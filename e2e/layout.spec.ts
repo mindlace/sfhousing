@@ -12,12 +12,18 @@ import { expectNoA11yViolations } from './helpers/a11y';
 import { expectAboutReachable, expectNoFooter, expectPhoneHeaderFits } from './helpers/chrome';
 import {
   PLAN_KEY,
+  TOUCH_FROM,
+  TOUCH_TO,
   chooseTool,
   gotoEditor,
   headerScore,
+  jumpAndIdle,
   openHeaderMenu,
+  ops,
+  projectToPage,
   resultsFace,
   smallText,
+  touchDrag,
   waitForMap,
   type Win
 } from './helpers/sharing';
@@ -280,6 +286,52 @@ test.describe('mobile', () => {
         ['attribution', attribution(page)]
       ]
     );
+  });
+
+  test("375 px: a stroke's chip overlays the map: the map region keeps its height, the strip stays clear", async ({
+    page
+  }) => {
+    await gotoEditor(page);
+    await setAttribution(page, false);
+    await jumpAndIdle(page);
+    await chooseTool(page, 'Paint');
+    // The strip and the folded sheet are in place: project after the layout settles.
+    await jumpAndIdle(page);
+    await expect(statusLine(page)).toHaveText('');
+    const mapRoot = page.getByTestId('map-root');
+    const heightBefore = (await box(mapRoot)).height;
+    const chip = page.getByTestId('stroke-chip');
+    await expect(chip).toHaveCount(0);
+
+    const cdp = await page.context().newCDPSession(page);
+    await touchDrag(
+      cdp,
+      await projectToPage(page, TOUCH_FROM),
+      await projectToPage(page, TOUCH_TO)
+    );
+    await expect.poll(() => ops(page)).toBe(1);
+    await expect(chip).toHaveText(/^6 stories on \d+ lots/);
+    expect((await box(mapRoot)).height).toBe(heightBefore);
+    await expectInside(chip, mapRoot);
+    await expectApart(
+      [['stroke chip', chip]],
+      [
+        ['palette strip', strip(page)],
+        ['dock handle', handle(page)],
+        ['attribution', attribution(page)]
+      ]
+    );
+    // The chip takes no presses: what is under its centre is the map's canvas, and a stroke that
+    // starts there paints.
+    const c = await chip.evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      const x = r.left + r.width / 2;
+      const y = r.top + r.height / 2;
+      return { x, y, hit: document.elementFromPoint(x, y)?.className ?? '' };
+    });
+    expect(c.hit).toContain('maplibregl-canvas');
+    await touchDrag(cdp, [c.x, c.y], [c.x + 40, c.y + 40]);
+    await expect.poll(() => ops(page)).toBe(2);
   });
 
   test('/: the failed phase shows its Retry pill, unobscured', async ({ page }) => {

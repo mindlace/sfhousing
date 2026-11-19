@@ -170,6 +170,15 @@ test("/'s Results face, a plan painted and both disclosures open, has no axe vio
   await expectNoA11yViolations(page, { include: ['header', '[data-testid=dock]'] });
 });
 
+test("/'s stroke chip has no axe violations in dark", async ({ page, isMobile }) => {
+  await gotoEditor(page);
+  await paintOnce(page, isMobile);
+  const chip = page.getByTestId('stroke-chip');
+  await expect(chip).toHaveText(/^6 stories on \d+ lots/);
+  await expect(chip).toHaveCSS('background-color', 'rgb(44, 46, 49)');
+  await expectNoA11yViolations(page, { include: ['[data-testid=brush-announcement]'] });
+});
+
 test("/'s notice pill (N1) in the one stack has no axe violations in dark", async ({ page }) => {
   await page.addInitScript((key) => {
     if (sessionStorage.getItem('sfh-e2e-seeded')) return;

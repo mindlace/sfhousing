@@ -9,7 +9,7 @@ import {
   type ControllerMap
 } from './BrushController.svelte';
 import { createEditor, type Editor } from './editor.svelte';
-import { MSG, strokeMessage } from './messages';
+import { MSG } from './messages';
 import type { OverlayCtors } from './overlay';
 import { BrushState } from './state.svelte';
 
@@ -397,7 +397,7 @@ describe('BrushController drag, previews and commit', () => {
     expect(fx.editor.plan.ops).toHaveLength(OPS_MAX);
     expect(fx.client.commits).toHaveLength(0);
     expect(fx.client.cancels).toHaveLength(1);
-    expect(fx.state.announcement).toBe(MSG.tooLarge);
+    expect(fx.state.announcement).toBe('Plan too large to save. Undo some strokes.');
     expect(fx.ctl.stroking).toBe(false);
   });
 
@@ -419,7 +419,7 @@ describe('BrushController drag, previews and commit', () => {
     fx.ctl.onDiff(diff(fx.ctl.lastCommitRev!, 'commit', { ...stats, opId: 'other' }), false);
     expect(fx.state.announcement).toBe('');
     fx.ctl.onDiff(diff(fx.ctl.lastCommitRev!, 'commit', stats), false);
-    expect(fx.state.announcement).toBe(strokeMessage(stats));
+    expect(fx.state.announcement).toBe('6 stories on 3 lots');
   });
 
   it('ignores non-primary buttons and treats a pen like a mouse', () => {

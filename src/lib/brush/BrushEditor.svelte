@@ -2,19 +2,23 @@
   `/`'s map editor (and /p/:id's read-only view): the map, its editor worker and, on plan 2's
   `Dock`, the Paint tab shared with /sim (plan 3's `PaintTab`, `HistoryButtons` above it and the
   phone `PaletteStrip`), so the two pages are one paint experience (sim-ux spec Goals 1, 3, 11
-  and 12). The page owns the `DockState` (its header "Paint" button toggles it) and the Results
-  face. Rows are the plan's op list grouped as /sim groups strokes (`planRowGroups`); their lot
-  counts and the selected row's outline come from the editor worker (`RowLots`, `opLots`), and the
+  and 12). The page owns the `DockState` (the dock folds by its own button) and the Results face.
+  Rows are the plan's op list grouped as /sim groups strokes (`planRowGroups`); their lot counts
+  and the selected row's outline come from the editor worker (`RowLots`, `opLots`), and the
   outline is drawn in the overlay mux's `outline` slot, beside the brush ring's. Remove takes a
   row's ops out as one undoable step and sends the worker the new plan. The brush status line, its
-  Retry and the page's own notices are pills in one notice stack (`NoticePills`); a stroke's or an
-  undo's announcement is screen-reader only, as on /sim, so painting never resizes the map on a
-  phone (where the stack is in flow). The page's header score flips the dock to its Results face
-  (`results`, the scoreboard). The live preview stays after release here, because on `/` it is the
-  plan.
+  Retry and the page's own notices are pills in one notice stack (`NoticePills`). What a stroke,
+  a refusal, an undo or a redo did shows in the stroke chip, a polite status over the map's top
+  (never in the stack, which is in flow on a phone), so painting never moves or resizes the map.
+  The page's header score flips the dock to its Results face (`results`, the scoreboard). The
+  live preview stays after release here, because on `/` it is the plan.
 -->
 <script module lang="ts">
+  import { PILL } from '$lib/shell/pill';
+
   const MEASURE = import.meta.env.DEV || import.meta.env.VITE_E2E === '1';
+  /** The stroke chip: a pill's look that takes no presses and has no action button. */
+  const CHIP = PILL.replace('pointer-events-auto', 'pointer-events-none').replace('pr-1', 'pr-4');
 </script>
 
 <script lang="ts">
@@ -36,7 +40,7 @@
   import type { Plan } from '$lib/plan';
   import type { Score } from '$lib/scoreboard';
   import NoticePills from '$lib/shell/NoticePills.svelte';
-  import { PILL, PILL_ACTION } from '$lib/shell/pill';
+  import { PILL_ACTION } from '$lib/shell/pill';
   import {
     SimClient,
     spawnSimWorker,
@@ -189,10 +193,13 @@
   const statusCells = new Set<string>(); // eslint-disable-line svelte/prefer-svelte-reactivity
   let lastStats: OpStats | null = null;
   let chunks: { pending: number; failed: string[] } = { pending: 0, failed: [] };
+  /** Failed parcel cells: map-view shows its failure chip, and the stroke chip sits below it. */
+  let failedCells = $state(0);
 
   /** Every assignment to `chunks` goes through here so `onchunks` never misses one. */
   function setChunks(next: { pending: number; failed: string[] }): void {
     chunks = next;
+    failedCells = next.failed.length;
     onchunks?.({ pending: next.pending, failed: next.failed.length });
   }
 
@@ -561,11 +568,6 @@
     </div>
     {@render notices?.()}
   </NoticePills>
-  <!-- Announcements (a stroke's result, Undid, Removed): heard, not shown, as on /sim. -->
-  <p role="status" aria-live="polite" data-testid="brush-announcement" class="sr-only">
-    {brush.announcement}
-  </p>
-
   <!-- The map and everything over it: the stack above is not part of its box. -->
   <div class="relative min-h-0 flex-1">
     {#if manifest}
@@ -579,6 +581,24 @@
     {:else}
       <div class="brush-editor-frame h-full" data-testid="brush-frame"></div>
     {/if}
+
+    <!-- The stroke chip (a stroke's result, a refusal, Undid, Redid, Removed): one polite status
+         over the map's top, centred right of the dock, at the top of map-view's failure chips and
+         one row lower while one of them shows (so it never covers Retry). It takes no presses, so
+         a stroke can start under it, and never moves the map. Mounted empty (no box), so its
+         first text is announced; it clears when the announcement does. -->
+    <div
+      role="status"
+      aria-live="polite"
+      data-testid="brush-announcement"
+      data-notice
+      class="brush-chip pointer-events-none absolute z-20 flex w-max -translate-x-1/2 justify-center"
+      style:top="calc(var(--notice-pills-bottom, 0px) + {failedCells > 0 ? '3.5rem' : '0.5rem'})"
+    >
+      {#if brush.announcement}
+        <span data-testid="stroke-chip" class={CHIP}>{brush.announcement}</span>
+      {/if}
+    </div>
 
     {#if crosshair}
       <svg
@@ -630,3 +650,12 @@
     {/if}
   </div>
 </div>
+
+<style>
+  /* Centred over the map right of the dock (`--dock-w`, 0 below md), as map-view's failure chips
+     and the notice pills are, within 16 px of the map's edges either side. */
+  .brush-chip {
+    left: calc(50% + var(--dock-w, 0px) / 2);
+    max-width: calc(100% - 2rem - var(--dock-w, 0px));
+  }
+</style>

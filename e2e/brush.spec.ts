@@ -68,12 +68,14 @@ const center = (page: Page) =>
   page.evaluate(() => (window as Win).__sfhMap!.map!.getCenter().toArray() as LngLat);
 
 /**
- * The brush's announcements (a stroke's result, Undid, Removed): a screen-reader-only status, as on
- * /sim. The visible status line (`brush-status`) carries only loading, the zoom hint and failures.
+ * The brush's announcements (a stroke's result, a refusal, Undid, Redid, Removed): a polite status
+ * over the map's top that shows them in the stroke chip. The status line in the notice stack
+ * (`brush-status`) carries only loading, the zoom hint and failures.
  */
 function announcement(page: Page): Locator {
   return page.getByTestId('brush-announcement');
 }
+const strokeChip = (page: Page): Locator => page.getByTestId('stroke-chip');
 
 /** The Paint tab's row select buttons ("6 stories · 2 strokes · 12 lots"). */
 const rowButtons = (page: Page): Locator => page.locator('[data-paint-row]');
@@ -141,7 +143,7 @@ test.describe('brush tool', () => {
 
       await mouseDrag(page, [-122.4193, 37.76014], [-122.418, 37.76014]);
 
-      await expect(announcement(page)).toHaveText(/^Painted 6 stories on \d+ parcels/);
+      await expect(strokeChip(page)).toHaveText(/^6 stories on \d+ lots/);
       expect(await ops(page)).toBe(1);
       await expect.poll(() => generated(page)).toBeGreaterThanOrEqual(1);
     });
@@ -150,7 +152,7 @@ test.describe('brush tool', () => {
       await gotoEditor(page);
       await jumpAndIdle(page, FRAME);
       await mouseDrag(page, [-122.4193, 37.76014], [-122.418, 37.76014]);
-      await expect(announcement(page)).toHaveText(/^Painted 6 stories/);
+      await expect(announcement(page)).toHaveText(/^6 stories on \d+ lots/);
       await expect.poll(() => generated(page)).toBeGreaterThanOrEqual(1);
       const painted = await generated(page);
 
@@ -422,8 +424,8 @@ test.describe('brush tool', () => {
       const heightBefore = await mapHeight();
       await touchDrag(cdp, p, q);
       await expect.poll(() => ops(page)).toBe(1);
-      // The stroke's result is announced, not shown: the map keeps its height (no pill in flow).
-      await expect(announcement(page)).toHaveText(/^Painted 6 stories/);
+      // The stroke's result shows in the chip over the map: the map keeps its height.
+      await expect(strokeChip(page)).toHaveText(/^6 stories on \d+ lots/);
       expect(await mapHeight()).toBe(heightBefore);
 
       // A second touch mid-stroke cancels it: still one op.

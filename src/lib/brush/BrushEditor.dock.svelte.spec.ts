@@ -5,13 +5,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import { page } from 'vitest/browser';
-import { createRawSnippet } from 'svelte';
+import { createRawSnippet, flushSync } from 'svelte';
 import '../../routes/layout.css';
 import type { Manifest } from '$lib/data/manifest';
 import { DockState } from '$lib/dock/dock-state.svelte';
 import { callsOf, stub } from '$lib/fzp/test/sim-map-stub';
 import { OUTLINE_LAYER_ID } from '$lib/paint/outline-layers';
-import { emptyPlan, type Plan, type PlanOp } from '$lib/plan';
+import { OPS_MAX, emptyPlan, type Plan, type PlanOp } from '$lib/plan';
 import { M_PER_DEG_LAT, M_PER_DEG_LNG } from '$lib/plan/geometry';
 import { PILL } from '$lib/shell/pill';
 import type { LotOutlines } from '$lib/sim/outlines';
@@ -20,7 +20,7 @@ import type { Score } from '$lib/scoreboard';
 import manifestJson from '../../../e2e/fixtures/data/fixture-0/manifest.json';
 import BrushEditorHost from './test/BrushEditorHost.svelte';
 import type { Editor } from './editor.svelte';
-import { MSG } from './messages';
+import { ANNOUNCE_MS, MSG, TOO_LARGE_MS } from './messages';
 import { FakeEditorWorker } from './test/fake-editor-worker';
 
 vi.mock('$lib/map/SimMap.svelte', () => import('$lib/fzp/test/FzpSimMapStub.svelte'));
@@ -36,6 +36,7 @@ const planOf = (...ops: PlanOp[]): Plan => ({ ...emptyPlan('fixture-0'), ops });
 
 interface Opts {
   width?: number;
+  height?: number;
   readOnly?: boolean;
   plan?: Plan;
   notices?: ReturnType<typeof createRawSnippet>;
@@ -43,7 +44,7 @@ interface Opts {
 
 async function setup(opts: Opts = {}) {
   const width = opts.width ?? 1024;
-  await page.viewport(width, width < 768 ? 700 : 768);
+  await page.viewport(width, opts.height ?? (width < 768 ? 700 : 768));
   const workers: FakeEditorWorker[] = [];
   const editors: Editor[] = [];
   const dock = new DockState({ tab: 'paint' });
@@ -112,8 +113,40 @@ const rowButtons = () => [...document.querySelectorAll<HTMLElement>('[data-paint
 const rowNames = () => rowButtons().map((b) => b.getAttribute('aria-label'));
 const rowButton = (re: RegExp) => rowButtons().find((b) => re.test(b.ariaLabel ?? ''))!;
 const removeButton = () => page.getByRole('button', { name: /^Remove: / });
-/** The screen-reader-only status that carries the brush's announcements (as on /sim). */
+/** The polite status over the map that carries the brush's announcements, and its chip. */
 const announcement = () => page.getByTestId('brush-announcement');
+const chip = () => page.getByTestId('stroke-chip');
+/** The map box: the stub map's parent, the region the chip overlays. */
+const mapBox = () =>
+  document.querySelector<HTMLElement>('[data-testid="fzp-sim-map-stub"]')!.parentElement!;
+
+/** Paints one stroke and answers its commit with stats: 6 stories on 3 lots. */
+async function commitStroke(w: FakeEditorWorker, editor: () => Editor): Promise<void> {
+  const n = w.allOf('commit').length;
+  stroke();
+  await expect.poll(() => w.allOf('commit').length).toBe(n + 1);
+  const c = w.lastOf('commit')!;
+  w.emit({
+    type: 'diff',
+    rev: c.rev,
+    phase: 'commit',
+    render: { revision: 1 } as GeneratedUpdate,
+    complete: true,
+    score: { total: 1 } as unknown as Score,
+    stats: {
+      opId: editor().plan.ops.at(-1)!.id,
+      kind: 'paint',
+      stories: 6,
+      covered: 3,
+      ineligible: 0,
+      underwater: 0,
+      built: 3,
+      notBigger: 0,
+      removed: 0,
+      partial: false
+    }
+  });
+}
 const overlayIds = () =>
   ((callsOf('setOverlayLayers').at(-1)?.[0] ?? []) as { id: string }[]).map((l) => l.id);
 const loadedIds = (w: FakeEditorWorker) => w.lastOf('load')!.plan.ops.map((o) => o.id);
@@ -315,50 +348,118 @@ describe('BrushEditor on the dock', () => {
     expect(stacks()).toHaveLength(1);
   });
 
-  it("on a phone a stroke's announcement is screen-reader only: the map box keeps its height", async () => {
-    const { w, editor } = await setup({ width: 375 });
-    await ready(w);
-    const mapBox = () =>
-      document.querySelector<HTMLElement>('[data-testid="fzp-sim-map-stub"]')!.parentElement!;
-    // Nothing visible in the stack once the worker is ready.
-    await expect.element(page.getByTestId('brush-status')).toHaveTextContent('');
-    const before = mapBox().getBoundingClientRect().height;
-    expect(before).toBeGreaterThan(0);
+  for (const [width, height] of [
+    [375, 812],
+    [1280, 800]
+  ]) {
+    it(`at ${width}px a stroke's result shows as a chip over the map, and the map box keeps its height`, async () => {
+      const { w, editor } = await setup({ width, height });
+      await ready(w);
+      // Nothing visible in the stack once the worker is ready.
+      await expect.element(page.getByTestId('brush-status')).toHaveTextContent('');
+      const region = announcement().element();
+      // The polite region is there, empty and boxless, before any text comes.
+      expect(region.getAttribute('role')).toBe('status');
+      expect(region.getAttribute('aria-live')).toBe('polite');
+      expect(region.textContent?.trim()).toBe('');
+      expect(region.getBoundingClientRect().height).toBe(0);
+      const before = mapBox().getBoundingClientRect().height;
+      expect(before).toBeGreaterThan(0);
 
-    stroke();
-    await expect.poll(() => w.lastOf('commit')).toBeTruthy();
-    const c = w.lastOf('commit')!;
-    w.emit({
-      type: 'diff',
-      rev: c.rev,
-      phase: 'commit',
-      render: { revision: 1 } as GeneratedUpdate,
-      complete: true,
-      score: { total: 1 } as unknown as Score,
-      stats: {
-        opId: editor().plan.ops[0].id,
-        kind: 'paint',
-        stories: 6,
-        covered: 3,
-        ineligible: 0,
-        underwater: 0,
-        built: 3,
-        notBigger: 0,
-        removed: 0,
-        partial: false
-      }
+      await commitStroke(w, editor);
+      await expect.element(chip()).toBeVisible();
+      await expect.element(chip()).toHaveTextContent('6 stories on 3 lots');
+      expect(region.contains(chip().element())).toBe(true);
+      expect(mapBox().contains(region)).toBe(true);
+      // A frame for layout, then the map box has not moved or resized.
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      expect(mapBox().getBoundingClientRect().height).toBe(before);
+      const box = mapBox().getBoundingClientRect();
+      const c = chip().element().getBoundingClientRect();
+      expect(c.top).toBeGreaterThanOrEqual(box.top);
+      expect(c.bottom).toBeLessThanOrEqual(box.bottom);
+      expect(c.left).toBeGreaterThanOrEqual(box.left);
+      expect(c.right).toBeLessThanOrEqual(box.right);
+      expect(getComputedStyle(chip().element()).pointerEvents).toBe('none');
+      expect(getComputedStyle(region).pointerEvents).toBe('none');
+      // A press at the chip's centre reaches what is under it: a stroke can start there.
+      const hit = document.elementFromPoint(c.left + c.width / 2, c.top + c.height / 2);
+      expect(region.contains(hit)).toBe(false);
+      expect(mapBox().contains(hit)).toBe(true);
+      // The chip is marked a notice, and the visible status line stays empty.
+      expect(region.hasAttribute('data-notice')).toBe(true);
+      await expect.element(page.getByTestId('brush-status')).toHaveTextContent('');
     });
-    // The announcement is made (a frame for layout), and the map box has not moved.
-    await expect
-      .poll(() => document.body.textContent?.includes('Painted 6 stories on 3 parcels'))
-      .toBe(true);
-    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
-    expect(mapBox().getBoundingClientRect().height).toBe(before);
-    const status = announcement();
-    await expect.element(status).toHaveTextContent(/^Painted 6 stories on 3 parcels/);
-    expect(status.element().getAttribute('role')).toBe('status');
-    expect(status.element().classList.contains('sr-only')).toBe(true);
-    await expect.element(page.getByTestId('brush-status')).toHaveTextContent('');
+  }
+
+  it('the chip clears after 4 s', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const { w, editor } = await setup();
+      await ready(w);
+      await commitStroke(w, editor);
+      await expect.element(chip()).toHaveTextContent('6 stories on 3 lots');
+      vi.advanceTimersByTime(ANNOUNCE_MS - 1);
+      flushSync();
+      expect(chip().query()).not.toBeNull();
+      vi.advanceTimersByTime(1);
+      flushSync();
+      expect(chip().query()).toBeNull();
+      // The region stays mounted (empty), ready for the next message.
+      expect(announcement().query()).not.toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('the chip sits a row lower while a failure chip shows', async () => {
+    const { w } = await setup();
+    await ready(w);
+    const region = announcement().element();
+    const host = document.querySelector<HTMLElement>('.brush-editor')!;
+    const pillsBottom = () =>
+      parseFloat(getComputedStyle(host).getPropertyValue('--notice-pills-bottom') || '0');
+    const offset = () => parseFloat(getComputedStyle(region).top) - pillsBottom();
+    await expect.poll(offset).toBe(8);
+    w.emit({ type: 'chunks', status: { '50_25': 'error' }, pending: 0, failed: ['50_25'] });
+    await expect.poll(offset).toBe(56);
+    w.emit({ type: 'chunks', status: { '50_25': 'ready' }, pending: 0, failed: [] });
+    await expect.poll(offset).toBe(8);
+  });
+
+  it('a refused stroke shows the refusal in the chip, for 6 s', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const ops = Array.from({ length: OPS_MAX }, (_, i) => op(`o${i}`, null));
+      const { w, editor } = await setup({ plan: planOf(...ops) });
+      await ready(w);
+      click(page.getByRole('radio', { name: 'Paint' }).element());
+      stroke();
+      await expect.element(chip()).toHaveTextContent(MSG.tooLarge);
+      expect(editor().plan.ops).toHaveLength(OPS_MAX);
+      expect(w.allOf('commit')).toEqual([]);
+      vi.advanceTimersByTime(TOO_LARGE_MS - 1);
+      flushSync();
+      expect(chip().query()).not.toBeNull();
+      vi.advanceTimersByTime(1);
+      flushSync();
+      expect(chip().query()).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('Ctrl+Z shows what it undid', async () => {
+    const { w, editor } = await setup();
+    await ready(w);
+    await commitStroke(w, editor);
+    await expect.element(chip()).toHaveTextContent('6 stories on 3 lots');
+    key('z');
+    await expect.element(chip()).toHaveTextContent('Undid paint, 6 stories');
+    expect(editor().plan.ops).toHaveLength(0);
+    key('z', true);
+    await expect.element(chip()).toHaveTextContent('Redid paint, 6 stories');
+    expect(editor().plan.ops).toHaveLength(1);
   });
 
   it('below md a stroke tool shows the palette strip; Done reopens the sheet on Paint', async () => {
