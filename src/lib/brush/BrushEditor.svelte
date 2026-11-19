@@ -13,11 +13,7 @@
   scoreboard). The live preview stays after release here, because on `/` it is the plan.
 -->
 <script module lang="ts">
-  import { PILL } from '$lib/shell/pill';
-
   const MEASURE = import.meta.env.DEV || import.meta.env.VITE_E2E === '1';
-  /** The stroke chip: a pill's look that takes no presses and has no action button. */
-  const CHIP = PILL.replace('pointer-events-auto', 'pointer-events-none').replace('pr-1', 'pr-4');
 </script>
 
 <script lang="ts">
@@ -37,7 +33,7 @@
   import type { Plan } from '$lib/plan';
   import type { Score } from '$lib/scoreboard';
   import NoticePills from '$lib/shell/NoticePills.svelte';
-  import { PILL_ACTION } from '$lib/shell/pill';
+  import { CHIP, PILL, PILL_ACTION } from '$lib/shell/pill';
   import {
     SimClient,
     spawnSimWorker,
@@ -90,9 +86,9 @@
     /** The manifest SimMap renders (null: none yet), once during setup and again whenever a
      *  Retry replaces it, so the parent can gate manifest-dependent UI (the View menu) on it. */
     onmanifest?: (m: Manifest | null) => void;
-    /** The page's dock (its header "Paint" button toggles it); one tab, 'paint'. */
+    /** The page's dock (its header score flips it to Results and back); one tab, 'paint'. */
     dock?: DockState;
-    /** The dock region's id, for the page's "Paint" button and the score's `aria-controls`. */
+    /** The dock region's id, for the header score's `aria-controls`. */
     dockId?: string;
     /** The page's Results face. */
     results?: Snippet;
@@ -101,7 +97,7 @@
      * in this component's one notice stack (`NoticePills`), as FzpMode's `notices`.
      */
     notices?: Snippet;
-    /** The user opened the dock (the page's "Paint" button): focus moves into it. */
+    /** The user opened the dock (the page's header score): focus moves into it. */
     dockFocus?: boolean;
     /** The dock folded by its collapse button or Escape: the page restores focus. */
     ondockclose?: () => void;

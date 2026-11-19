@@ -66,6 +66,30 @@ function announcement(page: Page): Locator {
   return page.getByTestId('brush-announcement');
 }
 const strokeChip = (page: Page): Locator => page.getByTestId('stroke-chip');
+/** map-view's chip for failed parcel chunks, with its Retry. */
+const failureChip = (page: Page): Locator =>
+  page.getByRole('status').filter({ hasText: "Some parcels didn't load —" });
+
+/**
+ * With the failure chip and the stroke chip both on screen, they do not overlap, and a press at
+ * Retry's centre reaches Retry (the stroke chip sits a row lower and takes no presses).
+ */
+async function expectChipsApart(page: Page): Promise<void> {
+  await expect(failureChip(page)).toBeVisible();
+  await expect(strokeChip(page)).toBeVisible();
+  const a = (await failureChip(page).boundingBox())!;
+  const b = (await strokeChip(page).boundingBox())!;
+  const overlap =
+    a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+  expect(overlap, `failure ${JSON.stringify(a)} stroke ${JSON.stringify(b)}`).toBe(false);
+  const retry = failureChip(page).getByRole('button', { name: 'Retry' });
+  const r = (await retry.boundingBox())!;
+  const hit = await retry.evaluate((el, p) => el.contains(document.elementFromPoint(p.x, p.y)), {
+    x: r.x + r.width / 2,
+    y: r.y + r.height / 2
+  });
+  expect(hit).toBe(true);
+}
 
 test.describe('brush tool', () => {
   test.describe('desktop', () => {
@@ -151,6 +175,20 @@ test.describe('brush tool', () => {
       await retry.click();
       await expect(chip).toBeHidden({ timeout: 5_000 });
       await expect.poll(() => generated(page)).toBeGreaterThan(0);
+    });
+
+    test('a stroke while parcels failed: the stroke chip clears the failure chip and its Retry', async ({
+      page
+    }) => {
+      await page.route(CHUNK, (r) => r.abort());
+      await gotoEditor(page);
+      await jumpAndIdle(page, FRAME);
+      await mouseDrag(page, [-122.4193, 37.76014], [-122.418, 37.76014]);
+      await expect(failureChip(page)).toBeVisible();
+      // A stroke with the failure chip up: its result shows a row lower.
+      await mouseDrag(page, [-122.4193, 37.7603], [-122.418, 37.7603]);
+      await expect.poll(() => ops(page)).toBe(2);
+      await expectChipsApart(page);
     });
 
     test('a parent loads a plan through oneditor and the buildings render', async ({ page }) => {
@@ -252,6 +290,25 @@ test.describe('brush tool', () => {
       await page.touchscreen.tap((p[0] + q[0]) / 2, p[1]);
       await expect.poll(() => ops(page)).toBe(2);
       expect(await ops(page)).toBe(2);
+    });
+
+    test('a stroke while parcels failed: the stroke chip clears the failure chip and its Retry', async ({
+      page
+    }) => {
+      await page.route(CHUNK, (r) => r.abort());
+      await gotoEditor(page);
+      await jumpAndIdle(page, FRAME);
+      const cdp = await page.context().newCDPSession(page);
+      await chooseTool(page, 'Paint');
+      await jumpAndIdle(page, FRAME);
+      const p = await projectToPage(page, [-122.419, 37.76014]);
+      const q = await projectToPage(page, [-122.4183, 37.76014]);
+      await touchDrag(cdp, p, q);
+      await expect.poll(() => ops(page)).toBe(1);
+      await expect(failureChip(page)).toBeVisible();
+      await touchDrag(cdp, p, q);
+      await expect.poll(() => ops(page)).toBe(2);
+      await expectChipsApart(page);
     });
 
     test('axe: the editor with the radius popover open', async ({ page }) => {

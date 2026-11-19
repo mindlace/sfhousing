@@ -69,7 +69,7 @@ describe('BrushState', () => {
     s.phase = 'failed';
     expect(s.statusText).toBe(MSG.cityFailed);
     s.phase = 'ready';
-    // The announcement is screen-reader only (its own region): the visible line skips it.
+    // The announcement shows in the stroke chip (its own polite region): the status line skips it.
     expect(s.announcement).toBe('Painted');
     expect(s.statusText).toBe(MSG.loadingParcels);
     t.flush();
