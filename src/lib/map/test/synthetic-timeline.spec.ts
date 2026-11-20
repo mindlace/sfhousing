@@ -61,6 +61,11 @@ describe('makeSyntheticTimeline', () => {
       expect(mean).toBeLessThanOrEqual(1.4);
     });
 
+    it('flags one project in ten (the halo bench case draws their marks)', () => {
+      const flagged = slots.filter(({ c, s }) => c.slotFlags![s] !== 0).length;
+      expect(flagged).toBe(300);
+    });
+
     it('exits about 15% of projects', () => {
       const exits = slots.filter(({ c, s }) => c.slotEnd[2 * s + 1] === 2).length;
       expect(exits / slots.length).toBeGreaterThanOrEqual(0.12);

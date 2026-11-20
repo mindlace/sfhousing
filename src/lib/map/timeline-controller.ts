@@ -1,7 +1,8 @@
 // Owns the deck timeline layers in FZP mode: revision ordering, slicing, the two cell layers per
-// timeline cell, the stage bars, the demolish pump and the overlay-layer slot (spec §4.1, §4.3,
-// §4.4, §4.5, §4.7). deck is type-only here: the layer and extension classes arrive through deps,
-// so deck and the timelapse GPU code (timelapse/deck.ts) stay lazy.
+// timeline cell, the stage bars, the halos and marks, the demolish pump and the overlay-layer slot
+// (spec §4.1, §4.3, §4.4, §4.5, §4.7; halos: docs/dev/map-interfaces.md "Halos and marks"). deck
+// is type-only here: the layer and extension classes arrive through deps, so deck and the
+// timelapse GPU code (timelapse/deck.ts) stay lazy.
 import type { Layer } from '@deck.gl/core';
 import type { SolidPolygonLayer } from '@deck.gl/layers';
 import type { ParcelId } from '$lib/data/parcel';
@@ -13,12 +14,14 @@ import { registerCellBounds } from './cull';
 import { appearanceColor } from './appearance';
 import { TYPOLOGY_ORDER, type Theme, type TimedPackedCell, type TimelineUpdate } from './types';
 import { buildBars } from './timelapse/bars';
+import { HALO_KIND, buildHalos, evalHalo, type HaloAttrs } from './timelapse/halos';
 import { declutter } from './timelapse/declutter';
 import { DemolishPump, type PumpDeps } from './timelapse/demolish';
 import { encodeParts, validateTimedCell, type EncodedParts } from './timelapse/encode';
 import { packChanceTexture, type ChanceTexture } from './timelapse/lookups';
 import type { TimelapseExtension, TimelapseExtensionProps } from './timelapse/extension';
 import type { StageBarLayer } from './timelapse/stage-bar-layer';
+import type { HaloLayer } from './timelapse/halo-layer';
 import type { BarAttrs, TimelineClock, TimelineLookups, TimelineSnapshot } from './timelapse/types';
 
 export interface TimelineDeps extends PumpDeps {
@@ -26,6 +29,7 @@ export interface TimelineDeps extends PumpDeps {
   SolidPolygonLayer: typeof SolidPolygonLayer;
   TimelapseExtension: typeof TimelapseExtension;
   StageBarLayer: typeof StageBarLayer;
+  HaloLayer: typeof HaloLayer;
   repaint(): void; // map.triggerRepaint()
   onResyncNeeded(): void;
 }
@@ -39,7 +43,10 @@ export interface TimelinePartLookup {
   existingUnits: number;
 }
 
-/** Ids of the per-cell timeline layers (picking and culling). `timeline-bars` is not one. */
+/**
+ * Ids of the per-cell timeline layers (picking and culling). `timeline-bars` and
+ * `timeline-halos` are not.
+ */
 export const TIMELINE_PART_LAYER = /^timeline-(solid|ghost)-/;
 
 type Accessor<T> = (o: unknown, info: { index: number }) => T;
@@ -145,6 +152,14 @@ export class TimelineController {
   private barsLayer: Layer | null = null;
   /** Cells changed since the bars were last built. */
   private barsDirty = false;
+  /** `setHalos`: events after this day ring; null (the default) emits no halo layer. */
+  private haloFrom: Day | null = null;
+  /** `setReducedMotion`: the halo layer's `reduced` prop. */
+  private reduced = false;
+  private halos: HaloAttrs[] = [];
+  private halosLayer: Layer | null = null;
+  /** Cells installed or removed since the halos were last built (a re-encode does not count). */
+  private halosDirty = false;
   private warnedNoLookups = false;
   /**
    * Cells of earlier runs a swap has not yet installed over. They stay on the map until an
@@ -244,6 +259,30 @@ export class TimelineController {
     if (this.lastRevision >= 0) this.emit();
   }
 
+  /**
+   * Halos and marks for the events after `from` (the dataset date), or none (`null`, the default).
+   * Rebuilds the records once when the value changes; before the first `apply` it is only kept.
+   */
+  setHalos(o: { from: Day } | null): void {
+    const from = o === null ? null : o.from;
+    if (from !== null && !Number.isFinite(from))
+      throw new RangeError(`setHalos: from must be finite, got ${from}`);
+    if (this.destroyed || from === this.haloFrom) return;
+    this.haloFrom = from;
+    if (this.lastRevision < 0) return;
+    this.rebuildHalos();
+    this.emit();
+  }
+
+  /** The halo layer's `reduced` prop, set on the layer there is: its records are not rebuilt. */
+  setReducedMotion(reduced: boolean): void {
+    if (this.destroyed || reduced === this.reduced) return;
+    this.reduced = reduced;
+    if (!this.halosLayer) return;
+    this.halosLayer = this.halosLayer.clone({ reduced } as Partial<Layer['props']>);
+    this.emit();
+  }
+
   setOverlayLayers(layers: Layer[]): void {
     for (const l of layers)
       if (RESERVED.test(l.id)) throw new Error(`setOverlayLayers: reserved layer id ${l.id}`);
@@ -279,6 +318,18 @@ export class TimelineController {
   debugSnapshot(): TimelineSnapshot {
     let parts = 0;
     for (const cell of this.cells.values()) parts += cell.pack.partCount;
+    const shown = this.halosLayer ? this.halos : [];
+    let marks = 0;
+    let halosShown = 0;
+    const days = new Set<number>();
+    for (const h of shown) {
+      if (h.kind === HALO_KIND.mark) {
+        marks++;
+        continue;
+      }
+      days.add(h.day);
+      if (evalHalo(h, this.clock.day, this.reduced).visible) halosShown++;
+    }
     return {
       revision: this.lastRevision,
       cells: this.cells.size,
@@ -289,7 +340,11 @@ export class TimelineController {
       // Queued slices + a scheduled pump frame. 0 = layers and feature-state have converged.
       pending: this.queue.length + (this.pump.pending ? 1 : 0),
       installs: this.installs,
-      layerIds: this.current.map((l) => l.id)
+      layerIds: this.current.map((l) => l.id),
+      halos: shown.length - marks,
+      marks,
+      halosShown,
+      haloDays: [...days].sort((a, b) => a - b).slice(0, 500)
     };
   }
 
@@ -302,6 +357,8 @@ export class TimelineController {
     this.leftover.clear();
     this.bars = [];
     this.barsLayer = null;
+    this.halos = [];
+    this.halosLayer = null;
     this.current = [];
   }
 
@@ -317,6 +374,9 @@ export class TimelineController {
     this.bars = [];
     this.barsLayer = null;
     this.barsDirty = true;
+    this.halos = [];
+    this.halosLayer = null;
+    this.halosDirty = true;
     this.pump.replace(u.demolish);
     this.lastRevision = 0;
     const slices = this.plan(u);
@@ -370,7 +430,7 @@ export class TimelineController {
       // During a swap a removed cell stays as a leftover, so the map never thins mid-switch.
       if (this.swapping) {
         if (this.cells.has(id)) this.leftover.add(id);
-      } else if (this.cells.delete(id)) this.barsDirty = true;
+      } else if (this.cells.delete(id)) this.barsDirty = this.halosDirty = true;
     }
     for (const pack of slice.cells) this.install(pack);
     for (const id of slice.reencode) {
@@ -381,12 +441,14 @@ export class TimelineController {
       this.buildCellLayers(cell);
     }
     if (slice.complete) {
-      for (const id of this.leftover) if (this.cells.delete(id)) this.barsDirty = true;
+      for (const id of this.leftover)
+        if (this.cells.delete(id)) this.barsDirty = this.halosDirty = true;
       this.leftover.clear();
       this.swapping = false;
     }
-    // Bars are rebuilt once per update, when its last slice has installed.
+    // Bars and halos are rebuilt once per update, when its last slice has installed.
     if (this.queue.length === 0 && this.barsDirty) this.rebuildBars();
+    if (this.queue.length === 0 && this.halosDirty) this.rebuildHalos();
     this.emit();
   }
 
@@ -410,7 +472,7 @@ export class TimelineController {
     this.cells.set(pack.cellId, cell);
     this.leftover.delete(pack.cellId);
     this.installs++;
-    this.barsDirty = true;
+    this.barsDirty = this.halosDirty = true;
   }
 
   private encode(cell: Cell): void {
@@ -437,6 +499,26 @@ export class TimelineController {
       clock: this.clock,
       ...(this.labelBeforeId ? { beforeId: this.labelBeforeId } : {})
     } as ConstructorParameters<TimelineDeps['StageBarLayer']>[0]) as unknown as Layer;
+  }
+
+  /** Halo records from the installed cells, in cellId order; no lookups needed. */
+  private rebuildHalos(): void {
+    this.halosDirty = false;
+    const from = this.haloFrom;
+    if (from === null) {
+      this.halos = [];
+      this.halosLayer = null;
+      return;
+    }
+    const sorted = [...this.cells].sort(byKey).map(([, c]) => c.pack);
+    const halos = buildHalos(sorted, from);
+    this.halos = halos;
+    this.halosLayer = new this.deps.HaloLayer({
+      data: halos,
+      clock: this.clock,
+      reduced: this.reduced,
+      ...(this.labelBeforeId ? { beforeId: this.labelBeforeId } : {})
+    } as ConstructorParameters<TimelineDeps['HaloLayer']>[0]) as unknown as Layer;
   }
 
   private frame = (): void => {
@@ -484,7 +566,10 @@ export class TimelineController {
     } as TimelineLayerProps) as unknown as Layer;
   }
 
-  /** Solids by cellId, then ghosts by cellId, then `timeline-bars`, then the overlay. */
+  /**
+   * Solids by cellId, then ghosts by cellId, then `timeline-bars`, then `timeline-halos`, then
+   * the overlay.
+   */
   private emit(): void {
     if (this.destroyed) return;
     const sorted = [...this.cells].sort(byKey);
@@ -498,6 +583,7 @@ export class TimelineController {
       ...solids,
       ...ghosts,
       ...(this.barsLayer ? [this.barsLayer] : []),
+      ...(this.halosLayer ? [this.halosLayer] : []),
       ...this.overlay
     ];
     this.deps.setLayers(this.current);

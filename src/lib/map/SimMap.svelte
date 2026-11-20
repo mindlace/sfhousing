@@ -181,6 +181,7 @@
     timelineLoading: boolean;
     timelineFailed: boolean; // a timelapse shader error: the error state is final for this map
     onRejection: ((e: PromiseRejectionEvent) => void) | null; // timeline mode's compile watch
+    unwatchMotion: (() => void) | null; // timeline mode's prefers-reduced-motion listener
     SolidPolygonLayer: SolidPolygonLayerClass | null; // from loadDeck(), once the overlay exists
     appliedTheme: Theme;
     paintDiff: Record<Theme, PaintSet[]> | null;
@@ -218,6 +219,7 @@
   let pendingTimeline: TimelineUpdate[] = [];
   let pendingDay: Day | null = null;
   let pendingLookups: TimelineLookups | null = null;
+  let pendingHalos: { from: Day } | null = null;
   let warnedGenerated = false;
   /** The last hover report to `timelinePick` was a part: the next hover miss is sent once. */
   let hoverReported = false;
@@ -373,6 +375,14 @@
     pendingLookups = l;
   }
 
+  /** Halos and marks from `from` on, or none (null, the default). Kept like the day. */
+  export function setHalos(o: { from: Day } | null): void {
+    if (o !== null && !Number.isFinite(o.from))
+      throw new RangeError(`setHalos: from must be finite, got ${o.from}`);
+    pendingHalos = o === null ? null : { from: o.from };
+    live?.timeline?.setHalos(pendingHalos);
+  }
+
   const handle: SimMapHandle = {
     applyGenerated,
     setChunkStatus,
@@ -383,7 +393,8 @@
     onResyncNeeded,
     applyTimeline,
     setTime,
-    setTimelineLookups
+    setTimelineLookups,
+    setHalos
   };
 
   // ---- effects ----------------------------------------------------------------------------------
@@ -438,7 +449,7 @@
         pendingGenerated: pendingApplies.length,
         theme
       }),
-      { applyTimeline, setTime, setTimelineLookups, setOverlayLayers }
+      { applyTimeline, setTime, setTimelineLookups, setHalos, setOverlayLayers }
     )
   );
 
@@ -456,6 +467,7 @@
       timelineLoading: false,
       timelineFailed: false,
       onRejection: null,
+      unwatchMotion: null,
       SolidPolygonLayer: null,
       appliedTheme: 'light',
       paintDiff: null,
@@ -700,8 +712,10 @@
     }
     l.timelineLoading = false;
     if (l.dead || l.map !== map) return;
-    const [{ TimelapseExtension, StageBarLayer }, { TimelineController, TIMELINE_PART_LAYER }] =
-      mods;
+    const [
+      { TimelapseExtension, StageBarLayer, HaloLayer },
+      { TimelineController, TIMELINE_PART_LAYER }
+    ] = mods;
     const { log } = mods[2];
     // Only one controller emits to the overlay.
     l.controller?.destroy();
@@ -712,6 +726,7 @@
         SolidPolygonLayer,
         TimelapseExtension,
         StageBarLayer,
+        HaloLayer,
         repaint: () => map.triggerRepaint()
       },
       l.appliedTheme,
@@ -728,6 +743,8 @@
       }
     });
     if (pendingDay !== null) timeline.setTime(pendingDay);
+    watchReducedMotion(l, timeline);
+    timeline.setHalos(pendingHalos);
     if (pendingLookups) {
       try {
         timeline.setLookups(pendingLookups);
@@ -747,6 +764,15 @@
       }
     }
     if (remount && queued.length === 0) resyncCb?.();
+  }
+
+  /** The halos follow `prefers-reduced-motion`, now and on each change, until teardown. */
+  function watchReducedMotion(l: Live, timeline: TimelineController): void {
+    const q = matchMedia('(prefers-reduced-motion: reduce)');
+    const onChange = (e: { matches: boolean }) => timeline.setReducedMotion(e.matches);
+    timeline.setReducedMotion(q.matches);
+    q.addEventListener('change', onChange);
+    l.unwatchMotion = () => q.removeEventListener('change', onChange);
   }
 
   /** luma device errors: logged as before, except in timeline mode (§4.8 "Errors"). */
@@ -799,6 +825,8 @@
     l.timeline?.destroy();
     if (l.onRejection) removeEventListener('unhandledrejection', l.onRejection);
     l.onRejection = null;
+    l.unwatchMotion?.();
+    l.unwatchMotion = null;
     l.overlay?.finalize();
     l.map?.remove();
     l.controller = null;

@@ -105,6 +105,11 @@ export interface SimMapHandle {
   // T7. `inFlight` (Call 15): the lookups for slots with slotCohort 1; absent = they read the
   // fresh set (the top level, new projects').
   setTimelineLookups(l: TimelineLookupSet & { inFlight?: TimelineLookupSet }): void;
+  /**
+   * Halos on stage changes after `from` (the dataset date) and marks on projects under your
+   * policy; null (the default) draws none. Kept until the timeline controller exists, as setTime.
+   */
+  setHalos(o: { from: Day } | null): void;
 }
 
 /** T7: one set of timeline lookups (T12 `chanceTable` and `typicalMonths` outputs). */

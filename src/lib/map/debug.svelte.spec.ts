@@ -19,6 +19,7 @@ describe('installDebug loadSyntheticLimits', () => {
           applyTimeline: vi.fn(),
           setTime: vi.fn(),
           setTimelineLookups: vi.fn(),
+          setHalos: vi.fn(),
           setOverlayLayers
         }
       );
@@ -33,4 +34,34 @@ describe('installDebug loadSyntheticLimits', () => {
       }
     }, 60_000);
   }
+});
+
+describe('installDebug timeline handle functions', () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it('passes each timeline call through to SimMap', () => {
+    vi.stubEnv('VITE_E2E', '1');
+    const fns = {
+      applyTimeline: vi.fn(),
+      setTime: vi.fn(),
+      setTimelineLookups: vi.fn(),
+      setHalos: vi.fn(),
+      setOverlayLayers: vi.fn()
+    };
+    const uninstall = installDebug(
+      () => ({ map: null, controller: null, timeline: null, pendingGenerated: 0, theme: 'light' }),
+      fns
+    );
+    try {
+      const hook = window.__sfhMap!;
+      hook.setTime(21000);
+      hook.setHalos({ from: 20742 });
+      hook.setHalos(null);
+      expect(fns.setTime).toHaveBeenCalledWith(21000);
+      expect(fns.setHalos.mock.calls).toEqual([[{ from: 20742 }], [null]]);
+      expect(hook.timelineSnapshot()).toBeNull();
+    } finally {
+      uninstall();
+    }
+  });
 });

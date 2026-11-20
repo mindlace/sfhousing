@@ -30,12 +30,19 @@ const DRAG_SWEEP_MS = 2000;
 /**
  * `daysPerS` is the sweep speed: the day is a triangle wave over [DAY_START, DAY_END]. `limits` adds
  * the synthetic height limits (`loadSyntheticLimits(1)`: whole-city contours and a 3 km downtown
- * lid, plain mode) once the timeline is in.
+ * lid, plain mode) once the timeline is in. `halos` turns on the halo layer from DAY_START
+ * (`setHalos`): a ring per stage change and a mark on every tenth project (synthetic-timeline.ts).
  */
 const CASES = [
-  { name: 'playback', daysPerS: PLAYBACK_DAYS_PER_S, limits: false },
-  { name: 'drag', daysPerS: (DAY_END - DAY_START) / (DRAG_SWEEP_MS / 1000), limits: false },
-  { name: 'playback + limits', daysPerS: PLAYBACK_DAYS_PER_S, limits: true }
+  { name: 'playback', daysPerS: PLAYBACK_DAYS_PER_S, limits: false, halos: false },
+  {
+    name: 'drag',
+    daysPerS: (DAY_END - DAY_START) / (DRAG_SWEEP_MS / 1000),
+    limits: false,
+    halos: false
+  },
+  { name: 'playback + limits', daysPerS: PLAYBACK_DAYS_PER_S, limits: true, halos: false },
+  { name: 'playback + halos', daysPerS: PLAYBACK_DAYS_PER_S, limits: false, halos: true }
 ] as const;
 
 /** A limits case's synthetic height limits (the overlay slot), installed; its counts, else null. */
@@ -49,7 +56,18 @@ async function loadLimits(page: Page, limits: boolean) {
 const limitsField = (c: Awaited<ReturnType<typeof loadLimits>>) =>
   c ? `limits=${c.faces}/${c.rimPaths}/${c.chains} ` : '';
 
-for (const { name, daysPerS, limits } of CASES)
+/** A halos case turns the halo layer on from DAY_START (`setHalos`); the others leave it off. */
+async function showHalos(page: Page, halos: boolean) {
+  const from = halos ? DAY_START : null;
+  await page.evaluate(
+    (f) => (window as Win).__sfhMap!.setHalos(f === null ? null : { from: f }),
+    from
+  );
+}
+const halosField = (halos: boolean, c: { halos: number; marks: number }) =>
+  halos ? `halos=${c.halos} marks=${c.marks} ` : '';
+
+for (const { name, daysPerS, limits, halos } of CASES)
   test(`bench:map: timeline ${name}`, async ({ page }) => {
     await transitLayersOn(page);
     await page.goto('/');
@@ -84,6 +102,7 @@ for (const { name, daysPerS, limits } of CASES)
       { timeout: 120_000 }
     );
     const limitCounts = await loadLimits(page, limits);
+    await showHalos(page, halos);
     await page.evaluate((d) => (window as Win).__sfhMap!.setTime(d), DAY_START);
 
     await page.evaluate(
@@ -130,9 +149,17 @@ for (const { name, daysPerS, limits } of CASES)
     const after = await page.evaluate(() => {
       const m = (window as Win).__sfhMap!;
       const s = m.timelineSnapshot();
-      return { cells: s?.cells ?? 0, parts: s?.parts ?? 0, pumpMaxOps: m.demolishMaxFrameOps };
+      return {
+        cells: s?.cells ?? 0,
+        parts: s?.parts ?? 0,
+        halos: s?.halos ?? 0,
+        marks: s?.marks ?? 0,
+        pumpMaxOps: m.demolishMaxFrameOps
+      };
     });
     expect(after.cells).toBe(cells);
+    // The halo case drew its records; the others none.
+    expect(after.halos > 0 && after.marks > 0).toBe(halos);
     // The pump actually ran: playback and drag both cross demolition days.
     expect(after.pumpMaxOps).toBeGreaterThan(0);
 
@@ -142,6 +169,7 @@ for (const { name, daysPerS, limits } of CASES)
     const line =
       `bench:map timeline=${name} frames=${deltas.length} projects=${projects} ` +
       `p50=${p50.toFixed(1)}ms parts=${after.parts} ${limitsField(limitCounts)}` +
+      halosField(halos, after) +
       `p95=${p95.toFixed(1)}ms ` +
       `pumpMaxOps=${after.pumpMaxOps} (catch-up ${catchUpOps}) bar=${BAR_MS}ms ${verdict(p95)} ` +
       `dpr=${dpr} renderer="${renderer}"`;
