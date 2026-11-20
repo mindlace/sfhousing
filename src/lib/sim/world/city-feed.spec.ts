@@ -332,6 +332,36 @@ describe('city-feed', () => {
     expect(feed.take(restored, STATICS, LATE)).toBeNull();
   });
 
+  it('a surviving row whose marker becomes null after a rewind is withdrawn: the floor drops to it', () => {
+    const { world, anchors, flags } = little();
+    const feed = feedOf(anchors, flags);
+    const page = new FakeController();
+    page.apply({
+      revision: 0,
+      cells: [],
+      removedCells: [],
+      demolish: [],
+      city: feed.snapshot(world, STATICS, LATE)
+    });
+    expect(page.markers.has(1)).toBe(true);
+    // Same rows; row 1 loses its T11 lot (a future re-split, say).
+    anchors[1] = null;
+    feed.rewind(world, STATICS, LATE);
+    const d = feed.take(world, STATICS, LATE)!;
+    expect(d.from).toBe(1);
+    expect(d.rows).toBe(5);
+    // Every row past the floor that still has a marker is resent.
+    expect(Array.from(d.row)).toEqual([4]);
+    page.apply({ revision: 1, cells: [], removedCells: [], demolish: [], city: d });
+    expect(page.markers.has(1)).toBe(false);
+    expect(page.markers).toEqual(markersOf(feedOf(anchors, flags).snapshot(world, STATICS, LATE)));
+    expect(feed.take(world, STATICS, LATE)).toBeNull();
+    // The row coming back later is sent again (it is no longer held as sent).
+    anchors[1] = 'L1';
+    feed.touch(1);
+    expect(Array.from(feed.take(world, STATICS, LATE)!.row)).toEqual([1]);
+  });
+
   it('two rewinds before one take keep the lower floor', () => {
     const { world, anchors, flags } = little();
     const feed = feedOf(anchors, flags);

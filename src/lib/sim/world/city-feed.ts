@@ -13,7 +13,8 @@
 //   and sends those whose marker differs from the one sent, ascending; at rest it sends nothing.
 // - `rewind` drops the rows at or past the restored world's `n` and touches every row whose marker
 //   now differs from the one sent. When a marker at or past `n` was sent, `n` becomes the drop
-//   floor (the lowest over the rewinds since the last take): the next delta carries it as `from`,
+//   floor, and a surviving row whose sent marker is now null (it lost its anchor) lowers the floor
+//   to that row (the lowest over the rewinds since the last take): the next delta carries it as `from`,
 //   so the page forgets every marker at or past it before applying the rows, and that delta also
 //   carries every row from the floor to the world's `n` then (rows the refill re-created between
 //   the rewind and the flush, touched or not). `snapshot` sends every marker and supersedes what is
@@ -160,7 +161,11 @@ export function createCityFeed(deps: CityFeedDeps): CityFeed {
       for (const row of order) {
         if (row >= n) continue;
         const m = markerOf(world, statics, row, day);
-        if (m === null) continue;
+        if (m === null) {
+          // the page forgot it with the floor (rewind lowers the floor to such a row)
+          if (from !== null && row >= from) sent[row] = undefined;
+          continue;
+        }
         const was = from !== null && row >= from ? undefined : sent[row];
         if (was !== undefined && sameMarker(was, m)) continue;
         sent[row] = m;
@@ -183,9 +188,11 @@ export function createCityFeed(deps: CityFeedDeps): CityFeed {
       for (let row = 0; row < n; row++) {
         const m = markerOf(world, statics, row, day);
         const was = sent[row];
-        if (m === null ? was !== undefined : was === undefined || !sameMarker(was, m)) {
-          touched.add(row);
-        }
+        if (m === null) {
+          // a sent marker now gone: only `from` removes a marker on the page, so the floor drops
+          // to this row and the rows above it are resent
+          if (was !== undefined) floor = floor === null ? row : Math.min(floor, row);
+        } else if (was === undefined || !sameMarker(was, m)) touched.add(row);
       }
     },
 
