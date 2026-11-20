@@ -57,11 +57,20 @@ test('no halo shows at today', async ({ page }) => {
   await expect
     .poll(() => dayOf(page))
     .toBe(await page.evaluate(() => (window as Win).__sfhFzp!.asOf));
+  const asOf = await page.evaluate(() => (window as Win).__sfhFzp!.asOf);
+  // At the default zoom the merged view stands in: city records exist ahead, none drawn yet.
+  const merged = await waitMap(page);
+  expect(merged.ringMinZoom).toBe(14);
+  expect(merged.cityRecords).toBeGreaterThan(0);
+  expect(merged.cityRings).toBe(0);
+  expect(merged.cityGlows).toBe(0);
+  for (const d of merged.cityDays) expect(d).toBeGreaterThan(asOf);
+  // From 14 each project's own rings: halos are on (rings exist ahead), and none is due yet.
+  await page.evaluate(() => (window as Win).__sfhMap!.map!.jumpTo({ zoom: 14.5 }));
   const s = await waitMap(page);
-  // Halos are on (rings exist ahead), and none is due yet.
   expect(s.halos).toBeGreaterThan(0);
   expect(s.halosShown).toBe(0);
-  const asOf = await page.evaluate(() => (window as Win).__sfhFzp!.asOf);
+  expect(s.marksShown).toBe(0);
   for (const d of s.haloDays) expect(d).toBeGreaterThan(asOf);
 });
 

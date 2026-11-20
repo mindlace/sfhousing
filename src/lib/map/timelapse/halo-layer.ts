@@ -26,7 +26,7 @@ type Rgb = [number, number, number];
 export type HaloModuleProps = {
   day: number;
   reduced: number; // 1 under reduced motion, else 0
-  /** 2^ringMinZoom (0 for no gate): rings show while project.scale >= it, exact at the gate. */
+  /** 2^ringMinZoom (0 for no gate): halos show while project.scale >= it, exact at the gate. */
   ringMinScale: number;
   approved: Rgb;
   started: Rgb;
@@ -104,8 +104,8 @@ struct HlEval {
 HlEval hl_evalHalo(float day, float until, float kind, float t, bool reduced, float scale) {
   // 1. Hidden: outside [day, until).
   if (t < day || t >= until) return HlEval(false, 0.0, 0.0);
-  // 2. A ring below the gate: the city layer's merged ring stands for it.
-  if (kind != HL_MARK && scale < halo.ringMinScale) return HlEval(false, 0.0, 0.0);
+  // 2. Below the gate (rings and marks): the city layer's merged rings stand for them.
+  if (scale < halo.ringMinScale) return HlEval(false, 0.0, 0.0);
   // 3. A mark: one size, full strength.
   if (kind == HL_MARK) return HlEval(true, HL_MARK_PX, 1.0);
   // 4. Reduced motion: a still ring.
@@ -216,7 +216,7 @@ type _HaloLayerProps = {
   /** Reduced motion: every ring still, at HALO_STILL_R_PX and full strength. */
   reduced: boolean;
   /**
-   * Rings (not marks) show only from this zoom: CITY_HANDOVER_ZOOM while a city layer draws the
+   * Rings and marks show only from this zoom: CITY_HANDOVER_ZOOM while a city layer draws the
    * merged rings below it, else 0 (no gate). A uniform: changing it rebuilds nothing.
    */
   ringMinZoom: number;

@@ -104,11 +104,12 @@ export function buildHalos(cells: Iterable<TimedPackedCell>, from: Day): HaloAtt
 }
 
 /**
- * CPU reference of the halo shader on day t at map zoom `zoom`. Ring: visible iff day <= t <
- * until and zoom >= ringMinZoom (the city layer's handover; 0, no gate, wherever there is no
- * city layer); radius HALO_R_PX[0] + (HALO_R_PX[1] − HALO_R_PX[0]) · age / HALO_DAYS and alpha
- * 1 − age / HALO_DAYS, or, reduced, HALO_STILL_R_PX and 1. Mark: visible iff day <= t < until,
- * MARK_PX, alpha 1, at any zoom.
+ * CPU reference of the halo shader on day t at map zoom `zoom`. Every halo, ring or mark, hides
+ * while zoom < ringMinZoom (the city layer's handover, where its merged rings, the doubled
+ * accent ring for policy projects included, stand for them; 0, no gate, wherever there is no
+ * city layer). Ring: visible iff day <= t < until; radius HALO_R_PX[0] + (HALO_R_PX[1] −
+ * HALO_R_PX[0]) · age / HALO_DAYS and alpha 1 − age / HALO_DAYS, or, reduced, HALO_STILL_R_PX
+ * and 1. Mark: visible iff day <= t < until, MARK_PX, alpha 1.
  */
 export function evalHalo(
   h: HaloAttrs,
@@ -119,9 +120,8 @@ export function evalHalo(
 ): HaloEval {
   // 1. Hidden: outside [day, until).
   if (t < h.day || t >= h.until) return { visible: false, radiusPx: 0, alpha: 0 };
-  // 2. A ring below the gate: the city layer's merged ring stands for it.
-  if (h.kind !== HALO_KIND.mark && zoom < ringMinZoom)
-    return { visible: false, radiusPx: 0, alpha: 0 };
+  // 2. Below the gate (rings and marks): the city layer's merged rings stand for them.
+  if (zoom < ringMinZoom) return { visible: false, radiusPx: 0, alpha: 0 };
   // 3. A mark: one size, full strength.
   if (h.kind === HALO_KIND.mark) return { visible: true, radiusPx: MARK_PX, alpha: 1 };
   // 4. Reduced motion: a still ring.

@@ -16,7 +16,15 @@ import { TYPOLOGY_ORDER, type Theme, type TimedPackedCell, type TimelineUpdate }
 import { validateCityDelta } from './city-delta';
 import { buildBars } from './timelapse/bars';
 import { HALO_KIND, buildHalos, evalHalo, type HaloAttrs } from './timelapse/halos';
-import { CityStore, buildCity, evalCity, type CityAttrs, type Clip } from './timelapse/city';
+import {
+  CityStore,
+  buildCity,
+  cityForward,
+  evalCity,
+  type CityAttrs,
+  type CityView,
+  type Clip
+} from './timelapse/city';
 import { CITY_HANDOVER_ZOOM } from './timelapse/constants';
 import { declutter } from './timelapse/declutter';
 import { DemolishPump, type PumpDeps } from './timelapse/demolish';
@@ -33,6 +41,12 @@ export interface DebugView {
   zoom: number;
   /** The view's CSS px size. */
   viewPx: [w: number, h: number];
+  /** The view's centre on the ground. */
+  centre: [lng: number, lat: number];
+  /** CSS px per metre at the centre. */
+  pxPerMeter: number;
+  /** The camera's bearing in degrees. */
+  bearing: number;
   /** A point's clip-space [x, y, w] in the map's camera. */
   clip(lng: number, lat: number): Clip;
 }
@@ -183,6 +197,13 @@ export class TimelineController {
   private cityLayer: Layer | null = null;
   /** An applied update carried city since the records were last built. */
   private cityDirty = false;
+  /** Applied `buildCity` calls since construction (the snapshot's `cityBuilds`). */
+  private cityBuilds = 0;
+  /**
+   * The glows' inset [top, right, bottom, left] in CSS px, shared with every CityLayer and
+   * mutated in place by `setEdgeInset` (the layer reads it in `draw`).
+   */
+  private readonly edgeInset: [number, number, number, number] = [0, 0, 0, 0];
   private warnedNoLookups = false;
   /**
    * Cells of earlier runs a swap has not yet installed over. They stay on the map until an
@@ -382,11 +403,13 @@ export class TimelineController {
     const ringMinZoom = this.gateOf(this.halosLayer);
     const shown = this.halosLayer ? this.halos : [];
     let marks = 0;
+    let marksShown = 0;
     let halosShown = 0;
     const days = new Set<number>();
     for (const h of shown) {
       if (h.kind === HALO_KIND.mark) {
         marks++;
+        if (evalHalo(h, this.clock.day, this.reduced, zoom, ringMinZoom).visible) marksShown++;
         continue;
       }
       days.add(h.day);
@@ -396,11 +419,22 @@ export class TimelineController {
     const cityDays = new Set<number>();
     let cityRings = 0;
     let cityGlows = 0;
+    const cityView: CityView | null = view && {
+      zoom,
+      viewPx: view.viewPx,
+      inset: this.edgeInset,
+      centre: view.centre,
+      pxPerMeter: view.pxPerMeter,
+      focalW: view.clip(view.centre[0], view.centre[1])[2],
+      forward: cityForward(view.bearing, view.centre[1])
+    };
     for (const r of records) {
       cityDays.add(r.day);
-      if (!view) continue;
+      if (!view || !cityView) continue;
       const clip = view.clip(r.anchor[0], r.anchor[1]);
-      const mode = evalCity(r, this.clock.day, zoom, clip, this.reduced, view.viewPx).mode;
+      const [f0, f1] = cityView.forward;
+      const fwd = view.clip(r.anchor[0] + f0, r.anchor[1] + f1);
+      const mode = evalCity(r, this.clock.day, cityView, clip, this.reduced, fwd).mode;
       if (mode === 'ring') cityRings++;
       else if (mode === 'edge') cityGlows++;
     }
@@ -417,6 +451,7 @@ export class TimelineController {
       layerIds: this.current.map((l) => l.id),
       halos: shown.length - marks,
       marks,
+      marksShown,
       halosShown,
       haloDays: [...days].sort((a, b) => a - b).slice(0, 500),
       flagged,
@@ -427,8 +462,21 @@ export class TimelineController {
       cityDays: [...cityDays].sort((a, b) => a - b).slice(0, 500),
       cityRings,
       cityGlows,
+      cityBuilds: this.cityBuilds,
       ringMinZoom
     };
+  }
+
+  /**
+   * Where the city layer's edge glows sit: the map's edges less these CSS px ([top, right,
+   * bottom, left]), so they stay clear of controls there. Rare (a page measures its controls on
+   * a resize); written into the shared array the layer reads in `draw`, so no layer is rebuilt.
+   */
+  setEdgeInset(inset: readonly [number, number, number, number]): void {
+    if (this.destroyed) return;
+    if (inset.every((v, i) => v === this.edgeInset[i])) return;
+    for (let i = 0; i < 4; i++) this.edgeInset[i] = inset[i];
+    if (this.cityLayer) this.deps.repaint();
   }
 
   destroy(): void {
@@ -638,11 +686,13 @@ export class TimelineController {
       return;
     }
     const records = buildCity(this.city, from);
+    this.cityBuilds++;
     this.cityRecords = records;
     this.cityLayer = new this.deps.CityLayer({
       data: records,
       clock: this.clock,
       reduced: this.reduced,
+      edgeInset: this.edgeInset,
       ...(this.labelBeforeId ? { beforeId: this.labelBeforeId } : {})
     } as ConstructorParameters<TimelineDeps['CityLayer']>[0]) as unknown as Layer;
   }

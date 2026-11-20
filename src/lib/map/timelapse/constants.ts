@@ -63,3 +63,21 @@ export const CITY_R_MAX_PX = 40;
  * 1 px land-coloured ring this many px inside its edge.
  */
 export const CITY_POLICY_INSET_PX = 4;
+/**
+ * Tier 4, slice 6 fix round: the smallest merged ring's radius in px. A ring is no larger than
+ * half its square's projected width, so rings shrink toward the horizon down to this floor.
+ */
+export const CITY_RING_FLOOR_PX = 5;
+/**
+ * Tier 4, slice 6 fix round: as a square's projected half-width falls from CITY_RING_FLOOR_PX
+ * to this many px, its ring fades out (alpha 1 to 0) instead of piling up at the floor.
+ */
+export const CITY_RING_FADE_PX = 2;
+/**
+ * Tier 4, slice 6 fix round: an edge glow's range, in the view's ground half-diagonals from the
+ * view's centre. Beyond it a record draws no glow. At the desktop default (zoom 13) the whole
+ * city is in range; at zoom 16 about 4 km around the centre.
+ */
+export const CITY_GLOW_REACH = 3;
+/** Tier 4, slice 6 fix round: an edge glow's strength at CITY_GLOW_REACH (1 at the centre). */
+export const CITY_GLOW_FAR_ALPHA = 0.4;

@@ -296,7 +296,7 @@ describe('HaloLayer on the GPU', () => {
     expect(errors).toEqual([]);
   });
 
-  it('with ringMinZoom 14, a ring draws at zoom 14 and not at 13.9; a mark draws at both', async () => {
+  it('with ringMinZoom 14, a ring and a mark draw at zoom 14 and not at 13.9', async () => {
     const h = ring(HALO_KIND.started);
     const policy = tok('light', 'tl-halo-policy');
     const colour = tok('light', 'tl-halo-started');
@@ -316,12 +316,14 @@ describe('HaloLayer on the GPU', () => {
         expect(e.visible).toBe(zoom >= 14);
         // The ring's east point: the stage colour at 14, nothing at 13.9.
         push(`${zoom} ring`, at(HALO_R_PX_0), e.visible ? colour : BG);
-        push(`${zoom} mark`, at(0.5), policy, TOL);
+        expect(evalHalo(MARK, D, false, zoom, 14).visible).toBe(zoom >= 14);
+        push(`${zoom} mark`, at(0.5), zoom >= 14 ? policy : BG, TOL);
       }
-      // Without the prop the gate is off: a ring at 13.9.
-      await show([halos([h])]);
+      // Without the prop the gate is off: a ring and a mark at 13.9.
+      await show([halos([h, MARK])]);
       render(D);
       push('no gate ring', at(HALO_R_PX_0), colour);
+      push('no gate mark', at(0.5), policy, TOL);
       expect(got).toEqual(want);
     } finally {
       zoomTo(VIEW_STATE.zoom);

@@ -233,12 +233,14 @@ describe('evalHalo', () => {
     expect(evalHalo(open, 29584, false).visible).toBe(true);
   });
 
-  it('evalHalo: a ring below ringMinZoom is hidden; a mark is not', () => {
+  it('evalHalo: below ringMinZoom a ring and a mark are hidden; from it both show', () => {
     const mark: HaloAttrs = { ...ring, kind: HALO_KIND.mark, until: 2000, policy: true };
     for (const reduced of [false, true]) {
       expect(evalHalo(ring, 1000, reduced, 12, 14).visible).toBe(false);
       expect(evalHalo(ring, 1000, reduced, 15, 14).visible).toBe(true);
-      expect(evalHalo(mark, 1000, reduced, 12, 14)).toEqual({
+      expect(evalHalo(mark, 1000, reduced, 12, 14).visible).toBe(false);
+      expect(evalHalo(mark, 1000, reduced, 13.99, 14).visible).toBe(false);
+      expect(evalHalo(mark, 1000, reduced, 14, 14)).toEqual({
         visible: true,
         radiusPx: MARK_PX,
         alpha: 1
@@ -247,6 +249,7 @@ describe('evalHalo', () => {
     // The defaults gate nothing: every page without the city layer is unchanged.
     expect(evalHalo(ring, 1000, false)).toEqual(evalHalo(ring, 1000, false, 11, 0));
     expect(evalHalo(ring, 1000, false, 11).visible).toBe(true);
+    expect(evalHalo(mark, 1000, false, 11, 0).visible).toBe(true);
     // The gate never shows a ring outside its window.
     expect(evalHalo(ring, 999, false, 16, 14).visible).toBe(false);
   });

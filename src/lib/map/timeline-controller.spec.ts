@@ -11,7 +11,15 @@ import { TYPOLOGY_ORDER, type TimedPackedCell, type TimelineUpdate } from './typ
 import type { BarAttrs } from './timelapse/types';
 import { HALO_KIND, buildHalos, evalHalo, type HaloAttrs } from './timelapse/halos';
 import { SLOT_FLAG, type CityDelta } from './types';
-import { CityStore, buildCity, evalCity, type CityAttrs } from './timelapse/city';
+import {
+  CityStore,
+  M_PER_DEG,
+  buildCity,
+  cityForward,
+  evalCity,
+  type CityAttrs,
+  type CityView
+} from './timelapse/city';
 import { CITY_HANDOVER_ZOOM } from './timelapse/constants';
 import { STAGE_ORDER } from '$lib/timelapse/types';
 
@@ -19,6 +27,7 @@ interface Props {
   id: string;
   data: unknown;
   beforeId?: string;
+  edgeInset?: number[];
   extensions: unknown[];
   updateTriggers: Record<string, unknown>;
   parameters?: { depthWriteEnabled?: boolean };
@@ -1095,10 +1104,24 @@ describe('TimelineController city', () => {
     return {
       zoom,
       viewPx: [800, 600],
+      centre: MISSION,
+      bearing: 0,
+      // 800 px across 0.04° of longitude.
+      pxPerMeter: 800 / (0.04 * M_PER_DEG * Math.cos((MISSION[1] * Math.PI) / 180)),
       clip: (lng, lat) => [(lng - MISSION[0]) / 0.02, (lat - MISSION[1]) / 0.02, 1]
     };
   }
-  // Two in the Mission (one flagged), one in the Richmond, off the fake view.
+  /** The CityView the controller builds from a DebugView and its inset. */
+  const cityViewOf = (v: DebugView, inset: CityView['inset'] = [0, 0, 0, 0]): CityView => ({
+    zoom: v.zoom,
+    viewPx: v.viewPx,
+    inset,
+    centre: v.centre,
+    pxPerMeter: v.pxPerMeter,
+    focalW: v.clip(v.centre[0], v.centre[1])[2],
+    forward: cityForward(v.bearing, v.centre[1])
+  });
+  // Two in the Mission (one flagged), one to the west (4.5 km), off the fake view and in reach.
   const MARKERS: Marker[] = [
     {
       row: 0,
@@ -1115,7 +1138,7 @@ describe('TimelineController city', () => {
     },
     {
       row: 2,
-      lngLat: [-122.49, 37.78],
+      lngLat: [-122.47, 37.78],
       days: [DAYS.a.permitIssued, DAYS.a.construction, NaN],
       homes: 8
     }
@@ -1161,7 +1184,7 @@ describe('TimelineController city', () => {
     c.apply(update(1, { city: later }));
     expect(c.debugSnapshot()).toMatchObject({ cityMarkers: 2, cityFlagged: 1 });
     expect(cityOf(deps)).toEqual(buildCity(storeOf(CITY, later), FROM));
-    // The Richmond row is gone from every record.
+    // The western row is gone from every record.
     expect(cityOf(deps).every((r) => r.anchor[0] > -122.45)).toBe(true);
     expect(cityOf(deps).some((r) => r.homes === 99)).toBe(true);
     // A revision gap carrying city changes nothing and asks for a resync.
@@ -1264,6 +1287,54 @@ describe('TimelineController city', () => {
     expect(deps.cityLayers).toHaveLength(2);
     expect(deps.haloLayers).toHaveLength(3);
     expect(gateOf(deps)).toBe(CITY_HANDOVER_ZOOM);
+    // The snapshot counts the builds: one per applied update that carried city.
+    expect(c.debugSnapshot().cityBuilds).toBe(2);
+    c.apply(update(3, { cells: [], city: cityDelta(3, [{ ...MARKERS[0], homes: 9 }]) }));
+    expect(c.debugSnapshot().cityBuilds).toBe(3);
+    c.apply(update(4, { cells: [], city: cityDelta(3, [], 2) }));
+    expect(c.debugSnapshot().cityBuilds).toBe(4);
+  });
+
+  it('setEdgeInset writes the shared inset the city layer reads, rebuilding nothing; the snapshot places glows on it', () => {
+    const c = controller();
+    c.setHalos({ from: FROM });
+    c.apply({ ...timelineSmall, city: CITY });
+    const layer = byId(deps, 'timeline-city');
+    const inset = props(layer).edgeInset as number[];
+    expect(inset).toEqual([0, 0, 0, 0]);
+    const built = deps.cityLayers.length;
+    const layers = deps.layerHistory.length;
+    const repaints = deps.repaintCount;
+    c.setEdgeInset([0, 0, 120, 0]);
+    expect(props(byId(deps, 'timeline-city')).edgeInset).toBe(inset);
+    expect(inset).toEqual([0, 0, 120, 0]);
+    expect(deps.cityLayers.length).toBe(built);
+    expect(deps.layerHistory.length).toBe(layers);
+    expect(deps.repaintCount).toBe(repaints + 1);
+    // The same inset again: nothing.
+    c.setEdgeInset([0, 0, 120, 0]);
+    expect(deps.repaintCount).toBe(repaints + 1);
+    // A later layer shares the same array.
+    c.apply(update(1, { cells: [], city: cityDelta(3, [{ ...MARKERS[0], homes: 9 }]) }));
+    expect(props(byId(deps, 'timeline-city')).edgeInset).toBe(inset);
+  });
+
+  it('marksShown follows the gate: no diamond below zoom 14 with the city on, every one from 14', () => {
+    const c = controller();
+    c.setHalos({ from: FROM });
+    const a = cellOf(A);
+    const flags = new Uint8Array(a.slotProjectIds.length);
+    flags[a.slotProjectIds.indexOf(SLOT.a.projectId)] = SLOT_FLAG.zoning;
+    c.apply({ ...timelineSmall, cells: [{ ...a, slotFlags: flags }, cellOf(B)], city: CITY });
+    const t = DAYS.a.construction;
+    c.setTime(t);
+    const marks = halosOf(deps).filter((h) => h.kind === HALO_KIND.mark);
+    const live = marks.filter((h) => evalHalo(h, t, false).visible).length;
+    expect(live).toBeGreaterThan(0);
+    deps.view = viewAt(13);
+    expect(c.debugSnapshot()).toMatchObject({ marks: marks.length, marksShown: 0 });
+    deps.view = viewAt(14);
+    expect(c.debugSnapshot().marksShown).toBe(live);
   });
 
   it('setTime constructs no layer and calls setLayers none, with the city layer on', () => {
@@ -1416,10 +1487,12 @@ describe('TimelineController city', () => {
     const rings = halosOf(deps).filter((h) => h.kind !== HALO_KIND.mark);
     const ungated = rings.filter((h) => evalHalo(h, t, false).visible).length;
     const count = (v: DebugView, mode: 'ring' | 'edge') =>
-      recs.filter(
-        (r) =>
-          evalCity(r, t, v.zoom, v.clip(r.anchor[0], r.anchor[1]), false, v.viewPx).mode === mode
-      ).length;
+      recs.filter((r) => {
+        const cv = cityViewOf(v);
+        const [a, b] = r.anchor;
+        const fwd = v.clip(a + cv.forward[0], b + cv.forward[1]);
+        return evalCity(r, t, cv, v.clip(a, b), false, fwd).mode === mode;
+      }).length;
     // No map view: the rings are counted ungated and the city's not at all.
     expect(c.debugSnapshot()).toMatchObject({ halosShown: ungated, cityRings: 0, cityGlows: 0 });
     // Zoom 13: merged rings stand for the projects' own, which hide.
@@ -1429,7 +1502,7 @@ describe('TimelineController city', () => {
     expect(at13.cityRings).toBe(count(deps.view, 'ring'));
     expect(at13.cityRings).toBeGreaterThan(0);
     expect(at13.cityGlows).toBe(count(deps.view, 'edge'));
-    expect(at13.cityGlows).toBeGreaterThan(0); // the Richmond, off view
+    expect(at13.cityGlows).toBeGreaterThan(0); // the western row, off view
     // Zoom 15: each project's own rings; no merged ring.
     deps.view = viewAt(15);
     const at15 = c.debugSnapshot();

@@ -351,6 +351,21 @@ describe('SimMap timeline mode', { timeout: 60_000 }, () => {
     map.jumpTo({ center: here, zoom: 15, pitch: 0, bearing: 0 });
     await converged(map);
     expect(dbg().timelineSnapshot()!.cityRings).toBe(0);
+    // The glows sit above the bottom-right controls: the published block, at most a quarter of
+    // the map's height.
+    const cityLayer = ((deckOf(map).props.layers ?? []) as Layer[]).find(
+      (l) => l.id === 'timeline-city'
+    )!;
+    const block = parseFloat(
+      document.documentElement.style.getPropertyValue('--map-controls-br-block-size')
+    );
+    const height = map.getContainer().getBoundingClientRect().height;
+    expect(block).toBeGreaterThan(0);
+    const inset = (cityLayer.props as unknown as { edgeInset: number[] }).edgeInset;
+    expect(inset[0]).toBe(0);
+    expect(inset[1]).toBe(0);
+    expect(inset[3]).toBe(0);
+    expect(Math.abs(inset[2] - Math.min(block, height / 4))).toBeLessThanOrEqual(1);
     // A malformed city is refused at the handle, before anything is queued or applied.
     const bad = { ...city, homes: new Uint16Array(1) };
     expect(() => h.applyTimeline({ ...timelineSmall, revision: 1, cells: [], city: bad })).toThrow(

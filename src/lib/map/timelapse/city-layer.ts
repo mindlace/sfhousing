@@ -10,6 +10,7 @@
 import {
   Layer,
   project32,
+  type WebMercatorViewport,
   type DefaultProps,
   type LayerProps,
   type UpdateParameters
@@ -17,15 +18,20 @@ import {
 import { Geometry, Model } from '@luma.gl/engine';
 import type { ShaderModule } from '@luma.gl/shadertools';
 import {
+  CITY_CELL_M,
   CITY_EDGE_DAYS,
+  CITY_GLOW_FAR_ALPHA,
+  CITY_GLOW_REACH,
   CITY_HANDOVER_ZOOM,
   CITY_POLICY_INSET_PX,
   CITY_R_MAX_PX,
   CITY_R_REF_HOMES,
   CITY_RING_DAYS,
+  CITY_RING_FADE_PX,
+  CITY_RING_FLOOR_PX,
   HALO_R_PX
 } from './constants';
-import { CITY_EDGE_MARGIN_PX, CITY_KIND, type CityAttrs } from './city';
+import { CITY_EDGE_MARGIN_PX, CITY_KIND, M_PER_DEG, cityForward, type CityAttrs } from './city';
 import { HALO_COLOURS, type HaloColours } from './halo-layer';
 import type { TimelineClock } from './types';
 
@@ -35,6 +41,18 @@ export type CityModuleProps = HaloColours & {
   reduced: number; // 1 under reduced motion, else 0
   /** 2^CITY_HANDOVER_ZOOM: zoom >= the handover is project.scale >= it, exact at 14.0. */
   handoverScale: number;
+  /** CSS px per metre at the view's centre on the ground. */
+  pxPerMeter: number;
+  /** The view's ground half-diagonal in metres (halfDiagM). */
+  halfDiagM: number;
+  /** The view's centre: lng, lat. */
+  centre: [number, number];
+  /** The view's CSS px size. */
+  viewPx: [number, number];
+  /** The glows' inset rectangle: top, right, bottom, left in CSS px. */
+  inset: [number, number, number, number];
+  /** One square up the screen on the ground, in degrees (cityForward). */
+  forward: [number, number];
 };
 
 /** A float literal GLSL accepts (always has a decimal point). */
@@ -46,6 +64,12 @@ layout(std140) uniform cityUniforms {
   float day;
   float reduced;
   float handoverScale;
+  float pxPerMeter;
+  float halfDiagM;
+  vec2 centre;
+  vec2 viewPx;
+  vec2 forward;
+  vec4 inset;
   vec3 approved;
   vec3 started;
   vec3 complete;
@@ -62,6 +86,12 @@ const cityModule = {
     day: 'f32',
     reduced: 'f32',
     handoverScale: 'f32',
+    pxPerMeter: 'f32',
+    halfDiagM: 'f32',
+    centre: 'vec2<f32>',
+    viewPx: 'vec2<f32>',
+    forward: 'vec2<f32>',
+    inset: 'vec4<f32>',
     approved: 'vec3<f32>',
     started: 'vec3<f32>',
     complete: 'vec3<f32>',
@@ -101,6 +131,12 @@ const float CY_RING = ${glslFloat(MODE.ring)};
 const float CY_EDGE = ${glslFloat(MODE.edge)};
 const float CY_STROKE_HALF_PX = ${glslFloat(STROKE_HALF_PX)};
 const float CY_EDGE_MARGIN_PX = ${glslFloat(CITY_EDGE_MARGIN_PX)};
+const float CY_CELL_M = ${glslFloat(CITY_CELL_M)};
+const float CY_M_PER_DEG = ${glslFloat(M_PER_DEG)};
+const float CY_GLOW_REACH = ${glslFloat(CITY_GLOW_REACH)};
+const float CY_GLOW_FAR_ALPHA = ${glslFloat(CITY_GLOW_FAR_ALPHA)};
+const float CY_RING_FLOOR_PX = ${glslFloat(CITY_RING_FLOOR_PX)};
+const float CY_RING_FADE_PX = ${glslFloat(CITY_RING_FADE_PX)};
 
 // evalCity's CityEval.
 struct CyEval {
@@ -131,10 +167,34 @@ bool cy_edgeOf(vec3 c, out vec2 at) {
   return true;
 }
 
-// The record on day t. Port of evalCity; 'far' is zoom >= CITY_HANDOVER_ZOOM, 'margin' is
-// CITY_EDGE_MARGIN_PX in NDC on each axis (2 · px / the view's CSS px).
+// Port of squareHalfPx with fwd; focalW is project.focalDistance, the clip w of the view's
+// centre.
+float cy_squareHalfPx(vec3 clip, vec3 fwd) {
+  if (clip.z <= 0.0) return 0.0;
+  float across = CY_CELL_M * city.pxPerMeter * project.focalDistance / clip.z;
+  if (fwd.z <= 0.0) return 0.0;
+  vec2 d = (fwd.xy / fwd.z - clip.xy / clip.z) * city.viewPx / 2.0;
+  return min(across, length(d)) / 2.0;
+}
+
+// Port of groundM(a, city.centre).
+float cy_groundM(vec2 a) {
+  vec2 b = city.centre;
+  return length(vec2((a.x - b.x) * CY_M_PER_DEG * cos(radians(b.y)), (a.y - b.y) * CY_M_PER_DEG));
+}
+
+// Port of insetEdge.
+vec2 cy_insetEdge(vec2 e) {
+  float x0 = -1.0 + 2.0 * city.inset.w / city.viewPx.x;
+  float x1 = 1.0 - 2.0 * city.inset.y / city.viewPx.x;
+  float y0 = -1.0 + 2.0 * city.inset.z / city.viewPx.y;
+  float y1 = 1.0 - 2.0 * city.inset.x / city.viewPx.y;
+  return vec2((x0 + x1) / 2.0 + e.x * (x1 - x0) / 2.0, (y0 + y1) / 2.0 + e.y * (y1 - y0) / 2.0);
+}
+
+// The record on day t. Port of evalCity; 'far' is zoom >= CITY_HANDOVER_ZOOM.
 CyEval cy_evalCity(
-  float day, float homes, float t, bool far, vec3 clip, bool reduced, vec2 margin
+  float day, float homes, vec2 anchor, float t, bool far, vec3 clip, bool reduced, vec3 fwd
 ) {
   CyEval none = CyEval(CY_NONE, 0.0, 0.0, vec2(0.0));
   // 1. Nothing before its day (the last event it holds).
@@ -144,22 +204,35 @@ CyEval cy_evalCity(
   // 2. Off view: an edge glow toward it.
   if (cy_edgeOf(clip, edge)) {
     // a. From the handover, a project ringing within reach of the view shows on its own.
+    vec2 margin = 2.0 * CY_EDGE_MARGIN_PX / city.viewPx;
     if (far && cy_inView(clip, margin)) return none;
-    // b. The glow's window.
+    // b. Only what is near enough to matter here.
+    float range = cy_groundM(anchor) / city.halfDiagM;
+    if (range > CY_GLOW_REACH) return none;
+    // c. The glow's window, fainter with distance.
     if (age >= CY_EDGE_DAYS) return none;
+    float strength = 1.0 - (1.0 - CY_GLOW_FAR_ALPHA) * range / CY_GLOW_REACH;
     return CyEval(
-      CY_EDGE, cy_radiusPx(homes) / 2.0, reduced ? 1.0 : 1.0 - age / CY_EDGE_DAYS, edge
+      CY_EDGE,
+      cy_radiusPx(homes) / 2.0,
+      (reduced ? 1.0 : 1.0 - age / CY_EDGE_DAYS) * strength,
+      cy_insetEdge(edge)
     );
   }
   // 3. From the handover each project rings on its own.
   if (far) return none;
-  // 4. A merged ring grows and fades over its life.
+  // 4. Near the horizon a square is too small to ring.
+  float halfSq = cy_squareHalfPx(clip, fwd);
+  if (halfSq <= CY_RING_FADE_PX) return none;
+  // 5. A merged ring, no wider than its square, grows and fades over its life.
   if (age >= CY_RING_DAYS) return none;
   vec2 at = clip.xy / clip.z;
-  float r = cy_radiusPx(homes);
-  if (reduced) return CyEval(CY_RING, r, 1.0, at);
+  float fade = min(1.0, (halfSq - CY_RING_FADE_PX) / (CY_RING_FLOOR_PX - CY_RING_FADE_PX));
+  float r = max(CY_RING_FLOOR_PX, min(cy_radiusPx(homes), halfSq));
+  if (reduced) return CyEval(CY_RING, r, fade, at);
   float u = age / CY_RING_DAYS;
-  return CyEval(CY_RING, CY_HALO_R_PX.x + (r - CY_HALO_R_PX.x) * u, 1.0 - u, at);
+  float r0 = min(CY_HALO_R_PX.x, r);
+  return CyEval(CY_RING, r0 + (r - r0) * u, (1.0 - u) * fade, at);
 }
 
 // The kind's tone: the three stage tones, or the accent for the person's policy.
@@ -177,10 +250,13 @@ void main(void) {
     instanceAnchor, instanceAnchor64Low, vec3(0.0), anchorCommon
   );
   geometry.position = anchorCommon;
-  vec2 margin = project_pixel_size_to_clipspace(vec2(CY_EDGE_MARGIN_PX)) / project.focalDistance;
+  // One square up the screen from the anchor: the square's foreshortened depth.
+  vec3 fwd = project_position_to_clipspace(
+    vec3(instanceAnchor.xy + city.forward, 0.0), instanceAnchor64Low, vec3(0.0)
+  ).xyw;
   CyEval e = cy_evalCity(
-    instanceCity.x, instanceCity.y, city.day, project.scale >= city.handoverScale, anchor.xyw,
-    city.reduced > 0.5, margin
+    instanceCity.x, instanceCity.y, instanceAnchor.xy, city.day,
+    project.scale >= city.handoverScale, anchor.xyw, city.reduced > 0.5, fwd
   );
   // Half the quad: the ring's outer edge or the disc's radius, plus a pixel of margin.
   float halfPx = e.sizePx + (e.mode == CY_RING ? CY_STROKE_HALF_PX : 0.0) + 1.0;
@@ -248,6 +324,12 @@ type _CityLayerProps = {
   clock: TimelineClock;
   /** Reduced motion: still rings at their full radius and still glows, at full strength. */
   reduced: boolean;
+  /**
+   * The glows' inset from the map's edges, [top, right, bottom, left] in CSS px. Shared and
+   * mutated in place by the controller (`setEdgeInset`); `draw` reads it, so a change sets no
+   * prop.
+   */
+  edgeInset: [number, number, number, number];
 };
 
 export type CityLayerProps = _CityLayerProps & LayerProps;
@@ -255,7 +337,8 @@ export type CityLayerProps = _CityLayerProps & LayerProps;
 const defaultProps: DefaultProps<CityLayerProps> = {
   // Identity compares: the same clock mutated in place is not a change.
   clock: { type: 'object', value: null as unknown as TimelineClock },
-  reduced: false
+  reduced: false,
+  edgeInset: { type: 'object', value: [0, 0, 0, 0] }
 };
 
 /** Fixed props: one city layer per map, never picked, drawn over everything without depth. */
@@ -312,15 +395,38 @@ export class CityLayer extends Layer<_CityLayerProps> {
   draw() {
     const { model } = this.state;
     if (!model) return;
-    const { clock, reduced } = this.props;
+    const { clock, reduced, edgeInset } = this.props;
     // luma copies the values, so one object per layer, mutated in place, serves every draw.
     const u = (this.state.uniforms ??= {
-      city: { day: 0, reduced: 0, handoverScale: HANDOVER_SCALE, ...HALO_COLOURS.light }
+      city: {
+        day: 0,
+        reduced: 0,
+        handoverScale: HANDOVER_SCALE,
+        pxPerMeter: 1,
+        halfDiagM: 1,
+        centre: [0, 0],
+        viewPx: [1, 1],
+        forward: [0, 0],
+        inset: [0, 0, 0, 0],
+        ...HALO_COLOURS.light
+      }
     });
     const c = u.city;
     const t = HALO_COLOURS[clock.theme];
     c.day = clock.day;
     c.reduced = reduced ? 1 : 0;
+    // The camera, O(1) per draw: the centre's scale and the view's size and inset.
+    const vp = this.context.viewport as WebMercatorViewport;
+    c.pxPerMeter = vp.scale * vp.distanceScales.unitsPerMeter[0];
+    c.viewPx[0] = vp.width;
+    c.viewPx[1] = vp.height;
+    c.halfDiagM = Math.hypot(vp.width, vp.height) / 2 / c.pxPerMeter;
+    c.centre[0] = vp.longitude;
+    c.centre[1] = vp.latitude;
+    const f = cityForward(vp.bearing, vp.latitude);
+    c.forward[0] = f[0];
+    c.forward[1] = f[1];
+    for (let i = 0; i < 4; i++) c.inset[i] = edgeInset[i];
     c.approved = t.approved;
     c.started = t.started;
     c.complete = t.complete;

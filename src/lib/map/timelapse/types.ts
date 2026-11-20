@@ -86,6 +86,8 @@ export interface TimelineSnapshot {
   halos: number;
   /** Policy marks in the halo layer. */
   marks: number;
+  /** Marks `evalHalo` shows on the clock's day at the map's zoom, behind `ringMinZoom`. */
+  marksShown: number;
   /** Rings `evalHalo` shows on the clock's day at the map's zoom, behind `ringMinZoom`. */
   halosShown: number;
   /** The rings' distinct event days, ascending, the first 500. */
@@ -102,10 +104,12 @@ export interface TimelineSnapshot {
   cityRecords: number;
   /** The records' distinct days, ascending, the first 500. */
   cityDays: number[];
-  /** Records `evalCity` draws as a merged ring on the clock's day in the map's view; 0 without a view. */
+  /** Records `evalCity` draws as a merged ring on the clock's day in the map's view. */
   cityRings: number;
-  /** Records `evalCity` draws as an edge glow on the clock's day in the map's view; 0 without a view. */
+  /** Records `evalCity` draws as an edge glow on the clock's day in the map's view. */
   cityGlows: number;
+  /** `buildCity` calls since the controller was made (one per applied update with `city`). */
+  cityBuilds: number;
   /** The halo layer's gate: 0, or CITY_HANDOVER_ZOOM while the city layer exists. */
   ringMinZoom: number;
 }

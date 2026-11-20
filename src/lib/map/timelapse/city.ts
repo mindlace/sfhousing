@@ -14,10 +14,14 @@ import {
   CITY_BUCKET_DAYS,
   CITY_CELL_M,
   CITY_EDGE_DAYS,
+  CITY_GLOW_FAR_ALPHA,
+  CITY_GLOW_REACH,
   CITY_HANDOVER_ZOOM,
   CITY_R_MAX_PX,
   CITY_R_REF_HOMES,
   CITY_RING_DAYS,
+  CITY_RING_FADE_PX,
+  CITY_RING_FLOOR_PX,
   HALO_R_PX
 } from './constants';
 import { HALO_TOKEN } from './halos';
@@ -65,7 +69,7 @@ export interface CityEval {
 export const CITY_EDGE_MARGIN_PX = HALO_R_PX[1] + 1;
 
 /** Metres per degree of latitude (mean Earth radius 6,371,008.8 m). */
-const M_PER_DEG = (6_371_008.8 * Math.PI) / 180;
+export const M_PER_DEG = (6_371_008.8 * Math.PI) / 180;
 const [[WEST, SOUTH], [EAST, NORTH]] = CONSTRAINTS.maxBounds;
 const D_LAT = CITY_CELL_M / M_PER_DEG;
 const D_LNG = D_LAT / Math.cos((((SOUTH + NORTH) / 2) * Math.PI) / 180);
@@ -138,54 +142,140 @@ export function edgeOf(clip: Clip): [x: number, y: number] | null {
 const NONE: CityEval = { mode: 'none', sizePx: 0, alpha: 0, at: [0, 0] };
 
 /**
- * CPU reference of the city shader on a view `viewPx` CSS px wide and tall, rule order fixed:
+ * The camera, as the city shader reads it from uniforms each frame (the CPU reference takes it
+ * whole). `pxPerMeter` and `focalW` are at the view's centre on the ground: the CSS px a metre
+ * spans there and that point's clip w (deck's `project.focalDistance`). `forward` is one square
+ * (CITY_CELL_M) on the ground straight up the screen (the camera's bearing), in degrees.
+ */
+export interface CityView {
+  zoom: number;
+  viewPx: readonly [w: number, h: number]; // CSS px
+  inset: readonly [top: number, right: number, bottom: number, left: number]; // CSS px
+  centre: readonly [lng: number, lat: number];
+  pxPerMeter: number;
+  focalW: number;
+  forward: readonly [dLng: number, dLat: number];
+}
+
+/** `forward` for a camera of bearing `bearing` degrees at latitude `lat`. */
+export function cityForward(bearing: number, lat: number): [dLng: number, dLat: number] {
+  const b = (bearing * Math.PI) / 180;
+  return [
+    (CITY_CELL_M * Math.sin(b)) / (M_PER_DEG * Math.cos((lat * Math.PI) / 180)),
+    (CITY_CELL_M * Math.cos(b)) / M_PER_DEG
+  ];
+}
+
+/**
+ * Half a square's projected size on screen in CSS px at an anchor of clip `clip`: half the
+ * smaller of its width across the screen (CITY_CELL_M at the centre's scale, times focalW / w)
+ * and its depth up the screen (the px between the anchor and `fwd`, the clip point one square
+ * up the screen from it, foreshortened under a pitched camera). Without `fwd`, the width alone.
+ * 0 at or behind the camera.
+ */
+export function squareHalfPx(clip: Clip, view: CityView, fwd?: Clip): number {
+  const w = clip[2];
+  if (w <= 0) return 0;
+  const across = (CITY_CELL_M * view.pxPerMeter * view.focalW) / w;
+  if (!fwd) return across / 2;
+  if (fwd[2] <= 0) return 0;
+  const dx = ((fwd[0] / fwd[2] - clip[0] / w) * view.viewPx[0]) / 2;
+  const dy = ((fwd[1] / fwd[2] - clip[1] / w) * view.viewPx[1]) / 2;
+  return Math.min(across, Math.hypot(dx, dy)) / 2;
+}
+
+/** Ground metres from `b` to `a` (equirectangular at b's latitude: exact enough within a city). */
+export function groundM(a: readonly [number, number], b: readonly [number, number]): number {
+  const dx = (a[0] - b[0]) * M_PER_DEG * Math.cos((b[1] * Math.PI) / 180);
+  const dy = (a[1] - b[1]) * M_PER_DEG;
+  return Math.hypot(dx, dy);
+}
+
+/** The view's ground half-diagonal in metres: half its diagonal in px at the centre's scale. */
+export function halfDiagM(view: CityView): number {
+  return Math.hypot(view.viewPx[0], view.viewPx[1]) / 2 / view.pxPerMeter;
+}
+
+/**
+ * The NDC edge point `e` (on the view's [-1, 1] square) moved onto the inset rectangle: the view
+ * less `inset` CSS px on each side, so a glow sits clear of controls on the map's edges.
+ */
+export function insetEdge(e: readonly [number, number], view: CityView): [number, number] {
+  const [w, h] = view.viewPx;
+  const [top, right, bottom, left] = view.inset;
+  const x0 = -1 + (2 * left) / w;
+  const x1 = 1 - (2 * right) / w;
+  const y0 = -1 + (2 * bottom) / h;
+  const y1 = 1 - (2 * top) / h;
+  return [(x0 + x1) / 2 + (e[0] * (x1 - x0)) / 2, (y0 + y1) / 2 + (e[1] * (y1 - y0)) / 2];
+}
+
+/**
+ * CPU reference of the city shader for a record whose anchor projects to `clip`, rule order
+ * fixed:
  * 1. t < day: none.
  * 2. off view (edgeOf non-null):
  *    a. zoom >= CITY_HANDOVER_ZOOM and the anchor in the view widened by CITY_EDGE_MARGIN_PX on
  *       each side: none (a project ringing there reaches into the view on its own).
- *    b. t < day + CITY_EDGE_DAYS → edge, cityEdgePx(homes), alpha 1 − age / CITY_EDGE_DAYS
- *       (reduced: 1), at the edge point; else none.
+ *    b. the anchor's ground distance from the view's centre, in half-diagonals (`range`), past
+ *       CITY_GLOW_REACH: none.
+ *    c. t < day + CITY_EDGE_DAYS → edge, cityEdgePx(homes), alpha (1 − age / CITY_EDGE_DAYS,
+ *       reduced 1) · (1 − (1 − CITY_GLOW_FAR_ALPHA) · range / CITY_GLOW_REACH), at the edge
+ *       point moved onto the inset rectangle (insetEdge); else none.
  * 3. zoom >= CITY_HANDOVER_ZOOM: none.
- * 4. t < day + CITY_RING_DAYS → ring, radius HALO_R_PX[0] + (cityRadiusPx − HALO_R_PX[0]) · u
- *    and alpha 1 − u, u = age / CITY_RING_DAYS (reduced: cityRadiusPx and 1), at the anchor's
- *    NDC point; else none.
+ * 4. The square's projected half-size `half` (squareHalfPx, with `fwd`, the clip point one
+ *    square up the screen from the anchor) at or below CITY_RING_FADE_PX: none.
+ * 5. t < day + CITY_RING_DAYS → ring of radius R = max(CITY_RING_FLOOR_PX, min(cityRadiusPx,
+ *    half)), growing from r0 = min(HALO_R_PX[0], R) to R and fading, u = age / CITY_RING_DAYS
+ *    (reduced: R and 1), its alpha times clamp((half − CITY_RING_FADE_PX) / (CITY_RING_FLOOR_PX
+ *    − CITY_RING_FADE_PX), 0, 1), at the anchor's NDC point; else none.
  */
 export function evalCity(
   c: CityAttrs,
   t: Day,
-  zoom: number,
+  view: CityView,
   clip: Clip,
   reduced: boolean,
-  viewPx: readonly [w: number, h: number]
+  fwd?: Clip
 ): CityEval {
   // 1. Nothing before its day (the last event it holds).
   if (t < c.day) return NONE;
   const age = t - c.day;
+  const far = view.zoom >= CITY_HANDOVER_ZOOM;
   const edge = edgeOf(clip);
   // 2. Off view: an edge glow toward it.
   if (edge) {
     // a. From the handover, a project ringing within reach of the view shows on its own.
-    const mx = (2 * CITY_EDGE_MARGIN_PX) / viewPx[0];
-    const my = (2 * CITY_EDGE_MARGIN_PX) / viewPx[1];
-    if (zoom >= CITY_HANDOVER_ZOOM && inView(clip, mx, my)) return NONE;
-    // b. The glow's window.
+    const mx = (2 * CITY_EDGE_MARGIN_PX) / view.viewPx[0];
+    const my = (2 * CITY_EDGE_MARGIN_PX) / view.viewPx[1];
+    if (far && inView(clip, mx, my)) return NONE;
+    // b. Only what is near enough to matter here.
+    const range = groundM(c.anchor, view.centre) / halfDiagM(view);
+    if (range > CITY_GLOW_REACH) return NONE;
+    // c. The glow's window, fainter with distance.
     if (age >= CITY_EDGE_DAYS) return NONE;
+    const strength = 1 - ((1 - CITY_GLOW_FAR_ALPHA) * range) / CITY_GLOW_REACH;
     return {
       mode: 'edge',
       sizePx: cityEdgePx(c.homes),
-      alpha: reduced ? 1 : 1 - age / CITY_EDGE_DAYS,
-      at: edge
+      alpha: (reduced ? 1 : 1 - age / CITY_EDGE_DAYS) * strength,
+      at: insetEdge(edge, view)
     };
   }
   // 3. From the handover each project rings on its own.
-  if (zoom >= CITY_HANDOVER_ZOOM) return NONE;
-  // 4. A merged ring grows and fades over its life.
+  if (far) return NONE;
+  // 4. Near the horizon a square is too small to ring.
+  const half = squareHalfPx(clip, view, fwd);
+  if (half <= CITY_RING_FADE_PX) return NONE;
+  // 5. A merged ring, no wider than its square, grows and fades over its life.
   if (age >= CITY_RING_DAYS) return NONE;
   const at: [number, number] = [clip[0] / clip[2], clip[1] / clip[2]];
-  const R = cityRadiusPx(c.homes);
-  if (reduced) return { mode: 'ring', sizePx: R, alpha: 1, at };
+  const fade = Math.min(1, (half - CITY_RING_FADE_PX) / (CITY_RING_FLOOR_PX - CITY_RING_FADE_PX));
+  const R = Math.max(CITY_RING_FLOOR_PX, Math.min(cityRadiusPx(c.homes), half));
+  if (reduced) return { mode: 'ring', sizePx: R, alpha: fade, at };
   const u = age / CITY_RING_DAYS;
-  return { mode: 'ring', sizePx: HALO_R_PX[0] + (R - HALO_R_PX[0]) * u, alpha: 1 - u, at };
+  const r0 = Math.min(HALO_R_PX[0], R);
+  return { mode: 'ring', sizePx: r0 + (R - r0) * u, alpha: (1 - u) * fade, at };
 }
 
 /** The page's markers, by row: typed arrays grown on demand, one entry per world row. */

@@ -279,6 +279,12 @@
   const FP_INLINE = '--map-controls-br-inline-size';
   const FP_BLOCK = '--map-controls-br-block-size';
   let fpObserver: ResizeObserver | null = null;
+  /**
+   * The city layer's bottom glow inset: the bottom-right controls' block (the attribution and
+   * the Layers and Key buttons), at most a quarter of the map's height. Measured with the
+   * footprint, never per frame.
+   */
+  let glowInset = 0;
   let footprintGone = false;
 
   function publishFootprint(inline: number, block: number): void {
@@ -305,8 +311,12 @@
   function measureFootprint(): void {
     const controls = live?.map?.getContainer().querySelector('.maplibregl-ctrl-bottom-right');
     if (!root || !controls) return publishFootprint(0, bottomInset);
-    const f = controlsFootprint(root.getBoundingClientRect(), controls.getBoundingClientRect());
-    publishFootprint(f.inline, Math.max(f.block, bottomInset));
+    const box = root.getBoundingClientRect();
+    const f = controlsFootprint(box, controls.getBoundingClientRect());
+    const block = Math.max(f.block, bottomInset);
+    publishFootprint(f.inline, block);
+    glowInset = Math.min(block, box.height / 4);
+    live?.timeline?.setEdgeInset([0, 0, glowInset, 0]);
   }
 
   function observeFootprint(map: MapLibreMap): void {
@@ -750,6 +760,9 @@
           return {
             zoom: map.getZoom(),
             viewPx: [el.clientWidth, el.clientHeight],
+            centre: [c.lng, c.lat],
+            pxPerMeter: vp.scale * vp.distanceScales.unitsPerMeter[0],
+            bearing: map.getBearing(),
             clip: (lng, lat) => {
               const [x, y, z] = vp.projectPosition([lng, lat, 0]);
               // Column-major: clip = M · [x, y, z, 1].
@@ -766,6 +779,7 @@
       firstSymbolLayerId(map.getStyle())
     );
     l.timeline = timeline;
+    timeline.setEdgeInset([0, 0, glowInset, 0]);
     l.timelinePart = TIMELINE_PART_LAYER;
     watchCompileErrors(l);
     overlay.setProps({

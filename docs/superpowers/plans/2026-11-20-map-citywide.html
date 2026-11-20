@@ -395,6 +395,11 @@ export const CITY_RING_DAYS = 364;      // a merged ring's life, 2 × CITY_BUCKE
 export const CITY_EDGE_DAYS = 182;      // an edge glow's life: 0.5 s at 1×
 export const CITY_R_REF_HOMES = 50;     // homes at which a merged ring reaches HALO_R_PX[1]
 export const CITY_R_MAX_PX = 40;        // the largest merged ring
+// 2026-11-20, Task 4 fix round (the controller's rulings after the Task 4 screenshots):
+export const CITY_RING_FLOOR_PX = 5;    // the smallest merged ring; a ring is no larger than half its square on screen
+export const CITY_RING_FADE_PX = 2;     // as that half-square falls from 5 to 2 px the ring fades out; at or below 2, none
+export const CITY_GLOW_REACH = 3;       // a glow only within 3 view half-diagonals of the view's centre
+export const CITY_GLOW_FAR_ALPHA = 0.4; // a glow's strength at the reach (1 at the centre)
 
 // src/lib/map/timelapse/city.ts (page-side, pure)
 export const CITY_KIND = { approved: 0, started: 1, completed: 2, policy: 3 } as const;
@@ -445,6 +450,11 @@ export interface CityEval { mode: 'none' | 'ring' | 'edge'; sizePx: number; alph
  *    and alpha 1 − u, u = age / CITY_RING_DAYS (reduced: cityRadiusPx and 1); else none.
  */
 export function evalCity(c: CityAttrs, t: Day, zoom: number, clip: [number, number, number], reduced: boolean, viewPx: [w: number, h: number]): CityEval; // viewPx: 2026-11-20, Task 3 fix round 1
+// 2026-11-20, Task 4 fix round: evalCity(c, t, view: CityView, clip, reduced, fwd?): the camera as a CityView (zoom,
+//   viewPx, inset, centre, pxPerMeter, focalW, forward); the ring's size is max(CITY_RING_FLOOR_PX, min(cityRadiusPx,
+//   squareHalfPx)), squareHalfPx = half the smaller of the square's projected width and foreshortened depth; a glow
+//   only within CITY_GLOW_REACH, its strength falling to CITY_GLOW_FAR_ALPHA there, placed on the inset rectangle
+//   (CityLayer.edgeInset, set by SimMap from the bottom-right controls' block, capped at a quarter of the map).
 
 // src/lib/map/timelapse/city-layer.ts
 // CityLayer props: { id: 'timeline-city', data: CityAttrs[], clock: TimelineClock,
@@ -455,6 +465,7 @@ export function evalCity(c: CityAttrs, t: Day, zoom: number, clip: [number, numb
 
 // src/lib/map/timelapse/halos.ts
 export function evalHalo(h: HaloAttrs, t: Day, reduced: boolean, zoom = Infinity, ringMinZoom = 0): HaloEval;
+// 2026-11-20, Task 4 fix round: the gate covers marks too (rings and marks hidden below ringMinZoom).
 // new rule 2 (after "hidden outside [day, until)", before the mark rule): a ring (not a mark)
 // is hidden while zoom &lt; ringMinZoom.
 // HaloLayer gains the prop ringMinZoom: number (default 0), a uniform of the halo module.</code></pre>
