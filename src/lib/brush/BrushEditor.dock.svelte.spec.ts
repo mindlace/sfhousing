@@ -823,4 +823,39 @@ describe("BrushEditor's map key", () => {
       expect(w.allOf('heightLots')).toHaveLength(asked);
     }
   );
+
+  describe('at 375 px the map toolbar sits above the sheet handle in every map state', () => {
+    const BL = '--map-controls-br-block-size';
+    /** The map handle's inset calls: none while onready has not fired. */
+    const insetCalls = () => stub.calls.filter((c) => c.method === 'setBottomInset');
+    afterEach(() => {
+      stub.autoReady = true;
+      document.documentElement.style.removeProperty(BL);
+    });
+
+    it.each([
+      // The map never becomes ready: nothing published, the control's own fallback applies.
+      ['never ready', null],
+      // The map failed or is unsupported, publishing the worst block it could (no controls).
+      ['failed, publishing a 0 px block', '0px']
+    ] as const)('%s', async (_, published) => {
+      stub.autoReady = false;
+      if (published !== null) document.documentElement.style.setProperty(BL, published);
+      const layers = createRawSnippet(() => ({
+        render: () => '<label><input type="checkbox" /> Transit stops</label>'
+      }));
+      await setup({ width: 375, layers });
+      expect(insetCalls()).toEqual([]);
+      const handle = page.getByTestId('dock-handle');
+      await expect.element(handle).toBeVisible();
+      const top = handle.element().getBoundingClientRect().top;
+      for (const id of ['map-layers-toggle', 'map-key-toggle']) {
+        const t = page.getByTestId(id);
+        await expect.element(t).toBeVisible();
+        await expect
+          .poll(() => t.element().getBoundingClientRect().bottom)
+          .toBeLessThanOrEqual(top);
+      }
+    });
+  });
 });

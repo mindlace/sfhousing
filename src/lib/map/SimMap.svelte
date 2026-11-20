@@ -268,13 +268,15 @@
   export function setBottomInset(px: number): void {
     bottomInset = px;
     live?.map?.setPadding({ top: 0, left: 0, right: 0, bottom: px });
-    scheduleFootprint(); // the inset lifts the control container; re-measure next frame
+    // The inset lifts the control container. Apply it to the root now (the style attribute
+    // follows on the next update) and measure in this task, so no frame sees the old footprint.
+    root?.style.setProperty('--map-bottom-inset', `${px}px`);
+    measureFootprint();
   }
 
   // ---- bottom-right controls footprint (docs/dev/map-interfaces.md) -----------------------------
   const FP_INLINE = '--map-controls-br-inline-size';
   const FP_BLOCK = '--map-controls-br-block-size';
-  let fpRaf: number | null = null;
   let fpObserver: ResizeObserver | null = null;
   let footprintGone = false;
 
@@ -294,34 +296,34 @@
     }
   }
 
+  /**
+   * Publishes the bottom-right footprint, measured now (one forced layout). Never below the
+   * bottom inset: with no controls (before the map exists, unsupported, failed, torn down) the
+   * block is the inset, which is what the controls would rest on.
+   */
   function measureFootprint(): void {
-    fpRaf = null;
     const controls = live?.map?.getContainer().querySelector('.maplibregl-ctrl-bottom-right');
-    if (!root || !controls) return publishFootprint(0, 0);
+    if (!root || !controls) return publishFootprint(0, bottomInset);
     const f = controlsFootprint(root.getBoundingClientRect(), controls.getBoundingClientRect());
-    publishFootprint(f.inline, f.block);
-  }
-
-  function scheduleFootprint(): void {
-    if (fpRaf === null && typeof requestAnimationFrame === 'function')
-      fpRaf = requestAnimationFrame(measureFootprint);
+    publishFootprint(f.inline, Math.max(f.block, bottomInset));
   }
 
   function observeFootprint(map: MapLibreMap): void {
     unobserveFootprint();
     const controls = map.getContainer().querySelector('.maplibregl-ctrl-bottom-right');
-    if (!controls || !root || typeof ResizeObserver === 'undefined') return;
-    fpObserver = new ResizeObserver(scheduleFootprint);
+    if (!controls || !root) return;
+    // In the same task as addControl: no task or frame sees the attribution with the old block.
+    measureFootprint();
+    if (typeof ResizeObserver === 'undefined') return;
+    // Its callback runs after layout and before paint: measure there, not a frame later.
+    fpObserver = new ResizeObserver(() => measureFootprint());
     fpObserver.observe(controls);
     fpObserver.observe(root);
-    scheduleFootprint();
   }
 
   function unobserveFootprint(): void {
     fpObserver?.disconnect();
     fpObserver = null;
-    if (fpRaf !== null) cancelAnimationFrame(fpRaf);
-    fpRaf = null;
   }
 
   export function getMap(): MapLibreMap | null {
@@ -409,7 +411,7 @@
     untrack(() => {
       live = l;
       mapState = 'loading';
-      publishFootprint(0, 0); // no controls until the map exists
+      publishFootprint(0, bottomInset); // no controls until the map exists: the inset only
       void start(m, l);
     });
     return () => teardown(l);
@@ -813,7 +815,8 @@
   function teardown(l: Live): void {
     l.dead = true;
     unobserveFootprint();
-    publishFootprint(0, 0); // a remount or error state has no controls until the next map exists
+    // A remount or error state has no controls until the next map exists: the inset only.
+    publishFootprint(0, bottomInset);
     for (const t of l.timers) clearTimeout(t);
     l.timers.clear();
     if (l.pickRaf !== null) cancelAnimationFrame(l.pickRaf);
@@ -849,7 +852,7 @@
     l.map?.remove();
     l.map = null;
     mapState = 'unsupported';
-    publishFootprint(0, 0);
+    publishFootprint(0, bottomInset);
     if (unsupportedFired) return;
     unsupportedFired = true;
     root?.dispatchEvent(new CustomEvent('mapunsupported', { bubbles: true }));
@@ -864,7 +867,7 @@
     pendingApplies = [];
     pendingTimeline = [];
     unobserveFootprint();
-    publishFootprint(0, 0);
+    publishFootprint(0, bottomInset);
     mapState = 'error';
   }
 

@@ -320,6 +320,38 @@ describe('SimMap controls footprint vars', { timeout: 30_000 }, () => {
     expect(rootVar(IN)).toBe('');
     expect(rootVar(BL)).toBe('');
   });
+
+  it('before the map exists the block is the inset; in the task that adds the attribution it includes it', async () => {
+    // A MutationObserver callback runs at the first microtask checkpoint after the insertion:
+    // still the task that called addControl, before any frame.
+    let atInsert: { block: number; container: number } | null = null;
+    const watch = new MutationObserver(() => {
+      const root = document.querySelector<HTMLElement>('[data-testid="map-root"]');
+      const c = root?.querySelector('.maplibregl-ctrl-bottom-right .maplibregl-ctrl-attrib');
+      if (atInsert || !root || !c) return;
+      const rr = root.getBoundingClientRect();
+      const cr = root.querySelector('.maplibregl-ctrl-bottom-right')!.getBoundingClientRect();
+      atInsert = { block: px(BL), container: rr.bottom - cr.top };
+    });
+    watch.observe(document.body, { childList: true, subtree: true });
+    try {
+      const { root, ready, screen } = await mount();
+      // No controls yet: the block is the inset (0, then what the page hands over), never a
+      // stale or zero value under the inset.
+      expect(root.querySelector('.maplibregl-ctrl-bottom-right')).toBeNull();
+      expect(rootVar(BL)).toBe('0px');
+      screen.component.setBottomInset(45);
+      expect(rootVar(BL)).toBe('45px');
+      await expect.poll(() => atInsert).not.toBeNull();
+      expect(atInsert!.container).toBeGreaterThan(45);
+      expect(Math.abs(atInsert!.block - atInsert!.container)).toBeLessThanOrEqual(1);
+      await expect.poll(() => root.dataset.state, { timeout: 20_000 }).toBe('ready');
+      await idle(await ready);
+      expect(px(BL)).toBeGreaterThan(45);
+    } finally {
+      watch.disconnect();
+    }
+  });
 });
 
 describe('SimMap picking', { timeout: 30_000 }, () => {

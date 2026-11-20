@@ -614,6 +614,7 @@
     <MapKeyControl
       key={paintKey}
       layers={layerRows}
+      floor={sheetH}
       hidden={!wide.current && dock.sheet !== 'closed'}
       onopenchange={(p) => (keyVisible = p === 'key')}
     />

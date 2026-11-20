@@ -25,6 +25,11 @@
     openFromMd?: boolean;
     /** Below md, while a card sheet covers the corner: not shown and inert. */
     hidden?: boolean;
+    /**
+     * The least the toolbar sits above the map's bottom, px, whatever the footprint says (Paint's
+     * sheet handle): it never sits under the sheet, even before the map measures or with no map.
+     */
+    floor?: number;
     /** The key panel's text dims as Results does (data-stale); the Layers panel's never does. */
     stale?: boolean;
     /** The control's box, for the card area. */
@@ -41,6 +46,7 @@
     layers,
     openFromMd = false,
     hidden = false,
+    floor = 0,
     stale = false,
     el = $bindable(),
     onopenchange = undefined
@@ -124,7 +130,7 @@
   bind:this={el}
   data-testid="map-key-control"
   class="sfh-map-key pointer-events-none absolute top-2 right-2 z-20 flex flex-col items-end justify-end gap-1"
-  style:bottom="calc(var(--map-controls-br-block-size, 60px) + 0.5rem)"
+  style:bottom="calc(max(var(--map-controls-br-block-size, 60px), {floor}px) + 0.5rem)"
   {hidden}
   inert={hidden}
   {onkeydown}
