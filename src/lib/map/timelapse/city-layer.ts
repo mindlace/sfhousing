@@ -25,7 +25,7 @@ import {
   CITY_RING_DAYS,
   HALO_R_PX
 } from './constants';
-import { CITY_KIND, type CityAttrs } from './city';
+import { CITY_EDGE_MARGIN_PX, CITY_KIND, type CityAttrs } from './city';
 import { HALO_COLOURS, type HaloColours } from './halo-layer';
 import type { TimelineClock } from './types';
 
@@ -83,7 +83,6 @@ in vec2 positions; // quad corner: -1 → 1 on each axis
 in vec3 instanceAnchor;
 in vec3 instanceAnchor64Low;
 in vec3 instanceCity; // day, homes, kind
-in vec4 instanceSquare; // west, south, east, north
 
 out vec2 vPx;
 flat out float vMode;
@@ -101,6 +100,7 @@ const float CY_NONE = ${glslFloat(MODE.none)};
 const float CY_RING = ${glslFloat(MODE.ring)};
 const float CY_EDGE = ${glslFloat(MODE.edge)};
 const float CY_STROKE_HALF_PX = ${glslFloat(STROKE_HALF_PX)};
+const float CY_EDGE_MARGIN_PX = ${glslFloat(CITY_EDGE_MARGIN_PX)};
 
 // evalCity's CityEval.
 struct CyEval {
@@ -115,41 +115,26 @@ float cy_radiusPx(float homes) {
   return min(CY_R_MAX_PX, CY_HALO_R_PX.y * max(1.0, sqrt(homes / CY_R_REF_HOMES)));
 }
 
+// Port of inView: c in the view widened by m (NDC) on each side.
+bool cy_inView(vec3 c, vec2 m) {
+  return c.z > 0.0 && abs(c.x / c.z) <= 1.0 + m.x && abs(c.y / c.z) <= 1.0 + m.y;
+}
+
 // Port of edgeOf: false in view; else true and 'at' the NDC point on the view's edge toward c.
+// Behind the camera (w <= 0) the direction is (x, y), not divided and not negated.
 bool cy_edgeOf(vec3 c, out vec2 at) {
   at = vec2(0.0);
-  if (c.z > 0.0 && abs(c.x / c.z) <= 1.0 && abs(c.y / c.z) <= 1.0) return false;
-  vec2 d = c.z > 0.0 ? c.xy / c.z : -c.xy;
+  if (cy_inView(c, vec2(0.0))) return false;
+  vec2 d = c.z > 0.0 ? c.xy / c.z : c.xy;
   float m = max(abs(d.x), abs(d.y));
   at = m == 0.0 ? vec2(0.0, -1.0) : d / m;
   return true;
 }
 
-// A ground point (lng, lat) in clip space: x, y, w.
-vec3 cy_clip(vec2 lngLat) {
-  return project_position_to_clipspace(vec3(lngLat, 0.0), vec3(0.0), vec3(0.0)).xyw;
-}
-
-// Port of blockOutside over the corners of cityBlock(square).
-bool cy_blockOutside(vec4 sq) {
-  vec2 size = sq.zw - sq.xy;
-  vec4 b = vec4(sq.xy - size, sq.zw + size);
-  vec3 c0 = cy_clip(b.xy);
-  vec3 c1 = cy_clip(b.zy);
-  vec3 c2 = cy_clip(b.xw);
-  vec3 c3 = cy_clip(b.zw);
-  vec4 x = vec4(c0.x, c1.x, c2.x, c3.x);
-  vec4 y = vec4(c0.y, c1.y, c2.y, c3.y);
-  vec4 w = vec4(c0.z, c1.z, c2.z, c3.z);
-  vec4 zero = vec4(0.0);
-  return all(greaterThan(x - w, zero)) || all(greaterThan(-x - w, zero)) ||
-    all(greaterThan(y - w, zero)) || all(greaterThan(-y - w, zero)) ||
-    all(lessThanEqual(w, zero));
-}
-
-// The record on day t. Port of evalCity; 'far' is zoom >= CITY_HANDOVER_ZOOM.
+// The record on day t. Port of evalCity; 'far' is zoom >= CITY_HANDOVER_ZOOM, 'margin' is
+// CITY_EDGE_MARGIN_PX in NDC on each axis (2 · px / the view's CSS px).
 CyEval cy_evalCity(
-  float day, float homes, vec4 square, float t, bool far, vec3 clip, bool reduced
+  float day, float homes, float t, bool far, vec3 clip, bool reduced, vec2 margin
 ) {
   CyEval none = CyEval(CY_NONE, 0.0, 0.0, vec2(0.0));
   // 1. Nothing before its day (the last event it holds).
@@ -158,8 +143,8 @@ CyEval cy_evalCity(
   vec2 edge;
   // 2. Off view: an edge glow toward it.
   if (cy_edgeOf(clip, edge)) {
-    // a. From the handover: only for a square wholly outside the view by one square.
-    if (far && !cy_blockOutside(square)) return none;
+    // a. From the handover, a project ringing within reach of the view shows on its own.
+    if (far && cy_inView(clip, margin)) return none;
     // b. The glow's window.
     if (age >= CY_EDGE_DAYS) return none;
     return CyEval(
@@ -192,9 +177,10 @@ void main(void) {
     instanceAnchor, instanceAnchor64Low, vec3(0.0), anchorCommon
   );
   geometry.position = anchorCommon;
+  vec2 margin = project_pixel_size_to_clipspace(vec2(CY_EDGE_MARGIN_PX)) / project.focalDistance;
   CyEval e = cy_evalCity(
-    instanceCity.x, instanceCity.y, instanceSquare, city.day,
-    project.scale >= city.handoverScale, anchor.xyw, city.reduced > 0.5
+    instanceCity.x, instanceCity.y, city.day, project.scale >= city.handoverScale, anchor.xyw,
+    city.reduced > 0.5, margin
   );
   // Half the quad: the ring's outer edge or the disc's radius, plus a pixel of margin.
   float halfPx = e.sizePx + (e.mode == CY_RING ? CY_STROKE_HALF_PX : 0.0) + 1.0;
@@ -310,10 +296,6 @@ export class CityLayer extends Layer<_CityLayerProps> {
       instanceCity: {
         size: 3,
         accessor: (c: CityAttrs) => [c.day, c.homes, c.kind]
-      },
-      instanceSquare: {
-        size: 4,
-        accessor: (c: CityAttrs) => c.square
       }
     });
   }

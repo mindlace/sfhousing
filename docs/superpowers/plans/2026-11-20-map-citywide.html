@@ -391,7 +391,7 @@ npx chreode timing-check --head HEAD</code></pre>
 export const CITY_HANDOVER_ZOOM = 14;   // below: merged rings; from it: each project's own ring
 export const CITY_CELL_M = 800;         // the grid square a merged ring stands for
 export const CITY_BUCKET_DAYS = 182;    // one merged ring per square, half-year and kind
-export const CITY_RING_DAYS = 365;      // a merged ring's life: 1 s at 1×, 0.33 s at 3×
+export const CITY_RING_DAYS = 364;      // a merged ring's life, 2 × CITY_BUCKET_DAYS (2026-11-20, Task 3 fix round 1: was 365)
 export const CITY_EDGE_DAYS = 182;      // an edge glow's life: 0.5 s at 1×
 export const CITY_R_REF_HOMES = 50;     // homes at which a merged ring reaches HALO_R_PX[1]
 export const CITY_R_MAX_PX = 40;        // the largest merged ring
@@ -427,21 +427,24 @@ export function cityRadiusPx(homes: number): number;
 export function cityEdgePx(homes: number): number;
 /**
  * null when the clip-space point is in view (w &gt; 0, |x/w| &lt;= 1, |y/w| &lt;= 1); else the NDC
- * point on the view's edge toward it: d / max(|d.x|, |d.y|), where d = (x/w, y/w), or (−x, −y)
- * behind the camera (w &lt;= 0); (0, −1) when d is zero.
+ * point on the view's edge toward it: d / max(|d.x|, |d.y|), where d = (x/w, y/w), or (x, y)
+ * behind the camera (w &lt;= 0); (0, −1) when d is zero. (2026-11-20, Task 3 fix round 1: was
+ * (−x, −y), which put a glow for a point behind a pitched camera on the opposite edge.)
  */
 export function edgeOf(clip: [x: number, y: number, w: number]): [x: number, y: number] | null;
 export interface CityEval { mode: 'none' | 'ring' | 'edge'; sizePx: number; alpha: number; at: [x: number, y: number] }
 /**
  * CPU reference of the city shader, rule order fixed:
  * 1. t &lt; day: none.
- * 2. off view (edgeOf non-null): t &lt; day + CITY_EDGE_DAYS → edge, cityEdgePx(homes), alpha
+ * 2. off view (edgeOf non-null): (2026-11-20, Task 3 fix round 1) a. zoom &gt;= CITY_HANDOVER_ZOOM
+ *    and the anchor within the view widened by CITY_EDGE_MARGIN_PX (HALO_R_PX[1] + 1) px on each
+ *    side: none; b. t &lt; day + CITY_EDGE_DAYS → edge, cityEdgePx(homes), alpha
  *    1 − age / CITY_EDGE_DAYS (reduced: 1), at the edge point; else none.
  * 3. zoom &gt;= CITY_HANDOVER_ZOOM: none.
  * 4. t &lt; day + CITY_RING_DAYS → ring, radius HALO_R_PX[0] + (cityRadiusPx − HALO_R_PX[0]) · u
  *    and alpha 1 − u, u = age / CITY_RING_DAYS (reduced: cityRadiusPx and 1); else none.
  */
-export function evalCity(c: CityAttrs, t: Day, zoom: number, clip: [number, number, number], reduced: boolean): CityEval;
+export function evalCity(c: CityAttrs, t: Day, zoom: number, clip: [number, number, number], reduced: boolean, viewPx: [w: number, h: number]): CityEval; // viewPx: 2026-11-20, Task 3 fix round 1
 
 // src/lib/map/timelapse/city-layer.ts
 // CityLayer props: { id: 'timeline-city', data: CityAttrs[], clock: TimelineClock,
@@ -523,6 +526,17 @@ npx chreode timing-check --head HEAD</code></pre>
       <li>Modify: <code>src/lib/map/test/synthetic-timeline.ts</code> (<code>makeSyntheticTimeline</code> adds a <code>city</code> delta: one marker per project at its site) and <code>synthetic-timeline.spec.ts</code>.</li>
       <li>Modify: <code>e2e/bench/map-timeline.bench.ts</code>: a case <code>citywide playback</code> (written, not run).</li>
       <li>Covering specs that must still pass: <code>SimMap.timeline-errors.svelte.spec.ts</code>, <code>SimMap.timeline-validation.svelte.spec.ts</code>, <code>SimMap.timeline-shader.svelte.spec.ts</code>, <code>src/lib/map/debug.svelte.spec.ts</code>, <code>src/lib/timeline/TimelineMode.svelte.spec.ts</code>, <code>e2e/sim-halos.spec.ts</code>, <code>e2e/timelapse-render.spec.ts</code>, <code>e2e/lesscars.spec.ts</code>, <code>e2e/map.spec.ts</code> (goldens unchanged). <code>src/lib/map/timeline.perf.svelte.spec.ts</code> and <code>src/lib/timeline/apply-cost.perf.svelte.spec.ts</code> are perf-only.</li>
+      <li><em>2026-11-20, from Task 3 review and fix round 1, for this task:</em>
+        <ul>
+          <li>Docs (<code>map-interfaces.md</code>) document the edge rule as built: below 14 any record whose anchor is off view glows; from 14 a record glows only when its anchor is beyond the view widened by <code>CITY_EDGE_MARGIN_PX</code> (23 px) on each side, and inside that a project's own ring stands for it. Behind the camera the glow's direction is clip (x, y). A project whose ring centre (bbox centre) is far from its anchor lot can show its ring and its square's glow together (accepted). An anchor in view from 14 draws nothing, so a project of that square more than 23 px off screen gets neither (accepted gap).</li>
+          <li>M1, accepted: when a rebuild brings a later event into the same square, half-year and kind, the record's day moves later, so a ring showing near the fill frontier vanishes and is born again. Carry one sentence into the docs: "a record still filling may restart".</li>
+          <li>M2, done in Task 3: every kind's homes count each marker once (policy: the flagged projects with any stage change in the half-year).</li>
+          <li>M4: in the synthetic and default-view screenshots, look at the top band of the pitched desktop view (rings of 44 to 80 px on squares 15 to 21 px tall near the horizon). If unreadable, clamp the radius by the square's projected size, or accept it and say so.</li>
+          <li>M5: <code>timeline-controller.ts:339</code> (<code>debugSnapshot</code>) must pass the map's zoom and the current <code>ringMinZoom</code> to <code>evalHalo</code>, or <code>halosShown</code> over-counts once the gate is on; add a case at zoom 13 with the city on.</li>
+          <li>A delta with <code>from</code> and no rows (the feed sends one, <code>city-feed.ts:170</code>) is a city update: it must trigger the records' rebuild.</li>
+          <li><code>evalCity</code> now takes the view's CSS px size (<code>viewPx</code>) for any debug count; <code>CityAttrs</code> has no <code>square</code>.</li>
+        </ul>
+      </li>
       <li>Docs: <code>docs/dev/map-interfaces.md</code> ("Halos and marks": the gate and the city layer, draw order, cadence); <code>docs/dev/map-perf.md</code> (see Step 3); <code>docs/dev/testing.md</code> (the snapshot's new fields).</li>
     </ul>
     <h3>Interfaces</h3>
@@ -818,7 +832,7 @@ npx chreode timing-check --head HEAD</code></pre>
         <tr><th scope="row">Markers read through <code>scheduleAt</code></th><td>Same days as the slots</td><td>Raw columns</td><td>2</td></tr>
         <tr><th scope="row">An 800 m grid on the page, not neighbourhoods</th><td>No new fetch or failure path; rings near their homes</td><td>Loading <code>neighborhoods.geojson</code> in the timeline worker</td><td>3</td></tr>
         <tr><th scope="row">Merge by zoom (below 14), not by speed</th><td>Rings live in simulated time; zoom is what crowds</td><td>A speed threshold</td><td>3</td></tr>
-        <tr><th scope="row">A merged ring per half-year and kind, born at its last event</th><td>Reveal rule without per-event shader work; at most two alive per square and kind</td><td>Monthly buckets</td><td>3</td></tr>
+        <tr><th scope="row">A merged ring per half-year and kind, born at its last event</th><td>Reveal rule without per-event shader work; at most two alive per square and kind in a steady stream (2026-11-20, Task 3 fix round 1: three can overlap when one bucket's last event is late and the next one's is early)</td><td>Monthly buckets</td><td>3</td></tr>
         <tr><th scope="row">The person's projects merge into their own accent ring</th><td>As slice 5: a policy project rings in the accent, whatever stage</td><td>Accent only when most homes are flagged</td><td>3</td></tr>
         <tr><th scope="row">On screen or not decided in the vertex shader</th><td>No JS per frame of a pan</td><td>A JS pass on <code>move</code></td><td>3</td></tr>
         <tr><th scope="row">One edge glow per record, a half-disc in the record's tone, at every zoom</th><td>The spec's glow, one per busy square rather than one per project</td><td>Per-project glows; a count at the edge (the spec asks for a glow)</td><td>3</td></tr>

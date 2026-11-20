@@ -3,16 +3,16 @@ import {
   CITY_GRID,
   CITY_KIND,
   CITY_KIND_TOKEN,
+  CITY_EDGE_MARGIN_PX,
   CityStore,
-  blockOutside,
   buildCity,
-  cityBlock,
   cityEdgePx,
   cityGroup,
   cityRadiusPx,
   citySquare,
   edgeOf,
   evalCity,
+  inView,
   type CityAttrs,
   type Clip
 } from './city';
@@ -30,6 +30,7 @@ import { CITY_DAY, SLOT_FLAG, type CityDelta } from '../types';
 import { CONSTRAINTS } from '../camera';
 import { cityGrid, gridSite, mulberry32 } from '../test/synthetic-city';
 import { SYNTHETIC_END, SYNTHETIC_START } from '../test/synthetic-timeline';
+import { WebMercatorViewport } from '@math.gl/web-mercator';
 
 const C: [number, number] = [-122.42, 37.77];
 /** Metres per degree of latitude. */
@@ -77,25 +78,37 @@ const N = NaN;
 
 /** A record of `kind` at C with day `day` and `homes`. */
 function rec(day: number, kind: 0 | 1 | 2 | 3 = 1, homes = 10, anchor = C): CityAttrs {
-  const sq = citySquare(cityGroup(anchor[0], anchor[1]));
-  return { anchor, day, homes, kind, square: sq };
+  return { anchor, day, homes, kind };
 }
 
 const IN: Clip = [0, 0, 1];
 const RIGHT: Clip = [2, 0.5, 1];
-/** Margin-block corners wholly beyond the right edge, and ones straddling it. */
-const BLOCK_OUT: Clip[] = [
-  [1.5, -1, 1],
-  [3, -1, 1],
-  [1.5, 1, 1],
-  [3, 1, 1]
-];
-const BLOCK_STRADDLE: Clip[] = [
-  [0.5, -1, 1],
-  [3, -1, 1],
-  [0.5, 1, 1],
-  [3, 1, 1]
-];
+/** A 1000 × 500 px view: CITY_EDGE_MARGIN_PX is 0.046 NDC across and 0.092 NDC down. */
+const VIEW = [1000, 500] as const;
+const MX = (2 * CITY_EDGE_MARGIN_PX) / VIEW[0];
+
+/**
+ * Clip space of a ground point under a real web-mercator camera, as deck's
+ * project_position_to_clipspace gives it: viewProjectionMatrix · projectPosition.
+ */
+function clipOn(vp: WebMercatorViewport, p: [number, number]): Clip {
+  const [x, y, z] = vp.projectPosition([p[0], p[1], 0]);
+  const m = vp.viewProjectionMatrix;
+  const v = [x, y, z, 1];
+  const o = [0, 0, 0, 0];
+  for (let r = 0; r < 4; r++) for (let c = 0; c < 4; c++) o[r] += m[c * 4 + r] * v[c];
+  return [o[0], o[1], o[3]];
+}
+const camera = (zoom: number, pitch: number, bearing = 0) =>
+  new WebMercatorViewport({
+    width: VIEW[0],
+    height: VIEW[1],
+    longitude: C[0],
+    latitude: C[1],
+    zoom,
+    pitch,
+    bearing
+  });
 
 describe('the grid', () => {
   it('cityGroup puts points 800 m apart in different squares and clamps points outside the bounds', () => {
@@ -116,9 +129,6 @@ describe('the grid', () => {
     expect(cityGroup(W - 1, S - 1)).toBe(0);
     expect(cityGroup(E + 1, Nn + 1)).toBe(CITY_GRID.cols * CITY_GRID.rows - 1);
     expect(cityGroup(E + 1, S - 1)).toBe(CITY_GRID.cols - 1);
-    // The margin block is the square widened by one square on each side.
-    const b = cityBlock([w, s, e, n]);
-    expect(b).toEqual([2 * w - e, 2 * s - n, 2 * e - w, 2 * n - s]);
   });
 });
 
@@ -140,7 +150,7 @@ describe('buildCity', () => {
     // Float32 lng/lat: within a metre of the weighted centre.
     expect(r[0].anchor[0]).toBeCloseTo((10 * a[0] + 30 * b[0]) / 40, 5);
     expect(r[0].anchor[1]).toBeCloseTo((10 * a[1] + 30 * b[1]) / 40, 5);
-    expect(r[0].square).toEqual(citySquare(cityGroup(...C)));
+    expect(cityGroup(...r[0].anchor)).toBe(cityGroup(...C));
     expect(r[1].day).toBe(F + CITY_BUCKET_DAYS);
     expect(r[1].homes).toBe(5);
     // Zero homes: the plain centre.
@@ -163,8 +173,8 @@ describe('buildCity', () => {
     ]);
     const [r] = buildCity(s, F);
     expect(r.day).toBe(F + 170);
-    expect(evalCity(r, F + 169, 13, IN, false).mode).toBe('none');
-    expect(evalCity(r, F + 170, 13, IN, false).mode).toBe('ring');
+    expect(evalCity(r, F + 169, 13, IN, false, VIEW).mode).toBe('none');
+    expect(evalCity(r, F + 170, 13, IN, false, VIEW).mode).toBe('ring');
   });
 
   it("a flagged marker's events go to the policy record, not their stage's", () => {
@@ -175,8 +185,62 @@ describe('buildCity', () => {
     const r = buildCity(s, F);
     expect(r.map((x) => [x.kind, x.day, x.homes])).toEqual([
       [CITY_KIND.started, F + 4, 10],
-      [CITY_KIND.policy, F + 3, 30]
+      [CITY_KIND.policy, F + 3, 10]
     ]);
+  });
+
+  it('a flagged project approved and started in one half-year counts its homes once in the policy record', () => {
+    const p = off(C, 200);
+    const s = store(2, [
+      { row: 0, at: p, days: [F + 10, F + 20, N], homes: 100, flags: SLOT_FLAG.zoning },
+      // Its completion in the next half-year: a second policy record, counted there once.
+      { row: 1, at: C, days: [N, F + 30, N], homes: 50, flags: SLOT_FLAG.money }
+    ]);
+    const s2 = store(1, [
+      { row: 0, at: p, days: [F + 10, F + 20, F + 200], homes: 100, flags: SLOT_FLAG.zoning }
+    ]);
+    const r = buildCity(s, F);
+    expect(r).toHaveLength(1);
+    expect(r[0]).toMatchObject({ kind: CITY_KIND.policy, day: F + 30, homes: 150 });
+    expect(r[0].anchor[0]).toBeCloseTo((100 * p[0] + 50 * C[0]) / 150, 5);
+    expect(buildCity(s2, F).map((x) => [x.kind, x.day, x.homes])).toEqual([
+      [CITY_KIND.policy, F + 20, 100],
+      [CITY_KIND.policy, F + 200, 100]
+    ]);
+    // An unflagged project counts once per stage kind, as before.
+    const s3 = store(1, [{ row: 0, at: p, days: [F + 10, F + 20, N], homes: 100 }]);
+    expect(buildCity(s3, F).map((x) => x.homes)).toEqual([100, 100]);
+  });
+
+  it('a steady stream keeps at most two rings of one square and kind alive; uneven buckets three', () => {
+    // An event every day for eight half-years in one square: each record is born on its
+    // bucket's last day, 182 days apart, so a 364-day life overlaps two (365 would give three).
+    const ms: M[] = [];
+    for (let i = 0; i < 8 * CITY_BUCKET_DAYS - 1; i++)
+      ms.push({ row: i, at: C, days: [N, F + 1 + i, N] });
+    const r = buildCity(store(ms.length, ms), F);
+    expect(r).toHaveLength(8);
+    const most = (recs: CityAttrs[]) => {
+      let m = 0;
+      for (let t = F; t < F + 6 * 365; t++)
+        m = Math.max(
+          m,
+          recs.filter((x) => evalCity(x, t, 13, IN, false, VIEW).mode === 'ring').length
+        );
+      return m;
+    };
+    expect(most(r)).toBe(2);
+    // A bucket whose last event is its first day, after one whose last is its last day: births
+    // 183 days apart, so three can be alive at once (found in the fix round; see the report).
+    const uneven = buildCity(
+      store(3, [
+        { row: 0, at: C, days: [N, F + 181, N] },
+        { row: 1, at: C, days: [N, F + 300, N] },
+        { row: 2, at: C, days: [N, F + 2 * CITY_BUCKET_DAYS, N] }
+      ]),
+      F
+    );
+    expect(most(uneven)).toBe(3);
   });
 
   it('events on or before from make no record; a marker with no days makes none', () => {
@@ -263,7 +327,7 @@ describe('sizes', () => {
 });
 
 describe('edgeOf', () => {
-  it('edgeOf: null in view; the edge point toward an anchor off each side and each corner; mirrored behind the camera', () => {
+  it('edgeOf: null in view; the edge point toward an anchor off each side and each corner; the same sense behind the camera', () => {
     expect(edgeOf([0, 0, 1])).toBeNull();
     expect(edgeOf([2, 2, 2])).toBeNull(); // on the corner: in view
     expect(edgeOf([4, 1, 2])).toEqual([1, 0.25]);
@@ -272,33 +336,55 @@ describe('edgeOf', () => {
     expect(edgeOf([1, -4, 2])).toEqual([0.25, -1]);
     expect(edgeOf([3, 3, 1])).toEqual([1, 1]);
     expect(edgeOf([-3, -6, 1])).toEqual([-0.5, -1]);
-    // Behind the camera: (−x, −y), normalised.
-    expect(edgeOf([2, 1, -1])).toEqual([-1, -0.5]);
+    // Behind the camera: (x, y), normalised (clip x and y keep their screen sense when w <= 0).
+    expect(edgeOf([2, 1, -1])).toEqual([1, 0.5]);
+    expect(edgeOf([0, -4, -0.5])).toEqual([0, -1]);
     expect(edgeOf([0, 0, 0])).toEqual([0, -1]);
     expect(edgeOf([0, 0, -1])).toEqual([0, -1]);
   });
 
-  it('blockOutside: true only when every corner is past the same clip plane', () => {
-    expect(blockOutside(BLOCK_OUT)).toBe(true);
-    expect(blockOutside(BLOCK_STRADDLE)).toBe(false);
-    // Past different planes (around a corner of the view): not wholly outside by this test.
-    expect(
-      blockOutside([
-        [2, 0, 1],
-        [0, 2, 1],
-        [2, 2, 1],
-        [3, 3, 1]
-      ])
-    ).toBe(false);
-    // Every corner behind the camera.
-    expect(
-      blockOutside([
-        [0, 0, -1],
-        [1, 0, -2],
-        [0, 1, -1],
-        [5, 5, -0.5]
-      ])
-    ).toBe(true);
+  it('inView: the view, widened by a margin in NDC; nothing behind the camera', () => {
+    expect(inView([1, -1, 1])).toBe(true);
+    expect(inView([1.01, 0, 1])).toBe(false);
+    expect(inView([1.01, 0, 1], 0.02, 0)).toBe(true);
+    expect(inView([0, 1.05, 1], 0.1, 0.02)).toBe(false);
+    expect(inView([0, 0, 0], 1, 1)).toBe(false);
+    expect(inView([0, 0, -1], 1, 1)).toBe(false);
+  });
+
+  it('pitched and rotated cameras: the glow is on the edge toward the point, behind the camera too', () => {
+    // The /sim desktop default: zoom 13, pitch 55. 8 km south is behind the camera (w < 0).
+    const def = camera(13, 55);
+    const s8 = clipOn(def, off(C, 0, -8000));
+    expect(s8[2]).toBeLessThan(0);
+    expect(edgeOf(s8)).toEqual([0, -1]);
+    expect(edgeOf(clipOn(def, off(C, 0, -5000)))).toEqual([0, -1]);
+    // 5 km south and 3 km west, at 14: the bottom-left, not the top-right.
+    const sw = edgeOf(clipOn(camera(14, 55), off(C, -3000, -5000)))!;
+    expect(sw[0]).toBeLessThan(0);
+    expect(sw[1]).toBe(-1);
+    // Zoom 16, pitch 55, bearing 90 (looking east): north is left, west is behind (bottom).
+    const east = camera(16, 55, 90);
+    const n3 = edgeOf(clipOn(east, off(C, 0, 3000)))!;
+    expect(n3[0]).toBe(-1);
+    expect(Math.abs(n3[1])).toBeLessThan(1);
+    const w3 = clipOn(east, off(C, -3000));
+    expect(w3[2]).toBeLessThan(0);
+    expect(edgeOf(w3)).toEqual([0, -1]);
+    // Continuity: south along the view's axis, the edge point stays on the bottom as w crosses 0.
+    let crossed = false;
+    for (let m = 1000; m <= 12_000; m += 50) {
+      const c = clipOn(def, off(C, 300, -m));
+      if (c[2] <= 0) crossed = true;
+      const e = edgeOf(c);
+      if (e) expect(e[1]).toBe(-1);
+    }
+    expect(crossed).toBe(true);
+    // And evalCity sends the default view's far south to the bottom edge.
+    expect(evalCity(rec(F + 1), F + 1, 13, s8, false, VIEW)).toMatchObject({
+      mode: 'edge',
+      at: [0, -1]
+    });
   });
 });
 
@@ -307,79 +393,95 @@ describe('evalCity', () => {
 
   it('evalCity: nothing before its day, at any zoom, in view or not', () => {
     for (const zoom of [11, 13.99, 14, 18])
-      for (const [clip, block] of [
-        [IN, undefined],
-        [RIGHT, BLOCK_OUT]
-      ] as const)
-        expect(evalCity(rec(D), D - 1, zoom, clip, false, block).mode).toBe('none');
-    expect(evalCity(rec(D), D, 13, IN, false).mode).toBe('ring');
+      for (const clip of [IN, RIGHT, [0, -4, -0.5] as Clip])
+        expect(evalCity(rec(D), D - 1, zoom, clip, false, VIEW).mode).toBe('none');
+    expect(evalCity(rec(D), D, 13, IN, false, VIEW).mode).toBe('ring');
   });
 
   it('evalCity in view below 14: a ring from 6 px to cityRadiusPx over CITY_RING_DAYS, fading; none from zoom 14', () => {
     const r = rec(D, 1, 200);
     const R = cityRadiusPx(200);
-    expect(evalCity(r, D, 13, IN, false)).toEqual({
+    expect(evalCity(r, D, 13, IN, false, VIEW)).toEqual({
       mode: 'ring',
       sizePx: HALO_R_PX[0],
       alpha: 1,
       at: [0, 0]
     });
-    const mid = evalCity(r, D + 182, 13, [1, 1, 2], false);
+    const mid = evalCity(r, D + 182, 13, [1, 1, 2], false, VIEW);
     expect(mid.mode).toBe('ring');
     expect(mid.sizePx).toBeCloseTo(HALO_R_PX[0] + ((R - HALO_R_PX[0]) * 182) / CITY_RING_DAYS, 9);
     expect(mid.alpha).toBeCloseTo(1 - 182 / CITY_RING_DAYS, 9);
     expect(mid.at).toEqual([0.5, 0.5]);
-    expect(evalCity(r, D + CITY_RING_DAYS - 1, 13, IN, false).mode).toBe('ring');
-    expect(evalCity(r, D + CITY_RING_DAYS, 13, IN, false).mode).toBe('none');
-    expect(evalCity(r, D, 13.99, IN, false).mode).toBe('ring');
-    expect(evalCity(r, D, CITY_HANDOVER_ZOOM, IN, false).mode).toBe('none');
-    expect(evalCity(r, D, 16, IN, false).mode).toBe('none');
+    expect(evalCity(r, D + CITY_RING_DAYS - 1, 13, IN, false, VIEW).mode).toBe('ring');
+    expect(evalCity(r, D + CITY_RING_DAYS, 13, IN, false, VIEW).mode).toBe('none');
+    expect(evalCity(r, D, 13.99, IN, false, VIEW).mode).toBe('ring');
+    expect(evalCity(r, D, CITY_HANDOVER_ZOOM, IN, false, VIEW).mode).toBe('none');
+    expect(evalCity(r, D, 16, IN, false, VIEW).mode).toBe('none');
   });
 
   it('evalCity off view at any zoom: an edge glow of cityEdgePx for CITY_EDGE_DAYS, fading', () => {
     const r = rec(D, 2, 100);
     for (const zoom of [11, 13, 13.99, 14, 16, 18]) {
-      const e = evalCity(r, D + 91, zoom, RIGHT, false, BLOCK_OUT);
+      const e = evalCity(r, D + 91, zoom, RIGHT, false, VIEW);
       expect(e.mode).toBe('edge');
       expect(e.sizePx).toBe(cityEdgePx(100));
       expect(e.alpha).toBeCloseTo(1 - 91 / CITY_EDGE_DAYS, 9);
       expect(e.at).toEqual([1, 0.25]);
-      expect(evalCity(r, D, zoom, RIGHT, false, BLOCK_OUT).alpha).toBe(1);
-      expect(evalCity(r, D + CITY_EDGE_DAYS - 1, zoom, RIGHT, false, BLOCK_OUT).mode).toBe('edge');
-      expect(evalCity(r, D + CITY_EDGE_DAYS, zoom, RIGHT, false, BLOCK_OUT).mode).toBe('none');
+      expect(evalCity(r, D, zoom, RIGHT, false, VIEW).alpha).toBe(1);
+      expect(evalCity(r, D + CITY_EDGE_DAYS - 1, zoom, RIGHT, false, VIEW).mode).toBe('edge');
+      expect(evalCity(r, D + CITY_EDGE_DAYS, zoom, RIGHT, false, VIEW).mode).toBe('none');
     }
   });
 
-  it('evalCity from zoom 14: an edge glow only for a square wholly outside the view by one square', () => {
+  it("evalCity from zoom 14: an edge glow only beyond the view widened by a project ring's reach", () => {
     const r = rec(D);
-    // The anchor is off view but its margin block reaches into the view: a project of the square
-    // may still ring on screen, so no glow from 14 (and none without a block).
-    expect(evalCity(r, D, CITY_HANDOVER_ZOOM, RIGHT, false, BLOCK_STRADDLE).mode).toBe('none');
-    expect(evalCity(r, D, CITY_HANDOVER_ZOOM, RIGHT, false).mode).toBe('none');
-    expect(evalCity(r, D, 17, RIGHT, false, BLOCK_STRADDLE).mode).toBe('none');
-    // Below 14 the merged ring hands over to no project ring, so any anchor off view glows.
-    expect(evalCity(r, D, 13.99, RIGHT, false, BLOCK_STRADDLE).mode).toBe('edge');
-    expect(evalCity(r, D, 13.99, RIGHT, false).mode).toBe('edge');
-    expect(evalCity(r, D, CITY_HANDOVER_ZOOM, RIGHT, false, BLOCK_OUT).mode).toBe('edge');
+    // Off view, within CITY_EDGE_MARGIN_PX of the edge: a project of the square ringing there
+    // reaches into the view on its own, so no glow from 14; a glow below 14.
+    const inside: Clip = [1 + MX * 0.99, 0, 1];
+    const beyond: Clip = [1 + MX * 1.01, 0, 1];
+    expect(evalCity(r, D, CITY_HANDOVER_ZOOM, inside, false, VIEW).mode).toBe('none');
+    expect(evalCity(r, D, 17, inside, false, VIEW).mode).toBe('none');
+    expect(evalCity(r, D, 13.99, inside, false, VIEW).mode).toBe('edge');
+    expect(evalCity(r, D, CITY_HANDOVER_ZOOM, beyond, false, VIEW).mode).toBe('edge');
+    expect(evalCity(r, D, 17, beyond, false, VIEW).mode).toBe('edge');
+    // Vertically the margin is in the view's height.
+    const my = (2 * CITY_EDGE_MARGIN_PX) / VIEW[1];
+    expect(evalCity(r, D, 14, [0, -1 - my * 0.99, 1], false, VIEW).mode).toBe('none');
+    expect(evalCity(r, D, 14, [0, -1 - my * 1.01, 1], false, VIEW).mode).toBe('edge');
+    // Pitched, zoom 16, on the anchor's own screen row: 10 px past the right edge (inside the
+    // margin) no glow; 40 px past it a glow; and 1 km past the edge (the band the old 3 × 3
+    // block rule left silent) a glow.
+    const vp = camera(16, 55);
+    const ground = (px: number) => vp.unproject([px, VIEW[1] / 2]) as [number, number];
+    const edgeM = ground(VIEW[0]);
+    for (const [p, mode] of [
+      [ground(VIEW[0] + 10), 'none'],
+      [ground(VIEW[0] + 40), 'edge'],
+      [off(edgeM, 1000), 'edge']
+    ] as const) {
+      const clip = clipOn(vp, p);
+      expect(edgeOf(clip)).not.toBeNull();
+      expect(evalCity(r, D, 16, clip, false, VIEW).mode).toBe(mode);
+    }
   });
 
   it('evalCity reduced: a still ring at cityRadiusPx and a still glow, full strength, the same windows', () => {
     const r = rec(D, 0, 120);
     for (const age of [0, 182, CITY_RING_DAYS - 1])
-      expect(evalCity(r, D + age, 13, IN, true)).toEqual({
+      expect(evalCity(r, D + age, 13, IN, true, VIEW)).toEqual({
         mode: 'ring',
         sizePx: cityRadiusPx(120),
         alpha: 1,
         at: [0, 0]
       });
-    expect(evalCity(r, D + CITY_RING_DAYS, 13, IN, true).mode).toBe('none');
+    expect(evalCity(r, D + CITY_RING_DAYS, 13, IN, true, VIEW).mode).toBe('none');
     for (const age of [0, CITY_EDGE_DAYS - 1])
-      expect(evalCity(r, D + age, 13, RIGHT, true, BLOCK_OUT)).toMatchObject({
+      expect(evalCity(r, D + age, 13, RIGHT, true, VIEW)).toMatchObject({
         mode: 'edge',
         sizePx: cityEdgePx(120),
         alpha: 1
       });
-    expect(evalCity(r, D + CITY_EDGE_DAYS, 13, RIGHT, true, BLOCK_OUT).mode).toBe('none');
+    expect(evalCity(r, D + CITY_EDGE_DAYS, 13, RIGHT, true, VIEW).mode).toBe('none');
   });
 
   it('every kind draws in a halo token: the stage tones of HALO_TOKEN, the policy accent', () => {

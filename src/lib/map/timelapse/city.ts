@@ -1,6 +1,6 @@
 // The citywide view on the page (map-citywide slice 6): the marker store the feed fills
 // (`CityStore`), the 800 m grid, the merged ring records (`buildCity`) and the CPU reference of
-// the `timeline-city` shader (`edgeOf`, `blockOutside`, `evalCity`). Pure. The GLSL port in
+// the `timeline-city` shader (`inView`, `edgeOf`, `evalCity`). Pure. The GLSL port in
 // city-layer.ts keeps `evalCity`'s rule order; change one with the other.
 //
 // Cost: `buildCity` runs once per applied update that carried city rows, O(markers), never per
@@ -43,9 +43,8 @@ export type CityBounds = [w: number, s: number, e: number, n: number];
 export interface CityAttrs {
   anchor: [lng: number, lat: number]; // homes-weighted centre of the record's events
   day: Day; // the latest event day in it
-  homes: number; // the sum of its events' homes
+  homes: number; // the homes it stands for (see buildCity)
   kind: 0 | 1 | 2 | 3; // a flagged marker's events go to `policy`, whatever stage
-  square: CityBounds; // the grid square the record stands for
 }
 
 /** A point in clip space: [x, y, w]. */
@@ -57,6 +56,13 @@ export interface CityEval {
   alpha: number;
   at: [x: number, y: number]; // NDC: the anchor (ring) or the edge point (edge)
 }
+
+/**
+ * From CITY_HANDOVER_ZOOM, the px beyond each side of the view inside which an off-view record
+ * draws no edge glow: the largest reach of a project's own ring (HALO_R_PX[1], plus its stroke's
+ * half pixel and a pixel of margin) whose centre is there. Beyond it, the record glows.
+ */
+export const CITY_EDGE_MARGIN_PX = HALO_R_PX[1] + 1;
 
 /** Metres per degree of latitude (mean Earth radius 6,371,008.8 m). */
 const M_PER_DEG = (6_371_008.8 * Math.PI) / 180;
@@ -95,41 +101,6 @@ export function citySquare(group: number): CityBounds {
   return [w, s, w + D_LNG, s + D_LAT];
 }
 
-/**
- * The margin block of a square: the square widened by one square on each side (3 × 3 squares).
- * From CITY_HANDOVER_ZOOM an off-view record glows only when this block is wholly outside the
- * view (`blockOutside`): a project's own ring sits at the bbox centre of its parts, not at its
- * anchor lot's label point, so a project of a square whose block reaches into the view may
- * still ring on screen, and must not also glow.
- */
-export function cityBlock([w, s, e, n]: CityBounds): CityBounds {
-  const dx = e - w;
-  const dy = n - s;
-  return [w - dx, s - dy, e + dx, n + dy];
-}
-
-/**
- * True when every corner of a convex ground box lies past one and the same clip plane (right,
- * left, top, bottom) or behind the camera (w <= 0). The planes are linear in clip space, so the
- * whole box is then out of view. A box past different planes (around a corner of the view) is
- * not wholly outside by this test: conservative, it never says outside for a visible point.
- */
-export function blockOutside(corners: readonly Clip[]): boolean {
-  let r = true;
-  let l = true;
-  let t = true;
-  let b = true;
-  let behind = true;
-  for (const [x, y, w] of corners) {
-    r &&= x - w > 0;
-    l &&= -x - w > 0;
-    t &&= y - w > 0;
-    b &&= -y - w > 0;
-    behind &&= w <= 0;
-  }
-  return r || l || t || b || behind;
-}
-
 /** min(CITY_R_MAX_PX, HALO_R_PX[1] · max(1, sqrt(homes / CITY_R_REF_HOMES))): 22 to 40 px. */
 export function cityRadiusPx(homes: number): number {
   return Math.min(CITY_R_MAX_PX, HALO_R_PX[1] * Math.max(1, Math.sqrt(homes / CITY_R_REF_HOMES)));
@@ -141,14 +112,25 @@ export function cityEdgePx(homes: number): number {
 }
 
 /**
- * null when the clip-space point is in view (w > 0, |x/w| <= 1, |y/w| <= 1); else the NDC
- * point on the view's edge toward it: d / max(|d.x|, |d.y|), where d = (x/w, y/w), or (−x, −y)
- * behind the camera (w <= 0); (0, −1) when d is zero.
+ * True when the clip-space point is in the view widened by `mx`, `my` in NDC on each side:
+ * w > 0, |x/w| <= 1 + mx, |y/w| <= 1 + my.
  */
-export function edgeOf([x, y, w]: Clip): [x: number, y: number] | null {
-  if (w > 0 && Math.abs(x / w) <= 1 && Math.abs(y / w) <= 1) return null;
-  const dx = w > 0 ? x / w : -x;
-  const dy = w > 0 ? y / w : -y;
+export function inView([x, y, w]: Clip, mx = 0, my = 0): boolean {
+  return w > 0 && Math.abs(x / w) <= 1 + mx && Math.abs(y / w) <= 1 + my;
+}
+
+/**
+ * null when the clip-space point is in view (inView); else the NDC point on the view's edge
+ * toward it: d / max(|d.x|, |d.y|), where d = (x/w, y/w) in front of the camera and (x, y)
+ * behind it (w <= 0); (0, −1) when d is zero. Clip x and y are the point's components along the
+ * camera's right and up axes whatever the sign of w, so (x, y) is the screen direction behind
+ * the camera too, and the edge point does not jump as w crosses 0 (it tends to the same edge).
+ */
+export function edgeOf(clip: Clip): [x: number, y: number] | null {
+  if (inView(clip)) return null;
+  const [x, y, w] = clip;
+  const dx = w > 0 ? x / w : x;
+  const dy = w > 0 ? y / w : y;
   const m = Math.max(Math.abs(dx), Math.abs(dy));
   return m === 0 ? [0, -1] : [dx / m, dy / m];
 }
@@ -156,12 +138,11 @@ export function edgeOf([x, y, w]: Clip): [x: number, y: number] | null {
 const NONE: CityEval = { mode: 'none', sizePx: 0, alpha: 0, at: [0, 0] };
 
 /**
- * CPU reference of the city shader, rule order fixed:
+ * CPU reference of the city shader on a view `viewPx` CSS px wide and tall, rule order fixed:
  * 1. t < day: none.
  * 2. off view (edgeOf non-null):
- *    a. zoom >= CITY_HANDOVER_ZOOM and the margin block (`block`: the clip-space corners of
- *       `cityBlock(c.square)`) not wholly outside the view (`blockOutside`), or no block given:
- *       none.
+ *    a. zoom >= CITY_HANDOVER_ZOOM and the anchor in the view widened by CITY_EDGE_MARGIN_PX on
+ *       each side: none (a project ringing there reaches into the view on its own).
  *    b. t < day + CITY_EDGE_DAYS → edge, cityEdgePx(homes), alpha 1 − age / CITY_EDGE_DAYS
  *       (reduced: 1), at the edge point; else none.
  * 3. zoom >= CITY_HANDOVER_ZOOM: none.
@@ -175,7 +156,7 @@ export function evalCity(
   zoom: number,
   clip: Clip,
   reduced: boolean,
-  block?: readonly Clip[]
+  viewPx: readonly [w: number, h: number]
 ): CityEval {
   // 1. Nothing before its day (the last event it holds).
   if (t < c.day) return NONE;
@@ -183,9 +164,10 @@ export function evalCity(
   const edge = edgeOf(clip);
   // 2. Off view: an edge glow toward it.
   if (edge) {
-    // a. From the handover a project of the square may ring on screen: glow only when the
-    //    square is wholly outside the view by a margin of one square.
-    if (zoom >= CITY_HANDOVER_ZOOM && !(block && blockOutside(block))) return NONE;
+    // a. From the handover, a project ringing within reach of the view shows on its own.
+    const mx = (2 * CITY_EDGE_MARGIN_PX) / viewPx[0];
+    const my = (2 * CITY_EDGE_MARGIN_PX) / viewPx[1];
+    if (zoom >= CITY_HANDOVER_ZOOM && inView(clip, mx, my)) return NONE;
     // b. The glow's window.
     if (age >= CITY_EDGE_DAYS) return NONE;
     return {
@@ -318,7 +300,7 @@ interface Acc {
   homes: number;
   wx: number; // Σ homes · lng
   wy: number; // Σ homes · lat
-  n: number; // events
+  n: number; // markers
   x: number; // Σ lng
   y: number; // Σ lat
 }
@@ -329,10 +311,16 @@ const KEY_BUCKETS = 2 ** 24;
 /**
  * One record per (square, CITY_BUCKET_DAYS bucket counted from `from`, kind) with an event
  * after `from`, in square, bucket, kind order. An event is one of a marker's three days; a
- * flagged marker's events go to `policy`. The record's day is its latest event's (so it never
- * shows before every event it counts has happened), its homes the sum of its events' homes, its
- * anchor their homes-weighted centre (the plain centre when they hold no homes). O(markers),
- * plus a sort of the records.
+ * flagged marker's events go to `policy`. Every kind's homes mean the same thing: the homes of
+ * the markers in the square with an event of that kind in that half-year, each marker once (a
+ * stage kind: the homes that reached that stage; policy: the homes of the flagged projects with
+ * any stage change). The anchor is those markers' homes-weighted centre (the plain centre when
+ * they hold no homes). O(markers), plus a sort of the records.
+ *
+ * The record's day is its latest event's, so it never shows before every event it counts has
+ * happened. The cost (accepted, 2026-11-20 review M1): a rebuild that brings a later event into
+ * the same square, half-year and kind moves the day later, so a ring showing near the fill
+ * frontier vanishes and is born again at the new day.
  */
 export function buildCity(store: CityStore, from: Day): CityAttrs[] {
   const { lngLat, days, homes, flags, has, length } = store;
@@ -343,6 +331,9 @@ export function buildCity(store: CityStore, from: Day): CityAttrs[] {
     const lat = lngLat[2 * r + 1];
     const h = homes[r];
     const group = cityGroup(lng, lat);
+    // The keys this marker has counted in (a flagged marker's events can share one).
+    let seen0 = -1;
+    let seen1 = -1;
     for (let k = 0; k < 3; k++) {
       const day = days[3 * r + k];
       // NaN (not yet) fails this too.
@@ -353,6 +344,9 @@ export function buildCity(store: CityStore, from: Day): CityAttrs[] {
       let a = acc.get(key);
       if (!a) acc.set(key, (a = { day, homes: 0, wx: 0, wy: 0, n: 0, x: 0, y: 0 }));
       a.day = Math.max(a.day, day);
+      if (key === seen0 || key === seen1) continue;
+      if (seen0 < 0) seen0 = key;
+      else seen1 = key;
       a.homes += h;
       a.wx += h * lng;
       a.wy += h * lat;
@@ -365,9 +359,8 @@ export function buildCity(store: CityStore, from: Day): CityAttrs[] {
   return keys.map((key) => {
     const a = acc.get(key)!;
     const kind = (key % 4) as CityAttrs['kind'];
-    const group = Math.floor(key / (4 * KEY_BUCKETS));
     const anchor: [number, number] =
       a.homes > 0 ? [a.wx / a.homes, a.wy / a.homes] : [a.x / a.n, a.y / a.n];
-    return { anchor, day: a.day, homes: a.homes, kind, square: citySquare(group) };
+    return { anchor, day: a.day, homes: a.homes, kind };
   });
 }

@@ -46,8 +46,11 @@ export const CITY_HANDOVER_ZOOM = 14;
 export const CITY_CELL_M = 800;
 /** Tier 4, slice 6: one merged ring per square, half-year and kind. */
 export const CITY_BUCKET_DAYS = 182;
-/** Tier 4, slice 6: a merged ring's life in simulated days (1 s at 1×, 0.33 s at 3×). */
-export const CITY_RING_DAYS = 365;
+/**
+ * Tier 4, slice 6: a merged ring's life in simulated days (1 s at 1×): 2 × CITY_BUCKET_DAYS, so
+ * at most two rings of one square and kind are alive at once.
+ */
+export const CITY_RING_DAYS = 364;
 /** Tier 4, slice 6: an edge glow's life in simulated days (0.5 s at 1×). */
 export const CITY_EDGE_DAYS = 182;
 /** Tier 4, slice 6: homes at which a merged ring reaches HALO_R_PX[1]. */

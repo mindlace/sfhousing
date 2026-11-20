@@ -1,4 +1,5 @@
-// GPU test of CityLayer: a standalone deck over a 96×96 canvas, top-down. Each sampled pixel
+// GPU test of CityLayer: a standalone deck over a 96×96 canvas, top-down unless a case pitches
+// or rotates the camera. Each sampled pixel
 // must match `evalCity`, the CPU reference: a merged ring's radius, alpha and tone in view below
 // the handover zoom, nothing in view from it, an edge glow toward an anchor off view, the reveal
 // window at both ends, and the policy record's accent and second stroke.
@@ -8,12 +9,8 @@ import { CityLayer } from './city-layer';
 import {
   CITY_KIND,
   CITY_KIND_TOKEN,
-  blockOutside,
-  cityBlock,
   cityEdgePx,
-  cityGroup,
   cityRadiusPx,
-  citySquare,
   edgeOf,
   evalCity,
   type CityAttrs,
@@ -42,11 +39,21 @@ const tok = (theme: Theme, name: TokenName): Rgb =>
   hexToRgba(TOKENS[theme][name]).slice(0, 3) as Rgb;
 const over = (c: Rgb, a: number): Rgb => c.map((v, i) => a * v + (1 - a) * BG[i]) as Rgb;
 
-/** A record of `kind` and `homes`, `eastM` metres east of CENTRE. */
-function rec(kind: 0 | 1 | 2 | 3, homes = 200, eastM = 0): CityAttrs {
-  const anchor: [number, number] = [CENTRE[0] + eastM / M_LNG, CENTRE[1]];
-  return { anchor, day: D, homes, kind, square: citySquare(cityGroup(...anchor)) };
+/** Metres per degree of latitude. */
+const M_LAT = 111_195;
+
+/** A record of `kind` and `homes`, `eastM` metres east and `northM` north of CENTRE. */
+function rec(kind: 0 | 1 | 2 | 3, homes = 200, eastM = 0, northM = 0): CityAttrs {
+  const anchor: [number, number] = [CENTRE[0] + eastM / M_LNG, CENTRE[1] + northM / M_LAT];
+  return { anchor, day: D, homes, kind };
 }
+/** A record at a ground point. */
+const recAt = (kind: 0 | 1 | 2 | 3, anchor: [number, number], homes = 200): CityAttrs => ({
+  anchor,
+  day: D,
+  homes,
+  kind
+});
 
 const VIEW_STATE: MapViewState = {
   longitude: CENTRE[0],
@@ -73,8 +80,8 @@ describe('CityLayer on the GPU', () => {
     );
   }
 
-  async function show(layers: Layer[], zoom = VIEW_STATE.zoom) {
-    deck.setProps({ layers, viewState: { ...VIEW_STATE, zoom } });
+  async function show(layers: Layer[], zoom = VIEW_STATE.zoom, camera: Partial<MapViewState> = {}) {
+    deck.setProps({ layers, viewState: { ...VIEW_STATE, zoom, ...camera } });
     const live = () =>
       (deck as unknown as { layerManager: { getLayers(): Layer[] } }).layerManager.getLayers();
     const ready = () =>
@@ -141,19 +148,26 @@ describe('CityLayer on the GPU', () => {
   });
 
   const vp = () => deck.getViewports()[0];
-  /** A lng/lat point in clip space, as the shader projects it. */
+  /**
+   * A lng/lat point in clip space, as the shader projects it (viewProjectionMatrix ·
+   * projectPosition): w is not 1 under a pitched camera, and is negative behind it.
+   */
   function clipOf(p: [number, number]): Clip {
-    const [x, y] = vp().project([p[0], p[1], 0]);
-    // A top-down view is affine: NDC from canvas px, w = 1.
-    return [(2 * x) / CW - 1, 1 - (2 * y) / CH, 1];
+    const v = vp();
+    const [x, y, z] = v.projectPosition([p[0], p[1], 0]);
+    const m = v.viewProjectionMatrix as number[];
+    const q = [x, y, z, 1];
+    const o = [0, 0, 0, 0];
+    for (let r = 0; r < 4; r++) for (let c = 0; c < 4; c++) o[r] += m[c * 4 + r] * q[c];
+    return [o[0], o[1], o[3]];
   }
-  const blockOf = (c: CityAttrs): Clip[] => {
-    const [w, s, e, n] = cityBlock(c.square);
-    return [clipOf([w, s]), clipOf([e, s]), clipOf([w, n]), clipOf([e, n])];
-  };
   /** evalCity for `c` on this view. */
   const cpu = (c: CityAttrs, t: Day, zoom: number, reduced = false) =>
-    evalCity(c, t, zoom, clipOf(c.anchor), reduced, blockOf(c));
+    evalCity(c, t, zoom, clipOf(c.anchor), reduced, [CW, CH]);
+  /** Canvas px of an NDC point. */
+  const ndcPx = ([x, y]: [number, number]) => [((x + 1) / 2) * CW, ((1 - y) / 2) * CH];
+  /** The ground point under canvas px (x, y) on this view. */
+  const groundAt = (x: number, y: number) => vp().unproject([x, y]) as [number, number];
 
   function readAt(x: number, y: number): Rgb {
     const px = new Uint8Array(4);
@@ -287,28 +301,117 @@ describe('CityLayer on the GPU', () => {
     expect(errors).toEqual([]);
   });
 
-  it('from zoom 14, an edge glow only for a square wholly outside the view by one square', async () => {
-    // 600 m east: off the view at zoom 14 (about 725 m across), but its margin block reaches
-    // into it, so a project of the square may ring on screen: no glow from 14, a glow below.
-    const nearby = rec(CITY_KIND.started, 200, 600);
-    // 5 km east: the block is wholly outside.
-    const far = rec(CITY_KIND.approved, 200, 5000);
-    for (const zoom of [13.99, 14]) {
-      await show([city([nearby])], zoom);
-      render(D);
-      expect(edgeOf(clipOf(nearby.anchor))).not.toBeNull();
-      expect(blockOutside(blockOf(nearby))).toBe(false);
-      const e = cpu(nearby, D, zoom);
-      expect(e.mode).toBe(zoom < 14 ? 'edge' : 'none');
-      if (zoom < 14) expect(drawnBox()).not.toBeNull();
-      else expect(drawnBox()).toBeNull();
-    }
-    await show([city([far])], 14);
+  for (const pitch of [0, 55]) {
+    it(`from zoom 14 an edge glow only beyond the view widened by a project ring's reach (pitch ${pitch})`, async () => {
+      const camera = { pitch };
+      // Find the ground points on this view first: 10 px past the right edge (inside the
+      // margin), 40 px past it (beyond), and 1 km past the edge (the old rule's silent band).
+      await show([city([])], 16, camera);
+      const inside = recAt(CITY_KIND.started, groundAt(CW + 10, CH / 2));
+      const beyond = recAt(CITY_KIND.started, groundAt(CW + 40, CH / 2));
+      const edge = groundAt(CW, CH / 2);
+      const km = recAt(CITY_KIND.started, [edge[0] + 1000 / M_LNG, edge[1]]);
+      const { got, want, push } = checks();
+      const tone = tok('light', 'tl-halo-started');
+      for (const [c, label] of [
+        [inside, 'inside'],
+        [beyond, 'beyond'],
+        [km, '1 km']
+      ] as const) {
+        for (const zoom of [13.99, 14, 16]) {
+          await show([city([c])], zoom, camera);
+          render(D);
+          const e = cpu(c, D, zoom);
+          if (zoom === 16) {
+            // Every case is off view at 16; only the margin decides.
+            expect(edgeOf(clipOf(c.anchor))).not.toBeNull();
+            expect(e.mode).toBe(label === 'inside' ? 'none' : 'edge');
+          }
+          if (e.mode === 'edge') {
+            const [ex, ey] = ndcPx(e.at);
+            push(`${label} at ${zoom}`, readAt(Math.min(ex, CW - 0.5), ey), tone, TOL);
+          } else if (e.mode === 'ring') {
+            // Below 14 at a zoomed-out view the point is in view: its merged ring draws.
+            expect(zoom).toBeLessThan(14);
+            expect(drawnBox()).not.toBeNull();
+          } else {
+            expect(drawnBox()).toBeNull();
+          }
+        }
+      }
+      expect(got).toEqual(want);
+      expect(errors).toEqual([]);
+    });
+  }
+
+  it('pitch 55: an anchor 8 km south (behind the camera) glows on the bottom edge', async () => {
+    const c = rec(CITY_KIND.approved, 200, 0, -8000);
+    await show([city([c])], 13, { pitch: 55 });
     render(D);
-    expect(blockOutside(blockOf(far))).toBe(true);
-    expect(cpu(far, D, 14).mode).toBe('edge');
+    expect(clipOf(c.anchor)[2]).toBeLessThan(0);
+    const e = cpu(c, D, 13);
+    expect(e.mode).toBe('edge');
+    expect(e.at[1]).toBe(-1);
+    const [ex] = ndcPx(e.at);
     const { got, want, push } = checks();
-    push('far glow', readAt(CW - 0.5, CH / 2 + 0.5), tok('light', 'tl-halo-approved'), TOL);
+    push('bottom', readAt(ex, CH - 0.5), tok('light', 'tl-halo-approved'), TOL);
+    push('not the top', readAt(ex, 0.5), BG, TOL);
+    expect(got).toEqual(want);
+    const box = drawnBox()!;
+    expect(box[3]).toBe(CH - 1);
+    expect(box[1]).toBeGreaterThan(CH / 2);
+    expect(errors).toEqual([]);
+  });
+
+  it('zoom 16, pitch 55, bearing 90: 3 km north glows on the left, 3 km west (behind) on the bottom', async () => {
+    const camera = { pitch: 55, bearing: 90 };
+    const { got, want, push } = checks();
+    for (const [c, label] of [
+      [rec(CITY_KIND.completed, 200, 0, 3000), 'north'],
+      [rec(CITY_KIND.completed, 200, -3000), 'west']
+    ] as const) {
+      await show([city([c])], 16, camera);
+      render(D);
+      const e = cpu(c, D, 16);
+      expect(e.mode).toBe('edge');
+      if (label === 'north') expect(e.at[0]).toBe(-1);
+      else {
+        expect(clipOf(c.anchor)[2]).toBeLessThan(0);
+        expect(e.at[1]).toBe(-1);
+      }
+      const [ex, ey] = ndcPx(e.at);
+      const x = Math.min(Math.max(ex, 0.5), CW - 0.5);
+      const y = Math.min(Math.max(ey, 0.5), CH - 0.5);
+      push(label, readAt(x, y), tok('light', 'tl-halo-complete'), TOL);
+      const box = drawnBox()!;
+      if (label === 'north') expect(box[0]).toBe(0);
+      else expect(box[3]).toBe(CH - 1);
+    }
+    expect(got).toEqual(want);
+    expect(errors).toEqual([]);
+  });
+
+  it('pitch 55: an in-view anchor near the top draws its ring at its projected point', async () => {
+    await show([city([])], 13, { pitch: 55 });
+    const c = recAt(CITY_KIND.started, groundAt(CW / 2 + 10, 16), 10);
+    await show([city([c])], 13, { pitch: 55 });
+    render(D);
+    const clip = clipOf(c.anchor);
+    expect(Math.abs(clip[2] - 1)).toBeGreaterThan(0.05);
+    const e = cpu(c, D, 13);
+    expect(e.mode).toBe('ring');
+    const [px, py] = ndcPx(e.at);
+    const [ax, ay] = anchorPx(c);
+    expect(Math.abs(px - ax)).toBeLessThan(0.01);
+    expect(Math.abs(py - ay)).toBeLessThan(0.01);
+    const r = e.sizePx;
+    const { got, want, push } = checks();
+    const tone = tok('light', 'tl-halo-started');
+    push('east', at(c, r), tone, TOL);
+    push('west', at(c, -r), tone, TOL);
+    push('south', at(c, 0, r), tone, TOL);
+    push('centre', at(c, 0), BG, TOL);
+    push('outside', at(c, r + 3), BG, TOL);
     expect(got).toEqual(want);
     expect(errors).toEqual([]);
   });
@@ -344,11 +447,11 @@ describe('CityLayer on the GPU', () => {
     });
   }
 
-  it('reduced: the same radius and full alpha at ages 0 and 364', async () => {
+  it('reduced: the same radius and full alpha at ages 0 and CITY_RING_DAYS - 1', async () => {
     const c = rec(CITY_KIND.started, 120);
     await show([city([c], true)]);
     const { got, want, push } = checks();
-    for (const age of [0, 364]) {
+    for (const age of [0, CITY_RING_DAYS - 1]) {
       render(D + age);
       const e = cpu(c, D + age, 13, true);
       expect(e).toMatchObject({ mode: 'ring', sizePx: cityRadiusPx(120), alpha: 1 });
