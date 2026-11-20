@@ -345,8 +345,9 @@ describe('SimMap controls footprint vars', { timeout: 30_000 }, () => {
       await expect.poll(() => atInsert).not.toBeNull();
       expect(atInsert!.container).toBeGreaterThan(45);
       expect(Math.abs(atInsert!.block - atInsert!.container)).toBeLessThanOrEqual(1);
-      await expect.poll(() => root.dataset.state, { timeout: 20_000 }).toBe('ready');
+      // onready is the map's readiness signal; then the block still includes the inset.
       await idle(await ready);
+      expect(root.dataset.state).toBe('ready');
       expect(px(BL)).toBeGreaterThan(45);
     } finally {
       watch.disconnect();
