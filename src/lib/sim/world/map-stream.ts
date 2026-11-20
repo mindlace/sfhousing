@@ -31,11 +31,15 @@
 //   with the whole demolish list computed from the world (so a fresh stream answers alike). The
 //   sent bookkeeping (`sentKeys`, `sentCells`, `sentDemolitions`) becomes what it sent; pending
 //   removals, restores and demolitions are superseded. Cells waiting on chunks stay dirty.
+// - The city feed (`city-feed.ts`, map-citywide slice 6): every event touches its row, ready cell
+//   or not; a flush carries the touched rows whose marker changed in `city`, and an update goes
+//   out for them alone. Revision 0 (the first flush and every `snapshot`) carries every marker.
+//   `rewind` runs the feed's rewind after the stream's own, so rows past `n` are dropped.
 //
 // Worker-safe, under the determinism lint rule (no transcendental Math).
 import type { ParcelId, ParcelRecord } from '$lib/data/parcel';
 import { packTimedCell, type TimedPackInput } from '$lib/map/pack-timed';
-import type { TimedPackedCell, TimelineUpdate } from '$lib/map/types';
+import type { CityDelta, TimedPackedCell, TimelineUpdate } from '$lib/map/types';
 import { createLru } from '$lib/sim/lru';
 import {
   cellAnchorParcel,
@@ -45,6 +49,7 @@ import {
 } from '$lib/sim/scenario/massing';
 import type { Massing, Schedule } from '$lib/sim/scenario/types';
 import { STAGE_ORDER } from '$lib/timelapse/types';
+import { createCityFeed } from './city-feed';
 import { monthLastDay } from './months';
 import { scheduleAt } from './read';
 import type { Statics } from './statics';
@@ -92,13 +97,17 @@ export interface MapStream {
   cellsFor(cellIds: Iterable<string>): Set<string>;
 }
 
-/** Where a row sits on the map: its anchor cell and every cell of its T11 parcels (anchor first). */
+/**
+ * Where a row sits on the map: its anchor lot (null without a T11 parcel), its anchor cell and
+ * every cell of its T11 parcels (anchor first).
+ */
 interface Placed {
   ids: ParcelId[];
   cells: string[];
+  anchor: ParcelId | null;
 }
 
-const NOWHERE: Placed = { ids: [], cells: [] };
+const NOWHERE: Placed = { ids: [], cells: [], anchor: null };
 
 /** `ParcelId` order, as geometry.ts sorts the demolish list. */
 const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
@@ -130,6 +139,12 @@ export function createMapStream(deps: MapStreamDeps, windowMonths: number): MapS
   /** Cells the map holds: sent in `cells` and not since in `removedCells`. */
   const sentCells = new Set<string>();
   let revision = 0;
+  /** The citywide markers: every placed row's, sent with the cells (map-citywide slice 6). */
+  const feed = createCityFeed({
+    parcels: P,
+    anchorOf: (w, st, row) => place(w, st, row).anchor,
+    flagsOf
+  });
   /** The last update sent said `complete` and nothing has re-armed it since. */
   let completeSent = false;
 
@@ -169,7 +184,7 @@ export function createMapStream(deps: MapStreamDeps, windowMonths: number): MapS
         const c = cellOf(id);
         if (!cells.includes(c)) cells.push(c);
       }
-      out = { ids: present, cells };
+      out = { ids: present, cells, anchor };
       const home = cells[0];
       const rows = rowsIn.get(home);
       if (rows) rows.add(row);
@@ -308,6 +323,7 @@ export function createMapStream(deps: MapStreamDeps, windowMonths: number): MapS
     onEvent(e, world, statics) {
       const at = place(world, statics, e.row);
       if (at.cells.length > 0) dirty.set(at.cells[0], true);
+      feed.touch(e.row);
       if (e.kind === 'enter' && e.stage === 'construction') {
         for (const id of at.ids) {
           const d = demolitions.get(id);
@@ -361,15 +377,20 @@ export function createMapStream(deps: MapStreamDeps, windowMonths: number): MapS
         sentCells.add(cell);
       }
       const complete = isComplete(world);
+      // the touched rows whose marker changed; revision 0 carries every marker (below)
+      let city: CityDelta | null = revision === 0 ? null : feed.take(world, statics, day);
       if (
         cells.length === 0 &&
         removedCells.length === 0 &&
         newDemolitions.size === 0 &&
         restores.size === 0 &&
+        city === null &&
+        !(revision === 0 && feed.pending()) &&
         (!complete || completeSent)
       ) {
         return null;
       }
+      if (revision === 0) city = feed.snapshot(world, statics, day);
       // revision 0 carries every demolition known; later updates those new or changed since
       const lots = revision === 0 ? [...demolitions.keys()] : [...newDemolitions];
       newDemolitions.clear();
@@ -388,6 +409,7 @@ export function createMapStream(deps: MapStreamDeps, windowMonths: number): MapS
       completeSent = complete;
       const u: TimelineUpdate = { revision: revision++, cells, removedCells, demolish, complete };
       if (restore.length > 0) u.restore = restore;
+      if (city !== null) u.city = city;
       return u;
     },
 
@@ -426,6 +448,8 @@ export function createMapStream(deps: MapStreamDeps, windowMonths: number): MapS
       for (const [lot, d] of now) if (sentDemolitions.get(lot) !== d) newDemolitions.add(lot);
       demolitions = now;
       completeSent = false;
+      // after the stream's own rows are dropped, so `place` answers for the restored world
+      feed.rewind(world, statics, day);
     },
 
     cellsFor(cellIds) {
@@ -486,7 +510,8 @@ export function createMapStream(deps: MapStreamDeps, windowMonths: number): MapS
       const complete = isComplete(world);
       completeSent = complete;
       revision = 1;
-      return { revision: 0, cells, removedCells: [], demolish, complete };
+      const city = feed.snapshot(world, statics, day);
+      return { revision: 0, cells, removedCells: [], demolish, complete, city };
     }
   };
 }

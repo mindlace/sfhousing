@@ -60,6 +60,28 @@ export interface TimedPackedCell extends PackedCell {
   slotFlags?: Uint8Array; // per slot: SLOT_FLAG bits; absent (older producers, fixtures) = none
 }
 
+/** Index of a day in `CityDelta.days`, 3 per row. */
+export const CITY_DAY = { approved: 0, started: 1, completed: 2 } as const;
+
+/**
+ * The citywide feed (map-citywide slice 6): one marker per project row the plan world holds that
+ * has a T11 lot, loaded cell or not. Revision 0: every marker. Later: the rows that changed.
+ */
+export interface CityDelta {
+  rows: number; // the world's row count now: markers at rows >= this are dropped
+  /**
+   * The drop floor (after a rewind; never in revision 0, which replaces every marker): before
+   * applying this delta's rows, forget every marker at row >= from. Rows below it in the delta
+   * are changed survivors; rows at or past it are re-created ones. Absent: nothing to forget.
+   */
+  from?: number;
+  row: Int32Array; // changed rows, strictly ascending, each < rows
+  lngLat: Float32Array; // 2 per changed row: the anchor lot's label point
+  days: Float32Array; // 3 per changed row (CITY_DAY): NaN = not (yet)
+  homes: Uint16Array; // per changed row: the final revision's units, capped at 65535
+  flags: Uint8Array; // per changed row: SLOT_FLAG bits
+}
+
 /** T7: one timeline message (timelapse worker → SimMap). */
 export interface TimelineUpdate {
   revision: number; // 0 = snapshot
@@ -70,6 +92,7 @@ export interface TimelineUpdate {
   restore?: ParcelId[];
   swap?: true; // revision 0 only: install over the cells on the map instead of clearing them
   complete?: boolean; // the run has packed every loaded cell (the scenario worker sets it)
+  city?: CityDelta; // absent: no marker changed (and, in a revision 0, no feed: the page clears it)
 }
 
 /**
@@ -110,7 +133,15 @@ export interface SimMapHandle {
    * policy; null (the default) draws none. Kept until the timeline controller exists, as setTime.
    */
   setHalos(o: { from: Day } | null): void;
+  /**
+   * 'street' (the default): today's bars, from zoom 15, growing to 48 by 8 px. 'far': from zoom
+   * 12 at 32 by 6 px at every zoom. Kept until the timeline controller exists, as setTime.
+   */
+  setBarMode(mode: BarMode): void;
 }
+
+/** How the progress bars draw (docs/dev/map-interfaces.md "Bar modes"). */
+export type BarMode = 'street' | 'far';
 
 /** T7: one set of timeline lookups (T12 `chanceTable` and `typicalMonths` outputs). */
 export interface TimelineLookupSet {

@@ -1,5 +1,5 @@
 // timelapse-render internal types (spec §2.1). None alters a T-row.
-import type { SimMapHandle, Theme } from '../types';
+import type { BarMode, SimMapHandle, Theme } from '../types';
 import type { ParcelId } from '$lib/data/parcel';
 import type { Day } from '$lib/timelapse/time';
 
@@ -58,6 +58,7 @@ export interface BarAttrs {
   segTypicalDays: number[]; // typical days per segment; OPEN_DAY if unknown
   segRow: number[]; // chance texture row per segment
   minZoom: number; // declutter's zoom gate (Task 6); BAR_MIN_ZOOM until then
+  policy: boolean; // slotFlags[s] !== 0: under the person's policy (wins declutter collisions)
 }
 
 /** `evalBar` result (§4.4). */
@@ -86,12 +87,39 @@ export interface TimelineSnapshot {
   halos: number;
   /** Policy marks in the halo layer. */
   marks: number;
-  /** Rings `evalHalo` shows on the clock's day. */
+  /** Marks `evalHalo` shows on the clock's day at the map's zoom, behind `ringMinZoom`. */
+  marksShown: number;
+  /** Rings `evalHalo` shows on the clock's day at the map's zoom, behind `ringMinZoom`. */
   halosShown: number;
   /** The rings' distinct event days, ascending, the first 500. */
   haloDays: number[];
   /** Installed slots with parts and a flag (`slotFlags[s] !== 0`), halos on or off. */
   flagged: number;
+  /** Distinct installed slots with parts. */
+  projects: number;
+  /** Rows the city store holds a marker for (halos on or off). */
+  cityMarkers: number;
+  /** Of them, with a `SLOT_FLAG` bit. */
+  cityFlagged: number;
+  /** Records in the city layer; 0 without one. */
+  cityRecords: number;
+  /** The records' distinct days, ascending, the first 500. */
+  cityDays: number[];
+  /** Records `evalCity` draws as a merged ring on the clock's day in the map's view. */
+  cityRings: number;
+  /** Records `evalCity` draws as an edge glow on the clock's day in the map's view. */
+  cityGlows: number;
+  /** `buildCity` calls since the controller was made (one per applied update with `city`). */
+  cityBuilds: number;
+  /** The halo layer's gate: 0, or CITY_HANDOVER_ZOOM while the city layer exists. */
+  ringMinZoom: number;
+  /** `setBarMode`'s mode ('street' until it is called). */
+  barMode: BarMode;
+  /**
+   * Bars `evalBar` shows on the clock's day at the zoom at each anchor (`barZoomAt`), anchors in
+   * the map's view; without a map view, every bar in time.
+   */
+  barsShown: number;
 }
 
 /** Shared mutable clock read by the extension's `draw`; `setTime` writes `day`. */

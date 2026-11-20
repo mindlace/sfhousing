@@ -22,19 +22,27 @@ async function scheme(value: 'light' | 'dark') {
 }
 
 /**
- * Resizes across md and waits for the `(min-width: 768px)` change event, then for Svelte to apply
- * it (the control's MediaQuery listener was added first, so it has run by then).
+ * Resizes the frame and returns once it has rendered at the new size: when the width crosses md,
+ * after the `(min-width: 768px)` change event (a listener added before the resize); otherwise
+ * after the next animation frame (the rendering update in which media query changes are
+ * reported). Then Svelte has applied it. `page.viewport` alone resolves before that: the change
+ * event lagged it in 78 of 80 resizes (#131).
  */
-async function crossMd(width: number, height: number) {
+async function atViewport(width: number, height: number): Promise<void> {
   const mq = matchMedia('(min-width: 768px)');
-  const changed = new Promise((res) => mq.addEventListener('change', res, { once: true }));
+  const crosses = mq.matches !== width >= 768;
+  const rendered = crosses
+    ? new Promise((res) => mq.addEventListener('change', res, { once: true }))
+    : null;
   await page.viewport(width, height);
-  await changed;
+  await (rendered ?? new Promise((res) => requestAnimationFrame(res)));
   await tick();
+  expect(innerWidth).toBe(width);
+  expect(mq.matches).toBe(width >= 768);
 }
 
 beforeEach(async () => {
-  await page.viewport(1024, 768);
+  await atViewport(1024, 768);
 });
 
 afterEach(async () => {
@@ -76,16 +84,16 @@ describe('MapKeyControl', () => {
   });
 
   it('going below md closes the key and moves focus from its panel to the toggle; going up keeps it closed', async () => {
-    await page.viewport(1024, 768);
+    await atViewport(1024, 768);
     await render(KeyHost, { props: { openFromMd: true } });
     await expect.element(keyPanel()).toBeVisible();
     (keyPanel().element() as HTMLElement).focus();
     expect(document.activeElement).toBe(keyPanel().element());
-    await crossMd(375, 812);
+    await atViewport(375, 812);
     await expect.element(keyToggle()).toHaveAttribute('aria-expanded', 'false');
     await expect.element(keyPanel()).not.toBeInTheDocument();
     expect(document.activeElement).toBe(keyToggle().element());
-    await crossMd(1024, 768);
+    await atViewport(1024, 768);
     await expect.element(keyToggle()).toHaveAttribute('aria-expanded', 'false');
     expect(document.activeElement).toBe(keyToggle().element());
     // The viewer opens it again at 1024: it holds.
@@ -94,14 +102,14 @@ describe('MapKeyControl', () => {
   });
 
   it('a key the viewer closed at 1024 stays closed after going down and up', async () => {
-    await page.viewport(1024, 768);
+    await atViewport(1024, 768);
     await render(KeyHost, { props: { openFromMd: true } });
     await expect.element(keyPanel()).toBeVisible();
     await keyToggle().click();
     await expect.element(keyToggle()).toHaveAttribute('aria-expanded', 'false');
-    await crossMd(375, 812);
+    await atViewport(375, 812);
     await expect.element(keyToggle()).toHaveAttribute('aria-expanded', 'false');
-    await crossMd(1024, 768);
+    await atViewport(1024, 768);
     await expect.element(keyToggle()).toHaveAttribute('aria-expanded', 'false');
     await expect.element(keyPanel()).not.toBeInTheDocument();
     // Focus was on the toggle throughout (it was clicked), not dropped to the body.
@@ -109,13 +117,43 @@ describe('MapKeyControl', () => {
   });
 
   it('going up keeps a panel the viewer opened below md', async () => {
-    await page.viewport(375, 812);
+    await atViewport(375, 812);
     await render(KeyHost, { props: {} });
     await keyToggle().click();
     await expect.element(keyPanel()).toBeVisible();
-    await crossMd(1024, 768);
+    await atViewport(1024, 768);
     await expect.element(keyPanel()).toBeVisible();
     await expect.element(keyToggle()).toHaveAttribute('aria-expanded', 'true');
+  });
+
+  it('atViewport returns once the frame has rendered at the new size, crossing md or not', async () => {
+    const mq = matchMedia('(min-width: 768px)');
+    for (const width of [1024, 375, 320, 1024, 1280]) {
+      const crosses = mq.matches !== width >= 768;
+      let fired = false;
+      const on = () => (fired = true);
+      mq.addEventListener('change', on);
+      await atViewport(width, 800);
+      mq.removeEventListener('change', on);
+      if (crosses) expect(fired).toBe(true);
+      expect(innerWidth).toBe(width);
+      expect(mq.matches).toBe(width >= 768);
+    }
+  });
+
+  it('a press that lands after going below md, before the control hears of it, holds', async () => {
+    // The size changes before the change event is reported (a rendering update later). A press in
+    // between (rotate the phone, tap Key at once) must not be undone when the event arrives. This
+    // listener is added before the control mounts, so it runs before the control's own: the press
+    // lands after the crossing and before the control reacts to it.
+    const mq = matchMedia('(min-width: 768px)');
+    const press = () => (keyToggle().element() as HTMLButtonElement).click();
+    mq.addEventListener('change', press, { once: true });
+    await render(KeyHost, { props: {} });
+    await expect.element(keyToggle()).toHaveAttribute('aria-expanded', 'false');
+    await atViewport(375, 812);
+    await expect.element(keyToggle()).toHaveAttribute('aria-expanded', 'true');
+    await expect.element(keyPanel()).toBeVisible();
   });
 
   it('no Layers toggle without layers; with it, opening one panel closes the other', async () => {
@@ -187,7 +225,7 @@ describe('MapKeyControl', () => {
   });
 
   it('a pointerdown outside the open Layers panel closes it without taking focus', async () => {
-    await page.viewport(375, 812);
+    await atViewport(375, 812);
     await render(KeyHost, { props: { withLayers: true, height: 400 } });
     await layersToggle().click();
     await expect.element(layersPanel()).toBeVisible();
@@ -208,16 +246,16 @@ describe('MapKeyControl', () => {
   });
 
   it('openFromMd: open at 1024 px, closed at 375 px', async () => {
-    await page.viewport(1024, 768);
+    await atViewport(1024, 768);
     const a = await render(KeyHost, { props: { openFromMd: true } });
     await expect.element(keyPanel()).toBeVisible();
     await a.unmount();
-    await page.viewport(375, 812);
+    await atViewport(375, 812);
     const b = await render(KeyHost, { props: { openFromMd: true } });
     await expect.element(keyToggle()).toHaveAttribute('aria-expanded', 'false');
     await b.unmount();
     // Without openFromMd it starts closed at any width.
-    await page.viewport(1024, 768);
+    await atViewport(1024, 768);
     await render(KeyHost, { props: {} });
     await expect.element(keyToggle()).toHaveAttribute('aria-expanded', 'false');
   });
@@ -261,7 +299,7 @@ describe('MapKeyControl', () => {
   });
 
   it('below md a pointerdown on the map closes the panel; from md the key stays open', async () => {
-    await page.viewport(375, 812);
+    await atViewport(375, 812);
     const a = await render(KeyHost, { props: { height: 400 } });
     await keyToggle().click();
     await expect.element(keyPanel()).toBeVisible();
@@ -277,7 +315,7 @@ describe('MapKeyControl', () => {
     await expect.element(keyPanel()).not.toBeInTheDocument();
     await a.unmount();
 
-    await page.viewport(1024, 768);
+    await atViewport(1024, 768);
     await render(KeyHost, { props: { openFromMd: true } });
     await expect.element(keyPanel()).toBeVisible();
     page
@@ -350,7 +388,7 @@ describe('MapKeyControl', () => {
     await expect.element(keyPanel()).toBeVisible();
     expect(rect(keyPanel().element()).width).toBeCloseTo(240, 0);
     await a.unmount();
-    await page.viewport(320, 700);
+    await atViewport(320, 700);
     await render(KeyHost, { props: {} });
     await keyToggle().click();
     await expect.element(keyPanel()).toBeVisible();

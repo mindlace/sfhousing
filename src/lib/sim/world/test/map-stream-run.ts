@@ -1,13 +1,29 @@
 // Test support: a world feeding a `MapStream`, stepped and flushed month by month. Browser-safe.
 import type { ParcelId } from '$lib/data/parcel';
-import type { TimedPackedCell, TimelineUpdate } from '$lib/map/types';
+import type { ScenarioParcels } from '$lib/data/scenario-codec';
+import { validateCityDelta } from '$lib/map/city-delta';
+import {
+  CITY_DAY,
+  type CityDelta,
+  type TimedPackedCell,
+  type TimelineUpdate
+} from '$lib/map/types';
 import { validateTimedCell } from '$lib/map/timelapse/encode';
+import { cellAnchorParcel } from '$lib/sim/scenario/massing';
 import type { Day } from '$lib/timelapse/time';
 import { planDue } from '../due';
 import type { MapStream } from '../map-stream';
 import type { PolicyTimeline } from '../policy/frame';
 import type { Statics } from '../statics';
-import type { Due, StepSink, World, WorldEvent } from '../types';
+import {
+  ORIGIN_PHASE,
+  ORIGIN_PIPELINE,
+  ORIGIN_SIM,
+  type Due,
+  type StepSink,
+  type World,
+  type WorldEvent
+} from '../types';
 import { createWorld, step } from '../world';
 
 /**
@@ -98,7 +114,56 @@ export function fill(o: {
     const u = stream.flush(world, statics, budget);
     if (u === null) continue;
     for (const c of u.cells) validateTimedCell(c);
+    if (u.city) validateCityDelta(u.city);
     out.push(u);
+  }
+  return out;
+}
+
+/** One citywide marker as the page holds it (a row of `CityDelta`). */
+export interface CityMarker {
+  lng: number;
+  lat: number;
+  approved: number;
+  started: number;
+  completed: number;
+  homes: number;
+  flags: number;
+}
+
+/** The delta's rows as markers, after `validateCityDelta`. */
+export function markersOf(d: CityDelta): Map<number, CityMarker> {
+  validateCityDelta(d);
+  const out = new Map<number, CityMarker>();
+  d.row.forEach((row, i) =>
+    out.set(row, {
+      lng: d.lngLat[2 * i],
+      lat: d.lngLat[2 * i + 1],
+      approved: d.days[3 * i + CITY_DAY.approved],
+      started: d.days[3 * i + CITY_DAY.started],
+      completed: d.days[3 * i + CITY_DAY.completed],
+      homes: d.homes[i],
+      flags: d.flags[i]
+    })
+  );
+  return out;
+}
+
+/** The T11 parcel ids of `row` from the statics (as map-stream's `parcelIdsOf`); [] for a master. */
+export function rowParcelIds(world: World, statics: Statics, row: number): ParcelId[] {
+  const p = world.projects;
+  const o = p.origin[row];
+  if (o === ORIGIN_SIM) return [statics.parcelId[p.src[row]]];
+  if (o === ORIGIN_PIPELINE) return statics.projects[p.src[row]].parcelIds;
+  if (o === ORIGIN_PHASE) return statics.projects[p.src[row]].phases![p.sub[row] - 1].parcelIds;
+  return [];
+}
+
+/** The rows of `world` with a T11 lot: those with a citywide marker, ascending. */
+export function anchoredRows(world: World, statics: Statics, parcels: ScenarioParcels): number[] {
+  const out: number[] = [];
+  for (let row = 0; row < world.projects.n; row++) {
+    if (cellAnchorParcel(rowParcelIds(world, statics, row), parcels) !== null) out.push(row);
   }
   return out;
 }
@@ -107,10 +172,14 @@ export function fill(o: {
  * Accepts revision 0 at any time, else only last + 1; throws otherwise. Folds cells, removals,
  * demolish and restore into `cells` and `demolished` (parcel → day), as the map does: revision 0
  * replaces both; later, `restore` drops a lot before `demolish` adds, and the earliest day wins.
+ * `markers` folds `city` as the page will: revision 0 replaces them (none without `city`); later
+ * updates forget markers at or past `from` (when present) and `rows`, then write the rows they
+ * carry.
  */
 export class FakeController {
   cells = new Map<string, TimedPackedCell>();
   demolished = new Map<ParcelId, Day>();
+  markers = new Map<number, CityMarker>();
   revision = -1;
 
   apply(u: TimelineUpdate): void {
@@ -121,8 +190,14 @@ export class FakeController {
     if (u.revision === 0) {
       this.cells.clear();
       this.demolished.clear();
+      this.markers.clear();
     } else {
       for (const id of u.restore ?? []) this.demolished.delete(id);
+    }
+    if (u.city) {
+      const floor = Math.min(u.city.rows, u.city.from ?? Infinity);
+      for (const row of [...this.markers.keys()]) if (row >= floor) this.markers.delete(row);
+      for (const [row, m] of markersOf(u.city)) this.markers.set(row, m);
     }
     for (const c of u.cells) this.cells.set(c.cellId, c);
     for (const id of u.removedCells) this.cells.delete(id);

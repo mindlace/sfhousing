@@ -12,17 +12,50 @@ import { MAX_CELLS_PER_SLICE, SWAP_CELLS_PER_SLICE } from './hide';
 import { TOKENS, hexToRgba, type RGBA } from './palette';
 import { registerCellBounds } from './cull';
 import { appearanceColor } from './appearance';
-import { TYPOLOGY_ORDER, type Theme, type TimedPackedCell, type TimelineUpdate } from './types';
-import { buildBars } from './timelapse/bars';
+import {
+  TYPOLOGY_ORDER,
+  type BarMode,
+  type Theme,
+  type TimedPackedCell,
+  type TimelineUpdate
+} from './types';
+import { validateCityDelta } from './city-delta';
+import { barZoomAt, buildBars, evalBar } from './timelapse/bars';
 import { HALO_KIND, buildHalos, evalHalo, type HaloAttrs } from './timelapse/halos';
-import { declutter } from './timelapse/declutter';
+import {
+  CityStore,
+  buildCity,
+  cityForward,
+  evalCity,
+  type CityAttrs,
+  type CityView,
+  type Clip
+} from './timelapse/city';
+import { CITY_HANDOVER_ZOOM } from './timelapse/constants';
+import { FAR_UNITS_PER_SLICE, FarDeclutter, declutter } from './timelapse/declutter';
 import { DemolishPump, type PumpDeps } from './timelapse/demolish';
 import { encodeParts, validateTimedCell, type EncodedParts } from './timelapse/encode';
 import { packChanceTexture, type ChanceTexture } from './timelapse/lookups';
 import type { TimelapseExtension, TimelapseExtensionProps } from './timelapse/extension';
 import type { StageBarLayer } from './timelapse/stage-bar-layer';
 import type { HaloLayer } from './timelapse/halo-layer';
+import type { CityLayer } from './timelapse/city-layer';
 import type { BarAttrs, TimelineClock, TimelineLookups, TimelineSnapshot } from './timelapse/types';
+
+/** The map's camera as the debug snapshot reads it (never per frame, never on a move). */
+export interface DebugView {
+  zoom: number;
+  /** The view's CSS px size. */
+  viewPx: [w: number, h: number];
+  /** The view's centre on the ground. */
+  centre: [lng: number, lat: number];
+  /** CSS px per metre at the centre. */
+  pxPerMeter: number;
+  /** The camera's bearing in degrees. */
+  bearing: number;
+  /** A point's clip-space [x, y, w] in the map's camera, `alt` metres up (0: the ground). */
+  clip(lng: number, lat: number, alt?: number): Clip;
+}
 
 export interface TimelineDeps extends PumpDeps {
   setLayers(layers: Layer[]): void; // overlay.setProps({ layers })
@@ -30,8 +63,11 @@ export interface TimelineDeps extends PumpDeps {
   TimelapseExtension: typeof TimelapseExtension;
   StageBarLayer: typeof StageBarLayer;
   HaloLayer: typeof HaloLayer;
+  CityLayer: typeof CityLayer;
   repaint(): void; // map.triggerRepaint()
   onResyncNeeded(): void;
+  /** The map's camera, read by `debugSnapshot` only; absent or null: no map to count against. */
+  debugView?(): DebugView | null;
 }
 
 export interface TimelinePartLookup {
@@ -44,8 +80,8 @@ export interface TimelinePartLookup {
 }
 
 /**
- * Ids of the per-cell timeline layers (picking and culling). `timeline-bars` and
- * `timeline-halos` are not.
+ * Ids of the per-cell timeline layers (picking and culling). `timeline-bars`, `timeline-halos`
+ * and `timeline-city` are not.
  */
 export const TIMELINE_PART_LAYER = /^timeline-(solid|ghost)-/;
 
@@ -111,6 +147,17 @@ interface Slice {
   reencode: string[];
   /** The last slice of a `complete` update: once it has run, the swap's leftovers go. */
   complete?: true;
+  /**
+   * A step of this far declutter: FAR_UNITS_PER_SLICE units, or its setup. Dropping the job
+   * removes its step; one that is not `barJob` all the same runs as an empty slice.
+   */
+  bars?: BarJob;
+}
+
+/** A far declutter in flight: the bars it was built from, and its state once set up. */
+interface BarJob {
+  bars: BarAttrs[];
+  job: FarDeclutter | null;
 }
 
 const RESERVED = /^(generated|rising|timeline)-/;
@@ -152,6 +199,15 @@ export class TimelineController {
   private barsLayer: Layer | null = null;
   /** Cells changed since the bars were last built. */
   private barsDirty = false;
+  /** `setBarMode`: how the bars declutter and draw ('street', the default, is today's). */
+  private barMode: BarMode = 'street';
+  /**
+   * The far declutter in flight, run in `bars` slices; the bar layer on the map stays until it
+   * ends and swaps in once. Cell updates do not stop it (it is newer than the layer on the map;
+   * they mark the bars dirty, so one more run follows). Dropped, never swapped in, on a revision
+   * 0, `setLookups`, a bar mode change and `destroy`.
+   */
+  private barJob: BarJob | null = null;
   /** `setHalos`: events after this day ring; null (the default) emits no halo layer. */
   private haloFrom: Day | null = null;
   /** `setReducedMotion`: the halo layer's `reduced` prop. */
@@ -160,6 +216,20 @@ export class TimelineController {
   private halosLayer: Layer | null = null;
   /** Cells installed or removed since the halos were last built (a re-encode does not count). */
   private halosDirty = false;
+  /** The citywide feed's markers (`TimelineUpdate.city`), by world row. */
+  private city = new CityStore();
+  private cityRecords: CityAttrs[] = [];
+  /** `timeline-city`: exists iff haloFrom !== null and the store holds a marker. */
+  private cityLayer: Layer | null = null;
+  /** An applied update carried city since the records were last built. */
+  private cityDirty = false;
+  /** Applied `buildCity` calls since construction (the snapshot's `cityBuilds`). */
+  private cityBuilds = 0;
+  /**
+   * The glows' inset [top, right, bottom, left] in CSS px, shared with every CityLayer and
+   * mutated in place by `setEdgeInset` (the layer reads it in `draw`).
+   */
+  private readonly edgeInset: [number, number, number, number] = [0, 0, 0, 0];
   private warnedNoLookups = false;
   /**
    * Cells of earlier runs a swap has not yet installed over. They stay on the map until an
@@ -201,11 +271,27 @@ export class TimelineController {
       return;
     }
     for (const c of u.cells) validateTimedCell(c);
+    if (u.city) validateCityDelta(u.city);
     if (u.revision === 0) return u.swap ? this.swap(u) : this.snapshot(u);
     this.lastRevision = u.revision;
+    if (u.city) {
+      this.city.apply(u.city, false);
+      this.cityDirty = true;
+    }
     if (u.restore?.length || u.demolish.length) this.pump.amend(u.demolish, u.restore ?? []);
     const slices = this.plan(u);
-    if (slices.length === 0) return; // band-only
+    if (slices.length === 0) {
+      // City-only (a `from` with no rows included): rebuild the records and emit now. Cells,
+      // bars, halos and the pump stay as they are.
+      if (u.city) {
+        this.rebuildCity();
+        this.syncGate();
+        this.emit();
+      }
+      return; // band-only
+    }
+    // Cells change. A far declutter in flight carries on and swaps in (it is newer than the
+    // bars on the map); the installs mark the bars dirty, so one more run starts after it.
     const idle = this.queue.length === 0;
     this.queue.push(...slices);
     if (idle) this.runSlice(this.queue.shift()!);
@@ -242,12 +328,14 @@ export class TimelineController {
     const queued = new Set<string>();
     for (const s of this.queue) for (const c of s.cells) queued.add(c.cellId);
     const ids = [...this.cells.keys()].filter((id) => !queued.has(id)).sort();
+    this.cancelBars();
     this.barsDirty = true;
     for (let i = 0; i < ids.length; i += MAX_CELLS_PER_SLICE)
       this.queue.push({ cells: [], removed: [], reencode: ids.slice(i, i + MAX_CELLS_PER_SLICE) });
     if (this.queue.length > 0) return this.schedule();
     this.rebuildBars(); // no cells: only the bars depend on the lookups
-    this.emit();
+    if (!this.barJob) this.emit(); // far: the last declutter slice emits
+    this.schedule();
   }
 
   setTheme(t: Theme): void {
@@ -260,8 +348,9 @@ export class TimelineController {
   }
 
   /**
-   * Halos and marks for the events after `from` (the dataset date), or none (`null`, the default).
-   * Rebuilds the records once when the value changes; before the first `apply` it is only kept.
+   * Halos and marks for the events after `from` (the dataset date), or none (`null`, the default);
+   * the city records follow the same `from`. Rebuilds both once when the value changes; before
+   * the first `apply` it is only kept.
    */
   setHalos(o: { from: Day } | null): void {
     const from = o === null ? null : o.from;
@@ -270,16 +359,44 @@ export class TimelineController {
     if (this.destroyed || from === this.haloFrom) return;
     this.haloFrom = from;
     if (this.lastRevision < 0) return;
+    this.rebuildCity(); // first: the halo layer's gate follows the city layer
     this.rebuildHalos();
     this.emit();
   }
 
-  /** The halo layer's `reduced` prop, set on the layer there is: its records are not rebuilt. */
+  /**
+   * How the bars draw: 'street' (the default) or 'far' (docs/dev/map-interfaces.md "Bar modes").
+   * A change rebuilds the bars once (declutter in the mode, a new layer with `far`); the same
+   * mode again does nothing; before the first `apply` it is only kept.
+   */
+  setBarMode(mode: BarMode): void {
+    if (mode !== 'street' && mode !== 'far')
+      throw new RangeError(`setBarMode: mode must be 'street' or 'far', got ${String(mode)}`);
+    if (this.destroyed || mode === this.barMode) return;
+    this.barMode = mode;
+    if (this.lastRevision < 0) return;
+    // Queued slices end in a rebuild that reads the mode; otherwise rebuild now.
+    this.cancelBars();
+    if (this.queue.length > 0) {
+      this.barsDirty = true;
+      return;
+    }
+    this.rebuildBars();
+    if (!this.barJob) this.emit(); // far: the last declutter slice emits
+    this.schedule();
+  }
+
+  /**
+   * The halo and city layers' `reduced` prop, set on the layers there are: their records are not
+   * rebuilt.
+   */
   setReducedMotion(reduced: boolean): void {
     if (this.destroyed || reduced === this.reduced) return;
     this.reduced = reduced;
-    if (!this.halosLayer) return;
-    this.halosLayer = this.halosLayer.clone({ reduced } as Partial<Layer['props']>);
+    if (!this.halosLayer && !this.cityLayer) return;
+    const p = { reduced } as Partial<Layer['props']>;
+    if (this.halosLayer) this.halosLayer = this.halosLayer.clone(p);
+    if (this.cityLayer) this.cityLayer = this.cityLayer.clone(p);
     this.emit();
   }
 
@@ -315,28 +432,64 @@ export class TimelineController {
     for (const id of this.pump.appliedIds()) this.deps.setReplaced(id);
   }
 
+  /**
+   * Counts for e2e and the bench. Debug only, O(parts + records): never called per frame. The
+   * shown counts read the map's camera through `deps.debugView` (zoom Infinity and no city counts
+   * without one).
+   */
   debugSnapshot(): TimelineSnapshot {
     let parts = 0;
     let flagged = 0;
+    let projects = 0;
     for (const cell of this.cells.values()) {
       const p = cell.pack;
       parts += p.partCount;
-      if (!p.slotFlags) continue;
       const drawn = new Set<number>();
       for (let k = 0; k < p.partCount; k++) drawn.add(p.partSlot[k]);
+      projects += drawn.size;
+      if (!p.slotFlags) continue;
       for (const s of drawn) if (p.slotFlags[s] !== 0) flagged++;
     }
+    const view = this.deps.debugView?.() ?? null;
+    const zoom = view ? view.zoom : Infinity;
+    const ringMinZoom = this.gateOf(this.halosLayer);
     const shown = this.halosLayer ? this.halos : [];
     let marks = 0;
+    let marksShown = 0;
     let halosShown = 0;
     const days = new Set<number>();
     for (const h of shown) {
       if (h.kind === HALO_KIND.mark) {
         marks++;
+        if (evalHalo(h, this.clock.day, this.reduced, zoom, ringMinZoom).visible) marksShown++;
         continue;
       }
       days.add(h.day);
-      if (evalHalo(h, this.clock.day, this.reduced).visible) halosShown++;
+      if (evalHalo(h, this.clock.day, this.reduced, zoom, ringMinZoom).visible) halosShown++;
+    }
+    const barsShown = this.barsShown(view);
+    const records = this.cityLayer ? this.cityRecords : [];
+    const cityDays = new Set<number>();
+    let cityRings = 0;
+    let cityGlows = 0;
+    const cityView: CityView | null = view && {
+      zoom,
+      viewPx: view.viewPx,
+      inset: this.edgeInset,
+      centre: view.centre,
+      pxPerMeter: view.pxPerMeter,
+      focalW: view.clip(view.centre[0], view.centre[1])[2],
+      forward: cityForward(view.bearing, view.centre[1])
+    };
+    for (const r of records) {
+      cityDays.add(r.day);
+      if (!view || !cityView) continue;
+      const clip = view.clip(r.anchor[0], r.anchor[1]);
+      const [f0, f1] = cityView.forward;
+      const fwd = view.clip(r.anchor[0] + f0, r.anchor[1] + f1);
+      const mode = evalCity(r, this.clock.day, cityView, clip, this.reduced, fwd).mode;
+      if (mode === 'ring') cityRings++;
+      else if (mode === 'edge') cityGlows++;
     }
     return {
       revision: this.lastRevision,
@@ -351,10 +504,57 @@ export class TimelineController {
       layerIds: this.current.map((l) => l.id),
       halos: shown.length - marks,
       marks,
+      marksShown,
       halosShown,
       haloDays: [...days].sort((a, b) => a - b).slice(0, 500),
-      flagged
+      flagged,
+      projects,
+      cityMarkers: this.city.size,
+      cityFlagged: this.city.flagged,
+      cityRecords: records.length,
+      cityDays: [...cityDays].sort((a, b) => a - b).slice(0, 500),
+      cityRings,
+      cityGlows,
+      cityBuilds: this.cityBuilds,
+      ringMinZoom,
+      barMode: this.barMode,
+      barsShown
     };
+  }
+
+  /**
+   * Bars `evalBar` shows on the clock's day at the zoom at each anchor, anchors in the view (the
+   * raised anchor the shader projects; the bar's px offset above it is ignored). Debug only.
+   */
+  private barsShown(view: DebugView | null): number {
+    const l = this.lookups;
+    if (!this.barsLayer || !l) return 0;
+    const mode = this.barMode;
+    const focalW = view ? view.clip(view.centre[0], view.centre[1])[2] : 1;
+    let n = 0;
+    for (const b of this.bars) {
+      let zoom = Infinity;
+      if (view) {
+        // At the bar's raised anchor, as the shader projects it.
+        const [x, y, w] = view.clip(b.anchor[0], b.anchor[1], b.anchor[2]);
+        if (!(w > 0 && Math.abs(x) <= w && Math.abs(y) <= w)) continue;
+        zoom = barZoomAt(view.zoom, focalW, w, mode);
+      }
+      if (evalBar(b, l, this.clock.day, zoom, mode).visible) n++;
+    }
+    return n;
+  }
+
+  /**
+   * Where the city layer's edge glows sit: the map's edges less these CSS px ([top, right,
+   * bottom, left]), so they stay clear of controls there. Rare (a page measures its controls on
+   * a resize); written into the shared array the layer reads in `draw`, so no layer is rebuilt.
+   */
+  setEdgeInset(inset: readonly [number, number, number, number]): void {
+    if (this.destroyed) return;
+    if (inset.every((v, i) => v === this.edgeInset[i])) return;
+    for (let i = 0; i < 4; i++) this.edgeInset[i] = inset[i];
+    if (this.cityLayer) this.deps.repaint();
   }
 
   destroy(): void {
@@ -366,8 +566,12 @@ export class TimelineController {
     this.leftover.clear();
     this.bars = [];
     this.barsLayer = null;
+    this.barJob = null;
     this.halos = [];
     this.halosLayer = null;
+    this.city.clear();
+    this.cityRecords = [];
+    this.cityLayer = null;
     this.current = [];
   }
 
@@ -377,6 +581,7 @@ export class TimelineController {
   private snapshot(u: TimelineUpdate): void {
     this.cancelFrame();
     this.queue = [];
+    this.barJob = null;
     this.cells.clear();
     this.leftover.clear();
     this.swapping = false;
@@ -386,6 +591,9 @@ export class TimelineController {
     this.halos = [];
     this.halosLayer = null;
     this.halosDirty = true;
+    this.replaceCity(u);
+    this.cityRecords = [];
+    this.cityLayer = null;
     this.pump.replace(u.demolish);
     this.lastRevision = 0;
     const slices = this.plan(u);
@@ -403,11 +611,13 @@ export class TimelineController {
    */
   private swap(u: TimelineUpdate): void {
     this.cancelFrame();
+    this.cancelBars();
     const reencode: string[] = [];
     for (const s of this.queue)
       for (const id of s.reencode) if (this.cells.has(id)) reencode.push(id);
     for (const id of this.cells.keys()) this.leftover.add(id);
     this.swapping = true;
+    this.replaceCity(u); // the old records stay drawn until the new ones are built
     this.pump.swap(u.demolish);
     this.lastRevision = 0;
     const slices = this.plan(u);
@@ -435,6 +645,8 @@ export class TimelineController {
   }
 
   private runSlice(slice: Slice): void {
+    // A far declutter step that does not finish changes nothing on the map: no emit.
+    if (slice.bars && !this.stepBars(slice.bars)) return;
     for (const id of slice.removed) {
       // During a swap a removed cell stays as a leftover, so the map never thins mid-switch.
       if (this.swapping) {
@@ -455,9 +667,15 @@ export class TimelineController {
       this.leftover.clear();
       this.swapping = false;
     }
-    // Bars and halos are rebuilt once per update, when its last slice has installed.
-    if (this.queue.length === 0 && this.barsDirty) this.rebuildBars();
-    if (this.queue.length === 0 && this.halosDirty) this.rebuildHalos();
+    // Bars, city records and halos are rebuilt once per update, when its last slice has
+    // installed (a far run's own steps do not hold them back); the city first, as the halo
+    // layer's gate follows it. Dirty bars wait for the run in flight to swap in, then rebuild.
+    if (this.drained()) {
+      if (this.barsDirty && !this.barJob) this.rebuildBars();
+      if (this.cityDirty) this.rebuildCity();
+      if (this.halosDirty) this.rebuildHalos();
+      else this.syncGate();
+    }
     this.emit();
   }
 
@@ -490,8 +708,14 @@ export class TimelineController {
     cell.tlc = this.tlcVersion;
   }
 
+  /**
+   * Street: builds, declutters and lays out the bars now. Far: builds the bars now and queues
+   * the declutter (`bars` slices: its setup, then FAR_UNITS_PER_SLICE units a slice); the bar
+   * layer on the map stays until the last step swaps the new one in.
+   */
   private rebuildBars(): void {
     this.barsDirty = false;
+    this.barJob = null;
     const l = this.lookups;
     if (!l || !this.chance) {
       this.bars = [];
@@ -500,14 +724,64 @@ export class TimelineController {
     }
     const sorted = [...this.cells].sort(byKey).map(([, c]) => c.pack);
     const bars = buildBars(sorted, l);
-    declutter(bars);
+    if (this.barMode === 'far') {
+      const job: BarJob = { bars, job: null };
+      this.barJob = job;
+      this.queue.push({ cells: [], removed: [], reencode: [], bars: job });
+      return;
+    }
+    this.layBars(declutter(bars));
+  }
+
+  /** The bar layer over `bars` (decluttered records), in the current mode. */
+  private layBars(bars: BarAttrs[]): void {
     this.bars = bars;
     this.barsLayer = new this.deps.StageBarLayer({
       data: bars,
       chance: this.chance,
       clock: this.clock,
+      far: this.barMode === 'far',
       ...(this.labelBeforeId ? { beforeId: this.labelBeforeId } : {})
     } as ConstructorParameters<TimelineDeps['StageBarLayer']>[0]) as unknown as Layer;
+  }
+
+  /**
+   * One `bars` slice: the far declutter's setup, or its next FAR_UNITS_PER_SLICE units. Queues
+   * the next slice, or lays the records out once every unit is visited. True when this slice
+   * changed the map (the swap) or its job is no longer the one in flight (a dropped one): the
+   * slice then runs as any.
+   */
+  private stepBars(b: BarJob): boolean {
+    if (b !== this.barJob) return true;
+    const more = () => this.queue.push({ cells: [], removed: [], reencode: [], bars: b });
+    if (!b.job) {
+      b.job = new FarDeclutter(b.bars);
+      more();
+      return false;
+    }
+    if (!b.job.step(FAR_UNITS_PER_SLICE)) {
+      more();
+      return false;
+    }
+    this.barJob = null;
+    this.layBars(b.job.result());
+    return true;
+  }
+
+  /**
+   * Drops a far declutter in flight (a revision 0, new lookups, a mode change): its queued step
+   * goes and it never swaps in; the bars rebuild when the cell slices drain.
+   */
+  private cancelBars(): void {
+    if (!this.barJob) return;
+    this.barJob = null;
+    this.barsDirty = true;
+    this.queue = this.queue.filter((s) => !s.bars);
+  }
+
+  /** No cell, removal or re-encode slice is queued: only far declutter steps, or nothing. */
+  private drained(): boolean {
+    return this.queue.every((s) => s.bars);
   }
 
   /** Halo records from the installed cells, in cellId order; no lookups needed. */
@@ -526,8 +800,57 @@ export class TimelineController {
       data: halos,
       clock: this.clock,
       reduced: this.reduced,
+      ringMinZoom: this.gate(),
       ...(this.labelBeforeId ? { beforeId: this.labelBeforeId } : {})
     } as ConstructorParameters<TimelineDeps['HaloLayer']>[0]) as unknown as Layer;
+  }
+
+  /** A revision 0's city replaces the store whole; without one (no feed) the store empties. */
+  private replaceCity(u: TimelineUpdate): void {
+    if (u.city) this.city.apply(u.city, true);
+    else this.city.clear();
+    this.cityDirty = true;
+  }
+
+  /**
+   * City records from the store (`buildCity`, O(markers)), and the layer: only while halos are on
+   * and a marker is held. Runs once per applied update that carried city and on a `setHalos`
+   * change, never per frame or per map move.
+   */
+  private rebuildCity(): void {
+    this.cityDirty = false;
+    const from = this.haloFrom;
+    if (from === null || this.city.size === 0) {
+      this.cityRecords = [];
+      this.cityLayer = null;
+      return;
+    }
+    const records = buildCity(this.city, from);
+    this.cityBuilds++;
+    this.cityRecords = records;
+    this.cityLayer = new this.deps.CityLayer({
+      data: records,
+      clock: this.clock,
+      reduced: this.reduced,
+      edgeInset: this.edgeInset,
+      ...(this.labelBeforeId ? { beforeId: this.labelBeforeId } : {})
+    } as ConstructorParameters<TimelineDeps['CityLayer']>[0]) as unknown as Layer;
+  }
+
+  /** The halo layer's ring gate: the handover zoom while the city layer draws merged rings. */
+  private gate(): number {
+    return this.cityLayer ? CITY_HANDOVER_ZOOM : 0;
+  }
+
+  private gateOf(layer: Layer | null): number {
+    return layer ? (layer.props as unknown as { ringMinZoom: number }).ringMinZoom : 0;
+  }
+
+  /** Clones the halo layer when the city layer came or went (a uniform: no records rebuilt). */
+  private syncGate(): void {
+    const g = this.gate();
+    if (!this.halosLayer || this.gateOf(this.halosLayer) === g) return;
+    this.halosLayer = this.halosLayer.clone({ ringMinZoom: g } as Partial<Layer['props']>);
   }
 
   private frame = (): void => {
@@ -577,7 +900,7 @@ export class TimelineController {
 
   /**
    * Solids by cellId, then ghosts by cellId, then `timeline-bars`, then `timeline-halos`, then
-   * the overlay.
+   * `timeline-city`, then the overlay.
    */
   private emit(): void {
     if (this.destroyed) return;
@@ -593,6 +916,7 @@ export class TimelineController {
       ...ghosts,
       ...(this.barsLayer ? [this.barsLayer] : []),
       ...(this.halosLayer ? [this.halosLayer] : []),
+      ...(this.cityLayer ? [this.cityLayer] : []),
       ...this.overlay
     ];
     this.deps.setLayers(this.current);

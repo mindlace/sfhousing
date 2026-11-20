@@ -61,6 +61,7 @@
   import type { TimelineLookups } from './timelapse/types';
   // Pure (no deck or luma): the handle validates before it stores or queues (ruling R18).
   import { validateTimedCell } from './timelapse/encode';
+  import { validateCityDelta } from './city-delta';
   import { packChanceTexture } from './timelapse/lookups';
   import { TOKENS } from './palette';
   import { useSystemTheme } from './system-theme.svelte';
@@ -91,6 +92,7 @@
     type TransitView
   } from './transit-layer';
   import type {
+    BarMode,
     ChunkStatus,
     GeneratedUpdate,
     ParcelSummaryLike,
@@ -220,6 +222,7 @@
   let pendingDay: Day | null = null;
   let pendingLookups: TimelineLookups | null = null;
   let pendingHalos: { from: Day } | null = null;
+  let pendingBarMode: BarMode = 'street';
   let warnedGenerated = false;
   /** The last hover report to `timelinePick` was a part: the next hover miss is sent once. */
   let hoverReported = false;
@@ -278,6 +281,12 @@
   const FP_INLINE = '--map-controls-br-inline-size';
   const FP_BLOCK = '--map-controls-br-block-size';
   let fpObserver: ResizeObserver | null = null;
+  /**
+   * The city layer's bottom glow inset: the bottom-right controls' block (the attribution and
+   * the Layers and Key buttons), at most a quarter of the map's height. Measured with the
+   * footprint, never per frame.
+   */
+  let glowInset = 0;
   let footprintGone = false;
 
   function publishFootprint(inline: number, block: number): void {
@@ -304,8 +313,12 @@
   function measureFootprint(): void {
     const controls = live?.map?.getContainer().querySelector('.maplibregl-ctrl-bottom-right');
     if (!root || !controls) return publishFootprint(0, bottomInset);
-    const f = controlsFootprint(root.getBoundingClientRect(), controls.getBoundingClientRect());
-    publishFootprint(f.inline, Math.max(f.block, bottomInset));
+    const box = root.getBoundingClientRect();
+    const f = controlsFootprint(box, controls.getBoundingClientRect());
+    const block = Math.max(f.block, bottomInset);
+    publishFootprint(f.inline, block);
+    glowInset = Math.min(block, box.height / 4);
+    live?.timeline?.setEdgeInset([0, 0, glowInset, 0]);
   }
 
   function observeFootprint(map: MapLibreMap): void {
@@ -349,6 +362,7 @@
    */
   export function applyTimeline(u: TimelineUpdate): void {
     for (const c of u.cells) validateTimedCell(c);
+    if (u.city) validateCityDelta(u.city);
     const t = live?.timeline;
     if (t) return t.apply(u);
     // Generated updates queued for a GeneratedController will never drain in timeline mode.
@@ -385,6 +399,14 @@
     live?.timeline?.setHalos(pendingHalos);
   }
 
+  /** 'street' (the default) or 'far' bars (docs/dev/map-interfaces.md). Kept like the day. */
+  export function setBarMode(mode: BarMode): void {
+    if (mode !== 'street' && mode !== 'far')
+      throw new RangeError(`setBarMode: mode must be 'street' or 'far', got ${String(mode)}`);
+    pendingBarMode = mode;
+    live?.timeline?.setBarMode(mode);
+  }
+
   const handle: SimMapHandle = {
     applyGenerated,
     setChunkStatus,
@@ -396,7 +418,8 @@
     applyTimeline,
     setTime,
     setTimelineLookups,
-    setHalos
+    setHalos,
+    setBarMode
   };
 
   // ---- effects ----------------------------------------------------------------------------------
@@ -451,7 +474,7 @@
         pendingGenerated: pendingApplies.length,
         theme
       }),
-      { applyTimeline, setTime, setTimelineLookups, setHalos, setOverlayLayers }
+      { applyTimeline, setTime, setTimelineLookups, setHalos, setBarMode, setOverlayLayers }
     )
   );
 
@@ -715,10 +738,10 @@
     l.timelineLoading = false;
     if (l.dead || l.map !== map) return;
     const [
-      { TimelapseExtension, StageBarLayer, HaloLayer },
+      { TimelapseExtension, StageBarLayer, HaloLayer, CityLayer },
       { TimelineController, TIMELINE_PART_LAYER }
     ] = mods;
-    const { log } = mods[2];
+    const { log, WebMercatorViewport } = mods[2];
     // Only one controller emits to the overlay.
     l.controller?.destroy();
     l.controller = null;
@@ -729,12 +752,45 @@
         TimelapseExtension,
         StageBarLayer,
         HaloLayer,
-        repaint: () => map.triggerRepaint()
+        CityLayer,
+        repaint: () => map.triggerRepaint(),
+        // The debug snapshot's camera: deck's projection of the map's, read on demand only.
+        debugView: () => {
+          const el = map.getCanvas();
+          const c = map.getCenter();
+          const vp = new WebMercatorViewport({
+            width: el.clientWidth,
+            height: el.clientHeight,
+            longitude: c.lng,
+            latitude: c.lat,
+            zoom: map.getZoom(),
+            pitch: map.getPitch(),
+            bearing: map.getBearing()
+          });
+          const m = vp.viewProjectionMatrix;
+          return {
+            zoom: map.getZoom(),
+            viewPx: [el.clientWidth, el.clientHeight],
+            centre: [c.lng, c.lat],
+            pxPerMeter: vp.scale * vp.distanceScales.unitsPerMeter[0],
+            bearing: map.getBearing(),
+            clip: (lng, lat, alt = 0) => {
+              const [x, y, z] = vp.projectPosition([lng, lat, alt]);
+              // Column-major: clip = M · [x, y, z, 1].
+              return [
+                m[0] * x + m[4] * y + m[8] * z + m[12],
+                m[1] * x + m[5] * y + m[9] * z + m[13],
+                m[3] * x + m[7] * y + m[11] * z + m[15]
+              ];
+            }
+          };
+        }
       },
       l.appliedTheme,
       firstSymbolLayerId(map.getStyle())
     );
     l.timeline = timeline;
+    timeline.setEdgeInset([0, 0, glowInset, 0]);
     l.timelinePart = TIMELINE_PART_LAYER;
     watchCompileErrors(l);
     overlay.setProps({
@@ -747,6 +803,7 @@
     if (pendingDay !== null) timeline.setTime(pendingDay);
     watchReducedMotion(l, timeline);
     timeline.setHalos(pendingHalos);
+    timeline.setBarMode(pendingBarMode);
     if (pendingLookups) {
       try {
         timeline.setLookups(pendingLookups);

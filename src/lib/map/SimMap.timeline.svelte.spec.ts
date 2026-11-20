@@ -16,6 +16,7 @@ import { packTimedCell } from './pack-timed';
 import { encodeParts } from './timelapse/encode';
 import { TIMELINE_PART_LAYER } from './timeline-controller';
 import type {
+  CityDelta,
   SimMapHandle,
   SimMapProps,
   TimedPackedCell,
@@ -307,6 +308,94 @@ describe('SimMap timeline mode', { timeout: 60_000 }, () => {
     expect(dbg().timelineSnapshot()!.halos).toBe(0);
     dbg().setHalos({ from: DAYS.start }); // the debug hook calls through to the handle
     expect(layerIds(map)).toContain('timeline-halos');
+    expect(errors).toEqual([]);
+  });
+
+  it('setBarMode before the timeline controller exists is kept and applied', async () => {
+    const barLayer = (map: MapLibreMap) =>
+      ((deckOf(map).props.layers ?? []) as Layer<{ far: boolean }>[]).find(
+        (l) => l.id === 'timeline-bars'
+      );
+    const { handle, ready } = await mount();
+    handle.setBarMode('far');
+    handle.setTimelineLookups(timelineLookups);
+    handle.applyTimeline(timelineSmall);
+    const h = await ready;
+    const map = h.getMap()!;
+    await converged(map);
+    expect(barLayer(map)!.props.far).toBe(true);
+    expect(dbg().timelineSnapshot()!.barMode).toBe('far');
+    h.setBarMode('street');
+    expect(barLayer(map)!.props.far).toBe(false);
+    dbg().setBarMode('far'); // the debug hook calls through to the handle
+    // Far declutters in slices: the street layer stays until the far one swaps in.
+    expect(barLayer(map)!.props.far).toBe(false);
+    await converged(map);
+    expect(barLayer(map)!.props.far).toBe(true);
+    expect(dbg().timelineSnapshot()!.barMode).toBe('far');
+    expect(errors).toEqual([]);
+  });
+
+  it('a queued update keeps its city until the controller exists, and the controller draws it', async () => {
+    // One marker in view of the camera below, one well off it to the west.
+    const here: [number, number] = [-122.4194, 37.7599];
+    const city: CityDelta = {
+      rows: 2,
+      row: Int32Array.from([0, 1]),
+      lngLat: Float32Array.from([...here, -122.51, 37.77]),
+      days: Float32Array.from([
+        DAYS.a.entitled,
+        DAYS.a.construction,
+        NaN,
+        DAYS.a.construction,
+        NaN,
+        NaN
+      ]),
+      homes: Uint16Array.from([40, 12]),
+      flags: Uint8Array.from([0, 0])
+    };
+    const { handle, ready } = await mount();
+    handle.setHalos({ from: DAYS.start });
+    handle.setTimelineLookups(timelineLookups);
+    handle.setTime(DAYS.a.construction);
+    handle.applyTimeline({ ...timelineSmall, city });
+    const h = await ready;
+    const map = h.getMap()!;
+    await converged(map);
+    const ids = layerIds(map);
+    expect(ids.indexOf('timeline-city')).toBe(ids.indexOf('timeline-halos') + 1);
+    // Zoom 13 over the first marker: its merged ring, the other's edge glow, the gate on.
+    map.jumpTo({ center: here, zoom: 13, pitch: 0, bearing: 0 });
+    await converged(map);
+    const snap = dbg().timelineSnapshot()!;
+    expect(snap).toMatchObject({ cityMarkers: 2, ringMinZoom: 14, halosShown: 0 });
+    expect(snap.cityRecords).toBeGreaterThan(0);
+    expect(snap.cityRings).toBeGreaterThan(0);
+    expect(snap.cityGlows).toBeGreaterThan(0);
+    // Zoom 15: the projects' own rings; the city draws no ring.
+    map.jumpTo({ center: here, zoom: 15, pitch: 0, bearing: 0 });
+    await converged(map);
+    expect(dbg().timelineSnapshot()!.cityRings).toBe(0);
+    // The glows sit above the bottom-right controls: the published block, at most a quarter of
+    // the map's height.
+    const cityLayer = ((deckOf(map).props.layers ?? []) as Layer[]).find(
+      (l) => l.id === 'timeline-city'
+    )!;
+    const block = parseFloat(
+      document.documentElement.style.getPropertyValue('--map-controls-br-block-size')
+    );
+    const height = map.getContainer().getBoundingClientRect().height;
+    expect(block).toBeGreaterThan(0);
+    const inset = (cityLayer.props as unknown as { edgeInset: number[] }).edgeInset;
+    expect(inset[0]).toBe(0);
+    expect(inset[1]).toBe(0);
+    expect(inset[3]).toBe(0);
+    expect(Math.abs(inset[2] - Math.min(block, height / 4))).toBeLessThanOrEqual(1);
+    // A malformed city is refused at the handle, before anything is queued or applied.
+    const bad = { ...city, homes: new Uint16Array(1) };
+    expect(() => h.applyTimeline({ ...timelineSmall, revision: 1, cells: [], city: bad })).toThrow(
+      RangeError
+    );
     expect(errors).toEqual([]);
   });
 

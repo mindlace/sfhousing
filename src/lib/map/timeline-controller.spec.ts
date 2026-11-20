@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Layer } from '@deck.gl/core';
 import { SolidPolygonLayer } from '@deck.gl/layers';
-import { TIMELINE_PART_LAYER, TimelineController } from './timeline-controller';
+import { TIMELINE_PART_LAYER, TimelineController, type DebugView } from './timeline-controller';
 import { makeFakeTimelineDeps, type FakeTimelineDeps } from './test/fake-timeline-deps';
 import { DAYS, SLOT, timelineSmall, timelineSmallRev1 } from './fixtures/timeline-small';
 import { timelineLookups } from './fixtures/timeline-lookups';
@@ -10,13 +10,28 @@ import { MAX_CELLS_PER_SLICE, SWAP_CELLS_PER_SLICE } from './hide';
 import { TYPOLOGY_ORDER, type TimedPackedCell, type TimelineUpdate } from './types';
 import type { BarAttrs } from './timelapse/types';
 import { HALO_KIND, buildHalos, evalHalo, type HaloAttrs } from './timelapse/halos';
-import { SLOT_FLAG } from './types';
+import { SLOT_FLAG, type CityDelta } from './types';
+import {
+  CityStore,
+  M_PER_DEG,
+  buildCity,
+  cityGroup,
+  cityForward,
+  evalCity,
+  type CityAttrs,
+  type CityView
+} from './timelapse/city';
+import { CITY_HANDOVER_ZOOM } from './timelapse/constants';
+import { buildBars, evalBar } from './timelapse/bars';
+import { FAR_UNITS_PER_SLICE, FarDeclutter, declutter } from './timelapse/declutter';
+import { SYNTHETIC_LOOKUPS, makeSyntheticTimeline } from './test/synthetic-timeline';
 import { STAGE_ORDER } from '$lib/timelapse/types';
 
 interface Props {
   id: string;
   data: unknown;
   beforeId?: string;
+  edgeInset?: number[];
   extensions: unknown[];
   updateTriggers: Record<string, unknown>;
   parameters?: { depthWriteEnabled?: boolean };
@@ -1066,3 +1081,787 @@ describe('TimelineController halos', () => {
     expect(c.debugSnapshot()).toMatchObject({ flagged: 1, marks: 0 });
   });
 });
+
+describe('TimelineController city', () => {
+  const FROM = DAYS.start;
+  interface Marker {
+    row: number;
+    lngLat: [number, number];
+    days: [number, number, number];
+    homes: number;
+    flags?: number;
+  }
+  function cityDelta(rows: number, ms: Marker[], from?: number): CityDelta {
+    return {
+      rows,
+      ...(from === undefined ? {} : { from }),
+      row: Int32Array.from(ms.map((m) => m.row)),
+      lngLat: Float32Array.from(ms.flatMap((m) => m.lngLat)),
+      days: Float32Array.from(ms.flatMap((m) => m.days)),
+      homes: Uint16Array.from(ms.map((m) => m.homes)),
+      flags: Uint8Array.from(ms.map((m) => m.flags ?? 0))
+    };
+  }
+  /** The fake map's view: ±0.02° around the Mission, as clip space with w = 1. */
+  const MISSION: [number, number] = [-122.4194, 37.7599];
+  function viewAt(zoom: number): DebugView {
+    return {
+      zoom,
+      viewPx: [800, 600],
+      centre: MISSION,
+      bearing: 0,
+      // 800 px across 0.04° of longitude.
+      pxPerMeter: 800 / (0.04 * M_PER_DEG * Math.cos((MISSION[1] * Math.PI) / 180)),
+      clip: (lng, lat) => [(lng - MISSION[0]) / 0.02, (lat - MISSION[1]) / 0.02, 1]
+    };
+  }
+  /** The CityView the controller builds from a DebugView and its inset. */
+  const cityViewOf = (v: DebugView, inset: CityView['inset'] = [0, 0, 0, 0]): CityView => ({
+    zoom: v.zoom,
+    viewPx: v.viewPx,
+    inset,
+    centre: v.centre,
+    pxPerMeter: v.pxPerMeter,
+    focalW: v.clip(v.centre[0], v.centre[1])[2],
+    forward: cityForward(v.bearing, v.centre[1])
+  });
+  // Two in the Mission (one flagged), one to the west (4.5 km), off the fake view and in reach.
+  const MARKERS: Marker[] = [
+    {
+      row: 0,
+      lngLat: MISSION,
+      days: [DAYS.a.entitled, DAYS.a.construction, DAYS.a.complete],
+      homes: 40
+    },
+    {
+      row: 1,
+      lngLat: [-122.419, 37.7601],
+      days: [DAYS.b.entitled, NaN, NaN],
+      homes: 12,
+      flags: SLOT_FLAG.zoning
+    },
+    {
+      row: 2,
+      lngLat: [-122.47, 37.78],
+      days: [DAYS.a.permitIssued, DAYS.a.construction, NaN],
+      homes: 8
+    }
+  ];
+  const CITY = cityDelta(3, MARKERS);
+  /** What the store holds after these deltas (the first replaces). */
+  function storeOf(...ds: CityDelta[]): CityStore {
+    const s = new CityStore();
+    ds.forEach((d, i) => s.apply(d, i === 0));
+    return s;
+  }
+  const cityOf = (f: FakeTimelineDeps) => props(byId(f, 'timeline-city')).data as CityAttrs[];
+  const gateOf = (f: FakeTimelineDeps) =>
+    (byId(f, 'timeline-halos').props as unknown as { ringMinZoom: number }).ringMinZoom;
+
+  it('stores the city from a revision 0 and replaces it on the next revision 0; a revision 0 without city clears it', () => {
+    const c = controller();
+    c.setHalos({ from: FROM });
+    c.apply({ ...timelineSmall, city: CITY });
+    expect(c.debugSnapshot()).toMatchObject({ cityMarkers: 3, cityFlagged: 1 });
+    expect(cityOf(deps)).toEqual(buildCity(storeOf(CITY), FROM));
+    // The next revision 0 replaces the store whole, never merges.
+    const one = cityDelta(1, [{ ...MARKERS[2], row: 0 }]);
+    c.apply({ ...timelineSmall, city: one });
+    expect(c.debugSnapshot()).toMatchObject({ cityMarkers: 1, cityFlagged: 0 });
+    expect(cityOf(deps)).toEqual(buildCity(storeOf(one), FROM));
+    // A swap's revision 0 replaces it too.
+    c.apply({ ...timelineSmall, swap: true, complete: true, city: CITY });
+    drain(c);
+    expect(c.debugSnapshot()).toMatchObject({ cityMarkers: 3, cityFlagged: 1 });
+    expect(cityOf(deps)).toEqual(buildCity(storeOf(CITY), FROM));
+    // A revision 0 with no city (no feed) clears it.
+    c.apply(timelineSmall);
+    expect(c.debugSnapshot()).toMatchObject({ cityMarkers: 0, cityRecords: 0, ringMinZoom: 0 });
+    expect(ids(deps)).not.toContain('timeline-city');
+  });
+
+  it('a later delta overwrites rows and drops those at or past rows', () => {
+    const c = controller();
+    c.setHalos({ from: FROM });
+    c.apply({ ...timelineSmall, city: CITY });
+    const later = cityDelta(2, [{ ...MARKERS[0], homes: 99 }]);
+    c.apply(update(1, { city: later }));
+    expect(c.debugSnapshot()).toMatchObject({ cityMarkers: 2, cityFlagged: 1 });
+    expect(cityOf(deps)).toEqual(buildCity(storeOf(CITY, later), FROM));
+    // The western row is gone from every record.
+    expect(cityOf(deps).every((r) => r.anchor[0] > -122.45)).toBe(true);
+    expect(cityOf(deps).some((r) => r.homes === 99)).toBe(true);
+    // A revision gap carrying city changes nothing and asks for a resync.
+    c.apply(update(3, { city: CITY }));
+    expect(deps.resyncCount).toBe(1);
+    expect(c.debugSnapshot().cityMarkers).toBe(2);
+  });
+
+  it('a later delta with from forgets the markers at or past it first', () => {
+    const c = controller();
+    c.setHalos({ from: FROM });
+    c.apply({ ...timelineSmall, city: CITY });
+    // Row 1 withdrawn by an edit; row 2 re-created with other days.
+    const moved: Marker = { ...MARKERS[2], days: [DAYS.d.permitIssued, NaN, NaN] };
+    const edit = cityDelta(3, [moved], 1);
+    c.apply(update(1, { city: edit }));
+    expect(c.debugSnapshot()).toMatchObject({ cityMarkers: 2, cityFlagged: 0 });
+    expect(cityOf(deps)).toEqual(buildCity(storeOf(CITY, edit), FROM));
+    expect(cityOf(deps).some((r) => r.kind === 3)).toBe(false); // the policy ring went with row 1
+    // A delta with from and no rows is a city update: it rebuilds the records.
+    const built = deps.cityLayers.length;
+    const drop = cityDelta(1, [], 1);
+    c.apply(update(2, { city: drop }));
+    expect(deps.cityLayers.length).toBe(built + 1);
+    expect(c.debugSnapshot().cityMarkers).toBe(1);
+    expect(cityOf(deps)).toEqual(buildCity(storeOf(CITY, edit, drop), FROM));
+  });
+
+  it('emits timeline-city after timeline-halos and before the overlay, only with halos on and markers held', () => {
+    const c = controller('label-1');
+    c.apply({ ...timelineSmall, cells: [cellOf(B), cellOf(A)], city: CITY });
+    c.setOverlayLayers([new SolidPolygonLayer({ id: 'brush', data: [] })]);
+    expect(ids(deps)).not.toContain('timeline-city');
+    expect(deps.cityLayers).toHaveLength(0);
+    c.setHalos({ from: FROM });
+    expect(ids(deps)).toEqual([
+      solid(A),
+      solid(B),
+      ghost(A),
+      ghost(B),
+      'timeline-bars',
+      'timeline-halos',
+      'timeline-city',
+      'brush'
+    ]);
+    const city = props(byId(deps, 'timeline-city'));
+    expect(city.beforeId).toBe('label-1');
+    expect(city.pickable).toBe(false);
+    expect(city.clock).toBe(props(byId(deps, 'timeline-bars')).clock);
+    expect(city.reduced).toBe(false);
+    // No markers held: no layer.
+    c.apply({ ...timelineSmall, city: cityDelta(0, []) });
+    expect(ids(deps)).toContain('timeline-halos');
+    expect(ids(deps)).not.toContain('timeline-city');
+  });
+
+  it('a city-only update rebuilds the city records once and emits once', () => {
+    const c = controller();
+    c.setHalos({ from: FROM });
+    c.apply({ ...timelineSmall, city: CITY });
+    c.setTime(DAYS.a.construction);
+    drain(c);
+    const emits = deps.layerHistory.length;
+    const events = deps.events.length;
+    const built = deps.cityLayers.length;
+    const halos = deps.haloLayers.length;
+    const before = new Map(deps.lastLayers.map((l) => [l.id, l]));
+    const demolish = c.debugSnapshot().demolish;
+    c.apply(update(1, { city: cityDelta(3, [{ ...MARKERS[1], homes: 30 }]) }));
+    expect(deps.layerHistory.length).toBe(emits + 1);
+    expect(deps.events.length).toBe(events + 1); // the one setLayers: no feature-state call
+    expect(deps.cityLayers.length).toBe(built + 1);
+    expect(deps.haloLayers.length).toBe(halos);
+    expect(deps.pendingFrames()).toBe(0);
+    // Cells, bars and halos are the same layer objects.
+    for (const l of deps.lastLayers) if (l.id !== 'timeline-city') expect(l).toBe(before.get(l.id));
+    expect(c.debugSnapshot()).toMatchObject({ pending: 0, demolish, cells: 2 });
+  });
+
+  it('builds city records once per update, when the slice queue drains', () => {
+    const c = controller();
+    c.setHalos({ from: FROM });
+    c.apply(update(0, { cells: manyCells(9), city: CITY }));
+    expect(ids(deps)).not.toContain('timeline-city');
+    deps.flushFrame();
+    expect(deps.cityLayers).toHaveLength(0);
+    deps.flushFrame();
+    expect(deps.cityLayers).toHaveLength(1);
+    expect(deps.haloLayers).toHaveLength(1);
+    expect(ids(deps)).toContain('timeline-city');
+    // An update with cells and city: once, after its last slice.
+    const homes7 = cityDelta(3, [{ ...MARKERS[0], homes: 7 }]);
+    c.apply(update(1, { cells: manyCells(5), city: homes7 }));
+    expect(deps.cityLayers).toHaveLength(1);
+    drain(c);
+    expect(deps.cityLayers).toHaveLength(2);
+    // An update without city leaves the records as they are (the halos follow the cells).
+    c.apply(update(2, { cells: manyCells(1) }));
+    drain(c);
+    expect(deps.cityLayers).toHaveLength(2);
+    expect(deps.haloLayers).toHaveLength(3);
+    expect(gateOf(deps)).toBe(CITY_HANDOVER_ZOOM);
+    // The snapshot counts the builds: one per applied update that carried city.
+    expect(c.debugSnapshot().cityBuilds).toBe(2);
+    c.apply(update(3, { cells: [], city: cityDelta(3, [{ ...MARKERS[0], homes: 9 }]) }));
+    expect(c.debugSnapshot().cityBuilds).toBe(3);
+    c.apply(update(4, { cells: [], city: cityDelta(3, [], 2) }));
+    expect(c.debugSnapshot().cityBuilds).toBe(4);
+  });
+
+  it('setEdgeInset writes the shared inset the city layer reads, rebuilding nothing; the snapshot places glows on it', () => {
+    const c = controller();
+    c.setHalos({ from: FROM });
+    c.apply({ ...timelineSmall, city: CITY });
+    const layer = byId(deps, 'timeline-city');
+    const inset = props(layer).edgeInset as number[];
+    expect(inset).toEqual([0, 0, 0, 0]);
+    const built = deps.cityLayers.length;
+    const layers = deps.layerHistory.length;
+    const repaints = deps.repaintCount;
+    c.setEdgeInset([0, 0, 120, 0]);
+    expect(props(byId(deps, 'timeline-city')).edgeInset).toBe(inset);
+    expect(inset).toEqual([0, 0, 120, 0]);
+    expect(deps.cityLayers.length).toBe(built);
+    expect(deps.layerHistory.length).toBe(layers);
+    expect(deps.repaintCount).toBe(repaints + 1);
+    // The same inset again: nothing.
+    c.setEdgeInset([0, 0, 120, 0]);
+    expect(deps.repaintCount).toBe(repaints + 1);
+    // A later layer shares the same array.
+    c.apply(update(1, { cells: [], city: cityDelta(3, [{ ...MARKERS[0], homes: 9 }]) }));
+    expect(props(byId(deps, 'timeline-city')).edgeInset).toBe(inset);
+  });
+
+  it('marksShown follows the gate: one diamond a square below zoom 14 with the city on, every one from 14', () => {
+    const c = controller();
+    c.setHalos({ from: FROM });
+    // Every slot of both cells under the policy.
+    const flagAll = (cell: TimedPackedCell) => ({
+      ...cell,
+      slotFlags: new Uint8Array(cell.slotProjectIds.length).fill(SLOT_FLAG.zoning)
+    });
+    c.apply({ ...timelineSmall, cells: [flagAll(cellOf(A)), flagAll(cellOf(B))], city: CITY });
+    const marks = halosOf(deps).filter((h) => h.kind === HALO_KIND.mark);
+    for (const t of [DAYS.start, DAYS.a.construction, DAYS.horizon - 1]) {
+      c.setTime(t);
+      const standing = marks.filter((h) => evalHalo(h, t, false).visible);
+      const squares = new Set(standing.map((h) => cityGroup(...h.anchor))).size;
+      deps.view = viewAt(13);
+      expect(c.debugSnapshot()).toMatchObject({ marks: marks.length, marksShown: squares });
+      deps.view = viewAt(14);
+      expect(c.debugSnapshot().marksShown).toBe(standing.length);
+    }
+    // The fixture's marks share squares, so below 14 there are fewer diamonds than projects.
+    c.setTime(DAYS.a.construction);
+    deps.view = viewAt(13);
+    const below = c.debugSnapshot().marksShown;
+    deps.view = viewAt(14);
+    expect(below).toBeGreaterThan(0);
+    expect(below).toBeLessThan(c.debugSnapshot().marksShown);
+  });
+
+  it('setTime constructs no layer and calls setLayers none, with the city layer on', () => {
+    const c = controller();
+    c.setHalos({ from: FROM });
+    c.apply({ ...timelineSmall, city: CITY });
+    drain(c);
+    const emits = deps.layerHistory.length;
+    const built = deps.cityLayers.length;
+    const halos = deps.haloLayers.length;
+    const layer = byId(deps, 'timeline-city');
+    const halo = byId(deps, 'timeline-halos');
+    const reads = deps.viewReads; // drain's debug snapshots read it
+    for (let i = 0; i < 100; i++) {
+      // A map move or zoom between frames reaches no controller method.
+      deps.view = viewAt(11 + (i % 7));
+      c.setTime(DAYS.start + i * 90);
+    }
+    expect(deps.layerHistory.length - emits).toBe(0);
+    expect(deps.cityLayers.length - built).toBe(0);
+    expect(deps.haloLayers.length - halos).toBe(0);
+    expect(deps.viewReads - reads).toBe(0);
+    expect(byId(deps, 'timeline-city')).toBe(layer);
+    expect(byId(deps, 'timeline-halos')).toBe(halo);
+  });
+
+  it("the halo layer's ringMinZoom is CITY_HANDOVER_ZOOM while the city layer is on, else 0", () => {
+    const c = controller();
+    c.setHalos({ from: FROM });
+    c.apply(timelineSmall);
+    expect(gateOf(deps)).toBe(0);
+    c.apply(update(1, { city: CITY }));
+    expect(ids(deps)).toContain('timeline-city');
+    expect(gateOf(deps)).toBe(CITY_HANDOVER_ZOOM);
+    expect(c.debugSnapshot().ringMinZoom).toBe(CITY_HANDOVER_ZOOM);
+    // A city update that keeps the layer on clones no halo layer.
+    const halos = deps.haloLayers.length;
+    c.apply(update(2, { city: cityDelta(3, [{ ...MARKERS[0], homes: 3 }]) }));
+    expect(deps.haloLayers.length).toBe(halos);
+    // Every marker dropped: no city layer, the gate off.
+    c.apply(update(3, { city: cityDelta(0, []) }));
+    expect(ids(deps)).not.toContain('timeline-city');
+    expect(gateOf(deps)).toBe(0);
+    expect(c.debugSnapshot().ringMinZoom).toBe(0);
+  });
+
+  it('an update stream without city (as /lesscars sends) emits no timeline-city and leaves the halos ungated', () => {
+    const c = controller();
+    c.setHalos({ from: FROM });
+    c.apply(timelineSmall);
+    c.apply(timelineSmallRev1);
+    drain(c);
+    expect(ids(deps)).not.toContain('timeline-city');
+    expect(deps.cityLayers).toHaveLength(0);
+    expect(gateOf(deps)).toBe(0);
+    deps.view = viewAt(13);
+    c.setTime(DAYS.a.construction);
+    const rings = halosOf(deps).filter((h) => h.kind !== HALO_KIND.mark);
+    const shown = rings.filter((h) => evalHalo(h, DAYS.a.construction, false).visible).length;
+    expect(shown).toBeGreaterThan(0);
+    expect(c.debugSnapshot()).toMatchObject({ halosShown: shown, cityMarkers: 0, ringMinZoom: 0 });
+  });
+
+  it('setHalos(null) removes the city layer and resets the gate; setHalos({ from }) rebuilds the records once', () => {
+    const c = controller();
+    c.apply({ ...timelineSmall, city: CITY });
+    c.setHalos({ from: FROM });
+    expect(deps.cityLayers).toHaveLength(1);
+    expect(gateOf(deps)).toBe(CITY_HANDOVER_ZOOM);
+    c.setHalos(null);
+    expect(ids(deps)).not.toContain('timeline-city');
+    expect(ids(deps)).not.toContain('timeline-halos');
+    expect(c.debugSnapshot()).toMatchObject({
+      cityMarkers: 3,
+      cityRecords: 0,
+      cityDays: [],
+      ringMinZoom: 0
+    });
+    c.setHalos({ from: DAYS.a.permitIssued });
+    expect(deps.cityLayers).toHaveLength(2);
+    expect(cityOf(deps)).toEqual(buildCity(storeOf(CITY), DAYS.a.permitIssued));
+    expect(gateOf(deps)).toBe(CITY_HANDOVER_ZOOM);
+  });
+
+  it('setReducedMotion sets reduced on the city layer without rebuilding its records', () => {
+    const c = controller();
+    c.setReducedMotion(true);
+    c.apply({ ...timelineSmall, city: CITY });
+    c.setHalos({ from: FROM });
+    expect(props(byId(deps, 'timeline-city')).reduced).toBe(true);
+    const data = cityOf(deps);
+    c.setReducedMotion(false);
+    expect(props(byId(deps, 'timeline-city')).reduced).toBe(false);
+    expect(props(byId(deps, 'timeline-halos')).reduced).toBe(false);
+    expect(cityOf(deps)).toBe(data);
+    expect(gateOf(deps)).toBe(CITY_HANDOVER_ZOOM); // a clone keeps the gate
+  });
+
+  it('rejects a malformed city delta before installing anything', () => {
+    const c = controller();
+    c.setHalos({ from: FROM });
+    c.apply({ ...timelineSmall, city: CITY });
+    const emits = deps.layerHistory.length;
+    const bad = cityDelta(3, [MARKERS[1], MARKERS[0]]); // rows not ascending
+    expect(() => c.apply(update(1, { cells: [cellOf(A)], city: bad }))).toThrow(RangeError);
+    expect(() => c.apply({ ...timelineSmall, city: bad })).toThrow(RangeError);
+    const short = { ...CITY, homes: new Uint16Array(1) };
+    expect(() => c.apply(update(1, { city: short }))).toThrow(RangeError);
+    expect(deps.layerHistory).toHaveLength(emits);
+    expect(c.debugSnapshot()).toMatchObject({ revision: 0, cityMarkers: 3, installs: 2 });
+    // The stream goes on from where it was.
+    c.apply(update(1, { city: cityDelta(3, [MARKERS[0]]) }));
+    expect(c.debugSnapshot().revision).toBe(1);
+  });
+
+  it('reports cityMarkers, cityFlagged, cityRecords, cityDays, ringMinZoom and projects in the debug snapshot', () => {
+    const c = controller();
+    const projects = timelineSmall.cells.reduce((n, p) => n + new Set(p.partSlot).size, 0);
+    expect(c.debugSnapshot()).toMatchObject({
+      cityMarkers: 0,
+      cityFlagged: 0,
+      cityRecords: 0,
+      cityDays: [],
+      cityRings: 0,
+      cityGlows: 0,
+      ringMinZoom: 0,
+      projects: 0
+    });
+    c.apply({ ...timelineSmall, city: CITY });
+    expect(c.debugSnapshot()).toMatchObject({ cityMarkers: 3, cityRecords: 0, projects });
+    c.setHalos({ from: FROM });
+    const recs = buildCity(storeOf(CITY), FROM);
+    expect(c.debugSnapshot()).toMatchObject({
+      cityMarkers: 3,
+      cityFlagged: 1,
+      cityRecords: recs.length,
+      cityDays: [...new Set(recs.map((r) => r.day))].sort((x, y) => x - y),
+      ringMinZoom: CITY_HANDOVER_ZOOM,
+      projects
+    });
+  });
+
+  it('counts shown rings and glows through the map view, and gates halosShown at zoom 13 with the city on', () => {
+    const c = controller();
+    c.setHalos({ from: FROM });
+    c.apply({ ...timelineSmall, city: CITY });
+    const t = DAYS.a.construction;
+    c.setTime(t);
+    const recs = buildCity(storeOf(CITY), FROM);
+    const rings = halosOf(deps).filter((h) => h.kind !== HALO_KIND.mark);
+    const ungated = rings.filter((h) => evalHalo(h, t, false).visible).length;
+    const count = (v: DebugView, mode: 'ring' | 'edge') =>
+      recs.filter((r) => {
+        const cv = cityViewOf(v);
+        const [a, b] = r.anchor;
+        const fwd = v.clip(a + cv.forward[0], b + cv.forward[1]);
+        return evalCity(r, t, cv, v.clip(a, b), false, fwd).mode === mode;
+      }).length;
+    // No map view: the rings are counted ungated and the city's not at all.
+    expect(c.debugSnapshot()).toMatchObject({ halosShown: ungated, cityRings: 0, cityGlows: 0 });
+    // Zoom 13: merged rings stand for the projects' own, which hide.
+    deps.view = viewAt(13);
+    const at13 = c.debugSnapshot();
+    expect(at13.halosShown).toBe(0);
+    expect(at13.cityRings).toBe(count(deps.view, 'ring'));
+    expect(at13.cityRings).toBeGreaterThan(0);
+    expect(at13.cityGlows).toBe(count(deps.view, 'edge'));
+    expect(at13.cityGlows).toBeGreaterThan(0); // the western row, off view
+    // Zoom 15: each project's own rings; no merged ring.
+    deps.view = viewAt(15);
+    const at15 = c.debugSnapshot();
+    expect(at15.halosShown).toBe(ungated);
+    expect(ungated).toBeGreaterThan(0);
+    expect(at15.cityRings).toBe(0);
+    expect(at15.cityGlows).toBe(count(deps.view, 'edge'));
+  });
+
+  it('destroy drops the city', () => {
+    const c = controller();
+    c.setHalos({ from: FROM });
+    c.apply({ ...timelineSmall, city: CITY });
+    c.destroy();
+    expect(c.debugSnapshot()).toMatchObject({ cityMarkers: 0, cityRecords: 0, layerIds: [] });
+  });
+});
+
+describe('TimelineController bar modes', () => {
+  const barLayer = () => byId(deps, 'timeline-bars');
+  const far = () => (barLayer().props as unknown as { far?: boolean }).far;
+  /** A flat fake view around the fixture (w = 1 everywhere: the zoom at every anchor is `zoom`). */
+  const CENTRE: [number, number] = [-122.4194, 37.7599];
+  function viewAt(zoom: number, half = 0.02): DebugView {
+    return {
+      zoom,
+      viewPx: [800, 600],
+      centre: CENTRE,
+      bearing: 0,
+      pxPerMeter: 1,
+      clip: (lng, lat) => [(lng - CENTRE[0]) / half, (lat - CENTRE[1]) / half, 1]
+    };
+  }
+
+  it('a controller that never calls setBarMode builds the same bars as before', () => {
+    const c = controller();
+    c.apply(timelineSmall);
+    const want = buildBars(
+      [...timelineSmall.cells].sort((a, b) => (a.cellId < b.cellId ? -1 : 1)),
+      timelineLookups
+    );
+    declutter(want);
+    expect(barsOf(deps)).toEqual(want);
+    expect(barsOf(deps).every((b) => b.minZoom >= 15)).toBe(true);
+    expect(far()).toBe(false);
+    expect(c.debugSnapshot().barMode).toBe('street');
+  });
+
+  it('setBarMode rebuilds the bars once with far and reports barMode; the same mode again does nothing', () => {
+    const c = controller();
+    c.apply(timelineSmall);
+    const street = barLayer();
+    const emits = deps.layerHistory.length;
+    c.setBarMode('far');
+    // The street layer stays up while the far declutter runs in slices, then swaps in once.
+    expect(deps.layerHistory).toHaveLength(emits);
+    expect(c.debugSnapshot().pending).toBeGreaterThan(0);
+    drain(c);
+    expect(deps.layerHistory).toHaveLength(emits + 1);
+    expect(barLayer()).not.toBe(street);
+    expect(far()).toBe(true);
+    expect(barsOf(deps).every((b) => b.minZoom >= 12 && b.minZoom <= 18)).toBe(true);
+    expect(barsOf(deps).some((b) => b.minZoom < 15)).toBe(true);
+    expect(c.debugSnapshot().barMode).toBe('far');
+    const farLayer = barLayer();
+    c.setBarMode('far');
+    expect(deps.layerHistory).toHaveLength(emits + 1);
+    expect(barLayer()).toBe(farLayer);
+    // Back to street: today's bars again, at once.
+    c.setBarMode('street');
+    expect(deps.layerHistory).toHaveLength(emits + 2);
+    expect(far()).toBe(false);
+    expect(barsOf(deps).every((b) => b.minZoom >= 15)).toBe(true);
+  });
+
+  it('setBarMode before the first apply is kept: the first bars are far, built once', () => {
+    const c = controller();
+    c.setBarMode('far');
+    expect(deps.layerHistory).toHaveLength(0);
+    c.apply(timelineSmall);
+    expect(ids(deps)).not.toContain('timeline-bars');
+    drain(c);
+    expect(far()).toBe(true);
+    expect(c.debugSnapshot().barMode).toBe('far');
+    // Without lookups there are no bars; the mode is kept for when they come.
+    const d = makeFakeTimelineDeps();
+    const bare = new TimelineController(d, 'light');
+    bare.setBarMode('far');
+    bare.apply(timelineSmall);
+    expect(d.lastLayers.map((l) => l.id)).not.toContain('timeline-bars');
+    bare.setLookups(timelineLookups);
+    drainWith(d, bare);
+    expect(
+      (d.lastLayers.find((l) => l.id === 'timeline-bars')!.props as unknown as { far: boolean }).far
+    ).toBe(true);
+  });
+
+  it('far: setTime and camera reads build no bars and move no gate (no declutter per frame or pan)', () => {
+    const c = controller();
+    c.setBarMode('far');
+    c.apply(timelineSmall);
+    drain(c);
+    const layer = barLayer();
+    const gates = barsOf(deps).map((b) => b.minZoom);
+    const emits = deps.layerHistory.length;
+    for (let i = 0; i < 200; i++) {
+      c.setTime(DAYS.start + i * 40);
+      // A pan or zoom: the controller hears of the camera only through the debug snapshot.
+      if (i % 20 === 0) {
+        deps.view = viewAt(12 + (i % 7), 0.01 + i / 10_000);
+        c.debugSnapshot();
+      }
+    }
+    expect(deps.layerHistory).toHaveLength(emits);
+    expect(barLayer()).toBe(layer);
+    expect(barsOf(deps).map((b) => b.minZoom)).toEqual(gates);
+  });
+
+  it('a flagged slot wins its collision in far mode', () => {
+    const c = controller();
+    c.setBarMode('far');
+    // (a)'s cell twice over at the same place: one flagged copy, one not, as two projects.
+    const a = cellOf(A);
+    const s = a.slotProjectIds.indexOf(SLOT.a.projectId);
+    const mine = {
+      ...a,
+      cellId: 'mine',
+      slotProjectIds: a.slotProjectIds.map((p) => `mine-${p}`),
+      slotFlags: Uint8Array.from(a.slotProjectIds, (_, i) => (i === s ? SLOT_FLAG.zoning : 0))
+    };
+    c.apply(update(0, { cells: [a, mine] }));
+    drain(c);
+    const bars = barsOf(deps);
+    const gate = (id: string) => bars.find((b) => b.projectId === id)!.minZoom;
+    expect(bars.find((b) => b.projectId === `mine-${SLOT.a.projectId}`)!.policy).toBe(true);
+    expect(gate(`mine-${SLOT.a.projectId}`)).toBeLessThan(gate(SLOT.a.projectId));
+  });
+
+  it('far: the declutter runs FAR_UNITS_PER_SLICE units a frame; the old layer stays until one swap', () => {
+    const u = makeSyntheticTimeline(3, 2_000, 1500, false);
+    const c = new TimelineController(deps, 'light');
+    c.setLookups(SYNTHETIC_LOOKUPS);
+    c.apply(u);
+    drain(c);
+    const street = barLayer();
+    const units = new FarDeclutter(barsOf(deps)).units;
+    expect(units).toBeGreaterThan(FAR_UNITS_PER_SLICE);
+    const emits = deps.layerHistory.length;
+    c.setBarMode('far');
+    // One frame for the setup, then one per FAR_UNITS_PER_SLICE units; nothing emitted till the
+    // last, and the street layer stays drawn.
+    let frames = 0;
+    while (c.debugSnapshot().pending > 0) {
+      expect(barLayer()).toBe(street);
+      expect(deps.layerHistory).toHaveLength(emits);
+      deps.flushFrame();
+      frames++;
+    }
+    expect(frames).toBe(1 + Math.ceil(units / FAR_UNITS_PER_SLICE));
+    expect(deps.layerHistory).toHaveLength(emits + 1);
+    expect(far()).toBe(true);
+    expect(barsOf(deps).length).toBeGreaterThan(units / 2);
+  });
+
+  /** Far bars a fresh controller lays for `cells` at revision 0 (what the map should end on). */
+  function farBarsFor(cells: TimedPackedCell[]): BarAttrs[] {
+    const d = makeFakeTimelineDeps();
+    const fresh = new TimelineController(d, 'light');
+    fresh.setLookups(SYNTHETIC_LOOKUPS);
+    fresh.setBarMode('far');
+    fresh.apply(update(0, { cells }));
+    drainWith(d, fresh);
+    return (props(d.lastLayers.find((l) => l.id === 'timeline-bars')!).data as BarAttrs[]).slice();
+  }
+  /** Far bar layers swapped in after `from` emits (the one on the map then not counted). */
+  const farLayers = (from: number) => {
+    const barsIn = (ls: Layer[] | undefined) => ls?.find((l) => l.id === 'timeline-bars');
+    const onMap = barsIn(deps.layerHistory[from - 1]);
+    return new Set(
+      deps.layerHistory
+        .slice(from)
+        .map(barsIn)
+        .filter((l) => l && l !== onMap && (l.props as unknown as { far?: boolean }).far)
+    );
+  };
+
+  it('far: an update mid-declutter lets the run swap in, then one more run drops what it withdrew', () => {
+    const u = makeSyntheticTimeline(3, 2_000, 1500, false);
+    const c = new TimelineController(deps, 'light');
+    c.setLookups(SYNTHETIC_LOOKUPS);
+    c.setBarMode('far');
+    c.apply(u);
+    deps.flushFrame(); // the declutter's setup; its steps are still to come
+    expect(c.debugSnapshot().pending).toBeGreaterThan(0);
+    // A later revision removes the first cell while the declutter is under way.
+    const gone = u.cells[0];
+    const before = deps.layerHistory.length;
+    c.apply(update(1, { removedCells: [gone.cellId] }));
+    drain(c);
+    // The run in flight was newer than the map (no bars at all): it swapped in, then one more.
+    expect(farLayers(before).size).toBe(2);
+    expect(barsOf(deps).some((b) => gone.slotProjectIds.includes(b.projectId))).toBe(false);
+    expect(barsOf(deps)).toEqual(farBarsFor(u.cells.slice(1)));
+  });
+
+  it('far: updates every few frames for longer than one run still swap bars in, and the last run reflects the last update', () => {
+    const u = makeSyntheticTimeline(5, 6_000, 500, false);
+    const c = new TimelineController(deps, 'light');
+    c.setLookups(SYNTHETIC_LOOKUPS);
+    c.setBarMode('far');
+    c.apply(u);
+    drain(c);
+    const run =
+      1 +
+      Math.ceil(
+        new FarDeclutter(buildBars(u.cells, SYNTHETIC_LOOKUPS)).units / FAR_UNITS_PER_SLICE
+      );
+    expect(run).toBeGreaterThan(3);
+    // A fill: an update with cells every 2 frames for 4 run lengths (each one would restart a run
+    // that was dropped on update, so none would ever swap in).
+    const before = deps.layerHistory.length;
+    const cells = new Map(u.cells.map((cell) => [cell.cellId, cell]));
+    let rev = 0;
+    let frame = 0;
+    const emitsBySetTime: number[] = [];
+    for (; frame < 4 * run; frame++) {
+      if (frame % 2 === 0) {
+        const cell = u.cells[(frame / 2) % u.cells.length];
+        cells.set(cell.cellId, cell);
+        c.apply(update(++rev, { cells: [cell] }));
+      }
+      const emits = deps.layerHistory.length;
+      c.setTime(DAYS.start + frame);
+      emitsBySetTime.push(deps.layerHistory.length - emits);
+      deps.flushFrame();
+    }
+    expect(emitsBySetTime.every((n) => n === 0)).toBe(true); // setTime builds nothing
+    // Bars progressed during the fill: at least one run swapped in while updates kept coming.
+    expect(farLayers(before).size).toBeGreaterThanOrEqual(1);
+    // The last update withdraws a cell; once the stream ends the last run reflects it.
+    const gone = u.cells[3];
+    cells.delete(gone.cellId);
+    c.apply(update(rev + 1, { removedCells: [gone.cellId] }));
+    drain(c);
+    expect(barsOf(deps).some((b) => gone.slotProjectIds.includes(b.projectId))).toBe(false);
+    expect(barsOf(deps)).toEqual(farBarsFor([...cells.values()]));
+  });
+
+  it('far: new lookups, a mode change or destroy mid-declutter drop the run; it never swaps in', () => {
+    const u = makeSyntheticTimeline(3, 2_000, 1500, false);
+    const start = (): TimelineController => {
+      const c = new TimelineController(deps, 'light');
+      c.setLookups(SYNTHETIC_LOOKUPS);
+      c.setBarMode('far');
+      c.apply(u);
+      deps.flushFrame(); // the setup
+      expect(c.debugSnapshot().pending).toBeGreaterThan(0);
+      return c;
+    };
+    // New lookups: one run swaps in, the one started after them.
+    let c = start();
+    let before = deps.layerHistory.length;
+    const later = { ...SYNTHETIC_LOOKUPS };
+    c.setLookups(later);
+    drain(c);
+    expect(farLayers(before).size).toBe(1);
+    expect(barsOf(deps)).toEqual(farBarsFor(u.cells));
+    c.destroy();
+    // Street mid-run: the street bars at once, and no far layer ever after.
+    c = start();
+    before = deps.layerHistory.length;
+    c.setBarMode('street');
+    drain(c);
+    expect(farLayers(before).size).toBe(0);
+    expect(far()).toBe(false);
+    c.destroy();
+    // destroy: nothing more is emitted.
+    c = start();
+    before = deps.layerHistory.length;
+    c.destroy();
+    for (let i = 0; i < 20; i++) deps.flushFrame();
+    expect(deps.layerHistory).toHaveLength(before);
+  });
+
+  it('far: a revision 0 mid-declutter drops the run; the new bars swap in once', () => {
+    const u = makeSyntheticTimeline(3, 2_000, 1500, false);
+    const c = new TimelineController(deps, 'light');
+    c.setLookups(SYNTHETIC_LOOKUPS);
+    c.setBarMode('far');
+    c.apply(u);
+    deps.flushFrame();
+    expect(c.debugSnapshot().pending).toBeGreaterThan(0);
+    c.apply(timelineSmall);
+    drain(c);
+    const ids = new Set(barsOf(deps).map((b) => b.projectId));
+    for (const s of Object.values(SLOT)) expect(ids.has(s.projectId)).toBe(true);
+    expect(barsOf(deps).every((b) => !b.projectId.startsWith('syn-'))).toBe(true);
+  });
+
+  it('counts the bars shown on the clock day at the zoom at each anchor, in view', () => {
+    const c = controller();
+    c.apply(timelineSmall);
+    const t = DAYS.a.construction;
+    c.setTime(t);
+    const inTime = barsOf(deps).filter((b) => b.from <= t && t < b.to).length;
+    expect(inTime).toBeGreaterThan(0);
+    // No map: every bar in time (as halosShown without a view).
+    expect(c.debugSnapshot().barsShown).toBe(inTime);
+    // A view that holds the whole fixture (its clip is flat: every anchor's zoom is 13).
+    deps.view = viewAt(13, 1);
+    expect(c.debugSnapshot().barsShown).toBe(0); // street: below 15
+    c.setBarMode('far');
+    drain(c);
+    const shown = barsOf(deps).filter(
+      (b) => evalBar(b, timelineLookups, t, 13, 'far').visible
+    ).length;
+    expect(shown).toBeGreaterThan(0);
+    expect(c.debugSnapshot().barsShown).toBe(shown);
+    // Every anchor 8 times deeper than the view's centre: zoom 10 there, below the ramp to 12.
+    deps.view = {
+      ...viewAt(13),
+      clip: (lng, lat) => (lng === CENTRE[0] && lat === CENTRE[1] ? [0, 0, 1] : [0, 0, 8])
+    };
+    expect(c.debugSnapshot().barsShown).toBe(0);
+    // The anchor's zoom is read at its raised anchor (anchor[2], roof plus 2 m), as the shader's.
+    const byAlt = (raised: number, ground: number): DebugView => ({
+      ...viewAt(13, 1),
+      clip: (lng, lat, alt = 0) => [
+        (lng - CENTRE[0]) / 1,
+        (lat - CENTRE[1]) / 1,
+        lng === CENTRE[0] && lat === CENTRE[1] ? 1 : alt > 0 ? raised : ground
+      ]
+    });
+    expect(barsOf(deps).every((b) => b.anchor[2] > 0)).toBe(true);
+    deps.view = byAlt(1, 8);
+    expect(c.debugSnapshot().barsShown).toBe(shown);
+    deps.view = byAlt(8, 1);
+    expect(c.debugSnapshot().barsShown).toBe(0);
+    // A view that holds none of the fixture.
+    deps.view = { ...viewAt(13), clip: () => [5, 5, 1] };
+    expect(c.debugSnapshot().barsShown).toBe(0);
+  });
+});
+
+function drainWith(d: FakeTimelineDeps, c: TimelineController): void {
+  for (let i = 0; i < 1000 && c.debugSnapshot().pending > 0; i++) d.flushFrame();
+  expect(c.debugSnapshot().pending).toBe(0);
+}

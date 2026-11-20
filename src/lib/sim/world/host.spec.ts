@@ -14,6 +14,7 @@ import { fundingOnly } from '$lib/sim/levers/fixtures/finance';
 import { customQuery, queryKey, type CustomBrush } from '$lib/sim-page/policy';
 import type { Policy, SimPolicy4 } from '$lib/timeline/policy4';
 import type { Day } from '$lib/timelapse/time';
+import { STAGE_ORDER } from '$lib/timelapse/types';
 import { createFundingSystem } from './funding';
 import { createTimelineHost } from './host';
 import { withFunding } from './index';
@@ -38,7 +39,7 @@ import { createChunkSet, loadDataset, type Dataset, type DatasetDeps } from './r
 import { cardDepsOf } from './runner/lookups';
 import { createRunner, type Runner } from './runner/runner';
 import { datasetFetch, fakeClock } from './runner/test/harness';
-import { FakeController } from './test/map-stream-run';
+import { anchoredRows, FakeController, markersOf } from './test/map-stream-run';
 import type { World, WorldEvent } from './types';
 import { DEFAULT_POLICY4 } from '$lib/timeline/policy4';
 
@@ -133,12 +134,12 @@ function makeHost(o: HostOpts = {}) {
   const clock = fakeClock();
   let task = 0;
   let seq = 0;
-  const posts: { msg: Msg; task: number }[] = [];
+  const posts: { msg: Msg; task: number; transfer: ArrayBuffer[] }[] = [];
   const warns: string[] = [];
   const host = createTimelineHost({
     fetch: o.fetch ?? f.fetch,
     fetchBytes: f.fetchBytes,
-    post: (msg) => posts.push({ msg, task }),
+    post: (msg, transfer) => posts.push({ msg, task, transfer }),
     setTimeout: (fn, ms) =>
       clock.setTimeout(() => {
         task = ++seq;
@@ -237,7 +238,11 @@ interface Plain {
 }
 
 /** The two sides' worlds on seed 1 stepped in a plain loop, fed live, as one chunk. */
-function plainLoop(doc: SimPolicy4, months: number): Plain {
+function plainLoop(
+  doc: SimPolicy4,
+  months: number,
+  lots: Parameters<typeof compileTimeline>[1] = {}
+): Plain {
   const { createWorld, step, planDue } = withFunding(createFundingSystem());
   const ctx = ctxOf(months);
   const rhna = ds.loaded.projects.rhnaCompletedNet;
@@ -246,7 +251,7 @@ function plainLoop(doc: SimPolicy4, months: number): Plain {
     { doc, base: 'plan' as const },
     { doc: c.doc, base: c.base }
   ].map(({ doc: d, base }) => {
-    const comp = compileTimeline(d, {}, ctx, base);
+    const comp = compileTimeline(d, lots, ctx, base);
     expect(comp.step(Infinity)).toBe(true);
     const t = comp.result();
     const s = scoreStaticsOf(ds.loaded.fzp, t, base, months, rhna);
@@ -330,6 +335,17 @@ function expectedCard(
   return summary;
 }
 
+/** Project id → row of `w`, read at the end of its month. */
+function rowsByProject(w: World): Map<string, number> {
+  const day = monthLastDay(asOf, w.month);
+  const out = new Map<string, number>();
+  for (let row = 0; row < w.projects.n; row++) {
+    const s = scheduleAt(w, ds.statics, row, day);
+    if (s) out.set(s.projectId, row);
+  }
+  return out;
+}
+
 /** Cells of every `cells` post, applied in order on a fake map controller. */
 function applyAll(updates: TimelineUpdate[]): FakeController {
   const ctl = new FakeController();
@@ -341,7 +357,7 @@ function applyAll(updates: TimelineUpdate[]): FakeController {
 
 describe('a full fill of the default document', () => {
   let h: Host;
-  let snapshot: { msg: Msg; task: number }[];
+  let snapshot: { msg: Msg; task: number; transfer: ArrayBuffer[] }[];
   let plain: Plain;
 
   beforeAll(async () => {
@@ -416,28 +432,41 @@ describe('a full fill of the default document', () => {
     expect(flagged.map((c) => c.cellId)).toEqual([]);
   });
 
+  /** Every other lot of the fixture painted to 20 stories from model month 1, filled 60 months. */
+  let paintedRun: Promise<{
+    p: Host;
+    doc: SimPolicy4;
+    painted: ParcelId[];
+    lots: Record<string, ParcelId[]>;
+  }> | null = null;
+  const paintedHost = () =>
+    (paintedRun ??= (async () => {
+      const painted = ds.loaded.fzp.parcels.id.filter((_, i) => i % 2 === 0);
+      const paint: CustomBrush = {
+        id: 'paint-all',
+        kind: 'paint',
+        strokes: [{ path: [[-122.419, 37.76]], radiusM: 30 }],
+        stories: 20
+      };
+      const doc: SimPolicy4 = structuredClone(DEFAULT_POLICY4);
+      doc.kinds.zoning.push({
+        id: 'p',
+        label: 'p',
+        preset: null,
+        on: true,
+        where: { tag: 'painted' },
+        spans: [span(asOf, 1, null, { tag: 'brushes', brushes: [paint] })]
+      });
+      const lots = { [queryKey(customQuery(paint))]: painted };
+      const p = makeHost();
+      p.open({ policy: doc, lots, months: 60 });
+      p.prefetchAll();
+      await p.runAll();
+      return { p, doc, painted, lots };
+    })());
+
   it('with a painted policy from today, a slot on a painted lot carries the zoning bit', async () => {
-    // every other lot of the fixture painted to 20 stories from model month 1
-    const painted = ds.loaded.fzp.parcels.id.filter((_, i) => i % 2 === 0);
-    const paint: CustomBrush = {
-      id: 'paint-all',
-      kind: 'paint',
-      strokes: [{ path: [[-122.419, 37.76]], radiusM: 30 }],
-      stories: 20
-    };
-    const doc: SimPolicy4 = structuredClone(DEFAULT_POLICY4);
-    doc.kinds.zoning.push({
-      id: 'p',
-      label: 'p',
-      preset: null,
-      on: true,
-      where: { tag: 'painted' },
-      spans: [span(asOf, 1, null, { tag: 'brushes', brushes: [paint] })]
-    });
-    const p = makeHost();
-    p.open({ policy: doc, lots: { [queryKey(customQuery(paint))]: painted }, months: 60 });
-    p.prefetchAll();
-    await p.runAll();
+    const { p, painted } = await paintedHost();
     expect(p.errors()).toEqual([]);
     const ctl = applyAll(p.of('cells').map((c) => c.render));
     const onPaint = new Set(painted);
@@ -517,6 +546,82 @@ describe('a full fill of the default document', () => {
       );
     });
     expect(wrong).toEqual([]);
+  });
+
+  it("with a painted policy from today, a painted lot's marker carries the zoning bit its slot carries", async () => {
+    const { p, doc, lots } = await paintedHost();
+    const ctl = applyAll(p.of('cells').map((c) => c.render));
+    const rowOf = rowsByProject(plainLoop(doc, 60, lots).world1);
+    let zoned = 0;
+    const wrong: string[] = [];
+    for (const c of ctl.cells.values()) {
+      c.slotProjectIds.forEach((id, s) => {
+        const m = ctl.markers.get(rowOf.get(id)!);
+        const slot = c.slotFlags![s] & SLOT_FLAG.zoning;
+        if (slot !== 0) zoned++;
+        if (m === undefined || (m.flags & SLOT_FLAG.zoning) !== slot) wrong.push(id);
+      });
+    }
+    expect(zoned).toBeGreaterThan(0);
+    expect(wrong).toEqual([]);
+  });
+
+  it('the city feed holds one marker per drawn project, and each cells post transfers its buffers', () => {
+    const posts = snapshot.filter((p) => p.msg.type === 'cells');
+    const updates = posts.map((p) => (p.msg as Of<'cells'>).render);
+    expect(updates[0].city).toBeDefined();
+    let deltas = 0;
+    for (const { msg, transfer } of posts) {
+      const city = (msg as Of<'cells'>).render.city;
+      // no buffer listed twice
+      expect(new Set(transfer).size).toBe(transfer.length);
+      if (!city) continue;
+      deltas++;
+      const bufs = [city.row, city.lngLat, city.days, city.homes, city.flags].map((a) => a.buffer);
+      expect(bufs.filter((b) => !transfer.includes(b as ArrayBuffer))).toEqual([]);
+    }
+    expect(deltas).toBeGreaterThan(1);
+    const ctl = applyAll(updates);
+    const w = plain.world1;
+    // every row with a T11 lot has its marker, loaded cell or not, and nothing else
+    expect([...ctl.markers.keys()].sort((a, b) => a - b)).toEqual(
+      anchoredRows(w, ds.statics, ds.loaded.fzp.parcels)
+    );
+    // fixture-0 loads every cell: each slot's row has a marker, and its days are the slot's
+    const rowOf = rowsByProject(w);
+    const CONSTRUCTION = STAGE_ORDER.indexOf('construction');
+    const NS = STAGE_ORDER.length;
+    let slots = 0;
+    const wrong: string[] = [];
+    for (const c of ctl.cells.values()) {
+      c.slotProjectIds.forEach((id, s) => {
+        slots++;
+        const m = ctl.markers.get(rowOf.get(id)!);
+        const done = c.slotEnd[2 * s + 1] === 1 ? c.slotEnd[2 * s] : NaN;
+        const same = (a: number, b: number) => a === b || (Number.isNaN(a) && Number.isNaN(b));
+        if (
+          m === undefined ||
+          !same(m.started, c.slotStages[NS * s + CONSTRUCTION]) ||
+          !same(m.completed, done)
+        )
+          wrong.push(id);
+      });
+    }
+    expect(slots).toBeGreaterThan(0);
+    expect(wrong).toEqual([]);
+  });
+
+  it('resyncMap answers a revision 0 whose city holds every marker', () => {
+    const ctl = applyAll(snapshot.flatMap((p) => (p.msg.type === 'cells' ? [p.msg.render] : [])));
+    const before = h.posts.length;
+    h.handle({ type: 'resyncMap' });
+    const got = h.posts.slice(before).filter((p) => p.msg.type === 'cells');
+    expect(got.length).toBe(1);
+    const render = (got[0].msg as Of<'cells'>).render;
+    expect(render.revision).toBe(0);
+    expect(render.city!.rows).toBe(plain.world1.projects.n);
+    expect(markersOf(render.city!)).toEqual(ctl.markers);
+    expect(got[0].transfer).toContain(render.city!.days.buffer);
   });
 
   it('resyncMap answers a revision 0 holding every cell', () => {

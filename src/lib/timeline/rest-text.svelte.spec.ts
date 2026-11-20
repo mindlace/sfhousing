@@ -93,6 +93,8 @@ describe('rest text (rules 37 to 39)', () => {
     await expect.element(key).toBeVisible();
     await expect.element(key.getByText('Planning review')).toBeVisible();
     await expect.element(key.getByText('Just changed stage')).toBeVisible();
+    await expect.element(key.getByText('Zoomed out: one per area')).toBeVisible();
+    await expect.element(key.getByText('Edge glow: off screen')).toBeVisible();
     await expect.element(key.getByText('Bar: progress and chance of finishing')).toBeVisible();
     expect(longTexts()).toEqual([]);
   });

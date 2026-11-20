@@ -1,7 +1,7 @@
 /// <reference types="@vitest/browser-playwright" />
 import { afterEach, describe, expect, it } from 'vitest';
 import { render } from 'vitest-browser-svelte';
-import { cdp, page } from 'vitest/browser';
+import { cdp, page, userEvent } from 'vitest/browser';
 import '../../routes/layout.css';
 import { REFERENCE_NOTE } from '$lib/timeline/copy';
 import { chartLabel, chartModel, tableRows } from './chart';
@@ -39,11 +39,36 @@ const rect = (id: string) => {
   return { x: Number(r.getAttribute('x')), width: Number(r.getAttribute('width')) };
 };
 const cursorX = () => Number(document.querySelector('[data-cursor]')!.getAttribute('x1'));
+/**
+ * Renders the chart with the pointer at rest on the plot. The pointer stays where an earlier test
+ * or file left it, and a chart drawn under it gets a pointer enter with no move: on a reference
+ * label that opens its explanation, which from md covers Show as table. The plot has none, so
+ * moving the pointer there closes it; the test goes on once no explanation is open.
+ */
+async function renderChart(p: ReturnType<typeof props>) {
+  const screen = await render(ScoreChart, { props: p });
+  await userEvent.hover(svg());
+  await expect.element(page.getByRole('tooltip')).not.toBeInTheDocument();
+  return screen;
+}
 
 describe('ScoreChart', () => {
+  it('a pointer left resting on a reference label does not keep Show as table from opening', async () => {
+    await page.viewport(1024, 768);
+    const first = await renderChart(props());
+    const labels = document.querySelectorAll<HTMLElement>('[data-reference-label] button');
+    await userEvent.hover(labels[labels.length - 1]);
+    await expect.element(page.getByRole('tooltip')).toBeVisible();
+    // The pointer stays where the label was; the next chart is drawn under it.
+    await first.unmount();
+    await renderChart(props());
+    await page.getByText('Show as table').click();
+    await expect.element(page.getByRole('columnheader', { name: 'Date' })).toBeVisible();
+  });
+
   it('is a figure whose svg is an image labelled with the summary', async () => {
     await page.viewport(1024, 768);
-    await render(ScoreChart, { props: props() });
+    await renderChart(props());
     expect(document.querySelector('figure svg[role="img"]')).not.toBeNull();
     await expect
       .element(page.getByRole('img', { name: chartLabel(TIMELINE_SCORE, monthOf(DAY1)) }))
@@ -52,7 +77,7 @@ describe('ScoreChart', () => {
 
   it('Show as table opens a table with the six columns and tableRows rows', async () => {
     await page.viewport(1024, 768);
-    await render(ScoreChart, { props: props() });
+    await renderChart(props());
     await page.getByText('Show as table').click();
     const headers = page.getByRole('columnheader').elements();
     expect(headers.map((h) => h.textContent)).toEqual([
@@ -76,7 +101,7 @@ describe('ScoreChart', () => {
 
   it('the Results chart says it counts toward the goal since Jun 2022', async () => {
     await page.viewport(1024, 768);
-    await render(ScoreChart, { props: props() });
+    await renderChart(props());
     expect(svg().getAttribute('aria-label')).toMatch(/^Toward the goal, since Jun 2022: /);
     expect([...svg().querySelectorAll('text')].some((t) => t.textContent === 'State target')).toBe(
       true
@@ -85,7 +110,7 @@ describe('ScoreChart', () => {
 
   it('moves the cursor line with the day prop', async () => {
     await page.viewport(1024, 768);
-    const screen = await render(ScoreChart, { props: props() });
+    const screen = await renderChart(props());
     const model = () => chartModel(TIMELINE_SCORE, FIX_ASOF, FIX_HORIZON, svgWidth(), 290);
     expect(cursorX()).toBeCloseTo(model().x(DAY1), 1);
     await screen.rerender(props({ day: DAY2 }));
@@ -97,7 +122,7 @@ describe('ScoreChart', () => {
     await page.viewport(1024, 768);
     const mid = dayFromUtc(2035, 6, 15);
     const totalD = () => document.querySelector('[data-series="total"]')!.getAttribute('d')!;
-    const full = await render(ScoreChart, { props: props({ day: mid, highWater: FIX_HORIZON }) });
+    const full = await renderChart(props({ day: mid, highWater: FIX_HORIZON }));
     const fullD = totalD();
     await full.rerender(props({ day: mid, highWater: mid }));
     await expect.poll(totalD).not.toBe(fullD);
@@ -112,7 +137,7 @@ describe('ScoreChart', () => {
   it('lines are solid to the cursor, thinner to the furthest date, absent past it', async () => {
     await page.viewport(1024, 768);
     const reached = dayFromUtc(2038, 1, 1);
-    await render(ScoreChart, { props: props({ reached }) });
+    await renderChart(props({ reached }));
     const model = chartModel(TIMELINE_SCORE, FIX_ASOF, FIX_HORIZON, svgWidth(), 290);
     const shown = rect('results-clip-shown');
     const seen = rect('results-clip-seen');
@@ -134,7 +159,7 @@ describe('ScoreChart', () => {
 
   it('a fully reached forecast cuts nothing short of the plot end', async () => {
     await page.viewport(1024, 768);
-    await render(ScoreChart, { props: props() });
+    await renderChart(props());
     const seen = rect('results-clip-seen');
     expect(seen.x + seen.width).toBeCloseTo(svgWidth(), 1);
   });
@@ -142,7 +167,7 @@ describe('ScoreChart', () => {
   it('the table lists months up to the playhead only', async () => {
     await page.viewport(1024, 768);
     const day = TIMELINE_SCORE.months[30];
-    await render(ScoreChart, { props: props({ day, reached: TIMELINE_SCORE.months[200] }) });
+    await renderChart(props({ day, reached: TIMELINE_SCORE.months[200] }));
     await page.getByText('Show as table').click();
     const expected = tableRows(TIMELINE_SCORE, FIX_ASOF, 30);
     expect(expected[expected.length - 1].index).toBe(30);
@@ -155,7 +180,7 @@ describe('ScoreChart', () => {
 
   it('the label names values up to the playhead only', async () => {
     await page.viewport(1024, 768);
-    await render(ScoreChart, { props: props({ day: DAY1, reached: FIX_HORIZON }) });
+    await renderChart(props({ day: DAY1, reached: FIX_HORIZON }));
     const label = svg().getAttribute('aria-label')!;
     expect(label).not.toContain('by 2045');
     expect(label).toContain("by the goal's deadline");
@@ -164,7 +189,7 @@ describe('ScoreChart', () => {
 
   it('moving the day writes no path', async () => {
     await page.viewport(1024, 768);
-    const screen = await render(ScoreChart, { props: props() });
+    const screen = await renderChart(props());
     let writes = 0;
     const observer = new MutationObserver((records) => (writes += records.length));
     observer.observe(svg(), { subtree: true, attributes: true, attributeFilter: ['d'] });
@@ -180,7 +205,7 @@ describe('ScoreChart', () => {
   it('references and the target line are drawn whole', async () => {
     await page.viewport(1024, 768);
     const reached = dayFromUtc(2026, 6, 1);
-    await render(ScoreChart, { props: props({ day: reached, reached }) });
+    await renderChart(props({ day: reached, reached }));
     const model = chartModel(TIMELINE_SCORE, FIX_ASOF, FIX_HORIZON, svgWidth(), 290);
     const target = document.querySelector('[data-series="rhna"]')!;
     expect(Number(target.getAttribute('x1'))).toBe(0);
@@ -196,7 +221,7 @@ describe('ScoreChart', () => {
 
   it('draws every series, each tagged with data-series', async () => {
     await page.viewport(1024, 768);
-    await render(ScoreChart, { props: props() });
+    await renderChart(props());
     for (const key of ['total', 'pipeline', 'fresh', 'planCompleted', 'planEntitled']) {
       expect(document.querySelector(`[data-series="${key}"]`), key).not.toBeNull();
     }
@@ -205,7 +230,7 @@ describe('ScoreChart', () => {
 
   it('marks the series by stroke and dash pattern', async () => {
     await page.viewport(1024, 768);
-    await render(ScoreChart, { props: props() });
+    await renderChart(props());
     const attr = (key: string, name: string) =>
       document.querySelector(`[data-series="${key}"]`)!.getAttribute(name);
     expect(attr('total', 'stroke')).toBe('var(--chart-total)');
@@ -218,7 +243,7 @@ describe('ScoreChart', () => {
 
   it('plan effect not yet computed: no plan paths, calculating legend and cells, references kept', async () => {
     await page.viewport(1024, 768);
-    await render(ScoreChart, { props: props({ score: TIMELINE_SCORE_R0 }) });
+    await renderChart(props({ score: TIMELINE_SCORE_R0 }));
     for (const key of ['planCompleted', 'planEntitled']) {
       expect(document.querySelector(`[data-series="${key}"]`), key).toBeNull();
     }
@@ -236,7 +261,7 @@ describe('ScoreChart', () => {
 
   it('explains the dotted reference lines', async () => {
     await page.viewport(1024, 768);
-    await render(ScoreChart, { props: props() });
+    await renderChart(props());
     await expect.element(page.getByText(REFERENCE_NOTE).first()).not.toBeInTheDocument();
     await page
       .getByRole('button', { name: /^Planning: about 39,000/ })
@@ -255,7 +280,7 @@ describe('ScoreChart', () => {
   it('keeps the plan-effect domain inside the plot when the effect is negative', async () => {
     await page.viewport(1024, 768);
     const score = makeTimelineScore();
-    await render(ScoreChart, { props: props({ score }) });
+    await renderChart(props({ score }));
     const model = chartModel(score, FIX_ASOF, FIX_HORIZON, svgWidth(), 290);
     expect(model.yMin).toBeLessThan(0);
     const d = document.querySelector('[data-series="planCompleted"]')!.getAttribute('d')!;
@@ -274,7 +299,7 @@ describe('ScoreChart themes', () => {
 
   it('resolves every stroke, label and halo, and they change with the scheme', async () => {
     await page.viewport(1024, 768);
-    await render(ScoreChart, { props: props() });
+    await renderChart(props());
     const st = (sel: string, prop: 'stroke' | 'fill') =>
       getComputedStyle(document.querySelector(sel)!)[prop];
     const read = () => [

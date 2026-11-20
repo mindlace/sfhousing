@@ -20,7 +20,14 @@ import { benchInput, fixtureInput } from './test/cities.node';
 import { benchRecords, fixtureRecords } from './test/map-stream-cities.node';
 import { sharedGenMemo, streamDeps as depsOf, warmGenMemo } from './test/map-stream-deps';
 import { useFastTypedArrayEquality } from './test/map-stream-equal';
-import { fill, startStream, StreamSink } from './test/map-stream-run';
+import {
+  anchoredRows,
+  FakeController,
+  fill,
+  markersOf,
+  startStream,
+  StreamSink
+} from './test/map-stream-run';
 import { Recorder, SEEDS, readAll, runWorld } from './test/run';
 import { frameOf, oneFrame } from './test/timeline';
 import { ORIGIN_SIM, type Due } from './types';
@@ -277,6 +284,65 @@ describe('map-stream: onEvent and flush', () => {
     step(world, due, bench.statics, bench.timeline, SEED, sink);
     expect(stream.flush(world, bench.statics, Infinity)).not.toBeNull();
     expect(stream.flush(world, bench.statics, Infinity)).toBeNull();
+  });
+
+  it('a flush carries city rows for events whose cells are not ready', () => {
+    const { world, sink, stream, due } = started(bench, { ready: () => false });
+    const u0 = stream.flush(world, bench.statics, Infinity)!;
+    expect(u0.cells).toEqual([]);
+    expect(u0.city!.row.length).toBeGreaterThan(0);
+    // one month's events: only rows they touched whose marker changed, and no cell
+    const evented = new Set<number>();
+    step(world, due, bench.statics, bench.timeline, SEED, {
+      event: (e) => {
+        evented.add(e.row);
+        sink.event(e);
+      }
+    });
+    const u = stream.flush(world, bench.statics, Infinity)!;
+    expect(u).not.toBeNull();
+    expect(u.revision).toBe(1);
+    expect(u.cells).toEqual([]);
+    expect(u.city!.rows).toBe(world.projects.n);
+    const rows = [...markersOf(u.city!).keys()];
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows.filter((r) => !evented.has(r))).toEqual([]);
+    expect(stream.flush(world, bench.statics, Infinity)).toBeNull();
+  });
+
+  it('flush returns null when no cell, removal, demolition, restore or city row is pending', () => {
+    const { world, stream } = started(bench, { ready: () => false });
+    expect(stream.flush(world, bench.statics, Infinity)).not.toBeNull();
+    expect(stream.flush(world, bench.statics, Infinity)).toBeNull();
+    // an event that changes no marker, on a cell that cannot pack: still nothing to say
+    const row = anchoredRows(world, bench.statics, bench.input.parcels)[0];
+    stream.onEvent(touch(row), world, bench.statics);
+    expect(stream.flush(world, bench.statics, Infinity)).toBeNull();
+  });
+
+  it('revision 0 carries every marker', () => {
+    const { world, sink, stream, due } = started(bench);
+    const u0 = stream.flush(world, bench.statics, Infinity)!;
+    expect(u0.revision).toBe(0);
+    expect(u0.city!.rows).toBe(world.projects.n);
+    expect([...markersOf(u0.city!).keys()]).toEqual(
+      anchoredRows(world, bench.statics, bench.input.parcels)
+    );
+    // the deltas that follow keep the page's markers whole: their fold equals a snapshot's
+    const run = { world, statics: bench.statics, timeline: bench.timeline, seed: SEED, stream };
+    const updates = [u0, ...fill({ ...run, sink, due, through: 36 })];
+    const ctl = new FakeController();
+    for (const u of updates) ctl.apply(u);
+    const later = updates.slice(1).filter((u) => u.city);
+    expect(later.length).toBeGreaterThan(0);
+    // deltas, not the whole set each time
+    expect(Math.max(...later.map((u) => u.city!.row.length))).toBeLessThan(world.projects.n / 2);
+    const snap = stream.snapshot(world, bench.statics);
+    expect(snap.revision).toBe(0);
+    expect([...markersOf(snap.city!).keys()]).toEqual(
+      anchoredRows(world, bench.statics, bench.input.parcels)
+    );
+    expect(ctl.markers).toEqual(markersOf(snap.city!));
   });
 
   it('the budget packs oldest first and keeps the rest', () => {

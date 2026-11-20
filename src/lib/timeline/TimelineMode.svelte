@@ -806,6 +806,8 @@
       // Halos and marks from the dataset date on: nothing rings at today. Once, not per move.
       h.setHalos({ from: calibration.asOf });
     }
+    // Bars from the default zoom, one size, the person's projects first. The page's, once.
+    h.setBarMode('far');
     applyInset();
     // Rule 22.
     h.onResyncNeeded(() => session?.resync());

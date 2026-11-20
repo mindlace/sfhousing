@@ -7,6 +7,7 @@ import {
 } from './synthetic-timeline';
 import { timelineLookups } from '../fixtures/timeline-lookups';
 import type { TimedPackedCell } from '../types';
+import { validateCityDelta } from '../city-delta';
 import { STAGE_ORDER } from '$lib/timelapse/types';
 
 const NS = STAGE_ORDER.length;
@@ -126,6 +127,52 @@ describe('makeSyntheticTimeline', () => {
         }
     });
 
+    it('carries one marker per project, at its site, with the days of its schedule and every tenth flagged', () => {
+      const city = u.city!;
+      expect(() => validateCityDelta(city)).not.toThrow();
+      expect(city.rows).toBe(3000);
+      expect(city.from).toBeUndefined();
+      expect(Array.from(city.row)).toEqual(Array.from({ length: 3000 }, (_, i) => i));
+      const f32 = (v: number) => Math.fround(v);
+      const nan = (v: number) => (Number.isNaN(v) ? NaN : f32(v));
+      let flagged = 0;
+      for (const { c, s } of slots) {
+        // The marker's row is the project's number (packing sorts the slots of a cell).
+        const i = Number(c.slotProjectIds[s].slice(-7));
+        // At its site: a vertex of its footprint (placeBuilding anchors a part's first there).
+        let [x0, y0, x1, y1] = [Infinity, Infinity, -Infinity, -Infinity];
+        for (let p = 0; p < c.partCount; p++) {
+          if (c.partSlot[p] !== s) continue;
+          for (let v = c.startIndices[p]; v < c.startIndices[p + 1]; v++) {
+            [x0, x1] = [Math.min(x0, c.positions[2 * v]), Math.max(x1, c.positions[2 * v])];
+            [y0, y1] = [Math.min(y0, c.positions[2 * v + 1]), Math.max(y1, c.positions[2 * v + 1])];
+          }
+        }
+        const EPS = 1e-5; // float32 at San Francisco's longitude
+        expect(city.lngLat[2 * i]).toBeGreaterThanOrEqual(x0 - EPS);
+        expect(city.lngLat[2 * i]).toBeLessThanOrEqual(x1 + EPS);
+        expect(city.lngLat[2 * i + 1]).toBeGreaterThanOrEqual(y0 - EPS);
+        expect(city.lngLat[2 * i + 1]).toBeLessThanOrEqual(y1 + EPS);
+        const at = (st: (typeof STAGE_ORDER)[number]) => c.slotStages[NS * s + stage(st)];
+        const entitled = at('entitled');
+        const approved = Number.isNaN(entitled) ? at('permitIssued') : entitled;
+        const complete = c.slotEnd[2 * s + 1] === 1 ? c.slotEnd[2 * s] : NaN;
+        expect(Array.from(city.days.subarray(3 * i, 3 * i + 3))).toEqual([
+          nan(approved),
+          nan(at('construction')),
+          nan(complete)
+        ]);
+        // The final revision's homes (parcelMeta's units).
+        expect(city.homes[i]).toBe(c.parcelMeta[4 * s]);
+        expect(city.flags[i]).toBe(c.slotFlags![s]);
+        if (city.flags[i]) flagged++;
+        // Every tenth project by number.
+        expect(city.flags[i] !== 0).toBe(i % 10 === 0);
+      }
+      expect(flagged).toBe(300);
+      expect(city.homes.some((h) => h > 0)).toBe(true);
+    });
+
     it('lists one demolish entry per project reaching construction, at that day', () => {
       const want = slots
         .filter(({ c, s }) => !Number.isNaN(c.slotStages[NS * s + stage('construction')]))
@@ -137,6 +184,11 @@ describe('makeSyntheticTimeline', () => {
       expect(want.length).toBeGreaterThan(1000);
       expect(u.demolish.map(key).sort()).toEqual(want.map(key).sort());
     });
+  });
+
+  it('leaves the city out when asked (the bench cases before the citywide one)', () => {
+    expect(makeSyntheticTimeline(1, 300, 200, false).city).toBeUndefined();
+    expect(makeSyntheticTimeline(1, 300, 200).city!.rows).toBe(300);
   });
 
   it('re-exports the hand-made timeline lookups', () => {

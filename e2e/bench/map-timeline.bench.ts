@@ -1,10 +1,12 @@
 // bench:map timeline cases (timelapse-render spec §4.7 and §6, docs/dev/map-perf.md): the same
-// 10 s pan as map-pan.bench.ts over downtown with a 30,000-project synthetic whole-city timeline
-// loaded, while `setTime` moves every frame. Reports rAF frame-time p50/p95 and the demolish
-// pump's largest per-frame operation count; passes at p95 ≤ 16.7 ms.
+// 10 s pan as map-pan.bench.ts over downtown (the citywide case: at the default desktop camera)
+// with a 30,000-project synthetic whole-city timeline loaded, while `setTime` moves every frame.
+// Reports rAF frame-time p50/p95 and the demolish pump's largest per-frame operation count;
+// passes at p95 ≤ 16.7 ms.
 import { expect, test, type Page } from '@playwright/test';
 import type { SfhBrushDebug } from '../../src/lib/brush/debug';
 import type { SfhMapDebug } from '../../src/lib/map/debug';
+import type { BarMode } from '../../src/lib/map/types';
 import { BAR_MS, pct, transitLayersOn, verdict } from './bench-util';
 
 type Win = Window & { __sfhMap?: SfhMapDebug; __sfhBrush?: SfhBrushDebug };
@@ -16,6 +18,15 @@ const DOWNTOWN = {
   pitch: 55,
   bearing: 0
 };
+/** The default desktop camera (src/lib/map/camera.ts defaultFrame(1280)). */
+const CITY = {
+  center: [-122.4194, 37.7749] as [number, number],
+  zoom: 13,
+  pitch: 55,
+  bearing: -20
+};
+/** CITY_HANDOVER_ZOOM (src/lib/map/timelapse/constants.ts): the halo gate while the city draws. */
+const HANDOVER_ZOOM = 14;
 const PAN_MS = 10_000;
 /** Pan speed, scaled by each frame's delta so 60 Hz and 120 Hz displays pan alike. */
 const PAN_PX_PER_S = 360;
@@ -32,17 +43,68 @@ const DRAG_SWEEP_MS = 2000;
  * the synthetic height limits (`loadSyntheticLimits(1)`: whole-city contours and a 3 km downtown
  * lid, plain mode) once the timeline is in. `halos` turns on the halo layer from DAY_START
  * (`setHalos`): a ring per stage change and a mark on every tenth project (synthetic-timeline.ts).
+ * `camera` is where the pan starts. `city` loads the synthetic city feed (one marker per
+ * project), so with `halos` the case also draws `timeline-city` (merged rings below zoom 14 and
+ * edge glows) and gates the projects' own rings and marks below 14 (one mark a square shows); the others load none and
+ * keep slice 5's layers. "playback + halos + city" is /sim zoomed in: the projects' own rings
+ * with the city's edge glows around them. `far` sets far bars (`setBarMode('far')`, as /sim):
+ * from zoom 12 at one size, so the citywide case draws bars at the default camera.
  */
 const CASES = [
-  { name: 'playback', daysPerS: PLAYBACK_DAYS_PER_S, limits: false, halos: false },
+  {
+    name: 'playback',
+    daysPerS: PLAYBACK_DAYS_PER_S,
+    limits: false,
+    halos: false,
+    city: false,
+    far: false,
+    camera: DOWNTOWN
+  },
   {
     name: 'drag',
     daysPerS: (DAY_END - DAY_START) / (DRAG_SWEEP_MS / 1000),
     limits: false,
-    halos: false
+    halos: false,
+    city: false,
+    far: false,
+    camera: DOWNTOWN
   },
-  { name: 'playback + limits', daysPerS: PLAYBACK_DAYS_PER_S, limits: true, halos: false },
-  { name: 'playback + halos', daysPerS: PLAYBACK_DAYS_PER_S, limits: false, halos: true }
+  {
+    name: 'playback + limits',
+    daysPerS: PLAYBACK_DAYS_PER_S,
+    limits: true,
+    halos: false,
+    city: false,
+    far: false,
+    camera: DOWNTOWN
+  },
+  {
+    name: 'playback + halos',
+    daysPerS: PLAYBACK_DAYS_PER_S,
+    limits: false,
+    halos: true,
+    city: false,
+    far: false,
+    camera: DOWNTOWN
+  },
+  {
+    name: 'playback + halos + city',
+    daysPerS: PLAYBACK_DAYS_PER_S,
+    limits: false,
+    halos: true,
+    city: true,
+    far: false,
+    camera: DOWNTOWN
+  },
+  {
+    name: 'citywide playback',
+    daysPerS: PLAYBACK_DAYS_PER_S,
+    limits: false,
+    halos: true,
+    city: true,
+    far: true,
+    camera: CITY
+  }
 ] as const;
 
 /** A limits case's synthetic height limits (the overlay slot), installed; its counts, else null. */
@@ -64,10 +126,17 @@ async function showHalos(page: Page, halos: boolean) {
     from
   );
 }
+/** A far case sets far bars (`setBarMode('far')`, as /sim); the others keep street bars. */
+async function setBars(page: Page, far: boolean) {
+  const mode: BarMode = far ? 'far' : 'street';
+  await page.evaluate((m) => (window as Win).__sfhMap!.setBarMode(m), mode);
+}
 const halosField = (halos: boolean, c: { halos: number; marks: number }) =>
   halos ? `halos=${c.halos} marks=${c.marks} ` : '';
+const cityField = (city: boolean, c: { cityRecords: number; cityMarkers: number }) =>
+  city ? `city=${c.cityRecords} markers=${c.cityMarkers} ` : '';
 
-for (const { name, daysPerS, limits, halos } of CASES)
+for (const { name, daysPerS, limits, halos, city, far, camera } of CASES)
   test(`bench:map: timeline ${name}`, async ({ page }) => {
     await transitLayersOn(page);
     await page.goto('/');
@@ -91,8 +160,8 @@ for (const { name, daysPerS, limits, halos } of CASES)
     // Each test is a fresh page load, so the pump's `demolishMaxFrameOps` high-water mark starts
     // at 0 for this case. The value read after install is the revision-0 catch-up.
     const { projects, cells } = await page.evaluate(
-      (n) => (window as Win).__sfhMap!.loadSyntheticTimeline(1, n),
-      PROJECTS
+      ({ n, c }) => (window as Win).__sfhMap!.loadSyntheticTimeline(1, n, c),
+      { n: PROJECTS, c: city }
     );
     expect(projects).toBe(PROJECTS);
     // The controller installs the timeline in per-frame slices; wait until every cell is in.
@@ -103,6 +172,7 @@ for (const { name, daysPerS, limits, halos } of CASES)
     );
     const limitCounts = await loadLimits(page, limits);
     await showHalos(page, halos);
+    await setBars(page, far);
     await page.evaluate((d) => (window as Win).__sfhMap!.setTime(d), DAY_START);
 
     await page.evaluate(
@@ -112,12 +182,12 @@ for (const { name, daysPerS, limits, halos } of CASES)
           map.once('idle', () => resolve());
           map.jumpTo(f);
         }),
-      DOWNTOWN
+      camera
     );
     const catchUpOps = await page.evaluate(() => (window as Win).__sfhMap!.demolishMaxFrameOps);
 
-    // Back and forth east/west so the camera stays over downtown (as map-pan). `setTime` runs once
-    // per frame, before the pan step.
+    // Back and forth east/west so the camera stays where it started (as map-pan). `setTime` runs
+    // once per frame, before the pan step.
     const deltas = await page.evaluate(
       ({ ms, speed, start: d0, end: d1, rate }) =>
         new Promise<number[]>((resolve) => {
@@ -154,12 +224,20 @@ for (const { name, daysPerS, limits, halos } of CASES)
         parts: s?.parts ?? 0,
         halos: s?.halos ?? 0,
         marks: s?.marks ?? 0,
+        cityRecords: s?.cityRecords ?? 0,
+        cityMarkers: s?.cityMarkers ?? 0,
+        ringMinZoom: s?.ringMinZoom ?? 0,
+        barMode: s?.barMode ?? 'street',
         pumpMaxOps: m.demolishMaxFrameOps
       };
     });
     expect(after.cells).toBe(cells);
-    // The halo case drew its records; the others none.
+    // The halo cases drew their records; the others none.
     expect(after.halos > 0 && after.marks > 0).toBe(halos);
+    // Only the city cases drew the city, and gated the projects' own rings.
+    expect(after.cityRecords > 0).toBe(city);
+    expect(after.ringMinZoom).toBe(city ? HANDOVER_ZOOM : 0);
+    expect(after.barMode).toBe(far ? 'far' : 'street');
     // The pump actually ran: playback and drag both cross demolition days.
     expect(after.pumpMaxOps).toBeGreaterThan(0);
 
@@ -170,6 +248,7 @@ for (const { name, daysPerS, limits, halos } of CASES)
       `bench:map timeline=${name} frames=${deltas.length} projects=${projects} ` +
       `p50=${p50.toFixed(1)}ms parts=${after.parts} ${limitsField(limitCounts)}` +
       halosField(halos, after) +
+      cityField(city, after) +
       `p95=${p95.toFixed(1)}ms ` +
       `pumpMaxOps=${after.pumpMaxOps} (catch-up ${catchUpOps}) bar=${BAR_MS}ms ${verdict(p95)} ` +
       `dpr=${dpr} renderer="${renderer}"`;

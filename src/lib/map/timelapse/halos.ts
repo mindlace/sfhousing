@@ -5,6 +5,7 @@
 import type { TokenName } from '../palette';
 import type { TimedPackedCell } from '../types';
 import { HALO_DAYS, HALO_R_PX, HALO_STILL_R_PX, MARK_PX } from './constants';
+import { cityGroup } from './city-grid';
 import { DYING_DAYS, OPEN_DAY, type Day } from '$lib/timelapse/time';
 import { STAGE_ORDER } from '$lib/timelapse/types';
 
@@ -25,6 +26,11 @@ export interface HaloAttrs {
   anchor: [lng: number, lat: number]; // centre of the bbox of the slot's final revision's parts
   day: Day; // the event day; a mark's first stage day
   until: Day; // a ring: day + HALO_DAYS; a mark: OPEN_DAY, or endDay + DYING_DAYS after an exit
+  /**
+   * From this day until `until`, a mark is its city square's one diamond below the gate
+   * (`areaMarks`); `until` when it never is, and for every ring.
+   */
+  areaFrom: Day;
   kind: 0 | 1 | 2 | 3;
   policy: boolean; // slotFlags[s] !== 0
 }
@@ -71,10 +77,12 @@ function anchors(c: TimedPackedCell): ([number, number] | null)[] {
  * Per slot of each cell, in cell then slot order: approved (the first of entitled and
  * permitIssued entered), started (construction), completed (slotEnd kind 1), each only when its
  * day is after `from`; then one mark when the slot has a flag and its first stage day is after
- * `from`. A slot without parts has no anchor and no records.
+ * `from`. A slot without parts has no anchor and no records. Marks get their `areaFrom` from
+ * `areaMarks`; a ring's is its `until`.
  */
 export function buildHalos(cells: Iterable<TimedPackedCell>, from: Day): HaloAttrs[] {
   const out: HaloAttrs[] = [];
+  const marks: { mark: HaloAttrs; homes: number }[] = [];
   for (const c of cells) {
     const at = anchors(c);
     for (let s = 0; s < c.slotProjectIds.length; s++) {
@@ -87,7 +95,15 @@ export function buildHalos(cells: Iterable<TimedPackedCell>, from: Day): HaloAtt
       const endKind = c.slotEnd[2 * s + 1];
       const ring = (day: number, kind: 0 | 1 | 2) => {
         if (!Number.isNaN(day) && day > from)
-          out.push({ projectId, anchor, day, until: day + HALO_DAYS, kind, policy });
+          out.push({
+            projectId,
+            anchor,
+            day,
+            until: day + HALO_DAYS,
+            areaFrom: day + HALO_DAYS,
+            kind,
+            policy
+          });
       };
       ring(earlier(stages[ENTITLED], stages[PERMIT_ISSUED]), HALO_KIND.approved);
       ring(stages[CONSTRUCTION], HALO_KIND.started);
@@ -97,25 +113,95 @@ export function buildHalos(cells: Iterable<TimedPackedCell>, from: Day): HaloAtt
       for (let j = 0; j < NS; j++) first = earlier(first, stages[j]);
       if (Number.isNaN(first) || first <= from) continue;
       const until = endKind === 2 ? endDay + DYING_DAYS : OPEN_DAY;
-      out.push({ projectId, anchor, day: first, until, kind: HALO_KIND.mark, policy });
+      const mark: HaloAttrs = {
+        projectId,
+        anchor,
+        day: first,
+        until,
+        areaFrom: until,
+        kind: HALO_KIND.mark,
+        policy
+      };
+      out.push(mark);
+      marks.push({ mark, homes: c.parcelMeta[4 * s] });
     }
   }
+  areaMarks(marks);
   return out;
 }
 
 /**
- * CPU reference of the halo shader on day t. Ring: visible iff day <= t < until; radius
- * HALO_R_PX[0] + (HALO_R_PX[1] − HALO_R_PX[0]) · age / HALO_DAYS and alpha 1 − age / HALO_DAYS,
- * or, reduced, HALO_STILL_R_PX and 1. Mark: visible iff day <= t < until, MARK_PX, alpha 1.
+ * Sets each mark's `areaFrom` so that below the gate every city square (`cityGroup` of the
+ * mark's anchor, the 800 m grid of `CityStore`) with a standing mark (day <= t < until) shows
+ * exactly one. The square's mark at t is its standing mark first by (day, then homes
+ * descending, then projectId); it keeps the square until its own end, since a mark revealed
+ * later never comes first, and then the square hands over to the first still standing, or,
+ * with none, to the next revealed. Each mark stands for its square at most once, over
+ * [areaFrom, until), so the records stay one per mark. Runs once per halo rebuild, never per
+ * frame: O(m log m) for the sort plus O(m · h) per square of m marks and h handovers (h <= m;
+ * one plus the square's exits, as most marks last to OPEN_DAY).
  */
-export function evalHalo(h: HaloAttrs, t: Day, reduced: boolean): HaloEval {
+function areaMarks(marks: { mark: HaloAttrs; homes: number }[]): void {
+  const squares = new Map<number, { mark: HaloAttrs; homes: number }[]>();
+  for (const m of marks) {
+    const g = cityGroup(m.mark.anchor[0], m.mark.anchor[1]);
+    let list = squares.get(g);
+    if (!list) squares.set(g, (list = []));
+    list.push(m);
+  }
+  for (const list of squares.values()) {
+    list.sort(
+      (a, b) =>
+        a.mark.day - b.mark.day ||
+        b.homes - a.homes ||
+        (a.mark.projectId < b.mark.projectId ? -1 : a.mark.projectId > b.mark.projectId ? 1 : 0)
+    );
+    // The square's mark from day `t`: the first in order standing at t, else the first revealed
+    // after it (list order breaks ties on the start).
+    let t = -Infinity;
+    for (;;) {
+      let next: HaloAttrs | null = null;
+      let start = Infinity;
+      for (const { mark } of list) {
+        if (mark.until <= t) continue;
+        const s = Math.max(mark.day, t);
+        if (s < start) {
+          next = mark;
+          start = s;
+        }
+      }
+      if (!next) break;
+      next.areaFrom = start;
+      t = next.until;
+    }
+  }
+}
+
+/**
+ * CPU reference of the halo shader on day t at map zoom `zoom`. Every halo, ring or mark, hides
+ * while zoom < ringMinZoom (the city layer's handover, where its merged rings, the doubled
+ * accent ring for policy projects included, stand for them; 0, no gate, wherever there is no
+ * city layer), except a mark from its `areaFrom`: its square's one diamond. Ring: visible iff day <= t < until; radius HALO_R_PX[0] + (HALO_R_PX[1] −
+ * HALO_R_PX[0]) · age / HALO_DAYS and alpha 1 − age / HALO_DAYS, or, reduced, HALO_STILL_R_PX
+ * and 1. Mark: visible iff day <= t < until, MARK_PX, alpha 1.
+ */
+export function evalHalo(
+  h: HaloAttrs,
+  t: Day,
+  reduced: boolean,
+  zoom = Infinity,
+  ringMinZoom = 0
+): HaloEval {
   // 1. Hidden: outside [day, until).
   if (t < h.day || t >= h.until) return { visible: false, radiusPx: 0, alpha: 0 };
-  // 2. A mark: one size, full strength.
+  // 2. Below the gate (rings and marks): the city layer's merged rings stand for them, and one
+  //    mark a square (from its areaFrom; a ring's is its until) stands for the square's marks.
+  if (zoom < ringMinZoom && t < h.areaFrom) return { visible: false, radiusPx: 0, alpha: 0 };
+  // 3. A mark: one size, full strength.
   if (h.kind === HALO_KIND.mark) return { visible: true, radiusPx: MARK_PX, alpha: 1 };
-  // 3. Reduced motion: a still ring.
+  // 4. Reduced motion: a still ring.
   if (reduced) return { visible: true, radiusPx: HALO_STILL_R_PX, alpha: 1 };
-  // 4. A ring grows and fades over its life.
+  // 5. A ring grows and fades over its life.
   const u = (t - h.day) / HALO_DAYS;
   return {
     visible: true,

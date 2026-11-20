@@ -2,7 +2,7 @@
 
 `createMapStream(deps, windowMonths)` (`src/lib/sim/world/map-stream.ts`) turns the plan world's events into the map's whole-cell `TimelineUpdate`s (spec `docs/superpowers/specs/2026-11-13-map-stream-design.md`, S17). It is worker-safe and under the determinism rule (no transcendental `Math`).
 
-`MapStreamDeps`: `massing` (a `MassingCtx`: `records` answer for every parcel of every ready cell, `input.parcels` places cells), `cellReady(cellId)` (the cell's chunk records are loaded), `warnOnce(key, msg)`, `now?()` (budget clock, default `performance.now`), `massingCap?` (test seam, default 60,000), `flagsOf?(world, statics, row)` (the row's `SLOT_FLAG` bits, asked when its cell is packed; default 0).
+`MapStreamDeps`: `massing` (a `MassingCtx`: `records` answer for every parcel of every ready cell, `input.parcels` places cells and gives the city feed its label points), `cellReady(cellId)` (the cell's chunk records are loaded), `warnOnce(key, msg)`, `now?()` (budget clock, default `performance.now`), `massingCap?` (test seam, default 60,000), `flagsOf?(world, statics, row)` (the row's `SLOT_FLAG` bits, asked when its cell is packed and when its marker is read; default 0).
 
 ## Host calls
 
@@ -23,6 +23,16 @@
 - `rewind` compares the projects last sent with the restored world. A project gone or with a changed row (its schedule or its flags) dirties its cell; a cell left with no project goes into `removedCells`. A lot whose demolition no longer holds goes in `restore`; a lot whose day changed goes in `restore` and then `demolish`. Unchanged cells are not sent again.
 - `snapshot` is unbudgeted. Cells waiting on chunks stay dirty. Pending restore and removals are superseded.
 - Pipeline projects at the dataset date go out in the first updates.
+
+### The city feed
+
+The stream composes `createCityFeed` (`src/lib/sim/world/city-feed.ts`, worker-safe, under the determinism rule) with `anchorOf` = the row's `place(...).anchor` and the stream's `flagsOf`. It sends one marker per row with a T11 lot in `TimelineUpdate.city` (the wire contract and sizes: [map-interfaces.md](map-interfaces.md), "The citywide feed").
+
+- `onEvent` touches the event's row, whether its cell is ready or not. Nothing else runs per world step.
+- `flush` takes the touched rows and sends those whose marker differs from the one sent, ascending, read at `lastDay` through `scheduleAt` (so a marker's days are its slot's whenever both exist). An update goes out for city rows alone; a flush with no changed row and nothing else pending returns null.
+- Revision 0 (the first flush and every `snapshot`) carries every marker of the world, whatever was touched.
+- `rewind` runs the feed's rewind after the stream's own, and every row whose marker now differs from the one sent (a day, the homes or the flags) is resent. When a marker at or past the restored world's `n` was sent, `n` is the drop floor; a surviving row whose sent marker is now null (it lost its lot) lowers the floor to that row, since only `from` takes a marker off the page (the lowest over the rewinds since the last flush). The next update's `city.from` carries it, even with no row in it and no event since, and that update also carries every row with a marker from the floor to the world's row count then: the refill's loud steps may re-create rows there before the flush, touched or not, with a lot or not, and the page forgets every marker at or past `from` first.
+- Days are the world's as of `lastDay`, ahead of the playhead too: the page and its shaders hide what the clock has not reached.
 
 ## Massing memo
 

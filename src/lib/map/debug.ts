@@ -4,14 +4,19 @@ import type { Map as MapLibreMap } from 'maplibre-gl';
 import type { ControllerSnapshot, GeneratedController } from './generated-controller';
 import type { TimelineController } from './timeline-controller';
 import type { TimelineLookups, TimelineSnapshot } from './timelapse/types';
-import type { GeneratedUpdate, SimMapHandle, Theme, TimelineUpdate } from './types';
+import type { BarMode, GeneratedUpdate, SimMapHandle, Theme, TimelineUpdate } from './types';
 import type { Day } from '$lib/timelapse/time';
 import { packCell } from './pack';
 
 /** SimMap's timeline handle functions: the hook calls them, so the lazy path runs as in FZP. */
 export type TimelineHandleFns = Pick<
   SimMapHandle,
-  'applyTimeline' | 'setTime' | 'setTimelineLookups' | 'setHalos' | 'setOverlayLayers'
+  | 'applyTimeline'
+  | 'setTime'
+  | 'setTimelineLookups'
+  | 'setHalos'
+  | 'setBarMode'
+  | 'setOverlayLayers'
 >;
 
 export interface SfhMapDebug {
@@ -39,10 +44,15 @@ export interface SfhMapDebug {
   ): Promise<{ parcels: number; cells: number }>;
   /**
    * bench:map and timeline-perf only (docs/dev/map-perf.md): sets `SYNTHETIC_LOOKUPS`, then
-   * applies `makeSyntheticTimeline(seed, n)` (revision 0) through SimMap's `applyTimeline`.
-   * Resolves to the project and cell counts.
+   * applies `makeSyntheticTimeline(seed, n, 1500, city)` (revision 0, with one city marker per
+   * project unless `city` is false) through SimMap's `applyTimeline`. Resolves to the project and
+   * cell counts.
    */
-  loadSyntheticTimeline(seed: number, n: number): Promise<{ projects: number; cells: number }>;
+  loadSyntheticTimeline(
+    seed: number,
+    n: number,
+    city?: boolean
+  ): Promise<{ projects: number; cells: number }>;
   /**
    * bench:map only (docs/dev/map-perf.md "Height limits case"): builds `makeSyntheticLimits(seed)`
    * (the whole-city contours and a downtown 3 km lid, on the main thread) and sets
@@ -58,6 +68,8 @@ export interface SfhMapDebug {
   setTimelineLookups(l: TimelineLookups): void;
   /** SimMap's `setHalos` (bench:map's "playback + halos" case). */
   setHalos(o: { from: Day } | null): void;
+  /** SimMap's `setBarMode` (bench:map's "citywide playback" case; screenshots of far bars). */
+  setBarMode(mode: BarMode): void;
   /** The TimelineController's snapshot; null outside timeline mode or while its module loads. */
   timelineSnapshot(): TimelineSnapshot | null;
   /** The demolish pump's largest feature-state call count in one frame; 0 without a timeline. */
@@ -91,6 +103,7 @@ export function installDebug(
     setTime: (day) => timeline.setTime(day),
     setTimelineLookups: (l) => timeline.setTimelineLookups(l),
     setHalos: (o) => timeline.setHalos(o),
+    setBarMode: (mode) => timeline.setBarMode(mode),
     timelineSnapshot: () => get().timeline?.debugSnapshot() ?? null,
     get demolishMaxFrameOps() {
       return get().timeline?.demolishMaxFrameOps ?? 0;
@@ -170,10 +183,10 @@ export function installDebug(
       get().controller?.apply({ revision: 0, cells, removedCells: [], hide: { add, remove: [] } });
       return { parcels: add.length, cells: cells.length };
     },
-    loadSyntheticTimeline: async (seed, n) => {
+    loadSyntheticTimeline: async (seed, n, city = true) => {
       const { makeSyntheticTimeline, SYNTHETIC_LOOKUPS } =
         await import('./test/synthetic-timeline');
-      const u = makeSyntheticTimeline(seed, n);
+      const u = makeSyntheticTimeline(seed, n, 1500, city);
       timeline.setTimelineLookups(SYNTHETIC_LOOKUPS);
       timeline.applyTimeline(u);
       const projects = u.cells.reduce((a, c) => a + c.slotProjectIds.length, 0);
