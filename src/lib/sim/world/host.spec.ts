@@ -10,6 +10,7 @@ import { createLru } from '$lib/sim/lru';
 import { scenarioUrls } from '$lib/sim/scenario/load';
 import type { LedgerEvent } from '$lib/sim/scenario/money';
 import type { TimelineHostRequest, TimelineHostResponse } from '$lib/sim/timeline-protocol';
+import { fundingOnly } from '$lib/sim/levers/fixtures/finance';
 import { customQuery, queryKey, type CustomBrush } from '$lib/sim-page/policy';
 import type { Policy, SimPolicy4 } from '$lib/timeline/policy4';
 import type { Day } from '$lib/timelapse/time';
@@ -458,6 +459,63 @@ describe('a full fill of the default document', () => {
       });
     }
     expect(flaggedOnPaint).toBeGreaterThan(0);
+    expect(wrong).toEqual([]);
+  });
+
+  it('with a fund policy on an added pool, its funded slots carry the money bit', async () => {
+    // a new pool with ample money from today and one grant programme on it (as fundingOnly())
+    const base = fundingOnly();
+    const pool = {
+      ...base.pools[0],
+      id: 'u-test-pool',
+      inflows: [{ kind: 'yearly' as const, from: asOf, to: null, dollarsPerYear: 500_000_000 }]
+    };
+    const programme = {
+      ...base.programmes[0],
+      id: 'u-test-prog',
+      pool: pool.id,
+      instrument: { kind: 'grant' as const, share: 0.5 },
+      from: asOf
+    };
+    expect(ds.loaded.fzp.finance!.pools.map((x) => x.id)).not.toContain(pool.id);
+    const doc: SimPolicy4 = structuredClone(DEFAULT_POLICY4);
+    doc.kinds.money.push({
+      id: 'fund',
+      label: 'fund',
+      preset: null,
+      on: true,
+      where: { tag: 'fund', pool: pool.id },
+      spans: [span(asOf, 1, null, { tag: 'fund', pool, programmes: [programme] })]
+    });
+    const months = 60;
+    const f = makeHost();
+    f.open({ policy: doc, months });
+    f.prefetchAll();
+    await f.runAll();
+    expect(f.errors()).toEqual([]);
+    // the host's plan world is the plain loop's (seed 1): its rows name what each slot is
+    const w = plainLoop(doc, months).world1;
+    const day = monthLastDay(asOf, w.month);
+    const rowOf = new Map<string, number>();
+    for (let row = 0; row < w.projects.n; row++) {
+      const sc = scheduleAt(w, ds.statics, row, day);
+      if (sc) rowOf.set(sc.projectId, row);
+    }
+    const ctl = applyAll(f.of('cells').map((c) => c.render));
+    const money: string[] = [];
+    for (const c of ctl.cells.values())
+      c.slotProjectIds.forEach((id, s) => {
+        if ((c.slotFlags![s] & SLOT_FLAG.money) !== 0) money.push(id);
+      });
+    expect(money.length).toBeGreaterThan(0);
+    const wrong = money.filter((id) => {
+      const row = rowOf.get(id);
+      if (row === undefined || !id.startsWith('sim:')) return true;
+      return (
+        w.projects.funded[row] !== 1 ||
+        !w.projects.programmes[row].split(',').includes(programme.id)
+      );
+    });
     expect(wrong).toEqual([]);
   });
 
