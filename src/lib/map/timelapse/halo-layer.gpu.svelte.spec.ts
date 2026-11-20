@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Deck, MapView, type Layer, type MapViewState } from '@deck.gl/core';
 import { HaloLayer } from './halo-layer';
 import { HALO_KIND, evalHalo, type HaloAttrs } from './halos';
-import { HALO_DAYS, HALO_STILL_R_PX, MARK_PX } from './constants';
+import { HALO_DAYS, HALO_R_PX, HALO_STILL_R_PX, MARK_PX } from './constants';
 import type { TimelineClock } from './types';
 import { TOKENS, hexToRgba, type TokenName } from '../palette';
 import type { Theme } from '../types';
@@ -16,6 +16,8 @@ const CH = 96;
 const CENTRE: [number, number] = [-122.42, 37.77];
 /** The event day. */
 const D = 21000;
+/** A ring's radius at birth. */
+const HALO_R_PX_0 = HALO_R_PX[0];
 /** The clear colour (opaque magenta): unlike every halo token, so "nothing drawn" is visible. */
 const BG: Rgb = [255, 0, 255];
 /** Per-channel tolerance (0–255) for opaque pixels. */
@@ -64,8 +66,13 @@ describe('HaloLayer on the GPU', () => {
   const errors: Error[] = [];
   const clock: TimelineClock = { day: D, theme: 'light' };
 
-  function halos(data: HaloAttrs[], reduced = false): HaloLayer {
-    return new HaloLayer({ data, clock, reduced });
+  function halos(data: HaloAttrs[], reduced = false, ringMinZoom?: number): HaloLayer {
+    return new HaloLayer({
+      data,
+      clock,
+      reduced,
+      ...(ringMinZoom === undefined ? {} : { ringMinZoom })
+    });
   }
 
   function linkStatuses(): string[] {
@@ -286,6 +293,39 @@ describe('HaloLayer on the GPU', () => {
     expect(got).toEqual(want);
     render(D + HALO_DAYS);
     expect(drawnBox()).toBeNull();
+    expect(errors).toEqual([]);
+  });
+
+  it('with ringMinZoom 14, a ring draws at zoom 14 and not at 13.9; a mark draws at both', async () => {
+    const h = ring(HALO_KIND.started);
+    const policy = tok('light', 'tl-halo-policy');
+    const colour = tok('light', 'tl-halo-started');
+    const zoomTo = (zoom: number) => deck.setProps({ viewState: { ...VIEW_STATE, zoom } });
+    try {
+      const got: string[] = [];
+      const want: string[] = [];
+      const push = (label: string, g: Rgb, w: Rgb, tol = TOL_BLEND) => {
+        got.push(check(label, g, w, tol));
+        want.push(`${label}: ok`);
+      };
+      for (const zoom of [14, 13.9]) {
+        zoomTo(zoom);
+        await show([halos([h, MARK], false, 14)]);
+        render(D);
+        const e = evalHalo(h, D, false, zoom, 14);
+        expect(e.visible).toBe(zoom >= 14);
+        // The ring's east point: the stage colour at 14, nothing at 13.9.
+        push(`${zoom} ring`, at(HALO_R_PX_0), e.visible ? colour : BG);
+        push(`${zoom} mark`, at(0.5), policy, TOL);
+      }
+      // Without the prop the gate is off: a ring at 13.9.
+      await show([halos([h])]);
+      render(D);
+      push('no gate ring', at(HALO_R_PX_0), colour);
+      expect(got).toEqual(want);
+    } finally {
+      zoomTo(VIEW_STATE.zoom);
+    }
     expect(errors).toEqual([]);
   });
 });

@@ -26,6 +26,8 @@ type Rgb = [number, number, number];
 export type HaloModuleProps = {
   day: number;
   reduced: number; // 1 under reduced motion, else 0
+  /** 2^ringMinZoom (0 for no gate): rings show while project.scale >= it, exact at the gate. */
+  ringMinScale: number;
   approved: Rgb;
   started: Rgb;
   complete: Rgb;
@@ -41,6 +43,7 @@ const uniformBlock = /* glsl */ `\
 layout(std140) uniform haloUniforms {
   float day;
   float reduced;
+  float ringMinScale;
   vec3 approved;
   vec3 started;
   vec3 complete;
@@ -56,6 +59,7 @@ const haloModule = {
   uniformTypes: {
     day: 'f32',
     reduced: 'f32',
+    ringMinScale: 'f32',
     approved: 'vec3<f32>',
     started: 'vec3<f32>',
     complete: 'vec3<f32>',
@@ -95,15 +99,18 @@ struct HlEval {
   float alpha;
 };
 
-// The halo on day t. Port of evalHalo.
-HlEval hl_evalHalo(float day, float until, float kind, float t, bool reduced) {
+// The halo on day t at map scale 'scale' (2^zoom). Port of evalHalo; zoom < ringMinZoom is
+// compared as scale < 2^ringMinZoom, so the gate is exact at an integer zoom (no log2 rounding).
+HlEval hl_evalHalo(float day, float until, float kind, float t, bool reduced, float scale) {
   // 1. Hidden: outside [day, until).
   if (t < day || t >= until) return HlEval(false, 0.0, 0.0);
-  // 2. A mark: one size, full strength.
+  // 2. A ring below the gate: the city layer's merged ring stands for it.
+  if (kind != HL_MARK && scale < halo.ringMinScale) return HlEval(false, 0.0, 0.0);
+  // 3. A mark: one size, full strength.
   if (kind == HL_MARK) return HlEval(true, HL_MARK_PX, 1.0);
-  // 3. Reduced motion: a still ring.
+  // 4. Reduced motion: a still ring.
   if (reduced) return HlEval(true, HL_HALO_STILL_R_PX, 1.0);
-  // 4. A ring grows and fades over its life.
+  // 5. A ring grows and fades over its life.
   float u = (t - day) / HL_HALO_DAYS;
   return HlEval(true, HL_HALO_R_PX.x + (HL_HALO_R_PX.y - HL_HALO_R_PX.x) * u, 1.0 - u);
 }
@@ -119,7 +126,7 @@ vec3 hl_color(float kind, bool policy) {
 void main(void) {
   float kind = instanceHalo.z;
   HlEval e = hl_evalHalo(
-    instanceHalo.x, instanceHalo.y, kind, halo.day, halo.reduced > 0.5
+    instanceHalo.x, instanceHalo.y, kind, halo.day, halo.reduced > 0.5, project.scale
   );
   // Half the quad: the ring's outer edge, or half the diamond's diagonal; plus a pixel of margin.
   float halfPx = (kind == HL_MARK ? e.radiusPx / 2.0 : e.radiusPx + HL_STROKE_HALF_PX) + 1.0;
@@ -183,12 +190,15 @@ const srgb01 = (theme: Theme, name: TokenName): Rgb =>
     .slice(0, 3)
     .map((v) => v / 255) as Rgb;
 
-/** Per-theme colour uniforms, built once at module load. */
-const COLOURS: Record<Theme, Omit<HaloModuleProps, 'day' | 'reduced'>> = {
+/** The halo colours, 0-1 sRGB. */
+export type HaloColours = Omit<HaloModuleProps, 'day' | 'reduced' | 'ringMinScale'>;
+
+/** Per-theme colour uniforms, built once at module load; CityLayer draws in the same table. */
+export const HALO_COLOURS: Record<Theme, HaloColours> = {
   light: colours('light'),
   dark: colours('dark')
 };
-function colours(theme: Theme) {
+function colours(theme: Theme): HaloColours {
   return {
     approved: srgb01(theme, HALO_TOKEN.approved),
     started: srgb01(theme, HALO_TOKEN.started),
@@ -205,6 +215,11 @@ type _HaloLayerProps = {
   clock: TimelineClock;
   /** Reduced motion: every ring still, at HALO_STILL_R_PX and full strength. */
   reduced: boolean;
+  /**
+   * Rings (not marks) show only from this zoom: CITY_HANDOVER_ZOOM while a city layer draws the
+   * merged rings below it, else 0 (no gate). A uniform: changing it rebuilds nothing.
+   */
+  ringMinZoom: number;
 };
 
 export type HaloLayerProps = _HaloLayerProps & LayerProps;
@@ -212,7 +227,8 @@ export type HaloLayerProps = _HaloLayerProps & LayerProps;
 const defaultProps: DefaultProps<HaloLayerProps> = {
   // Identity compares: the same clock mutated in place is not a change.
   clock: { type: 'object', value: null as unknown as TimelineClock },
-  reduced: false
+  reduced: false,
+  ringMinZoom: 0
 };
 
 /** Fixed props: one halo layer per map, never picked, drawn over everything without depth. */
@@ -267,13 +283,16 @@ export class HaloLayer extends Layer<_HaloLayerProps> {
   draw() {
     const { model } = this.state;
     if (!model) return;
-    const { clock, reduced } = this.props;
+    const { clock, reduced, ringMinZoom } = this.props;
     // luma copies the values, so one object per layer, mutated in place, serves every draw.
-    const u = (this.state.uniforms ??= { halo: { day: 0, reduced: 0, ...COLOURS.light } });
+    const u = (this.state.uniforms ??= {
+      halo: { day: 0, reduced: 0, ringMinScale: 0, ...HALO_COLOURS.light }
+    });
     const h = u.halo;
-    const c = COLOURS[clock.theme];
+    const c = HALO_COLOURS[clock.theme];
     h.day = clock.day;
     h.reduced = reduced ? 1 : 0;
+    h.ringMinScale = ringMinZoom > 0 ? 2 ** ringMinZoom : 0;
     h.approved = c.approved;
     h.started = c.started;
     h.complete = c.complete;

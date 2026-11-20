@@ -40,3 +40,23 @@ export const HALO_R_PX = [6, 22] as const;
 export const HALO_STILL_R_PX = 14;
 /** Tier 4: this slice; the policy mark's size in px (the diamond's diagonal). */
 export const MARK_PX = 10;
+/** Tier 4, slice 6: below this zoom merged rings; from it each project's own ring. */
+export const CITY_HANDOVER_ZOOM = 14;
+/** Tier 4, slice 6: the side of the grid square a merged ring stands for, in metres. */
+export const CITY_CELL_M = 800;
+/** Tier 4, slice 6: one merged ring per square, half-year and kind. */
+export const CITY_BUCKET_DAYS = 182;
+/** Tier 4, slice 6: a merged ring's life in simulated days (1 s at 1×, 0.33 s at 3×). */
+export const CITY_RING_DAYS = 365;
+/** Tier 4, slice 6: an edge glow's life in simulated days (0.5 s at 1×). */
+export const CITY_EDGE_DAYS = 182;
+/** Tier 4, slice 6: homes at which a merged ring reaches HALO_R_PX[1]. */
+export const CITY_R_REF_HOMES = 50;
+/** Tier 4, slice 6: the largest merged ring's radius in px. */
+export const CITY_R_MAX_PX = 40;
+/**
+ * Tier 4, slice 6: the second cue of a policy record (colour is never the only one). A policy
+ * ring is doubled, a second 2 px stroke this many px inside the first; a policy edge glow has a
+ * 1 px land-coloured ring this many px inside its edge.
+ */
+export const CITY_POLICY_INSET_PX = 4;
