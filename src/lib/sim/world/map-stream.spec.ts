@@ -654,6 +654,43 @@ describe('map-stream: onEvent and flush', () => {
     expect(small.massingCalls()).toBe(2 * revs(rows));
   });
 
+  it("packs flagsOf's answer for each row into its slot", () => {
+    const deps = {
+      ...streamDeps(bench.input, bench.records),
+      flagsOf: (_w: World, _s: Statics, row: number) => row % 4
+    };
+    const stream = createMapStream(deps, WINDOW);
+    const { world, sink } = startStream(bench.statics, bench.timeline, SEED, stream);
+    const due = planDue(world, bench.statics, bench.timeline, SEED, WINDOW);
+    const run = { world, statics: bench.statics, timeline: bench.timeline, seed: SEED, stream };
+    const updates = [stream.flush(world, bench.statics, Infinity)!];
+    updates.push(...fill({ ...run, sink, due, through: 24 }));
+    const rowOf = new Map<string, number>();
+    schedulesNow(world, bench.statics).forEach((s, row) => s && rowOf.set(s.projectId, row));
+    const got: number[] = [];
+    const want: number[] = [];
+    for (const c of lastSent(updates).values()) {
+      expect(c.slotFlags).toHaveLength(c.slotProjectIds.length);
+      c.slotProjectIds.forEach((id, slot) => {
+        got.push(c.slotFlags![slot]);
+        want.push(rowOf.get(id)! % 4);
+      });
+    }
+    expect(new Set(want)).toEqual(new Set([0, 1, 2, 3]));
+    expect(got).toEqual(want);
+  });
+
+  it('without flagsOf every slot is 0', () => {
+    const { world, sink, stream, due } = started(bench);
+    const run = { world, statics: bench.statics, timeline: bench.timeline, seed: SEED, stream };
+    const updates = [stream.flush(world, bench.statics, Infinity)!];
+    updates.push(...fill({ ...run, sink, due, through: 12 }));
+    const cells = [...lastSent(updates).values()];
+    expect(cells.length).toBeGreaterThan(0);
+    const flagged = cells.filter((c) => !c.slotFlags || c.slotFlags.some((f) => f !== 0));
+    expect(flagged.map((c) => c.cellId)).toEqual([]);
+  });
+
   it('every update passes validateTimedCell', () => {
     const { world, sink, stream, due } = started(bench);
     const updates = fill({

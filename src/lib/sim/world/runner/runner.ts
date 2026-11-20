@@ -90,6 +90,7 @@ import { finalTable } from '../score/statics';
 import type { World, WorldEvent } from '../types';
 import type { Dataset } from './dataset';
 import { COPY_MONTHS, createEnsemble, type Ensemble, type UnitKind } from './ensemble';
+import { slotFlags } from './flags';
 import { cityTransfer, lidLotsOf, lidsTransfer, scheduleReady } from './lookups';
 import { createWarmQueue } from './warm';
 
@@ -1251,12 +1252,18 @@ export function createRunner(deps: RunnerDeps): Runner {
       rev = r;
       months = m;
       ctx = ds.ctx(months);
+      const basePools = new Set(ds.loaded.fzp.finance?.pools.map((p) => p.id) ?? []);
       stream = createMapStream(
         {
           massing: ds.massing,
           cellReady: (cellId) => ds.chunks.byCell.has(cellId),
           warnOnce: (k, msg) => deps.logOnce(`stream:${k}`, msg),
-          now: deps.now
+          now: deps.now,
+          // the plan side's timeline in use: `limitsAt` reads only its frames
+          flagsOf: (w, st, row) =>
+            plan?.timeline
+              ? slotFlags(w, st, row, { frameAt: (m) => plan!.timeline!.frameAt(m), basePools })
+              : 0
         },
         months
       );

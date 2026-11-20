@@ -14,6 +14,8 @@ export interface TimedPackInput {
   massings: Massing[];
   /** The slot's pick parcel: the project's largest-area parcel. */
   pickParcelId: ParcelId;
+  /** SLOT_FLAG bits; default 0. */
+  flags?: number;
 }
 
 /** Height in metres of a footprint-only ghost. Tier 4: made up, display only. */
@@ -62,6 +64,7 @@ export function packTimedCell(cellId: string, items: readonly TimedPackInput[]):
   const slotEnd = new Float32Array(2 * n);
   const slotPathway = new Uint8Array(n);
   const slotCohort = new Uint8Array(n);
+  const slotFlags = new Uint8Array(n);
   const rings: [number, number][][] = [];
   const topM: number[] = [];
   const slots: number[] = [];
@@ -69,7 +72,7 @@ export function packTimedCell(cellId: string, items: readonly TimedPackInput[]):
   const appearance: number[] = [];
   const windows: number[] = [];
 
-  sorted.forEach(({ schedule, massings }, s) => {
+  sorted.forEach(({ schedule, massings, flags }, s) => {
     const id = schedule.projectId;
     const { revisions } = schedule;
     if (revisions.length === 0) fail(id, 'has no revisions');
@@ -129,6 +132,7 @@ export function packTimedCell(cellId: string, items: readonly TimedPackInput[]):
     slotEnd[2 * s + 1] = END_KIND[end.kind];
     slotPathway[s] = PATHWAYS.indexOf(schedule.pathway);
     slotCohort[s] = schedule.inFlight === true ? 1 : 0;
+    slotFlags[s] = flags ?? 0;
   });
 
   const startIndices = new Uint32Array(rings.length + 1);
@@ -161,12 +165,13 @@ export function packTimedCell(cellId: string, items: readonly TimedPackInput[]):
     slotStages,
     slotEnd,
     slotPathway,
-    slotCohort
+    slotCohort,
+    slotFlags
   };
 }
 
 export function packTimedTransferables(p: TimedPackedCell): ArrayBuffer[] {
-  return [
+  const out = [
     p.parcelMeta.buffer,
     p.startIndices.buffer,
     p.positions.buffer,
@@ -180,4 +185,6 @@ export function packTimedTransferables(p: TimedPackedCell): ArrayBuffer[] {
     p.slotPathway.buffer,
     p.slotCohort.buffer
   ] as ArrayBuffer[];
+  if (p.slotFlags) out.push(p.slotFlags.buffer as ArrayBuffer);
+  return out;
 }

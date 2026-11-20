@@ -82,6 +82,17 @@ Height-lids spec (`docs/superpowers/specs/2026-11-01-height-lids-design.md`); it
 
 `SimMapHandle.setTimelineLookups(l)` takes a lookup set (`{ chance, typicalMonths }`, from `chanceTable` and `typicalMonths`) and, optionally, a second set under `inFlight` (plan 4, Call 15). Absent `inFlight`, in-flight slots read the top-level (fresh) set, so `/fzp` is unchanged. The packed cell carries `slotCohort: Uint8Array` (0 fresh, 1 in flight; in the transferables and validated: wrong length or a value above 1 fails). The chance texture has 36 rows, `chanceRow(pathway, stage, cohort) = cohort · 18 + pathway · 6 + stage`; a bar's `segRow` and typical days read its slot's cohort. Lookups compare by identity, so send one object per posted `lookups`. The shader is unchanged (the row index is per-instance data). The map does not apply the in-flight `chanceShift` (a card does): see [sim-page.md](sim-page.md), Known gaps. Details: [fzp-mode.md](fzp-mode.md), "Cohort-aware bars".
 
+## Slot flags
+
+`TimedPackedCell.slotFlags?: Uint8Array`, one byte per slot, holds `SLOT_FLAG` bits (`src/lib/map/types.ts`): `zoning` (1) and `money` (2). `packTimedCell` always writes it (an item's `TimedPackInput.flags`, default 0) and `packTimedTransferables` lists its buffer; a cell without it (older fixtures) has no flags. `validateTimedCell` checks it only when present: length equal to the slots, each value at most 3.
+
+On `/sim` the map stream sets them from `slotFlags` (`src/lib/sim/world/runner/flags.ts`), read in the frame of the model month of the row's first entered stage, of the plan's timeline in use:
+
+- `zoning`: a simulated row whose lot's limit owner (`limitsAt`) is not current law: a painted policy or a transit rule above it. It over-counts (some would have started under current law) and never means "because of". Pipeline and phase rows never carry it.
+- `money`: a funded row with a programme whose pool is not a baseline pool (`ds.loaded.fzp.finance.pools`): a pool you added. Scaling the baseline funds through baseline pools and sets no bit.
+
+The bits do not sum to "+N from your policy". `/lesscars` and the hashed `scenario/geometry.ts` pack zeros.
+
 ## Timeline demolitions after revision 0
 
 `TimelineUpdate.demolish` after revision 0 adds entries, applied as revision 0's are. `restore?: ParcelId[]` takes back every entry of each listed lot and is applied before `demolish`; revision 0 ignores it. An update with no `restore` and an empty `demolish` changes nothing, so `/lesscars` and `/fzp` are unaffected. In `TimelineController.apply` this is `DemolishPump.amend(add, restore)`: the applied set stays the new list's prefix at the target, and feature-state follows by the same diff as `swap`. Producer: [map-stream.md](map-stream.md).

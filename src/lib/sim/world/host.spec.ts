@@ -4,7 +4,7 @@ import { beforeAll, describe, expect, it, vi } from 'vitest';
 import type { Manifest } from '$lib/data/manifest';
 import type { ParcelId } from '$lib/data/parcel';
 import { generate, generateForUnits, type GeneratedBuilding } from '$lib/generator';
-import type { TimelineUpdate } from '$lib/map/types';
+import { SLOT_FLAG, type TimelineUpdate } from '$lib/map/types';
 import type { FetchLike } from '$lib/sim/chunks';
 import { createLru } from '$lib/sim/lru';
 import { scenarioUrls } from '$lib/sim/scenario/load';
@@ -404,6 +404,61 @@ describe('a full fill of the default document', () => {
         expect(types.filter((t) => ['filled', 'compiling', 'compiled'].includes(t))).toEqual([]);
       }
     }
+  });
+
+  it('the default document posts no flagged slot', () => {
+    const cells = snapshot.flatMap((p) => (p.msg.type === 'cells' ? p.msg.render.cells : []));
+    expect(cells.length).toBeGreaterThan(0);
+    const flagged = cells.filter(
+      (c) => c.slotFlags?.length !== c.slotProjectIds.length || c.slotFlags.some((f) => f !== 0)
+    );
+    expect(flagged.map((c) => c.cellId)).toEqual([]);
+  });
+
+  it('with a painted policy from today, a slot on a painted lot carries the zoning bit', async () => {
+    // every other lot of the fixture painted to 20 stories from model month 1
+    const painted = ds.loaded.fzp.parcels.id.filter((_, i) => i % 2 === 0);
+    const paint: CustomBrush = {
+      id: 'paint-all',
+      kind: 'paint',
+      strokes: [{ path: [[-122.419, 37.76]], radiusM: 30 }],
+      stories: 20
+    };
+    const doc: SimPolicy4 = structuredClone(DEFAULT_POLICY4);
+    doc.kinds.zoning.push({
+      id: 'p',
+      label: 'p',
+      preset: null,
+      on: true,
+      where: { tag: 'painted' },
+      spans: [span(asOf, 1, null, { tag: 'brushes', brushes: [paint] })]
+    });
+    const p = makeHost();
+    p.open({ policy: doc, lots: { [queryKey(customQuery(paint))]: painted }, months: 60 });
+    p.prefetchAll();
+    await p.runAll();
+    expect(p.errors()).toEqual([]);
+    const ctl = applyAll(p.of('cells').map((c) => c.render));
+    const onPaint = new Set(painted);
+    const NS = 7;
+    let flaggedOnPaint = 0;
+    const wrong: string[] = [];
+    for (const c of ctl.cells.values()) {
+      c.slotProjectIds.forEach((id, s) => {
+        const zoning = (c.slotFlags![s] & SLOT_FLAG.zoning) !== 0;
+        let first = Infinity;
+        for (let j = 0; j < NS; j++) {
+          const d = c.slotStages[NS * s + j];
+          if (!Number.isNaN(d)) first = Math.min(first, d);
+        }
+        // simulated projects only: a pipeline phase entering after today was filed before it
+        const want = id.startsWith('sim:') && onPaint.has(c.parcelIds[s]) && first > asOf;
+        if (want) flaggedOnPaint++;
+        if (zoning !== want) wrong.push(`${id} on ${c.parcelIds[s]}: ${zoning}`);
+      });
+    }
+    expect(flaggedOnPaint).toBeGreaterThan(0);
+    expect(wrong).toEqual([]);
   });
 
   it('resyncMap answers a revision 0 holding every cell', () => {
