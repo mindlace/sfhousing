@@ -49,6 +49,25 @@ describe('Explain', () => {
     await expect.element(page.getByRole('button', { name: 'After' })).toHaveFocus();
   });
 
+  it('an open explanation takes Escape before a container does; a closed one lets it through', async () => {
+    await render(ExplainHost, { props: { text: TEXT } });
+    let outer = 0;
+    const box = target().element().closest('div')!;
+    const onkey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') outer++;
+    };
+    box.addEventListener('keydown', onkey);
+    focusTarget(target().element() as HTMLElement);
+    await expect.element(page.getByText(TEXT)).toBeVisible();
+    await userEvent.keyboard('{Escape}');
+    await expect.element(page.getByText(TEXT)).not.toBeInTheDocument();
+    expect(outer).toBe(0);
+    await userEvent.keyboard('{Escape}');
+    expect(outer).toBe(1);
+    await expect.element(target()).toHaveFocus();
+    box.removeEventListener('keydown', onkey);
+  });
+
   it('describes its target while open', async () => {
     await render(ExplainHost, { props: { text: TEXT } });
     await expect.element(target()).not.toHaveAttribute('aria-describedby');

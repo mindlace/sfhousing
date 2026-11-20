@@ -10,6 +10,7 @@ import type { SfhMapDebug } from '../src/lib/map/debug';
 import type { TimelineSnapshot } from '../src/lib/map/timelapse/types';
 import { expectNoA11yViolations } from './helpers/a11y';
 import { addPolicy, slider, waitFilled } from './helpers/run';
+import { headerAction } from './helpers/sharing';
 
 type Win = Window & { __sfhFzp?: SfhFzpDebug; __sfhMap?: SfhMapDebug };
 
@@ -121,6 +122,27 @@ test('a transit rule from today: the key names the mark; marks equal the flagged
   await expect(keyPanel(page).getByRole('tooltip')).toHaveText(
     'Your zoning sets its height limit, or your pool funds it.'
   );
+  // The first Escape closes only the explanation; the key stays open.
+  await markButton(page).focus();
+  await expect(keyPanel(page).getByRole('tooltip')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(keyPanel(page).getByRole('tooltip')).toHaveCount(0);
+  await expect(keyPanel(page)).toBeVisible();
+  await expect(markButton(page)).toBeFocused();
+
+  // Undo takes the rule away: the refill's cells replace the flagged ones, and their marks go.
+  const before = await page.evaluate(() => (window as Win).__sfhFzp!.refills.length);
+  await (await headerAction(page, 'Undo: Added: Transit rule')).click();
+  await page.waitForFunction((n) => (window as Win).__sfhFzp!.refills.length > n, before);
+  await waitFilled(page);
+  await expect
+    .poll(async () => {
+      const s = (await snap(page))!;
+      return { pending: s.pending, marks: s.marks, flagged: s.flagged };
+    })
+    .toEqual({ pending: 0, marks: 0, flagged: 0 });
+  await openKey(page);
+  await expect(markButton(page)).toHaveCount(0);
 });
 
 test('/sim with halos on: axe clean with the key open, light and dark', async ({ page }) => {

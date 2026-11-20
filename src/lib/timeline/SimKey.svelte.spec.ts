@@ -4,7 +4,7 @@
 // moved here with the key.
 import { afterEach, describe, expect, it } from 'vitest';
 import { render } from 'vitest-browser-svelte';
-import { cdp, page } from 'vitest/browser';
+import { cdp, page, userEvent } from 'vitest/browser';
 import axe from 'axe-core';
 import '../../routes/layout.css';
 import { timelineTokenCss } from '$lib/map/palette';
@@ -12,6 +12,7 @@ import { STAGE_KEY } from '$lib/map/key/rows';
 import { KEY_COPY } from '$lib/map/key/copy';
 import { longTexts } from '$lib/shell/test/rest-text';
 import SimKey from './SimKey.svelte';
+import SimKeyControlHost from './test/SimKeyControlHost.svelte';
 import type { KeyTally } from './key';
 
 const TALLY: KeyTally = {
@@ -229,5 +230,27 @@ describe('SimKey', () => {
       expect(dark[k], `${t} dark`).not.toBe('');
       expect(dark[k], `${t} differs by theme`).not.toBe(light[k]);
     });
+  });
+  it("in the key's panel, Escape closes the mark's explanation first, then the panel", async () => {
+    await page.viewport(1280, 800);
+    await render(SimKeyControlHost, { props: { tally: TALLY, inForce: true } });
+    const panel = page.getByRole('group', { name: 'Map key' });
+    const toggle = page.getByRole('button', { name: 'Map key' });
+    const button = page.getByRole('button', { name: KEY_COPY.mark });
+    await expect.element(panel).toBeVisible();
+    (button.element() as HTMLElement).focus();
+    const tip = page.getByRole('tooltip');
+    await expect.element(tip).toBeVisible();
+    // First Escape: only the explanation closes; the panel stays, focus stays on the button.
+    await userEvent.keyboard('{Escape}');
+    await expect.element(tip).not.toBeInTheDocument();
+    await expect.element(panel).toBeVisible();
+    await expect.element(button).toHaveFocus();
+    await expect.element(toggle).toHaveAttribute('aria-expanded', 'true');
+    // Second Escape: the panel closes and focus goes to its toggle.
+    await userEvent.keyboard('{Escape}');
+    await expect.element(panel).not.toBeInTheDocument();
+    await expect.element(toggle).toHaveFocus();
+    await expect.element(toggle).toHaveAttribute('aria-expanded', 'false');
   });
 });
