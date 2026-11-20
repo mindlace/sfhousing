@@ -328,6 +328,9 @@ describe('SimMap timeline mode', { timeout: 60_000 }, () => {
     h.setBarMode('street');
     expect(barLayer(map)!.props.far).toBe(false);
     dbg().setBarMode('far'); // the debug hook calls through to the handle
+    // Far declutters in slices: the street layer stays until the far one swaps in.
+    expect(barLayer(map)!.props.far).toBe(false);
+    await converged(map);
     expect(barLayer(map)!.props.far).toBe(true);
     expect(dbg().timelineSnapshot()!.barMode).toBe('far');
     expect(errors).toEqual([]);

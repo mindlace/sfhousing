@@ -32,7 +32,7 @@ import {
   type Clip
 } from './timelapse/city';
 import { CITY_HANDOVER_ZOOM } from './timelapse/constants';
-import { declutter } from './timelapse/declutter';
+import { FAR_UNITS_PER_SLICE, FarDeclutter, declutter } from './timelapse/declutter';
 import { DemolishPump, type PumpDeps } from './timelapse/demolish';
 import { encodeParts, validateTimedCell, type EncodedParts } from './timelapse/encode';
 import { packChanceTexture, type ChanceTexture } from './timelapse/lookups';
@@ -53,8 +53,8 @@ export interface DebugView {
   pxPerMeter: number;
   /** The camera's bearing in degrees. */
   bearing: number;
-  /** A point's clip-space [x, y, w] in the map's camera. */
-  clip(lng: number, lat: number): Clip;
+  /** A point's clip-space [x, y, w] in the map's camera, `alt` metres up (0: the ground). */
+  clip(lng: number, lat: number, alt?: number): Clip;
 }
 
 export interface TimelineDeps extends PumpDeps {
@@ -147,6 +147,8 @@ interface Slice {
   reencode: string[];
   /** The last slice of a `complete` update: once it has run, the swap's leftovers go. */
   complete?: true;
+  /** A step of the far declutter in flight (`barJob`): FAR_UNITS_PER_SLICE units, or its setup. */
+  bars?: true;
 }
 
 const RESERVED = /^(generated|rising|timeline)-/;
@@ -190,6 +192,11 @@ export class TimelineController {
   private barsDirty = false;
   /** `setBarMode`: how the bars declutter and draw ('street', the default, is today's). */
   private barMode: BarMode = 'street';
+  /**
+   * The far declutter in flight, run in `bars` slices; the bar layer on the map stays until it
+   * ends and swaps in once. Dropped (never swapped in) when the bars change under it.
+   */
+  private barJob: { bars: BarAttrs[]; job: FarDeclutter | null } | null = null;
   /** `setHalos`: events after this day ring; null (the default) emits no halo layer. */
   private haloFrom: Day | null = null;
   /** `setReducedMotion`: the halo layer's `reduced` prop. */
@@ -272,6 +279,8 @@ export class TimelineController {
       }
       return; // band-only
     }
+    // Cells change: a far declutter in flight is stale; the update's last slice rebuilds.
+    this.cancelBars();
     const idle = this.queue.length === 0;
     this.queue.push(...slices);
     if (idle) this.runSlice(this.queue.shift()!);
@@ -308,12 +317,14 @@ export class TimelineController {
     const queued = new Set<string>();
     for (const s of this.queue) for (const c of s.cells) queued.add(c.cellId);
     const ids = [...this.cells.keys()].filter((id) => !queued.has(id)).sort();
+    this.barJob = null;
     this.barsDirty = true;
     for (let i = 0; i < ids.length; i += MAX_CELLS_PER_SLICE)
       this.queue.push({ cells: [], removed: [], reencode: ids.slice(i, i + MAX_CELLS_PER_SLICE) });
     if (this.queue.length > 0) return this.schedule();
     this.rebuildBars(); // no cells: only the bars depend on the lookups
-    this.emit();
+    if (!this.barJob) this.emit(); // far: the last declutter slice emits
+    this.schedule();
   }
 
   setTheme(t: Theme): void {
@@ -355,11 +366,13 @@ export class TimelineController {
     if (this.lastRevision < 0) return;
     // Queued slices end in a rebuild that reads the mode; otherwise rebuild now.
     if (this.queue.length > 0) {
+      this.barJob = null;
       this.barsDirty = true;
       return;
     }
     this.rebuildBars();
-    this.emit();
+    if (!this.barJob) this.emit(); // far: the last declutter slice emits
+    this.schedule();
   }
 
   /**
@@ -500,7 +513,7 @@ export class TimelineController {
 
   /**
    * Bars `evalBar` shows on the clock's day at the zoom at each anchor, anchors in the view (the
-   * anchor's ground point; the bar's px offset above it is ignored). Debug only.
+   * raised anchor the shader projects; the bar's px offset above it is ignored). Debug only.
    */
   private barsShown(view: DebugView | null): number {
     const l = this.lookups;
@@ -511,7 +524,8 @@ export class TimelineController {
     for (const b of this.bars) {
       let zoom = Infinity;
       if (view) {
-        const [x, y, w] = view.clip(b.anchor[0], b.anchor[1]);
+        // At the bar's raised anchor, as the shader projects it.
+        const [x, y, w] = view.clip(b.anchor[0], b.anchor[1], b.anchor[2]);
         if (!(w > 0 && Math.abs(x) <= w && Math.abs(y) <= w)) continue;
         zoom = barZoomAt(view.zoom, focalW, w, mode);
       }
@@ -541,6 +555,7 @@ export class TimelineController {
     this.leftover.clear();
     this.bars = [];
     this.barsLayer = null;
+    this.barJob = null;
     this.halos = [];
     this.halosLayer = null;
     this.city.clear();
@@ -555,6 +570,7 @@ export class TimelineController {
   private snapshot(u: TimelineUpdate): void {
     this.cancelFrame();
     this.queue = [];
+    this.barJob = null;
     this.cells.clear();
     this.leftover.clear();
     this.swapping = false;
@@ -584,6 +600,7 @@ export class TimelineController {
    */
   private swap(u: TimelineUpdate): void {
     this.cancelFrame();
+    this.cancelBars();
     const reencode: string[] = [];
     for (const s of this.queue)
       for (const id of s.reencode) if (this.cells.has(id)) reencode.push(id);
@@ -617,6 +634,8 @@ export class TimelineController {
   }
 
   private runSlice(slice: Slice): void {
+    // A far declutter step that does not finish changes nothing on the map: no emit.
+    if (slice.bars && !this.stepBars()) return;
     for (const id of slice.removed) {
       // During a swap a removed cell stays as a leftover, so the map never thins mid-switch.
       if (this.swapping) {
@@ -677,8 +696,14 @@ export class TimelineController {
     cell.tlc = this.tlcVersion;
   }
 
+  /**
+   * Street: builds, declutters and lays out the bars now. Far: builds the bars now and queues
+   * the declutter (`bars` slices: its setup, then FAR_UNITS_PER_SLICE units a slice); the bar
+   * layer on the map stays until the last step swaps the new one in.
+   */
   private rebuildBars(): void {
     this.barsDirty = false;
+    this.barJob = null;
     const l = this.lookups;
     if (!l || !this.chance) {
       this.bars = [];
@@ -686,8 +711,17 @@ export class TimelineController {
       return;
     }
     const sorted = [...this.cells].sort(byKey).map(([, c]) => c.pack);
-    // Street gates the bars in place; far returns its time-split pieces.
-    const bars = declutter(buildBars(sorted, l), this.barMode);
+    const bars = buildBars(sorted, l);
+    if (this.barMode === 'far') {
+      this.barJob = { bars, job: null };
+      this.queue.push({ cells: [], removed: [], reencode: [], bars: true });
+      return;
+    }
+    this.layBars(declutter(bars));
+  }
+
+  /** The bar layer over `bars` (decluttered records), in the current mode. */
+  private layBars(bars: BarAttrs[]): void {
     this.bars = bars;
     this.barsLayer = new this.deps.StageBarLayer({
       data: bars,
@@ -696,6 +730,36 @@ export class TimelineController {
       far: this.barMode === 'far',
       ...(this.labelBeforeId ? { beforeId: this.labelBeforeId } : {})
     } as ConstructorParameters<TimelineDeps['StageBarLayer']>[0]) as unknown as Layer;
+  }
+
+  /**
+   * One `bars` slice: the far declutter's setup, or its next FAR_UNITS_PER_SLICE units. Queues
+   * the next slice, or lays the records out once every unit is visited. True when this slice
+   * changed the map (the swap) or there is no job (a dropped one): the slice then runs as any.
+   */
+  private stepBars(): boolean {
+    const b = this.barJob;
+    if (!b) return true;
+    const more = () => this.queue.push({ cells: [], removed: [], reencode: [], bars: true });
+    if (!b.job) {
+      b.job = new FarDeclutter(b.bars);
+      more();
+      return false;
+    }
+    if (!b.job.step(FAR_UNITS_PER_SLICE)) {
+      more();
+      return false;
+    }
+    this.barJob = null;
+    this.layBars(b.job.result());
+    return true;
+  }
+
+  /** Drops a far declutter in flight (its bars are stale); the bars rebuild when the queue drains. */
+  private cancelBars(): void {
+    if (!this.barJob) return;
+    this.barJob = null;
+    this.barsDirty = true;
   }
 
   /** Halo records from the installed cells, in cellId order; no lookups needed. */

@@ -22,7 +22,8 @@ import {
 } from './timelapse/city';
 import { CITY_HANDOVER_ZOOM } from './timelapse/constants';
 import { buildBars, evalBar } from './timelapse/bars';
-import { declutter } from './timelapse/declutter';
+import { FAR_UNITS_PER_SLICE, FarDeclutter, declutter } from './timelapse/declutter';
+import { SYNTHETIC_LOOKUPS, makeSyntheticTimeline } from './test/synthetic-timeline';
 import { STAGE_ORDER } from '$lib/timelapse/types';
 
 interface Props {
@@ -1559,6 +1560,10 @@ describe('TimelineController bar modes', () => {
     const street = barLayer();
     const emits = deps.layerHistory.length;
     c.setBarMode('far');
+    // The street layer stays up while the far declutter runs in slices, then swaps in once.
+    expect(deps.layerHistory).toHaveLength(emits);
+    expect(c.debugSnapshot().pending).toBeGreaterThan(0);
+    drain(c);
     expect(deps.layerHistory).toHaveLength(emits + 1);
     expect(barLayer()).not.toBe(street);
     expect(far()).toBe(true);
@@ -1569,7 +1574,7 @@ describe('TimelineController bar modes', () => {
     c.setBarMode('far');
     expect(deps.layerHistory).toHaveLength(emits + 1);
     expect(barLayer()).toBe(farLayer);
-    // Back to street: today's bars again.
+    // Back to street: today's bars again, at once.
     c.setBarMode('street');
     expect(deps.layerHistory).toHaveLength(emits + 2);
     expect(far()).toBe(false);
@@ -1581,6 +1586,8 @@ describe('TimelineController bar modes', () => {
     c.setBarMode('far');
     expect(deps.layerHistory).toHaveLength(0);
     c.apply(timelineSmall);
+    expect(ids(deps)).not.toContain('timeline-bars');
+    drain(c);
     expect(far()).toBe(true);
     expect(c.debugSnapshot().barMode).toBe('far');
     // Without lookups there are no bars; the mode is kept for when they come.
@@ -1600,6 +1607,7 @@ describe('TimelineController bar modes', () => {
     const c = controller();
     c.setBarMode('far');
     c.apply(timelineSmall);
+    drain(c);
     const layer = barLayer();
     const gates = barsOf(deps).map((b) => b.minZoom);
     const emits = deps.layerHistory.length;
@@ -1629,10 +1637,74 @@ describe('TimelineController bar modes', () => {
       slotFlags: Uint8Array.from(a.slotProjectIds, (_, i) => (i === s ? SLOT_FLAG.zoning : 0))
     };
     c.apply(update(0, { cells: [a, mine] }));
+    drain(c);
     const bars = barsOf(deps);
     const gate = (id: string) => bars.find((b) => b.projectId === id)!.minZoom;
     expect(bars.find((b) => b.projectId === `mine-${SLOT.a.projectId}`)!.policy).toBe(true);
     expect(gate(`mine-${SLOT.a.projectId}`)).toBeLessThan(gate(SLOT.a.projectId));
+  });
+
+  it('far: the declutter runs FAR_UNITS_PER_SLICE units a frame; the old layer stays until one swap', () => {
+    const u = makeSyntheticTimeline(3, 2_000, 1500, false);
+    const c = new TimelineController(deps, 'light');
+    c.setLookups(SYNTHETIC_LOOKUPS);
+    c.apply(u);
+    drain(c);
+    const street = barLayer();
+    const units = new FarDeclutter(barsOf(deps)).units;
+    expect(units).toBeGreaterThan(FAR_UNITS_PER_SLICE);
+    const emits = deps.layerHistory.length;
+    c.setBarMode('far');
+    // One frame for the setup, then one per FAR_UNITS_PER_SLICE units; nothing emitted till the
+    // last, and the street layer stays drawn.
+    let frames = 0;
+    while (c.debugSnapshot().pending > 0) {
+      expect(barLayer()).toBe(street);
+      expect(deps.layerHistory).toHaveLength(emits);
+      deps.flushFrame();
+      frames++;
+    }
+    expect(frames).toBe(1 + Math.ceil(units / FAR_UNITS_PER_SLICE));
+    expect(deps.layerHistory).toHaveLength(emits + 1);
+    expect(far()).toBe(true);
+    expect(barsOf(deps).length).toBeGreaterThan(units / 2);
+  });
+
+  it('far: an update mid-declutter restarts it from the new bars; the stale run never swaps in', () => {
+    const u = makeSyntheticTimeline(3, 2_000, 1500, false);
+    const c = new TimelineController(deps, 'light');
+    c.setLookups(SYNTHETIC_LOOKUPS);
+    c.setBarMode('far');
+    c.apply(u);
+    deps.flushFrame(); // the declutter's setup; its steps are still to come
+    expect(c.debugSnapshot().pending).toBeGreaterThan(0);
+    // A later revision removes the first cell while the declutter is under way.
+    const gone = u.cells[0];
+    c.apply(update(1, { removedCells: [gone.cellId] }));
+    const before = deps.layerHistory.length;
+    drain(c);
+    const layers = new Set(
+      deps.layerHistory.slice(before).map((ls) => ls.find((l) => l.id === 'timeline-bars'))
+    );
+    layers.delete(undefined);
+    expect(layers.size).toBe(1); // one swap, from the new bars only
+    expect(barsOf(deps).some((b) => gone.slotProjectIds.includes(b.projectId))).toBe(false);
+    expect(barsOf(deps).length).toBeGreaterThan(0);
+  });
+
+  it('far: a revision 0 mid-declutter drops the run; the new bars swap in once', () => {
+    const u = makeSyntheticTimeline(3, 2_000, 1500, false);
+    const c = new TimelineController(deps, 'light');
+    c.setLookups(SYNTHETIC_LOOKUPS);
+    c.setBarMode('far');
+    c.apply(u);
+    deps.flushFrame();
+    expect(c.debugSnapshot().pending).toBeGreaterThan(0);
+    c.apply(timelineSmall);
+    drain(c);
+    const ids = new Set(barsOf(deps).map((b) => b.projectId));
+    for (const s of Object.values(SLOT)) expect(ids.has(s.projectId)).toBe(true);
+    expect(barsOf(deps).every((b) => !b.projectId.startsWith('syn-'))).toBe(true);
   });
 
   it('counts the bars shown on the clock day at the zoom at each anchor, in view', () => {
@@ -1648,6 +1720,7 @@ describe('TimelineController bar modes', () => {
     deps.view = viewAt(13, 1);
     expect(c.debugSnapshot().barsShown).toBe(0); // street: below 15
     c.setBarMode('far');
+    drain(c);
     const shown = barsOf(deps).filter(
       (b) => evalBar(b, timelineLookups, t, 13, 'far').visible
     ).length;
@@ -1659,6 +1732,20 @@ describe('TimelineController bar modes', () => {
       clip: (lng, lat) => (lng === CENTRE[0] && lat === CENTRE[1] ? [0, 0, 1] : [0, 0, 8])
     };
     expect(c.debugSnapshot().barsShown).toBe(0);
+    // The anchor's zoom is read at its raised anchor (anchor[2], roof plus 2 m), as the shader's.
+    const byAlt = (raised: number, ground: number): DebugView => ({
+      ...viewAt(13, 1),
+      clip: (lng, lat, alt = 0) => [
+        (lng - CENTRE[0]) / 1,
+        (lat - CENTRE[1]) / 1,
+        lng === CENTRE[0] && lat === CENTRE[1] ? 1 : alt > 0 ? raised : ground
+      ]
+    });
+    expect(barsOf(deps).every((b) => b.anchor[2] > 0)).toBe(true);
+    deps.view = byAlt(1, 8);
+    expect(c.debugSnapshot().barsShown).toBe(shown);
+    deps.view = byAlt(8, 1);
+    expect(c.debugSnapshot().barsShown).toBe(0);
     // A view that holds none of the fixture.
     deps.view = { ...viewAt(13), clip: () => [5, 5, 1] };
     expect(c.debugSnapshot().barsShown).toBe(0);
@@ -1666,6 +1753,6 @@ describe('TimelineController bar modes', () => {
 });
 
 function drainWith(d: FakeTimelineDeps, c: TimelineController): void {
-  for (let i = 0; i < 50 && c.debugSnapshot().pending > 0; i++) d.flushFrame();
+  for (let i = 0; i < 1000 && c.debugSnapshot().pending > 0; i++) d.flushFrame();
   expect(c.debugSnapshot().pending).toBe(0);
 }

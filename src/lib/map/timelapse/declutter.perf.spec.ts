@@ -1,7 +1,9 @@
 // Wall-clock budget for declutter: runs in `npm run test:perf`, not in test:unit or signoff.
 import { describe, expect, it } from 'vitest';
 import { BAR_MIN_ZOOM } from './constants';
-import { declutter } from './declutter';
+import { FAR_UNITS_PER_SLICE, FarDeclutter, declutter } from './declutter';
+import { buildBars } from './bars';
+import { SYNTHETIC_LOOKUPS, makeSyntheticTimeline } from '../test/synthetic-timeline';
 import type { BarAttrs } from './types';
 import { OPEN_DAY } from '$lib/timelapse/time';
 
@@ -63,5 +65,26 @@ describe('declutter budget', () => {
       times.push(performance.now() - t0);
     }
     expect(Math.min(...times)).toBeLessThanOrEqual(50);
+  });
+
+  it('far: on the synthetic 30,000, setup in 30 ms and each slice of units in 16 ms', () => {
+    const u = makeSyntheticTimeline(1, 30_000, 1500, false);
+    let setup = Infinity;
+    let slice = Infinity;
+    for (let run = 0; run < 3; run++) {
+      const bars = buildBars(u.cells, SYNTHETIC_LOOKUPS);
+      const t0 = performance.now();
+      const job = new FarDeclutter(bars);
+      setup = Math.min(setup, performance.now() - t0);
+      let worst = 0;
+      while (!job.done) {
+        const s0 = performance.now();
+        job.step(FAR_UNITS_PER_SLICE);
+        worst = Math.max(worst, performance.now() - s0);
+      }
+      slice = Math.min(slice, worst);
+    }
+    expect(setup).toBeLessThanOrEqual(30);
+    expect(slice).toBeLessThanOrEqual(16);
   });
 });

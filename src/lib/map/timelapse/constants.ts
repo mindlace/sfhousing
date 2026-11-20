@@ -29,8 +29,9 @@ export const BAR_FAR_PX = { w: 32, h: 6 } as const;
 /**
  * Tier 4, slice 6: far declutter keeps at least this many px between two bars' boxes, across or
  * up, at the zoom both show from (centres at least hypot(w + gap, h + gap) apart on the ground).
+ * Set for density: on the synthetic 30,000 at the desktop default view, about 400 bars.
  */
-export const BAR_FAR_GAP_PX = 4;
+export const BAR_FAR_GAP_PX = 12;
 /** Tier 4: this spec; screen gap in px between the anchor and the bar's bottom edge. */
 export const BAR_OFFSET_PX = 10;
 /** Tier 4: this spec; metres above the revision's highest part top for the bar anchor. */

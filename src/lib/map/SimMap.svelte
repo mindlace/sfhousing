@@ -774,8 +774,8 @@
             centre: [c.lng, c.lat],
             pxPerMeter: vp.scale * vp.distanceScales.unitsPerMeter[0],
             bearing: map.getBearing(),
-            clip: (lng, lat) => {
-              const [x, y, z] = vp.projectPosition([lng, lat, 0]);
+            clip: (lng, lat, alt = 0) => {
+              const [x, y, z] = vp.projectPosition([lng, lat, alt]);
               // Column-major: clip = M · [x, y, z, 1].
               return [
                 m[0] * x + m[4] * y + m[8] * z + m[12],

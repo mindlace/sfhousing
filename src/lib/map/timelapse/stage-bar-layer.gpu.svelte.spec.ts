@@ -557,6 +557,13 @@ describe('StageBarLayer on the GPU', () => {
       return m[3] * x + m[7] * y + m[11] * z + m[15];
     };
     const focalW = clipW([CENTRE[0], CENTRE[1], 0]);
+    // focalW is what deck puts in the shader's project.focalDistance: the clip w of the point at
+    // the camera's focal distance on its axis (viewport-uniforms.js), so CPU and GPU read one
+    // anchor zoom, not one within a margin.
+    const pm = vp.projectionMatrix;
+    const fd = (vp as unknown as { focalDistance: number }).focalDistance;
+    expect(fd).toBeGreaterThan(0);
+    expect(focalW / (pm[11] * -fd + pm[15])).toBeCloseTo(1, 9);
     const zTop = barZoomAt(zoom, focalW, clipW(top), 'far');
     const zBottom = barZoomAt(zoom, focalW, clipW(bottom), 'far');
     // A gate between the two: the far one's zoom is below its ramp, the near one's above it,

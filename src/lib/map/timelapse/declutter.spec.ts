@@ -9,7 +9,14 @@ import {
   DECLUTTER_MAX_ZOOM,
   DECLUTTER_STEP
 } from './constants';
-import { BAR_FAR_MAX_PIECES, declutter, declutterPx, mpp } from './declutter';
+import {
+  BAR_FAR_MAX_PIECES,
+  FAR_UNITS_PER_SLICE,
+  FarDeclutter,
+  declutter,
+  declutterPx,
+  mpp
+} from './declutter';
 import type { BarAttrs } from './types';
 import { OPEN_DAY } from '$lib/timelapse/time';
 import { SYNTHETIC_LOOKUPS, makeSyntheticTimeline } from '../test/synthetic-timeline';
@@ -367,23 +374,36 @@ describe('declutter modes', () => {
         dx: fc.double({ min: 0, max: 2000, noNaN: true }),
         dy: fc.double({ min: 0, max: 2000, noNaN: true }),
         from: fc.integer({ min: 0, max: 100 }),
-        len: fc.integer({ min: 1, max: 100 })
+        len: fc.integer({ min: 1, max: 100 }),
+        // 0 open, 1 complete, 2 exit; the end day as an offset from `from` (may fall outside).
+        endKind: fc.constantFrom(0, 1, 2),
+        endAt: fc.integer({ min: -10, max: 110 })
       }),
       { minLength: 2, maxLength: 60 }
     );
     fc.assert(
       fc.property(arb, (rows) => {
-        const bars = rows.map((r, i) => ({
-          ...mk(`p${i}`, r.units, r.dx, r.dy, r.from, r.from + r.len),
-          policy: r.policy
-        }));
+        const bars = rows.map((r, i) => {
+          const b = {
+            ...mk(`p${i}`, r.units, r.dx, r.dy, r.from, r.from + r.len),
+            policy: r.policy
+          };
+          if (r.endKind === 0) return b;
+          const end = r.from + r.endAt;
+          return {
+            ...b,
+            endKind: r.endKind,
+            endDay: end,
+            completeDay: r.endKind === 1 ? end : OPEN_DAY
+          };
+        });
         const recs = declutter(bars, 'far');
-        // Each bar's records tile its window, at most four.
+        // Each bar's records tile its window: at most four for its live part, four for its tail.
         for (const b of bars) {
           const ps = recs
             .filter((r) => r.projectId === b.projectId)
             .sort((x, y) => x.from - y.from);
-          expect(ps.length).toBeLessThanOrEqual(BAR_FAR_MAX_PIECES);
+          expect(ps.length).toBeLessThanOrEqual(2 * BAR_FAR_MAX_PIECES);
           expect(ps[0].from).toBe(b.from);
           expect(ps.at(-1)!.to).toBe(b.to);
           for (let i = 1; i < ps.length; i++) expect(ps[i].from).toBe(ps[i - 1].to);
@@ -395,6 +415,74 @@ describe('declutter modes', () => {
       }),
       { numRuns: 100 }
     );
+  });
+
+  it("far: a finished bar's hold and fade never hold back a bar still in progress", () => {
+    // A big project completes on day 100; its bar holds and fades to day 280. A small one 20 m
+    // away is live from 50 to 400.
+    const big = {
+      ...mk('big', 500, 0, 0, 0, 280),
+      endKind: 1,
+      endDay: 100,
+      completeDay: 100
+    };
+    const small = mk('small', 5, 20, 0, 50, 400);
+    const recs = declutter([big, small], 'far');
+    // While both are live (50 to 100) the big one wins; from 100 the small one shows at the far
+    // gate and the big one's tail is the one held back.
+    expect(at(recs, 'big', 60)!.minZoom).toBe(BAR_FAR_MIN_ZOOM);
+    expect(at(recs, 'small', 60)!.minZoom).toBeGreaterThan(BAR_FAR_MIN_ZOOM);
+    for (const d of [100, 150, 279]) {
+      expect(at(recs, 'small', d)!.minZoom, `day ${d}`).toBe(BAR_FAR_MIN_ZOOM);
+      expect(at(recs, 'big', d)!.minZoom, `day ${d}`).toBeGreaterThan(BAR_FAR_MIN_ZOOM);
+    }
+    // The big bar's records still tile its window: live [0, 100), tail [100, 280).
+    const bigs = recs.filter((b) => b.projectId === 'big').sort((a, b) => a.from - b.from);
+    expect(bigs[0].from).toBe(0);
+    expect(bigs.at(-1)!.to).toBe(280);
+    expect(bigs.some((b) => b.from === 100)).toBe(true);
+    // An exit's dying ghost is a tail too.
+    const dead = { ...mk('dead', 500, 0, 0, 0, 370), endKind: 2, endDay: 100 };
+    const live = mk('live', 5, 20, 0, 50, 400);
+    const r2 = declutter([dead, live], 'far');
+    expect(at(r2, 'live', 200)!.minZoom).toBe(BAR_FAR_MIN_ZOOM);
+    expect(at(r2, 'dead', 200)!.minZoom).toBeGreaterThan(BAR_FAR_MIN_ZOOM);
+    for (const d of [0, 60, 99, 100, 200, 369]) {
+      expectApartOn(recs, d);
+      expectApartOn(r2, d);
+    }
+  });
+
+  it('far: sorted grid slots give exactly the records of the full scan (synthetic 5,000)', () => {
+    const u = makeSyntheticTimeline(2, 5_000, 1500, false);
+    const bars = buildBars(u.cells, SYNTHETIC_LOOKUPS);
+    const run = (sortedSlots: boolean) => {
+      const job = new FarDeclutter(bars, { sortedSlots });
+      job.step(Infinity);
+      return job.result();
+    };
+    const sorted = run(true);
+    const full = run(false);
+    expect(sorted.length).toBeGreaterThan(bars.length);
+    expect(sorted.map((b) => [b.projectId, b.from, b.to, b.minZoom])).toEqual(
+      full.map((b) => [b.projectId, b.from, b.to, b.minZoom])
+    );
+  });
+
+  it('far: a resumable run visits at most its budget a step, and ends as one call does', () => {
+    const u = makeSyntheticTimeline(3, 2_000, 1500, false);
+    const bars = buildBars(u.cells, SYNTHETIC_LOOKUPS);
+    const job = new FarDeclutter(bars);
+    expect(job.units).toBeGreaterThan(FAR_UNITS_PER_SLICE);
+    expect(() => job.result()).toThrow();
+    let steps = 0;
+    for (let before = job.visited; !job.step(FAR_UNITS_PER_SLICE); before = job.visited) {
+      expect(job.visited - before).toBe(FAR_UNITS_PER_SLICE);
+      steps++;
+    }
+    expect(steps + 1).toBe(Math.ceil(job.units / FAR_UNITS_PER_SLICE));
+    const key = (r: BarAttrs[]) => r.map((b) => [b.projectId, b.from, b.to, b.minZoom]);
+    expect(key(job.result())).toEqual(key(declutter(bars, 'far')));
   });
 
   it('far: the synthetic 30,000 at zoom 13 show no two bars within a gapped box', () => {
