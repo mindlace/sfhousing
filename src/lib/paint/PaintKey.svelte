@@ -25,8 +25,14 @@
     shown: number | null;
     /** Hover, focus or press: the height to outline, or null. */
     onshow(stories: number | null): void;
+    /**
+     * The key's panel is visible. Closed or hidden, the panel stays mounted: an outline shows only
+     * while its row can be seen, so this clears hover, focus and the pin (reopened, nothing is
+     * pressed).
+     */
+    active?: boolean;
   }
-  let { ops, result, shown, onshow }: Props = $props();
+  let { ops, result, shown, onshow, active = true }: Props = $props();
 
   const id = $props.id();
   /** The map draws the outline in the system theme's token (BrushEditor's outline slot). */
@@ -45,6 +51,15 @@
       if (hovered !== null && !hs.includes(hovered)) hovered = null;
       if (focused !== null && !hs.includes(focused)) focused = null;
       if (pinned !== null && !hs.includes(pinned)) pinned = null;
+    });
+  });
+
+  $effect(() => {
+    if (active) return;
+    untrack(() => {
+      hovered = null;
+      focused = null;
+      pinned = null;
     });
   });
 
@@ -105,14 +120,15 @@
           onclick={() => (pinned = pinned === stories ? null : stories)}
         >
           <!-- The dashed outline the map draws: shape, not colour alone, ties the row to it. A
-               pressed row's swatch fills (a cue beside aria-pressed that is not the row's tint). -->
+               pressed row's swatch fills solid in that colour (3:1 and more against the row, a
+               cue beside aria-pressed that is not the row's tint). -->
           <span class="flex w-7 shrink-0 justify-center" aria-hidden="true">
             <span
               class="inline-block h-4 w-4 rounded-sm border-2 border-dashed"
               data-swatch="outline"
               style:border-color={TOKENS[theme.current]['painted-outline']}
               style:background={pinned === stories
-                ? `color-mix(in srgb, ${TOKENS[theme.current]['painted-outline']} 40%, transparent)`
+                ? TOKENS[theme.current]['painted-outline']
                 : undefined}
             ></span>
           </span>

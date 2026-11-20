@@ -319,3 +319,70 @@ test('/ key: axe clean, light and dark', async ({ page }) => {
     await expectNoA11yViolations(page, { include: '[data-testid="map-key-control"]' });
   }
 });
+
+/** The page's `heightLots` requests to the worker, counted from the first script. */
+async function countHeightLots(page: Page): Promise<() => Promise<number>> {
+  await page.addInitScript(() => {
+    const w = window as unknown as { __heightLotsAsked: number };
+    w.__heightLotsAsked = 0;
+    const post = Worker.prototype.postMessage;
+    Worker.prototype.postMessage = function (this: Worker, ...args: unknown[]) {
+      if ((args[0] as { type?: string } | null)?.type === 'heightLots') w.__heightLotsAsked++;
+      return (post as (...a: unknown[]) => void).apply(this, args);
+    } as Worker['postMessage'];
+  });
+  return () =>
+    page.evaluate(() => (window as unknown as { __heightLotsAsked: number }).__heightLotsAsked);
+}
+
+/** Each way a phone closes or hides the key, and the way back to it. */
+const PHONE_CLOSE: Record<string, { close(p: Page): Promise<void>; back(p: Page): Promise<void> }> =
+  {
+    'the toggle': { close: (p) => keyToggle(p).click(), back: (p) => keyToggle(p).click() },
+    Escape: { close: (p) => p.keyboard.press('Escape'), back: (p) => keyToggle(p).click() },
+    'a tap on the map': {
+      close: (p) => p.touchscreen.tap(40, 160),
+      back: (p) => keyToggle(p).click()
+    },
+    // The handle's press is a press in the map box, so the panel closes as the sheet opens.
+    'the sheet opening': {
+      close: async (p) => {
+        await p.getByTestId('dock-handle').click();
+        await expect(keyToggle(p)).toBeHidden();
+      },
+      back: async (p) => {
+        await p.getByTestId('dock-handle').click();
+        await expect(keyToggle(p)).toHaveAttribute('aria-expanded', 'false');
+        await keyToggle(p).click();
+      }
+    }
+  };
+
+for (const [how, { close, back }] of Object.entries(PHONE_CLOSE)) {
+  test(`/ on a phone: a pressed height loses its outline when the key closes by ${how}`, async ({
+    isMobile,
+    page
+  }) => {
+    // eslint-disable-next-line playwright/no-skipped-test -- the phone's ways to close
+    test.skip(!isMobile, 'the phone layout');
+    const asked = await countHeightLots(page);
+    await seedTwoHeights(page);
+    await gotoEditor(page);
+    await keyToggle(page).click();
+    await expect(heightRows(page)).toHaveCount(2);
+    const row = heightRows(page).last();
+    await row.click();
+    await expect(row).toHaveAttribute('aria-pressed', 'true');
+    await expect.poll(() => deckIds(page)).toContain(OUTLINE_LAYER);
+    const before = await asked();
+    await close(page);
+    await expect.poll(() => deckIds(page)).not.toContain(OUTLINE_LAYER);
+    expect(await asked()).toBe(before);
+    // Reopened: nothing pressed, nothing outlined, nothing asked.
+    await back(page);
+    await expect(keyPanel(page)).toBeVisible();
+    await expect(row).toHaveAttribute('aria-pressed', 'false');
+    expect(await deckIds(page)).not.toContain(OUTLINE_LAYER);
+    expect(await asked()).toBe(before);
+  });
+}

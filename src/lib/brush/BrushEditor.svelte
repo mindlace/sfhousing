@@ -430,6 +430,8 @@
   const heightLots = new HeightLots((h) => client?.heightLots(h) ?? Promise.resolve(null));
   /** The height the key asked to outline, or null. */
   let shownHeight = $state<number | null>(null);
+  /** The key's panel is visible (open, and the control not hidden): outlines show only then. */
+  let keyVisible = $state(false);
   /** The next plan change is another plan (Editor.load): its rows wait for their own counts. */
   let freshPlan = false;
   $effect(() => {
@@ -528,6 +530,7 @@
     result={heightLots.result}
     shown={heightLots.outline ? shownHeight : null}
     onshow={showHeight}
+    active={keyVisible}
   />
 {/snippet}
 
@@ -604,7 +607,11 @@
     <!-- The map key at the map's bottom right, above the attribution (and the phone sheet's
          handle, which lifts the footprint); closed at rest at every width. Below md, while the
          sheet is open over the map, it hides (as /sim's does under a card's sheet). -->
-    <MapKeyControl key={paintKey} hidden={!wide.current && dock.sheet !== 'closed'} />
+    <MapKeyControl
+      key={paintKey}
+      hidden={!wide.current && dock.sheet !== 'closed'}
+      onopenchange={(p) => (keyVisible = p === 'key')}
+    />
 
     {#if crosshair}
       <svg

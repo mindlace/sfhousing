@@ -28,6 +28,9 @@ async function setup(ops: PlanOp[], result: HeightLotsResult | null = null) {
 
 afterEach(async () => {
   await cdp().send('Emulation.setTouchEmulationEnabled', { enabled: false });
+  await cdp().send('Emulation.setEmulatedMedia', {
+    features: [{ name: 'prefers-color-scheme', value: 'light' }]
+  });
 });
 
 describe('PaintKey', () => {
@@ -72,8 +75,8 @@ describe('PaintKey', () => {
       }
     });
     expect(texts()).toEqual([
-      '3 stories · 1+ lots · 1 rebuilt',
-      '8 stories · 42+ lots · 30 rebuilt'
+      '3 stories · 1+ lots · 1+ rebuilt',
+      '8 stories · 42+ lots · 30+ rebuilt'
     ]);
     await screen.rerender({
       result: {
@@ -139,6 +142,19 @@ describe('PaintKey', () => {
     expect(rows()).toHaveLength(1);
   });
 
+  it('an inactive key (closed or hidden) clears hover, focus and the pin; reopened, nothing is pressed', async () => {
+    const { onshow, screen } = await setup([paint('a', 3), paint('b', 8)]);
+    const last = () => onshow.mock.calls.at(-1)?.[0];
+    await userEvent.click(rows()[1]);
+    await expect.poll(last).toBe(8);
+    await screen.rerender({ active: false });
+    await expect.poll(last).toBeNull();
+    await screen.rerender({ active: true });
+    expect(rows().map((b) => b.getAttribute('aria-pressed'))).toEqual(['false', 'false']);
+    await userEvent.unhover(rows()[1]);
+    expect(last()).toBeNull();
+  });
+
   it('the shown height is marked on its row', async () => {
     const { screen } = await setup([paint('a', 3), paint('b', 8)]);
     expect(rows().map((b) => b.dataset.shown)).toEqual([undefined, undefined]);
@@ -164,10 +180,20 @@ describe('PaintKey', () => {
     const cs = getComputedStyle(sw);
     expect(cs.borderTopStyle).toBe('dashed');
     expect(cs.borderTopColor).toBe(hexToRgb(TOKENS.light['painted-outline']));
-    // Pressed, the swatch fills: a cue besides the row's tint.
+    // Pressed, the swatch fills solid in the outline colour (3:1 and more against the row).
     expect(cs.backgroundColor).toBe('rgba(0, 0, 0, 0)');
     await userEvent.click(rows()[0]);
-    await expect.poll(() => getComputedStyle(sw).backgroundColor).not.toBe('rgba(0, 0, 0, 0)');
+    await expect
+      .poll(() => getComputedStyle(sw).backgroundColor)
+      .toBe(hexToRgb(TOKENS.light['painted-outline']));
+    // Dark: the dark token.
+    await cdp().send('Emulation.setEmulatedMedia', {
+      features: [{ name: 'prefers-color-scheme', value: 'dark' }]
+    });
+    await expect
+      .poll(() => getComputedStyle(sw).backgroundColor)
+      .toBe(hexToRgb(TOKENS.dark['painted-outline']));
+    expect(getComputedStyle(sw).borderTopColor).toBe(hexToRgb(TOKENS.dark['painted-outline']));
   });
 });
 

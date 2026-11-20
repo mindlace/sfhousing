@@ -1,5 +1,5 @@
 /// <reference types="@vitest/browser-playwright" />
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { tick } from 'svelte';
 import { render } from 'vitest-browser-svelte';
 import { cdp, page, userEvent } from 'vitest/browser';
@@ -170,6 +170,28 @@ describe('MapKeyControl', () => {
     await page.viewport(1024, 768);
     await render(KeyHost, { props: {} });
     await expect.element(keyToggle()).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('onopenchange names the visible panel, and null while closed or hidden', async () => {
+    const onopenchange = vi.fn<(open: 'key' | 'layers' | null) => void>();
+    const screen = await render(KeyHost, { props: { withLayers: true, onopenchange } });
+    const last = () => onopenchange.mock.calls.at(-1)?.[0];
+    await expect.poll(last).toBeNull();
+    await keyToggle().click();
+    await expect.poll(last).toBe('key');
+    await layersToggle().click();
+    await expect.poll(last).toBe('layers');
+    await keyToggle().click();
+    await expect.poll(last).toBe('key');
+    // Hidden (a sheet over the corner): nothing is visible, though the choice is kept.
+    await screen.rerender({ hidden: true });
+    await expect.poll(last).toBeNull();
+    await screen.rerender({ hidden: false });
+    await expect.poll(last).toBe('key');
+    await keyToggle()
+      .element()
+      .dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await expect.poll(last).toBeNull();
   });
 
   it('toggles are 24 px on a fine pointer and 44 px on a coarse one', async () => {

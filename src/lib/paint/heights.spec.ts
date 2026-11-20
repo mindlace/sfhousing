@@ -18,10 +18,17 @@ describe('heightRowText', () => {
     expect(heightRowText(1, 1, 0, 0)).toBe('1 story · 1 lot · 0 rebuilt');
     expect(heightRowText(4, 0, 0, 0)).toBe('4 stories · 0 lots · 0 rebuilt');
     expect(heightRowText(12, 1234, 1001, 0)).toBe('12 stories · 1,234 lots · 1,001 rebuilt');
-    expect(heightRowText(6, 42, 30, 3)).toBe('6 stories · 42+ lots · 30 rebuilt');
-    expect(heightRowText(6, 1, 1, 2)).toBe('6 stories · 1+ lots · 1 rebuilt');
     expect(heightRowText(6, null, 0, 0)).toBe('6 stories · …');
     expect(heightRowText(1, null, 0, 5)).toBe('1 story · …');
+  });
+
+  it('heightRowText: while cells are missing both counts carry the plus; 0 lots so far is …', () => {
+    expect(heightRowText(6, 40, 12, 3)).toBe('6 stories · 40+ lots · 12+ rebuilt');
+    // Never "0+": a rebuilt count still at 0 while loading waits as '…'.
+    expect(heightRowText(6, 1, 0, 2)).toBe('6 stories · 1+ lots · …');
+    expect(heightRowText(6, 1234, 1001, 1)).toBe('6 stories · 1,234+ lots · 1,001+ rebuilt');
+    expect(heightRowText(6, 0, 0, 2)).toBe('6 stories · …');
+    expect(heightRowText(1, 0, 0, 1)).toBe('1 story · …');
   });
 });
 

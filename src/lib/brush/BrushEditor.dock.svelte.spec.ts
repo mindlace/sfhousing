@@ -720,7 +720,7 @@ describe("BrushEditor's map key", () => {
     expect(w.allOf('heightLots')).toHaveLength(1);
     w.heightLots({ heights: [{ stories: 6, lots: 3, rebuilt: 3 }], missing: 2, outline: null });
     click(keyToggle().element());
-    await expect.poll(heightRows).toEqual(['6 stories · 3+ lots · 3 rebuilt', '9 stories · …']);
+    await expect.poll(heightRows).toEqual(['6 stories · 3+ lots · 3+ rebuilt', '9 stories · …']);
     w.emit({ type: 'chunks', status: { '0_0': 'ready' }, pending: 1, failed: [] });
     expect(w.allOf('heightLots')).toHaveLength(2);
     w.heightLots({
@@ -767,4 +767,50 @@ describe("BrushEditor's map key", () => {
     click(eight.element());
     await expect.poll(overlayIds).not.toContain(OUTLINE_LAYER_ID);
   });
+
+  it.each(['the toggle', 'Escape', 'the sheet opening'] as const)(
+    'a pressed height loses its outline when the key closes by %s, with no new request; reopened, nothing is pressed',
+    async (how) => {
+      const phone = how === 'the sheet opening';
+      const { w, dock } = await setup({
+        width: phone ? 375 : 1024,
+        plan: planOf(op('a', 6), op('b', 8))
+      });
+      await ready(w);
+      await expect.poll(() => w.allOf('heightLots').length).toBe(1);
+      click(keyToggle().element());
+      await expect.poll(heightRows).toHaveLength(2);
+      const eight = () =>
+        document.querySelector<HTMLButtonElement>(
+          '[data-testid="map-key-panel"] [data-height="8"]'
+        )!;
+      click(eight());
+      await expect.poll(() => eight().getAttribute('aria-pressed')).toBe('true');
+      await expect.poll(() => w.lastOf('heightLots')!.outlineOf).toBe(8);
+      w.heightLots({
+        heights: [
+          { stories: 6, lots: 1, rebuilt: 1 },
+          { stories: 8, lots: 1, rebuilt: 1 }
+        ],
+        missing: 0,
+        outline: LOT_OUTLINE
+      });
+      await expect.poll(overlayIds).toContain(OUTLINE_LAYER_ID);
+      const asked = w.allOf('heightLots').length;
+
+      if (how === 'the toggle') click(keyToggle().element());
+      else if (how === 'Escape')
+        eight().dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      else dock.sheet = 'full';
+      await expect.poll(overlayIds).not.toContain(OUTLINE_LAYER_ID);
+      expect(w.allOf('heightLots')).toHaveLength(asked);
+
+      if (phone) dock.sheet = 'closed';
+      else click(keyToggle().element());
+      await expect.element(page.getByRole('group', { name: 'Map key' })).toBeVisible();
+      expect(eight().getAttribute('aria-pressed')).toBe('false');
+      expect(overlayIds()).not.toContain(OUTLINE_LAYER_ID);
+      expect(w.allOf('heightLots')).toHaveLength(asked);
+    }
+  );
 });

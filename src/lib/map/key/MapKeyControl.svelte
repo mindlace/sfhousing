@@ -29,6 +29,12 @@
     stale?: boolean;
     /** The control's box, for the card area. */
     el?: HTMLElement;
+    /**
+     * The panel the viewer can see, whenever it changes: 'key', 'layers', or null while none is
+     * open or the control is hidden. A panel's content stays mounted while closed, so a page whose
+     * panel draws on the map clears that drawing on anything but its own panel.
+     */
+    onopenchange?: (open: 'key' | 'layers' | null) => void;
   }
   let {
     key,
@@ -36,7 +42,8 @@
     openFromMd = false,
     hidden = false,
     stale = false,
-    el = $bindable()
+    el = $bindable(),
+    onopenchange = undefined
   }: Props = $props();
 
   type Panel = 'key' | 'layers';
@@ -52,6 +59,10 @@
     if (now === wasMd) return;
     wasMd = now;
     if (!now && open !== null) untrack(() => close(open!));
+  });
+  $effect(() => {
+    const visible = hidden ? null : open;
+    untrack(() => onopenchange?.(visible));
   });
   // A page that drops its layer rows closes their panel.
   $effect(() => {

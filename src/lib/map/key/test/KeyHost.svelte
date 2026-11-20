@@ -12,6 +12,7 @@
     /** Lines in the key panel. */
     lines?: number;
     el?: HTMLElement;
+    onopenchange?: (open: 'key' | 'layers' | null) => void;
   }
   let {
     height = 600,
@@ -20,7 +21,8 @@
     stale = false,
     withLayers = false,
     lines = 3,
-    el = $bindable()
+    el = $bindable(),
+    onopenchange = undefined
   }: Props = $props();
 </script>
 
@@ -44,6 +46,7 @@
     {openFromMd}
     {hidden}
     {stale}
+    {onopenchange}
     bind:el
   />
 </div>
