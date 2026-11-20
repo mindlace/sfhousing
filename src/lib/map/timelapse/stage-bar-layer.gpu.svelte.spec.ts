@@ -162,6 +162,8 @@ const VIEW_STATE: MapViewState = {
   bearing: 0
 };
 
+const nextFrame = () => new Promise<void>((r) => requestAnimationFrame(() => r()));
+
 describe('StageBarLayer on the GPU', () => {
   let canvas: HTMLCanvasElement;
   let deck: Deck<MapView>;
@@ -196,12 +198,16 @@ describe('StageBarLayer on the GPU', () => {
       !linkStatuses().includes('pending');
     for (let i = 0; i < 200 && !ready(); i++) {
       deck.redraw('link');
-      await new Promise((r) => setTimeout(r, 10));
+      await nextFrame();
     }
     expect(ready()).toBe(true);
-    await new Promise((r) => setTimeout(r, 10));
+    await nextFrame();
   }
 
+  /**
+   * Draws one frame now: deck applies the view state in `setProps` and `redraw('test')` draws
+   * synchronously, so the next `readPixels` reads this frame.
+   */
   function render(day: Day, zoom = 17, theme: Theme = 'light', pitch = 0) {
     clock.day = day;
     clock.theme = theme;
@@ -280,7 +286,10 @@ describe('StageBarLayer on the GPU', () => {
 
   /** The bar's screen rectangle at `zoom` (§4.4.1): left, top, width, height in canvas px. */
   function barRect(zoom: number, mode: BarMode = 'street', anchor = ANCHOR) {
-    const [ax, ay] = deck.getViewports()[0].project(anchor);
+    const vp = deck.getViewports()[0];
+    // Projected in the camera last drawn (`render`), never one an earlier test left.
+    expect(vp.zoom, 'barRect: render at this zoom first').toBe(zoom);
+    const [ax, ay] = vp.project(anchor);
     const { w, h } = barSizePx(zoom, mode);
     return { left: ax - w / 2, top: ay - BAR_OFFSET_PX - h, w, h };
   }
