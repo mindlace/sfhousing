@@ -1,7 +1,7 @@
 // A fake editor worker behind the real SimClient (`/`'s BrushEditor): records every request and
 // emits responses on demand, as a real Worker would.
 import type { WorkerLike } from '$lib/sim/client';
-import type { SimRequest, SimResponse } from '$lib/sim/protocol';
+import type { HeightLotsResult, SimRequest, SimResponse } from '$lib/sim/protocol';
 
 export class FakeEditorWorker implements WorkerLike {
   posts: SimRequest[] = [];
@@ -24,6 +24,11 @@ export class FakeEditorWorker implements WorkerLike {
   /** The worker answers init: ready (rev 1, as the first init is). */
   ready(rev = 1): void {
     this.emit({ type: 'ready', rev, datasetVersion: 'fixture-0', chunkCount: 4 });
+  }
+
+  /** Answers a `heightLots` request, by default the latest. */
+  heightLots(result: HeightLotsResult | null, reqId = this.lastOf('heightLots')!.reqId): void {
+    this.emit({ type: 'heightLots', reqId, result });
   }
 
   /** Every request of this type, in order. */

@@ -39,6 +39,12 @@ const LC_MARKS = [
   'lc-shuttle',
   'lc-garage'
 ] as const;
+const HALO_TOKENS = [
+  'tl-halo-approved',
+  'tl-halo-started',
+  'tl-halo-complete',
+  'tl-halo-policy'
+] as const;
 
 describe('palette (U4)', () => {
   for (const theme of ['light', 'dark'] as const) {
@@ -120,6 +126,22 @@ describe('palette (U4)', () => {
     it(`${theme}: every lc-* token is a hex colour`, () => {
       for (const id of [...LC_STREETS, ...LC_MARKS, 'lc-site'] as const)
         expect(TOKENS[theme][id], id).toMatch(/^#[0-9A-F]{6}$/);
+    });
+    it(`${theme}: the four halo tokens have 3:1 against land`, () => {
+      for (const id of HALO_TOKENS) {
+        expect(TOKENS[theme][id], id).toMatch(/^#[0-9A-F]{6}$/);
+        expect(contrast(TOKENS[theme][id], TOKENS[theme].land), id).toBeGreaterThanOrEqual(3);
+      }
+    });
+    it(`${theme}: the halo tones are distinct (ΔE2000 ≥ 8)`, () => {
+      for (let i = 0; i < HALO_TOKENS.length; i++)
+        for (let j = i + 1; j < HALO_TOKENS.length; j++) {
+          const d = de(
+            parse(TOKENS[theme][HALO_TOKENS[i]])!,
+            parse(TOKENS[theme][HALO_TOKENS[j]])!
+          );
+          expect(d, `${HALO_TOKENS[i]} vs ${HALO_TOKENS[j]}`).toBeGreaterThanOrEqual(8);
+        }
     });
     it(`${theme}: stop markers keep 3:1 contrast with land`, () => {
       for (const id of ['transit-bus', 'transit-rail', 'transit-regional'] as const)
@@ -331,9 +353,9 @@ describe('tokenCss / timelineTokenCss (spec §4.6.1)', () => {
   };
 
   it('tokenCss over every token and .sim-map reproduces the pinned DEFAULT_TOKENS_CSS body', () => {
-    // The pin predates the /lesscars `lc-*` tokens, which SimMap's stylesheet also declares
-    // (after these, in TOKENS order); the pinned body covers every other token byte for byte.
-    const pinned = ALL.filter((n) => !n.startsWith('lc-'));
+    // The pin predates the /lesscars `lc-*` and the `tl-halo-*` tokens, which SimMap's stylesheet
+    // also declares (in TOKENS order); the pinned body covers every other token byte for byte.
+    const pinned = ALL.filter((n) => !n.startsWith('lc-') && !n.startsWith('tl-halo-'));
     expect(tokenCss('.sim-map', pinned)).toBe(DEFAULT_TOKENS_BODY);
     const lc = ALL.filter((n) => n.startsWith('lc-'));
     expect(lc).toHaveLength(12);

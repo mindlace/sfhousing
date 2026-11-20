@@ -39,6 +39,10 @@ export type TokenName =
   | 'tl-bar-uncertain'
   | 'tl-bar-unlikely'
   | 'tl-bar-dead'
+  | 'tl-halo-approved'
+  | 'tl-halo-started'
+  | 'tl-halo-complete'
+  | 'tl-halo-policy'
   | 'lc-works'
   | 'lc-transit'
   | 'lc-bike'
@@ -52,7 +56,7 @@ export type TokenName =
   | 'lc-garage'
   | 'lc-site';
 
-/** Spec §4.3 verbatim, with the one-hue-per-meaning transit, pipeline and brush tokens from spec 2026-10-31 §8; `transit-*` from transit spec §6.1; `tl-*` from timelapse-render spec §4.6; `lc-*` are the /lesscars map marks (plan 2 Task 3b). Hex, or rgba() for highlight. */
+/** Spec §4.3 verbatim, with the one-hue-per-meaning transit, pipeline and brush tokens from spec 2026-10-31 §8; `transit-*` from transit spec §6.1; `tl-*` from timelapse-render spec §4.6 (`tl-halo-*`: map-on-screen slice 5, the stage tones and the site accent); `lc-*` are the /lesscars map marks (plan 2 Task 3b). Hex, or rgba() for highlight. */
 export const TOKENS: Record<Theme, Record<TokenName, string>> = {
   light: {
     land: '#F3EFE6',
@@ -99,6 +103,10 @@ export const TOKENS: Record<Theme, Record<TokenName, string>> = {
     'tl-bar-uncertain': '#B26A00',
     'tl-bar-unlikely': '#C62828',
     'tl-bar-dead': '#8A8478',
+    'tl-halo-approved': '#7B3F6E',
+    'tl-halo-started': '#1E63B0',
+    'tl-halo-complete': '#2E7D32',
+    'tl-halo-policy': '#A3472C',
     'lc-works': '#B35C00',
     'lc-transit': '#C1272D',
     'lc-bike': '#2E7D32',
@@ -157,6 +165,10 @@ export const TOKENS: Record<Theme, Record<TokenName, string>> = {
     'tl-bar-uncertain': '#FFB74D',
     'tl-bar-unlikely': '#FF8A80',
     'tl-bar-dead': '#8F8A80',
+    'tl-halo-approved': '#C08AAE',
+    'tl-halo-started': '#7FB8F0',
+    'tl-halo-complete': '#81C784',
+    'tl-halo-policy': '#E0955A',
     'lc-works': '#F0A040',
     'lc-transit': '#FF8A8A',
     'lc-bike': '#7FCF83',

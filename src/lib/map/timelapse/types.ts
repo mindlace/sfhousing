@@ -82,6 +82,16 @@ export interface TimelineSnapshot {
   /** Cells installed since construction, cumulative, never reset. */
   installs: number;
   layerIds: string[];
+  /** Halo rings in the halo layer; 0 without one (`setHalos(null)`). */
+  halos: number;
+  /** Policy marks in the halo layer. */
+  marks: number;
+  /** Rings `evalHalo` shows on the clock's day. */
+  halosShown: number;
+  /** The rings' distinct event days, ascending, the first 500. */
+  haloDays: number[];
+  /** Installed slots with parts and a flag (`slotFlags[s] !== 0`), halos on or off. */
+  flagged: number;
 }
 
 /** Shared mutable clock read by the extension's `draw`; `setTime` writes `day`. */

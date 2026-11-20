@@ -2,3 +2,4 @@
 // (and @luma.gl/engine) loads only in FZP mode.
 export { TimelapseExtension } from './extension';
 export { StageBarLayer } from './stage-bar-layer';
+export { HaloLayer } from './halo-layer';

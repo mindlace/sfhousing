@@ -41,9 +41,11 @@ export function validateTimedCell(c: TimedPackedCell): void {
   len('slotEnd', c.slotEnd.length, 2 * slots);
   len('slotPathway', c.slotPathway.length, slots);
   len('slotCohort', c.slotCohort.length, slots);
+  if (c.slotFlags) len('slotFlags', c.slotFlags.length, slots);
   for (let s = 0; s < slots; s++) {
     if (c.slotPathway[s] > 2) fail(`slot ${s} has pathway index ${c.slotPathway[s]}`);
     if (c.slotCohort[s] > 1) fail(`slot ${s} has cohort ${c.slotCohort[s]}`);
+    if (c.slotFlags && c.slotFlags[s] > 3) fail(`slot ${s} has flags ${c.slotFlags[s]}`);
     const kind = c.slotEnd[2 * s + 1];
     if (kind !== 0 && kind !== 1 && kind !== 2) fail(`slot ${s} has end kind ${kind}`);
   }

@@ -4,7 +4,7 @@ import type { Layer } from '@deck.gl/core';
 import { SolidPolygonLayer } from '@deck.gl/layers';
 import type { ParcelId } from '$lib/data/parcel';
 import type { TimelineDeps } from '../timeline-controller';
-import { StageBarLayer, TimelapseExtension } from '../timelapse/deck';
+import { HaloLayer, StageBarLayer, TimelapseExtension } from '../timelapse/deck';
 
 export type FakeTimelineEvent =
   | ['setLayers', string[]]
@@ -22,6 +22,8 @@ export interface FakeTimelineDeps extends TimelineDeps {
   events: FakeTimelineEvent[];
   resyncCount: number;
   repaintCount: number;
+  /** Every HaloLayer constructed (a clone included), in order. */
+  haloLayers: Layer[];
   /** Callbacks waiting for the next frame. */
   pendingFrames(): number;
   /** Runs the callbacks queued before this call. */
@@ -30,6 +32,14 @@ export interface FakeTimelineDeps extends TimelineDeps {
 
 export function makeFakeTimelineDeps(): FakeTimelineDeps {
   let handle = 0;
+  /** The real HaloLayer, recording each construction (deck's `clone` constructs one too). */
+  class RecordingHaloLayer extends HaloLayer {
+    static layerName = 'RecordingHaloLayer';
+    constructor(...props: ConstructorParameters<typeof HaloLayer>) {
+      super(...props);
+      f.haloLayers.push(this as unknown as Layer);
+    }
+  }
   let frames = new Map<number, (t: number) => void>();
   let time = 0;
   const f: FakeTimelineDeps = {
@@ -41,9 +51,11 @@ export function makeFakeTimelineDeps(): FakeTimelineDeps {
     events: [],
     resyncCount: 0,
     repaintCount: 0,
+    haloLayers: [],
     SolidPolygonLayer,
     TimelapseExtension,
     StageBarLayer,
+    HaloLayer: RecordingHaloLayer,
     setLayers(layers) {
       f.layerHistory.push(layers);
       f.events.push(['setLayers', layers.map((l) => l.id)]);

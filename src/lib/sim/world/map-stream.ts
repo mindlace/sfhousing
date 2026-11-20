@@ -14,13 +14,14 @@
 //   it. Revision 0 carries every one known; later updates those new or changed since the last.
 //   A lot can be sent in `demolish` more than once (an earlier day found later); the map's pump
 //   keeps every entry and the earliest governs, so the stream never assumes one entry per lot.
-// - `rewind` (rule 9): per row the stream keeps the key (entered, end, revisions) of the schedule
-//   it last sent, and per cell whether it was ever sent. A row gone from the restored world, or
-//   whose schedule now differs, dirties its cell. A dirty cell left with no project goes into
-//   `removedCells` if it was sent, and is dropped silently if not. Demolitions are recomputed
-//   from the restored world and diffed against those sent: a lot lost or whose day changed goes
-//   into `restore` (taking back every pump entry), and then, if it still has a day, into
-//   `demolish` with that day; both may travel in one update (restore is applied first).
+// - `rewind` (rule 9): per row the stream keeps the key (entered, end, revisions, and the flags
+//   `deps.flagsOf` gave) of the schedule it last sent, and per cell whether it was ever sent. A
+//   row gone from the restored world, or whose schedule or flags now differ, dirties its cell. A
+//   dirty cell left with no project goes into `removedCells` if it was sent, and is dropped
+//   silently if not. Demolitions are recomputed from the restored world and diffed against those
+//   sent: a lot lost or whose day changed goes into `restore` (taking back every pump entry), and
+//   then, if it still has a day, into `demolish` with that day; both may travel in one update
+//   (restore is applied first).
 // - An update goes out when a cell is packed or removed, or a demolition or restore is pending.
 //   `complete` (rule 7, ruled: no *ready* dirty cell) is computed on every update; once the world
 //   has stepped month `windowMonths` with no ready dirty cell left, one update says so even with
@@ -70,6 +71,8 @@ export interface MapStreamDeps {
   now?(): number;
   /** Test seam; default MASSING_CAP. */
   massingCap?: number;
+  /** SLOT_FLAG bits of `row` in `world`, asked when its cell is packed; default 0. */
+  flagsOf?(world: World, statics: Statics, row: number): number;
 }
 
 export interface MapStream {
@@ -103,6 +106,7 @@ const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 export function createMapStream(deps: MapStreamDeps, windowMonths: number): MapStream {
   const P = deps.massing.input.parcels;
   const now = deps.now ?? (() => performance.now());
+  const flagsOf = deps.flagsOf ?? (() => 0);
   // A cell needing more massings than the cap would evict its own and never finish under a finite
   // budget; no cell comes near 60,000.
   const massings = createLru<string, Massing>(deps.massingCap ?? MASSING_CAP);
@@ -189,8 +193,11 @@ export function createMapStream(deps: MapStreamDeps, windowMonths: number): MapS
     return `${s.projectId}|${k}|${r.day}|${r.units}|${r.stories}`;
   }
 
-  /** What a packed slot shows of a row (rule 9): its stage days, end and revisions; '-' for none. */
-  function scheduleKey(s: Schedule | null): string {
+  /**
+   * What a packed slot shows of a row (rule 9): its stage days, end, revisions and flags; '-' for
+   * none.
+   */
+  function scheduleKey(s: Schedule | null, flags: number): string {
     if (s === null) return '-';
     let k = '';
     for (const stage of STAGE_ORDER) k += `${s.entered[stage] ?? ''},`;
@@ -198,7 +205,7 @@ export function createMapStream(deps: MapStreamDeps, windowMonths: number): MapS
     k +=
       e.kind === 'open' ? '|open' : e.kind === 'complete' ? `|c${e.day}` : `|x${e.day}${e.stage}`;
     for (const r of s.revisions) k += `|${r.day}:${r.units}:${r.stories}`;
-    return k;
+    return `${k}|f${flags}`;
   }
 
   /**
@@ -241,7 +248,8 @@ export function createMapStream(deps: MapStreamDeps, windowMonths: number): MapS
     const items: TimedPackInput[] = [];
     for (const row of rowsIn.get(cell) ?? []) {
       const schedule = scheduleAt(world, statics, row, day);
-      keys.push([row, scheduleKey(schedule)]);
+      const flags = schedule === null ? 0 : flagsOf(world, statics, row);
+      keys.push([row, scheduleKey(schedule, flags)]);
       if (schedule === null) continue;
       const recs: ParcelRecord[] = [];
       for (const id of placed[row].ids) {
@@ -270,7 +278,7 @@ export function createMapStream(deps: MapStreamDeps, windowMonths: number): MapS
         ms.push(m);
       }
       if (cold) worked();
-      items.push({ schedule, massings: ms, pickParcelId: footprintParcel(recs).id });
+      items.push({ schedule, massings: ms, pickParcelId: footprintParcel(recs).id, flags });
     }
     return items;
   }
@@ -402,7 +410,8 @@ export function createMapStream(deps: MapStreamDeps, windowMonths: number): MapS
       for (const row of [...sentKeys.keys()]) if (row >= n) sentKeys.delete(row);
       // a row whose schedule differs from the one sent (stage days or end unknown again)
       for (const [row, key] of sentKeys) {
-        if (scheduleKey(scheduleAt(world, statics, row, day)) === key) continue;
+        const s = scheduleAt(world, statics, row, day);
+        if (scheduleKey(s, s === null ? 0 : flagsOf(world, statics, row)) === key) continue;
         const at = placed[row];
         if (at !== undefined && at.cells.length > 0) dirty.set(at.cells[0], true);
       }

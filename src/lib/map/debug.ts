@@ -11,7 +11,7 @@ import { packCell } from './pack';
 /** SimMap's timeline handle functions: the hook calls them, so the lazy path runs as in FZP. */
 export type TimelineHandleFns = Pick<
   SimMapHandle,
-  'applyTimeline' | 'setTime' | 'setTimelineLookups' | 'setOverlayLayers'
+  'applyTimeline' | 'setTime' | 'setTimelineLookups' | 'setHalos' | 'setOverlayLayers'
 >;
 
 export interface SfhMapDebug {
@@ -56,6 +56,8 @@ export interface SfhMapDebug {
   setTime(day: Day): void;
   /** SimMap's `setTimelineLookups`. */
   setTimelineLookups(l: TimelineLookups): void;
+  /** SimMap's `setHalos` (bench:map's "playback + halos" case). */
+  setHalos(o: { from: Day } | null): void;
   /** The TimelineController's snapshot; null outside timeline mode or while its module loads. */
   timelineSnapshot(): TimelineSnapshot | null;
   /** The demolish pump's largest feature-state call count in one frame; 0 without a timeline. */
@@ -88,6 +90,7 @@ export function installDebug(
     applyTimeline: (u) => timeline.applyTimeline(u),
     setTime: (day) => timeline.setTime(day),
     setTimelineLookups: (l) => timeline.setTimelineLookups(l),
+    setHalos: (o) => timeline.setHalos(o),
     timelineSnapshot: () => get().timeline?.debugSnapshot() ?? null,
     get demolishMaxFrameOps() {
       return get().timeline?.demolishMaxFrameOps ?? 0;

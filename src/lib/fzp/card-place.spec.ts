@@ -76,6 +76,15 @@ describe('cardArea', () => {
     expect(left + 200).toBeLessThanOrEqual(1280 - 60);
   });
 
+  it('the area ends at the key control on the right', () => {
+    // The key control at the map's bottom right, 8 px in, its open panel 240 px wide.
+    const area = cardArea(map, null, 320, 80, { right: 248 });
+    expect(area.right).toBe(1280 - 248);
+    // A click near the key flips the card to the anchor's left, clear of the control.
+    const { left } = cardPlacement({ x: 1100, y: 600 }, { w: 320, h: 200 }, area);
+    expect(left + 320).toBeLessThanOrEqual(1280 - 248);
+  });
+
   it('keeps a tall card off the attribution band', () => {
     const area = cardArea(map, null, 320, 80, { bottom: 112 });
     const top = cardPlacement({ x: 800, y: 690 }, { w: 320, h: 400 }, area).top;

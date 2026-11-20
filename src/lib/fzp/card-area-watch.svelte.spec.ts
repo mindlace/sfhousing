@@ -65,6 +65,20 @@ describe('watchCardArea', () => {
     stop();
   });
 
+  it('re-measures when the key control resizes', async () => {
+    const map = el(document.body, 'width:400px;height:300px');
+    const key = el(map, 'width:40px;height:24px');
+    const onchange = vi.fn();
+    const stop = watchCardArea({ map, key }, onchange);
+    await frames();
+    onchange.mockClear();
+    // The key panel opens: the control's box widens.
+    key.style.width = '240px';
+    await frames();
+    expect(onchange).toHaveBeenCalledTimes(1);
+    stop();
+  });
+
   it('re-measures when the map resizes', async () => {
     const map = el(document.body, 'width:400px;height:300px');
     const onchange = vi.fn();

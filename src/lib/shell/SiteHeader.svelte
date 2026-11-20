@@ -73,7 +73,8 @@
 
   function onkeydown(e: KeyboardEvent): void {
     if (!open || e.key !== 'Escape' || e.defaultPrevented) return;
-    // A modal dialog (Publish) or a disclosure open inside the menu (View) takes Escape first.
+    // A modal dialog (Publish) or a disclosure open inside the menu (Keyboard shortcuts) takes
+    // Escape first.
     if (document.querySelector('dialog:modal')) return;
     if (panel?.querySelector('[aria-expanded="true"]')) return;
     const a = document.activeElement;

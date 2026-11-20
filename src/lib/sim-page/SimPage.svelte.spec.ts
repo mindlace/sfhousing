@@ -150,6 +150,15 @@ const redoButton = () => header().getByRole('button', { name: /^Redo/ });
 const inspector = () => page.getByTestId('inspector');
 const inspectorTitle = () => inspector().getByRole('heading', { level: 2 });
 const notices = () => page.getByTestId('sim-notices');
+/** The map toolbar's Layers toggle and its panel (the switches were the header's View menu). */
+const layersToggle = () => page.getByRole('button', { name: 'Map layers' });
+const layersPanel = () => page.getByRole('group', { name: 'Map layers' });
+/** Opens the Layers panel if it is closed. */
+async function openLayers(): Promise<void> {
+  if (layersToggle().element().getAttribute('aria-expanded') !== 'true')
+    await userEvent.click(layersToggle());
+  await expect.element(layersPanel()).toBeVisible();
+}
 const zoningIds = () => debug().policy.kinds.zoning.map((p) => p.id);
 
 beforeEach(async () => {
@@ -592,22 +601,78 @@ describe('SimPage publish and view', () => {
       .toBeVisible();
   });
 
-  it('the view menu is offered at all times', async () => {
-    const viewButton = () => header().getByRole('button', { name: 'View', exact: true });
+  it('the header has no View; Layers on the map lists stops, capacity and limits in order', async () => {
     const r = await opened();
-    await expect.element(viewButton()).toBeVisible();
+    await expect.element(layersToggle()).toBeVisible();
+    expect(header().getByRole('button', { name: 'View', exact: true }).elements()).toEqual([]);
+    expect(header().element().contains(layersToggle().element())).toBe(false);
+    expect(page.getByTestId('map-key-control').element().contains(layersToggle().element())).toBe(
+      true
+    );
+    await userEvent.click(layersToggle());
+    const names = () =>
+      layersPanel()
+        .getByRole('checkbox')
+        .elements()
+        .map((e) => e.closest('label')!.textContent!.trim());
+    await expect.element(layersPanel()).toBeVisible();
+    expect(names()).toEqual([
+      'Transit stops',
+      'Transit capacity within a 10-minute walk',
+      'Zoning height limits'
+    ]);
     // After an edit and mid-refill: still there.
     await page.getByRole('button', { name: 'Add Zoning policy' }).click();
     await page.getByRole('button', { name: 'Protect historic buildings' }).click();
     await expect.poll(() => w().lastOf('setPolicy')?.rev).toBe(2);
     emit(compiledMsg(2, STATICS));
     emit(refillMsg(2, 3));
-    await expect.element(viewButton()).toBeVisible();
+    await expect.element(layersToggle()).toBeVisible();
     await r.unmount();
+    // The read-only view offers them too.
     await opened({ mode: 'view', persist: 'off', initialText: serializeSimDoc4(doc4(zoning())) });
-    await expect.element(viewButton()).toBeVisible();
-    await userEvent.click(viewButton());
+    await expect.element(layersToggle()).toBeVisible();
+    expect(header().getByRole('button', { name: 'View', exact: true }).elements()).toEqual([]);
+    await userEvent.click(layersToggle());
     await expect.element(page.getByRole('checkbox', { name: /height limits/i })).toBeVisible();
+  });
+
+  it('at 1024 px signed in, /sim fits with Autosave off and the status cell is not clipped', async () => {
+    await page.viewport(1024, 800);
+    // Every storage call fails: autosave is off, and its chip is the widest save state.
+    const blocked = {
+      getItem: () => {
+        throw new Error('blocked');
+      },
+      setItem: () => {
+        throw new Error('blocked');
+      },
+      removeItem: () => {
+        throw new Error('blocked');
+      }
+    } as unknown as Storage;
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await opened({ storage: () => blocked, headerUser: { handle: 'a'.repeat(24) } } as Over);
+    const chip = header().getByRole('button', { name: 'Autosave off' });
+    await expect.element(chip).toBeVisible();
+    // The playhead at the end: the headline's longest date.
+    (page.getByRole('slider').first().element() as HTMLElement).focus();
+    await userEvent.keyboard('{End}');
+    const cell = document.querySelector<HTMLElement>('[data-header-status]')!;
+    const banner = header().element() as HTMLElement;
+    expect(banner.scrollWidth).toBeLessThanOrEqual(banner.clientWidth);
+    expect(cell.scrollWidth, 'the status cell clips its content').toBeLessThanOrEqual(
+      cell.clientWidth
+    );
+    expect(chip.element().getBoundingClientRect().right).toBeLessThanOrEqual(
+      cell.getBoundingClientRect().right + 0.5
+    );
+    expect(cell.getBoundingClientRect().right).toBeLessThanOrEqual(
+      page.getByTestId('score-bar').element().getBoundingClientRect().left
+    );
+    const account = header().getByRole('link', { name: `@${'a'.repeat(24)}` });
+    await expect.element(account).toBeVisible();
   });
 });
 
@@ -657,7 +722,6 @@ const toolKey = async (key: 'b' | 'e' | 'v') => {
 };
 
 describe('SimPage map overlays', () => {
-  const viewButton = () => header().getByRole('button', { name: 'View', exact: true });
   type LimitsLayerLike = {
     id: string;
     props: { city: unknown; lids: unknown; mode: unknown; theme: string };
@@ -771,7 +835,7 @@ describe('SimPage map overlays', () => {
     await frames();
     expect(overlayIds()).not.toContain(LIMITS_LAYER_ID);
     expect(w().all('heightLids')).toHaveLength(0);
-    await viewButton().click();
+    await openLayers();
     await page.getByRole('checkbox', { name: 'Zoning height limits' }).click();
     await expect.poll(overlayIds).toContain(LIMITS_LAYER_ID);
     await expect.poll(() => w().all('heightLids').length).toBe(1);
@@ -795,7 +859,7 @@ describe('SimPage map overlays', () => {
     await expect.poll(() => lastLayer()?.props.mode).toEqual({ kind: 'plain' });
   });
 
-  it('with Zoning height limits off, selecting a transit policy or the plan turns them on', async () => {
+  it('selecting a Transit rule row turns the limits layer on (as through View before)', async () => {
     for (const which of ['policy', 'plan'] as const) {
       stub.reset();
       const mem = seeded(doc4(zoning(transit)));
@@ -815,14 +879,19 @@ describe('SimPage map overlays', () => {
         which === 'policy' ? { kind: 'rule', ruleId: 'near-bart' } : { kind: 'fzp' }
       );
       expect(JSON.parse(mem.getItem(VIEW_KEY)!).heightLimits).toBe(true);
+      // The Layers switch shows it on.
+      await openLayers();
+      await expect
+        .element(layersPanel().getByRole('checkbox', { name: 'Zoning height limits' }))
+        .toBeChecked();
       await r.unmount();
     }
   });
 
-  it('without transit the menu has only the height-limits row', async () => {
+  it('without manifest.transit Layers lists the limits row only', async () => {
     await opened({ manifest: { ...manifest, transit: undefined } });
-    await viewButton().click();
-    expect(page.getByRole('checkbox').elements()).toHaveLength(1);
+    await openLayers();
+    expect(layersPanel().getByRole('checkbox').elements()).toHaveLength(1);
     await expect
       .element(page.getByRole('checkbox', { name: 'Zoning height limits' }))
       .toBeChecked();
@@ -833,16 +902,15 @@ describe('SimPage map overlays', () => {
     setup({ manifest: null, manifestError: true });
     const retry = page.getByRole('button', { name: 'Retry', exact: true });
     await expect.element(retry).toBeVisible();
-    await viewButton().click();
-    const rows = () =>
-      page.getByRole('group', { name: 'Map layers' }).getByRole('checkbox').elements();
-    expect(rows()).toHaveLength(1);
-    await viewButton().click();
+    // No map, no toolbar: nothing to switch until the map is there.
+    expect(layersToggle().elements()).toHaveLength(0);
     await retry.click();
     await expect.poll(() => w()?.lastOf('openTimeline')).toBeTruthy();
-    await viewButton().click();
+    emit(compiledMsg(1, STATICS));
+    emit(filledMsg(1, 0, LAST + 1));
+    await openLayers();
     await expect.element(page.getByRole('checkbox', { name: 'Transit stops' })).toBeVisible();
-    expect(rows()).toHaveLength(3);
+    expect(layersPanel().getByRole('checkbox').elements()).toHaveLength(3);
   });
 
   it('the prefs are read from and written to the page storage', async () => {
@@ -852,7 +920,10 @@ describe('SimPage map overlays', () => {
     await expect
       .poll(() => stub.props.view)
       .toEqual({ transitStops: true, transitAccess: true, heightLimits: true });
-    await viewButton().click();
+    await openLayers();
+    // The stored choices are on in the panel.
+    await expect.element(page.getByRole('checkbox', { name: 'Transit stops' })).toBeChecked();
+    await expect.element(page.getByRole('checkbox', { name: /Transit capacity/ })).toBeChecked();
     await page.getByRole('checkbox', { name: 'Zoning height limits' }).click();
     await expect
       .poll(() => JSON.parse(mem.getItem(VIEW_KEY) ?? '{}'))

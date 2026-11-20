@@ -391,6 +391,36 @@ describe('map-stream: rewind (rule 9)', () => {
     for (const id of held) expect(touched.has(id)).toBe(true);
   });
 
+  it('a row whose flags changed with an unchanged schedule dirties its cell on rewind', () => {
+    // flags are read when a cell is packed; the row's flags change, the world does not
+    let flagged = -1;
+    const flagsOf = (_w: World, _s: Statics, row: number) => (row === flagged ? 1 : 0);
+    const stream = createMapStream({ ...streamDeps(input, records), flagsOf }, WINDOW);
+    const { world, sink } = startStream(statics, timeline, SEED, stream);
+    const due = planDue(world, statics, timeline, SEED, WINDOW);
+    const run: Run = { world, statics, timeline, seed: SEED, stream, sink, due };
+    const updates = [stream.flush(world, statics, Infinity)!, ...fill({ ...run, through: 60 })];
+    const saved = structuredClone(world);
+    const row = [...Array(saved.projects.n).keys()].find(
+      (r) => saved.projects.origin[r] === ORIGIN_SIM && anchorOfRow(saved, r) !== null
+    )!;
+    expect(row).toBeDefined();
+    const cell = anchorOfRow(saved, row)!;
+    const id = projectIdOf(saved, row);
+    const before = foldCells(updates).get(cell)!;
+    expect(before.slotFlags![before.slotProjectIds.indexOf(id)]).toBe(0);
+
+    // the same world again, flags unchanged: nothing to send
+    const same = rewound(structuredClone(saved), run.stream, timeline, 60);
+    expect(drain(same)).toEqual([]);
+    flagged = row;
+    const re = rewound(saved, run.stream, timeline, 60);
+    const now = drain(re);
+    expect(now.flatMap((u) => u.cells.map((c) => c.cellId))).toEqual([cell]);
+    const after = now[0].cells[0];
+    expect(after.slotFlags![after.slotProjectIds.indexOf(id)]).toBe(1);
+  });
+
   it('a sent cell left with no project is removed (fixture-0)', () => {
     use(fixture);
     // a cell whose projects in the first fill all began after month 60 and which no project of

@@ -64,6 +64,22 @@
       e.stopPropagation();
     }
   }
+  // Within it: an open explanation is the innermost layer, so Escape closes it and goes no further
+  // (a panel or sheet around it keeps its own Escape for the next press).
+  function onkeydown(e: KeyboardEvent) {
+    if (e.key !== 'Escape' || !open) return;
+    open = false;
+    dismissed = true;
+    e.stopPropagation();
+  }
+  // A native listener on the wrapper, not a delegated one: it runs before any container's handler,
+  // delegated (at the root) or native, and stopping it there keeps them all from seeing the key.
+  $effect(() => {
+    const el = wrapper;
+    if (!el) return;
+    el.addEventListener('keydown', onkeydown);
+    return () => el.removeEventListener('keydown', onkeydown);
+  });
   function onpointerdown(e: PointerEvent) {
     pressKind = e.pointerType;
     openAtPress = open;

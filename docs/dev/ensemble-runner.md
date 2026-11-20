@@ -29,7 +29,7 @@ The router treats `openTimeline` as `initScenario`: it disposes the editor host'
 
 A unit is one world one month (`step`), or one of `create`, `restore`, `copy`, `feed`, `quiet`, a compile `step(20)`, a `warm` massing of one (row, revision), a `cityInput` or a `heights` build step. A slice runs units until `SLICE_PLAN_MS` (45 ms); a unit of a kind runs only when the time used plus the largest of that kind's last 4 costs fits; the first unit always runs (D7). Then `setTimeout`.
 
-A flush (`MapStream.flush(world, statics, 20)`) is a task of its own, at most every 250 ms (D6). Warm units mass the plan world's started and revised rows, one (row, revision) per unit, just before it, in slices of their own (D12). When filling ends the stream is drained until an update says `complete` (D5).
+A flush (`MapStream.flush(world, statics, 20)`) is a task of its own, at most every 250 ms (D6). The stream's deps are the dataset's `massing`, `cellReady` (the chunk is loaded), `warnOnce` (to `logOnce`), the runner's clock and `flagsOf`: `slotFlags` over the plan side's timeline in use (0 before it has one) and the baseline pool ids, taken once per `open` ([map-interfaces.md](map-interfaces.md), "Slot flags"). Warm units mass the plan world's started and revised rows, one (row, revision) per unit, just before it, in slices of their own (D12). When filling ends the stream is drained until an update says `complete` (D5).
 
 ### Order
 

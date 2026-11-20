@@ -212,7 +212,15 @@ describe('validateTimedCell (§4.1 Validation)', () => {
     ['slotPathway value', (c) => (c.slotPathway[0] = 3)],
     ['slotEnd kind', (c) => (c.slotEnd[1] = 3)],
     ['slotCohort length', (c) => (c.slotCohort = c.slotCohort.slice(1))],
-    ['slotCohort value', (c) => (c.slotCohort[0] = 2)]
+    ['slotCohort value', (c) => (c.slotCohort[0] = 2)],
+    ['slotFlags length', (c) => (c.slotFlags = new Uint8Array(0))],
+    [
+      'slotFlags value',
+      (c) => {
+        c.slotFlags = new Uint8Array(c.parcelIds.length);
+        c.slotFlags[0] = 4;
+      }
+    ]
   ];
 
   it('accepts every fixture cell', () => {
@@ -226,6 +234,14 @@ describe('validateTimedCell (§4.1 Validation)', () => {
     expect(() => validateTimedCell(c)).toThrow(TypeError);
     expect(() => validateTimedCell(c)).toThrow(c.cellId);
     expect(() => encodeParts(c, timelineLookups)).toThrow(TypeError);
+  });
+
+  it('accepts a cell without slotFlags', () => {
+    const c = base();
+    delete c.slotFlags;
+    expect(() => validateTimedCell(c)).not.toThrow();
+    c.slotFlags = new Uint8Array(c.parcelIds.length).fill(3);
+    expect(() => validateTimedCell(c)).not.toThrow();
   });
 
   it('throws for a non-integer slotEnd kind', () => {

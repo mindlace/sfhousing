@@ -7,7 +7,7 @@ import {
   type TimedPackInput
 } from './pack-timed';
 import { packCell } from './pack';
-import { TYPOLOGY_ORDER } from './types';
+import { SLOT_FLAG, TYPOLOGY_ORDER } from './types';
 import type { TimedPackedCell } from './types';
 import type { GeneratedBuilding } from '$lib/generator';
 import type { Schedule } from '$lib/sim/scenario/types';
@@ -64,7 +64,8 @@ const arrays = (p: TimedPackedCell) => [
   p.slotStages,
   p.slotEnd,
   p.slotPathway,
-  p.slotCohort
+  p.slotCohort,
+  p.slotFlags!
 ];
 const count = (xs: ArrayLike<number>, v: number) => Array.from(xs).filter((x) => x === v).length;
 
@@ -219,7 +220,7 @@ describe('packTimedCell (§4.1.1)', () => {
       ]);
     const x = arrays(make());
     const y = arrays(make());
-    expect(x.length).toBe(12);
+    expect(x.length).toBe(13);
     x.forEach((arr, i) => {
       expect(bytes(arr.buffer as ArrayBuffer)).toEqual(bytes(y[i].buffer as ArrayBuffer));
     });
@@ -233,6 +234,18 @@ describe('packTimedCell (§4.1.1)', () => {
     ]);
     expect(p.slotCohort).toBeInstanceOf(Uint8Array);
     expect(Array.from(p.slotCohort)).toEqual([0, 1, 0]);
+  });
+
+  it("writes each item's flags to slotFlags in slot order, 0 when absent", () => {
+    const p = packTimedCell('c', [
+      { ...item('c-both', [B[2]]), flags: SLOT_FLAG.zoning | SLOT_FLAG.money },
+      item('a-none', [B[0]]),
+      { ...item('b-money', [B[1]]), flags: SLOT_FLAG.money }
+    ]);
+    expect(p.slotFlags).toBeInstanceOf(Uint8Array);
+    expect(p.slotProjectIds).toEqual(['a-none', 'b-money', 'c-both']);
+    expect(Array.from(p.slotFlags!)).toEqual([0, 2, 3]);
+    expect(Array.from(packTimedCell('c', [item('a', [B[0]])]).slotFlags!)).toEqual([0]);
   });
 
   it('accepts a building source other than user', () => {
@@ -305,13 +318,22 @@ describe('packTimedCell (§4.1.1)', () => {
 });
 
 describe('packTimedTransferables', () => {
-  it('lists the 12 typed-array buffers, all distinct, slotCohort among them', () => {
+  it('lists the 13 typed-array buffers, all distinct, slotCohort among them', () => {
     const p = packTimedCell('c', [item('a', [B[4], B[5]]), item('b', [{ footprint: RING }])]);
     const t = packTimedTransferables(p);
-    expect(t.length).toBe(12);
-    expect(new Set(t).size).toBe(12);
+    expect(t.length).toBe(13);
+    expect(new Set(t).size).toBe(13);
     expect(t).toContain(p.slotCohort.buffer);
     for (const arr of arrays(p)) expect(t).toContain(arr.buffer);
+  });
+
+  it('lists the slotFlags buffer among the transferables', () => {
+    const p = packTimedCell('c', [{ ...item('a', [B[4]]), flags: SLOT_FLAG.zoning }]);
+    expect(packTimedTransferables(p)).toContain(p.slotFlags!.buffer);
+    // a cell from an older producer, without slotFlags, lists the other 12
+    const old = { ...p };
+    delete old.slotFlags;
+    expect(packTimedTransferables(old)).toHaveLength(12);
   });
 });
 

@@ -4,7 +4,7 @@
 import { timelineLookups } from '../fixtures/timeline-lookups';
 import { packTimedCell, type TimedPackInput } from '../pack-timed';
 import type { TimelineLookups } from '../timelapse/types';
-import type { TimedPackedCell, TimelineUpdate } from '../types';
+import { SLOT_FLAG, type TimedPackedCell, type TimelineUpdate } from '../types';
 import {
   benchmarkExemplars,
   cityGrid,
@@ -36,6 +36,8 @@ const STAGE_GAP = { min: 30, span: 510 };
 const CONSTRUCTION_GAP = { min: 360, span: 540 };
 /** Room an open project leaves before the horizon, so a second revision fits. */
 const OPEN_LEAD = 60;
+/** Tier 4, test value only: one project in this many carries a policy flag (a mark on the map). */
+const FLAG_EVERY = 10;
 
 const int = (rnd: () => number, n: number) => Math.floor(rnd() * n);
 
@@ -47,7 +49,8 @@ const int = (rnd: () => number, n: number) => Math.floor(rnd() * n);
  * streamlined project never takes it because `SYNTHETIC_LOOKUPS` has no streamlined PPA row),
  * seeded stage days in [Day 20742, Day 29584], and an end: an exit at one of its stages, open at
  * the horizon, or complete. A second revision, on a different exemplar building, lands before
- * construction. `demolish` lists every project that reaches construction, at that day.
+ * construction. `demolish` lists every project that reaches construction, at that day. Every
+ * FLAG_EVERY-th project (by number, so the draws are unchanged) has `SLOT_FLAG.zoning`.
  * Deterministic for a seed.
  */
 export function makeSyntheticTimeline(
@@ -78,7 +81,8 @@ export function makeSyntheticTimeline(
         schedule.revisions[r].units = m.units;
         schedule.revisions[r].stories = m.stories;
       });
-      items.push({ schedule, massings, pickParcelId: parcelId });
+      const flags = (made + i) % FLAG_EVERY === 0 ? SLOT_FLAG.zoning : 0;
+      items.push({ schedule, massings, pickParcelId: parcelId, flags });
       const built = schedule.entered.construction;
       if (built !== undefined) demolish.push({ parcelId, day: built });
     }

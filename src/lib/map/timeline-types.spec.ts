@@ -26,6 +26,7 @@ interface RowTimedPackedCell extends PackedCell {
   slotEnd: Float32Array; // per slot: [endDay, endKind] (0 open, 1 complete, 2 exit)
   slotPathway: Uint8Array; // index into ['discretionary','streamlined','permitOnly']
   slotCohort: Uint8Array; // per slot: 0 = fresh (new projects' lookups), 1 = in flight (Call 15)
+  slotFlags?: Uint8Array; // per slot: SLOT_FLAG bits (map-on-screen Task 1); absent = none
 }
 
 interface RowTimelineUpdate {

@@ -31,7 +31,9 @@ const THEMED_FILES = [
   'src/lib/sim-page/SimNotices.svelte',
   'src/lib/fzp/SimResults.svelte',
   'src/lib/fzp/ScoreChart.svelte',
-  'src/lib/fzp/MapKey.svelte',
+  'src/lib/map/key/MapKeyControl.svelte',
+  'src/lib/map/key/KeySwatch.svelte',
+  'src/lib/timeline/SimKey.svelte',
   'src/lib/scoreboard/TargetRow.svelte',
   'src/lib/dock/Dock.svelte',
   'src/lib/scoreboard/HeaderScore.svelte',
@@ -73,7 +75,9 @@ const THEMED_FILES = [
 const NO_HEX_FILES = [
   'src/lib/fzp/SimResults.svelte',
   'src/lib/fzp/ScoreChart.svelte',
-  'src/lib/fzp/MapKey.svelte',
+  'src/lib/map/key/MapKeyControl.svelte',
+  'src/lib/map/key/KeySwatch.svelte',
+  'src/lib/timeline/SimKey.svelte',
   'src/lib/scoreboard/TargetRow.svelte'
 ];
 const BLUE_HEX = /#(1d4ed8|2563eb|1e40af|3b82f6|1e3a8a)\b/i;

@@ -29,7 +29,7 @@
   import { headlineSpoken } from '$lib/timeline/results';
   import TimelineHeaderScore from '$lib/timeline/TimelineHeaderScore.svelte';
   import { readViewPrefs, writeViewPrefs, type ViewPrefs } from '$lib/view/prefs';
-  import ViewMenu from '$lib/view/ViewMenu.svelte';
+  import LayerSwitches from '$lib/view/LayerSwitches.svelte';
   import { useSystemTheme } from '$lib/map/system-theme.svelte';
   import type { PageProps } from './$types';
 
@@ -112,8 +112,9 @@
     dock.toggleResults(wide.current);
   }
 
-  // Map layer toggles (transit spec §6.3), per viewer. View shows only when the manifest the map
-  // renders (BrushEditor's own, which a Retry can replace) has a transit network.
+  // Map layer toggles (transit spec §6.3), per viewer, in the map toolbar's Layers panel. Layers
+  // shows only when the manifest the map renders (BrushEditor's own, which a Retry can replace)
+  // has a transit network.
   let view = $state<ViewPrefs>(readViewPrefs());
   let mapManifest = $state.raw<Manifest | null>(null);
   function onViewChange(v: ViewPrefs): void {
@@ -170,10 +171,11 @@
   <NoticeStack {notices} ondismiss={(id) => (notices = notices.filter((n) => n.id !== id))} />
 {/snippet}
 
+{#snippet layerSwitches()}
+  <LayerSwitches {view} theme={systemTheme.current} onchange={onViewChange} />
+{/snippet}
+
 {#snippet headerActions()}
-  {#if mapManifest?.transit}
-    <ViewMenu {view} theme={systemTheme.current} onchange={onViewChange} />
-  {/if}
   {#if editor}
     <!-- editor.plan passes straight through: PublishDialog's 413 lock keys on its identity. -->
     <PublishButton
@@ -205,6 +207,7 @@
     onchunks={(c) => (chunkState = c)}
     {view}
     onmanifest={(m) => (mapManifest = m)}
+    layers={mapManifest?.transit ? layerSwitches : undefined}
     {dock}
     {dockId}
     {dockFocus}

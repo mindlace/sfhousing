@@ -84,4 +84,28 @@ describe('rest text (rules 37 to 39)', () => {
     await tick();
     expect(longTexts()).toEqual([]);
   });
+
+  it('/sim at rest with the key open shows no text of 12 words or more', async () => {
+    await page.viewport(1280, 800);
+    await opened();
+    await expect.element(page.getByTestId('score-bar')).toBeVisible();
+    const key = page.getByRole('group', { name: 'Map key' });
+    await expect.element(key).toBeVisible();
+    await expect.element(key.getByText('Planning review')).toBeVisible();
+    await expect.element(key.getByText('Just changed stage')).toBeVisible();
+    await expect.element(key.getByText('Bar: progress and chance of finishing')).toBeVisible();
+    expect(longTexts()).toEqual([]);
+  });
+
+  it('/sim with the Layers panel open shows no text of 12 words or more', async () => {
+    await page.viewport(1280, 800);
+    await opened();
+    await page.getByRole('button', { name: 'Map layers' }).click();
+    const layers = page.getByRole('group', { name: 'Map layers' });
+    await expect.element(layers).toBeVisible();
+    await expect.element(layers.getByText('BART / Caltrain')).toBeVisible();
+    await expect.element(layers.getByText(/^Estimated weekday/)).toBeVisible();
+    await expect.element(layers.getByText(/^Glass lids/)).toBeVisible();
+    expect(longTexts()).toEqual([]);
+  });
 });

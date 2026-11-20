@@ -10,7 +10,7 @@ import type { SimRequest, SimResponse } from '$lib/sim/protocol';
 import manifestJson from '../../../e2e/fixtures/data/fixture-0/manifest.json';
 import BrushEditor from './BrushEditor.svelte';
 import { MSG } from './messages';
-import { chunkStatus } from './test/sim-map-stub';
+import { chunkStatus, resetStubHandle } from './test/sim-map-stub';
 
 vi.mock('$lib/map/SimMap.svelte', async () => import('./test/SimMapStub.svelte'));
 
@@ -38,7 +38,7 @@ function fakeWorker(): FakeWorker {
 
 afterEach(() => {
   vi.restoreAllMocks();
-  chunkStatus.clear();
+  resetStubHandle();
 });
 
 describe('BrushEditor worker restart (F-3)', () => {

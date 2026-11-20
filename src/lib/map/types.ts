@@ -43,6 +43,9 @@ export interface PackedCell {
   partTypology: Uint8Array; // per part → index into TYPOLOGY_ORDER (I10 order)
 }
 
+/** Bits of `TimedPackedCell.slotFlags`. */
+export const SLOT_FLAG = { zoning: 1, money: 2 } as const;
+
 /**
  * T7: a packed cell whose parts and slots carry the timelapse's time data.
  * `parcelMeta` rows describe the slot's final revision.
@@ -54,6 +57,7 @@ export interface TimedPackedCell extends PackedCell {
   slotEnd: Float32Array; // per slot: [endDay, endKind] (0 open, 1 complete, 2 exit)
   slotPathway: Uint8Array; // index into ['discretionary','streamlined','permitOnly']
   slotCohort: Uint8Array; // per slot: 0 = fresh (new projects' lookups), 1 = in flight
+  slotFlags?: Uint8Array; // per slot: SLOT_FLAG bits; absent (older producers, fixtures) = none
 }
 
 /** T7: one timeline message (timelapse worker → SimMap). */
@@ -101,6 +105,11 @@ export interface SimMapHandle {
   // T7. `inFlight` (Call 15): the lookups for slots with slotCohort 1; absent = they read the
   // fresh set (the top level, new projects').
   setTimelineLookups(l: TimelineLookupSet & { inFlight?: TimelineLookupSet }): void;
+  /**
+   * Halos on stage changes after `from` (the dataset date) and marks on projects under your
+   * policy; null (the default) draws none. Kept until the timeline controller exists, as setTime.
+   */
+  setHalos(o: { from: Day } | null): void;
 }
 
 /** T7: one set of timeline lookups (T12 `chanceTable` and `typicalMonths` outputs). */

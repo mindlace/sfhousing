@@ -10,8 +10,9 @@ export interface CardArea {
  * bottom-left controls (`controls.left`: zoom and compass, px from the map's left edge), above the
  * time bar (`scrubberH`) and the bottom-right controls (`controls.bottom`: the footprint
  * `--map-controls-br-block-size`, px from the map's bottom, which includes the inset and the
- * attribution band; whichever is higher wins), left of the run slider (`controls.right`: px
- * from the map's right edge to the slider's left edge; 0 or absent when it is not shown), and
+ * attribution band; whichever is higher wins), left of the map key control or the run slider
+ * (`controls.right`: px from the map's right edge to the control's left edge, the key control's
+ * on /sim (`MapKeyControl`, open or closed), or the slider's; 0 or absent when none shows), and
  * below the notice-pill stack when it overlays the map's top (from md; a pill may be showing).
  * The stack's `height` is 0 when no pill shows, and below md it sits in flow above the map, so
  * its bottom is not past the map's top: both leave the top at 0.

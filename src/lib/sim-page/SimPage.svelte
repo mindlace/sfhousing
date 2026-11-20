@@ -5,8 +5,8 @@
   whose brush lots PolicySync resolves for the worker. The detail column (from md beside the
   timeline in the bottom pane under the map, below md a sheet) is the Inspector (the selected
   policy's editor, "+"'s menu) or Results: from md at rest or after a press on the header score,
-  below md after that press. The header has the View menu (always offered, rule 18), Undo and
-  Redo, and Publish; its status slot the save state.
+  below md after that press. The header has Undo and Redo, and Publish; its status slot the save
+  state. The map layer switches (rule 18) are in the map toolbar's Layers panel, beside Key.
   Opening (rule 40, R-3): with the calibration known, in the browser, the document opens before
   TimelineMode mounts, so its first `policy` is the opened one; with no calibration it opens on
   `oncalibration`, after a Retry's reload. Edit: the v1 autosave migrates to `sfhousing:sim:v2`,
@@ -77,7 +77,7 @@
     type TimelineClientApi
   } from '$lib/timeline/TimelineMode.svelte';
   import { readViewPrefs, writeViewPrefs, type ViewPrefs } from '$lib/view/prefs';
-  import ViewMenu, { type ViewRow } from '$lib/view/ViewMenu.svelte';
+  import LayerSwitches, { type ViewRow } from '$lib/view/LayerSwitches.svelte';
   import { ERASE_HINT, SimBrushTools, brushToolOf, type SimTool } from './brush-tools.svelte';
   import { simPaintRows } from './brush-summary';
   import { installSimDebug } from './debug';
@@ -608,7 +608,7 @@
     brush.announce(label, ANNOUNCE_MS);
   }
 
-  // ---- map overlays (rule 18: offered at all times) ----
+  // ---- map overlays (rule 18: offered at all times, in the map toolbar's Layers panel) ----
 
   /** The viewer's layer toggles, shared with / (`sfhousing:view`). */
   let viewPrefs = $state.raw<ViewPrefs>(untrack(() => readViewPrefs(storage())));
@@ -962,8 +962,11 @@
   });
 </script>
 
+{#snippet layerSwitches()}
+  <LayerSwitches view={viewPrefs} theme={systemTheme.current} rows={viewRows} onchange={setView} />
+{/snippet}
+
 {#snippet actions()}
-  <ViewMenu view={viewPrefs} theme={systemTheme.current} rows={viewRows} onchange={setView} />
   {#if toolOff}
     <button
       type="button"
@@ -1054,6 +1057,7 @@
   ownerName={(o) => ownerName4(o, store.policy)}
   fundingName={(c) => fundingName4(store.policy, cal?.baselineFunding)(c)}
   {actions}
+  layers={layerSwitches}
   status={readonly ? undefined : saveState}
   notices={sessionNotices}
   policy={store.policy}

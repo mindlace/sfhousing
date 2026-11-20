@@ -144,6 +144,9 @@
   import type { SpanRef } from './spans';
   import Timeline from './Timeline.svelte';
   import TimelineHeaderScore from './TimelineHeaderScore.svelte';
+  import MapKeyControl from '$lib/map/key/MapKeyControl.svelte';
+  import { keyTally } from './key';
+  import SimKey from './SimKey.svelte';
 
   interface Props {
     manifest: Manifest | null;
@@ -166,6 +169,8 @@
     fundingName?: (f: CardFunding) => string | null;
     /** The page's own header actions. */
     actions?: Snippet;
+    /** The map's layer switches, in the map toolbar's Layers panel; no Layers toggle without. */
+    layers?: Snippet;
     /**
      * The page's status (the save state), in the header's status slot. Its argument is true while
      * "Updating" covers it (the cell hides it): its controls should go inert and a popover of its
@@ -246,6 +251,7 @@
     ownerName = undefined,
     fundingName = undefined,
     actions = undefined,
+    layers = undefined,
     status = undefined,
     notices = undefined,
     policy,
@@ -385,6 +391,20 @@
     )
   );
   const headText = $derived(headline ? headlineText(headline, goal) : null);
+  /**
+   * The map key's tally: the homes in each stage at the playhead's month, under the headline's
+   * rules. It reads `index` and `atToday`, never `day`, so it reads one row at most once per month
+   * the playhead crosses.
+   */
+  const tally = $derived(
+    keyTally(
+      shown.view,
+      { index, atToday },
+      { provisional: session?.provisional ?? false, inForce }
+    )
+  );
+  /** The map key control's box: the card's area ends at its left edge. */
+  let keyEl = $state<HTMLElement>();
   /**
    * The goal's step, an input: from the newest view, else the one on show (a restart's re-open
    * keeps held numbers with no view of its own), so it stays whole while numbers show.
@@ -599,12 +619,18 @@
     const m = mapBox.getBoundingClientRect();
     const zoom = mapBox.querySelector('.maplibregl-ctrl-bottom-left')?.getBoundingClientRect();
     const br = parseFloat(document.documentElement.style.getPropertyValue(BR_BLOCK)) || 0;
+    // The key control (hidden below md while a card is open: no box, no edge).
+    const key = keyEl?.getBoundingClientRect();
     const next = cardArea(
       { left: m.left, top: m.top, width: m.width, height: m.height },
       pillsEl ? pillsEl.getBoundingClientRect() : null,
       0,
       0,
-      { left: zoom && zoom.width > 0 ? zoom.right - m.left : 0, bottom: br }
+      {
+        left: zoom && zoom.width > 0 ? zoom.right - m.left : 0,
+        bottom: br,
+        right: key && key.width > 0 ? m.right - key.left : 0
+      }
     );
     const was = cardBounds;
     if (
@@ -625,7 +651,8 @@
       {
         map: mapBox,
         pills: pillsEl,
-        controls: mapBox.querySelector<HTMLElement>('.maplibregl-ctrl-bottom-left')
+        controls: mapBox.querySelector<HTMLElement>('.maplibregl-ctrl-bottom-left'),
+        key: keyEl
       },
       measureCardArea
     );
@@ -774,7 +801,11 @@
     for (const u of queued) h.applyTimeline(u);
     for (const [cellId, s] of pendingStatus) h.setChunkStatus(cellId, s);
     pendingStatus.clear();
-    if (calibration) h.setTime(day);
+    if (calibration) {
+      h.setTime(day);
+      // Halos and marks from the dataset date on: nothing rings at today. Once, not per move.
+      h.setHalos({ from: calibration.asOf });
+    }
     applyInset();
     // Rule 22.
     h.onResyncNeeded(() => session?.resync());
@@ -994,6 +1025,7 @@
         reveal = revealOpen(fresh.calibration.asOf);
         pushLookups();
         handle?.setTime(day);
+        handle?.setHalos({ from: fresh.calibration.asOf });
         oncalibration?.(fresh.calibration);
       }
       failed = false;
@@ -1373,6 +1405,23 @@
             <div class="h-full" data-testid="fzp-frame"></div>
           {/if}
         </div>
+
+        {#if manifest && session}
+          <!-- The map key and the page's Layers: after the map's own controls in Tab order, before
+               the card. The key is open at rest from md; below md the control hides while the
+               card's sheet covers its corner. -->
+          <MapKeyControl
+            openFromMd
+            {layers}
+            hidden={narrow.current && cardOpen}
+            {stale}
+            bind:el={keyEl}
+          >
+            {#snippet key()}
+              <SimKey {tally} {inForce} />
+            {/snippet}
+          </MapKeyControl>
+        {/if}
 
         {#if session && calibration && cardChance}
           <div class="tl-dim" data-stale={stale ? 'true' : undefined} data-testid="tl-card">

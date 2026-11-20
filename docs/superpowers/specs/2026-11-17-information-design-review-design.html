@@ -279,6 +279,7 @@
         </svg>
         <figcaption>Figure 1. Regions of the proposed Simulate screen. Highlighted boxes carry See items; faded boxes carry Find or Alert items.</figcaption>
       </figure>
+      <aside data-kind="note"><strong>Built differently, 2026-11-20</strong> The key and the Layers toggle sit at the map's bottom right, above the attribution, not at the bottom left as drawn: the bottom left holds zoom, Reset view and Paint's strip, and the right corner is free at every measured width.</aside>
       <section id="sec-prop-header">
         <h4>Header</h4>
         <ul>
@@ -366,7 +367,8 @@
       <h3>Events</h3>
       <p>A stage change is the unit of "watching it grow". Three changes get a signal: approved, construction started, completed.</p>
       <ul>
-        <li><strong>On the visible map:</strong> a halo at the project that fades over about two seconds of real time. Its colour is the stage's colour from the key. A project that exists because of the person's policy gets the accent colour.</li>
+        <li><strong>On the visible map:</strong> a halo at the project that fades over about two seconds of real time. Its colour is the stage's colour from the key. A project that exists because of the person's policy gets the accent colour.
+          <aside data-kind="note"><strong>Built differently, 2026-11-20</strong> The halos have three tones of their own (approved, started building, completed), and the key names each one beside its ring. The stage swatch colours are too pale to reach 3:1 against the map's land.</aside></li>
         <li><strong>Off the visible map:</strong> a short glow on the map edge in the project's direction. The camera does not move.</li>
         <li><strong>At speed:</strong> above a set number of events per second, halos merge into one per neighbourhood, sized by homes.</li>
         <li><strong>In the tally:</strong> the map key's stage counts and the activity panel's yearly counts tick as events land.</li>
@@ -546,8 +548,8 @@
   </section>
 
   <section id="sec-carried">
-    <h2>Carried forward from slices 1 to 4</h2>
-    <p>Known rough edges that were left for the slice that rebuilds the part they live in. The four items slice 3 was given (rows clickable under the pinned block, the readout and header naming different months, the goal step's label, and the headline rules living outside the headline function) are done.</p>
+    <h2>Carried forward from slices 1 to 5</h2>
+    <p>Known rough edges that were left for the slice that rebuilds the part they live in. The four items slice 3 was given (rows clickable under the pinned block, the readout and header naming different months, the goal step's label, and the headline rules living outside the headline function) are done. Slice 5 finished the four items it was given: Paint's key lists each height with its lots and rebuilt count and outlines one height on the map; "rebuilt" explains a count that does not move; "View" left both headers, and with it the clip of <code>/sim</code>'s status cell at 1024 px.</p>
     <ul>
       <li><strong>From slice 3, needs wording:</strong> on a first load, if Play catches up with a forecast that is still being worked out, the playhead waits without saying why. The header's "Updating" cannot be used as it is, because its explanation reads "From before your latest change."</li>
       <li><strong>From slice 3, phones:</strong> the pinned block grows by one legend line when a first policy is added, because four legend names do not fit one line at 375 px. From tablet width up it keeps its height.</li>
@@ -557,12 +559,15 @@
       <li><strong>For slice 7:</strong> pressing the headline still opens Results, not Details.</li>
       <li><strong>Header:</strong> between 1024 and 1279 px the score is not centred, so the actions fit. With autosave off, the "Autosave off" warning is covered by "Updating" for the seconds an update takes. The header-fit test does not cover a signed-in handle at 1024 px.</li>
       <li><strong>From slice 4, your call:</strong> with the painted-areas list gone, Paint has no way to remove one height in a single step or to clear a plan quickly. The routes are Undo (hold Ctrl+Z on desktop) and erasing. A "Start over" control would be a small addition.</li>
-      <li><strong>From slice 4, for slice 5 (the map key):</strong> an editable plan no longer shows which heights it holds or how many lots each covers, and one height's area cannot be outlined. A shared plan shows its heights in one line.</li>
-      <li><strong>From slice 4, for slice 5 or 7:</strong> painting a taller height over small lots can leave the count unchanged, because a small lot cannot hold a taller building. Nothing explains that; the chip states the painted height, not what was built.</li>
       <li><strong>From slice 4, for slice 7:</strong> pressing Paint's headline still opens Results, which still says "RHNA".</li>
-      <li><strong>From slice 4, for slice 8 (shared parts):</strong> step numbers are hidden between 1024 and 1279 px; <code>/sim</code>'s status cell is clipped at 1024 px when signed in; if two map failure messages show at once, the stroke chip covers the second one's text for a few seconds; a touch laptop gets no Undo button; on a phone Redo is only in the open sheet.</li>
+      <li><strong>From slice 4, for slice 8 (shared parts):</strong> step numbers are hidden between 1024 and 1279 px; at 1024 px signed in, a five-digit headline with "Autosave off" can still clip <code>/sim</code>'s status cell by about 17 px; if two map failure messages show at once, the stroke chip covers the second one's text for a few seconds; a touch laptop gets no Undo button; on a phone Redo is only in the open sheet.</li>
       <li><strong>From slice 4, size:</strong> the labels and the starting sentence make the Paint tab 92 px taller on an empty plan (60 px after the first stroke).</li>
       <li><strong>Not re-run:</strong> the map benchmark, after it was changed to switch both transit layers on itself.</li>
+      <li><strong>From slice 5, for slice 6 (the citywide feed):</strong> rings in a dense cluster overlap and draw over place labels, as in the Mission; merging them per neighbourhood needs the citywide feed. Reduced motion shows a still ring, where this spec said no halos. Progress bars at the default zoom and events off screen are still to do.</li>
+      <li><strong>From slice 5, for slice 8 (shared parts):</strong> the header's "Updating" changes at most once a second, so it can lag the numbers by up to a second while the key dims in step. On a phone the timeline's policy rows show no names. Escape on an explanation opened by hover also closes an open project card. With a key or layers panel open, its controls come before the Layers toggle in tab order. While "Updating", a first policy's marks can show on the dimmed map before the key's mark row appears.</li>
+      <li><strong>From slice 5, for slice 9 (credits):</strong> at 375 px, Reset view sits over the map's expanded attribution until the first drag.</li>
+      <li><strong>From slice 5, for the next branch that changes the dataset version:</strong> a comment in <code>src/lib/sim/scenario/types.spec.ts</code> still names <code>opLots</code>, which slice 5 replaced. The file is in the hashed paths, so it waits for a branch that uploads a dataset anyway.</li>
+      <li><strong>From slice 5, after merge:</strong> run <code>npm run bench:map</code> on a quiet machine, the "playback + halos" case included. If it misses the pass bar, cache the halo records per cell.</li>
     </ul>
   </section>
 

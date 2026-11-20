@@ -1118,21 +1118,30 @@ const mapVisibility = (page: Page, id: string) =>
   );
 const deckIds = (page: Page) =>
   page.evaluate(() => (window as Win).__sfhMap!.timelineSnapshot()?.layerIds ?? []);
+/** The map toolbar's Layers toggle (the switches were the header View menu's). */
+const layersToggle = (page: Page) => page.getByTestId('map-layers-toggle');
+const layersGroup = (page: Page) => page.getByRole('group', { name: 'Map layers' });
+/** Opens the Layers panel; on a phone the map's own toolbar, as from md. */
+async function openLayers(page: Page): Promise<void> {
+  if ((await layersToggle(page).getAttribute('aria-expanded')) !== 'true')
+    await layersToggle(page).click();
+  await expect(layersGroup(page)).toBeVisible();
+}
 
-test('the height limits show, transit capacity is off, and View is offered at any day', async ({
+test('the height limits show, transit capacity is off, and Layers is offered at any day', async ({
   page
 }) => {
   await gotoSim(page);
   await expect.poll(() => deckIds(page)).toContain(LIMITS_LAYER);
   await expect.poll(() => mapVisibility(page, 'transit-access')).toBe('none');
-  await expect(await headerAction(page, 'View')).toBeVisible();
-  await page.keyboard.press('Escape'); // the Menu, below lg
+  await expect(layersToggle(page)).toBeVisible();
+  await expect(page.getByRole('button', { name: 'View', exact: true })).toHaveCount(0);
 
   await slider(page).focus();
   await page.keyboard.press('End');
   await expect.poll(() => fzp(page, 'day')).toBeGreaterThan(await fzp(page, 'asOf'));
   await expect.poll(() => deckIds(page)).toContain(LIMITS_LAYER);
-  await expect(await headerAction(page, 'View')).toBeVisible();
+  await expect(layersToggle(page)).toBeVisible();
 });
 
 test('the Zoning height limits toggle removes the limits and survives a reload', async ({
@@ -1140,11 +1149,11 @@ test('the Zoning height limits toggle removes the limits and survives a reload',
 }) => {
   await gotoSim(page);
   await expect.poll(() => deckIds(page)).toContain(LIMITS_LAYER);
-  await (await headerAction(page, 'View')).click();
+  await openLayers(page);
   await page.getByRole('checkbox', { name: 'Zoning height limits' }).uncheck();
   await expect.poll(() => deckIds(page)).not.toContain(LIMITS_LAYER);
   await gotoSim(page);
-  await (await headerAction(page, 'View')).click();
+  await openLayers(page);
   await expect(page.getByRole('checkbox', { name: 'Zoning height limits' })).not.toBeChecked();
   expect(await deckIds(page)).not.toContain(LIMITS_LAYER);
 });
@@ -1174,26 +1183,27 @@ test('zoomed in over the loaded lots, the glass lids draw: the toggle changes th
       { intervals: [500] }
     )
     .toBe(true);
-  await (await headerAction(page, 'View')).click();
+  await openLayers(page);
   await page.getByRole('checkbox', { name: 'Zoning height limits' }).uncheck();
   await expect.poll(() => deckIds(page)).not.toContain(LIMITS_LAYER);
+  // The panel closes: the map shot compares the map without it.
   await page.keyboard.press('Escape');
+  await expect(layersGroup(page)).toBeHidden();
   await expect.poll(async () => (await mapShot(page)).equals(on)).toBe(false);
 });
 
 for (const scheme of ['light', 'dark'] as const) {
-  test(`the open View menu on /sim has no axe violations (${scheme})`, async ({ page }) => {
+  test(`the open Layers panel on /sim has no axe violations (${scheme})`, async ({ page }) => {
     await page.emulateMedia({ colorScheme: scheme });
     await gotoSim(page);
-    await (await headerAction(page, 'View')).click();
-    const group = page.getByRole('group', { name: 'Map layers' });
-    await expect(group).toBeVisible();
+    await openLayers(page);
+    const group = layersGroup(page);
     await expect(group.getByRole('checkbox', { name: 'Zoning height limits' })).toBeVisible();
-    await expectNoA11yViolations(page, { include: ['header'] });
+    await expectNoA11yViolations(page, { include: ['[data-testid="map-key-control"]'] });
   });
 }
 
-test('without transit: no transit.json request, no transit layers, View has only the height limits', async ({
+test('without transit: no transit.json request, no transit layers, Layers has only the height limits', async ({
   page
 }) => {
   const transitAsked: string[] = [];
@@ -1229,8 +1239,8 @@ test('without transit: no transit.json request, no transit layers, View has only
   );
   expect(transitLayers).toEqual([]);
   expect(transitAsked).toEqual([]);
-  await (await headerAction(page, 'View')).click();
-  const group = page.getByRole('group', { name: 'Map layers' });
+  await openLayers(page);
+  const group = layersGroup(page);
   await expect(group.getByRole('checkbox')).toHaveCount(1);
   await expect(group.getByRole('checkbox', { name: 'Zoning height limits' })).toBeChecked();
 });
@@ -1349,7 +1359,8 @@ for (const width of [1024, 1280, 1536]) {
   }) => {
     await page.setViewportSize({ width, height: 1024 });
     await gotoSim(page);
-    await expect(page.getByRole('banner').getByRole('button', { name: 'View' })).toBeVisible();
+    await expect(page.getByRole('banner').getByRole('button', { name: /^Undo/ })).toBeVisible();
+    await expect(page.getByRole('banner').getByRole('button', { name: 'View' })).toHaveCount(0);
     await widestHeaderText(page);
     await widestStatusText(page);
     await expect(scoreBar(page)).toHaveAccessibleName(/^12,345 homes by Mar 2066$/);
@@ -1430,17 +1441,18 @@ for (const width of [768]) {
     const menu = banner.getByRole('button', { name: 'Menu', exact: true });
     await expect(menu).toBeVisible();
     // Closed: the site name, status, score and Menu button only; no action or step link shows.
-    await expect(banner.getByRole('button', { name: 'View', exact: true })).toHaveCount(0);
+    await expect(banner.getByRole('button', { name: /^Undo/ })).toBeHidden();
     await expect(banner.getByRole('link', { name: 'Fewer cars' })).toHaveCount(0);
     await widestHeaderText(page);
     await widestStatusText(page);
     await expectStatusPlace(page);
     await expectHeaderFits(page);
     await openHeaderMenu(page);
-    for (const name of ['View', /^(Publish|Share link)/])
-      await expect(
-        banner.getByRole('button', { name, exact: typeof name === 'string' })
-      ).toBeVisible();
+    for (const name of [/^Undo/, /^(Publish|Share link)/])
+      await expect(banner.getByRole('button', { name })).toBeVisible();
+    // The map's layers are not in the Menu: they are on the map.
+    await expect(banner.getByRole('button', { name: 'View', exact: true })).toHaveCount(0);
+    await expect(banner.getByRole('checkbox')).toHaveCount(0);
     for (const name of ['Paint', 'Simulate'])
       await expect(banner.getByRole('link', { name, exact: true })).toBeVisible();
     await expect(banner.getByRole('link', { name: 'Fewer cars' })).toHaveCount(0);

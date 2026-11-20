@@ -52,4 +52,35 @@ describe('SimMap without WebGL 2 (C1)', () => {
     expect(flags.imported).toBe(false);
     host.remove();
   });
+
+  it('with no map the published block is the bottom inset, never 0', async () => {
+    const original = HTMLCanvasElement.prototype.getContext;
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(function (
+      this: HTMLCanvasElement,
+      type: string,
+      ...rest: unknown[]
+    ) {
+      if (type === 'webgl2') return null;
+      return (original as (...a: unknown[]) => unknown).call(this, type, ...rest);
+    } as typeof original);
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const block = () =>
+      document.documentElement.style.getPropertyValue('--map-controls-br-block-size');
+    const screen = await render(SimMap, {
+      target: host,
+      props: { manifest: manifestJson as unknown as Manifest }
+    });
+    // A page hands over its sheet's height: published at once, with no map to measure.
+    screen.component.setBottomInset(45);
+    expect(block()).toBe('45px');
+    await expect.element(page.getByRole('alert')).toBeVisible();
+    expect(host.querySelector('[data-testid="map-root"]')!.getAttribute('data-state')).toBe(
+      'unsupported'
+    );
+    // Unsupported keeps the inset as the block: whatever sits above it stays above the sheet.
+    expect(block()).toBe('45px');
+    await screen.unmount();
+    host.remove();
+  });
 });

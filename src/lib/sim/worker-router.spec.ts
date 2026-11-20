@@ -219,26 +219,26 @@ describe('worker router', () => {
     expect(u.scenarioReqs[1]).toEqual(outlines);
   });
 
-  const opLots = { type: 'opLots', reqId: 9, opIds: ['a'], outlines: false };
+  const heightLots = { type: 'heightLots', reqId: 9, outlineOf: null };
 
-  it('sends opLots to the editor in editor mode and answers result null elsewhere', () => {
+  it('sends heightLots to the editor in editor mode and answers result null elsewhere', () => {
     const t = setup();
-    t.send(opLots);
-    expect(t.log).toEqual(['editor:opLots']);
-    expect(t.editorReqs[0]).toEqual(opLots);
+    t.send(heightLots);
+    expect(t.log).toEqual(['editor:heightLots']);
+    expect(t.editorReqs[0]).toEqual(heightLots);
     expect(t.created()).toBe(0);
     expect(t.posted).toEqual([]);
 
     const u = setup();
-    u.send(initScenario, opLots);
-    expect(u.log).not.toContain('editor:opLots');
+    u.send(initScenario, heightLots);
+    expect(u.log).not.toContain('editor:heightLots');
     expect(u.scenarioReqs).toHaveLength(1);
-    expect(u.posted).toEqual([{ type: 'opLots', reqId: 9, result: null }]);
+    expect(u.posted).toEqual([{ type: 'heightLots', reqId: 9, result: null }]);
 
     const v = setup();
-    v.send({ type: 'initPlayback', rev: 3, manifest: {}, plan: {}, sites: {} }, opLots);
-    expect(v.log).not.toContain('editor:opLots');
-    expect(v.posted).toEqual([{ type: 'opLots', reqId: 9, result: null }]);
+    v.send({ type: 'initPlayback', rev: 3, manifest: {}, plan: {}, sites: {} }, heightLots);
+    expect(v.log).not.toContain('editor:heightLots');
+    expect(v.posted).toEqual([{ type: 'heightLots', reqId: 9, result: null }]);
   });
 
   const preview = { type: 'previewBuildings', reqId: 7, lots: ['a'], stories: 8 };
@@ -525,10 +525,10 @@ describe('worker router', () => {
       expect(t.created()).toBe(0);
     });
 
-    it('answers opLots with null in timeline mode', () => {
+    it('answers heightLots with null in timeline mode', () => {
       const t = setup();
-      t.send(openTimeline, { type: 'opLots', reqId: 4 });
-      expect(t.posted).toEqual([{ type: 'opLots', reqId: 4, result: null }]);
+      t.send(openTimeline, { type: 'heightLots', reqId: 4 });
+      expect(t.posted).toEqual([{ type: 'heightLots', reqId: 4, result: null }]);
     });
   });
 });

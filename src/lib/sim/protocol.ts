@@ -20,8 +20,8 @@ export type SimRequest =
   | { type: 'prefetch'; bbox: BBox }
   | { type: 'retryChunks' }
   | { type: 'parcelSummary'; reqId: number; parcelId: ParcelId }
-  // The eligible loaded lots the plan's ops cover, for `/`'s Paint tab rows (sim UX plan 5).
-  | { type: 'opLots'; reqId: number; opIds: string[]; outlines: boolean };
+  // The plan's lots by painted height, for Paint's map key (map on screen, Task 5).
+  | { type: 'heightLots'; reqId: number; outlineOf: number | null };
 export type DiffPhase = 'load' | 'preview' | 'cancel' | 'commit' | 'undo' | 'chunk';
 export interface OpStats {
   opId: string;
@@ -48,7 +48,7 @@ export type SimResponse =
     }
   | { type: 'chunks'; status: Record<string, ChunkStatus>; pending: number; failed: string[] }
   | { type: 'parcelSummary'; reqId: number; summary: ParcelSummary | null }
-  | { type: 'opLots'; reqId: number; result: OpLotsResult | null }
+  | { type: 'heightLots'; reqId: number; result: HeightLotsResult | null }
   | {
       type: 'error';
       rev: Rev;
@@ -60,14 +60,19 @@ export type ChunksResponse = Extract<SimResponse, { type: 'chunks' }>;
 export type ReadyResponse = Extract<SimResponse, { type: 'ready' }>;
 export type ErrorResponse = Extract<SimResponse, { type: 'error' }>;
 /**
- * The eligible loaded lots the ops cover (the union); `missing` counts the ops' cells not loaded
- * yet (the page asks again on a `chunks` message while it is above 0). `outline` is set when
- * asked for, for exactly those lots. The `result` is null with no worker state: before `init`,
- * after a crash or dispose, and outside editor mode.
+ * The plan's lots by painted height, for Paint's map key. The `result` is null with no worker
+ * state: before `init`, after a crash or dispose, and outside editor mode.
  */
-export interface OpLotsResult {
-  lots: number;
+export interface HeightLotsResult {
+  /**
+   * One per painted height the plan holds, ascending (a height painted over everywhere keeps its
+   * row, at 0). A lot counts once, at the height of the last paint op covering it (an erase after
+   * it removes it); eligible loaded lots only. `rebuilt`: those of them with a new building.
+   */
+  heights: { stories: number; lots: number; rebuilt: number }[];
+  /** The plan's cells not loaded yet (the page asks again on a `chunks` message while above 0). */
   missing: number;
+  /** The outlines of the lots at `outlineOf`, when asked. */
   outline: LotOutlines | null;
 }
 export interface ParcelSummary {

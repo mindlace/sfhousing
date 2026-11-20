@@ -1,5 +1,5 @@
-// The shared-plan page: the View menu (transit spec §6.3: the viewer's own `sfhousing:view` prefs
-// apply here as on `/`, and View shows only when the rendered manifest has a transit network), and
+// The shared-plan page: the map's Layers (transit spec §6.3: the viewer's own `sfhousing:view` prefs
+// apply here as on `/`, and Layers shows only when the rendered manifest has a transit network), and
 // the score and the dock as on `/` (sim-ux plan 5, Task 4): the header score, the Results face and
 // a read-only Paint tab with the read-only line and one summary line, no rows, tools or undo. A stub
 // SimMap hands over a fake MapLibre map, so a real BrushController attaches (vi.mock is file-wide).
@@ -38,7 +38,7 @@ function data(m: Manifest = manifest, plan: Plan = emptyPlan('fixture-0')) {
   };
 }
 
-const viewButton = () => page.getByRole('button', { name: 'View' });
+const layersToggle = () => page.getByRole('button', { name: 'Map layers' });
 const stored = () => JSON.parse(localStorage.getItem(VIEW_KEY) ?? 'null');
 
 beforeEach(async () => {
@@ -55,8 +55,25 @@ afterEach(() => {
   localStorage.clear();
 });
 
-describe('/p/[id] View menu', () => {
-  it('honours the stored prefs, and a toggle updates the map and persists', async () => {
+describe('/p/[id] map layers', () => {
+  it('the header has no View; with manifest.transit the map toolbar has Layers, without it none', async () => {
+    const first = await render(PageHost, { props: { data: data() } });
+    await expect.element(layersToggle()).toBeVisible();
+    const toolbar = page.getByTestId('map-key-control').element();
+    expect(toolbar.contains(layersToggle().element())).toBe(true);
+    // The header's actions slot is empty: View was its only action.
+    expect(document.querySelector('[data-testid="header-actions"]')!.children).toHaveLength(0);
+    expect(page.getByRole('button', { name: 'View', exact: true }).elements()).toEqual([]);
+    await first.unmount();
+
+    const { transit: _omit, ...plain } = manifest;
+    await render(PageHost, { props: { data: data(plain as Manifest) } });
+    await expect.element(page.getByRole('heading', { name: 'Shared plan' })).toBeInTheDocument();
+    await expect.element(page.getByRole('button', { name: 'Map key' })).toBeInTheDocument();
+    expect(layersToggle().elements()).toHaveLength(0);
+  });
+
+  it('a stored transit choice is on when Layers opens, and a toggle writes it back', async () => {
     // /sim's heightLimits: the plan page never shows it, and writes back the value it read.
     localStorage.setItem(
       VIEW_KEY,
@@ -68,21 +85,16 @@ describe('/p/[id] View menu', () => {
       transitAccess: true,
       heightLimits: false
     });
-    await viewButton().click();
+    await layersToggle().click();
+    await expect.element(page.getByRole('group', { name: 'Map layers' })).toBeVisible();
     await expect.element(page.getByRole('checkbox', { name: 'Transit stops' })).not.toBeChecked();
+    await expect.element(page.getByRole('checkbox', { name: /Transit capacity/ })).toBeChecked();
     expect(page.getByRole('checkbox', { name: 'Zoning height limits' }).query()).toBeNull();
     await page.getByRole('checkbox', { name: 'Transit stops' }).click();
     await expect
       .poll(() => stub.props.view)
       .toEqual({ transitStops: true, transitAccess: true, heightLimits: false });
     expect(stored()).toEqual({ transitStops: true, transitAccess: true, heightLimits: false });
-  });
-
-  it('has no View button without manifest.transit', async () => {
-    const { transit: _omit, ...plain } = manifest;
-    await render(PageHost, { props: { data: data(plain as Manifest) } });
-    await expect.element(page.getByRole('heading', { name: 'Shared plan' })).toBeInTheDocument();
-    expect(viewButton().elements()).toHaveLength(0);
   });
 });
 
@@ -145,7 +157,7 @@ describe('/p/[id] score and dock', () => {
     expect(page.getByRole('radiogroup', { name: 'Tool' }).elements()).toEqual([]);
     expect(page.getByRole('button', { name: /^Undo/ }).elements()).toEqual([]);
     expect(page.getByRole('button', { name: /^Remove/ }).elements()).toEqual([]);
-    expect(w.allOf('opLots')).toEqual([]);
+    expect(w.allOf('heightLots').every((r) => r.outlineOf === null)).toBe(true);
     expect(overlayIds()).not.toContain(OUTLINE_LAYER_ID);
 
     // Ctrl+Z and Ctrl+Shift+Z do nothing: nothing goes to the worker.

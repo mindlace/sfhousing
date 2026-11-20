@@ -162,7 +162,8 @@ export const stub: Stub = {
     onResyncNeeded: record('onResyncNeeded'),
     applyTimeline: record('applyTimeline'),
     setTime: record('setTime'),
-    setTimelineLookups: record('setTimelineLookups')
+    setTimelineLookups: record('setTimelineLookups'),
+    setHalos: record('setHalos')
   },
   reset() {
     stub.calls = [];
