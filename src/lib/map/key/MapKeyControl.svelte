@@ -1,0 +1,183 @@
+<!--
+  The map key control (map-on-screen slice 5), shared by /sim and Paint: a toolbar at the map's
+  bottom right, 8 px in and 0.5rem above the attribution's footprint
+  (`--map-controls-br-block-size`, which includes the bottom inset), with a Key toggle and, when
+  the page has layer rows, a Layers toggle before it. Each opens its panel above the toolbar; at
+  most one is open. The panel's room runs from 0.5rem below the map's top down to the toolbar, and
+  it scrolls inside it. The toggles' words are fixed: status lives in the panels.
+
+  The control's box spans that room (the wrapper ignores the pointer; its toolbar and panel do not),
+  so a page can read its left edge for the card's area. Mount it inside the map's positioned box,
+  after the map, so Tab reaches it after the map's own controls.
+-->
+<script lang="ts">
+  import type { Snippet } from 'svelte';
+  import { MediaQuery } from 'svelte/reactivity';
+  import { timelineTokenCss } from '../palette';
+  import { KEY_COPY } from './copy';
+
+  interface Props {
+    /** The key panel's content. */
+    key: Snippet;
+    /** The Layers panel's content; no Layers toggle without it. */
+    layers?: Snippet;
+    /** The key starts open from md (true on /sim, false on /), always closed below md. */
+    openFromMd?: boolean;
+    /** Below md, while a card sheet covers the corner: not shown and inert. */
+    hidden?: boolean;
+    /** The panel's text dims as Results does (data-stale). */
+    stale?: boolean;
+    /** The control's box, for the card area. */
+    el?: HTMLElement;
+  }
+  let {
+    key,
+    layers,
+    openFromMd = false,
+    hidden = false,
+    stale = false,
+    el = $bindable()
+  }: Props = $props();
+
+  type Panel = 'key' | 'layers';
+  const md = new MediaQuery('(min-width: 768px)');
+  /** At rest: the key from md when the page asks for it, else nothing. Not remembered. */
+  const atRest = (): Panel | null => (openFromMd && md.current ? 'key' : null);
+  let open = $state<Panel | null>(atRest());
+  // Crossing md puts the control back at rest.
+  let wasMd = md.current;
+  $effect(() => {
+    const now = md.current;
+    if (now === wasMd) return;
+    wasMd = now;
+    open = atRest();
+  });
+  // A page that drops its layer rows closes their panel.
+  $effect(() => {
+    if (!layers && open === 'layers') open = null;
+  });
+
+  const uid = $props.id();
+  const ids = { key: `${uid}-key`, layers: `${uid}-layers` };
+  let keyButton = $state<HTMLButtonElement>();
+  let layersButton = $state<HTMLButtonElement>();
+
+  function toggle(p: Panel): void {
+    open = open === p ? null : p;
+  }
+
+  function onkeydown(e: KeyboardEvent): void {
+    if (e.key !== 'Escape' || open === null) return;
+    e.stopPropagation();
+    const was = open;
+    open = null;
+    (was === 'key' ? keyButton : layersButton)?.focus();
+  }
+
+  // Below md a pointerdown on the map (anywhere in the control's parent box outside the control)
+  // closes the panel; from md it stays until its toggle closes it.
+  $effect(() => {
+    const box = el?.parentElement;
+    if (!box || md.current || open === null) return;
+    const down = (e: PointerEvent) => {
+      if (el && e.target instanceof Node && el.contains(e.target)) return;
+      open = null;
+    };
+    box.addEventListener('pointerdown', down);
+    return () => box.removeEventListener('pointerdown', down);
+  });
+
+  const TOGGLE =
+    'pointer-events-auto inline-flex min-h-6 min-w-6 items-center justify-center rounded-md border border-control-line bg-surface px-2 text-xs font-semibold text-ink shadow-sm pointer-coarse:min-h-11 pointer-coarse:min-w-11 hover:bg-surface-raised aria-expanded:bg-surface-raised dark:border-control-line-dark dark:bg-surface-dark dark:text-ink-dark dark:hover:bg-surface-dark-raised dark:aria-expanded:bg-surface-dark-raised';
+  const PANEL =
+    'pointer-events-auto min-h-0 w-[min(18rem,calc(100vw-1rem))] overflow-y-auto rounded-lg border border-line bg-surface p-2 text-sm text-ink shadow-lg md:w-60 dark:border-line-dark dark:bg-surface-dark dark:text-ink-dark';
+</script>
+
+<svelte:head>
+  <!-- The key's swatches sit outside SimMap, so they cannot inherit its --map-* variables. -->
+  <!-- eslint-disable-next-line svelte/no-at-html-tags -- constant CSS built from palette TOKENS -->
+  {@html '<style>' + timelineTokenCss('.sfh-map-key') + '</style>'}
+</svelte:head>
+
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div
+  bind:this={el}
+  data-testid="map-key-control"
+  class="sfh-map-key pointer-events-none absolute top-2 right-2 z-20 flex flex-col items-end justify-end gap-1"
+  style:bottom="calc(var(--map-controls-br-block-size, 60px) + 0.5rem)"
+  {hidden}
+  inert={hidden}
+  {onkeydown}
+>
+  <!-- tabindex 0: a panel that scrolls is reachable by keyboard (WCAG 2.1.1). -->
+  <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+  <div
+    id={ids.key}
+    role="group"
+    aria-label={KEY_COPY.keyName}
+    data-testid="map-key-panel"
+    data-stale={stale ? 'true' : undefined}
+    tabindex="0"
+    class="sfh-map-key-panel {PANEL}"
+    hidden={open !== 'key'}
+  >
+    {@render key()}
+  </div>
+  {#if layers}
+    <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+    <div
+      id={ids.layers}
+      role="group"
+      aria-label={KEY_COPY.layersName}
+      data-testid="map-layers-panel"
+      data-stale={stale ? 'true' : undefined}
+      tabindex="0"
+      class="sfh-map-key-panel {PANEL}"
+      hidden={open !== 'layers'}
+    >
+      {@render layers()}
+    </div>
+  {/if}
+  <div class="flex shrink-0 gap-1">
+    {#if layers}
+      <button
+        bind:this={layersButton}
+        type="button"
+        data-testid="map-layers-toggle"
+        class={TOGGLE}
+        aria-label={KEY_COPY.layersName}
+        aria-expanded={open === 'layers'}
+        aria-controls={ids.layers}
+        onclick={() => toggle('layers')}>{KEY_COPY.layers}</button
+      >
+    {/if}
+    <button
+      bind:this={keyButton}
+      type="button"
+      data-testid="map-key-toggle"
+      class={TOGGLE}
+      aria-label={KEY_COPY.keyName}
+      aria-expanded={open === 'key'}
+      aria-controls={ids.key}
+      onclick={() => toggle('key')}>{KEY_COPY.key}</button
+    >
+  </div>
+</div>
+
+<style>
+  /* Stale (rule 31): the panel's text turns to the muted ink, which keeps AA contrast; controls
+     keep their own colours; swatches dim. */
+  .sfh-map-key-panel[data-stale],
+  .sfh-map-key-panel[data-stale] :global(:not(button, a, input, select, button *, a *)) {
+    color: var(--color-ink-muted);
+  }
+  .sfh-map-key-panel[data-stale] :global([data-swatch]) {
+    opacity: 0.6;
+  }
+  @media (prefers-color-scheme: dark) {
+    .sfh-map-key-panel[data-stale],
+    .sfh-map-key-panel[data-stale] :global(:not(button, a, input, select, button *, a *)) {
+      color: var(--color-ink-dark-muted);
+    }
+  }
+</style>

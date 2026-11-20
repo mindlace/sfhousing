@@ -144,6 +144,9 @@
   import type { SpanRef } from './spans';
   import Timeline from './Timeline.svelte';
   import TimelineHeaderScore from './TimelineHeaderScore.svelte';
+  import MapKeyControl from '$lib/map/key/MapKeyControl.svelte';
+  import { keyTally } from './key';
+  import SimKey from './SimKey.svelte';
 
   interface Props {
     manifest: Manifest | null;
@@ -386,6 +389,20 @@
   );
   const headText = $derived(headline ? headlineText(headline, goal) : null);
   /**
+   * The map key's tally: the homes in each stage at the playhead's month, under the headline's
+   * rules. It reads `index` and `atToday`, never `day`, so it reads one row at most once per month
+   * the playhead crosses.
+   */
+  const tally = $derived(
+    keyTally(
+      shown.view,
+      { index, atToday },
+      { provisional: session?.provisional ?? false, inForce }
+    )
+  );
+  /** The map key control's box: the card's area ends at its left edge. */
+  let keyEl = $state<HTMLElement>();
+  /**
    * The goal's step, an input: from the newest view, else the one on show (a restart's re-open
    * keeps held numbers with no view of its own), so it stays whole while numbers show.
    */
@@ -599,12 +616,18 @@
     const m = mapBox.getBoundingClientRect();
     const zoom = mapBox.querySelector('.maplibregl-ctrl-bottom-left')?.getBoundingClientRect();
     const br = parseFloat(document.documentElement.style.getPropertyValue(BR_BLOCK)) || 0;
+    // The key control (hidden below md while a card is open: no box, no edge).
+    const key = keyEl?.getBoundingClientRect();
     const next = cardArea(
       { left: m.left, top: m.top, width: m.width, height: m.height },
       pillsEl ? pillsEl.getBoundingClientRect() : null,
       0,
       0,
-      { left: zoom && zoom.width > 0 ? zoom.right - m.left : 0, bottom: br }
+      {
+        left: zoom && zoom.width > 0 ? zoom.right - m.left : 0,
+        bottom: br,
+        right: key && key.width > 0 ? m.right - key.left : 0
+      }
     );
     const was = cardBounds;
     if (
@@ -625,7 +648,8 @@
       {
         map: mapBox,
         pills: pillsEl,
-        controls: mapBox.querySelector<HTMLElement>('.maplibregl-ctrl-bottom-left')
+        controls: mapBox.querySelector<HTMLElement>('.maplibregl-ctrl-bottom-left'),
+        key: keyEl
       },
       measureCardArea
     );
@@ -1373,6 +1397,16 @@
             <div class="h-full" data-testid="fzp-frame"></div>
           {/if}
         </div>
+
+        {#if manifest && session}
+          <!-- The map key: after the map's own controls in Tab order, before the card. Open at
+               rest from md; below md it hides while the card's sheet covers its corner. -->
+          <MapKeyControl openFromMd hidden={narrow.current && cardOpen} {stale} bind:el={keyEl}>
+            {#snippet key()}
+              <SimKey {tally} />
+            {/snippet}
+          </MapKeyControl>
+        {/if}
 
         {#if session && calibration && cardChance}
           <div class="tl-dim" data-stale={stale ? 'true' : undefined} data-testid="tl-card">

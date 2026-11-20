@@ -29,6 +29,7 @@ import { filledEndDay, indexOfDay } from './playhead';
 import { DEFAULT_POLICY4, queriesOf4, type Policy, type SimPolicy4 } from './policy4';
 import { goalOutcome } from './outcome';
 import { headlineAt, headlineSpoken, headlineText, scoreOfView } from './results';
+import { keyTally } from './key';
 import { chartModel } from '$lib/fzp/chart';
 import { dayPct } from './rows';
 import { scanned } from './reveal';
@@ -60,6 +61,11 @@ vi.mock('./reveal', async (importOriginal) => {
 vi.mock('./results', async (importOriginal) => {
   const real = await importOriginal<typeof import('./results')>();
   return { ...real, scoreOfView: vi.fn(real.scoreOfView) };
+});
+// The key's tally as it is, counted (when the page reads a row for it).
+vi.mock('./key', async (importOriginal) => {
+  const real = await importOriginal<typeof import('./key')>();
+  return { ...real, keyTally: vi.fn(real.keyTally) };
 });
 vi.mock('$lib/fzp/chart', async (importOriginal) => {
   const real = await importOriginal<typeof import('$lib/fzp/chart')>();
@@ -2534,5 +2540,164 @@ describe('the goal notice', () => {
     expect(obs.takeRecords()).toEqual([]);
     obs.disconnect();
     expect(vi.mocked(goalOutcome).mock.calls.length).toBe(calls);
+  });
+});
+
+describe('the map key', () => {
+  const keyPanel = () => page.getByRole('group', { name: 'Map key' });
+  const keyToggle = () => page.getByRole('button', { name: 'Map key' });
+  const control = () => page.getByTestId('map-key-control');
+  /** The key's rows as [label, count]. */
+  const counts = () =>
+    [...keyPanel().element().querySelectorAll('[data-key-row]')].map((r) => [
+      r.querySelector('dt')!.textContent,
+      r.querySelector('dd')!.textContent
+    ]);
+  const FULL = () => viewOf([chunk(0, LAST + 1)], STATICS);
+
+  it('the map key is open at 1280 px and reads the tally of the playhead month', async () => {
+    await page.viewport(1280, 800);
+    await opened();
+    await expect.element(keyPanel()).toBeVisible();
+    await expect.element(keyToggle()).toHaveAttribute('aria-expanded', 'true');
+    // The control follows the map in the DOM: after its own controls, before the card.
+    const map = page.getByTestId('tl-map').element();
+    expect(map.compareDocumentPosition(control().element())).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    // Today: in progress from month 0, nothing completed or stopped yet.
+    await expect.poll(counts).toEqual([
+      ['Planning review', '2'],
+      ['Approved', '3'],
+      ['Permit issued', '1'],
+      ['Building', '3'],
+      ['Completed', '0'],
+      ['Stopped', '0']
+    ]);
+    (slider().element() as HTMLElement).focus();
+    await userEvent.keyboard('{Home}');
+    for (let k = 1; k <= 2; k++) {
+      await userEvent.keyboard('{ArrowRight}');
+      await expect.poll(() => debug().day).toBe(MONTHS[k]);
+    }
+    const row = FULL().rows[2];
+    await expect.poll(counts).toContainEqual(['Completed', String(row.completedNet)]);
+    expect(counts()).toContainEqual(['Stopped', String(row.exitedUnits)]);
+  });
+
+  it('shows … while calculating', async () => {
+    setup();
+    await expect.poll(() => workers.length).toBe(1);
+    await expect.element(keyPanel()).toBeVisible();
+    expect(counts().map(([, c]) => c)).toEqual(['…', '…', '…', '…', '…', '…']);
+  });
+
+  // No wall clock: the playhead is dragged in steps of a few days, so most steps stay inside a
+  // calendar month whatever the frame rate.
+  it('the tally changes only when the playhead crosses a month', async () => {
+    await opened();
+    await expect.element(keyPanel()).toBeVisible();
+    const track = slider().element() as HTMLElement;
+    const r = track.getBoundingClientRect();
+    const xOf = (d: Day) => r.left + ((d - asOf) / (windowEnd - asOf)) * r.width;
+    const pointer = (type: string, d: Day) =>
+      track.dispatchEvent(
+        new PointerEvent(type, {
+          bubbles: true,
+          button: 0,
+          pointerId: 1,
+          pointerType: 'mouse',
+          clientX: xOf(d),
+          clientY: r.top + r.height / 2
+        })
+      );
+    const frame = () => new Promise((res) => requestAnimationFrame(() => res(null)));
+    const from = MONTHS[2] + 1;
+    pointer('pointerdown', from);
+    await expect.poll(() => debug().day).toBe(from);
+    await expect.poll(counts).toContainEqual(['Completed', String(FULL().rows[2].completedNet)]);
+    const dl = keyPanel().element().querySelector('dl')!;
+    let records = 0;
+    const obs = new MutationObserver((m) => (records += m.length));
+    obs.observe(dl, { childList: true, characterData: true, subtree: true });
+    const written = () => records + obs.takeRecords().length;
+    let wrote = written();
+    let calls = vi.mocked(keyTally).mock.calls.length;
+    let changes = 0;
+    for (let d = from + 3; d < MONTHS[5] + 10; d += 3) {
+      const month = monthStart(debug().day);
+      pointer('pointermove', d);
+      await expect.poll(() => debug().day).toBe(d);
+      await frame();
+      const now = written();
+      const read = vi.mocked(keyTally).mock.calls.length;
+      const crossed = monthStart(d) !== month;
+      if (crossed) changes++;
+      // The tally is read, and its text written, exactly on the steps that cross a month.
+      expect({ d, crossed, wrote: now > wrote, read: read > calls }).toEqual({
+        d,
+        crossed,
+        wrote: crossed,
+        read: crossed
+      });
+      if (crossed) expect(read - calls).toBe(1);
+      wrote = now;
+      calls = read;
+    }
+    pointer('pointerup', MONTHS[5] + 10);
+    obs.disconnect();
+    expect(changes).toBe(3);
+  });
+
+  it('below md the key control hides while a card is open and returns on Close', async () => {
+    await page.viewport(390, 760);
+    await opened();
+    await expect.element(keyToggle()).toBeVisible();
+    // Closed at rest on a phone.
+    await expect.element(keyToggle()).toHaveAttribute('aria-expanded', 'false');
+    await expect.poll(() => stub.props.timelinePick).toBeTruthy();
+    stub.props.timelinePick!({ projectId: 'pr-1', parcelId: 'p1', x: 40, y: 40, kind: 'tap' });
+    await expect.poll(() => w().all('parcelSummary')).toHaveLength(1);
+    const req = w().lastOf('parcelSummary')!;
+    w().emit({ type: 'parcelSummary', reqId: req.reqId, summary: summary(REAL_ACTUAL) });
+    const card = page.getByTestId('tl-card');
+    await expect.element(card.getByRole('heading', { level: 2 })).toBeInTheDocument();
+    await expect.element(control()).not.toBeVisible();
+    expect(control().element().hasAttribute('inert')).toBe(true);
+    await card.getByRole('button', { name: 'Close' }).click();
+    await expect.element(keyToggle()).toBeVisible();
+    expect(control().element().hasAttribute('inert')).toBe(false);
+  });
+
+  it('from md an open card ends left of the key control', async () => {
+    await page.viewport(1280, 800);
+    await opened();
+    await expect.element(keyPanel()).toBeVisible();
+    await expect.poll(() => stub.props.timelinePick).toBeTruthy();
+    const map = page.getByTestId('tl-map').element().getBoundingClientRect();
+    // A tap right beside the key: the card flips to the anchor's left, clear of it.
+    const x = map.width - 300;
+    stub.props.timelinePick!({ projectId: 'pr-1', parcelId: 'p1', x, y: 200, kind: 'tap' });
+    await expect.poll(() => w().all('parcelSummary')).toHaveLength(1);
+    const req = w().lastOf('parcelSummary')!;
+    w().emit({ type: 'parcelSummary', reqId: req.reqId, summary: summary(REAL_ACTUAL) });
+    const card = page.getByTestId('tl-card');
+    await expect.element(card.getByRole('heading', { level: 2 })).toBeInTheDocument();
+    const section = card.element().querySelector('section')!;
+    const keyLeft = control().element().getBoundingClientRect().left;
+    await expect.poll(() => section.getBoundingClientRect().right).toBeLessThanOrEqual(keyLeft);
+    expect(section.getBoundingClientRect().width).toBeGreaterThan(0);
+    await expect.element(control()).toBeVisible();
+  });
+
+  it('stale: the key dims with Results', async () => {
+    const s = await opened();
+    await expect.element(keyPanel()).toBeVisible();
+    expect(keyPanel().element().hasAttribute('data-stale')).toBe(false);
+    s.setPolicy(mk(protect(5)));
+    await expect.element(page.getByTestId('tl-map')).toHaveAttribute('data-stale', 'true');
+    await expect.element(keyPanel()).toHaveAttribute('data-stale', 'true');
+    const label = keyPanel().element().querySelector('dt')!;
+    await expect.poll(() => getComputedStyle(label).color).toBe('rgb(75, 85, 99)');
+    // The toggle, a control, keeps its colour.
+    expect(getComputedStyle(keyToggle().element()).color).not.toBe('rgb(75, 85, 99)');
   });
 });

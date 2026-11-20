@@ -84,4 +84,14 @@ describe('rest text (rules 37 to 39)', () => {
     await tick();
     expect(longTexts()).toEqual([]);
   });
+
+  it('/sim at rest with the key open shows no text of 12 words or more', async () => {
+    await page.viewport(1280, 800);
+    await opened();
+    await expect.element(page.getByTestId('score-bar')).toBeVisible();
+    const key = page.getByRole('group', { name: 'Map key' });
+    await expect.element(key).toBeVisible();
+    await expect.element(key.getByText('Planning review')).toBeVisible();
+    expect(longTexts()).toEqual([]);
+  });
 });

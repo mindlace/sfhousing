@@ -4,7 +4,6 @@
   disclosure at the end. Every id is per instance.
 -->
 <script lang="ts">
-  import { timelineTokenCss } from '$lib/map/palette';
   import { count } from '$lib/sim-page/brush-summary';
   import { comparisonLine, scoreCopy, type ScoreCopy } from '$lib/sim-page/policy';
   import type { LeverCapacity } from '$lib/sim/levers/resolve';
@@ -18,7 +17,6 @@
   import { FORECAST_NOTE, TWIN_NOTE, capacityNote, marketBody } from '$lib/timeline/copy';
   import Explain from '$lib/timeline/Explain.svelte';
   import { monthIndex, utcParts } from './time';
-  import MapKey from './MapKey.svelte';
   import MoneyResults from './MoneyResults.svelte';
   import { resolveTerms } from '$lib/sim/finance';
   import type { ResolvedTerms } from '$lib/timelapse/types';
@@ -98,8 +96,6 @@
   /** The year of the window's last month: the capacity figure's note names it. */
   const lastYear = $derived(score ? utcParts(score.months[score.months.length - 1]).y : 0);
 
-  const WIDE = '(min-width: 768px)';
-
   /** The goal's deadline month in the view: null when it falls outside the window. */
   const deadline = $derived(view ? (goalStep(GOAL, view)?.deadlineIndex ?? null) : null);
   /**
@@ -130,16 +126,7 @@
   const planPending = $derived(at !== null && at.planCompleted === null);
   /** The month index of the furthest day reached: nothing after it is revealed. */
   const reveal = $derived(score ? monthIndex(reached, score.months[0], score.months.length) : -1);
-
-  /** The map key opens by default on a wide viewport (the sheet on a phone starts closed). */
-  const keyOpen = typeof matchMedia === 'function' && matchMedia(WIDE).matches;
 </script>
-
-<svelte:head>
-  <!-- The legend sits outside SimMap, so it cannot inherit SimMap's --map-* variables. -->
-  <!-- eslint-disable-next-line svelte/no-at-html-tags -- constant CSS built from palette TOKENS -->
-  {@html '<style>' + timelineTokenCss('.sfh-fzp-legend') + '</style>'}
-</svelte:head>
 
 {#snippet staleLine()}
   {#if stale}
@@ -269,8 +256,6 @@
           {marketBody(market)}
         </p>
       {/if}
-      <MapKey open={keyOpen} />
-
       <button
         type="button"
         class="mt-2 min-h-11 rounded-md px-1 text-left text-sm font-semibold underline"

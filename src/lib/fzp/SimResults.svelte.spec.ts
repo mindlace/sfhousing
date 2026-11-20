@@ -3,7 +3,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import { cdp, page } from 'vitest/browser';
 import '../../routes/layout.css';
-import { TIMELINE_LEGEND, timelineTokenCss } from '$lib/map/palette';
 import {
   FIX_ASOF,
   FIX_HORIZON,
@@ -140,7 +139,6 @@ describe('intro and loading', () => {
     await expect.element(page.getByText('Loading the simulation…').first()).toBeVisible();
     expect(document.querySelector('[data-testid="fzp-built"]')).toBeNull();
     expect(document.querySelector('svg[role="img"]')).toBeNull();
-    expect(document.querySelector('.sfh-fzp-legend')).toBeNull();
     expect(document.querySelector('[role="meter"]')).toBeNull();
   });
 });
@@ -451,54 +449,20 @@ describe('sources dialog', () => {
 });
 
 describe('map key', () => {
-  it('has one row per legend entry, verbatim, and the fzp-mode bar-length line', async () => {
+  // The key moved onto the map (MapKeyControl, SimKey): its legend cases are in
+  // src/lib/timeline/SimKey.svelte.spec.ts and src/lib/map/key/MapKeyControl.svelte.spec.ts.
+  it('Results holds no map key', async () => {
     await page.viewport(1024, 768);
     await render(SimResults, { props: props() });
-    const key = document.querySelector('details.sfh-fzp-legend') as HTMLDetailsElement;
-    expect(key.open).toBe(true);
-    const rows = [...key.querySelectorAll('[data-legend]')];
-    expect(rows.map((r) => r.getAttribute('data-legend'))).toEqual(
-      TIMELINE_LEGEND.map((e) => e.id)
+    openSources();
+    expect(document.querySelector('.sfh-fzp-legend')).toBeNull();
+    expect(document.querySelector('[data-legend]')).toBeNull();
+    expect(page.getByText('Map key').elements()).toEqual([]);
+    expect(page.getByText(/Bar length|solid floors|in Planning review/).elements()).toEqual([]);
+    const tokenCss = [...document.head.querySelectorAll('style')].filter((st) =>
+      st.textContent?.includes('.sfh-fzp-legend')
     );
-    for (const e of TIMELINE_LEGEND) {
-      const row = key.querySelector(`[data-legend="${e.id}"]`)!;
-      expect(row.textContent!.trim()).toBe(e.label);
-    }
-    expect(page.getByText('Bar colour', { exact: false }).elements()).toHaveLength(1);
-    expect(page.getByText('Bar length: progress through the stages.').elements()).toHaveLength(1);
-  });
-
-  it('injects the token CSS into <head> once', async () => {
-    await page.viewport(1024, 768);
-    await render(SimResults, { props: props() });
-    const css = timelineTokenCss('.sfh-fzp-legend');
-    const styles = [...document.head.querySelectorAll('style')].filter(
-      (s) => s.textContent === css
-    );
-    expect(styles).toHaveLength(1);
-  });
-
-  it('resolves every legend token under light and dark', async () => {
-    await page.viewport(1024, 768);
-    await render(SimResults, { props: props() });
-    const read = (id: string, token: string) =>
-      getComputedStyle(document.querySelector(`[data-swatch="${id}"]`)!)
-        .getPropertyValue(`--map-${token}`)
-        .trim();
-    const tokens = TIMELINE_LEGEND.flatMap((e) => e.tokens.map((t) => [e.id, t] as const));
-    expect(tokens.length).toBeGreaterThan(10);
-
-    await scheme('light');
-    const light = tokens.map(([id, t]) => read(id, t));
-    await scheme('dark');
-    await expect.poll(() => tokens.map(([id, t]) => read(id, t))).not.toEqual(light);
-    const dark = tokens.map(([id, t]) => read(id, t));
-    tokens.forEach(([id, t], k) => {
-      expect(light[k], `${t} light`).not.toBe('');
-      expect(dark[k], `${t} dark`).not.toBe('');
-      expect(dark[k], `${t} differs by theme`).not.toBe(light[k]);
-      expect(id).toBeTruthy();
-    });
+    expect(tokenCss).toEqual([]);
   });
 });
 
@@ -534,15 +498,6 @@ describe('footnote', () => {
   });
 });
 
-describe('375 px', () => {
-  it('the map key starts closed on a phone', async () => {
-    await page.viewport(375, 812);
-    await render(SimResults, { props: props() });
-    const key = document.querySelector('details.sfh-fzp-legend') as HTMLDetailsElement;
-    expect(key.open).toBe(false);
-  });
-});
-
 describe('target size on a fine pointer (SC 2.5.8)', () => {
   const MIN = 24;
   const expectTarget = (el: Element, name: string) => {
@@ -555,7 +510,6 @@ describe('target size on a fine pointer (SC 2.5.8)', () => {
     await page.viewport(1024, 768);
     await render(SimResults, { props: props() });
     openSources();
-    expectTarget(document.querySelector('.sfh-fzp-legend > summary')!, 'Map key summary');
     expectTarget(
       document.querySelector('[data-testid="fzp-chart"] details > summary')!,
       'Show as table summary'
@@ -575,7 +529,6 @@ describe('target size on a fine pointer (SC 2.5.8)', () => {
     await render(SimResults, { props: props() });
     openSources();
     for (const el of [
-      document.querySelector('.sfh-fzp-legend > summary')!,
       document.querySelector('[data-testid="fzp-chart"] details > summary')!,
       page.getByRole('link', { name: 'Data sources', exact: true }).element()
     ]) {
