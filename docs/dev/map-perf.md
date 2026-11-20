@@ -91,6 +91,8 @@ Each prints `p50`, `p95`, frames, parts, `pumpMaxOps` (the demolish pump's large
 
 **Halos case.** **playback + halos** is `playback` with the halo layer on (`map-interfaces.md`, "Halos and marks"): once the timeline cells are in, it calls `window.__sfhMap.setHalos({ from: 20742 })`, so every stage change of the 30,000 projects rings and every tenth project (`makeSyntheticTimeline` flags one in ten) carries a mark. The line adds `halos=` and `marks=` (the debug snapshot's record counts), and the case asserts both are above 0. Not yet run.
 
+**Run after map-on-screen lands.** The map-on-screen slice changed the rendering path and has not been benched. Run `npm run bench:map` on a quiet machine after it merges and add rows here. What changed: a new deck layer, `timeline-halos` (`HaloLayer`, instanced, one record per installed slot event and flagged slot), in `/sim`'s timeline overlay after `timeline-bars`; on `/`, the overlay mux's `outline` slot (an existing `PathLayer`) is now filled while a height in the key is hovered, focused or pressed; and the new **playback + halos** case above. Cases to read: `map-timeline.bench.ts` "playback" and "playback + halos", and `sim-timeline.bench.ts`'s pan (halos on through `/sim`).
+
 The synthetic parcel ids match no buildings-tile features. The pump's `setFeatureState` call count is real, but MapLibre's render-time cost on live tiles is not measured here.
 
 Pump max ops per frame, 2026-10-17 (full sweep; the earlier timeline-only run gave 48 and 155 ops at p95 10.0 ms and 8.5 ms):
