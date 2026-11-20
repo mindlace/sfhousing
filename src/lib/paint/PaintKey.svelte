@@ -63,7 +63,7 @@
   }
 
   const ROW =
-    'flex min-h-6 w-full items-center gap-2 rounded-md px-1 text-left pointer-coarse:min-h-11 hover:bg-surface-raised data-shown:bg-surface-raised aria-pressed:font-semibold dark:hover:bg-surface-dark-raised dark:data-shown:bg-surface-dark-raised';
+    'flex min-h-6 w-full items-center gap-2 rounded-md px-1 text-left pointer-coarse:min-h-11 hover:bg-surface-raised data-shown:bg-surface-raised dark:hover:bg-surface-dark-raised dark:data-shown:bg-surface-dark-raised';
 </script>
 
 <p id="{id}-types" class="text-xs font-semibold">{KEY_COPY.types}</p>
@@ -104,12 +104,16 @@
           }}
           onclick={() => (pinned = pinned === stories ? null : stories)}
         >
-          <!-- The dashed outline the map draws: shape, not colour alone, ties the row to it. -->
+          <!-- The dashed outline the map draws: shape, not colour alone, ties the row to it. A
+               pressed row's swatch fills (a cue beside aria-pressed that is not the row's tint). -->
           <span class="flex w-7 shrink-0 justify-center" aria-hidden="true">
             <span
               class="inline-block h-4 w-4 rounded-sm border-2 border-dashed"
               data-swatch="outline"
               style:border-color={TOKENS[theme.current]['painted-outline']}
+              style:background={pinned === stories
+                ? `color-mix(in srgb, ${TOKENS[theme.current]['painted-outline']} 40%, transparent)`
+                : undefined}
             ></span>
           </span>
           <span class="tabular-nums">{text(stories)}</span>

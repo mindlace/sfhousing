@@ -164,6 +164,10 @@ describe('PaintKey', () => {
     const cs = getComputedStyle(sw);
     expect(cs.borderTopStyle).toBe('dashed');
     expect(cs.borderTopColor).toBe(hexToRgb(TOKENS.light['painted-outline']));
+    // Pressed, the swatch fills: a cue besides the row's tint.
+    expect(cs.backgroundColor).toBe('rgba(0, 0, 0, 0)');
+    await userEvent.click(rows()[0]);
+    await expect.poll(() => getComputedStyle(sw).backgroundColor).not.toBe('rgba(0, 0, 0, 0)');
   });
 });
 
