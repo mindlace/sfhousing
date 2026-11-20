@@ -11,6 +11,7 @@ import { timelineTokenCss } from '$lib/map/palette';
 import { STAGE_KEY } from '$lib/map/key/rows';
 import { KEY_COPY } from '$lib/map/key/copy';
 import { HALO_KIND, HALO_TOKEN } from '$lib/map/timelapse/halos';
+import { CITY_KIND_TOKEN } from '$lib/map/timelapse/city';
 import { longTexts } from '$lib/shell/test/rest-text';
 import SimKey, { AREA_SWATCH, EDGE_SWATCH } from './SimKey.svelte';
 import SimKeyControlHost from './test/SimKeyControlHost.svelte';
@@ -127,15 +128,16 @@ describe('SimKey', () => {
   it('names the ring, and the bar, always', async () => {
     await render(SimKey, { props: { tally: TALLY, inForce: false } });
     const tones = ['tl-halo-approved', 'tl-halo-started', 'tl-halo-complete'];
+    const city = [...tones, 'tl-halo-policy'];
     expect(extras()).toEqual([
       [
         'ring',
         'ring',
-        [...tones, ...tones, ...tones],
+        [...tones, ...city, ...city],
         `${KEY_COPY.ring} Approved Building Completed ${KEY_COPY.area} ${KEY_COPY.edge}`
       ],
-      ['area', 'area', tones, KEY_COPY.area],
-      ['edge', 'edge', tones, KEY_COPY.edge],
+      ['area', 'area', city, KEY_COPY.area],
+      ['edge', 'edge', city, KEY_COPY.edge],
       ['bar', 'bar', ['tl-bar-unlikely', 'tl-bar-uncertain', 'tl-bar-likely'], KEY_COPY.bar]
     ]);
     // A list after the tally, its swatches beside words and hidden from assistive tech.
@@ -168,10 +170,12 @@ describe('SimKey', () => {
     expect(rows.map(([k]) => k)).toEqual(kinds);
   });
 
-  it('names the merged ring and the edge glow under "Just changed stage", in the halo tones', async () => {
+  it('names the merged ring and the edge glow under "Just changed stage", in the tones the city layer draws', async () => {
     expect(KEY_COPY.area).toBe('Zoomed out: one per area');
     expect(KEY_COPY.edge).toBe('Edge glow: off screen');
-    const tones = [HALO_TOKEN.approved, HALO_TOKEN.started, HALO_TOKEN.completed];
+    // CITY_KIND_TOKEN: the three halo tones and the policy accent.
+    const tones = [HALO_TOKEN.approved, HALO_TOKEN.started, HALO_TOKEN.completed, 'tl-halo-policy'];
+    expect(tones).toEqual(CITY_KIND_TOKEN);
     expect(AREA_SWATCH).toEqual({ kind: 'area', tokens: tones });
     expect(EDGE_SWATCH).toEqual({ kind: 'edge', tokens: tones });
     // In the panel's width, where each row must sit on one line.

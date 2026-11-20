@@ -9,6 +9,7 @@
 <script module lang="ts">
   import { STAGE_KEY, type StageGroup, type Swatch } from '$lib/map/key/rows';
   import { HALO_TOKEN } from '$lib/map/timelapse/halos';
+  import { CITY_KIND_TOKEN } from '$lib/map/timelapse/city';
 
   type RingKind = keyof typeof HALO_TOKEN;
   const ring = (kind: RingKind, group: StageGroup) => ({
@@ -25,11 +26,12 @@
     ring('started', 'building'),
     ring('completed', 'completed')
   ];
-  const TONES = [HALO_TOKEN.approved, HALO_TOKEN.started, HALO_TOKEN.completed];
-  /** The merged ring the city layer draws zoomed out, one per area, in the ring tones. */
-  export const AREA_SWATCH: Swatch = { kind: 'area', tokens: TONES };
-  /** The glow the city layer draws at the map's edge for a change off screen. */
-  export const EDGE_SWATCH: Swatch = { kind: 'edge', tokens: TONES };
+  /** The city layer's tones (`CITY_KIND_TOKEN`): the ring tones and the policy accent. */
+  const CITY_TONES = [...CITY_KIND_TOKEN];
+  /** The merged ring the city layer draws zoomed out, one per area, in its tones. */
+  export const AREA_SWATCH: Swatch = { kind: 'area', tokens: CITY_TONES };
+  /** The glow the city layer draws at the map's edge for a change off screen, in its tones. */
+  export const EDGE_SWATCH: Swatch = { kind: 'edge', tokens: CITY_TONES };
   /** The mark row: the diamond in the accent, inside the accent ring its projects carry. */
   export const MARK_SWATCH: Swatch = { kind: 'mark', tokens: ['tl-halo-policy'] };
   /** The bar row: a bar from unlikely to likely. */
