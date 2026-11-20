@@ -2,12 +2,23 @@
 // reference of its shader (`evalHalo`). Pure. Halos live in simulated time: a ring's age is the
 // clock's day less its event's, so the layer reads only the clock the bars read. The GLSL port in
 // halo-layer.ts keeps `evalHalo`'s rule order; change one with the other.
+import type { TokenName } from '../palette';
 import type { TimedPackedCell } from '../types';
 import { HALO_DAYS, HALO_R_PX, HALO_STILL_R_PX, MARK_PX } from './constants';
 import { DYING_DAYS, OPEN_DAY, type Day } from '$lib/timelapse/time';
 import { STAGE_ORDER } from '$lib/timelapse/types';
 
 export const HALO_KIND = { approved: 0, started: 1, completed: 2, mark: 3 } as const;
+
+/**
+ * The token each ring kind is drawn in (the halo layer's colours) and the key's ring rows show;
+ * a project under your policy rings in `tl-halo-policy` instead, as every mark is drawn.
+ */
+export const HALO_TOKEN = {
+  approved: 'tl-halo-approved',
+  started: 'tl-halo-started',
+  completed: 'tl-halo-complete'
+} as const satisfies Record<Exclude<keyof typeof HALO_KIND, 'mark'>, TokenName>;
 
 export interface HaloAttrs {
   projectId: string;

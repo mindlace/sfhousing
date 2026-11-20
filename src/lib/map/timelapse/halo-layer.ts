@@ -15,7 +15,7 @@ import {
 import { Geometry, Model } from '@luma.gl/engine';
 import type { ShaderModule } from '@luma.gl/shadertools';
 import { HALO_DAYS, HALO_R_PX, HALO_STILL_R_PX, MARK_PX } from './constants';
-import { HALO_KIND, type HaloAttrs } from './halos';
+import { HALO_KIND, HALO_TOKEN, type HaloAttrs } from './halos';
 import type { TimelineClock } from './types';
 import { TOKENS, hexToRgba, type TokenName } from '../palette';
 import type { Theme } from '../types';
@@ -190,9 +190,9 @@ const COLOURS: Record<Theme, Omit<HaloModuleProps, 'day' | 'reduced'>> = {
 };
 function colours(theme: Theme) {
   return {
-    approved: srgb01(theme, 'tl-halo-approved'),
-    started: srgb01(theme, 'tl-halo-started'),
-    complete: srgb01(theme, 'tl-halo-complete'),
+    approved: srgb01(theme, HALO_TOKEN.approved),
+    started: srgb01(theme, HALO_TOKEN.started),
+    complete: srgb01(theme, HALO_TOKEN.completed),
     policy: srgb01(theme, 'tl-halo-policy'),
     land: srgb01(theme, 'land')
   };

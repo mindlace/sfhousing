@@ -1,17 +1,28 @@
 <!--
   /sim's key panel: the homes in each stage group at the playhead's month (`keyTally`), each
   label beside its swatch and count, under "Homes". '…' while the numbers are calculating. Then
-  what the map draws over the buildings: the ring of a stage change, the mark of a project under
+  what the map draws over the buildings: the ring of a stage change (one labelled ring per tone), the mark of a project under
   the person's policy (only while one is in force; its claim behind a tap), and the stage bar.
 -->
 <script module lang="ts">
-  import type { Swatch } from '$lib/map/key/rows';
+  import { STAGE_KEY, type StageGroup, type Swatch } from '$lib/map/key/rows';
+  import { HALO_TOKEN } from '$lib/map/timelapse/halos';
 
-  /** The ring row: one ring per tone a stage change rings in. */
-  export const RING_SWATCH: Swatch = {
-    kind: 'ring',
-    tokens: ['tl-halo-approved', 'tl-halo-started', 'tl-halo-complete']
-  };
+  type RingKind = keyof typeof HALO_TOKEN;
+  const ring = (kind: RingKind, group: StageGroup) => ({
+    kind,
+    label: STAGE_KEY.find((r) => r.id === group)!.label,
+    swatch: { kind: 'ring', tokens: [HALO_TOKEN[kind]] } satisfies Swatch
+  });
+  /**
+   * The ring rows: each kind the halo layer rings in, in its token (`HALO_TOKEN`, the layer's
+   * own), named by the tally's word for that stage, so the key speaks one vocabulary.
+   */
+  export const RING_ROWS = [
+    ring('approved', 'approved'),
+    ring('started', 'building'),
+    ring('completed', 'completed')
+  ];
   /** The mark row: the diamond in the accent, inside the accent ring its projects carry. */
   export const MARK_SWATCH: Swatch = { kind: 'mark', tokens: ['tl-halo-policy'] };
   /** The bar row: a bar from unlikely to likely. */
@@ -24,7 +35,6 @@
 <script lang="ts">
   import KeySwatch from '$lib/map/key/KeySwatch.svelte';
   import { KEY_COPY } from '$lib/map/key/copy';
-  import { STAGE_KEY } from '$lib/map/key/rows';
   import { formatCount } from '$lib/scoreboard/format';
   import Explain from './Explain.svelte';
   import type { KeyTally } from './key';
@@ -50,9 +60,16 @@
   {/each}
 </dl>
 <ul class="mt-2 space-y-1 border-t border-line pt-2 dark:border-line-dark">
-  <li class="flex items-center gap-2" data-key-extra="ring">
-    <KeySwatch swatch={RING_SWATCH} />
+  <li data-key-extra="ring">
     <span>{KEY_COPY.ring}</span>
+    <ul class="mt-1 space-y-1">
+      {#each RING_ROWS as r (r.kind)}
+        <li class="flex items-center gap-2" data-ring-kind={r.kind}>
+          <KeySwatch swatch={r.swatch} />
+          <span>{r.label}</span>
+        </li>
+      {/each}
+    </ul>
   </li>
   {#if inForce}
     <li class="sim-key-mark flex items-start gap-2" data-key-extra="mark">

@@ -10,6 +10,7 @@ import '../../routes/layout.css';
 import { timelineTokenCss } from '$lib/map/palette';
 import { STAGE_KEY } from '$lib/map/key/rows';
 import { KEY_COPY } from '$lib/map/key/copy';
+import { HALO_KIND, HALO_TOKEN } from '$lib/map/timelapse/halos';
 import { longTexts } from '$lib/shell/test/rest-text';
 import SimKey from './SimKey.svelte';
 import SimKeyControlHost from './test/SimKeyControlHost.svelte';
@@ -109,24 +110,29 @@ describe('SimKey', () => {
       expect(dark[k], `${t} differs by theme`).not.toBe(light[k]);
     });
   });
-  /** The rows after the tally: [kind, its tokens, its words]. */
+  /** The rows after the tally: [kind, its first swatch's kind, its tokens, its words]. */
   const extras = () =>
     [...document.querySelectorAll('[data-key-extra]')].map((r) => {
       const sw = r.querySelector('[data-swatch]')!;
       return [
         r.getAttribute('data-key-extra'),
         sw.getAttribute('data-swatch'),
-        [...sw.querySelectorAll('[data-token]')].flatMap((t) =>
+        [...r.querySelectorAll('[data-token]')].flatMap((t) =>
           t.getAttribute('data-token')!.split(' ')
         ),
-        r.textContent!.trim()
+        r.textContent!.replace(/\s+/g, ' ').trim()
       ];
     });
 
   it('names the ring, and the bar, always', async () => {
     await render(SimKey, { props: { tally: TALLY, inForce: false } });
     expect(extras()).toEqual([
-      ['ring', 'ring', ['tl-halo-approved', 'tl-halo-started', 'tl-halo-complete'], KEY_COPY.ring],
+      [
+        'ring',
+        'ring',
+        ['tl-halo-approved', 'tl-halo-started', 'tl-halo-complete'],
+        `${KEY_COPY.ring} Approved Building Completed`
+      ],
       ['bar', 'bar', ['tl-bar-unlikely', 'tl-bar-uncertain', 'tl-bar-likely'], KEY_COPY.bar]
     ]);
     // A list after the tally, its swatches beside words and hidden from assistive tech.
@@ -136,6 +142,27 @@ describe('SimKey', () => {
       expect(sw.getAttribute('aria-hidden')).toBe('true');
     expect(document.body.textContent).not.toContain(KEY_COPY.mark);
     expect((await axe.run(list.parentElement!)).violations).toEqual([]);
+  });
+
+  it("names each ring's tone beside its stage word, with the token the halo layer draws it in", async () => {
+    await render(SimKey, { props: { tally: TALLY, inForce: false } });
+    const ring = document.querySelector('[data-key-extra="ring"]')!;
+    // The heading, then one ring per kind the layer draws (every HALO_KIND but the mark).
+    expect(ring.firstElementChild!.textContent).toBe(KEY_COPY.ring);
+    const kinds = Object.keys(HALO_KIND).filter((k) => k !== 'mark');
+    const rows = [...ring.querySelectorAll('[data-ring-kind]')].map((r) => [
+      r.getAttribute('data-ring-kind'),
+      r.querySelector('[data-swatch="ring"]')!.getAttribute('aria-hidden'),
+      [...r.querySelectorAll('[data-token]')].map((t) => t.getAttribute('data-token')),
+      r.textContent!.trim()
+    ]);
+    const word = (id: string) => STAGE_KEY.find((g) => g.id === id)!.label;
+    expect(rows).toEqual([
+      ['approved', 'true', [HALO_TOKEN.approved], word('approved')],
+      ['started', 'true', [HALO_TOKEN.started], word('building')],
+      ['completed', 'true', [HALO_TOKEN.completed], word('completed')]
+    ]);
+    expect(rows.map(([k]) => k)).toEqual(kinds);
   });
 
   it('names the mark with its explanation only while a policy is in force', async () => {
