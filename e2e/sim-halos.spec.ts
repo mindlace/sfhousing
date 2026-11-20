@@ -69,6 +69,9 @@ test('stepping the playhead past the first stage change shows its halo; Home hid
   page
 }) => {
   await gotoSim(page);
+  // Below zoom 14 the city layer's merged ring stands for a project's own (the halo layer's
+  // ringMinZoom gate, map-interfaces.md); from 14 the project's own ring shows.
+  await page.evaluate(() => (window as Win).__sfhMap!.map!.jumpTo({ zoom: 14.5 }));
   const [d] = (await waitMap(page)).haloDays;
   await slider(page).focus();
   await page.keyboard.press('Home');

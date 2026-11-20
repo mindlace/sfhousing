@@ -16,6 +16,7 @@ import { packTimedCell } from './pack-timed';
 import { encodeParts } from './timelapse/encode';
 import { TIMELINE_PART_LAYER } from './timeline-controller';
 import type {
+  CityDelta,
   SimMapHandle,
   SimMapProps,
   TimedPackedCell,
@@ -307,6 +308,54 @@ describe('SimMap timeline mode', { timeout: 60_000 }, () => {
     expect(dbg().timelineSnapshot()!.halos).toBe(0);
     dbg().setHalos({ from: DAYS.start }); // the debug hook calls through to the handle
     expect(layerIds(map)).toContain('timeline-halos');
+    expect(errors).toEqual([]);
+  });
+
+  it('a queued update keeps its city until the controller exists, and the controller draws it', async () => {
+    // One marker in view of the camera below, one well off it to the west.
+    const here: [number, number] = [-122.4194, 37.7599];
+    const city: CityDelta = {
+      rows: 2,
+      row: Int32Array.from([0, 1]),
+      lngLat: Float32Array.from([...here, -122.51, 37.77]),
+      days: Float32Array.from([
+        DAYS.a.entitled,
+        DAYS.a.construction,
+        NaN,
+        DAYS.a.construction,
+        NaN,
+        NaN
+      ]),
+      homes: Uint16Array.from([40, 12]),
+      flags: Uint8Array.from([0, 0])
+    };
+    const { handle, ready } = await mount();
+    handle.setHalos({ from: DAYS.start });
+    handle.setTimelineLookups(timelineLookups);
+    handle.setTime(DAYS.a.construction);
+    handle.applyTimeline({ ...timelineSmall, city });
+    const h = await ready;
+    const map = h.getMap()!;
+    await converged(map);
+    const ids = layerIds(map);
+    expect(ids.indexOf('timeline-city')).toBe(ids.indexOf('timeline-halos') + 1);
+    // Zoom 13 over the first marker: its merged ring, the other's edge glow, the gate on.
+    map.jumpTo({ center: here, zoom: 13, pitch: 0, bearing: 0 });
+    await converged(map);
+    const snap = dbg().timelineSnapshot()!;
+    expect(snap).toMatchObject({ cityMarkers: 2, ringMinZoom: 14, halosShown: 0 });
+    expect(snap.cityRecords).toBeGreaterThan(0);
+    expect(snap.cityRings).toBeGreaterThan(0);
+    expect(snap.cityGlows).toBeGreaterThan(0);
+    // Zoom 15: the projects' own rings; the city draws no ring.
+    map.jumpTo({ center: here, zoom: 15, pitch: 0, bearing: 0 });
+    await converged(map);
+    expect(dbg().timelineSnapshot()!.cityRings).toBe(0);
+    // A malformed city is refused at the handle, before anything is queued or applied.
+    const bad = { ...city, homes: new Uint16Array(1) };
+    expect(() => h.applyTimeline({ ...timelineSmall, revision: 1, cells: [], city: bad })).toThrow(
+      RangeError
+    );
     expect(errors).toEqual([]);
   });
 

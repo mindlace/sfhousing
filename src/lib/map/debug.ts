@@ -39,10 +39,15 @@ export interface SfhMapDebug {
   ): Promise<{ parcels: number; cells: number }>;
   /**
    * bench:map and timeline-perf only (docs/dev/map-perf.md): sets `SYNTHETIC_LOOKUPS`, then
-   * applies `makeSyntheticTimeline(seed, n)` (revision 0) through SimMap's `applyTimeline`.
-   * Resolves to the project and cell counts.
+   * applies `makeSyntheticTimeline(seed, n, 1500, city)` (revision 0, with one city marker per
+   * project unless `city` is false) through SimMap's `applyTimeline`. Resolves to the project and
+   * cell counts.
    */
-  loadSyntheticTimeline(seed: number, n: number): Promise<{ projects: number; cells: number }>;
+  loadSyntheticTimeline(
+    seed: number,
+    n: number,
+    city?: boolean
+  ): Promise<{ projects: number; cells: number }>;
   /**
    * bench:map only (docs/dev/map-perf.md "Height limits case"): builds `makeSyntheticLimits(seed)`
    * (the whole-city contours and a downtown 3 km lid, on the main thread) and sets
@@ -170,10 +175,10 @@ export function installDebug(
       get().controller?.apply({ revision: 0, cells, removedCells: [], hide: { add, remove: [] } });
       return { parcels: add.length, cells: cells.length };
     },
-    loadSyntheticTimeline: async (seed, n) => {
+    loadSyntheticTimeline: async (seed, n, city = true) => {
       const { makeSyntheticTimeline, SYNTHETIC_LOOKUPS } =
         await import('./test/synthetic-timeline');
-      const u = makeSyntheticTimeline(seed, n);
+      const u = makeSyntheticTimeline(seed, n, 1500, city);
       timeline.setTimelineLookups(SYNTHETIC_LOOKUPS);
       timeline.applyTimeline(u);
       const projects = u.cells.reduce((a, c) => a + c.slotProjectIds.length, 0);

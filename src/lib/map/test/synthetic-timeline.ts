@@ -4,7 +4,13 @@
 import { timelineLookups } from '../fixtures/timeline-lookups';
 import { packTimedCell, type TimedPackInput } from '../pack-timed';
 import type { TimelineLookups } from '../timelapse/types';
-import { SLOT_FLAG, type TimedPackedCell, type TimelineUpdate } from '../types';
+import {
+  CITY_DAY,
+  SLOT_FLAG,
+  type CityDelta,
+  type TimedPackedCell,
+  type TimelineUpdate
+} from '../types';
 import {
   benchmarkExemplars,
   cityGrid,
@@ -51,18 +57,30 @@ const int = (rnd: () => number, n: number) => Math.floor(rnd() * n);
  * the horizon, or complete. A second revision, on a different exemplar building, lands before
  * construction. `demolish` lists every project that reaches construction, at that day. Every
  * FLAG_EVERY-th project (by number, so the draws are unchanged) has `SLOT_FLAG.zoning`.
- * Deterministic for a seed.
+ * With `city` (the default), `city` carries one marker per project, row = its number, as the
+ * worker's feed would: at its site, the approved day (the first of entitled and permitIssued
+ * entered), the started day (construction), the completed day (a complete end), the final
+ * revision's homes and its flags. Deterministic for a seed.
  */
 export function makeSyntheticTimeline(
   seed: number,
   nProjects: number,
-  perCell = 1500
+  perCell = 1500,
+  city = true
 ): TimelineUpdate {
   const rnd = mulberry32(seed);
   const exemplars = benchmarkExemplars('representative');
   const grid = cityGrid(nProjects, perCell);
   const cells: TimedPackedCell[] = [];
   const demolish: TimelineUpdate['demolish'] = [];
+  const markers: CityDelta = {
+    rows: nProjects,
+    row: Int32Array.from({ length: nProjects }, (_, i) => i),
+    lngLat: new Float32Array(2 * nProjects),
+    days: new Float32Array(3 * nProjects),
+    homes: new Uint16Array(nProjects),
+    flags: new Uint8Array(nProjects)
+  };
   let made = 0;
   for (let c = 0; c < grid.nCells; c++) {
     const count = Math.min(perCell, nProjects - made);
@@ -85,11 +103,30 @@ export function makeSyntheticTimeline(
       items.push({ schedule, massings, pickParcelId: parcelId, flags });
       const built = schedule.entered.construction;
       if (built !== undefined) demolish.push({ parcelId, day: built });
+      mark(markers, made + i, [x, y], schedule, flags);
     }
     made += count;
     cells.push(packTimedCell(`syn-tl-${String(c).padStart(4, '0')}`, items));
   }
-  return { revision: 0, cells, removedCells: [], demolish };
+  return { revision: 0, cells, removedCells: [], demolish, ...(city ? { city: markers } : {}) };
+}
+
+/** Row `r`'s marker, as the worker's city feed fills it (src/lib/sim/world/city-feed.ts). */
+function mark(
+  d: CityDelta,
+  r: number,
+  [lng, lat]: [number, number],
+  s: Schedule,
+  flags: number
+): void {
+  const approved = s.entered.entitled ?? s.entered.permitIssued ?? NaN;
+  d.lngLat[2 * r] = lng;
+  d.lngLat[2 * r + 1] = lat;
+  d.days[3 * r + CITY_DAY.approved] = approved;
+  d.days[3 * r + CITY_DAY.started] = s.entered.construction ?? NaN;
+  d.days[3 * r + CITY_DAY.completed] = s.end.kind === 'complete' ? s.end.day : NaN;
+  d.homes[r] = Math.min(0xffff, Math.max(0, s.revisions[s.revisions.length - 1].units));
+  d.flags[r] = flags;
 }
 
 /** One project's schedule; revision units and stories are filled in from its massings. */
