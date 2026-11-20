@@ -34,6 +34,7 @@ export function makeFakeTimelineDeps(): FakeTimelineDeps {
   let handle = 0;
   /** The real HaloLayer, recording each construction (deck's `clone` constructs one too). */
   class RecordingHaloLayer extends HaloLayer {
+    static layerName = 'RecordingHaloLayer';
     constructor(...props: ConstructorParameters<typeof HaloLayer>) {
       super(...props);
       f.haloLayers.push(this as unknown as Layer);
