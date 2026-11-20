@@ -186,6 +186,29 @@ test("/'s dock on its Paint tab, a plan painted, has no axe violations in dark",
   await expectNoA11yViolations(page, { include: ['[data-testid=dock]'] });
 });
 
+test("/'s open map key, a height painted and pressed, has no axe violations in dark", async ({
+  page,
+  isMobile
+}) => {
+  await gotoEditor(page);
+  await paintOnce(page, isMobile);
+  const toggle = page.getByTestId('map-key-toggle');
+  await toggle.click();
+  const panel = page.getByTestId('map-key-panel');
+  await expect(panel).toBeVisible();
+  await expect(panel).toHaveCSS('background-color', 'rgb(28, 29, 31)');
+  const row = panel.locator('button[data-height="6"]');
+  await expect(row).toHaveText(/^\s*6 stories · [\d,]+ lots? · [\d,]+ rebuilt$/);
+  await row.click();
+  await expect(row).toHaveAttribute('aria-pressed', 'true');
+  // The row's dashed swatch is the map outline's dark colour.
+  await expect(row.locator('[data-swatch="outline"]')).toHaveCSS(
+    'border-top-color',
+    'rgb(219, 139, 66)'
+  );
+  await expectNoA11yViolations(page, { include: ['[data-testid=map-key-control]'] });
+});
+
 test("/p/:id's read-only Paint tab, its line and summary, has no axe violations in dark", async ({
   page
 }) => {

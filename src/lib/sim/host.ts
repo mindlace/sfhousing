@@ -29,7 +29,7 @@ import { checkManifestShape } from './manifest-shape';
 import { packOutlines } from './outlines';
 import type {
   ErrorResponse,
-  OpLotsResult,
+  HeightLotsResult,
   OpStats,
   ParcelSummary,
   SimRequest,
@@ -422,47 +422,54 @@ export function createSimHost(deps: SimHostDeps): SimHost {
   }
 
   /**
-   * The eligible loaded lots the committed ops `opIds` cover, as a union (unknown ids are
-   * skipped), and how many of the ops' cells are not loaded yet. Never fetches: the cells were
-   * asked of the loader when the ops were loaded or committed.
+   * The plan's eligible loaded lots by painted height, in one pass over the committed envelopes
+   * (each lot already holds the height of the last op over it; an erase after a paint removed
+   * it), so a lot counts once. A height painted over everywhere keeps its row at 0. `missing`:
+   * the plan's cells not loaded yet. Never fetches: the cells were asked of the loader when the
+   * ops were loaded or committed. The preview is not the plan, so it is not counted.
    */
-  function opLots(
+  function heightLots(
     st: State | null,
-    opIds: readonly string[],
-    outlines: boolean
-  ): { result: OpLotsResult | null; transfer: ArrayBuffer[] } {
+    outlineOf: number | null
+  ): { result: HeightLotsResult | null; transfer: ArrayBuffer[] } {
     if (!st) return { result: null, transfer: [] };
-    const want = new Set(opIds);
-    const lots = new Set<ParcelId>();
+    const rows = new Map<number, { stories: number; lots: number; rebuilt: number }>();
     const cells = new Set<string>();
     for (const op of st.plan.ops) {
-      if (!want.has(op.id)) continue;
       for (const c of opCellsOf(st, op)) cells.add(c);
-      for (const id of st.index.covered(op)) if (st.index.get(id)!.eligible) lots.add(id);
+      if (op.kind === 'paint' && !rows.has(op.stories))
+        rows.set(op.stories, { stories: op.stories, lots: 0, rebuilt: 0 });
+    }
+    const outlined: ParcelRecord[] = [];
+    for (const [id, env] of st.committed) {
+      const row = rows.get(env.maxStories);
+      const rec = st.index.get(id);
+      if (!row || !rec) continue;
+      row.lots++;
+      if (build(st, rec, env)) row.rebuilt++;
+      if (env.maxStories === outlineOf) outlined.push(rec);
     }
     let missing = 0;
     for (const c of cells) if (!st.loader.isReady(c)) missing++;
-    if (!outlines) return { result: { lots: lots.size, missing, outline: null }, transfer: [] };
-    const packed = packOutlines([...lots].map((id) => st.index.get(id)!));
-    return {
-      result: { lots: lots.size, missing, outline: packed.outlines },
-      transfer: packed.transfer
-    };
+    const heights = [...rows.values()].sort((a, b) => a.stories - b.stories);
+    if (outlineOf === null) return { result: { heights, missing, outline: null }, transfer: [] };
+    const packed = packOutlines(outlined);
+    return { result: { heights, missing, outline: packed.outlines }, transfer: packed.transfer };
   }
 
   function dispatch(req: SimRequest): void {
     switch (req.type) {
       case 'init':
         return init(req);
-      case 'opLots': {
-        let answer: ReturnType<typeof opLots>;
+      case 'heightLots': {
+        let answer: ReturnType<typeof heightLots>;
         try {
-          answer = opLots(s, req.opIds, req.outlines);
+          answer = heightLots(s, req.outlineOf);
         } catch (e) {
-          console.error('[sim] opLots:', e);
+          console.error('[sim] heightLots:', e);
           answer = { result: null, transfer: [] }; // the client's promise must still resolve
         }
-        post({ type: 'opLots', reqId: req.reqId, result: answer.result }, answer.transfer);
+        post({ type: 'heightLots', reqId: req.reqId, result: answer.result }, answer.transfer);
         return;
       }
       case 'parcelSummary': {

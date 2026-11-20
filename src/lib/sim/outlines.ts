@@ -1,6 +1,6 @@
 /**
  * Packed lot outlines: one ring per polygon ring as typed arrays, so a worker can transfer them.
- * Shared by the scenario host's `lotOutlines` and the editor host's `opLots`. Worker-bundle
+ * Shared by the scenario host's `lotOutlines` and the editor host's `heightLots`. Worker-bundle
  * module: DOM-free and $app-free.
  */
 import type { ParcelId, ParcelRecord } from '$lib/data/parcel';

@@ -1,7 +1,7 @@
 /// <reference types="@vitest/browser-playwright" />
 // The 12-word rule on `/` at rest (accessibility.md): with the Paint tab open and the header
 // score showing, no visible text of 12 words or more outside a notice or a dialog. An empty plan
-// (the starting sentence), and one restored stroke. Paint's Results face is not covered: its
+// (the starting sentence), and one restored stroke, with the map key open. Paint's Results face is not covered: its
 // sentences live in the hashed ScoreboardPanel.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
@@ -85,6 +85,11 @@ describe('/ at rest (rule: no text of 12 words or more)', () => {
     await expect.element(page.getByRole('radiogroup', { name: 'Tool' })).toBeVisible();
     await expect.element(page.getByTestId('score-bar')).toBeVisible();
     expect(page.getByText(MSG.start, { exact: true }).elements()).toEqual([]);
+    expect(longTexts()).toEqual([]);
+    // Nor with the map key open: the building types and the painted height.
+    await page.getByRole('button', { name: 'Map key' }).click();
+    await expect.element(page.getByRole('list', { name: 'Painted' })).toBeVisible();
+    await expect.element(page.getByRole('list', { name: 'New buildings' })).toBeVisible();
     expect(longTexts()).toEqual([]);
   });
 });

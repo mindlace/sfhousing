@@ -46,7 +46,7 @@ const ONE_LOT: Extract<LotOutlinesResult, { ok: true }> = {
 };
 
 describe('paintedOutlineLayers', () => {
-  it('takes a plain LotOutlines (an opLots outline), with the same layer', () => {
+  it('takes a plain LotOutlines (a heightLots outline), with the same layer', () => {
     const plain: LotOutlines = {
       lots: ONE_LOT.lots,
       ringLot: ONE_LOT.ringLot,

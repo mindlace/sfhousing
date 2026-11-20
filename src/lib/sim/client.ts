@@ -7,7 +7,7 @@ import type {
   ChunksResponse,
   DiffResponse,
   ErrorResponse,
-  OpLotsResult,
+  HeightLotsResult,
   ParcelSummary,
   ReadyResponse,
   Rev,
@@ -45,7 +45,7 @@ export class SimClient {
   #resyncRev: Rev | null = null;
   #reqId = 0;
   #pending = new Map<number, (s: ParcelSummary | null) => void>();
-  #pendingOpLots = new Map<number, (r: OpLotsResult | null) => void>();
+  #pendingHeightLots = new Map<number, (r: HeightLotsResult | null) => void>();
   #datasetVersion: string | null = null;
   #disposed = false;
   #crashed = false;
@@ -117,15 +117,15 @@ export class SimClient {
   }
 
   /**
-   * The eligible loaded lots the ops cover (see `OpLotsResult`). Null: no worker state, a crash
-   * or a dispose.
+   * The plan's lots by painted height, with the outline of the lots at `outlineOf` when it is set
+   * (see `HeightLotsResult`). Null: no worker state, a crash or a dispose.
    */
-  opLots(opIds: string[], outlines: boolean): Promise<OpLotsResult | null> {
+  heightLots(outlineOf: number | null): Promise<HeightLotsResult | null> {
     if (this.#disposed || this.#crashed) return Promise.resolve(null);
     const reqId = ++this.#reqId;
     return new Promise((resolve) => {
-      this.#pendingOpLots.set(reqId, resolve);
-      this.#worker.postMessage({ type: 'opLots', reqId, opIds, outlines });
+      this.#pendingHeightLots.set(reqId, resolve);
+      this.#worker.postMessage({ type: 'heightLots', reqId, outlineOf });
     });
   }
 
@@ -178,8 +178,8 @@ export class SimClient {
   #resolvePending(): void {
     for (const resolve of this.#pending.values()) resolve(null);
     this.#pending.clear();
-    for (const resolve of this.#pendingOpLots.values()) resolve(null);
-    this.#pendingOpLots.clear();
+    for (const resolve of this.#pendingHeightLots.values()) resolve(null);
+    this.#pendingHeightLots.clear();
   }
 
   #crash(worker: WorkerLike, e: Event): void {
@@ -216,10 +216,10 @@ export class SimClient {
         resolve(msg.summary);
         return;
       }
-      case 'opLots': {
-        const resolve = this.#pendingOpLots.get(msg.reqId);
+      case 'heightLots': {
+        const resolve = this.#pendingHeightLots.get(msg.reqId);
         if (!resolve) return;
-        this.#pendingOpLots.delete(msg.reqId);
+        this.#pendingHeightLots.delete(msg.reqId);
         resolve(msg.result);
         return;
       }

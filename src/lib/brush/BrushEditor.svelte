@@ -8,7 +8,10 @@
   pointer.
   `/` has no painted-areas list (that is `/sim`'s): the tab holds the tools, and read-only
   (`/p/:id`) the read-only line and one summary line (`paintedSummary`: the heights used and the
-  lots the latest score rebuilds). The overlay mux here has only the brush ring. The brush status
+  lots the latest score rebuilds). The map key (`MapKeyControl` with `PaintKey`, closed at rest)
+  names the building types and each painted height with its lots (the worker's `heightLots`,
+  latest wins); hovering, focusing or pressing a height draws its lots' outline in the overlay
+  mux's `outline` slot, under the brush ring in its `ring` slot. The brush status
   line, its Retry and the page's own notices are pills in one notice stack (`NoticePills`). What a
   stroke, a refusal, an undo or a redo did shows in the stroke chip, a polite status over the
   map's top (never in the stack, which is in flow on a phone), so painting never moves or resizes
@@ -26,10 +29,14 @@
   import Dock from '$lib/dock/Dock.svelte';
   import { DockState } from '$lib/dock/dock-state.svelte';
   import { DOCK_ICONS } from '$lib/dock/icons';
+  import MapKeyControl from '$lib/map/key/MapKeyControl.svelte';
   import { createOverlayMux } from '$lib/map/overlay-mux';
   import SimMap from '$lib/map/SimMap.svelte';
+  import { useSystemTheme } from '$lib/map/system-theme.svelte';
   import type { ChunkStatus, GeneratedUpdate, SimMapHandle } from '$lib/map/types';
   import HistoryButtons from '$lib/paint/HistoryButtons.svelte';
+  import { paintedOutlineLayers } from '$lib/paint/outline-layers';
+  import PaintKey from '$lib/paint/PaintKey.svelte';
   import PaintTab from '$lib/paint/PaintTab.svelte';
   import PaletteStrip from '$lib/paint/PaletteStrip.svelte';
   import { usePrimaryPointer } from '$lib/paint/pointer.svelte';
@@ -50,6 +57,7 @@
   import { BrushController } from './BrushController.svelte';
   import { installBrushDebug } from './debug';
   import { createEditor, type Editor } from './editor.svelte';
+  import { HeightLots } from './height-lots.svelte';
   import { MSG } from './messages';
   import type { OverlayCtors } from './overlay';
   import type { BrushTool } from './sampler';
@@ -250,6 +258,7 @@
       for (const [cellId, s] of Object.entries(c.status)) setChunkStatus(cellId, s);
       brush.loadingParcels = c.pending > 0;
       setChunks({ pending: c.pending, failed: [...c.failed] });
+      heightLots.chunksChanged();
     },
     onError(e) {
       controller?.onError(e.rev);
@@ -413,12 +422,49 @@
   const stories = $derived(storiesUsed(editor.plan.ops)); // re-runs only when the plan changes
   const summary = $derived(editor.readOnly ? paintedSummary(stories, rebuilt) : null);
 
+  /**
+   * The map key's counts: the worker's `heightLots`, asked once per plan change while the worker
+   * is ready (after the plan's own load, commit or undo, which the worker handles first), again on
+   * a chunk message while a cell of the plan is missing, and for the height the key shows.
+   */
+  const heightLots = new HeightLots((h) => client?.heightLots(h) ?? Promise.resolve(null));
+  /** The height the key asked to outline, or null. */
+  let shownHeight = $state<number | null>(null);
+  /** The next plan change is another plan (Editor.load): its rows wait for their own counts. */
+  let freshPlan = false;
+  $effect(() => {
+    void editor.plan;
+    if (brush.phase !== 'ready') return;
+    untrack(() => {
+      heightLots.planChanged(freshPlan);
+      freshPlan = false;
+    });
+  });
+  function showHeight(stories: number | null): void {
+    shownHeight = stories;
+    heightLots.show(stories);
+  }
+  const systemTheme = useSystemTheme();
+  /** Whether the outline slot holds a layer (an empty slot is not written again). */
+  let outlined = false;
+  $effect(() => {
+    const o = overlay;
+    const out = heightLots.outline;
+    const L = layers;
+    if (!o) return;
+    const next = out && L ? paintedOutlineLayers(L, out, systemTheme.current) : [];
+    if (next.length === 0 && !outlined) return;
+    outlined = next.length > 0;
+    untrack(() => o.slot('outline')(next));
+  });
+
   let wasReadOnly = untrack(() => readOnly);
   /** Editor.load (plan-sharing's restore, /p/:id, Remix) must reach the worker and the tools. */
   const offLoad = editor.onLoad((loaded) => {
     controller?.cancelStroke();
     // The new plan's count comes with its load diff, never the previous plan's.
     rebuilt = null;
+    freshPlan = true;
     // Not ready: onReady's load sends editor.plan, which is already `loaded`.
     if (brush.phase === 'ready') client?.load(loaded);
     if (editor.readOnly) onToolChange('move');
@@ -474,6 +520,15 @@
       onredo={() => controller?.redo()}
     />
   </div>
+{/snippet}
+
+{#snippet paintKey()}
+  <PaintKey
+    ops={editor.plan.ops}
+    result={heightLots.result}
+    shown={heightLots.outline ? shownHeight : null}
+    onshow={showHeight}
+  />
 {/snippet}
 
 {#snippet tabPanel(id: string)}
@@ -545,6 +600,11 @@
         <span data-testid="stroke-chip" class={CHIP}>{brush.announcement}</span>
       {/if}
     </div>
+
+    <!-- The map key at the map's bottom right, above the attribution (and the phone sheet's
+         handle, which lifts the footprint); closed at rest at every width. Below md, while the
+         sheet is open over the map, it hides (as /sim's does under a card's sheet). -->
+    <MapKeyControl key={paintKey} hidden={!wide.current && dock.sheet !== 'closed'} />
 
     {#if crosshair}
       <svg

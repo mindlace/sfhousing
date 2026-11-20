@@ -1,11 +1,21 @@
-// The map key control on the map's bottom right (map-on-screen slice 5, Task 3): on /sim the key
-// is open at rest from md and its counts follow the playhead's month; on a phone it starts closed,
-// clear of Reset view and the attribution, and its panel scrolls inside the room above it. Axe in
-// light and dark, open and closed. Runs against the VITE_E2E build on fixture-0.
+// The map key control on the map's bottom right (map-on-screen slice 5, Tasks 3 and 5): on /sim the
+// key is open at rest from md and its counts follow the playhead's month; on a phone it starts
+// closed, clear of Reset view and the attribution, and its panel scrolls inside the room above it.
+// On Paint (`/`, `/p/:id`) it starts closed at every width, names the building types and each
+// painted height with its lots, and a height's row outlines its lots on the map. Axe in light and
+// dark, open and closed. Runs against the VITE_E2E build on fixture-0.
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import type { SfhFzpDebug } from '../src/lib/fzp/debug';
 import { expectNoA11yViolations } from './helpers/a11y';
 import { slider, waitFilled } from './helpers/run';
+import {
+  PLAN_KEY,
+  gotoEditor,
+  paintOnce,
+  smallText,
+  waitForMap,
+  type Win as PaintWin
+} from './helpers/sharing';
 
 type Win = Window & { __sfhFzp?: SfhFzpDebug; __sfhMap?: { map?: unknown } };
 type Box = { x: number; y: number; width: number; height: number };
@@ -159,5 +169,153 @@ test('/sim key: axe clean, light and dark, open and closed', async ({ page }) =>
       await keyToggle(page).click();
     }
     await expect(keyToggle(page)).toHaveAttribute('aria-expanded', /true|false/);
+  }
+});
+
+// ---- Paint (`/` and `/p/:id`) ----
+
+const OUTLINE_LAYER = 'sim-painted-outline';
+const ROW = /^\s*\d+ stor(y|ies) · [\d,]+ lots? · [\d,]+ rebuilt$/;
+const heightRows = (page: Page): Locator => keyPanel(page).locator('button[data-height]');
+/** The generated controller's deck layers, overlays included. */
+const deckIds = (page: Page): Promise<string[]> =>
+  page.evaluate(() => (window as PaintWin).__sfhMap!.snapshot()?.layerIds ?? []);
+
+/** `/` restored from an autosave of the small plan: 6 and 12 stories, and an erase. */
+async function seedTwoHeights(page: Page): Promise<void> {
+  await page.addInitScript(
+    ([key, plan]) => {
+      if (sessionStorage.getItem('sfh-e2e-seeded')) return;
+      sessionStorage.setItem('sfh-e2e-seeded', '1');
+      localStorage.setItem(
+        key,
+        JSON.stringify({ v: 1, savedAt: '2026-11-18T00:00:00.000Z', plan })
+      );
+    },
+    [PLAN_KEY, smallText.trim()] as const
+  );
+}
+
+/** What Paint's map already shows: the key's toolbar and open panel are clear of all of it. */
+async function expectPaintClear(page: Page): Promise<void> {
+  const ours = [await boxOf(keyToggle(page))];
+  if (await keyPanel(page).isVisible()) ours.push(await boxOf(keyPanel(page)));
+  const theirs = [
+    ...(await boxesOf(page, '.maplibregl-ctrl-bottom-left .maplibregl-ctrl')),
+    ...(await boxesOf(page, '.maplibregl-ctrl-bottom-right .maplibregl-ctrl')),
+    ...(await boxesOf(page, '.sim-map-reset')),
+    ...(await boxesOf(page, '[data-testid="fzp-notices"] > *')),
+    ...(await boxesOf(page, '[data-testid="stroke-chip"]')),
+    ...(await boxesOf(page, '[data-testid="palette-strip"]')),
+    ...(await boxesOf(page, '[data-testid="dock-handle"]')),
+    ...(await boxesOf(page, '[data-testid="dock"]'))
+  ];
+  expect(theirs.length).toBeGreaterThan(0);
+  for (const a of ours)
+    for (const b of theirs) expect(overlaps(a, b), JSON.stringify({ a, b })).toBe(false);
+}
+
+test('/ : the key starts closed; opened, it lists the types and, after a stroke, its height', async ({
+  isMobile,
+  page
+}) => {
+  await gotoEditor(page);
+  await expect(keyToggle(page)).toHaveAttribute('aria-expanded', 'false');
+  await expect(keyToggle(page)).toHaveText('Key');
+  await expectPaintClear(page);
+  await keyToggle(page).click();
+  const types = keyPanel(page).getByRole('list', { name: 'New buildings' });
+  await expect(types.getByRole('listitem')).toHaveText([
+    'ADU',
+    'House or plex',
+    'Walk-up',
+    '5-over-1',
+    'Mid-rise',
+    'Tower'
+  ]);
+  await expect(keyPanel(page).getByRole('list', { name: 'Painted' })).toHaveCount(0);
+  await expectPaintClear(page);
+  await keyToggle(page).click();
+  await expect(keyPanel(page)).toBeHidden();
+
+  await paintOnce(page, isMobile);
+  await keyToggle(page).click();
+  await expect(keyPanel(page)).toBeVisible();
+  await expect(heightRows(page)).toHaveCount(1);
+  await expect(heightRows(page)).toHaveText(/^\s*6 stories · [\d,]+ lots? · [\d,]+ rebuilt$/);
+  await expect(heightRows(page)).toHaveAttribute('aria-pressed', 'false');
+  // The toolbar's words never change.
+  await expect(keyToggle(page)).toHaveText('Key');
+  await expectPaintClear(page);
+});
+
+test('/ : focusing a height outlines it on the map', async ({ page }) => {
+  await seedTwoHeights(page);
+  await gotoEditor(page);
+  await keyToggle(page).click();
+  await expect(heightRows(page)).toHaveCount(2);
+  await expect(heightRows(page).first()).toHaveText(ROW);
+  await expect(heightRows(page).last()).toHaveText(ROW);
+  await expect(heightRows(page).first()).toHaveText(/^\s*6 stories/);
+  await expect(heightRows(page).last()).toHaveText(/^\s*12 stories/);
+  expect(await deckIds(page)).not.toContain(OUTLINE_LAYER);
+  // From the toggle, Shift+Tab reaches the panel's last control: the 12-story row.
+  await keyToggle(page).focus();
+  await page.keyboard.press('Shift+Tab');
+  await expect(heightRows(page).last()).toBeFocused();
+  await expect.poll(() => deckIds(page)).toContain(OUTLINE_LAYER);
+  // Tab back to the toggle: the outline goes with the focus.
+  await page.keyboard.press('Tab');
+  await expect(keyToggle(page)).toBeFocused();
+  await expect.poll(() => deckIds(page)).not.toContain(OUTLINE_LAYER);
+  // A press pins it past the blur; a second press clears it.
+  await heightRows(page).first().focus();
+  await page.keyboard.press('Space');
+  await expect(heightRows(page).first()).toHaveAttribute('aria-pressed', 'true');
+  await page.keyboard.press('Tab');
+  await expect.poll(() => deckIds(page)).toContain(OUTLINE_LAYER);
+  await heightRows(page).first().click();
+  await expect(heightRows(page).first()).toHaveAttribute('aria-pressed', 'false');
+  await page.mouse.move(0, 0);
+  await keyToggle(page).focus();
+  await expect.poll(() => deckIds(page)).not.toContain(OUTLINE_LAYER);
+});
+
+test('/p/:id: the read-only plan lists its heights', async ({ page, request }) => {
+  const res = await request.post('/api/plans', {
+    data: smallText,
+    headers: { 'content-type': 'application/json' }
+  });
+  expect(res.ok()).toBe(true);
+  const { id } = (await res.json()) as { id: string };
+  await page.goto(`/p/${id}`);
+  await waitForMap(page);
+  await expect(keyToggle(page)).toHaveAttribute('aria-expanded', 'false');
+  await keyToggle(page).click();
+  await expect(heightRows(page)).toHaveCount(2);
+  await expect(heightRows(page).first()).toHaveText(
+    /^\s*6 stories · [\d,]+ lots? · [\d,]+ rebuilt$/
+  );
+  await expect(heightRows(page).last()).toHaveText(
+    /^\s*12 stories · [\d,]+ lots? · [\d,]+ rebuilt$/
+  );
+  await heightRows(page).last().click();
+  await expect(heightRows(page).last()).toHaveAttribute('aria-pressed', 'true');
+  await expect.poll(() => deckIds(page)).toContain(OUTLINE_LAYER);
+  await expectPaintClear(page);
+});
+
+test('/ key: axe clean, light and dark', async ({ page }) => {
+  await seedTwoHeights(page);
+  for (const colorScheme of ['light', 'dark'] as const) {
+    await page.emulateMedia({ colorScheme });
+    await gotoEditor(page);
+    await expectNoA11yViolations(page, { include: '[data-testid="map-key-control"]' });
+    await keyToggle(page).click();
+    await expect(heightRows(page)).toHaveCount(2);
+    await expect(heightRows(page).first()).toHaveText(ROW);
+    await heightRows(page).first().click();
+    await expect(heightRows(page).first()).toHaveAttribute('aria-pressed', 'true');
+    await expectNoA11yViolations(page, { include: '[data-testid="map-key-control"]' });
   }
 });

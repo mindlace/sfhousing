@@ -6,7 +6,7 @@ import { gridId, gridIndex, gridLngLat, gridRecord } from '$lib/plan/fixtures/gr
 import type {
   ChunksResponse,
   ErrorResponse,
-  OpLotsResult,
+  HeightLotsResult,
   OpStats,
   ParcelSummary,
   ReadyResponse
@@ -445,7 +445,7 @@ describe('(j) parcelSummary', () => {
   });
 });
 
-describe('opLots (sim UX plan 5)', () => {
+describe('heightLots (map on screen, Task 5)', () => {
   const A = paint('a', 6, [
     [2, 2],
     [5, 2]
@@ -454,87 +454,123 @@ describe('opLots (sim UX plan 5)', () => {
     [4, 2],
     [7, 2]
   ]);
-  function ask(h: Harness, opIds: string[], outlines = false): OpLotsResult | null {
+  function ask(h: Harness, outlineOf: number | null = null): HeightLotsResult | null {
     const reqId = h.sent.length + 2000;
-    h.host.handle({ type: 'opLots', reqId, opIds, outlines });
+    h.host.handle({ type: 'heightLots', reqId, outlineOf });
     const m = h.sent.at(-1)!;
-    if (m.type !== 'opLots' || m.reqId !== reqId) throw new Error('no opLots reply');
+    if (m.type !== 'heightLots' || m.reqId !== reqId) throw new Error('no heightLots reply');
     return m.result;
   }
-  /** The eligible lots the ops cover, as the plan index sees them (the union). */
-  function expected(ops: PlanOp[]): string[] {
-    const index = gridIndex();
-    const out = new Set<string>();
-    for (const op of ops)
-      for (const id of index.covered(op)) if (index.get(id)!.eligible) out.add(id);
-    return [...out].sort();
+  /** Lot ids by the height the resolved plan gives them, as the plan index sees it. */
+  function byHeight(ops: PlanOp[]): Map<number, string[]> {
+    const out = new Map<number, string[]>();
+    for (const [id, env] of resolveEnvelopes(planOf(ops), gridIndex())) {
+      const list = out.get(env.maxStories) ?? [];
+      list.push(id);
+      out.set(env.maxStories, list);
+    }
+    return out;
   }
+  const eligibleCovered = (op: PlanOp) => {
+    const index = gridIndex();
+    return index.covered(op).filter((id) => index.get(id)!.eligible);
+  };
 
-  it('counts the union of the ops eligible covered lots; missing 0 once their chunks are loaded', async () => {
+  it('heightLots: each eligible loaded lot counts once, at the height of the last paint over it', async () => {
     const h = makeHarness();
     start(h);
     load(h, planOf([A, B]));
     await h.flush();
-    const want = expected([A, B]);
-    expect(want.length).toBeGreaterThan(0);
-    expect(want.length).toBeLessThan(expected([A]).length + expected([B]).length); // they overlap
-    expect(ask(h, ['a', 'b'])).toEqual({ lots: want.length, missing: 0, outline: null });
-    expect(ask(h, ['a'])).toMatchObject({ lots: expected([A]).length, missing: 0 });
-    assertScores(h);
+    const want = byHeight([A, B]);
+    const a = eligibleCovered(A).length;
+    const b = eligibleCovered(B).length;
+    const six = want.get(6)!.length;
+    const nine = want.get(9)!.length;
+    expect(six).toBeLessThan(a); // B took the overlap
+    expect(nine).toBe(b);
+    const r = ask(h)!;
+    expect(r).toEqual({
+      heights: [
+        { stories: 6, lots: six, rebuilt: six },
+        { stories: 9, lots: nine, rebuilt: nine }
+      ],
+      missing: 0,
+      outline: null
+    });
+    // A preview is not the plan: the answer does not change.
+    preview(h, paint('p', 12, [[2, 2]]));
+    expect(ask(h)).toEqual(r);
   });
 
-  it('reports the ops cells not loaded yet as missing, and counts only loaded lots', async () => {
+  it('heightLots: a height painted over everywhere keeps its row with 0 lots', async () => {
+    const h = makeHarness();
+    start(h);
+    const under = paint('u', 4, [[3, 2]]);
+    load(h, planOf([under, A]));
+    await h.flush();
+    expect(ask(h)!.heights).toEqual([
+      { stories: 4, lots: 0, rebuilt: 0 },
+      { stories: 6, lots: eligibleCovered(A).length, rebuilt: eligibleCovered(A).length }
+    ]);
+  });
+
+  it('heightLots: an erase after a paint removes the lot; rebuilt counts lots with a new building', async () => {
+    const h = makeHarness();
+    start(h);
+    // stubGenerate builds nothing at 2 stories or fewer: painted, not rebuilt.
+    const low = paint('low', 2, [
+      [2, 4],
+      [6, 4]
+    ]);
+    const cut = erase('cut', [[3, 2]]); // (2, 2) is ineligible
+    load(h, planOf([A, low, cut]));
+    await h.flush();
+    const want = byHeight([A, low, cut]);
+    expect(want.get(6)!.length).toBeLessThan(eligibleCovered(A).length); // the erase took some
+    expect(ask(h)!.heights).toEqual([
+      { stories: 2, lots: want.get(2)!.length, rebuilt: 0 },
+      { stories: 6, lots: want.get(6)!.length, rebuilt: want.get(6)!.length }
+    ]);
+    // Committing and undoing follow the plan.
+    commit(h, B);
+    expect(ask(h)!.heights.map((x) => x.stories)).toEqual([2, 6, 9]);
+    undo(h, 'b');
+    expect(ask(h)!.heights.map((x) => x.stories)).toEqual([2, 6]);
+  });
+
+  it('heightLots: missing counts the plan cells not loaded; outlineOf answers that height only', async () => {
     const h = makeHarness({ mode: 'manual' });
     start(h);
-    load(h, planOf([A, B]));
-    const before = ask(h, ['a', 'b'])!;
-    expect(before.lots).toBe(0);
-    expect(before.missing).toBeGreaterThan(0);
+    load(h, planOf([A, BIG]));
+    const before = ask(h)!;
+    expect(before.missing).toBeGreaterThan(1);
+    expect(before.heights).toEqual([
+      { stories: 5, lots: 0, rebuilt: 0 },
+      { stories: 6, lots: 0, rebuilt: 0 }
+    ]);
     h.release('0_0');
     await h.flush();
-    const mid = ask(h, ['a', 'b'])!;
+    const mid = ask(h)!;
     expect(mid.missing).toBeLessThan(before.missing);
-    expect(mid.lots).toBeGreaterThan(0);
-    for (const c of h.fetches.map((f) => f.match(/parcels\/(.+)\.json/)![1]))
-      if (c !== '0_0') {
-        try {
-          h.release(c);
-        } catch {
-          /* already released */
-        }
-      }
-    await h.flush();
-    expect(ask(h, ['a', 'b'])).toMatchObject({ missing: 0 });
+    expect(mid.missing).toBeGreaterThan(0);
+    expect(mid.heights.reduce((n, x) => n + x.lots, 0)).toBeGreaterThan(0);
+
+    const five = ask(h, 5)!;
+    const fives = [...resolveEnvelopes(planOf([A, BIG]), gridIndex())]
+      .filter(([id, env]) => env.maxStories === 5 && FIXTURE_1_CELL_OF.get(id) === '0_0')
+      .map(([id]) => id)
+      .sort();
+    expect(fives.length).toBeGreaterThan(0);
+    expect([...five.outline!.lots].sort()).toEqual(fives);
+    expect(five.outline!.ringLot.length).toBe(fives.length); // the grid lots have one ring each
+    expect(five.heights).toEqual(mid.heights);
+    expect(ask(h, 30)!.outline!.lots).toEqual([]);
   });
 
-  it('with outlines returns one ring per lot for exactly those lots', async () => {
+  it('heightLots: null before init', () => {
     const h = makeHarness();
-    start(h);
-    load(h, planOf([A, B]));
-    await h.flush();
-    const r = ask(h, ['a', 'b'], true)!;
-    const want = expected([A, B]);
-    expect(r.outline).not.toBeNull();
-    expect([...r.outline!.lots].sort()).toEqual(want);
-    expect(r.outline!.ringLot.length).toBe(want.length); // the grid lots have one ring each
-    expect(r.outline!.starts.length).toBe(want.length + 1);
-    expect(r.outline!.positions.length).toBe(2 * r.outline!.starts[want.length]);
-    expect(r.lots).toBe(want.length);
-  });
-
-  it('skips unknown op ids, and counts nothing for none', async () => {
-    const h = makeHarness();
-    start(h);
-    load(h, planOf([A]));
-    await h.flush();
-    expect(ask(h, ['nope', 'a'])).toMatchObject({ lots: expected([A]).length, missing: 0 });
-    expect(ask(h, [])).toEqual({ lots: 0, missing: 0, outline: null });
-  });
-
-  it('before init the answer is result null', () => {
-    const h = makeHarness();
-    expect(ask(h, ['a'])).toBeNull();
-    expect(ask(h, ['a'], true)).toBeNull();
+    expect(ask(h)).toBeNull();
+    expect(ask(h, 6)).toBeNull();
   });
 });
 

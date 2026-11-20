@@ -5,7 +5,7 @@
 // real SimMap's fallback).
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
-import { page } from 'vitest/browser';
+import { page, userEvent } from 'vitest/browser';
 import { createRawSnippet, flushSync } from 'svelte';
 import '../../routes/layout.css';
 import type { Manifest } from '$lib/data/manifest';
@@ -226,7 +226,7 @@ describe('BrushEditor on the dock', () => {
     ).toBe('320px');
   });
 
-  it('`/` has no painted-areas list: strokes at two heights leave no rows and ask no lot counts', async () => {
+  it('`/` has no painted-areas list: strokes at two heights leave no rows and draw no outline', async () => {
     const { w, editor } = await setup();
     await ready(w);
     click(page.getByRole('radio', { name: 'Paint' }).element());
@@ -238,7 +238,7 @@ describe('BrushEditor on the dock', () => {
     expect(page.getByRole('list', { name: 'Painted areas' }).elements()).toEqual([]);
     expect(document.querySelector('[data-paint-row]')).toBeNull();
     expect(page.getByRole('button', { name: /^Remove/ }).elements()).toEqual([]);
-    expect(w.allOf('opLots')).toEqual([]);
+    expect(w.allOf('heightLots').every((r) => r.outlineOf === null)).toBe(true);
     expect(overlayIds()).not.toContain(OUTLINE_LAYER_ID);
   });
 
@@ -588,7 +588,7 @@ describe('BrushEditor on the dock', () => {
     expect(page.getByRole('radiogroup', { name: 'Tool' }).elements()).toEqual([]);
     expect(page.getByRole('button', { name: /^Undo/ }).elements()).toEqual([]);
     expect(document.querySelector('[data-paint-row]')).toBeNull();
-    expect(w.allOf('opLots')).toEqual([]);
+    expect(w.allOf('heightLots').every((r) => r.outlineOf === null)).toBe(true);
 
     const before = w.posts.length;
     key('z');
@@ -624,5 +624,147 @@ describe('BrushEditor on the dock', () => {
     editor().load(planOf(op('a', 6)), { readOnly: true });
     const tab = page.getByRole('tabpanel');
     await expect.element(tab.getByText('6 stories', { exact: true })).toBeVisible();
+  });
+});
+
+/** One square lot ring, about 10 m a side, for an outline answer. */
+const LOT_OUTLINE = {
+  lots: ['l1'],
+  ringLot: new Uint32Array([0]),
+  starts: new Uint32Array([0, 5]),
+  positions: new Float64Array([
+    -122.42, 37.76, -122.4199, 37.76, -122.4199, 37.7601, -122.42, 37.7601, -122.42, 37.76
+  ])
+};
+const keyToggle = () => page.getByRole('button', { name: 'Map key' });
+const heightRows = () =>
+  [
+    ...document.querySelectorAll<HTMLButtonElement>('[data-testid="map-key-panel"] [data-height]')
+  ].map((b) => b.textContent!.trim());
+
+describe("BrushEditor's map key", () => {
+  it("the map key's Painted rows follow the plan: two heights, then Ctrl+Z, then one", async () => {
+    const { w, editor } = await setup();
+    await ready(w);
+    await expect.element(keyToggle()).toHaveAttribute('aria-expanded', 'false');
+    click(keyToggle().element());
+    const panel = page.getByRole('group', { name: 'Map key' });
+    await expect.element(panel.getByRole('list', { name: 'New buildings' })).toBeVisible();
+    expect(panel.getByRole('list', { name: 'Painted' }).elements()).toEqual([]);
+    click(page.getByRole('radio', { name: 'Paint' }).element());
+    stroke();
+    click(page.getByRole('button', { name: '8 stories', exact: true }).element());
+    stroke();
+    await expect.poll(() => w.allOf('commit').length).toBe(2);
+    await expect.poll(heightRows).toEqual(['6 stories · …', '8 stories · …']);
+    await expect.poll(() => w.allOf('heightLots').length).toBe(2);
+    w.heightLots({
+      heights: [
+        { stories: 6, lots: 4, rebuilt: 3 },
+        { stories: 8, lots: 2, rebuilt: 2 }
+      ],
+      missing: 0,
+      outline: null
+    });
+    await expect
+      .poll(heightRows)
+      .toEqual(['6 stories · 4 lots · 3 rebuilt', '8 stories · 2 lots · 2 rebuilt']);
+    key('z');
+    expect(editor().plan.ops).toHaveLength(1);
+    await expect.poll(heightRows).toEqual(['6 stories · 4 lots · 3 rebuilt']);
+    // The undo asks again; its answer replaces the counts.
+    await expect.poll(() => w.allOf('heightLots').length).toBe(3);
+    w.heightLots({ heights: [{ stories: 6, lots: 5, rebuilt: 3 }], missing: 0, outline: null });
+    await expect.poll(heightRows).toEqual(['6 stories · 5 lots · 3 rebuilt']);
+  });
+
+  it('focusing a height puts its outline in the outline slot; Ctrl+Z removing that height clears it', async () => {
+    const { w, editor } = await setup({ plan: planOf(op('a', 6)) });
+    await ready(w);
+    await expect.poll(() => w.allOf('heightLots').length).toBe(1);
+    click(page.getByRole('radio', { name: 'Paint' }).element());
+    click(page.getByRole('button', { name: '8 stories', exact: true }).element());
+    stroke();
+    await expect.poll(() => editor().plan.ops).toHaveLength(2);
+    click(keyToggle().element());
+    await expect.poll(heightRows).toHaveLength(2);
+    // From the toggle, Shift+Tab reaches the panel's last control: the 8-story row.
+    (keyToggle().element() as HTMLElement).focus();
+    await userEvent.keyboard('{Shift>}{Tab}{/Shift}');
+    expect((document.activeElement as HTMLElement).dataset.height).toBe('8');
+    await expect.poll(() => w.lastOf('heightLots')!.outlineOf).toBe(8);
+    w.heightLots({
+      heights: [
+        { stories: 6, lots: 1, rebuilt: 1 },
+        { stories: 8, lots: 1, rebuilt: 1 }
+      ],
+      missing: 0,
+      outline: LOT_OUTLINE
+    });
+    await expect.poll(overlayIds).toContain(OUTLINE_LAYER_ID);
+    // The outline sits under the brush ring.
+    const ids = overlayIds();
+    expect(ids.indexOf(OUTLINE_LAYER_ID)).toBe(0);
+    key('z');
+    await expect.poll(overlayIds).not.toContain(OUTLINE_LAYER_ID);
+    expect(heightRows()).toHaveLength(1);
+  });
+
+  it('a restored plan asks heightLots once, and again on a chunk while cells are missing', async () => {
+    const { w } = await setup({ plan: planOf(op('a', 6), op('b', 9)) });
+    expect(w.allOf('heightLots')).toEqual([]); // not before the worker is ready
+    await ready(w);
+    await expect.poll(() => w.allOf('heightLots').length).toBe(1);
+    expect(w.types().indexOf('load')).toBeLessThan(w.types().indexOf('heightLots'));
+    w.emit(scoreDiff(w.lastOf('load')!.rev, 'load', 1));
+    expect(w.allOf('heightLots')).toHaveLength(1);
+    w.heightLots({ heights: [{ stories: 6, lots: 3, rebuilt: 3 }], missing: 2, outline: null });
+    click(keyToggle().element());
+    await expect.poll(heightRows).toEqual(['6 stories · 3+ lots · 3 rebuilt', '9 stories · …']);
+    w.emit({ type: 'chunks', status: { '0_0': 'ready' }, pending: 1, failed: [] });
+    expect(w.allOf('heightLots')).toHaveLength(2);
+    w.heightLots({
+      heights: [
+        { stories: 6, lots: 5, rebuilt: 4 },
+        { stories: 9, lots: 1, rebuilt: 1 }
+      ],
+      missing: 0,
+      outline: null
+    });
+    await expect
+      .poll(heightRows)
+      .toEqual(['6 stories · 5 lots · 4 rebuilt', '9 stories · 1 lot · 1 rebuilt']);
+    w.emit({ type: 'chunks', status: { '0_1': 'ready' }, pending: 0, failed: [] });
+    expect(w.allOf('heightLots')).toHaveLength(2);
+  });
+
+  it('read-only (/p/:id): the key lists the heights and outlines them; no tools', async () => {
+    const { w } = await setup({
+      readOnly: true,
+      plan: planOf(op('a', 8), op('b', null), op('c', 6))
+    });
+    await ready(w);
+    await expect.poll(() => w.allOf('heightLots').length).toBe(1);
+    expect(page.getByRole('radiogroup', { name: 'Tool' }).elements()).toEqual([]);
+    click(keyToggle().element());
+    await expect.poll(heightRows).toEqual(['6 stories · …', '8 stories · …']);
+    const eight = page.getByRole('button', { name: /^8 stories/ });
+    click(eight.element());
+    await expect.element(eight).toHaveAttribute('aria-pressed', 'true');
+    await expect.poll(() => w.lastOf('heightLots')!.outlineOf).toBe(8);
+    w.heightLots({
+      heights: [
+        { stories: 6, lots: 2, rebuilt: 2 },
+        { stories: 8, lots: 1, rebuilt: 0 }
+      ],
+      missing: 0,
+      outline: LOT_OUTLINE
+    });
+    await expect.poll(overlayIds).toContain(OUTLINE_LAYER_ID);
+    await expect
+      .poll(heightRows)
+      .toEqual(['6 stories · 2 lots · 2 rebuilt', '8 stories · 1 lot · 0 rebuilt']);
+    click(eight.element());
+    await expect.poll(overlayIds).not.toContain(OUTLINE_LAYER_ID);
   });
 });

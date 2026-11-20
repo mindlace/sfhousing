@@ -28,7 +28,7 @@ export interface RouterDeps {
   /**
    * The router's own answers: brush, outline, preview and lid requests outside scenario mode
    * (`no-session`), and the requests playback mode does not serve (a null summary or card,
-   * `bad-request`), and the editor's `opLots` outside editor mode (`result: null`).
+   * `bad-request`), and the editor's `heightLots` outside editor mode (`result: null`).
    */
   post(msg: ScenarioResponse | PlaybackResponse | SimResponse | TimelineHostResponse): void;
 }
@@ -74,10 +74,10 @@ export function createWorkerRouter(deps: RouterDeps): {
         case 'undo':
           deps.editor.handle(req);
           return;
-        case 'opLots':
+        case 'heightLots':
           // The editor's own request; with no editor session the answer is null, as for a summary.
           if (mode === 'editor') deps.editor.handle(req);
-          else deps.post({ type: 'opLots', reqId: req.reqId, result: null });
+          else deps.post({ type: 'heightLots', reqId: req.reqId, result: null });
           return;
         case 'initScenario':
           mode = 'scenario';

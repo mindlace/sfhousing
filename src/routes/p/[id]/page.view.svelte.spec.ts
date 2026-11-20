@@ -145,7 +145,7 @@ describe('/p/[id] score and dock', () => {
     expect(page.getByRole('radiogroup', { name: 'Tool' }).elements()).toEqual([]);
     expect(page.getByRole('button', { name: /^Undo/ }).elements()).toEqual([]);
     expect(page.getByRole('button', { name: /^Remove/ }).elements()).toEqual([]);
-    expect(w.allOf('opLots')).toEqual([]);
+    expect(w.allOf('heightLots').every((r) => r.outlineOf === null)).toBe(true);
     expect(overlayIds()).not.toContain(OUTLINE_LAYER_ID);
 
     // Ctrl+Z and Ctrl+Shift+Z do nothing: nothing goes to the worker.

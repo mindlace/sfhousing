@@ -380,6 +380,57 @@ test.describe('mobile', () => {
       await expect(pop).toBeHidden();
     }
   });
+
+  test('375 and 320 px on /: the key toolbar clears the strip, Reset, the handle and the attribution', async ({
+    page
+  }) => {
+    const toolbar = page.getByTestId('map-key-toggle');
+    const panel = page.getByRole('group', { name: 'Map key' });
+    const reset = page.getByRole('button', { name: 'Reset view' });
+    const others = (): [string, Locator][] => [
+      ['palette strip', strip(page)],
+      ['Reset view', reset],
+      ['dock handle', handle(page)],
+      ['attribution', attribution(page)]
+    ];
+    for (const width of [375, 320]) {
+      await page.setViewportSize({ width, height: 812 });
+      await gotoEditor(page);
+      await chooseTool(page, 'Paint');
+      await expect(strip(page)).toBeVisible();
+      for (const expanded of [true, false]) {
+        await setAttribution(page, expanded);
+        await expect(toolbar).toHaveAttribute('aria-expanded', 'false');
+        const t = await box(toolbar);
+        expect(t.width).toBeGreaterThanOrEqual(44);
+        expect(t.height).toBeGreaterThanOrEqual(44);
+        await expectApart([['key toolbar', toolbar]], others());
+        await expectUnobscured(toolbar);
+      }
+      // The attribution collapsed: the toolbar sits 10 px above the strip (the plan's measure).
+      const t = await box(toolbar);
+      const s = await box(strip(page));
+      expect(Math.abs(s.y - (t.y + t.height) - 10)).toBeLessThanOrEqual(1);
+      // Opened, its panel stays in the map, clear of the same controls, with no sideways scroll.
+      await toolbar.tap();
+      await expect(panel).toBeVisible();
+      await expectInside(panel, page.getByTestId('map-root'));
+      await expectApart([['key panel', panel]], others());
+      await expectUnobscured(panel.getByRole('list', { name: 'New buildings' }));
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+        width
+      );
+      await page.keyboard.press('Escape');
+      await expect(panel).toBeHidden();
+      // The sheet open over the map: the toolbar hides, and comes back when it folds.
+      await handle(page).tap();
+      await expect(handle(page)).toHaveAttribute('aria-expanded', 'true');
+      await expect(toolbar).toBeHidden();
+      await handle(page).tap();
+      await expect(handle(page)).toHaveAttribute('aria-expanded', 'false');
+      await expect(toolbar).toBeVisible();
+    }
+  });
 });
 
 test.describe('desktop', () => {
