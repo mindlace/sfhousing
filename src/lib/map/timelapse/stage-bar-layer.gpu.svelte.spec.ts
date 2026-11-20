@@ -511,9 +511,9 @@ describe('StageBarLayer on the GPU', () => {
   });
 
   it('far: a held-back bar draws from the day its winner ends, as its pieces say', async () => {
-    // 20 m east of the anchor: within a far bar's spacing at zoom 13.
+    // 100 m east of the anchor (about 6.6 px at zoom 13): within a far bar's spacing at zoom 13.
     const east: [number, number, number] = [
-      ANCHOR[0] + 20 / (111_320 * Math.cos((ANCHOR[1] * Math.PI) / 180)),
+      ANCHOR[0] + 100 / (111_320 * Math.cos((ANCHOR[1] * Math.PI) / 180)),
       ANCHOR[1],
       ANCHOR[2]
     ];
@@ -529,10 +529,12 @@ describe('StageBarLayer on the GPU', () => {
     // The east anchor falls between pixels: its box may round either way, by at most 1 px.
     const near = (got: number[] | null, want: number[]) =>
       got !== null && got.every((v, i) => Math.abs(v - want[i]) <= 1);
+    const atE99 = box(E1 + 99);
+    // Projected in the zoom 13 camera just drawn, not the one a previous test left.
     const here = boxOf(barRect(13, 'far'));
     const there = boxOf(barRect(13, 'far', east));
     expect(there[0] - here[0]).toBeGreaterThanOrEqual(2); // the two are told apart
-    expect(box(E1 + 99)).toEqual(here);
+    expect(atE99).toEqual(here);
     expect(near(box(E1 + 100), there)).toBe(true);
     expect(near(box(E1 + 299), there)).toBe(true);
     expect(box(E1 + 300)).toBeNull();
