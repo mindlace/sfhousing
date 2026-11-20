@@ -163,7 +163,8 @@ export const stub: Stub = {
     applyTimeline: record('applyTimeline'),
     setTime: record('setTime'),
     setTimelineLookups: record('setTimelineLookups'),
-    setHalos: record('setHalos')
+    setHalos: record('setHalos'),
+    setBarMode: record('setBarMode')
   },
   reset() {
     stub.calls = [];

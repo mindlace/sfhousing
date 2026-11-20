@@ -18,6 +18,8 @@ import { Geometry, Model } from '@luma.gl/engine';
 import type { ShaderModule } from '@luma.gl/shadertools';
 import { BAR_GROW_ZOOMS, RAMP } from './bars';
 import {
+  BAR_FAR_MIN_ZOOM,
+  BAR_FAR_PX,
   BAR_H_PX,
   BAR_MIN_ZOOM,
   BAR_OFFSET_PX,
@@ -44,6 +46,8 @@ type Rgb = [number, number, number];
 /** Uniforms of the `stageBar` module. Flat colours are 0–1 sRGB; ramp stops are linear RGB. */
 export type StageBarModuleProps = {
   day: number;
+  /** 1 in far mode (the `far` prop), else 0. */
+  far: number;
   track: Rgb;
   edge: Rgb;
   dead: Rgb;
@@ -61,6 +65,7 @@ const glslFloat = (v: number) => (Number.isInteger(v) ? v.toFixed(1) : String(v)
 const uniformBlock = /* glsl */ `\
 layout(std140) uniform stageBarUniforms {
   float day;
+  float far;
   vec3 track;
   vec3 edge;
   vec3 dead;
@@ -77,6 +82,7 @@ const stageBarModule = {
   fs: uniformBlock,
   uniformTypes: {
     day: 'f32',
+    far: 'f32',
     track: 'vec3<f32>',
     edge: 'vec3<f32>',
     dead: 'vec3<f32>',
@@ -114,6 +120,8 @@ flat out vec4 vColor;
 
 const int SB_MAX_SEGMENTS = ${MAX_SEGMENTS};
 const float SB_BAR_MIN_ZOOM = ${glslFloat(BAR_MIN_ZOOM)};
+const float SB_BAR_FAR_MIN_ZOOM = ${glslFloat(BAR_FAR_MIN_ZOOM)};
+const vec2 SB_BAR_FAR_PX = vec2(${glslFloat(BAR_FAR_PX.w)}, ${glslFloat(BAR_FAR_PX.h)});
 const float SB_BAR_ZOOM_RAMP = ${glslFloat(BAR_ZOOM_RAMP)};
 const float SB_BAR_GROW_ZOOMS = ${glslFloat(BAR_GROW_ZOOMS)};
 const vec2 SB_BAR_W_PX = vec2(${glslFloat(BAR_W_PX[0])}, ${glslFloat(BAR_W_PX[1])});
@@ -176,9 +184,14 @@ float sb_chanceAt(float row, float m) {
   return texelFetch(chanceTexture, ivec2(int(col), int(row)), 0).r;
 }
 
-// The bar on day t at map zoom 'zoom' (§4.4). Port of evalBar.
-SbBarEval sb_evalBar(SbBarAttrs b, float t, float zoom) {
-  float gate = max(SB_BAR_MIN_ZOOM, b.minZoom);
+// barGate: the mode's lowest zoom gate.
+float sb_barGate(bool far) {
+  return far ? SB_BAR_FAR_MIN_ZOOM : SB_BAR_MIN_ZOOM;
+}
+
+// The bar on day t at zoom 'zoom' (§4.4; in far mode the zoom at its anchor). Port of evalBar.
+SbBarEval sb_evalBar(SbBarAttrs b, float t, float zoom, bool far) {
+  float gate = max(sb_barGate(far), b.minZoom);
   float zoomAlpha = clamp((zoom - (gate - SB_BAR_ZOOM_RAMP)) / SB_BAR_ZOOM_RAMP, 0.0, 1.0);
   bool dead = b.endKind == 2.0 && t >= b.endDay;
   bool complete = t >= b.completeDay;
@@ -255,15 +268,30 @@ vec3 sb_barColor(SbBarEval e) {
   return sb_toSrgb(sb_rampLinear(e.chance));
 }
 
-// barSizePx: W = 32 → 48 px and H = 6 → 8 px from z15 to z17.
-vec2 sb_barSize(float zoom) {
+// barSizePx: far, SB_BAR_FAR_PX at every zoom; street, W = 32 → 48 px and H = 6 → 8 px from
+// z15 to z17.
+vec2 sb_barSize(float zoom, bool far) {
+  if (far) return SB_BAR_FAR_PX;
   float g = clamp((zoom - SB_BAR_MIN_ZOOM) / SB_BAR_GROW_ZOOMS, 0.0, 1.0);
   return vec2(mix(SB_BAR_W_PX.x, SB_BAR_W_PX.y, g), mix(SB_BAR_H_PX.x, SB_BAR_H_PX.y, g));
 }
 
+// barZoomAt: street, the map's zoom; far, the zoom at the anchor (focal depth over its clip w),
+// never shown at or behind the camera.
+float sb_barZoomAt(float zoom, float w, bool far) {
+  if (!far) return zoom;
+  return w > 0.0 ? zoom + log2(project.focalDistance / w) : -1.0e9;
+}
+
 void main(void) {
+  bool far = stageBar.far > 0.5;
   // project.scale is 2^zoom (§4.0).
   float zoom = log2(project.scale);
+  vec4 anchorCommon;
+  vec4 anchor = project_position_to_clipspace(
+    instanceAnchor, instanceAnchor64Low, vec3(0.0), anchorCommon
+  );
+  geometry.position = anchorCommon;
   SbBarAttrs a = SbBarAttrs(
     instanceTimes.x,
     instanceTimes.y,
@@ -285,14 +313,9 @@ void main(void) {
     ),
     instanceMeta.z
   );
-  SbBarEval e = sb_evalBar(a, stageBar.day, zoom);
+  SbBarEval e = sb_evalBar(a, stageBar.day, sb_barZoomAt(zoom, anchor.w, far), far);
 
-  vec2 size = sb_barSize(zoom);
-  vec4 anchorCommon;
-  vec4 anchor = project_position_to_clipspace(
-    instanceAnchor, instanceAnchor64Low, vec3(0.0), anchorCommon
-  );
-  geometry.position = anchorCommon;
+  vec2 size = sb_barSize(zoom, far);
   // Bottom edge SB_BAR_OFFSET_PX above the anchor, centred on it. project_pixel_size_to_clipspace
   // is exact at the focal plane's w; rescaling to the anchor's w keeps the bar 'size' px at any
   // height above the ground.
@@ -346,7 +369,7 @@ const srgb01 = (theme: Theme, name: TokenName): Rgb =>
     .map((v) => v / 255) as Rgb;
 
 /** Per-theme colour uniforms (§4.6), built once at module load. */
-const COLOURS: Record<Theme, Omit<StageBarModuleProps, 'day' | 'chanceTexture'>> = {
+const COLOURS: Record<Theme, Omit<StageBarModuleProps, 'day' | 'far' | 'chanceTexture'>> = {
   light: colours('light'),
   dark: colours('dark')
 };
@@ -374,6 +397,11 @@ type _StageBarLayerProps = {
   chance: ChanceTexture;
   /** Shared clock, mutated in place by `setTime`; `draw` reads `day` and `theme`. */
   clock: TimelineClock;
+  /**
+   * Far mode (`setBarMode('far')`): the gate from BAR_FAR_MIN_ZOOM, read at each anchor's zoom,
+   * and BAR_FAR_PX at every zoom. false (the default): street, today's bars.
+   */
+  far: boolean;
 };
 
 export type StageBarLayerProps = _StageBarLayerProps & LayerProps;
@@ -381,7 +409,8 @@ export type StageBarLayerProps = _StageBarLayerProps & LayerProps;
 const defaultProps: DefaultProps<StageBarLayerProps> = {
   // Identity compares: a new object is a change, the same object mutated in place is not.
   chance: { type: 'object', value: null as unknown as ChanceTexture },
-  clock: { type: 'object', value: null as unknown as TimelineClock }
+  clock: { type: 'object', value: null as unknown as TimelineClock },
+  far: false
 };
 
 /**
@@ -460,10 +489,11 @@ export class StageBarLayer extends Layer<_StageBarLayerProps> {
     const { clock } = this.props;
     // luma copies the values (`ShaderInputs.setProps` merges them into its own uniforms), so one
     // object per layer, mutated in place, serves every draw.
-    const u = (this.state.uniforms ??= { stageBar: { day: 0, ...COLOURS.light } });
+    const u = (this.state.uniforms ??= { stageBar: { day: 0, far: 0, ...COLOURS.light } });
     const sb = u.stageBar;
     const c = COLOURS[clock.theme];
     sb.day = clock.day;
+    sb.far = this.props.far ? 1 : 0;
     sb.track = c.track;
     sb.edge = c.edge;
     sb.dead = c.dead;

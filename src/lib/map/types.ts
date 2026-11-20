@@ -133,7 +133,15 @@ export interface SimMapHandle {
    * policy; null (the default) draws none. Kept until the timeline controller exists, as setTime.
    */
   setHalos(o: { from: Day } | null): void;
+  /**
+   * 'street' (the default): today's bars, from zoom 15, growing to 48 by 8 px. 'far': from zoom
+   * 12 at 32 by 6 px at every zoom. Kept until the timeline controller exists, as setTime.
+   */
+  setBarMode(mode: BarMode): void;
 }
+
+/** How the progress bars draw (docs/dev/map-interfaces.md "Bar modes"). */
+export type BarMode = 'street' | 'far';
 
 /** T7: one set of timeline lookups (T12 `chanceTable` and `typicalMonths` outputs). */
 export interface TimelineLookupSet {

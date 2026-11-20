@@ -12,9 +12,15 @@ import { MAX_CELLS_PER_SLICE, SWAP_CELLS_PER_SLICE } from './hide';
 import { TOKENS, hexToRgba, type RGBA } from './palette';
 import { registerCellBounds } from './cull';
 import { appearanceColor } from './appearance';
-import { TYPOLOGY_ORDER, type Theme, type TimedPackedCell, type TimelineUpdate } from './types';
+import {
+  TYPOLOGY_ORDER,
+  type BarMode,
+  type Theme,
+  type TimedPackedCell,
+  type TimelineUpdate
+} from './types';
 import { validateCityDelta } from './city-delta';
-import { buildBars } from './timelapse/bars';
+import { barZoomAt, buildBars, evalBar } from './timelapse/bars';
 import { HALO_KIND, buildHalos, evalHalo, type HaloAttrs } from './timelapse/halos';
 import {
   CityStore,
@@ -182,6 +188,8 @@ export class TimelineController {
   private barsLayer: Layer | null = null;
   /** Cells changed since the bars were last built. */
   private barsDirty = false;
+  /** `setBarMode`: how the bars declutter and draw ('street', the default, is today's). */
+  private barMode: BarMode = 'street';
   /** `setHalos`: events after this day ring; null (the default) emits no halo layer. */
   private haloFrom: Day | null = null;
   /** `setReducedMotion`: the halo layer's `reduced` prop. */
@@ -335,6 +343,26 @@ export class TimelineController {
   }
 
   /**
+   * How the bars draw: 'street' (the default) or 'far' (docs/dev/map-interfaces.md "Bar modes").
+   * A change rebuilds the bars once (declutter in the mode, a new layer with `far`); the same
+   * mode again does nothing; before the first `apply` it is only kept.
+   */
+  setBarMode(mode: BarMode): void {
+    if (mode !== 'street' && mode !== 'far')
+      throw new RangeError(`setBarMode: mode must be 'street' or 'far', got ${String(mode)}`);
+    if (this.destroyed || mode === this.barMode) return;
+    this.barMode = mode;
+    if (this.lastRevision < 0) return;
+    // Queued slices end in a rebuild that reads the mode; otherwise rebuild now.
+    if (this.queue.length > 0) {
+      this.barsDirty = true;
+      return;
+    }
+    this.rebuildBars();
+    this.emit();
+  }
+
+  /**
    * The halo and city layers' `reduced` prop, set on the layers there are: their records are not
    * rebuilt.
    */
@@ -415,6 +443,7 @@ export class TimelineController {
       days.add(h.day);
       if (evalHalo(h, this.clock.day, this.reduced, zoom, ringMinZoom).visible) halosShown++;
     }
+    const barsShown = this.barsShown(view);
     const records = this.cityLayer ? this.cityRecords : [];
     const cityDays = new Set<number>();
     let cityRings = 0;
@@ -463,8 +492,32 @@ export class TimelineController {
       cityRings,
       cityGlows,
       cityBuilds: this.cityBuilds,
-      ringMinZoom
+      ringMinZoom,
+      barMode: this.barMode,
+      barsShown
     };
+  }
+
+  /**
+   * Bars `evalBar` shows on the clock's day at the zoom at each anchor, anchors in the view (the
+   * anchor's ground point; the bar's px offset above it is ignored). Debug only.
+   */
+  private barsShown(view: DebugView | null): number {
+    const l = this.lookups;
+    if (!this.barsLayer || !l) return 0;
+    const mode = this.barMode;
+    const focalW = view ? view.clip(view.centre[0], view.centre[1])[2] : 1;
+    let n = 0;
+    for (const b of this.bars) {
+      let zoom = Infinity;
+      if (view) {
+        const [x, y, w] = view.clip(b.anchor[0], b.anchor[1]);
+        if (!(w > 0 && Math.abs(x) <= w && Math.abs(y) <= w)) continue;
+        zoom = barZoomAt(view.zoom, focalW, w, mode);
+      }
+      if (evalBar(b, l, this.clock.day, zoom, mode).visible) n++;
+    }
+    return n;
   }
 
   /**
@@ -634,12 +687,13 @@ export class TimelineController {
     }
     const sorted = [...this.cells].sort(byKey).map(([, c]) => c.pack);
     const bars = buildBars(sorted, l);
-    declutter(bars);
+    declutter(bars, this.barMode);
     this.bars = bars;
     this.barsLayer = new this.deps.StageBarLayer({
       data: bars,
       chance: this.chance,
       clock: this.clock,
+      far: this.barMode === 'far',
       ...(this.labelBeforeId ? { beforeId: this.labelBeforeId } : {})
     } as ConstructorParameters<TimelineDeps['StageBarLayer']>[0]) as unknown as Layer;
   }

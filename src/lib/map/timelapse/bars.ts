@@ -3,9 +3,11 @@
 // `evalBar`'s rule order and straight-line shape; do not restructure one without the other.
 import type { RGBA } from '../palette';
 import { TOKENS, hexToRgba } from '../palette';
-import type { Theme, TimedPackedCell } from '../types';
+import type { BarMode, Theme, TimedPackedCell } from '../types';
 import { typicalDays, validateTimedCell } from './encode';
 import {
+  BAR_FAR_MIN_ZOOM,
+  BAR_FAR_PX,
   BAR_H_PX,
   BAR_MIN_ZOOM,
   BAR_TOP_GAP_M,
@@ -82,7 +84,8 @@ function slotBar(c: TimedPackedCell, s: number, l: TimelineLookups): SlotBar {
     segEntry,
     segTypicalDays: segs.map((st) => typicalDays(l, pathway, st, cohort)),
     segRow: segs.map((st) => chanceRow(pi, st, cohort)),
-    minZoom: BAR_MIN_ZOOM
+    minZoom: BAR_MIN_ZOOM,
+    policy: (c.slotFlags?.[s] ?? 0) !== 0
   };
 }
 
@@ -148,9 +151,35 @@ function chanceAt(l: TimelineLookups, row: number, m: number): number {
   return values[Math.min(Math.max(m, 0), values.length - 1)];
 }
 
-/** The bar on day `t` at map zoom `zoom` (§4.4). CPU reference of the bar shader. */
-export function evalBar(b: BarAttrs, l: TimelineLookups, t: Day, zoom: number): BarEval {
-  const gate = Math.max(BAR_MIN_ZOOM, b.minZoom);
+/** The mode's lowest zoom gate: BAR_MIN_ZOOM (street) or BAR_FAR_MIN_ZOOM (far). */
+export function barGate(mode: BarMode): number {
+  return mode === 'far' ? BAR_FAR_MIN_ZOOM : BAR_MIN_ZOOM;
+}
+
+/**
+ * The zoom `evalBar` reads for a bar: in street mode the map's; in far mode the zoom at the
+ * anchor, `zoom + log2(focalW / w)`, where `w` is the anchor's clip w and `focalW` the view
+ * centre's (deck's `project.focalDistance`). Toward the horizon a ground metre spans fewer px, so
+ * a far bar there needs the gate a nearer one would. -Infinity at or behind the camera.
+ */
+export function barZoomAt(zoom: number, focalW: number, w: number, mode: BarMode): number {
+  if (mode !== 'far') return zoom;
+  return w > 0 ? zoom + Math.log2(focalW / w) : -Infinity;
+}
+
+/**
+ * The bar on day `t` at zoom `zoom` (§4.4; in far mode the zoom at its anchor, `barZoomAt`). CPU
+ * reference of the bar shader. The mode moves the zoom gate only; timing, fill and colour are the
+ * same in both.
+ */
+export function evalBar(
+  b: BarAttrs,
+  l: TimelineLookups,
+  t: Day,
+  zoom: number,
+  mode: BarMode = 'street'
+): BarEval {
+  const gate = Math.max(barGate(mode), b.minZoom);
   const zoomAlpha = clamp01((zoom - (gate - BAR_ZOOM_RAMP)) / BAR_ZOOM_RAMP);
   const dead = b.endKind === 2 && t >= b.endDay;
   const complete = t >= b.completeDay;
@@ -189,8 +218,12 @@ export function evalBar(b: BarAttrs, l: TimelineLookups, t: Day, zoom: number): 
 /** Zooms over which the bar grows from its z15 size to its full size (the shader's too). */
 export const BAR_GROW_ZOOMS = 2;
 
-/** Bar size in px: `W = clamp(32 + 8·(zoom − 15), 32, 48)`, `H = clamp(6 + (zoom − 15), 6, 8)`. */
-export function barSizePx(zoom: number): { w: number; h: number } {
+/**
+ * Bar size in px. Street: `W = clamp(32 + 8·(zoom − 15), 32, 48)`, `H = clamp(6 + (zoom − 15),
+ * 6, 8)`. Far: BAR_FAR_PX at every zoom.
+ */
+export function barSizePx(zoom: number, mode: BarMode = 'street'): { w: number; h: number } {
+  if (mode === 'far') return { w: BAR_FAR_PX.w, h: BAR_FAR_PX.h };
   const g = clamp01((zoom - BAR_MIN_ZOOM) / BAR_GROW_ZOOMS);
   return {
     w: BAR_W_PX[0] + (BAR_W_PX[1] - BAR_W_PX[0]) * g,

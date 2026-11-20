@@ -5,9 +5,11 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { Deck, MapView, type Layer, type MapViewState, type Material } from '@deck.gl/core';
 import { SolidPolygonLayer } from '@deck.gl/layers';
 import { StageBarLayer } from './stage-bar-layer';
-import { barColor, barSizePx, evalBar } from './bars';
+import { barColor, barSizePx, barZoomAt, evalBar } from './bars';
 import {
+  BAR_FAR_MIN_ZOOM,
   BAR_MIN_ZOOM,
+  BAR_ZOOM_RAMP,
   BAR_OFFSET_PX,
   COMPLETE_FADE_DAYS,
   COMPLETE_HOLD_DAYS,
@@ -18,7 +20,7 @@ import { chanceRow, packChanceTexture, type ChanceTexture } from './lookups';
 import type { BarAttrs, BarEval, TimelineClock, TimelineLookups } from './types';
 import { CHANCE_LEN, timelineLookups } from '../fixtures/timeline-lookups';
 import { TOKENS, hexToRgba, type TokenName } from '../palette';
-import type { Theme } from '../types';
+import type { BarMode, Theme } from '../types';
 import { localFrame } from '$lib/generator/geo';
 import { DYING_DAYS, MONTH_DAYS, OPEN_DAY, monthsIn, type Day } from '$lib/timelapse/time';
 import { PATHWAYS, type Stage } from '$lib/timelapse/types';
@@ -109,7 +111,8 @@ function makeBar(
     segEntry: segs.map(([, d]) => d),
     segTypicalDays: segs.map(([st]) => typicalDays(L, pathway, st, 0)),
     segRow: segs.map(([st]) => chanceRow(pi, st, 0)),
-    minZoom
+    minZoom,
+    policy: false
   };
 }
 
@@ -165,8 +168,8 @@ describe('StageBarLayer on the GPU', () => {
   const errors: Error[] = [];
   const clock: TimelineClock = { day: E1, theme: 'light' };
 
-  function bars(data: BarAttrs[], chance: ChanceTexture = TEX): StageBarLayer {
-    return new StageBarLayer({ data, chance, clock });
+  function bars(data: BarAttrs[], chance: ChanceTexture = TEX, far?: boolean): StageBarLayer {
+    return new StageBarLayer({ data, chance, clock, ...(far === undefined ? {} : { far }) });
   }
 
   /** Each layer model's pipeline link status (luma WEBGLRenderPipeline). */
@@ -198,10 +201,10 @@ describe('StageBarLayer on the GPU', () => {
     await new Promise((r) => setTimeout(r, 10));
   }
 
-  function render(day: Day, zoom = 17, theme: Theme = 'light') {
+  function render(day: Day, zoom = 17, theme: Theme = 'light', pitch = 0) {
     clock.day = day;
     clock.theme = theme;
-    deck.setProps({ viewState: { ...VIEW_STATE, zoom } });
+    deck.setProps({ viewState: { ...VIEW_STATE, zoom, pitch } });
     deck.redraw('test');
   }
 
@@ -275,11 +278,19 @@ describe('StageBarLayer on the GPU', () => {
   }
 
   /** The bar's screen rectangle at `zoom` (§4.4.1): left, top, width, height in canvas px. */
-  function barRect(zoom: number) {
-    const [ax, ay] = deck.getViewports()[0].project(ANCHOR);
-    const { w, h } = barSizePx(zoom);
+  function barRect(zoom: number, mode: BarMode = 'street', anchor = ANCHOR) {
+    const [ax, ay] = deck.getViewports()[0].project(anchor);
+    const { w, h } = barSizePx(zoom, mode);
     return { left: ax - w / 2, top: ay - BAR_OFFSET_PX - h, w, h };
   }
+
+  /** `drawnBox()` of exactly the rectangle `r`. */
+  const boxOf = (r: ReturnType<typeof barRect>) => [
+    Math.round(r.left),
+    Math.round(r.top),
+    Math.round(r.left + r.w) - 1,
+    Math.round(r.top + r.h) - 1
+  ];
 
   /** The pixel `dx` px right of the bar's left edge, on its middle row (`dy` from its top). */
   function barPixel(zoom: number, dx: number, dy?: number): Rgb {
@@ -458,6 +469,83 @@ describe('StageBarLayer on the GPU', () => {
     expect(check('gated half', barPixel(17.25, 6), over(fillRgb(g, 'light'), 0.5), TOL_BLEND)).toBe(
       'gated half: ok'
     );
+    expect(errors).toEqual([]);
+  });
+
+  it('far: a bar draws 32 by 6 px at zoom 12.5 and at zoom 17', async () => {
+    const far = { ...P, minZoom: BAR_FAR_MIN_ZOOM };
+    await show([bars([far], TEX, true)]);
+    for (const zoom of [12.5, 17]) {
+      render(E1 + 10, zoom);
+      const r = barRect(zoom, 'far');
+      expect([r.w, r.h]).toEqual([32, 6]);
+      expect(drawnBox(), `z${zoom}`).toEqual(boxOf(r));
+    }
+    // The fill and colour are street mode's: the second of 4 segments, the ramp at its months.
+    const e = evalBar(far, LQ, E1 + 10, 12.5, 'far');
+    render(E1 + 10, 12.5);
+    expect(e.fill).toBeGreaterThan(0.25);
+    expect(check('far fill', barPixel(12.5, 4), fillRgb(e, 'light'))).toBe('far fill: ok');
+    expect(errors).toEqual([]);
+  });
+
+  it('far: no bar at zoom 11.4; street: none at 14', async () => {
+    const far = { ...P, minZoom: BAR_FAR_MIN_ZOOM };
+    await show([bars([far], TEX, true)]);
+    render(E1 + 10, 11.4);
+    expect(evalBar(far, LQ, E1 + 10, 11.4, 'far').visible).toBe(false);
+    expect(drawnBox()).toBeNull();
+    render(E1 + 10, 12);
+    expect(drawnBox()).not.toBeNull();
+    // The same bar with far off (the default): street's gate.
+    await show([bars([far])]);
+    render(E1 + 10, 14);
+    expect(drawnBox()).toBeNull();
+    await show([bars([far], TEX, false)]);
+    render(E1 + 10, 14);
+    expect(drawnBox()).toBeNull();
+    render(E1 + 10, 15);
+    expect(drawnBox()).toEqual(boxOf(barRect(15)));
+    expect(errors).toEqual([]);
+  });
+
+  it('far: a pitched view gates each bar at the zoom at its anchor', async () => {
+    const zoom = 13;
+    const pitch = 65;
+    render(E1 + 10, zoom, 'light', pitch);
+    const vp = deck.getViewports()[0];
+    // Two ground anchors: one near the top of the canvas (far from the camera), one near the bottom.
+    const at = (y: number): [number, number, number] => {
+      const [lng, lat] = vp.unproject([CW / 2, y]);
+      return [lng, lat, 0];
+    };
+    const top = at(16);
+    const bottom = at(60);
+    const m = vp.viewProjectionMatrix;
+    const clipW = (p: [number, number, number]) => {
+      const [x, y, z] = vp.projectPosition(p);
+      return m[3] * x + m[7] * y + m[11] * z + m[15];
+    };
+    const focalW = clipW([CENTRE[0], CENTRE[1], 0]);
+    const zTop = barZoomAt(zoom, focalW, clipW(top), 'far');
+    const zBottom = barZoomAt(zoom, focalW, clipW(bottom), 'far');
+    // A gate between the two: the far one's zoom is below its ramp, the near one's above it,
+    // while the map's zoom (13) alone would show both or neither.
+    const gate = (zTop + BAR_ZOOM_RAMP + zBottom) / 2;
+    expect(zTop).toBeLessThan(gate - BAR_ZOOM_RAMP - 0.1);
+    expect(zBottom).toBeGreaterThan(gate + 0.1);
+    const mk = (anchor: [number, number, number], id: string) => ({
+      ...P,
+      projectId: id,
+      anchor,
+      minZoom: gate
+    });
+    await show([bars([mk(top, 'top'), mk(bottom, 'bottom')], TEX, true)]);
+    render(E1 + 10, zoom, 'light', pitch);
+    expect(drawnBox()).toEqual(boxOf(barRect(zoom, 'far', bottom)));
+    // Street mode would gate both on the map's zoom alone (both hidden below 15).
+    expect(evalBar(mk(top, 'top'), LQ, E1 + 10, zoom).visible).toBe(false);
+    render(E1 + 10, 17);
     expect(errors).toEqual([]);
   });
 

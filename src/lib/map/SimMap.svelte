@@ -92,6 +92,7 @@
     type TransitView
   } from './transit-layer';
   import type {
+    BarMode,
     ChunkStatus,
     GeneratedUpdate,
     ParcelSummaryLike,
@@ -221,6 +222,7 @@
   let pendingDay: Day | null = null;
   let pendingLookups: TimelineLookups | null = null;
   let pendingHalos: { from: Day } | null = null;
+  let pendingBarMode: BarMode = 'street';
   let warnedGenerated = false;
   /** The last hover report to `timelinePick` was a part: the next hover miss is sent once. */
   let hoverReported = false;
@@ -397,6 +399,14 @@
     live?.timeline?.setHalos(pendingHalos);
   }
 
+  /** 'street' (the default) or 'far' bars (docs/dev/map-interfaces.md). Kept like the day. */
+  export function setBarMode(mode: BarMode): void {
+    if (mode !== 'street' && mode !== 'far')
+      throw new RangeError(`setBarMode: mode must be 'street' or 'far', got ${String(mode)}`);
+    pendingBarMode = mode;
+    live?.timeline?.setBarMode(mode);
+  }
+
   const handle: SimMapHandle = {
     applyGenerated,
     setChunkStatus,
@@ -408,7 +418,8 @@
     applyTimeline,
     setTime,
     setTimelineLookups,
-    setHalos
+    setHalos,
+    setBarMode
   };
 
   // ---- effects ----------------------------------------------------------------------------------
@@ -463,7 +474,7 @@
         pendingGenerated: pendingApplies.length,
         theme
       }),
-      { applyTimeline, setTime, setTimelineLookups, setHalos, setOverlayLayers }
+      { applyTimeline, setTime, setTimelineLookups, setHalos, setBarMode, setOverlayLayers }
     )
   );
 
@@ -792,6 +803,7 @@
     if (pendingDay !== null) timeline.setTime(pendingDay);
     watchReducedMotion(l, timeline);
     timeline.setHalos(pendingHalos);
+    timeline.setBarMode(pendingBarMode);
     if (pendingLookups) {
       try {
         timeline.setLookups(pendingLookups);

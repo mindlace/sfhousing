@@ -18,6 +18,19 @@ export const BAR_ZOOM_RAMP = 0.5;
 export const BAR_W_PX = [32, 48] as const;
 /** Tier 4: this spec; bar height in px at z15 and from z17 up (1 px per zoom between). */
 export const BAR_H_PX = [6, 8] as const;
+/**
+ * Tier 4, slice 6: far bars show from this zoom (the phone's default view is 12.2, the
+ * desktop's 13). In far mode the gate is read at each bar's anchor: the map's zoom less how much
+ * deeper than the view's centre the anchor sits.
+ */
+export const BAR_FAR_MIN_ZOOM = 12;
+/** Tier 4, slice 6: a far bar's one size in px at every zoom (today's z15 size). */
+export const BAR_FAR_PX = { w: 32, h: 6 } as const;
+/**
+ * Tier 4, slice 6: far declutter keeps at least this many px between two bars' boxes, across or
+ * up, at the zoom both show from (centres at least hypot(w + gap, h + gap) apart on the ground).
+ */
+export const BAR_FAR_GAP_PX = 4;
 /** Tier 4: this spec; screen gap in px between the anchor and the bar's bottom edge. */
 export const BAR_OFFSET_PX = 10;
 /** Tier 4: this spec; metres above the revision's highest part top for the bar anchor. */
@@ -30,7 +43,7 @@ export const COMPLETE_FADE_DAYS = 90;
 export const RAMP_STOPS = [0.15, 0.45, 0.75] as const;
 /** Tier 4: this spec; the declutter ladder's top rung is the map's maxZoom (18). */
 export const DECLUTTER_MAX_ZOOM = 18;
-/** Tier 4: this spec; declutter ladder step from BAR_MIN_ZOOM up to DECLUTTER_MAX_ZOOM. */
+/** Tier 4: this spec; declutter ladder step from the mode's gate up to DECLUTTER_MAX_ZOOM. */
 export const DECLUTTER_STEP = 0.5;
 /** Tier 4: this slice; a halo ring's life in simulated days (2 s at 1×, 0.67 s at 3×). */
 export const HALO_DAYS = 730;

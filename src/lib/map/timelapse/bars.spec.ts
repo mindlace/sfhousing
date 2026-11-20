@@ -4,9 +4,20 @@ import { wcagContrast, wcagLuminance } from 'culori';
 import { DAYS, SLOT, timelineSmall } from '../fixtures/timeline-small';
 import { timelineLookups } from '../fixtures/timeline-lookups';
 import { TOKENS, hexToRgba, type RGBA } from '../palette';
-import type { TimedPackedCell } from '../types';
-import { BAR_SEGMENTS, barColor, barSizePx, buildBars, evalBar, rampColor } from './bars';
+import { SLOT_FLAG, type TimedPackedCell } from '../types';
 import {
+  BAR_SEGMENTS,
+  barColor,
+  barGate,
+  barSizePx,
+  barZoomAt,
+  buildBars,
+  evalBar,
+  rampColor
+} from './bars';
+import {
+  BAR_FAR_MIN_ZOOM,
+  BAR_FAR_PX,
   BAR_MIN_ZOOM,
   BAR_TOP_GAP_M,
   COMPLETE_FADE_DAYS,
@@ -434,5 +445,61 @@ describe('barColor', () => {
     const a = evalBar(bar('a'), L, DAYS.a.complete + 10, Z);
     expect(a.fill).toBe(1);
     expect(barColor(a, 'light')).toEqual(hexToRgba(TOKENS.light['tl-bar-likely']));
+  });
+});
+
+describe('bar modes', () => {
+  it('barGate: street 15, far 12', () => {
+    expect(barGate('street')).toBe(BAR_MIN_ZOOM);
+    expect(barGate('far')).toBe(BAR_FAR_MIN_ZOOM);
+    expect(BAR_FAR_MIN_ZOOM).toBe(12);
+  });
+  it('far: barSizePx is 32 by 6 at zooms 12, 15, 17 and 18', () => {
+    for (const z of [12, 15, 17, 18]) expect(barSizePx(z, 'far')).toEqual({ w: 32, h: 6 });
+    expect(BAR_FAR_PX).toEqual({ w: 32, h: 6 });
+    // The default is street: today's growth.
+    expect(barSizePx(17)).toEqual({ w: 48, h: 8 });
+    expect(barSizePx(17, 'street')).toEqual({ w: 48, h: 8 });
+  });
+  it('far: evalBar hides below the ramp to 12 and shows from 12; street keeps 15', () => {
+    const a = { ...bar('a'), minZoom: BAR_FAR_MIN_ZOOM };
+    const t = DAYS.a.filed;
+    expect(evalBar(a, L, t, 11.4, 'far').visible).toBe(false);
+    expect(evalBar(a, L, t, 11.5, 'far').visible).toBe(false);
+    expect(evalBar(a, L, t, 11.75, 'far')).toMatchObject({ visible: true, alpha: 0.5 });
+    expect(evalBar(a, L, t, 12, 'far').alpha).toBe(1);
+    expect(evalBar(a, L, t, 17, 'far').alpha).toBe(1);
+    // A declutter gate above 12 still holds in far mode.
+    expect(evalBar({ ...a, minZoom: 13 }, L, t, 12.5, 'far').visible).toBe(false);
+    expect(evalBar({ ...a, minZoom: 13 }, L, t, 13, 'far').alpha).toBe(1);
+    // Street (and the default) keeps 15 whatever minZoom says.
+    expect(evalBar(a, L, t, 14.5, 'street').visible).toBe(false);
+    expect(evalBar(a, L, t, 14.5).visible).toBe(false);
+    expect(evalBar(a, L, t, 15).alpha).toBe(1);
+    // Far changes size and culling, not timing: the same bar, fill and chance at a shown zoom.
+    const t2 = DAYS.a.construction + 40;
+    expect(evalBar(a, L, t2, 16, 'far')).toEqual(evalBar(a, L, t2, 16, 'street'));
+    expect(evalBar(a, L, DAYS.a.preApplication - 1, 16, 'far').visible).toBe(false);
+  });
+  it('barZoomAt: street is the map zoom; far is the zoom at the anchor', () => {
+    expect(barZoomAt(13, 100, 100, 'street')).toBe(13);
+    expect(barZoomAt(13, 100, 400, 'street')).toBe(13);
+    expect(barZoomAt(13, 100, 100, 'far')).toBe(13);
+    // Twice as deep as the focal plane: a ground metre is half as many px, one zoom less.
+    expect(barZoomAt(13, 100, 200, 'far')).toBeCloseTo(12, 12);
+    expect(barZoomAt(13, 100, 50, 'far')).toBeCloseTo(14, 12);
+    // Behind the camera: never shown.
+    expect(barZoomAt(13, 100, 0, 'far')).toBe(-Infinity);
+    expect(barZoomAt(13, 100, -5, 'far')).toBe(-Infinity);
+  });
+  it('buildBars sets policy from slotFlags', () => {
+    for (const b of BARS) expect(b.policy).toBe(false); // the fixture has no slotFlags
+    const cell = structuredClone(cellOf('d'));
+    const s = cell.slotProjectIds.indexOf(SLOT.d.projectId);
+    cell.slotFlags = new Uint8Array(cell.slotProjectIds.length);
+    cell.slotFlags[s] = SLOT_FLAG.money;
+    const bars = buildBars([cell], L);
+    for (const b of bars) expect(b.policy).toBe(b.projectId === SLOT.d.projectId);
+    expect(bars.filter((b) => b.policy)).toHaveLength(2); // (d)'s two revisions
   });
 });

@@ -1,7 +1,8 @@
 // Stage bar declutter (spec §4.4.4): per-project zoom gates so bars that coexist in time do not
 // overlap on screen. CPU, run on each bar rebuild by the controller, never on `setTime`.
-import { barSizePx } from './bars';
-import { BAR_MIN_ZOOM, DECLUTTER_MAX_ZOOM, DECLUTTER_STEP } from './constants';
+import type { BarMode } from '../types';
+import { barGate, barSizePx } from './bars';
+import { BAR_FAR_GAP_PX, DECLUTTER_MAX_ZOOM, DECLUTTER_STEP } from './constants';
 import type { BarAttrs } from './types';
 
 const EARTH_CIRCUMFERENCE_M = 40075016.686;
@@ -16,15 +17,35 @@ export function mpp(z: number, lat: number): number {
   return (EARTH_CIRCUMFERENCE_M * Math.cos(lat * DEG)) / (TILE_SIZE * 2 ** z);
 }
 
-/** The zoom ladder: BAR_MIN_ZOOM, +STEP, … DECLUTTER_MAX_ZOOM. */
-const RUNGS = Math.round((DECLUTTER_MAX_ZOOM - BAR_MIN_ZOOM) / DECLUTTER_STEP) + 1;
-const TOP = RUNGS - 1;
-const rungZoom = (r: number) => BAR_MIN_ZOOM + r * DECLUTTER_STEP;
-/** `W(z)·mpp(z, 0)` per rung, metres; a project at latitude `lat` scales it by `cos(lat)`. */
-const NEED_EQUATOR = Float64Array.from({ length: RUNGS }, (_, r) => {
-  const z = rungZoom(r);
-  return (barSizePx(z).w * EARTH_CIRCUMFERENCE_M) / (TILE_SIZE * 2 ** z);
-});
+/**
+ * The screen px two bars' anchors must be apart at zoom `z` to show together. Street: the bar's
+ * width (today's rule). Far: the diagonal of the 32 by 6 box grown by BAR_FAR_GAP_PX, so two
+ * shown boxes never overlap and keep the gap across or up.
+ */
+export function declutterPx(z: number, mode: BarMode): number {
+  if (mode === 'street') return barSizePx(z).w;
+  const { w, h } = barSizePx(z, 'far');
+  return Math.hypot(w + BAR_FAR_GAP_PX, h + BAR_FAR_GAP_PX);
+}
+
+interface Ladder {
+  base: number;
+  top: number;
+  /** `declutterPx(z)·mpp(z, 0)` per rung, metres; latitude `lat` scales it by `cos(lat)`. */
+  need: Float64Array;
+}
+
+/** The zoom ladder of a mode: barGate(mode), +STEP, … DECLUTTER_MAX_ZOOM. */
+function ladder(mode: BarMode): Ladder {
+  const base = barGate(mode);
+  const rungs = Math.round((DECLUTTER_MAX_ZOOM - base) / DECLUTTER_STEP) + 1;
+  const need = Float64Array.from({ length: rungs }, (_, r) => {
+    const z = base + r * DECLUTTER_STEP;
+    return (declutterPx(z, mode) * EARTH_CIRCUMFERENCE_M) / (TILE_SIZE * 2 ** z);
+  });
+  return { base, top: rungs - 1, need };
+}
+const LADDERS: Record<BarMode, Ladder> = { street: ladder('street'), far: ladder('far') };
 
 /** Open-addressing slot for grid cell `(cx, cy)`: the slot holding it, or the empty slot to use. */
 function slotOf(sx: Int32Array, sy: Int32Array, head: Int32Array, cx: number, cy: number): number {
@@ -37,14 +58,19 @@ function slotOf(sx: Int32Array, sy: Int32Array, head: Int32Array, cx: number, cy
 /**
  * Set `minZoom` on every bar, in place (§4.4.4). A project's bars (its revisions) share one
  * `minZoom`, computed from its final revision's anchor and its whole active interval
- * `[min from, max to)`. Projects are visited by final units descending, then `parcelId`, then
- * `projectId` ascending (a total order); each takes the smallest ladder zoom `z` at which every
- * earlier project `j` that overlaps in time, shown from `max(z, minZoom_j)`, is at least one bar
- * width away (equirectangular metres at the project's latitude). A project that never clears
- * shows at the top rung. O(n log n): a uniform grid whose cell is the widest conflict distance,
- * 3×3 neighbourhood.
+ * `[min from, max to)`. Projects are visited policy first (a bar with `policy`), then by final
+ * units descending, then `parcelId`, then `projectId` ascending (a total order, so the gates
+ * are the same on every rebuild of the same bars); each takes the smallest rung `z` of the mode's
+ * ladder (barGate(mode) to DECLUTTER_MAX_ZOOM) at which every earlier project `j` that overlaps
+ * in time, shown from `max(z, minZoom_j)`, is at least `declutterPx(z, mode)` px away
+ * (equirectangular metres at the project's latitude). A project that never clears shows at the
+ * top rung. O(n log n): a uniform grid whose cell is the widest conflict distance, 3×3
+ * neighbourhood. The gates do not depend on the camera or the clock: nothing reruns this on a
+ * pan, a zoom or `setTime`.
  */
-export function declutter(bars: BarAttrs[]): void {
+export function declutter(bars: BarAttrs[], mode: BarMode = 'street'): void {
+  const { base, top: TOP, need: NEED_EQUATOR } = LADDERS[mode];
+  const rungZoom = (r: number) => base + r * DECLUTTER_STEP;
   // One record per project, as parallel arrays.
   const index = new Map<string, number>();
   const barProject = new Int32Array(bars.length);
@@ -52,6 +78,7 @@ export function declutter(bars: BarAttrs[]): void {
   const first: BarAttrs[] = [];
   const from: number[] = [];
   const to: number[] = [];
+  const policy: boolean[] = [];
   for (let i = 0; i < bars.length; i++) {
     const b = bars[i];
     let p = index.get(b.projectId);
@@ -62,9 +89,11 @@ export function declutter(bars: BarAttrs[]): void {
       finalBar.push(i);
       from.push(b.from);
       to.push(b.to);
+      policy.push(b.policy === true);
     } else {
       if (b.from < from[p]) from[p] = b.from;
       if (b.to > to[p]) to[p] = b.to;
+      if (b.policy === true) policy[p] = true;
       // The final revision is the latest one.
       const f = bars[finalBar[p]];
       if (b.from > f.from || (b.from === f.from && b.to > f.to)) finalBar[p] = i;
@@ -103,6 +132,7 @@ export function declutter(bars: BarAttrs[]): void {
   const units = Float64Array.from(first, (b) => b.units);
   const order = Array.from({ length: n }, (_, p) => p);
   order.sort((a, b) => {
+    if (policy[a] !== policy[b]) return policy[a] ? -1 : 1;
     const d = units[b] - units[a];
     if (d !== 0) return d;
     const pa = first[a].parcelId;

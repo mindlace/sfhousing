@@ -1,5 +1,5 @@
 // timelapse-render internal types (spec §2.1). None alters a T-row.
-import type { SimMapHandle, Theme } from '../types';
+import type { BarMode, SimMapHandle, Theme } from '../types';
 import type { ParcelId } from '$lib/data/parcel';
 import type { Day } from '$lib/timelapse/time';
 
@@ -58,6 +58,7 @@ export interface BarAttrs {
   segTypicalDays: number[]; // typical days per segment; OPEN_DAY if unknown
   segRow: number[]; // chance texture row per segment
   minZoom: number; // declutter's zoom gate (Task 6); BAR_MIN_ZOOM until then
+  policy: boolean; // slotFlags[s] !== 0: under the person's policy (wins declutter collisions)
 }
 
 /** `evalBar` result (§4.4). */
@@ -112,6 +113,13 @@ export interface TimelineSnapshot {
   cityBuilds: number;
   /** The halo layer's gate: 0, or CITY_HANDOVER_ZOOM while the city layer exists. */
   ringMinZoom: number;
+  /** `setBarMode`'s mode ('street' until it is called). */
+  barMode: BarMode;
+  /**
+   * Bars `evalBar` shows on the clock's day at the zoom at each anchor (`barZoomAt`), anchors in
+   * the map's view; without a map view, every bar in time.
+   */
+  barsShown: number;
 }
 
 /** Shared mutable clock read by the extension's `draw`; `setTime` writes `day`. */

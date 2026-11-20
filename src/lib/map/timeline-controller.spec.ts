@@ -21,6 +21,8 @@ import {
   type CityView
 } from './timelapse/city';
 import { CITY_HANDOVER_ZOOM } from './timelapse/constants';
+import { buildBars, evalBar } from './timelapse/bars';
+import { declutter } from './timelapse/declutter';
 import { STAGE_ORDER } from '$lib/timelapse/types';
 
 interface Props {
@@ -1520,3 +1522,150 @@ describe('TimelineController city', () => {
     expect(c.debugSnapshot()).toMatchObject({ cityMarkers: 0, cityRecords: 0, layerIds: [] });
   });
 });
+
+describe('TimelineController bar modes', () => {
+  const barLayer = () => byId(deps, 'timeline-bars');
+  const far = () => (barLayer().props as unknown as { far?: boolean }).far;
+  /** A flat fake view around the fixture (w = 1 everywhere: the zoom at every anchor is `zoom`). */
+  const CENTRE: [number, number] = [-122.4194, 37.7599];
+  function viewAt(zoom: number, half = 0.02): DebugView {
+    return {
+      zoom,
+      viewPx: [800, 600],
+      centre: CENTRE,
+      bearing: 0,
+      pxPerMeter: 1,
+      clip: (lng, lat) => [(lng - CENTRE[0]) / half, (lat - CENTRE[1]) / half, 1]
+    };
+  }
+
+  it('a controller that never calls setBarMode builds the same bars as before', () => {
+    const c = controller();
+    c.apply(timelineSmall);
+    const want = buildBars(
+      [...timelineSmall.cells].sort((a, b) => (a.cellId < b.cellId ? -1 : 1)),
+      timelineLookups
+    );
+    declutter(want);
+    expect(barsOf(deps)).toEqual(want);
+    expect(barsOf(deps).every((b) => b.minZoom >= 15)).toBe(true);
+    expect(far()).toBe(false);
+    expect(c.debugSnapshot().barMode).toBe('street');
+  });
+
+  it('setBarMode rebuilds the bars once with far and reports barMode; the same mode again does nothing', () => {
+    const c = controller();
+    c.apply(timelineSmall);
+    const street = barLayer();
+    const emits = deps.layerHistory.length;
+    c.setBarMode('far');
+    expect(deps.layerHistory).toHaveLength(emits + 1);
+    expect(barLayer()).not.toBe(street);
+    expect(far()).toBe(true);
+    expect(barsOf(deps).every((b) => b.minZoom >= 12 && b.minZoom <= 18)).toBe(true);
+    expect(barsOf(deps).some((b) => b.minZoom < 15)).toBe(true);
+    expect(c.debugSnapshot().barMode).toBe('far');
+    const farLayer = barLayer();
+    c.setBarMode('far');
+    expect(deps.layerHistory).toHaveLength(emits + 1);
+    expect(barLayer()).toBe(farLayer);
+    // Back to street: today's bars again.
+    c.setBarMode('street');
+    expect(deps.layerHistory).toHaveLength(emits + 2);
+    expect(far()).toBe(false);
+    expect(barsOf(deps).every((b) => b.minZoom >= 15)).toBe(true);
+  });
+
+  it('setBarMode before the first apply is kept: the first bars are far, built once', () => {
+    const c = controller();
+    c.setBarMode('far');
+    expect(deps.layerHistory).toHaveLength(0);
+    c.apply(timelineSmall);
+    expect(far()).toBe(true);
+    expect(c.debugSnapshot().barMode).toBe('far');
+    // Without lookups there are no bars; the mode is kept for when they come.
+    const d = makeFakeTimelineDeps();
+    const bare = new TimelineController(d, 'light');
+    bare.setBarMode('far');
+    bare.apply(timelineSmall);
+    expect(d.lastLayers.map((l) => l.id)).not.toContain('timeline-bars');
+    bare.setLookups(timelineLookups);
+    drainWith(d, bare);
+    expect(
+      (d.lastLayers.find((l) => l.id === 'timeline-bars')!.props as unknown as { far: boolean }).far
+    ).toBe(true);
+  });
+
+  it('far: setTime and camera reads build no bars and move no gate (no declutter per frame or pan)', () => {
+    const c = controller();
+    c.setBarMode('far');
+    c.apply(timelineSmall);
+    const layer = barLayer();
+    const gates = barsOf(deps).map((b) => b.minZoom);
+    const emits = deps.layerHistory.length;
+    for (let i = 0; i < 200; i++) {
+      c.setTime(DAYS.start + i * 40);
+      // A pan or zoom: the controller hears of the camera only through the debug snapshot.
+      if (i % 20 === 0) {
+        deps.view = viewAt(12 + (i % 7), 0.01 + i / 10_000);
+        c.debugSnapshot();
+      }
+    }
+    expect(deps.layerHistory).toHaveLength(emits);
+    expect(barLayer()).toBe(layer);
+    expect(barsOf(deps).map((b) => b.minZoom)).toEqual(gates);
+  });
+
+  it('a flagged slot wins its collision in far mode', () => {
+    const c = controller();
+    c.setBarMode('far');
+    // (a)'s cell twice over at the same place: one flagged copy, one not, as two projects.
+    const a = cellOf(A);
+    const s = a.slotProjectIds.indexOf(SLOT.a.projectId);
+    const mine = {
+      ...a,
+      cellId: 'mine',
+      slotProjectIds: a.slotProjectIds.map((p) => `mine-${p}`),
+      slotFlags: Uint8Array.from(a.slotProjectIds, (_, i) => (i === s ? SLOT_FLAG.zoning : 0))
+    };
+    c.apply(update(0, { cells: [a, mine] }));
+    const bars = barsOf(deps);
+    const gate = (id: string) => bars.find((b) => b.projectId === id)!.minZoom;
+    expect(bars.find((b) => b.projectId === `mine-${SLOT.a.projectId}`)!.policy).toBe(true);
+    expect(gate(`mine-${SLOT.a.projectId}`)).toBeLessThan(gate(SLOT.a.projectId));
+  });
+
+  it('counts the bars shown on the clock day at the zoom at each anchor, in view', () => {
+    const c = controller();
+    c.apply(timelineSmall);
+    const t = DAYS.a.construction;
+    c.setTime(t);
+    const inTime = barsOf(deps).filter((b) => b.from <= t && t < b.to).length;
+    expect(inTime).toBeGreaterThan(0);
+    // No map: every bar in time (as halosShown without a view).
+    expect(c.debugSnapshot().barsShown).toBe(inTime);
+    // A view that holds the whole fixture (its clip is flat: every anchor's zoom is 13).
+    deps.view = viewAt(13, 1);
+    expect(c.debugSnapshot().barsShown).toBe(0); // street: below 15
+    c.setBarMode('far');
+    const shown = barsOf(deps).filter(
+      (b) => evalBar(b, timelineLookups, t, 13, 'far').visible
+    ).length;
+    expect(shown).toBeGreaterThan(0);
+    expect(c.debugSnapshot().barsShown).toBe(shown);
+    // Every anchor 8 times deeper than the view's centre: zoom 10 there, below the ramp to 12.
+    deps.view = {
+      ...viewAt(13),
+      clip: (lng, lat) => (lng === CENTRE[0] && lat === CENTRE[1] ? [0, 0, 1] : [0, 0, 8])
+    };
+    expect(c.debugSnapshot().barsShown).toBe(0);
+    // A view that holds none of the fixture.
+    deps.view = { ...viewAt(13), clip: () => [5, 5, 1] };
+    expect(c.debugSnapshot().barsShown).toBe(0);
+  });
+});
+
+function drainWith(d: FakeTimelineDeps, c: TimelineController): void {
+  for (let i = 0; i < 50 && c.debugSnapshot().pending > 0; i++) d.flushFrame();
+  expect(c.debugSnapshot().pending).toBe(0);
+}

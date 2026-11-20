@@ -20,6 +20,7 @@ describe('installDebug loadSyntheticLimits', () => {
           setTime: vi.fn(),
           setTimelineLookups: vi.fn(),
           setHalos: vi.fn(),
+          setBarMode: vi.fn(),
           setOverlayLayers
         }
       );
@@ -46,6 +47,7 @@ describe('installDebug timeline handle functions', () => {
       setTime: vi.fn(),
       setTimelineLookups: vi.fn(),
       setHalos: vi.fn(),
+      setBarMode: vi.fn(),
       setOverlayLayers: vi.fn()
     };
     const uninstall = installDebug(
@@ -59,6 +61,9 @@ describe('installDebug timeline handle functions', () => {
       hook.setHalos(null);
       expect(fns.setTime).toHaveBeenCalledWith(21000);
       expect(fns.setHalos.mock.calls).toEqual([[{ from: 20742 }], [null]]);
+      hook.setBarMode('far');
+      hook.setBarMode('street');
+      expect(fns.setBarMode.mock.calls).toEqual([['far'], ['street']]);
       expect(hook.timelineSnapshot()).toBeNull();
     } finally {
       uninstall();

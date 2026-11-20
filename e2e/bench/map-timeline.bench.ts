@@ -6,6 +6,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import type { SfhBrushDebug } from '../../src/lib/brush/debug';
 import type { SfhMapDebug } from '../../src/lib/map/debug';
+import type { BarMode } from '../../src/lib/map/types';
 import { BAR_MS, pct, transitLayersOn, verdict } from './bench-util';
 
 type Win = Window & { __sfhMap?: SfhMapDebug; __sfhBrush?: SfhBrushDebug };
@@ -46,7 +47,8 @@ const DRAG_SWEEP_MS = 2000;
  * project), so with `halos` the case also draws `timeline-city` (merged rings below zoom 14 and
  * edge glows) and gates the projects' own rings and marks below 14; the others load none and
  * keep slice 5's layers. "playback + halos + city" is /sim zoomed in: the projects' own rings
- * with the city's edge glows around them.
+ * with the city's edge glows around them. `far` sets far bars (`setBarMode('far')`, as /sim):
+ * from zoom 12 at one size, so the citywide case draws bars at the default camera.
  */
 const CASES = [
   {
@@ -55,6 +57,7 @@ const CASES = [
     limits: false,
     halos: false,
     city: false,
+    far: false,
     camera: DOWNTOWN
   },
   {
@@ -63,6 +66,7 @@ const CASES = [
     limits: false,
     halos: false,
     city: false,
+    far: false,
     camera: DOWNTOWN
   },
   {
@@ -71,6 +75,7 @@ const CASES = [
     limits: true,
     halos: false,
     city: false,
+    far: false,
     camera: DOWNTOWN
   },
   {
@@ -79,6 +84,7 @@ const CASES = [
     limits: false,
     halos: true,
     city: false,
+    far: false,
     camera: DOWNTOWN
   },
   {
@@ -87,6 +93,7 @@ const CASES = [
     limits: false,
     halos: true,
     city: true,
+    far: false,
     camera: DOWNTOWN
   },
   {
@@ -95,6 +102,7 @@ const CASES = [
     limits: false,
     halos: true,
     city: true,
+    far: true,
     camera: CITY
   }
 ] as const;
@@ -118,12 +126,17 @@ async function showHalos(page: Page, halos: boolean) {
     from
   );
 }
+/** A far case sets far bars (`setBarMode('far')`, as /sim); the others keep street bars. */
+async function setBars(page: Page, far: boolean) {
+  const mode: BarMode = far ? 'far' : 'street';
+  await page.evaluate((m) => (window as Win).__sfhMap!.setBarMode(m), mode);
+}
 const halosField = (halos: boolean, c: { halos: number; marks: number }) =>
   halos ? `halos=${c.halos} marks=${c.marks} ` : '';
 const cityField = (city: boolean, c: { cityRecords: number; cityMarkers: number }) =>
   city ? `city=${c.cityRecords} markers=${c.cityMarkers} ` : '';
 
-for (const { name, daysPerS, limits, halos, city, camera } of CASES)
+for (const { name, daysPerS, limits, halos, city, far, camera } of CASES)
   test(`bench:map: timeline ${name}`, async ({ page }) => {
     await transitLayersOn(page);
     await page.goto('/');
@@ -159,6 +172,7 @@ for (const { name, daysPerS, limits, halos, city, camera } of CASES)
     );
     const limitCounts = await loadLimits(page, limits);
     await showHalos(page, halos);
+    await setBars(page, far);
     await page.evaluate((d) => (window as Win).__sfhMap!.setTime(d), DAY_START);
 
     await page.evaluate(
@@ -213,6 +227,7 @@ for (const { name, daysPerS, limits, halos, city, camera } of CASES)
         cityRecords: s?.cityRecords ?? 0,
         cityMarkers: s?.cityMarkers ?? 0,
         ringMinZoom: s?.ringMinZoom ?? 0,
+        barMode: s?.barMode ?? 'street',
         pumpMaxOps: m.demolishMaxFrameOps
       };
     });
@@ -222,6 +237,7 @@ for (const { name, daysPerS, limits, halos, city, camera } of CASES)
     // Only the city cases drew the city, and gated the projects' own rings.
     expect(after.cityRecords > 0).toBe(city);
     expect(after.ringMinZoom).toBe(city ? HANDOVER_ZOOM : 0);
+    expect(after.barMode).toBe(far ? 'far' : 'street');
     // The pump actually ran: playback and drag both cross demolition days.
     expect(after.pumpMaxOps).toBeGreaterThan(0);
 

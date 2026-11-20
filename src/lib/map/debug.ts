@@ -4,14 +4,19 @@ import type { Map as MapLibreMap } from 'maplibre-gl';
 import type { ControllerSnapshot, GeneratedController } from './generated-controller';
 import type { TimelineController } from './timeline-controller';
 import type { TimelineLookups, TimelineSnapshot } from './timelapse/types';
-import type { GeneratedUpdate, SimMapHandle, Theme, TimelineUpdate } from './types';
+import type { BarMode, GeneratedUpdate, SimMapHandle, Theme, TimelineUpdate } from './types';
 import type { Day } from '$lib/timelapse/time';
 import { packCell } from './pack';
 
 /** SimMap's timeline handle functions: the hook calls them, so the lazy path runs as in FZP. */
 export type TimelineHandleFns = Pick<
   SimMapHandle,
-  'applyTimeline' | 'setTime' | 'setTimelineLookups' | 'setHalos' | 'setOverlayLayers'
+  | 'applyTimeline'
+  | 'setTime'
+  | 'setTimelineLookups'
+  | 'setHalos'
+  | 'setBarMode'
+  | 'setOverlayLayers'
 >;
 
 export interface SfhMapDebug {
@@ -63,6 +68,8 @@ export interface SfhMapDebug {
   setTimelineLookups(l: TimelineLookups): void;
   /** SimMap's `setHalos` (bench:map's "playback + halos" case). */
   setHalos(o: { from: Day } | null): void;
+  /** SimMap's `setBarMode` (bench:map's "citywide playback" case; screenshots of far bars). */
+  setBarMode(mode: BarMode): void;
   /** The TimelineController's snapshot; null outside timeline mode or while its module loads. */
   timelineSnapshot(): TimelineSnapshot | null;
   /** The demolish pump's largest feature-state call count in one frame; 0 without a timeline. */
@@ -96,6 +103,7 @@ export function installDebug(
     setTime: (day) => timeline.setTime(day),
     setTimelineLookups: (l) => timeline.setTimelineLookups(l),
     setHalos: (o) => timeline.setHalos(o),
+    setBarMode: (mode) => timeline.setBarMode(mode),
     timelineSnapshot: () => get().timeline?.debugSnapshot() ?? null,
     get demolishMaxFrameOps() {
       return get().timeline?.demolishMaxFrameOps ?? 0;

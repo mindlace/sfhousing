@@ -311,6 +311,28 @@ describe('SimMap timeline mode', { timeout: 60_000 }, () => {
     expect(errors).toEqual([]);
   });
 
+  it('setBarMode before the timeline controller exists is kept and applied', async () => {
+    const barLayer = (map: MapLibreMap) =>
+      ((deckOf(map).props.layers ?? []) as Layer<{ far: boolean }>[]).find(
+        (l) => l.id === 'timeline-bars'
+      );
+    const { handle, ready } = await mount();
+    handle.setBarMode('far');
+    handle.setTimelineLookups(timelineLookups);
+    handle.applyTimeline(timelineSmall);
+    const h = await ready;
+    const map = h.getMap()!;
+    await converged(map);
+    expect(barLayer(map)!.props.far).toBe(true);
+    expect(dbg().timelineSnapshot()!.barMode).toBe('far');
+    h.setBarMode('street');
+    expect(barLayer(map)!.props.far).toBe(false);
+    dbg().setBarMode('far'); // the debug hook calls through to the handle
+    expect(barLayer(map)!.props.far).toBe(true);
+    expect(dbg().timelineSnapshot()!.barMode).toBe('far');
+    expect(errors).toEqual([]);
+  });
+
   it('a queued update keeps its city until the controller exists, and the controller draws it', async () => {
     // One marker in view of the camera below, one well off it to the west.
     const here: [number, number] = [-122.4194, 37.7599];

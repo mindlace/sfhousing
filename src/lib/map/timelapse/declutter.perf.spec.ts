@@ -36,7 +36,8 @@ function mk(
     segEntry: [],
     segTypicalDays: [],
     segRow: [],
-    minZoom: BAR_MIN_ZOOM
+    minZoom: BAR_MIN_ZOOM,
+    policy: false
   };
 }
 
