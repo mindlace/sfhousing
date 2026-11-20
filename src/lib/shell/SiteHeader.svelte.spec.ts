@@ -330,14 +330,14 @@ describe('SiteHeader', () => {
   describe('signed in with a long handle', () => {
     const handle = 'a-very-long-handle-that-will-not-fit-in-the-header';
     const actions = createRawSnippet(() => ({
-      render: () => '<span><button>View</button><button>Publish</button></span>'
+      render: () => '<span><button>Publish</button></span>'
     }));
     const pinned = createRawSnippet(() => ({
       render: () => '<button>Room for 47,335 homes</button>'
     }));
 
-    // Known: on /sim at 1024 the row is about 15 px over on main with a handle and the playhead at
-    // the end (its status cell clips), so only the Paint-style header is asserted there.
+    // Paint's header (one action, Publish). /sim's, signed in at 1024 with the playhead at the
+    // end, is asserted in SimPage.svelte.spec.ts and e2e/map-key.spec.ts.
     for (const width of [1024, 1280])
       it(`at ${width}px the header does not overflow and the handle is capped at 160px`, async () => {
         await page.viewport(width, 800);
@@ -377,7 +377,8 @@ describe('SiteHeader', () => {
   describe('phone menu', () => {
     const actions = createRawSnippet(() => ({
       render: () =>
-        '<span><button>Example</button><button aria-expanded="false">View</button></span>'
+        '<span><button>Example</button>' +
+        '<button aria-expanded="false">Keyboard shortcuts</button></span>'
     }));
     const pinned = createRawSnippet(() => ({ render: () => '<button>1,234 homes added</button>' }));
     const menu = () => page.getByRole('button', { name: 'Menu' });
@@ -505,7 +506,7 @@ describe('SiteHeader', () => {
       await page.viewport(375, 812);
       render(SiteHeader, { routeId: '/sim', actions, pinned });
       await menu().click();
-      await page.getByRole('button', { name: 'View' }).click();
+      await page.getByRole('button', { name: 'Keyboard shortcuts' }).click();
       await expect.element(menu()).toHaveAttribute('aria-expanded', 'true');
       await page.getByRole('button', { name: 'Example' }).click();
       await expect.element(menu()).toHaveAttribute('aria-expanded', 'false');
@@ -580,12 +581,11 @@ describe('SiteHeader', () => {
       });
 
       // The /sim row as it renders from lg: the real chip, the score bar and the widest actions
-      // (Setup's, with View).
+      // (Setup's; the map's layers are on the map, not here).
       const btn = 'min-h-6 min-w-6 rounded-md border px-2 text-sm font-medium whitespace-nowrap';
       const simActions = createRawSnippet(() => ({
         render: () =>
-          `<div class="contents"><button class="${btn}">View</button>` +
-          `<button class="${btn}">Policy</button>` +
+          `<div class="contents"><button class="${btn}">Policy</button>` +
           `<button class="${btn} bg-accent text-on-accent">Share link</button></div>`
       }));
       for (const width of [1024, 1280]) {
@@ -613,7 +613,6 @@ describe('SiteHeader', () => {
               page.getByRole('navigation', { name: 'Steps' }).element(),
               chip.element(),
               page.getByRole('button', { name: '12,345 homes added' }).element(),
-              page.getByRole('button', { name: 'View' }).element(),
               page.getByRole('button', { name: 'Policy' }).element(),
               page.getByRole('button', { name: 'Share link' }).element(),
               page.getByRole('link', { name: 'Sign in' }).element(),
@@ -647,7 +646,7 @@ describe('SiteHeader', () => {
               .toBeVisible();
             await expect.element(page.getByText('Share link')).not.toBeVisible();
             await page.getByRole('button', { name: 'Menu' }).click();
-            for (const name of ['View', 'Policy', 'Share link'])
+            for (const name of ['Policy', 'Share link'])
               await expect.element(page.getByRole('button', { name })).toBeVisible();
             expect(banner.getBoundingClientRect().height).toBe(48);
             expect(banner.scrollWidth).toBeLessThanOrEqual(banner.clientWidth);

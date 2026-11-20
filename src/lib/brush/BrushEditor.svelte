@@ -97,8 +97,10 @@
     /** Map layer toggles (transit spec §6.3), passed to SimMap. */
     view?: ViewPrefs;
     /** The manifest SimMap renders (null: none yet), once during setup and again whenever a
-     *  Retry replaces it, so the parent can gate manifest-dependent UI (the View menu) on it. */
+     *  Retry replaces it, so the parent can gate manifest-dependent UI (its `layers`) on it. */
     onmanifest?: (m: Manifest | null) => void;
+    /** The map's layer switches, in the map toolbar's Layers panel; no Layers toggle without. */
+    layers?: Snippet;
     /** The page's dock (its header score flips it to Results and back); one tab, 'paint'. */
     dock?: DockState;
     /** The dock region's id, for the header score's `aria-controls`. */
@@ -129,6 +131,7 @@
     createWorker = spawnSimWorker,
     view = undefined,
     onmanifest = undefined,
+    layers: layerRows = undefined,
     dock: dockProp = undefined,
     dockId: dockIdProp = undefined,
     results = undefined,
@@ -605,10 +608,12 @@
     </div>
 
     <!-- The map key at the map's bottom right, above the attribution (and the phone sheet's
-         handle, which lifts the footprint); closed at rest at every width. Below md, while the
+         handle, which lifts the footprint), with the page's Layers toggle before Key when it
+         passes `layers`; both closed at rest at every width. Below md, while the
          sheet is open over the map, it hides (as /sim's does under a card's sheet). -->
     <MapKeyControl
       key={paintKey}
+      layers={layerRows}
       hidden={!wide.current && dock.sheet !== 'closed'}
       onopenchange={(p) => (keyVisible = p === 'key')}
     />

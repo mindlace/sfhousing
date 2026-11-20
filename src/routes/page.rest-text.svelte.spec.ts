@@ -91,5 +91,12 @@ describe('/ at rest (rule: no text of 12 words or more)', () => {
     await expect.element(page.getByRole('list', { name: 'Painted' })).toBeVisible();
     await expect.element(page.getByRole('list', { name: 'New buildings' })).toBeVisible();
     expect(longTexts()).toEqual([]);
+    // Nor with the Layers panel open: the transit rows, their legends and caption.
+    await page.getByRole('button', { name: 'Map layers' }).click();
+    const layers = page.getByRole('group', { name: 'Map layers' });
+    await expect.element(layers).toBeVisible();
+    await expect.element(layers.getByText('BART / Caltrain')).toBeVisible();
+    await expect.element(layers.getByText(/^Estimated weekday/)).toBeVisible();
+    expect(longTexts()).toEqual([]);
   });
 });

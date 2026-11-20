@@ -1,4 +1,4 @@
-// Access-surface bins (transit spec §6.1), shared by the map layer and the View menu legend.
+// Access-surface bins (transit spec §6.1), shared by the map layer and the Layers panel's legend.
 export const ACCESS_BINS = [200, 1000, 3000, 10000, 30000] as const;
 export type AccessBin = 0 | 1 | 2 | 3 | 4 | 5;
 

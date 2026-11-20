@@ -29,12 +29,12 @@ export function provideHeaderActions(): HeaderActions {
 }
 
 /**
- * Page components: put `snippet` in the header's actions slot, and `opts.pinned` and
- * `opts.status` (or nothing) in its pinned and status slots, while mounted. A page that mounts
- * later replaces all three.
+ * Page components: put `snippet` (or nothing, for a page with no actions) in the header's actions
+ * slot, and `opts.pinned` and `opts.status` (or nothing) in its pinned and status slots, while
+ * mounted. A page that mounts later replaces all three.
  */
 export function useHeaderActions(
-  snippet: Snippet,
+  snippet: Snippet | null,
   opts?: { pinned?: Snippet; status?: Snippet }
 ): void {
   const slot = getContext<HeaderActions | undefined>(KEY);

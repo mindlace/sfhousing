@@ -39,6 +39,8 @@ interface Opts {
   readOnly?: boolean;
   plan?: Plan;
   notices?: ReturnType<typeof createRawSnippet>;
+  /** The page's layer rows (the Layers panel's content). */
+  layers?: ReturnType<typeof createRawSnippet>;
 }
 
 async function setup(opts: Opts = {}) {
@@ -63,7 +65,8 @@ async function setup(opts: Opts = {}) {
       },
       dock,
       dockId: DOCK_ID,
-      notices: opts.notices
+      notices: opts.notices,
+      layers: opts.layers
     }
   });
   await expect.poll(() => workers.length).toBe(1);
@@ -768,13 +771,17 @@ describe("BrushEditor's map key", () => {
     await expect.poll(overlayIds).not.toContain(OUTLINE_LAYER_ID);
   });
 
-  it.each(['the toggle', 'Escape', 'the sheet opening'] as const)(
+  it.each(['the toggle', 'Escape', 'the sheet opening', 'Layers opening'] as const)(
     'a pressed height loses its outline when the key closes by %s, with no new request; reopened, nothing is pressed',
     async (how) => {
       const phone = how === 'the sheet opening';
+      const layers = createRawSnippet(() => ({
+        render: () => '<label><input type="checkbox" /> Transit stops</label>'
+      }));
       const { w, dock } = await setup({
         width: phone ? 375 : 1024,
-        plan: planOf(op('a', 6), op('b', 8))
+        plan: planOf(op('a', 6), op('b', 8)),
+        layers: how === 'Layers opening' ? layers : undefined
       });
       await ready(w);
       await expect.poll(() => w.allOf('heightLots').length).toBe(1);
@@ -799,7 +806,10 @@ describe("BrushEditor's map key", () => {
       const asked = w.allOf('heightLots').length;
 
       if (how === 'the toggle') click(keyToggle().element());
-      else if (how === 'Escape')
+      else if (how === 'Layers opening') {
+        click(page.getByRole('button', { name: 'Map layers' }).element());
+        await expect.element(page.getByRole('group', { name: 'Map layers' })).toBeVisible();
+      } else if (how === 'Escape')
         eight().dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
       else dock.sheet = 'full';
       await expect.poll(overlayIds).not.toContain(OUTLINE_LAYER_ID);

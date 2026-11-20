@@ -1,5 +1,6 @@
-// The View menu on the main page (transit spec §6.3): shown only with a transit network, seeded from
-// and persisted to `sfhousing:view`, and passed through BrushEditor to the map. A stub SimMap
+// The map's layer switches on the main page (transit spec §6.3; map-on-screen Task 6: the Layers
+// toggle in the map's toolbar, beside Key): shown only with a transit network, seeded from and
+// persisted to `sfhousing:view`, and passed through BrushEditor to the map. A stub SimMap
 // records the `view` it receives (a separate file: vi.mock is file-wide).
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
@@ -36,10 +37,12 @@ function data(m: Manifest | null = manifest) {
   };
 }
 
-const viewButton = () => page.getByRole('button', { name: 'View' });
+const layersToggle = () => page.getByRole('button', { name: 'Map layers' });
+const layersPanel = () => page.getByRole('group', { name: 'Map layers' });
 const stored = () => JSON.parse(localStorage.getItem(VIEW_KEY) ?? 'null');
+const headerSlot = () => document.querySelector('[data-testid="header-actions"]')!;
 
-describe('/ View menu', () => {
+describe('/ map layers', () => {
   beforeEach(async () => {
     // From md the dock is open, so the Paint tab's tools are on screen.
     await page.viewport(1024, 768);
@@ -54,30 +57,37 @@ describe('/ View menu', () => {
     stubProps.view = undefined;
   });
 
-  it('shows View in the header and passes the default view to the map', async () => {
-    await render(PageHost, { props: { data: data() } });
-    await expect.element(viewButton()).toBeInTheDocument();
-    // The first header action, left of Publish; no Paint button before it.
-    const slot = document.querySelector('[data-testid="header-actions"]')!;
-    const items = [...slot.children];
-    const at = (el: Element) => items.findIndex((c) => c.contains(el));
-    expect(at(viewButton().element())).toBe(0);
-    expect(at(page.getByRole('button', { name: /Publish/ }).element())).toBe(1);
+  it('the header has no View; with manifest.transit the map toolbar has Layers, without it none', async () => {
+    const first = await render(PageHost, { props: { data: data() } });
+    await expect.element(layersToggle()).toBeVisible();
+    expect(layersToggle().element().textContent!.trim()).toBe('Layers');
+    // In the map's toolbar, before Key; never in the header, whose one action is Publish.
+    const toolbar = page.getByTestId('map-key-control').element();
+    expect(toolbar.contains(layersToggle().element())).toBe(true);
+    expect(headerSlot().contains(layersToggle().element())).toBe(false);
+    expect(page.getByRole('button', { name: 'View', exact: true }).elements()).toEqual([]);
+    // Publish (its button and its dialog) is the first and only action; no layer switch.
+    const items = [...headerSlot().children];
+    expect(items[0].contains(page.getByRole('button', { name: /Publish/ }).element())).toBe(true);
+    expect(
+      headerSlot().querySelectorAll('input[type="checkbox"], [aria-label="Map layers"]')
+    ).toHaveLength(0);
     expect(stubProps.view).toEqual({
       transitStops: false,
       transitAccess: false,
       heightLimits: true
     });
-  });
+    await first.unmount();
 
-  it('has no View button without manifest.transit', async () => {
     const { transit: _omit, ...plain } = manifest;
     await render(PageHost, { props: { data: data(plain as Manifest) } });
     await expect.element(page.getByRole('radiogroup', { name: 'Tool' })).toBeInTheDocument();
-    expect(viewButton().elements()).toHaveLength(0);
+    await expect.element(page.getByRole('button', { name: 'Map key' })).toBeInTheDocument();
+    expect(layersToggle().elements()).toHaveLength(0);
+    expect(document.querySelector('[data-testid="map-layers-toggle"]')).toBeNull();
   });
 
-  it('starts from the stored prefs, and a toggle updates the map and persists', async () => {
+  it('a stored transit choice is on when Layers opens, and a toggle writes it back', async () => {
     // /sim's heightLimits: / never shows it, and writes back the value it read.
     localStorage.setItem(
       VIEW_KEY,
@@ -89,9 +99,11 @@ describe('/ View menu', () => {
       transitAccess: true,
       heightLimits: false
     });
+    await layersToggle().click();
+    await expect.element(layersPanel()).toBeVisible();
     expect(page.getByRole('checkbox', { name: 'Zoning height limits' }).query()).toBeNull();
-    await viewButton().click();
     await expect.element(page.getByRole('checkbox', { name: 'Transit stops' })).not.toBeChecked();
+    await expect.element(page.getByRole('checkbox', { name: /Transit capacity/ })).toBeChecked();
 
     await page.getByRole('checkbox', { name: /Transit capacity/ }).click();
     await expect
@@ -109,14 +121,14 @@ describe('/ View menu', () => {
     });
   });
 
-  it('gates View on the manifest the map renders: a reload after a failed load brings it', async () => {
+  it('gates Layers on the manifest the map renders: a reload after a failed load brings it', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
     await render(PageHost, { props: { data: data(null) } });
     const retry = page.getByRole('button', { name: 'Retry', exact: true });
     await expect.element(retry).toBeInTheDocument();
-    expect(viewButton().elements()).toHaveLength(0);
+    expect(layersToggle().elements()).toHaveLength(0);
     (retry.element() as HTMLElement).click();
-    await expect.element(viewButton()).toBeInTheDocument();
+    await expect.element(layersToggle()).toBeInTheDocument();
   });
 });
 

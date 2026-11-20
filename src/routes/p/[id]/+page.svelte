@@ -23,13 +23,13 @@
   import { headlineSpoken } from '$lib/timeline/results';
   import TimelineHeaderScore from '$lib/timeline/TimelineHeaderScore.svelte';
   import { readViewPrefs, writeViewPrefs, type ViewPrefs } from '$lib/view/prefs';
-  import ViewMenu from '$lib/view/ViewMenu.svelte';
+  import LayerSwitches from '$lib/view/LayerSwitches.svelte';
   import { useSystemTheme } from '$lib/map/system-theme.svelte';
   import type { PageProps } from './$types';
 
-  // Read-only view (spec §4.7): no oneditor, no autosave; the header action is View, with the
-  // header score pinned as on `/`. The local autosaved plan is only read (op
-  // count) and written by an explicit Remix.
+  // Read-only view (spec §4.7): no oneditor, no autosave; no header actions, with the header score
+  // pinned as on `/`. The local autosaved plan is only read (op count) and written by an explicit
+  // Remix.
   let { data }: PageProps = $props();
 
   const pageTitle = $derived(`${data.plan.title ?? 'Shared plan'} · SF Housing Simulator`);
@@ -46,15 +46,16 @@
     void goto('/', { state: { sfhRemix: stored ? { from } : { from, plan: planText } } });
   }
 
-  // Map layer toggles (transit spec §6.3): the viewer's own prefs, shared with `/`. View shows only
-  // when the manifest the map renders has a transit network.
+  // Map layer toggles (transit spec §6.3): the viewer's own prefs, shared with `/`, in the map
+  // toolbar's Layers panel, which shows only when the manifest the map renders has a transit
+  // network.
   let view = $state<ViewPrefs>(readViewPrefs());
   let mapManifest = $state.raw<Manifest | null>(null);
   function onViewChange(v: ViewPrefs): void {
     view = v;
     writeViewPrefs(v);
   }
-  useHeaderActions(headerActions, { pinned: scoreBar });
+  useHeaderActions(null, { pinned: scoreBar });
 
   // The dock, as on `/` (sim-ux plan 5): it opens on the read-only Paint tab (the heights it paints, no
   // tools); its own collapse button and rail fold and open it, the header score flips it to
@@ -96,10 +97,8 @@
   const systemTheme = useSystemTheme();
 </script>
 
-{#snippet headerActions()}
-  {#if mapManifest?.transit}
-    <ViewMenu {view} theme={systemTheme.current} onchange={onViewChange} />
-  {/if}
+{#snippet layerSwitches()}
+  <LayerSwitches {view} theme={systemTheme.current} onchange={onViewChange} />
 {/snippet}
 
 {#snippet scoreBar()}
@@ -158,6 +157,7 @@
         onchunks={(c) => (chunkState = c)}
         {view}
         onmanifest={(m) => (mapManifest = m)}
+        layers={mapManifest?.transit ? layerSwitches : undefined}
         {dock}
         {dockId}
         {dockFocus}

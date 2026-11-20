@@ -25,7 +25,7 @@
     openFromMd?: boolean;
     /** Below md, while a card sheet covers the corner: not shown and inert. */
     hidden?: boolean;
-    /** The panel's text dims as Results does (data-stale). */
+    /** The key panel's text dims as Results does (data-stale); the Layers panel's never does. */
     stale?: boolean;
     /** The control's box, for the card area. */
     el?: HTMLElement;
@@ -150,7 +150,6 @@
       role="group"
       aria-label={KEY_COPY.layersName}
       data-testid="map-layers-panel"
-      data-stale={stale ? 'true' : undefined}
       tabindex="0"
       class="sfh-map-key-panel {PANEL}"
       hidden={open !== 'layers'}

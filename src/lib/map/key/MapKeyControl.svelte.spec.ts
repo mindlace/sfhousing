@@ -157,6 +157,56 @@ describe('MapKeyControl', () => {
     expect(document.activeElement).toBe(layersToggle().element());
   });
 
+  it('Layers opens a group named Map layers; Escape closes it and focuses Layers', async () => {
+    await render(KeyHost, { props: { withLayers: true, openFromMd: true } });
+    await expect.element(keyPanel()).toBeVisible();
+    const t = layersToggle();
+    await expect.element(t).toHaveAttribute('aria-expanded', 'false');
+    await expect.element(layersPanel()).not.toBeInTheDocument();
+    await t.click();
+    await expect.element(layersPanel()).toBeVisible();
+    await expect.element(t).toHaveAttribute('aria-expanded', 'true');
+    expect(t.element().getAttribute('aria-controls')).toBe(layersPanel().element().id);
+    // The pressed toggle keeps focus; the key it replaced is closed.
+    expect(document.activeElement).toBe(t.element());
+    await expect.element(keyPanel()).not.toBeInTheDocument();
+    await expect
+      .element(layersPanel().getByRole('checkbox', { name: 'Transit stops' }))
+      .toBeVisible();
+    expect(rect(layersPanel().element()).bottom).toBeLessThanOrEqual(rect(t.element()).top);
+    await userEvent.keyboard('{Escape}');
+    await expect.element(layersPanel()).not.toBeInTheDocument();
+    await expect.element(t).toHaveAttribute('aria-expanded', 'false');
+    expect(document.activeElement).toBe(t.element());
+    // Key, pressed with Layers open, takes over and keeps focus.
+    await t.click();
+    await keyToggle().click();
+    await expect.element(keyPanel()).toBeVisible();
+    await expect.element(layersPanel()).not.toBeInTheDocument();
+    expect(document.activeElement).toBe(keyToggle().element());
+  });
+
+  it('a pointerdown outside the open Layers panel closes it without taking focus', async () => {
+    await page.viewport(375, 812);
+    await render(KeyHost, { props: { withLayers: true, height: 400 } });
+    await layersToggle().click();
+    await expect.element(layersPanel()).toBeVisible();
+    // A press inside the panel keeps it.
+    layersPanel()
+      .element()
+      .dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+    await expect.element(layersPanel()).toBeVisible();
+    const before = page.getByTestId('host-before').element() as HTMLElement;
+    before.focus();
+    page
+      .getByTestId('host-canvas')
+      .element()
+      .dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+    await expect.element(layersPanel()).not.toBeInTheDocument();
+    await expect.element(layersToggle()).toHaveAttribute('aria-expanded', 'false');
+    expect(document.activeElement).toBe(before);
+  });
+
   it('openFromMd: open at 1024 px, closed at 375 px', async () => {
     await page.viewport(1024, 768);
     const a = await render(KeyHost, { props: { openFromMd: true } });
@@ -280,7 +330,7 @@ describe('MapKeyControl', () => {
   });
 
   it('stale: the panel text dims to the muted ink; the toggle keeps its colour', async () => {
-    const r = await render(KeyHost, { props: { openFromMd: true } });
+    const r = await render(KeyHost, { props: { openFromMd: true, withLayers: true } });
     const body = page.getByTestId('host-key-body').element();
     const fresh = getComputedStyle(body).color;
     const toggleColour = getComputedStyle(keyToggle().element()).color;
@@ -289,6 +339,10 @@ describe('MapKeyControl', () => {
     await expect.poll(() => getComputedStyle(body).color).not.toBe(fresh);
     expect(getComputedStyle(body).color).toBe('rgb(75, 85, 99)');
     expect(getComputedStyle(keyToggle().element()).color).toBe(toggleColour);
+    // The layer switches are not numbers: their panel never dims.
+    expect(
+      document.querySelector('[data-testid="map-layers-panel"]')!.hasAttribute('data-stale')
+    ).toBe(false);
   });
 
   it('panel width: 15 rem from md, min(18rem, 100vw - 1rem) below', async () => {

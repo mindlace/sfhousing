@@ -19,6 +19,7 @@ import {
   filledMsg
 } from '$lib/timeline/test/fake-timeline-worker';
 import { statics as baseStatics } from '$lib/timeline/test/fixtures';
+import { LIMITS_CAPTION } from '$lib/view/LayerSwitches.svelte';
 import manifestJson from '../../../e2e/fixtures/data/fixture-0/manifest.json';
 import '$lib/sim-page/debug';
 import type SimPage from '$lib/sim-page/SimPage.svelte';
@@ -95,5 +96,19 @@ describe('rest text (rules 37 to 39)', () => {
     await expect.element(key.getByText('Just changed stage')).toBeVisible();
     await expect.element(key.getByText('Bar: progress and chance of finishing')).toBeVisible();
     expect(longTexts()).toEqual([]);
+  });
+
+  it('/sim with the Layers panel open: only the height limits caption runs long', async () => {
+    await page.viewport(1280, 800);
+    await opened();
+    await page.getByRole('button', { name: 'Map layers' }).click();
+    const layers = page.getByRole('group', { name: 'Map layers' });
+    await expect.element(layers).toBeVisible();
+    await expect.element(layers.getByText('BART / Caltrain')).toBeVisible();
+    await expect.element(layers.getByText(/^Estimated weekday/)).toBeVisible();
+    // The plan keeps the Layers rows' words unchanged (The strings), and the limits caption, moved
+    // from the View menu, is the one text of 12 words or more. It shows only on a press, never at
+    // rest; shortening it is a copy change for the owner (Task 6 report).
+    expect(longTexts()).toEqual([LIMITS_CAPTION]);
   });
 });

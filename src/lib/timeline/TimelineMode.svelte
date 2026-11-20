@@ -169,6 +169,8 @@
     fundingName?: (f: CardFunding) => string | null;
     /** The page's own header actions. */
     actions?: Snippet;
+    /** The map's layer switches, in the map toolbar's Layers panel; no Layers toggle without. */
+    layers?: Snippet;
     /**
      * The page's status (the save state), in the header's status slot. Its argument is true while
      * "Updating" covers it (the cell hides it): its controls should go inert and a popover of its
@@ -249,6 +251,7 @@
     ownerName = undefined,
     fundingName = undefined,
     actions = undefined,
+    layers = undefined,
     status = undefined,
     notices = undefined,
     policy,
@@ -1404,9 +1407,16 @@
         </div>
 
         {#if manifest && session}
-          <!-- The map key: after the map's own controls in Tab order, before the card. Open at
-               rest from md; below md it hides while the card's sheet covers its corner. -->
-          <MapKeyControl openFromMd hidden={narrow.current && cardOpen} {stale} bind:el={keyEl}>
+          <!-- The map key and the page's Layers: after the map's own controls in Tab order, before
+               the card. The key is open at rest from md; below md the control hides while the
+               card's sheet covers its corner. -->
+          <MapKeyControl
+            openFromMd
+            {layers}
+            hidden={narrow.current && cardOpen}
+            {stale}
+            bind:el={keyEl}
+          >
             {#snippet key()}
               <SimKey {tally} {inForce} />
             {/snippet}
