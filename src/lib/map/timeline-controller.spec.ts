@@ -15,6 +15,7 @@ import {
   CityStore,
   M_PER_DEG,
   buildCity,
+  cityGroup,
   cityForward,
   evalCity,
   type CityAttrs,
@@ -1322,22 +1323,32 @@ describe('TimelineController city', () => {
     expect(props(byId(deps, 'timeline-city')).edgeInset).toBe(inset);
   });
 
-  it('marksShown follows the gate: no diamond below zoom 14 with the city on, every one from 14', () => {
+  it('marksShown follows the gate: one diamond a square below zoom 14 with the city on, every one from 14', () => {
     const c = controller();
     c.setHalos({ from: FROM });
-    const a = cellOf(A);
-    const flags = new Uint8Array(a.slotProjectIds.length);
-    flags[a.slotProjectIds.indexOf(SLOT.a.projectId)] = SLOT_FLAG.zoning;
-    c.apply({ ...timelineSmall, cells: [{ ...a, slotFlags: flags }, cellOf(B)], city: CITY });
-    const t = DAYS.a.construction;
-    c.setTime(t);
+    // Every slot of both cells under the policy.
+    const flagAll = (cell: TimedPackedCell) => ({
+      ...cell,
+      slotFlags: new Uint8Array(cell.slotProjectIds.length).fill(SLOT_FLAG.zoning)
+    });
+    c.apply({ ...timelineSmall, cells: [flagAll(cellOf(A)), flagAll(cellOf(B))], city: CITY });
     const marks = halosOf(deps).filter((h) => h.kind === HALO_KIND.mark);
-    const live = marks.filter((h) => evalHalo(h, t, false).visible).length;
-    expect(live).toBeGreaterThan(0);
+    for (const t of [DAYS.start, DAYS.a.construction, DAYS.horizon - 1]) {
+      c.setTime(t);
+      const standing = marks.filter((h) => evalHalo(h, t, false).visible);
+      const squares = new Set(standing.map((h) => cityGroup(...h.anchor))).size;
+      deps.view = viewAt(13);
+      expect(c.debugSnapshot()).toMatchObject({ marks: marks.length, marksShown: squares });
+      deps.view = viewAt(14);
+      expect(c.debugSnapshot().marksShown).toBe(standing.length);
+    }
+    // The fixture's marks share squares, so below 14 there are fewer diamonds than projects.
+    c.setTime(DAYS.a.construction);
     deps.view = viewAt(13);
-    expect(c.debugSnapshot()).toMatchObject({ marks: marks.length, marksShown: 0 });
+    const below = c.debugSnapshot().marksShown;
     deps.view = viewAt(14);
-    expect(c.debugSnapshot().marksShown).toBe(live);
+    expect(below).toBeGreaterThan(0);
+    expect(below).toBeLessThan(c.debugSnapshot().marksShown);
   });
 
   it('setTime constructs no layer and calls setLayers none, with the city layer on', () => {

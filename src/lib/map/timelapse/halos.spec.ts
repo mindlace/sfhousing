@@ -3,6 +3,8 @@ import { HALO_KIND, buildHalos, evalHalo, type HaloAttrs } from './halos';
 import { HALO_DAYS, HALO_R_PX, HALO_STILL_R_PX, MARK_PX } from './constants';
 import { packTimedCell, type TimedPackInput } from '../pack-timed';
 import { SLOT_FLAG } from '../types';
+import { cityGroup } from './city-grid';
+import { CITY_HANDOVER_ZOOM } from './constants';
 import type { Schedule } from '$lib/sim/scenario/types';
 import { DYING_DAYS, OPEN_DAY, type Day } from '$lib/timelapse/time';
 
@@ -27,7 +29,7 @@ function item(
   pathway: Schedule['pathway'],
   entered: Schedule['entered'],
   end: Schedule['end'],
-  opts: { flags?: number; revs?: [Day, [number, number]][] } = {}
+  opts: { flags?: number; revs?: [Day, [number, number]][]; units?: number } = {}
 ): TimedPackInput {
   const revs = opts.revs ?? [[Math.min(...Object.values(entered)), C]];
   return {
@@ -38,7 +40,7 @@ function item(
       pathway,
       entered,
       end,
-      revisions: revs.map(([day]) => ({ day, units: 10, stories: null })),
+      revisions: revs.map(([day]) => ({ day, units: opts.units ?? 10, stories: null })),
       existingUnits: 0,
       multiPhase: false,
       phase: null
@@ -177,6 +179,11 @@ describe('buildHalos', () => {
     }
   });
 
+  it('a ring never stands for its square: its areaFrom is its until', () => {
+    const hs = buildHalos([packTimedCell('c', [DISCRETIONARY])], B);
+    expect(hs.every((h) => h.areaFrom === h.until)).toBe(true);
+  });
+
   it('a cell without slotFlags (an older producer) has no policy and no marks', () => {
     const cell = { ...packTimedCell('c', [STOPPED]), slotFlags: undefined };
     const hs = buildHalos([cell], B);
@@ -190,6 +197,7 @@ describe('evalHalo', () => {
     anchor: C,
     day: 1000,
     until: 1000 + HALO_DAYS,
+    areaFrom: 1000 + HALO_DAYS,
     kind: HALO_KIND.started,
     policy: false
   };
@@ -222,7 +230,13 @@ describe('evalHalo', () => {
   });
 
   it('evalHalo: a mark shows from its day to until at MARK_PX', () => {
-    const mark: HaloAttrs = { ...ring, kind: HALO_KIND.mark, until: 2000, policy: true };
+    const mark: HaloAttrs = {
+      ...ring,
+      kind: HALO_KIND.mark,
+      until: 2000,
+      areaFrom: 2000,
+      policy: true
+    };
     expect(evalHalo(mark, 999, false).visible).toBe(false);
     for (const reduced of [false, true]) {
       expect(evalHalo(mark, 1000, reduced)).toEqual({ visible: true, radiusPx: MARK_PX, alpha: 1 });
@@ -234,7 +248,13 @@ describe('evalHalo', () => {
   });
 
   it('evalHalo: below ringMinZoom a ring and a mark are hidden; from it both show', () => {
-    const mark: HaloAttrs = { ...ring, kind: HALO_KIND.mark, until: 2000, policy: true };
+    const mark: HaloAttrs = {
+      ...ring,
+      kind: HALO_KIND.mark,
+      until: 2000,
+      areaFrom: 2000,
+      policy: true
+    };
     for (const reduced of [false, true]) {
       expect(evalHalo(ring, 1000, reduced, 12, 14).visible).toBe(false);
       expect(evalHalo(ring, 1000, reduced, 15, 14).visible).toBe(true);
@@ -254,8 +274,133 @@ describe('evalHalo', () => {
     expect(evalHalo(ring, 999, false, 16, 14).visible).toBe(false);
   });
 
+  it('evalHalo: a mark that stands for its square shows below ringMinZoom from areaFrom', () => {
+    const mark: HaloAttrs = {
+      ...ring,
+      kind: HALO_KIND.mark,
+      until: 2000,
+      areaFrom: 1500,
+      policy: true
+    };
+    for (const reduced of [false, true]) {
+      expect(evalHalo(mark, 1499, reduced, 13, 14).visible).toBe(false);
+      expect(evalHalo(mark, 1500, reduced, 13, 14)).toEqual({
+        visible: true,
+        radiusPx: MARK_PX,
+        alpha: 1
+      });
+      expect(evalHalo(mark, 1999, reduced, 0, 14).visible).toBe(true);
+      expect(evalHalo(mark, 2000, reduced, 13, 14).visible).toBe(false);
+      // Before areaFrom it still shows from the gate, as every mark.
+      expect(evalHalo(mark, 1000, reduced, 14, 14).visible).toBe(true);
+    }
+  });
+
   it('evalHalo at 13.99 and 14.0 with ringMinZoom 14: hidden, then shown', () => {
     expect(evalHalo(ring, 1000, false, 13.99, 14).visible).toBe(false);
     expect(evalHalo(ring, 1000, false, 14, 14)).toEqual({ visible: true, radiusPx: R0, alpha: 1 });
+  });
+});
+
+/** A flagged slot at `at` whose first stage is `day` and that ends at `exit` (open if absent). */
+function marked(
+  id: string,
+  at: [number, number],
+  day: Day,
+  units = 10,
+  exit?: Day
+): TimedPackInput {
+  return item(
+    id,
+    'permitOnly',
+    { permitFiled: day, permitIssued: day + 30 },
+    exit === undefined
+      ? { kind: 'open' }
+      : { kind: 'exit', stage: 'permitIssued', reason: 'withdrawn', day: exit },
+    { flags: SLOT_FLAG.zoning, units, revs: [[day, at]] }
+  );
+}
+const near: [number, number] = [C[0] + 0.0005, C[1] + 0.0003];
+const other: [number, number] = [C[0] + 0.02, C[1]];
+const marksOf = (cells: TimedPackInput[]) =>
+  buildHalos([packTimedCell('c', cells)], B).filter((h) => h.kind === HALO_KIND.mark);
+const areaOf = (hs: HaloAttrs[]) => Object.fromEntries(hs.map((h) => [h.projectId, h.areaFrom]));
+
+describe('buildHalos: one mark per square below the handover', () => {
+  it('the test points: C and near share a square, other is another', () => {
+    expect(cityGroup(...near)).toBe(cityGroup(...C));
+    expect(cityGroup(...other)).not.toBe(cityGroup(...C));
+  });
+
+  it('the earliest revealed mark stands for its square from its day; a later one never does while it stands', () => {
+    const hs = marksOf([marked('late', near, B + 200), marked('early', C, B + 100)]);
+    expect(areaOf(hs)).toEqual({ early: B + 100, late: OPEN_DAY });
+    // Each mark keeps its own window and day: one record per mark.
+    expect(hs.map((h) => [h.projectId, h.day, h.until]).sort()).toEqual([
+      ['early', B + 100, OPEN_DAY],
+      ['late', B + 200, OPEN_DAY]
+    ]);
+  });
+
+  it('another square has its own', () => {
+    const hs = marksOf([marked('a', C, B + 100), marked('b', other, B + 200)]);
+    expect(areaOf(hs)).toEqual({ a: B + 100, b: B + 200 });
+  });
+
+  it('ties on the day go to more homes, then to the project id', () => {
+    expect(
+      areaOf(marksOf([marked('small', C, B + 100, 5), marked('big', near, B + 100, 50)]))
+    ).toEqual({ small: OPEN_DAY, big: B + 100 });
+    expect(areaOf(marksOf([marked('y', C, B + 100), marked('x', near, B + 100)]))).toEqual({
+      x: B + 100,
+      y: OPEN_DAY
+    });
+  });
+
+  it('when the standing one ends, the square hands over to the earliest still standing', () => {
+    const endA = B + 300 + DYING_DAYS; // a's until
+    const hs = marksOf([
+      marked('a', C, B + 100, 10, B + 300),
+      marked('b', near, B + 200),
+      marked('c', near, B + 150, 10, B + 250), // ends before a: never stands for the square
+      marked('d', near, endA + 50)
+    ]);
+    expect(areaOf(hs)).toEqual({ a: B + 100, b: endA, c: B + 250 + DYING_DAYS, d: OPEN_DAY });
+  });
+
+  it('with a gap, the next mark to be revealed stands for the square from its day', () => {
+    const endA = B + 300 + DYING_DAYS;
+    const hs = marksOf([marked('a', C, B + 100, 10, B + 300), marked('b', near, endA + 40)]);
+    expect(areaOf(hs)).toEqual({ a: B + 100, b: endA + 40 });
+  });
+
+  it('below the handover a square shows exactly one diamond while one of its marks stands; from it, every one', () => {
+    // A square's worth of marks with exits and ties, and a second square.
+    const cells = [
+      marked('m0', C, B + 100, 10, B + 400),
+      marked('m1', near, B + 100, 20, B + 200),
+      marked('m2', near, B + 180),
+      marked('m3', near, B + 500, 10, B + 600),
+      marked('m4', near, B + 2000, 10, B + 2100),
+      marked('o0', other, B + 300, 10, B + 350),
+      marked('o1', other, B + 3000)
+    ];
+    const hs = marksOf(cells);
+    expect(hs).toHaveLength(cells.length);
+    const squares = new Map<number, HaloAttrs[]>();
+    for (const h of hs) {
+      const g = cityGroup(...h.anchor);
+      squares.set(g, [...(squares.get(g) ?? []), h]);
+    }
+    for (let t = B; t < B + 4000; t += 5)
+      for (const group of squares.values()) {
+        const standing = group.filter((h) => h.day <= t && t < h.until).length;
+        const shown = (z: number) =>
+          group.filter((h) => evalHalo(h, t, false, z, CITY_HANDOVER_ZOOM).visible).length;
+        expect(shown(13)).toBe(standing > 0 ? 1 : 0);
+        expect(shown(CITY_HANDOVER_ZOOM)).toBe(standing);
+        // No gate (no city layer): every standing mark at any zoom.
+        expect(group.filter((h) => evalHalo(h, t, false, 11, 0).visible)).toHaveLength(standing);
+      }
   });
 });

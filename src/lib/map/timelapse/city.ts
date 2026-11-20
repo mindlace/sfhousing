@@ -7,7 +7,6 @@
 // frame. Whether a record is a ring, an edge glow or nothing is decided per record per frame in
 // the vertex shader from uniforms (the clock's day, the zoom, the camera).
 import type { TokenName } from '../palette';
-import { CONSTRAINTS } from '../camera';
 import { validateCityDelta } from '../city-delta';
 import type { CityDelta } from '../types';
 import {
@@ -25,6 +24,7 @@ import {
   HALO_R_PX
 } from './constants';
 import { HALO_TOKEN } from './halos';
+import { M_PER_DEG, cityGroup } from './city-grid';
 import type { Day } from '$lib/timelapse/time';
 
 export const CITY_KIND = { approved: 0, started: 1, completed: 2, policy: 3 } as const;
@@ -40,9 +40,6 @@ export const CITY_KIND_TOKEN = [
   HALO_TOKEN.completed,
   'tl-halo-policy'
 ] as const satisfies readonly TokenName[];
-
-/** A square's bounds: [west, south, east, north] in degrees. */
-export type CityBounds = [w: number, s: number, e: number, n: number];
 
 export interface CityAttrs {
   anchor: [lng: number, lat: number]; // homes-weighted centre of the record's events
@@ -68,42 +65,7 @@ export interface CityEval {
  */
 export const CITY_EDGE_MARGIN_PX = HALO_R_PX[1] + 1;
 
-/** Metres per degree of latitude (mean Earth radius 6,371,008.8 m). */
-export const M_PER_DEG = (6_371_008.8 * Math.PI) / 180;
-const [[WEST, SOUTH], [EAST, NORTH]] = CONSTRAINTS.maxBounds;
-const D_LAT = CITY_CELL_M / M_PER_DEG;
-const D_LNG = D_LAT / Math.cos((((SOUTH + NORTH) / 2) * Math.PI) / 180);
-
-/** The CITY_CELL_M grid over `CONSTRAINTS.maxBounds`, from its south-west corner. */
-export const CITY_GRID = {
-  west: WEST,
-  south: SOUTH,
-  dLng: D_LNG,
-  dLat: D_LAT,
-  cols: Math.ceil((EAST - WEST) / D_LNG),
-  rows: Math.ceil((NORTH - SOUTH) / D_LAT)
-} as const;
-
-const clampInt = (v: number, n: number) => Math.min(n - 1, Math.max(0, Math.floor(v)));
-
-/**
- * The square of a point on the CITY_CELL_M grid over CONSTRAINTS.maxBounds (row-major from the
- * south-west); outside points clamp to the edge squares.
- */
-export function cityGroup(lng: number, lat: number): number {
-  const col = clampInt((lng - WEST) / D_LNG, CITY_GRID.cols);
-  const row = clampInt((lat - SOUTH) / D_LAT, CITY_GRID.rows);
-  return row * CITY_GRID.cols + col;
-}
-
-/** The bounds of square `group`. */
-export function citySquare(group: number): CityBounds {
-  const col = group % CITY_GRID.cols;
-  const row = (group - col) / CITY_GRID.cols;
-  const w = WEST + col * D_LNG;
-  const s = SOUTH + row * D_LAT;
-  return [w, s, w + D_LNG, s + D_LAT];
-}
+export { CITY_GRID, M_PER_DEG, cityGroup, citySquare, type CityBounds } from './city-grid';
 
 /** min(CITY_R_MAX_PX, HALO_R_PX[1] · max(1, sqrt(homes / CITY_R_REF_HOMES))): 22 to 40 px. */
 export function cityRadiusPx(homes: number): number {

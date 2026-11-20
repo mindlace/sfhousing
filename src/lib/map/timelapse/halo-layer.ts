@@ -79,6 +79,7 @@ in vec2 positions; // quad corner: -1 → 1 on each axis
 in vec3 instanceAnchor;
 in vec3 instanceAnchor64Low;
 in vec4 instanceHalo; // day, until, kind, policy
+in float instanceAreaFrom; // a mark's areaFrom (a ring's: its until)
 
 out vec2 vPx;
 flat out float vKind;
@@ -101,11 +102,14 @@ struct HlEval {
 
 // The halo on day t at map scale 'scale' (2^zoom). Port of evalHalo; zoom < ringMinZoom is
 // compared as scale < 2^ringMinZoom, so the gate is exact at an integer zoom (no log2 rounding).
-HlEval hl_evalHalo(float day, float until, float kind, float t, bool reduced, float scale) {
+HlEval hl_evalHalo(
+  float day, float until, float areaFrom, float kind, float t, bool reduced, float scale
+) {
   // 1. Hidden: outside [day, until).
   if (t < day || t >= until) return HlEval(false, 0.0, 0.0);
-  // 2. Below the gate (rings and marks): the city layer's merged rings stand for them.
-  if (scale < halo.ringMinScale) return HlEval(false, 0.0, 0.0);
+  // 2. Below the gate (rings and marks): the city layer's merged rings stand for them, and one
+  //    mark a square (from its areaFrom; a ring's is its until) stands for the square's marks.
+  if (scale < halo.ringMinScale && t < areaFrom) return HlEval(false, 0.0, 0.0);
   // 3. A mark: one size, full strength.
   if (kind == HL_MARK) return HlEval(true, HL_MARK_PX, 1.0);
   // 4. Reduced motion: a still ring.
@@ -126,7 +130,13 @@ vec3 hl_color(float kind, bool policy) {
 void main(void) {
   float kind = instanceHalo.z;
   HlEval e = hl_evalHalo(
-    instanceHalo.x, instanceHalo.y, kind, halo.day, halo.reduced > 0.5, project.scale
+    instanceHalo.x,
+    instanceHalo.y,
+    instanceAreaFrom,
+    kind,
+    halo.day,
+    halo.reduced > 0.5,
+    project.scale
   );
   // Half the quad: the ring's outer edge, or half the diamond's diagonal; plus a pixel of margin.
   float halfPx = (kind == HL_MARK ? e.radiusPx / 2.0 : e.radiusPx + HL_STROKE_HALF_PX) + 1.0;
@@ -216,8 +226,9 @@ type _HaloLayerProps = {
   /** Reduced motion: every ring still, at HALO_STILL_R_PX and full strength. */
   reduced: boolean;
   /**
-   * Rings and marks show only from this zoom: CITY_HANDOVER_ZOOM while a city layer draws the
-   * merged rings below it, else 0 (no gate). A uniform: changing it rebuilds nothing.
+   * Rings and marks show only from this zoom, except a mark from its `areaFrom` (its city
+   * square's one diamond): CITY_HANDOVER_ZOOM while a city layer draws the merged rings below
+   * it, else 0 (no gate). A uniform: changing it rebuilds nothing.
    */
   ringMinZoom: number;
 };
@@ -267,7 +278,8 @@ export class HaloLayer extends Layer<_HaloLayerProps> {
       instanceHalo: {
         size: 4,
         accessor: (h: HaloAttrs) => [h.day, h.until, h.kind, h.policy ? 1 : 0]
-      }
+      },
+      instanceAreaFrom: { size: 1, accessor: (h: HaloAttrs) => h.areaFrom }
     });
   }
 

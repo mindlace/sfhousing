@@ -38,13 +38,15 @@ const KIND_TOKEN: Record<0 | 1 | 2, TokenName> = {
 };
 
 function ring(kind: 0 | 1 | 2, policy = false): HaloAttrs {
-  return { projectId: 'gpu', anchor: CENTRE, day: D, until: D + HALO_DAYS, kind, policy };
+  const until = D + HALO_DAYS;
+  return { projectId: 'gpu', anchor: CENTRE, day: D, until, areaFrom: until, kind, policy };
 }
 const MARK: HaloAttrs = {
   projectId: 'gpu',
   anchor: CENTRE,
   day: D - 100,
   until: OPEN_DAY,
+  areaFrom: OPEN_DAY, // never its square's one diamond
   kind: HALO_KIND.mark,
   policy: true
 };
@@ -324,6 +326,29 @@ describe('HaloLayer on the GPU', () => {
       render(D);
       push('no gate ring', at(HALO_R_PX_0), colour);
       push('no gate mark', at(0.5), policy, TOL);
+      expect(got).toEqual(want);
+    } finally {
+      zoomTo(VIEW_STATE.zoom);
+    }
+    expect(errors).toEqual([]);
+  });
+
+  it("with ringMinZoom 14, a mark draws at 13.9 from its areaFrom (its square's one diamond)", async () => {
+    const area: HaloAttrs = { ...MARK, areaFrom: D };
+    const policy = tok('light', 'tl-halo-policy');
+    const zoomTo = (zoom: number) => deck.setProps({ viewState: { ...VIEW_STATE, zoom } });
+    try {
+      const got: string[] = [];
+      const want: string[] = [];
+      zoomTo(13.9);
+      await show([halos([area], false, 14)]);
+      for (const day of [D - 1, D, D + 5000]) {
+        render(day);
+        const e = evalHalo(area, day, false, 13.9, 14);
+        expect(e.visible).toBe(day >= D);
+        got.push(check(`${day}`, at(0.5), e.visible ? policy : BG, TOL));
+        want.push(`${day}: ok`);
+      }
       expect(got).toEqual(want);
     } finally {
       zoomTo(VIEW_STATE.zoom);

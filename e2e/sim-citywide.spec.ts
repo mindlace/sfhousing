@@ -121,6 +121,41 @@ test('a transit rule from today: every flagged slot on the map has a flagged mar
     .toBe(true);
 });
 
+test('a transit rule: at the default zoom one diamond an area shows once its project begins; Home hides it', async ({
+  page
+}) => {
+  await gotoSim(page);
+  await slider(page).focus();
+  await page.keyboard.press('Home');
+  const refills = await page.evaluate(() => (window as Win).__sfhFzp!.refills.length);
+  await addPolicy(page, 'Zoning', 'Transit rule');
+  await page.waitForFunction((n) => (window as Win).__sfhFzp!.refills.length > n, refills);
+  await waitFilled(page);
+  await expect
+    .poll(async () => {
+      const s = (await snap(page))!;
+      return s.pending === 0 && s.marks > 0 && s.marks === s.flagged;
+    })
+    .toBe(true);
+  const zoom = await page.evaluate(() => (window as Win).__sfhMap!.map!.getZoom());
+  expect(zoom).toBeLessThan(14);
+  // At today no mark is due.
+  expect((await snap(page))!.marksShown).toBe(0);
+  // At the horizon the marked projects have begun: below 14 one diamond per area, never more
+  // than every project's own from 14.
+  await slider(page).focus();
+  await page.keyboard.press('End');
+  await expect.poll(async () => (await snap(page))!.marksShown).toBeGreaterThanOrEqual(1);
+  const below = (await snap(page))!.marksShown;
+  await page.evaluate(() => (window as Win).__sfhMap!.map!.jumpTo({ zoom: 14.5 }));
+  await expect.poll(async () => (await snap(page))!.marksShown).toBeGreaterThanOrEqual(below);
+  await page.evaluate((z) => (window as Win).__sfhMap!.map!.jumpTo({ zoom: z }), zoom);
+  await expect.poll(async () => (await snap(page))!.marksShown).toBe(below);
+  await slider(page).focus();
+  await page.keyboard.press('Home');
+  await expect.poll(async () => (await snap(page))!.marksShown).toBe(0);
+});
+
 test('bars are in far mode on /sim', async ({ page }) => {
   await gotoSim(page);
   await expect.poll(async () => (await snap(page))!.barMode).toBe('far');

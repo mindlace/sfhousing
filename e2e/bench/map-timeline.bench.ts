@@ -45,7 +45,7 @@ const DRAG_SWEEP_MS = 2000;
  * (`setHalos`): a ring per stage change and a mark on every tenth project (synthetic-timeline.ts).
  * `camera` is where the pan starts. `city` loads the synthetic city feed (one marker per
  * project), so with `halos` the case also draws `timeline-city` (merged rings below zoom 14 and
- * edge glows) and gates the projects' own rings and marks below 14; the others load none and
+ * edge glows) and gates the projects' own rings and marks below 14 (one mark a square shows); the others load none and
  * keep slice 5's layers. "playback + halos + city" is /sim zoomed in: the projects' own rings
  * with the city's edge glows around them. `far` sets far bars (`setBarMode('far')`, as /sim):
  * from zoom 12 at one size, so the citywide case draws bars at the default camera.
