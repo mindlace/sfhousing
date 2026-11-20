@@ -4,6 +4,7 @@ import type { ParcelId } from '$lib/data/parcel';
 import type { chanceTable, typicalMonths } from '$lib/timelapse/model';
 import { OPEN_DAY, type Day } from '$lib/timelapse/time';
 import type {
+  CityDelta,
   PackedCell,
   SimMapHandle,
   SimMapProps,
@@ -37,6 +38,7 @@ interface RowTimelineUpdate {
   restore?: ParcelId[]; // after revision 0: lots whose demolition no longer holds (S17)
   swap?: true; // revision 0 only: install over the cells on the map (run slider Task 3)
   complete?: boolean; // the run has packed every loaded cell
+  city?: CityDelta; // the citywide markers that changed (map-citywide Task 2); absent = none
 }
 
 type RowApplyTimeline = (u: TimelineUpdate) => void;

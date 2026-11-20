@@ -30,15 +30,17 @@ import { benchRecords, fixtureRecords } from './test/map-stream-cities.node';
 import { sharedGenMemo, streamDeps as depsOf, warmGenMemo } from './test/map-stream-deps';
 import { useFastTypedArrayEquality } from './test/map-stream-equal';
 import {
+  anchoredRows,
   FakeController,
   fill,
+  markersOf,
   rewindTo,
   startStream,
   type StreamSink
 } from './test/map-stream-run';
 import { Recorder, runWorld, SEEDS } from './test/run';
 import { changingAt, everyStage, frameOf, oneFrame } from './test/timeline';
-import { ORIGIN_SIM, type Due } from './types';
+import { NO_DAY, ORIGIN_SIM, type Due } from './types';
 
 const SEED = 1;
 const WINDOW = 480;
@@ -419,6 +421,46 @@ describe('map-stream: rewind (rule 9)', () => {
     expect(now.flatMap((u) => u.cells.map((c) => c.cellId))).toEqual([cell]);
     const after = now[0].cells[0];
     expect(after.slotFlags![after.slotProjectIds.indexOf(id)]).toBe(1);
+    // and its marker, alone, with the new flags
+    const city = now.flatMap((u) => (u.city ? [...markersOf(u.city)] : []));
+    expect(city.map(([r, m]) => [r, m.flags])).toEqual([[row, 1]]);
+  });
+
+  it('a rewind that drops rows sends rows = n and no marker past it', () => {
+    const { run, saved, updates } = firstFill({ save: 12, through: 36 });
+    updates.push(...drain(run));
+    const n = saved.projects.n;
+    expect(run.world.projects.n).toBeGreaterThan(n);
+    const ctl = new FakeController();
+    for (const u of updates) ctl.apply(u);
+    expect([...ctl.markers.keys()].some((row) => row >= n)).toBe(true);
+    const re = rewound(saved, run.stream, timeline, 36);
+    const now = drain(re);
+    const first = now.find((u) => u.city)!;
+    expect(first.city!.rows).toBe(n);
+    expect(Array.from(first.city!.row).filter((row) => row >= n)).toEqual([]);
+    for (const u of now) ctl.apply(u);
+    expect([...ctl.markers.keys()].filter((row) => row >= n)).toEqual([]);
+    // refilled, the page's markers equal a snapshot's: no marker of the old future is left
+    for (const u of fill({ ...re, through: 36 })) ctl.apply(u);
+    const snap = re.stream.snapshot(re.world, statics);
+    expect(ctl.markers).toEqual(markersOf(snap.city!));
+  });
+
+  it("a rewind that changes one row's stage days resends that row only", () => {
+    const { run, saved } = firstFill({ save: 24, through: 24 });
+    drain(run);
+    const row = anchoredRows(saved, statics, input.parcels).find((r) => {
+      const d = saved.projects.entered[r * NS + CONSTRUCTION];
+      return d !== NO_DAY && d <= lastDayOf(saved);
+    })!;
+    expect(row).toBeDefined();
+    const was = saved.projects.entered[row * NS + CONSTRUCTION];
+    const edited = structuredClone(saved);
+    edited.projects.entered[row * NS + CONSTRUCTION] = was - 1;
+    const now = drain(rewound(edited, run.stream, timeline, 24));
+    const city = now.flatMap((u) => (u.city ? [...markersOf(u.city)] : []));
+    expect(city.map(([r, m]) => [r, m.started])).toEqual([[row, was - 1]]);
   });
 
   it('a sent cell left with no project is removed (fixture-0)', () => {

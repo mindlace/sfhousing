@@ -112,6 +112,19 @@ Halos live in simulated time. A ring shows for `HALO_DAYS` (730) days from its e
 
 Draw order: solids, ghosts, `timeline-bars`, `timeline-halos`, then the overlay slot, all before the first label layer. The layer is not pickable and has no depth test. Cadence: the records are rebuilt when an update's last slice has installed and it added or removed cells (a re-encode for new lookups does not count; halos need no lookups), and when `setHalos` changes its value. `setReducedMotion` clones the layer with the new `reduced` prop and keeps its records. `setTime` sets no prop: the layer reads the clock the bars read in `draw`. The debug snapshot (`__sfhMap.timelineSnapshot()`) reports `halos` (rings), `marks`, `halosShown` (rings visible on the clock's day), `haloDays` (the rings' distinct days, ascending, the first 500) and `flagged` (installed slots with parts and a `SLOT_FLAG` bit, halos on or off; `e2e/sim-halos.spec.ts` checks `marks === flagged`).
 
+## The citywide feed
+
+`TimelineUpdate.city?: CityDelta` (`src/lib/map/types.ts`) carries one marker per project row of the plan world that has a T11 lot, whether its cell is loaded or not. Struct of arrays:
+
+- `rows`: the world's row count after this update. The page drops every marker at or past it.
+- Per changed row, ascending, each below `rows`: `row` (`Int32Array`), `lngLat` (`Float32Array`, 2: the anchor lot's label point, about 0.7 m at San Francisco), `days` (`Float32Array`, 3, indexed by `CITY_DAY`: `approved` = the first of entitled and permitIssued, `started` = construction, `completed` = a complete end; `NaN` = not (yet)), `homes` (`Uint16Array`: the final revision's units, capped at 65,535, below 0 sent as 0), `flags` (`Uint8Array`: `SLOT_FLAG` bits, at most 3).
+- 27 bytes a row (`CITY_DELTA_BYTES_PER_ROW`), transferred, not copied (`cityTransferables` lists the five buffers once each). 30,000 projects in a revision 0 or a resync: 810,000 bytes.
+- Revision 0 holds every marker and replaces the page's set; a revision 0 without `city` means no feed, so the page clears it. A later update holds only the rows whose marker changed since the last update (rows an event touched, or a rewind changed), and none at rest: a playhead move, a pan or a zoom sends nothing. A later update without `city` changes no marker.
+- Days run ahead of the playhead: the worker reads the world as of its last stepped month, and the page hides what the clock has not reached.
+- `validateCityDelta` (`src/lib/map/city-delta.ts`) throws `RangeError` on a wrong length, a row not ascending or at or past `rows`, a bad `rows` or a flag above 3.
+
+Producers: only `/sim`'s map stream ([map-stream.md](map-stream.md), "The city feed"). `/lesscars`, `/fzp` and the hashed `scenario/geometry.ts` send no `city`.
+
 ## Timeline demolitions after revision 0
 
 `TimelineUpdate.demolish` after revision 0 adds entries, applied as revision 0's are. `restore?: ParcelId[]` takes back every entry of each listed lot and is applied before `demolish`; revision 0 ignores it. An update with no `restore` and an empty `demolish` changes nothing, so `/lesscars` and `/fzp` are unaffected. In `TimelineController.apply` this is `DemolishPump.amend(add, restore)`: the applied set stays the new list's prefix at the target, and feature-state follows by the same diff as `swap`. Producer: [map-stream.md](map-stream.md).

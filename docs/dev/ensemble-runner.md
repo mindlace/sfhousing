@@ -83,6 +83,8 @@ An edit from a document with nothing in force changes the comparison from the pr
 
 `resyncMap` posts `MapStream.snapshot(planWorld)` (revision 0), unbudgeted; during a quiet re-step it waits for the rewind. `MapStream.cellsFor` runs after each non-null flush and on a viewport change; its cells go to the chunk loader.
 
+A `cells` post transfers every buffer it carries, each once: `packTimedTransferables` of each cell, then `cityTransferables(render.city)` when the update has the citywide feed ([map-interfaces.md](map-interfaces.md), "The citywide feed"). Nothing is posted per world step: the feed rides the flush.
+
 ### Failure
 
 A throw in a unit posts `error` `'timeline'` at the current rev and stops filling until the next `setPolicy` or `openTimeline`; the lookups keep answering. A compile throw other than `LeverFormatError` is the same (D11). A rejected load is `internal`. Chunk failures go out as `compiling.failedCells` and `chunks`; `retryChunks` works as today.

@@ -66,6 +66,7 @@ import {
   type StagedBuild
 } from '$lib/map/height/city';
 import { createLidBuild, LidTooLarge, type LidBuild } from '$lib/map/height/lids';
+import { cityTransferables } from '$lib/map/city-delta';
 import { packTimedTransferables } from '$lib/map/pack-timed';
 import { LeverFormatError } from '$lib/sim/levers/types';
 import type { Rev } from '$lib/sim/protocol';
@@ -865,7 +866,10 @@ export function createRunner(deps: RunnerDeps): Runner {
 
   function sendCells(u: ReturnType<MapStream['snapshot']>): void {
     complete = u.complete === true;
-    post({ type: 'cells', render: u }, u.cells.flatMap(packTimedTransferables));
+    post({ type: 'cells', render: u }, [
+      ...u.cells.flatMap(packTimedTransferables),
+      ...(u.city ? cityTransferables(u.city) : [])
+    ]);
     // S17: the chunks of projects anchored in the wanted cells, so their anchor cells can go
     const extra = stream!.cellsFor(ds.chunks.wanted);
     if (extra.size > 0) ds.chunks.wantAlso(extra);
