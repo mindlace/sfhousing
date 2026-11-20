@@ -147,8 +147,17 @@ interface Slice {
   reencode: string[];
   /** The last slice of a `complete` update: once it has run, the swap's leftovers go. */
   complete?: true;
-  /** A step of the far declutter in flight (`barJob`): FAR_UNITS_PER_SLICE units, or its setup. */
-  bars?: true;
+  /**
+   * A step of this far declutter: FAR_UNITS_PER_SLICE units, or its setup. Dropping the job
+   * removes its step; one that is not `barJob` all the same runs as an empty slice.
+   */
+  bars?: BarJob;
+}
+
+/** A far declutter in flight: the bars it was built from, and its state once set up. */
+interface BarJob {
+  bars: BarAttrs[];
+  job: FarDeclutter | null;
 }
 
 const RESERVED = /^(generated|rising|timeline)-/;
@@ -194,9 +203,11 @@ export class TimelineController {
   private barMode: BarMode = 'street';
   /**
    * The far declutter in flight, run in `bars` slices; the bar layer on the map stays until it
-   * ends and swaps in once. Dropped (never swapped in) when the bars change under it.
+   * ends and swaps in once. Cell updates do not stop it (it is newer than the layer on the map;
+   * they mark the bars dirty, so one more run follows). Dropped, never swapped in, on a revision
+   * 0, `setLookups`, a bar mode change and `destroy`.
    */
-  private barJob: { bars: BarAttrs[]; job: FarDeclutter | null } | null = null;
+  private barJob: BarJob | null = null;
   /** `setHalos`: events after this day ring; null (the default) emits no halo layer. */
   private haloFrom: Day | null = null;
   /** `setReducedMotion`: the halo layer's `reduced` prop. */
@@ -279,8 +290,8 @@ export class TimelineController {
       }
       return; // band-only
     }
-    // Cells change: a far declutter in flight is stale; the update's last slice rebuilds.
-    this.cancelBars();
+    // Cells change. A far declutter in flight carries on and swaps in (it is newer than the
+    // bars on the map); the installs mark the bars dirty, so one more run starts after it.
     const idle = this.queue.length === 0;
     this.queue.push(...slices);
     if (idle) this.runSlice(this.queue.shift()!);
@@ -317,7 +328,7 @@ export class TimelineController {
     const queued = new Set<string>();
     for (const s of this.queue) for (const c of s.cells) queued.add(c.cellId);
     const ids = [...this.cells.keys()].filter((id) => !queued.has(id)).sort();
-    this.barJob = null;
+    this.cancelBars();
     this.barsDirty = true;
     for (let i = 0; i < ids.length; i += MAX_CELLS_PER_SLICE)
       this.queue.push({ cells: [], removed: [], reencode: ids.slice(i, i + MAX_CELLS_PER_SLICE) });
@@ -365,8 +376,8 @@ export class TimelineController {
     this.barMode = mode;
     if (this.lastRevision < 0) return;
     // Queued slices end in a rebuild that reads the mode; otherwise rebuild now.
+    this.cancelBars();
     if (this.queue.length > 0) {
-      this.barJob = null;
       this.barsDirty = true;
       return;
     }
@@ -635,7 +646,7 @@ export class TimelineController {
 
   private runSlice(slice: Slice): void {
     // A far declutter step that does not finish changes nothing on the map: no emit.
-    if (slice.bars && !this.stepBars()) return;
+    if (slice.bars && !this.stepBars(slice.bars)) return;
     for (const id of slice.removed) {
       // During a swap a removed cell stays as a leftover, so the map never thins mid-switch.
       if (this.swapping) {
@@ -657,9 +668,10 @@ export class TimelineController {
       this.swapping = false;
     }
     // Bars, city records and halos are rebuilt once per update, when its last slice has
-    // installed; the city first, as the halo layer's gate follows it.
-    if (this.queue.length === 0) {
-      if (this.barsDirty) this.rebuildBars();
+    // installed (a far run's own steps do not hold them back); the city first, as the halo
+    // layer's gate follows it. Dirty bars wait for the run in flight to swap in, then rebuild.
+    if (this.drained()) {
+      if (this.barsDirty && !this.barJob) this.rebuildBars();
       if (this.cityDirty) this.rebuildCity();
       if (this.halosDirty) this.rebuildHalos();
       else this.syncGate();
@@ -713,8 +725,9 @@ export class TimelineController {
     const sorted = [...this.cells].sort(byKey).map(([, c]) => c.pack);
     const bars = buildBars(sorted, l);
     if (this.barMode === 'far') {
-      this.barJob = { bars, job: null };
-      this.queue.push({ cells: [], removed: [], reencode: [], bars: true });
+      const job: BarJob = { bars, job: null };
+      this.barJob = job;
+      this.queue.push({ cells: [], removed: [], reencode: [], bars: job });
       return;
     }
     this.layBars(declutter(bars));
@@ -735,12 +748,12 @@ export class TimelineController {
   /**
    * One `bars` slice: the far declutter's setup, or its next FAR_UNITS_PER_SLICE units. Queues
    * the next slice, or lays the records out once every unit is visited. True when this slice
-   * changed the map (the swap) or there is no job (a dropped one): the slice then runs as any.
+   * changed the map (the swap) or its job is no longer the one in flight (a dropped one): the
+   * slice then runs as any.
    */
-  private stepBars(): boolean {
-    const b = this.barJob;
-    if (!b) return true;
-    const more = () => this.queue.push({ cells: [], removed: [], reencode: [], bars: true });
+  private stepBars(b: BarJob): boolean {
+    if (b !== this.barJob) return true;
+    const more = () => this.queue.push({ cells: [], removed: [], reencode: [], bars: b });
     if (!b.job) {
       b.job = new FarDeclutter(b.bars);
       more();
@@ -755,11 +768,20 @@ export class TimelineController {
     return true;
   }
 
-  /** Drops a far declutter in flight (its bars are stale); the bars rebuild when the queue drains. */
+  /**
+   * Drops a far declutter in flight (a revision 0, new lookups, a mode change): its queued step
+   * goes and it never swaps in; the bars rebuild when the cell slices drain.
+   */
   private cancelBars(): void {
     if (!this.barJob) return;
     this.barJob = null;
     this.barsDirty = true;
+    this.queue = this.queue.filter((s) => !s.bars);
+  }
+
+  /** No cell, removal or re-encode slice is queued: only far declutter steps, or nothing. */
+  private drained(): boolean {
+    return this.queue.every((s) => s.bars);
   }
 
   /** Halo records from the installed cells, in cellId order; no lookups needed. */

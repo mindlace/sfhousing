@@ -1670,7 +1670,29 @@ describe('TimelineController bar modes', () => {
     expect(barsOf(deps).length).toBeGreaterThan(units / 2);
   });
 
-  it('far: an update mid-declutter restarts it from the new bars; the stale run never swaps in', () => {
+  /** Far bars a fresh controller lays for `cells` at revision 0 (what the map should end on). */
+  function farBarsFor(cells: TimedPackedCell[]): BarAttrs[] {
+    const d = makeFakeTimelineDeps();
+    const fresh = new TimelineController(d, 'light');
+    fresh.setLookups(SYNTHETIC_LOOKUPS);
+    fresh.setBarMode('far');
+    fresh.apply(update(0, { cells }));
+    drainWith(d, fresh);
+    return (props(d.lastLayers.find((l) => l.id === 'timeline-bars')!).data as BarAttrs[]).slice();
+  }
+  /** Far bar layers swapped in after `from` emits (the one on the map then not counted). */
+  const farLayers = (from: number) => {
+    const barsIn = (ls: Layer[] | undefined) => ls?.find((l) => l.id === 'timeline-bars');
+    const onMap = barsIn(deps.layerHistory[from - 1]);
+    return new Set(
+      deps.layerHistory
+        .slice(from)
+        .map(barsIn)
+        .filter((l) => l && l !== onMap && (l.props as unknown as { far?: boolean }).far)
+    );
+  };
+
+  it('far: an update mid-declutter lets the run swap in, then one more run drops what it withdrew', () => {
     const u = makeSyntheticTimeline(3, 2_000, 1500, false);
     const c = new TimelineController(deps, 'light');
     c.setLookups(SYNTHETIC_LOOKUPS);
@@ -1680,16 +1702,92 @@ describe('TimelineController bar modes', () => {
     expect(c.debugSnapshot().pending).toBeGreaterThan(0);
     // A later revision removes the first cell while the declutter is under way.
     const gone = u.cells[0];
-    c.apply(update(1, { removedCells: [gone.cellId] }));
     const before = deps.layerHistory.length;
+    c.apply(update(1, { removedCells: [gone.cellId] }));
     drain(c);
-    const layers = new Set(
-      deps.layerHistory.slice(before).map((ls) => ls.find((l) => l.id === 'timeline-bars'))
-    );
-    layers.delete(undefined);
-    expect(layers.size).toBe(1); // one swap, from the new bars only
+    // The run in flight was newer than the map (no bars at all): it swapped in, then one more.
+    expect(farLayers(before).size).toBe(2);
     expect(barsOf(deps).some((b) => gone.slotProjectIds.includes(b.projectId))).toBe(false);
-    expect(barsOf(deps).length).toBeGreaterThan(0);
+    expect(barsOf(deps)).toEqual(farBarsFor(u.cells.slice(1)));
+  });
+
+  it('far: updates every few frames for longer than one run still swap bars in, and the last run reflects the last update', () => {
+    const u = makeSyntheticTimeline(5, 6_000, 500, false);
+    const c = new TimelineController(deps, 'light');
+    c.setLookups(SYNTHETIC_LOOKUPS);
+    c.setBarMode('far');
+    c.apply(u);
+    drain(c);
+    const run =
+      1 +
+      Math.ceil(
+        new FarDeclutter(buildBars(u.cells, SYNTHETIC_LOOKUPS)).units / FAR_UNITS_PER_SLICE
+      );
+    expect(run).toBeGreaterThan(3);
+    // A fill: an update with cells every 2 frames for 4 run lengths (each one would restart a run
+    // that was dropped on update, so none would ever swap in).
+    const before = deps.layerHistory.length;
+    const cells = new Map(u.cells.map((cell) => [cell.cellId, cell]));
+    let rev = 0;
+    let frame = 0;
+    const emitsBySetTime: number[] = [];
+    for (; frame < 4 * run; frame++) {
+      if (frame % 2 === 0) {
+        const cell = u.cells[(frame / 2) % u.cells.length];
+        cells.set(cell.cellId, cell);
+        c.apply(update(++rev, { cells: [cell] }));
+      }
+      const emits = deps.layerHistory.length;
+      c.setTime(DAYS.start + frame);
+      emitsBySetTime.push(deps.layerHistory.length - emits);
+      deps.flushFrame();
+    }
+    expect(emitsBySetTime.every((n) => n === 0)).toBe(true); // setTime builds nothing
+    // Bars progressed during the fill: at least one run swapped in while updates kept coming.
+    expect(farLayers(before).size).toBeGreaterThanOrEqual(1);
+    // The last update withdraws a cell; once the stream ends the last run reflects it.
+    const gone = u.cells[3];
+    cells.delete(gone.cellId);
+    c.apply(update(rev + 1, { removedCells: [gone.cellId] }));
+    drain(c);
+    expect(barsOf(deps).some((b) => gone.slotProjectIds.includes(b.projectId))).toBe(false);
+    expect(barsOf(deps)).toEqual(farBarsFor([...cells.values()]));
+  });
+
+  it('far: new lookups, a mode change or destroy mid-declutter drop the run; it never swaps in', () => {
+    const u = makeSyntheticTimeline(3, 2_000, 1500, false);
+    const start = (): TimelineController => {
+      const c = new TimelineController(deps, 'light');
+      c.setLookups(SYNTHETIC_LOOKUPS);
+      c.setBarMode('far');
+      c.apply(u);
+      deps.flushFrame(); // the setup
+      expect(c.debugSnapshot().pending).toBeGreaterThan(0);
+      return c;
+    };
+    // New lookups: one run swaps in, the one started after them.
+    let c = start();
+    let before = deps.layerHistory.length;
+    const later = { ...SYNTHETIC_LOOKUPS };
+    c.setLookups(later);
+    drain(c);
+    expect(farLayers(before).size).toBe(1);
+    expect(barsOf(deps)).toEqual(farBarsFor(u.cells));
+    c.destroy();
+    // Street mid-run: the street bars at once, and no far layer ever after.
+    c = start();
+    before = deps.layerHistory.length;
+    c.setBarMode('street');
+    drain(c);
+    expect(farLayers(before).size).toBe(0);
+    expect(far()).toBe(false);
+    c.destroy();
+    // destroy: nothing more is emitted.
+    c = start();
+    before = deps.layerHistory.length;
+    c.destroy();
+    for (let i = 0; i < 20; i++) deps.flushFrame();
+    expect(deps.layerHistory).toHaveLength(before);
   });
 
   it('far: a revision 0 mid-declutter drops the run; the new bars swap in once', () => {
