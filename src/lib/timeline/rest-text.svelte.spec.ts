@@ -92,6 +92,8 @@ describe('rest text (rules 37 to 39)', () => {
     const key = page.getByRole('group', { name: 'Map key' });
     await expect.element(key).toBeVisible();
     await expect.element(key.getByText('Planning review')).toBeVisible();
+    await expect.element(key.getByText('Just changed stage')).toBeVisible();
+    await expect.element(key.getByText('Bar: progress and chance of finishing')).toBeVisible();
     expect(longTexts()).toEqual([]);
   });
 });

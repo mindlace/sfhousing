@@ -90,6 +90,8 @@ export interface TimelineSnapshot {
   halosShown: number;
   /** The rings' distinct event days, ascending, the first 500. */
   haloDays: number[];
+  /** Installed slots with parts and a flag (`slotFlags[s] !== 0`), halos on or off. */
+  flagged: number;
 }
 
 /** Shared mutable clock read by the extension's `draw`; `setTime` writes `day`. */

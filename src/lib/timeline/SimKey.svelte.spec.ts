@@ -9,6 +9,8 @@ import axe from 'axe-core';
 import '../../routes/layout.css';
 import { timelineTokenCss } from '$lib/map/palette';
 import { STAGE_KEY } from '$lib/map/key/rows';
+import { KEY_COPY } from '$lib/map/key/copy';
+import { longTexts } from '$lib/shell/test/rest-text';
 import SimKey from './SimKey.svelte';
 import type { KeyTally } from './key';
 
@@ -45,7 +47,7 @@ afterEach(async () => {
 
 describe('SimKey', () => {
   it('lists the six groups, each label beside its count, under Homes', async () => {
-    await render(SimKey, { props: { tally: TALLY } });
+    await render(SimKey, { props: { tally: TALLY, inForce: false } });
     await expect.element(page.getByText('Homes', { exact: true })).toBeVisible();
     const dl = document.querySelector('dl')!;
     expect(dl.getAttribute('aria-labelledby')).toBe(page.getByText('Homes').element().id);
@@ -64,13 +66,13 @@ describe('SimKey', () => {
   });
 
   it("shows '…' for every count while the tally is null", async () => {
-    await render(SimKey, { props: { tally: null } });
+    await render(SimKey, { props: { tally: null, inForce: false } });
     const counts = [...document.querySelectorAll('dl dd')].map((d) => d.textContent);
     expect(counts).toEqual(['…', '…', '…', '…', '…', '…']);
   });
 
   it('has one row per STAGE_KEY entry with its swatch tokens (replaces SimResults legend rows)', async () => {
-    await render(SimKey, { props: { tally: TALLY } });
+    await render(SimKey, { props: { tally: TALLY, inForce: false } });
     const rows = [...document.querySelectorAll('[data-key-row]')];
     expect(rows.map((r) => r.getAttribute('data-key-row'))).toEqual(STAGE_KEY.map((e) => e.id));
     for (const e of STAGE_KEY) {
@@ -87,7 +89,7 @@ describe('SimKey', () => {
 
   it('resolves every swatch token under light and dark (replaces SimResults)', async () => {
     const box = withTokens();
-    await render(SimKey, { props: { tally: TALLY }, target: box });
+    await render(SimKey, { props: { tally: TALLY, inForce: false }, target: box });
     const read = (id: string, token: string) =>
       getComputedStyle(document.querySelector(`[data-key-row="${id}"] [data-swatch]`)!)
         .getPropertyValue(`--map-${token}`)
@@ -101,6 +103,128 @@ describe('SimKey', () => {
     await expect.poll(() => tokens.map(([id, t]) => read(id, t))).not.toEqual(light);
     const dark = tokens.map(([id, t]) => read(id, t));
     tokens.forEach(([, t], k) => {
+      expect(light[k], `${t} light`).not.toBe('');
+      expect(dark[k], `${t} dark`).not.toBe('');
+      expect(dark[k], `${t} differs by theme`).not.toBe(light[k]);
+    });
+  });
+  /** The rows after the tally: [kind, its tokens, its words]. */
+  const extras = () =>
+    [...document.querySelectorAll('[data-key-extra]')].map((r) => {
+      const sw = r.querySelector('[data-swatch]')!;
+      return [
+        r.getAttribute('data-key-extra'),
+        sw.getAttribute('data-swatch'),
+        [...sw.querySelectorAll('[data-token]')].flatMap((t) =>
+          t.getAttribute('data-token')!.split(' ')
+        ),
+        r.textContent!.trim()
+      ];
+    });
+
+  it('names the ring, and the bar, always', async () => {
+    await render(SimKey, { props: { tally: TALLY, inForce: false } });
+    expect(extras()).toEqual([
+      ['ring', 'ring', ['tl-halo-approved', 'tl-halo-started', 'tl-halo-complete'], KEY_COPY.ring],
+      ['bar', 'bar', ['tl-bar-unlikely', 'tl-bar-uncertain', 'tl-bar-likely'], KEY_COPY.bar]
+    ]);
+    // A list after the tally, its swatches beside words and hidden from assistive tech.
+    const list = document.querySelector('dl + ul')!;
+    expect(list.querySelectorAll(':scope > li')).toHaveLength(2);
+    for (const sw of list.querySelectorAll('[data-swatch]'))
+      expect(sw.getAttribute('aria-hidden')).toBe('true');
+    expect(document.body.textContent).not.toContain(KEY_COPY.mark);
+    expect((await axe.run(list.parentElement!)).violations).toEqual([]);
+  });
+
+  it('names the mark with its explanation only while a policy is in force', async () => {
+    const r = await render(SimKey, { props: { tally: TALLY, inForce: true } });
+    expect(extras().map(([k]) => k)).toEqual(['ring', 'mark', 'bar']);
+    const mark = document.querySelector('[data-key-extra="mark"]')!;
+    expect(mark.querySelector('[data-swatch]')!.getAttribute('data-swatch')).toBe('mark');
+    expect(
+      [...mark.querySelectorAll('[data-token]')].flatMap((t) =>
+        t.getAttribute('data-token')!.split(' ')
+      )
+    ).toEqual(['tl-halo-policy']);
+    const button = page.getByRole('button', { name: KEY_COPY.mark });
+    await expect.element(button).toBeVisible();
+    // The claim is behind the tap, never at rest.
+    expect(document.body.textContent).not.toContain(KEY_COPY.markWhy);
+    expect(document.body.textContent).not.toMatch(/because/i);
+    expect(longTexts()).toEqual([]);
+    expect((await axe.run(document.querySelector('ul')!.parentElement!)).violations).toEqual([]);
+    await r.rerender({ tally: TALLY, inForce: false });
+    await expect.element(button).not.toBeInTheDocument();
+    expect(extras().map(([k]) => k)).toEqual(['ring', 'bar']);
+  });
+
+  it("the mark's explanation opens on focus and on tap, and is under 12 words", async () => {
+    await render(SimKey, { props: { tally: TALLY, inForce: true } });
+    const button = page.getByRole('button', { name: KEY_COPY.mark });
+    const el = button.element() as HTMLElement;
+    el.focus();
+    const tip = page.getByRole('tooltip');
+    await expect.element(tip).toHaveTextContent(KEY_COPY.markWhy);
+    await expect.element(button).toHaveAccessibleDescription(KEY_COPY.markWhy);
+    expect(KEY_COPY.markWhy.split(/\s+/).length).toBeLessThan(12);
+    el.blur();
+    await expect.element(tip).not.toBeInTheDocument();
+    const tap = () => {
+      el.dispatchEvent(new PointerEvent('pointerdown', { pointerType: 'touch', bubbles: true }));
+      el.focus();
+      el.dispatchEvent(new MouseEvent('click', { detail: 1, bubbles: true }));
+    };
+    tap();
+    await expect.element(tip).toHaveTextContent(KEY_COPY.markWhy);
+    tap();
+    await expect.element(tip).not.toBeInTheDocument();
+  });
+
+  it("the mark's button is at least 24 px tall, and its open text stays inside the panel's width", async () => {
+    // From md, where Explain is otherwise a popover beside its target.
+    await page.viewport(1280, 800);
+    const box = withTokens();
+    box.style.width = '240px';
+    box.style.overflowY = 'auto';
+    await render(SimKey, { props: { tally: TALLY, inForce: true }, target: box });
+    const el = page.getByRole('button', { name: KEY_COPY.mark }).element() as HTMLElement;
+    expect(el.getBoundingClientRect().height).toBeGreaterThanOrEqual(24);
+    el.focus();
+    await expect.element(page.getByRole('tooltip')).toBeVisible();
+    // No sideways scroll inside the key's panel (which scrolls on y only).
+    expect(box.scrollWidth).toBeLessThanOrEqual(box.clientWidth);
+  });
+
+  it('resolves every token the ring, mark and bar rows use, and every bar tone, light and dark', async () => {
+    const box = withTokens();
+    await render(SimKey, { props: { tally: TALLY, inForce: true }, target: box });
+    const used = [...box.querySelectorAll('[data-key-extra] [data-token]')].flatMap((t) =>
+      t.getAttribute('data-token')!.split(' ')
+    );
+    // The bar tones the map draws, the dead one and the edge included (no other DOM test reads them).
+    const tokens = [...new Set([...used, 'tl-bar-dead', 'tl-bar-edge'])];
+    expect(tokens).toEqual(
+      expect.arrayContaining([
+        'tl-halo-approved',
+        'tl-halo-started',
+        'tl-halo-complete',
+        'tl-halo-policy',
+        'tl-bar-unlikely',
+        'tl-bar-uncertain',
+        'tl-bar-likely',
+        'tl-bar-dead',
+        'tl-bar-edge'
+      ])
+    );
+    const sw = box.querySelector('[data-key-extra="bar"] [data-swatch]')!;
+    const read = (t: string) => getComputedStyle(sw).getPropertyValue(`--map-${t}`).trim();
+    await scheme('light');
+    const light = tokens.map(read);
+    await scheme('dark');
+    await expect.poll(() => tokens.map(read)).not.toEqual(light);
+    const dark = tokens.map(read);
+    tokens.forEach((t, k) => {
       expect(light[k], `${t} light`).not.toBe('');
       expect(dark[k], `${t} dark`).not.toBe('');
       expect(dark[k], `${t} differs by theme`).not.toBe(light[k]);

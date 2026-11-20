@@ -2,7 +2,8 @@
   One map key swatch, drawn from its tokens through the `--map-*` custom properties (set on
   `.sfh-map-key` by MapKeyControl, `timelineTokenCss`). Decorative: the row's words carry the
   meaning, so it is aria-hidden. Ghost: a tinted outline per token; solid: filled squares; bar: a
-  stage bar (a gradient for several tokens); ring: an outlined circle; mark: a diamond.
+  stage bar (a gradient for several tokens); ring: an outlined circle (several overlap in a row);
+  mark: a diamond inside a ring of its token.
 -->
 <script lang="ts">
   import type { Swatch } from './rows';
@@ -57,20 +58,31 @@
       style:border-color={color('tl-bar-edge')}
     ></span>
   {:else if swatch.kind === 'ring'}
-    {#each swatch.tokens as token (token)}
-      <span
-        class="inline-block h-4 w-4 rounded-full border-2"
-        data-token={token}
-        style:border-color={color(token)}
-      ></span>
-    {/each}
+    <!-- One ring, or several overlapping in a row that fits the swatch's width. -->
+    <span class="flex">
+      {#each swatch.tokens as token (token)}
+        <span
+          class="inline-block shrink-0 rounded-full border-2 {swatch.tokens.length > 1
+            ? 'h-3 w-3 not-first:-ml-1'
+            : 'h-4 w-4'}"
+          data-token={token}
+          style:border-color={color(token)}
+        ></span>
+      {/each}
+    </span>
   {:else}
+    <!-- A diamond inside a ring of the same token, as a mark sits on its project's ring. -->
     {#each swatch.tokens as token (token)}
       <span
-        class="inline-block h-2.5 w-2.5 rotate-45"
-        data-token={token}
-        style:background={color(token)}
-      ></span>
+        class="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2"
+        style:border-color={color(token)}
+      >
+        <span
+          class="inline-block h-2 w-2 rotate-45"
+          data-token={token}
+          style:background={color(token)}
+        ></span>
+      </span>
     {/each}
   {/if}
 </span>

@@ -137,6 +137,9 @@ type Over = Partial<{
   saveStatus: SaveStatus;
   /** The goal the page reads (a test seam; default the page's goal). */
   goal: Goal;
+  /** The page opens with its data failed (Retry shows); `reload` is what Retry brings. */
+  calibrationError: boolean;
+  reload: () => Promise<{ manifest: Manifest; calibration: typeof cal }>;
 }>;
 
 let workers: FakeTimelineWorker[];
@@ -161,10 +164,10 @@ function setup(over: Over = {}) {
       manifest,
       manifestError: false,
       calibration: cal,
-      calibrationError: false,
+      calibrationError: over.calibrationError ?? false,
       noScenario: over.noScenario ?? false,
       datasetVersion: 'fixture-0',
-      reload: async () => ({ manifest, calibration: cal }),
+      reload: over.reload ?? (async () => ({ manifest, calibration: cal })),
       createWorker,
       initialPolicy: over.initialPolicy ?? DEFAULT_POLICY4,
       initialLots: over.initialLots === undefined ? {} : over.initialLots,
@@ -2699,5 +2702,39 @@ describe('the map key', () => {
     await expect.poll(() => getComputedStyle(label).color).toBe('rgb(75, 85, 99)');
     // The toggle, a control, keeps its colour.
     expect(getComputedStyle(keyToggle().element()).color).not.toBe('rgb(75, 85, 99)');
+  });
+});
+
+describe('halos on the map', () => {
+  it('turns halos on from the dataset date once the map is ready', async () => {
+    stub.autoReady = false;
+    await opened();
+    // Nothing before the map is ready.
+    expect(callsOf('setHalos')).toEqual([]);
+    stub.fireReady();
+    await expect.poll(() => callsOf('setHalos')).toEqual([[{ from: asOf }]]);
+    // Not per playhead move: the arrows, Home and End leave it at the one call.
+    (slider().element() as HTMLElement).focus();
+    for (let k = 1; k <= 3; k++) {
+      await userEvent.keyboard('{ArrowRight}');
+      await expect.poll(() => debug().day).toBe(MONTHS[k]);
+    }
+    await userEvent.keyboard('{End}');
+    await userEvent.keyboard('{Home}');
+    await expect.poll(() => debug().day).toBe(asOf);
+    expect(callsOf('setTime').length).toBeGreaterThan(4);
+    expect(callsOf('setHalos')).toEqual([[{ from: asOf }]]);
+  });
+
+  it('turns them on again from the new date after a Retry brings a new calibration', async () => {
+    const fresh = { ...cal, asOf: asOf + 31 };
+    setup({ calibrationError: true, reload: async () => ({ manifest, calibration: fresh }) });
+    const retry = page.getByRole('button', { name: 'Retry' });
+    await expect.element(retry).toBeVisible();
+    await expect.poll(() => callsOf('setHalos')).toEqual([[{ from: asOf }]]);
+    await retry.click();
+    await expect
+      .poll(() => callsOf('setHalos'))
+      .toEqual([[{ from: asOf }], [{ from: fresh.asOf }]]);
   });
 });

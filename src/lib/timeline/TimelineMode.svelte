@@ -798,7 +798,11 @@
     for (const u of queued) h.applyTimeline(u);
     for (const [cellId, s] of pendingStatus) h.setChunkStatus(cellId, s);
     pendingStatus.clear();
-    if (calibration) h.setTime(day);
+    if (calibration) {
+      h.setTime(day);
+      // Halos and marks from the dataset date on: nothing rings at today. Once, not per move.
+      h.setHalos({ from: calibration.asOf });
+    }
     applyInset();
     // Rule 22.
     h.onResyncNeeded(() => session?.resync());
@@ -1018,6 +1022,7 @@
         reveal = revealOpen(fresh.calibration.asOf);
         pushLookups();
         handle?.setTime(day);
+        handle?.setHalos({ from: fresh.calibration.asOf });
         oncalibration?.(fresh.calibration);
       }
       failed = false;
@@ -1403,7 +1408,7 @@
                rest from md; below md it hides while the card's sheet covers its corner. -->
           <MapKeyControl openFromMd hidden={narrow.current && cardOpen} {stale} bind:el={keyEl}>
             {#snippet key()}
-              <SimKey {tally} />
+              <SimKey {tally} {inForce} />
             {/snippet}
           </MapKeyControl>
         {/if}

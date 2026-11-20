@@ -1054,4 +1054,15 @@ describe('TimelineController halos', () => {
     c.setTime(DAYS.start);
     expect(c.debugSnapshot().halosShown).toBe(0);
   });
+
+  it('counts the drawn slots with a flag in the debug snapshot, halos on or off', () => {
+    const c = controller();
+    expect(c.debugSnapshot().flagged).toBe(0);
+    c.apply({ ...timelineSmall, cells: [flaggedA(), cellOf(B)] });
+    expect(c.debugSnapshot().flagged).toBe(1);
+    c.setHalos({ from: FROM });
+    expect(c.debugSnapshot()).toMatchObject({ flagged: 1, marks: 1 });
+    c.setHalos(null);
+    expect(c.debugSnapshot()).toMatchObject({ flagged: 1, marks: 0 });
+  });
 });

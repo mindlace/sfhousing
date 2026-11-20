@@ -317,7 +317,15 @@ export class TimelineController {
 
   debugSnapshot(): TimelineSnapshot {
     let parts = 0;
-    for (const cell of this.cells.values()) parts += cell.pack.partCount;
+    let flagged = 0;
+    for (const cell of this.cells.values()) {
+      const p = cell.pack;
+      parts += p.partCount;
+      if (!p.slotFlags) continue;
+      const drawn = new Set<number>();
+      for (let k = 0; k < p.partCount; k++) drawn.add(p.partSlot[k]);
+      for (const s of drawn) if (p.slotFlags[s] !== 0) flagged++;
+    }
     const shown = this.halosLayer ? this.halos : [];
     let marks = 0;
     let halosShown = 0;
@@ -344,7 +352,8 @@ export class TimelineController {
       halos: shown.length - marks,
       marks,
       halosShown,
-      haloDays: [...days].sort((a, b) => a - b).slice(0, 500)
+      haloDays: [...days].sort((a, b) => a - b).slice(0, 500),
+      flagged
     };
   }
 
