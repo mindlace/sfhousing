@@ -82,7 +82,7 @@
 
   function toggle(p: Panel): void {
     // The width changes a rendering update before its change event: a press in between was made
-    // at the new width, so the crossing is behind it and must not close what it opens (#131).
+    // at the new width, so the crossing is behind it and must not close what it opens (issue 131).
     wasMd = md.current;
     open = open === p ? null : p;
   }
