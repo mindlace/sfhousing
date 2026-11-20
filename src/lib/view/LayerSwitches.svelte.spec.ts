@@ -78,8 +78,9 @@ describe('LayerSwitches', () => {
       .toBeChecked();
     await page.getByRole('checkbox', { name: 'Zoning height limits' }).click();
     expect(onchange).toHaveBeenCalledWith({ ...DEFAULT_VIEW, heightLimits: false });
+    // Under 12 words (the rest-text rule), shortened from the View menu's caption.
     expect(LIMITS_CAPTION).toBe(
-      "Glass lids at the height zoning allows, with each area's room to grow in floors. Zoomed out, contour lines."
+      'Glass lids at the height zoning allows. Zoomed out, contour lines.'
     );
     await expect.element(page.getByText(LIMITS_CAPTION)).toBeVisible();
   });

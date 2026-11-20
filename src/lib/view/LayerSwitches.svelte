@@ -4,7 +4,7 @@
 
   /** The Zoning height limits row's caption. */
   export const LIMITS_CAPTION =
-    "Glass lids at the height zoning allows, with each area's room to grow in floors. Zoomed out, contour lines.";
+    'Glass lids at the height zoning allows. Zoomed out, contour lines.';
 </script>
 
 <script lang="ts">
