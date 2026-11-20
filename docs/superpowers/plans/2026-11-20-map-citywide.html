@@ -1,0 +1,876 @@
+<article>
+  <header>
+    <h1>The map tells you, citywide plan</h1>
+    <p>Slice 6 of the information design review: on <code>/sim</code> the map hears about every project in the city, not only those in loaded cells. Zoomed out, stage changes merge into one ring per area, sized by homes; a change off screen glows on the map's edge toward it; progress bars show from the default zoom at one size on screen.</p>
+    <aside data-kind="note"><strong>For agentic workers</strong> REQUIRED SUB-SKILL: use superpowers:subagent-driven-development to implement this plan task by task. Steps are checklist items; progress is kept in the workspace ledger, not in the plan.</aside>
+    <aside data-kind="warning"><strong>Read before executing</strong> Line numbers below were taken on <code>291a51e8</code> (main after slices 1 to 5) and go stale as tasks land: every place is also named by function, component, snippet or test title. Locate by those. The owner told the controller to plan and execute without a stop between, so there is no approval gate; <a href="#sec-open-questions">Open questions</a> is empty.</aside>
+  </header>
+
+  <section id="sec-overview">
+    <h2>Overview</h2>
+    <dl>
+      <dt>Goal</dt>
+      <dd>The map says what is happening across the city. On <code>/sim</code>: below zoom 14 the per-project rings of slice 5 hand over to one ring per 800 m square of the city, per half-year and per stage tone, sized by the homes in it; a change whose square is off screen shows as a short glow on the map's edge in its direction, at every zoom; progress bars draw from zoom 12 (the phone's default view is 12.2, the desktop's 13) at one size, 32 by 6 px, at every zoom, and where two collide the project under the person's policy wins, then the larger one. The key names the merged ring and the edge glow. <code>/</code>, <code>/p/&lt;id&gt;</code> and <code>/lesscars</code> are unchanged.</dd>
+      <dt>Architecture</dt>
+      <dd>The worker's map stream already places every project row it hears about, loaded cell or not. A new module beside it (<code>src/lib/sim/world/city-feed.ts</code>) keeps one marker per placed row (the anchor lot's label point, the approved, started and completed days, homes, the two flags) and sends the rows that changed as an optional <code>city</code> delta on the same <code>TimelineUpdate</code> the cells travel in: same revisions, same resync, same rewind, sent once per flush and never per world step. The page keeps the markers in a <code>CityStore</code> inside the <code>TimelineController</code>, groups them into ring records once per applied update, and draws them with one new instanced deck layer, <code>timeline-city</code> (<code>CityLayer</code>), whose vertex shader decides per record and per frame on the GPU whether it is a ring (in view, below the handover zoom), an edge glow (off view) or nothing. <code>HaloLayer</code> gains a zoom gate for its rings. Bars get a second mode (<code>'far'</code>) that <code>/sim</code> turns on through a new handle call; <code>/lesscars</code> keeps today's mode. No file under the hashed paths changes.</dd>
+      <dt>Tech Stack</dt>
+      <dd>SvelteKit 2, Svelte 5 runes, TypeScript, Tailwind 4, deck.gl 9 and luma.gl (custom instanced layers, as <code>HaloLayer</code> and <code>StageBarLayer</code>), MapLibre, Vitest (server project for <code>*.spec.ts</code>, client project for <code>*.svelte.spec.ts</code>, GPU specs as <code>*.gpu.svelte.spec.ts</code>), Playwright, axe through <code>expectNoA11yViolations</code>.</dd>
+      <dt>Spec</dt>
+      <dd><a href="../specs/2026-11-17-information-design-review-design.html"><code>docs/superpowers/specs/2026-11-17-information-design-review-design.html</code></a>, row 6 of <a href="../specs/2026-11-17-information-design-review-design.html#tbl-slices">Order of work</a> ("Progress bars from the default zoom at one size. Events off screen." Needs first: "The citywide marker feed, measured first"). Governing parts: Events (<code>sec-prop-events</code>: off the visible map, at speed, reduced motion), What the engine can supply (<code>tbl-engine</code> and its "Proposed" decision: one citywide marker feed of date, stage, place, homes and flags), Progress bars (<code>sec-prop-bars</code>), the map inventory (<code>tbl-inv-sim-map</code>), the six rules, Decided (progress bars from further out at one size; new starts get fanfare; one clock and the reveal rule; "© OpenStreetMap" stays on the map), One vocabulary (<code>tbl-words</code>), and every slice 6 item of Carried forward (<code>sec-carried</code>).</dd>
+      <dt>Assumes</dt>
+      <dd>Slices 1 to 5 have landed (<code>291a51e8</code>): the slot flags (<code>SLOT_FLAG</code>, <code>slotFlags</code>, <code>src/lib/map/types.ts:46-62</code>; <code>runner/flags.ts</code>), the halo layer (<code>halos.ts</code>, <code>halo-layer.ts</code>), the key control and <code>/sim</code>'s key (<code>MapKeyControl.svelte</code>, <code>SimKey.svelte</code>), the reveal rules (<code>src/lib/timeline/reveal.ts</code>). The bench was run after slice 5 merged (rows in Task 4).</dd>
+    </dl>
+  </section>
+
+  <section id="sec-feed-decision">
+    <h2>The citywide feed: decision and evidence</h2>
+    <aside data-kind="decision"><strong>Chosen: a per-row marker feed beside the map stream, carried in <code>TimelineUpdate.city</code>; grouping, drawing and the handover on the page. No hashed file touched, no upload.</strong> Every input the feed needs is already in the worker for every project, whatever cells are loaded. Every file this plan creates or edits is outside <code>PATHS</code> (<code>pipeline/lib/version.ts:42-53</code>), so the dataset version does not move.</aside>
+
+    <section id="sec-feed-hashed">
+      <h3>1. Nothing hashed changes</h3>
+      <table id="tbl-feed-evidence">
+        <caption>What the feed needs, where it already is, and whether that file is hashed</caption>
+        <thead>
+          <tr><th scope="col">Need</th><th scope="col">Source in the code</th><th scope="col">File</th><th scope="col">Hashed?</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">Every project row, loaded or not</th><td>The plan ensemble calls the stream's <code>onEvent</code> for every plan-world event (<code>ensembleOf</code>, <code>map: { stream, onEvent }</code>); <code>onEvent</code> places the row on its first event, loaded cell or not (<code>place</code>)</td><td><code>src/lib/sim/world/runner/runner.ts:727-735</code>; <code>src/lib/sim/world/map-stream.ts:151-180</code>, <code>:308-319</code></td><td>No</td></tr>
+          <tr><th scope="row">Where a project is</th><td><code>place</code> computes the row's anchor lot (<code>cellAnchorParcel(present, P)</code>); T11 holds every lot's label point (<code>labelPoint</code>, lng/lat, 2 per row) and index, decoded at open</td><td><code>map-stream.ts:164</code>; <code>src/lib/data/scenario-codec.ts:44-47</code> (import only)</td><td>No (map-stream); codec imported only</td></tr>
+          <tr><th scope="row">Its stage days, end and homes</th><td><code>scheduleAt(world, statics, row, day)</code>, the read <code>itemsOf</code> already packs from, so the feed and the cells never disagree</td><td><code>src/lib/sim/world/read.ts:96</code></td><td>No</td></tr>
+          <tr><th scope="row">Its two flags</th><td><code>MapStreamDeps.flagsOf</code>, set by <code>open</code> from <code>slotFlags</code></td><td><code>map-stream.ts:74-75</code>; <code>runner.ts:1255-1265</code>; <code>runner/flags.ts</code></td><td>No</td></tr>
+          <tr><th scope="row">Carrying it to the page</th><td>The <code>cells</code> message posts a <code>TimelineUpdate</code> with its buffers transferred; the page hands it to <code>SimMap.applyTimeline</code></td><td><code>runner.ts:866-872</code>; <code>src/lib/sim/timeline-protocol.ts:144</code>; <code>src/lib/map/types.ts:64-74</code></td><td>No. The hashed <code>scenario/scenario-host.ts</code> and <code>scenario/geometry.ts</code> build <code>TimelineUpdate</code>s too; the new field is optional and they are not edited (they send none).</td></tr>
+          <tr><th scope="row">Neighbourhoods</th><td><code>neighborhoods.geojson</code> is published (manifest key <code>neighborhoods</code>, <code>src/lib/data/manifest.ts:52</code>; fixture-0 has it). The timeline worker does not load it: <code>Dataset.loaded</code> is <code>{ fzp, twin, projects, policy, gross }</code> (<code>runner/dataset.ts:88-101</code>, <code>scenario/load.ts:39-46</code>); only the editor worker's brush catalog reads it (<code>src/lib/sim/levers/brushes.ts:185</code>). Chunk records carry <code>neighborhood</code> (<code>src/lib/data/parcel.ts:27</code>) for loaded cells only. T11's <code>districts</code> are height districts (<code>scenario-codec.ts:39</code>).</td><td>—</td><td>Not used: the page groups by a fixed grid (builder's call below)</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="sec-feed-shape">
+      <h3>2. What the feed is</h3>
+      <ul>
+        <li><strong>One marker per placed row</strong> (a project, a phase or a pipeline row with a T11 lot; a master row or a row with no T11 parcel has none, as it has no cell): the anchor lot's label point as <code>float32</code> lng/lat (0.7 m at San Francisco), the <strong>approved</strong> day (the first of entitled and permitIssued entered, the halo layer's own rule), the <strong>started</strong> day (construction), the <strong>completed</strong> day (a complete end), each <code>NaN</code> when not (yet); the final revision's homes; the <code>SLOT_FLAG</code> bits.</li>
+        <li><strong>Message shape.</strong> <code>TimelineUpdate.city?: CityDelta</code>, struct of arrays: <code>rows</code> (the world's row count after this update: markers at or past it are dropped), then per changed row, ascending: <code>row</code> (<code>Int32Array</code>), <code>lngLat</code> (<code>Float32Array</code>, 2), <code>days</code> (<code>Float32Array</code>, 3), <code>homes</code> (<code>Uint16Array</code>), <code>flags</code> (<code>Uint8Array</code>). 27 bytes a row. Revision 0 carries every marker: 30,000 projects are 810 KB, transferred, not copied. A later update carries only the rows an event touched since the last flush. The worker sends nothing per world step: the delta rides the flush (at most every <code>FLUSH_EVERY_MS</code>, 250 ms, <code>runner.ts:103</code>), and a flush with only city rows to say still sends an update.</li>
+        <li><strong>Who computes it.</strong> <code>createCityFeed</code>, composed by <code>createMapStream</code>: <code>onEvent</code> touches the row, <code>flush</code> takes the touched rows, <code>rewind</code> diffs every row against what was sent, <code>snapshot</code> sends all. The stream owns revisions, so the feed inherits revision order, <code>resyncMap</code> and the controller's gap check for free.</li>
+        <li><strong>Rewound and replaced on an edit.</strong> After a restore the stream's <code>rewind</code> runs (<code>runner.ts:667-679</code>); the feed then drops rows at or past the restored world's <code>n</code> (<code>rows = n</code>) and marks every row whose marker now differs from the one sent. The next flush sends them. The page drops markers past <code>rows</code>, overwrites the rest and rebuilds its records, so no ring of the old numbers survives.</li>
+        <li><strong>The reveal rule.</strong> Every marker carries its days and the page hides what the clock has not reached: a record shows only for a day at or before the playhead (the shaders compare with the clock uniform), and the page builds no record for a day at or before today (<code>setHalos({ from: asOf })</code>, slice 5). The worker never sends a day past the world's current month (it reads <code>scheduleAt</code> at the month's last day).</li>
+      </ul>
+      <table id="tbl-feed-bytes">
+        <caption>Sizes of the feed</caption>
+        <thead>
+          <tr><th scope="col">Case</th><th scope="col">Rows</th><th scope="col">Bytes</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">fixture-0, revision 0 after the fill</th><td>about 21 (21 bars, 45 parts measured)</td><td>about 570</td></tr>
+          <tr><th scope="row">30,000 projects, revision 0 or a resync</th><td>30,000</td><td>810,000, transferred</td></tr>
+          <tr><th scope="row">A flush during the fill</th><td>rows with an event in the last 250 ms</td><td>27 a row</td></tr>
+          <tr><th scope="row">A playhead move, a pan or a zoom</th><td>0</td><td>0: nothing is sent</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="sec-feed-drawn">
+      <h3>3. What is drawn, at which zoom, and the handover</h3>
+      <table id="tbl-drawn">
+        <caption>What each zoom draws for a stage change, in view and off it</caption>
+        <thead>
+          <tr><th scope="col">Where the change is</th><th scope="col">Zoom below 14</th><th scope="col">Zoom 14 and up</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">On screen</th><td>Merged ring of its square (<code>timeline-city</code>); its own ring hidden (<code>timeline-halos</code> gate)</td><td>Its own ring (<code>timeline-halos</code>, slice 5); the merged ring hidden</td></tr>
+          <tr><th scope="row">Off screen</th><td>Edge glow of its square (<code>timeline-city</code>)</td><td>Edge glow of its square</td></tr>
+          <tr><th scope="row">Progress bar</th><td colspan="2">From the installed cells, from zoom 12, 32 by 6 px at every zoom, decluttered policy first, then homes (<code>timeline-bars</code>, mode <code>'far'</code>)</td></tr>
+          <tr><th scope="row">Policy mark (diamond)</th><td colspan="2">Unchanged from slice 5, at every zoom</td></tr>
+        </tbody>
+      </table>
+      <ul>
+        <li><strong>No double drawing.</strong> The handover is one constant, <code>CITY_HANDOVER_ZOOM</code> (14), read by both shaders from deck's <code>project.scale</code>: the city shader draws a ring only below it, the halo shader draws a ring only at or above it while the city layer is on (<code>ringMinZoom</code>). A record is either on screen or not by the same projection, so an area never shows both.</li>
+        <li><strong>Why bars need no feed.</strong> The page loads every cell the viewport touches at any zoom (<code>prefetchViewport</code>, <code>src/lib/timeline/TimelineMode.svelte:765-769</code>, over <code>cellsIntersecting</code>, <code>src/lib/sim/chunks.ts:192-197</code>), so the bars on screen are the installed cells' bars. A bar off screen has nothing to show. The feed is for what is off screen and for merging.</li>
+        <li><strong>Layer count.</strong> One new layer, <code>timeline-city</code>, after <code>timeline-halos</code>. The halo and bar layers each gain one uniform.</li>
+      </ul>
+    </section>
+  </section>
+
+  <section id="sec-global-constraints">
+    <h2>Global Constraints</h2>
+    <ul>
+      <li><strong>Hashed paths are read-only.</strong> Editing any file under <code>PATHS</code> (<code>pipeline/lib/version.ts:42-53</code>: <code>pipeline</code>, <code>src/lib/data</code>, <code>src/lib/generator</code>, <code>src/lib/timelapse</code>, <code>src/lib/plan/geometry.ts</code>, <code>src/lib/plan/types.ts</code>, <code>src/lib/sim/scenario</code>, <code>src/lib/sim/levers</code>, <code>src/lib/sim/finance</code>, <code>src/lib/scoreboard</code>), spec files included, forces a dataset upload. Every file this plan creates, edits or deletes is outside them (<a href="#tbl-files">File Structure</a>; note <code>src/lib/map/timelapse/</code> is not <code>src/lib/timelapse/</code>). Imports from them are fine (<code>STAGE_ORDER</code>, <code>OPEN_DAY</code>, <code>ScenarioParcels</code>, <code>cellAnchorParcel</code>, <code>formatCount</code>). If a change there seems unavoidable, stop and raise it.</li>
+      <li>Engine files outside the hashed paths may change for the feed only: <code>src/lib/map/types.ts</code>, the new <code>src/lib/map/city-delta.ts</code>, the new <code>src/lib/sim/world/city-feed.ts</code>, <code>src/lib/sim/world/map-stream.ts</code>, <code>src/lib/sim/world/runner/runner.ts</code> (the transfer list only). Nothing else under <code>src/lib/sim/</code>.</li>
+      <li>Not in this slice: the activity panel, Details, pools that drain (slice 7; the activity list can later read <code>CityStore</code>); shared button, card and chip components, the header's "Updating" lag, phone timeline row names, Escape on a hover-opened explanation (slice 8); About and credits (slice 9: "© OpenStreetMap" stays on the map exactly as it is); levels and unlocks.</li>
+      <li><strong>Shared surfaces.</strong> <code>/lesscars</code> renders <code>SimMap</code>, the timeline controller and the bars: it never calls <code>setHalos</code> or <code>setBarMode</code> and its updates carry no <code>city</code>, so it draws no city layer, keeps <code>ringMinZoom</code> 0 and keeps <code>'street'</code> bars. <code>/</code> and <code>/p/&lt;id&gt;</code> draw no timeline. The map goldens (<code>e2e/map.spec.ts-snapshots/map-light-chromium-darwin.png</code>, <code>map-dark-chromium-darwin.png</code>, <code>/</code> at rest) must not change; if one does, stop: something leaked off <code>/sim</code>. Regenerate only deliberately, with <code>--update-snapshots=all</code>, chromium only, and check by pixel diff.</li>
+      <li>All work in this worktree. Run <code>cd</code> and <code>git</code> as plain single commands, never chained (<code>cd … &amp;&amp; cmd</code>). Run everything in the foreground. Report once, at the end of each task.</li>
+      <li>Conventional Commits, messages as <code>-m</code> flags. <code>git add</code> named files only. No Claude attribution anywhere: no <code>Co-Authored-By</code> trailers, no generated-by notes in code, docs or commits.</li>
+      <li>Code style: 2-space indent, single quotes, no trailing commas, 100 columns (Prettier and ESLint). Svelte 5 runes only. Worker modules (<code>city-feed.ts</code>, <code>city-delta.ts</code>, <code>map-stream.ts</code>) stay under the determinism lint rule (no transcendental <code>Math</code>); page modules may use <code>Math.cos</code> and <code>Math.sqrt</code>.</li>
+      <li>Vitest runs with <code>expect.requireAssertions</code>: every test calls <code>expect</code>. Unit-test stderr is policed at signoff: a deck layer subclass declared in a test needs its own <code>static layerName</code> (as <code>RecordingHaloLayer</code>, <code>src/lib/map/test/fake-timeline-deps.ts:36-37</code>), and no test may leave a <code>console.warn</code> or <code>console.error</code> unasserted.</li>
+      <li>WCAG 2.2 AA on every changed surface, light and dark (<code>docs/dev/accessibility.md</code>, <code>e2e/chrome-dark.spec.ts</code>). New map marks use only the existing halo tokens (<code>tl-halo-approved</code>, <code>tl-halo-started</code>, <code>tl-halo-complete</code>, <code>tl-halo-policy</code>), which <code>palette.spec.ts</code> already holds to 3:1 against <code>land</code> in both themes; a mark is full strength at birth. Colour is never the only cue: the merged ring is a ring, the edge glow is a half-disc on the edge, and each has a key row in words. Nothing new is interactive on the map. No horizontal scroll at 320 or 375 px.</li>
+      <li><strong>Reduced motion</strong>: still forms. A merged ring is drawn at its full radius and a glow at full strength for the same windows, with no growth and no fade (as slice 5's still ring).</li>
+      <li><strong>Timing rule</strong>, for every spec, helper and fix round: no <code>setTimeout</code> or <code>setInterval</code> (even zero-length), no <code>waitForTimeout</code>, fixed sleeps, raised timeouts or retries in tests; wait on readiness signals (web-first assertions, <code>expect.poll</code>, events, attributes, <code>window.__sfhMap</code>, <code>window.__sfhFzp</code>). After the last commit of every task run <code>npx chreode timing-check --head HEAD</code> and see it clean. Every changed e2e spec is re-run with <code>--repeat-each=5 --retries=0</code>; signoff burns in changed test files five times and fails on server stderr.</li>
+      <li>Port 4173 is shared with other sessions: never start, stop or kill whatever holds it. Playwright runs on <code>SFH_E2E_PORT=4180</code>.</li>
+      <li><strong>Performance.</strong> Slice 5 benched after merge on a quiet M5 Pro at p95 10.2 to 10.3 ms on every case against 16.7 ms, "playback + halos" included (72,532 rings, 3,000 marks, 30,000 projects). Nothing added may run per animation frame in proportion to projects or records, and nothing new is posted per world step. The city records are rebuilt only when an applied update carried <code>city</code> (once, after its last slice), when <code>setHalos</code> changes, and never in <code>setTime</code>; <code>setTime</code> stays O(1), allocation-free and sets no layer prop (the city layer reads the shared clock in <code>draw</code>, as the halo and bar layers do). Whether a record is a ring, a glow or nothing is decided in the vertex shader. Guards in tests are structural (layer constructions, <code>setLayers</code> calls, records, transfer lists), never wall clock. No <code>npm run test:perf</code> or <code>npm run bench:map</code> inside any task: the controller runs the bench after merge.</li>
+      <li><strong>The reveal rule on the map.</strong> Nothing is drawn for a day after the playhead or at or before today: a city record shows only from its day (the latest event day it holds, so every home it counts has happened) and none is built for an event on or before <code>from</code>. Scrubbing back hides records whose day is now ahead. An edit's rewound rows replace their markers.</li>
+      <li>Copy: terse, plain words, no em dashes, no "it is not X" disclaimers. "homes", never "units"; no "RHNA" or "FZP" in any string added or changed. The strings are fixed in <a href="#tbl-strings">The strings</a>, each under 12 words. The 12-words-at-rest check for <code>/sim</code> (<code>src/lib/timeline/rest-text.svelte.spec.ts</code>) must still pass with the key open.</li>
+      <li>Status apart from controls: nothing new changes during play in the toolbar or the header; the key's new rows are fixed words.</li>
+      <li>The key (<code>SimKey.svelte</code> in the shared <code>MapKeyControl</code>) names every new mark the map shows, from the same constants the layer draws with (<code>HALO_TOKEN</code>).</li>
+      <li>Docs under <code>docs/dev/</code> that describe changed behaviour are updated in the task that changes it.</li>
+      <li>Test commands: <code>npx vitest --run --project server &lt;file&gt;</code> for <code>*.spec.ts</code>, <code>npx vitest --run --project client &lt;file&gt;</code> for <code>*.svelte.spec.ts</code> (GPU specs included), <code>SFH_E2E_PORT=4180 npx playwright test &lt;file&gt; --project=chromium --project=mobile</code>.</li>
+      <li><strong>Screenshots</strong> are taken with a temporary Playwright spec on port 4180 (fixture-0), saved to the session scratchpad, opened and looked at, and the spec deleted before the commit. The standard set, named in each task: <code>/sim</code> at 1280x800 and 375x812, at the default camera, mid-play (press <code>tl-play</code>, wait until <code>__sfhFzp.day &gt; asOf + 2000</code>), key open.</li>
+      <li>Task order: Task 1 stands alone. Task 3 needs Task 2's <code>CityDelta</code>; Task 4 needs Tasks 2 and 3; Task 5 edits the controller after Task 4; Task 6 needs Tasks 4 and 5. Tasks 4 and 5 both edit <code>timeline-controller.ts</code>, <code>SimMap.svelte</code>, <code>debug.ts</code> and the bench. Run them in order.</li>
+    </ul>
+  </section>
+
+  <section id="sec-strings">
+    <h2>The strings</h2>
+    <table id="tbl-strings">
+      <caption>Every visible or spoken string this slice adds</caption>
+      <thead>
+        <tr><th scope="col">Where</th><th scope="col">Text</th><th scope="col">Defined in</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row"><code>/sim</code> key, under "Just changed stage", after the three tone rows</th><td><code>Zoomed out: one per area</code> (5 words), beside an <code>area</code> swatch: a large ring and a small ring, in the three <code>HALO_TOKEN</code> tones</td><td><code>KEY_COPY.area</code>, <code>src/lib/map/key/copy.ts</code>; <code>AREA_SWATCH</code>, <code>SimKey.svelte</code></td></tr>
+        <tr><th scope="row"><code>/sim</code> key, next row</th><td><code>Edge glow: off screen</code> (4 words), beside an <code>edge</code> swatch: half-discs in the three tones against a 1 px edge line</td><td><code>KEY_COPY.edge</code>; <code>EDGE_SWATCH</code>, <code>SimKey.svelte</code></td></tr>
+      </tbody>
+    </table>
+    <p>Each fits one line in the 240 px key panel (about 26 characters beside the 28 px swatch), so the open <code>/sim</code> key grows by two 20 px rows and their gaps, about 48 px: 331 to about 379 px at 1024 and 1280, inside the 387 px room above the toolbar (<a href="#tbl-measured">Measured</a>). Nothing else changes in words. No count of off-screen changes is shown: the spec asks for a glow, not a number.</p>
+  </section>
+
+  <section id="sec-measures">
+    <h2>Measured</h2>
+    <p>Taken on <code>291a51e8</code> with a temporary Playwright spec against the e2e preview (<code>SFH_E2E_PORT=4180</code>, fixture-0, Chromium project, so every width has a fine pointer), signed out, after the filled forecast with nothing pending. Boxes are <code>[x, y, w, h]</code> in CSS px. The spec was deleted.</p>
+    <table id="tbl-measured">
+      <caption>/sim at the default camera, by width</caption>
+      <thead>
+        <tr><th scope="col">Viewport</th><th scope="col">Map box</th><th scope="col">Camera</th><th scope="col">View bounds [w, s, e, n]</th><th scope="col">Key, open</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">375x812</th><td>[0,48,375,306]</td><td>zoom 12.2, pitch 45</td><td>[-122.4755, 37.7512, -122.3914, 37.8223]</td><td>panel [79,56,288,158] (scrolls), toggle [327,218,40,24]</td></tr>
+        <tr><th scope="row">768x1024</th><td>[0,48,768,586]</td><td>zoom 13, pitch 55</td><td>[-122.5071, 37.7468, -122.3883, 37.8540]</td><td>panel [520,247,240,331], toggle [720,582,40,24]</td></tr>
+        <tr><th scope="row">1024x800</th><td>[0,48,1024,451]</td><td>zoom 13, pitch 55</td><td>[-122.5202, 37.7499, -122.3626, 37.8454]</td><td>panel [776,112,240,331], toggle [976,447,40,24]</td></tr>
+        <tr><th scope="row">1280x800</th><td>[0,48,1280,451]</td><td>zoom 13, pitch 55</td><td>[-122.5399, 37.7479, -122.3429, 37.8510]</td><td>panel [1032,112,240,331], toggle [1232,447,40,24]</td></tr>
+      </tbody>
+    </table>
+    <ul>
+      <li><strong>Loaded versus the whole fixture.</strong> At every width: 2 cells of the manifest's 2 (both in the Mission), 45 parts, 21 bars, 43 ring records, 0 marks; layers <code>timeline-solid-*</code>, <code>timeline-ghost-*</code>, <code>timeline-bars</code>, <code>timeline-halos</code>, <code>sim-height-limits</code>. Mid-play (about Day 22,760, Jun to Jul 2032): 8 rings shown.</li>
+      <li><strong>What slice 5 looks like at the default zoom</strong> (screenshots opened): at 1280 a cluster of two or three rings over the Mission label, the bars invisible (zoom 13 is below today's gate of 15); at 375 the rings sit under the open key panel, and the expanded attribution covers the map's lower third.</li>
+      <li><strong>The default view leaves the south of the city off screen.</strong> The city's land runs to about 37.708 north; the 1280 view's south edge is 37.748, so the Excelsior, Visitacion Valley, Ingleside, Oceanview and the south Bayview are off screen at rest. At 375 the west edge is -122.476, so the Outer Sunset and Richmond west of it are off too.</li>
+      <li><strong>The synthetic 30,000-project timeline</strong> (<code>__sfhMap.loadSyntheticTimeline(1, 30000)</code> on <code>/</code> at 1280x800, the default desktop camera, halos from Day 20742, clock at Day 25000): 20 cells, 38,977 bars (none drawn at zoom 13), 72,532 ring records, <strong>6,843 rings shown at once</strong>, 3,000 marks. The screenshot is a wall of overlapping rings from the Mission to the horizon, over the place labels. That is the density the merged rings answer.</li>
+      <li><strong>Key room.</strong> At 1024 and 1280 the panel can run from y 56 (8 px under the map's top) to y 443 (4 px over the toolbar): 387 px. At 375 it has 158 px and scrolls already.</li>
+    </ul>
+    <aside data-kind="note"><strong>What fixture-0 cannot show</strong> Both of its cells sit side by side in the Mission, inside one 800 m square, so on <code>/sim</code> at the default view there is one merged ring per tone and half-year, nothing is off screen, and nothing collides. Edge glows on fixture-0 need the camera moved away (an e2e <code>jumpTo</code>). Density, many squares, off-screen glows at the default view and the bench need the synthetic timeline, which Task 4 extends with a <code>city</code> delta (one marker per synthetic project at its site).</aside>
+  </section>
+
+  <section id="sec-review-focus">
+    <h2>Review Focus</h2>
+    <ol>
+      <li><strong>Playing at 3× zoomed into one street</strong> (zoom 16): almost the whole city is off screen. Expected: edge glows only, each at the edge toward its square for <code>CITY_EDGE_DAYS</code>; no layer rebuilt and no prop set per frame. Tests: <a href="#t3-s1">t3-s1</a> ("evalCity off view at any zoom…", "edgeOf…"), <a href="#t4-s1">t4-s1</a> ("setTime constructs no layer and calls setLayers none, with the city layer on").</li>
+      <li><strong>Zooming across 14 while playing.</strong> Expected: a change in view shows its own ring or its square's merged ring, never both, on either side of 14.0. Tests: <a href="#t3-s1">t3-s1</a> ("evalHalo: a ring below ringMinZoom is hidden…", "evalCity in view…none from zoom 14"), GPU checks at 13.99 and 14.0.</li>
+      <li><strong>An edit that removes projects</strong> (a policy deleted: the restored world has fewer rows). Expected: markers at or past the new row count are gone, changed rows resent, the records rebuilt, no ring of the old world left. Tests: <a href="#t2-s1">t2-s1</a> ("rewind: rows past n are dropped…"), <a href="#t4-s1">t4-s1</a> ("a later delta overwrites rows and drops those at or past rows").</li>
+      <li><strong>A resync or a worker restart</strong> (a revision gap, then revision 0). Expected: the store is replaced whole from revision 0's <code>city</code>, never merged with the old one; a revision 0 without <code>city</code> clears it. Test: <a href="#t4-s1">t4-s1</a> ("stores the city from a revision 0…").</li>
+      <li><strong>A phone on <code>/sim</code> with the key open</strong>: two more rows in a 158 px room. Expected: the panel scrolls inside its room, the toolbar does not move, every row's words are under 12. Test: <a href="#t6-s1">t6-s1</a> (e2e "375: the key's new rows scroll inside the panel").</li>
+    </ol>
+  </section>
+
+  <section id="sec-file-structure">
+    <h2>File Structure</h2>
+    <p>Every file below is outside the hashed <code>PATHS</code>.</p>
+    <table id="tbl-files">
+      <caption>Files by task and what each owns</caption>
+      <thead>
+        <tr><th scope="col">Area</th><th scope="col">Files</th><th scope="col">Task</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">Flake #131</th><td>Modify <code>src/lib/map/key/MapKeyControl.svelte.spec.ts</code> (and <code>MapKeyControl.svelte</code> only if the reproduction shows a component race)</td><td>1</td></tr>
+        <tr><th scope="row">The feed, in the worker</th><td>Create <code>src/lib/map/city-delta.ts</code>, <code>city-delta.spec.ts</code>, <code>src/lib/sim/world/city-feed.ts</code>, <code>city-feed.spec.ts</code>; modify <code>src/lib/map/types.ts</code>, <code>src/lib/sim/world/map-stream.ts</code>, <code>map-stream.spec.ts</code>, <code>map-stream.rewind.spec.ts</code>, <code>src/lib/sim/world/runner/runner.ts</code>, <code>src/lib/sim/world/host.spec.ts</code>; docs <code>map-stream.md</code>, <code>ensemble-runner.md</code>, <code>map-interfaces.md</code></td><td>2</td></tr>
+        <tr><th scope="row">Drawing: city records, the city layer, the halo gate</th><td>Create <code>src/lib/map/timelapse/city.ts</code>, <code>city.spec.ts</code>, <code>city-layer.ts</code>, <code>city-layer.gpu.svelte.spec.ts</code>; modify <code>timelapse/constants.ts</code>, <code>timelapse/deck.ts</code>, <code>timelapse/halos.ts</code>, <code>halos.spec.ts</code>, <code>timelapse/halo-layer.ts</code>, <code>halo-layer.gpu.svelte.spec.ts</code></td><td>3</td></tr>
+        <tr><th scope="row">The controller holds and draws the city</th><td>Modify <code>src/lib/map/timeline-controller.ts</code> and spec, <code>timelapse/types.ts</code>, <code>src/lib/map/test/fake-timeline-deps.ts</code>, <code>src/lib/map/test/synthetic-timeline.ts</code> and spec, <code>src/lib/map/SimMap.svelte</code>, <code>SimMap.timeline.svelte.spec.ts</code>, <code>e2e/bench/map-timeline.bench.ts</code> (a case, not run); docs <code>map-interfaces.md</code>, <code>map-perf.md</code> (the slice 5 results row, the new case), <code>testing.md</code></td><td>4</td></tr>
+        <tr><th scope="row">Bars from the default zoom at one size</th><td>Modify <code>timelapse/constants.ts</code>, <code>timelapse/bars.ts</code>, <code>bars.spec.ts</code>, <code>timelapse/declutter.ts</code>, <code>declutter.spec.ts</code>, <code>timelapse/stage-bar-layer.ts</code>, <code>stage-bar-layer.gpu.svelte.spec.ts</code>, <code>timelapse/types.ts</code>, <code>src/lib/map/types.ts</code> (<code>BarMode</code>, <code>SimMapHandle.setBarMode</code>), <code>timeline-controller.ts</code> and spec, <code>SimMap.svelte</code>, <code>SimMap.timeline.svelte.spec.ts</code>, <code>src/lib/map/debug.ts</code>, <code>debug.svelte.spec.ts</code>, <code>src/lib/fzp/test/sim-map-stub.ts</code>, <code>src/lib/brush/test/sim-map-stub.ts</code>, <code>e2e/bench/map-timeline.bench.ts</code>; docs <code>map-interfaces.md</code></td><td>5</td></tr>
+        <tr><th scope="row"><code>/sim</code> turns it on; the key names it</th><td>Modify <code>src/lib/timeline/TimelineMode.svelte</code> and spec, <code>src/lib/timeline/SimKey.svelte</code> and spec, <code>src/lib/map/key/copy.ts</code>, <code>src/lib/map/key/rows.ts</code> (the <code>Swatch</code> kinds) and spec, <code>src/lib/map/key/KeySwatch.svelte</code>, <code>src/lib/timeline/rest-text.svelte.spec.ts</code>; create <code>e2e/sim-citywide.spec.ts</code>; docs <code>timeline-ui.md</code>, <code>map-interfaces.md</code></td><td>6</td></tr>
+        <tr><th scope="row">Whole-suite pass</th><td>Whatever the full runs turn up</td><td>7</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="sec-task-1">
+    <h2>Task 1: Fix the key control's flake (#131)</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/lib/map/key/MapKeyControl.svelte.spec.ts</code>: replace <code>crossMd</code> (<code>:24-34</code>) with a readiness helper used for every resize in the file: <code>beforeEach</code> (<code>:36-38</code>), the bare <code>page.viewport</code> calls at <code>:79</code>, <code>:97</code>, <code>:112</code>, <code>:211</code>, <code>:220</code>, <code>:280</code>, and every <code>crossMd</code> call.</li>
+      <li>Modify <code>src/lib/map/key/MapKeyControl.svelte</code> only if Step 1 shows the component itself racing (then with a test of its own in the same spec file).</li>
+      <li>Covering specs: <code>MapKeyControl.svelte.spec.ts</code>; <code>src/lib/timeline/SimKey.svelte.spec.ts</code>, <code>src/lib/paint/PaintKey.svelte.spec.ts</code> and <code>src/lib/timeline/TimelineMode.svelte.spec.ts</code> render the control and must still pass.</li>
+    </ul>
+    <h3>What is known</h3>
+    <ul>
+      <li>The failure (<a href="https://github.com/mindlace/sfhousing/issues/131">#131</a>, on <code>3a6f0863</code>, client project, passed on retry): "going up keeps a panel the viewer opened below md" could not find <code>getByRole('group', { name: 'Map key' })</code>; the DOM dump shows the key panel <code>hidden</code>. So the panel was closed at line 115 (after the click at 375) or 117 (after going up to 1024).</li>
+      <li>Not reproduced while planning: 30 runs of the file in a row, 30 more as six parallel loops, 25 with <code>--sequence.shuffle</code> (seeds 1 to 25) and 4 runs of the file with 18 other client files (<code>src/lib/map/key src/lib/timeline src/lib/paint src/lib/view</code>, <code>--retry=0</code>): all passed.</li>
+      <li>Measured with a temporary spec on this branch (80 resizes alternating 1024 and 375): right after <code>await page.viewport(w, h)</code> resolves, <code>matchMedia('(min-width: 768px)').matches</code> already reads the new width (80 of 80), but the <code>change</code> event has not fired in 78 of 80: it fires at the frame's next rendering update. So "viewport resolved" is not "the frame has rendered at the new size". The failing test is the one place that resizes (line 112, to 375), renders and clicks without waiting for anything; <code>crossMd</code> waits for the event only when it crosses md, and <code>beforeEach</code> waits for nothing.</li>
+      <li>The component reads <code>md.current</code> live (<code>svelte/reactivity</code>'s <code>MediaQuery</code> returns <code>matchMedia(q).matches</code>, Svelte 5.57.2), and its md effect closes the panel only when an effect run sees <code>now === false</code> after <code>wasMd === true</code> (<code>MapKeyControl.svelte:62-68</code>). The click at 375 opens the panel through <code>toggle</code>; the only closers are that effect, a second toggle, Escape, and the below-md <code>pointerdown</code> listener on the map box (<code>:104-114</code>). Which one closed it, or whether the click missed while the frame was still at the old size, is what Step 1 must show.</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Produces (test-only, in the spec file):
+        <pre><code data-lang="ts">/**
+ * Resizes the frame and returns once it has rendered at the new size: when the width crosses md,
+ * after the `(min-width: 768px)` change event (a listener added before the resize); otherwise
+ * after the next animation frame (the rendering update in which media query changes are
+ * reported). Then `innerWidth === width` and `matchMedia(md).matches === (width &gt;= 768)`.
+ */
+async function atViewport(width: number, height: number): Promise&lt;void&gt;;</code></pre>
+      </li>
+    </ul>
+    <ol>
+      <li id="t1-s1"><input type="checkbox"> Reproduce before fixing. Add temporary logging to the failing test (innerWidth, <code>matchMedia</code>'s value, whether an md <code>change</code> event has fired since the last step, the toggle's <code>aria-expanded</code>, and a <code>pointerdown</code> listener on <code>document</code> that logs its target), then run the file 30 times in a loop, and the client project with <code>--retry=0</code> three times (the conditions the flake was seen under):
+        <pre><code data-lang="sh">for i in $(seq 1 30); do npx vitest --run --project client --retry=0 src/lib/map/key/MapKeyControl.svelte.spec.ts &gt; &lt;scratchpad&gt;/mkc-$i.log 2&gt;&amp;1; echo "$i $?"; done
+npx vitest --run --project client --retry=0</code></pre>
+        <p>Record in the report which closer fired or whether the click landed elsewhere. If nothing fails in those runs, say so and fix the measured gap (Step 3): the test must not act on a frame that has not rendered at its new size.</p>
+      </li>
+      <li id="t1-s2"><input type="checkbox"> Write the failing check of the readiness contract.
+        <pre><code data-lang="ts">it('atViewport returns once the frame has rendered at the new size, crossing md or not')
+  // for [1024, 375, 320, 1024, 1280]: a change listener on (min-width: 768px) added before the
+  // call has fired by the time it returns when the width crossed md; innerWidth === width;
+  // matchMedia('(min-width: 768px)').matches === width &gt;= 768</code></pre>
+        <p>It fails until <code>atViewport</code> exists.</p>
+      </li>
+      <li id="t1-s3"><input type="checkbox"> Implement <code>atViewport</code> and use it for every resize in the file, <code>beforeEach</code> and line 112 included; remove <code>crossMd</code> and the temporary logging. If Step 1 showed a closer inside the component, fix it there with a test that fails without the fix. <code>requestAnimationFrame</code> is a readiness signal (the rendering update), not a sleep; if <code>npx chreode timing-check</code> flags it, wait on <code>expect.poll</code> of <code>innerWidth</code> and the md listener instead.</li>
+      <li id="t1-s4"><input type="checkbox"> Prove it: the file 30 times in a row, then six parallel loops of five, all green.
+        <pre><code data-lang="sh">for i in $(seq 1 30); do npx vitest --run --project client --retry=0 src/lib/map/key/MapKeyControl.svelte.spec.ts &gt; /dev/null 2&gt;&amp;1; echo -n "$i:$? "; done
+npx vitest --run --project client src/lib/map/key/ src/lib/timeline/SimKey.svelte.spec.ts src/lib/paint/PaintKey.svelte.spec.ts src/lib/timeline/TimelineMode.svelte.spec.ts</code></pre>
+      </li>
+      <li id="t1-s5"><input type="checkbox"> Commit, with the cause in the body and the issue closed, then check timing.
+        <pre><code data-lang="sh">git add src/lib/map/key/MapKeyControl.svelte.spec.ts
+git commit -m "test(map): wait for the resized frame before acting in the key control spec" -m "&lt;the cause Step 1 found, or: page.viewport resolves before the frame renders at the new size; the change event lagged it in 78 of 80 resizes&gt;" -m "Fixes #131"
+npx chreode timing-check --head HEAD</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-2">
+    <h2>Task 2: The citywide feed, in the worker</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/lib/map/types.ts</code>: <code>CityDelta</code>, <code>CITY_DAY</code>, <code>TimelineUpdate.city</code> (<code>:64-74</code>).</li>
+      <li>Create: <code>src/lib/map/city-delta.ts</code> (worker-safe, pure: validation and the transfer list). Test: <code>src/lib/map/city-delta.spec.ts</code> (server).</li>
+      <li>Create: <code>src/lib/sim/world/city-feed.ts</code>. Test: <code>src/lib/sim/world/city-feed.spec.ts</code> (server), on worlds from <code>emptyWorld</code> and <code>addProject</code> (<code>src/lib/sim/world/columns.ts:123-160</code>) and a fixture world stepped to the horizon (<code>src/lib/sim/world/test/run.ts</code>, <code>test/cities.node.ts</code>).</li>
+      <li>Modify: <code>src/lib/sim/world/map-stream.ts</code>: <code>Placed</code> gains <code>anchor</code> (<code>:95-101</code>, set in <code>place</code>, <code>:151-180</code>); the stream composes a feed (<code>onEvent</code> <code>:308-319</code>, <code>flush</code> <code>:321-392</code> including its null check <code>:364-372</code>, <code>rewind</code> <code>:394-429</code>, <code>snapshot</code> <code>:442-490</code>). Tests: <code>map-stream.spec.ts</code>, <code>map-stream.rewind.spec.ts</code>.</li>
+      <li>Modify: <code>src/lib/sim/world/runner/runner.ts</code>: <code>sendCells</code> (<code>:866-872</code>) transfers <code>cityTransferables(u.city)</code> too. Test: <code>src/lib/sim/world/host.spec.ts</code> ("a full fill of the default document", <code>:342</code>).</li>
+      <li>Covering specs that must still pass unchanged: <code>map-stream.equality.spec.ts</code>, <code>src/lib/sim/world/host.edit.spec.ts</code>, <code>host.heights.spec.ts</code>, <code>src/lib/sim/world/runner/flags.spec.ts</code>, <code>src/lib/map/timeline-controller.spec.ts</code> (the page ignores <code>city</code> until Task 4), <code>src/lib/sim/timeline-client.spec.ts</code>, <code>src/lib/timeline/session.svelte.spec.ts</code>. <code>map-stream.perf.spec.ts</code> and <code>host.perf.spec.ts</code> are perf-only (not run in tasks).</li>
+      <li>Docs: <code>docs/dev/map-stream.md</code> (Rules: the city feed), <code>docs/dev/ensemble-runner.md</code> (the <code>cells</code> post's transfer list), <code>docs/dev/map-interfaces.md</code> (a new "The citywide feed" section: the wire contract and sizes).</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>scheduleAt</code> (<code>read.ts:96</code>), <code>monthLastDay</code>, <code>ScenarioParcels.labelPoint</code> and <code>index</code> (<code>scenario-codec.ts:44-47</code>), <code>MapStreamDeps.flagsOf</code>, <code>STAGE_ORDER</code>.</li>
+      <li>Produces:
+        <pre><code data-lang="ts">// src/lib/map/types.ts
+/** Index of a day in `CityDelta.days`, 3 per row. */
+export const CITY_DAY = { approved: 0, started: 1, completed: 2 } as const;
+/**
+ * The citywide feed (map-citywide slice 6): one marker per project row the plan world holds that
+ * has a T11 lot, loaded cell or not. Revision 0: every marker. Later: the rows that changed.
+ */
+export interface CityDelta {
+  rows: number;          // the world's row count now: markers at rows &gt;= this are dropped
+  row: Int32Array;       // changed rows, strictly ascending, each &lt; rows
+  lngLat: Float32Array;  // 2 per changed row: the anchor lot's label point
+  days: Float32Array;    // 3 per changed row (CITY_DAY): NaN = not (yet)
+  homes: Uint16Array;    // per changed row: the final revision's units, capped at 65535
+  flags: Uint8Array;     // per changed row: SLOT_FLAG bits
+}
+// TimelineUpdate gains:
+city?: CityDelta; // absent: no marker changed (and, in a revision 0, no feed: the page clears it)
+
+// src/lib/map/city-delta.ts (worker-safe)
+export const CITY_DELTA_BYTES_PER_ROW = 27;
+/** Throws RangeError: a length that is not row.length × its width, a row not ascending or
+ *  &gt;= rows, rows not a non-negative integer, a flag above 3. */
+export function validateCityDelta(d: CityDelta): void;
+/** The five buffers, each once. */
+export function cityTransferables(d: CityDelta): ArrayBuffer[];
+
+// src/lib/sim/world/city-feed.ts (worker-safe, under the determinism lint)
+export interface CityFeedDeps {
+  parcels: ScenarioParcels;                                        // labelPoint, index
+  anchorOf(world: World, statics: Statics, row: number): ParcelId | null; // the stream's place()
+  flagsOf(world: World, statics: Statics, row: number): number;
+}
+export interface CityFeed {
+  touch(row: number): void;                    // from onEvent
+  pending(): boolean;                          // a touched row or a drop not yet sent
+  /** The touched rows' markers at `day` (scheduleAt), or null when nothing is pending. */
+  take(world: World, statics: Statics, day: number): CityDelta | null;
+  /** After a restore: rows = world.projects.n; every row whose marker differs from the one
+   *  sent becomes touched. */
+  rewind(world: World, statics: Statics, day: number): void;
+  /** Every marker; supersedes pending touches. */
+  snapshot(world: World, statics: Statics, day: number): CityDelta;
+}
+export function createCityFeed(deps: CityFeedDeps): CityFeed;
+// A row's marker: none for a null anchor; days from scheduleAt (approved = the first of
+// entered.entitled and entered.permitIssued; started = entered.construction; completed =
+// end.day when end.kind === 'complete'); NaN days and homes 0 while scheduleAt is null.
+
+// src/lib/sim/world/map-stream.ts
+// Placed gains anchor: ParcelId | null. The stream builds createCityFeed({ parcels: P,
+// anchorOf: (w, st, row) =&gt; place(w, st, row).anchor, flagsOf }) and:
+//   onEvent: feed.touch(e.row) (every event, ready cell or not)
+//   flush: u.city = feed.take(...) when non-null; the null check also asks feed.pending()
+//   rewind: feed.rewind(world, statics, day)
+//   snapshot: city = feed.snapshot(world, statics, day)
+
+// runner.ts sendCells: transfer [...u.cells.flatMap(packTimedTransferables),
+//   ...(u.city ? cityTransferables(u.city) : [])]</code></pre>
+      </li>
+    </ul>
+    <aside data-kind="decision"><strong>Builder's call: the feed rides the map stream's updates</strong> One message, one revision counter, one resync and one rewind for cells and markers, so the page never holds markers of a world its cells do not show. Considered: a separate <code>city</code> message from the runner (its own revisions, its own resync path and its own ordering against <code>cells</code>, for no gain).</aside>
+    <aside data-kind="decision"><strong>Builder's call: deltas, not a whole summary each time</strong> Rows never move and a marker changes only on its row's event or a rewind, so a flush sends the touched rows: during the fill that is the rows with an event in the last 250 ms; at rest, nothing. A whole 810 KB summary per flush would rebuild 30,000 markers four times a second on both sides. Revision 0 is the whole set.</aside>
+    <aside data-kind="decision"><strong>Builder's call: markers read through <code>scheduleAt</code></strong> The read the cells are packed from (<code>itemsOf</code>, <code>map-stream.ts:250</code>), so a marker's days are the slot's days whenever both exist. Considered: reading the columns directly (cheaper, but a second rule for phases, pipeline rows and the month cap).</aside>
+    <ol>
+      <li id="t2-s1"><input type="checkbox"> Write the failing tests first (each fails on a missing export or field).
+        <pre><code data-lang="ts">// src/lib/map/city-delta.spec.ts
+it('validateCityDelta accepts a well-formed delta and an empty one (rows 0, no rows)')
+it.each(/* lngLat, days, homes or flags of the wrong length */)('rejects %s')
+it('rejects rows not ascending, a row at or past rows, a negative rows, a flag above 3')
+it('cityTransferables lists the five buffers, each once')
+
+// src/lib/sim/world/city-feed.spec.ts
+it("snapshot holds one marker per row with a lot, at its anchor lot's label point")
+it('approved is the first of entitled and permitIssued; started is construction; completed a complete end; NaN otherwise')
+it("homes is the final revision's units, capped at 65535; flags are flagsOf's")
+it('a master row and a row with no T11 parcel carry no marker')
+it('take sends only rows touched since the last take, ascending; null when none is pending')
+it('rewind: rows past n are dropped (rows === n) and rows whose marker changed are resent; unchanged rows are not')
+it('a rewind that changes nothing and keeps n leaves nothing pending')
+it('snapshot supersedes pending touches')
+it('on a fixture world stepped to the horizon, every marker equals scheduleAt of its row')
+
+// src/lib/sim/world/map-stream.spec.ts (map-stream: onEvent and flush)
+it('a flush carries city rows for events whose cells are not ready')   // an update with no cells
+it('flush returns null when no cell, removal, demolition, restore or city row is pending')
+it('revision 0 carries every marker')
+
+// src/lib/sim/world/map-stream.rewind.spec.ts (map-stream: rewind (rule 9))
+it('a rewind that drops rows sends rows = n and no marker past it')
+it("a rewind that changes one row's stage days resends that row only")
+
+// src/lib/sim/world/host.spec.ts (a full fill of the default document)
+it('the city feed holds one marker per drawn project, and each cells post transfers its buffers')
+  // fixture-0 loads every cell: the rows with a marker (folded over the updates) include every
+  // row packed into the cells last sent, and equal the rows with a T11 lot; every city buffer
+  // is in the transfer list
+it('resyncMap answers a revision 0 whose city holds every marker')
+it("with a painted policy from today, a painted lot's marker carries the zoning bit its slot carries")</code></pre>
+      </li>
+      <li id="t2-s2"><input type="checkbox"> Run them and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/map/city-delta.spec.ts src/lib/sim/world/city-feed.spec.ts src/lib/sim/world/map-stream.spec.ts src/lib/sim/world/map-stream.rewind.spec.ts src/lib/sim/world/host.spec.ts</code></pre>
+      </li>
+      <li id="t2-s3"><input type="checkbox"> Implement as in Interfaces; update the three docs. <code>map-interfaces.md</code>'s new section states the contract (fields, units, <code>NaN</code>, the 27 bytes a row, revision 0 whole, later deltas, <code>rows</code> truncation, producers that send none).</li>
+      <li id="t2-s4"><input type="checkbox"> Run every spec that covers the stream, the runner and the page's receipt of <code>cells</code>.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/map/ src/lib/sim/world/ src/lib/sim/timeline-client.spec.ts
+npx vitest --run --project client src/lib/timeline/session.svelte.spec.ts src/lib/map/SimMap.timeline.svelte.spec.ts
+SFH_E2E_PORT=4180 npx playwright test e2e/sim-halos.spec.ts e2e/sim-timeline.spec.ts e2e/lesscars.spec.ts --project=chromium --project=mobile</code></pre>
+      </li>
+      <li id="t2-s5"><input type="checkbox"> Commit, then check timing.
+        <pre><code data-lang="sh">git add src/lib/map/types.ts src/lib/map/city-delta.ts src/lib/map/city-delta.spec.ts src/lib/sim/world/city-feed.ts src/lib/sim/world/city-feed.spec.ts src/lib/sim/world/map-stream.ts src/lib/sim/world/map-stream.spec.ts src/lib/sim/world/map-stream.rewind.spec.ts src/lib/sim/world/runner/runner.ts src/lib/sim/world/host.spec.ts docs/dev/map-stream.md docs/dev/ensemble-runner.md docs/dev/map-interfaces.md
+git commit -m "feat(sim): a citywide feed of project markers rides the map stream's updates"
+npx chreode timing-check --head HEAD</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-3">
+    <h2>Task 3: Merged rings, edge glows and the halo gate</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/lib/map/timelapse/constants.ts</code>: the city constants (tier 4, display only).</li>
+      <li>Create: <code>src/lib/map/timelapse/city.ts</code> (the page's marker store, the grid, the records and the CPU reference of the city shader). Test: <code>city.spec.ts</code> (server).</li>
+      <li>Create: <code>src/lib/map/timelapse/city-layer.ts</code> (<code>CityLayer</code>, modelled on <code>halo-layer.ts</code>: one instanced screen-space quad per record; the vertex shader a rule-for-rule port of <code>evalCity</code> and <code>edgeOf</code>; colours from <code>HALO_TOKEN</code> and <code>tl-halo-policy</code>). Test: <code>city-layer.gpu.svelte.spec.ts</code> (client, as <code>halo-layer.gpu.svelte.spec.ts</code>). Export it from <code>timelapse/deck.ts</code>.</li>
+      <li>Modify: <code>src/lib/map/timelapse/halos.ts</code> (<code>evalHalo</code>, <code>:106-125</code>) and <code>halo-layer.ts</code> (the port <code>hl_evalHalo</code>, <code>:98-109</code>; the uniform block <code>:40-65</code>; props <code>:201-216</code>; <code>draw</code> <code>:267-284</code>): a ring gate by zoom. Tests: <code>halos.spec.ts</code>, <code>halo-layer.gpu.svelte.spec.ts</code>.</li>
+      <li>Covering specs that must still pass: <code>src/lib/map/palette.spec.ts</code>, <code>src/lib/map/timeline-controller.spec.ts</code>, <code>stage-bar-layer.gpu.svelte.spec.ts</code>, <code>timelapse-extension.gpu.svelte.spec.ts</code>.</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>CityDelta</code>, <code>CITY_DAY</code>, <code>validateCityDelta</code> (Task 2); <code>HALO_TOKEN</code>, <code>HALO_R_PX</code>; <code>CONSTRAINTS.maxBounds</code> (<code>src/lib/map/camera.ts:5-13</code>); <code>TimelineClock</code>.</li>
+      <li>Produces:
+        <pre><code data-lang="ts">// src/lib/map/timelapse/constants.ts (tier 4, this slice)
+export const CITY_HANDOVER_ZOOM = 14;   // below: merged rings; from it: each project's own ring
+export const CITY_CELL_M = 800;         // the grid square a merged ring stands for
+export const CITY_BUCKET_DAYS = 182;    // one merged ring per square, half-year and kind
+export const CITY_RING_DAYS = 365;      // a merged ring's life: 1 s at 1×, 0.33 s at 3×
+export const CITY_EDGE_DAYS = 182;      // an edge glow's life: 0.5 s at 1×
+export const CITY_R_REF_HOMES = 50;     // homes at which a merged ring reaches HALO_R_PX[1]
+export const CITY_R_MAX_PX = 40;        // the largest merged ring
+
+// src/lib/map/timelapse/city.ts (page-side, pure)
+export const CITY_KIND = { approved: 0, started: 1, completed: 2, policy: 3 } as const;
+export interface CityAttrs {
+  anchor: [lng: number, lat: number]; // homes-weighted centre of the record's events
+  day: Day;                           // the latest event day in it
+  homes: number;                      // the sum of its events' homes
+  kind: 0 | 1 | 2 | 3;                // a flagged marker's events go to `policy`, whatever stage
+}
+/** The page's markers, by row. */
+export class CityStore {
+  /** replace: revision 0 (the delta is the whole set); else write its rows and drop markers at
+   *  or past d.rows. Validates first (validateCityDelta). */
+  apply(d: CityDelta, replace: boolean): void;
+  clear(): void;
+  readonly size: number;     // rows holding a marker
+  readonly flagged: number;  // of them, with a flag
+  // typed-array views by row for buildCity: lngLat, days, homes, flags, has
+}
+/** The square of a point on the CITY_CELL_M grid over CONSTRAINTS.maxBounds; outside points
+ *  clamp to the edge squares. */
+export function cityGroup(lng: number, lat: number): number;
+/** One record per (square, CITY_BUCKET_DAYS bucket counted from `from`, kind) with an event
+ *  after `from`, in square, bucket, kind order. */
+export function buildCity(store: CityStore, from: Day): CityAttrs[];
+/** min(CITY_R_MAX_PX, HALO_R_PX[1] · max(1, sqrt(homes / CITY_R_REF_HOMES))): 22 to 40 px. */
+export function cityRadiusPx(homes: number): number;
+/** An edge glow's radius: cityRadiusPx(homes) / 2. */
+export function cityEdgePx(homes: number): number;
+/**
+ * null when the clip-space point is in view (w &gt; 0, |x/w| &lt;= 1, |y/w| &lt;= 1); else the NDC
+ * point on the view's edge toward it: d / max(|d.x|, |d.y|), where d = (x/w, y/w), or (−x, −y)
+ * behind the camera (w &lt;= 0); (0, −1) when d is zero.
+ */
+export function edgeOf(clip: [x: number, y: number, w: number]): [x: number, y: number] | null;
+export interface CityEval { mode: 'none' | 'ring' | 'edge'; sizePx: number; alpha: number; at: [x: number, y: number] }
+/**
+ * CPU reference of the city shader, rule order fixed:
+ * 1. t &lt; day: none.
+ * 2. off view (edgeOf non-null): t &lt; day + CITY_EDGE_DAYS → edge, cityEdgePx(homes), alpha
+ *    1 − age / CITY_EDGE_DAYS (reduced: 1), at the edge point; else none.
+ * 3. zoom &gt;= CITY_HANDOVER_ZOOM: none.
+ * 4. t &lt; day + CITY_RING_DAYS → ring, radius HALO_R_PX[0] + (cityRadiusPx − HALO_R_PX[0]) · u
+ *    and alpha 1 − u, u = age / CITY_RING_DAYS (reduced: cityRadiusPx and 1); else none.
+ */
+export function evalCity(c: CityAttrs, t: Day, zoom: number, clip: [number, number, number], reduced: boolean): CityEval;
+
+// src/lib/map/timelapse/city-layer.ts
+// CityLayer props: { id: 'timeline-city', data: CityAttrs[], clock: TimelineClock,
+//   reduced: boolean, beforeId? }. Not pickable; no depth test. A ring is stroked 2 px; an edge
+//   glow is a filled disc centred on the edge point (half of it falls off the canvas), both in
+//   the kind's HALO_TOKEN tone or tl-halo-policy. Reads clock.day in draw(); zoom from
+//   log2(project.scale), as stage-bar-layer.ts:266. static layerName = 'CityLayer'.
+
+// src/lib/map/timelapse/halos.ts
+export function evalHalo(h: HaloAttrs, t: Day, reduced: boolean, zoom = Infinity, ringMinZoom = 0): HaloEval;
+// new rule 2 (after "hidden outside [day, until)", before the mark rule): a ring (not a mark)
+// is hidden while zoom &lt; ringMinZoom.
+// HaloLayer gains the prop ringMinZoom: number (default 0), a uniform of the halo module.</code></pre>
+      </li>
+    </ul>
+    <aside data-kind="decision"><strong>Builder's call: a fixed 800 m grid, not neighbourhoods</strong> The spec says rings merge "into one per neighbourhood". The timeline worker has no neighbourhood geometry (<a href="#tbl-feed-evidence">evidence</a>); loading <code>neighborhoods.geojson</code> there adds a fetch, a parse, a point-in-polygon per lot and a failure path to every <code>/sim</code> open, and a ring at a large neighbourhood's centre would sit far from its homes. An 800 m square is about 106 px at the desktop's default zoom and 60 px at the phone's, room for a ring of up to 40 px, and the ring sits at the homes-weighted centre of its events. Considered: the 41 analysis neighbourhoods (above); the map stream's chunk cells (a few hundred metres: too fine to merge at zoom 13).</aside>
+    <aside data-kind="decision"><strong>Builder's call: merge by zoom, not by speed</strong> The spec merges "at speed: above a set number of events per second". Rings live in simulated time (slice 5), so the number alive at once is the same at 1× and 3×; what crowds the screen is zoom (6,843 at once at the default view on the synthetic city, <a href="#sec-measures">Measured</a>). Below zoom 14 the rings merge whatever the speed. Considered: a speed threshold (the page would switch layers on a speed change, and a crowded default view at 1× would stay crowded).</aside>
+    <aside data-kind="decision"><strong>Builder's call: the merged ring is born at its half-year's last event</strong> A record's homes count only events at or before its day, so the reveal rule holds without the shader summing events. The cost is lag: a change shows in its square's ring up to 182 days late (half a second at 1×). Considered: monthly buckets (a lag of a month, and up to a dozen concentric rings per square alive at once).</aside>
+    <aside data-kind="decision"><strong>Builder's call: edges decided on the GPU</strong> Whether a record is on screen depends on the camera, which changes every frame of a pan. The vertex shader projects the anchor, and either draws the ring, draws the glow at the edge point, or drops the instance. No JS runs per frame, and the records do not change with the camera. Considered: a JS pass on <code>move</code> (O(records) per frame of a pan).</aside>
+    <aside data-kind="decision"><strong>Builder's call: one glow per record, at every zoom</strong> The spec's edge glow ("a short glow on the map edge in the project's direction") is drawn per merged record, so a busy square off screen glows once per half-year and kind, not once per project. At the default view few squares are off screen (the far south, <a href="#sec-measures">Measured</a>); zoomed into a street most are, and their glows spread around the edges by direction. Considered: per-project glows (thousands at street zoom).</aside>
+    <ol>
+      <li id="t3-s1"><input type="checkbox"> Write the failing tests first.
+        <pre><code data-lang="ts">// src/lib/map/timelapse/city.spec.ts
+it('cityGroup puts points 800 m apart in different squares and clamps points outside the bounds')
+it('buildCity: one record per square, half-year and kind after from, at the homes-weighted centre, day = its latest event, homes = the sum')
+it("a flagged marker's events go to the policy record, not their stage's")
+it('events on or before from make no record; a marker with no days makes none')
+it('records are in square, bucket, kind order')
+it('cityRadiusPx: 22 up to 50 homes, grows with the square root, 40 at most; cityEdgePx is half')
+it('edgeOf: null in view; the edge point toward an anchor off each side and each corner; mirrored behind the camera')
+it('evalCity: nothing before its day, at any zoom, in view or not')
+it('evalCity in view below 14: a ring from 6 px to cityRadiusPx over CITY_RING_DAYS, fading; none from zoom 14')
+it('evalCity off view at any zoom: an edge glow of cityEdgePx for CITY_EDGE_DAYS, fading')
+it('evalCity reduced: a still ring at cityRadiusPx and a still glow, full strength, the same windows')
+it('CityStore: replace takes the delta whole; apply writes its rows and drops markers at or past rows')
+it('CityStore.apply rejects a malformed delta and leaves the store as it was')
+
+// src/lib/map/timelapse/halos.spec.ts
+it('evalHalo: a ring below ringMinZoom is hidden; a mark is not')
+it('evalHalo at 13.99 and 14.0 with ringMinZoom 14: hidden, then shown')
+
+// src/lib/map/timelapse/city-layer.gpu.svelte.spec.ts
+it('below zoom 14, draws a ring of the radius evalCity gives, in the stage tone, at ages 0 and 182')
+it('draws nothing in view at zoom 14')
+it('an anchor off the right edge draws a half-disc on the right edge in its tone, until CITY_EDGE_DAYS')
+it('a policy record draws in tl-halo-policy')
+it('reduced: the same radius and full alpha at ages 0 and 364')
+it('draws nothing before its day')
+
+// src/lib/map/timelapse/halo-layer.gpu.svelte.spec.ts
+it('with ringMinZoom 14, a ring draws at zoom 14 and not at 13.9; a mark draws at both')</code></pre>
+      </li>
+      <li id="t3-s2"><input type="checkbox"> Run them and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/map/timelapse/city.spec.ts src/lib/map/timelapse/halos.spec.ts
+npx vitest --run --project client src/lib/map/timelapse/city-layer.gpu.svelte.spec.ts src/lib/map/timelapse/halo-layer.gpu.svelte.spec.ts</code></pre>
+      </li>
+      <li id="t3-s3"><input type="checkbox"> Implement as in Interfaces. Export the halo module's colour table from <code>halo-layer.ts</code> for <code>CityLayer</code> to reuse rather than build a second one.</li>
+      <li id="t3-s4"><input type="checkbox"> Run every spec that covers the timeline renderer.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/map/
+npx vitest --run --project client src/lib/map/timelapse/ src/lib/map/SimMap.timeline.svelte.spec.ts src/lib/map/SimMap.timeline-shader.svelte.spec.ts</code></pre>
+        <p>No controller emits the city layer yet and every caller of <code>evalHalo</code> gets <code>ringMinZoom</code> 0, so nothing on any page changes.</p>
+      </li>
+      <li id="t3-s5"><input type="checkbox"> Commit, then check timing.
+        <pre><code data-lang="sh">git add src/lib/map/timelapse/constants.ts src/lib/map/timelapse/city.ts src/lib/map/timelapse/city.spec.ts src/lib/map/timelapse/city-layer.ts src/lib/map/timelapse/city-layer.gpu.svelte.spec.ts src/lib/map/timelapse/deck.ts src/lib/map/timelapse/halos.ts src/lib/map/timelapse/halos.spec.ts src/lib/map/timelapse/halo-layer.ts src/lib/map/timelapse/halo-layer.gpu.svelte.spec.ts
+git commit -m "feat(map): merged rings per area and edge glows, with a zoom gate on each project's ring"
+npx chreode timing-check --head HEAD</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-4">
+    <h2>Task 4: The controller holds the city and draws it</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/lib/map/timeline-controller.ts</code>: <code>TimelineDeps.CityLayer</code> (<code>:27-35</code>); <code>apply</code> (<code>:197-213</code>) validates and stores <code>u.city</code>; <code>snapshot</code> and <code>swap</code> (<code>:376-419</code>) replace or clear the store; records rebuilt where the halos are (<code>runSlice</code>, <code>:458-461</code>) and on <code>setHalos</code> (<code>:266-275</code>); <code>setReducedMotion</code> (<code>:278-284</code>) clones the city layer too; the halo layer's <code>ringMinZoom</code>; <code>emit</code> (<code>:582-599</code>); <code>debugSnapshot</code> (<code>:318-358</code>); <code>destroy</code>. Test: <code>timeline-controller.spec.ts</code>.</li>
+      <li>Modify: <code>src/lib/map/timelapse/types.ts</code> (<code>TimelineSnapshot</code>, <code>:74-95</code>); <code>src/lib/map/test/fake-timeline-deps.ts</code> (a <code>RecordingCityLayer</code> with its own <code>layerName</code>, recording constructions).</li>
+      <li>Modify: <code>src/lib/map/SimMap.svelte</code> (<code>enterTimeline</code>, <code>:699-760</code>: pass <code>CityLayer</code> from the lazy timelapse modules). Test: <code>SimMap.timeline.svelte.spec.ts</code>.</li>
+      <li>Modify: <code>src/lib/map/test/synthetic-timeline.ts</code> (<code>makeSyntheticTimeline</code> adds a <code>city</code> delta: one marker per project at its site) and <code>synthetic-timeline.spec.ts</code>.</li>
+      <li>Modify: <code>e2e/bench/map-timeline.bench.ts</code>: a case <code>citywide playback</code> (written, not run).</li>
+      <li>Covering specs that must still pass: <code>SimMap.timeline-errors.svelte.spec.ts</code>, <code>SimMap.timeline-validation.svelte.spec.ts</code>, <code>SimMap.timeline-shader.svelte.spec.ts</code>, <code>src/lib/map/debug.svelte.spec.ts</code>, <code>src/lib/timeline/TimelineMode.svelte.spec.ts</code>, <code>e2e/sim-halos.spec.ts</code>, <code>e2e/timelapse-render.spec.ts</code>, <code>e2e/lesscars.spec.ts</code>, <code>e2e/map.spec.ts</code> (goldens unchanged). <code>src/lib/map/timeline.perf.svelte.spec.ts</code> and <code>src/lib/timeline/apply-cost.perf.svelte.spec.ts</code> are perf-only.</li>
+      <li>Docs: <code>docs/dev/map-interfaces.md</code> ("Halos and marks": the gate and the city layer, draw order, cadence); <code>docs/dev/map-perf.md</code> (see Step 3); <code>docs/dev/testing.md</code> (the snapshot's new fields).</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>CityDelta</code>, <code>validateCityDelta</code> (Task 2); <code>CityStore</code>, <code>buildCity</code>, <code>CityLayer</code>, <code>evalCity</code>, <code>CITY_HANDOVER_ZOOM</code>, <code>HaloLayer</code>'s <code>ringMinZoom</code> (Task 3).</li>
+      <li>Produces:
+        <pre><code data-lang="ts">// src/lib/map/timeline-controller.ts
+// TimelineDeps gains: CityLayer: typeof CityLayer;
+// apply(u): validateCityDelta(u.city) with the cells, before anything installs (a RangeError
+//   leaves everything as it was); then revision 0: store.apply(city, true), or store.clear()
+//   without city; later: store.apply(city, false). A city-only update (no cells, no removals)
+//   rebuilds the city records and emits at once; otherwise the records are rebuilt once the
+//   slice queue drains, beside the halos.
+// The city layer exists iff haloFrom !== null and store.size &gt; 0. While it exists the halo
+//   layer is built (or cloned) with ringMinZoom = CITY_HANDOVER_ZOOM, else 0.
+// Emit order: solids, ghosts, timeline-bars, timeline-halos, timeline-city, overlay.
+// TimelineSnapshot gains:
+cityMarkers: number;   // rows the store holds a marker for
+cityFlagged: number;   // of them, with a SLOT_FLAG bit
+cityRecords: number;   // records in the city layer; 0 without one
+cityDays: number[];    // the records' distinct days, ascending, the first 500
+ringMinZoom: number;   // the halo layer's gate: 0 or CITY_HANDOVER_ZOOM
+projects: number;      // distinct installed slots with parts
+
+// e2e/bench/map-timeline.bench.ts: CASES gain
+{ name: 'citywide playback', daysPerS: PLAYBACK_DAYS_PER_S, limits: false, halos: true, camera: CITY }
+// CITY = { center: [-122.4194, 37.7749], zoom: 13, pitch: 55, bearing: -20 } (defaultFrame(1280));
+// the others keep DOWNTOWN. The line adds `city=&lt;cityRecords&gt; markers=&lt;cityMarkers&gt;`; the case
+// asserts cityRecords &gt; 0 and ringMinZoom === 14 after the pan.</code></pre>
+      </li>
+    </ul>
+    <aside data-kind="decision"><strong>Builder's call: the halo gate only while the city layer exists</strong> The per-project rings hide below zoom 14 only when merged rings replace them. A page that turns halos on without a feed (the bench's "playback + halos" at zoom 15.5, any future caller) keeps slice 5's behaviour exactly.</aside>
+    <ol>
+      <li id="t4-s1"><input type="checkbox"> Write the failing tests first.
+        <pre><code data-lang="ts">// src/lib/map/timeline-controller.spec.ts
+it('stores the city from a revision 0 and replaces it on the next revision 0; a revision 0 without city clears it')
+it('a later delta overwrites rows and drops those at or past rows')
+it('emits timeline-city after timeline-halos and before the overlay, only with halos on and markers held')
+it('a city-only update rebuilds the city records once and emits once')
+it('builds city records once per update, when the slice queue drains')
+it('setTime constructs no layer and calls setLayers none, with the city layer on')   // 100 calls
+it("the halo layer's ringMinZoom is CITY_HANDOVER_ZOOM while the city layer is on, else 0")
+it('setHalos(null) removes the city layer and resets the gate; setHalos({ from }) rebuilds the records once')
+it('setReducedMotion sets reduced on the city layer without rebuilding its records')
+it('rejects a malformed city delta before installing anything')
+it('reports cityMarkers, cityFlagged, cityRecords, cityDays, ringMinZoom and projects in the debug snapshot')
+
+// src/lib/map/SimMap.timeline.svelte.spec.ts
+it('a queued update keeps its city until the controller exists, and the controller draws it')
+
+// src/lib/map/test/synthetic-timeline.spec.ts
+it('carries one marker per project, at its site, with the days of its schedule and every tenth flagged')</code></pre>
+      </li>
+      <li id="t4-s2"><input type="checkbox"> Run them and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/map/timeline-controller.spec.ts src/lib/map/test/synthetic-timeline.spec.ts
+npx vitest --run --project client src/lib/map/SimMap.timeline.svelte.spec.ts</code></pre>
+      </li>
+      <li id="t4-s3"><input type="checkbox"> Implement as in Interfaces; update the fake deps, the synthetic timeline, the bench case and the docs. In <code>docs/dev/map-perf.md</code>:
+        <ul>
+          <li>Add this row to the first Results table: <code>| Apple M5 Pro (Mac17,9), after map-on-screen (#132) | 2026-11-20 | Playwright Chromium, Metal | 2 | — | — | 10.3 ms | Yes (representative and worst pan p95 10.3 ms; timeline playback 10.3 ms, drag 10.3 ms, playback + limits 10.2 ms, playback + halos 10.3 ms with halos=72532 marks=3000; /sim docked pan 10.3 ms on fixture-0) |</code>, run through Prettier's table alignment (<code>npm run format</code> on the file).</li>
+          <li>Remove the paragraph that starts "<strong>Run after map-on-screen lands.</strong>"</li>
+          <li>In "Halos case", replace "Not yet run." with the result: p95 10.3 ms, <code>halos=72532 marks=3000</code>, 2026-11-20.</li>
+          <li>Add a "Citywide case" paragraph: what <code>citywide playback</code> does (the default desktop camera, 3× playback, halos and the city on, far bars once Task 5 lands), the line's fields, and "Not yet run."</li>
+        </ul>
+      </li>
+      <li id="t4-s4"><input type="checkbox"> Run every spec that covers the controller and SimMap, then the e2e that draw a timeline; then look.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/map/
+npx vitest --run --project client src/lib/map/ src/lib/timeline/TimelineMode.svelte.spec.ts
+SFH_E2E_PORT=4180 npx playwright test e2e/sim-halos.spec.ts e2e/timelapse-render.spec.ts e2e/map.spec.ts e2e/sim-timeline.spec.ts e2e/lesscars.spec.ts --project=chromium --project=mobile</code></pre>
+        <p>Screenshots, opened and looked at: the standard set (<code>/sim</code> at 1280 and 375, default camera, mid-play, key open): one merged ring per tone over the Mission instead of the cluster, nothing at the edges. Then on <code>/</code> at 1280x800 with <code>__sfhMap.loadSyntheticTimeline(1, 30000)</code>, <code>setHalos({ from: 20742 })</code>, <code>setTime(25000)</code>: at the default camera (merged rings, no wall of rings, glows on the bottom edge for the south), and at zoom 16 over downtown (each project's rings in view, glows around the edges). Compare with the 6,843-ring screenshot in <a href="#sec-measures">Measured</a>; if the merged view is still unreadable, tune the tier-4 constants and say which.</p>
+      </li>
+      <li id="t4-s5"><input type="checkbox"> Commit, then check timing.
+        <pre><code data-lang="sh">git add src/lib/map/timeline-controller.ts src/lib/map/timeline-controller.spec.ts src/lib/map/timelapse/types.ts src/lib/map/test/fake-timeline-deps.ts src/lib/map/SimMap.svelte src/lib/map/SimMap.timeline.svelte.spec.ts src/lib/map/test/synthetic-timeline.ts src/lib/map/test/synthetic-timeline.spec.ts e2e/bench/map-timeline.bench.ts docs/dev/map-interfaces.md docs/dev/map-perf.md docs/dev/testing.md
+git commit -m "feat(map): the timeline draws the citywide feed: one ring per area zoomed out, a glow at the edge for changes off screen"
+npx chreode timing-check --head HEAD</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-5">
+    <h2>Task 5: Bars from the default zoom, at one size</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/lib/map/timelapse/constants.ts</code> (<code>:13-20</code>: the far gate and size beside today's), <code>src/lib/map/types.ts</code> (<code>BarMode</code>; <code>SimMapHandle.setBarMode</code>, <code>:95-113</code>).</li>
+      <li>Modify: <code>src/lib/map/timelapse/bars.ts</code>: <code>BarAttrs.policy</code> filled in <code>buildBars</code> (<code>:93-135</code>) from <code>slotFlags</code>; <code>evalBar</code> (<code>:151-187</code>) and <code>barSizePx</code> (<code>:189-199</code>) take a mode. Test: <code>bars.spec.ts</code>. <code>src/lib/map/timelapse/types.ts</code> (<code>BarAttrs</code>, <code>:44-61</code>).</li>
+      <li>Modify: <code>src/lib/map/timelapse/declutter.ts</code>: a ladder per mode (<code>:19-27</code>), the order policy first (<code>:103-114</code>). Test: <code>declutter.spec.ts</code>.</li>
+      <li>Modify: <code>src/lib/map/timelapse/stage-bar-layer.ts</code>: a <code>far</code> prop and uniform; the gate and size in the port (<code>:116-118</code>, <code>:179-182</code>, <code>:258-266</code>). Test: <code>stage-bar-layer.gpu.svelte.spec.ts</code>.</li>
+      <li>Modify: <code>src/lib/map/timeline-controller.ts</code> (<code>setBarMode</code>; <code>rebuildBars</code>, <code>:493-511</code>, declutters in the mode and builds the layer with <code>far</code>; snapshot <code>barMode</code>) and spec; <code>SimMap.svelte</code> (<code>setBarMode</code> kept like the day until the controller exists, as <code>setHalos</code>, <code>:381-386</code>; on the handle, <code>:388-400</code>) and <code>SimMap.timeline.svelte.spec.ts</code>; <code>src/lib/map/debug.ts</code> (<code>setBarMode</code>) and <code>debug.svelte.spec.ts</code> (the hook's method list); <code>src/lib/fzp/test/sim-map-stub.ts</code> and <code>src/lib/brush/test/sim-map-stub.ts</code> (a recording <code>setBarMode</code>); <code>e2e/bench/map-timeline.bench.ts</code> (the citywide case calls <code>setBarMode('far')</code>).</li>
+      <li>Covering specs that must still pass: <code>declutter.perf.spec.ts</code> is perf-only (not run in tasks); <code>e2e/timelapse-render.spec.ts</code>, <code>e2e/lesscars.spec.ts</code> (street bars, unchanged), <code>e2e/sim-timeline.spec.ts</code>.</li>
+      <li>Docs: <code>docs/dev/map-interfaces.md</code> (a "Bar modes" paragraph: the handle call, the two modes, who calls it, the declutter order).</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>SLOT_FLAG</code>, <code>slotFlags</code>; the controller of Task 4.</li>
+      <li>Produces:
+        <pre><code data-lang="ts">// src/lib/map/types.ts
+export type BarMode = 'street' | 'far';
+// SimMapHandle gains:
+setBarMode(mode: BarMode): void; // 'street' (the default): today's; kept until the controller exists
+
+// src/lib/map/timelapse/constants.ts (tier 4, this slice)
+export const BAR_FAR_MIN_ZOOM = 12;            // the phone's default view is 12.2, the desktop's 13
+export const BAR_FAR_PX = { w: 32, h: 6 } as const; // one size at every zoom (today's z15 size)
+
+// src/lib/map/timelapse/bars.ts
+export function barGate(mode: BarMode): number;               // BAR_MIN_ZOOM or BAR_FAR_MIN_ZOOM
+export function barSizePx(zoom: number, mode: BarMode = 'street'): { w: number; h: number };
+export function evalBar(b: BarAttrs, l: TimelineLookups, t: Day, zoom: number, mode: BarMode = 'street'): BarEval;
+// BarAttrs gains policy: boolean (slotFlags[s] !== 0); minZoom defaults to barGate('street').
+
+// src/lib/map/timelapse/declutter.ts
+export function declutter(bars: BarAttrs[], mode: BarMode = 'street'): void;
+// ladder from barGate(mode) to DECLUTTER_MAX_ZOOM by DECLUTTER_STEP, widths barSizePx(z, mode);
+// visit order: policy first, then units descending, then parcelId, then projectId.
+
+// StageBarLayer gains the prop far: boolean (default false): the shader's gate and size.
+// TimelineController.setBarMode(mode): a change rebuilds the bars once; TimelineSnapshot gains
+//   barMode: BarMode.</code></pre>
+      </li>
+    </ul>
+    <aside data-kind="decision"><strong>Builder's call: bars stay per installed cell</strong> The viewport's cells are loaded at every zoom (<a href="#sec-feed-drawn">evidence</a>), so the bars on screen already exist; only their gate and size change. Considered: bars from the feed at the lots' label points (a second bar layer, a second declutter over 30,000 projects per update, and a hand-over at the building tops).</aside>
+    <aside data-kind="decision"><strong>Builder's call: a mode, so <code>/lesscars</code> is unchanged</strong> <code>/lesscars</code> draws the same bars (<code>LessCarsMode.svelte:290</code> sets lookups) and must not change. <code>/sim</code> opts in with <code>setBarMode('far')</code>. Considered: changing the constants for every page.</aside>
+    <aside data-kind="decision"><strong>Builder's call: 32 by 6 px at every zoom</strong> Today's size at zoom 15, the smallest the bars were designed at, with room for six segments. It is smaller than today's 48 by 8 at zoom 17 and up, as "one size on screen" implies.</aside>
+    <aside data-kind="decision"><strong>Builder's call: policy first in both modes</strong> The spec: where bars collide, "a project caused by the person's policy wins over one that is not", then the larger. The flags are the "under your policy" marks of slice 5. In street mode on <code>/lesscars</code> no slot has a flag, so its order is unchanged.</aside>
+    <ol>
+      <li id="t5-s1"><input type="checkbox"> Write the failing tests first.
+        <pre><code data-lang="ts">// src/lib/map/timelapse/bars.spec.ts
+it('far: barSizePx is 32 by 6 at zooms 12, 15, 17 and 18')
+it('far: evalBar hides below the ramp to 12 and shows from 12; street keeps 15')
+it('buildBars sets policy from slotFlags')
+
+// src/lib/map/timelapse/declutter.spec.ts
+it('far: two projects 300 m apart both show by zoom 14, one hidden at 12')       // ladder from 12
+it('a flagged project wins a collision over a larger unflagged one')
+it('street mode without flags keeps today\'s gates exactly')                    // a recorded case
+
+// src/lib/map/timelapse/stage-bar-layer.gpu.svelte.spec.ts
+it('far: a bar draws 32 by 6 px at zoom 12.5 and at zoom 17')
+it('far: no bar at zoom 11.4; street: none at 14')
+
+// src/lib/map/timeline-controller.spec.ts
+it('setBarMode rebuilds the bars once with far and reports barMode; the same mode again does nothing')
+// src/lib/map/SimMap.timeline.svelte.spec.ts
+it('setBarMode before the timeline controller exists is kept and applied')
+// src/lib/map/debug.svelte.spec.ts: the method list gains setBarMode</code></pre>
+      </li>
+      <li id="t5-s2"><input type="checkbox"> Run them and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/map/timelapse/bars.spec.ts src/lib/map/timelapse/declutter.spec.ts src/lib/map/timeline-controller.spec.ts
+npx vitest --run --project client src/lib/map/timelapse/stage-bar-layer.gpu.svelte.spec.ts src/lib/map/SimMap.timeline.svelte.spec.ts src/lib/map/debug.svelte.spec.ts</code></pre>
+      </li>
+      <li id="t5-s3"><input type="checkbox"> Implement as in Interfaces; update the stubs, the bench case and <code>map-interfaces.md</code>.</li>
+      <li id="t5-s4"><input type="checkbox"> Run every spec that covers the bars, the controller and their callers, then the e2e that draw bars.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/map/
+npx vitest --run --project client src/lib/map/ src/lib/timeline/TimelineMode.svelte.spec.ts src/lib/sim-page/SimPage.svelte.spec.ts src/lib/lesscars/
+SFH_E2E_PORT=4180 npx playwright test e2e/timelapse-render.spec.ts e2e/lesscars.spec.ts e2e/sim-timeline.spec.ts e2e/map.spec.ts --project=chromium --project=mobile</code></pre>
+        <p>No page calls <code>setBarMode</code> yet, so <code>/sim</code> and <code>/lesscars</code> are unchanged. Screenshot, opened: on <code>/</code> at 1280x800 with the synthetic timeline, <code>setBarMode('far')</code> at the default camera and at zoom 17: bars the same size in both, none overlapping.</p>
+      </li>
+      <li id="t5-s5"><input type="checkbox"> Commit, then check timing.
+        <pre><code data-lang="sh">git add src/lib/map/types.ts src/lib/map/timelapse/constants.ts src/lib/map/timelapse/bars.ts src/lib/map/timelapse/bars.spec.ts src/lib/map/timelapse/types.ts src/lib/map/timelapse/declutter.ts src/lib/map/timelapse/declutter.spec.ts src/lib/map/timelapse/stage-bar-layer.ts src/lib/map/timelapse/stage-bar-layer.gpu.svelte.spec.ts src/lib/map/timeline-controller.ts src/lib/map/timeline-controller.spec.ts src/lib/map/SimMap.svelte src/lib/map/SimMap.timeline.svelte.spec.ts src/lib/map/debug.ts src/lib/map/debug.svelte.spec.ts src/lib/fzp/test/sim-map-stub.ts src/lib/brush/test/sim-map-stub.ts e2e/bench/map-timeline.bench.ts docs/dev/map-interfaces.md
+git commit -m "feat(map): a far bar mode: bars from zoom 12 at one size, the person's projects first"
+npx chreode timing-check --head HEAD</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-6">
+    <h2>Task 6: <code>/sim</code> turns it on, and the key names it</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/lib/timeline/TimelineMode.svelte</code>: <code>onMapReady</code> (<code>:795-818</code>) calls <code>h.setBarMode('far')</code> once, beside <code>setHalos</code>. Test: <code>TimelineMode.svelte.spec.ts</code>.</li>
+      <li>Modify: <code>src/lib/map/key/copy.ts</code> (<code>KEY_COPY.area</code>, <code>KEY_COPY.edge</code>), <code>src/lib/map/key/rows.ts</code> (<code>Swatch</code> kinds, <code>:8</code>) and <code>rows.spec.ts</code>, <code>src/lib/map/key/KeySwatch.svelte</code> (the two shapes), <code>src/lib/timeline/SimKey.svelte</code> (the two rows) and <code>SimKey.svelte.spec.ts</code>, <code>src/lib/timeline/rest-text.svelte.spec.ts</code>.</li>
+      <li>Create: <code>e2e/sim-citywide.spec.ts</code>.</li>
+      <li>Covering specs that must still pass: <code>MapKeyControl.svelte.spec.ts</code>, <code>src/lib/paint/PaintKey.svelte.spec.ts</code> (shares <code>KeySwatch</code>), <code>e2e/map-key.spec.ts</code>, <code>e2e/sim-halos.spec.ts</code>, <code>e2e/sim.spec.ts</code>, <code>e2e/fzp-sim.spec.ts</code>, <code>e2e/chrome-dark.spec.ts</code>, <code>e2e/layout.spec.ts</code>.</li>
+      <li>Docs: <code>docs/dev/timeline-ui.md</code> (Revealing time: the city layer follows the playhead; The screen: the key's new rows), <code>docs/dev/map-interfaces.md</code> ("The map key control": the two swatch kinds).</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>setBarMode</code>, the snapshot fields (Tasks 4 and 5); <code>HALO_TOKEN</code>.</li>
+      <li>Produces:
+        <pre><code data-lang="ts">// src/lib/map/key/copy.ts: KEY_COPY gains
+area: 'Zoomed out: one per area',
+edge: 'Edge glow: off screen',
+
+// src/lib/map/key/rows.ts
+export type Swatch = { kind: 'ghost' | 'solid' | 'bar' | 'ring' | 'mark' | 'area' | 'edge'; tokens: TokenName[] };
+// KeySwatch: 'area' a 16 px ring around an 8 px ring per token, overlapping in a row; 'edge' a
+//   1 px vertical line in --color-line with a 6 px half-disc per token against it. aria-hidden.
+
+// src/lib/timeline/SimKey.svelte (module script)
+export const AREA_SWATCH: Swatch; // { kind: 'area', tokens: the three HALO_TOKEN values }
+export const EDGE_SWATCH: Swatch; // { kind: 'edge', tokens: the same }
+// In the "Just changed stage" list, after the three tone rows:
+//   &lt;li data-key-extra="area"&gt; AREA_SWATCH, KEY_COPY.area
+//   &lt;li data-key-extra="edge"&gt; EDGE_SWATCH, KEY_COPY.edge
+
+// TimelineMode.svelte onMapReady: h.setBarMode('far') (not tied to the calibration)</code></pre>
+      </li>
+    </ul>
+    <aside data-kind="decision"><strong>Builder's call: both rows always shown</strong> The key names every mark the map can draw on <code>/sim</code>; zooming or panning changes which ones show, but the key's words stay fixed (status apart from controls). The mark row stays conditional on a policy in force, as in slice 5.</aside>
+    <ol>
+      <li id="t6-s1"><input type="checkbox"> Write the failing tests first.
+        <pre><code data-lang="ts">// src/lib/timeline/SimKey.svelte.spec.ts
+it('names the merged ring and the edge glow under "Just changed stage", in the halo tones')
+  // data-key-extra area and edge; their swatches' data-token are HALO_TOKEN's three values
+// src/lib/map/key/rows.spec.ts
+it('the area and edge swatch kinds draw from tokens that exist in both themes')
+// src/lib/timeline/rest-text.svelte.spec.ts: still passes with the key open (each row &lt; 12 words)
+// src/lib/timeline/TimelineMode.svelte.spec.ts
+it('turns far bars on once the map is ready')
+
+// e2e/sim-citywide.spec.ts (fixture-0, reduced motion, debug snapshot, never pixels)
+test('the feed holds a marker for every project on the map, and the city layer is on')
+  // cityMarkers &gt;= projects &gt; 0; layerIds contain timeline-city after timeline-halos
+test('at the default zoom each project\'s rings hand over: ringMinZoom 14, map zoom below 14')
+test('no city record shows at today; one is due after the playhead passes its day; Home hides it')
+  // cityDays[0] &gt; asOf; step with ArrowRight until __sfhFzp.day &gt;= cityDays[0] (each press checked)
+test('a transit rule from today: every flagged slot on the map has a flagged marker')
+  // addPolicy; waitFilled; cityFlagged &gt;= flagged &gt; 0 (every flagged slot drawn has a flagged marker)
+test('bars are in far mode on /sim')                                   // barMode === 'far'
+test('375: the key\'s new rows scroll inside the panel; the toolbar does not move')
+test('/sim with the city on: axe clean with the key open, light and dark')</code></pre>
+      </li>
+      <li id="t6-s2"><input type="checkbox"> Run them and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project client src/lib/timeline/SimKey.svelte.spec.ts src/lib/map/key/ src/lib/timeline/TimelineMode.svelte.spec.ts src/lib/timeline/rest-text.svelte.spec.ts
+SFH_E2E_PORT=4180 npx playwright test e2e/sim-citywide.spec.ts --project=chromium --project=mobile</code></pre>
+      </li>
+      <li id="t6-s3"><input type="checkbox"> Implement as in Interfaces; update <code>timeline-ui.md</code> and <code>map-interfaces.md</code>.</li>
+      <li id="t6-s4"><input type="checkbox"> Run every spec that covers <code>/sim</code>'s map and key, then the e2e of <code>/sim</code>, the new one repeated; then look.
+        <pre><code data-lang="sh">npx vitest --run --project client src/lib/timeline/ src/lib/map/ src/lib/paint/PaintKey.svelte.spec.ts src/lib/sim-page/SimPage.svelte.spec.ts
+SFH_E2E_PORT=4180 npx playwright test e2e/sim-citywide.spec.ts e2e/sim-halos.spec.ts e2e/map-key.spec.ts e2e/sim.spec.ts e2e/sim-timeline.spec.ts e2e/fzp-sim.spec.ts e2e/chrome-dark.spec.ts e2e/layout.spec.ts e2e/lesscars.spec.ts --project=chromium --project=mobile
+SFH_E2E_PORT=4180 npx playwright test e2e/sim-citywide.spec.ts --project=chromium --project=mobile --repeat-each=5 --retries=0</code></pre>
+        <p>Screenshots, opened and looked at: the standard set (<code>/sim</code> at 1280 and 375, default camera, mid-play, key open; the two new rows on one line each at 1280 and the panel not scrolling there), the same at 1280 in dark, and <code>/sim</code> at 1280 after a <code>jumpTo</code> to zoom 16 over Ocean Beach mid-play (the Mission's changes glow on the east edge) and after a zoom to 14.5 over the Mission (each project's own ring, no merged ring). Then <code>/lesscars</code> at 1280: bars and map as before.</p>
+      </li>
+      <li id="t6-s5"><input type="checkbox"> Commit, then check timing.
+        <pre><code data-lang="sh">git add src/lib/timeline/TimelineMode.svelte src/lib/timeline/TimelineMode.svelte.spec.ts src/lib/map/key/copy.ts src/lib/map/key/rows.ts src/lib/map/key/rows.spec.ts src/lib/map/key/KeySwatch.svelte src/lib/timeline/SimKey.svelte src/lib/timeline/SimKey.svelte.spec.ts src/lib/timeline/rest-text.svelte.spec.ts e2e/sim-citywide.spec.ts docs/dev/timeline-ui.md docs/dev/map-interfaces.md
+git commit -m "feat(sim): the map tells you citywide: one ring per area, a glow for changes off screen, bars from the default zoom"
+npx chreode timing-check --head HEAD</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-7">
+    <h2>Task 7: Whole-suite pass</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Whatever the full runs below turn up. No new behaviour.</li>
+    </ul>
+    <ol>
+      <li id="t7-s1"><input type="checkbox"> Run the checks and the full unit suite with stderr captured, and read the stderr: any warning or error a test does not assert is a failure here, as at signoff.
+        <pre><code data-lang="sh">npm run check
+npm run lint
+npm run test:unit 2&gt; &lt;scratchpad&gt;/unit-stderr.log
+rg -n "warn|error|Error" &lt;scratchpad&gt;/unit-stderr.log</code></pre>
+      </li>
+      <li id="t7-s2"><input type="checkbox"> Run the full e2e suite on a free port, both projects, no retries. Every failure is fixed at its cause, without retries, sleeps or loosened assertions; re-run any spec you change with <code>--repeat-each=5 --retries=0</code>.
+        <pre><code data-lang="sh">SFH_E2E_PORT=4180 npx playwright test --project=chromium --project=mobile --retries=0</code></pre>
+      </li>
+      <li id="t7-s3"><input type="checkbox"> The dataset version must not have moved. Both print nothing wrong: the diff is empty and the check passes.
+        <pre><code data-lang="sh">git diff --stat main -- pipeline src/lib/data src/lib/generator src/lib/timelapse src/lib/plan/geometry.ts src/lib/plan/types.ts src/lib/sim/scenario src/lib/sim/levers src/lib/sim/finance src/lib/scoreboard
+npx tsx scripts/dataset-version.ts --check</code></pre>
+      </li>
+      <li id="t7-s4"><input type="checkbox"> Sweep for leftovers. Each finds nothing:
+        <pre><code data-lang="sh">rg -n "crossMd" src
+rg -n "RHNA|FZP|units" src/lib/map/key/copy.ts src/lib/timeline/SimKey.svelte src/lib/map/timelapse/city.ts src/lib/map/timelapse/city-layer.ts
+rg -n "neighbou?rhood" src/lib/map/timelapse/city.ts src/lib/sim/world/city-feed.ts</code></pre>
+      </li>
+      <li id="t7-s5"><input type="checkbox"> Docs true to the code: <code>map-interfaces.md</code> (the feed, the gate, the city layer, bar modes, the swatches), <code>map-stream.md</code>, <code>ensemble-runner.md</code>, <code>timeline-ui.md</code>, <code>testing.md</code> and <code>map-perf.md</code> each name what the code does; every constant they quote matches <code>constants.ts</code>.</li>
+      <li id="t7-s6"><input type="checkbox"> Preview signoff's plan without running it, and confirm every step it lists ran green above.
+        <pre><code data-lang="sh">npm run signoff -- --dry-run</code></pre>
+      </li>
+      <li id="t7-s7"><input type="checkbox"> Commit any fixes with the files named, then check timing.
+        <pre><code data-lang="sh">git add &lt;each changed file&gt;
+git commit -m "test(map): re-pin the suite for the citywide feed, the city layer and far bars"
+npx chreode timing-check --head HEAD</code></pre>
+      </li>
+      <li id="t7-s8"><input type="checkbox"> Report, for the controller, that <code>npm run bench:map</code> should run on a quiet machine after merge. Layers changed: a new deck layer <code>timeline-city</code> (<code>CityLayer</code>, instanced, one record per square, half-year and kind) after <code>timeline-halos</code> on <code>/sim</code>; <code>timeline-halos</code> and <code>timeline-bars</code> each read one more uniform; <code>/sim</code>'s bars draw from zoom 12. Cases to read: <code>map-timeline.bench.ts</code> "playback + halos" and the new "citywide playback", and <code>sim-timeline.bench.ts</code>'s pan. Do not run them inside this plan.</li>
+    </ol>
+  </section>
+
+  <section id="sec-builders-calls">
+    <h2>Builder's calls</h2>
+    <p>The owner asked for no stop between plan and execution, so each call that slice 5 would have raised as a question is decided here, with the alternative rejected.</p>
+    <table id="tbl-calls">
+      <caption>Choices the spec leaves open, the one made, and the one rejected</caption>
+      <thead>
+        <tr><th scope="col">Call</th><th scope="col">Why</th><th scope="col">Rejected</th><th scope="col">Task</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">Task 1 fixes the test's readiness, the component only if shown racing</th><td>The measured gap is in the test; nothing yet shows the component wrong</td><td>Hardening the component's md effect blind</td><td>1</td></tr>
+        <tr><th scope="row">The feed rides <code>TimelineUpdate.city</code></th><td>One revision counter, resync and rewind for cells and markers</td><td>A separate <code>city</code> message</td><td>2</td></tr>
+        <tr><th scope="row">Deltas of touched rows; revision 0 whole</th><td>810 KB once, then only what changed; nothing at rest</td><td>A whole summary per flush</td><td>2</td></tr>
+        <tr><th scope="row">Markers read through <code>scheduleAt</code></th><td>Same days as the slots</td><td>Raw columns</td><td>2</td></tr>
+        <tr><th scope="row">An 800 m grid on the page, not neighbourhoods</th><td>No new fetch or failure path; rings near their homes</td><td>Loading <code>neighborhoods.geojson</code> in the timeline worker</td><td>3</td></tr>
+        <tr><th scope="row">Merge by zoom (below 14), not by speed</th><td>Rings live in simulated time; zoom is what crowds</td><td>A speed threshold</td><td>3</td></tr>
+        <tr><th scope="row">A merged ring per half-year and kind, born at its last event</th><td>Reveal rule without per-event shader work; at most two alive per square and kind</td><td>Monthly buckets</td><td>3</td></tr>
+        <tr><th scope="row">The person's projects merge into their own accent ring</th><td>As slice 5: a policy project rings in the accent, whatever stage</td><td>Accent only when most homes are flagged</td><td>3</td></tr>
+        <tr><th scope="row">On screen or not decided in the vertex shader</th><td>No JS per frame of a pan</td><td>A JS pass on <code>move</code></td><td>3</td></tr>
+        <tr><th scope="row">One edge glow per record, a half-disc in the record's tone, at every zoom</th><td>The spec's glow, one per busy square rather than one per project</td><td>Per-project glows; a count at the edge (the spec asks for a glow)</td><td>3</td></tr>
+        <tr><th scope="row">Reduced motion: still forms</th><td>Consistent with slice 5's still ring</td><td>No halos at all (the spec's wording; see Found on the way)</td><td>3</td></tr>
+        <tr><th scope="row">The halo gate only while the city layer exists</th><td>Slice 5's behaviour kept wherever there is no feed</td><td>Gating every halo layer</td><td>4</td></tr>
+        <tr><th scope="row">Bars stay per installed cell</th><td>The viewport's cells are always loaded</td><td>Bars from the feed</td><td>5</td></tr>
+        <tr><th scope="row">A bar mode, <code>/sim</code> opts in</th><td><code>/lesscars</code> unchanged</td><td>New constants for every page</td><td>5</td></tr>
+        <tr><th scope="row">32 by 6 px from zoom 12</th><td>The smallest designed size; the phone's default view is 12.2</td><td>Today's 48 by 8 (huge zoomed out)</td><td>5</td></tr>
+        <tr><th scope="row">Policy first in declutter, both modes</th><td>The spec's collision rule; no effect without flags</td><td>Far mode only</td><td>5</td></tr>
+        <tr><th scope="row">Two fixed key rows, always shown, one line each</th><td>Names every mark; fits the 387 px room at 1024 and 1280</td><td>Rows that appear with zoom (status among words); longer wording that wraps and scrolls</td><td>6</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="sec-open-questions">
+    <h2>Open questions</h2>
+    <p>None. Nothing here needs a dataset upload, contradicts a Decided item, or changes what a number means. The one departure from the spec's words (merging per 800 m square instead of per neighbourhood) is a builder's call, recorded in <a href="#sec-contradictions">Found on the way</a>.</p>
+  </section>
+
+  <section id="sec-not-in-plan">
+    <h2>Not in this plan</h2>
+    <ul>
+      <li>The activity panel's list of recent stage changes (slice 7). It can read <code>CityStore</code> (every project's days and homes), which this slice builds; a project's name or address is not in the feed and would be slice 7's addition.</li>
+      <li>Details, pools that drain, worded empty rows (slice 7).</li>
+      <li>The header's "Updating" lag, phone timeline row names, Escape on a hover-opened explanation, shared button, card and chip components (slice 8).</li>
+      <li>About this model and the (i) credit (slice 9): the attribution is untouched, "© OpenStreetMap" included.</li>
+      <li>The exact "would not exist under current law" mark (engine work, <code>tbl-engine</code>); the marks keep meaning "under your policy".</li>
+      <li>A count of changes off screen, and moving the camera to them: the spec asks for a glow and says the camera does not move.</li>
+      <li>Updating the governing spec's Carried forward list: the controller does that at merge.</li>
+    </ul>
+  </section>
+
+  <section id="sec-contradictions">
+    <h2>Found on the way</h2>
+    <ul>
+      <li><strong>Bars do not need the feed.</strong> <code>tbl-engine</code> lists "bars from the default zoom" with off-screen events as needing the citywide feed. The page loads every cell the viewport touches at any zoom (<code>TimelineMode.svelte:765-769</code>, <code>chunks.ts:192-197</code>), so the bars on screen exist already; at the default view fixture-0 has 21 bars built and none drawn only because of the zoom gate (15).</li>
+      <li><strong>The default view already loads most of the city.</strong> <code>tbl-engine</code> says loading every cell at the default zoom "costs over a second of packing". At the desktop default the view spans -122.540 to -122.343 and 37.748 to 37.851, most of the city, so the page pays that today (the 2026-11-14 <code>fill-install</code> bench: 378 installs, whole at 3,257 ms on live data).</li>
+      <li><strong>Neighbourhoods.</strong> The spec merges per neighbourhood. The geometry is published but not on the timeline worker; the plan merges per 800 m square (builder's call). If the owner wants named neighbourhoods later, the store's markers can be regrouped on the page without touching the feed.</li>
+      <li><strong>"At speed".</strong> The spec merges above some events per second. Since slice 5 the rings live in simulated time, so speed does not change how many are alive; the plan merges by zoom.</li>
+      <li><strong>Reduced motion.</strong> The spec says "no halos"; slice 5 drew a still ring, and this slice draws still merged rings and still glows to match. If the owner prefers the spec's reading, it is one branch in <code>evalHalo</code> and <code>evalCity</code> and their shader ports.</li>
+      <li><strong>The density is real.</strong> On the synthetic 30,000 projects at the default desktop view, 6,843 rings show at once at Day 25,000, covering the place labels.</li>
+      <li><strong>The default view leaves the south off screen</strong> (south of 37.748 at 1280; the west of -122.476 too at 375), so edge glows matter at rest, not only zoomed in.</li>
+      <li><strong>Flake #131 did not reproduce</strong> in 119 local runs. What was measured: <code>page.viewport</code> resolves before the frame renders at its new size (the md <code>change</code> event lagged it in 78 of 80 resizes), and the failing test is the one that resizes, renders and clicks with no wait.</li>
+      <li><strong>The goal-missed notice</strong> ("Goal missed by 81,848 homes…") sits over the map's top centre from January 2031 on fixture-0, so every mid-play screenshot past 2031 has it. Not a defect; edge glows on the top edge pass under it.</li>
+      <li><strong>Carried forward, "Not re-run: the map benchmark"</strong> (slice 4): the post-#132 run covers it (the pan cases ran with both transit layers on, p95 10.3 ms).</li>
+      <li><strong>Carried forward, "cache the halo records per cell"</strong> was the fallback if "playback + halos" missed the bar; it passed at 10.3 ms, so no caching is planned.</li>
+    </ul>
+  </section>
+
+  <section id="sec-self-review">
+    <h2>Self-review</h2>
+    <ul>
+      <li><strong>Spec coverage.</strong> Slice row 6: progress bars from the default zoom at one size (Task 5, on in Task 6); events off screen (Tasks 3 and 4, on in 6); "needs first: the citywide marker feed, measured first" (Task 2, <a href="#sec-feed-decision">decision</a>, <a href="#sec-measures">Measured</a>). <code>sec-prop-events</code>: off the visible map (edge glows), at speed (merged rings, by zoom), reduced motion (still forms), the tally (unchanged, already citywide). <code>tbl-engine</code>'s Proposed: one feed of date, stage, place, homes and flags (Task 2). <code>sec-prop-bars</code>: from the default zoom, one size, collisions won by the person's projects then the larger (Task 5). Decided: bars further out at one size; new starts get a ring and a glow; one clock and the reveal rule (records from their day, none at or before today); the OSM credit untouched. Carried forward for slice 6: rings overlapping labels in the Mission (merged below 14), reduced motion (still forms, Found on the way), bars and events off screen (Tasks 3 to 6), the bench (the row in Task 4). The flake (Task 1).</li>
+      <li><strong>Type consistency.</strong> <code>CityDelta</code>, <code>CITY_DAY</code>, <code>TimelineUpdate.city</code>, <code>validateCityDelta</code>, <code>cityTransferables</code>, <code>CITY_DELTA_BYTES_PER_ROW</code>, <code>createCityFeed</code>, <code>CityFeed</code>, <code>CityFeedDeps</code>, <code>Placed.anchor</code> (Task 2); <code>CITY_HANDOVER_ZOOM</code>, <code>CITY_CELL_M</code>, <code>CITY_BUCKET_DAYS</code>, <code>CITY_RING_DAYS</code>, <code>CITY_EDGE_DAYS</code>, <code>CITY_R_REF_HOMES</code>, <code>CITY_R_MAX_PX</code>, <code>CITY_KIND</code>, <code>CityAttrs</code>, <code>CityStore</code>, <code>cityGroup</code>, <code>buildCity</code>, <code>cityRadiusPx</code>, <code>cityEdgePx</code>, <code>edgeOf</code>, <code>evalCity</code>, <code>CityEval</code>, <code>CityLayer</code> (<code>timeline-city</code>), <code>evalHalo(…, zoom, ringMinZoom)</code>, <code>HaloLayer.ringMinZoom</code> (Task 3, used in 4); <code>TimelineDeps.CityLayer</code>, the snapshot's <code>cityMarkers</code>, <code>cityFlagged</code>, <code>cityRecords</code>, <code>cityDays</code>, <code>ringMinZoom</code>, <code>projects</code> (Task 4, read in 6); <code>BarMode</code>, <code>setBarMode</code>, <code>BAR_FAR_MIN_ZOOM</code>, <code>BAR_FAR_PX</code>, <code>barGate</code>, <code>barSizePx(zoom, mode)</code>, <code>evalBar(…, mode)</code>, <code>BarAttrs.policy</code>, <code>declutter(bars, mode)</code>, <code>StageBarLayer.far</code>, the snapshot's <code>barMode</code> (Task 5, used in 6); <code>KEY_COPY.area</code>, <code>KEY_COPY.edge</code>, the <code>area</code> and <code>edge</code> swatch kinds, <code>AREA_SWATCH</code>, <code>EDGE_SWATCH</code>, <code>data-key-extra</code> <code>area</code> and <code>edge</code> (Task 6). Bench case <code>citywide playback</code> (Tasks 4 and 5).</li>
+      <li><strong>Review Focus.</strong> Each item names its test step in its owning task.</li>
+      <li><strong>Proportion.</strong> Code blocks are signatures, wire contracts, constants, test names and assertions; the one rule written out in full is <code>evalCity</code>'s, which the shader must port in order.</li>
+    </ul>
+  </section>
+</article>
