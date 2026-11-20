@@ -686,8 +686,8 @@ export class TimelineController {
       return;
     }
     const sorted = [...this.cells].sort(byKey).map(([, c]) => c.pack);
-    const bars = buildBars(sorted, l);
-    declutter(bars, this.barMode);
+    // Street gates the bars in place; far returns its time-split pieces.
+    const bars = declutter(buildBars(sorted, l), this.barMode);
     this.bars = bars;
     this.barsLayer = new this.deps.StageBarLayer({
       data: bars,

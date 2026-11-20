@@ -9,7 +9,7 @@ import {
   DECLUTTER_MAX_ZOOM,
   DECLUTTER_STEP
 } from './constants';
-import { declutter, declutterPx, mpp } from './declutter';
+import { BAR_FAR_MAX_PIECES, declutter, declutterPx, mpp } from './declutter';
 import type { BarAttrs } from './types';
 import { OPEN_DAY } from '$lib/timelapse/time';
 import { SYNTHETIC_LOOKUPS, makeSyntheticTimeline } from '../test/synthetic-timeline';
@@ -236,37 +236,130 @@ describe('declutter modes', () => {
     expect(zoomsOf(street)).toEqual(recorded);
   });
 
+  /** The far record of `id` in force on `day`. */
+  const at = (recs: BarAttrs[], id: string, day: number) =>
+    recs.find((b) => b.projectId === id && b.from <= day && day < b.to);
+
+  /**
+   * Every pair of far records shown together on `day` at every ladder zoom is at least the
+   * gapped box apart on the flat (pitch 0) screen.
+   */
+  function expectApartOn(recs: BarAttrs[], day: number) {
+    const live = recs.filter((b) => b.from <= day && day < b.to);
+    for (let i = 0; i < live.length; i++) {
+      for (let j = i + 1; j < live.length; j++) {
+        const a = live[i];
+        const b = live[j];
+        const from = Math.max(a.minZoom, b.minZoom);
+        for (let z = BAR_FAR_MIN_ZOOM; z < DECLUTTER_MAX_ZOOM; z += DECLUTTER_STEP) {
+          if (z < from) continue;
+          const [ax, ay] = mercPx(a.anchor[0], a.anchor[1], z);
+          const [bx, by] = mercPx(b.anchor[0], b.anchor[1], z);
+          const overlap =
+            Math.abs(ax - bx) < BAR_FAR_PX.w + BAR_FAR_GAP_PX - 0.5 &&
+            Math.abs(ay - by) < BAR_FAR_PX.h + BAR_FAR_GAP_PX - 0.5;
+          expect(overlap, `day ${day} z${z} ${a.projectId}/${b.projectId}`).toBe(false);
+        }
+      }
+    }
+  }
+
   it('far: two projects 300 m apart both show by zoom 14, one hidden at 12', () => {
-    const bars = [mk('big', 50, 0, 0), mk('small', 5, 300, 0)];
-    declutter(bars, 'far');
-    expect(bars[0].minZoom).toBe(BAR_FAR_MIN_ZOOM);
-    expect(bars[1].minZoom).toBeGreaterThan(12);
-    expect(bars[1].minZoom).toBeLessThanOrEqual(14);
-    // Alone, a project shows from 12.
-    const alone = [mk('a', 5, 0, 0)];
-    declutter(alone, 'far');
-    expect(alone[0].minZoom).toBe(12);
+    const recs = declutter([mk('big', 50, 0, 0), mk('small', 5, 300, 0)], 'far');
+    expect(at(recs, 'big', 10)!.minZoom).toBe(BAR_FAR_MIN_ZOOM);
+    const small = at(recs, 'small', 10)!.minZoom;
+    expect(small).toBeGreaterThan(12);
+    expect(small).toBeLessThanOrEqual(14);
+    // Alone, a project shows from 12, in one record over its whole window.
+    const alone = declutter([mk('a', 5, 0, 0, 3, 90)], 'far');
+    expect(alone).toHaveLength(1);
+    expect(alone[0]).toMatchObject({ from: 3, to: 90, minZoom: 12 });
+  });
+
+  it('far: a bar held back by a winner shows at the far gate from the day the winner ends', () => {
+    const big = mk('big', 50, 0, 0, 0, 100);
+    const small = mk('small', 5, 20, 0, 50, 300);
+    const recs = declutter([big, small], 'far');
+    // Pieces tile the bar's own window, [from, to).
+    const pieces = recs.filter((b) => b.projectId === 'small').sort((a, b) => a.from - b.from);
+    expect(pieces.map((b) => [b.from, b.to])).toEqual([
+      [50, 100],
+      [100, 300]
+    ]);
+    expect(pieces[0].minZoom).toBeGreaterThan(12);
+    expect(pieces[1].minZoom).toBe(12);
+    // The gate is all that evalBar reads of a piece beyond its window: hidden at zoom 13 on day
+    // 99 (the piece's gate), shown from day 100, gone at the bar's end.
+    const shown = (day: number) =>
+      recs.filter((b) => b.projectId === 'small' && b.from <= day && day < b.to && b.minZoom <= 13)
+        .length;
+    expect(shown(99)).toBe(0);
+    expect(shown(100)).toBe(1);
+    expect(shown(299)).toBe(1);
+    expect(shown(300)).toBe(0);
+    // The input is untouched; street gates stay whole-life, in place.
+    expect(small.minZoom).toBe(BAR_MIN_ZOOM);
+    const street = [mk('big', 50, 0, 0, 0, 100), mk('small', 5, 20, 0, 50, 300)];
+    expect(declutter(street)).toBe(street);
+    expect(street[1].minZoom).toBeGreaterThan(15);
+  });
+
+  it('far: at most four records a bar; a merge takes the higher gate', () => {
+    // Five short winners in turn over the loser's window, each ending before the next starts.
+    const winners = [0, 1, 2, 3, 4].map((i) => mk(`w${i}`, 50, 0, 0, 100 * i + 10, 100 * i + 50));
+    const loser = mk('loser', 5, 10, 0, 0, 500);
+    const recs = declutter([...winners, loser], 'far');
+    const pieces = recs.filter((b) => b.projectId === 'loser').sort((a, b) => a.from - b.from);
+    expect(pieces.length).toBeLessThanOrEqual(BAR_FAR_MAX_PIECES);
+    expect(pieces[0].from).toBe(0);
+    expect(pieces.at(-1)!.to).toBe(500);
+    for (let i = 1; i < pieces.length; i++) expect(pieces[i].from).toBe(pieces[i - 1].to);
+    // Wherever a winner is in time, the loser's piece there is gated above the far gate.
+    for (const w of winners)
+      for (let d = w.from; d < w.to; d += 5)
+        expect(at(recs, 'loser', d)!.minZoom, `day ${d}`).toBeGreaterThan(12);
+    // Some gap between winners still shows the loser at the far gate.
+    expect(pieces.some((b) => b.minZoom === 12)).toBe(true);
+    for (const d of [0, 9, 10, 49, 50, 120, 230, 499]) expectApartOn(recs, d);
   });
 
   it('a flagged project wins a collision over a larger unflagged one', () => {
     for (const mode of ['street', 'far'] as const) {
-      const bars = [mk('big', 500, 0, 0), { ...mk('mine', 5, 5, 0), policy: true }];
-      declutter(bars, mode);
+      const recs = declutter(
+        [mk('big', 500, 0, 0), { ...mk('mine', 5, 5, 0), policy: true }],
+        mode
+      );
       const gate = mode === 'far' ? BAR_FAR_MIN_ZOOM : BAR_MIN_ZOOM;
-      expect(bars[1].minZoom, mode).toBe(gate);
-      expect(bars[0].minZoom, mode).toBeGreaterThan(gate);
+      expect(at(recs, 'mine', 10)!.minZoom, mode).toBe(gate);
+      expect(at(recs, 'big', 10)!.minZoom, mode).toBeGreaterThan(gate);
       // Two flagged projects: the larger first, as without flags.
-      const both = [
-        { ...mk('big', 500, 0, 0), policy: true },
-        { ...mk('mine', 5, 5, 0), policy: true }
-      ];
-      declutter(both, mode);
-      expect(both[0].minZoom, mode).toBe(gate);
-      expect(both[1].minZoom, mode).toBeGreaterThan(gate);
+      const both = declutter(
+        [
+          { ...mk('big', 500, 0, 0), policy: true },
+          { ...mk('mine', 5, 5, 0), policy: true }
+        ],
+        mode
+      );
+      expect(at(both, 'big', 10)!.minZoom, mode).toBe(gate);
+      expect(at(both, 'mine', 10)!.minZoom, mode).toBeGreaterThan(gate);
     }
   });
 
-  it('far: keeps every co-visible pair a gapped box apart (property)', () => {
+  it('far: is deterministic and independent of input order', () => {
+    const make = () => [
+      mk('a', 10, 0, 0, 0, 100),
+      mk('b', 10, 30, 0, 50, 200),
+      mk('c', 30, 60, 10, 20, 120),
+      mk('d', 5, 10, 40, 0, 400)
+    ];
+    const key = (r: BarAttrs[]) =>
+      r.map((b) => `${b.projectId}:${b.from}-${b.to}@${b.minZoom}`).sort();
+    const one = declutter(make(), 'far');
+    expect(key(declutter(make(), 'far'))).toEqual(key(one));
+    expect(key(declutter(make().reverse(), 'far'))).toEqual(key(one));
+  });
+
+  it('far: on every day, records shown together keep a gapped box apart (property)', () => {
     const arb = fc.array(
       fc.record({
         units: fc.integer({ min: 1, max: 20 }),
@@ -284,24 +377,21 @@ describe('declutter modes', () => {
           ...mk(`p${i}`, r.units, r.dx, r.dy, r.from, r.from + r.len),
           policy: r.policy
         }));
-        declutter(bars, 'far');
-        for (let i = 0; i < bars.length; i++) {
-          for (let j = i + 1; j < bars.length; j++) {
-            const a = bars[i];
-            const b = bars[j];
-            if (!(a.from < b.to && b.from < a.to)) continue;
-            const from = Math.max(a.minZoom, b.minZoom);
-            for (let z = BAR_FAR_MIN_ZOOM; z < DECLUTTER_MAX_ZOOM; z += DECLUTTER_STEP) {
-              if (z < from) continue;
-              const [ax, ay] = mercPx(a.anchor[0], a.anchor[1], z);
-              const [bx, by] = mercPx(b.anchor[0], b.anchor[1], z);
-              const overlap =
-                Math.abs(ax - bx) < BAR_FAR_PX.w + BAR_FAR_GAP_PX - 0.5 &&
-                Math.abs(ay - by) < BAR_FAR_PX.h + BAR_FAR_GAP_PX - 0.5;
-              expect(overlap).toBe(false);
-            }
-          }
+        const recs = declutter(bars, 'far');
+        // Each bar's records tile its window, at most four.
+        for (const b of bars) {
+          const ps = recs
+            .filter((r) => r.projectId === b.projectId)
+            .sort((x, y) => x.from - y.from);
+          expect(ps.length).toBeLessThanOrEqual(BAR_FAR_MAX_PIECES);
+          expect(ps[0].from).toBe(b.from);
+          expect(ps.at(-1)!.to).toBe(b.to);
+          for (let i = 1; i < ps.length; i++) expect(ps[i].from).toBe(ps[i - 1].to);
         }
+        // Every day a record starts or ends, and the day before: what shows changes only there.
+        const days = new Set<number>();
+        for (const r of recs) for (const d of [r.from, r.from - 1, r.to, r.to - 1]) days.add(d);
+        for (const d of days) expectApartOn(recs, d);
       }),
       { numRuns: 100 }
     );
@@ -312,7 +402,9 @@ describe('declutter modes', () => {
     const [w, s, e, n] = [-122.5399, 37.7479, -122.3429, 37.851];
     const u = makeSyntheticTimeline(1, 30_000, 1500, false);
     const bars = buildBars(u.cells, SYNTHETIC_LOOKUPS);
-    declutter(bars, 'far');
+    const recs = declutter(bars, 'far');
+    // The record bound: at most four per bar.
+    expect(recs.length).toBeLessThanOrEqual(BAR_FAR_MAX_PIECES * bars.length);
     const [x0, y0] = mercPx(w, n, 13);
     const [x1, y1] = mercPx(e, s, 13);
     // Disjoint boxes of (w + gap) by (h + gap) bound the count by the area they can tile.
@@ -320,8 +412,8 @@ describe('declutter modes', () => {
       ((x1 - x0 + BAR_FAR_PX.w + BAR_FAR_GAP_PX) * (y1 - y0 + BAR_FAR_PX.h + BAR_FAR_GAP_PX)) /
         ((BAR_FAR_PX.w + BAR_FAR_GAP_PX) * (BAR_FAR_PX.h + BAR_FAR_GAP_PX))
     );
-    for (const day of [22_000, 25_000, 28_000]) {
-      const shown = bars
+    for (const day of [21_000, 22_000, 23_500, 25_000, 26_500, 28_000]) {
+      const shown = recs
         .filter((b) => {
           const [lng, lat] = b.anchor;
           if (lng < w || lng > e || lat < s || lat > n) return false;

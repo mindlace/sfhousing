@@ -6,6 +6,7 @@ import { Deck, MapView, type Layer, type MapViewState, type Material } from '@de
 import { SolidPolygonLayer } from '@deck.gl/layers';
 import { StageBarLayer } from './stage-bar-layer';
 import { barColor, barSizePx, barZoomAt, evalBar } from './bars';
+import { declutter } from './declutter';
 import {
   BAR_FAR_MIN_ZOOM,
   BAR_MIN_ZOOM,
@@ -506,6 +507,35 @@ describe('StageBarLayer on the GPU', () => {
     expect(drawnBox()).toBeNull();
     render(E1 + 10, 15);
     expect(drawnBox()).toEqual(boxOf(barRect(15)));
+    expect(errors).toEqual([]);
+  });
+
+  it('far: a held-back bar draws from the day its winner ends, as its pieces say', async () => {
+    // 20 m east of the anchor: within a far bar's spacing at zoom 13.
+    const east: [number, number, number] = [
+      ANCHOR[0] + 20 / (111_320 * Math.cos((ANCHOR[1] * Math.PI) / 180)),
+      ANCHOR[1],
+      ANCHOR[2]
+    ];
+    const big = { ...P, projectId: 'big', units: 50, from: E1, to: E1 + 100 };
+    const small = { ...P, projectId: 'small', units: 5, anchor: east, from: E1, to: E1 + 300 };
+    const recs = declutter([big, small], 'far');
+    expect(recs.length).toBe(3); // big whole; small held back, then free
+    await show([bars(recs, TEX, true)]);
+    const box = (day: Day) => {
+      render(day, 13);
+      return drawnBox();
+    };
+    // The east anchor falls between pixels: its box may round either way, by at most 1 px.
+    const near = (got: number[] | null, want: number[]) =>
+      got !== null && got.every((v, i) => Math.abs(v - want[i]) <= 1);
+    const here = boxOf(barRect(13, 'far'));
+    const there = boxOf(barRect(13, 'far', east));
+    expect(there[0] - here[0]).toBeGreaterThanOrEqual(2); // the two are told apart
+    expect(box(E1 + 99)).toEqual(here);
+    expect(near(box(E1 + 100), there)).toBe(true);
+    expect(near(box(E1 + 299), there)).toBe(true);
+    expect(box(E1 + 300)).toBeNull();
     expect(errors).toEqual([]);
   });
 

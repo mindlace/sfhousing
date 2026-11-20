@@ -56,20 +56,31 @@ function slotOf(sx: Int32Array, sy: Int32Array, head: Int32Array, cx: number, cy
 }
 
 /**
- * Set `minZoom` on every bar, in place (§4.4.4). A project's bars (its revisions) share one
- * `minZoom`, computed from its final revision's anchor and its whole active interval
- * `[min from, max to)`. Projects are visited policy first (a bar with `policy`), then by final
- * units descending, then `parcelId`, then `projectId` ascending (a total order, so the gates
- * are the same on every rebuild of the same bars); each takes the smallest rung `z` of the mode's
- * ladder (barGate(mode) to DECLUTTER_MAX_ZOOM) at which every earlier project `j` that overlaps
- * in time, shown from `max(z, minZoom_j)`, is at least `declutterPx(z, mode)` px away
- * (equirectangular metres at the project's latitude). A project that never clears shows at the
- * top rung. O(n log n): a uniform grid whose cell is the widest conflict distance, 3×3
- * neighbourhood. The gates do not depend on the camera or the clock: nothing reruns this on a
- * pan, a zoom or `setTime`.
+ * Zoom gates for the bars (§4.4.4), returning the records to draw. Neither mode depends on the
+ * camera or the clock: the controller runs this once per bar rebuild, never on a pan, a zoom or
+ * `setTime`.
+ *
+ * Street (the default): sets `minZoom` on every bar in place and returns `bars` itself. A
+ * project's bars (its revisions) share one `minZoom`, computed from its final revision's anchor
+ * and its whole active interval `[min from, max to)`. Projects are visited policy first (a bar
+ * with `policy`), then by final units descending, then `parcelId`, then `projectId` ascending (a
+ * total order, so the gates are the same on every rebuild of the same bars); each takes the
+ * smallest rung `z` of the ladder (BAR_MIN_ZOOM to DECLUTTER_MAX_ZOOM) at which every earlier
+ * project `j` that overlaps in time, shown from `max(z, minZoom_j)`, is at least the bar's
+ * width away (equirectangular metres at the project's latitude). A project that never clears
+ * shows at the top rung. O(n log n): a uniform grid whose cell is the widest conflict distance,
+ * 3×3 neighbourhood.
+ *
+ * Far: `declutterFar`, gates split in time (new records; `bars` is not changed).
  */
-export function declutter(bars: BarAttrs[], mode: BarMode = 'street'): void {
-  const { base, top: TOP, need: NEED_EQUATOR } = LADDERS[mode];
+export function declutter(bars: BarAttrs[], mode: BarMode = 'street'): BarAttrs[] {
+  if (mode === 'far') return declutterFar(bars);
+  declutterStreet(bars);
+  return bars;
+}
+
+function declutterStreet(bars: BarAttrs[]): void {
+  const { base, top: TOP, need: NEED_EQUATOR } = LADDERS.street;
   const rungZoom = (r: number) => base + r * DECLUTTER_STEP;
   // One record per project, as parallel arrays.
   const index = new Map<string, number>();
@@ -193,4 +204,259 @@ export function declutter(bars: BarAttrs[], mode: BarMode = 'street'): void {
   }
 
   for (let i = 0; i < bars.length; i++) bars[i].minZoom = rungZoom(rung[barProject[i]]);
+}
+
+/** At most this many records per far bar (`declutterFar`). */
+export const BAR_FAR_MAX_PIECES = 4;
+
+/**
+ * Far declutter: each bar is split in time into pieces, each with its own gate, so a bar is held
+ * back by a higher-priority neighbour only while that neighbour's piece is in time. Bars (each
+ * revision with its own anchor and window) are visited in the street order (policy, units
+ * descending, `parcelId`, `projectId`), then by `from`, `to` and input index (a total order). A
+ * visited piece `q` with gate rung `g` constrains bar `p` during their common window to rung
+ * `k = clearRung(d)` (the first rung whose spacing `declutterPx` fits the anchors' distance `d`,
+ * the top if none) when `g < k`; p's rung at a day is the largest constraint then in force, else
+ * the ladder's base (BAR_FAR_MIN_ZOOM). p's window is cut where that changes. More than
+ * BAR_FAR_MAX_PIECES pieces: the shortest is merged into its neighbour of higher gate (the
+ * merged piece takes the larger gate, so a merge only hides, never shows) until it fits. Pieces
+ * are `[from, to)` windows that tile the bar's window, as the bar's own did.
+ */
+function declutterFar(bars: BarAttrs[]): BarAttrs[] {
+  const { base, top: TOP, need: NEED_EQUATOR } = LADDERS.far;
+  const n = bars.length;
+  if (n === 0) return [];
+  let minLat = Infinity;
+  let maxLat = 0;
+  for (const b of bars) {
+    const lat = Math.abs(b.anchor[1]);
+    if (lat < minLat) minLat = lat;
+    if (lat > maxLat) maxLat = lat;
+  }
+  const gridCos = Math.cos(maxLat * DEG);
+  const cell = NEED_EQUATOR[0] * Math.cos(minLat * DEG);
+  const tx = new Float64Array(n);
+  const ty = new Float64Array(n);
+  const cosLat = new Float64Array(n);
+  const cxs = new Int32Array(n);
+  const cys = new Int32Array(n);
+  const bFrom = new Float64Array(n);
+  const bTo = new Float64Array(n);
+  const project = new Int32Array(n);
+  const projects = new Map<string, number>();
+  for (let p = 0; p < n; p++) {
+    const b = bars[p];
+    const a = b.anchor;
+    tx[p] = a[0] * M_PER_DEG;
+    ty[p] = a[1] * M_PER_DEG;
+    cosLat[p] = Math.cos(a[1] * DEG);
+    cxs[p] = Math.floor((tx[p] * gridCos) / cell);
+    cys[p] = Math.floor(ty[p] / cell);
+    bFrom[p] = b.from;
+    bTo[p] = b.to;
+    let id = projects.get(b.projectId);
+    if (id === undefined) projects.set(b.projectId, (id = projects.size));
+    project[p] = id;
+  }
+  const order = Array.from({ length: n }, (_, p) => p);
+  order.sort((a, b) => {
+    const A = bars[a];
+    const B = bars[b];
+    if (A.policy !== B.policy) return A.policy ? -1 : 1;
+    if (A.units !== B.units) return B.units - A.units;
+    if (A.parcelId !== B.parcelId) return A.parcelId < B.parcelId ? -1 : 1;
+    if (A.projectId !== B.projectId) return A.projectId < B.projectId ? -1 : 1;
+    if (A.from !== B.from) return A.from - B.from;
+    if (A.to !== B.to) return A.to - B.to;
+    return a - b;
+  });
+
+  // Each visited bar's pieces, at most BAR_FAR_MAX_PIECES: from, to and rung, flat per bar.
+  const M = BAR_FAR_MAX_PIECES;
+  const pcFrom = new Float64Array(n * M);
+  const pcTo = new Float64Array(n * M);
+  const pcRung = new Int8Array(n * M);
+  const pcCount = new Int8Array(n);
+  let size = 16;
+  while (size < 2 * n) size *= 2;
+  const head = new Int32Array(size).fill(-1);
+  const slotX = new Int32Array(size);
+  const slotY = new Int32Array(size);
+  const next = new Int32Array(n);
+  const sweep = new Sweep(TOP);
+  // need[k]·cos is NEED_EQUATOR[0]·cos·2^(−k·STEP): the first rung that fits d, from a log.
+  const perRung = DECLUTTER_STEP;
+  for (let o = 0; o < n; o++) {
+    const p = order[o];
+    const pf = bFrom[p];
+    const pt = bTo[p];
+    const pc = cosLat[p];
+    const need0 = NEED_EQUATOR[0] * pc;
+    const need0Sq = need0 * need0;
+    sweep.reset(pf, pt);
+    for (let ox = -1; ox <= 1; ox++) {
+      for (let oy = -1; oy <= 1; oy++) {
+        let q = head[slotOf(slotX, slotY, head, cxs[p] + ox, cys[p] + oy)];
+        for (; q >= 0; q = next[q]) {
+          if (!(pf < bTo[q] && bFrom[q] < pt) || project[q] === project[p]) continue;
+          const dx = (tx[p] - tx[q]) * pc;
+          const dy = ty[p] - ty[q];
+          const d2 = dx * dx + dy * dy;
+          if (d2 >= need0Sq) continue;
+          // The first rung whose spacing fits d (the top if none); the log's guess is checked
+          // against the ladder both ways.
+          let k = d2 > 0 ? Math.ceil(Math.log2(need0Sq / d2) / (2 * perRung)) : TOP;
+          if (k > TOP) k = TOP;
+          if (k < 1) k = 1;
+          while (k > 1 && d2 >= (NEED_EQUATOR[k - 1] * pc) ** 2) k--;
+          while (k < TOP && d2 < (NEED_EQUATOR[k] * pc) ** 2) k++;
+          if (k <= sweep.whole) continue;
+          const o0 = q * M;
+          for (let i = o0; i < o0 + pcCount[q]; i++) {
+            if (pcRung[i] >= k) continue;
+            sweep.add(Math.max(pcFrom[i], pf), Math.min(pcTo[i], pt), k);
+          }
+        }
+      }
+    }
+    const ps = cap(sweep.run(), M);
+    const o0 = p * M;
+    pcCount[p] = ps.length / 3;
+    for (let i = 0; i < ps.length; i += 3) {
+      pcFrom[o0 + i / 3] = ps[i];
+      pcTo[o0 + i / 3] = ps[i + 1];
+      pcRung[o0 + i / 3] = ps[i + 2];
+    }
+    const slot = slotOf(slotX, slotY, head, cxs[p], cys[p]);
+    next[p] = head[slot];
+    head[slot] = p;
+    slotX[slot] = cxs[p];
+    slotY[slot] = cys[p];
+  }
+
+  const out: BarAttrs[] = [];
+  for (let p = 0; p < n; p++) {
+    for (let i = p * M; i < p * M + pcCount[p]; i++) {
+      out.push({
+        ...bars[p],
+        from: pcFrom[i],
+        to: pcTo[i],
+        minZoom: base + pcRung[i] * DECLUTTER_STEP
+      });
+    }
+  }
+  return out;
+}
+
+/**
+ * The largest rung in force over a bar's window `[from, to)` from constraints `[a, b, rung]`,
+ * as pieces `[from, to, rung]` flat (0 where none; equal neighbours joined). A constraint over
+ * the whole window raises `whole` and adds no event; one that starts at or before `from` counts
+ * from the start; one that ends at or after `to` adds no end. Buffers are reused across bars.
+ */
+class Sweep {
+  whole = 0;
+  private from = 0;
+  private to = 0;
+  private cnt: Int32Array;
+  private start: Int32Array;
+  private day = new Float64Array(64);
+  private code = new Int32Array(64); // +rung for a start, −rung for an end
+  private idx = new Uint32Array(64);
+  private m = 0;
+
+  constructor(top: number) {
+    this.cnt = new Int32Array(top + 1);
+    this.start = new Int32Array(top + 1);
+  }
+
+  reset(from: number, to: number): void {
+    this.whole = 0;
+    this.from = from;
+    this.to = to;
+    this.m = 0;
+    this.start.fill(0);
+  }
+
+  add(a: number, b: number, k: number): void {
+    if (a >= b) return;
+    const lead = a <= this.from;
+    const tail = b >= this.to;
+    if (lead && tail) {
+      if (k > this.whole) this.whole = k;
+      return;
+    }
+    if (lead) this.start[k]++;
+    else this.push(a, k);
+    if (!tail) this.push(b, -k);
+  }
+
+  private push(d: number, c: number): void {
+    if (this.m === this.day.length) {
+      const day = new Float64Array(2 * this.m);
+      const code = new Int32Array(2 * this.m);
+      day.set(this.day);
+      code.set(this.code);
+      this.day = day;
+      this.code = code;
+      this.idx = new Uint32Array(2 * this.m);
+    }
+    this.day[this.m] = d;
+    this.code[this.m] = c;
+    this.m++;
+  }
+
+  run(): number[] {
+    const { m, day, code, cnt, whole } = this;
+    const idx = this.idx.subarray(0, m);
+    for (let i = 0; i < m; i++) idx[i] = i;
+    idx.sort((x, y) => day[x] - day[y]);
+    cnt.set(this.start);
+    const top = (): number => {
+      for (let k = cnt.length - 1; k > whole; k--) if (cnt[k] > 0) return k;
+      return whole;
+    };
+    const out: number[] = [];
+    let start = this.from;
+    let rung = top();
+    const close = (end: number) => {
+      if (end <= start) return;
+      const L = out.length;
+      if (L > 0 && out[L - 1] === rung) out[L - 2] = end;
+      else out.push(start, end, rung);
+      start = end;
+    };
+    let i = 0;
+    while (i < m) {
+      const d = day[idx[i]];
+      close(d);
+      for (; i < m && day[idx[i]] === d; i++) {
+        const c = code[idx[i]];
+        cnt[c > 0 ? c : -c] += c > 0 ? 1 : -1;
+      }
+      rung = top();
+    }
+    close(this.to);
+    return out;
+  }
+}
+
+/** Pieces `[from, to, rung]` flat cut to at most `max`: the shortest merges into its higher neighbour. */
+function cap(ps: number[], max: number): number[] {
+  while (ps.length / 3 > max) {
+    let s = 0;
+    for (let i = 3; i < ps.length; i += 3) if (ps[i + 1] - ps[i] < ps[s + 1] - ps[s]) s = i;
+    const left = s - 3;
+    const right = s + 3 < ps.length ? s + 3 : -1;
+    const into = left < 0 ? right : right < 0 ? left : ps[left + 2] >= ps[right + 2] ? left : right;
+    const r = Math.max(ps[into + 2], ps[s + 2]);
+    const a = Math.min(ps[into], ps[s]);
+    const b = Math.max(ps[into + 1], ps[s + 1]);
+    const lo = Math.min(into, s);
+    ps.splice(lo, 6, a, b, r);
+    // Join equal neighbours the merge may have made.
+    for (let i = ps.length - 3; i >= 3; i -= 3)
+      if (ps[i + 2] === ps[i - 1]) ps.splice(i - 3, 6, ps[i - 3], ps[i + 1], ps[i + 2]);
+  }
+  return ps;
 }
