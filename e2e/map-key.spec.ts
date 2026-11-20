@@ -127,6 +127,26 @@ test('375 px on /sim: the key starts closed, sits clear of Reset and the attribu
   await page.keyboard.press('Escape');
   await expect(keyPanel(page)).toBeHidden();
   await expect(keyToggle(page)).toBeFocused();
+
+  // The attribution collapsed to its (i) button: the footprint shrinks and the toolbar follows it,
+  // still clear of the button and of Reset view, closed and open.
+  const block = () =>
+    page.evaluate(() =>
+      document.documentElement.style.getPropertyValue('--map-controls-br-block-size')
+    );
+  const before = await block();
+  const attrib = page.locator('.maplibregl-ctrl-attrib');
+  await expect(attrib).toHaveClass(/maplibregl-compact-show/);
+  await page.locator('.maplibregl-ctrl-attrib-button').click();
+  await expect(attrib).not.toHaveClass(/maplibregl-compact-show/);
+  await expect.poll(block).not.toBe(before);
+  const toolbarBefore = t.y;
+  await expect.poll(async () => (await boxOf(keyToggle(page))).y).toBeGreaterThan(toolbarBefore);
+  await expect(keyToggle(page)).toHaveAttribute('aria-expanded', 'false');
+  await expectClear(page);
+  await keyToggle(page).click();
+  await expect(keyPanel(page)).toBeVisible();
+  await expectClear(page);
 });
 
 test('/sim key: axe clean, light and dark, open and closed', async ({ page }) => {

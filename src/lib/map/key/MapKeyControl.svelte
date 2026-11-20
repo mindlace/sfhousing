@@ -11,7 +11,7 @@
   after the map, so Tab reaches it after the map's own controls.
 -->
 <script lang="ts">
-  import type { Snippet } from 'svelte';
+  import { untrack, type Snippet } from 'svelte';
   import { MediaQuery } from 'svelte/reactivity';
   import { timelineTokenCss } from '../palette';
   import { KEY_COPY } from './copy';
@@ -41,16 +41,17 @@
 
   type Panel = 'key' | 'layers';
   const md = new MediaQuery('(min-width: 768px)');
-  /** At rest: the key from md when the page asks for it, else nothing. Not remembered. */
+  /** On arrival: the key from md when the page asks for it, else nothing. Not stored. */
   const atRest = (): Panel | null => (openFromMd && md.current ? 'key' : null);
   let open = $state<Panel | null>(atRest());
-  // Crossing md puts the control back at rest.
+  // Going below md closes the open panel (focus inside it goes to its toggle, as Escape's does);
+  // going up keeps the viewer's state, so a key closed by the viewer stays closed.
   let wasMd = md.current;
   $effect(() => {
     const now = md.current;
     if (now === wasMd) return;
     wasMd = now;
-    open = atRest();
+    if (!now && open !== null) untrack(() => close(open!));
   });
   // A page that drops its layer rows closes their panel.
   $effect(() => {
@@ -64,6 +65,14 @@
 
   function toggle(p: Panel): void {
     open = open === p ? null : p;
+  }
+
+  /** Closes `p`; focus inside its panel goes to its toggle. */
+  function close(p: Panel): void {
+    const panel = document.getElementById(ids[p]);
+    const had = !!panel && panel.contains(document.activeElement);
+    open = null;
+    if (had) (p === 'key' ? keyButton : layersButton)?.focus();
   }
 
   function onkeydown(e: KeyboardEvent): void {

@@ -1,5 +1,6 @@
 /// <reference types="@vitest/browser-playwright" />
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { tick } from 'svelte';
 import { render } from 'vitest-browser-svelte';
 import { cdp, page, userEvent } from 'vitest/browser';
 import axe from 'axe-core';
@@ -18,6 +19,18 @@ async function scheme(value: 'light' | 'dark') {
   await cdp().send('Emulation.setEmulatedMedia', {
     features: [{ name: 'prefers-color-scheme', value }]
   });
+}
+
+/**
+ * Resizes across md and waits for the `(min-width: 768px)` change event, then for Svelte to apply
+ * it (the control's MediaQuery listener was added first, so it has run by then).
+ */
+async function crossMd(width: number, height: number) {
+  const mq = matchMedia('(min-width: 768px)');
+  const changed = new Promise((res) => mq.addEventListener('change', res, { once: true }));
+  await page.viewport(width, height);
+  await changed;
+  await tick();
 }
 
 beforeEach(async () => {
@@ -52,14 +65,57 @@ describe('MapKeyControl', () => {
     expect(r.violations).toEqual([]);
   });
 
-  it('injects its token CSS into <head>', async () => {
-    await render(KeyHost, { props: {} });
+  it('injects its token CSS into <head> once', async () => {
+    await render(KeyHost, { props: { withLayers: true, openFromMd: true } });
     const css = timelineTokenCss('.sfh-map-key');
     const styles = [...document.head.querySelectorAll('style')].filter(
       (s) => s.textContent === css
     );
-    expect(styles.length).toBeGreaterThanOrEqual(1);
+    expect(styles).toHaveLength(1);
     expect(control().element().classList.contains('sfh-map-key')).toBe(true);
+  });
+
+  it('going below md closes the key and moves focus from its panel to the toggle; going up keeps it closed', async () => {
+    await page.viewport(1024, 768);
+    await render(KeyHost, { props: { openFromMd: true } });
+    await expect.element(keyPanel()).toBeVisible();
+    (keyPanel().element() as HTMLElement).focus();
+    expect(document.activeElement).toBe(keyPanel().element());
+    await crossMd(375, 812);
+    await expect.element(keyToggle()).toHaveAttribute('aria-expanded', 'false');
+    await expect.element(keyPanel()).not.toBeInTheDocument();
+    expect(document.activeElement).toBe(keyToggle().element());
+    await crossMd(1024, 768);
+    await expect.element(keyToggle()).toHaveAttribute('aria-expanded', 'false');
+    expect(document.activeElement).toBe(keyToggle().element());
+    // The viewer opens it again at 1024: it holds.
+    await keyToggle().click();
+    await expect.element(keyPanel()).toBeVisible();
+  });
+
+  it('a key the viewer closed at 1024 stays closed after going down and up', async () => {
+    await page.viewport(1024, 768);
+    await render(KeyHost, { props: { openFromMd: true } });
+    await expect.element(keyPanel()).toBeVisible();
+    await keyToggle().click();
+    await expect.element(keyToggle()).toHaveAttribute('aria-expanded', 'false');
+    await crossMd(375, 812);
+    await expect.element(keyToggle()).toHaveAttribute('aria-expanded', 'false');
+    await crossMd(1024, 768);
+    await expect.element(keyToggle()).toHaveAttribute('aria-expanded', 'false');
+    await expect.element(keyPanel()).not.toBeInTheDocument();
+    // Focus was on the toggle throughout (it was clicked), not dropped to the body.
+    expect(document.activeElement).toBe(keyToggle().element());
+  });
+
+  it('going up keeps a panel the viewer opened below md', async () => {
+    await page.viewport(375, 812);
+    await render(KeyHost, { props: {} });
+    await keyToggle().click();
+    await expect.element(keyPanel()).toBeVisible();
+    await crossMd(1024, 768);
+    await expect.element(keyPanel()).toBeVisible();
+    await expect.element(keyToggle()).toHaveAttribute('aria-expanded', 'true');
   });
 
   it('no Layers toggle without layers; with it, opening one panel closes the other', async () => {
