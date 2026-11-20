@@ -12,7 +12,7 @@ import { STAGE_KEY } from '$lib/map/key/rows';
 import { KEY_COPY } from '$lib/map/key/copy';
 import { HALO_KIND, HALO_TOKEN } from '$lib/map/timelapse/halos';
 import { longTexts } from '$lib/shell/test/rest-text';
-import SimKey from './SimKey.svelte';
+import SimKey, { AREA_SWATCH, EDGE_SWATCH } from './SimKey.svelte';
 import SimKeyControlHost from './test/SimKeyControlHost.svelte';
 import type { KeyTally } from './key';
 
@@ -126,13 +126,16 @@ describe('SimKey', () => {
 
   it('names the ring, and the bar, always', async () => {
     await render(SimKey, { props: { tally: TALLY, inForce: false } });
+    const tones = ['tl-halo-approved', 'tl-halo-started', 'tl-halo-complete'];
     expect(extras()).toEqual([
       [
         'ring',
         'ring',
-        ['tl-halo-approved', 'tl-halo-started', 'tl-halo-complete'],
-        `${KEY_COPY.ring} Approved Building Completed`
+        [...tones, ...tones, ...tones],
+        `${KEY_COPY.ring} Approved Building Completed ${KEY_COPY.area} ${KEY_COPY.edge}`
       ],
+      ['area', 'area', tones, KEY_COPY.area],
+      ['edge', 'edge', tones, KEY_COPY.edge],
       ['bar', 'bar', ['tl-bar-unlikely', 'tl-bar-uncertain', 'tl-bar-likely'], KEY_COPY.bar]
     ]);
     // A list after the tally, its swatches beside words and hidden from assistive tech.
@@ -165,9 +168,63 @@ describe('SimKey', () => {
     expect(rows.map(([k]) => k)).toEqual(kinds);
   });
 
+  it('names the merged ring and the edge glow under "Just changed stage", in the halo tones', async () => {
+    expect(KEY_COPY.area).toBe('Zoomed out: one per area');
+    expect(KEY_COPY.edge).toBe('Edge glow: off screen');
+    const tones = [HALO_TOKEN.approved, HALO_TOKEN.started, HALO_TOKEN.completed];
+    expect(AREA_SWATCH).toEqual({ kind: 'area', tokens: tones });
+    expect(EDGE_SWATCH).toEqual({ kind: 'edge', tokens: tones });
+    // In the panel's width, where each row must sit on one line.
+    await page.viewport(1280, 800);
+    const box = withTokens();
+    box.style.width = '240px';
+    box.style.padding = '8px';
+    box.style.fontSize = '0.875rem';
+    box.style.lineHeight = '1.25rem';
+    await render(SimKey, { props: { tally: TALLY, inForce: false }, target: box });
+    const ring = box.querySelector('[data-key-extra="ring"]')!;
+    // After the three tone rows, in the same list.
+    expect(
+      [...ring.querySelector('ul')!.children].map(
+        (li) => li.getAttribute('data-ring-kind') ?? li.getAttribute('data-key-extra')
+      )
+    ).toEqual(['approved', 'started', 'completed', 'area', 'edge']);
+    const rows = [...ring.querySelectorAll('[data-key-extra]')].map((r) => {
+      const sw = r.querySelector('[data-swatch]')!;
+      return [
+        r.getAttribute('data-key-extra'),
+        sw.getAttribute('data-swatch'),
+        sw.getAttribute('aria-hidden'),
+        [...sw.querySelectorAll('[data-token]')].map((t) => t.getAttribute('data-token')),
+        r.textContent!.trim()
+      ];
+    });
+    expect(rows).toEqual([
+      ['area', 'area', 'true', tones, KEY_COPY.area],
+      ['edge', 'edge', 'true', tones, KEY_COPY.edge]
+    ]);
+    // Each on one line, its swatch inside its row; every tone drawn (a visible box).
+    for (const kind of ['area', 'edge']) {
+      const row = ring.querySelector(`[data-key-extra="${kind}"]`)!;
+      const words = row.querySelector('span:not([data-swatch]):not([data-swatch] *)')!;
+      expect(words.getClientRects(), `${kind} on one line`).toHaveLength(1);
+      expect(row.getBoundingClientRect().height, `${kind} row height`).toBeLessThanOrEqual(20);
+      for (const t of row.querySelectorAll('[data-token]')) {
+        const r = t.getBoundingClientRect();
+        expect(r.width * r.height, `${kind} tone drawn`).toBeGreaterThan(0);
+        const cs = getComputedStyle(t);
+        expect(cs.borderTopColor + cs.backgroundColor, `${kind} tone colour`).not.toBe(
+          'rgba(0, 0, 0, 0)rgba(0, 0, 0, 0)'
+        );
+      }
+    }
+    expect(box.scrollWidth).toBeLessThanOrEqual(box.clientWidth);
+    expect((await axe.run(ring)).violations).toEqual([]);
+  });
+
   it('names the mark with its explanation only while a policy is in force', async () => {
     const r = await render(SimKey, { props: { tally: TALLY, inForce: true } });
-    expect(extras().map(([k]) => k)).toEqual(['ring', 'mark', 'bar']);
+    expect(extras().map(([k]) => k)).toEqual(['ring', 'area', 'edge', 'mark', 'bar']);
     const mark = document.querySelector('[data-key-extra="mark"]')!;
     expect(mark.querySelector('[data-swatch]')!.getAttribute('data-swatch')).toBe('mark');
     expect(
@@ -184,7 +241,7 @@ describe('SimKey', () => {
     expect((await axe.run(document.querySelector('ul')!.parentElement!)).violations).toEqual([]);
     await r.rerender({ tally: TALLY, inForce: false });
     await expect.element(button).not.toBeInTheDocument();
-    expect(extras().map(([k]) => k)).toEqual(['ring', 'bar']);
+    expect(extras().map(([k]) => k)).toEqual(['ring', 'area', 'edge', 'bar']);
   });
 
   it("the mark's explanation opens on focus and on tap, and is under 12 words", async () => {

@@ -2736,5 +2736,23 @@ describe('halos on the map', () => {
     await expect
       .poll(() => callsOf('setHalos'))
       .toEqual([[{ from: asOf }], [{ from: fresh.asOf }]]);
+    // Far bars are the page's, not the calibration's: the Retry leaves them at the one call.
+    expect(callsOf('setBarMode')).toEqual([['far']]);
+  });
+
+  it('turns far bars on once the map is ready', async () => {
+    stub.autoReady = false;
+    await opened();
+    expect(callsOf('setBarMode')).toEqual([]);
+    stub.fireReady();
+    await expect.poll(() => callsOf('setBarMode')).toEqual([['far']]);
+    // Not per playhead move.
+    (slider().element() as HTMLElement).focus();
+    await userEvent.keyboard('{ArrowRight}');
+    await expect.poll(() => debug().day).toBe(MONTHS[1]);
+    await userEvent.keyboard('{End}');
+    await userEvent.keyboard('{Home}');
+    await expect.poll(() => debug().day).toBe(asOf);
+    expect(callsOf('setBarMode')).toEqual([['far']]);
   });
 });

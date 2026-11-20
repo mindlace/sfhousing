@@ -3,7 +3,9 @@
   `.sfh-map-key` by MapKeyControl, `timelineTokenCss`). Decorative: the row's words carry the
   meaning, so it is aria-hidden. Ghost: a tinted outline per token; solid: filled squares; bar: a
   stage bar (a gradient for several tokens); ring: an outlined circle (several overlap in a row);
-  mark: a diamond inside a ring of its token.
+  mark: a diamond inside a ring of its token; area: a 16 px ring around an 8 px ring per token,
+  overlapping in a row (the city layer's merged ring); edge: a half-disc per token against a 1 px
+  line (the city layer's glow at the map's edge).
 -->
 <script lang="ts">
   import type { Swatch } from './rows';
@@ -69,6 +71,34 @@
           style:border-color={color(token)}
         ></span>
       {/each}
+    </span>
+  {:else if swatch.kind === 'area'}
+    <!-- A large ring around a small one per tone, overlapping in a row inside the 28 px. -->
+    <span class="flex">
+      {#each swatch.tokens as token (token)}
+        <span
+          class="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 not-first:-ml-2.5"
+          data-token={token}
+          style:border-color={color(token)}
+        >
+          <span class="inline-block h-2 w-2 rounded-full border-2" style:border-color={color(token)}
+          ></span>
+        </span>
+      {/each}
+    </span>
+  {:else if swatch.kind === 'edge'}
+    <!-- Half-discs, flat side against the map's edge, a 1 px line. -->
+    <span class="flex h-[18px]">
+      <span class="flex flex-col justify-center">
+        {#each swatch.tokens as token (token)}
+          <span
+            class="block h-1.5 w-[3px] rounded-l-full"
+            data-token={token}
+            style:background={color(token)}
+          ></span>
+        {/each}
+      </span>
+      <span class="block w-px bg-line dark:bg-line-dark"></span>
     </span>
   {:else}
     <!-- A diamond inside a ring of the same token, as a mark sits on its project's ring. -->

@@ -1,8 +1,10 @@
 <!--
   /sim's key panel: the homes in each stage group at the playhead's month (`keyTally`), each
   label beside its swatch and count, under "Homes". '…' while the numbers are calculating. Then
-  what the map draws over the buildings: the ring of a stage change (one labelled ring per tone), the mark of a project under
-  the person's policy (only while one is in force; its claim behind a tap), and the stage bar.
+  what the map draws over the buildings: the ring of a stage change (one labelled ring per tone),
+  then the merged ring zoomed out and the glow at the edge for a change off screen, the mark of a
+  project under the person's policy (only while one is in force; its claim behind a tap), and the
+  stage bar.
 -->
 <script module lang="ts">
   import { STAGE_KEY, type StageGroup, type Swatch } from '$lib/map/key/rows';
@@ -23,6 +25,11 @@
     ring('started', 'building'),
     ring('completed', 'completed')
   ];
+  const TONES = [HALO_TOKEN.approved, HALO_TOKEN.started, HALO_TOKEN.completed];
+  /** The merged ring the city layer draws zoomed out, one per area, in the ring tones. */
+  export const AREA_SWATCH: Swatch = { kind: 'area', tokens: TONES };
+  /** The glow the city layer draws at the map's edge for a change off screen. */
+  export const EDGE_SWATCH: Swatch = { kind: 'edge', tokens: TONES };
   /** The mark row: the diamond in the accent, inside the accent ring its projects carry. */
   export const MARK_SWATCH: Swatch = { kind: 'mark', tokens: ['tl-halo-policy'] };
   /** The bar row: a bar from unlikely to likely. */
@@ -69,6 +76,14 @@
           <span>{r.label}</span>
         </li>
       {/each}
+      <li class="flex items-center gap-2" data-key-extra="area">
+        <KeySwatch swatch={AREA_SWATCH} />
+        <span>{KEY_COPY.area}</span>
+      </li>
+      <li class="flex items-center gap-2" data-key-extra="edge">
+        <KeySwatch swatch={EDGE_SWATCH} />
+        <span>{KEY_COPY.edge}</span>
+      </li>
     </ul>
   </li>
   {#if inForce}

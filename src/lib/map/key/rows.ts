@@ -5,7 +5,10 @@ import type { TokenName } from '../palette';
 import { TYPOLOGY_ORDER } from '../types';
 
 /** How a key row's swatch is drawn, from `--map-*` custom properties (`KeySwatch`). */
-export type Swatch = { kind: 'ghost' | 'solid' | 'bar' | 'ring' | 'mark'; tokens: TokenName[] };
+export type Swatch = {
+  kind: 'ghost' | 'solid' | 'bar' | 'ring' | 'mark' | 'area' | 'edge';
+  tokens: TokenName[];
+};
 
 export type StageGroup = 'planning' | 'approved' | 'issued' | 'building' | 'completed' | 'stopped';
 
