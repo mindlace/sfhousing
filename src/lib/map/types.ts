@@ -69,6 +69,12 @@ export const CITY_DAY = { approved: 0, started: 1, completed: 2 } as const;
  */
 export interface CityDelta {
   rows: number; // the world's row count now: markers at rows >= this are dropped
+  /**
+   * The drop floor (after a rewind; never in revision 0, which replaces every marker): before
+   * applying this delta's rows, forget every marker at row >= from. Rows below it in the delta
+   * are changed survivors; rows at or past it are re-created ones. Absent: nothing to forget.
+   */
+  from?: number;
   row: Int32Array; // changed rows, strictly ascending, each < rows
   lngLat: Float32Array; // 2 per changed row: the anchor lot's label point
   days: Float32Array; // 3 per changed row (CITY_DAY): NaN = not (yet)

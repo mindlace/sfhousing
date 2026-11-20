@@ -9,7 +9,7 @@ import { createCityFeed, type CityFeedDeps } from './city-feed';
 import { addProject, emptyWorld, pushRev } from './columns';
 import { monthLastDay, scheduleAt, staticsOf, type Statics } from '.';
 import { fixtureInput } from './test/cities.node';
-import { rowParcelIds } from './test/map-stream-run';
+import { FakeController, markersOf, rowParcelIds } from './test/map-stream-run';
 import { horizonMonth, runWorld } from './test/run';
 import { frameOf, oneFrame } from './test/timeline';
 import {
@@ -250,6 +250,7 @@ describe('city-feed', () => {
     expect(feed.pending()).toBe(true);
     const d = feed.take(restored, STATICS, LATE)!;
     expect(d.rows).toBe(4);
+    expect(d.from).toBe(4);
     const rows = rowsOf(d);
     expect(rows.map((r) => r.row)).toEqual([0, 1]);
     expect(rows[0].completed).toBeNaN();
@@ -280,7 +281,7 @@ describe('city-feed', () => {
     expect(rowsOf(d).map((r) => [r.row, r.started])).toEqual([[4, 20_310]]);
   });
 
-  it('a rewind that only removes rows sends rows = n and no marker', () => {
+  it('a rewind that only removes rows, with nothing else pending, sends from = rows = n and no marker', () => {
     const { world, anchors, flags } = little();
     const feed = feedOf(anchors, flags);
     feed.snapshot(world, STATICS, LATE);
@@ -290,8 +291,78 @@ describe('city-feed', () => {
     expect(feed.pending()).toBe(true);
     const d = feed.take(restored, STATICS, LATE)!;
     expect(d.rows).toBe(2);
+    expect(d.from).toBe(2);
     expect(d.row).toHaveLength(0);
     expect(feed.take(restored, STATICS, LATE)).toBeNull();
+  });
+
+  it('rows re-created between the rewind and the take: the floor goes out and the page matches a snapshot', () => {
+    const { world, anchors, flags } = little();
+    const feed = feedOf(anchors, flags);
+    const page = new FakeController();
+    page.apply({
+      revision: 0,
+      cells: [],
+      removedCells: [],
+      demolish: [],
+      city: feed.snapshot(world, STATICS, LATE)
+    });
+    expect(page.markers.has(4)).toBe(true);
+    // restored to 4 rows; the refill then re-creates row 4 with no T11 lot (touched) and row 5
+    // on L1 that no event has touched yet, before the first flush
+    const restored = structuredClone(world);
+    restored.projects.n = 4;
+    feed.rewind(restored, STATICS, LATE);
+    const r4 = simRow(restored, 3);
+    enter(restored, r4, 'filed', 20_700);
+    const r5 = simRow(restored, 1);
+    enter(restored, r5, 'filed', 20_800);
+    pushRev(restored.projects, r5, 20_800, 9, 2);
+    anchors[4] = null;
+    anchors[5] = 'L1';
+    feed.touch(r4);
+    const d = feed.take(restored, STATICS, LATE)!;
+    expect(d.from).toBe(4);
+    expect(d.rows).toBe(6);
+    expect(Array.from(d.row)).toEqual([5]);
+    page.apply({ revision: 1, cells: [], removedCells: [], demolish: [], city: d });
+    expect(page.markers.has(4)).toBe(false);
+    const fresh = feedOf(anchors, flags).snapshot(restored, STATICS, LATE);
+    expect(page.markers).toEqual(markersOf(fresh));
+    expect(feed.take(restored, STATICS, LATE)).toBeNull();
+  });
+
+  it('two rewinds before one take keep the lower floor', () => {
+    const { world, anchors, flags } = little();
+    const feed = feedOf(anchors, flags);
+    feed.snapshot(world, STATICS, LATE);
+    const low = structuredClone(world);
+    low.projects.n = 2;
+    feed.rewind(low, STATICS, LATE);
+    const high = structuredClone(world);
+    high.projects.n = 4;
+    feed.rewind(high, STATICS, LATE);
+    const d = feed.take(high, STATICS, LATE)!;
+    expect(d.from).toBe(2);
+    expect(d.rows).toBe(4);
+    // rows 2 and 3 have no lot: nothing to resend past the floor
+    expect(Array.from(d.row)).toEqual([]);
+    // and the other order
+    const again = feedOf(anchors, flags);
+    again.snapshot(world, STATICS, LATE);
+    again.rewind(high, STATICS, LATE);
+    again.rewind(low, STATICS, LATE);
+    expect(again.take(low, STATICS, LATE)!.from).toBe(2);
+  });
+
+  it('a take with no rewind before it carries no from', () => {
+    const { world, anchors, flags } = little();
+    const feed = feedOf(anchors, flags);
+    feed.snapshot(world, STATICS, LATE);
+    pushRev(world.projects, 1, 20_400, 31, 4);
+    feed.touch(1);
+    expect(feed.take(world, STATICS, LATE)!.from).toBeUndefined();
+    expect(feed.snapshot(world, STATICS, LATE).from).toBeUndefined();
   });
 
   it('a rewind drops pending touches of rows past n', () => {

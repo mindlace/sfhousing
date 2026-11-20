@@ -10,11 +10,15 @@ const MAX_FLAGS = 3;
 
 /**
  * Throws RangeError: a length that is not row.length × its width, a row not ascending or
- * >= rows, rows not a non-negative integer, a flag above 3.
+ * >= rows, rows not a non-negative integer, `from` present and not an integer in [0, rows], a
+ * flag above 3. Rows on both sides of `from` may appear.
  */
 export function validateCityDelta(d: CityDelta): void {
   if (!Number.isInteger(d.rows) || d.rows < 0) {
     throw new RangeError(`CityDelta: rows ${d.rows} is not a non-negative integer`);
+  }
+  if (d.from !== undefined && (!Number.isInteger(d.from) || d.from < 0 || d.from > d.rows)) {
+    throw new RangeError(`CityDelta: from ${d.from} is not an integer in [0, ${d.rows}]`);
   }
   const k = d.row.length;
   const widths: [string, ArrayLike<number>, number][] = [

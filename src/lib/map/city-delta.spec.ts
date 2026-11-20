@@ -57,6 +57,20 @@ describe('city-delta', () => {
     expect(() => validateCityDelta(d)).toThrow(RangeError);
   });
 
+  it('accepts from in [0, rows], with rows on both sides of it', () => {
+    for (const from of [0, 2, 4]) {
+      const d = deltaOf(4, [1, 2, 3]);
+      d.from = from;
+      expect(() => validateCityDelta(d)).not.toThrow();
+    }
+  });
+
+  it.each([-1, 5, 1.5, NaN])('rejects from %s', (from) => {
+    const d = deltaOf(4, [1]);
+    d.from = from;
+    expect(() => validateCityDelta(d)).toThrow(RangeError);
+  });
+
   it('cityTransferables lists the five buffers, each once', () => {
     const d = deltaOf(4, [0, 1]);
     const t = cityTransferables(d);

@@ -50,7 +50,7 @@
         <li><strong>One marker per placed row</strong> (a project, a phase or a pipeline row with a T11 lot; a master row or a row with no T11 parcel has none, as it has no cell): the anchor lot's label point as <code>float32</code> lng/lat (0.7 m at San Francisco), the <strong>approved</strong> day (the first of entitled and permitIssued entered, the halo layer's own rule), the <strong>started</strong> day (construction), the <strong>completed</strong> day (a complete end), each <code>NaN</code> when not (yet); the final revision's homes; the <code>SLOT_FLAG</code> bits.</li>
         <li><strong>Message shape.</strong> <code>TimelineUpdate.city?: CityDelta</code>, struct of arrays: <code>rows</code> (the world's row count after this update: markers at or past it are dropped), then per changed row, ascending: <code>row</code> (<code>Int32Array</code>), <code>lngLat</code> (<code>Float32Array</code>, 2), <code>days</code> (<code>Float32Array</code>, 3), <code>homes</code> (<code>Uint16Array</code>), <code>flags</code> (<code>Uint8Array</code>). 27 bytes a row. Revision 0 carries every marker: 30,000 projects are 810 KB, transferred, not copied. A later update carries only the rows an event touched since the last flush. The worker sends nothing per world step: the delta rides the flush (at most every <code>FLUSH_EVERY_MS</code>, 250 ms, <code>runner.ts:103</code>), and a flush with only city rows to say still sends an update.</li>
         <li><strong>Who computes it.</strong> <code>createCityFeed</code>, composed by <code>createMapStream</code>: <code>onEvent</code> touches the row, <code>flush</code> takes the touched rows, <code>rewind</code> diffs every row against what was sent, <code>snapshot</code> sends all. The stream owns revisions, so the feed inherits revision order, <code>resyncMap</code> and the controller's gap check for free.</li>
-        <li><strong>Rewound and replaced on an edit.</strong> After a restore the stream's <code>rewind</code> runs (<code>runner.ts:667-679</code>); the feed then drops rows at or past the restored world's <code>n</code> (<code>rows = n</code>) and marks every row whose marker now differs from the one sent. The next flush sends them. The page drops markers past <code>rows</code>, overwrites the rest and rebuilds its records, so no ring of the old numbers survives.</li>
+        <li><strong>Rewound and replaced on an edit.</strong> After a restore the stream's <code>rewind</code> runs (<code>runner.ts:667-679</code>); the feed then drops rows at or past the restored world's <code>n</code> (<code>rows = n</code>) and marks every row whose marker now differs from the one sent. The next flush sends them. The page drops markers past <code>rows</code>, overwrites the rest and rebuilds its records, so no ring of the old numbers survives. <em>2026-11-20, Task 2 fix round 1:</em> the drop is sent as <code>CityDelta.from</code>, the restored <code>n</code> (the lowest since the last flush), because refill steps may re-create rows before the flush; the page forgets every marker at or past <code>from</code> before applying the delta's rows, which include every re-created row with a marker.</li>
         <li><strong>The reveal rule.</strong> Every marker carries its days and the page hides what the clock has not reached: a record shows only for a day at or before the playhead (the shaders compare with the clock uniform), and the page builds no record for a day at or before today (<code>setHalos({ from: asOf })</code>, slice 5). The worker never sends a day past the world's current month (it reads <code>scheduleAt</code> at the month's last day).</li>
       </ul>
       <table id="tbl-feed-bytes">
@@ -265,6 +265,7 @@ export const CITY_DAY = { approved: 0, started: 1, completed: 2 } as const;
  */
 export interface CityDelta {
   rows: number;          // the world's row count now: markers at rows &gt;= this are dropped
+  from?: number;         // 2026-11-20, Task 2 fix round 1: the drop floor after a rewind; forget markers at rows &gt;= from, then apply the rows
   row: Int32Array;       // changed rows, strictly ascending, each &lt; rows
   lngLat: Float32Array;  // 2 per changed row: the anchor lot's label point
   days: Float32Array;    // 3 per changed row (CITY_DAY): NaN = not (yet)
@@ -405,8 +406,9 @@ export interface CityAttrs {
 }
 /** The page's markers, by row. */
 export class CityStore {
-  /** replace: revision 0 (the delta is the whole set); else write its rows and drop markers at
-   *  or past d.rows. Validates first (validateCityDelta). */
+  /** replace: revision 0 (the delta is the whole set); else forget markers at or past d.from
+   *  (when present; added 2026-11-20, Task 2 fix round 1), drop those at or past d.rows, then
+   *  write its rows. Validates first (validateCityDelta). */
   apply(d: CityDelta, replace: boolean): void;
   clear(): void;
   readonly size: number;     // rows holding a marker
@@ -475,6 +477,7 @@ it('evalCity in view below 14: a ring from 6 px to cityRadiusPx over CITY_RING_D
 it('evalCity off view at any zoom: an edge glow of cityEdgePx for CITY_EDGE_DAYS, fading')
 it('evalCity reduced: a still ring at cityRadiusPx and a still glow, full strength, the same windows')
 it('CityStore: replace takes the delta whole; apply writes its rows and drops markers at or past rows')
+it('CityStore.apply forgets markers at or past from before writing the rows, rows past from included') // 2026-11-20, Task 2 fix round 1
 it('CityStore.apply rejects a malformed delta and leaves the store as it was')
 
 // src/lib/map/timelapse/halos.spec.ts
@@ -557,6 +560,7 @@ projects: number;      // distinct installed slots with parts
         <pre><code data-lang="ts">// src/lib/map/timeline-controller.spec.ts
 it('stores the city from a revision 0 and replaces it on the next revision 0; a revision 0 without city clears it')
 it('a later delta overwrites rows and drops those at or past rows')
+it('a later delta with from forgets the markers at or past it first') // 2026-11-20, Task 2 fix round 1: CityDelta.from
 it('emits timeline-city after timeline-halos and before the overlay, only with halos on and markers held')
 it('a city-only update rebuilds the city records once and emits once')
 it('builds city records once per update, when the slice queue drains')

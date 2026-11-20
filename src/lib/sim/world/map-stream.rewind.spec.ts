@@ -438,11 +438,31 @@ describe('map-stream: rewind (rule 9)', () => {
     const now = drain(re);
     const first = now.find((u) => u.city)!;
     expect(first.city!.rows).toBe(n);
+    expect(first.city!.from).toBe(n);
     expect(Array.from(first.city!.row).filter((row) => row >= n)).toEqual([]);
     for (const u of now) ctl.apply(u);
     expect([...ctl.markers.keys()].filter((row) => row >= n)).toEqual([]);
     // refilled, the page's markers equal a snapshot's: no marker of the old future is left
     for (const u of fill({ ...re, through: 36 })) ctl.apply(u);
+    const snap = re.stream.snapshot(re.world, statics);
+    expect(ctl.markers).toEqual(markersOf(snap.city!));
+  });
+
+  it('refill steps between the rewind and the first flush: the floor goes out and the fold equals a snapshot', () => {
+    const { run, saved, updates } = firstFill({ save: 12, through: 36 });
+    updates.push(...drain(run));
+    const n = saved.projects.n;
+    const ctl = new FakeController();
+    for (const u of updates) ctl.apply(u);
+    const re = rewound(saved, run.stream, timeline, 36);
+    // loud steps re-create rows at and past n before any flush
+    for (let m = 0; m < 6; m++) step(re.world, re.due, statics, timeline, SEED, re.sink);
+    expect(re.world.projects.n).toBeGreaterThan(n);
+    const now = drain(re);
+    const first = now.find((u) => u.city)!;
+    expect(first.city!.from).toBe(n);
+    expect(first.city!.rows).toBe(re.world.projects.n);
+    for (const u of now) ctl.apply(u);
     const snap = re.stream.snapshot(re.world, statics);
     expect(ctl.markers).toEqual(markersOf(snap.city!));
   });

@@ -173,7 +173,8 @@ export function anchoredRows(world: World, statics: Statics, parcels: ScenarioPa
  * demolish and restore into `cells` and `demolished` (parcel → day), as the map does: revision 0
  * replaces both; later, `restore` drops a lot before `demolish` adds, and the earliest day wins.
  * `markers` folds `city` as the page will: revision 0 replaces them (none without `city`); later
- * updates drop markers at or past `rows` and overwrite the rows they carry.
+ * updates forget markers at or past `from` (when present) and `rows`, then write the rows they
+ * carry.
  */
 export class FakeController {
   cells = new Map<string, TimedPackedCell>();
@@ -194,7 +195,8 @@ export class FakeController {
       for (const id of u.restore ?? []) this.demolished.delete(id);
     }
     if (u.city) {
-      for (const row of [...this.markers.keys()]) if (row >= u.city.rows) this.markers.delete(row);
+      const floor = Math.min(u.city.rows, u.city.from ?? Infinity);
+      for (const row of [...this.markers.keys()]) if (row >= floor) this.markers.delete(row);
       for (const [row, m] of markersOf(u.city)) this.markers.set(row, m);
     }
     for (const c of u.cells) this.cells.set(c.cellId, c);

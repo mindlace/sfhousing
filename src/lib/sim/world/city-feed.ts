@@ -11,9 +11,13 @@
 //   or no T11 parcel) has no marker.
 // - Nothing runs per world step but `touch`, a set insert. `take` reads the touched rows at flush
 //   and sends those whose marker differs from the one sent, ascending; at rest it sends nothing.
-// - `rewind` drops the rows at or past the restored world's `n` (the next delta says `rows = n`)
-//   and touches every row whose marker now differs from the one sent. `snapshot` sends every
-//   marker and supersedes what is pending.
+// - `rewind` drops the rows at or past the restored world's `n` and touches every row whose marker
+//   now differs from the one sent. When a marker at or past `n` was sent, `n` becomes the drop
+//   floor (the lowest over the rewinds since the last take): the next delta carries it as `from`,
+//   so the page forgets every marker at or past it before applying the rows, and that delta also
+//   carries every row from the floor to the world's `n` then (rows the refill re-created between
+//   the rewind and the flush, touched or not). `snapshot` sends every marker and supersedes what is
+//   pending.
 //
 // Worker-safe, under the determinism lint rule (no transcendental Math).
 import type { ParcelId } from '$lib/data/parcel';
@@ -74,8 +78,8 @@ export function createCityFeed(deps: CityFeedDeps): CityFeed {
   let sent: (Marker | undefined)[] = [];
   /** Rows an event touched since the last take. */
   const touched = new Set<number>();
-  /** A rewind dropped rows the page holds; the next take says the new `rows`. */
-  let dropped = false;
+  /** A rewind dropped rows the page holds: the lowest restored `n` since the last take, or null. */
+  let floor: number | null = null;
 
   /** The row's marker at `day`, or null for a row with no anchor. */
   function markerOf(world: World, statics: Statics, row: number, day: number): Marker | null {
@@ -106,7 +110,12 @@ export function createCityFeed(deps: CityFeedDeps): CityFeed {
     return m;
   }
 
-  function deltaOf(rows: number, picked: number[], markers: Marker[]): CityDelta {
+  function deltaOf(
+    rows: number,
+    picked: number[],
+    markers: Marker[],
+    from: number | null = null
+  ): CityDelta {
     const k = picked.length;
     const d: CityDelta = {
       rows,
@@ -124,6 +133,7 @@ export function createCityFeed(deps: CityFeedDeps): CityFeed {
       d.homes[i] = m[HOMES];
       d.flags[i] = m[FLAGS];
     }
+    if (from !== null) d.from = from;
     return d;
   }
 
@@ -133,12 +143,16 @@ export function createCityFeed(deps: CityFeedDeps): CityFeed {
     },
 
     pending() {
-      return touched.size > 0 || dropped;
+      return touched.size > 0 || floor !== null;
     },
 
     take(world, statics, day) {
-      if (touched.size === 0 && !dropped) return null;
+      if (touched.size === 0 && floor === null) return null;
       const n = world.projects.n;
+      const from = floor;
+      floor = null;
+      // the page forgets every marker at or past the floor: resend every row there that has one
+      if (from !== null) for (let row = from; row < n; row++) touched.add(row);
       const order = [...touched].sort((a, b) => a - b);
       touched.clear();
       const picked: number[] = [];
@@ -147,21 +161,23 @@ export function createCityFeed(deps: CityFeedDeps): CityFeed {
         if (row >= n) continue;
         const m = markerOf(world, statics, row, day);
         if (m === null) continue;
-        const was = sent[row];
+        const was = from !== null && row >= from ? undefined : sent[row];
         if (was !== undefined && sameMarker(was, m)) continue;
         sent[row] = m;
         picked.push(row);
         markers.push(m);
       }
-      const drop = dropped;
-      dropped = false;
-      if (picked.length === 0 && !drop) return null;
-      return deltaOf(n, picked, markers);
+      if (picked.length === 0 && from === null) return null;
+      return deltaOf(n, picked, markers, from);
     },
 
     rewind(world, statics, day) {
       const n = world.projects.n;
-      for (let row = n; row < sent.length; row++) if (sent[row] !== undefined) dropped = true;
+      // a floor already pending is lowered to n too: it stays at or below the delta's `rows`
+      if (floor !== null) floor = Math.min(floor, n);
+      for (let row = n; row < sent.length && floor === null; row++) {
+        if (sent[row] !== undefined) floor = n;
+      }
       if (sent.length > n) sent.length = n;
       for (const row of [...touched]) if (row >= n) touched.delete(row);
       for (let row = 0; row < n; row++) {
@@ -177,7 +193,7 @@ export function createCityFeed(deps: CityFeedDeps): CityFeed {
       const n = world.projects.n;
       sent = [];
       touched.clear();
-      dropped = false;
+      floor = null;
       const picked: number[] = [];
       const markers: Marker[] = [];
       for (let row = 0; row < n; row++) {
