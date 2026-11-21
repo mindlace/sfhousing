@@ -29,15 +29,16 @@ const INTERACTIVE = [
 
 /**
  * Exempt, with the reason (2.5.8's exceptions):
- * - Inline: a link inside a sentence or a list of sources (the map attribution's links, a citation
- *   in Details), sized by the line it sits in.
- * - Equivalent: MapLibre's canvas and its own attribution parts (the map is panned by touch; the
- *   "i" control and the canvas are MapLibre's, and the page's own controls do what they do).
+ * - Inline: a link in a sentence, sized by the line it sits in: the map attribution's links, and
+ *   any link whose parent holds text of its own beside it (`inlineLink` below). A link that is its
+ *   list item's or paragraph's whole content (a step in the Menu, a source in a list) is a
+ *   standalone target and is measured.
+ * - Equivalent: MapLibre's canvas (the map is panned by touch; the page's own controls do what it
+ *   does).
  */
 const EXEMPT: { selector: string; reason: string }[] = [
   { selector: '.maplibregl-ctrl-attrib-inner a', reason: 'inline: attribution links in a line' },
-  { selector: '.maplibregl-canvas', reason: 'equivalent: the map itself, panned by touch' },
-  { selector: 'p a, li a, dd a, td a', reason: 'inline: a link in a sentence or a list' }
+  { selector: '.maplibregl-canvas', reason: 'equivalent: the map itself, panned by touch' }
 ];
 
 /**
@@ -55,6 +56,13 @@ async function small(page: Page): Promise<{ crowded: string[]; spaced: string[] 
         if (!el.checkVisibility({ visibilityProperty: true, opacityProperty: false })) continue;
         if (el.closest('[inert]')) continue;
         if (exempt.some((s) => el.matches(s))) continue;
+        // Inline: a link with text of its parent's own beside it, in the same line of prose.
+        const inlineLink =
+          el instanceof HTMLAnchorElement &&
+          [...(el.parentElement?.childNodes ?? [])].some(
+            (n) => n !== el && n.nodeType === Node.TEXT_NODE && !!n.textContent?.trim()
+          );
+        if (inlineLink) continue;
         let target: HTMLElement = el;
         // A radio or a checkbox is pressed through its label too: measure the label.
         if (
