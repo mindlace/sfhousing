@@ -303,10 +303,9 @@ describe('SimMap ready', { timeout: 30_000 }, () => {
     await expect.poll(settled).toBe(true);
     expect(isOpen(target)).toBe(true);
     expect(toggleOf(target)!.getAttribute('aria-expanded')).toBe('true');
-    // Nor does a first user zoom, or the page, close what the person opened.
+    // Nor does a first user zoom close what the person opened.
     const map = h.getMap()!;
     map.zoomTo(map.getZoom() + 0.5, { duration: 0 }, { originalEvent: new WheelEvent('wheel') });
-    h.collapseCredit();
     expect(isOpen(target)).toBe(true);
   });
 
@@ -375,7 +374,7 @@ describe('SimMap ready', { timeout: 30_000 }, () => {
     expect(isOpen(target)).toBe(true);
   });
 
-  it('collapseCredit() collapses it; after a toggle press it does nothing', async () => {
+  it('collapseCredit() collapses it, opened by hand too; not while focus is in it', async () => {
     const first = await mount({ creditShowMs: LONG });
     // Before the map: nothing to collapse, and nothing kept for later.
     (first.screen.component as unknown as SimMapHandle).collapseCredit();
@@ -384,13 +383,23 @@ describe('SimMap ready', { timeout: 30_000 }, () => {
     h.collapseCredit();
     expect(isOpen(first.target)).toBe(false);
     expect(toggleOf(first.target)!.getAttribute('aria-expanded')).toBe('false');
+    expect(creditOf(first.target)!.hasAttribute('open')).toBe(false);
 
+    // Opened by hand before Paint's strip appears: the strip's collapse still closes it.
     const second = await mount({ creditShowMs: LONG });
     const h2 = await second.ready;
     const t = toggleOf(second.target)!;
     t.click();
     t.click();
     expect(isOpen(second.target)).toBe(true);
+    (document.activeElement as HTMLElement | null)?.blur();
+    h2.collapseCredit();
+    expect(isOpen(second.target)).toBe(false);
+    expect(t.getAttribute('aria-expanded')).toBe('false');
+    // The person can open it again; with focus inside it, a collapse leaves it.
+    t.click();
+    expect(isOpen(second.target)).toBe(true);
+    creditOf(second.target)!.querySelector<HTMLElement>('a')!.focus();
     h2.collapseCredit();
     expect(isOpen(second.target)).toBe(true);
   });
@@ -435,7 +444,8 @@ describe('SimMap ready', { timeout: 30_000 }, () => {
     expect(esc.defaultPrevented).toBe(true);
     expect(isOpen(target)).toBe(false);
     expect(document.activeElement).toBe(toggleOf(target));
-    // Closed by the person: from now on only they open and close it.
+    // Closed by the person: from now on only they open and close it (and the strip's collapse,
+    // which leaves it while focus is in it).
     toggleOf(target)!.click();
     (await ready).collapseCredit();
     expect(isOpen(target)).toBe(true);

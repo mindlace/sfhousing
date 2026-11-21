@@ -214,7 +214,7 @@
    * The credit's state (docs/dev/map-interfaces.md). `auto` holds until it collapses once by
    * itself (the timer, the first user zoom, rotate or pitch, `collapseCredit`) or the person presses
    * its toggle, focuses inside it or puts the pointer on it; then only the person (and MapLibre's
-   * drag rule) opens and closes it.
+   * drag rule, and `collapseCredit`) opens and closes it.
    */
   interface Credit {
     el: HTMLElement; // MapLibre's <details>
@@ -791,8 +791,15 @@
     closeCredit(c);
   }
 
+  /**
+   * Paint's strip appearing: the credit collapses even if the person opened it earlier (it would
+   * cover the strip's end), unless focus is inside it. They can open it again.
+   */
   export function collapseCredit(): void {
-    if (live && !live.dead) autoCollapse(live);
+    const c = live && !live.dead ? live.credit : null;
+    if (!c || c.el.contains(document.activeElement)) return;
+    endAuto(live!);
+    closeCredit(c);
   }
 
   async function onLoad(l: Live, map: MapLibreMap): Promise<void> {

@@ -555,6 +555,21 @@ test.describe('mobile', () => {
     await about.tap();
     await expect(page).toHaveURL(/\/about#about-data$/);
   });
+
+  test('375 px on /: a credit opened before Paint collapses when the strip appears; Done is clear', async ({
+    page
+  }) => {
+    await gotoEditor(page);
+    await setAttribution(page, true);
+    await chooseTool(page, 'Paint');
+    await expect(strip(page)).toBeVisible();
+    await expect(attribution(page)).not.toHaveClass(/maplibregl-compact-show/);
+    await expect(creditToggle(page)).toHaveAttribute('aria-expanded', 'false');
+    await expectUnobscured(strip(page).getByRole('button', { name: 'Done', exact: true }));
+    // Opened again while the strip shows, it stays open.
+    await setAttribution(page, true);
+    await expect(creditToggle(page)).toHaveAttribute('aria-expanded', 'true');
+  });
 });
 
 test.describe('desktop', () => {

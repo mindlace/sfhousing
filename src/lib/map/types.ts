@@ -146,7 +146,10 @@ export interface SimMapHandle {
    * controller exists, as setTime.
    */
   setGlowInset(o: { top: number; right: number }): void;
-  /** Collapse the credit now unless the person has pressed its toggle; a no-op before the map. */
+  /**
+   * Collapse the credit now, opened by hand or not, unless focus is inside it (Paint's strip
+   * appearing); a no-op before the map.
+   */
   collapseCredit(): void;
 }
 
