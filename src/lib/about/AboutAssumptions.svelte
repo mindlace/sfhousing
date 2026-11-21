@@ -1,6 +1,6 @@
 <!--
   About, part 2: the assumptions (docs/dev/about.md). Live (the dialog on /sim): the run's sections
-  at once. On the page: a disclosure whose first open fetches the calibration and shows
+  at once; the dialog starts the data checks with `loadChecks()` on each open. On the page: a disclosure whose first open fetches the calibration and shows
   `modelSections`; nothing is fetched until then. A hash naming this part or a `src-` id opens it
   on mount and scrolls to the target once it exists. Colours only from --about-muted and
   --about-line, which the container sets.
@@ -12,7 +12,7 @@
   import { modelSections, type ProvSection } from '$lib/fzp/provenance';
   import Message from '$lib/shell/Message.svelte';
   import { BUTTON_QUIET, TARGET } from '$lib/shell/ui';
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { ABOUT_ID, ASSUMPTIONS_FAILED, ASSUMPTIONS_SHOW, PART_HEADING } from './copy';
 
   interface Props {
@@ -43,6 +43,15 @@
   let model = $state<Model>({ kind: 'idle' });
   /** The id a hash named on mount, until it has been scrolled to. */
   let landing = $state<string | null>(null);
+  let body = $state<ProvenanceBody | null>(null);
+
+  /**
+   * The one way to start the data checks: a no-op while they load or once loaded, a retry after a
+   * failure. The dialog calls it on every open; the page on every open of the disclosure.
+   */
+  export function loadChecks(): void {
+    body?.loadChecks();
+  }
 
   function load() {
     if (fzp === null || model.kind === 'loading' || model.kind === 'ready') return;
@@ -76,6 +85,12 @@
     if (open && model.kind === 'idle') load();
   });
 
+  // The page: each open of the disclosure (and the body's first showing) starts the data checks,
+  // so a failed load tries again on the next open.
+  $effect(() => {
+    if (!live && open && body !== null) untrack(loadChecks);
+  });
+
   // Scroll to the hash's target once it exists, once. Effects run after the DOM updates.
   $effect(() => {
     if (landing === null) return;
@@ -97,11 +112,11 @@
   >
   {#if live}
     <ProvenanceBody
+      bind:this={body}
       sections={live.sections}
       projectsUrl={live.projectsUrl}
       level={bodyLevel}
       {fetchFn}
-      load
     />
   {:else if fzp === null}
     <div class="mt-2"><Message text={ASSUMPTIONS_FAILED} /></div>
@@ -119,11 +134,11 @@
       </div>
       {#if model.kind === 'ready'}
         <ProvenanceBody
+          bind:this={body}
           sections={model.sections}
           projectsUrl={fzp.projects}
           level={bodyLevel}
           {fetchFn}
-          load
         />
       {/if}
     </details>

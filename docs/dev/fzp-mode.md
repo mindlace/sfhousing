@@ -112,9 +112,10 @@ pricing rule, the loss on exit worded from `terms.lossOnExit`, and ruling R8).
 
 The dialog's body lives in `src/lib/fzp/ProvenanceBody.svelte`, so About can show it too
 ([about.md](about.md)). Props: `sections`, `projectsUrl`, `level` (the sections' heading level, 3
-or 4; entries one below), `fetchFn`, `load`. It owns the data checks (`src-quality`): `load`
-turning true starts their load once, and `loadChecks()` (the dialog calls it on every open) starts
-it or retries it after a failure; a load in flight or done is never repeated. Its rules and entry
+or 4; entries one below), `fetchFn`. It owns the data checks (`src-quality`), and `loadChecks()`
+is the one way to start them: it starts the load or retries it after a failure, and a load in
+flight or done is never repeated. Its owner calls it each time the body is shown (the dialog on
+every open, About's page on every open of its disclosure). Its rules and entry
 borders read `--about-line`, which the container sets (`SourcesDialog` to `line`, `line-dark` in
 dark); the tier badges and the tables' head rules keep `control-line` with its dark partner. Ids are
 unchanged (`src-…`, `QUALITY_SECTION_ID`). `modelSections(calibration)` (`provenance.ts`) is the

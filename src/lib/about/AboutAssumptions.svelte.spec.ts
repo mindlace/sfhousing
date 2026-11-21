@@ -6,7 +6,7 @@ import '../../routes/layout.css';
 import type { ManifestSources } from '$lib/data/manifest';
 import { fixtureCalibration } from '$lib/fzp/fixtures/calibration';
 import { PROJECTS_JSON } from '$lib/fzp/fixtures/projects';
-import { QUALITY_HEADING, modelSections } from '$lib/fzp/provenance';
+import { QUALITY_HEADING, QUALITY_LOAD_FAILED, modelSections } from '$lib/fzp/provenance';
 import calibrationJson from '../../../e2e/fixtures/data/fixture-0/scenarios/fzp/calibration.json';
 import AboutAssumptions from './AboutAssumptions.svelte';
 import { ABOUT_ID, ASSUMPTIONS_FAILED, ASSUMPTIONS_SHOW, PART_HEADING } from './copy';
@@ -195,14 +195,41 @@ describe('AboutAssumptions on the page', () => {
   });
 });
 
+describe('the data checks: one way to load them', () => {
+  it('on the page, closing and reopening after a failed data-checks load retries', async () => {
+    const projects = vi
+      .fn<() => Promise<Response>>()
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockImplementation(() => Promise.resolve(json(PROJECTS_JSON)));
+    const fetchFn = vi.fn((input: RequestInfo | URL) =>
+      String(input) === CAL_URL ? Promise.resolve(json(calibrationJson)) : projects()
+    );
+    await setup({ fetchFn: fetchFn as unknown as ReturnType<typeof stub> });
+    await summary().click();
+    await expect
+      .poll(() => document.getElementById('src-quality')?.textContent)
+      .toContain(QUALITY_LOAD_FAILED);
+    await summary().click();
+    await summary().click();
+    await expect
+      .poll(() => document.getElementById('src-quality')?.querySelectorAll('tbody tr').length)
+      .toBe(3);
+    expect(projects).toHaveBeenCalledTimes(2);
+    expect(callsTo(fetchFn as unknown as ReturnType<typeof stub>, CAL_URL)).toBe(1);
+  });
+});
+
 describe('AboutAssumptions live (the dialog)', () => {
-  it('live sections render at once with no disclosure and no fetch of the calibration', async () => {
-    const fetchFn = stub();
-    await render(AboutAssumptions, {
+  const live = async (fetchFn: ReturnType<typeof stub> | ReturnType<typeof vi.fn>) =>
+    render(AboutAssumptions, {
       level: 3,
       live: { sections: modelSections(fixtureCalibration()), projectsUrl: PROJECTS_URL },
       fetchFn: fetchFn as unknown as typeof fetch
     });
+
+  it('live sections render at once with no disclosure, and fetch nothing until loadChecks', async () => {
+    const fetchFn = stub();
+    const view = await live(fetchFn);
     await expect
       .element(page.getByRole('heading', { level: 3, name: PART_HEADING.assumptions }))
       .toBeVisible();
@@ -210,7 +237,31 @@ describe('AboutAssumptions live (the dialog)', () => {
     expect([...part().querySelectorAll('h4')].map((h) => h.textContent?.trim())).toEqual(
       expected()
     );
+    expect(fetchFn).not.toHaveBeenCalled();
+    view.component.loadChecks();
+    await expect
+      .poll(() => document.getElementById('src-quality')?.querySelectorAll('tbody tr').length)
+      .toBe(3);
+    // Loaded: a second call fetches nothing more.
+    view.component.loadChecks();
+    expect(callsTo(fetchFn, PROJECTS_URL)).toBe(1);
     expect(callsTo(fetchFn, CAL_URL)).toBe(0);
-    await expect.poll(() => callsTo(fetchFn, PROJECTS_URL)).toBe(1);
+  });
+
+  it('after a failure the next loadChecks tries again', async () => {
+    const fetchFn = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockImplementation(() => Promise.resolve(json(PROJECTS_JSON)));
+    const view = await live(fetchFn);
+    view.component.loadChecks();
+    await expect
+      .poll(() => document.getElementById('src-quality')?.textContent)
+      .toContain(QUALITY_LOAD_FAILED);
+    view.component.loadChecks();
+    await expect
+      .poll(() => document.getElementById('src-quality')?.querySelectorAll('tbody tr').length)
+      .toBe(3);
+    expect(fetchFn).toHaveBeenCalledTimes(2);
   });
 });

@@ -1,13 +1,12 @@
 <!--
   The assumptions' body: sections 1-9 from `provenanceSections` (or `modelSections`), then section
-  10, the data checks, which is this component's own state: loaded when `load` turns true or on
-  `loadChecks()`, held for its lifetime; after a failure the next `loadChecks()` tries again.
+  10, the data checks, which is this component's own state: loaded on `loadChecks()` (the one way
+  in), held for its lifetime; after a failure the next `loadChecks()` tries again.
   Shown in /sim's Sources dialog and in About's assumptions (docs/dev/fzp-mode.md). Section
   headings at `level`, entries one below. Rules and borders read --about-line, which the container
   sets (docs/dev/about.md); the badge and the tables' head rule keep the control line.
 -->
 <script lang="ts">
-  import { untrack } from 'svelte';
   import type { ProjectsFile } from '$lib/timelapse/projects';
   import { perHomeMethod } from '$lib/timeline/copy';
   import { TIER_LABEL } from './labels';
@@ -31,11 +30,9 @@
     /** The sections' heading level; entries are one below. */
     level: 3 | 4;
     fetchFn?: typeof fetch;
-    /** Start the data checks' load (the page, once the body shows; the dialog calls loadChecks). */
-    load?: boolean;
   }
 
-  let { sections, projectsUrl, level, fetchFn, load = false }: Props = $props();
+  let { sections, projectsUrl, level, fetchFn }: Props = $props();
 
   type Quality =
     | { kind: 'loading' }
@@ -48,7 +45,8 @@
 
   /**
    * Start the data checks' load: a no-op while one is in flight or done, a retry after a failure.
-   * The dialog calls it on every open; `load` calls it once.
+   * Its owner calls it each time the body is shown (About's dialog on every open, the page on
+   * every open of the disclosure).
    */
   export function loadChecks(): void {
     if (projectsUrl === null) return;
@@ -66,11 +64,6 @@
       }
     );
   }
-
-  $effect(() => {
-    // Only `load` and the URL start a load: a failure must not retry by itself.
-    if (load && projectsUrl !== null) untrack(loadChecks);
-  });
 
   const heading = $derived(`h${level}`);
   const entryHeading = $derived(`h${level + 1}`);

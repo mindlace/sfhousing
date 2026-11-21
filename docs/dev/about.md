@@ -57,10 +57,12 @@ from `/about`.
 one heading level under the part.
 
 - `live` (`{ sections, projectsUrl }`, the dialog on `/sim`): the run's sections at once, no
-  disclosure, no fetch of the calibration; the data checks load at once.
+  disclosure, no fetch of the calibration. The part exports `loadChecks()`, which passes through
+  to the body's: the dialog calls it on every open (it loads once, and retries after a failure).
 - On the page: a `<details>` "Show the assumptions" (`ASSUMPTIONS_SHOW`). Its first open fetches
   `manifest.scenarios.fzp.calibration` (`fetchCalibration`) and shows `modelSections`; then the
-  data checks load `manifest.scenarios.fzp.projects`. Closing and opening again fetches nothing.
+  data checks load `manifest.scenarios.fzp.projects`. Closing and opening again fetches nothing,
+  except that a failed data-checks load tries again on the next open (`loadChecks()`).
   These are the same-origin, immutable `/data/<version>/…` files `/sim` loads.
 - One `role="status"` region, mounted with the disclosure, holds the state as a `Message`:
   "Loading…", then nothing, or `ASSUMPTIONS_FAILED` with Retry (`BUTTON_QUIET`), which loads again.
