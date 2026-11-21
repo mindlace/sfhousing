@@ -6,6 +6,11 @@ partner, and that the file has no hex). Colours come only from the tokens in
 `src/routes/layout.css`. Files adopt the parts as work touches them; a file that does goes into
 `THEMED_FILES` in `src/lib/shell/accent.spec.ts`.
 
+**Use a part, or add one.** Use a part as it is and put only position and size beside it; never
+restate or override its look. Add a part to `ui.ts` only when a look is needed in a second place,
+is meant to stay the same in both, and no part fits. A new part gets its check in `ui.spec.ts`,
+and its file joins `THEMED_FILES`.
+
 ## The spacing scale
 
 `SPACE_STEPS = [1, 2, 3, 4, 6]`: Tailwind steps of 4, 8, 12, 16 and 24 px. The parts use only these
@@ -43,7 +48,9 @@ adds those (`absolute top-full mt-1 w-64 …`) beside the constant.
 
 `Explain` draws `SURFACE_TIP` from md as `md:`-prefixed classes (below md the text is a muted line
 under its target), and `layout.css`'s `.explain-under` repeats the values in CSS for a tooltip that
-opens under its target. `ui.spec.ts` keeps both in step with the constant.
+opens under its target. `ui.spec.ts` keeps both in step with the constant: Explain's class list
+token for token, and the CSS rule's padding, border, radius, surface, ink and two-layer shadow,
+light and dark.
 
 ## Messages: chips and cards
 

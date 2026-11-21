@@ -59,18 +59,54 @@ describe('the shared parts', () => {
     expect(messageShape("Some map data didn't load.", true)).toBe('card');
   });
 
-  it("Explain's md tooltip and layout.css's .explain-under draw SURFACE_TIP", () => {
-    const explain = readFileSync(fromRoot('src/lib/timeline/Explain.svelte'), 'utf8');
-    for (const c of classes(ui.SURFACE_TIP)) {
-      // text-sm applies at every width; the rest only where the text is a pop-over (md up).
-      expect(explain, c).toContain(c === 'text-sm' ? c : `md:${c}`);
+  it('every button kind shows the accent outline on focus-visible, in both themes', () => {
+    for (const b of [ui.BUTTON, ui.BUTTON_PRIMARY, ui.BUTTON_QUIET]) {
+      expect(classes(b)).toEqual(
+        expect.arrayContaining([
+          'focus-visible:outline-2',
+          'focus-visible:outline-offset-1',
+          'focus-visible:outline-accent',
+          'dark:focus-visible:outline-accent-dark'
+        ])
+      );
     }
+  });
+
+  it("Explain's md tooltip draws SURFACE_TIP, class for class", () => {
+    const explain = readFileSync(fromRoot('src/lib/timeline/Explain.svelte'), 'utf8');
+    const attr = /role="tooltip"[^>]*?class="([^"]*)"/s.exec(explain)?.[1] ?? '';
+    const tip = new Set(classes(attr));
+    // text-sm applies at every width; the rest only where the text is a pop-over (md up), dark
+    // partners as md:dark:.
+    for (const c of classes(ui.SURFACE_TIP)) {
+      const want = c === 'text-sm' ? c : `md:${c}`;
+      expect(tip.has(want), want).toBe(true);
+    }
+    // Nothing else of the pop-over's look: no other md: radius, border, surface, ink or shadow.
+    const look = /^md:(dark:)?(rounded|border|bg-|text-ink|shadow|px-|py-)/;
+    const expected = new Set(classes(ui.SURFACE_TIP).map((c) => `md:${c}`));
+    expect([...tip].filter((c) => look.test(c) && !expected.has(c))).toEqual([]);
+  });
+
+  it("layout.css's .explain-under draws SURFACE_TIP in CSS, light and dark", () => {
     const css = readFileSync(fromRoot('src/routes/layout.css'), 'utf8');
-    const rule = /\.explain-under \[role='tooltip'\] \{([^}]*)\}/.exec(css)?.[1] ?? '';
     expect(css).toMatch(/SURFACE_TIP/);
-    expect(rule).toMatch(/padding: 0\.25rem 0\.5rem;/);
-    expect(rule).toMatch(/border: 1px solid var\(--color-line\);/);
-    expect(rule).toMatch(/background: var\(--color-surface\);/);
-    expect(rule).toMatch(/color: var\(--color-ink\);/);
+    const rules = [...css.matchAll(/\.explain-under \[role='tooltip'\] \{([^}]*)\}/g)].map(
+      (m) => m[1]
+    );
+    const [light, dark] = rules;
+    expect(light).toMatch(/padding: 0\.25rem 0\.5rem;/);
+    expect(light).toMatch(/border: 1px solid var\(--color-line\);/);
+    expect(light).toMatch(/border-radius: 0\.25rem;/);
+    expect(light).toMatch(/background: var\(--color-surface\);/);
+    expect(light).toMatch(/color: var\(--color-ink\);/);
+    // Tailwind's shadow-md, both layers.
+    expect(light.replace(/\s+/g, ' ')).toContain(
+      'box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);'
+    );
+    // The dark half: SURFACE_TIP's dark: partners.
+    expect(dark).toMatch(/border-color: var\(--color-line-dark\);/);
+    expect(dark).toMatch(/background: var\(--color-surface-dark\);/);
+    expect(dark).toMatch(/color: var\(--color-ink-dark\);/);
   });
 });
