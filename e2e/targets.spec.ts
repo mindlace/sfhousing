@@ -113,10 +113,10 @@ async function small(
           (el.textContent ?? '').trim().slice(0, 30) ||
           el.tagName;
         const label = `${el.tagName.toLowerCase()} "${name}"`;
-        // Covered at its centre by something else. By an open sheet, dialog or popover, or by
-        // another target (a timeline bar under the phone's open editor): not pressable there, so
-        // not a target in this state, and noted. By anything else (a layer that takes presses
-        // over a control): a defect. Off-screen points read null: kept.
+        // Covered at its centre by something else. By an open sheet, dialog or popover (a timeline
+        // bar under the phone's open editor), or by a target that holds it or that it holds: not
+        // pressable there, so not a target in this state, and noted. By anything else (a layer or
+        // a separate control over a control): a defect. Off-screen points read null: kept.
         const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
         // Scrolled out of a box that clips it (a panel's row below its fold) while its centre is
         // on screen: not pressable until scrolled to, so noted; the test scrolls it into view and
@@ -159,7 +159,11 @@ async function small(
           // An overlay covers what lies under it, not its own controls: a cover inside the same
           // column, sheet or panel as the target is a defect.
           const o = hit.closest(overlay);
-          if ((o && !o.contains(target)) || hit.closest(sel)) skipped.push(`${label} by ${by}`);
+          // A target over a target is one press only when one holds the other (a button inside
+          // the target that covers it); two separate controls on top of each other are a defect.
+          const t = hit.closest(sel);
+          const nested = !!t && (t.contains(target) || target.contains(t));
+          if ((o && !o.contains(target)) || nested) skipped.push(`${label} by ${by}`);
           else covered.push(`${label} covered by ${by}`);
           continue;
         }
@@ -400,6 +404,30 @@ test.describe('targets at 375 px', () => {
     expect(skipped.filter((s) => /pop-|abs-/.test(s))).toEqual([]);
     expect(crowded.some((c) => c.startsWith('button "pop-a" 16.0x16.0'))).toBe(true);
     expect(crowded.some((c) => c.startsWith('button "abs-a" 16.0x16.0'))).toBe(true);
+  });
+
+  test('a control over a separate control fails the sweep; over a control it holds, it does not', async ({
+    page
+  }) => {
+    await gotoEditor(page);
+    await page.evaluate(() => {
+      const box = document.createElement('div');
+      box.style.cssText = 'position:fixed;left:0;top:300px;width:300px;height:200px;z-index:9999';
+      box.innerHTML =
+        // Two separate buttons, the second laid over the first.
+        '<button aria-label="under" style="position:absolute;left:10px;top:10px;width:40px;height:40px"></button>' +
+        '<button aria-label="over" style="position:absolute;left:10px;top:10px;width:40px;height:40px"></button>' +
+        // A button inside a role=button, whose own child covers it: one press, not two.
+        '<div role="button" tabindex="0" aria-label="outer" style="position:absolute;left:100px;top:10px;width:120px;height:60px">' +
+        '<button aria-label="inner" style="position:absolute;left:10px;top:10px;width:40px;height:40px"></button>' +
+        '<span style="position:absolute;left:10px;top:10px;width:40px;height:40px"></span>' +
+        '</div>';
+      document.body.appendChild(box);
+    });
+    const { crowded, skipped } = await small(page);
+    expect(crowded).toContain('button "under" covered by over');
+    expect(crowded.filter((c) => c.includes('"inner"'))).toEqual([]);
+    expect(skipped).toContain('button "inner" by span');
   });
 
   test('/sim: a layer inside the detail column over its own control fails the sweep', async ({
