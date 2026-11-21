@@ -1,7 +1,8 @@
 <!--
   About, part 4: using it. Keyboard shortcuts (the Painting table, from SHORTCUTS, the list
-  Paint's Shortcuts button shows; the Timeline table, from TIMELINE_SHORTCUTS) and Your plans. Headings at `level` and `level + 1`; colours
-  only from --about-muted and --about-line, which the container sets (docs/dev/about.md).
+  Paint's Shortcuts button shows; the Timeline table, from TIMELINE_SHORTCUTS) and Your plans.
+  Headings at `level` and `level + 1`; colours only from --about-muted and --about-line, which the
+  container sets (docs/dev/about.md).
 -->
 <script lang="ts">
   import { SHORTCUTS } from '$lib/brush/shortcuts';
