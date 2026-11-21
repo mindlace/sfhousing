@@ -349,7 +349,7 @@
       type="button"
       aria-haspopup="dialog"
       onclick={a.open}
-      class="min-h-6 min-w-6 rounded-md border border-gray-300 px-2 text-sm font-medium whitespace-nowrap dark:border-gray-600 pointer-coarse:min-h-11 pointer-coarse:min-w-11"
+      class="min-h-6 min-w-6 rounded-md border border-gray-300 px-2 text-sm font-medium whitespace-nowrap dark:border-gray-600"
       >{a.label}</button
     >
   {/each}
@@ -405,7 +405,7 @@
         <span>Couldn't load the buildings.</span>
         <button
           type="button"
-          class="min-h-11 min-w-11 rounded-lg px-3 font-semibold underline"
+          class="min-h-6 min-w-6 rounded-lg px-3 font-semibold underline"
           onclick={retry}>Retry</button
         >
       </div>

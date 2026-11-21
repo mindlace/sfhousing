@@ -69,7 +69,7 @@
   {#if status === 'off'}
     <button
       type="button"
-      class="col-start-1 row-start-1 min-h-6 min-w-6 rounded-full border border-amber-700 bg-amber-50 px-2 whitespace-nowrap text-amber-900 pointer-coarse:min-h-11 pointer-coarse:min-w-11"
+      class="col-start-1 row-start-1 min-h-6 min-w-6 rounded-full border border-amber-700 bg-amber-50 px-2 whitespace-nowrap text-amber-900"
       aria-expanded={popOpen}
       aria-controls={popId}
       inert={covered}

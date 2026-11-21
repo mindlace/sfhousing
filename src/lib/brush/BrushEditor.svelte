@@ -153,12 +153,18 @@
   const uid = $props.id();
   const dockId = $derived(dockIdProp ?? `${uid}-dock`);
   const wide = new MediaQuery('(min-width: 768px)');
+  /** The phone palette strip shows: below md, the sheet closed, Paint or Erase chosen. */
+  const stripShown = $derived(
+    !editor.readOnly && !wide.current && dock.sheet === 'closed' && brush.tool !== 'move'
+  );
   /** Undo and Redo buttons are for a device with no keyboard (`usePrimaryPointer`). */
   const pointer = usePrimaryPointer();
   /** Done on the palette strip reopened the sheet: focus moves into it. */
   let doneFocus = $state(false);
   /** The phone sheet's height (its handle while closed; 0 from md): part of the map's inset. */
   let sheetH = $state(0);
+  /** The palette strip's height while it shows: the map key rests 10 px above it. */
+  let stripH = $state(0);
   let paletteStrip = $state<PaletteStrip>();
 
   untrack(() => {
@@ -608,13 +614,14 @@
     </div>
 
     <!-- The map key at the map's bottom right, above the attribution (and the phone sheet's
-         handle, which lifts the footprint), with the page's Layers toggle before Key when it
+         handle, which lifts the footprint, and 10 px above the palette strip while it shows),
+         with the page's Layers toggle before Key when it
          passes `layers`; both closed at rest at every width. Below md, while the
          sheet is open over the map, it hides (as /sim's does under a card's sheet). -->
     <MapKeyControl
       key={paintKey}
       layers={layerRows}
-      floor={sheetH}
+      floor={stripShown ? sheetH + stripH + 10 : sheetH}
       hidden={!wide.current && dock.sheet !== 'closed'}
       onopenchange={(p) => (keyVisible = p === 'key')}
     />
@@ -656,9 +663,10 @@
         })}
       onclose={ondockclose}
     />
-    {#if !editor.readOnly && !wide.current && dock.sheet === 'closed' && brush.tool !== 'move'}
+    {#if stripShown}
       <PaletteStrip
         bind:this={paletteStrip}
+        bind:height={stripH}
         {brush}
         tool={brush.tool}
         ontool={chooseTool}

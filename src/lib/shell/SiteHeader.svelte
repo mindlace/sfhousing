@@ -44,7 +44,7 @@
   // The current one is filled with the accent; the other carries a resting border so it reads as
   // pressable. Both take a 1 px border so their sizes match.
   const link =
-    'inline-flex min-h-6 items-center whitespace-nowrap rounded-md border px-2 no-underline lg:max-xl:px-1 pointer-coarse:min-h-11 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent dark:focus-visible:outline-accent-dark';
+    'inline-flex min-h-6 min-w-6 items-center whitespace-nowrap rounded-md border px-2 no-underline lg:max-xl:px-1 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent dark:focus-visible:outline-accent-dark';
   const tab = (current: boolean) => [
     link,
     current
@@ -168,7 +168,7 @@
   <button
     bind:this={menuButton}
     type="button"
-    class="inline-flex min-h-8 min-w-8 shrink-0 items-center justify-center rounded-md border border-gray-300 lg:hidden dark:border-gray-600 pointer-coarse:min-h-11 pointer-coarse:min-w-11"
+    class="inline-flex min-h-8 min-w-8 shrink-0 items-center justify-center rounded-md border border-gray-300 lg:hidden dark:border-gray-600"
     aria-label="Menu"
     aria-expanded={open}
     aria-controls={panelId}
@@ -194,7 +194,7 @@
     {#if pinned}
       <a
         href="/"
-        class="inline-flex min-h-6 items-center self-start font-semibold whitespace-nowrap sm:hidden pointer-coarse:min-h-11"
+        class="inline-flex min-h-6 min-w-6 items-center self-start font-semibold whitespace-nowrap sm:hidden"
         >SF Housing Simulator</a
       >
     {/if}

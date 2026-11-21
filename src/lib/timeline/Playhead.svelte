@@ -517,10 +517,4 @@
       margin-top: -8px;
     }
   }
-  @media (pointer: coarse) {
-    .ctl {
-      min-width: 44px;
-      min-height: 44px;
-    }
-  }
 </style>

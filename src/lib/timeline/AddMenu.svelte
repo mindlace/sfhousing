@@ -21,7 +21,7 @@
 
   const choices = $derived(addChoices(kind, calibration, doc));
   const link =
-    'min-h-6 rounded-md px-1 text-left font-semibold underline hover:bg-surface-raised dark:hover:bg-surface-dark-raised pointer-coarse:min-h-11';
+    'min-h-6 min-w-6 rounded-md px-1 text-left font-semibold underline hover:bg-surface-raised dark:hover:bg-surface-dark-raised';
 </script>
 
 <div

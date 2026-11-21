@@ -301,7 +301,7 @@
   <div
     role="group"
     aria-label="{routeName} timeline"
-    class="flex h-9 w-full gap-px overflow-hidden rounded-md border border-control-line bg-surface dark:border-control-line-dark dark:bg-surface-dark pointer-coarse:h-11"
+    class="flex h-9 w-full gap-px overflow-hidden rounded-md border border-control-line bg-surface dark:border-control-line-dark dark:bg-surface-dark"
     bind:clientWidth={trackPx}
   >
     {#each shown as v, i (v.stage)}
@@ -397,7 +397,7 @@
             type="button"
             aria-label="Shorten by 0.5 month"
             aria-disabled={v.atBound === 'min'}
-            class="min-h-6 min-w-6 rounded-md border border-control-line bg-surface px-2 font-bold text-ink hover:bg-surface-raised aria-disabled:opacity-40 dark:border-control-line-dark dark:bg-surface-dark dark:text-ink-dark dark:hover:bg-surface-dark-raised pointer-coarse:min-h-11 pointer-coarse:min-w-11"
+            class="min-h-6 min-w-6 rounded-md border border-control-line bg-surface px-2 font-bold text-ink hover:bg-surface-raised aria-disabled:opacity-40 dark:border-control-line-dark dark:bg-surface-dark dark:text-ink-dark dark:hover:bg-surface-dark-raised"
             onclick={() => step(v, -1)}>−</button
           >
           <input
@@ -407,14 +407,14 @@
             min={v.bounds.min}
             max={v.bounds.max}
             value={v.months}
-            class="min-h-6 w-16 rounded-md border border-control-line bg-surface px-1 text-center text-ink dark:border-control-line-dark dark:bg-surface-dark dark:text-ink-dark pointer-coarse:min-h-11"
+            class="min-h-6 w-16 rounded-md border border-control-line bg-surface px-1 text-center text-ink dark:border-control-line-dark dark:bg-surface-dark dark:text-ink-dark"
             onchange={(e) => commitInput(v, e.currentTarget)}
           />
           <button
             type="button"
             aria-label="Lengthen by 0.5 month"
             aria-disabled={v.atBound === 'max'}
-            class="min-h-6 min-w-6 rounded-md border border-control-line bg-surface px-2 font-bold text-ink hover:bg-surface-raised aria-disabled:opacity-40 dark:border-control-line-dark dark:bg-surface-dark dark:text-ink-dark dark:hover:bg-surface-dark-raised pointer-coarse:min-h-11 pointer-coarse:min-w-11"
+            class="min-h-6 min-w-6 rounded-md border border-control-line bg-surface px-2 font-bold text-ink hover:bg-surface-raised aria-disabled:opacity-40 dark:border-control-line-dark dark:bg-surface-dark dark:text-ink-dark dark:hover:bg-surface-dark-raised"
             onclick={() => step(v, 1)}>+</button
           >
           <span class="text-ink-muted dark:text-ink-dark-muted"

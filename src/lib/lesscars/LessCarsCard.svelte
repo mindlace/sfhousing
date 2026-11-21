@@ -69,7 +69,7 @@
     </h2>
     <button
       type="button"
-      class="min-h-6 min-w-6 shrink-0 rounded-md px-2 text-sm font-semibold underline pointer-coarse:min-h-11 pointer-coarse:min-w-11"
+      class="min-h-6 min-w-6 shrink-0 rounded-md px-2 text-sm font-semibold underline"
       onclick={onclose}>Close</button
     >
   </div>

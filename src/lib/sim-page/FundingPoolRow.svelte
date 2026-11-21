@@ -512,13 +512,12 @@
 
   const muted = 'text-ink-muted dark:text-ink-dark-muted';
   const rowButton =
-    'flex min-h-11 w-full flex-col items-start rounded-md px-1 py-1 text-left hover:bg-surface-raised dark:hover:bg-surface-dark-raised';
+    'flex min-h-6 w-full flex-col items-start rounded-md px-1 py-1 text-left hover:bg-surface-raised dark:hover:bg-surface-dark-raised';
   /** The header without the toggle (no `onselect`). */
-  const rowHead = 'flex min-h-11 w-full flex-col items-start px-1 py-1 text-left';
-  const link =
-    'min-h-6 min-w-6 rounded-md px-1 font-semibold underline aria-disabled:opacity-40 pointer-coarse:min-h-11 pointer-coarse:min-w-11';
+  const rowHead = 'flex min-h-6 w-full flex-col items-start px-1 py-1 text-left';
+  const link = 'min-h-6 min-w-6 rounded-md px-1 font-semibold underline aria-disabled:opacity-40';
   const input =
-    'min-h-6 rounded-md border border-control-line bg-surface px-2 text-ink aria-invalid:border-red-800 dark:border-control-line-dark dark:bg-surface-dark dark:text-ink-dark dark:aria-invalid:border-red-300 pointer-coarse:min-h-11';
+    'min-h-6 min-w-6 rounded-md border border-control-line bg-surface px-2 text-ink aria-invalid:border-red-800 dark:border-control-line-dark dark:bg-surface-dark dark:text-ink-dark dark:aria-invalid:border-red-300';
   const alertClass = (msg: string | null): string =>
     `text-red-800 dark:text-red-300 ${msg ? '' : 'sr-only'}`;
   const rowClass = (on: boolean): string =>
@@ -617,7 +616,7 @@
           <fieldset class="flex flex-wrap items-center gap-x-3 gap-y-1">
             <legend class="font-semibold">Money in, row {n}</legend>
             {#each [['once', 'Once'], ['yearly', 'Every year']] as const as [value, text] (value)}
-              <label class="flex min-h-6 items-center gap-1.5 pointer-coarse:min-h-11">
+              <label class="flex min-h-6 min-w-6 items-center gap-1.5">
                 <input
                   type="radio"
                   class="size-5"
@@ -703,7 +702,7 @@
             <div class="flex flex-col gap-0.5">
               <fieldset class="flex flex-wrap items-center gap-2">
                 <legend class="font-semibold">Until</legend>
-                <label class="flex min-h-6 items-center gap-1.5 pointer-coarse:min-h-11">
+                <label class="flex min-h-6 min-w-6 items-center gap-1.5">
                   <input
                     type="checkbox"
                     class="size-5"

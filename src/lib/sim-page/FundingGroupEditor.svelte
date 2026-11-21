@@ -178,10 +178,9 @@
     });
   }
 
-  const link =
-    'min-h-6 min-w-6 rounded-md px-1 font-semibold underline aria-disabled:opacity-40 pointer-coarse:min-h-11 pointer-coarse:min-w-11';
+  const link = 'min-h-6 min-w-6 rounded-md px-1 font-semibold underline aria-disabled:opacity-40';
   const field =
-    'min-h-6 rounded-md border border-control-line bg-surface px-2 text-ink dark:border-control-line-dark dark:bg-surface-dark dark:text-ink-dark pointer-coarse:min-h-11';
+    'min-h-6 min-w-6 rounded-md border border-control-line bg-surface px-2 text-ink dark:border-control-line-dark dark:bg-surface-dark dark:text-ink-dark';
   const muted = 'text-ink-muted dark:text-ink-dark-muted';
 </script>
 
@@ -244,7 +243,7 @@
         {#if uncapped}
           <fieldset class="flex flex-col gap-1">
             <legend class="font-semibold">Federal tax credits</legend>
-            <label class="flex min-h-6 items-center gap-1.5 pointer-coarse:min-h-11">
+            <label class="flex min-h-6 min-w-6 items-center gap-1.5">
               <input
                 type="radio"
                 class="size-5"
@@ -254,7 +253,7 @@
               />
               Switched off
             </label>
-            <label class="flex min-h-6 items-center gap-1.5 pointer-coarse:min-h-11">
+            <label class="flex min-h-6 min-w-6 items-center gap-1.5">
               <input
                 type="radio"
                 class="size-5"

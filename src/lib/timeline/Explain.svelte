@@ -4,6 +4,7 @@
   // wrapper); closes on Escape, on focus leaving both, and on a second tap. The text exists only
   // while open. From md it is a popover beside the target, below md an inline line under it.
   import type { Snippet } from 'svelte';
+  import { TARGET } from '$lib/shell/ui';
 
   interface Props {
     /** The explanation: short, what the reader cannot infer. */
@@ -146,7 +147,7 @@
   {#if as === 'button'}
     <button
       type="button"
-      class="cursor-help text-left"
+      class="{TARGET} cursor-help text-left"
       aria-label={label}
       aria-expanded={open}
       aria-describedby={open ? textId : undefined}

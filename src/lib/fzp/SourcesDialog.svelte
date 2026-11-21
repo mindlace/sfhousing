@@ -243,7 +243,7 @@
                       href={safeHref(src.url)}
                       target="_blank"
                       rel="noopener noreferrer"
-                      class="inline-flex min-h-6 items-center underline pointer-coarse:min-h-11"
+                      class="inline-flex min-h-6 min-w-6 items-center underline"
                       >{src.label}<span class="sr-only"> (opens in a new tab)</span></a
                     >
                   </li>

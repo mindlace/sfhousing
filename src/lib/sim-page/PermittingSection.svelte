@@ -114,7 +114,7 @@
   }
 
   const btn =
-    'min-h-6 min-w-6 rounded-md border border-control-line text-ink hover:bg-surface-raised dark:border-control-line-dark dark:text-ink-dark dark:hover:bg-surface-dark-raised px-2 font-semibold disabled:opacity-40 pointer-coarse:min-h-11 pointer-coarse:min-w-11';
+    'min-h-6 min-w-6 rounded-md border border-control-line text-ink hover:bg-surface-raised dark:border-control-line-dark dark:text-ink-dark dark:hover:bg-surface-dark-raised px-2 font-semibold disabled:opacity-40';
 </script>
 
 <div class="flex flex-col gap-3 text-sm">
@@ -124,7 +124,7 @@
     >
     <select
       aria-labelledby="{uid}-preset-label"
-      class="min-h-6 rounded-md border border-control-line bg-surface px-1 font-normal text-ink dark:border-control-line-dark dark:bg-surface-dark dark:text-ink-dark pointer-coarse:min-h-11"
+      class="min-h-6 min-w-6 rounded-md border border-control-line bg-surface px-1 font-normal text-ink dark:border-control-line-dark dark:bg-surface-dark dark:text-ink-dark"
       disabled={presetLocked !== null}
       value={current.preset}
       onchange={(e) => choosePreset(e.currentTarget.value as PresetId)}
@@ -172,7 +172,7 @@
             min="0"
             max="100"
             step="1"
-            class="min-h-6 w-16 rounded-md border border-control-line bg-surface px-1 text-ink dark:border-control-line-dark dark:bg-surface-dark dark:text-ink-dark pointer-coarse:min-h-11"
+            class="min-h-6 w-16 rounded-md border border-control-line bg-surface px-1 text-ink dark:border-control-line-dark dark:bg-surface-dark dark:text-ink-dark"
             value={shares[p]}
             onchange={(e) => commitShare(p, e.currentTarget)}
           />
@@ -192,7 +192,7 @@
 
   <details class="text-xs text-ink-muted dark:text-ink-dark-muted">
     <summary
-      class="flex min-h-6 cursor-pointer items-center font-semibold text-ink dark:text-ink-dark pointer-coarse:min-h-11"
+      class="flex min-h-6 min-w-6 cursor-pointer items-center font-semibold text-ink dark:text-ink-dark"
       >Sources and tiers</summary
     >
     <div class="mt-1 flex flex-col gap-1">

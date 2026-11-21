@@ -274,15 +274,6 @@
   .k-money {
     --k: var(--k-money);
   }
-  @media (pointer: coarse) {
-    .toggle,
-    .plus {
-      min-height: 44px;
-    }
-    .plus {
-      min-width: 44px;
-    }
-  }
   @media (prefers-color-scheme: dark) {
     .lab {
       border-bottom-color: var(--color-line-dark);

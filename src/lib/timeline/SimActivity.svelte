@@ -55,7 +55,7 @@
   const uid = $props.id();
   const signed = (n: number) => `${n < 0 ? '' : '+'}${formatCount(n)}`;
   const BUTTON =
-    'inline-flex min-h-6 min-w-6 items-center rounded-md border border-control-line px-2 text-sm font-semibold text-ink hover:bg-surface-raised focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent dark:border-control-line-dark dark:text-ink-dark dark:hover:bg-surface-dark-raised dark:focus-visible:outline-accent-dark pointer-coarse:min-h-11';
+    'inline-flex min-h-6 min-w-6 items-center rounded-md border border-control-line px-2 text-sm font-semibold text-ink hover:bg-surface-raised focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent dark:border-control-line-dark dark:text-ink-dark dark:hover:bg-surface-dark-raised dark:focus-visible:outline-accent-dark';
 </script>
 
 {#snippet item(term: string, value: string)}

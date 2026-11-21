@@ -1434,7 +1434,7 @@
         <span>Some parcels didn't load —</span>
         <button
           type="button"
-          class="min-h-11 min-w-11 rounded-full px-3 font-semibold underline"
+          class="min-h-6 min-w-6 rounded-full px-3 font-semibold underline"
           onclick={() => onRetryChunks?.()}>Retry</button
         >
       </div>
@@ -1448,7 +1448,7 @@
         <span>Existing buildings couldn't load. Generated buildings still work.</span>
         <button
           type="button"
-          class="min-h-11 min-w-11 shrink-0 rounded-lg px-3 font-semibold underline"
+          class="min-h-6 min-w-6 shrink-0 rounded-lg px-3 font-semibold underline"
           aria-label="Retry existing buildings"
           onclick={retryBuildings}>Retry</button
         >
@@ -1460,7 +1460,7 @@
     <button
       type="button"
       aria-label="Reset view"
-      class="sim-map-reset absolute z-10 flex h-11 w-11 items-center justify-center rounded-md"
+      class="sim-map-reset absolute z-10 flex size-[29px] items-center justify-center rounded-md"
       onclick={resetView}
     >
       <svg aria-hidden="true" viewBox="0 0 24 24" width="22" height="22" fill="none">
@@ -1497,7 +1497,7 @@
       </div>
       <button
         type="button"
-        class="min-h-11 min-w-11 shrink-0 rounded-lg px-3 font-semibold"
+        class="min-h-6 min-w-6 shrink-0 rounded-lg px-3 font-semibold"
         onclick={clearShown}>Close</button
       >
     </div>
@@ -1526,7 +1526,7 @@
         </p>
         <button
           type="button"
-          class="min-h-11 min-w-11 rounded-lg px-4 font-semibold underline"
+          class="min-h-6 min-w-6 rounded-lg px-4 font-semibold underline"
           onclick={() => location.reload()}>Reload</button
         >
       </div>
@@ -1555,6 +1555,7 @@
     bottom: calc(var(--map-bottom-inset, 0px) + 16px);
     padding-right: 4px;
   }
+  /* Its size (29 px) is MapLibre's control button's, which it stands in for on a phone. */
   .sim-map-reset {
     left: 10px;
     bottom: calc(var(--map-bottom-inset, 0px) + 10px);
@@ -1588,26 +1589,23 @@
     }
   }
 
-  /* MapLibre controls: every target ≥ 44×44 (spec §4.11), lifted by the bottom inset. */
-  .sim-map :global(.maplibregl-ctrl-group button) {
-    width: 44px;
-    height: 44px;
-  }
+  /* MapLibre controls, lifted by the bottom inset: its own 29 px buttons and a 24 px attribution
+     button, at least 24 by 24 px on every pointer (SC 2.5.8). */
   .sim-map :global(.maplibregl-ctrl-attrib-button) {
-    width: 44px;
-    height: 44px;
-    border-radius: 22px;
+    width: 24px;
+    height: 24px;
+    border-radius: 12px;
     background-position: center;
     background-repeat: no-repeat;
   }
   .sim-map :global(.maplibregl-ctrl-attrib.maplibregl-compact) {
-    min-height: 44px;
-    padding: 0 44px 0 0;
-    border-radius: 22px;
+    min-height: 24px;
+    padding: 0 24px 0 0;
+    border-radius: 12px;
   }
   .sim-map :global(.maplibregl-ctrl-attrib.maplibregl-compact-show) {
     min-height: 20px;
-    padding: 12px 48px 12px 12px;
+    padding: 12px 28px 12px 12px;
   }
   .sim-map :global(.maplibregl-ctrl-bottom-left),
   .sim-map :global(.maplibregl-ctrl-bottom-right) {

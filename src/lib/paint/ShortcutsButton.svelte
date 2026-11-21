@@ -34,8 +34,10 @@
     open = e.newState === 'open';
     if (!open || !pop || !button) return;
     const a = button.getBoundingClientRect();
+    // In the header the button is shorter than the bar: open under the bar, not over its edge.
+    const bar = button.closest('header')?.getBoundingClientRect();
     const p = placePopover(
-      a,
+      { right: a.right, bottom: Math.max(a.bottom, bar?.bottom ?? a.bottom) },
       { width: pop.getBoundingClientRect().width },
       { width: document.documentElement.clientWidth, height: window.innerHeight }
     );
@@ -77,7 +79,7 @@
     aria-expanded={open}
     aria-controls={popId}
     popovertarget={popId}
-    class="flex min-h-11 cursor-pointer items-center rounded-md px-2 text-sm text-ink-muted underline hover:bg-surface-raised dark:text-ink-dark-muted dark:hover:bg-surface-dark-raised"
+    class="flex min-h-6 min-w-6 cursor-pointer items-center rounded-md px-2 text-sm text-ink-muted underline hover:bg-surface-raised dark:text-ink-dark-muted dark:hover:bg-surface-dark-raised"
     ><span aria-hidden="true">Shortcuts</span><span class="sr-only">Keyboard shortcuts</span
     ></button
   >

@@ -105,7 +105,7 @@
   const HOVER = 'hover:bg-surface-raised dark:hover:bg-surface-dark-raised';
   const PRIMARY =
     'bg-accent text-on-accent hover:bg-accent-hover dark:bg-accent-dark dark:text-on-accent-dark dark:hover:bg-accent-dark-hover';
-  const ICON_BUTTON = `flex size-10 shrink-0 items-center justify-center rounded-md text-ink dark:text-ink-dark pointer-coarse:size-11 ${HOVER}`;
+  const ICON_BUTTON = `flex size-10 shrink-0 items-center justify-center rounded-md text-ink dark:text-ink-dark ${HOVER}`;
 
   /** Focus lands on the face's first control: the selected tab, or the flip button. */
   function moveFocusIn(): void {
@@ -264,7 +264,7 @@
             aria-selected={selected}
             aria-controls={panelId}
             tabindex={selected ? 0 : -1}
-            class="flex min-h-12 min-w-6 flex-1 flex-col items-center justify-center gap-0.5 rounded-md px-1 py-1 text-xs font-semibold pointer-coarse:min-h-14 {selected
+            class="flex min-h-12 min-w-6 flex-1 flex-col items-center justify-center gap-0.5 rounded-md px-1 py-1 text-xs font-semibold {selected
               ? PRIMARY
               : `text-ink-muted dark:text-ink-dark-muted ${HOVER}`}"
             onclick={() => dock.showEdit(t.id)}
@@ -281,7 +281,7 @@
           type="button"
           data-testid="dock-flip"
           aria-label={flipName}
-          class="min-h-10 rounded-md px-3 text-sm font-semibold pointer-coarse:min-h-11 {PRIMARY}"
+          class="min-h-10 min-w-6 rounded-md px-3 text-sm font-semibold {PRIMARY}"
           onclick={() => onflip()}>{flipLabel}</button
         >
       </div>
@@ -366,7 +366,7 @@
         aria-label={handleName}
         aria-expanded={dock.sheet !== 'closed'}
         aria-controls={bodyId}
-        class="flex min-h-11 shrink-0 flex-col items-center justify-center gap-0.5 rounded-t-lg px-4 text-sm font-semibold {HOVER}"
+        class="flex min-h-6 min-w-6 shrink-0 flex-col items-center justify-center gap-0.5 rounded-t-lg px-4 text-sm font-semibold {HOVER}"
         onclick={pressHandle}
       >
         <span

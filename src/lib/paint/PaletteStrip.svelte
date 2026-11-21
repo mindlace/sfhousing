@@ -43,6 +43,8 @@
      * keeps its strip as it was.
      */
     onundo?: () => void;
+    /** Bound: the strip's height, px, for a control that rests above it (the map key). */
+    height?: number;
   }
 
   let {
@@ -53,7 +55,8 @@
     eraseHint,
     lift = 0,
     canUndo = false,
-    onundo = undefined
+    onundo = undefined,
+    height = $bindable(0)
   }: Props = $props();
 
   const uid = $props.id();
@@ -99,7 +102,7 @@
   }
 
   const CTL =
-    'min-h-11 min-w-11 rounded-md px-2 text-sm font-semibold text-ink enabled:hover:bg-surface-raised disabled:opacity-40 dark:text-ink-dark dark:enabled:hover:bg-surface-dark-raised';
+    'min-h-6 min-w-6 rounded-md px-2 text-sm font-semibold text-ink enabled:hover:bg-surface-raised disabled:opacity-40 dark:text-ink-dark dark:enabled:hover:bg-surface-dark-raised';
   const POP = `absolute bottom-full left-0 z-10 mb-2 w-[min(22rem,calc(100vw-2rem))] ${SURFACE_POP}`;
 </script>
 
@@ -107,6 +110,7 @@
 
 <div
   bind:this={bar}
+  bind:offsetHeight={height}
   role="group"
   aria-label="Brush"
   data-testid="palette-strip"

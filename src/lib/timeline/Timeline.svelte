@@ -486,7 +486,7 @@
     justify-content: center;
     align-items: center;
     width: 100%;
-    min-height: 44px;
+    min-height: 24px;
     border: 0;
     background: transparent;
     cursor: pointer;

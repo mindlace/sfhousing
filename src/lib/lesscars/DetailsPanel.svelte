@@ -109,9 +109,7 @@
   <p class="text-gray-700 dark:text-gray-300">{AMENITIES_COPY}</p>
 
   <details class="rounded-md border border-gray-300 dark:border-gray-600">
-    <summary class="min-h-6 cursor-pointer px-2 py-1 font-semibold pointer-coarse:min-h-11"
-      >Map key</summary
-    >
+    <summary class="min-h-6 min-w-6 cursor-pointer px-2 py-1 font-semibold">Map key</summary>
     <ul class="space-y-1 px-2 pb-2">
       {#each LESSCARS_LEGEND as row (row.id)}
         <li class="flex items-center gap-2">
@@ -163,7 +161,7 @@
 
   <button
     type="button"
-    class="min-h-6 rounded-md border border-gray-300 px-3 py-1 font-semibold dark:border-gray-600 pointer-coarse:min-h-11"
+    class="min-h-6 min-w-6 rounded-md border border-gray-300 px-3 py-1 font-semibold dark:border-gray-600"
     onclick={onevidence}>Evidence for every number</button
   >
 </div>

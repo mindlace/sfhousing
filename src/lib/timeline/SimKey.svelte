@@ -90,9 +90,7 @@
   </li>
   {#if inForce}
     <li class="sim-key-mark flex items-start gap-2" data-key-extra="mark">
-      <span class="flex min-h-6 items-center pointer-coarse:min-h-11"
-        ><KeySwatch swatch={MARK_SWATCH} /></span
-      >
+      <span class="flex min-h-6 min-w-6 items-center"><KeySwatch swatch={MARK_SWATCH} /></span>
       <Explain text={KEY_COPY.markWhy} as="button">{KEY_COPY.mark}</Explain>
     </li>
   {/if}
@@ -103,14 +101,9 @@
 </ul>
 
 <style>
-  /* The mark's button is a target: 24 px, 44 on a coarse pointer (SC 2.5.8). */
+  /* The mark's button is a target: 24 px on every pointer (SC 2.5.8). */
   .sim-key-mark :global(button) {
     min-height: 1.5rem;
-  }
-  @media (pointer: coarse) {
-    .sim-key-mark :global(button) {
-      min-height: 2.75rem;
-    }
   }
   /* The panel scrolls on y and sits at the map's right edge: the explanation is a line under the
      mark at every width, never a popover beside it. */

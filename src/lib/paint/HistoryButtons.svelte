@@ -23,7 +23,7 @@
   const redoName = $derived(redoLabel ? `Redo: ${redoLabel}` : 'Redo');
 
   const BTN =
-    'flex min-h-11 min-w-11 items-center justify-center rounded-md border border-control-line bg-surface text-ink enabled:hover:bg-surface-raised disabled:opacity-40 dark:border-control-line-dark dark:bg-surface-dark dark:text-ink-dark dark:enabled:hover:bg-surface-dark-raised';
+    'flex min-h-6 min-w-6 items-center justify-center rounded-md border border-control-line bg-surface text-ink enabled:hover:bg-surface-raised disabled:opacity-40 dark:border-control-line-dark dark:bg-surface-dark dark:text-ink-dark dark:enabled:hover:bg-surface-dark-raised';
 </script>
 
 {#snippet icon(paths: readonly string[])}

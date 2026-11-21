@@ -2,9 +2,9 @@
   The map key control (map-on-screen slice 5), shared by /sim and Paint: a toolbar at the map's
   bottom right, 8 px in and 0.5rem above the attribution's footprint
   (`--map-controls-br-block-size`, which includes the bottom inset), with a Key toggle and, when
-  the page has layer rows, a Layers toggle before it. Each opens its panel above the toolbar; at
-  most one is open. The panel's room runs from 0.5rem below the map's top down to the toolbar, and
-  it scrolls inside it. The toggles' words are fixed: status lives in the panels.
+  the page has layer rows, a Layers toggle before it. Each opens its panel 12 px above the toolbar
+  (clear of the 29 px Reset view on a phone); at most one is open. The panel's room runs from
+  0.5rem below the map's top down to the toolbar, and it scrolls inside it. The toggles' words are fixed: status lives in the panels.
 
   The control's box spans that room (the wrapper ignores the pointer; its toolbar and panel do not),
   so a page can read its left edge for the card's area. Mount it inside the map's positioned box,
@@ -118,7 +118,7 @@
   });
 
   const TOGGLE =
-    'pointer-events-auto inline-flex min-h-6 min-w-6 items-center justify-center rounded-md border border-control-line bg-surface px-2 text-xs font-semibold text-ink shadow-sm pointer-coarse:min-h-11 pointer-coarse:min-w-11 hover:bg-surface-raised aria-expanded:bg-surface-raised dark:border-control-line-dark dark:bg-surface-dark dark:text-ink-dark dark:hover:bg-surface-dark-raised dark:aria-expanded:bg-surface-dark-raised';
+    'pointer-events-auto inline-flex min-h-6 min-w-6 items-center justify-center rounded-md border border-control-line bg-surface px-2 text-xs font-semibold text-ink shadow-sm hover:bg-surface-raised aria-expanded:bg-surface-raised dark:border-control-line-dark dark:bg-surface-dark dark:text-ink-dark dark:hover:bg-surface-dark-raised dark:aria-expanded:bg-surface-dark-raised';
   const PANEL = `pointer-events-auto min-h-0 w-[min(18rem,calc(100vw-1rem))] overflow-y-auto md:w-60 ${SURFACE_POP}`;
 </script>
 
@@ -132,7 +132,7 @@
 <div
   bind:this={el}
   data-testid="map-key-control"
-  class="sfh-map-key pointer-events-none absolute top-2 right-2 z-20 flex flex-col items-end justify-end gap-1"
+  class="sfh-map-key pointer-events-none absolute top-2 right-2 z-20 flex flex-col items-end justify-end gap-3"
   style:bottom="calc(max(var(--map-controls-br-block-size, 60px), {floor}px) + 0.5rem)"
   {hidden}
   inert={hidden}

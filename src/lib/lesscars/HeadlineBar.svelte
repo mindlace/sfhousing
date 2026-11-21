@@ -68,7 +68,7 @@
 <button
   bind:this={button}
   type="button"
-  class="min-h-6 min-w-6 rounded-md border border-gray-300 px-2 text-sm font-semibold whitespace-nowrap tabular-nums dark:border-gray-600 pointer-coarse:min-h-11 pointer-coarse:min-w-11"
+  class="min-h-6 min-w-6 rounded-md border border-gray-300 px-2 text-sm font-semibold whitespace-nowrap tabular-nums dark:border-gray-600"
   aria-label={headlineName(summary, idx)}
   aria-expanded={open}
   aria-controls={detailsId}

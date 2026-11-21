@@ -52,7 +52,7 @@
       </p>
       <button
         type="button"
-        class="min-h-11 min-w-11 shrink-0 rounded-md px-2 text-sm font-semibold underline hover:bg-surface-raised dark:hover:bg-surface-dark-raised"
+        class="min-h-6 min-w-6 shrink-0 rounded-md px-2 text-sm font-semibold underline hover:bg-surface-raised dark:hover:bg-surface-dark-raised"
         onclick={() => onretry?.()}>Retry</button
       >
     </div>

@@ -59,7 +59,7 @@
        button: the button is named by it and line 2 describes it. Line 2 takes no pointer events,
        so a press on it presses the button. -->
   <div
-    class="relative flex min-h-6 min-w-6 flex-col items-start justify-center overflow-hidden rounded-md border border-gray-300 bg-surface px-2 text-sm leading-tight font-semibold whitespace-nowrap text-ink tabular-nums hover:bg-surface-raised has-[button:focus-visible]:outline-2 has-[button:focus-visible]:outline-offset-2 has-[button:focus-visible]:outline-accent dark:border-gray-600 dark:bg-surface-dark dark:text-ink-dark dark:hover:bg-surface-dark-raised dark:has-[button:focus-visible]:outline-accent-dark pointer-coarse:min-h-11 pointer-coarse:min-w-11"
+    class="relative flex min-h-6 min-w-6 flex-col items-start justify-center overflow-hidden rounded-md border border-gray-300 bg-surface px-2 text-sm leading-tight font-semibold whitespace-nowrap text-ink tabular-nums hover:bg-surface-raised has-[button:focus-visible]:outline-2 has-[button:focus-visible]:outline-offset-2 has-[button:focus-visible]:outline-accent dark:border-gray-600 dark:bg-surface-dark dark:text-ink-dark dark:hover:bg-surface-dark-raised dark:has-[button:focus-visible]:outline-accent-dark"
     data-stale={stale ? 'true' : undefined}
     data-testid="score-box"
   >

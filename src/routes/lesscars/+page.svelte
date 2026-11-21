@@ -20,14 +20,14 @@
     <div class="max-w-md text-center">
       {#if data.state === 'no-scenario'}
         <p>This dataset has no fewer-cars plan yet.</p>
-        <a href="/sim" class="mt-2 inline-flex min-h-11 items-center font-semibold underline"
+        <a href="/sim" class="mt-2 inline-flex min-h-6 min-w-6 items-center font-semibold underline"
           >Open the policy simulation</a
         >
       {:else}
         <p role="alert">The fewer-cars plan couldn't be loaded.</p>
         <button
           type="button"
-          class="mt-2 min-h-11 min-w-11 rounded-md border border-gray-300 px-3 font-semibold dark:border-gray-600"
+          class="mt-2 min-h-6 min-w-6 rounded-md border border-gray-300 px-3 font-semibold dark:border-gray-600"
           onclick={() => void invalidateAll()}>Retry</button
         >
       {/if}

@@ -123,7 +123,7 @@
             disabled={!newer}
             aria-invalid={yearsError ? 'true' : undefined}
             aria-describedby={yearsError ? `${uid}-years-error` : undefined}
-            class="min-h-6 w-20 rounded-md border border-control-line bg-surface px-2 text-ink disabled:opacity-40 dark:border-control-line-dark dark:bg-surface-dark dark:text-ink-dark pointer-coarse:min-h-11"
+            class="min-h-6 w-20 rounded-md border border-control-line bg-surface px-2 text-ink disabled:opacity-40 dark:border-control-line-dark dark:bg-surface-dark dark:text-ink-dark"
             value={yearsText}
             oninput={(e) => (yearsText = e.currentTarget.value)}
             onchange={(e) => commitYears(e.currentTarget.value)}
