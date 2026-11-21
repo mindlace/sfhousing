@@ -1512,15 +1512,7 @@
                is announced. -->
           <div role="status" data-testid="tl-goal" class="contents">
             {#if outcome && goalNotice !== null}
-              {#snippet dismissGoalButton()}
-                <button
-                  type="button"
-                  aria-label="Dismiss"
-                  class={BUTTON_QUIET}
-                  onclick={dismissGoal}>×</button
-                >
-              {/snippet}
-              <Message text={goalNotice} actions={dismissGoalButton} testid="tl-goal-notice" />
+              <Message text={goalNotice} ondismiss={dismissGoal} testid="tl-goal-notice" />
             {/if}
           </div>
         {/if}
@@ -1557,18 +1549,13 @@
                   >Retry</button
                 >
               {/snippet}
-              {#snippet dismissButton()}
-                <button
-                  type="button"
-                  aria-label="Dismiss"
-                  class={BUTTON_QUIET}
-                  onclick={() => session?.dismiss('not-applied')}>×</button
-                >
-              {/snippet}
               {#if n.id === 'error'}
                 <Message text={n.text} actions={retryButton} />
               {:else if n.id === 'not-applied'}
-                <Message text={CHANGE_NOT_APPLIED} actions={dismissButton} />
+                <Message
+                  text={CHANGE_NOT_APPLIED}
+                  ondismiss={() => session?.dismiss('not-applied')}
+                />
               {/if}
             {/each}
             {#if lotsFailed && lots === null}

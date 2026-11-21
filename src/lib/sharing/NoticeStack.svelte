@@ -11,7 +11,6 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
   import Message from '$lib/shell/Message.svelte';
-  import { BUTTON_QUIET } from '$lib/shell/ui';
 
   type Notice = { id: string; text: string; tone?: 'info' | 'toast' };
 
@@ -51,18 +50,6 @@
 
 <div role="status" aria-live="polite" data-testid="notice-stack" class="contents">
   {#each notices as n (n.id)}
-    {#snippet dismiss()}
-      <button
-        type="button"
-        aria-label="Dismiss"
-        class="{BUTTON_QUIET} flex shrink-0 items-center justify-center no-underline hover:bg-surface-raised dark:hover:bg-line-dark"
-        onclick={() => ondismiss(n.id)}
-      >
-        <svg aria-hidden="true" viewBox="0 0 16 16" width="14" height="14" fill="none">
-          <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="2" />
-        </svg>
-      </button>
-    {/snippet}
-    <Message text={n.text} actions={dismiss} testid="notice" />
+    <Message text={n.text} ondismiss={() => ondismiss(n.id)} testid="notice" />
   {/each}
 </div>

@@ -12,7 +12,6 @@
   import { goalName, type Goal } from '$lib/goal/goal';
   import { formatCount } from '$lib/scoreboard/format';
   import Message from '$lib/shell/Message.svelte';
-  import { BUTTON_QUIET } from '$lib/shell/ui';
   import {
     ACTIVITY_COPY as C,
     type ActivityItem,
@@ -93,16 +92,8 @@
            today, so the card is announced once, by it alone; nothing takes focus. -->
       <div role="status" data-testid="tl-activity-refusal" class="contents">
         {#if refusal}
-          {#snippet dismiss()}
-            <button
-              type="button"
-              aria-label="Dismiss"
-              class="{BUTTON_QUIET} flex items-center justify-center"
-              onclick={() => ondismissrefusal?.()}>×</button
-            >
-          {/snippet}
           <div class="mt-3">
-            <Message text={refusal} actions={dismiss} />
+            <Message text={refusal} ondismiss={() => ondismissrefusal?.()} />
           </div>
         {/if}
       </div>

@@ -27,7 +27,7 @@ describe('the shared parts', () => {
 
   it('TARGET is 24 px on every pointer, and every button kind carries it', () => {
     expect(classes(ui.TARGET)).toEqual(['min-h-6', 'min-w-6']);
-    for (const b of [ui.BUTTON, ui.BUTTON_PRIMARY, ui.BUTTON_QUIET]) {
+    for (const b of [ui.BUTTON, ui.BUTTON_PRIMARY, ui.BUTTON_QUIET, ui.BUTTON_DISMISS]) {
       expect(classes(b)).toEqual(expect.arrayContaining(['min-h-6', 'min-w-6']));
     }
     // One size for mouse and touch: no constant grows on a coarse pointer or sets 44 px.
@@ -35,6 +35,14 @@ describe('the shared parts', () => {
       classes(v).some((c) => /pointer-(?:coarse|fine):|(?:^|:)(?:min-)?[hw]-11$|size-11$/.test(c))
     );
     expect(grown.map(([n]) => n)).toEqual([]);
+  });
+
+  it('BUTTON_DISMISS is BUTTON_QUIET without the underline, its icon centred', () => {
+    const quiet = classes(ui.BUTTON_QUIET).filter((c) => c !== 'underline');
+    const dismiss = classes(ui.BUTTON_DISMISS);
+    expect(dismiss).toEqual(expect.arrayContaining(quiet));
+    expect(dismiss).not.toContain('underline');
+    expect(dismiss).toEqual(expect.arrayContaining(['items-center', 'justify-center']));
   });
 
   it('a disabled or aria-disabled button reads muted, with no hover and a not-allowed cursor', () => {
@@ -58,7 +66,7 @@ describe('the shared parts', () => {
   });
 
   it('every button kind shows the accent outline on focus-visible, in both themes', () => {
-    for (const b of [ui.BUTTON, ui.BUTTON_PRIMARY, ui.BUTTON_QUIET]) {
+    for (const b of [ui.BUTTON, ui.BUTTON_PRIMARY, ui.BUTTON_QUIET, ui.BUTTON_DISMISS]) {
       expect(classes(b)).toEqual(
         expect.arrayContaining([
           'focus-visible:outline-2',

@@ -19,12 +19,13 @@ geometry only, with a comment saying so.
 
 ## Buttons
 
-| Kind             | Use                                                              | Look                                                                                         |
-| ---------------- | ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| `BUTTON`         | Any other action (Cancel, Copy link, Remix's "Start your own")   | control-line border, surface, ink, text-sm semibold, rounded-md, px-2; hover one step raised |
-| `BUTTON_PRIMARY` | The page's main action (Publish, Done, Replace)                  | accent fill, on-accent text; otherwise as `BUTTON`                                           |
-| `BUTTON_QUIET`   | An action inside a message (Retry, Details, ×), a dialog's Close | no border, underlined, semibold                                                              |
-| `ON_MAP`         | Added to a button over the map                                   | a small shadow, so it reads on any map                                                       |
+| Kind             | Use                                                                   | Look                                                                                         |
+| ---------------- | --------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `BUTTON`         | Any other action (Cancel, Copy link, Remix's "Start your own")        | control-line border, surface, ink, text-sm semibold, rounded-md, px-2; hover one step raised |
+| `BUTTON_PRIMARY` | The page's main action (Publish, Done, Replace)                       | accent fill, on-accent text; otherwise as `BUTTON`                                           |
+| `BUTTON_QUIET`   | An action inside a message (Retry, Details, a link), a dialog's Close | no border, underlined, semibold                                                              |
+| `BUTTON_DISMISS` | A message's dismiss (`Message` draws it, the drawn ×)                 | as `BUTTON_QUIET` without the underline, icon centred, hover one step raised                 |
+| `ON_MAP`         | Added to a button over the map                                        | a small shadow, so it reads on any map                                                       |
 
 Every kind carries `TARGET` (`min-h-6 min-w-6`): at least 24 by 24 px on every pointer, mouse and
 touch alike, with nothing larger on a coarse pointer (the target rule is in
@@ -72,11 +73,15 @@ the same: one sentence of at most 8 words with no details is a `'chip'`; anythin
 ### `Message`
 
 `src/lib/shell/Message.svelte` renders one message in its shape. Props: `text`; `shape` (default
-`messageShape(text, !!details)`); `actions` (a snippet: its buttons are `BUTTON_QUIET`); `details`
+`messageShape(text, !!details)`); `actions` (a snippet: its buttons are `BUTTON_QUIET`);
+`ondismiss` (the one dismiss, `BUTTON_DISMISS` with the drawn × and named "Dismiss", given the
+press's event); `details`
 (a snippet shown under the text, which makes it a card); `still` (`CHIP_STILL`); `testid` (on its
 root, which carries `data-shape="chip"` or `"card"`). A chip is the text then the actions on one
-line (a chip with no action pads its right as its left); a card is the text, then the actions in a
-row under it, then the details.
+line, the dismiss last (a chip with no action pads its right as its left); a card is the text, then
+the actions in a row under it, then the details, and its dismiss sits top right on the text's first
+line, pulled into the padding so it adds no height (a card whose only action is the dismiss has no
+second row).
 
 It has no role of its own: the page keeps its `role="status"` / `role="alert"` containers
 (usually `display: contents` wrappers mounted empty), so what is announced and when does not

@@ -81,16 +81,6 @@
           onclick={() => (open[n.id] = !(open[n.id] ?? false))}>Details</button
         >
       {/if}
-      <button
-        type="button"
-        aria-label="Dismiss"
-        class="{BUTTON_QUIET} flex items-center justify-center no-underline hover:bg-surface-raised dark:hover:bg-line-dark"
-        onclick={() => ondismiss(n.id)}
-      >
-        <svg aria-hidden="true" viewBox="0 0 16 16" width="14" height="14" fill="none">
-          <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="2" />
-        </svg>
-      </button>
     {/snippet}
     {#snippet details()}
       <ul
@@ -107,8 +97,9 @@
     <div role={n.tone === 'alert' ? 'alert' : undefined} class="contents">
       <Message
         text={n.text}
-        {actions}
+        actions={n.link || hasDetails ? actions : undefined}
         details={hasDetails ? details : undefined}
+        ondismiss={() => ondismiss(n.id)}
         testid="sim-notice"
       />
     </div>

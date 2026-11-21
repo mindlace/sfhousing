@@ -33,8 +33,17 @@ export const BUTTON = `${BUTTON_BASE} ${TARGET} rounded-md border border-control
  */
 export const BUTTON_PRIMARY = `${BUTTON_BASE} ${TARGET} rounded-md bg-accent px-2 text-sm font-semibold text-on-accent hover:bg-accent-hover disabled:bg-surface-raised disabled:text-ink-muted aria-disabled:bg-surface-raised aria-disabled:text-ink-muted disabled:hover:bg-surface-raised aria-disabled:hover:bg-surface-raised dark:bg-accent-dark dark:text-on-accent-dark dark:hover:bg-accent-dark-hover dark:disabled:bg-surface-dark-raised dark:disabled:text-ink-dark-muted dark:aria-disabled:bg-surface-dark-raised dark:aria-disabled:text-ink-dark-muted dark:disabled:hover:bg-surface-dark-raised dark:aria-disabled:hover:bg-surface-dark-raised`;
 
-/** An action inside a message (Retry, Details, ×): no border, underlined, semibold, min 24 px. */
-export const BUTTON_QUIET = `${TARGET} rounded-full px-3 font-semibold underline ${FOCUS_RING}`;
+/** What BUTTON_QUIET and BUTTON_DISMISS share: no border, rounded-full, px-3, min 24 px. */
+const QUIET_BASE = `${TARGET} rounded-full px-3 font-semibold ${FOCUS_RING}`;
+
+/** An action inside a message (Retry, Details, a link): no border, underlined, semibold. */
+export const BUTTON_QUIET = `${QUIET_BASE} underline`;
+
+/**
+ * A message's dismiss (Message draws it, the drawn ×): as BUTTON_QUIET without the underline, its
+ * icon centred, one step raised on hover.
+ */
+export const BUTTON_DISMISS = `${QUIET_BASE} flex shrink-0 items-center justify-center hover:bg-surface-raised dark:hover:bg-line-dark`;
 
 /** Added to a button that sits over the map: a small shadow so it reads on any map. */
 export const ON_MAP = 'shadow-sm';
