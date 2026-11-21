@@ -1,7 +1,7 @@
 <!--
-  `/`'s plan-sharing notices (plan-sharing spec §4.5/§4.8: N1 to N3 and the Remix toast), each one
-  pill line (`PILL` in shell/pill). The page passes this as BrushEditor's `notices` snippet, so the
-  pills sit in BrushEditor's one notice stack (`NoticePills`, `fzp-notices`) after the brush status
+  `/`'s plan-sharing notices (plan-sharing spec §4.5/§4.8: N1 to N3 and the Remix toast), each a
+  `Message` (a chip or a card by its words, shell/Message). The page passes this as BrushEditor's
+  `notices` snippet, so they sit in BrushEditor's one notice stack (`NoticePills`, `fzp-notices`) after the brush status
   (sim-ux spec Goal 8): an overlay at the map's top from md that moves nothing, in flow under the
   header below md. It has no stack or placement of its own. One always-mounted polite status region
   (`display: contents`, so its empty box adds no gap in the stack, not a list): a notice added to it
@@ -10,7 +10,8 @@
 -->
 <script lang="ts">
   import { onDestroy } from 'svelte';
-  import { PILL, PILL_ACTION } from '$lib/shell/pill';
+  import Message from '$lib/shell/Message.svelte';
+  import { BUTTON_QUIET } from '$lib/shell/ui';
 
   type Notice = { id: string; text: string; tone?: 'info' | 'toast' };
 
@@ -50,18 +51,18 @@
 
 <div role="status" aria-live="polite" data-testid="notice-stack" class="contents">
   {#each notices as n (n.id)}
-    <div data-testid="notice" class="{PILL} max-w-[min(34rem,100%)]!">
-      <span class="min-w-0 flex-1 py-1">{n.text}</span>
+    {#snippet dismiss()}
       <button
         type="button"
         aria-label="Dismiss"
-        class="{PILL_ACTION} flex shrink-0 items-center justify-center no-underline hover:bg-surface-raised dark:hover:bg-line-dark"
+        class="{BUTTON_QUIET} flex shrink-0 items-center justify-center no-underline hover:bg-surface-raised dark:hover:bg-line-dark"
         onclick={() => ondismiss(n.id)}
       >
         <svg aria-hidden="true" viewBox="0 0 16 16" width="14" height="14" fill="none">
           <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="2" />
         </svg>
       </button>
-    </div>
+    {/snippet}
+    <Message text={n.text} actions={dismiss} testid="notice" />
   {/each}
 </div>

@@ -112,7 +112,8 @@
   import type { ChunkStatus, TimelinePick, TimelineUpdate } from '$lib/map/types';
   import { useHeaderActions } from '$lib/shell/header-actions.svelte';
   import NoticePills from '$lib/shell/NoticePills.svelte';
-  import { PILL, PILL_ACTION } from '$lib/shell/pill';
+  import Message from '$lib/shell/Message.svelte';
+  import { BUTTON_QUIET } from '$lib/shell/ui';
   import { spawnSimWorker } from '$lib/sim/client';
   import { MARKET_TERMS, resolveTerms } from '$lib/sim/finance';
   import type { LimitOwner } from '$lib/sim/levers/source';
@@ -194,7 +195,7 @@
      * own close, while a live region of its own sets `visibility: visible` to keep speaking.
      */
     status?: Snippet<[covered: boolean]>;
-    /** The page's own notices, first in the notice stack; each should be a `PILL`. */
+    /** The page's own notices, first in the notice stack; each should be a `Message`. */
     notices?: Snippet;
     /** The document on show; a new object after open is an edit (rule 25). */
     policy: SimPolicy4;
@@ -250,6 +251,13 @@
      * "Added: {label}". Absent (read-only), Activity offers no starters.
      */
     onstarter?(choice: AddChoice, label: string): void;
+    /**
+     * Why the last starter added nothing (a funding limit's words): a card in Activity at today.
+     * Leaving today calls `ondismissrefusal`, so it is gone when the person comes back.
+     */
+    refusal?: string | null;
+    /** The refusal's Dismiss, or the playhead left today. */
+    ondismissrefusal?(): void;
     /** Activity's Details button. Absent, it presses the header score. */
     ondetails?(): void;
     /** Details' Activity button; absent, Details has none. */
@@ -308,6 +316,8 @@
     onmiss = undefined,
     onscore = undefined,
     onstarter = undefined,
+    refusal = null,
+    ondismissrefusal = undefined,
     ondetails = undefined,
     onactivity = undefined,
     scoreExpanded = false,
@@ -416,6 +426,10 @@
   const copy = $derived(copyOf(!inForce));
   /** The playhead is at the dataset date: the headline reads today. */
   const atToday = $derived(playheadAt(months ?? [], asOf, day).atToday);
+  // A starter's refusal belongs to today: leaving today clears it.
+  $effect(() => {
+    if (!atToday && refusal !== null) untrack(() => ondismissrefusal?.());
+  });
   /**
    * The headline at the playhead's month (rule 27; OQ-3: "calculating" while provisional). It
    * reads `index` and `atToday`, never `day`, so it changes at most once per month the playhead
@@ -1409,6 +1423,8 @@
       {atToday}
       {starters}
       onstarter={(s) => onstarter?.(s.choice, s.label)}
+      {refusal}
+      {ondismissrefusal}
       ondetails={() => (ondetails ?? onscore)?.()}
       {stale}
       events={latestItems}
@@ -1464,29 +1480,31 @@
   <!-- The notice stack's host (its parent): from md the stack overlays the map's top, under the
        header. Below md the stack is in flow and this box is no box. -->
   <div class="relative flex min-h-0 flex-1 flex-col max-md:contents">
-    <!-- Every notice is a pill in this one stack (as FzpMode). -->
+    <!-- Every notice is a chip or a card (Message) in this one stack (as FzpMode). -->
     <NoticePills bind:el={pillsEl}>
       {#if noScenario}
-        <div
-          role="status"
-          data-testid="fzp-status"
-          class="{PILL} w-[min(28rem,100%)]! flex-col! items-start! gap-0! rounded-lg! pr-4 pb-0"
-        >
-          <p>
-            The simulation isn't available for dataset {datasetVersion}. It needs data this dataset
-            doesn't have.
-          </p>
-          <a href="/" class="inline-flex min-h-11 items-center font-semibold underline"
-            >Go to the editor</a
-          >
+        {#snippet editorLink()}
+          <a href="/" class="{BUTTON_QUIET} inline-flex items-center">Go to the editor</a>
+        {/snippet}
+        <div role="status" class="contents">
+          <Message
+            text="The simulation isn't available for dataset {datasetVersion}. It needs data this dataset doesn't have."
+            actions={editorLink}
+            testid="fzp-status"
+          />
         </div>
       {:else if failed}
-        <div class={PILL}>
-          <p role="alert" data-testid="fzp-status">The simulation couldn't load.</p>
-          <button type="button" class="shrink-0 {PILL_ACTION}" onclick={() => void retryLoad()}
+        {#snippet retryLoadButton()}
+          <button type="button" class="shrink-0 {BUTTON_QUIET}" onclick={() => void retryLoad()}
             >Retry</button
           >
-        </div>
+        {/snippet}
+        <Message
+          text="The simulation couldn't load."
+          actions={retryLoadButton}
+          textRole="alert"
+          textTestid="fzp-status"
+        />
       {:else}
         {#if session}
           {@render notices?.()}
@@ -1494,71 +1512,72 @@
                is announced. -->
           <div role="status" data-testid="tl-goal" class="contents">
             {#if outcome && goalNotice !== null}
-              <span class={PILL} data-testid="tl-goal-notice">
-                <span>{goalNotice}</span>
-                <button type="button" aria-label="Dismiss" class={PILL_ACTION} onclick={dismissGoal}
-                  >×</button
+              {#snippet dismissGoalButton()}
+                <button
+                  type="button"
+                  aria-label="Dismiss"
+                  class={BUTTON_QUIET}
+                  onclick={dismissGoal}>×</button
                 >
-              </span>
+              {/snippet}
+              <Message text={goalNotice} actions={dismissGoalButton} testid="tl-goal-notice" />
             {/if}
           </div>
         {/if}
         {#if phase === 'loading' && !halted}
-          <p role="status" data-testid="fzp-status" class="{PILL} pr-4">Loading the simulation…</p>
+          <div role="status" class="contents">
+            <Message text="Loading the simulation…" testid="fzp-status" />
+          </div>
         {/if}
         {#if session}
           <div role="status" data-testid="tl-notices" class="contents">
             {#each session.notices as n (n.id)}
+              {#snippet retryButton()}
+                <button type="button" class={BUTTON_QUIET} onclick={() => retryNotice(n)}
+                  >Retry</button
+                >
+              {/snippet}
               {#if n.id === 'failed-cells'}
-                <span class={PILL}>
-                  <span>Some map data didn't load.</span>
-                  <button type="button" class={PILL_ACTION} onclick={() => retryNotice(n)}
-                    >Retry</button
-                  >
-                </span>
+                <Message text="Some map data didn't load." actions={retryButton} />
               {:else if n.id === 'crash'}
                 <!-- Rule 35's wording: before the first fill nothing had run to stop. -->
-                <span class={PILL}>
-                  <span
-                    >{session.phase === 'ready'
-                      ? 'Part of the simulation stopped.'
-                      : "The simulation couldn't load."}</span
-                  >
-                  <button type="button" class={PILL_ACTION} onclick={() => retryNotice(n)}
-                    >Retry</button
-                  >
-                </span>
+                <Message
+                  text={session.phase === 'ready'
+                    ? 'Part of the simulation stopped.'
+                    : "The simulation couldn't load."}
+                  actions={retryButton}
+                />
               {/if}
             {/each}
           </div>
           <div role="alert" data-testid="tl-alerts" class="contents">
             {#each session.notices as n (n.id)}
+              {#snippet retryButton()}
+                <button type="button" class={BUTTON_QUIET} onclick={() => retryNotice(n)}
+                  >Retry</button
+                >
+              {/snippet}
+              {#snippet dismissButton()}
+                <button
+                  type="button"
+                  aria-label="Dismiss"
+                  class={BUTTON_QUIET}
+                  onclick={() => session?.dismiss('not-applied')}>×</button
+                >
+              {/snippet}
               {#if n.id === 'error'}
-                <span class={PILL}>
-                  <span>{n.text}</span>
-                  <button type="button" class={PILL_ACTION} onclick={() => retryNotice(n)}
-                    >Retry</button
-                  >
-                </span>
+                <Message text={n.text} actions={retryButton} />
               {:else if n.id === 'not-applied'}
-                <span class={PILL}>
-                  <span>{CHANGE_NOT_APPLIED}</span>
-                  <button
-                    type="button"
-                    aria-label="Dismiss"
-                    class={PILL_ACTION}
-                    onclick={() => session?.dismiss('not-applied')}>×</button
-                  >
-                </span>
+                <Message text={CHANGE_NOT_APPLIED} actions={dismissButton} />
               {/if}
             {/each}
             {#if lotsFailed && lots === null}
-              <span class={PILL} data-testid="tl-lots-failed">
-                <span>{LOTS_FAILED}</span>
-                <button type="button" class={PILL_ACTION} onclick={() => onlotsretry?.()}
+              {#snippet lotsRetry()}
+                <button type="button" class={BUTTON_QUIET} onclick={() => onlotsretry?.()}
                   >Retry</button
                 >
-              </span>
+              {/snippet}
+              <Message text={LOTS_FAILED} actions={lotsRetry} testid="tl-lots-failed" />
             {/if}
           </div>
         {/if}

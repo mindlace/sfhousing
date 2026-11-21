@@ -12,7 +12,7 @@
   names the building types and each painted height with its lots (the worker's `heightLots`,
   latest wins); hovering, focusing or pressing a height draws its lots' outline in the overlay
   mux's `outline` slot, under the brush ring in its `ring` slot. The brush status
-  line, its Retry and the page's own notices are pills in one notice stack (`NoticePills`). What a
+  line, its Retry and the page's own notices are messages (chips or cards) in one notice stack (`NoticePills`). What a
   stroke, a refusal, an undo or a redo did shows in the stroke chip, a polite status over the
   map's top (never in the stack, which is in flow on a phone), so painting never moves or resizes
   the map. The page's header score flips the dock to its Results face (`results`, the
@@ -45,7 +45,8 @@
   import type { Plan } from '$lib/plan';
   import type { Score } from '$lib/scoreboard';
   import NoticePills from '$lib/shell/NoticePills.svelte';
-  import { CHIP, PILL, PILL_ACTION } from '$lib/shell/pill';
+  import Message from '$lib/shell/Message.svelte';
+  import { BUTTON_QUIET } from '$lib/shell/ui';
   import {
     SimClient,
     spawnSimWorker,
@@ -108,7 +109,7 @@
     /** The page's Results face. */
     results?: Snippet;
     /**
-     * The page's own notices (`/`: plan sharing's), each a `PILL`, rendered after the brush status
+     * The page's own notices (`/`: plan sharing's), each a `Message`, rendered after the brush status
      * in this component's one notice stack (`NoticePills`), as FzpMode's `notices`.
      */
     notices?: Snippet;
@@ -202,8 +203,6 @@
   const statusCells = new Set<string>(); // eslint-disable-line svelte/prefer-svelte-reactivity
   let lastStats: OpStats | null = null;
   let chunks: { pending: number; failed: string[] } = { pending: 0, failed: [] };
-  /** Failed parcel cells: map-view shows its failure chip, and the stroke chip sits below it. */
-  let failedCells = $state(0);
   /** Lots the plan rebuilds (the latest score's `parcelsChanged`), for the read-only summary;
    *  null until the first diff of a load arrives, so the line never claims a false zero. */
   let rebuilt = $state<number | null>(null);
@@ -211,7 +210,6 @@
   /** Every assignment to `chunks` goes through here so `onchunks` never misses one. */
   function setChunks(next: { pending: number; failed: string[] }): void {
     chunks = next;
-    failedCells = next.failed.length;
     onchunks?.({ pending: next.pending, failed: next.failed.length });
   }
 
@@ -563,14 +561,15 @@
   <NoticePills>
     <div role="status" aria-live="polite" data-testid="brush-status" class="contents">
       {#if brush.statusText}
-        <span class="{PILL} {brush.phase === 'failed' ? '' : 'pr-4'}">
-          <span>{brush.statusText}</span>
-          {#if brush.phase === 'failed'}
-            <button type="button" class="shrink-0 {PILL_ACTION}" onclick={() => void retry()}
-              >Retry</button
-            >
-          {/if}
-        </span>
+        {#snippet retryButton()}
+          <button type="button" class="shrink-0 {BUTTON_QUIET}" onclick={() => void retry()}
+            >Retry</button
+          >
+        {/snippet}
+        <Message
+          text={brush.statusText}
+          actions={brush.phase === 'failed' ? retryButton : undefined}
+        />
       {/if}
     </div>
     {@render notices?.()}
@@ -590,20 +589,21 @@
     {/if}
 
     <!-- The stroke chip (a stroke's result, a refusal, Undid, Redid, Removed): one polite status
-         over the map's top, centred right of the dock, at the top of map-view's failure chips and
-         one row lower while one of them shows (so it never covers Retry). It takes no presses, so
-         a stroke can start under it, and never moves the map. Mounted empty (no box), so its
-         first text is announced; it clears when the announcement does. -->
+         over the map's top, centred right of the dock, 0.5rem below the lower of the notices and
+         map-view's failure column (`--map-chips-bottom`), so it never covers a Retry. Always a
+         chip, whatever its words: it takes no presses, so a stroke can start under it, and never
+         moves the map. Mounted empty (no box), so its first text is announced; it clears when the
+         announcement does. -->
     <div
       role="status"
       aria-live="polite"
       data-testid="brush-announcement"
       data-notice
       class="brush-chip pointer-events-none absolute z-20 flex w-max -translate-x-1/2 justify-center"
-      style:top="calc(var(--notice-pills-bottom, 0px) + {failedCells > 0 ? '3.5rem' : '0.5rem'})"
+      style:top="calc(max(var(--notice-pills-bottom, 0px), var(--map-chips-bottom, 0px)) + 0.5rem)"
     >
       {#if brush.announcement}
-        <span data-testid="stroke-chip" class={CHIP}>{brush.announcement}</span>
+        <Message text={brush.announcement} shape="chip" still testid="stroke-chip" />
       {/if}
     </div>
 

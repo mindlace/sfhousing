@@ -339,6 +339,36 @@
     fpObserver = null;
   }
 
+  // ---- the failure column's bottom (docs/dev/map-interfaces.md) ---------------------------------
+  const CHIPS_BOTTOM = '--map-chips-bottom';
+  let chipsCol = $state<HTMLElement>();
+
+  /**
+   * Publishes `--map-chips-bottom` on :root and the map root: integer px from the map root's top
+   * to the failure column's bottom, `0px` while neither failure shows. A ResizeObserver on the
+   * column's border box measures it: its top offset is padding, so a move with the notices
+   * resizes it too. Never measured on map move.
+   */
+  $effect(() => {
+    const col = chipsCol;
+    const r = root;
+    if (!col || !r) return;
+    const publish = () => {
+      const shown = col.childElementCount > 0;
+      const px = shown
+        ? Math.ceil(col.getBoundingClientRect().bottom - r.getBoundingClientRect().top)
+        : 0;
+      for (const el of [document.documentElement, r]) el.style.setProperty(CHIPS_BOTTOM, `${px}px`);
+    };
+    publish();
+    const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(publish);
+    ro?.observe(col, { box: 'border-box' });
+    return () => {
+      ro?.disconnect();
+      for (const el of [document.documentElement, r]) el.style.removeProperty(CHIPS_BOTTOM);
+    };
+  });
+
   export function getMap(): MapLibreMap | null {
     return live?.map ?? null;
   }
@@ -1383,40 +1413,48 @@
   {/if}
   <p class="sr-only" aria-live="polite">{loadingSlow ? 'Loading buildings…' : ''}</p>
 
-  <!-- The failure chips sit at the top centre of the map the dock leaves uncovered (`--dock-w`,
-       published by the Dock from md, as the notice pills centre), below the page's notice pills
-       when they overlay the map (`--notice-pills-bottom`, published by NoticePills from md; see
-       map-interfaces.md). -->
-  {#if chunkError && mapState === 'ready'}
-    <div
-      role="status"
-      class="sim-map-panel sim-map-chip absolute z-10 flex w-max -translate-x-1/2 items-center gap-1 rounded-full pl-4 text-sm"
-      style:top="calc(var(--notice-pills-bottom, 0px) + 0.5rem)"
-    >
-      <span>Some parcels didn't load —</span>
-      <button
-        type="button"
-        class="min-h-11 min-w-11 rounded-full px-3 font-semibold underline"
-        onclick={() => onRetryChunks?.()}>Retry</button
+  <!-- The failure messages: one column at the top centre of the map the dock leaves uncovered
+       (`--dock-w`, published by the Dock from md, as the notice stack centres), below the page's
+       notices when they overlay the map (`--notice-pills-bottom`, published by NoticePills from
+       md), so neither covers the other. Parcels' one line is a chip, buildings' sentence a card;
+       both keep the map palette (/lesscars shares them). The column's top offset is its padding,
+       so its border box (which publishes `--map-chips-bottom`) moves with the notices; see
+       map-interfaces.md. -->
+  <div
+    bind:this={chipsCol}
+    data-testid="sim-map-chips"
+    class="sim-map-chip pointer-events-none absolute top-0 z-10 flex w-max -translate-x-1/2 flex-col items-center gap-2"
+    style:padding-top="calc(var(--notice-pills-bottom, 0px) + 0.5rem)"
+  >
+    {#if chunkError && mapState === 'ready'}
+      <div
+        role="status"
+        class="sim-map-panel pointer-events-auto flex w-max max-w-full items-center gap-1 rounded-full pl-4 text-sm"
       >
-    </div>
-  {/if}
+        <span>Some parcels didn't load —</span>
+        <button
+          type="button"
+          class="min-h-11 min-w-11 rounded-full px-3 font-semibold underline"
+          onclick={() => onRetryChunks?.()}>Retry</button
+        >
+      </div>
+    {/if}
 
-  {#if buildingsFailed && mapState === 'ready'}
-    <div
-      role="status"
-      class="sim-map-panel sim-map-chip absolute z-10 flex w-max -translate-x-1/2 items-center gap-1 rounded-lg pl-4 text-sm"
-      style:top="calc(var(--notice-pills-bottom, 0px) + 4rem)"
-    >
-      <span>Existing buildings couldn't load. Generated buildings still work.</span>
-      <button
-        type="button"
-        class="min-h-11 min-w-11 shrink-0 rounded-lg px-3 font-semibold underline"
-        aria-label="Retry existing buildings"
-        onclick={retryBuildings}>Retry</button
+    {#if buildingsFailed && mapState === 'ready'}
+      <div
+        role="status"
+        class="sim-map-panel pointer-events-auto flex w-max max-w-full items-center gap-1 rounded-lg pl-4 text-sm"
       >
-    </div>
-  {/if}
+        <span>Existing buildings couldn't load. Generated buildings still work.</span>
+        <button
+          type="button"
+          class="min-h-11 min-w-11 shrink-0 rounded-lg px-3 font-semibold underline"
+          aria-label="Retry existing buildings"
+          onclick={retryBuildings}>Retry</button
+        >
+      </div>
+    {/if}
+  </div>
 
   {#if coarse && mapState === 'ready'}
     <button

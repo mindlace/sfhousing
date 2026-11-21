@@ -7,7 +7,7 @@ import { expect, test, type Locator, type Page } from '@playwright/test';
 import type { SfhFzpDebug } from '../src/lib/fzp/debug';
 import { expectNoA11yViolations } from './helpers/a11y';
 import { addPolicy, slider, waitFilled } from './helpers/run';
-import type { Win } from './helpers/sharing';
+import { gotoHydrated, openHeaderMenu, type Win } from './helpers/sharing';
 
 type FzpWin = Win & { __sfhFzp?: SfhFzpDebug };
 
@@ -229,6 +229,47 @@ test('a transit rule from today: a listed project under it carries the mark', as
   // The glyph is hidden from AT; the words say it.
   await expect(item.locator('[aria-hidden=true]')).toHaveText('◆');
   await expect(item.locator('.sr-only')).toHaveText('Under your policy');
+});
+
+/** A client navigation to /sim from /about, so the browser fetches what a route can fail. */
+async function simFromAbout(page: Page): Promise<void> {
+  await gotoHydrated(page, '/about');
+  await openHeaderMenu(page);
+  await page.getByRole('banner').getByRole('link', { name: 'Simulate', exact: true }).click();
+  await expect(page).toHaveURL(/\/sim$/);
+}
+const radius = (loc: Locator) =>
+  loc.evaluate((el) => parseFloat(getComputedStyle(el).borderTopLeftRadius));
+
+test('the no-scenario message is a card; a load failure is a chip with Retry', async ({ page }) => {
+  await page.route('**/manifest.json', async (route) => {
+    const response = await route.fetch();
+    const manifest = (await response.json()) as Record<string, unknown>;
+    delete manifest.scenarios;
+    await route.fulfill({ response, json: manifest });
+  });
+  await simFromAbout(page);
+  const status = page.getByTestId('fzp-status');
+  await expect(status).toContainText("isn't available for dataset fixture-0");
+  await expect(status).toHaveAttribute('data-shape', 'card');
+  expect(await radius(status)).toBe(8);
+  // The link sits under the words.
+  const link = status.getByRole('link', { name: 'Go to the editor' });
+  const words = status.getByText(/isn't available/);
+  expect((await link.boundingBox())!.y).toBeGreaterThanOrEqual(
+    (await words.boundingBox())!.y + (await words.boundingBox())!.height
+  );
+
+  await page.unroute('**/manifest.json');
+  await page.route('**/scenarios/fzp/calibration.json', (route) => route.fulfill({ status: 500 }));
+  await simFromAbout(page);
+  const failed = page.getByTestId('fzp-status');
+  await expect(failed).toHaveText("The simulation couldn't load.");
+  await expect(failed).toHaveAttribute('role', 'alert');
+  const chip = page.locator('[data-shape=chip]').filter({ has: failed });
+  await expect(chip).toHaveCount(1);
+  expect(await radius(chip)).toBeGreaterThan(8);
+  await expect(chip.getByRole('button', { name: 'Retry', exact: true })).toBeVisible();
 });
 
 for (const scheme of ['light', 'dark'] as const) {

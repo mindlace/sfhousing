@@ -81,7 +81,9 @@
       id={popId}
       hidden={!popOpen}
       class={[
-        'absolute top-full z-20 mt-1 w-64 max-w-[calc(100vw-2rem)]',
+        // z-40: above the messages over the map (the notices, the failure column and the stroke
+        // chip, z-10 to z-30), which come later in the page.
+        'absolute top-full z-40 mt-1 w-64 max-w-[calc(100vw-2rem)]',
         SURFACE_POP,
         align === 'start' ? 'left-0' : 'right-0'
       ]}

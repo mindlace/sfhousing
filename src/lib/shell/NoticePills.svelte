@@ -1,6 +1,6 @@
 <!--
-  The notice stack: every notice on `/`, `/p/:id`, `/sim` and `/s/<id>` is a pill (`PILL` in
-  ./pill) in this column, one stack per page. From md it overlays the map's top, centred over the
+  The notice stack: every notice on `/`, `/p/:id`, `/sim` and `/s/<id>` is a chip or a card
+  (`Message`) in this column, one stack per page. From md it overlays the map's top, centred over the
   map right of the dock (`--dock-w`: the open panel or the rail), and takes no space, so a notice
   never moves the dock, the time bar or the map inset. The container lets clicks through to the
   map; each pill takes them. Below md it sits in flow under the header, full width, and pushes the

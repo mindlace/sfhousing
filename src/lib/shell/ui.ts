@@ -54,11 +54,11 @@ export const SURFACE_DIALOG_FLUSH =
 /** A modal dialog: rounded-lg, surface, ink, shadow-xl, p-4, a 40% black backdrop. */
 export const SURFACE_DIALOG = `${SURFACE_DIALOG_FLUSH} p-4`;
 
-/** A few words (today's PILL): rounded-full, one line, surface-raised in dark, shadow, text-sm. */
+/** A few words: rounded-full, one line, surface-raised in dark, shadow, text-sm. */
 export const CHIP =
   'pointer-events-auto flex w-max max-w-full items-center gap-1 rounded-full border border-line bg-surface py-1 pr-1 pl-4 text-sm text-ink shadow dark:border-line-dark dark:bg-surface-dark-raised dark:text-ink-dark';
 
-/** A chip that takes no presses (the stroke chip; today's CHIP). */
+/** A chip that takes no presses (the stroke chip), with even padding (it has no action). */
 export const CHIP_STILL =
   'pointer-events-none flex w-max max-w-full items-center gap-1 rounded-full border border-line bg-surface py-1 pr-4 pl-4 text-sm text-ink shadow dark:border-line-dark dark:bg-surface-dark-raised dark:text-ink-dark';
 

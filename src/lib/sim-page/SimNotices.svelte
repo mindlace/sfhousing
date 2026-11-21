@@ -1,8 +1,8 @@
 <!--
   The /sim session notices (plan 5, Task 5; timeline-ui Task 14): the autosave restore (N1 to N3
   in the policy wording), funding, the timelines refit, moved dates, "upgraded", and the Remix
-  toast. Each is one pill line (compact UI, `PILL`
-  in shell/pill): a "Details" disclosure holds a list, a link goes where the notice says. Rendered
+  toast. Each is a `Message` (shell/Message): a notice with details is a card, whose "Details"
+  disclosure holds a list; a link goes where the notice says. Rendered
   in TimelineMode's notice stack (`NoticePills`): an overlay at the map's top from md that moves
   nothing, in flow under the header below md. One always-mounted polite status region
   (`display: contents`, so its empty box adds no gap in the stack): a notice
@@ -13,7 +13,8 @@
 -->
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
-  import { PILL, PILL_ACTION } from '$lib/shell/pill';
+  import Message from '$lib/shell/Message.svelte';
+  import { BUTTON_QUIET } from '$lib/shell/ui';
   import type { SimNotice4 } from '$lib/timeline/session4';
 
   let { notices, ondismiss }: { notices: SimNotice4[]; ondismiss: (id: SimNotice4['id']) => void } =
@@ -66,50 +67,50 @@
 
 <div role="status" aria-live="polite" data-testid="sim-notices" class="contents">
   {#each shown as n (n.id)}
-    <!-- A notice with its details open is a card: a list does not fit a full-radius pill. -->
-    <div
-      data-testid="sim-notice"
-      role={n.tone === 'alert' ? 'alert' : undefined}
-      class="{PILL} max-w-[min(34rem,100%)]! {n.details && n.details.length > 0 && open[n.id]
-        ? 'flex-col! items-stretch! rounded-2xl!'
-        : ''}"
-    >
-      <div class="flex items-center gap-1">
-        <span class="min-w-0 flex-1 py-1">{n.text}</span>
-        {#if n.link}
-          <a href={n.link.href} class="{PILL_ACTION} inline-flex items-center">{n.link.label}</a>
-        {/if}
-        {#if n.details && n.details.length > 0}
-          <button
-            type="button"
-            class={PILL_ACTION}
-            aria-expanded={open[n.id] ?? false}
-            aria-controls="{uid}-{n.id}-details"
-            onclick={() => (open[n.id] = !(open[n.id] ?? false))}>Details</button
-          >
-        {/if}
+    {@const hasDetails = !!n.details && n.details.length > 0}
+    {#snippet actions()}
+      {#if n.link}
+        <a href={n.link.href} class="{BUTTON_QUIET} inline-flex items-center">{n.link.label}</a>
+      {/if}
+      {#if hasDetails}
         <button
           type="button"
-          aria-label="Dismiss"
-          class="{PILL_ACTION} flex items-center justify-center no-underline hover:bg-surface-raised dark:hover:bg-line-dark"
-          onclick={() => ondismiss(n.id)}
+          class={BUTTON_QUIET}
+          aria-expanded={open[n.id] ?? false}
+          aria-controls="{uid}-{n.id}-details"
+          onclick={() => (open[n.id] = !(open[n.id] ?? false))}>Details</button
         >
-          <svg aria-hidden="true" viewBox="0 0 16 16" width="14" height="14" fill="none">
-            <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="2" />
-          </svg>
-        </button>
-      </div>
-      {#if n.details && n.details.length > 0}
-        <ul
-          id="{uid}-{n.id}-details"
-          hidden={!(open[n.id] ?? false)}
-          class="mb-1 list-disc pr-2 pl-4 text-xs text-ink-muted dark:text-ink-dark-muted"
-        >
-          {#each n.details as d (d)}
-            <li>{d}</li>
-          {/each}
-        </ul>
       {/if}
+      <button
+        type="button"
+        aria-label="Dismiss"
+        class="{BUTTON_QUIET} flex items-center justify-center no-underline hover:bg-surface-raised dark:hover:bg-line-dark"
+        onclick={() => ondismiss(n.id)}
+      >
+        <svg aria-hidden="true" viewBox="0 0 16 16" width="14" height="14" fill="none">
+          <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="2" />
+        </svg>
+      </button>
+    {/snippet}
+    {#snippet details()}
+      <ul
+        id="{uid}-{n.id}-details"
+        hidden={!(open[n.id] ?? false)}
+        class="list-disc pr-2 pl-4 text-xs text-ink-muted dark:text-ink-dark-muted"
+      >
+        {#each n.details ?? [] as d (d)}
+          <li>{d}</li>
+        {/each}
+      </ul>
+    {/snippet}
+    <!-- A notice with details is a card: its list does not fit a chip's one line. -->
+    <div role={n.tone === 'alert' ? 'alert' : undefined} class="contents">
+      <Message
+        text={n.text}
+        {actions}
+        details={hasDetails ? details : undefined}
+        testid="sim-notice"
+      />
     </div>
   {/each}
 </div>

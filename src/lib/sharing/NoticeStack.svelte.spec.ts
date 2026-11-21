@@ -65,6 +65,22 @@ describe('NoticeStack', () => {
     expect(ondismiss).toHaveBeenCalledTimes(1);
   });
 
+  it('a paragraph notice is a card; a one-line notice is a chip', async () => {
+    render(NoticeStack, {
+      notices: [
+        { id: 'n1', text: "Your saved plan couldn't be read. The old data was kept." },
+        { id: 'remix', text: 'Remixed', tone: 'toast' }
+      ],
+      ondismiss: () => {}
+    });
+    await expect.element(page.getByText('Remixed')).toBeVisible();
+    const [card, chip] = [...document.querySelectorAll('[data-testid="notice"]')];
+    expect(card.getAttribute('data-shape')).toBe('card');
+    expect(chip.getAttribute('data-shape')).toBe('chip');
+    // Each keeps its Dismiss.
+    expect(page.getByRole('button', { name: 'Dismiss' }).elements()).toHaveLength(2);
+  });
+
   it('a toast auto-dismisses after 8 s; an info notice does not', async () => {
     vi.useFakeTimers();
     const ondismiss = vi.fn();
@@ -104,7 +120,7 @@ describe('NoticeStack', () => {
     });
     await vi.advanceTimersByTimeAsync(50);
     expect(text('Rebased notice')).toBe(true);
-    // Exactly one notice stack on the page, and both notices are pills inside it, after the brush
+    // Exactly one notice stack on the page, and both notices are chips inside it, after the brush
     // status; no stack of NoticeStack's own and no toolbar placement.
     const stacks = document.querySelectorAll('[data-testid="fzp-notices"]');
     expect(stacks).toHaveLength(1);

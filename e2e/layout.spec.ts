@@ -11,13 +11,17 @@ import { COPY } from '../src/lib/sharing/copy';
 import { expectNoA11yViolations } from './helpers/a11y';
 import { expectAboutReachable, expectNoFooter, expectPhoneHeaderFits } from './helpers/chrome';
 import {
+  FRAME,
+  FROM,
   PLAN_KEY,
+  TO,
   TOUCH_FROM,
   TOUCH_TO,
   chooseTool,
   gotoEditor,
   headerScore,
   jumpAndIdle,
+  mouseDrag,
   openHeaderMenu,
   ops,
   projectToPage,
@@ -48,8 +52,8 @@ async function showZoomHint(page: Page): Promise<void> {
   await expect(statusLine(page)).toHaveText(MSG.zoomIn);
 }
 
-/** The status pill (the status region itself is `display: contents`). */
-const statusPill = (page: Page): Locator => statusLine(page).locator(':scope > span');
+/** The status chip (the status region itself is `display: contents`). */
+const statusPill = (page: Page): Locator => statusLine(page).locator(':scope > *');
 
 /**
  * Seeds an unparsable autosave before the first load, so restore shows N1 (as
@@ -758,5 +762,118 @@ test.describe('account entry', () => {
         await expectNoA11yViolations(page);
       });
     }
+  });
+});
+
+// ---- several messages over the map at once (Review Focus 3) -----------------------------------
+
+const CHUNK_50_25 = '**/data/fixture-0/parcels/50_25.json';
+const BUILDINGS_FILE = '**/data/fixture-0/buildings.pmtiles';
+const parcelsChip = (page: Page): Locator =>
+  page.getByRole('status').filter({ hasText: "Some parcels didn't load —" });
+const buildingsCard = (page: Page): Locator =>
+  page.getByRole('status').filter({ hasText: "Existing buildings couldn't load." });
+
+/** `/` with both map failures (the parcels chunk and the buildings file 500) and a stroke's chip. */
+async function twoFailuresAndAStroke(page: Page, isMobile: boolean, width: number): Promise<void> {
+  await page.route(CHUNK_50_25, (r) => r.fulfill({ status: 500 }));
+  await page.route(BUILDINGS_FILE, (r) => r.fulfill({ status: 500 }));
+  await gotoEditor(page);
+  await jumpAndIdle(page);
+  if (isMobile) {
+    await chooseTool(page, 'Paint');
+    await jumpAndIdle(page);
+    const cdp = await page.context().newCDPSession(page);
+    await touchDrag(
+      cdp,
+      await projectToPage(page, TOUCH_FROM),
+      await projectToPage(page, TOUCH_TO)
+    );
+  } else {
+    // From 768 the dock takes the map's left: centre the stroke in the map right of it.
+    if (width < 1024) await jumpAndIdle(page, { ...FRAME, center: [-122.4201, 37.76014] });
+    await mouseDrag(page, FROM, TO);
+  }
+  await expect.poll(() => ops(page)).toBe(1);
+  await expect(parcelsChip(page)).toBeVisible();
+  await expect(buildingsCard(page)).toBeVisible();
+  await expect(page.getByTestId('stroke-chip')).toBeVisible();
+}
+
+test.describe('messages over the map', () => {
+  for (const width of [375, 768, 1280]) {
+    test(`/: two failures and a stroke chip: no box overlaps another, at ${width}`, async ({
+      page,
+      isMobile
+    }) => {
+      // eslint-disable-next-line playwright/no-skipped-test
+      test.skip(isMobile !== (width === 375), 'the mobile project is 375 px wide');
+      await page.setViewportSize({ width, height: 800 });
+      await twoFailuresAndAStroke(page, isMobile, width);
+      // The failures stack: the buildings card starts under the parcels chip.
+      const p = await box(parcelsChip(page));
+      expect((await box(buildingsCard(page))).y).toBeGreaterThanOrEqual(p.y + p.height);
+      const messages: [string, Locator][] = [
+        ['parcels chip', parcelsChip(page)],
+        ['buildings card', buildingsCard(page)],
+        ['stroke chip', page.getByTestId('stroke-chip')]
+      ];
+      // Each message against the others, the attribution and the map toolbar.
+      for (let i = 0; i < messages.length; i++) {
+        await expectApart(
+          [messages[i]],
+          [
+            ...messages.slice(i + 1),
+            ['attribution', attribution(page)],
+            ['Key', page.getByTestId('map-key-toggle')],
+            ['Layers', page.getByTestId('map-layers-toggle')]
+          ]
+        );
+      }
+      // Both Retry buttons are pressable where they are drawn.
+      for (const [, loc] of messages.slice(0, 2)) await expectUnobscured(loc.getByRole('button'));
+    });
+  }
+
+  test('375: the stroke chip never covers the Autosave off popover', async ({ page, isMobile }) => {
+    // eslint-disable-next-line playwright/no-skipped-test
+    test.skip(!isMobile, 'mobile only');
+    await page.addInitScript(() => {
+      Storage.prototype.setItem = () => {
+        throw new DOMException('refused', 'QuotaExceededError');
+      };
+    });
+    await gotoEditor(page);
+    await jumpAndIdle(page);
+    await chooseTool(page, 'Paint');
+    await jumpAndIdle(page);
+    const cdp = await page.context().newCDPSession(page);
+    await touchDrag(
+      cdp,
+      await projectToPage(page, TOUCH_FROM),
+      await projectToPage(page, TOUCH_TO)
+    );
+    await expect.poll(() => ops(page)).toBe(1);
+    const off = page
+      .getByRole('banner')
+      .getByRole('button', { name: COPY.autosaveOff, exact: true });
+    await off.click();
+    const pop = page.getByRole('banner').getByText(COPY.n4);
+    await expect(pop).toBeVisible();
+    const chip = page.getByTestId('stroke-chip');
+    await expect(chip).toBeVisible();
+    // The chip takes no presses, so hit testing skips it: let it take them, then every point of
+    // the popover's text must hit the popover (painted on top), not the chip.
+    await chip.evaluate((el) => (el.style.pointerEvents = 'auto'));
+    const hits = await pop.evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      const pts: [number, number][] = [];
+      for (const fx of [0.1, 0.5, 0.9]) for (const fy of [0.1, 0.5, 0.9]) pts.push([fx, fy]);
+      return pts.map(([fx, fy]) => {
+        const top = document.elementFromPoint(r.left + r.width * fx, r.top + r.height * fy);
+        return !!top && el.contains(top);
+      });
+    });
+    expect(hits.every(Boolean), JSON.stringify(hits)).toBe(true);
   });
 });

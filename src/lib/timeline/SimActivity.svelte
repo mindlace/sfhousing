@@ -11,6 +11,8 @@
   import { CALCULATING } from '$lib/fzp/copy';
   import { goalName, type Goal } from '$lib/goal/goal';
   import { formatCount } from '$lib/scoreboard/format';
+  import Message from '$lib/shell/Message.svelte';
+  import { BUTTON_QUIET } from '$lib/shell/ui';
   import {
     ACTIVITY_COPY as C,
     type ActivityItem,
@@ -31,6 +33,10 @@
     stale: boolean;
     /** The latest stage changes up to the playhead, newest first (after today). */
     events?: ActivityItem[];
+    /** Why the last starter added nothing: a card under the starters at today while set. */
+    refusal?: string | null;
+    /** The refusal card's Dismiss. */
+    ondismissrefusal?: () => void;
   }
 
   let {
@@ -41,7 +47,9 @@
     onstarter,
     ondetails,
     stale,
-    events = []
+    events = [],
+    refusal = null,
+    ondismissrefusal = undefined
   }: Props = $props();
 
   const uid = $props.id();
@@ -81,6 +89,23 @@
       {:else}
         <p class="mt-3">{C.play}</p>
       {/if}
+      <!-- A refused starter's words, as the "+" menu says them. The region is mounted empty at
+           today, so the card is announced once, by it alone; nothing takes focus. -->
+      <div role="status" data-testid="tl-activity-refusal" class="contents">
+        {#if refusal}
+          {#snippet dismiss()}
+            <button
+              type="button"
+              aria-label="Dismiss"
+              class="{BUTTON_QUIET} flex items-center justify-center"
+              onclick={() => ondismissrefusal?.()}>×</button
+            >
+          {/snippet}
+          <div class="mt-3">
+            <Message text={refusal} actions={dismiss} />
+          </div>
+        {/if}
+      </div>
     {:else if totals}
       <dl class="flex flex-col gap-1" data-testid="tl-totals">
         {@render item(C.approved, formatCount(totals.approved))}

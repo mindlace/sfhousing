@@ -56,3 +56,24 @@ opens under its target. `ui.spec.ts` keeps both in step with the constant.
 `messageShape(text, details?)` picks the shape from the words, so the same message always looks
 the same: one sentence of at most 8 words with no details is a `'chip'`; anything else is a
 `'card'`.
+
+### `Message`
+
+`src/lib/shell/Message.svelte` renders one message in its shape. Props: `text`; `shape` (default
+`messageShape(text, !!details)`); `actions` (a snippet: its buttons are `BUTTON_QUIET`); `details`
+(a snippet shown under the text, which makes it a card); `still` (`CHIP_STILL`); `testid` (on its
+root, which carries `data-shape="chip"` or `"card"`). A chip is the text then the actions on one
+line (a chip with no action pads its right as its left); a card is the text, then the actions in a
+row under it, then the details.
+
+It has no role of its own: the page keeps its `role="status"` / `role="alert"` containers
+(usually `display: contents` wrappers mounted empty), so what is announced and when does not
+change. `textRole` and `textTestid` put a role and test id on the words alone, for a page whose
+live region is the words without the actions (`/sim`'s load failure alert).
+
+Every notice on the four map pages is a `Message`: the notice stack (`NoticePills`) on `/sim`
+(TimelineMode's notices, `SimNotices`) and on `/` and `/p/:id` (the brush status, `NoticeStack`),
+the stroke chip (always `shape="chip"` and `still`, whatever its words: a stroke can start under
+it), and Activity's refused starter (a card). Map-view's failure messages keep the map palette
+(`.sim-map-panel`, shared with `/lesscars`) but follow the same shapes: parcels' one line is
+rounded-full, buildings' sentence rounded-lg ([map-interfaces.md](map-interfaces.md)).

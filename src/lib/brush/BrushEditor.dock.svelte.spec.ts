@@ -13,7 +13,7 @@ import { DockState } from '$lib/dock/dock-state.svelte';
 import { callsOf, stub } from '$lib/fzp/test/sim-map-stub';
 import { OUTLINE_LAYER_ID } from '$lib/paint/outline-layers';
 import { OPS_MAX, emptyPlan, type Plan, type PlanOp } from '$lib/plan';
-import { PILL } from '$lib/shell/pill';
+import { CHIP } from '$lib/shell/ui';
 import type { GeneratedUpdate } from '$lib/map/types';
 import type { Score } from '$lib/scoreboard';
 import manifestJson from '../../../e2e/fixtures/data/fixture-0/manifest.json';
@@ -247,7 +247,7 @@ describe('BrushEditor on the dock', () => {
 
   it("the status line and Retry are pills in the notice stack, together with the page's `notices` snippet in one `fzp-notices`", async () => {
     const notices = createRawSnippet(() => ({
-      render: () => `<p class="${PILL}" data-testid="page-notice">Page notice</p>`
+      render: () => `<p class="${CHIP}" data-testid="page-notice">Page notice</p>`
     }));
     const { w } = await setup({ notices });
     const stacks = () => document.querySelectorAll('[data-testid="fzp-notices"]');
@@ -337,19 +337,28 @@ describe('BrushEditor on the dock', () => {
     }
   });
 
-  it('the chip sits a row lower while a failure chip shows', async () => {
+  it("the chip sits below map-view's failure column (--map-chips-bottom) and the notices", async () => {
     const { w } = await setup();
     await ready(w);
     const region = announcement().element();
     const host = document.querySelector<HTMLElement>('.brush-editor')!;
-    const pillsBottom = () =>
-      parseFloat(getComputedStyle(host).getPropertyValue('--notice-pills-bottom') || '0');
-    const offset = () => parseFloat(getComputedStyle(region).top) - pillsBottom();
-    await expect.poll(offset).toBe(8);
-    w.emit({ type: 'chunks', status: { '50_25': 'error' }, pending: 0, failed: ['50_25'] });
-    await expect.poll(offset).toBe(56);
-    w.emit({ type: 'chunks', status: { '50_25': 'ready' }, pending: 0, failed: [] });
-    await expect.poll(offset).toBe(8);
+    const top = () => parseFloat(getComputedStyle(region).top);
+    const root = document.documentElement.style;
+    try {
+      host.style.setProperty('--notice-pills-bottom', '30px');
+      await expect.poll(top).toBe(38);
+      // SimMap publishes the failure column's bottom: the chip goes 8 px under it.
+      root.setProperty('--map-chips-bottom', '120px');
+      await expect.poll(top).toBe(128);
+      // Whichever is lower wins.
+      host.style.setProperty('--notice-pills-bottom', '200px');
+      await expect.poll(top).toBe(208);
+      root.setProperty('--map-chips-bottom', '0px');
+      host.style.setProperty('--notice-pills-bottom', '0px');
+      await expect.poll(top).toBe(8);
+    } finally {
+      root.removeProperty('--map-chips-bottom');
+    }
   });
 
   it('a refused stroke shows the refusal in the chip, for 6 s', async () => {

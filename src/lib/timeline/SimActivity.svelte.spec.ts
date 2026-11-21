@@ -7,6 +7,7 @@ import '../../routes/layout.css';
 import { GOAL, goalName } from '$lib/goal/goal';
 import { formatDollars } from '$lib/fzp/format';
 import type { ActivityItem, ActivityTotals, Starter } from './activity-view';
+import { limitAlert } from '$lib/sim-page/funding-copy';
 import SimActivity from './SimActivity.svelte';
 
 const STARTERS: Starter[] = [
@@ -150,6 +151,30 @@ describe('SimActivity', () => {
     expect(p.ondetails).toHaveBeenCalledOnce();
     await page.getByRole('button', { name: 'SB 423 approval clock' }).click();
     expect(p.onstarter).toHaveBeenCalledExactlyOnceWith(STARTERS[1]);
+  });
+
+  it('a refusal shows as a card under the starters with the limit words', async () => {
+    const words = limitAlert('pools');
+    const ondismissrefusal = vi.fn();
+    const r = await renderAtRest(props({ refusal: null, ondismissrefusal }));
+    // The polite region is there, empty, before any refusal.
+    const region = page.getByTestId('tl-activity-refusal');
+    await expect.element(region).toHaveAttribute('role', 'status');
+    expect(region.element().textContent!.trim()).toBe('');
+    await r.rerender(props({ refusal: words, ondismissrefusal }));
+    const card = region.element().querySelector('[data-shape]')!;
+    await expect.element(region).toHaveTextContent(words);
+    expect(card.getAttribute('data-shape')).toBe('card');
+    // Under the starters, and its own words only: no second live region inside it.
+    const list = page.getByRole('list', { name: 'Try one:' }).element();
+    expect(list.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(card.querySelector('[role], [aria-live]')).toBeNull();
+    // It does not take focus.
+    expect(card.contains(document.activeElement)).toBe(false);
+    await region.getByRole('button', { name: 'Dismiss' }).click();
+    expect(ondismissrefusal).toHaveBeenCalledOnce();
+    await r.rerender(props({ refusal: words, atToday: false, totals: TOTALS }));
+    expect(page.getByText(words).elements()).toHaveLength(0);
   });
 
   it('starters and Details are 24 px targets at least', async () => {

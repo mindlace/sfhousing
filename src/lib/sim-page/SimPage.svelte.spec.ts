@@ -1630,8 +1630,8 @@ describe('SimPage autosave and publish', () => {
       await expect.element(starter).toBeVisible();
     });
 
-    it('a starter a funding limit refuses adds nothing and announces the limit', async () => {
-      // The pool limit filled by policies that are off: nothing is in force, so starters show.
+    /** The pool limit filled by policies that are off: nothing is in force, so starters show. */
+    async function openedAtPoolLimit() {
       const pools = Array.from({ length: FINANCE_LIMITS.pools }, (_, i) => ({
         ...BOND_POLICY.funding.pools[0],
         id: `u-pool-${i + 1}`
@@ -1642,15 +1642,37 @@ describe('SimPage autosave and publish', () => {
       await opened({
         storage: () => seeded(doc4({ schema: 4, kinds: { zoning: [], permitting: [], money } }))
       });
+    }
+    const refusal = () => page.getByTestId('tl-activity-refusal');
+
+    it('a starter the pool limit refuses changes nothing and shows the refusal in Activity', async () => {
+      await openedAtPoolLimit();
       const starter = activity().getByRole('button', { name: 'A housing bond' });
       await expect.element(starter).toBeVisible();
       const before = debug().policy;
       await starter.click();
-      await expect
-        .element(page.getByRole('status').filter({ hasText: limitAlert('pools') }))
-        .toBeInTheDocument();
+      await expect.element(refusal()).toHaveTextContent(limitAlert('pools'));
+      expect(activity().element().contains(refusal().element())).toBe(true);
+      // Announced once: by the card's polite region alone, never by the page's status too.
+      const live = [
+        ...document.querySelectorAll('[role=status], [role=alert], [aria-live]')
+      ].filter((el) => el.textContent?.includes(limitAlert('pools')));
+      expect(live).toEqual([refusal().element()]);
       expect(debug().policy).toEqual(before);
       expect(inspector().elements()).toHaveLength(0);
+      // Focus stays on the starter.
+      expect(document.activeElement).toBe(starter.element());
+      await refusal().getByRole('button', { name: 'Dismiss' }).click();
+      await expect.element(refusal()).toHaveTextContent('');
+    });
+
+    it('the next starter press clears the refusal', async () => {
+      await openedAtPoolLimit();
+      await activity().getByRole('button', { name: 'A housing bond' }).click();
+      await expect.element(refusal()).toHaveTextContent(limitAlert('pools'));
+      await activity().getByRole('button', { name: 'Taller near transit' }).click();
+      await expect.element(inspectorTitle()).toHaveTextContent('Transit rule');
+      expect(page.getByText(limitAlert('pools')).elements()).toHaveLength(0);
     });
 
     it("Activity's Details opens Details and focuses it", async () => {

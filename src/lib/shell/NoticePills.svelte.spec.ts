@@ -15,6 +15,19 @@ describe('NoticePills', () => {
     await expect.element(stack().getByRole('button', { name: 'Retry' })).toBeVisible();
   });
 
+  it('a notice with details is a card; a one-line notice is a chip', async () => {
+    render(NoticePillsHost, { card: true });
+    await expect.element(stack().getByText('One detail')).toBeVisible();
+    expect(page.getByTestId('first').element().getAttribute('data-shape')).toBe('chip');
+    expect(page.getByTestId('second').element().getAttribute('data-shape')).toBe('chip');
+    const third = page.getByTestId('third').element();
+    expect(third.getAttribute('data-shape')).toBe('card');
+    expect(parseFloat(getComputedStyle(third).borderTopLeftRadius)).toBe(8);
+    expect(
+      parseFloat(getComputedStyle(page.getByTestId('first').element()).borderTopLeftRadius)
+    ).toBeGreaterThan(8);
+  });
+
   it('overlays the map from md, letting clicks through except on the pills', async () => {
     await page.viewport(1024, 768);
     render(NoticePillsHost);

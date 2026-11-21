@@ -399,6 +399,16 @@
   }
 
   /**
+   * Why the last starter added nothing (`limitAlert`'s words), shown in Activity. Cleared by the
+   * next starter press, any change to the document, its Dismiss, or leaving today.
+   */
+  let refusal = $state<string | null>(null);
+  $effect(() => {
+    void store.policy;
+    untrack(() => (refusal = null));
+  });
+
+  /**
    * Activity's starter: adds `choice` at the playhead's month as the "+" menu does (one undoable
    * change, announced "Added: {label}"), opens its kind from md, selects it and focuses the
    * editor's title.
@@ -406,6 +416,7 @@
   function addStarter(choice: AddChoice, label: string): void {
     const c = cal;
     if (readonly || !c) return;
+    refusal = null;
     let r: ReturnType<typeof addPolicy>;
     try {
       r = addPolicy(store.policy, choice, {
@@ -415,9 +426,10 @@
       });
     } catch (e) {
       // A funding limit (only off policies count: starters show with nothing in force). The "+"
-      // menu says it in its alert line; no menu is open here, so the page's status says it.
+      // menu says it in its alert line; here Activity shows it under the starters, a card that
+      // is its own polite status (so it is announced once, not also through the page's status).
       if (e instanceof AddLimitError) {
-        brush.announce(limitAlert(e.limit), ANNOUNCE_MS);
+        refusal = limitAlert(e.limit);
         return;
       }
       throw e;
@@ -1151,6 +1163,8 @@
   onmiss={onMiss}
   onscore={pressScore}
   onstarter={readonly ? undefined : addStarter}
+  {refusal}
+  ondismissrefusal={() => (refusal = null)}
   ondetails={showDetails}
   onactivity={showActivity}
   scoreExpanded={panel !== null && inspectorOpen}
