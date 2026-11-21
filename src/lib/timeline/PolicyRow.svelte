@@ -6,10 +6,16 @@
   import type { Day } from '$lib/timelapse/time';
   import Lane from './Lane.svelte';
   import type { Policy, PolicyKind, SimPolicy4 } from './policy4';
+  import type { LevelSet } from './pool-level';
   import SpanBar from './SpanBar.svelte';
   import type { SpanRef } from './spans';
 
   interface Props {
+    /** The pool levels on show; a fund policy with an own capped pool has one. */
+    levels?: LevelSet | null;
+    /** The playhead's day and the furthest day reached. */
+    day?: Day;
+    reached?: Day;
     kind: PolicyKind;
     policy: Policy;
     asOf: Day;
@@ -32,8 +38,13 @@
     selected,
     readonly,
     onselect,
-    onedit
+    onedit,
+    levels = null,
+    day = asOf,
+    reached = day
   }: Props = $props();
+
+  const level = $derived(levels?.byPolicy.get(policy.id) ?? null);
 </script>
 
 <div class="contents" data-testid="tl-policy" data-off={!policy.on}>
@@ -58,6 +69,10 @@
         {readonly}
         {onselect}
         {onedit}
+        {level}
+        {levels}
+        {day}
+        {reached}
       />
     {/each}
   </Lane>

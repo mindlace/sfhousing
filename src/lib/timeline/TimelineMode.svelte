@@ -146,6 +146,7 @@
   import { termsInForce } from './lens';
   import { nothingInForce, type PolicyKind, type SimPolicy4 } from './policy4';
   import { awaitsView, goalOutcome, outcomeKey, outcomeText, type GoalOutcome } from './outcome';
+  import { levelSet } from './pool-level';
   import { editedReveal, moved, revealOpen, scanned, type Reveal } from './reveal';
   import {
     headlineAt,
@@ -401,6 +402,13 @@
   const resultsDoc = $derived((stale ? heldDoc : null) ?? session?.accepted ?? policy);
   /** A policy of the person's is in force in the document the numbers on show are from. */
   const inForce = $derived(!nothingInForce(resultsDoc));
+  /**
+   * The pool levels the Public money bars draw: from the view on show and the document and
+   * calibration it was run on, rebuilt with them, never as the playhead moves.
+   */
+  const levels = $derived(
+    levelSet(shownView, resultsDoc, calibration?.baselineFunding?.pools, asOf)
+  );
   /**
    * The comparison's wording for Details and the header, from the document the numbers on show
    * are from, so it changes with the numbers (held numbers keep theirs).
@@ -1670,6 +1678,8 @@
           {lens}
           playheadMonth={viewMonthOf(asOf, day)}
           playheadDay={day}
+          {levels}
+          reached={reveal.reached}
           bind:pinHeight
           {pinned}
         />

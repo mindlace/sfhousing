@@ -21,6 +21,7 @@
   import KindRow from './KindRow.svelte';
   import Lane from './Lane.svelte';
   import type { PolicyKind, SimPolicy4 } from './policy4';
+  import type { LevelSet } from './pool-level';
   import {
     dayPct,
     hasMoney,
@@ -57,6 +58,10 @@
     playheadMonth: number;
     /** The playhead's day: the line through the rows sits at it. */
     playheadDay: Day;
+    /** The pool levels on show (`levelSet`), drawn in an open Public money kind's bars. */
+    levels?: LevelSet | null;
+    /** The furthest day reached: the levels are seen (dimmed) to it, absent after. */
+    reached?: Day;
     /** The pinned block's height (its offsetHeight): the page weighs it against its box. */
     pinHeight?: number;
     /**
@@ -83,6 +88,8 @@
     lens = 'homes',
     playheadMonth,
     playheadDay,
+    levels = null,
+    reached = playheadDay,
     pinHeight = $bindable(0),
     pinned = true
   }: Props = $props();
@@ -274,6 +281,9 @@
           {onselect}
           {onedit}
           {onadd}
+          {levels}
+          day={playheadDay}
+          {reached}
         />
       {/each}
 
@@ -336,6 +346,9 @@
           {onselect}
           {onedit}
           {onadd}
+          {levels}
+          day={playheadDay}
+          {reached}
         />
         <div
           class="line"

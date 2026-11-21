@@ -34,6 +34,7 @@ import { goalOutcome } from './outcome';
 import { headlineAt, headlineSpoken, headlineText, scoreOfView } from './results';
 import { PIPELINE_DASH } from './chart-lens';
 import { keyTally } from './key';
+import { levelSet } from './pool-level';
 import { dayPct } from './rows';
 import { scanned } from './reveal';
 import type { Lots } from './session.svelte';
@@ -78,6 +79,11 @@ vi.mock('./activity', async (importOriginal) => {
     }
   }
   return { ...real, ActivityIndex: Kept };
+});
+// The pool levels as they are, counted (when the page rebuilds them).
+vi.mock('./pool-level', async (importOriginal) => {
+  const real = await importOriginal<typeof import('./pool-level')>();
+  return { ...real, levelSet: vi.fn(real.levelSet) };
 });
 // The key's tally as it is, counted (when the page reads a row for it).
 vi.mock('./key', async (importOriginal) => {
@@ -1517,6 +1523,81 @@ describe('TimelineMode', () => {
     filledPools(2);
     await expect.poll(() => debug().stale).toBe(false);
     await expect.poll(received).toBe('no limit');
+  });
+
+  it('levels rebuild with the view, never as the playhead crosses months', async () => {
+    const bond: Pool = {
+      id: 'u-bond',
+      kind: 'generalRevenue',
+      label: 'Housing bond',
+      inflows: [{ kind: 'once', day: monthFirstDay(asOf, 2), dollars: 500_000_000 }],
+      uncapped: false,
+      debt: null,
+      leverage: 1
+    };
+    const doc: SimPolicy4 = {
+      schema: 4,
+      kinds: {
+        zoning: [],
+        permitting: [],
+        money: [
+          {
+            id: 'm',
+            label: 'Bond',
+            preset: null,
+            on: true,
+            where: { tag: 'fund', pool: 'u-bond' },
+            spans: [
+              {
+                from: monthFirstDay(asOf, 2),
+                to: null,
+                what: { tag: 'fund', pool: bond, programmes: [] }
+              }
+            ]
+          }
+        ]
+      }
+    };
+    const FIN: ScoreStatics = {
+      ...baseStatics({ lastIndex: LAST, finance: true }),
+      asOf,
+      months: MONTHS
+    };
+    const filledPools = (rev: number, from: number, base = 0) =>
+      emit({
+        type: 'filled',
+        rev,
+        through: LAST,
+        series: chunk(from, LAST + 1 - from, { pools: ['u-bond'], base })
+      });
+    setup({ initialPolicy: doc });
+    await expect.poll(() => w()?.lastOf('openTimeline')).toBeTruthy();
+    emit(compiledMsg(1, FIN));
+    filledPools(1, 0);
+    await expect.poll(() => debug().filledThrough).toBe(LAST);
+    await page
+      .getByTestId('tl-timeline')
+      .getByRole('button', { name: 'Public money', exact: true })
+      .click();
+    const fill = () =>
+      document.querySelector(
+        '[data-testid=tl-kind-money] [data-testid=tl-bar] [data-testid=tl-level]'
+      );
+    await expect.poll(fill).not.toBeNull();
+    const builds = vi.mocked(levelSet).mock.calls.length;
+    expect(builds).toBeGreaterThan(0);
+    // Across six months: the percent follows the playhead, the levels are not rebuilt.
+    (slider().element() as HTMLElement).focus();
+    for (let k = 1; k <= 6; k++) {
+      await userEvent.keyboard('{ArrowRight}');
+      await expect.poll(() => debug().day).toBeGreaterThanOrEqual(MONTHS[k]);
+    }
+    await expect.poll(() => fill()!.getAttribute('data-left')).toMatch(/^\d+$/);
+    expect(vi.mocked(levelSet).mock.calls.length).toBe(builds);
+    // A new view rebuilds them.
+    emit(refillMsg(1, 3));
+    filledPools(1, 3, 5);
+    await expect.poll(() => vi.mocked(levelSet).mock.calls.length).toBeGreaterThan(builds);
   });
 
   it("a crash before the first fill says the simulation couldn't load", async () => {

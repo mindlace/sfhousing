@@ -4,7 +4,10 @@
   Timeline's grid.
 -->
 <script lang="ts">
+  import type { Day } from '$lib/timelapse/time';
   import Lane from './Lane.svelte';
+  import LevelFill from './LevelFill.svelte';
+  import { levelIndexAt, levelLeft, type LevelSet } from './pool-level';
   import type { SpanRef } from './spans';
 
   interface Props {
@@ -17,9 +20,38 @@
     onselect: (ref: SpanRef) => void;
     /** Indent as a child of an open kind. */
     child?: boolean;
+    /** The capped baseline pools' level ("Current funding"); null for none. */
+    level?: Float64Array | null;
+    /** The set `level` is from: its months and dataset date (the window's start). */
+    levels?: LevelSet | null;
+    /** The window's last day: the bar spans the dataset date to it. */
+    windowEnd?: Day;
+    /** The playhead's day and the furthest day reached: the level's two zones. */
+    day?: Day;
+    reached?: Day;
   }
 
-  let { label, text, color, spanRef, selected, onselect, child = true }: Props = $props();
+  let {
+    label,
+    text,
+    color,
+    spanRef,
+    selected,
+    onselect,
+    child = true,
+    level = null,
+    levels = null,
+    windowEnd = 0,
+    day = 0,
+    reached = day
+  }: Props = $props();
+
+  const shownLevel = $derived(levels !== null && windowEnd > 0 ? level : null);
+  const left = $derived(
+    shownLevel && levels
+      ? levelLeft(shownLevel, levelIndexAt(levels.months, levels.asOf, day, levels.asOf, windowEnd))
+      : null
+  );
 </script>
 
 <div class="contents" data-testid="tl-fixed">
@@ -31,11 +63,23 @@
       type="button"
       class="bar k-{color} absolute"
       class:sel={selected}
-      aria-label="{label}, whole window"
+      class:leveled={shownLevel !== null}
+      aria-label="{label}, whole window{left ?? ''}"
       aria-pressed={selected}
       onclick={() => onselect(spanRef)}
     >
-      {text}
+      {#if shownLevel && levels}
+        <LevelFill
+          level={shownLevel}
+          months={levels.months}
+          asOf={levels.asOf}
+          from={levels.asOf}
+          to={windowEnd}
+          {day}
+          {reached}
+        />
+      {/if}
+      <span class="txt">{text}</span>
     </button>
   </Lane>
 </div>
@@ -74,6 +118,15 @@
     cursor: pointer;
     background: var(--k);
     box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.45);
+  }
+  /* The text sits over the level, haloed in the bar's colour where the level's edge crosses it. */
+  .txt {
+    position: relative;
+  }
+  .leveled .txt {
+    text-shadow:
+      0 0 2px var(--k),
+      0 0 2px var(--k);
   }
   .k-zoning {
     --k: var(--k-zoning);

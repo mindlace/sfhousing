@@ -10,6 +10,8 @@
   import type { PolicyKind, SimPolicy4, Span } from './policy4';
   import { barBox, barLabel, settingOf } from './rows';
   import { barKey, moveEdge, moveSpan, setFrom, setTo, spanMonths, type SpanRef } from './spans';
+  import LevelFill from './LevelFill.svelte';
+  import { levelIndexAt, levelLeft, type LevelSet } from './pool-level';
 
   interface Props {
     kind: PolicyKind;
@@ -26,6 +28,13 @@
     readonly: boolean;
     onselect: (ref: SpanRef) => void;
     onedit: (change: (p: SimPolicy4) => SimPolicy4, label: string) => void;
+    /** A fund policy's own pool level (`LevelSet.byPolicy`); null for none. */
+    level?: Float64Array | null;
+    /** The set `level` is from: its months and dataset date. */
+    levels?: LevelSet | null;
+    /** The playhead's day and the furthest day reached: the level's two zones. */
+    day?: Day;
+    reached?: Day;
   }
 
   let {
@@ -42,13 +51,30 @@
     off,
     readonly,
     onselect,
-    onedit
+    onedit,
+    level = null,
+    levels = null,
+    day = asOf,
+    reached = day
   }: Props = $props();
 
   const ref = $derived<SpanRef>({ kind, id: policyId, span: index });
   const win = $derived({ asOf, months });
   const open = $derived(span.to === null);
   const editLabel = $derived(`Moved: ${policyLabel}`);
+
+  // The level: drawn on an on bar only, over the days its box spans (as `barBox` places it).
+  const shownLevel = $derived(!off && levels !== null ? level : null);
+  const boxFrom = $derived(Math.max(monthFirstDay(asOf, spanMonths(span, asOf).from), asOf));
+  const boxTo = $derived.by(() => {
+    const m = spanMonths(span, asOf);
+    return m.to === null ? windowEnd : Math.min(monthLastDay(asOf, m.to), windowEnd);
+  });
+  const left = $derived(
+    shownLevel && levels
+      ? levelLeft(shownLevel, levelIndexAt(levels.months, levels.asOf, day, boxFrom, boxTo))
+      : null
+  );
 
   // The edge being dragged and the month under the pointer.
   let drag: { edge: 'from' | 'to'; month: number } | null = $state(null);
@@ -124,14 +150,26 @@
     class:sel={selected}
     class:off
     class:open
+    class:leveled={shownLevel !== null}
     data-testid="tl-bar"
     data-open={open}
-    aria-label={barLabel(policyLabel, span, asOf) + (off ? ', off' : '')}
+    aria-label={barLabel(policyLabel, span, asOf) + (off ? ', off' : '') + (left ?? '')}
     aria-pressed={selected}
     onclick={() => onselect(ref)}
     {onkeydown}
   >
-    {settingOf(span.what)}
+    {#if shownLevel && levels}
+      <LevelFill
+        level={shownLevel}
+        months={levels.months}
+        asOf={levels.asOf}
+        from={boxFrom}
+        to={boxTo}
+        {day}
+        {reached}
+      />
+    {/if}
+    <span class="txt">{settingOf(span.what)}</span>
   </button>
   {#if !readonly}
     <span
@@ -163,6 +201,7 @@
     height: 20px;
   }
   .bar {
+    position: relative;
     display: block;
     width: 100%;
     height: 100%;
@@ -177,6 +216,15 @@
     overflow: hidden;
     cursor: pointer;
     background: var(--k);
+  }
+  /* The text sits over the level, haloed in the bar's colour where the level's edge crosses it. */
+  .txt {
+    position: relative;
+  }
+  .leveled .txt {
+    text-shadow:
+      0 0 2px var(--k),
+      0 0 2px var(--k);
   }
   .k-zoning {
     --k: var(--k-zoning);

@@ -8,6 +8,7 @@
   import FixedRow from './FixedRow.svelte';
   import Lane from './Lane.svelte';
   import PolicyRow from './PolicyRow.svelte';
+  import type { LevelSet } from './pool-level';
   import type { PolicyKind, Policy, SimPolicy4 } from './policy4';
   import {
     barBox,
@@ -36,6 +37,11 @@
     onselect: (ref: SpanRef | null) => void;
     onedit: (change: (p: SimPolicy4) => SimPolicy4, label: string) => void;
     onadd: (kind: PolicyKind) => void;
+    /** The pool levels on show: an open Public money kind draws them (the miniatures never). */
+    levels?: LevelSet | null;
+    /** The playhead's day and the furthest day reached. */
+    day?: Day;
+    reached?: Day;
   }
 
   let {
@@ -52,8 +58,13 @@
     readonly,
     onselect,
     onedit,
-    onadd
+    onadd,
+    levels = null,
+    day = asOf,
+    reached = day
   }: Props = $props();
+  /** Only Public money has pools. */
+  const kindLevels = $derived(kind === 'money' ? levels : null);
 
   const label = $derived(KIND_LABEL[kind]);
   /** A closed, empty, editable kind says in its lane what "+" adds; the "+" takes those words. */
@@ -126,9 +137,17 @@
       spanRef={fixedRef(kind)}
       selected={fixedSelected}
       onselect={(r) => onselect(r)}
+      level={kindLevels?.fixed ?? null}
+      levels={kindLevels}
+      {windowEnd}
+      {day}
+      {reached}
     />
     {#each policies as p (p.id)}
       <PolicyRow
+        levels={kindLevels}
+        {day}
+        {reached}
         {kind}
         policy={p}
         {asOf}

@@ -16,6 +16,9 @@ import type { Policy, SimPolicy4 } from './policy4';
 import { moveEdge, moveSpan, type SpanRef, type TimelineWindow } from './spans';
 import TimelineHost from './test/TimelineHost.svelte';
 import { PLUS_NAME } from './test/plus';
+import { dayFromUtc, utcParts } from '$lib/fzp/time';
+import { indexOfDay } from './playhead';
+import type { LevelSet } from './pool-level';
 
 const miniCal = parseCalibration(structuredClone(miniCalibrationJson) as unknown);
 const cal: Calibration = {
@@ -99,6 +102,8 @@ interface Over {
   pinned?: boolean;
   /** Px: the timeline sits in a box this tall. */
   height?: number;
+  levels?: LevelSet | null;
+  reached?: number;
 }
 
 async function setup(over: Over = {}) {
@@ -689,6 +694,143 @@ describe('Timeline rows', () => {
       expect(ratio(fill, surface), `${k} fill`).toBeGreaterThanOrEqual(3);
       expect(ratio(fill, raised), `${k} ring`).toBeGreaterThanOrEqual(3);
       expect(ratio(on, fill), `${k} text`).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+});
+
+describe("a pool's level in its bar", () => {
+  // Calendar months from the dataset month, five years of them.
+  const { y, m } = utcParts(asOf);
+  const MONTHS = Array.from({ length: 60 }, (_, i) => dayFromUtc(y, m + i, 1));
+  const ramp = (start: number) =>
+    Float64Array.from(MONTHS, (_, i) => (i < start ? NaN : Math.max(0, 1 - (i - start) / 40)));
+  const levels: LevelSet = {
+    months: MONTHS,
+    asOf,
+    byPolicy: new Map([['m1', ramp(11)]]),
+    fixed: ramp(0)
+  };
+  const rides: Policy = {
+    id: 'm2',
+    label: 'Grants from City money',
+    preset: null,
+    on: true,
+    where: { tag: 'fund', pool: 'city' },
+    spans: [{ from: first(4), to: null, what: { tag: 'fund', pool: null, programmes: [] } }]
+  };
+  const withRides: SimPolicy4 = { ...doc, kinds: { ...doc.kinds, money: [money, rides] } };
+  const pct = (a: Float64Array, day: number) => Math.round(a[indexOfDay(MONTHS, day)] * 100);
+
+  it('an open Public money kind: a fund bar and Current funding carry a level and ", N% left"', async () => {
+    const day = first(30);
+    const s = await setup({ levels, playheadDay: day, playheadMonth: 30, reached: first(40) });
+    await kindButton('Public money').click();
+    const bar = barsOf('money')[0];
+    const bond = pct(levels.byPolicy.get('m1')!, day);
+    expect(bond).toBeGreaterThan(0);
+    expect(bond).toBeLessThan(100);
+    expect(bar.getAttribute('aria-label')).toMatch(new RegExp(`, ${bond}% left$`));
+    const fill = bar.querySelector('[data-testid=tl-level]')!;
+    expect(fill.getAttribute('data-left')).toBe(String(bond));
+    expect(fill.getAttribute('aria-hidden')).toBe('true');
+    // The text stays the bar's text, above the fill.
+    expect(bar.textContent?.trim()).toBe('$500M');
+    const fixed = page.getByRole('button', { name: /^Current funding/ }).element();
+    const base = pct(levels.fixed!, day);
+    expect(fixed.getAttribute('aria-label')).toBe(`Current funding, whole window, ${base}% left`);
+    expect(fixed.querySelector('[data-testid=tl-level]')!.getAttribute('data-left')).toBe(
+      String(base)
+    );
+    // At today: a level is drawn nowhere and no name says one.
+    await s.rerender({ levels, playheadDay: asOf, playheadMonth: 1, reached: asOf });
+    expect(barsOf('money')[0].getAttribute('aria-label')).not.toMatch(/left$/);
+    expect(
+      page
+        .getByRole('button', { name: /^Current funding/ })
+        .element()
+        .getAttribute('aria-label')
+    ).toBe('Current funding, whole window');
+  });
+
+  it('a closed kind and a fund policy with no own pool carry none', async () => {
+    const s = await setup({
+      policy: withRides,
+      levels,
+      playheadDay: first(30),
+      playheadMonth: 30,
+      reached: first(30)
+    });
+    // Closed: the miniatures carry no level.
+    expect(document.querySelectorAll('[data-testid=tl-level]')).toHaveLength(0);
+    await kindButton('Public money').click();
+    const [bond, ride] = barsOf('money');
+    expect(bond.querySelector('[data-testid=tl-level]')).not.toBeNull();
+    expect(ride.querySelector('[data-testid=tl-level]')).toBeNull();
+    expect(ride.getAttribute('aria-label')).not.toMatch(/left$/);
+    // Other kinds' fixed rows carry none.
+    await kindButton('Zoning').click();
+    expect(
+      document.querySelector('[data-testid=tl-kind-zoning] [data-testid=tl-level]')
+    ).toBeNull();
+    // Without levels, nothing.
+    await s.rerender({ levels: null });
+    expect(document.querySelectorAll('[data-testid=tl-level]')).toHaveLength(0);
+  });
+
+  it("the bar's text keeps 4.5:1 over the level's fill and its edge 3:1, light and dark", () => {
+    // The custom properties of `.tl` and of the level, per theme, read from the stylesheets.
+    const vars = { light: new Map<string, string>(), dark: new Map<string, string>() };
+    const own = /(^|\s)\.(tl|level)[.\s{]|^\.(tl|level)$/;
+    const walk = (rules: CSSRuleList, dark: boolean) => {
+      for (const r of rules) {
+        if (r instanceof CSSMediaRule) walk(r.cssRules, dark || r.conditionText.includes('dark'));
+        else if (r instanceof CSSStyleRule && own.test(r.selectorText)) {
+          for (const n of r.style)
+            if (n.startsWith('--'))
+              vars[dark ? 'dark' : 'light'].set(n, r.style.getPropertyValue(n).trim());
+        }
+      }
+    };
+    for (const sheet of document.styleSheets) {
+      try {
+        walk(sheet.cssRules, false);
+      } catch {
+        // A cross-origin sheet.
+      }
+    }
+    const rgba = (c: string): number[] =>
+      c.startsWith('#')
+        ? [...[1, 3, 5].map((i) => parseInt(c.slice(i, i + 2), 16)), 1]
+        : c.match(/[\d.]+/g)!.map(Number);
+    const over = (top: string, base: string) => {
+      const [r, g, b, a] = rgba(top);
+      const under = rgba(base);
+      return [r, g, b].map((v, i) => a * v + (1 - a) * under[i]);
+    };
+    const lum = (rgb: number[]) => {
+      const [r, g, b] = rgb.map((v) => {
+        const x = v / 255;
+        return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4;
+      });
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    };
+    const ratio = (a: number[], b: number[]) => {
+      const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x);
+      return (hi + 0.05) / (lo + 0.05);
+    };
+    for (const theme of ['light', 'dark'] as const) {
+      const v = (n: string) => vars[theme].get(n) ?? vars.light.get(n)!;
+      const bar = rgba(v('--k-money')).slice(0, 3);
+      const text = rgba(v('--on-k')).slice(0, 3);
+      const empty = v('--level-empty');
+      expect(empty, theme).toMatch(/^rgb/);
+      // The darkest fill is the shown zone's (the seen zone is at half strength).
+      const filled = over(empty, v('--k-money'));
+      expect(ratio(text, filled), `${theme} text over the fill`).toBeGreaterThanOrEqual(4.5);
+      expect(ratio(text, bar), `${theme} edge on the bar`).toBeGreaterThanOrEqual(3);
+      expect(ratio(text, filled), `${theme} edge on the fill`).toBeGreaterThanOrEqual(3);
+      // The fill only raises the text's contrast.
+      expect(ratio(text, filled)).toBeGreaterThan(ratio(text, bar));
     }
   });
 });
