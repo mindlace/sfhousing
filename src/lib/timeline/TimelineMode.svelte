@@ -652,10 +652,13 @@
     if (!playing || filledEnd >= lastDay) playWaits = false;
     else if (day >= filledEnd) playWaits = true;
   });
-  /** What the status cell says: stale wins over waiting; both show "Updating". */
+  /**
+   * What the status cell says: stale wins over waiting; both show "Updating". A worker error or
+   * crash stops the forecast, so Play no longer waits for it: its notice says what happened.
+   */
   type Shown = 'stale' | 'waiting' | null;
   const statusWanted = $derived<Shown>(
-    !session ? null : stale ? 'stale' : playWaits ? 'waiting' : null
+    !session ? null : stale ? 'stale' : playWaits && !halted ? 'waiting' : null
   );
   /** The cell follows the conditions at once (in step with the dimming). */
   let shownStatus = $state<Shown>(null);

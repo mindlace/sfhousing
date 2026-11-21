@@ -1981,6 +1981,30 @@ describe('TimelineMode', () => {
     expect(rects()).toEqual(off);
   });
 
+  it('a worker error while Play waits at the edge: the cell empties, the notice shows', async () => {
+    await playingAtEdge();
+    await expect.poll(shownText).toBe(UPDATING);
+    emit(errorMsg(1, 'timeline'));
+    await expect
+      .element(page.getByTestId('tl-alerts'))
+      .toHaveTextContent('Part of the simulation stopped.');
+    await expect.poll(shownText).toBe('');
+    await expect.element(statusSlot()).not.toHaveTextContent(UPDATING);
+  });
+
+  it('a worker crash while Play waits at the edge: the cell empties, the notice shows', async () => {
+    // The client logs each crash; silenced here so signoff's stderr check stays clean.
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    await playingAtEdge();
+    await expect.poll(shownText).toBe(UPDATING);
+    w().crash();
+    await expect
+      .element(page.getByTestId('tl-notices'))
+      .toHaveTextContent('Part of the simulation stopped.');
+    await expect.poll(shownText).toBe('');
+    await expect.element(statusSlot()).not.toHaveTextContent(UPDATING);
+  });
+
   it('Play caught by the computed edge on a first load: Updating, explained by Working out the months ahead.', async () => {
     await playingAtEdge();
     await expect.poll(shownText).toBe(UPDATING);
