@@ -406,12 +406,13 @@ test.describe('mobile', () => {
         await setAttribution(page, expanded);
         await expect(toolbar).toHaveAttribute('aria-expanded', 'false');
         const t = await box(toolbar);
-        expect(t.width).toBeGreaterThanOrEqual(44);
-        expect(t.height).toBeGreaterThanOrEqual(44);
+        expect(t.width).toBeGreaterThanOrEqual(24);
+        expect(t.height).toBeGreaterThanOrEqual(24);
         await expectApart([['key toolbar', toolbar]], others());
         await expectUnobscured(toolbar);
       }
-      // The attribution collapsed: the toolbar sits 10 px above the strip (the plan's measure).
+      // The attribution collapsed: the toolbar sits 10 px above the strip (the plan's measure;
+      // BrushEditor lifts the key over the strip, whose height it reads).
       const t = await box(toolbar);
       const s = await box(strip(page));
       expect(Math.abs(s.y - (t.y + t.height) - 10)).toBeLessThanOrEqual(1);

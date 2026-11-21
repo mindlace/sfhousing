@@ -120,7 +120,7 @@ describe('LayerSwitches', () => {
     );
   });
 
-  it('each switch is 24 px tall, 44 on a coarse pointer, and toggles by keyboard', async () => {
+  it('each switch is 24 px tall on every pointer, and toggles by keyboard', async () => {
     const onchange = vi.fn();
     render(LayerSwitches, {
       view: DEFAULT_VIEW,
@@ -137,8 +137,7 @@ describe('LayerSwitches', () => {
     for (const l of labels()) expect(l.getBoundingClientRect().height).toBeGreaterThanOrEqual(24);
     await cdp().send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
     await expect.poll(() => matchMedia('(pointer: coarse)').matches).toBe(true);
-    for (const l of labels())
-      await expect.poll(() => l.getBoundingClientRect().height).toBeGreaterThanOrEqual(44);
+    for (const l of labels()) expect(l.getBoundingClientRect().height).toBeGreaterThanOrEqual(24);
     // Space on a focused switch toggles it, as a click does.
     (page.getByRole('checkbox', { name: 'Transit stops' }).element() as HTMLElement).focus();
     await userEvent.keyboard(' ');

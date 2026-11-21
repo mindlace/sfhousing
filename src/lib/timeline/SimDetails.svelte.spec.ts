@@ -590,7 +590,7 @@ describe('target size on a fine pointer (SC 2.5.8)', () => {
     );
   });
 
-  it('summaries and the Data sources link carry the 44 px coarse-pointer variant', async () => {
+  it('summaries and the Data sources link carry the 24 px minimum, the same on every pointer', async () => {
     await page.viewport(1024, 768);
     await renderAtRest(props());
     openSources();
@@ -598,7 +598,9 @@ describe('target size on a fine pointer (SC 2.5.8)', () => {
       document.querySelector('[data-testid="tl-year-table"] > summary')!,
       page.getByRole('link', { name: 'Data sources', exact: true }).element()
     ]) {
-      expect(el.classList.contains('pointer-coarse:min-h-11'), el.outerHTML).toBe(true);
+      expect(el.classList.contains('min-h-6'), el.outerHTML).toBe(true);
+      expect(el.className, el.outerHTML).not.toMatch(/pointer-coarse:/);
+      expect(el.getBoundingClientRect().height, el.outerHTML).toBeGreaterThanOrEqual(24);
     }
   });
 });

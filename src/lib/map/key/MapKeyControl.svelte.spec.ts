@@ -282,7 +282,7 @@ describe('MapKeyControl', () => {
     await expect.poll(last).toBeNull();
   });
 
-  it('toggles are 24 px on a fine pointer and 44 px on a coarse one', async () => {
+  it('toggles are 24 px on a fine pointer and the same on a coarse one', async () => {
     await render(KeyHost, { props: { withLayers: true } });
     for (const t of [keyToggle(), layersToggle()]) {
       const r = rect(t.element());
@@ -293,8 +293,10 @@ describe('MapKeyControl', () => {
     await cdp().send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
     await expect.poll(() => matchMedia('(pointer: coarse)').matches).toBe(true);
     for (const t of [keyToggle(), layersToggle()]) {
-      await expect.poll(() => rect(t.element()).height).toBeGreaterThanOrEqual(44);
-      expect(rect(t.element()).width).toBeGreaterThanOrEqual(44);
+      const r = rect(t.element());
+      expect(r.height).toBeGreaterThanOrEqual(24);
+      expect(r.width).toBeGreaterThanOrEqual(24);
+      expect(r.height).toBeLessThan(44);
     }
   });
 

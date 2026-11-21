@@ -51,7 +51,7 @@ describe('BrushEditor map inset', () => {
     await setup();
     await expect.poll(sheet).not.toBeNull();
     // Closed, the sheet is its handle, on the region's bottom edge.
-    await expect.poll(sheetHeight).toBeGreaterThanOrEqual(44);
+    await expect.poll(sheetHeight).toBeGreaterThanOrEqual(24);
     const handleH = sheetHeight();
     await expect.poll(lastInset).toBe(handleH);
     const region = document.getElementById('map-region')!.getBoundingClientRect();

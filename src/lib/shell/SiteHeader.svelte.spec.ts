@@ -351,13 +351,13 @@ describe('SiteHeader', () => {
       });
   });
 
-  it('fits at 375px with three 44px actions and no banner overflow', async () => {
+  it('fits at 375px with three 24px actions and no banner overflow', async () => {
     await page.viewport(375, 812);
     const actions = createRawSnippet(() => ({
       render: () =>
-        '<span><button style="width:44px;height:44px">A</button>' +
-        '<button style="width:44px;height:44px">B</button>' +
-        '<button style="width:44px;height:44px">C</button></span>'
+        '<span><button style="width:24px;height:24px">A</button>' +
+        '<button style="width:24px;height:24px">B</button>' +
+        '<button style="width:24px;height:24px">C</button></span>'
     }));
     render(SiteHeader, { routeId: '/', actions });
     const banner = page.getByRole('banner');

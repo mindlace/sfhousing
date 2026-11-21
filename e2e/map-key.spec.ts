@@ -139,8 +139,8 @@ test('375 px on /sim: the key starts closed, sits clear of Reset and the attribu
   await expect(keyToggle(page)).toBeVisible();
   await expect(keyToggle(page)).toHaveAttribute('aria-expanded', 'false');
   const t = await boxOf(keyToggle(page));
-  expect(t.height).toBeGreaterThanOrEqual(44);
-  expect(t.width).toBeGreaterThanOrEqual(44);
+  expect(t.height).toBeGreaterThanOrEqual(24);
+  expect(t.width).toBeGreaterThanOrEqual(24);
   await expectClear(page);
   await keyToggle(page).click();
   await expect(keyPanel(page)).toBeVisible();
@@ -181,10 +181,10 @@ test('375 px on /sim: the key starts closed, sits clear of Reset and the attribu
   await keyToggle(page).click();
   await expect(keyPanel(page)).toBeVisible();
   await expectClear(page);
-  // Layers too: 44 px, clear of everything, open and closed.
+  // Layers too: 24 px, clear of everything, open and closed.
   const l = await boxOf(layersToggle(page));
-  expect(l.height).toBeGreaterThanOrEqual(44);
-  expect(l.width).toBeGreaterThanOrEqual(44);
+  expect(l.height).toBeGreaterThanOrEqual(24);
+  expect(l.width).toBeGreaterThanOrEqual(24);
   await layersToggle(page).click();
   await expect(layersPanel(page)).toBeVisible();
   await expect(keyPanel(page)).toBeHidden();
@@ -487,7 +487,7 @@ test('keyboard: Tab from the zoom controls reaches Layers, then Key; Escape retu
   await expect(layersToggle(page)).toBeFocused();
 });
 
-test('375 px: Layers and Key are 44 px, inside the map, clear of Reset and the attribution', async ({
+test('375 px: Layers and Key are 24 px, inside the map, clear of Reset and the attribution', async ({
   isMobile,
   page
 }) => {
@@ -497,8 +497,8 @@ test('375 px: Layers and Key are 44 px, inside the map, clear of Reset and the a
   const map = await boxOf(page.getByTestId('map-root'));
   for (const t of [layersToggle(page), keyToggle(page)]) {
     const b = await boxOf(t);
-    expect(b.height).toBeGreaterThanOrEqual(44);
-    expect(b.width).toBeGreaterThanOrEqual(44);
+    expect(b.height).toBeGreaterThanOrEqual(24);
+    expect(b.width).toBeGreaterThanOrEqual(24);
     expect(b.x).toBeGreaterThanOrEqual(map.x);
     expect(b.x + b.width).toBeLessThanOrEqual(map.x + map.width);
     expect(b.y).toBeGreaterThanOrEqual(map.y);

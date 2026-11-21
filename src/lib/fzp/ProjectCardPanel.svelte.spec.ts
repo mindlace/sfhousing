@@ -407,7 +407,7 @@ describe('closing', () => {
 });
 
 describe('target sizes (spec §4.3)', () => {
-  it('every control is at least 24x24 and carries the 44 px coarse-pointer variant', async () => {
+  it('every control is at least 24x24 on every pointer, with no coarse-pointer variant', async () => {
     await page.viewport(1280, 800);
     await setup(project(REAL_ACTUAL), { day: stageDay(REAL_ACTUAL, 'construction') + 122 });
     await page.getByText('How is this estimated?').click();
@@ -420,10 +420,9 @@ describe('target sizes (spec §4.3)', () => {
       const r = el.getBoundingClientRect();
       expect(r.height, el.outerHTML).toBeGreaterThanOrEqual(24);
       expect(r.width, el.outerHTML).toBeGreaterThanOrEqual(24);
-      expect(
-        el.className.includes('pointer-coarse:min-h-11') || el.className.includes('min-h-11'),
-        el.outerHTML
-      ).toBe(true);
+      // One size on every pointer: the 24 px minimum, nothing larger on a coarse one.
+      expect(el.className.split(/\s+/), el.outerHTML).toContain('min-h-6');
+      expect(el.className, el.outerHTML).not.toMatch(/pointer-coarse:/);
     }
   });
 });

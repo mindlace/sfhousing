@@ -495,9 +495,9 @@ test('rows scrolled part-way under the pinned block are not targets', async ({
   isMobile,
   page
 }) => {
-  // At 375x812 the phone's rows fit their box; at 375x400 (a 352 px mode box, the 217 px block
-  // leaving 135 px of rows, over MIN_ROWS) they overflow it by about 61 px and stay pinned.
-  if (isMobile) await page.setViewportSize({ width: 375, height: 400 });
+  // At 375x812 the phone's rows fit their box; at 375x340 (a 292 px mode box, the 193 px block
+  // leaving 98 px of rows, over MIN_ROWS) they overflow it by about 55 px and stay pinned.
+  if (isMobile) await page.setViewportSize({ width: 375, height: 340 });
   await gotoSim(page);
   await longRows(page, isMobile);
   const rows = page.getByTestId('tl-rows');
@@ -1302,7 +1302,7 @@ async function widestHeaderText(page: Page): Promise<void> {
     if (sizer) {
       const chip = document.createElement('span');
       chip.className =
-        'inline-flex min-h-6 min-w-6 items-center rounded-full border px-2 whitespace-nowrap pointer-coarse:min-h-11 pointer-coarse:min-w-11';
+        'inline-flex min-h-6 min-w-6 items-center rounded-full border px-2 whitespace-nowrap';
       chip.textContent = 'Autosave off';
       sizer.replaceChildren(chip);
     }
