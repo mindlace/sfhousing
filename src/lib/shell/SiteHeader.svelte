@@ -1,7 +1,9 @@
 <!--
-  The site header. From lg: the site name, the two steps (Paint, Simulate), the page's status, then
-  (on the right) the pinned item and the actions. Below lg: the site name, the status, the pinned
-  item and a hamburger Menu button whose panel (under the header) holds the steps and the actions.
+  The site header. From lg: the site name, the two steps (1 Paint, 2 Simulate), the page's status,
+  the pinned item centred in the bar (when both sides fit; a side that does not pushes it off
+  centre, never clips), and the actions on the right. Below lg: the site name, the status, the
+  pinned item and a hamburger Menu button whose panel (under the header) holds the steps and the
+  actions.
   Below sm, on a page that pins an item (Paint, /sim, /lesscars, /p/:id), the site name moves into
   the panel too. The account entry (Sign in, or @handle) follows the actions in the same group;
   Sign in shows only while a sign-in method is in effect (`signInAvailable`). The About entry
@@ -44,7 +46,7 @@
   // The current one is filled with the accent; the other carries a resting border so it reads as
   // pressable. Both take a 1 px border so their sizes match.
   const link =
-    'inline-flex min-h-6 min-w-6 items-center whitespace-nowrap rounded-md border px-2 no-underline lg:max-xl:px-1 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent dark:focus-visible:outline-accent-dark';
+    'inline-flex min-h-6 min-w-6 items-center whitespace-nowrap rounded-md border px-2 no-underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent dark:focus-visible:outline-accent-dark';
   const tab = (current: boolean) => [
     link,
     current
@@ -113,8 +115,9 @@
 
 <svelte:window {onkeydown} {onpointerdown} />
 
+<!-- From lg the list never wraps, so its full width counts in the left track's minimum. -->
 {#snippet steps()}
-  <ol class="m-0 flex list-none flex-wrap items-center gap-[inherit] p-0">
+  <ol class="m-0 flex list-none flex-wrap items-center gap-[inherit] p-0 lg:flex-nowrap">
     <li>
       <a href="/" class={tab(routeId === '/')} aria-current={routeId === '/' ? 'page' : undefined}
         >{@render stepNumber(1)}Paint</a
@@ -128,37 +131,39 @@
   </ol>
 {/snippet}
 
-<!-- The order is the list's to speak; the number is for the eye, and hidden from lg to xl. -->
+<!-- The order is the list's to speak; the number is for the eye, at every width. -->
 {#snippet stepNumber(n: number)}
-  <span aria-hidden="true" data-step-number class="mr-1 font-semibold tabular-nums lg:max-xl:hidden"
-    >{n}</span
-  >
+  <span aria-hidden="true" data-step-number class="mr-1 font-semibold tabular-nums">{n}</span>
 {/snippet}
 
 <header
   bind:this={header}
   class={[
     'relative flex h-12 items-center justify-between gap-2 border-b bg-surface px-4 text-gray-900 dark:border-gray-700 dark:bg-chrome-dark dark:text-gray-100',
-    // From xl the pinned item is centred. Between lg and xl a centred score left the actions too
-    // little room beside it, so the actions and the pinned item keep their widths on the right and
-    // the left group takes what is left.
-    pinned &&
-      'lg:grid lg:grid-cols-[minmax(0,1fr)_auto_auto] xl:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]'
+    // From lg the pinned item is centred. The side tracks are `1fr` with an automatic minimum, not
+    // `minmax(0,1fr)`: a side too wide for half the row pushes the score off centre instead of
+    // being clipped under it.
+    pinned && 'lg:grid lg:grid-cols-[1fr_auto_1fr]'
   ]}
 >
-  <div class={pinned ? 'flex min-w-0 flex-1 items-center gap-2' : 'contents'}>
+  <div class={pinned ? 'flex min-w-0 flex-1 items-center gap-2 lg:min-w-auto' : 'contents'}>
     <!-- Below sm a page that pins an item needs the room: the name waits in the Menu. -->
     <a href="/" class={['shrink-0 font-semibold whitespace-nowrap', pinned && 'max-sm:hidden']}
       >SF Housing <span class="sr-only xl:not-sr-only">Simulator</span></a
     >
-    <nav
-      aria-label="Steps"
-      class="flex shrink-0 items-center gap-3 text-sm max-lg:hidden lg:max-xl:gap-2"
-    >
+    <nav aria-label="Steps" class="flex shrink-0 items-center gap-3 text-sm max-lg:hidden">
       {@render steps()}
     </nav>
     <!-- The status, then the space that pushes the pinned item and the actions right. -->
-    <div class="flex min-w-0 flex-1 items-center lg:pl-2 lg:max-xl:pl-0" data-header-status>
+    <!-- In the grid (from lg, with a pinned item) it takes its content's width, so a status too
+         wide for the left track widens the track (the score moves) rather than running under it. -->
+    <div
+      class={[
+        'flex min-w-0 flex-1 items-center lg:pl-2 lg:max-xl:pl-0',
+        pinned && 'lg:min-w-auto lg:flex-initial'
+      ]}
+      data-header-status
+    >
       {@render status?.()}
     </div>
   </div>
@@ -201,12 +206,14 @@
     <nav aria-label="Steps" class="flex flex-wrap items-center gap-4 text-sm lg:hidden">
       {@render steps()}
     </nav>
-    <div class="flex items-center gap-2 max-lg:flex-wrap lg:justify-self-end">
+    <!-- From lg nothing here shrinks, so the group's full width counts in the right track's
+         minimum (a row too wide moves the score rather than squeezing a control). -->
+    <div class="flex items-center gap-2 max-lg:flex-wrap lg:justify-self-end lg:*:shrink-0">
       {@render actions?.()}
       {#if user || signInAvailable}
         <a
           href={user ? '/account' : '/signin'}
-          class={[tab(false), 'max-w-40 text-sm']}
+          class={[tab(false), 'max-w-40 text-sm lg:max-xl:max-w-24']}
           title={user ? `@${user.handle}` : undefined}
           data-header-account
           ><span class="truncate">{user ? `@${user.handle}` : AUTH_COPY.signIn}</span></a

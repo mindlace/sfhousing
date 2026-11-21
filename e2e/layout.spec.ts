@@ -9,6 +9,7 @@ import { expect, test, type APIRequestContext, type Locator, type Page } from '@
 import { MSG } from '../src/lib/brush/messages';
 import { COPY } from '../src/lib/sharing/copy';
 import { expectNoA11yViolations } from './helpers/a11y';
+import { loginAs } from './helpers/auth';
 import { expectAboutReachable, expectNoFooter, expectPhoneHeaderFits } from './helpers/chrome';
 import {
   FRAME,
@@ -31,6 +32,7 @@ import {
   waitForMap,
   type Win
 } from './helpers/sharing';
+import { waitFilled } from './helpers/run';
 
 type Box = { x: number; y: number; width: number; height: number };
 
@@ -739,6 +741,37 @@ test.describe('account entry', () => {
         await expectNoA11yViolations(page);
       });
     }
+
+    test('/sim at 1024×768 signed in: the handle, the score and every action are visible and clear of each other, axe clean', async ({
+      page
+    }) => {
+      // A fresh 20-character handle (the plan's worst case): parallel runs never mint one user.
+      const handle = `h${crypto.randomUUID().replace(/-/g, '')}`.slice(0, 20);
+      await loginAs(page, `${handle}@example.test`);
+      await page.goto('/sim');
+      await waitFilled(page);
+      const banner = page.getByRole('banner');
+      const items = [
+        banner.getByRole('link', { name: /^SF Housing/ }),
+        banner.getByRole('navigation', { name: 'Steps' }),
+        headerScore(page),
+        banner.getByRole('button', { name: 'Keyboard shortcuts' }),
+        banner.getByRole('button', { name: /^(Publish|Share link)/ }),
+        banner.getByRole('link', { name: `@${handle}` }),
+        banner.getByRole('link', { name: 'About', exact: true })
+      ];
+      for (const item of items) await expect(item).toBeInViewport({ ratio: 1 });
+      await expect(banner.getByRole('button', { name: /^(Undo|Redo)/ })).toHaveCount(0);
+      const boxes = await Promise.all(items.map(box));
+      for (let i = 1; i < boxes.length; i++)
+        expect(boxes[i].x, `item ${i} clear of item ${i - 1}`).toBeGreaterThanOrEqual(
+          boxes[i - 1].x + boxes[i - 1].width - 0.5
+        );
+      const fit = await banner.evaluate((b) => ({ scroll: b.scrollWidth, client: b.clientWidth }));
+      expect(fit.scroll).toBeLessThanOrEqual(fit.client);
+      expect((await box(banner)).height).toBe(48);
+      await expectNoA11yViolations(page);
+    });
   });
 
   test.describe('mobile', () => {

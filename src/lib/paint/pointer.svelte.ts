@@ -1,9 +1,10 @@
-// The one pointer rule for undo and redo: a device whose primary pointer is coarse (a phone or
-// tablet) has no keyboard, so it gets Undo and Redo buttons; any other has Ctrl+Z and the
-// Shortcuts button. `(pointer: coarse)` reports the primary pointer only, so a touch laptop whose
-// main pointer is the trackpad counts as fine. The query is reactive (docking a keyboard swaps the
-// two together) and neither side is true until the client has read it, so nothing the other side
-// would replace is ever in the server's HTML.
+// The pointer rules for undo and redo. Undo and Redo buttons show while some pointer is coarse
+// (`touch`: a phone, a tablet or a touch laptop), since a touch has no Ctrl+Z; the Shortcuts
+// button shows while the primary pointer is fine (`fine`), since it lists keys. A touch laptop
+// gets both. `(pointer: coarse)` reports the primary pointer only, `(any-pointer: coarse)` any of
+// them. The queries are reactive (docking a keyboard or adding a touch screen swaps the buttons)
+// and nothing is true until the client has read them, so nothing a query would remove is ever in
+// the server's HTML.
 import { onMount } from 'svelte';
 import { MediaQuery } from 'svelte/reactivity';
 
@@ -12,11 +13,15 @@ export interface PrimaryPointer {
   readonly coarse: boolean;
   /** The client has read the query and the primary pointer is not coarse. */
   readonly fine: boolean;
+  /** The client has read the query and some pointer is coarse (`(any-pointer: coarse)`): a phone,
+   *  a tablet or a touch laptop. Undo and Redo buttons show on it. */
+  readonly touch: boolean;
 }
 
 /** Call during a component's setup. */
 export function usePrimaryPointer(): PrimaryPointer {
   const query = new MediaQuery('(pointer: coarse)');
+  const any = new MediaQuery('(any-pointer: coarse)');
   let ready = $state(false);
   onMount(() => {
     ready = true;
@@ -27,6 +32,9 @@ export function usePrimaryPointer(): PrimaryPointer {
     },
     get fine() {
       return ready && !query.current;
+    },
+    get touch() {
+      return ready && any.current;
     }
   };
 }

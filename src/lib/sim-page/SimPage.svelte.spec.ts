@@ -19,6 +19,7 @@ import { LID_MAX_SPAN_M } from '$lib/map/height/lids';
 import { tinyLimits } from '$lib/map/height/test/fixtures';
 import type { PackedCell } from '$lib/map/types';
 import { OUTLINE_LAYER_ID } from '$lib/paint/outline-layers';
+import { stubPointer, stubTouchLaptop } from '$lib/paint/test/pointer-stub';
 import { DRAFT_DISCARDED, limitAlert } from '$lib/sim-page/funding-copy';
 import { BOND_POLICY, policyWith } from '$lib/sim-page/test/funding';
 import { FINANCE_LIMITS } from '$lib/sim/levers/finance';
@@ -149,6 +150,8 @@ const historic: Policy = {
 };
 
 const header = () => page.getByRole('banner');
+// The header's Undo and Redo show only while some pointer is coarse: the specs that press them
+// run as a touch laptop (`stubTouchLaptop`), which keeps Shortcuts too.
 const undoButton = () => header().getByRole('button', { name: /^Undo/ });
 const redoButton = () => header().getByRole('button', { name: /^Redo/ });
 const inspector = () => page.getByTestId('inspector');
@@ -174,6 +177,7 @@ beforeEach(async () => {
 
 afterEach(() => {
   vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
 
@@ -202,6 +206,7 @@ describe('SimPage opening', () => {
   });
 
   it('a v1 schema 3 autosave opens upgraded with the upgraded notice', async () => {
+    stubTouchLaptop();
     const mem = new MemoryStorage();
     const old: SimDoc = {
       schema: 3,
@@ -253,6 +258,7 @@ describe('SimPage editing', () => {
   });
 
   it('adding, switching off, removing and reordering a policy; undo and redo across those', async () => {
+    stubTouchLaptop();
     await opened();
     const add = page.getByRole('button', { name: PLUS_NAME.Zoning });
     await add.click();
@@ -289,6 +295,7 @@ describe('SimPage editing', () => {
   });
 
   it('a paint stroke lands in the selected painted span; with none selected a new painted policy starts at the playhead', async () => {
+    stubTouchLaptop();
     await opened({ storage: () => seeded(doc4(zoning(painted))) });
     await page
       .getByTestId('tl-kind-zoning')
@@ -399,6 +406,7 @@ describe('SimPage editing', () => {
   });
 
   it('bad-request from the worker undoes the edit and shows "That change couldn\'t be applied."', async () => {
+    stubTouchLaptop();
     await opened();
     await page.getByRole('button', { name: PLUS_NAME.Zoning }).click();
     await page.getByRole('button', { name: 'Protect historic buildings' }).click();
@@ -582,6 +590,60 @@ describe('SimPage publish and view', () => {
     expect(inspector().getByRole('button', { name: 'Remove policy' }).elements()).toHaveLength(0);
     expect(inspector().getByRole('switch').elements()).toHaveLength(0);
     expect(inspector().getByRole('spinbutton').elements()).toHaveLength(0);
+  });
+
+  it('a fine-only pointer: no Undo or Redo in the header; Shortcuts and Publish stay', async () => {
+    stubPointer('fine');
+    await opened();
+    await expect
+      .element(header().getByRole('button', { name: 'Keyboard shortcuts' }))
+      .toBeVisible();
+    await expect.element(page.getByTestId('publish-open')).toBeVisible();
+    expect(
+      header()
+        .getByRole('button', { name: /^(Undo|Redo)/ })
+        .elements()
+    ).toEqual([]);
+    // Ctrl+Z still undoes, through the brush controller.
+    await page.getByRole('button', { name: PLUS_NAME.Zoning }).click();
+    await page.getByRole('button', { name: 'Protect historic buildings' }).click();
+    await expect.poll(() => debug().policy.kinds.zoning).toHaveLength(1);
+    // The brush controller has attached (it alone listens to the map's zoom): keys reach it.
+    await expect.poll(() => stub.map.listenerCount('zoom')).toBeGreaterThan(0);
+    (page.getByTestId('publish-open').element() as HTMLElement).focus();
+    await userEvent.keyboard('{Control>}z{/Control}');
+    await expect.poll(() => debug().policy.kinds.zoning).toEqual([]);
+  });
+
+  it('any coarse pointer: Undo and Redo in the header, named by the change', async () => {
+    const pointer = stubPointer('fine', ['fine']);
+    await opened();
+    await expect
+      .element(header().getByRole('button', { name: 'Keyboard shortcuts' }))
+      .toBeVisible();
+    expect(undoButton().elements()).toEqual([]);
+    // A touch screen comes in: the buttons come, Shortcuts stays (the primary is still fine).
+    pointer.setAny(['fine', 'coarse']);
+    await expect.element(undoButton()).toHaveAccessibleName('Undo');
+    await expect.element(redoButton()).toHaveAccessibleName('Redo');
+    await page.getByRole('button', { name: PLUS_NAME.Zoning }).click();
+    await page.getByRole('button', { name: 'Protect historic buildings' }).click();
+    await expect
+      .element(undoButton())
+      .toHaveAccessibleName('Undo: Added: Protect historic buildings');
+    await undoButton().click();
+    await expect
+      .element(redoButton())
+      .toHaveAccessibleName('Redo: Added: Protect historic buildings');
+    await expect
+      .element(header().getByRole('button', { name: 'Keyboard shortcuts' }))
+      .toBeVisible();
+    // A phone (coarse primary): the buttons stay, Shortcuts goes.
+    pointer.set('coarse');
+    await expect
+      .element(header().getByRole('button', { name: 'Keyboard shortcuts' }))
+      .not.toBeInTheDocument();
+    await expect.element(undoButton()).toBeVisible();
   });
 
   it('view mode takes a document the route already opened, with its notices', async () => {
@@ -1271,6 +1333,7 @@ describe('SimPage painted areas', () => {
   });
 
   it('Remove on the selected area is one change Undo names; the selection and outline go', async () => {
+    stubTouchLaptop();
     await withPaintedArea();
     await areaRows().first().click();
     await expect.poll(() => w().lastOf('lotOutlines')?.lots).toEqual(brushLots);
@@ -1601,6 +1664,7 @@ describe('SimPage autosave and publish', () => {
     });
 
     it("a starter adds its policy at the playhead's month, selects it and announces Added: Transit rule", async () => {
+      stubTouchLaptop();
       await opened();
       const starter = activity().getByRole('button', { name: 'Taller near transit' });
       await expect.element(starter).toBeVisible();

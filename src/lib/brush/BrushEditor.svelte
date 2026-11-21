@@ -1,11 +1,11 @@
 <!--
   `/`'s map editor (and /p/:id's read-only view): the map, its editor worker and, on plan 2's
-  `Dock`, the Paint tab shared with /sim (plan 3's `PaintTab`, `HistoryButtons` above it on a
-  coarse pointer only, and the phone `PaletteStrip`), so the two pages are one paint experience
+  `Dock`, the Paint tab shared with /sim (plan 3's `PaintTab`, `HistoryButtons` above it while
+  some pointer is coarse, and the phone `PaletteStrip`), so the two pages are one paint experience
   (sim-ux spec Goals 1, 3, 11 and 12). The page owns the `DockState` (the dock folds by its own button) and the Results face.
-  Undo and Redo sit above the tab only on a coarse pointer (a keyboard does both; the stroke chip
-  says what it did) and the phone strip carries Undo; the Shortcuts button ends the tab on a fine
-  pointer.
+  Undo and Redo sit above the tab while some pointer is coarse (a phone, a tablet or a touch
+  laptop; a keyboard does both and the stroke chip says what it did) and the phone strip carries
+  Undo; the Shortcuts button ends the tab on a fine primary pointer, so a touch laptop has both.
   `/` has no painted-areas list (that is `/sim`'s): the tab holds the tools, and read-only
   (`/p/:id`) the read-only line and one summary line (`paintedSummary`: the heights used and the
   lots the latest score rebuilds). The map key (`MapKeyControl` with `PaintKey`, closed at rest)
@@ -157,7 +157,7 @@
   const stripShown = $derived(
     !editor.readOnly && !wide.current && dock.sheet === 'closed' && brush.tool !== 'move'
   );
-  /** Undo and Redo buttons are for a device with no keyboard (`usePrimaryPointer`). */
+  /** Undo and Redo buttons show on any coarse pointer, Shortcuts on a fine primary one. */
   const pointer = usePrimaryPointer();
   /** Done on the palette strip reopened the sheet: focus moves into it. */
   let doneFocus = $state(false);
@@ -649,7 +649,7 @@
       state={dock}
       tabs={[{ id: 'paint', label: 'Paint', icon: DOCK_ICONS.paint, railLabel: 'Paint tools' }]}
       panel={tabPanel}
-      top={pointer.coarse && !editor.readOnly ? history : undefined}
+      top={pointer.touch && !editor.readOnly ? history : undefined}
       {results}
       flipLabel="Paint"
       flipName={editor.readOnly ? 'Back to the Paint tab' : 'Back to painting'}

@@ -13,6 +13,7 @@ import { formatShortMonthYear } from '../src/lib/fzp/format';
 import { monthStart } from '../src/lib/fzp/time';
 import { expectNoA11yViolations } from './helpers/a11y';
 import { expectAboutReachable, expectNoFooter } from './helpers/chrome';
+import { touchLaptop } from './helpers/pointer';
 import {
   addPolicy,
   holdPolicy,
@@ -629,14 +630,40 @@ test('a Paint stroke adds a painted area and Ctrl+Z removes it', async ({ isMobi
 
   await page.keyboard.press('Control+z');
   await expect.poll(() => paintedAreas(page)).toBe(0);
+  // The header's Redo is there only where a pointer is coarse (the phone).
+  const redo = page
+    .getByRole('banner')
+    .getByRole('button', { name: /^Redo: /, includeHidden: true });
+  if (isMobile) await expect(redo).toBeEnabled();
+  else await expect(redo).toHaveCount(0);
+});
+
+test('the header has no Undo or Redo on a desktop pointer; Ctrl+Z undoes a policy add', async ({
+  isMobile,
+  page
+}) => {
+  test.skip(isMobile, 'a desktop (fine-only) pointer');
+  await gotoSim(page);
+  const banner = page.getByRole('banner');
+  await expect(banner.getByRole('button', { name: 'Keyboard shortcuts' })).toBeVisible();
   await expect(
-    page.getByRole('banner').getByRole('button', { name: /^Redo: /, includeHidden: true })
-  ).toBeEnabled();
+    banner.getByRole('button', { name: /^(Undo|Redo)/, includeHidden: true })
+  ).toHaveCount(0);
+  await addPolicy(page, 'Zoning', 'Transit rule');
+  // From a header control, not a field (a field's Ctrl+Z is its own).
+  await banner.getByRole('button', { name: 'Keyboard shortcuts' }).focus();
+  await page.keyboard.press('Control+z');
+  await page.waitForFunction(() => (window as FzpWin).__sfhFzp!.policy.kinds.zoning.length === 0);
+  await expect(
+    banner.getByRole('button', { name: /^(Undo|Redo)/, includeHidden: true })
+  ).toHaveCount(0);
 });
 
 test('a painted area is selected, outlined and removed', async ({ isMobile, page }) => {
   test.skip(isMobile, 'the painted policy editor and the map side by side are md+');
   const OUTLINE_LAYER = 'sim-painted-outline';
+  // A touch laptop: the header's Undo, named by the change, shows beside the keyboard's.
+  await touchLaptop(page);
   await hideHeightLimits(page);
   await gotoSim(page);
   await startPainting(page, isMobile);
@@ -908,7 +935,12 @@ test("a transit rule's editor passes axe at a bound and with the plan's row", as
   await expectNoA11yViolations(page);
 });
 
-test('rule edits are one undo step per run; the policy stays selected', async ({ page }) => {
+test('rule edits are one undo step per run; the policy stays selected', async ({
+  isMobile,
+  page
+}) => {
+  // The header's Undo is named by the change; on the desktop project, as a touch laptop.
+  if (!isMobile) await touchLaptop(page);
   await gotoSim(page);
   await addPolicy(page, 'Zoning', 'Transit rule');
   const inner = editor(page).getByRole('group', { name: 'Band 1' });
@@ -1338,8 +1370,16 @@ async function widestHeaderText(page: Page): Promise<void> {
 async function widestStatusText(page: Page): Promise<void> {
   await page.evaluate(() => {
     const shown = document.querySelector('[data-testid="tl-status-shown"]');
-    // Appended, not replacing: the component's own content (and its anchors) stay.
-    if (shown && shown.textContent?.trim() === '') shown.append('Updating');
+    // Appended, not replacing: the component's own content (and its anchors) stay. Its own copy
+    // from an earlier call goes first, so a real "Updating" is never shown twice (a doubled word
+    // widens the cell, which from lg moves the score).
+    shown?.querySelector('[data-widest-status]')?.remove();
+    if (shown && shown.textContent?.trim() === '') {
+      const word = document.createElement('span');
+      word.dataset.widestStatus = '';
+      word.textContent = 'Updating';
+      shown.appendChild(word);
+    }
   });
 }
 
@@ -1362,12 +1402,18 @@ async function expectStatusPlace(page: Page): Promise<void> {
 
 for (const width of [1024, 1280, 1536]) {
   test(`at ${width} px the header fits with the widest strings, before and after an edit, the score stays put and the status shows in its place`, async ({
+    isMobile,
     page
   }) => {
     await page.setViewportSize({ width, height: 1024 });
     await gotoSim(page);
-    await expect(page.getByRole('banner').getByRole('button', { name: /^Undo/ })).toBeVisible();
-    await expect(page.getByRole('banner').getByRole('button', { name: 'View' })).toHaveCount(0);
+    const banner = page.getByRole('banner');
+    // A fine pointer: Shortcuts and no Undo or Redo; the phone project (coarse): the reverse.
+    const shortcuts = banner.getByRole('button', { name: 'Keyboard shortcuts' });
+    const history = banner.getByRole('button', { name: /^(Undo|Redo)/ });
+    await expect(isMobile ? history.first() : shortcuts).toBeVisible();
+    await expect(isMobile ? shortcuts : history).toHaveCount(0);
+    await expect(banner.getByRole('button', { name: 'View' })).toHaveCount(0);
     await widestHeaderText(page);
     await widestStatusText(page);
     await expect(scoreBar(page)).toHaveAccessibleName(/^12,345 homes by Mar 2066$/);
@@ -1417,11 +1463,11 @@ test('at 1280 px Keyboard shortcuts opens under its button, moves nothing in the
   await gotoSim(page);
   const banner = page.getByRole('banner');
   const button = banner.getByRole('button', { name: 'Keyboard shortcuts' });
-  const undo = banner.getByRole('button', { name: /^Undo/ });
+  const publish = banner.getByRole('button', { name: /^(Publish|Share link)/ });
   await expect(button).toBeVisible();
   const before = await headerRow(page);
   const scoreY = (await scoreBar(page).boundingBox())!.y;
-  const undoY = (await undo.boundingBox())!.y;
+  const publishY = (await publish.boundingBox())!.y;
   await button.click();
   const table = page.getByRole('table', { name: 'Keyboard shortcuts' });
   await expect(table).toBeVisible();
@@ -1431,7 +1477,7 @@ test('at 1280 px Keyboard shortcuts opens under its button, moves nothing in the
   const after = await headerRow(page);
   expect(after.map((i) => i.left)).toEqual(before.map((i) => expect.closeTo(i.left, 0)));
   expect((await scoreBar(page).boundingBox())!.y).toBeCloseTo(scoreY, 0);
-  expect((await undo.boundingBox())!.y).toBeCloseTo(undoY, 0);
+  expect((await publish.boundingBox())!.y).toBeCloseTo(publishY, 0);
   expect((await banner.boundingBox())!.height).toBe(48);
   await page.keyboard.press('Escape');
   await expect(button).toHaveAttribute('aria-expanded', 'false');
@@ -1440,6 +1486,7 @@ test('at 1280 px Keyboard shortcuts opens under its button, moves nothing in the
 
 for (const width of [768]) {
   test(`at ${width} px the header is the Menu layout: it fits, and every action and step link is in the Menu`, async ({
+    isMobile,
     page
   }) => {
     await page.setViewportSize({ width, height: 1024 });
@@ -1448,15 +1495,18 @@ for (const width of [768]) {
     const menu = banner.getByRole('button', { name: 'Menu', exact: true });
     await expect(menu).toBeVisible();
     // Closed: the site name, status, score and Menu button only; no action or step link shows.
-    await expect(banner.getByRole('button', { name: /^Undo/ })).toBeHidden();
+    await expect(banner.getByRole('button', { name: /^(Publish|Share link)/ })).toBeHidden();
     await expect(banner.getByRole('link', { name: 'Fewer cars' })).toHaveCount(0);
     await widestHeaderText(page);
     await widestStatusText(page);
     await expectStatusPlace(page);
     await expectHeaderFits(page);
     await openHeaderMenu(page);
-    for (const name of [/^Undo/, /^(Publish|Share link)/])
+    // Undo where a pointer is coarse (the phone project), Shortcuts where the primary is fine.
+    const touchOnly = isMobile ? /^Undo/ : 'Keyboard shortcuts';
+    for (const name of [touchOnly, /^(Publish|Share link)/])
       await expect(banner.getByRole('button', { name })).toBeVisible();
+    if (!isMobile) await expect(banner.getByRole('button', { name: /^Undo/ })).toHaveCount(0);
     // The map's layers are not in the Menu: they are on the map.
     await expect(banner.getByRole('button', { name: 'View', exact: true })).toHaveCount(0);
     await expect(banner.getByRole('checkbox')).toHaveCount(0);

@@ -1,7 +1,7 @@
 <script lang="ts">
   // Test host: SiteHeader on /sim with the real HeaderScore pinned (fixed props) and one plain
-  // action, plus an area outside the header to press. A spec passes its own `actions`, `status`
-  // and the score's `total` and `delta` to check how the row fits.
+  // action, plus an area outside the header to press. A spec passes its own `actions`, `status`,
+  // `user` and the score's `total` and `delta` to check how the row fits.
   import { createRawSnippet, type Snippet } from 'svelte';
   import HeaderScore from '$lib/scoreboard/HeaderScore.svelte';
   import { M1_TARGETS } from '$lib/scoreboard/targets';
@@ -12,6 +12,7 @@
     status?: Snippet;
     total?: number;
     delta?: number | null;
+    user?: { handle: string } | null;
   }
   const defaultActions = createRawSnippet(() => ({
     render: () => '<button>Example</button>'
@@ -20,7 +21,8 @@
     actions = defaultActions,
     status = undefined,
     total = 1234,
-    delta = null
+    delta = null,
+    user = null
   }: Props = $props();
   const rhna = M1_TARGETS.find((t) => t.id === 'rhna')!;
 </script>
@@ -38,5 +40,5 @@
   />
 {/snippet}
 
-<SiteHeader routeId="/sim" {actions} {pinned} {status} />
+<SiteHeader routeId="/sim" {actions} {pinned} {status} {user} />
 <div data-testid="outside" style="height: 400px">Map</div>

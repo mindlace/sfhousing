@@ -43,11 +43,14 @@
   import { paintedOutlineLayers } from '$lib/paint/outline-layers';
   import PaintTab from '$lib/paint/PaintTab.svelte';
   import PaletteStrip from '$lib/paint/PaletteStrip.svelte';
+  import { usePrimaryPointer } from '$lib/paint/pointer.svelte';
+  import ShortcutsButton from '$lib/paint/ShortcutsButton.svelte';
   import { removedLabel } from '$lib/paint/rows';
   import { Autosave } from '$lib/sharing/autosave.svelte';
   import { copyFor } from '$lib/sharing/copy';
   import PublishButton from '$lib/sharing/PublishButton.svelte';
   import SaveIndicator from '$lib/sharing/SaveIndicator.svelte';
+  import { BUTTON } from '$lib/shell/ui';
   import { getStorage } from '$lib/sharing/storage';
   import type { BrushCatalog } from '$lib/sim/levers/brushes';
   import { PREVIEW_MAX_LOTS } from '$lib/sim/scenario/preview';
@@ -342,6 +345,8 @@
   /** Funding drafts: page memory outside the store, so autosave and undo never see one. */
   const drafts = new FundingDrafts();
   const wide = new MediaQuery('(min-width: 768px)');
+  /** Undo and Redo buttons in the header only while some pointer is coarse; a keyboard has Ctrl+Z. */
+  const pointer = usePrimaryPointer();
   const uid = $props.id();
   const inspectorId = `${uid}-inspector`;
 
@@ -1032,22 +1037,22 @@
 
 {#snippet actions()}
   {#if toolOff}
-    <button
-      type="button"
-      class="min-h-6 min-w-6 rounded-md border border-gray-300 px-2 text-sm font-medium whitespace-nowrap dark:border-gray-600"
-      onclick={() => setTool('move')}
+    <button type="button" class={BUTTON} onclick={() => setTool('move')}
       >{tools.tool === 'erase' ? 'Stop erasing' : 'Stop painting'}</button
     >
   {/if}
   {#if !readonly}
-    <HistoryButtons
-      canUndo={store.canUndo}
-      canRedo={store.canRedo}
-      undoLabel={store.undoLabel}
-      redoLabel={store.redoLabel}
-      onundo={undo}
-      onredo={redo}
-    />
+    {#if pointer.touch}
+      <HistoryButtons
+        canUndo={store.canUndo}
+        canRedo={store.canRedo}
+        undoLabel={store.undoLabel}
+        redoLabel={store.redoLabel}
+        onundo={undo}
+        onredo={redo}
+      />
+    {/if}
+    <ShortcutsButton />
     {#if codec}
       <PublishButton
         {codec}

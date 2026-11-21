@@ -12,6 +12,7 @@ import type { Manifest } from '$lib/data/manifest';
 import { DockState } from '$lib/dock/dock-state.svelte';
 import { callsOf, stub } from '$lib/fzp/test/sim-map-stub';
 import { OUTLINE_LAYER_ID } from '$lib/paint/outline-layers';
+import { stubPointer, stubTouchLaptop } from '$lib/paint/test/pointer-stub';
 import { OPS_MAX, emptyPlan, type Plan, type PlanOp } from '$lib/plan';
 import { CHIP } from '$lib/shell/ui';
 import type { GeneratedUpdate } from '$lib/map/types';
@@ -160,42 +161,6 @@ beforeEach(() => {
   stub.map.zoom = 18;
   localStorage.clear();
 });
-
-/**
- * A pointer stub for `window.matchMedia`, set before render: `primary` is what `(pointer: ...)`
- * reports, `any` the kinds `(any-pointer: ...)` does. Every other query is the browser's own
- * (the dock reads `(min-width: 768px)`).
- */
-function stubPointer(
-  primary: 'coarse' | 'fine',
-  any: ('coarse' | 'fine')[] = [primary]
-): { set(p: 'coarse' | 'fine'): void } {
-  const real = window.matchMedia.bind(window);
-  let now = primary;
-  const listeners = new Set<(e: Event) => void>();
-  vi.stubGlobal('matchMedia', (q: string) => {
-    const k = q.replace(/\s/g, '');
-    if (!/^\((any-)?pointer:/.test(k)) return real(q);
-    return {
-      get matches() {
-        return k === `(pointer:${now})` || any.some((a) => k === `(any-pointer:${a})`);
-      },
-      media: q,
-      addEventListener(_type: string, fn: (e: Event) => void) {
-        listeners.add(fn);
-      },
-      removeEventListener(_type: string, fn: (e: Event) => void) {
-        listeners.delete(fn);
-      }
-    } as unknown as MediaQueryList;
-  });
-  return {
-    set(p) {
-      now = p;
-      for (const fn of [...listeners]) fn(new Event('change'));
-    }
-  };
-}
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -454,11 +419,27 @@ describe('BrushEditor on the dock', () => {
     });
   }
 
-  it('a touch laptop (fine primary, coarse any-pointer) keeps the keyboard: no buttons, shortcuts listed', async () => {
-    stubPointer('fine', ['fine', 'coarse']);
+  it('a touch laptop gets Undo and Redo above the tab and keeps Shortcuts; a change event swaps them in and out', async () => {
+    const pointer = stubTouchLaptop();
     await setup();
-    expect(page.getByRole('button', { name: /^(Undo|Redo)/ }).elements()).toEqual([]);
-    await expect.element(page.getByRole('button', { name: 'Keyboard shortcuts' })).toBeVisible();
+    const undo = page.getByRole('button', { name: 'Undo', exact: true });
+    const redo = page.getByRole('button', { name: 'Redo', exact: true });
+    const shortcuts = page.getByRole('button', { name: 'Keyboard shortcuts' });
+    await expect.element(undo).toBeVisible();
+    await expect.element(redo).toBeVisible();
+    await expect.element(shortcuts).toBeVisible();
+    const panel = page.getByRole('tabpanel').element();
+    expect(undo.element().getBoundingClientRect().bottom).toBeLessThanOrEqual(
+      panel.getBoundingClientRect().top + 1
+    );
+    // The touch screen goes (a keyboard docked without one): the buttons go, Shortcuts stays.
+    pointer.setAny(['fine']);
+    await expect.element(undo).not.toBeInTheDocument();
+    await expect.element(redo).not.toBeInTheDocument();
+    await expect.element(shortcuts).toBeVisible();
+    pointer.setAny(['fine', 'coarse']);
+    await expect.element(undo).toBeVisible();
+    await expect.element(shortcuts).toBeVisible();
   });
 
   it('the Undo row and the Shortcuts button swap when the primary pointer changes', async () => {
