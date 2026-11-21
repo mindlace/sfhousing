@@ -37,6 +37,18 @@ describe('the shared parts', () => {
     expect(grown.map(([n]) => n)).toEqual([]);
   });
 
+  it('CHIP_PLAIN is CHIP with even padding (pr-4 for pr-1), and takes presses as CHIP does', () => {
+    const plain = classes(ui.CHIP_PLAIN);
+    expect(plain).toContain('pr-4');
+    expect(plain).not.toContain('pr-1');
+    expect(plain).toContain('pointer-events-auto');
+    expect(plain.filter((c) => c !== 'pr-4').sort()).toEqual(
+      classes(ui.CHIP)
+        .filter((c) => c !== 'pr-1')
+        .sort()
+    );
+  });
+
   it('BUTTON_DISMISS is BUTTON_QUIET without the underline, its icon centred', () => {
     const quiet = classes(ui.BUTTON_QUIET).filter((c) => c !== 'underline');
     const dismiss = classes(ui.BUTTON_DISMISS);

@@ -51,6 +51,16 @@ describe('Message', () => {
     expect(s.paddingRight).toBe(s.paddingLeft);
   });
 
+  it('a pressable chip with no action pads its right as its left', async () => {
+    render(MessageHost, { text: 'Loading the simulation…', withActions: false });
+    await expect.element(msg()).toBeVisible();
+    const el = msg().element();
+    expect(el.getAttribute('data-shape')).toBe('chip');
+    expect(getComputedStyle(el).pointerEvents).toBe('auto');
+    const s = getComputedStyle(el);
+    expect(s.paddingRight).toBe(s.paddingLeft);
+  });
+
   it("a card's dismiss sits top right, on the text's first line, and adds no row", async () => {
     const ondismiss = vi.fn();
     render(MessageHost, {

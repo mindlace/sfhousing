@@ -11,7 +11,15 @@
 -->
 <script lang="ts">
   import type { Snippet } from 'svelte';
-  import { BUTTON_DISMISS, CARD, CHIP, CHIP_STILL, messageShape, type MessageShape } from './ui';
+  import {
+    BUTTON_DISMISS,
+    CARD,
+    CHIP,
+    CHIP_PLAIN,
+    CHIP_STILL,
+    messageShape,
+    type MessageShape
+  } from './ui';
 
   interface Props {
     text: string;
@@ -41,9 +49,7 @@
 
   const s = $derived(shape ?? messageShape(text, !!details));
   // A chip with no action pads its right as its left.
-  const chip = $derived(
-    still ? CHIP_STILL : actions || ondismiss ? CHIP : CHIP.replace('pr-1', 'pr-4')
-  );
+  const chip = $derived(still ? CHIP_STILL : actions || ondismiss ? CHIP : CHIP_PLAIN);
 </script>
 
 {#snippet dismiss(extra: string)}

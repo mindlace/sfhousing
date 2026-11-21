@@ -60,11 +60,12 @@ light and dark.
 
 ## Messages: chips and cards
 
-| Shape        | Use                                            | Look                                                                      |
-| ------------ | ---------------------------------------------- | ------------------------------------------------------------------------- |
-| `CHIP`       | A few words, with an action or a dismiss       | rounded-full, one line, surface (surface-raised in dark), shadow, text-sm |
-| `CHIP_STILL` | A chip that takes no presses (the stroke chip) | as `CHIP`, `pointer-events: none`, even padding                           |
-| `CARD`       | A paragraph                                    | rounded-lg, wraps at 28rem, its actions in a row under it                 |
+| Shape        | Use                                                    | Look                                                                      |
+| ------------ | ------------------------------------------------------ | ------------------------------------------------------------------------- |
+| `CHIP`       | A few words, with an action or a dismiss               | rounded-full, one line, surface (surface-raised in dark), shadow, text-sm |
+| `CHIP_PLAIN` | A few words with no action ("Loading the simulation…") | as `CHIP`, even padding                                                   |
+| `CHIP_STILL` | A chip that takes no presses (the stroke chip)         | as `CHIP`, `pointer-events: none`, even padding                           |
+| `CARD`       | A paragraph                                            | rounded-lg, wraps at 28rem, its actions in a row under it                 |
 
 `messageShape(text, details?)` picks the shape from the words, so the same message always looks
 the same: one sentence of at most 8 words with no details is a `'chip'`; anything else is a
