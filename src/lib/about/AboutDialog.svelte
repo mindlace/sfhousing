@@ -36,6 +36,7 @@
   import AboutMeanings from './AboutMeanings.svelte';
   import AboutUsing from './AboutUsing.svelte';
   import { ABOUT_TITLE } from './copy';
+  import { focusLanding } from './land';
   import { interceptAboutLinks } from './links';
 
   interface Props {
@@ -87,6 +88,8 @@
       scroller.scrollTop = el
         ? scroller.scrollTop + el.getBoundingClientRect().top - scroller.getBoundingClientRect().top
         : 0;
+      // Focus where the reader was sent, so the next Tab starts there; with no target Close keeps it.
+      if (el) focusLanding(el);
     });
   }
 

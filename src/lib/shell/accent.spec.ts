@@ -107,6 +107,7 @@ const NO_HEX_FILES = [
   'src/lib/about/AboutAssumptions.svelte',
   'src/lib/about/AboutDialog.svelte',
   'src/lib/about/links.ts',
+  'src/lib/about/land.ts',
   'src/lib/fzp/ProvenanceBody.svelte'
 ];
 const BLUE_HEX = /#(1d4ed8|2563eb|1e40af|3b82f6|1e3a8a)\b/i;

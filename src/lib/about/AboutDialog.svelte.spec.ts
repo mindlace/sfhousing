@@ -297,6 +297,24 @@ describe('opening', () => {
     await expectAtTop(ABOUT_ID.data);
   });
 
+  it('a targeted open focuses the target, so the first Tab starts there', async () => {
+    await setup();
+    await page.getByRole('button', { name: 'Open at entitled' }).click();
+    await expectAtTop('src-transition-discretionary-entitled');
+    const entry = byId('src-transition-discretionary-entitled');
+    // The entry's heading: one line, so a focus ring is never drawn around the whole card.
+    const heading = entry.querySelector('h1, h2, h3, h4, h5, h6')!;
+    await expect.poll(() => document.activeElement).toBe(heading);
+    await userEvent.keyboard('{Tab}');
+    expect(entry.contains(document.activeElement)).toBe(true);
+    expect(document.activeElement?.matches('a[href]')).toBe(true);
+    await expectAtTop('src-transition-discretionary-entitled');
+    dialog().close();
+    // With no target, focus stays on Close as before.
+    await page.getByRole('button', { name: 'Sources', exact: true }).click();
+    await expect.poll(() => document.activeElement?.textContent?.trim()).toBe('Close');
+  });
+
   it('is capped at max-w-2xl and 85vh, and full-width on a phone', async () => {
     await setup();
     await openIt();
