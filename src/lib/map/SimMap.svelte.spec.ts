@@ -109,7 +109,8 @@ function atInsert<T>(at: (credit: HTMLElement, toggle: HTMLElement) => T): { val
 
 /**
  * Watches the credit's timer (the one scheduled with delay `ms`): true once it has run or been
- * cleared, so a test can wait for it without a wait of its own.
+ * cleared, or, read after the handle is ready (the map has loaded, where the timer starts), when
+ * none was scheduled; so a test can wait for it without a wait of its own.
  */
 function watchTimer(ms: number): () => boolean {
   const realSet = window.setTimeout.bind(window);
@@ -136,7 +137,7 @@ function watchTimer(ms: number): () => boolean {
     if (typeof id === 'number' && ids.has(id)) settled = true;
     realClear(id);
   });
-  return () => settled;
+  return () => settled || ids.size === 0;
 }
 const idle = (h: SimMapHandle) =>
   new Promise<void>((r) => {
@@ -298,11 +299,11 @@ describe('SimMap ready', { timeout: 30_000 }, () => {
     });
     const { target, ready } = await mount({ creditShowMs: 50 });
     await expect.poll(seen.value).toBe(true);
+    const h = await ready;
     await expect.poll(settled).toBe(true);
     expect(isOpen(target)).toBe(true);
     expect(toggleOf(target)!.getAttribute('aria-expanded')).toBe('true');
     // Nor does a first user zoom, or the page, close what the person opened.
-    const h = await ready;
     const map = h.getMap()!;
     map.zoomTo(map.getZoom() + 0.5, { duration: 0 }, { originalEvent: new WheelEvent('wheel') });
     h.collapseCredit();
@@ -335,6 +336,27 @@ describe('SimMap ready', { timeout: 30_000 }, () => {
     await ready;
     await expect.poll(settled).toBe(true);
     expect(isOpen(target)).toBe(true);
+  });
+
+  it("the five seconds start on the map's load, not when the credit is added", async () => {
+    const scheduled: boolean[] = [];
+    const realSet = window.setTimeout.bind(window);
+    vi.spyOn(window, 'setTimeout').mockImplementation(((
+      cb: TimerHandler,
+      delay?: number,
+      ...rest: unknown[]
+    ) => {
+      if (delay === 50) scheduled.push(true);
+      return realSet(cb, delay, ...rest);
+    }) as typeof window.setTimeout);
+    // In the task that adds the credit the map has not loaded: no timer yet.
+    const seen = atInsert(() => scheduled.length);
+    const { target, ready } = await mount({ creditShowMs: 50 });
+    await expect.poll(seen.value).toBe(0);
+    // By ready (after the load) it has started, once.
+    await ready;
+    expect(scheduled).toEqual([true]);
+    await expect.poll(() => isOpen(target)).toBe(false);
   });
 
   it('the first user zoom collapses it; a programmatic jump does not', async () => {

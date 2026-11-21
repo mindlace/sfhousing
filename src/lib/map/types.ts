@@ -201,8 +201,8 @@ export interface SimMapProps {
    */
   tapCards?: boolean;
   /**
-   * How long the map's credit stays open after it is added, ms (default: 0 in a VITE_E2E build,
-   * else `CREDIT_SHOW_MS`, 5 s). 0 collapses it at once.
+   * How long the map's credit stays open once the map has loaded, ms (default: 0 in a VITE_E2E
+   * build, else `CREDIT_SHOW_MS`, 5 s). 0 collapses it at once, when it is added.
    */
   creditShowMs?: number;
 }

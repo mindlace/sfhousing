@@ -5,7 +5,7 @@
 
   type MapLibreModule = typeof import('maplibre-gl');
 
-  /** How long the credit stays open after the control is added, ms. */
+  /** How long the credit stays open once the map has loaded, ms. */
   export const CREDIT_SHOW_MS = 5000;
 
   // CSS defaults for the --map-* tokens, so the SSR frame follows prefers-color-scheme before
@@ -688,7 +688,8 @@
   /**
    * MapLibre's compact control is a <details> whose <summary> is the (i); it starts open
    * (`maplibregl-compact-show`) and collapses on every `drag`. SimMap adds the rest: the toggle's
-   * `aria-expanded`, the timer, the first user zoom, rotate or pitch, `collapseCredit` and Escape.
+   * `aria-expanded`, the timer (from the map's load), the first user zoom, rotate or pitch,
+   * `collapseCredit` and Escape.
    */
   function installCredit(l: Live, map: MapLibreMap): void {
     const el = map.getContainer().querySelector<HTMLElement>('.maplibregl-ctrl-attrib');
@@ -753,9 +754,16 @@
       }
     };
     l.credit = credit;
-    if (creditShowMs <= 0) return autoCollapse(l);
+    // The timer starts on the map's load (startCreditTimer), so the credit shows with the map.
+    if (creditShowMs <= 0) autoCollapse(l);
+  }
+
+  /** On the map's load: the credit's `creditShowMs`, unless it has already stopped by itself. */
+  function startCreditTimer(l: Live): void {
+    const c = l.credit;
+    if (!c?.auto || c.timer !== null) return;
     // Not in `l.timers`: clearLoading clears those on every idle.
-    credit.timer = setTimeout(() => autoCollapse(l), creditShowMs);
+    c.timer = setTimeout(() => autoCollapse(l), creditShowMs);
   }
 
   function closeCredit(c: Credit | null): void {
@@ -791,6 +799,7 @@
     if (l.dead) return;
     l.loaded = true;
     mapState = 'ready';
+    startCreditTimer(l);
     pushChunkData();
     applyTheme(theme);
     applyView();
