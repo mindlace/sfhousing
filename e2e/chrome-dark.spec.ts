@@ -321,7 +321,7 @@ test("a transit rule's editor at a bound, then the plan's row, has no axe violat
   // The plan's row selected: its read-only view (a phone's editor sheet closes first).
   await editor(page).getByRole('button', { name: 'Close editor' }).click();
   await openKind(page, 'Zoning');
-  const plan = page.getByRole('button', { name: 'Current law, whole window' });
+  const plan = page.getByRole('button', { name: 'In force, Current law, whole window' });
   await plan.last().click();
   await expect(editor(page).getByRole('heading', { name: 'Current law' })).toBeVisible();
   await expectNoA11yViolations(page, {
@@ -388,7 +388,7 @@ test("the shared view's read-only editor has no axe violations in dark", async (
   await gotoSharedPolicy(page);
   await openKind(page, 'Zoning');
   await page
-    .getByRole('button', { name: /^Transit rule, / })
+    .getByRole('button', { name: /, Transit rule, / })
     .last()
     .click();
   await expect(editor(page).getByRole('heading', { name: 'Transit rule' })).toBeVisible();

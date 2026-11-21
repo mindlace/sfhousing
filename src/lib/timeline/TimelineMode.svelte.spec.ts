@@ -922,7 +922,7 @@ describe('TimelineMode', () => {
     expect(rows.scrollHeight).toBeGreaterThan(rows.clientHeight);
     const at = mode.scrollTop;
     const market = page
-      .getByRole('button', { name: 'Market conditions, whole window' })
+      .getByRole('button', { name: /, Market conditions, whole window$/ })
       .element() as HTMLElement;
     market.focus();
     await frame();
@@ -2469,7 +2469,7 @@ describe('TimelineMode', () => {
       await expect.poll(() => overflowOf('tl-rows')).toBe('visible');
       // The last row's bar: the market's, at the bottom of the scroll.
       const bar = page
-        .getByRole('button', { name: 'Market conditions, whole window' })
+        .getByRole('button', { name: /, Market conditions, whole window$/ })
         .element() as HTMLElement;
       bar.focus();
       await nextFrame();

@@ -1,9 +1,9 @@
 <!--
   Activity, the detail column's rest face on /sim: what has happened up to the playhead. At today
-  it names the goal and offers the starter policies (or says to press Play); after today, the totals
-  so far at the playhead's month, cost while a Public money policy is in force, and under "Latest"
-  the newest stage changes citywide up to the playhead (one line each). The heading row
-  carries Details. While the numbers are stale only the body dims; the heading and its button keep
+  it names the goal and offers the starter policies (or says to press Play); after today, under
+  "Latest" the newest stage changes citywide up to the playhead (one line each), then the totals so
+  far at the playhead's month in two columns, cost while a Public money policy is in force. The
+  heading row carries Details. While the numbers are stale only the body dims; the heading and its button keep
   their contrast (status apart from controls).
 -->
 <script lang="ts">
@@ -73,9 +73,10 @@
 </script>
 
 {#snippet item(term: string, value: string)}
-  <div class="flex items-baseline justify-between gap-4">
+  <!-- A value too long for its term's line drops under it, at the right: the term never squeezes. -->
+  <div class="flex min-w-0 flex-wrap items-baseline justify-between gap-x-2">
     <dt>{term}</dt>
-    <dd class="tabular-nums">{value}</dd>
+    <dd class="ml-auto text-right tabular-nums">{value}</dd>
   </div>
 {/snippet}
 
@@ -120,27 +121,7 @@
         {/if}
       </div>
     {:else if totals}
-      <dl class="flex flex-col gap-1" data-testid="tl-totals">
-        {@render item(C.approved, formatCount(totals.approved))}
-        {@render item(C.completed, formatCount(totals.completed))}
-        {@render item(C.stopped, formatCount(totals.stopped))}
-        {#if totals.affordable !== null}
-          {@render item(C.affordable, formatCount(totals.affordable))}
-        {/if}
-        {#if totals.effect !== null}
-          {@render item(C.effect, signed(totals.effect))}
-        {/if}
-        {#if totals.cost}
-          {@render item(C.spent, formatDollars(totals.cost.spent))}
-          {@render item(
-            C.perHome,
-            totals.cost.perAddedHome === null
-              ? C.noneAdded
-              : formatDollars(totals.cost.perAddedHome)
-          )}
-        {/if}
-      </dl>
-      <h3 class="mt-3 font-semibold" id="{uid}-latest">{C.latest}</h3>
+      <h3 class="font-semibold" id="{uid}-latest">{C.latest}</h3>
       {#if events.length > 0}
         <!-- One line each: the place gives way (ellipsis), its full text stays in the DOM. -->
         <ol class="mt-1 flex flex-col gap-1" aria-labelledby="{uid}-latest">
@@ -163,6 +144,27 @@
       {:else}
         <p class="mt-1">{C.noEvents}</p>
       {/if}
+      <!-- The totals under Latest, two term and value pairs to a line, read across. -->
+      <dl class="mt-3 grid grid-cols-2 gap-x-4 gap-y-1" data-testid="tl-totals">
+        {@render item(C.approved, formatCount(totals.approved))}
+        {@render item(C.completed, formatCount(totals.completed))}
+        {@render item(C.stopped, formatCount(totals.stopped))}
+        {#if totals.affordable !== null}
+          {@render item(C.affordable, formatCount(totals.affordable))}
+        {/if}
+        {#if totals.effect !== null}
+          {@render item(C.effect, signed(totals.effect))}
+        {/if}
+        {#if totals.cost}
+          {@render item(C.spent, formatDollars(totals.cost.spent))}
+          {@render item(
+            C.perHome,
+            totals.cost.perAddedHome === null
+              ? C.noneAdded
+              : formatDollars(totals.cost.perAddedHome)
+          )}
+        {/if}
+      </dl>
     {:else}
       <p>{CALCULATING}</p>
     {/if}

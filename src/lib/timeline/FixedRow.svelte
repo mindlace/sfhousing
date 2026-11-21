@@ -8,6 +8,7 @@
   import Lane from './Lane.svelte';
   import LevelFill from './LevelFill.svelte';
   import { levelIndexAt, levelLeft, type LevelSet } from './pool-level';
+  import { fixedLabel } from './rows';
   import type { SpanRef } from './spans';
 
   interface Props {
@@ -68,7 +69,7 @@
       class:sel={selected}
       class:leveled={shownLevel !== null}
       class:stale={shownLevel !== null && stale}
-      aria-label="{label}, whole window{left ?? ''}"
+      aria-label={fixedLabel(text, label, left)}
       aria-pressed={selected}
       onclick={() => onselect(spanRef)}
     >

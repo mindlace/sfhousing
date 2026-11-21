@@ -74,8 +74,9 @@
     </clipPath>
   </defs>
   <g clip-path="url(#{shownId})" data-testid="tl-level-shown">
-    <path d={area} fill="var(--level-empty)" fill-opacity={stale ? '0.5' : '1'} />
+    <path class="area" d={area} fill="var(--level-empty)" fill-opacity={stale ? '0.5' : '1'} />
     <path
+      class="edge"
       d={line}
       fill="none"
       stroke="var(--on-k)"
@@ -84,8 +85,9 @@
     />
   </g>
   <g clip-path="url(#{seenId})" data-testid="tl-level-seen">
-    <path d={area} fill="var(--level-empty)" fill-opacity="0.5" />
+    <path class="area" d={area} fill="var(--level-empty)" fill-opacity="0.5" />
     <path
+      class="edge"
       d={line}
       fill="none"
       stroke="var(--on-k)"
@@ -103,5 +105,19 @@
     width: 100%;
     height: 100%;
     pointer-events: none;
+  }
+  /* Forced colours would drop the svg's own fills and strokes: the level keeps its picture in
+     system colours, the empty part GrayText (at its opacities), the edge ButtonText, over the
+     button's forced ButtonFace. */
+  @media (forced-colors: active) {
+    .level {
+      forced-color-adjust: none;
+    }
+    .area {
+      fill: GrayText;
+    }
+    .edge {
+      stroke: ButtonText;
+    }
   }
 </style>

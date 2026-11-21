@@ -15,6 +15,7 @@
 <script lang="ts">
   import { untrack, type Snippet } from 'svelte';
   import { MediaQuery } from 'svelte/reactivity';
+  import { moreBelow } from '$lib/shell/more-below';
   import { BUTTON, ON_MAP, SURFACE_POP } from '$lib/shell/ui';
   import { timelineTokenCss } from '../palette';
   import { KEY_COPY } from './copy';
@@ -122,7 +123,8 @@
 
   // The shared button over the map; the open panel's toggle shows one step raised.
   const TOGGLE = `pointer-events-auto ${BUTTON} ${ON_MAP} aria-expanded:bg-surface-raised dark:aria-expanded:bg-surface-dark-raised`;
-  const PANEL = `pointer-events-auto min-h-0 w-[min(18rem,calc(100vw-1rem))] overflow-y-auto md:w-60 ${SURFACE_POP}`;
+  // A panel that scrolls says so: a fade at its foot while more is below (`moreBelow`).
+  const PANEL = `more-below pointer-events-auto min-h-0 w-[min(18rem,calc(100vw-1rem))] overflow-y-auto md:w-60 ${SURFACE_POP}`;
 </script>
 
 <svelte:head>
@@ -176,6 +178,7 @@
     tabindex="0"
     class="sfh-map-key-panel {PANEL}"
     hidden={open !== 'key'}
+    {@attach moreBelow}
   >
     {@render key()}
   </div>
@@ -189,6 +192,7 @@
       tabindex="0"
       class="sfh-map-key-panel {PANEL}"
       hidden={open !== 'layers'}
+      {@attach moreBelow}
     >
       {@render layers()}
     </div>

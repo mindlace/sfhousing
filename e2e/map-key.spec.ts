@@ -9,7 +9,7 @@ import { expect, test, type Locator, type Page } from '@playwright/test';
 import type { SfhFzpDebug } from '../src/lib/fzp/debug';
 import { expectNoA11yViolations } from './helpers/a11y';
 import { loginAs, uniqueEmail } from './helpers/auth';
-import { slider, waitFilled } from './helpers/run';
+import { addPolicy, slider, waitFilled } from './helpers/run';
 import {
   PLAN_KEY,
   chooseTool,
@@ -557,6 +557,63 @@ test('1280x800 on /sim: the open key panel does not scroll; its last row is in f
   const l = await boxOf(last);
   expect(l.y).toBeGreaterThanOrEqual(p.y);
   expect(l.y + l.height).toBeLessThanOrEqual(p.y + p.height);
+});
+
+/** The panel's cue (`moreBelow`): whether data-more is set, and its ::after's opacity and height. */
+const cue = (panel: Locator) =>
+  panel.evaluate((el) => {
+    const a = getComputedStyle(el, '::after');
+    return { more: el.hasAttribute('data-more'), opacity: a.opacity, height: a.height };
+  });
+
+/** A scrolling key panel says there is more below until it is scrolled to its end. */
+async function expectCueToTheEnd(panel: Locator): Promise<void> {
+  expect(await panel.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
+  await expect.poll(() => cue(panel)).toMatchObject({ more: true, opacity: '1', height: '24px' });
+  await panel.evaluate((el) => (el.scrollTop = el.scrollHeight));
+  await expect.poll(() => cue(panel)).toMatchObject({ more: false, opacity: '0' });
+  await panel.evaluate((el) => (el.scrollTop = 0));
+  await expect.poll(() => cue(panel)).toMatchObject({ more: true, opacity: '1' });
+}
+
+test('375 px on /sim: the scrolling key panel shows more below; the cue goes at its end', async ({
+  isMobile,
+  page
+}) => {
+  // eslint-disable-next-line playwright/no-skipped-test -- one layout per project
+  test.skip(!isMobile, 'the phone layout');
+  await gotoSim(page);
+  await keyToggle(page).click();
+  await expect(keyPanel(page)).toBeVisible();
+  await expectCueToTheEnd(keyPanel(page));
+});
+
+test('1280x800 on /sim with a policy in force: the key panel shows more below; a line under forced colours', async ({
+  isMobile,
+  page
+}) => {
+  // eslint-disable-next-line playwright/no-skipped-test -- one layout per project
+  test.skip(isMobile, 'the desktop layout');
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await gotoSim(page);
+  await addPolicy(page, 'Zoning', 'Transit rule');
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('inspector')).toHaveCount(0);
+  await waitFilled(page);
+  const panel = keyPanel(page);
+  await expect(panel).toBeVisible();
+  await expectCueToTheEnd(panel);
+  // Under forced colours the fade is a 2 px line at the panel's foot.
+  await page.emulateMedia({ reducedMotion: 'reduce', forcedColors: 'active' });
+  await expect.poll(() => cue(panel)).toMatchObject({ more: true, height: '2px' });
+  const foot = await panel.evaluate((el) => {
+    const probe = document.body.appendChild(document.createElement('span'));
+    probe.style.color = 'CanvasText';
+    const want = getComputedStyle(probe).color;
+    probe.remove();
+    return { got: getComputedStyle(el, '::after').backgroundColor, want };
+  });
+  expect(foot.got).toBe(foot.want);
 });
 
 test('375 px: Layers and Key are 24 px, inside the map, clear of Reset and the attribution', async ({

@@ -48,7 +48,7 @@ test('a housing bond: no level before its money arrives; after Play its bar drai
   let bar = await bondBar(page);
   // At today: no level, no words.
   await expect(bar.getByTestId('tl-level')).toHaveAttribute('data-left', '');
-  await expect(bar).not.toHaveAttribute('aria-label', /left$/);
+  await expect(bar).not.toHaveAttribute('aria-label', /left/);
   await closeSheet(page, isMobile);
   // Play past the bond's money: its level shows, and its words say the same number.
   const arrival = await page.evaluate(() => {
@@ -66,7 +66,8 @@ test('a housing bond: no level before its money arrives; after Play its bar drai
   const level = bar.getByTestId('tl-level');
   await expect(level).toHaveAttribute('data-left', /^\d+$/);
   let left = await level.getAttribute('data-left');
-  await expect(bar).toHaveAttribute('aria-label', new RegExp(`, ${left}% left$`));
+  // The name starts with the words on the bar (WCAG 2.5.3).
+  await expect(bar).toHaveAttribute('aria-label', new RegExp(`^\\S+, ${left}% left, `));
   await expect(bar).toHaveText(new RegExp(`, ${left}% left$`));
   // At the computed edge (End) the bond has been drawn on: below 100, and a once pool only drains,
   // so at most the paused reading. Read only once the slider's DOM says it is at the edge.
@@ -83,7 +84,8 @@ test('a housing bond: no level before its money arrives; after Play its bar drai
   left = await level.getAttribute('data-left');
   expect(Number(left)).toBeLessThan(100);
   expect(Number(left)).toBeLessThanOrEqual(paused);
-  await expect(bar).toHaveAttribute('aria-label', new RegExp(`, ${left}% left$`));
+  // The name starts with the words on the bar (WCAG 2.5.3).
+  await expect(bar).toHaveAttribute('aria-label', new RegExp(`^\\S+, ${left}% left, `));
   await expect(bar).toHaveText(new RegExp(`, ${left}% left$`));
   // Home: at today, nothing again.
   await closeSheet(page, isMobile);
@@ -94,7 +96,43 @@ test('a housing bond: no level before its money arrives; after Play its bar drai
     .toBe(await page.evaluate(() => (window as FzpWin).__sfhFzp!.asOf));
   bar = await bondBar(page);
   await expect(bar.getByTestId('tl-level')).toHaveAttribute('data-left', '');
-  await expect(bar).not.toHaveAttribute('aria-label', /left$/);
+  await expect(bar).not.toHaveAttribute('aria-label', /left/);
+});
+
+test("forced colours: the bond's level is drawn in a system colour", async ({ page }) => {
+  await page.emulateMedia({ forcedColors: 'active' });
+  await gotoSim(page);
+  await addBond(page);
+  await slider(page).focus();
+  await page.keyboard.press('End');
+  const bar = await bondBar(page);
+  const level = bar.getByTestId('tl-level');
+  await expect(level).toHaveAttribute('data-left', /^\d+$/);
+  const drawn = await level.evaluate((svg) => {
+    const probe = document.body.appendChild(document.createElement('span'));
+    const sys = (c: string) => {
+      probe.style.color = c;
+      return getComputedStyle(probe).color;
+    };
+    const want = { gray: sys('GrayText'), text: sys('ButtonText'), canvas: sys('Canvas') };
+    probe.remove();
+    const paths = [...svg.querySelectorAll('path')];
+    return {
+      want,
+      adjust: getComputedStyle(svg).getPropertyValue('forced-color-adjust'),
+      fills: paths
+        .filter((p) => p.getAttribute('fill') !== 'none')
+        .map((p) => getComputedStyle(p).fill),
+      strokes: paths
+        .filter((p) => p.getAttribute('fill') === 'none')
+        .map((p) => getComputedStyle(p).stroke)
+    };
+  });
+  expect(drawn.adjust).toBe('none');
+  // The empty part in GrayText, its edge in ButtonText: both differ from the bar's ground.
+  expect(drawn.fills).toEqual([drawn.want.gray, drawn.want.gray]);
+  expect(drawn.strokes).toEqual([drawn.want.text, drawn.want.text]);
+  expect(drawn.want.gray).not.toBe(drawn.want.canvas);
 });
 
 for (const scheme of ['light', 'dark'] as const) {

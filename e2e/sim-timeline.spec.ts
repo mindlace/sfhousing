@@ -298,7 +298,7 @@ test('publish, open the /s link, see the same timeline', async ({ page, browser 
   const labels = await bars(page).evaluateAll((els) =>
     els.map((e) => e.getAttribute('aria-label'))
   );
-  expect(labels).toContainEqual(expect.stringMatching(new RegExp(`^${PRESET}, `)));
+  expect(labels).toContainEqual(expect.stringMatching(new RegExp(`^[^,]+, ${PRESET}, `)));
   const link = await publish(page, 'Same timeline');
   await page.close();
 
@@ -407,9 +407,12 @@ test('every bar is reachable and operable by keyboard; focus returns to the bar 
     await expect(bar).toHaveCount(1);
     await bar.focus();
     const name = (await bar.getAttribute('aria-label'))!;
-    // The name is "{label}, {10 Dec 2030} to {date | no end}[, off]".
-    const label = name.replace(/, \d{1,2} [A-Z][a-z]{2} \d{4} to .*$/, '');
-    expect(label).not.toBe(name);
+    // The name is "{setting}, {label}, {10 Dec 2030} to {date | no end}[, off]": it starts with
+    // the words on the bar (WCAG 2.5.3).
+    const shown = (await bar.textContent())!.replace(/\s+/g, ' ').trim();
+    expect(name.startsWith(`${shown}, `)).toBe(true);
+    const label = name.slice(shown.length + 2).replace(/, \d{1,2} [A-Z][a-z]{2} \d{4} to .*$/, '');
+    expect(label).not.toBe(name.slice(shown.length + 2));
     await page.keyboard.press('Enter');
     await expect(bar).toHaveAttribute('aria-pressed', 'true');
     await expect(editor(page).getByRole('heading', { name: label })).toBeVisible();
@@ -420,7 +423,7 @@ test('every bar is reachable and operable by keyboard; focus returns to the bar 
     const was = await spans();
     expect(was.flat().length).toBeGreaterThan(0);
     const named = new RegExp(
-      `^${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}, \\d{1,2} [A-Z][a-z]{2} \\d{4} to `
+      `, ${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}, \\d{1,2} [A-Z][a-z]{2} \\d{4} to `
     );
     const focused = page.getByRole('button', { name: named, pressed: true });
     await focused.focus();

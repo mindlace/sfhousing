@@ -314,7 +314,7 @@ describe('Timeline rows', () => {
     await kindButton('Public money').click();
     for (const name of ['Current law', 'Current timelines', 'Current funding']) {
       await expect
-        .element(page.getByRole('button', { name: new RegExp(`^${name}`) }))
+        .element(page.getByRole('button', { name: new RegExp(`, ${name}, whole window$`) }))
         .toBeVisible();
     }
     const world = page.getByTestId('tl-world').element();
@@ -323,7 +323,7 @@ describe('Timeline rows', () => {
       marketLevel(cal) === 'private' ? 'private starts only' : 'all starts'
     );
     expect(world.textContent).not.toMatch(/, (private|all)$/);
-    await page.getByRole('button', { name: /^Current timelines/ }).click();
+    await page.getByRole('button', { name: /, Current timelines, whole window$/ }).click();
     expect(onselect).toHaveBeenCalledWith({ kind: 'permitting', id: 'fixed', span: -1 });
     const firstRow = document.querySelector(
       '[data-testid=tl-kind-permitting] [data-testid=tl-fixed]'
@@ -346,7 +346,7 @@ describe('Timeline rows', () => {
   it("a bar's keys produce the expected document", async () => {
     const { onedit } = await setup({ playheadMonth: 1 });
     await kindButton('Permitting').click();
-    const name = `Faster permit review, ${formatEdge(first(24))} to ${formatEdge(last(71))}`;
+    const name = `30% faster, Faster permit review, ${formatEdge(first(24))} to ${formatEdge(last(71))}`;
     (page.getByRole('button', { name }).element() as HTMLElement).focus();
     await userEvent.keyboard('{Shift>}{ArrowRight}{/Shift}');
     expect(onedit).toHaveBeenCalledTimes(1);
@@ -863,15 +863,19 @@ describe("a pool's level in its bar", () => {
     const bond = pct(levels.byPolicy.get('m1')!, day);
     expect(bond).toBeGreaterThan(0);
     expect(bond).toBeLessThan(100);
-    expect(bar.getAttribute('aria-label')).toMatch(new RegExp(`, ${bond}% left$`));
+    expect(bar.getAttribute('aria-label')).toMatch(
+      new RegExp(`^\\$500M, ${bond}% left, Housing bond, `)
+    );
     const fill = bar.querySelector('[data-testid=tl-level]')!;
     expect(fill.getAttribute('data-left')).toBe(String(bond));
     expect(fill.getAttribute('aria-hidden')).toBe('true');
     // The bar's text says it too, after its setting, above the fill.
     expect(bar.textContent?.trim()).toBe(`$500M, ${bond}% left`);
-    const fixed = page.getByRole('button', { name: /^Current funding/ }).element();
+    const fixed = page.getByRole('button', { name: /Current funding, whole window$/ }).element();
     const base = pct(levels.fixed!, day);
-    expect(fixed.getAttribute('aria-label')).toBe(`Current funding, whole window, ${base}% left`);
+    expect(fixed.getAttribute('aria-label')).toBe(
+      `In force, ${base}% left, Current funding, whole window`
+    );
     expect(fixed.textContent?.trim()).toBe(`In force, ${base}% left`);
     expect(fixed.querySelector('[data-testid=tl-level]')!.getAttribute('data-left')).toBe(
       String(base)
@@ -883,15 +887,35 @@ describe("a pool's level in its bar", () => {
     );
     // At today: a level is drawn nowhere and no name or text says one.
     await s.rerender({ levels, playheadDay: asOf, playheadMonth: 1, reached: asOf });
-    expect(barsOf('money')[0].getAttribute('aria-label')).not.toMatch(/left$/);
+    expect(barsOf('money')[0].getAttribute('aria-label')).not.toMatch(/left/);
     expect(barsOf('money')[0].textContent?.trim()).toBe('$500M');
     expect(fixed.textContent?.trim()).toBe('In force');
     expect(
       page
-        .getByRole('button', { name: /^Current funding/ })
+        .getByRole('button', { name: /Current funding, whole window$/ })
         .element()
         .getAttribute('aria-label')
-    ).toBe('Current funding, whole window');
+    ).toBe('In force, Current funding, whole window');
+  });
+
+  // WCAG 2.5.3: a voice user says what they see; the name starts with it.
+  it("every bar's accessible name contains its visible text, first", async () => {
+    await setup({ levels, playheadDay: first(30), playheadMonth: 30, reached: first(40) });
+    for (const k of ['Zoning', 'Permitting', 'Public money']) await kindButton(k).click();
+    const bars = all('[data-testid=tl-bar], [data-testid=tl-fixed] button');
+    // Every kind's fixed row, the world row and the policies' bars (one off).
+    expect(bars.length).toBeGreaterThanOrEqual(9);
+    const words = (b: Element) => b.textContent!.replace(/\s+/g, ' ').trim();
+    for (const b of bars) {
+      expect(words(b).length).toBeGreaterThan(0);
+      expect(b.getAttribute('aria-label')!.startsWith(words(b) + ', ')).toBe(true);
+    }
+    const world = page.getByTestId('tl-world').getByRole('button').element();
+    expect(world.getAttribute('aria-label')).toBe(
+      `${words(world)}, Market conditions, whole window`
+    );
+    const off = barsOf('permitting').find((b) => b.classList.contains('off'))!;
+    expect(off.getAttribute('aria-label')).toMatch(/, Paused review, .* to .*, off$/);
   });
 
   it('a closed kind and a fund policy with no own pool carry none', async () => {
@@ -908,7 +932,7 @@ describe("a pool's level in its bar", () => {
     const [bond, ride] = barsOf('money');
     expect(bond.querySelector('[data-testid=tl-level]')).not.toBeNull();
     expect(ride.querySelector('[data-testid=tl-level]')).toBeNull();
-    expect(ride.getAttribute('aria-label')).not.toMatch(/left$/);
+    expect(ride.getAttribute('aria-label')).not.toMatch(/left/);
     // Other kinds' fixed rows carry none.
     await kindButton('Zoning').click();
     expect(

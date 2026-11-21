@@ -100,3 +100,41 @@
     color: var(--color-ink-dark);
   }
 }
+
+/* A scroll box that says more is below (`moreBelow`, src/lib/shell/more-below.ts, sets data-more):
+   put `more-below` on it and attach `{@attach moreBelow}`. While data-more is set a 24 px fade to
+   the surface sticks to its foot; at the end, or when the content fits, nothing. It never takes a
+   press, focus scrolls clear of it, and nothing animates. Under forced colours (where a gradient is
+   not drawn) it is a 2 px CanvasText line at the foot. Used by the /sim detail column and the map
+   key's panels. */
+.more-below {
+  scroll-padding-bottom: 24px;
+}
+.more-below::after {
+  content: '';
+  position: sticky;
+  bottom: 0;
+  display: block;
+  height: 24px;
+  margin-top: -24px;
+  pointer-events: none;
+  opacity: 0;
+  background: linear-gradient(to bottom, transparent, var(--color-surface));
+}
+.more-below[data-more]::after {
+  opacity: 1;
+}
+@media (prefers-color-scheme: dark) {
+  .more-below::after {
+    background: linear-gradient(to bottom, transparent, var(--color-surface-dark));
+  }
+}
+@media (forced-colors: active) {
+  .more-below::after {
+    forced-color-adjust: none;
+    height: 2px;
+    margin-top: -2px;
+    background-color: CanvasText;
+    background-image: none;
+  }
+}

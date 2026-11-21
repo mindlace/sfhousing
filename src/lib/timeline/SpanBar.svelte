@@ -158,7 +158,7 @@
     class:stale={shownLevel !== null && stale}
     data-testid="tl-bar"
     data-open={open}
-    aria-label={barLabel(policyLabel, span, asOf) + (off ? ', off' : '') + (left ?? '')}
+    aria-label={barLabel(settingOf(span.what), policyLabel, span, asOf, { off, left })}
     aria-pressed={selected}
     onclick={() => onselect(ref)}
     {onkeydown}

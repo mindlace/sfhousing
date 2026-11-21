@@ -740,7 +740,7 @@ test('clicking a lot selects the transit rule that sets its limit', async ({ isM
   // From md the Zoning kind opens, its bar pressed.
   if (!isMobile)
     await expect(
-      page.getByRole('button', { name: /^Transit rule, /, pressed: true })
+      page.getByRole('button', { name: /, Transit rule, /, pressed: true })
     ).toBeInViewport();
   // Focus stays off the editor.
   expect(await editor(page).evaluate((d) => d.contains(document.activeElement))).toBe(false);
@@ -929,7 +929,7 @@ test("a transit rule's editor passes axe at a bound and with the plan's row", as
   // the kind's sheet is not under it.)
   await closeEditor(page);
   await openKind(page, 'Zoning');
-  const plan = page.getByRole('button', { name: 'Current law, whole window' });
+  const plan = page.getByRole('button', { name: 'In force, Current law, whole window' });
   await plan.last().click();
   await expect(editor(page).getByRole('heading', { name: 'Current law' })).toBeVisible();
   await expect(editor(page).getByRole('group', { name: 'Stop types' })).toHaveCount(0);

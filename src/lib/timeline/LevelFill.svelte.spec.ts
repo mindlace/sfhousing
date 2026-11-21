@@ -105,4 +105,39 @@ describe('LevelFill', () => {
     await s.view.rerender({ ...s.props, day: MONTHS[10] + 1 });
     expect(s.svg().getAttribute('data-left')).toBe('0');
   });
+
+  // Forced colours drop the svg's own fills; the level keeps its picture in system colours.
+  it('the style sheet draws the level under forced colours: forced-color-adjust none, GrayText, ButtonText', async () => {
+    const s = await setup(MONTHS[4] + 3, MONTHS[8]);
+    const forced = (el: Element) => {
+      const got: Record<string, string> = {};
+      for (const sheet of document.styleSheets) {
+        let rules: CSSRuleList;
+        try {
+          rules = sheet.cssRules;
+        } catch {
+          continue;
+        }
+        for (const r of rules) {
+          if (!(r instanceof CSSMediaRule) || !r.conditionText.includes('forced-colors: active'))
+            continue;
+          for (const x of r.cssRules) {
+            if (!(x instanceof CSSStyleRule) || !el.matches(x.selectorText)) continue;
+            for (const p of x.style) got[p] = x.style.getPropertyValue(p);
+          }
+        }
+      }
+      return got;
+    };
+    expect(forced(s.svg())['forced-color-adjust']).toBe('none');
+    const areas = [...s.svg().querySelectorAll('path')].filter((p) => p.getAttribute('d') !== null);
+    const fills = areas.filter((p) => p.getAttribute('fill') !== 'none');
+    const edges = areas.filter((p) => p.getAttribute('fill') === 'none');
+    expect(fills).toHaveLength(2);
+    expect(edges).toHaveLength(2);
+    for (const p of fills) expect(forced(p).fill).toBe('graytext');
+    for (const p of edges) expect(forced(p).stroke).toBe('buttontext');
+    // The empty part keeps its opacities: the seen zone half the shown one.
+    expect(fills.map((p) => p.getAttribute('fill-opacity'))).toEqual(['1', '0.5']);
+  });
 });

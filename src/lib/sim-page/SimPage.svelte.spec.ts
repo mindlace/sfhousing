@@ -514,7 +514,7 @@ describe('SimPage editing', () => {
       .getByTestId('tl-kind-money')
       .getByRole('button', { name: /^Public money/ })
       .click();
-    await page.getByRole('button', { name: /^Market terms, / }).click();
+    await page.getByRole('button', { name: /, Market terms, / }).click();
     await expect.element(inspectorTitle()).toHaveTextContent('Market terms');
     await inspector().getByRole('button', { name: 'Remove policy' }).click();
 
@@ -1061,7 +1061,7 @@ describe('SimPage map overlays', () => {
     await frames();
     expect(lastLayer()!.props.mode).toEqual({ kind: 'rule', ruleId: 'near-bart' });
     await toolKey('v');
-    await page.getByRole('button', { name: 'Current law, whole window' }).click();
+    await page.getByRole('button', { name: 'In force, Current law, whole window' }).click();
     await expect.poll(() => lastLayer()?.props.mode).toEqual({ kind: 'fzp' });
     await inspector().getByRole('button', { name: 'Close editor' }).click();
     await expect.poll(() => lastLayer()?.props.mode).toEqual({ kind: 'plain' });
@@ -1081,7 +1081,7 @@ describe('SimPage map overlays', () => {
       expect(overlayIds()).not.toContain(LIMITS_LAYER_ID);
       await openZoning();
       if (which === 'policy') await page.getByTestId('tl-bar').first().click();
-      else await page.getByRole('button', { name: 'Current law, whole window' }).click();
+      else await page.getByRole('button', { name: 'In force, Current law, whole window' }).click();
       await expect.poll(overlayIds).toContain(LIMITS_LAYER_ID);
       expect(lastLayer()!.props.mode).toEqual(
         which === 'policy' ? { kind: 'rule', ruleId: 'near-bart' } : { kind: 'fzp' }

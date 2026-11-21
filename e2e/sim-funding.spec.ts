@@ -550,7 +550,7 @@ test('8. a published policy lists its public money', async ({ page }) => {
   const g = f.programmes[0];
   // The fund's read-only summary: its pool and what it pays for.
   await page
-    .getByRole('button', { name: new RegExp(`^${esc(pool.label)}, `) })
+    .getByRole('button', { name: new RegExp(`, ${esc(pool.label)}, `) })
     .last()
     .click();
   const fund = editor(page).getByRole('region', { name: 'Public money' });
@@ -561,7 +561,7 @@ test('8. a published policy lists its public money', async ({ page }) => {
   await editor(page).getByRole('button', { name: 'Close editor' }).click();
   await openKind(page, 'Public money');
   await page
-    .getByRole('button', { name: /^Market terms, / })
+    .getByRole('button', { name: /, Market terms, / })
     .last()
     .click();
   await expect(editor(page).getByRole('region', { name: 'Public money' })).toContainText(

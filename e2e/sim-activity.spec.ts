@@ -272,6 +272,99 @@ test('the no-scenario message is a card; a load failure is a chip with Retry', a
   await expect(chip.getByRole('button', { name: 'Retry', exact: true })).toBeVisible();
 });
 
+/** At 1280x800 a transit rule and a housing bond in force, mid-play (three years on), filled. */
+async function midPlayWithTwo(page: Page): Promise<void> {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await gotoSim(page);
+  await addPolicy(page, 'Zoning', 'Transit rule');
+  await page.keyboard.press('Escape');
+  await addPolicy(page, 'Public money', 'A housing bond');
+  await page.keyboard.press('Escape');
+  await expect(editor(page)).toHaveCount(0);
+  await waitFilled(page);
+  const asOf = await page.evaluate(() => (window as FzpWin).__sfhFzp!.asOf);
+  await slider(page).focus();
+  for (let k = 0; k < 3; k++) await page.keyboard.press('PageUp');
+  await page.waitForFunction((a) => (window as FzpWin).__sfhFzp!.day > a + 1000, asOf);
+  await waitFilled(page);
+  await expect(activity(page).getByTestId('tl-totals')).toBeVisible();
+}
+
+const column = (page: Page): Locator => page.getByTestId('tl-inspector');
+
+test('1280×800 mid-play with a transit rule and a bond: at least four Latest items are inside the column', async ({
+  page,
+  isMobile
+}) => {
+  // eslint-disable-next-line playwright/no-skipped-test -- one layout per project
+  test.skip(isMobile, 'the desktop column');
+  await midPlayWithTwo(page);
+  await expect(latest(page)).toHaveCount(6);
+  // Latest first, then the totals.
+  const order = await activity(page).evaluate((a) => {
+    const h3 = a.querySelector('h3')!;
+    const dl = a.querySelector('[data-testid=tl-totals]')!;
+    return Boolean(h3.compareDocumentPosition(dl) & Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+  expect(order).toBe(true);
+  const inside = await column(page).evaluate((col) => {
+    col.scrollTop = 0;
+    const c = col.getBoundingClientRect();
+    return [...col.querySelectorAll('ol li')].filter((li) => {
+      const r = li.getBoundingClientRect();
+      return r.top >= c.top && r.bottom <= c.bottom;
+    }).length;
+  });
+  expect(inside).toBeGreaterThanOrEqual(4);
+});
+
+/** The column's cue (`moreBelow`): data-more, and its ::after's opacity, height and colour. */
+const cue = (col: Locator) =>
+  col.evaluate((el) => {
+    const a = getComputedStyle(el, '::after');
+    return {
+      more: el.hasAttribute('data-more'),
+      opacity: a.opacity,
+      height: a.height,
+      color: a.backgroundColor,
+      events: a.pointerEvents
+    };
+  });
+
+test("the column's fade shows while more is below and goes at the end; under forced colours it is a line", async ({
+  page,
+  isMobile
+}) => {
+  await gotoSim(page);
+  await slider(page).focus();
+  await page.keyboard.press('End');
+  await waitFilled(page);
+  await showActivity(page, isMobile);
+  // After today Details is longer than the column, and than the phone's sheet.
+  await activity(page).getByRole('button', { name: 'Details', exact: true }).click();
+  await expect(details(page)).toBeVisible();
+  const col = column(page);
+  expect(await col.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
+  await expect
+    .poll(() => cue(col))
+    .toMatchObject({ more: true, opacity: '1', height: '24px', events: 'none' });
+  await col.evaluate((el) => (el.scrollTop = el.scrollHeight));
+  await expect.poll(() => cue(col)).toMatchObject({ more: false, opacity: '0' });
+  // Under forced colours: a 2 px CanvasText line at the foot while more is below.
+  await page.emulateMedia({ reducedMotion: 'reduce', forcedColors: 'active' });
+  await col.evaluate((el) => (el.scrollTop = 0));
+  const canvasText = await page.evaluate(() => {
+    const probe = document.body.appendChild(document.createElement('span'));
+    probe.style.color = 'CanvasText';
+    const c = getComputedStyle(probe).color;
+    probe.remove();
+    return c;
+  });
+  await expect
+    .poll(() => cue(col))
+    .toMatchObject({ more: true, opacity: '1', height: '2px', color: canvasText });
+});
+
 for (const scheme of ['light', 'dark'] as const) {
   test(`Activity: axe clean, ${scheme}, at today and after Play`, async ({ page, isMobile }) => {
     await gotoSim(page, { colorScheme: scheme });
