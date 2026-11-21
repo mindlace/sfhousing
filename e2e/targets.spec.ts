@@ -156,9 +156,10 @@ test.describe('targets at 375 px', () => {
   test('/sim: at rest, the key, a policy editor, Details', async ({ page }) => {
     await page.goto('/sim');
     await page.waitForFunction(() => (window as W).__sfhFzp?.phase === 'ready');
-    await expect(page.getByTestId('map-root')).toHaveAttribute('data-state', 'ready', {
-      timeout: 20_000
-    });
+    await page.waitForFunction(
+      () =>
+        document.querySelector('[data-testid="map-root"]')?.getAttribute('data-state') === 'ready'
+    );
     await waitFilled(page);
     await expectTargets(page, '/sim at rest');
     const key = page.getByTestId('map-key-toggle');
@@ -176,12 +177,12 @@ test.describe('targets at 375 px', () => {
 
   test('/lesscars at rest', async ({ page }) => {
     await page.goto('/lesscars');
-    await page.waitForFunction(() => (window as W).__sfhLessCars?.phase === 'ready', undefined, {
-      timeout: 20_000
-    });
-    await expect(page.getByTestId('map-root')).toHaveAttribute('data-state', 'ready', {
-      timeout: 20_000
-    });
+    await page.waitForFunction(() => (window as W).__sfhLessCars?.phase === 'ready');
+    await page.waitForFunction(
+      () =>
+        document.querySelector('[data-testid="map-root"]')?.getAttribute('data-state') === 'ready'
+    );
+    await expect(page.getByTestId('map-root')).toHaveAttribute('data-state', 'ready');
     await expectTargets(page, '/lesscars at rest');
   });
 });
