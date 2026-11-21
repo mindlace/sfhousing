@@ -497,7 +497,7 @@ test('at 768 px on /s/<id> the banner, editor and notices leave the zoom control
   ]);
 });
 
-test('from md /s/<id> shows Results in the detail column; a selected policy replaces it read-only', async ({
+test('from md /s/<id> shows Details in the detail column; a selected policy replaces it read-only', async ({
   page,
   isMobile
 }) => {
@@ -507,9 +507,9 @@ test('from md /s/<id> shows Results in the detail column; a selected policy repl
   await page.goto(`/s/${id}`);
   await waitReady(page);
   const column = page.getByTestId('tl-inspector');
-  await expect(column.getByTestId('tl-results')).toBeVisible();
+  await expect(column.getByTestId('tl-details')).toBeVisible();
   await selectPolicy(page, 'Permitting', PRESET);
   await expect(column.getByTestId('inspector')).toBeVisible();
-  await expect(column.getByTestId('tl-results')).toHaveCount(0);
+  await expect(column.getByTestId('tl-details')).toHaveCount(0);
   await expect(column.getByRole('button', { name: 'Remove policy' })).toHaveCount(0);
 });

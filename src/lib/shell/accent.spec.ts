@@ -29,8 +29,7 @@ const SCANNED = [
 const THEMED_FILES = [
   'src/lib/shell/NoticePills.svelte',
   'src/lib/sim-page/SimNotices.svelte',
-  'src/lib/fzp/SimResults.svelte',
-  'src/lib/fzp/ScoreChart.svelte',
+  'src/lib/timeline/SimDetails.svelte',
   'src/lib/map/key/MapKeyControl.svelte',
   'src/lib/map/key/KeySwatch.svelte',
   'src/lib/timeline/SimKey.svelte',
@@ -75,8 +74,7 @@ const THEMED_FILES = [
 ];
 /** Themed files whose colours come from tokens and custom properties only: no hex at all. */
 const NO_HEX_FILES = [
-  'src/lib/fzp/SimResults.svelte',
-  'src/lib/fzp/ScoreChart.svelte',
+  'src/lib/timeline/SimDetails.svelte',
   'src/lib/map/key/MapKeyControl.svelte',
   'src/lib/map/key/KeySwatch.svelte',
   'src/lib/timeline/SimKey.svelte',

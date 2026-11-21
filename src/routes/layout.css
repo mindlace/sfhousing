@@ -24,7 +24,7 @@
   --color-ink-dark-muted: #b4aea3;
 }
 
-/* The score chart's strokes, labels and halos (src/lib/fzp/ScoreChart.svelte), light and dark.
+/* The chart strokes, labels and halos (the /sim timeline chart and its legend), light and dark.
    Every stroke is >= 3:1 on surface and surface-raised of its theme (SC 1.4.11). */
 :root {
   --chart-total: #1d4ed8;

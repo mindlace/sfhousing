@@ -947,7 +947,7 @@ describe('SimPage tools', () => {
 
   // Rule 19: with a stroke tool a tap strokes, so the tool must stay visible to turn off. From md
   // the painted policy's editor holds the tools; with it out of view (closed, another selection,
-  // Results) the header offers "Stop painting" / "Stop erasing". Below md the palette strip does.
+  // Details) the header offers "Stop painting" / "Stop erasing". Below md the palette strip does.
   it('on desktop a stroke tool with its editor closed shows in the header and turns off there', async () => {
     await opened({ storage: () => seeded(doc4(zoning(painted))) });
     const stop = () => header().getByRole('button', { name: /^Stop (painting|erasing)$/ });
@@ -1510,32 +1510,32 @@ describe('SimPage autosave and publish', () => {
 
   describe('the header score', () => {
     const scoreBar = () => header().getByTestId('score-bar');
-    const results = () => page.getByTestId('tl-results');
+    const details = () => page.getByTestId('tl-details');
 
-    it('from md Results shows at rest, and the header score has no aria-expanded', async () => {
+    it('from md Details shows at rest, and the header score has no aria-expanded', async () => {
       await opened();
-      await expect.element(results()).toBeVisible();
+      await expect.element(details()).toBeVisible();
       expect(scoreBar().element().hasAttribute('aria-expanded')).toBe(false);
       expect(scoreBar().element().getAttribute('aria-controls')).toBe(
         page.getByTestId('tl-inspector').element().id
       );
     });
 
-    it('from md the header score closes an open editor and moves focus to Results', async () => {
+    it('the header score from md opens Details and clears a selection', async () => {
       await opened({ storage: () => seeded(doc4(zoning(historic))) });
       await openZoning();
       await page.getByTestId('tl-bar').first().click();
       await expect.element(inspector()).toBeVisible();
       await scoreBar().click();
       await expect.poll(() => inspector().elements().length).toBe(0);
-      await expect.element(results()).toBeVisible();
+      await expect.element(details()).toBeVisible();
       expect(
         page
           .getByTestId('tl-bar')
           .and(page.getByRole('button', { pressed: true }))
           .elements()
       ).toHaveLength(0);
-      await expect.poll(() => document.activeElement).toBe(results().element());
+      await expect.poll(() => document.activeElement).toBe(details().element());
     });
 
     it('from md the header score discards an open pool draft and says so', async () => {
@@ -1546,23 +1546,23 @@ describe('SimPage autosave and publish', () => {
       await scoreBar().click();
       await expect.poll(() => inspector().elements().length).toBe(0);
       await expect.element(page.getByText(DRAFT_DISCARDED)).toBeInTheDocument();
-      await expect.element(results()).toBeVisible();
+      await expect.element(details()).toBeVisible();
     });
 
-    it('from md with nothing open the header score scrolls Results to the top and focuses it', async () => {
+    it('from md with nothing open the header score scrolls Details to the top and focuses it', async () => {
       await opened();
       const col = page.getByTestId('tl-inspector').element();
       col.scrollTop = 200;
       await scoreBar().click();
       await expect.poll(() => col.scrollTop).toBe(0);
-      await expect.poll(() => document.activeElement).toBe(results().element());
+      await expect.poll(() => document.activeElement).toBe(details().element());
     });
 
     it('from md a bar selected after the header score opens its editor at the top', async () => {
       await opened({ storage: () => seeded(doc4(zoning(historic))) });
       await openZoning();
       await scoreBar().click();
-      await expect.element(results()).toBeVisible();
+      await expect.element(details()).toBeVisible();
       const col = page.getByTestId('tl-inspector').element();
       await expect.poll(() => col.scrollHeight - col.clientHeight).toBeGreaterThan(100);
       col.scrollTop = 100;
@@ -1572,17 +1572,30 @@ describe('SimPage autosave and publish', () => {
       await expect.poll(() => col.scrollTop).toBe(0);
     });
 
-    it('below md the header score still toggles Results with aria-expanded', async () => {
+    it('selecting a policy shows its editor; closing it returns to the rest face', async () => {
+      await opened({ storage: () => seeded(doc4(zoning(historic))) });
+      await openZoning();
+      await scoreBar().click();
+      await expect.element(details()).toBeVisible();
+      await page.getByTestId('tl-bar').first().click();
+      await expect.element(inspector()).toBeVisible();
+      expect(details().elements()).toHaveLength(0);
+      await page.getByRole('button', { name: 'Close editor' }).click();
+      await expect.poll(() => inspector().elements().length).toBe(0);
+      await expect.element(details()).toBeVisible();
+    });
+
+    it('below md the header score toggles the Details sheet; aria-expanded follows it', async () => {
       await page.viewport(375, 700);
       await opened();
       await expect.element(scoreBar()).toHaveAttribute('aria-expanded', 'false');
-      expect(results().elements()).toHaveLength(0);
+      expect(details().elements()).toHaveLength(0);
       await scoreBar().click();
       await expect.element(scoreBar()).toHaveAttribute('aria-expanded', 'true');
-      await expect.element(results()).toBeVisible();
+      await expect.element(details()).toBeVisible();
       await scoreBar().click();
       await expect.element(scoreBar()).toHaveAttribute('aria-expanded', 'false');
-      expect(results().elements()).toHaveLength(0);
+      expect(details().elements()).toHaveLength(0);
     });
   });
 });

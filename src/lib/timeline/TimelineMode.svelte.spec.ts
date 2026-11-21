@@ -29,8 +29,8 @@ import { filledEndDay, indexOfDay } from './playhead';
 import { DEFAULT_POLICY4, queriesOf4, type Policy, type SimPolicy4 } from './policy4';
 import { goalOutcome } from './outcome';
 import { headlineAt, headlineSpoken, headlineText, scoreOfView } from './results';
+import { PIPELINE_DASH } from './chart-lens';
 import { keyTally } from './key';
-import { chartModel } from '$lib/fzp/chart';
 import { dayPct } from './rows';
 import { scanned } from './reveal';
 import type { Lots } from './session.svelte';
@@ -57,7 +57,7 @@ vi.mock('./reveal', async (importOriginal) => {
   const real = await importOriginal<typeof import('./reveal')>();
   return { ...real, scanned: vi.fn(real.scanned) };
 });
-// Results' score and its chart's model as they are, counted (when Results rebuilds).
+// Details' score as it is, counted (when Details rebuilds).
 vi.mock('./results', async (importOriginal) => {
   const real = await importOriginal<typeof import('./results')>();
   return { ...real, scoreOfView: vi.fn(real.scoreOfView) };
@@ -66,10 +66,6 @@ vi.mock('./results', async (importOriginal) => {
 vi.mock('./key', async (importOriginal) => {
   const real = await importOriginal<typeof import('./key')>();
   return { ...real, keyTally: vi.fn(real.keyTally) };
-});
-vi.mock('$lib/fzp/chart', async (importOriginal) => {
-  const real = await importOriginal<typeof import('$lib/fzp/chart')>();
-  return { ...real, chartModel: vi.fn(real.chartModel) };
 });
 
 const manifest: Manifest = parseManifest(manifestJson);
@@ -152,7 +148,7 @@ function setup(over: Over = {}) {
     setLots?: (l: Lots | null) => void;
     setLotsFailed?: (f: boolean) => void;
     setSaveStatus?: (s: SaveStatus) => void;
-    showResults?: () => Promise<void>;
+    showDetails?: () => Promise<void>;
   } = {};
   const createWorker = vi.fn(() => {
     const f = new FakeTimelineWorker();
@@ -192,7 +188,7 @@ function setup(over: Over = {}) {
     setLots: (l: Lots | null) => ctl.setLots!(l),
     setLotsFailed: (f: boolean) => ctl.setLotsFailed!(f),
     setSaveStatus: (st: SaveStatus) => ctl.setSaveStatus!(st),
-    showResults: () => ctl.showResults!()
+    showDetails: () => ctl.showDetails!()
   };
 }
 
@@ -1081,12 +1077,12 @@ describe('TimelineMode', () => {
     await expect.element(scoreBar()).toHaveTextContent(textAt(i).main);
     expect(page.getByTestId('score-delta').elements()).toEqual([]);
     await expect.element(page.getByTestId('score-detail')).toHaveTextContent(/of the goal$/);
-    const results = page.getByTestId('tl-results');
+    const results = page.getByTestId('tl-details');
     await expect.element(results).toHaveTextContent('What current law added');
     expect(results.element().textContent).not.toContain('your policy');
   });
 
-  it('a policy in force: the header shows the plan effect and Results the your-policy copy', async () => {
+  it('a policy in force: the header shows the plan effect and Details the your-policy copy', async () => {
     await opened(LAST, { withInspector: true, initialPolicy: mk(protect(5)) });
     (slider().element() as HTMLElement).focus();
     await userEvent.keyboard('{PageUp}');
@@ -1096,7 +1092,7 @@ describe('TimelineMode', () => {
       .element(page.getByTestId('score-delta'))
       .toHaveTextContent(fromPolicyText(FULL().planEffect[i].completedNetNew));
     await expect
-      .element(page.getByTestId('tl-results'))
+      .element(page.getByTestId('tl-details'))
       .toHaveTextContent('What your policy added');
   });
 
@@ -1338,7 +1334,7 @@ describe('TimelineMode', () => {
 
   it("the comparison wording is the shown numbers' document's: it changes with them", async () => {
     const s = await opened(LAST, { withInspector: true });
-    const results = page.getByTestId('tl-results');
+    const results = page.getByTestId('tl-details');
     (slider().element() as HTMLElement).focus();
     await userEvent.keyboard('{PageUp}');
     await expect.poll(() => debug().day).toBeGreaterThan(asOf);
@@ -1361,9 +1357,9 @@ describe('TimelineMode', () => {
     await expect.element(page.getByTestId('score-delta')).toHaveTextContent(/from your policy$/);
   });
 
-  /** Results and the header keep the current-law wording now; after `answer` the policy's. */
+  /** Details and the header keep the current-law wording now; after `answer` the policy's. */
   async function heldWordingThenPolicy(answer: () => void) {
-    const results = page.getByTestId('tl-results');
+    const results = page.getByTestId('tl-details');
     await tick();
     expect(debug().stale).toBe(true);
     await expect.element(results).toHaveTextContent('What current law added');
@@ -1385,7 +1381,7 @@ describe('TimelineMode', () => {
     s.setLotsFailed(true);
     await expect.poll(() => debug().stale).toBe(false);
     await expect
-      .element(page.getByTestId('tl-results'))
+      .element(page.getByTestId('tl-details'))
       .toHaveTextContent('What current law added');
     // Retry found the lots: the painted document goes out with no new edit.
     s.setLotsFailed(false);
@@ -1465,7 +1461,7 @@ describe('TimelineMode', () => {
     await expect.poll(() => w()?.lastOf('openTimeline')).toBeTruthy();
     emit(compiledMsg(1, FIN));
     filledPools(1);
-    const results = page.getByTestId('tl-results');
+    const results = page.getByTestId('tl-details');
     await results.getByRole('button', { name: /Money details/ }).click();
     const received = () => {
       const table = results.getByTestId('fzp-money-sources').element() as HTMLTableElement;
@@ -1601,7 +1597,7 @@ describe('TimelineMode', () => {
       .toBeCloseTo(2 + (1 - need / 100) * 96, 1);
   });
 
-  it('while stale the map canvas, Results, card and header dim; their controls keep full contrast', async () => {
+  it('while stale the map canvas, Details, card and header dim; their controls keep full contrast', async () => {
     const s = await opened(LAST, { withInspector: true });
     const canvas = document.createElement('canvas');
     canvas.className = 'maplibregl-canvas';
@@ -1630,7 +1626,7 @@ describe('TimelineMode', () => {
     };
     const controls = [
       ...document.querySelectorAll(
-        '[data-testid=tl-results] button, [data-testid=tl-card] button, [data-testid=header-pinned] button, [data-testid=fzp-sim-map-stub]'
+        '[data-testid=tl-details] button, [data-testid=tl-card] button, [data-testid=header-pinned] button, [data-testid=fzp-sim-map-stub]'
       )
     ];
     expect(controls.length).toBeGreaterThan(3);
@@ -2161,37 +2157,81 @@ describe('TimelineMode', () => {
     expect(page.getByTestId('chart-svg').element().getBoundingClientRect().height).toBe(96);
   });
 
-  it('from md the detail column shows Results when nothing is open', async () => {
+  it('from md the detail column shows Details when nothing is open', async () => {
     await opened(LAST, { withInspector: true, inspectorOpen: false });
     const insp = page.getByTestId('tl-inspector');
-    await expect.element(insp.getByTestId('tl-results')).toBeVisible();
+    await expect.element(insp.getByTestId('tl-details')).toBeVisible();
     expect(document.querySelector('[data-testid=host-inspector]')).toBeNull();
   });
 
-  it("Results' score and chart are not rebuilt as the playhead crosses months", async () => {
+  it("Details' score is not rebuilt as the playhead crosses months; it draws no chart", async () => {
     await opened(LAST, { withInspector: true, inspectorOpen: false });
-    const chart = page.getByTestId('tl-inspector').getByTestId('fzp-chart');
-    await expect.element(chart).toBeVisible();
+    const details = page.getByTestId('tl-inspector').getByTestId('tl-details');
+    await expect.element(details).toBeVisible();
+    expect(details.element().querySelector('svg[role="img"], figure')).toBeNull();
     (slider().element() as HTMLElement).focus();
     await userEvent.keyboard('{Home}');
     await expect.poll(() => debug().day).toBe(asOf);
     await tick();
     const scores = vi.mocked(scoreOfView).mock.calls.length;
-    const models = vi.mocked(chartModel).mock.calls.length;
-    let paths = 0;
-    const obs = new MutationObserver((r) => (paths += r.length));
-    obs.observe(chart.element(), { subtree: true, attributes: true, attributeFilter: ['d'] });
     for (let k = 1; k <= 4; k++) {
       await userEvent.keyboard('{ArrowRight}');
       await expect.poll(() => debug().day).toBe(MONTHS[k]);
       await expect.element(scoreBar()).toHaveTextContent(textAt(k).main);
     }
     await tick();
-    paths += obs.takeRecords().length;
-    obs.disconnect();
     expect(vi.mocked(scoreOfView).mock.calls.length - scores).toBe(0);
-    expect(vi.mocked(chartModel).mock.calls.length - models).toBe(0);
-    expect(paths).toBe(0);
+  });
+
+  /** The stacked legend's entries (from md, in the label column). */
+  const stackedLegend = () =>
+    [...page.getByTestId('tl-chart-legend').element().querySelectorAll('li')].map((li) =>
+      li.textContent!.trim()
+    );
+
+  it('choosing By source in Details redraws the timeline chart with the pipeline line', async () => {
+    await opened(LAST, { withInspector: true, inspectorOpen: false });
+    const details = page.getByTestId('tl-details');
+    await expect.element(details).toBeVisible();
+    const fig = page.getByTestId('tl-lanes').getByRole('figure');
+    await expect.element(fig).toHaveAttribute('data-lens', 'homes');
+    expect(page.getByRole('radio', { name: 'From your policy' }).elements()).toHaveLength(0);
+    await details.getByRole('radio', { name: 'By source' }).click();
+    await expect.element(fig).toHaveAttribute('data-lens', 'source');
+    await expect.element(fig).toHaveAccessibleName('By source');
+    // The pipeline line, dashed, and the stacked legend (from md) naming what is drawn.
+    await expect
+      .element(page.getByTestId('chart-law'))
+      .toHaveAttribute('stroke-dasharray', PIPELINE_DASH);
+    expect(stackedLegend()).toEqual(['All homes', "From today's pipeline", 'New projects']);
+    await details.getByRole('radio', { name: 'Homes' }).click();
+    await expect.element(fig).toHaveAttribute('data-lens', 'homes');
+    expect(stackedLegend()[0]).toBe('Homes completed');
+  });
+
+  it('a policy in force offers From your policy; the chart and the switch agree when it goes', async () => {
+    const s = await opened(LAST, {
+      withInspector: true,
+      inspectorOpen: false,
+      initialPolicy: mk(protect(5))
+    });
+    const details = page.getByTestId('tl-details');
+    const fig = page.getByTestId('tl-lanes').getByRole('figure');
+    await details.getByRole('radio', { name: 'From your policy' }).click();
+    await expect.element(fig).toHaveAttribute('data-lens', 'effect');
+    expect(stackedLegend()).toEqual(['From your policy']);
+    // The policy goes: once the numbers on show are the new document's, the radio goes and the
+    // chart and the switch both say Homes.
+    s.setPolicy(DEFAULT_POLICY4);
+    s.setLots({});
+    await expect.poll(() => w().lastOf('setPolicy')?.rev).toBe(2);
+    emit(compiledMsg(2, STATICS));
+    emit(refillMsg(2, 0));
+    emit(filledMsg(2, 0, LAST + 1));
+    await expect.poll(() => debug().stale).toBe(false);
+    await expect.element(fig).toHaveAttribute('data-lens', 'homes');
+    await expect.element(details.getByRole('radio', { name: 'Homes' })).toBeChecked();
+    expect(details.getByRole('radio', { name: 'From your policy' }).elements()).toHaveLength(0);
   });
 
   it("from md the map's height holds when a kind opens or the inspector opens", async () => {
@@ -2239,19 +2279,19 @@ describe('TimelineMode', () => {
     await expect.element(scoreBar()).toHaveAttribute('aria-controls', 'insp');
   });
 
-  it('showResults scrolls the detail column to the top and focuses Results', async () => {
+  it('showDetails scrolls the detail column to the top and focuses Details', async () => {
     const s = await opened(LAST, { withInspector: true, inspectorOpen: false });
     const insp = page.getByTestId('tl-inspector');
-    await expect.element(insp.getByTestId('tl-results')).toBeVisible();
+    await expect.element(insp.getByTestId('tl-details')).toBeVisible();
     const el = insp.element() as HTMLElement;
     await expect.poll(() => el.scrollHeight - el.clientHeight).toBeGreaterThan(200);
     el.scrollTop = 200;
     expect(el.scrollTop).toBe(200);
-    await s.showResults();
+    await s.showDetails();
     expect(el.scrollTop).toBe(0);
-    const res = page.getByTestId('tl-results').element();
+    const res = page.getByTestId('tl-details').element();
     expect(document.activeElement).toBe(res);
-    // The ring draws inside Results, so the column's scroll box never clips it (WCAG 2.4.7).
+    // The ring draws inside Details, so the column's scroll box never clips it (WCAG 2.4.7).
     const cs = getComputedStyle(res);
     expect(cs.outlineStyle).not.toBe('none');
     expect(parseFloat(cs.outlineWidth)).toBeGreaterThanOrEqual(2);
@@ -2267,7 +2307,7 @@ describe('TimelineMode', () => {
     el.scrollTop = 200;
     expect(el.scrollTop).toBe(200);
     await (await s.r).rerender({ inspectorOpen: false });
-    await expect.element(insp.getByTestId('tl-results')).toBeVisible();
+    await expect.element(insp.getByTestId('tl-details')).toBeVisible();
     expect(document.querySelector('[data-testid=host-inspector]')).toBeNull();
     await expect.poll(() => el.scrollTop).toBe(0);
   });
@@ -2691,7 +2731,7 @@ describe('the map key', () => {
     await expect.element(control()).toBeVisible();
   });
 
-  it('stale: the key dims with Results', async () => {
+  it('stale: the key dims with Details', async () => {
     const s = await opened();
     await expect.element(keyPanel()).toBeVisible();
     expect(keyPanel().element().hasAttribute('data-stale')).toBe(false);

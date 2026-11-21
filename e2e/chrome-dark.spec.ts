@@ -1,5 +1,5 @@
 // Dark chrome (sim-runs spec §8, sim-ux spec Goal 9, timeline-ui): the header, /sim's playhead
-// and timeline, its editor and Results, /'s dock and its Details face, and the notice pills take
+// and timeline, its editor and Details, /'s dock and its Details face, and the notice pills take
 // dark variants and stay WCAG AA. Both Playwright projects.
 import { expect, test, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
@@ -116,7 +116,7 @@ test("/'s Details face follows the dark tokens: the goal row's fill is the dark 
   await expect(results.getByTestId('goal-row-goal')).toHaveCSS('color', 'rgb(232, 228, 220)');
 });
 
-// ---- /sim's editor, Results, the project card and the notice pills; /'s dock ------------------
+// ---- /sim's editor, Details, the project card and the notice pills; /'s dock ------------------
 
 for (const [kind, choice] of [
   ['Zoning', 'Transit rule'],
@@ -351,10 +351,10 @@ test('the chart with a policy in force, played to the end, has no axe violations
   await expectNoA11yViolations(page, { include: ['[data-testid=tl-dock]'] });
 });
 
-test('Results have no axe violations in dark', async ({ page }) => {
+test('Details has no axe violations in dark', async ({ page }) => {
   await gotoSim(page);
   await page.getByTestId('score-bar').click();
-  await expect(page.getByTestId('tl-results')).toBeVisible();
+  await expect(page.getByTestId('tl-details')).toBeVisible();
   await expectNoA11yViolations(page, { include: ['[data-testid=tl-inspector]'] });
 });
 
@@ -396,10 +396,10 @@ test("the shared view's read-only editor has no axe violations in dark", async (
   await expectNoA11yViolations(page, { include: ['[data-testid=tl-inspector]'] });
 });
 
-test("the shared view's Results have no axe violations in dark", async ({ page }) => {
+test("the shared view's Details has no axe violations in dark", async ({ page }) => {
   await gotoSharedPolicy(page);
   await page.getByTestId('score-bar').click();
-  await expect(page.getByTestId('tl-results')).toBeVisible();
+  await expect(page.getByTestId('tl-details')).toBeVisible();
   await expectNoA11yViolations(page, { include: ['[data-testid=tl-inspector]'] });
 });
 

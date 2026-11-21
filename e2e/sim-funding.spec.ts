@@ -1,6 +1,6 @@
 // /sim's public money e2e (funding-ui spec 6, tests 1 to 10) on the timeline: the Public money
 // kind's policies (City funding scale, a preset's fund, your own pool, market terms), each edited
-// in the inspector, the Results money and tier blocks with the market paragraph and the sources
+// in the inspector, the Details money and tier blocks with the market paragraph and the sources
 // dialog, the published policy's read-only summary, a schema-2 document's notice and a calibration
 // without baseline funding. Runs against the VITE_E2E build on fixture-0 (window.__sfhFzp,
 // src/lib/fzp/debug.ts). Every fixture value is read from fixture-0's calibration.json on disk and
@@ -171,8 +171,8 @@ async function commit(field: Locator, text: string): Promise<void> {
 }
 
 const notices = (page: Page): Locator => page.getByTestId('sim-notice');
-/** Results, which the header score shows in the inspector. */
-const results = (page: Page): Locator => page.getByTestId('tl-results');
+/** Details, which the header score shows in the inspector. */
+const results = (page: Page): Locator => page.getByTestId('tl-details');
 
 async function expectNoHorizontalScroll(page: Page): Promise<void> {
   const { scroll, client } = await page.evaluate(() => ({
@@ -439,9 +439,9 @@ test('6. the programme editor: a loan is a draft until its rate', async ({ page 
   await expect(prog.locator(':scope > button')).toHaveText(sentence);
 });
 
-// ---- 7. Results -----------------------------------------------------------------------------------
+// ---- 7. Details -----------------------------------------------------------------------------------
 
-test('7. Results: Public money, Who the homes are for, the market and the sources', async ({
+test('7. Details: Public money, Who the homes are for, the market and the sources', async ({
   page
 }) => {
   expect(marketLevel(CAL)).toBe('private');
@@ -479,7 +479,7 @@ test('7. Results: Public money, Who the homes are for, the market and the source
   const sources = face.getByTestId('fzp-sources');
   await sources.locator(':scope > summary').click();
   const paragraph = face.getByTestId('fzp-market');
-  // Results' wording: the sentence without its old closing disclaimer (timeline-ui rule 38).
+  // Details' wording: the sentence without its old closing disclaimer (timeline-ui rule 38).
   await expect(paragraph).toHaveText(marketBody(marketText(CAL)!));
   const today = CAL.market!.today;
   await expect(paragraph).toContainText(

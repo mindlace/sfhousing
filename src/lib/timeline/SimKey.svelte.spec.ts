@@ -1,7 +1,7 @@
 /// <reference types="@vitest/browser-playwright" />
 // /sim's key panel: the tally of homes by stage at the playhead's month. The legend cases that
-// lived in SimResults (one row per entry with its swatch, every token resolving in both themes)
-// moved here with the key.
+// lived in the old Results face (one row per entry with its swatch, every token resolving in
+// both themes) moved here with the key.
 import { afterEach, describe, expect, it } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import { cdp, page, userEvent } from 'vitest/browser';
@@ -74,7 +74,7 @@ describe('SimKey', () => {
     expect(counts).toEqual(['…', '…', '…', '…', '…', '…']);
   });
 
-  it('has one row per STAGE_KEY entry with its swatch tokens (replaces SimResults legend rows)', async () => {
+  it('has one row per STAGE_KEY entry with its swatch tokens (replaces the old Results legend rows)', async () => {
     await render(SimKey, { props: { tally: TALLY, inForce: false } });
     const rows = [...document.querySelectorAll('[data-key-row]')];
     expect(rows.map((r) => r.getAttribute('data-key-row'))).toEqual(STAGE_KEY.map((e) => e.id));
@@ -90,7 +90,7 @@ describe('SimKey', () => {
     }
   });
 
-  it('resolves every swatch token under light and dark (replaces SimResults)', async () => {
+  it('resolves every swatch token under light and dark (replaces the old Results legend)', async () => {
     const box = withTokens();
     await render(SimKey, { props: { tally: TALLY, inForce: false }, target: box });
     const read = (id: string, token: string) =>

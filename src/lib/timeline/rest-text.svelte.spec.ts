@@ -1,5 +1,5 @@
 /// <reference types="@vitest/browser-playwright" />
-// Rule 37: /sim at rest, and with Results open, shows no sentence of 12 words or more outside a
+// Rule 37: /sim at rest, and with Details open, shows no sentence of 12 words or more outside a
 // notice, a dialog or an open explanation. SimPageHost over the fake timeline worker.
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { tick, type ComponentProps } from 'svelte';
@@ -77,10 +77,10 @@ describe('rest text (rules 37 to 39)', () => {
     expect(longTexts()).toEqual([]);
   });
 
-  it('shows none with Results open either', async () => {
+  it('shows none with Details open either', async () => {
     await opened();
     await page.getByTestId('score-bar').click();
-    await expect.element(page.getByTestId('tl-results')).toBeVisible();
+    await expect.element(page.getByTestId('tl-details')).toBeVisible();
     await tick();
     expect(longTexts()).toEqual([]);
   });

@@ -2,7 +2,7 @@
 // 768 px the dock's sheet handle sits on #map-region's bottom (the score is in the header, so no bar
 // sits under it); the full-height routes have no footer, and the header's About entry stays
 // visible, unobscured and tappable; the map's inset follows the sheet, which the header score
-// opens on Results; the brush status is a pill under the header; the palette strip leaves the map
+// opens on Details; the brush status is a pill under the header; the palette strip leaves the map
 // controls uncovered.
 // From 768 px the dock is a panel on the left of the map.
 import { expect, test, type APIRequestContext, type Locator, type Page } from '@playwright/test';
@@ -156,7 +156,7 @@ const paddingBottom = (page: Page): Promise<number> =>
 
 /**
  * The handle visible on the region's bottom, no footer; the map's inset follows the dock
- * sheet, opened by its handle and on Results by the header score; the sheet stays inside the region.
+ * sheet, opened by its handle and on Details by the header score; the sheet stays inside the region.
  * The header's About entry is reachable over the folded sheet (opening the Menu folds the sheet,
  * so the two never show together).
  */
@@ -202,7 +202,7 @@ async function checkMobile(page: Page): Promise<void> {
   await expect(handle(page)).toHaveAttribute('aria-expanded', 'false');
   await expect.poll(() => paddingBottom(page)).toBe(Math.round(ds.height));
 
-  // The header score opens the sheet on Results: inside the region, the inset its height;
+  // The header score opens the sheet on Details: inside the region, the inset its height;
   // pressing the score again flips to the editing face, the handle folds it.
   await headerScore(page).tap();
   await expect(resultsFace(page)).toBeVisible();
@@ -602,7 +602,7 @@ test.describe('landscape phone 667×375', () => {
 
   const bars = (page: Page): [string, Locator][] => [['dock handle', handle(page)]];
 
-  test('/: handle, strip, status, sheet, Results and a notice all fit, reachable and axe clean', async ({
+  test('/: handle, strip, status, sheet, Details and a notice all fit, reachable and axe clean', async ({
     page
   }) => {
     await gotoEditorWithN1(page);
@@ -614,7 +614,7 @@ test.describe('landscape phone 667×375', () => {
       await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)
     ).toBe(true);
     await expectNoFooter(page);
-    // Before the sheet and Results open: opening the Menu folds the sheet.
+    // Before the sheet and Details open: opening the Menu folds the sheet.
     await expectAboutReachable(page);
 
     for (const c of [handle(page), headerScore(page)]) {
@@ -659,7 +659,7 @@ test.describe('landscape phone 667×375', () => {
     // Folding by the button leaves focus on the handle, not on the page.
     await expect(handle(page)).toBeFocused();
 
-    // Results (the header score) in the sheet: inside the map region, its flip button reachable.
+    // Details (the header score) in the sheet: inside the map region, its flip button reachable.
     await headerScore(page).tap();
     await expect(resultsFace(page)).toBeVisible();
     await expectInside(dockSheet(page), region);

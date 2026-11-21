@@ -90,10 +90,10 @@ const SHIPYARD = projectById('CASE:2007.0001PRX');
 const readout = (page: Page): Locator => page.getByTestId('tl-flag');
 /** The header score: "{n} homes by {Mon YYYY}" at the playhead, "0 homes by today" at today. */
 const scoreBar = (page: Page): Locator => page.getByTestId('score-bar');
-/** Results, which the header score shows in the inspector. */
-const results = (page: Page): Locator => page.getByTestId('tl-results');
+/** Details, which the header score shows in the inspector. */
+const results = (page: Page): Locator => page.getByTestId('tl-details');
 /**
- * Shows Results from the header score (once), opens its Sources disclosure ("Where these numbers
+ * Shows Details from the header score (once), opens its Sources disclosure ("Where these numbers
  * come from" sits there) and returns it.
  */
 async function openScore(page: Page): Promise<Locator> {
@@ -216,7 +216,7 @@ async function bareMapPoint(page: Page): Promise<[number, number]> {
   return point!;
 }
 
-/** Opens the sources dialog, through Results. */
+/** Opens the sources dialog, through Details. */
 async function openSources(page: Page): Promise<Locator> {
   await (
     await openScore(page)
@@ -709,13 +709,13 @@ test('a notice is a pill at the top: it moves nothing on desktop and pushes the 
   }
 });
 
-test('axe: the Results face open', async ({ page }) => {
+test('axe: the Details face open', async ({ page }) => {
   await gotoFzp(page);
   await openScore(page);
   await expectNoA11yViolations(page);
 });
 
-test("Results' Sources state today's market", async ({ page }) => {
+test("Details' Sources state today's market", async ({ page }) => {
   const market = calibration.market;
   expect(market, 'fixture-0 gains calibration.market at the Release 1 regeneration').toBeDefined();
   const { observed, implied } = market!.today;
@@ -757,7 +757,7 @@ test('at 375 px a project card stays below the header, and the header score stay
   expect(covered, 'the header score is covered').toBe(false);
 });
 
-test('no footer; the About entry stays unobscured at 375 px: playhead, card and Results', async ({
+test('no footer; the About entry stays unobscured at 375 px: playhead, card and Details', async ({
   isMobile,
   page
 }) => {

@@ -16,6 +16,7 @@
   import type { Day } from '$lib/timelapse/time';
   import type { Calibration } from '$lib/timelapse/types';
   import ChartLegend from './ChartLegend.svelte';
+  import type { ChartLens } from './chart-lens';
   import FixedRow from './FixedRow.svelte';
   import KindRow from './KindRow.svelte';
   import Lane from './Lane.svelte';
@@ -50,6 +51,8 @@
     goalShown: boolean;
     /** The chart draws current law and the gap: the stacked legend names them. */
     inForce: boolean;
+    /** What the chart plots (Details switches it): the stacked legend names its lines. */
+    lens?: ChartLens;
     /** The playhead's model month, for the keys' nearer edge. */
     playheadMonth: number;
     /** The playhead's day: the line through the rows sits at it. */
@@ -77,6 +80,7 @@
     chart,
     goalShown,
     inForce,
+    lens = 'homes',
     playheadMonth,
     playheadDay,
     pinHeight = $bindable(0),
@@ -236,7 +240,7 @@
       {#if phone}
         <span>Homes completed</span>
       {:else}
-        <ChartLegend stacked goal={goalShown} {inForce} />
+        <ChartLegend stacked goal={goalShown} {inForce} {lens} />
       {/if}
     </div>
     <div class="cell" bind:this={chartCell}>
