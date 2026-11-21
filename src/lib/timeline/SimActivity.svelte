@@ -2,7 +2,7 @@
   Activity, the detail column's rest face on /sim: what has happened up to the playhead. At today
   it names the goal and offers the starter policies (or says to press Play); after today, under
   "Latest" the newest stage changes citywide up to the playhead (one line each), then the totals so
-  far at the playhead's month in two columns, cost while a Public money policy is in force. The
+  far at the playhead's month (one column below md, two from md), cost while a Public money policy is in force. The
   heading row carries Details. While the numbers are stale only the body dims; the heading and its button keep
   their contrast (status apart from controls).
 -->
@@ -144,8 +144,9 @@
       {:else}
         <p class="mt-1">{C.noEvents}</p>
       {/if}
-      <!-- The totals under Latest, two term and value pairs to a line, read across. -->
-      <dl class="mt-3 grid grid-cols-2 gap-x-4 gap-y-1" data-testid="tl-totals">
+      <!-- The totals under Latest: one pair to a line on the phone; from md two pairs to a line,
+           read across. -->
+      <dl class="mt-3 grid grid-cols-1 gap-x-4 gap-y-1 md:grid-cols-2" data-testid="tl-totals">
         {@render item(C.approved, formatCount(totals.approved))}
         {@render item(C.completed, formatCount(totals.completed))}
         {@render item(C.stopped, formatCount(totals.stopped))}

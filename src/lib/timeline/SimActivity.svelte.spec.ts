@@ -285,7 +285,41 @@ describe('SimActivity', () => {
     box.remove();
   });
 
+  it('below 768 px the totals are one column, each value on its term line at the right', async () => {
+    await page.viewport(375, 812);
+    // The phone's sheet at 375, padded 12 px a side.
+    const box = document.body.appendChild(document.createElement('div'));
+    box.style.width = '351px';
+    const totals = { ...TOTALS, effect: 24, cost: { spent: 2.5e6, perAddedHome: 410_000 } };
+    const r = await render(SimActivity, {
+      target: box,
+      props: props({ atToday: false, totals, events: EVENTS })
+    });
+    await expect.element(page.getByTestId('tl-totals')).toBeVisible();
+    const dl = page.getByTestId('tl-totals').element();
+    const rows = [...dl.querySelectorAll(':scope > div')];
+    expect(rows).toHaveLength(7);
+    const box0 = dl.getBoundingClientRect();
+    for (const [i, d] of rows.entries()) {
+      const cell = d.getBoundingClientRect();
+      // One column: each pair spans the list, one under the other.
+      expect(cell.left).toBeCloseTo(box0.left, 0);
+      expect(cell.right).toBeCloseTo(box0.right, 0);
+      if (i > 0)
+        expect(cell.top).toBeGreaterThanOrEqual(rows[i - 1].getBoundingClientRect().bottom);
+      // The value on its term's line, at the right.
+      const dt = d.querySelector('dt')!.getBoundingClientRect();
+      const dd = d.querySelector('dd')!.getBoundingClientRect();
+      expect(dd.top).toBe(dt.top);
+      expect(dd.right).toBeCloseTo(cell.right, 0);
+    }
+    await r.unmount();
+    box.remove();
+    await page.viewport(414, 896);
+  });
+
   it('after today: Latest comes before the totals; the totals are two columns', async () => {
+    await page.viewport(1280, 800);
     // The column at 1280 is 512 px wide, padded 12 px a side.
     const box = document.body.appendChild(document.createElement('div'));
     box.style.width = '488px';
@@ -331,6 +365,7 @@ describe('SimActivity', () => {
     ]);
     await r.unmount();
     box.remove();
+    await page.viewport(414, 896);
   });
 
   it('after today with no events: No stage changes yet.', async () => {
