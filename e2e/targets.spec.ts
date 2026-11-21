@@ -42,17 +42,36 @@ const EXEMPT: { selector: string; reason: string }[] = [
 ];
 
 /**
+ * What may cover a target at its centre without a defect: an open sheet, dialog or popover, or
+ * an open disclosure (MapLibre's attribution, expanded on load at 375 px, lies over the Layers
+ * panel's last row until a pan or its own button folds it). Each such cover is annotated.
+ */
+const OVERLAY = [
+  'dialog[open]',
+  '[role="dialog"]',
+  ':popover-open',
+  'details[open]',
+  '[data-testid="tl-inspector"]',
+  // `/`'s dock sheet, while its handle has it open.
+  '.sfh-dock:has([data-testid="dock-handle"][aria-expanded="true"]) .sfh-dock-sheet'
+].join(',');
+
+/**
  * Every visible target smaller than 24 px either way that also fails 2.5.8's spacing exception (a
  * 24 px circle on its centre meets another target or another small target's circle), as
- * "tag name w x h" (a crowded one also names the neighbour it meets).
+ * "tag name w x h" (a crowded one also names the neighbour it meets), and every target covered at
+ * its centre by something not in `OVERLAY` and not itself a target ("covered by …"). Targets an
+ * overlay covers are left out and listed in `skipped`.
  */
 async function small(
   page: Page
-): Promise<{ crowded: string[]; spaced: string[]; measured: number }> {
+): Promise<{ crowded: string[]; spaced: string[]; skipped: string[]; measured: number }> {
   return page.evaluate(
-    ({ sel, exempt }) => {
+    ({ sel, exempt, overlay }) => {
       type T = { label: string; r: DOMRect };
       const targets: T[] = [];
+      const skipped: string[] = [];
+      const covered: string[] = [];
       const seen = new Set<Element>();
       for (const el of document.querySelectorAll<HTMLElement>(sel)) {
         if (!el.checkVisibility({ visibilityProperty: true, opacityProperty: false })) continue;
@@ -86,16 +105,27 @@ async function small(
         seen.add(target);
         const r = target.getBoundingClientRect();
         if (r.width === 0 && r.height === 0) continue;
-        // Covered at its centre by something else (a timeline bar under the phone's open editor):
-        // not pressable there, so not a target in this state. Off-screen points read null: kept.
-        const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
-        if (hit && !target.contains(hit) && !hit.contains(target)) continue;
         const name =
           el.getAttribute('aria-label') ||
           el.getAttribute('data-testid') ||
           (el.textContent ?? '').trim().slice(0, 30) ||
           el.tagName;
-        targets.push({ label: `${el.tagName.toLowerCase()} "${name}"`, r });
+        const label = `${el.tagName.toLowerCase()} "${name}"`;
+        // Covered at its centre by something else. By an open sheet, dialog or popover, or by
+        // another target (a timeline bar under the phone's open editor): not pressable there, so
+        // not a target in this state, and noted. By anything else (a layer that takes presses
+        // over a control): a defect. Off-screen points read null: kept.
+        const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+        if (hit && !target.contains(hit) && !hit.contains(target)) {
+          const by =
+            hit.getAttribute('data-testid') ||
+            hit.getAttribute('aria-label') ||
+            hit.tagName.toLowerCase();
+          if (hit.closest(overlay) || hit.closest(sel)) skipped.push(`${label} by ${by}`);
+          else covered.push(`${label} covered by ${by}`);
+          continue;
+        }
+        targets.push({ label, r });
       }
       const isSmall = (r: DOMRect) => r.width < 23.5 || r.height < 23.5;
       const centre = (r: DOMRect) => [r.x + r.width / 2, r.y + r.height / 2] as const;
@@ -129,9 +159,9 @@ async function small(
         if (near) crowded.push(`${size}, beside ${near.label}`);
         else spaced.push(size);
       }
-      return { crowded, spaced, measured: targets.length };
+      return { crowded: [...covered, ...crowded], spaced, skipped, measured: targets.length };
     },
-    { sel: INTERACTIVE, exempt: EXEMPT.map((e) => e.selector) }
+    { sel: INTERACTIVE, exempt: EXEMPT.map((e) => e.selector), overlay: OVERLAY }
   );
 }
 
@@ -144,7 +174,9 @@ async function small(
 // low enough to survive a control added or dropped, high enough that a sweep seeing half the page
 // fails.
 async function expectTargets(page: Page, where: string, floor: number): Promise<number> {
-  const { crowded, spaced, measured } = await small(page);
+  const { crowded, spaced, skipped, measured } = await small(page);
+  for (const s of skipped)
+    test.info().annotations.push({ type: 'covered', description: `${where}: ${s}` });
   for (const s of spaced)
     test.info().annotations.push({ type: 'spaced', description: `${where}: ${s}` });
   test.info().annotations.push({ type: 'measured', description: `${where}: ${measured}` });
