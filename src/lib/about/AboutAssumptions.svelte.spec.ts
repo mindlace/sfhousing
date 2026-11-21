@@ -172,6 +172,27 @@ describe('AboutAssumptions on the page', () => {
     expect(scroll.mock.contexts[0]).toBe(document.getElementById('src-pathway'));
   });
 
+  it('a hash change after load opens the assumptions and lands; unmounted, nothing listens', async () => {
+    const scroll = vi.spyOn(HTMLElement.prototype, 'scrollIntoView');
+    const { fetchFn, view } = await setup();
+    await expect.element(summary()).toBeVisible();
+    expect(fetchFn).not.toHaveBeenCalled();
+    location.hash = '#src-pathway';
+    await expect.poll(() => scroll.mock.calls.length).toBe(1);
+    expect(part().querySelector('details')?.open).toBe(true);
+    expect(scroll.mock.contexts[0]).toBe(document.getElementById('src-pathway'));
+    // An unrelated hash afterwards changes nothing.
+    location.hash = `#${ABOUT_ID.data}`;
+    await expect.poll(() => location.hash).toBe(`#${ABOUT_ID.data}`);
+    expect(scroll).toHaveBeenCalledTimes(1);
+    await view.unmount();
+    const calls = fetchFn.mock.calls.length;
+    location.hash = '#src-transitions';
+    await expect.poll(() => location.hash).toBe('#src-transitions');
+    expect(fetchFn.mock.calls.length).toBe(calls);
+    expect(scroll).toHaveBeenCalledTimes(1);
+  });
+
   it('a malformed hash (#100%) neither throws nor opens the assumptions', async () => {
     history.replaceState(null, '', '#100%');
     const { fetchFn } = await setup();

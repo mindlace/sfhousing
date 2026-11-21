@@ -67,10 +67,8 @@
     );
   }
 
-  onMount(() => {
-    if (live) return;
-    // Pressed before hydration: take the disclosure's own state.
-    if (details?.open) open = true;
+  /** A hash naming this part or an entry opens the disclosure and lands on the target. */
+  function land(): void {
     // Taken as written: the ids are ASCII, and decoding throws on a stray '%'.
     const id = location.hash.slice(1);
     if (id !== ABOUT_ID.assumptions && !id.startsWith('src-')) return;
@@ -79,6 +77,16 @@
       details.open = true;
       open = true;
     }
+  }
+
+  onMount(() => {
+    if (live) return;
+    // Pressed before hydration: take the disclosure's own state.
+    if (details?.open) open = true;
+    land();
+    // A fragment navigation later (a pasted link, back or forward) remounts nothing.
+    window.addEventListener('hashchange', land);
+    return () => window.removeEventListener('hashchange', land);
   });
 
   // The first open loads; closing and opening again keeps what loaded.

@@ -68,9 +68,11 @@ one heading level under the part.
   "Loading…", then nothing, or `ASSUMPTIONS_FAILED` with Retry (`BUTTON_QUIET`), which loads again.
 - No `fzp` scenario in the manifest (or no manifest): the heading and `ASSUMPTIONS_FAILED`, with
   no disclosure and no Retry.
-- A hash on mount naming `about-assumptions` or any `src-…` id opens the disclosure (and so
+- A hash naming `about-assumptions` or any `src-…` id, on mount or on a later `hashchange` (a
+  pasted link, back or forward; the listener goes with the part), opens the disclosure (and so
   loads); once the target exists it is scrolled to (`block: 'start'`), once, after a failure and
-  Retry too.
+  Retry too. The hash is taken as written, never decoded (the ids are ASCII; a stray `%` would
+  throw).
 - The disclosure is not `bind:open`: Svelte's binding writes the state over the element on
   hydration, closing a disclosure pressed before then. The part reads `details.open` on mount and
   follows `toggle`.
