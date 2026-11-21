@@ -312,7 +312,7 @@ describe('SimMap ready', { timeout: 30_000 }, () => {
   });
 
   it("publishes --map-chips-bottom as the column's bottom, 0px with no failure", async () => {
-    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const warn = vi.spyOn(console, 'warn');
     const { root, ready, screen } = await mount();
     // onready is the map's readiness signal.
     const h = await ready;
@@ -333,6 +333,8 @@ describe('SimMap ready', { timeout: 30_000 }, () => {
     await expect.poll(rootVar).toBe('0px');
     await screen.unmount();
     expect(rootVar()).toBe('');
+    // A chunk's error is not a source failure: nothing warns.
+    expect(warn).not.toHaveBeenCalled();
   });
 });
 
