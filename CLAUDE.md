@@ -55,7 +55,7 @@ Fetch the file when working in the relevant area:
 - **Funding levers (`FinanceLevers`, `buildFinance`, `off` spans, the twin, the worker's guard, the finance warm task)** — [docs/dev/finance-levers.md](docs/dev/finance-levers.md)
 - **Homes by income tier and public money in the results (`TimelineScore.tiers` and `money`, `tiersOf`, the ledger series and their identities, per added home, limit statements)** — [docs/dev/finance-score.md](docs/dev/finance-score.md)
 - **World core (the world, the step and its systems, the due list, the readers, the funding hook)** — [docs/dev/world-core.md](docs/dev/world-core.md)
-- **Results from the step engine (WorldSeries, chunks, TimelineView, cardAt)** — [docs/dev/world-score.md](docs/dev/world-score.md)
+- **Scores from the step engine (WorldSeries, chunks, TimelineView, cardAt)** — [docs/dev/world-score.md](docs/dev/world-score.md)
 - **Public money in the step engine (world-funding: the line by month, funded clocks over frames, money events at stage events, shadows, the tolerance referee)** — [docs/dev/world-funding.md](docs/dev/world-funding.md)
 - **Ensemble runner (the /sim timeline worker host: openTimeline, setPolicy, filling, copies and refill, lookups)** — [docs/dev/ensemble-runner.md](docs/dev/ensemble-runner.md)
 - **Sim log core (commits, changes, item keys, the shape registry, fold, diff, re-apply, undo and redo, the hash chain)** — [docs/dev/sim-log.md](docs/dev/sim-log.md)
