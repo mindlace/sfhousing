@@ -33,6 +33,9 @@ describe('/about', () => {
     await expect
       .element(page.getByRole('link', { name: 'MIT licensed' }))
       .toHaveAttribute('href', `${REPO_URL}/blob/main/LICENSE`);
+    await expect
+      .element(page.getByRole('link', { name: 'code', exact: true }))
+      .toHaveAttribute('href', REPO_URL);
   });
 
   it('sets the two colour properties to the light tokens on its root', async () => {

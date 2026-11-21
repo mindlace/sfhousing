@@ -137,7 +137,7 @@
     {/each}
   </ul>
   <p class="mt-3">
-    This project's code is <a class="underline" href="{REPO_URL}/blob/main/LICENSE">MIT licensed</a
-    >.
+    This project's <a class="underline" href={REPO_URL}>code</a> is
+    <a class="underline" href="{REPO_URL}/blob/main/LICENSE">MIT licensed</a>.
   </p>
 </section>

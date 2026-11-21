@@ -74,6 +74,10 @@ async function expectNotices() {
   await expect
     .element(page.getByRole('link', { name: 'MIT licensed' }))
     .toHaveAttribute('href', `${REPO_URL}/blob/main/LICENSE`);
+  // The repository itself: the dialog on /sim has no footer to link it.
+  await expect
+    .element(page.getByRole('link', { name: 'code', exact: true }))
+    .toHaveAttribute('href', REPO_URL);
   expect(text()).toContain("This project's code is MIT licensed.");
 }
 
