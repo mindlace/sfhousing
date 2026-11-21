@@ -121,14 +121,28 @@ async function small(
         // Scrolled out of a box that clips it (a panel's row below its fold) while its centre is
         // on screen: not pressable until scrolled to, so noted; the test scrolls it into view and
         // sweeps again. Off-screen centres (hit null) are kept, as below.
+        // Only a real scroller (overflow auto or scroll, with more content than room) in the
+        // target's containing-block chain clips it: the walk stops at a fixed element or the top
+        // layer (a popover or dialog), and passes over static ancestors between an absolutely
+        // placed element and its containing block.
         const clipper = (() => {
           if (!hit) return null;
           const [cx, cy] = [r.x + r.width / 2, r.y + r.height / 2];
+          const pos = getComputedStyle(target).position;
+          if (pos === 'fixed' || target.matches(':popover-open, dialog[open]')) return null;
+          let skip = pos === 'absolute';
           for (let a = target.parentElement; a && a !== document.body; a = a.parentElement) {
             const s = getComputedStyle(a);
-            if (!/auto|scroll|hidden|clip/.test(s.overflowX + s.overflowY)) continue;
-            const b = a.getBoundingClientRect();
-            if (cx < b.left || cx > b.right || cy < b.top || cy > b.bottom) return a;
+            const scroller =
+              /auto|scroll/.test(s.overflowX + s.overflowY) &&
+              (a.scrollHeight > a.clientHeight || a.scrollWidth > a.clientWidth);
+            if (scroller && (!skip || s.position !== 'static')) {
+              const b = a.getBoundingClientRect();
+              if (cx < b.left || cx > b.right || cy < b.top || cy > b.bottom) return a;
+            }
+            if (s.position === 'fixed' || a.matches(':popover-open, dialog[open]')) return null;
+            if (s.position === 'absolute') skip = true;
+            else if (s.position !== 'static') skip = false;
           }
           return null;
         })();
@@ -327,6 +341,28 @@ test.describe('targets at 375 px', () => {
     await page.getByTestId('score-bar').click();
     await expect(page.getByTestId('tl-details')).toBeVisible();
     await expectTargets(page, '/sim Details', 10);
+  });
+
+  test('a fixed target under a short scroller is measured, never noted as scrolled out of it', async ({
+    page
+  }) => {
+    await gotoEditor(page);
+    // A short scroller at the top, and inside it two 16 px buttons fixed to the viewport well
+    // below its box: overflow never clips them, so the sweep measures them (and finds them
+    // crowding each other) rather than skipping them.
+    await page.evaluate(() => {
+      const box = document.createElement('div');
+      box.style.cssText =
+        'position:fixed;left:0;top:60px;width:100px;height:40px;overflow:auto;z-index:9998';
+      box.innerHTML =
+        '<div style="height:200px"></div>' +
+        '<button aria-label="fixed-a" style="position:fixed;left:150px;top:300px;width:16px;height:16px;z-index:9999"></button>' +
+        '<button aria-label="fixed-b" style="position:fixed;left:170px;top:300px;width:16px;height:16px;z-index:9999"></button>';
+      document.body.appendChild(box);
+    });
+    const { crowded, skipped } = await small(page);
+    expect(skipped.filter((s) => s.includes('fixed-'))).toEqual([]);
+    expect(crowded.some((c) => c.startsWith('button "fixed-a" 16.0x16.0'))).toBe(true);
   });
 
   test('/sim: a layer inside the detail column over its own control fails the sweep', async ({
