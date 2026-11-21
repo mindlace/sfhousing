@@ -1,0 +1,775 @@
+<article>
+  <header>
+    <h1>Shared parts and messages plan</h1>
+    <p>Slice 8 of the information design review: one spacing scale, one button, chips and cards for messages, one surface for dialogs and menus in light and dark; and the rough edges slices 1 to 7 left for this slice in the header, the status cell, the messages over the map, the keyboard, the phone, the map's edges and key, forced colours and the detail column.</p>
+    <aside data-kind="note"><strong>For agentic workers</strong> REQUIRED SUB-SKILL: use superpowers:subagent-driven-development to implement this plan task by task. Steps are checklist items; progress is kept in the workspace ledger, not in the plan.</aside>
+    <aside data-kind="warning"><strong>Read before executing</strong> Line numbers were taken on <code>22aaf877</code> (main after slices 1 to 7) and go stale as tasks land: every place is also named by function, component, snippet or test title. Locate by those. <a href="#sec-open-questions">Open questions</a> has four items, each with a recommendation; the plan executes on the recommendations unless the owner says otherwise.</aside>
+  </header>
+
+  <section id="sec-overview">
+    <h2>Overview</h2>
+    <dl>
+      <dt>Goal</dt>
+      <dd>The app gets its shared parts: a spacing scale, three button kinds, two message shapes (a chip for a few words, a card for a paragraph) and two surfaces (a popover for menus, panels and explanations; a dialog), each in light and dark, in one module and one doc. Every dialog and menu on <code>/</code>, <code>/p/&lt;id&gt;</code>, <code>/sim</code> and <code>/s/&lt;id&gt;</code> draws on them, so none is white in dark mode; every notice is a chip or a card; a disabled Publish says why on hover and focus. The header centres the score from lg, shows the step numbers at every width, and keeps Undo and Redo for touch only; "Autosave off" is never covered; "Updating" shows the moment the numbers go stale and says why when Play waits for the forecast. Map messages never cover each other. Escape closes the innermost thing only; the key's toggles come before its panels in tab order; a bar's name starts with its visible words. On a phone the policy rows show their names and Redo is in the painting strip. Edge glows clear the header line, the notices and an open key panel, and the key's glow swatch is legible. Under forced colours the pool level and the column's fade are drawn, and the fade works without scroll timelines. At 1280 by 800 Activity shows at least four Latest items.</dd>
+      <dt>Architecture</dt>
+      <dd>Page and shell work. One new module, <code>src/lib/shell/ui.ts</code>, holds the class constants (the project's pattern: <code>src/lib/shell/pill.ts</code> today, which it replaces) and <code>messageShape</code>; one new component, <code>src/lib/shell/Message.svelte</code>, renders a message in its shape; one new attachment, <code>src/lib/shell/more-below.ts</code>, marks a scroll box that has more below. Files adopt the parts as the tasks touch them ("later slices adopt it as they touch each screen", <code>tbl-slices</code> row 8). Two small interface additions on the map side: <code>SimMapHandle.setGlowInset</code> (the page's top and right insets for the edge glows, beside SimMap's own bottom one) and the <code>--map-chips-bottom</code> property SimMap publishes for its failure messages. No engine, worker, shader or hashed file changes; no dataset upload.</dd>
+      <dt>Tech Stack</dt>
+      <dd>SvelteKit 2, Svelte 5 runes (<code>{@attach}</code>, Svelte 5.56), TypeScript, Tailwind 4, Vitest (server project for <code>*.spec.ts</code>, client project for <code>*.svelte.spec.ts</code>), Playwright (<code>emulateMedia({ forcedColors: 'active' })</code> for forced colours), axe through <code>expectNoA11yViolations</code>.</dd>
+      <dt>Spec</dt>
+      <dd><a href="../specs/2026-11-17-information-design-review-design.html"><code>docs/superpowers/specs/2026-11-17-information-design-review-design.html</code></a>, row 8 of <a href="../specs/2026-11-17-information-design-review-design.html#tbl-slices">Order of work</a> ("One spacing scale, one button, cards and chips for messages, one surface for dialogs and menus in light and dark." Needs first: nothing). Governing parts: the ranking rule and the tiers (<code>tbl-tiers</code>: Alert "appears only while abnormal, visibly, with the action to take"), the six rules (<code>sec-prop-principles</code>, rules 4 and 6), the chrome inventory (<code>tbl-inv-chrome</code>: "One message per condition. A paragraph is a card, a few words are a chip."; the save state; "Updating" with the save state), the controls inventory (<code>tbl-inv-sim-controls</code>: Undo and redo "Keyboard only on desktop. Buttons only on touch."; Publish "When disabled, the reason is visible on hover and focus."), the header (<code>sec-prop-header</code>: "View, undo, redo and Keyboard shortcuts leave it"), Revealing time's note on waiting (<code>sec-prop-reveal</code>), Decided (one clock, the reveal rule), and every "for slice 8" item and the "Header:" item of Carried forward (<code>sec-carried</code>), plus slice 3's "needs wording" item.</dd>
+      <dt>Assumes</dt>
+      <dd>Slices 1 to 7 have landed (<code>22aaf877</code>).</dd>
+    </dl>
+  </section>
+
+  <section id="sec-scope">
+    <h2>Scope and size</h2>
+    <ul>
+      <li><strong>In:</strong> row 8, as shared parts plus their adoption on every dialog, menu, popover and message of the four map pages, and on the buttons of every file this plan touches; the "Header:" item and every "for slice 8" item of <code>sec-carried</code>; slice 3's waiting message (wording in Open question 1); the header's own proposal where the carried header items need it (Undo and Redo leave the header on a device with no touch pointer, <code>sec-prop-header</code>); Publish's visible reason (<code>tbl-inv-sim-controls</code>), since it is the one button rule a disabled control breaks today.</li>
+      <li><strong>Cut, too large for one slice:</strong> moving all 206 buttons in <code>src</code> to the button kinds. This slice moves the ones in the files it touches; the rest adopt the kinds as later slices touch them (the row says so). The account, sign-in and sim-membership pages are outside this work (<code>sec-scope</code> of the spec), and <code>/lesscars</code>' own dialogs (<code>EvidenceDialog</code>, <code>TimelineDialog</code>) stay as they are.</li>
+      <li><strong>Out:</strong> items for slice 9 (About, credits, Keyboard shortcuts' move into About, the expanded attribution at 375 px), "your call" items (Start over on Paint; Paint's Details face; a pool bar's changing text), the funding work, the game, the next dataset branch's deletions.</li>
+      <li><strong>Not already done on main:</strong> every carried item was checked against <code>22aaf877</code> and is still open; the code each one names is cited in its task.</li>
+      <li><strong>Size.</strong> Seven tasks plus the suite pass. If review load needs two pull requests, the clean cut is after Task 4: <strong>8a</strong> (Tasks 1 to 4: the parts, messages, header, status) and <strong>8b</strong> (Tasks 5 to 7: around the map, phone, bars and the column), each followed by Task 8. Recommendation: one branch.</li>
+    </ul>
+  </section>
+
+  <section id="sec-global-constraints">
+    <h2>Global Constraints</h2>
+    <ul>
+      <li><strong>Hashed paths are read-only.</strong> Editing any file under <code>PATHS</code> (<code>pipeline/lib/version.ts:42-53</code>: <code>pipeline</code>, <code>src/lib/data</code>, <code>src/lib/generator</code>, <code>src/lib/timelapse</code>, <code>src/lib/plan/geometry.ts</code>, <code>src/lib/plan/types.ts</code>, <code>src/lib/sim/scenario</code>, <code>src/lib/sim/levers</code>, <code>src/lib/sim/finance</code>, <code>src/lib/scoreboard</code>), spec files included, forces a dataset upload, which is the owner's alone. Every file this plan creates, edits or deletes is outside them (<a href="#tbl-files">File Structure</a>; <code>src/lib/map/timelapse/</code> is not <code>src/lib/timelapse/</code>, and this plan edits nothing there either). If a change there seems unavoidable, stop and raise it.</li>
+      <li><strong>Map changes.</strong> Nothing per animation frame on the CPU in proportion to projects; <code>setTime</code> stays O(1); the city layer's CPU reference (<code>city.ts</code>) and its shader (<code>city-layer.ts</code>) are not edited, so they still agree rule for rule. The glow insets reach the layer through the existing <code>setEdgeInset</code> (<code>src/lib/map/timeline-controller.ts:553-558</code>), written only when a measured inset changes, never per frame. No <code>npm run bench:map</code> or <code>npm run test:perf</code> inside a task: the controller runs benches, never the implementer.</li>
+      <li><strong>Map goldens.</strong> <code>e2e/map.spec.ts-snapshots/map-{light,dark}-chromium-darwin.png</code> are a clip of <code>map-root</code> on <code>/</code>, so they capture whatever chrome sits over the map there (the dock, the key's toolbar, any chip). A task that restyles that chrome runs the goldens; if they differ only where that task changed the chrome, regenerate them on darwin (<code>--update-snapshots</code>), open both images, and say so in the report. Task 5 (the key's toolbar) is expected to; Tasks 1 and 2 may.</li>
+      <li><strong>Shared surfaces.</strong> <code>/lesscars</code> imports <code>SiteHeader</code> (through the root layout and <code>header-actions</code>), <code>SimMap</code> and <code>TimeScrubber</code>, and none of the other files here. It changes only where the shell does: the header's centring from lg (Task 3) and SimMap's failure messages stacking (Task 2). <code>e2e/lesscars.spec.ts</code> must pass untouched; if it fails, stop and raise it rather than edit it.</li>
+      <li><strong>CSP</strong> is not touched (<code>kit.csp</code> in <code>svelte.config.js</code>): no new inline style source, script or origin.</li>
+      <li>All work in this worktree, everything in the foreground. Run <code>cd</code> and <code>git</code> as plain single commands, never chained (<code>cd … &amp;&amp; cmd</code>). Port 4173 belongs to another session: never start, stop or kill whatever holds it; Playwright runs on <code>SFH_E2E_PORT=4180</code>. Before the first test run, <code>npm install</code> then <code>npm run types</code> in the worktree.</li>
+      <li>Conventional Commits, messages as <code>-m</code> flags. <code>git add</code> named files only. No Claude attribution anywhere: no <code>Co-Authored-By</code> trailers, no generated-by notes in code, docs or commits.</li>
+      <li>Code style: 2-space indent, single quotes, no trailing commas, 100 columns (Prettier and ESLint). Svelte 5 runes only.</li>
+      <li>Vitest runs with <code>expect.requireAssertions</code>: every test calls <code>expect</code>. No test writes to stderr: a <code>console.warn</code> or <code>console.error</code> a test does not assert fails signoff.</li>
+      <li><strong>Timing rule</strong>, for every spec, helper and fix round: no <code>setTimeout</code> or <code>setInterval</code> (even zero-length), no <code>waitForTimeout</code>, fixed sleeps, raised timeouts or retries in tests; wait on readiness signals (web-first assertions, <code>expect.poll</code>, events, attributes, <code>window.__sfhFzp</code>). Throttles under test go through their seams (<code>statusMs</code>). A flaky test is a defect. The client project retries once by default, so every changed client spec is run with <code>--retry=0</code>, alone and with its folder. Every changed e2e spec is re-run with <code>--repeat-each=5 --retries=0</code>. After the last commit of every task run <code>npx chreode timing-check --head HEAD</code> and see it clean.</li>
+      <li>A spec that mounts a component with <code>Explain</code> popovers and then clicks starts with the pointer at rest: after render, hover a neutral element and assert no <code>tooltip</code> is in the document (the <code>renderAtRest</code> pattern of slice 7's specs).</li>
+      <li><strong>Colours.</strong> No hex colour outside the token files: <code>src/routes/layout.css</code> and the palette modules (<code>accent.spec.ts</code>). Every new colour pairing uses existing tokens. Each file this plan themes is appended to <code>THEMED_FILES</code> in <code>src/lib/shell/accent.spec.ts</code> (so its gray, white, black and ink utilities carry dark partners), and <code>ui.ts</code> also to <code>NO_HEX_FILES</code>. Forced colours use system colours (<code>Canvas</code>, <code>CanvasText</code>, <code>ButtonText</code>, <code>GrayText</code>, <code>Highlight</code>) only.</li>
+      <li><strong>WCAG 2.2 AA</strong> on every changed surface, light and dark (<code>docs/dev/accessibility.md</code>, <code>e2e/chrome-dark.spec.ts</code>). Targets at least 24 px, 44 px on a coarse pointer. No horizontal scroll at 320 or 375 px. Colour is never the only cue. A control's accessible name contains its visible text, first (2.5.3).</li>
+      <li><strong>Terse copy.</strong> Every visible or spoken string this plan adds or changes is in <a href="#tbl-strings">The strings</a>, exact; nothing else is added. No "it is not X" disclaimers. The 12-words-at-rest checks (<code>src/lib/timeline/rest-text.svelte.spec.ts</code>, <code>src/routes/page.rest-text.svelte.spec.ts</code>) must pass.</li>
+      <li><strong>Status apart from controls.</strong> No changing status among buttons. The status cell stays left, by the steps (by the site name below lg); "Updating" and the save state never move into the actions; a control's words never change with the status.</li>
+      <li><strong>One clock.</strong> Nothing here changes what a number reads or when; the key, the header and Activity keep the headline's rule (<code>playheadAt</code>, <code>src/lib/timeline/results.ts</code>).</li>
+      <li><strong>Reduced motion.</strong> Nothing added animates.</li>
+      <li>Docs under <code>docs/dev/</code> that describe changed behaviour are updated in the task that changes it; the new <code>docs/dev/ui-parts.md</code> is linked from <code>CLAUDE.md</code>'s scoped docs list.</li>
+      <li>Test commands: <code>npx vitest --run --project server &lt;file&gt;</code> for <code>*.spec.ts</code>; <code>npx vitest --run --project client --retry=0 &lt;file&gt;</code> for <code>*.svelte.spec.ts</code>; <code>SFH_E2E_PORT=4180 npx playwright test &lt;file&gt; --project=chromium --project=mobile</code>.</li>
+      <li><strong>Screenshots</strong> are taken with a temporary Playwright spec on port 4180 (fixture-0), saved to the session scratchpad, opened and looked at, and the spec deleted before the commit. The standard set is 1024x800 light, 1280x800 light, 1280x800 dark (<code>colorScheme: 'dark'</code>) and 375x812; forced colours where a task names it (<code>emulateMedia({ forcedColors: 'active' })</code>). A task that changes something already on screen takes the same view on <code>main</code>'s build first (before) and on the branch (after). Each task names its states.</li>
+      <li>Task order: Task 1 first (every later task uses <code>ui.ts</code>). Task 2 needs <code>Message</code>; Task 4 needs Task 3's header. Tasks 5, 6 and 7 need only Task 1 and can run in any order after Task 4. Run them in order.</li>
+    </ul>
+  </section>
+
+  <section id="sec-strings">
+    <h2>The strings</h2>
+    <table id="tbl-strings">
+      <caption>Every visible or spoken string this slice adds or changes</caption>
+      <thead>
+        <tr><th scope="col">Where</th><th scope="col">Text</th><th scope="col">Defined in</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">Status cell, while Play waits for the forecast (Open question 1)</th><td><code>Updating</code> (unchanged word); its explanation <code>Working out the months ahead.</code> (while stale it stays <code>From before your latest change.</code>)</td><td><code>WAITING_NOTE</code>, <code>src/lib/timeline/copy.ts</code></td></tr>
+        <tr><th scope="row">Publish, disabled: on hover and focus</th><td><code>Paint something first.</code> / <code>Change the policy first.</code> (the existing <code>copy.disabledHint</code>, now visible)</td><td><code>src/lib/sharing/copy.ts</code>, unchanged</td></tr>
+        <tr><th scope="row">Activity, a starter the funding limits refuse</th><td>A card under the starters: <code>This would pass the limit of {limit}. Remove one first.</code> (the existing <code>limitAlert</code>, now visible)</td><td><code>limitAlert</code>, <code>src/lib/sim-page/funding-copy.ts</code>, unchanged</td></tr>
+        <tr><th scope="row">Paint's phone strip, Redo</th><td>name and title <code>Redo</code>, or <code>Redo: {label}</code> when the store names the change (as <code>HistoryButtons</code>)</td><td><code>historyName</code>, <code>src/lib/paint/HistoryButtons.svelte</code> moved to <code>src/lib/paint/history.ts</code></td></tr>
+        <tr><th scope="row">A span bar's accessible name (re-ordered, words unchanged)</th><td><code>{setting}{left}, {policy}, {from} to {to}</code> then <code>, off</code> when off: <code>$410M, 99% left, Housing bond, 10 Dec 2030 to open</code>; <code>6 stories, Transit rule, 10 Dec 2030 to open</code></td><td><code>barLabel</code>, <code>src/lib/timeline/rows.ts</code></td></tr>
+        <tr><th scope="row">A fixed bar's accessible name (re-ordered)</th><td><code>{text}{left}, {label}, whole window</code>: <code>In force, 86% left, Current funding, whole window</code>; <code>In force, Current law, whole window</code>; the world row <code>{market text}, Market conditions, whole window</code></td><td><code>fixedLabel</code>, <code>rows.ts</code></td></tr>
+      </tbody>
+    </table>
+    <p>No other string is added, removed or reworded. "Autosave off", its popover text, every notice's words and the key's words stay as they are.</p>
+  </section>
+
+  <section id="sec-decisions">
+    <h2>Decided from the spec and the code</h2>
+    <aside data-kind="decision"><strong>Undo and Redo leave <code>/sim</code>'s header on a device with no touch pointer</strong> <code>sec-prop-header</code> ("View, undo, redo and Keyboard shortcuts leave it") and <code>tbl-inv-sim-controls</code> ("Keyboard only on desktop. Buttons only on touch."), the owner's "No undo and redo buttons on desktop". Ctrl+Z and Ctrl+Shift+Z go through <code>BrushController</code> on <code>/sim</code> already (<code>docs/dev/sim-page.md</code> item 4). It also frees about 96 px of the header at 1024 px (two 44 px buttons and their gaps, <code>HistoryButtons.svelte:25-26</code>), which the carried header items need. "Shortcuts" stays in <code>/sim</code>'s header until slice 9 gives it a place in About.</aside>
+    <aside data-kind="decision"><strong>"Touch" is any coarse pointer</strong> The carried item "a touch laptop gets no Undo button" comes from reading <code>(pointer: coarse)</code> only (<code>src/lib/paint/pointer.svelte.ts:1-31</code>). Undo and Redo buttons show when <code>(any-pointer: coarse)</code> matches, on <code>/</code> (above the Paint tab) and on <code>/sim</code> (the header); Shortcuts keeps the primary-pointer rule (it shows on a fine primary pointer). A touch laptop gets both.</aside>
+    <aside data-kind="decision"><strong>Messages: a chip for a few words, a card for a paragraph</strong> <code>tbl-inv-chrome</code>. <code>messageShape</code> decides: a chip is one sentence of at most 8 words with no details; anything else is a card. The shape is decided by the words, so the same message always looks the same.</aside>
+    <aside data-kind="decision"><strong>"Updating" shows at once; only its announcement is throttled</strong> The carried lag ("changes at most once a second, so it can lag the numbers") comes from one throttle serving both the visible cell and the live region (<code>TimelineMode.svelte:621-675</code>). The visible cell follows <code>stale</code> at once, in step with the dimming; the live region keeps at most one change a second (<code>statusMs</code>).</aside>
+    <aside data-kind="decision"><strong>"Autosave off" is never covered</strong> With autosave off, "Updating" sits beside the chip in the status cell instead of over it; the cell reserves both widths while autosave is off, so nothing moves as "Updating" comes and goes. With autosave on, one shared cell as now.</aside>
+  </section>
+
+  <section id="sec-measures">
+    <h2>What to measure</h2>
+    <p>Not measured while planning. Each task that changes layout measures with a temporary Playwright spec (port 4180, fixture-0, after <code>waitFilled</code> on <code>/sim</code>), records boxes <code>[x, y, w, h]</code> in its report, and deletes the spec:</p>
+    <ul>
+      <li>Task 3: at 1024x800 and 1280x800, the header's items left to right (site name, steps, status cell, score, Shortcuts, Publish, account, About) in the worst case: signed in with a 20-character handle, a five-digit headline with "+1,817 from your policy", autosave off and "Updating" showing; and in the common case (signed out, saved). The starting budget is <code>docs/dev/sim-page.md:81</code> ("about 43 px to spare … a five-digit headline with 'Autosave off' would still clip by about 17 px"), less Undo and Redo, plus the step numbers (26 px).</li>
+      <li>Task 6: at 375x812 on the Playwright <code>mobile</code> project, the pinned block and the rows box heights with nothing in force and with one policy per kind; the kind sheet's height with two policies.</li>
+      <li>Task 6: the palette strip's width at 320 and 375 px with Undo and Redo.</li>
+      <li>Task 7: at 1280x800 mid-play with a transit rule and a housing bond in force, how many Latest items are fully inside the column's box before scrolling.</li>
+    </ul>
+  </section>
+
+  <section id="sec-review-focus">
+    <h2>Review Focus</h2>
+    <ol>
+      <li><strong>Edits in quick succession.</strong> Stale goes on and off several times inside a second. Expected: the visible "Updating" follows each change at once; the live region speaks at most one change a second, the latest; focus on the save state's control or on "Updating"'s explanation is never dropped to the body. Tests: <a href="#t4-s1">t4-s1</a> ("Updating shows and goes with stale at once", "the live region changes at most once per statusMs, latest wins", "focus moves with the cover, never to the body").</li>
+      <li><strong>The widest header at 1024 px.</strong> Signed in with a long handle, a five-digit headline with its effect, autosave off and "Updating". Expected: every item in order, none overlapping, the header 48 px, no horizontal scroll; the score centred whenever both sides fit. Tests: <a href="#t3-s1">t3-s1</a> ("at 1024px the widest /sim row fits in order", "centres the score at 1024px when both sides fit"), <a href="#t4-s1">t4-s1</a> ("autosave off: Updating sits beside the chip, the chip stays pressable").</li>
+      <li><strong>Several messages over the map at once.</strong> Both map failures and a stroke result, with a notice in the stack. Expected: all four readable, none covering another's text or action, at 1280 and 375. Tests: <a href="#t2-s1">t2-s1</a> ("two failures and a stroke chip: no box overlaps another").</li>
+      <li><strong>Escape with layers open.</strong> An explanation opened by hover while a project card is open; an explanation inside the key panel; an explanation in a modal dialog. Expected: each Escape closes only the innermost open thing. Tests: <a href="#t5-s1">t5-s1</a> ("Escape on a hovered explanation leaves the card open", "inside the key panel: the first Escape closes the explanation, the second the panel").</li>
+      <li><strong>A pointer that changes at runtime.</strong> A keyboard docked or a touch screen added mid-visit. Expected: the Undo and Redo buttons come and go with <code>(any-pointer: coarse)</code> without losing focus elsewhere; Shortcuts follows the primary pointer. Tests: <a href="#t3-s1">t3-s1</a> ("a touch laptop gets Undo and Redo; a change event swaps them in and out").</li>
+    </ol>
+  </section>
+
+  <section id="sec-file-structure">
+    <h2>File Structure</h2>
+    <p>Every file below is outside the hashed <code>PATHS</code>.</p>
+    <table id="tbl-files">
+      <caption>Files by task and what each owns</caption>
+      <thead>
+        <tr><th scope="col">Area</th><th scope="col">Files</th><th scope="col">Task</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">The parts; dialogs and menus</th><td>Create <code>src/lib/shell/ui.ts</code>, <code>ui.spec.ts</code>, <code>docs/dev/ui-parts.md</code>; modify <code>CLAUDE.md</code>, <code>src/routes/layout.css</code>, <code>src/lib/sharing/PublishButton.svelte</code>, <code>PublishDialog.svelte</code>, <code>SharedBanner.svelte</code>, <code>SaveIndicator.svelte</code> and their specs, <code>src/lib/fzp/SourcesDialog.svelte</code>, <code>src/lib/paint/ShortcutsButton.svelte</code>, <code>src/lib/paint/PaletteStrip.svelte</code> (its pop-overs' surface), <code>src/lib/brush/RadiusPopover.svelte</code>, <code>src/lib/timeline/Explain.svelte</code>, <code>src/lib/map/key/MapKeyControl.svelte</code> (panel surface), <code>src/lib/shell/SiteHeader.svelte</code> (Menu panel surface), <code>accent.spec.ts</code>; e2e <code>chrome-dark.spec.ts</code>, <code>share-states.spec.ts</code></td><td>1</td></tr>
+        <tr><th scope="row">Messages</th><td>Create <code>src/lib/shell/Message.svelte</code>, <code>Message.svelte.spec.ts</code>; delete <code>src/lib/shell/pill.ts</code>, <code>pill.spec.ts</code>; modify <code>NoticePills.svelte</code>, <code>test/NoticePillsHost.svelte</code>, <code>src/lib/sim-page/SimNotices.svelte</code>, <code>src/lib/sharing/NoticeStack.svelte</code>, <code>src/lib/timeline/TimelineMode.svelte</code> (notices), <code>src/lib/brush/BrushEditor.svelte</code> (status, stroke chip), <code>src/lib/map/SimMap.svelte</code> (failure stack), <code>src/lib/timeline/SimActivity.svelte</code> and <code>src/lib/sim-page/SimPage.svelte</code> (the refusal), their specs; e2e <code>layout.spec.ts</code>, <code>sim-activity.spec.ts</code>; docs <code>map-interfaces.md</code>, <code>sim-page.md</code></td><td>2</td></tr>
+        <tr><th scope="row">Header and touch</th><td>Modify <code>src/lib/shell/SiteHeader.svelte</code> and spec, <code>src/lib/shell/test/HeaderScoreHeader.svelte</code>, <code>src/lib/paint/pointer.svelte.ts</code>, <code>src/lib/paint/HistoryButtons.svelte</code> and spec (and <code>history.ts</code>, created), <code>src/lib/brush/BrushEditor.svelte</code>, <code>src/lib/sim-page/SimPage.svelte</code> (actions) and spec, <code>src/lib/brush/BrushEditor.dock.svelte.spec.ts</code>; e2e <code>layout.spec.ts</code>, <code>sim.spec.ts</code>; docs <code>sim-page.md</code> (Header width), <code>testing.md</code> (the pointer rule)</td><td>3</td></tr>
+        <tr><th scope="row">The status cell</th><td>Modify <code>TimelineMode.svelte</code> (status, key marks) and spec, <code>src/lib/timeline/copy.ts</code>, <code>src/lib/timeline/test/TimelineModeHost.svelte</code>, <code>SimPage.svelte</code> (<code>saveOff</code>); e2e <code>sim-timeline.spec.ts</code>; docs <code>timeline-ui.md</code> (rule 32, Revealing time)</td><td>4</td></tr>
+        <tr><th scope="row">Around the map</th><td>Modify <code>Explain.svelte</code> and spec, <code>MapKeyControl.svelte</code> and spec, <code>src/lib/map/key/KeySwatch.svelte</code>, <code>src/lib/map/types.ts</code> (<code>setGlowInset</code>), <code>SimMap.svelte</code>, <code>src/lib/fzp/test/sim-map-stub.ts</code> (and every <code>SimMapHandle</code> double), <code>NoticePills.svelte</code> (<code>onbottom</code>), <code>TimelineMode.svelte</code> and spec; e2e <code>map-key.spec.ts</code>, <code>sim-citywide.spec.ts</code>; docs <code>map-interfaces.md</code></td><td>5</td></tr>
+        <tr><th scope="row">Phone</th><td>Modify <code>src/lib/timeline/KindRow.svelte</code>, <code>PolicyRow.svelte</code>, <code>FixedRow.svelte</code>, <code>Timeline.svelte</code> and spec, <code>src/lib/paint/PaletteStrip.svelte</code> and spec, <code>BrushEditor.svelte</code>; e2e <code>sim-timeline.spec.ts</code>, <code>layout.spec.ts</code>; docs <code>timeline-ui.md</code></td><td>6</td></tr>
+        <tr><th scope="row">Bars and the detail column</th><td>Modify <code>rows.ts</code> and spec, <code>SpanBar.svelte</code>, <code>FixedRow.svelte</code>, <code>Timeline.svelte</code> (world row), <code>LevelFill.svelte</code> and spec, <code>SimActivity.svelte</code> and spec, <code>TimelineMode.svelte</code> (the column's fade); create <code>src/lib/shell/more-below.ts</code>, <code>more-below.svelte.spec.ts</code>; every spec and e2e helper that names a bar (sweep in <a href="#t7-s3">t7-s3</a>); e2e <code>sim-pools.spec.ts</code>, <code>sim-activity.spec.ts</code>; docs <code>timeline-ui.md</code>, <code>sim-page.md</code></td><td>7</td></tr>
+        <tr><th scope="row">Whole-suite pass</th><td>Whatever the full runs turn up</td><td>8</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="sec-task-1">
+    <h2>Task 1: The shared parts, and dialogs and menus on one surface</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Create: <code>src/lib/shell/ui.ts</code>; test <code>src/lib/shell/ui.spec.ts</code> (server); <code>docs/dev/ui-parts.md</code> (the scale, the kinds, the surfaces, the shapes, when to use each; a short doc). Modify <code>CLAUDE.md</code>: one line in "Scoped reference docs" ("Shared UI parts (spacing scale, buttons, surfaces, chips and cards)").</li>
+      <li>Modify (surfaces): <code>src/lib/sharing/PublishDialog.svelte</code> (<code>:183-196</code>: <code>btn</code>, <code>primary</code>, <code>secondary</code>, the <code>dialog</code>'s classes), <code>src/lib/sharing/SharedBanner.svelte</code> (<code>:70-101</code>: the banner and its dialog), <code>src/lib/fzp/SourcesDialog.svelte</code> (<code>:146-151</code>), <code>src/lib/sharing/SaveIndicator.svelte</code> (the popover, <code>:79-88</code>), <code>src/lib/paint/ShortcutsButton.svelte</code> (<code>:95</code>), <code>src/lib/paint/PaletteStrip.svelte</code> (<code>POP</code>, <code>:103</code>), <code>src/lib/brush/RadiusPopover.svelte</code> (its pop-over), <code>src/lib/timeline/Explain.svelte</code> (the md tooltip, <code>:146</code>), <code>src/routes/layout.css</code> (<code>.explain-under</code>, <code>:68-98</code>: the same values as <code>SURFACE_TIP</code>, named in a comment), <code>src/lib/map/key/MapKeyControl.svelte</code> (<code>PANEL</code>, <code>:121-122</code>), <code>src/lib/shell/SiteHeader.svelte</code> (the Menu panel, <code>:189</code>: <code>bg-white</code> becomes the surface token with its chrome-dark partner).</li>
+      <li>Modify (Publish's reason): <code>src/lib/sharing/PublishButton.svelte</code> (<code>:60-74</code>).</li>
+      <li>Tests: <code>PublishDialog.svelte.spec.ts</code>, <code>SharedBanner.svelte.spec.ts</code>, <code>SaveIndicator.svelte.spec.ts</code>, <code>src/lib/fzp/SourcesDialog.svelte.spec.ts</code>, a new <code>src/lib/sharing/PublishButton.svelte.spec.ts</code>; <code>accent.spec.ts</code> (<code>THEMED_FILES</code> += <code>ui.ts</code>, <code>PublishButton.svelte</code>, <code>PublishDialog.svelte</code>, <code>SharedBanner.svelte</code>, <code>SaveIndicator.svelte</code>, <code>SourcesDialog.svelte</code>, <code>RadiusPopover.svelte</code>, <code>SiteHeader.svelte</code>; <code>NO_HEX_FILES</code> += <code>ui.ts</code>); e2e <code>chrome-dark.spec.ts</code>, <code>share-states.spec.ts</code>.</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: the tokens in <code>src/routes/layout.css:3-25</code>; <code>Explain</code> (<code>as="wrap"</code>).</li>
+      <li>Produces:
+        <pre><code data-lang="ts">// src/lib/shell/ui.ts — class constants; every gray, white, black or ink utility has its dark: partner
+/** The spacing scale: Tailwind steps 1, 2, 3, 4, 6 (4, 8, 12, 16, 24 px). Shared parts use only these
+ *  for padding, margin and gap; arbitrary px only for measured geometry (say so in a comment). */
+export const SPACE_STEPS = [1, 2, 3, 4, 6] as const;
+
+/** A secondary button: control-line border, surface, ink, text-sm font-semibold, rounded-md, px-2,
+ *  min 24 px (44 px on a coarse pointer), hover one step raised, focus-visible accent outline,
+ *  aria-disabled and disabled: muted ink, no hover, cursor not-allowed. */
+export const BUTTON: string;
+/** The page's main action (Publish): accent fill and on-accent text, otherwise as BUTTON. */
+export const BUTTON_PRIMARY: string;
+/** An action inside a message (Retry, Details, ×): no border, underlined, semibold, 44 px target. */
+export const BUTTON_QUIET: string;
+/** Added to a button that sits over the map: a small shadow so it reads on any map. */
+export const ON_MAP: string;
+
+/** Menus, panels and pop-overs: rounded-lg, line border, surface, ink, shadow-lg, p-2, text-sm. */
+export const SURFACE_POP: string;
+/** An explanation's tooltip: as SURFACE_POP with rounded, px-2 py-1, shadow-md. */
+export const SURFACE_TIP: string;
+/** A modal dialog: rounded-lg, surface, ink, shadow-xl, p-4, a 40% black backdrop. */
+export const SURFACE_DIALOG: string;
+
+/** A few words (today's PILL): rounded-full, one line, surface-raised in dark, shadow, text-sm. */
+export const CHIP: string;
+/** A chip that takes no presses (the stroke chip; today's CHIP). */
+export const CHIP_STILL: string;
+/** A paragraph: rounded-lg, the text wraps (max 28rem), its actions in a row under it. */
+export const CARD: string;
+
+export type MessageShape = 'chip' | 'card';
+/** 'chip' for one sentence of at most 8 words with no details; else 'card'. */
+export function messageShape(text: string, details?: boolean): MessageShape;
+
+// src/lib/sharing/PublishButton.svelte — disabled with a visible reason
+// While empty: aria-disabled="true" (not `disabled`, so it stays focusable), the press does
+// nothing, and the button sits in Explain as="wrap" with text copy.disabledHint, so the reason
+// shows on hover and focus and describes the button. Not empty: no Explain text, as today.</code></pre>
+      </li>
+    </ul>
+    <aside data-kind="decision"><strong>Builder's call: class constants, not <code>@utility</code></strong> The project already shares looks as TypeScript class strings (<code>pill.ts</code>), Tailwind scans them, and <code>accent.spec.ts</code> checks dark partners per class string, which an <code>@utility</code> block in CSS would escape. Rejected: Tailwind <code>@utility</code> classes.</aside>
+    <aside data-kind="decision"><strong>Builder's call: the existing looks, consolidated</strong> <code>BUTTON</code> is Activity's button (<code>SimActivity.svelte:49-50</code>), <code>BUTTON_PRIMARY</code> Publish's, <code>BUTTON_QUIET</code> <code>PILL_ACTION</code>, <code>CHIP</code> <code>PILL</code>, <code>CHIP_STILL</code> today's <code>CHIP</code>, <code>SURFACE_POP</code> the key panel's: the parts that already pass in both themes become the one look, so most surfaces change only where they were light-only.</aside>
+    <ol>
+      <li id="t1-s1"><input type="checkbox"> Write the failing tests first.
+        <pre><code data-lang="ts">// src/lib/shell/ui.spec.ts
+it('every padding, margin and gap step in the constants is one of SPACE_STEPS')
+  // parse each constant's /(?:p|px|py|pt|pr|pb|pl|m|mx|my|mt|mr|mb|ml|gap)-(\d+(?:\.5)?)/ steps
+it('BUTTON and BUTTON_PRIMARY: 24 px, 44 px on a coarse pointer; BUTTON_QUIET: 44 px')
+it('messageShape: "Some map data didn\'t load." is a chip; two sentences, nine words or details are a card')
+// accent.spec.ts: the new THEMED_FILES and NO_HEX_FILES entries (fail until the files are themed)
+// src/lib/sharing/PublishButton.svelte.spec.ts (renderAtRest)
+it('empty: aria-disabled, a press opens no dialog, hover shows "Paint something first."')
+it('empty: focus shows the reason and it describes the button')
+it('not empty: no aria-disabled, no reason, the press opens the dialog')
+// SaveIndicator.svelte.spec.ts
+it('the Autosave off popover draws on the surface tokens with dark partners')
+// e2e/chrome-dark.spec.ts
+test('the Publish dialog has no axe violations in dark and draws on surface-dark')
+test('the Autosave off popover has no axe violations in dark')
+test('the Sources dialog has no axe violations in dark and draws on surface-dark')
+test("the shared view's banner and its Remix dialog have no axe violations in dark")
+// e2e/share-states.spec.ts
+test('an empty plan: Publish is aria-disabled and says "Paint something first." on focus')</code></pre>
+      </li>
+      <li id="t1-s2"><input type="checkbox"> Run them and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/shell/ui.spec.ts src/lib/shell/accent.spec.ts
+npx vitest --run --project client --retry=0 src/lib/sharing/PublishButton.svelte.spec.ts src/lib/sharing/SaveIndicator.svelte.spec.ts
+SFH_E2E_PORT=4180 npx playwright test e2e/chrome-dark.spec.ts e2e/share-states.spec.ts --project=chromium --project=mobile</code></pre>
+      </li>
+      <li id="t1-s3"><input type="checkbox"> Implement <code>ui.ts</code> as in Interfaces and move the listed surfaces and their buttons onto it (<code>PublishDialog</code>'s and <code>SharedBanner</code>'s <code>primary</code> and <code>secondary</code> become <code>BUTTON_PRIMARY</code> and <code>BUTTON</code>). <code>PublishButton</code> takes <code>BUTTON_PRIMARY</code> and its aria-disabled styling. <code>pill.ts</code> stays until Task 2. Write <code>docs/dev/ui-parts.md</code> and the <code>CLAUDE.md</code> line; add one line to <code>docs/dev/plan-sharing.md</code> that Publish is aria-disabled with its reason on hover and focus.</li>
+      <li id="t1-s4"><input type="checkbox"> Run the covering specs, the goldens, then the changed e2e repeated.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/shell/
+npx vitest --run --project client --retry=0 src/lib/sharing/ src/lib/shell/ src/lib/fzp/SourcesDialog.svelte.spec.ts src/lib/paint/ src/lib/timeline/Explain.svelte.spec.ts src/lib/map/key/
+SFH_E2E_PORT=4180 npx playwright test e2e/chrome-dark.spec.ts e2e/share-states.spec.ts e2e/share-a11y.spec.ts e2e/share-roundtrip.spec.ts e2e/sim-share.spec.ts e2e/map-key.spec.ts e2e/map.spec.ts e2e/lesscars.spec.ts --project=chromium --project=mobile
+SFH_E2E_PORT=4180 npx playwright test e2e/chrome-dark.spec.ts e2e/share-states.spec.ts --project=chromium --project=mobile --repeat-each=5 --retries=0</code></pre>
+        <p>Screenshots, before on <code>main</code> and after: the Publish dialog, the Sources dialog, the Autosave off popover (blocked storage) and <code>/p/&lt;id&gt;</code>'s banner with Remix open, each at 1280 light and 1280 dark; Publish disabled with its reason on focus at 1280 light and 375.</p>
+      </li>
+      <li id="t1-s5"><input type="checkbox"> Commit, then check timing.
+        <pre><code data-lang="sh">git add src/lib/shell/ui.ts src/lib/shell/ui.spec.ts docs/dev/ui-parts.md CLAUDE.md docs/dev/plan-sharing.md src/routes/layout.css src/lib/sharing/PublishButton.svelte src/lib/sharing/PublishButton.svelte.spec.ts src/lib/sharing/PublishDialog.svelte src/lib/sharing/SharedBanner.svelte src/lib/sharing/SaveIndicator.svelte src/lib/sharing/SaveIndicator.svelte.spec.ts src/lib/fzp/SourcesDialog.svelte src/lib/paint/ShortcutsButton.svelte src/lib/paint/PaletteStrip.svelte src/lib/brush/RadiusPopover.svelte src/lib/timeline/Explain.svelte src/lib/map/key/MapKeyControl.svelte src/lib/shell/SiteHeader.svelte src/lib/shell/accent.spec.ts e2e/chrome-dark.spec.ts e2e/share-states.spec.ts
+git commit -m "feat(ui): shared parts; dialogs and menus on one surface in light and dark; Publish says why it is off"
+npx chreode timing-check --head HEAD</code></pre>
+        <p>Add every other spec file the run made you change, and the regenerated goldens if any, by name.</p>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-2">
+    <h2>Task 2: Messages as chips and cards, never covering each other</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Create: <code>src/lib/shell/Message.svelte</code>; test <code>Message.svelte.spec.ts</code> (client). Delete <code>src/lib/shell/pill.ts</code> and <code>pill.spec.ts</code>; every import moves to <code>ui.ts</code> or <code>Message</code>.</li>
+      <li>Modify: <code>src/lib/timeline/TimelineMode.svelte</code> (the notice stack, <code>:1468-1566</code>: the no-scenario message, the load failure, the goal notice, loading, failed cells, crash, error, not applied, lots failed; each a <code>Message</code>, role containers unchanged), <code>src/lib/sim-page/SimNotices.svelte</code> (<code>:73-94</code>: a notice with details is a card), <code>src/lib/sharing/NoticeStack.svelte</code> (<code>:53-58</code>), <code>src/lib/brush/BrushEditor.svelte</code> (the brush status, <code>:564-575</code>; the stroke chip's top, <code>:597-608</code>, reads <code>--map-chips-bottom</code> in place of <code>failedCells</code>), <code>src/lib/shell/test/NoticePillsHost.svelte</code>.</li>
+      <li>Modify: <code>src/lib/map/SimMap.svelte</code> (<code>:1386-1419</code>): the two failure messages go into one column (<code>sim-map-chips</code>, <code>flex-col gap-2</code>) at <code>top: calc(var(--notice-pills-bottom, 0px) + 0.5rem)</code>, each keeping its own shape (parcels a chip, buildings a card) and its map-palette colours (<code>.sim-map-panel</code>, shared with <code>/lesscars</code>); SimMap publishes the column's bottom as <code>--map-chips-bottom</code>.</li>
+      <li>Modify: <code>src/lib/timeline/SimActivity.svelte</code> (a <code>refusal</code> card under the starters) and <code>src/lib/sim-page/SimPage.svelte</code> (<code>addStarter</code>, <code>:406-433</code>: sets it instead of announcing through <code>brush.announce</code>; cleared on the next starter press or store change). Tests: <code>SimActivity.svelte.spec.ts</code>, <code>SimPage.svelte.spec.ts</code>, <code>NoticePills.svelte.spec.ts</code>, <code>SimNotices.svelte.spec.ts</code>, <code>NoticeStack.svelte.spec.ts</code>, <code>src/lib/map/SimMap.errors.svelte.spec.ts</code>.</li>
+      <li>e2e: <code>layout.spec.ts</code>, <code>sim-activity.spec.ts</code>. Docs: <code>map-interfaces.md</code> ("The notice pills and the failure chips": the column and <code>--map-chips-bottom</code>), <code>sim-page.md</code> (the refusal is visible), <code>ui-parts.md</code> (Message).</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>CHIP</code>, <code>CHIP_STILL</code>, <code>CARD</code>, <code>BUTTON_QUIET</code>, <code>messageShape</code> (Task 1).</li>
+      <li>Produces:
+        <pre><code data-lang="ts">// src/lib/shell/Message.svelte
+// props: { text: string; shape?: MessageShape (default messageShape(text, !!details));
+//   actions?: Snippet; details?: Snippet; still?: boolean; testid?: string }
+// chip: CHIP (CHIP_STILL when still), the text then the actions on one line.
+// card: CARD, the text wraps, the actions (and details, when given) in a row under it.
+// No role of its own: the page's role="status" / role="alert" containers stay where they are,
+// so what is announced and when does not change.
+
+// SimMap (map-interfaces.md): `--map-chips-bottom` on :root and on the map root, integer px from the
+// map root's top to the failure column's bottom; '0px' while neither failure shows; removed on
+// unmount. Measured by a ResizeObserver on the column, never on map move.
+
+// BrushEditor's stroke chip top:
+//   calc(max(var(--notice-pills-bottom, 0px), var(--map-chips-bottom, 0px)) + 0.5rem)
+
+// SimActivity: refusal?: string | null — a card (role="status") under the starters while set.</code></pre>
+      </li>
+    </ul>
+    <aside data-kind="decision"><strong>Builder's call: the map's failure messages keep the map palette</strong> They already follow the shape rule (parcels' one line is rounded-full, buildings' sentence rounded-lg, <code>SimMap.svelte:1393,1408</code>) and <code>/lesscars</code> shares them; only their placement changes (one column, so they never overlap). Rejected: moving them onto <code>CHIP</code>/<code>CARD</code> tokens, which would restyle <code>/lesscars</code>.</aside>
+    <aside data-kind="decision"><strong>Builder's call: the refusal is a card in Activity, not an announcement</strong> The starter lives in Activity, so its refusal shows there, with the add menu's own words; the card is the one announcement (a polite status), so screen readers hear it once, not twice.</aside>
+    <ol>
+      <li id="t2-s1"><input type="checkbox"> Write the failing tests first.
+        <pre><code data-lang="ts">// Message.svelte.spec.ts
+it('a short sentence renders as a chip with its actions on the line')
+it('two sentences render as a card; its actions sit under the text')
+it('still: the chip takes no presses')
+// SimMap.errors.svelte.spec.ts
+it('both failures show in one column: the buildings message starts below the parcels one')
+it('publishes --map-chips-bottom as the column\'s bottom, 0px with no failure')
+// NoticePills.svelte.spec.ts / SimNotices.svelte.spec.ts / NoticeStack.svelte.spec.ts
+it('a notice with details is a card; a one-line notice is a chip')
+// SimActivity.svelte.spec.ts
+it('a refusal shows as a card under the starters with the limit words')
+// SimPage.svelte.spec.ts
+it('a starter the pool limit refuses changes nothing and shows the refusal in Activity')
+it('the next starter press clears the refusal')
+// e2e/layout.spec.ts
+test('/: two failures and a stroke chip: no box overlaps another, at 1280 and 375')
+  // route the parcels chunk and the buildings file to 500, paint once, then compare boxes
+// e2e/sim-activity.spec.ts
+test('the no-scenario message is a card; a load failure is a chip with Retry')</code></pre>
+      </li>
+      <li id="t2-s2"><input type="checkbox"> Run them and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project client --retry=0 src/lib/shell/Message.svelte.spec.ts src/lib/map/SimMap.errors.svelte.spec.ts src/lib/timeline/SimActivity.svelte.spec.ts src/lib/sim-page/SimPage.svelte.spec.ts
+SFH_E2E_PORT=4180 npx playwright test e2e/layout.spec.ts e2e/sim-activity.spec.ts --project=chromium --project=mobile</code></pre>
+      </li>
+      <li id="t2-s3"><input type="checkbox"> Implement as in Interfaces. Sweep: <code>rg -n "PILL|from '\$lib/shell/pill'|from './pill'" src</code> finds nothing after. Update the three docs.</li>
+      <li id="t2-s4"><input type="checkbox"> Run the covering specs, the goldens, then the changed e2e repeated.
+        <pre><code data-lang="sh">npx vitest --run --project client --retry=0 src/lib/shell/ src/lib/sim-page/ src/lib/sharing/ src/lib/brush/ src/lib/map/SimMap.errors.svelte.spec.ts src/lib/timeline/
+npx vitest --run --project server src/lib/shell/
+SFH_E2E_PORT=4180 npx playwright test e2e/layout.spec.ts e2e/sim-activity.spec.ts e2e/share-notices.spec.ts e2e/brush.spec.ts e2e/sim.spec.ts e2e/chrome-dark.spec.ts e2e/map.spec.ts e2e/lesscars.spec.ts --project=chromium --project=mobile
+SFH_E2E_PORT=4180 npx playwright test e2e/layout.spec.ts e2e/sim-activity.spec.ts --project=chromium --project=mobile --repeat-each=5 --retries=0</code></pre>
+        <p>Screenshots: <code>/</code> with both map failures and a stroke chip, before on <code>main</code> (the overlap) and after, at 1280 light and 375; the dates-moved notice open (a card) at 1280 dark; Activity with the refusal at 1280 light.</p>
+      </li>
+      <li id="t2-s5"><input type="checkbox"> Commit, then check timing.
+        <pre><code data-lang="sh">git add src/lib/shell/Message.svelte src/lib/shell/Message.svelte.spec.ts src/lib/shell/pill.ts src/lib/shell/pill.spec.ts src/lib/shell/NoticePills.svelte src/lib/shell/test/NoticePillsHost.svelte src/lib/sim-page/SimNotices.svelte src/lib/sharing/NoticeStack.svelte src/lib/timeline/TimelineMode.svelte src/lib/brush/BrushEditor.svelte src/lib/map/SimMap.svelte src/lib/map/SimMap.errors.svelte.spec.ts src/lib/timeline/SimActivity.svelte src/lib/timeline/SimActivity.svelte.spec.ts src/lib/sim-page/SimPage.svelte src/lib/sim-page/SimPage.svelte.spec.ts e2e/layout.spec.ts e2e/sim-activity.spec.ts docs/dev/map-interfaces.md docs/dev/sim-page.md docs/dev/ui-parts.md
+git commit -m "feat(ui): messages are chips or cards; map messages stack; a refused starter says so"
+npx chreode timing-check --head HEAD</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-3">
+    <h2>Task 3: The header fits, centred, with its step numbers; Undo and Redo for touch</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/lib/shell/SiteHeader.svelte</code>: the grid (<code>:145-147</code>) is <code>1fr auto 1fr</code> from lg (min auto, not <code>minmax(0, 1fr)</code>, so a side that cannot fit pushes the score off centre rather than clipping); the step numbers (<code>:132-136</code>) and the steps' padding and gap (<code>:47</code>, <code>:156</code>) no longer change between lg and xl; the account entry (<code>:207-213</code>) is capped at <code>max-w-24</code> from lg to xl only if the measurement needs it (ladder below); the actions' buttons take <code>BUTTON</code>. Test: <code>SiteHeader.svelte.spec.ts</code> (the rows at 1024 and 1280, <code>:464-492</code>, <code>:583-630</code>, <code>:707-730</code>), <code>src/lib/shell/test/HeaderScoreHeader.svelte</code> (a <code>user</code> prop).</li>
+      <li>Modify: <code>src/lib/paint/pointer.svelte.ts</code>: <code>PrimaryPointer</code> gains <code>touch</code>. <code>src/lib/brush/BrushEditor.svelte</code> (<code>:645</code>) shows the history row on <code>pointer.touch</code>; <code>src/lib/sim-page/SimPage.svelte</code>'s <code>actions</code> (<code>:1021-1049</code>) renders Undo and Redo only on <code>pointer.touch</code> and <code>ShortcutsButton</code> on its own (fine primary), and its "Stop painting" button takes <code>BUTTON</code>. <code>src/lib/paint/HistoryButtons.svelte</code> loses its Shortcuts button (SimPage renders it beside); its naming moves to <code>src/lib/paint/history.ts</code> (<code>historyName</code>) for Task 6.</li>
+      <li>Tests: <code>HistoryButtons.svelte.spec.ts</code>, <code>BrushEditor.dock.svelte.spec.ts</code> (the touch-laptop stub, <code>docs/dev/testing.md:28</code>), <code>SimPage.svelte.spec.ts</code>; e2e <code>layout.spec.ts</code> ("account entry", <code>:704-762</code>), <code>sim.spec.ts</code>.</li>
+      <li>Docs: <code>sim-page.md</code> (item 1's actions, item 4, and "Header width" with the new measurements), <code>testing.md</code> (the pointer rule: <code>touch</code> reads <code>(any-pointer: coarse)</code>), the header comment in <code>SiteHeader.svelte</code>, <code>CLAUDE.md</code>'s Shell paragraph only if a sentence there becomes false.</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>BUTTON</code> (Task 1); <code>loginAs</code> (<code>e2e/helpers/auth.ts:12</code>).</li>
+      <li>Produces:
+        <pre><code data-lang="ts">// src/lib/paint/pointer.svelte.ts
+export interface PrimaryPointer {
+  readonly coarse: boolean; // unchanged: primary pointer coarse
+  readonly fine: boolean;   // unchanged
+  /** The client has read the query and some pointer is coarse (`(any-pointer: coarse)`): a phone,
+   *  a tablet or a touch laptop. Undo and Redo buttons show on it. */
+  readonly touch: boolean;
+}
+
+// src/lib/paint/history.ts
+/** 'Undo' / 'Undo: {label}' and 'Redo' / 'Redo: {label}', as HistoryButtons names them. */
+export function historyName(kind: 'undo' | 'redo', label: string | null): string;</code></pre>
+      </li>
+    </ul>
+    <aside data-kind="decision"><strong>The fit ladder at lg to xl (decided; the measurement picks the step)</strong> Measure first (<a href="#sec-measures">What to measure</a>). Then, in order, stopping at the first that fits the worst case: (1) Undo and Redo gone on a fine-only device, the step numbers shown, the score centred; (2) as 1, the account entry's text capped at 6 rem (96 px) from lg to xl, its full handle kept as its text, title and name; (3) as 2, the steps' padding <code>px-1</code> from lg to xl as today. Record which step was needed and the spare px in <code>sim-page.md</code>'s "Header width". If 3 does not fit, stop and raise it.</aside>
+    <ol>
+      <li id="t3-s1"><input type="checkbox"> Write the failing tests first.
+        <pre><code data-lang="ts">// SiteHeader.svelte.spec.ts
+it('at 1024px the Steps nav shows the numbers 1 and 2')                 // replaces 'the numbers are hidden'
+it('centres the score at 1024px when both sides fit')                    // |centre − banner centre| &lt; 1
+it('at 1024px the widest /sim row fits in order')
+  // HeaderScoreHeader with user { handle: 'a-very-long-handle-x' }, total 12345, delta 1817,
+  // the status slot holding SaveIndicator 'off' and an "Updating" span beside it (Task 4's shape),
+  // actions Shortcuts and Publish: each item's left ≥ the previous one's right; banner 48 px;
+  // banner.scrollWidth ≤ clientWidth; document.scrollWidth ≤ 1024
+it('at 1280px the same row fits and the score is centred')
+// BrushEditor.dock.svelte.spec.ts
+it('a touch laptop gets Undo and Redo above the tab and keeps Shortcuts; a change event swaps them in and out')
+// SimPage.svelte.spec.ts
+it('a fine-only pointer: no Undo or Redo in the header; Shortcuts and Publish stay')
+it('any coarse pointer: Undo and Redo in the header, named by the change')
+// e2e/layout.spec.ts ('account entry', desktop)
+test('/sim at 1024×768 signed in: the handle, the score and every action are visible and clear of each other, axe clean')
+// e2e/sim.spec.ts (chromium)
+test('the header has no Undo or Redo on a desktop pointer; Ctrl+Z undoes a policy add')</code></pre>
+      </li>
+      <li id="t3-s2"><input type="checkbox"> Run them and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project client --retry=0 src/lib/shell/SiteHeader.svelte.spec.ts src/lib/brush/BrushEditor.dock.svelte.spec.ts src/lib/sim-page/SimPage.svelte.spec.ts
+SFH_E2E_PORT=4180 npx playwright test e2e/layout.spec.ts e2e/sim.spec.ts --project=chromium --project=mobile</code></pre>
+      </li>
+      <li id="t3-s3"><input type="checkbox"> Take the Task 3 measurement, then implement as in Interfaces and the ladder. Update the docs.</li>
+      <li id="t3-s4"><input type="checkbox"> Run the covering specs, then the e2e, changed specs repeated.
+        <pre><code data-lang="sh">npx vitest --run --project client --retry=0 src/lib/shell/ src/lib/paint/ src/lib/brush/ src/lib/sim-page/
+SFH_E2E_PORT=4180 npx playwright test e2e/layout.spec.ts e2e/sim.spec.ts e2e/brush.spec.ts e2e/chrome-dark.spec.ts e2e/lesscars.spec.ts e2e/sim-share.spec.ts --project=chromium --project=mobile
+SFH_E2E_PORT=4180 npx playwright test e2e/layout.spec.ts e2e/sim.spec.ts --project=chromium --project=mobile --repeat-each=5 --retries=0</code></pre>
+        <p>Screenshots, before on <code>main</code> and after: <code>/sim</code>'s header at 1024 light signed in mid-play with a policy in force (the widest common row), at 1024 with autosave off and "Updating" (after only, once Task 4 lands it is re-taken), at 1280 light and dark; <code>/</code>'s header at 1024; <code>/lesscars</code>' header at 1024 (the one shell change it sees); 375 <code>/sim</code> with the Menu open.</p>
+      </li>
+      <li id="t3-s5"><input type="checkbox"> Commit, then check timing.
+        <pre><code data-lang="sh">git add src/lib/shell/SiteHeader.svelte src/lib/shell/SiteHeader.svelte.spec.ts src/lib/shell/test/HeaderScoreHeader.svelte src/lib/paint/pointer.svelte.ts src/lib/paint/history.ts src/lib/paint/HistoryButtons.svelte src/lib/paint/HistoryButtons.svelte.spec.ts src/lib/brush/BrushEditor.svelte src/lib/brush/BrushEditor.dock.svelte.spec.ts src/lib/sim-page/SimPage.svelte src/lib/sim-page/SimPage.svelte.spec.ts e2e/layout.spec.ts e2e/sim.spec.ts docs/dev/sim-page.md docs/dev/testing.md
+git commit -m "feat(header): the score centred from lg with step numbers; Undo and Redo only on touch"
+npx chreode timing-check --head HEAD</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-4">
+    <h2>Task 4: The status cell: never covering "Autosave off", never lagging, saying why Play waits</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/lib/timeline/TimelineMode.svelte</code>: the status block (<code>:621-675</code>) splits the visible state from the spoken one; the <code>statusSlot</code> snippet (<code>:1317-1348</code>) lays out two cells side by side while <code>saveOff</code>; the waiting state; the key's mark row (<code>:1591-1601</code>, <code>SimKey</code>'s <code>inForce</code>). Test: <code>TimelineMode.svelte.spec.ts</code>, <code>src/lib/timeline/test/TimelineModeHost.svelte</code> (pass <code>saveOff</code>).</li>
+      <li>Modify: <code>src/lib/timeline/copy.ts</code> (<code>WAITING_NOTE</code>, beside <code>STALE_NOTE</code>, <code>:42-44</code>); <code>src/lib/sim-page/SimPage.svelte</code> (passes <code>saveOff={autosave?.status === 'off'}</code>).</li>
+      <li>e2e: <code>sim-timeline.spec.ts</code>. Docs: <code>timeline-ui.md</code> (rule 32 as amended, Revealing time's waiting line, the key's mark row), <code>sim-page.md</code> (item 1's status slot).</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: the header row of Task 3; <code>nothingInForce</code>; <code>filledEnd</code>, <code>lastDay</code>, <code>playing</code>, <code>day</code> (all in <code>TimelineMode</code>).</li>
+      <li>Produces:
+        <pre><code data-lang="ts">// copy.ts
+export const WAITING_NOTE = 'Working out the months ahead.';
+
+// TimelineMode props
+/** Autosave is off: "Updating" sits beside the save state instead of covering it. */
+saveOff?: boolean; // default false
+
+// TimelineMode state (not exported; names for the reviewer)
+// shownStatus: 'stale' | 'waiting' | null — follows the conditions at once, drives the cell, `covered`
+//   (saveOff ? false : shownStatus !== null) and the focus hand-over (setStatus' rules, unchanged).
+// statusText: string — the live region's text, at most one change per statusMs, latest wins.
+// waiting: true once Play, playing, has caught the computed edge (day ≥ filledEnd) while
+//   filledEnd &lt; lastDay; false when playback stops or the forecast is whole (filledEnd ≥ lastDay).
+//   Not reset as the edge moves on, so it does not flicker with each fill.
+// The explanation: STALE_NOTE while stale (stale wins), WAITING_NOTE while waiting.
+// keyMarks = inForce || (stale &amp;&amp; !nothingInForce(policy)): SimKey's mark row shows while the map
+//   can show marks of the edited document.</code></pre>
+      </li>
+    </ul>
+    <ol>
+      <li id="t4-s1"><input type="checkbox"> Write the failing tests first.
+        <pre><code data-lang="ts">// TimelineMode.svelte.spec.ts (fake worker; statusMs seam)
+it('Updating shows and goes with stale at once')                            // no wait on statusMs
+it('the live region changes at most once per statusMs, latest wins')
+it('focus moves with the cover, never to the body')
+it('autosave off: Updating sits beside the chip, the chip stays pressable')  // chip not inert, both visible
+it('autosave off: the cell keeps its width as Updating comes and goes')
+it('Play caught by the computed edge on a first load: Updating, explained by Working out the months ahead.')
+it('waiting does not flicker as the fill moves the edge on; it goes when the forecast is whole or on Pause')
+it('stale while waiting: the explanation is From before your latest change.')
+it('while Updating after a first policy, the key shows Under your policy')
+// e2e/sim-timeline.spec.ts
+test('a held edit: Updating shows at once and the key\'s mark row with it')   // installPolicyHold, holdPolicy
+test('blocked storage: Autosave off and Updating both show during an edit; the chip opens its popover')</code></pre>
+      </li>
+      <li id="t4-s2"><input type="checkbox"> Run them and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project client --retry=0 src/lib/timeline/TimelineMode.svelte.spec.ts
+SFH_E2E_PORT=4180 npx playwright test e2e/sim-timeline.spec.ts --project=chromium --project=mobile</code></pre>
+      </li>
+      <li id="t4-s3"><input type="checkbox"> Implement as in Interfaces. The cell's invisible sizer holds "Updating" as today, so the cell's width does not depend on which note shows. Re-run Task 3's header-fit row with the real cell. Update the docs.</li>
+      <li id="t4-s4"><input type="checkbox"> Run the covering specs, then the e2e, changed specs repeated.
+        <pre><code data-lang="sh">npx vitest --run --project client --retry=0 src/lib/timeline/ src/lib/sim-page/ src/lib/shell/SiteHeader.svelte.spec.ts
+SFH_E2E_PORT=4180 npx playwright test e2e/sim-timeline.spec.ts e2e/sim.spec.ts e2e/layout.spec.ts e2e/sim-halos.spec.ts e2e/map-key.spec.ts --project=chromium --project=mobile
+SFH_E2E_PORT=4180 npx playwright test e2e/sim-timeline.spec.ts --project=chromium --project=mobile --repeat-each=5 --retries=0</code></pre>
+        <p>Screenshots: the header at 1024 light signed in with autosave off and "Updating" (before on <code>main</code>: the chip covered; after: both), at 1280 dark; a first load playing at the edge with "Updating" and its explanation open, 1280 light and 375; the key with its mark row during a held first edit, 1280 light.</p>
+      </li>
+      <li id="t4-s5"><input type="checkbox"> Commit, then check timing.
+        <pre><code data-lang="sh">git add src/lib/timeline/TimelineMode.svelte src/lib/timeline/TimelineMode.svelte.spec.ts src/lib/timeline/test/TimelineModeHost.svelte src/lib/timeline/copy.ts src/lib/sim-page/SimPage.svelte e2e/sim-timeline.spec.ts docs/dev/timeline-ui.md docs/dev/sim-page.md
+git commit -m "fix(sim): Updating shows at once, never covers Autosave off, and says why Play waits"
+npx chreode timing-check --head HEAD</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-5">
+    <h2>Task 5: Around the map: Escape, the key's tab order, glows clear of what covers them</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/lib/timeline/Explain.svelte</code>: the window Escape handler (<code>:59-66</code>, <code>:114</code>) becomes a capture-phase listener installed in an <code>$effect</code> that also calls <code>preventDefault()</code>, so it runs before every bubbling window handler and <code>ProjectCardPanel</code>'s check (<code>e.defaultPrevented</code>, <code>src/lib/fzp/ProjectCardPanel.svelte:121-126</code>) and the header Menu's and the dock's see the key as handled. Test: <code>Explain.svelte.spec.ts</code>, <code>src/lib/timeline/test/ExplainHost.svelte</code>.</li>
+      <li>Modify: <code>src/lib/map/key/MapKeyControl.svelte</code> (<code>:141-192</code>): the toolbar comes first in the DOM and the box is <code>flex-col-reverse</code>, so the panels still sit above the toolbar and Tab reaches the toggles before an open panel's controls; the toggles take <code>BUTTON</code> + <code>ON_MAP</code>. Test: <code>MapKeyControl.svelte.spec.ts</code>.</li>
+      <li>Modify: <code>src/lib/map/key/KeySwatch.svelte</code> (<code>EDGE_PX</code>, <code>:28</code>, the edge swatch <code>:98-106</code>).</li>
+      <li>Modify: <code>src/lib/map/types.ts</code> (<code>SimMapHandle.setGlowInset</code>), <code>src/lib/map/SimMap.svelte</code> (combines it with its bottom <code>glowInset</code>, <code>:289-321</code>, <code>:793</code>, in the one <code>setEdgeInset</code> call), every <code>SimMapHandle</code> double (<code>src/lib/fzp/test/sim-map-stub.ts</code>, <code>src/lib/map/test/fake-timeline-deps.ts</code> and any other <code>rg -l "setBarMode" src</code> finds), <code>src/lib/shell/NoticePills.svelte</code> (<code>onbottom</code>), <code>src/lib/timeline/TimelineMode.svelte</code> (feeds the top and right insets). Tests: <code>SimMap.timeline.svelte.spec.ts</code>, <code>NoticePills.svelte.spec.ts</code>, <code>TimelineMode.svelte.spec.ts</code>.</li>
+      <li>e2e: <code>map-key.spec.ts</code>, <code>sim-citywide.spec.ts</code>. Docs: <code>map-interfaces.md</code> ("The map key control": tab order and the swatch; "Merged rings and edge glows": the insets; the handle list).</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>BUTTON</code>, <code>ON_MAP</code> (Task 1); <code>TimelineController.setEdgeInset</code> (<code>timeline-controller.ts:553-558</code>, unchanged).</li>
+      <li>Produces:
+        <pre><code data-lang="ts">// src/lib/map/types.ts, SimMapHandle
+/**
+ * The page's part of the edge glows' inset, CSS px: `top` (what covers the map's top: the notice
+ * stack from md) and `right` (an open key or layers panel from md). SimMap adds its own bottom
+ * (the attribution's footprint) and passes [top + GLOW_TOP_GAP, right, bottom, 0] to the city
+ * layer. Write it on change only; repeating a value does nothing.
+ */
+setGlowInset(o: { top: number; right: number }): void;
+// SimMap: GLOW_TOP_GAP = 12 (px): a top glow's centre sits below the header line, so it reads as a
+// glow at the map's edge, not under the header.
+
+// src/lib/shell/NoticePills.svelte
+// onbottom?: (px: number) => void — the same value it publishes as --notice-pills-bottom, on change.
+
+// TimelineMode: setGlowInset({ top: pillsBottom, right: md &amp;&amp; panelOpen ? keyEl.offsetWidth + 8 : 0 })
+// from MapKeyControl's onopenchange and NoticePills' onbottom, never per frame.
+
+// KeySwatch, edge: each half-disc at least 10 px across and 5 px deep (EDGE_PX grows to fit the
+// tokens; the swatch column widens to fit if it must), flat side on the 1 px line.</code></pre>
+      </li>
+    </ul>
+    <aside data-kind="decision"><strong>Builder's call: insets, not a new layer rule</strong> The glows already sit on an inset rectangle that the shader reads as a uniform (<code>insetEdge</code>, <code>city.ts:161-171</code>; <code>cy_insetEdge</code>, <code>city-layer.ts:186-191</code>), and SimMap sets its bottom from the attribution. Giving the page the top and right keeps the CPU reference and the shader untouched (so they still agree rule for rule) and costs nothing per frame. A glow's reach (<code>CITY_GLOW_REACH</code>) is unchanged. Below md the right inset stays 0: an open panel there covers most of a 375 px map and would squeeze every glow to a strip.</aside>
+    <aside data-kind="note"><strong>Bench</strong> This task changes no layer code, so no <code>bench:map</code> is owed. If the implementer finds it must edit <code>city.ts</code> or <code>city-layer.ts</code>, stop: that is a layer change and owes a bench after merge.</aside>
+    <ol>
+      <li id="t5-s1"><input type="checkbox"> Write the failing tests first.
+        <pre><code data-lang="ts">// Explain.svelte.spec.ts (ExplainHost gains a window keydown listener that records defaultPrevented)
+it('Escape on a hovered explanation marks the key handled before any window listener sees it')
+it('Escape with no explanation open leaves the key unhandled')
+// TimelineMode.svelte.spec.ts
+it('Escape on a hovered explanation leaves the card open; the next Escape closes the card')
+// MapKeyControl.svelte.spec.ts
+it('the toggles come before an open panel in tab order; the panel still sits above them')
+it('inside the key panel: the first Escape closes the explanation, the second the panel')
+// SimMap.timeline.svelte.spec.ts
+it('setGlowInset: the city layer reads [top + 12, right, footprint bottom, 0]; a repeat writes nothing')
+// NoticePills.svelte.spec.ts
+it('onbottom reports the stack\'s bottom from md and 0 below md or empty')
+// TimelineMode.svelte.spec.ts
+it('a notice and an open key panel set the glow inset; closing the panel clears its part')
+// e2e/map-key.spec.ts
+test('Tab from the map reaches Layers and Key before the open key panel\'s controls')
+test('the edge swatch\'s half-discs are at least 10 by 5 px')
+// e2e/sim-citywide.spec.ts
+test('with the goal notice and the key open, the glows\' inset clears both')   // __sfhMap snapshot inset</code></pre>
+      </li>
+      <li id="t5-s2"><input type="checkbox"> Run them and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project client --retry=0 src/lib/timeline/Explain.svelte.spec.ts src/lib/map/key/MapKeyControl.svelte.spec.ts src/lib/map/SimMap.timeline.svelte.spec.ts src/lib/shell/NoticePills.svelte.spec.ts src/lib/timeline/TimelineMode.svelte.spec.ts
+SFH_E2E_PORT=4180 npx playwright test e2e/map-key.spec.ts e2e/sim-citywide.spec.ts --project=chromium --project=mobile</code></pre>
+      </li>
+      <li id="t5-s3"><input type="checkbox"> Implement as in Interfaces. If the timeline snapshot does not report the inset, add it to <code>TimelineSnapshot</code> (<code>src/lib/map/timelapse/types.ts</code> is not hashed) for the e2e. Update <code>map-interfaces.md</code>.</li>
+      <li id="t5-s4"><input type="checkbox"> Run the covering specs, the goldens, then the changed e2e repeated.
+        <pre><code data-lang="sh">npx vitest --run --project client --retry=0 src/lib/timeline/ src/lib/map/ src/lib/shell/ src/lib/fzp/
+npx vitest --run --project server src/lib/map/
+SFH_E2E_PORT=4180 npx playwright test e2e/map-key.spec.ts e2e/sim-citywide.spec.ts e2e/sim-halos.spec.ts e2e/layout.spec.ts e2e/chrome-dark.spec.ts e2e/map.spec.ts e2e/lesscars.spec.ts --project=chromium --project=mobile
+SFH_E2E_PORT=4180 npx playwright test e2e/map-key.spec.ts e2e/sim-citywide.spec.ts --project=chromium --project=mobile --repeat-each=5 --retries=0</code></pre>
+        <p>The key's toggles change look, so the goldens are expected to differ there: regenerate on darwin (<code>SFH_E2E_PORT=4180 npx playwright test e2e/map.spec.ts -g "golden" --project=chromium --update-snapshots</code>), open both images and confirm only the toolbar changed. Screenshots: <code>/sim</code> mid-play at the default camera with the goal notice and the key open, glows on the top and right edges, before on <code>main</code> and after, at 1280 light and dark; the key's edge swatch zoomed, before and after.</p>
+      </li>
+      <li id="t5-s5"><input type="checkbox"> Commit, then check timing.
+        <pre><code data-lang="sh">git add src/lib/timeline/Explain.svelte src/lib/timeline/Explain.svelte.spec.ts src/lib/timeline/test/ExplainHost.svelte src/lib/map/key/MapKeyControl.svelte src/lib/map/key/MapKeyControl.svelte.spec.ts src/lib/map/key/KeySwatch.svelte src/lib/map/types.ts src/lib/map/SimMap.svelte src/lib/map/SimMap.timeline.svelte.spec.ts src/lib/fzp/test/sim-map-stub.ts src/lib/map/test/fake-timeline-deps.ts src/lib/shell/NoticePills.svelte src/lib/shell/NoticePills.svelte.spec.ts src/lib/timeline/TimelineMode.svelte src/lib/timeline/TimelineMode.svelte.spec.ts e2e/map-key.spec.ts e2e/sim-citywide.spec.ts e2e/map.spec.ts-snapshots/map-light-chromium-darwin.png e2e/map.spec.ts-snapshots/map-dark-chromium-darwin.png docs/dev/map-interfaces.md
+git commit -m "fix(map): Escape closes the innermost layer; the key's toggles first; glows clear the header, notices and panels"
+npx chreode timing-check --head HEAD</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-6">
+    <h2>Task 6: Phone: the rows show their names; Redo in the painting strip</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/lib/timeline/Timeline.svelte</code> (the rows grid, <code>:370-397</code>; <code>--lab</code> is 92 px below md), <code>KindRow.svelte</code> (<code>.lab</code>, <code>:84-108</code>), <code>PolicyRow.svelte</code> (<code>:54-57</code>), <code>FixedRow.svelte</code> (<code>:61-63</code>), the world heading (<code>Timeline.svelte:294-305</code>). Test: <code>Timeline.svelte.spec.ts</code>.</li>
+      <li>Modify: <code>src/lib/paint/PaletteStrip.svelte</code> (<code>:175-200</code>: Redo after Undo), <code>src/lib/brush/BrushEditor.svelte</code> (<code>:660-670</code>: passes <code>canRedo</code>, <code>onredo</code> and the labels). Test: <code>PaletteStrip.svelte.spec.ts</code>.</li>
+      <li>e2e: <code>sim-timeline.spec.ts</code>, <code>layout.spec.ts</code> (the strip at 375 and 320). Docs: <code>timeline-ui.md</code> (The screen: phone rows), <code>sim-page.md</code> or <code>developing.md</code> (the strip's Redo; wherever the strip is described).</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>historyName</code> (Task 3).</li>
+      <li>Produces:
+        <pre><code data-lang="ts">// Below md (max-width: 767.98px), in the rows grid and the kind sheet: every row label cell
+// (.lab in KindRow, PolicyRow, FixedRow and the world heading) spans both columns
+// (grid-column: 1 / -1) as its own line, and its lane sits on the next line in column 2 with
+// column 1 empty. The label line is position: relative with z-index 2 and the surface background,
+// so the playhead line passes under the words. A closed kind's line: chevron, name, count, "+",
+// the name no longer cut. From md nothing changes.
+
+// PaletteStrip props
+canRedo?: boolean;          // default false
+onredo?: () =&gt; void;        // given: a Redo icon button after Undo
+undoLabel?: string | null;  // names via historyName
+redoLabel?: string | null;</code></pre>
+      </li>
+    </ul>
+    <aside data-kind="decision"><strong>Builder's call: a name line above each lane on phones</strong> At 92 px the label column holds the chevron, the count and a 44 px "+", leaving nothing for the name (<code>KindRow.svelte:189-228</code>); widening the column would narrow every lane and the ruler. A line per label keeps the lanes' width and the one x scale, at the cost of height (measured in this task). Rejected: a wider label column; names only in the sheet's heading.</aside>
+    <aside data-kind="decision"><strong>Builder's call: Redo must fit at 320 px</strong> The strip fits Undo at 320 px with no gap below 22.5 rem (<code>PaletteStrip.svelte:13-14</code>). If Redo makes it overflow at 320, Done shows as its icon below 22.5 rem with the name "Done" kept (no new visible string). Measure both widths.</aside>
+    <ol>
+      <li id="t6-s1"><input type="checkbox"> Write the failing tests first.
+        <pre><code data-lang="ts">// Timeline.svelte.spec.ts (375 px viewport)
+it('below md a closed kind\'s name is shown whole, with its count and "+" on the same line')
+it('below md each policy row in the sheet shows its name on its own line above its lane')
+it('below md the lanes keep the ruler\'s x scale: a bar\'s left matches dayPct')
+it('from md the label column and the rows are as before')
+// PaletteStrip.svelte.spec.ts
+it('with onredo: Redo after Undo, named Redo: {label}, disabled without canRedo')
+it('at 320 px the strip with Undo and Redo fits inside the viewport')
+// e2e/sim-timeline.spec.ts (mobile)
+test('375 px: Zoning, Permitting and Public money read in full; a policy row names itself in the sheet')
+// e2e/layout.spec.ts (mobile)
+test('375 and 320 px on /: the strip carries Undo and Redo, clear of the attribution and Reset view')</code></pre>
+      </li>
+      <li id="t6-s2"><input type="checkbox"> Run them and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project client --retry=0 src/lib/timeline/Timeline.svelte.spec.ts src/lib/paint/PaletteStrip.svelte.spec.ts
+SFH_E2E_PORT=4180 npx playwright test e2e/sim-timeline.spec.ts e2e/layout.spec.ts --project=chromium --project=mobile</code></pre>
+      </li>
+      <li id="t6-s3"><input type="checkbox"> Implement as in Interfaces. Take the Task 6 measurements; if the pinned block plus 64 px of rows no longer fits at 375x812 (<code>MIN_ROWS</code>, <code>timeline-ui.md</code> "The pinned block"), say so and how much it misses by. Update the docs.</li>
+      <li id="t6-s4"><input type="checkbox"> Run the covering specs, then the e2e, changed specs repeated.
+        <pre><code data-lang="sh">npx vitest --run --project client --retry=0 src/lib/timeline/ src/lib/paint/ src/lib/brush/
+SFH_E2E_PORT=4180 npx playwright test e2e/sim-timeline.spec.ts e2e/layout.spec.ts e2e/sim.spec.ts e2e/sim-pools.spec.ts e2e/brush.spec.ts e2e/chrome-dark.spec.ts --project=chromium --project=mobile
+SFH_E2E_PORT=4180 npx playwright test e2e/sim-timeline.spec.ts e2e/layout.spec.ts --project=chromium --project=mobile --repeat-each=5 --retries=0</code></pre>
+        <p>Screenshots, before on <code>main</code> and after: <code>/sim</code> at 375 with nothing in force and with a policy per kind, the rows scrolled into view; the Public money sheet with a housing bond and "Current funding"; at 1280 light (unchanged rows) after only. <code>/</code> at 375 and 320 with the strip, Undo and Redo, light and dark.</p>
+      </li>
+      <li id="t6-s5"><input type="checkbox"> Commit, then check timing.
+        <pre><code data-lang="sh">git add src/lib/timeline/Timeline.svelte src/lib/timeline/Timeline.svelte.spec.ts src/lib/timeline/KindRow.svelte src/lib/timeline/PolicyRow.svelte src/lib/timeline/FixedRow.svelte src/lib/paint/PaletteStrip.svelte src/lib/paint/PaletteStrip.svelte.spec.ts src/lib/brush/BrushEditor.svelte e2e/sim-timeline.spec.ts e2e/layout.spec.ts docs/dev/timeline-ui.md
+git commit -m "fix(phone): timeline rows show their names; Redo in the painting strip"
+npx chreode timing-check --head HEAD</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-7">
+    <h2>Task 7: Bars and the detail column: names that start with what you see, forced colours, the fade, Latest in view</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/lib/timeline/rows.ts</code> (<code>barLabel</code>, <code>:176-179</code>; a new <code>fixedLabel</code>), test <code>rows.spec.ts</code>; <code>SpanBar.svelte</code> (<code>:161</code>), <code>FixedRow.svelte</code> (<code>:71</code>), so a bar's name starts with its visible words (WCAG 2.5.3; the slice 7 finding). Sweep every spec and e2e helper that names a bar: <code>rg -n "whole window|, off'|to open'|barLabel\(" src e2e</code>, then read each <code>getByRole('button', { name: … })</code> in <code>src/lib/timeline</code>, <code>src/lib/sim-page</code> and <code>e2e/helpers/run.ts</code> that targets a bar.</li>
+      <li>Modify: <code>src/lib/timeline/LevelFill.svelte</code> (<code>:98-107</code>): under <code>forced-colors: active</code> the svg is <code>forced-color-adjust: none</code>, the empty part <code>GrayText</code> at its opacities, the edge <code>ButtonText</code>; the bar under it keeps the browser's forced button colours. Test: <code>LevelFill.svelte.spec.ts</code>.</li>
+      <li>Create: <code>src/lib/shell/more-below.ts</code> (an attachment), test <code>more-below.svelte.spec.ts</code>. Modify <code>TimelineMode.svelte</code> (<code>.detail-col</code>, <code>:1693-1706</code> and the style <code>:1745-1783</code>): the fade shows while <code>data-more</code> is set, in every browser; the scroll-driven animation goes; under forced colours the fade is a 2 px <code>CanvasText</code> line at the foot.</li>
+      <li>Modify: <code>src/lib/timeline/SimActivity.svelte</code> (<code>:84-127</code>): Latest comes before the totals (Open question 3), and the totals are a two-column grid of term and value pairs. Test: <code>SimActivity.svelte.spec.ts</code>.</li>
+      <li>e2e: <code>sim-pools.spec.ts</code>, <code>sim-activity.spec.ts</code>. Docs: <code>timeline-ui.md</code> (a bar's name; the level and the fade under forced colours; Activity's order and the fade's mechanism), <code>sim-page.md</code> (Activity's measured heights).</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>levelLeft</code>, <code>spanEdgeText</code>, <code>settingOf</code> (unchanged).</li>
+      <li>Produces:
+        <pre><code data-lang="ts">// src/lib/timeline/rows.ts
+/** '{setting}{left}, {label}, {from} to {to}' then ', off' when off. */
+export function barLabel(
+  setting: string, label: string, s: Span, asOf: Day,
+  extra?: { off?: boolean; left?: string | null }
+): string;
+/** '{text}{left}, {label}, whole window'. */
+export function fixedLabel(text: string, label: string, left?: string | null): string;
+
+// src/lib/shell/more-below.ts
+/**
+ * {@attach moreBelow}: sets data-more on the box while its content overflows and it is not
+ * scrolled to within 1 px of its end. Reads on scroll (passive) and on a ResizeObserver of the box
+ * and its first child; no animation frame, no timer.
+ */
+export function moreBelow(node: HTMLElement): () =&gt; void;</code></pre>
+      </li>
+    </ul>
+    <aside data-kind="decision"><strong>Builder's call: one fade mechanism, observed</strong> The CSS-only fade needs scroll timelines (none in Firefox by default) and the client project runs Chromium only, so a CSS fallback would go untested. A scroll listener and a ResizeObserver work in every browser, are tested in Chromium, and cost nothing per frame. Rejected: keeping the scroll-driven animation with an <code>@supports</code> fallback.</aside>
+    <ol>
+      <li id="t7-s1"><input type="checkbox"> Write the failing tests first.
+        <pre><code data-lang="ts">// rows.spec.ts
+it('barLabel starts with the setting and the level: "$410M, 99% left, Housing bond, 10 Dec 2030 to open"')
+it('barLabel: ", off" last; no level, no left')
+it('fixedLabel: "In force, 86% left, Current funding, whole window"')
+// Timeline.svelte.spec.ts
+it('every bar\'s accessible name contains its visible text, first')   // FixedRow, SpanBar, the world row
+// LevelFill.svelte.spec.ts
+it('the style sheet draws the level under forced colours: forced-color-adjust none, GrayText, ButtonText')
+// more-below.svelte.spec.ts
+it('data-more while the content overflows and is not at its end; gone at the end and when it fits')
+it('a content change that makes it overflow sets data-more without a scroll')
+// SimActivity.svelte.spec.ts
+it('after today: Latest comes before the totals; the totals are two columns')
+// e2e/sim-pools.spec.ts
+test('forced colours: the bond\'s level is drawn in a system colour')   // emulateMedia forcedColors
+// e2e/sim-activity.spec.ts
+test('1280×800 mid-play with a transit rule and a bond: at least four Latest items are inside the column')
+test('the column\'s fade shows while more is below and goes at the end; under forced colours it is a line')</code></pre>
+      </li>
+      <li id="t7-s2"><input type="checkbox"> Run them and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/timeline/rows.spec.ts
+npx vitest --run --project client --retry=0 src/lib/timeline/Timeline.svelte.spec.ts src/lib/timeline/LevelFill.svelte.spec.ts src/lib/shell/more-below.svelte.spec.ts src/lib/timeline/SimActivity.svelte.spec.ts
+SFH_E2E_PORT=4180 npx playwright test e2e/sim-pools.spec.ts e2e/sim-activity.spec.ts --project=chromium --project=mobile</code></pre>
+      </li>
+      <li id="t7-s3"><input type="checkbox"> Implement as in Interfaces. Run the two sweeps and move every named bar to its new name; nothing may match the old order after. Take the Task 7 measurement; if fewer than four items show, say how many and why. Update the docs.</li>
+      <li id="t7-s4"><input type="checkbox"> Run the covering specs, then the e2e, changed specs repeated.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/timeline/
+npx vitest --run --project client --retry=0 src/lib/timeline/ src/lib/shell/ src/lib/sim-page/
+SFH_E2E_PORT=4180 npx playwright test e2e/sim-pools.spec.ts e2e/sim-activity.spec.ts e2e/sim-funding.spec.ts e2e/sim-timeline.spec.ts e2e/sim.spec.ts e2e/sim-details.spec.ts e2e/chrome-dark.spec.ts --project=chromium --project=mobile
+SFH_E2E_PORT=4180 npx playwright test e2e/sim-pools.spec.ts e2e/sim-activity.spec.ts --project=chromium --project=mobile --repeat-each=5 --retries=0</code></pre>
+        <p>Screenshots, before on <code>main</code> and after: Activity at 1280x800 mid-play with a transit rule and a bond, light and dark; the Public money rows open with the bond in forced colours (light) and the column's foot in forced colours; at 375 Activity in the sheet.</p>
+      </li>
+      <li id="t7-s5"><input type="checkbox"> Commit, then check timing.
+        <pre><code data-lang="sh">git add src/lib/timeline/rows.ts src/lib/timeline/rows.spec.ts src/lib/timeline/SpanBar.svelte src/lib/timeline/FixedRow.svelte src/lib/timeline/Timeline.svelte src/lib/timeline/Timeline.svelte.spec.ts src/lib/timeline/LevelFill.svelte src/lib/timeline/LevelFill.svelte.spec.ts src/lib/shell/more-below.ts src/lib/shell/more-below.svelte.spec.ts src/lib/timeline/TimelineMode.svelte src/lib/timeline/SimActivity.svelte src/lib/timeline/SimActivity.svelte.spec.ts e2e/sim-pools.spec.ts e2e/sim-activity.spec.ts docs/dev/timeline-ui.md docs/dev/sim-page.md
+git commit -m "fix(sim): bar names start with what they show; level and fade under forced colours; Latest first"
+npx chreode timing-check --head HEAD</code></pre>
+        <p>Add by name every spec and helper the sweep changed.</p>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-8">
+    <h2>Task 8: Whole-suite pass</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Whatever the full runs below turn up. No new behaviour.</li>
+    </ul>
+    <ol>
+      <li id="t8-s1"><input type="checkbox"> Run the checks and the full unit suite with stderr captured, and read the stderr: any warning or error a test does not assert is a failure here, as at signoff.
+        <pre><code data-lang="sh">npm run check
+npm run lint
+npm run test:unit 2&gt; &lt;scratchpad&gt;/unit-stderr.log
+rg -n "warn|error|Error" &lt;scratchpad&gt;/unit-stderr.log</code></pre>
+      </li>
+      <li id="t8-s2"><input type="checkbox"> Run the full e2e suite on port 4180, both projects, no retries. Every failure is fixed at its cause, without retries, sleeps or loosened assertions; re-run any spec you change with <code>--repeat-each=5 --retries=0</code>.
+        <pre><code data-lang="sh">SFH_E2E_PORT=4180 npx playwright test --project=chromium --project=mobile --retries=0</code></pre>
+      </li>
+      <li id="t8-s3"><input type="checkbox"> The dataset version must not have moved: the diff is empty and the check passes.
+        <pre><code data-lang="sh">git diff --stat main -- pipeline src/lib/data src/lib/generator src/lib/timelapse src/lib/plan/geometry.ts src/lib/plan/types.ts src/lib/sim/scenario src/lib/sim/levers src/lib/sim/finance src/lib/scoreboard
+npx tsx scripts/dataset-version.ts --check</code></pre>
+      </li>
+      <li id="t8-s4"><input type="checkbox"> Sweep for leftovers. Each finds nothing:
+        <pre><code data-lang="sh">rg -n "shell/pill|\bPILL\b|PILL_ACTION" src e2e
+rg -n "bg-white|text-gray-800" src/lib/sharing/PublishDialog.svelte src/lib/sharing/SharedBanner.svelte src/lib/sharing/SaveIndicator.svelte src/lib/fzp/SourcesDialog.svelte
+rg -n "animation-timeline|sfh-detail-more" src
+rg -n "lg:max-xl:hidden" src/lib/shell/SiteHeader.svelte
+git diff --stat main -- src/lib/map/timelapse/city.ts src/lib/map/timelapse/city-layer.ts src/lib/lesscars e2e/lesscars.spec.ts</code></pre>
+      </li>
+      <li id="t8-s5"><input type="checkbox"> Docs true to the code: <code>ui-parts.md</code>, <code>timeline-ui.md</code>, <code>sim-page.md</code>, <code>map-interfaces.md</code>, <code>plan-sharing.md</code>, <code>testing.md</code> and <code>CLAUDE.md</code> describe the parts, the header, the status cell, the messages, the glows, the phone rows and the fade as the code does; every string they quote matches <a href="#tbl-strings">The strings</a>.</li>
+      <li id="t8-s6"><input type="checkbox"> Preview signoff's plan without running it, and confirm every step it lists ran green above.
+        <pre><code data-lang="sh">npm run signoff -- --dry-run</code></pre>
+      </li>
+      <li id="t8-s7"><input type="checkbox"> Commit any fixes with the files named, then check timing.
+        <pre><code data-lang="sh">git add &lt;each changed file&gt;
+git commit -m "test(ui): re-pin the suite for the shared parts and messages"
+npx chreode timing-check --head HEAD</code></pre>
+      </li>
+      <li id="t8-s8"><input type="checkbox"> Report, for the controller: no layer code changed (<code>city.ts</code>, <code>city-layer.ts</code>, the halo and bar layers untouched), so no <code>bench:map</code> is owed; whether the goldens were regenerated, in which task, and what changed in them. Do not run benches inside this plan.</li>
+    </ol>
+  </section>
+
+  <section id="sec-builders-calls">
+    <h2>Builder's calls</h2>
+    <table id="tbl-calls">
+      <caption>Choices the spec leaves open, the one made, and the one rejected</caption>
+      <thead>
+        <tr><th scope="col">Call</th><th scope="col">Why</th><th scope="col">Rejected</th><th scope="col">Task</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">Parts as class constants in <code>ui.ts</code></th><td>The project's pattern; <code>accent.spec</code> checks them</td><td>Tailwind <code>@utility</code></td><td>1</td></tr>
+        <tr><th scope="row">The parts are today's passing looks</th><td>Least churn; only light-only surfaces change look</td><td>A new visual design</td><td>1</td></tr>
+        <tr><th scope="row">Publish is aria-disabled, its reason in <code>Explain</code></th><td>A disabled button cannot take focus, so its reason could not show on focus</td><td>A visible line under the header</td><td>1</td></tr>
+        <tr><th scope="row">Chip: one sentence, at most 8 words, no details</th><td>"A few words" made testable</td><td>A shape per call site</td><td>2</td></tr>
+        <tr><th scope="row">The map's failures keep the map palette, in one column</th><td>Shared with <code>/lesscars</code>; the overlap was placement</td><td>Restyling them</td><td>2</td></tr>
+        <tr><th scope="row">The refusal is a card in Activity</th><td>Shown where the starter is; announced once</td><td>A notice in the stack</td><td>2</td></tr>
+        <tr><th scope="row"><code>1fr auto 1fr</code> with min auto from lg</th><td>Centred when it fits, never clipped when it does not</td><td><code>minmax(0, 1fr)</code>, which clips</td><td>3</td></tr>
+        <tr><th scope="row">Touch is <code>(any-pointer: coarse)</code>; Shortcuts keeps the primary rule</th><td>A touch laptop has both a screen and a keyboard</td><td>Primary pointer only</td><td>3</td></tr>
+        <tr><th scope="row">Shortcuts stays in <code>/sim</code>'s header until slice 9</th><td>About does not exist yet</td><td>Moving it now</td><td>3</td></tr>
+        <tr><th scope="row">"Updating" beside "Autosave off" while off</th><td>The warning is never covered; the cell keeps its width</td><td>Hiding "Updating" while off</td><td>4</td></tr>
+        <tr><th scope="row">Waiting holds until the forecast is whole or Pause</th><td>No flicker as the fill moves the edge</td><td>A timer before showing</td><td>4</td></tr>
+        <tr><th scope="row">The key's mark row while stale: either document's policy</th><td>The map can show the edited document's marks before the numbers settle</td><td>Hiding marks while stale</td><td>4</td></tr>
+        <tr><th scope="row">Escape in capture phase, marked handled</th><td>Runs before every window handler; the card already checks <code>defaultPrevented</code></td><td>Each container checking for an open tooltip</td><td>5</td></tr>
+        <tr><th scope="row">Toolbar first in the DOM, <code>flex-col-reverse</code></th><td>Tab order fixed with no visual change</td><td>tabindex juggling</td><td>5</td></tr>
+        <tr><th scope="row">Glow insets from the page: top (notices + 12 px), right (an open panel, from md)</th><td>No layer change; nothing per frame</td><td>A shader rule for covered areas</td><td>5</td></tr>
+        <tr><th scope="row">A name line above each lane below md</th><td>Lanes keep their width and the x scale</td><td>A wider label column</td><td>6</td></tr>
+        <tr><th scope="row">One observed fade for every browser</th><td>Testable in Chromium; works in Firefox</td><td>CSS with an untested fallback</td><td>7</td></tr>
+        <tr><th scope="row">Totals in two columns</th><td>Room for the list</td><td>A shorter list</td><td>7</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="sec-open-questions">
+    <h2>Open questions</h2>
+    <p>Each has a recommendation the plan executes on unless the owner says otherwise.</p>
+    <ol>
+      <li id="q-waiting"><strong>What the header says when Play waits for the forecast.</strong> On a first load, Play can catch up with the forecast while it is still being worked out; the playhead then waits with nothing said (slice 3's carried item). <em>Recommendation:</em> the status cell shows "Updating", as when an edit is pending, with the explanation "Working out the months ahead." It keeps one word for "numbers are on their way", costs no header width, and the explanation tells the two causes apart. Alternative: "Calculating…" (the header score's own word while a month is unfilled), which is about 20 px wider in the cell at 1024 px.</li>
+      <li id="q-shortcuts"><strong>Keyboard shortcuts on <code>/sim</code> until slice 9.</strong> The spec moves them into About, which slice 9 builds. <em>Recommendation:</em> keep the Shortcuts button in <code>/sim</code>'s header until then (Undo and Redo leave it now on non-touch devices, as decided). Alternative: move it now to the foot of Activity, as on Paint's tab, freeing a further ~80 px of header.</li>
+      <li id="q-latest"><strong>Latest above the totals in Activity.</strong> The spec lists "the most recent stage changes first", then the totals (<code>sec-prop-now</code>); slice 7 built totals first, which leaves one or two Latest items in view at 1280 by 800. <em>Recommendation:</em> Latest first, the totals under it in two columns, in the spec's order. Alternative: keep totals first and only make them two columns (likely three or four items in view; measured in Task 7).</li>
+      <li id="q-notsaved"><strong>"Autosave off" or "Not saved".</strong> The chrome inventory names the save state's abnormal words "Saving" and "Not saved" (<code>tbl-inv-chrome</code>); the app says "Autosave off", whose popover explains it. <em>Recommendation:</em> keep "Autosave off" (it says why, and the change is not in row 8 or the carried list). Alternative: "Not saved", about 20 px narrower.</li>
+    </ol>
+  </section>
+
+  <section id="sec-not-in-plan">
+    <h2>Not in this plan</h2>
+    <ul>
+      <li>Moving every button in <code>src</code> to the kinds (206 today): the files this plan touches move; the rest as later work touches them. The account, sign-in and membership pages, and <code>/lesscars</code>' own dialogs.</li>
+      <li>Keyboard shortcuts' move into About, credits and the attribution at 375 px (slice 9).</li>
+      <li>Phones' pinned-block growth when a first policy adds a legend line (slice 3, "phones"; not marked for slice 8).</li>
+      <li>Start over on Paint, Paint's Details face, the pool bar's changing text (your call); the victory card (the game); the dataset branch's deletions.</li>
+      <li>Updating the governing spec's Carried forward list: the controller does that at merge.</li>
+    </ul>
+  </section>
+
+  <section id="sec-contradictions">
+    <h2>Found on the way</h2>
+    <ul>
+      <li><strong><code>/sim</code>'s header still has Undo and Redo on every device.</strong> <code>sec-prop-header</code> and <code>tbl-inv-sim-controls</code> took them out on desktop; slice 4 did it for Paint only (<code>SimPage.svelte:1031-1038</code> renders <code>HistoryButtons</code> for every pointer). Task 3 does it for <code>/sim</code>, which is also what frees the header room the carried items need.</li>
+      <li><strong>Four surfaces have no dark theme.</strong> <code>PublishDialog</code> (<code>bg-white</code>, <code>text-gray-800</code>, <code>:186,196</code>), <code>SharedBanner</code> and its dialog (<code>:70-101</code>), <code>SourcesDialog</code> (<code>bg-white text-black</code>, <code>:151</code>) and the "Autosave off" popover (<code>SaveIndicator.svelte:83</code>); disabled Publish keeps <code>bg-gray-200</code> in dark (<code>PublishButton.svelte:68</code>). None is in <code>THEMED_FILES</code>. Task 1 themes them.</li>
+      <li><strong>Span bars fail label-in-name too, not only "Current funding".</strong> A span bar's name starts with the policy's name and dates (<code>barLabel</code>, <code>rows.ts:176-179</code>) while its visible text is the setting ("$410M", "6 stories"), <code>SpanBar.svelte:161,178</code>; the world row's name is "Market conditions, whole window" over its market text. Task 7 fixes all three.</li>
+      <li><strong>The "Updating" lag has one cause.</strong> One throttle drives both the visible cell and the live region (<code>TimelineMode.svelte:628-675</code>); the key dims on <code>stale</code> directly, so the two drift by up to <code>statusMs</code>.</li>
+      <li><strong>The Escape bug has one cause.</strong> Explain's window handler only stops propagation (<code>Explain.svelte:60-66</code>), which does nothing for other window listeners, and the card's handler, also on the window, checks <code>defaultPrevented</code>, which nobody set.</li>
+      <li><strong>The stroke chip's offset assumes one failure.</strong> <code>BrushEditor.svelte:603</code> drops it to 3.5 rem when parcels failed, but the buildings message sits at 4 rem (<code>SimMap.svelte:1409</code>), so with both the chip lands on the second.</li>
+      <li><strong>The top glow is the only uninset edge with something over it.</strong> SimMap insets only the bottom (<code>SimMap.svelte:320-321</code>); the header line, the notice stack and an open key panel sit over the top and right edges.</li>
+      <li><strong>Top, left and right glows are half-discs by design.</strong> Their centre is on the edge, so half is off the canvas; only the bottom one, inset by the attribution, shows whole. Task 5 moves the top one in by 12 px, clear of the header line; left and right keep the half-disc the key draws.</li>
+    </ul>
+  </section>
+
+  <section id="sec-self-review">
+    <h2>Self-review</h2>
+    <ul>
+      <li><strong>Spec coverage.</strong> Row 8: spacing scale, one button, chips and cards, one surface in light and dark (Task 1, Task 2). <code>tbl-inv-chrome</code>: one message per condition, paragraph card and few-words chip (2); "Updating" with the save state (4). <code>tbl-inv-sim-controls</code>: Undo and Redo keyboard on desktop, buttons on touch (3); Publish's visible reason (1). <code>sec-prop-header</code>: undo and redo leave the header (3); Shortcuts waits for slice 9 (Open question 2). <code>sec-prop-reveal</code>'s waiting note (4, Open question 1). Carried "Header:": centring (3), "Autosave off" covered (4), the signed-in fit test (3). Slice 4's: step numbers (3), the 17 px clip (3, 4), two map failures and the chip (2), touch laptop Undo (3), phone Redo (6). Slice 5's: "Updating" lag (4), phone row names (6), Escape (5), tab order (5), marks before the key row (4). Slice 6's: top glows, covered glows, the swatch (5). Slice 7's: the refused starter (2), forced colours (7), the fade without scroll timelines (7), Latest at 1280 by 800 (7), closed kinds' names on a phone (6). Slice 7's review finding: label in name (7).</li>
+      <li><strong>Type consistency.</strong> <code>SPACE_STEPS</code>, <code>BUTTON</code>, <code>BUTTON_PRIMARY</code>, <code>BUTTON_QUIET</code>, <code>ON_MAP</code>, <code>SURFACE_POP</code>, <code>SURFACE_TIP</code>, <code>SURFACE_DIALOG</code>, <code>CHIP</code>, <code>CHIP_STILL</code>, <code>CARD</code>, <code>MessageShape</code>, <code>messageShape</code> (1; used in 2, 3, 5); <code>Message</code>, <code>--map-chips-bottom</code>, <code>refusal</code> (2); <code>PrimaryPointer.touch</code>, <code>historyName</code> (3; used in 6); <code>WAITING_NOTE</code>, <code>saveOff</code> (4); <code>setGlowInset</code>, <code>GLOW_TOP_GAP</code>, <code>onbottom</code> (5); <code>canRedo</code>, <code>onredo</code>, <code>undoLabel</code>, <code>redoLabel</code> (6); <code>barLabel</code>, <code>fixedLabel</code>, <code>moreBelow</code> (7).</li>
+      <li><strong>Review Focus.</strong> Each item names its test step in its owning task.</li>
+      <li><strong>Proportion.</strong> Code blocks are signatures, contracts, test names and the values the spec and the code pin; no component body is written out.</li>
+    </ul>
+  </section>
+</article>
