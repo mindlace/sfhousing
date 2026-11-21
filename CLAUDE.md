@@ -36,6 +36,7 @@ Fetch the file when working in the relevant area:
 - **Accessibility (WCAG 2.2 AA, `expectNoA11yViolations`, per-page checklist)** — [docs/dev/accessibility.md](docs/dev/accessibility.md)
 - **Plan and policy sharing (`/p` plans and `/s` `/sim` policies: API contract, rate limit, autosave, manual takedown)** — [docs/dev/plan-sharing.md](docs/dev/plan-sharing.md)
 - **Shared UI parts (spacing scale, buttons, surfaces, chips and cards)** — [docs/dev/ui-parts.md](docs/dev/ui-parts.md)
+- **About this model (the page, the dialog on `/sim`, the link rule, the parts' colours, the map's credit)** — [docs/dev/about.md](docs/dev/about.md)
 - **Map-view interfaces for page and subsystem consumers (`--map-controls-br-*` CSS vars, the citywide feed (`CityDelta`), merged rings and edge glows, bar modes)** — [docs/dev/map-interfaces.md](docs/dev/map-interfaces.md)
 - **Map performance (`npm run bench:map`, pass bar, results, CI note)** — [docs/dev/map-perf.md](docs/dev/map-perf.md)
 - **`src/lib/fzp/` after `FzpMode` (`/fzp` redirects to `/sim`; what `/lesscars` and the timeline share: scrubber contract, card and Details' pieces, lookups on the map, known gaps)** — [docs/dev/fzp-mode.md](docs/dev/fzp-mode.md)
@@ -111,6 +112,6 @@ Shell: the root layout renders the skip link, header and `<main>`, and the foote
 - Schema change: edit `src/lib/server/db/schema/` → `npm run db:generate` → `npm run db:migrate`. Never hand-edit migrations.
 - Code style: 2-space indent, single quotes, no trailing commas, 100 columns (Prettier + ESLint).
 - CSP (`kit.csp` in `svelte.config.js`) changes are interface changes: raise them with the owning subsystem rather than widening ad hoc. Map glyphs and sprites are self-hosted under `/data/<version>/`.
-- Runtime dependencies that ship in the bundle get a credit in the `SOFTWARE` list in `src/lib/attribution.ts` (rendered at `/attribution`).
+- Runtime dependencies that ship in the bundle get a credit in the `SOFTWARE` list in `src/lib/attribution.ts` (rendered at `/about#about-data`).
 - Route tests that need R2 use `FakeR2Bucket` (`src/lib/server/test/fake-r2.ts`); Playwright against workerd is the source of truth for real R2 behaviour.
 - Vitest runs with `expect.requireAssertions`: every test must call `expect`.

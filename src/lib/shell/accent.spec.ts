@@ -97,7 +97,12 @@ const NO_HEX_FILES = [
   'src/lib/timeline/SimActivity.svelte',
   'src/lib/timeline/LevelFill.svelte',
   'src/lib/shell/ui.ts',
-  'src/lib/shell/Message.svelte'
+  'src/lib/shell/Message.svelte',
+  'src/lib/about/copy.ts',
+  'src/lib/about/credits.ts',
+  'src/lib/about/AboutMeanings.svelte',
+  'src/lib/about/AboutData.svelte',
+  'src/lib/about/AboutUsing.svelte'
 ];
 const BLUE_HEX = /#(1d4ed8|2563eb|1e40af|3b82f6|1e3a8a)\b/i;
 const BLUE_RGB = /rgb\(\s*(29[ ,]+78[ ,]+216|37[ ,]+99[ ,]+235)\s*\)/i;

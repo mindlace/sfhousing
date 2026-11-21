@@ -1263,7 +1263,7 @@ test('without transit: no transit.json request, no transit layers, Layers has on
     // A try that fell back to a full /sim load (the link clicked before hydration) asked for
     // transit.json through SSR's manifest: only the try that passes counts.
     transitAsked.length = 0;
-    await page.goto('/attribution');
+    await page.goto('/about');
     await page.evaluate(() => ((window as Window & { __spa?: boolean }).__spa = true));
     await openHeaderMenu(page);
     await page.getByRole('banner').getByRole('link', { name: 'Simulate', exact: true }).click();

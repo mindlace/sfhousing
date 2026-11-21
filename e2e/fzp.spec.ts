@@ -645,8 +645,8 @@ test('the header links move between the editor and the simulation', async ({ pag
   await expect(page).toHaveURL(/\/$/);
 });
 
-test('/attribution carries the scenario notice', async ({ page }) => {
-  await page.goto('/attribution');
+test('/about carries the scenario notice', async ({ page }) => {
+  await page.goto('/about');
   await expect(page.getByText(/^Housing project records \(building permits/)).toBeVisible();
 });
 

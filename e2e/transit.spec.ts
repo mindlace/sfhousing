@@ -76,7 +76,7 @@ test('there is no Layers toggle when the manifest has no transit, and no View an
   });
   // A click before hydration is a full page load (SSR sees transit); retry until it is client-side.
   await expect(async () => {
-    await page.goto('/attribution');
+    await page.goto('/about');
     await page.evaluate(() => ((window as Window & { __spa?: boolean }).__spa = true));
     await page.getByRole('banner').getByRole('link', { name: 'SF Housing Simulator' }).click();
     await waitForMap(page);

@@ -8,14 +8,14 @@ and ships. The arithmetic that spends it is [finance-model.md](finance-model.md)
 
 Four things are new in the dataset, plus one source and one hand-transcribed file:
 
-| What                                        | Where it is computed                                             | Where it ships                            |
-| ------------------------------------------- | ---------------------------------------------------------------- | ----------------------------------------- |
-| `affordableHomes` on each in-flight project | `affordableHomesOf`, `pipeline/project-records/derive.ts`        | `projects.json`                           |
-| `rhnaCompletedNet.byTier`                   | `rhnaCompletedNet`, `pipeline/project-records/rhna.ts`           | `projects.json`                           |
-| `calibration.affordableRoutes`              | `affordableRoutes`, `pipeline/lib/fzp-cal/affordable.ts`         | `calibration.json`                        |
-| `calibration.baselineFunding`               | `baselineFunding`, `pipeline/lib/fzp-cal/funding.ts`             | `calibration.json`                        |
-| `datasf-mohcd-pipeline`                     | `pipeline/sources/datasf.ts`                                     | the lock, the manifest and `/attribution` |
-| `pipeline/enrichment/funding.json`          | hand-transcribed; schema `pipeline/enrichment/funding-schema.ts` | read by `build`, never uploaded           |
+| What                                        | Where it is computed                                             | Where it ships                                 |
+| ------------------------------------------- | ---------------------------------------------------------------- | ---------------------------------------------- |
+| `affordableHomes` on each in-flight project | `affordableHomesOf`, `pipeline/project-records/derive.ts`        | `projects.json`                                |
+| `rhnaCompletedNet.byTier`                   | `rhnaCompletedNet`, `pipeline/project-records/rhna.ts`           | `projects.json`                                |
+| `calibration.affordableRoutes`              | `affordableRoutes`, `pipeline/lib/fzp-cal/affordable.ts`         | `calibration.json`                             |
+| `calibration.baselineFunding`               | `baselineFunding`, `pipeline/lib/fzp-cal/funding.ts`             | `calibration.json`                             |
+| `datasf-mohcd-pipeline`                     | `pipeline/sources/datasf.ts`                                     | the lock, the manifest and `/about#about-data` |
+| `pipeline/enrichment/funding.json`          | hand-transcribed; schema `pipeline/enrichment/funding-schema.ts` | read by `build`, never uploaded                |
 
 Live values are measured on the Release 1 build, dataset `2026-11-10-3532a348` (2026-11-10). Where
 a measurement differs from the design's expectation (the research queries of 2026-11-09), the
@@ -410,8 +410,8 @@ zoning. The section is report-only.
 ## The MOHCD source
 
 `datasf-mohcd-pipeline` (`aaxw-2cb8`, "DataSF MOHCD Affordable Housing Pipeline", PDDL-1.0) is a
-DataSF source in the lock. Its lock entry, with label, licence and homepage, is its credit on
-`/attribution` (the page reads the manifest). It is a 2023 snapshot ("all projects as of September
+DataSF source in the lock. Its lock entry, with label, licence and homepage, is its credit in
+About's Data and licences (`/about#about-data`, which reads the manifest). It is a 2023 snapshot ("all projects as of September
 30, 2023", 190 rows) and has **no above-moderate or market-rate column**. It is not normalised into
 DuckDB: the calibration step reads its locked pages with `readRows`. It is **not an as-of source**
 (it is not in `PROJECT_SOURCE_IDS`), so fetching it does not move `asOf`. The combined fetch command
