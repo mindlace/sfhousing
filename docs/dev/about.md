@@ -13,7 +13,7 @@ dialog on `/sim` never duplicates an id the page already holds.
 | Part                  | Id                  | Component                                                                  |
 | --------------------- | ------------------- | -------------------------------------------------------------------------- |
 | What the numbers mean | `about-meanings`    | `AboutMeanings.svelte`: the terms of `MEANINGS`                            |
-| Assumptions           | `about-assumptions` | the heading only, until the assumptions arrive                             |
+| Assumptions           | `about-assumptions` | `AboutAssumptions.svelte`: the Sources dialog's body, loaded on demand     |
 | Data and licences     | `about-data`        | `AboutData.svelte`: version, sources, notices, Software, the code line     |
 | Using it              | `about-using`       | `AboutUsing.svelte`: Keyboard shortcuts (`about-shortcuts`) and Your plans |
 
@@ -46,8 +46,35 @@ the slice 9 plan's licence section (`docs/superpowers/plans/2026-11-23-about-thi
 `src/routes/about/+page.svelte`: the heading "About this model", the line under it, then the four
 parts at level 2. `+page.server.ts` reads `manifest.json` for the dataset version from R2 and
 passes `datasetVersion` and `manifest` (null when the manifest is missing, invalid or unreadable).
-The page fetches nothing in the browser: several e2e specs use `/about` as a neutral page to
-navigate from. The deploy smoke checks read the dataset version from `/about`.
+The page fetches nothing in the browser until the reader opens the assumptions: several e2e specs
+use `/about` as a neutral page to navigate from. The deploy smoke checks read the dataset version
+from `/about`.
+
+## The assumptions
+
+`AboutAssumptions.svelte` (`{ level; live?; datasetVersion?; manifest?; fetchFn? }`) renders
+`ProvenanceBody` ([fzp-mode.md](fzp-mode.md)), the Sources dialog's sections and strings unchanged,
+one heading level under the part.
+
+- `live` (`{ sections, projectsUrl }`, the dialog on `/sim`): the run's sections at once, no
+  disclosure, no fetch of the calibration; the data checks load at once.
+- On the page: a `<details>` "Show the assumptions" (`ASSUMPTIONS_SHOW`). Its first open fetches
+  `manifest.scenarios.fzp.calibration` (`fetchCalibration`) and shows `modelSections`; then the
+  data checks load `manifest.scenarios.fzp.projects`. Closing and opening again fetches nothing.
+  These are the same-origin, immutable `/data/<version>/…` files `/sim` loads.
+- One `role="status"` region, mounted with the disclosure, holds the state as a `Message`:
+  "Loading…", then nothing, or `ASSUMPTIONS_FAILED` with Retry (`BUTTON_QUIET`), which loads again.
+- No `fzp` scenario in the manifest (or no manifest): the heading and `ASSUMPTIONS_FAILED`, with
+  no disclosure and no Retry.
+- A hash on mount naming `about-assumptions` or any `src-…` id opens the disclosure (and so
+  loads); once the target exists it is scrolled to (`block: 'start'`), once, after a failure and
+  Retry too.
+- The disclosure is not `bind:open`: Svelte's binding writes the state over the element on
+  hydration, closing a disclosure pressed before then. The part reads `details.open` on mount and
+  follows `toggle`.
+
+`Message` follows the theme (its `dark:` partners), so in a dark system its card is dark on the
+light page; the body's tier badges and head rules keep `control-line` with its dark partner.
 
 ## `/attribution`
 
@@ -69,5 +96,5 @@ and they read two custom properties the container sets:
 
 ## Still to come in slice 9
 
-The assumptions' loading on the page, the dialog on `/sim` and the link rule, and the map's credit
-are added here by the tasks that build them.
+The dialog on `/sim` and the link rule, and the map's credit are added here by the tasks that
+build them.

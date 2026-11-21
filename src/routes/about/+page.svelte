@@ -1,15 +1,16 @@
 <!--
   About this model, the page: what the numbers mean, the assumptions, data and licences, using
   it. The page is light at every setting, so it gives the parts the light tokens for their two
-  colour properties (docs/dev/about.md). It fetches nothing in the browser: the manifest comes
-  from the server load.
+  colour properties (docs/dev/about.md). The manifest comes from the server load; the browser
+  fetches nothing until the reader opens the assumptions (or a link names one).
 -->
 <script lang="ts">
   import type { PageData } from './$types';
+  import AboutAssumptions from '$lib/about/AboutAssumptions.svelte';
   import AboutData from '$lib/about/AboutData.svelte';
   import AboutMeanings from '$lib/about/AboutMeanings.svelte';
   import AboutUsing from '$lib/about/AboutUsing.svelte';
-  import { ABOUT_ID, ABOUT_INTRO, ABOUT_TITLE, PART_HEADING } from '$lib/about/copy';
+  import { ABOUT_INTRO, ABOUT_TITLE } from '$lib/about/copy';
   import { APP_NAME } from '$lib/config';
 
   let { data }: { data: PageData } = $props();
@@ -26,9 +27,7 @@
   style:--about-line="var(--color-line)"
 >
   <AboutMeanings level={2} />
-  <section id={ABOUT_ID.assumptions}>
-    <h2 class="text-lg font-semibold">{PART_HEADING.assumptions}</h2>
-  </section>
+  <AboutAssumptions level={2} datasetVersion={data.datasetVersion} manifest={data.manifest} />
   <AboutData level={2} datasetVersion={data.datasetVersion} manifest={data.manifest} />
   <AboutUsing level={2} />
 </div>

@@ -6,13 +6,13 @@ Developer notes for `src/lib/fzp/`. `FzpMode.svelte` is gone (timeline-ui): `/si
 
 ## What is here
 
-| Group                      | Files                                                                                                                                       | Used by                                                                                                                                                                         |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| The scrubber and its clock | `TimeScrubber.svelte`, `playback.ts`, `time.ts`, `high-water.svelte.ts`                                                                     | `/lesscars` (`LessCarsMode`); `/sim`'s `Playhead` takes `playback.ts` and `time.ts`                                                                                             |
-| Details' pieces            | `MoneyResults.svelte`, `score-view.ts`, `money-view.ts`, `market-view.ts`, `chart.ts`, `format.ts`, `SourcesDialog.svelte`, `provenance.ts` | `/sim`'s Details (`src/lib/timeline/SimDetails.svelte`, fed from `TimelineView` by `src/lib/timeline/results.ts`); `/lesscars` imports `chart.ts`, `format.ts`, `provenance.ts` |
-| The map's card and tooltip | `ProjectCardPanel.svelte`, `ProjectTooltip.svelte`, `summary-request.ts`, `card.ts`, `card-place.ts`, `card-area-watch.ts`, `labels.ts`     | `/sim` (`TimelineMode`)                                                                                                                                                         |
-| Loading and shared types   | `load.ts`, `types.ts`, `copy.ts`                                                                                                            | `/sim`, `/lesscars`                                                                                                                                                             |
-| The e2e hook               | `debug.ts` (`window.__sfhFzp`)                                                                                                              | `/sim`; fields in [timeline-ui.md](timeline-ui.md)                                                                                                                              |
+| Group                      | Files                                                                                                                                                                | Used by                                                                                                                                                                         |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| The scrubber and its clock | `TimeScrubber.svelte`, `playback.ts`, `time.ts`, `high-water.svelte.ts`                                                                                              | `/lesscars` (`LessCarsMode`); `/sim`'s `Playhead` takes `playback.ts` and `time.ts`                                                                                             |
+| Details' pieces            | `MoneyResults.svelte`, `score-view.ts`, `money-view.ts`, `market-view.ts`, `chart.ts`, `format.ts`, `SourcesDialog.svelte`, `ProvenanceBody.svelte`, `provenance.ts` | `/sim`'s Details (`src/lib/timeline/SimDetails.svelte`, fed from `TimelineView` by `src/lib/timeline/results.ts`); `/lesscars` imports `chart.ts`, `format.ts`, `provenance.ts` |
+| The map's card and tooltip | `ProjectCardPanel.svelte`, `ProjectTooltip.svelte`, `summary-request.ts`, `card.ts`, `card-place.ts`, `card-area-watch.ts`, `labels.ts`                              | `/sim` (`TimelineMode`)                                                                                                                                                         |
+| Loading and shared types   | `load.ts`, `types.ts`, `copy.ts`                                                                                                                                     | `/sim`, `/lesscars`                                                                                                                                                             |
+| The e2e hook               | `debug.ts` (`window.__sfhFzp`)                                                                                                                                       | `/sim`; fields in [timeline-ui.md](timeline-ui.md)                                                                                                                              |
 
 Details holds no map key: the key is on the map (`MapKeyControl` with `SimKey`, [timeline-ui.md](timeline-ui.md), "The screen"). A file `/lesscars` imports is not edited by `/sim` work ([lesscars.md](lesscars.md)). Run phases, the run slider, `RunSwitcher`, the swap reroll and `HighWater` are gone from `/sim`.
 
@@ -109,6 +109,19 @@ prototypes and land, the loan and guarantee terms (unsourced ones as "No sourced
 as "your value (custom, not sourced)"), the draw assumption, the displacement range and
 `finance-score`'s `MONEY_SOURCES` (first `PIPELINE_FUNDED`), then three fixed sentences (the
 pricing rule, the loss on exit worded from `terms.lossOnExit`, and ruling R8).
+
+The dialog's body lives in `src/lib/fzp/ProvenanceBody.svelte`, so About can show it too
+([about.md](about.md)). Props: `sections`, `projectsUrl`, `level` (the sections' heading level, 3
+or 4; entries one below), `fetchFn`, `load`. It owns the data checks (`src-quality`): `load`
+turning true starts their load once, and `loadChecks()` (the dialog calls it on every open) starts
+it or retries it after a failure; a load in flight or done is never repeated. Its rules and entry
+borders read `--about-line`, which the container sets (`SourcesDialog` to `line`, `line-dark` in
+dark); the tier badges and the tables' head rules keep `control-line` with its dark partner. Ids are
+unchanged (`src-…`, `QUALITY_SECTION_ID`). `modelSections(calibration)` (`provenance.ts`) is the
+run-free list About shows: `provenanceSections(calibration, null)` with default terms, then
+"Targets and published estimates" over `M1_TARGETS` (deadline `RHNA_DEADLINE`) and every
+`REFERENCES` entry. Actual completions and multi-phase projects need a run and stay in `/sim`'s
+dialog; so do the typed terms of a policy.
 
 ## Public money and income tiers in Details
 

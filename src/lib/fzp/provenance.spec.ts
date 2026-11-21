@@ -2,12 +2,16 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MARKET_TERMS, AVERAGE_DRAWN, DRAW_UP_FRONT, resolveTerms } from '$lib/sim/finance';
 import { MONEY_SOURCES } from '$lib/sim/scenario/finance-score';
 import { PIPELINE_FUNDED } from '$lib/sim/scenario/funding';
+import { REFERENCES, RHNA_DEADLINE } from '$lib/sim/scenario/score';
+import { formatCount } from '$lib/scoreboard/format';
+import { M1_TARGETS } from '$lib/scoreboard/targets';
 import { cumulativeIncidence } from '$lib/timelapse/model';
 import { parseProjectsFile } from '$lib/timelapse/projects';
 import { PATHWAYS, STAGE_ORDER } from '$lib/timelapse/types';
 import type { Pathway, Stage } from '$lib/timelapse/types';
 import { transitionSectionId } from './card';
 import { MEASURE_SERIES, SERIES_NAME } from './chart';
+import { formatDate } from './format';
 import {
   fixtureCalibration,
   fixtureCalibrationWithoutMarket,
@@ -27,6 +31,7 @@ import {
   PHASE_GAP_SENTENCE,
   QUALITY_LOAD_FAILED,
   loadProjectsFile,
+  modelSections,
   provenanceLines,
   provenanceSections,
   qualityRows,
@@ -393,6 +398,54 @@ describe('provenanceSections', () => {
     expect(s.tables[0].rows.map((r) => r[1])).toEqual(
       [0, 1, 2, 3, 4].map((i) => TIER_LABEL[i as 0 | 1 | 2 | 3 | 4])
     );
+  });
+});
+
+describe('modelSections (About, without a run)', () => {
+  const model = modelSections(cal);
+
+  it('modelSections: the sections of provenanceSections(cal, null), then Targets and published estimates', () => {
+    const bare = provenanceSections(cal, null);
+    expect(model.slice(0, -1)).toEqual(bare);
+    expect(model.map((s) => s.id)).toEqual([...bare.map((s) => s.id), 'src-targets']);
+    const targets = section('src-targets', model);
+    expect(targets.heading).toBe('Targets and published estimates');
+    // The same intro as the dialog's section 8, with or without a run.
+    expect(targets.intro).toEqual(section('src-targets').intro);
+    expect(model.map((s) => s.id)).not.toContain('src-actual');
+    expect(model.map((s) => s.id)).not.toContain('src-multiphase');
+  });
+
+  it('modelSections: the targets section lists both M1 targets and all three REFERENCES entries', () => {
+    const ids = section('src-targets', model).entries.map((e) => e.id);
+    expect(ids).toEqual([
+      ...M1_TARGETS.map((t) => `src-target-${t.id}`),
+      ...REFERENCES.map((r) => `src-reference-${r.id}`)
+    ]);
+    expect(ids).toHaveLength(5);
+    for (const t of M1_TARGETS) {
+      const e = entryOf(`src-target-${t.id}`, model);
+      expect(e.title).toBe(t.label);
+      expect(e.prov.sources).toEqual([t.source]);
+      expect(e.prov.method).toBe(
+        `Target: ${formatCount(t.units)} net new homes by ${formatDate(RHNA_DEADLINE)}.`
+      );
+    }
+    for (const r of REFERENCES) {
+      const e = entryOf(`src-reference-${r.id}`, model);
+      expect(e.title).toBe(r.label);
+      expect(e.prov).toBe(r.provenance);
+      expect(e.lines).toContain(`Compared with: ${SERIES_NAME[MEASURE_SERIES[r.measure]]}`);
+    }
+  });
+
+  it('provenanceSections with a score: unchanged (the existing cases pass as they are)', () => {
+    // The dialog's section 8 still reads the score's own targets and references.
+    const ids = section('src-targets').entries.map((e) => e.id);
+    expect(ids).toEqual([
+      ...TIMELINE_SCORE.targets.map(({ target }) => `src-target-${target.id}`),
+      ...TIMELINE_SCORE.references.map((r) => `src-reference-${r.id}`)
+    ]);
   });
 });
 
