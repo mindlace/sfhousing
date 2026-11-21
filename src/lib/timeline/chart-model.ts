@@ -71,11 +71,12 @@ const atPos = (run: number[], pos: number) =>
   run.length === 0 ? 0 : run[Math.min(Math.max(pos, 0), run.length - 1)];
 
 /**
- * niceCeil(max(goalUnits ?? 0, runMax[min(pos, last)], 1)): the scale grows only with what has
+ * niceCeil(max(goalUnits ?? 2, runMax[min(pos, last)], 1)): the scale grows only with what has
  * been reached, in 1-2-5 steps, so it changes a handful of times in a whole window.
  */
 export function yTop(goalUnits: number | null, runMax: number[], pos: number): number {
-  return niceCeil(Math.max(goalUnits ?? 0, atPos(runMax, pos), 1));
+  // Without a goal the top is at least 2, so the plot never tops out at a single home.
+  return niceCeil(Math.max(goalUnits ?? 2, atPos(runMax, pos), 1));
 }
 
 /** 0, or -niceCeil of the lowest value reached when one is below 0. */
@@ -125,10 +126,13 @@ const COMPACT = new Intl.NumberFormat('en-US', { notation: 'compact', maximumFra
 /**
  * [{ value: top / 2, label }, { value: top, label }], both in one format: compact ('50K',
  * '100K') when the top is formatCompactCount's compact, else both in full ('25,000', '50,000').
+ * The half is left out when it is not a whole number of homes (a top of 1 or 5).
  */
 export function yLabels(top: number): { value: number; label: string }[] {
   const compact = formatCompactCount(top) !== formatCount(top);
-  return [top / 2, top].map((value) => ({
+  // Homes are whole: an odd top (1, 5) has no half label.
+  const values = Number.isInteger(top / 2) ? [top / 2, top] : [top];
+  return values.map((value) => ({
     value,
     label: compact ? COMPACT.format(value) : formatCount(value)
   }));

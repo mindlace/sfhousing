@@ -94,15 +94,16 @@ describe('chart-model', () => {
     // The floor reads only what is reached: at position 5, -28 rounds to -50.
     expect(yBottom(min, 5)).toBe(-50);
     expect(yBottom(min, 0)).toBe(0);
-    // An effect that is all below zero still tops out at 1, never at the goal (none is drawn).
-    expect(yTop(null, runningMax(p), 5)).toBe(1);
+    // An effect that is all below zero still tops out at 2 (whole homes), never at the goal
+    // (none is drawn).
+    expect(yTop(null, runningMax(p), 5)).toBe(2);
   });
 
   it('the scale grows only with the months reached, in 1-2-5 steps, and never below the goal', () => {
     const p = { policy: [0, 3, 40, 12, 180, 90], law: [0, 1, 2, 3, 4, 300] };
     const run = runningMax(p);
     expect(run).toEqual([0, 3, 40, 40, 180, 300]);
-    expect([0, 1, 2, 3, 4, 5].map((pos) => yTop(null, run, pos))).toEqual([1, 5, 50, 50, 200, 500]);
+    expect([0, 1, 2, 3, 4, 5].map((pos) => yTop(null, run, pos))).toEqual([2, 5, 50, 50, 200, 500]);
     // Past the last point the last maximum holds.
     expect(yTop(null, run, 99)).toBe(500);
     // Never below the goal.
@@ -124,6 +125,16 @@ describe('chart-model', () => {
     );
     expect(linePath([], x, y)).toBe('');
     expect(gapPath([], [], x, y)).toBe('');
+  });
+
+  it('yLabels labels whole homes only: no half label when the top is odd', () => {
+    expect(yLabels(5)).toEqual([{ value: 5, label: '5' }]);
+    expect(yLabels(1)).toEqual([{ value: 1, label: '1' }]);
+    expect(yLabels(2)).toEqual([
+      { value: 1, label: '1' },
+      { value: 2, label: '2' }
+    ]);
+    expect(yLabels(10).map((l) => l.label)).toEqual(['5', '10']);
   });
 
   it('yLabels halves the top', () => {

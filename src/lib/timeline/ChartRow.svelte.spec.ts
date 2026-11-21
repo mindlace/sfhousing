@@ -20,7 +20,7 @@ import {
   yTop,
   type ChartLens
 } from './chart-model';
-import { chartCaption, goalNote, homesBy } from './copy';
+import { LENS_NAME, chartCaption, goalNote, homesBy } from './copy';
 import { filledEndDay } from './playhead';
 import { chartReading, playheadAt } from './results';
 import { dayPct } from './rows';
@@ -303,7 +303,7 @@ describe('ChartRow', () => {
     const { rerender } = await render(ChartRow, {
       props: props({ view, day: end, reached: end, target, lens: 'source' })
     });
-    const fig = page.getByRole('figure', { name: 'Homes completed' });
+    const fig = page.getByRole('figure');
     await expect.element(fig).toHaveAttribute('data-lens', 'source');
     await expect.element(page.getByTestId('chart-law')).toBeInTheDocument();
     await expect.element(page.getByTestId('chart-gap')).toBeInTheDocument();
@@ -389,7 +389,7 @@ describe('ChartRow', () => {
     const { rerender } = await render(ChartRow, {
       props: props({ view, day: end, reached: end, target, inForce: true, lens: 'effect' })
     });
-    const fig = page.getByRole('figure', { name: 'Homes completed' });
+    const fig = page.getByRole('figure');
     await expect.element(fig).toHaveAttribute('data-lens', 'effect');
     await expect.element(page.getByTestId('chart-line')).toBeInTheDocument();
     expect(document.querySelector('[data-testid=chart-law]')).toBeNull();
@@ -419,6 +419,23 @@ describe('ChartRow', () => {
     expect(legendNames()).toEqual(['Homes completed', 'Goal']);
   });
 
+  it('names the figure by the lens drawn', async () => {
+    const view = fullView();
+    const end = lastDay(view);
+    const { rerender } = await render(ChartRow, {
+      props: props({ view, day: end, reached: end, inForce: true })
+    });
+    const fig = page.getByRole('figure');
+    await expect.element(fig).toHaveAccessibleName('Homes completed');
+    await rerender({ lens: 'source' });
+    await expect.element(fig).toHaveAccessibleName(LENS_NAME.source);
+    await rerender({ lens: 'effect' });
+    await expect.element(fig).toHaveAccessibleName(LENS_NAME.effect);
+    // Without a policy in force the effect lens is drawn, and named, as Homes.
+    await rerender({ inForce: false });
+    await expect.element(fig).toHaveAccessibleName('Homes completed');
+  });
+
   it('a lens change rebuilds the paths once; a day change rebuilds none', async () => {
     const view = fullView();
     const m = view.months[7];
@@ -426,7 +443,7 @@ describe('ChartRow', () => {
       props: props({ view, inForce: true, day: m, reached: m + 5 })
     });
     await expect.element(page.getByTestId('chart-gap')).toBeInTheDocument();
-    const fig = page.getByRole('figure', { name: 'Homes completed' });
+    const fig = page.getByRole('figure');
     const lines = () => vi.mocked(linePath).mock.calls.length;
     const gaps = () => vi.mocked(gapPath).mock.calls.length;
     let l0 = lines();

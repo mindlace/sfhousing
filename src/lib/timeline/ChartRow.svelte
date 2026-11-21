@@ -42,7 +42,7 @@
     type ChartLens
   } from './chart-model';
   import ChartLegend from './ChartLegend.svelte';
-  import { chartCaption, goalNote } from './copy';
+  import { LENS_NAME, chartCaption, goalNote } from './copy';
   import { filledEndDay } from './playhead';
   import { chartReading, playheadAt } from './results';
   import { dayPct } from './rows';
@@ -192,7 +192,7 @@
 
 <figure
   class="sfh-chart-row m-0"
-  aria-label="Homes completed"
+  aria-label={shownLens === 'homes' ? 'Homes completed' : LENS_NAME[shownLens]}
   data-lens={shownLens}
   data-stale={stale ? 'true' : undefined}
 >
