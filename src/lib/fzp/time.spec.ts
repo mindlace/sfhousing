@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   HORIZON,
-  YEAR_2045,
   dayFromUtc,
   monthIndex,
   monthStart,
@@ -19,7 +18,6 @@ describe('dayFromUtc / utcParts', () => {
   it('pins the horizon at Day 35428', () => {
     expect(dayFromUtc(2066, 12, 31)).toBe(35428);
     expect(HORIZON).toBe(35428);
-    expect(YEAR_2045).toBe(dayFromUtc(2045, 1, 1));
   });
 
   it('decodes parts', () => {
