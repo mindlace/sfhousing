@@ -1680,6 +1680,7 @@
           playheadDay={day}
           {levels}
           reached={reveal.reached}
+          {stale}
           bind:pinHeight
           {pinned}
         />

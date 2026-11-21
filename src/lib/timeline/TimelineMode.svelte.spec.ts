@@ -1600,6 +1600,80 @@ describe('TimelineMode', () => {
     await expect.poll(() => vi.mocked(levelSet).mock.calls.length).toBeGreaterThan(builds);
   });
 
+  it('while an edit waits for its numbers the levels are dimmed as held numbers', async () => {
+    const bond = (dollars: number): Pool => ({
+      id: 'u-bond',
+      kind: 'generalRevenue',
+      label: 'Housing bond',
+      inflows: [{ kind: 'once', day: monthFirstDay(asOf, 2), dollars }],
+      uncapped: false,
+      debt: null,
+      leverage: 1
+    });
+    const doc = (dollars: number): SimPolicy4 => ({
+      schema: 4,
+      kinds: {
+        zoning: [],
+        permitting: [],
+        money: [
+          {
+            id: 'm',
+            label: 'Bond',
+            preset: null,
+            on: true,
+            where: { tag: 'fund', pool: 'u-bond' },
+            spans: [
+              {
+                from: monthFirstDay(asOf, 2),
+                to: null,
+                what: { tag: 'fund', pool: bond(dollars), programmes: [] }
+              }
+            ]
+          }
+        ]
+      }
+    });
+    const FIN: ScoreStatics = {
+      ...baseStatics({ lastIndex: LAST, finance: true }),
+      asOf,
+      months: MONTHS
+    };
+    const filledPools = (rev: number) =>
+      emit({
+        type: 'filled',
+        rev,
+        through: LAST,
+        series: chunk(0, LAST + 1, { pools: ['u-bond'] })
+      });
+    const s = setup({ initialPolicy: doc(500_000_000) });
+    await expect.poll(() => w()?.lastOf('openTimeline')).toBeTruthy();
+    emit(compiledMsg(1, FIN));
+    filledPools(1);
+    await expect.poll(() => debug().filledThrough).toBe(LAST);
+    await page
+      .getByTestId('tl-timeline')
+      .getByRole('button', { name: 'Public money', exact: true })
+      .click();
+    const fills = () => [
+      ...document.querySelectorAll('[data-testid=tl-kind-money] [data-testid=tl-level]')
+    ];
+    await expect.poll(() => fills().length).toBeGreaterThan(0);
+    expect(fills().every((f) => !f.hasAttribute('data-stale'))).toBe(true);
+    // An edit: the held numbers stay, dimmed, until its refill lands.
+    s.setPolicy(doc(250_000_000));
+    s.setLots({});
+    await expect.poll(() => w().lastOf('setPolicy')?.rev).toBe(2);
+    await expect.poll(() => debug().stale).toBe(true);
+    await expect
+      .poll(() => fills().every((f) => f.getAttribute('data-stale') === 'true'))
+      .toBe(true);
+    emit(compiledMsg(2, FIN));
+    emit(refillMsg(2, 0));
+    filledPools(2);
+    await expect.poll(() => debug().stale).toBe(false);
+    await expect.poll(() => fills().some((f) => f.hasAttribute('data-stale'))).toBe(false);
+  });
+
   it("a crash before the first fill says the simulation couldn't load", async () => {
     // The client logs each crash; silenced here so signoff's stderr check stays clean.
     const err = vi.spyOn(console, 'error').mockImplementation(() => {});

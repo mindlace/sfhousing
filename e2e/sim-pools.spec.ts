@@ -50,8 +50,7 @@ test('a housing bond: no level before its money arrives; after Play its bar drai
   await expect(bar.getByTestId('tl-level')).toHaveAttribute('data-left', '');
   await expect(bar).not.toHaveAttribute('aria-label', /left$/);
   await closeSheet(page, isMobile);
-  // Play at 3×, then stop six years past the bond's money: on fixture-0 its first grants are
-  // drawn within five.
+  // Play past the bond's money: its level shows, and its words say the same number.
   const arrival = await page.evaluate(() => {
     const p = (window as FzpWin).__sfhFzp!.policy.kinds.money[0].spans[0].what;
     return p.tag === 'fund' && p.pool?.inflows[0].kind === 'once' ? p.pool.inflows[0].day : 0;
@@ -60,16 +59,25 @@ test('a housing bond: no level before its money arrives; after Play its bar drai
   await page.getByTestId('tl-speed').click();
   const play = page.getByTestId('tl-play');
   await play.click();
-  await page.waitForFunction((a) => (window as FzpWin).__sfhFzp!.day > a + 6 * 365, arrival);
+  await page.waitForFunction((a) => (window as FzpWin).__sfhFzp!.day > a + 365, arrival);
   await play.click();
   await expect.poll(() => page.evaluate(() => (window as FzpWin).__sfhFzp!.playing)).toBe(false);
   bar = await bondBar(page);
   const level = bar.getByTestId('tl-level');
   await expect(level).toHaveAttribute('data-left', /^\d+$/);
-  const left = Number(await level.getAttribute('data-left'));
-  expect(left).toBeLessThan(100);
-  // The name says the same number.
+  let left = await level.getAttribute('data-left');
   await expect(bar).toHaveAttribute('aria-label', new RegExp(`, ${left}% left$`));
+  await expect(bar).toHaveText(new RegExp(`, ${left}% left$`));
+  // At the computed edge (End) the bond has been drawn on: below 100.
+  await closeSheet(page, isMobile);
+  await slider(page).focus();
+  await page.keyboard.press('End');
+  bar = await bondBar(page);
+  await expect(level).toHaveAttribute('data-left', /^\d+$/);
+  left = await level.getAttribute('data-left');
+  expect(Number(left)).toBeLessThan(100);
+  await expect(bar).toHaveAttribute('aria-label', new RegExp(`, ${left}% left$`));
+  await expect(bar).toHaveText(new RegExp(`, ${left}% left$`));
   // Home: at today, nothing again.
   await closeSheet(page, isMobile);
   await slider(page).focus();

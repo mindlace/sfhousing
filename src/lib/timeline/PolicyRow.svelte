@@ -16,6 +16,8 @@
     /** The playhead's day and the furthest day reached. */
     day?: Day;
     reached?: Day;
+    /** The levels are held numbers: they dim. */
+    stale?: boolean;
     kind: PolicyKind;
     policy: Policy;
     asOf: Day;
@@ -41,7 +43,8 @@
     onedit,
     levels = null,
     day = asOf,
-    reached = day
+    reached = day,
+    stale = false
   }: Props = $props();
 
   const level = $derived(levels?.byPolicy.get(policy.id) ?? null);
@@ -73,6 +76,7 @@
         {levels}
         {day}
         {reached}
+        {stale}
       />
     {/each}
   </Lane>

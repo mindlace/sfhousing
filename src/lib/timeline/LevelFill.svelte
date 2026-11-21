@@ -26,9 +26,11 @@
     day: Day;
     /** The furthest day reached: seen from `day` to it; nothing past it. */
     reached: Day;
+    /** The numbers on show are held while an edit waits: both zones take the seen styling. */
+    stale?: boolean;
   }
 
-  let { level, months, asOf, from, to, day, reached }: Props = $props();
+  let { level, months, asOf, from, to, day, reached, stale = false }: Props = $props();
 
   const W = 1000;
   const H = 20;
@@ -61,6 +63,7 @@
   aria-hidden="true"
   data-testid="tl-level"
   data-left={left === null ? '' : String(left)}
+  data-stale={stale ? 'true' : undefined}
 >
   <defs>
     <clipPath id={shownId} clipPathUnits="userSpaceOnUse">
@@ -71,12 +74,12 @@
     </clipPath>
   </defs>
   <g clip-path="url(#{shownId})" data-testid="tl-level-shown">
-    <path d={area} fill="var(--level-empty)" fill-opacity="1" />
+    <path d={area} fill="var(--level-empty)" fill-opacity={stale ? '0.5' : '1'} />
     <path
       d={line}
       fill="none"
       stroke="var(--on-k)"
-      stroke-width="1.5"
+      stroke-width={stale ? '1' : '1.5'}
       vector-effect="non-scaling-stroke"
     />
   </g>
@@ -93,18 +96,12 @@
 </svg>
 
 <style>
+  /* `--level-empty` and `--on-k` are the timeline's (Timeline.svelte `.tl`, both themes). */
   .level {
-    /* Over light text (the light theme's bars) the empty part darkens; over dark text it lightens. */
-    --level-empty: rgb(0 0 0 / 0.35);
     position: absolute;
     inset: 0;
     width: 100%;
     height: 100%;
     pointer-events: none;
-  }
-  @media (prefers-color-scheme: dark) {
-    .level {
-      --level-empty: rgb(255 255 255 / 0.35);
-    }
   }
 </style>

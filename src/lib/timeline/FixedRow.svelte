@@ -29,6 +29,8 @@
     /** The playhead's day and the furthest day reached: the level's two zones. */
     day?: Day;
     reached?: Day;
+    /** The level is held numbers: it and its words dim. */
+    stale?: boolean;
   }
 
   let {
@@ -43,7 +45,8 @@
     levels = null,
     windowEnd = 0,
     day = 0,
-    reached = day
+    reached = day,
+    stale = false
   }: Props = $props();
 
   const shownLevel = $derived(levels !== null && windowEnd > 0 ? level : null);
@@ -64,6 +67,7 @@
       class="bar k-{color} absolute"
       class:sel={selected}
       class:leveled={shownLevel !== null}
+      class:stale={shownLevel !== null && stale}
       aria-label="{label}, whole window{left ?? ''}"
       aria-pressed={selected}
       onclick={() => onselect(spanRef)}
@@ -77,9 +81,12 @@
           to={windowEnd}
           {day}
           {reached}
+          {stale}
         />
       {/if}
-      <span class="txt">{text}</span>
+      <span class="txt"
+        >{text}{#if left}<span class="left">{left}</span>{/if}</span
+      >
     </button>
   </Lane>
 </div>
@@ -119,14 +126,23 @@
     background: var(--k);
     box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.45);
   }
-  /* The text sits over the level, haloed in the bar's colour where the level's edge crosses it. */
+  /* The text sits over the level, on a small backing in the bar's colour, so the level's edge
+     passes under the words and never strikes them through. While stale the backing takes the
+     fill's shade and ", N% left" dims (`--level-dim`), still 4.5:1. */
   .txt {
     position: relative;
   }
   .leveled .txt {
-    text-shadow:
-      0 0 2px var(--k),
-      0 0 2px var(--k);
+    margin: 0 -3px;
+    padding: 0 3px;
+    border-radius: 3px;
+    background: var(--k);
+  }
+  .leveled.stale .txt {
+    background: linear-gradient(var(--level-empty), var(--level-empty)), var(--k);
+  }
+  .stale .left {
+    opacity: var(--level-dim);
   }
   .k-zoning {
     --k: var(--k-zoning);

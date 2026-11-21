@@ -62,6 +62,8 @@
     levels?: LevelSet | null;
     /** The furthest day reached: the levels are seen (dimmed) to it, absent after. */
     reached?: Day;
+    /** The numbers on show are held while an edit waits: the levels dim, as the chart does. */
+    stale?: boolean;
     /** The pinned block's height (its offsetHeight): the page weighs it against its box. */
     pinHeight?: number;
     /**
@@ -90,6 +92,7 @@
     playheadDay,
     levels = null,
     reached = playheadDay,
+    stale = false,
     pinHeight = $bindable(0),
     pinned = true
   }: Props = $props();
@@ -284,6 +287,7 @@
           {levels}
           day={playheadDay}
           {reached}
+          {stale}
         />
       {/each}
 
@@ -349,6 +353,7 @@
           {levels}
           day={playheadDay}
           {reached}
+          {stale}
         />
         <div
           class="line"
@@ -369,6 +374,10 @@
     --k-money: #1f7a55;
     --k-world: #5f5f66;
     --on-k: #ffffff;
+    /* A pool's level (LevelFill): the empty part darkens the bar under light text and lightens it
+       under dark text, so the text only gains contrast; held words dim to --level-dim. */
+    --level-empty: rgb(0 0 0 / 0.35);
+    --level-dim: 0.75;
     color: var(--color-ink);
     display: flex;
     flex-direction: column;
@@ -501,6 +510,7 @@
       --k-money: #4fb98a;
       --k-world: #a0a0a8;
       --on-k: #1c1d1f;
+      --level-empty: rgb(255 255 255 / 0.35);
     }
     .lab {
       border-bottom-color: var(--color-line-dark);

@@ -35,6 +35,8 @@
     /** The playhead's day and the furthest day reached: the level's two zones. */
     day?: Day;
     reached?: Day;
+    /** The level is held numbers: it and its words dim. */
+    stale?: boolean;
   }
 
   let {
@@ -55,7 +57,8 @@
     level = null,
     levels = null,
     day = asOf,
-    reached = day
+    reached = day,
+    stale = false
   }: Props = $props();
 
   const ref = $derived<SpanRef>({ kind, id: policyId, span: index });
@@ -63,8 +66,12 @@
   const open = $derived(span.to === null);
   const editLabel = $derived(`Moved: ${policyLabel}`);
 
-  // The level: drawn on an on bar only, over the days its box spans (as `barBox` places it).
-  const shownLevel = $derived(!off && levels !== null ? level : null);
+  // The edge being dragged and the month under the pointer.
+  let drag: { edge: 'from' | 'to'; month: number } | null = $state(null);
+
+  // The level: drawn on an on bar only, over the days its box spans (as `barBox` places it), and
+  // hidden while an edge is dragged (the box then no longer matches the run's months).
+  const shownLevel = $derived(!off && drag === null && levels !== null ? level : null);
   const boxFrom = $derived(Math.max(monthFirstDay(asOf, spanMonths(span, asOf).from), asOf));
   const boxTo = $derived.by(() => {
     const m = spanMonths(span, asOf);
@@ -75,9 +82,6 @@
       ? levelLeft(shownLevel, levelIndexAt(levels.months, levels.asOf, day, boxFrom, boxTo))
       : null
   );
-
-  // The edge being dragged and the month under the pointer.
-  let drag: { edge: 'from' | 'to'; month: number } | null = $state(null);
 
   const box = $derived.by(() => {
     if (!drag) return barBox(span, asOf, windowEnd);
@@ -151,6 +155,7 @@
     class:off
     class:open
     class:leveled={shownLevel !== null}
+    class:stale={shownLevel !== null && stale}
     data-testid="tl-bar"
     data-open={open}
     aria-label={barLabel(policyLabel, span, asOf) + (off ? ', off' : '') + (left ?? '')}
@@ -167,9 +172,12 @@
         to={boxTo}
         {day}
         {reached}
+        {stale}
       />
     {/if}
-    <span class="txt">{settingOf(span.what)}</span>
+    <span class="txt"
+      >{settingOf(span.what)}{#if left}<span class="left">{left}</span>{/if}</span
+    >
   </button>
   {#if !readonly}
     <span
@@ -217,14 +225,23 @@
     cursor: pointer;
     background: var(--k);
   }
-  /* The text sits over the level, haloed in the bar's colour where the level's edge crosses it. */
+  /* The text sits over the level, on a small backing in the bar's colour, so the level's edge
+     passes under the words and never strikes them through. While stale the backing takes the
+     fill's shade and ", N% left" dims (`--level-dim`), still 4.5:1. */
   .txt {
     position: relative;
   }
   .leveled .txt {
-    text-shadow:
-      0 0 2px var(--k),
-      0 0 2px var(--k);
+    margin: 0 -3px;
+    padding: 0 3px;
+    border-radius: 3px;
+    background: var(--k);
+  }
+  .leveled.stale .txt {
+    background: linear-gradient(var(--level-empty), var(--level-empty)), var(--k);
+  }
+  .stale .left {
+    opacity: var(--level-dim);
   }
   .k-zoning {
     --k: var(--k-zoning);

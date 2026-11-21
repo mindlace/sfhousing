@@ -42,6 +42,8 @@
     /** The playhead's day and the furthest day reached. */
     day?: Day;
     reached?: Day;
+    /** The levels are held numbers: they dim. */
+    stale?: boolean;
   }
 
   let {
@@ -61,7 +63,8 @@
     onadd,
     levels = null,
     day = asOf,
-    reached = day
+    reached = day,
+    stale = false
   }: Props = $props();
   /** Only Public money has pools. */
   const kindLevels = $derived(kind === 'money' ? levels : null);
@@ -142,12 +145,14 @@
       {windowEnd}
       {day}
       {reached}
+      {stale}
     />
     {#each policies as p (p.id)}
       <PolicyRow
         levels={kindLevels}
         {day}
         {reached}
+        {stale}
         {kind}
         policy={p}
         {asOf}

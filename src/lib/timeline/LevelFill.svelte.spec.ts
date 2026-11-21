@@ -77,6 +77,21 @@ describe('LevelFill', () => {
     expect(s.svg().querySelector('[data-testid=tl-level-shown] path')).toBe(path);
   });
 
+  it('while stale both zones take the seen styling and the svg carries data-stale', async () => {
+    const s = await setup(MONTHS[4] + 3, MONTHS[8]);
+    const style = (id: string) => {
+      const g = s.svg().querySelector(`[data-testid=${id}]`)!;
+      const [area, edge] = g.querySelectorAll('path');
+      return [area.getAttribute('fill-opacity'), edge.getAttribute('stroke-width')];
+    };
+    expect(s.svg().hasAttribute('data-stale')).toBe(false);
+    expect(style('tl-level-shown')).toEqual(['1', '1.5']);
+    await s.view.rerender({ ...s.props, stale: true });
+    expect(s.svg().getAttribute('data-stale')).toBe('true');
+    expect(style('tl-level-shown')).toEqual(style('tl-level-seen'));
+    expect(style('tl-level-seen')).toEqual(['0.5', '1']);
+  });
+
   it("aria-hidden; data-left is the playhead month's percent", async () => {
     const s = await setup(MONTHS[4] + 3, MONTHS[8]);
     expect(s.svg().getAttribute('aria-hidden')).toBe('true');
