@@ -293,12 +293,12 @@ test.describe('targets at 375 px', () => {
     const column = page.getByTestId('tl-inspector');
     await expect(column).toBeVisible();
     // A plain box inside the column, laid over the column's first visible button.
-    const name = await column.evaluate((col) => {
+    const name = await column.evaluate((col: HTMLElement) => {
       const b = [...col.querySelectorAll('button')].find((e) => e.checkVisibility())!;
       const r = b.getBoundingClientRect();
       const d = document.createElement('div');
       d.style.cssText = `position:fixed;left:${r.x}px;top:${r.y}px;width:${r.width}px;height:${r.height}px;z-index:9999`;
-      col.append(d);
+      col.appendChild(d);
       return b.getAttribute('aria-label') || b.getAttribute('data-testid') || b.textContent!.trim();
     });
     const { crowded } = await small(page);
