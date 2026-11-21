@@ -723,11 +723,16 @@ describe('TimelineMode', () => {
       document.body.appendChild(dialog);
       try {
         expect(spaceOn(field).defaultPrevented).toBe(false);
-        for (const mod of ['shiftKey', 'ctrlKey', 'altKey', 'metaKey'] as const)
-          spaceOn(document.body, { [mod]: true });
+        expect(debug().playing).toBe(false);
+        // After each press, so two wrong toggles cannot cancel out.
+        for (const mod of ['shiftKey', 'ctrlKey', 'altKey', 'metaKey'] as const) {
+          expect(spaceOn(document.body, { [mod]: true }).defaultPrevented, mod).toBe(false);
+          expect(debug().playing, mod).toBe(false);
+        }
         const handled = new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true });
         handled.preventDefault();
         document.body.dispatchEvent(handled);
+        expect(debug().playing).toBe(false);
         dialog.showModal();
         expect(spaceOn(document.body).defaultPrevented).toBe(false);
         dialog.close();
