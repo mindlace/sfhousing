@@ -318,10 +318,10 @@ export async function committedNet(page: Page): Promise<string> {
   return finalNet(page);
 }
 
-/** The dock's Results face (the scoreboard on `/` and `/p/:id`). */
-export const resultsFace = (page: Page): Locator => page.getByRole('region', { name: 'Results' });
+/** The dock's Details face (PaintDetails on `/` and `/p/:id`; its internal id is 'results'). */
+export const resultsFace = (page: Page): Locator => page.getByRole('region', { name: 'Details' });
 
-/** Shows the dock's Results face by pressing the header score (when it is not already shown). */
+/** Shows the dock's Details face by pressing the header score (when it is not already shown). */
 export async function openResults(page: Page): Promise<Locator> {
   const score = headerScore(page);
   if ((await score.getAttribute('aria-expanded')) !== 'true') await score.click();

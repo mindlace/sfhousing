@@ -1,11 +1,11 @@
 /// <reference types="@vitest/browser-playwright" />
 // The 12-word rule on `/` at rest (accessibility.md): with the Paint tab open and the header
 // score showing, no visible text of 12 words or more outside a notice or a dialog. An empty plan
-// (the starting sentence), and one restored stroke, with the map key open. Paint's Results face is not covered: its
-// sentences live in the hashed ScoreboardPanel.
+// (the starting sentence), and one restored stroke, with the map key open; and with Details (the
+// dock's face the header score opens) open, its disclosure too.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
-import { page } from 'vitest/browser';
+import { page, userEvent } from 'vitest/browser';
 import './layout.css';
 import type { Manifest } from '$lib/data/manifest';
 import { MSG } from '$lib/brush/messages';
@@ -97,6 +97,20 @@ describe('/ at rest (rule: no text of 12 words or more)', () => {
     await expect.element(layers).toBeVisible();
     await expect.element(layers.getByText('BART / Caltrain')).toBeVisible();
     await expect.element(layers.getByText(/^Estimated weekday/)).toBeVisible();
+    expect(longTexts()).toEqual([]);
+  });
+
+  it('nor with Details open, its disclosure too', async () => {
+    render(PaintHeaderHost, { props: { data: data() } });
+    await expect.element(page.getByRole('radiogroup', { name: 'Tool' })).toBeVisible();
+    await page.getByTestId('score-bar').click();
+    // The goal name opens under the pointer: dismiss it, as the user would.
+    await userEvent.keyboard('{Escape}');
+    const details = page.getByRole('region', { name: 'Details' });
+    await expect.element(details.getByTestId('goal-row-goal')).toBeVisible();
+    // Opened in place: in this host the header overlaps the panel, so a click cannot reach it.
+    for (const d of details.element().querySelectorAll('details')) d.open = true;
+    await expect.element(details.getByText(/^Homes in replaced buildings/)).toBeVisible();
     expect(longTexts()).toEqual([]);
   });
 });

@@ -132,7 +132,7 @@ describe('/ map layers', () => {
   });
 });
 
-describe('/ score: the header score and the Results face', () => {
+describe('/ score: the header score and the Details face', () => {
   beforeEach(async () => {
     await page.viewport(1024, 768);
     pageWorkers.length = 0;
@@ -147,9 +147,9 @@ describe('/ score: the header score and the Results face', () => {
 
   const pinned = () => page.getByTestId('header-pinned');
   const scoreButton = () => page.getByTestId('score-bar');
-  const results = () => page.getByRole('region', { name: 'Results' });
+  const results = () => page.getByRole('region', { name: 'Details' });
 
-  it("the header score shows the room for homes and its share of the goal; pressing it shows Results with the scoreboard's content and a Paint button that flips back", async () => {
+  it('pressing the headline shows Details, with the goal rows', async () => {
     await render(PageHost, { props: { data: data() } });
     // Before the worker's first score: the empty score.
     await expect.element(scoreButton()).toHaveTextContent('Room for 0 homes');
@@ -180,13 +180,14 @@ describe('/ score: the header score and the Results face', () => {
 
     await scoreButton().click();
     await expect.element(scoreButton()).toHaveAttribute('aria-expanded', 'true');
-    await expect.element(results().getByTestId('score-net')).toHaveTextContent('1,234');
-    await expect
-      .element(results().getByText('Theoretical max buildout', { exact: true }))
-      .toBeVisible();
-    await expect.element(results().getByTestId('target-rhna')).toBeVisible();
+    // The goal rows at the header's share; no badge, no repeated headline, no RHNA.
+    const goalRow = results().getByTestId('goal-row-goal');
+    await expect.element(goalRow).toBeVisible();
+    await expect.element(goalRow.getByText('1.5%', { exact: true })).toBeVisible();
+    await expect.element(results().getByTestId('goal-row-buffer')).toBeVisible();
     await expect.element(results().getByText('By neighborhood')).toBeVisible();
-    await expect.element(results().getByText('What does this number mean?')).toBeVisible();
+    await expect.element(results().getByText('What room for homes means')).toBeVisible();
+    expect(results().element().textContent).not.toMatch(/RHNA|Theoretical max|net new homes/);
     expect(page.getByRole('radiogroup', { name: 'Tool' }).elements()).toHaveLength(0);
     const flip = page.getByRole('button', { name: 'Back to painting' });
     await expect.element(flip).toHaveTextContent('Paint');
@@ -196,22 +197,22 @@ describe('/ score: the header score and the Results face', () => {
     await expect.element(scoreButton()).toHaveAttribute('aria-expanded', 'false');
     expect(results().elements()).toHaveLength(0);
 
-    // The score toggles: Results, then the Paint tab again.
+    // The score toggles: Details, then the Paint tab again.
     await scoreButton().click();
     await expect.element(results()).toBeVisible();
     await scoreButton().click();
     await expect.element(page.getByRole('radiogroup', { name: 'Tool' })).toBeVisible();
 
-    // Folded to the rail, the score opens the dock on Results, and focus moves in (as on /sim).
+    // Folded to the rail, the score opens the dock on Details, and focus moves in (as on /sim).
     await page.getByRole('button', { name: 'Collapse Paint' }).click();
     await expect.element(page.getByTestId('dock-rail')).toBeVisible();
     await scoreButton().click();
     await expect.element(scoreButton()).toHaveAttribute('aria-expanded', 'true');
-    await expect.element(results().getByTestId('score-net')).toHaveTextContent('1,234');
+    await expect.element(results().getByTestId('goal-row-goal')).toBeVisible();
     await expect.poll(() => document.activeElement).toBe(flip.element());
   });
 
-  it("Results' Retry for failed parcel areas asks the worker again", async () => {
+  it("Details' Retry for failed parcel areas asks the worker again", async () => {
     await render(PageHost, { props: { data: data() } });
     await expect.poll(() => pageWorkers.length).toBe(1);
     const w = pageWorkers[0];

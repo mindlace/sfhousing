@@ -99,7 +99,7 @@ describe('/ editor page', () => {
     await expect.poll(() => document.activeElement?.getAttribute('role')).toBe('tab');
   });
 
-  it('the header score reads room for homes and its share of the goal, and opens Results', async () => {
+  it('the header score reads room for homes and its share of the goal, and opens Details', async () => {
     render(PaintHeaderHost, { props: { data: data() } });
     const banner = page.getByRole('banner');
     const score = banner.getByTestId('score-bar');
@@ -107,7 +107,7 @@ describe('/ editor page', () => {
     await expect.element(banner.getByTestId('score-detail')).toHaveTextContent('0% of the goal');
     expect(banner.getByRole('meter').elements()).toHaveLength(0);
     await score.click();
-    const results = page.getByRole('region', { name: 'Results' });
+    const results = page.getByRole('region', { name: 'Details' });
     await expect
       .element(results.getByText('Paint a height on the map to add homes.'))
       .toBeVisible();

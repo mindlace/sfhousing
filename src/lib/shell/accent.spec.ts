@@ -70,7 +70,8 @@ const THEMED_FILES = [
   'src/lib/timeline/TimelineMode.svelte',
   'src/lib/timeline/WhatEditor.svelte',
   'src/lib/timeline/WhenEditor.svelte',
-  'src/lib/goal/GoalRow.svelte'
+  'src/lib/goal/GoalRow.svelte',
+  'src/lib/paint/PaintDetails.svelte'
 ];
 /** Themed files whose colours come from tokens and custom properties only: no hex at all. */
 const NO_HEX_FILES = [
@@ -80,7 +81,8 @@ const NO_HEX_FILES = [
   'src/lib/map/key/KeySwatch.svelte',
   'src/lib/timeline/SimKey.svelte',
   'src/lib/scoreboard/TargetRow.svelte',
-  'src/lib/goal/GoalRow.svelte'
+  'src/lib/goal/GoalRow.svelte',
+  'src/lib/paint/PaintDetails.svelte'
 ];
 const BLUE_HEX = /#(1d4ed8|2563eb|1e40af|3b82f6|1e3a8a)\b/i;
 const BLUE_RGB = /rgb\(\s*(29[ ,]+78[ ,]+216|37[ ,]+99[ ,]+235)\s*\)/i;
