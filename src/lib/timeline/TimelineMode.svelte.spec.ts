@@ -2267,7 +2267,7 @@ describe('TimelineMode', () => {
       )!;
       await expect.element(scoreBar()).toHaveTextContent(homesBy(h.homes, h.at));
       await expect.poll(totalsOf).toEqual([
-        ['Approved', String(full.rows[k].entitledNew)],
+        ['New projects approved', String(full.rows[k].entitledNew)],
         ['Completed', String(h.homes)],
         ['Stopped', String(full.rows[k].exitedUnits)],
         ['From your policy', `+${h.effect}`]
@@ -2330,10 +2330,10 @@ describe('TimelineMode', () => {
     const activity = page.getByTestId('tl-activity');
     const body = activity.getByTestId('tl-activity-body');
     const terms = () => totalsOf().map(([t]) => t);
-    const MONEY = ['Public money spent', 'Per added home'];
+    const MONEY = ['All public money spent', 'Per funded home'];
     await expect
       .poll(terms)
-      .toEqual(['Approved', 'Completed', 'Stopped', 'From your policy', ...MONEY]);
+      .toEqual(['New projects approved', 'Completed', 'Stopped', 'From your policy', ...MONEY]);
     // The chunk's publicSpent at month 3: 100 * 4.
     expect(totalsOf()[4][1]).toBe(formatDollars(400));
     expect(body.element().hasAttribute('data-stale')).toBe(false);
@@ -2344,7 +2344,13 @@ describe('TimelineMode', () => {
     await expect.poll(() => w().lastOf('setPolicy')?.rev).toBe(2);
     expect(debug().stale).toBe(true);
     await expect.element(body).toHaveAttribute('data-stale', 'true');
-    expect(terms()).toEqual(['Approved', 'Completed', 'Stopped', 'From your policy', ...MONEY]);
+    expect(terms()).toEqual([
+      'New projects approved',
+      'Completed',
+      'Stopped',
+      'From your policy',
+      ...MONEY
+    ]);
     const color = (e: Element) => getComputedStyle(e).color;
     const heading = activity.getByRole('heading', { name: 'Activity' }).element();
     const button = activity.getByRole('button', { name: 'Details' }).element();
@@ -2354,7 +2360,7 @@ describe('TimelineMode', () => {
     emit(refillMsg(2, 0));
     emit(filledMsg(2, 0, LAST + 1));
     await expect.poll(() => debug().stale).toBe(false);
-    await expect.poll(terms).toEqual(['Approved', 'Completed', 'Stopped']);
+    await expect.poll(terms).toEqual(['New projects approved', 'Completed', 'Stopped']);
     expect(body.element().hasAttribute('data-stale')).toBe(false);
   });
 

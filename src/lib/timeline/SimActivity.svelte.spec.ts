@@ -102,7 +102,7 @@ describe('SimActivity', () => {
     expect(page.getByText(goalName(GOAL)).elements()).toHaveLength(0);
     expect(page.getByText('Try one:').elements()).toHaveLength(0);
     expect(pairs()).toEqual([
-      ['Approved', '1,234'],
+      ['New projects approved', '1,234'],
       ['Completed', '567'],
       ['Stopped', '12'],
       ['Affordable', '89']
@@ -119,12 +119,12 @@ describe('SimActivity', () => {
       })
     );
     expect(pairs()).toEqual([
-      ['Approved', '1,234'],
+      ['New projects approved', '1,234'],
       ['Completed', '567'],
       ['Stopped', '12'],
       ['From your policy', '+24'],
-      ['Public money spent', formatDollars(2.5e6)],
-      ['Per added home', 'no homes added yet']
+      ['All public money spent', formatDollars(2.5e6)],
+      ['Per funded home', 'no funded homes yet']
     ]);
     await r.rerender(
       props({
@@ -134,8 +134,8 @@ describe('SimActivity', () => {
     );
     expect(pairs().slice(4)).toEqual([
       ['From your policy', '−4'],
-      ['Public money spent', formatDollars(1e6)],
-      ['Per added home', formatDollars(410_000)]
+      ['All public money spent', formatDollars(1e6)],
+      ['Per funded home', formatDollars(410_000)]
     ]);
     // Not filled yet: calculating, no list.
     await r.rerender(props({ atToday: false, totals: null }));

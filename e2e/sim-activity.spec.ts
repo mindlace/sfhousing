@@ -85,7 +85,12 @@ test('after Play the totals show and the starters go', async ({ page, isMobile }
   await expect(activity(page).getByText('Try one:')).toHaveCount(0);
   const totals = activity(page).getByTestId('tl-totals');
   await expect(totals).toBeVisible();
-  await expect(totals.locator('dt')).toHaveText(['Approved', 'Completed', 'Stopped', 'Affordable']);
+  await expect(totals.locator('dt')).toHaveText([
+    'New projects approved',
+    'Completed',
+    'Stopped',
+    'Affordable'
+  ]);
   // Completed is the header's homes at the same month.
   const headline = await page.getByTestId('score-bar').textContent();
   const homes = headline!.match(/^([\d,]+) homes? by /)![1];

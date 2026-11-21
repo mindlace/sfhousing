@@ -15,6 +15,7 @@ import type { Calibration, Pool } from '$lib/timelapse/types';
 import type { Policy, SimPolicy4 } from './policy4';
 import { moveEdge, moveSpan, type SpanRef, type TimelineWindow } from './spans';
 import TimelineHost from './test/TimelineHost.svelte';
+import { PLUS_NAME } from './test/plus';
 
 const miniCal = parseCalibration(structuredClone(miniCalibrationJson) as unknown);
 const cal: Calibration = {
@@ -153,7 +154,7 @@ describe('Timeline rows', () => {
     );
     expect(permitting.querySelectorAll('[data-testid=tl-mini]')).toHaveLength(2);
     expect(barsOf('permitting')).toHaveLength(0);
-    await expect.element(page.getByRole('button', { name: 'Add Zoning policy' })).toBeVisible();
+    await expect.element(page.getByRole('button', { name: PLUS_NAME.Zoning })).toBeVisible();
   });
 
   it('draws one playhead line through the pinned block and every row at the playhead day', async () => {
@@ -390,7 +391,7 @@ describe('Timeline rows', () => {
 
   it('"+" asks the page to add to its kind', async () => {
     const { onadd } = await setup();
-    await page.getByRole('button', { name: 'Add Permitting policy' }).click();
+    await page.getByRole('button', { name: PLUS_NAME.Permitting }).click();
     expect(onadd).toHaveBeenCalledWith('permitting');
   });
 
@@ -416,6 +417,25 @@ describe('Timeline rows', () => {
     expect(laneWords().map((e) => e.textContent!.trim())).toEqual(['Add public money']);
   });
 
+  it('while the words show, the "+" is named by them (voice control); otherwise "Add {kind} policy"', async () => {
+    const plusOf = (kind: string) =>
+      page.getByTestId(`tl-kind-${kind}`).element().querySelector<HTMLElement>('button.plus')!;
+    const { rerender } = await setup({ policy: emptyDoc });
+    for (const [kind, words] of [
+      ['zoning', 'Add a zoning change'],
+      ['permitting', 'Add a permitting change'],
+      ['money', 'Add public money']
+    ])
+      await expect.element(plusOf(kind)).toHaveAccessibleName(words);
+    // With a policy the words go, and the "+" takes its kind's name again.
+    await rerender({ policy: { ...emptyDoc, kinds: { ...emptyDoc.kinds, zoning: [zoning] } } });
+    await expect.element(plusOf('zoning')).toHaveAccessibleName('Add Zoning policy');
+    await expect.element(plusOf('money')).toHaveAccessibleName('Add public money');
+    // Open, likewise.
+    await kindButton('Permitting').click();
+    await expect.element(plusOf('permitting')).toHaveAccessibleName('Add Permitting policy');
+  });
+
   it('the words are hidden from assistive tech and out of tab order; read-only shows none', async () => {
     const { rerender } = await setup({ policy: emptyDoc });
     const words = laneWords();
@@ -431,6 +451,7 @@ describe('Timeline rows', () => {
     }
     await rerender({ policy: emptyDoc, readonly: true });
     expect(laneWords()).toHaveLength(0);
+    expect(page.getByRole('button', { name: /^Add / }).elements()).toHaveLength(0);
     // No Public money kind, no words for it.
     await rerender({ policy: emptyDoc, calibration: calNoMoney });
     expect(laneWords().map((e) => e.textContent!.trim())).toEqual([

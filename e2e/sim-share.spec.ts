@@ -11,6 +11,7 @@ import type { SfhFzpDebug } from '../src/lib/fzp/debug';
 import { expectNoA11yViolations } from './helpers/a11y';
 import { addPolicy, openKind, waitFilled } from './helpers/run';
 import { SIM_KEY, SIM_KEY_V1, openPublish, seedPlanRow, type Win } from './helpers/sharing';
+import { PLUS_NAME } from '../src/lib/timeline/test/plus';
 
 type FzpWin = Win & { __sfhFzp?: SfhFzpDebug };
 type Span = { from: number; to: number | null; what: Record<string, unknown> };
@@ -208,7 +209,7 @@ test('publish round trip', async ({ page, browser }, testInfo) => {
     const view = await selectPolicy(visitor, 'Permitting', PRESET);
     await expect(view).toContainText(PRESET);
     await expect(view.getByRole('button', { name: 'Remove policy' })).toHaveCount(0);
-    await expect(visitor.getByRole('button', { name: 'Add Permitting policy' })).toHaveCount(0);
+    await expect(visitor.getByRole('button', { name: PLUS_NAME.Permitting })).toHaveCount(0);
     expect(await storedDoc(visitor), 'viewing never writes the autosave').toBeNull();
     expect(errors).toEqual([]);
   } finally {

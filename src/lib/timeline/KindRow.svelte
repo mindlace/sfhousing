@@ -56,6 +56,8 @@
   }: Props = $props();
 
   const label = $derived(KIND_LABEL[kind]);
+  /** A closed, empty, editable kind says in its lane what "+" adds; the "+" takes those words. */
+  const words = $derived(!open && policies.length === 0 && !readonly);
   const countId = $props.id();
   const step = $derived(Math.min(7, 24 / Math.max(policies.length, 1)));
   const fixedSelected = $derived(
@@ -81,7 +83,7 @@
       <button
         type="button"
         class="plus"
-        aria-label="Add {label} policy"
+        aria-label={words ? EMPTY_LANE[kind] : `Add ${label} policy`}
         onclick={() => onadd(kind)}
       >
         +
@@ -89,9 +91,9 @@
     {/if}
   </div>
   <Lane>
-    {#if !open && policies.length === 0 && !readonly}
-      <!-- The "+" in words, for the pointer: the "+" named "Add {label} policy" is the keyboard
-           and assistive path, so this is hidden from both (one stop per action). -->
+    {#if words}
+      <!-- The "+" in words, for the pointer: the "+", named by these words while they show, is
+           the keyboard and assistive path, so this is hidden from both (one stop per action). -->
       <button
         type="button"
         class="empty"

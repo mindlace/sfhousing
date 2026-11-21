@@ -41,6 +41,7 @@ import {
   seedPlanRow,
   type Win
 } from './helpers/sharing';
+import { PLUS_NAME } from '../src/lib/timeline/test/plus';
 
 type FzpWin = Win & { __sfhFzp?: SfhFzpDebug };
 
@@ -228,7 +229,7 @@ test('1c. a11y with the "+" menu open and a pool editor expanded', async ({ page
   await gotoSim(page);
 
   // The kind's "+" menu open, then a preset's pool in its policy's editor.
-  await page.getByRole('button', { name: 'Add Public money policy' }).click();
+  await page.getByRole('button', { name: PLUS_NAME['Public money'] }).click();
   await expect(page.getByRole('group', { name: 'Add to Public money' })).toBeVisible();
   await expectNoA11yViolations(page);
   await editor(page).getByRole('button', { name: 'Close editor' }).click();
@@ -292,7 +293,7 @@ test('2. the bond preset: Undo names it and the forecast follows', async ({ page
 
 test('3. your own pool: the amount error, then a yearly amount', async ({ page }) => {
   await gotoSim(page);
-  await page.getByRole('button', { name: 'Add Public money policy' }).click();
+  await page.getByRole('button', { name: PLUS_NAME['Public money'] }).click();
   await page
     .getByRole('group', { name: 'Add to Public money' })
     .getByRole('button', { name: 'Your own pool', exact: true })
@@ -612,7 +613,7 @@ test('10. no baselineFunding: no Public money kind, funding-off notice', async (
   expect(off.id).toBe('funding-off');
   await expect(notices(page).filter({ hasText: off.text })).toHaveCount(1);
   await expect(page.getByRole('button', { name: 'Zoning', exact: true }).first()).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Add Public money policy' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: PLUS_NAME['Public money'] })).toHaveCount(0);
   // The money is kept, not used.
   expect((await storedPolicy(page))?.kinds.money).toHaveLength(1);
 });

@@ -3,6 +3,7 @@
 // policy added through the kind's "+". No raised timeouts: each wait is bounded by the test's.
 import { expect, type Locator, type Page } from '@playwright/test';
 import type { SfhFzpDebug } from '../../src/lib/fzp/debug';
+import { PLUS_NAME } from '../../src/lib/timeline/test/plus';
 
 type FzpWin = Window & { __sfhFzp?: SfhFzpDebug };
 
@@ -91,7 +92,8 @@ export async function addPolicy(page: Page, kind: string, choice: string): Promi
   });
   await page
     .getByTestId('tl-timeline')
-    .getByRole('button', { name: `Add ${kind} policy`, exact: true })
+    // Named "Add {kind} policy", or by the lane's words while a closed empty kind shows them.
+    .getByRole('button', { name: PLUS_NAME[kind as keyof typeof PLUS_NAME] })
     // Below md with the kind's sheet open, the sheet's "+" (the grid behind it is inert).
     .last()
     .click();

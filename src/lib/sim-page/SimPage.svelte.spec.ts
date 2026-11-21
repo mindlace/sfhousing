@@ -51,6 +51,7 @@ import { clampBbox } from './lid-request';
 import { DEFAULT_POLICY, SIM_CODEC, SIM_KEY, type SimDoc } from './sim-doc';
 import type SimPage from './SimPage.svelte';
 import SimPageHost from './test/SimPageHost.svelte';
+import { PLUS_NAME } from '$lib/timeline/test/plus';
 
 vi.mock('$lib/map/SimMap.svelte', () => import('$lib/fzp/test/FzpSimMapStub.svelte'));
 const workers = vi.hoisted(() => [] as FakeTimelineWorker[]);
@@ -238,7 +239,7 @@ describe('SimPage opening', () => {
 describe('SimPage editing', () => {
   it('closing the "+" menu puts focus back on that "+"', async () => {
     await opened();
-    const add = page.getByRole('button', { name: 'Add Permitting policy' });
+    const add = page.getByRole('button', { name: PLUS_NAME.Permitting });
     await add.click();
     await expect
       .element(inspector().getByRole('group', { name: 'Add to Permitting' }))
@@ -250,7 +251,7 @@ describe('SimPage editing', () => {
 
   it('adding, switching off, removing and reordering a policy; undo and redo across those', async () => {
     await opened();
-    const add = page.getByRole('button', { name: 'Add Zoning policy' });
+    const add = page.getByRole('button', { name: PLUS_NAME.Zoning });
     await add.click();
     await page.getByRole('button', { name: 'Protect historic buildings' }).click();
     await expect.element(inspectorTitle()).toHaveTextContent('Protect historic buildings');
@@ -396,7 +397,7 @@ describe('SimPage editing', () => {
 
   it('bad-request from the worker undoes the edit and shows "That change couldn\'t be applied."', async () => {
     await opened();
-    await page.getByRole('button', { name: 'Add Zoning policy' }).click();
+    await page.getByRole('button', { name: PLUS_NAME.Zoning }).click();
     await page.getByRole('button', { name: 'Protect historic buildings' }).click();
     await expect.poll(() => w().lastOf('setPolicy')?.rev).toBe(2);
     emit(errorMsg(2, 'bad-request'));
@@ -532,7 +533,7 @@ describe('SimPage publish and view', () => {
     await opened({ fetchFn: fetchFn as unknown as typeof fetch });
     const publish = page.getByTestId('publish-open');
     await expect.element(publish).toBeDisabled();
-    await page.getByRole('button', { name: 'Add Zoning policy' }).click();
+    await page.getByRole('button', { name: PLUS_NAME.Zoning }).click();
     await page.getByRole('button', { name: 'Protect historic buildings' }).click();
     await expect.element(publish).toBeEnabled();
     await publish.click();
@@ -622,7 +623,7 @@ describe('SimPage publish and view', () => {
       'Zoning height limits'
     ]);
     // After an edit and mid-refill: still there.
-    await page.getByRole('button', { name: 'Add Zoning policy' }).click();
+    await page.getByRole('button', { name: PLUS_NAME.Zoning }).click();
     await page.getByRole('button', { name: 'Protect historic buildings' }).click();
     await expect.poll(() => w().lastOf('setPolicy')?.rev).toBe(2);
     emit(compiledMsg(2, STATICS));
@@ -978,14 +979,14 @@ describe('SimPage tools', () => {
     expect(stop().elements()).toHaveLength(0);
 
     // "+" over the selected painted policy: its menu hides the tools.
-    await page.getByRole('button', { name: 'Add Permitting policy' }).click();
+    await page.getByRole('button', { name: PLUS_NAME.Permitting }).click();
     await expect
       .element(inspector().getByRole('group', { name: 'Add to Permitting' }))
       .toBeVisible();
     await expect.element(stop()).toBeVisible();
 
     // A pool draft hides them too.
-    await page.getByRole('button', { name: 'Add Public money policy' }).click();
+    await page.getByRole('button', { name: PLUS_NAME['Public money'] }).click();
     await page.getByRole('button', { name: 'Your own pool' }).click();
     await expect.element(inspectorTitle()).toHaveTextContent('Your own pool');
     await expect.element(stop()).toBeVisible();
@@ -996,7 +997,7 @@ describe('SimPage tools', () => {
   it('the transit catalog is asked for once, when the editor first shows', async () => {
     await opened();
     expect(w().all('brushCatalog')).toHaveLength(0);
-    const add = page.getByRole('button', { name: 'Add Zoning policy' });
+    const add = page.getByRole('button', { name: PLUS_NAME.Zoning });
     await add.click();
     await expect.poll(() => w().all('brushCatalog')).toHaveLength(1);
     await inspector().getByRole('button', { name: 'Close editor' }).click();
@@ -1007,7 +1008,7 @@ describe('SimPage tools', () => {
 
   it('closing a pool draft puts focus on the Public money "+"', async () => {
     await opened();
-    const add = page.getByRole('button', { name: 'Add Public money policy' });
+    const add = page.getByRole('button', { name: PLUS_NAME['Public money'] });
     await add.click();
     await page.getByRole('button', { name: 'Your own pool' }).click();
     await expect.element(inspectorTitle()).toHaveTextContent('Your own pool');
@@ -1408,7 +1409,7 @@ describe('SimPage autosave and publish', () => {
   const SIM = copyFor('sim');
   const publish = () => page.getByTestId('publish-open');
   const addHistoric = async () => {
-    await page.getByRole('button', { name: 'Add Zoning policy' }).click();
+    await page.getByRole('button', { name: PLUS_NAME.Zoning }).click();
     await page.getByRole('button', { name: 'Protect historic buildings' }).click();
   };
 
@@ -1432,7 +1433,7 @@ describe('SimPage autosave and publish', () => {
     expect(live.element().closest('[aria-hidden="true"], [inert]')).toBeNull();
     expect(getComputedStyle(live.element()).visibility).toBe('visible');
     mem.failWrites = false;
-    await page.getByRole('button', { name: 'Add Zoning policy' }).click();
+    await page.getByRole('button', { name: PLUS_NAME.Zoning }).click();
     await page.getByRole('button', { name: 'Protect rent-controlled buildings' }).click();
     await expect
       .element(header().getByTestId('save-state'))
@@ -1503,7 +1504,7 @@ describe('SimPage autosave and publish', () => {
     const rec = JSON.parse(mem.getItem(SIM_KEY4)!);
     expect(rec.lastPublished.id).toBe('AbCdEfGh');
     expect(JSON.parse(rec.plan).title).toBe('Historic');
-    await page.getByRole('button', { name: 'Add Zoning policy' }).click();
+    await page.getByRole('button', { name: PLUS_NAME.Zoning }).click();
     await page.getByRole('button', { name: 'Protect rent-controlled buildings' }).click();
     await expect.element(publish()).toHaveTextContent('Publish');
   });
@@ -1543,7 +1544,7 @@ describe('SimPage autosave and publish', () => {
 
     it('from md the header score discards an open pool draft and says so', async () => {
       await opened();
-      await page.getByRole('button', { name: 'Add Public money policy' }).click();
+      await page.getByRole('button', { name: PLUS_NAME['Public money'] }).click();
       await page.getByRole('button', { name: 'Your own pool' }).click();
       await expect.element(inspectorTitle()).toHaveTextContent('Your own pool');
       await scoreBar().click();
