@@ -396,14 +396,14 @@ describe('MapKeyControl', () => {
 
   it('the open panel scrolls inside the room above the toolbar', async () => {
     document.documentElement.style.setProperty('--map-controls-br-block-size', '20px');
-    // A 220 px map: the toolbar's top is 220 - 28 - 24 = 168 px down, less 8 px at the top and the
-    // 4 px gap leaves about 160 px of room for the panel.
+    // A 220 px map: the toolbar's top is 220 - 28 - 24 = 168 px down, less 4 px at the top (`top-1`)
+    // and the gap leaves about 150 px of room for the panel.
     await render(KeyHost, { props: { height: 220, openFromMd: true, lines: 30 } });
     await expect.element(keyPanel()).toBeVisible();
     const panel = keyPanel().element() as HTMLElement;
     const map = page.getByTestId('host-map').element();
     expect(panel.scrollHeight).toBeGreaterThan(panel.clientHeight);
-    expect(rect(panel).top).toBeGreaterThanOrEqual(rect(map).top + 8 - 0.5);
+    expect(rect(panel).top).toBeGreaterThanOrEqual(rect(map).top + 4 - 0.5);
     expect(rect(panel).bottom).toBeLessThanOrEqual(rect(keyToggle().element()).top);
     expect(getComputedStyle(panel).overflowY).toBe('auto');
     panel.scrollTop = panel.scrollHeight;

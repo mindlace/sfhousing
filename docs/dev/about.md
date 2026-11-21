@@ -146,7 +146,7 @@ calibration and a scenario (the Sources dialog's old place and condition).
 
 Every way into About is a link to `/about#…`: the header's About, Details' last line ("How this is
 worked out", `WORKED_OUT`, to `/about#about-assumptions`), the card's sources (through
-`open(id)`), and later the map's credit. `src/lib/about/links.ts`:
+`open(id)`), and the map's credit ("About this model", to `/about#about-data`). `src/lib/about/links.ts`:
 
 - `aboutTarget(a, origin)`: the fragment a link opens (`''` for `/about`), or null when it is not
   a same-origin link to exactly `/about`, or has a `target` other than `_self`, or `download`.
@@ -161,6 +161,10 @@ worked out", `WORKED_OUT`, to `/about#about-assumptions`), the card's sources (t
 Pages that mount no dialog (`/about` itself, Paint, `/p/<id>`, `/lesscars`) have no listener: their
 About links navigate.
 
-## Still to come in slice 9
+## The map's credit
 
-The map's credit is added here by the task that builds it.
+The map carries only "© OpenStreetMap" (linked to the OSM copyright page, as the OSMF guidelines
+ask) and "About this model" (`/about#about-data`), behind a collapsed (i) that shows open for five
+seconds on load (`creditHtml`, `src/lib/map/attribution.ts`). Every other credit is in Data and
+licences, one tap away. The control's rules are in [map-interfaces.md](map-interfaces.md), "The
+credit".

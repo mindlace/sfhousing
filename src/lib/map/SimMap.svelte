@@ -1,9 +1,12 @@
 <script module lang="ts">
   import type { Protocol as PmtilesProtocol } from 'pmtiles';
   import { TOKENS as THEME_TOKENS, tokenCss, type TokenName } from './palette';
-  import { attributionHtml } from './attribution';
+  import { creditHtml } from './attribution';
 
   type MapLibreModule = typeof import('maplibre-gl');
+
+  /** How long the credit stays open after the control is added, ms. */
+  export const CREDIT_SHOW_MS = 5000;
 
   // CSS defaults for the --map-* tokens, so the SSR frame follows prefers-color-scheme before
   // JS resolves a theme (an explicit or JS-resolved theme overrides them inline).
@@ -50,7 +53,7 @@
   import type { Day } from '$lib/timelapse/time';
   import { DEFAULT_TRANSIT_PARAMS, SF_GRID_BBOX, buildAccessGrid } from '$lib/transit';
   import { DEFAULT_VIEW } from '$lib/view/prefs';
-  import { CONSTRAINTS, NARROW_PX, defaultFrame, initialCamera, pixelRatio } from './camera';
+  import { CONSTRAINTS, defaultFrame, initialCamera, pixelRatio } from './camera';
   import { loadDeck } from './deck-loader';
   import { loadTimelapse } from './timelapse-loader';
   import { generatedCellFilter } from './cull';
@@ -114,7 +117,9 @@
     view = undefined,
     fetchTransit = undefined,
     timelinePick = undefined,
-    tapCards = true
+    tapCards = true,
+    // e2e builds start collapsed: a five-second timer would race every step that reads the corner.
+    creditShowMs = import.meta.env.VITE_E2E === '1' ? 0 : CREDIT_SHOW_MS
   }: SimMapProps = $props();
 
   type PaintProp = Parameters<MapLibreMap['setPaintProperty']>[1];
@@ -202,6 +207,22 @@
     transitIdle: (() => void) | null; // cancels the pending access-grid build
     deckLayers: Layer[]; // the generated controller's latest deck layers
     deckGroupsPending: boolean; // set while deck skipped adding its MapLibre layer groups
+    credit: Credit | null; // the credit's control and its one self-collapse
+  }
+
+  /**
+   * The credit's state (docs/dev/map-interfaces.md). `auto` holds until it collapses once by
+   * itself (the timer, the first user zoom, rotate or pitch, `collapseCredit`) or the person presses
+   * its toggle; then only the person (and MapLibre's drag rule) opens and closes it.
+   */
+  interface Credit {
+    el: HTMLElement; // MapLibre's <details>
+    toggle: HTMLElement; // its <summary>
+    auto: boolean;
+    timer: ReturnType<typeof setTimeout> | null; // the creditShowMs timer, while it runs
+    sync: () => void; // the toggle's aria-expanded from the class
+    offMoves: () => void; // removes the first-move listeners
+    stop: () => void; // removes its listeners and observer
   }
 
   let live: Live | null = null;
@@ -471,7 +492,8 @@
     setTimelineLookups,
     setHalos,
     setBarMode,
-    setGlowInset
+    setGlowInset,
+    collapseCredit
   };
 
   // ---- effects ----------------------------------------------------------------------------------
@@ -562,7 +584,8 @@
       transit: null,
       transitIdle: null,
       deckLayers: [],
-      deckGroupsPending: false
+      deckGroupsPending: false,
+      credit: null
     };
   }
 
@@ -607,6 +630,7 @@
         pixelRatio: pixelRatio(dpr),
         canvasContextAttributes: { antialias: dpr < 2 },
         attributionControl: false,
+        locale: { 'AttributionControl.ToggleAttribution': 'Map credits' },
         hash: false,
         cooperativeGestures: false,
         ...(cam.kind === 'jump' ? cam.frame : { bounds: cam.bounds, fitBoundsOptions: cam.options })
@@ -648,24 +672,112 @@
     map.once('load', () => void onLoad(l, map));
 
     if (!coarse) map.addControl(new ml.NavigationControl({ showCompass: true }), 'bottom-left');
-    const compact = width < NARROW_PX;
     map.addControl(
-      new ml.AttributionControl({ compact, customAttribution: attributionHtml(manifest.sources) }),
+      new ml.AttributionControl({ compact: true, customAttribution: creditHtml() }),
       'bottom-right'
     );
+    installCredit(l, map);
     observeFootprint(map);
-    if (compact) {
-      // MapLibre v6 starts compact attribution expanded (maplibregl-compact-show) and collapses
-      // it on `drag` only. Also collapse on the first user zoom, rotate or pitch.
-      const collapse = (e: { originalEvent?: unknown }) => {
-        if (!e.originalEvent) return;
-        container
-          ?.querySelector('.maplibregl-ctrl-attrib.maplibregl-compact')
-          ?.classList.remove('maplibregl-compact-show');
-        for (const t of ['zoomstart', 'rotatestart', 'pitchstart'] as const) map.off(t, collapse);
-      };
-      for (const t of ['zoomstart', 'rotatestart', 'pitchstart'] as const) map.on(t, collapse);
-    }
+  }
+
+  // ---- the credit (docs/dev/map-interfaces.md, "The credit") ------------------------------------
+  const CREDIT_OPEN = 'maplibregl-compact-show';
+  const USER_MOVES = ['zoomstart', 'rotatestart', 'pitchstart'] as const;
+
+  /**
+   * MapLibre's compact control is a <details> whose <summary> is the (i); it starts open
+   * (`maplibregl-compact-show`) and collapses on every `drag`. SimMap adds the rest: the toggle's
+   * `aria-expanded`, the timer, the first user zoom, rotate or pitch, `collapseCredit` and Escape.
+   */
+  function installCredit(l: Live, map: MapLibreMap): void {
+    const el = map.getContainer().querySelector<HTMLElement>('.maplibregl-ctrl-attrib');
+    const toggle = el?.querySelector<HTMLElement>('.maplibregl-ctrl-attrib-button');
+    if (!el || !toggle) return;
+    const isOpen = () => el.classList.contains(CREDIT_OPEN);
+    const sync = () => toggle.setAttribute('aria-expanded', String(isOpen()));
+    sync();
+    // The class is what shows the line. The handlers below sync the toggle in the same task; this
+    // catches any other change of it MapLibre makes.
+    const classes = new MutationObserver(sync);
+    classes.observe(el, { attributes: true, attributeFilter: ['class'] });
+    const onUserMove = (e: { originalEvent?: unknown }) => {
+      if (e.originalEvent) autoCollapse(l);
+    };
+    // MapLibre drops the class on a drag but leaves the details open: close it for real.
+    const onDrag = () => {
+      autoCollapse(l);
+      if (!isOpen()) el.removeAttribute('open');
+      sync();
+    };
+    // A press (pointer, Enter or Space) on the toggle, after MapLibre's own listener has toggled
+    // the class: from now on only the person decides.
+    const onPress = () => {
+      endAuto(l);
+      sync();
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented || !isOpen()) return;
+      e.preventDefault();
+      endAuto(l);
+      closeCredit(l.credit);
+      toggle.focus();
+    };
+    for (const t of USER_MOVES) map.on(t, onUserMove);
+    map.on('drag', onDrag);
+    toggle.addEventListener('click', onPress);
+    el.addEventListener('keydown', onKey);
+    const credit: Credit = {
+      el,
+      toggle,
+      auto: true,
+      timer: null,
+      sync,
+      stop: () => {
+        if (credit.timer !== null) clearTimeout(credit.timer);
+        credit.timer = null;
+        classes.disconnect();
+        for (const t of USER_MOVES) map.off(t, onUserMove);
+        map.off('drag', onDrag);
+        toggle.removeEventListener('click', onPress);
+        el.removeEventListener('keydown', onKey);
+      },
+      offMoves: () => {
+        for (const t of USER_MOVES) map.off(t, onUserMove);
+      }
+    };
+    l.credit = credit;
+    if (creditShowMs <= 0) return autoCollapse(l);
+    // Not in `l.timers`: clearLoading clears those on every idle.
+    credit.timer = setTimeout(() => autoCollapse(l), creditShowMs);
+  }
+
+  function closeCredit(c: Credit | null): void {
+    if (!c) return;
+    c.el.classList.remove(CREDIT_OPEN);
+    c.el.removeAttribute('open');
+    c.sync();
+  }
+
+  /** The credit no longer collapses by itself: the timer and the first-move rule end. */
+  function endAuto(l: Live): void {
+    const c = l.credit;
+    if (!c?.auto) return;
+    c.auto = false;
+    c.offMoves();
+    if (c.timer !== null) clearTimeout(c.timer);
+    c.timer = null;
+  }
+
+  /** The one collapse by itself, unless the person has pressed the toggle first. */
+  function autoCollapse(l: Live): void {
+    const c = l.credit;
+    if (!c?.auto) return;
+    endAuto(l);
+    closeCredit(c);
+  }
+
+  export function collapseCredit(): void {
+    if (live && !live.dead) autoCollapse(live);
   }
 
   async function onLoad(l: Live, map: MapLibreMap): Promise<void> {
@@ -928,6 +1040,8 @@
     publishFootprint(0, bottomInset);
     for (const t of l.timers) clearTimeout(t);
     l.timers.clear();
+    l.credit?.stop(); // its timer too
+    l.credit = null;
     if (l.pickRaf !== null) cancelAnimationFrame(l.pickRaf);
     if (l.chunkRaf !== null) cancelAnimationFrame(l.chunkRaf);
     l.transitIdle?.();
@@ -1611,8 +1725,9 @@
     }
   }
 
-  /* MapLibre controls, lifted by the bottom inset: its own 29 px buttons and a 24 px attribution
-     button, at least 24 by 24 px on every pointer (SC 2.5.8). */
+  /* MapLibre controls, lifted by the bottom inset: its own 29 px buttons and the credit's 24 px
+     (i), at least 24 by 24 px on every pointer (SC 2.5.8). The credit is one 24 px line open or
+     collapsed (2 px padding around a 20 px line), so nothing above it moves when it collapses. */
   .sim-map :global(.maplibregl-ctrl-attrib-button) {
     width: 24px;
     height: 24px;
@@ -1620,14 +1735,25 @@
     background-position: center;
     background-repeat: no-repeat;
   }
+  /* MapLibre rings the (i) on any focus; keep its ring for the keyboard only. */
+  .sim-map :global(.maplibregl-ctrl-attrib-button:focus:not(:focus-visible)) {
+    box-shadow: none;
+  }
+  /* Flush in the corner, as the old strip was (MapLibre's compact control has a 10 px margin all
+     round): the footprint's block is 24 px, which the map key's room needs. Only the corner
+     facing the map is rounded. */
   .sim-map :global(.maplibregl-ctrl-attrib.maplibregl-compact) {
     min-height: 24px;
+    margin: 0;
     padding: 0 24px 0 0;
-    border-radius: 12px;
+    border-radius: 12px 0 0 0;
   }
   .sim-map :global(.maplibregl-ctrl-attrib.maplibregl-compact-show) {
     min-height: 20px;
-    padding: 12px 28px 12px 12px;
+    padding: 2px 28px 2px 8px;
+    line-height: 20px;
+    white-space: nowrap;
+    border-radius: 12px 0 0 0;
   }
   .sim-map :global(.maplibregl-ctrl-bottom-left),
   .sim-map :global(.maplibregl-ctrl-bottom-right) {

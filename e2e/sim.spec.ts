@@ -1450,6 +1450,35 @@ test("/sim: the header's About opens About this model over the map; Escape close
   }
 });
 
+test("/sim: the credit's About this model opens the dialog at Data and licences", async ({
+  isMobile,
+  page
+}) => {
+  test.skip(isMobile, 'one pointer is enough: the link rule is not width-bound');
+  await gotoSim(page);
+  const before = await runState(page);
+  const credit = page.getByTestId('map-root').locator('.maplibregl-ctrl-attrib');
+  const toggle = page.getByTestId('map-root').getByLabel('Map credits');
+  // The e2e build starts the credit collapsed: the (i) opens it.
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  const link = credit.getByRole('link', { name: 'About this model', exact: true });
+  await expect(link).toHaveAttribute('href', '/about#about-data');
+  await link.click();
+  const dialog = aboutDialog(page);
+  await expect(dialog).toBeVisible();
+  await expect(page).toHaveURL(/\/sim$/);
+  // Landed at Data and licences: its heading has focus, at the top of the scroll box.
+  const heading = dialog.getByRole('heading', { level: 3, name: 'Data and licences', exact: true });
+  await expect(heading).toBeFocused();
+  await expect(heading).toBeInViewport();
+  expect(await runState(page)).toEqual(before);
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+  await expect(link).toBeFocused();
+});
+
 test('/sim at 375: About from the Menu opens the dialog; closing focuses the Menu button', async ({
   isMobile,
   page

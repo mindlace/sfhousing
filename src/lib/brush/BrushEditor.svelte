@@ -386,7 +386,14 @@
     for (const u of renders) h.applyGenerated(u);
     applyInset();
     attachController();
+    if (untrack(() => stripShown)) h.collapseCredit();
   }
+
+  // The strip covers the map's bottom on a phone: its appearance collapses the credit (a size
+  // change, so the footprint is measured again). Opened by hand, the credit draws above it.
+  $effect(() => {
+    if (stripShown) untrack(() => handle?.collapseCredit());
+  });
 
   function onToolChange(t: BrushTool): void {
     if (controller) controller.setTool(t);

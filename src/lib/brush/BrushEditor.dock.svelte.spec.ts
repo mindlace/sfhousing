@@ -562,6 +562,24 @@ describe('BrushEditor on the dock', () => {
     await expect.poll(() => document.activeElement?.getAttribute('role')).toBe('tab');
   });
 
+  it('showing the palette strip calls collapseCredit', async () => {
+    const { w } = await setup({ width: 375 });
+    await ready(w);
+    const strip = page.getByTestId('palette-strip');
+    // Showing when the map hands over its handle: collapsed then.
+    await expect.element(strip).toBeVisible();
+    await expect.poll(() => callsOf('collapseCredit').length).toBeGreaterThan(0);
+    // Hidden (Done reopens the sheet): no call. Shown again: once more.
+    await strip.getByRole('button', { name: 'Done' }).click();
+    await expect.element(strip).not.toBeInTheDocument();
+    const n = callsOf('collapseCredit').length;
+    const handle = page.getByTestId('dock-handle');
+    await page.getByRole('radio', { name: 'Erase' }).click();
+    await expect.element(handle).toHaveAttribute('aria-expanded', 'false');
+    await expect.element(strip).toBeVisible();
+    await expect.poll(() => callsOf('collapseCredit').length).toBe(n + 1);
+  });
+
   it('read-only: the read-only line and the summary, no tools; the count follows the score', async () => {
     const plan = planOf(op('a', 8), op('b', null), op('c', 6));
     const { w, editor } = await setup({ readOnly: true, plan });

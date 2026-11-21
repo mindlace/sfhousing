@@ -244,13 +244,10 @@ test.describe('mobile', () => {
     page
   }) => {
     await gotoWithN3AndChips(page);
-    // MapLibre starts compact attribution expanded; either state must stay uncovered.
+    // The e2e build starts the credit collapsed; open or collapsed it must stay uncovered.
     await expectNoticesClear(page, MOBILE);
-    await page.evaluate(() =>
-      document
-        .querySelector('.maplibregl-ctrl-attrib.maplibregl-compact')
-        ?.classList.remove('maplibregl-compact-show')
-    );
+    await page.getByTestId('map-root').getByLabel('Map credits').click();
+    await expect(page.locator('.maplibregl-ctrl-attrib')).toHaveClass(/maplibregl-compact-show/);
     await expectNoticesClear(page, MOBILE);
     expect(
       await page.evaluate(
