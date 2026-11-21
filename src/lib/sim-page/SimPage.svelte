@@ -82,7 +82,7 @@
   import { simPaintRows } from './brush-summary';
   import { installSimDebug } from './debug';
   import { PaintFeedback, lotsInView } from './feedback';
-  import { fundingNotices } from './funding-copy';
+  import { fundingNotices, limitAlert } from './funding-copy';
   import { FundingDrafts } from './funding-drafts.svelte';
   import { LidRequest, clampBbox } from './lid-request';
   import { OutlineRequest } from './outline-request';
@@ -414,8 +414,12 @@
         cal: c
       });
     } catch (e) {
-      // A funding limit: the starter only shows with nothing in force, so only off policies count.
-      if (e instanceof AddLimitError) return;
+      // A funding limit (only off policies count: starters show with nothing in force). The "+"
+      // menu says it in its alert line; no menu is open here, so the page's status says it.
+      if (e instanceof AddLimitError) {
+        brush.announce(limitAlert(e.limit), ANNOUNCE_MS);
+        return;
+      }
       throw e;
     }
     const msg = `Added: ${label}`;

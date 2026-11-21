@@ -19,7 +19,10 @@ import { LID_MAX_SPAN_M } from '$lib/map/height/lids';
 import { tinyLimits } from '$lib/map/height/test/fixtures';
 import type { PackedCell } from '$lib/map/types';
 import { OUTLINE_LAYER_ID } from '$lib/paint/outline-layers';
-import { DRAFT_DISCARDED } from '$lib/sim-page/funding-copy';
+import { DRAFT_DISCARDED, limitAlert } from '$lib/sim-page/funding-copy';
+import { BOND_POLICY, policyWith } from '$lib/sim-page/test/funding';
+import { FINANCE_LIMITS } from '$lib/sim/levers/finance';
+import { upgradePolicy } from '$lib/timeline/upgrade';
 import { copyFor } from '$lib/sharing/copy';
 import { MemoryStorage } from '$lib/sharing/fixtures/memory-storage';
 import { fundingOnly } from '$lib/sim/levers/fixtures/finance';
@@ -1618,6 +1621,29 @@ describe('SimPage autosave and publish', () => {
       await undoButton().click();
       await expect.poll(() => debug().policy.kinds.zoning.length).toBe(0);
       await expect.element(starter).toBeVisible();
+    });
+
+    it('a starter a funding limit refuses adds nothing and announces the limit', async () => {
+      // The pool limit filled by policies that are off: nothing is in force, so starters show.
+      const pools = Array.from({ length: FINANCE_LIMITS.pools }, (_, i) => ({
+        ...BOND_POLICY.funding.pools[0],
+        id: `u-pool-${i + 1}`
+      }));
+      const money = upgradePolicy(policyWith({ pools, programmes: [] }), asOf).kinds.money.map(
+        (p) => ({ ...p, on: false })
+      );
+      await opened({
+        storage: () => seeded(doc4({ schema: 4, kinds: { zoning: [], permitting: [], money } }))
+      });
+      const starter = activity().getByRole('button', { name: 'A housing bond' });
+      await expect.element(starter).toBeVisible();
+      const before = debug().policy;
+      await starter.click();
+      await expect
+        .element(page.getByRole('status').filter({ hasText: limitAlert('pools') }))
+        .toBeInTheDocument();
+      expect(debug().policy).toEqual(before);
+      expect(inspector().elements()).toHaveLength(0);
     });
 
     it("Activity's Details opens Details and focuses it", async () => {
