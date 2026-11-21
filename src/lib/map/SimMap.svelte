@@ -1755,12 +1755,49 @@
     width: 24px;
     height: 24px;
     border-radius: 12px;
-    background-position: center;
-    background-repeat: no-repeat;
+    /* The glyph is the ::before below, in currentColor, so forced colours can recolour it. */
+    background-image: none;
+    color: rgb(0 0 0);
   }
-  /* MapLibre rings the (i) on any focus; keep its ring for the keyboard only. */
-  .sim-map :global(.maplibregl-ctrl-attrib-button:focus:not(:focus-visible)) {
+  /* MapLibre's (i), drawn as a mask over currentColor: the same 24 px glyph its background-image
+     drew, centred in the button. */
+  .sim-map :global(.maplibregl-ctrl-attrib-button::before) {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-color: currentColor;
+    mask: url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2224%22%20height%3D%2224%22%20fill-rule%3D%22evenodd%22%20viewBox%3D%220%200%2020%2020%22%3E%3Cpath%20d%3D%22M4%2010a6%206%200%201%200%2012%200%206%206%200%201%200-12%200m5-3a1%201%200%201%200%202%200%201%201%200%201%200-2%200m0%203a1%201%200%201%201%202%200v3a1%201%200%201%201-2%200%22%2F%3E%3C%2Fsvg%3E')
+      center / 24px 24px no-repeat;
+  }
+  /* The project's ring (FOCUS_RING, src/lib/shell/ui.ts) in place of MapLibre's box-shadow, which
+     forced colours drop: for the keyboard only. */
+  .sim-map :global(.maplibregl-ctrl-attrib-button:focus) {
     box-shadow: none;
+  }
+  .sim-map :global(.maplibregl-ctrl-attrib-button:focus-visible) {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 1px;
+  }
+  @media (prefers-color-scheme: dark) {
+    .sim-map :global(.maplibregl-ctrl-attrib-button:focus-visible) {
+      outline-color: var(--color-accent-dark);
+    }
+  }
+  /* Forced colours: the (i) in ButtonText on ButtonFace, the ring in Highlight, and the control
+     outlined in CanvasText (an outline, so its box keeps its 24 px). */
+  @media (forced-colors: active) {
+    .sim-map :global(.maplibregl-ctrl-attrib-button) {
+      forced-color-adjust: none;
+      color: ButtonText;
+      background-color: ButtonFace;
+    }
+    .sim-map :global(.maplibregl-ctrl-attrib-button:focus-visible) {
+      outline-color: Highlight;
+    }
+    .sim-map :global(.maplibregl-ctrl-attrib.maplibregl-compact) {
+      outline: 1px solid CanvasText;
+      outline-offset: -1px;
+    }
   }
   /* Flush in the corner, as the old strip was (MapLibre's compact control has a 10 px margin all
      round): the footprint's block is 24 px, which the map key's room needs. Only the corner

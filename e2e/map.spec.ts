@@ -511,6 +511,42 @@ test.describe('map view', () => {
     await expect(page.getByRole('heading', { level: 2, name: 'Data and licences' })).toBeVisible();
   });
 
+  test('under forced colours in a dark theme the (i) shows its glyph and a focus ring', async ({
+    page
+  }) => {
+    await page.emulateMedia({ forcedColors: 'active', colorScheme: 'dark' });
+    await gotoReady(page);
+    const toggle = creditToggle(page);
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    // The glyph is drawn: the (i)'s pixels hold a light glyph on a dark ground, not one colour.
+    const spread = async () => {
+      const png = (await toggle.screenshot()).toString('base64');
+      return page.evaluate(async (b64) => {
+        const img = new Image();
+        img.src = `data:image/png;base64,${b64}`;
+        await img.decode();
+        const c = new OffscreenCanvas(img.width, img.height);
+        const g = c.getContext('2d')!;
+        g.drawImage(img, 0, 0);
+        const d = g.getImageData(0, 0, img.width, img.height).data;
+        let lo = 255;
+        let hi = 0;
+        for (let i = 0; i < d.length; i += 4) {
+          const y = 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
+          lo = Math.min(lo, y);
+          hi = Math.max(hi, y);
+        }
+        return hi - lo;
+      }, png);
+    };
+    expect(await spread()).toBeGreaterThan(128);
+    // Focused from the keyboard it has an outline (forced colours drop box-shadow rings).
+    await toggle.focus();
+    expect(await toggle.evaluate((el) => el.matches(':focus-visible'))).toBe(true);
+    await expect(toggle).toHaveCSS('outline-style', 'solid');
+    await expect(toggle).toHaveCSS('outline-width', '2px');
+  });
+
   // ---- painting (brush-tool + worker host) -----------------------------------------------------
 
   test('E2: paint a stroke, then erase', async ({ page, isMobile }) => {
