@@ -1141,6 +1141,31 @@ describe('SimPage tools', () => {
     await expect.poll(() => debug().playing).toBe(false);
   });
 
+  it('with Paint chosen while the brush loads (no session), Space plays and pauses', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    await opened();
+    await expect.poll(() => stub.calls.some((c) => c.method === 'setPanEnabled')).toBe(true);
+    await toolKey('b');
+    await expect.poll(() => stub.props.tapCards).toBe(false);
+    // The worker crashes: the page has no client, so the brush is loading again.
+    w().crash();
+    await expect.element(page.getByRole('button', { name: 'Retry', exact: true })).toBeVisible();
+    const space = () => {
+      const e = new KeyboardEvent('keydown', {
+        key: ' ',
+        code: 'Space',
+        bubbles: true,
+        cancelable: true
+      });
+      document.body.dispatchEvent(e);
+      return e.defaultPrevented;
+    };
+    expect(space()).toBe(true);
+    await expect.poll(() => debug().playing).toBe(true);
+    expect(space()).toBe(true);
+    await expect.poll(() => debug().playing).toBe(false);
+  });
+
   it('B and E pick Paint and Erase; V goes back to Move', async () => {
     await opened({ storage: () => seeded(doc4(zoning(painted))) });
     await openZoning();
