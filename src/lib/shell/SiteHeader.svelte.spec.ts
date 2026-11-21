@@ -800,11 +800,13 @@ describe('SiteHeader', () => {
         page.getByRole('link', { name: 'About', exact: true }).element()
       ];
       const box = (el: Element) => el.getBoundingClientRect();
-      for (let i = 1; i < items.length; i++) {
-        expect(box(items[i]).left, `item ${i} after item ${i - 1}`).toBeGreaterThanOrEqual(
-          box(items[i - 1]).right
-        );
-        // Not squeezed: each control keeps its content's width.
+      for (let i = 0; i < items.length; i++) {
+        if (i > 0)
+          expect(box(items[i]).left, `item ${i} after item ${i - 1}`).toBeGreaterThanOrEqual(
+            box(items[i - 1]).right
+          );
+        // Not squeezed: each item, the score (which clips its text) first, keeps its content's
+        // width.
         const el = items[i] as HTMLElement;
         expect(el.scrollWidth, `item ${i} clips`).toBeLessThanOrEqual(el.clientWidth + 0.5);
       }
@@ -812,6 +814,9 @@ describe('SiteHeader', () => {
       const banner = page.getByRole('banner').element() as HTMLElement;
       expect(banner.getBoundingClientRect().height).toBe(48);
       expect(banner.scrollWidth).toBeLessThanOrEqual(banner.clientWidth);
+      const score = box(items[0]);
+      const b = box(banner);
+      expect(Math.abs((score.left + score.right) / 2 - (b.left + b.right) / 2)).toBeLessThan(1);
     });
 
     it('at 1280px the same row fits and the score is centred', async () => {
