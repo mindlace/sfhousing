@@ -646,6 +646,66 @@ describe('SimPage publish and view', () => {
     expect(zoning()).toHaveLength(2);
   });
 
+  it('a fine-only pointer with no map: Meta+Z and Meta+Shift+Z undo and redo', async () => {
+    stubPointer('fine');
+    stub.autoReady = false;
+    await opened();
+    const zoning = () => debug().policy.kinds.zoning;
+    await page.getByRole('button', { name: PLUS_NAME.Zoning }).click();
+    await page.getByRole('button', { name: 'Protect historic buildings' }).click();
+    await expect.poll(zoning).toHaveLength(1);
+    (page.getByTestId('publish-open').element() as HTMLElement).focus();
+    await userEvent.keyboard('{Meta>}z{/Meta}');
+    await expect.poll(zoning).toEqual([]);
+    await userEvent.keyboard('{Meta>}{Shift>}z{/Shift}{/Meta}');
+    await expect.poll(zoning).toHaveLength(1);
+  });
+
+  it('a fine-only pointer with no map: Ctrl+Z under the Publish dialog leaves the policy', async () => {
+    stubPointer('fine');
+    stub.autoReady = false;
+    await opened();
+    const zoning = () => debug().policy.kinds.zoning;
+    await page.getByRole('button', { name: PLUS_NAME.Zoning }).click();
+    await page.getByRole('button', { name: 'Protect historic buildings' }).click();
+    await expect.poll(zoning).toHaveLength(1);
+    await page.getByTestId('publish-open').click();
+    const dialog = page.getByRole('dialog');
+    await expect.element(dialog).toBeVisible();
+    expect(document.querySelector('dialog:modal')).not.toBeNull();
+    // Focus on the dialog's own button, not a field: only the modal gate stands in the way.
+    (dialog.getByRole('button', { name: 'Publish', exact: true }).element() as HTMLElement).focus();
+    await userEvent.keyboard('{Control>}z{/Control}');
+    await tick();
+    expect(zoning()).toHaveLength(1);
+  });
+
+  it('view mode: Ctrl+Z leaves the policy as opened', async () => {
+    stubPointer('fine');
+    stub.autoReady = false;
+    await opened({
+      mode: 'view',
+      persist: 'off',
+      initialText: serializeSimDoc4(doc4(zoning(historic)))
+    });
+    await expect.element(page.getByTestId('tl-timeline')).toBeVisible();
+    expect(debug().policy).toEqual(zoning(historic));
+    // The page's key route stands down: it does not even claim the key (nothing to undo here,
+    // so a claim is the only trace a dropped read-only guard would leave).
+    const claimed: boolean[] = [];
+    const seen = (e: KeyboardEvent) => claimed.push(e.defaultPrevented);
+    window.addEventListener('keydown', seen);
+    try {
+      (page.getByTestId('tl-timeline').element() as HTMLElement).focus();
+      await userEvent.keyboard('{Control>}z{/Control}');
+      await tick();
+    } finally {
+      window.removeEventListener('keydown', seen);
+    }
+    expect(claimed.at(-1)).toBe(false);
+    expect(debug().policy).toEqual(zoning(historic));
+  });
+
   it('a fine-only pointer with no map: Ctrl+Z in a text field is the field’s', async () => {
     stubPointer('fine');
     stub.autoReady = false;
