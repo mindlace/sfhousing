@@ -150,6 +150,17 @@ describe('AboutAssumptions on the page', () => {
     expect(scroll).toHaveBeenCalledTimes(1);
   });
 
+  it('a delayed landing focuses the target without scrolling again, so Tab starts there', async () => {
+    history.replaceState(null, '', '#src-pathway');
+    const scroll = vi.spyOn(HTMLElement.prototype, 'scrollIntoView');
+    await setup();
+    await expect.poll(() => scroll.mock.calls.length).toBe(1);
+    const target = document.getElementById('src-pathway')!;
+    expect(document.activeElement).toBe(target);
+    expect(target.tabIndex).toBe(-1);
+    expect(scroll).toHaveBeenCalledTimes(1);
+  });
+
   it("the part's own id opens the assumptions too", async () => {
     history.replaceState(null, '', `#${ABOUT_ID.assumptions}`);
     await setup();

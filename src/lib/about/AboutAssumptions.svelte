@@ -107,6 +107,10 @@
     const el = document.getElementById(landing);
     if (el === null) return;
     el.scrollIntoView({ block: 'start' });
+    // The target appeared after load, so the browser did not move the focus start point there:
+    // focus it (without scrolling again), so a keyboard user's next Tab starts at it.
+    if (!el.hasAttribute('tabindex')) el.tabIndex = -1;
+    el.focus({ preventScroll: true });
     landing = null;
   });
 </script>
