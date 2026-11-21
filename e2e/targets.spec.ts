@@ -42,15 +42,16 @@ const EXEMPT: { selector: string; reason: string }[] = [
 ];
 
 /**
- * What may cover a target at its centre without a defect: an open sheet, dialog or popover, or
- * an open disclosure (MapLibre's attribution, expanded on load at 375 px, lies over the Layers
- * panel's last row until a pan or its own button folds it). Each such cover is annotated.
+ * What may cover a target at its centre without a defect: an open sheet, dialog, popover or
+ * toolbar panel. Each such cover is annotated. MapLibre's attribution is none of these: it never
+ * covers a control.
  */
 const OVERLAY = [
   'dialog[open]',
   '[role="dialog"]',
   ':popover-open',
-  'details[open]',
+  '[data-testid="map-key-panel"]:not([hidden])',
+  '[data-testid="map-layers-panel"]:not([hidden])',
   '[data-testid="tl-inspector"]',
   // `/`'s dock sheet, while its handle has it open.
   '.sfh-dock:has([data-testid="dock-handle"][aria-expanded="true"]) .sfh-dock-sheet'
@@ -116,6 +117,25 @@ async function small(
         // not a target in this state, and noted. By anything else (a layer that takes presses
         // over a control): a defect. Off-screen points read null: kept.
         const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+        // Scrolled out of a box that clips it (a panel's row below its fold) while its centre is
+        // on screen: not pressable until scrolled to, so noted; the test scrolls it into view and
+        // sweeps again. Off-screen centres (hit null) are kept, as below.
+        const clipper = (() => {
+          if (!hit) return null;
+          const [cx, cy] = [r.x + r.width / 2, r.y + r.height / 2];
+          for (let a = target.parentElement; a && a !== document.body; a = a.parentElement) {
+            const s = getComputedStyle(a);
+            if (!/auto|scroll|hidden|clip/.test(s.overflowX + s.overflowY)) continue;
+            const b = a.getBoundingClientRect();
+            if (cx < b.left || cx > b.right || cy < b.top || cy > b.bottom) return a;
+          }
+          return null;
+        })();
+        if (clipper) {
+          const where = clipper.getAttribute('data-testid') || clipper.tagName.toLowerCase();
+          skipped.push(`${label} scrolled out of ${where}`);
+          continue;
+        }
         if (hit && !target.contains(hit) && !hit.contains(target)) {
           const by =
             hit.getAttribute('data-testid') ||
@@ -235,8 +255,23 @@ test.describe('targets at 375 px', () => {
     await key.click();
     const layers = page.getByRole('button', { name: 'Map layers' });
     await layers.click();
-    await expect(page.getByRole('group', { name: 'Map layers' })).toBeVisible();
+    const layersPanel = page.getByRole('group', { name: 'Map layers' });
+    await expect(layersPanel).toBeVisible();
     await expectTargets(page, '/sim Layers panel', 15);
+    // The panel scrolls inside the room above its toolbar: its last row, scrolled to, is
+    // measured too, clear of the attribution under the toolbar.
+    const last = layersPanel.getByRole('checkbox').last();
+    await last.scrollIntoViewIfNeeded();
+    await expect(last).toBeInViewport();
+    await expectTargets(page, '/sim Layers panel scrolled', 15);
+    expect(
+      await last.evaluate((el) => {
+        const r = (el as HTMLInputElement).labels![0].getBoundingClientRect();
+        const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+        return !!hit && (el as HTMLInputElement).labels![0].contains(hit);
+      }),
+      'the last layer row is pressable at its centre'
+    ).toBe(true);
     await layers.click();
     await addPolicy(page, 'Zoning', 'Transit rule');
     await expect(page.getByTestId('inspector')).toBeVisible();
