@@ -1052,7 +1052,8 @@
         onredo={redo}
       />
     {/if}
-    <ShortcutsButton />
+    <!-- Lg to xl with Undo and Redo beside it (a touch laptop), the row has no room for it. -->
+    <ShortcutsButton class={pointer.touch ? 'lg:max-xl:hidden' : undefined} />
     {#if codec}
       <PublishButton
         {codec}
@@ -1138,6 +1139,7 @@
   {actions}
   layers={layerSwitches}
   status={readonly ? undefined : saveState}
+  saveOff={autosave?.status === 'off'}
   notices={sessionNotices}
   policy={store.policy}
   lots={sync.lots}

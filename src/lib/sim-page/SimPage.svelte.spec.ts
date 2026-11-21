@@ -646,6 +646,30 @@ describe('SimPage publish and view', () => {
     await expect.element(undoButton()).toBeVisible();
   });
 
+  it('a touch laptop from lg to xl: Undo and Redo take the place of Shortcuts; from xl all three', async () => {
+    stubTouchLaptop();
+    await page.viewport(1024, 800);
+    await opened();
+    const shortcuts = header().getByRole('button', { name: 'Keyboard shortcuts' });
+    await expect.element(undoButton()).toBeVisible();
+    await expect.element(redoButton()).toBeVisible();
+    // The pointer is read (Undo shows): the button is rendered but out of the row (display none).
+    expect(shortcuts.elements()).toEqual([]);
+    expect(document.querySelector('header button[popovertarget$="-shortcuts"]')).not.toBeNull();
+    await page.viewport(1280, 800);
+    await expect.element(shortcuts).toBeVisible();
+    await expect.element(undoButton()).toBeVisible();
+  });
+
+  it('a fine-only pointer at 1024: Shortcuts shows', async () => {
+    stubPointer('fine');
+    await page.viewport(1024, 800);
+    await opened();
+    await expect
+      .element(header().getByRole('button', { name: 'Keyboard shortcuts' }))
+      .toBeVisible();
+  });
+
   it('view mode takes a document the route already opened, with its notices', async () => {
     const shared = doc4(zoning(historic), 'SD');
     await opened({
@@ -1495,10 +1519,12 @@ describe('SimPage autosave and publish', () => {
     await expect
       .element(header().getByTestId('save-state'))
       .toHaveAttribute('data-save-status', 'off');
-    // The fake worker never refills, so "Updating" covers the chip in the status cell.
+    // The fake worker never refills, so "Updating" shows: beside the chip, not over it.
     await expect.element(header().getByTestId('tl-status-shown')).toHaveTextContent('Updating');
-    await expect.element(header().getByTestId('save-state')).not.toBeVisible();
-    // Covered, the save state still announces the change, from a region screen readers reach.
+    await expect
+      .element(header().getByRole('button', { name: 'Autosave off', exact: true }))
+      .toBeVisible();
+    // The save state announces the change, from a region screen readers reach.
     const live = header().getByTestId('save-live');
     await expect.element(live).toHaveTextContent('Autosave off');
     expect(live.element().closest('[aria-hidden="true"], [inert]')).toBeNull();

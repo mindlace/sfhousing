@@ -42,6 +42,8 @@ export const CHANGE_NOT_APPLIED = "That change couldn't be applied.";
 export const UPDATING = 'Updating';
 /** Behind UPDATING (rule 31). */
 export const STALE_NOTE = 'From before your latest change.';
+/** Behind UPDATING while Play waits at the computed edge for the forecast (rule 32). */
+export const WAITING_NOTE = 'Working out the months ahead.';
 /** Behind a tap in a fund's read-only terms. */
 export const TERMS_HINT = 'End this and add a new one to change terms.';
 /** OQ-4. */

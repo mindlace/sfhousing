@@ -32,7 +32,9 @@ import {
   waitForMap,
   type Win
 } from './helpers/sharing';
-import { waitFilled } from './helpers/run';
+import { widestHeaderText } from './helpers/header-text';
+import { touchLaptop } from './helpers/pointer';
+import { addPolicy, holdPolicy, installPolicyHold, releasePolicy, waitFilled } from './helpers/run';
 
 type Box = { x: number; y: number; width: number; height: number };
 
@@ -772,6 +774,92 @@ test.describe('account entry', () => {
       expect((await box(banner)).height).toBe(48);
       await expectNoA11yViolations(page);
     });
+
+    // The widest /sim row: a 20-character handle, the widest headline, "Autosave off" (storage
+    // refused) and "Updating" (a held edit) side by side. A touch laptop adds Undo and Redo; from
+    // lg to xl Shortcuts then leaves the row (it returns from xl). A touch laptop at 1280 does not
+    // fit this row (about 27 px over): a known limit, not tested here.
+    for (const [width, touch] of [
+      [1024, false],
+      [1280, false],
+      [1024, true]
+    ] as const) {
+      test(`/sim at ${width} signed in${touch ? ', a touch laptop' : ''}: Autosave off and Updating together, the widest row, nothing overlaps or clips`, async ({
+        page
+      }) => {
+        await page.setViewportSize({ width, height: 800 });
+        if (touch) await touchLaptop(page);
+        await page.addInitScript(() => {
+          Storage.prototype.setItem = () => {
+            throw new DOMException('refused', 'QuotaExceededError');
+          };
+        });
+        await installPolicyHold(page);
+        const handle = `h${crypto.randomUUID().replace(/-/g, '')}`.slice(0, 20);
+        await loginAs(page, `${handle}@example.test`);
+        await page.goto('/sim');
+        await expect(page.locator('html')).toHaveAttribute('data-hydrated', '');
+        await waitFilled(page);
+        await holdPolicy(page);
+        await addPolicy(page, 'Zoning', 'Transit rule');
+        const banner = page.getByRole('banner');
+        const chip = banner.getByRole('button', { name: 'Autosave off', exact: true });
+        const updating = banner.getByTestId('tl-status').getByRole('button', { name: 'Updating' });
+        await expect(chip).toBeVisible();
+        await expect(updating).toBeVisible();
+        await widestHeaderText(page);
+        await expect(headerScore(page)).toHaveAccessibleName(/^12,345 homes by Mar 2066$/);
+        const shortcuts = banner.getByRole('button', { name: 'Keyboard shortcuts' });
+        const history = [
+          banner.getByRole('button', { name: /^Undo/ }),
+          banner.getByRole('button', { name: /^Redo/ })
+        ];
+        if (touch) for (const h of history) await expect(h).toBeVisible();
+        else await expect(history[0]).toHaveCount(0);
+        if (touch && width < 1280) await expect(shortcuts).toHaveCount(0);
+        else await expect(shortcuts).toBeVisible();
+        const items: [string, Locator][] = [
+          ['name', banner.getByRole('link', { name: /^SF Housing/ })],
+          ['steps', banner.getByRole('navigation', { name: 'Steps' })],
+          ['chip', chip],
+          ['Updating', updating],
+          ['score', banner.getByTestId('score-box')],
+          ...(touch
+            ? (['Undo', 'Redo'] as const).map((n, i) => [n, history[i]] as [string, Locator])
+            : []),
+          ...(touch && width < 1280 ? [] : [['Shortcuts', shortcuts] as [string, Locator]]),
+          ['Publish', banner.getByRole('button', { name: /^(Publish|Share link)/ })],
+          ['handle', banner.getByRole('link', { name: `@${handle}` })],
+          ['About', banner.getByRole('link', { name: 'About', exact: true })]
+        ];
+        for (const [name, item] of items)
+          await expect(item, `${name} on screen`).toBeInViewport({ ratio: 1 });
+        const boxes = await Promise.all(items.map(([, l]) => box(l)));
+        for (let i = 1; i < boxes.length; i++)
+          expect(boxes[i].x, `${items[i][0]} clear of ${items[i - 1][0]}`).toBeGreaterThanOrEqual(
+            boxes[i - 1].x + boxes[i - 1].width - 0.5
+          );
+        // Nothing clipped: each item's content fits its box (the handle truncates by design).
+        for (const [name, item] of items) {
+          if (name === 'handle' || name === 'steps') continue;
+          const fit = await item.evaluate((el) => ({ s: el.scrollWidth, c: el.clientWidth }));
+          expect(fit.s, `${name} clips`).toBeLessThanOrEqual(fit.c + 0.5);
+        }
+        const fit = await banner.evaluate((b) => ({
+          scroll: b.scrollWidth,
+          client: b.clientWidth
+        }));
+        expect(fit.scroll).toBeLessThanOrEqual(fit.client);
+        expect((await box(banner)).height).toBe(48);
+        const score = boxes[4];
+        const off = score.x + score.width / 2 - width / 2;
+        test.info().annotations.push({
+          type: 'score off centre',
+          description: `${off.toFixed(1)} px`
+        });
+        await releasePolicy(page);
+      });
+    }
   });
 
   test.describe('mobile', () => {

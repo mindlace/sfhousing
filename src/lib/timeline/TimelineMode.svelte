@@ -139,7 +139,7 @@
   import { datasetUrl } from '$lib/sim/scenario/load';
   import type { NeighborhoodShapes } from '$lib/sim/levers/brushes';
   import type { AddChoice } from './add';
-  import { CHANGE_NOT_APPLIED, STALE_NOTE, UPDATING } from './copy';
+  import { CHANGE_NOT_APPLIED, STALE_NOTE, UPDATING, WAITING_NOTE } from './copy';
   import Explain from './Explain.svelte';
   import { fundsOf4 } from './owner';
   import Playhead from './Playhead.svelte';
@@ -195,6 +195,8 @@
      * own close, while a live region of its own sets `visibility: visible` to keep speaking.
      */
     status?: Snippet<[covered: boolean]>;
+    /** Autosave is off: "Updating" sits beside the save state instead of covering it. */
+    saveOff?: boolean;
     /** The page's own notices, first in the notice stack; each should be a `Message`. */
     notices?: Snippet;
     /** The document on show; a new object after open is an edit (rule 25). */
@@ -292,6 +294,7 @@
     actions = undefined,
     layers = undefined,
     status = undefined,
+    saveOff = false,
     notices = undefined,
     policy,
     lots,
@@ -412,6 +415,11 @@
   const resultsDoc = $derived((stale ? heldDoc : null) ?? session?.accepted ?? policy);
   /** A policy of the person's is in force in the document the numbers on show are from. */
   const inForce = $derived(!nothingInForce(resultsDoc));
+  /**
+   * The key's mark row shows while the map can show marks of the edited document: a policy in
+   * force in the numbers on show, or, while they are stale, in the edited one.
+   */
+  const keyMarks = $derived(inForce || (stale && !nothingInForce(policy)));
   /**
    * The pool levels the Public money bars draw: from the view on show and the document and
    * calibration it was run on, rebuilt with them, never as the playhead moves.
@@ -634,43 +642,63 @@
 
   // ---- the status slot (rules 31, 32) ----
 
-  /** "Updating" while the numbers are stale, else nothing. */
-  const statusWanted = $derived(session && stale ? UPDATING : '');
+  /**
+   * Play waits at the computed edge for the forecast: true once playback has caught the edge
+   * while the forecast is short of the last day; false when playback stops or the forecast is
+   * whole. It is not reset as the edge moves on, so it does not flicker with each fill.
+   */
+  let playWaits = $state(false);
+  $effect(() => {
+    if (!playing || filledEnd >= lastDay) playWaits = false;
+    else if (day >= filledEnd) playWaits = true;
+  });
+  /** What the status cell says: stale wins over waiting; both show "Updating". */
+  type Shown = 'stale' | 'waiting' | null;
+  const statusWanted = $derived<Shown>(
+    !session ? null : stale ? 'stale' : playWaits ? 'waiting' : null
+  );
+  /** The cell follows the conditions at once (in step with the dimming). */
+  let shownStatus = $state<Shown>(null);
+  /** The live region's text: at most one change per `statusMs`, the latest wins. */
   let statusText = $state('');
-  /** "Updating" shows: it covers the page's save state in the slot's one cell. */
-  const covered = $derived(statusText === UPDATING);
+  /** "Updating" covers the page's save state in the slot's one cell (not while autosave is off). */
+  const covered = $derived(!saveOff && shownStatus !== null);
   let statusAt = -Infinity;
   let statusTimer: ReturnType<typeof setTimeout> | null = null;
   /** At most one change a second: a change inside the gap goes out when it ends (latest wins). */
-  function showStatus(want: string): void {
+  function announce(want: string): void {
     if (statusTimer !== null) clearTimeout(statusTimer);
     statusTimer = null;
     if (want === statusText) return;
     const wait = statusAt + statusMs - performance.now();
     if (wait <= 0) {
-      setStatus(want);
+      speak(want);
       return;
     }
     statusTimer = setTimeout(() => {
       statusTimer = null;
-      setStatus(want);
+      speak(want);
     }, wait);
+  }
+  function speak(want: string): void {
+    statusText = want;
+    statusAt = performance.now();
   }
   /** The save state's part of the slot's cell and the shown "Updating" (bound in the snippet). */
   let saveCell = $state<HTMLElement>();
   let shownCell = $state<HTMLElement>();
   /**
-   * Shows `want`. Focus inside the part about to be covered or removed is not dropped to the
-   * body (WCAG 2.4.3): the save state's focused control hands it to "Updating"'s explanation, in
-   * the same place; that explanation hands it back to the save state's control if one shows,
-   * else to the header score.
+   * Shows `want` in the cell. Focus inside the part about to be covered or removed is not dropped
+   * to the body (WCAG 2.4.3): the save state's focused control hands it to "Updating"'s
+   * explanation, in the same place; that explanation hands it back to the save state's control if
+   * one shows, else to the header score. With autosave off nothing is covered.
    */
-  function setStatus(want: string): void {
+  function setStatus(want: Shown): void {
+    if (want === shownStatus) return;
     const active = document.activeElement;
-    const covering = want === UPDATING && !!saveCell?.contains(active);
-    const uncovering = want !== UPDATING && !!shownCell?.contains(active);
-    statusText = want;
-    statusAt = performance.now();
+    const covering = want !== null && !saveOff && !!saveCell?.contains(active);
+    const uncovering = want === null && !!shownCell?.contains(active);
+    shownStatus = want;
     if (!covering && !uncovering) return;
     void tick().then(() => {
       if (covering) {
@@ -685,7 +713,10 @@
   }
   $effect(() => {
     const want = statusWanted;
-    untrack(() => showStatus(want));
+    untrack(() => {
+      setStatus(want);
+      announce(want === null ? '' : UPDATING);
+    });
   });
 
   // ---- the card and tooltip ----
@@ -1324,23 +1355,28 @@
 <!-- The header's status slot (rule 32), at every width: the page's save state and "Updating"
      share one cell, and "Updating" wins while both apply. The covered save state keeps its width
      (`visibility: hidden`, and the snippet's `covered` makes its own controls inert), so the cell
-     is as wide as the widest and nothing moves as either comes or goes. The save state's own live
-     region opts back into visibility, so its announcements still reach screen readers. The
-     timeline's live region is apart, once, in the page; "Updating"'s explanation opens as a
+     is as wide as the widest and nothing moves as either comes or goes. With autosave off
+     (`saveOff`) "Updating" sits beside the save state in a second cell instead, so "Autosave off"
+     stays visible and pressable; that cell's sizer keeps its width while "Updating" is away. The
+     save state's own live region opts back into visibility, so its announcements still reach
+     screen readers. The timeline's live region is apart, once, in the page; "Updating"'s
+     explanation (why the numbers are stale, or that Play waits for the months ahead) opens as a
      popover under the slot (`explain-under`, layout.css), so the header keeps its size. -->
 {#snippet statusSlot()}
-  <span class="inline-grid items-center" data-testid="tl-status-group">
+  <span class={['inline-grid items-center', saveOff && 'gap-x-2']} data-testid="tl-status-group">
     <span
       bind:this={saveCell}
       class={['col-start-1 row-start-1 inline-flex items-center', covered && 'invisible']}
       >{@render status?.(covered)}</span
     >
     {#if !noScenario}
-      <!-- Over the save state in the cell: it takes presses only while "Updating" shows. -->
+      <!-- Over the save state in its cell, or beside it with autosave off: it takes presses only
+           while "Updating" shows. -->
       <span
         class={[
-          'tl-status explain-under relative col-start-1 row-start-1 inline-grid text-sm text-ink-muted tabular-nums dark:text-ink-dark-muted',
-          !covered && 'pointer-events-none'
+          'tl-status explain-under relative row-start-1 inline-grid text-sm text-ink-muted tabular-nums dark:text-ink-dark-muted',
+          saveOff ? 'col-start-2' : 'col-start-1',
+          shownStatus === null && 'pointer-events-none'
         ]}
         data-testid="tl-status"
       >
@@ -1352,8 +1388,8 @@
           class="col-start-1 row-start-1 whitespace-nowrap"
           data-testid="tl-status-shown"
         >
-          {#if statusText === UPDATING}
-            <Explain text={STALE_NOTE}>{UPDATING}</Explain>
+          {#if shownStatus !== null}
+            <Explain text={shownStatus === 'stale' ? STALE_NOTE : WAITING_NOTE}>{UPDATING}</Explain>
           {/if}
         </span>
       </span>
@@ -1604,7 +1640,7 @@
             bind:el={keyEl}
           >
             {#snippet key()}
-              <SimKey {tally} {inForce} />
+              <SimKey {tally} inForce={keyMarks} />
             {/snippet}
           </MapKeyControl>
         {/if}

@@ -11,7 +11,16 @@ import type { SfhFzpDebug } from '../src/lib/fzp/debug';
 import { DEFAULT_POLICY } from '../src/lib/sim-page/policy';
 import { serializeSimDoc } from '../src/lib/sim-page/sim-doc';
 import { expectNoA11yViolations } from './helpers/a11y';
-import { addPolicy, openKind, slider, waitFilled } from './helpers/run';
+import { COPY } from '../src/lib/sharing/copy';
+import {
+  addPolicy,
+  holdPolicy,
+  installPolicyHold,
+  openKind,
+  releasePolicy,
+  slider,
+  waitFilled
+} from './helpers/run';
 import { openPublish, seedPlanRow, type Win } from './helpers/sharing';
 
 type FzpWin = Win & { __sfhFzp?: SfhFzpDebug };
@@ -140,6 +149,61 @@ test('open /sim and see the headline settle', async ({ page }) => {
   const text = await scoreBar(page).textContent();
   await waitFilled(page);
   await expect(scoreBar(page)).toHaveText(text!);
+});
+
+// ---- the status cell ----------------------------------------------------------------------------
+
+const statusShown = (page: Page): Locator => page.getByTestId('tl-status-shown');
+
+test("a held edit: Updating shows at once and the key's mark row with it", async ({ page }) => {
+  await installPolicyHold(page);
+  await gotoSim(page);
+  // A first policy, held at the worker boundary: the numbers stay the nothing-in-force ones.
+  await holdPolicy(page);
+  await addPolicy(page, 'Zoning', 'Transit rule');
+  await expect(statusShown(page)).toHaveText('Updating');
+  expect(await fzp(page, 'stale')).toBe(true);
+  await closeEditor(page);
+  const keyPanel = page.getByRole('group', { name: 'Map key' });
+  if (!(await keyPanel.isVisible())) await page.getByTestId('map-key-toggle').click();
+  await expect(keyPanel.getByText('Under your policy', { exact: true })).toBeVisible();
+  expect(await fzp(page, 'stale')).toBe(true);
+  await releasePolicy(page);
+  await waitFilled(page);
+  await expect(statusShown(page)).toHaveText('');
+  await expect(keyPanel.getByText('Under your policy', { exact: true })).toBeVisible();
+});
+
+test('blocked storage: Autosave off and Updating both show during an edit; the chip opens its popover', async ({
+  page
+}) => {
+  await page.addInitScript(() => {
+    Storage.prototype.setItem = () => {
+      throw new DOMException('refused', 'QuotaExceededError');
+    };
+  });
+  await installPolicyHold(page);
+  await gotoSim(page);
+  await holdPolicy(page);
+  await addPolicy(page, 'Zoning', 'Transit rule');
+  const banner = page.getByRole('banner');
+  const chip = banner.getByRole('button', { name: 'Autosave off', exact: true });
+  await expect(chip).toBeVisible();
+  await expect(statusShown(page)).toHaveText('Updating');
+  const updating = banner.getByTestId('tl-status').getByRole('button', { name: 'Updating' });
+  await expect(updating).toBeVisible();
+  const a = (await chip.boundingBox())!;
+  const b = (await updating.boundingBox())!;
+  expect(b.x).toBeGreaterThanOrEqual(a.x + a.width);
+  await closeEditor(page);
+  await chip.click();
+  await expect(chip).toHaveAttribute('aria-expanded', 'true');
+  await expect(page.getByText(COPY.n4, { exact: true })).toBeVisible();
+  await expect(statusShown(page)).toHaveText('Updating');
+  await releasePolicy(page);
+  await waitFilled(page);
+  await expect(statusShown(page)).toHaveText('');
+  await expect(chip).toBeVisible();
 });
 
 // ---- the refill ---------------------------------------------------------------------------------

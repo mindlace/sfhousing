@@ -27,7 +27,15 @@ import manifestJson from '../../../e2e/fixtures/data/fixture-0/manifest.json';
 import placesRaw from '../../../e2e/fixtures/data/fixture-0/neighborhoods.geojson?raw';
 import { SLOT_FLAG, type CityDelta, type TimelineUpdate } from '$lib/map/types';
 import { parseNeighborhoods, type NeighborhoodShapes } from '$lib/sim/levers/brushes';
-import { CHANGE_NOT_APPLIED, STALE_NOTE, UPDATING, goalNote, homesBy, playFromText } from './copy';
+import {
+  CHANGE_NOT_APPLIED,
+  STALE_NOTE,
+  UPDATING,
+  WAITING_NOTE,
+  goalNote,
+  homesBy,
+  playFromText
+} from './copy';
 import { filledEndDay, indexOfDay } from './playhead';
 import { DEFAULT_POLICY4, queriesOf4, type Policy, type SimPolicy4 } from './policy4';
 import { goalOutcome } from './outcome';
@@ -155,6 +163,8 @@ type Over = Partial<{
   scoreExpanded: boolean;
   /** The page's save state (the real SaveIndicator), in the header's status slot. */
   saveStatus: SaveStatus;
+  /** Overrides the page's `saveOff` (autosave off: "Updating" beside the save state). */
+  saveOff: boolean;
   /** The goal the page reads (a test seam; default the page's goal). */
   goal: Goal;
   /** The page opens with its data failed (Retry shows); `reload` is what Retry brings. */
@@ -209,6 +219,7 @@ function setup(over: Over = {}) {
       ...(over.inspectorOpen !== undefined ? { inspectorOpen: over.inspectorOpen } : {}),
       ...(over.scoreExpanded !== undefined ? { scoreExpanded: over.scoreExpanded } : {}),
       ...(over.saveStatus ? { saveStatus: over.saveStatus } : {}),
+      ...(over.saveOff !== undefined ? { saveOff: over.saveOff } : {}),
       ...(over.goal ? { goal: over.goal } : {}),
       ...(over.readonly ? { readonly: true } : {}),
       ...(over.face ? { face: over.face } : {}),
@@ -1830,7 +1841,7 @@ describe('TimelineMode', () => {
     expect(getComputedStyle(cardText).color).toBe('rgb(75, 85, 99)');
   });
 
-  it('the status slot changes at most once a second; the latest text goes out after the gap', async () => {
+  it('the live region changes at most once per statusMs, latest wins', async () => {
     const s = await opened(LAST, { statusMs: 1000 });
     const live = () => statusSlot().element().textContent?.trim();
     await expect.poll(() => debug().filledThrough).toBe(LAST);
@@ -1854,6 +1865,155 @@ describe('TimelineMode', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('Updating shows and goes with stale at once', async () => {
+    const s = await opened(LAST, { statusMs: 1000 });
+    const live = () => statusSlot().element().textContent?.trim();
+    await expect.poll(() => debug().filledThrough).toBe(LAST);
+    // No timer runs: whatever shows follows the conditions without waiting on statusMs.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
+    try {
+      s.setPolicy(mk(protect(5)));
+      await expect.poll(shownText).toBe(UPDATING);
+      s.setLots({});
+      await expect.poll(() => w().lastOf('setPolicy')?.rev).toBe(2);
+      emit(compiledMsg(2, STATICS));
+      emit(refillMsg(2, 3));
+      await expect.poll(() => debug().stale).toBe(false);
+      await expect.poll(shownText).toBe('');
+      // The live region is still inside its gap.
+      expect(live()).toBe(UPDATING);
+      s.setPolicy(mk(protect(3)));
+      await expect.poll(shownText).toBe(UPDATING);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  /** The status cell's shown text. */
+  const shownText = () => statusShown().element().textContent?.trim();
+  const updatingButton = () =>
+    page.getByTestId('tl-status').getByRole('button', { name: UPDATING });
+  /** Filled through month 5, the playhead at the computed edge, playing: it waits there. */
+  async function playingAtEdge(over: Over = {}) {
+    const s = await opened(5, over);
+    await expect.poll(() => debug().filledThrough).toBe(5);
+    const edge = filledEndDay(MONTHS, 5, asOf);
+    (slider().element() as HTMLElement).focus();
+    await userEvent.keyboard('{End}');
+    await expect.poll(() => debug().day).toBe(edge);
+    expect(shownText()).toBe('');
+    await playButton().click();
+    await expect.poll(() => debug().playing).toBe(true);
+    return { s, edge };
+  }
+
+  for (const width of [375, 1280]) {
+    it(`at ${width} px autosave off: Updating sits beside the chip, the chip stays pressable`, async () => {
+      await page.viewport(width, 900);
+      const s = await opened(LAST, { saveStatus: 'off', initialPolicy: mk(protect(5)) });
+      const chip = page.getByRole('button', { name: 'Autosave off' });
+      await expect.element(chip).toBeVisible();
+      const chipEl = chip.element() as HTMLButtonElement;
+      const pop = document.getElementById(chipEl.getAttribute('aria-controls')!)!;
+      chipEl.focus();
+      s.setPolicy(mk(protect(3)));
+      await expect.element(statusShown()).toHaveTextContent(UPDATING);
+      await expect.element(updatingButton()).toBeVisible();
+      // Both show, side by side; focus stays on the chip, which stays in the tab order.
+      expect(chipEl.checkVisibility({ visibilityProperty: true })).toBe(true);
+      expect(chipEl.closest('[inert]')).toBeNull();
+      expect(document.activeElement).toBe(chipEl);
+      const a = chipEl.getBoundingClientRect();
+      const b = updatingButton().element().getBoundingClientRect();
+      expect(b.left).toBeGreaterThanOrEqual(a.right);
+      expect(Math.abs(a.top + a.height / 2 - (b.top + b.height / 2))).toBeLessThanOrEqual(1);
+      // A real press on each: the chip's popover opens; "Updating"'s explanation opens.
+      await chip.click();
+      await expect.poll(() => pop.hidden).toBe(false);
+      await expect.element(statusShown()).toHaveTextContent(UPDATING);
+      await updatingButton().click();
+      await expect.element(page.getByRole('tooltip')).toHaveTextContent(STALE_NOTE);
+    });
+  }
+
+  it('autosave off: the cell keeps its width as Updating comes and goes', async () => {
+    await page.viewport(1280, 900);
+    const s = await opened(LAST, { saveStatus: 'off', initialPolicy: mk(protect(5)) });
+    const chip = page.getByRole('button', { name: 'Autosave off' });
+    await expect.element(chip).toBeVisible();
+    await frame();
+    const rects = () => ({
+      cell: page.getByTestId('tl-status-group').element().getBoundingClientRect().toJSON(),
+      chip: chip.element().getBoundingClientRect().toJSON(),
+      score: scoreBar().element().getBoundingClientRect().toJSON()
+    });
+    const off = rects();
+    s.setPolicy(mk(protect(3)));
+    await expect.element(updatingButton()).toBeVisible();
+    await frame();
+    expect(rects()).toEqual(off);
+    await settle(s, 2);
+    await frame();
+    expect(rects()).toEqual(off);
+  });
+
+  it('Play caught by the computed edge on a first load: Updating, explained by Working out the months ahead.', async () => {
+    await playingAtEdge();
+    await expect.poll(shownText).toBe(UPDATING);
+    await expect.element(statusSlot()).toHaveTextContent(UPDATING);
+    expect(debug().stale).toBe(false);
+    await updatingButton().click();
+    await expect.element(page.getByRole('tooltip')).toHaveTextContent(WAITING_NOTE);
+  });
+
+  it('waiting does not flicker as the fill moves the edge on; it goes when the forecast is whole or on Pause', async () => {
+    const { edge } = await playingAtEdge();
+    await expect.poll(shownText).toBe(UPDATING);
+    const seen: string[] = [];
+    const watch = new MutationObserver(() => seen.push(shownText() ?? ''));
+    watch.observe(statusShown().element(), {
+      childList: true,
+      characterData: true,
+      subtree: true
+    });
+    try {
+      // The edge moves on and the playhead follows it: "Updating" holds throughout.
+      emit(filledMsg(1, 6, 3));
+      await expect.poll(() => debug().filledThrough).toBe(8);
+      await expect.poll(() => debug().day).toBeGreaterThan(edge);
+      await expect.poll(() => debug().day).toBe(filledEndDay(MONTHS, 8, asOf));
+      expect(debug().playing).toBe(true);
+      expect(shownText()).toBe(UPDATING);
+      expect(seen.filter((t) => t !== UPDATING)).toEqual([]);
+      // Pause: it goes.
+      await playButton().click();
+      await expect.poll(() => debug().playing).toBe(false);
+      await expect.poll(shownText).toBe('');
+      // Playing again at the edge, then the forecast whole: it goes.
+      await playButton().click();
+      await expect.poll(shownText).toBe(UPDATING);
+      emit(filledMsg(1, 9, LAST - 8));
+      await expect.poll(() => debug().filledThrough).toBe(LAST);
+      await expect.poll(shownText).toBe('');
+    } finally {
+      watch.disconnect();
+    }
+  });
+
+  it('stale while waiting: the explanation is From before your latest change.', async () => {
+    const { s } = await playingAtEdge();
+    await expect.poll(shownText).toBe(UPDATING);
+    s.setPolicy(mk(protect(5)));
+    await expect.poll(() => debug().stale).toBe(true);
+    // Play again at the edge while the numbers are stale: both apply, stale wins.
+    await expect.poll(() => debug().playing).toBe(false);
+    await playButton().click();
+    await expect.poll(() => debug().playing).toBe(true);
+    expect(shownText()).toBe(UPDATING);
+    await updatingButton().click();
+    await expect.element(page.getByRole('tooltip')).toHaveTextContent(STALE_NOTE);
   });
 
   for (const width of [375, 1280, 1600]) {
@@ -1935,10 +2095,16 @@ describe('TimelineMode', () => {
   }
 
   for (const width of [375, 1280]) {
-    it(`at ${width} px with autosave off an update covers the chip; nothing moves; the popover closes`, async () => {
+    // The cover itself: a save state with a control under "Updating" in one cell. The page keeps
+    // the chip beside "Updating" (`saveOff`); here the test turns that off to cover it.
+    it(`at ${width} px focus moves with the cover, never to the body; nothing moves; the popover closes`, async () => {
       await page.viewport(width, 900);
       // A policy in force throughout, so the score's effect line is there before and after.
-      const s = await opened(LAST, { saveStatus: 'off', initialPolicy: mk(protect(5)) });
+      const s = await opened(LAST, {
+        saveStatus: 'off',
+        saveOff: false,
+        initialPolicy: mk(protect(5))
+      });
       const chip = page.getByRole('button', { name: 'Autosave off' });
       await expect.element(chip).toBeVisible();
       const chipEl = chip.element() as HTMLButtonElement;
@@ -3073,6 +3239,20 @@ describe('the map key', () => {
     const row = FULL().rows[2];
     await expect.poll(counts).toContainEqual(['Completed', String(row.completedNet)]);
     expect(counts()).toContainEqual(['Stopped', String(row.exitedUnits)]);
+  });
+
+  it('while Updating after a first policy, the key shows Under your policy', async () => {
+    await page.viewport(1280, 800);
+    const s = await opened();
+    await expect.element(keyPanel()).toBeVisible();
+    const mark = () => keyPanel().element().querySelector('[data-key-extra="mark"]');
+    expect(mark()).toBeNull();
+    s.setPolicy(mk(protect(5)));
+    await expect.poll(() => debug().stale).toBe(true);
+    await expect.element(statusShown()).toHaveTextContent(UPDATING);
+    // The numbers are still the nothing-in-force document's; the map can show the edit's marks.
+    await expect.poll(mark).not.toBeNull();
+    expect(mark()!.textContent).toContain('Under your policy');
   });
 
   it('shows … while calculating', async () => {

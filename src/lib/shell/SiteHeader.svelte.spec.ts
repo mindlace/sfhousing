@@ -785,16 +785,16 @@ describe('SiteHeader', () => {
       expect(await expectRowFits(1024)).toBeLessThan(1);
     });
 
-    it('at 1024px a touch laptop adds Undo and Redo: still one row, in order, nothing squeezed', async () => {
+    it('at 1024px a touch laptop adds Undo and Redo, Shortcuts leaves: one row, in order, nothing squeezed', async () => {
       await page.viewport(1024, 800);
       render(SimRowHeader, { props: { user: { handle: 'a-very-long-handle-x' }, touch: true } });
       const undo = page.getByRole('button', { name: /^Undo/ });
       await expect.element(undo).toBeVisible();
+      expect(page.getByRole('button', { name: 'Keyboard shortcuts' }).elements()).toEqual([]);
       const items = [
         page.getByTestId('score-bar').element().parentElement!,
         undo.element(),
         page.getByRole('button', { name: /^Redo/ }).element(),
-        page.getByRole('button', { name: 'Keyboard shortcuts' }).element(),
         page.getByRole('button', { name: 'Publish' }).element(),
         page.getByRole('link', { name: '@a-very-long-handle-x' }).element(),
         page.getByRole('link', { name: 'About', exact: true }).element()

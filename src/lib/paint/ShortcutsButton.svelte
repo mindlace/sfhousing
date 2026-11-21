@@ -1,7 +1,8 @@
 <!--
   The Shortcuts button and the keyboard shortcuts list it opens in a native popover (nothing on a
   coarse pointer, which has no keyboard: `usePrimaryPointer`, the one rule `BrushEditor` shares).
-  `/` puts it last in the Paint tab; `/sim` has it in its header (after Undo and Redo where a pointer is coarse). The popover
+  `/` puts it last in the Paint tab; `/sim` has it in its header (after Undo and Redo where a
+  pointer is coarse; there, from lg to xl, the page hides it through `class`). The popover
   sits in the top layer, so it takes no room in its row and is not clipped by the dock's scroll
   box; script places it under its button. Escape, a second press and an outside press close it,
   as do a resize and a scroll outside it. The label shows as "Shortcuts" while the name stays
@@ -15,6 +16,9 @@
   import { SURFACE_POP } from '$lib/shell/ui';
   import { placePopover } from './place-popover';
   import { usePrimaryPointer } from './pointer.svelte';
+
+  /** Classes for the button (on /sim: hidden lg to xl beside Undo and Redo). */
+  let { class: extra = undefined }: { class?: string } = $props();
 
   // Shown once the client has read the query, and only on a fine primary pointer.
   const pointer = usePrimaryPointer();
@@ -79,7 +83,10 @@
     aria-expanded={open}
     aria-controls={popId}
     popovertarget={popId}
-    class="flex min-h-6 min-w-6 cursor-pointer items-center rounded-md px-2 text-sm text-ink-muted underline hover:bg-surface-raised dark:text-ink-dark-muted dark:hover:bg-surface-dark-raised"
+    class={[
+      'flex min-h-6 min-w-6 cursor-pointer items-center rounded-md px-2 text-sm text-ink-muted underline hover:bg-surface-raised dark:text-ink-dark-muted dark:hover:bg-surface-dark-raised',
+      extra
+    ]}
     ><span aria-hidden="true">Shortcuts</span><span class="sr-only">Keyboard shortcuts</span
     ></button
   >
