@@ -7,6 +7,12 @@
  */
 export type ChartLens = 'homes' | 'source' | 'effect';
 
+/**
+ * The source lens's pipeline line and its legend swatch: dashed, so it is told apart from all
+ * homes by more than colour; short dashes, unlike the goal's '5 3'.
+ */
+export const PIPELINE_DASH = '2 3';
+
 /** 'effect' without a policy in force falls back to 'homes'. */
 export function lensOf(lens: ChartLens, inForce: boolean): ChartLens {
   return lens === 'effect' && !inForce ? 'homes' : lens;

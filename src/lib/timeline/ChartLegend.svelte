@@ -1,17 +1,17 @@
 <!--
   The chart row's legend names only what is drawn, by lens (through `lensOf`). Homes: the homes
   line ("Homes completed"), or with a policy in force (`inForce`) "With your policy", "Current
-  law" and the shaded gap "From your policy". By source: "All homes", "From today's pipeline" and
-  the shaded gap "New projects". From your policy: its one line, and no goal. Then "Goal" while
-  its step is drawn (`goal`; never in the effect lens). At most four entries. Below md it runs
-  under the plot (ChartRow); from md it stacks in the label column as the row's label (Timeline),
-  so the plot keeps the lane's full width. Stacked, its four entries fit the plot's height at
+  law" and the shaded gap "From your policy", then "Goal" while its step is drawn (`goal`). By
+  source: "All homes", "From today's pipeline" (dashed, as its line) and the shaded gap "New
+  projects", no goal. From your policy: its one line, no goal. At most four entries. Below md it
+  runs under the plot (ChartRow); from md it stacks in the label column as the row's label
+  (Timeline), so the plot keeps the lane's full width. Stacked, its four entries fit the plot's height at
   every size (16 px lines: 70 of 96; compact, 14 px lines: 62 of 64), so a first policy or a lens
   never moves the pinned block.
 -->
 <script lang="ts">
   import { COLORS } from '$lib/fzp/chart';
-  import { lensOf, type ChartLens } from './chart-model';
+  import { lensOf, PIPELINE_DASH, type ChartLens } from './chart-model';
 
   interface Props {
     /** Stacked in the label column (from md) rather than wrapped under the plot. */
@@ -33,18 +33,23 @@
   const LAW: Entry = { name: 'Current law', width: 2.5, color: 'var(--chart-law)' };
   const GAP: Entry = { name: 'From your policy', color: 'var(--chart-gap)', fill: true };
   const ALL: Entry = { name: 'All homes', width: 2.5, color: COLORS.total };
-  const PIPELINE: Entry = { name: "From today's pipeline", width: 2.5, color: 'var(--chart-law)' };
+  const PIPELINE: Entry = {
+    name: "From today's pipeline",
+    width: 2.5,
+    color: 'var(--chart-law)',
+    dash: PIPELINE_DASH
+  };
   const NEW: Entry = { name: 'New projects', color: 'var(--chart-gap)', fill: true };
   const EFFECT: Entry = { name: 'From your policy', width: 2.5, color: COLORS.total };
   const GOAL_LINE: Entry = { name: 'Goal', dash: '5 3', width: 1.5, color: 'var(--chart-ink)' };
   const shown = $derived(lensOf(lens, inForce));
+  // Only the homes lens draws the goal.
   const legend = $derived(
     shown === 'effect'
       ? [EFFECT]
-      : [
-          ...(shown === 'source' ? [ALL, PIPELINE, NEW] : inForce ? [POLICY, LAW, GAP] : [HOMES]),
-          ...(goal ? [GOAL_LINE] : [])
-        ]
+      : shown === 'source'
+        ? [ALL, PIPELINE, NEW]
+        : [...(inForce ? [POLICY, LAW, GAP] : [HOMES]), ...(goal ? [GOAL_LINE] : [])]
   );
 </script>
 

@@ -63,20 +63,14 @@ describe('the chart', () => {
       for (const b of [goal, null]) expect(chartCaption(a, b)).not.toMatch(/RHNA|FZP/);
   });
 
-  it("chartCaption names each lens's lines; effect names no goal", () => {
+  it("chartCaption names each lens's lines; source and effect name no goal", () => {
     const goal = { units: 73_346, deadline: dayFromUtc(2031, 1, 1) };
     const source =
       "Homes completed from today, by month, and those from today's pipeline. The shaded gap " +
-      'is new projects.';
-    for (const inForce of [true, false]) {
-      expect(chartCaption(inForce, goal, 'source')).toBe(
-        `${source} The goal is drawn as the homes still needed by its deadline: 73,346 more by ` +
-          'Jan 2031. The month slider reads out each month.'
-      );
-      expect(chartCaption(inForce, null, 'source')).toBe(
-        `${source} The month slider reads out each month.`
-      );
-    }
+      'is new projects. The month slider reads out each month.';
+    // The source lens draws no goal step (its scale is its own), so it names none.
+    for (const inForce of [true, false])
+      for (const b of [goal, null]) expect(chartCaption(inForce, b, 'source')).toBe(source);
     const effect =
       'Homes from your policy against current law, by month. The month slider reads out each month.';
     expect(chartCaption(true, goal, 'effect')).toBe(effect);

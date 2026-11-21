@@ -102,7 +102,7 @@ export const LENS_NAME: Record<ChartLens, string> = {
 /**
  * The chart's sr-only caption: what is drawn in the lens (through lensOf), the goal (its
  * remainder and deadline, the in-plot note's words, which are hidden from assistive tech) only
- * while its step is drawn; the effect lens draws no goal.
+ * while its step is drawn; only the homes lens draws the goal.
  */
 export function chartCaption(
   inForce: boolean,
@@ -112,15 +112,15 @@ export function chartCaption(
   const slider = 'The month slider reads out each month.';
   const shown = lensOf(lens, inForce);
   if (shown === 'effect') return `Homes from your policy against current law, by month. ${slider}`;
+  if (shown === 'source')
+    return (
+      "Homes completed from today, by month, and those from today's pipeline. The shaded gap is " +
+      `new projects. ${slider}`
+    );
   const needed = goal
     ? `the homes still needed by its deadline: ${goalNote(goal.units, goal.deadline)}.`
     : '';
   const drawn = goal ? `The goal is drawn as ${needed} ` : '';
-  if (shown === 'source')
-    return (
-      "Homes completed from today, by month, and those from today's pipeline. The shaded gap is " +
-      `new projects. ${drawn}${slider}`
-    );
   if (!inForce)
     return goal
       ? `Homes completed from today, by month, and the goal as ${needed} ${slider}`

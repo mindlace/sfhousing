@@ -5,9 +5,10 @@
   them. The goal is a dashed step at the homes still needed to the end of its deadline's month,
   labelled in the plot (`goalNote`); it is an input, so it is always drawn whole.
   Lenses (`lens`, through `lensOf`; Details switches it): Homes as above; By source, all homes
-  over today's pipeline (the current-law tokens) with the gap, new projects, shaded, with or
-  without a policy; From your policy, the effect's one line, no goal step or note, and the goal
-  does not set the scale. The zones, the scale rule and the readout hold in every lens.
+  over today's pipeline (the current-law tokens, dashed `PIPELINE_DASH`) with the gap, new
+  projects, shaded, with or without a policy; From your policy, the effect's one line. Only Homes
+  draws the goal: in the other two there is no step or note and the goal does not set the scale.
+  The zones, the scale rule and the readout hold in every lens.
   Zones: each series is drawn twice from one path, cut by two clip rectangles: shown, today to the
   playhead's day (full strength), and seen, the day to the furthest date reached (the -seen tokens
   and a thinner stroke). Nothing past `reached`. A zone edge at or past the last row's day reaches
@@ -30,6 +31,7 @@
     gapPath,
     lensOf,
     linePath,
+    PIPELINE_DASH,
     posDay,
     posOf,
     runningMax,
@@ -89,8 +91,11 @@
   const v = $derived(view);
   const force = $derived(inForce);
   const shownLens = $derived(lensOf(lens, force));
-  // The effect lens draws no goal: no step, no note, and the goal does not set its scale.
-  const target = $derived(shownLens === 'effect' ? null : targetIn);
+  // Only the homes lens draws the goal: elsewhere no step, no note, and the goal does not set
+  // the scale, which then comes from the lens's own values.
+  const target = $derived(shownLens === 'homes' ? targetIn : null);
+  // The source lens's pipeline line is dashed (more than colour tells it from all homes).
+  const lawDash = $derived(shownLens === 'source' ? PIPELINE_DASH : undefined);
   const goalUnits = $derived(target?.units ?? null);
   const from = $derived(asOf);
   const to = $derived(windowEnd);
@@ -275,6 +280,7 @@
               fill="none"
               stroke={shownStroke.law}
               stroke-width={shownStroke.width}
+              stroke-dasharray={lawDash}
               stroke-linejoin="round"
               vector-effect="non-scaling-stroke"
               data-testid="chart-law"
@@ -305,6 +311,7 @@
               fill="none"
               stroke={SEEN.law}
               stroke-width={SEEN.width}
+              stroke-dasharray={lawDash}
               stroke-linejoin="round"
               vector-effect="non-scaling-stroke"
               data-testid="chart-law-seen"

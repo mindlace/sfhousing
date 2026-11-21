@@ -4,7 +4,7 @@ import { niceCeil } from '$lib/fzp/chart';
 import { formatCompactCount, formatCount } from '$lib/scoreboard/format';
 import type { TimelineView } from '$lib/sim/world/score/types';
 import type { Day } from '$lib/timelapse/time';
-import { lensOf, type ChartLens } from './chart-lens';
+import { lensOf, PIPELINE_DASH, type ChartLens } from './chart-lens';
 import { filledEndDay } from './playhead';
 import { currentLawHomes, type PlayheadAt } from './results';
 
@@ -17,7 +17,7 @@ export interface ChartPoints {
   law: number[] | null;
 }
 
-export { lensOf, type ChartLens };
+export { lensOf, PIPELINE_DASH, type ChartLens };
 
 /**
  * homes: policy = rows[i].completedNet; law = currentLawHomes(view, i), only inForce.
