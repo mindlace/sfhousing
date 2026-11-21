@@ -492,7 +492,7 @@ included; one before `asOf` never arrives.
 `marketLevel(calibration)` (`market.ts`) is `'private'` exactly when the calibration has both
 `market` and `baselineFunding`, else `'all'`. That is exactly when `buildSimInput` sets `finance`, so
 the engine and the page change level together. `buildSimInput` and the page's statement of the
-market (`marketSentence`, the sources dialog's "In force" line) all call it, and nothing names a
+market (`marketSentence`, About's "In force" line) all call it, and nothing names a
 level itself, so the page can never state a level the engine is not running. The reasons for the
 table: a dataset from before Release 1 has neither field and its saved plans keep loading as they
 did; without a market model there is no slope, so no programme can be priced. The mini calibration

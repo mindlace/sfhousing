@@ -3,32 +3,34 @@
   no chart of its own: its Chart switch (`lens`, bound) picks what the one timeline chart plots.
   Order: the heading (with Activity in its row), the switch, the goal rows, what the policy added (the protection line kept),
   the homes by source, the stopped line, public money, who the homes are for, the year table
-  (stopping at the playhead's month) and the Sources disclosure. Unmounting puts the chart back on
-  Homes: the chart at rest always means one thing. Every id is per instance.
+  (stopping at the playhead's month), then one link, "How this is worked out", into About's
+  assumptions (on /sim it opens About over the map; docs/dev/about.md). Unmounting puts the chart
+  back on Homes: the chart at rest always means one thing. Every id is per instance.
 -->
 <script lang="ts">
   import { onDestroy } from 'svelte';
   import { count } from '$lib/sim-page/brush-summary';
   import { comparisonLine, scoreCopy, type ScoreCopy } from '$lib/sim-page/policy';
   import type { LeverCapacity } from '$lib/sim/levers/resolve';
-  import { formatBuiltDate, formatCount } from '$lib/scoreboard';
+  import { formatCount } from '$lib/scoreboard';
   import type { TimelineScore } from '$lib/sim/protocol';
   import type { TimelineView } from '$lib/sim/world/score/types';
   import { GOAL, goalRows, goalTrackMax, type Goal } from '$lib/goal/goal';
   import GoalRow from '$lib/goal/GoalRow.svelte';
   import type { Day } from '$lib/timelapse/time';
-  import { formatDate, formatMonthYear } from '$lib/fzp/format';
+  import { formatMonthYear } from '$lib/fzp/format';
   import { utcParts } from '$lib/fzp/time';
   import MoneyResults from '$lib/fzp/MoneyResults.svelte';
   import { resolveTerms } from '$lib/sim/finance';
   import type { ResolvedTerms } from '$lib/timelapse/types';
-  import { CALCULATING, builtTowardGoalText, phasingFootnote } from '$lib/fzp/score-view';
+  import { CALCULATING, builtTowardGoalText } from '$lib/fzp/score-view';
   import type { ScoreAt } from '$lib/fzp/types';
   import type { ChartLens } from './chart-lens';
-  import { FORECAST_NOTE, LENS_NAME, TWIN_NOTE, capacityNote, marketBody } from './copy';
+  import { LENS_NAME, TWIN_NOTE, capacityNote } from './copy';
   import { YEAR_COLUMNS, yearRows } from './details';
   import Explain from './Explain.svelte';
-  import { BUTTON } from '$lib/shell/ui';
+  import { BUTTON, TARGET } from '$lib/shell/ui';
+  import { ABOUT_ID, WORKED_OUT } from '$lib/about/copy';
   import type { PlayheadAt } from './results';
 
   interface Props {
@@ -43,17 +45,12 @@
      *  for it. */
     reachedMonth: number;
     asOf: Day;
-    datasetVersion: string;
-    builtAt: string;
-    onsources: () => void;
     /** Who the plan effect is for: the current-law copy by default. */
     copy?: ScoreCopy;
     /** The current levers' capacity: the protection line reads it. */
     capacity?: LeverCapacity | null;
     /** The numbers on show are from before the latest policy change. */
     stale?: boolean;
-    /** Today's market, in words (spec 4.11); `null` renders nothing. */
-    market?: string | null;
     /** A revision is pending: the money and tier blocks carry aria-busy (4.11). */
     pending?: boolean;
     /** The resolved market terms of the shown levers: the lost-grants line reads `lossOnExit`. */
@@ -79,13 +76,9 @@
     playhead,
     reachedMonth,
     asOf,
-    datasetVersion,
-    builtAt,
-    onsources,
     copy = scoreCopy(null),
     capacity = null,
     stale = false,
-    market = null,
     pending = false,
     terms = resolveTerms(),
     uncapped = new Set(),
@@ -131,7 +124,6 @@
   const rows = $derived(view ? (goalRows(goal, view, playhead, reachedMonth) ?? []) : []);
   /** The rows' shared track. */
   const max = $derived(goalTrackMax(rows));
-  const phasing = $derived(score ? phasingFootnote(score.phasing) : null);
   const planPending = $derived(at !== null && at.planCompleted === null);
   /** The year table: nothing at today (no month has ended), else up to the playhead's month. */
   const years = $derived(view && !playhead.atToday ? yearRows(view, playhead.index, inForce) : []);
@@ -292,34 +284,13 @@
         </div>
       </details>
     {/if}
-
-    <details class="mt-4" data-testid="fzp-sources">
-      <summary class="min-h-6 min-w-6 cursor-pointer text-sm font-semibold">Sources</summary>
-      {#if copy.compare === 'preFzp'}
-        <p class="mt-2 text-sm text-ink-muted dark:text-ink-dark-muted">
-          {FORECAST_NOTE}
-        </p>
-      {/if}
-      {#if market}
-        <p class="mt-2 text-sm text-ink-muted dark:text-ink-dark-muted" data-testid="fzp-market">
-          {marketBody(market)}
-        </p>
-      {/if}
-      <button
-        type="button"
-        class="mt-2 min-h-6 min-w-6 rounded-md px-1 text-left text-sm font-semibold underline"
-        onclick={() => onsources()}>Where these numbers come from</button
-      >
-
-      <p class="mt-3 text-xs text-ink-muted dark:text-ink-dark-muted">
-        Data {datasetVersion} · built {formatBuiltDate(builtAt)} · as of {formatDate(asOf)} ·
-        <a class="inline-flex min-h-6 min-w-6 items-center underline" href="/attribution"
-          >Data sources</a
-        >
-      </p>
-      {#if phasing}
-        <p class="mt-1 text-xs text-ink-muted dark:text-ink-dark-muted">{phasing}</p>
-      {/if}
-    </details>
   {/if}
+
+  <p class="mt-4 text-sm">
+    <a
+      class="{TARGET} inline-flex items-center font-semibold underline"
+      href="/about#{ABOUT_ID.assumptions}"
+      data-testid="details-about">{WORKED_OUT}</a
+    >
+  </p>
 </div>

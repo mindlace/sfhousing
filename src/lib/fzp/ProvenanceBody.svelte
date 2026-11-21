@@ -2,7 +2,7 @@
   The assumptions' body: sections 1-9 from `provenanceSections` (or `modelSections`), then section
   10, the data checks, which is this component's own state: loaded on `loadChecks()` (the one way
   in), held for its lifetime; after a failure the next `loadChecks()` tries again.
-  Shown in /sim's Sources dialog and in About's assumptions (docs/dev/fzp-mode.md). Section
+  Shown in About's assumptions, on /about and in /sim's dialog (docs/dev/fzp-mode.md). Section
   headings at `level`, entries one below. Rules and borders read --about-line, which the container
   sets (docs/dev/about.md); the badge and the tables' head rule keep the control line.
 -->

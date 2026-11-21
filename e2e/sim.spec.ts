@@ -1386,6 +1386,98 @@ for (const width of [1024, 1280, 1536]) {
   });
 }
 
+// ---- About this model over the map ---------------------------------------------------------------
+
+/** About this model, the dialog /sim mounts over the map. */
+const aboutDialog = (page: Page): Locator => page.getByRole('dialog', { name: 'About this model' });
+
+/** The playhead's day, the furthest day reached and whether it plays. */
+const runState = (page: Page) =>
+  page.evaluate(() => {
+    const f = (window as FzpWin).__sfhFzp!;
+    return { day: f.day, reached: f.reached, playing: f.playing };
+  });
+
+test("/sim: the header's About opens About this model over the map; Escape closes it; the playhead stays", async ({
+  isMobile,
+  page
+}) => {
+  await gotoSim(page);
+  // A playhead and a furthest date reached away from today.
+  const start = await runState(page);
+  await slider(page).focus();
+  await page.keyboard.press('PageUp');
+  await page.keyboard.press('PageUp');
+  await expect.poll(async () => (await runState(page)).reached).toBeGreaterThan(start.reached);
+  const before = await runState(page);
+  expect(before.playing).toBe(false);
+
+  await openHeaderMenu(page);
+  const about = page.getByRole('banner').getByRole('link', { name: 'About', exact: true });
+  await about.click();
+  const dialog = aboutDialog(page);
+  await expect(dialog).toBeVisible();
+  await expect(page).toHaveURL(/\/sim$/);
+  for (const name of ['What the numbers mean', 'Assumptions', 'Data and licences', 'Using it'])
+    await expect(dialog.getByRole('heading', { level: 3, name, exact: true })).toBeVisible();
+  // Live: the run's sections, the data checks loaded.
+  await expect(dialog.locator('[id="src-quality"] tbody tr').first()).toBeVisible();
+  expect(await runState(page)).toEqual(before);
+  await expectNoA11yViolations(page, { include: 'dialog[open]', structure: true });
+
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+  await expect(page).toHaveURL(/\/sim$/);
+  expect(await runState(page)).toEqual(before);
+  // Focus back where About was pressed: the link, or the Menu button once the Menu closed.
+  if (isMobile) await expect(menuButton(page)).toBeFocused();
+  else await expect(about).toBeFocused();
+
+  if (!isMobile) {
+    // A modified click is the browser's: the page in a new tab, no dialog, the run untouched.
+    const [tab] = await Promise.all([
+      page.context().waitForEvent('page'),
+      about.click({ modifiers: ['ControlOrMeta'] })
+    ]);
+    await expect(tab).toHaveURL(/\/about$/);
+    await tab.close();
+    await expect(dialog).toBeHidden();
+    expect(await runState(page)).toEqual(before);
+  }
+});
+
+test('/sim at 375: About from the Menu opens the dialog; closing focuses the Menu button', async ({
+  isMobile,
+  page
+}) => {
+  test.skip(!isMobile, 'the phone layout');
+  await gotoSim(page);
+  await openHeaderMenu(page);
+  await page.getByRole('banner').getByRole('link', { name: 'About', exact: true }).click();
+  const dialog = aboutDialog(page);
+  await expect(dialog).toBeVisible();
+  await expect(menuButton(page)).toHaveAttribute('aria-expanded', 'false');
+  const box = (await dialog.boundingBox())!;
+  const viewport = page.viewportSize()!;
+  test.info().annotations.push({
+    type: 'about-375',
+    description: JSON.stringify({
+      dialog: [box.x, box.y, box.width, box.height].map(Math.round),
+      viewport
+    })
+  });
+  expect(box.x).toBeGreaterThanOrEqual(0);
+  expect(box.y).toBeGreaterThanOrEqual(0);
+  expect(box.x + box.width).toBeLessThanOrEqual(viewport.width);
+  expect(box.y + box.height).toBeLessThanOrEqual(viewport.height);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+    viewport.width
+  );
+  await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(dialog).toBeHidden();
+  await expect(menuButton(page)).toBeFocused();
+});
+
 test('at 375 px the header fits with the widest strings; the site name waits in the Menu', async ({
   isMobile,
   page

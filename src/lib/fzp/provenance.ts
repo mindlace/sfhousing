@@ -1,6 +1,7 @@
 /**
  * "Where these numbers come from" (spec §4.10). Pure: turns the calibration, the T8 score and
- * `projects.json` into sections of plain strings for `SourcesDialog.svelte`. Transition shares
+ * `projects.json` into sections of plain strings for About's assumptions (`ProvenanceBody.svelte`,
+ * in `/about` and in `/sim`'s `AboutDialog`). Transition shares
  * come from `cumulativeIncidence` (tail included); nothing here re-derives them.
  */
 import { formatCount, formatPercent } from '$lib/scoreboard/format';

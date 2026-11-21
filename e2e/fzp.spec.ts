@@ -92,22 +92,14 @@ const readout = (page: Page): Locator => page.getByTestId('tl-flag');
 const scoreBar = (page: Page): Locator => page.getByTestId('score-bar');
 /** Details, which the header score shows in the inspector. */
 const results = (page: Page): Locator => page.getByTestId('tl-details');
-/**
- * Shows Details from the header score (once), opens its Sources disclosure ("Where these numbers
- * come from" sits there) and returns it.
- */
+/** Shows Details from the header score (once) and returns it. */
 async function openScore(page: Page): Promise<Locator> {
   if ((await scoreBar(page).getAttribute('aria-expanded')) !== 'true') await scoreBar(page).click();
   await expect(results(page)).toBeVisible();
-  const sources = results(page).getByTestId('fzp-sources');
-  if ((await sources.getAttribute('open')) === null) {
-    await sources.locator(':scope > summary').click();
-    await expect(sources).toHaveAttribute('open', '');
-  }
   return results(page);
 }
-const sourcesDialog = (page: Page): Locator =>
-  page.getByRole('dialog', { name: 'Where these numbers come from' });
+/** About this model, over the map: what Details' last link opens on /sim. */
+const aboutDialog = (page: Page): Locator => page.getByRole('dialog', { name: 'About this model' });
 /** A header step link, made visible first (below 1024 px the links wait in the header Menu). */
 async function headerLink(page: Page, name: string): Promise<Locator> {
   await openHeaderMenu(page);
@@ -216,15 +208,12 @@ async function bareMapPoint(page: Page): Promise<[number, number]> {
   return point!;
 }
 
-/** Opens the sources dialog, through Details. */
+/** Opens About over the map from Details' last link ("How this is worked out"). */
 async function openSources(page: Page): Promise<Locator> {
-  await (
-    await openScore(page)
-  )
-    .getByRole('button', { name: 'Where these numbers come from' })
-    .click();
-  const dialog = sourcesDialog(page);
+  await (await openScore(page)).getByRole('link', { name: 'How this is worked out' }).click();
+  const dialog = aboutDialog(page);
   await expect(dialog).toBeVisible();
+  await expect(page).toHaveURL(/\/sim$/);
   return dialog;
 }
 
@@ -548,9 +537,9 @@ test('clicking empty map closes the card; moving the pointer off the part does n
   await expect(c).toBeHidden();
 });
 
-// ---- the sources dialog -------------------------------------------------------------------------
+// ---- About's assumptions (was the sources dialog) ---------------------------------------------
 
-test('the sources dialog lists every parameter and every data check', async ({ page }) => {
+test("About's assumptions list every parameter and every data check", async ({ page }) => {
   await gotoFzp(page);
   const dialog = await openSources(page);
 
@@ -658,7 +647,7 @@ test('axe: the card open', async ({ isMobile, page }) => {
   await expectNoA11yViolations(page);
 });
 
-test('axe: the sources dialog open', async ({ page }) => {
+test('axe: About open over the map', async ({ page }) => {
   await gotoFzp(page);
   const dialog = await openSources(page);
   await expect(dialog.locator('[id="src-quality"] tbody tr').first()).toBeVisible();
@@ -715,21 +704,21 @@ test('axe: the Details face open', async ({ page }) => {
   await expectNoA11yViolations(page);
 });
 
-test("Details' Sources state today's market", async ({ page }) => {
+test("About's Today's market states the market, from Details' link", async ({ page }) => {
   const market = calibration.market;
   expect(market, 'fixture-0 gains calibration.market at the Release 1 regeneration').toBeDefined();
   const { observed, implied } = market!.today;
   await gotoFzp(page);
   const face = await openScore(page);
-  const paragraph = face.getByTestId('fzp-market');
-  await expect(paragraph).toContainText(String(observed.private));
-  await expect(paragraph).toContainText(String(Math.round(implied)));
-  await expect(paragraph).toContainText(formatPercent(observed.private / implied));
+  // Details holds no market paragraph now: it is About's (rule 5).
+  await expect(face.getByTestId('fzp-market')).toHaveCount(0);
   await expectNoA11yViolations(page);
 
-  await face.getByRole('button', { name: 'Where these numbers come from' }).click();
-  const dialog = sourcesDialog(page);
-  await expect(dialog).toBeVisible();
+  const dialog = await openSources(page);
+  const section = dialog.locator('[id="src-market"]');
+  await expect(section).toContainText(String(observed.private));
+  await expect(section).toContainText(String(Math.round(implied)));
+  await expect(section).toContainText(formatPercent(observed.private / implied));
   await expect(dialog.getByText("Today's market", { exact: true }).first()).toBeVisible();
   await expect(dialog.getByText('Assumption, not data').first()).toBeVisible();
   await expectNoA11yViolations(page, { include: 'dialog[open]', structure: true });

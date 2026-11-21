@@ -99,11 +99,12 @@
   import { BR_BLOCK, watchCardArea } from '$lib/fzp/card-area-watch';
   import { cardArea, cardPlacement, type CardArea } from '$lib/fzp/card-place';
   import { installFzpDebug } from '$lib/fzp/debug';
-  import { marketText as marketSentence, uncappedPoolIds } from '$lib/fzp/money-view';
+  import { uncappedPoolIds } from '$lib/fzp/money-view';
   import { DEFAULT_SPEED } from '$lib/fzp/playback';
   import ProjectCardPanel from '$lib/fzp/ProjectCardPanel.svelte';
   import ProjectTooltip from '$lib/fzp/ProjectTooltip.svelte';
-  import SourcesDialog from '$lib/fzp/SourcesDialog.svelte';
+  import { provenanceSections } from '$lib/fzp/provenance';
+  import AboutDialog from '$lib/about/AboutDialog.svelte';
   import { SummaryRequester, type SummaryState } from '$lib/fzp/summary-request';
   import { monthStart } from '$lib/fzp/time';
   import type { FzpPhase, Speed } from '$lib/fzp/types';
@@ -738,7 +739,9 @@
   let pillsEl = $state<HTMLElement>();
   let tipState = $state.raw<SummaryState>({ kind: 'idle' });
   let tipAt = $state({ x: 0, y: 0 });
-  let dialog = $state<ReturnType<typeof SourcesDialog>>();
+  let about = $state<ReturnType<typeof AboutDialog>>();
+  /** About's live assumptions: read only once the dialog has opened (props are lazy). */
+  const aboutSections = $derived(calibration ? provenanceSections(calibration, score, terms) : []);
   /** The month the open card was last asked for. */
   let cardMonth: Day | null = null;
   /** The stage tables each card's own answer carried (rule 20). */
@@ -1451,15 +1454,11 @@
       playhead={{ index, atToday }}
       {reachedMonth}
       {asOf}
-      {datasetVersion}
-      builtAt={manifest?.builtAt ?? ''}
-      onsources={() => dialog?.open()}
       {copy}
       capacity={session?.capacity ?? null}
       pending={stale}
       {terms}
       {uncapped}
-      market={calibration ? marketSentence(calibration) : null}
       {inForce}
       {goal}
       {onactivity}
@@ -1678,7 +1677,7 @@
               calibration={{ inFlight: calibration, fresh: calibration }}
               chance={cardChance}
               onclose={closeCard}
-              onsource={(id) => dialog?.open(id)}
+              onsource={(id) => about?.open(id)}
               anchor={cardAnchor}
               allowedBy={cardAllowedBy}
               fundedBy={cardFundedBy}
@@ -1690,13 +1689,12 @@
         {/if}
 
         {#if calibration && !noScenario}
-          <SourcesDialog
-            bind:this={dialog}
-            {calibration}
-            {score}
+          <AboutDialog
+            bind:this={about}
+            {manifest}
+            {datasetVersion}
+            sections={aboutSections}
             projectsUrl={manifest?.scenarios?.fzp.projects ?? null}
-            {asOf}
-            {terms}
             onopen={() => (playing = false)}
           />
         {/if}

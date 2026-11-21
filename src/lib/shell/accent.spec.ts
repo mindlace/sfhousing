@@ -78,7 +78,7 @@ const THEMED_FILES = [
   'src/lib/sharing/PublishDialog.svelte',
   'src/lib/sharing/SharedBanner.svelte',
   'src/lib/sharing/SaveIndicator.svelte',
-  'src/lib/fzp/SourcesDialog.svelte',
+  'src/lib/about/AboutDialog.svelte',
   'src/lib/fzp/ProvenanceBody.svelte',
   'src/lib/brush/RadiusPopover.svelte',
   'src/lib/shell/SiteHeader.svelte',
@@ -105,6 +105,8 @@ const NO_HEX_FILES = [
   'src/lib/about/AboutData.svelte',
   'src/lib/about/AboutUsing.svelte',
   'src/lib/about/AboutAssumptions.svelte',
+  'src/lib/about/AboutDialog.svelte',
+  'src/lib/about/links.ts',
   'src/lib/fzp/ProvenanceBody.svelte'
 ];
 const BLUE_HEX = /#(1d4ed8|2563eb|1e40af|3b82f6|1e3a8a)\b/i;

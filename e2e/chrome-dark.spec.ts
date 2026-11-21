@@ -493,19 +493,18 @@ test('the Autosave off popover has no axe violations in dark', async ({ page, is
   await expectNoA11yViolations(page, { include: ['[data-testid=save-state]'] });
 });
 
-test('the Sources dialog has no axe violations in dark and draws on surface-dark', async ({
+test('About over the map has no axe violations in dark and draws on surface-dark', async ({
   page
 }) => {
   await gotoSim(page);
   await page.getByTestId('score-bar').click();
   const details = page.getByTestId('tl-details');
   await expect(details).toBeVisible();
-  const sources = details.getByTestId('fzp-sources');
-  await sources.locator(':scope > summary').click();
-  await expect(sources).toHaveAttribute('open', '');
-  await details.getByRole('button', { name: 'Where these numbers come from' }).click();
-  const dialog = page.getByRole('dialog', { name: 'Where these numbers come from' });
+  await details.getByRole('link', { name: 'How this is worked out' }).click();
+  const dialog = page.getByRole('dialog', { name: 'About this model' });
   await expect(dialog).toBeVisible();
+  // The data checks have loaded: the whole body is there for axe.
+  await expect(dialog.locator('[id="src-quality"] tbody tr').first()).toBeVisible();
   await expect(dialog).toHaveCSS('background-color', SURFACE_DARK);
   // Its scroller's native scrollbar follows the dark theme.
   const scroller = dialog.locator('.overflow-y-auto').first();

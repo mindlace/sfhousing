@@ -1317,6 +1317,47 @@ describe('TimelineMode', () => {
     await expect.element(heading).not.toBeInTheDocument();
   });
 
+  it("the card's source link opens About at its entry and pauses", async () => {
+    await page.viewport(1280, 800);
+    await opened();
+    await expect.poll(() => stub.props.timelinePick).toBeTruthy();
+    stub.props.timelinePick!({ projectId: 'pr-1', parcelId: 'p1', x: 40, y: 40, kind: 'tap' });
+    await expect.poll(() => w().all('parcelSummary')).toHaveLength(1);
+    const req = w().lastOf('parcelSummary')!;
+    w().emit({ type: 'parcelSummary', reqId: req.reqId, summary: summary(REAL_ACTUAL) });
+    const card = page.getByTestId('tl-card');
+    await expect.element(card.getByRole('heading', { level: 2 })).toBeInTheDocument();
+    await playButton().click();
+    await expect.poll(() => debug().playing).toBe(true);
+    // Nothing of About is built before it opens.
+    expect(document.getElementById('about-assumptions')).toBeNull();
+    await card.getByText('How is this estimated?').click();
+    const source = card.element().querySelector<HTMLButtonElement>('details li button')!;
+    await userEvent.click(source);
+    const dialog = page.getByRole('dialog', { name: 'About this model' });
+    await expect.element(dialog).toBeVisible();
+    expect(debug().playing).toBe(false);
+    const day = debug().day;
+    // Scrolled to an entry of the assumptions: one sits at the top of the scroll box.
+    const box = dialog.element().querySelector('[data-about-scroll]')!;
+    await expect
+      .poll(() =>
+        [...box.querySelectorAll('[id^="src-"]')].some(
+          (el) => Math.abs(el.getBoundingClientRect().top - box.getBoundingClientRect().top) < 24
+        )
+      )
+      .toBe(true);
+    expect(box.scrollTop).toBeGreaterThan(0);
+    const el = dialog.element() as HTMLDialogElement;
+    await dialog.getByRole('button', { name: 'Close' }).click();
+    expect(el.open).toBe(false);
+    // The run stays: the playhead where it paused, the card open, focus back on the source.
+    expect(debug().day).toBe(day);
+    expect(debug().playing).toBe(false);
+    await expect.element(card.getByRole('heading', { level: 2 })).toBeInTheDocument();
+    expect(document.activeElement).toBe(source);
+  });
+
   it('a miss tap calls onmiss and opens no card', async () => {
     const onmiss = vi.fn();
     await opened(LAST, { onmiss });

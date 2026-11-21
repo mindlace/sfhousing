@@ -78,6 +78,10 @@ one heading level under the part.
 `Message` follows the theme (its `dark:` partners), so in a dark system its card is dark on the
 light page; the body's tier badges and head rules keep `control-line` with its dark partner.
 
+The data checks have one way in: `loadChecks()`. `ProvenanceBody` exports it (it starts the load,
+is a no-op in flight or once loaded, and retries after a failure); `AboutAssumptions` passes it
+through, calls it on each open of the page's disclosure, and the dialog calls it on each open.
+
 ## `/attribution`
 
 A permanent redirect: `redirect(308, '/about#about-data')`, so old links (and the hashed
@@ -86,17 +90,65 @@ A permanent redirect: `redirect(308, '/about#about-data')`, so old links (and th
 
 ## The colours
 
-The page is light at every setting; the dialog on `/sim` follows the theme. So the parts carry no
-`dark:` utilities and no gray, white, black or ink utilities of their own: text colour is inherited,
-and they read two custom properties the container sets:
+The page is light at every setting; the dialog on `/sim` follows the theme. So the parts' own
+markup carries no `dark:` utilities and no gray, white, black or ink utilities: text colour is
+inherited, and they read two custom properties the container sets. Two things inside part 2 follow
+the theme on their own: `ProvenanceBody`'s tier badges and tables' head rules
+(`border-control-line dark:border-control-line-dark`) and the page's `Message` states. On the light
+page in a dark system both show their dark partners (still legible; ruled acceptable in Task 2's
+review). The properties:
 
 - `--about-muted`: muted text (the Retrieved dates, the Painting caption).
 - `--about-line`: rules and borders (the tables' head rows).
 
 `/about` sets them to `var(--color-ink-muted)` and `var(--color-line)` on the parts' wrapper.
-`AboutParts.svelte.spec.ts` checks the rendered classes.
+`AboutDialog` sets them on its scroll box with dark partners (`ink-dark-muted`, `line-dark`); the
+muted text is 4.5:1 or better on its surface in both themes (`accent.spec.ts`). `AboutParts.svelte.spec.ts` checks the
+rendered classes; `AboutDialog.svelte.spec.ts` the computed colours in light and dark.
+
+## The dialog on `/sim`
+
+On `/sim` and `/s/<id>` leaving the page would drop the playhead, the furthest date reached and
+the live assumptions, so About opens over the map instead. `src/lib/about/AboutDialog.svelte`
+(props `{ manifest; datasetVersion; sections; projectsUrl; fetchFn?; onopen? }`) is a native modal
+`<dialog>` on the shared surface (`SURFACE_DIALOG_FLUSH`) headed "About this model" (h2), with
+Close (`BUTTON_QUIET`), then the four parts at level 3, part 2 live (`sections` is the run's
+`provenanceSections(calibration, score, terms)`). `TimelineMode` mounts it while it has a
+calibration and a scenario (the Sources dialog's old place and condition).
+
+- `open(target = '')`: `''` is the top; an `ABOUT_ID` value or an entry id (`src-…`) is scrolled
+  to the top of the dialog's scroll box. Every open calls `onopen` (the page pauses Play) and
+  `loadChecks()`.
+- Nothing is built before the first open: the parts mount then and stay, so nothing is fetched
+  until About is first opened, and `sections` (a lazy prop) is not computed before it.
+- Focus: Tab wraps inside. On close, focus returns to the opener while it is rendered
+  (`getClientRects().length > 0`); otherwise to the header's Menu button (`focusHeaderMenu()`,
+  for About pressed in the phone's Menu, which closed); otherwise the body.
+- Escape: a capture-phase listener on the document closes the dialog and marks the key handled
+  (`preventDefault`), so nothing under it (a card, the dock) also acts on it. A key already handled
+  (an open explanation, `Explain`, takes Escape in the capture phase on the window) is left alone,
+  and the dialog stays open for the next press.
+- Colours: the scroll box sets `--about-muted` and `--about-line` with dark partners.
+
+## The link rule
+
+Every way into About is a link to `/about#…`: the header's About, Details' last line ("How this is
+worked out", `WORKED_OUT`, to `/about#about-assumptions`), the card's sources (through
+`open(id)`), and later the map's credit. `src/lib/about/links.ts`:
+
+- `aboutTarget(a, origin)`: the fragment a link opens (`''` for `/about`), or null when it is not
+  a same-origin link to exactly `/about`, or has a `target` other than `_self`, or `download`.
+  The fragment is taken as written (the ids are ASCII), so a malformed one never throws.
+- `interceptAboutLinks(open)`: while installed (the dialog installs it for its lifetime), a
+  capture-phase click listener on `document`. A plain click (button 0, no Ctrl, Meta, Shift or
+  Alt, not already handled) on an About link calls `preventDefault()` and `open(fragment, link)`.
+  It runs before SvelteKit's router, which skips a handled click. Enter on a focused link is a
+  click, so the keyboard follows the same rule. A modified or middle click, a `target=_blank` link
+  and links to other pages are left to the browser (a new tab on `/about`; the run untouched).
+
+Pages that mount no dialog (`/about` itself, Paint, `/p/<id>`, `/lesscars`) have no listener: their
+About links navigate.
 
 ## Still to come in slice 9
 
-The dialog on `/sim` and the link rule, and the map's credit are added here by the tasks that
-build them.
+The map's credit is added here by the task that builds it.

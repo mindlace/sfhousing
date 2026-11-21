@@ -237,5 +237,5 @@ code and stays outside the hashed paths.
 
 ## The page
 
-See [fzp-mode.md](fzp-mode.md) ("Today's market in Details' sources"): Details'
-`fzp-market` paragraph from `marketSentence`, and the dialog's `src-market` section.
+See [fzp-mode.md](fzp-mode.md) ("Today's market in About"): About's `src-market` section (on
+`/sim` in the dialog over the map). Details carries no market paragraph since slice 9.

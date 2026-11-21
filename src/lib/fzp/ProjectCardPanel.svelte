@@ -120,7 +120,7 @@
 
   function onkeydown(e: KeyboardEvent) {
     if (e.key !== 'Escape' || e.defaultPrevented || state.kind === 'idle') return;
-    // Escape belongs to the sources dialog while it is open.
+    // Escape belongs to a modal dialog (About over the map) while one is open.
     if (document.querySelector('dialog:modal')) return;
     onclose();
   }

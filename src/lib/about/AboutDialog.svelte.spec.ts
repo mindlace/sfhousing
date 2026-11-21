@@ -1,34 +1,39 @@
 /// <reference types="@vitest/browser-playwright" />
 import type { ComponentProps } from 'svelte';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
-import { page, userEvent } from 'vitest/browser';
+import { cdp, page, userEvent } from 'vitest/browser';
 import '../../routes/layout.css';
-import { fixtureCalibration } from './fixtures/calibration';
-import { liveMarketCalibration } from './fixtures/market';
-import { resolveTerms } from '$lib/sim/finance';
-import { PIPELINE_FUNDED } from '$lib/sim/scenario/funding';
-import { PROJECTS_JSON, PROJECTS_JSON_NO_RULES } from './fixtures/projects';
-import { FIX_ASOF, TIMELINE_SCORE, TIMELINE_SCORE_NO_PHASING } from './fixtures/timeline-score';
-import { formatDate } from './format';
-import { TIER_LABEL } from './labels';
+import { parseManifest } from '$lib/data/manifest';
+import { fixtureCalibration } from '$lib/fzp/fixtures/calibration';
+import { liveMarketCalibration } from '$lib/fzp/fixtures/market';
+import { PROJECTS_JSON, PROJECTS_JSON_NO_RULES } from '$lib/fzp/fixtures/projects';
+import { TIMELINE_SCORE, TIMELINE_SCORE_NO_PHASING } from '$lib/fzp/fixtures/timeline-score';
+import { formatDate } from '$lib/fzp/format';
+import { TIER_LABEL } from '$lib/fzp/labels';
 import {
   NOT_SF_NOTE,
   PERMIT_WINDOW_SENTENCE,
   PHASE_DELAY_SENTENCE,
   QUALITY_EMPTY,
+  QUALITY_HEADING,
   QUALITY_LOAD_FAILED,
   QUALITY_PARCEL_SENTENCE,
   TWIN_RESIZE_SENTENCE,
   UNENRICHED_SENTENCE,
   provenanceSections
-} from './provenance';
-import SourcesDialogHarness from './test/SourcesDialogHarness.svelte';
+} from '$lib/fzp/provenance';
+import { resolveTerms } from '$lib/sim/finance';
+import { PIPELINE_FUNDED } from '$lib/sim/scenario/funding';
+import manifestJson from '../../../e2e/fixtures/data/fixture-0/manifest.json';
+import { ABOUT_ID, ABOUT_TITLE, PART_HEADING } from './copy';
+import AboutDialogHarness from './test/AboutDialogHarness.svelte';
 
 const cal = fixtureCalibration();
+const manifest = parseManifest(manifestJson);
 const URL_ = '/data/fixture-0/scenarios/fzp/projects.json';
 
-type Props = ComponentProps<typeof SourcesDialogHarness>;
+type Props = ComponentProps<typeof AboutDialogHarness>;
 
 const jsonResponse = (body: unknown) =>
   Promise.resolve(new Response(JSON.stringify(body), { status: 200 }));
@@ -38,40 +43,173 @@ async function setup(over: Partial<Props> = {}) {
   const fetchFn = vi.fn((_url: RequestInfo | URL) => jsonResponse(PROJECTS_JSON));
   const onopen = vi.fn();
   const props: Props = {
-    calibration: cal,
-    score: TIMELINE_SCORE,
+    manifest,
+    datasetVersion: 'fixture-0',
+    sections: provenanceSections(cal, TIMELINE_SCORE),
     projectsUrl: URL_,
-    asOf: FIX_ASOF,
     fetchFn: fetchFn as unknown as typeof fetch,
     onopen,
     ...over
   };
-  const view = await render(SourcesDialogHarness, { props });
+  const view = await render(AboutDialogHarness, { props });
   return { fetchFn, onopen, view };
+}
+
+async function scheme(value: 'light' | 'dark') {
+  await cdp().send('Emulation.setEmulatedMedia', {
+    features: [{ name: 'prefers-color-scheme', value }]
+  });
 }
 
 const dialog = () => document.querySelector('dialog') as HTMLDialogElement;
 const byId = (id: string) => dialog().querySelector(`[id="${id}"]`) as HTMLElement;
+const scroller = () => dialog().querySelector('[data-about-scroll]') as HTMLElement;
 const opener = () => page.getByRole('button', { name: 'Sources', exact: true });
+const linkNamed = (name: string) =>
+  page.getByRole('link', { name, exact: true }).element() as HTMLAnchorElement;
 
 async function openIt() {
   await opener().click();
   expect(dialog().open).toBe(true);
 }
 
+/** The target's top sits at the top of the dialog's scroll box (within a few px). */
+async function expectAtTop(id: string) {
+  await expect
+    .poll(() => {
+      const el = byId(id);
+      if (!el) return Infinity;
+      return Math.abs(el.getBoundingClientRect().top - scroller().getBoundingClientRect().top);
+    })
+    .toBeLessThan(24);
+  // Only the scroll box moved: the title row and Close stay in view.
+  expect(dialog().scrollTop).toBe(0);
+  const head = dialog().querySelector('h2')!.getBoundingClientRect();
+  expect(head.top).toBeGreaterThanOrEqual(dialog().getBoundingClientRect().top);
+}
+
+/**
+ * Dispatches a click as the browser would for a modified or other-button press, and reports
+ * whether anything before the window's bubble phase claimed it. The window listener then stops
+ * the navigation, so the test page stays put.
+ */
+function clickWith(a: HTMLElement, init: MouseEventInit): boolean {
+  let claimed = true;
+  const last = (e: Event) => {
+    claimed = e.defaultPrevented;
+    e.preventDefault();
+  };
+  window.addEventListener('click', last, { once: true });
+  a.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, ...init }));
+  window.removeEventListener('click', last);
+  return claimed;
+}
+
+afterEach(async () => {
+  if (dialog()?.open) dialog().close();
+  await scheme('light');
+});
+
+describe('links to About', () => {
+  it('a plain click on an About link opens the dialog at the fragment and the page does not navigate', async () => {
+    const { onopen } = await setup();
+    const before = location.href;
+    await page.getByRole('link', { name: 'Data link', exact: true }).click();
+    expect(dialog().open).toBe(true);
+    expect(onopen).toHaveBeenCalledTimes(1);
+    expect(location.href).toBe(before);
+    await expectAtTop(ABOUT_ID.data);
+    dialog().close();
+    // An entry's id, and the bare /about (the top).
+    await page.getByRole('link', { name: 'Entitled link', exact: true }).click();
+    expect(dialog().open).toBe(true);
+    await expectAtTop('src-transition-discretionary-entitled');
+    dialog().close();
+    await page.getByRole('link', { name: 'About', exact: true }).click();
+    expect(dialog().open).toBe(true);
+    await expect.poll(() => scroller().scrollTop).toBe(0);
+    expect(location.href).toBe(before);
+  });
+
+  it('Enter on an About link opens the dialog like the click', async () => {
+    await setup();
+    linkNamed('Data link').focus();
+    await userEvent.keyboard('{Enter}');
+    expect(dialog().open).toBe(true);
+    await expectAtTop(ABOUT_ID.data);
+  });
+
+  it('a modified click is left to the browser', async () => {
+    await setup();
+    const a = linkNamed('Data link');
+    for (const init of [
+      { ctrlKey: true },
+      { metaKey: true },
+      { shiftKey: true },
+      { altKey: true },
+      { button: 1 }
+    ]) {
+      expect(clickWith(a, init), JSON.stringify(init)).toBe(false);
+      expect(dialog().open, JSON.stringify(init)).toBe(false);
+    }
+    // A plain click on a new-tab link or a link to another page is the browser's too.
+    expect(clickWith(linkNamed('New tab'), {})).toBe(false);
+    expect(clickWith(linkNamed('Other page'), {})).toBe(false);
+    expect(dialog().open).toBe(false);
+    // A click something earlier already handled is not taken.
+    const claim = (e: Event) => e.preventDefault();
+    window.addEventListener('click', claim, { capture: true, once: true });
+    a.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    expect(dialog().open).toBe(false);
+    // The same click unmodified is the dialog's.
+    expect(clickWith(a, {})).toBe(true);
+    expect(dialog().open).toBe(true);
+  });
+
+  it('unmounted, a click on an About link is not intercepted', async () => {
+    const { view } = await setup();
+    const a = document.createElement('a');
+    a.href = '/about#about-data';
+    a.textContent = 'Outside';
+    document.body.appendChild(a);
+    try {
+      await view.unmount();
+      expect(clickWith(a, {})).toBe(false);
+    } finally {
+      a.remove();
+    }
+  });
+});
+
 describe('opening', () => {
-  it('shows a modal dialog with an h2 and an h3 per section, and calls onopen', async () => {
+  it('the dialog holds the four parts in order, headed at level 3, with live assumptions', async () => {
     const { onopen } = await setup();
     expect(dialog().open).toBe(false);
     await openIt();
     expect(dialog().matches(':modal')).toBe(true);
     expect(onopen).toHaveBeenCalledTimes(1);
     await expect
-      .element(page.getByRole('heading', { level: 2, name: 'Where these numbers come from' }))
+      .element(page.getByRole('heading', { level: 2, name: ABOUT_TITLE, exact: true }))
       .toBeVisible();
+    expect(dialog().getAttribute('aria-labelledby')).toBe(dialog().querySelector('h2')!.id);
+    const parts = [...dialog().querySelectorAll(':scope section[id^="about-"]')]
+      .filter((s) => s.id !== ABOUT_ID.shortcuts)
+      .map((s) => [s.id, s.querySelector('h3')?.textContent?.trim()]);
+    expect(parts).toEqual([
+      [ABOUT_ID.meanings, PART_HEADING.meanings],
+      [ABOUT_ID.assumptions, PART_HEADING.assumptions],
+      [ABOUT_ID.data, PART_HEADING.data],
+      [ABOUT_ID.using, PART_HEADING.using]
+    ]);
+    // Live: the run's sections (Actual completions needs a run), one level under the part.
     const expected = provenanceSections(cal, TIMELINE_SCORE).map((s) => s.heading);
-    const h3 = [...dialog().querySelectorAll('h3')].map((h) => h.textContent?.trim());
-    expect(h3).toEqual([...expected, 'How the records were checked']);
+    const h4 = [...byId(ABOUT_ID.assumptions).querySelectorAll('h4')].map((h) =>
+      h.textContent?.trim()
+    );
+    expect(h4).toEqual([...expected, QUALITY_HEADING]);
+    expect(byId('src-actual')).not.toBeNull();
+    // No disclosure: the dialog is already the place asked for.
+    expect(byId(ABOUT_ID.assumptions).querySelector('details')).toBeNull();
   });
 
   it('traps Tab, closes on Escape and returns focus to the opener', async () => {
@@ -80,37 +218,61 @@ describe('opening', () => {
     await openIt();
     expect(dialog().contains(document.activeElement)).toBe(true);
     const count = dialog().querySelectorAll('a[href], button').length;
-    for (let i = 0; i < count + 2; i++) {
+    for (let i = 0; i < Math.min(count + 2, 40); i++) {
       await userEvent.tab();
       expect(dialog().contains(document.activeElement)).toBe(true);
     }
+    await userEvent.tab({ shift: true });
+    expect(dialog().contains(document.activeElement)).toBe(true);
     await userEvent.keyboard('{Escape}');
     expect(dialog().open).toBe(false);
     expect(document.activeElement).toBe(opener().element());
   });
 
-  it('wraps Tab over every focusable kind, a <summary> and a [tabindex] among them', async () => {
+  it('Tab wraps inside the dialog over every focusable kind, a <summary> and a [tabindex] among them', async () => {
     await setup();
     await openIt();
-    // Content a later section may add: a disclosure, and a focusable scroll region before it.
     const extra = document.createElement('div');
     extra.innerHTML =
       '<div tabindex="0" data-testid="scroller">Scroll</div><details><summary>More</summary></details>';
     dialog().appendChild(extra);
     const close = dialog().querySelector('button')!;
     const summary = extra.querySelector('summary')!;
-    const scroller = extra.querySelector('[tabindex]') as HTMLElement;
+    const scrollerEl = extra.querySelector('[tabindex]') as HTMLElement;
     try {
       close.focus();
       await userEvent.tab({ shift: true });
       expect(document.activeElement).toBe(summary);
       await userEvent.tab({ shift: true });
-      expect(document.activeElement).toBe(scroller);
+      expect(document.activeElement).toBe(scrollerEl);
       summary.focus();
       await userEvent.tab();
       expect(document.activeElement).toBe(close);
     } finally {
       extra.remove();
+    }
+  });
+
+  it('Escape closes it once and is marked handled; a key already handled leaves it open', async () => {
+    await setup();
+    await openIt();
+    // Something under the dialog (a card, the dock) skips a handled Escape.
+    let seen: boolean | null = null;
+    const under = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') seen = e.defaultPrevented;
+    };
+    window.addEventListener('keydown', under);
+    // An explanation that took this Escape first (Explain, capture phase on the window).
+    const explain = (e: KeyboardEvent) => e.preventDefault();
+    window.addEventListener('keydown', explain, { capture: true, once: true });
+    try {
+      await userEvent.keyboard('{Escape}');
+      expect(dialog().open).toBe(true);
+      await userEvent.keyboard('{Escape}');
+      expect(dialog().open).toBe(false);
+      expect(seen).toBe(true);
+    } finally {
+      window.removeEventListener('keydown', under);
     }
   });
 
@@ -121,14 +283,18 @@ describe('opening', () => {
     expect(dialog().open).toBe(false);
   });
 
-  it('scrolls the requested entry into view', async () => {
+  it('open("src-…") scrolls the entry into view; open("about-data") the part', async () => {
     await setup();
     await page.getByRole('button', { name: 'Open at entitled' }).click();
     expect(dialog().open).toBe(true);
+    await expectAtTop('src-transition-discretionary-entitled');
     const box = dialog().getBoundingClientRect();
     const top = byId('src-transition-discretionary-entitled').getBoundingClientRect().top;
     expect(top).toBeGreaterThanOrEqual(box.top);
     expect(top).toBeLessThan(box.bottom);
+    dialog().close();
+    await page.getByRole('button', { name: 'Open at data' }).click();
+    await expectAtTop(ABOUT_ID.data);
   });
 
   it('is capped at max-w-2xl and 85vh, and full-width on a phone', async () => {
@@ -140,7 +306,35 @@ describe('opening', () => {
     dialog().close();
     await page.viewport(375, 700);
     await openIt();
-    expect(dialog().getBoundingClientRect().width).toBe(375);
+    const narrow = dialog().getBoundingClientRect();
+    expect(narrow.width).toBe(375);
+    expect(narrow.left).toBeGreaterThanOrEqual(0);
+    expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(375);
+  });
+});
+
+describe('focus on close', () => {
+  it('closing returns focus to a visible opener', async () => {
+    await setup();
+    const a = linkNamed('Data link');
+    a.focus();
+    await userEvent.keyboard('{Enter}');
+    expect(dialog().open).toBe(true);
+    await page.getByRole('button', { name: 'Close' }).click();
+    expect(document.activeElement).toBe(a);
+  });
+
+  it('opened from the Menu, closing returns focus to the Menu button', async () => {
+    await setup();
+    const menu = page.getByRole('button', { name: 'Menu', exact: true });
+    await menu.click();
+    await page.getByRole('link', { name: 'About in the Menu', exact: true }).click();
+    expect(dialog().open).toBe(true);
+    // The Menu closed when its link was pressed: the opener is no longer rendered.
+    expect(page.getByTestId('menu-panel').element().getClientRects().length).toBe(0);
+    await userEvent.keyboard('{Escape}');
+    expect(dialog().open).toBe(false);
+    expect(document.activeElement).toBe(menu.element());
   });
 });
 
@@ -234,12 +428,15 @@ describe('targets and multi-phase', () => {
   });
 
   it('omits section 9 without phasing, and sections 2 and 8 without a score', async () => {
-    const withoutPhasing = await setup({ score: TIMELINE_SCORE_NO_PHASING });
+    const withoutPhasing = await setup({
+      sections: provenanceSections(cal, TIMELINE_SCORE_NO_PHASING)
+    });
     await openIt();
     expect(byId('src-multiphase')).toBeNull();
     expect(byId('src-targets')).not.toBeNull();
+    dialog().close();
     await withoutPhasing.view.unmount();
-    await setup({ score: null });
+    await setup({ sections: provenanceSections(cal, null) });
     await openIt();
     expect(byId('src-actual')).toBeNull();
     expect(byId('src-targets')).toBeNull();
@@ -255,18 +452,40 @@ describe('surface', () => {
       expect(cls, c).toContain(c);
     expect(cls).not.toContain('bg-white');
     expect(getComputedStyle(dialog()).backgroundColor).toBe('rgb(255, 255, 255)');
+    // The parts' muted text and rules take the light tokens.
+    const caption = byId(ABOUT_ID.shortcuts).querySelector('caption')!;
+    expect(getComputedStyle(caption).color).toBe('rgb(75, 85, 99)');
+  });
+
+  it("in dark the surface is surface-dark and the parts' muted text is ink-dark-muted", async () => {
+    await scheme('dark');
+    await setup();
+    await openIt();
+    expect(getComputedStyle(dialog()).backgroundColor).toBe('rgb(28, 29, 31)');
+    expect(getComputedStyle(dialog()).color).toBe('rgb(232, 228, 220)');
+    const caption = byId(ABOUT_ID.shortcuts).querySelector('caption')!;
+    expect(getComputedStyle(caption).color).toBe('rgb(180, 174, 163)');
+    const rule = byId(ABOUT_ID.shortcuts).querySelector('thead tr')!;
+    expect(getComputedStyle(rule).borderBottomColor).toBe('rgb(59, 61, 65)');
+    const entry = byId('src-transition-discretionary-entitled');
+    expect(getComputedStyle(entry).borderTopColor).toBe('rgb(59, 61, 65)');
   });
 });
 
 describe('target sizes (spec §4.3)', () => {
-  it('links and Close are at least 24 px tall on every pointer, with no coarse-pointer variant', async () => {
+  it('Close and every standalone link are at least 24 px tall on every pointer, with no coarse-pointer variant', async () => {
     await setup();
     await openIt();
-    const controls = [...dialog().querySelectorAll<HTMLElement>('a[href], button')];
+    // Standalone: Close, the assumptions' source links and the sources table's links. Links
+    // inside a sentence are inline and exempt.
+    const controls = [
+      dialog().querySelector('button')!,
+      ...byId(ABOUT_ID.assumptions).querySelectorAll<HTMLElement>('a[href], button'),
+      ...byId(ABOUT_ID.data).querySelectorAll<HTMLElement>('td > a[href]')
+    ];
     expect(controls.length).toBeGreaterThan(5);
     for (const el of controls) {
       expect(el.getBoundingClientRect().height, el.outerHTML).toBeGreaterThanOrEqual(24);
-      // One size on every pointer: the 24 px minimum, nothing larger on a coarse one.
       expect(el.className.split(/\s+/), el.outerHTML).toContain('min-h-6');
       expect(el.className, el.outerHTML).not.toMatch(/pointer-coarse:/);
     }
@@ -277,6 +496,8 @@ describe('how the records were checked', () => {
   it('does not fetch before the first open', async () => {
     const { fetchFn } = await setup();
     expect(fetchFn).not.toHaveBeenCalled();
+    // Nothing of the parts is built before then either.
+    expect(byId(ABOUT_ID.assumptions)).toBeNull();
   });
 
   it('reads Loading… until the fetch resolves, then lists the rules with counts', async () => {
@@ -289,7 +510,7 @@ describe('how the records were checked', () => {
     );
     await setup({ fetchFn: fetchFn as unknown as typeof fetch });
     await openIt();
-    expect(fetchFn).toHaveBeenCalledTimes(1);
+    await expect.poll(() => fetchFn.mock.calls.length).toBe(1);
     expect(fetchFn).toHaveBeenCalledWith(URL_);
     expect(byId('src-quality').textContent).toContain('Loading…');
     resolve(new Response(JSON.stringify(PROJECTS_JSON)));
@@ -315,6 +536,7 @@ describe('how the records were checked', () => {
     await expect.poll(() => byId('src-quality').querySelectorAll('tbody tr').length).toBe(3);
     dialog().close();
     await openIt();
+    await expect.poll(() => byId('src-quality').querySelectorAll('tbody tr').length).toBe(3);
     expect(fetchFn).toHaveBeenCalledTimes(1);
   });
 
@@ -322,19 +544,19 @@ describe('how the records were checked', () => {
     const fetchFn = vi.fn(() => Promise.reject(new Error('offline')));
     await setup({ fetchFn: fetchFn as unknown as typeof fetch });
     await openIt();
-    await expect.poll(() => byId('src-quality').textContent).toContain(QUALITY_LOAD_FAILED);
+    await expect.poll(() => byId('src-quality')?.textContent).toContain(QUALITY_LOAD_FAILED);
     expect(byId('src-transition-discretionary-entitled')).not.toBeNull();
     expect(byId('src-initiation')).not.toBeNull();
   });
 
-  it('tries again on the next open after a failure', async () => {
+  it('the data checks load on the first open; a failure retries on the next', async () => {
     const fetchFn = vi
       .fn()
       .mockRejectedValueOnce(new Error('offline'))
       .mockImplementation(() => jsonResponse(PROJECTS_JSON));
     await setup({ fetchFn: fetchFn as unknown as typeof fetch });
     await openIt();
-    await expect.poll(() => byId('src-quality').textContent).toContain(QUALITY_LOAD_FAILED);
+    await expect.poll(() => byId('src-quality')?.textContent).toContain(QUALITY_LOAD_FAILED);
     dialog().close();
     await openIt();
     await expect.poll(() => byId('src-quality').querySelectorAll('tbody tr').length).toBe(3);
@@ -345,7 +567,7 @@ describe('how the records were checked', () => {
     const fetchFn = vi.fn(() => jsonResponse(PROJECTS_JSON_NO_RULES));
     await setup({ fetchFn: fetchFn as unknown as typeof fetch });
     await openIt();
-    await expect.poll(() => byId('src-quality').textContent).toContain(QUALITY_EMPTY);
+    await expect.poll(() => byId('src-quality')?.textContent).toContain(QUALITY_EMPTY);
     expect(byId('src-quality').querySelector('table')).toBeNull();
     expect(byId('src-quality').textContent).toContain(QUALITY_PARCEL_SENTENCE);
   });
@@ -353,7 +575,7 @@ describe('how the records were checked', () => {
 
 describe("today's market", () => {
   it('shows its heading and no research note under it', async () => {
-    await setup({ calibration: liveMarketCalibration() });
+    await setup({ sections: provenanceSections(liveMarketCalibration(), TIMELINE_SCORE) });
     await openIt();
     const section = byId('src-market');
     expect(section.textContent).toContain("Today's market");
@@ -363,7 +585,7 @@ describe("today's market", () => {
   it('extended src-market and src-money render with links', async () => {
     const live = liveMarketCalibration();
     const terms = resolveTerms(undefined, { lossOnExit: 0.5, constructionRate: 0.07 });
-    await setup({ calibration: live, terms });
+    await setup({ sections: provenanceSections(live, TIMELINE_SCORE, terms) });
     await openIt();
     const slope = byId('src-market-slope');
     expect(slope.textContent).toContain("How strongly money moves a private project's odds");
@@ -382,7 +604,7 @@ describe("today's market", () => {
     );
 
     const money = byId('src-money');
-    expect(money.querySelector('h3')?.textContent).toBe('Public money');
+    expect(money.querySelector('h4')?.textContent).toBe('Public money');
     expect(money.textContent).toContain(
       'If a funded project stops after construction starts, 50% spent or lent on it'
     );
@@ -391,7 +613,6 @@ describe("today's market", () => {
     const pipeline = byId('src-money-pipeline');
     expect(pipeline.textContent).toContain(PIPELINE_FUNDED.label);
     expect(pipeline.textContent).toContain(NOT_SF_NOTE);
-    // Every src-money entry's sources are links.
     const expected = provenanceSections(live, TIMELINE_SCORE, terms).find(
       (s) => s.id === 'src-money'
     )!;
