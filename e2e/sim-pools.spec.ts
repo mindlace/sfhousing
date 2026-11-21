@@ -68,14 +68,21 @@ test('a housing bond: no level before its money arrives; after Play its bar drai
   let left = await level.getAttribute('data-left');
   await expect(bar).toHaveAttribute('aria-label', new RegExp(`, ${left}% left$`));
   await expect(bar).toHaveText(new RegExp(`, ${left}% left$`));
-  // At the computed edge (End) the bond has been drawn on: below 100.
+  // At the computed edge (End) the bond has been drawn on: below 100, and a once pool only drains,
+  // so at most the paused reading. Read only once the slider's DOM says it is at the edge.
+  const paused = Number(left);
   await closeSheet(page, isMobile);
-  await slider(page).focus();
+  const ruler = slider(page);
+  const edge = await ruler.getAttribute('aria-valuemax');
+  expect(Number(edge)).toBeGreaterThan(Number(await ruler.getAttribute('aria-valuenow')));
+  await ruler.focus();
   await page.keyboard.press('End');
+  await expect(ruler).toHaveAttribute('aria-valuenow', edge!);
   bar = await bondBar(page);
   await expect(level).toHaveAttribute('data-left', /^\d+$/);
   left = await level.getAttribute('data-left');
   expect(Number(left)).toBeLessThan(100);
+  expect(Number(left)).toBeLessThanOrEqual(paused);
   await expect(bar).toHaveAttribute('aria-label', new RegExp(`, ${left}% left$`));
   await expect(bar).toHaveText(new RegExp(`, ${left}% left$`));
   // Home: at today, nothing again.
