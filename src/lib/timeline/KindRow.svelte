@@ -9,7 +9,15 @@
   import Lane from './Lane.svelte';
   import PolicyRow from './PolicyRow.svelte';
   import type { PolicyKind, Policy, SimPolicy4 } from './policy4';
-  import { barBox, FIXED_ID, FIXED_LABEL, fixedRef, isFixedRef, KIND_LABEL } from './rows';
+  import {
+    barBox,
+    EMPTY_LANE,
+    FIXED_ID,
+    FIXED_LABEL,
+    fixedRef,
+    isFixedRef,
+    KIND_LABEL
+  } from './rows';
   import type { SpanRef } from './spans';
 
   interface Props {
@@ -81,7 +89,18 @@
     {/if}
   </div>
   <Lane>
-    {#if !open}
+    {#if !open && policies.length === 0 && !readonly}
+      <!-- The "+" in words, for the pointer: the "+" named "Add {label} policy" is the keyboard
+           and assistive path, so this is hidden from both (one stop per action). -->
+      <button
+        type="button"
+        class="empty"
+        data-testid="tl-empty-lane"
+        tabindex="-1"
+        aria-hidden="true"
+        onclick={() => onadd(kind)}>{EMPTY_LANE[kind]}</button
+      >
+    {:else if !open}
       {#each policies as p, i (p.id)}
         <div class="mini-policy" data-testid="tl-mini" class:off={!p.on} aria-hidden="true">
           {#each p.spans as s, j (j)}
@@ -178,6 +197,26 @@
     outline: 2px solid var(--color-accent);
     outline-offset: 1px;
   }
+  .empty {
+    position: absolute;
+    inset: 3px auto 3px 6px;
+    display: inline-flex;
+    align-items: center;
+    min-height: 24px;
+    padding: 0 6px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--color-ink-muted);
+    font: inherit;
+    font-size: 13px;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .empty:hover {
+    color: var(--color-ink);
+    text-decoration: underline;
+  }
   .mini-policy {
     position: absolute;
     inset: 0;
@@ -218,8 +257,12 @@
       border-color: var(--color-control-line-dark);
       background: var(--color-surface-dark);
     }
-    .count {
+    .count,
+    .empty {
       color: var(--color-ink-dark-muted);
+    }
+    .empty:hover {
+      color: var(--color-ink-dark);
     }
     .toggle:focus-visible,
     .plus:focus-visible {

@@ -1,9 +1,10 @@
 <!--
   Test host: TimelineMode under the real SiteHeader, wired as the root layout wires it, and the
   page's part of the document: `policy`, `lots`, `lotsFailed` and the selection live here, and
-  `ctl` lets a test set them as the page's store and PolicySync would, and call `showDetails`. `onedit` applies the change; `onundoto`
-  (rule 34) sets the document unless the test passes its own. With `withInspector` the inspector
-  renders the Details face. `regionHeight` is the mode box's height (700 px unless given). With
+  `ctl` lets a test set them as the page's store and PolicySync would, and call `showDetails` and
+  `showActivity`. `onedit` applies the change; `onundoto` (rule 34) sets the document unless the
+  test passes its own. With `withInspector` the inspector renders the Details face (or `face`'s).
+  `readonly` is the page's (default false). `regionHeight` is the mode box's height (700 px unless given). With
   `saveStatus` the status is the real SaveIndicator, as SimPage renders it (`ctl.setSaveStatus`).
 -->
 <script lang="ts">
@@ -32,6 +33,8 @@
   interface Props extends Rest {
     onundoto?: (p: SimPolicy4) => void;
     withInspector?: boolean;
+    face?: 'details' | 'activity';
+    readonly?: boolean;
     regionHeight?: number;
     saveStatus?: SaveStatus;
     initialPolicy: SimPolicy4;
@@ -42,6 +45,7 @@
       setLots?: (l: Lots | null) => void;
       setLotsFailed?: (f: boolean) => void;
       showDetails?: () => Promise<void>;
+      showActivity?: () => Promise<void>;
     };
   }
 
@@ -51,6 +55,8 @@
     ctl,
     onundoto = undefined,
     withInspector = false,
+    face = 'details',
+    readonly = false,
     regionHeight = 700,
     saveStatus: initialSave = undefined,
     ...rest
@@ -64,6 +70,7 @@
   let mode = $state<ReturnType<typeof TimelineMode>>();
   untrack(() => {
     ctl.showDetails = () => mode!.showDetails();
+    ctl.showActivity = () => mode!.showActivity();
     ctl.setSaveStatus = (s) => (save = s);
     ctl.setPolicy = (p) => (policy = p);
     ctl.setLots = (l) => (lots = l);
@@ -71,8 +78,10 @@
   });
 </script>
 
-{#snippet inspector({ details }: { details: Snippet })}
-  <div data-testid="host-inspector">{@render details()}</div>
+{#snippet inspector({ activity, details }: { activity: Snippet; details: Snippet })}
+  <div data-testid="host-inspector">
+    {#if face === 'activity'}{@render activity()}{:else}{@render details()}{/if}
+  </div>
 {/snippet}
 
 {#snippet saveState(covered: boolean)}
@@ -94,7 +103,7 @@
     {policy}
     {lots}
     {lotsFailed}
-    readonly={false}
+    {readonly}
     {selected}
     onselect={(r) => (selected = r)}
     onedit={(change) => (policy = change(policy))}

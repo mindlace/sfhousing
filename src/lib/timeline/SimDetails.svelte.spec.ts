@@ -81,6 +81,7 @@ type Overrides = Partial<{
   uncapped: ReadonlySet<string>;
   inForce: boolean;
   lens: ChartLens;
+  onactivity: () => void;
 }>;
 
 const props = (over: Overrides = {}) => {
@@ -193,6 +194,24 @@ describe('layout', () => {
     // While loading too.
     await renderAtRest(props({ score: null }));
     await expect.element(h).toBeVisible();
+  });
+
+  it('the Activity button in the heading row calls onactivity', async () => {
+    await page.viewport(1024, 768);
+    const onactivity = vi.fn();
+    const first = await renderAtRest(props({ onactivity }));
+    const h = page.getByRole('heading', { level: 2, name: 'Details', exact: true }).element();
+    const button = page.getByRole('button', { name: 'Activity', exact: true });
+    // In the heading's row, after it.
+    expect(h.parentElement!.contains(button.element())).toBe(true);
+    const r = button.element().getBoundingClientRect();
+    expect(r.height).toBeGreaterThanOrEqual(24);
+    await button.click();
+    expect(onactivity).toHaveBeenCalledOnce();
+    await first.unmount();
+    // Without onactivity (no page to show Activity) there is no button.
+    await renderAtRest(props());
+    expect(page.getByRole('button', { name: 'Activity', exact: true }).elements()).toHaveLength(0);
   });
 
   it('orders the switch, the goal rows, what the policy added, the sources of homes, stopped, the table, then Sources', async () => {

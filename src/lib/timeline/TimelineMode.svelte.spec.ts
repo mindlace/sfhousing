@@ -11,8 +11,8 @@ import { parseManifest, type Manifest } from '$lib/data/manifest';
 import { fixtureCalibration } from '$lib/fzp/fixtures/calibration';
 import { REAL_ACTUAL } from '$lib/fzp/fixtures/cards';
 import { CALCULATING, fromPolicyText } from '$lib/fzp/score-view';
-import { GOAL, STATE_TARGET, type Goal } from '$lib/goal/goal';
-import { formatShortMonthYear } from '$lib/fzp/format';
+import { GOAL, STATE_TARGET, goalName, type Goal } from '$lib/goal/goal';
+import { formatDollars, formatShortMonthYear } from '$lib/fzp/format';
 import { dayFromUtc, monthStart, utcParts } from '$lib/fzp/time';
 import { callsOf, stub } from '$lib/fzp/test/sim-map-stub';
 import { lotsText } from '$lib/paint/rows';
@@ -43,6 +43,7 @@ import {
 } from './test/fake-timeline-worker';
 import { chunk, statics as baseStatics } from './test/fixtures';
 import type { Pool } from '$lib/timelapse/types';
+import type { AddChoice } from './add';
 import TimelineModeHost from './test/TimelineModeHost.svelte';
 import { pointerBetween } from './test/pointer';
 
@@ -136,6 +137,11 @@ type Over = Partial<{
   /** The page opens with its data failed (Retry shows); `reload` is what Retry brings. */
   calibrationError: boolean;
   reload: () => Promise<{ manifest: Manifest; calibration: typeof cal }>;
+  readonly: boolean;
+  face: 'details' | 'activity';
+  onstarter: (choice: AddChoice, label: string) => void;
+  ondetails: () => void;
+  onactivity: () => void;
 }>;
 
 let workers: FakeTimelineWorker[];
@@ -149,6 +155,7 @@ function setup(over: Over = {}) {
     setLotsFailed?: (f: boolean) => void;
     setSaveStatus?: (s: SaveStatus) => void;
     showDetails?: () => Promise<void>;
+    showActivity?: () => Promise<void>;
   } = {};
   const createWorker = vi.fn(() => {
     const f = new FakeTimelineWorker();
@@ -178,7 +185,12 @@ function setup(over: Over = {}) {
       ...(over.inspectorOpen !== undefined ? { inspectorOpen: over.inspectorOpen } : {}),
       ...(over.scoreExpanded !== undefined ? { scoreExpanded: over.scoreExpanded } : {}),
       ...(over.saveStatus ? { saveStatus: over.saveStatus } : {}),
-      ...(over.goal ? { goal: over.goal } : {})
+      ...(over.goal ? { goal: over.goal } : {}),
+      ...(over.readonly ? { readonly: true } : {}),
+      ...(over.face ? { face: over.face } : {}),
+      ...(over.onstarter ? { onstarter: over.onstarter } : {}),
+      ...(over.ondetails ? { ondetails: over.ondetails } : {}),
+      ...(over.onactivity ? { onactivity: over.onactivity } : {})
     }
   });
   return {
@@ -188,7 +200,8 @@ function setup(over: Over = {}) {
     setLots: (l: Lots | null) => ctl.setLots!(l),
     setLotsFailed: (f: boolean) => ctl.setLotsFailed!(f),
     setSaveStatus: (st: SaveStatus) => ctl.setSaveStatus!(st),
-    showDetails: () => ctl.showDetails!()
+    showDetails: () => ctl.showDetails!(),
+    showActivity: () => ctl.showActivity!()
   };
 }
 
@@ -2161,19 +2174,202 @@ describe('TimelineMode', () => {
     expect(page.getByTestId('chart-svg').element().getBoundingClientRect().height).toBe(96);
   });
 
-  it('from md the detail column shows Details when nothing is open', async () => {
+  /** Activity's totals as [term, value] pairs. */
+  const totalsOf = () =>
+    [...document.querySelectorAll('[data-testid=tl-totals] > div')].map((d) => [
+      d.querySelector('dt')!.textContent!.trim(),
+      d.querySelector('dd')!.textContent!.trim()
+    ]);
+
+  it('from md at rest the detail column shows Activity', async () => {
     await opened(LAST, { withInspector: true, inspectorOpen: false });
     const insp = page.getByTestId('tl-inspector');
-    await expect.element(insp.getByTestId('tl-details')).toBeVisible();
+    const activity = insp.getByTestId('tl-activity');
+    await expect.element(activity).toBeVisible();
     expect(document.querySelector('[data-testid=host-inspector]')).toBeNull();
+    expect(document.querySelector('[data-testid=tl-details]')).toBeNull();
+    await expect
+      .element(activity.getByRole('heading', { level: 2, name: 'Activity' }))
+      .toBeVisible();
+    // At today: the goal, and without onstarter (read-only) Press Play, no starters.
+    await expect.element(activity.getByText(goalName(GOAL))).toBeVisible();
+    await expect.element(activity.getByText('Press Play to see what gets built.')).toBeVisible();
     // Padded as the Inspector is: the text keeps off the column's edge.
-    const pad = getComputedStyle(insp.getByTestId('tl-details').element());
+    const pad = getComputedStyle(activity.element());
     expect(pad.paddingLeft).toBe('12px');
     expect(pad.paddingRight).toBe('12px');
   });
 
+  it('Activity at today offers the starters with nothing in force; one calls onstarter', async () => {
+    const onstarter = vi.fn();
+    const s = await opened(LAST, { withInspector: true, inspectorOpen: false, onstarter });
+    const activity = page.getByTestId('tl-activity');
+    const list = activity.getByRole('list', { name: 'Try one:' });
+    await expect.element(list).toBeVisible();
+    expect(
+      list
+        .getByRole('button')
+        .elements()
+        .map((b) => b.textContent!.trim())
+    ).toEqual(['Taller near transit', 'SB 423 approval clock', 'A housing bond']);
+    await list.getByRole('button', { name: 'Taller near transit' }).click();
+    expect(onstarter).toHaveBeenCalledExactlyOnceWith(
+      { kind: 'zoning', what: 'transit' },
+      'Transit rule'
+    );
+    // A policy in force in the edited document: Press Play instead, at once.
+    s.setPolicy(mk(protect(5)));
+    await expect.element(activity.getByText('Press Play to see what gets built.')).toBeVisible();
+    expect(activity.getByText('Try one:').elements()).toHaveLength(0);
+  });
+
+  it("Activity's totals read the header's month: today, then each month crossed", async () => {
+    await opened(LAST, {
+      withInspector: true,
+      inspectorOpen: false,
+      initialPolicy: mk(protect(5))
+    });
+    const activity = page.getByTestId('tl-activity');
+    await expect.element(activity).toBeVisible();
+    await expect.poll(() => debug().filledThrough).toBe(LAST);
+    const full = viewOf([chunk(0, LAST + 1)], STATICS);
+    (slider().element() as HTMLElement).focus();
+    await userEvent.keyboard('{Home}');
+    await expect.poll(() => debug().day).toBe(asOf);
+    expect(document.querySelector('[data-testid=tl-totals]')).toBeNull();
+    await expect.element(activity.getByText(goalName(GOAL))).toBeVisible();
+    for (let k = 1; k <= 3; k++) {
+      await userEvent.keyboard('{ArrowRight}');
+      await expect.poll(() => debug().day).toBe(MONTHS[k]);
+      const h = headlineAt(
+        full,
+        { index: k, atToday: false },
+        { provisional: false, inForce: true }
+      )!;
+      await expect.element(scoreBar()).toHaveTextContent(homesBy(h.homes, h.at));
+      await expect.poll(totalsOf).toEqual([
+        ['Approved', String(full.rows[k].entitledNew)],
+        ['Completed', String(h.homes)],
+        ['Stopped', String(full.rows[k].exitedUnits)],
+        ['From your policy', `+${h.effect}`]
+      ]);
+      expect(activity.getByText(goalName(GOAL)).elements()).toHaveLength(0);
+    }
+  });
+
+  it("stale: totals and cost are the held document's, dimmed", async () => {
+    const pool: Pool = {
+      id: 'u-bond',
+      kind: 'goBond',
+      label: 'Bond',
+      inflows: [{ kind: 'once', day: monthFirstDay(asOf, 2), dollars: 100_000_000 }],
+      uncapped: false,
+      debt: null,
+      leverage: 1
+    };
+    const bondDoc: SimPolicy4 = {
+      schema: 4,
+      kinds: {
+        zoning: [],
+        permitting: [],
+        money: [
+          {
+            id: 'm',
+            label: 'Bond',
+            preset: null,
+            on: true,
+            where: { tag: 'fund', pool: 'u-bond' },
+            spans: [
+              {
+                from: monthFirstDay(asOf, 2),
+                to: null,
+                what: { tag: 'fund', pool, programmes: [] }
+              }
+            ]
+          }
+        ]
+      }
+    };
+    const FIN: ScoreStatics = {
+      ...baseStatics({ lastIndex: LAST, finance: true }),
+      asOf,
+      months: MONTHS
+    };
+    const s = setup({ withInspector: true, inspectorOpen: false, initialPolicy: bondDoc });
+    await expect.poll(() => w()?.lastOf('openTimeline')).toBeTruthy();
+    emit(compiledMsg(1, FIN));
+    emit({
+      type: 'filled',
+      rev: 1,
+      through: LAST,
+      series: chunk(0, LAST + 1, { pools: ['u-bond'] })
+    });
+    await expect.poll(() => debug().filledThrough).toBe(LAST);
+    (slider().element() as HTMLElement).focus();
+    await userEvent.keyboard('{ArrowRight}{ArrowRight}{ArrowRight}');
+    await expect.poll(() => debug().day).toBe(MONTHS[3]);
+    const activity = page.getByTestId('tl-activity');
+    const body = activity.getByTestId('tl-activity-body');
+    const terms = () => totalsOf().map(([t]) => t);
+    const MONEY = ['Public money spent', 'Per added home'];
+    await expect
+      .poll(terms)
+      .toEqual(['Approved', 'Completed', 'Stopped', 'From your policy', ...MONEY]);
+    // The chunk's publicSpent at month 3: 100 * 4.
+    expect(totalsOf()[4][1]).toBe(formatDollars(400));
+    expect(body.element().hasAttribute('data-stale')).toBe(false);
+    // The money policy goes: until the refill the held numbers and the held document's rows stay,
+    // dimmed; the heading and Details keep their contrast.
+    s.setPolicy(DEFAULT_POLICY4);
+    s.setLots({});
+    await expect.poll(() => w().lastOf('setPolicy')?.rev).toBe(2);
+    expect(debug().stale).toBe(true);
+    await expect.element(body).toHaveAttribute('data-stale', 'true');
+    expect(terms()).toEqual(['Approved', 'Completed', 'Stopped', 'From your policy', ...MONEY]);
+    const color = (e: Element) => getComputedStyle(e).color;
+    const heading = activity.getByRole('heading', { name: 'Activity' }).element();
+    const button = activity.getByRole('button', { name: 'Details' }).element();
+    expect(color(body.element())).not.toBe(color(heading));
+    expect(color(button)).toBe(color(heading));
+    emit(compiledMsg(2, STATICS));
+    emit(refillMsg(2, 0));
+    emit(filledMsg(2, 0, LAST + 1));
+    await expect.poll(() => debug().stale).toBe(false);
+    await expect.poll(terms).toEqual(['Approved', 'Completed', 'Stopped']);
+    expect(body.element().hasAttribute('data-stale')).toBe(false);
+  });
+
+  it('read-only: no starters and no empty-lane words', async () => {
+    await opened(LAST, { withInspector: true, inspectorOpen: false, readonly: true });
+    const activity = page.getByTestId('tl-activity');
+    await expect.element(activity.getByText('Press Play to see what gets built.')).toBeVisible();
+    expect(activity.getByText('Try one:').elements()).toHaveLength(0);
+    expect(document.querySelectorAll('[data-testid=tl-empty-lane]')).toHaveLength(0);
+  });
+
+  it("Activity's Details and Details' Activity call the page; showActivity focuses Activity", async () => {
+    const ondetails = vi.fn();
+    const onactivity = vi.fn();
+    const s = await opened(LAST, {
+      withInspector: true,
+      inspectorOpen: false,
+      ondetails,
+      onactivity
+    });
+    const insp = page.getByTestId('tl-inspector');
+    await insp.getByTestId('tl-activity').getByRole('button', { name: 'Details' }).click();
+    expect(ondetails).toHaveBeenCalledOnce();
+    await (await s.r).rerender({ inspectorOpen: true });
+    await insp.getByTestId('tl-details').getByRole('button', { name: 'Activity' }).click();
+    expect(onactivity).toHaveBeenCalledOnce();
+    await (await s.r).rerender({ inspectorOpen: true, face: 'activity' });
+    await expect.element(insp.getByTestId('tl-activity')).toBeVisible();
+    await s.showActivity();
+    expect(document.activeElement).toBe(insp.getByTestId('tl-activity').element());
+  });
+
   it("Details' score is not rebuilt as the playhead crosses months; it draws no chart", async () => {
-    await opened(LAST, { withInspector: true, inspectorOpen: false });
+    await opened(LAST, { withInspector: true });
     const details = page.getByTestId('tl-inspector').getByTestId('tl-details');
     await expect.element(details).toBeVisible();
     expect(details.element().querySelector('svg[role="img"], figure')).toBeNull();
@@ -2198,7 +2394,7 @@ describe('TimelineMode', () => {
     );
 
   it('choosing By source in Details redraws the timeline chart with the pipeline line', async () => {
-    await opened(LAST, { withInspector: true, inspectorOpen: false });
+    await opened(LAST, { withInspector: true });
     const details = page.getByTestId('tl-details');
     await expect.element(details).toBeVisible();
     const fig = page.getByTestId('tl-lanes').getByRole('figure');
@@ -2218,11 +2414,7 @@ describe('TimelineMode', () => {
   });
 
   it('a policy in force offers From your policy; the chart and the switch agree when it goes', async () => {
-    const s = await opened(LAST, {
-      withInspector: true,
-      inspectorOpen: false,
-      initialPolicy: mk(protect(5))
-    });
+    const s = await opened(LAST, { withInspector: true, initialPolicy: mk(protect(5)) });
     const details = page.getByTestId('tl-details');
     const fig = page.getByTestId('tl-lanes').getByRole('figure');
     await details.getByRole('radio', { name: 'From your policy' }).click();
@@ -2293,7 +2485,7 @@ describe('TimelineMode', () => {
   });
 
   it('at today Details reads today, as the header does, not month 0', async () => {
-    setup({ withInspector: true, inspectorOpen: false, initialPolicy: mk(protect(5)) });
+    setup({ withInspector: true, initialPolicy: mk(protect(5)) });
     await expect.poll(() => w()?.lastOf('openTimeline')).toBeTruthy();
     emit(compiledMsg(1, STATICS));
     // Month 0 is not empty: 11 homes (5.5 + 5.5), 1 stopped, an effect of 10.
@@ -2326,7 +2518,7 @@ describe('TimelineMode', () => {
   });
 
   it('showDetails scrolls the detail column to the top and focuses Details', async () => {
-    const s = await opened(LAST, { withInspector: true, inspectorOpen: false });
+    const s = await opened(LAST, { withInspector: true });
     const insp = page.getByTestId('tl-inspector');
     await expect.element(insp.getByTestId('tl-details')).toBeVisible();
     const el = insp.element() as HTMLElement;
@@ -2353,7 +2545,7 @@ describe('TimelineMode', () => {
     el.scrollTop = 200;
     expect(el.scrollTop).toBe(200);
     await (await s.r).rerender({ inspectorOpen: false });
-    await expect.element(insp.getByTestId('tl-details')).toBeVisible();
+    await expect.element(insp.getByTestId('tl-activity')).toBeVisible();
     expect(document.querySelector('[data-testid=host-inspector]')).toBeNull();
     await expect.poll(() => el.scrollTop).toBe(0);
   });

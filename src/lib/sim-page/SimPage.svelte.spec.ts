@@ -1511,10 +1511,13 @@ describe('SimPage autosave and publish', () => {
   describe('the header score', () => {
     const scoreBar = () => header().getByTestId('score-bar');
     const details = () => page.getByTestId('tl-details');
+    const activity = () => page.getByTestId('tl-activity');
+    const column = () => page.getByTestId('tl-inspector');
 
-    it('from md Details shows at rest, and the header score has no aria-expanded', async () => {
+    it('from md Activity shows at rest, and the header score has no aria-expanded', async () => {
       await opened();
-      await expect.element(details()).toBeVisible();
+      await expect.element(activity()).toBeVisible();
+      expect(details().elements()).toHaveLength(0);
       expect(scoreBar().element().hasAttribute('aria-expanded')).toBe(false);
       expect(scoreBar().element().getAttribute('aria-controls')).toBe(
         page.getByTestId('tl-inspector').element().id
@@ -1582,7 +1585,102 @@ describe('SimPage autosave and publish', () => {
       expect(details().elements()).toHaveLength(0);
       await page.getByRole('button', { name: 'Close editor' }).click();
       await expect.poll(() => inspector().elements().length).toBe(0);
+      await expect.element(activity()).toBeVisible();
+      expect(details().elements()).toHaveLength(0);
+    });
+
+    it("a starter adds its policy at the playhead's month, selects it and announces Added: Transit rule", async () => {
+      await opened();
+      const starter = activity().getByRole('button', { name: 'Taller near transit' });
+      await expect.element(starter).toBeVisible();
+      await starter.click();
+      await expect.element(inspectorTitle()).toHaveTextContent('Transit rule');
+      const added = debug().policy.kinds.zoning;
+      expect(added).toHaveLength(1);
+      expect(added[0].where.tag).toBe('transit');
+      // The playhead is at today: the add menu's month, the window's first.
+      expect(added[0].spans.map((x) => [x.from, x.to])).toEqual([
+        [monthFirstDay(asOf, viewMonthOf(asOf, debug().day)), null]
+      ]);
+      expect(added[0].spans[0].from).toBe(M(1));
+      // One undoable change, named as the "+" menu names it, and announced.
+      await expect.element(undoButton()).toHaveAccessibleName(/Added: Transit rule/);
+      await expect
+        .element(page.getByRole('status').filter({ hasText: 'Added: Transit rule' }))
+        .toBeInTheDocument();
+      // Selected: its bar is pressed (the kind opened) and focus is on the editor's title.
+      await expect
+        .element(page.getByTestId('tl-kind-zoning').getByRole('button', { pressed: true }))
+        .toBeVisible();
+      await expect.poll(() => document.activeElement).toBe(inspectorTitle().element());
+      // Undo takes it back, and the starters return with nothing in force.
+      await undoButton().click();
+      await expect.poll(() => debug().policy.kinds.zoning.length).toBe(0);
+      await expect.element(starter).toBeVisible();
+    });
+
+    it("Activity's Details opens Details and focuses it", async () => {
+      await opened();
+      await activity().getByRole('button', { name: 'Details' }).click();
       await expect.element(details()).toBeVisible();
+      expect(activity().elements()).toHaveLength(0);
+      await expect.poll(() => document.activeElement).toBe(details().element());
+    });
+
+    it('from md the header pressed again on Details keeps its chart view and focus', async () => {
+      await opened();
+      await scoreBar().click();
+      await expect.element(details()).toBeVisible();
+      const source = details().getByRole('radio', { name: 'By source' });
+      await source.click();
+      await expect
+        .element(page.getByTestId('tl-lanes').getByRole('figure'))
+        .toHaveAttribute('data-lens', 'source');
+      const el = details().element();
+      await scoreBar().click();
+      await expect.poll(() => document.activeElement).toBe(el);
+      // The same Details, not a new one: the chosen view stays.
+      expect(details().element()).toBe(el);
+      await expect.element(source).toBeChecked();
+      await expect
+        .element(page.getByTestId('tl-lanes').getByRole('figure'))
+        .toHaveAttribute('data-lens', 'source');
+    });
+
+    it("Details' Activity button shows Activity; below md it opens Activity in the sheet", async () => {
+      await opened();
+      await scoreBar().click();
+      await details().getByRole('button', { name: 'Activity' }).click();
+      await expect.element(activity()).toBeVisible();
+      expect(details().elements()).toHaveLength(0);
+      await expect.poll(() => document.activeElement).toBe(activity().element());
+      // Closing Details put the chart back on Homes.
+      await expect
+        .element(page.getByTestId('tl-lanes').getByRole('figure'))
+        .toHaveAttribute('data-lens', 'homes');
+    });
+
+    it('below md Details and Activity share the sheet, each reaching the other', async () => {
+      await page.viewport(375, 700);
+      await opened();
+      expect(activity().elements()).toHaveLength(0);
+      await scoreBar().click();
+      await expect.element(details()).toBeVisible();
+      await details().getByRole('button', { name: 'Activity' }).click();
+      await expect.element(column().getByTestId('tl-activity')).toBeVisible();
+      expect(details().elements()).toHaveLength(0);
+      await expect.poll(() => document.activeElement).toBe(activity().element());
+      // The sheet is open: the header score says so, and pressing it closes the sheet.
+      await expect.element(scoreBar()).toHaveAttribute('aria-expanded', 'true');
+      await activity().getByRole('button', { name: 'Details' }).click();
+      await expect.element(details()).toBeVisible();
+      await expect.poll(() => document.activeElement).toBe(details().element());
+      await details().getByRole('button', { name: 'Activity' }).click();
+      await expect.element(activity()).toBeVisible();
+      await scoreBar().click();
+      await expect.element(scoreBar()).toHaveAttribute('aria-expanded', 'false');
+      expect(activity().elements()).toHaveLength(0);
+      expect(column().elements()).toHaveLength(0);
     });
 
     it('below md the header score toggles the Details sheet; aria-expanded follows it', async () => {

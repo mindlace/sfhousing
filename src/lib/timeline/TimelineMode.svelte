@@ -2,7 +2,8 @@
   The /sim and /s/<id> composition on the timeline (timeline-ui rules 1, 18-36): the header score
   and the status slot, the notice stack, the map with the project card and tooltip, and under the
   map the bottom pane: the timeline (the playhead, the chart and the rows) beside the detail
-  column (the inspector, or Details; a sheet on a phone), over a `TimelineSession`. It takes
+  column (the inspector, Details, or at rest Activity; a sheet on a phone), over a
+  `TimelineSession`. It takes
   FzpMode's place; the load states before the worker are FzpMode's (rule 30). The policy store and
   its editors are the page's: edits arrive as a new `policy`, their lots as a new `lots`
   (PolicySync).
@@ -124,6 +125,9 @@
   import ChartRow from './ChartRow.svelte';
   import type { ChartLens } from './chart-lens';
   import SimDetails from './SimDetails.svelte';
+  import SimActivity from './SimActivity.svelte';
+  import { activityTotals, moneyInForce, startersFor } from './activity-view';
+  import type { AddChoice } from './add';
   import { CHANGE_NOT_APPLIED, STALE_NOTE, UPDATING } from './copy';
   import Explain from './Explain.svelte';
   import { fundsOf4 } from './owner';
@@ -200,15 +204,18 @@
     onselect(ref: SpanRef | null): void;
     /** The timeline's "+" (the menu is the page's). */
     onadd(kind: PolicyKind): void;
-    /** The page's inspector, given the Details face and the playhead's day. */
-    inspector?: Snippet<[{ details: Snippet; day: Day }]>;
+    /** The page's inspector, given the Activity and Details faces and the playhead's day. */
+    inspector?: Snippet<[{ activity: Snippet; details: Snippet; day: Day }]>;
     /**
      * The inspector is open (default true). Below md it is a sheet that shows only while open;
      * from md the detail column beside the timeline always shows: the inspector while open,
-     * else Details.
+     * else Activity.
      */
     inspectorOpen?: boolean;
-    /** What the detail column shows (Details, an editor, a menu): a new key starts it at its top. */
+    /**
+     * What the detail column shows (Activity, Details, an editor, a menu): a new key starts it at
+     * its top.
+     */
     detailKey?: string;
     /** The playhead's day, on every change. */
     onday?(day: Day): void;
@@ -227,6 +234,15 @@
     onmiss?(): void;
     /** The header score is pressed. */
     onscore?(): void;
+    /**
+     * Activity's starter is pressed: the page adds `choice` as its "+" menu does, announcing
+     * "Added: {label}". Absent (read-only), Activity offers no starters.
+     */
+    onstarter?(choice: AddChoice, label: string): void;
+    /** Activity's Details button. Absent, it presses the header score. */
+    ondetails?(): void;
+    /** Details' Activity button; absent, Details has none. */
+    onactivity?(): void;
     /** The sheet shows Details: the header score's `aria-expanded`, below md only. */
     scoreExpanded?: boolean;
     /** The detail column's id: the header score's `aria-controls` while the column shows. */
@@ -278,6 +294,9 @@
     onchunks = undefined,
     onmiss = undefined,
     onscore = undefined,
+    onstarter = undefined,
+    ondetails = undefined,
+    onactivity = undefined,
     scoreExpanded = false,
     scoreControls = undefined,
     bottomExtra = 0,
@@ -401,6 +420,26 @@
       { index, atToday },
       { provisional: session?.provisional ?? false, inForce }
     )
+  );
+  /**
+   * Activity's totals at the playhead's month, under the headline's rule and from the document the
+   * numbers on show came from (held while stale). It reads `index` and `atToday`, never `day`, so
+   * it changes at most once per month the playhead crosses.
+   */
+  const totals = $derived(
+    activityTotals(
+      shown.view,
+      { index, atToday },
+      {
+        provisional: session?.provisional ?? false,
+        inForce,
+        moneyInForce: moneyInForce(resultsDoc)
+      }
+    )
+  );
+  /** At today with nothing in force in the edited document and the page editable: the starters. */
+  const starters = $derived(
+    onstarter && calibration && nothingInForce(policy) ? startersFor(calibration, policy) : []
   );
   /** The map key control's box: the card's area ends at its left edge. */
   let keyEl = $state<HTMLElement>();
@@ -1045,7 +1084,7 @@
   // ---- the inspector (rule 1) ----
 
   const narrow = new MediaQuery('(max-width: 767px)');
-  /** The detail column shows: always from md (Details when nothing is open), below md while open. */
+  /** The detail column shows: always from md (Activity when nothing is open), below md while open. */
   const detailShown = $derived(
     mounted && session !== null && !!inspector && (!narrow.current || inspectorOpen)
   );
@@ -1054,7 +1093,7 @@
   let dockEl = $state<HTMLElement>();
   let detailEl = $state<HTMLElement>();
 
-  /** The column's content swaps (Details, an editor, another editor): it starts at the top. */
+  /** The column's content swaps (Activity, Details, an editor): it starts at the top. */
   $effect(() => {
     void inspectorOpen;
     void detailKey;
@@ -1068,6 +1107,15 @@
     if (!detailEl) return;
     detailEl.scrollTop = 0;
     detailEl.querySelector<HTMLElement>('[data-testid=tl-details]')?.focus({ preventScroll: true });
+  }
+  /** Activity's or Details' button, or the header from md: the column at its top, focus on it. */
+  export async function showActivity(): Promise<void> {
+    await tick();
+    if (!detailEl) return;
+    detailEl.scrollTop = 0;
+    detailEl
+      .querySelector<HTMLElement>('[data-testid=tl-activity]')
+      ?.focus({ preventScroll: true });
   }
   /**
    * What the one chart plots: Details switches it (bound), and it is Homes whenever Details is
@@ -1241,7 +1289,28 @@
       market={calibration ? marketSentence(calibration) : null}
       {inForce}
       {goal}
+      {onactivity}
       bind:lens
+    />
+  </div>
+{/snippet}
+
+{#snippet activity()}
+  <!-- Focused by showActivity, the ring inside the box as Details'. Not dimmed as a whole: only
+       Activity's body dims while stale, its heading and button keep their contrast. -->
+  <div
+    class="p-3 focus:outline-2 focus:-outline-offset-2 focus:outline-accent dark:focus:outline-accent-dark"
+    data-testid="tl-activity"
+    tabindex="-1"
+  >
+    <SimActivity
+      {goal}
+      {totals}
+      {atToday}
+      {starters}
+      onstarter={(s) => onstarter?.(s.choice, s.label)}
+      ondetails={() => (ondetails ?? onscore)?.()}
+      {stale}
     />
   </div>
 {/snippet}
@@ -1514,7 +1583,7 @@
       </div>
 
       {#if detailShown && inspector}
-        <!-- From md the column beside the timeline: the inspector while open, else Details. Below
+        <!-- From md the column beside the timeline: the inspector while open, else Activity. Below
              md a sheet from under the chart to the mode box's end (top and bottom inline), so the
              playhead and the chart stay above it and nothing past the box is covered (rules 1, 9; W6b). -->
         <aside
@@ -1526,9 +1595,9 @@
           class="z-30 overflow-y-auto border-line bg-surface text-ink max-md:fixed max-md:inset-x-0 max-md:rounded-t-2xl max-md:border-t max-md:shadow-lg md:min-h-0 md:border-l dark:border-line-dark dark:bg-surface-dark dark:text-ink-dark"
         >
           {#if inspectorOpen}
-            {@render inspector({ details, day })}
+            {@render inspector({ activity, details, day })}
           {:else}
-            {@render details()}
+            {@render activity()}
           {/if}
         </aside>
       {/if}

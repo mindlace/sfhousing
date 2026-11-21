@@ -1,7 +1,7 @@
 <!--
   Details on /sim (was Results): the numbers behind the headline at the playhead's month. It draws
   no chart of its own: its Chart switch (`lens`, bound) picks what the one timeline chart plots.
-  Order: the heading, the switch, the goal rows, what the policy added (the protection line kept),
+  Order: the heading (with Activity in its row), the switch, the goal rows, what the policy added (the protection line kept),
   the homes by source, the stopped line, public money, who the homes are for, the year table
   (stopping at the playhead's month) and the Sources disclosure. Unmounting puts the chart back on
   Homes: the chart at rest always means one thing. Every id is per instance.
@@ -68,6 +68,8 @@
     lens?: ChartLens;
     /** Test seam: the goal the rows read, as the page's (TimelineMode's `goal`). */
     goal?: Goal;
+    /** Shows Activity in the column: the heading row's button (none without it). */
+    onactivity?: () => void;
   }
   let {
     score,
@@ -88,7 +90,8 @@
     uncapped = new Set(),
     inForce = false,
     lens = $bindable<ChartLens>('homes'),
-    goal = GOAL
+    goal = GOAL,
+    onactivity = undefined
   }: Props = $props();
 
   const uid = $props.id();
@@ -146,7 +149,16 @@
 {/snippet}
 
 <div class="text-ink dark:text-ink-dark">
-  <h2 class="text-base font-semibold">Details</h2>
+  <div class="flex items-center justify-between gap-2">
+    <h2 class="text-base font-semibold">Details</h2>
+    {#if onactivity}
+      <button
+        type="button"
+        class="inline-flex min-h-6 min-w-6 items-center rounded-md border border-control-line px-2 text-sm font-semibold text-ink hover:bg-surface-raised focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent dark:border-control-line-dark dark:text-ink-dark dark:hover:bg-surface-dark-raised dark:focus-visible:outline-accent-dark pointer-coarse:min-h-11"
+        onclick={onactivity}>Activity</button
+      >
+    {/if}
+  </div>
   {#if !score || !at}
     {@render staleLine()}
     <p class="mt-3 text-sm text-ink-muted dark:text-ink-dark-muted">Loading the simulation…</p>

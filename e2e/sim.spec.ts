@@ -239,7 +239,7 @@ test('/fzp lands on /sim and the forecast fills', async ({ page }) => {
   expect(await fzp(page, 'filledThrough')).toBe(await fzp(page, 'lastIndex'));
 });
 
-test('/sim opens on the Family Zoning Plan; the header score shows Details', async ({
+test('/sim opens on the Family Zoning Plan; Activity at rest, the header score shows Details', async ({
   isMobile,
   page
 }) => {
@@ -251,7 +251,8 @@ test('/sim opens on the Family Zoning Plan; the header score shows Details', asy
     await expect(scoreBar(page)).toHaveAttribute('aria-expanded', 'false');
   } else {
     await expect(scoreBar(page)).not.toHaveAttribute('aria-expanded');
-    await expect(results(page)).toBeVisible();
+    await expect(page.getByTestId('tl-activity')).toBeVisible();
+    await expect(results(page)).toHaveCount(0);
   }
   // Nothing in force: the numbers are current law's.
   const face = await openScore(page);
@@ -383,12 +384,13 @@ test('below md the header score flips the sheet between Details and the editor',
   await expect(editor(page).getByRole('heading', { name: 'Transit rule' })).toBeVisible();
 });
 
-test('from md Details shows at rest; below md nothing opens', async ({ isMobile, page }) => {
+test('from md Activity shows at rest; below md nothing opens', async ({ isMobile, page }) => {
   await gotoSim(page);
   if (isMobile) {
     await expect(inspectorBox(page)).toHaveCount(0);
   } else {
-    await expect(results(page)).toBeVisible();
+    await expect(page.getByTestId('tl-activity')).toBeVisible();
+    await expect(results(page)).toHaveCount(0);
     await expect(editor(page)).toHaveCount(0);
   }
 });

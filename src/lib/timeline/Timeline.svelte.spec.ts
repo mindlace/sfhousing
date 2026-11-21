@@ -394,6 +394,51 @@ describe('Timeline rows', () => {
     expect(onadd).toHaveBeenCalledWith('permitting');
   });
 
+  const emptyDoc: SimPolicy4 = { schema: 4, kinds: { zoning: [], permitting: [], money: [] } };
+  const laneWords = () => all('[data-testid=tl-empty-lane]');
+
+  it('a closed empty kind shows its words in the lane; pressing them calls onadd(kind)', async () => {
+    const { onadd } = await setup({
+      policy: { ...emptyDoc, kinds: { ...emptyDoc.kinds, zoning: [zoning] } }
+    });
+    // Zoning has a policy: its miniature, no words. The other two say what "+" adds.
+    expect(laneWords().map((e) => e.textContent!.trim())).toEqual([
+      'Add a permitting change',
+      'Add public money'
+    ]);
+    const words = page.getByTestId('tl-kind-money').getByTestId('tl-empty-lane');
+    await expect.element(words).toBeVisible();
+    expect(words.element().closest('[data-testid=tl-lane]')).not.toBeNull();
+    await words.click();
+    expect(onadd).toHaveBeenCalledExactlyOnceWith('money');
+    // Open, the kind shows its rows instead.
+    await kindButton('Permitting').click();
+    expect(laneWords().map((e) => e.textContent!.trim())).toEqual(['Add public money']);
+  });
+
+  it('the words are hidden from assistive tech and out of tab order; read-only shows none', async () => {
+    const { rerender } = await setup({ policy: emptyDoc });
+    const words = laneWords();
+    expect(words).toHaveLength(3);
+    for (const w of words) {
+      expect(w.getAttribute('aria-hidden')).toBe('true');
+      expect(w.getAttribute('tabindex')).toBe('-1');
+      // The "+" named for the kind stays the one keyboard and assistive path.
+      const kind = w.closest('[data-testid^=tl-kind-]')!;
+      expect(kind.querySelectorAll('button.plus')).toHaveLength(1);
+      // A 24 px target at least.
+      expect(w.getBoundingClientRect().height).toBeGreaterThanOrEqual(24);
+    }
+    await rerender({ policy: emptyDoc, readonly: true });
+    expect(laneWords()).toHaveLength(0);
+    // No Public money kind, no words for it.
+    await rerender({ policy: emptyDoc, calibration: calNoMoney });
+    expect(laneWords().map((e) => e.textContent!.trim())).toEqual([
+      'Add a zoning change',
+      'Add a permitting change'
+    ]);
+  });
+
   it('a pointer drag of an edge commits one edit on pointer-up', async () => {
     const { onedit } = await setup();
     await kindButton('Permitting').click();
