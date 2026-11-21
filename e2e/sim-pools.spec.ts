@@ -135,6 +135,46 @@ test("forced colours: the bond's level is drawn in a system colour", async ({ pa
   expect(drawn.want.gray).not.toBe(drawn.want.canvas);
 });
 
+test("forced colours: each bar's extent is drawn as a 1 px ButtonText line; none otherwise", async ({
+  page
+}) => {
+  await gotoSim(page);
+  await addBond(page);
+  await bondBar(page);
+  /** Every bar in the open Public money kind (below md, its sheet) not selected or focused. */
+  const outlines = () =>
+    page
+      .getByTestId('tl-kind-money')
+      .last()
+      .evaluate((kind) => {
+        const probe = document.body.appendChild(document.createElement('span'));
+        probe.style.color = 'ButtonText';
+        const text = getComputedStyle(probe).color;
+        probe.remove();
+        const bars = [...kind.querySelectorAll<HTMLElement>('button.bar')].filter(
+          (b) => !b.matches('.sel, :focus-visible')
+        );
+        return {
+          text,
+          bars: bars.map((b) => {
+            const s = getComputedStyle(b);
+            return [s.outlineStyle, s.outlineWidth, s.outlineColor, s.outlineOffset];
+          })
+        };
+      });
+  // The span bar and the fixed "Current funding" bar at least.
+  const plain = await outlines();
+  expect(plain.bars.length).toBeGreaterThanOrEqual(2);
+  for (const b of plain.bars) expect(b[0]).toBe('none');
+  await page.emulateMedia({ reducedMotion: 'reduce', forcedColors: 'active' });
+  await expect
+    .poll(() => page.evaluate(() => matchMedia('(forced-colors: active)').matches))
+    .toBe(true);
+  const forced = await outlines();
+  expect(forced.bars).toHaveLength(plain.bars.length);
+  for (const b of forced.bars) expect(b).toEqual(['solid', '1px', forced.text, '-1px']);
+});
+
 for (const scheme of ['light', 'dark'] as const) {
   test(`the Public money rows with levels: axe clean, ${scheme}`, async ({ page }) => {
     await gotoSim(page, scheme);
