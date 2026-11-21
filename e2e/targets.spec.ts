@@ -111,9 +111,11 @@ async function small(page: Page): Promise<{ crowded: string[]; spaced: string[] 
             o.r.bottom >= t.r.bottom
           )
             return false;
+          // Another small target: its circle, and its box too (a small target can be long and
+          // thin, reaching far past its own circle).
           if (isSmall(o.r)) {
             const [ox, oy] = centre(o.r);
-            return Math.hypot(x - ox, y - oy) < 24;
+            return Math.hypot(x - ox, y - oy) < 24 || toRect(x, y, o.r) < 12;
           }
           return toRect(x, y, o.r) < 12;
         });
