@@ -15,6 +15,7 @@ import {
   playheadAt,
   resultsAt,
   scoreOfView,
+  todayAt,
   type HeadlineOpts
 } from './results';
 import { calendarMonths, chunk, cut, statics } from './test/fixtures';
@@ -250,5 +251,31 @@ describe('scoreOfView and resultsAt', () => {
     const s = scoreOfView(empty, null);
     expect(s.money).toBeUndefined();
     expect(s.shown).toEqual([]);
+  });
+});
+
+describe('todayAt', () => {
+  it('todayAt reads today as the header does: nothing added, approved or stopped yet', () => {
+    const v = whole();
+    const month0 = resultsAt(v, null, 0);
+    expect(month0.pipeline).not.toBe(0);
+    expect(month0.exitedUnits).not.toBe(0);
+    const t = todayAt(month0);
+    expect(t).toEqual({
+      ...month0,
+      pipeline: 0,
+      fresh: 0,
+      exitedUnits: 0,
+      planCompleted: 0,
+      planEntitled: 0
+    });
+    // The header at today agrees: 0 homes, +0 from your policy.
+    const head = headlineAt(v, at(0, true), OPTS)!;
+    expect(t.pipeline + t.fresh).toBe(head.homes);
+    expect(t.planCompleted).toBe(head.effect);
+    // "Calculating" stays calculating.
+    const pending = todayAt({ ...month0, planCompleted: null, planEntitled: null });
+    expect(pending.planCompleted).toBeNull();
+    expect(pending.planEntitled).toBeNull();
   });
 });

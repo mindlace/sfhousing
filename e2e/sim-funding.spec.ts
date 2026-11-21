@@ -31,7 +31,7 @@ import {
 } from '../src/lib/sim-page/funding-presets';
 import { baselineGroups, programmeSentence } from '../src/lib/sim-page/funding-view';
 import { expectNoA11yViolations } from './helpers/a11y';
-import { addPolicy, openKind, waitFilled } from './helpers/run';
+import { addPolicy, openKind, slider, waitFilled } from './helpers/run';
 import {
   SIM_KEY,
   gotoHydrated,
@@ -449,6 +449,11 @@ test('7. Details: Public money, Who the homes are for, the market and the source
   await page.getByTestId('score-bar').click();
   const face = results(page);
   await expect(face).toBeVisible();
+  // At today nothing is spent or finished yet: the blocks show from the first month on.
+  await expect(face.getByTestId('fzp-money')).toHaveCount(0);
+  await slider(page).focus();
+  await page.keyboard.press('End');
+  await waitFilled(page);
 
   const money = face.getByTestId('fzp-money');
   await expect(money.getByRole('heading', { name: 'Public money' })).toBeVisible();

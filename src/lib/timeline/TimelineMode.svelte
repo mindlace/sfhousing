@@ -139,7 +139,8 @@
     headlineText,
     playheadAt,
     resultsAt,
-    scoreOfView
+    scoreOfView,
+    todayAt
   } from './results';
   import { TimelineSession, type Lots, type SessionNotice } from './session.svelte';
   import type { SpanRef } from './spans';
@@ -354,12 +355,12 @@
   /** Today's score shape over the view on show (rule 26). */
   const score = $derived(shownView ? scoreOfView(shownView, tierBaseline) : null);
   const shownFilled = $derived(shown.view?.filledThrough ?? -1);
-  /** `resultsAt` over the score above (the view's, built once). */
-  const at = $derived(
-    shown.view && score && index <= shownFilled
-      ? resultsAt(shown.view, tierBaseline, index, score)
-      : null
-  );
+  /** `resultsAt` over the score above (the view's, built once); at today `todayAt` of it. */
+  const at = $derived.by(() => {
+    if (!shown.view || !score || index > shownFilled) return null;
+    const read = resultsAt(shown.view, tierBaseline, index, score);
+    return atToday ? todayAt(read) : read;
+  });
   /**
    * The document the shown numbers are from: the one the worker runs, or while stale the one it
    * ran when the held view was taken; the edited `policy` until the session has one.
@@ -1217,7 +1218,7 @@
   <!-- Focused by showDetails: the ring draws inside the box, which sits flush in the column's
        scroll box and would clip an outer one (WCAG 2.4.7). -->
   <div
-    class="tl-dim focus:outline-2 focus:-outline-offset-2 focus:outline-accent dark:focus:outline-accent-dark"
+    class="tl-dim p-3 focus:outline-2 focus:-outline-offset-2 focus:outline-accent dark:focus:outline-accent-dark"
     data-testid="tl-details"
     data-stale={stale ? 'true' : undefined}
     tabindex="-1"

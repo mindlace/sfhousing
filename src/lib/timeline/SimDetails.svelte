@@ -179,9 +179,9 @@
     </div>
 
     <section class="mt-4" aria-busy={planPending ? 'true' : undefined}>
-      <h2 class="text-sm font-semibold">
+      <h3 class="text-sm font-semibold">
         <Explain text={TWIN_NOTE}>What {copy.plan} added</Explain>
-      </h2>
+      </h3>
       <p class="mt-1 text-sm text-ink-muted dark:text-ink-dark-muted">
         {comparisonLine(copy, at.planCompleted)}
       </p>
@@ -225,24 +225,27 @@
       <span class="tabular-nums">{formatCount(at.exitedUnits)}</span>
     </p>
 
-    <MoneyResults
-      {score}
-      i={at.monthIndex}
-      at={score.months[at.monthIndex]}
-      {terms}
-      {pending}
-      {uncapped}
-      part="money"
-    />
+    <!-- At today nothing is spent or finished yet: no money or tier block, as no table. -->
+    {#if !playhead.atToday}
+      <MoneyResults
+        {score}
+        i={at.monthIndex}
+        at={score.months[at.monthIndex]}
+        {terms}
+        {pending}
+        {uncapped}
+        part="money"
+      />
 
-    <MoneyResults
-      {score}
-      i={at.monthIndex}
-      at={score.months[at.monthIndex]}
-      {terms}
-      {pending}
-      part="tiers"
-    />
+      <MoneyResults
+        {score}
+        i={at.monthIndex}
+        at={score.months[at.monthIndex]}
+        {terms}
+        {pending}
+        part="tiers"
+      />
+    {/if}
 
     {#if years.length > 0}
       <details class="mt-4" data-testid="tl-year-table">
@@ -256,7 +259,7 @@
             <caption
               id="{uid}-years"
               class="text-left text-xs text-ink-muted dark:text-ink-dark-muted"
-              >Homes by year, from today</caption
+              >Running total from today, by year</caption
             >
             <thead>
               <tr>

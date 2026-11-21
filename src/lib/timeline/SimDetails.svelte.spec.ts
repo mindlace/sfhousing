@@ -33,7 +33,8 @@ import {
   fundedLine,
   marketText,
   moneyAt,
-  tiersAt
+  tiersAt,
+  plainSources
 } from '$lib/fzp/money-view';
 import { formatCount } from '$lib/scoreboard/format';
 import { resolveTerms } from '$lib/sim/finance';
@@ -629,8 +630,8 @@ describe('public money and income tiers (funding-ui 4.11)', () => {
       sources().querySelector('summary')!
     ];
     for (let k = 0; k < els.length - 1; k++) before(els[k], els[k + 1]);
-    expect(el('fzp-money')!.querySelector('h2')!.textContent).toMatch(/Public money$/);
-    expect(el('fzp-tiers')!.querySelector('h2')!.textContent).toMatch(/Who the homes are for$/);
+    expect(el('fzp-money')!.querySelector('h3')!.textContent).toMatch(/Public money$/);
+    expect(el('fzp-tiers')!.querySelector('h3')!.textContent).toMatch(/Who the homes are for$/);
     before(el('fzp-money-city')!, el('fzp-money-all')!);
   });
 
@@ -738,7 +739,8 @@ describe('public money and income tiers (funding-ui 4.11)', () => {
     await page.viewport(1024, 768);
     await renderAtRest(at(MONEY_LAST));
     const tierBox = el('fzp-tiers-sources')!;
-    for (const pv of TIER_SOURCES) expect(tierBox.textContent).toContain(pv.label);
+    // As shown: no plain label says RHNA (plainSources); the links keep the documents' names.
+    for (const pv of plainSources(TIER_SOURCES)) expect(tierBox.textContent).toContain(pv.label);
     const base = MONEY_SCORE.baseline;
     expect(el('fzp-tiers-baseline')!.textContent).toContain(tierBaselineLabel(base.since));
     expect(tierBox.textContent).toContain(
@@ -949,7 +951,7 @@ describe('fed from a stepped view (timeline-ui rule 26)', () => {
     const at = resultsAt(withTiers, baseline, IDX);
     await renderAtRest({ ...feed(withTiers), score, at, view: withTiers });
     const h2s = [
-      ...document.querySelectorAll('[data-testid="fzp-money"] h2, [data-testid="fzp-tiers"] h2')
+      ...document.querySelectorAll('[data-testid="fzp-money"] h3, [data-testid="fzp-tiers"] h3')
     ];
     expect(h2s.map((h) => h.textContent)).toEqual(['Public money', 'Who the homes are for']);
   });
@@ -1169,7 +1171,7 @@ describe('the Chart switch and the year table', () => {
     const p = props({ inForce: true });
     await renderAtRest(p);
     await page.getByText('Show as table').click();
-    const table = page.getByRole('table', { name: 'Homes by year, from today' });
+    const table = page.getByRole('table', { name: 'Running total from today, by year' });
     await expect.element(table).toBeVisible();
     const t = table.element() as HTMLTableElement;
     expect([...t.tHead!.rows[0].cells].map((c) => c.textContent!.trim())).toEqual([
@@ -1218,5 +1220,43 @@ describe('the Chart switch and the year table', () => {
     await renderAtRest(props());
     await page.getByText('Show as table').click();
     await expect.element(page.getByRole('columnheader', { name: 'Year' })).toBeVisible();
+  });
+});
+
+describe('fix round 1', () => {
+  it("Details' sections are h3 under the Details h2; the limits heading is h4", async () => {
+    await page.viewport(1024, 768);
+    await renderAtRest(props({ score: MONEY_SCORE, day: MONEY_SCORE.months[MONEY_LAST] + 14 }));
+    const levels = [...document.querySelectorAll('h2, h3, h4')].map(
+      (h) => `${h.tagName} ${h.textContent!.trim()}`
+    );
+    expect(levels).toEqual([
+      'H2 Details',
+      'H3 What current law added',
+      'H3 Public money',
+      'H4 Limits on the City borrowing this policy adds (shown, not enforced)',
+      'H3 Who the homes are for'
+    ]);
+  });
+
+  it('at today the money and tier blocks are not shown, as the table is not', async () => {
+    await page.viewport(1024, 768);
+    const p = props({ score: MONEY_SCORE, day: FIX_ASOF });
+    expect(p.playhead.atToday).toBe(true);
+    await renderAtRest(p);
+    await expect.element(page.getByText('What current law added')).toBeVisible();
+    expect(document.querySelector('[data-testid="fzp-money"]')).toBeNull();
+    expect(document.querySelector('[data-testid="fzp-tiers"]')).toBeNull();
+    expect(document.querySelector('[data-testid="tl-year-table"]')).toBeNull();
+  });
+
+  it('no plain label in Homes by income level says RHNA; only citation links may', async () => {
+    await page.viewport(1024, 768);
+    await renderAtRest(props({ score: MONEY_SCORE, day: MONEY_SCORE.months[MONEY_LAST] + 14 }));
+    await page.getByRole('button', { name: 'Homes by income level' }).click();
+    const tiers = page.getByTestId('fzp-tiers').element().cloneNode(true) as HTMLElement;
+    tiers.querySelectorAll('a').forEach((a) => a.remove());
+    expect(tiers.textContent).not.toMatch(/RHNA/);
+    expect(tiers.textContent).toContain('since the start of the goal period');
   });
 });

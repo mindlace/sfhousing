@@ -62,6 +62,22 @@ export function resultsAt(
   return scoreAt(score, i);
 }
 
+/**
+ * Details' figures at today, under the headline's rule: nothing completed, approved or stopped
+ * from today yet, so the month-0 row's pipeline, new projects, stopped homes and plan effect read
+ * 0 (a plan effect still calculating stays null). Everything else is `at`'s.
+ */
+export function todayAt(at: ScoreAt): ScoreAt {
+  return {
+    ...at,
+    pipeline: 0,
+    fresh: 0,
+    exitedUnits: 0,
+    planCompleted: at.planCompleted === null ? null : 0,
+    planEntitled: at.planEntitled === null ? null : 0
+  };
+}
+
 export interface Headline {
   /** Simulated net homes completed from today to the playhead: rows[i].completedNet; 0 at today. */
   homes: number;

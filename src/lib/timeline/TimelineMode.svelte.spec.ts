@@ -1461,6 +1461,10 @@ describe('TimelineMode', () => {
     await expect.poll(() => w()?.lastOf('openTimeline')).toBeTruthy();
     emit(compiledMsg(1, FIN));
     filledPools(1);
+    // Past today: at today Details shows no money block.
+    (slider().element() as HTMLElement).focus();
+    await userEvent.keyboard('{PageUp}');
+    await expect.poll(() => debug().day).toBeGreaterThan(asOf);
     const results = page.getByTestId('tl-details');
     await results.getByRole('button', { name: /Money details/ }).click();
     const received = () => {
@@ -2162,6 +2166,10 @@ describe('TimelineMode', () => {
     const insp = page.getByTestId('tl-inspector');
     await expect.element(insp.getByTestId('tl-details')).toBeVisible();
     expect(document.querySelector('[data-testid=host-inspector]')).toBeNull();
+    // Padded as the Inspector is: the text keeps off the column's edge.
+    const pad = getComputedStyle(insp.getByTestId('tl-details').element());
+    expect(pad.paddingLeft).toBe('12px');
+    expect(pad.paddingRight).toBe('12px');
   });
 
   it("Details' score is not rebuilt as the playhead crosses months; it draws no chart", async () => {
@@ -2225,6 +2233,11 @@ describe('TimelineMode', () => {
     s.setPolicy(DEFAULT_POLICY4);
     s.setLots({});
     await expect.poll(() => w().lastOf('setPolicy')?.rev).toBe(2);
+    // Before the refill the numbers on show are the policy's: the switch and the chart both
+    // still say From your policy.
+    expect(debug().stale).toBe(true);
+    await expect.element(details.getByRole('radio', { name: 'From your policy' })).toBeChecked();
+    await expect.element(fig).toHaveAttribute('data-lens', 'effect');
     emit(compiledMsg(2, STATICS));
     emit(refillMsg(2, 0));
     emit(filledMsg(2, 0, LAST + 1));
@@ -2277,6 +2290,39 @@ describe('TimelineMode', () => {
     });
     await expect.element(scoreBar()).toHaveAttribute('aria-expanded', 'true');
     await expect.element(scoreBar()).toHaveAttribute('aria-controls', 'insp');
+  });
+
+  it('at today Details reads today, as the header does, not month 0', async () => {
+    setup({ withInspector: true, inspectorOpen: false, initialPolicy: mk(protect(5)) });
+    await expect.poll(() => w()?.lastOf('openTimeline')).toBeTruthy();
+    emit(compiledMsg(1, STATICS));
+    // Month 0 is not empty: 11 homes (5.5 + 5.5), 1 stopped, an effect of 10.
+    emit(filledMsg(1, 0, LAST + 1, { base: 10 }));
+    await expect.poll(() => debug().filledThrough).toBe(LAST);
+    expect(debug().day).toBe(asOf);
+    await expect.element(scoreBar()).toHaveTextContent('0 homes by today');
+    await expect.element(page.getByTestId('score-delta')).toHaveTextContent('+0 from your policy');
+    const details = page.getByTestId('tl-details');
+    const row = (label: string) =>
+      details
+        .getByText(label, { exact: true })
+        .element()
+        .parentElement!.textContent!.replace(/\s+/g, ' ')
+        .trim();
+    expect(row("From today's pipeline")).toBe("From today's pipeline 0");
+    expect(row('New projects')).toBe('New projects 0');
+    expect(row('Homes completed because of your policy')).toBe(
+      'Homes completed because of your policy 0'
+    );
+    expect(row('Homes approved because of your policy')).toBe(
+      'Homes approved because of your policy 0'
+    );
+    await expect
+      .element(details.getByText(/^Your policy added/))
+      .toHaveTextContent('Your policy added 0 homes vs current law');
+    await expect
+      .element(details.getByText(/^Proposed homes in projects that stopped/))
+      .toHaveTextContent(/: 0$/);
   });
 
   it('showDetails scrolls the detail column to the top and focuses Details', async () => {

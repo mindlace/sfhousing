@@ -7,7 +7,6 @@ import { MONEY_SOURCES } from '$lib/sim/scenario/finance-score';
 import {
   MARKET_FUNDING_SENTENCE4,
   PER_HOME_SOURCE,
-  REFERENCE_NOTE,
   GOAL_FLAG,
   LENS_NAME,
   chartCaption,
@@ -109,7 +108,6 @@ describe('marketBody', () => {
   it('marketBody swaps in the current-law sentence and drops the old tail', () => {
     expect(marketBody(`x ${MARKET_FUNDING_SENTENCE}`)).toBe(`x ${MARKET_FUNDING_SENTENCE4}`);
     expect(MARKET_FUNDING_SENTENCE4).not.toContain('FZP');
-    expect(REFERENCE_NOTE).toContain('Family Zoning Plan');
   });
 
   it('drops the market sentence’s closing disclaimer', () => {

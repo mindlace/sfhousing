@@ -12,6 +12,8 @@ import { INCOME_TIERS } from '$lib/timelapse/types';
 import { MARKET_FUNDING_SENTENCE } from '$lib/sim-page/funding-copy';
 import { fixtureCalibration } from './fixtures/calibration';
 import { MONEY_LAST, MONEY_SCORE } from './fixtures/money';
+import { plainSources } from './money-view';
+import { TIER_SOURCES as TIERS } from '$lib/sim/scenario/finance-score';
 import { formatDollars, formatDollarsExact, formatSourcePercent } from './format';
 import { marketSentence } from './market-view';
 import {
@@ -287,5 +289,25 @@ describe('moneyFigureAt', () => {
     expect(displacementLine(view, 3)).toContain('(3.0% of funded homes)');
     expect(displacementLine(view, 3)).not.toMatch(/ by \d{4}/);
     expect(moneyFigureAt(base, 1).perAddedHome.all).toBe(moneyAt(base, 1).perAddedHome);
+  });
+});
+
+describe('plainSources', () => {
+  it('no plain label says RHNA; the citations (links) keep their document names', () => {
+    expect(TIERS.some((p) => /RHNA/.test(p.label))).toBe(true);
+    const plain = plainSources(TIERS);
+    for (const p of plain) expect(p.label).not.toMatch(/RHNA/);
+    expect(plain.map((p) => p.label)).toContain(
+      'Homes completed since the start of the goal period, by income tier (net)'
+    );
+    expect(plain.map((p) => p.label)).toContain('State 2023-2031 targets by income tier');
+    // Everything else is the hashed entry as it is.
+    plain.forEach((p, k) => {
+      expect(p.sources).toEqual(TIERS[k].sources);
+      expect(p.tier).toBe(TIERS[k].tier);
+    });
+    expect(plainSources([{ tier: 0, label: 'Other', sources: [], method: 'm' }])[0].label).toBe(
+      'Other'
+    );
   });
 });

@@ -14,9 +14,6 @@ import type { CoverageStep } from '$lib/sim-page/funding-view';
 import { lensOf, type ChartLens } from './chart-lens';
 
 export const FORECAST_NOTE = 'A forecast if nothing changes.';
-/** Behind each reference line's legend entry on the chart. */
-export const REFERENCE_NOTE =
-  'Published estimates of what the Family Zoning Plan adds. Compare with the violet lines.';
 export const capacityNote = (year: number): string => `Capacity in ${year}.`;
 export const TWIN_NOTE = 'The forecast is run twice, with and without it.';
 

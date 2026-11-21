@@ -43,15 +43,25 @@ test('the headline opens Details, focused; it names no RHNA', async ({ page, isM
       .poll(() => details(page).evaluate((el) => el.contains(document.activeElement)))
       .toBe(true);
   }
-  // Sources open, the text as shown. The closed "Homes by income level" panel cites its source
-  // documents by their published names (hashed finance-score labels); Details' own words never
-  // say RHNA.
+  // Mid-play, every disclosure open: no text outside a citation link says RHNA or FZP (the
+  // links name the source documents, "Final RHNA Plan").
+  await slider(page).focus();
+  await page.keyboard.press('End');
+  await waitFilled(page);
   for (const summary of await details(page).locator('details > summary').all())
     await summary.click();
+  for (const name of ['Money details', 'Homes by income level'])
+    await details(page).getByRole('button', { name }).click();
+  await expect(details(page).getByTestId('fzp-tiers-table')).toBeVisible();
   await expect(details(page).getByTestId('fzp-sources')).toHaveAttribute('open', '');
-  const shown = await details(page).innerText();
-  expect(shown).not.toMatch(/RHNA/);
-  expect(shown).not.toMatch(/\bFZP\b/);
+  const plain = await details(page).evaluate((el) => {
+    const copy = el.cloneNode(true) as HTMLElement;
+    copy.querySelectorAll('a').forEach((a) => a.remove());
+    return copy.textContent ?? '';
+  });
+  expect(plain).toContain('Who the homes are for');
+  expect(plain).not.toMatch(/RHNA/);
+  expect(plain).not.toMatch(/\bFZP\b/);
 });
 
 test('By source redraws the timeline chart; closing Details puts Homes back', async ({
@@ -101,7 +111,7 @@ for (const scheme of ['light', 'dark'] as const) {
     await waitFilled(page);
     await details(page).getByText('Show as table').click();
     await expect(
-      details(page).getByRole('table', { name: 'Homes by year, from today' })
+      details(page).getByRole('table', { name: 'Running total from today, by year' })
     ).toBeVisible();
     await expect(details(page).getByRole('radio', { name: 'From your policy' })).toBeVisible();
     await expectNoA11yViolations(page, { include: ['[data-testid=tl-inspector]'] });

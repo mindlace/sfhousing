@@ -825,6 +825,11 @@ test('the window has homes by tier and, with the baseline funding, public money'
 }) => {
   await gotoSim(page);
   const face = await openScore(page);
+  // At today nothing is spent or finished yet: the blocks show from the first month on.
+  await expect(face.getByTestId('fzp-money')).toHaveCount(0);
+  await slider(page).focus();
+  await page.keyboard.press('End');
+  await waitFilled(page);
   await expect(face.getByRole('heading', { name: /Who the homes are for/ })).toBeVisible();
   await expect(face.getByRole('heading', { name: /Public money/ })).toBeVisible();
   await expect(face.getByTestId('fzp-money-city')).toBeVisible();

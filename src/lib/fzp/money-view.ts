@@ -1,5 +1,5 @@
 /**
- * The Results rows' public money and income tiers at one month (funding-ui spec 4.11), and the
+ * Details' public money and income tiers at one month (funding-ui spec 4.11), and the
  * market paragraph's text (4.12). Pure. Every value is read at the month index the caller passes,
  * the scrubbed month, never past the high-water mark; only the limit statements are not series.
  * The per-home figures are `finance-score`'s `perAddedHome`: nothing here divides.
@@ -30,6 +30,19 @@ import {
 } from '$lib/timelapse/types';
 import { formatDollars, formatDollarsExact, formatSourcePercent } from './format';
 import { marketSentence } from './market-view';
+
+/**
+ * Source entries as Details shows them: no plain label says "RHNA" (the hashed finance-score
+ * labels do); the goal is the state target. The links (`sources`) keep the documents' own names.
+ */
+export function plainSources(items: readonly Provenance[]): Provenance[] {
+  return items.map((p) => {
+    const label = p.label
+      .replace('the start of the RHNA period', 'the start of the goal period')
+      .replace(/^RHNA (\d{4}-\d{4}) targets/, 'State $1 targets');
+    return label === p.label ? p : { ...p, label };
+  });
+}
 
 export interface MoneyAt {
   spent: Dollars;
