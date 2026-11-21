@@ -1746,7 +1746,10 @@
      is below: a fade sticks to its foot while its content overflows and is not scrolled to the
      end. CSS only: a scroll-driven animation on the column's own scroll timeline; while nothing
      overflows the timeline is inactive and the base opacity (0) holds. Never takes a press, and
-     focus scrolls clear of it. Nothing moves but the opacity, with the scroll. */
+     focus scrolls clear of it. Nothing moves but the opacity, with the scroll. Without scroll
+     timelines the 0 s animation fills to its end keyframe (opacity 0): no fade, nothing covered.
+     Keep `animation` before `animation-timeline` (the shorthand resets the timeline) and give it
+     no duration. Under forced colours the gradient, a background-image, is not drawn. */
   .detail-col {
     scroll-timeline: --sfh-detail block;
     scroll-padding-bottom: 24px;
