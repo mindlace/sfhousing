@@ -7,41 +7,42 @@
   import { count } from '$lib/sim-page/brush-summary';
   import { comparisonLine, scoreCopy, type ScoreCopy } from '$lib/sim-page/policy';
   import type { LeverCapacity } from '$lib/sim/levers/resolve';
-  import { formatBuiltDate, formatCount, formatPercent, trackMax } from '$lib/scoreboard';
-  import TargetRow from '$lib/scoreboard/TargetRow.svelte';
+  import { formatBuiltDate, formatCount, trackMax } from '$lib/scoreboard';
+  import type { TargetProgress } from '$lib/scoreboard/types';
   import type { TimelineScore } from '$lib/sim/protocol';
   import type { TimelineView } from '$lib/sim/world/score/types';
-  import { GOAL, goalStep, readGoal } from '$lib/goal/goal';
+  import { GOAL, goalRows } from '$lib/goal/goal';
+  import GoalRow from '$lib/goal/GoalRow.svelte';
+  import type { PlayheadAt } from '$lib/timeline/results';
   import type { Day } from '$lib/timelapse/time';
   import { formatDate, formatMonthYear } from './format';
   import { FORECAST_NOTE, TWIN_NOTE, capacityNote, marketBody } from '$lib/timeline/copy';
   import Explain from '$lib/timeline/Explain.svelte';
-  import { monthIndex, utcParts } from './time';
+  import { utcParts } from './time';
   import MoneyResults from './MoneyResults.svelte';
   import { resolveTerms } from '$lib/sim/finance';
   import type { ResolvedTerms } from '$lib/timelapse/types';
   import ScoreChart from './ScoreChart.svelte';
-  import {
-    CALCULATING,
-    builtTowardGoalText,
-    inProgressRows,
-    deadlineIndex,
-    phasingFootnote
-  } from './score-view';
+  import { CALCULATING, builtTowardGoalText, inProgressRows, phasingFootnote } from './score-view';
   import type { ScoreAt } from './types';
 
   interface Props {
     score: TimelineScore | null;
     /** `null` exactly when `score` is. */
     at: ScoreAt | null;
-    /** The view `score` is built from (`null` exactly when `score` is): the target rows read it. */
+    /** The view `score` is built from (`null` exactly when `score` is): the goal rows read it. */
     view: TimelineView | null;
+    /** The header's playhead (`playheadAt`): the goal rows read the same month it does. */
+    playhead: PlayheadAt;
+    /** The month of the furthest date reached (TODAY before any): the deadline preview waits
+     *  for it. */
+    reachedMonth: number;
     day: Day;
     asOf: Day;
     horizon: Day;
     /** The last filled month's day: the Results chart's scale covers every filled month. */
     filledEnd: Day;
-    /** The furthest day reached: the deadline line and the chart's lines stop here. */
+    /** The furthest day reached: the chart's lines stop here. */
     reached: Day;
     datasetVersion: string;
     builtAt: string;
@@ -65,6 +66,8 @@
     score,
     at,
     view,
+    playhead,
+    reachedMonth,
     day,
     asOf,
     horizon,
@@ -96,36 +99,19 @@
   /** The year of the window's last month: the capacity figure's note names it. */
   const lastYear = $derived(score ? utcParts(score.months[score.months.length - 1]).y : 0);
 
-  /** The goal's deadline month in the view: null when it falls outside the window. */
-  const deadline = $derived(view ? (goalStep(GOAL, view)?.deadlineIndex ?? null) : null);
   /**
-   * The target rows at the playhead's month up to the goal's deadline, then held at the deadline
-   * month, as the header's goal part is. The goal's own row is `readGoal`'s figure.
+   * The goal rows at the header's playhead under its rule (TODAY at today, then the playhead's
+   * month up to the deadline's, held there after), dated; empty while the month is not filled.
    */
-  const rows = $derived.by(() => {
-    if (!at || !view) return [];
-    const i = at.monthIndex;
-    const held = deadline === null ? i : Math.min(i, deadline);
-    const net = GOAL.measure.valueAt(view, held);
-    const goal = readGoal(GOAL, view, i);
-    return view.targets.map((t, k) => ({
-      tp: {
-        target: t.target,
-        fraction: k === 0 && goal ? goal.fraction : t.fraction[held]
-      },
-      net,
-      atDeadline: at.targets[k].atDeadline,
-      // Past the deadline the row's own figure is the deadline's: the line would repeat it.
-      deadlineLine: deadline === null || i < deadline
-    }));
-  });
-  const max = $derived(rows.length > 0 ? trackMax(rows.map((r) => r.tp)) : 1);
+  const rows = $derived(view ? (goalRows(GOAL, view, playhead, reachedMonth) ?? []) : []);
+  /** The rows' shared track; trackMax reads only each fraction. */
+  const max = $derived(
+    rows.length > 0 ? trackMax(rows.map((r) => ({ fraction: r.fraction }) as TargetProgress)) : 1
+  );
   const stages = $derived(score && at ? inProgressRows(score.shown[at.monthIndex].inProgress) : []);
   const inProgressTotal = $derived(stages.reduce((sum, s) => sum + s.units, 0));
   const phasing = $derived(score ? phasingFootnote(score.phasing) : null);
   const planPending = $derived(at !== null && at.planCompleted === null);
-  /** The month index of the furthest day reached: nothing after it is revealed. */
-  const reveal = $derived(score ? monthIndex(reached, score.months[0], score.months.length) : -1);
 </script>
 
 {#snippet staleLine()}
@@ -190,13 +176,8 @@
 
     <div class="mt-4">
       <p class="text-sm" data-testid="fzp-built">{builtTowardGoalText(score.baseline)}</p>
-      {#each rows as t, k (t.tp.target.id)}
-        <TargetRow tp={t.tp} net={t.net} {max} primary={k === 0} />
-        {#if t.deadlineLine && reveal >= deadlineIndex(score, score.targets[k].deadline)}
-          <p class="text-sm text-ink-muted dark:text-ink-dark-muted">
-            At the deadline ({formatDate(score.targets[k].deadline)}): {formatPercent(t.atDeadline)}
-          </p>
-        {/if}
+      {#each rows as row, k (row.id)}
+        <GoalRow {row} {max} primary={k === 0} />
       {/each}
     </div>
 

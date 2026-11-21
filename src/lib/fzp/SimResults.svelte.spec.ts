@@ -43,12 +43,19 @@ import { MARKET_FUNDING_SENTENCE } from '$lib/sim-page/funding-copy';
 import { MARKET_FUNDING_SENTENCE4 } from '$lib/timeline/copy';
 import type { ResolvedTerms } from '$lib/timelapse/types';
 import { EMPTY_LOG, logCompiled, logFilled, viewOfLog } from '$lib/timeline/chunk-log';
-import { headlineAt, headlineText, resultsAt, scoreOfView } from '$lib/timeline/results';
+import {
+  headlineAt,
+  headlineText,
+  playheadAt,
+  resultsAt,
+  scoreOfView
+} from '$lib/timeline/results';
 import { calendarMonths, chunk, statics } from '$lib/timeline/test/fixtures';
 import { tierTargetsOf } from '$lib/sim/scenario/score';
 import type { TimelineView } from '$lib/sim/world/score/types';
 import type { TimelineScore } from '$lib/sim/scenario/types';
-import { GOAL, goalStep, readGoal } from '$lib/goal/goal';
+import { GOAL, TODAY, atDeadlineText, goalRows, goalStep, readGoal } from '$lib/goal/goal';
+import { indexOfDay } from '$lib/timeline/playhead';
 
 /** Index 53 of the fixture: 2031-03-15. */
 const DAY = dayFromUtc(2031, 3, 15);
@@ -84,7 +91,14 @@ const props = (over: Overrides = {}) => {
   };
   const sc = p.score;
   const at = sc ? scoreAt(sc, monthIndex(p.day, sc.months[0], sc.months.length)) : null;
-  return { ...p, at, view: sc ? viewOfScore(sc) : null };
+  const months = sc?.months ?? [];
+  return {
+    ...p,
+    at,
+    view: sc ? viewOfScore(sc) : null,
+    playhead: playheadAt(months, p.asOf, p.day),
+    reachedMonth: months.length > 0 && p.reached > p.asOf ? indexOfDay(months, p.reached) : TODAY
+  };
 };
 
 /** The stepped view a fixture score stands for (on the page the score is built from it). */
@@ -378,19 +392,24 @@ describe('protections cost (/sim)', () => {
 });
 
 describe('targets and progress', () => {
-  it('renders RHNA then RHNA + buffer, each with its deadline fraction', async () => {
+  /** The deadline preview lines, in row order. */
+  const previews = () =>
+    [...document.querySelectorAll('[data-testid^="goal-row-"] p')]
+      .map((p) => p.textContent!.trim())
+      .filter((t) => t.startsWith('At the deadline'));
+
+  it('renders State target then State target + 15%, each with its deadline preview', async () => {
     await page.viewport(1024, 768);
-    await render(SimResults, { props: props({ day: dayFromUtc(2030, 6, 1) }) });
+    const p = props({ day: dayFromUtc(2030, 6, 1) });
+    await render(SimResults, { props: p });
     const meters = page.getByRole('meter').elements();
     expect(meters.map((m) => m.getAttribute('aria-label'))).toEqual([
-      TIMELINE_SCORE.targets[0].target.label,
-      TIMELINE_SCORE.targets[1].target.label
+      'State target',
+      'State target + 15%'
     ]);
-    const lines = document.body.textContent!.match(/At the deadline \(Jan 31, 2031\): [^A]*%/g);
-    expect(lines?.map((l) => l.trim())).toEqual([
-      'At the deadline (Jan 31, 2031): 20%',
-      'At the deadline (Jan 31, 2031): 18%'
-    ]);
+    const rows = goalRows(GOAL, p.view!, p.playhead, p.reachedMonth)!;
+    expect(rows.every((r) => r.atDeadline !== null)).toBe(true);
+    expect(previews()).toEqual(rows.map((r) => atDeadlineText(r.atDeadline!)));
   });
 
   it('the deadline line waits until the furthest date reaches the deadline', async () => {
@@ -401,17 +420,15 @@ describe('targets and progress', () => {
     expect(document.body.textContent).not.toContain('At the deadline');
     await before.unmount();
 
-    await render(SimResults, {
-      props: props({ day: dayFromUtc(2030, 6, 1), reached: dayFromUtc(2031, 1, 1) })
-    });
-    const at = scoreAt(
-      TIMELINE_SCORE,
-      monthIndex(dayFromUtc(2030, 6, 1), TIMELINE_SCORE.months[0], TIMELINE_SCORE.months.length)
-    );
-    const lines = document.body.textContent!.match(/At the deadline \(Jan 31, 2031\): [^A]*%/g);
-    expect(lines?.map((l) => l.trim())).toEqual(
-      at.targets.map((t) => `At the deadline (Jan 31, 2031): ${formatPercent(t.atDeadline)}`)
-    );
+    const p = props({ day: dayFromUtc(2030, 6, 1), reached: dayFromUtc(2031, 1, 1) });
+    await render(SimResults, { props: p });
+    const view = p.view!;
+    const deadline = goalStep(GOAL, view)!.deadlineIndex;
+    const value = GOAL.measure.valueAt(view, deadline);
+    expect(previews()).toEqual([
+      `At the deadline: ${formatPercent(value / 82_069)}`,
+      `At the deadline: ${formatPercent(value / 94_379)}`
+    ]);
   });
 
   it('lists the in-progress total and one row per stage, then the stopped line', async () => {
@@ -919,32 +936,45 @@ describe('fed from a stepped view (timeline-ui rule 26)', () => {
 
 describe("the target rows hold at the goal's deadline, as the header does", () => {
   /** 60 calendar months from Nov 2026: the goal's deadline (Jan 2031) is month 50. */
-  const view = (units = 1000): TimelineView => {
+  const view = (units = 1000, base = 0): TimelineView => {
     const st = statics({ lastIndex: 59 });
     return calendarMonths(
       viewOfLog(
         logFilled(
           logCompiled(EMPTY_LOG, { ...st, baseline: { ...st.baseline, units } }),
-          chunk(0, 60)
+          chunk(0, 60, { base })
         )
       )!
     );
   };
-  const feedAt = (v: TimelineView, i: number) => {
+  /** At month `i` (today when `atToday`), with every month reached. */
+  const feedAt = (v: TimelineView, i: number, atToday = false) => {
     const score = scoreOfView(v, null);
     return {
       ...props({ score, day: v.months[i], filledEnd: v.months[v.lastIndex] }),
       at: resultsAt(v, null, i, score),
       view: v,
       asOf: v.months[0],
-      horizon: v.months[v.lastIndex]
+      horizon: v.months[v.lastIndex],
+      playhead: { index: i, atToday },
+      reachedMonth: v.lastIndex
     };
   };
-  /** The percentage text of each target row, in order. */
+  /** The percentage text of each goal row, in order. */
   const rowPercents = () =>
-    [...document.querySelectorAll('[data-testid^="target-"]')].map((row) =>
+    [...document.querySelectorAll('[data-testid^="goal-row-"]')].map((row) =>
       row.querySelector('.tabular-nums')!.textContent!.trim()
     );
+  /** Each row's percentage at month `i` of `v`: the measure over the goal and over the buffer. */
+  const percentsAt = (v: TimelineView, i: number) =>
+    [82_069, 94_379].map((a) => formatPercent(GOAL.measure.valueAt(v, i) / a));
+  /** The text lines under each goal row's meter, in order. */
+  const rowLines = (id: string) =>
+    [...document.querySelectorAll(`[data-testid="goal-row-${id}"] p`)].map((p) =>
+      p.textContent!.trim()
+    );
+  const header = (v: TimelineView, at: { index: number; atToday: boolean }) =>
+    headlineText(headlineAt(v, at, { provisional: false, inForce: false }, GOAL)!, GOAL).goal!;
   const DEADLINE = 50;
 
   it('the deadline is month 50 of the view', () => {
@@ -956,8 +986,23 @@ describe("the target rows hold at the goal's deadline, as the header does", () =
     const v = view();
     const i = 30;
     await render(SimResults, { props: feedAt(v, i) });
-    expect(rowPercents()).toEqual(v.targets.map((t) => formatPercent(t.fraction[i])));
-    expect(document.body.textContent).toContain('At the deadline');
+    expect(rowPercents()).toEqual(percentsAt(v, i));
+    expect(rowLines('goal')[0]).toMatch(/ to go by Jan 2031$/);
+    expect(document.body.textContent).toContain('At the deadline: ');
+  });
+
+  it("at today the goal row reads the header's percentage, not month 0's", async () => {
+    await page.viewport(1024, 768);
+    // 1,000 before today and 501 in month 0: 1.2% of the goal at today, 1.8% at month 0.
+    const v = view(1000, 500);
+    expect(percentsAt(v, 0)[0]).not.toBe(percentsAt(v, TODAY)[0]);
+    await render(SimResults, { props: feedAt(v, 0, true) });
+    expect(header(v, { index: 0, atToday: true })).toBe(`${percentsAt(v, TODAY)[0]} of the goal`);
+    expect(rowPercents()).toEqual(percentsAt(v, TODAY));
+    expect(page.getByRole('meter').elements()[0].getAttribute('aria-valuenow')).toBe(
+      String(v.baseline.completedNet)
+    );
+    expect(rowLines('goal')[0]).toMatch(/ to go by Jan 2031$/);
   });
 
   it('past the deadline the rows hold the deadline month, the goal row as the header says', async () => {
@@ -965,26 +1010,54 @@ describe("the target rows hold at the goal's deadline, as the header does", () =
     const v = view();
     const i = 57;
     await render(SimResults, { props: feedAt(v, i) });
-    const header = headlineText(
-      headlineAt(v, { index: i, atToday: false }, { provisional: false, inForce: false }, GOAL)!,
-      GOAL
-    ).goal!;
     const goalPercent = formatPercent(readGoal(GOAL, v, i)!.fraction);
-    expect(header).toBe(`${goalPercent} of the goal`);
+    expect(header(v, { index: i, atToday: false })).toBe(`${goalPercent} of the goal`);
     expect(rowPercents()[0]).toBe(goalPercent);
-    expect(rowPercents()).toEqual(v.targets.map((t) => formatPercent(t.fraction[DEADLINE])));
+    expect(rowPercents()).toEqual(percentsAt(v, DEADLINE));
     expect(document.body.textContent).not.toContain('At the deadline');
     expect(page.getByRole('meter').elements()[0].getAttribute('aria-valuenow')).toBe(
       String(v.baseline.completedNet + v.rows[DEADLINE].completedNet)
     );
   });
 
+  it('past the deadline the rows say Held at Jan 2031 and the buffer row is dated', async () => {
+    await page.viewport(1024, 768);
+    const v = view();
+    await render(SimResults, { props: feedAt(v, 57) });
+    expect(rowLines('goal')[1]).toBe('Held at Jan 2031');
+    expect(rowLines('buffer')[1]).toBe('Held at Jan 2031');
+    expect(rowLines('buffer')).toHaveLength(2);
+  });
+
+  it('before the deadline the buffer row is dated too', async () => {
+    await page.viewport(1024, 768);
+    await render(SimResults, { props: feedAt(view(), 30) });
+    expect(rowLines('buffer')[0]).toMatch(/^[\d,]+ to go by Jan 2031$/);
+  });
+
   it('at the deadline month the deadline line is gone', async () => {
     await page.viewport(1024, 768);
     const v = view();
     await render(SimResults, { props: feedAt(v, DEADLINE) });
-    expect(rowPercents()).toEqual(v.targets.map((t) => formatPercent(t.fraction[DEADLINE])));
+    expect(rowPercents()).toEqual(percentsAt(v, DEADLINE));
     expect(document.body.textContent).not.toContain('At the deadline');
+    expect(rowLines('goal')[1]).toBe('Held at Jan 2031');
+  });
+
+  it('no Results text contains RHNA', async () => {
+    await page.viewport(1024, 768);
+    const v = view();
+    for (const [i, atToday] of [
+      [0, true],
+      [30, false],
+      [57, false]
+    ] as const) {
+      const screen = await render(SimResults, { props: feedAt(v, i, atToday) });
+      sources().open = true;
+      expect(page.getByRole('meter').elements()).toHaveLength(2);
+      expect(document.body.textContent).not.toMatch(/RHNA/);
+      await screen.unmount();
+    }
   });
 
   it('a goal reached before the deadline: the rows still hold the deadline month', async () => {
@@ -1000,7 +1073,7 @@ describe("the target rows hold at the goal's deadline, as the header does", () =
       ).goal
     ).toBe('Goal reached, Oct 2028');
     expect(rowPercents()[0]).toBe(formatPercent(readGoal(GOAL, v, i)!.fraction));
-    expect(rowPercents()).toEqual(v.targets.map((t) => formatPercent(t.fraction[DEADLINE])));
+    expect(rowPercents()).toEqual(percentsAt(v, DEADLINE));
     expect(document.body.textContent).not.toContain('At the deadline');
   });
 });

@@ -1223,6 +1223,8 @@
       {score}
       {at}
       view={score ? shownView : null}
+      playhead={{ index, atToday }}
+      {reachedMonth}
       {day}
       {asOf}
       horizon={windowEnd}
