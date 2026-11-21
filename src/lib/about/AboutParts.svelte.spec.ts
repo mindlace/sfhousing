@@ -159,11 +159,18 @@ describe('AboutData', () => {
     expect(text()).toContain(TRANSIT);
     expect(text()).toContain(SCENARIO);
     expect(text()).toContain(POLICY);
+    expect(text()).not.toContain('MTC');
     await r.unmount();
-    renderData({ ...manifest, scenarios });
+    const s = await renderData({ ...manifest, scenarios });
     await expect.element(page.getByText('Map data ©')).toBeInTheDocument();
     expect(text()).toContain(SCENARIO);
     expect(text()).not.toContain(TRANSIT);
+    expect(text()).not.toContain('Street centerlines');
+    await s.unmount();
+    // No fzp scenario: no housing records to credit.
+    renderData(manifest);
+    await expect.element(page.getByText('Map data ©')).toBeInTheDocument();
+    expect(text()).not.toContain('Housing project records');
     expect(text()).not.toContain('Street centerlines');
   });
 
