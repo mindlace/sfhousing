@@ -30,8 +30,15 @@
   const CITY_TONES = [...CITY_KIND_TOKEN];
   /** The merged ring the city layer draws zoomed out, one per area, in its tones. */
   export const AREA_SWATCH: Swatch = { kind: 'area', tokens: CITY_TONES };
-  /** The glow the city layer draws at the map's edge for a change off screen, in its tones. */
-  export const EDGE_SWATCH: Swatch = { kind: 'edge', tokens: CITY_TONES };
+  /**
+   * The glow the city layer draws at the map's edge for a change off screen: the three stage tones,
+   * as the three rows above it (the policy accent's glow is the mark row's colour), so the swatch
+   * fits one row.
+   */
+  export const EDGE_SWATCH: Swatch = {
+    kind: 'edge',
+    tokens: [HALO_TOKEN.approved, HALO_TOKEN.started, HALO_TOKEN.completed]
+  };
   /** The mark row: the diamond in the accent, inside the accent ring its projects carry. */
   export const MARK_SWATCH: Swatch = { kind: 'mark', tokens: ['tl-halo-policy'] };
   /** The bar row: a bar from unlikely to likely. */

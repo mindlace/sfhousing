@@ -520,19 +520,43 @@ test("Tab from the map reaches Layers and Key before the open key panel's contro
   expect(panel.y + panel.height).toBeLessThanOrEqual((await boxOf(keyToggle(page))).y);
 });
 
-test("the edge swatch's half-discs are at least 10 by 5 px", async ({ page }) => {
+test("the edge swatch's half-discs are at least 10 by 5 px, side by side in one row", async ({
+  page
+}) => {
   await gotoSim(page);
   if ((await keyToggle(page).getAttribute('aria-expanded')) !== 'true')
     await keyToggle(page).click();
   await expect(keyPanel(page)).toBeVisible();
   const halves = keyPanel(page).locator('[data-swatch="edge"] [data-token]');
-  await expect(halves).toHaveCount(4);
+  await expect(halves).toHaveCount(3);
   for (const b of await halves.evaluateAll((els) =>
     els.map((e) => ({ w: e.getBoundingClientRect().width, h: e.getBoundingClientRect().height }))
   )) {
-    expect(b.h).toBeGreaterThanOrEqual(10);
-    expect(b.w).toBeGreaterThanOrEqual(5);
+    expect(b.w).toBeGreaterThanOrEqual(10);
+    expect(b.h).toBeGreaterThanOrEqual(5);
   }
+  expect((await boxOf(keyPanel(page).locator('[data-swatch="edge"]'))).height).toBeLessThanOrEqual(
+    24
+  );
+});
+
+test('1280x800 on /sim: the open key panel does not scroll; its last row is in full view', async ({
+  isMobile,
+  page
+}) => {
+  // eslint-disable-next-line playwright/no-skipped-test -- one layout per project
+  test.skip(isMobile, 'the desktop layout');
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await gotoSim(page);
+  await expect(keyPanel(page)).toBeVisible();
+  const fits = await keyPanel(page).evaluate((el) => el.scrollHeight <= el.clientHeight);
+  expect(fits, 'the key panel scrolls').toBe(true);
+  const last = keyPanel(page).locator('li').last();
+  await expect(last).toContainText('Bar');
+  const p = await boxOf(keyPanel(page));
+  const l = await boxOf(last);
+  expect(l.y).toBeGreaterThanOrEqual(p.y);
+  expect(l.y + l.height).toBeLessThanOrEqual(p.y + p.height);
 });
 
 test('375 px: Layers and Key are 24 px, inside the map, clear of Reset and the attribution', async ({
