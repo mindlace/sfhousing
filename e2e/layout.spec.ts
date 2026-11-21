@@ -777,12 +777,12 @@ test.describe('account entry', () => {
 
     // The widest /sim row: a 20-character handle, the widest headline, "Autosave off" (storage
     // refused) and "Updating" (a held edit) side by side. A touch laptop adds Undo and Redo; from
-    // lg to xl Shortcuts then leaves the row (it returns from xl). A touch laptop at 1280 does not
-    // fit this row (about 27 px over): a known limit, not tested here.
+    // lg Shortcuts then leaves the row at every width.
     for (const [width, touch] of [
       [1024, false],
       [1280, false],
-      [1024, true]
+      [1024, true],
+      [1280, true]
     ] as const) {
       test(`/sim at ${width} signed in${touch ? ', a touch laptop' : ''}: Autosave off and Updating together, the widest row, nothing overlaps or clips`, async ({
         page
@@ -816,7 +816,7 @@ test.describe('account entry', () => {
         ];
         if (touch) for (const h of history) await expect(h).toBeVisible();
         else await expect(history[0]).toHaveCount(0);
-        if (touch && width < 1280) await expect(shortcuts).toHaveCount(0);
+        if (touch) await expect(shortcuts).toHaveCount(0);
         else await expect(shortcuts).toBeVisible();
         const items: [string, Locator][] = [
           ['name', banner.getByRole('link', { name: /^SF Housing/ })],
@@ -827,7 +827,7 @@ test.describe('account entry', () => {
           ...(touch
             ? (['Undo', 'Redo'] as const).map((n, i) => [n, history[i]] as [string, Locator])
             : []),
-          ...(touch && width < 1280 ? [] : [['Shortcuts', shortcuts] as [string, Locator]]),
+          ...(touch ? [] : [['Shortcuts', shortcuts] as [string, Locator]]),
           ['Publish', banner.getByRole('button', { name: /^(Publish|Share link)/ })],
           ['handle', banner.getByRole('link', { name: `@${handle}` })],
           ['About', banner.getByRole('link', { name: 'About', exact: true })]

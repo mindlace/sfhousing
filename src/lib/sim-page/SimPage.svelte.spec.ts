@@ -672,7 +672,8 @@ describe('SimPage publish and view', () => {
       .element(header().getByRole('button', { name: 'Keyboard shortcuts' }))
       .toBeVisible();
     expect(undoButton().elements()).toEqual([]);
-    // A touch screen comes in: the buttons come, Shortcuts stays (the primary is still fine).
+    // A touch screen comes in: the buttons come; Shortcuts stays rendered (the primary is still
+    // fine) but leaves the row from lg.
     pointer.setAny(['fine', 'coarse']);
     await expect.element(undoButton()).toHaveAccessibleName('Undo');
     await expect.element(redoButton()).toHaveAccessibleName('Redo');
@@ -685,9 +686,9 @@ describe('SimPage publish and view', () => {
     await expect
       .element(redoButton())
       .toHaveAccessibleName('Redo: Added: Protect historic buildings');
-    await expect
-      .element(header().getByRole('button', { name: 'Keyboard shortcuts' }))
-      .toBeVisible();
+    expect(innerWidth).toBeGreaterThanOrEqual(1024);
+    expect(header().getByRole('button', { name: 'Keyboard shortcuts' }).elements()).toEqual([]);
+    expect(document.querySelector('header button[popovertarget$="-shortcuts"]')).not.toBeNull();
     // A phone (coarse primary): the buttons stay, Shortcuts goes.
     pointer.set('coarse');
     await expect
@@ -696,7 +697,7 @@ describe('SimPage publish and view', () => {
     await expect.element(undoButton()).toBeVisible();
   });
 
-  it('a touch laptop from lg to xl: Undo and Redo take the place of Shortcuts; from xl all three', async () => {
+  it('a touch laptop from lg: Undo and Redo take the place of Shortcuts at every width', async () => {
     stubTouchLaptop();
     await page.viewport(1024, 800);
     await opened();
@@ -706,9 +707,11 @@ describe('SimPage publish and view', () => {
     // The pointer is read (Undo shows): the button is rendered but out of the row (display none).
     expect(shortcuts.elements()).toEqual([]);
     expect(document.querySelector('header button[popovertarget$="-shortcuts"]')).not.toBeNull();
-    await page.viewport(1280, 800);
-    await expect.element(shortcuts).toBeVisible();
-    await expect.element(undoButton()).toBeVisible();
+    for (const width of [1280, 1440]) {
+      await page.viewport(width, 800);
+      await expect.element(undoButton()).toBeVisible();
+      expect(shortcuts.elements(), `${width}`).toEqual([]);
+    }
   });
 
   it('a fine-only pointer at 1024: Shortcuts shows', async () => {

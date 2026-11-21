@@ -3,7 +3,7 @@
   // "Autosave off" with "Updating" beside it (Task 4's shape), the score is the real HeaderScore
   // with a five-digit total and its delta, the actions are Shortcuts and Publish, and the account
   // entry shows `user`'s handle. `touch` adds Undo and Redo before Shortcuts (a touch laptop),
-  // and from lg to xl Shortcuts then leaves the row, as on /sim.
+  // and from lg Shortcuts then leaves the row, as on /sim.
   import HistoryButtons from '$lib/paint/HistoryButtons.svelte';
   import ShortcutsButton from '$lib/paint/ShortcutsButton.svelte';
   import SaveIndicator from '$lib/sharing/SaveIndicator.svelte';
@@ -32,7 +32,7 @@
       onredo={() => {}}
     />
   {/if}
-  <ShortcutsButton class={touch ? 'lg:max-xl:hidden' : undefined} />
+  <ShortcutsButton class={touch ? 'lg:hidden' : undefined} />
   <button type="button" class={BUTTON_PRIMARY}>Publish</button>
 {/snippet}
 
