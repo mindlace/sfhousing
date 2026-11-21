@@ -4,8 +4,9 @@
   meaning, so it is aria-hidden. Ghost: a tinted outline per token; solid: filled squares; bar: a
   stage bar (a gradient for several tokens); ring: an outlined circle (several overlap in a row);
   mark: a diamond inside a ring of its token; area: a 16 px ring around an 8 px ring per token,
-  overlapping in a row 28 px wide (the city layer's merged ring); edge: a half-disc per token,
-  sharing 18 px, against a 1 px line (the city layer's glow at the map's edge).
+  overlapping in a row 28 px wide (the city layer's merged ring); edge: a half-disc per token, each
+  at least 10 px across and 5 px deep, flat side on a 1 px line (the city layer's glow at the map's
+  edge).
 -->
 <script lang="ts">
   import type { Swatch } from './rows';
@@ -24,8 +25,14 @@
   const AREA_PX = 16;
   /** How far each area ring after the first overlaps the one before, so the row spans 28 px. */
   const areaOverlapPx = (n: number) => AREA_PX - (SWATCH_PX - AREA_PX) / Math.max(1, n - 1);
-  /** The edge swatch's height: its half-discs share it. */
+  /**
+   * An edge half-disc, px: at least this far across (along the line) and half that deep, so each
+   * tone reads as a shape. The swatch's height is what its half-discs share, never under 18 px;
+   * it grows to fit the tokens.
+   */
+  const HALF_PX = 10;
   const EDGE_PX = 18;
+  const edgePx = (n: number) => Math.max(EDGE_PX, HALF_PX * n);
 
   function barBackground(tokens: string[]): string {
     return tokens.length === 1
@@ -97,13 +104,14 @@
     </span>
   {:else if swatch.kind === 'edge'}
     <!-- Half-discs, flat side against the map's edge, a 1 px line. -->
-    <span class="flex" style:height="{EDGE_PX}px">
+    <span class="flex" style:height="{edgePx(swatch.tokens.length)}px">
       <span class="flex flex-col justify-center">
         {#each swatch.tokens as token (token)}
           <span
-            class="block w-[3px] rounded-l-full"
+            class="block rounded-l-full"
             data-token={token}
-            style:height="{EDGE_PX / swatch.tokens.length}px"
+            style:width="{HALF_PX / 2}px"
+            style:height="{edgePx(swatch.tokens.length) / swatch.tokens.length}px"
             style:background={color(token)}
           ></span>
         {/each}

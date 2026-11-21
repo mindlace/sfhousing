@@ -967,6 +967,24 @@
   function applyInset(): void {
     handle?.setBottomInset(untrack(() => bottomExtra));
   }
+
+  /** The notice stack's bottom from md (NoticePills' onbottom), px from the map's top. */
+  let pillsBottom = $state(0);
+  /** The key control's open panel (its onopenchange). */
+  let keyOpen = $state<'key' | 'layers' | null>(null);
+  /**
+   * The page's part of the glows' inset (SimMap adds the bottom): the notices at the top, an open
+   * panel at the right from md. Below md the right stays 0: an open panel covers most of a
+   * phone's map and would squeeze every glow to a strip. Set on those changes, never per frame.
+   */
+  let glowInset = { top: 0, right: 0 };
+  $effect(() => {
+    const top = pillsBottom;
+    const panel = keyOpen !== null && !narrow.current;
+    const el = keyEl;
+    glowInset = { top, right: panel && el ? el.offsetWidth + 8 : 0 };
+    untrack(() => handle?.setGlowInset(glowInset));
+  });
   let lastExtra = untrack(() => bottomExtra);
   $effect(() => {
     const extra = bottomExtra;
@@ -992,6 +1010,7 @@
     // Bars from the default zoom, one size, the person's projects first. The page's, once.
     h.setBarMode('far');
     applyInset();
+    h.setGlowInset(glowInset);
     // Rule 22.
     h.onResyncNeeded(() => session?.resync());
     attachMap(h.getMap());
@@ -1519,7 +1538,7 @@
        header. Below md the stack is in flow and this box is no box. -->
   <div class="relative flex min-h-0 flex-1 flex-col max-md:contents">
     <!-- Every notice is a chip or a card (Message) in this one stack (as FzpMode). -->
-    <NoticePills bind:el={pillsEl}>
+    <NoticePills bind:el={pillsEl} onbottom={(px) => (pillsBottom = px)}>
       {#if noScenario}
         {#snippet editorLink()}
           <a href="/" class="{BUTTON_QUIET} inline-flex items-center">Go to the editor</a>
@@ -1638,6 +1657,7 @@
             hidden={narrow.current && cardOpen}
             {stale}
             bind:el={keyEl}
+            onopenchange={(p) => (keyOpen = p)}
           >
             {#snippet key()}
               <SimKey {tally} inForce={keyMarks} />

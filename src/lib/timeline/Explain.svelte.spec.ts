@@ -94,6 +94,28 @@ describe('Explain', () => {
       .toBeInTheDocument();
   });
 
+  it('Escape on a hovered explanation marks the key handled before any window listener sees it', async () => {
+    const seen: [string, boolean][] = [];
+    await render(ExplainHost, {
+      props: { text: TEXT, onwindowkey: (k: string, p: boolean) => seen.push([k, p]) }
+    });
+    await target().hover();
+    await expect.element(page.getByText(TEXT)).toBeVisible();
+    await userEvent.keyboard('{Escape}');
+    await expect.element(page.getByText(TEXT)).not.toBeInTheDocument();
+    expect(seen).toEqual([['Escape', true]]);
+  });
+
+  it('Escape with no explanation open leaves the key unhandled', async () => {
+    const seen: [string, boolean][] = [];
+    await render(ExplainHost, {
+      props: { text: TEXT, onwindowkey: (k: string, p: boolean) => seen.push([k, p]) }
+    });
+    (page.getByRole('button', { name: 'After' }).element() as HTMLElement).focus();
+    await userEvent.keyboard('{Escape}');
+    expect(seen).toEqual([['Escape', false]]);
+  });
+
   it('closes on Escape when opened by hover with focus elsewhere', async () => {
     await render(ExplainHost, { props: { text: TEXT } });
     await target().hover();

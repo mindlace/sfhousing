@@ -120,6 +120,8 @@ export interface TimelineSnapshot {
    * the map's view; without a map view, every bar in time.
    */
   barsShown: number;
+  /** The glows' inset [top, right, bottom, left] in CSS px, as `setEdgeInset` last wrote it. */
+  edgeInset: [number, number, number, number];
 }
 
 /** Shared mutable clock read by the extension's `draw`; `setTime` writes `day`. */

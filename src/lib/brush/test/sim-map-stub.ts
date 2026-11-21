@@ -32,5 +32,6 @@ export const stubHandle: SimMapHandle = {
   setTime: () => {},
   setTimelineLookups: () => {},
   setHalos: (o) => void halos.push(o),
-  setBarMode: (mode) => void barModes.push(mode)
+  setBarMode: (mode) => void barModes.push(mode),
+  setGlowInset: () => {}
 };

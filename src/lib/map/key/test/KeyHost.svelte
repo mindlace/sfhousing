@@ -1,5 +1,6 @@
 <!-- A map-sized box with MapKeyControl over it, for MapKeyControl.svelte.spec.ts. -->
 <script lang="ts">
+  import Explain from '$lib/timeline/Explain.svelte';
   import MapKeyControl from '../MapKeyControl.svelte';
 
   interface Props {
@@ -9,6 +10,8 @@
     hidden?: boolean;
     stale?: boolean;
     withLayers?: boolean;
+    /** An explanation in the key panel, as SimKey's mark row has. */
+    withExplain?: boolean;
     /** Lines in the key panel. */
     lines?: number;
     el?: HTMLElement;
@@ -20,6 +23,7 @@
     hidden = false,
     stale = false,
     withLayers = false,
+    withExplain = false,
     lines = 3,
     el = $bindable(),
     onopenchange = undefined
@@ -28,6 +32,9 @@
 
 {#snippet key()}
   <p data-testid="host-key-body">Key body</p>
+  {#if withExplain}
+    <p><Explain text="Why this row shows.">Marked</Explain></p>
+  {/if}
   {#each { length: lines }, i (i)}
     <p class="leading-5">Row {i}</p>
   {/each}

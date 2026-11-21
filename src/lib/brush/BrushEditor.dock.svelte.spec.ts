@@ -681,9 +681,10 @@ describe("BrushEditor's map key", () => {
     await expect.poll(() => editor().plan.ops).toHaveLength(2);
     click(keyToggle().element());
     await expect.poll(heightRows).toHaveLength(2);
-    // From the toggle, Shift+Tab reaches the panel's last control: the 8-story row.
+    // The toolbar comes before the panel: from the toggle, Tab reaches the panel, then its rows,
+    // the 8-story row last.
     (keyToggle().element() as HTMLElement).focus();
-    await userEvent.keyboard('{Shift>}{Tab}{/Shift}');
+    await userEvent.keyboard('{Tab}{Tab}{Tab}');
     expect((document.activeElement as HTMLElement).dataset.height).toBe('8');
     await expect.poll(() => w.lastOf('heightLots')!.outlineOf).toBe(8);
     w.heightLots({

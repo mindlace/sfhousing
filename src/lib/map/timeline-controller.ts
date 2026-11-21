@@ -518,7 +518,8 @@ export class TimelineController {
       cityBuilds: this.cityBuilds,
       ringMinZoom,
       barMode: this.barMode,
-      barsShown
+      barsShown,
+      edgeInset: [...this.edgeInset]
     };
   }
 

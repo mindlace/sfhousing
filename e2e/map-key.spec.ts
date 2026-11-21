@@ -291,15 +291,20 @@ test('/ : focusing a height outlines it on the map', async ({ page }) => {
   await expect(heightRows(page).first()).toHaveText(/^\s*6 stories/);
   await expect(heightRows(page).last()).toHaveText(/^\s*12 stories/);
   expect(await deckIds(page)).not.toContain(OUTLINE_LAYER);
-  // The panel sits before the toolbar (Layers, then Key): from Layers, Shift+Tab reaches the
-  // panel's last control, the 12-story row.
-  await layersToggle(page).focus();
-  await page.keyboard.press('Shift+Tab');
+  // The toolbar comes before the panel: from Key, Tab reaches the panel, then its rows, the
+  // 12-story row last.
+  await keyToggle(page).focus();
+  await page.keyboard.press('Tab');
+  await expect(keyPanel(page)).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(heightRows(page).first()).toBeFocused();
+  await page.keyboard.press('Tab');
   await expect(heightRows(page).last()).toBeFocused();
   await expect.poll(() => deckIds(page)).toContain(OUTLINE_LAYER);
-  // Tab back to the toolbar: the outline goes with the focus.
-  await page.keyboard.press('Tab');
-  await expect(layersToggle(page)).toBeFocused();
+  // Back up to the panel: the outline goes with the focus.
+  await page.keyboard.press('Shift+Tab');
+  await page.keyboard.press('Shift+Tab');
+  await expect(keyPanel(page)).toBeFocused();
   await expect.poll(() => deckIds(page)).not.toContain(OUTLINE_LAYER);
   // A press pins it past the blur; a second press clears it.
   await heightRows(page).first().focus();
@@ -466,8 +471,9 @@ test('keyboard: Tab from the zoom controls reaches Layers, then Key; Escape retu
   await page.keyboard.press('Escape');
   await expect(keyPanel(page)).toBeHidden();
   await expect(keyToggle(page)).toBeFocused();
-  // Layers by keyboard: Space opens it, Shift+Tab reaches its switches (the panel sits before
-  // the toolbar), Space toggles one, Escape closes the panel and returns focus to Layers.
+  // Layers by keyboard: Space opens it, Tab passes Key and then reaches its panel and switches
+  // (the toolbar comes first in the DOM), Space toggles one, Escape closes the panel and returns
+  // focus to Layers.
   await page.keyboard.press('Shift+Tab');
   await expect(layersToggle(page)).toBeFocused();
   await page.keyboard.press('Space');
@@ -475,16 +481,58 @@ test('keyboard: Tab from the zoom controls reaches Layers, then Key; Escape retu
   await expect(keyPanel(page)).toBeHidden();
   await expect(layersToggle(page)).toBeFocused();
   const stops = layersPanel(page).getByRole('checkbox', { name: 'Transit stops' });
-  const capacity = layersPanel(page).getByRole('checkbox', { name: /^Transit capacity/ });
-  await page.keyboard.press('Shift+Tab');
-  await expect(capacity).toBeFocused();
-  await page.keyboard.press('Shift+Tab');
+  await page.keyboard.press('Tab');
+  await expect(keyToggle(page)).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(layersPanel(page)).toBeFocused();
+  await page.keyboard.press('Tab');
   await expect(stops).toBeFocused();
   await page.keyboard.press('Space');
   await expect(stops).toBeChecked();
   await page.keyboard.press('Escape');
   await expect(layersPanel(page)).toBeHidden();
   await expect(layersToggle(page)).toBeFocused();
+});
+
+test("Tab from the map reaches Layers and Key before the open key panel's controls", async ({
+  isMobile,
+  page
+}) => {
+  // eslint-disable-next-line playwright/no-skipped-test -- the key is open at rest from md
+  test.skip(isMobile, 'the desktop layout');
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await gotoSim(page);
+  await expect(keyPanel(page)).toBeVisible();
+  await page.locator('.maplibregl-ctrl-bottom-left button').last().focus();
+  for (let i = 0; i < 12; i++) {
+    await page.keyboard.press('Tab');
+    const at = await focusAt(page);
+    if (at.testid === 'map-layers-toggle') break;
+    expect(at.inMap, JSON.stringify(at)).toBe(true);
+  }
+  await expect(layersToggle(page)).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(keyToggle(page)).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(keyPanel(page)).toBeFocused();
+  // The panel still sits above the toolbar.
+  const panel = await boxOf(keyPanel(page));
+  expect(panel.y + panel.height).toBeLessThanOrEqual((await boxOf(keyToggle(page))).y);
+});
+
+test("the edge swatch's half-discs are at least 10 by 5 px", async ({ page }) => {
+  await gotoSim(page);
+  if ((await keyToggle(page).getAttribute('aria-expanded')) !== 'true')
+    await keyToggle(page).click();
+  await expect(keyPanel(page)).toBeVisible();
+  const halves = keyPanel(page).locator('[data-swatch="edge"] [data-token]');
+  await expect(halves).toHaveCount(4);
+  for (const b of await halves.evaluateAll((els) =>
+    els.map((e) => ({ w: e.getBoundingClientRect().width, h: e.getBoundingClientRect().height }))
+  )) {
+    expect(b.h).toBeGreaterThanOrEqual(10);
+    expect(b.w).toBeGreaterThanOrEqual(5);
+  }
 });
 
 test('375 px: Layers and Key are 24 px, inside the map, clear of Reset and the attribution', async ({

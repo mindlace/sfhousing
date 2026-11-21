@@ -5,7 +5,11 @@
   import NoticePills from '../NoticePills.svelte';
   import { BUTTON_QUIET } from '../ui';
 
-  let { empty = false, card = false }: { empty?: boolean; card?: boolean } = $props();
+  let {
+    empty = false,
+    card = false,
+    onbottom = undefined
+  }: { empty?: boolean; card?: boolean; onbottom?: (px: number) => void } = $props();
 </script>
 
 {#snippet retry()}
@@ -16,7 +20,7 @@
 {/snippet}
 
 <div data-testid="pills-host" class="sfh-dock-host relative" style="height: 400px">
-  <NoticePills>
+  <NoticePills {onbottom}>
     {#if !empty}
       <div role="status" class="contents">
         <Message text="First notice" testid="first" />

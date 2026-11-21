@@ -212,7 +212,9 @@ describe('SimKey', () => {
       const row = ring.querySelector(`[data-key-extra="${kind}"]`)!;
       const words = row.querySelector('span:not([data-swatch]):not([data-swatch] *)')!;
       expect(words.getClientRects(), `${kind} on one line`).toHaveLength(1);
-      expect(row.getBoundingClientRect().height, `${kind} row height`).toBeLessThanOrEqual(20);
+      // The edge swatch grows to fit a 10 px half-disc per tone.
+      const tall = kind === 'edge' ? Math.max(20, 10 * tones.length) : 20;
+      expect(row.getBoundingClientRect().height, `${kind} row height`).toBeLessThanOrEqual(tall);
       for (const t of row.querySelectorAll('[data-token]')) {
         const r = t.getBoundingClientRect();
         expect(r.width * r.height, `${kind} tone drawn`).toBeGreaterThan(0);

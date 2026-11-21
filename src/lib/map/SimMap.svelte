@@ -287,6 +287,17 @@
    * footprint, never per frame.
    */
   let glowInset = 0;
+  /** The page's part (`setGlowInset`): what covers the map's top and right. */
+  let pageInset = { top: 0, right: 0 };
+  /**
+   * A top glow's centre sits this far below what covers the top (the header line, the notices),
+   * so it reads as a glow at the map's edge, not one under the header. CSS px.
+   */
+  const GLOW_TOP_GAP = 12;
+  /** The one write of the glows' inset [top, right, bottom, left]: the page's and the footprint's. */
+  function writeEdgeInset(t = live?.timeline): void {
+    t?.setEdgeInset([pageInset.top + GLOW_TOP_GAP, pageInset.right, glowInset, 0]);
+  }
   let footprintGone = false;
 
   function publishFootprint(inline: number, block: number): void {
@@ -318,7 +329,7 @@
     const block = Math.max(f.block, bottomInset);
     publishFootprint(f.inline, block);
     glowInset = Math.min(block, box.height / 4);
-    live?.timeline?.setEdgeInset([0, 0, glowInset, 0]);
+    writeEdgeInset();
   }
 
   function observeFootprint(map: MapLibreMap): void {
@@ -437,6 +448,16 @@
     live?.timeline?.setBarMode(mode);
   }
 
+  /**
+   * The page's part of the glows' inset (top and right, CSS px); SimMap adds its bottom. Kept like
+   * the day; a repeated value writes nothing.
+   */
+  export function setGlowInset(o: { top: number; right: number }): void {
+    if (o.top === pageInset.top && o.right === pageInset.right) return;
+    pageInset = { top: o.top, right: o.right };
+    writeEdgeInset();
+  }
+
   const handle: SimMapHandle = {
     applyGenerated,
     setChunkStatus,
@@ -449,7 +470,8 @@
     setTime,
     setTimelineLookups,
     setHalos,
-    setBarMode
+    setBarMode,
+    setGlowInset
   };
 
   // ---- effects ----------------------------------------------------------------------------------
@@ -820,7 +842,7 @@
       firstSymbolLayerId(map.getStyle())
     );
     l.timeline = timeline;
-    timeline.setEdgeInset([0, 0, glowInset, 0]);
+    writeEdgeInset(timeline);
     l.timelinePart = TIMELINE_PART_LAYER;
     watchCompileErrors(l);
     overlay.setProps({

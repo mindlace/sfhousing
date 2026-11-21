@@ -138,6 +138,14 @@ export interface SimMapHandle {
    * 12 at 32 by 6 px at every zoom. Kept until the timeline controller exists, as setTime.
    */
   setBarMode(mode: BarMode): void;
+  /**
+   * The page's part of the edge glows' inset, CSS px: `top` (what covers the map's top: the notice
+   * stack from md) and `right` (an open key or layers panel from md). SimMap adds its own bottom
+   * (the attribution's footprint) and passes [top + GLOW_TOP_GAP, right, bottom, 0] to the city
+   * layer. Write it on change only; repeating a value does nothing. Kept until the timeline
+   * controller exists, as setTime.
+   */
+  setGlowInset(o: { top: number; right: number }): void;
 }
 
 /** How the progress bars draw (docs/dev/map-interfaces.md "Bar modes"). */

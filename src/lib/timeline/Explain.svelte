@@ -76,20 +76,29 @@
     const next = e.relatedTarget as Node | null;
     if (!next || !wrapper?.contains(next)) opened = false;
   }
-  // On the window: Escape closes however it opened, including by hover with focus elsewhere.
-  function onwindowkeydown(e: KeyboardEvent) {
-    if (e.key === 'Escape' && open) {
-      opened = false;
-      dismissed = true;
-      e.stopPropagation();
-    }
+  /** Closes on Escape and marks the key handled, so no other Escape handler acts on it too. */
+  function dismiss(e: KeyboardEvent) {
+    opened = false;
+    dismissed = true;
+    e.preventDefault();
   }
+  // On the window, in the capture phase: Escape closes however it opened, including by hover with
+  // focus elsewhere, before any bubbling window handler (a card, the Menu, the dock) sees it; they
+  // skip a key already handled (`defaultPrevented`). A key from inside is left to `onkeydown`.
+  function onwindowkeydown(e: KeyboardEvent) {
+    if (e.key !== 'Escape' || !open) return;
+    if (e.target instanceof Node && wrapper?.contains(e.target)) return;
+    dismiss(e);
+  }
+  $effect(() => {
+    window.addEventListener('keydown', onwindowkeydown, { capture: true });
+    return () => window.removeEventListener('keydown', onwindowkeydown, { capture: true });
+  });
   // Within it: an open explanation is the innermost layer, so Escape closes it and goes no further
   // (a panel or sheet around it keeps its own Escape for the next press).
   function onkeydown(e: KeyboardEvent) {
     if (e.key !== 'Escape' || !open) return;
-    opened = false;
-    dismissed = true;
+    dismiss(e);
     e.stopPropagation();
   }
   // A native listener on the wrapper, not a delegated one: it runs before any container's handler,
@@ -130,8 +139,6 @@
     return () => set(ids().filter((t) => t !== textId));
   });
 </script>
-
-<svelte:window onkeydown={onwindowkeydown} />
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <span
