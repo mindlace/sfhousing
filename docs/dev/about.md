@@ -10,12 +10,12 @@ Four parts, in this order. Each part's root is a `<section>` with its id; links 
 `/about#<id>` (`ABOUT_ID`, `src/lib/about/copy.ts`). The ids carry an `about-` prefix so that the
 dialog on `/sim` never duplicates an id the page already holds.
 
-| Part                  | Id                  | Component                                                                  |
-| --------------------- | ------------------- | -------------------------------------------------------------------------- |
-| What the numbers mean | `about-meanings`    | `AboutMeanings.svelte`: the terms of `MEANINGS`                            |
-| Assumptions           | `about-assumptions` | `AboutAssumptions.svelte`: the Sources dialog's body, loaded on demand     |
-| Data and licences     | `about-data`        | `AboutData.svelte`: version, sources, notices, Software, the code line     |
-| Using it              | `about-using`       | `AboutUsing.svelte`: Keyboard shortcuts (`about-shortcuts`) and Your plans |
+| Part                  | Id                  | Component                                                                                     |
+| --------------------- | ------------------- | --------------------------------------------------------------------------------------------- |
+| What the numbers mean | `about-meanings`    | `AboutMeanings.svelte`: the terms of `MEANINGS`                                               |
+| Assumptions           | `about-assumptions` | `AboutAssumptions.svelte`: `ProvenanceBody`, live in the dialog, loaded on demand on the page |
+| Data and licences     | `about-data`        | `AboutData.svelte`: version, sources, notices, Software, the code line                        |
+| Using it              | `about-using`       | `AboutUsing.svelte`: Keyboard shortcuts (`about-shortcuts`) and Your plans                    |
 
 Every part takes `level` (`2 | 3`): its heading's level, 2 on the page and 3 in a dialog; its
 sub-headings are one deeper. `AboutData` also takes `datasetVersion` and `manifest`
@@ -54,8 +54,8 @@ from `/about`.
 ## The assumptions
 
 `AboutAssumptions.svelte` (`{ level; live?; datasetVersion?; manifest?; fetchFn? }`) renders
-`ProvenanceBody` ([fzp-mode.md](fzp-mode.md)), the Sources dialog's sections and strings unchanged,
-one heading level under the part.
+`ProvenanceBody` ([fzp-mode.md](fzp-mode.md)), the sections and strings `/sim` has always shown,
+unchanged, one heading level under the part.
 
 - `live` (`{ sections, projectsUrl }`, the dialog on `/sim`): the run's sections at once, no
   disclosure, no fetch of the calibration. The part exports `loadChecks()`, which passes through
@@ -74,8 +74,9 @@ one heading level under the part.
 - A hash naming `about-assumptions` or any `src-…` id, on mount or on a later `hashchange` (a
   pasted link, back or forward; the listener goes with the part), opens the disclosure (and so
   loads); once the target exists it is scrolled to (`block: 'start'`), once, after a failure and
-  Retry too, and focused (`tabindex="-1"`, `preventScroll`), so a keyboard user's next Tab starts
-  there. The hash is taken as written, never decoded (the ids are ASCII; a stray `%` would
+  Retry too, and its heading is focused (`focusLanding`, `src/lib/about/land.ts`: `tabindex="-1"`,
+  `preventScroll`), so a keyboard user's next Tab starts there and a focus ring is one line, never
+  the whole part. The hash is taken as written, never decoded (the ids are ASCII; a stray `%` would
   throw).
 - The disclosure is not `bind:open`: Svelte's binding writes the state over the element on
   hydration, closing a disclosure pressed before then. The part reads `details.open` on mount and
@@ -85,8 +86,9 @@ one heading level under the part.
 light page; the body's tier badges and head rules keep `control-line` with its dark partner.
 
 The data checks have one way in: `loadChecks()`. `ProvenanceBody` exports it (it starts the load,
-is a no-op in flight or once loaded, and retries after a failure); `AboutAssumptions` passes it
-through, calls it on each open of the page's disclosure, and the dialog calls it on each open.
+is a no-op in flight or once loaded, and retries after a failure) and returns a promise that
+resolves once the attempt has settled and is drawn; `AboutAssumptions` passes it through, calls it
+on each open of the page's disclosure, and the dialog calls it on each open.
 
 ## `/attribution`
 
@@ -123,8 +125,12 @@ Close (`BUTTON_QUIET`), then the four parts at level 3, part 2 live (`sections` 
 calibration and a scenario (the Sources dialog's old place and condition).
 
 - `open(target = '')`: `''` is the top; an `ABOUT_ID` value or an entry id (`src-…`) is scrolled
-  to the top of the dialog's scroll box. Every open calls `onopen` (the page pauses Play) and
-  `loadChecks()`.
+  to the top of the dialog's scroll box and its heading focused (`focusLanding`), so the next Tab
+  starts there; with no target focus stays on Close. Every open calls `onopen` (the page pauses
+  Play) and `loadChecks()`. The data checks grow when they arrive, above every later part, and
+  WebKit anchors no scroll, so the dialog lands again once `loadChecks()` resolves, unless the
+  reader has moved the scroll box since (wheel, touch, a press or a key in it) or another open
+  came first.
 - Nothing is built before the first open: the parts mount then and stay, so nothing is fetched
   until About is first opened, and `sections` (a lazy prop) is not computed before it.
 - Focus: Tab wraps inside. On close, focus returns to the opener while it is rendered
