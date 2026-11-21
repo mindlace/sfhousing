@@ -213,7 +213,8 @@
   /**
    * The credit's state (docs/dev/map-interfaces.md). `auto` holds until it collapses once by
    * itself (the timer, the first user zoom, rotate or pitch, `collapseCredit`) or the person presses
-   * its toggle; then only the person (and MapLibre's drag rule) opens and closes it.
+   * its toggle, focuses inside it or puts the pointer on it; then only the person (and MapLibre's
+   * drag rule) opens and closes it.
    */
   interface Credit {
     el: HTMLElement; // MapLibre's <details>
@@ -715,6 +716,8 @@
       endAuto(l);
       sync();
     };
+    // A reader who has Tabbed into it or rests the pointer on it is using it: it stays open.
+    const onEngage = () => endAuto(l);
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || e.defaultPrevented || !isOpen()) return;
       e.preventDefault();
@@ -726,6 +729,8 @@
     map.on('drag', onDrag);
     toggle.addEventListener('click', onPress);
     el.addEventListener('keydown', onKey);
+    el.addEventListener('focusin', onEngage);
+    el.addEventListener('pointerenter', onEngage);
     const credit: Credit = {
       el,
       toggle,
@@ -740,6 +745,8 @@
         map.off('drag', onDrag);
         toggle.removeEventListener('click', onPress);
         el.removeEventListener('keydown', onKey);
+        el.removeEventListener('focusin', onEngage);
+        el.removeEventListener('pointerenter', onEngage);
       },
       offMoves: () => {
         for (const t of USER_MOVES) map.off(t, onUserMove);

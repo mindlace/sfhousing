@@ -309,6 +309,34 @@ describe('SimMap ready', { timeout: 30_000 }, () => {
     expect(isOpen(target)).toBe(true);
   });
 
+  it('focus in the credit during creditShowMs keeps it open, the focused link kept', async () => {
+    const settled = watchTimer(50);
+    // A keyboard user Tabs onto "© OpenStreetMap" in the task that adds the credit.
+    const seen = atInsert((c) => {
+      c.querySelector<HTMLElement>('a')!.focus();
+      return true;
+    });
+    const { target, ready } = await mount({ creditShowMs: 50 });
+    await expect.poll(seen.value).toBe(true);
+    await ready;
+    await expect.poll(settled).toBe(true);
+    expect(isOpen(target)).toBe(true);
+    expect(document.activeElement).toBe(creditOf(target)!.querySelector('a'));
+  });
+
+  it('a pointer on the credit during creditShowMs keeps it open', async () => {
+    const settled = watchTimer(50);
+    const seen = atInsert((c) => {
+      c.dispatchEvent(new PointerEvent('pointerenter', { pointerType: 'mouse' }));
+      return true;
+    });
+    const { target, ready } = await mount({ creditShowMs: 50 });
+    await expect.poll(seen.value).toBe(true);
+    await ready;
+    await expect.poll(settled).toBe(true);
+    expect(isOpen(target)).toBe(true);
+  });
+
   it('the first user zoom collapses it; a programmatic jump does not', async () => {
     const { target, ready } = await mount({ creditShowMs: LONG });
     const h = await ready;
