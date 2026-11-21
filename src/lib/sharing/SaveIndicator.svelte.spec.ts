@@ -113,7 +113,9 @@ describe('SaveIndicator', () => {
     const below = document.createElement('div');
     below.style.marginTop = '300px';
     document.body.appendChild(below);
-    onTestFinished(() => below.remove());
+    onTestFinished(() => {
+      below.remove();
+    });
     render(ExplainHost, { props: { text: 'An explanation.' }, target: below });
     await userEvent.click(page.getByRole('button', { name: 'Autosave off' }));
     await expect.element(page.getByText(COPY.n4)).toBeVisible();
