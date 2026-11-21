@@ -158,7 +158,7 @@
     class:stale={shownLevel !== null && stale}
     data-testid="tl-bar"
     data-open={open}
-    aria-label={barLabel(policyLabel, span, asOf) + (off ? ', off' : '') + (left ?? '')}
+    aria-label={barLabel(settingOf(span.what), policyLabel, span, asOf, { off, left })}
     aria-pressed={selected}
     onclick={() => onselect(ref)}
     {onkeydown}
@@ -293,6 +293,14 @@
     .bar.sel,
     .bar:focus-visible {
       outline-color: var(--color-accent-dark);
+    }
+  }
+  /* Under forced colours the bar's fill is not drawn: a 1 px line inside its box draws its extent
+     (a selected or focused bar keeps its own outline). */
+  @media (forced-colors: active) {
+    .bar {
+      outline: 1px solid ButtonText;
+      outline-offset: -1px;
     }
   }
 </style>

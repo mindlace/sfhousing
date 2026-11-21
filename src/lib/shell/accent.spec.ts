@@ -72,7 +72,18 @@ const THEMED_FILES = [
   'src/lib/goal/GoalRow.svelte',
   'src/lib/paint/PaintDetails.svelte',
   'src/lib/timeline/SimActivity.svelte',
-  'src/lib/timeline/LevelFill.svelte'
+  'src/lib/timeline/LevelFill.svelte',
+  'src/lib/shell/ui.ts',
+  'src/lib/sharing/PublishButton.svelte',
+  'src/lib/sharing/PublishDialog.svelte',
+  'src/lib/sharing/SharedBanner.svelte',
+  'src/lib/sharing/SaveIndicator.svelte',
+  'src/lib/fzp/SourcesDialog.svelte',
+  'src/lib/brush/RadiusPopover.svelte',
+  'src/lib/shell/SiteHeader.svelte',
+  'src/lib/shell/Message.svelte',
+  'src/lib/sharing/NoticeStack.svelte',
+  'src/lib/sim-page/SimNotices.svelte'
 ];
 /** Themed files whose colours come from tokens and custom properties only: no hex at all. */
 const NO_HEX_FILES = [
@@ -84,7 +95,9 @@ const NO_HEX_FILES = [
   'src/lib/goal/GoalRow.svelte',
   'src/lib/paint/PaintDetails.svelte',
   'src/lib/timeline/SimActivity.svelte',
-  'src/lib/timeline/LevelFill.svelte'
+  'src/lib/timeline/LevelFill.svelte',
+  'src/lib/shell/ui.ts',
+  'src/lib/shell/Message.svelte'
 ];
 const BLUE_HEX = /#(1d4ed8|2563eb|1e40af|3b82f6|1e3a8a)\b/i;
 const BLUE_RGB = /rgb\(\s*(29[ ,]+78[ ,]+216|37[ ,]+99[ ,]+235)\s*\)/i;

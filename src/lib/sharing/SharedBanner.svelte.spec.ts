@@ -47,6 +47,30 @@ describe('SharedBanner', () => {
     await expect.element(start).toHaveAttribute('href', '/');
   });
 
+  it('the banner and its dialog draw on the surface tokens, with dark partners', async () => {
+    setup({ count: 2 });
+    await expect.element(banner()).toBeVisible();
+    const has = (el: Element, list: string[]) => {
+      const cls = [...el.classList];
+      for (const c of list) expect(cls, c).toContain(c);
+      expect(cls).not.toContain('bg-white');
+    };
+    has(banner().element(), [
+      'bg-surface',
+      'dark:bg-surface-dark',
+      'text-ink',
+      'dark:text-ink-dark'
+    ]);
+    await userEvent.click(remixButton());
+    await expect.element(dialog()).toBeVisible();
+    has(dialog().element(), [
+      'bg-surface',
+      'dark:bg-surface-dark',
+      'text-ink',
+      'dark:text-ink-dark'
+    ]);
+  });
+
   it("falls back to 'Untitled plan'", async () => {
     setup({});
     await expect.element(banner().getByText('Untitled plan', { exact: true })).toBeVisible();

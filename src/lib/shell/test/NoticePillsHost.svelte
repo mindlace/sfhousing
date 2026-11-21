@@ -1,20 +1,38 @@
 <script lang="ts">
-  // Test host: NoticePills around two pills (none with `empty`), inside a positioned host as
-  // FzpMode and BrushEditor render it.
+  // Test host: NoticePills around two chips (none with `empty`), and with `card` a notice with
+  // details, inside a positioned host as FzpMode and BrushEditor render it.
+  import Message from '../Message.svelte';
   import NoticePills from '../NoticePills.svelte';
-  import { PILL, PILL_ACTION } from '../pill';
+  import { BUTTON_QUIET } from '../ui';
 
-  let { empty = false }: { empty?: boolean } = $props();
+  let {
+    empty = false,
+    card = false,
+    onbottom = undefined
+  }: { empty?: boolean; card?: boolean; onbottom?: (px: number) => void } = $props();
 </script>
 
+{#snippet retry()}
+  <button type="button" class={BUTTON_QUIET}>Retry</button>
+{/snippet}
+{#snippet details()}
+  <ul class="list-disc pl-4 text-xs"><li>One detail</li></ul>
+{/snippet}
+
 <div data-testid="pills-host" class="sfh-dock-host relative" style="height: 400px">
-  <NoticePills>
+  <NoticePills {onbottom}>
     {#if !empty}
-      <p role="status" class="{PILL} pr-4">First notice</p>
-      <p role="status" class={PILL}>
-        <span>Second notice</span>
-        <button type="button" class={PILL_ACTION}>Retry</button>
-      </p>
+      <div role="status" class="contents">
+        <Message text="First notice" testid="first" />
+      </div>
+      <div role="status" class="contents">
+        <Message text="Second notice" actions={retry} testid="second" />
+      </div>
+      {#if card}
+        <div role="status" class="contents">
+          <Message text="Third notice" {details} testid="third" />
+        </div>
+      {/if}
     {/if}
   </NoticePills>
 </div>

@@ -1,30 +1,42 @@
 <!--
-  The notice stack: every notice on `/`, `/p/:id`, `/sim` and `/s/<id>` is a pill (`PILL` in
-  ./pill) in this column, one stack per page. From md it overlays the map's top, centred over the
+  The notice stack: every notice on `/`, `/p/:id`, `/sim` and `/s/<id>` is a chip or a card
+  (`Message`) in this column, one stack per page. From md it overlays the map's top, centred over the
   map right of the dock (`--dock-w`: the open panel or the rail), and takes no space, so a notice
   never moves the dock, the time bar or the map inset. The container lets clicks through to the
-  map; each pill takes them. Below md it sits in flow under the header, full width, and pushes the
+  map; each message takes them (a chip or a card by its words, see docs/dev/ui-parts.md). Below md it sits in flow under the header, full width, and pushes the
   map down (the phone rule, spec Goal 8).
   Map-view's failure chips sit at the same top centre, so from md the stack publishes its
   bottom edge, in px from its host's top, on its host (the parent element: FzpMode's or
   BrushEditor's root) as `--notice-pills-bottom`, and SimMap places the chips below it. It is `0px`
-  while the stack is empty and below md (in flow, the map is already below it).
+  while the stack is empty and below md (in flow, the map is already below it). `onbottom` reports
+  the same value on change.
 -->
 <script lang="ts">
-  import type { Snippet } from 'svelte';
+  import { untrack, type Snippet } from 'svelte';
   import { MediaQuery } from 'svelte/reactivity';
 
-  /** `el` is the stack's element, for a host that places something clear of the pills. */
-  let { children, el = $bindable() }: { children: Snippet; el?: HTMLElement } = $props();
+  interface Props {
+    children: Snippet;
+    /** The stack's element, for a host that places something clear of the pills. */
+    el?: HTMLElement;
+    /** The same value it publishes as --notice-pills-bottom (px), on change. */
+    onbottom?: (px: number) => void;
+  }
+  let { children, el = $bindable(), onbottom = undefined }: Props = $props();
 
   const wide = new MediaQuery('(min-width: 48rem)');
   let height = $state(0);
+  let reported: number | null = null;
   $effect(() => {
     const stack = el;
     const host = stack?.parentElement;
     if (!stack || !host) return;
-    const bottom = wide.current && height > 0 ? stack.offsetTop + height : 0;
-    host.style.setProperty('--notice-pills-bottom', `${Math.round(bottom)}px`);
+    const bottom = Math.round(wide.current && height > 0 ? stack.offsetTop + height : 0);
+    host.style.setProperty('--notice-pills-bottom', `${bottom}px`);
+    if (bottom !== reported) {
+      reported = bottom;
+      untrack(() => onbottom?.(bottom));
+    }
     return () => host.style.removeProperty('--notice-pills-bottom');
   });
 </script>

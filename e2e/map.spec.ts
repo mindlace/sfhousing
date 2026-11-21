@@ -373,21 +373,21 @@ test.describe('map view', () => {
         const box = await b.boundingBox();
         const name = (await b.getAttribute('aria-label')) ?? (await b.textContent());
         expect(box, `button ${name}`).not.toBeNull();
-        expect(box!.width, `button ${name} width`).toBeGreaterThanOrEqual(44);
-        expect(box!.height, `button ${name} height`).toBeGreaterThanOrEqual(44);
+        expect(box!.width, `button ${name} width`).toBeGreaterThanOrEqual(24);
+        expect(box!.height, `button ${name} height`).toBeGreaterThanOrEqual(24);
       }
 
       await card.getByRole('button', { name: 'Close' }).click();
       await expect(card).toBeHidden();
     });
 
-    test('reset view: 44×44 button restores the default frame', async ({ page }) => {
+    test('reset view: a 24 px button (at least) restores the default frame', async ({ page }) => {
       await gotoReady(page);
       const reset = page.getByRole('button', { name: 'Reset view' });
       await expect(reset).toBeVisible();
       const box = (await reset.boundingBox())!;
-      expect(box.width).toBeGreaterThanOrEqual(44);
-      expect(box.height).toBeGreaterThanOrEqual(44);
+      expect(box.width).toBeGreaterThanOrEqual(24);
+      expect(box.height).toBeGreaterThanOrEqual(24);
 
       await jumpAndIdle(page, { center: PARCEL_3512014, zoom: 16.5, pitch: 0, bearing: 30 });
       await reset.click();

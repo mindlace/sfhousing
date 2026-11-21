@@ -15,6 +15,10 @@
     onready?: (focus: () => void) => void;
     canUndo?: boolean;
     onundo?: () => void;
+    canRedo?: boolean;
+    onredo?: () => void;
+    undoLabel?: string | null;
+    redoLabel?: string | null;
   }
 
   let {
@@ -25,7 +29,11 @@
     ondone = undefined,
     onready = undefined,
     canUndo = false,
-    onundo = undefined
+    onundo = undefined,
+    canRedo = false,
+    onredo = undefined,
+    undoLabel = null,
+    redoLabel = null
   }: Props = $props();
 
   // The prop only seeds the host's own state, as a page's would.
@@ -50,4 +58,8 @@
   {eraseHint}
   {canUndo}
   {onundo}
+  {canRedo}
+  {onredo}
+  {undoLabel}
+  {redoLabel}
 />

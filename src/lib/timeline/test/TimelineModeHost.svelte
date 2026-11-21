@@ -5,7 +5,8 @@
   `showActivity`. `onedit` applies the change; `onundoto` (rule 34) sets the document unless the
   test passes its own. With `withInspector` the inspector renders the Details face (or `face`'s).
   `readonly` is the page's (default false). `regionHeight` is the mode box's height (700 px unless given). With
-  `saveStatus` the status is the real SaveIndicator, as SimPage renders it (`ctl.setSaveStatus`).
+  `saveStatus` the status is the real SaveIndicator, as SimPage renders it (`ctl.setSaveStatus`),
+  and `saveOff` follows it as SimPage passes it (autosave off) unless the test gives its own.
 -->
 <script lang="ts">
   import { untrack, type ComponentProps, type Snippet } from 'svelte';
@@ -37,6 +38,8 @@
     readonly?: boolean;
     regionHeight?: number;
     saveStatus?: SaveStatus;
+    /** Overrides the page's rule (`saveOff` while the save state is 'off'). */
+    saveOff?: boolean;
     initialPolicy: SimPolicy4;
     initialLots: Lots | null;
     ctl: {
@@ -59,6 +62,7 @@
     readonly = false,
     regionHeight = 700,
     saveStatus: initialSave = undefined,
+    saveOff = undefined,
     ...rest
   }: Props = $props();
   const slot = provideHeaderActions();
@@ -104,6 +108,7 @@
     {lots}
     {lotsFailed}
     {readonly}
+    saveOff={saveOff ?? save === 'off'}
     {selected}
     onselect={(r) => (selected = r)}
     onedit={(change) => (policy = change(policy))}

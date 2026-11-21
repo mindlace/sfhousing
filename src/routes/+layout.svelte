@@ -25,7 +25,12 @@
   class="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-50 focus:bg-white focus:px-3 focus:py-2"
   >Skip to content</a
 >
-<div class={full ? 'flex h-dvh flex-col overflow-hidden' : 'flex min-h-dvh flex-col'}>
+<!-- The map pages are themed whole, so in dark they declare the dark color-scheme (native
+     scrollbars and control internals follow). The document pages are light at every setting, so
+     they keep the default (`:root` declares nothing). -->
+<div
+  class={full ? 'flex h-dvh flex-col overflow-hidden dark:scheme-dark' : 'flex min-h-dvh flex-col'}
+>
   <SiteHeader
     actions={headerActions.current ?? undefined}
     pinned={headerActions.pinned ?? undefined}

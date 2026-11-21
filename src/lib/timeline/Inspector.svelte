@@ -357,7 +357,7 @@
   );
 
   const btn =
-    'min-h-6 min-w-6 rounded-md border border-control-line px-2 font-semibold text-ink hover:bg-surface-raised aria-disabled:opacity-40 dark:border-control-line-dark dark:text-ink-dark dark:hover:bg-surface-dark-raised pointer-coarse:min-h-11';
+    'min-h-6 min-w-6 rounded-md border border-control-line px-2 font-semibold text-ink hover:bg-surface-raised aria-disabled:opacity-40 dark:border-control-line-dark dark:text-ink-dark dark:hover:bg-surface-dark-raised';
   const muted = 'text-ink-muted dark:text-ink-dark-muted';
   const alertClass = (t: string) => `text-sm text-red-800 dark:text-red-300 ${t ? '' : 'sr-only'}`;
 </script>
@@ -378,7 +378,7 @@
       <button
         type="button"
         aria-label="Close editor"
-        class="flex min-h-6 min-w-6 items-center justify-center rounded-md hover:bg-surface-raised dark:hover:bg-surface-dark-raised pointer-coarse:min-h-11 pointer-coarse:min-w-11"
+        class="flex min-h-6 min-w-6 items-center justify-center rounded-md hover:bg-surface-raised dark:hover:bg-surface-dark-raised"
         onclick={close}><span aria-hidden="true">×</span></button
       >
     </div>

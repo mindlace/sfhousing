@@ -1,7 +1,9 @@
 <!--
   The Shortcuts button and the keyboard shortcuts list it opens in a native popover (nothing on a
   coarse pointer, which has no keyboard: `usePrimaryPointer`, the one rule `BrushEditor` shares).
-  `/` puts it last in the Paint tab; `/sim` has it in its header, after Undo and Redo. The popover
+  `/` puts it last in the Paint tab; `/sim` has it in its header (after Undo and Redo where a
+  pointer is coarse; from lg, the page hides it wherever Undo and Redo are in the header, through
+  `class`). The popover
   sits in the top layer, so it takes no room in its row and is not clipped by the dock's scroll
   box; script places it under its button. Escape, a second press and an outside press close it,
   as do a resize and a scroll outside it. The label shows as "Shortcuts" while the name stays
@@ -12,8 +14,12 @@
 -->
 <script lang="ts">
   import { SHORTCUTS } from '$lib/brush/shortcuts';
+  import { SURFACE_POP } from '$lib/shell/ui';
   import { placePopover } from './place-popover';
   import { usePrimaryPointer } from './pointer.svelte';
+
+  /** Classes for the button (on /sim: hidden from lg beside Undo and Redo). */
+  let { class: extra = undefined }: { class?: string } = $props();
 
   // Shown once the client has read the query, and only on a fine primary pointer.
   const pointer = usePrimaryPointer();
@@ -33,8 +39,10 @@
     open = e.newState === 'open';
     if (!open || !pop || !button) return;
     const a = button.getBoundingClientRect();
+    // In the header the button is shorter than the bar: open under the bar, not over its edge.
+    const bar = button.closest('header')?.getBoundingClientRect();
     const p = placePopover(
-      a,
+      { right: a.right, bottom: Math.max(a.bottom, bar?.bottom ?? a.bottom) },
       { width: pop.getBoundingClientRect().width },
       { width: document.documentElement.clientWidth, height: window.innerHeight }
     );
@@ -76,7 +84,10 @@
     aria-expanded={open}
     aria-controls={popId}
     popovertarget={popId}
-    class="flex min-h-11 cursor-pointer items-center rounded-md px-2 text-sm text-ink-muted underline hover:bg-surface-raised dark:text-ink-dark-muted dark:hover:bg-surface-dark-raised"
+    class={[
+      'flex min-h-6 min-w-6 cursor-pointer items-center rounded-md px-2 text-sm text-ink-muted underline hover:bg-surface-raised dark:text-ink-dark-muted dark:hover:bg-surface-dark-raised',
+      extra
+    ]}
     ><span aria-hidden="true">Shortcuts</span><span class="sr-only">Keyboard shortcuts</span
     ></button
   >
@@ -92,9 +103,9 @@
     data-testid="shortcuts"
     {onbeforetoggle}
     {ontoggle}
-    class="fixed m-0 w-max max-w-[min(20rem,calc(100vw-1rem))] overflow-y-auto rounded-md border border-control-line bg-surface p-3 text-xs text-ink shadow-lg dark:border-control-line-dark dark:bg-surface-dark dark:text-ink-dark"
+    class="fixed m-0 w-max max-w-[min(20rem,calc(100vw-1rem))] overflow-y-auto {SURFACE_POP}"
   >
-    <table aria-label="Keyboard shortcuts" class="text-left">
+    <table aria-label="Keyboard shortcuts" class="text-left text-xs">
       <thead>
         <tr><th scope="col" class="py-1 pr-2">Key</th><th scope="col">Action</th></tr>
       </thead>

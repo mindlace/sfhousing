@@ -30,8 +30,15 @@
   const CITY_TONES = [...CITY_KIND_TOKEN];
   /** The merged ring the city layer draws zoomed out, one per area, in its tones. */
   export const AREA_SWATCH: Swatch = { kind: 'area', tokens: CITY_TONES };
-  /** The glow the city layer draws at the map's edge for a change off screen, in its tones. */
-  export const EDGE_SWATCH: Swatch = { kind: 'edge', tokens: CITY_TONES };
+  /**
+   * The glow the city layer draws at the map's edge for a change off screen: the three stage tones,
+   * as the three rows above it (the policy accent's glow is the mark row's colour), so the swatch
+   * fits one row.
+   */
+  export const EDGE_SWATCH: Swatch = {
+    kind: 'edge',
+    tokens: [HALO_TOKEN.approved, HALO_TOKEN.started, HALO_TOKEN.completed]
+  };
   /** The mark row: the diamond in the accent, inside the accent ring its projects carry. */
   export const MARK_SWATCH: Swatch = { kind: 'mark', tokens: ['tl-halo-policy'] };
   /** The bar row: a bar from unlikely to likely. */
@@ -90,9 +97,7 @@
   </li>
   {#if inForce}
     <li class="sim-key-mark flex items-start gap-2" data-key-extra="mark">
-      <span class="flex min-h-6 items-center pointer-coarse:min-h-11"
-        ><KeySwatch swatch={MARK_SWATCH} /></span
-      >
+      <span class="flex min-h-6 min-w-6 items-center"><KeySwatch swatch={MARK_SWATCH} /></span>
       <Explain text={KEY_COPY.markWhy} as="button">{KEY_COPY.mark}</Explain>
     </li>
   {/if}
@@ -103,14 +108,9 @@
 </ul>
 
 <style>
-  /* The mark's button is a target: 24 px, 44 on a coarse pointer (SC 2.5.8). */
+  /* The mark's button is a target: 24 px on every pointer (SC 2.5.8). */
   .sim-key-mark :global(button) {
     min-height: 1.5rem;
-  }
-  @media (pointer: coarse) {
-    .sim-key-mark :global(button) {
-      min-height: 2.75rem;
-    }
   }
   /* The panel scrolls on y and sits at the map's right edge: the explanation is a line under the
      mark at every width, never a popover beside it. */

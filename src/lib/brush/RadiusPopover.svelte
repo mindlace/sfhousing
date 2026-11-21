@@ -36,7 +36,8 @@
   let popEl = $state<HTMLElement>();
 
   function onWindowKey(e: KeyboardEvent) {
-    if (inline || !open || e.key !== 'Escape') return;
+    // An Escape already handled (an open explanation's, `defaultPrevented`) is not this one's.
+    if (inline || !open || e.key !== 'Escape' || e.defaultPrevented) return;
     onclose?.();
     opener?.focus();
   }
@@ -74,7 +75,7 @@
       step="1"
       aria-valuetext={radiusValueText(brush.radiusM)}
       value={posFromRadius(brush.radiusM)}
-      class="range min-h-11 min-w-11 flex-1"
+      class="range min-h-6 min-w-6 flex-1"
       oninput={(e) => brush.setRadius(radiusFromPos(Number(e.currentTarget.value)))}
     />
   </div>
@@ -89,7 +90,7 @@
     aria-label="Brush size: {brush.radiusM} m"
     aria-expanded={open}
     aria-controls={popId}
-    class="ctl min-h-11 min-w-11 rounded-md px-2 text-sm whitespace-nowrap {openerClass}"
+    class="ctl min-h-6 min-w-6 rounded-md px-2 text-sm whitespace-nowrap {openerClass}"
     onclick={() => ontoggle?.()}>{brush.radiusM} m</button
   >
   {#if open}

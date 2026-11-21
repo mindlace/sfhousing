@@ -12,6 +12,7 @@
   import { chanceTable, typicalMonths } from '$lib/timelapse/model';
   import type { Calibration } from '$lib/timelapse/types';
   import type { SimMapHandle } from '$lib/map/types';
+  import { moreBelow } from '$lib/shell/more-below';
   import type { ParcelId } from '$lib/data/parcel';
   import type { BrushCatalog, BrushQuery } from '$lib/sim/levers/brushes';
   import type {
@@ -80,7 +81,7 @@
   const MIN_SHEET = 240;
 
   /**
-   * Px of rows the pinned block must leave in its box (a 44 px coarse row with room around it);
+   * Px of rows the pinned block must leave in its box (a 24 px row target with room around it);
    * with less (a short window or browser zoom) the block and the rows are one piece that the
    * page's box scrolls, so a focused row always shows (WCAG 2.2 2.4.11, 1.4.10).
    */
@@ -112,7 +113,8 @@
   import type { ChunkStatus, TimelinePick, TimelineUpdate } from '$lib/map/types';
   import { useHeaderActions } from '$lib/shell/header-actions.svelte';
   import NoticePills from '$lib/shell/NoticePills.svelte';
-  import { PILL, PILL_ACTION } from '$lib/shell/pill';
+  import Message from '$lib/shell/Message.svelte';
+  import { BUTTON_QUIET } from '$lib/shell/ui';
   import { spawnSimWorker } from '$lib/sim/client';
   import { MARKET_TERMS, resolveTerms } from '$lib/sim/finance';
   import type { LimitOwner } from '$lib/sim/levers/source';
@@ -138,7 +140,7 @@
   import { datasetUrl } from '$lib/sim/scenario/load';
   import type { NeighborhoodShapes } from '$lib/sim/levers/brushes';
   import type { AddChoice } from './add';
-  import { CHANGE_NOT_APPLIED, STALE_NOTE, UPDATING } from './copy';
+  import { CHANGE_NOT_APPLIED, STALE_NOTE, UPDATING, WAITING_NOTE } from './copy';
   import Explain from './Explain.svelte';
   import { fundsOf4 } from './owner';
   import Playhead from './Playhead.svelte';
@@ -194,7 +196,9 @@
      * own close, while a live region of its own sets `visibility: visible` to keep speaking.
      */
     status?: Snippet<[covered: boolean]>;
-    /** The page's own notices, first in the notice stack; each should be a `PILL`. */
+    /** Autosave is off: "Updating" sits beside the save state instead of covering it. */
+    saveOff?: boolean;
+    /** The page's own notices, first in the notice stack; each should be a `Message`. */
     notices?: Snippet;
     /** The document on show; a new object after open is an edit (rule 25). */
     policy: SimPolicy4;
@@ -250,6 +254,13 @@
      * "Added: {label}". Absent (read-only), Activity offers no starters.
      */
     onstarter?(choice: AddChoice, label: string): void;
+    /**
+     * Why the last starter added nothing (a funding limit's words): a card in Activity at today.
+     * Leaving today calls `ondismissrefusal`, so it is gone when the person comes back.
+     */
+    refusal?: string | null;
+    /** The refusal's Dismiss, or the playhead left today. */
+    ondismissrefusal?(): void;
     /** Activity's Details button. Absent, it presses the header score. */
     ondetails?(): void;
     /** Details' Activity button; absent, Details has none. */
@@ -284,6 +295,7 @@
     actions = undefined,
     layers = undefined,
     status = undefined,
+    saveOff = false,
     notices = undefined,
     policy,
     lots,
@@ -308,6 +320,8 @@
     onmiss = undefined,
     onscore = undefined,
     onstarter = undefined,
+    refusal = null,
+    ondismissrefusal = undefined,
     ondetails = undefined,
     onactivity = undefined,
     scoreExpanded = false,
@@ -403,6 +417,11 @@
   /** A policy of the person's is in force in the document the numbers on show are from. */
   const inForce = $derived(!nothingInForce(resultsDoc));
   /**
+   * The key's mark row shows while the map can show marks of the edited document: a policy in
+   * force in the numbers on show, or, while they are stale, in the edited one.
+   */
+  const keyMarks = $derived(inForce || (stale && !nothingInForce(policy)));
+  /**
    * The pool levels the Public money bars draw: from the view on show and the document and
    * calibration it was run on, rebuilt with them, never as the playhead moves.
    */
@@ -416,6 +435,10 @@
   const copy = $derived(copyOf(!inForce));
   /** The playhead is at the dataset date: the headline reads today. */
   const atToday = $derived(playheadAt(months ?? [], asOf, day).atToday);
+  // A starter's refusal belongs to today: leaving today clears it.
+  $effect(() => {
+    if (!atToday && refusal !== null) untrack(() => ondismissrefusal?.());
+  });
   /**
    * The headline at the playhead's month (rule 27; OQ-3: "calculating" while provisional). It
    * reads `index` and `atToday`, never `day`, so it changes at most once per month the playhead
@@ -620,43 +643,66 @@
 
   // ---- the status slot (rules 31, 32) ----
 
-  /** "Updating" while the numbers are stale, else nothing. */
-  const statusWanted = $derived(session && stale ? UPDATING : '');
+  /**
+   * Play waits at the computed edge for the forecast: true once playback has caught the edge
+   * while the forecast is short of the last day; false when playback stops or the forecast is
+   * whole. It is not reset as the edge moves on, so it does not flicker with each fill.
+   */
+  let playWaits = $state(false);
+  $effect(() => {
+    if (!playing || filledEnd >= lastDay) playWaits = false;
+    else if (day >= filledEnd) playWaits = true;
+  });
+  /**
+   * What the status cell says: stale wins over waiting; both show "Updating". A worker error or
+   * crash stops the forecast, so Play no longer waits for it: its notice says what happened.
+   */
+  type Shown = 'stale' | 'waiting' | null;
+  const statusWanted = $derived<Shown>(
+    !session ? null : stale ? 'stale' : playWaits && !halted ? 'waiting' : null
+  );
+  /** The cell follows the conditions at once (in step with the dimming). */
+  let shownStatus = $state<Shown>(null);
+  /** The live region's text: at most one change per `statusMs`, the latest wins. */
   let statusText = $state('');
-  /** "Updating" shows: it covers the page's save state in the slot's one cell. */
-  const covered = $derived(statusText === UPDATING);
+  /** "Updating" covers the page's save state in the slot's one cell (not while autosave is off). */
+  const covered = $derived(!saveOff && shownStatus !== null);
   let statusAt = -Infinity;
   let statusTimer: ReturnType<typeof setTimeout> | null = null;
   /** At most one change a second: a change inside the gap goes out when it ends (latest wins). */
-  function showStatus(want: string): void {
+  function announce(want: string): void {
     if (statusTimer !== null) clearTimeout(statusTimer);
     statusTimer = null;
     if (want === statusText) return;
     const wait = statusAt + statusMs - performance.now();
     if (wait <= 0) {
-      setStatus(want);
+      speak(want);
       return;
     }
     statusTimer = setTimeout(() => {
       statusTimer = null;
-      setStatus(want);
+      speak(want);
     }, wait);
+  }
+  function speak(want: string): void {
+    statusText = want;
+    statusAt = performance.now();
   }
   /** The save state's part of the slot's cell and the shown "Updating" (bound in the snippet). */
   let saveCell = $state<HTMLElement>();
   let shownCell = $state<HTMLElement>();
   /**
-   * Shows `want`. Focus inside the part about to be covered or removed is not dropped to the
-   * body (WCAG 2.4.3): the save state's focused control hands it to "Updating"'s explanation, in
-   * the same place; that explanation hands it back to the save state's control if one shows,
-   * else to the header score.
+   * Shows `want` in the cell. Focus inside the part about to be covered or removed is not dropped
+   * to the body (WCAG 2.4.3): the save state's focused control hands it to "Updating"'s
+   * explanation, in the same place; that explanation hands it back to the save state's control if
+   * one shows, else to the header score. With autosave off nothing is covered.
    */
-  function setStatus(want: string): void {
+  function setStatus(want: Shown): void {
+    if (want === shownStatus) return;
     const active = document.activeElement;
-    const covering = want === UPDATING && !!saveCell?.contains(active);
-    const uncovering = want !== UPDATING && !!shownCell?.contains(active);
-    statusText = want;
-    statusAt = performance.now();
+    const covering = want !== null && !saveOff && !!saveCell?.contains(active);
+    const uncovering = want === null && !!shownCell?.contains(active);
+    shownStatus = want;
     if (!covering && !uncovering) return;
     void tick().then(() => {
       if (covering) {
@@ -671,7 +717,10 @@
   }
   $effect(() => {
     const want = statusWanted;
-    untrack(() => showStatus(want));
+    untrack(() => {
+      setStatus(want);
+      announce(want === null ? '' : UPDATING);
+    });
   });
 
   // ---- the card and tooltip ----
@@ -922,6 +971,24 @@
   function applyInset(): void {
     handle?.setBottomInset(untrack(() => bottomExtra));
   }
+
+  /** The notice stack's bottom from md (NoticePills' onbottom), px from the map's top. */
+  let pillsBottom = $state(0);
+  /** The key control's open panel (its onopenchange). */
+  let keyOpen = $state<'key' | 'layers' | null>(null);
+  /**
+   * The page's part of the glows' inset (SimMap adds the bottom): the notices at the top, an open
+   * panel at the right from md. Below md the right stays 0: an open panel covers most of a
+   * phone's map and would squeeze every glow to a strip. Set on those changes, never per frame.
+   */
+  let glowInset = { top: 0, right: 0 };
+  $effect(() => {
+    const top = pillsBottom;
+    const panel = keyOpen !== null && !narrow.current;
+    const el = keyEl;
+    glowInset = { top, right: panel && el ? el.offsetWidth + 8 : 0 };
+    untrack(() => handle?.setGlowInset(glowInset));
+  });
   let lastExtra = untrack(() => bottomExtra);
   $effect(() => {
     const extra = bottomExtra;
@@ -947,6 +1014,7 @@
     // Bars from the default zoom, one size, the person's projects first. The page's, once.
     h.setBarMode('far');
     applyInset();
+    h.setGlowInset(glowInset);
     // Rule 22.
     h.onResyncNeeded(() => session?.resync());
     attachMap(h.getMap());
@@ -1209,13 +1277,13 @@
     detailEl.querySelector<HTMLElement>('[data-testid=tl-details]')?.focus({ preventScroll: true });
   }
   /** Activity's or Details' button, or the header from md: the column at its top, focus on it. */
+  /** Activity's box: focused by showActivity, and where the refusal's Dismiss falls back. */
+  let activityBox = $state<HTMLDivElement>();
   export async function showActivity(): Promise<void> {
     await tick();
     if (!detailEl) return;
     detailEl.scrollTop = 0;
-    detailEl
-      .querySelector<HTMLElement>('[data-testid=tl-activity]')
-      ?.focus({ preventScroll: true });
+    activityBox?.focus({ preventScroll: true });
   }
   /**
    * What the one chart plots: Details switches it (bound), and it is Homes whenever Details is
@@ -1310,23 +1378,28 @@
 <!-- The header's status slot (rule 32), at every width: the page's save state and "Updating"
      share one cell, and "Updating" wins while both apply. The covered save state keeps its width
      (`visibility: hidden`, and the snippet's `covered` makes its own controls inert), so the cell
-     is as wide as the widest and nothing moves as either comes or goes. The save state's own live
-     region opts back into visibility, so its announcements still reach screen readers. The
-     timeline's live region is apart, once, in the page; "Updating"'s explanation opens as a
+     is as wide as the widest and nothing moves as either comes or goes. With autosave off
+     (`saveOff`) "Updating" sits beside the save state in a second cell instead, so "Autosave off"
+     stays visible and pressable; that cell's sizer keeps its width while "Updating" is away. The
+     save state's own live region opts back into visibility, so its announcements still reach
+     screen readers. The timeline's live region is apart, once, in the page; "Updating"'s
+     explanation (why the numbers are stale, or that Play waits for the months ahead) opens as a
      popover under the slot (`explain-under`, layout.css), so the header keeps its size. -->
 {#snippet statusSlot()}
-  <span class="inline-grid items-center" data-testid="tl-status-group">
+  <span class={['inline-grid items-center', saveOff && 'gap-x-2']} data-testid="tl-status-group">
     <span
       bind:this={saveCell}
       class={['col-start-1 row-start-1 inline-flex items-center', covered && 'invisible']}
       >{@render status?.(covered)}</span
     >
     {#if !noScenario}
-      <!-- Over the save state in the cell: it takes presses only while "Updating" shows. -->
+      <!-- Over the save state in its cell, or beside it with autosave off: it takes presses only
+           while "Updating" shows. -->
       <span
         class={[
-          'tl-status explain-under relative col-start-1 row-start-1 inline-grid text-sm text-ink-muted tabular-nums dark:text-ink-dark-muted',
-          !covered && 'pointer-events-none'
+          'tl-status explain-under relative row-start-1 inline-grid text-sm text-ink-muted tabular-nums dark:text-ink-dark-muted',
+          saveOff ? 'col-start-2' : 'col-start-1',
+          shownStatus === null && 'pointer-events-none'
         ]}
         data-testid="tl-status"
       >
@@ -1338,8 +1411,8 @@
           class="col-start-1 row-start-1 whitespace-nowrap"
           data-testid="tl-status-shown"
         >
-          {#if statusText === UPDATING}
-            <Explain text={STALE_NOTE}>{UPDATING}</Explain>
+          {#if shownStatus !== null}
+            <Explain text={shownStatus === 'stale' ? STALE_NOTE : WAITING_NOTE}>{UPDATING}</Explain>
           {/if}
         </span>
       </span>
@@ -1402,6 +1475,7 @@
     class="p-3 focus:outline-2 focus:-outline-offset-2 focus:outline-accent dark:focus:outline-accent-dark"
     data-testid="tl-activity"
     tabindex="-1"
+    bind:this={activityBox}
   >
     <SimActivity
       {goal}
@@ -1409,6 +1483,9 @@
       {atToday}
       {starters}
       onstarter={(s) => onstarter?.(s.choice, s.label)}
+      {refusal}
+      {ondismissrefusal}
+      fallbackfocus={() => activityBox}
       ondetails={() => (ondetails ?? onscore)?.()}
       {stale}
       events={latestItems}
@@ -1464,29 +1541,31 @@
   <!-- The notice stack's host (its parent): from md the stack overlays the map's top, under the
        header. Below md the stack is in flow and this box is no box. -->
   <div class="relative flex min-h-0 flex-1 flex-col max-md:contents">
-    <!-- Every notice is a pill in this one stack (as FzpMode). -->
-    <NoticePills bind:el={pillsEl}>
+    <!-- Every notice is a chip or a card (Message) in this one stack (as FzpMode). -->
+    <NoticePills bind:el={pillsEl} onbottom={(px) => (pillsBottom = px)}>
       {#if noScenario}
-        <div
-          role="status"
-          data-testid="fzp-status"
-          class="{PILL} w-[min(28rem,100%)]! flex-col! items-start! gap-0! rounded-lg! pr-4 pb-0"
-        >
-          <p>
-            The simulation isn't available for dataset {datasetVersion}. It needs data this dataset
-            doesn't have.
-          </p>
-          <a href="/" class="inline-flex min-h-11 items-center font-semibold underline"
-            >Go to the editor</a
-          >
+        {#snippet editorLink()}
+          <a href="/" class="{BUTTON_QUIET} inline-flex items-center">Go to the editor</a>
+        {/snippet}
+        <div role="status" class="contents">
+          <Message
+            text="The simulation isn't available for dataset {datasetVersion}. It needs data this dataset doesn't have."
+            actions={editorLink}
+            testid="fzp-status"
+          />
         </div>
       {:else if failed}
-        <div class={PILL}>
-          <p role="alert" data-testid="fzp-status">The simulation couldn't load.</p>
-          <button type="button" class="shrink-0 {PILL_ACTION}" onclick={() => void retryLoad()}
+        {#snippet retryLoadButton()}
+          <button type="button" class="shrink-0 {BUTTON_QUIET}" onclick={() => void retryLoad()}
             >Retry</button
           >
-        </div>
+        {/snippet}
+        <Message
+          text="The simulation couldn't load."
+          actions={retryLoadButton}
+          textRole="alert"
+          textTestid="fzp-status"
+        />
       {:else}
         {#if session}
           {@render notices?.()}
@@ -1494,71 +1573,59 @@
                is announced. -->
           <div role="status" data-testid="tl-goal" class="contents">
             {#if outcome && goalNotice !== null}
-              <span class={PILL} data-testid="tl-goal-notice">
-                <span>{goalNotice}</span>
-                <button type="button" aria-label="Dismiss" class={PILL_ACTION} onclick={dismissGoal}
-                  >×</button
-                >
-              </span>
+              <Message text={goalNotice} ondismiss={dismissGoal} testid="tl-goal-notice" />
             {/if}
           </div>
         {/if}
         {#if phase === 'loading' && !halted}
-          <p role="status" data-testid="fzp-status" class="{PILL} pr-4">Loading the simulation…</p>
+          <div role="status" class="contents">
+            <Message text="Loading the simulation…" testid="fzp-status" />
+          </div>
         {/if}
         {#if session}
           <div role="status" data-testid="tl-notices" class="contents">
             {#each session.notices as n (n.id)}
+              {#snippet retryButton()}
+                <button type="button" class={BUTTON_QUIET} onclick={() => retryNotice(n)}
+                  >Retry</button
+                >
+              {/snippet}
               {#if n.id === 'failed-cells'}
-                <span class={PILL}>
-                  <span>Some map data didn't load.</span>
-                  <button type="button" class={PILL_ACTION} onclick={() => retryNotice(n)}
-                    >Retry</button
-                  >
-                </span>
+                <Message text="Some map data didn't load." actions={retryButton} />
               {:else if n.id === 'crash'}
                 <!-- Rule 35's wording: before the first fill nothing had run to stop. -->
-                <span class={PILL}>
-                  <span
-                    >{session.phase === 'ready'
-                      ? 'Part of the simulation stopped.'
-                      : "The simulation couldn't load."}</span
-                  >
-                  <button type="button" class={PILL_ACTION} onclick={() => retryNotice(n)}
-                    >Retry</button
-                  >
-                </span>
+                <Message
+                  text={session.phase === 'ready'
+                    ? 'Part of the simulation stopped.'
+                    : "The simulation couldn't load."}
+                  actions={retryButton}
+                />
               {/if}
             {/each}
           </div>
           <div role="alert" data-testid="tl-alerts" class="contents">
             {#each session.notices as n (n.id)}
+              {#snippet retryButton()}
+                <button type="button" class={BUTTON_QUIET} onclick={() => retryNotice(n)}
+                  >Retry</button
+                >
+              {/snippet}
               {#if n.id === 'error'}
-                <span class={PILL}>
-                  <span>{n.text}</span>
-                  <button type="button" class={PILL_ACTION} onclick={() => retryNotice(n)}
-                    >Retry</button
-                  >
-                </span>
+                <Message text={n.text} actions={retryButton} />
               {:else if n.id === 'not-applied'}
-                <span class={PILL}>
-                  <span>{CHANGE_NOT_APPLIED}</span>
-                  <button
-                    type="button"
-                    aria-label="Dismiss"
-                    class={PILL_ACTION}
-                    onclick={() => session?.dismiss('not-applied')}>×</button
-                  >
-                </span>
+                <Message
+                  text={CHANGE_NOT_APPLIED}
+                  ondismiss={() => session?.dismiss('not-applied')}
+                />
               {/if}
             {/each}
             {#if lotsFailed && lots === null}
-              <span class={PILL} data-testid="tl-lots-failed">
-                <span>{LOTS_FAILED}</span>
-                <button type="button" class={PILL_ACTION} onclick={() => onlotsretry?.()}
+              {#snippet lotsRetry()}
+                <button type="button" class={BUTTON_QUIET} onclick={() => onlotsretry?.()}
                   >Retry</button
                 >
-              </span>
+              {/snippet}
+              <Message text={LOTS_FAILED} actions={lotsRetry} testid="tl-lots-failed" />
             {/if}
           </div>
         {/if}
@@ -1594,9 +1661,10 @@
             hidden={narrow.current && cardOpen}
             {stale}
             bind:el={keyEl}
+            onopenchange={(p) => (keyOpen = p)}
           >
             {#snippet key()}
-              <SimKey {tally} {inForce} />
+              <SimKey {tally} inForce={keyMarks} />
             {/snippet}
           </MapKeyControl>
         {/if}
@@ -1694,9 +1762,10 @@
           bind:this={detailEl}
           id={scoreControls}
           data-testid="tl-inspector"
+          {@attach moreBelow}
           style:top={phoneSheet ? `${sheetTop}px` : undefined}
           style:bottom={phoneSheet ? `${sheetBottom}px` : undefined}
-          class="detail-col z-30 overflow-y-auto border-line bg-surface text-ink max-md:fixed max-md:inset-x-0 max-md:rounded-t-2xl max-md:border-t max-md:shadow-lg md:min-h-0 md:border-l dark:border-line-dark dark:bg-surface-dark dark:text-ink-dark"
+          class="detail-col more-below z-30 overflow-y-auto border-line bg-surface text-ink max-md:fixed max-md:inset-x-0 max-md:rounded-t-2xl max-md:border-t max-md:shadow-lg md:min-h-0 md:border-l dark:border-line-dark dark:bg-surface-dark dark:text-ink-dark"
         >
           {#if inspectorOpen}
             {@render inspector({ activity, details, day })}
@@ -1740,45 +1809,6 @@
     .tl-dim[data-stale]
       :global(:not(button, a, input, select, textarea, summary, button *, a *, summary *)) {
       color: var(--color-ink-dark-muted);
-    }
-  }
-  /* The detail column (Activity, Details, the editor; the phone sheet is the same box) says more
-     is below: a fade sticks to its foot while its content overflows and is not scrolled to the
-     end. CSS only: a scroll-driven animation on the column's own scroll timeline; while nothing
-     overflows the timeline is inactive and the base opacity (0) holds. Never takes a press, and
-     focus scrolls clear of it. Nothing moves but the opacity, with the scroll. Without scroll
-     timelines the 0 s animation fills to its end keyframe (opacity 0): no fade, nothing covered.
-     Keep `animation` before `animation-timeline` (the shorthand resets the timeline) and give it
-     no duration. Under forced colours the gradient, a background-image, is not drawn. */
-  .detail-col {
-    scroll-timeline: --sfh-detail block;
-    scroll-padding-bottom: 24px;
-  }
-  .detail-col::after {
-    content: '';
-    position: sticky;
-    bottom: 0;
-    display: block;
-    height: 24px;
-    margin-top: -24px;
-    pointer-events: none;
-    opacity: 0;
-    background: linear-gradient(to bottom, transparent, var(--color-surface));
-    animation: sfh-detail-more linear both;
-    animation-timeline: --sfh-detail;
-  }
-  @keyframes sfh-detail-more {
-    0%,
-    92% {
-      opacity: 1;
-    }
-    100% {
-      opacity: 0;
-    }
-  }
-  @media (prefers-color-scheme: dark) {
-    .detail-col::after {
-      background: linear-gradient(to bottom, transparent, var(--color-surface-dark));
     }
   }
 </style>

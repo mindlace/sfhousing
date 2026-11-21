@@ -9,6 +9,7 @@ import type { SfhFzpDebug } from '../src/lib/fzp/debug';
 import type { SfhMapDebug } from '../src/lib/map/debug';
 import type { TimelineSnapshot } from '../src/lib/map/timelapse/types';
 import { expectNoA11yViolations } from './helpers/a11y';
+import { touchLaptop } from './helpers/pointer';
 import { addPolicy, slider, waitFilled } from './helpers/run';
 import { headerAction } from './helpers/sharing';
 
@@ -111,6 +112,8 @@ test('the default document draws no marks, and the key names no mark', async ({ 
 test('a transit rule from today: the key names the mark; marks equal the flagged slots on the map', async ({
   page
 }) => {
+  // The header's Undo, named by the change, shows where a pointer is coarse: a touch laptop here.
+  await touchLaptop(page);
   await gotoSim(page);
   await slider(page).focus();
   await page.keyboard.press('Home');

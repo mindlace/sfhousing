@@ -389,16 +389,4 @@
       background: var(--color-accent-dark-hover);
     }
   }
-  /* The repo's coarse-pointer pattern (the Paint tab's tools): 44 px targets. */
-  @media (pointer: coarse) {
-    .ctl,
-    .track,
-    .markers {
-      min-width: 44px;
-      min-height: 44px;
-    }
-    .markers {
-      min-width: 0;
-    }
-  }
 </style>

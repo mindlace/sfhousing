@@ -58,7 +58,8 @@ describe('STAGE_KEY', () => {
     ] as const;
     expect(tones).toEqual(CITY_KIND_TOKEN);
     expect(AREA_SWATCH).toEqual({ kind: 'area', tokens: tones });
-    expect(EDGE_SWATCH).toEqual({ kind: 'edge', tokens: tones });
+    // The edge glow's swatch: the three stage tones, one row (the policy's glow is the mark row's).
+    expect(EDGE_SWATCH).toEqual({ kind: 'edge', tokens: tones.slice(0, 3) });
     for (const t of tones) {
       expect(light, `${t} light`).toContain(`${prop(t)}: ${TOKENS.light[t]}`);
       expect(dark, `${t} dark`).toContain(`${prop(t)}: ${TOKENS.dark[t]}`);

@@ -15,6 +15,7 @@ import { FORECAST_NOTE, LENS_NAME, TWIN_NOTE, marketBody } from './copy';
 import { DEFAULT_LEVERS } from '$lib/sim/levers/types';
 import type { LeverCapacity } from '$lib/sim/levers/resolve';
 import SimDetails from './SimDetails.svelte';
+import { BUTTON } from '$lib/shell/ui';
 import SimDetailsHost from './test/SimDetailsHost.svelte';
 import type { ChartLens } from './chart-lens';
 import { headlineAt as headAt } from './results';
@@ -206,6 +207,8 @@ describe('layout', () => {
     expect(h.parentElement!.contains(button.element())).toBe(true);
     const r = button.element().getBoundingClientRect();
     expect(r.height).toBeGreaterThanOrEqual(24);
+    // The shared button look, not a copy of it.
+    expect(button.element().className).toBe(BUTTON);
     await button.click();
     expect(onactivity).toHaveBeenCalledOnce();
     await first.unmount();
@@ -590,7 +593,7 @@ describe('target size on a fine pointer (SC 2.5.8)', () => {
     );
   });
 
-  it('summaries and the Data sources link carry the 44 px coarse-pointer variant', async () => {
+  it('summaries and the Data sources link carry the 24 px minimum, the same on every pointer', async () => {
     await page.viewport(1024, 768);
     await renderAtRest(props());
     openSources();
@@ -598,7 +601,9 @@ describe('target size on a fine pointer (SC 2.5.8)', () => {
       document.querySelector('[data-testid="tl-year-table"] > summary')!,
       page.getByRole('link', { name: 'Data sources', exact: true }).element()
     ]) {
-      expect(el.classList.contains('pointer-coarse:min-h-11'), el.outerHTML).toBe(true);
+      expect(el.classList.contains('min-h-6'), el.outerHTML).toBe(true);
+      expect(el.className, el.outerHTML).not.toMatch(/pointer-coarse:/);
+      expect(el.getBoundingClientRect().height, el.outerHTML).toBeGreaterThanOrEqual(24);
     }
   });
 });

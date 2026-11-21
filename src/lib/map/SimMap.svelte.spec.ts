@@ -277,6 +277,65 @@ describe('SimMap ready', { timeout: 30_000 }, () => {
     await expect.poll(() => root.style.getPropertyValue('--map-land')).toBe(TOKENS.dark.land);
     expect(h.getMap()).toBe(map); // same map: no remount
   });
+
+  // ---- the failure messages: one column ----
+  const CHIPS = '--map-chips-bottom';
+  const rootVar = () => document.documentElement.style.getPropertyValue(CHIPS);
+  const parcels = () =>
+    page.getByRole('status').filter({ hasText: "Some parcels didn't load" }).element();
+  const buildings = () =>
+    page.getByRole('status').filter({ hasText: "Existing buildings couldn't load." }).element();
+  /** The buildings archive 404s, so its failure shows with the map ready. */
+  const broken = { ...manifest, buildingsTiles: `${FIXTURE}missing-buildings.pmtiles` };
+
+  it('both failures show in one column: the buildings message starts below the parcels one', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { root, ready } = await mount({ manifest: broken });
+    // onready is the map's readiness signal.
+    const h = await ready;
+    expect(root.dataset.state).toBe('ready');
+    h.setChunkStatus('50_25', 'error');
+    await expect.element(page.getByText("Some parcels didn't load")).toBeVisible();
+    await expect
+      .element(page.getByText("Existing buildings couldn't load.", { exact: false }))
+      .toBeVisible();
+    const col = root.querySelector<HTMLElement>('[data-testid="sim-map-chips"]')!;
+    expect(col.contains(parcels())).toBe(true);
+    expect(col.contains(buildings())).toBe(true);
+    const p = parcels().getBoundingClientRect();
+    const b = buildings().getBoundingClientRect();
+    expect(b.top).toBeGreaterThanOrEqual(p.bottom);
+    // Each keeps its shape: parcels one line, fully rounded; buildings a sentence, rounded-lg.
+    expect(parseFloat(getComputedStyle(parcels()).borderTopLeftRadius)).toBeGreaterThan(16);
+    expect(parseFloat(getComputedStyle(buildings()).borderTopLeftRadius)).toBe(8);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('[map] source "buildings" failed'));
+  });
+
+  it("publishes --map-chips-bottom as the column's bottom, 0px with no failure", async () => {
+    const warn = vi.spyOn(console, 'warn');
+    const { root, ready, screen } = await mount();
+    // onready is the map's readiness signal.
+    const h = await ready;
+    expect(root.dataset.state).toBe('ready');
+    await expect.poll(rootVar).toBe('0px');
+    expect(root.style.getPropertyValue(CHIPS)).toBe('0px');
+    h.setChunkStatus('50_25', 'error');
+    await expect.element(page.getByText("Some parcels didn't load")).toBeVisible();
+    const bottom = () =>
+      `${Math.ceil(parcels().getBoundingClientRect().bottom - root.getBoundingClientRect().top)}px`;
+    await expect.poll(rootVar).toBe(bottom());
+    expect(root.style.getPropertyValue(CHIPS)).toBe(rootVar());
+    // The page's notices grow: the column moves down, and the value follows.
+    root.style.setProperty('--notice-pills-bottom', '40px');
+    await expect.poll(rootVar).toBe(bottom());
+    expect(parseFloat(rootVar())).toBeGreaterThan(40);
+    h.setChunkStatus('50_25', 'ready');
+    await expect.poll(rootVar).toBe('0px');
+    await screen.unmount();
+    expect(rootVar()).toBe('');
+    // A chunk's error is not a source failure: nothing warns.
+    expect(warn).not.toHaveBeenCalled();
+  });
 });
 
 describe('SimMap controls footprint vars', { timeout: 30_000 }, () => {

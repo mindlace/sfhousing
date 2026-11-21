@@ -1,4 +1,6 @@
 <script lang="ts" generics="D">
+  import { BUTTON_PRIMARY } from '$lib/shell/ui';
+  import Explain from '$lib/timeline/Explain.svelte';
   import { copyFor } from './copy';
   import type { DocCodec } from './doc-codec';
   import { sha256Hex } from './hash';
@@ -21,9 +23,6 @@
     fetchFn?: typeof fetch;
     origin?: string;
   } = $props();
-
-  const uid = $props.id();
-  const hintId = `${uid}-hint`;
 
   let hashed = $state.raw<{ doc: D; hash: string } | undefined>();
   const copy = $derived(copyFor(codec.kind));
@@ -51,27 +50,43 @@
     origin ?? (typeof location === 'undefined' ? '' : location.origin)
   );
 
-  function onclick() {
+  const uid = $props.id();
+  const hintId = `${uid}-hint`;
+
+  function onclick(e: MouseEvent) {
+    // aria-disabled, not `disabled`, so it stays focusable and shows its reason: a press (click,
+    // Enter or Space, which all arrive here) does nothing but focus it, so the reason shows where
+    // a tap does not focus (iOS Safari, a VoiceOver double-tap).
+    if (empty) {
+      (e.currentTarget as HTMLElement).focus();
+      return;
+    }
     mode = alreadyPublished ? 'success' : 'form';
     open = true;
   }
 </script>
 
-<button
-  type="button"
-  data-testid="publish-open"
-  data-hashed={hashReady}
-  disabled={empty}
-  aria-describedby={empty ? hintId : undefined}
-  aria-haspopup="dialog"
-  {onclick}
-  class="min-h-6 min-w-6 rounded-md bg-accent px-2 text-sm font-medium whitespace-nowrap text-on-accent disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-700 dark:bg-accent-dark dark:text-on-accent-dark pointer-coarse:min-h-11 pointer-coarse:min-w-11"
->
-  {alreadyPublished ? 'Share link' : 'Publish'}
-</button>
-{#if empty}
-  <span id={hintId} class="sr-only">{copy.disabledHint}</span>
-{/if}
+<!-- One button in both states, so focus on it survives the switch (undo or redo from the
+     keyboard). While empty the reason shows under it on hover and focus; the hidden hint describes
+     it at rest too (a browse-mode screen reader moves no focus), so Explain adds no description
+     of its own and the reason is read once. -->
+<span class="explain-under relative inline-block">
+  <Explain as="wrap" text={copy.disabledHint} off={!empty} describes={false}>
+    <button
+      type="button"
+      data-testid="publish-open"
+      data-hashed={hashReady}
+      aria-disabled={empty ? 'true' : undefined}
+      aria-describedby={empty ? hintId : undefined}
+      aria-haspopup="dialog"
+      {onclick}
+      class={BUTTON_PRIMARY}
+    >
+      {alreadyPublished ? 'Share link' : 'Publish'}
+    </button>
+  </Explain>
+  {#if empty}<span id={hintId} class="sr-only">{copy.disabledHint}</span>{/if}
+</span>
 
 <PublishDialog
   bind:open

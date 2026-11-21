@@ -139,7 +139,7 @@
       <h2 id={headingId} class="text-base font-semibold">{heading}</h2>
       <button
         type="button"
-        class="min-h-11 min-w-11 shrink-0 rounded-md px-2 text-sm font-semibold underline"
+        class="min-h-6 min-w-6 shrink-0 rounded-md px-2 text-sm font-semibold underline"
         onclick={onclose}
       >
         Close
@@ -190,15 +190,13 @@
           {/if}
           <p class="text-ink-muted dark:text-ink-dark-muted">{CHANCE_EXPLANATION}</p>
           <details class="mt-1">
-            <summary class="min-h-6 cursor-pointer pointer-coarse:min-h-11"
-              >How is this estimated?</summary
-            >
+            <summary class="min-h-6 min-w-6 cursor-pointer">How is this estimated?</summary>
             <ul class="mt-1 space-y-1">
               {#each estimate.entries as e, i (i)}
                 <li>
                   <button
                     type="button"
-                    class="inline-flex min-h-6 items-center text-left underline pointer-coarse:min-h-11"
+                    class="inline-flex min-h-6 min-w-6 items-center text-left underline"
                     onclick={() => onsource(e.sectionId)}
                   >
                     {TIER_LABEL[e.tier as 0 | 1 | 2 | 3 | 4]}: {e.label}
@@ -244,7 +242,7 @@
                 href={link.href}
                 target="_blank"
                 rel="noopener noreferrer"
-                class="inline-flex min-h-6 items-center underline pointer-coarse:min-h-11"
+                class="inline-flex min-h-6 min-w-6 items-center underline"
                 >{link.text}<span class="sr-only"> (opens in a new tab)</span></a
               >
             </li>

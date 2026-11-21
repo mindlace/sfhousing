@@ -39,7 +39,7 @@
   }
 
   const BTN =
-    'min-h-11 min-w-11 rounded-md border border-control-line bg-surface text-ink enabled:hover:bg-surface-raised disabled:opacity-40 dark:border-control-line-dark dark:bg-surface-dark dark:text-ink-dark dark:enabled:hover:bg-surface-dark-raised';
+    'min-h-6 min-w-6 rounded-md border border-control-line bg-surface text-ink enabled:hover:bg-surface-raised disabled:opacity-40 dark:border-control-line-dark dark:bg-surface-dark dark:text-ink-dark dark:enabled:hover:bg-surface-dark-raised';
 </script>
 
 <div
@@ -56,7 +56,7 @@
         aria-pressed={brush.stories === n}
         aria-label="{n} stories"
         {disabled}
-        class="min-h-11 min-w-11 rounded-md border border-control-line text-sm font-medium disabled:opacity-40 dark:border-control-line-dark {brush.stories ===
+        class="min-h-6 min-w-6 rounded-md border border-control-line text-sm font-medium disabled:opacity-40 dark:border-control-line-dark {brush.stories ===
         n
           ? 'bg-ink text-surface dark:bg-ink-dark dark:text-surface-dark'
           : 'bg-surface-raised text-ink dark:bg-surface-dark-raised dark:text-ink-dark'}"
@@ -83,7 +83,7 @@
       aria-label="Stories"
       {disabled}
       value={brush.stories}
-      class="min-h-11 w-16 rounded-md border border-control-line bg-surface text-center text-ink disabled:opacity-40 dark:border-control-line-dark dark:bg-surface-dark dark:text-ink-dark"
+      class="min-h-6 w-16 rounded-md border border-control-line bg-surface text-center text-ink disabled:opacity-40 dark:border-control-line-dark dark:bg-surface-dark dark:text-ink-dark"
       onblur={(e) => commitStories(e.currentTarget)}
       onkeydown={(e) => {
         if (e.key === 'Enter') commitStories(e.currentTarget);

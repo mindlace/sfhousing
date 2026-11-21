@@ -35,8 +35,8 @@
     ['transit-bus', 'Bus / cable car']
   ] as const;
 
-  /** Each switch's target: its whole label, 24 px tall, 44 on a coarse pointer. */
-  const SWITCH = 'flex min-h-6 items-center gap-2 font-medium pointer-coarse:min-h-11';
+  /** Each switch's target: its whole label, at least 24 px either way on every pointer. */
+  const SWITCH = 'flex min-h-6 min-w-6 items-center gap-2 font-medium';
 </script>
 
 {#each rows as row, n (row)}

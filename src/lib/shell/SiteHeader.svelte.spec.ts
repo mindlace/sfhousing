@@ -8,6 +8,7 @@ import { focusHeaderMenu } from './header-actions.svelte';
 import SiteHeader from './SiteHeader.svelte';
 import HeaderScoreHeader from './test/HeaderScoreHeader.svelte';
 import HistoryHeader from './test/HistoryHeader.svelte';
+import SimRowHeader from './test/SimRowHeader.svelte';
 
 describe('SiteHeader', () => {
   it('renders a banner with a home link', async () => {
@@ -163,19 +164,17 @@ describe('SiteHeader', () => {
         .not.toHaveAttribute('aria-current');
     });
 
-    it('at 1024px the numbers are hidden and the links keep their widths', async () => {
+    it('at 1024px the Steps nav shows the numbers 1 and 2', async () => {
       await page.viewport(1024, 768);
       render(SiteHeader, { routeId: '/' });
       const nav = page.getByRole('navigation', { name: 'Steps' });
-      const paint = nav.getByRole('link', { name: 'Paint' });
-      await expect.element(paint).toBeVisible();
+      await expect.element(nav.getByRole('link', { name: 'Paint' })).toBeVisible();
       const nums = Array.from(nav.element().querySelectorAll<HTMLElement>('[data-step-number]'));
-      expect(nums).toHaveLength(2);
-      expect(nums.some(shown)).toBe(false);
-      expect(paint.element().getBoundingClientRect().width).toBeLessThanOrEqual(43.5);
-      expect(
-        nav.getByRole('link', { name: 'Simulate' }).element().getBoundingClientRect().width
-      ).toBeLessThanOrEqual(67);
+      expect(nums.map((n) => n.textContent)).toEqual(['1', '2']);
+      expect(nums.every(shown)).toBe(true);
+      // The same steps as from xl: no tighter padding or gap between lg and xl.
+      const links = nav.getByRole('link').elements() as HTMLElement[];
+      for (const a of links) expect(getComputedStyle(a).paddingLeft).toBe('8px');
     });
 
     it('at 375px the Menu holds the two steps with their numbers', async () => {
@@ -337,27 +336,33 @@ describe('SiteHeader', () => {
     }));
 
     // Paint's header (one action, Publish). /sim's, signed in at 1024 with the playhead at the
-    // end, is asserted in SimPage.svelte.spec.ts and e2e/map-key.spec.ts.
-    for (const width of [1024, 1280])
-      it(`at ${width}px the header does not overflow and the handle is capped at 160px`, async () => {
+    // end, is asserted in SimPage.svelte.spec.ts and e2e/map-key.spec.ts. From lg to xl the
+    // handle is capped at 96 px (the fit ladder's step 2: a touch laptop's row at 1024), from xl
+    // at 160 px; its full text stays the name and the title.
+    for (const [width, cap] of [
+      [1024, 96],
+      [1280, 160]
+    ])
+      it(`at ${width}px the header does not overflow and the handle is capped at ${cap}px`, async () => {
         await page.viewport(width, 800);
         render(SiteHeader, { routeId: '/', user: { handle }, actions, pinned });
         const banner = page.getByRole('banner');
         const account = banner.getByRole('link', { name: `@${handle}` });
         await expect.element(account).toBeVisible();
-        expect(account.element().getBoundingClientRect().width).toBeLessThanOrEqual(160);
+        await expect.element(account).toHaveAttribute('title', `@${handle}`);
+        expect(account.element().getBoundingClientRect().width).toBeLessThanOrEqual(cap);
         const el = banner.element() as HTMLElement;
         expect(el.scrollWidth).toBeLessThanOrEqual(el.clientWidth);
       });
   });
 
-  it('fits at 375px with three 44px actions and no banner overflow', async () => {
+  it('fits at 375px with three 24px actions and no banner overflow', async () => {
     await page.viewport(375, 812);
     const actions = createRawSnippet(() => ({
       render: () =>
-        '<span><button style="width:44px;height:44px">A</button>' +
-        '<button style="width:44px;height:44px">B</button>' +
-        '<button style="width:44px;height:44px">C</button></span>'
+        '<span><button style="width:24px;height:24px">A</button>' +
+        '<button style="width:24px;height:24px">B</button>' +
+        '<button style="width:24px;height:24px">C</button></span>'
     }));
     render(SiteHeader, { routeId: '/', actions });
     const banner = page.getByRole('banner');
@@ -727,6 +732,95 @@ describe('SiteHeader', () => {
       expect(
         Math.abs((rect.left + rect.right) / 2 - (header.left + header.right) / 2)
       ).toBeLessThan(1);
+    });
+
+    it('centres the score at 1024px when both sides fit', async () => {
+      await page.viewport(1024, 768);
+      render(HeaderScoreHeader, { props: { total: 12345, delta: 1817 } });
+      const box = page.getByTestId('score-bar').element().parentElement!.getBoundingClientRect();
+      const banner = page.getByRole('banner').element().getBoundingClientRect();
+      expect(Math.abs((box.left + box.right) / 2 - (banner.left + banner.right) / 2)).toBeLessThan(
+        1
+      );
+    });
+
+    // /sim's widest row from lg on a fine-only pointer (no Undo or Redo): a 20-character handle,
+    // a five-digit headline with its delta, "Autosave off" with "Updating" beside it.
+    const row = () => {
+      const handle = 'a-very-long-handle-x';
+      return [
+        page.getByRole('link', { name: /SF Housing/ }).element(),
+        page.getByRole('navigation', { name: 'Steps' }).element(),
+        page.getByRole('button', { name: 'Autosave off' }).element(),
+        page.getByText('Updating', { exact: true }).element(),
+        page.getByTestId('score-bar').element().parentElement!,
+        page.getByRole('button', { name: 'Keyboard shortcuts' }).element(),
+        page.getByRole('button', { name: 'Publish' }).element(),
+        page.getByRole('link', { name: `@${handle}` }).element(),
+        page.getByRole('link', { name: 'About', exact: true }).element()
+      ];
+    };
+    const expectRowFits = async (width: number) => {
+      await page.viewport(width, 800);
+      render(SimRowHeader, { props: { user: { handle: 'a-very-long-handle-x' } } });
+      await expect.element(page.getByRole('button', { name: 'Keyboard shortcuts' })).toBeVisible();
+      await expect.element(page.getByRole('button', { name: 'Autosave off' })).toBeVisible();
+      const items = row();
+      const box = (el: Element) => el.getBoundingClientRect();
+      for (let i = 1; i < items.length; i++)
+        expect(box(items[i]).left, `item ${i} after item ${i - 1}`).toBeGreaterThanOrEqual(
+          box(items[i - 1]).right
+        );
+      expect(box(items.at(-1)!).right).toBeLessThanOrEqual(width);
+      const banner = page.getByRole('banner').element() as HTMLElement;
+      expect(banner.getBoundingClientRect().height).toBe(48);
+      expect(banner.scrollWidth).toBeLessThanOrEqual(banner.clientWidth);
+      expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(width);
+      const score = box(items[4]);
+      const b = box(banner);
+      return Math.abs((score.left + score.right) / 2 - (b.left + b.right) / 2);
+    };
+
+    it('at 1024px the widest /sim row fits in order', async () => {
+      expect(await expectRowFits(1024)).toBeLessThan(1);
+    });
+
+    it('at 1024px a touch laptop adds Undo and Redo, Shortcuts leaves: one row, in order, nothing squeezed', async () => {
+      await page.viewport(1024, 800);
+      render(SimRowHeader, { props: { user: { handle: 'a-very-long-handle-x' }, touch: true } });
+      const undo = page.getByRole('button', { name: /^Undo/ });
+      await expect.element(undo).toBeVisible();
+      expect(page.getByRole('button', { name: 'Keyboard shortcuts' }).elements()).toEqual([]);
+      const items = [
+        page.getByTestId('score-bar').element().parentElement!,
+        undo.element(),
+        page.getByRole('button', { name: /^Redo/ }).element(),
+        page.getByRole('button', { name: 'Publish' }).element(),
+        page.getByRole('link', { name: '@a-very-long-handle-x' }).element(),
+        page.getByRole('link', { name: 'About', exact: true }).element()
+      ];
+      const box = (el: Element) => el.getBoundingClientRect();
+      for (let i = 0; i < items.length; i++) {
+        if (i > 0)
+          expect(box(items[i]).left, `item ${i} after item ${i - 1}`).toBeGreaterThanOrEqual(
+            box(items[i - 1]).right
+          );
+        // Not squeezed: each item, the score (which clips its text) first, keeps its content's
+        // width.
+        const el = items[i] as HTMLElement;
+        expect(el.scrollWidth, `item ${i} clips`).toBeLessThanOrEqual(el.clientWidth + 0.5);
+      }
+      expect(box(items[1]).top).toBe(box(items[2]).top);
+      const banner = page.getByRole('banner').element() as HTMLElement;
+      expect(banner.getBoundingClientRect().height).toBe(48);
+      expect(banner.scrollWidth).toBeLessThanOrEqual(banner.clientWidth);
+      const score = box(items[0]);
+      const b = box(banner);
+      expect(Math.abs((score.left + score.right) / 2 - (b.left + b.right) / 2)).toBeLessThan(1);
+    });
+
+    it('at 1280px the same row fits and the score is centred', async () => {
+      expect(await expectRowFits(1280)).toBeLessThan(1);
     });
   });
 });

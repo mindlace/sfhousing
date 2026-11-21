@@ -23,6 +23,7 @@
 </script>
 
 <script lang="ts">
+  import { BUTTON_QUIET, SURFACE_DIALOG_FLUSH } from '$lib/shell/ui';
   import type { TimelineScore } from '$lib/sim/protocol';
   import type { ProjectsFile } from '$lib/timelapse/projects';
   import type { Day } from '$lib/timelapse/time';
@@ -148,15 +149,13 @@
   aria-labelledby={headingId}
   {onclose}
   {onkeydown}
-  class="m-auto w-full max-w-2xl rounded-lg bg-white p-0 text-black shadow-2xl backdrop:bg-black/50 open:flex open:max-h-[85vh] open:flex-col max-md:max-w-none"
+  class="m-auto w-full max-w-2xl open:flex open:max-h-[85vh] open:flex-col max-md:max-w-none {SURFACE_DIALOG_FLUSH}"
 >
-  <div class="flex items-start justify-between gap-2 border-b border-gray-300 px-4 py-2">
+  <div
+    class="flex items-start justify-between gap-2 border-b border-line px-4 py-2 dark:border-line-dark"
+  >
     <h2 id={headingId} class="text-lg font-semibold">Where these numbers come from</h2>
-    <button
-      type="button"
-      class="min-h-11 min-w-11 shrink-0 rounded-md px-2 text-sm font-semibold underline"
-      onclick={() => dialog?.close()}
-    >
+    <button type="button" class="{BUTTON_QUIET} shrink-0 text-sm" onclick={() => dialog?.close()}>
       Close
     </button>
   </div>
@@ -165,7 +164,7 @@
     {#snippet badge(tier: 0 | 1 | 2 | 3 | 4)}
       <span
         data-testid="tier-badge"
-        class="inline-block rounded-full border border-gray-700 px-2 py-0.5 text-xs font-semibold"
+        class="inline-block rounded-full border border-control-line px-2 py-0.5 text-xs font-semibold dark:border-control-line-dark"
         >{TIER_LABEL[tier]}</span
       >
     {/snippet}
@@ -176,7 +175,11 @@
         <thead>
           <tr>
             {#each t.head as h, i (i)}
-              <th scope="col" class="border-b border-gray-400 py-1 pr-2 font-semibold">{h}</th>
+              <th
+                scope="col"
+                class="border-b border-control-line py-1 pr-2 font-semibold dark:border-control-line-dark"
+                >{h}</th
+              >
             {/each}
           </tr>
         </thead>
@@ -186,7 +189,7 @@
               {#each row as cell, c (c)}
                 <td
                   colspan={row.length < t.head.length ? t.head.length : undefined}
-                  class="border-b border-gray-200 py-1 pr-2 align-top">{cell}</td
+                  class="border-b border-line py-1 pr-2 align-top dark:border-line-dark">{cell}</td
                 >
               {/each}
             </tr>
@@ -202,7 +205,10 @@
           <p class="mt-2">{p}</p>
         {/each}
         {#each s.entries as e (e.id)}
-          <article id={e.id} class="mt-3 scroll-mt-2 rounded-md border border-gray-300 p-3">
+          <article
+            id={e.id}
+            class="mt-3 scroll-mt-2 rounded-md border border-line p-3 dark:border-line-dark"
+          >
             <h4 class="font-semibold">{e.title}</h4>
             <p class="mt-1">{@render badge(e.prov.tier)}</p>
             {#each e.lines.slice(1) as line, i (i)}
@@ -237,7 +243,7 @@
                       href={safeHref(src.url)}
                       target="_blank"
                       rel="noopener noreferrer"
-                      class="inline-flex min-h-6 items-center underline pointer-coarse:min-h-11"
+                      class="inline-flex min-h-6 min-w-6 items-center underline"
                       >{src.label}<span class="sr-only"> (opens in a new tab)</span></a
                     >
                   </li>
@@ -267,11 +273,19 @@
             <caption class="pb-1 text-left font-semibold">Data checks that changed a value</caption>
             <thead>
               <tr>
-                <th scope="col" class="border-b border-gray-400 py-1 pr-2 font-semibold">Check</th>
-                <th scope="col" class="border-b border-gray-400 py-1 pr-2 font-semibold"
+                <th
+                  scope="col"
+                  class="border-b border-control-line py-1 pr-2 font-semibold dark:border-control-line-dark"
+                  >Check</th
+                >
+                <th
+                  scope="col"
+                  class="border-b border-control-line py-1 pr-2 font-semibold dark:border-control-line-dark"
                   >Kind of evidence</th
                 >
-                <th scope="col" class="border-b border-gray-400 py-1 pr-2 font-semibold"
+                <th
+                  scope="col"
+                  class="border-b border-control-line py-1 pr-2 font-semibold dark:border-control-line-dark"
                   >Projects changed</th
                 >
               </tr>
@@ -279,12 +293,16 @@
             <tbody>
               {#each quality.rows as row (row.id)}
                 <tr>
-                  <td class="border-b border-gray-200 py-1 pr-2 align-top">{row.label}</td>
-                  <td class="border-b border-gray-200 py-1 pr-2 align-top"
+                  <td class="border-b border-line py-1 pr-2 align-top dark:border-line-dark"
+                    >{row.label}</td
+                  >
+                  <td class="border-b border-line py-1 pr-2 align-top dark:border-line-dark"
                     >{row.tierLabel}{#if row.research}
                       <span class="block">{NOT_SF_NOTE}</span>{/if}</td
                   >
-                  <td class="border-b border-gray-200 py-1 pr-2 align-top">{plural(row.count)}</td>
+                  <td class="border-b border-line py-1 pr-2 align-top dark:border-line-dark"
+                    >{plural(row.count)}</td
+                  >
                 </tr>
               {/each}
             </tbody>

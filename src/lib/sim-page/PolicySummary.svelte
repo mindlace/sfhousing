@@ -133,7 +133,7 @@
     {#if timingLines.length > 0}
       <button
         type="button"
-        class="flex min-h-6 min-w-6 items-center gap-1 rounded-md px-2 text-left font-semibold hover:bg-surface-raised dark:hover:bg-surface-dark-raised pointer-coarse:min-h-11"
+        class="flex min-h-6 min-w-6 items-center gap-1 rounded-md px-2 text-left font-semibold hover:bg-surface-raised dark:hover:bg-surface-dark-raised"
         aria-expanded={open}
         aria-controls={detailsId}
         onclick={() => (open = !open)}

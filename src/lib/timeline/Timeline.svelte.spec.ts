@@ -267,7 +267,10 @@ describe('Timeline rows', () => {
     expect(parseFloat(line!.style.left)).toBeCloseTo(dayPct(first(13), asOf, windowEnd), 2);
     expect(line!.getAttribute('aria-hidden')).toBe('true');
     expect(getComputedStyle(line!).pointerEvents).toBe('none');
-    const lanes = [...sheet.element().querySelectorAll<HTMLElement>('[data-testid=tl-lane]')];
+    // The lanes drawn (below md the open kind's own, empty lane is not).
+    const lanes = [
+      ...sheet.element().querySelectorAll<HTMLElement>('[data-testid=tl-lane]')
+    ].filter((l) => l.getBoundingClientRect().height > 0);
     expect(lanes.length).toBeGreaterThan(1);
     const l = line!.getBoundingClientRect();
     const x = l.left + l.width / 2;
@@ -311,7 +314,7 @@ describe('Timeline rows', () => {
     await kindButton('Public money').click();
     for (const name of ['Current law', 'Current timelines', 'Current funding']) {
       await expect
-        .element(page.getByRole('button', { name: new RegExp(`^${name}`) }))
+        .element(page.getByRole('button', { name: new RegExp(`, ${name}, whole window$`) }))
         .toBeVisible();
     }
     const world = page.getByTestId('tl-world').element();
@@ -320,7 +323,7 @@ describe('Timeline rows', () => {
       marketLevel(cal) === 'private' ? 'private starts only' : 'all starts'
     );
     expect(world.textContent).not.toMatch(/, (private|all)$/);
-    await page.getByRole('button', { name: /^Current timelines/ }).click();
+    await page.getByRole('button', { name: /, Current timelines, whole window$/ }).click();
     expect(onselect).toHaveBeenCalledWith({ kind: 'permitting', id: 'fixed', span: -1 });
     const firstRow = document.querySelector(
       '[data-testid=tl-kind-permitting] [data-testid=tl-fixed]'
@@ -343,7 +346,7 @@ describe('Timeline rows', () => {
   it("a bar's keys produce the expected document", async () => {
     const { onedit } = await setup({ playheadMonth: 1 });
     await kindButton('Permitting').click();
-    const name = `Faster permit review, ${formatEdge(first(24))} to ${formatEdge(last(71))}`;
+    const name = `30% faster, Faster permit review, ${formatEdge(first(24))} to ${formatEdge(last(71))}`;
     (page.getByRole('button', { name }).element() as HTMLElement).focus();
     await userEvent.keyboard('{Shift>}{ArrowRight}{/Shift}');
     expect(onedit).toHaveBeenCalledTimes(1);
@@ -711,6 +714,124 @@ describe('Timeline rows', () => {
   });
 });
 
+describe('the rows below md: a name line above each lane', () => {
+  const rect = (e: Element) => e.getBoundingClientRect();
+  /** The label cell (the row's first child) and its lane. */
+  const parts = (row: Element) => ({
+    lab: row.querySelector(':scope > .lab')!,
+    lane: row.querySelector(':scope > [data-testid=tl-lane]')!
+  });
+  /** Whether an element shows its text whole (no ellipsis cut). */
+  const whole = (e: Element) => e.scrollWidth <= e.clientWidth;
+
+  async function phone() {
+    await setup({ playheadDay: first(13) });
+    await page.viewport(375, 812);
+    await expect.element(page.getByTestId('ph-part')).toBeVisible();
+    // The page's matchMedia listener has seen the new width: the chart's label is the plain one.
+    await expect.element(page.getByText('Homes completed', { exact: true })).toBeVisible();
+    return page.getByTestId('tl-rows').element().querySelector('.rows-grid')!;
+  }
+
+  it('below md a closed kind\'s name is shown whole, with its count and "+" on the same line', async () => {
+    const grid = await phone();
+    const g = rect(grid);
+    for (const [kind, name] of [
+      ['zoning', 'Zoning'],
+      ['permitting', 'Permitting'],
+      ['money', 'Public money']
+    ] as const) {
+      const row = page.getByTestId(`tl-kind-${kind}`).element();
+      const { lab, lane } = parts(row);
+      const toggle = kindButton(name).element();
+      expect(toggle.textContent?.trim()).toBe(name);
+      expect(whole(toggle), `${name} is cut`).toBe(true);
+      // The label line spans the grid; the lane sits under it in the lane column.
+      const l = rect(lab);
+      expect(Math.abs(l.left - g.left)).toBeLessThanOrEqual(1);
+      expect(Math.abs(l.right - g.right)).toBeLessThanOrEqual(1);
+      expect(Math.abs(rect(lane).top - l.bottom)).toBeLessThanOrEqual(1);
+      // Lines pack: no spare height shared out to them.
+      expect(l.height).toBeLessThanOrEqual(32);
+      expect(rect(lane).height).toBeLessThanOrEqual(32);
+      // Chevron, name, count and "+" on that one line.
+      const line = (e: Element) => {
+        const r = rect(e);
+        return r.top >= l.top - 1 && r.bottom <= l.bottom + 1;
+      };
+      expect(line(toggle)).toBe(true);
+      expect(line(row.querySelector('[data-testid=tl-count]')!)).toBe(true);
+      expect(line(row.querySelector('.plus')!)).toBe(true);
+    }
+  });
+
+  it('below md each policy row in the sheet shows its name on its own line above its lane', async () => {
+    await phone();
+    await kindButton('Permitting').click();
+    const sheet = page.getByRole('dialog', { name: 'Permitting' });
+    await expect.element(sheet).toBeVisible();
+    const grid = sheet.element().querySelector('.grid')!;
+    const g = rect(grid);
+    const rows = [...sheet.element().querySelectorAll('[data-testid=tl-policy]')];
+    expect(rows).toHaveLength(2);
+    for (const row of rows) {
+      const { lab, lane } = parts(row);
+      const l = rect(lab);
+      const n = rect(lane);
+      expect(Math.abs(l.left - g.left)).toBeLessThanOrEqual(1);
+      expect(n.top).toBeGreaterThanOrEqual(l.bottom - 1);
+      expect(whole(lab.querySelector('.name')!)).toBe(true);
+      // The words sit over the playhead line (the line passes under the name line).
+      const cs = getComputedStyle(lab);
+      expect(cs.position).toBe('relative');
+      expect(Number(cs.zIndex)).toBeGreaterThan(1);
+      expect(cs.backgroundColor).not.toBe('rgba(0, 0, 0, 0)');
+    }
+    expect(rows[0].textContent).toContain('Faster permit review');
+    await userEvent.keyboard('{Escape}');
+  });
+
+  it("below md the lanes keep the ruler's x scale: a bar's left matches dayPct", async () => {
+    await phone();
+    const ruler = page.getByTestId('tl-pin').element().querySelector('[data-testid=tl-lane]')!;
+    const r = rect(ruler);
+    for (const row of all('[data-testid=tl-rows] [data-testid=tl-lane]')) {
+      const n = rect(row);
+      if (n.height === 0) continue;
+      expect(Math.abs(n.left - r.left)).toBeLessThanOrEqual(1);
+      expect(Math.abs(n.width - r.width)).toBeLessThanOrEqual(1);
+    }
+    await kindButton('Permitting').click();
+    const sheet = page.getByRole('dialog', { name: 'Permitting' }).element();
+    await expect.poll(() => sheet.querySelectorAll('[data-testid=tl-bar]').length).toBe(4);
+    const bar = sheet.querySelector<HTMLElement>('[data-testid=tl-bar]')!;
+    const lane = rect(bar.closest('[data-testid=tl-lane]')!);
+    expect(Math.abs(lane.left - r.left)).toBeLessThanOrEqual(1);
+    expect(Math.abs(lane.width - r.width)).toBeLessThanOrEqual(1);
+    const want = lane.left + (lane.width * dayPct(first(24), asOf, windowEnd)) / 100;
+    expect(Math.abs(rect(bar).left - want)).toBeLessThanOrEqual(1);
+    await userEvent.keyboard('{Escape}');
+  });
+
+  it('from md the label column and the rows are as before', async () => {
+    await setup();
+    await page.viewport(768, 900);
+    for (const name of ['Zoning', 'Permitting', 'Public money']) await kindButton(name).click();
+    const rows = all(
+      '[data-testid=tl-rows] [data-testid^=tl-kind-], [data-testid=tl-rows] [data-testid=tl-policy], [data-testid=tl-rows] [data-testid=tl-fixed], [data-testid=tl-world]'
+    );
+    expect(rows.length).toBeGreaterThan(6);
+    for (const row of rows) {
+      const { lab, lane } = parts(row);
+      const l = rect(lab);
+      const n = rect(lane);
+      expect(Math.abs(l.width - 168)).toBeLessThanOrEqual(1);
+      expect(Math.abs(n.left - l.right)).toBeLessThanOrEqual(1);
+      expect(Math.abs(n.top - l.top)).toBeLessThanOrEqual(1);
+    }
+  });
+});
+
 describe("a pool's level in its bar", () => {
   // Calendar months from the dataset month, five years of them.
   const { y, m } = utcParts(asOf);
@@ -742,15 +863,19 @@ describe("a pool's level in its bar", () => {
     const bond = pct(levels.byPolicy.get('m1')!, day);
     expect(bond).toBeGreaterThan(0);
     expect(bond).toBeLessThan(100);
-    expect(bar.getAttribute('aria-label')).toMatch(new RegExp(`, ${bond}% left$`));
+    expect(bar.getAttribute('aria-label')).toMatch(
+      new RegExp(`^\\$500M, ${bond}% left, Housing bond, `)
+    );
     const fill = bar.querySelector('[data-testid=tl-level]')!;
     expect(fill.getAttribute('data-left')).toBe(String(bond));
     expect(fill.getAttribute('aria-hidden')).toBe('true');
     // The bar's text says it too, after its setting, above the fill.
     expect(bar.textContent?.trim()).toBe(`$500M, ${bond}% left`);
-    const fixed = page.getByRole('button', { name: /^Current funding/ }).element();
+    const fixed = page.getByRole('button', { name: /Current funding, whole window$/ }).element();
     const base = pct(levels.fixed!, day);
-    expect(fixed.getAttribute('aria-label')).toBe(`Current funding, whole window, ${base}% left`);
+    expect(fixed.getAttribute('aria-label')).toBe(
+      `In force, ${base}% left, Current funding, whole window`
+    );
     expect(fixed.textContent?.trim()).toBe(`In force, ${base}% left`);
     expect(fixed.querySelector('[data-testid=tl-level]')!.getAttribute('data-left')).toBe(
       String(base)
@@ -762,15 +887,35 @@ describe("a pool's level in its bar", () => {
     );
     // At today: a level is drawn nowhere and no name or text says one.
     await s.rerender({ levels, playheadDay: asOf, playheadMonth: 1, reached: asOf });
-    expect(barsOf('money')[0].getAttribute('aria-label')).not.toMatch(/left$/);
+    expect(barsOf('money')[0].getAttribute('aria-label')).not.toMatch(/left/);
     expect(barsOf('money')[0].textContent?.trim()).toBe('$500M');
     expect(fixed.textContent?.trim()).toBe('In force');
     expect(
       page
-        .getByRole('button', { name: /^Current funding/ })
+        .getByRole('button', { name: /Current funding, whole window$/ })
         .element()
         .getAttribute('aria-label')
-    ).toBe('Current funding, whole window');
+    ).toBe('In force, Current funding, whole window');
+  });
+
+  // WCAG 2.5.3: a voice user says what they see; the name starts with it.
+  it("every bar's accessible name contains its visible text, first", async () => {
+    await setup({ levels, playheadDay: first(30), playheadMonth: 30, reached: first(40) });
+    for (const k of ['Zoning', 'Permitting', 'Public money']) await kindButton(k).click();
+    const bars = all('[data-testid=tl-bar], [data-testid=tl-fixed] button');
+    // Every kind's fixed row, the world row and the policies' bars (one off).
+    expect(bars.length).toBeGreaterThanOrEqual(9);
+    const words = (b: Element) => b.textContent!.replace(/\s+/g, ' ').trim();
+    for (const b of bars) {
+      expect(words(b).length).toBeGreaterThan(0);
+      expect(b.getAttribute('aria-label')!.startsWith(words(b) + ', ')).toBe(true);
+    }
+    const world = page.getByTestId('tl-world').getByRole('button').element();
+    expect(world.getAttribute('aria-label')).toBe(
+      `${words(world)}, Market conditions, whole window`
+    );
+    const off = barsOf('permitting').find((b) => b.classList.contains('off'))!;
+    expect(off.getAttribute('aria-label')).toMatch(/, Paused review, .* to .*, off$/);
   });
 
   it('a closed kind and a fund policy with no own pool carry none', async () => {
@@ -787,7 +932,7 @@ describe("a pool's level in its bar", () => {
     const [bond, ride] = barsOf('money');
     expect(bond.querySelector('[data-testid=tl-level]')).not.toBeNull();
     expect(ride.querySelector('[data-testid=tl-level]')).toBeNull();
-    expect(ride.getAttribute('aria-label')).not.toMatch(/left$/);
+    expect(ride.getAttribute('aria-label')).not.toMatch(/left/);
     // Other kinds' fixed rows carry none.
     await kindButton('Zoning').click();
     expect(

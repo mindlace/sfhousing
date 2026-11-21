@@ -182,7 +182,7 @@ test.describe('desktop', () => {
     [1280, 800],
     [1440, 900]
   ] as const) {
-    test(`${width}×${height}: N3 is a pill in the one stack, clear of the dock, chips and attribution`, async ({
+    test(`${width}×${height}: N3 is a card in the one stack, clear of the dock, chips and attribution`, async ({
       page
     }) => {
       await page.setViewportSize({ width, height });
@@ -190,11 +190,12 @@ test.describe('desktop', () => {
       await expectNoticesClear(page, DESKTOP);
       await expectCentredRightOfDock(page, page.locator('.sfh-dock-panel'));
       await expectChipsRightOfDock(page, page.locator('.sfh-dock-panel'));
-      // A pill: fully rounded.
+      // N3 is two sentences: a card (rounded-lg), the shape its words pick (ui-parts.md).
+      await expect(notice(page).first()).toHaveAttribute('data-shape', 'card');
       const radius = await notice(page)
         .first()
         .evaluate((el) => parseFloat(getComputedStyle(el).borderTopLeftRadius));
-      expect(radius).toBeGreaterThanOrEqual(16);
+      expect(radius).toBe(8);
     });
   }
 

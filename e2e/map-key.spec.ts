@@ -9,7 +9,7 @@ import { expect, test, type Locator, type Page } from '@playwright/test';
 import type { SfhFzpDebug } from '../src/lib/fzp/debug';
 import { expectNoA11yViolations } from './helpers/a11y';
 import { loginAs, uniqueEmail } from './helpers/auth';
-import { slider, waitFilled } from './helpers/run';
+import { addPolicy, slider, waitFilled } from './helpers/run';
 import {
   PLAN_KEY,
   chooseTool,
@@ -139,8 +139,8 @@ test('375 px on /sim: the key starts closed, sits clear of Reset and the attribu
   await expect(keyToggle(page)).toBeVisible();
   await expect(keyToggle(page)).toHaveAttribute('aria-expanded', 'false');
   const t = await boxOf(keyToggle(page));
-  expect(t.height).toBeGreaterThanOrEqual(44);
-  expect(t.width).toBeGreaterThanOrEqual(44);
+  expect(t.height).toBeGreaterThanOrEqual(24);
+  expect(t.width).toBeGreaterThanOrEqual(24);
   await expectClear(page);
   await keyToggle(page).click();
   await expect(keyPanel(page)).toBeVisible();
@@ -181,10 +181,10 @@ test('375 px on /sim: the key starts closed, sits clear of Reset and the attribu
   await keyToggle(page).click();
   await expect(keyPanel(page)).toBeVisible();
   await expectClear(page);
-  // Layers too: 44 px, clear of everything, open and closed.
+  // Layers too: 24 px, clear of everything, open and closed.
   const l = await boxOf(layersToggle(page));
-  expect(l.height).toBeGreaterThanOrEqual(44);
-  expect(l.width).toBeGreaterThanOrEqual(44);
+  expect(l.height).toBeGreaterThanOrEqual(24);
+  expect(l.width).toBeGreaterThanOrEqual(24);
   await layersToggle(page).click();
   await expect(layersPanel(page)).toBeVisible();
   await expect(keyPanel(page)).toBeHidden();
@@ -291,15 +291,20 @@ test('/ : focusing a height outlines it on the map', async ({ page }) => {
   await expect(heightRows(page).first()).toHaveText(/^\s*6 stories/);
   await expect(heightRows(page).last()).toHaveText(/^\s*12 stories/);
   expect(await deckIds(page)).not.toContain(OUTLINE_LAYER);
-  // The panel sits before the toolbar (Layers, then Key): from Layers, Shift+Tab reaches the
-  // panel's last control, the 12-story row.
-  await layersToggle(page).focus();
-  await page.keyboard.press('Shift+Tab');
+  // The toolbar comes before the panel: from Key, Tab reaches the panel, then its rows, the
+  // 12-story row last.
+  await keyToggle(page).focus();
+  await page.keyboard.press('Tab');
+  await expect(keyPanel(page)).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(heightRows(page).first()).toBeFocused();
+  await page.keyboard.press('Tab');
   await expect(heightRows(page).last()).toBeFocused();
   await expect.poll(() => deckIds(page)).toContain(OUTLINE_LAYER);
-  // Tab back to the toolbar: the outline goes with the focus.
-  await page.keyboard.press('Tab');
-  await expect(layersToggle(page)).toBeFocused();
+  // Back up to the panel: the outline goes with the focus.
+  await page.keyboard.press('Shift+Tab');
+  await page.keyboard.press('Shift+Tab');
+  await expect(keyPanel(page)).toBeFocused();
   await expect.poll(() => deckIds(page)).not.toContain(OUTLINE_LAYER);
   // A press pins it past the blur; a second press clears it.
   await heightRows(page).first().focus();
@@ -466,8 +471,9 @@ test('keyboard: Tab from the zoom controls reaches Layers, then Key; Escape retu
   await page.keyboard.press('Escape');
   await expect(keyPanel(page)).toBeHidden();
   await expect(keyToggle(page)).toBeFocused();
-  // Layers by keyboard: Space opens it, Shift+Tab reaches its switches (the panel sits before
-  // the toolbar), Space toggles one, Escape closes the panel and returns focus to Layers.
+  // Layers by keyboard: Space opens it, Tab passes Key and then reaches its panel and switches
+  // (the toolbar comes first in the DOM), Space toggles one, Escape closes the panel and returns
+  // focus to Layers.
   await page.keyboard.press('Shift+Tab');
   await expect(layersToggle(page)).toBeFocused();
   await page.keyboard.press('Space');
@@ -475,10 +481,11 @@ test('keyboard: Tab from the zoom controls reaches Layers, then Key; Escape retu
   await expect(keyPanel(page)).toBeHidden();
   await expect(layersToggle(page)).toBeFocused();
   const stops = layersPanel(page).getByRole('checkbox', { name: 'Transit stops' });
-  const capacity = layersPanel(page).getByRole('checkbox', { name: /^Transit capacity/ });
-  await page.keyboard.press('Shift+Tab');
-  await expect(capacity).toBeFocused();
-  await page.keyboard.press('Shift+Tab');
+  await page.keyboard.press('Tab');
+  await expect(keyToggle(page)).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(layersPanel(page)).toBeFocused();
+  await page.keyboard.press('Tab');
   await expect(stops).toBeFocused();
   await page.keyboard.press('Space');
   await expect(stops).toBeChecked();
@@ -487,7 +494,129 @@ test('keyboard: Tab from the zoom controls reaches Layers, then Key; Escape retu
   await expect(layersToggle(page)).toBeFocused();
 });
 
-test('375 px: Layers and Key are 44 px, inside the map, clear of Reset and the attribution', async ({
+test("Tab from the map reaches Layers and Key before the open key panel's controls", async ({
+  isMobile,
+  page
+}) => {
+  // eslint-disable-next-line playwright/no-skipped-test -- the key is open at rest from md
+  test.skip(isMobile, 'the desktop layout');
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await gotoSim(page);
+  await expect(keyPanel(page)).toBeVisible();
+  await page.locator('.maplibregl-ctrl-bottom-left button').last().focus();
+  for (let i = 0; i < 12; i++) {
+    await page.keyboard.press('Tab');
+    const at = await focusAt(page);
+    if (at.testid === 'map-layers-toggle') break;
+    expect(at.inMap, JSON.stringify(at)).toBe(true);
+  }
+  await expect(layersToggle(page)).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(keyToggle(page)).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(keyPanel(page)).toBeFocused();
+  // The panel still sits above the toolbar.
+  const panel = await boxOf(keyPanel(page));
+  expect(panel.y + panel.height).toBeLessThanOrEqual((await boxOf(keyToggle(page))).y);
+});
+
+test("the edge swatch's half-discs are at least 10 by 5 px, side by side in one row", async ({
+  page
+}) => {
+  await gotoSim(page);
+  if ((await keyToggle(page).getAttribute('aria-expanded')) !== 'true')
+    await keyToggle(page).click();
+  await expect(keyPanel(page)).toBeVisible();
+  const halves = keyPanel(page).locator('[data-swatch="edge"] [data-token]');
+  await expect(halves).toHaveCount(3);
+  for (const b of await halves.evaluateAll((els) =>
+    els.map((e) => ({ w: e.getBoundingClientRect().width, h: e.getBoundingClientRect().height }))
+  )) {
+    expect(b.w).toBeGreaterThanOrEqual(10);
+    expect(b.h).toBeGreaterThanOrEqual(5);
+  }
+  expect((await boxOf(keyPanel(page).locator('[data-swatch="edge"]'))).height).toBeLessThanOrEqual(
+    24
+  );
+});
+
+test('1280x800 on /sim: the open key panel does not scroll; its last row is in full view', async ({
+  isMobile,
+  page
+}) => {
+  // eslint-disable-next-line playwright/no-skipped-test -- one layout per project
+  test.skip(isMobile, 'the desktop layout');
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await gotoSim(page);
+  await expect(keyPanel(page)).toBeVisible();
+  const fits = await keyPanel(page).evaluate((el) => el.scrollHeight <= el.clientHeight);
+  expect(fits, 'the key panel scrolls').toBe(true);
+  const last = keyPanel(page).locator('li').last();
+  await expect(last).toContainText('Bar');
+  const p = await boxOf(keyPanel(page));
+  const l = await boxOf(last);
+  expect(l.y).toBeGreaterThanOrEqual(p.y);
+  expect(l.y + l.height).toBeLessThanOrEqual(p.y + p.height);
+});
+
+/** The panel's cue (`moreBelow`): whether data-more is set, and its ::after's opacity and height. */
+const cue = (panel: Locator) =>
+  panel.evaluate((el) => {
+    const a = getComputedStyle(el, '::after');
+    return { more: el.hasAttribute('data-more'), opacity: a.opacity, height: a.height };
+  });
+
+/** A scrolling key panel says there is more below until it is scrolled to its end. */
+async function expectCueToTheEnd(panel: Locator): Promise<void> {
+  expect(await panel.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
+  await expect.poll(() => cue(panel)).toMatchObject({ more: true, opacity: '1', height: '24px' });
+  await panel.evaluate((el) => (el.scrollTop = el.scrollHeight));
+  await expect.poll(() => cue(panel)).toMatchObject({ more: false, opacity: '0' });
+  await panel.evaluate((el) => (el.scrollTop = 0));
+  await expect.poll(() => cue(panel)).toMatchObject({ more: true, opacity: '1' });
+}
+
+test('375 px on /sim: the scrolling key panel shows more below; the cue goes at its end', async ({
+  isMobile,
+  page
+}) => {
+  // eslint-disable-next-line playwright/no-skipped-test -- one layout per project
+  test.skip(!isMobile, 'the phone layout');
+  await gotoSim(page);
+  await keyToggle(page).click();
+  await expect(keyPanel(page)).toBeVisible();
+  await expectCueToTheEnd(keyPanel(page));
+});
+
+test('1280x800 on /sim with a policy in force: the key panel shows more below; a line under forced colours', async ({
+  isMobile,
+  page
+}) => {
+  // eslint-disable-next-line playwright/no-skipped-test -- one layout per project
+  test.skip(isMobile, 'the desktop layout');
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await gotoSim(page);
+  await addPolicy(page, 'Zoning', 'Transit rule');
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('inspector')).toHaveCount(0);
+  await waitFilled(page);
+  const panel = keyPanel(page);
+  await expect(panel).toBeVisible();
+  await expectCueToTheEnd(panel);
+  // Under forced colours the fade is a 2 px line at the panel's foot.
+  await page.emulateMedia({ reducedMotion: 'reduce', forcedColors: 'active' });
+  await expect.poll(() => cue(panel)).toMatchObject({ more: true, height: '2px' });
+  const foot = await panel.evaluate((el) => {
+    const probe = document.body.appendChild(document.createElement('span'));
+    probe.style.color = 'CanvasText';
+    const want = getComputedStyle(probe).color;
+    probe.remove();
+    return { got: getComputedStyle(el, '::after').backgroundColor, want };
+  });
+  expect(foot.got).toBe(foot.want);
+});
+
+test('375 px: Layers and Key are 24 px, inside the map, clear of Reset and the attribution', async ({
   isMobile,
   page
 }) => {
@@ -497,8 +626,8 @@ test('375 px: Layers and Key are 44 px, inside the map, clear of Reset and the a
   const map = await boxOf(page.getByTestId('map-root'));
   for (const t of [layersToggle(page), keyToggle(page)]) {
     const b = await boxOf(t);
-    expect(b.height).toBeGreaterThanOrEqual(44);
-    expect(b.width).toBeGreaterThanOrEqual(44);
+    expect(b.height).toBeGreaterThanOrEqual(24);
+    expect(b.width).toBeGreaterThanOrEqual(24);
     expect(b.x).toBeGreaterThanOrEqual(map.x);
     expect(b.x + b.width).toBeLessThanOrEqual(map.x + map.width);
     expect(b.y).toBeGreaterThanOrEqual(map.y);

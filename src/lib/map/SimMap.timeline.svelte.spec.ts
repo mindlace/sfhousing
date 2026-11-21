@@ -14,7 +14,7 @@ import { DAYS, SLOT, timelineSmall } from './fixtures/timeline-small';
 import { timelineLookups } from './fixtures/timeline-lookups';
 import { packTimedCell } from './pack-timed';
 import { encodeParts } from './timelapse/encode';
-import { TIMELINE_PART_LAYER } from './timeline-controller';
+import { TIMELINE_PART_LAYER, TimelineController } from './timeline-controller';
 import type {
   CityDelta,
   SimMapHandle,
@@ -336,6 +336,35 @@ describe('SimMap timeline mode', { timeout: 60_000 }, () => {
     expect(errors).toEqual([]);
   });
 
+  it('setGlowInset: the city layer reads [top + 12, right, footprint bottom, 0]; a repeat writes nothing', async () => {
+    const { handle, ready } = await mount();
+    // Before the controller exists: kept and applied when it is made.
+    handle.setGlowInset({ top: 30, right: 250 });
+    handle.setTimelineLookups(timelineLookups);
+    handle.applyTimeline(timelineSmall);
+    const h = await ready;
+    const map = h.getMap()!;
+    await converged(map);
+    const block = parseFloat(
+      document.documentElement.style.getPropertyValue('--map-controls-br-block-size')
+    );
+    const height = map.getContainer().getBoundingClientRect().height;
+    const bottom = Math.min(block, height / 4);
+    expect(block).toBeGreaterThan(0);
+    const inset = () => dbg().timelineSnapshot()!.edgeInset;
+    expect(inset().slice(0, 2)).toEqual([42, 250]);
+    expect(Math.abs(inset()[2] - bottom)).toBeLessThanOrEqual(1);
+    expect(inset()[3]).toBe(0);
+    const writes = vi.spyOn(TimelineController.prototype, 'setEdgeInset');
+    h.setGlowInset({ top: 30, right: 250 });
+    expect(writes).not.toHaveBeenCalled();
+    h.setGlowInset({ top: 0, right: 0 });
+    expect(writes).toHaveBeenCalledTimes(1);
+    expect(inset().slice(0, 2)).toEqual([12, 0]);
+    expect(Math.abs(inset()[2] - bottom)).toBeLessThanOrEqual(1);
+    expect(errors).toEqual([]);
+  });
+
   it('a queued update keeps its city until the controller exists, and the controller draws it', async () => {
     // One marker in view of the camera below, one well off it to the west.
     const here: [number, number] = [-122.4194, 37.7599];
@@ -377,7 +406,7 @@ describe('SimMap timeline mode', { timeout: 60_000 }, () => {
     await converged(map);
     expect(dbg().timelineSnapshot()!.cityRings).toBe(0);
     // The glows sit above the bottom-right controls: the published block, at most a quarter of
-    // the map's height.
+    // the map's height; with no page part, the top is GLOW_TOP_GAP (12 px).
     const cityLayer = ((deckOf(map).props.layers ?? []) as Layer[]).find(
       (l) => l.id === 'timeline-city'
     )!;
@@ -387,7 +416,7 @@ describe('SimMap timeline mode', { timeout: 60_000 }, () => {
     const height = map.getContainer().getBoundingClientRect().height;
     expect(block).toBeGreaterThan(0);
     const inset = (cityLayer.props as unknown as { edgeInset: number[] }).edgeInset;
-    expect(inset[0]).toBe(0);
+    expect(inset[0]).toBe(12);
     expect(inset[1]).toBe(0);
     expect(inset[3]).toBe(0);
     expect(Math.abs(inset[2] - Math.min(block, height / 4))).toBeLessThanOrEqual(1);

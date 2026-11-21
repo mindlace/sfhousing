@@ -6,6 +6,7 @@ import {
   barLabel,
   compactDollars,
   dayPct,
+  fixedLabel,
   fixedRef,
   formatEdge,
   isFixedRef,
@@ -52,8 +53,51 @@ describe('rows helpers', () => {
       to: null,
       what: { tag: 'protect' as const, years: null }
     };
-    expect(barLabel('Keep it', s, asOf)).toBe(
-      `Keep it, ${formatEdge(monthFirstDay(asOf, 3))} to no end`
+    expect(barLabel('Protected', 'Keep it', s, asOf)).toBe(
+      `Protected, Keep it, ${formatEdge(monthFirstDay(asOf, 3))} to no end`
+    );
+  });
+
+  // WCAG 2.5.3: a bar's name starts with the words it shows (the setting, then its level).
+  it('barLabel starts with the setting and the level: "$410M, 99% left, Housing bond, 10 Dec 2030 to no end"', () => {
+    const a = dayFromUtc(2030, 12, 9);
+    const s = {
+      from: monthFirstDay(a, 1),
+      to: null,
+      what: { tag: 'protect' as const, years: null }
+    };
+    expect(formatEdge(s.from)).toBe('10 Dec 2030');
+    expect(barLabel('$410M', 'Housing bond', s, a, { left: ', 99% left' })).toBe(
+      '$410M, 99% left, Housing bond, 10 Dec 2030 to no end'
+    );
+    expect(barLabel('6 stories', 'Transit rule', s, a)).toBe(
+      '6 stories, Transit rule, 10 Dec 2030 to no end'
+    );
+  });
+
+  it('barLabel: ", off" last; no level, no left', () => {
+    const a = dayFromUtc(2030, 12, 9);
+    const s = {
+      from: monthFirstDay(a, 1),
+      to: monthLastDay(a, 12),
+      what: { tag: 'protect' as const, years: null }
+    };
+    const { from, to } = spanEdgeText(s, a);
+    expect(barLabel('$410M', 'Housing bond', s, a, { off: true })).toBe(
+      `$410M, Housing bond, ${from} to ${to}, off`
+    );
+    expect(barLabel('$410M', 'Housing bond', s, a, { off: false, left: null })).toBe(
+      `$410M, Housing bond, ${from} to ${to}`
+    );
+  });
+
+  it('fixedLabel: "In force, 86% left, Current funding, whole window"', () => {
+    expect(fixedLabel('In force', 'Current funding', ', 86% left')).toBe(
+      'In force, 86% left, Current funding, whole window'
+    );
+    expect(fixedLabel('In force', 'Current law')).toBe('In force, Current law, whole window');
+    expect(fixedLabel('Steady', 'Market conditions', null)).toBe(
+      'Steady, Market conditions, whole window'
     );
   });
 
@@ -78,7 +122,7 @@ describe('rows helpers', () => {
     expect(spanEdgeText(s, a)).toEqual({ from: start, to: end });
     expect(spanEdgeText(s, a).from).toBe(formatEdge(monthFirstDay(a, m)));
     expect(spanEdgeText({ ...s, to: null }, a).to).toBe('no end');
-    expect(barLabel('P', s, a)).toBe(`P, ${start} to ${end}`);
+    expect(barLabel('Protected', 'P', s, a)).toBe(`Protected, P, ${start} to ${end}`);
   });
 
   it('tells a fixed ref from a policy span by its span index', () => {

@@ -1,9 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, onTestFinished } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import { page, userEvent } from 'vitest/browser';
 import '../../routes/layout.css';
 import { COPY } from './copy';
 import SaveIndicator from './SaveIndicator.svelte';
+import ExplainHost from '$lib/timeline/test/ExplainHost.svelte';
 
 const live = () => page.getByTestId('save-live');
 
@@ -83,6 +84,49 @@ describe('SaveIndicator', () => {
 
     await userEvent.click(btn);
     await expect.element(btn).toHaveAttribute('aria-expanded', 'false');
+    await expect.element(page.getByText(COPY.n4)).not.toBeVisible();
+  });
+
+  it('the Autosave off popover draws on the surface tokens with dark partners', async () => {
+    render(SaveIndicator, { status: 'off' });
+    await userEvent.click(page.getByRole('button', { name: 'Autosave off' }));
+    const pop = page.getByText(COPY.n4);
+    await expect.element(pop).toBeVisible();
+    const cls = [...pop.element().classList];
+    for (const c of [
+      'bg-surface',
+      'dark:bg-surface-dark',
+      'text-ink',
+      'dark:text-ink-dark',
+      'border-line',
+      'dark:border-line-dark'
+    ])
+      expect(cls, c).toContain(c);
+    expect(cls).not.toContain('bg-white');
+    // The light surface token, as drawn.
+    expect(getComputedStyle(pop.element()).backgroundColor).toBe('rgb(255, 255, 255)');
+  });
+
+  it('an Escape an open explanation took leaves the N4 popover open; the next closes it', async () => {
+    render(SaveIndicator, { status: 'off' });
+    // Below the popover, clear of it.
+    const below = document.createElement('div');
+    below.style.marginTop = '300px';
+    document.body.appendChild(below);
+    onTestFinished(() => {
+      below.remove();
+    });
+    render(ExplainHost, { props: { text: 'An explanation.' }, target: below });
+    await userEvent.click(page.getByRole('button', { name: 'Autosave off' }));
+    await expect.element(page.getByText(COPY.n4)).toBeVisible();
+    // The pointer at rest on the button: no explanation yet.
+    await expect.element(page.getByText('An explanation.')).not.toBeInTheDocument();
+    await page.getByTestId('target').hover();
+    await expect.element(page.getByText('An explanation.')).toBeVisible();
+    await userEvent.keyboard('{Escape}');
+    await expect.element(page.getByText('An explanation.')).not.toBeInTheDocument();
+    await expect.element(page.getByText(COPY.n4)).toBeVisible();
+    await userEvent.keyboard('{Escape}');
     await expect.element(page.getByText(COPY.n4)).not.toBeVisible();
   });
 

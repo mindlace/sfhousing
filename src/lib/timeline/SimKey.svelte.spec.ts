@@ -133,11 +133,11 @@ describe('SimKey', () => {
       [
         'ring',
         'ring',
-        [...tones, ...city, ...city],
+        [...tones, ...city, ...tones],
         `${KEY_COPY.ring} Approved Building Completed ${KEY_COPY.area} ${KEY_COPY.edge}`
       ],
       ['area', 'area', city, KEY_COPY.area],
-      ['edge', 'edge', city, KEY_COPY.edge],
+      ['edge', 'edge', tones, KEY_COPY.edge],
       ['bar', 'bar', ['tl-bar-unlikely', 'tl-bar-uncertain', 'tl-bar-likely'], KEY_COPY.bar]
     ]);
     // A list after the tally, its swatches beside words and hidden from assistive tech.
@@ -177,7 +177,9 @@ describe('SimKey', () => {
     const tones = [HALO_TOKEN.approved, HALO_TOKEN.started, HALO_TOKEN.completed, 'tl-halo-policy'];
     expect(tones).toEqual(CITY_KIND_TOKEN);
     expect(AREA_SWATCH).toEqual({ kind: 'area', tokens: tones });
-    expect(EDGE_SWATCH).toEqual({ kind: 'edge', tokens: tones });
+    // The edge glow shows the three stage tones (as the three rows above it), side by side.
+    const stages = [HALO_TOKEN.approved, HALO_TOKEN.started, HALO_TOKEN.completed];
+    expect(EDGE_SWATCH).toEqual({ kind: 'edge', tokens: stages });
     // In the panel's width, where each row must sit on one line.
     await page.viewport(1280, 800);
     const box = withTokens();
@@ -205,13 +207,14 @@ describe('SimKey', () => {
     });
     expect(rows).toEqual([
       ['area', 'area', 'true', tones, KEY_COPY.area],
-      ['edge', 'edge', 'true', tones, KEY_COPY.edge]
+      ['edge', 'edge', 'true', stages, KEY_COPY.edge]
     ]);
     // Each on one line, its swatch inside its row; every tone drawn (a visible box).
     for (const kind of ['area', 'edge']) {
       const row = ring.querySelector(`[data-key-extra="${kind}"]`)!;
       const words = row.querySelector('span:not([data-swatch]):not([data-swatch] *)')!;
       expect(words.getClientRects(), `${kind} on one line`).toHaveLength(1);
+      // No swatch makes its row taller than a line of words.
       expect(row.getBoundingClientRect().height, `${kind} row height`).toBeLessThanOrEqual(20);
       for (const t of row.querySelectorAll('[data-token]')) {
         const r = t.getBoundingClientRect();
@@ -224,6 +227,72 @@ describe('SimKey', () => {
     }
     expect(box.scrollWidth).toBeLessThanOrEqual(box.clientWidth);
     expect((await axe.run(ring)).violations).toEqual([]);
+  });
+
+  it('the edge swatch: three half-discs side by side on a line, inside the swatch, 3:1 in both themes', async () => {
+    await page.viewport(1280, 800);
+    const box = withTokens();
+    box.style.width = '240px';
+    box.style.padding = '8px';
+    box.style.fontSize = '0.875rem';
+    box.style.lineHeight = '1.25rem';
+    await render(SimKey, { props: { tally: TALLY, inForce: false }, target: box });
+    const sw = box.querySelector('[data-key-extra="edge"] [data-swatch="edge"]')!;
+    const s = sw.getBoundingClientRect();
+    expect(s.height).toBeLessThanOrEqual(24);
+    expect(s.width).toBeLessThanOrEqual(28);
+    const halves = [...sw.querySelectorAll('[data-token]')];
+    expect(halves).toHaveLength(3);
+    const rs = halves.map((h) => h.getBoundingClientRect());
+    for (const r of rs) {
+      // A half-disc: 10 px along the edge, 5 px deep, inside the swatch.
+      expect(r.width).toBeGreaterThanOrEqual(10);
+      expect(r.height).toBeGreaterThanOrEqual(5);
+      expect(r.left).toBeGreaterThanOrEqual(s.left - 0.5);
+      expect(r.right).toBeLessThanOrEqual(s.right + 0.5);
+      expect(r.top).toBeGreaterThanOrEqual(s.top - 0.5);
+      expect(r.bottom).toBeLessThanOrEqual(s.bottom + 0.5);
+    }
+    // Side by side: one band of y, left to right.
+    for (let i = 1; i < rs.length; i++) {
+      expect(Math.abs(rs[i].top - rs[0].top)).toBeLessThanOrEqual(0.5);
+      expect(rs[i].left).toBeGreaterThan(rs[i - 1].left);
+    }
+    const rgb = (c: string) =>
+      c
+        .match(/[\d.]+/g)!
+        .slice(0, 3)
+        .map(Number);
+    const lum = (c: string) => {
+      const [r, g, b] = rgb(c).map((v) => {
+        const x = v / 255;
+        return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4;
+      });
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    };
+    const ratio = (a: string, b: string) => {
+      const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x);
+      return (hi + 0.05) / (lo + 0.05);
+    };
+    /** The panel's surface (SURFACE_POP: bg-surface, dark:bg-surface-dark), resolved. */
+    const surface = (dark: boolean) => {
+      const probe = document.createElement('div');
+      probe.className = dark ? 'bg-surface-dark' : 'bg-surface';
+      document.body.appendChild(probe);
+      const c = getComputedStyle(probe).backgroundColor;
+      probe.remove();
+      return c;
+    };
+    for (const theme of ['light', 'dark'] as const) {
+      await scheme(theme);
+      for (const h of halves) {
+        const fill = getComputedStyle(h).backgroundColor;
+        expect(
+          ratio(fill, surface(theme === 'dark')),
+          `${h.getAttribute('data-token')} ${theme}`
+        ).toBeGreaterThanOrEqual(3);
+      }
+    }
   });
 
   it('names the mark with its explanation only while a policy is in force', async () => {

@@ -1,18 +1,18 @@
 <!--
   `/`'s map editor (and /p/:id's read-only view): the map, its editor worker and, on plan 2's
-  `Dock`, the Paint tab shared with /sim (plan 3's `PaintTab`, `HistoryButtons` above it on a
-  coarse pointer only, and the phone `PaletteStrip`), so the two pages are one paint experience
+  `Dock`, the Paint tab shared with /sim (plan 3's `PaintTab`, `HistoryButtons` above it while
+  some pointer is coarse, and the phone `PaletteStrip`), so the two pages are one paint experience
   (sim-ux spec Goals 1, 3, 11 and 12). The page owns the `DockState` (the dock folds by its own button) and the Results face.
-  Undo and Redo sit above the tab only on a coarse pointer (a keyboard does both; the stroke chip
-  says what it did) and the phone strip carries Undo; the Shortcuts button ends the tab on a fine
-  pointer.
+  Undo and Redo sit above the tab while some pointer is coarse (a phone, a tablet or a touch
+  laptop; a keyboard does both and the stroke chip says what it did) and the phone strip carries
+  Undo; the Shortcuts button ends the tab on a fine primary pointer, so a touch laptop has both.
   `/` has no painted-areas list (that is `/sim`'s): the tab holds the tools, and read-only
   (`/p/:id`) the read-only line and one summary line (`paintedSummary`: the heights used and the
   lots the latest score rebuilds). The map key (`MapKeyControl` with `PaintKey`, closed at rest)
   names the building types and each painted height with its lots (the worker's `heightLots`,
   latest wins); hovering, focusing or pressing a height draws its lots' outline in the overlay
   mux's `outline` slot, under the brush ring in its `ring` slot. The brush status
-  line, its Retry and the page's own notices are pills in one notice stack (`NoticePills`). What a
+  line, its Retry and the page's own notices are messages (chips or cards) in one notice stack (`NoticePills`). What a
   stroke, a refusal, an undo or a redo did shows in the stroke chip, a polite status over the
   map's top (never in the stack, which is in flow on a phone), so painting never moves or resizes
   the map. The page's header score flips the dock to its Results face (`results`, the
@@ -45,7 +45,8 @@
   import type { Plan } from '$lib/plan';
   import type { Score } from '$lib/scoreboard';
   import NoticePills from '$lib/shell/NoticePills.svelte';
-  import { CHIP, PILL, PILL_ACTION } from '$lib/shell/pill';
+  import Message from '$lib/shell/Message.svelte';
+  import { BUTTON_QUIET } from '$lib/shell/ui';
   import {
     SimClient,
     spawnSimWorker,
@@ -108,7 +109,7 @@
     /** The page's Results face. */
     results?: Snippet;
     /**
-     * The page's own notices (`/`: plan sharing's), each a `PILL`, rendered after the brush status
+     * The page's own notices (`/`: plan sharing's), each a `Message`, rendered after the brush status
      * in this component's one notice stack (`NoticePills`), as FzpMode's `notices`.
      */
     notices?: Snippet;
@@ -152,12 +153,18 @@
   const uid = $props.id();
   const dockId = $derived(dockIdProp ?? `${uid}-dock`);
   const wide = new MediaQuery('(min-width: 768px)');
-  /** Undo and Redo buttons are for a device with no keyboard (`usePrimaryPointer`). */
+  /** The phone palette strip shows: below md, the sheet closed, Paint or Erase chosen. */
+  const stripShown = $derived(
+    !editor.readOnly && !wide.current && dock.sheet === 'closed' && brush.tool !== 'move'
+  );
+  /** Undo and Redo buttons show on any coarse pointer, Shortcuts on a fine primary one. */
   const pointer = usePrimaryPointer();
   /** Done on the palette strip reopened the sheet: focus moves into it. */
   let doneFocus = $state(false);
   /** The phone sheet's height (its handle while closed; 0 from md): part of the map's inset. */
   let sheetH = $state(0);
+  /** The palette strip's height while it shows: the map key rests 10 px above it. */
+  let stripH = $state(0);
   let paletteStrip = $state<PaletteStrip>();
 
   untrack(() => {
@@ -202,8 +209,6 @@
   const statusCells = new Set<string>(); // eslint-disable-line svelte/prefer-svelte-reactivity
   let lastStats: OpStats | null = null;
   let chunks: { pending: number; failed: string[] } = { pending: 0, failed: [] };
-  /** Failed parcel cells: map-view shows its failure chip, and the stroke chip sits below it. */
-  let failedCells = $state(0);
   /** Lots the plan rebuilds (the latest score's `parcelsChanged`), for the read-only summary;
    *  null until the first diff of a load arrives, so the line never claims a false zero. */
   let rebuilt = $state<number | null>(null);
@@ -211,7 +216,6 @@
   /** Every assignment to `chunks` goes through here so `onchunks` never misses one. */
   function setChunks(next: { pending: number; failed: string[] }): void {
     chunks = next;
-    failedCells = next.failed.length;
     onchunks?.({ pending: next.pending, failed: next.failed.length });
   }
 
@@ -563,14 +567,15 @@
   <NoticePills>
     <div role="status" aria-live="polite" data-testid="brush-status" class="contents">
       {#if brush.statusText}
-        <span class="{PILL} {brush.phase === 'failed' ? '' : 'pr-4'}">
-          <span>{brush.statusText}</span>
-          {#if brush.phase === 'failed'}
-            <button type="button" class="shrink-0 {PILL_ACTION}" onclick={() => void retry()}
-              >Retry</button
-            >
-          {/if}
-        </span>
+        {#snippet retryButton()}
+          <button type="button" class="shrink-0 {BUTTON_QUIET}" onclick={() => void retry()}
+            >Retry</button
+          >
+        {/snippet}
+        <Message
+          text={brush.statusText}
+          actions={brush.phase === 'failed' ? retryButton : undefined}
+        />
       {/if}
     </div>
     {@render notices?.()}
@@ -590,31 +595,33 @@
     {/if}
 
     <!-- The stroke chip (a stroke's result, a refusal, Undid, Redid, Removed): one polite status
-         over the map's top, centred right of the dock, at the top of map-view's failure chips and
-         one row lower while one of them shows (so it never covers Retry). It takes no presses, so
-         a stroke can start under it, and never moves the map. Mounted empty (no box), so its
-         first text is announced; it clears when the announcement does. -->
+         over the map's top, centred right of the dock, 0.5rem below the lower of the notices and
+         map-view's failure column (`--map-chips-bottom`), so it never covers a Retry. Always a
+         chip, whatever its words: it takes no presses, so a stroke can start under it, and never
+         moves the map. Mounted empty (no box), so its first text is announced; it clears when the
+         announcement does. -->
     <div
       role="status"
       aria-live="polite"
       data-testid="brush-announcement"
       data-notice
       class="brush-chip pointer-events-none absolute z-20 flex w-max -translate-x-1/2 justify-center"
-      style:top="calc(var(--notice-pills-bottom, 0px) + {failedCells > 0 ? '3.5rem' : '0.5rem'})"
+      style:top="calc(max(var(--notice-pills-bottom, 0px), var(--map-chips-bottom, 0px)) + 0.5rem)"
     >
       {#if brush.announcement}
-        <span data-testid="stroke-chip" class={CHIP}>{brush.announcement}</span>
+        <Message text={brush.announcement} shape="chip" still testid="stroke-chip" />
       {/if}
     </div>
 
     <!-- The map key at the map's bottom right, above the attribution (and the phone sheet's
-         handle, which lifts the footprint), with the page's Layers toggle before Key when it
+         handle, which lifts the footprint, and 10 px above the palette strip while it shows),
+         with the page's Layers toggle before Key when it
          passes `layers`; both closed at rest at every width. Below md, while the
          sheet is open over the map, it hides (as /sim's does under a card's sheet). -->
     <MapKeyControl
       key={paintKey}
       layers={layerRows}
-      floor={sheetH}
+      floor={stripShown ? sheetH + stripH + 10 : sheetH}
       hidden={!wide.current && dock.sheet !== 'closed'}
       onopenchange={(p) => (keyVisible = p === 'key')}
     />
@@ -642,7 +649,7 @@
       state={dock}
       tabs={[{ id: 'paint', label: 'Paint', icon: DOCK_ICONS.paint, railLabel: 'Paint tools' }]}
       panel={tabPanel}
-      top={pointer.coarse && !editor.readOnly ? history : undefined}
+      top={pointer.touch && !editor.readOnly ? history : undefined}
       {results}
       flipLabel="Paint"
       flipName={editor.readOnly ? 'Back to the Paint tab' : 'Back to painting'}
@@ -656,9 +663,10 @@
         })}
       onclose={ondockclose}
     />
-    {#if !editor.readOnly && !wide.current && dock.sheet === 'closed' && brush.tool !== 'move'}
+    {#if stripShown}
       <PaletteStrip
         bind:this={paletteStrip}
+        bind:height={stripH}
         {brush}
         tool={brush.tool}
         ontool={chooseTool}
@@ -667,6 +675,10 @@
         lift={sheetH}
         canUndo={editor.canUndo}
         onundo={() => controller?.undo()}
+        canRedo={editor.canRedo}
+        onredo={() => controller?.redo()}
+        undoLabel={null}
+        redoLabel={null}
       />
     {/if}
   </div>

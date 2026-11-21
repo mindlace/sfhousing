@@ -195,6 +195,47 @@ describe('MapKeyControl', () => {
     expect(document.activeElement).toBe(layersToggle().element());
   });
 
+  it('the toggles come before an open panel in tab order; the panel still sits above them', async () => {
+    await render(KeyHost, { props: { withLayers: true, openFromMd: true } });
+    await expect.element(keyPanel()).toBeVisible();
+    (page.getByTestId('host-before').element() as HTMLElement).focus();
+    await userEvent.tab();
+    expect(document.activeElement).toBe(layersToggle().element());
+    await userEvent.tab();
+    expect(document.activeElement).toBe(keyToggle().element());
+    await userEvent.tab();
+    expect(document.activeElement).toBe(keyPanel().element());
+    expect(rect(keyPanel().element()).bottom).toBeLessThanOrEqual(rect(keyToggle().element()).top);
+    // Shift+Tab from the panel goes back to the toggles, not past them.
+    await userEvent.tab({ shift: true });
+    expect(document.activeElement).toBe(keyToggle().element());
+  });
+
+  it('inside the key panel: the first Escape closes the explanation, the second the panel', async () => {
+    await render(KeyHost, { props: { openFromMd: true, withExplain: true } });
+    await expect.element(keyPanel()).toBeVisible();
+    // Focus on the toggle, the explanation open by hover.
+    (keyToggle().element() as HTMLElement).focus();
+    await keyPanel().getByRole('button', { name: 'Marked' }).hover();
+    await expect.element(page.getByText('Why this row shows.')).toBeVisible();
+    await userEvent.keyboard('{Escape}');
+    await expect.element(page.getByText('Why this row shows.')).not.toBeInTheDocument();
+    await expect.element(keyPanel()).toBeVisible();
+    await userEvent.keyboard('{Escape}');
+    await expect.element(keyPanel()).not.toBeInTheDocument();
+    expect(document.activeElement).toBe(keyToggle().element());
+    // Focus on the explanation's own button inside the panel: the same, one layer per press.
+    await keyToggle().click();
+    await expect.element(keyPanel()).toBeVisible();
+    (keyPanel().getByRole('button', { name: 'Marked' }).element() as HTMLElement).focus();
+    await expect.element(page.getByText('Why this row shows.')).toBeVisible();
+    await userEvent.keyboard('{Escape}');
+    await expect.element(page.getByText('Why this row shows.')).not.toBeInTheDocument();
+    await expect.element(keyPanel()).toBeVisible();
+    await userEvent.keyboard('{Escape}');
+    await expect.element(keyPanel()).not.toBeInTheDocument();
+  });
+
   it('Layers opens a group named Map layers; Escape closes it and focuses Layers', async () => {
     await render(KeyHost, { props: { withLayers: true, openFromMd: true } });
     await expect.element(keyPanel()).toBeVisible();
@@ -282,7 +323,7 @@ describe('MapKeyControl', () => {
     await expect.poll(last).toBeNull();
   });
 
-  it('toggles are 24 px on a fine pointer and 44 px on a coarse one', async () => {
+  it('toggles are 24 px on a fine pointer and the same on a coarse one', async () => {
     await render(KeyHost, { props: { withLayers: true } });
     for (const t of [keyToggle(), layersToggle()]) {
       const r = rect(t.element());
@@ -293,8 +334,10 @@ describe('MapKeyControl', () => {
     await cdp().send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
     await expect.poll(() => matchMedia('(pointer: coarse)').matches).toBe(true);
     for (const t of [keyToggle(), layersToggle()]) {
-      await expect.poll(() => rect(t.element()).height).toBeGreaterThanOrEqual(44);
-      expect(rect(t.element()).width).toBeGreaterThanOrEqual(44);
+      const r = rect(t.element());
+      expect(r.height).toBeGreaterThanOrEqual(24);
+      expect(r.width).toBeGreaterThanOrEqual(24);
+      expect(r.height).toBeLessThan(44);
     }
   });
 

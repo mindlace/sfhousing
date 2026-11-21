@@ -29,6 +29,7 @@
   import { BrushController, type ControllerMap } from '$lib/brush/BrushController.svelte';
   import { ANNOUNCE_MS } from '$lib/brush/messages';
   import type { OverlayCtors } from '$lib/brush/overlay';
+  import { actionForKey } from '$lib/brush/shortcuts';
   import { BrushState } from '$lib/brush/state.svelte';
   import type { Manifest } from '$lib/data/manifest';
   import type { ParcelId } from '$lib/data/parcel';
@@ -43,11 +44,14 @@
   import { paintedOutlineLayers } from '$lib/paint/outline-layers';
   import PaintTab from '$lib/paint/PaintTab.svelte';
   import PaletteStrip from '$lib/paint/PaletteStrip.svelte';
+  import { usePrimaryPointer } from '$lib/paint/pointer.svelte';
+  import ShortcutsButton from '$lib/paint/ShortcutsButton.svelte';
   import { removedLabel } from '$lib/paint/rows';
   import { Autosave } from '$lib/sharing/autosave.svelte';
   import { copyFor } from '$lib/sharing/copy';
   import PublishButton from '$lib/sharing/PublishButton.svelte';
   import SaveIndicator from '$lib/sharing/SaveIndicator.svelte';
+  import { BUTTON } from '$lib/shell/ui';
   import { getStorage } from '$lib/sharing/storage';
   import type { BrushCatalog } from '$lib/sim/levers/brushes';
   import { PREVIEW_MAX_LOTS } from '$lib/sim/scenario/preview';
@@ -342,6 +346,8 @@
   /** Funding drafts: page memory outside the store, so autosave and undo never see one. */
   const drafts = new FundingDrafts();
   const wide = new MediaQuery('(min-width: 768px)');
+  /** Undo and Redo buttons in the header only while some pointer is coarse; a keyboard has Ctrl+Z. */
+  const pointer = usePrimaryPointer();
   const uid = $props.id();
   const inspectorId = `${uid}-inspector`;
 
@@ -399,6 +405,16 @@
   }
 
   /**
+   * Why the last starter added nothing (`limitAlert`'s words), shown in Activity. Cleared by the
+   * next starter press, any change to the document, its Dismiss, or leaving today.
+   */
+  let refusal = $state<string | null>(null);
+  $effect(() => {
+    void store.policy;
+    untrack(() => (refusal = null));
+  });
+
+  /**
    * Activity's starter: adds `choice` at the playhead's month as the "+" menu does (one undoable
    * change, announced "Added: {label}"), opens its kind from md, selects it and focuses the
    * editor's title.
@@ -406,6 +422,7 @@
   function addStarter(choice: AddChoice, label: string): void {
     const c = cal;
     if (readonly || !c) return;
+    refusal = null;
     let r: ReturnType<typeof addPolicy>;
     try {
       r = addPolicy(store.policy, choice, {
@@ -415,9 +432,10 @@
       });
     } catch (e) {
       // A funding limit (only off policies count: starters show with nothing in force). The "+"
-      // menu says it in its alert line; no menu is open here, so the page's status says it.
+      // menu says it in its alert line; here Activity shows it under the starters, a card that
+      // is its own polite status (so it is announced once, not also through the page's status).
       if (e instanceof AddLimitError) {
-        brush.announce(limitAlert(e.limit), ANNOUNCE_MS);
+        refusal = limitAlert(e.limit);
         return;
       }
       throw e;
@@ -636,6 +654,34 @@
   function redo(): void {
     if (controller) controller.redo();
     else adapter.editor.redo();
+  }
+
+  /**
+   * Ctrl+Z and Ctrl+Shift+Z before the brush controller attaches (the map is loading, or never
+   * comes without WebGL): the page undoes and redoes itself. Once attached, the controller's own
+   * window listener takes the keys and this one does nothing. Typing in a field and a modal
+   * dialog keep their keys (`actionForKey`).
+   */
+  function onWindowKey(e: KeyboardEvent): void {
+    if (controller || readonly || e.defaultPrevented) return;
+    const a = actionForKey(
+      {
+        key: e.key,
+        code: e.code,
+        metaKey: e.metaKey,
+        ctrlKey: e.ctrlKey,
+        shiftKey: e.shiftKey,
+        altKey: e.altKey,
+        repeat: e.repeat,
+        target: e.target,
+        type: 'keydown'
+      },
+      { mapFocused: false, modalOpen: document.querySelector('dialog:modal') !== null }
+    );
+    if (a?.type !== 'undo' && a?.type !== 'redo') return;
+    e.preventDefault();
+    if (a.type === 'undo') undo();
+    else redo();
   }
 
   // ---- painted areas of the selected span ----
@@ -1020,22 +1066,24 @@
 
 {#snippet actions()}
   {#if toolOff}
-    <button
-      type="button"
-      class="min-h-6 min-w-6 rounded-md border border-gray-300 px-2 text-sm font-medium whitespace-nowrap dark:border-gray-600 pointer-coarse:min-h-11 pointer-coarse:min-w-11"
-      onclick={() => setTool('move')}
+    <button type="button" class={BUTTON} onclick={() => setTool('move')}
       >{tools.tool === 'erase' ? 'Stop erasing' : 'Stop painting'}</button
     >
   {/if}
   {#if !readonly}
-    <HistoryButtons
-      canUndo={store.canUndo}
-      canRedo={store.canRedo}
-      undoLabel={store.undoLabel}
-      redoLabel={store.redoLabel}
-      onundo={undo}
-      onredo={redo}
-    />
+    {#if pointer.touch}
+      <HistoryButtons
+        canUndo={store.canUndo}
+        canRedo={store.canRedo}
+        undoLabel={store.undoLabel}
+        redoLabel={store.redoLabel}
+        onundo={undo}
+        onredo={redo}
+      />
+    {/if}
+    <!-- From lg with Undo and Redo beside it (a touch laptop), the row has no room for it at any
+         width (a known limit until slice 9 moves it to About). -->
+    <ShortcutsButton class={pointer.touch ? 'lg:hidden' : undefined} />
     {#if codec}
       <PublishButton
         {codec}
@@ -1105,6 +1153,8 @@
   {/if}
 {/snippet}
 
+<svelte:window onkeydown={onWindowKey} />
+
 <TimelineMode
   bind:this={timeline}
   {manifest}
@@ -1121,6 +1171,7 @@
   {actions}
   layers={layerSwitches}
   status={readonly ? undefined : saveState}
+  saveOff={autosave?.status === 'off'}
   notices={sessionNotices}
   policy={store.policy}
   lots={sync.lots}
@@ -1151,6 +1202,8 @@
   onmiss={onMiss}
   onscore={pressScore}
   onstarter={readonly ? undefined : addStarter}
+  {refusal}
+  ondismissrefusal={() => (refusal = null)}
   ondetails={showDetails}
   onactivity={showActivity}
   scoreExpanded={panel !== null && inspectorOpen}

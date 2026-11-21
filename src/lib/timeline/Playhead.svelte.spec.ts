@@ -434,7 +434,7 @@ describe('Playhead', () => {
     expect(document.querySelector('[data-testid=tl-goal-flag]')).toBeNull();
   });
 
-  it('every target is at least 24 px; 44 on a coarse pointer', async () => {
+  it('every target is at least 24 px, the same on every pointer', async () => {
     for (const size of [
       [1280, 900],
       [1280, 720],
@@ -447,8 +447,9 @@ describe('Playhead', () => {
         expect(r.width, el.dataset.testid).toBeGreaterThanOrEqual(24);
         expect(r.height, el.dataset.testid).toBeGreaterThanOrEqual(24);
       }
+      // No coarse-pointer rule enlarges them: one size for mouse and touch.
       for (const el of targets.slice(0, 3))
-        expect(coarseMinHeight(el), el.dataset.testid).toBe('44px');
+        expect(coarseMinHeight(el), el.dataset.testid).toBeNull();
       view.unmount();
     }
   });

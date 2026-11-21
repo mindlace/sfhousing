@@ -8,6 +8,7 @@ import '../../routes/layout.css';
 import type { BrushTool } from '$lib/brush/sampler';
 import { BrushState } from '$lib/brush/state.svelte';
 import PaletteStripHost from './test/PaletteStripHost.svelte';
+import ExplainHost from '$lib/timeline/test/ExplainHost.svelte';
 
 const HINT = 'Erase has no height.';
 
@@ -67,7 +68,7 @@ describe('PaletteStrip Undo', () => {
     expect(page.getByRole('button', { name: 'Undo' }).elements()).toEqual([]);
   });
 
-  it('at 320 px the Brush size pop-over is inside the viewport and its targets are 44 px', async () => {
+  it('at 320 px the Brush size pop-over is inside the viewport and its targets are 24 px', async () => {
     await page.viewport(320, 700);
     setup('paint', { onundo: vi.fn(), canUndo: true });
     await btn('Brush size: 30 m').click();
@@ -82,14 +83,14 @@ describe('PaletteStrip Undo', () => {
     expect(targets.length).toBeGreaterThan(0);
     for (const t of targets) {
       const r = t.getBoundingClientRect();
-      expect(r.width).toBeGreaterThanOrEqual(44);
-      expect(r.height).toBeGreaterThanOrEqual(44);
+      expect(r.width).toBeGreaterThanOrEqual(24);
+      expect(r.height).toBeGreaterThanOrEqual(24);
     }
     expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(320);
   });
 
   for (const tool of ['paint', 'erase'] as const) {
-    it(`at 320 px in ${tool} the strip with Undo is inside the viewport and every target is 44 px`, async () => {
+    it(`at 320 px in ${tool} the strip with Undo is inside the viewport and every target is 24 px`, async () => {
       await page.viewport(320, 700);
       setup(tool, { onundo: vi.fn(), canUndo: true });
       await expect.element(btn('Undo')).toBeVisible();
@@ -98,12 +99,81 @@ describe('PaletteStrip Undo', () => {
       expect(bar.left).toBeGreaterThanOrEqual(8);
       for (const b of document.querySelectorAll('[data-testid="palette-strip"] button')) {
         const r = b.getBoundingClientRect();
-        expect(r.width).toBeGreaterThanOrEqual(44);
-        expect(r.height).toBeGreaterThanOrEqual(44);
+        expect(r.width).toBeGreaterThanOrEqual(24);
+        expect(r.height).toBeGreaterThanOrEqual(24);
       }
       expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(320);
     });
   }
+});
+
+describe('PaletteStrip Redo', () => {
+  beforeEach(async () => {
+    await page.viewport(375, 700);
+  });
+
+  it('with onredo: Redo after Undo, named Redo: {label}, disabled without canRedo', async () => {
+    const onundo = vi.fn();
+    const onredo = vi.fn();
+    setup('paint', {
+      onundo,
+      onredo,
+      canUndo: true,
+      canRedo: false,
+      undoLabel: 'Painted 8 stories',
+      redoLabel: 'Erased'
+    });
+    const undo = btn('Undo: Painted 8 stories');
+    const redo = btn('Redo: Erased');
+    await expect.element(undo).toBeEnabled();
+    await expect.element(redo).toBeDisabled();
+    await expect.element(redo).toHaveAttribute('title', 'Redo: Erased');
+    await expect.element(undo).toHaveAttribute('title', 'Undo: Painted 8 stories');
+    // Order: Undo, Redo, Done.
+    const follows = (a: Element, b: Element) =>
+      (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+    expect(follows(undo.element(), redo.element())).toBe(true);
+    expect(follows(redo.element(), btn('Done').element())).toBe(true);
+  });
+
+  it('without labels the two are named Undo and Redo; Redo calls onredo when enabled', async () => {
+    const onredo = vi.fn();
+    setup('paint', { onundo: vi.fn(), onredo, canRedo: true });
+    await expect.element(btn('Undo')).toBeVisible();
+    await btn('Redo').click();
+    expect(onredo).toHaveBeenCalledOnce();
+  });
+
+  for (const tool of ['paint', 'erase'] as const) {
+    it(`at 320 px in ${tool} the strip with Undo and Redo fits inside the viewport`, async () => {
+      await page.viewport(320, 700);
+      setup(tool, { onundo: vi.fn(), onredo: vi.fn(), canUndo: true, canRedo: true });
+      await expect.element(btn('Redo')).toBeVisible();
+      const bar = page.getByTestId('palette-strip').element().getBoundingClientRect();
+      expect(bar.left).toBeGreaterThanOrEqual(8);
+      expect(bar.right).toBeLessThanOrEqual(312);
+      const buttons = [...document.querySelectorAll('[data-testid="palette-strip"] button')];
+      expect(buttons).toHaveLength(6);
+      const top = buttons[0].getBoundingClientRect().top;
+      for (const b of buttons) {
+        const r = b.getBoundingClientRect();
+        expect(r.width).toBeGreaterThanOrEqual(24);
+        expect(r.height).toBeGreaterThanOrEqual(24);
+        expect(Math.abs(r.top - top)).toBeLessThan(10);
+      }
+      // Done is its check, still named Done.
+      await expect.element(btn('Done')).toBeVisible();
+      expect(btn('Done').element().querySelector('svg')?.getBoundingClientRect().width).toBe(20);
+      expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(320);
+    });
+  }
+
+  it('at 375 px Done keeps its word beside Undo and Redo, inside the viewport', async () => {
+    setup('erase', { onundo: vi.fn(), onredo: vi.fn() });
+    await expect.element(page.getByText('Done', { exact: true })).toBeVisible();
+    const bar = page.getByTestId('palette-strip').element().getBoundingClientRect();
+    expect(bar.right).toBeLessThanOrEqual(375 - 8);
+  });
 });
 
 describe('PaletteStrip at 375 px', () => {
@@ -174,6 +244,29 @@ describe('PaletteStrip at 375 px', () => {
     await expect.element(palette()).not.toBeInTheDocument();
     await expect.element(swatch()).toHaveFocus();
   });
+
+  for (const which of ['height', 'size'] as const) {
+    it(`an Escape an open explanation took leaves the ${which} pop-over open; the next closes it`, async () => {
+      setup();
+      render(ExplainHost, { props: { text: 'An explanation.' } });
+      const opener = which === 'height' ? swatch() : btn('Brush size: 30 m');
+      const pop =
+        which === 'height'
+          ? palette()
+          : page.getByRole('group', { name: 'Brush size', exact: true });
+      await opener.click();
+      await expect.element(pop).toBeVisible();
+      // The pointer at rest on the opener: no explanation yet.
+      await expect.element(page.getByText('An explanation.')).not.toBeInTheDocument();
+      await page.getByTestId('target').hover();
+      await expect.element(page.getByText('An explanation.')).toBeVisible();
+      await userEvent.keyboard('{Escape}');
+      await expect.element(page.getByText('An explanation.')).not.toBeInTheDocument();
+      await expect.element(pop).toBeVisible();
+      await userEvent.keyboard('{Escape}');
+      await expect.element(pop).not.toBeInTheDocument();
+    });
+  }
 
   it('is keyboard-operable: Enter on the swatch opens it, Tab reaches the palette', async () => {
     setup();

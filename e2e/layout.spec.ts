@@ -9,15 +9,20 @@ import { expect, test, type APIRequestContext, type Locator, type Page } from '@
 import { MSG } from '../src/lib/brush/messages';
 import { COPY } from '../src/lib/sharing/copy';
 import { expectNoA11yViolations } from './helpers/a11y';
+import { loginAs } from './helpers/auth';
 import { expectAboutReachable, expectNoFooter, expectPhoneHeaderFits } from './helpers/chrome';
 import {
+  FRAME,
+  FROM,
   PLAN_KEY,
+  TO,
   TOUCH_FROM,
   TOUCH_TO,
   chooseTool,
   gotoEditor,
   headerScore,
   jumpAndIdle,
+  mouseDrag,
   openHeaderMenu,
   ops,
   projectToPage,
@@ -27,6 +32,9 @@ import {
   waitForMap,
   type Win
 } from './helpers/sharing';
+import { widestHeaderText } from './helpers/header-text';
+import { touchLaptop } from './helpers/pointer';
+import { addPolicy, holdPolicy, installPolicyHold, releasePolicy, waitFilled } from './helpers/run';
 
 type Box = { x: number; y: number; width: number; height: number };
 
@@ -48,8 +56,8 @@ async function showZoomHint(page: Page): Promise<void> {
   await expect(statusLine(page)).toHaveText(MSG.zoomIn);
 }
 
-/** The status pill (the status region itself is `display: contents`). */
-const statusPill = (page: Page): Locator => statusLine(page).locator(':scope > span');
+/** The status chip (the status region itself is `display: contents`). */
+const statusPill = (page: Page): Locator => statusLine(page).locator(':scope > *');
 
 /**
  * Seeds an unparsable autosave before the first load, so restore shows N1 (as
@@ -402,12 +410,13 @@ test.describe('mobile', () => {
         await setAttribution(page, expanded);
         await expect(toolbar).toHaveAttribute('aria-expanded', 'false');
         const t = await box(toolbar);
-        expect(t.width).toBeGreaterThanOrEqual(44);
-        expect(t.height).toBeGreaterThanOrEqual(44);
+        expect(t.width).toBeGreaterThanOrEqual(24);
+        expect(t.height).toBeGreaterThanOrEqual(24);
         await expectApart([['key toolbar', toolbar]], others());
         await expectUnobscured(toolbar);
       }
-      // The attribution collapsed: the toolbar sits 10 px above the strip (the plan's measure).
+      // The attribution collapsed: the toolbar sits 10 px above the strip (the plan's measure;
+      // BrushEditor lifts the key over the strip, whose height it reads).
       const t = await box(toolbar);
       const s = await box(strip(page));
       expect(Math.abs(s.y - (t.y + t.height) - 10)).toBeLessThanOrEqual(1);
@@ -429,6 +438,46 @@ test.describe('mobile', () => {
       await handle(page).tap();
       await expect(handle(page)).toHaveAttribute('aria-expanded', 'false');
       await expect(toolbar).toBeVisible();
+    }
+  });
+
+  test('375 and 320 px on /: the strip carries Undo and Redo, clear of the attribution and Reset view', async ({
+    page
+  }) => {
+    for (const width of [375, 320]) {
+      await page.setViewportSize({ width, height: 812 });
+      await gotoEditor(page);
+      await chooseTool(page, 'Paint');
+      await expect(strip(page)).toBeVisible();
+      // Collapsed, as the strip's own test has it (expanded, MapLibre's text spans the map).
+      await setAttribution(page, false);
+      const names = ['Undo', 'Redo', 'Done'];
+      const boxes: Box[] = [];
+      for (const name of names) {
+        const b = strip(page).getByRole('button', { name, exact: true });
+        await expect(b).toBeVisible();
+        boxes.push(await box(b));
+      }
+      // Undo, Redo, Done in that order on the strip's one line, inside the screen.
+      for (let i = 1; i < boxes.length; i++) {
+        expect(boxes[i].x).toBeGreaterThanOrEqual(boxes[i - 1].x + boxes[i - 1].width - 1);
+        expect(Math.abs(boxes[i].y - boxes[0].y)).toBeLessThan(8);
+      }
+      const s = await box(strip(page));
+      expect(s.x).toBeGreaterThanOrEqual(0);
+      expect(s.x + s.width).toBeLessThanOrEqual(width);
+      await expectApart(
+        [['palette strip', strip(page)]],
+        [
+          ['attribution', attribution(page)],
+          ['Reset view', page.getByRole('button', { name: 'Reset view' })]
+        ]
+      );
+      for (const name of names)
+        await expectUnobscured(strip(page).getByRole('button', { name, exact: true }));
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+        width
+      );
     }
   });
 });
@@ -734,6 +783,123 @@ test.describe('account entry', () => {
         await expectNoA11yViolations(page);
       });
     }
+
+    test('/sim at 1024×768 signed in: the handle, the score and every action are visible and clear of each other, axe clean', async ({
+      page
+    }) => {
+      // A fresh 20-character handle (the plan's worst case): parallel runs never mint one user.
+      const handle = `h${crypto.randomUUID().replace(/-/g, '')}`.slice(0, 20);
+      await loginAs(page, `${handle}@example.test`);
+      await page.goto('/sim');
+      await waitFilled(page);
+      const banner = page.getByRole('banner');
+      const items = [
+        banner.getByRole('link', { name: /^SF Housing/ }),
+        banner.getByRole('navigation', { name: 'Steps' }),
+        headerScore(page),
+        banner.getByRole('button', { name: 'Keyboard shortcuts' }),
+        banner.getByRole('button', { name: /^(Publish|Share link)/ }),
+        banner.getByRole('link', { name: `@${handle}` }),
+        banner.getByRole('link', { name: 'About', exact: true })
+      ];
+      for (const item of items) await expect(item).toBeInViewport({ ratio: 1 });
+      await expect(banner.getByRole('button', { name: /^(Undo|Redo)/ })).toHaveCount(0);
+      const boxes = await Promise.all(items.map(box));
+      for (let i = 1; i < boxes.length; i++)
+        expect(boxes[i].x, `item ${i} clear of item ${i - 1}`).toBeGreaterThanOrEqual(
+          boxes[i - 1].x + boxes[i - 1].width - 0.5
+        );
+      const fit = await banner.evaluate((b) => ({ scroll: b.scrollWidth, client: b.clientWidth }));
+      expect(fit.scroll).toBeLessThanOrEqual(fit.client);
+      expect((await box(banner)).height).toBe(48);
+      await expectNoA11yViolations(page);
+    });
+
+    // The widest /sim row: a 20-character handle, the widest headline, "Autosave off" (storage
+    // refused) and "Updating" (a held edit) side by side. A touch laptop adds Undo and Redo; from
+    // lg Shortcuts then leaves the row at every width.
+    for (const [width, touch] of [
+      [1024, false],
+      [1280, false],
+      [1024, true],
+      [1280, true]
+    ] as const) {
+      test(`/sim at ${width} signed in${touch ? ', a touch laptop' : ''}: Autosave off and Updating together, the widest row, nothing overlaps or clips`, async ({
+        page
+      }) => {
+        await page.setViewportSize({ width, height: 800 });
+        if (touch) await touchLaptop(page);
+        await page.addInitScript(() => {
+          Storage.prototype.setItem = () => {
+            throw new DOMException('refused', 'QuotaExceededError');
+          };
+        });
+        await installPolicyHold(page);
+        const handle = `h${crypto.randomUUID().replace(/-/g, '')}`.slice(0, 20);
+        await loginAs(page, `${handle}@example.test`);
+        await page.goto('/sim');
+        await expect(page.locator('html')).toHaveAttribute('data-hydrated', '');
+        await waitFilled(page);
+        await holdPolicy(page);
+        await addPolicy(page, 'Zoning', 'Transit rule');
+        const banner = page.getByRole('banner');
+        const chip = banner.getByRole('button', { name: 'Autosave off', exact: true });
+        const updating = banner.getByTestId('tl-status').getByRole('button', { name: 'Updating' });
+        await expect(chip).toBeVisible();
+        await expect(updating).toBeVisible();
+        await widestHeaderText(page);
+        await expect(headerScore(page)).toHaveAccessibleName(/^12,345 homes by Mar 2066$/);
+        const shortcuts = banner.getByRole('button', { name: 'Keyboard shortcuts' });
+        const history = [
+          banner.getByRole('button', { name: /^Undo/ }),
+          banner.getByRole('button', { name: /^Redo/ })
+        ];
+        if (touch) for (const h of history) await expect(h).toBeVisible();
+        else await expect(history[0]).toHaveCount(0);
+        if (touch) await expect(shortcuts).toHaveCount(0);
+        else await expect(shortcuts).toBeVisible();
+        const items: [string, Locator][] = [
+          ['name', banner.getByRole('link', { name: /^SF Housing/ })],
+          ['steps', banner.getByRole('navigation', { name: 'Steps' })],
+          ['chip', chip],
+          ['Updating', updating],
+          ['score', banner.getByTestId('score-box')],
+          ...(touch
+            ? (['Undo', 'Redo'] as const).map((n, i) => [n, history[i]] as [string, Locator])
+            : []),
+          ...(touch ? [] : [['Shortcuts', shortcuts] as [string, Locator]]),
+          ['Publish', banner.getByRole('button', { name: /^(Publish|Share link)/ })],
+          ['handle', banner.getByRole('link', { name: `@${handle}` })],
+          ['About', banner.getByRole('link', { name: 'About', exact: true })]
+        ];
+        for (const [name, item] of items)
+          await expect(item, `${name} on screen`).toBeInViewport({ ratio: 1 });
+        const boxes = await Promise.all(items.map(([, l]) => box(l)));
+        for (let i = 1; i < boxes.length; i++)
+          expect(boxes[i].x, `${items[i][0]} clear of ${items[i - 1][0]}`).toBeGreaterThanOrEqual(
+            boxes[i - 1].x + boxes[i - 1].width - 0.5
+          );
+        // Nothing clipped: each item's content fits its box (the handle truncates by design).
+        for (const [name, item] of items) {
+          if (name === 'handle' || name === 'steps') continue;
+          const fit = await item.evaluate((el) => ({ s: el.scrollWidth, c: el.clientWidth }));
+          expect(fit.s, `${name} clips`).toBeLessThanOrEqual(fit.c + 0.5);
+        }
+        const fit = await banner.evaluate((b) => ({
+          scroll: b.scrollWidth,
+          client: b.clientWidth
+        }));
+        expect(fit.scroll).toBeLessThanOrEqual(fit.client);
+        expect((await box(banner)).height).toBe(48);
+        const score = boxes[4];
+        const off = score.x + score.width / 2 - width / 2;
+        test.info().annotations.push({
+          type: 'score off centre',
+          description: `${off.toFixed(1)} px`
+        });
+        await releasePolicy(page);
+      });
+    }
   });
 
   test.describe('mobile', () => {
@@ -758,5 +924,118 @@ test.describe('account entry', () => {
         await expectNoA11yViolations(page);
       });
     }
+  });
+});
+
+// ---- several messages over the map at once (Review Focus 3) -----------------------------------
+
+const CHUNK_50_25 = '**/data/fixture-0/parcels/50_25.json';
+const BUILDINGS_FILE = '**/data/fixture-0/buildings.pmtiles';
+const parcelsChip = (page: Page): Locator =>
+  page.getByRole('status').filter({ hasText: "Some parcels didn't load —" });
+const buildingsCard = (page: Page): Locator =>
+  page.getByRole('status').filter({ hasText: "Existing buildings couldn't load." });
+
+/** `/` with both map failures (the parcels chunk and the buildings file 500) and a stroke's chip. */
+async function twoFailuresAndAStroke(page: Page, isMobile: boolean, width: number): Promise<void> {
+  await page.route(CHUNK_50_25, (r) => r.fulfill({ status: 500 }));
+  await page.route(BUILDINGS_FILE, (r) => r.fulfill({ status: 500 }));
+  await gotoEditor(page);
+  await jumpAndIdle(page);
+  if (isMobile) {
+    await chooseTool(page, 'Paint');
+    await jumpAndIdle(page);
+    const cdp = await page.context().newCDPSession(page);
+    await touchDrag(
+      cdp,
+      await projectToPage(page, TOUCH_FROM),
+      await projectToPage(page, TOUCH_TO)
+    );
+  } else {
+    // From 768 the dock takes the map's left: centre the stroke in the map right of it.
+    if (width < 1024) await jumpAndIdle(page, { ...FRAME, center: [-122.4201, 37.76014] });
+    await mouseDrag(page, FROM, TO);
+  }
+  await expect.poll(() => ops(page)).toBe(1);
+  await expect(parcelsChip(page)).toBeVisible();
+  await expect(buildingsCard(page)).toBeVisible();
+  await expect(page.getByTestId('stroke-chip')).toBeVisible();
+}
+
+test.describe('messages over the map', () => {
+  for (const width of [375, 768, 1280]) {
+    test(`/: two failures and a stroke chip: no box overlaps another, at ${width}`, async ({
+      page,
+      isMobile
+    }) => {
+      // eslint-disable-next-line playwright/no-skipped-test
+      test.skip(isMobile !== (width === 375), 'the mobile project is 375 px wide');
+      await page.setViewportSize({ width, height: 800 });
+      await twoFailuresAndAStroke(page, isMobile, width);
+      // The failures stack: the buildings card starts under the parcels chip.
+      const p = await box(parcelsChip(page));
+      expect((await box(buildingsCard(page))).y).toBeGreaterThanOrEqual(p.y + p.height);
+      const messages: [string, Locator][] = [
+        ['parcels chip', parcelsChip(page)],
+        ['buildings card', buildingsCard(page)],
+        ['stroke chip', page.getByTestId('stroke-chip')]
+      ];
+      // Each message against the others, the attribution and the map toolbar.
+      for (let i = 0; i < messages.length; i++) {
+        await expectApart(
+          [messages[i]],
+          [
+            ...messages.slice(i + 1),
+            ['attribution', attribution(page)],
+            ['Key', page.getByTestId('map-key-toggle')],
+            ['Layers', page.getByTestId('map-layers-toggle')]
+          ]
+        );
+      }
+      // Both Retry buttons are pressable where they are drawn.
+      for (const [, loc] of messages.slice(0, 2)) await expectUnobscured(loc.getByRole('button'));
+    });
+  }
+
+  test('375: the stroke chip never covers the Autosave off popover', async ({ page, isMobile }) => {
+    // eslint-disable-next-line playwright/no-skipped-test
+    test.skip(!isMobile, 'mobile only');
+    await page.addInitScript(() => {
+      Storage.prototype.setItem = () => {
+        throw new DOMException('refused', 'QuotaExceededError');
+      };
+    });
+    await gotoEditor(page);
+    await jumpAndIdle(page);
+    await chooseTool(page, 'Paint');
+    await jumpAndIdle(page);
+    const cdp = await page.context().newCDPSession(page);
+    await touchDrag(
+      cdp,
+      await projectToPage(page, TOUCH_FROM),
+      await projectToPage(page, TOUCH_TO)
+    );
+    await expect.poll(() => ops(page)).toBe(1);
+    const off = page
+      .getByRole('banner')
+      .getByRole('button', { name: COPY.autosaveOff, exact: true });
+    await off.click();
+    const pop = page.getByRole('banner').getByText(COPY.n4);
+    await expect(pop).toBeVisible();
+    const chip = page.getByTestId('stroke-chip');
+    await expect(chip).toBeVisible();
+    // The chip takes no presses, so hit testing skips it: let it take them, then every point of
+    // the popover's text must hit the popover (painted on top), not the chip.
+    await chip.evaluate((el) => (el.style.pointerEvents = 'auto'));
+    const hits = await pop.evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      const pts: [number, number][] = [];
+      for (const fx of [0.1, 0.5, 0.9]) for (const fy of [0.1, 0.5, 0.9]) pts.push([fx, fy]);
+      return pts.map(([fx, fy]) => {
+        const top = document.elementFromPoint(r.left + r.width * fx, r.top + r.height * fy);
+        return !!top && el.contains(top);
+      });
+    });
+    expect(hits.every(Boolean), JSON.stringify(hits)).toBe(true);
   });
 });

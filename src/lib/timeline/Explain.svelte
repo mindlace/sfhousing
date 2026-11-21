@@ -4,6 +4,7 @@
   // wrapper); closes on Escape, on focus leaving both, and on a second tap. The text exists only
   // while open. From md it is a popover beside the target, below md an inline line under it.
   import type { Snippet } from 'svelte';
+  import { TARGET } from '$lib/shell/ui';
 
   interface Props {
     /** The explanation: short, what the reader cannot infer. */
@@ -12,15 +13,34 @@
     as?: 'button' | 'wrap';
     /** Accessible name of the button (default: the child's text). */
     label?: string;
+    /**
+     * Wrap mode: whether the open text describes the child (default true). False when the child
+     * carries the same words as a description of its own at rest, so they are read once.
+     */
+    describes?: boolean;
+    /**
+     * Never opens (and closes if open), with the same elements in place: a child that only
+     * sometimes needs explaining keeps its node, so focus on it survives the switch.
+     */
+    off?: boolean;
     children: Snippet;
   }
 
-  let { text, as = 'button', label = undefined, children }: Props = $props();
+  let {
+    text,
+    as = 'button',
+    label = undefined,
+    describes = true,
+    off = false,
+    children
+  }: Props = $props();
 
   const id = $props.id();
   const textId = `${id}-explain`;
 
-  let open = $state(false);
+  let opened = $state(false);
+  /** Shown: opened, and not switched off. */
+  const open = $derived(opened && !off);
   let wrapper: HTMLElement | undefined = $state();
   // Whether the panel was open when a touch or pen press began (it opens on focus in between).
   let openAtPress = false;
@@ -36,40 +56,49 @@
   const withinFocus = () => !!wrapper && wrapper.contains(document.activeElement);
 
   function onenter(e: PointerEvent) {
-    if (e.pointerType === 'mouse' && !dismissed) open = true;
+    if (e.pointerType === 'mouse' && !dismissed) opened = true;
   }
   function onmove(e: PointerEvent) {
     if (e.pointerType !== 'mouse' || !dismissed) return;
     dismissed = false;
-    open = true;
+    opened = true;
   }
   function onleave(e: PointerEvent) {
     if (e.pointerType !== 'mouse') return;
     dismissed = false;
-    if (!withinFocus()) open = false;
+    if (!withinFocus()) opened = false;
   }
   function onfocusin() {
     dismissed = false;
-    open = true;
+    opened = true;
   }
   function onfocusout(e: FocusEvent) {
     const next = e.relatedTarget as Node | null;
-    if (!next || !wrapper?.contains(next)) open = false;
+    if (!next || !wrapper?.contains(next)) opened = false;
   }
-  // On the window: Escape closes however it opened, including by hover with focus elsewhere.
+  /** Closes on Escape and marks the key handled, so no other Escape handler acts on it too. */
+  function dismiss(e: KeyboardEvent) {
+    opened = false;
+    dismissed = true;
+    e.preventDefault();
+  }
+  // On the window, in the capture phase: Escape closes however it opened, including by hover with
+  // focus elsewhere, before any bubbling window handler (a card, the Menu, the dock) sees it; they
+  // skip a key already handled (`defaultPrevented`). A key from inside is left to `onkeydown`.
   function onwindowkeydown(e: KeyboardEvent) {
-    if (e.key === 'Escape' && open) {
-      open = false;
-      dismissed = true;
-      e.stopPropagation();
-    }
+    if (e.key !== 'Escape' || !open) return;
+    if (e.target instanceof Node && wrapper?.contains(e.target)) return;
+    dismiss(e);
   }
+  $effect(() => {
+    window.addEventListener('keydown', onwindowkeydown, { capture: true });
+    return () => window.removeEventListener('keydown', onwindowkeydown, { capture: true });
+  });
   // Within it: an open explanation is the innermost layer, so Escape closes it and goes no further
   // (a panel or sheet around it keeps its own Escape for the next press).
   function onkeydown(e: KeyboardEvent) {
     if (e.key !== 'Escape' || !open) return;
-    open = false;
-    dismissed = true;
+    dismiss(e);
     e.stopPropagation();
   }
   // A native listener on the wrapper, not a delegated one: it runs before any container's handler,
@@ -87,14 +116,14 @@
   // Wrap mode has no second-tap close: a tap there belongs to the focusable child's own action.
   function onclick(e: MouseEvent) {
     if (as !== 'button') return;
-    if (e.detail === 0) open = !open;
-    else if (pressKind === 'mouse') open = true;
-    else open = !openAtPress;
+    if (e.detail === 0) opened = !open;
+    else if (pressKind === 'mouse') opened = true;
+    else opened = !openAtPress;
   }
 
-  // Wrap mode: the focusable child gets the description while open.
+  // Wrap mode: the focusable child gets the description while open (unless it describes itself).
   $effect(() => {
-    if (as !== 'wrap' || !wrapper) return;
+    if (as !== 'wrap' || !describes || !wrapper) return;
     const el = wrapper.querySelector<HTMLElement>(
       'a[href], button, input, select, textarea, [tabindex]'
     );
@@ -111,8 +140,6 @@
   });
 </script>
 
-<svelte:window onkeydown={onwindowkeydown} />
-
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <span
   bind:this={wrapper}
@@ -127,7 +154,7 @@
   {#if as === 'button'}
     <button
       type="button"
-      class="cursor-help text-left"
+      class="{TARGET} cursor-help text-left"
       aria-label={label}
       aria-expanded={open}
       aria-describedby={open ? textId : undefined}
@@ -139,6 +166,8 @@
     {@render children()}
   {/if}
   {#if open}
+    <!-- From md the text is a pop-over drawn as SURFACE_TIP (src/lib/shell/ui.ts), each class with
+         `md:`; below md a muted line under the target. ui.spec.ts keeps the two in step. -->
     <span
       id={textId}
       role="tooltip"

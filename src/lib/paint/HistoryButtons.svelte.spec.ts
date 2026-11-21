@@ -36,14 +36,14 @@ describe('HistoryButtons', () => {
     await expect.element(page.getByRole('button', { name: 'Redo', exact: true })).toBeDisabled();
   });
 
-  it('still offers Keyboard shortcuts after Undo and Redo on a fine pointer', async () => {
+  it('is Undo then Redo only: the page puts Keyboard shortcuts beside it', async () => {
     render(HistoryButtons, { props: props() });
-    const shortcuts = page.getByRole('button', { name: 'Keyboard shortcuts' });
-    await expect.element(shortcuts).toBeVisible();
-    const undo = page.getByRole('button', { name: /^Undo/ }).element();
+    const undo = page.getByRole('button', { name: /^Undo/ });
+    await expect.element(undo).toBeVisible();
     const redo = page.getByRole('button', { name: /^Redo/ }).element();
-    const sc = shortcuts.element();
-    expect(undo.compareDocumentPosition(redo) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(redo.compareDocumentPosition(sc) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(
+      undo.element().compareDocumentPosition(redo) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+    expect(page.getByRole('button').elements()).toHaveLength(2);
   });
 });

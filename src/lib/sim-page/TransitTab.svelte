@@ -119,7 +119,7 @@
       <button
         type="button"
         aria-pressed={fzpSelected}
-        class="flex min-h-11 w-full items-center gap-2 rounded-md px-1 text-left font-semibold hover:bg-surface-raised dark:hover:bg-surface-dark-raised"
+        class="flex min-h-6 w-full items-center gap-2 rounded-md px-1 text-left font-semibold hover:bg-surface-raised dark:hover:bg-surface-dark-raised"
         onclick={() => onselect(fzpSelected ? null : { kind: 'fzp' })}
       >
         <span
@@ -154,7 +154,7 @@
       data-brush-add
       aria-disabled={why !== null ? 'true' : undefined}
       aria-describedby={why ? `${uid}-why` : undefined}
-      class="min-h-11 rounded-md border border-control-line bg-surface px-3 font-medium text-ink hover:bg-surface-raised aria-disabled:opacity-40 dark:border-control-line-dark dark:bg-surface-dark dark:text-ink-dark dark:hover:bg-surface-dark-raised"
+      class="min-h-6 min-w-6 rounded-md border border-control-line bg-surface px-3 font-medium text-ink hover:bg-surface-raised aria-disabled:opacity-40 dark:border-control-line-dark dark:bg-surface-dark dark:text-ink-dark dark:hover:bg-surface-dark-raised"
       onclick={add}
       ><span class="sr-only">Add</span> <span aria-hidden="true">+</span> Transit layer</button
     >

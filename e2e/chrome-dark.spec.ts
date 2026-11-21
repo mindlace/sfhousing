@@ -321,7 +321,7 @@ test("a transit rule's editor at a bound, then the plan's row, has no axe violat
   // The plan's row selected: its read-only view (a phone's editor sheet closes first).
   await editor(page).getByRole('button', { name: 'Close editor' }).click();
   await openKind(page, 'Zoning');
-  const plan = page.getByRole('button', { name: 'Current law, whole window' });
+  const plan = page.getByRole('button', { name: 'In force, Current law, whole window' });
   await plan.last().click();
   await expect(editor(page).getByRole('heading', { name: 'Current law' })).toBeVisible();
   await expectNoA11yViolations(page, {
@@ -388,7 +388,7 @@ test("the shared view's read-only editor has no axe violations in dark", async (
   await gotoSharedPolicy(page);
   await openKind(page, 'Zoning');
   await page
-    .getByRole('button', { name: /^Transit rule, / })
+    .getByRole('button', { name: /, Transit rule, / })
     .last()
     .click();
   await expect(editor(page).getByRole('heading', { name: 'Transit rule' })).toBeVisible();
@@ -457,4 +457,109 @@ test('the pill stack showing a notice has no axe violations in dark', async ({ p
     'Part of the simulation stopped.'
   );
   await expectNoA11yViolations(page, { include: ['[data-testid=fzp-notices]'] });
+});
+
+// The dialogs and pop-overs on the shared surfaces (ui.ts): none is white in dark.
+const SURFACE_DARK = 'rgb(28, 29, 31)';
+
+test('the Publish dialog has no axe violations in dark and draws on surface-dark', async ({
+  page,
+  isMobile
+}) => {
+  await gotoEditor(page);
+  await paintOnce(page, isMobile);
+  await openHeaderMenu(page);
+  await page.getByTestId('publish-open').click();
+  const dialog = page.getByRole('dialog', { name: COPY.dialogHeading });
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toHaveCSS('background-color', SURFACE_DARK);
+  await expectNoA11yViolations(page, { include: ['dialog[open]'] });
+});
+
+test('the Autosave off popover has no axe violations in dark', async ({ page, isMobile }) => {
+  await page.addInitScript(() => {
+    Storage.prototype.setItem = () => {
+      throw new DOMException('refused', 'QuotaExceededError');
+    };
+  });
+  await gotoEditor(page);
+  await paintOnce(page, isMobile);
+  const off = page.getByRole('banner').getByRole('button', { name: COPY.autosaveOff, exact: true });
+  await expect(off).toBeVisible();
+  await off.click();
+  const pop = page.getByRole('banner').getByText(COPY.n4);
+  await expect(pop).toBeVisible();
+  await expect(pop).toHaveCSS('background-color', SURFACE_DARK);
+  await expectNoA11yViolations(page, { include: ['[data-testid=save-state]'] });
+});
+
+test('the Sources dialog has no axe violations in dark and draws on surface-dark', async ({
+  page
+}) => {
+  await gotoSim(page);
+  await page.getByTestId('score-bar').click();
+  const details = page.getByTestId('tl-details');
+  await expect(details).toBeVisible();
+  const sources = details.getByTestId('fzp-sources');
+  await sources.locator(':scope > summary').click();
+  await expect(sources).toHaveAttribute('open', '');
+  await details.getByRole('button', { name: 'Where these numbers come from' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Where these numbers come from' });
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toHaveCSS('background-color', SURFACE_DARK);
+  // Its scroller's native scrollbar follows the dark theme.
+  const scroller = dialog.locator('.overflow-y-auto').first();
+  await expect(scroller).toHaveCSS('color-scheme', 'dark');
+  await expectNoA11yViolations(page, { include: ['dialog[open]'] });
+});
+
+test('color-scheme follows the theme on the map pages, and a document page stays light', async ({
+  page
+}) => {
+  await gotoSim(page);
+  // The map page's shell (its scrolling column and sheet inside `main`) declares dark.
+  await expect(page.locator('main')).toHaveCSS('color-scheme', 'dark');
+  // /about is not themed dark: its canvas and text keep the light scheme.
+  await page.goto('/about');
+  await expect(page.locator('main')).toHaveCSS('color-scheme', 'normal');
+  await expect(page.locator('html')).toHaveCSS('color-scheme', 'normal');
+});
+
+test("the shared view's banner and its Remix dialog have no axe violations in dark", async ({
+  page,
+  request,
+  isMobile
+}) => {
+  const res = await request.post('/api/plans', {
+    data: smallText,
+    headers: { 'content-type': 'application/json' }
+  });
+  expect(res.ok()).toBe(true);
+  const { id } = (await res.json()) as { id: string };
+  // Local work to replace, so Remix asks first.
+  await gotoEditor(page);
+  await paintOnce(page, isMobile);
+  await expect
+    .poll(() =>
+      page.evaluate((k) => {
+        const raw = localStorage.getItem(k);
+        if (!raw) return 0;
+        const record = JSON.parse(raw) as { plan: string };
+        return (JSON.parse(record.plan) as { ops: unknown[] }).ops.length;
+      }, PLAN_KEY)
+    )
+    .toBe(1);
+
+  await page.goto(`/p/${id}`);
+  const banner = page.getByRole('region', { name: 'Shared plan' });
+  await expect(banner).toBeVisible();
+  // Hydration wires the Remix handler; wait for the map so the click is not lost to SSR markup.
+  await waitForMap(page);
+  await expect(banner).toHaveCSS('background-color', SURFACE_DARK);
+  await expectNoA11yViolations(page, { include: ['section[aria-label="Shared plan"]'] });
+  await banner.getByRole('button', { name: 'Remix' }).click();
+  const confirm = page.getByRole('dialog');
+  await expect(confirm).toContainText('(1 strokes)');
+  await expect(confirm).toHaveCSS('background-color', SURFACE_DARK);
+  await expectNoA11yViolations(page, { include: ['dialog[open]'] });
 });

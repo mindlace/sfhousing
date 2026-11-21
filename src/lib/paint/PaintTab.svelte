@@ -105,8 +105,7 @@
   const LABEL = 'text-xs font-semibold text-ink-muted dark:text-ink-dark-muted';
 
   const erase = PAINT_TOOLS.find((t) => t.id === 'erase')!;
-  const btn =
-    'min-h-6 min-w-6 rounded-md px-2 font-semibold underline pointer-coarse:min-h-11 pointer-coarse:min-w-11';
+  const btn = 'min-h-6 min-w-6 rounded-md px-2 font-semibold underline';
 </script>
 
 <div class="flex flex-col gap-3 text-sm text-ink dark:text-ink-dark">
@@ -125,7 +124,7 @@
             aria-checked={tool === t.id}
             tabindex={t.id === tabStop ? 0 : -1}
             disabled={!enabled(t.id)}
-            class="paint-tool flex min-h-11 min-w-11 items-center gap-1.5 rounded-md border border-control-line bg-surface px-2 text-ink enabled:hover:bg-surface-raised disabled:opacity-40 dark:border-control-line-dark dark:bg-surface-dark dark:text-ink-dark dark:enabled:hover:bg-surface-dark-raised"
+            class="paint-tool flex min-h-6 min-w-6 items-center gap-1.5 rounded-md border border-control-line bg-surface px-2 text-ink enabled:hover:bg-surface-raised disabled:opacity-40 dark:border-control-line-dark dark:bg-surface-dark dark:text-ink-dark dark:enabled:hover:bg-surface-dark-raised"
             onclick={() => choose(t.id)}
             onkeydown={(e) => onRadioKey(e, t.id)}
           >
@@ -179,7 +178,7 @@
             data-paint-row={row.id}
             aria-pressed={isSel}
             aria-label="{name} · {meta}"
-            class="flex min-h-11 w-full items-center gap-2 rounded-md px-1 text-left hover:bg-surface-raised dark:hover:bg-surface-dark-raised"
+            class="flex min-h-6 w-full items-center gap-2 rounded-md px-1 text-left hover:bg-surface-raised dark:hover:bg-surface-dark-raised"
             onclick={() => onselect(isSel ? null : row.id)}
           >
             <!-- The same neutral ink tile as the palette: the height, or an eraser. -->

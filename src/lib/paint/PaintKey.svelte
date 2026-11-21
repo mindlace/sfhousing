@@ -78,7 +78,7 @@
   }
 
   const ROW =
-    'flex min-h-6 w-full items-center gap-2 rounded-md px-1 text-left pointer-coarse:min-h-11 hover:bg-surface-raised data-shown:bg-surface-raised dark:hover:bg-surface-dark-raised dark:data-shown:bg-surface-dark-raised';
+    'flex min-h-6 w-full items-center gap-2 rounded-md px-1 text-left hover:bg-surface-raised data-shown:bg-surface-raised dark:hover:bg-surface-dark-raised dark:data-shown:bg-surface-dark-raised';
 </script>
 
 <p id="{id}-types" class="text-xs font-semibold">{KEY_COPY.types}</p>

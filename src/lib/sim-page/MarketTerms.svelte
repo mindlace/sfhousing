@@ -109,10 +109,9 @@
   }
 
   const muted = 'text-ink-muted dark:text-ink-dark-muted';
-  const link =
-    'min-h-6 min-w-6 rounded-md px-1 font-semibold underline aria-disabled:opacity-40 pointer-coarse:min-h-11 pointer-coarse:min-w-11';
+  const link = 'min-h-6 min-w-6 rounded-md px-1 font-semibold underline aria-disabled:opacity-40';
   const input =
-    'min-h-6 w-24 rounded-md border border-control-line bg-surface px-2 text-ink aria-invalid:border-red-800 dark:border-control-line-dark dark:bg-surface-dark dark:text-ink-dark dark:aria-invalid:border-red-300 pointer-coarse:min-h-11';
+    'min-h-6 w-24 rounded-md border border-control-line bg-surface px-2 text-ink aria-invalid:border-red-800 dark:border-control-line-dark dark:bg-surface-dark dark:text-ink-dark dark:aria-invalid:border-red-300';
 </script>
 
 {#snippet rateField(r: Row, p: ReturnType<typeof pendingOf>)}

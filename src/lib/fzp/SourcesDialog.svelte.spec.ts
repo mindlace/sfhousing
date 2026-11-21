@@ -246,18 +246,29 @@ describe('targets and multi-phase', () => {
   });
 });
 
+describe('surface', () => {
+  it('draws on the dialog surface tokens, with dark partners', async () => {
+    await setup();
+    await openIt();
+    const cls = [...dialog().classList];
+    for (const c of ['bg-surface', 'dark:bg-surface-dark', 'text-ink', 'dark:text-ink-dark'])
+      expect(cls, c).toContain(c);
+    expect(cls).not.toContain('bg-white');
+    expect(getComputedStyle(dialog()).backgroundColor).toBe('rgb(255, 255, 255)');
+  });
+});
+
 describe('target sizes (spec §4.3)', () => {
-  it('links and Close are at least 24 px tall and carry the 44 px coarse-pointer variant', async () => {
+  it('links and Close are at least 24 px tall on every pointer, with no coarse-pointer variant', async () => {
     await setup();
     await openIt();
     const controls = [...dialog().querySelectorAll<HTMLElement>('a[href], button')];
     expect(controls.length).toBeGreaterThan(5);
     for (const el of controls) {
       expect(el.getBoundingClientRect().height, el.outerHTML).toBeGreaterThanOrEqual(24);
-      expect(
-        el.className.includes('pointer-coarse:min-h-11') || el.className.includes('min-h-11'),
-        el.outerHTML
-      ).toBe(true);
+      // One size on every pointer: the 24 px minimum, nothing larger on a coarse one.
+      expect(el.className.split(/\s+/), el.outerHTML).toContain('min-h-6');
+      expect(el.className, el.outerHTML).not.toMatch(/pointer-coarse:/);
     }
   });
 });

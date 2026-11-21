@@ -145,9 +145,9 @@
   }
 
   const select =
-    'min-h-6 rounded-md border border-control-line bg-surface px-1 text-ink disabled:opacity-40 dark:border-control-line-dark dark:bg-surface-dark dark:text-ink-dark pointer-coarse:min-h-11';
+    'min-h-6 min-w-6 rounded-md border border-control-line bg-surface px-1 text-ink disabled:opacity-40 dark:border-control-line-dark dark:bg-surface-dark dark:text-ink-dark';
   const btn =
-    'min-h-6 min-w-6 rounded-md border border-control-line px-2 font-semibold text-ink hover:bg-surface-raised aria-disabled:opacity-40 dark:border-control-line-dark dark:text-ink-dark dark:hover:bg-surface-dark-raised pointer-coarse:min-h-11';
+    'min-h-6 min-w-6 rounded-md border border-control-line px-2 font-semibold text-ink hover:bg-surface-raised aria-disabled:opacity-40 dark:border-control-line-dark dark:text-ink-dark dark:hover:bg-surface-dark-raised';
 </script>
 
 <section aria-labelledby="{uid}-h" class="flex flex-col gap-2 text-sm text-ink dark:text-ink-dark">
@@ -164,7 +164,7 @@
           <button
             type="button"
             aria-pressed={i === span}
-            class="min-h-6 rounded-md px-1 text-left tabular-nums hover:bg-surface-raised aria-pressed:bg-accent-tint aria-pressed:font-semibold dark:hover:bg-surface-dark-raised dark:aria-pressed:bg-accent-dark/30 pointer-coarse:min-h-11"
+            class="min-h-6 min-w-6 rounded-md px-1 text-left tabular-nums hover:bg-surface-raised aria-pressed:bg-accent-tint aria-pressed:font-semibold dark:hover:bg-surface-dark-raised dark:aria-pressed:bg-accent-dark/30"
             onclick={() => onspan(i)}>{v.fromText} to {v.toText}</button
           >
         {/if}

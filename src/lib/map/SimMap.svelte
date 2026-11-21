@@ -287,6 +287,17 @@
    * footprint, never per frame.
    */
   let glowInset = 0;
+  /** The page's part (`setGlowInset`): what covers the map's top and right. */
+  let pageInset = { top: 0, right: 0 };
+  /**
+   * A top glow's centre sits this far below what covers the top (the header line, the notices),
+   * so it reads as a glow at the map's edge, not one under the header. CSS px.
+   */
+  const GLOW_TOP_GAP = 12;
+  /** The one write of the glows' inset [top, right, bottom, left]: the page's and the footprint's. */
+  function writeEdgeInset(t = live?.timeline): void {
+    t?.setEdgeInset([pageInset.top + GLOW_TOP_GAP, pageInset.right, glowInset, 0]);
+  }
   let footprintGone = false;
 
   function publishFootprint(inline: number, block: number): void {
@@ -318,7 +329,7 @@
     const block = Math.max(f.block, bottomInset);
     publishFootprint(f.inline, block);
     glowInset = Math.min(block, box.height / 4);
-    live?.timeline?.setEdgeInset([0, 0, glowInset, 0]);
+    writeEdgeInset();
   }
 
   function observeFootprint(map: MapLibreMap): void {
@@ -338,6 +349,36 @@
     fpObserver?.disconnect();
     fpObserver = null;
   }
+
+  // ---- the failure column's bottom (docs/dev/map-interfaces.md) ---------------------------------
+  const CHIPS_BOTTOM = '--map-chips-bottom';
+  let chipsCol = $state<HTMLElement>();
+
+  /**
+   * Publishes `--map-chips-bottom` on :root and the map root: integer px from the map root's top
+   * to the failure column's bottom, `0px` while neither failure shows. A ResizeObserver on the
+   * column's border box measures it: its top offset is padding, so a move with the notices
+   * resizes it too. Never measured on map move.
+   */
+  $effect(() => {
+    const col = chipsCol;
+    const r = root;
+    if (!col || !r) return;
+    const publish = () => {
+      const shown = col.childElementCount > 0;
+      const px = shown
+        ? Math.ceil(col.getBoundingClientRect().bottom - r.getBoundingClientRect().top)
+        : 0;
+      for (const el of [document.documentElement, r]) el.style.setProperty(CHIPS_BOTTOM, `${px}px`);
+    };
+    publish();
+    const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(publish);
+    ro?.observe(col, { box: 'border-box' });
+    return () => {
+      ro?.disconnect();
+      for (const el of [document.documentElement, r]) el.style.removeProperty(CHIPS_BOTTOM);
+    };
+  });
 
   export function getMap(): MapLibreMap | null {
     return live?.map ?? null;
@@ -407,6 +448,16 @@
     live?.timeline?.setBarMode(mode);
   }
 
+  /**
+   * The page's part of the glows' inset (top and right, CSS px); SimMap adds its bottom. Kept like
+   * the day; a repeated value writes nothing.
+   */
+  export function setGlowInset(o: { top: number; right: number }): void {
+    if (o.top === pageInset.top && o.right === pageInset.right) return;
+    pageInset = { top: o.top, right: o.right };
+    writeEdgeInset();
+  }
+
   const handle: SimMapHandle = {
     applyGenerated,
     setChunkStatus,
@@ -419,7 +470,8 @@
     setTime,
     setTimelineLookups,
     setHalos,
-    setBarMode
+    setBarMode,
+    setGlowInset
   };
 
   // ---- effects ----------------------------------------------------------------------------------
@@ -790,7 +842,7 @@
       firstSymbolLayerId(map.getStyle())
     );
     l.timeline = timeline;
-    timeline.setEdgeInset([0, 0, glowInset, 0]);
+    writeEdgeInset(timeline);
     l.timelinePart = TIMELINE_PART_LAYER;
     watchCompileErrors(l);
     overlay.setProps({
@@ -1383,46 +1435,54 @@
   {/if}
   <p class="sr-only" aria-live="polite">{loadingSlow ? 'Loading buildings…' : ''}</p>
 
-  <!-- The failure chips sit at the top centre of the map the dock leaves uncovered (`--dock-w`,
-       published by the Dock from md, as the notice pills centre), below the page's notice pills
-       when they overlay the map (`--notice-pills-bottom`, published by NoticePills from md; see
-       map-interfaces.md). -->
-  {#if chunkError && mapState === 'ready'}
-    <div
-      role="status"
-      class="sim-map-panel sim-map-chip absolute z-10 flex w-max -translate-x-1/2 items-center gap-1 rounded-full pl-4 text-sm"
-      style:top="calc(var(--notice-pills-bottom, 0px) + 0.5rem)"
-    >
-      <span>Some parcels didn't load —</span>
-      <button
-        type="button"
-        class="min-h-11 min-w-11 rounded-full px-3 font-semibold underline"
-        onclick={() => onRetryChunks?.()}>Retry</button
+  <!-- The failure messages: one column at the top centre of the map the dock leaves uncovered
+       (`--dock-w`, published by the Dock from md, as the notice stack centres), below the page's
+       notices when they overlay the map (`--notice-pills-bottom`, published by NoticePills from
+       md), so neither covers the other. Parcels' one line is a chip, buildings' sentence a card;
+       both keep the map palette (/lesscars shares them). The column's top offset is its padding,
+       so its border box (which publishes `--map-chips-bottom`) moves with the notices; see
+       map-interfaces.md. -->
+  <div
+    bind:this={chipsCol}
+    data-testid="sim-map-chips"
+    class="sim-map-chip pointer-events-none absolute top-0 z-10 flex w-max -translate-x-1/2 flex-col items-center gap-2"
+    style:padding-top="calc(var(--notice-pills-bottom, 0px) + 0.5rem)"
+  >
+    {#if chunkError && mapState === 'ready'}
+      <div
+        role="status"
+        class="sim-map-panel pointer-events-auto flex w-max max-w-full items-center gap-1 rounded-full pl-4 text-sm"
       >
-    </div>
-  {/if}
+        <span>Some parcels didn't load —</span>
+        <button
+          type="button"
+          class="min-h-6 min-w-6 rounded-full px-3 font-semibold underline"
+          onclick={() => onRetryChunks?.()}>Retry</button
+        >
+      </div>
+    {/if}
 
-  {#if buildingsFailed && mapState === 'ready'}
-    <div
-      role="status"
-      class="sim-map-panel sim-map-chip absolute z-10 flex w-max -translate-x-1/2 items-center gap-1 rounded-lg pl-4 text-sm"
-      style:top="calc(var(--notice-pills-bottom, 0px) + 4rem)"
-    >
-      <span>Existing buildings couldn't load. Generated buildings still work.</span>
-      <button
-        type="button"
-        class="min-h-11 min-w-11 shrink-0 rounded-lg px-3 font-semibold underline"
-        aria-label="Retry existing buildings"
-        onclick={retryBuildings}>Retry</button
+    {#if buildingsFailed && mapState === 'ready'}
+      <div
+        role="status"
+        class="sim-map-panel pointer-events-auto flex w-max max-w-full items-center gap-1 rounded-lg pl-4 text-sm"
       >
-    </div>
-  {/if}
+        <span>Existing buildings couldn't load. Generated buildings still work.</span>
+        <button
+          type="button"
+          class="min-h-6 min-w-6 shrink-0 rounded-lg px-3 font-semibold underline"
+          aria-label="Retry existing buildings"
+          onclick={retryBuildings}>Retry</button
+        >
+      </div>
+    {/if}
+  </div>
 
   {#if coarse && mapState === 'ready'}
     <button
       type="button"
       aria-label="Reset view"
-      class="sim-map-reset absolute z-10 flex h-11 w-11 items-center justify-center rounded-md"
+      class="sim-map-reset absolute z-10 flex size-[29px] items-center justify-center rounded-md"
       onclick={resetView}
     >
       <svg aria-hidden="true" viewBox="0 0 24 24" width="22" height="22" fill="none">
@@ -1459,7 +1519,7 @@
       </div>
       <button
         type="button"
-        class="min-h-11 min-w-11 shrink-0 rounded-lg px-3 font-semibold"
+        class="min-h-6 min-w-6 shrink-0 rounded-lg px-3 font-semibold"
         onclick={clearShown}>Close</button
       >
     </div>
@@ -1488,7 +1548,7 @@
         </p>
         <button
           type="button"
-          class="min-h-11 min-w-11 rounded-lg px-4 font-semibold underline"
+          class="min-h-6 min-w-6 rounded-lg px-4 font-semibold underline"
           onclick={() => location.reload()}>Reload</button
         >
       </div>
@@ -1517,6 +1577,7 @@
     bottom: calc(var(--map-bottom-inset, 0px) + 16px);
     padding-right: 4px;
   }
+  /* Its size (29 px) is MapLibre's control button's, which it stands in for on a phone. */
   .sim-map-reset {
     left: 10px;
     bottom: calc(var(--map-bottom-inset, 0px) + 10px);
@@ -1550,26 +1611,23 @@
     }
   }
 
-  /* MapLibre controls: every target ≥ 44×44 (spec §4.11), lifted by the bottom inset. */
-  .sim-map :global(.maplibregl-ctrl-group button) {
-    width: 44px;
-    height: 44px;
-  }
+  /* MapLibre controls, lifted by the bottom inset: its own 29 px buttons and a 24 px attribution
+     button, at least 24 by 24 px on every pointer (SC 2.5.8). */
   .sim-map :global(.maplibregl-ctrl-attrib-button) {
-    width: 44px;
-    height: 44px;
-    border-radius: 22px;
+    width: 24px;
+    height: 24px;
+    border-radius: 12px;
     background-position: center;
     background-repeat: no-repeat;
   }
   .sim-map :global(.maplibregl-ctrl-attrib.maplibregl-compact) {
-    min-height: 44px;
-    padding: 0 44px 0 0;
-    border-radius: 22px;
+    min-height: 24px;
+    padding: 0 24px 0 0;
+    border-radius: 12px;
   }
   .sim-map :global(.maplibregl-ctrl-attrib.maplibregl-compact-show) {
     min-height: 20px;
-    padding: 12px 48px 12px 12px;
+    padding: 12px 28px 12px 12px;
   }
   .sim-map :global(.maplibregl-ctrl-bottom-left),
   .sim-map :global(.maplibregl-ctrl-bottom-right) {

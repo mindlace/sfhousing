@@ -12,8 +12,9 @@ import type { Manifest } from '$lib/data/manifest';
 import { DockState } from '$lib/dock/dock-state.svelte';
 import { callsOf, stub } from '$lib/fzp/test/sim-map-stub';
 import { OUTLINE_LAYER_ID } from '$lib/paint/outline-layers';
+import { stubPointer, stubTouchLaptop } from '$lib/paint/test/pointer-stub';
 import { OPS_MAX, emptyPlan, type Plan, type PlanOp } from '$lib/plan';
-import { PILL } from '$lib/shell/pill';
+import { CHIP } from '$lib/shell/ui';
 import type { GeneratedUpdate } from '$lib/map/types';
 import type { Score } from '$lib/scoreboard';
 import manifestJson from '../../../e2e/fixtures/data/fixture-0/manifest.json';
@@ -161,42 +162,6 @@ beforeEach(() => {
   localStorage.clear();
 });
 
-/**
- * A pointer stub for `window.matchMedia`, set before render: `primary` is what `(pointer: ...)`
- * reports, `any` the kinds `(any-pointer: ...)` does. Every other query is the browser's own
- * (the dock reads `(min-width: 768px)`).
- */
-function stubPointer(
-  primary: 'coarse' | 'fine',
-  any: ('coarse' | 'fine')[] = [primary]
-): { set(p: 'coarse' | 'fine'): void } {
-  const real = window.matchMedia.bind(window);
-  let now = primary;
-  const listeners = new Set<(e: Event) => void>();
-  vi.stubGlobal('matchMedia', (q: string) => {
-    const k = q.replace(/\s/g, '');
-    if (!/^\((any-)?pointer:/.test(k)) return real(q);
-    return {
-      get matches() {
-        return k === `(pointer:${now})` || any.some((a) => k === `(any-pointer:${a})`);
-      },
-      media: q,
-      addEventListener(_type: string, fn: (e: Event) => void) {
-        listeners.add(fn);
-      },
-      removeEventListener(_type: string, fn: (e: Event) => void) {
-        listeners.delete(fn);
-      }
-    } as unknown as MediaQueryList;
-  });
-  return {
-    set(p) {
-      now = p;
-      for (const fn of [...listeners]) fn(new Event('change'));
-    }
-  };
-}
-
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
@@ -247,7 +212,7 @@ describe('BrushEditor on the dock', () => {
 
   it("the status line and Retry are pills in the notice stack, together with the page's `notices` snippet in one `fzp-notices`", async () => {
     const notices = createRawSnippet(() => ({
-      render: () => `<p class="${PILL}" data-testid="page-notice">Page notice</p>`
+      render: () => `<p class="${CHIP}" data-testid="page-notice">Page notice</p>`
     }));
     const { w } = await setup({ notices });
     const stacks = () => document.querySelectorAll('[data-testid="fzp-notices"]');
@@ -337,19 +302,28 @@ describe('BrushEditor on the dock', () => {
     }
   });
 
-  it('the chip sits a row lower while a failure chip shows', async () => {
+  it("the chip sits below map-view's failure column (--map-chips-bottom) and the notices", async () => {
     const { w } = await setup();
     await ready(w);
     const region = announcement().element();
     const host = document.querySelector<HTMLElement>('.brush-editor')!;
-    const pillsBottom = () =>
-      parseFloat(getComputedStyle(host).getPropertyValue('--notice-pills-bottom') || '0');
-    const offset = () => parseFloat(getComputedStyle(region).top) - pillsBottom();
-    await expect.poll(offset).toBe(8);
-    w.emit({ type: 'chunks', status: { '50_25': 'error' }, pending: 0, failed: ['50_25'] });
-    await expect.poll(offset).toBe(56);
-    w.emit({ type: 'chunks', status: { '50_25': 'ready' }, pending: 0, failed: [] });
-    await expect.poll(offset).toBe(8);
+    const top = () => parseFloat(getComputedStyle(region).top);
+    const root = document.documentElement.style;
+    try {
+      host.style.setProperty('--notice-pills-bottom', '30px');
+      await expect.poll(top).toBe(38);
+      // SimMap publishes the failure column's bottom: the chip goes 8 px under it.
+      root.setProperty('--map-chips-bottom', '120px');
+      await expect.poll(top).toBe(128);
+      // Whichever is lower wins.
+      host.style.setProperty('--notice-pills-bottom', '200px');
+      await expect.poll(top).toBe(208);
+      root.setProperty('--map-chips-bottom', '0px');
+      host.style.setProperty('--notice-pills-bottom', '0px');
+      await expect.poll(top).toBe(8);
+    } finally {
+      root.removeProperty('--map-chips-bottom');
+    }
   });
 
   it('a refused stroke shows the refusal in the chip, for 6 s', async () => {
@@ -445,11 +419,27 @@ describe('BrushEditor on the dock', () => {
     });
   }
 
-  it('a touch laptop (fine primary, coarse any-pointer) keeps the keyboard: no buttons, shortcuts listed', async () => {
-    stubPointer('fine', ['fine', 'coarse']);
+  it('a touch laptop gets Undo and Redo above the tab and keeps Shortcuts; a change event swaps them in and out', async () => {
+    const pointer = stubTouchLaptop();
     await setup();
-    expect(page.getByRole('button', { name: /^(Undo|Redo)/ }).elements()).toEqual([]);
-    await expect.element(page.getByRole('button', { name: 'Keyboard shortcuts' })).toBeVisible();
+    const undo = page.getByRole('button', { name: 'Undo', exact: true });
+    const redo = page.getByRole('button', { name: 'Redo', exact: true });
+    const shortcuts = page.getByRole('button', { name: 'Keyboard shortcuts' });
+    await expect.element(undo).toBeVisible();
+    await expect.element(redo).toBeVisible();
+    await expect.element(shortcuts).toBeVisible();
+    const panel = page.getByRole('tabpanel').element();
+    expect(undo.element().getBoundingClientRect().bottom).toBeLessThanOrEqual(
+      panel.getBoundingClientRect().top + 1
+    );
+    // The touch screen goes (a keyboard docked without one): the buttons go, Shortcuts stays.
+    pointer.setAny(['fine']);
+    await expect.element(undo).not.toBeInTheDocument();
+    await expect.element(redo).not.toBeInTheDocument();
+    await expect.element(shortcuts).toBeVisible();
+    pointer.setAny(['fine', 'coarse']);
+    await expect.element(undo).toBeVisible();
+    await expect.element(shortcuts).toBeVisible();
   });
 
   it('the Undo row and the Shortcuts button swap when the primary pointer changes', async () => {
@@ -691,9 +681,10 @@ describe("BrushEditor's map key", () => {
     await expect.poll(() => editor().plan.ops).toHaveLength(2);
     click(keyToggle().element());
     await expect.poll(heightRows).toHaveLength(2);
-    // From the toggle, Shift+Tab reaches the panel's last control: the 8-story row.
+    // The toolbar comes before the panel: from the toggle, Tab reaches the panel, then its rows,
+    // the 8-story row last.
     (keyToggle().element() as HTMLElement).focus();
-    await userEvent.keyboard('{Shift>}{Tab}{/Shift}');
+    await userEvent.keyboard('{Tab}{Tab}{Tab}');
     expect((document.activeElement as HTMLElement).dataset.height).toBe('8');
     await expect.poll(() => w.lastOf('heightLots')!.outlineOf).toBe(8);
     w.heightLots({

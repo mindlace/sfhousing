@@ -1,5 +1,6 @@
 <script lang="ts">
   import { flushSync } from 'svelte';
+  import { BUTTON, BUTTON_PRIMARY, SURFACE_DIALOG } from '$lib/shell/ui';
   import { copyFor, formatPublished } from './copy';
   import type { DocKind } from './doc-codec';
 
@@ -64,16 +65,14 @@
     onremix();
   }
 
-  const btn =
-    'min-h-6 min-w-6 rounded-md px-3 py-1.5 text-sm pointer-coarse:min-h-11 pointer-coarse:min-w-11';
-  const primary = `${btn} bg-accent font-medium text-on-accent hover:bg-accent-hover`;
-  const secondary = `${btn} border border-gray-400 bg-white text-gray-800 hover:bg-gray-50`;
+  const primary = BUTTON_PRIMARY;
+  const secondary = BUTTON;
 </script>
 
 <!-- Sticky at the top of the /p/:id and /s/:id page column; every row wraps at 375 px. -->
 <section
   aria-label={copy.shared}
-  class="sticky top-0 z-30 border-b border-gray-300 bg-white px-4 py-2 text-sm text-gray-900"
+  class="sticky top-0 z-30 border-b border-line bg-surface px-4 py-2 text-sm text-ink dark:border-line-dark dark:bg-surface-dark dark:text-ink-dark"
 >
   <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
     <p class="min-w-0 flex-1 basis-64 break-words">
@@ -82,14 +81,12 @@
     </p>
     <div class="flex flex-wrap gap-2">
       <button type="button" class={primary} onclick={startRemix}>Remix</button>
-      <a href={copy.startHref} class="{secondary} inline-flex items-center justify-center"
-        >Start your own</a
-      >
+      <a href={copy.startHref} class={secondary}>Start your own</a>
     </div>
   </div>
   {#if notice}
     <div class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2">
-      <p class="min-w-0 flex-1 basis-64 text-gray-800">{notice}</p>
+      <p class="min-w-0 flex-1 basis-64">{notice}</p>
       <button type="button" class={secondary} onclick={startRemix}>Open with current data</button>
     </div>
   {/if}
@@ -98,7 +95,7 @@
 <dialog
   bind:this={dlg}
   aria-labelledby={confirmId}
-  class="m-auto w-[calc(100vw-2rem)] max-w-md rounded-lg bg-white p-5 text-gray-800 shadow-xl backdrop:bg-black/40"
+  class="m-auto w-[calc(100vw-2rem)] max-w-md {SURFACE_DIALOG}"
 >
   <p id={confirmId} class="text-sm">{pending}</p>
   <div class="mt-4 flex flex-wrap justify-end gap-2">

@@ -506,7 +506,7 @@
     }
   }
   /* From md on a short viewport the pinned block is compact (24 + 4 + 24), so the rows under it
-     keep room. A coarse pointer keeps its 44 px (below). */
+     keep room. */
   @media (min-width: 768px) and (max-height: 820px) {
     .ctl {
       min-width: 24px;
@@ -515,12 +515,6 @@
     .thumb {
       height: 16px;
       margin-top: -8px;
-    }
-  }
-  @media (pointer: coarse) {
-    .ctl {
-      min-width: 44px;
-      min-height: 44px;
     }
   }
 </style>

@@ -471,10 +471,9 @@
         : 'border-line bg-surface dark:border-line-dark dark:bg-surface-dark'
     }`;
   const rowButton =
-    'flex min-h-11 w-full flex-col items-start rounded-md px-1 py-1 text-left hover:bg-surface-raised dark:hover:bg-surface-dark-raised';
+    'flex min-h-6 w-full flex-col items-start rounded-md px-1 py-1 text-left hover:bg-surface-raised dark:hover:bg-surface-dark-raised';
   const muted = 'text-ink-muted dark:text-ink-dark-muted';
-  const link =
-    'min-h-6 min-w-6 rounded-md px-1 font-semibold underline aria-disabled:opacity-40 pointer-coarse:min-h-11 pointer-coarse:min-w-11';
+  const link = 'min-h-6 min-w-6 rounded-md px-1 font-semibold underline aria-disabled:opacity-40';
 </script>
 
 <div class="flex flex-col gap-4 text-sm text-ink dark:text-ink-dark">
@@ -651,7 +650,7 @@
     {#if showBaseline}
       <details class="text-xs {muted}">
         <summary
-          class="flex min-h-6 cursor-pointer items-center font-semibold text-ink dark:text-ink-dark pointer-coarse:min-h-11"
+          class="flex min-h-6 min-w-6 cursor-pointer items-center font-semibold text-ink dark:text-ink-dark"
           >Sources and tiers</summary
         >
         <div class="mt-1 flex flex-col gap-1">

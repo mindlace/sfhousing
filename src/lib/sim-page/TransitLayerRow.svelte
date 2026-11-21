@@ -113,9 +113,8 @@
   }
 
   const control =
-    'min-h-11 min-w-11 rounded-md border border-control-line bg-surface px-2 text-ink hover:bg-surface-raised aria-disabled:opacity-40 aria-disabled:hover:bg-surface dark:border-control-line-dark dark:bg-surface-dark dark:text-ink-dark dark:hover:bg-surface-dark-raised dark:aria-disabled:hover:bg-surface-dark';
-  const link =
-    'min-h-6 min-w-6 rounded-md px-1 font-semibold underline aria-disabled:opacity-40 pointer-coarse:min-h-11 pointer-coarse:min-w-11';
+    'min-h-6 min-w-6 rounded-md border border-control-line bg-surface px-2 text-ink hover:bg-surface-raised aria-disabled:opacity-40 aria-disabled:hover:bg-surface dark:border-control-line-dark dark:bg-surface-dark dark:text-ink-dark dark:hover:bg-surface-dark-raised dark:aria-disabled:hover:bg-surface-dark';
+  const link = 'min-h-6 min-w-6 rounded-md px-1 font-semibold underline aria-disabled:opacity-40';
 </script>
 
 <svelte:element
@@ -142,13 +141,13 @@
       type="button"
       aria-pressed={selected}
       aria-label={label}
-      class="flex min-h-11 w-full items-center gap-2 rounded-md px-1 text-left hover:bg-surface-raised dark:hover:bg-surface-dark-raised"
+      class="flex min-h-6 w-full items-center gap-2 rounded-md px-1 text-left hover:bg-surface-raised dark:hover:bg-surface-dark-raised"
       onclick={() => onselect()}
     >
       {@render head()}
     </button>
   {:else if part === 'bands'}
-    <div class="flex min-h-11 w-full items-center gap-2 px-1">{@render head()}</div>
+    <div class="flex min-h-6 w-full items-center gap-2 px-1">{@render head()}</div>
   {/if}
   {#if part !== 'stops'}
     <span role="status" class="sr-only">{lots}</span>
@@ -176,7 +175,7 @@
               aria-pressed={on}
               aria-disabled={locked ? 'true' : undefined}
               aria-describedby={locked ? `${uid}-last-stop` : undefined}
-              class="min-h-11 rounded-full border border-control-line bg-surface px-3 text-left text-ink hover:bg-surface-raised aria-pressed:border-accent aria-pressed:bg-accent-tint aria-pressed:font-semibold aria-pressed:text-ink dark:border-control-line-dark dark:bg-surface-dark dark:text-ink-dark dark:hover:bg-surface-dark-raised dark:aria-pressed:border-accent-dark dark:aria-pressed:bg-accent-dark/30 dark:aria-pressed:text-ink-dark"
+              class="min-h-6 min-w-6 rounded-full border border-control-line bg-surface px-3 text-left text-ink hover:bg-surface-raised aria-pressed:border-accent aria-pressed:bg-accent-tint aria-pressed:font-semibold aria-pressed:text-ink dark:border-control-line-dark dark:bg-surface-dark dark:text-ink-dark dark:hover:bg-surface-dark-raised dark:aria-pressed:border-accent-dark dark:aria-pressed:bg-accent-dark/30 dark:aria-pressed:text-ink-dark"
               onclick={() => {
                 if (!locked) edit(toggleStop(rule, t));
               }}>{chipText(t)}</button
@@ -211,7 +210,7 @@
                 min={Math.min(dist.min, b.maxM)}
                 max={Math.max(dist.max, b.maxM)}
                 value={b.maxM}
-                class="min-h-11 w-24 rounded-md border border-control-line bg-surface px-2 text-ink dark:border-control-line-dark dark:bg-surface-dark dark:text-ink-dark"
+                class="min-h-6 w-24 rounded-md border border-control-line bg-surface px-2 text-ink dark:border-control-line-dark dark:bg-surface-dark dark:text-ink-dark"
                 onchange={(e) => commitDistance(e.currentTarget, i)}
                 onkeydown={(e) => {
                   if (e.key === 'Enter') commitDistance(e.currentTarget, i);

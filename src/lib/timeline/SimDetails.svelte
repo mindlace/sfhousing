@@ -28,6 +28,7 @@
   import { FORECAST_NOTE, LENS_NAME, TWIN_NOTE, capacityNote, marketBody } from './copy';
   import { YEAR_COLUMNS, yearRows } from './details';
   import Explain from './Explain.svelte';
+  import { BUTTON } from '$lib/shell/ui';
   import type { PlayheadAt } from './results';
 
   interface Props {
@@ -136,8 +137,7 @@
   const years = $derived(view && !playhead.atToday ? yearRows(view, playhead.index, inForce) : []);
   const columns = $derived(inForce ? YEAR_COLUMNS : YEAR_COLUMNS.slice(0, -1));
   const signed = (n: number) => `${n < 0 ? '' : '+'}${formatCount(n)}`;
-  const TARGET =
-    'inline-flex min-h-6 cursor-pointer items-center gap-2 pr-2 text-sm pointer-coarse:min-h-11';
+  const CHOICE_LABEL = 'inline-flex min-h-6 min-w-6 cursor-pointer items-center gap-2 pr-2 text-sm';
 </script>
 
 {#snippet staleLine()}
@@ -152,11 +152,7 @@
   <div class="flex items-center justify-between gap-2">
     <h2 class="text-base font-semibold">Details</h2>
     {#if onactivity}
-      <button
-        type="button"
-        class="inline-flex min-h-6 min-w-6 items-center rounded-md border border-control-line px-2 text-sm font-semibold text-ink hover:bg-surface-raised focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent dark:border-control-line-dark dark:text-ink-dark dark:hover:bg-surface-dark-raised dark:focus-visible:outline-accent-dark pointer-coarse:min-h-11"
-        onclick={onactivity}>Activity</button
-      >
+      <button type="button" class={BUTTON} onclick={onactivity}>Activity</button>
     {/if}
   </div>
   {#if !score || !at}
@@ -169,7 +165,7 @@
       <legend class="text-sm font-semibold">Chart</legend>
       <div class="flex flex-wrap gap-x-3">
         {#each lenses as l (l)}
-          <label class={TARGET}>
+          <label class={CHOICE_LABEL}>
             <input
               type="radio"
               name="{uid}-lens"
@@ -261,8 +257,7 @@
 
     {#if years.length > 0}
       <details class="mt-4" data-testid="tl-year-table">
-        <summary class="min-h-6 cursor-pointer text-sm font-semibold pointer-coarse:min-h-11"
-          >Show as table</summary
+        <summary class="min-h-6 min-w-6 cursor-pointer text-sm font-semibold">Show as table</summary
         >
         <!-- A scrollable region must be keyboard reachable (axe: scrollable-region-focusable). -->
         <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
@@ -299,9 +294,7 @@
     {/if}
 
     <details class="mt-4" data-testid="fzp-sources">
-      <summary class="min-h-6 cursor-pointer text-sm font-semibold pointer-coarse:min-h-11"
-        >Sources</summary
-      >
+      <summary class="min-h-6 min-w-6 cursor-pointer text-sm font-semibold">Sources</summary>
       {#if copy.compare === 'preFzp'}
         <p class="mt-2 text-sm text-ink-muted dark:text-ink-dark-muted">
           {FORECAST_NOTE}
@@ -314,15 +307,14 @@
       {/if}
       <button
         type="button"
-        class="mt-2 min-h-11 rounded-md px-1 text-left text-sm font-semibold underline"
+        class="mt-2 min-h-6 min-w-6 rounded-md px-1 text-left text-sm font-semibold underline"
         onclick={() => onsources()}>Where these numbers come from</button
       >
 
       <p class="mt-3 text-xs text-ink-muted dark:text-ink-dark-muted">
         Data {datasetVersion} · built {formatBuiltDate(builtAt)} · as of {formatDate(asOf)} ·
-        <a
-          class="inline-flex min-h-6 items-center underline pointer-coarse:min-h-11"
-          href="/attribution">Data sources</a
+        <a class="inline-flex min-h-6 min-w-6 items-center underline" href="/attribution"
+          >Data sources</a
         >
       </p>
       {#if phasing}

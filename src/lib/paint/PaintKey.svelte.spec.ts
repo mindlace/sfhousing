@@ -162,7 +162,7 @@ describe('PaintKey', () => {
     expect(rows().map((b) => b.dataset.shown)).toEqual([undefined, 'true']);
   });
 
-  it('each height row is a 24 px button (44 coarse) with aria-pressed', async () => {
+  it('each height row is a 24 px button on every pointer, with aria-pressed', async () => {
     await setup([paint('a', 3)]);
     const b = page.getByRole('button', { name: /^3 stories/ });
     await expect.element(b).toHaveAttribute('aria-pressed', 'false');
@@ -170,7 +170,7 @@ describe('PaintKey', () => {
     expect(b.element().getBoundingClientRect().height).toBeGreaterThanOrEqual(24);
     await cdp().send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
     await expect.poll(() => matchMedia('(pointer: coarse)').matches).toBe(true);
-    await expect.poll(() => b.element().getBoundingClientRect().height).toBeGreaterThanOrEqual(44);
+    expect(b.element().getBoundingClientRect().height).toBeGreaterThanOrEqual(24);
   });
 
   it("each height row carries a dashed swatch in the map outline's colour", async () => {

@@ -67,8 +67,7 @@
   const month = $derived(formatMonthYear(at));
   const busy = $derived(pending ? 'true' : undefined);
 
-  const button =
-    'min-h-6 min-w-6 rounded-md px-1 text-left text-sm font-semibold underline pointer-coarse:min-h-11';
+  const button = 'min-h-6 min-w-6 rounded-md px-1 text-left text-sm font-semibold underline';
   const muted = 'text-ink-muted dark:text-ink-dark-muted';
 </script>
 

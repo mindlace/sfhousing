@@ -11,7 +11,16 @@ import type { SfhFzpDebug } from '../src/lib/fzp/debug';
 import { DEFAULT_POLICY } from '../src/lib/sim-page/policy';
 import { serializeSimDoc } from '../src/lib/sim-page/sim-doc';
 import { expectNoA11yViolations } from './helpers/a11y';
-import { addPolicy, openKind, slider, waitFilled } from './helpers/run';
+import { COPY } from '../src/lib/sharing/copy';
+import {
+  addPolicy,
+  holdPolicy,
+  installPolicyHold,
+  openKind,
+  releasePolicy,
+  slider,
+  waitFilled
+} from './helpers/run';
 import { openPublish, seedPlanRow, type Win } from './helpers/sharing';
 
 type FzpWin = Win & { __sfhFzp?: SfhFzpDebug };
@@ -142,6 +151,61 @@ test('open /sim and see the headline settle', async ({ page }) => {
   await expect(scoreBar(page)).toHaveText(text!);
 });
 
+// ---- the status cell ----------------------------------------------------------------------------
+
+const statusShown = (page: Page): Locator => page.getByTestId('tl-status-shown');
+
+test("a held edit: Updating shows at once and the key's mark row with it", async ({ page }) => {
+  await installPolicyHold(page);
+  await gotoSim(page);
+  // A first policy, held at the worker boundary: the numbers stay the nothing-in-force ones.
+  await holdPolicy(page);
+  await addPolicy(page, 'Zoning', 'Transit rule');
+  await expect(statusShown(page)).toHaveText('Updating');
+  expect(await fzp(page, 'stale')).toBe(true);
+  await closeEditor(page);
+  const keyPanel = page.getByRole('group', { name: 'Map key' });
+  if (!(await keyPanel.isVisible())) await page.getByTestId('map-key-toggle').click();
+  await expect(keyPanel.getByText('Under your policy', { exact: true })).toBeVisible();
+  expect(await fzp(page, 'stale')).toBe(true);
+  await releasePolicy(page);
+  await waitFilled(page);
+  await expect(statusShown(page)).toHaveText('');
+  await expect(keyPanel.getByText('Under your policy', { exact: true })).toBeVisible();
+});
+
+test('blocked storage: Autosave off and Updating both show during an edit; the chip opens its popover', async ({
+  page
+}) => {
+  await page.addInitScript(() => {
+    Storage.prototype.setItem = () => {
+      throw new DOMException('refused', 'QuotaExceededError');
+    };
+  });
+  await installPolicyHold(page);
+  await gotoSim(page);
+  await holdPolicy(page);
+  await addPolicy(page, 'Zoning', 'Transit rule');
+  const banner = page.getByRole('banner');
+  const chip = banner.getByRole('button', { name: 'Autosave off', exact: true });
+  await expect(chip).toBeVisible();
+  await expect(statusShown(page)).toHaveText('Updating');
+  const updating = banner.getByTestId('tl-status').getByRole('button', { name: 'Updating' });
+  await expect(updating).toBeVisible();
+  const a = (await chip.boundingBox())!;
+  const b = (await updating.boundingBox())!;
+  expect(b.x).toBeGreaterThanOrEqual(a.x + a.width);
+  await closeEditor(page);
+  await chip.click();
+  await expect(chip).toHaveAttribute('aria-expanded', 'true');
+  await expect(page.getByText(COPY.n4, { exact: true })).toBeVisible();
+  await expect(statusShown(page)).toHaveText('Updating');
+  await releasePolicy(page);
+  await waitFilled(page);
+  await expect(statusShown(page)).toHaveText('');
+  await expect(chip).toBeVisible();
+});
+
 // ---- the refill ---------------------------------------------------------------------------------
 
 test('a transit rule from 2031 refills from 2031, months before unchanged', async ({ page }) => {
@@ -234,7 +298,7 @@ test('publish, open the /s link, see the same timeline', async ({ page, browser 
   const labels = await bars(page).evaluateAll((els) =>
     els.map((e) => e.getAttribute('aria-label'))
   );
-  expect(labels).toContainEqual(expect.stringMatching(new RegExp(`^${PRESET}, `)));
+  expect(labels).toContainEqual(expect.stringMatching(new RegExp(`^[^,]+, ${PRESET}, `)));
   const link = await publish(page, 'Same timeline');
   await page.close();
 
@@ -343,9 +407,12 @@ test('every bar is reachable and operable by keyboard; focus returns to the bar 
     await expect(bar).toHaveCount(1);
     await bar.focus();
     const name = (await bar.getAttribute('aria-label'))!;
-    // The name is "{label}, {10 Dec 2030} to {date | no end}[, off]".
-    const label = name.replace(/, \d{1,2} [A-Z][a-z]{2} \d{4} to .*$/, '');
-    expect(label).not.toBe(name);
+    // The name is "{setting}, {label}, {10 Dec 2030} to {date | no end}[, off]": it starts with
+    // the words on the bar (WCAG 2.5.3).
+    const shown = (await bar.textContent())!.replace(/\s+/g, ' ').trim();
+    expect(name.startsWith(`${shown}, `)).toBe(true);
+    const label = name.slice(shown.length + 2).replace(/, \d{1,2} [A-Z][a-z]{2} \d{4} to .*$/, '');
+    expect(label).not.toBe(name.slice(shown.length + 2));
     await page.keyboard.press('Enter');
     await expect(bar).toHaveAttribute('aria-pressed', 'true');
     await expect(editor(page).getByRole('heading', { name: label })).toBeVisible();
@@ -356,7 +423,7 @@ test('every bar is reachable and operable by keyboard; focus returns to the bar 
     const was = await spans();
     expect(was.flat().length).toBeGreaterThan(0);
     const named = new RegExp(
-      `^${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}, \\d{1,2} [A-Z][a-z]{2} \\d{4} to `
+      `, ${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}, \\d{1,2} [A-Z][a-z]{2} \\d{4} to `
     );
     const focused = page.getByRole('button', { name: named, pressed: true });
     await focused.focus();
@@ -393,4 +460,40 @@ test('a market term committed by Enter keeps focus in its field', async ({ page 
   );
   await expect(cut).toBeFocused();
   await expect(cut).toHaveValue('0.5');
+});
+
+// ---- the phone rows -----------------------------------------------------------------------------
+
+test('375 px: Zoning, Permitting and Public money read in full; a policy row names itself in the sheet', async ({
+  isMobile,
+  page
+}) => {
+  test.skip(!isMobile, 'mobile project only');
+  await gotoSim(page);
+  const rows = page.getByTestId('tl-rows');
+  /** A toggle or name shows its words whole (no ellipsis cut). */
+  const whole = (l: Locator) => l.evaluate((e) => e.scrollWidth <= e.clientWidth);
+  for (const kind of ['Zoning', 'Permitting', 'Public money']) {
+    const toggle = rows.getByRole('button', { name: kind, exact: true });
+    await toggle.scrollIntoViewIfNeeded();
+    await expect(toggle).toBeVisible();
+    await expect(toggle).toHaveText(kind);
+    expect(await whole(toggle), `${kind} is cut`).toBe(true);
+  }
+  await addPolicy(page, 'Permitting', PRESET);
+  await closeEditor(page);
+  await openKind(page, 'Permitting');
+  const sheet = page.getByRole('dialog', { name: 'Permitting' });
+  await expect(sheet).toBeVisible();
+  const row = sheet.getByTestId('tl-policy');
+  await expect(row).toHaveCount(1);
+  const name = row.locator('.name');
+  await expect(name).toBeVisible();
+  expect(await whole(name)).toBe(true);
+  // The name is a line of its own, above its lane, both inside the 375 px screen.
+  const n = (await name.boundingBox())!;
+  const lane = (await row.getByTestId('tl-lane').boundingBox())!;
+  expect(lane.y).toBeGreaterThanOrEqual(n.y + n.height - 1);
+  expect(lane.x + lane.width).toBeLessThanOrEqual(375);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375);
 });

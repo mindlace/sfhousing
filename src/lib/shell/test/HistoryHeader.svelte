@@ -1,7 +1,8 @@
 <script lang="ts">
-  // Test host: SiteHeader on /sim with a plain pinned score button and the actions of the
-  // paint page's row: Undo, Redo and the keyboard shortcuts (HistoryButtons), then Publish.
+  // Test host: SiteHeader on /sim with a plain pinned score button and the actions of /sim's row
+  // on a touch laptop: Undo and Redo (HistoryButtons), the keyboard shortcuts, then Publish.
   import HistoryButtons from '$lib/paint/HistoryButtons.svelte';
+  import ShortcutsButton from '$lib/paint/ShortcutsButton.svelte';
   import SiteHeader from '../SiteHeader.svelte';
 </script>
 
@@ -18,6 +19,7 @@
     onundo={() => {}}
     onredo={() => {}}
   />
+  <ShortcutsButton />
   <button type="button" class="min-h-6 px-2 text-sm">Publish</button>
 {/snippet}
 

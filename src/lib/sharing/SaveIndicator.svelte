@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { SURFACE_POP } from '$lib/shell/ui';
   import type { SaveStatus } from './autosave.svelte';
   import { COPY } from './copy';
 
@@ -44,8 +45,9 @@
     if (status !== 'off' || covered) popOpen = false;
   });
 
+  // An Escape already handled (an open explanation's, `defaultPrevented`) is not this one's.
   function onWindowKeydown(e: KeyboardEvent) {
-    if (popOpen && e.key === 'Escape') popOpen = false;
+    if (popOpen && e.key === 'Escape' && !e.defaultPrevented) popOpen = false;
   }
 
   function onWindowPointerdown(e: PointerEvent) {
@@ -68,7 +70,7 @@
   {#if status === 'off'}
     <button
       type="button"
-      class="col-start-1 row-start-1 min-h-6 min-w-6 rounded-full border border-amber-700 bg-amber-50 px-2 whitespace-nowrap text-amber-900 pointer-coarse:min-h-11 pointer-coarse:min-w-11"
+      class="col-start-1 row-start-1 min-h-6 min-w-6 rounded-full border border-amber-700 bg-amber-50 px-2 whitespace-nowrap text-amber-900"
       aria-expanded={popOpen}
       aria-controls={popId}
       inert={covered}
@@ -80,7 +82,10 @@
       id={popId}
       hidden={!popOpen}
       class={[
-        'absolute top-full z-20 mt-1 w-64 max-w-[calc(100vw-2rem)] rounded-md border border-gray-300 bg-white p-3 text-sm text-gray-800 shadow-lg',
+        // z-40: above the messages over the map (the notices, the failure column and the stroke
+        // chip, z-10 to z-30), which come later in the page.
+        'absolute top-full z-40 mt-1 w-64 max-w-[calc(100vw-2rem)]',
+        SURFACE_POP,
         align === 'start' ? 'left-0' : 'right-0'
       ]}
     >

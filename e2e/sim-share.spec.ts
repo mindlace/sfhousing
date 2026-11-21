@@ -85,7 +85,7 @@ async function selectPolicy(
   await openKind(page, kind);
   await page
     .getByRole('button', {
-      name: new RegExp(`^${label.replace(/[.*+?^${}()|[\]\\']/g, '\\$&')}, `)
+      name: new RegExp(`, ${label.replace(/[.*+?^${}()|[\]\\']/g, '\\$&')}, `)
     })
     .last()
     .click();

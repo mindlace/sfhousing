@@ -172,8 +172,23 @@ export function spanEdgeText(s: Span, asOf: Day): { from: string; to: string } {
   };
 }
 
-/** "{label}, {from date} to {to date | no end}". */
-export function barLabel(label: string, s: Span, asOf: Day): string {
+/**
+ * A span bar's name: '{setting}{left}, {label}, {from} to {to}' then ', off' when off. It starts
+ * with the words the bar shows (its setting, then ", N% left"), so a voice user can say what they
+ * see (WCAG 2.5.3).
+ */
+export function barLabel(
+  setting: string,
+  label: string,
+  s: Span,
+  asOf: Day,
+  extra: { off?: boolean; left?: string | null } = {}
+): string {
   const { from, to } = spanEdgeText(s, asOf);
-  return `${label}, ${from} to ${to}`;
+  return `${setting}${extra.left ?? ''}, ${label}, ${from} to ${to}${extra.off ? ', off' : ''}`;
+}
+
+/** A fixed bar's name (a kind's fixed row, the world row): '{text}{left}, {label}, whole window'. */
+export function fixedLabel(text: string, label: string, left?: string | null): string {
+  return `${text}${left ?? ''}, ${label}, whole window`;
 }

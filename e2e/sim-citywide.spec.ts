@@ -156,6 +156,33 @@ test('a transit rule: at the default zoom one diamond an area shows once its pro
   await expect.poll(async () => (await snap(page))!.marksShown).toBe(0);
 });
 
+test("with the goal notice and the key open, the glows' inset clears both", async ({
+  isMobile,
+  page
+}) => {
+  // eslint-disable-next-line playwright/no-skipped-test -- the notices overlay the map from md
+  test.skip(isMobile, 'the desktop layout');
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await gotoSim(page);
+  await expect(keyPanel(page)).toBeVisible();
+  await slider(page).focus();
+  await page.keyboard.press('End');
+  const notice = page.getByTestId('tl-goal-notice');
+  await expect(notice).toBeVisible();
+  const map = (await page.getByTestId('tl-map').boundingBox())!;
+  const n = (await notice.boundingBox())!;
+  const k = (await keyPanel(page).boundingBox())!;
+  const inset = async () => (await snap(page))!.edgeInset;
+  // Top: below the notice, plus the 12 px gap. Right: the panel and its 8 px from the edge.
+  await expect.poll(async () => (await inset())[0]).toBeGreaterThanOrEqual(n.y + n.height - map.y);
+  expect((await inset())[0]).toBeLessThanOrEqual(n.y + n.height - map.y + 12 + 1);
+  expect((await inset())[1]).toBeGreaterThanOrEqual(map.x + map.width - k.x);
+  // Closing the key gives the right edge back.
+  await keyToggle(page).click();
+  await expect(keyPanel(page)).toBeHidden();
+  await expect.poll(async () => (await inset())[1]).toBe(0);
+});
+
 test('bars are in far mode on /sim', async ({ page }) => {
   await gotoSim(page);
   await expect.poll(async () => (await snap(page))!.barMode).toBe('far');

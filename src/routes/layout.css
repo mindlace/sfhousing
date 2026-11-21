@@ -64,7 +64,9 @@
 /* An Explain tooltip that opens under its target (the /sim header score's goal name and
    "Updating"'s explanation): put `explain-under` on a positioned box around the Explain. Its
    ::before bridges the gap above it, so a pointer moving from the target onto the text stays
-   inside Explain's wrapper and the text stays open (WCAG 1.4.13, hoverable). */
+   inside Explain's wrapper and the text stays open (WCAG 1.4.13, hoverable). Its look is
+   SURFACE_TIP's (src/lib/shell/ui.ts) in CSS: rounded, a line border, surface, ink, px-2 py-1,
+   shadow-md; the dark block below is its dark: half. */
 .explain-under [role='tooltip'] {
   position: absolute;
   top: 100%;
@@ -79,7 +81,9 @@
   border-radius: 0.25rem;
   background: var(--color-surface);
   color: var(--color-ink);
-  box-shadow: 0 4px 6px rgb(0 0 0 / 0.1);
+  box-shadow:
+    0 4px 6px -1px rgb(0 0 0 / 0.1),
+    0 2px 4px -2px rgb(0 0 0 / 0.1);
 }
 .explain-under [role='tooltip']::before {
   content: '';
@@ -94,5 +98,43 @@
     border-color: var(--color-line-dark);
     background: var(--color-surface-dark);
     color: var(--color-ink-dark);
+  }
+}
+
+/* A scroll box that says more is below (`moreBelow`, src/lib/shell/more-below.ts, sets data-more):
+   put `more-below` on it and attach `{@attach moreBelow}`. While data-more is set a 24 px fade to
+   the surface sticks to its foot; at the end, or when the content fits, nothing. It never takes a
+   press, focus scrolls clear of it, and nothing animates. Under forced colours (where a gradient is
+   not drawn) it is a 2 px CanvasText line at the foot. Used by the /sim detail column and the map
+   key's panels. */
+.more-below {
+  scroll-padding-bottom: 24px;
+}
+.more-below::after {
+  content: '';
+  position: sticky;
+  bottom: 0;
+  display: block;
+  height: 24px;
+  margin-top: -24px;
+  pointer-events: none;
+  opacity: 0;
+  background: linear-gradient(to bottom, transparent, var(--color-surface));
+}
+.more-below[data-more]::after {
+  opacity: 1;
+}
+@media (prefers-color-scheme: dark) {
+  .more-below::after {
+    background: linear-gradient(to bottom, transparent, var(--color-surface-dark));
+  }
+}
+@media (forced-colors: active) {
+  .more-below::after {
+    forced-color-adjust: none;
+    height: 2px;
+    margin-top: -2px;
+    background-color: CanvasText;
+    background-image: none;
   }
 }

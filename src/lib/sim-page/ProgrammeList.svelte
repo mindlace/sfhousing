@@ -117,8 +117,7 @@
     });
   }
 
-  const link =
-    'min-h-6 min-w-6 rounded-md px-1 font-semibold underline aria-disabled:opacity-40 pointer-coarse:min-h-11 pointer-coarse:min-w-11';
+  const link = 'min-h-6 min-w-6 rounded-md px-1 font-semibold underline aria-disabled:opacity-40';
   const muted = 'text-ink-muted dark:text-ink-dark-muted';
 </script>
 

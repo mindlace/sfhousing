@@ -57,7 +57,7 @@
 
   const muted = 'text-ink-muted dark:text-ink-dark-muted';
   const choice =
-    'min-h-6 rounded-md px-1 text-left font-semibold underline aria-disabled:opacity-40 pointer-coarse:min-h-11';
+    'min-h-6 min-w-6 rounded-md px-1 text-left font-semibold underline aria-disabled:opacity-40';
 </script>
 
 <div class="flex flex-col items-start gap-1">
@@ -68,7 +68,7 @@
     aria-controls="{uid}-chooser"
     aria-disabled={off ? 'true' : undefined}
     aria-describedby={off ? `${uid}-why` : undefined}
-    class="min-h-11 rounded-md border border-control-line bg-surface px-3 font-medium text-ink hover:bg-surface-raised aria-disabled:opacity-40 dark:border-control-line-dark dark:bg-surface-dark dark:text-ink-dark dark:hover:bg-surface-dark-raised"
+    class="min-h-6 min-w-6 rounded-md border border-control-line bg-surface px-3 font-medium text-ink hover:bg-surface-raised aria-disabled:opacity-40 dark:border-control-line-dark dark:bg-surface-dark dark:text-ink-dark dark:hover:bg-surface-dark-raised"
     onclick={toggle}><span aria-hidden="true">+</span> Add money</button
   >
   {#if off}

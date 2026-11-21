@@ -4,8 +4,9 @@
   meaning, so it is aria-hidden. Ghost: a tinted outline per token; solid: filled squares; bar: a
   stage bar (a gradient for several tokens); ring: an outlined circle (several overlap in a row);
   mark: a diamond inside a ring of its token; area: a 16 px ring around an 8 px ring per token,
-  overlapping in a row 28 px wide (the city layer's merged ring); edge: a half-disc per token,
-  sharing 18 px, against a 1 px line (the city layer's glow at the map's edge).
+  overlapping in a row 28 px wide (the city layer's merged ring); edge: a half-disc per token, each
+  10 px across and 5 px deep, side by side with their flat sides on a 1 px line, inside the 28 px
+  (the city layer's glow at the map's edge).
 -->
 <script lang="ts">
   import type { Swatch } from './rows';
@@ -24,8 +25,14 @@
   const AREA_PX = 16;
   /** How far each area ring after the first overlaps the one before, so the row spans 28 px. */
   const areaOverlapPx = (n: number) => AREA_PX - (SWATCH_PX - AREA_PX) / Math.max(1, n - 1);
-  /** The edge swatch's height: its half-discs share it. */
-  const EDGE_PX = 18;
+  /**
+   * An edge half-disc, px: this far across (along the line) and half that deep, so each tone reads
+   * as a shape. They sit side by side, overlapping just enough to fit the swatch's width (1 px
+   * each for three), so the swatch is one row tall.
+   */
+  const HALF_PX = 10;
+  const edgeOverlapPx = (n: number) =>
+    n > 1 ? Math.max(0, (HALF_PX * n - SWATCH_PX) / (n - 1)) : 0;
 
   function barBackground(tokens: string[]): string {
     return tokens.length === 1
@@ -96,19 +103,21 @@
       {/each}
     </span>
   {:else if swatch.kind === 'edge'}
-    <!-- Half-discs, flat side against the map's edge, a 1 px line. -->
-    <span class="flex" style:height="{EDGE_PX}px">
-      <span class="flex flex-col justify-center">
-        {#each swatch.tokens as token (token)}
+    <!-- Half-discs side by side, flat side down on the map's edge, a 1 px line under them. -->
+    <span class="flex w-7 flex-col items-center">
+      <span class="flex">
+        {#each swatch.tokens as token, i (token)}
           <span
-            class="block w-[3px] rounded-l-full"
+            class="block shrink-0 rounded-t-full"
             data-token={token}
-            style:height="{EDGE_PX / swatch.tokens.length}px"
+            style:width="{HALF_PX}px"
+            style:height="{HALF_PX / 2}px"
+            style:margin-left={i > 0 ? `-${edgeOverlapPx(swatch.tokens.length)}px` : undefined}
             style:background={color(token)}
           ></span>
         {/each}
       </span>
-      <span class="block w-px bg-line dark:bg-line-dark"></span>
+      <span class="block h-px w-full bg-line dark:bg-line-dark"></span>
     </span>
   {:else}
     <!-- A diamond inside a ring of the same token, as a mark sits on its project's ring. -->

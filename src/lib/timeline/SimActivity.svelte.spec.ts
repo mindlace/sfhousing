@@ -7,7 +7,9 @@ import '../../routes/layout.css';
 import { GOAL, goalName } from '$lib/goal/goal';
 import { formatDollars } from '$lib/fzp/format';
 import type { ActivityItem, ActivityTotals, Starter } from './activity-view';
+import { limitAlert } from '$lib/sim-page/funding-copy';
 import SimActivity from './SimActivity.svelte';
+import { BUTTON } from '$lib/shell/ui';
 
 const STARTERS: Starter[] = [
   {
@@ -152,12 +154,60 @@ describe('SimActivity', () => {
     expect(p.onstarter).toHaveBeenCalledExactlyOnceWith(STARTERS[1]);
   });
 
+  it('a refusal shows as a card under the starters with the limit words', async () => {
+    const words = limitAlert('pools');
+    const ondismissrefusal = vi.fn();
+    const r = await renderAtRest(props({ refusal: null, ondismissrefusal }));
+    // The polite region is there, empty, before any refusal.
+    const region = page.getByTestId('tl-activity-refusal');
+    await expect.element(region).toHaveAttribute('role', 'status');
+    expect(region.element().textContent!.trim()).toBe('');
+    await r.rerender(props({ refusal: words, ondismissrefusal }));
+    const card = region.element().querySelector('[data-shape]')!;
+    await expect.element(region).toHaveTextContent(words);
+    expect(card.getAttribute('data-shape')).toBe('card');
+    // Under the starters, and its own words only: no second live region inside it.
+    const list = page.getByRole('list', { name: 'Try one:' }).element();
+    expect(list.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(card.querySelector('[role], [aria-live]')).toBeNull();
+    // It does not take focus.
+    expect(card.contains(document.activeElement)).toBe(false);
+    await region.getByRole('button', { name: 'Dismiss' }).click();
+    expect(ondismissrefusal).toHaveBeenCalledOnce();
+    await r.rerender(props({ refusal: words, atToday: false, totals: TOTALS }));
+    expect(page.getByText(words).elements()).toHaveLength(0);
+  });
+
+  it("with the pressed starter gone, the refusal's Dismiss puts focus on the page's fallback", async () => {
+    const words = limitAlert('pools');
+    const box = document.createElement('div');
+    box.tabIndex = -1;
+    box.dataset.testid = 'fallback';
+    document.body.appendChild(box);
+    try {
+      const fallbackfocus = () => box;
+      const r = await renderAtRest(props({ fallbackfocus }));
+      await page.getByRole('button', { name: 'SB 423 approval clock' }).click();
+      // The starter added something after all elsewhere: the starters go, the refusal stays.
+      await r.rerender(props({ starters: [], refusal: words, fallbackfocus }));
+      await page
+        .getByTestId('tl-activity-refusal')
+        .getByRole('button', { name: 'Dismiss' })
+        .click();
+      await expect.poll(() => document.activeElement).toBe(box);
+    } finally {
+      box.remove();
+    }
+  });
+
   it('starters and Details are 24 px targets at least', async () => {
     await renderAtRest(props());
     for (const b of page.getByRole('button').elements()) {
       const r = b.getBoundingClientRect();
       expect(r.height).toBeGreaterThanOrEqual(24);
       expect(r.width).toBeGreaterThanOrEqual(24);
+      // The shared button look, not a copy of it.
+      expect(b.className).toBe(BUTTON);
     }
   });
 
@@ -199,10 +249,10 @@ describe('SimActivity', () => {
       props: props({ atToday: false, totals: TOTALS, events: EVENTS })
     });
     await expect.element(page.getByRole('heading', { level: 3, name: 'Latest' })).toBeVisible();
-    // Under the totals.
+    // Above the totals.
     const dl = page.getByTestId('tl-totals').element();
     const h3 = page.getByRole('heading', { level: 3 }).element();
-    expect(dl.compareDocumentPosition(h3) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(dl.compareDocumentPosition(h3) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
     const li = items().elements();
     expect(li).toHaveLength(3);
     const text = (e: Element) => e.textContent!.replace(/\s+/g, ' ').trim();
@@ -236,6 +286,89 @@ describe('SimActivity', () => {
     expect(month.scrollWidth).toBeLessThanOrEqual(month.clientWidth);
     await r.unmount();
     box.remove();
+  });
+
+  it('below 768 px the totals are one column, each value on its term line at the right', async () => {
+    await page.viewport(375, 812);
+    // The phone's sheet at 375, padded 12 px a side.
+    const box = document.body.appendChild(document.createElement('div'));
+    box.style.width = '351px';
+    const totals = { ...TOTALS, effect: 24, cost: { spent: 2.5e6, perAddedHome: 410_000 } };
+    const r = await render(SimActivity, {
+      target: box,
+      props: props({ atToday: false, totals, events: EVENTS })
+    });
+    await expect.element(page.getByTestId('tl-totals')).toBeVisible();
+    const dl = page.getByTestId('tl-totals').element();
+    const rows = [...dl.querySelectorAll(':scope > div')];
+    expect(rows).toHaveLength(7);
+    const box0 = dl.getBoundingClientRect();
+    for (const [i, d] of rows.entries()) {
+      const cell = d.getBoundingClientRect();
+      // One column: each pair spans the list, one under the other.
+      expect(cell.left).toBeCloseTo(box0.left, 0);
+      expect(cell.right).toBeCloseTo(box0.right, 0);
+      if (i > 0)
+        expect(cell.top).toBeGreaterThanOrEqual(rows[i - 1].getBoundingClientRect().bottom);
+      // The value on its term's line, at the right.
+      const dt = d.querySelector('dt')!.getBoundingClientRect();
+      const dd = d.querySelector('dd')!.getBoundingClientRect();
+      expect(dd.top).toBe(dt.top);
+      expect(dd.right).toBeCloseTo(cell.right, 0);
+    }
+    await r.unmount();
+    box.remove();
+    await page.viewport(414, 896);
+  });
+
+  it('after today: Latest comes before the totals; the totals are two columns', async () => {
+    await page.viewport(1280, 800);
+    // The column at 1280 is 512 px wide, padded 12 px a side.
+    const box = document.body.appendChild(document.createElement('div'));
+    box.style.width = '488px';
+    const totals = { ...TOTALS, effect: 24, cost: { spent: 2.5e6, perAddedHome: 410_000 } };
+    const r = await render(SimActivity, {
+      target: box,
+      props: props({ atToday: false, totals, events: EVENTS })
+    });
+    await expect.element(page.getByRole('heading', { level: 3, name: 'Latest' })).toBeVisible();
+    const h3 = page.getByRole('heading', { level: 3 }).element();
+    const list = page.getByRole('list', { name: 'Latest' }).element();
+    const dl = page.getByTestId('tl-totals').element();
+    // In the DOM and on screen: the heading, the list, then the totals.
+    expect(h3.compareDocumentPosition(dl) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(list.compareDocumentPosition(dl) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(dl.getBoundingClientRect().top).toBeGreaterThanOrEqual(
+      list.getBoundingClientRect().bottom
+    );
+    // Two columns of term and value pairs, read across: 7 pairs on 4 lines.
+    const cells = [...dl.querySelectorAll(':scope > div')].map((d) => d.getBoundingClientRect());
+    expect(cells).toHaveLength(7);
+    for (let i = 0; i + 1 < cells.length; i += 2) {
+      expect(cells[i + 1].top).toBe(cells[i].top);
+      expect(cells[i + 1].left).toBeGreaterThan(cells[i].right);
+    }
+    for (let i = 2; i < cells.length; i++) expect(cells[i].left).toBe(cells[i % 2].left);
+    expect(new Set(cells.map((c) => c.top)).size).toBe(4);
+    // Each value sits on its term's line, at the cell's right.
+    for (const d of dl.querySelectorAll(':scope > div')) {
+      const dt = d.querySelector('dt')!.getBoundingClientRect();
+      const dd = d.querySelector('dd')!.getBoundingClientRect();
+      expect(dd.left).toBeGreaterThanOrEqual(dt.right);
+      expect(dd.right).toBeCloseTo(d.getBoundingClientRect().right, 0);
+    }
+    expect(pairs().map(([t]) => t)).toEqual([
+      'Approved in new projects',
+      'Completed',
+      'Stopped',
+      'Affordable',
+      'From your policy',
+      'All public money spent',
+      'Per added home'
+    ]);
+    await r.unmount();
+    box.remove();
+    await page.viewport(414, 896);
   });
 
   it('after today with no events: No stage changes yet.', async () => {

@@ -48,3 +48,26 @@ describe('SimNotices funding-dropped', () => {
     expect(document.querySelectorAll('[data-testid="sim-notices"] li')).toHaveLength(2);
   });
 });
+
+describe('SimNotices shapes', () => {
+  it('a notice with details is a card; a one-line notice is a chip', async () => {
+    render(SimNotices, {
+      props: {
+        notices: [
+          { id: 'timing', text: 'Timelines were re-fit.', details: ['One line'], tone: 'info' },
+          { id: 'funding-off', text: 'Funding is off.', tone: 'info' }
+        ],
+        ondismiss: () => {}
+      }
+    });
+    await expect.element(page.getByText('Funding is off.')).toBeInTheDocument();
+    const [card, chip] = [...document.querySelectorAll('[data-testid="sim-notice"]')];
+    expect(card.getAttribute('data-shape')).toBe('card');
+    expect(card.textContent).toContain('Timelines were re-fit.');
+    expect(chip.getAttribute('data-shape')).toBe('chip');
+    // The details stay behind their button until it opens them.
+    expect(page.getByText('One line').element().closest('[hidden]')).not.toBeNull();
+    await page.getByRole('button', { name: 'Details' }).click();
+    await expect.element(page.getByText('One line')).toBeVisible();
+  });
+});

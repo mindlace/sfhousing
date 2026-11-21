@@ -31,6 +31,7 @@ import {
 } from '../src/lib/sim-page/funding-presets';
 import { baselineGroups, programmeSentence } from '../src/lib/sim-page/funding-view';
 import { expectNoA11yViolations } from './helpers/a11y';
+import { touchLaptop } from './helpers/pointer';
 import { addPolicy, openKind, slider, waitFilled } from './helpers/run';
 import {
   SIM_KEY,
@@ -277,6 +278,8 @@ test('1d. a11y with a programme editor as a grant, a loan draft and a loan', asy
 // ---- 2 to 6. editing ------------------------------------------------------------------------------
 
 test('2. the bond preset: Undo names it and the forecast follows', async ({ page }) => {
+  // The header's Undo, named by the change, shows where a pointer is coarse: a touch laptop here.
+  await touchLaptop(page);
   await gotoSim(page);
   const preset = await addBond(page);
   await expect(poolRow(page)).toBeVisible();
@@ -381,6 +384,8 @@ test('5. market terms: a typed rate cut lets a guarantee run', async ({ page }) 
 });
 
 test('6. the programme editor: a loan is a draft until its rate', async ({ page }) => {
+  // The header's Undo, named by the change, shows where a pointer is coarse: a touch laptop here.
+  await touchLaptop(page);
   await gotoSim(page);
   const preset = await addBond(page);
   const pool = preset.pools[0];
@@ -545,7 +550,7 @@ test('8. a published policy lists its public money', async ({ page }) => {
   const g = f.programmes[0];
   // The fund's read-only summary: its pool and what it pays for.
   await page
-    .getByRole('button', { name: new RegExp(`^${esc(pool.label)}, `) })
+    .getByRole('button', { name: new RegExp(`, ${esc(pool.label)}, `) })
     .last()
     .click();
   const fund = editor(page).getByRole('region', { name: 'Public money' });
@@ -556,7 +561,7 @@ test('8. a published policy lists its public money', async ({ page }) => {
   await editor(page).getByRole('button', { name: 'Close editor' }).click();
   await openKind(page, 'Public money');
   await page
-    .getByRole('button', { name: /^Market terms, / })
+    .getByRole('button', { name: /, Market terms, / })
     .last()
     .click();
   await expect(editor(page).getByRole('region', { name: 'Public money' })).toContainText(
