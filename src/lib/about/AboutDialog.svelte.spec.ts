@@ -1,5 +1,5 @@
 /// <reference types="@vitest/browser-playwright" />
-import type { ComponentProps } from 'svelte';
+import { tick, type ComponentProps } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import { cdp, page, userEvent } from 'vitest/browser';
@@ -313,6 +313,47 @@ describe('opening', () => {
     // With no target, focus stays on Close as before.
     await page.getByRole('button', { name: 'Sources', exact: true }).click();
     await expect.poll(() => document.activeElement?.textContent?.trim()).toBe('Close');
+  });
+
+  it('a first open below the assumptions stays on target when the data checks arrive', async () => {
+    let resolve!: (r: Response) => void;
+    const fetchFn = vi.fn(
+      () =>
+        new Promise<Response>((res) => {
+          resolve = res;
+        })
+    );
+    await setup({ fetchFn: fetchFn as unknown as typeof fetch });
+    await page.getByRole('button', { name: 'Open at data' }).click();
+    // WebKit has no scroll anchoring: turn Chromium's off so the case fails as it would there.
+    scroller().style.overflowAnchor = 'none';
+    await expectAtTop(ABOUT_ID.data);
+    await expect.poll(() => fetchFn.mock.calls.length).toBe(1);
+    resolve(new Response(JSON.stringify(PROJECTS_JSON)));
+    await expect.poll(() => byId('src-quality')?.querySelector('tbody tr')).not.toBeNull();
+    await expectAtTop(ABOUT_ID.data);
+  });
+
+  it('once the reader has scrolled, the data checks arriving move nothing back', async () => {
+    let resolve!: (r: Response) => void;
+    const fetchFn = vi.fn(
+      () =>
+        new Promise<Response>((res) => {
+          resolve = res;
+        })
+    );
+    await setup({ fetchFn: fetchFn as unknown as typeof fetch });
+    await page.getByRole('button', { name: 'Open at data' }).click();
+    scroller().style.overflowAnchor = 'none';
+    await expectAtTop(ABOUT_ID.data);
+    await expect.poll(() => fetchFn.mock.calls.length).toBe(1);
+    scroller().dispatchEvent(new WheelEvent('wheel', { deltaY: -40, bubbles: true }));
+    scroller().scrollTop -= 40;
+    const at = scroller().scrollTop;
+    resolve(new Response(JSON.stringify(PROJECTS_JSON)));
+    await expect.poll(() => byId('src-quality')?.querySelector('tbody tr')).not.toBeNull();
+    await tick();
+    expect(scroller().scrollTop).toBe(at);
   });
 
   it('is capped at max-w-2xl and 85vh, and full-width on a phone', async () => {

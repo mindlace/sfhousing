@@ -81,17 +81,35 @@
     // The parts mount with the first open: wait for them before loading and scrolling.
     void tick().then(() => {
       if (!dialog?.open) return;
-      assumptions?.loadChecks();
+      const checks = assumptions?.loadChecks();
       if (scroller === null) return;
-      const el = target ? scroller.querySelector(`[id="${CSS.escape(target)}"]`) : null;
-      // The scroll box alone: scrollIntoView would also scroll the dialog, hiding its title row.
-      scroller.scrollTop = el
-        ? scroller.scrollTop + el.getBoundingClientRect().top - scroller.getBoundingClientRect().top
-        : 0;
+      const box = scroller;
+      const el = target ? box.querySelector(`[id="${CSS.escape(target)}"]`) : null;
+      const visit = ++visits;
+      moved = false;
+      land(box, el);
       // Focus where the reader was sent, so the next Tab starts there; with no target Close keeps it.
       if (el) focusLanding(el);
+      // The data checks grow when they arrive, above every later part, and WebKit anchors no
+      // scroll: land again then, unless the reader has scrolled or another open came first.
+      void checks?.then(() => {
+        if (visit === visits && !moved && dialog?.open) land(box, el);
+      });
     });
   }
+
+  /** The scroll box alone: scrollIntoView would also scroll the dialog, hiding its title row. */
+  function land(box: HTMLElement, el: Element | null): void {
+    box.scrollTop = el
+      ? box.scrollTop + el.getBoundingClientRect().top - box.getBoundingClientRect().top
+      : 0;
+  }
+
+  /** Counts opens: a later land belongs to the open that asked for it. */
+  let visits = 0;
+  /** The reader moved the scroll box (wheel, touch, a press, a key) since the last open. */
+  let moved = false;
+  const onmove = () => (moved = true);
 
   $effect(() => interceptAboutLinks((fragment, link) => show(fragment, link)));
 
@@ -162,6 +180,10 @@
   <div
     bind:this={scroller}
     data-about-scroll
+    onwheel={onmove}
+    ontouchmove={onmove}
+    onpointerdown={onmove}
+    onkeydowncapture={onmove}
     class="min-h-0 flex-1 space-y-6 overflow-y-auto px-4 pt-4 pb-6 text-sm [--about-line:var(--color-line)] [--about-muted:var(--color-ink-muted)] dark:[--about-line:var(--color-line-dark)] dark:[--about-muted:var(--color-ink-dark-muted)]"
   >
     {#if built}

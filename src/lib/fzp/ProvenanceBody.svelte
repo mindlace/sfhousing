@@ -7,6 +7,7 @@
   sets (docs/dev/about.md); the badge and the tables' head rule keep the control line.
 -->
 <script lang="ts">
+  import { tick } from 'svelte';
   import type { ProjectsFile } from '$lib/timelapse/projects';
   import { perHomeMethod } from '$lib/timeline/copy';
   import { TIER_LABEL } from './labels';
@@ -43,26 +44,33 @@
   // The in-flight or settled load, held by the instance; a failure clears it so the next start retries.
   let loading: Promise<ProjectsFile> | null = null;
 
+  // The current attempt's end: its state applied and drawn.
+  let settled: Promise<void> = Promise.resolve();
+
   /**
    * Start the data checks' load: a no-op while one is in flight or done, a retry after a failure.
    * Its owner calls it each time the body is shown (About's dialog on every open, the page on
-   * every open of the disclosure).
+   * every open of the disclosure). Resolves once the current attempt has settled and its result
+   * is in the DOM (the dialog lands again then: the checks change the height above later parts).
    */
-  export function loadChecks(): void {
-    if (projectsUrl === null) return;
+  export function loadChecks(): Promise<void> {
+    if (projectsUrl === null) return Promise.resolve();
     if (quality.kind === 'failed') quality = { kind: 'loading' };
-    if (loading !== null) return;
+    if (loading !== null) return settled;
     const attempt = loadProjectsFile(projectsUrl, fetchFn ?? ((...a) => fetch(...a)));
     loading = attempt;
-    attempt.then(
-      (file) => {
-        quality = { kind: 'ready', rows: qualityRows(file) };
-      },
-      () => {
-        if (loading === attempt) loading = null;
-        quality = { kind: 'failed' };
-      }
-    );
+    settled = attempt
+      .then(
+        (file) => {
+          quality = { kind: 'ready', rows: qualityRows(file) };
+        },
+        () => {
+          if (loading === attempt) loading = null;
+          quality = { kind: 'failed' };
+        }
+      )
+      .then(() => tick());
+    return settled;
   }
 
   const heading = $derived(`h${level}`);

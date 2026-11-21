@@ -48,10 +48,11 @@
 
   /**
    * The one way to start the data checks: a no-op while they load or once loaded, a retry after a
-   * failure. The dialog calls it on every open; the page on every open of the disclosure.
+   * failure. The dialog calls it on every open; the page on every open of the disclosure. Resolves
+   * once the checks have settled and are drawn.
    */
-  export function loadChecks(): void {
-    body?.loadChecks();
+  export function loadChecks(): Promise<void> {
+    return body?.loadChecks() ?? Promise.resolve();
   }
 
   function load() {
