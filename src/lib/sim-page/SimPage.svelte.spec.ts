@@ -1662,8 +1662,12 @@ describe('SimPage autosave and publish', () => {
       expect(inspector().elements()).toHaveLength(0);
       // Focus stays on the starter.
       expect(document.activeElement).toBe(starter.element());
-      await refusal().getByRole('button', { name: 'Dismiss' }).click();
+      const x = refusal().getByRole('button', { name: 'Dismiss' });
+      (x.element() as HTMLElement).focus();
+      await x.click();
       await expect.element(refusal()).toHaveTextContent('');
+      // Focus goes back to the starter that was pressed, never to the page.
+      await expect.poll(() => document.activeElement).toBe(starter.element());
     });
 
     it('the next starter press clears the refusal', async () => {

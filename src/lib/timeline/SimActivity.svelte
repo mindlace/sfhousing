@@ -52,6 +52,19 @@
   }: Props = $props();
 
   const uid = $props.id();
+  /** The starter last pressed: the refusal's Dismiss puts focus back on it. */
+  let pressed: HTMLButtonElement | null = null;
+  /**
+   * Dismissing removes the focused ×: focus goes to the starter that was pressed, else to
+   * Activity itself (`tl-activity`, focusable by script), never to the page.
+   */
+  function dismissRefusal(e: MouseEvent) {
+    const to = pressed?.isConnected
+      ? pressed
+      : (e.currentTarget as HTMLElement).closest<HTMLElement>('[data-testid=tl-activity]');
+    to?.focus();
+    ondismissrefusal?.();
+  }
   const signed = (n: number) => `${n < 0 ? '' : '+'}${formatCount(n)}`;
   const BUTTON =
     'inline-flex min-h-6 min-w-6 items-center rounded-md border border-control-line px-2 text-sm font-semibold text-ink hover:bg-surface-raised focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent dark:border-control-line-dark dark:text-ink-dark dark:hover:bg-surface-dark-raised dark:focus-visible:outline-accent-dark';
@@ -81,7 +94,14 @@
         <ul class="mt-1 flex flex-wrap gap-2" aria-labelledby="{uid}-try">
           {#each starters as s (s.text)}
             <li>
-              <button type="button" class={BUTTON} onclick={() => onstarter(s)}>{s.text}</button>
+              <button
+                type="button"
+                class={BUTTON}
+                onclick={(e) => {
+                  pressed = e.currentTarget;
+                  onstarter(s);
+                }}>{s.text}</button
+              >
             </li>
           {/each}
         </ul>
@@ -93,7 +113,7 @@
       <div role="status" data-testid="tl-activity-refusal" class="contents">
         {#if refusal}
           <div class="mt-3">
-            <Message text={refusal} ondismiss={() => ondismissrefusal?.()} />
+            <Message text={refusal} ondismiss={dismissRefusal} />
           </div>
         {/if}
       </div>
