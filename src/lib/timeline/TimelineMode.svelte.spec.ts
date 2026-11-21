@@ -2516,7 +2516,7 @@ describe('TimelineMode', () => {
     const activity = page.getByTestId('tl-activity');
     const body = activity.getByTestId('tl-activity-body');
     const terms = () => totalsOf().map(([t]) => t);
-    const MONEY = ['All public money spent', 'Per funded home'];
+    const MONEY = ['All public money spent', 'Per added home'];
     await expect
       .poll(terms)
       .toEqual(['Approved in new projects', 'Completed', 'Stopped', 'From your policy', ...MONEY]);

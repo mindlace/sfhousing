@@ -124,7 +124,7 @@ describe('SimActivity', () => {
       ['Stopped', '12'],
       ['From your policy', '+24'],
       ['All public money spent', formatDollars(2.5e6)],
-      ['Per funded home', 'no funded homes yet']
+      ['Per added home', 'no homes added yet']
     ]);
     await r.rerender(
       props({
@@ -135,7 +135,7 @@ describe('SimActivity', () => {
     expect(pairs().slice(4)).toEqual([
       ['From your policy', '−4'],
       ['All public money spent', formatDollars(1e6)],
-      ['Per funded home', formatDollars(410_000)]
+      ['Per added home', formatDollars(410_000)]
     ]);
     // Not filled yet: calculating, no list.
     await r.rerender(props({ atToday: false, totals: null }));
