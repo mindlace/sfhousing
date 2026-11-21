@@ -80,7 +80,7 @@
   const MIN_SHEET = 240;
 
   /**
-   * Px of rows the pinned block must leave in its box (a 44 px coarse row with room around it);
+   * Px of rows the pinned block must leave in its box (a 24 px row target with room around it);
    * with less (a short window or browser zoom) the block and the rows are one piece that the
    * page's box scrolls, so a focused row always shows (WCAG 2.2 2.4.11, 1.4.10).
    */

@@ -216,8 +216,8 @@
 </div>
 
 <style>
-  /* The strip is 54 px tall (a 44 px target, 4 px padding, 1 px border) and sits 0.5rem above the
-     map inset (the bar and the sheet handle, which the page adds to the inset), so a control at
+  /* The strip is 42 px tall (the 32 px stories swatch, 4 px padding, 1 px border) and sits
+     0.5rem above the map inset (the bar and the sheet handle, which the page adds to the inset), so a control at
      the map's bottom left clears it at 0.5rem + 3.5rem: the navigation control's container (fine
      pointers) and SimMap's Reset view button (coarse pointers). `.sim-map` outranks SimMap's own
      `bottom` rules. The host is the dock's (`.sfh-dock-host`: FzpMode's root on /sim,
