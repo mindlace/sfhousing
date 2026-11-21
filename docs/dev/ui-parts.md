@@ -26,8 +26,10 @@ geometry only, with a comment saying so.
 | `BUTTON_QUIET`   | An action inside a message (Retry, Details, ×), a dialog's Close | no border, underlined, semibold                                                              |
 | `ON_MAP`         | Added to a button over the map                                   | a small shadow, so it reads on any map                                                       |
 
-`BUTTON` and `BUTTON_PRIMARY` are at least 24 px, 44 px on a coarse pointer; `BUTTON_QUIET` is 44 px
-everywhere. All show the accent outline on `:focus-visible`. Off (`disabled` or
+Every kind carries `TARGET` (`min-h-6 min-w-6`): at least 24 by 24 px on every pointer, mouse and
+touch alike, with nothing larger on a coarse pointer (the target rule is in
+[accessibility.md](accessibility.md)). A control that is none of the kinds (a field, a switch's
+label, a summary, a row) takes `TARGET` beside its own look. All show the accent outline on `:focus-visible`. Off (`disabled` or
 `aria-disabled="true"`) they read in muted ink (the primary loses its fill for the raised surface),
 take no hover, and show `cursor: not-allowed`. A button that must say why it is off is
 `aria-disabled`, not `disabled`, so it keeps focus and can carry an `Explain` (Publish; see

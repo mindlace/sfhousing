@@ -14,12 +14,15 @@ const FOCUS_RING =
 /** What BUTTON and BUTTON_PRIMARY share: the focus ring and the off states. */
 const BUTTON_BASE = `inline-flex items-center justify-center whitespace-nowrap ${FOCUS_RING} disabled:cursor-not-allowed aria-disabled:cursor-not-allowed`;
 
-/** 24 px, 44 px on a coarse pointer. */
-const TARGET = 'min-h-6 min-w-6 pointer-coarse:min-h-11 pointer-coarse:min-w-11';
+/**
+ * The one target size: at least 24 by 24 px on every pointer, mouse and touch alike (WCAG 2.2 AA,
+ * 2.5.8). Every button kind carries it; a control that is none of them takes it beside its own look.
+ */
+export const TARGET = 'min-h-6 min-w-6';
 
 /**
  * A secondary button: control-line border, surface, ink, text-sm font-semibold, rounded-md, px-2,
- * min 24 px (44 px on a coarse pointer), hover one step raised, focus-visible accent outline,
+ * min 24 px, hover one step raised, focus-visible accent outline,
  * aria-disabled and disabled: muted ink, no hover, cursor not-allowed.
  */
 export const BUTTON = `${BUTTON_BASE} ${TARGET} rounded-md border border-control-line bg-surface px-2 text-sm font-semibold text-ink hover:bg-surface-raised disabled:text-ink-muted aria-disabled:text-ink-muted disabled:hover:bg-surface aria-disabled:hover:bg-surface dark:border-control-line-dark dark:bg-surface-dark dark:text-ink-dark dark:hover:bg-surface-dark-raised dark:disabled:text-ink-dark-muted dark:aria-disabled:text-ink-dark-muted dark:disabled:hover:bg-surface-dark dark:aria-disabled:hover:bg-surface-dark`;
@@ -30,8 +33,8 @@ export const BUTTON = `${BUTTON_BASE} ${TARGET} rounded-md border border-control
  */
 export const BUTTON_PRIMARY = `${BUTTON_BASE} ${TARGET} rounded-md bg-accent px-2 text-sm font-semibold text-on-accent hover:bg-accent-hover disabled:bg-surface-raised disabled:text-ink-muted aria-disabled:bg-surface-raised aria-disabled:text-ink-muted disabled:hover:bg-surface-raised aria-disabled:hover:bg-surface-raised dark:bg-accent-dark dark:text-on-accent-dark dark:hover:bg-accent-dark-hover dark:disabled:bg-surface-dark-raised dark:disabled:text-ink-dark-muted dark:aria-disabled:bg-surface-dark-raised dark:aria-disabled:text-ink-dark-muted dark:disabled:hover:bg-surface-dark-raised dark:aria-disabled:hover:bg-surface-dark-raised`;
 
-/** An action inside a message (Retry, Details, ×): no border, underlined, semibold, 44 px target. */
-export const BUTTON_QUIET = `min-h-11 min-w-11 rounded-full px-3 font-semibold underline ${FOCUS_RING}`;
+/** An action inside a message (Retry, Details, ×): no border, underlined, semibold, min 24 px. */
+export const BUTTON_QUIET = `${TARGET} rounded-full px-3 font-semibold underline ${FOCUS_RING}`;
 
 /** Added to a button that sits over the map: a small shadow so it reads on any map. */
 export const ON_MAP = 'shadow-sm';

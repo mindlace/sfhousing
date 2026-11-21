@@ -25,18 +25,16 @@ describe('the shared parts', () => {
     expect(bad).toEqual([]);
   });
 
-  it('BUTTON and BUTTON_PRIMARY: 24 px, 44 px on a coarse pointer; BUTTON_QUIET: 44 px', () => {
-    for (const b of [ui.BUTTON, ui.BUTTON_PRIMARY]) {
-      expect(classes(b)).toEqual(
-        expect.arrayContaining([
-          'min-h-6',
-          'min-w-6',
-          'pointer-coarse:min-h-11',
-          'pointer-coarse:min-w-11'
-        ])
-      );
+  it('TARGET is 24 px on every pointer, and every button kind carries it', () => {
+    expect(classes(ui.TARGET)).toEqual(['min-h-6', 'min-w-6']);
+    for (const b of [ui.BUTTON, ui.BUTTON_PRIMARY, ui.BUTTON_QUIET]) {
+      expect(classes(b)).toEqual(expect.arrayContaining(['min-h-6', 'min-w-6']));
     }
-    expect(classes(ui.BUTTON_QUIET)).toEqual(expect.arrayContaining(['min-h-11', 'min-w-11']));
+    // One size for mouse and touch: no constant grows on a coarse pointer or sets 44 px.
+    const grown = constants.filter(([, v]) =>
+      classes(v).some((c) => /pointer-(?:coarse|fine):|(?:^|:)(?:min-)?[hw]-11$|size-11$/.test(c))
+    );
+    expect(grown.map(([n]) => n)).toEqual([]);
   });
 
   it('a disabled or aria-disabled button reads muted, with no hover and a not-allowed cursor', () => {
