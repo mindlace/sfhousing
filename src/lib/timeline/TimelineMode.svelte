@@ -1696,7 +1696,7 @@
           data-testid="tl-inspector"
           style:top={phoneSheet ? `${sheetTop}px` : undefined}
           style:bottom={phoneSheet ? `${sheetBottom}px` : undefined}
-          class="z-30 overflow-y-auto border-line bg-surface text-ink max-md:fixed max-md:inset-x-0 max-md:rounded-t-2xl max-md:border-t max-md:shadow-lg md:min-h-0 md:border-l dark:border-line-dark dark:bg-surface-dark dark:text-ink-dark"
+          class="detail-col z-30 overflow-y-auto border-line bg-surface text-ink max-md:fixed max-md:inset-x-0 max-md:rounded-t-2xl max-md:border-t max-md:shadow-lg md:min-h-0 md:border-l dark:border-line-dark dark:bg-surface-dark dark:text-ink-dark"
         >
           {#if inspectorOpen}
             {@render inspector({ activity, details, day })}
@@ -1740,6 +1740,42 @@
     .tl-dim[data-stale]
       :global(:not(button, a, input, select, textarea, summary, button *, a *, summary *)) {
       color: var(--color-ink-dark-muted);
+    }
+  }
+  /* The detail column (Activity, Details, the editor; the phone sheet is the same box) says more
+     is below: a fade sticks to its foot while its content overflows and is not scrolled to the
+     end. CSS only: a scroll-driven animation on the column's own scroll timeline; while nothing
+     overflows the timeline is inactive and the base opacity (0) holds. Never takes a press, and
+     focus scrolls clear of it. Nothing moves but the opacity, with the scroll. */
+  .detail-col {
+    scroll-timeline: --sfh-detail block;
+    scroll-padding-bottom: 24px;
+  }
+  .detail-col::after {
+    content: '';
+    position: sticky;
+    bottom: 0;
+    display: block;
+    height: 24px;
+    margin-top: -24px;
+    pointer-events: none;
+    opacity: 0;
+    background: linear-gradient(to bottom, transparent, var(--color-surface));
+    animation: sfh-detail-more linear both;
+    animation-timeline: --sfh-detail;
+  }
+  @keyframes sfh-detail-more {
+    0%,
+    92% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0;
+    }
+  }
+  @media (prefers-color-scheme: dark) {
+    .detail-col::after {
+      background: linear-gradient(to bottom, transparent, var(--color-surface-dark));
     }
   }
 </style>

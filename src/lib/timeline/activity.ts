@@ -3,8 +3,8 @@
  * its own `CityStore`, fed by the same `TimelineUpdate`s it forwards to the map (map-interfaces,
  * "The citywide feed"), and this index over it. Pure TS.
  *
- * Cost: an `apply` only marks the order stale; the first read after it sorts every event once
- * (O(n log n), n = 3 × rows at most); every read is a binary search plus the few events it returns
+ * Cost: an `apply` only marks the order stale; the first read after it that can show anything
+ * (not at today) sorts every event once (O(n log n), n = 3 × rows at most); every read is a binary search plus the few events it returns
  * (O(log n + limit)). Moving the playhead never sorts.
  */
 import { CityStore } from '$lib/map/timelapse/city';
@@ -59,12 +59,14 @@ export class ActivityIndex {
 
   /**
    * The newest `limit` events with after < day <= through, newest first, ties by row then kind.
-   * The first read after an apply sorts every (day, event) key once; later reads only search.
+   * The first read after an apply that can show anything (`through > after`) sorts every
+   * (day, event) key once; later reads only search, and a read at today never sorts.
    */
   recent(after: Day, through: Day, limit = ACTIVITY_LIMIT): ActivityEvent[] {
-    if (this.#dirty) this.#sort();
     const out: ActivityEvent[] = [];
+    // Nothing can show (at today, or no room): return before sorting.
     if (through <= after || limit <= 0) return out;
+    if (this.#dirty) this.#sort();
     const days = this.#store.days;
     if (this.#keys) {
       // Packed days are whole: day <= through is day < floor(through) + 1, day > after likewise.

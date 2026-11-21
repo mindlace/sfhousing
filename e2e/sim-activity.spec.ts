@@ -86,7 +86,7 @@ test('after Play the totals show and the starters go', async ({ page, isMobile }
   const totals = activity(page).getByTestId('tl-totals');
   await expect(totals).toBeVisible();
   await expect(totals.locator('dt')).toHaveText([
-    'New projects approved',
+    'Approved in new projects',
     'Completed',
     'Stopped',
     'Affordable'

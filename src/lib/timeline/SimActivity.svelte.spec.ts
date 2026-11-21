@@ -102,7 +102,7 @@ describe('SimActivity', () => {
     expect(page.getByText(goalName(GOAL)).elements()).toHaveLength(0);
     expect(page.getByText('Try one:').elements()).toHaveLength(0);
     expect(pairs()).toEqual([
-      ['New projects approved', '1,234'],
+      ['Approved in new projects', '1,234'],
       ['Completed', '567'],
       ['Stopped', '12'],
       ['Affordable', '89']
@@ -119,7 +119,7 @@ describe('SimActivity', () => {
       })
     );
     expect(pairs()).toEqual([
-      ['New projects approved', '1,234'],
+      ['Approved in new projects', '1,234'],
       ['Completed', '567'],
       ['Stopped', '12'],
       ['From your policy', '+24'],

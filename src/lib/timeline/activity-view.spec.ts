@@ -176,7 +176,7 @@ describe('copy', () => {
       details: 'Details',
       tryOne: 'Try one:',
       play: 'Press Play to see what gets built.',
-      approved: 'New projects approved',
+      approved: 'Approved in new projects',
       completed: 'Completed',
       stopped: 'Stopped',
       affordable: 'Affordable',

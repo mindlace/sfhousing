@@ -192,6 +192,17 @@ describe('ActivityIndex', () => {
     expect(ix.sorts).toBe(2);
   });
 
+  it('a read that can show nothing (at today) sorts nothing; the next real read sorts once', () => {
+    const ix = new ActivityIndex();
+    ix.apply(update(0, delta(1, [{ row: 0, days: [AS_OF + 1, N, N] }])));
+    expect(ix.recent(AS_OF, AS_OF)).toEqual([]);
+    expect(ix.recent(AS_OF, AS_OF - 3)).toEqual([]);
+    expect(ix.recent(AS_OF, AS_OF + 5, 0)).toEqual([]);
+    expect(ix.sorts).toBe(0);
+    expect(ix.recent(AS_OF, AS_OF + 5)).toHaveLength(1);
+    expect(ix.sorts).toBe(1);
+  });
+
   it('beyond the packed keys (many rows) it reads in the same order', () => {
     const rows = 90_000; // 3 × rows > 2^18
     const ms: M[] = [];

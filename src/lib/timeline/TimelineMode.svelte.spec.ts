@@ -2374,6 +2374,37 @@ describe('TimelineMode', () => {
     expect(pad.paddingRight).toBe('12px');
   });
 
+  /** The detail column's bottom fade: its ::after's opacity. */
+  const fadeOf = (el: Element) => Number(getComputedStyle(el, '::after').opacity);
+
+  it('the detail column shows no fade at its foot when its content fits', async () => {
+    await opened(LAST, { withInspector: true, inspectorOpen: false, regionHeight: 900 });
+    const col = page.getByTestId('tl-inspector').element() as HTMLElement;
+    await expect.element(page.getByTestId('tl-activity')).toBeVisible();
+    expect(col.scrollHeight).toBeLessThanOrEqual(col.clientHeight);
+    expect(fadeOf(col)).toBe(0);
+  });
+
+  it('the detail column fades at its foot while more is below; scrolled to its end, none', async () => {
+    await opened(LAST, { withInspector: true, inspectorOpen: false, regionHeight: 300 });
+    const col = page.getByTestId('tl-inspector').element() as HTMLElement;
+    await expect.element(page.getByTestId('tl-activity')).toBeVisible();
+    // After today Activity lists its totals: more than the short column holds.
+    (slider().element() as HTMLElement).focus();
+    await userEvent.keyboard('{End}');
+    await expect.element(page.getByTestId('tl-totals')).toBeVisible();
+    await expect.poll(() => col.scrollHeight).toBeGreaterThan(col.clientHeight);
+    await expect.poll(() => fadeOf(col)).toBe(1);
+    // The fade never takes a press: what is under it stays reachable.
+    expect(getComputedStyle(col, '::after').pointerEvents).toBe('none');
+    // Focus scrolls clear of it.
+    expect(parseFloat(getComputedStyle(col).scrollPaddingBottom)).toBeGreaterThanOrEqual(
+      parseFloat(getComputedStyle(col, '::after').height)
+    );
+    col.scrollTop = col.scrollHeight;
+    await expect.poll(() => fadeOf(col)).toBe(0);
+  });
+
   it('Activity at today offers the starters with nothing in force; one calls onstarter', async () => {
     const onstarter = vi.fn();
     const s = await opened(LAST, { withInspector: true, inspectorOpen: false, onstarter });
@@ -2422,7 +2453,7 @@ describe('TimelineMode', () => {
       )!;
       await expect.element(scoreBar()).toHaveTextContent(homesBy(h.homes, h.at));
       await expect.poll(totalsOf).toEqual([
-        ['New projects approved', String(full.rows[k].entitledNew)],
+        ['Approved in new projects', String(full.rows[k].entitledNew)],
         ['Completed', String(h.homes)],
         ['Stopped', String(full.rows[k].exitedUnits)],
         ['From your policy', `+${h.effect}`]
@@ -2488,7 +2519,7 @@ describe('TimelineMode', () => {
     const MONEY = ['All public money spent', 'Per funded home'];
     await expect
       .poll(terms)
-      .toEqual(['New projects approved', 'Completed', 'Stopped', 'From your policy', ...MONEY]);
+      .toEqual(['Approved in new projects', 'Completed', 'Stopped', 'From your policy', ...MONEY]);
     // The chunk's publicSpent at month 3: 100 * 4.
     expect(totalsOf()[4][1]).toBe(formatDollars(400));
     expect(body.element().hasAttribute('data-stale')).toBe(false);
@@ -2500,7 +2531,7 @@ describe('TimelineMode', () => {
     expect(debug().stale).toBe(true);
     await expect.element(body).toHaveAttribute('data-stale', 'true');
     expect(terms()).toEqual([
-      'New projects approved',
+      'Approved in new projects',
       'Completed',
       'Stopped',
       'From your policy',
@@ -2515,7 +2546,7 @@ describe('TimelineMode', () => {
     emit(refillMsg(2, 0));
     emit(filledMsg(2, 0, LAST + 1));
     await expect.poll(() => debug().stale).toBe(false);
-    await expect.poll(terms).toEqual(['New projects approved', 'Completed', 'Stopped']);
+    await expect.poll(terms).toEqual(['Approved in new projects', 'Completed', 'Stopped']);
     expect(body.element().hasAttribute('data-stale')).toBe(false);
   });
 
