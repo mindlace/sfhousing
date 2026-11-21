@@ -95,6 +95,27 @@ test('an empty plan: Publish is aria-disabled and says "Paint something first." 
   await expect(page.locator('dialog[open]')).toHaveCount(0);
 });
 
+test('an empty plan on a phone: a tap on Publish shows "Paint something first."', async ({
+  page,
+  isMobile
+}) => {
+  // eslint-disable-next-line playwright/no-skipped-test
+  test.skip(!isMobile, 'touch only');
+  await gotoEditor(page);
+  const opener = await openPublish(page);
+  // Described at rest, before any focus or tap.
+  await expect(opener).toHaveAccessibleDescription('Paint something first.');
+  // Playwright waits for an aria-disabled element to be enabled: force sends the real tap.
+  await opener.tap({ force: true });
+  await expect(opener).toBeFocused();
+  const reason = page.getByRole('banner').getByRole('tooltip');
+  await expect(reason).toHaveText('Paint something first.');
+  await expect(reason).toBeVisible();
+  // Read once while it shows.
+  await expect(opener).toHaveAccessibleDescription('Paint something first.');
+  await expect(page.locator('dialog[open]')).toHaveCount(0);
+});
+
 test('reload restores the autosaved plan', async ({ page, isMobile }) => {
   await gotoEditor(page);
   await paintOnce(page, isMobile);

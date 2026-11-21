@@ -50,37 +50,43 @@
     origin ?? (typeof location === 'undefined' ? '' : location.origin)
   );
 
-  function onclick() {
+  const uid = $props.id();
+  const hintId = `${uid}-hint`;
+
+  function onclick(e: MouseEvent) {
     // aria-disabled, not `disabled`, so it stays focusable and shows its reason: a press (click,
-    // Enter or Space, which all arrive here) does nothing.
-    if (empty) return;
+    // Enter or Space, which all arrive here) does nothing but focus it, so the reason shows where
+    // a tap does not focus (iOS Safari, a VoiceOver double-tap).
+    if (empty) {
+      (e.currentTarget as HTMLElement).focus();
+      return;
+    }
     mode = alreadyPublished ? 'success' : 'form';
     open = true;
   }
 </script>
 
-{#snippet opener()}
-  <button
-    type="button"
-    data-testid="publish-open"
-    data-hashed={hashReady}
-    aria-disabled={empty ? 'true' : undefined}
-    aria-haspopup="dialog"
-    {onclick}
-    class={BUTTON_PRIMARY}
-  >
-    {alreadyPublished ? 'Share link' : 'Publish'}
-  </button>
-{/snippet}
-
-<!-- While empty the reason shows on hover and focus, under the button, and describes it. -->
-{#if empty}
-  <span class="explain-under relative inline-block">
-    <Explain as="wrap" text={copy.disabledHint}>{@render opener()}</Explain>
-  </span>
-{:else}
-  {@render opener()}
-{/if}
+<!-- One button in both states, so focus on it survives the switch (undo or redo from the
+     keyboard). While empty the reason shows under it on hover and focus; the hidden hint describes
+     it at rest too (a browse-mode screen reader moves no focus), so Explain adds no description
+     of its own and the reason is read once. -->
+<span class="explain-under relative inline-block">
+  <Explain as="wrap" text={copy.disabledHint} off={!empty} describes={false}>
+    <button
+      type="button"
+      data-testid="publish-open"
+      data-hashed={hashReady}
+      aria-disabled={empty ? 'true' : undefined}
+      aria-describedby={empty ? hintId : undefined}
+      aria-haspopup="dialog"
+      {onclick}
+      class={BUTTON_PRIMARY}
+    >
+      {alreadyPublished ? 'Share link' : 'Publish'}
+    </button>
+  </Explain>
+  {#if empty}<span id={hintId} class="sr-only">{copy.disabledHint}</span>{/if}
+</span>
 
 <PublishDialog
   bind:open

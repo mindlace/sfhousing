@@ -12,15 +12,34 @@
     as?: 'button' | 'wrap';
     /** Accessible name of the button (default: the child's text). */
     label?: string;
+    /**
+     * Wrap mode: whether the open text describes the child (default true). False when the child
+     * carries the same words as a description of its own at rest, so they are read once.
+     */
+    describes?: boolean;
+    /**
+     * Never opens (and closes if open), with the same elements in place: a child that only
+     * sometimes needs explaining keeps its node, so focus on it survives the switch.
+     */
+    off?: boolean;
     children: Snippet;
   }
 
-  let { text, as = 'button', label = undefined, children }: Props = $props();
+  let {
+    text,
+    as = 'button',
+    label = undefined,
+    describes = true,
+    off = false,
+    children
+  }: Props = $props();
 
   const id = $props.id();
   const textId = `${id}-explain`;
 
-  let open = $state(false);
+  let opened = $state(false);
+  /** Shown: opened, and not switched off. */
+  const open = $derived(opened && !off);
   let wrapper: HTMLElement | undefined = $state();
   // Whether the panel was open when a touch or pen press began (it opens on focus in between).
   let openAtPress = false;
@@ -36,30 +55,30 @@
   const withinFocus = () => !!wrapper && wrapper.contains(document.activeElement);
 
   function onenter(e: PointerEvent) {
-    if (e.pointerType === 'mouse' && !dismissed) open = true;
+    if (e.pointerType === 'mouse' && !dismissed) opened = true;
   }
   function onmove(e: PointerEvent) {
     if (e.pointerType !== 'mouse' || !dismissed) return;
     dismissed = false;
-    open = true;
+    opened = true;
   }
   function onleave(e: PointerEvent) {
     if (e.pointerType !== 'mouse') return;
     dismissed = false;
-    if (!withinFocus()) open = false;
+    if (!withinFocus()) opened = false;
   }
   function onfocusin() {
     dismissed = false;
-    open = true;
+    opened = true;
   }
   function onfocusout(e: FocusEvent) {
     const next = e.relatedTarget as Node | null;
-    if (!next || !wrapper?.contains(next)) open = false;
+    if (!next || !wrapper?.contains(next)) opened = false;
   }
   // On the window: Escape closes however it opened, including by hover with focus elsewhere.
   function onwindowkeydown(e: KeyboardEvent) {
     if (e.key === 'Escape' && open) {
-      open = false;
+      opened = false;
       dismissed = true;
       e.stopPropagation();
     }
@@ -68,7 +87,7 @@
   // (a panel or sheet around it keeps its own Escape for the next press).
   function onkeydown(e: KeyboardEvent) {
     if (e.key !== 'Escape' || !open) return;
-    open = false;
+    opened = false;
     dismissed = true;
     e.stopPropagation();
   }
@@ -87,14 +106,14 @@
   // Wrap mode has no second-tap close: a tap there belongs to the focusable child's own action.
   function onclick(e: MouseEvent) {
     if (as !== 'button') return;
-    if (e.detail === 0) open = !open;
-    else if (pressKind === 'mouse') open = true;
-    else open = !openAtPress;
+    if (e.detail === 0) opened = !open;
+    else if (pressKind === 'mouse') opened = true;
+    else opened = !openAtPress;
   }
 
-  // Wrap mode: the focusable child gets the description while open.
+  // Wrap mode: the focusable child gets the description while open (unless it describes itself).
   $effect(() => {
-    if (as !== 'wrap' || !wrapper) return;
+    if (as !== 'wrap' || !describes || !wrapper) return;
     const el = wrapper.querySelector<HTMLElement>(
       'a[href], button, input, select, textarea, [tabindex]'
     );
