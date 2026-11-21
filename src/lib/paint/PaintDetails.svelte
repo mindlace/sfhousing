@@ -1,16 +1,18 @@
 <!--
   Paint's Details: the dock's Details face on `/` and on shared plans (`/p/:id`), opened by the
   header's headline. The goal rows at the headline's share, what the strokes changed, the
-  neighborhoods, what room for homes means, then the data footnote. No badge, no repeated
+  neighborhoods, what room for homes means, an old plan's recalculated note, then the link to
+  About's meanings (WORKED_OUT). No badge, no repeated
   headline: the header carries the number. On the dock's surface, so every colour is a light and
   dark token pair.
 -->
 <script lang="ts">
+  import { ABOUT_ID, WORKED_OUT } from '$lib/about/copy';
   import { capacityRows, goalTrackMax } from '$lib/goal/goal';
   import GoalRow from '$lib/goal/GoalRow.svelte';
   import NeighborhoodList from '$lib/scoreboard/NeighborhoodList.svelte';
+  import { TARGET } from '$lib/shell/ui';
   import {
-    footnoteLead,
     neighborhoodRows,
     oldPlanNote,
     viewState,
@@ -87,8 +89,17 @@
     </div>
   </details>
 
-  <p class="mt-3 text-xs text-ink-muted dark:text-ink-dark-muted">
-    {footnoteLead(status)} · <a class="underline" href="/attribution">Sources</a>{#if view.oldPlan}
-      · {oldPlanNote(status)}{/if}
+  {#if view.oldPlan}
+    <p class="mt-3 text-xs text-ink-muted first-letter:uppercase dark:text-ink-dark-muted">
+      {oldPlanNote(status)}
+    </p>
+  {/if}
+
+  <p class={view.oldPlan ? 'mt-1 text-sm' : 'mt-3 text-sm'}>
+    <a
+      class="{TARGET} inline-flex items-center font-semibold underline"
+      href="/about#{ABOUT_ID.meanings}"
+      data-testid="paint-details-about">{WORKED_OUT}</a
+    >
   </p>
 </div>

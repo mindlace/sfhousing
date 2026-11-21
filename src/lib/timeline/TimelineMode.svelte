@@ -1821,9 +1821,9 @@
 </div>
 
 <style>
-  /* A narrow or short map wraps the attribution (bottom right) across its width: the zoom and
-     compass control (bottom left) sits above the attribution's footprint, never under it (WCAG
-     2.2 2.4.11). The footprint includes the bottom inset (docs/dev/map-interfaces.md). */
+  /* The zoom and compass control (bottom left) sits above the bottom-right controls' footprint
+     (the map's credit, Layers and Key), never under it (WCAG 2.2 2.4.11). The footprint includes
+     the bottom inset (docs/dev/map-interfaces.md). */
   .sfh-tl :global(.sim-map .maplibregl-ctrl-bottom-left) {
     bottom: max(var(--map-bottom-inset, 0px), var(--map-controls-br-block-size, 0px));
   }

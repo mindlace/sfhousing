@@ -1,6 +1,7 @@
 // Target size (WCAG 2.2 AA, 2.5.8; docs/dev/accessibility.md): at 375 px on the mobile project
-// (touch, coarse pointer), every visible interactive element on `/`, `/sim` and `/lesscars` is at
-// least 24 by 24 CSS px, at rest and with the page's sheets, menus and panels open. One size for
+// (touch, coarse pointer), every visible interactive element on `/`, `/sim`, `/lesscars` and
+// `/about` is at least 24 by 24 CSS px, at rest and with the page's sheets, menus, panels and
+// dialogs open (About over `/sim`, the assumptions open on `/about`). One size for
 // every pointer: nothing here needs 44 px. The exemptions are listed below with their reasons.
 import { expect, test, type Page } from '@playwright/test';
 import { addPolicy, waitFilled } from './helpers/run';
@@ -476,6 +477,31 @@ test.describe('targets at 375 px', () => {
       await addPolicy(page, kind, choice);
       await expectTargets(page, `/sim ${kind} editor`, 25);
     });
+
+  test('/about: at rest and with the assumptions open', async ({ page }) => {
+    await page.goto('/about');
+    await expect(page.locator('html')).toHaveAttribute('data-hydrated', '');
+    await expectTargets(page, '/about at rest', 20);
+    const show = page.locator('#about-assumptions').getByText('Show the assumptions', {
+      exact: true
+    });
+    await show.click();
+    await expect(
+      page.locator('#src-quality').getByRole('table', { name: 'Data checks that changed a value' })
+    ).toBeVisible();
+    await expectTargets(page, '/about assumptions open', 40);
+  });
+
+  test('/sim: About open from the Menu', async ({ page }) => {
+    await gotoSimReady(page);
+    await openHeaderMenu(page);
+    await page.getByRole('link', { name: 'About', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'About this model' });
+    await expect(dialog).toBeVisible();
+    // The data checks have loaded: the whole body is there.
+    await expect(dialog.locator('[id="src-quality"] tbody tr').first()).toBeVisible();
+    await expectTargets(page, '/sim About open', 20);
+  });
 
   test('/lesscars at rest', async ({ page }) => {
     await page.goto('/lesscars');

@@ -19,7 +19,7 @@
 <div class={menuOpen ? '' : 'hidden'} data-testid="menu-panel">
   <a href="/about" onclick={() => (menuOpen = false)}>About in the Menu</a>
 </div>
-<button type="button" onclick={() => dialog.open()}>Sources</button>
+<button type="button" onclick={() => dialog.open()}>Open About</button>
 <button type="button" onclick={() => dialog.open('src-transition-discretionary-entitled')}>
   Open at entitled
 </button>

@@ -17,7 +17,7 @@
 
   const SIM = copyFor('sim');
   const OG_DESCRIPTION =
-    'A housing policy for San Francisco, run through the simulation lot by lot. Open it to see how many homes it adds against the RHNA target.';
+    'A housing policy for San Francisco, run through the simulation lot by lot. Open it to see how many homes it adds against the state target.';
 
   const heading = $derived(data.doc.title ?? 'Shared policy');
   const pageTitle = $derived(`${heading} · SF Housing Simulator`);

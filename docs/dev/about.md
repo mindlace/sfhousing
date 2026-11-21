@@ -122,7 +122,7 @@ the live assumptions, so About opens over the map instead. `src/lib/about/AboutD
 `<dialog>` on the shared surface (`SURFACE_DIALOG_FLUSH`) headed "About this model" (h2), with
 Close (`BUTTON_QUIET`), then the four parts at level 3, part 2 live (`sections` is the run's
 `provenanceSections(calibration, score, terms)`). `TimelineMode` mounts it while it has a
-calibration and a scenario (the Sources dialog's old place and condition).
+calibration and a scenario.
 
 - `open(target = '')`: `''` is the top; an `ABOUT_ID` value or an entry id (`src-…`) is scrolled
   to the top of the dialog's scroll box and its heading focused (`focusLanding`), so the next Tab
@@ -144,9 +144,20 @@ calibration and a scenario (the Sources dialog's old place and condition).
 
 ## The link rule
 
-Every way into About is a link to `/about#…`: the header's About, Details' last line ("How this is
-worked out", `WORKED_OUT`, to `/about#about-assumptions`), the card's sources (through
-`open(id)`), and the map's credit ("About this model", to `/about#about-data`). `src/lib/about/links.ts`:
+Every way into About is a link to `/about#…`, and every one says the same thing:
+
+| Way in                                                         | Where it lands                                                            |
+| -------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| The header's About (in the Menu below lg)                      | `/about`                                                                  |
+| `/sim`'s Details, its last line (`WORKED_OUT`)                 | `/about#about-assumptions`                                                |
+| Paint's Details (`/`, `/p/<id>`), its last line (`WORKED_OUT`) | `/about#about-meanings`, where the goal links the SF Planning RHNA Primer |
+| A project card's sources                                       | the entry (`src-…`, through `open(id)`)                                   |
+| The map's credit, "About this model"                           | `/about#about-data`                                                       |
+| The footer on document pages: About; "Data & licences"         | `/about`; `/about#about-data`                                             |
+| `/attribution` (old links)                                     | 308 to `/about#about-data`                                                |
+
+"RHNA" is said only in About: part 1's goal spells it out, and the assumptions cite documents by
+their own titles. `/s/<id>`'s share description says "the state target". `src/lib/about/links.ts`:
 
 - `aboutTarget(a, origin)`: the fragment a link opens (`''` for `/about`), or null when it is not
   a same-origin link to exactly `/about`, or has a `target` other than `_self`, or `download`.

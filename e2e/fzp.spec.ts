@@ -537,7 +537,7 @@ test('clicking empty map closes the card; moving the pointer off the part does n
   await expect(c).toBeHidden();
 });
 
-// ---- About's assumptions (was the sources dialog) ---------------------------------------------
+// ---- About's assumptions ----------------------------------------------------------------------
 
 test("About's assumptions list every parameter and every data check", async ({ page }) => {
   await gotoFzp(page);

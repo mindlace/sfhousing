@@ -64,7 +64,7 @@ async function scheme(value: 'light' | 'dark') {
 const dialog = () => document.querySelector('dialog') as HTMLDialogElement;
 const byId = (id: string) => dialog().querySelector(`[id="${id}"]`) as HTMLElement;
 const scroller = () => dialog().querySelector('[data-about-scroll]') as HTMLElement;
-const opener = () => page.getByRole('button', { name: 'Sources', exact: true });
+const opener = () => page.getByRole('button', { name: 'Open About', exact: true });
 const linkNamed = (name: string) =>
   page.getByRole('link', { name, exact: true }).element() as HTMLAnchorElement;
 
@@ -311,7 +311,7 @@ describe('opening', () => {
     await expectAtTop('src-transition-discretionary-entitled');
     dialog().close();
     // With no target, focus stays on Close as before.
-    await page.getByRole('button', { name: 'Sources', exact: true }).click();
+    await page.getByRole('button', { name: 'Open About', exact: true }).click();
     await expect.poll(() => document.activeElement?.textContent?.trim()).toBe('Close');
   });
 

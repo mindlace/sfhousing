@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import { page, userEvent } from 'vitest/browser';
 import '../../routes/layout.css';
+import { ABOUT_ID, WORKED_OUT } from '$lib/about/copy';
 import { capacityGoalText } from './headline';
 import PaintDetails from './PaintDetails.svelte';
 import { M1_TARGETS, score as computeScore, type Score, type ScoreStatus } from '$lib/scoreboard';
@@ -124,23 +125,54 @@ describe('PaintDetails', () => {
     expect(onretry).toHaveBeenCalledTimes(1);
   });
 
-  it('updating: Updating… first; the footnote names the data, Sources and an old plan', async () => {
+  it('updating: Updating… first', async () => {
     await page.viewport(1024, 768);
-    await renderAtRest(
-      scoreOf({ Mission: 5 }),
-      status({ complete: false, planDatasetVersion: 'fixture-0' })
-    );
+    await renderAtRest(scoreOf({ Mission: 5 }), status({ complete: false }));
     await expect.element(page.getByText('Updating…')).toBeVisible();
     const first = panel().querySelector('p');
     expect(first?.textContent?.trim()).toBe('Updating…');
-    await expect
-      .element(page.getByText(/Data 2026-10-10-abcdef12 · built 2026-10-10/))
-      .toBeVisible();
-    await expect
-      .element(page.getByText(/plan made on data fixture-0, recalculated on current data/))
-      .toBeVisible();
-    await expect
-      .element(page.getByRole('link', { name: 'Sources' }))
-      .toHaveAttribute('href', '/attribution');
+  });
+
+  it('the last line is "How this is worked out" to /about#about-meanings, at least 24 px tall; no dataset version', async () => {
+    await page.viewport(1024, 768);
+    await renderAtRest(scoreOf({ Mission: 5 }));
+    const link = page.getByRole('link', { name: WORKED_OUT, exact: true });
+    await expect.element(link).toBeVisible();
+    expect(link.element().getAttribute('href')).toBe(`/about#${ABOUT_ID.meanings}`);
+    // The last thing in Details: everything after it in the panel is its own content.
+    const all = [...panel().querySelectorAll('*')];
+    const after = all.slice(all.indexOf(link.element()) + 1);
+    expect(after.every((el) => link.element().contains(el))).toBe(true);
+    // A standalone target: its line holds nothing else, 24 px on every pointer.
+    expect(link.element().parentElement!.textContent!.trim()).toBe(WORKED_OUT);
+    expect(link.element().classList.contains('min-h-6')).toBe(true);
+    expect(link.element().className).not.toMatch(/pointer-coarse:/);
+    expect(link.element().getBoundingClientRect().height).toBeGreaterThanOrEqual(24);
+    // No dataset line, no Sources link.
+    const text = panel().textContent ?? '';
+    expect(text).not.toMatch(/2026-10-10-abcdef12/);
+    expect(text).not.toMatch(/Data .* built/);
+    expect(page.getByRole('link', { name: 'Sources' }).elements()).toHaveLength(0);
+    expect(panel().querySelector('a[href="/attribution"]')).toBeNull();
+    // A current plan has no recalculated note.
+    expect(text).not.toMatch(/recalculated on current data/);
+  });
+
+  it('an old plan: the recalculated note shows on its own line', async () => {
+    await page.viewport(1024, 768);
+    await renderAtRest(scoreOf({ Mission: 5 }), status({ planDatasetVersion: 'fixture-0' }));
+    const note = page.getByText('plan made on data fixture-0, recalculated on current data', {
+      exact: true
+    });
+    await expect.element(note).toBeVisible();
+    // Its own line: the note's element holds the note alone, and sits above the link's line.
+    expect(note.element().textContent!.trim()).toBe(
+      'plan made on data fixture-0, recalculated on current data'
+    );
+    const link = page.getByRole('link', { name: WORKED_OUT, exact: true }).element();
+    expect(note.element().contains(link)).toBe(false);
+    expect(note.element().getBoundingClientRect().bottom).toBeLessThanOrEqual(
+      link.getBoundingClientRect().top + 0.5
+    );
   });
 });

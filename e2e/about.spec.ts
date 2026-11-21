@@ -1,5 +1,12 @@
 import { expect, test } from '@playwright/test';
+import { M1_TARGETS } from '../src/lib/scoreboard/targets';
 import { expectNoA11yViolations } from './helpers/a11y';
+import { gotoEditor, openResults } from './helpers/sharing';
+
+// `ABOUT_ID` and `WORKED_OUT` (src/lib/about/copy.ts): Playwright cannot resolve that module's
+// `$lib` imports, so the values are written out here.
+const ABOUT_ID = { meanings: 'about-meanings', assumptions: 'about-assumptions' } as const;
+const WORKED_OUT = 'How this is worked out';
 
 const NOTICES = [
   'Map data © OpenStreetMap contributors, available under the Open Database License (ODbL).',
@@ -37,6 +44,53 @@ test('/attribution lands on /about at Data and licences', async ({ page }) => {
   await page.goto('/attribution');
   await expect(page).toHaveURL(/\/about#about-data$/);
   await expect(page.getByRole('heading', { name: 'Data and licences' })).toBeInViewport();
+});
+
+test("from Paint, About's goal links the SF Planning RHNA Primer", async ({ page }) => {
+  await gotoEditor(page);
+  const results = await openResults(page);
+  await results.getByRole('link', { name: WORKED_OUT, exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`/about#${ABOUT_ID.meanings}$`));
+  const meanings = page.locator(`#${ABOUT_ID.meanings}`);
+  await expect(
+    meanings.getByRole('heading', { level: 2, name: 'What the numbers mean' })
+  ).toBeInViewport();
+  const goal = meanings.locator('dt', { hasText: /^The goal$/ }).locator('xpath=..');
+  const primer = goal.getByRole('link', { name: 'SF Planning, RHNA Primer', exact: true });
+  await expect(primer).toBeVisible();
+  await expect(primer).toHaveAttribute('href', M1_TARGETS[0].source.url);
+});
+
+test('"RHNA" appears on /about only in part 1\'s goal and in the assumptions\' citations', async ({
+  page
+}) => {
+  await page.goto(`/about#${ABOUT_ID.assumptions}`);
+  await expect(page.locator('#src-targets')).toBeVisible();
+  await expect(
+    page.locator('#src-quality').getByRole('table', { name: 'Data checks that changed a value' })
+  ).toBeVisible();
+  // Every text node in the page that says RHNA, and where it sits. Allowed: the goal's term in
+  // part 1 (its long form and its source), a source link in the assumptions, and the assumptions'
+  // entries for the targets themselves (the plan's citations: name, source and method).
+  const found = await page.evaluate((ids) => {
+    const where: { text: string; ok: boolean }[] = [];
+    const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+      const text = n.textContent ?? '';
+      if (!/RHNA/.test(text)) continue;
+      const el = n.parentElement!;
+      if (!el.checkVisibility()) continue;
+      const goal = el.closest(`#${ids.meanings} dd`);
+      const goalTerm = goal?.parentElement?.querySelector('dt')?.textContent?.trim() === 'The goal';
+      const assumptions = el.closest(`#${ids.assumptions}`);
+      const citation =
+        !!assumptions && (!!el.closest('a[href]') || !!el.closest('[id^="src-target-"]'));
+      where.push({ text: text.trim().slice(0, 80), ok: goalTerm || citation });
+    }
+    return where;
+  }, ABOUT_ID);
+  expect(found.length).toBeGreaterThan(0);
+  expect(found.filter((f) => !f.ok)).toEqual([]);
 });
 
 test.describe('the assumptions', () => {
