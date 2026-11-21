@@ -139,6 +139,8 @@
     {@render children()}
   {/if}
   {#if open}
+    <!-- From md the text is a pop-over drawn as SURFACE_TIP (src/lib/shell/ui.ts), each class with
+         `md:`; below md a muted line under the target. ui.spec.ts keeps the two in step. -->
     <span
       id={textId}
       role="tooltip"

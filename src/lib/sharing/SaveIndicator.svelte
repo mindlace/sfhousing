@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { SURFACE_POP } from '$lib/shell/ui';
   import type { SaveStatus } from './autosave.svelte';
   import { COPY } from './copy';
 
@@ -80,7 +81,8 @@
       id={popId}
       hidden={!popOpen}
       class={[
-        'absolute top-full z-20 mt-1 w-64 max-w-[calc(100vw-2rem)] rounded-md border border-gray-300 bg-white p-3 text-sm text-gray-800 shadow-lg',
+        'absolute top-full z-20 mt-1 w-64 max-w-[calc(100vw-2rem)]',
+        SURFACE_POP,
         align === 'start' ? 'left-0' : 'right-0'
       ]}
     >

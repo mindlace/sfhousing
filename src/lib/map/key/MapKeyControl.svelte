@@ -13,6 +13,7 @@
 <script lang="ts">
   import { untrack, type Snippet } from 'svelte';
   import { MediaQuery } from 'svelte/reactivity';
+  import { SURFACE_POP } from '$lib/shell/ui';
   import { timelineTokenCss } from '../palette';
   import { KEY_COPY } from './copy';
 
@@ -118,8 +119,7 @@
 
   const TOGGLE =
     'pointer-events-auto inline-flex min-h-6 min-w-6 items-center justify-center rounded-md border border-control-line bg-surface px-2 text-xs font-semibold text-ink shadow-sm pointer-coarse:min-h-11 pointer-coarse:min-w-11 hover:bg-surface-raised aria-expanded:bg-surface-raised dark:border-control-line-dark dark:bg-surface-dark dark:text-ink-dark dark:hover:bg-surface-dark-raised dark:aria-expanded:bg-surface-dark-raised';
-  const PANEL =
-    'pointer-events-auto min-h-0 w-[min(18rem,calc(100vw-1rem))] overflow-y-auto rounded-lg border border-line bg-surface p-2 text-sm text-ink shadow-lg md:w-60 dark:border-line-dark dark:bg-surface-dark dark:text-ink-dark';
+  const PANEL = `pointer-events-auto min-h-0 w-[min(18rem,calc(100vw-1rem))] overflow-y-auto md:w-60 ${SURFACE_POP}`;
 </script>
 
 <svelte:head>

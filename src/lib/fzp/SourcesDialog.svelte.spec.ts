@@ -246,6 +246,18 @@ describe('targets and multi-phase', () => {
   });
 });
 
+describe('surface', () => {
+  it('draws on the dialog surface tokens, with dark partners', async () => {
+    await setup();
+    await openIt();
+    const cls = [...dialog().classList];
+    for (const c of ['bg-surface', 'dark:bg-surface-dark', 'text-ink', 'dark:text-ink-dark'])
+      expect(cls, c).toContain(c);
+    expect(cls).not.toContain('bg-white');
+    expect(getComputedStyle(dialog()).backgroundColor).toBe('rgb(255, 255, 255)');
+  });
+});
+
 describe('target sizes (spec §4.3)', () => {
   it('links and Close are at least 24 px tall and carry the 44 px coarse-pointer variant', async () => {
     await setup();

@@ -64,7 +64,9 @@
 /* An Explain tooltip that opens under its target (the /sim header score's goal name and
    "Updating"'s explanation): put `explain-under` on a positioned box around the Explain. Its
    ::before bridges the gap above it, so a pointer moving from the target onto the text stays
-   inside Explain's wrapper and the text stays open (WCAG 1.4.13, hoverable). */
+   inside Explain's wrapper and the text stays open (WCAG 1.4.13, hoverable). Its look is
+   SURFACE_TIP's (src/lib/shell/ui.ts) in CSS: rounded, a line border, surface, ink, px-2 py-1,
+   shadow-md; the dark block below is its dark: half. */
 .explain-under [role='tooltip'] {
   position: absolute;
   top: 100%;
@@ -79,7 +81,9 @@
   border-radius: 0.25rem;
   background: var(--color-surface);
   color: var(--color-ink);
-  box-shadow: 0 4px 6px rgb(0 0 0 / 0.1);
+  box-shadow:
+    0 4px 6px -1px rgb(0 0 0 / 0.1),
+    0 2px 4px -2px rgb(0 0 0 / 0.1);
 }
 .explain-under [role='tooltip']::before {
   content: '';

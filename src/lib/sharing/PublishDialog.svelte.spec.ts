@@ -69,6 +69,17 @@ const headerButton = () => page.getByTestId('publish-open');
 const dialogPublish = () => dialog().getByRole('button', { name: 'Publish', exact: true });
 const titleInput = () => dialog().getByLabelText('Title');
 
+/**
+ * The opener is off: aria-disabled (not `disabled`, so it stays focusable and can show its reason)
+ * and a press opens nothing.
+ */
+async function expectOff() {
+  await expect.element(headerButton()).toHaveAttribute('aria-disabled', 'true');
+  // Playwright waits for an aria-disabled element to be enabled: force sends the real click.
+  await userEvent.click(headerButton(), { force: true });
+  expect(document.querySelector('dialog[open]')).toBeNull();
+}
+
 async function openForm() {
   await expect.element(headerButton()).toHaveTextContent('Publish');
   await userEvent.click(headerButton());
@@ -84,11 +95,12 @@ describe('PublishButton + PublishDialog', () => {
     vi.restoreAllMocks();
   });
 
-  it('empty plan: Publish is disabled and described by "Paint something first."', async () => {
+  it('empty plan: Publish is off and, focused, described by "Paint something first."', async () => {
     await setup({ plan: emptyPlan() });
     const btn = headerButton();
     await expect.element(btn).toHaveTextContent('Publish');
-    await expect.element(btn).toBeDisabled();
+    await expectOff();
+    await expect.element(btn).toHaveFocus();
     await expect.element(btn).toHaveAccessibleDescription(COPY.disabledHint);
     const id = btn.element().getAttribute('aria-describedby');
     expect(document.getElementById(id ?? '')?.textContent).toBe('Paint something first.');
@@ -180,7 +192,7 @@ describe('PublishButton + PublishDialog', () => {
       fetchFn: vi.fn() as unknown as typeof fetch,
       origin: ORIGIN
     });
-    await expect.element(headerButton()).toBeDisabled();
+    await expectOff();
     await expect.element(headerButton()).toHaveAccessibleDescription('Change the policy first.');
   });
 
@@ -238,6 +250,7 @@ describe('PublishButton + PublishDialog', () => {
     await expect.element(headerButton()).toHaveAttribute('data-hashed', 'true');
     await expect.element(headerButton()).toHaveTextContent('Publish');
     await expect.element(headerButton()).toBeEnabled();
+    expect(headerButton().element().hasAttribute('aria-disabled')).toBe(false);
   });
 
   it('413: too-large copy in the alert, Publish disabled until the title changes', async () => {

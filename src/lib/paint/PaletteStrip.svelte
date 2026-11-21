@@ -17,6 +17,7 @@
 <script lang="ts">
   import RadiusPopover from '$lib/brush/RadiusPopover.svelte';
   import type { BrushTool } from '$lib/brush/sampler';
+  import { SURFACE_POP } from '$lib/shell/ui';
   import type { BrushState } from '$lib/brush/state.svelte';
   import HeightPalette from './HeightPalette.svelte';
   import { HISTORY_ICONS, PAINT_TOOLS } from './tools';
@@ -99,8 +100,7 @@
 
   const CTL =
     'min-h-11 min-w-11 rounded-md px-2 text-sm font-semibold text-ink enabled:hover:bg-surface-raised disabled:opacity-40 dark:text-ink-dark dark:enabled:hover:bg-surface-dark-raised';
-  const POP =
-    'absolute bottom-full left-0 z-10 mb-2 w-[min(22rem,calc(100vw-2rem))] rounded-lg border border-line bg-surface p-2 text-ink shadow-lg dark:border-line-dark dark:bg-surface-dark dark:text-ink-dark';
+  const POP = `absolute bottom-full left-0 z-10 mb-2 w-[min(22rem,calc(100vw-2rem))] ${SURFACE_POP}`;
 </script>
 
 <svelte:window onkeydown={onWindowKey} onpointerdown={onWindowPointer} />

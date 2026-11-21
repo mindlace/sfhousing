@@ -12,6 +12,7 @@
 -->
 <script lang="ts">
   import { SHORTCUTS } from '$lib/brush/shortcuts';
+  import { SURFACE_POP } from '$lib/shell/ui';
   import { placePopover } from './place-popover';
   import { usePrimaryPointer } from './pointer.svelte';
 
@@ -92,9 +93,9 @@
     data-testid="shortcuts"
     {onbeforetoggle}
     {ontoggle}
-    class="fixed m-0 w-max max-w-[min(20rem,calc(100vw-1rem))] overflow-y-auto rounded-md border border-control-line bg-surface p-3 text-xs text-ink shadow-lg dark:border-control-line-dark dark:bg-surface-dark dark:text-ink-dark"
+    class="fixed m-0 w-max max-w-[min(20rem,calc(100vw-1rem))] overflow-y-auto {SURFACE_POP}"
   >
-    <table aria-label="Keyboard shortcuts" class="text-left">
+    <table aria-label="Keyboard shortcuts" class="text-left text-xs">
       <thead>
         <tr><th scope="col" class="py-1 pr-2">Key</th><th scope="col">Action</th></tr>
       </thead>

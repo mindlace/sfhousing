@@ -1,6 +1,7 @@
 <script lang="ts" generics="D">
   import { tick, untrack } from 'svelte';
   import { REPO_URL } from '$lib/config';
+  import { BUTTON, BUTTON_PRIMARY, SURFACE_DIALOG } from '$lib/shell/ui';
   import { MAX_PLAN_BYTES, TITLE_MAX_CHARS } from '$lib/plan';
   import { copyFor } from './copy';
   import type { DocCodec } from './doc-codec';
@@ -180,10 +181,11 @@
     }
   }
 
-  const btn =
-    'min-h-6 min-w-6 rounded-md px-3 py-1.5 text-sm pointer-coarse:min-h-11 pointer-coarse:min-w-11 disabled:cursor-not-allowed disabled:opacity-50';
-  const primary = `${btn} bg-accent font-medium text-on-accent`;
-  const secondary = `${btn} border border-gray-400 bg-white text-gray-800`;
+  const primary = BUTTON_PRIMARY;
+  const secondary = BUTTON;
+  /** The title and link fields: a control-line border on the dialog's own surface. */
+  const field =
+    'mt-1 w-full rounded-md border border-control-line px-2 py-1.5 text-sm dark:border-control-line-dark';
 </script>
 
 <dialog
@@ -193,7 +195,7 @@
     if (busy) e.preventDefault();
   }}
   onclose={() => (open = false)}
-  class="m-auto w-[calc(100vw-2rem)] max-w-md rounded-lg bg-white p-5 text-gray-800 shadow-xl backdrop:bg-black/40"
+  class="m-auto w-[calc(100vw-2rem)] max-w-md {SURFACE_DIALOG}"
 >
   {#if view === 'success'}
     <h2 id={ids.heading} class="text-lg font-semibold">{copy.successHeading}</h2>
@@ -205,7 +207,7 @@
       readonly
       value={url}
       onfocus={(e) => e.currentTarget.select()}
-      class="mt-1 w-full rounded-md border border-gray-400 px-2 py-1.5 text-sm"
+      class={field}
     />
     <div class="mt-4 flex flex-wrap justify-end gap-2">
       <button type="button" class={secondary} onclick={copyLink}>
@@ -214,11 +216,7 @@
       {#if shareable}
         <button type="button" class={secondary} onclick={share}>Share…</button>
       {/if}
-      <a
-        href={url}
-        target="_blank"
-        rel="noopener"
-        class="{secondary} inline-flex items-center justify-center"
+      <a href={url} target="_blank" rel="noopener" class={secondary}
         >Open<span class="sr-only"> (opens in a new tab)</span></a
       >
       <button type="button" class={primary} onclick={() => (open = false)}>Done</button>
@@ -242,14 +240,18 @@
         maxlength={TITLE_MAX_CHARS}
         disabled={busy}
         autocomplete="off"
-        class="mt-1 w-full rounded-md border border-gray-400 px-2 py-1.5 text-sm disabled:opacity-50"
+        class="{field} disabled:opacity-50"
       />
       <p class="mt-3 text-sm">{copy.dialogBody}</p>
-      <p id={ids.size} class="mt-2 text-sm text-gray-700">{copy.sizeLine(bytes)}</p>
+      <p id={ids.size} class="mt-2 text-sm text-ink-muted dark:text-ink-dark-muted">
+        {copy.sizeLine(bytes)}
+      </p>
       {#if oversize}
-        <p id={ids.preflight} class="mt-2 text-sm text-red-800">{copy.tooLarge(bytes)}</p>
+        <p id={ids.preflight} class="mt-2 text-sm text-red-800 dark:text-red-300">
+          {copy.tooLarge(bytes)}
+        </p>
       {/if}
-      <div role="alert" class="text-sm text-red-800">
+      <div role="alert" class="text-sm text-red-800 dark:text-red-300">
         {#if message && failure}
           <p class="mt-2">
             {message}
@@ -262,7 +264,9 @@
         {/if}
       </div>
       {#if retryLeft > 0}
-        <p class="mt-1 text-sm text-gray-700">You can publish again in {retryLeft} s.</p>
+        <p class="mt-1 text-sm text-ink-muted dark:text-ink-dark-muted">
+          You can publish again in {retryLeft} s.
+        </p>
       {/if}
       <div class="mt-4 flex justify-end gap-2">
         <button type="button" class={secondary} disabled={busy} onclick={() => (open = false)}>

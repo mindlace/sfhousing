@@ -535,9 +535,14 @@ describe('SimPage publish and view', () => {
     );
     await opened({ fetchFn: fetchFn as unknown as typeof fetch });
     const publish = page.getByTestId('publish-open');
-    await expect.element(publish).toBeDisabled();
+    // Off: aria-disabled (it stays focusable to show its reason) and a press opens nothing.
+    await expect.element(publish).toHaveAttribute('aria-disabled', 'true');
+    // Playwright waits for an aria-disabled element to be enabled: force sends the real click.
+    await publish.click({ force: true });
+    expect(document.querySelector('dialog[open]')).toBeNull();
     await page.getByRole('button', { name: PLUS_NAME.Zoning }).click();
     await page.getByRole('button', { name: 'Protect historic buildings' }).click();
+    await expect.element(publish).not.toHaveAttribute('aria-disabled');
     await expect.element(publish).toBeEnabled();
     await publish.click();
     const dialog = page.getByRole('dialog');
@@ -1453,7 +1458,9 @@ describe('SimPage autosave and publish', () => {
     expect(kept).toHaveLength(1);
     expect(mem.getItem(kept[0])).toBe('{nope');
     expect(w().lastOf('openTimeline')!.policy).toEqual(zoning());
-    await expect.element(publish()).toBeDisabled();
+    await expect.element(publish()).toHaveAttribute('aria-disabled', 'true');
+    await publish().click({ force: true });
+    expect(document.querySelector('dialog[open]')).toBeNull();
   });
 
   it('the save state sits in the header status slot, apart from the actions', async () => {

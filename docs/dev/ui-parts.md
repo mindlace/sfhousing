@@ -1,0 +1,58 @@
+# Shared UI parts
+
+`src/lib/shell/ui.ts` holds the app's shared looks as Tailwind class constants (Tailwind scans them;
+`accent.spec.ts` checks that every gray, white, black or ink utility in them has its `dark:`
+partner, and that the file has no hex). Colours come only from the tokens in
+`src/routes/layout.css`. Files adopt the parts as work touches them; a file that does goes into
+`THEMED_FILES` in `src/lib/shell/accent.spec.ts`.
+
+## The spacing scale
+
+`SPACE_STEPS = [1, 2, 3, 4, 6]`: Tailwind steps of 4, 8, 12, 16 and 24 px. The parts use only these
+for padding, margin and gap (`ui.spec.ts` checks every constant). Arbitrary px are for measured
+geometry only, with a comment saying so.
+
+## Buttons
+
+| Kind             | Use                                                              | Look                                                                                         |
+| ---------------- | ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `BUTTON`         | Any other action (Cancel, Copy link, Remix's "Start your own")   | control-line border, surface, ink, text-sm semibold, rounded-md, px-2; hover one step raised |
+| `BUTTON_PRIMARY` | The page's main action (Publish, Done, Replace)                  | accent fill, on-accent text; otherwise as `BUTTON`                                           |
+| `BUTTON_QUIET`   | An action inside a message (Retry, Details, ×), a dialog's Close | no border, underlined, semibold                                                              |
+| `ON_MAP`         | Added to a button over the map                                   | a small shadow, so it reads on any map                                                       |
+
+`BUTTON` and `BUTTON_PRIMARY` are at least 24 px, 44 px on a coarse pointer; `BUTTON_QUIET` is 44 px
+everywhere. All show the accent outline on `:focus-visible`. Off (`disabled` or
+`aria-disabled="true"`) they read in muted ink (the primary loses its fill for the raised surface),
+take no hover, and show `cursor: not-allowed`. A button that must say why it is off is
+`aria-disabled`, not `disabled`, so it keeps focus and can carry an `Explain` (Publish; see
+[plan-sharing.md](plan-sharing.md)); its handler returns early while off.
+
+## Surfaces
+
+| Surface                | Use                                                                                                                | Look                                                           |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------- |
+| `SURFACE_POP`          | Menus, panels, pop-overs (the key's panels, the palette strip's pop-overs, Shortcuts, the "Autosave off" pop-over) | rounded-lg, line border, surface, ink, shadow-lg, p-2, text-sm |
+| `SURFACE_TIP`          | An explanation's tooltip (`Explain`)                                                                               | as `SURFACE_POP` with rounded, px-2 py-1, shadow-md            |
+| `SURFACE_DIALOG`       | A modal dialog (Publish, Remix's confirm)                                                                          | rounded-lg, surface, ink, shadow-xl, p-4, a 40% black backdrop |
+| `SURFACE_DIALOG_FLUSH` | A dialog that pads its own regions (Sources)                                                                       | `SURFACE_DIALOG` without the padding                           |
+
+In dark every surface is `surface-dark` with `ink-dark` text; a dialog also takes a `line-dark`
+border to set it off from the dimmed page. The constants carry no position or size: the component
+adds those (`absolute top-full mt-1 w-64 …`) beside the constant.
+
+`Explain` draws `SURFACE_TIP` from md as `md:`-prefixed classes (below md the text is a muted line
+under its target), and `layout.css`'s `.explain-under` repeats the values in CSS for a tooltip that
+opens under its target. `ui.spec.ts` keeps both in step with the constant.
+
+## Messages: chips and cards
+
+| Shape        | Use                                            | Look                                                                      |
+| ------------ | ---------------------------------------------- | ------------------------------------------------------------------------- |
+| `CHIP`       | A few words, with an action or a dismiss       | rounded-full, one line, surface (surface-raised in dark), shadow, text-sm |
+| `CHIP_STILL` | A chip that takes no presses (the stroke chip) | as `CHIP`, `pointer-events: none`, even padding                           |
+| `CARD`       | A paragraph                                    | rounded-lg, wraps at 28rem, its actions in a row under it                 |
+
+`messageShape(text, details?)` picks the shape from the words, so the same message always looks
+the same: one sentence of at most 8 words with no details is a `'chip'`; anything else is a
+`'card'`.

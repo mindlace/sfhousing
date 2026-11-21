@@ -138,7 +138,7 @@
 <header
   bind:this={header}
   class={[
-    'relative flex h-12 items-center justify-between gap-2 border-b bg-white px-4 text-gray-900 dark:border-gray-700 dark:bg-chrome-dark dark:text-gray-100',
+    'relative flex h-12 items-center justify-between gap-2 border-b bg-surface px-4 text-gray-900 dark:border-gray-700 dark:bg-chrome-dark dark:text-gray-100',
     // From xl the pinned item is centred. Between lg and xl a centred score left the actions too
     // little room beside it, so the actions and the pinned item keep their widths on the right and
     // the left group takes what is left.
@@ -186,7 +186,7 @@
     class={[
       'lg:contents',
       open
-        ? 'max-lg:absolute max-lg:inset-x-0 max-lg:top-full max-lg:z-50 max-lg:flex max-lg:flex-col max-lg:gap-3 max-lg:border-b max-lg:bg-white max-lg:p-4 max-lg:shadow-lg dark:max-lg:border-gray-700 dark:max-lg:bg-chrome-dark'
+        ? 'max-lg:absolute max-lg:inset-x-0 max-lg:top-full max-lg:z-50 max-lg:flex max-lg:flex-col max-lg:gap-3 max-lg:border-b max-lg:bg-surface max-lg:p-4 max-lg:shadow-lg dark:max-lg:border-gray-700 dark:max-lg:bg-chrome-dark'
         : 'max-lg:hidden'
     ]}
     onclick={onpanelclick}

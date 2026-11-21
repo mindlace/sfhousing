@@ -60,6 +60,7 @@ test('a rate-limited publish shows the alert and a countdown, then re-enables Pu
   await paintOnce(page, isMobile);
   const opener = await openPublish(page);
   await expect(opener).toBeEnabled();
+  await expect(opener).not.toHaveAttribute('aria-disabled', 'true');
   await opener.click();
   const dialog = publishDialog(page);
   const publish = dialog.getByRole('button', { name: 'Publish' });
@@ -72,6 +73,26 @@ test('a rate-limited publish shows the alert and a countdown, then re-enables Pu
   await expect(publish).toBeDisabled();
   await expect(publish).toBeEnabled({ timeout: 7_000 });
   await expect(dialog.getByText(/You can publish again in/)).toBeHidden();
+});
+
+test('an empty plan: Publish is aria-disabled and says "Paint something first." on focus', async ({
+  page
+}) => {
+  await gotoEditor(page);
+  const opener = await openPublish(page);
+  await expect(opener).toHaveAttribute('aria-disabled', 'true');
+  await opener.focus();
+  const reason = page.getByRole('banner').getByRole('tooltip');
+  await expect(reason).toHaveText('Paint something first.');
+  await expect(reason).toBeVisible();
+  await expect(opener).toHaveAccessibleDescription('Paint something first.');
+  // A press of any kind opens nothing.
+  await opener.press('Enter');
+  await opener.press('Space');
+  // Playwright waits for an aria-disabled element to be enabled: force sends the real click.
+  await opener.click({ force: true });
+  await expect(opener).toBeFocused();
+  await expect(page.locator('dialog[open]')).toHaveCount(0);
 });
 
 test('reload restores the autosaved plan', async ({ page, isMobile }) => {

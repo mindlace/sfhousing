@@ -86,6 +86,26 @@ describe('SaveIndicator', () => {
     await expect.element(page.getByText(COPY.n4)).not.toBeVisible();
   });
 
+  it('the Autosave off popover draws on the surface tokens with dark partners', async () => {
+    render(SaveIndicator, { status: 'off' });
+    await userEvent.click(page.getByRole('button', { name: 'Autosave off' }));
+    const pop = page.getByText(COPY.n4);
+    await expect.element(pop).toBeVisible();
+    const cls = [...pop.element().classList];
+    for (const c of [
+      'bg-surface',
+      'dark:bg-surface-dark',
+      'text-ink',
+      'dark:text-ink-dark',
+      'border-line',
+      'dark:border-line-dark'
+    ])
+      expect(cls, c).toContain(c);
+    expect(cls).not.toContain('bg-white');
+    // The light surface token, as drawn.
+    expect(getComputedStyle(pop.element()).backgroundColor).toBe('rgb(255, 255, 255)');
+  });
+
   it('Escape closes the N4 popover', async () => {
     render(SaveIndicator, { status: 'off' });
     const btn = page.getByRole('button', { name: 'Autosave off' });
