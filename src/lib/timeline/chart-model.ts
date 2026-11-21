@@ -4,23 +4,44 @@ import { niceCeil } from '$lib/fzp/chart';
 import { formatCompactCount, formatCount } from '$lib/scoreboard/format';
 import type { TimelineView } from '$lib/sim/world/score/types';
 import type { Day } from '$lib/timelapse/time';
+import { lensOf, type ChartLens } from './chart-lens';
 import { filledEndDay } from './playhead';
 import { currentLawHomes, type PlayheadAt } from './results';
 
-/** Position j: 0 is today (value 0); j = i + 1 is the end of month i. Filled months only. */
+/**
+ * Position j: 0 is today (value 0); j = i + 1 is the end of month i. Filled months only.
+ * `policy` is the main line (the legend's first entry); `law` the second, the gap between them.
+ */
 export interface ChartPoints {
   policy: number[];
   law: number[] | null;
 }
 
-/** policy[j]: 0, then rows[i].completedNet; law: 0, then currentLawHomes(view, i), only inForce. */
-export function chartPoints(view: TimelineView, inForce: boolean): ChartPoints {
+export { lensOf, type ChartLens };
+
+/**
+ * homes: policy = rows[i].completedNet; law = currentLawHomes(view, i), only inForce.
+ * source: policy = rows[i].completedNet; law = rows[i].completedNetPipeline (the gap is new
+ * projects), with or without a policy.
+ * effect: policy = planEffect[i].completedNetNew; law = null.
+ * Position 0 is 0 in every lens. The lens goes through lensOf.
+ */
+export function chartPoints(
+  view: TimelineView,
+  inForce: boolean,
+  lens: ChartLens = 'homes'
+): ChartPoints {
+  const shown = lensOf(lens, inForce);
   const n = Math.min(view.filledThrough + 1, view.rows.length);
   const policy = [0];
-  const law = inForce ? [0] : null;
+  if (shown === 'effect') {
+    for (let i = 0; i < n; i++) policy.push(view.planEffect[i].completedNetNew);
+    return { policy, law: null };
+  }
+  const law = shown === 'source' || inForce ? [0] : null;
   for (let i = 0; i < n; i++) {
     policy.push(view.rows[i].completedNet);
-    law?.push(currentLawHomes(view, i));
+    law?.push(shown === 'source' ? view.rows[i].completedNetPipeline : currentLawHomes(view, i));
   }
   return { policy, law };
 }

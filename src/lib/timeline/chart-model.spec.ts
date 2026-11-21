@@ -4,6 +4,7 @@ import { EMPTY_LOG, logCompiled, logFilled, viewOfLog } from './chunk-log';
 import {
   chartPoints,
   gapPath,
+  lensOf,
   linePath,
   posDay,
   posOf,
@@ -47,6 +48,54 @@ describe('chart-model', () => {
       expect(p.law![i + 1]).toBe(v.rows[i].completedNet - v.planEffect[i].completedNetNew);
     }
     expect(chartPoints(v, false).law).toBeNull();
+  });
+
+  it('source: policy is completedNet, law is completedNetPipeline, with or without a policy', () => {
+    const v = whole();
+    for (const inForce of [true, false]) {
+      const p = chartPoints(v, inForce, 'source');
+      expect(p.policy[0]).toBe(0);
+      expect(p.law![0]).toBe(0);
+      expect(p.policy).toHaveLength(v.rows.length + 1);
+      expect(p.law).toHaveLength(v.rows.length + 1);
+      for (const i of [0, 6, 23]) {
+        expect(p.policy[i + 1]).toBe(v.rows[i].completedNet);
+        expect(p.law![i + 1]).toBe(v.rows[i].completedNetPipeline);
+      }
+    }
+    // Only the filled months, as every lens.
+    expect(chartPoints(cut(v, 4), false, 'source').law).toHaveLength(6);
+    // homes is the default and as before.
+    expect(chartPoints(v, true, 'homes')).toEqual(chartPoints(v, true));
+  });
+
+  it('effect: one line of planEffect completedNetNew, no law; falls back to homes without a policy', () => {
+    const v = whole();
+    const p = chartPoints(v, true, 'effect');
+    expect(p.law).toBeNull();
+    expect(p.policy[0]).toBe(0);
+    expect(p.policy).toHaveLength(v.rows.length + 1);
+    for (const i of [0, 9, 23]) expect(p.policy[i + 1]).toBe(v.planEffect[i].completedNetNew);
+    expect(chartPoints(v, false, 'effect')).toEqual(chartPoints(v, false, 'homes'));
+    expect(lensOf('effect', false)).toBe('homes');
+    expect(lensOf('effect', true)).toBe('effect');
+    expect(lensOf('source', false)).toBe('source');
+    expect(lensOf('homes', true)).toBe('homes');
+  });
+
+  it('runningMin keeps a negative effect inside the plot', () => {
+    const v = whole();
+    const planEffect = v.planEffect.map((p, i) => ({ ...p, completedNetNew: -7 * i }));
+    const p = chartPoints({ ...v, planEffect }, true, 'effect');
+    const min = runningMin(p);
+    expect(min[0]).toBe(0);
+    expect(min[5]).toBe(-28);
+    expect(min.at(-1)).toBe(-7 * 23);
+    // The floor reads only what is reached: at position 5, -28 rounds to -50.
+    expect(yBottom(min, 5)).toBe(-50);
+    expect(yBottom(min, 0)).toBe(0);
+    // An effect that is all below zero still tops out at 1, never at the goal (none is drawn).
+    expect(yTop(null, runningMax(p), 5)).toBe(1);
   });
 
   it('the scale grows only with the months reached, in 1-2-5 steps, and never below the goal', () => {

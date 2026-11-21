@@ -4,12 +4,17 @@
   document the numbers on show came from) it adds the current-law line and the shaded gap between
   them. The goal is a dashed step at the homes still needed to the end of its deadline's month,
   labelled in the plot (`goalNote`); it is an input, so it is always drawn whole.
+  Lenses (`lens`, through `lensOf`; Details switches it): Homes as above; By source, all homes
+  over today's pipeline (the current-law tokens) with the gap, new projects, shaded, with or
+  without a policy; From your policy, the effect's one line, no goal step or note, and the goal
+  does not set the scale. The zones, the scale rule and the readout hold in every lens.
   Zones: each series is drawn twice from one path, cut by two clip rectangles: shown, today to the
   playhead's day (full strength), and seen, the day to the furthest date reached (the -seen tokens
   and a thinner stroke). Nothing past `reached`. A zone edge at or past the last row's day reaches
   the plot's end, as on the ruler. As the day moves only the two rectangles change; the paths are
-  rebuilt only when the view, `inForce` or the scale changes, and the scale (a running maximum
-  over the months reached, in 1-2-5 steps) changes at most as the furthest date crosses a month.
+  rebuilt only when the view, `inForce`, the lens or the scale changes, and the scale (a running
+  maximum over the months reached, in 1-2-5 steps) changes at most as the furthest date crosses a
+  month.
   While stale it draws the view on show (the held numbers) with the seen styling throughout.
   Hover or focus of a month, and Left and Right on the focused overlay, read out the header's
   line 1 for it (`chartReading`). The plot is 96 px tall (64 from md on a viewport 820 px tall or
@@ -23,6 +28,7 @@
   import {
     chartPoints,
     gapPath,
+    lensOf,
     linePath,
     posDay,
     posOf,
@@ -30,7 +36,8 @@
     runningMin,
     yBottom,
     yLabels,
-    yTop
+    yTop,
+    type ChartLens
   } from './chart-model';
   import ChartLegend from './ChartLegend.svelte';
   import { chartCaption, goalNote } from './copy';
@@ -53,9 +60,21 @@
     /** The goal: its deadline's month and the homes still needed (goalStep). */
     target: { deadlineIndex: number; units: number } | null;
     stale: boolean;
+    /** What it plots (Details switches it); 'effect' without a policy in force is 'homes'. */
+    lens?: ChartLens;
   }
 
-  let { asOf, windowEnd, view, inForce, day, reached, target, stale }: Props = $props();
+  let {
+    asOf,
+    windowEnd,
+    view,
+    inForce,
+    day,
+    reached,
+    target: targetIn,
+    stale,
+    lens = 'homes'
+  }: Props = $props();
 
   const W = 1000;
   const H = 100;
@@ -69,6 +88,9 @@
   // when the value itself changed, so nothing below reruns as the day moves.
   const v = $derived(view);
   const force = $derived(inForce);
+  const shownLens = $derived(lensOf(lens, force));
+  // The effect lens draws no goal: no step, no note, and the goal does not set its scale.
+  const target = $derived(shownLens === 'effect' ? null : targetIn);
   const goalUnits = $derived(target?.units ?? null);
   const from = $derived(asOf);
   const to = $derived(windowEnd);
@@ -80,8 +102,8 @@
   );
   const edge = (d: Day) => (d >= last ? W : xDay(d));
 
-  // Built once per view and inForce.
-  const points = $derived(v ? chartPoints(v, force) : null);
+  // Built once per view, inForce and lens.
+  const points = $derived(v ? chartPoints(v, force, shownLens) : null);
   const runMax = $derived(points ? runningMax(points) : []);
   const runMin = $derived(points ? runningMin(points) : []);
   const xs = $derived(v && points ? points.policy.map((_, j) => xDay(posDay(v, j, from))) : []);
@@ -127,7 +149,7 @@
   const active = $derived(hoverAt ?? focusAt);
   const playPos = $derived(months ? Math.min(posOf(playheadAt(months, from, day)), reachedPos) : 0);
   const valuePos = $derived(active ?? playPos);
-  const reading = $derived(v ? chartReading(v, valuePos, force) : '');
+  const reading = $derived(v ? chartReading(v, valuePos, force, shownLens) : '');
 
   let overlay: HTMLElement | undefined = $state();
   function posAt(clientX: number): number {
@@ -157,7 +179,8 @@
   const caption = $derived(
     chartCaption(
       force,
-      v && target ? { units: target.units, deadline: v.months[target.deadlineIndex] } : null
+      v && target ? { units: target.units, deadline: v.months[target.deadlineIndex] } : null,
+      shownLens
     )
   );
 </script>
@@ -165,6 +188,7 @@
 <figure
   class="sfh-chart-row m-0"
   aria-label="Homes completed"
+  data-lens={shownLens}
   data-stale={stale ? 'true' : undefined}
 >
   <div class="plot relative">
@@ -361,7 +385,7 @@
     {/if}
   </div>
   <!-- From md the legend sits in the label column beside the plot (Timeline). -->
-  <ChartLegend class="md:hidden" goal={target !== null} {inForce} />
+  <ChartLegend class="md:hidden" goal={target !== null} {inForce} lens={shownLens} />
   <figcaption class="sr-only">{caption}</figcaption>
 </figure>
 

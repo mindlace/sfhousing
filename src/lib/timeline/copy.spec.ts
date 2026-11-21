@@ -9,6 +9,7 @@ import {
   PER_HOME_SOURCE,
   REFERENCE_NOTE,
   GOAL_FLAG,
+  LENS_NAME,
   chartCaption,
   goalNote,
   marketBody,
@@ -60,6 +61,32 @@ describe('the chart', () => {
     );
     for (const a of [true, false])
       for (const b of [goal, null]) expect(chartCaption(a, b)).not.toMatch(/RHNA|FZP/);
+  });
+
+  it("chartCaption names each lens's lines; effect names no goal", () => {
+    const goal = { units: 73_346, deadline: dayFromUtc(2031, 1, 1) };
+    const source =
+      "Homes completed from today, by month, and those from today's pipeline. The shaded gap " +
+      'is new projects.';
+    for (const inForce of [true, false]) {
+      expect(chartCaption(inForce, goal, 'source')).toBe(
+        `${source} The goal is drawn as the homes still needed by its deadline: 73,346 more by ` +
+          'Jan 2031. The month slider reads out each month.'
+      );
+      expect(chartCaption(inForce, null, 'source')).toBe(
+        `${source} The month slider reads out each month.`
+      );
+    }
+    const effect =
+      'Homes from your policy against current law, by month. The month slider reads out each month.';
+    expect(chartCaption(true, goal, 'effect')).toBe(effect);
+    expect(chartCaption(true, null, 'effect')).toBe(effect);
+    // Without a policy in force the effect lens is the homes lens.
+    expect(chartCaption(false, goal, 'effect')).toBe(chartCaption(false, goal));
+    expect(chartCaption(true, goal, 'homes')).toBe(chartCaption(true, goal));
+    expect(LENS_NAME).toEqual({ homes: 'Homes', source: 'By source', effect: 'From your policy' });
+    for (const lens of ['homes', 'source', 'effect'] as const)
+      for (const b of [goal, null]) expect(chartCaption(true, b, lens)).not.toMatch(/RHNA|FZP/);
   });
 });
 

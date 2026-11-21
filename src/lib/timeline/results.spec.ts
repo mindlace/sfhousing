@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { formatShortMonthYear } from '$lib/fzp/format';
 import { dayFromUtc } from '$lib/fzp/time';
 import { GOAL, TODAY, goalName, readGoal, type Goal } from '$lib/goal/goal';
 import type { TimelineView } from '$lib/sim/world/score/types';
@@ -91,6 +92,49 @@ describe('headlineAt', () => {
     expect(chartReading(v, 11, false)).toBe(
       headlineText(headlineAt(v, at(10), { ...OPTS, inForce: false })!).main
     );
+  });
+
+  it('chartReading source: "1,234 homes by Apr 2040, 800 from today\'s pipeline"', () => {
+    const v = whole();
+    const rows = v.rows.map((r, i) =>
+      i === 4 ? { ...r, completedNet: 1234, completedNetPipeline: 800 } : r
+    );
+    const m = formatShortMonthYear(v.months[4]);
+    for (const inForce of [true, false]) {
+      expect(chartReading({ ...v, rows }, 5, inForce, 'source')).toBe(
+        `1,234 homes by ${m}, 800 from today's pipeline`
+      );
+      expect(chartReading(v, 0, inForce, 'source')).toBe(
+        "0 homes by today, 0 from today's pipeline"
+      );
+    }
+    // Its first part is the header's line 1 for the month.
+    expect(chartReading(v, 11, false, 'source')).toMatch(
+      new RegExp(`^${headlineText(headlineAt(v, at(10), { ...OPTS, inForce: false })!).main}, `)
+    );
+    expect(chartReading(cut(v, 4), 9, false, 'source')).toBe('');
+    // homes is the default.
+    expect(chartReading(v, 5, true, 'homes')).toBe(chartReading(v, 5, true));
+  });
+
+  it('chartReading effect: "+56 from your policy by Apr 2040"; "+0 from your policy by today" at 0', () => {
+    const v = whole();
+    const planEffect = v.planEffect.map((p, i) =>
+      i === 4 ? { ...p, completedNetNew: 56 } : i === 5 ? { ...p, completedNetNew: -3 } : p
+    );
+    const w = { ...v, planEffect };
+    expect(chartReading(w, 5, true, 'effect')).toBe(
+      `+56 from your policy by ${formatShortMonthYear(v.months[4])}`
+    );
+    expect(chartReading(w, 6, true, 'effect')).toBe(
+      `−3 from your policy by ${formatShortMonthYear(v.months[5])}`
+    );
+    expect(chartReading(w, 0, true, 'effect')).toBe('+0 from your policy by today');
+    // The header's effect figure for the same month.
+    const h = headlineText(headlineAt(w, at(4), OPTS)!);
+    expect(chartReading(w, 5, true, 'effect')).toMatch(new RegExp(`^\\${h.effect} by `));
+    // Without a policy in force: the homes reading.
+    expect(chartReading(w, 5, false, 'effect')).toBe(chartReading(w, 5, false));
   });
 
   it('negative homes and effects stay negative', () => {

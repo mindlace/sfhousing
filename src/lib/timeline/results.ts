@@ -14,7 +14,9 @@ import type { TimelineScore } from '$lib/sim/scenario/types';
 import type { TimelineView } from '$lib/sim/world/score/types';
 import type { Day } from '$lib/timelapse/time';
 import type { TierUnits } from '$lib/timelapse/types';
-import { homesBy } from './copy';
+import { formatCount } from '$lib/scoreboard/format';
+import { lensOf, type ChartLens } from './chart-lens';
+import { byWhen, homesBy } from './copy';
 import { indexOfDay } from './playhead';
 
 /**
@@ -133,17 +135,32 @@ export function currentLawHomes(view: TimelineView, i: number): number {
 }
 
 /**
- * The chart's readout at position j (0 today, j = i + 1 the end of month i): the header's line 1
- * for it, then ', ' + the effect while inForce ('0 homes by today'; '1,234 homes by Apr 2040,
- * +56 from your policy'). Reads one row; '' where month j - 1 is not filled.
+ * The chart's readout at position j (0 today, j = i + 1 the end of month i), by lens (through
+ * lensOf):
+ * homes: the header's line 1 for it, then ', ' + the effect while inForce ('0 homes by today';
+ * '1,234 homes by Apr 2040, +56 from your policy').
+ * source: line 1, then ', 800 from today's pipeline'.
+ * effect: the header's effect figure and the month: '+56 from your policy by Apr 2040'.
+ * Reads one row; '' where month j - 1 is not filled.
  */
-export function chartReading(view: TimelineView, j: number, inForce: boolean): string {
+export function chartReading(
+  view: TimelineView,
+  j: number,
+  inForce: boolean,
+  lens: ChartLens = 'homes'
+): string {
   // headlineAt's month rule without its goal reading, so only row j - 1 is read.
   const i = j - 1;
   if (i >= 0 && view.filledThrough < i) return '';
-  const main = i < 0 ? homesBy(0, null) : homesBy(view.rows[i].completedNet, view.months[i]);
+  const at = i < 0 ? null : view.months[i];
+  const shown = lensOf(lens, inForce);
+  const effect = () => fromPolicyText(i < 0 ? 0 : view.planEffect[i].completedNetNew);
+  if (shown === 'effect') return `${effect()} by ${byWhen(at)}`;
+  const main = homesBy(i < 0 ? 0 : view.rows[i].completedNet, at);
+  if (shown === 'source')
+    return `${main}, ${formatCount(i < 0 ? 0 : view.rows[i].completedNetPipeline)} from today's pipeline`;
   if (!inForce) return main;
-  return `${main}, ${fromPolicyText(i < 0 ? 0 : view.planEffect[i].completedNetNew)}`;
+  return `${main}, ${effect()}`;
 }
 
 export interface HeadlineText {
