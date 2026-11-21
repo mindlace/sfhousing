@@ -1,0 +1,772 @@
+<article>
+  <header>
+    <h1>About this model plan</h1>
+    <p>Slice 9 of the information design review: one place for what the numbers mean, the assumptions, the data and credits, and the shortcuts; a collapsed OpenStreetMap credit on the map; and the items slices 5, 6, 7 and 8 left for this slice (Reset view and the painting strip against the expanded credit, the RHNA primer from Paint, citations that say "RHNA", and <code>/sim</code>'s Shortcuts).</p>
+    <aside data-kind="note"><strong>For agentic workers</strong> REQUIRED SUB-SKILL: use superpowers:subagent-driven-development to implement this plan task by task. Steps are checklist items; progress is kept in the workspace ledger, not in the plan.</aside>
+    <aside data-kind="warning"><strong>Read before executing</strong> Line numbers were taken on <code>eed08041</code> (main after slices 1 to 8) and go stale as tasks land: every place is also named by function, component, snippet or test title. Locate by those. <a href="#sec-open-questions">Questions for the owner</a> has five items, each with a recommended answer; the plan executes on the recommendations unless the owner says otherwise.</aside>
+  </header>
+
+  <section id="sec-overview">
+    <h2>Overview</h2>
+    <dl>
+      <dt>Goal</dt>
+      <dd>"About this model" is the one place for background: what the numbers mean, the assumptions with their sources and the published estimates beside them, the data and licences with every credit, and how to use the app (keyboard shortcuts, published plans). It is the page <code>/about</code> on every route; on <code>/sim</code> and <code>/s/&lt;id&gt;</code> every link to it opens the same content as a dialog over the map, so the run, the playhead and the live assumptions stay. <code>/attribution</code> redirects into it. The map's credit is MapLibre's collapsed (i) at every width, holding a linked "© OpenStreetMap" and an "About this model" link, shown for five seconds on load, one line high, clear of Reset view and the painting strip. <code>/sim</code>'s header loses Shortcuts; Space plays and pauses. Details and Paint's Details end in one "How this is worked out" link; the dataset version, the market paragraph and the source citations that say "RHNA" live only in About.</dd>
+      <dt>Architecture</dt>
+      <dd>Page and shell work, no engine change. A new folder <code>src/lib/about/</code> holds the parts (<code>AboutMeanings</code>, <code>AboutAssumptions</code>, <code>AboutData</code>, <code>AboutUsing</code>), their strings (<code>copy.ts</code>), the credits (<code>credits.ts</code>), the link rule (<code>links.ts</code>) and the dialog (<code>AboutDialog.svelte</code>, which replaces <code>src/lib/fzp/SourcesDialog.svelte</code>). The Sources dialog's body becomes <code>src/lib/fzp/ProvenanceBody.svelte</code>, shown live in the dialog and model-wide on the page (<code>modelSections</code>, <code>src/lib/fzp/provenance.ts</code>). The parts take their colours from two custom properties the container sets, because the page is light at every setting and the dialog follows the theme. On the map side: <code>creditHtml()</code> replaces <code>attributionHtml</code>, SimMap gains a <code>creditShowMs</code> prop and <code>SimMapHandle.collapseCredit()</code>. No hashed file, CSP, shader or layer changes; no dataset upload.</dd>
+      <dt>Tech Stack</dt>
+      <dd>SvelteKit 2, Svelte 5 runes, TypeScript, Tailwind 4, MapLibre GL JS 6.13 (<code>AttributionControl</code> with <code>compact</code>, the <code>locale</code> map option), Vitest (server project for <code>*.spec.ts</code>, client project for <code>*.svelte.spec.ts</code>), Playwright, axe through <code>expectNoA11yViolations</code>.</dd>
+      <dt>Spec</dt>
+      <dd><a href="../specs/2026-11-17-information-design-review-design.html"><code>docs/superpowers/specs/2026-11-17-information-design-review-design.html</code></a>, row 9 of <a href="../specs/2026-11-17-information-design-review-design.html#tbl-slices">Order of work</a> ("One place for meanings, assumptions, data and credits, and shortcuts. The map keeps a collapsed OpenStreetMap credit." Needs first: slice 8). Governing parts: the ranking rule (<code>sec-intent</code>: the person "can learn/discover where the data comes from, the assumptions the sim runs on"), the tiers (<code>tbl-tiers</code>: Find is "one step away, in one of two fixed places"), rule 5 (<code>sec-prop-principles</code>: "Details holds the numbers behind an effect. About this model holds data, assumptions, credits and help. Nothing else links out."), <a href="../specs/2026-11-17-information-design-review-design.html#sec-prop-about">About this model</a> (the four parts and the (i)), <a href="../specs/2026-11-17-information-design-review-design.html#tbl-words">One vocabulary</a> (the long forms), the inventory rows that send items to About (published estimates, homes built before today, data credits, keyboard shortcuts, the About and dataset rows of <code>tbl-inv-chrome</code>), Decided (plain words; the game not built), and every "for slice 9" item of <code>sec-carried</code>.</dd>
+      <dt>Assumes</dt>
+      <dd>Slices 1 to 8 have landed (<code>eed08041</code>): the shared parts (<code>src/lib/shell/ui.ts</code>, <code>docs/dev/ui-parts.md</code>), 24 px targets on every pointer, the map toolbar (<code>MapKeyControl</code>), the footprint contract (<code>docs/dev/map-interfaces.md</code>).</dd>
+    </dl>
+  </section>
+
+  <section id="sec-scope">
+    <h2>Scope and size</h2>
+    <ul>
+      <li><strong>In:</strong> row 9 as the four parts of <code>sec-prop-about</code>, on a page and as <code>/sim</code>'s dialog; the on-map credit; the carried items for slice 9: Reset view under the expanded credit at 375 px (slice 5), the expanded credit over merged rings on a phone (slice 6), the primer link from Paint and citations naming "RHNA" (slice 7), Shortcuts on a touch laptop and the credit behind the painting strip (slice 8); Space for Play (<code>tbl-inv-sim-controls</code>, "add Space for Play"); the dataset version out of Details (<code>tbl-inv-chrome</code>, "About this model only"). Carried items with no slice that fit cheaply: the slice 6 bench result into <code>docs/dev/map-perf.md</code> (Task 5); <code>/s/&lt;id&gt;</code>'s share description that says "RHNA" (Task 6).</li>
+      <li><strong>Depth of the assumptions:</strong> today's Sources dialog content, re-housed, with the published estimates in its "Targets and published estimates" section as today. No new methodology text: the fuller reader-facing pages on how the model is assembled are the owner's later work (<a href="#q-depth">Question 4</a>).</li>
+      <li><strong>Out:</strong> the game and unlocking (Decided); "your call" items (Start over, Paint's Details face, a pool bar's changing text); the funding rework; the next dataset branch's deletions (<code>ScoreboardPanel</code>'s <code>/attribution</code> link is in <code>src/lib/scoreboard</code>, hashed and no longer rendered; the redirect keeps it working); the carried "not checked" and "not timed" items.</li>
+      <li><strong>Not already done on main:</strong> every carried item was checked against <code>eed08041</code> and is still open; the code each one names is cited in its task.</li>
+      <li><strong>Size.</strong> Six tasks plus the suite pass. If review load needs two pull requests, the clean cut is after Task 4: <strong>9a</strong> (Tasks 1 to 4: About on the page and on <code>/sim</code>, shortcuts) and <strong>9b</strong> (Tasks 5 and 6: the map's credit, every way in), each followed by Task 7. Recommendation: one branch.</li>
+    </ul>
+  </section>
+
+  <section id="sec-global-constraints">
+    <h2>Global Constraints</h2>
+    <ul>
+      <li><strong>Hashed paths are read-only.</strong> Editing any file under <code>PATHS</code> (<code>pipeline/lib/version.ts:42-53</code>: <code>pipeline</code>, <code>src/lib/data</code>, <code>src/lib/generator</code>, <code>src/lib/timelapse</code>, <code>src/lib/plan/geometry.ts</code>, <code>src/lib/plan/types.ts</code>, <code>src/lib/sim/scenario</code>, <code>src/lib/sim/levers</code>, <code>src/lib/sim/finance</code>, <code>src/lib/scoreboard</code>), spec files included, forces a dataset upload, which is the owner's alone. The dataset version (<code>2026-11-14-1a31d026</code>) must not change; no dataset upload. Importing from those paths is fine (this plan reads <code>M1_TARGETS</code>, <code>REFERENCES</code>, <code>RHNA_DEADLINE</code>, <code>ManifestSourcesSchema</code>, <code>parseCalibration</code>); editing is not. If a change there seems unavoidable, stop and raise it.</li>
+      <li><strong>Touch targets:</strong> at least 24 by 24 CSS px on mouse and touch alike (the owner's slice 8 decision; WCAG 2.2 AA 2.5.8). Never 44 px, no <code>pointer-coarse:</code> size variants. <code>e2e/targets.spec.ts</code> must keep passing; Task 6 extends it to <code>/about</code> and to <code>/sim</code> with About open. A link that is its table cell's or list item's whole content is a standalone target (<code>inline-flex min-h-6 items-center</code>); a link inside a sentence is inline and exempt.</li>
+      <li><strong>Shared parts.</strong> Buttons, surfaces, chips and cards come from <code>src/lib/shell/ui.ts</code> (<code>BUTTON</code>, <code>BUTTON_QUIET</code>, <code>SURFACE_DIALOG_FLUSH</code>, <code>TARGET</code>, <code>Message</code>, <code>moreBelow</code>); nothing restyled ad hoc. Each themed file joins <code>THEMED_FILES</code> in <code>src/lib/shell/accent.spec.ts</code>, and every new <code>.ts</code> or <code>.svelte</code> file in <code>src/lib/about/</code> joins <code>NO_HEX_FILES</code>.</li>
+      <li><strong>Theme.</strong> Document pages are light at every setting (<code>e2e/chrome-dark.spec.ts</code>, "a document page stays light"); the map pages follow the system theme. The About parts render in both, so they carry no <code>dark:</code> utilities and no gray, white, black or ink utilities of their own: they read <code>--about-muted</code> (muted text) and <code>--about-line</code> (rules and borders), which <code>/about</code> sets to the light tokens and <code>AboutDialog</code> sets with dark partners. Text colour is inherited.</li>
+      <li><strong>Terse copy.</strong> Every visible or spoken string this plan adds or changes is in <a href="#tbl-strings">The strings</a>, exact; nothing else is added. No "it is not X" disclaimers. Details on demand: the assumptions on <code>/about</code> load only when asked for. The 12-words-at-rest checks (<code>src/lib/timeline/rest-text.svelte.spec.ts</code>, <code>src/routes/page.rest-text.svelte.spec.ts</code>) must pass.</li>
+      <li><strong>Status apart from controls.</strong> Nothing here puts changing status among buttons; the header's status cell is untouched.</li>
+      <li><strong>WCAG 2.2 AA</strong> on every changed surface, light and dark (<code>docs/dev/accessibility.md</code>). Layout checked at 375, 768, 1024 and 1280 px; no horizontal scroll at 320 or 375 px. A dialog returns focus to a visible opener. A control's accessible name contains its visible text, first. <code>/about</code> passes axe with <code>structure: true</code>.</li>
+      <li><strong>ODbL and the other licences.</strong> "© OpenStreetMap" stays on the map, linked to <code>https://www.openstreetmap.org/copyright</code>, and the full credits are one tap from the map (the (i), then "About this model"). No licence-required notice is removed: every notice on today's <code>/attribution</code> moves into About's "Data and licences", and the Overture notice is corrected from the manifest. What each source requires is in <a href="#sec-licences">What the licences require</a>; where it is unsure the plan keeps more and asks (<a href="#q-credit">Question 1</a>).</li>
+      <li><strong>CSP</strong> (<code>kit.csp</code> in <code>svelte.config.js</code>) is not touched: the About parts fetch only same-origin <code>/data/&lt;version&gt;/…</code> files, which the map pages already fetch, and the credit's OpenStreetMap link is a navigation, not a load. If a change seems needed, stop and raise it.</li>
+      <li><strong>Shared surfaces.</strong> <code>/lesscars</code> uses <code>SimMap</code> and the shell. It sees the new credit (the same (i), whose About link navigates to <code>/about#about-data</code>, since <code>/lesscars</code> mounts no About dialog) and the header's About link (unchanged). <code>e2e/lesscars.spec.ts</code> stays unedited and must pass (if it fails, stop and raise it rather than edit it); several e2e specs use <code>/about</code> as a neutral page to navigate from (<code>lesscars.spec.ts:622-667</code>, <code>sim-control-plane.spec.ts</code>, <code>sim-object.spec.ts</code>, <code>fzp.spec.ts:609</code>), so <code>/about</code> must stay light: no data fetched until the assumptions are opened.</li>
+      <li><strong>Map layers.</strong> <code>src/lib/map/timelapse/city.ts</code> and <code>city-layer.ts</code> are not edited (a layer change owes a benchmark), nor any other layer, shader or per-frame path. The credit is DOM: no <code>npm run bench:map</code> or <code>npm run test:perf</code> is owed or run inside a task.</li>
+      <li><strong>Map goldens.</strong> <code>e2e/map.spec.ts-snapshots/map-{light,dark}-chromium-darwin.png</code> clip <code>map-root</code> on <code>/</code> and so capture the credit. Task 5 changes it: regenerate them on darwin in Task 5 (<code>--update-snapshots</code>), open both images, confirm only the bottom-right corner changed, and say so in the report.</li>
+      <li>All work in this worktree, everything in the foreground. Run <code>cd</code> and <code>git</code> as plain single commands, never chained (<code>cd … &amp;&amp; cmd</code>). Port 4173 belongs to another session: never start, stop or kill whatever holds it; Playwright runs on <code>SFH_E2E_PORT=4180</code>. Before the first test run, <code>npm install</code> then <code>npm run types</code> in the worktree.</li>
+      <li>Conventional Commits, messages as <code>-m</code> flags. <code>git add</code> named files only. No Claude attribution anywhere: no <code>Co-Authored-By</code> trailers, no generated-by notes in code, docs or commits. One branch, one PR; signoff is run by the coordinator, not by any task.</li>
+      <li>Code style: 2-space indent, single quotes, no trailing commas, 100 columns (Prettier and ESLint). Svelte 5 runes only.</li>
+      <li>Vitest runs with <code>expect.requireAssertions</code>: every test calls <code>expect</code>. No test writes to stderr: a <code>console.warn</code> or <code>console.error</code> a test does not assert fails signoff.</li>
+      <li><strong>Timing rule</strong>, for every spec, helper and fix round: no <code>setTimeout</code> or <code>setInterval</code> in tests (even zero-length), no <code>waitForTimeout</code>, fixed sleeps, raised timeouts or retries; wait on readiness signals (web-first assertions, <code>expect.poll</code>, events, attributes). The credit's five seconds go through its seam (<code>creditShowMs</code>). Every changed client spec is run with <code>--retry=0</code>, alone and with its folder. Every changed e2e spec is re-run with <code>--repeat-each=5 --retries=0</code>. After the last commit of every task run <code>npx chreode timing-check --head HEAD</code> and see it clean.</li>
+      <li>A spec that mounts a component with <code>Explain</code> popovers and then clicks starts with the pointer at rest (the <code>renderAtRest</code> pattern of slice 7's specs).</li>
+      <li>Docs under <code>docs/dev/</code> that describe changed behaviour are updated in the task that changes it. A new doc, <code>docs/dev/about.md</code>, is linked from <code>CLAUDE.md</code>'s scoped docs list (Task 1).</li>
+      <li>Test commands: <code>npx vitest --run --project server &lt;file&gt;</code> for <code>*.spec.ts</code>; <code>npx vitest --run --project client --retry=0 &lt;file&gt;</code> for <code>*.svelte.spec.ts</code>; <code>SFH_E2E_PORT=4180 npx playwright test &lt;file&gt; --project=chromium --project=mobile</code>.</li>
+      <li><strong>Screenshots</strong> are taken with a temporary Playwright spec on port 4180 (fixture-0), saved to the session scratchpad, opened and looked at, and the spec deleted before the commit. The standard set is 1024x800 light, 1280x800 light, 1280x800 dark (<code>colorScheme: 'dark'</code>) and 375x812. A task that changes something already on screen takes the same view on <code>main</code>'s build first and on the branch after. Each task names its states.</li>
+      <li>Task order: Task 1 first (every later task uses its parts and ids). Task 2 needs Task 1; Task 3 needs Tasks 1 and 2; Task 4 needs Task 1's <code>AboutUsing</code>; Task 5 needs Task 1's ids and Task 3's dialog for its <code>/sim</code> check; Task 6 needs all of them. Run them in order.</li>
+    </ul>
+  </section>
+
+  <section id="sec-licences">
+    <h2>What the licences require</h2>
+    <p>Read for this plan on 2026-11-21 from the sources named. The spec's warning (<code>sec-prop-about</code>: "The Microsoft, USGS and DataSF terms were not read from their own pages and need confirming when the page is written") is answered here for Overture's contributors; the Microsoft and USGS parts arrive through Overture under ODbL.</p>
+    <table id="tbl-licences">
+      <caption>Each source, what it requires, and where this plan puts the credit</caption>
+      <thead>
+        <tr><th scope="col">Source</th><th scope="col">Requirement</th><th scope="col">Where</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">OpenStreetMap (ODbL), basemap and Overture's OSM part</th><td>OSMF Attribution Guidelines (osmfoundation.org/wiki/Licence/Attribution_Guidelines): attribution "must be to 'OpenStreetMap'"; "© OpenStreetMap" is acceptable; it must make clear the data is under ODbL, suggested by linking the text to openstreetmap.org/copyright. Interactive maps may collapse it "automatically after five seconds" or on interaction (panning, clicking, zooming), provided "the user must still be able to find the licence information if they look for it"; an (i) in the map's corner is the guidelines' own example.</td><td>On the map: the (i), expanded on load for five seconds, holding "© OpenStreetMap" linked to the copyright page. In About: the full ODbL notice.</td></tr>
+        <tr><th scope="row">Overture Maps buildings (ODbL)</th><td>docs.overturemaps.org/attribution: the buildings theme is ODbL; credits listed per contributor: OpenStreetMap (ODbL), Microsoft ML Buildings ("Licensed by Microsoft under the Open Database License"), Esri Community Maps (CC BY 4.0), Google Open Buildings (CC BY 4.0), USGS 3DEP (no licence stated). No placement rule; Overture's own map shows "© OpenStreetMap contributors, Overture Maps Foundation". ODbL 4.3 asks for a notice "reasonably calculated" to make users aware of the source and the licence.</td><td>About's Data and licences, built from the manifest's <code>overture:*</code> sources by licence, one tap from the map. See <a href="#q-credit">Question 1</a>.</td></tr>
+        <tr><th scope="row">Esri Community Maps via Overture (CC BY 4.0)</th><td>CC BY 4.0, 3(a): credit, a licence link and an indication of changes, which "may be satisfied in any reasonable manner", including a link to a resource that holds them.</td><td>About, with the licence linked; the map links to it.</td></tr>
+        <tr><th scope="row">Protomaps basemap (data ODbL; code BSD-3-Clause)</th><td>The tiles' data is OpenStreetMap's (credited above). BSD-3-Clause needs the copyright notice in the documentation of a binary distribution.</td><td>About: the basemap notice and the <code>SOFTWARE</code> list.</td></tr>
+        <tr><th scope="row">MapLibre GL JS (BSD-3-Clause)</th><td>The notice in documentation or other materials; no on-map logo is required.</td><td>About's Software list (<code>SOFTWARE</code>, <code>src/lib/attribution.ts</code>).</td></tr>
+        <tr><th scope="row">DataSF (PDDL, CC0, public domain)</th><td>None required; credit is courtesy (<code>docs/dev/pipeline.md:434</code>).</td><td>About only (off the map, as the spec decides).</td></tr>
+        <tr><th scope="row">Transit GTFS (agency developer licences)</th><td>Credited as a courtesy today (<code>/attribution</code>'s transit notice).</td><td>About, unchanged.</td></tr>
+      </tbody>
+    </table>
+    <aside data-kind="warning"><strong>Today's notice is wrong</strong> <code>/attribution</code> says "Buildings © Overture Maps Foundation; OSM-derived data under ODbL, other data under CDLA Permissive 2.0." (<code>src/routes/attribution/+page.svelte:61-64</code>). CDLA Permissive 2.0 is Overture's Places licence; the buildings theme is ODbL with CC BY 4.0 parts, and the manifest says so (<code>e2e/fixtures/data/fixture-0/manifest.json</code>: <code>overture:Esri Community Maps</code>, <code>CC-BY-4.0</code>). Task 1 builds the notice from the manifest.</aside>
+  </section>
+
+  <section id="sec-strings">
+    <h2>The strings</h2>
+    <table id="tbl-strings">
+      <caption>Every visible or spoken string this slice adds or changes</caption>
+      <thead>
+        <tr><th scope="col">Where</th><th scope="col">Text</th><th scope="col">Defined in</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">The map's credit, expanded</th><td><code>© OpenStreetMap</code> (a link to <code>https://www.openstreetmap.org/copyright</code>), <code> · </code>, <code>About this model</code> (a link to <code>/about#about-data</code>); no <code>title</code></td><td><code>creditHtml</code>, <code>src/lib/map/attribution.ts</code></td></tr>
+        <tr><th scope="row">The map's credit, its toggle's name and title</th><td><code>Map credits</code></td><td>the map's <code>locale</code> (<code>'AttributionControl.ToggleAttribution'</code>), <code>SimMap.svelte</code></td></tr>
+        <tr><th scope="row"><code>/about</code>: tab title; heading</th><td><code>About this model · SF Housing Simulator</code>; <code>About this model</code></td><td><code>src/routes/about/+page.svelte</code></td></tr>
+        <tr><th scope="row"><code>/about</code>: the line under the heading</th><td><code>I built this to show what zoning, permitting and public money could do for housing in San Francisco.</code></td><td><code>ABOUT_INTRO</code>, <code>src/lib/about/copy.ts</code></td></tr>
+        <tr><th scope="row">The dialog on <code>/sim</code>: heading; close</th><td><code>About this model</code>; <code>Close</code> (unchanged)</td><td><code>AboutDialog.svelte</code></td></tr>
+        <tr><th scope="row">Part 1 heading</th><td><code>What the numbers mean</code> (unchanged words, from today's <code>/about</code>)</td><td><code>PART_HEADING.meanings</code>, <code>copy.ts</code></td></tr>
+        <tr><th scope="row">Part 1, terms (a <code>dl</code>)</th><td>
+          <code>Room for N homes</code> — <code>Every eligible lot you painted, rebuilt to its height at once. Homes in replaced buildings are subtracted.</code> (<code>ROOM_MEANS</code>, unchanged, joined)<br>
+          <code>Homes by a date</code> — <code>Homes the forecast completes from today to that month, net of homes removed. It holds today's market.</code><br>
+          <code>From your policy</code> — <code>The forecast runs twice, with your policy and under current law. This is the difference.</code><br>
+          <code>Current law</code> — <code>The Family Zoning Plan as adopted, permitting as observed, and City funding today.</code><br>
+          <code>The goal</code> — <code>The state target: 82,069 homes by January 2031, counted from June 2022, so homes built since then count. It is San Francisco's share of RHNA 2023–2031, the state's Regional Housing Needs Allocation.</code> then the source link <code>SF Planning, RHNA Primer</code><br>
+          <code>The goal + 15%</code> — <code>The state asks for room for at least 15% more: 94,379 homes.</code></td><td><code>MEANINGS</code>, <code>copy.ts</code>; amounts, dates and the link from <code>GOAL</code>, <code>bufferAmount</code> (<code>src/lib/goal/goal.ts</code>) and <code>M1_TARGETS[0]</code> (read, not copied)</td></tr>
+        <tr><th scope="row">Part 2 heading; on <code>/about</code> its opener and states</th><td><code>Assumptions</code>; a disclosure <code>Show the assumptions</code>; while loading <code>Loading…</code>; on failure <code>The assumptions couldn't load.</code> and a <code>Retry</code> button</td><td><code>PART_HEADING.assumptions</code>, <code>ASSUMPTIONS_SHOW</code>, <code>ASSUMPTIONS_FAILED</code>, <code>copy.ts</code></td></tr>
+        <tr><th scope="row">Part 2 body</th><td>The Sources dialog's sections and strings, unchanged (<code>provenance.ts</code>)</td><td><code>provenance.ts</code>, unchanged strings</td></tr>
+        <tr><th scope="row">Part 3 heading; version line</th><td><code>Data and licences</code>; <code>Dataset version {v}, built {yyyy-mm-dd}.</code> (unchanged)</td><td><code>PART_HEADING.data</code>, <code>AboutData.svelte</code></td></tr>
+        <tr><th scope="row">Part 3, the Overture notice (replaces the CDLA sentence)</th><td><code>Buildings © Overture Maps Foundation, from {names} under the ODbL and {names} under CC BY 4.0.</code> With fixture-0 (names in manifest order): <code>Buildings © Overture Maps Foundation, from Microsoft ML Buildings, OpenStreetMap and USGS Lidar under the ODbL and Esri Community Maps under CC BY 4.0.</code> With no <code>overture:*</code> source: <code>Buildings © Overture Maps Foundation, under the ODbL.</code> "the ODbL" links <code>https://opendatacommons.org/licenses/odbl/1-0/</code>; "CC BY 4.0" links <code>https://creativecommons.org/licenses/by/4.0/</code></td><td><code>overtureNotice</code>, <code>src/lib/about/credits.ts</code></td></tr>
+        <tr><th scope="row">Part 3, every other notice, the Sources table, Software, the code line</th><td>Unchanged from <code>/attribution</code> (<code>src/routes/attribution/+page.svelte:52-109</code>), including <code>Licences and notices</code>, <code>Software</code>, <code>This project's code is MIT licensed.</code></td><td><code>AboutData.svelte</code></td></tr>
+        <tr><th scope="row">Part 4 heading and sub-headings</th><td><code>Using it</code>; <code>Keyboard shortcuts</code>; <code>Your plans</code></td><td><code>PART_HEADING</code>, <code>copy.ts</code></td></tr>
+        <tr><th scope="row">Part 4, shortcut tables' captions</th><td><code>Painting</code> (the rows of <code>SHORTCUTS</code>, unchanged); <code>Timeline</code></td><td><code>AboutUsing.svelte</code></td></tr>
+        <tr><th scope="row">Part 4, the Timeline rows (key, action)</th><td><code>Space</code> — <code>Play or pause (not while painting)</code>; <code>← / →</code> — <code>A month back or on (date slider)</code>; <code>Page Down / Page Up</code> — <code>A year back or on (date slider)</code>; <code>Home / End</code> — <code>Today / the last month (date slider)</code></td><td><code>TIMELINE_SHORTCUTS</code>, <code>src/lib/timeline/shortcuts.ts</code></td></tr>
+        <tr><th scope="row">Part 4, Your plans</th><td><code>Published plans and policies are public and permanent: anyone with the link can see them, and I can't take them back.</code> <code>Reopening a saved plan uses the current data, so its totals can change.</code></td><td><code>YOUR_PLANS</code>, <code>copy.ts</code></td></tr>
+        <tr><th scope="row">Details (<code>/sim</code>) and Paint's Details: the last line</th><td>A link <code>How this is worked out</code> (<code>/about#about-assumptions</code> on <code>/sim</code>; <code>/about#about-meanings</code> on Paint)</td><td><code>WORKED_OUT</code>, <code>copy.ts</code></td></tr>
+        <tr><th scope="row">The footer on document pages</th><td><code>Data &amp; licences</code> (unchanged words) now links <code>/about#about-data</code></td><td><code>SiteFooter.svelte</code></td></tr>
+        <tr><th scope="row"><code>/s/&lt;id&gt;</code>'s share description</th><td><code>A housing policy for San Francisco, run through the simulation lot by lot. Open it to see how many homes it adds against the state target.</code></td><td><code>OG_DESCRIPTION</code>, <code>src/routes/s/[id]/+page.svelte:19-20</code></td></tr>
+      </tbody>
+    </table>
+    <p>Removed: <code>/sim</code>'s header Shortcuts button; Details' "Sources" disclosure with its "Where these numbers come from" button, market paragraph, forecast note, dataset line and "Data sources" link; Paint's Details footnote's dataset lead and "Sources" link (its old-plan note stays); the credit's four-source line and its title; today's <code>/about</code> sentences about capacity, the "6th-cycle" target and the Housing Element link (replaced by part 1). No other string is added, removed or reworded. The header's "About" stays "About".</p>
+  </section>
+
+  <section id="sec-decisions">
+    <h2>Decided from the spec and the code</h2>
+    <aside data-kind="decision"><strong>About is a page everywhere and a dialog on <code>/sim</code></strong> The Sources dialog's content depends on the run (the baseline's completions, the policy's typed terms, the comparison's references: <code>provenanceSections(cal, score, terms)</code>, <code>src/lib/fzp/provenance.ts:537-589</code>), and leaving <code>/sim</code> drops the playhead and the furthest date reached, which last for the visit (<code>sec-prop-reveal</code>). So on <code>/sim</code> and <code>/s/&lt;id&gt;</code> About opens over the map, live; on every other route it is the page. One set of parts renders both. Paint and <code>/p/&lt;id&gt;</code> autosave and have no clock, so their links navigate. See <a href="#q-dialog">Question 2</a>.</aside>
+    <aside data-kind="decision"><strong>Links, not buttons</strong> Every way into About is an <code>&lt;a href="/about#…"&gt;</code>: the header's About, the credit's link, Details' last line, the footer. While <code>AboutDialog</code> is mounted, a plain click on a link to <code>/about</code> (button 0, no modifier, no <code>target</code>, no <code>download</code>) opens the dialog at its fragment instead of navigating; a modified click still opens the page in a new tab. Nothing in the shell or in <code>/lesscars</code> needs to know.</aside>
+    <aside data-kind="decision"><strong><code>/attribution</code> redirects</strong> A 308 to <code>/about#about-data</code>, so old links and <code>ScoreboardPanel</code>'s hashed link land in the right part. The deploy smoke checks (<code>.github/workflows/deploy-staging.yml:50</code>, <code>deploy-prod.yml:51</code>) grep the dataset version from <code>/attribution</code> with <code>curl -fsS</code>, which does not follow redirects: they move to <code>/about</code>, which renders the version server-side.</aside>
+    <aside data-kind="decision"><strong>Details ends in one link</strong> Rule 5: Details holds the numbers behind an effect; About holds assumptions and sources. Details' Sources disclosure (<code>SimDetails.svelte:296-323</code>) carried the forecast note, the market paragraph, the Sources dialog button, the dataset line and the phasing note: all background. They leave; Details ends with "How this is worked out". The market, the phasing and the run's sources are in About's assumptions (<code>marketSection</code>, <code>multiphaseSection</code>); "holds today's market" is in part 1.</aside>
+    <aside data-kind="decision"><strong>The credit: compact at every width, one line, five seconds</strong> <code>sec-prop-about</code>: "MapLibre's collapsed control holding a linked '© OpenStreetMap' and the About link, shown expanded for five seconds on load." It collapses after five seconds, on the first drag, zoom, rotate or pitch (as today below 640 px, <code>SimMap.svelte:657-668</code>), or when Paint's strip appears, unless the person has pressed the toggle. Expanded it is one 24 px line, the same height as collapsed, so nothing anchored above it (the map key, Reset view on <code>/sim</code>, the glows' inset) moves when it collapses. Short, it ends well right of Reset view at 320 px, which fixes the slice 5 overlap; collapsed, it no longer covers merged rings (slice 6).</aside>
+    <aside data-kind="decision"><strong>Space plays and pauses</strong> <code>tbl-inv-sim-controls</code>: "add Space for Play". <code>BrushController</code> takes Space for temporary Move on every tool today and marks it handled (<code>BrushController.svelte.ts:602-612, 657-661</code>); it stands down while the tool cannot paint (<code>#canPaint()</code>, <code>:287-290</code>), and then Space presses Play (or Pause) exactly as the button does, "Play from" included (<code>Playhead.svelte:158-166</code>). Never on a key repeat, in a field, on a native Space control (<code>SPACE_NATIVE</code>, <code>:65</code>) or under a modal dialog.</aside>
+  </section>
+
+  <section id="sec-measures">
+    <h2>What to measure</h2>
+    <p>Not measured while planning. Each task that changes layout measures with a temporary Playwright spec (port 4180, fixture-0), records boxes <code>[x, y, w, h]</code> in its report, and deletes the spec:</p>
+    <ul>
+      <li>Task 5: the credit expanded and collapsed at 320, 375, 1024 and 1280 px on <code>/</code> and <code>/sim</code>: its box, the footprint vars, and Reset view's box on a coarse pointer (both pages). Expected: expanded one line, 24 px tall, block size equal expanded and collapsed within 1 px; at 320 the expanded left edge is right of Reset view's right edge by at least 8 px.</li>
+      <li>Task 5: on <code>/</code> at 320 and 375 with the strip showing (Undo and Redo in it): the strip's right edge and the collapsed (i)'s left edge; the expanded credit's box against the strip's.</li>
+      <li>Task 3: <code>/sim</code> at 375 with About open from the Menu: the dialog's box (inside the viewport, no horizontal scroll) and where focus lands on close.</li>
+      <li>Task 4: <code>/sim</code>'s header at 1024 and 1280, fine pointer and touch laptop, signed in with the 20-character handle (the slice 8 worst case): the spare px each side once Shortcuts has left. Record in <code>docs/dev/sim-page.md</code>'s "Header width".</li>
+    </ul>
+  </section>
+
+  <section id="sec-review-focus">
+    <h2>Review Focus</h2>
+    <ol>
+      <li><strong>A modified click on an About link on <code>/sim</code>.</strong> Ctrl or Cmd click, middle click, Shift click, a link with <code>target</code>. Expected: the browser's own behaviour (a new tab or window on <code>/about</code>), no dialog, the run untouched. Tests: <a href="#t3-s1">t3-s1</a> ("a modified click is left to the browser", "a plain click opens the dialog at the fragment and the page does not navigate").</li>
+      <li><strong>Space where it already means something.</strong> Focus on a button, a link, a summary, a radio, a field, the date slider; the Paint tool chosen on <code>/sim</code>; the key held down (repeats). Expected: native activation, typing, temporary Move while painting, one toggle per press, never a scroll. Tests: <a href="#t4-s1">t4-s1</a> ("Space on a button presses the button and leaves Play", "Space while the Paint tool is chosen keeps temporary Move", "a held Space toggles once").</li>
+      <li><strong>Closing About opened from the phone Menu.</strong> The opener is a link in a Menu panel that closed when it was pressed. Expected: focus goes to the Menu button, never to the body. Tests: <a href="#t3-s1">t3-s1</a> ("opened from the Menu, closing returns focus to the Menu button").</li>
+      <li><strong>The person presses the credit before five seconds.</strong> Opened or closed by hand during the first five seconds. Expected: their choice holds; the timer never flips it. Tests: <a href="#t5-s1">t5-s1</a> ("a toggle press before creditShowMs cancels the collapse").</li>
+      <li><strong>A deep link to an assumption on <code>/about</code>.</strong> <code>/about#about-assumptions</code> or <code>/about#src-transitions</code> on load, including after a failed load and a Retry. Expected: the assumptions open, load, and the page scrolls to the target once it exists. Tests: <a href="#t2-s1">t2-s1</a> ("a hash for an entry opens the assumptions and scrolls to it", "after a failure, Retry loads and the hash still lands").</li>
+    </ol>
+  </section>
+
+  <section id="sec-file-structure">
+    <h2>File Structure</h2>
+    <p>Every file below is outside the hashed <code>PATHS</code>.</p>
+    <table id="tbl-files">
+      <caption>Files by task and what each owns</caption>
+      <thead>
+        <tr><th scope="col">Area</th><th scope="col">Files</th><th scope="col">Task</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">The page and its parts</th><td>Create <code>src/lib/about/copy.ts</code>, <code>credits.ts</code> and <code>credits.spec.ts</code>, <code>AboutMeanings.svelte</code>, <code>AboutData.svelte</code>, <code>AboutUsing.svelte</code>, <code>AboutParts.svelte.spec.ts</code>, <code>src/routes/about/+page.server.ts</code> and <code>page.server.spec.ts</code>, <code>docs/dev/about.md</code>; modify <code>src/routes/about/+page.svelte</code> and <code>page.svelte.spec.ts</code>, <code>src/routes/attribution/+page.server.ts</code> and <code>page.server.spec.ts</code> (a redirect); delete <code>src/routes/attribution/+page.svelte</code> and <code>page.svelte.spec.ts</code>; modify <code>src/lib/shell/SiteFooter.svelte</code> and spec, <code>src/lib/shell/accent.spec.ts</code>, <code>.github/workflows/deploy-staging.yml</code>, <code>deploy-prod.yml</code>, <code>CLAUDE.md</code>; e2e <code>attribution.spec.ts</code> (renamed <code>about.spec.ts</code>), <code>pages-a11y.spec.ts</code>, <code>cache-headers.spec.ts</code>, <code>transit.spec.ts</code>, <code>fzp.spec.ts</code> (the scenario notice), <code>sim.spec.ts:1266</code>; docs <code>deploy.md</code>, <code>pipeline.md</code>, <code>finance-data.md</code></td><td>1</td></tr>
+        <tr><th scope="row">Assumptions on the page</th><td>Create <code>src/lib/fzp/ProvenanceBody.svelte</code>, <code>src/lib/about/AboutAssumptions.svelte</code> and spec; modify <code>src/lib/fzp/provenance.ts</code> and spec (<code>modelSections</code>), <code>src/lib/fzp/SourcesDialog.svelte</code> (uses the body until Task 3 replaces it), <code>src/routes/about/+page.svelte</code>; e2e <code>about.spec.ts</code></td><td>2</td></tr>
+        <tr><th scope="row">About on <code>/sim</code></th><td>Create <code>src/lib/about/links.ts</code> and <code>links.spec.ts</code>, <code>src/lib/about/AboutDialog.svelte</code>, <code>AboutDialog.svelte.spec.ts</code>, <code>src/lib/about/test/AboutDialogHarness.svelte</code>; delete <code>src/lib/fzp/SourcesDialog.svelte</code>, its spec and <code>src/lib/fzp/test/SourcesDialogHarness.svelte</code> (their cases move); modify <code>src/lib/timeline/TimelineMode.svelte</code> and spec, <code>src/lib/timeline/SimDetails.svelte</code> and spec; e2e <code>fzp.spec.ts</code>, <code>sim-funding.spec.ts</code>, <code>sim-details.spec.ts</code>, <code>chrome-dark.spec.ts</code>, <code>sim.spec.ts</code>; docs <code>about.md</code>, <code>fzp-mode.md</code>, <code>sim-funding.md</code>, <code>sim-page.md</code></td><td>3</td></tr>
+        <tr><th scope="row">Shortcuts</th><td>Create <code>src/lib/timeline/shortcuts.ts</code> and spec; modify <code>src/lib/brush/BrushController.svelte.ts</code> and spec, <code>src/lib/timeline/Playhead.svelte</code>, <code>TimelineMode.svelte</code> and spec, <code>src/lib/sim-page/SimPage.svelte</code> and spec, <code>src/lib/paint/ShortcutsButton.svelte</code> and spec, <code>src/lib/shell/test/SimRowHeader.svelte</code>, <code>src/lib/shell/SiteHeader.svelte.spec.ts</code>, <code>src/lib/about/AboutUsing.svelte</code>; e2e <code>sim.spec.ts</code>, <code>layout.spec.ts</code>, <code>sim-timeline.spec.ts</code>; docs <code>sim-page.md</code>, <code>timeline-ui.md</code>, <code>developing.md</code>, <code>testing.md</code></td><td>4</td></tr>
+        <tr><th scope="row">The map's credit</th><td>Modify <code>src/lib/map/attribution.ts</code> and spec, <code>src/lib/map/SimMap.svelte</code>, <code>SimMap.svelte.spec.ts</code>, <code>src/lib/map/types.ts</code> (<code>collapseCredit</code>), every <code>SimMapHandle</code> double (<code>src/lib/fzp/test/sim-map-stub.ts</code>, <code>src/lib/brush/test/sim-map-stub.ts</code>, any other <code>rg -l "setGlowInset" src</code> finds), <code>src/lib/brush/BrushEditor.svelte</code>, <code>src/lib/paint/PaletteStrip.svelte</code> (the expanded credit over the strip); e2e <code>map.spec.ts</code> and its two goldens, <code>layout.spec.ts</code>, <code>sim.spec.ts</code>; docs <code>map-interfaces.md</code>, <code>map-perf.md</code> (the slice 6 row), <code>about.md</code></td><td>5</td></tr>
+        <tr><th scope="row">Every way in</th><td>Modify <code>src/lib/paint/PaintDetails.svelte</code> and spec, <code>src/routes/s/[id]/+page.svelte</code>; e2e <code>targets.spec.ts</code>, <code>chrome-dark.spec.ts</code>, <code>scoreboard.spec.ts</code> or <code>brush.spec.ts</code> (whichever pins Paint's footnote); docs <code>accessibility.md</code>, <code>developing.md</code>, <code>about.md</code></td><td>6</td></tr>
+        <tr><th scope="row">Whole-suite pass</th><td>Whatever the full runs turn up</td><td>7</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="sec-task-1">
+    <h2>Task 1: About this model, the page: what the numbers mean, data and licences, using it</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Create: <code>src/lib/about/copy.ts</code> (every string of the parts: <a href="#tbl-strings">The strings</a>), <code>src/lib/about/credits.ts</code> (<code>overtureNotice</code>) with <code>credits.spec.ts</code> (server), <code>src/lib/about/AboutMeanings.svelte</code>, <code>AboutData.svelte</code> (today's <code>/attribution</code> body, <code>src/routes/attribution/+page.svelte:17-109</code>, as a part), <code>AboutUsing.svelte</code> (the Painting table from <code>SHORTCUTS</code>, <code>src/lib/brush/shortcuts.ts:88-99</code>; the Timeline table arrives in Task 4; Your plans), <code>src/lib/about/AboutParts.svelte.spec.ts</code> (client).</li>
+      <li>Create: <code>src/routes/about/+page.server.ts</code> (the manifest reader moved from <code>src/routes/attribution/+page.server.ts:5-25</code>) with <code>page.server.spec.ts</code> (moved from <code>attribution</code>). Modify <code>src/routes/about/+page.svelte</code> (the parts in order; part 2 holds only its heading and an empty slot until Task 2) and <code>page.svelte.spec.ts</code>.</li>
+      <li>Modify: <code>src/routes/attribution/+page.server.ts</code>: <code>redirect(308, '/about#about-data')</code>; its spec asserts the redirect. Delete <code>src/routes/attribution/+page.svelte</code> and <code>page.svelte.spec.ts</code> (their cases move to <code>AboutParts.svelte.spec.ts</code>).</li>
+      <li>Modify: <code>src/lib/shell/SiteFooter.svelte:9</code> (<code>/about#about-data</code>) and <code>SiteFooter.svelte.spec.ts</code>; <code>src/lib/shell/accent.spec.ts</code> (<code>NO_HEX_FILES</code> += the new <code>src/lib/about/*</code> files); <code>.github/workflows/deploy-staging.yml:50</code> and <code>deploy-prod.yml:51</code> (<code>/attribution</code> → <code>/about</code>; run <code>npm run lint:workflows</code>); <code>CLAUDE.md</code> (the <code>SOFTWARE</code> line, <code>:114</code>: "rendered at <code>/about#about-data</code>"; one scoped-docs line: "About this model (the page, the dialog on <code>/sim</code>, the link rule, the parts' colours, the map's credit)" → <code>docs/dev/about.md</code>).</li>
+      <li>e2e: <code>git mv e2e/attribution.spec.ts e2e/about.spec.ts</code> and update; <code>pages-a11y.spec.ts</code> (<code>/attribution</code> leaves the 200 list; a redirect test), <code>cache-headers.spec.ts</code> (<code>/attribution</code> → a 308 check), <code>transit.spec.ts:79</code>, <code>fzp.spec.ts:648-649</code>, <code>sim.spec.ts:1266</code> (go to <code>/about</code>). Docs: <code>docs/dev/about.md</code> (new), <code>deploy.md:38</code>, <code>pipeline.md:434</code>, <code>finance-data.md:17,414</code>.</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>GOAL</code>, <code>bufferAmount</code> (<code>src/lib/goal/goal.ts</code>); <code>M1_TARGETS</code> (<code>src/lib/scoreboard/targets.ts</code>, read only); <code>ROOM_MEANS</code> (<code>src/lib/paint/details.ts:17-20</code>); <code>formatCount</code>, <code>formatMonthYear</code>; <code>SOFTWARE</code>, <code>isoDate</code> (<code>src/lib/attribution.ts</code>); <code>ManifestSources</code>; <code>SHORTCUTS</code>; <code>REPO_URL</code>.</li>
+      <li>Produces:
+        <pre><code data-lang="ts">// src/lib/about/copy.ts
+/** The parts' element ids, on the page and in the dialog: links name them as /about#&lt;id&gt;. */
+export const ABOUT_ID = {
+  meanings: 'about-meanings',
+  assumptions: 'about-assumptions',
+  data: 'about-data',
+  using: 'about-using',
+  shortcuts: 'about-shortcuts'
+} as const;
+export type AboutPart = keyof typeof ABOUT_ID;
+export const ABOUT_TITLE = 'About this model';
+export const ABOUT_INTRO: string;
+export const PART_HEADING: Record&lt;'meanings' | 'assumptions' | 'data' | 'using', string&gt;;
+/** Part 1's terms, in order; `body` composes from GOAL, bufferAmount and M1_TARGETS. */
+export const MEANINGS: readonly { term: string; body: string; source?: { label: string; url: string } }[];
+export const YOUR_PLANS: readonly [string, string];
+export const WORKED_OUT = 'How this is worked out';
+export const ASSUMPTIONS_SHOW = 'Show the assumptions';
+export const ASSUMPTIONS_FAILED = "The assumptions couldn't load.";
+
+// src/lib/about/credits.ts
+/** The Overture notice from the manifest's `overture:*` sources, grouped by licence, names in
+ *  manifest order: ODbL-1.0 first, then CC-BY-4.0, then any other licence as its own clause. */
+/** A name is the source's label less " via Overture Maps", else the id after "overture:".
+ *  AboutData renders the clauses into the sentence in The strings, linking each licence. */
+export function overtureNotice(
+  sources: { id: string; label?: string; license: string }[]
+): { license: string; names: string[] }[];
+
+// Parts (src/lib/about/*.svelte). Every part: { level: 2 | 3 } (its heading level: 2 on the page,
+// 3 in the dialog), its root a &lt;section id={ABOUT_ID[part]}&gt;, colours only from
+// --about-muted and --about-line.
+// AboutMeanings: { level }
+// AboutData: { level; datasetVersion: string; manifest: ManifestSources | null }
+//   (manifest null: "Dataset version {v}." and "Source list unavailable for this dataset version.",
+//   as /attribution does today)
+// AboutUsing: { level } (the Painting table and Your plans; Task 4 adds the Timeline table)
+// The page: src/routes/about/+page.svelte sets --about-muted: var(--color-ink-muted) and
+// --about-line: var(--color-line) on its root.</code></pre>
+      </li>
+    </ul>
+    <aside data-kind="decision"><strong>Builder's call: colours through two properties</strong> The parts render on a page that stays light and in a dialog that follows the theme; a <code>dark:</code> utility would turn the page's muted text light on white in a dark system. The container sets <code>--about-muted</code> and <code>--about-line</code>. Rejected: two copies of each part, or a Tailwind custom dark variant (a site-wide change).</aside>
+    <aside data-kind="decision"><strong>Builder's call: ids carry an <code>about-</code> prefix</strong> The dialog lives on <code>/sim</code>, whose page could hold a bare <code>data</code> or <code>using</code> id; a duplicate id fails axe. Provenance entries keep their <code>src-</code> ids (unique today on <code>/sim</code>).</aside>
+    <ol>
+      <li id="t1-s1"><input type="checkbox"> Write the failing tests first.
+        <pre><code data-lang="ts">// src/lib/about/credits.spec.ts
+it('fixture-0: [{ ODbL-1.0: Microsoft ML Buildings, OpenStreetMap, USGS Lidar }, { CC-BY-4.0: Esri Community Maps }]')
+it('no overture: source gives no clauses (AboutData then renders the ODbL-only sentence)')
+it('a third licence gets its own clause, after CC BY 4.0')
+// src/lib/about/AboutParts.svelte.spec.ts
+it('meanings: every term in order; the goal reads "82,069 homes by January 2031" and "June 2022" from GOAL')
+it('meanings: the goal links "SF Planning, RHNA Primer" to M1_TARGETS[0].source.url')
+it('meanings: the buffer reads 94,379 from bufferAmount(GOAL)')
+it('data: the version line, the sources table, every notice of today\'s page, Software and the code line')
+it('data: the Overture notice comes from the manifest; "the ODbL" and "CC BY 4.0" link their licences')
+it('data: with no manifest, the fallback lines')
+it('data: every link that is its cell\'s whole content is at least 24 px tall')
+it('using: the Painting table holds every SHORTCUTS row; Your plans holds both sentences')
+it('each part\'s heading is at the given level and its section carries its ABOUT_ID')
+it('no part has a dark: class or a gray, white, black or ink utility')   // scans the rendered classes
+// src/routes/about/page.svelte.spec.ts
+it('the page: h1 About this model, the intro, the four parts in order, the source code link')
+// src/routes/about/page.server.spec.ts (moved): the manifest reader's cases, unchanged
+// src/routes/attribution/page.server.spec.ts
+it('redirects 308 to /about#about-data')
+// e2e/about.spec.ts (renamed)
+test('/about shows the dataset version, the sources, every notice and Software, server-rendered')
+test('/attribution lands on /about at Data and licences')
+// e2e/pages-a11y.spec.ts: '/about' keeps its case (structure: true); '/attribution' redirects
+// e2e/cache-headers.spec.ts
+test('/attribution answers 308 to /about#about-data')</code></pre>
+      </li>
+      <li id="t1-s2"><input type="checkbox"> Run them and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/about/credits.spec.ts src/routes/attribution/page.server.spec.ts src/routes/about/page.server.spec.ts
+npx vitest --run --project client --retry=0 src/lib/about/AboutParts.svelte.spec.ts src/routes/about/page.svelte.spec.ts
+SFH_E2E_PORT=4180 npx playwright test e2e/about.spec.ts e2e/pages-a11y.spec.ts e2e/cache-headers.spec.ts --project=chromium --project=mobile</code></pre>
+      </li>
+      <li id="t1-s3"><input type="checkbox"> Implement as in Interfaces: the copy, the credits, the three parts, the page, the redirect, the footer, the workflows, the docs. <code>docs/dev/about.md</code> says: the four parts and their ids, the page, the redirect, the colour properties, the strings' home, and (filled in by Tasks 2, 3 and 5) the assumptions' loading, the dialog and the link rule, the map's credit.</li>
+      <li id="t1-s4"><input type="checkbox"> Run the covering specs and the changed e2e, then repeat the changed e2e.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/about/ src/routes/ src/lib/shell/
+npx vitest --run --project client --retry=0 src/lib/about/ src/routes/about/ src/lib/shell/
+npm run lint:workflows
+SFH_E2E_PORT=4180 npx playwright test e2e/about.spec.ts e2e/pages-a11y.spec.ts e2e/cache-headers.spec.ts e2e/transit.spec.ts e2e/fzp.spec.ts e2e/sim.spec.ts e2e/chrome-dark.spec.ts e2e/lesscars.spec.ts --project=chromium --project=mobile
+SFH_E2E_PORT=4180 npx playwright test e2e/about.spec.ts e2e/pages-a11y.spec.ts e2e/cache-headers.spec.ts --project=chromium --project=mobile --repeat-each=5 --retries=0</code></pre>
+        <p>Screenshots, before on <code>main</code> (<code>/about</code> and <code>/attribution</code>) and after (<code>/about</code>): at 1280 light, at 1280 with the system in dark (the page stays light) and at 375.</p>
+      </li>
+      <li id="t1-s5"><input type="checkbox"> Commit, then check timing.
+        <pre><code data-lang="sh">git add src/lib/about/copy.ts src/lib/about/credits.ts src/lib/about/credits.spec.ts src/lib/about/AboutMeanings.svelte src/lib/about/AboutData.svelte src/lib/about/AboutUsing.svelte src/lib/about/AboutParts.svelte.spec.ts src/routes/about/+page.svelte src/routes/about/+page.server.ts src/routes/about/page.svelte.spec.ts src/routes/about/page.server.spec.ts src/routes/attribution/+page.server.ts src/routes/attribution/page.server.spec.ts src/routes/attribution/+page.svelte src/routes/attribution/page.svelte.spec.ts src/lib/shell/SiteFooter.svelte src/lib/shell/SiteFooter.svelte.spec.ts src/lib/shell/accent.spec.ts .github/workflows/deploy-staging.yml .github/workflows/deploy-prod.yml CLAUDE.md docs/dev/about.md docs/dev/deploy.md docs/dev/pipeline.md docs/dev/finance-data.md e2e/about.spec.ts e2e/attribution.spec.ts e2e/pages-a11y.spec.ts e2e/cache-headers.spec.ts e2e/transit.spec.ts e2e/fzp.spec.ts e2e/sim.spec.ts
+git commit -m "feat(about): About this model as one page: meanings, data and licences, using it; /attribution redirects"
+npx chreode timing-check --head HEAD</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-2">
+    <h2>Task 2: The assumptions on the page</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Create: <code>src/lib/fzp/ProvenanceBody.svelte</code>: the Sources dialog's body (<code>SourcesDialog.svelte:163-313</code>: the sections, the entries, the tables and the data checks), with a heading level and the colour properties; the data checks' load moves with it. <code>SourcesDialog.svelte</code> renders it (so nothing on <code>/sim</code> changes in this task).</li>
+      <li>Modify: <code>src/lib/fzp/provenance.ts</code>: <code>targetsSection</code> (<code>:471-493</code>) takes only the targets and references; add <code>modelSections</code>. Test: <code>provenance.spec.ts</code>.</li>
+      <li>Create: <code>src/lib/about/AboutAssumptions.svelte</code> and <code>AboutAssumptions.svelte.spec.ts</code> (client); <code>src/routes/about/+page.svelte</code> renders it in part 2. e2e: <code>about.spec.ts</code>. Docs: <code>about.md</code> (the loading), <code>fzp-mode.md</code> (the body's new home).</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: Task 1's <code>ABOUT_ID</code>, <code>ASSUMPTIONS_SHOW</code>, <code>ASSUMPTIONS_FAILED</code>, the colour properties; <code>fetchCalibration</code> (<code>src/lib/fzp/load.ts:11-16</code>), <code>loadProjectsFile</code> (<code>provenance.ts:615-621</code>); <code>M1_TARGETS</code>, <code>REFERENCES</code>, <code>RHNA_DEADLINE</code> (<code>src/lib/sim/scenario/score.ts:293, 341-397</code>, read only); <code>BUTTON_QUIET</code>.</li>
+      <li>Produces:
+        <pre><code data-lang="ts">// src/lib/fzp/provenance.ts
+/** The targets and the published estimates beside them (today's section 8). */
+function targetsSection(
+  score: Pick&lt;TimelineScore, 'targets' | 'references'&gt;,
+  asOf: Day
+): ProvSection;
+/**
+ * The assumptions without a run: provenanceSections(cal, null) (sections 1 and 3 to 7, default
+ * terms) then targetsSection over M1_TARGETS (deadline RHNA_DEADLINE) and every REFERENCES entry.
+ * Actual completions and multi-phase projects need a run and are only in /sim's dialog.
+ */
+export function modelSections(cal: Calibration): ProvSection[];
+
+// src/lib/fzp/ProvenanceBody.svelte
+// props: { sections: ProvSection[]; projectsUrl: string | null; level: 3 | 4;
+//   fetchFn?: typeof fetch; load?: boolean }
+// level: the sections' heading level (entries one below). load: start the data checks' load
+// (the dialog passes true on open; the page when the body first shows). Ids as today
+// (src-…, QUALITY_SECTION_ID).
+
+// src/lib/about/AboutAssumptions.svelte
+// props: { level: 2 | 3; live?: { sections: ProvSection[]; projectsUrl: string | null };
+//   datasetVersion?: string; manifest?: ManifestSources | null; fetchFn?: typeof fetch }
+// live (the dialog): the body at once. Otherwise (the page) a &lt;details&gt; "Show the assumptions":
+// its first open fetches manifest.scenarios.fzp.calibration (fetchCalibration) and renders
+// modelSections; "Loading…" in a role=status; a failure shows ASSUMPTIONS_FAILED and Retry
+// (BUTTON_QUIET). No fzp scenario in the manifest: the part shows nothing but its heading and
+// ASSUMPTIONS_FAILED without Retry.
+// On mount, location.hash naming ABOUT_ID.assumptions or an id starting "src-" opens the details;
+// once the target exists it is scrolled to (block 'start'), once.</code></pre>
+      </li>
+    </ul>
+    <aside data-kind="decision"><strong>Builder's call: loaded on demand, in the browser</strong> <code>/about</code> is a neutral page several e2e specs navigate from, and the projects file is large on the live dataset; the details' first open is the only fetch. The files are the same-origin, immutable <code>/data/&lt;version&gt;/…</code> files <code>/sim</code> loads (no CSP change). Rejected: loading the calibration in the server load on every visit.</aside>
+    <ol>
+      <li id="t2-s1"><input type="checkbox"> Write the failing tests first.
+        <pre><code data-lang="ts">// src/lib/fzp/provenance.spec.ts
+it('modelSections: the sections of provenanceSections(cal, null), then Targets and published estimates')
+it('modelSections: the targets section lists both M1 targets and all three REFERENCES entries')
+it('provenanceSections with a score: unchanged (the existing cases pass as they are)')
+// src/lib/about/AboutAssumptions.svelte.spec.ts (fetchFn stubbed; no timers)
+it('closed: nothing is fetched')
+it('opening fetches the calibration once and renders every section heading of modelSections')
+it('a failure shows "The assumptions couldn\'t load." and Retry; Retry loads')
+it('a hash for an entry opens the assumptions and scrolls to it')            // #src-transitions
+it('after a failure, Retry loads and the hash still lands')
+it('live sections render at once with no disclosure and no fetch of the calibration')
+// e2e/about.spec.ts
+test('/about: Show the assumptions loads them; the published estimates sit in Targets and published estimates')
+test('/about#about-assumptions opens them on load')
+test('/about with the assumptions open passes axe with structure')</code></pre>
+      </li>
+      <li id="t2-s2"><input type="checkbox"> Run them and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/fzp/provenance.spec.ts
+npx vitest --run --project client --retry=0 src/lib/about/AboutAssumptions.svelte.spec.ts
+SFH_E2E_PORT=4180 npx playwright test e2e/about.spec.ts --project=chromium --project=mobile</code></pre>
+      </li>
+      <li id="t2-s3"><input type="checkbox"> Extract <code>ProvenanceBody</code>, add <code>modelSections</code>, implement <code>AboutAssumptions</code> and put it in the page. Update the docs.</li>
+      <li id="t2-s4"><input type="checkbox"> Run the covering specs and e2e, then repeat the changed e2e.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/fzp/
+npx vitest --run --project client --retry=0 src/lib/fzp/ src/lib/about/ src/routes/about/
+SFH_E2E_PORT=4180 npx playwright test e2e/about.spec.ts e2e/fzp.spec.ts e2e/sim-funding.spec.ts e2e/chrome-dark.spec.ts --project=chromium --project=mobile
+SFH_E2E_PORT=4180 npx playwright test e2e/about.spec.ts --project=chromium --project=mobile --repeat-each=5 --retries=0</code></pre>
+        <p>Screenshots: <code>/about</code> with the assumptions open at 1280 light and 375; <code>/sim</code>'s Sources dialog at 1280 light and dark, before and after (unchanged).</p>
+      </li>
+      <li id="t2-s5"><input type="checkbox"> Commit, then check timing.
+        <pre><code data-lang="sh">git add src/lib/fzp/ProvenanceBody.svelte src/lib/fzp/SourcesDialog.svelte src/lib/fzp/provenance.ts src/lib/fzp/provenance.spec.ts src/lib/about/AboutAssumptions.svelte src/lib/about/AboutAssumptions.svelte.spec.ts src/routes/about/+page.svelte src/lib/shell/accent.spec.ts e2e/about.spec.ts docs/dev/about.md docs/dev/fzp-mode.md
+git commit -m "feat(about): the assumptions and published estimates in About, loaded on demand"
+npx chreode timing-check --head HEAD</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-3">
+    <h2>Task 3: About on <code>/sim</code>: one dialog, every link opens it, Details ends in one link</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Create: <code>src/lib/about/links.ts</code> (the link rule) and <code>links.spec.ts</code> (server); <code>src/lib/about/AboutDialog.svelte</code> (today's <code>SourcesDialog</code> shell, <code>SourcesDialog.svelte:1-160</code>: the native modal, the Tab wrap, focus return, <code>SURFACE_DIALOG_FLUSH</code>; heading "About this model"; the four parts at level 3, part 2 live) with <code>AboutDialog.svelte.spec.ts</code> and <code>src/lib/about/test/AboutDialogHarness.svelte</code>. Delete <code>src/lib/fzp/SourcesDialog.svelte</code>, <code>SourcesDialog.svelte.spec.ts</code> and <code>src/lib/fzp/test/SourcesDialogHarness.svelte</code>; every case of that spec moves to the new one (focus return, Tab wrap, open at an entry, the data checks' states, dark surfaces). <code>accent.spec.ts</code>: <code>THEMED_FILES</code> swaps <code>SourcesDialog.svelte</code> for <code>AboutDialog.svelte</code>.</li>
+      <li>Modify: <code>src/lib/timeline/TimelineMode.svelte</code> (<code>:106</code> import, <code>:741</code>, <code>:1456</code>, <code>:1681</code>, <code>:1693-1702</code>): mounts <code>AboutDialog</code> where <code>SourcesDialog</code> was (same condition: <code>calibration &amp;&amp; !noScenario</code>), passing <code>manifest</code>, <code>datasetVersion</code> and the live sections; the card's <code>onsource(id)</code> calls <code>about.open(id)</code>; <code>onopen</code> pauses as today. Test: <code>TimelineMode.svelte.spec.ts</code>.</li>
+      <li>Modify: <code>src/lib/timeline/SimDetails.svelte</code>: the Sources disclosure (<code>:296-323</code>) becomes one line, a link <code>WORKED_OUT</code> to <code>/about#about-assumptions</code> (<code>data-testid="details-about"</code>, a standalone 24 px target); the props <code>datasetVersion</code>, <code>builtAt</code>, <code>onsources</code> and <code>market</code> and the phasing note go. Test: <code>SimDetails.svelte.spec.ts</code> (<code>:549</code>).</li>
+      <li>e2e: <code>fzp.spec.ts</code> (<code>:102-110</code>, <code>:224</code>, <code>:730</code>), <code>sim-funding.spec.ts</code> (<code>:490-502</code>: the market paragraph is now in About's "Today's market"), <code>sim-details.spec.ts:56</code>, <code>chrome-dark.spec.ts:495-513</code>, <code>sim.spec.ts</code>. Docs: <code>about.md</code> (the dialog and the link rule), <code>fzp-mode.md</code> (<code>:44</code>, <code>:93</code>, <code>:135-136</code>), <code>sim-funding.md</code> (<code>:194</code>, <code>:198</code>), <code>sim-page.md</code> (Details' last line), <code>timeline-ui.md</code> if it names the disclosure.</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: Tasks 1 and 2's parts, <code>ABOUT_ID</code>, <code>WORKED_OUT</code>, <code>ProvenanceBody</code>; <code>provenanceSections</code>; <code>focusHeaderMenu</code> (<code>src/lib/shell/header-actions.svelte.ts</code>).</li>
+      <li>Produces:
+        <pre><code data-lang="ts">// src/lib/about/links.ts
+/**
+ * The fragment an About link opens ('' for /about itself), or null when `a` is not a same-origin
+ * link to /about. Pure: reads a.href, a.target, a.hasAttribute('download') and `origin`.
+ */
+export function aboutTarget(a: HTMLAnchorElement, origin: string): string | null;
+/**
+ * While installed: a capture-phase click listener on `document` that, for a plain click (button
+ * 0, no Ctrl, Meta, Shift or Alt, not already handled, no target other than _self) on an About
+ * link, calls preventDefault() and open(fragment). Returns the uninstall.
+ */
+export function interceptAboutLinks(open: (fragment: string) =&gt; void): () =&gt; void;
+
+// src/lib/about/AboutDialog.svelte
+// props: { manifest: Manifest | null; datasetVersion: string; sections: ProvSection[];
+//   projectsUrl: string | null; fetchFn?: typeof fetch; onopen?: () =&gt; void }
+// Sets --about-muted and --about-line with dark partners. Installs interceptAboutLinks while
+// mounted.
+export function open(target?: string): void;
+// target: '' (the top), an ABOUT_ID value, or an entry id (src-…): scrolls it to the top of the
+// dialog's scroll box. Opening loads the data checks (as today). On close, focus returns to the
+// opener when it is still rendered (getClientRects().length &gt; 0); otherwise to the header's
+// Menu button (focusHeaderMenu()), otherwise to the body only if neither exists.</code></pre>
+      </li>
+    </ul>
+    <aside data-kind="decision"><strong>Builder's call: capture phase on the document</strong> SvelteKit's router handles link clicks on the body and skips a handled event; a capture listener on <code>document</code> runs first, and MapLibre's credit link, the header's About and Details' link are all reached without each knowing about the dialog. Rejected: an <code>onclick</code> on each link (the credit's is MapLibre's HTML).</aside>
+    <ol>
+      <li id="t3-s1"><input type="checkbox"> Write the failing tests first.
+        <pre><code data-lang="ts">// src/lib/about/links.spec.ts
+it('aboutTarget: /about → "", /about#about-data → "about-data", /about#src-x → "src-x"')
+it('aboutTarget: another path, another origin, a target="_blank" or a download link → null')
+// src/lib/about/AboutDialog.svelte.spec.ts (the harness has a header-like Menu button and links)
+it('a plain click on an About link opens the dialog at the fragment and the page does not navigate')
+it('a modified click is left to the browser')                       // ctrl, meta, shift, middle
+it('the dialog holds the four parts in order, headed at level 3, with live assumptions')
+it('open("src-…") scrolls the entry into view; open("about-data") the part')
+it('opened from the Menu, closing returns focus to the Menu button')  // opener hidden on close
+it('closing returns focus to a visible opener')
+it('Tab wraps inside the dialog')                                    // moved
+it('the data checks load on the first open; a failure retries on the next')  // moved
+it('in dark the surface is surface-dark and the parts\' muted text is ink-dark-muted')
+it('unmounted, a click on an About link is not intercepted')
+// TimelineMode.svelte.spec.ts
+it('the card\'s source link opens About at its entry and pauses')
+// SimDetails.svelte.spec.ts
+it('Details ends with "How this is worked out" to /about#about-assumptions, at least 24 px tall')
+it('Details has no Sources disclosure, dataset line or market paragraph')
+// e2e/sim.spec.ts
+test('/sim: the header\'s About opens About this model over the map; Escape closes it; the playhead stays')
+test('/sim at 375: About from the Menu opens the dialog; closing focuses the Menu button')
+// e2e/fzp.spec.ts, sim-funding.spec.ts, sim-details.spec.ts, chrome-dark.spec.ts: the Sources
+// dialog cases now open About from Details' link and find the same sections; dark and axe as before</code></pre>
+      </li>
+      <li id="t3-s2"><input type="checkbox"> Run them and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/about/links.spec.ts
+npx vitest --run --project client --retry=0 src/lib/about/AboutDialog.svelte.spec.ts src/lib/timeline/TimelineMode.svelte.spec.ts src/lib/timeline/SimDetails.svelte.spec.ts
+SFH_E2E_PORT=4180 npx playwright test e2e/sim.spec.ts e2e/fzp.spec.ts e2e/sim-funding.spec.ts e2e/sim-details.spec.ts e2e/chrome-dark.spec.ts --project=chromium --project=mobile</code></pre>
+      </li>
+      <li id="t3-s3"><input type="checkbox"> Implement as in Interfaces; move the Sources dialog's cases; update the docs.</li>
+      <li id="t3-s4"><input type="checkbox"> Run the covering specs and e2e, then repeat the changed e2e.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/about/ src/lib/fzp/
+npx vitest --run --project client --retry=0 src/lib/about/ src/lib/fzp/ src/lib/timeline/ src/lib/sim-page/ src/lib/shell/
+SFH_E2E_PORT=4180 npx playwright test e2e/sim.spec.ts e2e/fzp.spec.ts e2e/fzp-sim.spec.ts e2e/sim-funding.spec.ts e2e/sim-details.spec.ts e2e/sim-share.spec.ts e2e/chrome-dark.spec.ts e2e/layout.spec.ts e2e/lesscars.spec.ts --project=chromium --project=mobile
+SFH_E2E_PORT=4180 npx playwright test e2e/sim.spec.ts e2e/fzp.spec.ts e2e/sim-funding.spec.ts e2e/sim-details.spec.ts e2e/chrome-dark.spec.ts --project=chromium --project=mobile --repeat-each=5 --retries=0</code></pre>
+        <p>Screenshots, before (the Sources dialog and Details' foot) and after (About open and Details' foot): <code>/sim</code> at 1280 light and dark, 1024 light, and 375 with About opened from the Menu.</p>
+      </li>
+      <li id="t3-s5"><input type="checkbox"> Commit, then check timing.
+        <pre><code data-lang="sh">git add src/lib/about/links.ts src/lib/about/links.spec.ts src/lib/about/AboutDialog.svelte src/lib/about/AboutDialog.svelte.spec.ts src/lib/about/test/AboutDialogHarness.svelte src/lib/fzp/SourcesDialog.svelte src/lib/fzp/SourcesDialog.svelte.spec.ts src/lib/fzp/test/SourcesDialogHarness.svelte src/lib/shell/accent.spec.ts src/lib/timeline/TimelineMode.svelte src/lib/timeline/TimelineMode.svelte.spec.ts src/lib/timeline/SimDetails.svelte src/lib/timeline/SimDetails.svelte.spec.ts e2e/sim.spec.ts e2e/fzp.spec.ts e2e/sim-funding.spec.ts e2e/sim-details.spec.ts e2e/chrome-dark.spec.ts docs/dev/about.md docs/dev/fzp-mode.md docs/dev/sim-funding.md docs/dev/sim-page.md
+git commit -m "feat(sim): About this model opens over the map; Details ends in one link"
+npx chreode timing-check --head HEAD</code></pre>
+        <p>Add by name every other spec or doc the run made you change (for example <code>docs/dev/timeline-ui.md</code>).</p>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-4">
+    <h2>Task 4: Shortcuts in About; Space plays; <code>/sim</code>'s header without Shortcuts</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Create: <code>src/lib/timeline/shortcuts.ts</code> (<code>TIMELINE_SHORTCUTS</code>, <code>isPlayKey</code>) and <code>shortcuts.spec.ts</code> (server). Modify <code>src/lib/about/AboutUsing.svelte</code> (the Timeline table after the Painting table, on the page and in the dialog).</li>
+      <li>Modify: <code>src/lib/brush/BrushController.svelte.ts</code> (<code>:602-612</code>, <code>:657-661</code>): Space is temporary Move only while <code>#canPaint()</code>; otherwise the controller leaves the key alone (no <code>spaceHeld</code>, no <code>preventDefault</code>). Test: <code>BrushController.svelte.spec.ts</code>.</li>
+      <li>Modify: <code>src/lib/timeline/Playhead.svelte</code>: exports <code>toggle()</code> (today's <code>onplay</code>, <code>:158-166</code>). <code>src/lib/timeline/TimelineMode.svelte</code>: a window <code>keydown</code> listener calls it for <code>isPlayKey</code>, and a <code>spacePlays</code> prop (default true) gates it. <code>src/lib/sim-page/SimPage.svelte</code> passes <code>spacePlays={tools.tool === 'move' || readonly}</code>. Tests: <code>TimelineMode.svelte.spec.ts</code>, <code>SimPage.svelte.spec.ts</code>.</li>
+      <li>Modify: <code>src/lib/sim-page/SimPage.svelte</code> (<code>:48</code>, <code>:1084-1086</code>): no <code>ShortcutsButton</code> in the actions. <code>src/lib/paint/ShortcutsButton.svelte</code>: its <code>class</code> prop and every <code>/sim</code> line in its comment go (Paint's tab is its one home, <a href="#q-paint-shortcuts">Question 3</a>). <code>src/lib/shell/test/SimRowHeader.svelte</code> loses it; <code>SiteHeader.svelte.spec.ts</code>'s <code>/sim</code> rows are re-measured (<code>:386</code>, <code>:514</code>, <code>:757</code>).</li>
+      <li>e2e: <code>sim.spec.ts</code> (<code>:649-655</code>, <code>:1365</code>, <code>:1410-1430</code>, <code>:1459</code>), <code>layout.spec.ts</code> (<code>:800</code>, <code>:852-870</code>), <code>sim-timeline.spec.ts</code> (Space). Docs: <code>sim-page.md</code> (item 1's actions, item 4, "Header width" with the new spare and without the known limit), <code>timeline-ui.md</code> (Space), <code>developing.md:75</code> ("<code>/sim</code> keeps its header Undo, Redo and Shortcuts" becomes true to the code), <code>testing.md:28</code> (Shortcuts shows on <code>/</code> only).</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>SPACE_NATIVE</code> (export it from <code>BrushController.svelte.ts:65</code>), <code>isEditableTarget</code> (<code>src/lib/brush/shortcuts.ts:26-33</code>).</li>
+      <li>Produces:
+        <pre><code data-lang="ts">// src/lib/timeline/shortcuts.ts
+export const TIMELINE_SHORTCUTS: readonly { keys: string; action: string }[];  // The strings
+/**
+ * Space pressed to play or pause: key ' ', keydown, not a repeat, no modifier, not handled,
+ * target neither editable (isEditableTarget) nor inside SPACE_NATIVE, and no modal dialog open.
+ * The date slider (role="slider") is not in SPACE_NATIVE, so Space plays from it too.
+ */
+export function isPlayKey(e: KeyboardEvent, modalOpen: boolean): boolean;
+
+// src/lib/timeline/Playhead.svelte
+export function toggle(): void;   // what the Play button does, "Play from" included
+
+// TimelineMode: { spacePlays?: boolean } (default true). On isPlayKey and spacePlays:
+// preventDefault() (no page scroll) and playhead.toggle().</code></pre>
+      </li>
+    </ul>
+    <ol>
+      <li id="t4-s1"><input type="checkbox"> Write the failing tests first.
+        <pre><code data-lang="ts">// src/lib/timeline/shortcuts.spec.ts
+it('isPlayKey: Space on the body and on the date slider')
+it('isPlayKey: not on a repeat, with a modifier, in a field, on a button, link, summary or radio, or under a modal')
+it('TIMELINE_SHORTCUTS: the four rows of The strings, in order')
+// BrushController.svelte.spec.ts
+it('Space while the tool is Move: no spaceHeld and the key is not handled')
+it('Space while the Paint tool is chosen keeps temporary Move')           // existing case kept
+// TimelineMode.svelte.spec.ts
+it('Space plays and pauses; after an edit it plays from the first changed month')
+it('Space on a button presses the button and leaves Play')
+it('a held Space toggles once')
+it('spacePlays false: Space does nothing')
+// SimPage.svelte.spec.ts
+it('the header has no Keyboard shortcuts button on any pointer')
+it('with the Paint tool chosen Space does not play; with Move it does')
+// src/lib/about/AboutParts.svelte.spec.ts
+it('using: the Timeline table holds every TIMELINE_SHORTCUTS row')
+// e2e/sim-timeline.spec.ts
+test('Space plays and pauses from the body and from the date slider')
+// e2e/sim.spec.ts: the Shortcuts cases become "the header has no Shortcuts; About lists the
+// Timeline keys"; e2e/layout.spec.ts: the widest rows without Shortcuts</code></pre>
+      </li>
+      <li id="t4-s2"><input type="checkbox"> Run them and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/timeline/shortcuts.spec.ts
+npx vitest --run --project client --retry=0 src/lib/brush/BrushController.svelte.spec.ts src/lib/timeline/TimelineMode.svelte.spec.ts src/lib/sim-page/SimPage.svelte.spec.ts src/lib/about/AboutParts.svelte.spec.ts
+SFH_E2E_PORT=4180 npx playwright test e2e/sim-timeline.spec.ts e2e/sim.spec.ts e2e/layout.spec.ts --project=chromium --project=mobile</code></pre>
+      </li>
+      <li id="t4-s3"><input type="checkbox"> Take the Task 4 header measurement (<a href="#sec-measures">What to measure</a>), implement as in Interfaces, update the docs.</li>
+      <li id="t4-s4"><input type="checkbox"> Run the covering specs and e2e, then repeat the changed e2e.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/timeline/ src/lib/brush/
+npx vitest --run --project client --retry=0 src/lib/brush/ src/lib/paint/ src/lib/timeline/ src/lib/sim-page/ src/lib/shell/ src/lib/about/
+SFH_E2E_PORT=4180 npx playwright test e2e/sim-timeline.spec.ts e2e/sim.spec.ts e2e/layout.spec.ts e2e/brush.spec.ts e2e/sim-share.spec.ts e2e/lesscars.spec.ts --project=chromium --project=mobile
+SFH_E2E_PORT=4180 npx playwright test e2e/sim-timeline.spec.ts e2e/sim.spec.ts e2e/layout.spec.ts --project=chromium --project=mobile --repeat-each=5 --retries=0</code></pre>
+        <p>Screenshots, before and after: <code>/sim</code>'s header at 1024 and 1280 light, signed in, fine pointer and touch laptop (<code>touchLaptop</code>, <code>e2e/helpers/pointer.ts</code>); About's Using it at 1280 dark in the dialog.</p>
+      </li>
+      <li id="t4-s5"><input type="checkbox"> Commit, then check timing.
+        <pre><code data-lang="sh">git add src/lib/timeline/shortcuts.ts src/lib/timeline/shortcuts.spec.ts src/lib/about/AboutUsing.svelte src/lib/about/AboutParts.svelte.spec.ts src/lib/brush/BrushController.svelte.ts src/lib/brush/BrushController.svelte.spec.ts src/lib/timeline/Playhead.svelte src/lib/timeline/TimelineMode.svelte src/lib/timeline/TimelineMode.svelte.spec.ts src/lib/sim-page/SimPage.svelte src/lib/sim-page/SimPage.svelte.spec.ts src/lib/paint/ShortcutsButton.svelte src/lib/paint/ShortcutsButton.svelte.spec.ts src/lib/shell/test/SimRowHeader.svelte src/lib/shell/SiteHeader.svelte.spec.ts e2e/sim-timeline.spec.ts e2e/sim.spec.ts e2e/layout.spec.ts docs/dev/sim-page.md docs/dev/timeline-ui.md docs/dev/developing.md docs/dev/testing.md
+git commit -m "feat(sim): Space plays and pauses; keyboard shortcuts live in About, not the header"
+npx chreode timing-check --head HEAD</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-5">
+    <h2>Task 5: The map's credit: a collapsed (i) with "© OpenStreetMap" and About</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/lib/map/attribution.ts</code>: <code>creditHtml()</code> replaces <code>attributionText</code>, <code>attributionHtml</code> and <code>datasfLicences</code> (<code>:26-61</code>; the manifest is no longer read for the credit). Test: <code>attribution.spec.ts</code>.</li>
+      <li>Modify: <code>src/lib/map/SimMap.svelte</code>: the map's <code>locale</code> names the toggle (<code>:603-613</code>); <code>AttributionControl({ compact: true, customAttribution: creditHtml() })</code> at every width (<code>:651-668</code>); the collapse rules; <code>collapseCredit</code> on the handle; the expanded line's CSS (<code>:1614-1631</code>: one 24 px line, <code>padding: 2px 28px 2px 8px</code>, line height 20 px, measured). Test: <code>SimMap.svelte.spec.ts</code> (<code>:34-36</code>, <code>:188-200</code>, <code>:353-381</code>).</li>
+      <li>Modify: <code>src/lib/map/types.ts</code> (<code>SimMapHandle.collapseCredit</code>) and every double (<code>src/lib/fzp/test/sim-map-stub.ts</code>, <code>src/lib/brush/test/sim-map-stub.ts</code>, any other <code>rg -l "setGlowInset" src</code> finds). <code>src/lib/brush/BrushEditor.svelte</code>: calls it when <code>stripShown</code> turns true. <code>src/lib/paint/PaletteStrip.svelte</code> (<code>:276-287</code>): while the strip shows, an expanded credit draws above it (<code>.sfh-dock-host:has(.sfh-palette-strip) .sim-map .maplibregl-ctrl-bottom-right:has(.maplibregl-compact-show)</code>, <code>z-index</code> above the strip's <code>z-30</code>). Test: <code>BrushEditor.dock.svelte.spec.ts</code>.</li>
+      <li>e2e: <code>map.spec.ts</code> (<code>:244-247</code>, and the golden regenerated), <code>layout.spec.ts</code> (<code>:98-128</code>: the comment "a text strip from 640 px" and the helper; the 375 and 320 cases), <code>sim.spec.ts</code> (Reset view on a coarse pointer). Docs: <code>map-interfaces.md</code> ("Bottom-right controls footprint": the compact control at every width, one line, the collapse rules, <code>collapseCredit</code>, <code>creditShowMs</code>), <code>about.md</code> (the credit), <code>sim-page.md:14</code> if a sentence there becomes false, <code>map-perf.md</code> (the row below).</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>ABOUT_ID.data</code> (Task 1); the footprint measurement (<code>measureFootprint</code>, <code>SimMap.svelte:324-333</code>, unchanged: a collapse resizes the control, so the <code>ResizeObserver</code> re-measures).</li>
+      <li>Produces:
+        <pre><code data-lang="ts">// src/lib/map/attribution.ts
+/** '&lt;a href="https://www.openstreetmap.org/copyright" rel="noopener noreferrer"&gt;© OpenStreetMap&lt;/a&gt;'
+ *  + ' · ' + '&lt;a href="/about#about-data"&gt;About this model&lt;/a&gt;'. */
+export function creditHtml(): string;
+
+// src/lib/map/SimMap.svelte
+/** How long the credit stays open after the control is added, ms. */
+export const CREDIT_SHOW_MS = 5000;
+// prop: creditShowMs?: number (default: 0 in a VITE_E2E build, else CREDIT_SHOW_MS)
+// The credit collapses at most once by itself: after creditShowMs, on the first user drag, zoom,
+// rotate or pitch, or on collapseCredit(); a press on its toggle before any of these cancels them,
+// and from then on only the person opens and closes it. The timer is cleared on teardown.
+
+// src/lib/map/types.ts, SimMapHandle
+/** Collapse the credit now unless the person has pressed its toggle; a no-op before the map. */
+collapseCredit(): void;
+
+// map locale: { 'AttributionControl.ToggleAttribution': 'Map credits' }</code></pre>
+      </li>
+    </ul>
+    <aside data-kind="decision"><strong>Builder's call: e2e builds start collapsed</strong> A five-second timer would race every e2e step that reads the bottom-right corner (the goldens, the layout helper that taps the toggle). The e2e build passes 0, so the credit collapses at load and specs open it with its toggle, as the layout helper does today; the client spec covers the five seconds through the prop with a short value and <code>expect.poll</code>. The <code>VITE_E2E</code> flag already gates the root layout's hydration mark. Rejected: a debug hook to settle the credit.</aside>
+    <aside data-kind="decision"><strong>Builder's call: Paint's strip collapses the credit; pressed open, it sits on top</strong> The strip is 325 to 328 px wide at 375 (<code>docs/dev/developing.md:75</code>), so an expanded credit would sit behind it (slice 8's carried item). The strip's appearance collapses it through the handle (the size change re-measures the footprint, which a CSS lift would not); if the person opens it with the strip showing, it draws above the strip until they close it or touch the map. Rejected: lifting the bottom-right container above the strip (moves the key and costs 64 px of a phone's map).</aside>
+    <aside data-kind="note"><strong>Bench</strong> No layer, shader or per-frame code changes: no <code>bench:map</code> is owed. The slice 6 result the spec records (<code>sec-carried</code>: "The map benchmark after slice 6 passed every case at p95 9.3 ms") goes into <code>docs/dev/map-perf.md</code>'s Results as a row: <code>Apple M5 Pro (Mac17,9), after map-citywide (#134) | 2026-11-20 | Playwright Chromium, Metal | 2 | — | — | 9.3 ms | Yes (every case p95 9.3 ms; recorded in the review spec)</code>. If the owner has the per-case numbers, they replace the dashes; nothing is run for it.</aside>
+    <ol>
+      <li id="t5-s1"><input type="checkbox"> Write the failing tests first.
+        <pre><code data-lang="ts">// src/lib/map/attribution.spec.ts
+it('creditHtml: "© OpenStreetMap" to the copyright page, then " · ", then "About this model" to /about#about-data')
+// SimMap.svelte.spec.ts
+it('the credit is compact at 1280 px as at 375, its toggle named "Map credits"')   // replaces the text case
+it('expanded on load; collapsed after creditShowMs')                   // creditShowMs 50, expect.poll
+it('a toggle press before creditShowMs cancels the collapse')
+it('the first user zoom collapses it; a programmatic jump does not')
+it('collapseCredit() collapses it; after a toggle press it does nothing')
+it('expanded and collapsed it is 24 px tall; the block size is the same within 1 px')
+it('publishes the footprint on :root and tracks collapse, inset and unmount')   // existing, at 1280 too
+// BrushEditor.dock.svelte.spec.ts
+it('showing the palette strip calls collapseCredit')
+// e2e/map.spec.ts
+test('the credit opens from its toggle: "© OpenStreetMap" links the OSM copyright page, "About this model" /about#about-data')
+// e2e/layout.spec.ts (mobile)
+test('375 and 320 px on / and /sim: Reset view and the expanded credit do not overlap')
+test('375 px on /: with the strip showing the credit is collapsed; opened, its links are on top and pressable')
+// e2e/sim.spec.ts (chromium)
+test('/sim: the credit\'s About this model opens the dialog at Data and licences')</code></pre>
+      </li>
+      <li id="t5-s2"><input type="checkbox"> Run them and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/map/attribution.spec.ts
+npx vitest --run --project client --retry=0 src/lib/map/SimMap.svelte.spec.ts src/lib/brush/BrushEditor.dock.svelte.spec.ts
+SFH_E2E_PORT=4180 npx playwright test e2e/map.spec.ts e2e/layout.spec.ts e2e/sim.spec.ts --project=chromium --project=mobile</code></pre>
+      </li>
+      <li id="t5-s3"><input type="checkbox"> Take the Task 5 measurements, then implement as in Interfaces. Add the <code>map-perf.md</code> row and update the docs.</li>
+      <li id="t5-s4"><input type="checkbox"> Run the covering specs, the goldens, then the changed e2e repeated.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/map/
+npx vitest --run --project client --retry=0 src/lib/map/ src/lib/brush/ src/lib/paint/ src/lib/fzp/ src/lib/timeline/
+SFH_E2E_PORT=4180 npx playwright test e2e/map.spec.ts -g "golden" --project=chromium --update-snapshots
+SFH_E2E_PORT=4180 npx playwright test e2e/map.spec.ts e2e/layout.spec.ts e2e/sim.spec.ts e2e/map-key.spec.ts e2e/sim-citywide.spec.ts e2e/targets.spec.ts e2e/transit.spec.ts e2e/lesscars.spec.ts e2e/chrome-dark.spec.ts --project=chromium --project=mobile
+SFH_E2E_PORT=4180 npx playwright test e2e/map.spec.ts e2e/layout.spec.ts e2e/sim.spec.ts --project=chromium --project=mobile --repeat-each=5 --retries=0</code></pre>
+        <p>Open both regenerated goldens beside <code>main</code>'s and confirm only the bottom-right corner changed. Screenshots, before and after: <code>/</code> and <code>/sim</code> at 375 (expanded and collapsed, Reset view visible), <code>/</code> at 375 with the strip and the credit opened, <code>/sim</code> at 1280 light and dark (collapsed, expanded), <code>/lesscars</code> at 1280.</p>
+      </li>
+      <li id="t5-s5"><input type="checkbox"> Commit, then check timing.
+        <pre><code data-lang="sh">git add src/lib/map/attribution.ts src/lib/map/attribution.spec.ts src/lib/map/SimMap.svelte src/lib/map/SimMap.svelte.spec.ts src/lib/map/types.ts src/lib/fzp/test/sim-map-stub.ts src/lib/brush/test/sim-map-stub.ts src/lib/brush/BrushEditor.svelte src/lib/brush/BrushEditor.dock.svelte.spec.ts src/lib/paint/PaletteStrip.svelte e2e/map.spec.ts e2e/map.spec.ts-snapshots/map-light-chromium-darwin.png e2e/map.spec.ts-snapshots/map-dark-chromium-darwin.png e2e/layout.spec.ts e2e/sim.spec.ts docs/dev/map-interfaces.md docs/dev/map-perf.md docs/dev/about.md
+git commit -m "feat(map): the credit is a collapsed (i) with OpenStreetMap and About this model"
+npx chreode timing-check --head HEAD</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-6">
+    <h2>Task 6: Every way in: Paint's link, the words, the sweeps</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/lib/paint/PaintDetails.svelte</code> (<code>:90-93</code>): the footnote becomes the link <code>WORKED_OUT</code> to <code>/about#about-meanings</code> (a standalone 24 px target), with the old-plan note (<code>oldPlanNote</code>) on its own line while <code>view.oldPlan</code>; the dataset lead (<code>footnoteLead</code>) goes. Test: <code>PaintDetails.svelte.spec.ts</code> (<code>:144</code>).</li>
+      <li>Modify: <code>src/routes/s/[id]/+page.svelte:19-20</code> (<code>OG_DESCRIPTION</code>). Its spec if one pins the description.</li>
+      <li>e2e: <code>targets.spec.ts</code> (new cases: <code>/about</code> at rest and with the assumptions open; <code>/sim</code> with About open; the header comment's page list), <code>chrome-dark.spec.ts</code> (About on <code>/sim</code> in dark: axe scoped to the dialog, its surface and muted text; <code>/about</code> still light), whichever e2e pins Paint's footnote (<code>rg -n "/attribution|footnote" e2e</code>). Docs: <code>accessibility.md:16</code> (the sweep's pages), <code>developing.md</code> (Paint's Details' last line), <code>about.md</code> (the ways in, complete).</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>WORKED_OUT</code>, <code>ABOUT_ID</code> (Task 1); the dialog (Task 3).</li>
+      <li>Produces: nothing new; this task closes the sweep below.</li>
+    </ul>
+    <ol>
+      <li id="t6-s1"><input type="checkbox"> Write the failing tests first.
+        <pre><code data-lang="ts">// PaintDetails.svelte.spec.ts
+it('the last line is "How this is worked out" to /about#about-meanings, at least 24 px tall; no dataset version')
+it('an old plan: the recalculated note shows on its own line')
+// e2e/targets.spec.ts (mobile)
+test('/about: at rest and with the assumptions open')
+test('/sim: About open from the Menu')
+// e2e/chrome-dark.spec.ts
+test('About on /sim in dark: surface-dark, muted text in ink-dark-muted, no axe violations')
+// e2e/about.spec.ts
+test('from Paint, About\'s goal links the SF Planning RHNA Primer')
+test('"RHNA" appears on /about only in part 1\'s goal and in the assumptions\' citations')</code></pre>
+      </li>
+      <li id="t6-s2"><input type="checkbox"> Run them and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project client --retry=0 src/lib/paint/PaintDetails.svelte.spec.ts
+SFH_E2E_PORT=4180 npx playwright test e2e/targets.spec.ts e2e/chrome-dark.spec.ts e2e/about.spec.ts --project=chromium --project=mobile</code></pre>
+      </li>
+      <li id="t6-s3"><input type="checkbox"> Implement; then sweep. Each finds nothing outside the hashed paths, the redirect route and its spec, and <code>docs/superpowers/</code>:
+        <pre><code data-lang="sh">rg -n '"/attribution"|/attribution\b' src e2e docs/dev CLAUDE.md .github
+rg -n "RHNA" src --glob '!src/lib/sim/**' --glob '!src/lib/scoreboard/**' --glob '!src/lib/timelapse/**' --glob '!*.spec.ts'
+rg -n "SourcesDialog|Where these numbers come from|fzp-sources|attributionHtml|datasfLicences" src e2e docs/dev</code></pre>
+        <p>The <code>RHNA</code> sweep may list <code>src/lib/goal/goal.ts</code> (identifiers and comments), <code>src/lib/fzp/money-view.ts</code> (its rewording), <code>src/lib/fzp/fixtures/</code>, and <code>src/lib/about/copy.ts</code> (part 1's long form); any visible string elsewhere is a finding.</p>
+      </li>
+      <li id="t6-s4"><input type="checkbox"> Run the covering specs and e2e, then repeat the changed e2e.
+        <pre><code data-lang="sh">npx vitest --run --project client --retry=0 src/lib/paint/ src/routes/
+SFH_E2E_PORT=4180 npx playwright test e2e/targets.spec.ts e2e/chrome-dark.spec.ts e2e/about.spec.ts e2e/scoreboard.spec.ts e2e/brush.spec.ts e2e/sim-share.spec.ts --project=chromium --project=mobile
+SFH_E2E_PORT=4180 npx playwright test e2e/targets.spec.ts e2e/chrome-dark.spec.ts e2e/about.spec.ts --project=chromium --project=mobile --repeat-each=5 --retries=0</code></pre>
+        <p>Screenshots: Paint's Details at 1280 light and dark and at 375, before and after.</p>
+      </li>
+      <li id="t6-s5"><input type="checkbox"> Commit, then check timing.
+        <pre><code data-lang="sh">git add src/lib/paint/PaintDetails.svelte src/lib/paint/PaintDetails.svelte.spec.ts "src/routes/s/[id]/+page.svelte" e2e/targets.spec.ts e2e/chrome-dark.spec.ts e2e/about.spec.ts docs/dev/accessibility.md docs/dev/developing.md docs/dev/about.md
+git commit -m "feat(about): every way in leads to About; RHNA only where it is explained"
+npx chreode timing-check --head HEAD</code></pre>
+        <p>Add by name any other file the sweep made you change.</p>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-7">
+    <h2>Task 7: Whole-suite pass</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Whatever the full runs below turn up. No new behaviour.</li>
+    </ul>
+    <ol>
+      <li id="t7-s1"><input type="checkbox"> Run the checks and the full unit suite with stderr captured, and read the stderr: any warning or error a test does not assert is a failure here, as at signoff.
+        <pre><code data-lang="sh">npm run check
+npm run lint
+npm run lint:workflows
+npm run test:unit 2&gt; &lt;scratchpad&gt;/unit-stderr.log
+rg -n "warn|error|Error" &lt;scratchpad&gt;/unit-stderr.log</code></pre>
+      </li>
+      <li id="t7-s2"><input type="checkbox"> Run the full e2e suite on port 4180, both projects, no retries. Every failure is fixed at its cause, without retries, sleeps or loosened assertions; re-run any spec you change with <code>--repeat-each=5 --retries=0</code>.
+        <pre><code data-lang="sh">SFH_E2E_PORT=4180 npx playwright test --project=chromium --project=mobile --retries=0</code></pre>
+      </li>
+      <li id="t7-s3"><input type="checkbox"> The dataset version must not have moved: the diff is empty and the check passes.
+        <pre><code data-lang="sh">git diff --stat main -- pipeline src/lib/data src/lib/generator src/lib/timelapse src/lib/plan/geometry.ts src/lib/plan/types.ts src/lib/sim/scenario src/lib/sim/levers src/lib/sim/finance src/lib/scoreboard
+npx tsx scripts/dataset-version.ts --check</code></pre>
+      </li>
+      <li id="t7-s4"><input type="checkbox"> Untouched surfaces stay untouched: each diff is empty.
+        <pre><code data-lang="sh">git diff --stat main -- src/lib/map/timelapse/city.ts src/lib/map/timelapse/city-layer.ts src/lib/lesscars e2e/lesscars.spec.ts svelte.config.js</code></pre>
+      </li>
+      <li id="t7-s5"><input type="checkbox"> Docs true to the code: <code>about.md</code>, <code>map-interfaces.md</code>, <code>sim-page.md</code>, <code>timeline-ui.md</code>, <code>fzp-mode.md</code>, <code>sim-funding.md</code>, <code>developing.md</code>, <code>testing.md</code>, <code>accessibility.md</code>, <code>deploy.md</code>, <code>pipeline.md</code>, <code>finance-data.md</code>, <code>map-perf.md</code> and <code>CLAUDE.md</code> describe About, the credit, the shortcuts and the links as the code does; every string they quote matches <a href="#tbl-strings">The strings</a>.</li>
+      <li id="t7-s6"><input type="checkbox"> Preview signoff's plan without running it, and confirm every step it lists ran green above.
+        <pre><code data-lang="sh">npm run signoff -- --dry-run</code></pre>
+      </li>
+      <li id="t7-s7"><input type="checkbox"> Commit any fixes with the files named, then check timing.
+        <pre><code data-lang="sh">git add &lt;each changed file&gt;
+git commit -m "test(about): re-pin the suite for About this model"
+npx chreode timing-check --head HEAD</code></pre>
+      </li>
+      <li id="t7-s8"><input type="checkbox"> Report, for the controller: no layer code changed, so no <code>bench:map</code> is owed; the goldens were regenerated in Task 5 and only the credit's corner changed; the deploy smoke now reads <code>/about</code> (the first deploy after merge proves it). Do not run benches inside this plan.</li>
+    </ol>
+  </section>
+
+  <section id="sec-builders-calls">
+    <h2>Builder's calls</h2>
+    <table id="tbl-calls">
+      <caption>Choices the spec leaves open, the one made, and the one rejected</caption>
+      <thead>
+        <tr><th scope="col">Call</th><th scope="col">Why</th><th scope="col">Rejected</th><th scope="col">Task</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">The parts read <code>--about-muted</code> and <code>--about-line</code></th><td>One part in a light page and a themed dialog</td><td>Two copies; a custom dark variant</td><td>1</td></tr>
+        <tr><th scope="row">Ids with an <code>about-</code> prefix</th><td>No duplicate id on <code>/sim</code></td><td>Bare <code>#data</code></td><td>1</td></tr>
+        <tr><th scope="row">The Overture notice from the manifest, by licence</th><td>Today's fixed text names the wrong licence</td><td>A corrected fixed sentence</td><td>1</td></tr>
+        <tr><th scope="row"><code>/attribution</code> answers 308 to <code>/about#about-data</code></th><td>Old links and the hashed <code>ScoreboardPanel</code> link still land</td><td>Deleting the route</td><td>1</td></tr>
+        <tr><th scope="row">The page's assumptions load on demand, in the browser</th><td><code>/about</code> stays light; no server cost</td><td>A server load on every visit</td><td>2</td></tr>
+        <tr><th scope="row">The page omits Actual completions and Multi-phase projects</th><td>Both need a run; the dialog on <code>/sim</code> has them</td><td>Running the score on the page</td><td>2</td></tr>
+        <tr><th scope="row">Links intercepted in capture phase on the document</th><td>Reaches MapLibre's HTML and the header without either knowing</td><td>An onclick per link</td><td>3</td></tr>
+        <tr><th scope="row">Focus falls back to the Menu button</th><td>The opener is hidden when the Menu closed</td><td>Focus to the body</td><td>3</td></tr>
+        <tr><th scope="row">Details' market paragraph and forecast note leave</th><td>Assumptions, not numbers behind an effect (rule 5)</td><td>Keeping a Sources disclosure</td><td>3</td></tr>
+        <tr><th scope="row">Space stands down in BrushController while it cannot paint</th><td>One rule for both pages; temporary Move needs a paint tool</td><td>A capture listener racing the controller</td><td>4</td></tr>
+        <tr><th scope="row">e2e builds start the credit collapsed</th><td>No race with a five-second timer</td><td>A debug hook</td><td>5</td></tr>
+        <tr><th scope="row">The credit one 24 px line, expanded or not</th><td>Nothing above it moves when it collapses</td><td>MapLibre's 12 px padding</td><td>5</td></tr>
+        <tr><th scope="row">The strip collapses the credit through the handle</th><td>A size change re-measures the footprint</td><td>A CSS lift</td><td>5</td></tr>
+        <tr><th scope="row">"Map credits" names the toggle</th><td>Says what it opens</td><td>MapLibre's "Toggle attribution"</td><td>5</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="sec-open-questions">
+    <h2>Questions for the owner</h2>
+    <p>Each has a recommended answer the plan executes on unless the owner says otherwise.</p>
+    <ol>
+      <li id="q-credit"><strong>What the (i) holds besides OpenStreetMap.</strong> You decided only "© OpenStreetMap" must stay on the map. Overture's buildings (ODbL, with Esri's part under CC BY 4.0) are drawn on the same map; both licences accept a notice reached by a link "in any reasonable manner", and Overture's own map shows "© OpenStreetMap contributors, Overture Maps Foundation". <em>Recommended:</em> as decided: "© OpenStreetMap · About this model", with Overture's contributors and licences named in About one tap away. Alternative, if you would rather keep more on the map: "© OpenStreetMap · Overture Maps · About this model", about 85 px wider expanded (still clear of Reset view at 320 px), nothing more collapsed.</li>
+      <li id="q-dialog"><strong>About on <code>/sim</code>: over the map, or the page.</strong> Leaving <code>/sim</code> drops the playhead and the furthest date reached, and the assumptions there are live (your policy's typed terms, the completions so far). <em>Recommended:</em> on <code>/sim</code> and <code>/s/&lt;id&gt;</code>, every About link opens the same parts as a dialog over the map; elsewhere it is the page; a Ctrl or middle click still opens the page in a new tab. Alternative: the page everywhere, and a press on About from <code>/sim</code> leaves the run.</li>
+      <li id="q-paint-shortcuts"><strong>Paint's Shortcuts button.</strong> The spec moves Keyboard shortcuts out of the header into About; Paint's button is not in the header but at the foot of the Paint tab, beside the tools it lists, and Paint has no About dialog. <em>Recommended:</em> keep it there (the same <code>SHORTCUTS</code> list About shows, one source). Alternative: replace it with a "Keyboard shortcuts" link to <code>/about#about-shortcuts</code>, which leaves Paint.</li>
+      <li id="q-depth"><strong>How deep the assumptions go.</strong> You plan fuller "how the model is assembled" pages later. <em>Recommended:</em> this slice re-houses the Sources dialog's content as About's Assumptions, word for word, and writes no new methodology; part 1 adds only the six one-line meanings in The strings. Alternative: a short prose overview of the model at the top of part 2 now (one paragraph, owner-worded).</li>
+      <li id="q-attribution-route"><strong><code>/attribution</code>.</strong> <em>Recommended:</em> a permanent redirect to <code>/about#about-data</code>, and the deploy smoke checks move to <code>/about</code>. Alternative: keep <code>/attribution</code> as a second page with the data part alone (two places for credits, against rule 5).</li>
+    </ol>
+  </section>
+
+  <section id="sec-not-in-plan">
+    <h2>Not in this plan</h2>
+    <ul>
+      <li>Fuller reader-facing pages on how the model is assembled (the owner's later work).</li>
+      <li>The game, unlocking, the victory card, "Next goal".</li>
+      <li>An About dialog on Paint, <code>/p/&lt;id&gt;</code> or <code>/lesscars</code>: their links open the page.</li>
+      <li>Rewording citation titles that contain "RHNA": they are the documents' own titles and appear only in About, where part 1 explains the word. <code>src/lib/scoreboard</code>'s labels and <code>finance-score.ts</code> wait for the next dataset branch.</li>
+      <li>Start over on Paint, Paint's Details face, a pool bar's changing text (your call); the carried "not checked" and "not timed" items; re-running any benchmark.</li>
+      <li>Updating the governing spec's Carried forward list: the controller does that at merge.</li>
+    </ul>
+  </section>
+
+  <section id="sec-contradictions">
+    <h2>Found on the way</h2>
+    <ul>
+      <li><strong>Today's Overture notice names the wrong licence.</strong> "other data under CDLA Permissive 2.0" (<code>src/routes/attribution/+page.svelte:61-64</code>; pinned in <code>e2e/attribution.spec.ts:5</code>): CDLA is Overture's Places licence; buildings are ODbL with CC BY 4.0 parts, as the manifest records. The on-map link's title (<code>src/lib/map/attribution.ts:56-57</code>) also says "OpenStreetMap and Overture data under ODbL". Task 1 fixes the notice; Task 5 drops the title.</li>
+      <li><strong>The deploy smoke reads <code>/attribution</code></strong> without following redirects (<code>deploy-staging.yml:50</code>, <code>deploy-prod.yml:51</code>). Task 1 moves it to <code>/about</code>.</li>
+      <li><strong>Space is taken on every tool.</strong> <code>BrushController</code> marks Space handled even in Move (<code>BrushController.svelte.ts:657-661</code>), and on <code>/sim</code> its listener registers after the page's, so "add Space for Play" needs the controller to stand down. Task 4.</li>
+      <li><strong>The Sources dialog's content depends on the run.</strong> <code>provenanceSections(cal, score, terms)</code>: the spec's "Assumptions: today's Sources dialog" cannot move wholesale to a plain page; the page shows the model-wide part and <code>/sim</code> the live one (<a href="#q-dialog">Question 2</a>).</li>
+      <li><strong>Document pages stay light</strong> (<code>e2e/chrome-dark.spec.ts</code>, "a document page stays light"), while the map pages are themed, so a part shared by the page and the dialog cannot use <code>dark:</code> utilities. Task 1's colour properties.</li>
+      <li><strong>The spec says only OpenStreetMap needs an on-map credit</strong> (<code>sec-prop-about</code>); Overture's CC BY 4.0 part needs a credit "in any reasonable manner", which a linked page satisfies. Raised as <a href="#q-credit">Question 1</a> rather than assumed.</li>
+      <li><strong>Several e2e specs use <code>/about</code> as a neutral page</strong> to navigate from (<code>lesscars.spec.ts:622-667</code>, <code>sim-control-plane.spec.ts</code>, <code>sim-object.spec.ts</code>, <code>fzp.spec.ts:609</code>, <code>sim-funding.spec.ts:606</code>), one of them routing <code>calibration.json</code> after it: <code>/about</code> must fetch no data until asked (Task 2).</li>
+      <li><strong>MapLibre collapses a compact credit only on drag</strong> (<code>attribution_control.ts</code>, <code>_updateCompactMinimize</code> on <code>drag</code>); the five seconds and the zoom, rotate and pitch rules are SimMap's (<code>SimMap.svelte:657-668</code> already adds the latter below 640 px).</li>
+    </ul>
+  </section>
+
+  <section id="sec-self-review">
+    <h2>Self-review</h2>
+    <ul>
+      <li><strong>Spec coverage.</strong> Row 9: meanings (Task 1), assumptions with the published estimates beside them (Tasks 2, 3), data and credits (Task 1), shortcuts (Tasks 1, 4), the collapsed OpenStreetMap credit (Task 5). <code>sec-prop-about</code>: one entry from the header, the (i) and every "how is this worked out" link (Tasks 3, 5, 6); shown expanded for five seconds (Task 5). <code>tbl-words</code>: the long forms in part 1 (Task 1). <code>tbl-inv-chrome</code>: About, data, licences, source code in one entry; dataset version in About only (Tasks 1, 3, 6). <code>tbl-inv-sim-controls</code>: Keyboard shortcuts a section of About, Space for Play (Task 4). <code>tbl-inv-sim-outcome</code>: published estimates and homes built before today in About (Tasks 1, 2). <code>sec-prop-header</code>: Keyboard shortcuts leaves the header (Task 4). Carried for slice 9: Reset view at 375 (Task 5), the credit over merged rings (Task 5), the primer from Paint (Tasks 1, 6), "RHNA" citations (Task 6, Not in this plan), Shortcuts on a touch laptop (Task 4), the credit behind the strip (Task 5). Unslotted: the slice 6 bench row (Task 5), <code>/s/&lt;id&gt;</code>'s description (Task 6).</li>
+      <li><strong>Type consistency.</strong> <code>ABOUT_ID</code>, <code>AboutPart</code>, <code>ABOUT_TITLE</code>, <code>ABOUT_INTRO</code>, <code>PART_HEADING</code>, <code>MEANINGS</code>, <code>YOUR_PLANS</code>, <code>WORKED_OUT</code>, <code>ASSUMPTIONS_SHOW</code>, <code>ASSUMPTIONS_FAILED</code>, <code>overtureNotice</code> (1; used in 2, 3, 6); <code>modelSections</code>, <code>ProvenanceBody</code>, <code>AboutAssumptions</code> (2; used in 3); <code>aboutTarget</code>, <code>interceptAboutLinks</code>, <code>AboutDialog.open</code> (3; used in 5, 6); <code>TIMELINE_SHORTCUTS</code>, <code>isPlayKey</code>, <code>Playhead.toggle</code>, <code>spacePlays</code>, <code>SPACE_NATIVE</code> (4); <code>creditHtml</code>, <code>CREDIT_SHOW_MS</code>, <code>creditShowMs</code>, <code>collapseCredit</code> (5).</li>
+      <li><strong>Review Focus.</strong> Each item names its test in its owning task.</li>
+      <li><strong>Proportion.</strong> Code blocks are signatures, contracts, test names and the values the spec and the licences pin; no component body is written out.</li>
+    </ul>
+  </section>
+</article>
