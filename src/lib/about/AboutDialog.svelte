@@ -110,6 +110,15 @@
   /** The reader moved the scroll box (wheel, touch, a press, a key) since the last open. */
   let moved = false;
   const onmove = () => (moved = true);
+  $effect(() => {
+    const box = scroller;
+    if (box === null) return;
+    const kinds = ['wheel', 'touchmove', 'pointerdown', 'keydown'] as const;
+    for (const k of kinds) box.addEventListener(k, onmove, { capture: true, passive: true });
+    return () => {
+      for (const k of kinds) box.removeEventListener(k, onmove, { capture: true });
+    };
+  });
 
   $effect(() => interceptAboutLinks((fragment, link) => show(fragment, link)));
 
@@ -180,10 +189,6 @@
   <div
     bind:this={scroller}
     data-about-scroll
-    onwheel={onmove}
-    ontouchmove={onmove}
-    onpointerdown={onmove}
-    onkeydowncapture={onmove}
     class="min-h-0 flex-1 space-y-6 overflow-y-auto px-4 pt-4 pb-6 text-sm [--about-line:var(--color-line)] [--about-muted:var(--color-ink-muted)] dark:[--about-line:var(--color-line-dark)] dark:[--about-muted:var(--color-ink-dark-muted)]"
   >
     {#if built}
