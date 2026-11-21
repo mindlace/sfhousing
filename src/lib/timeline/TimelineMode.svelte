@@ -1223,13 +1223,13 @@
     detailEl.querySelector<HTMLElement>('[data-testid=tl-details]')?.focus({ preventScroll: true });
   }
   /** Activity's or Details' button, or the header from md: the column at its top, focus on it. */
+  /** Activity's box: focused by showActivity, and where the refusal's Dismiss falls back. */
+  let activityBox = $state<HTMLDivElement>();
   export async function showActivity(): Promise<void> {
     await tick();
     if (!detailEl) return;
     detailEl.scrollTop = 0;
-    detailEl
-      .querySelector<HTMLElement>('[data-testid=tl-activity]')
-      ?.focus({ preventScroll: true });
+    activityBox?.focus({ preventScroll: true });
   }
   /**
    * What the one chart plots: Details switches it (bound), and it is Homes whenever Details is
@@ -1416,6 +1416,7 @@
     class="p-3 focus:outline-2 focus:-outline-offset-2 focus:outline-accent dark:focus:outline-accent-dark"
     data-testid="tl-activity"
     tabindex="-1"
+    bind:this={activityBox}
   >
     <SimActivity
       {goal}
@@ -1425,6 +1426,7 @@
       onstarter={(s) => onstarter?.(s.choice, s.label)}
       {refusal}
       {ondismissrefusal}
+      fallbackfocus={() => activityBox}
       ondetails={() => (ondetails ?? onscore)?.()}
       {stale}
       events={latestItems}

@@ -177,6 +177,28 @@ describe('SimActivity', () => {
     expect(page.getByText(words).elements()).toHaveLength(0);
   });
 
+  it("with the pressed starter gone, the refusal's Dismiss puts focus on the page's fallback", async () => {
+    const words = limitAlert('pools');
+    const box = document.createElement('div');
+    box.tabIndex = -1;
+    box.dataset.testid = 'fallback';
+    document.body.appendChild(box);
+    try {
+      const fallbackfocus = () => box;
+      const r = await renderAtRest(props({ fallbackfocus }));
+      await page.getByRole('button', { name: 'SB 423 approval clock' }).click();
+      // The starter added something after all elsewhere: the starters go, the refusal stays.
+      await r.rerender(props({ starters: [], refusal: words, fallbackfocus }));
+      await page
+        .getByTestId('tl-activity-refusal')
+        .getByRole('button', { name: 'Dismiss' })
+        .click();
+      await expect.poll(() => document.activeElement).toBe(box);
+    } finally {
+      box.remove();
+    }
+  });
+
   it('starters and Details are 24 px targets at least', async () => {
     await renderAtRest(props());
     for (const b of page.getByRole('button').elements()) {

@@ -36,6 +36,9 @@
     refusal?: string | null;
     /** The refusal card's Dismiss. */
     ondismissrefusal?: () => void;
+    /** Where the refusal's Dismiss puts focus when the starter pressed is gone (the page's
+     *  Activity box, focusable by script). */
+    fallbackfocus?: () => HTMLElement | null | undefined;
   }
 
   let {
@@ -48,20 +51,19 @@
     stale,
     events = [],
     refusal = null,
-    ondismissrefusal = undefined
+    ondismissrefusal = undefined,
+    fallbackfocus = undefined
   }: Props = $props();
 
   const uid = $props.id();
   /** The starter last pressed: the refusal's Dismiss puts focus back on it. */
   let pressed: HTMLButtonElement | null = null;
   /**
-   * Dismissing removes the focused ×: focus goes to the starter that was pressed, else to
-   * Activity itself (`tl-activity`, focusable by script), never to the page.
+   * Dismissing removes the focused ×: focus goes to the starter that was pressed, else to the
+   * page's `fallbackfocus` (Activity itself), never to the body.
    */
-  function dismissRefusal(e: MouseEvent) {
-    const to = pressed?.isConnected
-      ? pressed
-      : (e.currentTarget as HTMLElement).closest<HTMLElement>('[data-testid=tl-activity]');
+  function dismissRefusal() {
+    const to = pressed?.isConnected ? pressed : fallbackfocus?.();
     to?.focus();
     ondismissrefusal?.();
   }
