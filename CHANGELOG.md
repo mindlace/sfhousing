@@ -1,5 +1,49 @@
 # Changelog
 
+## [0.7.0](https://github.com/mindlace/sfhousing/compare/v0.6.0...v0.7.0) (2026-11-21)
+
+
+### Features
+
+* **auth:** port accounts, sims and invitations from planafoot ([#112](https://github.com/mindlace/sfhousing/issues/112)) ([fa69e8d](https://github.com/mindlace/sfhousing/commit/fa69e8dcf5bd5f87950c3c0f82d7102decfe24c7))
+* datasets ship with their code (build-time dataset version) ([#78](https://github.com/mindlace/sfhousing/issues/78)) ([28a9e07](https://github.com/mindlace/sfhousing/commit/28a9e07104ab3df0dd0706ee290f8347ade87c16))
+* **map:** the map tells you citywide: merged rings, edge glows, bars from the default zoom ([#134](https://github.com/mindlace/sfhousing/issues/134)) ([d5fa24e](https://github.com/mindlace/sfhousing/commit/d5fa24e060d8391507e50bb5129dcda17ce42886))
+* **map:** the map tells you, on screen: rings on stage changes, marks under your policy, a key and layers on the map ([#132](https://github.com/mindlace/sfhousing/issues/132)) ([291a51e](https://github.com/mindlace/sfhousing/commit/291a51e85dcb7ac8a54294e11953df84139b241f))
+* **paint:** Paint as step one: two steps, room for N homes, a chip for each stroke, no painted-areas list ([#130](https://github.com/mindlace/sfhousing/issues/130)) ([617ca31](https://github.com/mindlace/sfhousing/commit/617ca310a17b1dd6c77912cf9da8124234d46316))
+* pipeline gross table makes /s load in ~1 s ([#87](https://github.com/mindlace/sfhousing/issues/87)) ([2c7711f](https://github.com/mindlace/sfhousing/commit/2c7711fe39b29ebbc095d9e6297cb0357cbb1335))
+* **pipeline:** existing buildings from LiDAR boxes and OSM building parts ([#108](https://github.com/mindlace/sfhousing/issues/108)) ([ee81a45](https://github.com/mindlace/sfhousing/commit/ee81a45ef373d78df5a462450c746440f889fb18))
+* reveal sim and lesscars outcomes only up to the furthest day reached ([#86](https://github.com/mindlace/sfhousing/issues/86)) ([72b1180](https://github.com/mindlace/sfhousing/commit/72b11806c94d2a697d19de34201a02d09e5123f1))
+* **shell:** quick repairs: shortcuts popover, current law, About in the header ([#127](https://github.com/mindlace/sfhousing/issues/127)) ([d42ccd2](https://github.com/mindlace/sfhousing/commit/d42ccd275aa60ea67eb0f3a2f72a1b8a399d1a4b))
+* sim-financing Release 1 — today's market, finance model and finance data ([#89](https://github.com/mindlace/sfhousing/issues/89)) ([8a0dbe8](https://github.com/mindlace/sfhousing/commit/8a0dbe89b7e5b42024c2bef2a9d9ad85e929e63a))
+* sim-financing Release 2 — public money in the simulation ([#100](https://github.com/mindlace/sfhousing/issues/100)) ([736be46](https://github.com/mindlace/sfhousing/commit/736be467a6cf7c46c79bfbb530239d9e6ca99513))
+* **sim-log:** the sim message log design and its log core ([#115](https://github.com/mindlace/sfhousing/issues/115)) ([01bb73e](https://github.com/mindlace/sfhousing/commit/01bb73e7b93b9062008265ad2860a22a5056e269))
+* **sim-object:** the Durable Object that orders and stores a sim's commits ([#116](https://github.com/mindlace/sfhousing/issues/116)) ([9f16e78](https://github.com/mindlace/sfhousing/commit/9f16e78ed47fc4a8c062ac893314bd84351f0316))
+* **sim-store:** the browser log store core for /sim ([#121](https://github.com/mindlace/sfhousing/issues/121)) ([653ee4b](https://github.com/mindlace/sfhousing/commit/653ee4b520bdc3ef6296927ad028fe19087fbccb))
+* **sim-sync:** the browser's sync client for the sim log ([#122](https://github.com/mindlace/sfhousing/issues/122)) ([ced1533](https://github.com/mindlace/sfhousing/commit/ced1533b847d21887423a42d7adb530704f31121))
+* **sim:** /sim on the step-engine timeline and schema 4 (release B, part 2) ([#114](https://github.com/mindlace/sfhousing/issues/114)) ([425bd7f](https://github.com/mindlace/sfhousing/commit/425bd7fd23f974f67c6d6d780936c9cbcdb1eacb))
+* **sim:** one clock: the header follows the playhead and counts from today ([#128](https://github.com/mindlace/sfhousing/issues/128)) ([9d356ef](https://github.com/mindlace/sfhousing/commit/9d356eff13995cc0a43a152fd34d3957d28f0e2b))
+* **sim:** one time axis, pinned controls and a detail column in the bottom pane ([#125](https://github.com/mindlace/sfhousing/issues/125)) ([9daf8ff](https://github.com/mindlace/sfhousing/commit/9daf8ff8145df9c75d931260fddfe448bfb8b6ce))
+* **sim:** one timeline, revealed: the ruler is the scrubber, results show as far as the playhead has been ([#129](https://github.com/mindlace/sfhousing/issues/129)) ([6df9d14](https://github.com/mindlace/sfhousing/commit/6df9d144a7bcdba2d0429ecb3ef9ba65770a9a29))
+* **sim:** one world per side on /sim ([#124](https://github.com/mindlace/sfhousing/issues/124)) ([ef93d02](https://github.com/mindlace/sfhousing/commit/ef93d026505ed8526d79160788c6a5a3a823ca15))
+* **sim:** pair draws so timing levers never flip outcomes ([#97](https://github.com/mindlace/sfhousing/issues/97)) ([7b6e7c3](https://github.com/mindlace/sfhousing/commit/7b6e7c3c22f45eb59a6efa1ddd11f11197a8de07))
+* **sim:** run slider to show the best, worst and any run of the band ([#99](https://github.com/mindlace/sfhousing/issues/99)) ([7f6616d](https://github.com/mindlace/sfhousing/commit/7f6616d023cc70df7ded08b06513273652bcb860))
+* **sim:** step engine Release A (month-step world, dated policy, funding, results, map stream) ([#106](https://github.com/mindlace/sfhousing/issues/106)) ([d3003a9](https://github.com/mindlace/sfhousing/commit/d3003a9a1b4851fea2f9fca79210396c8d7d243b))
+* **sim:** step-engine worker host, protocol and client (release B, part 1) ([#107](https://github.com/mindlace/sfhousing/issues/107)) ([306cba0](https://github.com/mindlace/sfhousing/commit/306cba0130c5bd95cbc83330deebbfeec9d0cb8a))
+* **sims:** the control plane for the sim message log ([#117](https://github.com/mindlace/sfhousing/issues/117)) ([00c6f4e](https://github.com/mindlace/sfhousing/commit/00c6f4e4c542244aa3231270b89be742b889cac4))
+* **sim:** the detail column and money: Activity, Details with chart views, pools that drain ([#135](https://github.com/mindlace/sfhousing/issues/135)) ([22aaf87](https://github.com/mindlace/sfhousing/commit/22aaf877c865d541ca914cc86174c374b00563b1))
+* **ui:** shared parts and messages, 24 px targets (information design slice 8) ([#136](https://github.com/mindlace/sfhousing/issues/136)) ([eed0804](https://github.com/mindlace/sfhousing/commit/eed08041a7fd7a90d1d46ff943f35cbcecf82993))
+
+
+### Bug Fixes
+
+* **deps:** security updates ([#118](https://github.com/mindlace/sfhousing/issues/118)) ([97bda14](https://github.com/mindlace/sfhousing/commit/97bda141848530c5bc118598e46cd4c985e395ce))
+* **deps:** security updates ([#126](https://github.com/mindlace/sfhousing/issues/126)) ([07f375a](https://github.com/mindlace/sfhousing/commit/07f375ad40c8d8136101356a09251c5b7a534b4a))
+
+
+### Performance Improvements
+
+* **sim:** faster funded engine (warm, line, typed records) ([#101](https://github.com/mindlace/sfhousing/issues/101)) ([f17d4b1](https://github.com/mindlace/sfhousing/commit/f17d4b1b7e4357da23fa52b899e4e8ac71bfd93e))
+
 ## [0.6.0](https://github.com/mindlace/sfhousing/compare/v0.5.0...v0.6.0) (2026-11-08)
 
 
