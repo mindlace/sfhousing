@@ -3,6 +3,8 @@ import { EMPTY_LOG, logCompiled, logFilled, viewOfLog } from './chunk-log';
 import { YEAR_COLUMNS, yearRows } from './details';
 import { calendarMonths, chunk, cut, statics } from './test/fixtures';
 import { headlineAt } from './results';
+import { formatShortMonthYear } from '$lib/fzp/format';
+import { utcParts } from '$lib/fzp/time';
 
 /** 36 calendar months from Nov 2026 (Dec 2026 is month 1, Dec 2027 month 13, Dec 2028 month 25). */
 const view = () =>
@@ -51,6 +53,53 @@ describe('yearRows', () => {
     expect(withPolicy.map((r) => r.effect)).toEqual(
       withPolicy.map((r) => v.planEffect[r.index].completedNetNew)
     );
+  });
+
+  it('yearRows reads one month a year, not every month to the playhead; figures unchanged', () => {
+    const long = calendarMonths(
+      viewOfLog(logFilled(logCompiled(EMPTY_LOG, statics({ lastIndex: 479 })), chunk(0, 480)))!
+    );
+    // Every month to i, as the table read before: the rows to match.
+    const walk = (v: typeof long, i: number) => {
+      const out: { index: number; label: string; homes: number; effect: number }[] = [];
+      for (let k = 0; k <= Math.min(i, v.filledThrough); k++) {
+        const { y, m } = utcParts(v.months[k]);
+        if (m !== 12 && k !== i) continue;
+        const label = m === 12 ? String(y) : formatShortMonthYear(v.months[k]);
+        out.push({
+          index: k,
+          label,
+          homes: v.rows[k].completedNet,
+          effect: v.planEffect[k].completedNetNew
+        });
+      }
+      return out;
+    };
+    const part = cut(long, 20);
+    for (const [v, i] of [
+      ...[-1, 0, 1, 11, 12, 13, 200, 478, 479, 600].map((i) => [long, i] as const),
+      [part, 13] as const,
+      [part, 30] as const
+    ])
+      expect(
+        yearRows(v, i, true).map(({ index, label, homes, effect }) => ({
+          index,
+          label,
+          homes,
+          effect
+        }))
+      ).toEqual(walk(v, i));
+    let reads = 0;
+    const months = new Proxy(long.months as number[], {
+      get(t, p, r) {
+        if (typeof p === 'string' && /^\d+$/.test(p)) reads++;
+        return Reflect.get(t, p, r);
+      }
+    });
+    const rows = yearRows({ ...long, months }, 479, true);
+    expect(rows).toHaveLength(41);
+    // Two reads per row (its year and its label) and one to find the first December.
+    expect(reads).toBeLessThanOrEqual(2 * rows.length + 1);
   });
 
   it('YEAR_COLUMNS names the columns; the last only with a policy in force', () => {

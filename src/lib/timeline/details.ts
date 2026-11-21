@@ -22,24 +22,30 @@ export interface YearRow {
 /**
  * One row per calendar year whose December (or the playhead's month, for the playhead's own year)
  * is filled and at or before month i, from today's year; effect only inForce. Nothing after the
- * playhead's month, so the last row is the header's figure at the same month.
+ * playhead's month, so the last row is the header's figure at the same month. The window's months
+ * are consecutive calendar months, so it steps from the first December by 12: O(years), not O(i).
  */
 export function yearRows(view: TimelineView, i: number, inForce: boolean): YearRow[] {
   const last = Math.min(i, view.filledThrough);
   const out: YearRow[] = [];
-  for (let k = 0; k <= last; k++) {
-    const { y, m } = utcParts(view.months[k]);
-    if (m !== 12 && k !== i) continue;
-    const row = view.rows[k];
-    out.push({
-      year: y,
-      index: k,
-      label: m === 12 ? String(y) : formatShortMonthYear(view.months[k]),
-      homes: row.completedNet,
-      pipeline: row.completedNetPipeline,
-      fresh: row.completedNetNew,
-      effect: inForce ? view.planEffect[k].completedNetNew : null
-    });
+  if (last < 0) return out;
+  const row = (k: number, y: number, label: string): YearRow => ({
+    year: y,
+    index: k,
+    label,
+    homes: view.rows[k].completedNet,
+    pipeline: view.rows[k].completedNetPipeline,
+    fresh: view.rows[k].completedNetNew,
+    effect: inForce ? view.planEffect[k].completedNetNew : null
+  });
+  const firstDec = (12 - utcParts(view.months[0]).m) % 12;
+  for (let k = firstDec; k <= last; k += 12) {
+    const y = utcParts(view.months[k]).y;
+    out.push(row(k, y, String(y)));
+  }
+  // The playhead's own month, when it is filled and not a December (already listed).
+  if (i === last && (i - firstDec) % 12 !== 0) {
+    out.push(row(i, utcParts(view.months[i]).y, formatShortMonthYear(view.months[i])));
   }
   return out;
 }
