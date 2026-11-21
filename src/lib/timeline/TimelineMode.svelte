@@ -145,6 +145,7 @@
   import Explain from './Explain.svelte';
   import { fundsOf4 } from './owner';
   import Playhead from './Playhead.svelte';
+  import { isPlayKey } from './shortcuts';
   import { clampDay, filledEndDay, indexOfDay, viewMonthOf } from './playhead';
   import { termsInForce } from './lens';
   import { nothingInForce, type PolicyKind, type SimPolicy4 } from './policy4';
@@ -278,6 +279,11 @@
     goal?: Goal;
     /** Test seam: fetches the neighbourhoods Activity's list names; null on any failure. */
     fetchPlaces?(url: string): Promise<NeighborhoodShapes | null>;
+    /**
+     * Space plays and pauses (default true). The page turns it off while a paint tool is chosen,
+     * where Space is the brush's temporary Move.
+     */
+    spacePlays?: boolean;
   }
 
   let {
@@ -330,7 +336,8 @@
     bottomExtra = 0,
     goal = GOAL,
     statusMs = 1000,
-    fetchPlaces = (url: string) => loadPlaces(url)
+    fetchPlaces = (url: string) => loadPlaces(url),
+    spacePlays = true
   }: Props = $props();
 
   // The props seed the page once; a Retry replaces the manifest and calibration in place.
@@ -740,6 +747,28 @@
   let tipState = $state.raw<SummaryState>({ kind: 'idle' });
   let tipAt = $state({ x: 0, y: 0 });
   let about = $state<ReturnType<typeof AboutDialog>>();
+  let playhead = $state<ReturnType<typeof Playhead>>();
+
+  /**
+   * Space presses Play (or Pause) as the button does, "Play from" included: not on a repeat, with
+   * a modifier, in a field, on a control Space presses, under a modal dialog or an open popover,
+   * or once something else handled the key (`isPlayKey`). Handled here, so the page never scrolls.
+   */
+  function overlayOpen(): boolean {
+    try {
+      return document.querySelector('dialog:modal, :popover-open') !== null;
+    } catch {
+      // A browser without :popover-open throws on the whole list.
+      return document.querySelector('dialog[open]') !== null;
+    }
+  }
+
+  function onWindowKey(e: KeyboardEvent): void {
+    if (!spacePlays || !playhead) return;
+    if (!isPlayKey(e, overlayOpen())) return;
+    e.preventDefault();
+    playhead.toggle();
+  }
   /** About's live assumptions: read only once the dialog has opened (props are lazy). */
   const aboutSections = $derived(calibration ? provenanceSections(calibration, score, terms) : []);
   /** The month the open card was last asked for. */
@@ -1492,8 +1521,11 @@
   </div>
 {/snippet}
 
+<svelte:window onkeydown={onWindowKey} />
+
 {#snippet playheadPart()}
   <Playhead
+    bind:this={playhead}
     {asOf}
     {windowEnd}
     last={lastDay}

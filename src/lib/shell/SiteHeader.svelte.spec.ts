@@ -7,7 +7,6 @@ import '../../routes/layout.css';
 import { focusHeaderMenu } from './header-actions.svelte';
 import SiteHeader from './SiteHeader.svelte';
 import HeaderScoreHeader from './test/HeaderScoreHeader.svelte';
-import HistoryHeader from './test/HistoryHeader.svelte';
 import SimRowHeader from './test/SimRowHeader.svelte';
 
 describe('SiteHeader', () => {
@@ -382,8 +381,7 @@ describe('SiteHeader', () => {
   describe('phone menu', () => {
     const actions = createRawSnippet(() => ({
       render: () =>
-        '<span><button>Example</button>' +
-        '<button aria-expanded="false">Keyboard shortcuts</button></span>'
+        '<span><button>Example</button>' + '<button aria-expanded="false">Options</button></span>'
     }));
     const pinned = createRawSnippet(() => ({ render: () => '<button>1,234 homes added</button>' }));
     const menu = () => page.getByRole('button', { name: 'Menu' });
@@ -511,11 +509,25 @@ describe('SiteHeader', () => {
       await page.viewport(375, 812);
       render(SiteHeader, { routeId: '/sim', actions, pinned });
       await menu().click();
-      await page.getByRole('button', { name: 'Keyboard shortcuts' }).click();
+      await page.getByRole('button', { name: 'Options' }).click();
       await expect.element(menu()).toHaveAttribute('aria-expanded', 'true');
       await page.getByRole('button', { name: 'Example' }).click();
       await expect.element(menu()).toHaveAttribute('aria-expanded', 'false');
       await expect.element(page.getByText('Example')).not.toBeVisible();
+    });
+
+    it('Escape leaves the menu open while a disclosure inside it is open', async () => {
+      await page.viewport(375, 812);
+      render(SiteHeader, { routeId: '/sim', actions, pinned });
+      await menu().click();
+      const options = page.getByRole('button', { name: 'Options' }).element();
+      options.setAttribute('aria-expanded', 'true');
+      (options as HTMLElement).focus();
+      await userEvent.keyboard('{Escape}');
+      await expect.element(menu()).toHaveAttribute('aria-expanded', 'true');
+      options.setAttribute('aria-expanded', 'false');
+      await userEvent.keyboard('{Escape}');
+      await expect.element(menu()).toHaveAttribute('aria-expanded', 'false');
     });
 
     it('a button inside a dialog opened from the menu keeps the menu (and the dialog) open', async () => {
@@ -754,7 +766,6 @@ describe('SiteHeader', () => {
         page.getByRole('button', { name: 'Autosave off' }).element(),
         page.getByText('Updating', { exact: true }).element(),
         page.getByTestId('score-bar').element().parentElement!,
-        page.getByRole('button', { name: 'Keyboard shortcuts' }).element(),
         page.getByRole('button', { name: 'Publish' }).element(),
         page.getByRole('link', { name: `@${handle}` }).element(),
         page.getByRole('link', { name: 'About', exact: true }).element()
@@ -763,8 +774,9 @@ describe('SiteHeader', () => {
     const expectRowFits = async (width: number) => {
       await page.viewport(width, 800);
       render(SimRowHeader, { props: { user: { handle: 'a-very-long-handle-x' } } });
-      await expect.element(page.getByRole('button', { name: 'Keyboard shortcuts' })).toBeVisible();
+      await expect.element(page.getByRole('button', { name: 'Publish' })).toBeVisible();
       await expect.element(page.getByRole('button', { name: 'Autosave off' })).toBeVisible();
+      expect(page.getByRole('button', { name: 'Keyboard shortcuts' }).elements()).toEqual([]);
       const items = row();
       const box = (el: Element) => el.getBoundingClientRect();
       for (let i = 1; i < items.length; i++)
@@ -785,7 +797,7 @@ describe('SiteHeader', () => {
       expect(await expectRowFits(1024)).toBeLessThan(1);
     });
 
-    it('at 1024px a touch laptop adds Undo and Redo, Shortcuts leaves: one row, in order, nothing squeezed', async () => {
+    it('at 1024px a touch laptop adds Undo and Redo: one row, in order, nothing squeezed', async () => {
       await page.viewport(1024, 800);
       render(SimRowHeader, { props: { user: { handle: 'a-very-long-handle-x' }, touch: true } });
       const undo = page.getByRole('button', { name: /^Undo/ });
@@ -822,54 +834,5 @@ describe('SiteHeader', () => {
     it('at 1280px the same row fits and the score is centred', async () => {
       expect(await expectRowFits(1280)).toBeLessThan(1);
     });
-  });
-});
-
-describe('keyboard shortcuts in the header', () => {
-  const shortcuts = () => page.getByRole('button', { name: 'Keyboard shortcuts' });
-  const table = () => page.getByRole('table', { name: 'Keyboard shortcuts' });
-
-  for (const width of [1024, 1280])
-    it(`at ${width}px opening Keyboard shortcuts moves no header item and the header stays 48 px`, async () => {
-      await page.viewport(width, 768);
-      render(HistoryHeader);
-      await expect.element(shortcuts()).toBeVisible();
-      const items = () => [
-        page.getByRole('link', { name: /SF Housing/ }).element(),
-        page.getByRole('navigation', { name: 'Steps' }).element(),
-        page.getByRole('button', { name: '12,345 homes added' }).element(),
-        page.getByRole('button', { name: /^Undo/ }).element(),
-        page.getByRole('button', { name: /^Redo/ }).element(),
-        shortcuts().element(),
-        page.getByRole('button', { name: 'Publish' }).element(),
-        page.getByRole('link', { name: 'Sign in' }).element()
-      ];
-      const before = items().map((e) => e.getBoundingClientRect());
-      await shortcuts().click();
-      await expect.element(table()).toBeVisible();
-      items().forEach((e, i) => {
-        const r = e.getBoundingClientRect();
-        for (const k of ['left', 'top', 'width', 'height'] as const)
-          expect(Math.abs(r[k] - before[i][k]), `item ${i} ${k}`).toBeLessThanOrEqual(0.5);
-      });
-      const banner = page.getByRole('banner').element().getBoundingClientRect();
-      expect(banner.height).toBe(48);
-      const panel = document.querySelector('[data-testid=shortcuts]')!.getBoundingClientRect();
-      expect(panel.top).toBeGreaterThanOrEqual(banner.bottom);
-      expect(panel.right).toBeLessThanOrEqual(width);
-    });
-
-  it('at 800px in the Menu, Escape closes the shortcuts first and the Menu next', async () => {
-    await page.viewport(800, 768);
-    render(HistoryHeader);
-    const menu = page.getByRole('button', { name: 'Menu' });
-    await menu.click();
-    await shortcuts().click();
-    await expect.element(table()).toBeVisible();
-    await userEvent.keyboard('{Escape}');
-    await expect.element(page.getByTestId('shortcuts')).not.toBeVisible();
-    await expect.element(menu).toHaveAttribute('aria-expanded', 'true');
-    await userEvent.keyboard('{Escape}');
-    await expect.element(menu).toHaveAttribute('aria-expanded', 'false');
   });
 });

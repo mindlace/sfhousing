@@ -1,8 +1,7 @@
 <!--
   Undo and Redo as icon buttons named by the change they would undo or redo (`historyName`). Each
   page shows the row only while some pointer is coarse (`usePrimaryPointer().touch`): `/` above the
-  Paint tab, `/sim` in its header. The Shortcuts button is the page's own, beside it. Colours are
-  tokens.
+  Paint tab, `/sim` in its header. Colours are tokens.
 -->
 <script lang="ts">
   import { historyName } from './history';

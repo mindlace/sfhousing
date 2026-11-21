@@ -797,13 +797,15 @@ test.describe('account entry', () => {
         banner.getByRole('link', { name: /^SF Housing/ }),
         banner.getByRole('navigation', { name: 'Steps' }),
         headerScore(page),
-        banner.getByRole('button', { name: 'Keyboard shortcuts' }),
         banner.getByRole('button', { name: /^(Publish|Share link)/ }),
         banner.getByRole('link', { name: `@${handle}` }),
         banner.getByRole('link', { name: 'About', exact: true })
       ];
       for (const item of items) await expect(item).toBeInViewport({ ratio: 1 });
       await expect(banner.getByRole('button', { name: /^(Undo|Redo)/ })).toHaveCount(0);
+      await expect(
+        banner.getByRole('button', { name: 'Keyboard shortcuts', includeHidden: true })
+      ).toHaveCount(0);
       const boxes = await Promise.all(items.map(box));
       for (let i = 1; i < boxes.length; i++)
         expect(boxes[i].x, `item ${i} clear of item ${i - 1}`).toBeGreaterThanOrEqual(
@@ -816,8 +818,8 @@ test.describe('account entry', () => {
     });
 
     // The widest /sim row: a 20-character handle, the widest headline, "Autosave off" (storage
-    // refused) and "Updating" (a held edit) side by side. A touch laptop adds Undo and Redo; from
-    // lg Shortcuts then leaves the row at every width.
+    // refused) and "Updating" (a held edit) side by side. A touch laptop adds Undo and Redo. No
+    // Shortcuts on either: the keys are listed in About.
     for (const [width, touch] of [
       [1024, false],
       [1280, false],
@@ -849,15 +851,15 @@ test.describe('account entry', () => {
         await expect(updating).toBeVisible();
         await widestHeaderText(page);
         await expect(headerScore(page)).toHaveAccessibleName(/^12,345 homes by Mar 2066$/);
-        const shortcuts = banner.getByRole('button', { name: 'Keyboard shortcuts' });
         const history = [
           banner.getByRole('button', { name: /^Undo/ }),
           banner.getByRole('button', { name: /^Redo/ })
         ];
         if (touch) for (const h of history) await expect(h).toBeVisible();
         else await expect(history[0]).toHaveCount(0);
-        if (touch) await expect(shortcuts).toHaveCount(0);
-        else await expect(shortcuts).toBeVisible();
+        await expect(
+          banner.getByRole('button', { name: 'Keyboard shortcuts', includeHidden: true })
+        ).toHaveCount(0);
         const items: [string, Locator][] = [
           ['name', banner.getByRole('link', { name: /^SF Housing/ })],
           ['steps', banner.getByRole('navigation', { name: 'Steps' })],
@@ -867,7 +869,6 @@ test.describe('account entry', () => {
           ...(touch
             ? (['Undo', 'Redo'] as const).map((n, i) => [n, history[i]] as [string, Locator])
             : []),
-          ...(touch ? [] : [['Shortcuts', shortcuts] as [string, Locator]]),
           ['Publish', banner.getByRole('button', { name: /^(Publish|Share link)/ })],
           ['handle', banner.getByRole('link', { name: `@${handle}` })],
           ['About', banner.getByRole('link', { name: 'About', exact: true })]

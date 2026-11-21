@@ -151,7 +151,7 @@ const historic: Policy = {
 
 const header = () => page.getByRole('banner');
 // The header's Undo and Redo show only while some pointer is coarse: the specs that press them
-// run as a touch laptop (`stubTouchLaptop`), which keeps Shortcuts too.
+// run as a touch laptop (`stubTouchLaptop`).
 const undoButton = () => header().getByRole('button', { name: /^Undo/ });
 const redoButton = () => header().getByRole('button', { name: /^Redo/ });
 const inspector = () => page.getByTestId('inspector');
@@ -592,12 +592,9 @@ describe('SimPage publish and view', () => {
     expect(inspector().getByRole('spinbutton').elements()).toHaveLength(0);
   });
 
-  it('a fine-only pointer: no Undo or Redo in the header; Shortcuts and Publish stay', async () => {
+  it('a fine-only pointer: no Undo or Redo in the header; Publish stays', async () => {
     stubPointer('fine');
     await opened();
-    await expect
-      .element(header().getByRole('button', { name: 'Keyboard shortcuts' }))
-      .toBeVisible();
     await expect.element(page.getByTestId('publish-open')).toBeVisible();
     expect(
       header()
@@ -728,12 +725,9 @@ describe('SimPage publish and view', () => {
   it('any coarse pointer: Undo and Redo in the header, named by the change', async () => {
     const pointer = stubPointer('fine', ['fine']);
     await opened();
-    await expect
-      .element(header().getByRole('button', { name: 'Keyboard shortcuts' }))
-      .toBeVisible();
+    await expect.element(page.getByTestId('publish-open')).toBeVisible();
     expect(undoButton().elements()).toEqual([]);
-    // A touch screen comes in: the buttons come; Shortcuts stays rendered (the primary is still
-    // fine) but leaves the row from lg.
+    // A touch screen comes in: the buttons come.
     pointer.setAny(['fine', 'coarse']);
     await expect.element(undoButton()).toHaveAccessibleName('Undo');
     await expect.element(redoButton()).toHaveAccessibleName('Redo');
@@ -746,41 +740,32 @@ describe('SimPage publish and view', () => {
     await expect
       .element(redoButton())
       .toHaveAccessibleName('Redo: Added: Protect historic buildings');
-    expect(innerWidth).toBeGreaterThanOrEqual(1024);
-    expect(header().getByRole('button', { name: 'Keyboard shortcuts' }).elements()).toEqual([]);
-    expect(document.querySelector('header button[popovertarget$="-shortcuts"]')).not.toBeNull();
-    // A phone (coarse primary): the buttons stay, Shortcuts goes.
+    // A phone (coarse primary): the buttons stay.
     pointer.set('coarse');
-    await expect
-      .element(header().getByRole('button', { name: 'Keyboard shortcuts' }))
-      .not.toBeInTheDocument();
     await expect.element(undoButton()).toBeVisible();
   });
 
-  it('a touch laptop from lg: Undo and Redo take the place of Shortcuts at every width', async () => {
-    stubTouchLaptop();
+  it('the header has no Keyboard shortcuts button on any pointer', async () => {
+    const pointer = stubPointer('fine', ['fine']);
     await page.viewport(1024, 800);
     await opened();
-    const shortcuts = header().getByRole('button', { name: 'Keyboard shortcuts' });
+    await expect.element(page.getByTestId('publish-open')).toBeVisible();
+    const none = () => {
+      expect(header().getByRole('button', { name: 'Keyboard shortcuts' }).elements()).toEqual([]);
+      expect(document.querySelector('header [data-testid=shortcuts]')).toBeNull();
+    };
+    none();
+    // A touch laptop: Undo and Redo come, and still no Shortcuts.
+    pointer.setAny(['fine', 'coarse']);
     await expect.element(undoButton()).toBeVisible();
-    await expect.element(redoButton()).toBeVisible();
-    // The pointer is read (Undo shows): the button is rendered but out of the row (display none).
-    expect(shortcuts.elements()).toEqual([]);
-    expect(document.querySelector('header button[popovertarget$="-shortcuts"]')).not.toBeNull();
-    for (const width of [1280, 1440]) {
+    for (const width of [1024, 1280]) {
       await page.viewport(width, 800);
-      await expect.element(undoButton()).toBeVisible();
-      expect(shortcuts.elements(), `${width}`).toEqual([]);
+      none();
     }
-  });
-
-  it('a fine-only pointer at 1024: Shortcuts shows', async () => {
-    stubPointer('fine');
-    await page.viewport(1024, 800);
-    await opened();
-    await expect
-      .element(header().getByRole('button', { name: 'Keyboard shortcuts' }))
-      .toBeVisible();
+    // A phone or tablet.
+    pointer.set('coarse');
+    await expect.element(undoButton()).toBeVisible();
+    none();
   });
 
   it('view mode takes a document the route already opened, with its notices', async () => {
@@ -1140,6 +1125,22 @@ describe('SimPage map overlays', () => {
 });
 
 describe('SimPage tools', () => {
+  it('with the Paint tool chosen Space does not play; with Move it does', async () => {
+    await opened();
+    // The controller has attached (it alone sets pan): the Paint tool can paint.
+    await expect.poll(() => stub.calls.some((c) => c.method === 'setPanEnabled')).toBe(true);
+    await toolKey('b');
+    await expect.poll(() => stub.props.tapCards).toBe(false);
+    await userEvent.keyboard(' ');
+    expect(debug().playing).toBe(false);
+    await toolKey('v');
+    await expect.poll(() => stub.props.tapCards).toBe(true);
+    await userEvent.keyboard(' ');
+    await expect.poll(() => debug().playing).toBe(true);
+    await userEvent.keyboard(' ');
+    await expect.poll(() => debug().playing).toBe(false);
+  });
+
   it('B and E pick Paint and Erase; V goes back to Move', async () => {
     await opened({ storage: () => seeded(doc4(zoning(painted))) });
     await openZoning();

@@ -15,6 +15,7 @@ import { expectNoA11yViolations } from './helpers/a11y';
 import { expectAboutReachable, expectNoFooter } from './helpers/chrome';
 import { widestHeaderText } from './helpers/header-text';
 import { touchLaptop } from './helpers/pointer';
+import { TIMELINE_SHORTCUTS } from '../src/lib/timeline/shortcuts';
 import {
   addPolicy,
   holdPolicy,
@@ -646,13 +647,14 @@ test('the header has no Undo or Redo on a desktop pointer; Ctrl+Z undoes a polic
   test.skip(isMobile, 'a desktop (fine-only) pointer');
   await gotoSim(page);
   const banner = page.getByRole('banner');
-  await expect(banner.getByRole('button', { name: 'Keyboard shortcuts' })).toBeVisible();
+  const publish = banner.getByRole('button', { name: /^(Publish|Share link)/ });
+  await expect(publish).toBeVisible();
   await expect(
     banner.getByRole('button', { name: /^(Undo|Redo)/, includeHidden: true })
   ).toHaveCount(0);
   await addPolicy(page, 'Zoning', 'Transit rule');
   // From a header control, not a field (a field's Ctrl+Z is its own).
-  await banner.getByRole('button', { name: 'Keyboard shortcuts' }).focus();
+  await publish.focus();
   await page.keyboard.press('Control+z');
   await page.waitForFunction(() => (window as FzpWin).__sfhFzp!.policy.kinds.zoning.length === 0);
   await expect(
@@ -1361,11 +1363,13 @@ for (const width of [1024, 1280, 1536]) {
     await page.setViewportSize({ width, height: 1024 });
     await gotoSim(page);
     const banner = page.getByRole('banner');
-    // A fine pointer: Shortcuts and no Undo or Redo; the phone project (coarse): the reverse.
-    const shortcuts = banner.getByRole('button', { name: 'Keyboard shortcuts' });
+    // A fine pointer: no Undo or Redo; the phone project (coarse): both. No Shortcuts on either.
     const history = banner.getByRole('button', { name: /^(Undo|Redo)/ });
-    await expect(isMobile ? history.first() : shortcuts).toBeVisible();
-    await expect(isMobile ? shortcuts : history).toHaveCount(0);
+    if (isMobile) await expect(history.first()).toBeVisible();
+    else await expect(history).toHaveCount(0);
+    await expect(
+      banner.getByRole('button', { name: 'Keyboard shortcuts', includeHidden: true })
+    ).toHaveCount(0);
     await expect(banner.getByRole('button', { name: 'View' })).toHaveCount(0);
     await widestHeaderText(page);
     await widestStatusText(page);
@@ -1499,34 +1503,30 @@ test('at 375 px the header fits with the widest strings; the site name waits in 
   await expect(menuButton(page)).toHaveAttribute('aria-expanded', 'false');
 });
 
-test('at 1280 px Keyboard shortcuts opens under its button, moves nothing in the header and closes on Escape', async ({
-  isMobile,
-  page
-}) => {
-  test.skip(isMobile, 'chromium project only');
-  await page.setViewportSize({ width: 1280, height: 900 });
+test('the header has no Shortcuts; About lists the Timeline keys', async ({ isMobile, page }) => {
   await gotoSim(page);
   const banner = page.getByRole('banner');
-  const button = banner.getByRole('button', { name: 'Keyboard shortcuts' });
-  const publish = banner.getByRole('button', { name: /^(Publish|Share link)/ });
-  await expect(button).toBeVisible();
-  const before = await headerRow(page);
-  const scoreY = (await scoreBar(page).boundingBox())!.y;
-  const publishY = (await publish.boundingBox())!.y;
-  await button.click();
-  const table = page.getByRole('table', { name: 'Keyboard shortcuts' });
+  await expect(banner.getByTestId('publish-open')).toBeAttached();
+  await expect(
+    banner.getByRole('button', { name: 'Keyboard shortcuts', includeHidden: true })
+  ).toHaveCount(0);
+  await openHeaderMenu(page);
+  await expect(banner.getByRole('button', { name: 'Keyboard shortcuts' })).toHaveCount(0);
+  await banner.getByRole('link', { name: 'About', exact: true }).click();
+  const dialog = aboutDialog(page);
+  await expect(dialog).toBeVisible();
+  const table = dialog.getByRole('table', { name: 'Timeline' });
   await expect(table).toBeVisible();
-  const buttonBox = (await button.boundingBox())!;
-  const listBox = (await page.getByTestId('shortcuts').boundingBox())!;
-  expect(listBox.y).toBeGreaterThanOrEqual(buttonBox.y + buttonBox.height);
-  const after = await headerRow(page);
-  expect(after.map((i) => i.left)).toEqual(before.map((i) => expect.closeTo(i.left, 0)));
-  expect((await scoreBar(page).boundingBox())!.y).toBeCloseTo(scoreY, 0);
-  expect((await publish.boundingBox())!.y).toBeCloseTo(publishY, 0);
-  expect((await banner.boundingBox())!.height).toBe(48);
+  const rows = await table
+    .locator('tbody tr')
+    .evaluateAll((trs) =>
+      trs.map((tr) => [...tr.querySelectorAll('td')].map((td) => td.textContent?.trim()))
+    );
+  expect(rows).toEqual(TIMELINE_SHORTCUTS.map((s) => [s.keys, s.action]));
+  await expect(dialog.getByRole('table', { name: 'Painting' })).toBeVisible();
   await page.keyboard.press('Escape');
-  await expect(button).toHaveAttribute('aria-expanded', 'false');
-  await expect(table).toBeHidden();
+  await expect(dialog).toBeHidden();
+  if (isMobile) await expect(menuButton(page)).toBeFocused();
 });
 
 for (const width of [768]) {
@@ -1547,11 +1547,11 @@ for (const width of [768]) {
     await expectStatusPlace(page);
     await expectHeaderFits(page);
     await openHeaderMenu(page);
-    // Undo where a pointer is coarse (the phone project), Shortcuts where the primary is fine.
-    const touchOnly = isMobile ? /^Undo/ : 'Keyboard shortcuts';
-    for (const name of [touchOnly, /^(Publish|Share link)/])
-      await expect(banner.getByRole('button', { name })).toBeVisible();
-    if (!isMobile) await expect(banner.getByRole('button', { name: /^Undo/ })).toHaveCount(0);
+    // Undo where a pointer is coarse (the phone project); never Shortcuts.
+    if (isMobile) await expect(banner.getByRole('button', { name: /^Undo/ })).toBeVisible();
+    else await expect(banner.getByRole('button', { name: /^Undo/ })).toHaveCount(0);
+    await expect(banner.getByRole('button', { name: /^(Publish|Share link)/ })).toBeVisible();
+    await expect(banner.getByRole('button', { name: 'Keyboard shortcuts' })).toHaveCount(0);
     // The map's layers are not in the Menu: they are on the map.
     await expect(banner.getByRole('button', { name: 'View', exact: true })).toHaveCount(0);
     await expect(banner.getByRole('checkbox')).toHaveCount(0);

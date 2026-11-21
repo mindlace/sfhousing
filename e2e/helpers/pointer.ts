@@ -4,7 +4,7 @@ import type { Page } from '@playwright/test';
  * Makes the page a touch laptop before it loads: the primary pointer stays the desktop's fine one,
  * and `(any-pointer: coarse)` matches as a touch screen beside it would. Chromium cannot emulate
  * that pair (`hasTouch` makes the primary pointer coarse too), so the query is answered in the
- * page. /sim then shows Undo and Redo in its header beside Shortcuts.
+ * page. /sim then shows Undo and Redo in its header.
  */
 export async function touchLaptop(page: Page): Promise<void> {
   await page.addInitScript(() => {

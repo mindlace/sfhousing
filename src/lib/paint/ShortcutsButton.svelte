@@ -1,14 +1,11 @@
 <!--
   The Shortcuts button and the keyboard shortcuts list it opens in a native popover (nothing on a
   coarse pointer, which has no keyboard: `usePrimaryPointer`, the one rule `BrushEditor` shares).
-  `/` puts it last in the Paint tab; `/sim` has it in its header (after Undo and Redo where a
-  pointer is coarse; from lg, the page hides it wherever Undo and Redo are in the header, through
-  `class`). The popover
-  sits in the top layer, so it takes no room in its row and is not clipped by the dock's scroll
-  box; script places it under its button. Escape, a second press and an outside press close it,
-  as do a resize and a scroll outside it. The label shows as "Shortcuts" while the name stays
-  "Keyboard shortcuts": the full words do not fit the header's actions column at 1024 px. Lower
-  in the tab than the header, the list can be taller than the room under the button and scrolls
+  Its one home is the end of the Paint tab (About this model lists the same `SHORTCUTS`). The
+  popover sits in the top layer, so it takes no room in its row and is not clipped by the dock's
+  scroll box; script places it under its button. Escape, a second press and an outside press
+  close it, as do a resize and a scroll outside it. The label shows as "Shortcuts" while the name
+  stays "Keyboard shortcuts". The list can be taller than the room under the button and scrolls
   inside itself, so it is a named region that takes focus (`tabindex`) for a keyboard to scroll
   it (axe `scrollable-region-focusable`). Colours are tokens.
 -->
@@ -17,9 +14,6 @@
   import { SURFACE_POP } from '$lib/shell/ui';
   import { placePopover } from './place-popover';
   import { usePrimaryPointer } from './pointer.svelte';
-
-  /** Classes for the button (on /sim: hidden from lg beside Undo and Redo). */
-  let { class: extra = undefined }: { class?: string } = $props();
 
   // Shown once the client has read the query, and only on a fine primary pointer.
   const pointer = usePrimaryPointer();
@@ -39,10 +33,8 @@
     open = e.newState === 'open';
     if (!open || !pop || !button) return;
     const a = button.getBoundingClientRect();
-    // In the header the button is shorter than the bar: open under the bar, not over its edge.
-    const bar = button.closest('header')?.getBoundingClientRect();
     const p = placePopover(
-      { right: a.right, bottom: Math.max(a.bottom, bar?.bottom ?? a.bottom) },
+      { right: a.right, bottom: a.bottom },
       { width: pop.getBoundingClientRect().width },
       { width: document.documentElement.clientWidth, height: window.innerHeight }
     );
@@ -84,10 +76,7 @@
     aria-expanded={open}
     aria-controls={popId}
     popovertarget={popId}
-    class={[
-      'flex min-h-6 min-w-6 cursor-pointer items-center rounded-md px-2 text-sm text-ink-muted underline hover:bg-surface-raised dark:text-ink-dark-muted dark:hover:bg-surface-dark-raised',
-      extra
-    ]}
+    class="flex min-h-6 min-w-6 cursor-pointer items-center rounded-md px-2 text-sm text-ink-muted underline hover:bg-surface-raised dark:text-ink-dark-muted dark:hover:bg-surface-dark-raised"
     ><span aria-hidden="true">Shortcuts</span><span class="sr-only">Keyboard shortcuts</span
     ></button
   >

@@ -3,6 +3,7 @@ import { render } from 'vitest-browser-svelte';
 import { page } from 'vitest/browser';
 import '../../routes/layout.css';
 import { SHORTCUTS } from '$lib/brush/shortcuts';
+import { TIMELINE_SHORTCUTS } from '$lib/timeline/shortcuts';
 import { REPO_URL } from '$lib/config';
 import { bufferAmount, GOAL } from '$lib/goal/goal';
 import { M1_TARGETS } from '$lib/scoreboard/targets';
@@ -239,6 +240,21 @@ describe('AboutUsing', () => {
       'Reopening a saved plan uses the current data, so its totals can change.'
     ]);
     for (const s of YOUR_PLANS) await expect.element(page.getByText(s)).toBeInTheDocument();
+  });
+
+  it('using: the Timeline table holds every TIMELINE_SHORTCUTS row', async () => {
+    render(AboutUsing, { level: 3 });
+    const table = page.getByRole('table', { name: 'Timeline' });
+    await expect.element(table).toBeInTheDocument();
+    const rows = [...table.element().querySelectorAll('tbody tr')].map((tr) =>
+      [...tr.querySelectorAll('td')].map((td) => td.textContent?.trim())
+    );
+    expect(rows).toEqual(TIMELINE_SHORTCUTS.map((s) => [s.keys, s.action]));
+    // After the Painting table, in the Keyboard shortcuts section.
+    const tables = [...document.querySelectorAll('#about-shortcuts table caption')].map((c) =>
+      c.textContent?.trim()
+    );
+    expect(tables).toEqual(['Painting', 'Timeline']);
   });
 });
 

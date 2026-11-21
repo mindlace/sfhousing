@@ -22,6 +22,12 @@ export interface KeyLike {
   type: 'keydown' | 'keyup';
 }
 
+/**
+ * Space on these keeps its native meaning (activate / toggle): never temporary Move, never Play
+ * (`isPlayKey`, src/lib/timeline/shortcuts.ts).
+ */
+export const SPACE_NATIVE = 'button, a[href], summary, [role="radio"], [role="button"]';
+
 /** Elements where shortcuts never fire: input, textarea, select, [contenteditable]. */
 export function isEditableTarget(t: EventTarget | null): boolean {
   if (!t) return false;

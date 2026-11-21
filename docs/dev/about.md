@@ -29,7 +29,8 @@ which stay in `AboutData.svelte` as they were on `/attribution`. Part 1's amount
 source link are read from `GOAL`, `bufferAmount` (`src/lib/goal/goal.ts`) and `M1_TARGETS[0]`,
 never copied; "Room for N homes" reads `ROOM_MEANS` (`src/lib/paint/details.ts`). The Painting
 shortcuts table is `SHORTCUTS` (`src/lib/brush/shortcuts.ts`), the list Paint's Shortcuts button
-shows.
+shows; the Timeline table after it is `TIMELINE_SHORTCUTS` (`src/lib/timeline/shortcuts.ts`).
+Keyboard shortcuts live here only on `/sim`: its header has no Shortcuts button.
 
 ## The Overture notice
 

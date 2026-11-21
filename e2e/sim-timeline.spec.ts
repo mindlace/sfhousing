@@ -284,6 +284,37 @@ test('after an edit Play reads Play from the first changed year, and plays from 
   expect(pressed).toEqual({ day: from, playing: true });
 });
 
+/** Every scroll offset on the page, summed: Space must never scroll anything. */
+const scrolled = (page: Page): Promise<number> =>
+  page.evaluate(() =>
+    [...document.querySelectorAll('*')].reduce((a, el) => a + el.scrollTop + el.scrollLeft, 0)
+  );
+
+test('Space plays and pauses from the body and from the date slider', async ({ page }) => {
+  await gotoSim(page);
+  const scroll = await scrolled(page);
+  // From the body (nothing focused).
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await page.keyboard.press('Space');
+  await expect.poll(() => fzp(page, 'playing')).toBe(true);
+  await expect(page.getByTestId('tl-play')).toHaveAccessibleName('Pause');
+  await page.keyboard.press('Space');
+  await expect.poll(() => fzp(page, 'playing')).toBe(false);
+  // From the date slider.
+  await slider(page).focus();
+  await page.keyboard.press('Space');
+  await expect.poll(() => fzp(page, 'playing')).toBe(true);
+  await page.keyboard.press('Space');
+  await expect.poll(() => fzp(page, 'playing')).toBe(false);
+  await expect(slider(page)).toBeFocused();
+  expect(await scrolled(page)).toBe(scroll);
+  // On a button Space is the button's: Today jumps and pauses, it never plays.
+  await page.getByTestId('tl-today').focus();
+  await page.keyboard.press('Space');
+  await expect.poll(() => fzp(page, 'day')).toBe(await fzp(page, 'asOf'));
+  expect(await fzp(page, 'playing')).toBe(false);
+});
+
 // ---- sharing ------------------------------------------------------------------------------------
 
 test('publish, open the /s link, see the same timeline', async ({ page, browser }, testInfo) => {
