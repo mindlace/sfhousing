@@ -24,6 +24,9 @@ import type { ScoreStatics } from '$lib/sim/world/score/types';
 import type { ParcelSummary, ProjectCard } from '$lib/sim/protocol';
 import type { Day } from '$lib/timelapse/time';
 import manifestJson from '../../../e2e/fixtures/data/fixture-0/manifest.json';
+import placesRaw from '../../../e2e/fixtures/data/fixture-0/neighborhoods.geojson?raw';
+import { SLOT_FLAG, type CityDelta, type TimelineUpdate } from '$lib/map/types';
+import { parseNeighborhoods, type NeighborhoodShapes } from '$lib/sim/levers/brushes';
 import { CHANGE_NOT_APPLIED, STALE_NOTE, UPDATING, goalNote, homesBy, playFromText } from './copy';
 import { filledEndDay, indexOfDay } from './playhead';
 import { DEFAULT_POLICY4, queriesOf4, type Policy, type SimPolicy4 } from './policy4';
@@ -36,6 +39,7 @@ import { scanned } from './reveal';
 import type { Lots } from './session.svelte';
 import {
   FakeTimelineWorker,
+  cellsMsg,
   compiledMsg,
   errorMsg,
   filledMsg,
@@ -63,6 +67,18 @@ vi.mock('./results', async (importOriginal) => {
   const real = await importOriginal<typeof import('./results')>();
   return { ...real, scoreOfView: vi.fn(real.scoreOfView) };
 });
+// Activity's index as it is, each instance kept (its sort counter guards the playhead path).
+const { indexes } = vi.hoisted(() => ({ indexes: [] as { sorts: number }[] }));
+vi.mock('./activity', async (importOriginal) => {
+  const real = await importOriginal<typeof import('./activity')>();
+  class Kept extends real.ActivityIndex {
+    constructor() {
+      super();
+      indexes.push(this);
+    }
+  }
+  return { ...real, ActivityIndex: Kept };
+});
 // The key's tally as it is, counted (when the page reads a row for it).
 vi.mock('./key', async (importOriginal) => {
   const real = await importOriginal<typeof import('./key')>();
@@ -70,6 +86,7 @@ vi.mock('./key', async (importOriginal) => {
 });
 
 const manifest: Manifest = parseManifest(manifestJson);
+const FIXTURE_PLACES: NeighborhoodShapes = parseNeighborhoods(JSON.parse(placesRaw));
 const cal = fixtureCalibration();
 const asOf = cal.asOf;
 const LAST = 23;
@@ -142,6 +159,7 @@ type Over = Partial<{
   onstarter: (choice: AddChoice, label: string) => void;
   ondetails: () => void;
   onactivity: () => void;
+  fetchPlaces: (url: string) => Promise<NeighborhoodShapes | null>;
 }>;
 
 let workers: FakeTimelineWorker[];
@@ -190,7 +208,8 @@ function setup(over: Over = {}) {
       ...(over.face ? { face: over.face } : {}),
       ...(over.onstarter ? { onstarter: over.onstarter } : {}),
       ...(over.ondetails ? { ondetails: over.ondetails } : {}),
-      ...(over.onactivity ? { onactivity: over.onactivity } : {})
+      ...(over.onactivity ? { onactivity: over.onactivity } : {}),
+      fetchPlaces: over.fetchPlaces ?? (async () => FIXTURE_PLACES)
     }
   });
   return {
@@ -3032,5 +3051,142 @@ describe('halos on the map', () => {
     await userEvent.keyboard('{Home}');
     await expect.poll(() => debug().day).toBe(asOf);
     expect(callsOf('setBarMode')).toEqual([['far']]);
+  });
+});
+
+describe("Activity's latest stage changes", () => {
+  const MISSION: [number, number] = [-122.4194, 37.76];
+  const ELSEWHERE: [number, number] = [-122.5, 37.7];
+  /** A citywide delta of markers (ascending rows). */
+  function city(
+    rows: number,
+    ms: { row: number; days: [number, number, number]; at?: [number, number]; flags?: number }[],
+    from?: number
+  ): CityDelta {
+    const k = ms.length;
+    const d: CityDelta = {
+      rows,
+      row: Int32Array.from(ms.map((m) => m.row)),
+      lngLat: new Float32Array(2 * k),
+      days: new Float32Array(3 * k),
+      homes: Uint16Array.from(ms.map(() => 12)),
+      flags: Uint8Array.from(ms.map((m) => m.flags ?? 0))
+    };
+    ms.forEach((m, i) => {
+      d.lngLat.set(m.at ?? ELSEWHERE, 2 * i);
+      d.days.set(m.days, 3 * i);
+    });
+    if (from !== undefined) d.from = from;
+    return d;
+  }
+  const update = (revision: number, c?: CityDelta): TimelineUpdate => ({
+    revision,
+    cells: [],
+    removedCells: [],
+    demolish: [],
+    ...(c ? { city: c } : {})
+  });
+  const N = NaN;
+  const items = () => [...document.querySelectorAll('[data-testid=tl-activity] ol li')];
+  const lines = () => items().map((li) => li.textContent!.replace(/\s+/g, ' ').trim());
+  const month = (d: Day) => formatShortMonthYear(d);
+  async function keysTo(k: number) {
+    (slider().element() as HTMLElement).focus();
+    await userEvent.keyboard('{Home}');
+    await expect.poll(() => debug().day).toBe(asOf);
+    for (let i = 1; i <= k; i++) {
+      await userEvent.keyboard('{ArrowRight}');
+      await expect.poll(() => debug().day).toBe(MONTHS[i]);
+    }
+  }
+
+  it('events arriving before the map is ready still reach Activity', async () => {
+    stub.autoReady = false;
+    const fetchPlaces = vi.fn(async () => FIXTURE_PLACES);
+    await opened(LAST, { withInspector: true, inspectorOpen: false, fetchPlaces });
+    const u = update(
+      0,
+      city(2, [
+        { row: 0, days: [MONTHS[1] + 2, N, N], at: MISSION, flags: SLOT_FLAG.zoning },
+        { row: 1, days: [MONTHS[2] + 2, MONTHS[2] + 5, N] }
+      ])
+    );
+    emit(cellsMsg(u));
+    await expect.element(page.getByTestId('tl-activity')).toBeVisible();
+    // Not fetched before the list has an item.
+    expect(fetchPlaces).not.toHaveBeenCalled();
+    await keysTo(3);
+    await expect
+      .poll(lines)
+      .toEqual([
+        `Building 12 homes ${month(MONTHS[2] + 5)}`,
+        `Approved 12 homes ${month(MONTHS[2] + 2)}`,
+        `◆Under your policy Approved 12 homes Mission · ${month(MONTHS[1] + 2)}`
+      ]);
+    expect(fetchPlaces).toHaveBeenCalledExactlyOnceWith('/data/fixture-0/neighborhoods.geojson');
+    // The map gets the same update once it is ready.
+    expect(callsOf('applyTimeline')).toEqual([]);
+    stub.fireReady();
+    await expect.poll(() => callsOf('applyTimeline')).toEqual([[u]]);
+    // Fetched once per manifest, however the list moves.
+    await userEvent.keyboard('{ArrowLeft}');
+    await expect.poll(() => debug().day).toBe(MONTHS[2]);
+    await expect.poll(() => items().length).toBe(1);
+    expect(fetchPlaces).toHaveBeenCalledOnce();
+  });
+
+  it('scrubbing back drops later events; the list DOM is not rewritten when its keys are the same', async () => {
+    await opened(LAST, { withInspector: true, inspectorOpen: false });
+    emit(
+      cellsMsg(
+        update(
+          0,
+          city(3, [
+            { row: 0, days: [MONTHS[1] + 2, N, N] },
+            { row: 1, days: [MONTHS[2] + 2, N, N] },
+            { row: 2, days: [MONTHS[3] + 2, N, N] }
+          ])
+        )
+      )
+    );
+    await keysTo(3);
+    await expect.poll(() => items().length).toBe(2);
+    await expect
+      .element(page.getByTestId('tl-activity').getByRole('heading', { level: 3, name: 'Latest' }))
+      .toBeVisible();
+    const [newer, older] = items();
+    expect(newer.textContent).toContain(month(MONTHS[2]));
+    const sorts = indexes.at(-1)!.sorts;
+    // Forward across the next event, then back: the old items are the same nodes.
+    await userEvent.keyboard('{ArrowRight}');
+    await expect.poll(() => debug().day).toBe(MONTHS[4]);
+    await expect.poll(() => items().length).toBe(3);
+    expect(items().slice(1)).toEqual([newer, older]);
+    expect(items()[1]).toBe(newer);
+    await userEvent.keyboard('{ArrowLeft}{ArrowLeft}');
+    await expect.poll(() => debug().day).toBe(MONTHS[2]);
+    await expect.poll(() => items().length).toBe(1);
+    expect(items()[0]).toBe(older);
+    // Moving the playhead never sorts.
+    expect(indexes.at(-1)!.sorts).toBe(sorts);
+    // A rewind from row 0 forgets it: the list empties at once.
+    emit(cellsMsg(update(1, city(1, [], 0))));
+    await expect.element(page.getByText('No stage changes yet.')).toBeVisible();
+    expect(items()).toEqual([]);
+    // Home: today names no stage change and shows no list.
+    await userEvent.keyboard('{Home}');
+    await expect.poll(() => debug().day).toBe(asOf);
+    await expect
+      .element(page.getByTestId('tl-activity').getByRole('heading', { level: 3 }))
+      .not.toBeInTheDocument();
+  });
+
+  it('a failed neighbourhood file leaves the items without a place', async () => {
+    const fetchPlaces = vi.fn(async () => null);
+    await opened(LAST, { withInspector: true, inspectorOpen: false, fetchPlaces });
+    emit(cellsMsg(update(0, city(1, [{ row: 0, days: [MONTHS[1] + 2, N, N], at: MISSION }]))));
+    await keysTo(2);
+    await expect.poll(lines).toEqual([`Approved 12 homes ${month(MONTHS[1] + 2)}`]);
+    expect(fetchPlaces).toHaveBeenCalledOnce();
   });
 });

@@ -126,7 +126,17 @@
   import type { ChartLens } from './chart-lens';
   import SimDetails from './SimDetails.svelte';
   import SimActivity from './SimActivity.svelte';
-  import { activityTotals, moneyInForce, startersFor } from './activity-view';
+  import {
+    activityTotals,
+    eventText,
+    moneyInForce,
+    startersFor,
+    type ActivityItem
+  } from './activity-view';
+  import { ACTIVITY_LIMIT, ActivityIndex, type ActivityEvent } from './activity';
+  import { loadPlaces, placeOf } from './places';
+  import { datasetUrl } from '$lib/sim/scenario/load';
+  import type { NeighborhoodShapes } from '$lib/sim/levers/brushes';
   import type { AddChoice } from './add';
   import { CHANGE_NOT_APPLIED, STALE_NOTE, UPDATING } from './copy';
   import Explain from './Explain.svelte';
@@ -253,6 +263,8 @@
     statusMs?: number;
     /** Test seam: the goal every goal read goes through. Default the page's goal. */
     goal?: Goal;
+    /** Test seam: fetches the neighbourhoods Activity's list names; null on any failure. */
+    fetchPlaces?(url: string): Promise<NeighborhoodShapes | null>;
   }
 
   let {
@@ -301,7 +313,8 @@
     scoreControls = undefined,
     bottomExtra = 0,
     goal = GOAL,
-    statusMs = 1000
+    statusMs = 1000,
+    fetchPlaces = (url: string) => loadPlaces(url)
   }: Props = $props();
 
   // The props seed the page once; a Retry replaces the manifest and calibration in place.
@@ -436,6 +449,76 @@
         moneyInForce: moneyInForce(resultsDoc)
       }
     )
+  );
+  /**
+   * Activity's list: the page's own copy of the citywide feed (map-interfaces, "The citywide
+   * feed"), indexed by day. `cityVersion` moves once per update that carries markers.
+   */
+  const activityIndex = new ActivityIndex();
+  let cityVersion = $state(0);
+  /** The list on show; a new array only when an item differs (the DOM is kept otherwise). */
+  let latestShown: ActivityEvent[] = [];
+  const sameEvent = (a: ActivityEvent, b: ActivityEvent) =>
+    a.row === b.row &&
+    a.kind === b.kind &&
+    a.day === b.day &&
+    a.homes === b.homes &&
+    a.policy === b.policy &&
+    a.lngLat[0] === b.lngLat[0] &&
+    a.lngLat[1] === b.lngLat[1];
+  /**
+   * The newest stage changes after today and at or before the playhead's day. Per move a binary
+   * search and at most ACTIVITY_LIMIT events (the index sorts only after an update).
+   */
+  const latest = $derived.by(() => {
+    void cityVersion;
+    const next = activityIndex.recent(asOf, day, ACTIVITY_LIMIT);
+    const prev = latestShown;
+    if (next.length === prev.length && next.every((e, i) => sameEvent(e, prev[i]))) return prev;
+    latestShown = next;
+    return next;
+  });
+  /** The neighbourhoods, once per manifest, fetched when the list first has an item. */
+  let places = $state.raw<NeighborhoodShapes | null>(null);
+  let placesFor: Manifest | null = null;
+  const wantPlaces = $derived(latest.length > 0);
+  $effect(() => {
+    if (!wantPlaces || !manifest || placesFor === manifest) return;
+    const m = manifest;
+    placesFor = m;
+    places = null;
+    const url = datasetUrl(m, m.neighborhoods);
+    if (url === null) return;
+    void fetchPlaces(url).then((s) => {
+      if (!dead && placesFor === m) places = s;
+    });
+  });
+  /** Names by row, until the index or the shapes change. */
+  let placeMemo = new Map<number, string | null>(); // eslint-disable-line svelte/prefer-svelte-reactivity
+  let placeMemoKey: [number, NeighborhoodShapes | null] = [-1, null];
+  function placeFor(e: ActivityEvent, shapes: NeighborhoodShapes | null, v: number): string | null {
+    if (!shapes) return null;
+    if (placeMemoKey[0] !== v || placeMemoKey[1] !== shapes) {
+      placeMemo = new Map();
+      placeMemoKey = [v, shapes];
+    }
+    let name = placeMemo.get(e.row);
+    if (name === undefined) placeMemo.set(e.row, (name = placeOf(shapes, e.lngLat)));
+    return name;
+  }
+  const latestItems = $derived<ActivityItem[]>(
+    latest.map((e) => ({
+      key: `${e.row}:${e.kind}`,
+      policy: e.policy,
+      ...eventText(
+        e,
+        placeFor(
+          e,
+          places,
+          untrack(() => cityVersion)
+        )
+      )
+    }))
   );
   /** At today with nothing in force in the edited document and the page editable: the starters. */
   const starters = $derived(
@@ -782,6 +865,15 @@
   }
 
   function applyRender(u: TimelineUpdate): void {
+    // Activity's index first, whether or not the map exists yet (the map may take the buffers).
+    if (u.revision === 0 || u.city) {
+      try {
+        activityIndex.apply(u);
+      } catch {
+        // A malformed delta leaves the index as it was; the map's own store reports it.
+      }
+      cityVersion++;
+    }
     if (handle) return handle.applyTimeline(u);
     if (u.revision === 0) pendingUpdates = [];
     pendingUpdates.push(u);
@@ -1311,6 +1403,7 @@
       onstarter={(s) => onstarter?.(s.choice, s.label)}
       ondetails={() => (ondetails ?? onscore)?.()}
       {stale}
+      events={latestItems}
     />
   </div>
 {/snippet}

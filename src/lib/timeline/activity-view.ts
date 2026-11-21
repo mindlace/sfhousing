@@ -3,7 +3,11 @@
  * month (from today, under the headline's rule), cost while a Public money policy is in force, and
  * at today the starter policies. Pure TS.
  */
+import { formatShortMonthYear } from '$lib/fzp/format';
 import { moneyFigureAt } from '$lib/fzp/money-view';
+import { STAGE_KEY } from '$lib/map/key/rows';
+import { formatCount } from '$lib/scoreboard/format';
+import type { ActivityEvent, ActivityKind } from './activity';
 import type { TimelineView } from '$lib/sim/world/score/types';
 import type { Calibration } from '$lib/timelapse/types';
 import { addChoices, type AddChoice } from './add';
@@ -105,5 +109,43 @@ export const ACTIVITY_COPY = {
   effect: 'From your policy',
   spent: 'Public money spent',
   perHome: 'Per added home',
-  noneAdded: 'no homes added yet'
+  noneAdded: 'no homes added yet',
+  latest: 'Latest',
+  noEvents: 'No stage changes yet.',
+  policyMark: '◆',
+  underPolicy: 'Under your policy'
 } as const;
+
+/** One line of Activity's list, as SimActivity draws it. */
+export interface ActivityItem {
+  /** `row:kind`: the item's identity in the list. */
+  key: string;
+  stage: string;
+  homes: string;
+  /** The neighbourhood; null when unknown (no separator then). */
+  place: string | null;
+  when: string;
+  policy: boolean;
+}
+
+/** The map key's words for each stage, so the list and the key cannot drift. */
+const STAGE_WORD: Record<ActivityKind, string> = (() => {
+  const label = (id: string) => STAGE_KEY.find((r) => r.id === id)!.label;
+  return { approved: label('approved'), started: label('building'), completed: label('completed') };
+})();
+
+/**
+ * One item of Activity's list, one line: the stage word as the map key names it ("Approved",
+ * "Building", "Completed"), "120 homes", the neighbourhood (null when unknown) and the month.
+ */
+export function eventText(
+  e: ActivityEvent,
+  place: string | null
+): { stage: string; homes: string; place: string | null; when: string } {
+  return {
+    stage: STAGE_WORD[e.kind],
+    homes: `${formatCount(e.homes)} ${e.homes === 1 ? 'home' : 'homes'}`,
+    place,
+    when: formatShortMonthYear(e.day)
+  };
+}

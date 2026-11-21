@@ -9,7 +9,16 @@ import { moneyFigureAt } from '$lib/fzp/money-view';
 import { addChoices } from './add';
 import { EMPTY_LOG, logCompiled, logFilled, viewOfLog } from './chunk-log';
 import { DEFAULT_POLICY4, type Policy, type SimPolicy4 } from './policy4';
-import { ACTIVITY_COPY, activityTotals, moneyInForce, startersFor } from './activity-view';
+import {
+  ACTIVITY_COPY,
+  activityTotals,
+  eventText,
+  moneyInForce,
+  startersFor
+} from './activity-view';
+import type { ActivityEvent } from './activity';
+import { STAGE_KEY } from '$lib/map/key/rows';
+import { dayFromUtc } from '$lib/fzp/time';
 import { chunk, cut, statics } from './test/fixtures';
 
 const miniCal = parseCalibration(structuredClone(miniCalibrationJson) as unknown);
@@ -174,7 +183,45 @@ describe('copy', () => {
       effect: 'From your policy',
       spent: 'Public money spent',
       perHome: 'Per added home',
-      noneAdded: 'no homes added yet'
+      noneAdded: 'no homes added yet',
+      latest: 'Latest',
+      noEvents: 'No stage changes yet.',
+      policyMark: '◆',
+      underPolicy: 'Under your policy'
     });
+  });
+});
+
+describe('eventText', () => {
+  const day = dayFromUtc(2031, 3, 14);
+  const ev = (kind: ActivityEvent['kind'], homes = 120): ActivityEvent => ({
+    row: 4,
+    kind,
+    day,
+    homes,
+    lngLat: [-122.42, 37.76],
+    policy: false
+  });
+
+  it('eventText: the key\'s stage word, "120 homes", "Mission", "Mar 2031"; no place: null', () => {
+    expect(eventText(ev('started'), 'Mission')).toEqual({
+      stage: 'Building',
+      homes: '120 homes',
+      place: 'Mission',
+      when: 'Mar 2031'
+    });
+    expect(eventText(ev('approved'), null)).toEqual({
+      stage: 'Approved',
+      homes: '120 homes',
+      place: null,
+      when: 'Mar 2031'
+    });
+    expect(eventText(ev('completed', 1), null).homes).toBe('1 home');
+    expect(eventText(ev('completed', 1200), null).homes).toBe('1,200 homes');
+    // The map key's own words, so the two cannot drift.
+    const key = Object.fromEntries(STAGE_KEY.map((r) => [r.id, r.label]));
+    expect(eventText(ev('approved'), null).stage).toBe(key.approved);
+    expect(eventText(ev('started'), null).stage).toBe(key.building);
+    expect(eventText(ev('completed'), null).stage).toBe(key.completed);
   });
 });

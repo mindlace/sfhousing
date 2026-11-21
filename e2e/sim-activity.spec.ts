@@ -6,7 +6,7 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import type { SfhFzpDebug } from '../src/lib/fzp/debug';
 import { expectNoA11yViolations } from './helpers/a11y';
-import { waitFilled } from './helpers/run';
+import { addPolicy, slider, waitFilled } from './helpers/run';
 import type { Win } from './helpers/sharing';
 
 type FzpWin = Win & { __sfhFzp?: SfhFzpDebug };
@@ -108,6 +108,119 @@ test('the empty lanes say what they add; the words add a policy', async ({ page 
   }
   await page.getByTestId('tl-kind-money').getByTestId('tl-empty-lane').click();
   await expect(page.getByRole('group', { name: 'Add to Public money' })).toBeVisible();
+});
+
+const MONTH_NAMES = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec'
+];
+/** "Mar 2031" as a month count (year × 12 + month), from an item's last words. */
+const monthOfText = (t: string): number => {
+  const m = t.match(/(\w{3}) (\d{4})$/)!;
+  return Number(m[2]) * 12 + MONTH_NAMES.indexOf(m[1]);
+};
+/** A Day's month count, as monthOfText. */
+const monthOfDay = (d: number): number => {
+  const at = new Date(d * 86_400_000);
+  return at.getUTCFullYear() * 12 + at.getUTCMonth();
+};
+const latest = (page: Page): Locator =>
+  activity(page).getByRole('list', { name: 'Latest' }).getByRole('listitem');
+const itemTexts = async (page: Page): Promise<string[]> =>
+  (await latest(page).allTextContents()).map((t) => t.replace(/\s+/g, ' ').trim());
+
+test('mid-play the list names stage changes up to the playhead; Home empties it', async ({
+  page,
+  isMobile
+}) => {
+  const errors: string[] = [];
+  page.on('console', (m) => {
+    if (m.type() === 'error') errors.push(m.text());
+  });
+  await gotoSim(page);
+  await showActivity(page, isMobile);
+  const asOf = await page.evaluate(() => (window as FzpWin).__sfhFzp!.asOf);
+  // Two years on (Day > asOf + 700): the window is filled, so the feed is whole.
+  await slider(page).focus();
+  for (let k = 0; k < 2; k++) await page.keyboard.press('PageUp');
+  await page.waitForFunction((a) => (window as FzpWin).__sfhFzp!.day > a + 700, asOf);
+  const day = await page.evaluate(() => (window as FzpWin).__sfhFzp!.day);
+  await expect(activity(page).getByRole('heading', { level: 3, name: 'Latest' })).toBeVisible();
+  await expect.poll(() => latest(page).count()).toBeGreaterThan(0);
+  const texts = await itemTexts(page);
+  expect(texts.length).toBeLessThanOrEqual(6);
+  const months = texts.map(monthOfText);
+  for (const [i, t] of texts.entries()) {
+    expect(t).toMatch(/^(◆Under your policy )?(Approved|Building|Completed) [\d,]+ homes? /);
+    // After today and at or before the playhead, newest first.
+    expect(months[i]).toBeGreaterThanOrEqual(monthOfDay(asOf));
+    expect(months[i]).toBeLessThanOrEqual(monthOfDay(day));
+  }
+  expect(months).toEqual([...months].sort((a, b) => b - a));
+  // Each item is one line.
+  const heights = await latest(page).evaluateAll((li) => li.map((e) => e.clientHeight));
+  expect(new Set(heights).size).toBe(1);
+  // Home: at today the list goes with the totals.
+  await page.keyboard.press('Home');
+  await page.waitForFunction((a) => (window as FzpWin).__sfhFzp!.day === a, asOf);
+  await expect(activity(page).getByRole('heading', { level: 3 })).toHaveCount(0);
+  await expect(latest(page)).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+/**
+ * From the playhead, a month at a time back (at most `steps`), until a listed project is under
+ * the person's policy; true when one is.
+ */
+async function backToAMark(page: Page, steps: number): Promise<boolean> {
+  const marked = latest(page).filter({ hasText: 'Under your policy' });
+  for (let k = 0; k <= steps; k++) {
+    const day = await page.evaluate(() => (window as FzpWin).__sfhFzp!.day);
+    await expect(activity(page).getByRole('heading', { level: 3, name: 'Latest' })).toBeVisible();
+    if ((await marked.count()) > 0) return true;
+    await page.keyboard.press('ArrowLeft');
+    await page.waitForFunction((d) => (window as FzpWin).__sfhFzp!.day < d, day);
+  }
+  return false;
+}
+
+/** Back to Activity after an edit: from md the editor closes (Escape); below md the sheet. */
+async function activityAfterEdit(page: Page, isMobile: boolean): Promise<void> {
+  if (!isMobile) await page.keyboard.press('Escape');
+  await showActivity(page, isMobile);
+}
+
+test('a transit rule from today: a listed project under it carries the mark', async ({
+  page,
+  isMobile
+}) => {
+  await gotoSim(page);
+  await slider(page).focus();
+  await page.keyboard.press('Home');
+  const refills = await page.evaluate(() => (window as FzpWin).__sfhFzp!.refills.length);
+  await addPolicy(page, 'Zoning', 'Transit rule');
+  await page.waitForFunction((n) => (window as FzpWin).__sfhFzp!.refills.length > n, refills);
+  await waitFilled(page);
+  await activityAfterEdit(page, isMobile);
+  // From the end, a month at a time back, until a listed project is under the rule.
+  await slider(page).focus();
+  await page.keyboard.press('End');
+  const last = await page.evaluate(() => (window as FzpWin).__sfhFzp!.lastIndex);
+  expect(await backToAMark(page, last)).toBe(true);
+  const item = latest(page).filter({ hasText: 'Under your policy' }).first();
+  // The glyph is hidden from AT; the words say it.
+  await expect(item.locator('[aria-hidden=true]')).toHaveText('◆');
+  await expect(item.locator('.sr-only')).toHaveText('Under your policy');
 });
 
 for (const scheme of ['light', 'dark'] as const) {

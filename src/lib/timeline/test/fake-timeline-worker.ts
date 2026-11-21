@@ -10,6 +10,7 @@ import type {
   TimelineResponse
 } from '$lib/sim/timeline-protocol';
 import type { ScoreStatics } from '$lib/sim/world/score/types';
+import type { TimelineUpdate } from '$lib/map/types';
 import { chunk } from './fixtures';
 
 type Req = TimelineHostRequest;
@@ -95,3 +96,6 @@ export const compilingMsg = (rev: number, failedCells: string[] = []): Of<'compi
   total: 2,
   failedCells
 });
+
+/** The map's feed: one `TimelineUpdate` (cells, demolitions, the citywide markers). */
+export const cellsMsg = (render: TimelineUpdate): Of<'cells'> => ({ type: 'cells', render });

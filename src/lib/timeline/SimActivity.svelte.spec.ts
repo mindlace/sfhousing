@@ -6,7 +6,7 @@ import { page, userEvent } from 'vitest/browser';
 import '../../routes/layout.css';
 import { GOAL, goalName } from '$lib/goal/goal';
 import { formatDollars } from '$lib/fzp/format';
-import type { ActivityTotals, Starter } from './activity-view';
+import type { ActivityItem, ActivityTotals, Starter } from './activity-view';
 import SimActivity from './SimActivity.svelte';
 
 const STARTERS: Starter[] = [
@@ -158,6 +158,96 @@ describe('SimActivity', () => {
       const r = b.getBoundingClientRect();
       expect(r.height).toBeGreaterThanOrEqual(24);
       expect(r.width).toBeGreaterThanOrEqual(24);
+    }
+  });
+
+  const LONG = 'Bayview Hunters Point and the Neighbourhoods Beyond the Long Name';
+  const EVENTS: ActivityItem[] = [
+    {
+      key: '7:completed',
+      stage: 'Completed',
+      homes: '120 homes',
+      place: 'Mission',
+      when: 'Mar 2031',
+      policy: true
+    },
+    {
+      key: '3:started',
+      stage: 'Building',
+      homes: '1 home',
+      place: null,
+      when: 'Feb 2031',
+      policy: false
+    },
+    {
+      key: '9:approved',
+      stage: 'Approved',
+      homes: '48 homes',
+      place: LONG,
+      when: 'Jan 2031',
+      policy: false
+    }
+  ];
+  const items = () => page.getByRole('list', { name: 'Latest' }).getByRole('listitem');
+
+  it('lists events newest first; a policy event has the glyph and "Under your policy" for AT', async () => {
+    // A column as narrow as the phone's sheet.
+    const box = document.body.appendChild(document.createElement('div'));
+    box.style.width = '320px';
+    const r = await render(SimActivity, {
+      target: box,
+      props: props({ atToday: false, totals: TOTALS, events: EVENTS })
+    });
+    await expect.element(page.getByRole('heading', { level: 3, name: 'Latest' })).toBeVisible();
+    // Under the totals.
+    const dl = page.getByTestId('tl-totals').element();
+    const h3 = page.getByRole('heading', { level: 3 }).element();
+    expect(dl.compareDocumentPosition(h3) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const li = items().elements();
+    expect(li).toHaveLength(3);
+    const text = (e: Element) => e.textContent!.replace(/\s+/g, ' ').trim();
+    expect(li.map(text)).toEqual([
+      '◆Under your policy Completed 120 homes Mission · Mar 2031',
+      'Building 1 home Feb 2031',
+      `Approved 48 homes ${LONG} · Jan 2031`
+    ]);
+    // The mark is a glyph hidden from AT, with words for it; colour is not the only cue.
+    const mark = li[0].querySelector('[aria-hidden=true]')!;
+    expect(mark.textContent).toBe('◆');
+    // What assistive technology reads: the text without the aria-hidden glyph.
+    const spoken = (e: Element) => {
+      const c = e.cloneNode(true) as Element;
+      c.querySelectorAll('[aria-hidden=true]').forEach((h) => h.remove());
+      return text(c);
+    };
+    expect(spoken(li[0])).toBe('Under your policy Completed 120 homes Mission · Mar 2031');
+    expect(spoken(li[1])).not.toContain('Under your policy');
+    // No place: no separator left over.
+    expect(text(li[1])).not.toContain('·');
+    // One line each: the long place is cut with an ellipsis; its full text stays for AT.
+    const line = li[1].getBoundingClientRect().height;
+    for (const e of li) expect(e.getBoundingClientRect().height).toBe(line);
+    const place = [...li[2].querySelectorAll('span')].find((s) => s.textContent === LONG)!;
+    expect(getComputedStyle(place).textOverflow).toBe('ellipsis');
+    expect(place.scrollWidth).toBeGreaterThan(place.clientWidth);
+    expect(spoken(li[2])).toContain(LONG);
+    // The month stays whole after a cut place.
+    const month = li[2].lastElementChild!;
+    expect(month.scrollWidth).toBeLessThanOrEqual(month.clientWidth);
+    await r.unmount();
+    box.remove();
+  });
+
+  it('after today with no events: No stage changes yet.', async () => {
+    const r = await renderAtRest(props({ atToday: false, totals: TOTALS, events: [] }));
+    await expect.element(page.getByRole('heading', { level: 3, name: 'Latest' })).toBeVisible();
+    await expect.element(page.getByText('No stage changes yet.')).toBeVisible();
+    expect(document.querySelector('ol')).toBeNull();
+    // At today and while calculating: no list and no Latest.
+    for (const over of [{ atToday: true }, { atToday: false, totals: null }]) {
+      await r.rerender(props({ events: EVENTS, ...over }));
+      expect(page.getByRole('heading', { level: 3 }).elements()).toHaveLength(0);
+      expect(document.querySelector('ol')).toBeNull();
     }
   });
 

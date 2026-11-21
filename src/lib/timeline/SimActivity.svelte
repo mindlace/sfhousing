@@ -1,7 +1,8 @@
 <!--
   Activity, the detail column's rest face on /sim: what has happened up to the playhead. At today
   it names the goal and offers the starter policies (or says to press Play); after today, the totals
-  so far at the playhead's month, and cost while a Public money policy is in force. The heading row
+  so far at the playhead's month, cost while a Public money policy is in force, and under "Latest"
+  the newest stage changes citywide up to the playhead (one line each). The heading row
   carries Details. While the numbers are stale only the body dims; the heading and its button keep
   their contrast (status apart from controls).
 -->
@@ -10,7 +11,12 @@
   import { CALCULATING } from '$lib/fzp/copy';
   import { goalName, type Goal } from '$lib/goal/goal';
   import { formatCount } from '$lib/scoreboard/format';
-  import { ACTIVITY_COPY as C, type ActivityTotals, type Starter } from './activity-view';
+  import {
+    ACTIVITY_COPY as C,
+    type ActivityItem,
+    type ActivityTotals,
+    type Starter
+  } from './activity-view';
 
   interface Props {
     goal: Goal;
@@ -23,9 +29,20 @@
     ondetails: () => void;
     /** The numbers on show are from before the latest change: the body dims. */
     stale: boolean;
+    /** The latest stage changes up to the playhead, newest first (after today). */
+    events?: ActivityItem[];
   }
 
-  let { goal, totals, atToday, starters, onstarter, ondetails, stale }: Props = $props();
+  let {
+    goal,
+    totals,
+    atToday,
+    starters,
+    onstarter,
+    ondetails,
+    stale,
+    events = []
+  }: Props = $props();
 
   const uid = $props.id();
   const signed = (n: number) => `${n < 0 ? '' : '+'}${formatCount(n)}`;
@@ -85,7 +102,29 @@
           )}
         {/if}
       </dl>
-      <!-- Task 6: the latest stage changes go here, under an h3. -->
+      <h3 class="mt-3 font-semibold" id="{uid}-latest">{C.latest}</h3>
+      {#if events.length > 0}
+        <!-- One line each: the place gives way (ellipsis), its full text stays in the DOM. -->
+        <ol class="mt-1 flex flex-col gap-1" aria-labelledby="{uid}-latest">
+          {#each events as e (e.key)}
+            <li class="flex min-w-0 items-baseline gap-1.5 whitespace-nowrap">
+              <span class="w-3 shrink-0 text-accent dark:text-accent-dark">
+                {#if e.policy}<span aria-hidden="true">{C.policyMark}</span><span class="sr-only"
+                    >{C.underPolicy}</span
+                  >{/if}
+              </span>
+              <span class="shrink-0 font-semibold">{e.stage}</span>
+              <span class="shrink-0 tabular-nums">{e.homes}</span>
+              {#if e.place}<span class="min-w-0 truncate" title={e.place}>{e.place}</span>{/if}
+              <span class="shrink-0 text-ink-muted dark:text-ink-dark-muted"
+                >{e.place ? '· ' : ''}{e.when}</span
+              >
+            </li>
+          {/each}
+        </ol>
+      {:else}
+        <p class="mt-1">{C.noEvents}</p>
+      {/if}
     {:else}
       <p>{CALCULATING}</p>
     {/if}
