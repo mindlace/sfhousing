@@ -29,7 +29,7 @@
   import { BrushController, type ControllerMap } from '$lib/brush/BrushController.svelte';
   import { ANNOUNCE_MS } from '$lib/brush/messages';
   import type { OverlayCtors } from '$lib/brush/overlay';
-  import { actionForKey } from '$lib/brush/shortcuts';
+  import { actionForKey, canPaint } from '$lib/brush/shortcuts';
   import { BrushState } from '$lib/brush/state.svelte';
   import type { Manifest } from '$lib/data/manifest';
   import type { ParcelId } from '$lib/data/parcel';
@@ -1162,7 +1162,7 @@
   {reload}
   view={viewPrefs}
   cards={readonly || tools.tool === 'move'}
-  spacePlays={tools.tool === 'move' || readonly}
+  spacePlays={!canPaint(brush, readonly)}
   ownerName={(o) => ownerName4(o, store.policy)}
   fundingName={(c) => fundingName4(store.policy, cal?.baselineFunding)(c)}
   {actions}

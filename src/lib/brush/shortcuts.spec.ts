@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { actionForKey, isEditableTarget, SHORTCUTS, type KeyLike } from './shortcuts';
+import { actionForKey, canPaint, isEditableTarget, SHORTCUTS, type KeyLike } from './shortcuts';
 
 const ctx = { mapFocused: true };
 function ev(key: string, extra: Partial<KeyLike> = {}): KeyLike {
@@ -142,5 +142,18 @@ describe('SHORTCUTS', () => {
       expect(s.keys).toBeTruthy();
       expect(s.action).toBeTruthy();
     }
+  });
+});
+
+describe('canPaint', () => {
+  it('only a ready, editable brush with Paint or Erase paints; Space plays whenever it cannot', () => {
+    for (const tool of ['paint', 'erase'] as const) {
+      expect(canPaint({ phase: 'ready', tool }, false)).toBe(true);
+      // A session restarting (Retry, a worker restart): not ready, so Space plays.
+      expect(canPaint({ phase: 'loading', tool }, false)).toBe(false);
+      expect(canPaint({ phase: 'failed', tool }, false)).toBe(false);
+      expect(canPaint({ phase: 'ready', tool }, true)).toBe(false);
+    }
+    expect(canPaint({ phase: 'ready', tool: 'move' }, false)).toBe(false);
   });
 });

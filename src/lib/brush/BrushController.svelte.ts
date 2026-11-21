@@ -9,7 +9,7 @@ import { ANNOUNCE_MS, MSG, TOO_LARGE_MS, strokeMessage, undoMessage } from './me
 import { buildOverlayLayers, metersPerPixel, type OverlayCtors } from './overlay';
 import { stepRadius } from './radius';
 import { createSampler, type BrushTool, type StrokeSampler } from './sampler';
-import { actionForKey, SPACE_NATIVE } from './shortcuts';
+import { actionForKey, canPaint, SPACE_NATIVE } from './shortcuts';
 import type { BrushState } from './state.svelte';
 
 export interface ControllerMap {
@@ -283,7 +283,7 @@ export class BrushController {
   /** Ruling (a): the effective tool, not state.tool alone (the toolbar shows Move otherwise). */
   #canPaint(): boolean {
     const { state, editor } = this.#d;
-    return state.phase === 'ready' && !editor.readOnly && state.tool !== 'move';
+    return canPaint(state, editor.readOnly);
   }
 
   #syncPanMode(): void {
