@@ -43,8 +43,9 @@ const EXEMPT: { selector: string; reason: string }[] = [
 
 /**
  * What may cover a target at its centre without a defect: an open sheet, dialog, popover or
- * toolbar panel. Each such cover is annotated. MapLibre's attribution is none of these: it never
- * covers a control.
+ * toolbar panel that does not hold the target (a cover inside the target's own column or panel is a
+ * defect). Each such cover is annotated. MapLibre's attribution is none of these: it never covers
+ * a control.
  */
 const OVERLAY = [
   'dialog[open]',
@@ -141,7 +142,10 @@ async function small(
             hit.getAttribute('data-testid') ||
             hit.getAttribute('aria-label') ||
             hit.tagName.toLowerCase();
-          if (hit.closest(overlay) || hit.closest(sel)) skipped.push(`${label} by ${by}`);
+          // An overlay covers what lies under it, not its own controls: a cover inside the same
+          // column, sheet or panel as the target is a defect.
+          const o = hit.closest(overlay);
+          if ((o && !o.contains(target)) || hit.closest(sel)) skipped.push(`${label} by ${by}`);
           else covered.push(`${label} covered by ${by}`);
           continue;
         }
@@ -279,6 +283,28 @@ test.describe('targets at 375 px', () => {
     await page.getByTestId('score-bar').click();
     await expect(page.getByTestId('tl-details')).toBeVisible();
     await expectTargets(page, '/sim Details', 10);
+  });
+
+  test('/sim: a layer inside the detail column over its own control fails the sweep', async ({
+    page
+  }) => {
+    await gotoSimReady(page);
+    await addPolicy(page, 'Zoning', 'Transit rule');
+    const column = page.getByTestId('tl-inspector');
+    await expect(column).toBeVisible();
+    // A plain box inside the column, laid over the column's first visible button.
+    const name = await column.evaluate((col) => {
+      const b = [...col.querySelectorAll('button')].find((e) => e.checkVisibility())!;
+      const r = b.getBoundingClientRect();
+      const d = document.createElement('div');
+      d.style.cssText = `position:fixed;left:${r.x}px;top:${r.y}px;width:${r.width}px;height:${r.height}px;z-index:9999`;
+      col.append(d);
+      return b.getAttribute('aria-label') || b.getAttribute('data-testid') || b.textContent!.trim();
+    });
+    const { crowded } = await small(page);
+    expect(crowded.some((c) => c.includes(name.slice(0, 30)) && c.endsWith('covered by div'))).toBe(
+      true
+    );
   });
 
   // One editor per page: below md an editor opens in its kind's sheet, over the other kinds.
