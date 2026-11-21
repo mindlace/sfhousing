@@ -1,0 +1,907 @@
+<article>
+  <header>
+    <h1>The detail column and money plan</h1>
+    <p>Slice 7 of the information design review: at rest the detail column on <code>/sim</code> shows what has happened up to the playhead; the headline opens Details in place of Results on <code>/sim</code> and on Paint; the second chart goes and the one chart gains views; empty kinds say what they add; a pool's bar shows its money draining.</p>
+    <aside data-kind="note"><strong>For agentic workers</strong> REQUIRED SUB-SKILL: use superpowers:subagent-driven-development to implement this plan task by task. Steps are checklist items; progress is kept in the workspace ledger, not in the plan.</aside>
+    <aside data-kind="warning"><strong>Read before executing</strong> Line numbers were taken on <code>d5fa24e0</code> (main after slices 1 to 6) and go stale as tasks land: every place is also named by function, component, snippet or test title. Locate by those. <a href="#sec-open-questions">Open questions</a> has two items, each with a recommendation; the plan executes on the recommendations unless the owner says otherwise.</aside>
+  </header>
+
+  <section id="sec-overview">
+    <h2>Overview</h2>
+    <dl>
+      <dt>Goal</dt>
+      <dd>On <code>/sim</code> and <code>/s/&lt;id&gt;</code> the detail column at rest is <strong>Activity</strong>: the latest stage changes citywide up to the playhead (what, how many homes, where, marked when under the person's policy), the totals so far, cost while a Public money policy is in force, and a Details button; at today it names the goal and, with nothing in force, offers three starter policies. Pressing the headline opens <strong>Details</strong> (the numbers behind the effect) in place of Results, on <code>/sim</code> and on Paint (<code>/</code>, <code>/p/&lt;id&gt;</code>). Results' second chart goes; Details switches what the one timeline chart plots (homes, by source, your policy's effect). The goal rows read the header's date at today, say when they hold at the deadline, and date the buffer; nothing in Details says "RHNA". Empty kinds say what they add. A pool's bar in the Public money rows shows the share of its money still free, drawn up to the playhead.</dd>
+      <dt>Architecture</dt>
+      <dd>All page work. New pure modules beside the components they feed: <code>goal.ts</code> gains the goal rows; <code>chart-model.ts</code> a lens; <code>src/lib/timeline/activity.ts</code> an event index over a page-side <code>CityStore</code> fed by the same <code>TimelineUpdate</code>s <code>TimelineMode</code> already forwards to the map; <code>places.ts</code> names a neighbourhood from the published <code>neighborhoods.geojson</code>; <code>pool-level.ts</code> reads pool levels from the money series the view already carries. <code>SimResults</code> becomes <code>SimDetails</code>; a new <code>SimActivity</code> takes the rest face; <code>PaintDetails</code> replaces the hashed <code>ScoreboardPanel</code> on the Paint pages. No worker, engine or hashed file changes; no dataset upload.</dd>
+      <dt>Tech Stack</dt>
+      <dd>SvelteKit 2, Svelte 5 runes, TypeScript, Tailwind 4, Vitest (server project for <code>*.spec.ts</code>, client project for <code>*.svelte.spec.ts</code>), Playwright, axe through <code>expectNoA11yViolations</code>.</dd>
+      <dt>Spec</dt>
+      <dd><a href="../specs/2026-11-17-information-design-review-design.html"><code>docs/superpowers/specs/2026-11-17-information-design-review-design.html</code></a>, row 7 of <a href="../specs/2026-11-17-information-design-review-design.html#tbl-slices">Order of work</a> ("Activity up to the playhead, Details in place of Results, worded empty rows, pools that drain." Needs first: slices 2 and 3; the full activity list needs slice 6). Governing parts: the ranking rule and tiers (<code>tbl-tiers</code>), the inventory rows that send items to Details or the activity panel (<code>tbl-inv-sim-outcome</code>, <code>tbl-inv-sim-controls</code>, <code>tbl-inv-paint</code>), the header's press (<code>sec-prop-header</code>), the one chart's views (<code>sec-prop-chart</code>), the activity panel (<code>sec-prop-now</code>), public money on the timeline (<code>sec-prop-money</code>), Paint (<code>sec-prop-paint</code>: "Results stop being a hidden face"), Revealing time (<code>sec-prop-reveal</code>), One vocabulary (<code>tbl-words</code>), What comes straight after (<code>sec-next-work</code>), Decided (one clock, today is the start, the reveal rule, current law, the headline starts at zero, public money, the detail column at rest), and every "for slice 7" item of Carried forward (<code>sec-carried</code>).</dd>
+      <dt>Assumes</dt>
+      <dd>Slices 1 to 6 have landed (<code>d5fa24e0</code>): the header headline and <code>goal.ts</code> (slice 2), the zones and <code>reveal.ts</code> (slice 3), Paint's headline and the dock (slice 4), the key's tally (slice 5), the citywide feed <code>TimelineUpdate.city</code> and <code>CityStore</code> (slice 6, <code>src/lib/map/types.ts:63-96</code>, <code>src/lib/map/timelapse/city.ts:244-330</code>).</dd>
+    </dl>
+  </section>
+
+  <section id="sec-scope">
+    <h2>Scope and size</h2>
+    <ul>
+      <li><strong>In:</strong> slice 7's row, all of it, and the four "for slice 7" items of Carried forward: the Results chart as a second chart (it goes; Task 4), the target rows (Task 1), the headline opening Results on <code>/sim</code> (Task 4) and on Paint, where Results says "RHNA" (Task 2), the activity list over the citywide store (Task 6).</li>
+      <li><strong>Out:</strong> items marked for slice 8 (shared button, card, chip; the header's Updating lag; phone row names), slice 9 (About, credits) and "your call" (Start over on Paint); levels and unlocks; any change to the finance model or the engine's numbers (the owner's next project); moving the protection line into the protection policy's editor (in the inventory, not in row 7: it stays in Details).</li>
+      <li><strong>Size.</strong> Seven tasks of work plus the suite pass. It fits one branch. If the owner wants two pull requests, the clean cut is after Task 4: <strong>7a</strong> (Tasks 1 to 4: goal rows, Paint Details, the chart's views, <code>/sim</code> Details) and <strong>7b</strong> (Tasks 5 to 7: Activity, its list, pools that drain), each followed by Task 8. Nothing in 7a depends on 7b. Recommendation: one branch; the cut is there if review load needs it.</li>
+    </ul>
+  </section>
+
+  <section id="sec-global-constraints">
+    <h2>Global Constraints</h2>
+    <ul>
+      <li><strong>Hashed paths are read-only.</strong> Editing any file under <code>PATHS</code> (<code>pipeline/lib/version.ts:42-53</code>: <code>pipeline</code>, <code>src/lib/data</code>, <code>src/lib/generator</code>, <code>src/lib/timelapse</code>, <code>src/lib/plan/geometry.ts</code>, <code>src/lib/plan/types.ts</code>, <code>src/lib/sim/scenario</code>, <code>src/lib/sim/levers</code>, <code>src/lib/sim/finance</code>, <code>src/lib/scoreboard</code>), spec files included, forces a dataset upload, which is the owner's alone. Every file this plan creates, edits or deletes is outside them (<a href="#tbl-files">File Structure</a>; <code>src/lib/map/timelapse/</code> is not <code>src/lib/timelapse/</code>). Imports from them are fine: <code>ScoreboardPanel</code>, <code>TargetRow</code> and <code>M1_TARGETS</code> stay as they are (they still say "RHNA"; this slice stops rendering them, it does not edit them); <code>NeighborhoodList</code>, <code>remainderText</code>, <code>trackMax</code>, <code>fillPercent</code>, <code>tickPercent</code>, <code>footnoteLead</code>, <code>parseNeighborhoods</code>, <code>formatCount</code> are imported. If a change there seems unavoidable, stop and raise it.</li>
+      <li>Nothing under <code>src/lib/sim/</code> and nothing under <code>src/lib/map/</code> changes: the activity index keeps its own <code>CityStore</code> instance on the page (Task 6), so <code>SimMapHandle</code> and the controller are untouched.</li>
+      <li><strong>Shared surfaces.</strong> <code>/lesscars</code> imports none of the files this plan changes (checked: no import of <code>src/lib/timeline/</code>, <code>src/lib/goal/</code>, <code>src/lib/dock/</code> or <code>SimResults</code>); it must stay unchanged, and <code>e2e/lesscars.spec.ts</code> must pass untouched. The map goldens (<code>e2e/map.spec.ts-snapshots/</code>) must not change.</li>
+      <li>All work in this worktree. Run <code>cd</code> and <code>git</code> as plain single commands, never chained (<code>cd … &amp;&amp; cmd</code>). Run everything in the foreground. Report once, at the end of each task.</li>
+      <li>Conventional Commits, messages as <code>-m</code> flags. <code>git add</code> named files only. No Claude attribution anywhere: no <code>Co-Authored-By</code> trailers, no generated-by notes in code, docs or commits.</li>
+      <li>Code style: 2-space indent, single quotes, no trailing commas, 100 columns (Prettier and ESLint). Svelte 5 runes only.</li>
+      <li>Vitest runs with <code>expect.requireAssertions</code>: every test calls <code>expect</code>. No test writes to stderr: a <code>console.warn</code> or <code>console.error</code> a test does not assert fails signoff.</li>
+      <li>A spec that mounts a component with <code>Explain</code> popovers (Details, Activity, the goal rows' hosts) starts with the pointer at rest: after render, hover a neutral element and assert no <code>tooltip</code> is in the document, as <code>renderChart</code> does (<code>src/lib/fzp/ScoreChart.svelte.spec.ts:48-53</code>; that file is deleted in Task 4, so copy the pattern into each new spec as <code>renderAtRest</code>).</li>
+      <li><strong>Timing rule</strong>, for every spec, helper and fix round: no <code>setTimeout</code> or <code>setInterval</code> (even zero-length), no <code>waitForTimeout</code>, fixed sleeps, raised timeouts or retries in tests; wait on readiness signals (web-first assertions, <code>expect.poll</code>, events, attributes, <code>window.__sfhFzp</code>). A flaky test is a defect. After the last commit of every task run <code>npx chreode timing-check --head HEAD</code> and see it clean. Every changed e2e spec is re-run with <code>--repeat-each=5 --retries=0</code>.</li>
+      <li>Port 4173 belongs to another session: never start, stop or kill whatever holds it. Playwright runs on <code>SFH_E2E_PORT=4180</code>.</li>
+      <li>WCAG 2.2 AA on every changed surface, light and dark (<code>docs/dev/accessibility.md</code>, <code>e2e/chrome-dark.spec.ts</code>). Every new colour pairing uses existing tokens; new themed files are appended to the themed-files list in <code>src/lib/shell/accent.spec.ts</code>. Colour is never the only cue: the policy mark in the list is a glyph with words for assistive technology, the pool level is a shape with its percentage in the bar's name, the chart's views each name their lines in the legend. Real named controls: every new control is a <code>button</code> or a radio in a <code>fieldset</code> with a <code>legend</code>. Targets at least 24 px, 44 px on a coarse pointer. No horizontal scroll at 320 or 375 px.</li>
+      <li><strong>Reduced motion:</strong> nothing added animates; the level fill and the list change in steps with the playhead.</li>
+      <li><strong>One clock and the reveal rule.</strong> Every number on the main screen and in Activity reads the playhead's month under the headline's rule (<code>playheadAt</code>, <code>src/lib/timeline/results.ts:83-85</code>: TODAY at the dataset date); nothing in Activity names an event after the playhead's day or at or before today; the pool levels draw shown to the playhead, seen (dimmed) to the furthest date reached, nothing past it, like <code>ChartRow</code>. Details' goal rows, money and tier blocks read the playhead's month; its table stops at it.</li>
+      <li><strong>Words.</strong> "homes", never "units"; no "RHNA" or "FZP" in any string added or changed; "current law" for the baseline; the goal is <code>GOAL.name</code> ("State target"), never a target id or label. Copy is terse: every visible string is in <a href="#tbl-strings">The strings</a>, each under 12 words, no "it is not X" disclaimers. The 12-words-at-rest checks (<code>src/lib/timeline/rest-text.svelte.spec.ts</code>, <code>src/routes/page.rest-text.svelte.spec.ts</code>) must pass at rest, with Activity, and with Details open.</li>
+      <li><strong>Status apart from controls.</strong> Nothing in the Activity or Details headings changes with the playhead; the counts and the list live in the body. No new live region: the numbers change too often to speak (as the header's text).</li>
+      <li><strong>Money is presented, not modelled.</strong> Every money figure comes from <code>TimelineView.money</code> as the engine reports it (<code>src/lib/sim/world/score/types.ts:46-62</code>). Nothing here changes what a pool receives, commits or spends. No money figure gets a permanent main-screen place: cost shows in Activity only while a Public money policy is in force (<code>sec-next-work</code>).</li>
+      <li><strong>Performance.</strong> Nothing per animation frame in proportion to projects, events or months; <code>setTime</code> is untouched. The activity index sorts its events at most once per changed store, lazily, on the next read; a read is a binary search plus the few items listed (<code>O(log n + ACTIVITY_LIMIT)</code>). Level paths are built once per view, policy set and span; as the day moves only clip widths change (as <code>ChartRow</code>). Tests guard structure (sort counts, rebuild counts), never wall clock. No <code>npm run test:perf</code> or <code>npm run bench:map</code> inside a task.</li>
+      <li>Docs under <code>docs/dev/</code> that describe changed behaviour are updated in the task that changes it.</li>
+      <li>Test commands: <code>npx vitest --run --project server &lt;file&gt;</code> for <code>*.spec.ts</code>, <code>npx vitest --run --project client &lt;file&gt;</code> for <code>*.svelte.spec.ts</code>, <code>SFH_E2E_PORT=4180 npx playwright test &lt;file&gt; --project=chromium --project=mobile</code>.</li>
+      <li><strong>Screenshots</strong> are taken with a temporary Playwright spec on port 4180 (fixture-0), saved to the session scratchpad, opened and looked at, and the spec deleted before the commit. The standard set: <code>/sim</code> at 1280x800 light, 1280x800 dark (<code>colorScheme: 'dark'</code>) and 375x812, after <code>waitFilled</code>, at the state each task names. A task that changes something already on screen takes the same view on <code>main</code>'s build first (before) and on the branch (after).</li>
+      <li>Task order: Task 1 first (Tasks 2 and 4 use its rows). Task 3 before Task 4 (Details switches the lens). Task 4 before Task 5 (Activity takes the rest face from Details). Task 6 needs Task 5's panel. Task 7 needs only Task 4's page state and can run after it. Run them in order.</li>
+    </ul>
+  </section>
+
+  <section id="sec-strings">
+    <h2>The strings</h2>
+    <table id="tbl-strings">
+      <caption>Every visible or spoken string this slice adds or changes</caption>
+      <thead>
+        <tr><th scope="col">Where</th><th scope="col">Text</th><th scope="col">Defined in</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">Goal row label (<code>/sim</code> Details, Paint Details)</th><td><code>State target</code> (<code>GOAL.name</code>); buffer row <code>State target + 15%</code></td><td><code>goalRows</code>, <code>capacityRows</code>, <code>src/lib/goal/goal.ts</code></td></tr>
+        <tr><th scope="row">Goal row, under the meter</th><td><code>73,346 to go</code> / <code>1,234 over target</code> (<code>remainderText</code>, unchanged); on <code>/sim</code> before the deadline's month <code>73,346 to go by Jan 2031</code>; from it <code>Held at Jan 2031</code> after the remainder</td><td><code>goalRowNote</code>, <code>goal.ts</code></td></tr>
+        <tr><th scope="row">Goal row, the preview line (<code>/sim</code>, once reached, before the deadline's month)</th><td><code>At the deadline: 74%</code> (replaces "At the deadline (Jan 31, 2031): 74%")</td><td><code>atDeadlineText</code>, <code>goal.ts</code></td></tr>
+        <tr><th scope="row">Paint dock: handle, region name, rail button</th><td><code>Details</code> (was "Results")</td><td><code>Dock.svelte</code></td></tr>
+        <tr><th scope="row">Paint Details, the counts line</th><td><code>1,204 built · 310 replaced · 42 lots changed</code> (<code>1 lot</code> when one)</td><td><code>paintCounts</code>, <code>src/lib/paint/details.ts</code></td></tr>
+        <tr><th scope="row">Paint Details, disclosure</th><td><code>What room for homes means</code>; inside, two lines: <code>Every eligible lot you painted, rebuilt to its height at once.</code> and <code>Homes in replaced buildings are subtracted.</code></td><td><code>ROOM_MEANS</code>, <code>details.ts</code></td></tr>
+        <tr><th scope="row">Paint Details, unchanged lines kept</th><td><code>Paint a height on the map to add homes.</code>, <code>Updating…</code>, the failed-areas line and Retry, <code>By neighborhood</code>, the data footnote</td><td>moved from <code>ScoreboardPanel</code></td></tr>
+        <tr><th scope="row"><code>/sim</code> Details heading and its button</th><td><code>Details</code> (h2); button <code>Activity</code></td><td><code>SimDetails.svelte</code></td></tr>
+        <tr><th scope="row">Details, the chart switch</th><td>legend <code>Chart</code>; radios <code>Homes</code>, <code>By source</code>, <code>From your policy</code> (the last only while a policy is in force)</td><td><code>LENS_NAME</code>, <code>src/lib/timeline/copy.ts</code></td></tr>
+        <tr><th scope="row">Chart legend, lens <code>source</code></th><td><code>All homes</code>, <code>From today's pipeline</code>, <code>New projects</code> (the gap), then <code>Goal</code></td><td><code>ChartLegend.svelte</code></td></tr>
+        <tr><th scope="row">Chart legend, lens <code>effect</code></th><td><code>From your policy</code> (a line)</td><td><code>ChartLegend.svelte</code></td></tr>
+        <tr><th scope="row">Chart readout, lens <code>source</code> / <code>effect</code></th><td><code>1,234 homes by Apr 2040, 800 from today's pipeline</code> / <code>+56 from your policy by Apr 2040</code> (<code>by today</code> at position 0)</td><td><code>chartReading</code>, <code>results.ts</code></td></tr>
+        <tr><th scope="row">Chart caption (sr-only), lens <code>source</code> / <code>effect</code></th><td><code>Homes completed from today, by month, and those from today's pipeline. The shaded gap is new projects.</code> then the goal and slider sentences as today / <code>Homes from your policy against current law, by month.</code> then the slider sentence</td><td><code>chartCaption</code>, <code>copy.ts</code></td></tr>
+        <tr><th scope="row">Details rows (renamed)</th><td><code>From today's pipeline</code>, <code>New projects</code> (were "Simulated, from today's pipeline", "Simulated, new projects not yet in today's pipeline")</td><td><code>SimDetails.svelte</code></td></tr>
+        <tr><th scope="row">Details, table</th><td>toggle <code>Show as table</code>; caption <code>Homes by year, from today</code>; columns <code>Year</code>, <code>Homes</code>, <code>From today's pipeline</code>, <code>New projects</code>, <code>From your policy</code> (only in force)</td><td><code>YEAR_COLUMNS</code>, <code>src/lib/timeline/details.ts</code></td></tr>
+        <tr><th scope="row">Activity heading and its button</th><td><code>Activity</code> (h2); button <code>Details</code></td><td><code>SimActivity.svelte</code></td></tr>
+        <tr><th scope="row">Activity at today</th><td><code>goalName(GOAL)</code>: <code>State target: 82,069 homes by Jan 2031</code>; with nothing in force and editable: <code>Try one:</code> then buttons <code>Taller near transit</code>, <code>SB 423 approval clock</code>, <code>A housing bond</code>; otherwise <code>Press Play to see what gets built.</code></td><td><code>ACTIVITY_COPY</code>, <code>STARTERS</code>, <code>src/lib/timeline/activity-view.ts</code></td></tr>
+        <tr><th scope="row">Activity totals (a <code>dl</code>, after today)</th><td><code>Approved</code>, <code>Completed</code>, <code>Stopped</code>, <code>Affordable</code>, then <code>From your policy</code> (in force); then <code>Public money spent</code> and <code>Per added home</code> (<code>no homes added yet</code> when none) while a Public money policy is in force</td><td><code>ACTIVITY_COPY</code></td></tr>
+        <tr><th scope="row">Activity list</th><td>heading <code>Latest</code>; item <code>120 homes approved</code> / <code>120 homes started</code> / <code>120 homes completed</code>, then <code>Mission · Mar 2031</code> (place left out when unknown); policy mark <code>◆</code> (aria-hidden) with sr-only <code>Under your policy</code>; empty: <code>No stage changes yet.</code></td><td><code>eventText</code>, <code>activity-view.ts</code></td></tr>
+        <tr><th scope="row">Empty kind's lane (closed, no policy, editable)</th><td><code>Add a zoning change</code>, <code>Add a permitting change</code>, <code>Add public money</code></td><td><code>EMPTY_LANE</code>, <code>src/lib/timeline/rows.ts</code></td></tr>
+        <tr><th scope="row">A pool's bar, accessible name suffix</th><td><code>, 62% left</code> at the playhead's month, only where a level is drawn there</td><td><code>levelLeft</code>, <code>src/lib/timeline/pool-level.ts</code></td></tr>
+        <tr><th scope="row">Announcement after a starter</th><td><code>Added: Transit rule</code> / <code>Added: SB 423 approval clock</code> / <code>Added: A housing bond</code> (the add menu's labels, as the Inspector announces today)</td><td><code>STARTERS[k].label</code></td></tr>
+      </tbody>
+    </table>
+    <p>Removed: Results' second chart and its legend, "Toward the goal, since Jun 2022", the "Homes in projects still in progress" rows (the map key carries them, slice 5), the Paint panel's badge "Theoretical max buildout", its repeated headline "N net new homes" and its RHNA paragraph.</p>
+  </section>
+
+  <section id="sec-decisions">
+    <h2>Decided from the spec and the code</h2>
+    <aside data-kind="decision"><strong>Rest face is Activity; the headline and Activity's button open Details</strong> Decided ("the detail column at rest shows activity"; <code>sec-prop-header</code>: "Pressing the headline opens Details"). From md the column shows Activity whenever no editor, menu or draft is open; below md the sheet opens on the headline press with Details, and Details' <code>Activity</code> button shows Activity in the sheet.</aside>
+    <aside data-kind="decision"><strong>The second chart goes; its content survives as lenses</strong> <code>sec-prop-chart</code>: "Details can switch what it plots: by source … or the policy's effect alone. The second chart's content survives as views of this one." The published estimates are already listed in the Sources dialog ("Targets and published estimates", <code>src/lib/fzp/provenance.ts:480-493</code>), which slice 9 turns into About's Assumptions, so dropping the dotted overlay loses no source. "Plan effect (approved)" survives as the Details row "Homes approved because of your policy" and the table.</aside>
+    <aside data-kind="decision"><strong>Paint gets its own Details component</strong> <code>ScoreboardPanel</code> and <code>TargetRow</code> are hashed (<code>src/lib/scoreboard</code>); the "RHNA" words live in them and in <code>M1_TARGETS</code>. <code>PaintDetails</code> (outside the hashed paths) replaces <code>ScoreboardPanel</code> on <code>/</code> and <code>/p/&lt;id&gt;</code>; the hashed files stay, unrendered.</aside>
+    <aside data-kind="decision"><strong>The level is the share of money received that is still free</strong> For a capped pool at month <code>i</code>: <code>(leverage × received − committed − spent − out − lostCredit) / (leverage × received)</code>, clamped to [0, 1], which is finance-score's identity I4 (<code>docs/dev/finance-score.md</code>, "Identities") over what has arrived. No level before the first arrival (received 0) or for an uncapped pool (<code>sec-prop-money</code>: "an uncapped pool has no level to show"). A once pool (the housing bond) starts full and drains; a yearly pool tops up at each arrival, which is how the engine pays (memory: funding arrives yearly on purpose). See Open question 1.</aside>
+  </section>
+
+  <section id="sec-measures">
+    <h2>What to measure</h2>
+    <p>Not measured while planning. Each task that changes layout measures with a temporary Playwright spec (port 4180, fixture-0, signed out, after <code>waitFilled</code>), records boxes <code>[x, y, w, h]</code> in its report, and deletes the spec:</p>
+    <ul>
+      <li>Task 4: the detail column's box at 1024x800 and 1280x800 (it is at least 22 rem, <code>docs/dev/sim-page.md</code> Layout item 2), and whether Details scrolls inside it; the sheet's top and height at 375x812 with Details open.</li>
+      <li>Task 5: Activity's height at rest at 1280x800 at today and mid-play (Day &gt; asOf + 2000), so the list's limit (<code>ACTIVITY_LIMIT</code>, 6) fits the column without scrolling at 900 px tall; if it does not, lower the limit to what fits and say so.</li>
+      <li>Task 7: the Public money rows open at 1280x800 with the housing bond added, the bar's height (20 px, <code>FixedRow.svelte</code> <code>.bar</code>) and that the setting text stays readable over the level fill in light and dark (contrast of the text against the darkest fill, by token values).</li>
+    </ul>
+  </section>
+
+  <section id="sec-review-focus">
+    <h2>Review Focus</h2>
+    <ol>
+      <li><strong>Scrubbing back across stage changes, and dragging forward past many.</strong> Expected: the list never names an event after the playhead's day or on or before today, newest first, at most <code>ACTIVITY_LIMIT</code>; dragging back drops the later ones at once; a read never sorts. Tests: <a href="#t6-s1">t6-s1</a> ("recent: only events after today and at or before the day, newest first…", "a read after a read sorts nothing").</li>
+      <li><strong>An edit that rewinds the city</strong> (a delta with <code>from</code>, or a revision 0 without <code>city</code>). Expected: events of forgotten rows leave the list; a revision 0 replaces the index whole and without <code>city</code> empties it. Tests: <a href="#t6-s1">t6-s1</a> ("a delta with from forgets…", "revision 0 without city clears").</li>
+      <li><strong>Opening at today on a document with a policy in force</strong> (a restored autosave or a shared link). Expected: Activity names the goal and says "Press Play to see what gets built.", no starters; on <code>/s/&lt;id&gt;</code> never starters. Tests: <a href="#t5-s1">t5-s1</a> ("at today with a policy in force: the goal and Press Play, no starters", "read-only: no starters and no empty-lane words").</li>
+      <li><strong>An edit while numbers are stale.</strong> Expected: Activity's totals, cost and Details read the held view and the held document's wording (<code>resultsDoc</code>), dimmed; cost does not appear before the money policy's numbers do. Tests: <a href="#t5-s1">t5-s1</a> ("stale: totals and cost are the held document's, dimmed").</li>
+      <li><strong>A pool with nothing yet, an uncapped pool, a pool run dry.</strong> Expected: no level path and no name suffix before the first arrival or for an uncapped pool; no <code>NaN</code> in any path; a dry pool draws an empty fill from that month and reads ", 0% left". Tests: <a href="#t7-s1">t7-s1</a> ("poolLevel: NaN before the first arrival…", "levelPath never writes NaN…", "levelLeft: 0% left for a dry pool").</li>
+    </ol>
+  </section>
+
+  <section id="sec-file-structure">
+    <h2>File Structure</h2>
+    <p>Every file below is outside the hashed <code>PATHS</code>.</p>
+    <table id="tbl-files">
+      <caption>Files by task and what each owns</caption>
+      <thead>
+        <tr><th scope="col">Area</th><th scope="col">Files</th><th scope="col">Task</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">Goal rows</th><td>Modify <code>src/lib/goal/goal.ts</code>, <code>goal.spec.ts</code>; create <code>src/lib/goal/GoalRow.svelte</code>, <code>GoalRow.svelte.spec.ts</code>; modify <code>src/lib/fzp/SimResults.svelte</code>, <code>SimResults.svelte.spec.ts</code>, <code>src/lib/shell/accent.spec.ts</code>; docs <code>timeline-ui.md</code></td><td>1</td></tr>
+        <tr><th scope="row">Paint Details</th><td>Create <code>src/lib/paint/PaintDetails.svelte</code>, <code>PaintDetails.svelte.spec.ts</code>, <code>src/lib/paint/details.ts</code>, <code>details.spec.ts</code>; modify <code>src/routes/+page.svelte</code>, <code>src/routes/p/[id]/+page.svelte</code>, <code>src/lib/dock/Dock.svelte</code>, <code>Dock.svelte.spec.ts</code>, <code>src/routes/page.view.svelte.spec.ts</code>, <code>src/routes/p/[id]/page.view.svelte.spec.ts</code>, <code>src/routes/page.svelte.spec.ts</code>, <code>src/routes/page.rest-text.svelte.spec.ts</code>, <code>e2e/scoreboard.spec.ts</code>, <code>accent.spec.ts</code>; docs <code>developing.md</code>, <code>plan-sharing.md</code></td><td>2</td></tr>
+        <tr><th scope="row">The one chart's lenses</th><td>Modify <code>src/lib/timeline/chart-model.ts</code> and spec, <code>ChartRow.svelte</code> and spec, <code>ChartLegend.svelte</code>, <code>results.ts</code>, <code>results.spec.ts</code>, <code>copy.ts</code>, <code>copy.spec.ts</code>; docs <code>timeline-ui.md</code></td><td>3</td></tr>
+        <tr><th scope="row"><code>/sim</code> Details</th><td>Move <code>src/lib/fzp/SimResults.svelte</code> to <code>src/lib/timeline/SimDetails.svelte</code> (and its spec); create <code>src/lib/timeline/details.ts</code>, <code>details.spec.ts</code>; delete <code>src/lib/fzp/ScoreChart.svelte</code>, <code>ScoreChart.svelte.spec.ts</code>; modify <code>TimelineMode.svelte</code> and spec, <code>src/lib/sim-page/SimPage.svelte</code> and spec, <code>rest-text.svelte.spec.ts</code>, <code>accent.spec.ts</code>; e2e <code>sim.spec.ts</code>, <code>sim-funding.spec.ts</code>, <code>sim-share.spec.ts</code>, <code>chrome-dark.spec.ts</code>, <code>layout.spec.ts</code>, <code>fzp.spec.ts</code>, <code>helpers/sharing.ts</code>; create <code>e2e/sim-details.spec.ts</code>; docs <code>timeline-ui.md</code>, <code>sim-page.md</code>, <code>fzp-mode.md</code>, <code>sim-funding.md</code>, <code>market.md</code></td><td>4</td></tr>
+        <tr><th scope="row">Activity, starters, worded lanes</th><td>Create <code>src/lib/timeline/activity-view.ts</code>, <code>activity-view.spec.ts</code>, <code>SimActivity.svelte</code>, <code>SimActivity.svelte.spec.ts</code>; modify <code>rows.ts</code>, <code>rows.spec.ts</code>, <code>KindRow.svelte</code>, <code>Timeline.svelte.spec.ts</code>, <code>TimelineMode.svelte</code> and spec, <code>SimPage.svelte</code> and spec, <code>rest-text.svelte.spec.ts</code>, <code>accent.spec.ts</code>; create <code>e2e/sim-activity.spec.ts</code>; docs <code>timeline-ui.md</code>, <code>sim-page.md</code></td><td>5</td></tr>
+        <tr><th scope="row">The activity list</th><td>Create <code>src/lib/timeline/activity.ts</code>, <code>activity.spec.ts</code>, <code>src/lib/timeline/places.ts</code>, <code>places.spec.ts</code>; modify <code>activity-view.ts</code> and spec, <code>SimActivity.svelte</code> and spec, <code>TimelineMode.svelte</code> and spec, <code>src/lib/timeline/test/fake-timeline-worker.ts</code> (<code>cellsMsg</code>), <code>e2e/sim-activity.spec.ts</code>; docs <code>timeline-ui.md</code>, <code>map-interfaces.md</code> (one line: the page keeps a second <code>CityStore</code>)</td><td>6</td></tr>
+        <tr><th scope="row">Pools that drain</th><td>Create <code>src/lib/timeline/pool-level.ts</code>, <code>pool-level.spec.ts</code>, <code>src/lib/timeline/LevelFill.svelte</code>, <code>LevelFill.svelte.spec.ts</code>; modify <code>Timeline.svelte</code> and spec, <code>KindRow.svelte</code>, <code>PolicyRow.svelte</code>, <code>SpanBar.svelte</code>, <code>FixedRow.svelte</code>, <code>TimelineMode.svelte</code> and spec; create <code>e2e/sim-pools.spec.ts</code>; docs <code>timeline-ui.md</code>, <code>sim-funding.md</code></td><td>7</td></tr>
+        <tr><th scope="row">Whole-suite pass</th><td>Whatever the full runs turn up</td><td>8</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="sec-task-1">
+    <h2>Task 1: Goal rows that say their date</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/lib/goal/goal.ts</code> (after <code>goalStep</code>, <code>:105-117</code>). Test: <code>src/lib/goal/goal.spec.ts</code> (server).</li>
+      <li>Create: <code>src/lib/goal/GoalRow.svelte</code> (the meter row, from <code>TargetRow.svelte</code>'s markup without its target label). Test: <code>GoalRow.svelte.spec.ts</code> (client).</li>
+      <li>Modify: <code>src/lib/fzp/SimResults.svelte</code>: <code>deadline</code>, <code>rows</code>, <code>max</code> (<code>:99-122</code>) and the target block (<code>:191-201</code>) render <code>GoalRow</code> over <code>goalRows</code>; it takes the header's <code>PlayheadAt</code> and the reached month. <code>TimelineMode.svelte</code>'s <code>results</code> snippet (<code>:1213-1242</code>) passes them. Test: <code>SimResults.svelte.spec.ts</code>.</li>
+      <li>Modify: <code>src/lib/shell/accent.spec.ts</code> (themed files: <code>GoalRow.svelte</code>).</li>
+      <li>Docs: <code>docs/dev/timeline-ui.md</code> (the chart row's Results paragraph: the target rows).</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>readGoal</code>, <code>TODAY</code>, <code>goalStep</code> (<code>goal.ts:78-117</code>); <code>remainderText</code>, <code>trackMax</code>, <code>fillPercent</code>, <code>tickPercent</code> (<code>src/lib/scoreboard/view.ts</code>, import only); <code>formatShortMonthYear</code>.</li>
+      <li>Produces:
+        <pre><code data-lang="ts">// src/lib/goal/goal.ts
+export const BUFFER_SHARE = 0.15;
+/** floor(goal.amount × (1 + BUFFER_SHARE)): 94,379 for the state target (M1_TARGETS' buffer). */
+export function bufferAmount(goal: Goal): number;
+
+export interface GoalRowData {
+  id: 'goal' | 'buffer';
+  label: string; // goal.name | `${goal.name} + 15%`
+  amount: number;
+  value: number; // the measure the row reads
+  fraction: number; // value / amount, uncapped
+  /** The remainder's suffix or note (goalRowNote); null on Paint. */
+  note: string | null;
+  /** The fraction at the deadline's month, shown only while the playhead is before it and the
+   *  furthest month reached is at or past it; else null. */
+  atDeadline: number | null;
+}
+
+/**
+ * /sim's two rows at the playhead, under the header's rule: at today both read TODAY (so the
+ * goal row is the header's percentage exactly); otherwise month min(index, deadline month). The
+ * goal row's fraction is readGoal's. Null when readGoal is (month not filled).
+ */
+export function goalRows(
+  goal: Goal,
+  view: TimelineView,
+  at: { index: number; atToday: boolean },
+  reachedMonth: number
+): GoalRowData[] | null;
+
+/** Paint's two rows: capacity `net` over each amount; no note, no atDeadline. */
+export function capacityRows(net: number, goal?: Goal): GoalRowData[];
+
+/** 'by Jan 2031' before the deadline's month, 'Held at Jan 2031' from it on (and at today: 'by …'). */
+export function goalRowNote(goal: Goal, index: number, deadlineIndex: number | null, atToday: boolean): string | null;
+
+/** 'At the deadline: 74%'. */
+export const atDeadlineText = (fraction: number): string;
+
+// src/lib/goal/GoalRow.svelte
+// props: { row: GoalRowData; max: number; primary: boolean }
+// data-testid="goal-row-{row.id}", data-primary; the meter: role="meter", aria-label=row.label,
+// aria-valuetext `${formatPercent(fraction)} of ${label}`; under it, remainderText(value, amount)
+// then ' ' + note when note starts with 'by', or a second muted line when it is 'Held at …';
+// then atDeadlineText(atDeadline) when atDeadline !== null.</code></pre>
+      </li>
+    </ul>
+    <ol>
+      <li id="t1-s1"><input type="checkbox"> Write the failing tests first.
+        <pre><code data-lang="ts">// src/lib/goal/goal.spec.ts
+it('bufferAmount is floor(amount × 1.15): 94,379 for the state target')
+it('goalRows at today reads TODAY for both rows, so the goal row equals readGoal(goal, view, TODAY)')
+  // month 0's value differs from TODAY's in the fixture view; the row's fraction is TODAY's
+it('goalRows before the deadline month: month index, note "by Jan 2031"')
+it('goalRows from the deadline month: both rows hold at the deadline month, note "Held at Jan 2031"')
+  // index = deadline + 5: value === valueAt(view, deadline) for both rows
+it('goalRows: atDeadline only while index &lt; deadline and reachedMonth &gt;= deadline')
+it('goalRows is null when the month is not filled')
+it('capacityRows: net over 82,069 and over 94,379, notes null, labels State target and State target + 15%')
+it('no row label or note contains RHNA')
+// src/lib/goal/GoalRow.svelte.spec.ts (renderAtRest)
+it('a meter named by the label, with the remainder and the note after it')
+it('a held row shows Held at Jan 2031 on its own muted line')
+it('the deadline preview line shows only when atDeadline is a number')
+// src/lib/fzp/SimResults.svelte.spec.ts
+it('at today the goal row reads the header\'s percentage, not month 0\'s')
+it('past the deadline the rows say Held at Jan 2031 and the buffer row is dated')
+it('no Results text contains RHNA')</code></pre>
+      </li>
+      <li id="t1-s2"><input type="checkbox"> Run them and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/goal/goal.spec.ts
+npx vitest --run --project client src/lib/goal/GoalRow.svelte.spec.ts src/lib/fzp/SimResults.svelte.spec.ts</code></pre>
+      </li>
+      <li id="t1-s3"><input type="checkbox"> Implement as in Interfaces. <code>SimResults</code> gains props <code>playhead: { index: number; atToday: boolean }</code> and <code>reachedMonth: number</code> (TimelineMode passes <code>{ index, atToday }</code> and its <code>reachedMonth</code>, <code>TimelineMode.svelte:420-422</code>) and drops its own <code>rows</code>, <code>max</code> and <code>deadlineLine</code> logic; <code>builtTowardGoalText</code> stays above the rows. Update <code>timeline-ui.md</code>'s target-rows sentences.</li>
+      <li id="t1-s4"><input type="checkbox"> Run the covering specs.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/goal/
+npx vitest --run --project client src/lib/goal/ src/lib/fzp/SimResults.svelte.spec.ts src/lib/timeline/TimelineMode.svelte.spec.ts src/lib/shell/accent.spec.ts
+SFH_E2E_PORT=4180 npx playwright test e2e/sim.spec.ts e2e/fzp-sim.spec.ts --project=chromium --project=mobile</code></pre>
+        <p>Screenshots: Results at 1280x800 light at today and with the playhead dragged past January 2031 (End), before on <code>main</code> and after, plus 1280 dark after.</p>
+      </li>
+      <li id="t1-s5"><input type="checkbox"> Commit, then check timing.
+        <pre><code data-lang="sh">git add src/lib/goal/goal.ts src/lib/goal/goal.spec.ts src/lib/goal/GoalRow.svelte src/lib/goal/GoalRow.svelte.spec.ts src/lib/fzp/SimResults.svelte src/lib/fzp/SimResults.svelte.spec.ts src/lib/timeline/TimelineMode.svelte src/lib/shell/accent.spec.ts docs/dev/timeline-ui.md
+git commit -m "fix(sim): goal rows read the header's date, say when they hold and date the buffer"
+npx chreode timing-check --head HEAD</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-2">
+    <h2>Task 2: Paint's headline opens Details</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Create: <code>src/lib/paint/details.ts</code> (<code>paintCounts</code>, <code>ROOM_MEANS</code>), test <code>details.spec.ts</code> (server); <code>src/lib/paint/PaintDetails.svelte</code>, test <code>PaintDetails.svelte.spec.ts</code> (client).</li>
+      <li>Modify: <code>src/routes/+page.svelte</code> (<code>results</code> snippet, <code>:166-168</code>) and <code>src/routes/p/[id]/+page.svelte</code> (<code>:119</code>): render <code>PaintDetails</code> in place of <code>ScoreboardPanel</code>; remove the <code>ScoreboardPanel</code> import.</li>
+      <li>Modify: <code>src/lib/dock/Dock.svelte</code>: the visible and accessible word "Results" becomes "Details" (<code>handleText</code> and the rail label, <code>:226-229</code>; the region's <code>aria-label</code>, <code>:305</code>; the rail button's <code>aria-label</code> and <code>title</code>, <code>:346-347</code>). <code>DockState</code>'s face id <code>'results'</code> and <code>showResults</code>/<code>toggleResults</code> keep their names (builder's call, below). Test: <code>Dock.svelte.spec.ts</code>.</li>
+      <li>Covering specs to update: <code>src/routes/page.view.svelte.spec.ts</code>, <code>src/routes/p/[id]/page.view.svelte.spec.ts</code>, <code>src/routes/page.svelte.spec.ts</code>, <code>src/routes/page.rest-text.svelte.spec.ts</code>, <code>e2e/scoreboard.spec.ts</code>; <code>src/lib/scoreboard/ScoreboardPanel.svelte.spec.ts</code> stays and passes unchanged (hashed). <code>accent.spec.ts</code> gains <code>PaintDetails.svelte</code>.</li>
+      <li>Docs: <code>docs/dev/developing.md</code> (the header score flips the dock to its Details face, <code>PaintDetails</code>), <code>docs/dev/plan-sharing.md</code> (<code>/p/&lt;id&gt;</code>'s dock).</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>capacityRows</code>, <code>GoalRow</code> (Task 1); <code>Score</code>, <code>ScoreStatus</code>, <code>viewState</code>, <code>neighborhoodRows</code>, <code>footnoteLead</code>, <code>oldPlanNote</code>, <code>NeighborhoodList</code> (hashed, import only).</li>
+      <li>Produces:
+        <pre><code data-lang="ts">// src/lib/paint/details.ts
+/** '1,204 built · 310 replaced · 42 lots changed' ('1 lot changed'). */
+export function paintCounts(score: Score): string;
+export const ROOM_MEANS: readonly [string, string];
+
+// src/lib/paint/PaintDetails.svelte
+// props: { score: Score; status: ScoreStatus; onretry?: () => void }
+// Order: Updating… (viewState.updating), the failed line and Retry, the empty line, the two
+// GoalRows (capacityRows(score.netUnits)), paintCounts, "By neighborhood" (when lots changed),
+// "What room for homes means" (details), the footnote (footnoteLead · Sources link, oldPlanNote).
+// No badge, no repeated headline, no RHNA paragraph.</code></pre>
+      </li>
+    </ul>
+    <aside data-kind="decision"><strong>Builder's call: the dock's face id stays <code>'results'</code></strong> Only the words change. Renaming the internal id touches <code>DockState</code>, <code>Dock</code>, <code>BrushEditor</code> and their specs for no change a person sees; the words are what the spec asks for.</aside>
+    <ol>
+      <li id="t2-s1"><input type="checkbox"> Write the failing tests first.
+        <pre><code data-lang="ts">// src/lib/paint/details.spec.ts
+it('paintCounts says lots, singular for one')
+it('ROOM_MEANS: two lines, each under 12 words, no RHNA')
+// src/lib/paint/PaintDetails.svelte.spec.ts (renderAtRest)
+it('shows the two goal rows at the headline\'s share: net over 82,069 and 94,379')
+it('names no RHNA and repeats no headline or badge')
+it('empty plan: the empty line and no counts')
+it('failed areas: the line and Retry calls onretry')
+// src/lib/dock/Dock.svelte.spec.ts
+it('the Details face is named Details on the handle, the region and the rail')
+// src/routes/page.view.svelte.spec.ts
+it('pressing the headline shows Details, with the goal rows')   // replaces the Results test
+// e2e/scoreboard.spec.ts: the existing Results flows now find region "Details"; RHNA absent</code></pre>
+      </li>
+      <li id="t2-s2"><input type="checkbox"> Run them and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/paint/details.spec.ts
+npx vitest --run --project client src/lib/paint/PaintDetails.svelte.spec.ts src/lib/dock/Dock.svelte.spec.ts src/routes/page.view.svelte.spec.ts</code></pre>
+      </li>
+      <li id="t2-s3"><input type="checkbox"> Implement as in Interfaces; update the two docs.</li>
+      <li id="t2-s4"><input type="checkbox"> Run the covering specs, then the e2e, the changed spec repeated.
+        <pre><code data-lang="sh">npx vitest --run --project client src/lib/paint/ src/lib/dock/ src/routes/ src/lib/scoreboard/ScoreboardPanel.svelte.spec.ts src/lib/shell/accent.spec.ts
+SFH_E2E_PORT=4180 npx playwright test e2e/scoreboard.spec.ts e2e/brush.spec.ts e2e/share-roundtrip.spec.ts e2e/share-states.spec.ts e2e/chrome-dark.spec.ts e2e/layout.spec.ts --project=chromium --project=mobile
+SFH_E2E_PORT=4180 npx playwright test e2e/scoreboard.spec.ts --project=chromium --project=mobile --repeat-each=5 --retries=0</code></pre>
+        <p>Screenshots: <code>/</code> with Details open after one stroke, at 1280 light (before and after), 1280 dark and 375 (the sheet at peek).</p>
+      </li>
+      <li id="t2-s5"><input type="checkbox"> Commit, then check timing.
+        <pre><code data-lang="sh">git add src/lib/paint/details.ts src/lib/paint/details.spec.ts src/lib/paint/PaintDetails.svelte src/lib/paint/PaintDetails.svelte.spec.ts src/routes/+page.svelte src/routes/p/[id]/+page.svelte src/lib/dock/Dock.svelte src/lib/dock/Dock.svelte.spec.ts src/routes/page.view.svelte.spec.ts src/routes/p/[id]/page.view.svelte.spec.ts src/routes/page.svelte.spec.ts src/routes/page.rest-text.svelte.spec.ts e2e/scoreboard.spec.ts src/lib/shell/accent.spec.ts docs/dev/developing.md docs/dev/plan-sharing.md
+git commit -m "feat(paint): the headline opens Details, with goal rows and no RHNA"
+npx chreode timing-check --head HEAD</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-3">
+    <h2>Task 3: The one chart's lenses</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/lib/timeline/chart-model.ts</code> (<code>ChartPoints</code>, <code>chartPoints</code>, <code>:10-25</code>). Test: <code>chart-model.spec.ts</code> (server).</li>
+      <li>Modify: <code>src/lib/timeline/results.ts</code> (<code>chartReading</code>, <code>:140-147</code>), <code>copy.ts</code> (<code>chartCaption</code>, <code>:98-116</code>; <code>LENS_NAME</code>). Tests: <code>results.spec.ts</code>, <code>copy.spec.ts</code>.</li>
+      <li>Modify: <code>src/lib/timeline/ChartRow.svelte</code> (prop <code>lens</code>; the goal step and its note drawn only when <code>lens !== 'effect'</code>), <code>ChartLegend.svelte</code> (prop <code>lens</code>, <code>:24-34</code>). Test: <code>ChartRow.svelte.spec.ts</code>.</li>
+      <li>Docs: <code>docs/dev/timeline-ui.md</code> (the chart row: lenses).</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>currentLawHomes</code>, <code>fromPolicyText</code>, <code>homesBy</code>.</li>
+      <li>Produces:
+        <pre><code data-lang="ts">// src/lib/timeline/chart-model.ts
+export type ChartLens = 'homes' | 'source' | 'effect';
+/** 'effect' without a policy in force falls back to 'homes'. */
+export function lensOf(lens: ChartLens, inForce: boolean): ChartLens;
+/**
+ * homes: as today (policy = completedNet; law = currentLawHomes while inForce).
+ * source: policy = completedNet; law = completedNetPipeline (the gap is new projects), any inForce.
+ * effect: policy = planEffect[i].completedNetNew; law = null. Position 0 is 0 in every lens.
+ */
+export function chartPoints(view: TimelineView, inForce: boolean, lens?: ChartLens): ChartPoints;
+
+// src/lib/timeline/results.ts
+export function chartReading(view: TimelineView, j: number, inForce: boolean, lens?: ChartLens): string;
+// src/lib/timeline/copy.ts
+export function chartCaption(inForce: boolean, goal: { units: number; deadline: Day } | null, lens?: ChartLens): string;
+export const LENS_NAME: Record&lt;ChartLens, string&gt;; // Homes, By source, From your policy
+
+// ChartRow.svelte: lens?: ChartLens = 'homes' (applied through lensOf); figure data-lens.
+// ChartLegend.svelte: lens?: ChartLens = 'homes'.</code></pre>
+      </li>
+    </ul>
+    <ol>
+      <li id="t3-s1"><input type="checkbox"> Write the failing tests first.
+        <pre><code data-lang="ts">// chart-model.spec.ts
+it('source: policy is completedNet, law is completedNetPipeline, with or without a policy')
+it('effect: one line of planEffect completedNetNew, no law; falls back to homes without a policy')
+it('runningMin keeps a negative effect inside the plot')
+// results.spec.ts
+it('chartReading source: "1,234 homes by Apr 2040, 800 from today\'s pipeline"')
+it('chartReading effect: "+56 from your policy by Apr 2040"; "+0 from your policy by today" at 0')
+// copy.spec.ts
+it('chartCaption names each lens\'s lines; effect names no goal')
+// ChartRow.svelte.spec.ts
+it('lens source: two lines and the gap, legend All homes, From today\'s pipeline, New projects, Goal')
+it('lens effect: one line, no goal step or note, legend From your policy')
+it('a lens change rebuilds the paths once; a day change rebuilds none')   // structural counter</code></pre>
+      </li>
+      <li id="t3-s2"><input type="checkbox"> Run them and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/timeline/chart-model.spec.ts src/lib/timeline/results.spec.ts src/lib/timeline/copy.spec.ts
+npx vitest --run --project client src/lib/timeline/ChartRow.svelte.spec.ts</code></pre>
+      </li>
+      <li id="t3-s3"><input type="checkbox"> Implement as in Interfaces. The legend stays at most four entries (source with the goal is four), so the stacked legend still fits the plot (<code>ChartLegend.svelte:1-8</code>). The pipeline line reuses <code>--chart-law</code> and the gap <code>--chart-gap</code>: no new token. Update <code>timeline-ui.md</code>.</li>
+      <li id="t3-s4"><input type="checkbox"> Run the covering specs.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/timeline/
+npx vitest --run --project client src/lib/timeline/ChartRow.svelte.spec.ts src/lib/timeline/TimelineMode.svelte.spec.ts src/lib/timeline/Timeline.svelte.spec.ts</code></pre>
+        <p>No screenshot: nothing on the page uses a lens until Task 4.</p>
+      </li>
+      <li id="t3-s5"><input type="checkbox"> Commit, then check timing.
+        <pre><code data-lang="sh">git add src/lib/timeline/chart-model.ts src/lib/timeline/chart-model.spec.ts src/lib/timeline/results.ts src/lib/timeline/results.spec.ts src/lib/timeline/copy.ts src/lib/timeline/copy.spec.ts src/lib/timeline/ChartRow.svelte src/lib/timeline/ChartRow.svelte.spec.ts src/lib/timeline/ChartLegend.svelte docs/dev/timeline-ui.md
+git commit -m "feat(sim): the timeline chart can plot by source or your policy's effect"
+npx chreode timing-check --head HEAD</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-4">
+    <h2>Task 4: Details in place of Results on <code>/sim</code></h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Move: <code>git mv src/lib/fzp/SimResults.svelte src/lib/timeline/SimDetails.svelte</code> and its spec to <code>src/lib/timeline/SimDetails.svelte.spec.ts</code>; rewrite as below.</li>
+      <li>Create: <code>src/lib/timeline/details.ts</code> (<code>yearRows</code>, <code>YEAR_COLUMNS</code>), test <code>details.spec.ts</code> (server).</li>
+      <li>Delete: <code>src/lib/fzp/ScoreChart.svelte</code>, <code>ScoreChart.svelte.spec.ts</code>. <code>chart.ts</code> stays (<code>/lesscars</code>, <code>ChartLegend</code> and <code>provenance.ts</code> import it); its <code>chartModel</code>, <code>tableRows</code> and <code>chartLabel</code> lose their last caller: delete them and their tests if nothing else imports them (check with <code>rg</code>).</li>
+      <li>Modify: <code>src/lib/timeline/TimelineMode.svelte</code>: the <code>inspector</code> snippet type (<code>:201-202</code>) becomes <code>Snippet&lt;[{ details: Snippet; day: Day }]&gt;</code> for now (Task 5 adds <code>activity</code>); the <code>results</code> snippet (<code>:1213-1242</code>) becomes <code>details</code> rendering <code>SimDetails</code> in <code>data-testid="tl-details"</code>; <code>showResults</code> (<code>:1066-1072</code>) becomes <code>showDetails</code>; a <code>lens</code> state passed to <code>ChartRow</code> (<code>chartPart</code>, <code>:1260-1274</code>) and bound in <code>SimDetails</code>. Test: <code>TimelineMode.svelte.spec.ts</code> (the Results tests at <code>:1089</code>, <code>:1604</code>, <code>:2164</code>, <code>:2171</code>, <code>:2242</code>, <code>:2694</code> move to Details).</li>
+      <li>Modify: <code>src/lib/sim-page/SimPage.svelte</code>: <code>face</code> (<code>:331</code>) becomes <code>panel</code>; <code>inspectorOpen</code>, <code>detailKey</code> (<code>:343-351</code>), <code>select</code>, <code>startAdd</code>, <code>pressScore</code> (<code>:353-380</code>), <code>inspectorPart</code> (<code>:1023-1046</code>), <code>scoreExpanded</code> (<code>:1091</code>). Test: <code>SimPage.svelte.spec.ts</code>.</li>
+      <li>Covering specs to update: <code>src/lib/timeline/rest-text.svelte.spec.ts</code> ("with Results open" becomes "with Details open"), <code>src/lib/timeline/SimKey.svelte.spec.ts</code> (mentions only), <code>src/lib/shell/accent.spec.ts</code> (themed file path); e2e <code>sim.spec.ts</code>, <code>sim-funding.spec.ts</code>, <code>sim-share.spec.ts</code>, <code>chrome-dark.spec.ts</code>, <code>layout.spec.ts</code>, <code>fzp.spec.ts</code>, <code>e2e/helpers/sharing.ts</code> (every <code>tl-results</code>, <code>fzp-chart</code>, <code>fzp-stages</code>, "Results" lookup). Create <code>e2e/sim-details.spec.ts</code>.</li>
+      <li>Docs: <code>timeline-ui.md</code> (The screen: Details; the chart row: the lens; remove the Results chart sentences), <code>sim-page.md</code> (Layout items 1 and 2), <code>fzp-mode.md</code> (the Results row of its table and "Public money and income tiers in Results": now Details, <code>src/lib/timeline/SimDetails.svelte</code>; the ScoreChart paragraph goes), <code>sim-funding.md</code> ("Results, card and summary": Details), <code>market.md</code> (the Results' sources: Details').</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>goalRows</code>, <code>GoalRow</code> (Task 1); <code>ChartLens</code>, <code>lensOf</code>, <code>LENS_NAME</code> (Task 3); <code>MoneyResults</code> (unchanged, both parts), <code>scoreCopy</code>, <code>comparisonLine</code>, <code>capacityNote</code>, <code>FORECAST_NOTE</code>, <code>marketBody</code>, <code>phasingFootnote</code>, <code>builtTowardGoalText</code>.</li>
+      <li>Produces:
+        <pre><code data-lang="ts">// src/lib/timeline/details.ts
+export interface YearRow { year: number; homes: number; pipeline: number; fresh: number; effect: number | null }
+/** One row per calendar year whose December (or the playhead's month, for the playhead's own
+ *  year) is filled and at or before month i, from today's year; effect only inForce. */
+export function yearRows(view: TimelineView, i: number, inForce: boolean): YearRow[];
+export const YEAR_COLUMNS: readonly string[]; // Year, Homes, From today's pipeline, New projects, From your policy
+
+// src/lib/timeline/SimDetails.svelte (was SimResults)
+// props: score, at, view, playhead: { index; atToday }, reachedMonth, asOf, datasetVersion,
+//   builtAt, onsources, copy, capacity, stale, market, pending, terms, uncapped, inForce,
+//   lens = $bindable&lt;ChartLens&gt;('homes'); Task 5 adds onactivity and its button
+// Order: h2 "Details"; the Chart fieldset (radios, effect only
+// inForce); the goal rows and builtTowardGoalText; "What {copy.plan} added" (as today, the
+// protection line kept); "From today's pipeline" and "New projects"; stopped since; MoneyResults
+// money; MoneyResults tiers; "Show as table" (yearRows at the playhead's month); Sources (as today).
+// On unmount it sets lens to 'homes': the chart at rest is always Homes.
+
+// TimelineMode.svelte
+inspector?: Snippet&lt;[{ details: Snippet; day: Day }]&gt;; // Task 5 adds activity
+export async function showDetails(): Promise&lt;void&gt;; // scrolls the column to its top, focuses tl-details
+
+// SimPage.svelte
+let panel = $state&lt;'activity' | 'details' | null&gt;(null); // 'activity' is first set in Task 5
+// inspectorOpen = panel !== null || selected !== null || adding !== null || drafts.isOpen
+// select() and startAdd() set panel = null (the editor shows; closing it returns to the rest face)
+// pressScore: from md panel = 'details', selection and menu cleared, showDetails(); below md
+//   panel = panel === 'details' ? null : 'details'
+// scoreExpanded = panel === 'details' &amp;&amp; inspectorOpen</code></pre>
+      </li>
+    </ul>
+    <aside data-kind="decision"><strong>Builder's call: the lens resets to Homes when Details closes</strong> The main screen at rest shows one meaning for the one chart; a view chosen in Details is a Details view. Rejected: a lens that persists hidden behind a closed panel.</aside>
+    <aside data-kind="decision"><strong>Builder's call: until Task 5, the rest face from md is Details</strong> So the page works after this task: at rest from md <code>TimelineMode</code> renders <code>details</code> where it rendered <code>results</code> (<code>:1521-1525</code>). Task 5 swaps it for Activity.</aside>
+    <ol>
+      <li id="t4-s1"><input type="checkbox"> Write the failing tests first.
+        <pre><code data-lang="ts">// src/lib/timeline/details.spec.ts
+it('yearRows stops at the playhead\'s month; the playhead\'s year reads its own month')
+it('yearRows counts from today: homes is rows[i].completedNet, effect null without a policy')
+// src/lib/timeline/SimDetails.svelte.spec.ts (renderAtRest; carries SimResults' tests over)
+it('has a Details heading')
+it('the Chart fieldset: Homes, By source; From your policy only in force; choosing sets lens')
+it('unmounting sets lens back to homes')
+it('draws no chart of its own and no in-progress rows')
+it('the table stops at the playhead\'s month')
+it('names no RHNA and no FZP')
+// src/lib/timeline/TimelineMode.svelte.spec.ts
+it('from md the detail column shows Details when nothing is open')        // was Results
+it('choosing By source in Details redraws the timeline chart with the pipeline line')
+it('showDetails scrolls the detail column to the top and focuses Details')
+it('stale: the key dims with Details')
+// src/lib/sim-page/SimPage.svelte.spec.ts
+it('the header score from md opens Details and clears a selection')
+it('below md the header score toggles the Details sheet; aria-expanded follows it')
+it('selecting a policy shows its editor; closing it returns to the rest face')
+// e2e/sim-details.spec.ts (fixture-0, debug hooks, never pixels)
+test('the headline opens Details, focused; it names no RHNA')
+test('By source redraws the timeline chart; closing Details puts Homes back')
+test('past the deadline the goal rows say Held at Jan 2031')
+test('Details: axe clean, light and dark, 1280 and 375')</code></pre>
+      </li>
+      <li id="t4-s2"><input type="checkbox"> Run them and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/timeline/details.spec.ts
+npx vitest --run --project client src/lib/timeline/SimDetails.svelte.spec.ts src/lib/timeline/TimelineMode.svelte.spec.ts src/lib/sim-page/SimPage.svelte.spec.ts
+SFH_E2E_PORT=4180 npx playwright test e2e/sim-details.spec.ts --project=chromium --project=mobile</code></pre>
+      </li>
+      <li id="t4-s3"><input type="checkbox"> Implement as in Interfaces; update the five docs. Take the measurements named in <a href="#sec-measures">What to measure</a>.</li>
+      <li id="t4-s4"><input type="checkbox"> Run every spec that covers <code>/sim</code>'s column, then the e2e of <code>/sim</code>, the new and changed specs repeated.
+        <pre><code data-lang="sh">npx vitest --run --project client src/lib/timeline/ src/lib/sim-page/ src/lib/fzp/ src/lib/shell/accent.spec.ts
+npx vitest --run --project server src/lib/timeline/ src/lib/fzp/
+SFH_E2E_PORT=4180 npx playwright test e2e/sim-details.spec.ts e2e/sim.spec.ts e2e/sim-funding.spec.ts e2e/sim-share.spec.ts e2e/sim-timeline.spec.ts e2e/fzp.spec.ts e2e/fzp-sim.spec.ts e2e/chrome-dark.spec.ts e2e/layout.spec.ts e2e/lesscars.spec.ts --project=chromium --project=mobile
+SFH_E2E_PORT=4180 npx playwright test e2e/sim-details.spec.ts e2e/sim.spec.ts e2e/sim-funding.spec.ts --project=chromium --project=mobile --repeat-each=5 --retries=0</code></pre>
+        <p>Screenshots: <code>/sim</code> with Details open at 1280 light (before: Results on <code>main</code>; after), 1280 dark, 375 (the sheet), each mid-play; and 1280 with By source chosen, the timeline chart in view.</p>
+      </li>
+      <li id="t4-s5"><input type="checkbox"> Commit, then check timing.
+        <pre><code data-lang="sh">git add -A src/lib/fzp src/lib/timeline/SimDetails.svelte src/lib/timeline/SimDetails.svelte.spec.ts src/lib/timeline/details.ts src/lib/timeline/details.spec.ts src/lib/timeline/TimelineMode.svelte src/lib/timeline/TimelineMode.svelte.spec.ts src/lib/timeline/rest-text.svelte.spec.ts src/lib/timeline/SimKey.svelte.spec.ts src/lib/sim-page/SimPage.svelte src/lib/sim-page/SimPage.svelte.spec.ts src/lib/shell/accent.spec.ts e2e/sim-details.spec.ts e2e/sim.spec.ts e2e/sim-funding.spec.ts e2e/sim-share.spec.ts e2e/chrome-dark.spec.ts e2e/layout.spec.ts e2e/fzp.spec.ts e2e/helpers/sharing.ts docs/dev/timeline-ui.md docs/dev/sim-page.md docs/dev/fzp-mode.md docs/dev/sim-funding.md docs/dev/market.md
+git status --short
+git commit -m "feat(sim): the headline opens Details; one chart, with views, in place of Results"
+npx chreode timing-check --head HEAD</code></pre>
+        <p><code>git add -A src/lib/fzp</code> stages the move and the deletions only; check <code>git status --short</code> shows nothing else staged under it.</p>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-5">
+    <h2>Task 5: Activity at rest, starters and worded lanes</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Create: <code>src/lib/timeline/activity-view.ts</code> (pure), test <code>activity-view.spec.ts</code> (server); <code>src/lib/timeline/SimActivity.svelte</code>, test <code>SimActivity.svelte.spec.ts</code> (client).</li>
+      <li>Modify: <code>src/lib/timeline/rows.ts</code> (<code>EMPTY_LANE</code>), <code>rows.spec.ts</code>; <code>KindRow.svelte</code> (the closed lane, <code>:83-99</code>); <code>Timeline.svelte.spec.ts</code>.</li>
+      <li>Modify: <code>TimelineMode.svelte</code>: an <code>activity</code> snippet rendering <code>SimActivity</code> in <code>data-testid="tl-activity"</code>; the <code>inspector</code> snippet gets <code>activity</code>; at rest from md render <code>activity</code> (<code>:1521-1525</code>); new props <code>onstarter</code>, <code>ondetails</code>, <code>onactivity</code>; <code>SimDetails</code> gains the <code>onactivity</code> prop and its <code>Activity</code> button in the heading row. Tests: <code>TimelineMode.svelte.spec.ts</code>, <code>SimDetails.svelte.spec.ts</code>.</li>
+      <li>Modify: <code>SimPage.svelte</code>: <code>inspectorPart</code> renders <code>activity</code> for <code>panel === 'activity'</code>; <code>onactivity</code> sets <code>panel = 'activity'</code>; <code>ondetails</code> sets <code>panel = 'details'</code> and calls <code>showDetails</code>; <code>onstarter</code> adds a policy as the Inspector's <code>add</code> does (<code>Inspector.svelte:279-298</code>: <code>addPolicy</code>, <code>store.apply</code>, announce "Added: …", select). Test: <code>SimPage.svelte.spec.ts</code>.</li>
+      <li>Modify: <code>rest-text.svelte.spec.ts</code> (at rest is now Activity), <code>accent.spec.ts</code> (<code>SimActivity.svelte</code>). Create <code>e2e/sim-activity.spec.ts</code>.</li>
+      <li>Docs: <code>timeline-ui.md</code> (The screen: Activity; empty lanes), <code>sim-page.md</code> (Layout item 2; the starters).</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>PlayheadAt</code>, <code>headlineAt</code>'s month rule (<code>results.ts:101-124</code>); <code>moneyFigureAt</code> (<code>money-view.ts:67-85</code>); <code>AddChoice</code>, <code>addChoices</code>, <code>addPolicy</code> (<code>add.ts</code>); <code>PRESETS</code> (<code>sim-page/timing.ts</code>), <code>fundingPresets</code>; <code>goalName</code>; <code>nothingInForce</code> (<code>policy4.ts:94-98</code>).</li>
+      <li>Produces:
+        <pre><code data-lang="ts">// src/lib/timeline/activity-view.ts
+export interface ActivityTotals {
+  approved: number;  // rows[i].entitledNew
+  completed: number; // rows[i].completedNet
+  stopped: number;   // rows[i].exitedUnits
+  affordable: number | null; // view.tiers[i]: veryLow + low + moderate + unrecorded (from today); null without tiers
+  effect: number | null;     // planEffect[i].completedNetNew while inForce
+  cost: { spent: number; perAddedHome: number | null } | null; // money.publicSpent[i], moneyFigureAt; only moneyInForce
+}
+/** Null at today, while provisional, or when month index is not filled (headlineAt's rule). */
+export function activityTotals(
+  view: TimelineView | null,
+  at: PlayheadAt,
+  opts: { provisional: boolean; inForce: boolean; moneyInForce: boolean }
+): ActivityTotals | null;
+/** A Public money policy is on with a span in the document. */
+export function moneyInForce(doc: SimPolicy4): boolean;
+
+export interface Starter { choice: AddChoice; text: string; label: string }
+/** Taller near transit ({zoning, transit}, label 'Transit rule'); SB 423 approval clock
+ *  ({permitting, preset, 'sb423Clock'}); A housing bond ({money, preset, 'housing-bond'}).
+ *  Each only when addChoices(kind, cal, doc) offers it. */
+export function startersFor(cal: Calibration, doc: SimPolicy4): Starter[];
+export const ACTIVITY_COPY: { heading: 'Activity'; details: 'Details'; tryOne: 'Try one:';
+  play: 'Press Play to see what gets built.'; approved: 'Approved'; completed: 'Completed';
+  stopped: 'Stopped'; affordable: 'Affordable'; effect: 'From your policy';
+  spent: 'Public money spent'; perHome: 'Per added home'; noneAdded: 'no homes added yet' };
+
+// src/lib/timeline/SimActivity.svelte
+// props: { goal: Goal; totals: ActivityTotals | null; atToday: boolean; starters: Starter[];
+//   onstarter: (s: Starter) =&gt; void; ondetails: () =&gt; void; stale: boolean }
+// At today: goalName(goal), then starters (when any) or ACTIVITY_COPY.play. After today: the dl.
+// The Details button sits in the heading row. Task 6 adds the list.
+
+// src/lib/timeline/rows.ts
+export const EMPTY_LANE: Record&lt;PolicyKind, string&gt;;
+// KindRow: closed, no policy, editable: a button in the lane with EMPTY_LANE[kind] that calls
+// onadd(kind), tabindex="-1" and aria-hidden="true" (the "+" named "Add {label} policy" is the
+// keyboard and assistive path; this is its visible words).
+
+// TimelineMode.svelte
+inspector?: Snippet&lt;[{ activity: Snippet; details: Snippet; day: Day }]&gt;;
+onstarter?(choice: AddChoice, label: string): void; // absent: no starters (read-only passes none)
+ondetails?(): void;
+onactivity?(): void;
+// SimDetails.svelte gains onactivity: () =&gt; void and an "Activity" button in its heading row</code></pre>
+      </li>
+    </ul>
+    <aside data-kind="decision"><strong>Builder's call: starters at today only, with nothing in force</strong> <code>sec-prop-now</code>: "At today it is empty, so it says the goal and offers a starter policy instead"; <code>tbl-inv-sim-controls</code>: "First visit: the detail column offers three starter policies." With a policy in force at today the empty state says Press Play instead: the person already knows how to choose. Rejected: starters whenever nothing is in force (they would sit beside a full activity list).</aside>
+    <aside data-kind="decision"><strong>Builder's call: the totals count from today</strong> One clock (Decided). Affordable counts the homes completed from today (<code>view.tiers[i]</code>), not the 2022 baseline, which stays in Details' tier table.</aside>
+    <ol>
+      <li id="t5-s1"><input type="checkbox"> Write the failing tests first.
+        <pre><code data-lang="ts">// activity-view.spec.ts
+it('activityTotals is null at today, while provisional and past the filled month')
+it('reads rows[i]: approved entitledNew, completed completedNet, stopped exitedUnits')
+it('affordable counts completed tiers from today, without the baseline')
+it('effect only in force; cost only while a Public money policy is on with a span')
+it('moneyInForce: an off money policy or one with no span is not in force')
+it('startersFor: three when offered; a calibration without money gives two')
+it('every ACTIVITY_COPY string and starter text is under 12 words, with no RHNA or FZP')
+// rows.spec.ts
+it('EMPTY_LANE: Add a zoning change, Add a permitting change, Add public money')
+// Timeline.svelte.spec.ts
+it('a closed empty kind shows its words in the lane; pressing them calls onadd(kind)')
+it('the words are hidden from assistive tech and out of tab order; read-only shows none')
+// SimActivity.svelte.spec.ts (renderAtRest)
+it('at today with nothing in force: the goal, Try one: and three starter buttons')
+it('at today with a policy in force: the goal and Press Play, no starters')
+it('after today: the totals list; From your policy only in force; cost only with money')
+it('Details calls ondetails; a starter calls onstarter with it')
+it('stale: the body dims; the heading and Details keep full contrast')
+// TimelineMode.svelte.spec.ts
+it('from md at rest the detail column shows Activity')
+it('stale: totals and cost are the held document\'s, dimmed')
+it('read-only: no starters and no empty-lane words')
+// SimPage.svelte.spec.ts
+it('a starter adds its policy at the playhead\'s month, selects it and announces Added: Transit rule')
+it('Activity\'s Details opens Details and focuses it')
+it('Details\' Activity button shows Activity; below md it opens Activity in the sheet')
+// SimDetails.svelte.spec.ts
+it('the Activity button in the heading row calls onactivity')
+// e2e/sim-activity.spec.ts
+test('a first visit: Activity names the goal and three starters; one adds a policy')
+test('after Play the totals show and the starters go')
+test('the empty lanes say what they add; the words add a policy')
+test('Activity: axe clean, light and dark, at 1280 and in the 375 sheet')</code></pre>
+      </li>
+      <li id="t5-s2"><input type="checkbox"> Run them and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/timeline/activity-view.spec.ts src/lib/timeline/rows.spec.ts
+npx vitest --run --project client src/lib/timeline/SimActivity.svelte.spec.ts src/lib/timeline/Timeline.svelte.spec.ts src/lib/timeline/TimelineMode.svelte.spec.ts src/lib/sim-page/SimPage.svelte.spec.ts
+SFH_E2E_PORT=4180 npx playwright test e2e/sim-activity.spec.ts --project=chromium --project=mobile</code></pre>
+      </li>
+      <li id="t5-s3"><input type="checkbox"> Implement as in Interfaces. <code>TimelineMode</code> derives <code>totals</code> from <code>shown.view</code>, <code>{ index, atToday }</code> and <code>resultsDoc</code>, so it changes at most once per month crossed, as the header does. The page passes <code>onstarter</code> only when not read-only. Update the two docs. Take the Task 5 measurement.</li>
+      <li id="t5-s4"><input type="checkbox"> Run the covering specs, then the e2e, changed specs repeated.
+        <pre><code data-lang="sh">npx vitest --run --project client src/lib/timeline/ src/lib/sim-page/ src/lib/shell/accent.spec.ts
+npx vitest --run --project server src/lib/timeline/
+SFH_E2E_PORT=4180 npx playwright test e2e/sim-activity.spec.ts e2e/sim-details.spec.ts e2e/sim.spec.ts e2e/sim-share.spec.ts e2e/sim-timeline.spec.ts e2e/chrome-dark.spec.ts e2e/layout.spec.ts --project=chromium --project=mobile
+SFH_E2E_PORT=4180 npx playwright test e2e/sim-activity.spec.ts --project=chromium --project=mobile --repeat-each=5 --retries=0</code></pre>
+        <p>Screenshots: <code>/sim</code> at rest on first open (Activity at today with starters), at 1280 light (before: Results on <code>main</code>; after), 1280 dark, 375 (the closed rows' words visible; Activity in the sheet from Details' button); and 1280 mid-play with a policy in force (totals).</p>
+      </li>
+      <li id="t5-s5"><input type="checkbox"> Commit, then check timing.
+        <pre><code data-lang="sh">git add src/lib/timeline/activity-view.ts src/lib/timeline/activity-view.spec.ts src/lib/timeline/SimActivity.svelte src/lib/timeline/SimActivity.svelte.spec.ts src/lib/timeline/rows.ts src/lib/timeline/rows.spec.ts src/lib/timeline/KindRow.svelte src/lib/timeline/Timeline.svelte.spec.ts src/lib/timeline/TimelineMode.svelte src/lib/timeline/TimelineMode.svelte.spec.ts src/lib/timeline/SimDetails.svelte src/lib/timeline/SimDetails.svelte.spec.ts src/lib/timeline/rest-text.svelte.spec.ts src/lib/sim-page/SimPage.svelte src/lib/sim-page/SimPage.svelte.spec.ts src/lib/shell/accent.spec.ts e2e/sim-activity.spec.ts docs/dev/timeline-ui.md docs/dev/sim-page.md
+git commit -m "feat(sim): Activity at rest, with totals so far, starter policies and worded empty rows"
+npx chreode timing-check --head HEAD</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-6">
+    <h2>Task 6: The latest stage changes, citywide</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Create: <code>src/lib/timeline/activity.ts</code> (<code>ActivityIndex</code> over a page-side <code>CityStore</code>), test <code>activity.spec.ts</code> (server); <code>src/lib/timeline/places.ts</code> (neighbourhood names), test <code>places.spec.ts</code> (server).</li>
+      <li>Modify: <code>activity-view.ts</code> (<code>eventText</code>), spec; <code>SimActivity.svelte</code> (the list), spec.</li>
+      <li>Modify: <code>TimelineMode.svelte</code>: <code>applyRender</code> (<code>:746-750</code>) feeds the index before forwarding (whether or not the map handle exists yet); a <code>$state</code> version bumped after each apply; <code>events</code> derived from the version, <code>day</code> and <code>asOf</code>, kept when the new list has the same keys; the neighbourhoods loaded once per manifest (<code>loadPlaces</code>, a <code>fetchPlaces</code> test seam prop). Test: <code>TimelineMode.svelte.spec.ts</code>.</li>
+      <li>Modify: <code>src/lib/timeline/test/fake-timeline-worker.ts</code>: <code>cellsMsg(render: TimelineUpdate)</code> for <code>{ type: 'cells', render }</code> (<code>src/lib/sim/timeline-protocol.ts:144</code>).</li>
+      <li>Modify: <code>e2e/sim-activity.spec.ts</code>.</li>
+      <li>Docs: <code>timeline-ui.md</code> (Activity's list and its rules), <code>map-interfaces.md</code> ("The citywide feed": the page keeps a second store for Activity, fed by the same updates).</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>CityStore</code> (<code>src/lib/map/timelapse/city.ts:244-330</code>: <code>apply(d, replace)</code>, <code>clear</code>, <code>length</code>, <code>has</code>, <code>days</code>, <code>homes</code>, <code>flags</code>, <code>lngLat</code>), <code>CITY_DAY</code>, <code>TimelineUpdate</code> (<code>src/lib/map/types.ts:63-96</code>); <code>parseNeighborhoods</code>, <code>NeighborhoodShapes</code> (<code>src/lib/sim/levers/brushes.ts:185-200</code>, import only); <code>Manifest.neighborhoods</code>.</li>
+      <li>Produces:
+        <pre><code data-lang="ts">// src/lib/timeline/activity.ts
+export type ActivityKind = 'approved' | 'started' | 'completed';
+export interface ActivityEvent {
+  row: number; kind: ActivityKind; day: Day; homes: number;
+  lngLat: [number, number]; policy: boolean; // flags !== 0
+}
+export const ACTIVITY_LIMIT = 6;
+export class ActivityIndex {
+  /** Revision 0: replace (clear when it carries no city); later: apply u.city when present. */
+  apply(u: TimelineUpdate): void;
+  /** Sorts made since construction (a test seam: reads never sort twice for one store state). */
+  get sorts(): number;
+  /**
+   * The newest `limit` events with after &lt; day &lt;= through, newest first, ties by row then kind.
+   * The first read after an apply sorts every (day, event) key once: one Float64Array of
+   * day × 2^18 + event index (3 per row, row &lt; 2^16 / 3 checked, else a two-array sort), then
+   * binary search; later reads only search.
+   */
+  recent(after: Day, through: Day, limit?: number): ActivityEvent[];
+}
+
+// src/lib/timeline/places.ts
+/** The name of the first shape whose rings hold the point (even-odd), else null. */
+export function placeOf(shapes: NeighborhoodShapes, lngLat: readonly [number, number]): string | null;
+/** Fetch and parse; null on any failure (the list then shows no place). */
+export function loadPlaces(url: string, fetchFn?: typeof fetch): Promise&lt;NeighborhoodShapes | null&gt;;
+
+// src/lib/timeline/activity-view.ts
+/** { what: '120 homes approved', where: 'Mission · Mar 2031' | 'Mar 2031' }. */
+export function eventText(e: ActivityEvent, place: string | null): { what: string; where: string };
+
+// SimActivity.svelte gains: events: { key: string; what: string; where: string; policy: boolean }[]
+// After today: under the totals, h3 "Latest" and an ol of events, or "No stage changes yet."</code></pre>
+      </li>
+    </ul>
+    <aside data-kind="decision"><strong>Builder's call: a second <code>CityStore</code> on the page</strong> <code>TimelineMode</code> already sees every <code>TimelineUpdate</code> before the map (<code>applyRender</code>), so it keeps its own store instead of reaching into the map's controller. <code>SimMapHandle</code>, the controller and <code>/lesscars</code> stay untouched; the index is testable without a map. Cost: one more copy of the markers, 27 bytes a row (about 0.8 MB at 30,000 projects). Rejected: a new handle method that reads the controller's store.</aside>
+    <aside data-kind="decision"><strong>Builder's call: "where" is the neighbourhood, from the published polygons</strong> The feed carries no name or address, only the anchor lot's label point (<code>sec-feed-shape</code> of slice 6). <code>neighborhoods.geojson</code> is in every manifest (<code>src/lib/data/manifest.ts:52</code>; fixture-0 has three small squares), same origin, fetched once per manifest. Names are looked up only for the listed events and memoised by row until the index changes. Rejected: a "show on map" control per event (more controls, and the spec says what, where and how many).</aside>
+    <ol>
+      <li id="t6-s1"><input type="checkbox"> Write the failing tests first.
+        <pre><code data-lang="ts">// activity.spec.ts
+it('recent: only events after today and at or before the day, newest first, at most the limit')
+it('a row with approved, started and completed days gives three events of its kind')
+it('NaN days give no event; flags set policy')
+it('a delta with from forgets rows at or past it; their events leave the list')
+it('revision 0 without city clears; revision 0 with city replaces whole')
+it('a read after a read sorts nothing; an apply then a read sorts once')    // sorts counter
+// places.spec.ts
+it('placeOf names the fixture-0 square holding the point, null outside every square')
+it('loadPlaces is null on a failed fetch or a bad file')
+// activity-view.spec.ts
+it('eventText: "120 homes started", "Mission · Mar 2031"; no place: "Mar 2031"')
+// SimActivity.svelte.spec.ts
+it('lists events newest first; a policy event has the glyph and "Under your policy" for AT')
+it('after today with no events: No stage changes yet.')
+// TimelineMode.svelte.spec.ts (fake worker cellsMsg with a city delta)
+it('events arriving before the map is ready still reach Activity')
+it('scrubbing back drops later events; the list DOM is not rewritten when its keys are the same')
+// e2e/sim-activity.spec.ts
+test('mid-play the list names stage changes up to the playhead; Home empties it')
+test('a transit rule from today: a listed project under it carries the mark')</code></pre>
+      </li>
+      <li id="t6-s2"><input type="checkbox"> Run them and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/timeline/activity.spec.ts src/lib/timeline/places.spec.ts src/lib/timeline/activity-view.spec.ts
+npx vitest --run --project client src/lib/timeline/SimActivity.svelte.spec.ts src/lib/timeline/TimelineMode.svelte.spec.ts
+SFH_E2E_PORT=4180 npx playwright test e2e/sim-activity.spec.ts --project=chromium --project=mobile</code></pre>
+      </li>
+      <li id="t6-s3"><input type="checkbox"> Implement as in Interfaces. The derived list reads <code>recent(asOf, day, ACTIVITY_LIMIT)</code> on day changes (a search, no sort) and replaces the shown array only when its keys (<code>row:kind</code>) differ. Update the two docs.</li>
+      <li id="t6-s4"><input type="checkbox"> Run the covering specs, then the e2e, changed specs repeated.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/timeline/ src/lib/map/timelapse/city.spec.ts
+npx vitest --run --project client src/lib/timeline/ src/lib/sim-page/SimPage.svelte.spec.ts
+SFH_E2E_PORT=4180 npx playwright test e2e/sim-activity.spec.ts e2e/sim-citywide.spec.ts e2e/sim-halos.spec.ts e2e/sim.spec.ts e2e/lesscars.spec.ts --project=chromium --project=mobile
+SFH_E2E_PORT=4180 npx playwright test e2e/sim-activity.spec.ts --project=chromium --project=mobile --repeat-each=5 --retries=0</code></pre>
+        <p>Screenshots: <code>/sim</code> mid-play with a transit rule in force, Activity's list in view, at 1280 light, 1280 dark and 375 (the sheet).</p>
+      </li>
+      <li id="t6-s5"><input type="checkbox"> Commit, then check timing.
+        <pre><code data-lang="sh">git add src/lib/timeline/activity.ts src/lib/timeline/activity.spec.ts src/lib/timeline/places.ts src/lib/timeline/places.spec.ts src/lib/timeline/activity-view.ts src/lib/timeline/activity-view.spec.ts src/lib/timeline/SimActivity.svelte src/lib/timeline/SimActivity.svelte.spec.ts src/lib/timeline/TimelineMode.svelte src/lib/timeline/TimelineMode.svelte.spec.ts src/lib/timeline/test/fake-timeline-worker.ts e2e/sim-activity.spec.ts docs/dev/timeline-ui.md docs/dev/map-interfaces.md
+git commit -m "feat(sim): Activity lists the latest stage changes citywide, up to the playhead"
+npx chreode timing-check --head HEAD</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-7">
+    <h2>Task 7: Pools that drain</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Create: <code>src/lib/timeline/pool-level.ts</code> (pure), test <code>pool-level.spec.ts</code> (server); <code>src/lib/timeline/LevelFill.svelte</code>, test <code>LevelFill.svelte.spec.ts</code> (client).</li>
+      <li>Modify: <code>Timeline.svelte</code> (props <code>levels</code>, <code>reached</code>; <code>:35-82</code>) passing them through <code>KindRow</code> to <code>PolicyRow</code>/<code>SpanBar</code> (a money fund policy's spans) and to the money kind's <code>FixedRow</code> ("Current funding"); <code>SpanBar.svelte</code> and <code>FixedRow.svelte</code> render <code>LevelFill</code> inside the bar under the text and append <code>levelLeft</code> to the bar's <code>aria-label</code>. Test: <code>Timeline.svelte.spec.ts</code>.</li>
+      <li>Modify: <code>TimelineMode.svelte</code>: <code>levels</code> derived from <code>shownView</code>, <code>resultsDoc</code> and <code>calibration.baselineFunding.pools</code> (rebuilt with the view, never per day); passes <code>levels</code> and <code>reveal.reached</code> to <code>Timeline</code> (<code>:1489-1505</code>). Test: <code>TimelineMode.svelte.spec.ts</code>.</li>
+      <li>Create: <code>e2e/sim-pools.spec.ts</code>.</li>
+      <li>Docs: <code>timeline-ui.md</code> (The screen: a pool's bar shows its level), <code>sim-funding.md</code> (the level's definition, one paragraph).</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>MoneyView.pools</code> series <code>received</code>, <code>committed</code>, <code>spent</code>, <code>out</code>, <code>lostCredit</code> (<code>src/lib/sim/world/score/types.ts:46-62</code>, <code>finance-score.md</code> "The ledger and its series"); <code>Pool.leverage</code>, <code>Pool.uncapped</code> (<code>src/lib/timelapse/types.ts:244-255</code>); a fund policy's pool (<code>where.tag === 'fund'</code>, <code>spans[0].what.pool</code>, as <code>documentFunding</code> reads it, <code>add.ts</code>); <code>filledEndDay</code>, <code>dayPct</code>, <code>indexOfDay</code>.</li>
+      <li>Produces:
+        <pre><code data-lang="ts">// src/lib/timeline/pool-level.ts
+export interface LevelPool { id: string; leverage: number; uncapped: boolean }
+/**
+ * Per filled month: Σ(leverage·received − committed − spent − out − lostCredit) / Σ(leverage·received)
+ * over the capped pools given that the money carries, clamped to [0, 1]; NaN where that
+ * denominator is 0 (nothing received yet) or no capped pool is given.
+ */
+export function poolLevel(money: MoneyView, pools: readonly LevelPool[]): Float64Array;
+/**
+ * The empty part as one closed SVG path in a 1000 × 20 box spanning [from, to]: for each month
+ * end inside it with a finite level, y = (1 − level) × 20 from the top; a run of NaN breaks the
+ * path (no point is written for it). '' when no month has a level.
+ */
+export function levelPath(level: ArrayLike&lt;number&gt;, months: readonly Day[], asOf: Day, from: Day, to: Day): string;
+/** ', 62% left' (Math.round) at month i; null when level[i] is NaN or i is out of range. */
+export function levelLeft(level: ArrayLike&lt;number&gt;, i: number): string | null;
+export interface LevelSet {
+  months: readonly Day[];
+  asOf: Day;
+  byPolicy: ReadonlyMap&lt;string, Float64Array&gt;; // fund policies with an own capped pool
+  fixed: Float64Array | null; // the capped baseline pools, summed: "Current funding"
+}
+export function levelSet(view: TimelineView | null, doc: SimPolicy4, baseline: readonly Pool[] | undefined): LevelSet | null;
+
+// src/lib/timeline/LevelFill.svelte
+// props: { level: Float64Array; months: readonly Day[]; asOf: Day; from: Day; to: Day;
+//   day: Day; reached: Day }
+// An aria-hidden svg, absolutely filling the bar under its text (pointer-events none): the
+// path filled in rgb(0 0 0 / 0.35) under a shown clip [from, day], and at half that alpha under
+// a seen clip [day, reached]; nothing past reached. As the day moves only the two clip widths
+// change. data-testid="tl-level", data-left = the rounded percent at the playhead's month or ''.
+
+// Timeline.svelte: levels?: LevelSet | null = null; reached: Day</code></pre>
+      </li>
+    </ul>
+    <aside data-kind="decision"><strong>Builder's call: the empty part darkens the bar from the top</strong> The bar's text is white on the kind colour (<code>FixedRow.svelte</code> <code>.bar</code>); a dark overlay only raises its contrast, where a pale "empty" tint would lower it. The level is the edge of the dark area; the percentage is in the bar's name. Shown on open rows only: a closed kind's 5 px mini bars carry no level. Rejected: a separate strip under the bar (the lane has 5 px to spare).</aside>
+    <ol>
+      <li id="t7-s1"><input type="checkbox"> Write the failing tests first.
+        <pre><code data-lang="ts">// pool-level.spec.ts
+it('poolLevel: NaN before the first arrival; 1 at arrival with nothing committed')
+it('a once pool drains as it commits and spends; a yearly pool tops up at each arrival')
+it('leverage scales what is free: a bank pool at leverage 3')
+it('an uncapped pool gives NaN; a policy with no own pool has no entry')
+it('levelPath never writes NaN and breaks the path across a NaN run; empty string with no level')
+it('levelLeft: ", 62% left"; ", 0% left" for a dry pool; null where NaN')
+it('levelSet: one entry per fund policy with a capped pool; fixed sums the capped baseline pools')
+// LevelFill.svelte.spec.ts
+it('draws the path under a shown clip to the day and a seen clip to reached; nothing past')
+it('a day change moves only the clip widths: the path d is not rewritten')
+it('aria-hidden; data-left is the playhead month\'s percent')
+// Timeline.svelte.spec.ts
+it('an open Public money kind: a fund bar and Current funding carry a level and ", N% left"')
+it('a closed kind and a fund policy with no own pool carry none')
+// TimelineMode.svelte.spec.ts
+it('levels rebuild with the view, never as the playhead crosses months')
+// e2e/sim-pools.spec.ts
+test('a housing bond: no level before its money arrives; after Play its bar drains')
+  // starter "A housing bond"; openKind money; tl-level data-left '' then a number below 100
+test('the Public money rows with levels: axe clean, light and dark')</code></pre>
+      </li>
+      <li id="t7-s2"><input type="checkbox"> Run them and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/timeline/pool-level.spec.ts
+npx vitest --run --project client src/lib/timeline/LevelFill.svelte.spec.ts src/lib/timeline/Timeline.svelte.spec.ts src/lib/timeline/TimelineMode.svelte.spec.ts
+SFH_E2E_PORT=4180 npx playwright test e2e/sim-pools.spec.ts --project=chromium --project=mobile</code></pre>
+      </li>
+      <li id="t7-s3"><input type="checkbox"> Implement as in Interfaces. Check the bar's text contrast over the darkest fill in both themes from the token values (the Task 7 measurement), and say the ratios in the report. Update the two docs.</li>
+      <li id="t7-s4"><input type="checkbox"> Run the covering specs, then the e2e, changed specs repeated.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/timeline/
+npx vitest --run --project client src/lib/timeline/ src/lib/sim-page/
+SFH_E2E_PORT=4180 npx playwright test e2e/sim-pools.spec.ts e2e/sim-funding.spec.ts e2e/sim-timeline.spec.ts e2e/sim.spec.ts e2e/chrome-dark.spec.ts e2e/lesscars.spec.ts --project=chromium --project=mobile
+SFH_E2E_PORT=4180 npx playwright test e2e/sim-pools.spec.ts --project=chromium --project=mobile --repeat-each=5 --retries=0</code></pre>
+        <p>Screenshots: Public money open with the housing bond, mid-play past its arrival, at 1280 light (before on <code>main</code>: the plain bar; after), 1280 dark, 375 (the kind's sheet).</p>
+      </li>
+      <li id="t7-s5"><input type="checkbox"> Commit, then check timing.
+        <pre><code data-lang="sh">git add src/lib/timeline/pool-level.ts src/lib/timeline/pool-level.spec.ts src/lib/timeline/LevelFill.svelte src/lib/timeline/LevelFill.svelte.spec.ts src/lib/timeline/Timeline.svelte src/lib/timeline/Timeline.svelte.spec.ts src/lib/timeline/KindRow.svelte src/lib/timeline/PolicyRow.svelte src/lib/timeline/SpanBar.svelte src/lib/timeline/FixedRow.svelte src/lib/timeline/TimelineMode.svelte src/lib/timeline/TimelineMode.svelte.spec.ts e2e/sim-pools.spec.ts docs/dev/timeline-ui.md docs/dev/sim-funding.md
+git commit -m "feat(sim): a pool's bar shows its money draining, up to the playhead"
+npx chreode timing-check --head HEAD</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-8">
+    <h2>Task 8: Whole-suite pass</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Whatever the full runs below turn up. No new behaviour.</li>
+    </ul>
+    <ol>
+      <li id="t8-s1"><input type="checkbox"> Run the checks and the full unit suite with stderr captured, and read the stderr: any warning or error a test does not assert is a failure here, as at signoff.
+        <pre><code data-lang="sh">npm run check
+npm run lint
+npm run test:unit 2&gt; &lt;scratchpad&gt;/unit-stderr.log
+rg -n "warn|error|Error" &lt;scratchpad&gt;/unit-stderr.log</code></pre>
+      </li>
+      <li id="t8-s2"><input type="checkbox"> Run the full e2e suite on port 4180, both projects, no retries. Every failure is fixed at its cause, without retries, sleeps or loosened assertions; re-run any spec you change with <code>--repeat-each=5 --retries=0</code>.
+        <pre><code data-lang="sh">SFH_E2E_PORT=4180 npx playwright test --project=chromium --project=mobile --retries=0</code></pre>
+      </li>
+      <li id="t8-s3"><input type="checkbox"> The dataset version must not have moved: the diff is empty and the check passes.
+        <pre><code data-lang="sh">git diff --stat main -- pipeline src/lib/data src/lib/generator src/lib/timelapse src/lib/plan/geometry.ts src/lib/plan/types.ts src/lib/sim/scenario src/lib/sim/levers src/lib/sim/finance src/lib/scoreboard
+npx tsx scripts/dataset-version.ts --check</code></pre>
+      </li>
+      <li id="t8-s4"><input type="checkbox"> Sweep for leftovers. Each finds nothing:
+        <pre><code data-lang="sh">rg -n "SimResults|ScoreChart|showResults|tl-results|fzp-chart" src e2e
+rg -n "ScoreboardPanel" src/routes
+rg -n "RHNA|FZP|units\b" src/lib/goal src/lib/paint/details.ts src/lib/paint/PaintDetails.svelte src/lib/timeline/SimDetails.svelte src/lib/timeline/SimActivity.svelte src/lib/timeline/activity-view.ts src/lib/timeline/pool-level.ts
+rg -n "'Results'|\"Results\"" src/lib/dock src/lib/timeline src/lib/sim-page</code></pre>
+      </li>
+      <li id="t8-s5"><input type="checkbox"> Docs true to the code: <code>timeline-ui.md</code>, <code>sim-page.md</code>, <code>fzp-mode.md</code>, <code>sim-funding.md</code>, <code>market.md</code>, <code>map-interfaces.md</code>, <code>developing.md</code> and <code>plan-sharing.md</code> name Details, Activity, the lenses, the list and the levels as the code does; every string they quote matches <a href="#tbl-strings">The strings</a>.</li>
+      <li id="t8-s6"><input type="checkbox"> Preview signoff's plan without running it, and confirm every step it lists ran green above.
+        <pre><code data-lang="sh">npm run signoff -- --dry-run</code></pre>
+      </li>
+      <li id="t8-s7"><input type="checkbox"> Commit any fixes with the files named, then check timing.
+        <pre><code data-lang="sh">git add &lt;each changed file&gt;
+git commit -m "test(sim): re-pin the suite for Activity, Details and pool levels"
+npx chreode timing-check --head HEAD</code></pre>
+      </li>
+      <li id="t8-s8"><input type="checkbox"> Report, for the controller: no map layer changed, so no <code>bench:map</code> is owed by this slice; the page now keeps a second <code>CityStore</code> and sorts its events once per changed store (during the fill, at most every 250 ms flush), which <code>sim-timeline.bench.ts</code>'s fill case would show if it costs anything. Do not run benches inside this plan.</li>
+    </ol>
+  </section>
+
+  <section id="sec-builders-calls">
+    <h2>Builder's calls</h2>
+    <table id="tbl-calls">
+      <caption>Choices the spec leaves open, the one made, and the one rejected</caption>
+      <thead>
+        <tr><th scope="col">Call</th><th scope="col">Why</th><th scope="col">Rejected</th><th scope="col">Task</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">Goal rows named by <code>GOAL.name</code> and "+ 15%", from <code>goal.ts</code></th><td>The goal is one replaceable thing (<code>sec-prop-loop</code>); no target id or "RHNA"</td><td>Rendering <code>view.targets</code> labels through the hashed <code>TargetRow</code></td><td>1</td></tr>
+        <tr><th scope="row">"by Jan 2031" before the deadline, "Held at Jan 2031" from it</th><td>The row says its date in both phases; the buffer row is dated</td><td>A separate legend line</td><td>1</td></tr>
+        <tr><th scope="row"><code>PaintDetails</code> replaces the hashed panel</th><td>The RHNA words live in hashed files</td><td>Editing <code>ScoreboardPanel</code> (an upload)</td><td>2</td></tr>
+        <tr><th scope="row">Dock face id stays <code>'results'</code></th><td>Only words change for a person</td><td>Renaming through four files and specs</td><td>2</td></tr>
+        <tr><th scope="row">Three lenses on one chart; source's gap is new projects</th><td>The second chart's series survive as views (<code>sec-prop-chart</code>); four legend entries at most</td><td>A five-line chart</td><td>3</td></tr>
+        <tr><th scope="row">No goal step in the effect lens</th><td>A different measure; the step would mislead</td><td>Drawing it whole as in other lenses</td><td>3</td></tr>
+        <tr><th scope="row">The lens resets to Homes when Details closes</th><td>One meaning at rest</td><td>A hidden persistent lens</td><td>4</td></tr>
+        <tr><th scope="row">Published estimates stay in the Sources dialog only</th><td>Already listed there; About-bound (<code>tbl-inv-sim-outcome</code>)</td><td>A table in Details</td><td>4</td></tr>
+        <tr><th scope="row">The protection line stays in Details</th><td>Its move to the editor is not in row 7</td><td>Moving it now</td><td>4</td></tr>
+        <tr><th scope="row">The in-progress rows leave Details</th><td>The map key carries them (slice 5, <code>tbl-inv-sim-outcome</code>)</td><td>Keeping a duplicate</td><td>4</td></tr>
+        <tr><th scope="row">Below md, Activity is reached from Details' button</th><td>The sheet has one opener, the headline; Activity is the rest face from md</td><td>A second header control</td><td>5</td></tr>
+        <tr><th scope="row">Empty-lane words are a pointer-only duplicate of "+"</th><td>One keyboard stop per action; the words are visible to everyone</td><td>Two tab stops per empty kind</td><td>5</td></tr>
+        <tr><th scope="row">Starters at today with nothing in force</th><td><code>sec-prop-now</code>'s empty state</td><td>Starters beside a full list</td><td>5</td></tr>
+        <tr><th scope="row">Totals count from today; cost only with a money policy</th><td>One clock; <code>tbl-inv-sim-outcome</code></td><td>The 2022 baseline in Activity</td><td>5</td></tr>
+        <tr><th scope="row">"Totals so far" in place of yearly counts</th><td><code>sec-prop-now</code> lists totals; <code>sec-prop-events</code>' "yearly counts" has no separate design and would repeat them</td><td>A per-year table in Activity</td><td>5</td></tr>
+        <tr><th scope="row">A page-side <code>CityStore</code> for Activity</th><td>No map API change; testable</td><td>Reading the controller's store</td><td>6</td></tr>
+        <tr><th scope="row">Place by neighbourhood polygon</th><td>Published, small, same origin</td><td>No place; a show-on-map control</td><td>6</td></tr>
+        <tr><th scope="row">Six events listed</th><td>Fits the column (measured in Task 5)</td><td>A scrolling feed</td><td>6</td></tr>
+        <tr><th scope="row">The level darkens the bar's empty part, open rows only</th><td>Contrast only rises; 5 px minis cannot carry it</td><td>A pale tint; a strip under the bar</td><td>7</td></tr>
+        <tr><th scope="row">"Current funding" shows the capped baseline pools summed</th><td>One fixed bar for several pools</td><td>One fixed bar per baseline pool</td><td>7</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="sec-open-questions">
+    <h2>Open questions</h2>
+    <p>Each has a recommendation the plan executes on unless the owner says otherwise.</p>
+    <ol>
+      <li id="q-level"><strong>What "drains" means for a pool that is paid yearly.</strong> The spec's bar "starts full and drains as its money is allocated" and notes that the funding rework will give pools amounts and end dates. Today most pools receive money every year, so a level of "free share of what has arrived" refills at each arrival (a saw-tooth); only a once pool (the housing bond) drains in one run. <em>Recommendation:</em> ship the free-share level now (decided above): it is true to the engine, it shows a bond draining and a yearly pool running dry between arrivals, and the funding rework can redefine the denominator (an amount, an end date) in <code>poolLevel</code> alone. Alternative: show levels only for once pools until the rework.</li>
+      <li id="q-starters"><strong>Which three starters, and their words.</strong> The spec asks for three and names none. <em>Recommendation:</em> one per kind, each the plainest effect of its kind on this data: "Taller near transit" (the default transit rule: 6 stories within 402 m and 4 within 805 m of rail and Metro, <code>DEFAULT_BANDS</code>), "SB 423 approval clock" (the permitting preset), "A housing bond" (the funding preset, which also shows a pool draining). Alternative: three zoning starters, since Paint teaches zoning first in the game's order.</li>
+    </ol>
+  </section>
+
+  <section id="sec-not-in-plan">
+    <h2>Not in this plan</h2>
+    <ul>
+      <li>The policy's own effect at the top of its editor, and the protection line moving there (<code>tbl-inv-sim-controls</code>; not in row 7).</li>
+      <li>Market conditions as dated bars (after the funding rework); "Market conditions" keeps its one fixed bar.</li>
+      <li>Shared button, card, chip and dialog surfaces; the header's Updating lag; phone row names (slice 8). About this model, the published estimates beside their assumptions, the dataset footnote's move (slice 9): Details keeps today's Sources disclosure until then.</li>
+      <li>Levels, unlocks, "Next goal" (the game).</li>
+      <li>Stopped projects in the list: the citywide feed carries approved, started and completed days only (slice 6's <code>CITY_DAY</code>); Activity's totals count stopped homes.</li>
+      <li>Updating the governing spec's Carried forward list: the controller does that at merge.</li>
+    </ul>
+  </section>
+
+  <section id="sec-contradictions">
+    <h2>Found on the way</h2>
+    <ul>
+      <li><strong>"RHNA" is on <code>/sim</code> too, not only Paint.</strong> Results renders the hashed <code>TargetRow</code> with <code>view.targets</code>' labels ("RHNA 2023–2031", "RHNA + 15% buffer", <code>src/lib/scoreboard/targets.ts:11-18</code>). Task 1 fixes both pages' rows through <code>goal.ts</code>.</li>
+      <li><strong>The one-point gap at today has a single cause.</strong> The header reads <code>readGoal(…, TODAY)</code> (<code>results.ts:108-114</code>); Results reads month 0 because <code>at.monthIndex</code> is 0 at today (<code>SimResults.svelte:105-110</code>).</li>
+      <li><strong>The hashed Paint panel and target rows become unrendered code.</strong> <code>ScoreboardPanel</code>, <code>TargetRow</code> and their specs stay in <code>src/lib/scoreboard</code>; deleting them is for the next branch that uploads a dataset anyway (as slice 5's <code>opLots</code> comment).</li>
+      <li><strong>The published estimates already have a home.</strong> The Sources dialog lists them ("Targets and published estimates"); the second chart's dotted lines were their only other place.</li>
+      <li><strong>The page has no pool level today.</strong> <code>MoneyAt</code> (<code>money-view.ts:34-52</code>) drops <code>committed</code>, and the money series carry no leverage or uncapped flag (<code>uncappedPoolIds</code>, <code>:235-242</code>, reads them from the pools). <code>pool-level.ts</code> reads the view's series directly and the pools from the document and calibration.</li>
+      <li><strong>The feed has no names.</strong> The activity list's "where" needs the neighbourhood polygons, which the timeline worker does not load (slice 6, <code>tbl-feed-evidence</code>); the page loads them.</li>
+      <li><strong>A stale doc line.</strong> <code>docs/dev/fzp-mode.md:139</code> says <code>/sim</code>'s region is "Results" (<code>score-details</code>); <code>/sim</code> uses <code>tl-results</code> and <code>score-details</code> is the Paint dock's. Task 4 corrects it.</li>
+      <li><strong>Phones.</strong> The detail column is a sheet below md that starts under the chart (<code>TimelineMode.svelte:1093-1099</code>), so the chart's lens change in Details is visible above it. Activity and Details compete for one sheet; the headline opens Details, Details' button shows Activity. The measurements in Tasks 4 and 5 check the sheet at 375.</li>
+    </ul>
+  </section>
+
+  <section id="sec-self-review">
+    <h2>Self-review</h2>
+    <ul>
+      <li><strong>Spec coverage.</strong> Row 7: activity up to the playhead (Tasks 5, 6), Details in place of Results (Tasks 2, 4), worded empty rows (Task 5), pools that drain (Task 7). <code>sec-prop-now</code>: latest changes, marked (6); totals, affordable, from your policy (5); cost only with a money policy (5); Details button (5); empty at today with the goal and starters (5). <code>sec-prop-chart</code>: Details switches the plot by source or effect (3, 4); the second chart goes (4). <code>sec-prop-header</code>: the headline opens Details (2, 4). <code>sec-prop-paint</code>: Results stop being a hidden face; the rest is Details (2). <code>sec-prop-money</code>: drain drawn up to the playhead, empty when dry, none for uncapped (7); cost light (5). Inventory: buffer, before today, approved because of policy, pipeline versus new, stopped, income table, money details, yearly table to Details (4); affordable to Activity (5). Carried forward for slice 7: the second chart and its seen colour and scale (4, by removal), target rows held and buffer dated and the today gap (1), the headline on <code>/sim</code> (4) and on Paint with RHNA (2), the citywide list (6). Decided: one clock, today is the start, the reveal rule, current law, the headline starts at zero, public money, the detail column at rest.</li>
+      <li><strong>Type consistency.</strong> <code>BUFFER_SHARE</code>, <code>bufferAmount</code>, <code>GoalRowData</code>, <code>goalRows</code>, <code>capacityRows</code>, <code>goalRowNote</code>, <code>atDeadlineText</code>, <code>GoalRow</code> (Task 1, used in 2 and 4); <code>paintCounts</code>, <code>ROOM_MEANS</code>, <code>PaintDetails</code> (2); <code>ChartLens</code>, <code>lensOf</code>, <code>chartPoints(…, lens)</code>, <code>chartReading(…, lens)</code>, <code>chartCaption(…, lens)</code>, <code>LENS_NAME</code> (3, used in 4); <code>YearRow</code>, <code>yearRows</code>, <code>YEAR_COLUMNS</code>, <code>SimDetails</code>, <code>showDetails</code>, <code>onactivity</code>, <code>panel</code> (4, used in 5); <code>ActivityTotals</code>, <code>activityTotals</code>, <code>moneyInForce</code>, <code>Starter</code>, <code>startersFor</code>, <code>ACTIVITY_COPY</code>, <code>SimActivity</code>, <code>EMPTY_LANE</code>, <code>onstarter</code>, <code>ondetails</code> (5, extended in 6); <code>ActivityKind</code>, <code>ActivityEvent</code>, <code>ACTIVITY_LIMIT</code>, <code>ActivityIndex</code>, <code>placeOf</code>, <code>loadPlaces</code>, <code>eventText</code>, <code>cellsMsg</code> (6); <code>LevelPool</code>, <code>poolLevel</code>, <code>levelPath</code>, <code>levelLeft</code>, <code>LevelSet</code>, <code>levelSet</code>, <code>LevelFill</code> (7).</li>
+      <li><strong>Review Focus.</strong> Each item names its test step in its owning task.</li>
+      <li><strong>Proportion.</strong> Code blocks are signatures, data contracts, test names and the assertions that carry the spec's values; no component body is written out.</li>
+    </ul>
+  </section>
+</article>
