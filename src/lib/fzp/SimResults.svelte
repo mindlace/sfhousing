@@ -7,11 +7,10 @@
   import { count } from '$lib/sim-page/brush-summary';
   import { comparisonLine, scoreCopy, type ScoreCopy } from '$lib/sim-page/policy';
   import type { LeverCapacity } from '$lib/sim/levers/resolve';
-  import { formatBuiltDate, formatCount, trackMax } from '$lib/scoreboard';
-  import type { TargetProgress } from '$lib/scoreboard/types';
+  import { formatBuiltDate, formatCount } from '$lib/scoreboard';
   import type { TimelineScore } from '$lib/sim/protocol';
   import type { TimelineView } from '$lib/sim/world/score/types';
-  import { GOAL, goalRows } from '$lib/goal/goal';
+  import { GOAL, goalRows, goalTrackMax } from '$lib/goal/goal';
   import GoalRow from '$lib/goal/GoalRow.svelte';
   import type { PlayheadAt } from '$lib/timeline/results';
   import type { Day } from '$lib/timelapse/time';
@@ -104,10 +103,8 @@
    * month up to the deadline's, held there after), dated; empty while the month is not filled.
    */
   const rows = $derived(view ? (goalRows(GOAL, view, playhead, reachedMonth) ?? []) : []);
-  /** The rows' shared track; trackMax reads only each fraction. */
-  const max = $derived(
-    rows.length > 0 ? trackMax(rows.map((r) => ({ fraction: r.fraction }) as TargetProgress)) : 1
-  );
+  /** The rows' shared track. */
+  const max = $derived(goalTrackMax(rows));
   const stages = $derived(score && at ? inProgressRows(score.shown[at.monthIndex].inProgress) : []);
   const inProgressTotal = $derived(stages.reduce((sum, s) => sum + s.units, 0));
   const phasing = $derived(score ? phasingFootnote(score.phasing) : null);

@@ -54,7 +54,7 @@ import { calendarMonths, chunk, statics } from '$lib/timeline/test/fixtures';
 import { tierTargetsOf } from '$lib/sim/scenario/score';
 import type { TimelineView } from '$lib/sim/world/score/types';
 import type { TimelineScore } from '$lib/sim/scenario/types';
-import { GOAL, TODAY, atDeadlineText, goalRows, goalStep, readGoal } from '$lib/goal/goal';
+import { GOAL, TODAY, goalStep, readGoal } from '$lib/goal/goal';
 import { indexOfDay } from '$lib/timeline/playhead';
 
 /** Index 53 of the fixture: 2031-03-15. */
@@ -407,9 +407,7 @@ describe('targets and progress', () => {
       'State target',
       'State target + 15%'
     ]);
-    const rows = goalRows(GOAL, p.view!, p.playhead, p.reachedMonth)!;
-    expect(rows.every((r) => r.atDeadline !== null)).toBe(true);
-    expect(previews()).toEqual(rows.map((r) => atDeadlineText(r.atDeadline!)));
+    expect(previews()).toEqual(['At the deadline: 20%', 'At the deadline: 18%']);
   });
 
   it('the deadline line waits until the furthest date reaches the deadline', async () => {

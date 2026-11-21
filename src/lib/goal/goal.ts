@@ -208,6 +208,15 @@ export function goalRows(
   }));
 }
 
+/**
+ * The rows' shared track full-scale, as the scoreboard's trackMax reads targets:
+ * max(1, ceil(largest fraction × 2) / 2). 1 for no rows.
+ */
+export function goalTrackMax(rows: readonly GoalRowData[]): number {
+  const largest = Math.max(0, ...rows.map((r) => r.fraction));
+  return Math.max(1, Math.ceil(largest * 2) / 2);
+}
+
 /** Paint's two rows: capacity `net` over each amount; no note, no atDeadline. */
 export function capacityRows(net: number, goal: Goal = GOAL): GoalRowData[] {
   return rowsOf(goal).map((r) => ({

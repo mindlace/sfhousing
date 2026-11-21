@@ -21,9 +21,11 @@ import {
   goalRows,
   goalStep,
   goalText,
+  goalTrackMax,
   readGoal,
   type Goal
 } from './goal';
+import { trackMax } from '$lib/scoreboard/view';
 
 function whole(): TimelineView {
   return calendarMonths(viewOfLog(logFilled(logCompiled(EMPTY_LOG, statics()), chunk(0, 24)))!);
@@ -255,6 +257,20 @@ describe('goal rows', () => {
         atDeadline: null
       }
     ]);
+  });
+
+  it('goalTrackMax: 1 up to 100%, then the next half step; as trackMax reads targets', () => {
+    expect(goalTrackMax([])).toBe(1);
+    expect(goalTrackMax(capacityRows(-500))).toBe(1);
+    expect(goalTrackMax(capacityRows(47_335))).toBe(1);
+    expect(goalTrackMax(capacityRows(82_069))).toBe(1);
+    // 1.8 of the goal (the buffer row is lower): the track grows to 200%.
+    const rows = capacityRows(147_725);
+    expect(goalTrackMax(rows)).toBe(2);
+    expect(goalTrackMax(rows)).toBe(
+      trackMax(rows.map((r, i) => ({ target: M1_TARGETS[i], fraction: r.fraction })))
+    );
+    expect(goalTrackMax(capacityRows(82_070))).toBe(1.5);
   });
 
   it('no row label or note contains RHNA', () => {
