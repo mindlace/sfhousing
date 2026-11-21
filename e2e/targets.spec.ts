@@ -365,6 +365,43 @@ test.describe('targets at 375 px', () => {
     expect(crowded.some((c) => c.startsWith('button "fixed-a" 16.0x16.0'))).toBe(true);
   });
 
+  test('a top-layer target and an absolute target past a static scroller are measured, never scrolled out', async ({
+    page
+  }) => {
+    await gotoEditor(page);
+    await page.evaluate(() => {
+      // 1. A popover (the top layer) inside a short fixed scroller, placed absolutely by the author
+      //    so only the walk's top-layer stop keeps the scroller from counting.
+      const box = document.createElement('div');
+      box.style.cssText =
+        'position:fixed;left:0;top:60px;width:100px;height:40px;overflow:auto;z-index:9998';
+      box.innerHTML =
+        '<div style="height:200px"></div>' +
+        '<div popover="manual" style="position:absolute;inset:auto;left:150px;top:300px;margin:0;padding:0;border:0;width:60px;height:16px">' +
+        '<button aria-label="pop-a" style="position:absolute;left:0;top:0;width:16px;height:16px"></button>' +
+        '<button aria-label="pop-b" style="position:absolute;left:20px;top:0;width:16px;height:16px"></button>' +
+        '</div>';
+      document.body.appendChild(box);
+      box.querySelector<HTMLElement>('[popover]')!.showPopover();
+      // 2. Two buttons placed absolutely against a relative box, inside a short static scroller
+      //    between them and it: the scroller is not their containing block, so it never clips them.
+      const fixed = document.createElement('div');
+      fixed.style.cssText = 'position:fixed;left:0;top:420px;width:400px;height:200px;z-index:9999';
+      fixed.innerHTML =
+        '<div style="position:relative;width:400px;height:200px">' +
+        '<div style="height:40px;width:100px;overflow:auto">' +
+        '<div style="height:200px"></div>' +
+        '<button aria-label="abs-a" style="position:absolute;left:150px;top:120px;width:16px;height:16px"></button>' +
+        '<button aria-label="abs-b" style="position:absolute;left:170px;top:120px;width:16px;height:16px"></button>' +
+        '</div></div>';
+      document.body.appendChild(fixed);
+    });
+    const { crowded, skipped } = await small(page);
+    expect(skipped.filter((s) => /pop-|abs-/.test(s))).toEqual([]);
+    expect(crowded.some((c) => c.startsWith('button "pop-a" 16.0x16.0'))).toBe(true);
+    expect(crowded.some((c) => c.startsWith('button "abs-a" 16.0x16.0'))).toBe(true);
+  });
+
   test('/sim: a layer inside the detail column over its own control fails the sweep', async ({
     page
   }) => {
