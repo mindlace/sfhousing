@@ -43,7 +43,10 @@ take no hover, and show `cursor: not-allowed`. A button that must say why it is 
 | `SURFACE_DIALOG_FLUSH` | A dialog that pads its own regions (Sources)                                                                       | `SURFACE_DIALOG` without the padding                           |
 
 In dark every surface is `surface-dark` with `ink-dark` text; a dialog also takes a `line-dark`
-border to set it off from the dimmed page. The constants carry no position or size: the component
+border to set it off from the dimmed page. Pop-overs and dialogs declare `color-scheme: dark` in
+dark (`dark:scheme-dark`), so a native scrollbar or field inside them follows the theme. So does
+the root layout's wrapper on the full-height map pages, which are themed whole; the document pages
+are light at every setting and declare nothing, so they never turn dark. The constants carry no position or size: the component
 adds those (`absolute top-full mt-1 w-64 …`) beside the constant.
 
 `Explain` draws `SURFACE_TIP` from md as `md:`-prefixed classes (below md the text is a muted line

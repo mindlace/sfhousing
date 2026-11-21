@@ -507,7 +507,22 @@ test('the Sources dialog has no axe violations in dark and draws on surface-dark
   const dialog = page.getByRole('dialog', { name: 'Where these numbers come from' });
   await expect(dialog).toBeVisible();
   await expect(dialog).toHaveCSS('background-color', SURFACE_DARK);
+  // Its scroller's native scrollbar follows the dark theme.
+  const scroller = dialog.locator('.overflow-y-auto').first();
+  await expect(scroller).toHaveCSS('color-scheme', 'dark');
   await expectNoA11yViolations(page, { include: ['dialog[open]'] });
+});
+
+test('color-scheme follows the theme on the map pages, and a document page stays light', async ({
+  page
+}) => {
+  await gotoSim(page);
+  // The map page's shell (its scrolling column and sheet inside `main`) declares dark.
+  await expect(page.locator('main')).toHaveCSS('color-scheme', 'dark');
+  // /about is not themed dark: its canvas and text keep the light scheme.
+  await page.goto('/about');
+  await expect(page.locator('main')).toHaveCSS('color-scheme', 'normal');
+  await expect(page.locator('html')).toHaveCSS('color-scheme', 'normal');
 });
 
 test("the shared view's banner and its Remix dialog have no axe violations in dark", async ({

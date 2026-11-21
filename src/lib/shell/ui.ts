@@ -36,9 +36,12 @@ export const BUTTON_QUIET = `min-h-11 min-w-11 rounded-full px-3 font-semibold u
 /** Added to a button that sits over the map: a small shadow so it reads on any map. */
 export const ON_MAP = 'shadow-sm';
 
-/** Menus, panels and pop-overs: rounded-lg, line border, surface, ink, shadow-lg, p-2, text-sm. */
+/**
+ * Menus, panels and pop-overs: rounded-lg, line border, surface, ink, shadow-lg, p-2, text-sm. In
+ * dark it declares the dark color-scheme, so a native scrollbar or control inside follows.
+ */
 export const SURFACE_POP =
-  'rounded-lg border border-line bg-surface p-2 text-sm text-ink shadow-lg dark:border-line-dark dark:bg-surface-dark dark:text-ink-dark';
+  'rounded-lg border border-line bg-surface p-2 text-sm text-ink shadow-lg dark:border-line-dark dark:bg-surface-dark dark:text-ink-dark dark:scheme-dark';
 
 /**
  * An explanation's tooltip: as SURFACE_POP with rounded, px-2 py-1, shadow-md. Explain.svelte draws
@@ -49,10 +52,11 @@ export const SURFACE_TIP =
 
 /**
  * A modal dialog without its padding, for a dialog that pads its own regions (the Sources dialog's
- * sticky title row and scrolling body). In dark a line border sets it off from the dimmed page.
+ * sticky title row and scrolling body). In dark a line border sets it off from the dimmed page, and
+ * it declares the dark color-scheme (its scrollbar and fields follow).
  */
 export const SURFACE_DIALOG_FLUSH =
-  'rounded-lg bg-surface text-ink shadow-xl backdrop:bg-black/40 dark:border dark:border-line-dark dark:bg-surface-dark dark:text-ink-dark';
+  'rounded-lg bg-surface text-ink shadow-xl backdrop:bg-black/40 dark:border dark:border-line-dark dark:bg-surface-dark dark:text-ink-dark dark:scheme-dark';
 
 /** A modal dialog: rounded-lg, surface, ink, shadow-xl, p-4, a 40% black backdrop. */
 export const SURFACE_DIALOG = `${SURFACE_DIALOG_FLUSH} p-4`;

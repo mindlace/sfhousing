@@ -72,6 +72,12 @@ describe('the shared parts', () => {
     }
   });
 
+  it('pop-overs and dialogs declare the dark color-scheme in dark, so their scrollbars follow', () => {
+    for (const s of [ui.SURFACE_POP, ui.SURFACE_DIALOG_FLUSH, ui.SURFACE_DIALOG]) {
+      expect(classes(s)).toContain('dark:scheme-dark');
+    }
+  });
+
   it("Explain's md tooltip draws SURFACE_TIP, class for class", () => {
     const explain = readFileSync(fromRoot('src/lib/timeline/Explain.svelte'), 'utf8');
     const attr = /role="tooltip"[^>]*?class="([^"]*)"/s.exec(explain)?.[1] ?? '';
