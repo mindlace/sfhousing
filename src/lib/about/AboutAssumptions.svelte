@@ -71,7 +71,8 @@
     if (live) return;
     // Pressed before hydration: take the disclosure's own state.
     if (details?.open) open = true;
-    const id = decodeURIComponent(location.hash.slice(1));
+    // Taken as written: the ids are ASCII, and decoding throws on a stray '%'.
+    const id = location.hash.slice(1);
     if (id !== ABOUT_ID.assumptions && !id.startsWith('src-')) return;
     landing = id;
     if (details !== null) {

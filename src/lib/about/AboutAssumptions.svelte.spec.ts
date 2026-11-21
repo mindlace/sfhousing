@@ -172,6 +172,14 @@ describe('AboutAssumptions on the page', () => {
     expect(scroll.mock.contexts[0]).toBe(document.getElementById('src-pathway'));
   });
 
+  it('a malformed hash (#100%) neither throws nor opens the assumptions', async () => {
+    history.replaceState(null, '', '#100%');
+    const { fetchFn } = await setup();
+    await expect.element(summary()).toBeVisible();
+    expect(part().querySelector('details')?.open).toBe(false);
+    expect(fetchFn).not.toHaveBeenCalled();
+  });
+
   it('an unrelated hash leaves the assumptions closed', async () => {
     history.replaceState(null, '', `#${ABOUT_ID.data}`);
     const { fetchFn } = await setup();
