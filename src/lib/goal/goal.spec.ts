@@ -217,6 +217,13 @@ describe('goal rows', () => {
     expect(of(at(DEADLINE + 5), 59)).toEqual(none);
   });
 
+  it('goalRows with the deadline before the window: no "by" or "Held at" note, today or later', () => {
+    const v = long();
+    const past = { ...STATE_TARGET, deadline: v.months[0] - 40 };
+    for (const a of [at(0, true), at(1), at(30)])
+      expect(goalRows(past, v, a, 59)!.map((r) => r.note)).toEqual([null, null]);
+  });
+
   it('goalRows is null when the month is not filled', () => {
     const v = cut(long(), 20);
     expect(goalRows(STATE_TARGET, v, at(21), 20)).toBeNull();

@@ -192,7 +192,8 @@ export function goalRows(
   if (!reading) return null;
   const value = goal.measure.valueAt(view, readMonth(goal, view, i));
   const deadline = monthOffset(goal.deadline, view.months[0]);
-  const note = goalRowNote(goal, at.index, deadline, at.atToday);
+  // A deadline before the window has passed: the rows read today, so they claim no date.
+  const note = goalRowNote(goal, at.index, deadline < 0 ? null : deadline, at.atToday);
   const preview =
     deadline >= 0 &&
     deadline <= view.filledThrough &&
