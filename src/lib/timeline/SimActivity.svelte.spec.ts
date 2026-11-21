@@ -9,6 +9,7 @@ import { formatDollars } from '$lib/fzp/format';
 import type { ActivityItem, ActivityTotals, Starter } from './activity-view';
 import { limitAlert } from '$lib/sim-page/funding-copy';
 import SimActivity from './SimActivity.svelte';
+import { BUTTON } from '$lib/shell/ui';
 
 const STARTERS: Starter[] = [
   {
@@ -205,6 +206,8 @@ describe('SimActivity', () => {
       const r = b.getBoundingClientRect();
       expect(r.height).toBeGreaterThanOrEqual(24);
       expect(r.width).toBeGreaterThanOrEqual(24);
+      // The shared button look, not a copy of it.
+      expect(b.className).toBe(BUTTON);
     }
   });
 

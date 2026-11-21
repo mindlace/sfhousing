@@ -28,6 +28,7 @@
   import { FORECAST_NOTE, LENS_NAME, TWIN_NOTE, capacityNote, marketBody } from './copy';
   import { YEAR_COLUMNS, yearRows } from './details';
   import Explain from './Explain.svelte';
+  import { BUTTON } from '$lib/shell/ui';
   import type { PlayheadAt } from './results';
 
   interface Props {
@@ -151,11 +152,7 @@
   <div class="flex items-center justify-between gap-2">
     <h2 class="text-base font-semibold">Details</h2>
     {#if onactivity}
-      <button
-        type="button"
-        class="inline-flex min-h-6 min-w-6 items-center rounded-md border border-control-line px-2 text-sm font-semibold text-ink hover:bg-surface-raised focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent dark:border-control-line-dark dark:text-ink-dark dark:hover:bg-surface-dark-raised dark:focus-visible:outline-accent-dark"
-        onclick={onactivity}>Activity</button
-      >
+      <button type="button" class={BUTTON} onclick={onactivity}>Activity</button>
     {/if}
   </div>
   {#if !score || !at}

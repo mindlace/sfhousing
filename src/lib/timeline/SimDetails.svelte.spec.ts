@@ -15,6 +15,7 @@ import { FORECAST_NOTE, LENS_NAME, TWIN_NOTE, marketBody } from './copy';
 import { DEFAULT_LEVERS } from '$lib/sim/levers/types';
 import type { LeverCapacity } from '$lib/sim/levers/resolve';
 import SimDetails from './SimDetails.svelte';
+import { BUTTON } from '$lib/shell/ui';
 import SimDetailsHost from './test/SimDetailsHost.svelte';
 import type { ChartLens } from './chart-lens';
 import { headlineAt as headAt } from './results';
@@ -206,6 +207,8 @@ describe('layout', () => {
     expect(h.parentElement!.contains(button.element())).toBe(true);
     const r = button.element().getBoundingClientRect();
     expect(r.height).toBeGreaterThanOrEqual(24);
+    // The shared button look, not a copy of it.
+    expect(button.element().className).toBe(BUTTON);
     await button.click();
     expect(onactivity).toHaveBeenCalledOnce();
     await first.unmount();
