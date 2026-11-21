@@ -102,7 +102,8 @@
   }
 
   function onWindowKey(e: KeyboardEvent) {
-    if (open !== 'height' || e.key !== 'Escape') return;
+    // An Escape already handled (an open explanation's, `defaultPrevented`) is not this one's.
+    if (open !== 'height' || e.key !== 'Escape' || e.defaultPrevented) return;
     open = null;
     swatch?.focus();
   }

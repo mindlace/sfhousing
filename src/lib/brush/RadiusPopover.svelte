@@ -36,7 +36,8 @@
   let popEl = $state<HTMLElement>();
 
   function onWindowKey(e: KeyboardEvent) {
-    if (inline || !open || e.key !== 'Escape') return;
+    // An Escape already handled (an open explanation's, `defaultPrevented`) is not this one's.
+    if (inline || !open || e.key !== 'Escape' || e.defaultPrevented) return;
     onclose?.();
     opener?.focus();
   }

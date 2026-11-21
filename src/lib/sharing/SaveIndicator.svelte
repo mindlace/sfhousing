@@ -45,8 +45,9 @@
     if (status !== 'off' || covered) popOpen = false;
   });
 
+  // An Escape already handled (an open explanation's, `defaultPrevented`) is not this one's.
   function onWindowKeydown(e: KeyboardEvent) {
-    if (popOpen && e.key === 'Escape') popOpen = false;
+    if (popOpen && e.key === 'Escape' && !e.defaultPrevented) popOpen = false;
   }
 
   function onWindowPointerdown(e: PointerEvent) {

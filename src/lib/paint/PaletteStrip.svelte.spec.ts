@@ -8,6 +8,7 @@ import '../../routes/layout.css';
 import type { BrushTool } from '$lib/brush/sampler';
 import { BrushState } from '$lib/brush/state.svelte';
 import PaletteStripHost from './test/PaletteStripHost.svelte';
+import ExplainHost from '$lib/timeline/test/ExplainHost.svelte';
 
 const HINT = 'Erase has no height.';
 
@@ -243,6 +244,29 @@ describe('PaletteStrip at 375 px', () => {
     await expect.element(palette()).not.toBeInTheDocument();
     await expect.element(swatch()).toHaveFocus();
   });
+
+  for (const which of ['height', 'size'] as const) {
+    it(`an Escape an open explanation took leaves the ${which} pop-over open; the next closes it`, async () => {
+      setup();
+      render(ExplainHost, { props: { text: 'An explanation.' } });
+      const opener = which === 'height' ? swatch() : btn('Brush size: 30 m');
+      const pop =
+        which === 'height'
+          ? palette()
+          : page.getByRole('group', { name: 'Brush size', exact: true });
+      await opener.click();
+      await expect.element(pop).toBeVisible();
+      // The pointer at rest on the opener: no explanation yet.
+      await expect.element(page.getByText('An explanation.')).not.toBeInTheDocument();
+      await page.getByTestId('target').hover();
+      await expect.element(page.getByText('An explanation.')).toBeVisible();
+      await userEvent.keyboard('{Escape}');
+      await expect.element(page.getByText('An explanation.')).not.toBeInTheDocument();
+      await expect.element(pop).toBeVisible();
+      await userEvent.keyboard('{Escape}');
+      await expect.element(pop).not.toBeInTheDocument();
+    });
+  }
 
   it('is keyboard-operable: Enter on the swatch opens it, Tab reaches the palette', async () => {
     setup();
