@@ -440,6 +440,46 @@ test.describe('mobile', () => {
       await expect(toolbar).toBeVisible();
     }
   });
+
+  test('375 and 320 px on /: the strip carries Undo and Redo, clear of the attribution and Reset view', async ({
+    page
+  }) => {
+    for (const width of [375, 320]) {
+      await page.setViewportSize({ width, height: 812 });
+      await gotoEditor(page);
+      await chooseTool(page, 'Paint');
+      await expect(strip(page)).toBeVisible();
+      // Collapsed, as the strip's own test has it (expanded, MapLibre's text spans the map).
+      await setAttribution(page, false);
+      const names = ['Undo', 'Redo', 'Done'];
+      const boxes: Box[] = [];
+      for (const name of names) {
+        const b = strip(page).getByRole('button', { name, exact: true });
+        await expect(b).toBeVisible();
+        boxes.push(await box(b));
+      }
+      // Undo, Redo, Done in that order on the strip's one line, inside the screen.
+      for (let i = 1; i < boxes.length; i++) {
+        expect(boxes[i].x).toBeGreaterThanOrEqual(boxes[i - 1].x + boxes[i - 1].width - 1);
+        expect(Math.abs(boxes[i].y - boxes[0].y)).toBeLessThan(8);
+      }
+      const s = await box(strip(page));
+      expect(s.x).toBeGreaterThanOrEqual(0);
+      expect(s.x + s.width).toBeLessThanOrEqual(width);
+      await expectApart(
+        [['palette strip', strip(page)]],
+        [
+          ['attribution', attribution(page)],
+          ['Reset view', page.getByRole('button', { name: 'Reset view' })]
+        ]
+      );
+      for (const name of names)
+        await expectUnobscured(strip(page).getByRole('button', { name, exact: true }));
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+        width
+      );
+    }
+  });
 });
 
 test.describe('desktop', () => {

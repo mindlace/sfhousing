@@ -10,8 +10,9 @@
   scrubber (`--fzp-scrubber-h`, 0 when unset) and above `lift` px (the dock's sheet handle on
   `/sim` and `/`). On a fine pointer (a narrow desktop window) the map's bottom-left navigation control
   would sit under it, so while the strip shows the control is lifted above it (WCAG 2.2 2.4.11).
-  With `onundo` the strip carries an Undo button before Done (below 22.5rem, 360 px, its left
-  inset is 0.5rem and its gap 0, so it fits a 320 px phone).
+  With `onundo` and `onredo` the strip carries Undo and Redo icon buttons before Done, named by
+  `historyName` (below 22.5rem, 360 px, its left inset is 0.5rem, its gap 0 and Done a check named
+  Done, so it fits a 320 px phone).
   Colours are tokens; a control's hover steps one level up from its background.
 -->
 <script lang="ts">
@@ -20,6 +21,7 @@
   import { SURFACE_POP } from '$lib/shell/ui';
   import type { BrushState } from '$lib/brush/state.svelte';
   import HeightPalette from './HeightPalette.svelte';
+  import { historyName } from './history';
   import { HISTORY_ICONS, PAINT_TOOLS } from './tools';
 
   interface Props {
@@ -39,10 +41,17 @@
     /** With `onundo`: whether there is a stroke to undo (the Undo button is disabled if not). */
     canUndo?: boolean;
     /**
-     * Given: an Undo icon button before Done (`/`; Redo stays in the sheet). `/sim` gives none and
+     * Given: an Undo icon button before Done (`/`, with Redo after it). `/sim` gives none and
      * keeps its strip as it was.
      */
     onundo?: () => void;
+    /** With `onredo`: whether there is a stroke to redo (the Redo button is disabled if not). */
+    canRedo?: boolean;
+    /** Given: a Redo icon button after Undo (`/`). */
+    onredo?: () => void;
+    /** What Undo and Redo would change, for their names (`historyName`); null names them bare. */
+    undoLabel?: string | null;
+    redoLabel?: string | null;
     /** Bound: the strip's height, px, for a control that rests above it (the map key). */
     height?: number;
   }
@@ -56,8 +65,17 @@
     lift = 0,
     canUndo = false,
     onundo = undefined,
+    canRedo = false,
+    onredo = undefined,
+    undoLabel = null,
+    redoLabel = null,
     height = $bindable(0)
   }: Props = $props();
+
+  const undoName = $derived(historyName('undo', undoLabel));
+  const redoName = $derived(historyName('redo', redoLabel));
+  /** Undo and Redo both in the strip: below 22.5rem Done is its icon. */
+  const history = $derived(!!onundo && !!onredo);
 
   const uid = $props.id();
   const popId = `${uid}-height-pop`;
@@ -180,14 +198,62 @@
     popClass={POP}
   />
 
+  {#snippet historyIcon(paths: readonly string[])}
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      width="20"
+      height="20"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    >
+      {#each paths as d (d)}<path {d} />{/each}
+    </svg>
+  {/snippet}
+
   {#if onundo}
     <button
       type="button"
-      aria-label="Undo"
+      aria-label={undoName}
+      title={undoName}
       disabled={!canUndo}
-      class="{CTL} flex items-center justify-center px-1"
+      class="{CTL} flex items-center justify-center px-1 max-[22.5rem]:px-0.5"
       onclick={() => onundo()}
     >
+      {@render historyIcon(HISTORY_ICONS.undo)}
+    </button>
+  {/if}
+  {#if onredo}
+    <button
+      type="button"
+      aria-label={redoName}
+      title={redoName}
+      disabled={!canRedo}
+      class="{CTL} flex items-center justify-center px-1 max-[22.5rem]:px-0.5"
+      onclick={() => onredo()}
+    >
+      {@render historyIcon(HISTORY_ICONS.redo)}
+    </button>
+  {/if}
+
+  <!-- With Undo and Redo both in the strip, below 22.5rem Done shows as a check (named Done), so
+       the strip fits a 320 px phone. -->
+  <button
+    type="button"
+    class="{CTL} underline {history
+      ? 'max-[22.5rem]:flex max-[22.5rem]:items-center max-[22.5rem]:justify-center max-[22.5rem]:px-0.5'
+      : ''}"
+    title={history ? 'Done' : undefined}
+    onclick={() => {
+      open = null;
+      ontool('move');
+      ondone();
+    }}
+  >
+    {#if history}
       <svg
         aria-hidden="true"
         viewBox="0 0 24 24"
@@ -198,21 +264,12 @@
         stroke-width="2"
         stroke-linecap="round"
         stroke-linejoin="round"
-      >
-        {#each HISTORY_ICONS.undo as d (d)}<path {d} />{/each}
-      </svg>
-    </button>
-  {/if}
-
-  <button
-    type="button"
-    class="{CTL} underline"
-    onclick={() => {
-      open = null;
-      ontool('move');
-      ondone();
-    }}>Done</button
-  >
+        class="hidden max-[22.5rem]:block"><path d="M20 6 9 17l-5-5" /></svg
+      ><span class="max-[22.5rem]:sr-only">Done</span>
+    {:else}
+      Done
+    {/if}
+  </button>
 </div>
 
 <style>

@@ -675,6 +675,10 @@
         lift={sheetH}
         canUndo={editor.canUndo}
         onundo={() => controller?.undo()}
+        canRedo={editor.canRedo}
+        onredo={() => controller?.redo()}
+        undoLabel={null}
+        redoLabel={null}
       />
     {/if}
   </div>

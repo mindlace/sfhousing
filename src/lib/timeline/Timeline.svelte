@@ -291,7 +291,7 @@
         />
       {/each}
 
-      <div class="contents" data-testid="tl-world">
+      <div class="world contents" data-testid="tl-world">
         <div class="lab plain heading">The world</div>
         <Lane />
         <FixedRow
@@ -460,6 +460,41 @@
   }
   .lab.heading {
     font-weight: 600;
+  }
+  /* Below md the label column (92 px) has no room for a name beside the count and "+", so in the
+     rows and the kind sheet every row's label is a line of its own across both columns, and its
+     lane sits on the next line in the lane column (column 1 empty): the lanes keep the ruler's
+     width and x scale. The name line rides over the playhead line (z-index 2, an opaque surface),
+     so the line passes under the words. A lane that never holds anything (the world heading's) is
+     not drawn. From md nothing changes (there the rows share out a tall box's spare height, as
+     before). */
+  @media (max-width: 767.98px) {
+    /* The lines pack at the top of a tall box rather than share out its spare height. */
+    .rows-grid {
+      align-content: start;
+    }
+    .rows-grid :global(.lab),
+    .sheet :global(.lab) {
+      grid-column: 1 / -1;
+      position: relative;
+      z-index: 2;
+      min-height: 24px;
+      border-bottom: 0;
+      background: var(--color-surface);
+    }
+    .rows-grid :global([data-testid='tl-lane']),
+    .sheet :global([data-testid='tl-lane']) {
+      grid-column: 2;
+    }
+    .world > :global([data-testid='tl-lane']) {
+      display: none;
+    }
+  }
+  @media (max-width: 767.98px) and (prefers-color-scheme: dark) {
+    .rows-grid :global(.lab),
+    .sheet :global(.lab) {
+      background: var(--color-surface-dark);
+    }
   }
   /* From md the chart's label stacks its legend under it (the plot keeps the lane's width). */
   @media (min-width: 768px) {

@@ -458,3 +458,39 @@ test('a market term committed by Enter keeps focus in its field', async ({ page 
   await expect(cut).toBeFocused();
   await expect(cut).toHaveValue('0.5');
 });
+
+// ---- the phone rows -----------------------------------------------------------------------------
+
+test('375 px: Zoning, Permitting and Public money read in full; a policy row names itself in the sheet', async ({
+  isMobile,
+  page
+}) => {
+  test.skip(!isMobile, 'mobile project only');
+  await gotoSim(page);
+  const rows = page.getByTestId('tl-rows');
+  /** A toggle or name shows its words whole (no ellipsis cut). */
+  const whole = (l: Locator) => l.evaluate((e) => e.scrollWidth <= e.clientWidth);
+  for (const kind of ['Zoning', 'Permitting', 'Public money']) {
+    const toggle = rows.getByRole('button', { name: kind, exact: true });
+    await toggle.scrollIntoViewIfNeeded();
+    await expect(toggle).toBeVisible();
+    await expect(toggle).toHaveText(kind);
+    expect(await whole(toggle), `${kind} is cut`).toBe(true);
+  }
+  await addPolicy(page, 'Permitting', PRESET);
+  await closeEditor(page);
+  await openKind(page, 'Permitting');
+  const sheet = page.getByRole('dialog', { name: 'Permitting' });
+  await expect(sheet).toBeVisible();
+  const row = sheet.getByTestId('tl-policy');
+  await expect(row).toHaveCount(1);
+  const name = row.locator('.name');
+  await expect(name).toBeVisible();
+  expect(await whole(name)).toBe(true);
+  // The name is a line of its own, above its lane, both inside the 375 px screen.
+  const n = (await name.boundingBox())!;
+  const lane = (await row.getByTestId('tl-lane').boundingBox())!;
+  expect(lane.y).toBeGreaterThanOrEqual(n.y + n.height - 1);
+  expect(lane.x + lane.width).toBeLessThanOrEqual(375);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375);
+});

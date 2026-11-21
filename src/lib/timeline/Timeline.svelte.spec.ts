@@ -267,7 +267,10 @@ describe('Timeline rows', () => {
     expect(parseFloat(line!.style.left)).toBeCloseTo(dayPct(first(13), asOf, windowEnd), 2);
     expect(line!.getAttribute('aria-hidden')).toBe('true');
     expect(getComputedStyle(line!).pointerEvents).toBe('none');
-    const lanes = [...sheet.element().querySelectorAll<HTMLElement>('[data-testid=tl-lane]')];
+    // The lanes drawn (below md the open kind's own, empty lane is not).
+    const lanes = [
+      ...sheet.element().querySelectorAll<HTMLElement>('[data-testid=tl-lane]')
+    ].filter((l) => l.getBoundingClientRect().height > 0);
     expect(lanes.length).toBeGreaterThan(1);
     const l = line!.getBoundingClientRect();
     const x = l.left + l.width / 2;
@@ -707,6 +710,124 @@ describe('Timeline rows', () => {
       expect(ratio(fill, surface), `${k} fill`).toBeGreaterThanOrEqual(3);
       expect(ratio(fill, raised), `${k} ring`).toBeGreaterThanOrEqual(3);
       expect(ratio(on, fill), `${k} text`).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+});
+
+describe('the rows below md: a name line above each lane', () => {
+  const rect = (e: Element) => e.getBoundingClientRect();
+  /** The label cell (the row's first child) and its lane. */
+  const parts = (row: Element) => ({
+    lab: row.querySelector(':scope > .lab')!,
+    lane: row.querySelector(':scope > [data-testid=tl-lane]')!
+  });
+  /** Whether an element shows its text whole (no ellipsis cut). */
+  const whole = (e: Element) => e.scrollWidth <= e.clientWidth;
+
+  async function phone() {
+    await setup({ playheadDay: first(13) });
+    await page.viewport(375, 812);
+    await expect.element(page.getByTestId('ph-part')).toBeVisible();
+    // The page's matchMedia listener has seen the new width: the chart's label is the plain one.
+    await expect.element(page.getByText('Homes completed', { exact: true })).toBeVisible();
+    return page.getByTestId('tl-rows').element().querySelector('.rows-grid')!;
+  }
+
+  it('below md a closed kind\'s name is shown whole, with its count and "+" on the same line', async () => {
+    const grid = await phone();
+    const g = rect(grid);
+    for (const [kind, name] of [
+      ['zoning', 'Zoning'],
+      ['permitting', 'Permitting'],
+      ['money', 'Public money']
+    ] as const) {
+      const row = page.getByTestId(`tl-kind-${kind}`).element();
+      const { lab, lane } = parts(row);
+      const toggle = kindButton(name).element();
+      expect(toggle.textContent?.trim()).toBe(name);
+      expect(whole(toggle), `${name} is cut`).toBe(true);
+      // The label line spans the grid; the lane sits under it in the lane column.
+      const l = rect(lab);
+      expect(Math.abs(l.left - g.left)).toBeLessThanOrEqual(1);
+      expect(Math.abs(l.right - g.right)).toBeLessThanOrEqual(1);
+      expect(Math.abs(rect(lane).top - l.bottom)).toBeLessThanOrEqual(1);
+      // Lines pack: no spare height shared out to them.
+      expect(l.height).toBeLessThanOrEqual(32);
+      expect(rect(lane).height).toBeLessThanOrEqual(32);
+      // Chevron, name, count and "+" on that one line.
+      const line = (e: Element) => {
+        const r = rect(e);
+        return r.top >= l.top - 1 && r.bottom <= l.bottom + 1;
+      };
+      expect(line(toggle)).toBe(true);
+      expect(line(row.querySelector('[data-testid=tl-count]')!)).toBe(true);
+      expect(line(row.querySelector('.plus')!)).toBe(true);
+    }
+  });
+
+  it('below md each policy row in the sheet shows its name on its own line above its lane', async () => {
+    await phone();
+    await kindButton('Permitting').click();
+    const sheet = page.getByRole('dialog', { name: 'Permitting' });
+    await expect.element(sheet).toBeVisible();
+    const grid = sheet.element().querySelector('.grid')!;
+    const g = rect(grid);
+    const rows = [...sheet.element().querySelectorAll('[data-testid=tl-policy]')];
+    expect(rows).toHaveLength(2);
+    for (const row of rows) {
+      const { lab, lane } = parts(row);
+      const l = rect(lab);
+      const n = rect(lane);
+      expect(Math.abs(l.left - g.left)).toBeLessThanOrEqual(1);
+      expect(n.top).toBeGreaterThanOrEqual(l.bottom - 1);
+      expect(whole(lab.querySelector('.name')!)).toBe(true);
+      // The words sit over the playhead line (the line passes under the name line).
+      const cs = getComputedStyle(lab);
+      expect(cs.position).toBe('relative');
+      expect(Number(cs.zIndex)).toBeGreaterThan(1);
+      expect(cs.backgroundColor).not.toBe('rgba(0, 0, 0, 0)');
+    }
+    expect(rows[0].textContent).toContain('Faster permit review');
+    await userEvent.keyboard('{Escape}');
+  });
+
+  it("below md the lanes keep the ruler's x scale: a bar's left matches dayPct", async () => {
+    await phone();
+    const ruler = page.getByTestId('tl-pin').element().querySelector('[data-testid=tl-lane]')!;
+    const r = rect(ruler);
+    for (const row of all('[data-testid=tl-rows] [data-testid=tl-lane]')) {
+      const n = rect(row);
+      if (n.height === 0) continue;
+      expect(Math.abs(n.left - r.left)).toBeLessThanOrEqual(1);
+      expect(Math.abs(n.width - r.width)).toBeLessThanOrEqual(1);
+    }
+    await kindButton('Permitting').click();
+    const sheet = page.getByRole('dialog', { name: 'Permitting' }).element();
+    await expect.poll(() => sheet.querySelectorAll('[data-testid=tl-bar]').length).toBe(4);
+    const bar = sheet.querySelector<HTMLElement>('[data-testid=tl-bar]')!;
+    const lane = rect(bar.closest('[data-testid=tl-lane]')!);
+    expect(Math.abs(lane.left - r.left)).toBeLessThanOrEqual(1);
+    expect(Math.abs(lane.width - r.width)).toBeLessThanOrEqual(1);
+    const want = lane.left + (lane.width * dayPct(first(24), asOf, windowEnd)) / 100;
+    expect(Math.abs(rect(bar).left - want)).toBeLessThanOrEqual(1);
+    await userEvent.keyboard('{Escape}');
+  });
+
+  it('from md the label column and the rows are as before', async () => {
+    await setup();
+    await page.viewport(768, 900);
+    for (const name of ['Zoning', 'Permitting', 'Public money']) await kindButton(name).click();
+    const rows = all(
+      '[data-testid=tl-rows] [data-testid^=tl-kind-], [data-testid=tl-rows] [data-testid=tl-policy], [data-testid=tl-rows] [data-testid=tl-fixed], [data-testid=tl-world]'
+    );
+    expect(rows.length).toBeGreaterThan(6);
+    for (const row of rows) {
+      const { lab, lane } = parts(row);
+      const l = rect(lab);
+      const n = rect(lane);
+      expect(Math.abs(l.width - 168)).toBeLessThanOrEqual(1);
+      expect(Math.abs(n.left - l.right)).toBeLessThanOrEqual(1);
+      expect(Math.abs(n.top - l.top)).toBeLessThanOrEqual(1);
     }
   });
 });

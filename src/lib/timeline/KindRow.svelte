@@ -80,7 +80,7 @@
   );
 </script>
 
-<div class="contents" data-testid="tl-kind-{kind}">
+<div class="kind-row contents" class:open data-testid="tl-kind-{kind}">
   <div class="lab kind">
     <button
       type="button"
@@ -250,6 +250,13 @@
   .empty:hover {
     color: var(--color-ink);
     text-decoration: underline;
+  }
+  /* Below md the label is a line of its own (Timeline); an open kind's own lane holds nothing
+     (its rows follow), so it is not drawn under the heading line. */
+  @media (max-width: 767.98px) {
+    .kind-row.open > :global([data-testid='tl-lane']) {
+      display: none;
+    }
   }
   .mini-policy {
     position: absolute;

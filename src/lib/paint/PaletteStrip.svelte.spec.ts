@@ -106,6 +106,75 @@ describe('PaletteStrip Undo', () => {
   }
 });
 
+describe('PaletteStrip Redo', () => {
+  beforeEach(async () => {
+    await page.viewport(375, 700);
+  });
+
+  it('with onredo: Redo after Undo, named Redo: {label}, disabled without canRedo', async () => {
+    const onundo = vi.fn();
+    const onredo = vi.fn();
+    setup('paint', {
+      onundo,
+      onredo,
+      canUndo: true,
+      canRedo: false,
+      undoLabel: 'Painted 8 stories',
+      redoLabel: 'Erased'
+    });
+    const undo = btn('Undo: Painted 8 stories');
+    const redo = btn('Redo: Erased');
+    await expect.element(undo).toBeEnabled();
+    await expect.element(redo).toBeDisabled();
+    await expect.element(redo).toHaveAttribute('title', 'Redo: Erased');
+    await expect.element(undo).toHaveAttribute('title', 'Undo: Painted 8 stories');
+    // Order: Undo, Redo, Done.
+    const follows = (a: Element, b: Element) =>
+      (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+    expect(follows(undo.element(), redo.element())).toBe(true);
+    expect(follows(redo.element(), btn('Done').element())).toBe(true);
+  });
+
+  it('without labels the two are named Undo and Redo; Redo calls onredo when enabled', async () => {
+    const onredo = vi.fn();
+    setup('paint', { onundo: vi.fn(), onredo, canRedo: true });
+    await expect.element(btn('Undo')).toBeVisible();
+    await btn('Redo').click();
+    expect(onredo).toHaveBeenCalledOnce();
+  });
+
+  for (const tool of ['paint', 'erase'] as const) {
+    it(`at 320 px in ${tool} the strip with Undo and Redo fits inside the viewport`, async () => {
+      await page.viewport(320, 700);
+      setup(tool, { onundo: vi.fn(), onredo: vi.fn(), canUndo: true, canRedo: true });
+      await expect.element(btn('Redo')).toBeVisible();
+      const bar = page.getByTestId('palette-strip').element().getBoundingClientRect();
+      expect(bar.left).toBeGreaterThanOrEqual(8);
+      expect(bar.right).toBeLessThanOrEqual(312);
+      const buttons = [...document.querySelectorAll('[data-testid="palette-strip"] button')];
+      expect(buttons).toHaveLength(6);
+      const top = buttons[0].getBoundingClientRect().top;
+      for (const b of buttons) {
+        const r = b.getBoundingClientRect();
+        expect(r.width).toBeGreaterThanOrEqual(24);
+        expect(r.height).toBeGreaterThanOrEqual(24);
+        expect(Math.abs(r.top - top)).toBeLessThan(10);
+      }
+      // Done is its check, still named Done.
+      await expect.element(btn('Done')).toBeVisible();
+      expect(btn('Done').element().querySelector('svg')?.getBoundingClientRect().width).toBe(20);
+      expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(320);
+    });
+  }
+
+  it('at 375 px Done keeps its word beside Undo and Redo, inside the viewport', async () => {
+    setup('erase', { onundo: vi.fn(), onredo: vi.fn() });
+    await expect.element(page.getByText('Done', { exact: true })).toBeVisible();
+    const bar = page.getByTestId('palette-strip').element().getBoundingClientRect();
+    expect(bar.right).toBeLessThanOrEqual(375 - 8);
+  });
+});
+
 describe('PaletteStrip at 375 px', () => {
   beforeEach(async () => {
     await page.viewport(375, 700);

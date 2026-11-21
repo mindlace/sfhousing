@@ -243,6 +243,50 @@ test.describe('targets at 375 px', () => {
     await expectTargets(page, '/ palette strip', 8);
   });
 
+  test('/: the palette strip at 320 px, Undo, Redo and Done as its check', async ({ page }) => {
+    await page.setViewportSize({ width: 320, height: 812 });
+    await gotoEditor(page);
+    const handle = page.getByTestId('dock-handle');
+    await handle.click();
+    await page.getByRole('radio', { name: 'Paint', exact: true }).click();
+    const strip = page.getByTestId('palette-strip');
+    await expect(strip).toBeVisible();
+    await expect(strip.getByRole('button', { name: 'Redo', exact: true })).toBeVisible();
+    await expect(strip.getByRole('button', { name: 'Done', exact: true })).toBeVisible();
+    await expectTargets(page, '/ palette strip at 320', 8);
+  });
+
+  test('/sim: the timeline rows with a policy per kind, names on their own lines, and a kind sheet', async ({
+    page
+  }) => {
+    await gotoSimReady(page);
+    const close = async () => {
+      await page.getByTestId('inspector').getByRole('button', { name: 'Close editor' }).click();
+      await expect(page.getByTestId('inspector')).toHaveCount(0);
+      // Below md the editor's kind sheet stays open: close it for the next kind.
+      await page.keyboard.press('Escape');
+      await expect(page.getByRole('dialog')).toHaveCount(0);
+    };
+    await addPolicy(page, 'Zoning', 'Transit rule');
+    await close();
+    await addPolicy(page, 'Permitting', "Permits at San Diego's pace");
+    await close();
+    await addPolicy(page, 'Public money', 'A housing bond');
+    await close();
+    const world = page.getByTestId('tl-world');
+    await world.scrollIntoViewIfNeeded();
+    await expect(
+      page.getByTestId('tl-kind-zoning').getByRole('button', { name: 'Zoning', exact: true })
+    ).toBeInViewport();
+    await expectTargets(page, '/sim timeline rows', 10);
+    await page
+      .getByTestId('tl-rows')
+      .getByRole('button', { name: 'Public money', exact: true })
+      .click();
+    await expect(page.getByRole('dialog', { name: 'Public money' })).toBeVisible();
+    await expectTargets(page, '/sim Public money sheet', 4);
+  });
+
   test('/sim: at rest, the Menu, the key, the Layers panel, a Zoning editor, Details', async ({
     page
   }) => {
