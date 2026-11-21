@@ -136,7 +136,7 @@
   const years = $derived(view && !playhead.atToday ? yearRows(view, playhead.index, inForce) : []);
   const columns = $derived(inForce ? YEAR_COLUMNS : YEAR_COLUMNS.slice(0, -1));
   const signed = (n: number) => `${n < 0 ? '' : '+'}${formatCount(n)}`;
-  const TARGET = 'inline-flex min-h-6 min-w-6 cursor-pointer items-center gap-2 pr-2 text-sm';
+  const CHOICE_LABEL = 'inline-flex min-h-6 min-w-6 cursor-pointer items-center gap-2 pr-2 text-sm';
 </script>
 
 {#snippet staleLine()}
@@ -168,7 +168,7 @@
       <legend class="text-sm font-semibold">Chart</legend>
       <div class="flex flex-wrap gap-x-3">
         {#each lenses as l (l)}
-          <label class={TARGET}>
+          <label class={CHOICE_LABEL}>
             <input
               type="radio"
               name="{uid}-lens"
