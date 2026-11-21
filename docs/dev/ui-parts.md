@@ -59,6 +59,16 @@ opens under its target. `ui.spec.ts` keeps both in step with the constant: Expla
 token for token, and the CSS rule's padding, border, radius, surface, ink and two-layer shadow,
 light and dark.
 
+## Scroll boxes
+
+A box that scrolls and should say more is below takes `class="more-below"` and
+`{@attach moreBelow}` (`src/lib/shell/more-below.ts`, which sets `data-more` while the box is not
+scrolled to within 1 px of its end). The look is `.more-below` in `src/routes/layout.css`: a 24 px
+fade to `surface` (`surface-dark` in dark) sticks to the foot, takes no press, and focus scrolls
+clear of it; under forced colours it is a 2 px `CanvasText` line. The fade ends in `surface`, so use
+it only on a `surface` box. Used by the `/sim` detail column (and the phone sheet, the same box) and
+the map toolbar's Key and Layers panels.
+
 ## Messages: chips and cards
 
 | Shape        | Use                                                    | Look                                                                      |
