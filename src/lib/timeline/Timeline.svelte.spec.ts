@@ -466,6 +466,18 @@ describe('Timeline rows', () => {
     ]);
   });
 
+  it('a click on the words adds but never focuses them (they are hidden from assistive tech)', async () => {
+    const { onadd } = await setup({ policy: emptyDoc });
+    const words = laneWords()[0];
+    await userEvent.click(words);
+    expect(onadd).toHaveBeenCalledExactlyOnceWith('zoning');
+    // Focus is where a press of the row's "+" leaves it: on the "+".
+    expect(document.activeElement).not.toBe(words);
+    expect(document.activeElement).toBe(
+      words.closest('[data-testid=tl-kind-zoning]')!.querySelector('button.plus')
+    );
+  });
+
   it('a pointer drag of an edge commits one edit on pointer-up', async () => {
     const { onedit } = await setup();
     await kindButton('Permitting').click();

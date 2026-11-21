@@ -73,6 +73,7 @@
   /** A closed, empty, editable kind says in its lane what "+" adds; the "+" takes those words. */
   const words = $derived(!open && policies.length === 0 && !readonly);
   const countId = $props.id();
+  let plus = $state<HTMLButtonElement>();
   const step = $derived(Math.min(7, 24 / Math.max(policies.length, 1)));
   const fixedSelected = $derived(
     selected !== null && isFixedRef(selected) && selected.id === FIXED_ID && selected.kind === kind
@@ -95,6 +96,7 @@
     <span class="count" id={countId} data-testid="tl-count">{policies.length}</span>
     {#if !readonly}
       <button
+        bind:this={plus}
         type="button"
         class="plus"
         aria-label={words ? EMPTY_LANE[kind] : `Add ${label} policy`}
@@ -107,14 +109,20 @@
   <Lane>
     {#if words}
       <!-- The "+" in words, for the pointer: the "+", named by these words while they show, is
-           the keyboard and assistive path, so this is hidden from both (one stop per action). -->
+           the keyboard and assistive path, so this is hidden from both (one stop per action). A
+           press never focuses it (no mousedown default): it focuses the "+" and presses as the
+           "+" does, so focus ends where a press of the "+" leaves it. -->
       <button
         type="button"
         class="empty"
         data-testid="tl-empty-lane"
         tabindex="-1"
         aria-hidden="true"
-        onclick={() => onadd(kind)}>{EMPTY_LANE[kind]}</button
+        onmousedown={(e) => e.preventDefault()}
+        onclick={() => {
+          plus?.focus();
+          onadd(kind);
+        }}>{EMPTY_LANE[kind]}</button
       >
     {:else if !open}
       {#each policies as p, i (p.id)}

@@ -112,7 +112,10 @@ test('the empty lanes say what they add; the words add a policy', async ({ page 
     await expect(w).toHaveAttribute('tabindex', '-1');
   }
   await page.getByTestId('tl-kind-money').getByTestId('tl-empty-lane').click();
-  await expect(page.getByRole('group', { name: 'Add to Public money' })).toBeVisible();
+  const menu = page.getByRole('group', { name: 'Add to Public money' });
+  await expect(menu).toBeVisible();
+  // Focus is where a press of the "+" leaves it (the "+"), never on the hidden words.
+  await expect(page.getByRole('button', { name: 'Add public money' })).toBeFocused();
 });
 
 const MONTH_NAMES = [
