@@ -44,9 +44,11 @@ const EXEMPT: { selector: string; reason: string }[] = [
 /**
  * Every visible target smaller than 24 px either way that also fails 2.5.8's spacing exception (a
  * 24 px circle on its centre meets another target or another small target's circle), as
- * "tag name w x h".
+ * "tag name w x h" (a crowded one also names the neighbour it meets).
  */
-async function small(page: Page): Promise<{ crowded: string[]; spaced: string[] }> {
+async function small(
+  page: Page
+): Promise<{ crowded: string[]; spaced: string[]; measured: number }> {
   return page.evaluate(
     ({ sel, exempt }) => {
       type T = { label: string; r: DOMRect };
@@ -84,6 +86,10 @@ async function small(page: Page): Promise<{ crowded: string[]; spaced: string[] 
         seen.add(target);
         const r = target.getBoundingClientRect();
         if (r.width === 0 && r.height === 0) continue;
+        // Covered at its centre by something else (a timeline bar under the phone's open editor):
+        // not pressable there, so not a target in this state. Off-screen points read null: kept.
+        const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+        if (hit && !target.contains(hit) && !hit.contains(target)) continue;
         const name =
           el.getAttribute('aria-label') ||
           el.getAttribute('data-testid') ||
@@ -101,7 +107,7 @@ async function small(page: Page): Promise<{ crowded: string[]; spaced: string[] 
       for (const t of targets) {
         if (!isSmall(t.r)) continue;
         const [x, y] = centre(t.r);
-        const near = targets.some((o) => {
+        const near = targets.find((o) => {
           if (o === t) return false;
           // Nested in each other (a label around its input): one target, not two.
           if (
@@ -119,11 +125,11 @@ async function small(page: Page): Promise<{ crowded: string[]; spaced: string[] 
           }
           return toRect(x, y, o.r) < 12;
         });
-        (near ? crowded : spaced).push(
-          `${t.label} ${t.r.width.toFixed(1)}x${t.r.height.toFixed(1)}`
-        );
+        const size = `${t.label} ${t.r.width.toFixed(1)}x${t.r.height.toFixed(1)}`;
+        if (near) crowded.push(`${size}, beside ${near.label}`);
+        else spaced.push(size);
       }
-      return { crowded, spaced };
+      return { crowded, spaced, measured: targets.length };
     },
     { sel: INTERACTIVE, exempt: EXEMPT.map((e) => e.selector) }
   );
@@ -131,13 +137,30 @@ async function small(page: Page): Promise<{ crowded: string[]; spaced: string[] 
 
 /**
  * Fails on any target under 24 px that its neighbours crowd; notes the ones under 24 px that pass
- * on 2.5.8's spacing exception, so the report can list them.
+ * on 2.5.8's spacing exception, so the report can list them. Also fails when it measured fewer
+ * than `floor` targets (a sweep that sees nothing passes on nothing), and returns the count.
  */
-async function expectTargets(page: Page, where: string): Promise<void> {
-  const { crowded, spaced } = await small(page);
+// Each state's floor sits a third or so under what it measured on fixture-0 (Task 2b review M3):
+// low enough to survive a control added or dropped, high enough that a sweep seeing half the page
+// fails.
+async function expectTargets(page: Page, where: string, floor: number): Promise<number> {
+  const { crowded, spaced, measured } = await small(page);
   for (const s of spaced)
     test.info().annotations.push({ type: 'spaced', description: `${where}: ${s}` });
+  test.info().annotations.push({ type: 'measured', description: `${where}: ${measured}` });
   expect(crowded, where).toEqual([]);
+  expect(measured, `${where}: targets measured`).toBeGreaterThanOrEqual(floor);
+  return measured;
+}
+
+/** /sim with its map ready and the forecast filled. */
+async function gotoSimReady(page: Page): Promise<void> {
+  await page.goto('/sim');
+  await page.waitForFunction(() => (window as W).__sfhFzp?.phase === 'ready');
+  await page.waitForFunction(
+    () => document.querySelector('[data-testid="map-root"]')?.getAttribute('data-state') === 'ready'
+  );
+  await waitFilled(page);
 }
 
 test.describe('targets at 375 px', () => {
@@ -150,40 +173,57 @@ test.describe('targets at 375 px', () => {
 
   test('/: at rest, the Menu, the Paint sheet, the palette strip', async ({ page }) => {
     await gotoEditor(page);
-    await expectTargets(page, '/ at rest');
+    const rest = await expectTargets(page, '/ at rest', 5);
     await openHeaderMenu(page);
-    await expectTargets(page, '/ Menu open');
+    // The Menu adds the site name, the two steps, Publish, Sign in and About.
+    expect(await expectTargets(page, '/ Menu open', 10)).toBeGreaterThan(rest);
     await page.keyboard.press('Escape');
     const handle = page.getByTestId('dock-handle');
     await handle.click();
     await expect(handle).toHaveAttribute('aria-expanded', 'true');
-    await expectTargets(page, '/ Paint sheet');
+    await expectTargets(page, '/ Paint sheet', 15);
     await page.getByRole('radio', { name: 'Paint', exact: true }).click();
     await expect(page.getByTestId('palette-strip')).toBeVisible();
-    await expectTargets(page, '/ palette strip');
+    await expectTargets(page, '/ palette strip', 8);
   });
 
-  test('/sim: at rest, the key, a policy editor, Details', async ({ page }) => {
-    await page.goto('/sim');
-    await page.waitForFunction(() => (window as W).__sfhFzp?.phase === 'ready');
-    await page.waitForFunction(
-      () =>
-        document.querySelector('[data-testid="map-root"]')?.getAttribute('data-state') === 'ready'
-    );
-    await waitFilled(page);
-    await expectTargets(page, '/sim at rest');
+  test('/sim: at rest, the Menu, the key, the Layers panel, a Zoning editor, Details', async ({
+    page
+  }) => {
+    await gotoSimReady(page);
+    const rest = await expectTargets(page, '/sim at rest', 15);
+    await openHeaderMenu(page);
+    // The Menu adds the site name, the steps, Undo, Redo, Publish, Sign in and About.
+    expect(await expectTargets(page, '/sim Menu open', 20)).toBeGreaterThan(rest);
+    await page.keyboard.press('Escape');
     const key = page.getByTestId('map-key-toggle');
     await key.click();
     await expect(page.getByRole('group', { name: 'Map key' })).toBeVisible();
-    await expectTargets(page, '/sim key open');
+    await expectTargets(page, '/sim key open', 15);
     await key.click();
+    const layers = page.getByRole('button', { name: 'Map layers' });
+    await layers.click();
+    await expect(page.getByRole('group', { name: 'Map layers' })).toBeVisible();
+    await expectTargets(page, '/sim Layers panel', 15);
+    await layers.click();
     await addPolicy(page, 'Zoning', 'Transit rule');
     await expect(page.getByTestId('inspector')).toBeVisible();
-    await expectTargets(page, '/sim policy editor');
+    await expectTargets(page, '/sim Zoning editor', 25);
     await page.getByTestId('score-bar').click();
     await expect(page.getByTestId('tl-details')).toBeVisible();
-    await expectTargets(page, '/sim Details');
+    await expectTargets(page, '/sim Details', 10);
   });
+
+  // One editor per page: below md an editor opens in its kind's sheet, over the other kinds.
+  for (const [kind, choice] of [
+    ['Permitting', "Permits at San Diego's pace"],
+    ['Public money', 'A housing bond']
+  ])
+    test(`/sim: the ${kind} editor`, async ({ page }) => {
+      await gotoSimReady(page);
+      await addPolicy(page, kind, choice);
+      await expectTargets(page, `/sim ${kind} editor`, 25);
+    });
 
   test('/lesscars at rest', async ({ page }) => {
     await page.goto('/lesscars');
@@ -193,6 +233,6 @@ test.describe('targets at 375 px', () => {
         document.querySelector('[data-testid="map-root"]')?.getAttribute('data-state') === 'ready'
     );
     await expect(page.getByTestId('map-root')).toHaveAttribute('data-state', 'ready');
-    await expectTargets(page, '/lesscars at rest');
+    await expectTargets(page, '/lesscars at rest', 8);
   });
 });
