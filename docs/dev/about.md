@@ -64,8 +64,10 @@ one heading level under the part.
   data checks load `manifest.scenarios.fzp.projects`. Closing and opening again fetches nothing,
   except that a failed data-checks load tries again on the next open (`loadChecks()`).
   These are the same-origin, immutable `/data/<version>/…` files `/sim` loads.
-- One `role="status"` region, mounted with the disclosure, holds the state as a `Message`:
-  "Loading…", then nothing, or `ASSUMPTIONS_FAILED` with Retry (`BUTTON_QUIET`), which loads again.
+- The state shows as a `Message`: "Loading…", then nothing, or `ASSUMPTIONS_FAILED` with Retry
+  (`BUTTON_QUIET`), which loads again. One `role="status"` region, a plain `sr-only` block mounted
+  with the disclosure, carries the same words alone (never Retry), so each change is announced once
+  (no `display: contents`, whose role older WebKit dropped).
 - No `fzp` scenario in the manifest (or no manifest): the heading and `ASSUMPTIONS_FAILED`, with
   no disclosure and no Retry.
 - A hash naming `about-assumptions` or any `src-…` id, on mount or on a later `hashchange` (a

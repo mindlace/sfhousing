@@ -136,15 +136,16 @@
   {:else}
     <details bind:this={details} ontoggle={() => (open = details?.open ?? false)} class="mt-2">
       <summary class="{TARGET} cursor-pointer font-semibold">{ASSUMPTIONS_SHOW}</summary>
-      <!-- One status region, mounted with the disclosure: what it says changes, so it is
-           announced once per change. -->
-      <div role="status" class="contents">
-        {#if model.kind === 'loading'}
-          <div class="mt-2"><Message text="Loading…" /></div>
-        {:else if model.kind === 'failed'}
-          <div class="mt-2"><Message text={ASSUMPTIONS_FAILED} actions={retry} /></div>
-        {/if}
+      <!-- One status region, a plain block mounted with the disclosure: what it says changes, so
+           it is announced once per change. It holds the words alone; Retry stays outside it. -->
+      <div role="status" class="sr-only">
+        {model.kind === 'loading' ? 'Loading…' : model.kind === 'failed' ? ASSUMPTIONS_FAILED : ''}
       </div>
+      {#if model.kind === 'loading'}
+        <div class="mt-2"><Message text="Loading…" /></div>
+      {:else if model.kind === 'failed'}
+        <div class="mt-2"><Message text={ASSUMPTIONS_FAILED} actions={retry} /></div>
+      {/if}
       {#if model.kind === 'ready'}
         <ProvenanceBody
           bind:this={body}

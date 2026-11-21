@@ -58,6 +58,8 @@ async function setup(
 
 const part = () => document.getElementById(ABOUT_ID.assumptions)!;
 const summary = () => page.getByText(ASSUMPTIONS_SHOW, { exact: true });
+/** The failure as shown (the Message); the status region's hidden copy of the words comes first. */
+const shownFailure = () => page.getByText(ASSUMPTIONS_FAILED, { exact: true }).last();
 const sectionHeadings = () =>
   [...part().querySelectorAll('h3')].map((h) => h.textContent?.trim() ?? '');
 const expected = () => [
@@ -114,6 +116,27 @@ describe('AboutAssumptions on the page', () => {
     expect(document.getElementById('src-transitions')!.querySelector('h4')).not.toBeNull();
   });
 
+  it('the status region is a block that announces the words alone, never Retry', async () => {
+    const fail = vi
+      .fn<() => Promise<Response>>()
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockImplementation(() => Promise.resolve(json(calibrationJson)));
+    await setup({ fetchFn: stub(fail) });
+    const status = part().querySelector('[role="status"]') as HTMLElement;
+    // Mounted with the part, before anything is asked for, and not display: contents.
+    expect(status).not.toBeNull();
+    expect(getComputedStyle(status).display).not.toBe('contents');
+    await summary().click();
+    await expect.element(page.getByRole('button', { name: 'Retry' })).toBeVisible();
+    expect(status.textContent?.trim()).toBe(ASSUMPTIONS_FAILED);
+    expect(status.textContent).not.toContain('Retry');
+    expect(status.querySelector('button')).toBeNull();
+    await page.getByRole('button', { name: 'Retry' }).click();
+    await expect.poll(sectionHeadings).toEqual(expected());
+    expect(part().querySelector('[role="status"]')).toBe(status);
+    expect(status.textContent?.trim()).toBe('');
+  });
+
   it('a failure shows "The assumptions couldn\'t load." and Retry; Retry loads', async () => {
     const fail = vi
       .fn<() => Promise<Response>>()
@@ -122,7 +145,7 @@ describe('AboutAssumptions on the page', () => {
     const fetchFn = stub(fail);
     await setup({ fetchFn });
     await summary().click();
-    await expect.element(page.getByText(ASSUMPTIONS_FAILED)).toBeVisible();
+    await expect.element(shownFailure()).toBeVisible();
     expect(ASSUMPTIONS_FAILED).toBe("The assumptions couldn't load.");
     const retry = page.getByRole('button', { name: 'Retry' });
     await expect.element(retry).toBeVisible();
@@ -176,7 +199,7 @@ describe('AboutAssumptions on the page', () => {
       .mockRejectedValueOnce(new Error('offline'))
       .mockImplementation(() => Promise.resolve(json(calibrationJson)));
     await setup({ fetchFn: stub(fail) });
-    await expect.element(page.getByText(ASSUMPTIONS_FAILED)).toBeVisible();
+    await expect.element(shownFailure()).toBeVisible();
     expect(scroll).not.toHaveBeenCalled();
     await page.getByRole('button', { name: 'Retry' }).click();
     await expect.poll(() => scroll.mock.calls.length).toBe(1);
