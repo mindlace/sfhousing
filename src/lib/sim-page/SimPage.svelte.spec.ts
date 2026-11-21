@@ -1679,6 +1679,31 @@ describe('SimPage autosave and publish', () => {
       expect(page.getByText(limitAlert('pools')).elements()).toHaveLength(0);
     });
 
+    it('a change to the policy clears the refusal', async () => {
+      await openedAtPoolLimit();
+      await activity().getByRole('button', { name: 'A housing bond' }).click();
+      await expect.element(refusal()).toHaveTextContent(limitAlert('pools'));
+      // A change that is not a starter press: a zoning policy from the kind's "+".
+      await page.getByRole('button', { name: PLUS_NAME.Zoning }).click();
+      await page.getByRole('button', { name: 'Protect historic buildings' }).click();
+      await expect.element(inspectorTitle()).toHaveTextContent('Protect historic buildings');
+      await inspector().getByRole('button', { name: 'Close editor' }).click();
+      await expect.element(activity()).toBeVisible();
+      await expect.element(refusal()).toHaveTextContent('');
+    });
+
+    it('leaving today and coming back clears the refusal', async () => {
+      await openedAtPoolLimit();
+      await activity().getByRole('button', { name: 'A housing bond' }).click();
+      await expect.element(refusal()).toHaveTextContent(limitAlert('pools'));
+      (page.getByRole('slider').first().element() as HTMLElement).focus();
+      await userEvent.keyboard('{End}');
+      await expect.element(refusal()).not.toBeInTheDocument();
+      await userEvent.keyboard('{Home}');
+      await expect.element(refusal()).toBeInTheDocument();
+      await expect.element(refusal()).toHaveTextContent('');
+    });
+
     it("Activity's Details opens Details and focuses it", async () => {
       await opened();
       await activity().getByRole('button', { name: 'Details' }).click();
