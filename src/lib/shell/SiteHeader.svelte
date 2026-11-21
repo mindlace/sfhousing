@@ -10,7 +10,7 @@
   follows the account entry on every route (the map pages have no footer). The status is the
   page's one status cell, left-aligned at every width and never in the Menu: on Paint and /sim
   the save state (nothing when saved), and on /sim "Updating" covers it while the numbers are
-  stale, with its explanation button. The status and the actions render once at every width:
+  stale or Play waits (beside it while autosave is off), with its explanation button. The status and the actions render once at every width:
   from lg the panel is `display: contents`, so the actions sit in the header row.
 -->
 <script lang="ts">
