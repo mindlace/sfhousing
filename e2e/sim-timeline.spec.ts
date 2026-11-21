@@ -308,6 +308,18 @@ test('Space plays and pauses from the body and from the date slider', async ({ p
   await expect.poll(() => fzp(page, 'playing')).toBe(false);
   await expect(slider(page)).toBeFocused();
   expect(await scrolled(page)).toBe(scroll);
+  // Held, from the body and from the slider: one toggle, and the repeats scroll nothing.
+  for (const from of ['body', 'slider'] as const) {
+    if (from === 'body') await page.evaluate(() => (document.activeElement as HTMLElement).blur());
+    else await slider(page).focus();
+    await page.keyboard.down(' ');
+    for (let i = 0; i < 4; i++) await page.keyboard.down(' ');
+    await page.keyboard.up(' ');
+    await expect.poll(() => fzp(page, 'playing')).toBe(true);
+    expect(await scrolled(page), `held from the ${from}`).toBe(scroll);
+    await page.keyboard.press('Space');
+    await expect.poll(() => fzp(page, 'playing')).toBe(false);
+  }
   // On a button Space is the button's: Today jumps and pauses, it never plays.
   await page.getByTestId('tl-today').focus();
   await page.keyboard.press('Space');

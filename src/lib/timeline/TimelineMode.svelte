@@ -763,11 +763,23 @@
     }
   }
 
+  /**
+   * A Space press that toggled is held: its repeats are handled too, without a toggle, so a held
+   * key never scrolls the page. Cleared on Space's keyup and on a window blur.
+   */
+  let spaceTook = false;
+
   function onWindowKey(e: KeyboardEvent): void {
+    if (spaceTook && e.key === ' ' && e.repeat) return e.preventDefault();
     if (!spacePlays || !playhead) return;
     if (!isPlayKey(e, overlayOpen())) return;
     e.preventDefault();
+    spaceTook = true;
     playhead.toggle();
+  }
+
+  function onWindowKeyUp(e: KeyboardEvent): void {
+    if (e.key === ' ') spaceTook = false;
   }
   /** About's live assumptions: read only once the dialog has opened (props are lazy). */
   const aboutSections = $derived(calibration ? provenanceSections(calibration, score, terms) : []);
@@ -1521,7 +1533,7 @@
   </div>
 {/snippet}
 
-<svelte:window onkeydown={onWindowKey} />
+<svelte:window onkeydown={onWindowKey} onkeyup={onWindowKeyUp} onblur={() => (spaceTook = false)} />
 
 {#snippet playheadPart()}
   <Playhead

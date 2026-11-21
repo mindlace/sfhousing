@@ -697,12 +697,20 @@ describe('TimelineMode', () => {
       (document.activeElement as HTMLElement | null)?.blur();
       expect(spaceOn(document.body).defaultPrevented).toBe(true);
       expect(debug().playing).toBe(true);
-      // The repeats while held: neither a toggle nor handled by the page.
-      for (let i = 0; i < 3; i++) spaceOn(document.body, { repeat: true });
-      expect(debug().playing).toBe(true);
+      // The repeats while held: no toggle, but handled, so the page never scrolls.
+      for (let i = 0; i < 3; i++) {
+        expect(spaceOn(document.body, { repeat: true }).defaultPrevented).toBe(true);
+        expect(debug().playing).toBe(true);
+      }
       spaceUp(document.body);
       expect(debug().playing).toBe(true);
+      // Released: a repeat no press took is left to the browser.
+      expect(spaceOn(document.body, { repeat: true }).defaultPrevented).toBe(false);
       spaceOn(document.body);
+      expect(debug().playing).toBe(false);
+      // A blur ends the press as a keyup does.
+      window.dispatchEvent(new Event('blur'));
+      expect(spaceOn(document.body, { repeat: true }).defaultPrevented).toBe(false);
       expect(debug().playing).toBe(false);
       spaceUp(document.body);
     });
