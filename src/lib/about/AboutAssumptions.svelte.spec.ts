@@ -173,22 +173,27 @@ describe('AboutAssumptions on the page', () => {
     expect(scroll).toHaveBeenCalledTimes(1);
   });
 
-  it('a delayed landing focuses the target without scrolling again, so Tab starts there', async () => {
+  it("a delayed landing focuses the target's heading without scrolling again, so Tab starts there", async () => {
     history.replaceState(null, '', '#src-pathway');
     const scroll = vi.spyOn(HTMLElement.prototype, 'scrollIntoView');
     await setup();
     await expect.poll(() => scroll.mock.calls.length).toBe(1);
     const target = document.getElementById('src-pathway')!;
-    expect(document.activeElement).toBe(target);
-    expect(target.tabIndex).toBe(-1);
+    // Its heading, one line: a focus ring never surrounds the whole section.
+    const heading = target.querySelector('h1, h2, h3, h4, h5, h6') as HTMLElement;
+    expect(document.activeElement).toBe(heading);
+    expect(heading.tabIndex).toBe(-1);
     expect(scroll).toHaveBeenCalledTimes(1);
   });
 
-  it("the part's own id opens the assumptions too", async () => {
+  it("the part's own id opens the assumptions too, and focuses the part's heading", async () => {
     history.replaceState(null, '', `#${ABOUT_ID.assumptions}`);
     await setup();
     await expect.poll(sectionHeadings).toEqual(expected());
     expect(part().querySelector('details')?.open).toBe(true);
+    await expect
+      .poll(() => document.activeElement)
+      .toBe(part().querySelector('h1, h2, h3, h4, h5, h6'));
   });
 
   it('after a failure, Retry loads and the hash still lands', async () => {

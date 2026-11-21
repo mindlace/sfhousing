@@ -13,6 +13,7 @@
   import Message from '$lib/shell/Message.svelte';
   import { BUTTON_QUIET, TARGET } from '$lib/shell/ui';
   import { onMount, untrack } from 'svelte';
+  import { focusLanding } from './land';
   import { ABOUT_ID, ASSUMPTIONS_FAILED, ASSUMPTIONS_SHOW, PART_HEADING } from './copy';
 
   interface Props {
@@ -108,9 +109,9 @@
     if (el === null) return;
     el.scrollIntoView({ block: 'start' });
     // The target appeared after load, so the browser did not move the focus start point there:
-    // focus it (without scrolling again), so a keyboard user's next Tab starts at it.
-    if (!el.hasAttribute('tabindex')) el.tabIndex = -1;
-    el.focus({ preventScroll: true });
+    // focus its heading (without scrolling again), so a keyboard user's next Tab starts at it and
+    // any focus ring is one line, never the whole part.
+    focusLanding(el);
     landing = null;
   });
 </script>
