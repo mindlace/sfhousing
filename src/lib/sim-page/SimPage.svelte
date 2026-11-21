@@ -29,6 +29,7 @@
   import { BrushController, type ControllerMap } from '$lib/brush/BrushController.svelte';
   import { ANNOUNCE_MS } from '$lib/brush/messages';
   import type { OverlayCtors } from '$lib/brush/overlay';
+  import { actionForKey } from '$lib/brush/shortcuts';
   import { BrushState } from '$lib/brush/state.svelte';
   import type { Manifest } from '$lib/data/manifest';
   import type { ParcelId } from '$lib/data/parcel';
@@ -655,6 +656,34 @@
     else adapter.editor.redo();
   }
 
+  /**
+   * Ctrl+Z and Ctrl+Shift+Z before the brush controller attaches (the map is loading, or never
+   * comes without WebGL): the page undoes and redoes itself. Once attached, the controller's own
+   * window listener takes the keys and this one does nothing. Typing in a field and a modal
+   * dialog keep their keys (`actionForKey`).
+   */
+  function onWindowKey(e: KeyboardEvent): void {
+    if (controller || readonly || e.defaultPrevented) return;
+    const a = actionForKey(
+      {
+        key: e.key,
+        code: e.code,
+        metaKey: e.metaKey,
+        ctrlKey: e.ctrlKey,
+        shiftKey: e.shiftKey,
+        altKey: e.altKey,
+        repeat: e.repeat,
+        target: e.target,
+        type: 'keydown'
+      },
+      { mapFocused: false, modalOpen: document.querySelector('dialog:modal') !== null }
+    );
+    if (a?.type !== 'undo' && a?.type !== 'redo') return;
+    e.preventDefault();
+    if (a.type === 'undo') undo();
+    else redo();
+  }
+
   // ---- painted areas of the selected span ----
 
   /** A painted area (custom brush) of the selected span, picked in its rows. */
@@ -1122,6 +1151,8 @@
     />
   {/if}
 {/snippet}
+
+<svelte:window onkeydown={onWindowKey} />
 
 <TimelineMode
   bind:this={timeline}

@@ -615,6 +615,56 @@ describe('SimPage publish and view', () => {
     await expect.poll(() => debug().policy.kinds.zoning).toEqual([]);
   });
 
+  it('a fine-only pointer before the map (or without one): Ctrl+Z and Ctrl+Shift+Z undo and redo', async () => {
+    stubPointer('fine');
+    stub.autoReady = false;
+    await opened();
+    const zoning = () => debug().policy.kinds.zoning;
+    const keys = (k: string) => {
+      (page.getByTestId('publish-open').element() as HTMLElement).focus();
+      return userEvent.keyboard(k);
+    };
+    await page.getByRole('button', { name: PLUS_NAME.Zoning }).click();
+    await page.getByRole('button', { name: 'Protect historic buildings' }).click();
+    await expect.poll(zoning).toHaveLength(1);
+    // No map, so no brush controller (it alone listens to the map's zoom).
+    expect(stub.map.listenerCount('zoom')).toBe(0);
+    await keys('{Control>}z{/Control}');
+    await expect.poll(zoning).toEqual([]);
+    await keys('{Control>}{Shift>}z{/Shift}{/Control}');
+    await expect.poll(zoning).toHaveLength(1);
+    // The map comes: the controller takes the keys, and one press undoes one change.
+    stub.fireReady();
+    await expect.poll(() => stub.map.listenerCount('zoom')).toBeGreaterThan(0);
+    await page.getByRole('button', { name: PLUS_NAME.Zoning }).click();
+    await page.getByRole('button', { name: 'Protect rent-controlled buildings' }).click();
+    await expect.poll(zoning).toHaveLength(2);
+    await keys('{Control>}z{/Control}');
+    await expect.poll(zoning).toHaveLength(1);
+    await keys('{Control>}{Shift>}z{/Shift}{/Control}');
+    await expect.poll(zoning).toHaveLength(2);
+    expect(zoning()).toHaveLength(2);
+  });
+
+  it('a fine-only pointer with no map: Ctrl+Z in a text field is the field’s', async () => {
+    stubPointer('fine');
+    stub.autoReady = false;
+    await opened();
+    const zoning = () => debug().policy.kinds.zoning;
+    await page.getByRole('button', { name: PLUS_NAME.Zoning }).click();
+    await page.getByRole('button', { name: 'Protect historic buildings' }).click();
+    await expect.poll(zoning).toHaveLength(1);
+    const field = document.createElement('input');
+    document.body.appendChild(field);
+    try {
+      field.focus();
+      await userEvent.keyboard('{Control>}z{/Control}');
+      expect(zoning()).toHaveLength(1);
+    } finally {
+      field.remove();
+    }
+  });
+
   it('any coarse pointer: Undo and Redo in the header, named by the change', async () => {
     const pointer = stubPointer('fine', ['fine']);
     await opened();
