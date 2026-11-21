@@ -11,8 +11,8 @@ import { parseManifest, type Manifest } from '$lib/data/manifest';
 import { fixtureCalibration } from '$lib/fzp/fixtures/calibration';
 import { REAL_ACTUAL } from '$lib/fzp/fixtures/cards';
 import { CALCULATING, fromPolicyText } from '$lib/fzp/score-view';
-import { GOAL, STATE_TARGET, type Goal } from '$lib/goal/goal';
-import { formatShortMonthYear } from '$lib/fzp/format';
+import { GOAL, STATE_TARGET, goalName, type Goal } from '$lib/goal/goal';
+import { formatDollars, formatShortMonthYear } from '$lib/fzp/format';
 import { dayFromUtc, monthStart, utcParts } from '$lib/fzp/time';
 import { callsOf, stub } from '$lib/fzp/test/sim-map-stub';
 import { lotsText } from '$lib/paint/rows';
@@ -24,18 +24,23 @@ import type { ScoreStatics } from '$lib/sim/world/score/types';
 import type { ParcelSummary, ProjectCard } from '$lib/sim/protocol';
 import type { Day } from '$lib/timelapse/time';
 import manifestJson from '../../../e2e/fixtures/data/fixture-0/manifest.json';
+import placesRaw from '../../../e2e/fixtures/data/fixture-0/neighborhoods.geojson?raw';
+import { SLOT_FLAG, type CityDelta, type TimelineUpdate } from '$lib/map/types';
+import { parseNeighborhoods, type NeighborhoodShapes } from '$lib/sim/levers/brushes';
 import { CHANGE_NOT_APPLIED, STALE_NOTE, UPDATING, goalNote, homesBy, playFromText } from './copy';
 import { filledEndDay, indexOfDay } from './playhead';
 import { DEFAULT_POLICY4, queriesOf4, type Policy, type SimPolicy4 } from './policy4';
 import { goalOutcome } from './outcome';
 import { headlineAt, headlineSpoken, headlineText, scoreOfView } from './results';
+import { PIPELINE_DASH } from './chart-lens';
 import { keyTally } from './key';
-import { chartModel } from '$lib/fzp/chart';
+import { levelSet } from './pool-level';
 import { dayPct } from './rows';
 import { scanned } from './reveal';
 import type { Lots } from './session.svelte';
 import {
   FakeTimelineWorker,
+  cellsMsg,
   compiledMsg,
   errorMsg,
   filledMsg,
@@ -43,6 +48,7 @@ import {
 } from './test/fake-timeline-worker';
 import { chunk, statics as baseStatics } from './test/fixtures';
 import type { Pool } from '$lib/timelapse/types';
+import type { AddChoice } from './add';
 import TimelineModeHost from './test/TimelineModeHost.svelte';
 import { pointerBetween } from './test/pointer';
 
@@ -57,22 +63,36 @@ vi.mock('./reveal', async (importOriginal) => {
   const real = await importOriginal<typeof import('./reveal')>();
   return { ...real, scanned: vi.fn(real.scanned) };
 });
-// Results' score and its chart's model as they are, counted (when Results rebuilds).
+// Details' score as it is, counted (when Details rebuilds).
 vi.mock('./results', async (importOriginal) => {
   const real = await importOriginal<typeof import('./results')>();
   return { ...real, scoreOfView: vi.fn(real.scoreOfView) };
+});
+// Activity's index as it is, each instance kept (its sort counter guards the playhead path).
+const { indexes } = vi.hoisted(() => ({ indexes: [] as { sorts: number }[] }));
+vi.mock('./activity', async (importOriginal) => {
+  const real = await importOriginal<typeof import('./activity')>();
+  class Kept extends real.ActivityIndex {
+    constructor() {
+      super();
+      indexes.push(this);
+    }
+  }
+  return { ...real, ActivityIndex: Kept };
+});
+// The pool levels as they are, counted (when the page rebuilds them).
+vi.mock('./pool-level', async (importOriginal) => {
+  const real = await importOriginal<typeof import('./pool-level')>();
+  return { ...real, levelSet: vi.fn(real.levelSet) };
 });
 // The key's tally as it is, counted (when the page reads a row for it).
 vi.mock('./key', async (importOriginal) => {
   const real = await importOriginal<typeof import('./key')>();
   return { ...real, keyTally: vi.fn(real.keyTally) };
 });
-vi.mock('$lib/fzp/chart', async (importOriginal) => {
-  const real = await importOriginal<typeof import('$lib/fzp/chart')>();
-  return { ...real, chartModel: vi.fn(real.chartModel) };
-});
 
 const manifest: Manifest = parseManifest(manifestJson);
+const FIXTURE_PLACES: NeighborhoodShapes = parseNeighborhoods(JSON.parse(placesRaw));
 const cal = fixtureCalibration();
 const asOf = cal.asOf;
 const LAST = 23;
@@ -140,6 +160,12 @@ type Over = Partial<{
   /** The page opens with its data failed (Retry shows); `reload` is what Retry brings. */
   calibrationError: boolean;
   reload: () => Promise<{ manifest: Manifest; calibration: typeof cal }>;
+  readonly: boolean;
+  face: 'details' | 'activity';
+  onstarter: (choice: AddChoice, label: string) => void;
+  ondetails: () => void;
+  onactivity: () => void;
+  fetchPlaces: (url: string) => Promise<NeighborhoodShapes | null>;
 }>;
 
 let workers: FakeTimelineWorker[];
@@ -152,7 +178,8 @@ function setup(over: Over = {}) {
     setLots?: (l: Lots | null) => void;
     setLotsFailed?: (f: boolean) => void;
     setSaveStatus?: (s: SaveStatus) => void;
-    showResults?: () => Promise<void>;
+    showDetails?: () => Promise<void>;
+    showActivity?: () => Promise<void>;
   } = {};
   const createWorker = vi.fn(() => {
     const f = new FakeTimelineWorker();
@@ -182,7 +209,13 @@ function setup(over: Over = {}) {
       ...(over.inspectorOpen !== undefined ? { inspectorOpen: over.inspectorOpen } : {}),
       ...(over.scoreExpanded !== undefined ? { scoreExpanded: over.scoreExpanded } : {}),
       ...(over.saveStatus ? { saveStatus: over.saveStatus } : {}),
-      ...(over.goal ? { goal: over.goal } : {})
+      ...(over.goal ? { goal: over.goal } : {}),
+      ...(over.readonly ? { readonly: true } : {}),
+      ...(over.face ? { face: over.face } : {}),
+      ...(over.onstarter ? { onstarter: over.onstarter } : {}),
+      ...(over.ondetails ? { ondetails: over.ondetails } : {}),
+      ...(over.onactivity ? { onactivity: over.onactivity } : {}),
+      fetchPlaces: over.fetchPlaces ?? (async () => FIXTURE_PLACES)
     }
   });
   return {
@@ -192,7 +225,8 @@ function setup(over: Over = {}) {
     setLots: (l: Lots | null) => ctl.setLots!(l),
     setLotsFailed: (f: boolean) => ctl.setLotsFailed!(f),
     setSaveStatus: (st: SaveStatus) => ctl.setSaveStatus!(st),
-    showResults: () => ctl.showResults!()
+    showDetails: () => ctl.showDetails!(),
+    showActivity: () => ctl.showActivity!()
   };
 }
 
@@ -1081,12 +1115,12 @@ describe('TimelineMode', () => {
     await expect.element(scoreBar()).toHaveTextContent(textAt(i).main);
     expect(page.getByTestId('score-delta').elements()).toEqual([]);
     await expect.element(page.getByTestId('score-detail')).toHaveTextContent(/of the goal$/);
-    const results = page.getByTestId('tl-results');
+    const results = page.getByTestId('tl-details');
     await expect.element(results).toHaveTextContent('What current law added');
     expect(results.element().textContent).not.toContain('your policy');
   });
 
-  it('a policy in force: the header shows the plan effect and Results the your-policy copy', async () => {
+  it('a policy in force: the header shows the plan effect and Details the your-policy copy', async () => {
     await opened(LAST, { withInspector: true, initialPolicy: mk(protect(5)) });
     (slider().element() as HTMLElement).focus();
     await userEvent.keyboard('{PageUp}');
@@ -1096,7 +1130,7 @@ describe('TimelineMode', () => {
       .element(page.getByTestId('score-delta'))
       .toHaveTextContent(fromPolicyText(FULL().planEffect[i].completedNetNew));
     await expect
-      .element(page.getByTestId('tl-results'))
+      .element(page.getByTestId('tl-details'))
       .toHaveTextContent('What your policy added');
   });
 
@@ -1338,7 +1372,7 @@ describe('TimelineMode', () => {
 
   it("the comparison wording is the shown numbers' document's: it changes with them", async () => {
     const s = await opened(LAST, { withInspector: true });
-    const results = page.getByTestId('tl-results');
+    const results = page.getByTestId('tl-details');
     (slider().element() as HTMLElement).focus();
     await userEvent.keyboard('{PageUp}');
     await expect.poll(() => debug().day).toBeGreaterThan(asOf);
@@ -1361,9 +1395,9 @@ describe('TimelineMode', () => {
     await expect.element(page.getByTestId('score-delta')).toHaveTextContent(/from your policy$/);
   });
 
-  /** Results and the header keep the current-law wording now; after `answer` the policy's. */
+  /** Details and the header keep the current-law wording now; after `answer` the policy's. */
   async function heldWordingThenPolicy(answer: () => void) {
-    const results = page.getByTestId('tl-results');
+    const results = page.getByTestId('tl-details');
     await tick();
     expect(debug().stale).toBe(true);
     await expect.element(results).toHaveTextContent('What current law added');
@@ -1385,7 +1419,7 @@ describe('TimelineMode', () => {
     s.setLotsFailed(true);
     await expect.poll(() => debug().stale).toBe(false);
     await expect
-      .element(page.getByTestId('tl-results'))
+      .element(page.getByTestId('tl-details'))
       .toHaveTextContent('What current law added');
     // Retry found the lots: the painted document goes out with no new edit.
     s.setLotsFailed(false);
@@ -1465,7 +1499,11 @@ describe('TimelineMode', () => {
     await expect.poll(() => w()?.lastOf('openTimeline')).toBeTruthy();
     emit(compiledMsg(1, FIN));
     filledPools(1);
-    const results = page.getByTestId('tl-results');
+    // Past today: at today Details shows no money block.
+    (slider().element() as HTMLElement).focus();
+    await userEvent.keyboard('{PageUp}');
+    await expect.poll(() => debug().day).toBeGreaterThan(asOf);
+    const results = page.getByTestId('tl-details');
     await results.getByRole('button', { name: /Money details/ }).click();
     const received = () => {
       const table = results.getByTestId('fzp-money-sources').element() as HTMLTableElement;
@@ -1485,6 +1523,155 @@ describe('TimelineMode', () => {
     filledPools(2);
     await expect.poll(() => debug().stale).toBe(false);
     await expect.poll(received).toBe('no limit');
+  });
+
+  it('levels rebuild with the view, never as the playhead crosses months', async () => {
+    const bond: Pool = {
+      id: 'u-bond',
+      kind: 'generalRevenue',
+      label: 'Housing bond',
+      inflows: [{ kind: 'once', day: monthFirstDay(asOf, 2), dollars: 500_000_000 }],
+      uncapped: false,
+      debt: null,
+      leverage: 1
+    };
+    const doc: SimPolicy4 = {
+      schema: 4,
+      kinds: {
+        zoning: [],
+        permitting: [],
+        money: [
+          {
+            id: 'm',
+            label: 'Bond',
+            preset: null,
+            on: true,
+            where: { tag: 'fund', pool: 'u-bond' },
+            spans: [
+              {
+                from: monthFirstDay(asOf, 2),
+                to: null,
+                what: { tag: 'fund', pool: bond, programmes: [] }
+              }
+            ]
+          }
+        ]
+      }
+    };
+    const FIN: ScoreStatics = {
+      ...baseStatics({ lastIndex: LAST, finance: true }),
+      asOf,
+      months: MONTHS
+    };
+    const filledPools = (rev: number, from: number, base = 0) =>
+      emit({
+        type: 'filled',
+        rev,
+        through: LAST,
+        series: chunk(from, LAST + 1 - from, { pools: ['u-bond'], base })
+      });
+    setup({ initialPolicy: doc });
+    await expect.poll(() => w()?.lastOf('openTimeline')).toBeTruthy();
+    emit(compiledMsg(1, FIN));
+    filledPools(1, 0);
+    await expect.poll(() => debug().filledThrough).toBe(LAST);
+    await page
+      .getByTestId('tl-timeline')
+      .getByRole('button', { name: 'Public money', exact: true })
+      .click();
+    const fill = () =>
+      document.querySelector(
+        '[data-testid=tl-kind-money] [data-testid=tl-bar] [data-testid=tl-level]'
+      );
+    await expect.poll(fill).not.toBeNull();
+    const builds = vi.mocked(levelSet).mock.calls.length;
+    expect(builds).toBeGreaterThan(0);
+    // Across six months: the percent follows the playhead, the levels are not rebuilt.
+    (slider().element() as HTMLElement).focus();
+    for (let k = 1; k <= 6; k++) {
+      await userEvent.keyboard('{ArrowRight}');
+      await expect.poll(() => debug().day).toBeGreaterThanOrEqual(MONTHS[k]);
+    }
+    await expect.poll(() => fill()!.getAttribute('data-left')).toMatch(/^\d+$/);
+    expect(vi.mocked(levelSet).mock.calls.length).toBe(builds);
+    // A new view rebuilds them.
+    emit(refillMsg(1, 3));
+    filledPools(1, 3, 5);
+    await expect.poll(() => vi.mocked(levelSet).mock.calls.length).toBeGreaterThan(builds);
+  });
+
+  it('while an edit waits for its numbers the levels are dimmed as held numbers', async () => {
+    const bond = (dollars: number): Pool => ({
+      id: 'u-bond',
+      kind: 'generalRevenue',
+      label: 'Housing bond',
+      inflows: [{ kind: 'once', day: monthFirstDay(asOf, 2), dollars }],
+      uncapped: false,
+      debt: null,
+      leverage: 1
+    });
+    const doc = (dollars: number): SimPolicy4 => ({
+      schema: 4,
+      kinds: {
+        zoning: [],
+        permitting: [],
+        money: [
+          {
+            id: 'm',
+            label: 'Bond',
+            preset: null,
+            on: true,
+            where: { tag: 'fund', pool: 'u-bond' },
+            spans: [
+              {
+                from: monthFirstDay(asOf, 2),
+                to: null,
+                what: { tag: 'fund', pool: bond(dollars), programmes: [] }
+              }
+            ]
+          }
+        ]
+      }
+    });
+    const FIN: ScoreStatics = {
+      ...baseStatics({ lastIndex: LAST, finance: true }),
+      asOf,
+      months: MONTHS
+    };
+    const filledPools = (rev: number) =>
+      emit({
+        type: 'filled',
+        rev,
+        through: LAST,
+        series: chunk(0, LAST + 1, { pools: ['u-bond'] })
+      });
+    const s = setup({ initialPolicy: doc(500_000_000) });
+    await expect.poll(() => w()?.lastOf('openTimeline')).toBeTruthy();
+    emit(compiledMsg(1, FIN));
+    filledPools(1);
+    await expect.poll(() => debug().filledThrough).toBe(LAST);
+    await page
+      .getByTestId('tl-timeline')
+      .getByRole('button', { name: 'Public money', exact: true })
+      .click();
+    const fills = () => [
+      ...document.querySelectorAll('[data-testid=tl-kind-money] [data-testid=tl-level]')
+    ];
+    await expect.poll(() => fills().length).toBeGreaterThan(0);
+    expect(fills().every((f) => !f.hasAttribute('data-stale'))).toBe(true);
+    // An edit: the held numbers stay, dimmed, until its refill lands.
+    s.setPolicy(doc(250_000_000));
+    s.setLots({});
+    await expect.poll(() => w().lastOf('setPolicy')?.rev).toBe(2);
+    await expect.poll(() => debug().stale).toBe(true);
+    await expect
+      .poll(() => fills().every((f) => f.getAttribute('data-stale') === 'true'))
+      .toBe(true);
+    emit(compiledMsg(2, FIN));
+    emit(refillMsg(2, 0));
+    filledPools(2);
+    await expect.poll(() => debug().stale).toBe(false);
+    await expect.poll(() => fills().some((f) => f.hasAttribute('data-stale'))).toBe(false);
   });
 
   it("a crash before the first fill says the simulation couldn't load", async () => {
@@ -1601,7 +1788,7 @@ describe('TimelineMode', () => {
       .toBeCloseTo(2 + (1 - need / 100) * 96, 1);
   });
 
-  it('while stale the map canvas, Results, card and header dim; their controls keep full contrast', async () => {
+  it('while stale the map canvas, Details, card and header dim; their controls keep full contrast', async () => {
     const s = await opened(LAST, { withInspector: true });
     const canvas = document.createElement('canvas');
     canvas.className = 'maplibregl-canvas';
@@ -1630,7 +1817,7 @@ describe('TimelineMode', () => {
     };
     const controls = [
       ...document.querySelectorAll(
-        '[data-testid=tl-results] button, [data-testid=tl-card] button, [data-testid=header-pinned] button, [data-testid=fzp-sim-map-stub]'
+        '[data-testid=tl-details] button, [data-testid=tl-card] button, [data-testid=header-pinned] button, [data-testid=fzp-sim-map-stub]'
       )
     ];
     expect(controls.length).toBeGreaterThan(3);
@@ -2161,37 +2348,306 @@ describe('TimelineMode', () => {
     expect(page.getByTestId('chart-svg').element().getBoundingClientRect().height).toBe(96);
   });
 
-  it('from md the detail column shows Results when nothing is open', async () => {
+  /** Activity's totals as [term, value] pairs. */
+  const totalsOf = () =>
+    [...document.querySelectorAll('[data-testid=tl-totals] > div')].map((d) => [
+      d.querySelector('dt')!.textContent!.trim(),
+      d.querySelector('dd')!.textContent!.trim()
+    ]);
+
+  it('from md at rest the detail column shows Activity', async () => {
     await opened(LAST, { withInspector: true, inspectorOpen: false });
     const insp = page.getByTestId('tl-inspector');
-    await expect.element(insp.getByTestId('tl-results')).toBeVisible();
+    const activity = insp.getByTestId('tl-activity');
+    await expect.element(activity).toBeVisible();
     expect(document.querySelector('[data-testid=host-inspector]')).toBeNull();
+    expect(document.querySelector('[data-testid=tl-details]')).toBeNull();
+    await expect
+      .element(activity.getByRole('heading', { level: 2, name: 'Activity' }))
+      .toBeVisible();
+    // At today: the goal, and without onstarter (read-only) Press Play, no starters.
+    await expect.element(activity.getByText(goalName(GOAL))).toBeVisible();
+    await expect.element(activity.getByText('Press Play to see what gets built.')).toBeVisible();
+    // Padded as the Inspector is: the text keeps off the column's edge.
+    const pad = getComputedStyle(activity.element());
+    expect(pad.paddingLeft).toBe('12px');
+    expect(pad.paddingRight).toBe('12px');
   });
 
-  it("Results' score and chart are not rebuilt as the playhead crosses months", async () => {
-    await opened(LAST, { withInspector: true, inspectorOpen: false });
-    const chart = page.getByTestId('tl-inspector').getByTestId('fzp-chart');
-    await expect.element(chart).toBeVisible();
+  /** The detail column's bottom fade: its ::after's opacity. */
+  const fadeOf = (el: Element) => Number(getComputedStyle(el, '::after').opacity);
+
+  it('the detail column shows no fade at its foot when its content fits', async () => {
+    await opened(LAST, { withInspector: true, inspectorOpen: false, regionHeight: 900 });
+    const col = page.getByTestId('tl-inspector').element() as HTMLElement;
+    await expect.element(page.getByTestId('tl-activity')).toBeVisible();
+    expect(col.scrollHeight).toBeLessThanOrEqual(col.clientHeight);
+    expect(fadeOf(col)).toBe(0);
+  });
+
+  it('the detail column fades at its foot while more is below; scrolled to its end, none', async () => {
+    await opened(LAST, { withInspector: true, inspectorOpen: false, regionHeight: 300 });
+    const col = page.getByTestId('tl-inspector').element() as HTMLElement;
+    await expect.element(page.getByTestId('tl-activity')).toBeVisible();
+    // After today Activity lists its totals: more than the short column holds.
+    (slider().element() as HTMLElement).focus();
+    await userEvent.keyboard('{End}');
+    await expect.element(page.getByTestId('tl-totals')).toBeVisible();
+    await expect.poll(() => col.scrollHeight).toBeGreaterThan(col.clientHeight);
+    await expect.poll(() => fadeOf(col)).toBe(1);
+    // The fade never takes a press: what is under it stays reachable.
+    expect(getComputedStyle(col, '::after').pointerEvents).toBe('none');
+    // Focus scrolls clear of it.
+    expect(parseFloat(getComputedStyle(col).scrollPaddingBottom)).toBeGreaterThanOrEqual(
+      parseFloat(getComputedStyle(col, '::after').height)
+    );
+    col.scrollTop = col.scrollHeight;
+    await expect.poll(() => fadeOf(col)).toBe(0);
+  });
+
+  it('Activity at today offers the starters with nothing in force; one calls onstarter', async () => {
+    const onstarter = vi.fn();
+    const s = await opened(LAST, { withInspector: true, inspectorOpen: false, onstarter });
+    const activity = page.getByTestId('tl-activity');
+    const list = activity.getByRole('list', { name: 'Try one:' });
+    await expect.element(list).toBeVisible();
+    expect(
+      list
+        .getByRole('button')
+        .elements()
+        .map((b) => b.textContent!.trim())
+    ).toEqual(['Taller near transit', 'SB 423 approval clock', 'A housing bond']);
+    await list.getByRole('button', { name: 'Taller near transit' }).click();
+    expect(onstarter).toHaveBeenCalledExactlyOnceWith(
+      { kind: 'zoning', what: 'transit' },
+      'Transit rule'
+    );
+    // A policy in force in the edited document: Press Play instead, at once.
+    s.setPolicy(mk(protect(5)));
+    await expect.element(activity.getByText('Press Play to see what gets built.')).toBeVisible();
+    expect(activity.getByText('Try one:').elements()).toHaveLength(0);
+  });
+
+  it("Activity's totals read the header's month: today, then each month crossed", async () => {
+    await opened(LAST, {
+      withInspector: true,
+      inspectorOpen: false,
+      initialPolicy: mk(protect(5))
+    });
+    const activity = page.getByTestId('tl-activity');
+    await expect.element(activity).toBeVisible();
+    await expect.poll(() => debug().filledThrough).toBe(LAST);
+    const full = viewOf([chunk(0, LAST + 1)], STATICS);
+    (slider().element() as HTMLElement).focus();
+    await userEvent.keyboard('{Home}');
+    await expect.poll(() => debug().day).toBe(asOf);
+    expect(document.querySelector('[data-testid=tl-totals]')).toBeNull();
+    await expect.element(activity.getByText(goalName(GOAL))).toBeVisible();
+    for (let k = 1; k <= 3; k++) {
+      await userEvent.keyboard('{ArrowRight}');
+      await expect.poll(() => debug().day).toBe(MONTHS[k]);
+      const h = headlineAt(
+        full,
+        { index: k, atToday: false },
+        { provisional: false, inForce: true }
+      )!;
+      await expect.element(scoreBar()).toHaveTextContent(homesBy(h.homes, h.at));
+      await expect.poll(totalsOf).toEqual([
+        ['Approved in new projects', String(full.rows[k].entitledNew)],
+        ['Completed', String(h.homes)],
+        ['Stopped', String(full.rows[k].exitedUnits)],
+        ['From your policy', `+${h.effect}`]
+      ]);
+      expect(activity.getByText(goalName(GOAL)).elements()).toHaveLength(0);
+    }
+  });
+
+  it("stale: totals and cost are the held document's, dimmed", async () => {
+    const pool: Pool = {
+      id: 'u-bond',
+      kind: 'goBond',
+      label: 'Bond',
+      inflows: [{ kind: 'once', day: monthFirstDay(asOf, 2), dollars: 100_000_000 }],
+      uncapped: false,
+      debt: null,
+      leverage: 1
+    };
+    const bondDoc: SimPolicy4 = {
+      schema: 4,
+      kinds: {
+        zoning: [],
+        permitting: [],
+        money: [
+          {
+            id: 'm',
+            label: 'Bond',
+            preset: null,
+            on: true,
+            where: { tag: 'fund', pool: 'u-bond' },
+            spans: [
+              {
+                from: monthFirstDay(asOf, 2),
+                to: null,
+                what: { tag: 'fund', pool, programmes: [] }
+              }
+            ]
+          }
+        ]
+      }
+    };
+    const FIN: ScoreStatics = {
+      ...baseStatics({ lastIndex: LAST, finance: true }),
+      asOf,
+      months: MONTHS
+    };
+    const s = setup({ withInspector: true, inspectorOpen: false, initialPolicy: bondDoc });
+    await expect.poll(() => w()?.lastOf('openTimeline')).toBeTruthy();
+    emit(compiledMsg(1, FIN));
+    emit({
+      type: 'filled',
+      rev: 1,
+      through: LAST,
+      series: chunk(0, LAST + 1, { pools: ['u-bond'] })
+    });
+    await expect.poll(() => debug().filledThrough).toBe(LAST);
+    (slider().element() as HTMLElement).focus();
+    await userEvent.keyboard('{ArrowRight}{ArrowRight}{ArrowRight}');
+    await expect.poll(() => debug().day).toBe(MONTHS[3]);
+    const activity = page.getByTestId('tl-activity');
+    const body = activity.getByTestId('tl-activity-body');
+    const terms = () => totalsOf().map(([t]) => t);
+    const MONEY = ['All public money spent', 'Per added home'];
+    await expect
+      .poll(terms)
+      .toEqual(['Approved in new projects', 'Completed', 'Stopped', 'From your policy', ...MONEY]);
+    // The chunk's publicSpent at month 3: 100 * 4.
+    expect(totalsOf()[4][1]).toBe(formatDollars(400));
+    expect(body.element().hasAttribute('data-stale')).toBe(false);
+    // The money policy goes: until the refill the held numbers and the held document's rows stay,
+    // dimmed; the heading and Details keep their contrast.
+    s.setPolicy(DEFAULT_POLICY4);
+    s.setLots({});
+    await expect.poll(() => w().lastOf('setPolicy')?.rev).toBe(2);
+    expect(debug().stale).toBe(true);
+    await expect.element(body).toHaveAttribute('data-stale', 'true');
+    expect(terms()).toEqual([
+      'Approved in new projects',
+      'Completed',
+      'Stopped',
+      'From your policy',
+      ...MONEY
+    ]);
+    const color = (e: Element) => getComputedStyle(e).color;
+    const heading = activity.getByRole('heading', { name: 'Activity' }).element();
+    const button = activity.getByRole('button', { name: 'Details' }).element();
+    expect(color(body.element())).not.toBe(color(heading));
+    expect(color(button)).toBe(color(heading));
+    emit(compiledMsg(2, STATICS));
+    emit(refillMsg(2, 0));
+    emit(filledMsg(2, 0, LAST + 1));
+    await expect.poll(() => debug().stale).toBe(false);
+    await expect.poll(terms).toEqual(['Approved in new projects', 'Completed', 'Stopped']);
+    expect(body.element().hasAttribute('data-stale')).toBe(false);
+  });
+
+  it('read-only: no starters and no empty-lane words', async () => {
+    await opened(LAST, { withInspector: true, inspectorOpen: false, readonly: true });
+    const activity = page.getByTestId('tl-activity');
+    await expect.element(activity.getByText('Press Play to see what gets built.')).toBeVisible();
+    expect(activity.getByText('Try one:').elements()).toHaveLength(0);
+    expect(document.querySelectorAll('[data-testid=tl-empty-lane]')).toHaveLength(0);
+  });
+
+  it("Activity's Details and Details' Activity call the page; showActivity focuses Activity", async () => {
+    const ondetails = vi.fn();
+    const onactivity = vi.fn();
+    const s = await opened(LAST, {
+      withInspector: true,
+      inspectorOpen: false,
+      ondetails,
+      onactivity
+    });
+    const insp = page.getByTestId('tl-inspector');
+    await insp.getByTestId('tl-activity').getByRole('button', { name: 'Details' }).click();
+    expect(ondetails).toHaveBeenCalledOnce();
+    await (await s.r).rerender({ inspectorOpen: true });
+    await insp.getByTestId('tl-details').getByRole('button', { name: 'Activity' }).click();
+    expect(onactivity).toHaveBeenCalledOnce();
+    await (await s.r).rerender({ inspectorOpen: true, face: 'activity' });
+    await expect.element(insp.getByTestId('tl-activity')).toBeVisible();
+    await s.showActivity();
+    expect(document.activeElement).toBe(insp.getByTestId('tl-activity').element());
+  });
+
+  it("Details' score is not rebuilt as the playhead crosses months; it draws no chart", async () => {
+    await opened(LAST, { withInspector: true });
+    const details = page.getByTestId('tl-inspector').getByTestId('tl-details');
+    await expect.element(details).toBeVisible();
+    expect(details.element().querySelector('svg[role="img"], figure')).toBeNull();
     (slider().element() as HTMLElement).focus();
     await userEvent.keyboard('{Home}');
     await expect.poll(() => debug().day).toBe(asOf);
     await tick();
     const scores = vi.mocked(scoreOfView).mock.calls.length;
-    const models = vi.mocked(chartModel).mock.calls.length;
-    let paths = 0;
-    const obs = new MutationObserver((r) => (paths += r.length));
-    obs.observe(chart.element(), { subtree: true, attributes: true, attributeFilter: ['d'] });
     for (let k = 1; k <= 4; k++) {
       await userEvent.keyboard('{ArrowRight}');
       await expect.poll(() => debug().day).toBe(MONTHS[k]);
       await expect.element(scoreBar()).toHaveTextContent(textAt(k).main);
     }
     await tick();
-    paths += obs.takeRecords().length;
-    obs.disconnect();
     expect(vi.mocked(scoreOfView).mock.calls.length - scores).toBe(0);
-    expect(vi.mocked(chartModel).mock.calls.length - models).toBe(0);
-    expect(paths).toBe(0);
+  });
+
+  /** The stacked legend's entries (from md, in the label column). */
+  const stackedLegend = () =>
+    [...page.getByTestId('tl-chart-legend').element().querySelectorAll('li')].map((li) =>
+      li.textContent!.trim()
+    );
+
+  it('choosing By source in Details redraws the timeline chart with the pipeline line', async () => {
+    await opened(LAST, { withInspector: true });
+    const details = page.getByTestId('tl-details');
+    await expect.element(details).toBeVisible();
+    const fig = page.getByTestId('tl-lanes').getByRole('figure');
+    await expect.element(fig).toHaveAttribute('data-lens', 'homes');
+    expect(page.getByRole('radio', { name: 'From your policy' }).elements()).toHaveLength(0);
+    await details.getByRole('radio', { name: 'By source' }).click();
+    await expect.element(fig).toHaveAttribute('data-lens', 'source');
+    await expect.element(fig).toHaveAccessibleName('By source');
+    // The pipeline line, dashed, and the stacked legend (from md) naming what is drawn.
+    await expect
+      .element(page.getByTestId('chart-law'))
+      .toHaveAttribute('stroke-dasharray', PIPELINE_DASH);
+    expect(stackedLegend()).toEqual(['All homes', "From today's pipeline", 'New projects']);
+    await details.getByRole('radio', { name: 'Homes' }).click();
+    await expect.element(fig).toHaveAttribute('data-lens', 'homes');
+    expect(stackedLegend()[0]).toBe('Homes completed');
+  });
+
+  it('a policy in force offers From your policy; the chart and the switch agree when it goes', async () => {
+    const s = await opened(LAST, { withInspector: true, initialPolicy: mk(protect(5)) });
+    const details = page.getByTestId('tl-details');
+    const fig = page.getByTestId('tl-lanes').getByRole('figure');
+    await details.getByRole('radio', { name: 'From your policy' }).click();
+    await expect.element(fig).toHaveAttribute('data-lens', 'effect');
+    expect(stackedLegend()).toEqual(['From your policy']);
+    // The policy goes: once the numbers on show are the new document's, the radio goes and the
+    // chart and the switch both say Homes.
+    s.setPolicy(DEFAULT_POLICY4);
+    s.setLots({});
+    await expect.poll(() => w().lastOf('setPolicy')?.rev).toBe(2);
+    // Before the refill the numbers on show are the policy's: the switch and the chart both
+    // still say From your policy.
+    expect(debug().stale).toBe(true);
+    await expect.element(details.getByRole('radio', { name: 'From your policy' })).toBeChecked();
+    await expect.element(fig).toHaveAttribute('data-lens', 'effect');
+    emit(compiledMsg(2, STATICS));
+    emit(refillMsg(2, 0));
+    emit(filledMsg(2, 0, LAST + 1));
+    await expect.poll(() => debug().stale).toBe(false);
+    await expect.element(fig).toHaveAttribute('data-lens', 'homes');
+    await expect.element(details.getByRole('radio', { name: 'Homes' })).toBeChecked();
+    expect(details.getByRole('radio', { name: 'From your policy' }).elements()).toHaveLength(0);
   });
 
   it("from md the map's height holds when a kind opens or the inspector opens", async () => {
@@ -2239,19 +2695,52 @@ describe('TimelineMode', () => {
     await expect.element(scoreBar()).toHaveAttribute('aria-controls', 'insp');
   });
 
-  it('showResults scrolls the detail column to the top and focuses Results', async () => {
-    const s = await opened(LAST, { withInspector: true, inspectorOpen: false });
+  it('at today Details reads today, as the header does, not month 0', async () => {
+    setup({ withInspector: true, initialPolicy: mk(protect(5)) });
+    await expect.poll(() => w()?.lastOf('openTimeline')).toBeTruthy();
+    emit(compiledMsg(1, STATICS));
+    // Month 0 is not empty: 11 homes (5.5 + 5.5), 1 stopped, an effect of 10.
+    emit(filledMsg(1, 0, LAST + 1, { base: 10 }));
+    await expect.poll(() => debug().filledThrough).toBe(LAST);
+    expect(debug().day).toBe(asOf);
+    await expect.element(scoreBar()).toHaveTextContent('0 homes by today');
+    await expect.element(page.getByTestId('score-delta')).toHaveTextContent('+0 from your policy');
+    const details = page.getByTestId('tl-details');
+    const row = (label: string) =>
+      details
+        .getByText(label, { exact: true })
+        .element()
+        .parentElement!.textContent!.replace(/\s+/g, ' ')
+        .trim();
+    expect(row("From today's pipeline")).toBe("From today's pipeline 0");
+    expect(row('New projects')).toBe('New projects 0');
+    expect(row('Homes completed because of your policy')).toBe(
+      'Homes completed because of your policy 0'
+    );
+    expect(row('Homes approved because of your policy')).toBe(
+      'Homes approved because of your policy 0'
+    );
+    await expect
+      .element(details.getByText(/^Your policy added/))
+      .toHaveTextContent('Your policy added 0 homes vs current law');
+    await expect
+      .element(details.getByText(/^Proposed homes in projects that stopped/))
+      .toHaveTextContent(/: 0$/);
+  });
+
+  it('showDetails scrolls the detail column to the top and focuses Details', async () => {
+    const s = await opened(LAST, { withInspector: true });
     const insp = page.getByTestId('tl-inspector');
-    await expect.element(insp.getByTestId('tl-results')).toBeVisible();
+    await expect.element(insp.getByTestId('tl-details')).toBeVisible();
     const el = insp.element() as HTMLElement;
     await expect.poll(() => el.scrollHeight - el.clientHeight).toBeGreaterThan(200);
     el.scrollTop = 200;
     expect(el.scrollTop).toBe(200);
-    await s.showResults();
+    await s.showDetails();
     expect(el.scrollTop).toBe(0);
-    const res = page.getByTestId('tl-results').element();
+    const res = page.getByTestId('tl-details').element();
     expect(document.activeElement).toBe(res);
-    // The ring draws inside Results, so the column's scroll box never clips it (WCAG 2.4.7).
+    // The ring draws inside Details, so the column's scroll box never clips it (WCAG 2.4.7).
     const cs = getComputedStyle(res);
     expect(cs.outlineStyle).not.toBe('none');
     expect(parseFloat(cs.outlineWidth)).toBeGreaterThanOrEqual(2);
@@ -2267,7 +2756,7 @@ describe('TimelineMode', () => {
     el.scrollTop = 200;
     expect(el.scrollTop).toBe(200);
     await (await s.r).rerender({ inspectorOpen: false });
-    await expect.element(insp.getByTestId('tl-results')).toBeVisible();
+    await expect.element(insp.getByTestId('tl-activity')).toBeVisible();
     expect(document.querySelector('[data-testid=host-inspector]')).toBeNull();
     await expect.poll(() => el.scrollTop).toBe(0);
   });
@@ -2691,7 +3180,7 @@ describe('the map key', () => {
     await expect.element(control()).toBeVisible();
   });
 
-  it('stale: the key dims with Results', async () => {
+  it('stale: the key dims with Details', async () => {
     const s = await opened();
     await expect.element(keyPanel()).toBeVisible();
     expect(keyPanel().element().hasAttribute('data-stale')).toBe(false);
@@ -2754,5 +3243,142 @@ describe('halos on the map', () => {
     await userEvent.keyboard('{Home}');
     await expect.poll(() => debug().day).toBe(asOf);
     expect(callsOf('setBarMode')).toEqual([['far']]);
+  });
+});
+
+describe("Activity's latest stage changes", () => {
+  const MISSION: [number, number] = [-122.4194, 37.76];
+  const ELSEWHERE: [number, number] = [-122.5, 37.7];
+  /** A citywide delta of markers (ascending rows). */
+  function city(
+    rows: number,
+    ms: { row: number; days: [number, number, number]; at?: [number, number]; flags?: number }[],
+    from?: number
+  ): CityDelta {
+    const k = ms.length;
+    const d: CityDelta = {
+      rows,
+      row: Int32Array.from(ms.map((m) => m.row)),
+      lngLat: new Float32Array(2 * k),
+      days: new Float32Array(3 * k),
+      homes: Uint16Array.from(ms.map(() => 12)),
+      flags: Uint8Array.from(ms.map((m) => m.flags ?? 0))
+    };
+    ms.forEach((m, i) => {
+      d.lngLat.set(m.at ?? ELSEWHERE, 2 * i);
+      d.days.set(m.days, 3 * i);
+    });
+    if (from !== undefined) d.from = from;
+    return d;
+  }
+  const update = (revision: number, c?: CityDelta): TimelineUpdate => ({
+    revision,
+    cells: [],
+    removedCells: [],
+    demolish: [],
+    ...(c ? { city: c } : {})
+  });
+  const N = NaN;
+  const items = () => [...document.querySelectorAll('[data-testid=tl-activity] ol li')];
+  const lines = () => items().map((li) => li.textContent!.replace(/\s+/g, ' ').trim());
+  const month = (d: Day) => formatShortMonthYear(d);
+  async function keysTo(k: number) {
+    (slider().element() as HTMLElement).focus();
+    await userEvent.keyboard('{Home}');
+    await expect.poll(() => debug().day).toBe(asOf);
+    for (let i = 1; i <= k; i++) {
+      await userEvent.keyboard('{ArrowRight}');
+      await expect.poll(() => debug().day).toBe(MONTHS[i]);
+    }
+  }
+
+  it('events arriving before the map is ready still reach Activity', async () => {
+    stub.autoReady = false;
+    const fetchPlaces = vi.fn(async () => FIXTURE_PLACES);
+    await opened(LAST, { withInspector: true, inspectorOpen: false, fetchPlaces });
+    const u = update(
+      0,
+      city(2, [
+        { row: 0, days: [MONTHS[1] + 2, N, N], at: MISSION, flags: SLOT_FLAG.zoning },
+        { row: 1, days: [MONTHS[2] + 2, MONTHS[2] + 5, N] }
+      ])
+    );
+    emit(cellsMsg(u));
+    await expect.element(page.getByTestId('tl-activity')).toBeVisible();
+    // Not fetched before the list has an item.
+    expect(fetchPlaces).not.toHaveBeenCalled();
+    await keysTo(3);
+    await expect
+      .poll(lines)
+      .toEqual([
+        `Building 12 homes ${month(MONTHS[2] + 5)}`,
+        `Approved 12 homes ${month(MONTHS[2] + 2)}`,
+        `◆Under your policy Approved 12 homes Mission · ${month(MONTHS[1] + 2)}`
+      ]);
+    expect(fetchPlaces).toHaveBeenCalledExactlyOnceWith('/data/fixture-0/neighborhoods.geojson');
+    // The map gets the same update once it is ready.
+    expect(callsOf('applyTimeline')).toEqual([]);
+    stub.fireReady();
+    await expect.poll(() => callsOf('applyTimeline')).toEqual([[u]]);
+    // Fetched once per manifest, however the list moves.
+    await userEvent.keyboard('{ArrowLeft}');
+    await expect.poll(() => debug().day).toBe(MONTHS[2]);
+    await expect.poll(() => items().length).toBe(1);
+    expect(fetchPlaces).toHaveBeenCalledOnce();
+  });
+
+  it('scrubbing back drops later events; the list DOM is not rewritten when its keys are the same', async () => {
+    await opened(LAST, { withInspector: true, inspectorOpen: false });
+    emit(
+      cellsMsg(
+        update(
+          0,
+          city(3, [
+            { row: 0, days: [MONTHS[1] + 2, N, N] },
+            { row: 1, days: [MONTHS[2] + 2, N, N] },
+            { row: 2, days: [MONTHS[3] + 2, N, N] }
+          ])
+        )
+      )
+    );
+    await keysTo(3);
+    await expect.poll(() => items().length).toBe(2);
+    await expect
+      .element(page.getByTestId('tl-activity').getByRole('heading', { level: 3, name: 'Latest' }))
+      .toBeVisible();
+    const [newer, older] = items();
+    expect(newer.textContent).toContain(month(MONTHS[2]));
+    const sorts = indexes.at(-1)!.sorts;
+    // Forward across the next event, then back: the old items are the same nodes.
+    await userEvent.keyboard('{ArrowRight}');
+    await expect.poll(() => debug().day).toBe(MONTHS[4]);
+    await expect.poll(() => items().length).toBe(3);
+    expect(items().slice(1)).toEqual([newer, older]);
+    expect(items()[1]).toBe(newer);
+    await userEvent.keyboard('{ArrowLeft}{ArrowLeft}');
+    await expect.poll(() => debug().day).toBe(MONTHS[2]);
+    await expect.poll(() => items().length).toBe(1);
+    expect(items()[0]).toBe(older);
+    // Moving the playhead never sorts.
+    expect(indexes.at(-1)!.sorts).toBe(sorts);
+    // A rewind from row 0 forgets it: the list empties at once.
+    emit(cellsMsg(update(1, city(1, [], 0))));
+    await expect.element(page.getByText('No stage changes yet.')).toBeVisible();
+    expect(items()).toEqual([]);
+    // Home: today names no stage change and shows no list.
+    await userEvent.keyboard('{Home}');
+    await expect.poll(() => debug().day).toBe(asOf);
+    await expect
+      .element(page.getByTestId('tl-activity').getByRole('heading', { level: 3 }))
+      .not.toBeInTheDocument();
+  });
+
+  it('a failed neighbourhood file leaves the items without a place', async () => {
+    const fetchPlaces = vi.fn(async () => null);
+    await opened(LAST, { withInspector: true, inspectorOpen: false, fetchPlaces });
+    emit(cellsMsg(update(0, city(1, [{ row: 0, days: [MONTHS[1] + 2, N, N], at: MISSION }]))));
+    await keysTo(2);
+    await expect.poll(lines).toEqual([`Approved 12 homes ${month(MONTHS[1] + 2)}`]);
+    expect(fetchPlaces).toHaveBeenCalledOnce();
   });
 });

@@ -4,7 +4,7 @@
   programmes or scales an edit leaves without a source dropped with today's funding notice),
   whose brush lots PolicySync resolves for the worker. The detail column (from md beside the
   timeline in the bottom pane under the map, below md a sheet) is the Inspector (the selected
-  policy's editor, "+"'s menu) or Results: from md at rest or after a press on the header score,
+  policy's editor, "+"'s menu) or Details: from md at rest or after a press on the header score,
   below md after that press. The header has Undo and Redo, and Publish; its status slot the save
   state. The map layer switches (rule 18) are in the map toolbar's Layers panel, beside Key.
   Opening (rule 40, R-3): with the calibration known, in the browser, the document opens before
@@ -55,7 +55,7 @@
   import { WINDOW_MONTHS } from '$lib/sim/timeline-client';
   import type { Day } from '$lib/timelapse/time';
   import type { Calibration } from '$lib/timelapse/types';
-  import { addPolicy } from '$lib/timeline/add';
+  import { AddLimitError, addPolicy, type AddChoice } from '$lib/timeline/add';
   import Inspector from '$lib/timeline/Inspector.svelte';
   import { project, spanLens, writeBack, type StrokeStore } from '$lib/timeline/lens';
   import { fundingName4, ownerName4 } from '$lib/timeline/owner';
@@ -82,7 +82,7 @@
   import { simPaintRows } from './brush-summary';
   import { installSimDebug } from './debug';
   import { PaintFeedback, lotsInView } from './feedback';
-  import { fundingNotices } from './funding-copy';
+  import { fundingNotices, limitAlert } from './funding-copy';
   import { FundingDrafts } from './funding-drafts.svelte';
   import { LidRequest, clampBbox } from './lid-request';
   import { OutlineRequest } from './outline-request';
@@ -328,8 +328,13 @@
   let selected = $state.raw<SpanRef | null>(null);
   /** The kind whose "+" menu is open. */
   let adding = $state<PolicyKind | null>(null);
-  /** The inspector's face: the selection's editor, or Results (the header score). */
-  let face = $state<'editor' | 'results'>('editor');
+  /**
+   * The panel the detail column shows when nothing is selected or being added: Details (the header
+   * score, Activity's Details), Activity (Details' Activity: below md it keeps the sheet open on
+   * it) or none (the rest face, Activity from md). A selection or "+" sets it to null, so closing
+   * the editor returns to the rest face.
+   */
+  let panel = $state<'activity' | 'details' | null>(null);
   let timeline = $state<ReturnType<typeof TimelineMode>>();
   let day = $state<Day>(untrack(() => calibration?.asOf ?? 0));
   /** The kind last selected or added to: where focus falls back (WCAG 2.4.3). */
@@ -341,19 +346,19 @@
   const inspectorId = `${uid}-inspector`;
 
   const inspectorOpen = $derived(
-    face === 'results' || selected !== null || adding !== null || drafts.isOpen
+    panel !== null || selected !== null || adding !== null || drafts.isOpen
   );
   /** What the detail column shows: a change starts it at its top. */
   const detailKey = $derived(
-    face === 'results'
-      ? 'results'
+    panel !== null
+      ? panel
       : `${adding ?? ''}:${selected ? `${selected.kind}:${selected.id}:${selected.span}` : ''}`
   );
 
   function select(ref: SpanRef | null): void {
     selected = ref;
     if (ref === null) return;
-    face = 'editor';
+    panel = null;
     focusKind = ref.kind;
     // A transit policy or the plan shows its limits on the map: the view turns them on.
     const v = limitsViewOf(ref, store.policy, 'move', mode);
@@ -362,22 +367,69 @@
   }
 
   function startAdd(kind: PolicyKind): void {
-    face = 'editor';
+    panel = null;
     focusKind = kind;
     adding = kind;
   }
 
   /** The header score. From md it closes what is open as Close × does (the inspector's unmount
-   *  discards and announces a draft) and shows Results; below md it toggles. */
+   *  discards and announces a draft) and shows Details; below md it toggles the sheet: open on
+   *  Details, closed from Details or Activity. Pressed again on Details from md, nothing remounts:
+   *  the chart keeps its view and focus returns to Details. */
   function pressScore(): void {
     if (wide.current) {
-      adding = null;
-      selected = null;
-      face = 'results';
-      void timeline?.showResults();
+      showDetails();
       return;
     }
-    face = face === 'results' ? 'editor' : 'results';
+    panel = panel === null ? 'details' : null;
+  }
+
+  /** Activity's Details (and the header from md): Details in the column, focused. */
+  function showDetails(): void {
+    adding = null;
+    selected = null;
+    panel = 'details';
+    void timeline?.showDetails();
+  }
+
+  /** Details' Activity: Activity in the column (below md, in the sheet), focused. */
+  function showActivity(): void {
+    panel = 'activity';
+    void timeline?.showActivity();
+  }
+
+  /**
+   * Activity's starter: adds `choice` at the playhead's month as the "+" menu does (one undoable
+   * change, announced "Added: {label}"), opens its kind from md, selects it and focuses the
+   * editor's title.
+   */
+  function addStarter(choice: AddChoice, label: string): void {
+    const c = cal;
+    if (readonly || !c) return;
+    let r: ReturnType<typeof addPolicy>;
+    try {
+      r = addPolicy(store.policy, choice, {
+        w: { asOf: c.asOf, months: WINDOW_MONTHS },
+        month: viewMonthOf(c.asOf, day),
+        cal: c
+      });
+    } catch (e) {
+      // A funding limit (only off policies count: starters show with nothing in force). The "+"
+      // menu says it in its alert line; no menu is open here, so the page's status says it.
+      if (e instanceof AddLimitError) {
+        brush.announce(limitAlert(e.limit), ANNOUNCE_MS);
+        return;
+      }
+      throw e;
+    }
+    const msg = `Added: ${label}`;
+    store.apply(() => r.doc, msg);
+    brush.announce(msg, ANNOUNCE_MS);
+    select(r.ref);
+    openKind(choice.kind);
+    void tick().then(() => {
+      if (!dead) document.querySelector<HTMLElement>('[data-testid=inspector] h2')?.focus();
+    });
   }
 
   // A policy the document no longer holds (an undo of its add) is no longer selected.
@@ -560,12 +612,12 @@
 
   /**
    * From md, Paint or Erase with the painted policy's tools out of view (closed, another
-   * selection, Results, or a "+" menu or pool draft in the inspector over the painted policy, as
+   * selection, Details, or a "+" menu or pool draft in the inspector over the painted policy, as
    * Inspector picks its face): the header offers the way back to Move. Below md the palette strip
    * does.
    */
   const toolsShown = $derived(
-    paintRef !== null && face === 'editor' && adding === null && drafts.draft?.kind !== 'pool'
+    paintRef !== null && panel === null && adding === null && drafts.draft?.kind !== 'pool'
   );
   const toolOff = $derived(!readonly && wide.current && tools.tool !== 'move' && !toolsShown);
 
@@ -1020,9 +1072,19 @@
   />
 {/snippet}
 
-{#snippet inspectorPart({ results, day: at }: { results: Snippet; day: Day })}
-  {#if face === 'results'}
-    {@render results()}
+{#snippet inspectorPart({
+  activity,
+  details,
+  day: at
+}: {
+  activity: Snippet;
+  details: Snippet;
+  day: Day;
+})}
+  {#if panel === 'details'}
+    {@render details()}
+  {:else if panel === 'activity'}
+    {@render activity()}
   {:else if cal}
     <Inspector
       {store}
@@ -1088,7 +1150,10 @@
   }}
   onmiss={onMiss}
   onscore={pressScore}
-  scoreExpanded={face === 'results' && inspectorOpen}
+  onstarter={readonly ? undefined : addStarter}
+  ondetails={showDetails}
+  onactivity={showActivity}
+  scoreExpanded={panel !== null && inspectorOpen}
   scoreControls={inspectorId}
 />
 {#if !readonly && !wide.current && tools.tool !== 'move'}

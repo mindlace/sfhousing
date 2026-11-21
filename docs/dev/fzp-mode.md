@@ -6,15 +6,15 @@ Developer notes for `src/lib/fzp/`. `FzpMode.svelte` is gone (timeline-ui): `/si
 
 ## What is here
 
-| Group                      | Files                                                                                                                                                                                 | Used by                                                                                                                         |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| The scrubber and its clock | `TimeScrubber.svelte`, `playback.ts`, `time.ts`, `high-water.svelte.ts`                                                                                                               | `/lesscars` (`LessCarsMode`); `/sim`'s `Playhead` takes `playback.ts` and `time.ts`                                             |
-| Results                    | `SimResults.svelte`, `ScoreChart.svelte`, `MoneyResults.svelte`, `score-view.ts`, `money-view.ts`, `market-view.ts`, `chart.ts`, `format.ts`, `SourcesDialog.svelte`, `provenance.ts` | `/sim` (fed from `TimelineView` by `src/lib/timeline/results.ts`); `/lesscars` imports `chart.ts`, `format.ts`, `provenance.ts` |
-| The map's card and tooltip | `ProjectCardPanel.svelte`, `ProjectTooltip.svelte`, `summary-request.ts`, `card.ts`, `card-place.ts`, `card-area-watch.ts`, `labels.ts`                                               | `/sim` (`TimelineMode`)                                                                                                         |
-| Loading and shared types   | `load.ts`, `types.ts`, `copy.ts`                                                                                                                                                      | `/sim`, `/lesscars`                                                                                                             |
-| The e2e hook               | `debug.ts` (`window.__sfhFzp`)                                                                                                                                                        | `/sim`; fields in [timeline-ui.md](timeline-ui.md)                                                                              |
+| Group                      | Files                                                                                                                                       | Used by                                                                                                                                                                         |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| The scrubber and its clock | `TimeScrubber.svelte`, `playback.ts`, `time.ts`, `high-water.svelte.ts`                                                                     | `/lesscars` (`LessCarsMode`); `/sim`'s `Playhead` takes `playback.ts` and `time.ts`                                                                                             |
+| Details' pieces            | `MoneyResults.svelte`, `score-view.ts`, `money-view.ts`, `market-view.ts`, `chart.ts`, `format.ts`, `SourcesDialog.svelte`, `provenance.ts` | `/sim`'s Details (`src/lib/timeline/SimDetails.svelte`, fed from `TimelineView` by `src/lib/timeline/results.ts`); `/lesscars` imports `chart.ts`, `format.ts`, `provenance.ts` |
+| The map's card and tooltip | `ProjectCardPanel.svelte`, `ProjectTooltip.svelte`, `summary-request.ts`, `card.ts`, `card-place.ts`, `card-area-watch.ts`, `labels.ts`     | `/sim` (`TimelineMode`)                                                                                                                                                         |
+| Loading and shared types   | `load.ts`, `types.ts`, `copy.ts`                                                                                                            | `/sim`, `/lesscars`                                                                                                                                                             |
+| The e2e hook               | `debug.ts` (`window.__sfhFzp`)                                                                                                              | `/sim`; fields in [timeline-ui.md](timeline-ui.md)                                                                                                                              |
 
-Results holds no map key: the key is on the map (`MapKeyControl` with `SimKey`, [timeline-ui.md](timeline-ui.md), "The screen"). A file `/lesscars` imports is not edited by `/sim` work ([lesscars.md](lesscars.md)). Run phases, the run slider, `RunSwitcher`, the swap reroll and `HighWater` are gone from `/sim`.
+Details holds no map key: the key is on the map (`MapKeyControl` with `SimKey`, [timeline-ui.md](timeline-ui.md), "The screen"). A file `/lesscars` imports is not edited by `/sim` work ([lesscars.md](lesscars.md)). Run phases, the run slider, `RunSwitcher`, the swap reroll and `HighWater` are gone from `/sim`.
 
 ## The scrubber contract
 
@@ -75,13 +75,13 @@ Freeway land never builds in the forecast: a parcel in the freeway-land catalog 
 
 ## Known gap: no keyboard access to cards
 
-Map picking is pointer-only (mouse click, touch tap, hover), a gap shared with the editor's tooltips (see "Known gap" in [map-interfaces.md](map-interfaces.md)). A keyboard user can drive the playhead, the Results face and the sources dialog, but cannot open a project card. Once a card is open it is a normal region with a Close button, and Escape closes it (unless the sources dialog is open, which takes Escape first).
+Map picking is pointer-only (mouse click, touch tap, hover), a gap shared with the editor's tooltips (see "Known gap" in [map-interfaces.md](map-interfaces.md)). A keyboard user can drive the playhead, Details and the sources dialog, but cannot open a project card. Once a card is open it is a normal region with a Close button, and Escape closes it (unless the sources dialog is open, which takes Escape first).
 
-## Today's market in the Results' sources
+## Today's market in Details' sources
 
-When `calibration.market` is present, the Results face's Sources disclosure
+When `calibration.market` is present, Details' Sources disclosure
 (`data-testid="fzp-sources"`) has a paragraph `data-testid="fzp-market"` directly after its first
-paragraph. `SimResults` takes it as the `market?: string | null` prop (default `null` renders
+paragraph. `SimDetails` (`src/lib/timeline/SimDetails.svelte`) takes it as the `market?: string | null` prop (default `null` renders
 nothing); `TimelineMode` passes `marketText(calibration)` (`src/lib/fzp/money-view.ts`):
 `marketSentence(calibration, marketLevel(calibration))` (`src/lib/fzp/market-view.ts`), `null`
 without `calibration.market`, with `MARKET_FUNDING_SENTENCE` (`sim-page/funding-copy.ts`)
@@ -110,12 +110,12 @@ as "your value (custom, not sourced)"), the draw assumption, the displacement ra
 `finance-score`'s `MONEY_SOURCES` (first `PIPELINE_FUNDED`), then three fixed sentences (the
 pricing rule, the loss on exit worded from `terms.lossOnExit`, and ruling R8).
 
-## Public money and income tiers in Results
+## Public money and income tiers in Details
 
-`SimResults` renders `MoneyResults.svelte` twice: `part="money"` ("Public money",
-`data-testid="fzp-money"`, after "What … added", only with `score.money`) and `part="tiers"` ("Who
-the homes are for", `data-testid="fzp-tiers"`, after the RHNA rows, only with `score.tiers`). Both
-read the playhead's month. Its props:
+`SimDetails` (`src/lib/timeline/SimDetails.svelte`) renders `MoneyResults.svelte` twice: `part="money"`
+("Public money", `data-testid="fzp-money"`, after the stopped line, only with `score.money`) and
+`part="tiers"` ("Who the homes are for", `data-testid="fzp-tiers"`, right after it, only with
+`score.tiers`). Both read the playhead's month. Its props:
 
 - `pending` (`TimelineMode`: the numbers are stale): both blocks carry `aria-busy="true"`, with no
   visible text (the header score is the busy sign). A failed edit keeps the old
@@ -125,17 +125,13 @@ read the playhead's month. Its props:
   `TimelineMode` derives it with `uncappedPoolIds` over the calibration's baseline pools and the document's money policies
   (`money-view.ts`), because the money series carries no flag.
 
-The rows and their wording are in [sim-funding.md](sim-funding.md) ("Results, card and summary").
-
-## The chart's y domain
-
-`ScoreChart` (`chart.ts`) builds its paths and scale from every month up to `monthIndex(highWater)`; on `/sim` that prop is the filled mark (`filledEnd`), and a second prop, `reached` (the furthest day reached), only moves two clip rectangles (see timeline-ui.md, Results). Its accessible name is "Toward the goal, since Jun 2022: ...". The y domain covers the shown values, so it can grow as the forecast fills, with the references and the RHNA target as a floor (so the axis does not jump for them). It starts at 0, **unless a shown value is negative**: the plan-effect series can be early on. Then the axis reaches down to `-niceCeil(-min)` so the negative part stays inside the plot, and a floor gridline is added when it is clear of the zero line. Spec section 4.6 says "0 to niceCeil"; the extension is deliberate.
+The rows and their wording are in [sim-funding.md](sim-funding.md) ("Details, card and summary").
 
 ## e2e notes
 
 - Run on port 4206 with one worker: `SFH_E2E_PORT=4206 SFH_E2E_WORKERS=1 npx playwright test e2e/sim.spec.ts e2e/sim-timeline.spec.ts e2e/fzp.spec.ts`. Helpers: `e2e/helpers/run.ts` (`waitFilled`, `waitFilledThrough`, `openKind`, `addPolicy`, `slider`), `e2e/helpers/sharing.ts` (`jumpAndIdle`, `projectToPage`, `FRAME`, `headerAction`, `openHeaderMenu`) and `e2e/helpers/a11y.ts`.
 - The fixture dataset (`fixture-0`) has two parcel chunks (cell 50_25, 15 parcels; cell 51_25, 3 parcels, lots 15 to 17) and the scenario files `/sim` reads at load. Tests read `projects.json`, `calibration.json`, `parcels.bin` and the chunk from disk and derive counts, ids and labels; do not hard-code them. The two chunks are neighbouring cells about 700 m apart, so they cannot show over-fetching by themselves: `e2e/fzp-sim.spec.ts` adds a far-away chunk to the manifest the page loads and asserts it is fetched only after a pan.
 - A first load of `/sim` takes the manifest from the server's render, so `page.route` on `manifest.json` has no effect there. To test a dataset without scenarios, navigate to `/sim` from `/about` (a page that loads no manifest) with the route in place.
-- Results shows at rest from md; below md the header score (`data-testid="score-bar"`) opens it; the region is "Results" (`data-testid="score-details"`) and its Sources disclosure (`data-testid="fzp-sources"`) holds "Where these numbers come from": open it first. Below 1024 px the header's links and actions wait in the Menu: use `headerAction` / `openHeaderMenu`.
-- Axe and the About check: `expectNoA11yViolations` runs with the card open, with the sources dialog open (scoped to the dialog, `structure: true`) and with Results open; the timeline's own cases (a kind open, the editor open, light and dark) are in `e2e/sim-timeline.spec.ts`. At 375 px there is no footer, and the header's About entry (in the Menu) must stay unobscured with the card or Results open.
-- `e2e/sim-funding.spec.ts` covers the Funding editors, the Results money and tier blocks, the market paragraph and `src-money`, the published summary and the funding notices ([sim-funding.md](sim-funding.md), "The e2e").
+- Details shows at rest from md; below md the header score (`data-testid="score-bar"`) opens it in the sheet. It is `data-testid="tl-details"` in the detail column (`tl-inspector`), headed "Details" (`score-details` is the Paint dock's region), and its Sources disclosure (`data-testid="fzp-sources"`) holds "Where these numbers come from": open it first. Below 1024 px the header's links and actions wait in the Menu: use `headerAction` / `openHeaderMenu`.
+- Axe and the About check: `expectNoA11yViolations` runs with the card open, with the sources dialog open (scoped to the dialog, `structure: true`) and with Details open; the timeline's own cases (a kind open, the editor open, light and dark) are in `e2e/sim-timeline.spec.ts`. At 375 px there is no footer, and the header's About entry (in the Menu) must stay unobscured with the card or Details open.
+- `e2e/sim-funding.spec.ts` covers the Funding editors, Details' money and tier blocks, the market paragraph and `src-money`, the published summary and the funding notices ([sim-funding.md](sim-funding.md), "The e2e").

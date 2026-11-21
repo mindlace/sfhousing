@@ -11,7 +11,8 @@ import {
   isFixedRef,
   marketRef,
   settingOf,
-  spanEdgeText
+  spanEdgeText,
+  EMPTY_LANE
 } from './rows';
 
 const asOf = 20000;
@@ -87,5 +88,13 @@ describe('rows helpers', () => {
     expect(isFixedRef({ kind: 'zoning', id: 'fixed', span: 0 })).toBe(false);
     expect(isFixedRef({ kind: 'money', id: 'fixed-market', span: 0 })).toBe(false);
     expect(isFixedRef(null)).toBe(false);
+  });
+
+  it('EMPTY_LANE: Add a zoning change, Add a permitting change, Add public money', () => {
+    expect(EMPTY_LANE).toEqual({
+      zoning: 'Add a zoning change',
+      permitting: 'Add a permitting change',
+      money: 'Add public money'
+    });
   });
 });

@@ -51,6 +51,13 @@ export const FIXED_NOTE: Record<PolicyKind, string> = {
   money: "Current funding is today's City, state and federal money for affordable homes."
 };
 
+/** A closed kind with no policy says in its lane what "+" adds (a pointer-only duplicate of it). */
+export const EMPTY_LANE: Record<PolicyKind, string> = {
+  zoning: 'Add a zoning change',
+  permitting: 'Add a permitting change',
+  money: 'Add public money'
+};
+
 export const MARKET_LABEL = 'Market conditions';
 
 /** Rule 8: the data can run money. */

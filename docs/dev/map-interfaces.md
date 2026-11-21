@@ -130,6 +130,8 @@ Draw order: solids, ghosts, `timeline-bars`, `timeline-halos`, `timeline-city`, 
 
 Producers: only `/sim`'s map stream ([map-stream.md](map-stream.md), "The city feed"). `/lesscars`, `/fzp` and the hashed `scenario/geometry.ts` send no `city`.
 
+Consumers: the map's controller, and on `/sim` the page itself. `TimelineMode.applyRender` feeds every update with `city` (and every revision 0) to its own `CityStore`, inside `ActivityIndex` (`src/lib/timeline/activity.ts`), before it forwards the update to the map (or queues it until the map is ready), so Activity's list needs no map and the buffers are read before the map may take them. It is a second copy of the markers, 27 bytes a row. `SimMapHandle` and the controller are unchanged. See [timeline-ui.md](timeline-ui.md), "Activity".
+
 ## Merged rings and edge glows (`timeline-city`)
 
 The `TimelineController` holds the markers in a `CityStore` (`src/lib/map/timelapse/city.ts`). `apply` validates `u.city` with the cells, before anything installs (a `RangeError` leaves everything as it was). A revision 0 (a swap's too) replaces the store from its `city`, or clears it without one; a later update forgets the markers at or past `from`, drops those at or past `rows`, then writes its rows. A delta with `from` and no rows is still a city update.

@@ -237,5 +237,5 @@ code and stays outside the hashed paths.
 
 ## The page
 
-See [fzp-mode.md](fzp-mode.md) ("Today's market in the Results' sources"): the Results face's
+See [fzp-mode.md](fzp-mode.md) ("Today's market in Details' sources"): Details'
 `fzp-market` paragraph from `marketSentence`, and the dialog's `src-market` section.

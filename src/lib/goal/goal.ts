@@ -74,11 +74,17 @@ function monthOffset(day: Day, month0: Day): number {
   return (a.y - b.y) * 12 + (a.m - b.m);
 }
 
+/** The month the goal reads for playhead month `i`: min(i, deadline month), TODAY when the
+ *  deadline is before months[0]. */
+function readMonth(goal: Goal, view: TimelineView, i: number): number {
+  const deadline = monthOffset(goal.deadline, view.months[0]);
+  return deadline < 0 ? TODAY : Math.min(i, deadline, view.lastIndex);
+}
+
 /** Null when `i` (or the month it must read) is past view.filledThrough. */
 export function readGoal(goal: Goal, view: TimelineView, i: number): GoalReading | null {
   if (i > view.filledThrough) return null;
-  const deadline = monthOffset(goal.deadline, view.months[0]);
-  const at = deadline < 0 ? TODAY : Math.min(i, deadline, view.lastIndex);
+  const at = readMonth(goal, view, i);
   const value = goal.measure.valueAt(view, at);
   let reachedOn: Day | null = null;
   for (let m = TODAY; m <= at; m++) {
@@ -114,4 +120,111 @@ export function goalStep(
   const deadlineIndex = monthOffset(goal.deadline, view.months[0]);
   if (deadlineIndex < 0 || deadlineIndex > view.lastIndex) return null;
   return { deadlineIndex, units: goal.amount - goal.measure.valueAt(view, TODAY) };
+}
+
+/** The buffer over the goal the state asks for: at least 15% more capacity. */
+export const BUFFER_SHARE = 0.15;
+
+/** floor(goal.amount × (1 + BUFFER_SHARE)): 94,379 for the state target (M1_TARGETS' buffer). */
+export function bufferAmount(goal: Goal): number {
+  return Math.floor(goal.amount * (1 + BUFFER_SHARE));
+}
+
+/** One goal row: the goal or its buffer, at one month (/sim) or over Paint's capacity. */
+export interface GoalRowData {
+  id: 'goal' | 'buffer';
+  /** goal.name | `${goal.name} + 15%`. */
+  label: string;
+  amount: number;
+  /** The measure the row reads. */
+  value: number;
+  /** value / amount, uncapped. */
+  fraction: number;
+  /** The remainder's suffix or note (goalRowNote); null on Paint. */
+  note: string | null;
+  /** The fraction at the deadline's month, shown only while the playhead is before it and the
+   *  furthest month reached is at or past it; else null. */
+  atDeadline: number | null;
+}
+
+/** 'by Jan 2031' before the deadline's month, 'Held at Jan 2031' from it on (and at today: 'by …');
+ *  null without a deadline month. */
+export function goalRowNote(
+  goal: Goal,
+  index: number,
+  deadlineIndex: number | null,
+  atToday: boolean
+): string | null {
+  if (deadlineIndex === null) return null;
+  const date = formatShortMonthYear(goal.deadline);
+  return atToday || index < deadlineIndex ? `by ${date}` : `Held at ${date}`;
+}
+
+/** 'At the deadline: 74%'. */
+export const atDeadlineText = (fraction: number): string =>
+  `At the deadline: ${formatPercent(fraction)}`;
+
+/** The two rows' labels and amounts. */
+function rowsOf(goal: Goal): { id: GoalRowData['id']; label: string; amount: number }[] {
+  return [
+    { id: 'goal', label: goal.name, amount: goal.amount },
+    {
+      id: 'buffer',
+      label: `${goal.name} + ${Math.round(BUFFER_SHARE * 100)}%`,
+      amount: bufferAmount(goal)
+    }
+  ];
+}
+
+/**
+ * /sim's two rows at the playhead, under the header's rule: at today both read TODAY (so the
+ * goal row is the header's percentage exactly); otherwise month min(index, deadline month). The
+ * goal row's fraction is readGoal's. Null when readGoal is (month not filled).
+ */
+export function goalRows(
+  goal: Goal,
+  view: TimelineView,
+  at: { index: number; atToday: boolean },
+  reachedMonth: number
+): GoalRowData[] | null {
+  const i = at.atToday ? TODAY : at.index;
+  const reading = readGoal(goal, view, i);
+  if (!reading) return null;
+  const value = goal.measure.valueAt(view, readMonth(goal, view, i));
+  const deadline = monthOffset(goal.deadline, view.months[0]);
+  // A deadline before the window has passed: the rows read today, so they claim no date.
+  const note = goalRowNote(goal, at.index, deadline < 0 ? null : deadline, at.atToday);
+  const preview =
+    deadline >= 0 &&
+    deadline <= view.filledThrough &&
+    (at.atToday || at.index < deadline) &&
+    reachedMonth >= deadline;
+  const atDeadline = preview ? goal.measure.valueAt(view, deadline) : null;
+  return rowsOf(goal).map((r) => ({
+    ...r,
+    value,
+    fraction: r.id === 'goal' ? reading.fraction : value / r.amount,
+    note,
+    atDeadline: atDeadline === null ? null : atDeadline / r.amount
+  }));
+}
+
+/**
+ * The rows' shared track full-scale, as the scoreboard's trackMax reads targets:
+ * max(1, ceil(largest fraction × 2) / 2). 1 for no rows.
+ */
+export function goalTrackMax(rows: readonly GoalRowData[]): number {
+  const largest = Math.max(0, ...rows.map((r) => r.fraction));
+  return Math.max(1, Math.ceil(largest * 2) / 2);
+}
+
+/** Paint's two rows: capacity `net` over each amount; no note, no atDeadline. */
+export function capacityRows(net: number, goal: Goal = GOAL): GoalRowData[] {
+  return rowsOf(goal).map((r) => ({
+    ...r,
+    value: net,
+    fraction: net / r.amount,
+    note: null,
+    atDeadline: null
+  }));
 }

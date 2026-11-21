@@ -1,6 +1,6 @@
 // Scoreboard e2e (scoreboard spec §6 E2E, on the sim-ux layout): the score is the header's
-// ("Room for {n} homes" and its share of the goal, no meter), and the scoreboard is the dock's Results
-// face, which pressing the score shows. Runs against the VITE_E2E build, which exposes
+// ("Room for {n} homes" and its share of the goal, no meter), and the dock's Details face
+// (PaintDetails: the goal rows, the counts, the neighborhoods) is what pressing the score shows. Runs against the VITE_E2E build, which exposes
 // window.__sfhBrush and window.__sfhMap and shortens the worker's chunk retries to 50/100/200 ms.
 import { expect, test, type Page } from '@playwright/test';
 import { expectNoA11yViolations } from './helpers/a11y';
@@ -86,7 +86,7 @@ test.describe('scoreboard', () => {
       expect(ms).toBeLessThanOrEqual(150);
     });
 
-    test('Results: the same number as the header, the neighbourhood list, then erase to empty', async ({
+    test("Details: the goal rows read the header's number, the neighbourhood list, then erase to empty", async ({
       page
     }) => {
       await gotoEditor(page);
@@ -97,8 +97,11 @@ test.describe('scoreboard', () => {
       const net = await headerNet(page);
 
       const results = await openResults(page);
-      await expect(results.getByTestId('score-net')).toHaveText(net.toLocaleString('en-US'));
-      await expect(results.getByTestId('target-rhna')).toBeVisible();
+      const goal = results.getByRole('meter', { name: 'State target', exact: true });
+      await expect(goal).toHaveAttribute('aria-valuenow', String(net));
+      await expect(results.getByTestId('goal-row-buffer')).toBeVisible();
+      // No badge, no repeated headline, no RHNA.
+      await expect(results).not.toContainText(/RHNA|Theoretical max|net new homes/);
       // The header has no meter: its share of the goal is text under the room for homes.
       await expect(page.getByRole('banner').getByRole('meter')).toHaveCount(0);
       await expect(headerScore(page)).toHaveText(/^Room for [\d,.KM]+ homes$/);
@@ -111,13 +114,15 @@ test.describe('scoreboard', () => {
       await mouseDrag(page, FROM, TO);
       await expect.poll(() => headerNet(page)).toBe(0);
       await openResults(page);
-      await expect(resultsFace(page).getByTestId('score-net')).toHaveText('0');
+      await expect(
+        resultsFace(page).getByRole('meter', { name: 'State target', exact: true })
+      ).toHaveAttribute('aria-valuenow', '0');
       await expect(
         resultsFace(page).getByText('Paint a height on the map to add homes.')
       ).toBeVisible();
     });
 
-    test('while parcels load, the header score is busy and Results says Updating…', async ({
+    test('while parcels load, the header score is busy and Details says Updating…', async ({
       page
     }) => {
       let release: () => void = () => {};
@@ -164,7 +169,7 @@ test.describe('scoreboard', () => {
       await expect(await openResults(page)).not.toContainText('recalculated');
     });
 
-    test('a blocked chunk shows the warning in Results, and Retry recovers', async ({ page }) => {
+    test('a blocked chunk shows the warning in Details, and Retry recovers', async ({ page }) => {
       await page.route(CHUNK, (r) => r.abort());
       await gotoEditor(page);
       await jumpAndIdle(page, FRAME);
@@ -178,7 +183,7 @@ test.describe('scoreboard', () => {
       await expect(warning).toBeHidden({ timeout: 5_000 });
     });
 
-    test('axe: Results with both disclosures open', async ({ page }) => {
+    test('axe: Details with both disclosures open', async ({ page }) => {
       await gotoEditor(page);
       await jumpAndIdle(page, FRAME);
       await mouseDrag(page, FROM, TO);
@@ -194,14 +199,14 @@ test.describe('scoreboard', () => {
     // eslint-disable-next-line playwright/no-skipped-test
     test.skip(({ isMobile }) => !isMobile, 'mobile project only');
 
-    test('axe: Results open in the sheet', async ({ page }) => {
+    test('axe: Details open in the sheet', async ({ page }) => {
       await gotoEditor(page);
       await headerScore(page).tap();
       await expect(resultsFace(page)).toBeVisible();
       await expectNoA11yViolations(page);
     });
 
-    test('375 px: the score is in the header; it opens Results in the sheet and Paint flips back', async ({
+    test('375 px: the score is in the header; it opens Details in the sheet and Paint flips back', async ({
       page
     }) => {
       await gotoEditor(page);
@@ -217,7 +222,8 @@ test.describe('scoreboard', () => {
       await headerScore(page).tap();
       await expect(headerScore(page)).toHaveAttribute('aria-expanded', 'true');
       await expect(handle).toHaveAttribute('aria-expanded', 'true');
-      await expect(resultsFace(page).getByTestId('score-net')).toBeVisible();
+      await expect(resultsFace(page).getByTestId('goal-row-goal')).toBeVisible();
+      await expect(page.getByTestId('dock-handle')).toHaveText('Details');
       // The sheet stays below the header and inside the map region.
       const open = (await page.locator('.sfh-dock-sheet').boundingBox())!;
       const h = (await header.boundingBox())!;

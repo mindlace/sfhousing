@@ -11,11 +11,9 @@ import { formatCount, formatPercent } from '$lib/scoreboard/format';
 import type { Day } from '$lib/timelapse/time';
 import { MARKET_FUNDING_SENTENCE } from '$lib/sim-page/funding-copy';
 import type { CoverageStep } from '$lib/sim-page/funding-view';
+import { lensOf, type ChartLens } from './chart-lens';
 
 export const FORECAST_NOTE = 'A forecast if nothing changes.';
-/** Behind each reference line's legend entry on the chart. */
-export const REFERENCE_NOTE =
-  'Published estimates of what the Family Zoning Plan adds. Compare with the violet lines.';
 export const capacityNote = (year: number): string => `Capacity in ${year}.`;
 export const TWIN_NOTE = 'The forecast is run twice, with and without it.';
 
@@ -91,29 +89,49 @@ export function rulerDescription(seenTo: Day | null, deadline: Day | null): stri
 export const goalNote = (units: number, deadline: Day): string =>
   `${formatCount(units)} more by ${formatShortMonthYear(deadline)}`;
 
+/** The chart switch's radios in Details, by lens. */
+export const LENS_NAME: Record<ChartLens, string> = {
+  homes: 'Homes',
+  source: 'By source',
+  effect: 'From your policy'
+};
+
 /**
- * The chart's sr-only caption: what is drawn, the goal (its remainder and deadline, the in-plot
- * note's words, which are hidden from assistive tech) only while its step is drawn.
+ * The chart's sr-only caption: what is drawn in the lens (through lensOf), the goal (its
+ * remainder and deadline, the in-plot note's words, which are hidden from assistive tech) only
+ * while its step is drawn; only the homes lens draws the goal.
  */
 export function chartCaption(
   inForce: boolean,
-  goal: { units: number; deadline: Day } | null
+  goal: { units: number; deadline: Day } | null,
+  lens: ChartLens = 'homes'
 ): string {
   const slider = 'The month slider reads out each month.';
+  const shown = lensOf(lens, inForce);
+  if (shown === 'effect') return `Homes from your policy against current law, by month. ${slider}`;
+  if (shown === 'source')
+    return (
+      "Homes completed from today, by month, and those from today's pipeline. The shaded gap is " +
+      `new projects. ${slider}`
+    );
   const needed = goal
     ? `the homes still needed by its deadline: ${goalNote(goal.units, goal.deadline)}.`
     : '';
+  const drawn = goal ? `The goal is drawn as ${needed} ` : '';
   if (!inForce)
     return goal
       ? `Homes completed from today, by month, and the goal as ${needed} ${slider}`
       : `Homes completed from today, by month. ${slider}`;
-  const drawn = goal ? `The goal is drawn as ${needed} ` : '';
   return (
     'Homes completed from today with your policy and under current law, by month. The shaded ' +
     `gap is what your policy adds. ${drawn}${slider}`
   );
 }
 
+/** 'Apr 2040'; at === null: 'today'. */
+export const byWhen = (at: Day | null): string =>
+  at === null ? 'today' : formatShortMonthYear(at);
+
 /** '12,345 homes by Apr 2040'; at === null: '0 homes by today'. Negative counts use U+2212. */
 export const homesBy = (n: number, at: Day | null): string =>
-  `${formatCount(n)} homes by ${at === null ? 'today' : formatShortMonthYear(at)}`;
+  `${formatCount(n)} homes by ${byWhen(at)}`;

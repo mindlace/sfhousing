@@ -4,23 +4,44 @@ import { niceCeil } from '$lib/fzp/chart';
 import { formatCompactCount, formatCount } from '$lib/scoreboard/format';
 import type { TimelineView } from '$lib/sim/world/score/types';
 import type { Day } from '$lib/timelapse/time';
+import { lensOf, PIPELINE_DASH, type ChartLens } from './chart-lens';
 import { filledEndDay } from './playhead';
 import { currentLawHomes, type PlayheadAt } from './results';
 
-/** Position j: 0 is today (value 0); j = i + 1 is the end of month i. Filled months only. */
+/**
+ * Position j: 0 is today (value 0); j = i + 1 is the end of month i. Filled months only.
+ * `policy` is the main line (the legend's first entry); `law` the second, the gap between them.
+ */
 export interface ChartPoints {
   policy: number[];
   law: number[] | null;
 }
 
-/** policy[j]: 0, then rows[i].completedNet; law: 0, then currentLawHomes(view, i), only inForce. */
-export function chartPoints(view: TimelineView, inForce: boolean): ChartPoints {
+export { lensOf, PIPELINE_DASH, type ChartLens };
+
+/**
+ * homes: policy = rows[i].completedNet; law = currentLawHomes(view, i), only inForce.
+ * source: policy = rows[i].completedNet; law = rows[i].completedNetPipeline (the gap is new
+ * projects), with or without a policy.
+ * effect: policy = planEffect[i].completedNetNew; law = null.
+ * Position 0 is 0 in every lens. The lens goes through lensOf.
+ */
+export function chartPoints(
+  view: TimelineView,
+  inForce: boolean,
+  lens: ChartLens = 'homes'
+): ChartPoints {
+  const shown = lensOf(lens, inForce);
   const n = Math.min(view.filledThrough + 1, view.rows.length);
   const policy = [0];
-  const law = inForce ? [0] : null;
+  if (shown === 'effect') {
+    for (let i = 0; i < n; i++) policy.push(view.planEffect[i].completedNetNew);
+    return { policy, law: null };
+  }
+  const law = shown === 'source' || inForce ? [0] : null;
   for (let i = 0; i < n; i++) {
     policy.push(view.rows[i].completedNet);
-    law?.push(currentLawHomes(view, i));
+    law?.push(shown === 'source' ? view.rows[i].completedNetPipeline : currentLawHomes(view, i));
   }
   return { policy, law };
 }
@@ -50,11 +71,12 @@ const atPos = (run: number[], pos: number) =>
   run.length === 0 ? 0 : run[Math.min(Math.max(pos, 0), run.length - 1)];
 
 /**
- * niceCeil(max(goalUnits ?? 0, runMax[min(pos, last)], 1)): the scale grows only with what has
+ * niceCeil(max(goalUnits ?? 2, runMax[min(pos, last)], 1)): the scale grows only with what has
  * been reached, in 1-2-5 steps, so it changes a handful of times in a whole window.
  */
 export function yTop(goalUnits: number | null, runMax: number[], pos: number): number {
-  return niceCeil(Math.max(goalUnits ?? 0, atPos(runMax, pos), 1));
+  // Without a goal the top is at least 2, so the plot never tops out at a single home.
+  return niceCeil(Math.max(goalUnits ?? 2, atPos(runMax, pos), 1));
 }
 
 /** 0, or -niceCeil of the lowest value reached when one is below 0. */
@@ -104,10 +126,13 @@ const COMPACT = new Intl.NumberFormat('en-US', { notation: 'compact', maximumFra
 /**
  * [{ value: top / 2, label }, { value: top, label }], both in one format: compact ('50K',
  * '100K') when the top is formatCompactCount's compact, else both in full ('25,000', '50,000').
+ * The half is left out when it is not a whole number of homes (a top of 1 or 5).
  */
 export function yLabels(top: number): { value: number; label: string }[] {
   const compact = formatCompactCount(top) !== formatCount(top);
-  return [top / 2, top].map((value) => ({
+  // Homes are whole: an odd top (1, 5) has no half label.
+  const values = Number.isInteger(top / 2) ? [top / 2, top] : [top];
+  return values.map((value) => ({
     value,
     label: compact ? COMPACT.format(value) : formatCount(value)
   }));

@@ -7,8 +7,8 @@ import { MONEY_SOURCES } from '$lib/sim/scenario/finance-score';
 import {
   MARKET_FUNDING_SENTENCE4,
   PER_HOME_SOURCE,
-  REFERENCE_NOTE,
   GOAL_FLAG,
+  LENS_NAME,
   chartCaption,
   goalNote,
   marketBody,
@@ -61,6 +61,26 @@ describe('the chart', () => {
     for (const a of [true, false])
       for (const b of [goal, null]) expect(chartCaption(a, b)).not.toMatch(/RHNA|FZP/);
   });
+
+  it("chartCaption names each lens's lines; source and effect name no goal", () => {
+    const goal = { units: 73_346, deadline: dayFromUtc(2031, 1, 1) };
+    const source =
+      "Homes completed from today, by month, and those from today's pipeline. The shaded gap " +
+      'is new projects. The month slider reads out each month.';
+    // The source lens draws no goal step (its scale is its own), so it names none.
+    for (const inForce of [true, false])
+      for (const b of [goal, null]) expect(chartCaption(inForce, b, 'source')).toBe(source);
+    const effect =
+      'Homes from your policy against current law, by month. The month slider reads out each month.';
+    expect(chartCaption(true, goal, 'effect')).toBe(effect);
+    expect(chartCaption(true, null, 'effect')).toBe(effect);
+    // Without a policy in force the effect lens is the homes lens.
+    expect(chartCaption(false, goal, 'effect')).toBe(chartCaption(false, goal));
+    expect(chartCaption(true, goal, 'homes')).toBe(chartCaption(true, goal));
+    expect(LENS_NAME).toEqual({ homes: 'Homes', source: 'By source', effect: 'From your policy' });
+    for (const lens of ['homes', 'source', 'effect'] as const)
+      for (const b of [goal, null]) expect(chartCaption(true, b, lens)).not.toMatch(/RHNA|FZP/);
+  });
 });
 
 describe('homesBy', () => {
@@ -88,7 +108,6 @@ describe('marketBody', () => {
   it('marketBody swaps in the current-law sentence and drops the old tail', () => {
     expect(marketBody(`x ${MARKET_FUNDING_SENTENCE}`)).toBe(`x ${MARKET_FUNDING_SENTENCE4}`);
     expect(MARKET_FUNDING_SENTENCE4).not.toContain('FZP');
-    expect(REFERENCE_NOTE).toContain('Family Zoning Plan');
   });
 
   it('drops the market sentence’s closing disclaimer', () => {

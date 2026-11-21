@@ -11,11 +11,11 @@
 
 <!--
   The dock: one panel of tabs on two faces, the editing face (tabs, a `top` row, the tab panel)
-  and the Results face (a flip button, then the results). From md it is a 320 px panel on the
-  left of the map that folds to a 48 px rail of icon buttons (one per tab and Results); below md it
-  is a bottom sheet over the map, a handle always visible and the body at 'peek' (about 40dvh) or
-  'full' (up to 85dvh), never taller than its host above the time bar (so it never covers the
-  header). The page owns `state` (a `DockState`); this component renders it and writes
+  and the Details face (internal id 'results': a flip button, then the details). From md it is a
+  320 px panel on the left of the map that folds to a 48 px rail of icon buttons (one per tab and
+  Details); below md it is a bottom sheet over the map, a handle always visible and the body at
+  'peek' (about 40dvh) or 'full' (up to 85dvh), never taller than its host above the time bar (so
+  it never covers the header). The page owns `state` (a `DockState`); this component renders it and writes
   to it for the user's own input (tabs, rail, handle, collapse, Escape).
 
   The root is a `display: contents` region named by `label` (the target of the header buttons'
@@ -50,7 +50,7 @@
     panel: Snippet<[string]>;
     /** Above the tab panel, editing face only (Undo and Redo). */
     top?: Snippet;
-    /** The Results face's body. */
+    /** The Details face's body. */
     results?: Snippet;
     /** 'Edit policy' | 'Paint' | 'Policy'. */
     flipLabel: string;
@@ -59,7 +59,7 @@
      * button's (it contains `flipLabel`, so the visible label stays in the name).
      */
     flipName?: string;
-    /** The flip button on Results. */
+    /** The flip button on Details. */
     onflip(): void;
     /** The user opened it (button, handle, score): move focus in. False for the default open. */
     focusOnOpen?: boolean;
@@ -67,7 +67,7 @@
     onsheetheight?: (px: number) => void;
     /** After the dock collapsed by the collapse button or Escape (the page restores focus). */
     onclose?: () => void;
-    /** A run is active: the rail shows only the Results button (the tabs are not offered). */
+    /** A run is active: the rail shows only the Details button (the tabs are not offered). */
     resultsOnly?: boolean;
   }
   let {
@@ -223,10 +223,10 @@
   }
 
   const shownTab = $derived(tabs.find((t) => t.id === dock.tab));
-  const handleText = $derived(dock.face === 'results' ? 'Results' : (shownTab?.label ?? label));
+  const handleText = $derived(dock.face === 'results' ? 'Details' : (shownTab?.label ?? label));
   /** The handle's name: its text, or the tab's `railLabel` (which contains the text). */
   const handleName = $derived(
-    dock.face === 'results' ? 'Results' : (shownTab?.railLabel ?? handleText)
+    dock.face === 'results' ? 'Details' : (shownTab?.railLabel ?? handleText)
   );
 </script>
 
@@ -302,7 +302,7 @@
       {@render panel(dock.tab)}
     </div>
   {:else}
-    <div role="region" aria-label="Results" data-testid="score-details" class="p-4">
+    <div role="region" aria-label="Details" data-testid="score-details" class="p-4">
       {@render results?.()}
     </div>
   {/if}
@@ -343,8 +343,8 @@
         <button
           type="button"
           class={ICON_BUTTON}
-          aria-label="Results"
-          title="Results"
+          aria-label="Details"
+          title="Details"
           data-dock-rail="results"
           onclick={() => void openFromRail(() => dock.showResults())}
           >{@render icon(DOCK_ICONS.results)}</button

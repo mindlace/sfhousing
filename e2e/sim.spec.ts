@@ -1,5 +1,5 @@
 // /sim e2e on the timeline (timeline-ui): the /fzp redirect, the header score and the phone Menu,
-// Results and the editor in the inspector, a transit rule, a painted area and its undo, selecting
+// Details and the editor in the inspector, a transit rule, a painted area and its undo, selecting
 // on the map, a category protection, permitting presets and edits, the map overlays, the header
 // layout and the live paint preview, with the accessibility checks. Runs against the VITE_E2E
 // build, which exposes window.__sfhFzp (src/lib/fzp/debug.ts: the playhead day, the fill, the
@@ -91,8 +91,8 @@ async function hideHeightLimits(page: Page): Promise<void> {
 }
 
 const scoreBar = (page: Page): Locator => page.getByTestId('score-bar');
-/** Results: from md in the detail column when nothing else is open, below md in the sheet. */
-const results = (page: Page): Locator => page.getByTestId('tl-results');
+/** Details: from md in the detail column when nothing else is open, below md in the sheet. */
+const results = (page: Page): Locator => page.getByTestId('tl-details');
 /** The editor (the selected policy, a fixed row or the "+" menu). */
 const editor = (page: Page): Locator => page.getByTestId('inspector');
 /** The inspector's box: the detail column beside the timeline from md, a sheet below. */
@@ -101,7 +101,7 @@ const menuButton = (page: Page): Locator =>
   page.getByRole('banner').getByRole('button', { name: 'Menu', exact: true });
 
 /**
- * Shows Results. From md the header score has no aria-expanded and shows Results in the detail
+ * Shows Details. From md the header score has no aria-expanded and shows Details in the detail
  * column; below md it opens the sheet.
  */
 async function openScore(page: Page): Promise<Locator> {
@@ -239,7 +239,7 @@ test('/fzp lands on /sim and the forecast fills', async ({ page }) => {
   expect(await fzp(page, 'filledThrough')).toBe(await fzp(page, 'lastIndex'));
 });
 
-test('/sim opens on the Family Zoning Plan; the header score shows Results', async ({
+test('/sim opens on the Family Zoning Plan; Activity at rest, the header score shows Details', async ({
   isMobile,
   page
 }) => {
@@ -251,7 +251,8 @@ test('/sim opens on the Family Zoning Plan; the header score shows Results', asy
     await expect(scoreBar(page)).toHaveAttribute('aria-expanded', 'false');
   } else {
     await expect(scoreBar(page)).not.toHaveAttribute('aria-expanded');
-    await expect(results(page)).toBeVisible();
+    await expect(page.getByTestId('tl-activity')).toBeVisible();
+    await expect(results(page)).toHaveCount(0);
   }
   // Nothing in force: the numbers are current law's.
   const face = await openScore(page);
@@ -362,11 +363,11 @@ test('at 375 px the links wait in Menu; the header score stays pinned', async ({
   await expect(scoreBar(page)).toBeVisible();
 });
 
-test('below md the header score flips the sheet between Results and the editor', async ({
+test('below md the header score flips the sheet between Details and the editor', async ({
   isMobile,
   page
 }) => {
-  test.skip(!isMobile, 'the phone sheet; from md the score only shows Results');
+  test.skip(!isMobile, 'the phone sheet; from md the score only shows Details');
   await gotoSim(page);
   await addPolicy(page, 'Zoning', 'Transit rule');
   await expect(editor(page).getByRole('heading', { name: 'Transit rule' })).toBeVisible();
@@ -383,17 +384,18 @@ test('below md the header score flips the sheet between Results and the editor',
   await expect(editor(page).getByRole('heading', { name: 'Transit rule' })).toBeVisible();
 });
 
-test('from md Results show at rest; below md nothing opens', async ({ isMobile, page }) => {
+test('from md Activity shows at rest; below md nothing opens', async ({ isMobile, page }) => {
   await gotoSim(page);
   if (isMobile) {
     await expect(inspectorBox(page)).toHaveCount(0);
   } else {
-    await expect(results(page)).toBeVisible();
+    await expect(page.getByTestId('tl-activity')).toBeVisible();
+    await expect(results(page)).toHaveCount(0);
     await expect(editor(page)).toHaveCount(0);
   }
 });
 
-test('from md the header score closes the editor and shows Results', async ({ isMobile, page }) => {
+test('from md the header score closes the editor and shows Details', async ({ isMobile, page }) => {
   test.skip(isMobile, 'below md the score toggles the sheet');
   await gotoSim(page);
   await addPolicy(page, 'Zoning', 'Transit rule');
@@ -404,7 +406,7 @@ test('from md the header score closes the editor and shows Results', async ({ is
     .poll(() => results(page).evaluate((el) => el.contains(document.activeElement)))
     .toBe(true);
 
-  // Pressed again it still shows Results.
+  // Pressed again it still shows Details.
   await scoreBar(page).click();
   await expect(results(page)).toBeVisible();
   await expect(editor(page)).toHaveCount(0);
@@ -794,7 +796,7 @@ test('clicking inside a painted stroke selects its painted policy', async ({ isM
   await expect(editor(page).getByRole('heading', { name: 'Painted zoning' })).toBeVisible();
 });
 
-test('a category protection shows the protections line in Results', async ({ page }) => {
+test('a category protection shows the protections line in Details', async ({ page }) => {
   await gotoSim(page);
   const before = await refillCount(page);
   await addPolicy(page, 'Zoning', 'Protect rent-controlled buildings');
@@ -825,12 +827,17 @@ test('the window has homes by tier and, with the baseline funding, public money'
 }) => {
   await gotoSim(page);
   const face = await openScore(page);
+  // At today nothing is spent or finished yet: the blocks show from the first month on.
+  await expect(face.getByTestId('fzp-money')).toHaveCount(0);
+  await slider(page).focus();
+  await page.keyboard.press('End');
+  await waitFilled(page);
   await expect(face.getByRole('heading', { name: /Who the homes are for/ })).toBeVisible();
   await expect(face.getByRole('heading', { name: /Public money/ })).toBeVisible();
   await expect(face.getByTestId('fzp-money-city')).toBeVisible();
 });
 
-test('at 375 px with Results open the playhead and the About entry stay unobscured', async ({
+test('at 375 px with Details open the playhead and the About entry stay unobscured', async ({
   isMobile,
   page
 }) => {
@@ -873,7 +880,7 @@ test('End, Play at the last month reads Replay, and Today returns to the present
   await expect(page.getByTestId('tl-play-label')).toHaveText('Play');
 });
 
-test('axe: Results', async ({ page }) => {
+test('axe: Details', async ({ page }) => {
   await gotoSim(page);
   await openScore(page);
   await expectNoA11yViolations(page);
@@ -991,7 +998,7 @@ test('at 375 px: no horizontal scroll, no footer, and the About entry stays unob
     .evaluate((el) => el.getBoundingClientRect().bottom - window.innerHeight);
   expect(Math.abs(tlBottom)).toBeLessThanOrEqual(1);
 
-  // With Results open (the header score).
+  // With Details open (the header score).
   await openScore(page);
   await expectNoHorizontalScroll(page);
   await expectNoFooter(page);

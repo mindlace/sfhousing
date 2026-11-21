@@ -15,6 +15,10 @@ import type { Calibration, Pool } from '$lib/timelapse/types';
 import type { Policy, SimPolicy4 } from './policy4';
 import { moveEdge, moveSpan, type SpanRef, type TimelineWindow } from './spans';
 import TimelineHost from './test/TimelineHost.svelte';
+import { PLUS_NAME } from './test/plus';
+import { dayFromUtc, utcParts } from '$lib/fzp/time';
+import { indexOfDay } from './playhead';
+import type { LevelSet } from './pool-level';
 
 const miniCal = parseCalibration(structuredClone(miniCalibrationJson) as unknown);
 const cal: Calibration = {
@@ -98,6 +102,9 @@ interface Over {
   pinned?: boolean;
   /** Px: the timeline sits in a box this tall. */
   height?: number;
+  levels?: LevelSet | null;
+  reached?: number;
+  stale?: boolean;
 }
 
 async function setup(over: Over = {}) {
@@ -153,7 +160,7 @@ describe('Timeline rows', () => {
     );
     expect(permitting.querySelectorAll('[data-testid=tl-mini]')).toHaveLength(2);
     expect(barsOf('permitting')).toHaveLength(0);
-    await expect.element(page.getByRole('button', { name: 'Add Zoning policy' })).toBeVisible();
+    await expect.element(page.getByRole('button', { name: PLUS_NAME.Zoning })).toBeVisible();
   });
 
   it('draws one playhead line through the pinned block and every row at the playhead day', async () => {
@@ -390,8 +397,85 @@ describe('Timeline rows', () => {
 
   it('"+" asks the page to add to its kind', async () => {
     const { onadd } = await setup();
-    await page.getByRole('button', { name: 'Add Permitting policy' }).click();
+    await page.getByRole('button', { name: PLUS_NAME.Permitting }).click();
     expect(onadd).toHaveBeenCalledWith('permitting');
+  });
+
+  const emptyDoc: SimPolicy4 = { schema: 4, kinds: { zoning: [], permitting: [], money: [] } };
+  const laneWords = () => all('[data-testid=tl-empty-lane]');
+
+  it('a closed empty kind shows its words in the lane; pressing them calls onadd(kind)', async () => {
+    const { onadd } = await setup({
+      policy: { ...emptyDoc, kinds: { ...emptyDoc.kinds, zoning: [zoning] } }
+    });
+    // Zoning has a policy: its miniature, no words. The other two say what "+" adds.
+    expect(laneWords().map((e) => e.textContent!.trim())).toEqual([
+      'Add a permitting change',
+      'Add public money'
+    ]);
+    const words = page.getByTestId('tl-kind-money').getByTestId('tl-empty-lane');
+    await expect.element(words).toBeVisible();
+    expect(words.element().closest('[data-testid=tl-lane]')).not.toBeNull();
+    await words.click();
+    expect(onadd).toHaveBeenCalledExactlyOnceWith('money');
+    // Open, the kind shows its rows instead.
+    await kindButton('Permitting').click();
+    expect(laneWords().map((e) => e.textContent!.trim())).toEqual(['Add public money']);
+  });
+
+  it('while the words show, the "+" is named by them (voice control); otherwise "Add {kind} policy"', async () => {
+    const plusOf = (kind: string) =>
+      page.getByTestId(`tl-kind-${kind}`).element().querySelector<HTMLElement>('button.plus')!;
+    const { rerender } = await setup({ policy: emptyDoc });
+    for (const [kind, words] of [
+      ['zoning', 'Add a zoning change'],
+      ['permitting', 'Add a permitting change'],
+      ['money', 'Add public money']
+    ])
+      await expect.element(plusOf(kind)).toHaveAccessibleName(words);
+    // With a policy the words go, and the "+" takes its kind's name again.
+    await rerender({ policy: { ...emptyDoc, kinds: { ...emptyDoc.kinds, zoning: [zoning] } } });
+    await expect.element(plusOf('zoning')).toHaveAccessibleName('Add Zoning policy');
+    await expect.element(plusOf('money')).toHaveAccessibleName('Add public money');
+    // Open, likewise.
+    await kindButton('Permitting').click();
+    await expect.element(plusOf('permitting')).toHaveAccessibleName('Add Permitting policy');
+  });
+
+  it('the words are hidden from assistive tech and out of tab order; read-only shows none', async () => {
+    const { rerender } = await setup({ policy: emptyDoc });
+    const words = laneWords();
+    expect(words).toHaveLength(3);
+    for (const w of words) {
+      expect(w.getAttribute('aria-hidden')).toBe('true');
+      expect(w.getAttribute('tabindex')).toBe('-1');
+      // The "+" named for the kind stays the one keyboard and assistive path.
+      const kind = w.closest('[data-testid^=tl-kind-]')!;
+      expect(kind.querySelectorAll('button.plus')).toHaveLength(1);
+      // A 24 px target at least.
+      expect(w.getBoundingClientRect().height).toBeGreaterThanOrEqual(24);
+    }
+    await rerender({ policy: emptyDoc, readonly: true });
+    expect(laneWords()).toHaveLength(0);
+    expect(page.getByRole('button', { name: /^Add / }).elements()).toHaveLength(0);
+    // No Public money kind, no words for it.
+    await rerender({ policy: emptyDoc, calibration: calNoMoney });
+    expect(laneWords().map((e) => e.textContent!.trim())).toEqual([
+      'Add a zoning change',
+      'Add a permitting change'
+    ]);
+  });
+
+  it('a click on the words adds but never focuses them (they are hidden from assistive tech)', async () => {
+    const { onadd } = await setup({ policy: emptyDoc });
+    const words = laneWords()[0];
+    await userEvent.click(words);
+    expect(onadd).toHaveBeenCalledExactlyOnceWith('zoning');
+    // Focus is where a press of the row's "+" leaves it: on the "+".
+    expect(document.activeElement).not.toBe(words);
+    expect(document.activeElement).toBe(
+      words.closest('[data-testid=tl-kind-zoning]')!.querySelector('button.plus')
+    );
   });
 
   it('a pointer drag of an edge commits one edit on pointer-up', async () => {
@@ -623,6 +707,203 @@ describe('Timeline rows', () => {
       expect(ratio(fill, surface), `${k} fill`).toBeGreaterThanOrEqual(3);
       expect(ratio(fill, raised), `${k} ring`).toBeGreaterThanOrEqual(3);
       expect(ratio(on, fill), `${k} text`).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+});
+
+describe("a pool's level in its bar", () => {
+  // Calendar months from the dataset month, five years of them.
+  const { y, m } = utcParts(asOf);
+  const MONTHS = Array.from({ length: 60 }, (_, i) => dayFromUtc(y, m + i, 1));
+  const ramp = (start: number) =>
+    Float64Array.from(MONTHS, (_, i) => (i < start ? NaN : Math.max(0, 1 - (i - start) / 40)));
+  const levels: LevelSet = {
+    months: MONTHS,
+    asOf,
+    byPolicy: new Map([['m1', ramp(11)]]),
+    fixed: ramp(0)
+  };
+  const rides: Policy = {
+    id: 'm2',
+    label: 'Grants from City money',
+    preset: null,
+    on: true,
+    where: { tag: 'fund', pool: 'city' },
+    spans: [{ from: first(4), to: null, what: { tag: 'fund', pool: null, programmes: [] } }]
+  };
+  const withRides: SimPolicy4 = { ...doc, kinds: { ...doc.kinds, money: [money, rides] } };
+  const pct = (a: Float64Array, day: number) => Math.round(a[indexOfDay(MONTHS, day)] * 100);
+
+  it('an open Public money kind: a fund bar and Current funding carry a level and ", N% left"', async () => {
+    const day = first(30);
+    const s = await setup({ levels, playheadDay: day, playheadMonth: 30, reached: first(40) });
+    await kindButton('Public money').click();
+    const bar = barsOf('money')[0];
+    const bond = pct(levels.byPolicy.get('m1')!, day);
+    expect(bond).toBeGreaterThan(0);
+    expect(bond).toBeLessThan(100);
+    expect(bar.getAttribute('aria-label')).toMatch(new RegExp(`, ${bond}% left$`));
+    const fill = bar.querySelector('[data-testid=tl-level]')!;
+    expect(fill.getAttribute('data-left')).toBe(String(bond));
+    expect(fill.getAttribute('aria-hidden')).toBe('true');
+    // The bar's text says it too, after its setting, above the fill.
+    expect(bar.textContent?.trim()).toBe(`$500M, ${bond}% left`);
+    const fixed = page.getByRole('button', { name: /^Current funding/ }).element();
+    const base = pct(levels.fixed!, day);
+    expect(fixed.getAttribute('aria-label')).toBe(`Current funding, whole window, ${base}% left`);
+    expect(fixed.textContent?.trim()).toBe(`In force, ${base}% left`);
+    expect(fixed.querySelector('[data-testid=tl-level]')!.getAttribute('data-left')).toBe(
+      String(base)
+    );
+    // The words fit the bar: nothing of them is cut at 1280.
+    const words = bar.querySelector<HTMLElement>('.txt')!;
+    expect(words.getBoundingClientRect().right).toBeLessThanOrEqual(
+      bar.getBoundingClientRect().right
+    );
+    // At today: a level is drawn nowhere and no name or text says one.
+    await s.rerender({ levels, playheadDay: asOf, playheadMonth: 1, reached: asOf });
+    expect(barsOf('money')[0].getAttribute('aria-label')).not.toMatch(/left$/);
+    expect(barsOf('money')[0].textContent?.trim()).toBe('$500M');
+    expect(fixed.textContent?.trim()).toBe('In force');
+    expect(
+      page
+        .getByRole('button', { name: /^Current funding/ })
+        .element()
+        .getAttribute('aria-label')
+    ).toBe('Current funding, whole window');
+  });
+
+  it('a closed kind and a fund policy with no own pool carry none', async () => {
+    const s = await setup({
+      policy: withRides,
+      levels,
+      playheadDay: first(30),
+      playheadMonth: 30,
+      reached: first(30)
+    });
+    // Closed: the miniatures carry no level.
+    expect(document.querySelectorAll('[data-testid=tl-level]')).toHaveLength(0);
+    await kindButton('Public money').click();
+    const [bond, ride] = barsOf('money');
+    expect(bond.querySelector('[data-testid=tl-level]')).not.toBeNull();
+    expect(ride.querySelector('[data-testid=tl-level]')).toBeNull();
+    expect(ride.getAttribute('aria-label')).not.toMatch(/left$/);
+    // Other kinds' fixed rows carry none.
+    await kindButton('Zoning').click();
+    expect(
+      document.querySelector('[data-testid=tl-kind-zoning] [data-testid=tl-level]')
+    ).toBeNull();
+    // Without levels, nothing.
+    await s.rerender({ levels: null });
+    expect(document.querySelectorAll('[data-testid=tl-level]')).toHaveLength(0);
+  });
+
+  it('while stale the levels and their words dim; fresh again they do not', async () => {
+    const s = await setup({
+      levels,
+      playheadDay: first(30),
+      playheadMonth: 30,
+      reached: first(30),
+      stale: true
+    });
+    await kindButton('Public money').click();
+    const fills = () => all('[data-testid=tl-kind-money] [data-testid=tl-level]');
+    expect(fills()).toHaveLength(2);
+    for (const f of fills()) expect(f.getAttribute('data-stale')).toBe('true');
+    const lefts = () => all('[data-testid=tl-kind-money] .left');
+    expect(lefts()).toHaveLength(2);
+    for (const l of lefts()) expect(Number(getComputedStyle(l).opacity)).toBeLessThan(1);
+    await s.rerender({ stale: false });
+    for (const f of fills()) expect(f.hasAttribute('data-stale')).toBe(false);
+    for (const l of lefts()) expect(getComputedStyle(l).opacity).toBe('1');
+  });
+
+  it("dragging a bar's edge hides its level until the pointer is up", async () => {
+    await setup({ levels, playheadDay: first(30), playheadMonth: 30, reached: first(30) });
+    await kindButton('Public money').click();
+    const bar = barsOf('money')[0];
+    const handle = bar.parentElement!.querySelector<HTMLElement>('[data-edge=from]')!;
+    const hr = handle.getBoundingClientRect();
+    const fire = (type: string, x: number) =>
+      handle.dispatchEvent(
+        new PointerEvent(type, {
+          clientX: x,
+          clientY: hr.top + hr.height / 2,
+          pointerId: 1,
+          button: 0,
+          bubbles: true,
+          pointerType: 'mouse'
+        })
+      );
+    expect(bar.querySelector('[data-testid=tl-level]')).not.toBeNull();
+    fire('pointerdown', hr.left + hr.width / 2);
+    fire('pointermove', hr.left + 40);
+    await expect.poll(() => bar.querySelector('[data-testid=tl-level]')).toBeNull();
+    expect(bar.textContent?.trim()).toBe('$500M');
+    fire('pointerup', hr.left + hr.width / 2);
+    await expect.poll(() => bar.querySelector('[data-testid=tl-level]')).not.toBeNull();
+  });
+
+  it("the bar's text keeps 4.5:1 over the level's fill and its edge 3:1, light and dark", () => {
+    // The custom properties of `.tl` and of the level, per theme, read from the stylesheets.
+    const vars = { light: new Map<string, string>(), dark: new Map<string, string>() };
+    const own = /(^|\s)\.(tl|level)[.\s{]|^\.(tl|level)$/;
+    const walk = (rules: CSSRuleList, dark: boolean) => {
+      for (const r of rules) {
+        if (r instanceof CSSMediaRule) walk(r.cssRules, dark || r.conditionText.includes('dark'));
+        else if (r instanceof CSSStyleRule && own.test(r.selectorText)) {
+          for (const n of r.style)
+            if (n.startsWith('--'))
+              vars[dark ? 'dark' : 'light'].set(n, r.style.getPropertyValue(n).trim());
+        }
+      }
+    };
+    for (const sheet of document.styleSheets) {
+      try {
+        walk(sheet.cssRules, false);
+      } catch {
+        // A cross-origin sheet.
+      }
+    }
+    const rgba = (c: string): number[] =>
+      c.startsWith('#')
+        ? [...[1, 3, 5].map((i) => parseInt(c.slice(i, i + 2), 16)), 1]
+        : c.match(/[\d.]+/g)!.map(Number);
+    const over = (top: string, base: string) => {
+      const [r, g, b, a] = rgba(top);
+      const under = rgba(base);
+      return [r, g, b].map((v, i) => a * v + (1 - a) * under[i]);
+    };
+    const lum = (rgb: number[]) => {
+      const [r, g, b] = rgb.map((v) => {
+        const x = v / 255;
+        return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4;
+      });
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    };
+    const ratio = (a: number[], b: number[]) => {
+      const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x);
+      return (hi + 0.05) / (lo + 0.05);
+    };
+    for (const theme of ['light', 'dark'] as const) {
+      const v = (n: string) => vars[theme].get(n) ?? vars.light.get(n)!;
+      const bar = rgba(v('--k-money')).slice(0, 3);
+      const text = rgba(v('--on-k')).slice(0, 3);
+      const empty = v('--level-empty');
+      expect(empty, theme).toMatch(/^rgb/);
+      // The darkest fill is the shown zone's (the seen zone is at half strength).
+      const filled = over(empty, v('--k-money'));
+      expect(ratio(text, filled), `${theme} text over the fill`).toBeGreaterThanOrEqual(4.5);
+      expect(ratio(text, bar), `${theme} edge on the bar`).toBeGreaterThanOrEqual(3);
+      expect(ratio(text, filled), `${theme} edge on the fill`).toBeGreaterThanOrEqual(3);
+      // The fill only raises the text's contrast.
+      expect(ratio(text, filled)).toBeGreaterThan(ratio(text, bar));
+      // While stale the label sits on the fill's shade and its ", N% left" dims, still 4.5:1.
+      const dim = Number(v('--level-dim'));
+      expect(dim, theme).toBeGreaterThan(0);
+      expect(dim, theme).toBeLessThan(1);
+      const dimmed = over(`rgb(${text.join(' ')} / ${dim})`, `rgb(${filled.join(' ')})`);
+      expect(ratio(dimmed, filled), `${theme} dimmed words`).toBeGreaterThanOrEqual(4.5);
     }
   });
 });

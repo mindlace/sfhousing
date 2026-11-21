@@ -15,8 +15,8 @@
   import type { Manifest } from '$lib/data/manifest';
   import { DockState } from '$lib/dock/dock-state.svelte';
   import { paintHeadline } from '$lib/paint/headline';
+  import PaintDetails from '$lib/paint/PaintDetails.svelte';
   import { frameLatest, viewState, type Score, type ScoreStatus } from '$lib/scoreboard';
-  import ScoreboardPanel from '$lib/scoreboard/ScoreboardPanel.svelte';
   import { Autosave } from '$lib/sharing/autosave.svelte';
   import { COPY, n3, remixedToast } from '$lib/sharing/copy';
   import NoticeStack from '$lib/sharing/NoticeStack.svelte';
@@ -97,8 +97,8 @@
 
   // The dock (sim-ux plan 5): the Paint tab, open on the left of the map from md (folding to a
   // rail), a bottom sheet behind its handle below md. Its own collapse button and rail (the
-  // handle below md) fold and open it; the header score flips it to its Results face (the
-  // scoreboard) and back.
+  // handle below md) fold and open it; the header score flips it to its Details face
+  // (PaintDetails) and back.
   const wide = new MediaQuery('(min-width: 768px)');
   const uid = $props.id();
   const dockId = `${uid}-dock`;
@@ -106,7 +106,7 @@
   /** The user opened the dock (the score): focus moves in. False for the default open. */
   let dockFocus = $state(false);
 
-  /** The header score: Results <-> the Paint tab, opening the dock if it is hidden. */
+  /** The header score: Details <-> the Paint tab, opening the dock if it is hidden. */
   function pressScore(): void {
     dockFocus = true;
     dock.toggleResults(wide.current);
@@ -123,7 +123,7 @@
   }
 
   // Score wiring (scoreboard spec §4.3/§4.4), separate from the editor/plan concern above: the
-  // header score and the dock's Results face (sim-ux spec Goal 5, the same as /sim's).
+  // header score and the dock's Details face (sim-ux spec Goal 5).
   let brushEditor = $state<ReturnType<typeof BrushEditor>>();
   // Score and its diff's `complete` travel together, coalesced to ≤ 1 commit per frame.
   const latestScore = frameLatest<{ score: Score | null; complete: boolean }>({
@@ -164,7 +164,7 @@
 {/snippet}
 
 {#snippet results()}
-  <ScoreboardPanel score={shown} status={scoreStatus} onretry={() => brushEditor?.retryChunks()} />
+  <PaintDetails score={shown} status={scoreStatus} onretry={() => brushEditor?.retryChunks()} />
 {/snippet}
 
 {#snippet noticeStack()}

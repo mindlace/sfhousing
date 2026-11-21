@@ -1,6 +1,6 @@
 <!--
   The Results face's "Public money" and "Who the homes are for" blocks (funding-ui spec 4.11).
-  `part` picks one, so SimResults renders this twice and keeps the face order of 4.11 without
+  `part` picks one, so SimDetails renders this twice and keeps the face order of 4.11 without
   moving its own markup. Every value is the month `i`'s (the scrubbed month, never past the
   high-water mark); only the limit statements are not series. The first lines are not live
   regions: they change every frame during play, as the headline does.
@@ -29,7 +29,8 @@
     owedLines,
     tiersAt,
     TIERS_FUNDED_SENTENCE,
-    TIERS_UNRECORDED_SENTENCE
+    TIERS_UNRECORDED_SENTENCE,
+    plainSources
   } from './money-view';
 
   interface Props {
@@ -78,7 +79,7 @@
     aria-busy={busy}
     data-testid="fzp-money"
   >
-    <h2 id="{uid}-money-h" class="font-semibold">Public money</h2>
+    <h3 id="{uid}-money-h" class="font-semibold">Public money</h3>
     {#if city}
       <p class="mt-1 tabular-nums" data-testid="fzp-money-city">{city}</p>
     {/if}
@@ -139,19 +140,21 @@
       </p>
       <div data-testid="fzp-money-displaced">
         <p>{displacementLine(money, i)}</p>
-        <div class={muted}><SourceList items={[DISPLACEMENT_RANGE.provenance]} /></div>
+        <div class={muted}>
+          <SourceList items={plainSources([DISPLACEMENT_RANGE.provenance])} />
+        </div>
       </div>
       {#each owed as line, k (k)}
         <p data-testid="fzp-money-owed">{line}</p>
       {/each}
       <div class={muted} data-testid="fzp-money-sources-list">
-        <SourceList items={MONEY_SOURCES} />
+        <SourceList items={plainSources(MONEY_SOURCES)} />
       </div>
       {#if limits.length > 0}
         <div data-testid="fzp-money-limits">
-          <h3 id="{uid}-limits-h" class="font-semibold" aria-describedby="{uid}-limits-d">
+          <h4 id="{uid}-limits-h" class="font-semibold" aria-describedby="{uid}-limits-d">
             Limits on the City borrowing this policy adds (shown, not enforced)
-          </h3>
+          </h4>
           <p id="{uid}-limits-d" class={muted}>
             These follow from the borrowing your policy adds, not from what the simulation builds.
           </p>
@@ -162,7 +165,7 @@
                   <span class="font-semibold">{l.word}</span>
                   {l.text}
                 </p>
-                <div class={muted}><SourceList items={[l.provenance]} /></div>
+                <div class={muted}><SourceList items={plainSources([l.provenance])} /></div>
               </li>
             {/each}
           </ul>
@@ -179,7 +182,7 @@
     aria-busy={busy}
     data-testid="fzp-tiers"
   >
-    <h2 id="{uid}-tiers-h" class="font-semibold">Who the homes are for</h2>
+    <h3 id="{uid}-tiers-h" class="font-semibold">Who the homes are for</h3>
     <p class="mt-1 tabular-nums" data-testid="fzp-tiers-affordable">{affordableLine(t)}</p>
     <button
       type="button"
@@ -230,12 +233,12 @@
       <p data-testid="fzp-tiers-funded">{TIERS_FUNDED_SENTENCE}</p>
       <p data-testid="fzp-tiers-unrecorded">{TIERS_UNRECORDED_SENTENCE}</p>
       <div class={muted} data-testid="fzp-tiers-sources">
-        <SourceList items={TIER_SOURCES} />
+        <SourceList items={plainSources(TIER_SOURCES)} />
         <!-- TIER_SOURCES' last entry is a fixed statement; the dataset's own provenance is here. -->
         <p class="mt-1" data-testid="fzp-tiers-baseline">
           Homes {tierBaselineLabel(score.baseline.since)}:
         </p>
-        <SourceList items={[score.baseline.provenance]} />
+        <SourceList items={plainSources([score.baseline.provenance])} />
       </div>
     </div>
   </section>

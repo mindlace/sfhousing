@@ -1,6 +1,6 @@
 // The shared-plan page: the map's Layers (transit spec §6.3: the viewer's own `sfhousing:view` prefs
 // apply here as on `/`, and Layers shows only when the rendered manifest has a transit network), and
-// the score and the dock as on `/` (sim-ux plan 5, Task 4): the header score, the Results face and
+// the score and the dock as on `/` (sim-ux plan 5, Task 4): the header score, the Details face and
 // a read-only Paint tab with the read-only line and one summary line, no rows, tools or undo. A stub
 // SimMap hands over a fake MapLibre map, so a real BrushController attaches (vi.mock is file-wide).
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -114,7 +114,7 @@ const shared: Plan = {
 const SUMMARY = '6 stories · 1 lot rebuilt';
 
 const scoreButton = () => page.getByTestId('score-bar');
-const results = () => page.getByRole('region', { name: 'Results' });
+const results = () => page.getByRole('region', { name: 'Details' });
 const overlayIds = () =>
   ((callsOf('setOverlayLayers').at(-1)?.[0] ?? []) as { id: string }[]).map((l) => l.id);
 const key = (k: string, shift = false) =>
@@ -123,7 +123,7 @@ const key = (k: string, shift = false) =>
   );
 
 describe('/p/[id] score and dock', () => {
-  it('a shared plan shows the header score, a read-only Paint tab with its summary, and Results', async () => {
+  it('a shared plan shows the header score, a read-only Paint tab with its summary, and Details', async () => {
     await render(PageHost, { props: { data: data(manifest, shared) } });
     await expect.poll(() => pageWorkers.length).toBe(1);
     const w = pageWorkers[0];
@@ -169,17 +169,16 @@ describe('/p/[id] score and dock', () => {
     expect(w.posts.slice(before)).toEqual([]);
     await expect.element(tab.getByText(SUMMARY, { exact: true })).toBeVisible();
 
-    // Results: the same face as `/`'s, then back to the rows.
+    // Details: the same face as `/`'s, then back to the rows.
     await scoreButton().click();
     // The goal name opens under the pointer (in flow, as this host has no styles): dismiss it.
     await userEvent.keyboard('{Escape}');
     await expect.element(scoreButton()).toHaveAttribute('aria-expanded', 'true');
-    await expect.element(results().getByTestId('score-net')).toHaveTextContent('4,321');
-    await expect
-      .element(results().getByText('Theoretical max buildout', { exact: true }))
-      .toBeVisible();
-    await expect.element(results().getByTestId('target-rhna')).toBeVisible();
-    await expect.element(results().getByText('What does this number mean?')).toBeVisible();
+    const goalRow = results().getByTestId('goal-row-goal');
+    await expect.element(goalRow.getByText('5.2%', { exact: true })).toBeVisible();
+    await expect.element(results().getByTestId('goal-row-buffer')).toBeVisible();
+    await expect.element(results().getByText('What room for homes means')).toBeVisible();
+    expect(results().element().textContent).not.toMatch(/RHNA|Theoretical max|net new homes/);
     // Read-only: nothing can be painted, so the flip names the Paint tab, not painting.
     expect(page.getByRole('button', { name: 'Back to painting' }).elements()).toEqual([]);
     await page.getByRole('button', { name: 'Back to the Paint tab' }).click();

@@ -81,7 +81,7 @@ describe('Dock, desktop', () => {
     expect(page.getByRole('button', { name: 'Collapse Policy' }).query()).not.toBeNull();
   });
 
-  it('on Results: no tablist; the flip button comes first and calls onflip', async () => {
+  it('on Details: no tablist; the flip button comes first and calls onflip', async () => {
     await page.viewport(1024, 768);
     const state = new DockState({ tab: 'transit' });
     state.face = 'results';
@@ -96,13 +96,13 @@ describe('Dock, desktop', () => {
     expect(focusables[0]).toBe(flip.element());
     const details = page.getByTestId('score-details');
     expect(details.element().getAttribute('role')).toBe('region');
-    expect(details.element().getAttribute('aria-label')).toBe('Results');
+    expect(details.element().getAttribute('aria-label')).toBe('Details');
     await expect.element(details.getByText('Results body')).toBeVisible();
     await flip.click();
     expect(onflip).toHaveBeenCalledOnce();
   });
 
-  it('pads the Results region as it pads the tabpanel, so every page draws Results the same', async () => {
+  it('pads the Details region as it pads the tabpanel, so every page draws Details the same', async () => {
     await page.viewport(1024, 768);
     const state = new DockState({ tab: 'transit' });
     await setup(state);
@@ -117,7 +117,7 @@ describe('Dock, desktop', () => {
     expect(pad(page.getByTestId('score-details').element())).toEqual(tabPad);
   });
 
-  it('collapsed: a rail with a button per tab plus Results; Permits opens the panel there and focuses its tab', async () => {
+  it('collapsed: a rail with a button per tab plus Details; Permits opens the panel there and focuses its tab', async () => {
     await page.viewport(1024, 768);
     const state = new DockState({ tab: 'transit', open: false });
     await setup(state);
@@ -130,7 +130,7 @@ describe('Dock, desktop', () => {
       .getByRole('button')
       .elements()
       .map((b) => b.getAttribute('aria-label'));
-    expect(names).toEqual(['Transit', 'Zoning', 'Permits', 'Results']);
+    expect(names).toEqual(['Transit', 'Zoning', 'Permits', 'Details']);
     expect(page.getByRole('tablist').query()).toBeNull();
     await rail.getByRole('button', { name: 'Permits' }).click();
     await expect.element(page.getByRole('tablist')).toBeVisible();
@@ -139,11 +139,11 @@ describe('Dock, desktop', () => {
     expect(page.getByTestId('dock-rail').query()).toBeNull();
   });
 
-  it('the rail Results button opens the panel on Results', async () => {
+  it('the rail Details button opens the panel on Details', async () => {
     await page.viewport(1024, 768);
     const state = new DockState({ tab: 'transit', open: false });
     await setup(state);
-    await page.getByTestId('dock-rail').getByRole('button', { name: 'Results' }).click();
+    await page.getByTestId('dock-rail').getByRole('button', { name: 'Details' }).click();
     await expect.element(page.getByTestId('score-details')).toBeVisible();
     expect(state.face).toBe('results');
     await vi.waitFor(() =>
@@ -151,11 +151,34 @@ describe('Dock, desktop', () => {
     );
   });
 
-  it('with resultsOnly the rail shows the Results button alone', async () => {
+  it('the Details face is named Details on the handle, the region and the rail', async () => {
+    await page.viewport(1024, 768);
+    const state = new DockState({ tab: 'transit', open: false });
+    const view = await setup(state);
+    const railButton = page.getByTestId('dock-rail').getByRole('button', { name: 'Details' });
+    await expect.element(railButton).toBeVisible();
+    expect(railButton.element().getAttribute('title')).toBe('Details');
+    await railButton.click();
+    await expect.element(page.getByRole('region', { name: 'Details' })).toBeVisible();
+    expect(page.getByRole('region', { name: 'Results' }).query()).toBeNull();
+    await view.unmount();
+
+    await page.viewport(375, 700);
+    const sheet = new DockState({ tab: 'transit' });
+    sheet.face = 'results';
+    sheet.sheet = 'peek';
+    await setup(sheet, { focusOnOpen: false });
+    const handle = page.getByTestId('dock-handle');
+    await expect.element(handle).toHaveAccessibleName('Details');
+    expect(handle.element().textContent?.trim()).toBe('Details');
+    await expect.element(page.getByRole('region', { name: 'Details' })).toBeVisible();
+  });
+
+  it('with resultsOnly the rail shows the Details button alone', async () => {
     await page.viewport(1024, 768);
     await setup(new DockState({ tab: 'transit', open: false }), { resultsOnly: true });
     const buttons = page.getByTestId('dock-rail').getByRole('button').elements();
-    expect(buttons.map((b) => b.getAttribute('aria-label'))).toEqual(['Results']);
+    expect(buttons.map((b) => b.getAttribute('aria-label'))).toEqual(['Details']);
   });
 
   it('the collapse button folds the panel to the rail and calls onclose', async () => {
@@ -293,7 +316,7 @@ describe('Dock, phone', () => {
     expect(state.sheet).toBe('full');
   });
 
-  it('the handle on Results reads "Results"; a peek is about 40dvh and the body scrolls', async () => {
+  it('the handle on Details reads "Details"; a peek is about 40dvh and the body scrolls', async () => {
     await page.viewport(375, 700);
     const state = new DockState({ tab: 'transit' });
     state.face = 'results';
@@ -301,7 +324,7 @@ describe('Dock, phone', () => {
     const onsheetheight = vi.fn();
     await setup(state, { onsheetheight, focusOnOpen: false });
     const handle = page.getByTestId('dock-handle');
-    expect(handle.element().textContent?.trim()).toBe('Results');
+    expect(handle.element().textContent?.trim()).toBe('Details');
     await vi.waitFor(() => expect(onsheetheight).toHaveBeenCalled());
     const last = () => onsheetheight.mock.calls.at(-1)![0] as number;
     expect(last()).toBeLessThanOrEqual(0.4 * 700 + 1);

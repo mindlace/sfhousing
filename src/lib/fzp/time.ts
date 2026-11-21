@@ -20,9 +20,6 @@ export function utcParts(day: Day): { y: number; m: number; d: number } {
 /** The end of the scrubber: 2066-12-31, Day 35,428; was 2050 under OD-T4. */
 export const HORIZON: Day = dayFromUtc(2066, 12, 31);
 
-/** The default 2045 marker day when the data has no reference falling in 2045. */
-export const YEAR_2045: Day = dayFromUtc(2045, 1, 1);
-
 /** The first of the day's month. */
 export function monthStart(day: Day): Day {
   const { y, m } = utcParts(day);

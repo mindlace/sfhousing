@@ -12,8 +12,8 @@
   import type { Manifest } from '$lib/data/manifest';
   import { DockState } from '$lib/dock/dock-state.svelte';
   import { paintHeadline } from '$lib/paint/headline';
+  import PaintDetails from '$lib/paint/PaintDetails.svelte';
   import { frameLatest, viewState, type Score, type ScoreStatus } from '$lib/scoreboard';
-  import ScoreboardPanel from '$lib/scoreboard/ScoreboardPanel.svelte';
   import { ogDescription, remixConfirm } from '$lib/sharing/copy';
   import { localOpCount, remixToLocal } from '$lib/sharing/remix';
   import SharedBanner from '$lib/sharing/SharedBanner.svelte';
@@ -59,7 +59,7 @@
 
   // The dock, as on `/` (sim-ux plan 5): it opens on the read-only Paint tab (the heights it paints, no
   // tools); its own collapse button and rail fold and open it, the header score flips it to
-  // Results.
+  // Details (PaintDetails).
   const wide = new MediaQuery('(min-width: 768px)');
   const uid = $props.id();
   const dockId = `${uid}-dock`;
@@ -72,7 +72,7 @@
     dock.toggleResults(wide.current);
   }
 
-  // Score wiring, as on `/` (scoreboard spec §4.3/§4.4): the header score and the Results face.
+  // Score wiring, as on `/` (scoreboard spec §4.3/§4.4): the header score and the Details face.
   let brushEditor = $state<ReturnType<typeof BrushEditor>>();
   const latestScore = frameLatest<{ score: Score | null; complete: boolean }>({
     score: null,
@@ -116,7 +116,7 @@
 {/snippet}
 
 {#snippet results()}
-  <ScoreboardPanel score={shown} status={scoreStatus} onretry={() => brushEditor?.retryChunks()} />
+  <PaintDetails score={shown} status={scoreStatus} onretry={() => brushEditor?.retryChunks()} />
 {/snippet}
 
 <svelte:head>

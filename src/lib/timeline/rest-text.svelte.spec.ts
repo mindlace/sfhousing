@@ -1,10 +1,10 @@
 /// <reference types="@vitest/browser-playwright" />
-// Rule 37: /sim at rest, and with Results open, shows no sentence of 12 words or more outside a
-// notice, a dialog or an open explanation. SimPageHost over the fake timeline worker.
+// Rule 37: /sim at rest (Activity from md), and with Details open, shows no sentence of 12 words or
+// more outside a notice, a dialog or an open explanation. SimPageHost over the fake timeline worker.
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { tick, type ComponentProps } from 'svelte';
 import { render } from 'vitest-browser-svelte';
-import { page } from 'vitest/browser';
+import { page, userEvent } from 'vitest/browser';
 import '../../routes/layout.css';
 import { parseManifest } from '$lib/data/manifest';
 import { longTexts } from '$lib/shell/test/rest-text';
@@ -77,10 +77,22 @@ describe('rest text (rules 37 to 39)', () => {
     expect(longTexts()).toEqual([]);
   });
 
-  it('shows none with Results open either', async () => {
+  it('/sim at rest from md shows Activity, at today and with totals, and no long text', async () => {
+    await page.viewport(1280, 800);
+    await opened();
+    const activity = page.getByTestId('tl-activity');
+    await expect.element(activity.getByRole('list', { name: 'Try one:' })).toBeVisible();
+    expect(longTexts()).toEqual([]);
+    (page.getByRole('slider', { name: 'Date in the simulation' }).element() as HTMLElement).focus();
+    await userEvent.keyboard('{End}');
+    await expect.element(activity.getByTestId('tl-totals')).toBeVisible();
+    expect(longTexts()).toEqual([]);
+  });
+
+  it('shows none with Details open either', async () => {
     await opened();
     await page.getByTestId('score-bar').click();
-    await expect.element(page.getByTestId('tl-results')).toBeVisible();
+    await expect.element(page.getByTestId('tl-details')).toBeVisible();
     await tick();
     expect(longTexts()).toEqual([]);
   });

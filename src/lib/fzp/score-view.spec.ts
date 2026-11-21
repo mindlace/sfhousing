@@ -2,29 +2,24 @@ import { describe, expect, it } from 'vitest';
 import {
   TIMELINE_SCORE,
   TIMELINE_SCORE_NO_PHASING,
-  TIMELINE_SCORE_R0,
-  makeTimelineScore
+  TIMELINE_SCORE_R0
 } from './fixtures/timeline-score';
 import {
   CALCULATING,
-  RHNA_ID,
   builtTowardGoalText,
   deadlineIndex,
-  inProgressRows,
   phasingFootnote,
   scoreAt,
-  scrubMarkers,
   vsFzpText,
   fromPolicyText
 } from './score-view';
-import { YEAR_2045, dayFromUtc } from './time';
+import { dayFromUtc } from './time';
 
 const DEADLINE = dayFromUtc(2031, 1, 31);
 
 describe('shared copy', () => {
-  it('is defined once: calculating and the RHNA id', () => {
+  it('is defined once: calculating', () => {
     expect(CALCULATING).toBe('calculating…');
-    expect(RHNA_ID).toBe('rhna');
   });
 });
 
@@ -90,29 +85,6 @@ describe('scoreAt', () => {
   });
 });
 
-describe('inProgressRows', () => {
-  it('lists stage-order stages first, then unknown keys, labelled', () => {
-    const rows = inProgressRows({ ...TIMELINE_SCORE.shown[1].inProgress, designReview: 7 });
-    expect(rows.map((r) => r.stage)).toEqual([
-      'preApplication',
-      'filed',
-      'entitled',
-      'permitFiled',
-      'permitIssued',
-      'construction',
-      'designReview'
-    ]);
-    expect(rows[0]).toEqual({ stage: 'preApplication', label: 'Pre-application', units: 10 });
-    expect(rows[5].label).toBe('Under construction');
-    expect(rows[6]).toEqual({ stage: 'designReview', label: 'designReview', units: 7 });
-  });
-
-  it('orders by stage, not by key order', () => {
-    const rows = inProgressRows({ construction: 1, filed: 2 });
-    expect(rows.map((r) => r.stage)).toEqual(['filed', 'construction']);
-  });
-});
-
 describe('phasingFootnote', () => {
   const head =
     'Multi-phase projects: 5 phases scheduled from published plans, 3 estimated from past projects';
@@ -152,37 +124,6 @@ describe('phasingFootnote', () => {
 
   it('is null when there are no master plans', () => {
     expect(phasingFootnote(TIMELINE_SCORE_NO_PHASING.phasing)).toBeNull();
-  });
-});
-
-describe('scrubMarkers', () => {
-  it('marks the RHNA deadline and the 2045 reference', () => {
-    expect(scrubMarkers(TIMELINE_SCORE)).toEqual([
-      {
-        day: DEADLINE,
-        label: 'RHNA deadline',
-        name: 'Jump to RHNA deadline, January 2031'
-      },
-      { day: dayFromUtc(2045, 6, 30), label: '2045', name: 'Jump to 2045' }
-    ]);
-  });
-
-  it('falls back to 2045-01-01 with no reference in 2045', () => {
-    const s = { ...makeTimelineScore(), references: [] };
-    expect(scrubMarkers(s)[1].day).toBe(YEAR_2045);
-  });
-
-  it('ignores references outside 2045', () => {
-    const s = makeTimelineScore();
-    s.references = s.references.map((r) => ({ ...r, by: dayFromUtc(2040, 1, 1) }));
-    expect(scrubMarkers(s)[1].day).toBe(YEAR_2045);
-  });
-
-  it('drops the RHNA marker without an rhna target', () => {
-    const s = makeTimelineScore();
-    s.targets = s.targets.filter((t) => t.target.id !== 'rhna');
-    const markers = scrubMarkers(s);
-    expect(markers.map((m) => m.label)).toEqual(['2045']);
   });
 });
 

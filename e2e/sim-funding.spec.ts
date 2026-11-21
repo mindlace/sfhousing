@@ -1,6 +1,6 @@
 // /sim's public money e2e (funding-ui spec 6, tests 1 to 10) on the timeline: the Public money
 // kind's policies (City funding scale, a preset's fund, your own pool, market terms), each edited
-// in the inspector, the Results money and tier blocks with the market paragraph and the sources
+// in the inspector, the Details money and tier blocks with the market paragraph and the sources
 // dialog, the published policy's read-only summary, a schema-2 document's notice and a calibration
 // without baseline funding. Runs against the VITE_E2E build on fixture-0 (window.__sfhFzp,
 // src/lib/fzp/debug.ts). Every fixture value is read from fixture-0's calibration.json on disk and
@@ -31,7 +31,7 @@ import {
 } from '../src/lib/sim-page/funding-presets';
 import { baselineGroups, programmeSentence } from '../src/lib/sim-page/funding-view';
 import { expectNoA11yViolations } from './helpers/a11y';
-import { addPolicy, openKind, waitFilled } from './helpers/run';
+import { addPolicy, openKind, slider, waitFilled } from './helpers/run';
 import {
   SIM_KEY,
   gotoHydrated,
@@ -41,6 +41,7 @@ import {
   seedPlanRow,
   type Win
 } from './helpers/sharing';
+import { PLUS_NAME } from '../src/lib/timeline/test/plus';
 
 type FzpWin = Win & { __sfhFzp?: SfhFzpDebug };
 
@@ -171,8 +172,8 @@ async function commit(field: Locator, text: string): Promise<void> {
 }
 
 const notices = (page: Page): Locator => page.getByTestId('sim-notice');
-/** Results, which the header score shows in the inspector. */
-const results = (page: Page): Locator => page.getByTestId('tl-results');
+/** Details, which the header score shows in the inspector. */
+const results = (page: Page): Locator => page.getByTestId('tl-details');
 
 async function expectNoHorizontalScroll(page: Page): Promise<void> {
   const { scroll, client } = await page.evaluate(() => ({
@@ -228,7 +229,7 @@ test('1c. a11y with the "+" menu open and a pool editor expanded', async ({ page
   await gotoSim(page);
 
   // The kind's "+" menu open, then a preset's pool in its policy's editor.
-  await page.getByRole('button', { name: 'Add Public money policy' }).click();
+  await page.getByRole('button', { name: PLUS_NAME['Public money'] }).click();
   await expect(page.getByRole('group', { name: 'Add to Public money' })).toBeVisible();
   await expectNoA11yViolations(page);
   await editor(page).getByRole('button', { name: 'Close editor' }).click();
@@ -292,7 +293,7 @@ test('2. the bond preset: Undo names it and the forecast follows', async ({ page
 
 test('3. your own pool: the amount error, then a yearly amount', async ({ page }) => {
   await gotoSim(page);
-  await page.getByRole('button', { name: 'Add Public money policy' }).click();
+  await page.getByRole('button', { name: PLUS_NAME['Public money'] }).click();
   await page
     .getByRole('group', { name: 'Add to Public money' })
     .getByRole('button', { name: 'Your own pool', exact: true })
@@ -439,9 +440,9 @@ test('6. the programme editor: a loan is a draft until its rate', async ({ page 
   await expect(prog.locator(':scope > button')).toHaveText(sentence);
 });
 
-// ---- 7. Results -----------------------------------------------------------------------------------
+// ---- 7. Details -----------------------------------------------------------------------------------
 
-test('7. Results: Public money, Who the homes are for, the market and the sources', async ({
+test('7. Details: Public money, Who the homes are for, the market and the sources', async ({
   page
 }) => {
   expect(marketLevel(CAL)).toBe('private');
@@ -449,6 +450,11 @@ test('7. Results: Public money, Who the homes are for, the market and the source
   await page.getByTestId('score-bar').click();
   const face = results(page);
   await expect(face).toBeVisible();
+  // At today nothing is spent or finished yet: the blocks show from the first month on.
+  await expect(face.getByTestId('fzp-money')).toHaveCount(0);
+  await slider(page).focus();
+  await page.keyboard.press('End');
+  await waitFilled(page);
 
   const money = face.getByTestId('fzp-money');
   await expect(money.getByRole('heading', { name: 'Public money' })).toBeVisible();
@@ -479,7 +485,7 @@ test('7. Results: Public money, Who the homes are for, the market and the source
   const sources = face.getByTestId('fzp-sources');
   await sources.locator(':scope > summary').click();
   const paragraph = face.getByTestId('fzp-market');
-  // Results' wording: the sentence without its old closing disclaimer (timeline-ui rule 38).
+  // Details' wording: the sentence without its old closing disclaimer (timeline-ui rule 38).
   await expect(paragraph).toHaveText(marketBody(marketText(CAL)!));
   const today = CAL.market!.today;
   await expect(paragraph).toContainText(
@@ -607,7 +613,7 @@ test('10. no baselineFunding: no Public money kind, funding-off notice', async (
   expect(off.id).toBe('funding-off');
   await expect(notices(page).filter({ hasText: off.text })).toHaveCount(1);
   await expect(page.getByRole('button', { name: 'Zoning', exact: true }).first()).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Add Public money policy' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: PLUS_NAME['Public money'] })).toHaveCount(0);
   // The money is kept, not used.
   expect((await storedPolicy(page))?.kinds.money).toHaveLength(1);
 });

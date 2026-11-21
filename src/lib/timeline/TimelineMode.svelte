@@ -2,7 +2,8 @@
   The /sim and /s/<id> composition on the timeline (timeline-ui rules 1, 18-36): the header score
   and the status slot, the notice stack, the map with the project card and tooltip, and under the
   map the bottom pane: the timeline (the playhead, the chart and the rows) beside the detail
-  column (the inspector, or Results; a sheet on a phone), over a `TimelineSession`. It takes
+  column (the inspector, Details, or at rest Activity; a sheet on a phone), over a
+  `TimelineSession`. It takes
   FzpMode's place; the load states before the worker are FzpMode's (rule 30). The policy store and
   its editors are the page's: edits arrive as a new `policy`, their lots as a new `lots`
   (PolicySync).
@@ -101,7 +102,6 @@
   import { DEFAULT_SPEED } from '$lib/fzp/playback';
   import ProjectCardPanel from '$lib/fzp/ProjectCardPanel.svelte';
   import ProjectTooltip from '$lib/fzp/ProjectTooltip.svelte';
-  import SimResults from '$lib/fzp/SimResults.svelte';
   import SourcesDialog from '$lib/fzp/SourcesDialog.svelte';
   import { SummaryRequester, type SummaryState } from '$lib/fzp/summary-request';
   import { monthStart } from '$lib/fzp/time';
@@ -123,6 +123,21 @@
   import type { Day } from '$lib/timelapse/time';
   import { HIDDEN_VIEW, type ViewPrefs } from '$lib/view/prefs';
   import ChartRow from './ChartRow.svelte';
+  import type { ChartLens } from './chart-lens';
+  import SimDetails from './SimDetails.svelte';
+  import SimActivity from './SimActivity.svelte';
+  import {
+    activityTotals,
+    eventText,
+    moneyInForce,
+    startersFor,
+    type ActivityItem
+  } from './activity-view';
+  import { ACTIVITY_LIMIT, ActivityIndex, type ActivityEvent } from './activity';
+  import { loadPlaces, placeOf } from './places';
+  import { datasetUrl } from '$lib/sim/scenario/load';
+  import type { NeighborhoodShapes } from '$lib/sim/levers/brushes';
+  import type { AddChoice } from './add';
   import { CHANGE_NOT_APPLIED, STALE_NOTE, UPDATING } from './copy';
   import Explain from './Explain.svelte';
   import { fundsOf4 } from './owner';
@@ -131,6 +146,7 @@
   import { termsInForce } from './lens';
   import { nothingInForce, type PolicyKind, type SimPolicy4 } from './policy4';
   import { awaitsView, goalOutcome, outcomeKey, outcomeText, type GoalOutcome } from './outcome';
+  import { levelSet } from './pool-level';
   import { editedReveal, moved, revealOpen, scanned, type Reveal } from './reveal';
   import {
     headlineAt,
@@ -138,7 +154,8 @@
     headlineText,
     playheadAt,
     resultsAt,
-    scoreOfView
+    scoreOfView,
+    todayAt
   } from './results';
   import { TimelineSession, type Lots, type SessionNotice } from './session.svelte';
   import type { SpanRef } from './spans';
@@ -198,15 +215,18 @@
     onselect(ref: SpanRef | null): void;
     /** The timeline's "+" (the menu is the page's). */
     onadd(kind: PolicyKind): void;
-    /** The page's inspector, given the Results face and the playhead's day. */
-    inspector?: Snippet<[{ results: Snippet; day: Day }]>;
+    /** The page's inspector, given the Activity and Details faces and the playhead's day. */
+    inspector?: Snippet<[{ activity: Snippet; details: Snippet; day: Day }]>;
     /**
      * The inspector is open (default true). Below md it is a sheet that shows only while open;
      * from md the detail column beside the timeline always shows: the inspector while open,
-     * else Results.
+     * else Activity.
      */
     inspectorOpen?: boolean;
-    /** What the detail column shows (Results, an editor, a menu): a new key starts it at its top. */
+    /**
+     * What the detail column shows (Activity, Details, an editor, a menu): a new key starts it at
+     * its top.
+     */
     detailKey?: string;
     /** The playhead's day, on every change. */
     onday?(day: Day): void;
@@ -225,7 +245,16 @@
     onmiss?(): void;
     /** The header score is pressed. */
     onscore?(): void;
-    /** The sheet shows Results: the header score's `aria-expanded`, below md only. */
+    /**
+     * Activity's starter is pressed: the page adds `choice` as its "+" menu does, announcing
+     * "Added: {label}". Absent (read-only), Activity offers no starters.
+     */
+    onstarter?(choice: AddChoice, label: string): void;
+    /** Activity's Details button. Absent, it presses the header score. */
+    ondetails?(): void;
+    /** Details' Activity button; absent, Details has none. */
+    onactivity?(): void;
+    /** The sheet shows Details: the header score's `aria-expanded`, below md only. */
     scoreExpanded?: boolean;
     /** The detail column's id: the header score's `aria-controls` while the column shows. */
     scoreControls?: string;
@@ -235,6 +264,8 @@
     statusMs?: number;
     /** Test seam: the goal every goal read goes through. Default the page's goal. */
     goal?: Goal;
+    /** Test seam: fetches the neighbourhoods Activity's list names; null on any failure. */
+    fetchPlaces?(url: string): Promise<NeighborhoodShapes | null>;
   }
 
   let {
@@ -276,11 +307,15 @@
     onchunks = undefined,
     onmiss = undefined,
     onscore = undefined,
+    onstarter = undefined,
+    ondetails = undefined,
+    onactivity = undefined,
     scoreExpanded = false,
     scoreControls = undefined,
     bottomExtra = 0,
     goal = GOAL,
-    statusMs = 1000
+    statusMs = 1000,
+    fetchPlaces = (url: string) => loadPlaces(url)
   }: Props = $props();
 
   // The props seed the page once; a Retry replaces the manifest and calibration in place.
@@ -353,15 +388,12 @@
   /** Today's score shape over the view on show (rule 26). */
   const score = $derived(shownView ? scoreOfView(shownView, tierBaseline) : null);
   const shownFilled = $derived(shown.view?.filledThrough ?? -1);
-  /** `resultsAt` over the score above (the view's, built once). */
-  const at = $derived(
-    shown.view && score && index <= shownFilled
-      ? resultsAt(shown.view, tierBaseline, index, score)
-      : null
-  );
-  const shownEnd = $derived(
-    shown.view ? filledEndDay(shown.view.months, shown.view.filledThrough, asOf) : asOf
-  );
+  /** `resultsAt` over the score above (the view's, built once); at today `todayAt` of it. */
+  const at = $derived.by(() => {
+    if (!shown.view || !score || index > shownFilled) return null;
+    const read = resultsAt(shown.view, tierBaseline, index, score);
+    return atToday ? todayAt(read) : read;
+  });
   /**
    * The document the shown numbers are from: the one the worker runs, or while stale the one it
    * ran when the held view was taken; the edited `policy` until the session has one.
@@ -371,7 +403,14 @@
   /** A policy of the person's is in force in the document the numbers on show are from. */
   const inForce = $derived(!nothingInForce(resultsDoc));
   /**
-   * The comparison's wording for Results and the header, from the document the numbers on show
+   * The pool levels the Public money bars draw: from the view on show and the document and
+   * calibration it was run on, rebuilt with them, never as the playhead moves.
+   */
+  const levels = $derived(
+    levelSet(shownView, resultsDoc, calibration?.baselineFunding?.pools, asOf)
+  );
+  /**
+   * The comparison's wording for Details and the header, from the document the numbers on show
    * are from, so it changes with the numbers (held numbers keep theirs).
    */
   const copy = $derived(copyOf(!inForce));
@@ -402,6 +441,96 @@
       { index, atToday },
       { provisional: session?.provisional ?? false, inForce }
     )
+  );
+  /**
+   * Activity's totals at the playhead's month, under the headline's rule and from the document the
+   * numbers on show came from (held while stale). It reads `index` and `atToday`, never `day`, so
+   * it changes at most once per month the playhead crosses.
+   */
+  const totals = $derived(
+    activityTotals(
+      shown.view,
+      { index, atToday },
+      {
+        provisional: session?.provisional ?? false,
+        inForce,
+        moneyInForce: moneyInForce(resultsDoc)
+      }
+    )
+  );
+  /**
+   * Activity's list: the page's own copy of the citywide feed (map-interfaces, "The citywide
+   * feed"), indexed by day. `cityVersion` moves once per update that carries markers.
+   */
+  const activityIndex = new ActivityIndex();
+  let cityVersion = $state(0);
+  /** The list on show; a new array only when an item differs (the DOM is kept otherwise). */
+  let latestShown: ActivityEvent[] = [];
+  const sameEvent = (a: ActivityEvent, b: ActivityEvent) =>
+    a.row === b.row &&
+    a.kind === b.kind &&
+    a.day === b.day &&
+    a.homes === b.homes &&
+    a.policy === b.policy &&
+    a.lngLat[0] === b.lngLat[0] &&
+    a.lngLat[1] === b.lngLat[1];
+  /**
+   * The newest stage changes after today and at or before the playhead's day. Per move a binary
+   * search and at most ACTIVITY_LIMIT events (the index sorts only after an update).
+   */
+  const latest = $derived.by(() => {
+    void cityVersion;
+    const next = activityIndex.recent(asOf, day, ACTIVITY_LIMIT);
+    const prev = latestShown;
+    if (next.length === prev.length && next.every((e, i) => sameEvent(e, prev[i]))) return prev;
+    latestShown = next;
+    return next;
+  });
+  /** The neighbourhoods, once per manifest, fetched when the list first has an item. */
+  let places = $state.raw<NeighborhoodShapes | null>(null);
+  let placesFor: Manifest | null = null;
+  const wantPlaces = $derived(latest.length > 0);
+  $effect(() => {
+    if (!wantPlaces || !manifest || placesFor === manifest) return;
+    const m = manifest;
+    placesFor = m;
+    places = null;
+    const url = datasetUrl(m, m.neighborhoods);
+    if (url === null) return;
+    void fetchPlaces(url).then((s) => {
+      if (!dead && placesFor === m) places = s;
+    });
+  });
+  /** Names by row, until the index or the shapes change. */
+  let placeMemo = new Map<number, string | null>(); // eslint-disable-line svelte/prefer-svelte-reactivity
+  let placeMemoKey: [number, NeighborhoodShapes | null] = [-1, null];
+  function placeFor(e: ActivityEvent, shapes: NeighborhoodShapes | null, v: number): string | null {
+    if (!shapes) return null;
+    if (placeMemoKey[0] !== v || placeMemoKey[1] !== shapes) {
+      placeMemo = new Map();
+      placeMemoKey = [v, shapes];
+    }
+    let name = placeMemo.get(e.row);
+    if (name === undefined) placeMemo.set(e.row, (name = placeOf(shapes, e.lngLat)));
+    return name;
+  }
+  const latestItems = $derived<ActivityItem[]>(
+    latest.map((e) => ({
+      key: `${e.row}:${e.kind}`,
+      policy: e.policy,
+      ...eventText(
+        e,
+        placeFor(
+          e,
+          places,
+          untrack(() => cityVersion)
+        )
+      )
+    }))
+  );
+  /** At today with nothing in force in the edited document and the page editable: the starters. */
+  const starters = $derived(
+    onstarter && calibration && nothingInForce(policy) ? startersFor(calibration, policy) : []
   );
   /** The map key control's box: the card's area ends at its left edge. */
   let keyEl = $state<HTMLElement>();
@@ -479,7 +608,7 @@
     if (!stale) untrack(() => (heldDoc = null));
   });
   const funds = $derived(fundsOf4(resultsDoc));
-  /** The market terms in force at the playhead, for the Results' lost-grants line. */
+  /** The market terms in force at the playhead, for Details' lost-grants line. */
   const terms = $derived(resolveTerms(MARKET_TERMS, termsInForce(resultsDoc, day)));
   const uncapped = $derived(uncappedPoolIds(calibration?.baselineFunding?.pools, funds.pools));
   const phase = $derived<FzpPhase>(
@@ -744,6 +873,15 @@
   }
 
   function applyRender(u: TimelineUpdate): void {
+    // Activity's index first, whether or not the map exists yet (the map may take the buffers).
+    if (u.revision === 0 || u.city) {
+      try {
+        activityIndex.apply(u);
+      } catch {
+        // A malformed delta leaves the index as it was; the map's own store reports it.
+      }
+      cityVersion++;
+    }
     if (handle) return handle.applyTimeline(u);
     if (u.revision === 0) pendingUpdates = [];
     pendingUpdates.push(u);
@@ -1046,7 +1184,7 @@
   // ---- the inspector (rule 1) ----
 
   const narrow = new MediaQuery('(max-width: 767px)');
-  /** The detail column shows: always from md (Results when nothing is open), below md while open. */
+  /** The detail column shows: always from md (Activity when nothing is open), below md while open. */
   const detailShown = $derived(
     mounted && session !== null && !!inspector && (!narrow.current || inspectorOpen)
   );
@@ -1055,7 +1193,7 @@
   let dockEl = $state<HTMLElement>();
   let detailEl = $state<HTMLElement>();
 
-  /** The column's content swaps (Results, an editor, another editor): it starts at the top. */
+  /** The column's content swaps (Activity, Details, an editor): it starts at the top. */
   $effect(() => {
     void inspectorOpen;
     void detailKey;
@@ -1063,13 +1201,27 @@
     if (el) el.scrollTop = 0;
   });
 
-  /** The header score's press from md: the column at its top, focus on Results. */
-  export async function showResults(): Promise<void> {
+  /** The header score's press from md: the column at its top, focus on Details. */
+  export async function showDetails(): Promise<void> {
     await tick();
     if (!detailEl) return;
     detailEl.scrollTop = 0;
-    detailEl.querySelector<HTMLElement>('[data-testid=tl-results]')?.focus({ preventScroll: true });
+    detailEl.querySelector<HTMLElement>('[data-testid=tl-details]')?.focus({ preventScroll: true });
   }
+  /** Activity's or Details' button, or the header from md: the column at its top, focus on it. */
+  export async function showActivity(): Promise<void> {
+    await tick();
+    if (!detailEl) return;
+    detailEl.scrollTop = 0;
+    detailEl
+      .querySelector<HTMLElement>('[data-testid=tl-activity]')
+      ?.focus({ preventScroll: true });
+  }
+  /**
+   * What the one chart plots: Details switches it (bound), and it is Homes whenever Details is
+   * not shown (SimDetails puts it back as it unmounts).
+   */
+  let lens = $state<ChartLens>('homes');
   /** The pinned block's height. */
   let pinHeight = $state(0);
   /** The timeline's box's client height: the mode box below md, the bottom pane's lanes from md. */
@@ -1210,24 +1362,22 @@
   {/if}
 {/snippet}
 
-{#snippet results()}
-  <!-- Focused by showResults: the ring draws inside the box, which sits flush in the column's
+{#snippet details()}
+  <!-- Focused by showDetails: the ring draws inside the box, which sits flush in the column's
        scroll box and would clip an outer one (WCAG 2.4.7). -->
   <div
-    class="tl-dim focus:outline-2 focus:-outline-offset-2 focus:outline-accent dark:focus:outline-accent-dark"
-    data-testid="tl-results"
+    class="tl-dim p-3 focus:outline-2 focus:-outline-offset-2 focus:outline-accent dark:focus:outline-accent-dark"
+    data-testid="tl-details"
     data-stale={stale ? 'true' : undefined}
     tabindex="-1"
   >
-    <SimResults
+    <SimDetails
       {score}
       {at}
       view={score ? shownView : null}
-      {day}
+      playhead={{ index, atToday }}
+      {reachedMonth}
       {asOf}
-      horizon={windowEnd}
-      filledEnd={shownEnd}
-      reached={Math.min(reveal.reached, shownEnd)}
       {datasetVersion}
       builtAt={manifest?.builtAt ?? ''}
       onsources={() => dialog?.open()}
@@ -1237,6 +1387,31 @@
       {terms}
       {uncapped}
       market={calibration ? marketSentence(calibration) : null}
+      {inForce}
+      {goal}
+      {onactivity}
+      bind:lens
+    />
+  </div>
+{/snippet}
+
+{#snippet activity()}
+  <!-- Focused by showActivity, the ring inside the box as Details'. Not dimmed as a whole: only
+       Activity's body dims while stale, its heading and button keep their contrast. -->
+  <div
+    class="p-3 focus:outline-2 focus:-outline-offset-2 focus:outline-accent dark:focus:outline-accent-dark"
+    data-testid="tl-activity"
+    tabindex="-1"
+  >
+    <SimActivity
+      {goal}
+      {totals}
+      {atToday}
+      {starters}
+      onstarter={(s) => onstarter?.(s.choice, s.label)}
+      ondetails={() => (ondetails ?? onscore)?.()}
+      {stale}
+      events={latestItems}
     />
   </div>
 {/snippet}
@@ -1269,6 +1444,7 @@
       reached={reveal.reached}
       target={chartTarget}
       {stale}
+      {lens}
     />
   </div>
 {/snippet}
@@ -1499,15 +1675,19 @@
           chart={chartPart}
           goalShown={chartTarget !== null}
           {inForce}
+          {lens}
           playheadMonth={viewMonthOf(asOf, day)}
           playheadDay={day}
+          {levels}
+          reached={reveal.reached}
+          {stale}
           bind:pinHeight
           {pinned}
         />
       </div>
 
       {#if detailShown && inspector}
-        <!-- From md the column beside the timeline: the inspector while open, else Results. Below
+        <!-- From md the column beside the timeline: the inspector while open, else Activity. Below
              md a sheet from under the chart to the mode box's end (top and bottom inline), so the
              playhead and the chart stay above it and nothing past the box is covered (rules 1, 9; W6b). -->
         <aside
@@ -1516,12 +1696,12 @@
           data-testid="tl-inspector"
           style:top={phoneSheet ? `${sheetTop}px` : undefined}
           style:bottom={phoneSheet ? `${sheetBottom}px` : undefined}
-          class="z-30 overflow-y-auto border-line bg-surface text-ink max-md:fixed max-md:inset-x-0 max-md:rounded-t-2xl max-md:border-t max-md:shadow-lg md:min-h-0 md:border-l dark:border-line-dark dark:bg-surface-dark dark:text-ink-dark"
+          class="detail-col z-30 overflow-y-auto border-line bg-surface text-ink max-md:fixed max-md:inset-x-0 max-md:rounded-t-2xl max-md:border-t max-md:shadow-lg md:min-h-0 md:border-l dark:border-line-dark dark:bg-surface-dark dark:text-ink-dark"
         >
           {#if inspectorOpen}
-            {@render inspector({ results, day })}
+            {@render inspector({ activity, details, day })}
           {:else}
-            {@render results()}
+            {@render activity()}
           {/if}
         </aside>
       {/if}
@@ -1547,7 +1727,7 @@
   .tl-map[data-stale] :global(.maplibregl-canvas) {
     opacity: 0.6;
   }
-  /* Results and the card: text turns to the muted ink, which keeps AA contrast; controls keep
+  /* Details and the card: text turns to the muted ink, which keeps AA contrast; controls keep
      their own colours; graphics outside controls dim. */
   .tl-dim[data-stale]
     :global(:not(button, a, input, select, textarea, summary, button *, a *, summary *)) {
@@ -1560,6 +1740,45 @@
     .tl-dim[data-stale]
       :global(:not(button, a, input, select, textarea, summary, button *, a *, summary *)) {
       color: var(--color-ink-dark-muted);
+    }
+  }
+  /* The detail column (Activity, Details, the editor; the phone sheet is the same box) says more
+     is below: a fade sticks to its foot while its content overflows and is not scrolled to the
+     end. CSS only: a scroll-driven animation on the column's own scroll timeline; while nothing
+     overflows the timeline is inactive and the base opacity (0) holds. Never takes a press, and
+     focus scrolls clear of it. Nothing moves but the opacity, with the scroll. Without scroll
+     timelines the 0 s animation fills to its end keyframe (opacity 0): no fade, nothing covered.
+     Keep `animation` before `animation-timeline` (the shorthand resets the timeline) and give it
+     no duration. Under forced colours the gradient, a background-image, is not drawn. */
+  .detail-col {
+    scroll-timeline: --sfh-detail block;
+    scroll-padding-bottom: 24px;
+  }
+  .detail-col::after {
+    content: '';
+    position: sticky;
+    bottom: 0;
+    display: block;
+    height: 24px;
+    margin-top: -24px;
+    pointer-events: none;
+    opacity: 0;
+    background: linear-gradient(to bottom, transparent, var(--color-surface));
+    animation: sfh-detail-more linear both;
+    animation-timeline: --sfh-detail;
+  }
+  @keyframes sfh-detail-more {
+    0%,
+    92% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0;
+    }
+  }
+  @media (prefers-color-scheme: dark) {
+    .detail-col::after {
+      background: linear-gradient(to bottom, transparent, var(--color-surface-dark));
     }
   }
 </style>

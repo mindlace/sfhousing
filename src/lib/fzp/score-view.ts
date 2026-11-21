@@ -7,13 +7,9 @@ import { formatCount } from '$lib/scoreboard';
 import type { TimelineScore } from '$lib/sim/protocol';
 import { STAGE_ORDER, type Stage } from '$lib/timelapse/types';
 import type { Day } from '$lib/timelapse/time';
-import { formatMonthYear, formatShortMonthYear } from './format';
-import { inStageLabel } from './labels';
-import { YEAR_2045, monthIndex, utcParts } from './time';
-import type { Marker, ScoreAt } from './types';
-
-/** The id of the RHNA target in `score.targets`. */
-export const RHNA_ID = 'rhna';
+import { formatShortMonthYear } from './format';
+import { monthIndex } from './time';
+import type { ScoreAt } from './types';
 import { CALCULATING } from './copy';
 
 export { CALCULATING };
@@ -50,22 +46,6 @@ export function scoreAt(score: TimelineScore, i: number): ScoreAt {
   };
 }
 
-/**
- * One row per stage that has units: `STAGE_ORDER` stages first, then any other key (a stage the
- * labels do not know yet still renders, as its id).
- */
-export function inProgressRows(
-  rec: Record<string, number>
-): { stage: string; label: string; units: number }[] {
-  const known: string[] = OPEN_STAGES.filter((s) => s in rec);
-  const extra = Object.keys(rec).filter((k) => !(STAGE_ORDER as readonly string[]).includes(k));
-  return [...known, ...extra].map((stage) => ({
-    stage,
-    label: inStageLabel(stage),
-    units: rec[stage]
-  }));
-}
-
 /** Item 13: the multi-phase footnote; `null` when no master plan is in the data. */
 export function phasingFootnote(p: TimelineScore['phasing']): string | null {
   if (p.masters <= 0) return null;
@@ -83,27 +63,6 @@ export function phasingFootnote(p: TimelineScore['phasing']): string | null {
       clauses.join(', ');
   }
   return `${text}.`;
-}
-
-/** The earliest `by` that falls in 2045, else 2045-01-01 (OD-T4). */
-function day2045(score: TimelineScore): Day {
-  const in2045 = score.references.map((r) => r.by).filter((d) => utcParts(d).y === 2045);
-  return in2045.length > 0 ? Math.min(...in2045) : YEAR_2045;
-}
-
-/** The two jump buttons on the scrubber track (spec §4.4). */
-export function scrubMarkers(score: TimelineScore): Marker[] {
-  const markers: Marker[] = [];
-  const rhna = score.targets.find((t) => t.target.id === RHNA_ID);
-  if (rhna) {
-    markers.push({
-      day: rhna.deadline,
-      label: 'RHNA deadline',
-      name: `Jump to RHNA deadline, ${formatMonthYear(rhna.deadline)}`
-    });
-  }
-  markers.push({ day: day2045(score), label: '2045', name: 'Jump to 2045' });
-  return markers;
 }
 
 /** The /sim header delta: "+1,234 from your policy", "−56 from your policy" (U+2212), "+0 …". */

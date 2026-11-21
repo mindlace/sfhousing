@@ -227,7 +227,7 @@ export class TimelineSession {
   get statics(): ScoreStatics | null {
     return this.#statics;
   }
-  /** From the last `compiled`, for SimResults. */
+  /** From the last `compiled`, for SimDetails. */
   get capacity(): Capacity | null {
     return this.#capacity;
   }

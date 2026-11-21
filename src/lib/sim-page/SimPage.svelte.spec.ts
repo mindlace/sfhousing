@@ -19,7 +19,10 @@ import { LID_MAX_SPAN_M } from '$lib/map/height/lids';
 import { tinyLimits } from '$lib/map/height/test/fixtures';
 import type { PackedCell } from '$lib/map/types';
 import { OUTLINE_LAYER_ID } from '$lib/paint/outline-layers';
-import { DRAFT_DISCARDED } from '$lib/sim-page/funding-copy';
+import { DRAFT_DISCARDED, limitAlert } from '$lib/sim-page/funding-copy';
+import { BOND_POLICY, policyWith } from '$lib/sim-page/test/funding';
+import { FINANCE_LIMITS } from '$lib/sim/levers/finance';
+import { upgradePolicy } from '$lib/timeline/upgrade';
 import { copyFor } from '$lib/sharing/copy';
 import { MemoryStorage } from '$lib/sharing/fixtures/memory-storage';
 import { fundingOnly } from '$lib/sim/levers/fixtures/finance';
@@ -51,6 +54,7 @@ import { clampBbox } from './lid-request';
 import { DEFAULT_POLICY, SIM_CODEC, SIM_KEY, type SimDoc } from './sim-doc';
 import type SimPage from './SimPage.svelte';
 import SimPageHost from './test/SimPageHost.svelte';
+import { PLUS_NAME } from '$lib/timeline/test/plus';
 
 vi.mock('$lib/map/SimMap.svelte', () => import('$lib/fzp/test/FzpSimMapStub.svelte'));
 const workers = vi.hoisted(() => [] as FakeTimelineWorker[]);
@@ -238,7 +242,7 @@ describe('SimPage opening', () => {
 describe('SimPage editing', () => {
   it('closing the "+" menu puts focus back on that "+"', async () => {
     await opened();
-    const add = page.getByRole('button', { name: 'Add Permitting policy' });
+    const add = page.getByRole('button', { name: PLUS_NAME.Permitting });
     await add.click();
     await expect
       .element(inspector().getByRole('group', { name: 'Add to Permitting' }))
@@ -250,7 +254,7 @@ describe('SimPage editing', () => {
 
   it('adding, switching off, removing and reordering a policy; undo and redo across those', async () => {
     await opened();
-    const add = page.getByRole('button', { name: 'Add Zoning policy' });
+    const add = page.getByRole('button', { name: PLUS_NAME.Zoning });
     await add.click();
     await page.getByRole('button', { name: 'Protect historic buildings' }).click();
     await expect.element(inspectorTitle()).toHaveTextContent('Protect historic buildings');
@@ -396,7 +400,7 @@ describe('SimPage editing', () => {
 
   it('bad-request from the worker undoes the edit and shows "That change couldn\'t be applied."', async () => {
     await opened();
-    await page.getByRole('button', { name: 'Add Zoning policy' }).click();
+    await page.getByRole('button', { name: PLUS_NAME.Zoning }).click();
     await page.getByRole('button', { name: 'Protect historic buildings' }).click();
     await expect.poll(() => w().lastOf('setPolicy')?.rev).toBe(2);
     emit(errorMsg(2, 'bad-request'));
@@ -532,7 +536,7 @@ describe('SimPage publish and view', () => {
     await opened({ fetchFn: fetchFn as unknown as typeof fetch });
     const publish = page.getByTestId('publish-open');
     await expect.element(publish).toBeDisabled();
-    await page.getByRole('button', { name: 'Add Zoning policy' }).click();
+    await page.getByRole('button', { name: PLUS_NAME.Zoning }).click();
     await page.getByRole('button', { name: 'Protect historic buildings' }).click();
     await expect.element(publish).toBeEnabled();
     await publish.click();
@@ -622,7 +626,7 @@ describe('SimPage publish and view', () => {
       'Zoning height limits'
     ]);
     // After an edit and mid-refill: still there.
-    await page.getByRole('button', { name: 'Add Zoning policy' }).click();
+    await page.getByRole('button', { name: PLUS_NAME.Zoning }).click();
     await page.getByRole('button', { name: 'Protect historic buildings' }).click();
     await expect.poll(() => w().lastOf('setPolicy')?.rev).toBe(2);
     emit(compiledMsg(2, STATICS));
@@ -947,7 +951,7 @@ describe('SimPage tools', () => {
 
   // Rule 19: with a stroke tool a tap strokes, so the tool must stay visible to turn off. From md
   // the painted policy's editor holds the tools; with it out of view (closed, another selection,
-  // Results) the header offers "Stop painting" / "Stop erasing". Below md the palette strip does.
+  // Details) the header offers "Stop painting" / "Stop erasing". Below md the palette strip does.
   it('on desktop a stroke tool with its editor closed shows in the header and turns off there', async () => {
     await opened({ storage: () => seeded(doc4(zoning(painted))) });
     const stop = () => header().getByRole('button', { name: /^Stop (painting|erasing)$/ });
@@ -978,14 +982,14 @@ describe('SimPage tools', () => {
     expect(stop().elements()).toHaveLength(0);
 
     // "+" over the selected painted policy: its menu hides the tools.
-    await page.getByRole('button', { name: 'Add Permitting policy' }).click();
+    await page.getByRole('button', { name: PLUS_NAME.Permitting }).click();
     await expect
       .element(inspector().getByRole('group', { name: 'Add to Permitting' }))
       .toBeVisible();
     await expect.element(stop()).toBeVisible();
 
     // A pool draft hides them too.
-    await page.getByRole('button', { name: 'Add Public money policy' }).click();
+    await page.getByRole('button', { name: PLUS_NAME['Public money'] }).click();
     await page.getByRole('button', { name: 'Your own pool' }).click();
     await expect.element(inspectorTitle()).toHaveTextContent('Your own pool');
     await expect.element(stop()).toBeVisible();
@@ -996,7 +1000,7 @@ describe('SimPage tools', () => {
   it('the transit catalog is asked for once, when the editor first shows', async () => {
     await opened();
     expect(w().all('brushCatalog')).toHaveLength(0);
-    const add = page.getByRole('button', { name: 'Add Zoning policy' });
+    const add = page.getByRole('button', { name: PLUS_NAME.Zoning });
     await add.click();
     await expect.poll(() => w().all('brushCatalog')).toHaveLength(1);
     await inspector().getByRole('button', { name: 'Close editor' }).click();
@@ -1007,7 +1011,7 @@ describe('SimPage tools', () => {
 
   it('closing a pool draft puts focus on the Public money "+"', async () => {
     await opened();
-    const add = page.getByRole('button', { name: 'Add Public money policy' });
+    const add = page.getByRole('button', { name: PLUS_NAME['Public money'] });
     await add.click();
     await page.getByRole('button', { name: 'Your own pool' }).click();
     await expect.element(inspectorTitle()).toHaveTextContent('Your own pool');
@@ -1408,7 +1412,7 @@ describe('SimPage autosave and publish', () => {
   const SIM = copyFor('sim');
   const publish = () => page.getByTestId('publish-open');
   const addHistoric = async () => {
-    await page.getByRole('button', { name: 'Add Zoning policy' }).click();
+    await page.getByRole('button', { name: PLUS_NAME.Zoning }).click();
     await page.getByRole('button', { name: 'Protect historic buildings' }).click();
   };
 
@@ -1432,7 +1436,7 @@ describe('SimPage autosave and publish', () => {
     expect(live.element().closest('[aria-hidden="true"], [inert]')).toBeNull();
     expect(getComputedStyle(live.element()).visibility).toBe('visible');
     mem.failWrites = false;
-    await page.getByRole('button', { name: 'Add Zoning policy' }).click();
+    await page.getByRole('button', { name: PLUS_NAME.Zoning }).click();
     await page.getByRole('button', { name: 'Protect rent-controlled buildings' }).click();
     await expect
       .element(header().getByTestId('save-state'))
@@ -1503,66 +1507,69 @@ describe('SimPage autosave and publish', () => {
     const rec = JSON.parse(mem.getItem(SIM_KEY4)!);
     expect(rec.lastPublished.id).toBe('AbCdEfGh');
     expect(JSON.parse(rec.plan).title).toBe('Historic');
-    await page.getByRole('button', { name: 'Add Zoning policy' }).click();
+    await page.getByRole('button', { name: PLUS_NAME.Zoning }).click();
     await page.getByRole('button', { name: 'Protect rent-controlled buildings' }).click();
     await expect.element(publish()).toHaveTextContent('Publish');
   });
 
   describe('the header score', () => {
     const scoreBar = () => header().getByTestId('score-bar');
-    const results = () => page.getByTestId('tl-results');
+    const details = () => page.getByTestId('tl-details');
+    const activity = () => page.getByTestId('tl-activity');
+    const column = () => page.getByTestId('tl-inspector');
 
-    it('from md Results shows at rest, and the header score has no aria-expanded', async () => {
+    it('from md Activity shows at rest, and the header score has no aria-expanded', async () => {
       await opened();
-      await expect.element(results()).toBeVisible();
+      await expect.element(activity()).toBeVisible();
+      expect(details().elements()).toHaveLength(0);
       expect(scoreBar().element().hasAttribute('aria-expanded')).toBe(false);
       expect(scoreBar().element().getAttribute('aria-controls')).toBe(
         page.getByTestId('tl-inspector').element().id
       );
     });
 
-    it('from md the header score closes an open editor and moves focus to Results', async () => {
+    it('the header score from md opens Details and clears a selection', async () => {
       await opened({ storage: () => seeded(doc4(zoning(historic))) });
       await openZoning();
       await page.getByTestId('tl-bar').first().click();
       await expect.element(inspector()).toBeVisible();
       await scoreBar().click();
       await expect.poll(() => inspector().elements().length).toBe(0);
-      await expect.element(results()).toBeVisible();
+      await expect.element(details()).toBeVisible();
       expect(
         page
           .getByTestId('tl-bar')
           .and(page.getByRole('button', { pressed: true }))
           .elements()
       ).toHaveLength(0);
-      await expect.poll(() => document.activeElement).toBe(results().element());
+      await expect.poll(() => document.activeElement).toBe(details().element());
     });
 
     it('from md the header score discards an open pool draft and says so', async () => {
       await opened();
-      await page.getByRole('button', { name: 'Add Public money policy' }).click();
+      await page.getByRole('button', { name: PLUS_NAME['Public money'] }).click();
       await page.getByRole('button', { name: 'Your own pool' }).click();
       await expect.element(inspectorTitle()).toHaveTextContent('Your own pool');
       await scoreBar().click();
       await expect.poll(() => inspector().elements().length).toBe(0);
       await expect.element(page.getByText(DRAFT_DISCARDED)).toBeInTheDocument();
-      await expect.element(results()).toBeVisible();
+      await expect.element(details()).toBeVisible();
     });
 
-    it('from md with nothing open the header score scrolls Results to the top and focuses it', async () => {
+    it('from md with nothing open the header score scrolls Details to the top and focuses it', async () => {
       await opened();
       const col = page.getByTestId('tl-inspector').element();
       col.scrollTop = 200;
       await scoreBar().click();
       await expect.poll(() => col.scrollTop).toBe(0);
-      await expect.poll(() => document.activeElement).toBe(results().element());
+      await expect.poll(() => document.activeElement).toBe(details().element());
     });
 
     it('from md a bar selected after the header score opens its editor at the top', async () => {
       await opened({ storage: () => seeded(doc4(zoning(historic))) });
       await openZoning();
       await scoreBar().click();
-      await expect.element(results()).toBeVisible();
+      await expect.element(details()).toBeVisible();
       const col = page.getByTestId('tl-inspector').element();
       await expect.poll(() => col.scrollHeight - col.clientHeight).toBeGreaterThan(100);
       col.scrollTop = 100;
@@ -1572,17 +1579,148 @@ describe('SimPage autosave and publish', () => {
       await expect.poll(() => col.scrollTop).toBe(0);
     });
 
-    it('below md the header score still toggles Results with aria-expanded', async () => {
+    it('selecting a policy shows its editor; closing it returns to the rest face', async () => {
+      await opened({ storage: () => seeded(doc4(zoning(historic))) });
+      await openZoning();
+      await scoreBar().click();
+      await expect.element(details()).toBeVisible();
+      await page.getByTestId('tl-bar').first().click();
+      await expect.element(inspector()).toBeVisible();
+      expect(details().elements()).toHaveLength(0);
+      await page.getByRole('button', { name: 'Close editor' }).click();
+      await expect.poll(() => inspector().elements().length).toBe(0);
+      await expect.element(activity()).toBeVisible();
+      expect(details().elements()).toHaveLength(0);
+    });
+
+    it("a starter adds its policy at the playhead's month, selects it and announces Added: Transit rule", async () => {
+      await opened();
+      const starter = activity().getByRole('button', { name: 'Taller near transit' });
+      await expect.element(starter).toBeVisible();
+      await starter.click();
+      await expect.element(inspectorTitle()).toHaveTextContent('Transit rule');
+      const added = debug().policy.kinds.zoning;
+      expect(added).toHaveLength(1);
+      expect(added[0].where.tag).toBe('transit');
+      // The playhead is at today: the add menu's month, the window's first.
+      expect(added[0].spans.map((x) => [x.from, x.to])).toEqual([
+        [monthFirstDay(asOf, viewMonthOf(asOf, debug().day)), null]
+      ]);
+      expect(added[0].spans[0].from).toBe(M(1));
+      // One undoable change, named as the "+" menu names it, and announced.
+      await expect.element(undoButton()).toHaveAccessibleName(/Added: Transit rule/);
+      await expect
+        .element(page.getByRole('status').filter({ hasText: 'Added: Transit rule' }))
+        .toBeInTheDocument();
+      // Selected: its bar is pressed (the kind opened) and focus is on the editor's title.
+      await expect
+        .element(page.getByTestId('tl-kind-zoning').getByRole('button', { pressed: true }))
+        .toBeVisible();
+      await expect.poll(() => document.activeElement).toBe(inspectorTitle().element());
+      // Undo takes it back, and the starters return with nothing in force.
+      await undoButton().click();
+      await expect.poll(() => debug().policy.kinds.zoning.length).toBe(0);
+      await expect.element(starter).toBeVisible();
+    });
+
+    it('a starter a funding limit refuses adds nothing and announces the limit', async () => {
+      // The pool limit filled by policies that are off: nothing is in force, so starters show.
+      const pools = Array.from({ length: FINANCE_LIMITS.pools }, (_, i) => ({
+        ...BOND_POLICY.funding.pools[0],
+        id: `u-pool-${i + 1}`
+      }));
+      const money = upgradePolicy(policyWith({ pools, programmes: [] }), asOf).kinds.money.map(
+        (p) => ({ ...p, on: false })
+      );
+      await opened({
+        storage: () => seeded(doc4({ schema: 4, kinds: { zoning: [], permitting: [], money } }))
+      });
+      const starter = activity().getByRole('button', { name: 'A housing bond' });
+      await expect.element(starter).toBeVisible();
+      const before = debug().policy;
+      await starter.click();
+      await expect
+        .element(page.getByRole('status').filter({ hasText: limitAlert('pools') }))
+        .toBeInTheDocument();
+      expect(debug().policy).toEqual(before);
+      expect(inspector().elements()).toHaveLength(0);
+    });
+
+    it("Activity's Details opens Details and focuses it", async () => {
+      await opened();
+      await activity().getByRole('button', { name: 'Details' }).click();
+      await expect.element(details()).toBeVisible();
+      expect(activity().elements()).toHaveLength(0);
+      await expect.poll(() => document.activeElement).toBe(details().element());
+    });
+
+    it('from md the header pressed again on Details keeps its chart view and focus', async () => {
+      await opened();
+      await scoreBar().click();
+      await expect.element(details()).toBeVisible();
+      const source = details().getByRole('radio', { name: 'By source' });
+      await source.click();
+      await expect
+        .element(page.getByTestId('tl-lanes').getByRole('figure'))
+        .toHaveAttribute('data-lens', 'source');
+      const el = details().element();
+      await scoreBar().click();
+      await expect.poll(() => document.activeElement).toBe(el);
+      // The same Details, not a new one: the chosen view stays.
+      expect(details().element()).toBe(el);
+      await expect.element(source).toBeChecked();
+      await expect
+        .element(page.getByTestId('tl-lanes').getByRole('figure'))
+        .toHaveAttribute('data-lens', 'source');
+    });
+
+    it("Details' Activity button shows Activity; below md it opens Activity in the sheet", async () => {
+      await opened();
+      await scoreBar().click();
+      await details().getByRole('button', { name: 'Activity' }).click();
+      await expect.element(activity()).toBeVisible();
+      expect(details().elements()).toHaveLength(0);
+      await expect.poll(() => document.activeElement).toBe(activity().element());
+      // Closing Details put the chart back on Homes.
+      await expect
+        .element(page.getByTestId('tl-lanes').getByRole('figure'))
+        .toHaveAttribute('data-lens', 'homes');
+    });
+
+    it('below md Details and Activity share the sheet, each reaching the other', async () => {
+      await page.viewport(375, 700);
+      await opened();
+      expect(activity().elements()).toHaveLength(0);
+      await scoreBar().click();
+      await expect.element(details()).toBeVisible();
+      await details().getByRole('button', { name: 'Activity' }).click();
+      await expect.element(column().getByTestId('tl-activity')).toBeVisible();
+      expect(details().elements()).toHaveLength(0);
+      await expect.poll(() => document.activeElement).toBe(activity().element());
+      // The sheet is open: the header score says so, and pressing it closes the sheet.
+      await expect.element(scoreBar()).toHaveAttribute('aria-expanded', 'true');
+      await activity().getByRole('button', { name: 'Details' }).click();
+      await expect.element(details()).toBeVisible();
+      await expect.poll(() => document.activeElement).toBe(details().element());
+      await details().getByRole('button', { name: 'Activity' }).click();
+      await expect.element(activity()).toBeVisible();
+      await scoreBar().click();
+      await expect.element(scoreBar()).toHaveAttribute('aria-expanded', 'false');
+      expect(activity().elements()).toHaveLength(0);
+      expect(column().elements()).toHaveLength(0);
+    });
+
+    it('below md the header score toggles the Details sheet; aria-expanded follows it', async () => {
       await page.viewport(375, 700);
       await opened();
       await expect.element(scoreBar()).toHaveAttribute('aria-expanded', 'false');
-      expect(results().elements()).toHaveLength(0);
+      expect(details().elements()).toHaveLength(0);
       await scoreBar().click();
       await expect.element(scoreBar()).toHaveAttribute('aria-expanded', 'true');
-      await expect.element(results()).toBeVisible();
+      await expect.element(details()).toBeVisible();
       await scoreBar().click();
       await expect.element(scoreBar()).toHaveAttribute('aria-expanded', 'false');
-      expect(results().elements()).toHaveLength(0);
+      expect(details().elements()).toHaveLength(0);
     });
   });
 });

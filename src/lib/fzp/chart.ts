@@ -1,23 +1,11 @@
 /**
- * The score chart as numbers and path strings (spec §4.6). Pure: `ScoreChart.svelte` only lays
- * the model out. There is no plotting library; the marks are plain SVG paths.
+ * What the deleted score chart left behind (spec §4.6): the stroke colours the timeline chart and
+ * its legend use, the series names the sources dialog compares published estimates with, and
+ * `niceCeil`, the scale rounding the timeline chart and /lesscars share. Pure.
  */
 import { GOAL } from '$lib/goal/goal';
-import { formatCompactCount, formatCount } from '$lib/scoreboard';
 import type { TimelineScore } from '$lib/sim/protocol';
-import type { Day } from '$lib/timelapse/time';
-import { formatDate, formatMonthYear, formatShortMonthYear } from './format';
-import { CALCULATING, RHNA_ID, deadlineIndex, scrubMarkers } from './score-view';
-import { dayFromUtc, monthIndex, utcParts } from './time';
-
-export const CHART_H = 140;
-
-/** The vertical at the goal's deadline. */
-export const GOAL_DEADLINE_LABEL = 'Goal deadline';
-
-/** The 2045 reference's day (the scrubber's second marker). */
-const year2045 = (score: TimelineScore): Day =>
-  scrubMarkers(score)[scrubMarkers(score).length - 1].day;
+import { formatShortMonthYear } from './format';
 
 /**
  * Stroke colours (spec §4.6) as the custom properties layout.css defines per theme; each has at
@@ -41,37 +29,6 @@ export const SERIES_NAME: Record<
   planEntitled: 'Plan effect, approved'
 };
 
-export interface ChartModel {
-  width: number;
-  height: number;
-  yMin: number;
-  yMax: number;
-  gridlines: { y: number; label: string }[];
-  xTicks: { x: number; label: string }[];
-  total: string;
-  pipeline: string;
-  fresh: string;
-  planCompleted: string | null;
-  planEntitled: string | null;
-  rhnaY: number;
-  verticals: { x: number; label: string }[];
-  references: { x1: number; x2: number; y: number; label: string; color: string }[];
-  x(day: Day): number;
-}
-
-export interface TableRow {
-  index: number;
-  date: string;
-  total: string;
-  pipeline: string;
-  fresh: string;
-  planCompleted: string;
-  planEntitled: string;
-}
-
-/** Least vertical distance (px) between the zero gridline and a floor gridline. */
-const MIN_FLOOR_GAP = 12;
-
 /** Round up to 1, 2 or 5 × 10ⁿ (at least 1). */
 export function niceCeil(v: number): number {
   if (!(v > 1)) return 1;
@@ -83,26 +40,7 @@ export function niceCeil(v: number): number {
   return 10 * p;
 }
 
-/** The last month index to show, kept inside the run. */
-function clampReveal(reveal: number, n: number): number {
-  return Math.min(Math.max(Math.trunc(reveal) || 0, 0), n - 1);
-}
-
-const num = (n: number) => String(Math.round(n * 100) / 100);
-
-/** The T8 series' values as one drawn series. Empty arrays are not drawn. */
-function seriesRange(values: number[]): { min: number; max: number } | null {
-  if (values.length === 0) return null;
-  let min = Infinity;
-  let max = -Infinity;
-  for (const v of values) {
-    if (v < min) min = v;
-    if (v > max) max = v;
-  }
-  return { min, max };
-}
-
-/** The drawn series a published reference is compared with (the chart and the sources dialog). */
+/** The drawn series a published reference is compared with (the sources dialog). */
 export const MEASURE_SERIES = {
   'planEffect.entitledNew': 'planEntitled',
   'planEffect.completedNetNew': 'planCompleted',
@@ -111,145 +49,3 @@ export const MEASURE_SERIES = {
   TimelineScore['references'][number]['measure'],
   keyof typeof SERIES_NAME
 >;
-
-export function chartModel(
-  score: TimelineScore,
-  asOf: Day,
-  horizon: Day,
-  width: number,
-  reveal: number
-): ChartModel {
-  const n = score.months.length;
-  const upTo = clampReveal(reveal, n) + 1;
-  const base = score.baseline.completedNet;
-  const x = (day: Day) => ((day - asOf) / (horizon - asOf)) * width;
-  // Each value is the state at the end of its month: plot it at the next month's start, and the
-  // last at the horizon.
-  const xAt = (i: number) => (i + 1 < n ? x(score.months[i + 1]) : x(horizon));
-
-  // Only the months up to `reveal` are drawn; the rest of the run is not yet known to the viewer.
-  const shown = score.shown.slice(0, upTo);
-  const plan = score.planEffect.slice(0, upTo);
-  const total = shown.map((s) => base + s.completedNet);
-  const pipeline = shown.map((s) => s.completedNetPipeline);
-  const fresh = shown.map((s) => s.completedNetNew);
-  const planCompleted = plan.map((p) => p.completedNetNew);
-  const planEntitled = plan.map((p) => p.entitledNew);
-
-  // Domain: every drawn value, the references and RHNA. It starts at 0 unless a drawn value is
-  // negative (early plan effect can be): then it reaches down to -niceCeil. This is a deliberate
-  // extension of spec §4.6's "0 to niceCeil", so negative values stay inside the plot.
-  const drawn = [total, pipeline, fresh, planCompleted, planEntitled]
-    .map(seriesRange)
-    .filter((r) => r !== null);
-  const refUnits = score.references.map((r) => r.units);
-  const top = Math.max(GOAL.amount, ...refUnits, ...drawn.map((r) => r.max));
-  const bottom = Math.min(0, ...drawn.map((r) => r.min));
-  const yMax = niceCeil(top);
-  const yMin = bottom < 0 ? -niceCeil(-bottom) : 0;
-  const y = (v: number) => CHART_H - ((v - yMin) / (yMax - yMin)) * CHART_H;
-
-  const line = (values: number[]) =>
-    values.length === 0
-      ? null
-      : 'M' + values.map((v, i) => `${num(xAt(i))} ${num(y(v))}`).join('L');
-
-  // Zero, the midpoint and the ceiling. A floor line joins them only when it is clear of the
-  // zero line, so the two labels never overprint.
-  const gridValues = [0, yMax / 2, yMax];
-  if (yMin < 0 && y(yMin) - y(0) >= MIN_FLOOR_GAP) gridValues.unshift(yMin);
-  const lastYear = utcParts(horizon).y;
-  // Every 10 years, every 20 once the span passes 50, strictly after the first year.
-  const firstYear = utcParts(score.months[0]).y;
-  const step = lastYear - firstYear > 50 ? 20 : 10;
-  const xTicks: { x: number; label: string }[] = [];
-  for (let year = firstYear + 1; year <= lastYear; year++) {
-    if (year % step === 0) xTicks.push({ x: x(dayFromUtc(year, 1, 1)), label: String(year) });
-  }
-
-  return {
-    width,
-    height: CHART_H,
-    yMin,
-    yMax,
-    gridlines: gridValues.map((v) => ({ y: y(v), label: formatCompactCount(v) })),
-    xTicks,
-    total: line(total)!,
-    pipeline: line(pipeline)!,
-    fresh: line(fresh)!,
-    planCompleted: line(planCompleted),
-    planEntitled: line(planEntitled),
-    rhnaY: y(GOAL.amount),
-    verticals: [
-      { x: x(GOAL.deadline), label: GOAL_DEADLINE_LABEL },
-      { x: x(year2045(score)), label: '2045' }
-    ],
-    references: score.references.map((r) => {
-      const series = MEASURE_SERIES[r.measure];
-      return {
-        x1: x(Math.max(r.from, asOf)),
-        x2: x(r.by),
-        y: y(r.units),
-        label: `${r.label} (compare with: ${SERIES_NAME[series]})`,
-        color: series === 'total' ? COLORS.total : COLORS.plan
-      };
-    }),
-    x
-  };
-}
-
-/**
- * The "Show as table" rows: every January after `asOf`'s year, the RHNA deadline's month (dated
- * to the day) and the final month. One row per month index, sorted; the deadline row replaces
- * the month row it falls in. Nothing after month `reveal` is listed, and the last row is `reveal`.
- */
-export function tableRows(score: TimelineScore, asOf: Day, reveal: number): TableRow[] {
-  const n = score.months.length;
-  const last = clampReveal(reveal, n);
-  const base = score.baseline.completedNet;
-  const row = (index: number, date: string): TableRow => {
-    const s = score.shown[index];
-    const plan = score.planEffect[index];
-    return {
-      index,
-      date,
-      total: formatCount(base + s.completedNet),
-      pipeline: formatCount(s.completedNetPipeline),
-      fresh: formatCount(s.completedNetNew),
-      planCompleted: plan ? formatCount(plan.completedNetNew) : CALCULATING,
-      planEntitled: plan ? formatCount(plan.entitledNew) : CALCULATING
-    };
-  };
-
-  const byIndex = new Map<number, TableRow>();
-  const lastYear = utcParts(score.months[last]).y;
-  for (let year = utcParts(asOf).y + 1; year <= lastYear; year++) {
-    const i = monthIndex(dayFromUtc(year, 1, 1), score.months[0], n);
-    if (i <= last) byIndex.set(i, row(i, formatMonthYear(score.months[i])));
-  }
-  const rhna = score.targets.find((t) => t.target.id === RHNA_ID);
-  if (rhna) {
-    const i = deadlineIndex(score, rhna.deadline);
-    if (i <= last) byIndex.set(i, row(i, formatDate(rhna.deadline)));
-  }
-  if (!byIndex.has(last)) byIndex.set(last, row(last, formatMonthYear(score.months[last])));
-  return [...byIndex.values()].sort((a, b) => a.index - b.index);
-}
-
-/**
- * The SVG's `aria-label`: the milestones reached by month `reveal` (the goal's deadline, 2045), then
- * the total at `reveal`.
- */
-export function chartLabel(score: TimelineScore, reveal: number): string {
-  const n = score.months.length;
-  const last = clampReveal(reveal, n);
-  const totalAt = (i: number) =>
-    formatCount(score.baseline.completedNet + score.shown[i].completedNet);
-  const parts: string[] = [];
-  const iGoal = deadlineIndex(score, GOAL.deadline);
-  if (iGoal <= last) parts.push(`${totalAt(iGoal)} by the goal's deadline`);
-  const i2045 = monthIndex(year2045(score), score.months[0], n);
-  if (i2045 <= last) parts.push(`${totalAt(i2045)} by 2045`);
-  parts.push(`${totalAt(last)} by ${formatMonthYear(score.months[last])}`);
-  return `${SERIES_NAME.total}: ${parts.join(', ')}.`;
-}

@@ -10,10 +10,19 @@ import { WINDOW_MONTHS } from '$lib/sim/timeline-client';
 import { monthLastDay } from '$lib/sim/world/months';
 import ChartRow from './ChartRow.svelte';
 import { yearMarks } from './axis';
-import { chartPoints, gapPath, linePath, posOf, runningMax, yLabels, yTop } from './chart-model';
-import { chartCaption, goalNote, homesBy } from './copy';
+import {
+  chartPoints,
+  gapPath,
+  linePath,
+  posOf,
+  runningMax,
+  yLabels,
+  yTop,
+  type ChartLens
+} from './chart-model';
+import { LENS_NAME, chartCaption, goalNote, homesBy } from './copy';
 import { filledEndDay } from './playhead';
-import { playheadAt } from './results';
+import { chartReading, playheadAt } from './results';
 import { dayPct } from './rows';
 import { calendarMonths, chunk, statics } from './test/fixtures';
 
@@ -45,6 +54,7 @@ type Props = {
   reached: Day;
   target: { deadlineIndex: number; units: number } | null;
   stale: boolean;
+  lens?: ChartLens;
 };
 const props = (over: Partial<Props> = {}): Props => ({
   asOf,
@@ -62,6 +72,12 @@ const attr = (id: string, name: string) => page.getByTestId(id).element().getAtt
 const num = (id: string, name: string) => Number(attr(id, name));
 const legendNames = () =>
   [...document.querySelectorAll('.legend li')].map((li) => li.textContent!.trim());
+/** The dash of a legend entry's line swatch (null: solid or a fill). */
+const swatchDash = (name: string) =>
+  [...document.querySelectorAll('.legend li')]
+    .find((li) => li.textContent!.trim() === name)!
+    .querySelector('line')
+    ?.getAttribute('stroke-dasharray') ?? null;
 const ysOf = (d: string) => [...d.matchAll(/[ML][\d.-]+,([\d.-]+)/g)].map((m) => Number(m[1]));
 const firstPoint = (d: string) => /^M([\d.-]+),([\d.-]+)/.exec(d)!.slice(1).map(Number);
 const overlay = () => page.getByRole('slider', { name: 'Month in the chart' });
@@ -278,6 +294,175 @@ describe('ChartRow', () => {
     // The counter sees a rebuild: reaching month 20 (61 homes) steps the scale to 100.
     await rerender({ reached: base.months[20] + 3 });
     expect(builds() - built).toBeGreaterThan(0);
+  });
+
+  it("lens source: two lines and the gap, legend All homes, From today's pipeline, New projects", async () => {
+    const view = fullView();
+    const end = lastDay(view);
+    const target = { deadlineIndex: 12, units: 40 };
+    const { rerender } = await render(ChartRow, {
+      props: props({ view, day: end, reached: end, target, lens: 'source' })
+    });
+    const fig = page.getByRole('figure');
+    await expect.element(fig).toHaveAttribute('data-lens', 'source');
+    await expect.element(page.getByTestId('chart-law')).toBeInTheDocument();
+    await expect.element(page.getByTestId('chart-gap')).toBeInTheDocument();
+    // No goal step or note in this lens.
+    expect(document.querySelector('[data-testid=chart-target]')).toBeNull();
+    expect(document.querySelector('[data-testid=chart-target-note]')).toBeNull();
+    const SOURCE = ['All homes', "From today's pipeline", 'New projects'];
+    expect(legendNames()).toEqual(SOURCE);
+    // The pipeline line is dashed, in both zones, with a dash of its own (not the goal's); its
+    // legend swatch shows the same dash. The main line is solid.
+    const dash = attr('chart-law', 'stroke-dasharray');
+    expect(dash).toBeTruthy();
+    expect(dash).not.toBe('5 3');
+    expect(attr('chart-law-seen', 'stroke-dasharray')).toBe(dash);
+    expect(attr('chart-line', 'stroke-dasharray')).toBeNull();
+    expect(swatchDash("From today's pipeline")).toBe(dash);
+    expect(swatchDash('All homes')).toBeNull();
+    // The lower line is the pipeline's: its last point sits at rows[LAST].completedNetPipeline.
+    const p = chartPoints(view, false, 'source');
+    const top = yTop(null, runningMax(p), p.policy.length - 1);
+    const yOf = (n: number) => 2 + (1 - n / top) * 96;
+    expect(ysOf(attr('chart-law', 'd')!).at(-1)).toBeCloseTo(
+      yOf(view.rows[LAST].completedNetPipeline),
+      1
+    );
+    expect(ysOf(attr('chart-line', 'd')!).at(-1)).toBeCloseTo(yOf(view.rows[LAST].completedNet), 1);
+    // The pipeline line takes current law's colour, the gap its fill: no new token.
+    expect(attr('chart-law', 'stroke')).toBe('var(--chart-law)');
+    expect(attr('chart-gap', 'fill')).toBe('var(--chart-gap)');
+    expect(document.querySelector('figcaption')!.textContent!.trim()).toBe(
+      chartCaption(false, null, 'source')
+    );
+    (overlay().element() as HTMLElement).focus();
+    await expect
+      .element(page.getByTestId('chart-readout'))
+      .toHaveTextContent(chartReading(view, LAST + 1, false, 'source'));
+    (overlay().element() as HTMLElement).blur();
+    // The same with a policy in force.
+    await rerender({ inForce: true });
+    expect(legendNames()).toEqual(SOURCE);
+    expect(document.querySelector('[data-testid=chart-target]')).toBeNull();
+    // Homes: the goal is back, and current law is solid.
+    await rerender({ lens: 'homes' });
+    await expect.element(page.getByTestId('chart-target')).toBeInTheDocument();
+    expect(attr('chart-law', 'stroke-dasharray')).toBeNull();
+    expect(swatchDash('Current law')).toBeNull();
+  });
+
+  it('lens source: the scale ignores the goal and reads only the months reached', async () => {
+    const base = fullView();
+    // Totals near 700 against a goal of 82,069 still needed.
+    const rows = base.rows.map((r, i) => ({
+      ...r,
+      completedNet: 30 * (i + 1),
+      completedNetPipeline: 20 * (i + 1)
+    }));
+    const view = { ...base, rows };
+    const target = { deadlineIndex: 12, units: 82_069 };
+    const ylabels = () =>
+      [...document.querySelectorAll('[data-testid=chart-ylabel]')].map((e) =>
+        e.textContent!.trim()
+      );
+    const end = lastDay(view);
+    const { rerender } = await render(ChartRow, {
+      props: props({ view, day: end, reached: end, target, lens: 'source' })
+    });
+    await expect.element(page.getByTestId('chart-law')).toBeInTheDocument();
+    // 720 at the last month: the top is 1,000, not 100K.
+    expect(ylabels()).toEqual(['500', '1,000']);
+    // Reached only to month 5 (180 homes): the top is 200, never sized from later months.
+    const mid = view.months[5] + 3;
+    await rerender({ day: mid, reached: mid });
+    expect(ylabels()).toEqual(['100', '200']);
+    // Homes keeps the goal's scale.
+    await rerender({ lens: 'homes' });
+    expect(ylabels()).toEqual(['50K', '100K']);
+  });
+
+  it('lens effect: one line, no goal step or note, legend From your policy', async () => {
+    const view = fullView();
+    const end = lastDay(view);
+    const target = { deadlineIndex: 12, units: 40 };
+    const { rerender } = await render(ChartRow, {
+      props: props({ view, day: end, reached: end, target, inForce: true, lens: 'effect' })
+    });
+    const fig = page.getByRole('figure');
+    await expect.element(fig).toHaveAttribute('data-lens', 'effect');
+    await expect.element(page.getByTestId('chart-line')).toBeInTheDocument();
+    expect(document.querySelector('[data-testid=chart-law]')).toBeNull();
+    expect(document.querySelector('[data-testid=chart-gap]')).toBeNull();
+    expect(document.querySelector('[data-testid=chart-target]')).toBeNull();
+    expect(document.querySelector('[data-testid=chart-target-note]')).toBeNull();
+    expect(legendNames()).toEqual(['From your policy']);
+    expect(document.querySelector('figcaption')!.textContent!.trim()).toBe(
+      chartCaption(true, null, 'effect')
+    );
+    // The scale is the effect's own: the goal (not drawn) does not set it.
+    const p = chartPoints(view, true, 'effect');
+    const top = yTop(null, runningMax(p), p.policy.length - 1);
+    const labels = [...document.querySelectorAll('[data-testid=chart-ylabel]')].map((e) =>
+      e.textContent!.trim()
+    );
+    expect(labels).toEqual(yLabels(top).map((l) => l.label));
+    (overlay().element() as HTMLElement).focus();
+    await expect
+      .element(page.getByTestId('chart-readout'))
+      .toHaveTextContent(chartReading(view, LAST + 1, true, 'effect'));
+    (overlay().element() as HTMLElement).blur();
+    // Without a policy in force the lens falls back to homes, goal and all.
+    await rerender({ inForce: false });
+    await expect.element(fig).toHaveAttribute('data-lens', 'homes');
+    await expect.element(page.getByTestId('chart-target')).toBeInTheDocument();
+    expect(legendNames()).toEqual(['Homes completed', 'Goal']);
+  });
+
+  it('names the figure by the lens drawn', async () => {
+    const view = fullView();
+    const end = lastDay(view);
+    const { rerender } = await render(ChartRow, {
+      props: props({ view, day: end, reached: end, inForce: true })
+    });
+    const fig = page.getByRole('figure');
+    await expect.element(fig).toHaveAccessibleName('Homes completed');
+    await rerender({ lens: 'source' });
+    await expect.element(fig).toHaveAccessibleName(LENS_NAME.source);
+    await rerender({ lens: 'effect' });
+    await expect.element(fig).toHaveAccessibleName(LENS_NAME.effect);
+    // Without a policy in force the effect lens is drawn, and named, as Homes.
+    await rerender({ inForce: false });
+    await expect.element(fig).toHaveAccessibleName('Homes completed');
+  });
+
+  it('a lens change rebuilds the paths once; a day change rebuilds none', async () => {
+    const view = fullView();
+    const m = view.months[7];
+    const { rerender } = await render(ChartRow, {
+      props: props({ view, inForce: true, day: m, reached: m + 5 })
+    });
+    await expect.element(page.getByTestId('chart-gap')).toBeInTheDocument();
+    const fig = page.getByRole('figure');
+    const lines = () => vi.mocked(linePath).mock.calls.length;
+    const gaps = () => vi.mocked(gapPath).mock.calls.length;
+    let l0 = lines();
+    let g0 = gaps();
+    await rerender({ lens: 'source' });
+    await expect.element(fig).toHaveAttribute('data-lens', 'source');
+    // One rebuild: the two lines and the gap, once each.
+    expect([lines() - l0, gaps() - g0]).toEqual([2, 1]);
+    l0 = lines();
+    g0 = gaps();
+    for (let k = 1; k <= 10; k++) await rerender({ day: m + k, reached: m + k + 5 });
+    expect([lines() - l0, gaps() - g0]).toEqual([0, 0]);
+    await rerender({ lens: 'effect' });
+    await expect.element(fig).toHaveAttribute('data-lens', 'effect');
+    // One rebuild: the one line.
+    expect([lines() - l0, gaps() - g0]).toEqual([1, 0]);
+    l0 = lines();
+    for (let k = 11; k <= 20; k++) await rerender({ day: m + k, reached: m + k + 5 });
+    expect([lines() - l0, gaps() - g0]).toEqual([0, 0]);
   });
 
   it('the value labels and the goal note are hidden from assistive tech', async () => {

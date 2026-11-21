@@ -11,6 +11,7 @@ import type { SfhFzpDebug } from '../src/lib/fzp/debug';
 import { expectNoA11yViolations } from './helpers/a11y';
 import { addPolicy, openKind, waitFilled } from './helpers/run';
 import { SIM_KEY, SIM_KEY_V1, openPublish, seedPlanRow, type Win } from './helpers/sharing';
+import { PLUS_NAME } from '../src/lib/timeline/test/plus';
 
 type FzpWin = Win & { __sfhFzp?: SfhFzpDebug };
 type Span = { from: number; to: number | null; what: Record<string, unknown> };
@@ -208,7 +209,7 @@ test('publish round trip', async ({ page, browser }, testInfo) => {
     const view = await selectPolicy(visitor, 'Permitting', PRESET);
     await expect(view).toContainText(PRESET);
     await expect(view.getByRole('button', { name: 'Remove policy' })).toHaveCount(0);
-    await expect(visitor.getByRole('button', { name: 'Add Permitting policy' })).toHaveCount(0);
+    await expect(visitor.getByRole('button', { name: PLUS_NAME.Permitting })).toHaveCount(0);
     expect(await storedDoc(visitor), 'viewing never writes the autosave').toBeNull();
     expect(errors).toEqual([]);
   } finally {
@@ -497,7 +498,7 @@ test('at 768 px on /s/<id> the banner, editor and notices leave the zoom control
   ]);
 });
 
-test('from md /s/<id> shows Results in the detail column; a selected policy replaces it read-only', async ({
+test('from md /s/<id> shows Activity in the detail column, no starters; a selected policy replaces it read-only', async ({
   page,
   isMobile
 }) => {
@@ -507,9 +508,13 @@ test('from md /s/<id> shows Results in the detail column; a selected policy repl
   await page.goto(`/s/${id}`);
   await waitReady(page);
   const column = page.getByTestId('tl-inspector');
-  await expect(column.getByTestId('tl-results')).toBeVisible();
+  await expect(column.getByTestId('tl-activity')).toBeVisible();
+  // Read-only: no starters, and the empty kinds carry no words.
+  await expect(column.getByText('Press Play to see what gets built.')).toBeVisible();
+  await expect(column.getByText('Try one:')).toHaveCount(0);
+  await expect(page.getByTestId('tl-empty-lane')).toHaveCount(0);
   await selectPolicy(page, 'Permitting', PRESET);
   await expect(column.getByTestId('inspector')).toBeVisible();
-  await expect(column.getByTestId('tl-results')).toHaveCount(0);
+  await expect(column.getByTestId('tl-activity')).toHaveCount(0);
   await expect(column.getByRole('button', { name: 'Remove policy' })).toHaveCount(0);
 });
