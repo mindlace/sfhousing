@@ -1,12 +1,19 @@
 // The timeline's keys: the rows About's Timeline table lists, and the rule for Space as Play.
 import { isEditableTarget, SPACE_NATIVE } from '$lib/brush/shortcuts';
 
-/** About's Timeline table (The strings). The arrows and paging keys are the date slider's own. */
+/**
+ * About's Timeline table (The strings): the date slider's keys, then a focused bar's (`barKey`,
+ * `spans.ts`: the edge nearer the playhead, Shift twelve months, Alt the whole span).
+ */
 export const TIMELINE_SHORTCUTS: readonly { keys: string; action: string }[] = [
   { keys: 'Space', action: 'Play or pause (not while painting)' },
   { keys: '← / →', action: 'A month back or on (date slider)' },
   { keys: 'Page Down / Page Up', action: 'A year back or on (date slider)' },
-  { keys: 'Home / End', action: 'Today / the last month (date slider)' }
+  { keys: 'Home / End', action: 'Today / the last month (date slider)' },
+  {
+    keys: '← / →',
+    action: "Move a bar's edge nearest the playhead a month (Shift: a year; Alt: the whole bar)"
+  }
 ];
 
 /**

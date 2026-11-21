@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { isPlayKey, TIMELINE_SHORTCUTS } from './shortcuts';
+import { barKey } from './spans';
 
 /**
  * A node-side stand-in for an element: `closest` matches a selector list by tag, `[href]` and
@@ -84,12 +85,26 @@ describe('isPlayKey', () => {
 });
 
 describe('TIMELINE_SHORTCUTS', () => {
-  it('TIMELINE_SHORTCUTS: the four rows of The strings, in order', () => {
+  it("TIMELINE_SHORTCUTS: the rows of The strings, then the bars' keys, in order", () => {
     expect(TIMELINE_SHORTCUTS).toEqual([
       { keys: 'Space', action: 'Play or pause (not while painting)' },
       { keys: '← / →', action: 'A month back or on (date slider)' },
       { keys: 'Page Down / Page Up', action: 'A year back or on (date slider)' },
-      { keys: 'Home / End', action: 'Today / the last month (date slider)' }
+      { keys: 'Home / End', action: 'Today / the last month (date slider)' },
+      {
+        keys: '← / →',
+        action: "Move a bar's edge nearest the playhead a month (Shift: a year; Alt: the whole bar)"
+      }
     ]);
+  });
+
+  it('the bar row says what barKey does: an edge a month, Shift a year, Alt the whole span', () => {
+    const s = { from: 0, to: 365 } as unknown as Parameters<typeof barKey>[1];
+    const key = (k: string, shiftKey = false, altKey = false) =>
+      barKey({ key: k, shiftKey, altKey }, s, 0, 0);
+    expect(key('ArrowRight')).toMatchObject({ op: 'edge', by: 1 });
+    expect(key('ArrowLeft', true)).toMatchObject({ op: 'edge', by: -12 });
+    expect(key('ArrowRight', false, true)).toEqual({ op: 'span', by: 1 });
+    expect(key('ArrowUp')).toBeNull();
   });
 });

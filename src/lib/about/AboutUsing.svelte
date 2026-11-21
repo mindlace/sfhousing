@@ -34,7 +34,7 @@
           </tr>
         </thead>
         <tbody>
-          {#each t.rows as s (s.keys)}
+          {#each t.rows as s (`${s.keys} ${s.action}`)}
             <tr><td class="py-1 pr-4 font-mono">{s.keys}</td><td class="py-1">{s.action}</td></tr>
           {/each}
         </tbody>
