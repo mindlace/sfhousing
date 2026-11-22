@@ -10,7 +10,7 @@ import {
   TIMELINE_SCORE_R0
 } from '$lib/fzp/fixtures/timeline-score';
 import { scoreCopy } from '$lib/sim-page/policy';
-import { FORECAST_NOTE, LENS_NAME, TWIN_NOTE } from './copy';
+import { LENS_NAME, TWIN_NOTE } from './copy';
 import { ABOUT_ID, WORKED_OUT } from '$lib/about/copy';
 import { DEFAULT_LEVERS } from '$lib/sim/levers/types';
 import type { LeverCapacity } from '$lib/sim/levers/resolve';
@@ -57,6 +57,9 @@ import type { TimelineView } from '$lib/sim/world/score/types';
 import type { TimelineScore } from '$lib/sim/scenario/types';
 import { GOAL, TODAY, goalStep, readGoal } from '$lib/goal/goal';
 import { indexOfDay } from '$lib/timeline/playhead';
+
+/** The old forecast note Details no longer shows. */
+const FORECAST_NOTE = 'A forecast if nothing changes.';
 
 /** Index 53 of the fixture: 2031-03-15. */
 const DAY = dayFromUtc(2031, 3, 15);

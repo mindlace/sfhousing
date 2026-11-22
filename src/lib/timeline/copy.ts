@@ -9,12 +9,9 @@ import { utcParts } from '$lib/fzp/time';
 import type { Speed } from '$lib/fzp/types';
 import { formatCount, formatPercent } from '$lib/scoreboard/format';
 import type { Day } from '$lib/timelapse/time';
-import { MARKET_FUNDING_SENTENCE4 } from '$lib/fzp/market-view';
-import { MARKET_FUNDING_SENTENCE } from '$lib/sim-page/funding-copy';
 import type { CoverageStep } from '$lib/sim-page/funding-view';
 import { lensOf, type ChartLens } from './chart-lens';
 
-export const FORECAST_NOTE = 'A forecast if nothing changes.';
 export const capacityNote = (year: number): string => `Capacity in ${year}.`;
 export const TWIN_NOTE = 'The forecast is run twice, with and without it.';
 
@@ -49,12 +46,6 @@ export const WAITING_NOTE = 'Working out the months ahead.';
 export const TERMS_HINT = 'End this and add a new one to change terms.';
 /** OQ-4. */
 export const DATES_MOVED_NOTICE = 'Some policy dates moved to fit this data.';
-
-/** The market sentence's closing disclaimer, which `FORECAST_NOTE` replaces. */
-const MARKET_TAIL = " This holds today's market; it is not a forecast.";
-/** Results' market sentence without its old closing disclaimer. */
-export const marketBody = (s: string): string =>
-  s.replace(MARKET_TAIL, '').replace(MARKET_FUNDING_SENTENCE, MARKET_FUNDING_SENTENCE4);
 
 const PER_HOME_TAIL = ', counted when the funded project completes.';
 /**

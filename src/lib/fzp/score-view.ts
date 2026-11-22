@@ -46,25 +46,6 @@ export function scoreAt(score: TimelineScore, i: number): ScoreAt {
   };
 }
 
-/** Item 13: the multi-phase footnote; `null` when no master plan is in the data. */
-export function phasingFootnote(p: TimelineScore['phasing']): string | null {
-  if (p.masters <= 0) return null;
-  let text =
-    `Multi-phase projects: ${formatCount(p.phasesScheduled)} phases scheduled from published plans, ` +
-    `${formatCount(p.phasesEstimated)} estimated from past projects`;
-  if (p.unenriched.length > 0) {
-    const drawn = p.unenriched.filter((u) => u.drawn).length;
-    const scoreOnly = p.unenriched.length - drawn;
-    const clauses: string[] = [];
-    if (drawn > 0) clauses.push(`${drawn} drawn as one footprint on a free lot`);
-    if (scoreOnly > 0) clauses.push(`${scoreOnly} counted in the score but not drawn`);
-    text +=
-      `; ${p.unenriched.length} projects without phase data are simulated as one project each: ` +
-      clauses.join(', ');
-  }
-  return `${text}.`;
-}
-
 /** The /sim header delta: "+1,234 from your policy", "−56 from your policy" (U+2212), "+0 …". */
 export function fromPolicyText(n: number): string {
   return `${n < 0 ? '' : '+'}${formatCount(n)} from your policy`;
