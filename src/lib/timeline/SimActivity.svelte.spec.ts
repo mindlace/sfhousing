@@ -4,8 +4,9 @@ import type { ComponentProps } from 'svelte';
 import { render } from 'vitest-browser-svelte';
 import { page, userEvent } from 'vitest/browser';
 import '../../routes/layout.css';
-import { GOAL, goalName } from '$lib/goal/goal';
+import { defaultGoal, goalName } from '$lib/goal/goal';
 import { formatDollars } from '$lib/fzp/format';
+import { dayFromUtc } from '$lib/fzp/time';
 import type { ActivityItem, ActivityTotals, Starter } from './activity-view';
 import { limitAlert } from '$lib/sim-page/funding-copy';
 import SimActivity from './SimActivity.svelte';
@@ -38,6 +39,8 @@ const TOTALS: ActivityTotals = {
   cost: null
 };
 
+const GOAL = defaultGoal(dayFromUtc(2026, 10, 10));
+
 const props = (over: Partial<ComponentProps<typeof SimActivity>> = {}) => ({
   goal: GOAL,
   totals: null as ActivityTotals | null,
@@ -68,7 +71,7 @@ describe('SimActivity', () => {
   it('at today with nothing in force: the goal, Try one: and three starter buttons', async () => {
     await renderAtRest(props());
     await expect.element(page.getByText(goalName(GOAL))).toBeVisible();
-    expect(goalName(GOAL)).toMatch(/^State target: [\d,]+ homes by \w{3} \d{4}$/);
+    expect(goalName(GOAL)).toMatch(/^Goal: [\d,]+ homes by \w{3} \d{4}$/);
     await expect.element(page.getByText('Try one:')).toBeVisible();
     const list = page.getByRole('list', { name: 'Try one:' });
     const buttons = list.getByRole('button').elements();

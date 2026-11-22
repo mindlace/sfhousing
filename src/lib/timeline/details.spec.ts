@@ -4,6 +4,7 @@ import { YEAR_COLUMNS, yearRows } from './details';
 import { calendarMonths, chunk, cut, statics } from './test/fixtures';
 import { headlineAt } from './results';
 import { formatShortMonthYear } from '$lib/fzp/format';
+import { defaultGoal } from '$lib/goal/goal';
 import { utcParts } from '$lib/fzp/time';
 
 /** 36 calendar months from Nov 2026 (Dec 2026 is month 1, Dec 2027 month 13, Dec 2028 month 25). */
@@ -45,7 +46,8 @@ describe('yearRows', () => {
     const head = headlineAt(
       v,
       { index: 18, atToday: false },
-      { provisional: false, inForce: true }
+      { provisional: false, inForce: true },
+      defaultGoal(v.months[0])
     );
     const withPolicy = yearRows(v, 18, true);
     expect(withPolicy.at(-1)!.homes).toBe(head!.homes);

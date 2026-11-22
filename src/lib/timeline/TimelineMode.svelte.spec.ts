@@ -11,7 +11,7 @@ import { parseManifest, type Manifest } from '$lib/data/manifest';
 import { fixtureCalibration } from '$lib/fzp/fixtures/calibration';
 import { REAL_ACTUAL } from '$lib/fzp/fixtures/cards';
 import { CALCULATING, fromPolicyText } from '$lib/fzp/score-view';
-import { GOAL, STATE_TARGET, goalName, type Goal } from '$lib/goal/goal';
+import { STATE_TARGET, defaultGoal, goalName, type Goal } from '$lib/goal/goal';
 import { formatDollars, formatShortMonthYear } from '$lib/fzp/format';
 import { dayFromUtc, monthStart, utcParts } from '$lib/fzp/time';
 import { callsOf, stub } from '$lib/fzp/test/sim-map-stub';
@@ -108,6 +108,8 @@ const { y, m } = utcParts(asOf);
 const MONTHS: Day[] = Array.from({ length: LAST + 1 }, (_, i) => dayFromUtc(y, m + i, 1));
 const STATICS: ScoreStatics = { ...baseStatics({ lastIndex: LAST }), asOf, months: MONTHS };
 const windowEnd = monthLastDay(asOf, WINDOW_MONTHS);
+/** A goal whose deadline (Jan 2031) falls inside the fixture's short window. */
+const TEST_GOAL: Goal = { ...defaultGoal(asOf), deadline: dayFromUtc(2031, 1, 31) };
 
 const protect = (years: number): Policy => ({
   id: 'a',
@@ -1125,7 +1127,13 @@ describe('TimelineMode', () => {
   /** The header's text at month i. Nothing is in force (the default document): no effect part. */
   const textAt = (i: number) =>
     headlineText(
-      headlineAt(FULL(), { index: i, atToday: false }, { provisional: false, inForce: false })!
+      headlineAt(
+        FULL(),
+        { index: i, atToday: false },
+        { provisional: false, inForce: false },
+        defaultGoal(asOf)
+      )!,
+      defaultGoal(asOf)
     );
 
   it('the header reads 0 by today, then follows the playhead month by month', async () => {
@@ -1952,9 +1960,9 @@ describe('TimelineMode', () => {
       ...base,
       asOf: dayFromUtc(2030, 1, 1),
       months: Array.from({ length: LAST + 1 }, (_, i) => dayFromUtc(2030, 1 + i, 1)),
-      baseline: { ...base.baseline, units: GOAL.amount - need }
+      baseline: { ...base.baseline, units: defaultGoal(asOf).amount - need }
     };
-    setup({});
+    setup({ goal: TEST_GOAL });
     await expect.poll(() => workers.length).toBe(1);
     await expect.poll(() => w().lastOf('openTimeline')).toBeTruthy();
     emit(compiledMsg(1, statics));
@@ -2514,7 +2522,7 @@ describe('TimelineMode', () => {
    */
   async function blockBeforeAfterPolicy(vw: number, vh: number, over: Over = {}) {
     await page.viewport(vw, vh);
-    const s = setup({ withInspector: true, ...over });
+    const s = setup({ withInspector: true, goal: TEST_GOAL, ...over });
     await expect.poll(() => workers.length).toBe(1);
     await expect.poll(() => w().lastOf('openTimeline')).toBeTruthy();
     // From Jan 2030 the goal's deadline (Jan 2031) is in the window, so its step is drawn.
@@ -2727,6 +2735,13 @@ describe('TimelineMode', () => {
       d.querySelector('dd')!.textContent!.trim()
     ]);
 
+  it('without the goal seam the goal is defaultGoal(asOf): Activity names it', async () => {
+    await opened(LAST, { withInspector: true, inspectorOpen: false });
+    const activity = page.getByTestId('tl-inspector').getByTestId('tl-activity');
+    await expect.element(activity.getByText(goalName(defaultGoal(asOf)))).toBeVisible();
+    expect(goalName(defaultGoal(asOf))).toMatch(/^Goal: 82,069 homes by [A-Z][a-z]{2} \d{4}$/);
+  });
+
   it('from md at rest the detail column shows Activity', async () => {
     await opened(LAST, { withInspector: true, inspectorOpen: false });
     const insp = page.getByTestId('tl-inspector');
@@ -2738,7 +2753,7 @@ describe('TimelineMode', () => {
       .element(activity.getByRole('heading', { level: 2, name: 'Activity' }))
       .toBeVisible();
     // At today: the goal, and without onstarter (read-only) Press Play, no starters.
-    await expect.element(activity.getByText(goalName(GOAL))).toBeVisible();
+    await expect.element(activity.getByText(goalName(defaultGoal(asOf)))).toBeVisible();
     await expect.element(activity.getByText('Press Play to see what gets built.')).toBeVisible();
     // Padded as the Inspector is: the text keeps off the column's edge.
     const pad = getComputedStyle(activity.element());
@@ -2814,14 +2829,15 @@ describe('TimelineMode', () => {
     await userEvent.keyboard('{Home}');
     await expect.poll(() => debug().day).toBe(asOf);
     expect(document.querySelector('[data-testid=tl-totals]')).toBeNull();
-    await expect.element(activity.getByText(goalName(GOAL))).toBeVisible();
+    await expect.element(activity.getByText(goalName(defaultGoal(asOf)))).toBeVisible();
     for (let k = 1; k <= 3; k++) {
       await userEvent.keyboard('{ArrowRight}');
       await expect.poll(() => debug().day).toBe(MONTHS[k]);
       const h = headlineAt(
         full,
         { index: k, atToday: false },
-        { provisional: false, inForce: true }
+        { provisional: false, inForce: true },
+        defaultGoal(asOf)
       )!;
       await expect.element(scoreBar()).toHaveTextContent(homesBy(h.homes, h.at));
       await expect.poll(totalsOf).toEqual([
@@ -2830,7 +2846,7 @@ describe('TimelineMode', () => {
         ['Stopped', String(full.rows[k].exitedUnits)],
         ['From your policy', `+${h.effect}`]
       ]);
-      expect(activity.getByText(goalName(GOAL)).elements()).toHaveLength(0);
+      expect(activity.getByText(goalName(defaultGoal(asOf))).elements()).toHaveLength(0);
     }
   });
 
@@ -3652,6 +3668,26 @@ describe('halos on the map', () => {
       .toEqual([[{ from: asOf }], [{ from: fresh.asOf }]]);
     // Far bars are the page's, not the calibration's: the Retry leaves them at the one call.
     expect(callsOf('setBarMode')).toEqual([['far']]);
+  });
+
+  it("a new calibration re-derives the goal's date", async () => {
+    const nextAsOf = asOf + 62;
+    const fresh = { ...cal, asOf: nextAsOf };
+    await page.viewport(1280, 900);
+    setup({
+      calibrationError: true,
+      withInspector: true,
+      inspectorOpen: false,
+      reload: async () => ({ manifest, calibration: fresh })
+    });
+    const retry = page.getByRole('button', { name: 'Retry' });
+    await expect.element(retry).toBeVisible();
+    await retry.click();
+    await expect.poll(() => w()?.lastOf('openTimeline')).toBeTruthy();
+    emit(compiledMsg(1, { ...STATICS, asOf: nextAsOf }));
+    emit(filledMsg(1, 0, LAST + 1));
+    await expect.element(page.getByText(goalName(defaultGoal(nextAsOf))).first()).toBeVisible();
+    expect(goalName(defaultGoal(nextAsOf))).not.toBe(goalName(defaultGoal(asOf)));
   });
 
   it('turns far bars on once the map is ready', async () => {

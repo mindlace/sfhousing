@@ -15,7 +15,7 @@
   import { formatCount } from '$lib/scoreboard';
   import type { TimelineScore } from '$lib/sim/protocol';
   import type { TimelineView } from '$lib/sim/world/score/types';
-  import { GOAL, goalRows, goalTrackMax, type Goal } from '$lib/goal/goal';
+  import { goalRows, goalTrackMax, type Goal } from '$lib/goal/goal';
   import GoalRow from '$lib/goal/GoalRow.svelte';
   import type { Day } from '$lib/timelapse/time';
   import { formatMonthYear } from '$lib/fzp/format';
@@ -64,8 +64,8 @@
     inForce?: boolean;
     /** What the timeline chart plots (bound): Details switches it. */
     lens?: ChartLens;
-    /** Test seam: the goal the rows read, as the page's (TimelineMode's `goal`). */
-    goal?: Goal;
+    /** The page's goal (TimelineMode's `goal`), which the rows read. */
+    goal: Goal;
     /** Shows Activity in the column: the heading row's button (none without it). */
     onactivity?: () => void;
   }
@@ -84,7 +84,7 @@
     uncapped = new Set(),
     inForce = false,
     lens = $bindable<ChartLens>('homes'),
-    goal = GOAL,
+    goal,
     onactivity = undefined
   }: Props = $props();
 

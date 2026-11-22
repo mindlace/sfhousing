@@ -1,15 +1,7 @@
 // The Results face and the header score from the stepped view (timeline-ui rules 26 and 27). Pure.
 import { fromPolicyText, scoreAt } from '$lib/fzp/score-view';
 import type { ScoreAt } from '$lib/fzp/types';
-import {
-  GOAL,
-  TODAY,
-  goalName,
-  goalText,
-  readGoal,
-  type Goal,
-  type GoalReading
-} from '$lib/goal/goal';
+import { TODAY, goalName, goalText, readGoal, type Goal, type GoalReading } from '$lib/goal/goal';
 import type { TimelineScore } from '$lib/sim/scenario/types';
 import type { TimelineView } from '$lib/sim/world/score/types';
 import type { Day } from '$lib/timelapse/time';
@@ -120,7 +112,7 @@ export function headlineAt(
   view: TimelineView | null,
   at: PlayheadAt,
   opts: HeadlineOpts,
-  goal: Goal = GOAL
+  goal: Goal
 ): Headline | null {
   if (!view || opts.provisional) return null;
   if (at.atToday) {
@@ -186,7 +178,7 @@ export interface HeadlineText {
   goalName: string | null;
 }
 
-export function headlineText(h: Headline, goal: Goal = GOAL): HeadlineText {
+export function headlineText(h: Headline, goal: Goal): HeadlineText {
   return {
     main: homesBy(h.homes, h.at),
     effect: h.effect === null ? null : fromPolicyText(h.effect),

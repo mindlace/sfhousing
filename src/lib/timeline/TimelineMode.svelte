@@ -108,7 +108,7 @@
   import { SummaryRequester, type SummaryState } from '$lib/fzp/summary-request';
   import { monthStart } from '$lib/fzp/time';
   import type { FzpPhase, Speed } from '$lib/fzp/types';
-  import { GOAL, TODAY, goalStep, type Goal } from '$lib/goal/goal';
+  import { TODAY, defaultGoal, goalStep, type Goal } from '$lib/goal/goal';
   import type { HeightCity } from '$lib/map/height/types';
   import SimMap from '$lib/map/SimMap.svelte';
   import type { ChunkStatus, TimelinePick, TimelineUpdate } from '$lib/map/types';
@@ -275,7 +275,7 @@
     bottomExtra?: number;
     /** Test seam: the status slot's least gap between updates (rule 32). */
     statusMs?: number;
-    /** Test seam: the goal every goal read goes through. Default the page's goal. */
+    /** Test seam: the goal every goal read goes through. Default `defaultGoal(asOf)`. */
     goal?: Goal;
     /** Test seam: fetches the neighbourhoods Activity's list names; null on any failure. */
     fetchPlaces?(url: string): Promise<NeighborhoodShapes | null>;
@@ -334,7 +334,7 @@
     scoreExpanded = false,
     scoreControls = undefined,
     bottomExtra = 0,
-    goal = GOAL,
+    goal: goalSeam = undefined,
     statusMs = 1000,
     fetchPlaces = (url: string) => loadPlaces(url),
     spacePlays = true
@@ -379,6 +379,8 @@
 
   const asOf = $derived(calibration?.asOf ?? 0);
   const windowEnd = $derived(monthLastDay(asOf, WINDOW_MONTHS));
+  /** The page's goal: the seam, else the default goal built from the dataset's date. */
+  const goal = $derived(goalSeam ?? defaultGoal(asOf));
   const current = $derived(session?.view ?? null);
   const statics = $derived(session?.statics ?? null);
   const months = $derived(statics?.months ?? current?.months ?? null);
@@ -601,7 +603,14 @@
     const wait = stale || searching;
     untrack(() => {
       if (wait) return;
-      const day = m === TODAY || !view ? asOf : view.months[m];
+      // The window's last month stands for the window's last day, which is where a goal due at
+      // the window's end is judged.
+      const day =
+        m === TODAY || !view
+          ? asOf
+          : m >= view.lastIndex
+            ? filledEndDay(view.months, view.lastIndex, asOf)
+            : view.months[m];
       // A view not yet covering the months read is no answer: the last outcome stays.
       if (awaitsView(g, view, day, asOf)) return;
       const next = goalOutcome(g, view, day, asOf);
