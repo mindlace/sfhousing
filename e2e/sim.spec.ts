@@ -1479,11 +1479,7 @@ test("/sim: the credit's About this model opens the dialog at Data and licences"
   await expect(link).toBeFocused();
 });
 
-test("/sim: the credit's © OpenStreetMap opens in a new tab; the run stays", async ({
-  isMobile,
-  page
-}) => {
-  test.skip(isMobile, 'one pointer is enough: the link rule is not width-bound');
+test("/sim: the credit's © OpenStreetMap opens in a new tab; the run stays", async ({ page }) => {
   // The copyright page is answered locally: the test checks where the link goes, not OSM.
   await page
     .context()
