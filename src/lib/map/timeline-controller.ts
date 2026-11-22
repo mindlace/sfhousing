@@ -33,17 +33,14 @@ import type { StageBarLayer } from './timelapse/stage-bar-layer';
 import type { HaloLayer } from './timelapse/halo-layer';
 import type { BarAttrs, TimelineClock, TimelineLookups, TimelineSnapshot } from './timelapse/types';
 
+/** A point in clip space: [x, y, w]. */
+export type Clip = [x: number, y: number, w: number];
+
 /** The map's camera as the debug snapshot reads it (never per frame, never on a move). */
 export interface DebugView {
   zoom: number;
-  /** The view's CSS px size. */
-  viewPx: [w: number, h: number];
   /** The view's centre on the ground. */
   centre: [lng: number, lat: number];
-  /** CSS px per metre at the centre. */
-  pxPerMeter: number;
-  /** The camera's bearing in degrees. */
-  bearing: number;
   /** A point's clip-space [x, y, w] in the map's camera, `alt` metres up (0: the ground). */
   clip(lng: number, lat: number, alt?: number): Clip;
 }
@@ -318,7 +315,7 @@ export class TimelineController {
   }
 
   /**
-   * Halos and marks for the events after `from` (the dataset date), or none (`null`, the default);
+   * Halos and marks for the events after `from` (the dataset date), or none (`null`, the default).
    * Rebuilds them once when the value changes; before the first `apply` it is only kept.
    */
   setHalos(o: { from: Day } | null): void {

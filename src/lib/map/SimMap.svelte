@@ -943,10 +943,7 @@
           const m = vp.viewProjectionMatrix;
           return {
             zoom: map.getZoom(),
-            viewPx: [el.clientWidth, el.clientHeight],
             centre: [c.lng, c.lat],
-            pxPerMeter: vp.scale * vp.distanceScales.unitsPerMeter[0],
-            bearing: map.getBearing(),
             clip: (lng, lat, alt = 0) => {
               const [x, y, z] = vp.projectPosition([lng, lat, alt]);
               // Column-major: clip = M · [x, y, z, 1].

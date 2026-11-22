@@ -107,8 +107,8 @@ HlEval hl_evalHalo(
 ) {
   // 1. Hidden: outside [day, until).
   if (t < day || t >= until) return HlEval(false, 0.0, 0.0);
-  // 2. Below the gate (rings and marks): one
-  //    mark a square (from its areaFrom; a ring's is its until) stands for the square's marks.
+  // 2. Below the gate (rings and marks): one mark a
+  //    square (from its areaFrom; a ring's is its until) stands for the square's marks.
   if (scale < halo.ringMinScale && t < areaFrom) return HlEval(false, 0.0, 0.0);
   // 3. A mark: one size, full strength.
   if (kind == HL_MARK) return HlEval(true, HL_MARK_PX, 1.0);

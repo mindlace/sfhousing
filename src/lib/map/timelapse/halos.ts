@@ -179,9 +179,9 @@ function areaMarks(marks: { mark: HaloAttrs; homes: number }[]): void {
 
 /**
  * CPU reference of the halo shader on day t at map zoom `zoom`. Every halo, ring or mark, hides
- * while zoom < ringMinZoom (MARK_AREA_ZOOM; 0, no gate, wherever there is no halo layer),
- * except a mark from its `areaFrom`: its square's one diamond. Ring: visible iff day <= t < until; radius HALO_R_PX[0] + (HALO_R_PX[1] −
- * HALO_R_PX[0]) · age / HALO_DAYS and alpha 1 − age / HALO_DAYS, or, reduced, HALO_STILL_R_PX
+ * while zoom < ringMinZoom (the layer's gate is MARK_AREA_ZOOM; the default 0 is no gate),
+ * except a mark from its `areaFrom`: its square's one diamond. Ring: visible iff day <= t <
+ * until; radius HALO_R_PX[0] + (HALO_R_PX[1] − HALO_R_PX[0]) · age / HALO_DAYS and alpha 1 − age / HALO_DAYS, or, reduced, HALO_STILL_R_PX
  * and 1. Mark: visible iff day <= t < until, MARK_PX, alpha 1.
  */
 export function evalHalo(
@@ -193,8 +193,8 @@ export function evalHalo(
 ): HaloEval {
   // 1. Hidden: outside [day, until).
   if (t < h.day || t >= h.until) return { visible: false, radiusPx: 0, alpha: 0 };
-  // 2. Below the gate (rings and marks): one
-  //    mark a square (from its areaFrom; a ring's is its until) stands for the square's marks.
+  // 2. Below the gate (rings and marks): one mark a
+  //    square (from its areaFrom; a ring's is its until) stands for the square's marks.
   if (zoom < ringMinZoom && t < h.areaFrom) return { visible: false, radiusPx: 0, alpha: 0 };
   // 3. A mark: one size, full strength.
   if (h.kind === HALO_KIND.mark) return { visible: true, radiusPx: MARK_PX, alpha: 1 };

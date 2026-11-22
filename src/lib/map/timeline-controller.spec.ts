@@ -11,7 +11,7 @@ import { TYPOLOGY_ORDER, type TimedPackedCell, type TimelineUpdate } from './typ
 import type { BarAttrs } from './timelapse/types';
 import { HALO_KIND, buildHalos, evalHalo, type HaloAttrs } from './timelapse/halos';
 import { SLOT_FLAG, type CityDelta } from './types';
-import { M_PER_DEG, cityGroup } from './timelapse/city-grid';
+import { cityGroup } from './timelapse/city-grid';
 import { MARK_AREA_ZOOM } from './timelapse/constants';
 import { buildBars, evalBar } from './timelapse/bars';
 import { FAR_UNITS_PER_SLICE, FarDeclutter, declutter } from './timelapse/declutter';
@@ -1097,11 +1097,7 @@ describe('TimelineController city', () => {
   function viewAt(zoom: number): DebugView {
     return {
       zoom,
-      viewPx: [800, 600],
       centre: MISSION,
-      bearing: 0,
-      // 800 px across 0.04° of longitude.
-      pxPerMeter: 800 / (0.04 * M_PER_DEG * Math.cos((MISSION[1] * Math.PI) / 180)),
       clip: (lng, lat) => [(lng - MISSION[0]) / 0.02, (lat - MISSION[1]) / 0.02, 1]
     };
   }
@@ -1294,10 +1290,7 @@ describe('TimelineController bar modes', () => {
   function viewAt(zoom: number, half = 0.02): DebugView {
     return {
       zoom,
-      viewPx: [800, 600],
       centre: CENTRE,
-      bearing: 0,
-      pxPerMeter: 1,
       clip: (lng, lat) => [(lng - CENTRE[0]) / half, (lat - CENTRE[1]) / half, 1]
     };
   }
