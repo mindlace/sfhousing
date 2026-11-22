@@ -5,7 +5,7 @@ import { TODAY, goalStep, readGoal, type Goal } from '$lib/goal/goal';
 import { formatCount } from '$lib/scoreboard/format';
 import type { TimelineView } from '$lib/sim/world/score/types';
 import type { Day } from '$lib/timelapse/time';
-import { indexOfDay } from './playhead';
+import { filledEndDay, indexOfDay } from './playhead';
 
 export type GoalOutcome = { kind: 'reached'; on: Day } | { kind: 'missed'; short: number };
 
@@ -24,8 +24,14 @@ export function awaitsView(
   if (!step) return false;
   const at = Math.min(monthReached(view, reached, asOf), step.deadlineIndex);
   return (
-    at > view.filledThrough || (reached > goal.deadline && step.deadlineIndex > view.filledThrough)
+    at > view.filledThrough ||
+    (passed(goal, view, reached, asOf) && step.deadlineIndex > view.filledThrough)
   );
+}
+
+/** The goal is judged once its deadline is passed or the window's last day is reached. */
+function passed(goal: Goal, view: TimelineView, reached: Day, asOf: Day): boolean {
+  return reached > goal.deadline || reached >= filledEndDay(view.months, view.lastIndex, asOf);
 }
 
 /** The month of `reached` in the view (TODAY at or before `asOf`). */
@@ -38,7 +44,7 @@ function monthReached(view: TimelineView, reached: Day, asOf: Day): number {
  * (deadline outside the window) or the view does not cover the months read (`awaitsView`).
  * Reached: `readGoal(goal, view, min(m, deadline month)).reachedOn`, m the month of `reached`
  * (TODAY at or before `asOf`), so it agrees with the header's "Goal reached". Missed: `reached` is
- * past goal.deadline and the amount was not met by it; short = goal.amount - the measure at the
+ * past goal.deadline or at the window's last day and the amount was not met by it; short = goal.amount - the measure at the
  * deadline month. Reads the rows up to the deadline month, plus a few repeat reads.
  */
 export function goalOutcome(
@@ -53,7 +59,7 @@ export function goalOutcome(
   const reading = readGoal(goal, view, at);
   if (reading === null) return null;
   if (reading.reachedOn !== null) return { kind: 'reached', on: reading.reachedOn };
-  if (reached <= goal.deadline) return null;
+  if (!passed(goal, view, reached, asOf)) return null;
   return { kind: 'missed', short: goal.amount - goal.measure.valueAt(view, step.deadlineIndex) };
 }
 

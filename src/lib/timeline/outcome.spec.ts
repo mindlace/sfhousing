@@ -4,6 +4,7 @@ import { STATE_TARGET, readGoal, type Goal } from '$lib/goal/goal';
 import type { TimelineView } from '$lib/sim/world/score/types';
 import { viewOf } from '$lib/sim/world/score/view';
 import { goalOutcome, awaitsView, outcomeKey, outcomeText } from './outcome';
+import { filledEndDay } from './playhead';
 import { calendarMonths, chunk, cut, statics } from './test/fixtures';
 
 // The measure at month i is 1000 + 3i + 1 (the baseline 1000 plus the row), 1000 at today.
@@ -48,6 +49,19 @@ describe('goalOutcome', () => {
     expect(goalOutcome(g, view, M[23], ASOF)).toEqual({ kind: 'missed', short: 63 });
     // Met after the deadline is still a miss.
     expect(goalOutcome(goal(1050, 12), view, M[23], ASOF)).toEqual({ kind: 'missed', short: 13 });
+  });
+
+  it("missed at the window's last day when the deadline is that day", () => {
+    const last = filledEndDay(M, 23, ASOF);
+    const g: Goal = { ...goal(1100, 0), deadline: last };
+    expect(goalOutcome(g, view, last - 1, ASOF)).toBeNull();
+    expect(goalOutcome(g, view, last, ASOF)).toEqual({ kind: 'missed', short: 30 });
+    expect(awaitsView(g, cut(view, 5), last, ASOF)).toBe(true);
+    // Reached on the way, the same day says reached.
+    expect(goalOutcome({ ...g, amount: 1025 }, view, last, ASOF)).toEqual({
+      kind: 'reached',
+      on: M[8]
+    });
   });
 
   it('nothing for a deadline outside the window', () => {
