@@ -390,7 +390,8 @@
   }
 
   // The strip covers the map's bottom on a phone: its appearance collapses the credit (a size
-  // change, so the footprint is measured again). Opened by hand, the credit draws above it.
+  // change, so the footprint is measured again), opened by hand or not (`collapseCredit`). Opened
+  // again while the strip shows, it draws above it.
   $effect(() => {
     if (stripShown) untrack(() => handle?.collapseCredit());
   });
