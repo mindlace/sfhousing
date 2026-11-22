@@ -26,7 +26,7 @@
 
 ### The city feed
 
-The stream composes `createCityFeed` (`src/lib/sim/world/city-feed.ts`, worker-safe, under the determinism rule) with `anchorOf` = the row's `place(...).anchor` and the stream's `flagsOf`. It sends one marker per row with a T11 lot in `TimelineUpdate.city` (the wire contract and sizes: [map-interfaces.md](map-interfaces.md), "The citywide feed").
+The stream composes `createCityFeed` (`src/lib/sim/world/city-feed.ts`, worker-safe, under the determinism rule) with `anchorOf` = the row's `place(...).anchor` and the stream's `flagsOf`. It sends one marker per row with a T11 lot in `TimelineUpdate.city` (the wire contract and sizes: [map-interfaces.md](map-interfaces.md), "The citywide feed"). The page reads it for Activity and the controller for its debug counts; no layer draws it.
 
 - `onEvent` touches the event's row, whether its cell is ready or not. Nothing else runs per world step.
 - `flush` takes the touched rows and sends those whose marker differs from the one sent, ascending, read at `lastDay` through `scheduleAt` (so a marker's days are its slot's whenever both exist). An update goes out for city rows alone; a flush with no changed row and nothing else pending returns null.
