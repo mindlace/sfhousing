@@ -9,10 +9,8 @@ import { M1_TARGETS } from '$lib/scoreboard/targets';
 import type { TimelineView } from '$lib/sim/world/score/types';
 import {
   BUFFER_SHARE,
-  GOAL,
   GOAL_BASE,
   HOMES_COMPLETED,
-  STATE_TARGET,
   TODAY,
   atDeadlineText,
   bufferAmount,
@@ -37,19 +35,24 @@ function whole(): TimelineView {
   return calendarMonths(viewOfLog(logFilled(logCompiled(EMPTY_LOG, statics()), chunk(0, 24)))!);
 }
 
+/** The goal due Jan 2031: the date the deadline cases below were written against. */
+const TEST_GOAL: Goal = {
+  ...defaultGoal(dayFromUtc(2026, 11, 10)),
+  deadline: dayFromUtc(2031, 1, 31)
+};
+
 function goalOf(amount: number, deadline: Day): Goal {
-  return { ...STATE_TARGET, amount, deadline };
+  return { ...TEST_GOAL, amount, deadline };
 }
 
 const BIG = 10_000_000;
 
 describe('the goal', () => {
-  it('the state target is RHNA 2023-2031, counted from 30 Jun 2022, due 31 Jan 2031', () => {
-    expect(STATE_TARGET.amount).toBe(M1_TARGETS.find((t) => t.id === 'rhna')!.units);
-    expect(STATE_TARGET.deadline).toBe(RHNA_DEADLINE);
-    expect(STATE_TARGET.countsFrom).toBe(dayFromUtc(2022, 6, 30));
-    expect(GOAL).toBe(STATE_TARGET);
-    expect(STATE_TARGET.name).toBe('State target');
+  it('the goal base is RHNA 2023-2031, counted from 30 Jun 2022, with no deadline', () => {
+    expect(GOAL_BASE.amount).toBe(M1_TARGETS.find((t) => t.id === 'rhna')!.units);
+    expect(GOAL_BASE.countsFrom).toBe(dayFromUtc(2022, 6, 30));
+    expect(GOAL_BASE.name).toBe('Goal');
+    expect('deadline' in GOAL_BASE).toBe(false);
   });
 
   it("countsFrom matches fixture-0's baseline.since", () => {
@@ -57,11 +60,11 @@ describe('the goal', () => {
       readFileSync('e2e/fixtures/data/fixture-0/scenarios/fzp/projects.json', 'utf8')
     );
     expect(file.rhnaCompletedNet.since).toBe(19173);
-    expect(STATE_TARGET.countsFrom).toBe(19173);
+    expect(GOAL_BASE.countsFrom).toBe(19173);
   });
 
   it('names the goal', () => {
-    expect(goalName(STATE_TARGET)).toBe('State target: 82,069 homes by Jan 2031');
+    expect(goalName(TEST_GOAL)).toBe('Goal: 82,069 homes by Jan 2031');
   });
 
   it('HOMES_COMPLETED counts the homes built before today plus the simulation', () => {
@@ -164,7 +167,7 @@ describe('the goal', () => {
 });
 
 describe('goal rows', () => {
-  /** 60 calendar months from Nov 2026: the state target's deadline (Jan 2031) is month 50. */
+  /** 60 calendar months from Nov 2026: the test goal's deadline (Jan 2031) is month 50. */
   const long = (): TimelineView =>
     calendarMonths(
       viewOfLog(logFilled(logCompiled(EMPTY_LOG, statics({ lastIndex: 59 })), chunk(0, 60)))!
@@ -173,18 +176,18 @@ describe('goal rows', () => {
   const value = (v: TimelineView, i: number) => HOMES_COMPLETED.valueAt(v, i);
   const at = (index: number, atToday = false) => ({ index, atToday });
 
-  it('bufferAmount is floor(amount × 1.15): 94,379 for the state target', () => {
+  it('bufferAmount is floor(amount × 1.15): 94,379 for the goal', () => {
     expect(BUFFER_SHARE).toBe(0.15);
-    expect(bufferAmount(STATE_TARGET)).toBe(94_379);
-    expect(bufferAmount(STATE_TARGET)).toBe(M1_TARGETS.find((t) => t.id === 'rhna-buffer')!.units);
+    expect(bufferAmount(GOAL_BASE)).toBe(94_379);
+    expect(bufferAmount(GOAL_BASE)).toBe(M1_TARGETS.find((t) => t.id === 'rhna-buffer')!.units);
   });
 
   it('goalRows at today reads TODAY for both rows, so the goal row equals readGoal(goal, view, TODAY)', () => {
     const v = long();
     expect(value(v, 0)).not.toBe(value(v, TODAY));
-    const rows = goalRows(STATE_TARGET, v, at(0, true), TODAY)!;
+    const rows = goalRows(TEST_GOAL, v, at(0, true), TODAY)!;
     expect(rows.map((r) => r.id)).toEqual(['goal', 'buffer']);
-    expect(rows[0].fraction).toBe(readGoal(STATE_TARGET, v, TODAY)!.fraction);
+    expect(rows[0].fraction).toBe(readGoal(TEST_GOAL, v, TODAY)!.fraction);
     expect(rows.map((r) => r.value)).toEqual([value(v, TODAY), value(v, TODAY)]);
     expect(rows[1].fraction).toBe(value(v, TODAY) / 94_379);
     expect(rows.map((r) => r.note)).toEqual(['by Jan 2031', 'by Jan 2031']);
@@ -192,8 +195,8 @@ describe('goal rows', () => {
 
   it('goalRows before the deadline month: month index, note "by Jan 2031"', () => {
     const v = long();
-    const rows = goalRows(STATE_TARGET, v, at(30), 30)!;
-    expect(rows[0].fraction).toBe(readGoal(STATE_TARGET, v, 30)!.fraction);
+    const rows = goalRows(TEST_GOAL, v, at(30), 30)!;
+    expect(rows[0].fraction).toBe(readGoal(TEST_GOAL, v, 30)!.fraction);
     expect(rows.map((r) => r.value)).toEqual([value(v, 30), value(v, 30)]);
     expect(rows.map((r) => r.amount)).toEqual([82_069, 94_379]);
     expect(rows.map((r) => r.note)).toEqual(['by Jan 2031', 'by Jan 2031']);
@@ -202,9 +205,9 @@ describe('goal rows', () => {
   it('goalRows from the deadline month: both rows hold at the deadline month, note "Held at Jan 2031"', () => {
     const v = long();
     for (const i of [DEADLINE, DEADLINE + 5]) {
-      const rows = goalRows(STATE_TARGET, v, at(i), i)!;
+      const rows = goalRows(TEST_GOAL, v, at(i), i)!;
       expect(rows.map((r) => r.value)).toEqual([value(v, DEADLINE), value(v, DEADLINE)]);
-      expect(rows[0].fraction).toBe(readGoal(STATE_TARGET, v, i)!.fraction);
+      expect(rows[0].fraction).toBe(readGoal(TEST_GOAL, v, i)!.fraction);
       expect(rows.map((r) => r.note)).toEqual(['Held at Jan 2031', 'Held at Jan 2031']);
       expect(rows.map((r) => r.atDeadline)).toEqual([null, null]);
     }
@@ -215,7 +218,7 @@ describe('goal rows', () => {
     const none = [null, null];
     const shares = [value(v, DEADLINE) / 82_069, value(v, DEADLINE) / 94_379];
     const of = (a: { index: number; atToday: boolean }, reached: number) =>
-      goalRows(STATE_TARGET, v, a, reached)!.map((r) => r.atDeadline);
+      goalRows(TEST_GOAL, v, a, reached)!.map((r) => r.atDeadline);
     expect(of(at(30), DEADLINE - 1)).toEqual(none);
     expect(of(at(30), DEADLINE)).toEqual(shares);
     expect(of(at(0, true), 59)).toEqual(shares);
@@ -225,23 +228,23 @@ describe('goal rows', () => {
 
   it('goalRows with the deadline before the window: no "by" or "Held at" note, today or later', () => {
     const v = long();
-    const past = { ...STATE_TARGET, deadline: v.months[0] - 40 };
+    const past = { ...TEST_GOAL, deadline: v.months[0] - 40 };
     for (const a of [at(0, true), at(1), at(30)])
       expect(goalRows(past, v, a, 59)!.map((r) => r.note)).toEqual([null, null]);
   });
 
   it('goalRows is null when the month is not filled', () => {
     const v = cut(long(), 20);
-    expect(goalRows(STATE_TARGET, v, at(21), 20)).toBeNull();
-    expect(goalRows(STATE_TARGET, v, at(20), 20)).not.toBeNull();
-    expect(goalRows(STATE_TARGET, v, at(0, true), TODAY)).not.toBeNull();
+    expect(goalRows(TEST_GOAL, v, at(21), 20)).toBeNull();
+    expect(goalRows(TEST_GOAL, v, at(20), 20)).not.toBeNull();
+    expect(goalRows(TEST_GOAL, v, at(0, true), TODAY)).not.toBeNull();
   });
 
   it('goalRowNote: by before the deadline month and at today, held from it on, null without one', () => {
-    expect(goalRowNote(STATE_TARGET, 49, DEADLINE, false)).toBe('by Jan 2031');
-    expect(goalRowNote(STATE_TARGET, 50, DEADLINE, false)).toBe('Held at Jan 2031');
-    expect(goalRowNote(STATE_TARGET, 50, DEADLINE, true)).toBe('by Jan 2031');
-    expect(goalRowNote(STATE_TARGET, 3, null, false)).toBeNull();
+    expect(goalRowNote(TEST_GOAL, 49, DEADLINE, false)).toBe('by Jan 2031');
+    expect(goalRowNote(TEST_GOAL, 50, DEADLINE, false)).toBe('Held at Jan 2031');
+    expect(goalRowNote(TEST_GOAL, 50, DEADLINE, true)).toBe('by Jan 2031');
+    expect(goalRowNote(TEST_GOAL, 3, null, false)).toBeNull();
   });
 
   it('atDeadlineText', () => {
@@ -290,9 +293,9 @@ describe('goal rows', () => {
     const v = long();
     const all = [
       ...capacityRows(10),
-      ...goalRows(STATE_TARGET, v, at(0, true), 59)!,
-      ...goalRows(STATE_TARGET, v, at(30), 59)!,
-      ...goalRows(STATE_TARGET, v, at(55), 59)!
+      ...goalRows(TEST_GOAL, v, at(0, true), 59)!,
+      ...goalRows(TEST_GOAL, v, at(30), 59)!,
+      ...goalRows(TEST_GOAL, v, at(55), 59)!
     ];
     expect(all).toHaveLength(8);
     for (const r of all) expect(`${r.label} ${r.note ?? ''}`).not.toMatch(/RHNA/);

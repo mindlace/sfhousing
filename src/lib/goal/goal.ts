@@ -7,7 +7,6 @@ import { formatShortMonthYear } from '$lib/fzp/format';
 import { dayFromUtc, utcParts } from '$lib/fzp/time';
 import { formatCount, formatPercent } from '$lib/scoreboard/format';
 import { M1_TARGETS } from '$lib/scoreboard/targets';
-import { RHNA_DEADLINE } from '$lib/sim/scenario/score';
 import { WINDOW_MONTHS } from '$lib/sim/timeline-client';
 import { windowHorizon } from '$lib/sim/world/months';
 import type { TimelineView } from '$lib/sim/world/score/types';
@@ -48,16 +47,6 @@ export const HOMES_COMPLETED: GoalMeasure = {
 
 const RHNA_UNITS = M1_TARGETS.find((t) => t.id === 'rhna')!.units;
 
-/** The state housing target: RHNA 2023-2031, counted from 30 Jun 2022. */
-export const STATE_TARGET: Goal = {
-  id: 'state-target',
-  name: 'State target',
-  measure: HOMES_COMPLETED,
-  amount: RHNA_UNITS,
-  deadline: RHNA_DEADLINE,
-  countsFrom: dayFromUtc(2022, 6, 30)
-};
-
 /** A goal without its deadline: what stays fixed while the deadline follows the dataset date. */
 export type GoalBase = Omit<Goal, 'deadline'>;
 
@@ -74,9 +63,6 @@ export const GOAL_BASE: GoalBase = {
 export function defaultGoal(asOf: Day): Goal {
   return { ...GOAL_BASE, deadline: windowHorizon(asOf, WINDOW_MONTHS) };
 }
-
-/** The goal in force. The main screen reads this, never STATE_TARGET or a target id. */
-export const GOAL: Goal = STATE_TARGET;
 
 export interface GoalReading {
   /** valueAt(at) / amount, uncapped, where at = min(i, deadline month); TODAY when the deadline
@@ -150,7 +136,7 @@ export function goalStep(
 /** The buffer over the goal the state asks for: at least 15% more capacity. */
 export const BUFFER_SHARE = 0.15;
 
-/** floor(goal.amount × (1 + BUFFER_SHARE)): 94,379 for the state target (M1_TARGETS' buffer). */
+/** floor(goal.amount × (1 + BUFFER_SHARE)): 94,379 for the goal (M1_TARGETS' buffer). */
 export function bufferAmount(goal: GoalBase): number {
   return Math.floor(goal.amount * (1 + BUFFER_SHARE));
 }

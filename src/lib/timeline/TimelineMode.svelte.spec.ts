@@ -11,7 +11,7 @@ import { parseManifest, type Manifest } from '$lib/data/manifest';
 import { fixtureCalibration } from '$lib/fzp/fixtures/calibration';
 import { REAL_ACTUAL } from '$lib/fzp/fixtures/cards';
 import { CALCULATING, fromPolicyText } from '$lib/fzp/score-view';
-import { STATE_TARGET, defaultGoal, goalName, type Goal } from '$lib/goal/goal';
+import { GOAL_BASE, defaultGoal, goalName, type Goal } from '$lib/goal/goal';
 import { formatDollars, formatShortMonthYear } from '$lib/fzp/format';
 import { dayFromUtc, monthStart, utcParts } from '$lib/fzp/time';
 import { callsOf, stub } from '$lib/fzp/test/sim-map-stub';
@@ -1898,7 +1898,7 @@ describe('TimelineMode', () => {
     // The client logs each crash; silenced here so signoff's stderr check stays clean.
     vi.spyOn(console, 'error').mockImplementation(() => {});
     // A deadline inside the fixture's window, so the step is drawn.
-    await opened(LAST, { goal: { ...STATE_TARGET, amount: 1100, deadline: MONTHS[12] } });
+    await opened(LAST, { goal: { ...GOAL_BASE, amount: 1100, deadline: MONTHS[12] } });
     const flag = page.getByTestId('tl-goal-flag');
     const legend = page.getByTestId('tl-chart-legend');
     const step = page.getByTestId('chart-target');
@@ -3153,8 +3153,8 @@ describe('TimelineMode', () => {
 describe('the goal notice', () => {
   // The measure at month i is 1000 + 3i + 1 (more with a base), 1000 at today.
   const DEADLINE = 12;
-  const missing: Goal = { ...STATE_TARGET, amount: 1100, deadline: MONTHS[DEADLINE] };
-  const metAt8: Goal = { ...STATE_TARGET, amount: 1025, deadline: MONTHS[DEADLINE] };
+  const missing: Goal = { ...GOAL_BASE, amount: 1100, deadline: MONTHS[DEADLINE] };
+  const metAt8: Goal = { ...GOAL_BASE, amount: 1025, deadline: MONTHS[DEADLINE] };
   const region = () => page.getByTestId('tl-goal');
   const notice = () => page.getByTestId('tl-goal-notice');
 
@@ -3584,7 +3584,7 @@ describe('the map key', () => {
 
   it('a notice and an open key panel set the glow inset; closing the panel clears its part', async () => {
     await page.viewport(1280, 800);
-    const missing: Goal = { ...STATE_TARGET, amount: 1100, deadline: MONTHS[12] };
+    const missing: Goal = { ...GOAL_BASE, amount: 1100, deadline: MONTHS[12] };
     await opened(LAST, { goal: missing });
     await expect.element(keyPanel()).toBeVisible();
     const last = () => callsOf('setGlowInset').at(-1)?.[0] as { top: number; right: number };

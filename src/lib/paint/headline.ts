@@ -3,7 +3,7 @@
  * Line 1 is the capacity ('Room for 47,335 homes'); line 2 its share of the goal. Undated: room
  * for homes has no clock.
  */
-import { GOAL, goalName, type Goal } from '$lib/goal/goal';
+import { GOAL_BASE, goalAmountName, type GoalBase } from '$lib/goal/goal';
 import { formatCompactCount, formatCount, formatPercent } from '$lib/scoreboard';
 import type { HeadlineText } from '$lib/timeline/results';
 
@@ -19,17 +19,17 @@ export function roomFor(net: number): string {
  * '57% of the goal' | 'Goal reached' (net at or over the amount); null when the goal's measure
  * is not a count of homes.
  */
-export function capacityGoalText(net: number, goal: Goal = GOAL): string | null {
+export function capacityGoalText(net: number, goal: GoalBase = GOAL_BASE): string | null {
   if (goal.measure.id !== 'homesCompleted') return null;
   return net >= goal.amount ? 'Goal reached' : `${formatPercent(net / goal.amount)} of the goal`;
 }
 
-export function paintHeadline(net: number, goal: Goal = GOAL): HeadlineText {
+export function paintHeadline(net: number, goal: GoalBase = GOAL_BASE): HeadlineText {
   const goalPart = capacityGoalText(net, goal);
   return {
     main: roomFor(net),
     effect: null,
     goal: goalPart,
-    goalName: goalPart === null ? null : goalName(goal)
+    goalName: goalPart === null ? null : goalAmountName(goal)
   };
 }

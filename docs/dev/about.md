@@ -26,7 +26,7 @@ unavailable for this dataset version." and the fixed notices.
 
 Every string of the parts is in `src/lib/about/copy.ts`, except the notices of Data and licences,
 which stay in `AboutData.svelte` as they were on `/attribution`. Part 1's amounts, dates and its
-source link are read from `GOAL`, `bufferAmount` (`src/lib/goal/goal.ts`) and `M1_TARGETS[0]`,
+source link are read from `GOAL_BASE`, `bufferAmount` (`src/lib/goal/goal.ts`) and `M1_TARGETS[0]`,
 never copied; "Room for N homes" reads `ROOM_MEANS` (`src/lib/paint/details.ts`). The Painting
 shortcuts table is `SHORTCUTS` (`src/lib/brush/shortcuts.ts`), the list Paint's Shortcuts button
 shows; the Timeline table after it is `TIMELINE_SHORTCUTS` (`src/lib/timeline/shortcuts.ts`).
@@ -157,7 +157,7 @@ Every way into About is a link to `/about#…`, and every one says the same thin
 | `/attribution` (old links)                                     | 308 to `/about#about-data`                                                |
 
 "RHNA" is said only in About: part 1's goal spells it out, and the assumptions cite documents by
-their own titles. `/s/<id>`'s share description says "the state target". `src/lib/about/links.ts`:
+their own titles. `/s/<id>`'s share description says "the goal". `src/lib/about/links.ts`:
 
 - `aboutTarget(a, origin)`: the fragment a link opens (`''` for `/about`), or null when it is not
   a same-origin link to exactly `/about`, or has a `target` other than `_self`, or `download`.

@@ -3,9 +3,11 @@
  * and the goal's source are read from the goal and the targets, never copied.
  */
 import { formatMonthYear } from '$lib/fzp/format';
-import { BUFFER_SHARE, bufferAmount, GOAL } from '$lib/goal/goal';
+import { BUFFER_SHARE, bufferAmount, GOAL_BASE } from '$lib/goal/goal';
 import { ROOM_MEANS } from '$lib/paint/details';
 import { formatCount } from '$lib/scoreboard/format';
+import { RHNA_DEADLINE } from '$lib/sim/scenario/score';
+import { WINDOW_MONTHS } from '$lib/sim/timeline-client';
 import { M1_TARGETS } from '$lib/scoreboard/targets';
 
 /** The parts' element ids, on the page and in the dialog: links name them as /about#<id>. */
@@ -32,7 +34,7 @@ export const PART_HEADING: Record<'meanings' | 'assumptions' | 'data' | 'using',
 const goalSource = M1_TARGETS[0].source;
 const bufferPercent = Math.round(BUFFER_SHARE * 100);
 
-/** Part 1's terms, in order; `body` composes from GOAL, bufferAmount and M1_TARGETS. */
+/** Part 1's terms, in order; `body` composes from GOAL_BASE, bufferAmount and M1_TARGETS. */
 export const MEANINGS: readonly {
   term: string;
   body: string;
@@ -54,15 +56,15 @@ export const MEANINGS: readonly {
   {
     term: 'The goal',
     body:
-      `The state target: ${formatCount(GOAL.amount)} ${GOAL.measure.unit} by ` +
-      `${formatMonthYear(GOAL.deadline)}, counted from ${formatMonthYear(GOAL.countsFrom)}, so ` +
+      `${formatCount(GOAL_BASE.amount)} ${GOAL_BASE.measure.unit} by the end of the ` +
+      `${WINDOW_MONTHS / 12}-year window, counted from ${formatMonthYear(GOAL_BASE.countsFrom)}, so ` +
       "homes built since then count. It is San Francisco's share of RHNA 2023–2031, the state's " +
-      'Regional Housing Needs Allocation.',
+      `Regional Housing Needs Allocation, which asks for them by ${formatMonthYear(RHNA_DEADLINE)}.`,
     source: { label: goalSource.label, url: goalSource.url }
   },
   {
     term: `The goal + ${bufferPercent}%`,
-    body: `The state asks for room for at least ${bufferPercent}% more: ${formatCount(bufferAmount(GOAL))} ${GOAL.measure.unit}.`
+    body: `The state asks for room for at least ${bufferPercent}% more: ${formatCount(bufferAmount(GOAL_BASE))} ${GOAL_BASE.measure.unit}.`
   }
 ];
 

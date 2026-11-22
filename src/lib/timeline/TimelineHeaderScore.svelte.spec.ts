@@ -13,7 +13,7 @@ const TEXT: HeadlineText = {
   main: '47,335 homes by Apr 2040',
   effect: '+1,817 from your policy',
   goal: '68% of the goal',
-  goalName: 'State target: 82,069 homes by Jan 2031'
+  goalName: 'Goal: 82,069 homes by Sep 2066'
 };
 
 type Props = ComponentProps<typeof TimelineHeaderScore>;

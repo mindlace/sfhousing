@@ -97,7 +97,7 @@ test.describe('scoreboard', () => {
       const net = await headerNet(page);
 
       const results = await openResults(page);
-      const goal = results.getByRole('meter', { name: 'State target', exact: true });
+      const goal = results.getByRole('meter', { name: 'Goal', exact: true });
       await expect(goal).toHaveAttribute('aria-valuenow', String(net));
       await expect(results.getByTestId('goal-row-buffer')).toBeVisible();
       // No badge, no repeated headline, no RHNA.
@@ -115,7 +115,7 @@ test.describe('scoreboard', () => {
       await expect.poll(() => headerNet(page)).toBe(0);
       await openResults(page);
       await expect(
-        resultsFace(page).getByRole('meter', { name: 'State target', exact: true })
+        resultsFace(page).getByRole('meter', { name: 'Goal', exact: true })
       ).toHaveAttribute('aria-valuenow', '0');
       await expect(
         resultsFace(page).getByText('Paint a height on the map to add homes.')
