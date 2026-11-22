@@ -175,7 +175,8 @@ About links navigate.
 ## The map's credit
 
 The map carries only "© OpenStreetMap" (linked to the OSM copyright page, as the OSMF guidelines
-ask) and "About this model" (`/about#about-data`), behind a collapsed (i) that shows open for five
-seconds on load (`creditHtml`, `src/lib/map/attribution.ts`). Every other credit is in Data and
+ask, in a new tab on every map page, so it never ends a run on `/sim`) and "About this model"
+(`/about#about-data`), behind a collapsed (i) that shows open for five seconds on load
+(`creditHtml`, `src/lib/map/attribution.ts`). Every other credit is in Data and
 licences, one tap away. The control's rules are in [map-interfaces.md](map-interfaces.md), "The
 credit".

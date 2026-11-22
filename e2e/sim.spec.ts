@@ -1479,6 +1479,29 @@ test("/sim: the credit's About this model opens the dialog at Data and licences"
   await expect(link).toBeFocused();
 });
 
+test("/sim: the credit's © OpenStreetMap opens in a new tab; the run stays", async ({
+  isMobile,
+  page
+}) => {
+  test.skip(isMobile, 'one pointer is enough: the link rule is not width-bound');
+  // The copyright page is answered locally: the test checks where the link goes, not OSM.
+  await page
+    .context()
+    .route('https://www.openstreetmap.org/**', (r) =>
+      r.fulfill({ contentType: 'text/html', body: '<title>OSM copyright</title>' })
+    );
+  await gotoSim(page);
+  const before = await runState(page);
+  const credit = page.getByTestId('map-root').locator('.maplibregl-ctrl-attrib');
+  await page.getByTestId('map-root').getByLabel('Map credits').click();
+  const osm = credit.getByRole('link', { name: '© OpenStreetMap', exact: true });
+  const [tab] = await Promise.all([page.context().waitForEvent('page'), osm.click()]);
+  await expect(tab).toHaveURL('https://www.openstreetmap.org/copyright');
+  await tab.close();
+  await expect(page).toHaveURL(/\/sim$/);
+  expect(await runState(page)).toEqual(before);
+});
+
 test('/sim at 375: About from the Menu opens the dialog; closing focuses the Menu button', async ({
   isMobile,
   page

@@ -494,6 +494,8 @@ test.describe('map view', () => {
     await expect(inner).toHaveText(CREDIT);
     const osm = credit(page).getByRole('link', { name: '© OpenStreetMap', exact: true });
     await expect(osm).toHaveAttribute('href', 'https://www.openstreetmap.org/copyright');
+    // A new tab on every map page, so it never ends a run on /sim.
+    await expect(osm).toHaveAttribute('target', '_blank');
     const about = credit(page).getByRole('link', { name: 'About this model', exact: true });
     await expect(about).toHaveAttribute('href', '/about#about-data');
     // One 24 px line, open as collapsed.
