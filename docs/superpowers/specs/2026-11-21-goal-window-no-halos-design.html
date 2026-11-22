@@ -1,0 +1,67 @@
+<article>
+  <header>
+    <h1>Goal due at the window's end; no rings or glows</h1>
+    <p>The goal gets its own amount and due date, separate from RHNA. The map stops drawing rings and edge glows.</p>
+  </header>
+
+  <section id="sec-why">
+    <h2>Why</h2>
+    <p>The goal is judged at Jan 2031 (RHNA's deadline). From today's data that means 73,346 more homes in about four years, which no policy reaches, so the goal tells the player nothing. Under today's policy the city reaches 82,069 homes around 2057. With the goal due at the end of the window, the player sees how far reality is from the target. A later pass will add levels that raise the amount or bring the due date closer, so the amount and the date must be settings, not RHNA facts.</p>
+    <p>The rings and edge glows overwhelm the map. The bigger stage bars now show the same activity.</p>
+  </section>
+
+  <section id="sec-goals">
+    <h2>Goals and non-goals</h2>
+    <ul>
+      <li><strong>Goal:</strong> one goal on <code>/sim</code> with its own amount, due date and name. By default it is 82,069 homes, due at the end of the window, counted from 30 Jun 2022.</li>
+      <li><strong>Goal:</strong> everything that judges the goal reads that goal: the header's line 2 and its name, the Details goal rows and bars, the chart's "N more by …" step, the ruler's Goal flag and its aria text, the reached/missed notice, and Activity.</li>
+      <li><strong>Goal:</strong> remove the per-project rings, the merged rings and the edge glows from the map, with their Key rows, tests and docs.</li>
+      <li><strong>Non-goal:</strong> levels, or any UI for changing the goal. This pass only makes the goal a value that a level can supply later.</li>
+      <li><strong>Non-goal:</strong> changing the RHNA labels ("RHNA 2023–2031", the tier targets, their sources) or the RHNA panels on <code>/fzp</code>, the scoreboard and money results.</li>
+      <li><strong>Anti-goal:</strong> RHNA data and the goal drifting into one thing again, such as the goal's name saying "State target" or its date coming from <code>RHNA_DEADLINE</code>.</li>
+      <li><strong>Anti-goal:</strong> losing the ◆ "under your policy" marks or the citywide feed (<code>CityStore</code>, which Activity uses).</li>
+    </ul>
+  </section>
+
+  <section id="sec-approaches">
+    <h2>Approaches</h2>
+    <ul>
+      <li><strong>A. The goal is its own value, built at load (picked).</strong> <code>Goal</code> in <code>src/lib/goal/goal.ts</code> already carries name, measure, amount, deadline and countsFrom. Replace the constant <code>GOAL</code> (<code>= STATE_TARGET</code>) with a goal built from the dataset date, because the window starts at <code>asOf</code>. Its deadline is the last day of the window's last month. Readers take the goal as an argument or from page state, never from a module constant. Levels later swap in other values.</li>
+      <li><strong>B. Point <code>RHNA_DEADLINE</code> at the window's end.</strong> Smallest change, but the goal stays tied to RHNA and the levels pass would have to undo it. Rejected.</li>
+    </ul>
+    <aside data-kind="decision"><strong>Decision</strong> A, picked by the owner on 2026-11-21.</aside>
+  </section>
+
+  <section id="sec-design">
+    <h2>Design</h2>
+    <section id="sec-goal">
+      <h3>The goal</h3>
+      <ul>
+        <li>Default goal: name <strong>"Goal"</strong>, amount 82,069 (the RHNA figure, read from <code>M1_TARGETS</code> as now), measure <code>HOMES_COMPLETED</code>, countsFrom 30 Jun 2022, deadline = the window's end (<code>monthLastDay(asOf, WINDOW_MONTHS)</code>, the same date <code>TimelineMode</code> uses as <code>windowEnd</code>).</li>
+        <li>Its name reads "Goal: 82,069 homes by Nov 2066" with today's data. The chart step reads "73,346 more by Nov 2066". The outcome notice says reached in a month, or missed by N homes at the window's end.</li>
+        <li><code>STATE_TARGET</code> and the <code>GOAL</code> constant go. <code>RHNA_DEADLINE</code> stays for the RHNA target rows (<code>targetsOf</code>, <code>/fzp</code>), which keep their Jan 2031 dates.</li>
+        <li>The read cap (<code>readMonth</code>) and "Held at …" stay in the code. With the deadline at the last month they never trigger, and a level with an earlier date brings them back.</li>
+        <li>About (<code>src/lib/about/copy.ts</code>): the goal paragraph says the goal is 82,069 homes (the RHNA figure) by the end of the 40-year window, counted from June 2022, and that RHNA asks for them by January 2031.</li>
+        <li>Paint (<code>/</code>, <code>/p</code>) shows no date and reads the same amount. It takes the default goal too, so <code>goalName</code> stays consistent. Paint has no window, so its deadline is whatever date the default goal uses; Paint never shows it.</li>
+      </ul>
+    </section>
+    <section id="sec-halos">
+      <h3>Rings and glows</h3>
+      <ul>
+        <li>Delete <code>CityLayer</code> (<code>city-layer.ts</code>), the controller's <code>buildCity</code> and <code>rebuildCity</code>, the record-building and edge logic in <code>city.ts</code> (keep <code>CityStore</code> and the feed), the glow inset (<code>setGlowInset</code>, <code>GLOW_TOP_GAP</code>, the panel measuring) and the <code>CITY_*</code> constants.</li>
+        <li>The halo layer keeps only the ◆ marks: drop the ring records, the <code>HALO_DAYS</code> grow-and-fade and the ring zoom gate. The marks keep today's thinning, one per 800 m square below zoom 14 and all from zoom 14 up. Renaming the layer (for example to a marks layer) is the builder's call.</li>
+        <li>The Key keeps the ◆ row and drops "Just changed stage", "Zoomed out: one per area" and "Edge glow: off screen", along with the <code>ring</code>, <code>area</code> and <code>edge</code> swatch kinds and any <code>tl-halo-*</code> tokens only the rings used.</li>
+        <li>Tests, e2e (<code>sim-halos</code>, <code>sim-citywide</code>), the map bench cases and the docs (<code>map-interfaces.md</code>, <code>map-perf.md</code>, <code>map-stream.md</code>, <code>timeline-ui.md</code>, <code>sim-page.md</code>, <code>testing.md</code>, CLAUDE.md's doc list) change to match. Historical plans stay as written.</li>
+      </ul>
+    </section>
+  </section>
+
+  <section id="sec-builder">
+    <h2>Left to the builder</h2>
+    <ul>
+      <li>How the goal reaches its readers: a function such as <code>defaultGoal(asOf)</code> passed down, or held in page state. No module constant.</li>
+      <li>Whether the marks layer keeps the name <code>HaloLayer</code>.</li>
+      <li>Whether the map bench's citywide case is rewritten or dropped.</li>
+    </ul>
+  </section>
+</article>
