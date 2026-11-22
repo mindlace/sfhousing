@@ -9,6 +9,7 @@ import { utcParts } from '$lib/fzp/time';
 import type { Speed } from '$lib/fzp/types';
 import { formatCount, formatPercent } from '$lib/scoreboard/format';
 import type { Day } from '$lib/timelapse/time';
+import { MARKET_FUNDING_SENTENCE4 } from '$lib/fzp/market-view';
 import { MARKET_FUNDING_SENTENCE } from '$lib/sim-page/funding-copy';
 import type { CoverageStep } from '$lib/sim-page/funding-view';
 import { lensOf, type ChartLens } from './chart-lens';
@@ -48,12 +49,6 @@ export const WAITING_NOTE = 'Working out the months ahead.';
 export const TERMS_HINT = 'End this and add a new one to change terms.';
 /** OQ-4. */
 export const DATES_MOVED_NOTICE = 'Some policy dates moved to fit this data.';
-
-// Why duplicated: funding-copy.ts says "FZP as written", and the original may not change.
-export const MARKET_FUNDING_SENTENCE4 =
-  "Today's public funding is part of every run, including the comparison with current law, " +
-  'and the 100% affordable homes it pays for start because of it, so nothing is counted twice; ' +
-  'the comparison shows what your changes add.';
 
 /** The market sentence's closing disclaimer, which `FORECAST_NOTE` replaces. */
 const MARKET_TAIL = " This holds today's market; it is not a forecast.";

@@ -18,7 +18,11 @@ import {
   tier3Calibration
 } from './fixtures/calibration';
 import { LIVE_MARKET, liveMarketCalibration } from './fixtures/market';
-import { MARKET_HOLD_SENTENCE, MARKET_INTRO_SENTENCE } from './market-view';
+import {
+  MARKET_FUNDING_SENTENCE4,
+  MARKET_HOLD_SENTENCE,
+  MARKET_INTRO_SENTENCE
+} from './market-view';
 import { PROJECTS_JSON, PROJECTS_JSON_NO_RULES } from './fixtures/projects';
 import { TIMELINE_SCORE, TIMELINE_SCORE_NO_PHASING } from './fixtures/timeline-score';
 import { EXIT_LABEL, TIER_LABEL, inStageLabel } from './labels';
@@ -609,6 +613,27 @@ describe("today's market, Release 2 (funding-ui 4.12)", () => {
     for (const e of m.entries) expect(e.title).not.toContain('Cross-check');
     expect(textOf(m)).not.toContain(NOT_SF_NOTE);
     expect(list.filter((s) => s.id.startsWith('src-market'))).toHaveLength(1);
+  });
+
+  it("private: Today's level says today's public funding is in every run, after the in-force line", () => {
+    expect(MARKET_FUNDING_SENTENCE4).toBe(
+      "Today's public funding is part of every run, including the comparison with current law, " +
+        'and the 100% affordable homes it pays for start because of it, so nothing is counted twice; ' +
+        'the comparison shows what your changes add.'
+    );
+    const lines = entryOf('src-market-today', provenanceSections(live, TIMELINE_SCORE)).lines;
+    const at = lines.indexOf(MARKET_FUNDING_SENTENCE4);
+    expect(at).toBeGreaterThan(0);
+    expect(lines[at - 1]).toBe(
+      `Private starts only: 47% of the average (log-odds ${coefText(LIVE_MARKET.today.private)}). In force.`
+    );
+    expect(lines.filter((l) => l === MARKET_FUNDING_SENTENCE4)).toHaveLength(1);
+  });
+
+  it("all: no public funding is modelled, so Today's level does not say it is in every run", () => {
+    forced.level = 'all';
+    const lines = entryOf('src-market-today', provenanceSections(live, TIMELINE_SCORE)).lines;
+    expect(lines).not.toContain(MARKET_FUNDING_SENTENCE4);
   });
 
   it('all with baselineFunding stubbed off: Release 1 section with the R-P5 private line and no slope entry', () => {

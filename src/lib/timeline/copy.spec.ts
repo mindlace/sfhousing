@@ -1,11 +1,10 @@
 // The render-time remaps of texts that hashed or /lesscars-imported files keep (rule 38).
 import { describe, expect, it } from 'vitest';
 import { fixtureCalibration } from '$lib/fzp/fixtures/calibration';
-import { marketSentence } from '$lib/fzp/market-view';
+import { MARKET_FUNDING_SENTENCE4, marketSentence } from '$lib/fzp/market-view';
 import { MARKET_FUNDING_SENTENCE } from '$lib/sim-page/funding-copy';
 import { MONEY_SOURCES } from '$lib/sim/scenario/finance-score';
 import {
-  MARKET_FUNDING_SENTENCE4,
   PER_HOME_SOURCE,
   GOAL_FLAG,
   LENS_NAME,

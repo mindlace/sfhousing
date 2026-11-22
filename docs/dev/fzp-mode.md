@@ -91,7 +91,9 @@ section and no paragraph. In Release 2 (`funding-ui` 4.12) the "Today's level" e
 the level not in force reads "Not in force: today's public funding is modelled, so private starts
 run at their own level." (all starts) or, when `marketLevel` is `'all'` (data without
 `baselineFunding`), "Not in force: this data has no public funding, so every start runs at one
-level." (private starts; ruling R-P5 rewords the Release 1 text). At the private level a second
+level." (private starts; ruling R-P5 rewords the Release 1 text). At the private level the entry
+also says that today's public funding is in every run, the comparison included
+(`MARKET_FUNDING_SENTENCE4`, `src/lib/fzp/market-view.ts`, after the "In force" line), and a second
 entry, `src-market-slope` ("How strongly money moves a private project's odds"), gives the slope's
 provenance with the Controller's cost and price coefficients as cross-check lines, not entries.
 The e2e reads their numbers from `fixture-0`'s calibration. See [market.md](market.md).

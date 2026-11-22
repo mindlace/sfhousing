@@ -41,7 +41,12 @@ import type {
 import { transitionSectionId, LOCAL_PROGRAM_SECTION_ID } from './card';
 import { MEASURE_SERIES, SERIES_NAME } from './chart';
 import { formatDate, formatSourcePercent } from './format';
-import { MARKET_HOLD_SENTENCE, MARKET_INTRO_SENTENCE, marketShare } from './market-view';
+import {
+  MARKET_FUNDING_SENTENCE4,
+  MARKET_HOLD_SENTENCE,
+  MARKET_INTRO_SENTENCE,
+  marketShare
+} from './market-view';
 import { EXIT_LABEL, PATHWAY_LABEL, TIER_LABEL, inStageLabel } from './labels';
 
 export interface ProvEntry {
@@ -280,6 +285,7 @@ function marketSection(cal: Calibration, market: MarketModel): ProvSection {
       'private',
       'Not in force: this data has no public funding, so every start runs at one level.'
     ),
+    ...(level === 'private' ? [MARKET_FUNDING_SENTENCE4] : []),
     `Cross-check, not used: the Controller's development model, on its cost and price indices, puts today's odds at ${formatPercent(Math.exp(crossCheck.logOdds))} of the 2007 to 2025 average (research or literature, tier 3).`
   ];
   const entries = [entry('src-market-today', "Today's level", today.provenance, { after })];
