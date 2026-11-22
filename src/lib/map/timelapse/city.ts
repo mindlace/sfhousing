@@ -1,29 +1,7 @@
 // The citywide feed's marker store on the page (`CityStore`): the rows `TimelineUpdate.city`
 // fills, by world row. Pure. Activity reads it; nothing draws from it.
 import { validateCityDelta } from '../city-delta';
-import type { TokenName } from '../palette';
 import type { CityDelta } from '../types';
-
-/**
- * The tone of each stage ring the Key still lists. Held only until the Key rows go (Task 7);
- * nothing draws with it.
- */
-export const HALO_TOKEN = {
-  approved: 'tl-halo-approved',
-  started: 'tl-halo-started',
-  completed: 'tl-halo-complete'
-} as const satisfies Record<string, TokenName>;
-
-/**
- * The tones the Key still lists for the merged rings, by record kind: the halo stages and the
- * site accent. Held only until the Key rows go (Task 7); nothing draws with it.
- */
-export const CITY_KIND_TOKEN = [
-  HALO_TOKEN.approved,
-  HALO_TOKEN.started,
-  HALO_TOKEN.completed,
-  'tl-halo-policy'
-] as const satisfies readonly TokenName[];
 
 /** The page's markers, by row: typed arrays grown on demand, one entry per world row. */
 export class CityStore {

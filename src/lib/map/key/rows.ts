@@ -6,7 +6,7 @@ import { TYPOLOGY_ORDER } from '../types';
 
 /** How a key row's swatch is drawn, from `--map-*` custom properties (`KeySwatch`). */
 export type Swatch = {
-  kind: 'ghost' | 'solid' | 'bar' | 'ring' | 'mark' | 'area' | 'edge';
+  kind: 'ghost' | 'solid' | 'bar' | 'mark';
   tokens: TokenName[];
 };
 
