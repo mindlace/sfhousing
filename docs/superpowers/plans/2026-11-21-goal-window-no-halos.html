@@ -282,10 +282,10 @@ npx vitest --run --project client src/lib/about/AboutParts.svelte.spec.ts src/li
 npx vitest --run --project server src/lib/goal src/lib/paint src/lib/timeline/outcome.spec.ts src/lib/fzp
 npx vitest --run --project client src/lib/about src/lib/goal src/lib/paint src/lib/timeline/TimelineHeaderScore.svelte.spec.ts
 npx playwright test e2e/scoreboard.spec.ts e2e/about.spec.ts</code></pre>
-        <p>Expected: the <code>rg</code> prints nothing. (<code>src/routes/s/[id]/+page.svelte:20</code>'s lowercase "the state target" is share copy outside this pass; see Open questions.)</p>
+        <p>Expected: the <code>rg</code> prints nothing. Also change <code>src/routes/s/[id]/+page.svelte:20</code>'s "against the state target" to "against the goal" (Question 3, decided), and add <code>src/routes/s</code> to the commit.</p>
       </li>
       <li id="t4-s5"><input type="checkbox"> Commit.
-        <pre><code data-lang="sh">git add src/lib/goal src/lib/paint src/lib/fzp/chart.ts src/lib/about src/lib/timeline e2e/scoreboard.spec.ts docs/dev
+        <pre><code data-lang="sh">git add src/lib/goal src/lib/paint src/lib/fzp/chart.ts src/lib/about src/lib/timeline src/routes/s e2e/scoreboard.spec.ts docs/dev
 git commit -m "feat(goal): Paint and About read the undated goal; drop the state-target constant"</code></pre>
       </li>
     </ol>
@@ -518,7 +518,8 @@ rg -n "RHNA_DEADLINE" src/lib/goal src/lib/timeline --glob '!*.spec.ts'</code></
   </section>
 
   <section id="sec-open-questions">
-    <h2>Open questions</h2>
+    <h2>Open questions (decided 2026-11-22)</h2>
+    <aside data-kind="decision"><strong>Decision</strong> Q1: accept the last whole month. Q2: keep "Held at". Q3: change the share copy to "against the goal" in Task 4.</aside>
     <aside data-kind="question"><strong>Question 1: the goal's date</strong> The spec's <code>monthLastDay(asOf, WINDOW_MONTHS)</code> falls in a calendar month the view does not hold, which would hide the chart step, the ruler flag and the "missed" notice (see the warning in the overview). This plan uses the last day of the view's last whole calendar month instead (Sep 2066 for fixture-0, one calendar month earlier than "asOf's month + 40 years"; the spec's "Nov 2066" example will read one month earlier too). Recommendation: accept; the alternative is to extend the view by a partial month, which changes the score statics for every reader.</aside>
     <aside data-kind="question"><strong>Question 2: "Held at" at the last month</strong> With the deadline at the last month, the goal rows read "Held at Sep 2066" on that month (the note says "Held at" from the deadline's month on, <code>goal.ts:150-159</code>), so the spec's "never trigger" holds for the read cap but not for the note. Recommendation: keep it; it is true at the window's end and a level with an earlier date needs the rule as it is.</aside>
     <aside data-kind="question"><strong>Question 3: the share description</strong> <code>src/routes/s/[id]/+page.svelte:20</code> says a shared policy is judged "against the state target". It is not the goal's name, and the spec does not list it. Recommendation: leave it for the levels pass, or change it to "against the goal" in Task 4 if the owner wants the word gone now.</aside>
