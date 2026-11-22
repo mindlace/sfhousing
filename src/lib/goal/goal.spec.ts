@@ -10,12 +10,15 @@ import type { TimelineView } from '$lib/sim/world/score/types';
 import {
   BUFFER_SHARE,
   GOAL,
+  GOAL_BASE,
   HOMES_COMPLETED,
   STATE_TARGET,
   TODAY,
   atDeadlineText,
   bufferAmount,
   capacityRows,
+  defaultGoal,
+  goalAmountName,
   goalName,
   goalRowNote,
   goalRows,
@@ -26,6 +29,9 @@ import {
   type Goal
 } from './goal';
 import { trackMax } from '$lib/scoreboard/view';
+import { WINDOW_MONTHS } from '$lib/sim/timeline-client';
+import { monthsOf } from '$lib/sim/scenario/score';
+import { windowHorizon } from '$lib/sim/world/months';
 
 function whole(): TimelineView {
   return calendarMonths(viewOfLog(logFilled(logCompiled(EMPTY_LOG, statics()), chunk(0, 24)))!);
@@ -242,12 +248,12 @@ describe('goal rows', () => {
     expect(atDeadlineText(0.74)).toBe('At the deadline: 74%');
   });
 
-  it('capacityRows: net over 82,069 and over 94,379, notes null, labels State target and State target + 15%', () => {
+  it('capacityRows: net over 82,069 and over 94,379, notes null, labels Goal and Goal + 15%', () => {
     const rows = capacityRows(47_335);
     expect(rows).toEqual([
       {
         id: 'goal',
-        label: 'State target',
+        label: 'Goal',
         amount: 82_069,
         value: 47_335,
         fraction: 47_335 / 82_069,
@@ -256,7 +262,7 @@ describe('goal rows', () => {
       },
       {
         id: 'buffer',
-        label: 'State target + 15%',
+        label: 'Goal + 15%',
         amount: 94_379,
         value: 47_335,
         fraction: 47_335 / 94_379,
@@ -290,5 +296,46 @@ describe('goal rows', () => {
     ];
     expect(all).toHaveLength(8);
     for (const r of all) expect(`${r.label} ${r.note ?? ''}`).not.toMatch(/RHNA/);
+  });
+});
+
+describe('the default goal', () => {
+  it('GOAL_BASE: Goal, 82,069 homes from M1_TARGETS, counted from 30 Jun 2022, no deadline', () => {
+    expect(GOAL_BASE.name).toBe('Goal');
+    expect(GOAL_BASE.amount).toBe(M1_TARGETS.find((t) => t.id === 'rhna')!.units);
+    expect(GOAL_BASE.countsFrom).toBe(dayFromUtc(2022, 6, 30));
+    expect('deadline' in GOAL_BASE).toBe(false);
+    expect(goalAmountName(GOAL_BASE)).toBe('Goal: 82,069 homes');
+  });
+
+  it('defaultGoal(asOf): GOAL_BASE due at windowHorizon(asOf, WINDOW_MONTHS), never RHNA_DEADLINE', () => {
+    const g = defaultGoal(20736);
+    expect(g).toEqual({ ...GOAL_BASE, deadline: 35336 });
+    expect(g.deadline).not.toBe(RHNA_DEADLINE);
+    expect(goalName(g)).toBe('Goal: 82,069 homes by Sep 2066');
+  });
+
+  it("defaultGoal's deadline month is the view's last month, whatever day of its month asOf is", () => {
+    for (const asOf of [20727, 20736, 20757, 20787]) {
+      const months = monthsOf(asOf, windowHorizon(asOf, WINDOW_MONTHS));
+      const view = {
+        months,
+        lastIndex: months.length - 1,
+        filledThrough: -1,
+        rows: [],
+        baseline: { completedNet: 8723 }
+      } as unknown as TimelineView;
+      expect(goalStep(defaultGoal(asOf), view)).toEqual({
+        deadlineIndex: view.lastIndex,
+        units: 82_069 - 8723
+      });
+    }
+  });
+
+  it('capacityRows defaults to GOAL_BASE: labels Goal and Goal + 15%', () => {
+    expect(capacityRows(0).map((r) => [r.label, r.amount])).toEqual([
+      ['Goal', 82_069],
+      ['Goal + 15%', 94_379]
+    ]);
   });
 });

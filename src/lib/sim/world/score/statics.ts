@@ -1,5 +1,5 @@
 import { limitStatements } from '$lib/sim/finance';
-import { addMonths, firstOfMonth } from '$lib/sim/scenario/dates';
+import { addMonths } from '$lib/sim/scenario/dates';
 import {
   addedBorrowing,
   tierBaselineOf,
@@ -12,7 +12,7 @@ import type { SimInput } from '$lib/sim/scenario/types';
 import type { ProjectsFile } from '$lib/timelapse/projects';
 import type { Day } from '$lib/timelapse/time';
 import type { Inflow, Pool } from '$lib/timelapse/types';
-import { monthFirstDay, monthLastDay, monthOfDay } from '../months';
+import { monthFirstDay, monthLastDay, monthOfDay, windowHorizon } from '../months';
 import type { FinanceFrame, PolicyTimeline } from '../policy/frame';
 import type { ScoreStatics } from './types';
 
@@ -182,9 +182,7 @@ export function scoreStaticsOf(
   rhna: ProjectsFile['rhnaCompletedNet']
 ): ScoreStatics {
   const asOf = input.asOf;
-  const limit = monthLastDay(asOf, windowMonths);
-  let h = lastDayOf(firstOfMonth(asOf));
-  while (lastDayOf(h + 1) <= limit) h = lastDayOf(h + 1);
+  const h = windowHorizon(asOf, windowMonths);
   const tiers = tierTableOf(input, timeline, windowMonths);
   const months = monthsOf(asOf, h);
   const plan = planFinanceOf(timeline, asOf, windowMonths);

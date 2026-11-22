@@ -1,5 +1,6 @@
 import * as timeModule from '$lib/timelapse/time';
 import type { Day } from '$lib/timelapse/time';
+import { addMonths, firstOfMonth } from '$lib/sim/scenario/dates';
 
 // Imports are bound once, here: under Vite's module runner (the tests and the cost bench) every
 // use of an imported name is a getter call (docs/dev/world-core.md, Cost).
@@ -24,4 +25,16 @@ export function monthOfDay(asOf: Day, day: Day): number {
   if (day > monthLastDay(asOf, m)) m += 1;
   else if (m > 1 && day < monthFirstDay(asOf, m)) m -= 1;
   return m;
+}
+
+/**
+ * The last day of the last calendar month whose last day is at or before
+ * `monthLastDay(asOf, windowMonths)`; the last day of `asOf`'s own month when none is.
+ */
+export function windowHorizon(asOf: Day, windowMonths: number): Day {
+  const limit = monthLastDay(asOf, windowMonths);
+  const lastDayOf = (first: Day): Day => addMonths(first, 1) - 1;
+  let h = lastDayOf(firstOfMonth(asOf));
+  while (lastDayOf(h + 1) <= limit) h = lastDayOf(h + 1);
+  return h;
 }
