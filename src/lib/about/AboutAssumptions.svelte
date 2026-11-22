@@ -1,7 +1,8 @@
 <!--
   About, part 2: the assumptions (docs/dev/about.md). Live (the dialog on /sim): the run's sections
-  at once; the dialog starts the data checks with `loadChecks()` on each open. On the page: a disclosure whose first open fetches the calibration and shows
-  `modelSections`; nothing is fetched until then. A hash naming this part or a `src-` id opens it
+  at once; the dialog starts the data checks with `loadChecks()` on each open. On the page: a
+  disclosure whose first open fetches the calibration and shows `modelSections`; nothing is
+  fetched until then. A hash naming this part or a `src-` id opens it
   on mount and scrolls to the target once it exists. Colours only from --about-muted and
   --about-line, which the container sets.
 -->
@@ -20,13 +21,10 @@
     level: 2 | 3;
     /** The dialog: the run's sections, shown at once. */
     live?: { sections: ProvSection[]; projectsUrl: string | null };
-    /** In the interface for the caller; the files' URLs come from the manifest. */
-    datasetVersion?: string;
     manifest?: ManifestSources | null;
     fetchFn?: typeof fetch;
   }
 
-  // eslint-disable-next-line svelte/no-unused-props
   let { level, live, manifest = null, fetchFn }: Props = $props();
 
   type Model =

@@ -27,7 +27,7 @@
   style:--about-line="var(--color-line)"
 >
   <AboutMeanings level={2} />
-  <AboutAssumptions level={2} datasetVersion={data.datasetVersion} manifest={data.manifest} />
+  <AboutAssumptions level={2} manifest={data.manifest} />
   <AboutData level={2} datasetVersion={data.datasetVersion} manifest={data.manifest} />
   <AboutUsing level={2} />
 </div>

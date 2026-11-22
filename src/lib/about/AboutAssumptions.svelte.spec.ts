@@ -49,7 +49,6 @@ async function setup(
   const fetchFn = over.fetchFn ?? stub();
   const view = await render(AboutAssumptions, {
     level: 2,
-    datasetVersion: 'fixture-0',
     manifest: over.manifest === undefined ? manifest : over.manifest,
     fetchFn: fetchFn as unknown as typeof fetch
   });

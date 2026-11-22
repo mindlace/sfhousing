@@ -13,8 +13,8 @@ const ORDER = ['ODbL-1.0', 'CC-BY-4.0'];
 const VIA = / via Overture Maps$/;
 
 /** The Overture notice from the manifest's `overture:*` sources, grouped by licence, names in
- *  manifest order: ODbL-1.0 first, then CC-BY-4.0, then any other licence as its own clause. */
-/** A name is the source's label less " via Overture Maps", else the id after "overture:".
+ *  manifest order: ODbL-1.0 first, then CC-BY-4.0, then any other licence as its own clause.
+ *  A name is the source's label less " via Overture Maps", else the id after "overture:".
  *  AboutData renders the clauses into the sentence in The strings, linking each licence. */
 export function overtureNotice(
   sources: { id: string; label?: string; license: string }[]

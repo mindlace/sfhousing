@@ -1,6 +1,6 @@
 <!--
   About, part 3: data and licences. The dataset version, the manifest's sources, every notice
-  and the software credits (what /attribution showed before it redirected here). The Overture
+  and the software credits. The Overture
   notice is built from the manifest's `overture:*` sources (overtureNotice). Without a manifest
   it shows the version alone and the fixed notices. Headings at `level` and `level + 1`; colours
   only from --about-muted and --about-line, which the container sets (docs/dev/about.md).

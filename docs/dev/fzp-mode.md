@@ -79,8 +79,7 @@ Map picking is pointer-only (mouse click, touch tap, hover), a gap shared with t
 
 ## Today's market in About
 
-Details has no market paragraph since slice 9 (rule 5: it is an assumption, not a number behind an
-effect); today's market is About's "Today's market" section, below. `marketText(calibration)`
+Details has no market paragraph (rule 5: it is an assumption, not a number behind an effect); today's market is About's "Today's market" section, below. `marketText(calibration)`
 (`src/lib/fzp/money-view.ts`: `marketSentence(calibration, marketLevel(calibration))`, with
 `MARKET_FUNDING_SENTENCE` appended at the private level) and `marketBody` (`timeline/copy.ts`) are
 kept with their unit tests but no page renders them now. The level always comes from
