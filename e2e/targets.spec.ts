@@ -1,6 +1,7 @@
 // Target size (WCAG 2.2 AA, 2.5.8; docs/dev/accessibility.md): at 375 px on the mobile project
-// (touch, coarse pointer), every visible interactive element on `/`, `/sim` and `/lesscars` is at
-// least 24 by 24 CSS px, at rest and with the page's sheets, menus and panels open. One size for
+// (touch, coarse pointer), every visible interactive element on `/`, `/sim`, `/lesscars` and
+// `/about` is at least 24 by 24 CSS px, at rest and with the page's sheets, menus, panels and
+// dialogs open (About over `/sim`, the assumptions open on `/about`). One size for
 // every pointer: nothing here needs 44 px. The exemptions are listed below with their reasons.
 import { expect, test, type Page } from '@playwright/test';
 import { addPolicy, waitFilled } from './helpers/run';
@@ -29,7 +30,7 @@ const INTERACTIVE = [
 
 /**
  * Exempt, with the reason (2.5.8's exceptions):
- * - Inline: a link in a sentence, sized by the line it sits in: the map attribution's links, and
+ * - Inline: a link in a sentence, sized by the line it sits in: the map credit's two links, and
  *   any link whose parent holds text of its own beside it (`inlineLink` below). A link that is its
  *   list item's or paragraph's whole content (a step in the Menu, a source in a list) is a
  *   standalone target and is measured.
@@ -44,8 +45,9 @@ const EXEMPT: { selector: string; reason: string }[] = [
 /**
  * What may cover a target at its centre without a defect: an open sheet, dialog, popover or
  * toolbar panel that does not hold the target (a cover inside the target's own column or panel is a
- * defect). Each such cover is annotated. MapLibre's attribution is none of these: it never covers
- * a control.
+ * defect). Each such cover is annotated. The map's credit is none of these: open or collapsed it
+ * covers no control, except Paint's phone strip when the person opens it there (by design: it
+ * draws above the strip until closed), a state no sweep here takes.
  */
 const OVERLAY = [
   'dialog[open]',
@@ -227,6 +229,13 @@ async function expectTargets(page: Page, where: string, floor: number): Promise<
   return measured;
 }
 
+/** Opens the map's credit from its (i) (the e2e build starts it collapsed); focus stays on it. */
+async function openCredit(page: Page): Promise<void> {
+  const toggle = page.getByTestId('map-root').getByLabel('Map credits');
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+}
+
 /** /sim with its map ready and the forecast filled. */
 async function gotoSimReady(page: Page): Promise<void> {
   await page.goto('/sim');
@@ -248,6 +257,9 @@ test.describe('targets at 375 px', () => {
   test('/: at rest, the Menu, the Paint sheet, the palette strip', async ({ page }) => {
     await gotoEditor(page);
     const rest = await expectTargets(page, '/ at rest', 5);
+    await openCredit(page);
+    await expectTargets(page, '/ credit open', 5);
+    await page.keyboard.press('Escape');
     await openHeaderMenu(page);
     // The Menu adds the site name, the two steps, Publish, Sign in and About.
     expect(await expectTargets(page, '/ Menu open', 10)).toBeGreaterThan(rest);
@@ -310,6 +322,9 @@ test.describe('targets at 375 px', () => {
   }) => {
     await gotoSimReady(page);
     const rest = await expectTargets(page, '/sim at rest', 15);
+    await openCredit(page);
+    await expectTargets(page, '/sim credit open', 15);
+    await page.keyboard.press('Escape');
     await openHeaderMenu(page);
     // The Menu adds the site name, the steps, Undo, Redo, Publish, Sign in and About.
     expect(await expectTargets(page, '/sim Menu open', 20)).toBeGreaterThan(rest);
@@ -462,6 +477,31 @@ test.describe('targets at 375 px', () => {
       await addPolicy(page, kind, choice);
       await expectTargets(page, `/sim ${kind} editor`, 25);
     });
+
+  test('/about: at rest and with the assumptions open', async ({ page }) => {
+    await page.goto('/about');
+    await expect(page.locator('html')).toHaveAttribute('data-hydrated', '');
+    await expectTargets(page, '/about at rest', 20);
+    const show = page.locator('#about-assumptions').getByText('Show the assumptions', {
+      exact: true
+    });
+    await show.click();
+    await expect(
+      page.locator('#src-quality').getByRole('table', { name: 'Data checks that changed a value' })
+    ).toBeVisible();
+    await expectTargets(page, '/about assumptions open', 40);
+  });
+
+  test('/sim: About open from the Menu', async ({ page }) => {
+    await gotoSimReady(page);
+    await openHeaderMenu(page);
+    await page.getByRole('link', { name: 'About', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'About this model' });
+    await expect(dialog).toBeVisible();
+    // The data checks have loaded: the whole body is there.
+    await expect(dialog.locator('[id="src-quality"] tbody tr').first()).toBeVisible();
+    await expectTargets(page, '/sim About open', 20);
+  });
 
   test('/lesscars at rest', async ({ page }) => {
     await page.goto('/lesscars');

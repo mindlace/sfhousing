@@ -1,11 +1,9 @@
 <script lang="ts">
   // Test host: /sim's widest header row from lg on a fine-only pointer. The status cell holds
   // "Autosave off" with "Updating" beside it (Task 4's shape), the score is the real HeaderScore
-  // with a five-digit total and its delta, the actions are Shortcuts and Publish, and the account
-  // entry shows `user`'s handle. `touch` adds Undo and Redo before Shortcuts (a touch laptop),
-  // and from lg Shortcuts then leaves the row, as on /sim.
+  // with a five-digit total and its delta, the action is Publish, and the account entry shows
+  // `user`'s handle. `touch` adds Undo and Redo before Publish (a touch laptop), as on /sim.
   import HistoryButtons from '$lib/paint/HistoryButtons.svelte';
-  import ShortcutsButton from '$lib/paint/ShortcutsButton.svelte';
   import SaveIndicator from '$lib/sharing/SaveIndicator.svelte';
   import { BUTTON_PRIMARY } from '../ui';
   import HeaderScoreHeader from './HeaderScoreHeader.svelte';
@@ -32,7 +30,6 @@
       onredo={() => {}}
     />
   {/if}
-  <ShortcutsButton class={touch ? 'lg:hidden' : undefined} />
   <button type="button" class={BUTTON_PRIMARY}>Publish</button>
 {/snippet}
 

@@ -29,7 +29,7 @@
   import { BrushController, type ControllerMap } from '$lib/brush/BrushController.svelte';
   import { ANNOUNCE_MS } from '$lib/brush/messages';
   import type { OverlayCtors } from '$lib/brush/overlay';
-  import { actionForKey } from '$lib/brush/shortcuts';
+  import { actionForKey, canPaint } from '$lib/brush/shortcuts';
   import { BrushState } from '$lib/brush/state.svelte';
   import type { Manifest } from '$lib/data/manifest';
   import type { ParcelId } from '$lib/data/parcel';
@@ -45,7 +45,6 @@
   import PaintTab from '$lib/paint/PaintTab.svelte';
   import PaletteStrip from '$lib/paint/PaletteStrip.svelte';
   import { usePrimaryPointer } from '$lib/paint/pointer.svelte';
-  import ShortcutsButton from '$lib/paint/ShortcutsButton.svelte';
   import { removedLabel } from '$lib/paint/rows';
   import { Autosave } from '$lib/sharing/autosave.svelte';
   import { copyFor } from '$lib/sharing/copy';
@@ -1081,9 +1080,6 @@
         onredo={redo}
       />
     {/if}
-    <!-- From lg with Undo and Redo beside it (a touch laptop), the row has no room for it at any
-         width (a known limit until slice 9 moves it to About). -->
-    <ShortcutsButton class={pointer.touch ? 'lg:hidden' : undefined} />
     {#if codec}
       <PublishButton
         {codec}
@@ -1166,6 +1162,7 @@
   {reload}
   view={viewPrefs}
   cards={readonly || tools.tool === 'move'}
+  spacePlays={!canPaint(brush, readonly)}
   ownerName={(o) => ownerName4(o, store.policy)}
   fundingName={(c) => fundingName4(store.policy, cal?.baselineFunding)(c)}
   {actions}

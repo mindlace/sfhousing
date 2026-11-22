@@ -431,7 +431,7 @@ Dataset `2026-10-29-0fd62c4d` (rebuilt after the final fix wave; it replaces `20
 
 ## ODbL obligations
 
-`buildings.pmtiles`, `basemap.pmtiles` and the parcel chunks are Derivative Databases of ODbL data (OpenStreetMap, Overture), published under **ODbL-1.0**. The manifest `sources` carry each licence, with Overture expanded per contributing dataset, and `/attribution` renders the notice from them. Do not add a source without recording its licence in the lock. DataSF sources are PDDL or public domain (credit is courtesy). Spec section 4.12 has the visible-attribution wording.
+`buildings.pmtiles`, `basemap.pmtiles` and the parcel chunks are Derivative Databases of ODbL data (OpenStreetMap, Overture), published under **ODbL-1.0**. The manifest `sources` carry each licence, with Overture expanded per contributing dataset, and About's Data and licences (`/about#about-data`) renders the notice from them (`overtureNotice`, `src/lib/about/credits.ts`: Overture's contributors grouped by licence). Do not add a source without recording its licence in the lock. DataSF sources are PDDL or public domain (credit is courtesy). Spec section 4.12 has the visible-attribution wording.
 
 ## Partner actions
 

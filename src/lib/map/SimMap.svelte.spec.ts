@@ -31,8 +31,9 @@ const HANDLE_FNS = [
   'onResyncNeeded'
 ] as const;
 
-const ATTRIBUTION =
-  '© OpenStreetMap · Overture Maps (Esri Community Maps, Microsoft ML Buildings, OpenStreetMap, USGS Lidar) · DataSF · Protomaps';
+const CREDIT = '© OpenStreetMap · About this model';
+/** Longer than any test runs: the credit stays open until the test acts on it. */
+const LONG = 600_000;
 
 let hosts: HTMLElement[] = [];
 let errors: unknown[] = [];
@@ -53,16 +54,16 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function host(): HTMLElement {
+function host(width = 600): HTMLElement {
   const el = document.createElement('div');
-  el.style.cssText = 'width:600px;height:400px';
+  el.style.cssText = `width:${width}px;height:400px`;
   document.body.appendChild(el);
   hosts.push(el);
   return el;
 }
 
-async function mount(props: Partial<SimMapProps> = {}) {
-  const target = host();
+async function mount(props: Partial<SimMapProps> = {}, width = 600) {
+  const target = host(width);
   let resolveReady!: (h: SimMapHandle) => void;
   const ready = new Promise<SimMapHandle>((r) => (resolveReady = r));
   const onready = vi.fn((h: SimMapHandle) => resolveReady(h));
@@ -83,6 +84,61 @@ const statusesIn = async (map: import('maplibre-gl').Map) =>
   (await chunkData(map)).features.map((f) => f.properties.status);
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+const creditOf = (t: HTMLElement) => t.querySelector<HTMLElement>('.maplibregl-ctrl-attrib');
+const toggleOf = (t: HTMLElement) => t.querySelector<HTMLElement>('.maplibregl-ctrl-attrib-button');
+const isOpen = (t: HTMLElement) => !!creditOf(t)?.classList.contains('maplibregl-compact-show');
+const cssVar = (n: string) => document.documentElement.style.getPropertyValue(n);
+
+/**
+ * Runs `at(credit, toggle)` once, in the task that adds the credit (a MutationObserver callback
+ * runs at that task's first microtask checkpoint): before its timer or any frame.
+ */
+function atInsert<T>(at: (credit: HTMLElement, toggle: HTMLElement) => T): { value: () => T } {
+  let result: { v: T } | null = null;
+  const watch = new MutationObserver(() => {
+    const c = document.querySelector<HTMLElement>('.maplibregl-ctrl-attrib');
+    const t = c?.querySelector<HTMLElement>('.maplibregl-ctrl-attrib-button');
+    if (result || !c || !t) return;
+    result = { v: at(c, t) };
+    watch.disconnect();
+  });
+  watch.observe(document.body, { childList: true, subtree: true });
+  return { value: () => result?.v as T };
+}
+
+/**
+ * Watches the credit's timer (the one scheduled with delay `ms`): true once it has run or been
+ * cleared, or, read after the handle is ready (the map has loaded, where the timer starts), when
+ * none was scheduled; so a test can wait for it without a wait of its own.
+ */
+function watchTimer(ms: number): () => boolean {
+  const realSet = window.setTimeout.bind(window);
+  const realClear = window.clearTimeout.bind(window);
+  const ids = new Set<number>();
+  let settled = false;
+  vi.spyOn(window, 'setTimeout').mockImplementation(((
+    cb: TimerHandler,
+    delay?: number,
+    ...rest: unknown[]
+  ) => {
+    if (delay !== ms || typeof cb !== 'function') return realSet(cb, delay, ...rest);
+    const id = realSet(() => {
+      try {
+        (cb as () => void)();
+      } finally {
+        settled = true;
+      }
+    }, delay);
+    ids.add(id);
+    return id;
+  }) as typeof window.setTimeout);
+  vi.spyOn(window, 'clearTimeout').mockImplementation((id) => {
+    if (typeof id === 'number' && ids.has(id)) settled = true;
+    realClear(id);
+  });
+  return () => settled || ids.size === 0;
+}
 const idle = (h: SimMapHandle) =>
   new Promise<void>((r) => {
     const map = h.getMap()!;
@@ -185,20 +241,241 @@ describe('SimMap ready', { timeout: 30_000 }, () => {
     await expect.poll(() => statusesIn(second)).toEqual([]);
   });
 
-  it('attribution text is exact and links to /attribution', async () => {
-    const { root, target } = await mount();
-    await expect.poll(() => root.dataset.state, { timeout: 20_000 }).toBe('ready');
-    const inner = target.querySelector('.maplibregl-ctrl-attrib-inner')!;
-    expect(inner.textContent).toBe(ATTRIBUTION);
-    const a = inner.querySelector('a')!;
-    expect(a.getAttribute('href')).toBe('/attribution');
-    expect(a.textContent).toBe(ATTRIBUTION);
-    expect(a.getAttribute('title')).toBe(
-      'Data & licences: OpenStreetMap and Overture data under ODbL; DataSF under PDDL / public domain / CC0; Protomaps basemap'
-    );
-    expect(
-      target.querySelector('.maplibregl-ctrl-bottom-right .maplibregl-ctrl-attrib')
-    ).not.toBeNull();
+  // ---- the credit: a collapsed (i) with "© OpenStreetMap" and About ----
+
+  it('the credit is compact at 1280 px as at 375, its toggle named "Map credits"', async () => {
+    for (const width of [1280, 375]) {
+      const { target, ready } = await mount({ creditShowMs: LONG }, width);
+      await ready;
+      const c = creditOf(target)!;
+      expect(c.closest('.maplibregl-ctrl-bottom-right')).not.toBeNull();
+      expect(c.classList.contains('maplibregl-compact'), `${width}`).toBe(true);
+      const t = toggleOf(target)!;
+      expect(t.getAttribute('aria-label')).toBe('Map credits');
+      expect(t.getAttribute('title')).toBe('Map credits');
+      expect(t.getAttribute('aria-expanded')).toBe('true');
+      const inner = c.querySelector('.maplibregl-ctrl-attrib-inner')!;
+      expect(inner.textContent).toBe(CREDIT);
+      const links = [...inner.querySelectorAll('a')].map((a) => [
+        a.textContent,
+        a.getAttribute('href'),
+        a.getAttribute('title')
+      ]);
+      expect(links).toEqual([
+        ['© OpenStreetMap', 'https://www.openstreetmap.org/copyright', null],
+        ['About this model', '/about#about-data', null]
+      ]);
+      t.click();
+      expect(isOpen(target)).toBe(false);
+      expect(t.getAttribute('aria-expanded')).toBe('false');
+      t.click();
+      expect(isOpen(target)).toBe(true);
+      expect(t.getAttribute('aria-expanded')).toBe('true');
+    }
+  });
+
+  it('expanded on load; collapsed after creditShowMs', async () => {
+    const seen = atInsert((c, t) => ({
+      open: c.classList.contains('maplibregl-compact-show'),
+      expanded: t.getAttribute('aria-expanded')
+    }));
+    const { target, ready } = await mount({ creditShowMs: 50 });
+    await expect.poll(seen.value).toEqual({ open: true, expanded: 'true' });
+    await expect.poll(() => isOpen(target)).toBe(false);
+    expect(toggleOf(target)!.getAttribute('aria-expanded')).toBe('false');
+    // Closed for the assistive tech too: the details element is not open.
+    expect(creditOf(target)!.hasAttribute('open')).toBe(false);
+    await ready;
+    expect(errors).toEqual([]);
+  });
+
+  it('a toggle press before creditShowMs cancels the collapse', async () => {
+    const settled = watchTimer(50);
+    // Closed, then opened again by hand, in the task that adds the credit: before its timer.
+    const seen = atInsert((_, t) => {
+      t.click();
+      t.click();
+      return true;
+    });
+    const { target, ready } = await mount({ creditShowMs: 50 });
+    await expect.poll(seen.value).toBe(true);
+    const h = await ready;
+    await expect.poll(settled).toBe(true);
+    expect(isOpen(target)).toBe(true);
+    expect(toggleOf(target)!.getAttribute('aria-expanded')).toBe('true');
+    // Nor does a first user zoom close what the person opened.
+    const map = h.getMap()!;
+    map.zoomTo(map.getZoom() + 0.5, { duration: 0 }, { originalEvent: new WheelEvent('wheel') });
+    expect(isOpen(target)).toBe(true);
+  });
+
+  it('focus in the credit during creditShowMs keeps it open, the focused link kept', async () => {
+    const settled = watchTimer(50);
+    // A keyboard user Tabs onto "© OpenStreetMap" in the task that adds the credit.
+    const seen = atInsert((c) => {
+      c.querySelector<HTMLElement>('a')!.focus();
+      return true;
+    });
+    const { target, ready } = await mount({ creditShowMs: 50 });
+    await expect.poll(seen.value).toBe(true);
+    await ready;
+    await expect.poll(settled).toBe(true);
+    expect(isOpen(target)).toBe(true);
+    expect(document.activeElement).toBe(creditOf(target)!.querySelector('a'));
+  });
+
+  it('a pointer on the credit pauses its collapse; leaving starts the timer again', async () => {
+    const scheduled: number[] = [];
+    const realSet = window.setTimeout.bind(window);
+    vi.spyOn(window, 'setTimeout').mockImplementation(((
+      cb: TimerHandler,
+      delay?: number,
+      ...rest: unknown[]
+    ) => {
+      if (delay === 50) scheduled.push(delay);
+      return realSet(cb, delay, ...rest);
+    }) as typeof window.setTimeout);
+    const seen = atInsert((c) => {
+      c.dispatchEvent(new PointerEvent('pointerenter', { pointerType: 'mouse' }));
+      return true;
+    });
+    const { target, ready } = await mount({ creditShowMs: 50 });
+    await expect.poll(seen.value).toBe(true);
+    await ready;
+    // Loaded with the pointer on it: no timer runs, and it stays open.
+    expect(scheduled).toEqual([]);
+    expect(isOpen(target)).toBe(true);
+    creditOf(target)!.dispatchEvent(new PointerEvent('pointerleave', { pointerType: 'mouse' }));
+    expect(scheduled).toEqual([50]);
+    await expect.poll(() => isOpen(target)).toBe(false);
+  });
+
+  it('a pointer passing over the credit leaves the first user zoom collapsing it', async () => {
+    const seen = atInsert((c) => {
+      c.dispatchEvent(new PointerEvent('pointerenter', { pointerType: 'mouse' }));
+      c.dispatchEvent(new PointerEvent('pointerleave', { pointerType: 'mouse' }));
+      return true;
+    });
+    const { target, ready } = await mount({ creditShowMs: LONG });
+    await expect.poll(seen.value).toBe(true);
+    const map = (await ready).getMap()!;
+    expect(isOpen(target)).toBe(true);
+    map.zoomTo(map.getZoom() + 0.5, { duration: 0 }, { originalEvent: new WheelEvent('wheel') });
+    expect(isOpen(target)).toBe(false);
+  });
+
+  it("the five seconds start on the map's load, not when the credit is added", async () => {
+    const scheduled: boolean[] = [];
+    const realSet = window.setTimeout.bind(window);
+    vi.spyOn(window, 'setTimeout').mockImplementation(((
+      cb: TimerHandler,
+      delay?: number,
+      ...rest: unknown[]
+    ) => {
+      if (delay === 50) scheduled.push(true);
+      return realSet(cb, delay, ...rest);
+    }) as typeof window.setTimeout);
+    // In the task that adds the credit the map has not loaded: no timer yet.
+    const seen = atInsert(() => scheduled.length);
+    const { target, ready } = await mount({ creditShowMs: 50 });
+    await expect.poll(seen.value).toBe(0);
+    // By ready (after the load) it has started, once.
+    await ready;
+    expect(scheduled).toEqual([true]);
+    await expect.poll(() => isOpen(target)).toBe(false);
+  });
+
+  it('the first user zoom collapses it; a programmatic jump does not', async () => {
+    const { target, ready } = await mount({ creditShowMs: LONG });
+    const h = await ready;
+    const map = h.getMap()!;
+    map.jumpTo({ zoom: map.getZoom() + 0.5 });
+    map.easeTo({ bearing: 10, pitch: 20, duration: 0 });
+    expect(isOpen(target)).toBe(true);
+    map.zoomTo(map.getZoom() + 0.5, { duration: 0 }, { originalEvent: new WheelEvent('wheel') });
+    expect(isOpen(target)).toBe(false);
+    expect(toggleOf(target)!.getAttribute('aria-expanded')).toBe('false');
+    // Once: opened by hand, the next user zoom leaves it open.
+    toggleOf(target)!.click();
+    map.zoomTo(map.getZoom() + 0.5, { duration: 0 }, { originalEvent: new WheelEvent('wheel') });
+    expect(isOpen(target)).toBe(true);
+  });
+
+  it('collapseCredit() collapses it, opened by hand too; not while focus is in it', async () => {
+    const first = await mount({ creditShowMs: LONG });
+    // Before the map: nothing to collapse, and nothing kept for later.
+    (first.screen.component as unknown as SimMapHandle).collapseCredit();
+    const h = await first.ready;
+    expect(isOpen(first.target)).toBe(true);
+    h.collapseCredit();
+    expect(isOpen(first.target)).toBe(false);
+    expect(toggleOf(first.target)!.getAttribute('aria-expanded')).toBe('false');
+    expect(creditOf(first.target)!.hasAttribute('open')).toBe(false);
+
+    // Opened by hand before Paint's strip appears: the strip's collapse still closes it.
+    const second = await mount({ creditShowMs: LONG });
+    const h2 = await second.ready;
+    const t = toggleOf(second.target)!;
+    t.click();
+    t.click();
+    expect(isOpen(second.target)).toBe(true);
+    (document.activeElement as HTMLElement | null)?.blur();
+    h2.collapseCredit();
+    expect(isOpen(second.target)).toBe(false);
+    expect(t.getAttribute('aria-expanded')).toBe('false');
+    // The person can open it again; with focus inside it, a collapse leaves it.
+    t.click();
+    expect(isOpen(second.target)).toBe(true);
+    creditOf(second.target)!.querySelector<HTMLElement>('a')!.focus();
+    h2.collapseCredit();
+    expect(isOpen(second.target)).toBe(true);
+  });
+
+  it('expanded and collapsed it is 24 px tall; the block size is the same within 1 px', async () => {
+    for (const width of [375, 1280]) {
+      const { target, ready } = await mount({ creditShowMs: LONG }, width);
+      await idle(await ready);
+      const c = creditOf(target)!;
+      const block = () => parseFloat(cssVar('--map-controls-br-block-size'));
+      expect(c.getBoundingClientRect().height, `${width} expanded`).toBeCloseTo(24, 0);
+      // One line: the text is one 20 px line box.
+      const inner = c.querySelector('.maplibregl-ctrl-attrib-inner')!;
+      expect(inner.getBoundingClientRect().height, `${width} one line`).toBeCloseTo(20, 0);
+      const open = block();
+      toggleOf(target)!.click();
+      expect(isOpen(target)).toBe(false);
+      expect(c.getBoundingClientRect().height, `${width} collapsed`).toBeCloseTo(24, 0);
+      const t = toggleOf(target)!.getBoundingClientRect();
+      expect(t.width).toBeGreaterThanOrEqual(24);
+      expect(t.height).toBeGreaterThanOrEqual(24);
+      await expect.poll(() => Math.abs(block() - open)).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it('Escape in the credit closes it and focuses its toggle; a handled Escape is left alone', async () => {
+    const { target, ready } = await mount({ creditShowMs: LONG });
+    await ready;
+    const link = creditOf(target)!.querySelector<HTMLElement>('a')!;
+    link.focus();
+    // Already handled (an open explanation took it): the credit stays open.
+    const handled = new KeyboardEvent('keydown', {
+      key: 'Escape',
+      bubbles: true,
+      cancelable: true
+    });
+    handled.preventDefault();
+    link.dispatchEvent(handled);
+    expect(isOpen(target)).toBe(true);
+    const esc = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    link.dispatchEvent(esc);
+    expect(esc.defaultPrevented).toBe(true);
+    expect(isOpen(target)).toBe(false);
+    expect(document.activeElement).toBe(toggleOf(target));
+    // Closed by the person: from now on only they open and close it (and the strip's collapse,
+    // which leaves it while focus is in it).
+    toggleOf(target)!.click();
+    (await ready).collapseCredit();
+    expect(isOpen(target)).toBe(true);
   });
 
   it('calls queued before ready replay once deck attaches', async () => {
@@ -349,35 +626,36 @@ describe('SimMap controls footprint vars', { timeout: 30_000 }, () => {
     return { inline: r.right - c.left, block: r.bottom - c.top };
   };
 
-  it('publishes the container footprint on :root and tracks collapse, inset and unmount', async () => {
-    const { target, root, ready, screen } = await mount();
-    target.style.width = '375px';
-    await expect.poll(() => root.dataset.state, { timeout: 20_000 }).toBe('ready');
-    const h = await ready;
-    await idle(h);
+  it('publishes the footprint on :root and tracks collapse, inset and unmount', async () => {
+    for (const width of [375, 1280]) {
+      const { target, root, ready, screen } = await mount({ creditShowMs: LONG }, width);
+      const h = await ready;
+      await idle(h);
 
-    await expect.poll(() => px(IN)).toBeGreaterThan(0);
-    await expect.poll(() => px(BL)).toBeGreaterThan(0);
-    const m = measured(target, root);
-    expect(Math.abs(px(IN) - m.inline)).toBeLessThanOrEqual(1);
-    expect(Math.abs(px(BL) - m.block)).toBeLessThanOrEqual(1);
+      await expect.poll(() => px(IN)).toBeGreaterThan(0);
+      await expect.poll(() => px(BL)).toBeGreaterThan(0);
+      const m = measured(target, root);
+      expect(Math.abs(px(IN) - m.inline)).toBeLessThanOrEqual(1);
+      expect(Math.abs(px(BL) - m.block)).toBeLessThanOrEqual(1);
 
-    const attrib = target.querySelector<HTMLElement>('.maplibregl-ctrl-attrib')!;
-    expect(attrib.classList.contains('maplibregl-compact')).toBe(true);
-    const expandedIn = px(IN);
-    attrib.classList.remove('maplibregl-compact-show');
-    await expect.poll(() => px(IN)).toBeLessThan(expandedIn);
-    attrib.classList.add('maplibregl-compact-show');
-    await expect.poll(() => px(IN)).toBe(expandedIn);
+      const attrib = target.querySelector<HTMLElement>('.maplibregl-ctrl-attrib')!;
+      expect(attrib.classList.contains('maplibregl-compact'), `${width}`).toBe(true);
+      const toggle = attrib.querySelector<HTMLElement>('.maplibregl-ctrl-attrib-button')!;
+      const expandedIn = px(IN);
+      toggle.click();
+      await expect.poll(() => px(IN)).toBeLessThan(expandedIn);
+      toggle.click();
+      await expect.poll(() => px(IN)).toBe(expandedIn);
 
-    const before = px(BL);
-    h.setBottomInset(100);
-    await expect.poll(() => px(BL)).toBeGreaterThanOrEqual(before + 99);
-    await expect.poll(() => px(BL)).toBeLessThanOrEqual(before + 101);
+      const before = px(BL);
+      h.setBottomInset(100);
+      await expect.poll(() => px(BL)).toBeGreaterThanOrEqual(before + 99);
+      await expect.poll(() => px(BL)).toBeLessThanOrEqual(before + 101);
 
-    await screen.unmount();
-    expect(rootVar(IN)).toBe('');
-    expect(rootVar(BL)).toBe('');
+      await screen.unmount();
+      expect(rootVar(IN)).toBe('');
+      expect(rootVar(BL)).toBe('');
+    }
   });
 
   it('before the map exists the block is the inset; in the task that adds the attribution it includes it', async () => {

@@ -2,19 +2,27 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MARKET_TERMS, AVERAGE_DRAWN, DRAW_UP_FRONT, resolveTerms } from '$lib/sim/finance';
 import { MONEY_SOURCES } from '$lib/sim/scenario/finance-score';
 import { PIPELINE_FUNDED } from '$lib/sim/scenario/funding';
+import { REFERENCES, RHNA_DEADLINE } from '$lib/sim/scenario/score';
+import { formatCount } from '$lib/scoreboard/format';
+import { M1_TARGETS } from '$lib/scoreboard/targets';
 import { cumulativeIncidence } from '$lib/timelapse/model';
 import { parseProjectsFile } from '$lib/timelapse/projects';
 import { PATHWAYS, STAGE_ORDER } from '$lib/timelapse/types';
 import type { Pathway, Stage } from '$lib/timelapse/types';
 import { transitionSectionId } from './card';
 import { MEASURE_SERIES, SERIES_NAME } from './chart';
+import { formatDate } from './format';
 import {
   fixtureCalibration,
   fixtureCalibrationWithoutMarket,
   tier3Calibration
 } from './fixtures/calibration';
 import { LIVE_MARKET, liveMarketCalibration } from './fixtures/market';
-import { MARKET_HOLD_SENTENCE, MARKET_INTRO_SENTENCE } from './market-view';
+import {
+  MARKET_FUNDING_SENTENCE4,
+  MARKET_HOLD_SENTENCE,
+  MARKET_INTRO_SENTENCE
+} from './market-view';
 import { PROJECTS_JSON, PROJECTS_JSON_NO_RULES } from './fixtures/projects';
 import { TIMELINE_SCORE, TIMELINE_SCORE_NO_PHASING } from './fixtures/timeline-score';
 import { EXIT_LABEL, TIER_LABEL, inStageLabel } from './labels';
@@ -27,6 +35,7 @@ import {
   PHASE_GAP_SENTENCE,
   QUALITY_LOAD_FAILED,
   loadProjectsFile,
+  modelSections,
   provenanceLines,
   provenanceSections,
   qualityRows,
@@ -396,6 +405,54 @@ describe('provenanceSections', () => {
   });
 });
 
+describe('modelSections (About, without a run)', () => {
+  const model = modelSections(cal);
+
+  it('modelSections: the sections of provenanceSections(cal, null), then Targets and published estimates', () => {
+    const bare = provenanceSections(cal, null);
+    expect(model.slice(0, -1)).toEqual(bare);
+    expect(model.map((s) => s.id)).toEqual([...bare.map((s) => s.id), 'src-targets']);
+    const targets = section('src-targets', model);
+    expect(targets.heading).toBe('Targets and published estimates');
+    // The same intro as the dialog's section 8, with or without a run.
+    expect(targets.intro).toEqual(section('src-targets').intro);
+    expect(model.map((s) => s.id)).not.toContain('src-actual');
+    expect(model.map((s) => s.id)).not.toContain('src-multiphase');
+  });
+
+  it('modelSections: the targets section lists both M1 targets and all three REFERENCES entries', () => {
+    const ids = section('src-targets', model).entries.map((e) => e.id);
+    expect(ids).toEqual([
+      ...M1_TARGETS.map((t) => `src-target-${t.id}`),
+      ...REFERENCES.map((r) => `src-reference-${r.id}`)
+    ]);
+    expect(ids).toHaveLength(5);
+    for (const t of M1_TARGETS) {
+      const e = entryOf(`src-target-${t.id}`, model);
+      expect(e.title).toBe(t.label);
+      expect(e.prov.sources).toEqual([t.source]);
+      expect(e.prov.method).toBe(
+        `Target: ${formatCount(t.units)} net new homes by ${formatDate(RHNA_DEADLINE)}.`
+      );
+    }
+    for (const r of REFERENCES) {
+      const e = entryOf(`src-reference-${r.id}`, model);
+      expect(e.title).toBe(r.label);
+      expect(e.prov).toBe(r.provenance);
+      expect(e.lines).toContain(`Compared with: ${SERIES_NAME[MEASURE_SERIES[r.measure]]}`);
+    }
+  });
+
+  it('provenanceSections with a score: unchanged (the existing cases pass as they are)', () => {
+    // The dialog's section 8 still reads the score's own targets and references.
+    const ids = section('src-targets').entries.map((e) => e.id);
+    expect(ids).toEqual([
+      ...TIMELINE_SCORE.targets.map(({ target }) => `src-target-${target.id}`),
+      ...TIMELINE_SCORE.references.map((r) => `src-reference-${r.id}`)
+    ]);
+  });
+});
+
 describe('qualityRows', () => {
   const dropped: string[] = [];
   const file = parseProjectsFile(PROJECTS_JSON, {
@@ -556,6 +613,27 @@ describe("today's market, Release 2 (funding-ui 4.12)", () => {
     for (const e of m.entries) expect(e.title).not.toContain('Cross-check');
     expect(textOf(m)).not.toContain(NOT_SF_NOTE);
     expect(list.filter((s) => s.id.startsWith('src-market'))).toHaveLength(1);
+  });
+
+  it("private: Today's level says today's public funding is in every run, after the in-force line", () => {
+    expect(MARKET_FUNDING_SENTENCE4).toBe(
+      "Today's public funding is part of every run, including the comparison with current law, " +
+        'and the 100% affordable homes it pays for start because of it, so nothing is counted twice; ' +
+        'the comparison shows what your changes add.'
+    );
+    const lines = entryOf('src-market-today', provenanceSections(live, TIMELINE_SCORE)).lines;
+    const at = lines.indexOf(MARKET_FUNDING_SENTENCE4);
+    expect(at).toBeGreaterThan(0);
+    expect(lines[at - 1]).toBe(
+      `Private starts only: 47% of the average (log-odds ${coefText(LIVE_MARKET.today.private)}). In force.`
+    );
+    expect(lines.filter((l) => l === MARKET_FUNDING_SENTENCE4)).toHaveLength(1);
+  });
+
+  it("all: no public funding is modelled, so Today's level does not say it is in every run", () => {
+    forced.level = 'all';
+    const lines = entryOf('src-market-today', provenanceSections(live, TIMELINE_SCORE)).lines;
+    expect(lines).not.toContain(MARKET_FUNDING_SENTENCE4);
   });
 
   it('all with baselineFunding stubbed off: Release 1 section with the R-P5 private line and no slope entry', () => {

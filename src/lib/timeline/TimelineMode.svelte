@@ -99,11 +99,12 @@
   import { BR_BLOCK, watchCardArea } from '$lib/fzp/card-area-watch';
   import { cardArea, cardPlacement, type CardArea } from '$lib/fzp/card-place';
   import { installFzpDebug } from '$lib/fzp/debug';
-  import { marketText as marketSentence, uncappedPoolIds } from '$lib/fzp/money-view';
+  import { uncappedPoolIds } from '$lib/fzp/money-view';
   import { DEFAULT_SPEED } from '$lib/fzp/playback';
   import ProjectCardPanel from '$lib/fzp/ProjectCardPanel.svelte';
   import ProjectTooltip from '$lib/fzp/ProjectTooltip.svelte';
-  import SourcesDialog from '$lib/fzp/SourcesDialog.svelte';
+  import { provenanceSections } from '$lib/fzp/provenance';
+  import AboutDialog from '$lib/about/AboutDialog.svelte';
   import { SummaryRequester, type SummaryState } from '$lib/fzp/summary-request';
   import { monthStart } from '$lib/fzp/time';
   import type { FzpPhase, Speed } from '$lib/fzp/types';
@@ -144,6 +145,7 @@
   import Explain from './Explain.svelte';
   import { fundsOf4 } from './owner';
   import Playhead from './Playhead.svelte';
+  import { isPlayKey } from './shortcuts';
   import { clampDay, filledEndDay, indexOfDay, viewMonthOf } from './playhead';
   import { termsInForce } from './lens';
   import { nothingInForce, type PolicyKind, type SimPolicy4 } from './policy4';
@@ -277,6 +279,11 @@
     goal?: Goal;
     /** Test seam: fetches the neighbourhoods Activity's list names; null on any failure. */
     fetchPlaces?(url: string): Promise<NeighborhoodShapes | null>;
+    /**
+     * Space plays and pauses (default true). The page turns it off while a paint tool is chosen,
+     * where Space is the brush's temporary Move.
+     */
+    spacePlays?: boolean;
   }
 
   let {
@@ -329,7 +336,8 @@
     bottomExtra = 0,
     goal = GOAL,
     statusMs = 1000,
-    fetchPlaces = (url: string) => loadPlaces(url)
+    fetchPlaces = (url: string) => loadPlaces(url),
+    spacePlays = true
   }: Props = $props();
 
   // The props seed the page once; a Retry replaces the manifest and calibration in place.
@@ -738,7 +746,43 @@
   let pillsEl = $state<HTMLElement>();
   let tipState = $state.raw<SummaryState>({ kind: 'idle' });
   let tipAt = $state({ x: 0, y: 0 });
-  let dialog = $state<ReturnType<typeof SourcesDialog>>();
+  let about = $state<ReturnType<typeof AboutDialog>>();
+  let playhead = $state<ReturnType<typeof Playhead>>();
+
+  /**
+   * Space presses Play (or Pause) as the button does, "Play from" included: not on a repeat, with
+   * a modifier, in a field, on a control Space presses, under a modal dialog or an open popover,
+   * or once something else handled the key (`isPlayKey`). Handled here, so the page never scrolls.
+   */
+  function overlayOpen(): boolean {
+    try {
+      return document.querySelector('dialog:modal, :popover-open') !== null;
+    } catch {
+      // A browser without :popover-open throws on the whole list.
+      return document.querySelector('dialog[open]') !== null;
+    }
+  }
+
+  /**
+   * A Space press that toggled is held: its repeats are handled too, without a toggle, so a held
+   * key never scrolls the page. Cleared on Space's keyup and on a window blur.
+   */
+  let spaceTook = false;
+
+  function onWindowKey(e: KeyboardEvent): void {
+    if (spaceTook && e.key === ' ' && e.repeat) return e.preventDefault();
+    if (!spacePlays || !playhead) return;
+    if (!isPlayKey(e, overlayOpen())) return;
+    e.preventDefault();
+    spaceTook = true;
+    playhead.toggle();
+  }
+
+  function onWindowKeyUp(e: KeyboardEvent): void {
+    if (e.key === ' ') spaceTook = false;
+  }
+  /** About's live assumptions: read only once the dialog has opened (props are lazy). */
+  const aboutSections = $derived(calibration ? provenanceSections(calibration, score, terms) : []);
   /** The month the open card was last asked for. */
   let cardMonth: Day | null = null;
   /** The stage tables each card's own answer carried (rule 20). */
@@ -1451,15 +1495,11 @@
       playhead={{ index, atToday }}
       {reachedMonth}
       {asOf}
-      {datasetVersion}
-      builtAt={manifest?.builtAt ?? ''}
-      onsources={() => dialog?.open()}
       {copy}
       capacity={session?.capacity ?? null}
       pending={stale}
       {terms}
       {uncapped}
-      market={calibration ? marketSentence(calibration) : null}
       {inForce}
       {goal}
       {onactivity}
@@ -1493,8 +1533,11 @@
   </div>
 {/snippet}
 
+<svelte:window onkeydown={onWindowKey} onkeyup={onWindowKeyUp} onblur={() => (spaceTook = false)} />
+
 {#snippet playheadPart()}
   <Playhead
+    bind:this={playhead}
     {asOf}
     {windowEnd}
     last={lastDay}
@@ -1678,7 +1721,7 @@
               calibration={{ inFlight: calibration, fresh: calibration }}
               chance={cardChance}
               onclose={closeCard}
-              onsource={(id) => dialog?.open(id)}
+              onsource={(id) => about?.open(id)}
               anchor={cardAnchor}
               allowedBy={cardAllowedBy}
               fundedBy={cardFundedBy}
@@ -1690,13 +1733,12 @@
         {/if}
 
         {#if calibration && !noScenario}
-          <SourcesDialog
-            bind:this={dialog}
-            {calibration}
-            {score}
+          <AboutDialog
+            bind:this={about}
+            {manifest}
+            {datasetVersion}
+            sections={aboutSections}
             projectsUrl={manifest?.scenarios?.fzp.projects ?? null}
-            {asOf}
-            {terms}
             onopen={() => (playing = false)}
           />
         {/if}
@@ -1779,9 +1821,9 @@
 </div>
 
 <style>
-  /* A narrow or short map wraps the attribution (bottom right) across its width: the zoom and
-     compass control (bottom left) sits above the attribution's footprint, never under it (WCAG
-     2.2 2.4.11). The footprint includes the bottom inset (docs/dev/map-interfaces.md). */
+  /* The zoom and compass control (bottom left) sits above the bottom-right controls' footprint
+     (the map's credit, Layers and Key), never under it (WCAG 2.2 2.4.11). The footprint includes
+     the bottom inset (docs/dev/map-interfaces.md). */
   .sfh-tl :global(.sim-map .maplibregl-ctrl-bottom-left) {
     bottom: max(var(--map-bottom-inset, 0px), var(--map-controls-br-block-size, 0px));
   }

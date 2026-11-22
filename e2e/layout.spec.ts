@@ -95,8 +95,18 @@ async function expectApart(a: [string, Locator][], b: [string, Locator][]): Prom
   expect(overlaps, overlaps.join('\n')).toEqual([]);
 }
 
-/** Map-view's attribution control (compact below 640 px, a text strip from 640 px). */
+/** Map-view's credit: MapLibre's compact control at every width, one 24 px line open or not. */
 const attribution = (page: Page): Locator => page.locator('.maplibregl-ctrl-attrib');
+/** The credit's (i) toggle. */
+const creditToggle = (page: Page): Locator =>
+  page.getByTestId('map-root').getByLabel('Map credits');
+
+/** The map root reports ready (no brush wait: /sim has none). */
+async function waitMapReady(page: Page): Promise<void> {
+  await page.waitForFunction(
+    () => document.querySelector('[data-testid=map-root]')?.getAttribute('data-state') === 'ready'
+  );
+}
 
 /** The footprint vars have caught up with the bottom-right control container's current box. */
 async function expectFootprintSettled(page: Page): Promise<void> {
@@ -118,13 +128,13 @@ async function expectFootprintSettled(page: Page): Promise<void> {
 }
 
 /**
- * Below 640 px: puts the compact attribution in the given state with its (i) toggle (MapLibre
- * starts it expanded), then waits for the footprint vars to follow.
+ * Puts the credit in the given state with its (i) toggle (the e2e build starts it collapsed), then
+ * waits for the footprint vars to follow.
  */
 async function setAttribution(page: Page, expanded: boolean): Promise<void> {
   const a = page.locator('.maplibregl-ctrl-attrib.maplibregl-compact');
   const shown = /maplibregl-compact-show/.test((await a.getAttribute('class')) ?? '');
-  if (shown !== expanded) await a.locator('.maplibregl-ctrl-attrib-button').tap();
+  if (shown !== expanded) await creditToggle(page).tap();
   if (expanded) await expect(a).toHaveClass(/maplibregl-compact-show/);
   else await expect(a).not.toHaveClass(/maplibregl-compact-show/);
   await expectFootprintSettled(page);
@@ -480,6 +490,86 @@ test.describe('mobile', () => {
       );
     }
   });
+
+  test('375 and 320 px on / and /sim: Reset view and the expanded credit do not overlap', async ({
+    page
+  }) => {
+    const reset = page.getByRole('button', { name: 'Reset view' });
+    for (const path of ['/', '/sim']) {
+      for (const width of [375, 320]) {
+        await page.setViewportSize({ width, height: 812 });
+        if (path === '/') await gotoEditor(page);
+        else {
+          await page.goto(path);
+          await waitMapReady(page);
+        }
+        await expect(reset).toBeVisible();
+        for (const expanded of [true, false]) {
+          await setAttribution(page, expanded);
+          const r = await box(reset);
+          const c = await box(attribution(page));
+          test.info().annotations.push({
+            type: 'measured',
+            description: `${path} ${width} ${expanded ? 'open' : 'collapsed'}: credit ${fmt(c)}, Reset view ${fmt(r)}`
+          });
+          // One 24 px line; its left edge at least 8 px right of Reset view's right edge.
+          expect(Math.abs(c.height - 24)).toBeLessThanOrEqual(0.5);
+          expect(c.x).toBeGreaterThanOrEqual(r.x + r.width + 8);
+          await expectApart([['credit', attribution(page)]], [['Reset view', reset]]);
+          await expectUnobscured(reset);
+          await expectUnobscured(creditToggle(page));
+          if (expanded)
+            for (const name of ['© OpenStreetMap', 'About this model'])
+              await expectUnobscured(attribution(page).getByRole('link', { name }));
+        }
+        expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+          width
+        );
+      }
+    }
+  });
+
+  test('375 px on /: with the strip showing the credit is collapsed; opened, its links are on top and pressable', async ({
+    page
+  }) => {
+    await gotoEditor(page);
+    await chooseTool(page, 'Paint');
+    await expect(strip(page)).toBeVisible();
+    await expect(attribution(page)).not.toHaveClass(/maplibregl-compact-show/);
+    await expect(creditToggle(page)).toHaveAttribute('aria-expanded', 'false');
+    await expectApart([['palette strip', strip(page)]], [['credit', attribution(page)]]);
+    await expectUnobscured(creditToggle(page));
+
+    await setAttribution(page, true);
+    const s = await box(strip(page));
+    const c = await box(attribution(page));
+    test.info().annotations.push({
+      type: 'measured',
+      description: `/ 375 strip ${fmt(s)}, credit open ${fmt(c)}`
+    });
+    const osm = attribution(page).getByRole('link', { name: '© OpenStreetMap' });
+    const about = attribution(page).getByRole('link', { name: 'About this model' });
+    await expectUnobscured(osm);
+    await expectUnobscured(about);
+    await expectUnobscured(creditToggle(page));
+    await about.tap();
+    await expect(page).toHaveURL(/\/about#about-data$/);
+  });
+
+  test('375 px on /: a credit opened before Paint collapses when the strip appears; Done is clear', async ({
+    page
+  }) => {
+    await gotoEditor(page);
+    await setAttribution(page, true);
+    await chooseTool(page, 'Paint');
+    await expect(strip(page)).toBeVisible();
+    await expect(attribution(page)).not.toHaveClass(/maplibregl-compact-show/);
+    await expect(creditToggle(page)).toHaveAttribute('aria-expanded', 'false');
+    await expectUnobscured(strip(page).getByRole('button', { name: 'Done', exact: true }));
+    // Opened again while the strip shows, it stays open.
+    await setAttribution(page, true);
+    await expect(creditToggle(page)).toHaveAttribute('aria-expanded', 'true');
+  });
 });
 
 test.describe('desktop', () => {
@@ -639,7 +729,7 @@ test.describe('medium width', () => {
 });
 
 // A landscape phone: below 768 px, so the narrow layout (the sheet handle, the score in the header)
-// on a short map region; from 640 px the attribution is a full-width text strip above the handle.
+// on a short map region; the credit is its one-line (i) at the bottom right, above the handle.
 test.describe('landscape phone 667×375', () => {
   // By project name: this describe's own test.use sets isMobile in both projects.
   test.beforeEach(() => {
@@ -797,13 +887,15 @@ test.describe('account entry', () => {
         banner.getByRole('link', { name: /^SF Housing/ }),
         banner.getByRole('navigation', { name: 'Steps' }),
         headerScore(page),
-        banner.getByRole('button', { name: 'Keyboard shortcuts' }),
         banner.getByRole('button', { name: /^(Publish|Share link)/ }),
         banner.getByRole('link', { name: `@${handle}` }),
         banner.getByRole('link', { name: 'About', exact: true })
       ];
       for (const item of items) await expect(item).toBeInViewport({ ratio: 1 });
       await expect(banner.getByRole('button', { name: /^(Undo|Redo)/ })).toHaveCount(0);
+      await expect(
+        banner.getByRole('button', { name: 'Keyboard shortcuts', includeHidden: true })
+      ).toHaveCount(0);
       const boxes = await Promise.all(items.map(box));
       for (let i = 1; i < boxes.length; i++)
         expect(boxes[i].x, `item ${i} clear of item ${i - 1}`).toBeGreaterThanOrEqual(
@@ -816,8 +908,8 @@ test.describe('account entry', () => {
     });
 
     // The widest /sim row: a 20-character handle, the widest headline, "Autosave off" (storage
-    // refused) and "Updating" (a held edit) side by side. A touch laptop adds Undo and Redo; from
-    // lg Shortcuts then leaves the row at every width.
+    // refused) and "Updating" (a held edit) side by side. A touch laptop adds Undo and Redo. No
+    // Shortcuts on either: the keys are listed in About.
     for (const [width, touch] of [
       [1024, false],
       [1280, false],
@@ -849,15 +941,15 @@ test.describe('account entry', () => {
         await expect(updating).toBeVisible();
         await widestHeaderText(page);
         await expect(headerScore(page)).toHaveAccessibleName(/^12,345 homes by Mar 2066$/);
-        const shortcuts = banner.getByRole('button', { name: 'Keyboard shortcuts' });
         const history = [
           banner.getByRole('button', { name: /^Undo/ }),
           banner.getByRole('button', { name: /^Redo/ })
         ];
         if (touch) for (const h of history) await expect(h).toBeVisible();
         else await expect(history[0]).toHaveCount(0);
-        if (touch) await expect(shortcuts).toHaveCount(0);
-        else await expect(shortcuts).toBeVisible();
+        await expect(
+          banner.getByRole('button', { name: 'Keyboard shortcuts', includeHidden: true })
+        ).toHaveCount(0);
         const items: [string, Locator][] = [
           ['name', banner.getByRole('link', { name: /^SF Housing/ })],
           ['steps', banner.getByRole('navigation', { name: 'Steps' })],
@@ -867,7 +959,6 @@ test.describe('account entry', () => {
           ...(touch
             ? (['Undo', 'Redo'] as const).map((n, i) => [n, history[i]] as [string, Locator])
             : []),
-          ...(touch ? [] : [['Shortcuts', shortcuts] as [string, Locator]]),
           ['Publish', banner.getByRole('button', { name: /^(Publish|Share link)/ })],
           ['handle', banner.getByRole('link', { name: `@${handle}` })],
           ['About', banner.getByRole('link', { name: 'About', exact: true })]

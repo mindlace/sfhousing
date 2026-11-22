@@ -8,9 +8,9 @@
 import { readFileSync } from 'node:fs';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import type { SfhFzpDebug } from '../src/lib/fzp/debug';
+import { marketShare } from '../src/lib/fzp/market-view';
 import { marketText } from '../src/lib/fzp/money-view';
 import { marketLevel } from '../src/lib/sim/scenario/market';
-import { marketBody } from '../src/lib/timeline/copy';
 import type { FinanceLevers } from '../src/lib/sim/levers/types';
 import type { Calibration, Pool, Programme } from '../src/lib/timelapse/types';
 import {
@@ -486,21 +486,20 @@ test('7. Details: Public money, Who the homes are for, the market and the source
   await expect(face.getByTestId('fzp-tiers-table')).toBeVisible();
   await expectNoA11yViolations(page);
 
-  // The market paragraph at the private level, its counts from calibration.json.
-  const sources = face.getByTestId('fzp-sources');
-  await sources.locator(':scope > summary').click();
-  const paragraph = face.getByTestId('fzp-market');
-  // Details' wording: the sentence without its old closing disclaimer (timeline-ui rule 38).
-  await expect(paragraph).toHaveText(marketBody(marketText(CAL)!));
-  const today = CAL.market!.today;
-  await expect(paragraph).toContainText(
-    `${today.observed.private} new projects started other than those proposing nearly all homes affordable`
-  );
-  await expect(paragraph).toContainText(`expected ${Math.round(today.implied)} of every kind`);
-
-  await face.getByRole('button', { name: 'Where these numbers come from' }).click();
-  const dialog = page.getByRole('dialog', { name: 'Where these numbers come from' });
+  // The market at the private level is About's now ("Today's market"), its counts from
+  // calibration.json; Details keeps no market paragraph.
+  await expect(face.getByTestId('fzp-market')).toHaveCount(0);
+  expect(marketText(CAL)).not.toBeNull();
+  await face.getByRole('link', { name: 'How this is worked out' }).click();
+  const dialog = page.getByRole('dialog', { name: 'About this model' });
   await expect(dialog).toBeVisible();
+  const today = CAL.market!.today;
+  const level = dialog.locator('[id="src-market-today"]');
+  await expect(level).toContainText(String(today.observed.private));
+  await expect(level).toContainText(String(Math.round(today.implied)));
+  await expect(level).toContainText(
+    `Private starts only: ${marketShare(CAL, 'private')} of the average`
+  );
   await expect(dialog.getByRole('heading', { name: "Today's market", exact: true })).toBeVisible();
   // The private level is in force: the all-starts line says why it is not, and the private
   // line has no "Not in force" of its own.

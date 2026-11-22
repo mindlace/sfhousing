@@ -1,6 +1,7 @@
 /**
- * "Where these numbers come from" (spec §4.10). Pure: turns the calibration, the T8 score and
- * `projects.json` into sections of plain strings for `SourcesDialog.svelte`. Transition shares
+ * Provenance (spec §4.10). Pure: turns the calibration, the T8 score and
+ * `projects.json` into sections of plain strings for About's assumptions (`ProvenanceBody.svelte`,
+ * in `/about` and in `/sim`'s `AboutDialog`). Transition shares
  * come from `cumulativeIncidence` (tail included); nothing here re-derives them.
  */
 import { formatCount, formatPercent } from '$lib/scoreboard/format';
@@ -20,6 +21,8 @@ import {
 import { MONEY_SOURCES } from '$lib/sim/scenario/finance-score';
 import { PIPELINE_FUNDED } from '$lib/sim/scenario/funding';
 import { marketLevel } from '$lib/sim/scenario/market';
+import { REFERENCES, RHNA_DEADLINE } from '$lib/sim/scenario/score';
+import { M1_TARGETS } from '$lib/scoreboard/targets';
 import { noSourcedValueText, termTitle, typedTermText } from '$lib/sim-page/funding-copy';
 import type { TimelineScore } from '$lib/sim/protocol';
 import { cumulativeIncidence } from '$lib/timelapse/model';
@@ -38,7 +41,12 @@ import type {
 import { transitionSectionId, LOCAL_PROGRAM_SECTION_ID } from './card';
 import { MEASURE_SERIES, SERIES_NAME } from './chart';
 import { formatDate, formatSourcePercent } from './format';
-import { MARKET_HOLD_SENTENCE, MARKET_INTRO_SENTENCE, marketShare } from './market-view';
+import {
+  MARKET_FUNDING_SENTENCE4,
+  MARKET_HOLD_SENTENCE,
+  MARKET_INTRO_SENTENCE,
+  marketShare
+} from './market-view';
 import { EXIT_LABEL, PATHWAY_LABEL, TIER_LABEL, inStageLabel } from './labels';
 
 export interface ProvEntry {
@@ -277,6 +285,7 @@ function marketSection(cal: Calibration, market: MarketModel): ProvSection {
       'private',
       'Not in force: this data has no public funding, so every start runs at one level.'
     ),
+    ...(level === 'private' ? [MARKET_FUNDING_SENTENCE4] : []),
     `Cross-check, not used: the Controller's development model, on its cost and price indices, puts today's odds at ${formatPercent(Math.exp(crossCheck.logOdds))} of the 2007 to 2025 average (research or literature, tier 3).`
   ];
   const entries = [entry('src-market-today', "Today's level", today.provenance, { after })];
@@ -468,7 +477,11 @@ function pathwaySection(cal: Calibration): ProvSection {
   };
 }
 
-function targetsSection(score: TimelineScore, asOf: Day): ProvSection {
+/** The targets and the published estimates beside them (section 8). */
+function targetsSection(
+  score: Pick<TimelineScore, 'targets' | 'references'>,
+  asOf: Day
+): ProvSection {
   const targets = score.targets.map(({ target, deadline }) =>
     entry(`src-target-${target.id}`, target.label, {
       tier: 1,
@@ -585,6 +598,20 @@ export function provenanceSections(
     if (score.phasing.masters > 0) out.push(multiphaseSection(cal, score.phasing));
   }
   return out;
+}
+
+/**
+ * The assumptions without a run (About): provenanceSections(cal, null) (sections 1 and 3 to 7,
+ * default terms) then targetsSection over M1_TARGETS (deadline RHNA_DEADLINE) and every REFERENCES
+ * entry. Actual completions and multi-phase projects need a run and are only in /sim's dialog.
+ */
+export function modelSections(cal: Calibration): ProvSection[] {
+  // No run, so no progress: the section reads only the target and its deadline.
+  const targets = M1_TARGETS.map((target) => ({ target, deadline: RHNA_DEADLINE, fraction: [] }));
+  return [
+    ...provenanceSections(cal, null),
+    targetsSection({ targets, references: REFERENCES }, cal.asOf)
+  ];
 }
 
 /** Section 10 rows: one per `qualityRules` entry, in file order. */

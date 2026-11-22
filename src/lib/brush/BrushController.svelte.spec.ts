@@ -476,7 +476,7 @@ describe('BrushController pan mode and Space', () => {
     expect(fx.box.style.touchAction).toBe('');
   });
 
-  it('enters temporary Move on Space and leaves it on keyup', () => {
+  it('Space while the Paint tool is chosen keeps temporary Move', () => {
     const e = key(' ');
     flushSync();
     expect(e.defaultPrevented).toBe(true);
@@ -488,6 +488,31 @@ describe('BrushController pan mode and Space', () => {
     keyUp(' ');
     flushSync();
     expect(lastPan()).toBe(false);
+  });
+
+  it('Space while the tool is Move: no spaceHeld and the key is not handled', () => {
+    fx.ctl.setTool('move');
+    flushSync();
+    const e = key(' ');
+    flushSync();
+    expect(e.defaultPrevented).toBe(false);
+    expect(fx.state.spaceHeld).toBe(false);
+    // A repeat while held is not handled either: nothing was taken.
+    const r = key(' ', { repeat: true });
+    expect(r.defaultPrevented).toBe(false);
+    keyUp(' ');
+    flushSync();
+    expect(fx.state.spaceHeld).toBe(false);
+    expect(lastPan()).toBe(true);
+  });
+
+  it('Space on a read-only editor: no spaceHeld and the key is not handled', () => {
+    fx.editor.load(fx.editor.plan, { readOnly: true });
+    flushSync();
+    const e = key(' ');
+    flushSync();
+    expect(e.defaultPrevented).toBe(false);
+    expect(fx.state.spaceHeld).toBe(false);
   });
 
   it('ignores Space during a stroke', () => {

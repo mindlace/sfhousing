@@ -53,7 +53,7 @@ test('the headline opens Details, focused; it names no RHNA', async ({ page, isM
   for (const name of ['Money details', 'Homes by income level'])
     await details(page).getByRole('button', { name }).click();
   await expect(details(page).getByTestId('fzp-tiers-table')).toBeVisible();
-  await expect(details(page).getByTestId('fzp-sources')).toHaveAttribute('open', '');
+  await expect(details(page).getByRole('link', { name: 'How this is worked out' })).toBeVisible();
   const plain = await details(page).evaluate((el) => {
     const copy = el.cloneNode(true) as HTMLElement;
     copy.querySelectorAll('a').forEach((a) => a.remove());

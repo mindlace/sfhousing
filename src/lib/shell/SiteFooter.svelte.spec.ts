@@ -14,7 +14,7 @@ describe('SiteFooter', () => {
       .toHaveAttribute('href', '/about');
     await expect
       .element(footer.getByRole('link', { name: 'Data & licences' }))
-      .toHaveAttribute('href', '/attribution');
+      .toHaveAttribute('href', '/about#about-data');
     await expect
       .element(footer.getByRole('link', { name: 'Source code (GitHub)' }))
       .toHaveAttribute('href', REPO_URL);

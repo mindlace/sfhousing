@@ -15,6 +15,7 @@ import { expectNoA11yViolations } from './helpers/a11y';
 import { expectAboutReachable, expectNoFooter } from './helpers/chrome';
 import { widestHeaderText } from './helpers/header-text';
 import { touchLaptop } from './helpers/pointer';
+import { TIMELINE_SHORTCUTS } from '../src/lib/timeline/shortcuts';
 import {
   addPolicy,
   holdPolicy,
@@ -646,13 +647,14 @@ test('the header has no Undo or Redo on a desktop pointer; Ctrl+Z undoes a polic
   test.skip(isMobile, 'a desktop (fine-only) pointer');
   await gotoSim(page);
   const banner = page.getByRole('banner');
-  await expect(banner.getByRole('button', { name: 'Keyboard shortcuts' })).toBeVisible();
+  const publish = banner.getByRole('button', { name: /^(Publish|Share link)/ });
+  await expect(publish).toBeVisible();
   await expect(
     banner.getByRole('button', { name: /^(Undo|Redo)/, includeHidden: true })
   ).toHaveCount(0);
   await addPolicy(page, 'Zoning', 'Transit rule');
   // From a header control, not a field (a field's Ctrl+Z is its own).
-  await banner.getByRole('button', { name: 'Keyboard shortcuts' }).focus();
+  await publish.focus();
   await page.keyboard.press('Control+z');
   await page.waitForFunction(() => (window as FzpWin).__sfhFzp!.policy.kinds.zoning.length === 0);
   await expect(
@@ -1263,7 +1265,7 @@ test('without transit: no transit.json request, no transit layers, Layers has on
     // A try that fell back to a full /sim load (the link clicked before hydration) asked for
     // transit.json through SSR's manifest: only the try that passes counts.
     transitAsked.length = 0;
-    await page.goto('/attribution');
+    await page.goto('/about');
     await page.evaluate(() => ((window as Window & { __spa?: boolean }).__spa = true));
     await openHeaderMenu(page);
     await page.getByRole('banner').getByRole('link', { name: 'Simulate', exact: true }).click();
@@ -1361,11 +1363,13 @@ for (const width of [1024, 1280, 1536]) {
     await page.setViewportSize({ width, height: 1024 });
     await gotoSim(page);
     const banner = page.getByRole('banner');
-    // A fine pointer: Shortcuts and no Undo or Redo; the phone project (coarse): the reverse.
-    const shortcuts = banner.getByRole('button', { name: 'Keyboard shortcuts' });
+    // A fine pointer: no Undo or Redo; the phone project (coarse): both. No Shortcuts on either.
     const history = banner.getByRole('button', { name: /^(Undo|Redo)/ });
-    await expect(isMobile ? history.first() : shortcuts).toBeVisible();
-    await expect(isMobile ? shortcuts : history).toHaveCount(0);
+    if (isMobile) await expect(history.first()).toBeVisible();
+    else await expect(history).toHaveCount(0);
+    await expect(
+      banner.getByRole('button', { name: 'Keyboard shortcuts', includeHidden: true })
+    ).toHaveCount(0);
     await expect(banner.getByRole('button', { name: 'View' })).toHaveCount(0);
     await widestHeaderText(page);
     await widestStatusText(page);
@@ -1385,6 +1389,146 @@ for (const width of [1024, 1280, 1536]) {
     expect(Math.abs(after - before)).toBeLessThanOrEqual(1);
   });
 }
+
+// ---- About this model over the map ---------------------------------------------------------------
+
+/** About this model, the dialog /sim mounts over the map. */
+const aboutDialog = (page: Page): Locator => page.getByRole('dialog', { name: 'About this model' });
+
+/** The playhead's day, the furthest day reached and whether it plays. */
+const runState = (page: Page) =>
+  page.evaluate(() => {
+    const f = (window as FzpWin).__sfhFzp!;
+    return { day: f.day, reached: f.reached, playing: f.playing };
+  });
+
+test("/sim: the header's About opens About this model over the map; Escape closes it; the playhead stays", async ({
+  isMobile,
+  page
+}) => {
+  await gotoSim(page);
+  // A playhead and a furthest date reached away from today.
+  const start = await runState(page);
+  await slider(page).focus();
+  await page.keyboard.press('PageUp');
+  await page.keyboard.press('PageUp');
+  await expect.poll(async () => (await runState(page)).reached).toBeGreaterThan(start.reached);
+  const before = await runState(page);
+  expect(before.playing).toBe(false);
+
+  await openHeaderMenu(page);
+  const about = page.getByRole('banner').getByRole('link', { name: 'About', exact: true });
+  await about.click();
+  const dialog = aboutDialog(page);
+  await expect(dialog).toBeVisible();
+  await expect(page).toHaveURL(/\/sim$/);
+  for (const name of ['What the numbers mean', 'Assumptions', 'Data and licences', 'Using it'])
+    await expect(dialog.getByRole('heading', { level: 3, name, exact: true })).toBeVisible();
+  // Live: the run's sections, the data checks loaded.
+  await expect(dialog.locator('[id="src-quality"] tbody tr').first()).toBeVisible();
+  expect(await runState(page)).toEqual(before);
+  await expectNoA11yViolations(page, { include: 'dialog[open]', structure: true });
+
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+  await expect(page).toHaveURL(/\/sim$/);
+  expect(await runState(page)).toEqual(before);
+  // Focus back where About was pressed: the link, or the Menu button once the Menu closed.
+  if (isMobile) await expect(menuButton(page)).toBeFocused();
+  else await expect(about).toBeFocused();
+
+  if (!isMobile) {
+    // A modified click is the browser's: the page in a new tab, no dialog, the run untouched.
+    const [tab] = await Promise.all([
+      page.context().waitForEvent('page'),
+      about.click({ modifiers: ['ControlOrMeta'] })
+    ]);
+    await expect(tab).toHaveURL(/\/about$/);
+    await tab.close();
+    await expect(dialog).toBeHidden();
+    expect(await runState(page)).toEqual(before);
+  }
+});
+
+test("/sim: the credit's About this model opens the dialog at Data and licences", async ({
+  isMobile,
+  page
+}) => {
+  test.skip(isMobile, 'one pointer is enough: the link rule is not width-bound');
+  await gotoSim(page);
+  const before = await runState(page);
+  const credit = page.getByTestId('map-root').locator('.maplibregl-ctrl-attrib');
+  const toggle = page.getByTestId('map-root').getByLabel('Map credits');
+  // The e2e build starts the credit collapsed: the (i) opens it.
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  const link = credit.getByRole('link', { name: 'About this model', exact: true });
+  await expect(link).toHaveAttribute('href', '/about#about-data');
+  await link.click();
+  const dialog = aboutDialog(page);
+  await expect(dialog).toBeVisible();
+  await expect(page).toHaveURL(/\/sim$/);
+  // Landed at Data and licences: its heading has focus, at the top of the scroll box.
+  const heading = dialog.getByRole('heading', { level: 3, name: 'Data and licences', exact: true });
+  await expect(heading).toBeFocused();
+  await expect(heading).toBeInViewport();
+  expect(await runState(page)).toEqual(before);
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+  await expect(link).toBeFocused();
+});
+
+test("/sim: the credit's © OpenStreetMap opens in a new tab; the run stays", async ({ page }) => {
+  // The copyright page is answered locally: the test checks where the link goes, not OSM.
+  await page
+    .context()
+    .route('https://www.openstreetmap.org/**', (r) =>
+      r.fulfill({ contentType: 'text/html', body: '<title>OSM copyright</title>' })
+    );
+  await gotoSim(page);
+  const before = await runState(page);
+  const credit = page.getByTestId('map-root').locator('.maplibregl-ctrl-attrib');
+  await page.getByTestId('map-root').getByLabel('Map credits').click();
+  const osm = credit.getByRole('link', { name: '© OpenStreetMap', exact: true });
+  const [tab] = await Promise.all([page.context().waitForEvent('page'), osm.click()]);
+  await expect(tab).toHaveURL('https://www.openstreetmap.org/copyright');
+  await tab.close();
+  await expect(page).toHaveURL(/\/sim$/);
+  expect(await runState(page)).toEqual(before);
+});
+
+test('/sim at 375: About from the Menu opens the dialog; closing focuses the Menu button', async ({
+  isMobile,
+  page
+}) => {
+  test.skip(!isMobile, 'the phone layout');
+  await gotoSim(page);
+  await openHeaderMenu(page);
+  await page.getByRole('banner').getByRole('link', { name: 'About', exact: true }).click();
+  const dialog = aboutDialog(page);
+  await expect(dialog).toBeVisible();
+  await expect(menuButton(page)).toHaveAttribute('aria-expanded', 'false');
+  const box = (await dialog.boundingBox())!;
+  const viewport = page.viewportSize()!;
+  test.info().annotations.push({
+    type: 'about-375',
+    description: JSON.stringify({
+      dialog: [box.x, box.y, box.width, box.height].map(Math.round),
+      viewport
+    })
+  });
+  expect(box.x).toBeGreaterThanOrEqual(0);
+  expect(box.y).toBeGreaterThanOrEqual(0);
+  expect(box.x + box.width).toBeLessThanOrEqual(viewport.width);
+  expect(box.y + box.height).toBeLessThanOrEqual(viewport.height);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+    viewport.width
+  );
+  await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(dialog).toBeHidden();
+  await expect(menuButton(page)).toBeFocused();
+});
 
 test('at 375 px the header fits with the widest strings; the site name waits in the Menu', async ({
   isMobile,
@@ -1407,34 +1551,30 @@ test('at 375 px the header fits with the widest strings; the site name waits in 
   await expect(menuButton(page)).toHaveAttribute('aria-expanded', 'false');
 });
 
-test('at 1280 px Keyboard shortcuts opens under its button, moves nothing in the header and closes on Escape', async ({
-  isMobile,
-  page
-}) => {
-  test.skip(isMobile, 'chromium project only');
-  await page.setViewportSize({ width: 1280, height: 900 });
+test('the header has no Shortcuts; About lists the Timeline keys', async ({ isMobile, page }) => {
   await gotoSim(page);
   const banner = page.getByRole('banner');
-  const button = banner.getByRole('button', { name: 'Keyboard shortcuts' });
-  const publish = banner.getByRole('button', { name: /^(Publish|Share link)/ });
-  await expect(button).toBeVisible();
-  const before = await headerRow(page);
-  const scoreY = (await scoreBar(page).boundingBox())!.y;
-  const publishY = (await publish.boundingBox())!.y;
-  await button.click();
-  const table = page.getByRole('table', { name: 'Keyboard shortcuts' });
+  await expect(banner.getByTestId('publish-open')).toBeAttached();
+  await expect(
+    banner.getByRole('button', { name: 'Keyboard shortcuts', includeHidden: true })
+  ).toHaveCount(0);
+  await openHeaderMenu(page);
+  await expect(banner.getByRole('button', { name: 'Keyboard shortcuts' })).toHaveCount(0);
+  await banner.getByRole('link', { name: 'About', exact: true }).click();
+  const dialog = aboutDialog(page);
+  await expect(dialog).toBeVisible();
+  const table = dialog.getByRole('table', { name: 'Timeline' });
   await expect(table).toBeVisible();
-  const buttonBox = (await button.boundingBox())!;
-  const listBox = (await page.getByTestId('shortcuts').boundingBox())!;
-  expect(listBox.y).toBeGreaterThanOrEqual(buttonBox.y + buttonBox.height);
-  const after = await headerRow(page);
-  expect(after.map((i) => i.left)).toEqual(before.map((i) => expect.closeTo(i.left, 0)));
-  expect((await scoreBar(page).boundingBox())!.y).toBeCloseTo(scoreY, 0);
-  expect((await publish.boundingBox())!.y).toBeCloseTo(publishY, 0);
-  expect((await banner.boundingBox())!.height).toBe(48);
+  const rows = await table
+    .locator('tbody tr')
+    .evaluateAll((trs) =>
+      trs.map((tr) => [...tr.querySelectorAll('td')].map((td) => td.textContent?.trim()))
+    );
+  expect(rows).toEqual(TIMELINE_SHORTCUTS.map((s) => [s.keys, s.action]));
+  await expect(dialog.getByRole('table', { name: 'Painting' })).toBeVisible();
   await page.keyboard.press('Escape');
-  await expect(button).toHaveAttribute('aria-expanded', 'false');
-  await expect(table).toBeHidden();
+  await expect(dialog).toBeHidden();
+  if (isMobile) await expect(menuButton(page)).toBeFocused();
 });
 
 for (const width of [768]) {
@@ -1455,11 +1595,11 @@ for (const width of [768]) {
     await expectStatusPlace(page);
     await expectHeaderFits(page);
     await openHeaderMenu(page);
-    // Undo where a pointer is coarse (the phone project), Shortcuts where the primary is fine.
-    const touchOnly = isMobile ? /^Undo/ : 'Keyboard shortcuts';
-    for (const name of [touchOnly, /^(Publish|Share link)/])
-      await expect(banner.getByRole('button', { name })).toBeVisible();
-    if (!isMobile) await expect(banner.getByRole('button', { name: /^Undo/ })).toHaveCount(0);
+    // Undo where a pointer is coarse (the phone project); never Shortcuts.
+    if (isMobile) await expect(banner.getByRole('button', { name: /^Undo/ })).toBeVisible();
+    else await expect(banner.getByRole('button', { name: /^Undo/ })).toHaveCount(0);
+    await expect(banner.getByRole('button', { name: /^(Publish|Share link)/ })).toBeVisible();
+    await expect(banner.getByRole('button', { name: 'Keyboard shortcuts' })).toHaveCount(0);
     // The map's layers are not in the Menu: they are on the map.
     await expect(banner.getByRole('button', { name: 'View', exact: true })).toHaveCount(0);
     await expect(banner.getByRole('checkbox')).toHaveCount(0);

@@ -63,7 +63,7 @@ export const SURFACE_TIP =
   'rounded border border-line bg-surface px-2 py-1 text-sm text-ink shadow-md dark:border-line-dark dark:bg-surface-dark dark:text-ink-dark';
 
 /**
- * A modal dialog without its padding, for a dialog that pads its own regions (the Sources dialog's
+ * A modal dialog without its padding, for a dialog that pads its own regions (About's dialog's
  * sticky title row and scrolling body). In dark a line border sets it off from the dimmed page, and
  * it declares the dark color-scheme (its scrollbar and fields follow).
  */

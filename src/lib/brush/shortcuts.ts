@@ -22,6 +22,24 @@ export interface KeyLike {
   type: 'keydown' | 'keyup';
 }
 
+/**
+ * Space on these keeps its native meaning (activate / toggle): never temporary Move, never Play
+ * (`isPlayKey`, src/lib/timeline/shortcuts.ts).
+ */
+export const SPACE_NATIVE = 'button, a[href], summary, [role="radio"], [role="button"]';
+
+/**
+ * The brush paints (and Space is its temporary Move) only when the city is ready, the plan is
+ * editable and Paint or Erase is chosen. The one rule for both pages: BrushController paints by
+ * it, and /sim's Space plays whenever it is false.
+ */
+export function canPaint(
+  s: { phase: 'loading' | 'ready' | 'failed'; tool: BrushTool },
+  readOnly: boolean
+): boolean {
+  return s.phase === 'ready' && !readOnly && s.tool !== 'move';
+}
+
 /** Elements where shortcuts never fire: input, textarea, select, [contenteditable]. */
 export function isEditableTarget(t: EventTarget | null): boolean {
   if (!t) return false;

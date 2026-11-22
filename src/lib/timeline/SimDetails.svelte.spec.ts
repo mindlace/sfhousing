@@ -7,11 +7,11 @@ import {
   FIX_ASOF,
   FIX_HORIZON,
   TIMELINE_SCORE,
-  TIMELINE_SCORE_NO_PHASING,
   TIMELINE_SCORE_R0
 } from '$lib/fzp/fixtures/timeline-score';
 import { scoreCopy } from '$lib/sim-page/policy';
-import { FORECAST_NOTE, LENS_NAME, TWIN_NOTE, marketBody } from './copy';
+import { LENS_NAME, TWIN_NOTE } from './copy';
+import { ABOUT_ID, WORKED_OUT } from '$lib/about/copy';
 import { DEFAULT_LEVERS } from '$lib/sim/levers/types';
 import type { LeverCapacity } from '$lib/sim/levers/resolve';
 import SimDetails from './SimDetails.svelte';
@@ -24,15 +24,12 @@ import { formatPercent } from '$lib/scoreboard';
 import { builtTowardGoalText, scoreAt } from '$lib/fzp/score-view';
 import { dayFromUtc, monthIndex } from '$lib/fzp/time';
 import { MONEY_LAST, MONEY_SCORE } from '$lib/fzp/fixtures/money';
-import { fixtureCalibration } from '$lib/fzp/fixtures/calibration';
 import { formatDollars, formatMonthYear } from '$lib/fzp/format';
-import { marketSentence } from '$lib/fzp/market-view';
 import {
   affordableLine,
   allLine,
   cityLine,
   fundedLine,
-  marketText,
   moneyAt,
   tiersAt,
   plainSources
@@ -45,8 +42,6 @@ import {
   tierBaselineLabel,
   type Money
 } from '$lib/sim/scenario/finance-score';
-import { MARKET_FUNDING_SENTENCE } from '$lib/sim-page/funding-copy';
-import { MARKET_FUNDING_SENTENCE4 } from '$lib/timeline/copy';
 import type { ResolvedTerms } from '$lib/timelapse/types';
 import { EMPTY_LOG, logCompiled, logFilled, viewOfLog } from '$lib/timeline/chunk-log';
 import {
@@ -63,19 +58,19 @@ import type { TimelineScore } from '$lib/sim/scenario/types';
 import { GOAL, TODAY, goalStep, readGoal } from '$lib/goal/goal';
 import { indexOfDay } from '$lib/timeline/playhead';
 
+/** The old forecast note Details no longer shows. */
+const FORECAST_NOTE = 'A forecast if nothing changes.';
+
 /** Index 53 of the fixture: 2031-03-15. */
 const DAY = dayFromUtc(2031, 3, 15);
-const INTRO = FORECAST_NOTE;
 
 type Overrides = Partial<{
   score: typeof TIMELINE_SCORE | null;
   day: number;
   filledEnd: number;
   reached: number;
-  onsources: () => void;
   copy: ReturnType<typeof scoreCopy>;
   capacity: LeverCapacity | null;
-  market: string | null;
   stale: boolean;
   pending: boolean;
   terms: ResolvedTerms;
@@ -93,9 +88,6 @@ const props = (over: Overrides = {}) => {
     horizon: FIX_HORIZON,
     filledEnd: FIX_HORIZON,
     reached: FIX_HORIZON,
-    datasetVersion: 'fixture-0',
-    builtAt: '2026-10-10T12:00:00Z',
-    onsources: vi.fn(),
     ...over
   };
   const sc = p.score;
@@ -158,20 +150,15 @@ afterEach(async () => {
   await scheme('light');
 });
 
-/** The closed "Sources" disclosure: the details that moved behind it. */
-const sources = () =>
-  document.querySelector('details[data-testid="fzp-sources"]') as HTMLDetailsElement;
-const openSources = () => {
-  sources().open = true;
-};
+/** Details' last line: the link into About's assumptions. */
+const workedOut = () => page.getByTestId('details-about');
 
 describe('intro and loading', () => {
-  it('has no badge, and the forecast note is in Sources', async () => {
+  it('has no badge and no forecast note', async () => {
     await page.viewport(1024, 768);
     await renderAtRest(props());
     expect(document.querySelector('[data-testid="fzp-badge"]')).toBeNull();
-    const intro = page.getByText(INTRO).element();
-    expect(sources().contains(intro)).toBe(true);
+    expect(document.body.textContent).not.toContain(FORECAST_NOTE);
   });
 
   it('before the first timeline: only the intro and a loading line', async () => {
@@ -217,7 +204,7 @@ describe('layout', () => {
     expect(page.getByRole('button', { name: 'Activity', exact: true }).elements()).toHaveLength(0);
   });
 
-  it('orders the switch, the goal rows, what the policy added, the sources of homes, stopped, the table, then Sources', async () => {
+  it('orders the switch, the goal rows, what the policy added, the sources of homes, stopped, the table, then the About link', async () => {
     await page.viewport(1024, 768);
     await renderAtRest(props());
     const before = (a: Element, b: Element) =>
@@ -231,18 +218,47 @@ describe('layout', () => {
       page.getByTestId('tl-sources-of-homes').element(),
       page.getByText(/^Proposed homes in projects that stopped/).element(),
       page.getByTestId('tl-year-table').element(),
-      sources().querySelector('summary')!
+      workedOut().element()
     ];
     for (let k = 0; k < els.length - 1; k++) before(els[k], els[k + 1]);
   });
 
-  it('Sources is closed by default and holds where the numbers come from', async () => {
+  it('Details ends with "How this is worked out" to /about#about-assumptions, at least 24 px tall', async () => {
+    await page.viewport(1024, 768);
+    const first = await renderAtRest(props());
+    const link = page.getByRole('link', { name: WORKED_OUT, exact: true });
+    expect(link.element()).toBe(workedOut().element());
+    expect(link.element().getAttribute('href')).toBe(`/about#${ABOUT_ID.assumptions}`);
+    // The last thing in Details: everything after it in the document is its own content.
+    const all = [...document.body.querySelectorAll('*')];
+    const after = all.slice(all.indexOf(link.element()) + 1);
+    expect(after.every((el) => link.element().contains(el))).toBe(true);
+    // A standalone target: 24 px, the same on every pointer.
+    const r = link.element().getBoundingClientRect();
+    expect(r.height).toBeGreaterThanOrEqual(24);
+    expect(r.width).toBeGreaterThanOrEqual(24);
+    expect(link.element().classList.contains('min-h-6')).toBe(true);
+    expect(link.element().className).not.toMatch(/pointer-coarse:/);
+    await first.unmount();
+    // While loading too.
+    await renderAtRest(props({ score: null }));
+    await expect.element(workedOut()).toBeVisible();
+  });
+
+  it('Details has no Sources disclosure, dataset line or market paragraph', async () => {
     await page.viewport(1024, 768);
     await renderAtRest(props());
-    const d = sources();
-    expect(d.open).toBe(false);
-    expect(d.querySelector('summary')!.textContent!.trim()).toBe('Sources');
-    expect(d.textContent).toContain('Where these numbers come from');
+    document.querySelectorAll('details').forEach((d) => (d.open = true));
+    expect(document.querySelector('[data-testid="fzp-sources"]')).toBeNull();
+    expect(document.querySelector('[data-testid="fzp-market"]')).toBeNull();
+    expect(page.getByText('Sources', { exact: true }).elements()).toEqual([]);
+    expect(page.getByRole('button', { name: 'Where these numbers come from' }).elements()).toEqual(
+      []
+    );
+    expect(page.getByRole('link', { name: 'Data sources' }).elements()).toEqual([]);
+    expect(document.body.textContent).not.toMatch(/fixture-0|Data .* · built/);
+    expect(document.body.textContent).not.toContain("today's market");
+    expect(document.body.textContent).not.toContain('Multi-phase projects');
   });
 
   it('has no headline: no fzp-net, no "homes added since", no "built by today"', async () => {
@@ -287,7 +303,7 @@ describe('what the plan added', () => {
       page.getByText(label, { exact: true }).element().parentElement!.textContent!;
     expect(row('Homes completed because of current law')).toContain('1,290');
     expect(row('Homes approved because of current law')).toContain('2,185');
-    expect(sources().textContent).not.toContain('run twice');
+    expect(document.body.textContent).not.toContain('run twice');
     await expect.element(page.getByText(TWIN_NOTE)).not.toBeInTheDocument();
     await page.getByRole('button', { name: 'What current law added' }).click();
     await expect.element(page.getByText(TWIN_NOTE)).toBeVisible();
@@ -321,7 +337,6 @@ describe('what the plan added', () => {
   it('shows no This city, no range and no scope caption', async () => {
     await page.viewport(1024, 768);
     await renderAtRest(props());
-    openSources();
     await expect.element(page.getByTestId('fzp-city')).not.toBeInTheDocument();
     await expect.element(page.getByText(/8 in 10/)).not.toBeInTheDocument();
     await expect.element(page.getByTestId('fzp-scope')).not.toBeInTheDocument();
@@ -329,10 +344,10 @@ describe('what the plan added', () => {
 });
 
 describe('the forecast note', () => {
-  it('shows in Sources only with no policy in force', async () => {
+  it('is not in Details, with or without a policy in force', async () => {
     await page.viewport(1024, 768);
     const r = await renderAtRest(props({ copy: scoreCopy(null) }));
-    expect(sources().contains(page.getByText(FORECAST_NOTE).element())).toBe(true);
+    await expect.element(page.getByText(FORECAST_NOTE)).not.toBeInTheDocument();
     await r.rerender({ copy: scoreCopy({ ...DEFAULT_LEVERS, compare: 'fzp' }) });
     await expect.element(page.getByText(FORECAST_NOTE)).not.toBeInTheDocument();
   });
@@ -345,7 +360,6 @@ describe('score copy (/sim)', () => {
     await renderAtRest(props({ copy }));
     await expect.element(page.getByText('What your policy added')).toBeVisible();
     await expect.element(page.getByText('What current law added')).not.toBeInTheDocument();
-    openSources();
     await expect.element(page.getByText(FORECAST_NOTE)).not.toBeInTheDocument();
     const row = (label: string) =>
       page.getByText(label, { exact: true }).element().parentElement!.textContent!;
@@ -378,7 +392,6 @@ describe('score copy (/sim)', () => {
     await page.viewport(1024, 768);
     await renderAtRest(props({ copy: scoreCopy(null) }));
     await expect.element(page.getByText('What current law added')).toBeVisible();
-    await expect.element(page.getByText(INTRO)).toBeInTheDocument();
   });
 
   it('no Details text says FZP or the plan, with and without a policy', async () => {
@@ -506,24 +519,12 @@ describe('targets and progress', () => {
   });
 });
 
-describe('sources dialog', () => {
-  it('opens the sources dialog through its callback', async () => {
-    await page.viewport(1024, 768);
-    const onsources = vi.fn();
-    await renderAtRest(props({ onsources }));
-    openSources();
-    await page.getByRole('button', { name: 'Where these numbers come from' }).click();
-    expect(onsources).toHaveBeenCalledOnce();
-  });
-});
-
 describe('map key', () => {
   // The key moved onto the map (MapKeyControl, SimKey): its legend cases are in
   // src/lib/timeline/SimKey.svelte.spec.ts and src/lib/map/key/MapKeyControl.svelte.spec.ts.
   it('Details holds no map key', async () => {
     await page.viewport(1024, 768);
     await renderAtRest(props());
-    openSources();
     expect(document.querySelector('.sfh-fzp-legend')).toBeNull();
     expect(document.querySelector('[data-legend]')).toBeNull();
     expect(page.getByText('Map key').elements()).toEqual([]);
@@ -532,38 +533,6 @@ describe('map key', () => {
       st.textContent?.includes('.sfh-fzp-legend')
     );
     expect(tokenCss).toEqual([]);
-  });
-});
-
-describe('footnote', () => {
-  it('names the data, the build, the as-of date and links Data sources, then the phasing sentence', async () => {
-    await page.viewport(1024, 768);
-    await renderAtRest(props());
-    openSources();
-    await expect
-      .element(
-        page.getByText('Data fixture-0 · built 2026-10-10 · as of Oct 16, 2026 · Data sources')
-      )
-      .toBeVisible();
-    const link = page.getByRole('link', { name: 'Data sources', exact: true });
-    expect(link.element().getAttribute('href')).toBe('/attribution');
-    // Only the disclosure is named "Sources": the link inside it has its own name.
-    expect(page.getByRole('link', { name: 'Sources', exact: true }).elements()).toEqual([]);
-    await expect
-      .element(
-        page.getByText(
-          'Multi-phase projects: 5 phases scheduled from published plans, 3 estimated from past projects; 2 projects without phase data are simulated as one project each: 1 drawn as one footprint on a free lot, 1 counted in the score but not drawn.'
-        )
-      )
-      .toBeVisible();
-  });
-
-  it('omits the phasing sentence when there are no master plans', async () => {
-    await page.viewport(1024, 768);
-    await renderAtRest(props({ score: TIMELINE_SCORE_NO_PHASING }));
-    openSources();
-    await expect.element(page.getByText(/^Data fixture-0/)).toBeVisible();
-    expect(document.body.textContent).not.toContain('Multi-phase projects');
   });
 });
 
@@ -578,51 +547,24 @@ describe('target size on a fine pointer (SC 2.5.8)', () => {
   it('every control in the desktop panel is at least 24x24', async () => {
     await page.viewport(1024, 768);
     await renderAtRest(props());
-    openSources();
     expectTarget(
       document.querySelector('[data-testid="tl-year-table"] > summary')!,
       'Show as table summary'
     );
-    expectTarget(
-      page.getByRole('button', { name: 'Where these numbers come from' }).element(),
-      'Where these numbers come from'
-    );
-    expectTarget(
-      page.getByRole('link', { name: 'Data sources', exact: true }).element(),
-      'Data sources link'
-    );
+    expectTarget(workedOut().element(), WORKED_OUT);
   });
 
-  it('summaries and the Data sources link carry the 24 px minimum, the same on every pointer', async () => {
+  it('summaries and the About link carry the 24 px minimum, the same on every pointer', async () => {
     await page.viewport(1024, 768);
     await renderAtRest(props());
-    openSources();
     for (const el of [
       document.querySelector('[data-testid="tl-year-table"] > summary')!,
-      page.getByRole('link', { name: 'Data sources', exact: true }).element()
+      workedOut().element()
     ]) {
       expect(el.classList.contains('min-h-6'), el.outerHTML).toBe(true);
       expect(el.className, el.outerHTML).not.toMatch(/pointer-coarse:/);
       expect(el.getBoundingClientRect().height, el.outerHTML).toBeGreaterThanOrEqual(24);
     }
-  });
-});
-
-describe('the market paragraph', () => {
-  it('sits right after the first paragraph of Sources', async () => {
-    await page.viewport(1024, 768);
-    await renderAtRest(props({ market: 'X sentence' }));
-    openSources();
-    const m = sources().querySelector('[data-testid="fzp-market"]')!;
-    expect(m.textContent).toBe('X sentence');
-    expect(sources().querySelector('p')!.nextElementSibling).toBe(m);
-  });
-
-  it.each([undefined, null])('renders nothing for %s', async (market) => {
-    await page.viewport(1024, 768);
-    await renderAtRest(props({ market }));
-    openSources();
-    expect(sources().querySelector('[data-testid="fzp-market"]')).toBeNull();
   });
 });
 
@@ -651,7 +593,7 @@ describe('public money and income tiers (funding-ui 4.11)', () => {
       el('fzp-money')!,
       el('fzp-tiers')!,
       page.getByTestId('tl-year-table').element(),
-      sources().querySelector('summary')!
+      workedOut().element()
     ];
     for (let k = 0; k < els.length - 1; k++) before(els[k], els[k + 1]);
     expect(el('fzp-money')!.querySelector('h3')!.textContent).toMatch(/Public money$/);
@@ -870,25 +812,6 @@ describe('public money and income tiers (funding-ui 4.11)', () => {
     expect(el('fzp-money-limits')).toBeNull();
     expect(document.body.textContent).not.toContain('Limits on the City borrowing');
   });
-
-  it('market paragraph ends with MARKET_FUNDING_SENTENCE under private, Release 1 text under all', async () => {
-    await page.viewport(1024, 768);
-    const cal = fixtureCalibration();
-    const priv = marketText(cal)!;
-    expect(priv.endsWith(` ${MARKET_FUNDING_SENTENCE}`)).toBe(true);
-    const screen = await renderAtRest(props({ market: priv }));
-    openSources();
-    expect(el('fzp-market')!.textContent!.trim()).toBe(marketBody(priv));
-    expect(el('fzp-market')!.textContent!.trim().endsWith(MARKET_FUNDING_SENTENCE4)).toBe(true);
-    expect(el('fzp-market')!.textContent).not.toContain('FZP');
-    const all = structuredClone(cal);
-    delete all.baselineFunding;
-    const r1 = marketText(all)!;
-    expect(r1).toBe(marketSentence(all, 'all'));
-    await screen.rerender(props({ market: r1 }));
-    await expect.element(page.getByTestId('fzp-market')).toHaveTextContent(marketBody(r1));
-    expect(el('fzp-market')!.textContent).not.toContain(MARKET_FUNDING_SENTENCE);
-  });
 });
 
 describe('fed from a stepped view (timeline-ui rule 26)', () => {
@@ -928,7 +851,7 @@ describe('fed from a stepped view (timeline-ui rule 26)', () => {
     expect(text).not.toContain('still calculating');
     expect(document.querySelector('[data-testid="fzp-chart"]')).toBeNull();
     expect(document.querySelectorAll('[role="meter"]').length).toBeGreaterThan(0);
-    expect(document.querySelector('[data-testid="fzp-sources"]')).not.toBeNull();
+    expect(document.querySelector('[data-testid="details-about"]')).not.toBeNull();
     expect(
       document.querySelector('[data-testid="tl-year-table"] > summary')!.textContent
     ).toContain('Show as table');
@@ -1099,7 +1022,6 @@ describe("the target rows hold at the goal's deadline, as the header does", () =
       [57, false]
     ] as const) {
       const screen = await renderAtRest(feedAt(v, i, atToday));
-      sources().open = true;
       expect(page.getByRole('meter').elements()).toHaveLength(2);
       document.querySelectorAll('details').forEach((d) => (d.open = true));
       expect(document.body.textContent).not.toMatch(/RHNA/);

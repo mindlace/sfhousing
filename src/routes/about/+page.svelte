@@ -1,49 +1,33 @@
+<!--
+  About this model, the page: what the numbers mean, the assumptions, data and licences, using
+  it. The page is light at every setting, so it gives the parts the light tokens for their two
+  colour properties (docs/dev/about.md). The manifest comes from the server load; the browser
+  fetches nothing until the reader opens the assumptions (or a link names one).
+-->
 <script lang="ts">
-  import { REPO_URL } from '$lib/config';
+  import type { PageData } from './$types';
+  import AboutAssumptions from '$lib/about/AboutAssumptions.svelte';
+  import AboutData from '$lib/about/AboutData.svelte';
+  import AboutMeanings from '$lib/about/AboutMeanings.svelte';
+  import AboutUsing from '$lib/about/AboutUsing.svelte';
+  import { ABOUT_INTRO, ABOUT_TITLE } from '$lib/about/copy';
+  import { APP_NAME } from '$lib/config';
+
+  let { data }: { data: PageData } = $props();
 </script>
 
-<svelte:head><title>About · SF Housing Simulator</title></svelte:head>
+<svelte:head><title>{ABOUT_TITLE} · {APP_NAME}</title></svelte:head>
 
-<h1 class="text-2xl font-semibold">About</h1>
+<h1 class="text-2xl font-semibold">{ABOUT_TITLE}</h1>
+<p class="mt-3">{ABOUT_INTRO}</p>
 
-<h2 class="mt-6 text-lg font-semibold">What this is</h2>
-<p class="mt-3">
-  I built this so you can paint zoning changes on a map of San Francisco and see how many homes they
-  could allow. Pick an area, choose what the rules would permit there, and watch the totals move.
-</p>
-
-<h2 class="mt-6 text-lg font-semibold">What the numbers mean</h2>
-<p class="mt-3">
-  <strong>Estimated housing capacity under the modeled building forms, not a forecast.</strong>
-  The totals describe the homes that fit the modeled forms on eligible parcels under your chosen height
-  limits.
-</p>
-<p class="mt-3">
-  For scale, San Francisco's RHNA 6th-cycle target is <strong>82,069</strong> homes (<strong
-    >94,379</strong
-  >
-  with the 15% buffer). See
-  <a
-    class="underline"
-    href="https://sfplanning.org/project/housing-element-update-2022"
-    rel="noopener noreferrer">SF Planning's Housing Element</a
-  > for how that target was set.
-</p>
-
-<p class="mt-3">
-  Reopening a saved plan uses the current building model, so its appearance and estimated totals can
-  change.
-</p>
-
-<h2 class="mt-6 text-lg font-semibold">Your plans</h2>
-<p class="mt-3">
-  <strong>Published plans are public and permanent.</strong> Anyone with the link can see them, and I
-  can't take them back, so don't put anything in a plan you wouldn't want shared.
-</p>
-
-<h2 class="mt-6 text-lg font-semibold">Code and data</h2>
-<p class="mt-3">
-  The <a class="underline" href={REPO_URL}>source code</a> is on GitHub, MIT licensed; see the
-  <a class="underline" href="{REPO_URL}/blob/main/LICENSE">LICENSE</a>. Data sources and their
-  licences are listed on the <a class="underline" href="/attribution">data and licences page</a>.
-</p>
+<div
+  class="mt-6 space-y-6"
+  style:--about-muted="var(--color-ink-muted)"
+  style:--about-line="var(--color-line)"
+>
+  <AboutMeanings level={2} />
+  <AboutAssumptions level={2} manifest={data.manifest} />
+  <AboutData level={2} datasetVersion={data.datasetVersion} manifest={data.manifest} />
+  <AboutUsing level={2} />
+</div>

@@ -1,14 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import {
-  TIMELINE_SCORE,
-  TIMELINE_SCORE_NO_PHASING,
-  TIMELINE_SCORE_R0
-} from './fixtures/timeline-score';
+import { TIMELINE_SCORE, TIMELINE_SCORE_R0 } from './fixtures/timeline-score';
 import {
   CALCULATING,
   builtTowardGoalText,
   deadlineIndex,
-  phasingFootnote,
   scoreAt,
   vsFzpText,
   fromPolicyText
@@ -82,48 +77,6 @@ describe('scoreAt', () => {
       planCompleted: 1,
       planEntitled: 1
     });
-  });
-});
-
-describe('phasingFootnote', () => {
-  const head =
-    'Multi-phase projects: 5 phases scheduled from published plans, 3 estimated from past projects';
-
-  it('counts drawn and score-only projects', () => {
-    expect(phasingFootnote(TIMELINE_SCORE.phasing)).toBe(
-      `${head}; 2 projects without phase data are simulated as one project each: ` +
-        '1 drawn as one footprint on a free lot, 1 counted in the score but not drawn.'
-    );
-  });
-
-  it('omits the score-only clause with its comma when every project is drawn', () => {
-    const p = {
-      ...TIMELINE_SCORE.phasing,
-      unenriched: TIMELINE_SCORE.phasing.unenriched.filter((u) => u.drawn)
-    };
-    expect(phasingFootnote(p)).toBe(
-      `${head}; 1 projects without phase data are simulated as one project each: ` +
-        '1 drawn as one footprint on a free lot.'
-    );
-  });
-
-  it('omits the drawn clause when none is drawn', () => {
-    const p = {
-      ...TIMELINE_SCORE.phasing,
-      unenriched: TIMELINE_SCORE.phasing.unenriched.filter((u) => !u.drawn)
-    };
-    expect(phasingFootnote(p)).toBe(
-      `${head}; 1 projects without phase data are simulated as one project each: ` +
-        '1 counted in the score but not drawn.'
-    );
-  });
-
-  it('ends after "estimated from past projects" with no unenriched projects', () => {
-    expect(phasingFootnote({ ...TIMELINE_SCORE.phasing, unenriched: [] })).toBe(`${head}.`);
-  });
-
-  it('is null when there are no master plans', () => {
-    expect(phasingFootnote(TIMELINE_SCORE_NO_PHASING.phasing)).toBeNull();
   });
 });
 

@@ -155,7 +155,8 @@
     setDay(to);
   }
 
-  function onplay() {
+  /** What the Play button does ("Play from" and Replay included): TimelineMode's Space calls it. */
+  export function toggle(): void {
     if (playing) {
       playing = false;
       return;
@@ -209,7 +210,7 @@
 
 <div class="sfh-playhead text-ink dark:text-ink-dark">
   <div class="controls" data-testid="tl-controls">
-    <button type="button" class="ctl play" data-testid="tl-play" onclick={onplay}>
+    <button type="button" class="ctl play" data-testid="tl-play" onclick={toggle}>
       <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor" aria-hidden="true">
         {#if playing}
           <rect x="3" y="2" width="3.5" height="12" rx="0.5" />

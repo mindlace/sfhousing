@@ -5,13 +5,19 @@ import { smallText } from './helpers/sharing';
 // HTML that outlives a deploy. Explicit cache headers must be untouched.
 const HTML_DEFAULT = 'private, no-cache';
 
-for (const path of ['/', '/about', '/attribution']) {
+for (const path of ['/', '/about']) {
   test(`${path} is private, no-cache`, async ({ request }) => {
     const res = await request.get(path);
     expect(res.status()).toBe(200);
     expect(res.headers()['cache-control']).toBe(HTML_DEFAULT);
   });
 }
+
+test('/attribution answers 308 to /about#about-data', async ({ request }) => {
+  const res = await request.get('/attribution', { maxRedirects: 0 });
+  expect(res.status()).toBe(308);
+  expect(res.headers()['location']).toBe('/about#about-data');
+});
 
 test('a 404 page is private, no-cache', async ({ request }) => {
   const res = await request.get('/no-such-page');

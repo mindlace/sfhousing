@@ -8,6 +8,16 @@ export const MARKET_INTRO_SENTENCE =
 export const MARKET_HOLD_SENTENCE =
   "This round holds today's market to the end of the simulation; it does not forecast a recovery or a downturn.";
 
+/**
+ * Under About's "Today's level" while today's public funding is modelled (the private level).
+ * Why duplicated: `MARKET_FUNDING_SENTENCE` in `src/lib/sim-page/funding-copy.ts` says "FZP as
+ * written", and `/lesscars` imports it, so the original may not change.
+ */
+export const MARKET_FUNDING_SENTENCE4 =
+  "Today's public funding is part of every run, including the comparison with current law, " +
+  'and the 100% affordable homes it pays for start because of it, so nothing is counted twice; ' +
+  'the comparison shows what your changes add.';
+
 /** The share of the average that `level`'s observed starts are, from the counts. */
 export function marketShare(cal: Calibration, level: 'all' | 'private'): string | null {
   const today = cal.market?.today;

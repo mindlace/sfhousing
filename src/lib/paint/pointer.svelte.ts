@@ -1,5 +1,5 @@
 // The pointer rules for undo and redo. Undo and Redo buttons show while some pointer is coarse
-// (`touch`: a phone, a tablet or a touch laptop), since a touch has no Ctrl+Z; the Shortcuts
+// (`touch`: a phone, a tablet or a touch laptop), since a touch has no Ctrl+Z; Paint's Shortcuts
 // button shows while the primary pointer is fine (`fine`), since it lists keys. A touch laptop
 // gets both. `(pointer: coarse)` reports the primary pointer only, `(any-pointer: coarse)` any of
 // them. The queries are reactive (docking a keyboard or adding a touch screen swaps the buttons)

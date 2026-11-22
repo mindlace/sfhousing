@@ -176,6 +176,7 @@ type Over = Partial<{
   ondetails: () => void;
   onactivity: () => void;
   fetchPlaces: (url: string) => Promise<NeighborhoodShapes | null>;
+  spacePlays: boolean;
 }>;
 
 let workers: FakeTimelineWorker[];
@@ -226,6 +227,7 @@ function setup(over: Over = {}) {
       ...(over.onstarter ? { onstarter: over.onstarter } : {}),
       ...(over.ondetails ? { ondetails: over.ondetails } : {}),
       ...(over.onactivity ? { onactivity: over.onactivity } : {}),
+      ...(over.spacePlays !== undefined ? { spacePlays: over.spacePlays } : {}),
       fetchPlaces: over.fetchPlaces ?? (async () => FIXTURE_PLACES)
     }
   });
@@ -259,6 +261,15 @@ const statusSlot = () => page.getByTestId('tl-status-live');
 /** The status as shown in the header's slot (beside the invisible sizer). */
 const statusShown = () => page.getByTestId('tl-status-shown');
 const slider = () => page.getByRole('slider', { name: 'Date in the simulation' });
+/** A Space keydown dispatched on `target` (it bubbles to the window), returned for its state. */
+function spaceOn(target: EventTarget, init: KeyboardEventInit = {}): KeyboardEvent {
+  const e = new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true, ...init });
+  target.dispatchEvent(e);
+  return e;
+}
+function spaceUp(target: EventTarget): void {
+  target.dispatchEvent(new KeyboardEvent('keyup', { key: ' ', bubbles: true, cancelable: true }));
+}
 
 function summary(project?: ProjectCard): ParcelSummary {
   return {
@@ -445,6 +456,28 @@ describe('TimelineMode', () => {
       expect(debug().playFrom).toBeNull();
       await expect.element(playButton()).toHaveAccessibleName('Pause');
       await playButton().click();
+      await expect.poll(() => debug().playing).toBe(false);
+      await expect.element(playLabelEl()).not.toHaveTextContent(/Play from/);
+    });
+
+    it('Space plays and pauses; after an edit it plays from the first changed month', async () => {
+      const s = await opened(LAST, { initialPolicy: before });
+      await keysTo(20, 15);
+      await edit(s, mk(protect(7)), 2);
+      await answer(2, 8, 12);
+      await expect.element(playLabelEl()).toHaveTextContent(playFromText(MONTHS[12]));
+      (document.activeElement as HTMLElement | null)?.blur();
+      // Read in the key's own task: no frame of playback can come between.
+      const down = spaceOn(document.body);
+      expect(down.defaultPrevented).toBe(true);
+      expect(debug().day).toBe(MONTHS[12]);
+      expect(debug().playing).toBe(true);
+      expect(debug().playFrom).toBeNull();
+      spaceUp(document.body);
+      await expect.element(playButton()).toHaveAccessibleName('Pause');
+      // A real press on the date slider pauses.
+      (slider().element() as HTMLElement).focus();
+      await userEvent.keyboard(' ');
       await expect.poll(() => debug().playing).toBe(false);
       await expect.element(playLabelEl()).not.toHaveTextContent(/Play from/);
     });
@@ -639,6 +672,92 @@ describe('TimelineMode', () => {
       await expect.poll(() => debug().filledThrough).toBe(11);
       await tick();
       expect(vi.mocked(scanned).mock.calls.length).toBe(calls + 1);
+    });
+  });
+
+  describe('Space', () => {
+    it('Space on a button presses the button and leaves Play', async () => {
+      await opened();
+      const speed = page.getByTestId('tl-speed');
+      (speed.element() as HTMLElement).focus();
+      const before = debug().speed;
+      await userEvent.keyboard(' ');
+      await expect.poll(() => debug().speed).not.toBe(before);
+      expect(debug().playing).toBe(false);
+      // The Play button itself: its own press, once.
+      (playButton().element() as HTMLElement).focus();
+      await userEvent.keyboard(' ');
+      await expect.poll(() => debug().playing).toBe(true);
+      await userEvent.keyboard(' ');
+      await expect.poll(() => debug().playing).toBe(false);
+    });
+
+    it('a held Space toggles once', async () => {
+      await opened();
+      (document.activeElement as HTMLElement | null)?.blur();
+      expect(spaceOn(document.body).defaultPrevented).toBe(true);
+      expect(debug().playing).toBe(true);
+      // The repeats while held: no toggle, but handled, so the page never scrolls.
+      for (let i = 0; i < 3; i++) {
+        expect(spaceOn(document.body, { repeat: true }).defaultPrevented).toBe(true);
+        expect(debug().playing).toBe(true);
+      }
+      spaceUp(document.body);
+      expect(debug().playing).toBe(true);
+      // Released: a repeat no press took is left to the browser.
+      expect(spaceOn(document.body, { repeat: true }).defaultPrevented).toBe(false);
+      spaceOn(document.body);
+      expect(debug().playing).toBe(false);
+      // A blur ends the press as a keyup does.
+      window.dispatchEvent(new Event('blur'));
+      expect(spaceOn(document.body, { repeat: true }).defaultPrevented).toBe(false);
+      expect(debug().playing).toBe(false);
+      spaceUp(document.body);
+    });
+
+    it('not in a field, with a modifier, already handled or under a modal dialog', async () => {
+      await opened();
+      const field = document.createElement('input');
+      document.body.appendChild(field);
+      const dialog = document.createElement('dialog');
+      document.body.appendChild(dialog);
+      try {
+        expect(spaceOn(field).defaultPrevented).toBe(false);
+        expect(debug().playing).toBe(false);
+        // After each press, so two wrong toggles cannot cancel out.
+        for (const mod of ['shiftKey', 'ctrlKey', 'altKey', 'metaKey'] as const) {
+          expect(spaceOn(document.body, { [mod]: true }).defaultPrevented, mod).toBe(false);
+          expect(debug().playing, mod).toBe(false);
+        }
+        const handled = new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true });
+        handled.preventDefault();
+        document.body.dispatchEvent(handled);
+        expect(debug().playing).toBe(false);
+        dialog.showModal();
+        expect(spaceOn(document.body).defaultPrevented).toBe(false);
+        dialog.close();
+        expect(debug().playing).toBe(false);
+      } finally {
+        field.remove();
+        dialog.remove();
+      }
+    });
+
+    it('About open: Space does not play', async () => {
+      await opened();
+      await page.getByRole('link', { name: 'About', exact: true }).click();
+      await expect.element(page.getByRole('dialog', { name: 'About this model' })).toBeVisible();
+      spaceOn(document.body);
+      expect(debug().playing).toBe(false);
+      await userEvent.keyboard('{Escape}');
+    });
+
+    it('spacePlays false: Space does nothing', async () => {
+      await opened(LAST, { spacePlays: false });
+      (document.activeElement as HTMLElement | null)?.blur();
+      expect(spaceOn(document.body).defaultPrevented).toBe(false);
+      spaceUp(document.body);
+      expect(debug().playing).toBe(false);
     });
   });
 
@@ -1315,6 +1434,47 @@ describe('TimelineMode', () => {
     await expect.element(heading).toBeInTheDocument();
     await userEvent.keyboard('{Escape}');
     await expect.element(heading).not.toBeInTheDocument();
+  });
+
+  it("the card's source link opens About at its entry and pauses", async () => {
+    await page.viewport(1280, 800);
+    await opened();
+    await expect.poll(() => stub.props.timelinePick).toBeTruthy();
+    stub.props.timelinePick!({ projectId: 'pr-1', parcelId: 'p1', x: 40, y: 40, kind: 'tap' });
+    await expect.poll(() => w().all('parcelSummary')).toHaveLength(1);
+    const req = w().lastOf('parcelSummary')!;
+    w().emit({ type: 'parcelSummary', reqId: req.reqId, summary: summary(REAL_ACTUAL) });
+    const card = page.getByTestId('tl-card');
+    await expect.element(card.getByRole('heading', { level: 2 })).toBeInTheDocument();
+    await playButton().click();
+    await expect.poll(() => debug().playing).toBe(true);
+    // Nothing of About is built before it opens.
+    expect(document.getElementById('about-assumptions')).toBeNull();
+    await card.getByText('How is this estimated?').click();
+    const source = card.element().querySelector<HTMLButtonElement>('details li button')!;
+    await userEvent.click(source);
+    const dialog = page.getByRole('dialog', { name: 'About this model' });
+    await expect.element(dialog).toBeVisible();
+    expect(debug().playing).toBe(false);
+    const day = debug().day;
+    // Scrolled to an entry of the assumptions: one sits at the top of the scroll box.
+    const box = dialog.element().querySelector('[data-about-scroll]')!;
+    await expect
+      .poll(() =>
+        [...box.querySelectorAll('[id^="src-"]')].some(
+          (el) => Math.abs(el.getBoundingClientRect().top - box.getBoundingClientRect().top) < 24
+        )
+      )
+      .toBe(true);
+    expect(box.scrollTop).toBeGreaterThan(0);
+    const el = dialog.element() as HTMLDialogElement;
+    await dialog.getByRole('button', { name: 'Close' }).click();
+    expect(el.open).toBe(false);
+    // The run stays: the playhead where it paused, the card open, focus back on the source.
+    expect(debug().day).toBe(day);
+    expect(debug().playing).toBe(false);
+    await expect.element(card.getByRole('heading', { level: 2 })).toBeInTheDocument();
+    expect(document.activeElement).toBe(source);
   });
 
   it('a miss tap calls onmiss and opens no card', async () => {

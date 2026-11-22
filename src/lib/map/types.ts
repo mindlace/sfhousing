@@ -146,6 +146,11 @@ export interface SimMapHandle {
    * controller exists, as setTime.
    */
   setGlowInset(o: { top: number; right: number }): void;
+  /**
+   * Collapse the credit now, opened by hand or not, unless focus is inside it (Paint's strip
+   * appearing); a no-op before the map.
+   */
+  collapseCredit(): void;
 }
 
 /** How the progress bars draw (docs/dev/map-interfaces.md "Bar modes"). */
@@ -198,6 +203,11 @@ export interface SimMapProps {
    * open card. Hover tooltips and `timelinePick` reports are unaffected.
    */
   tapCards?: boolean;
+  /**
+   * How long the map's credit stays open once the map has loaded, ms (default: 0 in a VITE_E2E
+   * build, else `CREDIT_SHOW_MS`, 5 s). 0 collapses it at once, when it is added.
+   */
+  creditShowMs?: number;
 }
 
 /**

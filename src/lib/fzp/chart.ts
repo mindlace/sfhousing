@@ -1,6 +1,6 @@
 /**
  * What the deleted score chart left behind (spec §4.6): the stroke colours the timeline chart and
- * its legend use, the series names the sources dialog compares published estimates with, and
+ * its legend use, the series names About's assumptions compare published estimates with, and
  * `niceCeil`, the scale rounding the timeline chart and /lesscars share. Pure.
  */
 import { GOAL } from '$lib/goal/goal';
@@ -40,7 +40,7 @@ export function niceCeil(v: number): number {
   return 10 * p;
 }
 
-/** The drawn series a published reference is compared with (the sources dialog). */
+/** The drawn series a published reference is compared with (About's assumptions). */
 export const MEASURE_SERIES = {
   'planEffect.entitledNew': 'planEntitled',
   'planEffect.completedNetNew': 'planCompleted',

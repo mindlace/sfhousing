@@ -20,8 +20,11 @@ import {
   touchDrag
 } from './helpers/sharing';
 
-const ATTRIBUTION =
-  '© OpenStreetMap · Overture Maps (Esri Community Maps, Microsoft ML Buildings, OpenStreetMap, USGS Lidar) · DataSF · Protomaps';
+const CREDIT = '© OpenStreetMap · About this model';
+/** The map's credit (MapLibre's compact control) and its (i) toggle. */
+const credit = (page: Page) => page.getByTestId('map-root').locator('.maplibregl-ctrl-attrib');
+const creditToggle = (page: Page) => page.getByTestId('map-root').getByLabel('Map credits');
+const OPEN = /maplibregl-compact-show/;
 const BUILDINGS = '**/data/fixture-0/buildings.pmtiles';
 // Fixture parcel 3512014 (e2e/fixtures/data/fixture-0/parcels/50_25.json): label point and a
 // 60 m existing building.
@@ -217,7 +220,7 @@ async function firstFrame(page: Page): Promise<ControllerSnapshot> {
 }
 
 test.describe('map view', () => {
-  test('E1: / loads the map with exact attribution, no console errors or CSP violations', async ({
+  test('E1: / loads the map with its credit collapsed, no console errors or CSP violations', async ({
     page
   }) => {
     const errors: string[] = [];
@@ -241,10 +244,10 @@ test.describe('map view', () => {
     const canvasBox = (await page.locator('.maplibregl-canvas').boundingBox())!;
     expect(Math.abs(canvasBox.height - rootBox.height)).toBeLessThanOrEqual(1);
     expect(Math.abs(canvasBox.width - rootBox.width)).toBeLessThanOrEqual(1);
-    const link = page.getByTestId('map-root').getByRole('link', { name: ATTRIBUTION, exact: true });
-    await expect(link).toBeVisible();
-    await expect(link).toHaveText(ATTRIBUTION);
-    await expect(link).toHaveAttribute('href', '/attribution');
+    // The e2e build starts the credit collapsed (creditShowMs 0): the (i) alone.
+    await expect(credit(page)).not.toHaveClass(OPEN);
+    await expect(creditToggle(page)).toBeVisible();
+    await expect(creditToggle(page)).toHaveAttribute('aria-expanded', 'false');
     await waitIdle(page);
     await expectNoA11yViolations(page);
 
@@ -355,8 +358,7 @@ test.describe('map view', () => {
           () => document.documentElement.scrollWidth <= document.documentElement.clientWidth
         )
       ).toBe(true);
-      await expect(page.locator('.maplibregl-ctrl-attrib.maplibregl-compact-show')).toBeVisible();
-      await expect(page.getByRole('link', { name: ATTRIBUTION, exact: true })).toBeVisible();
+      await expect(creditToggle(page)).toBeVisible();
 
       await jumpAndIdle(page, { center: PARCEL_3512014, zoom: 17, pitch: 0, bearing: 0 });
       const [x, y] = await projectToPage(page, PARCEL_3512014);
@@ -395,12 +397,13 @@ test.describe('map view', () => {
       expect(zoom).toBeCloseTo(12.2, 2);
     });
 
-    test('attribution collapses after a user drag and re-expands from the (i) button', async ({
+    test('the credit opened from its (i) collapses on a user drag and opens again from it', async ({
       page
     }) => {
       await gotoReady(page);
-      const attrib = page.locator('.maplibregl-ctrl-attrib.maplibregl-compact');
-      await expect(attrib).toHaveClass(/maplibregl-compact-show/);
+      await expect(credit(page)).not.toHaveClass(OPEN);
+      await creditToggle(page).tap();
+      await expect(credit(page)).toHaveClass(OPEN);
 
       const canvas = (await page.locator('.maplibregl-canvas').boundingBox())!;
       const cx = canvas.x + canvas.width / 2;
@@ -410,21 +413,21 @@ test.describe('map view', () => {
       await page.mouse.move(cx + 40, cy + 20, { steps: 5 });
       await page.mouse.move(cx + 80, cy + 40, { steps: 5 });
       await page.mouse.up();
-      await expect(attrib).not.toHaveClass(/maplibregl-compact-show/);
+      await expect(credit(page)).not.toHaveClass(OPEN);
+      await expect(creditToggle(page)).toHaveAttribute('aria-expanded', 'false');
 
-      const button = attrib.locator('.maplibregl-ctrl-attrib-button');
-      await expect(button).toBeVisible();
-      await button.click();
-      await expect(attrib).toHaveClass(/maplibregl-compact-show/);
-      await expect(page.getByRole('link', { name: ATTRIBUTION, exact: true })).toBeVisible();
+      await expect(creditToggle(page)).toBeVisible();
+      await creditToggle(page).tap();
+      await expect(credit(page)).toHaveClass(OPEN);
+      await expect(creditToggle(page)).toHaveAttribute('aria-expanded', 'true');
+      await expect(credit(page).getByRole('link', { name: 'About this model' })).toBeVisible();
     });
 
-    test('the bottom-right controls footprint vars track the container and the (i) collapse', async ({
+    test('the bottom-right controls footprint vars track the container; the block holds open or collapsed', async ({
       page
     }) => {
       await gotoReady(page);
-      const attrib = page.locator('.maplibregl-ctrl-attrib.maplibregl-compact');
-      await expect(attrib).toHaveClass(/maplibregl-compact-show/);
+      await expect(credit(page)).not.toHaveClass(OPEN);
 
       const read = () =>
         page.evaluate(() => {
@@ -450,7 +453,14 @@ test.describe('map view', () => {
         ].every(Boolean);
       };
       await expect.poll(matches).toBe(true);
-      const expanded = (await read()).inline;
+      const collapsed = await read();
+
+      await creditToggle(page).tap();
+      await expect(credit(page)).toHaveClass(OPEN);
+      await expect.poll(async () => (await read()).inline).toBeGreaterThan(collapsed.inline);
+      await expect.poll(matches).toBe(true);
+      // One 24 px line either way: nothing above it moves.
+      expect(Math.abs((await read()).block - collapsed.block)).toBeLessThanOrEqual(1);
 
       const canvas = (await page.locator('.maplibregl-canvas').boundingBox())!;
       const cx = canvas.x + canvas.width / 2;
@@ -460,17 +470,98 @@ test.describe('map view', () => {
       await page.mouse.move(cx + 40, cy + 20, { steps: 5 });
       await page.mouse.move(cx + 80, cy + 40, { steps: 5 });
       await page.mouse.up();
-      await expect(attrib).not.toHaveClass(/maplibregl-compact-show/);
-      await expect.poll(async () => (await read()).inline).toBeLessThan(expanded);
-      await expect.poll(matches).toBe(true);
-
-      await attrib.locator('.maplibregl-ctrl-attrib-button').click();
-      await expect(attrib).toHaveClass(/maplibregl-compact-show/);
+      await expect(credit(page)).not.toHaveClass(OPEN);
       await expect
-        .poll(async () => Math.abs((await read()).inline - expanded))
+        .poll(async () => Math.abs((await read()).inline - collapsed.inline))
         .toBeLessThanOrEqual(1);
       await expect.poll(matches).toBe(true);
     });
+  });
+
+  test('the credit opens from its toggle: "© OpenStreetMap" links the OSM copyright page, "About this model" /about#about-data', async ({
+    page
+  }) => {
+    await gotoReady(page);
+    const toggle = creditToggle(page);
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    await expect(credit(page).getByRole('link')).toHaveCount(0);
+    // The keyboard reaches the (i): Enter opens it.
+    await toggle.focus();
+    await page.keyboard.press('Enter');
+    await expect(credit(page)).toHaveClass(OPEN);
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    const inner = credit(page).locator('.maplibregl-ctrl-attrib-inner');
+    await expect(inner).toHaveText(CREDIT);
+    const osm = credit(page).getByRole('link', { name: '© OpenStreetMap', exact: true });
+    await expect(osm).toHaveAttribute('href', 'https://www.openstreetmap.org/copyright');
+    // A new tab on every map page, so it never ends a run on /sim.
+    await expect(osm).toHaveAttribute('target', '_blank');
+    const about = credit(page).getByRole('link', { name: 'About this model', exact: true });
+    await expect(about).toHaveAttribute('href', '/about#about-data');
+    // One 24 px line, open as collapsed.
+    expect((await credit(page).boundingBox())!.height).toBeCloseTo(24, 0);
+    // Escape from inside closes it and puts focus on the (i).
+    await about.focus();
+    await page.keyboard.press('Escape');
+    await expect(credit(page)).not.toHaveClass(OPEN);
+    await expect(toggle).toBeFocused();
+    expect((await credit(page).boundingBox())!.height).toBeCloseTo(24, 0);
+    // Off /sim there is no About dialog: the link navigates to the page at Data and licences.
+    await toggle.click();
+    await about.click();
+    await expect(page).toHaveURL(/\/about#about-data$/);
+    await expect(page.getByRole('heading', { level: 2, name: 'Data and licences' })).toBeVisible();
+  });
+
+  test('under forced colours in a dark theme the (i) shows its glyph and a focus ring', async ({
+    page
+  }) => {
+    await page.emulateMedia({ forcedColors: 'active', colorScheme: 'dark' });
+    await gotoReady(page);
+    const toggle = creditToggle(page);
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    // The glyph is drawn: the (i)'s pixels hold a light glyph on a dark ground, not one colour.
+    const spread = async () => {
+      const png = (await toggle.screenshot()).toString('base64');
+      return page.evaluate(async (b64) => {
+        const img = new Image();
+        img.src = `data:image/png;base64,${b64}`;
+        await img.decode();
+        const c = new OffscreenCanvas(img.width, img.height);
+        const g = c.getContext('2d')!;
+        g.drawImage(img, 0, 0);
+        const d = g.getImageData(0, 0, img.width, img.height).data;
+        let lo = 255;
+        let hi = 0;
+        for (let i = 0; i < d.length; i += 4) {
+          const y = 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
+          lo = Math.min(lo, y);
+          hi = Math.max(hi, y);
+        }
+        return hi - lo;
+      }, png);
+    };
+    expect(await spread()).toBeGreaterThan(128);
+    // Focused from the keyboard it has an outline (forced colours drop box-shadow rings).
+    await toggle.focus();
+    expect(await toggle.evaluate((el) => el.matches(':focus-visible'))).toBe(true);
+    await expect(toggle).toHaveCSS('outline-style', 'solid');
+    await expect(toggle).toHaveCSS('outline-width', '2px');
+    // The (i) is flush in the map's corner and the map clips its overflow: the whole ring is drawn
+    // inside the map, in forced colours and out of them.
+    const ringPastMap = () =>
+      toggle.evaluate((el) => {
+        const s = getComputedStyle(el);
+        const out = parseFloat(s.outlineOffset) + parseFloat(s.outlineWidth);
+        const r = el.getBoundingClientRect();
+        const m = el.closest('.maplibregl-map')!.getBoundingClientRect();
+        return Math.max(r.right + out - m.right, r.bottom + out - m.bottom);
+      });
+    expect(await ringPastMap()).toBeLessThanOrEqual(0);
+    await page.emulateMedia({ forcedColors: 'none', colorScheme: 'light' });
+    expect(await toggle.evaluate((el) => el.matches(':focus-visible'))).toBe(true);
+    await expect(toggle).toHaveCSS('outline-style', 'solid');
+    expect(await ringPastMap()).toBeLessThanOrEqual(0);
   });
 
   // ---- painting (brush-tool + worker host) -----------------------------------------------------

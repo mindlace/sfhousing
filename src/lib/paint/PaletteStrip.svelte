@@ -284,4 +284,14 @@
   :global(.sfh-dock-host:has(.sfh-palette-strip) .sim-map .sim-map-reset) {
     bottom: calc(var(--map-bottom-inset, 0px) + 4rem);
   }
+  /* The strip's appearance collapses the map's credit, opened by hand or not (BrushEditor,
+     `collapseCredit`); opened again while the strip shows, its line draws above the strip
+     (`z-30`) until it closes or the map is dragged. */
+  :global(
+    .sfh-dock-host:has(.sfh-palette-strip)
+      .sim-map
+      .maplibregl-ctrl-bottom-right:has(.maplibregl-compact-show)
+  ) {
+    z-index: 31;
+  }
 </style>

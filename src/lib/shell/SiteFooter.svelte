@@ -6,7 +6,7 @@
   <nav aria-label="Footer" class="flex flex-wrap items-center gap-x-2 gap-y-1">
     <a href="/about" class="underline">About</a>
     <span aria-hidden="true">·</span>
-    <a href="/attribution" class="underline">Data &amp; licences</a>
+    <a href="/about#about-data" class="underline">Data &amp; licences</a>
     <span aria-hidden="true">·</span>
     <a href={REPO_URL} class="underline">Source code (GitHub)</a>
   </nav>

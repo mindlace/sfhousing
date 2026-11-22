@@ -9,7 +9,7 @@ import { ANNOUNCE_MS, MSG, TOO_LARGE_MS, strokeMessage, undoMessage } from './me
 import { buildOverlayLayers, metersPerPixel, type OverlayCtors } from './overlay';
 import { stepRadius } from './radius';
 import { createSampler, type BrushTool, type StrokeSampler } from './sampler';
-import { actionForKey } from './shortcuts';
+import { actionForKey, canPaint, SPACE_NATIVE } from './shortcuts';
 import type { BrushState } from './state.svelte';
 
 export interface ControllerMap {
@@ -60,9 +60,6 @@ interface Stroke {
 const MEASURE = import.meta.env.DEV || import.meta.env.VITE_E2E === '1';
 const PREFETCH_MIN_ZOOM = 14;
 const ZOOM_HINT_PX = 4;
-
-/** Space on these keeps its native meaning (activate / toggle), never temporary Move. */
-const SPACE_NATIVE = 'button, a[href], summary, [role="radio"], [role="button"]';
 
 function defaultDark(): boolean {
   try {
@@ -286,7 +283,7 @@ export class BrushController {
   /** Ruling (a): the effective tool, not state.tool alone (the toolbar shows Move otherwise). */
   #canPaint(): boolean {
     const { state, editor } = this.#d;
-    return state.phase === 'ready' && !editor.readOnly && state.tool !== 'move';
+    return canPaint(state, editor.readOnly);
   }
 
   #syncPanMode(): void {
@@ -609,6 +606,8 @@ export class BrushController {
         return;
       }
       if (e.target instanceof Element && e.target.closest(SPACE_NATIVE)) return; // ruling (b)
+      // Temporary Move needs a tool that paints: otherwise Space is the page's (on /sim, Play).
+      if (!this.#canPaint()) return;
     }
     const a = actionForKey(
       {

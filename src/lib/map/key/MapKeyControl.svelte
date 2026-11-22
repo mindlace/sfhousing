@@ -4,7 +4,7 @@
   (`--map-controls-br-block-size`, which includes the bottom inset), with a Key toggle and, when
   the page has layer rows, a Layers toggle before it. Each opens its panel 12 px above the toolbar
   (clear of the 29 px Reset view on a phone); at most one is open. The panel's room runs from
-  0.5rem below the map's top down to the toolbar, and it scrolls inside it. The toggles' words are fixed: status lives in the panels.
+  4 px below the map's top down to the toolbar, and it scrolls inside it. The toggles' words are fixed: status lives in the panels.
   The toolbar comes first in the DOM (the box is flex-col-reverse, so the panels still sit above
   it): Tab reaches the toggles before an open panel's controls.
 
@@ -137,7 +137,7 @@
 <div
   bind:this={el}
   data-testid="map-key-control"
-  class="sfh-map-key pointer-events-none absolute top-2 right-2 z-20 flex flex-col-reverse items-end justify-start gap-3"
+  class="sfh-map-key pointer-events-none absolute top-1 right-2 z-20 flex flex-col-reverse items-end justify-start gap-3"
   style:bottom="calc(max(var(--map-controls-br-block-size, 60px), {floor}px) + 0.5rem)"
   {hidden}
   inert={hidden}

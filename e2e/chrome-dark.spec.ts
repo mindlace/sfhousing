@@ -1,6 +1,6 @@
 // Dark chrome (sim-runs spec §8, sim-ux spec Goal 9, timeline-ui): the header, /sim's playhead
-// and timeline, its editor and Details, /'s dock and its Details face, and the notice pills take
-// dark variants and stay WCAG AA. Both Playwright projects.
+// and timeline, its editor, Details and About over the map, /'s dock and its Details face, and the
+// notice pills take dark variants and stay WCAG AA. Both Playwright projects.
 import { expect, test, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { MSG } from '../src/lib/brush/messages';
@@ -493,20 +493,31 @@ test('the Autosave off popover has no axe violations in dark', async ({ page, is
   await expectNoA11yViolations(page, { include: ['[data-testid=save-state]'] });
 });
 
-test('the Sources dialog has no axe violations in dark and draws on surface-dark', async ({
+// `ink-dark-muted`, the dark partner of muted text.
+const INK_DARK_MUTED = 'rgb(180, 174, 163)';
+
+test('About on /sim in dark: surface-dark, muted text in ink-dark-muted, no axe violations', async ({
   page
 }) => {
   await gotoSim(page);
   await page.getByTestId('score-bar').click();
   const details = page.getByTestId('tl-details');
   await expect(details).toBeVisible();
-  const sources = details.getByTestId('fzp-sources');
-  await sources.locator(':scope > summary').click();
-  await expect(sources).toHaveAttribute('open', '');
-  await details.getByRole('button', { name: 'Where these numbers come from' }).click();
-  const dialog = page.getByRole('dialog', { name: 'Where these numbers come from' });
+  await details.getByRole('link', { name: 'How this is worked out' }).click();
+  const dialog = page.getByRole('dialog', { name: 'About this model' });
   await expect(dialog).toBeVisible();
+  // The data checks have loaded: the whole body is there for axe.
+  await expect(dialog.locator('[id="src-quality"] tbody tr').first()).toBeVisible();
   await expect(dialog).toHaveCSS('background-color', SURFACE_DARK);
+  // The parts' muted text (the Painting caption, a source's Retrieved date) reads the dark token.
+  await expect(dialog.locator('caption', { hasText: /^Painting$/ })).toHaveCSS(
+    'color',
+    INK_DARK_MUTED
+  );
+  await expect(dialog.locator('#about-data td.whitespace-nowrap').first()).toHaveCSS(
+    'color',
+    INK_DARK_MUTED
+  );
   // Its scroller's native scrollbar follows the dark theme.
   const scroller = dialog.locator('.overflow-y-auto').first();
   await expect(scroller).toHaveCSS('color-scheme', 'dark');

@@ -162,20 +162,19 @@ test('375 px on /sim: the key starts closed, sits clear of Reset and the attribu
   await expect(keyPanel(page)).toBeHidden();
   await expect(keyToggle(page)).toBeFocused();
 
-  // The attribution collapsed to its (i) button: the footprint shrinks and the toolbar follows it,
-  // still clear of the button and of Reset view, closed and open.
+  // The credit opened from its (i): one 24 px line, as collapsed, so the footprint's block and the
+  // toolbar stay put, still clear of the credit and of Reset view, closed and open.
   const block = () =>
     page.evaluate(() =>
-      document.documentElement.style.getPropertyValue('--map-controls-br-block-size')
+      parseFloat(document.documentElement.style.getPropertyValue('--map-controls-br-block-size'))
     );
   const before = await block();
   const attrib = page.locator('.maplibregl-ctrl-attrib');
-  await expect(attrib).toHaveClass(/maplibregl-compact-show/);
-  await page.locator('.maplibregl-ctrl-attrib-button').click();
   await expect(attrib).not.toHaveClass(/maplibregl-compact-show/);
-  await expect.poll(block).not.toBe(before);
-  const toolbarBefore = t.y;
-  await expect.poll(async () => (await boxOf(keyToggle(page))).y).toBeGreaterThan(toolbarBefore);
+  await page.getByTestId('map-root').getByLabel('Map credits').click();
+  await expect(attrib).toHaveClass(/maplibregl-compact-show/);
+  expect(Math.abs((await block()) - before)).toBeLessThanOrEqual(1);
+  expect(Math.abs((await boxOf(keyToggle(page))).y - t.y)).toBeLessThanOrEqual(1);
   await expect(keyToggle(page)).toHaveAttribute('aria-expanded', 'false');
   await expectClear(page);
   await keyToggle(page).click();
@@ -449,7 +448,7 @@ test('keyboard: Tab from the zoom controls reaches Layers, then Key; Escape retu
   await expect(layersToggle(page)).toBeVisible();
   // The last of the map's zoom and compass buttons.
   await page.locator('.maplibregl-ctrl-bottom-left button').last().focus();
-  // Only the map's own controls (the attribution's links) lie between them and Layers.
+  // Only the map's own controls (the credit's (i)) lie between them and Layers.
   for (let i = 0; i < 12; i++) {
     await page.keyboard.press('Tab');
     const at = await focusAt(page);

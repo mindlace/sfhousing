@@ -4,9 +4,7 @@ import { render } from 'vitest-browser-svelte';
 import { page, userEvent } from 'vitest/browser';
 import '../../routes/layout.css';
 import ExplainHost from './test/ExplainHost.svelte';
-import { FORECAST_NOTE } from './copy';
-
-const TEXT = FORECAST_NOTE;
+const TEXT = 'A forecast if nothing changes.';
 const target = () => page.getByRole('button', { name: 'Target' });
 const focusTarget = (el: HTMLElement) => el.focus();
 
