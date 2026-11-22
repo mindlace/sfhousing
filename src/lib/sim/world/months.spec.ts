@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import { SYNTH_AS_OF } from '../scenario/fixtures/synth-city';
-import { monthFirstDay, monthLastDay, monthOfDay } from './months';
+import { monthFirstDay, monthLastDay, monthOfDay, windowHorizon } from './months';
 
 it('matches the worked month boundaries at asOf 0', () => {
   expect([monthFirstDay(0, 1), monthLastDay(0, 1)]).toEqual([1, 30]);
@@ -21,4 +21,11 @@ it('maps days to months consistently, tiling the calendar', () => {
     expect(monthOfDay(asOf, asOf)).toBe(0);
     expect(monthOfDay(asOf, asOf - 100)).toBe(0);
   }
+});
+
+it('windowHorizon: the last whole calendar month inside the window', () => {
+  expect(windowHorizon(20727, 480)).toBe(35336); // 1 Oct 2026  -> 30 Sep 2066
+  expect(windowHorizon(20736, 480)).toBe(35336); // 10 Oct 2026 -> 30 Sep 2066 (fixture-0)
+  expect(windowHorizon(20757, 480)).toBe(35336); // 31 Oct 2026 -> 30 Sep 2066
+  expect(windowHorizon(20787, 480)).toBe(35367); // 30 Nov 2026 -> 31 Oct 2066
 });

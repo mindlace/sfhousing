@@ -8,7 +8,7 @@ import type { GoalRowData } from './goal';
 
 const row = (over: Partial<GoalRowData> = {}): GoalRowData => ({
   id: 'goal',
-  label: 'State target',
+  label: 'Goal',
   amount: 82_069,
   value: 8_723,
   fraction: 8_723 / 82_069,
@@ -35,9 +35,9 @@ describe('GoalRow', () => {
   it('a meter named by the label, with the remainder and the note after it', async () => {
     await page.viewport(1024, 768);
     await renderAtRest(row());
-    const meter = page.getByRole('meter', { name: 'State target' });
+    const meter = page.getByRole('meter', { name: 'Goal' });
     await expect.element(meter).toBeInTheDocument();
-    expect(meter.element().getAttribute('aria-valuetext')).toBe('10% of State target');
+    expect(meter.element().getAttribute('aria-valuetext')).toBe('10% of Goal');
     expect(meter.element().getAttribute('aria-valuenow')).toBe('8723');
     expect(meter.element().getAttribute('aria-valuemax')).toBe('82069');
     expect(rowEl().getAttribute('data-primary')).toBe('true');
@@ -51,10 +51,7 @@ describe('GoalRow', () => {
 
   it('a held row shows Held at Jan 2031 on its own muted line', async () => {
     await page.viewport(1024, 768);
-    await renderAtRest(
-      row({ id: 'buffer', label: 'State target + 15%', note: 'Held at Jan 2031' }),
-      false
-    );
+    await renderAtRest(row({ id: 'buffer', label: 'Goal + 15%', note: 'Held at Jan 2031' }), false);
     expect(rowEl('buffer').getAttribute('data-primary')).toBe('false');
     const lines = [...rowEl('buffer').querySelectorAll('p')];
     expect(lines.map((p) => p.textContent!.trim())).toEqual(['73,346 to go', 'Held at Jan 2031']);

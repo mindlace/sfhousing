@@ -260,15 +260,13 @@ test('a shared link opens with everything ahead unseen', async ({ page }) => {
   );
 });
 
-test("the share description counts the policy's homes against the state target", async ({
-  page
-}) => {
+test("the share description counts the policy's homes against the goal", async ({ page }) => {
   const id = await seedPolicy(page, { ...(await capturePresetDoc(page)), title: 'SD permits' });
   await page.goto(`/s/${id}`);
   const og = page.locator('meta[property="og:description"]');
   await expect(og).toHaveAttribute(
     'content',
-    'A housing policy for San Francisco, run through the simulation lot by lot. Open it to see how many homes it adds against the state target.'
+    'A housing policy for San Francisco, run through the simulation lot by lot. Open it to see how many homes it adds against the goal.'
   );
   expect(await og.getAttribute('content')).not.toMatch(/RHNA/);
 });

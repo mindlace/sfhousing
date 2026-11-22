@@ -108,7 +108,7 @@
   import { SummaryRequester, type SummaryState } from '$lib/fzp/summary-request';
   import { monthStart } from '$lib/fzp/time';
   import type { FzpPhase, Speed } from '$lib/fzp/types';
-  import { GOAL, TODAY, goalStep, type Goal } from '$lib/goal/goal';
+  import { TODAY, defaultGoal, goalStep, type Goal } from '$lib/goal/goal';
   import type { HeightCity } from '$lib/map/height/types';
   import SimMap from '$lib/map/SimMap.svelte';
   import type { ChunkStatus, TimelinePick, TimelineUpdate } from '$lib/map/types';
@@ -275,7 +275,7 @@
     bottomExtra?: number;
     /** Test seam: the status slot's least gap between updates (rule 32). */
     statusMs?: number;
-    /** Test seam: the goal every goal read goes through. Default the page's goal. */
+    /** Test seam: the goal every goal read goes through. Default `defaultGoal(asOf)`. */
     goal?: Goal;
     /** Test seam: fetches the neighbourhoods Activity's list names; null on any failure. */
     fetchPlaces?(url: string): Promise<NeighborhoodShapes | null>;
@@ -334,7 +334,7 @@
     scoreExpanded = false,
     scoreControls = undefined,
     bottomExtra = 0,
-    goal = GOAL,
+    goal: goalSeam = undefined,
     statusMs = 1000,
     fetchPlaces = (url: string) => loadPlaces(url),
     spacePlays = true
@@ -379,6 +379,8 @@
 
   const asOf = $derived(calibration?.asOf ?? 0);
   const windowEnd = $derived(monthLastDay(asOf, WINDOW_MONTHS));
+  /** The page's goal: the seam, else the default goal built from the dataset's date. */
+  const goal = $derived(goalSeam ?? defaultGoal(asOf));
   const current = $derived(session?.view ?? null);
   const statics = $derived(session?.statics ?? null);
   const months = $derived(statics?.months ?? current?.months ?? null);
@@ -601,7 +603,14 @@
     const wait = stale || searching;
     untrack(() => {
       if (wait) return;
-      const day = m === TODAY || !view ? asOf : view.months[m];
+      // The window's last month stands for the window's last day, which is where a goal due at
+      // the window's end is judged.
+      const day =
+        m === TODAY || !view
+          ? asOf
+          : m >= view.lastIndex
+            ? filledEndDay(view.months, view.lastIndex, asOf)
+            : view.months[m];
       // A view not yet covering the months read is no answer: the last outcome stays.
       if (awaitsView(g, view, day, asOf)) return;
       const next = goalOutcome(g, view, day, asOf);
@@ -1016,23 +1025,6 @@
     handle?.setBottomInset(untrack(() => bottomExtra));
   }
 
-  /** The notice stack's bottom from md (NoticePills' onbottom), px from the map's top. */
-  let pillsBottom = $state(0);
-  /** The key control's open panel (its onopenchange). */
-  let keyOpen = $state<'key' | 'layers' | null>(null);
-  /**
-   * The page's part of the glows' inset (SimMap adds the bottom): the notices at the top, an open
-   * panel at the right from md. Below md the right stays 0: an open panel covers most of a
-   * phone's map and would squeeze every glow to a strip. Set on those changes, never per frame.
-   */
-  let glowInset = { top: 0, right: 0 };
-  $effect(() => {
-    const top = pillsBottom;
-    const panel = keyOpen !== null && !narrow.current;
-    const el = keyEl;
-    glowInset = { top, right: panel && el ? el.offsetWidth + 8 : 0 };
-    untrack(() => handle?.setGlowInset(glowInset));
-  });
   let lastExtra = untrack(() => bottomExtra);
   $effect(() => {
     const extra = bottomExtra;
@@ -1052,13 +1044,12 @@
     pendingStatus.clear();
     if (calibration) {
       h.setTime(day);
-      // Halos and marks from the dataset date on: nothing rings at today. Once, not per move.
+      // Policy marks from the dataset date on: none shows at today. Once, not per move.
       h.setHalos({ from: calibration.asOf });
     }
     // Bars from the default zoom, one size, the person's projects first. The page's, once.
     h.setBarMode('far');
     applyInset();
-    h.setGlowInset(glowInset);
     // Rule 22.
     h.onResyncNeeded(() => session?.resync());
     attachMap(h.getMap());
@@ -1585,7 +1576,7 @@
        header. Below md the stack is in flow and this box is no box. -->
   <div class="relative flex min-h-0 flex-1 flex-col max-md:contents">
     <!-- Every notice is a chip or a card (Message) in this one stack (as FzpMode). -->
-    <NoticePills bind:el={pillsEl} onbottom={(px) => (pillsBottom = px)}>
+    <NoticePills bind:el={pillsEl}>
       {#if noScenario}
         {#snippet editorLink()}
           <a href="/" class="{BUTTON_QUIET} inline-flex items-center">Go to the editor</a>
@@ -1704,7 +1695,6 @@
             hidden={narrow.current && cardOpen}
             {stale}
             bind:el={keyEl}
-            onopenchange={(p) => (keyOpen = p)}
           >
             {#snippet key()}
               <SimKey {tally} inForce={keyMarks} />

@@ -188,7 +188,6 @@
     timelineLoading: boolean;
     timelineFailed: boolean; // a timelapse shader error: the error state is final for this map
     onRejection: ((e: PromiseRejectionEvent) => void) | null; // timeline mode's compile watch
-    unwatchMotion: (() => void) | null; // timeline mode's prefers-reduced-motion listener
     SolidPolygonLayer: SolidPolygonLayerClass | null; // from loadDeck(), once the overlay exists
     appliedTheme: Theme;
     paintDiff: Record<Theme, PaintSet[]> | null;
@@ -304,23 +303,6 @@
   const FP_INLINE = '--map-controls-br-inline-size';
   const FP_BLOCK = '--map-controls-br-block-size';
   let fpObserver: ResizeObserver | null = null;
-  /**
-   * The city layer's bottom glow inset: the bottom-right controls' block (the attribution and
-   * the Layers and Key buttons), at most a quarter of the map's height. Measured with the
-   * footprint, never per frame.
-   */
-  let glowInset = 0;
-  /** The page's part (`setGlowInset`): what covers the map's top and right. */
-  let pageInset = { top: 0, right: 0 };
-  /**
-   * A top glow's centre sits this far below what covers the top (the header line, the notices),
-   * so it reads as a glow at the map's edge, not one under the header. CSS px.
-   */
-  const GLOW_TOP_GAP = 12;
-  /** The one write of the glows' inset [top, right, bottom, left]: the page's and the footprint's. */
-  function writeEdgeInset(t = live?.timeline): void {
-    t?.setEdgeInset([pageInset.top + GLOW_TOP_GAP, pageInset.right, glowInset, 0]);
-  }
   let footprintGone = false;
 
   function publishFootprint(inline: number, block: number): void {
@@ -351,8 +333,6 @@
     const f = controlsFootprint(box, controls.getBoundingClientRect());
     const block = Math.max(f.block, bottomInset);
     publishFootprint(f.inline, block);
-    glowInset = Math.min(block, box.height / 4);
-    writeEdgeInset();
   }
 
   function observeFootprint(map: MapLibreMap): void {
@@ -471,16 +451,6 @@
     live?.timeline?.setBarMode(mode);
   }
 
-  /**
-   * The page's part of the glows' inset (top and right, CSS px); SimMap adds its bottom. Kept like
-   * the day; a repeated value writes nothing.
-   */
-  export function setGlowInset(o: { top: number; right: number }): void {
-    if (o.top === pageInset.top && o.right === pageInset.right) return;
-    pageInset = { top: o.top, right: o.right };
-    writeEdgeInset();
-  }
-
   const handle: SimMapHandle = {
     applyGenerated,
     setChunkStatus,
@@ -494,7 +464,6 @@
     setTimelineLookups,
     setHalos,
     setBarMode,
-    setGlowInset,
     collapseCredit
   };
 
@@ -568,7 +537,6 @@
       timelineLoading: false,
       timelineFailed: false,
       onRejection: null,
-      unwatchMotion: null,
       SolidPolygonLayer: null,
       appliedTheme: 'light',
       paintDiff: null,
@@ -942,7 +910,7 @@
     l.timelineLoading = false;
     if (l.dead || l.map !== map) return;
     const [
-      { TimelapseExtension, StageBarLayer, HaloLayer, CityLayer },
+      { TimelapseExtension, StageBarLayer, HaloLayer },
       { TimelineController, TIMELINE_PART_LAYER }
     ] = mods;
     const { log, WebMercatorViewport } = mods[2];
@@ -956,7 +924,6 @@
         TimelapseExtension,
         StageBarLayer,
         HaloLayer,
-        CityLayer,
         repaint: () => map.triggerRepaint(),
         // The debug snapshot's camera: deck's projection of the map's, read on demand only.
         debugView: () => {
@@ -974,10 +941,7 @@
           const m = vp.viewProjectionMatrix;
           return {
             zoom: map.getZoom(),
-            viewPx: [el.clientWidth, el.clientHeight],
             centre: [c.lng, c.lat],
-            pxPerMeter: vp.scale * vp.distanceScales.unitsPerMeter[0],
-            bearing: map.getBearing(),
             clip: (lng, lat, alt = 0) => {
               const [x, y, z] = vp.projectPosition([lng, lat, alt]);
               // Column-major: clip = M · [x, y, z, 1].
@@ -994,7 +958,6 @@
       firstSymbolLayerId(map.getStyle())
     );
     l.timeline = timeline;
-    writeEdgeInset(timeline);
     l.timelinePart = TIMELINE_PART_LAYER;
     watchCompileErrors(l);
     overlay.setProps({
@@ -1005,7 +968,6 @@
       }
     });
     if (pendingDay !== null) timeline.setTime(pendingDay);
-    watchReducedMotion(l, timeline);
     timeline.setHalos(pendingHalos);
     timeline.setBarMode(pendingBarMode);
     if (pendingLookups) {
@@ -1027,15 +989,6 @@
       }
     }
     if (remount && queued.length === 0) resyncCb?.();
-  }
-
-  /** The halos follow `prefers-reduced-motion`, now and on each change, until teardown. */
-  function watchReducedMotion(l: Live, timeline: TimelineController): void {
-    const q = matchMedia('(prefers-reduced-motion: reduce)');
-    const onChange = (e: { matches: boolean }) => timeline.setReducedMotion(e.matches);
-    timeline.setReducedMotion(q.matches);
-    q.addEventListener('change', onChange);
-    l.unwatchMotion = () => q.removeEventListener('change', onChange);
   }
 
   /** luma device errors: logged as before, except in timeline mode (§4.8 "Errors"). */
@@ -1091,8 +1044,6 @@
     l.timeline?.destroy();
     if (l.onRejection) removeEventListener('unhandledrejection', l.onRejection);
     l.onRejection = null;
-    l.unwatchMotion?.();
-    l.unwatchMotion = null;
     l.overlay?.finalize();
     l.map?.remove();
     l.controller = null;

@@ -87,14 +87,18 @@ test('By source redraws the timeline chart; closing Details puts Homes back', as
   await expect(chart(page)).toHaveAttribute('data-lens', 'homes');
 });
 
-test('past the deadline the goal rows say Held at Jan 2031', async ({ page }) => {
+test("the goal rows are dated by the window's last month, and hold at it there", async ({
+  page
+}) => {
   await gotoSim(page);
   await openDetails(page);
+  // At today.
+  await expect(details(page).getByTestId('goal-row-goal')).toContainText('to go by Sep 2066');
   await slider(page).focus();
   await page.keyboard.press('End');
   await waitFilled(page);
-  await expect(details(page).getByTestId('goal-row-goal')).toContainText('Held at Jan 2031');
-  await expect(details(page).getByTestId('goal-row-buffer')).toContainText('Held at Jan 2031');
+  await expect(details(page).getByTestId('goal-row-goal')).toContainText('Held at Sep 2066');
+  await expect(details(page).getByTestId('goal-row-buffer')).toContainText('Held at Sep 2066');
 });
 
 for (const scheme of ['light', 'dark'] as const) {

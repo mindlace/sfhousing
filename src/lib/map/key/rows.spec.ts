@@ -2,9 +2,6 @@ import { describe, expect, it } from 'vitest';
 import { STAGE_ORDER } from '$lib/timelapse/types';
 import { TOKENS, timelineTokenCss } from '$lib/map/palette';
 import { TYPOLOGY_ORDER } from '$lib/map/types';
-import { HALO_TOKEN } from '$lib/map/timelapse/halos';
-import { CITY_KIND_TOKEN } from '$lib/map/timelapse/city';
-import { AREA_SWATCH, EDGE_SWATCH } from '$lib/timeline/SimKey.svelte';
 import { STAGE_KEY, TYPE_KEY } from './rows';
 
 const prop = (name: string) => `--map-${name.replace(/[A-Z]/g, (c) => '-' + c.toLowerCase())}`;
@@ -41,26 +38,6 @@ describe('STAGE_KEY', () => {
     const tokens = [...STAGE_KEY.flatMap((r) => r.swatch.tokens), ...TYPE_KEY.map((t) => t.token)];
     expect(tokens.length).toBeGreaterThan(10);
     for (const t of tokens) {
-      expect(light, `${t} light`).toContain(`${prop(t)}: ${TOKENS.light[t]}`);
-      expect(dark, `${t} dark`).toContain(`${prop(t)}: ${TOKENS.dark[t]}`);
-    }
-  });
-
-  it('the area and edge swatch kinds draw from tokens that exist in both themes', () => {
-    const css = timelineTokenCss('.x');
-    const [light, dark] = css.split('@media (prefers-color-scheme: dark)');
-    // The city layer's own tones (CITY_KIND_TOKEN): the halo tones and the policy accent.
-    const tones = [
-      HALO_TOKEN.approved,
-      HALO_TOKEN.started,
-      HALO_TOKEN.completed,
-      'tl-halo-policy'
-    ] as const;
-    expect(tones).toEqual(CITY_KIND_TOKEN);
-    expect(AREA_SWATCH).toEqual({ kind: 'area', tokens: tones });
-    // The edge glow's swatch: the three stage tones, one row (the policy's glow is the mark row's).
-    expect(EDGE_SWATCH).toEqual({ kind: 'edge', tokens: tones.slice(0, 3) });
-    for (const t of tones) {
       expect(light, `${t} light`).toContain(`${prop(t)}: ${TOKENS.light[t]}`);
       expect(dark, `${t} dark`).toContain(`${prop(t)}: ${TOKENS.dark[t]}`);
     }

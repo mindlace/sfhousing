@@ -1,12 +1,14 @@
 /**
  * The goal the main screen reads, from one place: a name, a measure, an amount, a deadline and
- * the day the measure counts from. Built today from the state housing target.
+ * the day the measure counts from. Its amount and start come from GOAL_BASE (RHNA's 82,069 homes,
+ * counted from 30 Jun 2022); its deadline is the end of the model window (defaultGoal(asOf)).
  */
 import { formatShortMonthYear } from '$lib/fzp/format';
 import { dayFromUtc, utcParts } from '$lib/fzp/time';
 import { formatCount, formatPercent } from '$lib/scoreboard/format';
 import { M1_TARGETS } from '$lib/scoreboard/targets';
-import { RHNA_DEADLINE } from '$lib/sim/scenario/score';
+import { WINDOW_MONTHS } from '$lib/sim/timeline-client';
+import { windowHorizon } from '$lib/sim/world/months';
 import type { TimelineView } from '$lib/sim/world/score/types';
 import type { Day } from '$lib/timelapse/time';
 
@@ -27,7 +29,7 @@ export interface GoalMeasure {
 
 export interface Goal {
   id: string;
-  /** Display name: 'State target'. */
+  /** Display name: 'Goal'. */
   name: string;
   measure: GoalMeasure;
   amount: number;
@@ -45,18 +47,22 @@ export const HOMES_COMPLETED: GoalMeasure = {
 
 const RHNA_UNITS = M1_TARGETS.find((t) => t.id === 'rhna')!.units;
 
-/** The state housing target: RHNA 2023-2031, counted from 30 Jun 2022. */
-export const STATE_TARGET: Goal = {
-  id: 'state-target',
-  name: 'State target',
+/** A goal without its deadline: what stays fixed while the deadline follows the dataset date. */
+export type GoalBase = Omit<Goal, 'deadline'>;
+
+/** The goal's amount and start: RHNA's homes, counted from 30 Jun 2022. */
+export const GOAL_BASE: GoalBase = {
+  id: 'goal',
+  name: 'Goal',
   measure: HOMES_COMPLETED,
   amount: RHNA_UNITS,
-  deadline: RHNA_DEADLINE,
   countsFrom: dayFromUtc(2022, 6, 30)
 };
 
-/** The goal in force. The main screen reads this, never STATE_TARGET or a target id. */
-export const GOAL: Goal = STATE_TARGET;
+/** GOAL_BASE due at the last whole calendar month of the model window from `asOf`. */
+export function defaultGoal(asOf: Day): Goal {
+  return { ...GOAL_BASE, deadline: windowHorizon(asOf, WINDOW_MONTHS) };
+}
 
 export interface GoalReading {
   /** valueAt(at) / amount, uncapped, where at = min(i, deadline month); TODAY when the deadline
@@ -103,9 +109,14 @@ export function goalText(r: GoalReading): string {
     : `Goal reached, ${formatShortMonthYear(r.reachedOn)}`;
 }
 
-/** 'State target: 82,069 homes by Jan 2031'. */
+/** 'Goal: 82,069 homes'. */
+export function goalAmountName(goal: GoalBase): string {
+  return `${goal.name}: ${formatCount(goal.amount)} ${goal.measure.unit}`;
+}
+
+/** 'Goal: 82,069 homes by Sep 2066'. */
 export function goalName(goal: Goal): string {
-  return `${goal.name}: ${formatCount(goal.amount)} ${goal.measure.unit} by ${formatShortMonthYear(goal.deadline)}`;
+  return `${goalAmountName(goal)} by ${formatShortMonthYear(goal.deadline)}`;
 }
 
 /**
@@ -125,8 +136,8 @@ export function goalStep(
 /** The buffer over the goal the state asks for: at least 15% more capacity. */
 export const BUFFER_SHARE = 0.15;
 
-/** floor(goal.amount × (1 + BUFFER_SHARE)): 94,379 for the state target (M1_TARGETS' buffer). */
-export function bufferAmount(goal: Goal): number {
+/** floor(goal.amount × (1 + BUFFER_SHARE)): 94,379 for the goal (M1_TARGETS' buffer). */
+export function bufferAmount(goal: GoalBase): number {
   return Math.floor(goal.amount * (1 + BUFFER_SHARE));
 }
 
@@ -147,8 +158,8 @@ export interface GoalRowData {
   atDeadline: number | null;
 }
 
-/** 'by Jan 2031' before the deadline's month, 'Held at Jan 2031' from it on (and at today: 'by …');
- *  null without a deadline month. */
+/** 'by Jan 2031' before the deadline's month, 'Held at Jan 2031' from it on (and at today:
+ *  'by …'); null without a deadline month. */
 export function goalRowNote(
   goal: Goal,
   index: number,
@@ -165,7 +176,7 @@ export const atDeadlineText = (fraction: number): string =>
   `At the deadline: ${formatPercent(fraction)}`;
 
 /** The two rows' labels and amounts. */
-function rowsOf(goal: Goal): { id: GoalRowData['id']; label: string; amount: number }[] {
+function rowsOf(goal: GoalBase): { id: GoalRowData['id']; label: string; amount: number }[] {
   return [
     { id: 'goal', label: goal.name, amount: goal.amount },
     {
@@ -219,7 +230,7 @@ export function goalTrackMax(rows: readonly GoalRowData[]): number {
 }
 
 /** Paint's two rows: capacity `net` over each amount; no note, no atDeadline. */
-export function capacityRows(net: number, goal: Goal = GOAL): GoalRowData[] {
+export function capacityRows(net: number, goal: GoalBase = GOAL_BASE): GoalRowData[] {
   return rowsOf(goal).map((r) => ({
     ...r,
     value: net,

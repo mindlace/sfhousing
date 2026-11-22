@@ -3,7 +3,7 @@
  * its legend use, the series names About's assumptions compare published estimates with, and
  * `niceCeil`, the scale rounding the timeline chart and /lesscars share. Pure.
  */
-import { GOAL } from '$lib/goal/goal';
+import { GOAL_BASE } from '$lib/goal/goal';
 import type { TimelineScore } from '$lib/sim/protocol';
 import { formatShortMonthYear } from './format';
 
@@ -22,7 +22,7 @@ export const SERIES_NAME: Record<
   'total' | 'pipeline' | 'fresh' | 'planCompleted' | 'planEntitled',
   string
 > = {
-  total: `Toward the goal, since ${formatShortMonthYear(GOAL.countsFrom)}`,
+  total: `Toward the goal, since ${formatShortMonthYear(GOAL_BASE.countsFrom)}`,
   pipeline: "From today's pipeline",
   fresh: 'New projects',
   planCompleted: 'Plan effect, completed',

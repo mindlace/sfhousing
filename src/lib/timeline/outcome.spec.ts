@@ -1,16 +1,17 @@
 // The goal outcome: what the furthest date reached says of the goal (pure).
 import { describe, expect, it } from 'vitest';
-import { STATE_TARGET, readGoal, type Goal } from '$lib/goal/goal';
+import { GOAL_BASE, readGoal, type Goal } from '$lib/goal/goal';
 import type { TimelineView } from '$lib/sim/world/score/types';
 import { viewOf } from '$lib/sim/world/score/view';
 import { goalOutcome, awaitsView, outcomeKey, outcomeText } from './outcome';
+import { filledEndDay } from './playhead';
 import { calendarMonths, chunk, cut, statics } from './test/fixtures';
 
 // The measure at month i is 1000 + 3i + 1 (the baseline 1000 plus the row), 1000 at today.
 const view = calendarMonths(viewOf([chunk(0, 24)], statics()));
 const M = view.months;
 const ASOF = M[0];
-const goal = (amount: number, k: number): Goal => ({ ...STATE_TARGET, amount, deadline: M[k] });
+const goal = (amount: number, k: number): Goal => ({ ...GOAL_BASE, amount, deadline: M[k] });
 /** The view with its rows read through a proxy that records the month indexes read. */
 function counted(v: TimelineView): { view: TimelineView; reads: number[] } {
   const reads: number[] = [];
@@ -50,10 +51,23 @@ describe('goalOutcome', () => {
     expect(goalOutcome(goal(1050, 12), view, M[23], ASOF)).toEqual({ kind: 'missed', short: 13 });
   });
 
+  it("missed at the window's last day when the deadline is that day", () => {
+    const last = filledEndDay(M, 23, ASOF);
+    const g: Goal = { ...goal(1100, 0), deadline: last };
+    expect(goalOutcome(g, view, last - 1, ASOF)).toBeNull();
+    expect(goalOutcome(g, view, last, ASOF)).toEqual({ kind: 'missed', short: 30 });
+    expect(awaitsView(g, cut(view, 5), last, ASOF)).toBe(true);
+    // Reached on the way, the same day says reached.
+    expect(goalOutcome({ ...g, amount: 1025 }, view, last, ASOF)).toEqual({
+      kind: 'reached',
+      on: M[8]
+    });
+  });
+
   it('nothing for a deadline outside the window', () => {
-    const early: Goal = { ...STATE_TARGET, amount: 1100, deadline: M[0] - 40 };
+    const early: Goal = { ...GOAL_BASE, amount: 1100, deadline: M[0] - 40 };
     expect(goalOutcome(early, view, M[23], ASOF)).toBeNull();
-    const late: Goal = { ...STATE_TARGET, amount: 1100, deadline: M[23] + 400 };
+    const late: Goal = { ...GOAL_BASE, amount: 1100, deadline: M[23] + 400 };
     expect(goalOutcome(late, view, M[23], ASOF)).toBeNull();
     expect(goalOutcome(goal(1100, 12), null, M[23], ASOF)).toBeNull();
   });
@@ -99,11 +113,11 @@ describe('goalOutcome', () => {
     expect(awaitsView(goal(1100, 12), part, M[13], ASOF)).toBe(true);
     expect(awaitsView(goal(1100, 12), part, M[5], ASOF)).toBe(false);
     expect(awaitsView(goal(1100, 12), view, M[23], ASOF)).toBe(false);
-    expect(awaitsView({ ...STATE_TARGET, deadline: M[0] - 40 }, part, M[23], ASOF)).toBe(false);
+    expect(awaitsView({ ...GOAL_BASE, deadline: M[0] - 40 }, part, M[23], ASOF)).toBe(false);
   });
 
   it('outcomeText and outcomeKey', () => {
-    const g: Goal = { ...STATE_TARGET, amount: 1025, deadline: M[12] };
+    const g: Goal = { ...GOAL_BASE, amount: 1025, deadline: M[12] };
     const reached = { kind: 'reached', on: M[8] } as const;
     expect(outcomeText(reached, g, true)).toBe(
       'Goal reached in Jul 2027, by the Nov 2027 deadline.'

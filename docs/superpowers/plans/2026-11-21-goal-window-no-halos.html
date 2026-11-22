@@ -1,0 +1,527 @@
+<article>
+  <header>
+    <h1>Goal due at the window's end; no rings or glows: plan</h1>
+    <p>Implements the goal-window-no-halos spec in two independent parts: the goal as its own value (Tasks 1 to 4) and the map without rings and edge glows (Tasks 5 to 8), then a final check (Task 9).</p>
+    <aside data-kind="note"><strong>For agentic workers</strong> REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps are checklist items; progress is kept in the workspace ledger, not in the plan.</aside>
+  </header>
+
+  <section id="sec-overview">
+    <h2>Overview</h2>
+    <ul>
+      <li><strong>Goal:</strong> the <code>/sim</code> goal becomes a value built from the dataset date (82,069 homes, due at the window's last month, counted from 30 Jun 2022), and the map stops drawing per-project rings, merged rings and edge glows, keeping only the ◆ policy marks.</li>
+      <li><strong>Architecture:</strong> <code>src/lib/goal/goal.ts</code> gains <code>GOAL_BASE</code> (everything but the date) and <code>defaultGoal(asOf)</code>; <code>TimelineMode</code> derives the goal from its calibration's <code>asOf</code> and passes it to every reader, which already take a <code>Goal</code> argument. Paint and About read <code>GOAL_BASE</code> and show no window date. On the map, <code>CityLayer</code> and the glow inset go; the halo layer draws marks only, thinned below a fixed zoom 14; <code>CityStore</code> and <code>TimelineUpdate.city</code> stay.</li>
+      <li><strong>Tech stack:</strong> SvelteKit 2, Svelte 5 runes, deck.gl custom layers (GLSL), Vitest (server and client projects), Playwright.</li>
+      <li><strong>Spec:</strong> <a href="../specs/2026-11-21-goal-window-no-halos-design.html">docs/superpowers/specs/2026-11-21-goal-window-no-halos-design.html</a></li>
+    </ul>
+    <aside data-kind="warning"><strong>Deviation from the spec's literal date</strong> The spec sets the deadline to <code>monthLastDay(asOf, WINDOW_MONTHS)</code> (the Playhead's <code>windowEnd</code>). That day lies inside a calendar month the view does not hold: <code>scoreStaticsOf</code> keeps only whole calendar months up to it (<code>src/lib/sim/world/score/statics.ts:185-189</code>), so for fixture-0 (asOf 20736, 10 Oct 2026) <code>windowEnd</code> is 9 Oct 2066 while <code>view.lastIndex</code> is Sep 2066. <code>goalStep</code> then returns null (<code>goal.ts:121</code>, deadline index 480 &gt; lastIndex 479), which removes the chart's step and the ruler's Goal flag (<code>TimelineMode.svelte:573-575</code>), and <code>goalOutcome</code> can never say "missed" because the playhead stops at the last whole month (<code>playhead.ts:23-29</code>, <code>outcome.ts:56</code>). This plan therefore uses the last day of the view's last calendar month (<code>windowHorizon</code>, Task 1), and lets the outcome judge a goal at the window's last day (Task 2). The goal then reads "by Sep 2066" for fixture-0, not "Nov 2066" as the spec's example says. See <a href="#sec-open-questions">Open questions</a>.</aside>
+  </section>
+
+  <section id="sec-global-constraints">
+    <h2>Global Constraints</h2>
+    <ul>
+      <li>Work only in the worktree <code>/Users/mindlace/Projects/sfhousing/.claude/worktrees/goal-window-no-halos</code>. Never compound <code>cd … &amp;&amp; cmd</code>.</li>
+      <li>Default goal: name <code>'Goal'</code>, measure <code>HOMES_COMPLETED</code>, amount 82,069 read from <code>M1_TARGETS</code> (id <code>'rhna'</code>), countsFrom 30 Jun 2022 (<code>dayFromUtc(2022, 6, 30)</code>), deadline from the dataset date. No module constant holds a dated goal.</li>
+      <li><code>RHNA_DEADLINE</code> (<code>src/lib/sim/scenario/score.ts:293</code>) stays for the RHNA target rows (<code>targetsOf</code>, <code>tierTargetsOf</code>, <code>/fzp</code> provenance) and is never a goal's deadline. RHNA labels, tier targets and <code>/fzp</code> panels do not change.</li>
+      <li><code>readMonth</code>'s cap and the "Held at …" note stay in <code>goal.ts</code>.</li>
+      <li>Keep <code>CityStore</code>, <code>TimelineUpdate.city</code> and its validation, and the ◆ marks with one per 800 m square below zoom 14 and all from zoom 14 up.</li>
+      <li>Historical plans and specs under <code>docs/superpowers/</code> stay as written.</li>
+      <li>Code style: 2-space indent, single quotes, no trailing commas, 100 columns (Prettier and ESLint).</li>
+      <li>Vitest runs with <code>expect.requireAssertions</code>: every test calls <code>expect</code>. Single test: <code>npx vitest --run --project server &lt;file&gt;</code> or <code>--project client</code> for <code>*.svelte.spec.ts</code>.</li>
+      <li>Port 4173 (the e2e preview server) may belong to another session: never kill it; wait for it.</li>
+      <li>Conventional Commits. No Claude attribution of any kind (no trailers, footers or notes).</li>
+      <li>UI copy stays terse; no "it is not X" disclaimers.</li>
+      <li>The final check is <code>npm run signoff</code>; do not <code>git push</code> first.</li>
+    </ul>
+  </section>
+
+  <section id="sec-review-focus">
+    <h2>Review Focus</h2>
+    <ol>
+      <li><strong>A dataset date on any day of its month.</strong> The goal's deadline month must be the view's last month whether <code>asOf</code> is the 1st, the 10th or the last day; otherwise the chart step, the ruler flag and the outcome all vanish. Test in Task 1 (<code>t1-s1</code>).</li>
+      <li><strong>Playing to the very end.</strong> At the window's last day a goal still short must say "Goal missed by N homes", once. Test in Task 2 (<code>t2-s1</code>) and the existing e2e "passing the goal deadline short of it says by how much, once" (<code>e2e/sim.spec.ts:294</code>).</li>
+      <li><strong>A new calibration in the same visit</strong> (a fresh dataset on restart, <code>TimelineMode.svelte:1274-1281</code>). The goal's date must follow the new <code>asOf</code>. Test in Task 3 (<code>t3-s1</code>).</li>
+      <li><strong>Paint's header tooltip.</strong> Paint has no window, so its goal name must carry no date. Test in Task 4 (<code>t4-s1</code>).</li>
+      <li><strong>The key with no policy in force.</strong> With the ring rows gone, no empty list or stray heading may remain; the extras list holds the bar row only. Test in Task 7 (<code>t7-s1</code>).</li>
+    </ol>
+  </section>
+
+  <section id="sec-file-structure">
+    <h2>File Structure</h2>
+    <table id="tbl-files">
+      <caption>Files by task</caption>
+      <thead>
+        <tr><th scope="col">Task</th><th scope="col">Files</th><th scope="col">Responsibility</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">1</th><td><code>src/lib/sim/world/months.ts</code>, <code>score/statics.ts</code>, <code>src/lib/goal/goal.ts</code></td><td>The window's last whole-month day; the goal's base and <code>defaultGoal</code></td></tr>
+        <tr><th scope="row">2</th><td><code>src/lib/timeline/outcome.ts</code></td><td>A goal is judged at the window's last day</td></tr>
+        <tr><th scope="row">3</th><td><code>results.ts</code>, <code>TimelineMode.svelte</code>, <code>SimDetails.svelte</code>, their specs and hosts, e2e</td><td>/sim reads the derived goal</td></tr>
+        <tr><th scope="row">4</th><td><code>src/lib/paint/headline.ts</code>, <code>PaintDetails.svelte</code>, <code>src/lib/fzp/chart.ts</code>, <code>src/lib/about/copy.ts</code>, goal docs</td><td>Undated readers; <code>STATE_TARGET</code> and <code>GOAL</code> deleted</td></tr>
+        <tr><th scope="row">5</th><td><code>timeline-controller.ts</code>, <code>timelapse/city.ts</code>, <code>city-layer.ts</code> (deleted), <code>SimMap.svelte</code>, <code>TimelineMode.svelte</code>, <code>map/types.ts</code>, <code>timelapse/types.ts</code>, <code>constants.ts</code>, stubs</td><td>No city layer, no glow inset</td></tr>
+        <tr><th scope="row">6</th><td><code>timelapse/halos.ts</code>, <code>halo-layer.ts</code>, controller, <code>SimMap.svelte</code></td><td>Marks-only halo layer; no reduced-motion plumbing</td></tr>
+        <tr><th scope="row">7</th><td><code>SimKey.svelte</code>, <code>map/key/copy.ts</code>, <code>rows.ts</code>, <code>KeySwatch.svelte</code>, <code>palette.ts</code></td><td>The key keeps the mark and bar rows</td></tr>
+        <tr><th scope="row">8</th><td><code>e2e/sim-halos.spec.ts</code>, <code>e2e/sim-citywide.spec.ts</code>, <code>e2e/bench/map-timeline.bench.ts</code>, map docs, <code>CLAUDE.md</code></td><td>e2e, bench and docs match the map</td></tr>
+        <tr><th scope="row">9</th><td>none</td><td>Whole-branch verification and signoff</td></tr>
+      </tbody>
+    </table>
+    <aside data-kind="decision"><strong>Builder's call: names stay</strong> <code>HaloLayer</code>, <code>halos.ts</code>, <code>setHalos</code>, the <code>timeline-halos</code> layer id and the <code>tl-halo-policy</code> token keep their names: the debug hook, e2e and bench address them, and the spec leaves the rename optional. Comments say they draw marks.</aside>
+  </section>
+
+  <section id="sec-task-1">
+    <h2>Task 1: The goal's base and its window date</h2>
+    <ul>
+      <li>Modify: <code>src/lib/sim/world/months.ts</code> (add <code>windowHorizon</code>), <code>src/lib/sim/world/score/statics.ts:185-187</code> (use it), <code>src/lib/goal/goal.ts</code></li>
+      <li>Test: <code>src/lib/sim/world/months.spec.ts</code>, <code>src/lib/goal/goal.spec.ts</code></li>
+    </ul>
+    <p><strong>Interfaces</strong></p>
+    <ul>
+      <li>Consumes: <code>firstOfMonth(day: Day): Day</code>, <code>addMonths(firstDay: Day, n: number): Day</code> (<code>src/lib/sim/scenario/dates.ts:16,22</code>, no imports of its own, so no cycle); <code>monthLastDay</code> (<code>months.ts:14</code>); <code>WINDOW_MONTHS</code> (<code>src/lib/sim/timeline-client.ts:29</code>, 480).</li>
+      <li>Produces:
+        <ul>
+          <li><code>windowHorizon(asOf: Day, windowMonths: number): Day</code> in <code>months.ts</code>: the last day of the last calendar month whose last day is at or before <code>monthLastDay(asOf, windowMonths)</code>; the last day of <code>asOf</code>'s own month when none is. Exactly the loop at <code>statics.ts:186-187</code>, which now calls it.</li>
+          <li><code>type GoalBase = Omit&lt;Goal, 'deadline'&gt;</code> and <code>GOAL_BASE: GoalBase</code> = <code>{ id: 'goal', name: 'Goal', measure: HOMES_COMPLETED, amount: RHNA_UNITS, countsFrom: dayFromUtc(2022, 6, 30) }</code>.</li>
+          <li><code>defaultGoal(asOf: Day): Goal</code> = <code>{ ...GOAL_BASE, deadline: windowHorizon(asOf, WINDOW_MONTHS) }</code>.</li>
+          <li><code>goalAmountName(goal: GoalBase): string</code>: <code>'Goal: 82,069 homes'</code>. <code>goalName(goal: Goal)</code> becomes <code>`${goalAmountName(goal)} by ${formatShortMonthYear(goal.deadline)}`</code>.</li>
+          <li><code>bufferAmount</code>, the private <code>rowsOf</code> and <code>capacityRows(net, goal: GoalBase = GOAL_BASE)</code> take <code>GoalBase</code>.</li>
+          <li><code>STATE_TARGET</code> and <code>GOAL</code> stay for now (Task 4 deletes them); <code>goal.ts</code>'s header comment and the <code>Goal.name</code> doc (<code>'Goal'</code>) are updated.</li>
+        </ul>
+      </li>
+    </ul>
+    <ol>
+      <li id="t1-s1"><input type="checkbox"> Write the failing tests.
+        <pre><code data-lang="ts">// months.spec.ts
+it('windowHorizon: the last whole calendar month inside the window', () =&gt; {
+  expect(windowHorizon(20727, 480)).toBe(35336); // 1 Oct 2026  -&gt; 30 Sep 2066
+  expect(windowHorizon(20736, 480)).toBe(35336); // 10 Oct 2026 -&gt; 30 Sep 2066 (fixture-0)
+  expect(windowHorizon(20757, 480)).toBe(35336); // 31 Oct 2026 -&gt; 30 Sep 2066
+  expect(windowHorizon(20787, 480)).toBe(35367); // 30 Nov 2026 -&gt; 31 Oct 2066
+});
+
+// goal.spec.ts
+it('GOAL_BASE: Goal, 82,069 homes from M1_TARGETS, counted from 30 Jun 2022, no deadline', () =&gt; {
+  expect(GOAL_BASE.name).toBe('Goal');
+  expect(GOAL_BASE.amount).toBe(M1_TARGETS.find((t) =&gt; t.id === 'rhna')!.units);
+  expect(GOAL_BASE.countsFrom).toBe(dayFromUtc(2022, 6, 30));
+  expect('deadline' in GOAL_BASE).toBe(false);
+  expect(goalAmountName(GOAL_BASE)).toBe('Goal: 82,069 homes');
+});
+it('defaultGoal(asOf): GOAL_BASE due at windowHorizon(asOf, WINDOW_MONTHS), never RHNA_DEADLINE', () =&gt; {
+  const g = defaultGoal(20736);
+  expect(g).toEqual({ ...GOAL_BASE, deadline: 35336 });
+  expect(g.deadline).not.toBe(RHNA_DEADLINE);
+  expect(goalName(g)).toBe('Goal: 82,069 homes by Sep 2066');
+});
+it("defaultGoal's deadline month is the view's last month, whatever day of its month asOf is", () =&gt; {
+  for (const asOf of [20727, 20736, 20757, 20787]) {
+    const months = monthsOf(asOf, windowHorizon(asOf, WINDOW_MONTHS));
+    const view = { months, lastIndex: months.length - 1, filledThrough: -1, rows: [],
+      baseline: { completedNet: 8723 } } as unknown as TimelineView;
+    expect(goalStep(defaultGoal(asOf), view)).toEqual({
+      deadlineIndex: view.lastIndex, units: 82_069 - 8723 });
+  }
+});
+it('capacityRows defaults to GOAL_BASE: labels Goal and Goal + 15%', () =&gt; {
+  expect(capacityRows(0).map((r) =&gt; [r.label, r.amount])).toEqual([
+    ['Goal', 82_069], ['Goal + 15%', 94_379]]);
+});</code></pre>
+        <p><code>monthsOf</code> is <code>src/lib/sim/scenario/score.ts:25</code>. Also assert <code>scoreStaticsOf</code>'s horizon is unchanged: the existing statics specs must stay green after the refactor.</p>
+      </li>
+      <li id="t1-s2"><input type="checkbox"> Run them and see them fail (<code>windowHorizon</code>, <code>GOAL_BASE</code>, <code>defaultGoal</code>, <code>goalAmountName</code> not exported).
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/sim/world/months.spec.ts src/lib/goal/goal.spec.ts</code></pre>
+      </li>
+      <li id="t1-s3"><input type="checkbox"> Implement <code>windowHorizon</code> in <code>months.ts</code> and call it from <code>scoreStaticsOf</code>; add <code>GoalBase</code>, <code>GOAL_BASE</code>, <code>defaultGoal</code>, <code>goalAmountName</code> in <code>goal.ts</code> and widen <code>bufferAmount</code>, <code>rowsOf</code>, <code>capacityRows</code> to <code>GoalBase</code>. <code>goal.ts</code> no longer needs <code>RHNA_DEADLINE</code> except through <code>STATE_TARGET</code> until Task 4.</li>
+      <li id="t1-s4"><input type="checkbox"> Run the two files again, plus the statics and series specs, and see them pass.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/sim/world/months.spec.ts src/lib/goal/goal.spec.ts src/lib/sim/world/score</code></pre>
+      </li>
+      <li id="t1-s5"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add src/lib/sim/world/months.ts src/lib/sim/world/months.spec.ts src/lib/sim/world/score/statics.ts src/lib/goal/goal.ts src/lib/goal/goal.spec.ts
+git commit -m "feat(goal): a goal base and a default goal due at the window's last month"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-2">
+    <h2>Task 2: The outcome judges a goal at the window's last day</h2>
+    <ul>
+      <li>Modify: <code>src/lib/timeline/outcome.ts</code> (<code>awaitsView</code> line 27, <code>goalOutcome</code> line 56)</li>
+      <li>Test: <code>src/lib/timeline/outcome.spec.ts</code></li>
+    </ul>
+    <p><strong>Interfaces</strong></p>
+    <ul>
+      <li>Consumes: <code>filledEndDay(months, filledThrough, asOf)</code> (<code>src/lib/timeline/playhead.ts:23</code>).</li>
+      <li>Produces: unchanged signatures. A private <code>passed(goal, view, reached, asOf): boolean</code> = <code>reached &gt; goal.deadline || reached &gt;= filledEndDay(view.months, view.lastIndex, asOf)</code>, used in both places that test <code>reached &gt; goal.deadline</code> today. The doc comment says a goal is judged once the deadline is passed or the window's last day is reached.</li>
+    </ul>
+    <ol>
+      <li id="t2-s1"><input type="checkbox"> Write the failing test in <code>outcome.spec.ts</code> (the fixture view has 24 months; the measure at month i is 1000 + 3i + 1).
+        <pre><code data-lang="ts">it("missed at the window's last day when the deadline is that day", () =&gt; {
+  const last = filledEndDay(M, 23, ASOF);
+  const g: Goal = { ...goal(1100, 0), deadline: last };
+  expect(goalOutcome(g, view, last - 1, ASOF)).toBeNull();
+  expect(goalOutcome(g, view, last, ASOF)).toEqual({ kind: 'missed', short: 30 });
+  expect(awaitsView(g, cut(view, 5), last, ASOF)).toBe(true);
+  // Reached on the way, the same day says reached.
+  expect(goalOutcome({ ...g, amount: 1025 }, view, last, ASOF)).toEqual({ kind: 'reached', on: M[8] });
+});</code></pre>
+        <p>The existing "On the deadline itself it is not passed" (<code>outcome.spec.ts:33</code>) stays as it is: a mid-window deadline still needs a later day.</p>
+      </li>
+      <li id="t2-s2"><input type="checkbox"> Run it and see it fail (the miss is null at <code>last</code>).
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/timeline/outcome.spec.ts</code></pre>
+      </li>
+      <li id="t2-s3"><input type="checkbox"> Implement <code>passed</code> and use it in <code>awaitsView</code> and <code>goalOutcome</code>.</li>
+      <li id="t2-s4"><input type="checkbox"> Run the file again and see it pass.</li>
+      <li id="t2-s5"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add src/lib/timeline/outcome.ts src/lib/timeline/outcome.spec.ts
+git commit -m "feat(timeline): judge the goal at the window's last day"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-3">
+    <h2>Task 3: /sim reads the goal built from its dataset date</h2>
+    <ul>
+      <li>Modify: <code>src/lib/timeline/results.ts:119-124,189</code> (goal parameter required), <code>src/lib/timeline/TimelineMode.svelte:111,278-279,337</code>, <code>src/lib/timeline/SimDetails.svelte:18,68,87</code> (goal required), <code>src/lib/timeline/test/SimDetailsHost.svelte</code> and <code>TimelineModeHost.svelte</code> if they need a default</li>
+      <li>Test: <code>src/lib/timeline/TimelineMode.svelte.spec.ts</code>, <code>SimDetails.svelte.spec.ts</code>, <code>SimActivity.svelte.spec.ts</code>, <code>results.spec.ts</code>, <code>e2e/sim-details.spec.ts:90-98</code>, <code>e2e/sim-activity.spec.ts:57</code>, <code>e2e/sim.spec.ts</code></li>
+    </ul>
+    <p><strong>Interfaces</strong></p>
+    <ul>
+      <li>Consumes: <code>defaultGoal(asOf)</code>, <code>goalName</code> (Task 1); <code>goalOutcome</code> (Task 2).</li>
+      <li>Produces:
+        <ul>
+          <li><code>headlineAt(view, at, opts, goal: Goal)</code> and <code>headlineText(h: Headline, goal: Goal)</code>: no default.</li>
+          <li><code>TimelineMode</code>: the prop stays <code>goal?: Goal</code> (a test seam); destructure it as <code>goal: goalSeam = undefined</code> and derive <code>const goal = $derived(goalSeam ?? defaultGoal(asOf))</code>, so every existing reader (<code>headlineAt</code>, <code>headlineText</code>, <code>goalStep</code>, <code>goalDeadline</code>, the outcome effect, <code>SimDetails</code>, <code>SimActivity</code>) follows a new calibration.</li>
+          <li><code>SimDetails</code>: <code>goal: Goal</code> required (no longer a seam); the doc comment says it is the page's goal.</li>
+        </ul>
+      </li>
+    </ul>
+    <aside data-kind="decision"><strong>Builder's call: tests that need an in-window deadline</strong> Specs whose short fixture windows relied on the RHNA date through <code>GOAL</code> (for example <code>TimelineMode.svelte.spec.ts:1948,2520</code>, <code>SimDetails.svelte.spec.ts:908-1045</code>, <code>results.spec.ts:180-190</code>) declare a local <code>const TEST_GOAL: Goal = { ...defaultGoal(ASOF), deadline: dayFromUtc(2031, 1, 31) }</code> (their own <code>ASOF</code>) and pass it, so their deadline arithmetic and "Held at Jan 2031" assertions keep testing the same logic. Reason: these tests pin goal.ts's logic, not the default goal's date.</aside>
+    <ol>
+      <li id="t3-s1"><input type="checkbox"> Write the failing tests in <code>TimelineMode.svelte.spec.ts</code>.
+        <pre><code data-lang="ts">it('without the goal seam the goal is defaultGoal(asOf): Activity names it', async () =&gt; {
+  // opened without `goal`; the fixture calibration's asOf
+  await expect.element(activity.getByText(goalName(defaultGoal(asOf)))).toBeVisible();
+  expect(goalName(defaultGoal(asOf))).toMatch(/^Goal: 82,069 homes by [A-Z][a-z]{2} \d{4}$/);
+});
+it("a new calibration re-derives the goal's date", async () =&gt; {
+  // the restart-with-fresh-calibration path the setHalos tests use (spec ~3640-3651)
+  await expect.element(activity.getByText(goalName(defaultGoal(nextAsOf)))).toBeVisible();
+});</code></pre>
+        <p>Pick <code>nextAsOf</code> at least one calendar month after <code>asOf</code> so the names differ.</p>
+      </li>
+      <li id="t3-s2"><input type="checkbox"> Run them and see them fail (Activity shows "State target: … Jan 2031").
+        <pre><code data-lang="sh">npx vitest --run --project client src/lib/timeline/TimelineMode.svelte.spec.ts</code></pre>
+      </li>
+      <li id="t3-s3"><input type="checkbox"> Make <code>results.ts</code>'s goal parameters required, derive the goal in <code>TimelineMode</code>, make <code>SimDetails</code>'s <code>goal</code> required, and update every caller and spec that used the defaults: <code>results.spec.ts</code>, <code>SimDetails.svelte.spec.ts</code> (pass <code>goal</code> to the host), <code>SimActivity.svelte.spec.ts:42,70-104</code> (its name now matches <code>/^Goal: [\d,]+ homes by \w{3} \d{4}$/</code>), <code>TimelineMode.svelte.spec.ts</code> (<code>TEST_GOAL</code> where a test reads the RHNA date; <code>goalName(defaultGoal(asOf))</code> where it reads Activity's name at 2741, 2817, 2833).</li>
+      <li id="t3-s4"><input type="checkbox"> Update the e2e that pin the goal's date (fixture-0, asOf 10 Oct 2026, so the goal is due Sep 2066).
+        <pre><code data-lang="ts">// e2e/sim-details.spec.ts, replacing 'past the deadline the goal rows say Held at Jan 2031'
+test("the goal rows are dated by the window's last month, and hold at it there", async ({ page }) =&gt; {
+  // at today
+  await expect(details(page).getByTestId('goal-row-goal')).toContainText('to go by Sep 2066');
+  // End, waitFilled
+  await expect(details(page).getByTestId('goal-row-goal')).toContainText('Held at Sep 2066');
+  await expect(details(page).getByTestId('goal-row-buffer')).toContainText('Held at Sep 2066');
+});
+// e2e/sim.spec.ts, in 'passing the goal deadline short of it says by how much, once', once filled:
+await expect(slider(page)).toHaveAccessibleDescription(/Goal deadline September 2066\.$/);
+// e2e/sim-activity.spec.ts:57
+await expect(activity(page)).toContainText(/Goal: [\d,]+ homes by \w{3} \d{4}/);</code></pre>
+      </li>
+      <li id="t3-s5"><input type="checkbox"> Run the unit files and the e2e files and see them pass (the e2e starts the preview on 4173; if another session holds it, wait).
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/timeline/results.spec.ts
+npx vitest --run --project client src/lib/timeline/TimelineMode.svelte.spec.ts src/lib/timeline/SimDetails.svelte.spec.ts src/lib/timeline/SimActivity.svelte.spec.ts
+npx playwright test e2e/sim-details.spec.ts e2e/sim-activity.spec.ts e2e/sim.spec.ts</code></pre>
+      </li>
+      <li id="t3-s6"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add src/lib/timeline e2e/sim-details.spec.ts e2e/sim-activity.spec.ts e2e/sim.spec.ts
+git commit -m "feat(sim): the goal follows the dataset date, due at the window's end"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-4">
+    <h2>Task 4: Paint, the chart's series name and About read the undated goal; the old constants go</h2>
+    <ul>
+      <li>Modify: <code>src/lib/paint/headline.ts:6,22-34</code>, <code>src/lib/paint/PaintDetails.svelte:31</code> (default stays, no change unless the import moves), <code>src/lib/fzp/chart.ts:6,25</code>, <code>src/lib/about/copy.ts:1-6,35,54-66</code>, <code>src/lib/goal/goal.ts</code> (delete <code>STATE_TARGET</code>, <code>GOAL</code>, the <code>RHNA_DEADLINE</code> import)</li>
+      <li>Test: <code>src/lib/paint/headline.spec.ts</code>, <code>PaintDetails.svelte.spec.ts:64-65,109-110</code>, <code>src/lib/about/AboutParts.svelte.spec.ts:86-123</code>, <code>goal.spec.ts</code>, <code>outcome.spec.ts</code>, <code>GoalRow.svelte.spec.ts</code>, <code>TimelineHeaderScore.svelte.spec.ts:16</code>, <code>e2e/scoreboard.spec.ts:100,118</code></li>
+      <li>Docs: <code>docs/dev/timeline-ui.md:27,34-36</code> (examples become "Goal: 82,069 homes by Sep 2066", "73,346 more by …", rows "Goal" and "Goal + 15%", due at the window's last month), <code>docs/dev/developing.md:77</code>, <code>docs/dev/testing.md:83</code>, <code>docs/dev/about.md:29</code></li>
+    </ul>
+    <p><strong>Interfaces</strong></p>
+    <ul>
+      <li>Consumes: <code>GOAL_BASE</code>, <code>GoalBase</code>, <code>goalAmountName</code>, <code>bufferAmount</code> (Task 1); <code>RHNA_DEADLINE</code>; <code>WINDOW_MONTHS</code>.</li>
+      <li>Produces: <code>capacityGoalText(net, goal: GoalBase = GOAL_BASE)</code>, <code>paintHeadline(net, goal: GoalBase = GOAL_BASE)</code> whose <code>goalName</code> is <code>goalAmountName(goal)</code>; <code>SERIES_NAME.total</code> reads <code>GOAL_BASE.countsFrom</code>; About's goal body is fixed copy below.</li>
+    </ul>
+    <aside data-kind="decision"><strong>Builder's call: Paint's goal name is undated</strong> The spec says Paint never shows the goal's date, but today <code>paintHeadline</code> puts <code>goalName(goal)</code>, date included, in the header's tooltip (<code>headline.ts:33</code>, <code>TimelineHeaderScore.svelte:102</code>). Paint has no dataset date to build one from, so it reads <code>goalAmountName</code>: "Goal: 82,069 homes".</aside>
+    <ol>
+      <li id="t4-s1"><input type="checkbox"> Write the failing tests.
+        <pre><code data-lang="ts">// headline.spec.ts
+it('is the header text with no effect, the goal named without a date', () =&gt; {
+  expect(paintHeadline(47335)).toEqual({ main: 'Room for 47,335 homes', effect: null,
+    goal: '57% of the goal', goalName: 'Goal: 82,069 homes' });
+});
+// AboutParts.svelte.spec.ts (meanings)
+expect(t).toContain(
+  '82,069 homes by the end of the 40-year window, counted from June 2022, so homes built since ' +
+  "then count. It is San Francisco's share of RHNA 2023–2031, the state's Regional Housing " +
+  'Needs Allocation, which asks for them by January 2031.');
+expect(text()).toContain('which asks for them by January 2031. SF Planning, RHNA Primer');
+expect(bufferAmount(GOAL_BASE)).toBe(94379);</code></pre>
+        <p>Existing <code>capacityGoalText(…, STATE_TARGET)</code> cases switch to <code>GOAL_BASE</code> with the same results. PaintDetails' meters are named "Goal" and "Goal + 15%" ("0% of Goal").</p>
+      </li>
+      <li id="t4-s2"><input type="checkbox"> Run them and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/paint/headline.spec.ts
+npx vitest --run --project client src/lib/about/AboutParts.svelte.spec.ts src/lib/paint/PaintDetails.svelte.spec.ts</code></pre>
+      </li>
+      <li id="t4-s3"><input type="checkbox"> Implement. About's goal term body, composed (amount, unit and dates read, never typed):
+        <pre><code data-lang="ts">`${formatCount(GOAL_BASE.amount)} ${GOAL_BASE.measure.unit} by the end of the ` +
+  `${WINDOW_MONTHS / 12}-year window, counted from ${formatMonthYear(GOAL_BASE.countsFrom)}, so ` +
+  "homes built since then count. It is San Francisco's share of RHNA 2023–2031, the state's " +
+  `Regional Housing Needs Allocation, which asks for them by ${formatMonthYear(RHNA_DEADLINE)}.`</code></pre>
+        <p>The buffer term reads <code>bufferAmount(GOAL_BASE)</code> and <code>GOAL_BASE.measure.unit</code>. Then delete <code>STATE_TARGET</code> and <code>GOAL</code> from <code>goal.ts</code> and move every remaining spec to <code>GOAL_BASE</code>, <code>defaultGoal</code> or a local test goal: <code>goal.spec.ts</code> (its "State target" name and Jan 2031 cases use <code>{ ...defaultGoal(asOf), deadline: dayFromUtc(2031, 1, 31) }</code>), <code>outcome.spec.ts</code>, <code>GoalRow.svelte.spec.ts</code> and <code>TimelineHeaderScore.svelte.spec.ts</code> fixtures ("Goal" labels), <code>e2e/scoreboard.spec.ts</code> (meter name <code>'Goal'</code>).</p>
+      </li>
+      <li id="t4-s4"><input type="checkbox"> Confirm nothing reads the old names, then run the touched specs and see them pass.
+        <pre><code data-lang="sh">rg -n "STATE_TARGET|\bGOAL\b|State target" src e2e docs/dev
+npx vitest --run --project server src/lib/goal src/lib/paint src/lib/timeline/outcome.spec.ts src/lib/fzp
+npx vitest --run --project client src/lib/about src/lib/goal src/lib/paint src/lib/timeline/TimelineHeaderScore.svelte.spec.ts
+npx playwright test e2e/scoreboard.spec.ts e2e/about.spec.ts</code></pre>
+        <p>Expected: the <code>rg</code> prints nothing. Also change <code>src/routes/s/[id]/+page.svelte:20</code>'s "against the state target" to "against the goal" (Question 3, decided), and add <code>src/routes/s</code> to the commit.</p>
+      </li>
+      <li id="t4-s5"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add src/lib/goal src/lib/paint src/lib/fzp/chart.ts src/lib/about src/lib/timeline src/routes/s e2e/scoreboard.spec.ts docs/dev
+git commit -m "feat(goal): Paint and About read the undated goal; drop the state-target constant"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-5">
+    <h2>Task 5: No city layer and no edge glows</h2>
+    <ul>
+      <li>Delete: <code>src/lib/map/timelapse/city-layer.ts</code>, <code>src/lib/map/timelapse/city-layer.gpu.svelte.spec.ts</code></li>
+      <li>Modify: <code>src/lib/map/timelapse/city.ts</code> (keep <code>CityStore</code> only), <code>constants.ts:57-97</code>, <code>city-grid.ts:5,10,13</code>, <code>deck.ts:6</code>, <code>src/lib/map/timeline-controller.ts</code> (lines 26-42, 65-66, 219-232, 284-290, 362, 471-523, 549-559, 573-597, 621, 671-677, 809-856, 903-920), <code>src/lib/map/timelapse/types.ts:100-124</code>, <code>src/lib/map/types.ts:140-148</code>, <code>src/lib/map/SimMap.svelte:307-323,354-355,474-482,497,945-959,997</code>, <code>src/lib/timeline/TimelineMode.svelte:1019-1036,1061,1588,1707</code>, <code>src/lib/map/test/fake-timeline-deps.ts</code>, <code>src/lib/fzp/test/sim-map-stub.ts:168</code>, <code>src/lib/brush/test/sim-map-stub.ts:36</code></li>
+      <li>Test: <code>src/lib/map/timelapse/city.spec.ts</code>, <code>src/lib/map/timeline-controller.spec.ts</code> (describe "TimelineController city", from line 1085), <code>src/lib/map/SimMap.timeline.svelte.spec.ts:339-420</code>, <code>src/lib/timeline/TimelineMode.svelte.spec.ts:3569-3610</code></li>
+    </ul>
+    <p><strong>Interfaces</strong></p>
+    <ul>
+      <li>Consumes: nothing new.</li>
+      <li>Produces:
+        <ul>
+          <li><code>constants.ts</code>: <code>MARK_AREA_ZOOM = 14</code> (replaces <code>CITY_HANDOVER_ZOOM</code>: below it one mark per square) and <code>MARK_AREA_M = 800</code> (replaces <code>CITY_CELL_M</code>, read by <code>city-grid.ts</code>); every other <code>CITY_*</code> goes.</li>
+          <li><code>city.ts</code> exports only <code>CityStore</code> (and nothing re-exported from <code>city-grid.ts</code> that no one imports). <code>city-grid.ts</code> keeps <code>CITY_GRID</code>, <code>cityGroup</code>, <code>citySquare</code>, <code>M_PER_DEG</code>.</li>
+          <li><code>TimelineDeps</code> loses <code>CityLayer</code>; the controller keeps <code>private city = new CityStore()</code> (applied, replaced and cleared as today), loses <code>cityRecords</code>, <code>cityLayer</code>, <code>cityDirty</code>, <code>cityBuilds</code>, <code>edgeInset</code>, <code>setEdgeInset</code>, <code>rebuildCity</code>, <code>gate</code>, <code>gateOf</code>, <code>syncGate</code>. The halo layer is built with <code>ringMinZoom: MARK_AREA_ZOOM</code> always (Task 6 folds it into the shader). A city-only update stores the markers and emits nothing.</li>
+          <li><code>TimelineSnapshot</code> loses <code>cityRecords</code>, <code>cityDays</code>, <code>cityRings</code>, <code>cityGlows</code>, <code>cityBuilds</code>, <code>edgeInset</code>; keeps <code>cityMarkers</code>, <code>cityFlagged</code>.</li>
+          <li><code>SimMapHandle</code> loses <code>setGlowInset</code>. SimMap keeps publishing the bottom-right footprint (<code>--map-controls-br-*</code>).</li>
+          <li><code>TimelineMode</code> drops <code>pillsBottom</code>, <code>keyOpen</code>, <code>glowInset</code> and the <code>onbottom</code> / <code>onopenchange</code> handlers it passed. <code>NoticePills.onbottom</code> and <code>MapKeyControl.onopenchange</code> stay (their own specs and <code>BrushEditor.svelte:634</code> use them).</li>
+        </ul>
+      </li>
+    </ul>
+    <ol>
+      <li id="t5-s1"><input type="checkbox"> Write the failing tests in <code>timeline-controller.spec.ts</code>.
+        <pre><code data-lang="ts">it('emits no timeline-city, with halos on and markers held', () =&gt; {
+  // revision 0 with city, setHalos({ from })
+  expect(c.debugSnapshot().layerIds).not.toContain('timeline-city');
+  expect(c.debugSnapshot().cityMarkers).toBeGreaterThan(0);
+});
+it("the halo layer's gate is MARK_AREA_ZOOM with or without a city feed", () =&gt; {
+  expect(haloProps().ringMinZoom).toBe(14); // a stream without city, as /lesscars sends
+});
+it('a city-only update stores the markers and emits nothing', () =&gt; {
+  const before = emits();
+  c.apply(cityOnly);
+  expect(emits()).toBe(before);
+  expect(c.debugSnapshot().cityMarkers).toBe(n);
+});</code></pre>
+      </li>
+      <li id="t5-s2"><input type="checkbox"> Run them and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/map/timeline-controller.spec.ts</code></pre>
+      </li>
+      <li id="t5-s3"><input type="checkbox"> Remove the city layer, the edge inset and the glow inset as listed. Trim the specs: <code>city.spec.ts</code> keeps the "the grid" and "CityStore" describes; the controller's city describe keeps the store tests (1161, 1200), the malformed-delta test (1450), "destroy drops the city" (1529) and the gate test at 1326 rewritten to "one diamond a square below zoom 14, every one from 14"; the snapshot test at 1467 checks <code>cityMarkers</code>, <code>cityFlagged</code> and <code>projects</code>; the rest of that describe goes. <code>SimMap.timeline.svelte.spec.ts</code> loses its <code>setGlowInset</code> and merged-ring tests (339-420); <code>TimelineMode.svelte.spec.ts</code> loses the two glow-inset tests (3569, 3597). Drop <code>setGlowInset</code> from both sim-map stubs and <code>CityLayer</code> from <code>fake-timeline-deps.ts</code>.</li>
+      <li id="t5-s4"><input type="checkbox"> Run the map and timeline unit tests and type-check.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/map
+npx vitest --run --project client src/lib/map src/lib/timeline/TimelineMode.svelte.spec.ts
+npm run check</code></pre>
+        <p>Expected: all pass; <code>rg -n "CityLayer|setGlowInset|setEdgeInset|GLOW_TOP_GAP|CITY_HANDOVER_ZOOM|evalCity|buildCity" src</code> prints nothing.</p>
+      </li>
+      <li id="t5-s5"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add -A src/lib/map src/lib/timeline src/lib/fzp/test src/lib/brush/test
+git commit -m "refactor(map): remove merged rings and edge glows; keep the city feed"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-6">
+    <h2>Task 6: The halo layer draws marks only</h2>
+    <ul>
+      <li>Modify: <code>src/lib/map/timelapse/halos.ts</code>, <code>src/lib/map/timelapse/halo-layer.ts</code>, <code>constants.ts:47-54</code> (drop <code>HALO_DAYS</code>, <code>HALO_R_PX</code>, <code>HALO_STILL_R_PX</code>; keep <code>MARK_PX</code>), <code>timeline-controller.ts</code> (<code>reduced</code>, <code>setReducedMotion</code> 389-400, <code>debugSnapshot</code> 452-469, <code>rebuildHalos</code> 789-807), <code>src/lib/map/timelapse/types.ts:86-95,114-115</code>, <code>src/lib/map/SimMap.svelte:1008,1032-1038</code> (<code>watchReducedMotion</code>, <code>unwatchMotion</code>)</li>
+      <li>Test: <code>halos.spec.ts</code>, <code>halo-layer.gpu.svelte.spec.ts</code>, <code>timeline-controller.spec.ts</code> (describe "TimelineController halos", from 885), <code>SimMap.timeline.svelte.spec.ts:126,431-458</code></li>
+    </ul>
+    <p><strong>Interfaces</strong></p>
+    <ul>
+      <li>Consumes: <code>MARK_AREA_ZOOM</code>, <code>MARK_PX</code> (Task 5), <code>cityGroup</code>.</li>
+      <li>Produces:
+        <ul>
+          <li><code>interface HaloAttrs { projectId: string; anchor: [lng: number, lat: number]; day: Day; until: Day; areaFrom: Day }</code>: one record per flagged slot with parts whose first stage day is after <code>from</code> (no <code>kind</code>, no <code>policy</code>). <code>HALO_KIND</code> and <code>HALO_TOKEN</code> go.</li>
+          <li><code>buildHalos(cells: Iterable&lt;TimedPackedCell&gt;, from: Day): HaloAttrs[]</code>: marks only; <code>areaMarks</code> unchanged.</li>
+          <li><code>evalHalo(h: HaloAttrs, t: Day, zoom = Infinity): boolean</code>: <code>h.day &lt;= t &amp;&amp; t &lt; h.until &amp;&amp; (zoom &gt;= MARK_AREA_ZOOM || t &gt;= h.areaFrom)</code>. The GLSL port compares <code>project.scale &gt;= 2^MARK_AREA_ZOOM</code> as a constant, so the gate stays exact at 14.0.</li>
+          <li><code>HaloLayer</code> props: <code>data</code>, <code>clock</code>, <code>theme</code> (no <code>reduced</code>, no <code>ringMinZoom</code>); uniforms <code>day</code>, <code>policy</code>, <code>land</code>; the fragment shader fills the diamond with its 1 px land edge only.</li>
+          <li>Controller: no <code>reduced</code>, no <code>setReducedMotion</code>. <code>TimelineSnapshot</code> loses <code>halos</code>, <code>halosShown</code>, <code>haloDays</code>, <code>ringMinZoom</code>; <code>marks</code> = records in the layer, <code>marksShown</code> = those <code>evalHalo</code> shows at the map's zoom.</li>
+        </ul>
+      </li>
+    </ul>
+    <aside data-kind="decision"><strong>Builder's call: reduced motion goes</strong> Only the rings and merged rings animated (<code>setReducedMotion</code> sets <code>reduced</code> on the halo and city layers only, <code>timeline-controller.ts:389-400</code>); a mark is still. With nothing left to read it, the media-query hook and the method are removed.</aside>
+    <ol>
+      <li id="t6-s1"><input type="checkbox"> Write the failing tests in <code>halos.spec.ts</code>.
+        <pre><code data-lang="ts">it('makes no record for an unflagged slot, at any stage', () =&gt; {
+  expect(buildHalos([unflaggedCell], FROM)).toEqual([]);
+});
+it('a flagged slot gets one mark from its first stage day and nothing else', () =&gt; {
+  expect(buildHalos([flaggedCell], FROM)).toEqual([
+    { projectId: 'p', anchor: C, day: firstStage, until: OPEN_DAY, areaFrom: firstStage }]);
+});
+it('evalHalo: below zoom 14 only from areaFrom; from 14 from its day; never at or after until', () =&gt; {
+  expect(evalHalo(m, m.day, 13.99)).toBe(false); // areaFrom later than day
+  expect(evalHalo(m, m.areaFrom, 13.99)).toBe(true);
+  expect(evalHalo(m, m.day, 14)).toBe(true);
+  expect(evalHalo(m, m.until, 18)).toBe(false);
+});</code></pre>
+        <p>Keep and adapt (records lose <code>kind</code> and <code>policy</code>): "records leave out events on or before from", the stopped slot's mark ending <code>DYING_DAYS</code> after its exit, cell-then-slot order, the anchor test, "a cell without slotFlags … has no marks", and every test in "one mark per square below the handover". Delete the ring tests (83, 102, 110, 182, 206, 221) and the <code>ringMinZoom</code> argument from the rest. In the controller spec: delete "setReducedMotion sets the prop…" (1006) and the <code>reduced</code> check at 915; rewrite 1048 as "reports marks and marksShown in the debug snapshot". In <code>SimMap.timeline.svelte.spec.ts</code>: delete "a change of prefers-reduced-motion reaches the controller" (431).</p>
+      </li>
+      <li id="t6-s2"><input type="checkbox"> Write the GPU spec: <code>halo-layer.gpu.svelte.spec.ts</code> keeps three cases, rewritten for marks only, and deletes the ring cases (206, 236, 276).
+        <pre><code data-lang="ts">it(`a mark draws in tl-halo-policy from its first stage day, not before (${theme})`, …);
+it('a mark draws at zoom 14 and not at 13.9 before its areaFrom', …);
+it("a mark draws at 13.9 from its areaFrom (its square's one diamond)", …);</code></pre>
+      </li>
+      <li id="t6-s3"><input type="checkbox"> Run them and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/map/timelapse/halos.spec.ts src/lib/map/timeline-controller.spec.ts
+npx vitest --run --project client src/lib/map/timelapse/halo-layer.gpu.svelte.spec.ts</code></pre>
+      </li>
+      <li id="t6-s4"><input type="checkbox"> Implement marks-only <code>halos.ts</code> and <code>halo-layer.ts</code> (keep the GLSL port rule-for-rule with <code>evalHalo</code>), remove <code>reduced</code> from the controller and SimMap, and trim <code>TimelineSnapshot</code>.</li>
+      <li id="t6-s5"><input type="checkbox"> Run the map unit tests and type-check; see them pass.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/map
+npx vitest --run --project client src/lib/map
+npm run check</code></pre>
+        <p>Expected: <code>rg -n "HALO_KIND|HALO_TOKEN|HALO_DAYS|HALO_R_PX|HALO_STILL_R_PX|ringMinZoom|setReducedMotion|halosShown|haloDays" src</code> prints nothing.</p>
+      </li>
+      <li id="t6-s6"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add -A src/lib/map
+git commit -m "refactor(map): the halo layer draws policy marks only"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-7">
+    <h2>Task 7: The key keeps the mark and the bar</h2>
+    <ul>
+      <li>Modify: <code>src/lib/timeline/SimKey.svelte</code> (module script 9-48, the ring list 78-96, the header comment), <code>src/lib/map/key/copy.ts</code> (drop <code>ring</code>, <code>area</code>, <code>edge</code>), <code>src/lib/map/key/rows.ts:9</code> (<code>Swatch.kind</code>), <code>src/lib/map/key/KeySwatch.svelte</code> (drop the ring, area and edge branches and their helpers), <code>src/lib/map/palette.ts:42-44,106-108,168-170</code> (drop <code>tl-halo-approved</code>, <code>tl-halo-started</code>, <code>tl-halo-complete</code>)</li>
+      <li>Test: <code>src/lib/timeline/SimKey.svelte.spec.ts</code>, <code>src/lib/map/key/rows.spec.ts:49-62</code>, <code>src/lib/map/palette.spec.ts:43-46,356-358</code>, <code>src/lib/timeline/rest-text.svelte.spec.ts:107-109</code></li>
+    </ul>
+    <p><strong>Interfaces</strong></p>
+    <ul>
+      <li>Consumes: nothing from earlier tasks beyond the deleted <code>HALO_TOKEN</code> and <code>CITY_KIND_TOKEN</code> (no longer imported).</li>
+      <li>Produces: <code>Swatch.kind: 'ghost' | 'solid' | 'bar' | 'mark'</code>; <code>SimKey</code> exports <code>MARK_SWATCH = { kind: 'mark', tokens: ['tl-halo-policy'] }</code> and <code>BAR_SWATCH</code> only; the extras list is the mark row (only while <code>inForce</code>) then the bar row.</li>
+    </ul>
+    <aside data-kind="decision"><strong>Builder's call: the mark swatch is the diamond alone</strong> <code>KeySwatch</code> draws the mark "inside a ring of its token, as a mark sits on its project's ring" (<code>KeySwatch.svelte:123</code>). No ring is drawn on the map now, so the swatch drops it.</aside>
+    <ol>
+      <li id="t7-s1"><input type="checkbox"> Write the failing tests in <code>SimKey.svelte.spec.ts</code>.
+        <pre><code data-lang="ts">it('with no policy in force the extras are the bar row alone: no ring, area or edge row', async () =&gt; {
+  render(SimKey, { tally: null, inForce: false });
+  const extras = [...document.querySelectorAll('[data-key-extra]')].map((e) =&gt; e.getAttribute('data-key-extra'));
+  expect(extras).toEqual(['bar']);
+  expect(document.querySelectorAll('[data-ring-kind]')).toHaveLength(0);
+  expect(document.body.textContent).not.toMatch(/Just changed stage|one per area|Edge glow/);
+});
+it('with a policy in force the extras are the mark then the bar', async () =&gt; {
+  render(SimKey, { tally: null, inForce: true });
+  // extras === ['mark', 'bar']; the mark swatch's tokens are ['tl-halo-policy']
+});</code></pre>
+        <p>Delete the ring, merged-ring and edge tests (128 rewritten as above, 152, 173, 232); the token test at 357 lists only <code>tl-halo-policy</code> and the bar tones. <code>rows.spec.ts</code> drops the area and edge swatch test; <code>palette.spec.ts</code> drops the three tokens from its list; <code>rest-text.svelte.spec.ts</code> drops its "Just changed stage" and "Edge glow" lines.</p>
+      </li>
+      <li id="t7-s2"><input type="checkbox"> Run them and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project client src/lib/timeline/SimKey.svelte.spec.ts</code></pre>
+      </li>
+      <li id="t7-s3"><input type="checkbox"> Implement: trim <code>SimKey</code>, <code>KEY_COPY</code>, <code>Swatch.kind</code>, <code>KeySwatch</code> and the palette.</li>
+      <li id="t7-s4"><input type="checkbox"> Run the key, palette and rest-text specs and type-check.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/map/key src/lib/map/palette.spec.ts
+npx vitest --run --project client src/lib/timeline/SimKey.svelte.spec.ts src/lib/timeline/rest-text.svelte.spec.ts src/lib/map/key
+npm run check</code></pre>
+        <p>Expected: all pass; <code>rg -n "tl-halo-(approved|started|complete)|RING_ROWS|AREA_SWATCH|EDGE_SWATCH" src</code> prints nothing.</p>
+      </li>
+      <li id="t7-s5"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add -A src/lib/timeline src/lib/map
+git commit -m "refactor(key): keep the policy mark and the bar; drop the ring rows"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-8">
+    <h2>Task 8: e2e, the map bench and the docs match the map</h2>
+    <ul>
+      <li>Modify: <code>e2e/sim-halos.spec.ts</code>, <code>e2e/sim-citywide.spec.ts</code>, <code>e2e/bench/map-timeline.bench.ts</code>, <code>docs/dev/map-interfaces.md:126-172</code>, <code>docs/dev/map-perf.md:94-111</code>, <code>docs/dev/map-stream.md</code> ("The city feed"), <code>docs/dev/timeline-ui.md:37,70</code>, <code>docs/dev/sim-page.md</code>, <code>docs/dev/testing.md:20</code>, <code>CLAUDE.md</code> (the map-interfaces line drops "merged rings and edge glows")</li>
+    </ul>
+    <p><strong>Interfaces</strong></p>
+    <ul>
+      <li>Consumes: <code>TimelineSnapshot</code> as Tasks 5 and 6 left it (<code>marks</code>, <code>marksShown</code>, <code>cityMarkers</code>, <code>cityFlagged</code>, <code>layerIds</code>).</li>
+      <li>Produces: nothing code reads.</li>
+    </ul>
+    <aside data-kind="decision"><strong>Builder's call: the bench</strong> Drop the "playback + halos + city" case (its point was the city layer zoomed in). Keep "citywide playback" (far bars at the default camera, the feed loaded, marks thinned) and "playback + halos" (marks only). The bench is not re-run as a gate: the change only removes layers. If the machine is quiet, run <code>npm run bench:map</code> once and add a row to map-perf.md's results; otherwise leave the old rows, marked as measured with rings.</aside>
+    <ol>
+      <li id="t8-s1"><input type="checkbox"> Rewrite the e2e.
+        <ul>
+          <li><code>sim-halos.spec.ts</code>: delete "no halo shows at today" (54) and "stepping the playhead past the first stage change shows its halo; Home hides it again" (78). Keep "the default document draws no marks, and the key names no mark" (101), now asserting the key names no "Just changed stage"; keep the transit-rule marks test (112) and the axe test (163). Update the header comment.</li>
+          <li><code>sim-citywide.spec.ts</code>: keep the feed test (55) asserting <code>layerIds</code> has no <code>timeline-city</code>; keep the flagged-marker test (106), the one-diamond-an-area test (124), far bars (186), the axe test (225), and the <code>/lesscars</code> and Paint tests (236, 251) without their city-layer assertions. Delete the <code>ringMinZoom</code> test (67), the city-record test (78), the glows' inset test (159) and the 375 px key-rows test (191).</li>
+          <li>Bench: delete the case, the <code>CITY_HANDOVER_ZOOM</code> comment (line 28, now <code>MARK_AREA_ZOOM</code>), and <code>cityRecords</code> from <code>cityField</code> (print <code>markers=</code> only); <code>halosField</code> prints <code>marks=</code> only.</li>
+        </ul>
+      </li>
+      <li id="t8-s2"><input type="checkbox"> Run the e2e and see them pass (wait for 4173 if another session holds it).
+        <pre><code data-lang="sh">npx playwright test e2e/sim-halos.spec.ts e2e/sim-citywide.spec.ts e2e/map.spec.ts</code></pre>
+      </li>
+      <li id="t8-s3"><input type="checkbox"> Update the docs: map-interfaces.md's "Halos and marks" becomes "Policy marks" (records, the fixed zoom-14 gate, one per square; no <code>HALO_DAYS</code>, no reduced motion), "Merged rings and edge glows" goes, "The citywide feed" says the store feeds the debug counts and Activity reads <code>TimelineUpdate.city</code>; the draw order drops <code>timeline-city</code>; the map key control's swatch kinds are ghost, solid, bar and mark. map-perf.md drops the dropped case. map-stream.md, timeline-ui.md (line 70: marks follow the playhead), sim-page.md and testing.md (the snapshot's fields) match. Then confirm no live doc still describes them.
+        <pre><code data-lang="sh">rg -n -i -w "edge glows?|merged rings?|setGlowInset|ringMinZoom|CityLayer|timeline-city|cityRings|cityGlows|halosShown" docs/dev CLAUDE.md</code></pre>
+        <p>Expected: no hits.</p>
+      </li>
+      <li id="t8-s4"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add e2e docs/dev CLAUDE.md
+git commit -m "test(map): e2e, bench and docs without rings and glows"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-9">
+    <h2>Task 9: Whole-branch verification and signoff</h2>
+    <ul>
+      <li>Files: none, unless a check fails.</li>
+    </ul>
+    <p><strong>Interfaces</strong></p>
+    <ul>
+      <li>Consumes: everything above. Produces: a signed-off branch.</li>
+    </ul>
+    <ol>
+      <li id="t9-s1"><input type="checkbox"> Type-check and lint.
+        <pre><code data-lang="sh">npm run check
+npm run lint</code></pre>
+        <p>Expected: 0 errors, 0 warnings; Prettier and ESLint clean.</p>
+      </li>
+      <li id="t9-s2"><input type="checkbox"> Run the unit suites.
+        <pre><code data-lang="sh">npm run test:unit</code></pre>
+        <p>Expected: every test passes; no test without an assertion.</p>
+      </li>
+      <li id="t9-s3"><input type="checkbox"> Run the relevant e2e (preview on 4173: wait if another session holds it, never kill it).
+        <pre><code data-lang="sh">npx playwright test e2e/sim.spec.ts e2e/sim-details.spec.ts e2e/sim-activity.spec.ts e2e/sim-halos.spec.ts e2e/sim-citywide.spec.ts e2e/scoreboard.spec.ts e2e/about.spec.ts e2e/layout.spec.ts e2e/chrome-dark.spec.ts</code></pre>
+        <p>Expected: all pass with no retries and no server stderr.</p>
+      </li>
+      <li id="t9-s4"><input type="checkbox"> Final sweep for the anti-goals.
+        <pre><code data-lang="sh">rg -n "STATE_TARGET|\bGOAL\b|State target|CityLayer|setGlowInset|HALO_DAYS" src e2e
+rg -n "RHNA_DEADLINE" src/lib/goal src/lib/timeline --glob '!*.spec.ts'</code></pre>
+        <p>Expected: no hits from either.</p>
+      </li>
+      <li id="t9-s5"><input type="checkbox"> Run signoff (it merges <code>origin/main</code>, runs the steps the changes need, pushes and posts the status; do not push first).
+        <pre><code data-lang="sh">npm run signoff</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-open-questions">
+    <h2>Open questions (decided 2026-11-22)</h2>
+    <aside data-kind="decision"><strong>Decision</strong> Q1: accept the last whole month. Q2: keep "Held at". Q3: change the share copy to "against the goal" in Task 4.</aside>
+    <aside data-kind="question"><strong>Question 1: the goal's date</strong> The spec's <code>monthLastDay(asOf, WINDOW_MONTHS)</code> falls in a calendar month the view does not hold, which would hide the chart step, the ruler flag and the "missed" notice (see the warning in the overview). This plan uses the last day of the view's last whole calendar month instead (Sep 2066 for fixture-0, one calendar month earlier than "asOf's month + 40 years"; the spec's "Nov 2066" example will read one month earlier too). Recommendation: accept; the alternative is to extend the view by a partial month, which changes the score statics for every reader.</aside>
+    <aside data-kind="question"><strong>Question 2: "Held at" at the last month</strong> With the deadline at the last month, the goal rows read "Held at Sep 2066" on that month (the note says "Held at" from the deadline's month on, <code>goal.ts:150-159</code>), so the spec's "never trigger" holds for the read cap but not for the note. Recommendation: keep it; it is true at the window's end and a level with an earlier date needs the rule as it is.</aside>
+    <aside data-kind="question"><strong>Question 3: the share description</strong> <code>src/routes/s/[id]/+page.svelte:20</code> says a shared policy is judged "against the state target". It is not the goal's name, and the spec does not list it. Recommendation: leave it for the levels pass, or change it to "against the goal" in Task 4 if the owner wants the word gone now.</aside>
+  </section>
+</article>

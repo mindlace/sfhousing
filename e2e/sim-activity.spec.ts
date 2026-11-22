@@ -54,7 +54,7 @@ test('a first visit: Activity names the goal and three starters; one adds a poli
   await gotoSim(page);
   await showActivity(page, isMobile);
   await expect(activity(page).getByRole('heading', { level: 2, name: 'Activity' })).toBeVisible();
-  await expect(activity(page)).toContainText(/State target: [\d,]+ homes by \w{3} \d{4}/);
+  await expect(activity(page)).toContainText(/Goal: [\d,]+ homes by \w{3} \d{4}/);
   const starters = activity(page).getByRole('list', { name: 'Try one:' }).getByRole('button');
   await expect(starters).toHaveText([
     'Taller near transit',

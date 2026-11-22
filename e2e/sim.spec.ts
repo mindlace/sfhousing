@@ -299,6 +299,8 @@ test('passing the goal deadline short of it says by how much, once', async ({ pa
   await expect(page.getByTestId('tl-goal')).toHaveText('');
   await slider(page).focus();
   await page.keyboard.press('End');
+  await waitFilled(page);
+  await expect(slider(page)).toHaveAccessibleDescription(/Goal deadline September 2066\.$/);
   await expect(notice.locator('span')).toHaveText(
     /^Goal missed by [\d,]+ homes\. Add a policy and play again\.$/
   );

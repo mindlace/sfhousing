@@ -1,9 +1,7 @@
-// The map citywide on /sim (map-citywide slice 6, Task 6): the feed carries a marker for every
-// project, the city layer draws merged rings below zoom 14 and glows at the edge for changes off
-// screen, bars are in far mode, and the key names the merged ring and the edge glow. /lesscars and
-// Paint stay as they were: street bars, no city layer. Reads the map's debug snapshot
-// (window.__sfhMap.timelineSnapshot) and the playhead (window.__sfhFzp), never pixels. Runs
-// against the VITE_E2E build on fixture-0.
+// The map citywide on /sim: the feed carries a marker for every project, one diamond an area shows
+// below zoom 14, and bars are in far mode. /lesscars and Paint stay as they were: street bars.
+// Reads the map's debug snapshot (window.__sfhMap.timelineSnapshot) and the playhead
+// (window.__sfhFzp), never pixels. Runs against the VITE_E2E build on fixture-0.
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import type { SfhFzpDebug } from '../src/lib/fzp/debug';
 import type { SfhMapDebug } from '../src/lib/map/debug';
@@ -14,22 +12,17 @@ import { gotoHydrated } from './helpers/sharing';
 
 type Win = Window & { __sfhFzp?: SfhFzpDebug; __sfhMap?: SfhMapDebug };
 
-const AREA = 'Zoomed out: one per area';
-const EDGE = 'Edge glow: off screen';
-
 const keyToggle = (page: Page): Locator => page.getByTestId('map-key-toggle');
 const keyPanel = (page: Page): Locator => page.getByRole('group', { name: 'Map key' });
 
 const snap = (page: Page): Promise<TimelineSnapshot | null> =>
   page.evaluate(() => (window as Win).__sfhMap?.timelineSnapshot() ?? null);
-const dayOf = (page: Page): Promise<number> => page.evaluate(() => (window as Win).__sfhFzp!.day);
-const asOfOf = (page: Page): Promise<number> => page.evaluate(() => (window as Win).__sfhFzp!.asOf);
 
-/** The map has drawn the filled forecast: cells in, nothing queued, city records built. */
+/** The map has drawn the filled forecast: cells in, nothing queued, city markers built. */
 async function waitMap(page: Page): Promise<TimelineSnapshot> {
   await page.waitForFunction(() => {
     const s = (window as Win).__sfhMap?.timelineSnapshot();
-    return !!s && s.cells > 0 && s.pending === 0 && s.cityRecords > 0;
+    return !!s && s.cells > 0 && s.pending === 0 && s.cityMarkers > 0;
   });
   return (await snap(page))!;
 }
@@ -52,55 +45,14 @@ async function openKey(page: Page): Promise<void> {
   await expect(keyPanel(page)).toBeVisible();
 }
 
-test('the feed holds a marker for every project on the map, and the city layer is on', async ({
+test('the feed holds a marker for every project on the map, and no city layer draws', async ({
   page
 }) => {
   await gotoSim(page);
   const s = (await snap(page))!;
   expect(s.projects).toBeGreaterThan(0);
   expect(s.cityMarkers).toBeGreaterThanOrEqual(s.projects);
-  const city = s.layerIds.indexOf('timeline-city');
-  expect(city).toBeGreaterThan(s.layerIds.indexOf('timeline-halos'));
-  expect(s.layerIds.indexOf('timeline-halos')).toBeGreaterThanOrEqual(0);
-});
-
-test("at the default zoom each project's rings hand over: ringMinZoom 14, map zoom below 14", async ({
-  page
-}) => {
-  await gotoSim(page);
-  const s = (await snap(page))!;
-  expect(s.ringMinZoom).toBe(14);
-  const zoom = await page.evaluate(() => (window as Win).__sfhMap!.map!.getZoom());
-  expect(zoom).toBeLessThan(14);
-  expect(s.halosShown).toBe(0);
-});
-
-test('no city record shows at today; one is due after the playhead passes its day; Home hides it', async ({
-  page
-}) => {
-  await gotoSim(page);
-  await slider(page).focus();
-  await page.keyboard.press('Home');
-  const asOf = await asOfOf(page);
-  await expect.poll(() => dayOf(page)).toBe(asOf);
-  await expect
-    .poll(async () => {
-      const s = (await snap(page))!;
-      return { rings: s.cityRings, glows: s.cityGlows };
-    })
-    .toEqual({ rings: 0, glows: 0 });
-  const [first] = (await snap(page))!.cityDays;
-  expect(first).toBeGreaterThan(asOf);
-  let day = await dayOf(page);
-  while (day < first) {
-    await page.keyboard.press('ArrowRight');
-    await expect.poll(() => dayOf(page)).toBeGreaterThan(day);
-    day = await dayOf(page);
-  }
-  await expect.poll(async () => (await snap(page))!.cityRings).toBeGreaterThanOrEqual(1);
-  expect((await snap(page))!.day).toBe(day);
-  await page.keyboard.press('Home');
-  await expect.poll(async () => (await snap(page))!.cityRings).toBe(0);
+  expect(s.layerIds).not.toContain('timeline-city');
 });
 
 test('a transit rule from today: every flagged slot on the map has a flagged marker', async ({
@@ -156,84 +108,21 @@ test('a transit rule: at the default zoom one diamond an area shows once its pro
   await expect.poll(async () => (await snap(page))!.marksShown).toBe(0);
 });
 
-test("with the goal notice and the key open, the glows' inset clears both", async ({
-  isMobile,
-  page
-}) => {
-  // eslint-disable-next-line playwright/no-skipped-test -- the notices overlay the map from md
-  test.skip(isMobile, 'the desktop layout');
-  await page.setViewportSize({ width: 1280, height: 800 });
-  await gotoSim(page);
-  await expect(keyPanel(page)).toBeVisible();
-  await slider(page).focus();
-  await page.keyboard.press('End');
-  const notice = page.getByTestId('tl-goal-notice');
-  await expect(notice).toBeVisible();
-  const map = (await page.getByTestId('tl-map').boundingBox())!;
-  const n = (await notice.boundingBox())!;
-  const k = (await keyPanel(page).boundingBox())!;
-  const inset = async () => (await snap(page))!.edgeInset;
-  // Top: below the notice, plus the 12 px gap. Right: the panel and its 8 px from the edge.
-  await expect.poll(async () => (await inset())[0]).toBeGreaterThanOrEqual(n.y + n.height - map.y);
-  expect((await inset())[0]).toBeLessThanOrEqual(n.y + n.height - map.y + 12 + 1);
-  expect((await inset())[1]).toBeGreaterThanOrEqual(map.x + map.width - k.x);
-  // Closing the key gives the right edge back.
-  await keyToggle(page).click();
-  await expect(keyPanel(page)).toBeHidden();
-  await expect.poll(async () => (await inset())[1]).toBe(0);
-});
-
 test('bars are in far mode on /sim', async ({ page }) => {
   await gotoSim(page);
   await expect.poll(async () => (await snap(page))!.barMode).toBe('far');
 });
 
-test("375: the key's new rows scroll inside the panel; the toolbar does not move", async ({
-  page
-}) => {
-  await page.setViewportSize({ width: 375, height: 812 });
-  await gotoSim(page);
-  const toggle = keyToggle(page);
-  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
-  const closed = await toggle.boundingBox();
-  await openKey(page);
-  const panel = page.getByTestId('map-key-panel');
-  const edge = keyPanel(page).locator('[data-key-extra="edge"]');
-  await expect(keyPanel(page).getByText(AREA)).toHaveCount(1);
-  await expect(keyPanel(page).getByText(EDGE)).toHaveCount(1);
-  // The panel is shorter than its rows: it scrolls on y, never sideways.
-  const sizes = await panel.evaluate((el) => ({
-    sh: el.scrollHeight,
-    ch: el.clientHeight,
-    sw: el.scrollWidth,
-    cw: el.clientWidth
-  }));
-  expect(sizes.sh).toBeGreaterThan(sizes.ch);
-  expect(sizes.sw).toBeLessThanOrEqual(sizes.cw);
-  await edge.scrollIntoViewIfNeeded();
-  await expect(edge).toBeInViewport();
-  const p = (await panel.boundingBox())!;
-  const e = (await edge.boundingBox())!;
-  expect(e.y).toBeGreaterThanOrEqual(p.y);
-  expect(e.y + e.height).toBeLessThanOrEqual(p.y + p.height);
-  expect(await panel.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
-  // The toggles sit where they did with the key closed.
-  expect(await toggle.boundingBox()).toEqual(closed);
-  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375);
-});
-
-test('/sim with the city on: axe clean with the key open, light and dark', async ({ page }) => {
+test('/sim: axe clean with the key open, light and dark', async ({ page }) => {
   for (const colorScheme of ['light', 'dark'] as const) {
     await page.emulateMedia({ colorScheme });
     await gotoSim(page);
     await openKey(page);
-    await expect(keyPanel(page).getByText(AREA)).toBeVisible();
-    await expect(keyPanel(page).getByText(EDGE)).toBeVisible();
     await expectNoA11yViolations(page, { include: '[data-testid="map-key-control"]' });
   }
 });
 
-test('/lesscars keeps street bars and draws no city layer', async ({ page }) => {
+test('/lesscars keeps street bars and draws no city feed', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await gotoHydrated(page, '/lesscars');
   await expect(page.getByTestId('map-root')).toHaveAttribute('data-state', 'ready');
@@ -243,12 +132,11 @@ test('/lesscars keeps street bars and draws no city layer', async ({ page }) => 
   });
   const s = (await snap(page))!;
   expect(s.barMode).toBe('street');
-  expect(s.ringMinZoom).toBe(0);
-  expect(s.cityRecords).toBe(0);
+  expect(s.cityMarkers).toBe(0);
   expect(s.layerIds).not.toContain('timeline-city');
 });
 
-test('Paint draws no timeline: no bars, no city layer', async ({ page }) => {
+test('Paint draws no timeline: no bars', async ({ page }) => {
   await gotoHydrated(page, '/');
   await expect(page.getByTestId('map-root')).toHaveAttribute('data-state', 'ready');
   await page.waitForFunction(() => !!(window as Win).__sfhMap?.map);

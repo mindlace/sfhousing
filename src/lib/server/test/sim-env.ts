@@ -9,5 +9,5 @@ export function fakeSimEnv(
     throw new Error('no sim object in this test');
   }
 ): NonNullable<SimEnv> {
-  return { SIM: { getByName } as unknown as DurableObjectNamespace };
+  return { SIM: { getByName } as unknown as NonNullable<SimEnv>['SIM'] };
 }

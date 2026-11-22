@@ -4,8 +4,9 @@ import type { ComponentProps } from 'svelte';
 import { render } from 'vitest-browser-svelte';
 import { page, userEvent } from 'vitest/browser';
 import '../../routes/layout.css';
-import { GOAL, goalName } from '$lib/goal/goal';
+import { defaultGoal, goalName } from '$lib/goal/goal';
 import { formatDollars } from '$lib/fzp/format';
+import { dayFromUtc } from '$lib/fzp/time';
 import type { ActivityItem, ActivityTotals, Starter } from './activity-view';
 import { limitAlert } from '$lib/sim-page/funding-copy';
 import SimActivity from './SimActivity.svelte';
@@ -38,8 +39,10 @@ const TOTALS: ActivityTotals = {
   cost: null
 };
 
+const goal = defaultGoal(dayFromUtc(2026, 10, 10));
+
 const props = (over: Partial<ComponentProps<typeof SimActivity>> = {}) => ({
-  goal: GOAL,
+  goal: goal,
   totals: null as ActivityTotals | null,
   atToday: true,
   starters: STARTERS,
@@ -67,8 +70,8 @@ const pairs = () =>
 describe('SimActivity', () => {
   it('at today with nothing in force: the goal, Try one: and three starter buttons', async () => {
     await renderAtRest(props());
-    await expect.element(page.getByText(goalName(GOAL))).toBeVisible();
-    expect(goalName(GOAL)).toMatch(/^State target: [\d,]+ homes by \w{3} \d{4}$/);
+    await expect.element(page.getByText(goalName(goal))).toBeVisible();
+    expect(goalName(goal)).toMatch(/^Goal: [\d,]+ homes by \w{3} \d{4}$/);
     await expect.element(page.getByText('Try one:')).toBeVisible();
     const list = page.getByRole('list', { name: 'Try one:' });
     const buttons = list.getByRole('button').elements();
@@ -88,7 +91,7 @@ describe('SimActivity', () => {
 
   it('at today with a policy in force: the goal and Press Play, no starters', async () => {
     await renderAtRest(props({ starters: [] }));
-    await expect.element(page.getByText(goalName(GOAL))).toBeVisible();
+    await expect.element(page.getByText(goalName(goal))).toBeVisible();
     await expect.element(page.getByText('Press Play to see what gets built.')).toBeVisible();
     expect(page.getByText('Try one:').elements()).toHaveLength(0);
     expect(
@@ -101,7 +104,7 @@ describe('SimActivity', () => {
 
   it('after today: the totals list; From your policy only in force; cost only with money', async () => {
     const r = await renderAtRest(props({ atToday: false, totals: TOTALS }));
-    expect(page.getByText(goalName(GOAL)).elements()).toHaveLength(0);
+    expect(page.getByText(goalName(goal)).elements()).toHaveLength(0);
     expect(page.getByText('Try one:').elements()).toHaveLength(0);
     expect(pairs()).toEqual([
       ['Approved in new projects', '1,234'],

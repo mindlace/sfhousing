@@ -60,10 +60,7 @@ describe('PaintDetails', () => {
     await expect.element(buffer.getByText('1.3%', { exact: true })).toBeVisible();
     await expect.element(buffer.getByText('93,145 to go', { exact: true })).toBeVisible();
     const meters = page.getByRole('meter').elements();
-    expect(meters.map((m) => m.getAttribute('aria-label'))).toEqual([
-      'State target',
-      'State target + 15%'
-    ]);
+    expect(meters.map((m) => m.getAttribute('aria-label'))).toEqual(['Goal', 'Goal + 15%']);
     expect(meters.map((m) => m.getAttribute('aria-valuenow'))).toEqual(['1234', '1234']);
     // Then the counts, the neighborhoods and what room for homes means.
     await expect
@@ -106,8 +103,8 @@ describe('PaintDetails', () => {
     // The rows stay, at 0%.
     const meters = page.getByRole('meter').elements();
     expect(meters.map((m) => m.getAttribute('aria-valuetext'))).toEqual([
-      '0% of State target',
-      '0% of State target + 15%'
+      '0% of Goal',
+      '0% of Goal + 15%'
     ]);
   });
 

@@ -5,9 +5,8 @@ import '../../routes/layout.css';
 import { SHORTCUTS } from '$lib/brush/shortcuts';
 import { TIMELINE_SHORTCUTS } from '$lib/timeline/shortcuts';
 import { REPO_URL } from '$lib/config';
-import { bufferAmount, GOAL } from '$lib/goal/goal';
+import { bufferAmount, GOAL_BASE } from '$lib/goal/goal';
 import { M1_TARGETS } from '$lib/scoreboard/targets';
-import { formatCount } from '$lib/scoreboard/format';
 import type { ManifestSources } from '$lib/data/manifest';
 import AboutData from './AboutData.svelte';
 import AboutMeanings from './AboutMeanings.svelte';
@@ -83,7 +82,7 @@ async function expectNotices() {
 }
 
 describe('AboutMeanings', () => {
-  it('meanings: every term in order; the goal reads "82,069 homes by January 2031" and "June 2022" from GOAL', async () => {
+  it('meanings: every term in order; the goal reads "82,069 homes by the end of the 40-year window" and "June 2022" from GOAL_BASE', async () => {
     render(AboutMeanings, { level: 2 });
     const terms = [...document.querySelectorAll('dt')].map((d) => d.textContent?.trim());
     expect(terms).toEqual([
@@ -101,11 +100,9 @@ describe('AboutMeanings', () => {
       'Every eligible lot you painted, rebuilt to its height at once. Homes in replaced buildings are subtracted.'
     );
     expect(t).toContain(
-      `The state target: ${formatCount(GOAL.amount)} homes by January 2031, counted from June 2022, so homes built since then count.`
-    );
-    expect(t).toContain('82,069 homes by January 2031');
-    expect(t).toContain(
-      "It is San Francisco's share of RHNA 2023–2031, the state's Regional Housing Needs Allocation."
+      '82,069 homes by the end of the 40-year window, counted from June 2022, so homes built since ' +
+        "then count. It is San Francisco's share of RHNA 2023–2031, the state's Regional Housing " +
+        'Needs Allocation, which asks for them by January 2031.'
     );
   });
 
@@ -114,12 +111,12 @@ describe('AboutMeanings', () => {
     await expect
       .element(page.getByRole('link', { name: 'SF Planning, RHNA Primer' }))
       .toHaveAttribute('href', M1_TARGETS[0].source.url);
-    expect(text()).toContain('Regional Housing Needs Allocation. SF Planning, RHNA Primer');
+    expect(text()).toContain('which asks for them by January 2031. SF Planning, RHNA Primer');
   });
 
-  it('meanings: the buffer reads 94,379 from bufferAmount(GOAL)', async () => {
+  it('meanings: the buffer reads 94,379 from bufferAmount(GOAL_BASE)', async () => {
     render(AboutMeanings, { level: 2 });
-    expect(bufferAmount(GOAL)).toBe(94379);
+    expect(bufferAmount(GOAL_BASE)).toBe(94379);
     expect(text()).toContain('The state asks for room for at least 15% more: 94,379 homes.');
   });
 });

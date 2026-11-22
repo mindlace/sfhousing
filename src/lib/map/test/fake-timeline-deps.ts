@@ -4,7 +4,7 @@ import type { Layer } from '@deck.gl/core';
 import { SolidPolygonLayer } from '@deck.gl/layers';
 import type { ParcelId } from '$lib/data/parcel';
 import type { DebugView, TimelineDeps } from '../timeline-controller';
-import { CityLayer, HaloLayer, StageBarLayer, TimelapseExtension } from '../timelapse/deck';
+import { HaloLayer, StageBarLayer, TimelapseExtension } from '../timelapse/deck';
 
 export type FakeTimelineEvent =
   | ['setLayers', string[]]
@@ -24,8 +24,6 @@ export interface FakeTimelineDeps extends TimelineDeps {
   repaintCount: number;
   /** Every HaloLayer constructed (a clone included), in order. */
   haloLayers: Layer[];
-  /** Every CityLayer constructed (a clone included), in order. */
-  cityLayers: Layer[];
   /** What `debugView` returns (null, the default: no map). Tests set it. */
   view: DebugView | null;
   /** Calls of `debugView` (the controller reads the view only for its debug snapshot). */
@@ -46,14 +44,6 @@ export function makeFakeTimelineDeps(): FakeTimelineDeps {
       f.haloLayers.push(this as unknown as Layer);
     }
   }
-  /** The real CityLayer, recording each construction (deck's `clone` constructs one too). */
-  class RecordingCityLayer extends CityLayer {
-    static layerName = 'RecordingCityLayer';
-    constructor(...props: ConstructorParameters<typeof CityLayer>) {
-      super(...props);
-      f.cityLayers.push(this as unknown as Layer);
-    }
-  }
   let frames = new Map<number, (t: number) => void>();
   let time = 0;
   const f: FakeTimelineDeps = {
@@ -66,14 +56,12 @@ export function makeFakeTimelineDeps(): FakeTimelineDeps {
     resyncCount: 0,
     repaintCount: 0,
     haloLayers: [],
-    cityLayers: [],
     view: null,
     viewReads: 0,
     SolidPolygonLayer,
     TimelapseExtension,
     StageBarLayer,
     HaloLayer: RecordingHaloLayer,
-    CityLayer: RecordingCityLayer,
     debugView() {
       f.viewReads++;
       return f.view;

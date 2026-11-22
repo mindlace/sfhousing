@@ -37,7 +37,7 @@ Fetch the file when working in the relevant area:
 - **Plan and policy sharing (`/p` plans and `/s` `/sim` policies: API contract, rate limit, autosave, manual takedown)** — [docs/dev/plan-sharing.md](docs/dev/plan-sharing.md)
 - **Shared UI parts (spacing scale, buttons, surfaces, chips and cards)** — [docs/dev/ui-parts.md](docs/dev/ui-parts.md)
 - **About this model (the page, the dialog on `/sim`, the link rule, the parts' colours, the map's credit)** — [docs/dev/about.md](docs/dev/about.md)
-- **Map-view interfaces for page and subsystem consumers (`--map-controls-br-*` CSS vars, the citywide feed (`CityDelta`), merged rings and edge glows, bar modes)** — [docs/dev/map-interfaces.md](docs/dev/map-interfaces.md)
+- **Map-view interfaces for page and subsystem consumers (`--map-controls-br-*` CSS vars, the citywide feed (`CityDelta`), policy marks, bar modes)** — [docs/dev/map-interfaces.md](docs/dev/map-interfaces.md)
 - **Map performance (`npm run bench:map`, pass bar, results, CI note)** — [docs/dev/map-perf.md](docs/dev/map-perf.md)
 - **`src/lib/fzp/` after `FzpMode` (`/fzp` redirects to `/sim`; what `/lesscars` and the timeline share: scrubber contract, card and Details' pieces, lookups on the map, known gaps)** — [docs/dev/fzp-mode.md](docs/dev/fzp-mode.md)
 - **Policy levers engine (`SimLevers`, resolution order, law switch, timer reach, `setLevers` protocol)** — [docs/dev/sim-levers.md](docs/dev/sim-levers.md)

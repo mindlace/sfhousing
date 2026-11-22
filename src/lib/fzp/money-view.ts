@@ -33,7 +33,7 @@ import { marketSentence } from './market-view';
 
 /**
  * Source entries as Details shows them: no plain label says "RHNA" (the hashed finance-score
- * labels do); the goal is the state target. The links (`sources`) keep the documents' own names.
+ * labels do); the goal is RHNA's. The links (`sources`) keep the documents' own names.
  */
 export function plainSources(items: readonly Provenance[]): Provenance[] {
   return items.map((p) => {

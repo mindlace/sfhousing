@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { formatShortMonthYear } from '$lib/fzp/format';
 import { dayFromUtc } from '$lib/fzp/time';
-import { GOAL, TODAY, goalName, readGoal, type Goal } from '$lib/goal/goal';
+import { TODAY, defaultGoal, goalName, readGoal, type Goal } from '$lib/goal/goal';
 import type { TimelineView } from '$lib/sim/world/score/types';
 import { EMPTY_LOG, logCompiled, logFilled, viewOfLog } from './chunk-log';
 import { fromPolicyText } from '$lib/fzp/score-view';
@@ -20,6 +20,11 @@ import {
 } from './results';
 import { calendarMonths, chunk, cut, statics } from './test/fixtures';
 
+/** A goal whose deadline falls in the fixture's two-year window. */
+const TEST_GOAL: Goal = {
+  ...defaultGoal(dayFromUtc(2029, 1, 1)),
+  deadline: dayFromUtc(2031, 1, 31)
+};
 const OPTS: HeadlineOpts = { provisional: false, inForce: true };
 const at = (index: number, atToday = false) => ({ index, atToday });
 
@@ -32,18 +37,18 @@ function whole(compare: 'plan' | 'preFzp' = 'plan'): TimelineView {
 describe('headlineAt', () => {
   it('counts from today: the world at the playhead, without the baseline', () => {
     const v = whole();
-    const h = headlineAt(v, at(10), OPTS)!;
+    const h = headlineAt(v, at(10), OPTS, TEST_GOAL)!;
     expect(h.homes).toBe(v.rows[10].completedNet);
     expect(h.at).toBe(v.months[10]);
   });
 
   it('reads 0 and today at the dataset date', () => {
     const v = whole();
-    const h = headlineAt(v, at(0, true), OPTS)!;
+    const h = headlineAt(v, at(0, true), OPTS, TEST_GOAL)!;
     expect(h.homes).toBe(0);
     expect(h.at).toBeNull();
     expect(h.effect).toBe(0);
-    expect(h.goal).toEqual(readGoal(GOAL, v, TODAY));
+    expect(h.goal).toEqual(readGoal(TEST_GOAL, v, TODAY));
   });
 
   it('playheadAt reads the calendar month and today', () => {
@@ -60,19 +65,19 @@ describe('headlineAt', () => {
 
   it('the effect shows only with a policy in force, whatever view.compare says', () => {
     const v = whole();
-    expect(headlineAt(v, at(10), OPTS)!.effect).toBe(v.planEffect[10].completedNetNew);
-    expect(headlineAt(v, at(10), { ...OPTS, inForce: false })!.effect).toBeNull();
-    expect(headlineAt(whole('preFzp'), at(10), OPTS)!.effect).toBe(
+    expect(headlineAt(v, at(10), OPTS, TEST_GOAL)!.effect).toBe(v.planEffect[10].completedNetNew);
+    expect(headlineAt(v, at(10), { ...OPTS, inForce: false }, TEST_GOAL)!.effect).toBeNull();
+    expect(headlineAt(whole('preFzp'), at(10), OPTS, TEST_GOAL)!.effect).toBe(
       v.planEffect[10].completedNetNew
     );
-    expect(headlineAt(v, at(0, true), OPTS)!.effect).toBe(0);
-    expect(headlineAt(v, at(0, true), { ...OPTS, inForce: false })!.effect).toBeNull();
+    expect(headlineAt(v, at(0, true), OPTS, TEST_GOAL)!.effect).toBe(0);
+    expect(headlineAt(v, at(0, true), { ...OPTS, inForce: false }, TEST_GOAL)!.effect).toBeNull();
   });
 
   it("names the row's month", () => {
     const v = whole();
     for (const i of [0, 7, v.lastIndex]) {
-      expect(headlineAt(v, at(i), OPTS)!.at).toBe(v.months[i]);
+      expect(headlineAt(v, at(i), OPTS, TEST_GOAL)!.at).toBe(v.months[i]);
     }
   });
 
@@ -91,7 +96,7 @@ describe('headlineAt', () => {
     );
     // The header's line 1 for the same month.
     expect(chartReading(v, 11, false)).toBe(
-      headlineText(headlineAt(v, at(10), { ...OPTS, inForce: false })!).main
+      headlineText(headlineAt(v, at(10), { ...OPTS, inForce: false }, TEST_GOAL)!, TEST_GOAL).main
     );
   });
 
@@ -111,7 +116,9 @@ describe('headlineAt', () => {
     }
     // Its first part is the header's line 1 for the month.
     expect(chartReading(v, 11, false, 'source')).toMatch(
-      new RegExp(`^${headlineText(headlineAt(v, at(10), { ...OPTS, inForce: false })!).main}, `)
+      new RegExp(
+        `^${headlineText(headlineAt(v, at(10), { ...OPTS, inForce: false }, TEST_GOAL)!, TEST_GOAL).main}, `
+      )
     );
     expect(chartReading(cut(v, 4), 9, false, 'source')).toBe('');
     // homes is the default.
@@ -132,7 +139,7 @@ describe('headlineAt', () => {
     );
     expect(chartReading(w, 0, true, 'effect')).toBe('+0 from your policy by today');
     // The header's effect figure for the same month.
-    const h = headlineText(headlineAt(w, at(4), OPTS)!);
+    const h = headlineText(headlineAt(w, at(4), OPTS, TEST_GOAL)!, TEST_GOAL);
     expect(chartReading(w, 5, true, 'effect')).toMatch(new RegExp(`^\\${h.effect} by `));
     // Without a policy in force: the homes reading.
     expect(chartReading(w, 5, false, 'effect')).toBe(chartReading(w, 5, false));
@@ -142,28 +149,31 @@ describe('headlineAt', () => {
     const v = whole();
     const rows = v.rows.map((r, i) => (i === 3 ? { ...r, completedNet: -12 } : r));
     const planEffect = v.planEffect.map((p, i) => (i === 3 ? { ...p, completedNetNew: -56 } : p));
-    const t = headlineText(headlineAt({ ...v, rows, planEffect }, at(3), OPTS)!);
+    const t = headlineText(
+      headlineAt({ ...v, rows, planEffect }, at(3), OPTS, TEST_GOAL)!,
+      TEST_GOAL
+    );
     expect(t.main).toMatch(/^−12 homes by /);
     expect(t.effect).toBe('−56 from your policy');
   });
 
   it('is calculating only until the playhead month is filled', () => {
     const v = whole();
-    expect(headlineAt(cut(v, 5), at(4), OPTS)).not.toBeNull();
-    expect(headlineAt(cut(v, 5), at(5), OPTS)).not.toBeNull();
-    expect(headlineAt(cut(v, 5), at(6), OPTS)).toBeNull();
-    expect(headlineAt(null, at(0, true), OPTS)).toBeNull();
-    expect(headlineAt(v, at(3), { ...OPTS, provisional: true })).toBeNull();
+    expect(headlineAt(cut(v, 5), at(4), OPTS, TEST_GOAL)).not.toBeNull();
+    expect(headlineAt(cut(v, 5), at(5), OPTS, TEST_GOAL)).not.toBeNull();
+    expect(headlineAt(cut(v, 5), at(6), OPTS, TEST_GOAL)).toBeNull();
+    expect(headlineAt(null, at(0, true), OPTS, TEST_GOAL)).toBeNull();
+    expect(headlineAt(v, at(3), { ...OPTS, provisional: true }, TEST_GOAL)).toBeNull();
   });
 
   it('nothing is read at the end of the window', () => {
     const v = whole();
-    const before = headlineAt(v, at(4), OPTS);
+    const before = headlineAt(v, at(4), OPTS, TEST_GOAL);
     const rows = v.rows.map((r, i) => (i === v.lastIndex ? { ...r, completedNet: 999999 } : r));
     const planEffect = v.planEffect.map((p, i) =>
       i === v.lastIndex ? { ...p, completedNetNew: 888888 } : p
     );
-    expect(headlineAt({ ...v, rows, planEffect }, at(4), OPTS)).toEqual(before);
+    expect(headlineAt({ ...v, rows, planEffect }, at(4), OPTS, TEST_GOAL)).toEqual(before);
   });
 
   it('reads a bounded number of rows, whatever the window length', () => {
@@ -177,7 +187,7 @@ describe('headlineAt', () => {
         }
       });
     const counted = { ...v, rows: count(v.rows), planEffect: count(v.planEffect) };
-    const g: Goal = { ...GOAL, deadline: v.months[12] };
+    const g: Goal = { ...TEST_GOAL, deadline: v.months[12] };
     for (const i of [0, 12, 23]) {
       reads = 0;
       expect(headlineAt(counted, at(i), OPTS, g)).not.toBeNull();
@@ -187,7 +197,7 @@ describe('headlineAt', () => {
 });
 
 describe('headlineText and headlineSpoken', () => {
-  const g: Goal = { ...GOAL, deadline: dayFromUtc(2027, 11, 1) };
+  const g: Goal = { ...TEST_GOAL, deadline: dayFromUtc(2027, 11, 1) };
 
   it('say the same thing', () => {
     const h = headlineAt(whole(), at(6), OPTS, g)!;
@@ -212,8 +222,8 @@ describe('headlineText and headlineSpoken', () => {
         [12, false],
         [23, false]
       ] as const) {
-        const h = headlineAt(whole(compare), at(i, today), OPTS)!;
-        expect(JSON.stringify(headlineText(h))).not.toMatch(/RHNA/);
+        const h = headlineAt(whole(compare), at(i, today), OPTS, TEST_GOAL)!;
+        expect(JSON.stringify(headlineText(h, TEST_GOAL))).not.toMatch(/RHNA/);
       }
     }
   });
@@ -270,7 +280,7 @@ describe('todayAt', () => {
       planEntitled: 0
     });
     // The header at today agrees: 0 homes, +0 from your policy.
-    const head = headlineAt(v, at(0, true), OPTS)!;
+    const head = headlineAt(v, at(0, true), OPTS, TEST_GOAL)!;
     expect(t.pipeline + t.fresh).toBe(head.homes);
     expect(t.planCompleted).toBe(head.effect);
     // "Calculating" stays calculating.

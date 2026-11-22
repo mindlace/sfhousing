@@ -83,16 +83,10 @@ export interface TimelineSnapshot {
   /** Cells installed since construction, cumulative, never reset. */
   installs: number;
   layerIds: string[];
-  /** Halo rings in the halo layer; 0 without one (`setHalos(null)`). */
-  halos: number;
-  /** Policy marks in the halo layer. */
+  /** Policy marks in the halo layer; 0 without one (`setHalos(null)`). */
   marks: number;
-  /** Marks `evalHalo` shows on the clock's day at the map's zoom, behind `ringMinZoom`. */
+  /** Marks `evalHalo` shows on the clock's day at the map's zoom. */
   marksShown: number;
-  /** Rings `evalHalo` shows on the clock's day at the map's zoom, behind `ringMinZoom`. */
-  halosShown: number;
-  /** The rings' distinct event days, ascending, the first 500. */
-  haloDays: number[];
   /** Installed slots with parts and a flag (`slotFlags[s] !== 0`), halos on or off. */
   flagged: number;
   /** Distinct installed slots with parts. */
@@ -101,18 +95,6 @@ export interface TimelineSnapshot {
   cityMarkers: number;
   /** Of them, with a `SLOT_FLAG` bit. */
   cityFlagged: number;
-  /** Records in the city layer; 0 without one. */
-  cityRecords: number;
-  /** The records' distinct days, ascending, the first 500. */
-  cityDays: number[];
-  /** Records `evalCity` draws as a merged ring on the clock's day in the map's view. */
-  cityRings: number;
-  /** Records `evalCity` draws as an edge glow on the clock's day in the map's view. */
-  cityGlows: number;
-  /** `buildCity` calls since the controller was made (one per applied update with `city`). */
-  cityBuilds: number;
-  /** The halo layer's gate: 0, or CITY_HANDOVER_ZOOM while the city layer exists. */
-  ringMinZoom: number;
   /** `setBarMode`'s mode ('street' until it is called). */
   barMode: BarMode;
   /**
@@ -120,8 +102,6 @@ export interface TimelineSnapshot {
    * the map's view; without a map view, every bar in time.
    */
   barsShown: number;
-  /** The glows' inset [top, right, bottom, left] in CSS px, as `setEdgeInset` last wrote it. */
-  edgeInset: [number, number, number, number];
 }
 
 /** Shared mutable clock read by the extension's `draw`; `setTime` writes `day`. */

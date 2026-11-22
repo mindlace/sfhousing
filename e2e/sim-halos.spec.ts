@@ -1,7 +1,5 @@
-// Halos and marks on /sim (map-on-screen slice 5, Task 4): the page turns halos on from the dataset
-// date, so nothing rings at today; a ring shows once the playhead reaches its stage change and
-// hides again when the playhead goes back; marks appear only under a policy of the person's, one
-// per flagged project on the map, and only then does the key name the mark. Reads the map's debug
+// Policy marks on /sim: marks appear only under a policy of the person's, one per flagged project
+// on the map, and only then does the key name the mark. Reads the map's debug
 // snapshot (window.__sfhMap.timelineSnapshot) and the playhead (window.__sfhFzp), never pixels.
 // Runs against the VITE_E2E build on fixture-0.
 import { expect, test, type Locator, type Page } from '@playwright/test';
@@ -22,13 +20,12 @@ const markButton = (page: Page): Locator =>
 
 const snap = (page: Page): Promise<TimelineSnapshot | null> =>
   page.evaluate(() => (window as Win).__sfhMap?.timelineSnapshot() ?? null);
-const dayOf = (page: Page): Promise<number> => page.evaluate(() => (window as Win).__sfhFzp!.day);
 
-/** The map has drawn the filled forecast: cells in, nothing queued, halo records built. */
+/** The map has drawn the filled forecast: cells in, nothing queued, policy marks built. */
 async function waitMap(page: Page): Promise<TimelineSnapshot> {
   await page.waitForFunction(() => {
     const s = (window as Win).__sfhMap?.timelineSnapshot();
-    return !!s && s.cells > 0 && s.pending === 0 && s.halos > 0;
+    return !!s && s.cells > 0 && s.pending === 0;
   });
   return (await snap(page))!;
 }
@@ -51,57 +48,10 @@ async function openKey(page: Page): Promise<void> {
   await expect(keyPanel(page)).toBeVisible();
 }
 
-test('no halo shows at today', async ({ page }) => {
-  await gotoSim(page);
-  await slider(page).focus();
-  await page.keyboard.press('Home');
-  await expect
-    .poll(() => dayOf(page))
-    .toBe(await page.evaluate(() => (window as Win).__sfhFzp!.asOf));
-  const asOf = await page.evaluate(() => (window as Win).__sfhFzp!.asOf);
-  // At the default zoom the merged view stands in: city records exist ahead, none drawn yet.
-  const merged = await waitMap(page);
-  expect(merged.ringMinZoom).toBe(14);
-  expect(merged.cityRecords).toBeGreaterThan(0);
-  expect(merged.cityRings).toBe(0);
-  expect(merged.cityGlows).toBe(0);
-  for (const d of merged.cityDays) expect(d).toBeGreaterThan(asOf);
-  // From 14 each project's own rings: halos are on (rings exist ahead), and none is due yet.
-  await page.evaluate(() => (window as Win).__sfhMap!.map!.jumpTo({ zoom: 14.5 }));
-  const s = await waitMap(page);
-  expect(s.halos).toBeGreaterThan(0);
-  expect(s.halosShown).toBe(0);
-  expect(s.marksShown).toBe(0);
-  for (const d of s.haloDays) expect(d).toBeGreaterThan(asOf);
-});
-
-test('stepping the playhead past the first stage change shows its halo; Home hides it again', async ({
-  page
-}) => {
-  await gotoSim(page);
-  // Below zoom 14 the city layer's merged ring stands for a project's own (the halo layer's
-  // ringMinZoom gate, map-interfaces.md); from 14 the project's own ring shows.
-  await page.evaluate(() => (window as Win).__sfhMap!.map!.jumpTo({ zoom: 14.5 }));
-  const [d] = (await waitMap(page)).haloDays;
-  await slider(page).focus();
-  await page.keyboard.press('Home');
-  let day = await dayOf(page);
-  expect(day).toBeLessThan(d);
-  while (day < d) {
-    await page.keyboard.press('ArrowRight');
-    await expect.poll(() => dayOf(page)).toBeGreaterThan(day);
-    day = await dayOf(page);
-  }
-  await expect.poll(async () => (await snap(page))!.halosShown).toBeGreaterThanOrEqual(1);
-  expect((await snap(page))!.day).toBe(day);
-  await page.keyboard.press('Home');
-  await expect.poll(async () => (await snap(page))!.halosShown).toBe(0);
-});
-
 test('the default document draws no marks, and the key names no mark', async ({ page }) => {
   await gotoSim(page);
   await openKey(page);
-  await expect(keyPanel(page).getByText('Just changed stage')).toBeVisible();
+  await expect(keyPanel(page).getByText('Just changed stage')).toHaveCount(0);
   await expect(keyPanel(page).getByText('Bar: progress and chance of finishing')).toBeVisible();
   const s = (await snap(page))!;
   expect(s.flagged).toBe(0);
@@ -160,7 +110,7 @@ test('a transit rule from today: the key names the mark; marks equal the flagged
   await expect(markButton(page)).toHaveCount(0);
 });
 
-test('/sim with halos on: axe clean with the key open, light and dark', async ({ page }) => {
+test('/sim with marks: axe clean with the key open, light and dark', async ({ page }) => {
   for (const colorScheme of ['light', 'dark'] as const) {
     await page.emulateMedia({ colorScheme });
     await gotoSim(page);

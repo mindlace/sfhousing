@@ -139,14 +139,6 @@ export interface SimMapHandle {
    */
   setBarMode(mode: BarMode): void;
   /**
-   * The page's part of the edge glows' inset, CSS px: `top` (what covers the map's top: the notice
-   * stack from md) and `right` (an open key or layers panel from md). SimMap adds its own bottom
-   * (the attribution's footprint) and passes [top + GLOW_TOP_GAP, right, bottom, 0] to the city
-   * layer. Write it on change only; repeating a value does nothing. Kept until the timeline
-   * controller exists, as setTime.
-   */
-  setGlowInset(o: { top: number; right: number }): void;
-  /**
    * Collapse the credit now, opened by hand or not, unless focus is inside it (Paint's strip
    * appearing); a no-op before the map.
    */
