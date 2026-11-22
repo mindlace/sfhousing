@@ -44,8 +44,8 @@ function monthReached(view: TimelineView, reached: Day, asOf: Day): number {
  * (deadline outside the window) or the view does not cover the months read (`awaitsView`).
  * Reached: `readGoal(goal, view, min(m, deadline month)).reachedOn`, m the month of `reached`
  * (TODAY at or before `asOf`), so it agrees with the header's "Goal reached". Missed: `reached` is
- * past goal.deadline or at the window's last day and the amount was not met by it; short = goal.amount - the measure at the
- * deadline month. Reads the rows up to the deadline month, plus a few repeat reads.
+ * past goal.deadline or at the window's last day and the amount was not met by it; short =
+ * goal.amount - the measure at the deadline month. Reads the rows up to the deadline month, plus a few repeat reads.
  */
 export function goalOutcome(
   goal: Goal,

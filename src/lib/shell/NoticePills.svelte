@@ -8,35 +8,27 @@
   Map-view's failure chips sit at the same top centre, so from md the stack publishes its
   bottom edge, in px from its host's top, on its host (the parent element: FzpMode's or
   BrushEditor's root) as `--notice-pills-bottom`, and SimMap places the chips below it. It is `0px`
-  while the stack is empty and below md (in flow, the map is already below it). `onbottom` reports
-  the same value on change.
+  while the stack is empty and below md (in flow, the map is already below it).
 -->
 <script lang="ts">
-  import { untrack, type Snippet } from 'svelte';
+  import { type Snippet } from 'svelte';
   import { MediaQuery } from 'svelte/reactivity';
 
   interface Props {
     children: Snippet;
     /** The stack's element, for a host that places something clear of the pills. */
     el?: HTMLElement;
-    /** The same value it publishes as --notice-pills-bottom (px), on change. */
-    onbottom?: (px: number) => void;
   }
-  let { children, el = $bindable(), onbottom = undefined }: Props = $props();
+  let { children, el = $bindable() }: Props = $props();
 
   const wide = new MediaQuery('(min-width: 48rem)');
   let height = $state(0);
-  let reported: number | null = null;
   $effect(() => {
     const stack = el;
     const host = stack?.parentElement;
     if (!stack || !host) return;
     const bottom = Math.round(wide.current && height > 0 ? stack.offsetTop + height : 0);
     host.style.setProperty('--notice-pills-bottom', `${bottom}px`);
-    if (bottom !== reported) {
-      reported = bottom;
-      untrack(() => onbottom?.(bottom));
-    }
     return () => host.style.removeProperty('--notice-pills-bottom');
   });
 </script>

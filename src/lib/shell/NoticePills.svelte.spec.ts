@@ -60,31 +60,6 @@ describe('NoticePills', () => {
     await expect.poll(published).toBe(`${Math.round(s.bottom - host.top)}px`);
   });
 
-  it("onbottom reports the stack's bottom from md and 0 below md or empty", async () => {
-    await page.viewport(1024, 768);
-    const seen: number[] = [];
-    const a = await render(NoticePillsHost, { onbottom: (px: number) => seen.push(px) });
-    await expect.element(stack().getByText('Second notice')).toBeVisible();
-    await expect.poll(published).not.toBe('0px');
-    // The same value it publishes, reported once per change.
-    await expect.poll(() => seen.at(-1)).toBe(parseFloat(published()));
-    expect(seen.filter((v, i) => i > 0 && v === seen[i - 1])).toEqual([]);
-    await a.unmount();
-    const empty: number[] = [];
-    const b = await render(NoticePillsHost, {
-      empty: true,
-      onbottom: (px: number) => empty.push(px)
-    });
-    await expect.poll(() => empty).toEqual([0]);
-    await b.unmount();
-    await page.viewport(375, 812);
-    const narrow: number[] = [];
-    render(NoticePillsHost, { onbottom: (px: number) => narrow.push(px) });
-    await expect.element(stack().getByText('First notice')).toBeVisible();
-    await expect.poll(() => narrow.at(-1)).toBe(0);
-    expect(narrow.every((v) => v === 0)).toBe(true);
-  });
-
   it('publishes 0px when empty, and below md (in flow, the map is already below it)', async () => {
     await page.viewport(1024, 768);
     const screen = await render(NoticePillsHost, { empty: true });

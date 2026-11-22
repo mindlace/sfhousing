@@ -194,7 +194,7 @@ export class TimelineController {
    * 0, `setLookups`, a bar mode change and `destroy`.
    */
   private barJob: BarJob | null = null;
-  /** `setHalos`: events after this day ring; null (the default) emits no halo layer. */
+  /** `setHalos`: policy marks show for events after this day; null (the default) emits no halo layer. */
   private haloFrom: Day | null = null;
   private halos: HaloAttrs[] = [];
   private halosLayer: Layer | null = null;

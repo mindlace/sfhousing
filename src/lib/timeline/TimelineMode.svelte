@@ -1044,7 +1044,7 @@
     pendingStatus.clear();
     if (calibration) {
       h.setTime(day);
-      // Halos and marks from the dataset date on: nothing rings at today. Once, not per move.
+      // Policy marks from the dataset date on: none shows at today. Once, not per move.
       h.setHalos({ from: calibration.asOf });
     }
     // Bars from the default zoom, one size, the person's projects first. The page's, once.

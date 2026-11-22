@@ -85,7 +85,7 @@ export function buildHalos(cells: Iterable<TimedPackedCell>, from: Day): HaloAtt
 
 /**
  * Sets each mark's `areaFrom` so that below the gate every city square (`cityGroup` of the
- * mark's anchor, the 800 m grid of `CityStore`) with a standing mark (day <= t < until) shows
+ * mark's anchor, the 800 m grid of city-grid.ts) with a standing mark (day <= t < until) shows
  * exactly one. The square's mark at t is its standing mark first by (day, then homes
  * descending, then projectId); it keeps the square until its own end, since a mark revealed
  * later never comes first, and then the square hands over to the first still standing, or,

@@ -158,8 +158,8 @@ export interface GoalRowData {
   atDeadline: number | null;
 }
 
-/** 'by Jan 2031' before the deadline's month, 'Held at Jan 2031' from it on (and at today: 'by …');
- *  null without a deadline month. */
+/** 'by Jan 2031' before the deadline's month, 'Held at Jan 2031' from it on (and at today:
+ *  'by …'); null without a deadline month. */
 export function goalRowNote(
   goal: Goal,
   index: number,

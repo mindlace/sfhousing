@@ -1,7 +1,7 @@
 // The map citywide on /sim: the feed carries a marker for every project, one diamond an area shows
-// below zoom 14, and bars are in far mode. /lesscars and Paint stay as they were: street bars. Reads the map's debug snapshot
-// (window.__sfhMap.timelineSnapshot) and the playhead (window.__sfhFzp), never pixels. Runs
-// against the VITE_E2E build on fixture-0.
+// below zoom 14, and bars are in far mode. /lesscars and Paint stay as they were: street bars.
+// Reads the map's debug snapshot (window.__sfhMap.timelineSnapshot) and the playhead
+// (window.__sfhFzp), never pixels. Runs against the VITE_E2E build on fixture-0.
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import type { SfhFzpDebug } from '../src/lib/fzp/debug';
 import type { SfhMapDebug } from '../src/lib/map/debug';
