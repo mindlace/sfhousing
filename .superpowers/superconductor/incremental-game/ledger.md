@@ -1,6 +1,11 @@
-# Ledger — incremental-game
+# Superconductor ledger — design: docs/superpowers/design/2026-11-22-1216-incremental-game.html
+Package worktree: /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game
+
+## Checkpoints
 
 ## 2026-11-22 — composition started (supercomposer, fresh)
+
+- **C5 handoff, 2026-11-22.** Package committed at `b2140b14` (Conventional Commit, no attribution). Integration branch `superconductor/incremental-game` created at that commit. The package worktree is the composition worktree itself, switched to the integration branch: this session is isolated in its worktree and may not add another one in the shared checkout. The earlier branch `worktree-incremental-game` still points at `b2140b14` and carries nothing else. Dependencies are installed in the worktree (`npm install`) so the commit hook runs.
 
 - Partner request (verbatim):
 
