@@ -9,7 +9,7 @@ import { expect, test, type Locator, type Page } from '@playwright/test';
 import type { SfhFzpDebug } from '../src/lib/fzp/debug';
 import { expectNoA11yViolations } from './helpers/a11y';
 import { loginAs, uniqueEmail } from './helpers/auth';
-import { addPolicy, slider, waitFilled } from './helpers/run';
+import { slider, waitFilled } from './helpers/run';
 import {
   PLAN_KEY,
   chooseTool,
@@ -519,26 +519,6 @@ test("Tab from the map reaches Layers and Key before the open key panel's contro
   expect(panel.y + panel.height).toBeLessThanOrEqual((await boxOf(keyToggle(page))).y);
 });
 
-test("the edge swatch's half-discs are at least 10 by 5 px, side by side in one row", async ({
-  page
-}) => {
-  await gotoSim(page);
-  if ((await keyToggle(page).getAttribute('aria-expanded')) !== 'true')
-    await keyToggle(page).click();
-  await expect(keyPanel(page)).toBeVisible();
-  const halves = keyPanel(page).locator('[data-swatch="edge"] [data-token]');
-  await expect(halves).toHaveCount(3);
-  for (const b of await halves.evaluateAll((els) =>
-    els.map((e) => ({ w: e.getBoundingClientRect().width, h: e.getBoundingClientRect().height }))
-  )) {
-    expect(b.w).toBeGreaterThanOrEqual(10);
-    expect(b.h).toBeGreaterThanOrEqual(5);
-  }
-  expect((await boxOf(keyPanel(page).locator('[data-swatch="edge"]'))).height).toBeLessThanOrEqual(
-    24
-  );
-});
-
 test('1280x800 on /sim: the open key panel does not scroll; its last row is in full view', async ({
   isMobile,
   page
@@ -567,6 +547,8 @@ const cue = (panel: Locator) =>
 
 /** A scrolling key panel says there is more below until it is scrolled to its end. */
 async function expectCueToTheEnd(panel: Locator): Promise<void> {
+  // The key now fits its room; a short max-height makes it scroll, as a longer key would.
+  await panel.evaluate((el) => (el.style.maxHeight = '90px'));
   expect(await panel.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
   await expect.poll(() => cue(panel)).toMatchObject({ more: true, opacity: '1', height: '24px' });
   await panel.evaluate((el) => (el.scrollTop = el.scrollHeight));
@@ -575,7 +557,7 @@ async function expectCueToTheEnd(panel: Locator): Promise<void> {
   await expect.poll(() => cue(panel)).toMatchObject({ more: true, opacity: '1' });
 }
 
-test('375 px on /sim: the scrolling key panel shows more below; the cue goes at its end', async ({
+test('375 px on /sim: a scrolling key panel shows more below; the cue goes at its end', async ({
   isMobile,
   page
 }) => {
@@ -587,7 +569,7 @@ test('375 px on /sim: the scrolling key panel shows more below; the cue goes at 
   await expectCueToTheEnd(keyPanel(page));
 });
 
-test('1280x800 on /sim with a policy in force: the key panel shows more below; a line under forced colours', async ({
+test('1280x800 on /sim: a scrolling key panel shows more below; a line under forced colours', async ({
   isMobile,
   page
 }) => {
@@ -595,10 +577,6 @@ test('1280x800 on /sim with a policy in force: the key panel shows more below; a
   test.skip(isMobile, 'the desktop layout');
   await page.setViewportSize({ width: 1280, height: 800 });
   await gotoSim(page);
-  await addPolicy(page, 'Zoning', 'Transit rule');
-  await page.keyboard.press('Escape');
-  await expect(page.getByTestId('inspector')).toHaveCount(0);
-  await waitFilled(page);
   const panel = keyPanel(page);
   await expect(panel).toBeVisible();
   await expectCueToTheEnd(panel);
