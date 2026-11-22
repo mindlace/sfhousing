@@ -545,6 +545,21 @@ test.describe('map view', () => {
     expect(await toggle.evaluate((el) => el.matches(':focus-visible'))).toBe(true);
     await expect(toggle).toHaveCSS('outline-style', 'solid');
     await expect(toggle).toHaveCSS('outline-width', '2px');
+    // The (i) is flush in the map's corner and the map clips its overflow: the whole ring is drawn
+    // inside the map, in forced colours and out of them.
+    const ringPastMap = () =>
+      toggle.evaluate((el) => {
+        const s = getComputedStyle(el);
+        const out = parseFloat(s.outlineOffset) + parseFloat(s.outlineWidth);
+        const r = el.getBoundingClientRect();
+        const m = el.closest('.maplibregl-map')!.getBoundingClientRect();
+        return Math.max(r.right + out - m.right, r.bottom + out - m.bottom);
+      });
+    expect(await ringPastMap()).toBeLessThanOrEqual(0);
+    await page.emulateMedia({ forcedColors: 'none', colorScheme: 'light' });
+    expect(await toggle.evaluate((el) => el.matches(':focus-visible'))).toBe(true);
+    await expect(toggle).toHaveCSS('outline-style', 'solid');
+    expect(await ringPastMap()).toBeLessThanOrEqual(0);
   });
 
   // ---- painting (brush-tool + worker host) -----------------------------------------------------

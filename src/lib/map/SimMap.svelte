@@ -1770,13 +1770,14 @@
       center / 24px 24px no-repeat;
   }
   /* The project's ring (FOCUS_RING, src/lib/shell/ui.ts) in place of MapLibre's box-shadow, which
-     forced colours drop: for the keyboard only. */
+     forced colours drop: for the keyboard only. Inset, since the (i) is flush in the map's corner
+     and the map clips its overflow. */
   .sim-map :global(.maplibregl-ctrl-attrib-button:focus) {
     box-shadow: none;
   }
   .sim-map :global(.maplibregl-ctrl-attrib-button:focus-visible) {
     outline: 2px solid var(--color-accent);
-    outline-offset: 1px;
+    outline-offset: -2px;
   }
   @media (prefers-color-scheme: dark) {
     .sim-map :global(.maplibregl-ctrl-attrib-button:focus-visible) {
