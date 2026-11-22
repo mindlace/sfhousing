@@ -304,23 +304,6 @@
   const FP_INLINE = '--map-controls-br-inline-size';
   const FP_BLOCK = '--map-controls-br-block-size';
   let fpObserver: ResizeObserver | null = null;
-  /**
-   * The city layer's bottom glow inset: the bottom-right controls' block (the attribution and
-   * the Layers and Key buttons), at most a quarter of the map's height. Measured with the
-   * footprint, never per frame.
-   */
-  let glowInset = 0;
-  /** The page's part (`setGlowInset`): what covers the map's top and right. */
-  let pageInset = { top: 0, right: 0 };
-  /**
-   * A top glow's centre sits this far below what covers the top (the header line, the notices),
-   * so it reads as a glow at the map's edge, not one under the header. CSS px.
-   */
-  const GLOW_TOP_GAP = 12;
-  /** The one write of the glows' inset [top, right, bottom, left]: the page's and the footprint's. */
-  function writeEdgeInset(t = live?.timeline): void {
-    t?.setEdgeInset([pageInset.top + GLOW_TOP_GAP, pageInset.right, glowInset, 0]);
-  }
   let footprintGone = false;
 
   function publishFootprint(inline: number, block: number): void {
@@ -351,8 +334,6 @@
     const f = controlsFootprint(box, controls.getBoundingClientRect());
     const block = Math.max(f.block, bottomInset);
     publishFootprint(f.inline, block);
-    glowInset = Math.min(block, box.height / 4);
-    writeEdgeInset();
   }
 
   function observeFootprint(map: MapLibreMap): void {
@@ -471,16 +452,6 @@
     live?.timeline?.setBarMode(mode);
   }
 
-  /**
-   * The page's part of the glows' inset (top and right, CSS px); SimMap adds its bottom. Kept like
-   * the day; a repeated value writes nothing.
-   */
-  export function setGlowInset(o: { top: number; right: number }): void {
-    if (o.top === pageInset.top && o.right === pageInset.right) return;
-    pageInset = { top: o.top, right: o.right };
-    writeEdgeInset();
-  }
-
   const handle: SimMapHandle = {
     applyGenerated,
     setChunkStatus,
@@ -494,7 +465,6 @@
     setTimelineLookups,
     setHalos,
     setBarMode,
-    setGlowInset,
     collapseCredit
   };
 
@@ -942,7 +912,7 @@
     l.timelineLoading = false;
     if (l.dead || l.map !== map) return;
     const [
-      { TimelapseExtension, StageBarLayer, HaloLayer, CityLayer },
+      { TimelapseExtension, StageBarLayer, HaloLayer },
       { TimelineController, TIMELINE_PART_LAYER }
     ] = mods;
     const { log, WebMercatorViewport } = mods[2];
@@ -956,7 +926,6 @@
         TimelapseExtension,
         StageBarLayer,
         HaloLayer,
-        CityLayer,
         repaint: () => map.triggerRepaint(),
         // The debug snapshot's camera: deck's projection of the map's, read on demand only.
         debugView: () => {
@@ -994,7 +963,6 @@
       firstSymbolLayerId(map.getStyle())
     );
     l.timeline = timeline;
-    writeEdgeInset(timeline);
     l.timelinePart = TIMELINE_PART_LAYER;
     watchCompileErrors(l);
     overlay.setProps({

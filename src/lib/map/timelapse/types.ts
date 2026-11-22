@@ -101,17 +101,7 @@ export interface TimelineSnapshot {
   cityMarkers: number;
   /** Of them, with a `SLOT_FLAG` bit. */
   cityFlagged: number;
-  /** Records in the city layer; 0 without one. */
-  cityRecords: number;
-  /** The records' distinct days, ascending, the first 500. */
-  cityDays: number[];
-  /** Records `evalCity` draws as a merged ring on the clock's day in the map's view. */
-  cityRings: number;
-  /** Records `evalCity` draws as an edge glow on the clock's day in the map's view. */
-  cityGlows: number;
-  /** `buildCity` calls since the controller was made (one per applied update with `city`). */
-  cityBuilds: number;
-  /** The halo layer's gate: 0, or CITY_HANDOVER_ZOOM while the city layer exists. */
+  /** The halo layer's gate: 0 without a halo layer, else MARK_AREA_ZOOM. */
   ringMinZoom: number;
   /** `setBarMode`'s mode ('street' until it is called). */
   barMode: BarMode;
@@ -120,8 +110,6 @@ export interface TimelineSnapshot {
    * the map's view; without a map view, every bar in time.
    */
   barsShown: number;
-  /** The glows' inset [top, right, bottom, left] in CSS px, as `setEdgeInset` last wrote it. */
-  edgeInset: [number, number, number, number];
 }
 
 /** Shared mutable clock read by the extension's `draw`; `setTime` writes `day`. */

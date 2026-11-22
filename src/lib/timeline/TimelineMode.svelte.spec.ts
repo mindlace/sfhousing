@@ -3582,45 +3582,6 @@ describe('the map key', () => {
     await expect.element(control()).toBeVisible();
   });
 
-  it('a notice and an open key panel set the glow inset; closing the panel clears its part', async () => {
-    await page.viewport(1280, 800);
-    const missing: Goal = { ...GOAL_BASE, amount: 1100, deadline: MONTHS[12] };
-    await opened(LAST, { goal: missing });
-    await expect.element(keyPanel()).toBeVisible();
-    const last = () => callsOf('setGlowInset').at(-1)?.[0] as { top: number; right: number };
-    const keyRight = () => (control().element() as HTMLElement).offsetWidth + 8;
-    await expect.poll(() => last()?.right).toBe(keyRight());
-    // The notice stack from md: its bottom edge, as the stack publishes it.
-    (slider().element() as HTMLElement).focus();
-    await userEvent.keyboard('{End}');
-    const notice = page.getByTestId('tl-goal-notice');
-    await expect.element(notice).toBeVisible();
-    const host = page.getByTestId('fzp-notices').element().parentElement!;
-    const published = () =>
-      parseFloat(getComputedStyle(host).getPropertyValue('--notice-pills-bottom'));
-    await expect.poll(published).toBeGreaterThan(0);
-    await expect.poll(() => last().top).toBe(published());
-    expect(last().right).toBe(keyRight());
-    const n = callsOf('setGlowInset').length;
-    await keyToggle().click();
-    await expect.element(keyPanel()).not.toBeInTheDocument();
-    await expect.poll(() => last().right).toBe(0);
-    expect(last().top).toBe(published());
-    // One write for the close, none per frame.
-    expect(callsOf('setGlowInset').length).toBe(n + 1);
-  });
-
-  it('below md the glow inset has no right part, even with the key open', async () => {
-    await page.viewport(390, 760);
-    await opened();
-    await keyToggle().click();
-    await expect.element(keyPanel()).toBeVisible();
-    await expect.poll(() => callsOf('setGlowInset').length).toBeGreaterThan(0);
-    expect(callsOf('setGlowInset').every((c) => (c[0] as { right: number }).right === 0)).toBe(
-      true
-    );
-  });
-
   it('stale: the key dims with Details', async () => {
     const s = await opened();
     await expect.element(keyPanel()).toBeVisible();

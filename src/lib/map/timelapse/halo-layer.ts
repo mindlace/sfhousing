@@ -107,7 +107,7 @@ HlEval hl_evalHalo(
 ) {
   // 1. Hidden: outside [day, until).
   if (t < day || t >= until) return HlEval(false, 0.0, 0.0);
-  // 2. Below the gate (rings and marks): the city layer's merged rings stand for them, and one
+  // 2. Below the gate (rings and marks): one
   //    mark a square (from its areaFrom; a ring's is its until) stands for the square's marks.
   if (scale < halo.ringMinScale && t < areaFrom) return HlEval(false, 0.0, 0.0);
   // 3. A mark: one size, full strength.
@@ -203,7 +203,7 @@ const srgb01 = (theme: Theme, name: TokenName): Rgb =>
 /** The halo colours, 0-1 sRGB. */
 export type HaloColours = Omit<HaloModuleProps, 'day' | 'reduced' | 'ringMinScale'>;
 
-/** Per-theme colour uniforms, built once at module load; CityLayer draws in the same table. */
+/** Per-theme colour uniforms, built once at module load. */
 export const HALO_COLOURS: Record<Theme, HaloColours> = {
   light: colours('light'),
   dark: colours('dark')
@@ -227,8 +227,7 @@ type _HaloLayerProps = {
   reduced: boolean;
   /**
    * Rings and marks show only from this zoom, except a mark from its `areaFrom` (its city
-   * square's one diamond): CITY_HANDOVER_ZOOM while a city layer draws the merged rings below
-   * it, else 0 (no gate). A uniform: changing it rebuilds nothing.
+   * square's one diamond): MARK_AREA_ZOOM. A uniform: changing it rebuilds nothing.
    */
   ringMinZoom: number;
 };

@@ -14,7 +14,7 @@ import { DAYS, SLOT, timelineSmall } from './fixtures/timeline-small';
 import { timelineLookups } from './fixtures/timeline-lookups';
 import { packTimedCell } from './pack-timed';
 import { encodeParts } from './timelapse/encode';
-import { TIMELINE_PART_LAYER, TimelineController } from './timeline-controller';
+import { TIMELINE_PART_LAYER } from './timeline-controller';
 import type {
   CityDelta,
   SimMapHandle,
@@ -336,36 +336,7 @@ describe('SimMap timeline mode', { timeout: 60_000 }, () => {
     expect(errors).toEqual([]);
   });
 
-  it('setGlowInset: the city layer reads [top + 12, right, footprint bottom, 0]; a repeat writes nothing', async () => {
-    const { handle, ready } = await mount();
-    // Before the controller exists: kept and applied when it is made.
-    handle.setGlowInset({ top: 30, right: 250 });
-    handle.setTimelineLookups(timelineLookups);
-    handle.applyTimeline(timelineSmall);
-    const h = await ready;
-    const map = h.getMap()!;
-    await converged(map);
-    const block = parseFloat(
-      document.documentElement.style.getPropertyValue('--map-controls-br-block-size')
-    );
-    const height = map.getContainer().getBoundingClientRect().height;
-    const bottom = Math.min(block, height / 4);
-    expect(block).toBeGreaterThan(0);
-    const inset = () => dbg().timelineSnapshot()!.edgeInset;
-    expect(inset().slice(0, 2)).toEqual([42, 250]);
-    expect(Math.abs(inset()[2] - bottom)).toBeLessThanOrEqual(1);
-    expect(inset()[3]).toBe(0);
-    const writes = vi.spyOn(TimelineController.prototype, 'setEdgeInset');
-    h.setGlowInset({ top: 30, right: 250 });
-    expect(writes).not.toHaveBeenCalled();
-    h.setGlowInset({ top: 0, right: 0 });
-    expect(writes).toHaveBeenCalledTimes(1);
-    expect(inset().slice(0, 2)).toEqual([12, 0]);
-    expect(Math.abs(inset()[2] - bottom)).toBeLessThanOrEqual(1);
-    expect(errors).toEqual([]);
-  });
-
-  it('a queued update keeps its city until the controller exists, and the controller draws it', async () => {
+  it('a queued update keeps its city until the controller exists, and the controller holds it', async () => {
     // One marker in view of the camera below, one well off it to the west.
     const here: [number, number] = [-122.4194, 37.7599];
     const city: CityDelta = {
@@ -391,35 +362,9 @@ describe('SimMap timeline mode', { timeout: 60_000 }, () => {
     const h = await ready;
     const map = h.getMap()!;
     await converged(map);
-    const ids = layerIds(map);
-    expect(ids.indexOf('timeline-city')).toBe(ids.indexOf('timeline-halos') + 1);
-    // Zoom 13 over the first marker: its merged ring, the other's edge glow, the gate on.
-    map.jumpTo({ center: here, zoom: 13, pitch: 0, bearing: 0 });
-    await converged(map);
-    const snap = dbg().timelineSnapshot()!;
-    expect(snap).toMatchObject({ cityMarkers: 2, ringMinZoom: 14, halosShown: 0 });
-    expect(snap.cityRecords).toBeGreaterThan(0);
-    expect(snap.cityRings).toBeGreaterThan(0);
-    expect(snap.cityGlows).toBeGreaterThan(0);
-    // Zoom 15: the projects' own rings; the city draws no ring.
-    map.jumpTo({ center: here, zoom: 15, pitch: 0, bearing: 0 });
-    await converged(map);
-    expect(dbg().timelineSnapshot()!.cityRings).toBe(0);
-    // The glows sit above the bottom-right controls: the published block, at most a quarter of
-    // the map's height; with no page part, the top is GLOW_TOP_GAP (12 px).
-    const cityLayer = ((deckOf(map).props.layers ?? []) as Layer[]).find(
-      (l) => l.id === 'timeline-city'
-    )!;
-    const block = parseFloat(
-      document.documentElement.style.getPropertyValue('--map-controls-br-block-size')
-    );
-    const height = map.getContainer().getBoundingClientRect().height;
-    expect(block).toBeGreaterThan(0);
-    const inset = (cityLayer.props as unknown as { edgeInset: number[] }).edgeInset;
-    expect(inset[0]).toBe(12);
-    expect(inset[1]).toBe(0);
-    expect(inset[3]).toBe(0);
-    expect(Math.abs(inset[2] - Math.min(block, height / 4))).toBeLessThanOrEqual(1);
+    // The markers are held; no layer draws from them.
+    expect(layerIds(map)).not.toContain('timeline-city');
+    expect(dbg().timelineSnapshot()).toMatchObject({ cityMarkers: 2, ringMinZoom: 14 });
     // A malformed city is refused at the handle, before anything is queued or applied.
     const bad = { ...city, homes: new Uint16Array(1) };
     expect(() => h.applyTimeline({ ...timelineSmall, revision: 1, cells: [], city: bad })).toThrow(

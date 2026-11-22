@@ -3,4 +3,3 @@
 export { TimelapseExtension } from './extension';
 export { StageBarLayer } from './stage-bar-layer';
 export { HaloLayer } from './halo-layer';
-export { CityLayer } from './city-layer';

@@ -11,17 +11,8 @@ import { TYPOLOGY_ORDER, type TimedPackedCell, type TimelineUpdate } from './typ
 import type { BarAttrs } from './timelapse/types';
 import { HALO_KIND, buildHalos, evalHalo, type HaloAttrs } from './timelapse/halos';
 import { SLOT_FLAG, type CityDelta } from './types';
-import {
-  CityStore,
-  M_PER_DEG,
-  buildCity,
-  cityGroup,
-  cityForward,
-  evalCity,
-  type CityAttrs,
-  type CityView
-} from './timelapse/city';
-import { CITY_HANDOVER_ZOOM } from './timelapse/constants';
+import { M_PER_DEG, cityGroup } from './timelapse/city-grid';
+import { MARK_AREA_ZOOM } from './timelapse/constants';
 import { buildBars, evalBar } from './timelapse/bars';
 import { FAR_UNITS_PER_SLICE, FarDeclutter, declutter } from './timelapse/declutter';
 import { SYNTHETIC_LOOKUPS, makeSyntheticTimeline } from './test/synthetic-timeline';
@@ -31,7 +22,6 @@ interface Props {
   id: string;
   data: unknown;
   beforeId?: string;
-  edgeInset?: number[];
   extensions: unknown[];
   updateTriggers: Record<string, unknown>;
   parameters?: { depthWriteEnabled?: boolean };
@@ -1115,16 +1105,6 @@ describe('TimelineController city', () => {
       clip: (lng, lat) => [(lng - MISSION[0]) / 0.02, (lat - MISSION[1]) / 0.02, 1]
     };
   }
-  /** The CityView the controller builds from a DebugView and its inset. */
-  const cityViewOf = (v: DebugView, inset: CityView['inset'] = [0, 0, 0, 0]): CityView => ({
-    zoom: v.zoom,
-    viewPx: v.viewPx,
-    inset,
-    centre: v.centre,
-    pxPerMeter: v.pxPerMeter,
-    focalW: v.clip(v.centre[0], v.centre[1])[2],
-    forward: cityForward(v.bearing, v.centre[1])
-  });
   // Two in the Mission (one flagged), one to the west (4.5 km), off the fake view and in reach.
   const MARKERS: Marker[] = [
     {
@@ -1148,35 +1128,25 @@ describe('TimelineController city', () => {
     }
   ];
   const CITY = cityDelta(3, MARKERS);
-  /** What the store holds after these deltas (the first replaces). */
-  function storeOf(...ds: CityDelta[]): CityStore {
-    const s = new CityStore();
-    ds.forEach((d, i) => s.apply(d, i === 0));
-    return s;
-  }
-  const cityOf = (f: FakeTimelineDeps) => props(byId(f, 'timeline-city')).data as CityAttrs[];
-  const gateOf = (f: FakeTimelineDeps) =>
-    (byId(f, 'timeline-halos').props as unknown as { ringMinZoom: number }).ringMinZoom;
+  /** A haloLayer prop read off the emitted layer. */
+  const haloProps = () => byId(deps, 'timeline-halos').props as unknown as { ringMinZoom: number };
 
   it('stores the city from a revision 0 and replaces it on the next revision 0; a revision 0 without city clears it', () => {
     const c = controller();
     c.setHalos({ from: FROM });
     c.apply({ ...timelineSmall, city: CITY });
     expect(c.debugSnapshot()).toMatchObject({ cityMarkers: 3, cityFlagged: 1 });
-    expect(cityOf(deps)).toEqual(buildCity(storeOf(CITY), FROM));
     // The next revision 0 replaces the store whole, never merges.
     const one = cityDelta(1, [{ ...MARKERS[2], row: 0 }]);
     c.apply({ ...timelineSmall, city: one });
     expect(c.debugSnapshot()).toMatchObject({ cityMarkers: 1, cityFlagged: 0 });
-    expect(cityOf(deps)).toEqual(buildCity(storeOf(one), FROM));
     // A swap's revision 0 replaces it too.
     c.apply({ ...timelineSmall, swap: true, complete: true, city: CITY });
     drain(c);
     expect(c.debugSnapshot()).toMatchObject({ cityMarkers: 3, cityFlagged: 1 });
-    expect(cityOf(deps)).toEqual(buildCity(storeOf(CITY), FROM));
     // A revision 0 with no city (no feed) clears it.
     c.apply(timelineSmall);
-    expect(c.debugSnapshot()).toMatchObject({ cityMarkers: 0, cityRecords: 0, ringMinZoom: 0 });
+    expect(c.debugSnapshot()).toMatchObject({ cityMarkers: 0, cityFlagged: 0 });
     expect(ids(deps)).not.toContain('timeline-city');
   });
 
@@ -1187,10 +1157,6 @@ describe('TimelineController city', () => {
     const later = cityDelta(2, [{ ...MARKERS[0], homes: 99 }]);
     c.apply(update(1, { city: later }));
     expect(c.debugSnapshot()).toMatchObject({ cityMarkers: 2, cityFlagged: 1 });
-    expect(cityOf(deps)).toEqual(buildCity(storeOf(CITY, later), FROM));
-    // The western row is gone from every record.
-    expect(cityOf(deps).every((r) => r.anchor[0] > -122.45)).toBe(true);
-    expect(cityOf(deps).some((r) => r.homes === 99)).toBe(true);
     // A revision gap carrying city changes nothing and asks for a resync.
     c.apply(update(3, { city: CITY }));
     expect(deps.resyncCount).toBe(1);
@@ -1206,23 +1172,15 @@ describe('TimelineController city', () => {
     const edit = cityDelta(3, [moved], 1);
     c.apply(update(1, { city: edit }));
     expect(c.debugSnapshot()).toMatchObject({ cityMarkers: 2, cityFlagged: 0 });
-    expect(cityOf(deps)).toEqual(buildCity(storeOf(CITY, edit), FROM));
-    expect(cityOf(deps).some((r) => r.kind === 3)).toBe(false); // the policy ring went with row 1
-    // A delta with from and no rows is a city update: it rebuilds the records.
-    const built = deps.cityLayers.length;
-    const drop = cityDelta(1, [], 1);
-    c.apply(update(2, { city: drop }));
-    expect(deps.cityLayers.length).toBe(built + 1);
+    // A delta with from and no rows forgets markers too.
+    c.apply(update(2, { city: cityDelta(1, [], 1) }));
     expect(c.debugSnapshot().cityMarkers).toBe(1);
-    expect(cityOf(deps)).toEqual(buildCity(storeOf(CITY, edit, drop), FROM));
   });
 
-  it('emits timeline-city after timeline-halos and before the overlay, only with halos on and markers held', () => {
+  it('emits no timeline-city, with halos on and markers held', () => {
     const c = controller('label-1');
     c.apply({ ...timelineSmall, cells: [cellOf(B), cellOf(A)], city: CITY });
     c.setOverlayLayers([new SolidPolygonLayer({ id: 'brush', data: [] })]);
-    expect(ids(deps)).not.toContain('timeline-city');
-    expect(deps.cityLayers).toHaveLength(0);
     c.setHalos({ from: FROM });
     expect(ids(deps)).toEqual([
       solid(A),
@@ -1231,99 +1189,40 @@ describe('TimelineController city', () => {
       ghost(B),
       'timeline-bars',
       'timeline-halos',
-      'timeline-city',
       'brush'
     ]);
-    const city = props(byId(deps, 'timeline-city'));
-    expect(city.beforeId).toBe('label-1');
-    expect(city.pickable).toBe(false);
-    expect(city.clock).toBe(props(byId(deps, 'timeline-bars')).clock);
-    expect(city.reduced).toBe(false);
-    // No markers held: no layer.
-    c.apply({ ...timelineSmall, city: cityDelta(0, []) });
-    expect(ids(deps)).toContain('timeline-halos');
-    expect(ids(deps)).not.toContain('timeline-city');
+    expect(c.debugSnapshot().layerIds).not.toContain('timeline-city');
+    expect(c.debugSnapshot().cityMarkers).toBeGreaterThan(0);
   });
 
-  it('a city-only update rebuilds the city records once and emits once', () => {
+  it("the halo layer's gate is MARK_AREA_ZOOM with or without a city feed", () => {
+    const c = controller();
+    c.setHalos({ from: FROM });
+    c.apply(timelineSmall); // a stream without city, as /lesscars sends
+    expect(haloProps().ringMinZoom).toBe(MARK_AREA_ZOOM);
+    expect(MARK_AREA_ZOOM).toBe(14);
+    c.apply(update(1, { city: CITY }));
+    expect(haloProps().ringMinZoom).toBe(MARK_AREA_ZOOM);
+    expect(c.debugSnapshot().ringMinZoom).toBe(MARK_AREA_ZOOM);
+  });
+
+  it('a city-only update stores the markers and emits nothing', () => {
     const c = controller();
     c.setHalos({ from: FROM });
     c.apply({ ...timelineSmall, city: CITY });
-    c.setTime(DAYS.a.construction);
     drain(c);
     const emits = deps.layerHistory.length;
     const events = deps.events.length;
-    const built = deps.cityLayers.length;
     const halos = deps.haloLayers.length;
-    const before = new Map(deps.lastLayers.map((l) => [l.id, l]));
-    const demolish = c.debugSnapshot().demolish;
     c.apply(update(1, { city: cityDelta(3, [{ ...MARKERS[1], homes: 30 }]) }));
-    expect(deps.layerHistory.length).toBe(emits + 1);
-    expect(deps.events.length).toBe(events + 1); // the one setLayers: no feature-state call
-    expect(deps.cityLayers.length).toBe(built + 1);
+    expect(deps.layerHistory.length).toBe(emits);
+    expect(deps.events.length).toBe(events);
     expect(deps.haloLayers.length).toBe(halos);
     expect(deps.pendingFrames()).toBe(0);
-    // Cells, bars and halos are the same layer objects.
-    for (const l of deps.lastLayers) if (l.id !== 'timeline-city') expect(l).toBe(before.get(l.id));
-    expect(c.debugSnapshot()).toMatchObject({ pending: 0, demolish, cells: 2 });
+    expect(c.debugSnapshot()).toMatchObject({ cityMarkers: 3, cityFlagged: 1 });
   });
 
-  it('builds city records once per update, when the slice queue drains', () => {
-    const c = controller();
-    c.setHalos({ from: FROM });
-    c.apply(update(0, { cells: manyCells(9), city: CITY }));
-    expect(ids(deps)).not.toContain('timeline-city');
-    deps.flushFrame();
-    expect(deps.cityLayers).toHaveLength(0);
-    deps.flushFrame();
-    expect(deps.cityLayers).toHaveLength(1);
-    expect(deps.haloLayers).toHaveLength(1);
-    expect(ids(deps)).toContain('timeline-city');
-    // An update with cells and city: once, after its last slice.
-    const homes7 = cityDelta(3, [{ ...MARKERS[0], homes: 7 }]);
-    c.apply(update(1, { cells: manyCells(5), city: homes7 }));
-    expect(deps.cityLayers).toHaveLength(1);
-    drain(c);
-    expect(deps.cityLayers).toHaveLength(2);
-    // An update without city leaves the records as they are (the halos follow the cells).
-    c.apply(update(2, { cells: manyCells(1) }));
-    drain(c);
-    expect(deps.cityLayers).toHaveLength(2);
-    expect(deps.haloLayers).toHaveLength(3);
-    expect(gateOf(deps)).toBe(CITY_HANDOVER_ZOOM);
-    // The snapshot counts the builds: one per applied update that carried city.
-    expect(c.debugSnapshot().cityBuilds).toBe(2);
-    c.apply(update(3, { cells: [], city: cityDelta(3, [{ ...MARKERS[0], homes: 9 }]) }));
-    expect(c.debugSnapshot().cityBuilds).toBe(3);
-    c.apply(update(4, { cells: [], city: cityDelta(3, [], 2) }));
-    expect(c.debugSnapshot().cityBuilds).toBe(4);
-  });
-
-  it('setEdgeInset writes the shared inset the city layer reads, rebuilding nothing; the snapshot places glows on it', () => {
-    const c = controller();
-    c.setHalos({ from: FROM });
-    c.apply({ ...timelineSmall, city: CITY });
-    const layer = byId(deps, 'timeline-city');
-    const inset = props(layer).edgeInset as number[];
-    expect(inset).toEqual([0, 0, 0, 0]);
-    const built = deps.cityLayers.length;
-    const layers = deps.layerHistory.length;
-    const repaints = deps.repaintCount;
-    c.setEdgeInset([0, 0, 120, 0]);
-    expect(props(byId(deps, 'timeline-city')).edgeInset).toBe(inset);
-    expect(inset).toEqual([0, 0, 120, 0]);
-    expect(deps.cityLayers.length).toBe(built);
-    expect(deps.layerHistory.length).toBe(layers);
-    expect(deps.repaintCount).toBe(repaints + 1);
-    // The same inset again: nothing.
-    c.setEdgeInset([0, 0, 120, 0]);
-    expect(deps.repaintCount).toBe(repaints + 1);
-    // A later layer shares the same array.
-    c.apply(update(1, { cells: [], city: cityDelta(3, [{ ...MARKERS[0], homes: 9 }]) }));
-    expect(props(byId(deps, 'timeline-city')).edgeInset).toBe(inset);
-  });
-
-  it('marksShown follows the gate: one diamond a square below zoom 14 with the city on, every one from 14', () => {
+  it('marksShown follows the gate: one diamond a square below zoom 14, every one from 14', () => {
     const c = controller();
     c.setHalos({ from: FROM });
     // Every slot of both cells under the policy.
@@ -1351,102 +1250,6 @@ describe('TimelineController city', () => {
     expect(below).toBeLessThan(c.debugSnapshot().marksShown);
   });
 
-  it('setTime constructs no layer and calls setLayers none, with the city layer on', () => {
-    const c = controller();
-    c.setHalos({ from: FROM });
-    c.apply({ ...timelineSmall, city: CITY });
-    drain(c);
-    const emits = deps.layerHistory.length;
-    const built = deps.cityLayers.length;
-    const halos = deps.haloLayers.length;
-    const layer = byId(deps, 'timeline-city');
-    const halo = byId(deps, 'timeline-halos');
-    const reads = deps.viewReads; // drain's debug snapshots read it
-    for (let i = 0; i < 100; i++) {
-      // A map move or zoom between frames reaches no controller method.
-      deps.view = viewAt(11 + (i % 7));
-      c.setTime(DAYS.start + i * 90);
-    }
-    expect(deps.layerHistory.length - emits).toBe(0);
-    expect(deps.cityLayers.length - built).toBe(0);
-    expect(deps.haloLayers.length - halos).toBe(0);
-    expect(deps.viewReads - reads).toBe(0);
-    expect(byId(deps, 'timeline-city')).toBe(layer);
-    expect(byId(deps, 'timeline-halos')).toBe(halo);
-  });
-
-  it("the halo layer's ringMinZoom is CITY_HANDOVER_ZOOM while the city layer is on, else 0", () => {
-    const c = controller();
-    c.setHalos({ from: FROM });
-    c.apply(timelineSmall);
-    expect(gateOf(deps)).toBe(0);
-    c.apply(update(1, { city: CITY }));
-    expect(ids(deps)).toContain('timeline-city');
-    expect(gateOf(deps)).toBe(CITY_HANDOVER_ZOOM);
-    expect(c.debugSnapshot().ringMinZoom).toBe(CITY_HANDOVER_ZOOM);
-    // A city update that keeps the layer on clones no halo layer.
-    const halos = deps.haloLayers.length;
-    c.apply(update(2, { city: cityDelta(3, [{ ...MARKERS[0], homes: 3 }]) }));
-    expect(deps.haloLayers.length).toBe(halos);
-    // Every marker dropped: no city layer, the gate off.
-    c.apply(update(3, { city: cityDelta(0, []) }));
-    expect(ids(deps)).not.toContain('timeline-city');
-    expect(gateOf(deps)).toBe(0);
-    expect(c.debugSnapshot().ringMinZoom).toBe(0);
-  });
-
-  it('an update stream without city (as /lesscars sends) emits no timeline-city and leaves the halos ungated', () => {
-    const c = controller();
-    c.setHalos({ from: FROM });
-    c.apply(timelineSmall);
-    c.apply(timelineSmallRev1);
-    drain(c);
-    expect(ids(deps)).not.toContain('timeline-city');
-    expect(deps.cityLayers).toHaveLength(0);
-    expect(gateOf(deps)).toBe(0);
-    deps.view = viewAt(13);
-    c.setTime(DAYS.a.construction);
-    const rings = halosOf(deps).filter((h) => h.kind !== HALO_KIND.mark);
-    const shown = rings.filter((h) => evalHalo(h, DAYS.a.construction, false).visible).length;
-    expect(shown).toBeGreaterThan(0);
-    expect(c.debugSnapshot()).toMatchObject({ halosShown: shown, cityMarkers: 0, ringMinZoom: 0 });
-  });
-
-  it('setHalos(null) removes the city layer and resets the gate; setHalos({ from }) rebuilds the records once', () => {
-    const c = controller();
-    c.apply({ ...timelineSmall, city: CITY });
-    c.setHalos({ from: FROM });
-    expect(deps.cityLayers).toHaveLength(1);
-    expect(gateOf(deps)).toBe(CITY_HANDOVER_ZOOM);
-    c.setHalos(null);
-    expect(ids(deps)).not.toContain('timeline-city');
-    expect(ids(deps)).not.toContain('timeline-halos');
-    expect(c.debugSnapshot()).toMatchObject({
-      cityMarkers: 3,
-      cityRecords: 0,
-      cityDays: [],
-      ringMinZoom: 0
-    });
-    c.setHalos({ from: DAYS.a.permitIssued });
-    expect(deps.cityLayers).toHaveLength(2);
-    expect(cityOf(deps)).toEqual(buildCity(storeOf(CITY), DAYS.a.permitIssued));
-    expect(gateOf(deps)).toBe(CITY_HANDOVER_ZOOM);
-  });
-
-  it('setReducedMotion sets reduced on the city layer without rebuilding its records', () => {
-    const c = controller();
-    c.setReducedMotion(true);
-    c.apply({ ...timelineSmall, city: CITY });
-    c.setHalos({ from: FROM });
-    expect(props(byId(deps, 'timeline-city')).reduced).toBe(true);
-    const data = cityOf(deps);
-    c.setReducedMotion(false);
-    expect(props(byId(deps, 'timeline-city')).reduced).toBe(false);
-    expect(props(byId(deps, 'timeline-halos')).reduced).toBe(false);
-    expect(cityOf(deps)).toBe(data);
-    expect(gateOf(deps)).toBe(CITY_HANDOVER_ZOOM); // a clone keeps the gate
-  });
-
   it('rejects a malformed city delta before installing anything', () => {
     const c = controller();
     c.setHalos({ from: FROM });
@@ -1464,66 +1267,14 @@ describe('TimelineController city', () => {
     expect(c.debugSnapshot().revision).toBe(1);
   });
 
-  it('reports cityMarkers, cityFlagged, cityRecords, cityDays, ringMinZoom and projects in the debug snapshot', () => {
+  it('reports cityMarkers, cityFlagged and projects in the debug snapshot', () => {
     const c = controller();
     const projects = timelineSmall.cells.reduce((n, p) => n + new Set(p.partSlot).size, 0);
-    expect(c.debugSnapshot()).toMatchObject({
-      cityMarkers: 0,
-      cityFlagged: 0,
-      cityRecords: 0,
-      cityDays: [],
-      cityRings: 0,
-      cityGlows: 0,
-      ringMinZoom: 0,
-      projects: 0
-    });
+    expect(c.debugSnapshot()).toMatchObject({ cityMarkers: 0, cityFlagged: 0, projects: 0 });
     c.apply({ ...timelineSmall, city: CITY });
-    expect(c.debugSnapshot()).toMatchObject({ cityMarkers: 3, cityRecords: 0, projects });
+    expect(c.debugSnapshot()).toMatchObject({ cityMarkers: 3, cityFlagged: 1, projects });
     c.setHalos({ from: FROM });
-    const recs = buildCity(storeOf(CITY), FROM);
-    expect(c.debugSnapshot()).toMatchObject({
-      cityMarkers: 3,
-      cityFlagged: 1,
-      cityRecords: recs.length,
-      cityDays: [...new Set(recs.map((r) => r.day))].sort((x, y) => x - y),
-      ringMinZoom: CITY_HANDOVER_ZOOM,
-      projects
-    });
-  });
-
-  it('counts shown rings and glows through the map view, and gates halosShown at zoom 13 with the city on', () => {
-    const c = controller();
-    c.setHalos({ from: FROM });
-    c.apply({ ...timelineSmall, city: CITY });
-    const t = DAYS.a.construction;
-    c.setTime(t);
-    const recs = buildCity(storeOf(CITY), FROM);
-    const rings = halosOf(deps).filter((h) => h.kind !== HALO_KIND.mark);
-    const ungated = rings.filter((h) => evalHalo(h, t, false).visible).length;
-    const count = (v: DebugView, mode: 'ring' | 'edge') =>
-      recs.filter((r) => {
-        const cv = cityViewOf(v);
-        const [a, b] = r.anchor;
-        const fwd = v.clip(a + cv.forward[0], b + cv.forward[1]);
-        return evalCity(r, t, cv, v.clip(a, b), false, fwd).mode === mode;
-      }).length;
-    // No map view: the rings are counted ungated and the city's not at all.
-    expect(c.debugSnapshot()).toMatchObject({ halosShown: ungated, cityRings: 0, cityGlows: 0 });
-    // Zoom 13: merged rings stand for the projects' own, which hide.
-    deps.view = viewAt(13);
-    const at13 = c.debugSnapshot();
-    expect(at13.halosShown).toBe(0);
-    expect(at13.cityRings).toBe(count(deps.view, 'ring'));
-    expect(at13.cityRings).toBeGreaterThan(0);
-    expect(at13.cityGlows).toBe(count(deps.view, 'edge'));
-    expect(at13.cityGlows).toBeGreaterThan(0); // the western row, off view
-    // Zoom 15: each project's own rings; no merged ring.
-    deps.view = viewAt(15);
-    const at15 = c.debugSnapshot();
-    expect(at15.halosShown).toBe(ungated);
-    expect(ungated).toBeGreaterThan(0);
-    expect(at15.cityRings).toBe(0);
-    expect(at15.cityGlows).toBe(count(deps.view, 'edge'));
+    expect(c.debugSnapshot()).toMatchObject({ cityMarkers: 3, cityFlagged: 1, projects });
   });
 
   it('destroy drops the city', () => {
@@ -1531,7 +1282,7 @@ describe('TimelineController city', () => {
     c.setHalos({ from: FROM });
     c.apply({ ...timelineSmall, city: CITY });
     c.destroy();
-    expect(c.debugSnapshot()).toMatchObject({ cityMarkers: 0, cityRecords: 0, layerIds: [] });
+    expect(c.debugSnapshot()).toMatchObject({ cityMarkers: 0, layerIds: [] });
   });
 });
 

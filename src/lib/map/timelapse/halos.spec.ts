@@ -4,7 +4,7 @@ import { HALO_DAYS, HALO_R_PX, HALO_STILL_R_PX, MARK_PX } from './constants';
 import { packTimedCell, type TimedPackInput } from '../pack-timed';
 import { SLOT_FLAG } from '../types';
 import { cityGroup } from './city-grid';
-import { CITY_HANDOVER_ZOOM } from './constants';
+import { MARK_AREA_ZOOM } from './constants';
 import type { Schedule } from '$lib/sim/scenario/types';
 import { DYING_DAYS, OPEN_DAY, type Day } from '$lib/timelapse/time';
 
@@ -396,9 +396,9 @@ describe('buildHalos: one mark per square below the handover', () => {
       for (const group of squares.values()) {
         const standing = group.filter((h) => h.day <= t && t < h.until).length;
         const shown = (z: number) =>
-          group.filter((h) => evalHalo(h, t, false, z, CITY_HANDOVER_ZOOM).visible).length;
+          group.filter((h) => evalHalo(h, t, false, z, MARK_AREA_ZOOM).visible).length;
         expect(shown(13)).toBe(standing > 0 ? 1 : 0);
-        expect(shown(CITY_HANDOVER_ZOOM)).toBe(standing);
+        expect(shown(MARK_AREA_ZOOM)).toBe(standing);
         // No gate (no city layer): every standing mark at any zoom.
         expect(group.filter((h) => evalHalo(h, t, false, 11, 0).visible)).toHaveLength(standing);
       }
