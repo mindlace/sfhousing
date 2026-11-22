@@ -1,0 +1,907 @@
+<article>
+  <header>
+    <h1>Finite funding design</h1>
+    <p>Every one of today's funding sources carries a bound from evidence, federal tax credits get a yearly ceiling, and no pool can always pay.</p>
+  </header>
+
+  <section id="sec-goal">
+    <h2>Goal</h2>
+    <p>Today's public money in the simulation never ends: every baseline pool is paid each year with no end, and the federal pool can always pay. This unit makes it finite, as the <a href="../design/2026-11-22-1216-incremental-game.html">incremental game design</a> rules (<a href="../design/2026-11-22-1216-incremental-game.html#r2">R2</a>, <a href="../design/2026-11-22-1216-incremental-game.html#d3">D3</a>, <a href="../design/2026-11-22-1216-incremental-game.html#sec-model-money">Finite public money</a>). It delivers:</p>
+    <ul>
+      <li><code>pipeline/enrichment/funding.json</code> at schema 2: a <code>bound</code> on every source, read from evidence, and the federal yearly ceiling.</li>
+      <li>The calibration step emits pools whose inflows follow their source's bound, with provenance text that states each end and its citation.</li>
+      <li><code>Pool.uncapped</code> gone from the types, both engines, the score, the pipeline and the page.</li>
+      <li>Stored and published documents that carry <code>uncapped</code> still load.</li>
+      <li>The fixture dataset's <code>calibration.json</code> regenerated.</li>
+    </ul>
+    <p>Pools that end leave a known limit in the step engine: an affordable application waits on a spent pool. The <code>pool-closing</code> unit, built after this one, removes it (<a href="../design/2026-11-22-1216-incremental-game.html#d13">D13</a>).</p>
+  </section>
+
+  <section id="sec-interfaces">
+    <h2>Interfaces</h2>
+    <p>These rows and their sections are copied from the design document. A change to one is a change to the design.</p>
+    <table id="tbl-interfaces">
+      <caption>Interface table</caption>
+      <thead>
+        <tr><th scope="col">Row</th><th scope="col">Owner</th><th scope="col">Layer</th><th scope="col">Summary</th><th scope="col">Contract</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">F1</th><td><code>finite-funding</code></td><td>Model commitment</td><td>The funding file: a bound for every source.</td><td><a href="#sec-if-f1">F1</a></td></tr>
+        <tr><th scope="row">F2</th><td><code>finite-funding</code></td><td>Model commitment</td><td>Pools with no "can always pay".</td><td><a href="#sec-if-f2">F2</a></td></tr>
+        <tr><th scope="row">L1</th><td><code>remove-lesscars</code></td><td>Decomposition choice</td><td>The pipeline, dataset and worker with no less cars.</td><td><a href="../design/2026-11-22-1216-incremental-game.html#sec-if-l1">L1</a></td></tr>
+      </tbody>
+    </table>
+
+    <section id="sec-if-f1">
+      <h3>F1 The funding file</h3>
+      <pre><code data-lang="ts">// pipeline/enrichment/funding-schema.ts (schema 2 of pipeline/enrichment/funding.json)
+type Bound =
+  | { kind: 'ends'; on: string; method: string; tier: 1 | 2 | 3; cite: Cite }
+  | { kind: 'remaining'; dollars: number; method: string; tier: 1 | 2 | 3; cite: Cite }
+  | { kind: 'none'; reason: string; tier: 1 | 2 | 3; cite: Cite };
+
+interface CitySource {
+  id: string;
+  label: string;
+  kind: 'goBond' | 'cop' | 'generalRevenue' | 'dedicatedTax';
+  dollarsPerYear: number;
+  debt: { rate: number; termYears: number; cite: Cite } | null;
+  note: string;
+  cite: Cite;
+  bound: Bound;
+}
+
+interface StateSource {
+  id: string;
+  label: string;
+  dollarsPerYear: number;
+  tier: number;
+  method: string;
+  cite: Cite;
+  bound: Bound;
+}
+
+interface FederalSource {
+  id: string;
+  label: string;
+  /** The yearly ceiling. */
+  dollarsPerYear: number;
+  tier: number;
+  method: string;
+  cite: Cite;
+  bound: Bound;
+}</code></pre>
+      <dl>
+        <dt><code>ends</code></dt><dd><code>on</code> is an ISO date. The source's last yearly arrival is the last one on or before it.</dd>
+        <dt><code>remaining</code></dt><dd>The dollars the source has left in total, as of the citation: an authorisation not yet issued, a balance being spent down.</dd>
+        <dt><code>none</code></dt><dd>Law sets no end. <code>reason</code> says what was read that shows it.</dd>
+      </dl>
+      <ul>
+        <li>Every City source, the state source and the federal source has a <code>bound</code>. A file without one is refused.</li>
+        <li>No <code>bound</code> has tier 4. An end nobody has read in a source is not written.</li>
+        <li>A source with <code>ends</code> emits one yearly inflow from the dataset date to <code>on</code>.</li>
+        <li>A source with <code>remaining</code> emits one-time inflows of <code>dollarsPerYear</code> on the dataset date and each anniversary until <code>dollars</code> is used, the last one being what is left.</li>
+        <li>A source with <code>none</code> emits one yearly inflow with no end.</li>
+        <li>A source whose <code>ends.on</code> is before the dataset date, or whose <code>remaining.dollars</code> is 0, emits a pool with no inflow, and its programme is not in the baseline.</li>
+        <li>The calibration's provenance text for each pool states its end, or that it has none, with the citation.</li>
+        <li>The "check" that compares implied homes a year with observed awards is kept and reads the first year.</li>
+      </ul>
+    </section>
+
+    <section id="sec-if-f2">
+      <h3>F2 Pools</h3>
+      <pre><code data-lang="ts">// src/lib/timelapse/types.ts
+export interface Pool {
+  id: string;
+  kind: PoolKind;
+  label: string;
+  inflows: Inflow[];
+  /** non-null exactly for `goBond` and `cop` */
+  debt: { rate: number; termYears: number } | null;
+  /** dollars a pool may have committed or out per dollar received: 1 for every kind but `bank` */
+  leverage: number;
+}
+
+export type Inflow =
+  | { kind: 'once'; day: Day; dollars: Dollars }
+  | { kind: 'yearly'; from: Day; to: Day | null; dollarsPerYear: Dollars };</code></pre>
+      <ul>
+        <li><code>Pool</code> has no <code>uncapped</code> field. A pool can pay only from what it has received.</li>
+        <li>The baseline's federal pool has kind <code>federal</code> and one yearly inflow of the ceiling.</li>
+        <li>A baseline pool's inflows follow its source's bound (F1). A yearly inflow has <code>to: null</code> only for a bound of kind <code>none</code>.</li>
+        <li>A stored or published document whose pool carries <code>uncapped</code> loads with the field ignored.</li>
+        <li>A published plan or policy runs on its own dataset while that dataset exists, and every dataset built before this build has <code>uncapped: true</code> on its federal pool. The calibration loader reads such a pool as one yearly inflow of <code>LEGACY_UNCAPPED_DOLLARS</code> (100 billion dollars) from the dataset date with no end, and never refuses the calibration.</li>
+        <li>Where the yearly amount of such a pool is shown, it reads "No ceiling". So a policy published before this build plays as it did.</li>
+        <li><code>isNoCeiling(dollars)</code> in <code>src/lib/timelapse/model.ts</code> is the one test for such a pool: a yearly amount at or above <code>LEGACY_UNCAPPED_DOLLARS</code>.</li>
+        <li>A scale entry on the federal pool scales its ceiling, as on any pool; 0 switches it off.</li>
+        <li><code>Inflow</code>, <code>Programme</code>, <code>Instrument</code>, the award rule, the line and <code>fundBundle</code> are unchanged.</li>
+      </ul>
+      <p><strong>Removed:</strong> <code>Pool.uncapped</code>, the "no limit" text for anything but an older dataset's pool, the on/off-only editor for the federal pool, the <code>uncapped</code> sets passed to the money results.</p>
+    </section>
+  </section>
+
+  <section id="sec-today">
+    <h2>What is there today</h2>
+    <p>Read on the worktree at commit <code>8125e557</code>.</p>
+    <section id="sec-today-pipeline">
+      <h3>The pipeline</h3>
+      <ul>
+        <li><code>FundingFile</code> is schema 1 (<code>pipeline/enrichment/funding-schema.ts:22</code>). A City source has no bound (<code>:41-49</code>). <code>federal</code> has no dollars and carries <code>uncapped: { rounds, window, cites }</code> (<code>:52-60</code>), validated at <code>:192-203</code> and <code>:237-250</code>.</li>
+        <li><code>baselineFunding</code> gives every City and state pool one yearly inflow from <code>asOf</code> with <code>to: null</code> (<code>pipeline/lib/fzp-cal/funding.ts:209-211</code>, <code>:219</code>, <code>:232</code>).</li>
+        <li>It gives the federal pool <code>inflows: []</code> and <code>uncapped: true</code> (<code>funding.ts:241-252</code>); <code>PoolSpec.dollarsPerYear</code> is null for it (<code>:182-183</code>).</li>
+        <li>Every programme is a grant from <code>asOf</code> with <code>to: null</code>, one per pool (<code>funding.ts:258-268</code>).</li>
+        <li>The check reads the least implied homes a year over the pools with a yearly amount (<code>funding.ts:270-279</code>).</li>
+        <li>Each City pool's provenance says "held level from the first inflow, with no end" (<code>funding.ts:330-331</code>). The federal entry's label ends ": uncapped" and its <code>n</code> and <code>window</code> come from <code>federal.uncapped</code> (<code>funding.ts:348-361</code>).</li>
+        <li>The calibration report prints "uncapped" for the federal row (<code>pipeline/lib/fzp-cal/report.ts:958</code>, <code>:960</code>).</li>
+        <li>The live file has six City sources summing to $234,000,000, a state source of $150,000,000 a year and a federal source with no amount; its federal <code>method</code> says "The pool has no ceiling".</li>
+      </ul>
+    </section>
+    <section id="sec-today-model">
+      <h3>Types and engines</h3>
+      <ul>
+        <li><code>Pool.uncapped: boolean</code> (<code>src/lib/timelapse/types.ts:249-250</code>).</li>
+        <li><code>checkPool</code> requires the key and refuses inflows on an uncapped pool (<code>src/lib/timelapse/model.ts:960-975</code>). It checks the calibration's pools (<code>model.ts:1064</code>) and every added pool (<code>src/lib/sim/levers/finance.ts:120</code>).</li>
+        <li><code>parsePool</code> requires <code>uncapped</code> and refuses any value but <code>false</code> (<code>src/lib/sim/levers/finance.ts:118</code>, <code>:128-129</code>), and writes <code>uncapped: false</code> (<code>:142</code>). <code>parseFinanceLevers</code> is the one loader of a stored or published document's money: <code>src/lib/timeline/parse4.ts:176-202</code> calls it.</li>
+        <li><code>buildFinance</code> leaves an uncapped pool's inflows unscaled (<code>levers/finance.ts:401</code>).</li>
+        <li>The older engine: <code>checkFinanceShape</code> refuses inflows on an uncapped pool (<code>src/lib/sim/scenario/funding.ts:88-89</code>); <code>available</code> returns <code>Infinity</code> for it (<code>:227-229</code>); <code>FinanceIndex.capped</code> is built from the flag (<code>:272</code>) and read at <code>funding.ts:356</code>, <code>:456</code>, <code>:469</code>, <code>scenario/money.ts:61</code>, <code>:185</code>, <code>:195</code> and <code>scenario/funded.ts:1414</code>.</li>
+        <li>The step engine: <code>availableOf</code> returns <code>Infinity</code> (<code>src/lib/sim/world/funding/pools.ts:85-87</code>); <code>book</code> reads <code>capped</code> (<code>pools.ts:266</code>); the money track skips arrivals of a pool that is not capped (<code>src/lib/sim/world/policy/money.ts:160</code>).</li>
+      </ul>
+    </section>
+    <section id="sec-today-page">
+      <h3>The page</h3>
+      <ul>
+        <li>Details' "By source" table keeps Received while a pool is uncapped and writes "no limit" in its cell (<code>src/lib/fzp/money-view.ts:232-254</code>, <code>src/lib/fzp/MoneyResults.svelte:46-49</code>, <code>:57</code>, <code>:113-117</code>).</li>
+        <li><code>TimelineMode</code> builds the set with <code>uncappedPoolIds</code> (<code>src/lib/timeline/TimelineMode.svelte:102</code>, <code>:653</code>) and passes it through <code>SimDetails</code> (<code>TimelineMode.svelte:1493</code>; <code>src/lib/timeline/SimDetails.svelte:58-59</code>, <code>:84</code>, <code>:236</code>).</li>
+        <li>The federal group's dated change offers only "Switched off" and "Switched back on" (<code>src/lib/sim-page/FundingGroupEditor.svelte:152-154</code>, <code>:192</code>, <code>:243-262</code>).</li>
+        <li><code>baselineGroups</code> gives the federal group <code>perYear: null</code> and counts only yearly inflows (<code>src/lib/sim-page/funding-view.ts:262</code>, <code>:285-296</code>); <code>scaleLines</code> carries <code>uncapped</code> (<code>:320-321</code>, <code>:371-378</code>); <code>poolMoneySentence</code> writes "no limit" (<code>:482</code>).</li>
+        <li><code>labelScaleApplied</code> and <code>summaryScaleText</code> take an <code>uncapped</code> argument (<code>src/lib/sim-page/funding-copy.ts:297-308</code>, <code>:450-462</code>); <code>addScaleEdit</code> passes it (<code>src/lib/sim-page/funding-edit.ts:811</code>).</li>
+        <li>Pool literals write <code>uncapped: false</code> (<code>funding-edit.ts:269</code>, <code>:941</code>; <code>funding-presets.ts:149</code>; <code>FundingPoolRow.svelte:156</code>).</li>
+        <li>A pool's level skips an uncapped pool (<code>src/lib/timeline/pool-level.ts:18-22</code>, <code>:43</code>, <code>:208</code>, <code>:213</code>).</li>
+      </ul>
+    </section>
+  </section>
+
+  <section id="sec-design">
+    <h2>Design</h2>
+
+    <section id="sec-design-schema">
+      <h3>The funding file, schema 2</h3>
+      <p>The file's shape follows <a href="#sec-if-f1">F1</a>; <code>perHome</code>, <code>city</code>'s other fields, <code>awards</code> and <code>retiredIds</code> keep today's meaning. This unit adds the <code>Bound</code> type and makes it required on every source in one step.</p>
+      <pre><code data-lang="ts">// pipeline/enrichment/funding-schema.ts
+export type Bound =
+  | { kind: 'ends'; on: IsoDate; method: string; tier: 1 | 2 | 3; cite: Cite }
+  | { kind: 'remaining'; dollars: number; method: string; tier: 1 | 2 | 3; cite: Cite }
+  | { kind: 'none'; reason: string; tier: 1 | 2 | 3; cite: Cite };
+
+export interface CitySource {
+  id: string;
+  label: string;
+  kind: 'goBond' | 'cop' | 'generalRevenue' | 'dedicatedTax';
+  dollarsPerYear: number;
+  debt: { rate: number; termYears: number; cite: Cite } | null;
+  note: string;
+  cite: Cite;
+  bound: Bound;
+}
+
+export interface StateSource {
+  id: string;
+  label: string;
+  dollarsPerYear: number;
+  tier: number;
+  method: string;
+  cite: Cite;
+  bound: Bound;
+}
+
+export interface FederalSource {
+  id: string;
+  label: string;
+  /** The yearly ceiling. */
+  dollarsPerYear: number;
+  tier: number;
+  method: string;
+  cite: Cite;
+  bound: Bound;
+}
+
+export interface FundingFile {
+  schema: 2;
+  perHome: { /* as today */ };
+  city: { fiscalYear: string; total: number; tier: 1; cite: Cite; sources: CitySource[] };
+  state: StateSource;
+  federal: FederalSource;
+  awards: { /* as today */ };
+  retiredIds: string[];
+}</code></pre>
+      <p>Validation rules, each a <code>BuildError</code> naming the path, in the form today's <code>parseFundingFile</code> gives:</p>
+      <ul>
+        <li><code>schema</code> is <code>2</code>. A file at schema 1 is refused with "funding.json is schema 1: every source needs a bound (schema 2)".</li>
+        <li>Every City source, <code>state</code> and <code>federal</code> has a <code>bound</code>. A missing one is refused.</li>
+        <li><code>bound.kind</code> is <code>ends</code>, <code>remaining</code> or <code>none</code>; each kind holds exactly its own keys (a strict object).</li>
+        <li><code>bound.tier</code> is 1, 2 or 3. A tier 4 is refused with "a bound's tier is 1, 2 or 3: an end nobody has read in a source is not written".</li>
+        <li><code>ends.on</code> is a real calendar date, <code>YYYY-MM-DD</code>.</li>
+        <li><code>remaining.dollars</code> is a whole number of 0 or more.</li>
+        <li>A source with <code>remaining.dollars</code> above 0 has <code>dollarsPerYear</code> above 0, else "a source with money remaining needs a yearly amount".</li>
+        <li><code>bound.method</code> and <code>bound.reason</code> are non-empty text; <code>bound.cite</code> is a <code>Cite</code> as today (https URL, page, retrieval date).</li>
+        <li><code>federal.dollarsPerYear</code> equals the largest, over <code>awards.years</code>, of that year's new-construction award homes, times <code>perHome.federal</code>. Else "federal.dollarsPerYear must be the most new-construction homes awarded in one year times perHome.federal".</li>
+        <li><code>federal</code> holds no <code>uncapped</code> key: the strict object refuses it.</li>
+        <li><code>state.tier</code> and <code>federal.tier</code> are 1, 2 or 3.</li>
+        <li>Unchanged: ids, retired ids, <code>debt</code> exactly on <code>goBond</code> and <code>cop</code>, City sources summing to <code>city.total</code>, the fiscal year, the award rows, and <code>perHome</code> against <code>AFFORDABLE</code>.</li>
+      </ul>
+      <p>A source whose money has ended stays in the file with its bound, so stored policies that name its pool keep loading. <code>retiredIds</code> keeps its meaning: the ids of sources removed from the file.</p>
+    </section>
+
+    <section id="sec-design-data">
+      <h3>The data</h3>
+      <p>The bounds below are the values the file takes. They come from the research note <code>.superpowers/superconductor/incremental-game/surveys/funding-bounds.md</code>.</p>
+      <ul>
+        <li>Before a value enters the file, the builder reads its primary at the cited page.</li>
+        <li>Where the primary states a value other than the one here, the file takes the primary's value, and the builder's handback lists the difference.</li>
+        <li>Each bound cite below that is not <code>BLA</code> has a <code>retrieved</code> the blocks leave out: the day the builder reads that primary.</li>
+        <li>The cite <code>BLA</code> below is today's Budget and Legislative Analyst cite in the file (label, URL, <code>retrieved</code> "2026-11-09"), with the page shown.</li>
+      </ul>
+      <table id="tbl-ff-bounds">
+        <caption>The bound of each source</caption>
+        <thead>
+          <tr><th scope="col">Source id</th><th scope="col">Dollars a year</th><th scope="col">Bound</th><th scope="col">Tier</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row"><code>city-debt</code></th><td>80,500,000</td><td>Remaining $260,310,000</td><td>2</td></tr>
+          <tr><th scope="row"><code>city-ocoh</code></th><td>48,600,000</td><td>None</td><td>2</td></tr>
+          <tr><th scope="row"><code>city-general-fund</code></th><td>21,800,000</td><td>None</td><td>2</td></tr>
+          <tr><th scope="row"><code>city-housing-stability-fund</code></th><td>14,900,000</td><td>Remaining $0</td><td>1</td></tr>
+          <tr><th scope="row"><code>city-impact-fees</code></th><td>34,800,000</td><td>Remaining, the fee accounts' balance (see the rule below)</td><td>2</td></tr>
+          <tr><th scope="row"><code>city-housing-trust-fund</code></th><td>27,400,000</td><td>Ends 2043-06-30</td><td>2</td></tr>
+          <tr><th scope="row"><code>city-redevelopment</code></th><td>6,000,000</td><td>Remaining $0</td><td>1</td></tr>
+          <tr><th scope="row"><code>state</code></th><td>150,000,000</td><td>None</td><td>2</td></tr>
+          <tr><th scope="row"><code>federal-tax-credits</code></th><td>564,519,592 (the ceiling)</td><td>None</td><td>2</td></tr>
+        </tbody>
+      </table>
+
+      <section id="sec-design-data-city-debt">
+        <h4>City bonds and other debt</h4>
+        <p>The unissued part of the two housing bonds not yet fully issued. The capital plan's next housing bond needs voters, so it is a measure a player adds, not current law.</p>
+        <pre><code data-lang="json">"bound": {
+  "kind": "remaining",
+  "dollars": 260310000,
+  "method": "Unissued authorisation of the affordable-housing bonds on 30 September 2026: 2019 Proposition A, $107,540,000 of $600,000,000 (row [13]); 2024 Proposition A, $152,770,000 of $300,000,000 (row [16]). 2015 Proposition A is fully issued (row [10]). The capital plan's next housing bond (November 2034, $200 million) needs voters and is not current law. Proceeds issued and not yet spent, and the source's other debt, are not counted.",
+  "tier": 2,
+  "cite": {
+    "label": "City and County of San Francisco, General Obligation Bonds Project Summary, 30 September 2026",
+    "url": "https://media.api.sf.gov/documents/08c._GOB_Project_Summary_2027_September_2026.pdf",
+    "page": "rows [10], [13] and [16]"
+  }
+}</code></pre>
+      </section>
+
+      <section id="sec-design-data-ocoh">
+        <h4>Our City, Our Home</h4>
+        <pre><code data-lang="json">"bound": {
+  "kind": "none",
+  "reason": "A gross receipts tax approved by voters in 2018 (Proposition C) for a continuing fund; no sunset was found in what was read.",
+  "tier": 2,
+  "cite": { BLA, "page": "pp. 44, 46" }
+}</code></pre>
+      </section>
+
+      <section id="sec-design-data-general-fund">
+        <h4>General Fund, and the Housing Stability Fund split from it</h4>
+        <p>Exhibit E's General Fund line, $36.7 million, includes $14.9 million from the Housing Stability Fund (Proposition I, 2020), which was spent down by February 2026. That piece becomes its own source, so the General Fund continues at the lower amount (the design's "None, at a lower amount") and the City total still matches Exhibit E.</p>
+        <ul>
+          <li><code>city-general-fund</code>: <code>dollarsPerYear</code> 21,800,000.</li>
+          <li><code>city-general-fund</code>'s <code>note</code> reads: "General Fund, from unrestricted tax revenue (p. 44): $36.7 million in Exhibit E, less the $14.9 million from the Housing Stability Fund, which is its own source here. It includes $14.5 million work-ordered from the Department of Homelessness and Supportive Housing for homeless housing (p. 44)."</li>
+          <li>The new source follows <code>city-general-fund</code> in <code>city.sources</code>.</li>
+        </ul>
+        <pre><code data-lang="json">// city-general-fund
+"bound": {
+  "kind": "none",
+  "reason": "A yearly appropriation from unrestricted tax revenue; no law sets an end.",
+  "tier": 2,
+  "cite": { BLA, "page": "p. 44" }
+}
+
+// the new source, after city-general-fund
+{
+  "id": "city-housing-stability-fund",
+  "label": "City: Housing Stability Fund (Proposition I, 2020)",
+  "kind": "generalRevenue",
+  "dollarsPerYear": 14900000,
+  "debt": null,
+  "note": "The part of Exhibit E's General Fund line that came from the Housing Stability Fund (Proposition I, 2020), $14.9 million in FY2024-25 (p. 44).",
+  "cite": { BLA, "page": "p. 44" },
+  "bound": {
+    "kind": "remaining",
+    "dollars": 0,
+    "method": "The Housing Stability Fund was spent down by February 2026 (p. 100).",
+    "tier": 1,
+    "cite": { BLA, "page": "p. 100" }
+  }
+}</code></pre>
+      </section>
+
+      <section id="sec-design-data-impact-fees">
+        <h4>Impact fees</h4>
+        <p>FY2024-25 spending of $34.8 million came from earlier years' balances; collections that year were $422,048. The source's bound is the balance it is spending down. The research did not read that balance.</p>
+        <ul>
+          <li>The builder reads the ending balance of the affordable-housing fee accounts (the Inclusionary Affordable Housing Fee and the Jobs-Housing Linkage Fee) for the latest fiscal year in the City's annual development impact fee report, which Government Code section 66006(b) requires.</li>
+          <li>When no primary states it, the bound is the block below: law sets no end to the fees (<a href="../design/2026-11-22-1216-incremental-game.html#d3">D3</a>), and the reason says the balance was not found.</li>
+          <li>The operator's handback states which bound went in, with the report and page read, or the search that found none. In the second case $34.8 million a year keeps arriving for a source whose collections were $0.42 million, and the owner is told.</li>
+        </ul>
+        <p>When a primary states the balance, the bound is a <code>remaining</code>:</p>
+        <dl>
+          <dt><code>dollars</code></dt><dd>The sum of the two accounts' ending balances in the report.</dd>
+          <dt><code>method</code></dt><dd>"Ending balance of the Inclusionary Affordable Housing Fee and Jobs-Housing Linkage Fee accounts, fiscal year FYyyyy-yy, from the City's development impact fee report (Government Code section 66006(b)). FY2024-25 spending came from earlier balances while collections were $422,048 (BLA p. 9, Exhibit I; p. 44). Collections after that report are not counted.", with the report's fiscal year written in.</dd>
+          <dt><code>tier</code></dt><dd>2: the balance is recorded; taking it as all the source has left is an inference.</dd>
+          <dt><code>cite</code></dt><dd>The report, with its URL, the page of the two accounts and the day it was read.</dd>
+        </dl>
+        <p>When no primary states it:</p>
+        <pre><code data-lang="json">"bound": {
+  "kind": "none",
+  "reason": "The fees are charged on development under the Planning Code with no end in law. FY2024-25 spending came from earlier balances (p. 44) while collections were $422,048 (p. 9, Exhibit I); the balance was not found in a primary, so the source keeps paying.",
+  "tier": 2,
+  "cite": { BLA, "page": "pp. 9, 44" }
+}</code></pre>
+      </section>
+
+      <section id="sec-design-data-htf">
+        <h4>Housing Trust Fund</h4>
+        <ul>
+          <li>The builder reads the Charter's Housing Trust Fund section (section 16.110) for its last fiscal year before writing <code>on</code>.</li>
+          <li>When the Charter names fiscal year 2042-43 or the year 2043, <code>on</code> is 2043-06-30 and the cite is the Controller's statement below.</li>
+          <li>When it names another last fiscal year, <code>on</code> is the 30 June that ends it, the cite is the Charter section, and the handback says so.</li>
+        </ul>
+        <pre><code data-lang="json">"bound": {
+  "kind": "ends",
+  "on": "2043-06-30",
+  "method": "The Charter's Housing Trust Fund runs to 2043; the Controller's statement on the 2026 measure extends it 'from 2043 to 2058'. Read as the end of fiscal year 2042-43, 30 June 2043. The 2026 extension (Proposition C) is not certified and is a measure a player adds.",
+  "tier": 2,
+  "cite": {
+    "label": "Controller, Proposition C: Contributions to the Housing Fund, statement of 2026-08-10",
+    "url": "https://media.api.sf.gov/documents/Proposition_C__Contributions_to_the_Housing_Fund_-_Signed.pdf",
+    "page": "p. 1",
+    "quote": "from 2043 to 2058"
+  }
+}</code></pre>
+      </section>
+
+      <section id="sec-design-data-redevelopment">
+        <h4>Former Redevelopment assets</h4>
+        <pre><code data-lang="json">"bound": {
+  "kind": "remaining",
+  "dollars": 0,
+  "method": "The Low- and Moderate-Income Housing Asset Fund is spent down. The later SB 593 bond route for replacement homes is not this source.",
+  "tier": 1,
+  "cite": { BLA, "page": "p. 73", "quote": "that source has now been spent down" }
+}</code></pre>
+      </section>
+
+      <section id="sec-design-data-state">
+        <h4>State programmes</h4>
+        <p>This is the bound D1's margin rests on: with the state source ending after five years, current law misses the goal by 1,244 homes in the second reach measurement (variant G, <code>.superpowers/superconductor/incremental-game/surveys/reach-measurement.md</code>).</p>
+        <ul>
+          <li>Before writing the bound, the builder reads the reports behind the $150 million a year: the Department of Housing and Community Development's and CalHFA's reports on the 2018 bonds (Proposition 1, the Veterans and Affordable Housing Bond Act; Proposition 2, No Place Like Home), on the Multifamily Housing Program, the Affordable Housing and Sustainable Communities program and the Infill Infrastructure Grant program, and the Legislative Analyst's cap-and-invest update of 12 August 2026 for the Affordable Housing and Sustainable Communities program.</li>
+          <li>When a primary states the day the programmes behind the amount make their last award, the bound is <code>ends</code> on that day, tier 1 or 2 as the primary states it or it is read, with that cite.</li>
+          <li>When a primary states the dollars left for San Francisco from those programmes, the bound is <code>remaining</code> with those dollars and that cite.</li>
+          <li>A statewide balance with no San Francisco share makes no bound: turning it into one would need an invented share.</li>
+          <li>When no primary settles it, the bound is the block below: <code>none</code> under <a href="../design/2026-11-22-1216-incremental-game.html#d3">D3</a>, saying plainly it could not be settled.</li>
+          <li>The operator's handback names each report and page read and says which bound went in.</li>
+          <li>An <code>ends</code> or <code>remaining</code> bound here is expected to make current law miss the goal. Then <code>closing</code>'s check fails, and the owner decides the remedy.</li>
+        </ul>
+        <pre><code data-lang="json">"bound": {
+  "kind": "none",
+  "reason": "Could not be settled. Whether the 2018 state housing bonds (Propositions 1 and 2) are spent was not found in a primary, and the state's housing programmes are funded every year. A source with no end found keeps paying at its yearly amount.",
+  "tier": 2,
+  "cite": { the state source's own cite: BLA, "page": "p. 42" }
+}</code></pre>
+      </section>
+
+      <section id="sec-design-data-federal">
+        <h4>Federal tax credits and the ceiling</h4>
+        <p>The ceiling is the most San Francisco won in one year of the award rows: 1,274 new-construction homes in 2024, times $443,108, which is $564,519,592 a year.</p>
+        <aside data-kind="decision" id="dec-ff-ceiling"><strong>Decision: the ceiling is the best year, not the average</strong> The award rows give two readings, the average year (980 homes, $434,245,840) and the best year (1,274 homes, $564,519,592). A ceiling below a year the records show was reached would contradict per-record data, so the best year is the ceiling. Neither binds in the measured runs.</aside>
+        <pre><code data-lang="json">"federal": {
+  "id": "federal-tax-credits",
+  "label": "Federal: low-income housing tax credits",
+  "dollarsPerYear": 564519592,
+  "tier": 2,
+  "method": "Federal funding pays $443,108 of an affordable home (Exhibit F, p. 7). The Analyst says it 'includes the Low-Income Housing Tax Credit' (p. 6) and gives no split; this pool treats all of it as tax credits, which follow the project. The yearly ceiling is the most San Francisco won in one year of the award rows: 1,274 new-construction homes in 2024, times $443,108, $564,519,592 (an inference from the award records, tier 2). California sets both credits' ceilings each year: in 2026, $4.83 billion of bond ceiling for rental housing, divided among state-wide pools and six regions with no San Francisco share, and a San Francisco share of $2,861,626 a year of the 9% credit.",
+  "cite": { today's federal cite: BLA, "page": "p. 7, Exhibit F" },
+  "bound": {
+    "kind": "none",
+    "reason": "California sets both credits' ceilings every calendar year, and no end to the credit was read.",
+    "tier": 2,
+    "cite": {
+      "label": "California Debt Limit Allocation Committee, Exhibit A, \"Pool and Set-Aside Recommendation of 2026 State Debt Ceiling\", updated 2026-09-14",
+      "url": "https://www.treasurer.ca.gov/sites/default/files/2026-09/Allocation_by_Round_9-14-2026.pdf",
+      "page": "Exhibit A",
+      "retrieved": "2026-11-10"
+    }
+  }
+}</code></pre>
+      </section>
+
+      <section id="sec-design-data-notes">
+        <h4>Other edits to the file</h4>
+        <ul>
+          <li><code>schema</code> becomes <code>2</code>.</li>
+          <li>Every City <code>note</code> loses its last sentence, "Held level (OD-F3).": the bound now says what happens.</li>
+          <li><code>state.tier</code> stays 2.</li>
+          <li>Run <code>npx prettier --write pipeline/enrichment/funding.json</code> after editing.</li>
+        </ul>
+      </section>
+
+      <section id="sec-design-data-fixture">
+        <h4>The fixture twin</h4>
+        <p><code>pipeline/test/fixtures/mini/enrichment/funding.json</code> takes the live ids, kinds and order, schema 2, every cite label starting "Fixture:", and these values, so that every bound kind is built:</p>
+        <table id="tbl-ff-fixture">
+          <caption>The fixture's sources</caption>
+          <thead>
+            <tr><th scope="col">Source id</th><th scope="col">Dollars a year</th><th scope="col">Bound</th></tr>
+          </thead>
+          <tbody>
+            <tr><th scope="row"><code>city-debt</code></th><td>1,500,000</td><td>Remaining 3,500,000</td></tr>
+            <tr><th scope="row"><code>city-ocoh</code></th><td>1,200,000</td><td>None</td></tr>
+            <tr><th scope="row"><code>city-general-fund</code></th><td>600,000</td><td>None</td></tr>
+            <tr><th scope="row"><code>city-housing-stability-fund</code></th><td>400,000</td><td>Remaining 0</td></tr>
+            <tr><th scope="row"><code>city-impact-fees</code></th><td>1,000,000</td><td>Remaining 2,000,000</td></tr>
+            <tr><th scope="row"><code>city-housing-trust-fund</code></th><td>800,000</td><td>Ends 2043-06-30</td></tr>
+            <tr><th scope="row"><code>city-redevelopment</code></th><td>500,000</td><td>Remaining 0</td></tr>
+            <tr><th scope="row"><code>state</code></th><td>3,000,000</td><td>None</td></tr>
+            <tr><th scope="row"><code>federal-tax-credits</code></th><td>13,293,240 (30 homes in 2025 times $443,108)</td><td>None</td></tr>
+          </tbody>
+        </table>
+        <ul>
+          <li>The City sources sum to 6,000,000, today's fixture <code>city.total</code>.</li>
+          <li>Every fixture bound has tier 2 and a <code>method</code> or <code>reason</code> starting "Fixture: invented".</li>
+          <li>Fixture provenance is still marked tier 4 by the build, as today.</li>
+        </ul>
+      </section>
+    </section>
+
+    <section id="sec-design-emit">
+      <h3>From a bound to pools and programmes</h3>
+      <p><code>baselineFunding</code> builds one pool per source, in today's order: the City sources in file order, then <code>state</code>, then <code>federal-tax-credits</code>. A source's inflows follow its bound.</p>
+      <dl>
+        <dt><code>asOf</code></dt><dd>The dataset date, the build's <code>asOf</code>.</dd>
+        <dt>anniversary k</dt><dd>The day <code>inflowArrivals</code> (<code>src/lib/sim/scenario/funding.ts</code>) gives as the k-th arrival of a yearly inflow from <code>asOf</code>, k from 0: the same month and day k years later, 29 February becoming 28 February in a common year.</dd>
+        <dt>the first year</dt><dd>The days from <code>asOf</code> to the day before anniversary 1.</dd>
+      </dl>
+      <ul>
+        <li><code>none</code>: one inflow <code>{ kind: 'yearly', from: asOf, to: null, dollarsPerYear }</code>.</li>
+        <li><code>ends</code> with <code>on</code> on or after <code>asOf</code>: one inflow <code>{ kind: 'yearly', from: asOf, to: day(on), dollarsPerYear }</code>. <code>day(on)</code> is the <code>Day</code> of that date.</li>
+        <li><code>remaining</code> with <code>dollars</code> above 0: one <code>once</code> inflow on each anniversary k = 0, 1, 2, … of <code>min(dollarsPerYear, left)</code>, where <code>left</code> is <code>dollars</code> less the inflows before it, until <code>left</code> is 0.</li>
+        <li><code>ends</code> with <code>on</code> before <code>asOf</code>, or <code>remaining</code> with <code>dollars</code> 0: the pool has <code>inflows: []</code>.</li>
+        <li>A pool with no inflow has no programme in the baseline. Every other pool has today's one grant programme, <code>from: asOf</code>, <code>to: null</code>.</li>
+        <li>Shares are computed as today, with <code>roundShares</code> over every source, those without a programme included. A dropped programme's share leaves every bundle, so projects go ahead on what is left at lower odds, as when a source is switched off today.</li>
+        <li>No pool has <code>uncapped</code>; the federal pool is built like any other, <code>kind: 'federal'</code>, <code>debt: null</code>, <code>leverage: 1</code>.</li>
+        <li>The build check V25 (<code>fundingOutcomes</code>, <code>pipeline/lib/fzp-cal/invariants.ts</code>) holds the rule below.</li>
+        <li>A source's <code>dollarsPerYear</code> of 0 under <code>none</code> or <code>ends</code> still gives its yearly inflow of 0; no arrival is made of it, as today.</li>
+      </ul>
+      <p>A programme keeps <code>to: null</code> under every bound. Ending a programme on its pool's last inflow would strand the last year's money; the pool ends when it is spent, which the step engine handles once <code>pool-closing</code> lands (<a href="../design/2026-11-22-1216-incremental-game.html#sec-if-f3">F3</a> in the design).</p>
+
+      <section id="sec-design-emit-v25">
+        <h4>V25's funding rule</h4>
+        <p><code>fundingOutcomes(cal, live)</code> reports a problem when any of these fails:</p>
+        <ul>
+          <li>The programmes are exactly one <code>baseline-&lt;pool id&gt;</code> per pool that has at least one inflow, in pool order, each with <code>pool</code> that pool's id. A pool with no inflow has none.</li>
+          <li>At least one programme exists.</li>
+          <li>Every programme's grant share is above 0.</li>
+          <li>The programmes' shares, in millionths, sum to at most 1,000,000.</li>
+          <li>When every pool has an inflow, they sum to exactly 1,000,000.</li>
+        </ul>
+        <ul>
+          <li>The messages: "baselineFunding programmes [..] are not one baseline-&lt;pool id&gt; per pool with an inflow, in pool order [..]"; "baselineFunding has no programme"; "baselineFunding programme {id} has a share of 0"; "baselineFunding shares sum to {n} millionths, over 1000000"; "baselineFunding shares sum to {n} millionths, not 1000000".</li>
+          <li>The detail reads "baselineFunding {p} pools, {g} programmes; shares {n} millionths", followed by "; no programme for {ids}" when a pool has none, the ids in pool order joined with ", ".</li>
+          <li>The <code>affordableRoutes</code> part is unchanged.</li>
+        </ul>
+      </section>
+
+      <section id="sec-design-emit-examples">
+        <h4>Worked examples, live data, <code>asOf</code> 2026-11-10</h4>
+        <pre><code data-lang="ts">// none: city-ocoh
+{ id: 'city-ocoh', kind: 'dedicatedTax', inflows: [
+  { kind: 'yearly', from: day('2026-11-10'), to: null, dollarsPerYear: 48_600_000 } ], debt: null, leverage: 1 }
+// programme baseline-city-ocoh: grant, from day('2026-11-10'), to null
+
+// none: federal-tax-credits, the ceiling
+{ id: 'federal-tax-credits', kind: 'federal', inflows: [
+  { kind: 'yearly', from: day('2026-11-10'), to: null, dollarsPerYear: 564_519_592 } ], debt: null, leverage: 1 }
+
+// ends: city-housing-trust-fund, on 2043-06-30
+{ id: 'city-housing-trust-fund', kind: 'generalRevenue', inflows: [
+  { kind: 'yearly', from: day('2026-11-10'), to: day('2043-06-30'), dollarsPerYear: 27_400_000 } ], debt: null, leverage: 1 }
+// arrivals: 2026-11-10, 2027-11-10, ..., 2042-11-10 (17); programme to null
+
+// remaining 260,310,000 at 80,500,000 a year: city-debt
+{ id: 'city-debt', kind: 'goBond', inflows: [
+  { kind: 'once', day: day('2026-11-10'), dollars: 80_500_000 },
+  { kind: 'once', day: day('2027-11-10'), dollars: 80_500_000 },
+  { kind: 'once', day: day('2028-11-10'), dollars: 80_500_000 },
+  { kind: 'once', day: day('2029-11-10'), dollars: 18_810_000 } ], debt: { rate: 0.06, termYears: 20 }, leverage: 1 }
+
+// remaining 0: city-redevelopment (and city-housing-stability-fund)
+{ id: 'city-redevelopment', kind: 'dedicatedTax', inflows: [], debt: null, leverage: 1 }
+// no programme baseline-city-redevelopment
+
+// ends before asOf, for example on 2026-06-30
+{ id: '...', inflows: [] }   // no programme</code></pre>
+      </section>
+    </section>
+
+    <section id="sec-design-provenance">
+      <h3>Provenance, the check and the report</h3>
+      <p>Each pool's provenance entry states its end, or that it has none, with the bound's citation. The pieces:</p>
+      <dl>
+        <dt><code>end(b)</code></dt><dd>The short form for a label: "ends {on}" (<code>on</code> on or after <code>asOf</code>), "ended {on}" (before), "{$X.X million} left" (<code>remaining</code> above 0), "spent" (<code>remaining</code> 0), "no end".</dd>
+        <dt><code>cited(b)</code></dt><dd>"(tier {b.tier}; {b.cite.label}, {b.cite.page})".</dd>
+        <dt><code>boundSentence(b)</code></dt><dd>The bound's sentence in the method, below.</dd>
+      </dl>
+      <pre><code data-lang="text">ends, on on or after asOf:
+  Ends: the amount is held level from the first inflow to {on}; the last inflow is on {last arrival, YYYY-MM-DD}. {method} {cited}.
+ends, on before asOf:
+  Ended on {on}: the pool receives nothing and its programme is not in the baseline. {method} {cited}.
+remaining, above 0:
+  Remaining: {$dollars}, paid at the yearly amount from the first inflow until used, {n} inflows, the last {$last} on {YYYY-MM-DD}. {method} {cited}.
+remaining, 0:
+  Remaining: nothing; the pool receives nothing and its programme is not in the baseline. {method} {cited}.
+none:
+  No end: {reason} {cited}. The amount is held level from the first inflow (an assumption, not a forecast).</code></pre>
+      <ul>
+        <li>A City entry's label is "{label}: {$X.X million} a year, {fiscal year} ({end})". Example: "City: general-obligation bonds and other debt: $80.5 million a year, FY2024-25 ($260.3 million left)".</li>
+        <li>A City entry's method replaces today's "The amount is held level from the first inflow, with no end (an assumption, not a forecast)." with <code>boundSentence</code>. The inflow sentence ("First inflow on asOf ..., then each anniversary.") stays for a pool with an inflow and is left out for one without.</li>
+        <li>The state entry's label is "{label}: {$X.X million} a year (a lower bound; {end})"; its method is today's, then <code>boundSentence</code>.</li>
+        <li>The federal entry's label is "{label}: at most {$X.X million} a year ({end})"; its method is the file's <code>federal.method</code>, the award sentence, the share sentence, <code>boundSentence</code>, then "FY2024-25 dollars, not adjusted."</li>
+        <li>The federal entry's <code>n</code> is the number of new-construction award rows and its <code>window</code> is the award window, from 1 January of the first award year to 31 December of the last.</li>
+        <li>Each entry's <code>sources</code> are today's, then the bound's cite as "{label}, {page}" with its URL, unless an existing source has the same label and URL.</li>
+        <li>Each entry's tier is the larger of 2 and the bound's tier.</li>
+        <li>A fixture build marks every entry tier 4 with the "Fixture (tier 4): " prefix, as today.</li>
+      </ul>
+      <p>The check is kept and reads the first year:</p>
+      <ul>
+        <li>For each pool with a programme and a share above 0, its implied homes a year is its first year's dollars divided by (share times the uncovered cost).</li>
+        <li><code>impliedHomesPerYear</code> is the least of those, rounded half up. The federal pool counts like any other.</li>
+        <li>The check's method begins "Implied: over the pools with a programme and a share above 0, the least of their first year's dollars ÷ (share × {uncovered}), rounded half up: {n}." and continues as today.</li>
+        <li><code>fundingWarning</code>'s text says "the baseline pools fully fund" in place of "the capped pools fully fund".</li>
+        <li>On the live file the check stays 780 implied against 980 observed, with no warning, unless the impact-fee balance read is under one year's amount; then the least is that pool's, and the handback reports the check and any warning.</li>
+      </ul>
+      <p>The report's baseline-funding table:</p>
+      <pre><code data-lang="ts">// pipeline/lib/fzp-cal/funding.ts
+interface FundingReport {
+  rows: {
+    /** null for a pool with no programme */
+    programme: string | null;
+    pool: string;
+    kind: PoolKind;
+    fillTier: 1 | 2 | 3;
+    /** dollars arriving in the first year */
+    firstYear: number;
+    share: number;
+    /** null for a pool with no programme */
+    impliedHomesPerYear: number | null;
+    /** `end(bound)` */
+    end: string;
+  }[];
+  mix: MohcdMix;
+  check: { impliedHomesPerYear: number; observedHomesPerYear: number };
+  warning: string | null;
+  awardRows: number;
+}</code></pre>
+      <ul>
+        <li>The table's columns are fill tier, programme, pool, kind, dollars in the first year, share, implied homes a year, end.</li>
+        <li>A null programme or implied value prints "none".</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-pool">
+      <h3>Pools with no "can always pay"</h3>
+      <p><a href="#sec-if-f2">F2</a> holds. Every place the flag is read changes as follows.</p>
+      <section id="sec-design-pool-types">
+        <h4>Types and parsing</h4>
+        <ul>
+          <li><code>Pool</code> loses <code>uncapped</code> (<code>src/lib/timelapse/types.ts</code>); its comment no longer mentions it.</li>
+          <li><code>checkPool</code>'s keys are <code>id</code>, <code>kind</code>, <code>label</code>, <code>inflows</code>, <code>debt</code>, <code>leverage</code>. The two uncapped checks go.</li>
+          <li><code>model.ts</code> exports <code>LEGACY_UNCAPPED_DOLLARS = 100_000_000_000</code> and <code>isNoCeiling(dollars: number): boolean</code>, true when <code>dollars &gt;= LEGACY_UNCAPPED_DOLLARS</code>. It is the one test of an older dataset's federal pool; no flag on <code>Pool</code> marks it.</li>
+          <li><code>parseCalibration</code> reads a dataset built before this build (<a href="#sec-if-f2">F2</a>), whose pools carry <code>uncapped</code>. A pool with <code>uncapped: true</code> and no inflows becomes the same pool without the key and with one inflow, <code>{ kind: 'yearly', from: asOf, to: null, dollarsPerYear: LEGACY_UNCAPPED_DOLLARS }</code>, <code>asOf</code> being the calibration's.</li>
+          <li>A pool with <code>uncapped: false</code> loses the key. A pool with <code>uncapped: true</code> and inflows keeps its inflows and loses the key. A value that is not a boolean is refused with "expected a boolean", as today.</li>
+          <li><code>parseCalibration</code> never refuses a calibration for <code>uncapped</code>. It returns the input unchanged except that <code>baselineFunding.pools</code> is a new array holding the converted pools; the other objects are the input's.</li>
+          <li>Nothing else in an older calibration meets a new rule: <code>checkBaselineFunding</code> keeps its rules (a programme on every pool is still accepted; provenance is one per pool, then one), and schema 2 belongs to <code>funding.json</code>, which datasets do not ship.</li>
+          <li>In the engines an older dataset's federal pool receives $100 billion a year from the dataset date and never closes, so it never binds: such a policy plays as it did.</li>
+          <li><code>parsePool</code> (<code>src/lib/sim/levers/finance.ts</code>) accepts <code>uncapped</code> as an optional key with any value and ignores it: it checks and returns the pool without it.</li>
+          <li><code>parsePool</code> is reached from <code>parseFinanceLevers</code>, the one loader of a stored document's money: the page's <code>sfhousing:sim:v2</code> record, a game's saved policy, and a published policy at <code>/s/&lt;id&gt;</code> all load through <code>parse4.ts</code> into it. A document written after this change has no <code>uncapped</code>.</li>
+          <li>The error "expected false: an added pool has a schedule of money" goes.</li>
+        </ul>
+      </section>
+      <section id="sec-design-pool-engines">
+        <h4>The two engines and the score</h4>
+        <ul>
+          <li><code>buildFinance</code> scales every baseline pool's inflows by its runs, the federal pool included. A scale of 0 still makes an off span, as on any pool.</li>
+          <li><code>FinanceIndex.capped</code> leaves <code>scenario/funding.ts</code>. Every reader treats every pool as one that pays only from what it received:
+            <ul>
+              <li><code>asksOf</code> and <code>awardPasses</code> ask every pool of the set.</li>
+              <li><code>checkFinanceShape</code> drops its uncapped rule.</li>
+              <li><code>available</code> returns <code>leverage × received − committed − spentGrant − outLoan − lostLoan − lostGuarantee</code> for every pool.</li>
+              <li><code>scenario/money.ts</code> bins every pool's arrivals, and a release or repayment to any pool counts as money returned.</li>
+              <li><code>scenario/funded.ts</code> collects every asked pool.</li>
+            </ul>
+          </li>
+          <li>The step engine: <code>availableOf</code> returns the same expression for every pool; <code>book</code> treats a release or repayment to any pool of the frame as returned money; the money track (<code>world/policy/money.ts</code>) makes arrivals for every pool.</li>
+          <li><code>world/score/statics.ts</code>'s comment drops "an uncapped pool has no inflows".</li>
+          <li>The ledger identities E4 (<code>finance-engine.md</code>) and I4 (<code>finance-score.md</code>) hold for every pool. E6, "An uncapped pool has no in event", is retired with its checks in <code>world/funding/test/identities.ts</code> and <code>scenario/test/money-identities.ts</code>; the other identities keep their numbers.</li>
+        </ul>
+      </section>
+      <section id="sec-design-pool-page">
+        <h4>The page</h4>
+        <ul>
+          <li>Details' "By source" table: Received shows dollars for every pool. A column whose every value is 0 is dropped, with no exception. <code>bySourceColumns(m)</code> takes one argument.</li>
+          <li><code>uncappedPoolIds</code> leaves <code>money-view.ts</code>, and <code>MoneyResults</code> loses its <code>uncapped</code> prop. Its Received cell reads "No ceiling" where <code>isNoCeiling(received)</code>, the case of an older dataset's federal pool; every other cell shows dollars.</li>
+          <li><code>TimelineMode</code> stops building the set and no longer passes it; <code>SimDetails</code> loses its <code>uncapped</code> prop. In these two files and their specs only the <code>uncapped</code> lines change; <code>game-sim</code> writes them after this unit.</li>
+          <li>The federal pool becomes an ordinary pool in the editors: the "Federal tax credits" fieldset with "Switched off" and "Switched back on" goes, so the federal group's "+ Change from a date" is the group editor every other group uses, unchanged.</li>
+          <li><code>labelScaleApplied</code>, <code>summaryScaleText</code> and <code>scaleLines</code> lose their <code>uncapped</code> branch and argument; on the federal group they give the text they give any group. This unit adds no sentence.</li>
+          <li><code>ScaleLine</code> loses <code>uncapped</code>.</li>
+          <li><code>BaselineGroup.perYear</code> has type <code>number</code>: today's sum (the yearly inflows in force at the present, at their scale) for every group, the federal group included, with the uncapped branch gone. How a group's amount counts <code>once</code> inflows is <code>funding-measures</code>' rule.</li>
+          <li><code>NO_LIMIT</code> (<code>funding-copy.ts</code>) becomes <code>NO_CEILING = 'No ceiling'</code>. <code>FundingTab.svelte</code>'s group amount (<code>:221</code>) reads <code>NO_CEILING</code> where <code>isNoCeiling(g.perYear)</code> and <code>perYearText(g.perYear)</code> otherwise.</li>
+          <li><code>poolMoneySentence</code> writes the inflow phrases for every pool; a yearly inflow whose amount <code>isNoCeiling</code> reads "No ceiling". A pool with no inflow writes an empty money phrase.</li>
+          <li><code>e2e/sim-funding.spec.ts</code>: line 19 drops the <code>NO_LIMIT</code> import, and line 200's amount is <code>g.off ? SWITCHED_OFF : perYearText(g.perYear)</code>. fixture-0 is built by this tree, so its federal pool has a ceiling. Nothing else in the file changes; <code>funding-measures</code> edits it after this unit.</li>
+          <li>Pool literals (<code>funding-edit.ts</code>, <code>funding-presets.ts</code>, <code>FundingPoolRow.svelte</code>) drop <code>uncapped: false</code>. <code>newProgramme</code>'s comment names "a pool with no inflows" in place of the tax-credit pool.</li>
+          <li><code>pool-level.ts</code>: <code>LevelPool</code> is <code>{ id, leverage }</code>; <code>poolLevel</code> reads every pool given; <code>levelSet</code> gives every fund policy with an own pool its level and sums every baseline pool the money carries into "Current funding", the federal pool included. A pool with a yearly inflow whose amount <code>isNoCeiling</code> (an older dataset's federal pool) has no level and stays out of the sum, so its bar draws as today's no-limit pool did. The doc comment says so in place of "an uncapped pool has no level".</li>
+          <li>Code that reads the baseline's programmes by pool handles a baseline pool with no programme (<code>city-redevelopment</code>, <code>city-housing-stability-fund</code>): <code>baselineGroups</code> lists the pool in its group, with nothing in <code>programmes</code> for it.</li>
+        </ul>
+      </section>
+      <p><strong>Removed:</strong> <code>Pool.uncapped</code>, <code>FinanceIndex.capped</code>, <code>FundingFile.federal.uncapped</code>, <code>uncappedPoolIds</code>, <code>MoneyResults</code>' and <code>SimDetails</code>' <code>uncapped</code> props, the "no limit" text (an older dataset's federal pool reads "No ceiling"), <code>NO_LIMIT</code>, the federal on/off-only editor, <code>ScaleLine.uncapped</code>, the uncapped arguments of <code>labelScaleApplied</code> and <code>summaryScaleText</code>, <code>LevelPool.uncapped</code>, identity E6 and I6.</p>
+    </section>
+
+    <section id="sec-design-money-copy">
+      <h3>The money sentences move to <code>money-copy.ts</code></h3>
+      <p>The public-money sentences leave <code>src/lib/timeline/copy.ts</code> for a new <code>src/lib/timeline/money-copy.ts</code>, text and signatures unchanged.</p>
+      <ul>
+        <li>The exports that move: <code>PER_HOME_SOURCE</code>, <code>coverageShortLine</code>, <code>COVERAGE_CHANCE_NOTE</code>, <code>COVERAGE_RUN_SENTENCE4</code>, <code>COVERAGE_OFF_SHORT_SENTENCE4</code>, <code>TERMS_HINT</code> (a fund's read-only terms) and <code>perHomeMethod</code>, with the private <code>PER_HOME_TAIL</code>.</li>
+        <li>Their comments move with them, the file-head sentence about the <code>*4</code> sentences included. Imports only they use (<code>formatPercent</code>, <code>CoverageStep</code>) move too.</li>
+        <li>Every other export of <code>copy.ts</code> stays.</li>
+        <li>The <code>perHomeMethod</code> tests leave <code>copy.spec.ts</code> for <code>money-copy.spec.ts</code>, with the <code>MONEY_SOURCES</code> import; <code>copy.spec.ts</code>'s import list loses <code>PER_HOME_SOURCE</code> and <code>perHomeMethod</code>.</li>
+        <li>The importers change their import path only:
+          <ul>
+            <li><code>src/lib/sim-page/PolicySummary.svelte:19</code> (<code>COVERAGE_CHANCE_NOTE</code>, <code>coverageShortLine</code>)</li>
+            <li><code>src/lib/sim-page/FundingTab.svelte:20-26</code> (<code>COVERAGE_CHANCE_NOTE</code>, <code>COVERAGE_OFF_SHORT_SENTENCE4</code>, <code>COVERAGE_RUN_SENTENCE4</code>, <code>coverageShortLine</code>)</li>
+            <li><code>src/lib/sim-page/FundingTab.svelte.spec.ts:12</code> (<code>coverageShortLine</code>)</li>
+            <li><code>src/lib/fzp/ProvenanceBody.svelte:12</code> (<code>perHomeMethod</code>)</li>
+            <li><code>src/lib/timeline/WhatEditor.svelte:32</code> and <code>src/lib/timeline/Inspector.svelte.spec.ts:19</code> (<code>TERMS_HINT</code>)</li>
+          </ul>
+        </li>
+        <li>After this unit, <code>game-sim</code> owns all of <code>copy.ts</code> and <code>funding-measures</code> owns <code>money-copy.ts</code>.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-reach">
+      <h3>The goal must stay reachable (D1), and the dataset</h3>
+      <ul>
+        <li>The real-data check that current law reaches the goal inside the window (<a href="../design/2026-11-22-1216-incremental-game.html#d1">D1</a>, <a href="../design/2026-11-22-1216-incremental-game.html#sec-if-g4">G4</a>) is <code>closing</code>'s <code>scripts/level2-check.ts</code>, run after <code>pool-closing</code> lands. This unit does not run it.</li>
+        <li>Until <code>pool-closing</code> lands, an affordable application that asks a spent pool waits to the window's end in the step engine (the known limit, <code>docs/dev/finance-engine.md</code>). The live goal month is therefore not meaningful between the two units, and this unit asserts none.</li>
+        <li>Fixture-level tests stay meaningful through the fixture's bounds: every bound kind is built, and the continuing pools (<code>city-ocoh</code>, <code>city-general-fund</code>, <code>state</code>, federal) keep receiving money to the window's end. A new test pins that (<a href="#sec-tests">Tests</a>).</li>
+        <li>Tests that pin funded numbers on a fixture with an uncapped pool give that pool one yearly inflow, <code>{ kind: 'yearly', from: &lt;the fixture's asOf&gt;, to: null, dollarsPerYear: 100_000_000_000 }</code>, which no test reaches. Their recorded numbers are re-recorded where they move, and the handback lists each one.</li>
+        <li>The unit's handback reports the live file's first-year dollars by source and the impact-fee block chosen, for <code>closing</code>'s check.</li>
+        <li>This unit writes hashed paths: <code>pipeline/**</code> and <code>src/lib/timelapse</code>, under <code>PATHS</code> as <code>remove-lesscars</code> leaves it (<code>src/lib/sim/scenario</code> and <code>src/lib/sim/levers</code> are no longer hashed). So the dataset version changes.</li>
+        <li>The unit regenerates the fixture with <code>npm run pipeline -- fixture</code> and commits every file that changes, <code>e2e/fixtures/data/fixture-0/report.json</code> included.</li>
+        <li>It runs no signoff and uploads no dataset.</li>
+      </ul>
+    </section>
+  </section>
+
+  <section id="sec-write-set">
+    <h2>Write set</h2>
+    <p>The design document's row for <code>finite-funding</code>, after <code>contracts</code> and <code>remove-lesscars</code>:</p>
+    <ul>
+      <li><code>pipeline/enrichment/funding.json</code>, <code>funding-schema.ts</code>, <code>pipeline/lib/fzp-cal/**</code>, <code>pipeline/steps/calibration.ts</code></li>
+      <li><code>e2e/fixtures/data/fixture-0/scenarios/fzp/calibration.json</code></li>
+      <li><code>src/lib/timelapse/{types,model}.ts</code></li>
+      <li><code>src/lib/sim/{levers,scenario,world,finance}/**</code> where <code>uncapped</code> is read</li>
+      <li><code>src/lib/fzp/{money-view.ts,MoneyResults.svelte}</code></li>
+      <li><code>src/lib/sim-page/funding-*.ts</code> and <code>Funding*.svelte</code></li>
+      <li><code>src/lib/timeline/pool-level.ts</code></li>
+      <li><code>src/lib/timeline/money-copy.ts</code>, made by moving the public-money sentences out of <code>src/lib/timeline/copy.ts</code> unchanged, with their tests and the import lines that used them</li>
+      <li>The lines of <code>e2e/sim-funding.spec.ts</code> that use the "no limit" text</li>
+      <li>Every other line under <code>src/</code>, <code>pipeline/</code> and <code>e2e/</code> that reads or sets <code>uncapped</code>, tests and fixtures included (among them <code>src/lib/timeline/{TimelineMode,SimDetails}.svelte</code>)</li>
+      <li>The fixture files a regeneration changes</li>
+      <li><code>docs/dev/{finance-data,finance-engine,finance-levers,finance-model,world-funding}.md</code></li>
+      <li>The tests, harnesses and test helpers beside these files; the pipeline's mini twin and goldens count as tests.</li>
+    </ul>
+    <p>Ordering notes from the design document that concern this unit:</p>
+    <ul>
+      <li><code>pipeline/**</code> and the fixture are written by <code>remove-lesscars</code> and then by <code>finite-funding</code>; this unit needs <a href="../design/2026-11-22-1216-incremental-game.html#sec-if-l1">L1</a>.</li>
+      <li><code>src/lib/timeline/{TimelineMode,SimDetails}.svelte</code> and the timeline tests that set <code>uncapped</code> are written by this unit (those lines only) and then by <code>game-sim</code>.</li>
+      <li><code>src/lib/sim-page/funding-*</code>, <code>src/lib/timeline/{pool-level,money-copy}.ts</code> and <code>e2e/sim-funding.spec.ts</code> are written by this unit and then by <code>funding-measures</code>.</li>
+      <li><code>src/lib/sim-page/funding-presets.ts</code> holds <code>contracts</code>' <code>dateMeasure</code> stub (M1); this unit leaves it as it is.</li>
+      <li>After this unit, <code>game-sim</code> owns all of <code>src/lib/timeline/copy.ts</code> and <code>funding-measures</code> owns <code>money-copy.ts</code>.</li>
+      <li><code>src/lib/sim/world/funding/**</code> and the money results are written by this unit and then by <code>pool-closing</code>.</li>
+    </ul>
+
+    <section id="sec-write-set-files">
+      <h3>Files</h3>
+      <p>Changed, in the pipeline:</p>
+      <ul>
+        <li><code>pipeline/enrichment/funding.json</code>, <code>pipeline/enrichment/funding-schema.ts</code></li>
+        <li><code>pipeline/lib/fzp-cal/funding.ts</code>, <code>pipeline/lib/fzp-cal/report.ts</code>, <code>pipeline/lib/fzp-cal/invariants.ts</code></li>
+        <li><code>pipeline/test/enrichment/funding-schema.test.ts</code>, <code>pipeline/test/fzp-cal/funding.test.ts</code>, <code>pipeline/test/fzp-cal/calibrate.test.ts</code>, <code>pipeline/test/fzp-cal/calibration-invariants.test.ts</code></li>
+        <li><code>pipeline/test/fixtures/mini/enrichment/funding.json</code></li>
+        <li>Regenerated: <code>pipeline/test/fixtures/mini/golden/scenarios/fzp/calibration.json</code>, <code>pipeline/test/fixtures/mini/golden/derived/calibration-report.md</code>, <code>e2e/fixtures/data/fixture-0/scenarios/fzp/calibration.json</code>, <code>e2e/fixtures/data/fixture-0/report.json</code>, and any other fixture file the regeneration changes</li>
+        <li><code>pipeline/steps/calibration.ts</code> needs no change: it reads the file through <code>parseFundingFile</code>.</li>
+      </ul>
+      <p>Changed, types and engines:</p>
+      <ul>
+        <li><code>src/lib/timelapse/types.ts</code>, <code>src/lib/timelapse/model.ts</code>, <code>src/lib/timelapse/model.test.ts</code></li>
+        <li><code>src/lib/sim/levers/finance.ts</code>, <code>finance.spec.ts</code>, <code>fixtures/finance.ts</code></li>
+        <li><code>src/lib/sim/scenario/funding.ts</code>, <code>money.ts</code>, <code>funded.ts</code></li>
+        <li><code>src/lib/sim/scenario/{funding,engine-finance,finance-score,money,line}.spec.ts</code></li>
+        <li><code>src/lib/sim/scenario/fixtures/{bench-finance,finance-score-cases,ledger-model,mini-finance,tiny-queue}.ts</code></li>
+        <li><code>src/lib/sim/scenario/test/{finance-harness,money-identities}.ts</code></li>
+        <li><code>src/lib/sim/world/funding/pools.ts</code>, <code>funding/test/{fixtures,identities}.ts</code>, <code>funding/{memo,policy,pools,serve}.spec.ts</code></li>
+        <li><code>src/lib/sim/world/funding/fixtures/funded-events-mini-seed1.json</code>, regenerated by <code>build-funded-golden.ts</code> if the mini fixture's change moves it</li>
+        <li><code>src/lib/sim/world/policy/money.ts</code>, <code>src/lib/sim/world/policy/roundtrip.spec.ts</code></li>
+        <li><code>src/lib/sim/world/score/statics.ts</code>, <code>score/{lapse,limits}.spec.ts</code></li>
+      </ul>
+      <p>Changed, the page:</p>
+      <ul>
+        <li><code>src/lib/fzp/money-view.ts</code>, <code>money-view.spec.ts</code>, <code>MoneyResults.svelte</code></li>
+        <li><code>src/lib/sim-page/funding-copy.ts</code>, <code>funding-edit.ts</code>, <code>funding-edit.spec.ts</code>, <code>funding-presets.ts</code>, <code>funding-presets.spec.ts</code>, <code>funding-view.ts</code>, <code>funding-view.spec.ts</code></li>
+        <li><code>src/lib/sim-page/FundingGroupEditor.svelte</code>, <code>FundingPoolRow.svelte</code>, <code>FundingTab.svelte</code> (the group amount at <code>:221</code>, the <code>NO_LIMIT</code> import at <code>:45</code>, the copy imports at <code>:20-26</code>), <code>FundingTab.svelte.spec.ts</code></li>
+        <li><code>e2e/sim-funding.spec.ts</code>, lines 19 and 200 only</li>
+        <li><code>src/lib/timeline/pool-level.ts</code>, <code>pool-level.spec.ts</code></li>
+        <li><code>src/lib/sim-page/test/funding.ts</code></li>
+        <li>The <code>uncapped</code> lines only: <code>src/lib/timeline/TimelineMode.svelte</code>, <code>SimDetails.svelte</code>, <code>TimelineMode.svelte.spec.ts</code>, <code>SimDetails.svelte.spec.ts</code>, <code>owner.spec.ts</code>, <code>Timeline.svelte.spec.ts</code></li>
+        <li><code>src/lib/fzp/card.spec.ts</code>, <code>ProjectCardPanel.svelte.spec.ts</code>, <code>fixtures/timeline-score.spec.ts</code>, <code>fixtures/timeline-score.ts</code>, <code>fixtures/money.ts</code></li>
+      </ul>
+      <p>Created:</p>
+      <ul>
+        <li><code>src/lib/sim/world/funding/bounds.spec.ts</code></li>
+        <li><code>src/lib/timelapse/fixtures/calibration-uncapped.json</code></li>
+        <li><code>src/lib/timeline/money-copy.ts</code>, <code>src/lib/timeline/money-copy.spec.ts</code></li>
+      </ul>
+      <p>Changed for the move of the money sentences (<a href="#sec-design-money-copy">below</a>):</p>
+      <ul>
+        <li><code>src/lib/timeline/copy.ts</code>, <code>copy.spec.ts</code></li>
+        <li>Import lines only: <code>src/lib/sim-page/PolicySummary.svelte:19</code>, <code>src/lib/sim-page/FundingTab.svelte:20-26</code>, <code>src/lib/sim-page/FundingTab.svelte.spec.ts:12</code>, <code>src/lib/fzp/ProvenanceBody.svelte:12</code>, <code>src/lib/timeline/WhatEditor.svelte:32</code>, <code>src/lib/timeline/Inspector.svelte.spec.ts:19</code></li>
+      </ul>
+      <p>Docs: <code>docs/dev/finance-data.md</code>, <code>finance-engine.md</code>, <code>finance-levers.md</code>, <code>finance-model.md</code>, <code>world-funding.md</code>.</p>
+      <p>Deleted: none.</p>
+    </section>
+  </section>
+
+  <section id="sec-tests">
+    <h2>Tests</h2>
+    <section id="sec-tests-pipeline">
+      <h3>Pipeline</h3>
+      <ul>
+        <li><code>pipeline/test/enrichment/funding-schema.test.ts</code>:
+          <ul>
+            <li>The live file parses at schema 2 with the nine pinned ids, in order, and a page on every cite, bound cites included.</li>
+            <li>Each live bound's kind, date or dollars and tier are those of <a href="#tbl-ff-bounds">the bounds table</a>; the impact-fee row accepts either block.</li>
+            <li>The federal ceiling equals 1,274 times 443,108.</li>
+            <li>Refusals, one case each, with the message: schema 1; a source with no bound; tier 4; an unknown bound kind; an extra key in a bound; <code>ends.on</code> not a real date; negative <code>remaining.dollars</code>; money remaining with a yearly amount of 0; a federal ceiling one dollar off; a <code>federal.uncapped</code> key.</li>
+            <li>The fixture twin parses with the live ids and kinds, schema 2, every bound kind, and "Fixture:" labels.</li>
+            <li>Removed: "carries the federal pool's three allocation records in federal.uncapped" and "fixture twin carries an invented federal.uncapped".</li>
+          </ul>
+        </li>
+        <li><code>pipeline/test/fzp-cal/funding.test.ts</code>:
+          <ul>
+            <li>The worked examples of <a href="#sec-design-emit-examples">the emission rules</a>: each kind's inflows on the live file, day for day and dollar for dollar; the <code>remaining</code> remainder; 29 February <code>asOf</code> giving 28 February anniversaries.</li>
+            <li>Nine pools in order; seven programmes, none for <code>city-redevelopment</code> and <code>city-housing-stability-fund</code>; every programme <code>to: null</code>; shares over all nine summing to 1,000,000 millionths.</li>
+            <li>An <code>ends</code> before <code>asOf</code> gives a pool with no inflow and no programme.</li>
+            <li>No pool has an <code>uncapped</code> key.</li>
+            <li>Each provenance entry states its bound: the label's end text and <code>boundSentence</code> for each kind, the bound's cite in <code>sources</code>, the tier.</li>
+            <li>The check: the least first-year implied homes over the pools with a programme (780 against 980 observed on the live file, as <a href="#sec-design-provenance">above</a>); the federal pool's implied homes counted; a pool with no programme left out.</li>
+            <li>The fixture build: every entry tier 4; the federal entry's <code>n</code> and <code>window</code> from the award rows.</li>
+            <li>Emitted pools and programmes pass <code>checkPool</code> and <code>checkProgramme</code>.</li>
+            <li>Changed: "has debt only on city-debt, inflows from asOf and an uncapped federal pool", "takes the federal entry's n, window and sources from federal.uncapped", "gives the eight expected shares", "emits the eight pools".</li>
+          </ul>
+        </li>
+        <li><code>pipeline/test/fzp-cal/calibrate.test.ts</code>: the calibration's <code>baselineFunding</code> on the mini fixture matches the twin's bounds.</li>
+        <li><code>pipeline/test/fzp-cal/calibration-invariants.test.ts</code>: <code>fundingOutcomes</code> holds on the fixture calibration with the new detail text (nine pools, seven programmes, "no programme for city-housing-stability-fund, city-redevelopment"); fails on a dropped programme of a pool with an inflow, a programme on a pool with no inflow, a swapped pair, a share of 0, shares over 1,000,000, and shares under 1,000,000 when every pool has an inflow. The V25 run case pins the new detail.</li>
+        <li>The golden test passes on the regenerated golden files.</li>
+      </ul>
+    </section>
+    <section id="sec-tests-model">
+      <h3>Types, parsing and engines</h3>
+      <ul>
+        <li><code>src/lib/timelapse/model.test.ts</code>:
+          <ul>
+            <li>An older-format calibration (today's fixture-0 <code>calibration.json</code>, kept as a test fixture under <code>src/lib/timelapse/fixtures/calibration-uncapped.json</code>) loads: its federal pool has no <code>uncapped</code> key and one yearly inflow of <code>LEGACY_UNCAPPED_DOLLARS</code> from its <code>asOf</code> with no end; its other pools lose <code>uncapped: false</code>; nothing else differs from the input.</li>
+            <li><code>isNoCeiling</code> at the constant, one dollar under it, and above it.</li>
+            <li>A non-boolean <code>uncapped</code> is refused. The "expected no inflows on an uncapped pool" case goes.</li>
+          </ul>
+        </li>
+        <li><code>src/lib/sim/levers/finance.spec.ts</code>: an added pool stored with <code>uncapped: false</code>, and one with <code>uncapped: true</code>, both load; the result has no <code>uncapped</code> key; a schema 4 document carrying it loads through <code>parse4</code> into the same document as one without it. A baseline scale on the federal pool scales its inflow; 0 makes an off span.</li>
+        <li><code>src/lib/sim/scenario/funding.spec.ts</code>: <code>available</code> is finite on every pool; an application short on the federal pool waits as on any pool.</li>
+        <li><code>src/lib/sim/world/funding/pools.spec.ts</code>: <code>availableOf</code> is finite on every pool; the federal pool receives its yearly arrival.</li>
+        <li>The identity checks (<code>world/funding/test/identities.ts</code>, <code>scenario/test/money-identities.ts</code>) assert E4 and I4 on every pool and no longer have E6 or I6. <code>referee-ledger.spec.ts</code> passes on fixture-0's new calibration.</li>
+        <li>Every spec listed in <a href="#sec-write-set-files">Files</a> passes with its uncapped fixtures changed as <a href="#sec-design-reach">above</a>.</li>
+        <li><code>src/lib/sim/world/funding/bounds.spec.ts</code> (new), on the fixture-0 calibration with the empty document, one world to month 480:
+          <ul>
+            <li>The last <code>in</code> ledger event of <code>city-debt</code> is on its second anniversary, of 500,000; of <code>city-impact-fees</code> on its first anniversary; of <code>city-housing-trust-fund</code> on 2042-10-10.</li>
+            <li><code>city-redevelopment</code> and <code>city-housing-stability-fund</code> have no <code>in</code> event and no programme.</li>
+            <li><code>city-ocoh</code>, <code>city-general-fund</code>, <code>state</code> and <code>federal-tax-credits</code> each have an <code>in</code> event in the window's last twelve months.</li>
+            <li>At least one funded start happens in the first year.</li>
+          </ul>
+        </li>
+        <li><code>src/lib/sim/world/funding/bounds.spec.ts</code>, on the older-format calibration fixture: the federal pool is never short in a 480-month run (no waiting row is short on it in any month) and its available money never falls below $99 billion.</li>
+      </ul>
+    </section>
+    <section id="sec-tests-page">
+      <h3>The page</h3>
+      <ul>
+        <li><code>src/lib/fzp/money-view.spec.ts</code>: <code>bySourceColumns</code> drops an all-zero Received column; <code>uncappedPoolIds</code> tests go.</li>
+        <li><code>src/lib/sim-page/funding-view.spec.ts</code>: the federal group's <code>perYear</code> is its ceiling; <code>scaleLines</code> on the federal pool gives the text it gives a City pool at the same scale; <code>poolMoneySentence</code> of the federal pool names its yearly amount, and of a $100 billion yearly pool reads "No ceiling"; a baseline pool with no programme is listed in its group.</li>
+        <li><code>src/lib/sim-page/funding-edit.spec.ts</code>: <code>addScaleEdit</code> on the federal group at 1.5 labels as on any group.</li>
+        <li><code>src/lib/sim-page/funding-presets.spec.ts</code>: presets build with pools that carry no <code>uncapped</code>.</li>
+        <li><code>src/lib/sim-page/FundingTab.svelte.spec.ts</code>: the federal group's entry is the group editor, with no "Switched back on" choice; a 150% change on it is applied; on an older-dataset baseline the federal row reads "Federal tax credits · No ceiling"; light and dark pass <code>expectNoA11yViolations</code>.</li>
+        <li><code>src/lib/timeline/pool-level.spec.ts</code>: the federal pool has a level; "Current funding" sums every baseline pool; a pool with a $100 billion yearly inflow has no level and stays out of the sum.</li>
+        <li><code>src/lib/fzp/money-view.spec.ts</code> and <code>MoneyResults</code> through <code>SimDetails.svelte.spec.ts</code>: a pool whose received is $100 billion reads "No ceiling" under Received.</li>
+        <li><code>src/lib/timeline/money-copy.spec.ts</code>: the tests moved from <code>copy.spec.ts</code>, unchanged.</li>
+        <li><code>src/lib/timeline/SimDetails.svelte.spec.ts</code>: the two "no limit" cases go; Received shows the federal pool's dollars. <code>TimelineMode.svelte.spec.ts</code>, <code>owner.spec.ts</code>, <code>Timeline.svelte.spec.ts</code> and the <code>src/lib/fzp</code> specs and fixtures drop <code>uncapped</code> from their pools and pass unchanged otherwise.</li>
+      </ul>
+    </section>
+  </section>
+
+  <section id="sec-docs">
+    <h2>Docs</h2>
+    <ul>
+      <li><code>docs/dev/finance-data.md</code>:
+        <ul>
+          <li>"<code>calibration.baselineFunding</code>": nine pools; each pool's inflows follow its bound, with the emission rules and one example per kind; programmes only for pools with an inflow; the table gains an End column and the federal row its ceiling.</li>
+          <li>"Why the federal pool has no ceiling" becomes "The federal ceiling": how it is read from the award rows, why the best year, and its check in the schema.</li>
+          <li>"<code>pipeline/enrichment/funding.json</code>": schema 2, the bound kinds and their validation, the tier rule (no tier 4), and that a source whose money ended stays in the file with its bound.</li>
+          <li>"Stable ids": <code>city-housing-stability-fund</code> added; the pinned ids are nine; a spent source stays, <code>retiredIds</code> is for sources removed.</li>
+          <li>"Updating <code>funding.json</code>": step 4 re-reads each bound's primary each year and recomputes the federal ceiling from the new award year; the impact-fee balance from the yearly fee report.</li>
+          <li>"Fixture mode": the twin's values and bounds.</li>
+          <li>A section "Older datasets": how <code>parseCalibration</code> reads a pool with <code>uncapped</code>, <code>LEGACY_UNCAPPED_DOLLARS</code>, <code>isNoCeiling</code> and where "No ceiling" shows.</li>
+          <li>V25's funding rule, as <a href="#sec-design-emit-v25">above</a>.</li>
+          <li>Every other "uncapped" goes.</li>
+        </ul>
+      </li>
+      <li><code>docs/dev/finance-engine.md</code>: the award rule's and the pool state's notes about an uncapped federal pool go; E4 holds for every pool and E6 is retired; the mini fixture's federal pool is described with its yearly inflow. "The known limit" stays: it holds for this engine.</li>
+      <li><code>docs/dev/finance-levers.md</code>: parse rules: an added pool's <code>uncapped</code> key, from documents written before this change, is ignored; <code>buildFinance</code> scales every baseline pool, the federal pool included.</li>
+      <li><code>docs/dev/world-funding.md</code>: <code>availableOf</code> has no infinite case; arrivals come for every pool.</li>
+      <li><code>docs/dev/finance-model.md</code>: the bundle-order paragraph's example says an added City loan would shrink the federal grant, which relieves nothing while the City pool commits the whole principal; "uncapped" and "that pool never binds" go.</li>
+    </ul>
+  </section>
+
+  <section id="sec-global-constraints">
+    <h2>Global constraints</h2>
+    <ul>
+      <li>Work happens in git worktrees under <code>.claude/worktrees/</code>. Commits follow Conventional Commits. No attribution to an AI anywhere.</li>
+      <li>Code style: 2-space indent, single quotes, no trailing commas, 100 columns.</li>
+      <li>Every Vitest test calls <code>expect</code>.</li>
+      <li>Signoff fails on server stderr, on timing crutches and on a retried flake. Each unit runs <code>npm run lint</code>, <code>npm run check</code> and the Vitest projects its files belong to before it hands back.</li>
+      <li>Port 4173 is shared by every session on this machine. A unit never kills a server it did not start; it waits.</li>
+      <li>Every agent runs every command in the foreground and never ends a turn while something it started is running.</li>
+      <li>Schema changes go through <code>npm run db:generate</code>. Nobody edits a migration.</li>
+      <li>No unit runs <code>npm run signoff</code>: its dataset step fails until the dataset is uploaded. <code>closing</code> runs it once, after the upload.</li>
+      <li>The dataset version changes in this build. The dataset is built and uploaded once, from the integration branch, after the last unit that writes a hashed path has merged; no unit uploads a dataset.</li>
+      <li>A unit that writes a hashed path regenerates the fixture dataset with <code>npm run pipeline -- fixture</code> and commits it.</li>
+      <li>WCAG 2.2 AA: every new control is at least 24 px and passes <code>expectNoA11yViolations</code> in light and dark.</li>
+      <li>Page text is short. No sentence says what something is not.</li>
+      <li>Nothing on the main screen says "RHNA". The goal is read from the <code>Goal</code> value, never from a constant.</li>
+      <li>The game's rules are read from <code>src/lib/game/</code>. No component compares a level to a number.</li>
+      <li>One future: no seed control, no band, no average over runs.</li>
+      <li>Published plans and policies, their ids and their pages keep working, including every policy published before this build.</li>
+      <li>A number that is a claim about the world carries its source and tier, in the existing <code>Sourced</code>, <code>Unsourced</code> and <code>Evidence</code> shapes.</li>
+      <li>A runtime dependency that ships in the bundle gets a credit in <code>SOFTWARE</code>. This build adds none.</li>
+      <li>CSP changes are interface changes. This build makes none.</li>
+      <li>Timing is measured only on a quiet machine. A unit that cannot get one defers the measurement and says so.</li>
+    </ul>
+  </section>
+
+  <section id="sec-out-of-scope">
+    <h2>Out of scope</h2>
+    <ul>
+      <li>Closing a spent pool in the step engine, and Details' "ran out" line: <code>pool-closing</code>.</li>
+      <li>Ends for the presets ("General Fund set-aside", "federal support", "state money doubled"), a pool's lifetime level, the window's last month in the funding editors, how a group's amount counts <code>once</code> inflows, any new sentence for the federal group, the read-only view of a given measure: <code>funding-measures</code>.</li>
+      <li>The real-data check that current law reaches the goal (<code>scripts/level2-check.ts</code>): <code>closing</code>.</li>
+      <li>Building and uploading the live dataset: done once from the integration branch after the last unit that writes a hashed path.</li>
+      <li>The two November 2026 measures (the Housing Trust Fund extension, the state bond) as given measures: a later change, no unit in this build.</li>
+      <li>Making debt service or the legal borrowing limits bind: level 6, not built.</li>
+      <li>The older scenario engine's known limit: it stays, as the step engine's referee.</li>
+      <li>Other docs that still name <code>uncapped</code>: <code>docs/dev/sim-funding.md</code> is rewritten by <code>funding-measures</code>; <code>pipeline.md</code>, <code>fzp-mode.md</code> and <code>testing.md</code> are swept by <code>closing</code>; <code>finance-score.md</code>'s I6 goes with <code>pool-closing</code>.</li>
+      <li>Running <code>npm run signoff</code>: <code>closing</code>, once, after the upload.</li>
+    </ul>
+  </section>
+</article>

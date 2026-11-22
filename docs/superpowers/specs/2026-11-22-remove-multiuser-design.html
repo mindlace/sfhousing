@@ -1,0 +1,826 @@
+<article>
+  <header>
+    <h1>Remove multiuser design</h1>
+    <p>Shared sims, invitations, members, roles and the per-sim Durable Object go; accounts stay, with no sims in them.</p>
+  </header>
+
+  <section id="sec-goal">
+    <h2>Goal</h2>
+    <p>This unit removes the multi-user stack and leaves the identity code standing on its own, as the <a href="../design/2026-11-22-1216-incremental-game.html">incremental-game design</a> rules (R1, D10). The request: "The whole multiplayer aspect - there's a whole invite/concurrent user subsystem - should be removed".</p>
+    <ul>
+      <li>The sim log, the browser log store, the sync client, the socket protocol and the members UI are deleted.</li>
+      <li>The server-side sims, invitations, the Durable Object, the operator takedown, the capability ledger and the authorization model are deleted.</li>
+      <li>The <code>/sims</code> and <code>/invite</code> pages and the <code>/api/sims</code>, <code>/api/invites</code> and <code>/api/operator</code> routes are deleted.</li>
+      <li>The identity code (<a href="#sec-if-i1">I1</a>) imports nothing from the removed code.</li>
+      <li>The tables <code>sim_index</code>, <code>sim_commit</code>, <code>sim_takedown</code>, <code>sim_invite</code> and <code>capability_event</code> are dropped by one generated migration. Every account is kept.</li>
+      <li>The Durable Object class <code>SimObject</code> is deleted with its storage, through a delete migration in <code>wrangler.jsonc</code>.</li>
+      <li>Published <code>/p</code> and <code>/s</code> links are untouched.</li>
+    </ul>
+  </section>
+
+  <section id="sec-interfaces">
+    <h2>Interfaces</h2>
+    <p>These rows and their sections are copied from the design document. A change to one is a change to the design.</p>
+    <table id="tbl-interfaces">
+      <caption>Interface table</caption>
+      <thead>
+        <tr><th scope="col">Row</th><th scope="col">Owner</th><th scope="col">Layer</th><th scope="col">Summary</th><th scope="col">Contract</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">I1</th><td><code>remove-multiuser</code></td><td>Decomposition choice</td><td>The identity code with no sims in it.</td><td><a href="#sec-if-i1">I1</a></td></tr>
+      </tbody>
+    </table>
+
+    <section id="sec-if-i1">
+      <h3>I1 The identity code with no sims in it</h3>
+      <pre><code data-lang="ts">// src/lib/server/onboarding/pseudonymous-mint.ts
+export async function mintPseudonymousSession(
+  event: RequestEvent,
+  deps?: Deps
+): Promise&lt;{ ok: true; user: User } | { ok: false; status: 429 | 500; message: string }&gt;;
+
+// src/lib/server/user-store/identity.ts
+export function handleAccountLink(args: {
+  db: Database;
+  /** Called with (survivorId, absorbedId) after two identities are joined. */
+  onFuse?: (survivorId: string, absorbedId: string) =&gt; Promise&lt;void&gt;;
+  /* the remaining fields as today, without `roster` */
+}): Promise&lt;void&gt;;
+
+// src/lib/server/user-store/deletion.ts
+export async function deleteAccount(args: {
+  db: Database;
+  identityId: string;
+}): Promise&lt;{ more: false }&gt;;
+
+// src/lib/server/security/same-origin-json.ts
+export function refuseUnlessSameOriginJson(event: RequestEvent): Response | null;
+
+// src/app.d.ts
+interface Locals {
+  user: User | null;
+  session: { id: string; userId: string } | null;
+}</code></pre>
+      <ul>
+        <li>No module under <code>src/lib/server/{auth,user-store,onboarding,security,email,email-templates}</code> imports from a sims, invites, members, sim-object, authz or operator module.</li>
+        <li>The mint's refusal texts and the origin check's texts live in <code>src/lib/account/copy.ts</code>.</li>
+        <li><code>deleteAccount</code> finishes in one request and always answers <code>{ more: false }</code>.</li>
+        <li><code>onFuse</code> is the one hook a join of two identities offers; <code>game-save</code> supplies it to move the absorbed identity's saved games.</li>
+        <li><code>locals.capabilities</code> and <code>locals.actorKind</code> are gone.</li>
+        <li><code>User</code>, <code>resolveSessionUser</code>, <code>updateProfile</code>, the known-device cookie and the pending-identifier cookie are unchanged.</li>
+        <li>The session route prefixes are <code>/api/auth</code>, <code>/account</code>, <code>/api/account</code>, <code>/signin</code>, <code>/forgot-password</code>, <code>/reset-password</code>, <code>/api/e2e</code>.</li>
+      </ul>
+      <p><strong>Removed:</strong> <code>reseedHandleFromSim</code>, the <code>pending-sim</code> cookie, the <code>startFresh</code> action, the invite email template, <code>requireCap</code>, <code>requireSimRole</code>, the <code>authz</code> and <code>event-log</code> directories, <code>resolveCapabilities</code>.</p>
+    </section>
+  </section>
+
+  <section id="sec-today">
+    <h2>What is there today</h2>
+    <p>Read on commit <code>8125e557</code>.</p>
+    <section id="sec-today-identity">
+      <h3>Identity code that reaches into sims</h3>
+      <ul>
+        <li><code>src/hooks.server.ts:7</code> imports <code>resolveCapabilities</code>; <code>:12-13</code> and <code>:53-61</code> set <code>locals.capabilities</code> and <code>locals.actorKind</code> on every request that resolves a session.</li>
+        <li><code>src/app.d.ts:3-4</code> imports <code>Capability</code> and <code>ActorKind</code> from <code>authz</code>; <code>:12</code> has <code>Error.resource?: 'sim'</code>; <code>:20-22</code> declare the two locals.</li>
+        <li><code>src/lib/server/auth/session-gate.ts:31-34</code> lists <code>/sims</code>, <code>/api/sims</code>, <code>/invite</code> and <code>/api/invites</code> as session routes.</li>
+        <li><code>src/lib/server/onboarding/pseudonymous-mint.ts:6</code> and <code>src/lib/server/security/same-origin-json.ts:2</code> take their texts from <code>SIMS_COPY</code> in <code>$lib/members/copy</code>.</li>
+        <li><code>src/lib/server/onboarding/pseudonymous-mint.ts</code> has three callers today, all removed here: <code>startSim</code>, the <code>startFresh</code> action and the invite page's <code>join</code>.</li>
+        <li><code>src/lib/server/user-store/identity.ts:6-9</code> imports from <code>sim-object</code> and <code>sims</code>. <code>:45-73</code> is <code>reseedHandleFromSim</code>. <code>:129-172</code> reads the absorbed identity's sims during a fuse; <code>:174-205</code> is <code>handleAccountLink</code> with its <code>roster</code> argument.</li>
+        <li><code>src/lib/server/user-store/deletion.ts:10,15,18-22</code> import <code>simInvite</code>, <code>Actor</code> and the sims modules. <code>:110-117</code> delete invitations. <code>:129-193</code> leave every sim in passes of 50 and answer <code>{ more }</code>.</li>
+        <li><code>src/lib/server/auth/better-auth.ts:297-305</code> passes <code>roster</code> to <code>handleAccountLink</code>.</li>
+        <li><code>src/routes/signin/+page.server.ts:12,17-23</code> import from sims, sim-object and pending-sim. <code>:40-42</code> load the pending sim. <code>:212-257</code> is the <code>startFresh</code> action, which mints an account and creates a sim.</li>
+        <li><code>src/routes/signin/+page.svelte:120-121</code> shows the pending sim line; <code>:278-289</code> is the "Start fresh without an account" form.</li>
+        <li><code>src/routes/api/account/+server.ts:35-44</code> passes <code>env</code>, <code>actor</code> and <code>defer</code> to <code>deleteAccount</code> and answers 202 while sims remain.</li>
+        <li><code>src/lib/account/DeleteAccountPane.svelte:13-14,43-66</code> repeats the request while it answers 202.</li>
+        <li><code>src/lib/account/account-copy.ts:58-59</code> holds the two multi-pass texts; <code>:67-68</code> the delete description that names sims.</li>
+        <li><code>src/lib/account/copy.ts:30</code> is <code>startFresh</code>; <code>:56</code> is <code>pendingSimLine</code>.</li>
+        <li><code>src/lib/server/security/rate-limit.ts:40-55</code> hold <code>RATE_LIMIT_MESSAGES</code> and <code>enforceMutationRate</code>, used only by the invite routes.</li>
+        <li><code>src/lib/server/email-templates/copy.ts:40-49</code> is the invite mail copy; <code>invite.ts</code> and <code>InviteEmail.svelte</code> build it.</li>
+        <li><code>src/lib/server/e2e/mail-sink.ts:4-5</code> has the <code>'invite'</code> mail kind.</li>
+        <li><code>src/lib/server/test/auth-db.ts:8-9,77-157</code> seed capability events and sims.</li>
+        <li><code>src/routes/api/account/profile/+server.ts:29-31</code> turns a missing <code>name</code> into <code>''</code>, so a request that changes only the handle clears the display name.</li>
+      </ul>
+    </section>
+    <section id="sec-today-platform">
+      <h3>Schema, Durable Object and config</h3>
+      <ul>
+        <li><code>src/lib/server/db/schema/index.ts:5,6,8</code> export <code>simControlPlane</code>, <code>simInvite</code> and <code>capabilityEvent</code>. The D1 migrations create 15 tables: nine identity tables, <code>plan</code> and the five this unit drops (<code>migrations/d1/*.sql</code>).</li>
+        <li><code>wrangler.jsonc:6-8</code> is the <code>alias</code> for the Durable Object's modules; <code>:9-10</code> the <code>SIM</code> binding and the <code>v1-sim-object</code> migration; <code>:51-52</code> the same under staging.</li>
+        <li><code>wrangler.jsonc:31</code> and <code>:81</code> are <code>INVITE_RL</code>; <code>:33-37</code> and <code>:87-91</code> are <code>MUTATION_REGISTERED_RL</code>.</li>
+        <li><code>scripts/worker-entry.ts:16</code> re-exports <code>SimObject</code>; <code>package.json:13</code> runs it after <code>vite build</code>.</li>
+        <li><code>package.json:27</code> is <code>db:generate:sim</code>. <code>drizzle.sim.config.ts</code> and <code>migrations/sim/</code> are the sim object's own SQLite track.</li>
+        <li><code>drizzle-cf.config.ts:7-15</code> and <code>:18</code> declare the <code>sim</code> track and import <code>src/lib/server/sim-object/schema</code>.</li>
+        <li><code>svelte.config.js:9-22</code> is the CSP. <code>connect-src</code> is <code>['self']</code> only; the sim socket needed nothing more.</li>
+        <li>Neither environment has <code>SIM_TAKEDOWN_TOKEN</code> or <code>BOOTSTRAP_EMAILS</code> set: <code>wrangler secret list</code> shows only <code>BETTER_AUTH_SECRET</code> on each.</li>
+        <li>No runtime or dev dependency is used only by the removed code. <code>fast-check</code> stays: the generator, data and plan tests use it.</li>
+      </ul>
+    </section>
+  </section>
+
+  <section id="sec-design">
+    <h2>Design</h2>
+
+    <section id="sec-design-removed-urls">
+      <h3>Removed URLs</h3>
+      <ul>
+        <li>Every path under <code>/sims</code>, <code>/invite</code>, <code>/api/sims</code>, <code>/api/invites</code> and <code>/api/operator</code> has no route and answers 404.</li>
+        <li>A page path renders the root error page ("Page not found", with "Go to the home page").</li>
+        <li>No removed path redirects anywhere.</li>
+        <li>A request to a removed path with a session cookie still resolves the session in the hook, as any path with a cookie does, then answers 404.</li>
+        <li>An invitation link sent before this build lands on the 404 page.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-locals">
+      <h3>Locals and the hook</h3>
+      <pre><code data-lang="ts">// src/app.d.ts
+interface Error {
+  message: string;
+  reference?: string;
+}
+interface Locals {
+  user: User | null;
+  session: { id: string; userId: string } | null;
+}
+// PageState and Platform unchanged.</code></pre>
+      <ul>
+        <li><code>sessionHandle</code> sets <code>user</code> and <code>session</code> only. It reads no capability and no <code>BOOTSTRAP_EMAILS</code>.</li>
+        <li>A request that resolves no session user gets <code>{ user: null, session: null }</code>.</li>
+        <li><code>PageState.sfhSimRemix</code> stays: it is the <code>/s</code> to <code>/sim</code> remix hand-off, which has nothing to do with server-side sims.</li>
+        <li>The websocket branch of <code>sessionHandle</code> (<code>disableRefresh</code> on an upgrade request) and its comment go: no route accepts a websocket.</li>
+        <li><code>headersHandle</code> is unchanged.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-gate">
+      <h3>Session gate</h3>
+      <pre><code data-lang="ts">const SESSION_ROUTE_PREFIXES = [
+  '/api/auth',
+  '/account',
+  '/api/account',
+  '/signin',
+  '/forgot-password',
+  '/reset-password',
+  '/api/e2e'
+] as const;</code></pre>
+    </section>
+
+    <section id="sec-design-copy">
+      <h3>Texts that leave the members copy</h3>
+      <p>The mint's refusals and the origin check's refusals move to <code>AUTH_COPY</code> in <code>src/lib/account/copy.ts</code>. The two refusal texts that named sims are reworded.</p>
+      <pre><code data-lang="ts">// added to AUTH_COPY
+tooManyAccounts: 'Too many new accounts too quickly. Wait a moment.',
+sessionStart: "Couldn't start your session. Try again.",
+jsonRequired: 'Send JSON.',
+crossOrigin: 'Cross-site requests are not allowed.'</code></pre>
+      <ul>
+        <li><code>mintPseudonymousSession</code> answers 429 with <code>AUTH_COPY.tooManyAccounts</code> and 500 with <code>AUTH_COPY.sessionStart</code>.</li>
+        <li><code>refuseUnlessSameOriginJson</code> answers 415 <code>{ error: AUTH_COPY.jsonRequired }</code> and <code>refuseForeignOrigin</code> 403 <code>{ error: AUTH_COPY.crossOrigin }</code>.</li>
+        <li><code>AUTH_COPY.startFresh</code> and <code>pendingSimLine</code> are deleted.</li>
+        <li>The mint keeps its signature, its <code>PSEUDO_MINT_RL</code> brake (key <code>pseudo_mint:&lt;ip&gt;</code>, critical) and its doc comment, reworded to say it is the one mint seam and names no caller. It has no caller until <code>game-save</code> adds one.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-identity">
+      <h3>Identity files: what goes and what stays</h3>
+      <dl>
+        <dt><code>src/lib/server/user-store/identity.ts</code></dt>
+        <dd>
+          <ul>
+            <li>Goes: the imports of <code>loggable</code>, <code>rosterChangedAll</code>, <code>SimEnv</code> and <code>foldSimsForUser</code>; <code>reseedHandleFromSim</code>; the sims read inside <code>applyFuse</code> and its <code>readSims</code> parameter; the <code>roster</code> argument and its fan-out.</li>
+            <li>Stays: <code>createIdentityForNewVersion</code>, <code>normalizeLinkArgs</code>, <code>applyUpgrade</code> and the fuse's writes, unchanged.</li>
+            <li>New: <code>handleAccountLink</code> takes <code>onFuse</code> (<a href="#sec-if-i1">I1</a>).</li>
+          </ul>
+        </dd>
+        <dt><code>src/lib/server/user-store/deletion.ts</code></dt>
+        <dd>
+          <ul>
+            <li>Goes: the <code>simInvite</code>, <code>Actor</code>, sims and sim-object imports; the membership loop; <code>DELETE_SIMS_PER_PASS</code>; the <code>env</code>, <code>actor</code>, <code>defer</code> and <code>perPass</code> arguments; the invitation delete in <code>purgeCredentialsAndSettings</code>.</li>
+            <li>Stays: <code>closeAccountRows</code> and its steps in order (release the handle, scrub the live row, record the tombstone version, hash earlier versions across the identity union, purge credentials, mark the identity deleted last).</li>
+            <li><code>purgeCredentialsAndSettings(db, liveUserId)</code> deletes the session, account and passkey rows of the live user. Its <code>identityIds</code> parameter goes.</li>
+          </ul>
+        </dd>
+        <dt><code>src/lib/server/user-store/handle.ts</code></dt>
+        <dd><code>generateUniqueHandle</code>'s <code>simTitle</code> argument is renamed <code>seedText</code>. Its behaviour is unchanged; <code>createIdentityForNewVersion</code> passes the display name as <code>seedText</code>.</dd>
+        <dt><code>src/lib/server/user-store/handle-normalize.ts</code></dt>
+        <dd>Unchanged. The reserved handles <code>invite</code>, <code>sims</code> and <code>sim</code> stay reserved.</dd>
+        <dt><code>src/lib/server/onboarding/</code></dt>
+        <dd><code>pending-sim.ts</code> is deleted. <code>known-device.ts</code>, <code>pending-identifier.ts</code> and <code>pseudonymous-mint.ts</code> stay; the mint's texts change as above. The comment in <code>pending-identifier.ts:9</code> that names <code>sfh_pending_sim</code> is reworded.</dd>
+        <dt><code>src/lib/server/security/</code></dt>
+        <dd><code>same-origin-json.ts</code> takes its texts from <code>AUTH_COPY</code>. <code>rate-limit.ts</code> loses <code>RATE_LIMIT_MESSAGES</code> and <code>enforceMutationRate</code>; <code>enforceRate</code> is unchanged and its header comment lists the remaining bindings.</dd>
+        <dt><code>src/lib/server/email-templates/</code></dt>
+        <dd><code>invite.ts</code>, <code>invite.spec.ts</code> and <code>InviteEmail.svelte</code> are deleted; <code>copy.ts</code> loses its <code>invite</code> block. Sign-in, reset, change-approve and confirm mails are unchanged.</dd>
+        <dt><code>src/lib/server/e2e/</code></dt>
+        <dd><code>E2eMailKind</code> is <code>'password-reset' | 'change-email-approve' | 'change-email-verify'</code>. <code>session.ts</code> gains <code>mintTestPseudonym</code> (<a href="#sec-design-e2e">e2e seams</a>).</dd>
+        <dt><code>src/lib/server/auth/better-auth.ts</code></dt>
+        <dd>The <code>onLinkAccount</code> callback calls <code>handleAccountLink</code> with <code>db</code>, <code>isUpgrade</code> and the link ids only. The comment in <code>google-provider.ts</code> that names a first-time operator and <code>BOOTSTRAP_EMAILS</code> is reworded to a first-time user.</dd>
+        <dt><code>src/lib/server/test/</code></dt>
+        <dd><code>auth-db.ts</code> loses <code>grantEvent</code>, <code>seedSim</code>, <code>seedManagedSims</code> and their imports; <code>freshDb</code>, <code>makePlatform</code>, <code>seedUser</code> and <code>seedIdentity</code> stay. <code>sim-env.ts</code> is deleted. <code>sim-docs.ts</code> stays: the sharing and timeline tests use it.</dd>
+      </dl>
+      <ul>
+        <li><code>handleAccountLink</code> calls <code>onFuse(survivorId, absorbedId)</code> once, after the fuse batch has committed, with the survivor's identity id and the absorbed pseudonymous identity id.</li>
+        <li>It calls <code>onFuse</code> only on a fuse that wrote: never on an upgrade, never when the two identities are already one, never when either live row is missing.</li>
+        <li>An error thrown by <code>onFuse</code> propagates, so the sign-in fails loudly, as a failed fuse does today.</li>
+        <li><code>deleteAccount({ db, identityId })</code> returns <code>{ more: false }</code> in every case, including an unknown or already deleted identity.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-signin">
+      <h3>Sign-in</h3>
+      <ul>
+        <li>The <code>/signin</code> load returns <code>signup</code>, <code>linkError</code>, <code>googleError</code>, <code>pendingIdentifier</code>, <code>reset</code> and <code>methods</code>. <code>pendingSim</code> goes.</li>
+        <li>The actions are <code>sendLink</code> and <code>signInPassword</code>, unchanged. <code>startFresh</code> goes, with its form.</li>
+        <li>A sign-in by link, password, passkey or Google returns to <code>returnTo</code>, made safe by <code>safeReturnTo</code>, or to <code>/</code>. Nothing is resumed after sign-in.</li>
+        <li>The pending-identifier cookie keeps its reader and its clears in <code>/signin</code>; nothing writes it once the invite page is gone.</li>
+        <li>With no sign-in method in effect, <code>/signin</code> renders its heading and no form.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-account">
+      <h3>Account page and deletion</h3>
+      <ul>
+        <li>The account page listed no sims, memberships or invitations; its panes are unchanged except for the delete pane.</li>
+        <li><code>DELETE /api/account</code> runs the origin check (415, 403), answers 401 <code>{ error: ACCOUNT_COPY.signinRequired }</code> with no user, 400 <code>{ deleteError: ACCOUNT_COPY.handleMismatch }</code> on a wrong handle, then calls <code>deleteAccount({ db, identityId })</code>, signs out best-effort and answers 200 <code>{ ok: true }</code>. It never answers 202.</li>
+        <li><code>DeleteAccountPane</code> sends one request. A 2xx calls <code>onDeleted</code>. A 400 shows the body's <code>deleteError</code>, or <code>ACCOUNT_COPY.handleMismatch</code>. Anything else, and a network failure, shows <code>ACCOUNT_COPY.networkError</code>.</li>
+        <li><code>ACCOUNT_COPY.deleteNotFinished</code>, <code>ACCOUNT_COPY.deleteSignedOut</code> and <code>DELETE_PASSES_MAX</code> are deleted.</li>
+        <li><code>ACCOUNT_COPY.deleteDescription</code> is "Deletes your account and the games saved to it. Published plans and policies stay. This cannot be undone."</li>
+        <li><code>PATCH /api/account/profile</code> leaves the display name unchanged when the body has no <code>name</code> field. A <code>name</code> that is present, including <code>''</code>, is applied as today. The handle rule is unchanged.</li>
+        <li>The comments in <code>src/routes/account/+page.server.ts</code> that name sims say instead that a pseudonymous account with no way back in would be lost, and that the known-device cookie steers the next save from this device to sign-in.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-schema">
+      <h3>Tables and the migration</h3>
+      <p>Dropped, by deleting their schema files and removing their exports from <code>src/lib/server/db/schema/index.ts</code>:</p>
+      <ul>
+        <li><code>sim_index</code>, <code>sim_takedown</code>, <code>sim_commit</code> (<code>simControlPlane.ts</code>)</li>
+        <li><code>sim_invite</code> (<code>simInvite.ts</code>)</li>
+        <li><code>capability_event</code> (<code>capabilityEvent.ts</code>, with <code>src/lib/server/db/capability-events.ts</code>)</li>
+      </ul>
+      <p>Kept, the nine identity tables:</p>
+      <ul>
+        <li><code>principal</code>, <code>user_identity</code>, <code>user</code>, <code>session</code>, <code>account</code>, <code>verification</code>, <code>passkey</code>, <code>user_version</code>, <code>handle_tombstone</code></li>
+      </ul>
+      <p>The publish table <code>plan</code> is kept unchanged.</p>
+      <pre><code data-lang="ts">// src/lib/server/db/schema/index.ts
+export * from './plan';
+export * from './principal';
+export * from './users';
+export * from './auth';
+export * from './userVersion';
+export * from './handleTombstone';</code></pre>
+      <ul>
+        <li>The migration is generated with <code>npm run db:generate</code> after the schema change and committed as generated. Nobody edits it.</li>
+        <li>The generated SQL drops the five tables and nothing else. A generated migration that touches a kept table is a defect in the schema change, fixed in the schema.</li>
+        <li>The comment on <code>principal</code> (<code>principal.ts:3-10</code>) is reworded: it is the supertype of every identity, and <code>user_identity.id</code> references it.</li>
+        <li>Existing rows: every account, identity, session, credential, passkey, history row and handle tombstone is kept as it is.</li>
+        <li>Every sim's index row, commit copy, takedown mark, invitation and capability grant, operator grants included, is dropped with its table.</li>
+        <li>An account that held only sims keeps working and owns nothing until it saves a game.</li>
+        <li>No kept table has a column that refers to a sim, so no kept row changes.</li>
+        <li>The deploy workflows apply the D1 migration before <code>wrangler deploy</code>. Between the two steps the old Worker can answer a removed sims page with an error; nothing a person used depends on it (D10).</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-do">
+      <h3>The Durable Object</h3>
+      <ul>
+        <li><code>src/lib/server/sim-object/</code> is deleted, so no module exports <code>SimObject</code>.</li>
+        <li><code>scripts/worker-entry.ts</code> and its spec are deleted. <code>build</code> is <code>vite build</code>, and wrangler's <code>main</code> stays <code>.svelte-kit/cloudflare/_worker.js</code>, now the adapter's own output.</li>
+        <li>The top-level <code>alias</code> in <code>wrangler.jsonc</code> and its comment go: nothing outside the Vite build is bundled from source.</li>
+        <li>The <code>durable_objects</code> key goes from the top level and from <code>env.staging</code>.</li>
+        <li>Cloudflare deletes a deployed class only through a delete migration, applied by <code>wrangler deploy</code> once the binding and the class export are gone. The <code>migrations</code> array keeps its first entry and gains one, at the top level and under <code>env.staging</code>:</li>
+      </ul>
+      <pre><code data-lang="json">"migrations": [
+  { "tag": "v1-sim-object", "new_sqlite_classes": ["SimObject"] },
+  { "tag": "v2-delete-sim-object", "deleted_classes": ["SimObject"] }
+]</code></pre>
+      <ul>
+        <li>The delete migration deletes every sim object and its stored log. That is D10's ruling: no page ever opened one.</li>
+        <li>A class lifecycle change cannot be rolled back past, and cannot go out through a gradual version upload. Both workflows already run <code>wrangler deploy</code>, which applies it.</li>
+        <li>The <code>v1-sim-object</code> entry stays: wrangler compares the array with the migrations already applied, and removing an applied entry is refused.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-config">
+      <h3>Rate limits, secrets, scripts and the CSP</h3>
+      <ul>
+        <li><code>INVITE_RL</code> goes from both environments: nothing reads it.</li>
+        <li><code>MUTATION_REGISTERED_RL</code> stays in both environments, with its namespaces 4107 and 4207 and its limit of 120 a minute. It has no reader in this unit; <code>game-save</code> uses it to guard writes of saved games.</li>
+        <li>The remaining bindings are <code>PUBLISH_RL</code>, <code>AUTH_LINK_RL</code>, <code>AUTH_PASSWORD_RL</code>, <code>PSEUDO_MINT_RL</code>, <code>ACCOUNT_EDIT_RL</code> and <code>MUTATION_REGISTERED_RL</code>.</li>
+        <li><code>SIM_TAKEDOWN_TOKEN</code> and <code>BOOTSTRAP_EMAILS</code> are read by nothing. Neither is set on either environment, so no secret is deleted.</li>
+        <li>The e2e server command in <code>playwright.config.ts</code> loses its <code>SIM_TAKEDOWN_TOKEN</code> var and the comment above it.</li>
+        <li><code>package.json</code>: <code>build</code> becomes <code>vite build</code>; <code>db:generate:sim</code> goes. No dependency is removed.</li>
+        <li><code>drizzle.sim.config.ts</code> and <code>migrations/sim/</code> are deleted.</li>
+        <li><code>svelte.config.js</code> is unchanged: this build makes no CSP change. The CSP never held anything for the sim socket; <code>connect-src 'self'</code> covers a same-origin websocket and is needed by every fetch.</li>
+        <li>After a build, <code>npm run types</code> regenerates <code>worker-configuration.d.ts</code> with no <code>SIM</code>, <code>INVITE_RL</code> or <code>SIM_TAKEDOWN_TOKEN</code>.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-e2e">
+      <h3>e2e seams</h3>
+      <p>The account specs need a pseudonymous account without playing the game. The e2e login seam mints one.</p>
+      <pre><code data-lang="ts">// src/lib/server/e2e/session.ts
+/** A live pseudonymous `user` row and its identity, as the anonymous plugin would make them. */
+export async function mintTestPseudonym(
+  db: Database,
+  now: Date
+): Promise&lt;{ userId: string; identityId: string }&gt;;
+
+// POST /api/e2e/login body
+type E2eLoginBody = { email: string } | { pseudonymous: true };
+
+// e2e/helpers/account.ts
+/** Sign this context in as a fresh pseudonymous account. */
+export function startPseudonymous(page: Page): Promise&lt;void&gt;;</code></pre>
+      <ul>
+        <li><code>mintTestPseudonym</code> writes a <code>principal</code>, a <code>user_identity</code> and a <code>user</code> with <code>isAnonymous</code> true, <code>emailVerified</code> false, the email <code>&lt;userId&gt;@</code> plus <code>PSEUDONYMOUS_EMAIL_DOMAIN</code>, and a handle from <code>generateUniqueHandle</code>.</li>
+        <li><code>POST /api/e2e/login</code> with <code>{ pseudonymous: true }</code> mints one, issues a session as for an email and answers <code>{ userId }</code> with the session cookie. The gates (<code>VITE_E2E</code>, <code>isE2eEnv</code>) are unchanged.</li>
+        <li><code>startPseudonymous(page)</code> posts that body through <code>page.request</code>, so the cookie lands in the page's context. It takes no title.</li>
+        <li><code>/api/e2e/mail</code> accepts the three kinds of <code>E2eMailKind</code>; <code>kind=invite</code> answers 404.</li>
+      </ul>
+    </section>
+  </section>
+
+  <section id="sec-write-set">
+    <h2>Write set</h2>
+    <p>The design document's row for <code>remove-multiuser</code>:</p>
+    <ul>
+      <li><code>src/lib/{sim-log,sim-store,sim-sync,sim-stream,members}/**</code></li>
+      <li><code>src/lib/server/{sims,invites,sim-object,operator,authz,event-log}/**</code></li>
+      <li><code>src/lib/server/{auth,user-store,onboarding,security,email-templates,e2e,test}/**</code></li>
+      <li><code>src/lib/server/db/**</code></li>
+      <li><code>migrations/**</code></li>
+      <li><code>src/routes/{sims,invite,signin,account}/**</code></li>
+      <li><code>src/routes/api/{sims,invites,operator,account,e2e}/**</code></li>
+      <li><code>src/hooks.server.ts</code>, <code>src/app.d.ts</code></li>
+      <li><code>src/lib/account/**</code></li>
+      <li><code>scripts/worker-entry*.ts</code>, <code>scripts/wrangler-config.spec.ts</code></li>
+      <li><code>wrangler.jsonc</code>, <code>package.json</code>, <code>drizzle.sim.config.ts</code>, <code>drizzle-cf.config.ts</code>, <code>svelte.config.js</code>, <code>playwright.config.ts</code></li>
+      <li>The multi-user and account e2e specs and helpers</li>
+      <li><code>docs/dev/auth.md</code></li>
+    </ul>
+    <p>This unit needs nothing from <code>contracts</code> or any other unit and can start at once.</p>
+    <p>Ordering notes that concern this unit:</p>
+    <ul>
+      <li>A write set includes the tests, harnesses and test helpers that sit beside its files and test only them.</li>
+      <li>The schema index, <code>wrangler.jsonc</code>, the auth files and <code>docs/dev/auth.md</code> are written by <code>remove-multiuser</code> and then by <code>game-save</code>; the second needs I1.</li>
+      <li><code>package.json</code>, <code>src/app.d.ts</code> and <code>playwright.config.ts</code> are written by <code>remove-multiuser</code>; <code>closing</code> writes the first two after it.</li>
+      <li>Links to a deleted doc file are fixed by <code>closing</code>.</li>
+      <li>Migrations are generated, never hand-edited: <code>remove-multiuser</code> generates one that drops tables, <code>game-save</code> one that adds <code>game_save</code>.</li>
+    </ul>
+
+    <section id="sec-write-set-deleted">
+      <h3>Deleted</h3>
+      <p>Whole directories (every tracked file under each):</p>
+          <details>
+            <summary><code>src/lib/sim-log/</code>: 25 files</summary>
+            <ul>
+              <li><code>src/lib/sim-log/chain.spec.ts</code></li>
+              <li><code>src/lib/sim-log/chain.ts</code></li>
+              <li><code>src/lib/sim-log/check.spec.ts</code></li>
+              <li><code>src/lib/sim-log/check.ts</code></li>
+              <li><code>src/lib/sim-log/diff.spec.ts</code></li>
+              <li><code>src/lib/sim-log/diff.ts</code></li>
+              <li><code>src/lib/sim-log/history.spec.ts</code></li>
+              <li><code>src/lib/sim-log/history.ts</code></li>
+              <li><code>src/lib/sim-log/index.spec.ts</code></li>
+              <li><code>src/lib/sim-log/index.ts</code></li>
+              <li><code>src/lib/sim-log/items.spec.ts</code></li>
+              <li><code>src/lib/sim-log/items.ts</code></li>
+              <li><code>src/lib/sim-log/keys.spec.ts</code></li>
+              <li><code>src/lib/sim-log/keys.ts</code></li>
+              <li><code>src/lib/sim-log/parse.spec.ts</code></li>
+              <li><code>src/lib/sim-log/parse.ts</code></li>
+              <li><code>src/lib/sim-log/reapply.spec.ts</code></li>
+              <li><code>src/lib/sim-log/reapply.ts</code></li>
+              <li><code>src/lib/sim-log/shapes.spec.ts</code></li>
+              <li><code>src/lib/sim-log/shapes.ts</code></li>
+              <li><code>src/lib/sim-log/state.spec.ts</code></li>
+              <li><code>src/lib/sim-log/state.ts</code></li>
+              <li><code>src/lib/sim-log/test/arbitraries.ts</code></li>
+              <li><code>src/lib/sim-log/test/fixtures.ts</code></li>
+              <li><code>src/lib/sim-log/types.ts</code></li>
+            </ul>
+          </details>
+          <details>
+            <summary><code>src/lib/sim-store/</code>: 18 files</summary>
+            <ul>
+              <li><code>src/lib/sim-store/author.spec.ts</code></li>
+              <li><code>src/lib/sim-store/author.ts</code></li>
+              <li><code>src/lib/sim-store/dataset.spec.ts</code></li>
+              <li><code>src/lib/sim-store/dataset.ts</code></li>
+              <li><code>src/lib/sim-store/history.spec.ts</code></li>
+              <li><code>src/lib/sim-store/history.ts</code></li>
+              <li><code>src/lib/sim-store/idb.svelte.spec.ts</code></li>
+              <li><code>src/lib/sim-store/idb.ts</code></li>
+              <li><code>src/lib/sim-store/local-log.spec.ts</code></li>
+              <li><code>src/lib/sim-store/local-log.ts</code></li>
+              <li><code>src/lib/sim-store/log-store.persist.spec.ts</code></li>
+              <li><code>src/lib/sim-store/log-store.spec.ts</code></li>
+              <li><code>src/lib/sim-store/log-store.svelte.ts</code></li>
+              <li><code>src/lib/sim-store/sim-db.spec.ts</code></li>
+              <li><code>src/lib/sim-store/sim-db.ts</code></li>
+              <li><code>src/lib/sim-store/test/commits.ts</code></li>
+              <li><code>src/lib/sim-store/test/sim-db-contract.ts</code></li>
+              <li><code>src/lib/sim-store/types.ts</code></li>
+            </ul>
+          </details>
+          <details>
+            <summary><code>src/lib/sim-sync/</code>: 19 files</summary>
+            <ul>
+              <li><code>src/lib/sim-sync/backoff.spec.ts</code></li>
+              <li><code>src/lib/sim-sync/backoff.ts</code></li>
+              <li><code>src/lib/sim-sync/browser.svelte.spec.ts</code></li>
+              <li><code>src/lib/sim-sync/ports.spec.ts</code></li>
+              <li><code>src/lib/sim-sync/ports.ts</code></li>
+              <li><code>src/lib/sim-sync/register.spec.ts</code></li>
+              <li><code>src/lib/sim-sync/register.ts</code></li>
+              <li><code>src/lib/sim-sync/save-state.spec.ts</code></li>
+              <li><code>src/lib/sim-sync/save-state.ts</code></li>
+              <li><code>src/lib/sim-sync/sim-socket.spec.ts</code></li>
+              <li><code>src/lib/sim-sync/sim-socket.ts</code></li>
+              <li><code>src/lib/sim-sync/sim-sync.spec.ts</code></li>
+              <li><code>src/lib/sim-sync/sim-sync.svelte.ts</code></li>
+              <li><code>src/lib/sim-sync/tabs.spec.ts</code></li>
+              <li><code>src/lib/sim-sync/tabs.ts</code></li>
+              <li><code>src/lib/sim-sync/test/fakes.spec.ts</code></li>
+              <li><code>src/lib/sim-sync/test/fakes.ts</code></li>
+              <li><code>src/lib/sim-sync/test/hub.spec.ts</code></li>
+              <li><code>src/lib/sim-sync/test/hub.ts</code></li>
+            </ul>
+          </details>
+          <details>
+            <summary><code>src/lib/sim-stream/</code>: 5 files</summary>
+            <ul>
+              <li><code>src/lib/sim-stream/limits.spec.ts</code></li>
+              <li><code>src/lib/sim-stream/limits.ts</code></li>
+              <li><code>src/lib/sim-stream/protocol.spec.ts</code></li>
+              <li><code>src/lib/sim-stream/protocol.ts</code></li>
+              <li><code>src/lib/sim-stream/register.ts</code></li>
+            </ul>
+          </details>
+          <details>
+            <summary><code>src/lib/members/</code>: 13 files</summary>
+            <ul>
+              <li><code>src/lib/members/InvitationsList.svelte</code></li>
+              <li><code>src/lib/members/InvitationsList.svelte.spec.ts</code></li>
+              <li><code>src/lib/members/InviteBanner.svelte</code></li>
+              <li><code>src/lib/members/InviteBanner.svelte.spec.ts</code></li>
+              <li><code>src/lib/members/LeaveSimConfirm.svelte</code></li>
+              <li><code>src/lib/members/LeaveSimConfirm.svelte.spec.ts</code></li>
+              <li><code>src/lib/members/MembersPanel.svelte</code></li>
+              <li><code>src/lib/members/MembersPanel.svelte.spec.ts</code></li>
+              <li><code>src/lib/members/copy.ts</code></li>
+              <li><code>src/lib/members/invite-banner.spec.ts</code></li>
+              <li><code>src/lib/members/invite-banner.ts</code></li>
+              <li><code>src/lib/members/membership-overlay.svelte.spec.ts</code></li>
+              <li><code>src/lib/members/membership-overlay.svelte.ts</code></li>
+            </ul>
+          </details>
+          <details>
+            <summary><code>src/lib/server/sims/</code>: 16 files</summary>
+            <ul>
+              <li><code>src/lib/server/sims/live-sim.ts</code></li>
+              <li><code>src/lib/server/sims/rename.spec.ts</code></li>
+              <li><code>src/lib/server/sims/rename.ts</code></li>
+              <li><code>src/lib/server/sims/roster-hook.spec.ts</code></li>
+              <li><code>src/lib/server/sims/roster-hook.ts</code></li>
+              <li><code>src/lib/server/sims/sim-index.spec.ts</code></li>
+              <li><code>src/lib/server/sims/sim-index.ts</code></li>
+              <li><code>src/lib/server/sims/sim-quota.spec.ts</code></li>
+              <li><code>src/lib/server/sims/sim-quota.ts</code></li>
+              <li><code>src/lib/server/sims/sim-roles.spec.ts</code></li>
+              <li><code>src/lib/server/sims/sim-roles.ts</code></li>
+              <li><code>src/lib/server/sims/sims.spec.ts</code></li>
+              <li><code>src/lib/server/sims/sims.ts</code></li>
+              <li><code>src/lib/server/sims/stamp.ts</code></li>
+              <li><code>src/lib/server/sims/start-sim.spec.ts</code></li>
+              <li><code>src/lib/server/sims/start-sim.ts</code></li>
+            </ul>
+          </details>
+          <details>
+            <summary><code>src/lib/server/invites/</code>: 10 files</summary>
+            <ul>
+              <li><code>src/lib/server/invites/claim.spec.ts</code></li>
+              <li><code>src/lib/server/invites/claim.ts</code></li>
+              <li><code>src/lib/server/invites/control-plane.spec.ts</code></li>
+              <li><code>src/lib/server/invites/control-plane.ts</code></li>
+              <li><code>src/lib/server/invites/email.spec.ts</code></li>
+              <li><code>src/lib/server/invites/email.ts</code></li>
+              <li><code>src/lib/server/invites/error-code.spec.ts</code></li>
+              <li><code>src/lib/server/invites/error-code.ts</code></li>
+              <li><code>src/lib/server/invites/token.spec.ts</code></li>
+              <li><code>src/lib/server/invites/token.ts</code></li>
+            </ul>
+          </details>
+          <details>
+            <summary><code>src/lib/server/sim-object/</code>: 27 files</summary>
+            <ul>
+              <li><code>src/lib/server/sim-object/access.spec.ts</code></li>
+              <li><code>src/lib/server/sim-object/access.ts</code></li>
+              <li><code>src/lib/server/sim-object/decide.spec.ts</code></li>
+              <li><code>src/lib/server/sim-object/decide.ts</code></li>
+              <li><code>src/lib/server/sim-object/index-runner.spec.ts</code></li>
+              <li><code>src/lib/server/sim-object/index-runner.ts</code></li>
+              <li><code>src/lib/server/sim-object/index-sync.spec.ts</code></li>
+              <li><code>src/lib/server/sim-object/index-sync.ts</code></li>
+              <li><code>src/lib/server/sim-object/limits.spec.ts</code></li>
+              <li><code>src/lib/server/sim-object/limits.ts</code></li>
+              <li><code>src/lib/server/sim-object/log-host.spec.ts</code></li>
+              <li><code>src/lib/server/sim-object/log-host.ts</code></li>
+              <li><code>src/lib/server/sim-object/migrations.generated.ts</code></li>
+              <li><code>src/lib/server/sim-object/migrations.spec.ts</code></li>
+              <li><code>src/lib/server/sim-object/object-rules.spec.ts</code></li>
+              <li><code>src/lib/server/sim-object/object-rules.ts</code></li>
+              <li><code>src/lib/server/sim-object/open-params.spec.ts</code></li>
+              <li><code>src/lib/server/sim-object/open-params.ts</code></li>
+              <li><code>src/lib/server/sim-object/resume-budget.spec.ts</code></li>
+              <li><code>src/lib/server/sim-object/resume-budget.ts</code></li>
+              <li><code>src/lib/server/sim-object/schema.ts</code></li>
+              <li><code>src/lib/server/sim-object/sim-object.ts</code></li>
+              <li><code>src/lib/server/sim-object/store.spec.ts</code></li>
+              <li><code>src/lib/server/sim-object/store.ts</code></li>
+              <li><code>src/lib/server/sim-object/stub.ts</code></li>
+              <li><code>src/lib/server/sim-object/test/drafts.ts</code></li>
+              <li><code>src/lib/server/sim-object/test/harness.ts</code></li>
+            </ul>
+          </details>
+          <details>
+            <summary><code>src/lib/server/operator/</code>: 7 files</summary>
+            <ul>
+              <li><code>src/lib/server/operator/capabilities.spec.ts</code></li>
+              <li><code>src/lib/server/operator/capabilities.ts</code></li>
+              <li><code>src/lib/server/operator/grants.spec.ts</code></li>
+              <li><code>src/lib/server/operator/grants.ts</code></li>
+              <li><code>src/lib/server/operator/registry.ts</code></li>
+              <li><code>src/lib/server/operator/token.spec.ts</code></li>
+              <li><code>src/lib/server/operator/token.ts</code></li>
+            </ul>
+          </details>
+          <details>
+            <summary><code>src/lib/server/authz/</code>: 15 files</summary>
+            <ul>
+              <li><code>src/lib/server/authz/ability.spec.ts</code></li>
+              <li><code>src/lib/server/authz/ability.ts</code></li>
+              <li><code>src/lib/server/authz/actor.ts</code></li>
+              <li><code>src/lib/server/authz/authorize.spec.ts</code></li>
+              <li><code>src/lib/server/authz/authorize.ts</code></li>
+              <li><code>src/lib/server/authz/enforcement-parity.spec.ts</code></li>
+              <li><code>src/lib/server/authz/index.ts</code></li>
+              <li><code>src/lib/server/authz/require-cap.spec.ts</code></li>
+              <li><code>src/lib/server/authz/require-cap.ts</code></li>
+              <li><code>src/lib/server/authz/require-sim-role.spec.ts</code></li>
+              <li><code>src/lib/server/authz/require-sim-role.ts</code></li>
+              <li><code>src/lib/server/authz/resource.spec.ts</code></li>
+              <li><code>src/lib/server/authz/resource.ts</code></li>
+              <li><code>src/lib/server/authz/sim-caps.spec.ts</code></li>
+              <li><code>src/lib/server/authz/sim-caps.ts</code></li>
+            </ul>
+          </details>
+          <details>
+            <summary><code>src/lib/server/event-log/</code>: 4 files</summary>
+            <ul>
+              <li><code>src/lib/server/event-log/append.spec.ts</code></li>
+              <li><code>src/lib/server/event-log/append.ts</code></li>
+              <li><code>src/lib/server/event-log/fold.spec.ts</code></li>
+              <li><code>src/lib/server/event-log/fold.ts</code></li>
+            </ul>
+          </details>
+          <details>
+            <summary><code>src/routes/sims/</code>: 12 files</summary>
+            <ul>
+              <li><code>src/routes/sims/+layout.server.ts</code></li>
+              <li><code>src/routes/sims/+layout.svelte</code></li>
+              <li><code>src/routes/sims/+page.server.ts</code></li>
+              <li><code>src/routes/sims/+page.svelte</code></li>
+              <li><code>src/routes/sims/[simId]/+layout.server.ts</code></li>
+              <li><code>src/routes/sims/[simId]/+page.server.ts</code></li>
+              <li><code>src/routes/sims/[simId]/+page.svelte</code></li>
+              <li><code>src/routes/sims/[simId]/layout.server.spec.ts</code></li>
+              <li><code>src/routes/sims/[simId]/page.server.spec.ts</code></li>
+              <li><code>src/routes/sims/[simId]/page.svelte.spec.ts</code></li>
+              <li><code>src/routes/sims/page.server.spec.ts</code></li>
+              <li><code>src/routes/sims/page.svelte.spec.ts</code></li>
+            </ul>
+          </details>
+          <details>
+            <summary><code>src/routes/invite/</code>: 4 files</summary>
+            <ul>
+              <li><code>src/routes/invite/[token]/+page.server.ts</code></li>
+              <li><code>src/routes/invite/[token]/+page.svelte</code></li>
+              <li><code>src/routes/invite/[token]/page.server.spec.ts</code></li>
+              <li><code>src/routes/invite/[token]/page.svelte.spec.ts</code></li>
+            </ul>
+          </details>
+          <details>
+            <summary><code>src/routes/api/sims/</code>: 12 files</summary>
+            <ul>
+              <li><code>src/routes/api/sims/+server.ts</code></li>
+              <li><code>src/routes/api/sims/[simId]/invites/+server.ts</code></li>
+              <li><code>src/routes/api/sims/[simId]/invites/[inviteId]/+server.ts</code></li>
+              <li><code>src/routes/api/sims/[simId]/invites/[inviteId]/api.spec.ts</code></li>
+              <li><code>src/routes/api/sims/[simId]/invites/[inviteId]/resend/+server.ts</code></li>
+              <li><code>src/routes/api/sims/[simId]/invites/[inviteId]/resend/api.spec.ts</code></li>
+              <li><code>src/routes/api/sims/[simId]/invites/api.spec.ts</code></li>
+              <li><code>src/routes/api/sims/[simId]/members/[userId]/+server.ts</code></li>
+              <li><code>src/routes/api/sims/[simId]/members/[userId]/api.spec.ts</code></li>
+              <li><code>src/routes/api/sims/[simId]/stream/+server.ts</code></li>
+              <li><code>src/routes/api/sims/[simId]/stream/server.spec.ts</code></li>
+              <li><code>src/routes/api/sims/server.spec.ts</code></li>
+            </ul>
+          </details>
+          <details>
+            <summary><code>src/routes/api/invites/</code>: 4 files</summary>
+            <ul>
+              <li><code>src/routes/api/invites/[inviteId]/accept/+server.ts</code></li>
+              <li><code>src/routes/api/invites/[inviteId]/accept/accept.spec.ts</code></li>
+              <li><code>src/routes/api/invites/[inviteId]/decline/+server.ts</code></li>
+              <li><code>src/routes/api/invites/[inviteId]/decline/decline.spec.ts</code></li>
+            </ul>
+          </details>
+          <details>
+            <summary><code>src/routes/api/operator/</code>: 2 files</summary>
+            <ul>
+              <li><code>src/routes/api/operator/sims/[simId]/takedown/+server.ts</code></li>
+              <li><code>src/routes/api/operator/sims/[simId]/takedown/server.spec.ts</code></li>
+            </ul>
+          </details>
+          <details>
+            <summary><code>migrations/sim/</code>: 2 files</summary>
+            <ul>
+              <li><code>migrations/sim/20261115062714_fat_scorpion/migration.sql</code></li>
+              <li><code>migrations/sim/20261115062714_fat_scorpion/snapshot.json</code></li>
+            </ul>
+          </details>
+      <p>Single files:</p>
+      <ul>
+        <li><code>src/lib/server/onboarding/pending-sim.ts</code>, <code>src/lib/server/onboarding/pending-sim.spec.ts</code></li>
+        <li><code>src/lib/server/email-templates/invite.ts</code>, <code>src/lib/server/email-templates/invite.spec.ts</code>, <code>src/lib/server/email-templates/InviteEmail.svelte</code></li>
+        <li><code>src/lib/server/db/capability-events.ts</code>, <code>src/lib/server/db/capability-events.spec.ts</code></li>
+        <li><code>src/lib/server/db/schema/simControlPlane.ts</code>, <code>src/lib/server/db/schema/simInvite.ts</code>, <code>src/lib/server/db/schema/capabilityEvent.ts</code></li>
+        <li><code>src/lib/server/test/sim-env.ts</code></li>
+        <li><code>scripts/worker-entry.ts</code>, <code>scripts/worker-entry.spec.ts</code></li>
+        <li><code>drizzle.sim.config.ts</code></li>
+        <li><code>e2e/invite.spec.ts</code>, <code>e2e/invite-redundant-entry.spec.ts</code>, <code>e2e/leave-sim.spec.ts</code>, <code>e2e/sim-control-plane.spec.ts</code>, <code>e2e/sim-object.spec.ts</code>, <code>e2e/sims-onboarding.spec.ts</code>, <code>e2e/pseudonymous-onboarding.spec.ts</code></li>
+        <li><code>e2e/helpers/members.ts</code>, <code>e2e/helpers/sim-socket.ts</code></li>
+      </ul>
+    </section>
+
+    <section id="sec-write-set-changed">
+      <h3>Changed</h3>
+      <ul>
+        <li><code>src/hooks.server.ts</code>, <code>src/hooks.server.spec.ts</code></li>
+        <li><code>src/app.d.ts</code></li>
+        <li><code>src/lib/server/auth/session-gate.ts</code>, <code>session-gate.spec.ts</code>, <code>better-auth.ts</code>, <code>google-provider.ts</code> (comment)</li>
+        <li><code>src/lib/server/onboarding/pseudonymous-mint.ts</code>, <code>pseudonymous-mint.spec.ts</code>, <code>pending-identifier.ts</code> (comment)</li>
+        <li><code>src/lib/server/security/same-origin-json.ts</code>, <code>same-origin-json.spec.ts</code>, <code>rate-limit.ts</code>, <code>rate-limit.spec.ts</code></li>
+        <li><code>src/lib/server/user-store/identity.ts</code>, <code>identity.spec.ts</code>, <code>deletion.ts</code>, <code>deletion.spec.ts</code>, <code>handle.ts</code>, <code>handle.spec.ts</code></li>
+        <li><code>src/lib/server/email-templates/copy.ts</code></li>
+        <li><code>src/lib/server/e2e/mail-sink.ts</code>, <code>mail-sink.spec.ts</code>, <code>session.ts</code>, <code>session.spec.ts</code></li>
+        <li><code>src/lib/server/test/auth-db.ts</code>, <code>auth-db.spec.ts</code></li>
+        <li><code>src/lib/server/db/schema/index.ts</code>, <code>principal.ts</code> (comment), <code>auth-schema.spec.ts</code></li>
+        <li><code>migrations/d1/</code>: one new generated migration</li>
+        <li><code>src/routes/signin/+page.server.ts</code>, <code>+page.svelte</code>, <code>page.server.spec.ts</code>, <code>page.svelte.spec.ts</code></li>
+        <li><code>src/routes/account/+page.server.ts</code> (comments), <code>page.server.spec.ts</code></li>
+        <li><code>src/routes/api/account/+server.ts</code>, <code>server.spec.ts</code>, <code>delete-pseudonymous.spec.ts</code></li>
+        <li><code>src/routes/api/account/profile/+server.ts</code>, <code>profile/server.spec.ts</code></li>
+        <li><code>src/routes/api/account/email/server.spec.ts</code>, <code>email/verify/server.spec.ts</code>, <code>password/server.spec.ts</code> (the copy import)</li>
+        <li><code>src/lib/account/copy.ts</code>, <code>account-copy.ts</code>, <code>safe-redirect.spec.ts</code>, <code>DeleteAccountPane.svelte</code>, <code>DeleteAccountPane.svelte.spec.ts</code>, <code>AuthenticationPane.svelte</code> (comment)</li>
+        <li><code>scripts/wrangler-config.spec.ts</code></li>
+        <li><code>wrangler.jsonc</code>, <code>package.json</code></li>
+        <li><code>drizzle-cf.config.ts</code>: the <code>sim</code> track and its schema import go, leaving the <code>d1</code> track.</li>
+        <li><code>src/routes/api/e2e/mail/+server.ts</code>: <code>'invite'</code> leaves <code>KINDS</code>.</li>
+        <li><code>src/routes/api/e2e/login/+server.ts</code>: the <code>{ pseudonymous: true }</code> body (<a href="#sec-design-e2e">e2e seams</a>).</li>
+        <li><code>playwright.config.ts</code>: the <code>--var SIM_TAKEDOWN_TOKEN:…</code> flag and its comment (<code>:49-51</code>) go.</li>
+        <li><code>e2e/helpers/account.ts</code>, <code>e2e/account-deletion.spec.ts</code>, <code>e2e/auth-a11y.spec.ts</code>, <code>e2e/auth-methods-default.spec.ts</code>, <code>e2e/email-link.spec.ts</code>, <code>e2e/sign-out.spec.ts</code>, <code>e2e/account-a11y.spec.ts</code>, <code>e2e/password-auth.spec.ts</code>, <code>e2e/account-email.spec.ts</code></li>
+        <li><code>docs/dev/auth.md</code></li>
+      </ul>
+      <p><code>svelte.config.js</code> is in the write set and is not changed.</p>
+    </section>
+
+  </section>
+
+  <section id="sec-tests">
+    <h2>Tests</h2>
+    <section id="sec-tests-deleted">
+      <h3>Deleted</h3>
+      <p>Every spec under the deleted directories and among the deleted files above, and the seven e2e specs listed there.</p>
+    </section>
+    <section id="sec-tests-changed">
+      <h3>Changed</h3>
+      <dl>
+        <dt><code>src/hooks.server.spec.ts</code></dt>
+        <dd>Public locals are <code>{ user: null, session: null }</code>. The capability and operator cases go. A resolved session sets exactly <code>user</code> and <code>session</code>.</dd>
+        <dt><code>src/lib/server/auth/session-gate.spec.ts</code></dt>
+        <dd><code>/sims</code>, <code>/sims/abc</code>, <code>/api/sims/abc/members</code> and <code>/invite/xyz</code> are not session routes; the seven prefixes are.</dd>
+        <dt><code>pseudonymous-mint.spec.ts</code>, <code>same-origin-json.spec.ts</code>, the five account route specs</dt>
+        <dd>They assert the <code>AUTH_COPY</code> texts in place of <code>SIMS_COPY</code>.</dd>
+        <dt><code>src/lib/server/security/rate-limit.spec.ts</code></dt>
+        <dd>The <code>enforceMutationRate</code> cases go.</dd>
+        <dt><code>src/lib/server/user-store/identity.spec.ts</code></dt>
+        <dd>The sims-read and roster cases go. New: a fuse calls <code>onFuse</code> once with (survivor, absorbed) after the identity is superseded; an upgrade, a same-identity link and a missing live row never call it; a rejecting <code>onFuse</code> rejects <code>handleAccountLink</code>.</dd>
+        <dt><code>src/lib/server/user-store/deletion.spec.ts</code>, <code>src/routes/api/account/delete-pseudonymous.spec.ts</code></dt>
+        <dd>The sim and pass cases go. A deletion scrubs, tombstones and purges in one call and answers <code>{ more: false }</code>; a second call is a no-op.</dd>
+        <dt><code>src/routes/api/account/server.spec.ts</code></dt>
+        <dd><code>deleteAccount</code> is called with <code>{ db, identityId }</code>; the route answers 200 <code>{ ok: true }</code> and never 202.</dd>
+        <dt><code>src/routes/api/account/profile/server.spec.ts</code></dt>
+        <dd>New: a body with only <code>handle</code> passes no <code>name</code> to <code>updateProfile</code>; a body with <code>name: ''</code> passes <code>''</code>.</dd>
+        <dt><code>src/lib/account/DeleteAccountPane.svelte.spec.ts</code></dt>
+        <dd>The 202 loop cases go. One request; a 200 calls <code>onDeleted</code>; a 400 shows the mismatch text; a 500 shows the network text.</dd>
+        <dt><code>src/routes/signin/page.server.spec.ts</code>, <code>page.svelte.spec.ts</code></dt>
+        <dd>The pending-sim and start-fresh cases go. New: the load returns no <code>pendingSim</code>; the page renders no "Start fresh without an account".</dd>
+        <dt><code>src/routes/account/page.server.spec.ts</code></dt>
+        <dd>The known-device case's name stops naming sims; its assertion is unchanged.</dd>
+        <dt><code>src/lib/account/safe-redirect.spec.ts</code></dt>
+        <dd>The same-origin path cases use <code>/account</code> and <code>/account#section</code> in place of <code>/sims/abc</code> and <code>/sims/x#section</code>; the assertions are otherwise unchanged.</dd>
+        <dt><code>src/lib/server/user-store/handle.spec.ts</code></dt>
+        <dd><code>simTitle</code> becomes <code>seedText</code>.</dd>
+        <dt><code>src/lib/server/e2e/mail-sink.spec.ts</code></dt>
+        <dd>Uses <code>'password-reset'</code> where it used <code>'invite'</code>.</dd>
+        <dt><code>src/lib/server/e2e/session.spec.ts</code></dt>
+        <dd>New: <code>mintTestPseudonym</code> writes an anonymous user with the pseudonymous email domain and a unique handle.</dd>
+        <dt><code>src/lib/server/db/schema/auth-schema.spec.ts</code>, <code>src/lib/server/test/auth-db.spec.ts</code></dt>
+        <dd>The <code>capability_event</code> and <code>sim_invite</code> cases go. New: on a freshly migrated database the tables, leaving out names that start with <code>sqlite_</code>, <code>_cf_</code> or <code>d1_</code>, are exactly the nine identity tables and <code>plan</code>, and none of the five dropped tables exists.</dd>
+        <dt><code>scripts/wrangler-config.spec.ts</code></dt>
+        <dd>New, for production and staging: no <code>durable_objects</code>; the last migration is <code>v2-delete-sim-object</code> deleting <code>SimObject</code> and the first is still <code>v1-sim-object</code>; the rate-limit names are exactly the six; no top-level <code>alias</code>.</dd>
+      </dl>
+    </section>
+    <section id="sec-tests-e2e">
+      <h3>e2e</h3>
+      <dl>
+        <dt><code>e2e/helpers/account.ts</code></dt>
+        <dd><code>startPseudonymous(page)</code> as in <a href="#sec-design-e2e">e2e seams</a>; the <code>SIMS_COPY</code> import goes.</dd>
+        <dt><code>e2e/sign-out.spec.ts</code>, <code>account-a11y.spec.ts</code>, <code>password-auth.spec.ts</code>, <code>account-email.spec.ts</code></dt>
+        <dd>Call <code>startPseudonymous(page)</code>; assertions unchanged.</dd>
+        <dt><code>e2e/account-deletion.spec.ts</code></dt>
+        <dd>"deleting the account signs out and keeps both sims" goes. The wrong-handle case signs in with <code>loginAs</code>. The pseudonymous case keeps its sign-out assertions and drops the sim page.</dd>
+        <dt><code>e2e/auth-a11y.spec.ts</code></dt>
+        <dd>The invite page case goes.</dd>
+        <dt><code>e2e/auth-methods-default.spec.ts</code></dt>
+        <dd><code>/signin</code> renders no "Start fresh without an account" button.</dd>
+        <dt><code>e2e/email-link.spec.ts</code></dt>
+        <dd>"a known device resumes its sim" goes. The safe-returnTo case uses <code>returnTo=/about</code>.</dd>
+        <dt>New in <code>e2e/auth-a11y.spec.ts</code></dt>
+        <dd><code>/sims</code>, <code>/sims/abc</code> and <code>/invite/abc</code> answer 404 with "Page not found"; <code>GET /api/sims</code> and <code>POST /api/operator/sims/abc/takedown</code> answer 404.</dd>
+      </dl>
+    </section>
+  </section>
+
+  <section id="sec-docs">
+    <h2>Docs</h2>
+    <p><code>docs/dev/auth.md</code> is rewritten as "Accounts". Afterwards it says:</p>
+    <ul>
+      <li>Identity model: the nine identity tables and what each holds; the stable identity id and the live user id; the survivor graph.</li>
+      <li>Pseudonymous accounts: one mint seam, <code>mintPseudonymousSession</code>, behind <code>PSEUDO_MINT_RL</code>; the known-device cookie and when it is set; no account is reaped; what ends pseudonymity and what fuses two accounts; the <code>onFuse</code> hook and when it runs.</li>
+      <li>Sign out: who is offered it.</li>
+      <li>Deletion: the steps of <code>closeAccountRows</code> in order, in one request.</li>
+      <li>Sign-in methods, the method switch and turning a method on in a test: as today, without "Start fresh".</li>
+      <li>Session gate: the seven prefixes; the websocket paragraph goes.</li>
+      <li>JSON routes: the origin check and its texts in <code>AUTH_COPY</code>.</li>
+      <li>Rate limits: the six bindings, with namespaces, and which code reads each; <code>MUTATION_REGISTERED_RL</code> is kept for saved games.</li>
+      <li>Mail: the four templates; no invite mail.</li>
+      <li>e2e seams: <code>/api/e2e/login</code> with an email or <code>{ pseudonymous: true }</code>, <code>/api/e2e/mail</code> with its three kinds.</li>
+      <li>Secrets and vars: <code>BETTER_AUTH_SECRET</code>, <code>BETTER_AUTH_URL</code>, the mail keys, the Google pair, <code>AUTH_METHODS</code>, <code>SES_FROM</code>.</li>
+      <li>The sections on authorization and roles, sims and membership, registering a sim, sims with no members, the roster hook and invitations are gone.</li>
+    </ul>
+  </section>
+
+  <section id="sec-global-constraints">
+    <h2>Global constraints</h2>
+    <ul>
+      <li>Work happens in git worktrees under <code>.claude/worktrees/</code>. Commits follow Conventional Commits. No attribution to an AI anywhere.</li>
+      <li>Code style: 2-space indent, single quotes, no trailing commas, 100 columns.</li>
+      <li>Every Vitest test calls <code>expect</code>.</li>
+      <li>Signoff fails on server stderr, on timing crutches and on a retried flake. Each unit runs <code>npm run lint</code>, <code>npm run check</code> and the Vitest projects its files belong to before it hands back.</li>
+      <li>Port 4173 is shared by every session on this machine. A unit never kills a server it did not start; it waits.</li>
+      <li>Every agent runs every command in the foreground and never ends a turn while something it started is running.</li>
+      <li>Schema changes go through <code>npm run db:generate</code>. Nobody edits a migration.</li>
+      <li>No unit runs <code>npm run signoff</code>: its dataset step fails until the dataset is uploaded. <code>closing</code> runs it once, after the upload.</li>
+      <li>The dataset version changes in this build. The dataset is built and uploaded once, from the integration branch, after the last unit that writes a hashed path has merged; no unit uploads a dataset.</li>
+      <li>A unit that writes a hashed path regenerates the fixture dataset with <code>npm run pipeline -- fixture</code> and commits it.</li>
+      <li>WCAG 2.2 AA: every new control is at least 24 px and passes <code>expectNoA11yViolations</code> in light and dark.</li>
+      <li>Page text is short. No sentence says what something is not.</li>
+      <li>Nothing on the main screen says "RHNA". The goal is read from the <code>Goal</code> value, never from a constant.</li>
+      <li>The game's rules are read from <code>src/lib/game/</code>. No component compares a level to a number.</li>
+      <li>One future: no seed control, no band, no average over runs.</li>
+      <li>Published plans and policies, their ids and their pages keep working, including every policy published before this build.</li>
+      <li>A number that is a claim about the world carries its source and tier, in the existing <code>Sourced</code>, <code>Unsourced</code> and <code>Evidence</code> shapes.</li>
+      <li>A runtime dependency that ships in the bundle gets a credit in <code>SOFTWARE</code>. This build adds none.</li>
+      <li>CSP changes are interface changes. This build makes none.</li>
+      <li>Timing is measured only on a quiet machine. A unit that cannot get one defers the measurement and says so.</li>
+    </ul>
+  </section>
+
+  <section id="sec-out-of-scope">
+    <h2>Out of scope</h2>
+    <ul>
+      <li>The <code>game_save</code> table, <code>/api/game</code>, the first caller of the mint and the <code>onFuse</code> body: <code>game-save</code>.</li>
+      <li><code>AUTH_METHODS</code> changing to four methods: <code>game-save</code>.</li>
+      <li>Deleting <code>docs/dev/{sim-log,sim-object,sim-sync,sim-store}.md</code> and their lines in <code>CLAUDE.md</code>'s doc list: <code>contracts</code>.</li>
+      <li><code>CLAUDE.md</code> (line 30's description of the auth doc and the Architecture paragraph at line 102, which name sims, the <code>SIM</code> binding, seven rate limits and <code>SIM_TAKEDOWN_TOKEN</code>), <code>docs/dev/{developing,testing,deploy}.md</code>: <code>closing</code>.</li>
+      <li><code>chreode.config.ts:72</code>, which still names <code>drizzle.sim.config.ts</code> in a match list: <code>closing</code>. A glob that matches nothing does no harm meanwhile.</li>
+      <li>The remix hand-off from <code>/s</code> to <code>/sim</code>: <code>game-shell</code>.</li>
+      <li>Reaping pseudonymous accounts that own nothing: no unit.</li>
+    </ul>
+  </section>
+</article>

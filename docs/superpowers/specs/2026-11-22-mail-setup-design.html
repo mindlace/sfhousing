@@ -1,0 +1,461 @@
+<article>
+  <header>
+    <h1>Mail setup design</h1>
+    <p>Sign-in mail from <code>sfhousing.mindlace.net</code> through Amazon SES, on staging and production, proved by a real mail.</p>
+  </header>
+
+  <section id="sec-goal">
+    <h2>Goal</h2>
+    <p>This unit makes sign-in mail deliverable in both environments, as ruling D12 and <a href="../design/2026-11-22-1216-incremental-game.html#sec-model-mail">Sign-in mail</a> in the <a href="../design/2026-11-22-1216-incremental-game.html">design doc</a> require. It writes no application code. Its operator performs outward-facing setup the owner authorised in D12 ("We'll need to set up email sending as well, against the aws account that planafoot uses. `aws` is authenticated.").</p>
+    <ul>
+      <li>An SES domain identity for <code>sfhousing.mindlace.net</code> in <code>us-west-1</code>, with Easy DKIM and the MAIL FROM domain <code>mail.sfhousing.mindlace.net</code>.</li>
+      <li>Six DNS records in the <code>mindlace.net</code> zone on Cloudflare, added by the owner from the exact list this runbook produces.</li>
+      <li>One IAM user per environment, <code>sfhousing-mail-staging</code> and <code>sfhousing-mail-production</code>, each allowed to send from that identity and nothing else, each with one access key.</li>
+      <li><code>SES_ACCESS_KEY_ID</code> and <code>SES_SECRET_ACCESS_KEY</code> set on the staging and production Workers by the operator.</li>
+      <li>One real sign-in mail on staging, then one on production, accepted by SES; the owner confirms DKIM, SPF and DMARC pass in the received headers.</li>
+      <li>The Google sign-in client as the one owner step, written down exactly.</li>
+      <li>The mail section and the bootstrap checklist of <code>docs/dev/deploy.md</code>.</li>
+    </ul>
+  </section>
+
+  <section id="sec-today">
+    <h2>What is there today</h2>
+    <p>Read on commit <code>8125e557</code> and, for the cloud state, by read-only calls on 2026-11-22.</p>
+
+    <section id="sec-today-code">
+      <h3>The code that sends mail</h3>
+      <ul>
+        <li><code>mailProvider</code> picks SES when <code>EMAIL_PROVIDER</code> is unset or not <code>resend</code> and both <code>SES_ACCESS_KEY_ID</code> and <code>SES_SECRET_ACCESS_KEY</code> are set; with neither provider it returns null (<code>src/lib/server/email/provider.ts:19-24</code>).</li>
+        <li><code>mailCanBeDelivered</code> is true exactly when <code>mailProvider</code> is not null (<code>provider.ts:27-29</code>).</li>
+        <li><code>sendEmail</code> takes its From from <code>SES_FROM</code> and throws when it is unset (<code>src/lib/server/email/send.ts:38-43</code>).</li>
+        <li>With no provider, <code>sendEmail</code> runs in mail log mode: it logs <code>[email:log-mode]</code> with from, recipients and subject, and returns <code>{ sent: false, logged: true }</code> (<code>send.ts:50-53</code>).</li>
+        <li>SES is called through the SESv2 <code>outbound-emails</code> endpoint, signed with <code>aws4fetch</code>, in <code>SES_REGION</code> or <code>us-west-1</code> when it is unset (<code>send.ts:61-84</code>).</li>
+        <li>An SES error makes <code>sendEmail</code> throw <code>SES SendEmail failed: {code}: {message}</code> (<code>send.ts:86-96</code>).</li>
+        <li><code>parseAuthMethods</code> always puts <code>magic-link</code> in the set, whatever <code>AUTH_METHODS</code> says (<code>src/lib/server/auth/methods.ts:17-24</code>).</li>
+        <li><code>enabledAuthMethods</code> drops <code>magic-link</code> when mail cannot be delivered, except in an e2e build (<code>methods.ts:47-57</code>).</li>
+        <li>Google is dropped unless both <code>GOOGLE_CLIENT_ID</code> and <code>GOOGLE_CLIENT_SECRET</code> are set (<code>methods.ts:36-40</code>, <code>src/lib/server/auth/google-provider.ts:9-14</code>).</li>
+        <li>The <code>/signin</code> action <code>sendLink</code> answers 404 while magic link is off (<code>requireMethod</code>, <code>src/routes/signin/+page.server.ts:57</code>), limits by IP and by address on <code>AUTH_LINK_RL</code> (<code>:65-71</code>, <code>:84-90</code>), and calls <code>auth.api.signInMagicLink</code> (<code>:105-113</code>). Its answer is <code>{ sent: true }</code> whether or not the address has an account (<code>:122-123</code>).</li>
+        <li>The magic-link plugin's <code>sendMagicLink</code> sends the sign-in template through <code>sendEmail</code> (<code>src/lib/server/auth/better-auth.ts:312-318</code>). Its subject is <code>Your SF Housing Simulator sign in link</code> (<code>src/lib/server/email-templates/copy.ts:9-10</code>, <code>PRODUCT_NAME</code> in <code>src/lib/server/auth/brand.ts:2</code>).</li>
+        <li>Better-Auth's base URL is <code>BETTER_AUTH_URL</code>, else the request origin (<code>better-auth.ts:115</code>); its routes are served by <code>src/routes/api/auth/[...all]/</code>, and Google's callback is <code>/api/auth/callback/google</code> (<code>methods.ts:84</code>, <code>:93</code>).</li>
+      </ul>
+    </section>
+
+    <section id="sec-today-config">
+      <h3>Configuration</h3>
+      <ul>
+        <li><code>SES_FROM</code> is <code>SF Housing Simulator &lt;noreply@sfhousing.mindlace.net&gt;</code> in production (<code>wrangler.jsonc:42</code>) and in staging (<code>wrangler.jsonc:96</code>). Its domain is the identity this unit creates, so it stays as it is.</li>
+        <li><code>AUTH_METHODS</code> is <code>magic-link</code> in both (<code>wrangler.jsonc:41</code>, <code>:95</code>). <code>SES_REGION</code> is not set.</li>
+        <li>The hosts are <code>sfhousing.mindlace.net</code> (<code>wrangler.jsonc:12</code>) and <code>sfhousing-staging.mindlace.net</code> (<code>wrangler.jsonc:54</code>), both Worker custom domains.</li>
+        <li><code>docs/dev/deploy.md</code> lists the secrets in "Worker (set in Cloudflare)" (<code>:51-65</code>): the SES bullet (<code>:60</code>) says magic link is off until a provider is set, and the bootstrap checklist (<code>:107-122</code>) has no mail item.</li>
+      </ul>
+    </section>
+
+    <section id="sec-today-cloud">
+      <h3>The cloud accounts</h3>
+      <ul>
+        <li><code>wrangler secret list</code> shows only <code>BETTER_AUTH_SECRET</code> on production and on staging. Mail runs in log mode in both, so magic link is off in both.</li>
+        <li>The <code>aws</code> CLI is authenticated to the account ending <code>1215</code>, default region <code>us-west-1</code>, with the account's root credentials.</li>
+        <li><code>aws sesv2 get-account</code> in <code>us-west-1</code>: production access, sending enabled, status <code>HEALTHY</code>, 50,000 a day, 14 a second.</li>
+        <li>SES identities in <code>us-west-1</code>: the domains <code>planafoot.com</code> and <code>traceclue.com</code>, and one single-address identity. None for <code>mindlace.net</code> or <code>sfhousing.mindlace.net</code>.</li>
+        <li>IAM has one user, <code>planafoot</code>, with the attached policy <code>send-email</code>. Its keys belong to planafoot.</li>
+        <li>Route 53 has no hosted zones.</li>
+        <li><code>dig NS mindlace.net</code> answers two <code>ns.cloudflare.com</code> servers: the zone is on Cloudflare.</li>
+        <li><code>mindlace.net</code> has its own mail: an MX at Google, SPF <code>v=spf1 include:_spf.google.com ~all</code>, and DMARC with <code>p=none</code> and no <code>sp</code>.</li>
+        <li>Nothing exists yet under <code>_dmarc.sfhousing.mindlace.net</code> or <code>mail.sfhousing.mindlace.net</code>.</li>
+        <li><code>wrangler whoami</code>: the OAuth token's zone scope is <code>zone (read)</code>, with no DNS write scope. The operator's tools cannot write DNS records.</li>
+      </ul>
+    </section>
+  </section>
+
+  <section id="sec-design">
+    <h2>Design</h2>
+    <p>The runbook runs in the order of the numbered subsections. A step whose check fails stops the runbook at that step; the operator reports the step and the output, with every secret and the account id beyond its last four digits left out.</p>
+
+    <section id="sec-design-rules">
+      <h3>Rules for the operator</h3>
+      <ul>
+        <li>Every command runs from the unit's worktree, in the foreground.</li>
+        <li>No secret value is ever printed, logged, written to a file, put in a commit or put in the handback. The access key is passed from <code>aws</code> to <code>wrangler</code> inside one shell command.</li>
+        <li>The AWS account id is never printed whole. Commands that need it read it into a shell variable in the same command.</li>
+        <li>The test address is never written to a file, a commit, a doc or the handback. The handback says "an address the owner named".</li>
+        <li>No SES identity, IAM user, key or DNS record other than those named here is created, changed or deleted. The <code>planafoot</code> user, its policy and its keys are never touched.</li>
+        <li>Secrets go on an environment only after the identity reads verified (<a href="#sec-design-wait">Waiting for the owner's records</a>), because SES refuses mail from an identity that is not verified.</li>
+        <li>Setting the two SES secrets on an environment switches magic-link sign-in on at once in the deployed Worker, before this build ships, because <code>parseAuthMethods</code> always lists it.</li>
+        <li>The owner was told on 2026-11-22 that setting the secrets switches magic-link sign-in on at once in the deployed Worker, and that the existing invitation pages can then send real mail until this build ships. The operator sets the secrets on staging and then on production without asking and without waiting.</li>
+        <li>The DNS step is the one wait (<a href="#sec-design-relay">Hand-backs</a>).</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-identity">
+      <h3>1. The SES identity</h3>
+      <p>Create the domain identity with Easy DKIM at 2048 bits:</p>
+      <pre><code data-lang="sh">aws sesv2 create-email-identity \
+  --region us-west-1 \
+  --email-identity sfhousing.mindlace.net \
+  --dkim-signing-attributes NextSigningKeyLength=RSA_2048_BIT \
+  --tags Key=project,Value=sfhousing \
+  --query 'DkimAttributes.Tokens' --output text</code></pre>
+      <p>The output is the three DKIM tokens. They are not secret; the operator keeps them for the records.</p>
+      <p>Set the MAIL FROM domain:</p>
+      <pre><code data-lang="sh">aws sesv2 put-email-identity-mail-from-attributes \
+  --region us-west-1 \
+  --email-identity sfhousing.mindlace.net \
+  --mail-from-domain mail.sfhousing.mindlace.net \
+  --behavior-on-mx-failure USE_DEFAULT_VALUE</code></pre>
+      <ul>
+        <li><code>USE_DEFAULT_VALUE</code>: if the MX record ever fails, SES sends with its own MAIL FROM. DKIM still aligns, so DMARC still passes.</li>
+        <li>No configuration set and no event destination is attached.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-dns">
+      <h3>2. The DNS records</h3>
+      <p>The <code>mindlace.net</code> zone is on Cloudflare and the operator cannot write it. The operator stops here and hands back partial (<a href="#sec-design-relay">Hand-backs</a>) with this list, the three tokens filled in:</p>
+      <table id="tbl-dns">
+        <caption>Records to add in the Cloudflare zone mindlace.net</caption>
+        <thead>
+          <tr><th scope="col">Name</th><th scope="col">Type</th><th scope="col">Content</th><th scope="col">Proxy</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row"><code>&lt;token1&gt;._domainkey.sfhousing</code></th><td>CNAME</td><td><code>&lt;token1&gt;.dkim.amazonses.com</code></td><td>DNS only</td></tr>
+          <tr><th scope="row"><code>&lt;token2&gt;._domainkey.sfhousing</code></th><td>CNAME</td><td><code>&lt;token2&gt;.dkim.amazonses.com</code></td><td>DNS only</td></tr>
+          <tr><th scope="row"><code>&lt;token3&gt;._domainkey.sfhousing</code></th><td>CNAME</td><td><code>&lt;token3&gt;.dkim.amazonses.com</code></td><td>DNS only</td></tr>
+          <tr><th scope="row"><code>mail.sfhousing</code></th><td>MX</td><td><code>feedback-smtp.us-west-1.amazonses.com</code>, priority 10</td><td>Not proxiable</td></tr>
+          <tr><th scope="row"><code>mail.sfhousing</code></th><td>TXT</td><td><code>v=spf1 include:amazonses.com ~all</code></td><td>Not proxiable</td></tr>
+          <tr><th scope="row"><code>_dmarc.sfhousing</code></th><td>TXT</td><td><code>v=DMARC1; p=quarantine; adkim=r; aspf=r</code></td><td>Not proxiable</td></tr>
+        </tbody>
+      </table>
+      <ul>
+        <li>Names are relative to <code>mindlace.net</code>, as Cloudflare's dashboard takes them.</li>
+        <li>The CNAMEs must be "DNS only" (grey cloud). Cloudflare proxies a new CNAME by default, and a proxied DKIM record never verifies.</li>
+        <li>TTL is Auto.</li>
+        <li>No record is added at <code>sfhousing.mindlace.net</code> itself. Its address records belong to the Worker custom domain and are not touched.</li>
+        <li>The From domain needs no SPF record of its own: SPF is checked on the MAIL FROM domain, which aligns with the From domain under relaxed alignment.</li>
+        <li>DMARC is <code>p=quarantine</code> from the start: the subdomain sends only through SES, so every real mail aligns on DKIM and on SPF.</li>
+        <li><code>mindlace.net</code>'s own SPF, MX and DMARC records are not changed.</li>
+      </ul>
+      <aside data-kind="decision"><strong>Decision</strong> The owner adds the records. The operator's Cloudflare token has no DNS write scope, and the owner's own mail runs in this zone, so no new token is minted for this.</aside>
+    </section>
+
+    <section id="sec-design-wait">
+      <h3>3. Waiting for the owner's records</h3>
+      <p>When the conductor resumes the operator with the owner's answer, the operator checks each record resolves:</p>
+      <pre><code data-lang="sh">for t in &lt;token1&gt; &lt;token2&gt; &lt;token3&gt;; do dig +short CNAME "$t._domainkey.sfhousing.mindlace.net"; done
+dig +short MX mail.sfhousing.mindlace.net
+dig +short TXT mail.sfhousing.mindlace.net
+dig +short TXT _dmarc.sfhousing.mindlace.net</code></pre>
+      <p>Each answer must equal the table's content (a CNAME answer carries a trailing dot). A missing or different answer goes back to the owner with the one record that is wrong.</p>
+      <p>Then the operator reads the identity's state:</p>
+      <pre><code data-lang="sh">aws sesv2 get-email-identity --region us-west-1 --email-identity sfhousing.mindlace.net \
+  --query '{sending:VerifiedForSendingStatus,identity:VerificationStatus,dkim:DkimAttributes.Status,mailFrom:MailFromAttributes.MailFromDomainStatus}'</code></pre>
+      <ul>
+        <li>The operator goes on only when <code>sending</code> is <code>true</code> and <code>identity</code>, <code>dkim</code> and <code>mailFrom</code> are all <code>SUCCESS</code>.</li>
+        <li>While the records resolve but a status reads <code>PENDING</code>, the operator hands back partial again with "waiting on SES verification". SES checks again by itself; the conductor resumes the operator later and it reads the state again.</li>
+        <li>A status of <code>FAILED</code> while the records resolve as listed stops the runbook and is reported.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-env">
+      <h3>The environment parameter</h3>
+      <p>Every command from here on concerns one environment, <code>staging</code> or <code>production</code>, and touches only that environment's user, key and secrets. Each block starts with this prelude, in the same shell command:</p>
+      <pre><code data-lang="sh">E=staging   # the one parameter: staging or production
+U="sfhousing-mail-$E"
+ENVF=(); [ "$E" = staging ] &amp;&amp; ENVF=(--env staging)
+HOST=$([ "$E" = staging ] &amp;&amp; echo sfhousing-staging.mindlace.net || echo sfhousing.mindlace.net)</code></pre>
+      <ul>
+        <li><code>ENVF</code> is an array, so <code>"${ENVF[@]}"</code> expands to nothing for production and to <code>--env staging</code> for staging, in bash and in zsh.</li>
+        <li>The operator never runs a block with an <code>E</code> other than <code>staging</code> or <code>production</code>.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-iam">
+      <h3>4. The sending users</h3>
+      <p>Each environment has its own user. Both carry the same inline policy, <code>send-from-sfhousing</code>: <code>ses:SendEmail</code> on this identity and nothing else. The policy, with the account id shown as <code>&lt;account&gt;</code>:</p>
+      <pre><code data-lang="json">{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "SendFromSfhousing",
+      "Effect": "Allow",
+      "Action": "ses:SendEmail",
+      "Resource": "arn:aws:ses:us-west-1:&lt;account&gt;:identity/sfhousing.mindlace.net"
+    }
+  ]
+}</code></pre>
+      <p>Create one environment's user, attach the policy, and check it allows this identity and refuses another, printing only the decisions (prelude first):</p>
+      <pre><code data-lang="sh">ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text) &amp;&amp; \
+aws iam create-user --user-name "$U" --tags Key=project,Value=sfhousing "Key=environment,Value=$E" \
+  --query 'User.UserName' --output text &amp;&amp; \
+aws iam put-user-policy --user-name "$U" --policy-name send-from-sfhousing \
+  --policy-document "$(jq -nc --arg r "arn:aws:ses:us-west-1:$ACCOUNT_ID:identity/sfhousing.mindlace.net" \
+    '{Version:"2012-10-17",Statement:[{Sid:"SendFromSfhousing",Effect:"Allow",Action:"ses:SendEmail",Resource:$r}]}')" &amp;&amp; \
+aws iam simulate-principal-policy \
+  --policy-source-arn "arn:aws:iam::$ACCOUNT_ID:user/$U" \
+  --action-names ses:SendEmail \
+  --resource-arns "arn:aws:ses:us-west-1:$ACCOUNT_ID:identity/sfhousing.mindlace.net" \
+                  "arn:aws:ses:us-west-1:$ACCOUNT_ID:identity/planafoot.com" \
+  --query 'EvaluationResults[].EvalDecision' --output text</code></pre>
+      <ul>
+        <li>The last line printed must be <code>allowed</code> then <code>implicitDeny</code>.</li>
+        <li>The operator runs it for <code>staging</code>, then for <code>production</code>.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-staging">
+      <h3>5. The key and the secrets</h3>
+      <p>One command per environment creates the user's one access key and hands both halves to <code>wrangler</code> on stdin (prelude first):</p>
+      <pre><code data-lang="sh">[ "$(aws iam list-access-keys --user-name "$U" --query 'length(AccessKeyMetadata)' --output text)" = 0 ] &amp;&amp; \
+read -r KEY_ID KEY_SECRET &lt;&lt;&lt;"$(aws iam create-access-key --user-name "$U" \
+  --query 'AccessKey.[AccessKeyId,SecretAccessKey]' --output text)" &amp;&amp; \
+printf '%s' "$KEY_ID" | npx wrangler secret put SES_ACCESS_KEY_ID "${ENVF[@]}" &amp;&amp; \
+printf '%s' "$KEY_SECRET" | npx wrangler secret put SES_SECRET_ACCESS_KEY "${ENVF[@]}"</code></pre>
+      <ul>
+        <li>The first line refuses to run when the user already has a key: a second key is made only by a rotation.</li>
+        <li>If any part fails after the key was made, the operator runs <a href="#sec-design-rollback">Rollback</a> for that environment, then steps 4 and 5 again for it.</li>
+        <li>The check is the secret names: <code>npx wrangler secret list "${ENVF[@]}"</code> lists <code>BETTER_AUTH_SECRET</code>, <code>SES_ACCESS_KEY_ID</code> and <code>SES_SECRET_ACCESS_KEY</code>.</li>
+        <li><code>wrangler secret put</code> deploys the secret to the running Worker. Later deploys keep it.</li>
+        <li>Order: steps 5 and 6 for <code>staging</code>, then steps 5 and 6 for <code>production</code>.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-proof">
+      <h3>6. The proof mail</h3>
+      <p>The test address is the one the owner gave with the DNS answer. It is typed in place of <code>ADDRESS</code> and used nowhere else.</p>
+      <p>First the page must offer the link form. This prints a count of at least 1 (prelude first):</p>
+      <pre><code data-lang="sh">curl -fsS "https://$HOST/signin" | grep -c 'sendLink'</code></pre>
+      <p>Then the operator submits the form's action as the page does:</p>
+      <pre><code data-lang="sh">curl -sS -X POST "https://$HOST/signin?/sendLink" \
+  -H "Origin: https://$HOST" \
+  -H 'Accept: application/json' \
+  -H 'x-sveltekit-action: true' \
+  --data-urlencode 'identifier=ADDRESS'</code></pre>
+      <ul>
+        <li>The answer must be JSON with <code>"type":"success"</code>: SES accepted the mail.</li>
+        <li>An answer with <code>"type":"error"</code> and status 404 means magic link is still off: the two secrets are not both set.</li>
+        <li>Status 500 means SES refused the mail. The Worker logs <code>SES SendEmail failed: {code}: {message}</code>.</li>
+        <li>The rate limit allows 5 sends a minute per IP and per address. The operator sends once per environment, and again only after a fix.</li>
+        <li>Production's step 5 runs only after staging's POST answered <code>success</code>.</li>
+      </ul>
+      <p>To read the log of a 500, the operator sends once more under a bounded tail, in one foreground command (the tail ends by itself after 45 seconds):</p>
+      <pre><code data-lang="sh">timeout 45 npx wrangler tail "${ENVF[@]}" --format pretty &amp; sleep 10; \
+curl -sS -X POST "https://$HOST/signin?/sendLink" \
+  -H "Origin: https://$HOST" \
+  -H 'Accept: application/json' -H 'x-sveltekit-action: true' \
+  --data-urlencode 'identifier=ADDRESS'; wait</code></pre>
+      <p>A 500 whose cause the operator cannot fix within this runbook ends the runbook for that environment: the operator runs Rollback for it, which returns it to log mode, and reports the logged error.</p>
+      <p>What the owner confirms after the final hand-back, for each of the two mails:</p>
+      <ul>
+        <li>The mail arrived in the inbox, not in spam.</li>
+        <li>Its subject is <code>Your SF Housing Simulator sign in link</code> and its From is <code>SF Housing Simulator &lt;noreply@sfhousing.mindlace.net&gt;</code>.</li>
+        <li><code>Authentication-Results</code> (in Gmail: "Show original") has <code>dkim=pass</code> with <code>header.i=@sfhousing.mindlace.net</code> (or <code>header.d=sfhousing.mindlace.net</code>).</li>
+        <li>It has <code>spf=pass</code> with <code>smtp.mailfrom</code> at <code>mail.sfhousing.mindlace.net</code>.</li>
+        <li>It has <code>dmarc=pass</code> with <code>header.from=sfhousing.mindlace.net</code>.</li>
+        <li>On staging, the link opens on <code>https://sfhousing-staging.mindlace.net</code> and signs the owner in. The production link is not followed; it expires unused.</li>
+      </ul>
+      <p>A line that fails is a DNS or identity fault. The conductor resumes the operator with it; the operator checks <a href="#sec-design-wait">step 3</a> again and hands the corrected record to the owner as in step 2.</p>
+    </section>
+
+    <section id="sec-design-relay">
+      <h3>Hand-backs</h3>
+      <p>The operator runs as a conducted session. The owner's inputs reach it through the conductor.</p>
+      <ul>
+        <li><strong>Partial, "waiting on owner: DNS records and a test address".</strong> After step 1: the six records of <a href="#tbl-dns">the DNS table</a>, and the request for one address the owner reads. The conductor resumes the operator with the owner's answer; the address is passed in the session only.</li>
+        <li><strong>Partial, "waiting on SES verification".</strong> Only when step 3 reads <code>PENDING</code> with every record resolving. The conductor resumes the operator later, with no owner input.</li>
+        <li><strong>Final.</strong> After steps 4 to 6 for both environments, the checks of step 7, and the commit of <code>docs/dev/deploy.md</code>. It asks the owner to confirm the proof lines of <a href="#sec-design-proof">step 6</a> for both mails, and names the Google step as the owner's.</li>
+      </ul>
+      <p>No other point waits on the owner.</p>
+    </section>
+
+    <section id="sec-design-after">
+      <h3>7. What is checked afterwards</h3>
+      <ul>
+        <li>For each environment, <code>aws iam list-access-keys --user-name "$U" --query 'AccessKeyMetadata[].Status' --output text</code> prints exactly one <code>Active</code>.</li>
+        <li>On both hosts a signed-out <code>/signin</code> contains the <code>sendLink</code> form.</li>
+        <li>Magic link is in effect on both environments from this unit on. <code>AUTH_METHODS</code> itself becomes <code>magic-link,password,google,passkey</code> in <code>game-save</code>; that change needs nothing from this unit, and magic link stays tied to the two secrets through <code>mailCanBeDelivered</code>.</li>
+        <li><code>SES_FROM</code> in <code>wrangler.jsonc</code> is unchanged and its domain is the verified identity.</li>
+        <li>No secret, key or account id appears in the unit's diff.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-rotate">
+      <h3>Rotating one environment's key</h3>
+      <p>The user has one key. A rotation makes a second, swaps the secrets, proves a mail, and deletes the first (prelude first):</p>
+      <pre><code data-lang="sh">OLD=$(aws iam list-access-keys --user-name "$U" --query 'AccessKeyMetadata[0].AccessKeyId' --output text) &amp;&amp; \
+[ "$(aws iam list-access-keys --user-name "$U" --query 'length(AccessKeyMetadata)' --output text)" = 1 ] &amp;&amp; \
+read -r KEY_ID KEY_SECRET &lt;&lt;&lt;"$(aws iam create-access-key --user-name "$U" \
+  --query 'AccessKey.[AccessKeyId,SecretAccessKey]' --output text)" &amp;&amp; \
+printf '%s' "$KEY_ID" | npx wrangler secret put SES_ACCESS_KEY_ID "${ENVF[@]}" &amp;&amp; \
+printf '%s' "$KEY_SECRET" | npx wrangler secret put SES_SECRET_ACCESS_KEY "${ENVF[@]}" &amp;&amp; \
+echo "old key ends ${OLD: -4}"</code></pre>
+      <ol>
+        <li>Run the block above. It refuses unless the user has exactly one key.</li>
+        <li>Send a proof mail with step 6 for the same environment; it must answer <code>success</code>.</li>
+        <li>Delete the old key, the one of the user's two keys with the older <code>CreateDate</code> in <code>aws iam list-access-keys --user-name "$U"</code>, whose last four characters the block printed: <code>aws iam delete-access-key --user-name "$U" --access-key-id &lt;old key id&gt;</code>.</li>
+      </ol>
+      <p>Mail keeps flowing throughout: the old key works until it is deleted.</p>
+    </section>
+
+    <section id="sec-design-rollback">
+      <h3>Rollback</h3>
+      <p>One environment, which turns magic link off there at once (prelude first):</p>
+      <pre><code data-lang="sh">npx wrangler secret delete SES_ACCESS_KEY_ID "${ENVF[@]}"
+npx wrangler secret delete SES_SECRET_ACCESS_KEY "${ENVF[@]}"
+for k in $(aws iam list-access-keys --user-name "$U" --query 'AccessKeyMetadata[].AccessKeyId' --output text); do
+  aws iam delete-access-key --user-name "$U" --access-key-id "$k"
+done
+aws iam delete-user-policy --user-name "$U" --policy-name send-from-sfhousing
+aws iam delete-user --user-name "$U"</code></pre>
+      <ul>
+        <li>It touches only that environment's user, keys and secrets; the other environment keeps sending.</li>
+        <li>The identity goes only after both environments are rolled back: <code>aws sesv2 delete-email-identity --region us-west-1 --email-identity sfhousing.mindlace.net</code>, then the owner removes the six records of <a href="#tbl-dns">the DNS table</a>.</li>
+        <li>The operator rolls back only an environment whose step 5 or 6 failed. Any other rollback happens only on the owner's word.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-google">
+      <h3>Google sign-in: the owner step</h3>
+      <p>Google sign-in shows once its two secrets are on an environment and <code>AUTH_METHODS</code> lists <code>google</code>. The client secret is the owner's to make and to set; it never passes through an agent. The unit is complete without it; it stays open in the bootstrap checklist.</p>
+      <p>In the owner's Google Cloud console, one project for the site:</p>
+      <ol>
+        <li>Google Auth Platform, Branding: app name <code>SF Housing Simulator</code>, the owner's support and developer contact address, home page <code>https://sfhousing.mindlace.net</code>, authorised domain <code>mindlace.net</code>.</li>
+        <li>Audience: External, published to production, so any Google account can sign in.</li>
+        <li>Data access: the scopes <code>openid</code>, <code>.../auth/userinfo.email</code> and <code>.../auth/userinfo.profile</code> only. These need no Google review.</li>
+        <li>Clients, Create client: type Web application, name <code>sfhousing</code>.</li>
+        <li>Authorised JavaScript origins: <code>https://sfhousing.mindlace.net</code> and <code>https://sfhousing-staging.mindlace.net</code>.</li>
+        <li>Authorised redirect URIs: <code>https://sfhousing.mindlace.net/api/auth/callback/google</code> and <code>https://sfhousing-staging.mindlace.net/api/auth/callback/google</code>.</li>
+      </ol>
+      <p>One client serves both environments. The owner then pastes the client id and secret at each prompt:</p>
+      <pre><code data-lang="sh">npx wrangler secret put GOOGLE_CLIENT_ID
+npx wrangler secret put GOOGLE_CLIENT_SECRET
+npx wrangler secret put GOOGLE_CLIENT_ID --env staging
+npx wrangler secret put GOOGLE_CLIENT_SECRET --env staging</code></pre>
+      <p>The check, by anyone: <code>npx wrangler secret list</code> and <code>npx wrangler secret list --env staging</code> each list both names; once <code>game-save</code> has merged and deployed, <code>/signin</code> on each host shows the Google button.</p>
+    </section>
+  </section>
+
+  <section id="sec-write-set">
+    <h2>Write set</h2>
+    <p>From the design doc's write-sets table:</p>
+    <ul>
+      <li><code>docs/dev/deploy.md</code>'s mail section and bootstrap checklist.</li>
+      <li>AWS, DNS and Worker secrets outside the repository.</li>
+    </ul>
+    <p>Ordering note: <code>docs/dev/deploy.md</code> is written by <code>mail-setup</code> (its mail section) and by <code>closing</code> (the rest), which needs every other unit's rows.</p>
+    <p>"The mail section" of <code>deploy.md</code> is exactly these parts, and <code>closing</code> writes everything else:</p>
+    <ul>
+      <li>The new section <code>## Sign-in mail</code>, after <code>## Secrets and variables</code> and before the next <code>##</code> section.</li>
+      <li>In <code>### Worker (set in Cloudflare)</code>: the "Already set" line, the <code>GOOGLE_CLIENT_ID</code> bullet and the <code>SES_ACCESS_KEY_ID</code> bullet.</li>
+      <li>In <code>## One-time bootstrap</code>: the mail and Google items.</li>
+    </ul>
+    <p>Files, as found with <code>git ls-files</code>:</p>
+    <ul>
+      <li>Changes: <code>docs/dev/deploy.md</code>.</li>
+      <li>Creates: none. Deletes: none.</li>
+    </ul>
+    <p>Outside the repository the unit creates: the SES identity <code>sfhousing.mindlace.net</code> in <code>us-west-1</code> with its MAIL FROM; the IAM users <code>sfhousing-mail-staging</code> and <code>sfhousing-mail-production</code>, each with the inline policy <code>send-from-sfhousing</code> and one access key; the secrets <code>SES_ACCESS_KEY_ID</code> and <code>SES_SECRET_ACCESS_KEY</code> on the Workers <code>sfhousing</code> and <code>sfhousing-staging</code>. The owner creates the six DNS records and the Google client.</p>
+  </section>
+
+  <section id="sec-tests">
+    <h2>Tests</h2>
+    <p>There is no code, so there are no unit, component or e2e tests. No existing test changes. The unit is proved by this verification list, each item with its command in <a href="#sec-design">Design</a>:</p>
+    <ol>
+      <li><code>dig</code> answers each of the six records as listed.</li>
+      <li><code>get-email-identity</code>: sending <code>true</code>, identity, DKIM and MAIL FROM <code>SUCCESS</code>.</li>
+      <li><code>simulate-principal-policy</code>: <code>allowed</code> for this identity, <code>implicitDeny</code> for <code>planafoot.com</code>.</li>
+      <li><code>wrangler secret list</code> on each environment lists <code>SES_ACCESS_KEY_ID</code> and <code>SES_SECRET_ACCESS_KEY</code>.</li>
+      <li>Each environment's user has exactly one active key.</li>
+      <li><code>/signin</code> on each host carries the <code>sendLink</code> form.</li>
+      <li>The <code>sendLink</code> POST answers <code>success</code> on each host.</li>
+      <li>The owner confirms, after the final hand-back, that each mail arrived in the inbox with <code>dkim=pass</code>, <code>spf=pass</code> and <code>dmarc=pass</code> for the domains named in <a href="#sec-design-proof">step 6</a>, and that the staging link signs in.</li>
+      <li><code>npm run lint</code> passes with the edited <code>deploy.md</code>, and the unit's diff carries no secret, key id or account id.</li>
+    </ol>
+  </section>
+
+  <section id="sec-docs">
+    <h2>Docs</h2>
+    <p><code>docs/dev/deploy.md</code>, the mail section only (boundary in <a href="#sec-write-set">Write set</a>).</p>
+
+    <section id="sec-docs-worker">
+      <h3>In "Worker (set in Cloudflare)"</h3>
+      <ul>
+        <li>The "Already set" line: <code>BETTER_AUTH_SECRET</code> on staging and production, each with its own value; <code>SES_ACCESS_KEY_ID</code> and <code>SES_SECRET_ACCESS_KEY</code> on staging and production, each environment with its own key (see Sign-in mail).</li>
+        <li>The SES bullet: the two SES secrets make mail deliverable, and magic link is in effect exactly while both are set; without them mail runs in log mode (link to <code>auth.md</code>'s Mail section). <code>EMAIL_PROVIDER=resend</code> with <code>RESEND_API_KEY</code> is the other provider the code accepts and is unused. <code>SES_REGION</code> is unset, so mail goes through <code>us-west-1</code>. The bullet names no page, sim or invitation.</li>
+        <li>The Google bullet: <code>GOOGLE_CLIENT_ID</code> and <code>GOOGLE_CLIENT_SECRET</code> switch Google sign-in on while <code>AUTH_METHODS</code> lists <code>google</code>; how they are made is under Sign-in mail.</li>
+      </ul>
+    </section>
+
+    <section id="sec-docs-mail">
+      <h3>The section "Sign-in mail"</h3>
+      <p>It states, each as its own item or block:</p>
+      <ul>
+        <li>Mail goes through Amazon SES in the AWS account planafoot uses, region <code>us-west-1</code>, with production access.</li>
+        <li>The identity: <code>sfhousing.mindlace.net</code>, Easy DKIM at 2048 bits, MAIL FROM <code>mail.sfhousing.mindlace.net</code> with the SES default on MX failure. Why a subdomain: <code>mindlace.net</code> carries the owner's own mail.</li>
+        <li>The From: <code>SES_FROM</code> in <code>wrangler.jsonc</code>, the same in both environments.</li>
+        <li>The senders: one IAM user per environment, <code>sfhousing-mail-staging</code> and <code>sfhousing-mail-production</code>, each with the inline policy <code>send-from-sfhousing</code>, the policy JSON as in <a href="#sec-design-iam">step 4</a> with <code>&lt;account&gt;</code> for the id.</li>
+        <li>The keys: each user holds one access key, set as that environment's two secrets. No copy of a key is kept anywhere but the Worker secret.</li>
+        <li>The DNS records: <a href="#tbl-dns">the table</a> as a Markdown table, with <code>&lt;token&gt;</code> for the three DKIM tokens and the command that prints them (<code>aws sesv2 get-email-identity ... --query DkimAttributes.Tokens</code>), the zone (Cloudflare, <code>mindlace.net</code>) and the "DNS only" rule for the CNAMEs.</li>
+        <li>The health check: the <code>get-email-identity</code> query of <a href="#sec-design-wait">step 3</a> and its expected answer.</li>
+        <li>The environment prelude of <a href="#sec-design-env">The environment parameter</a>, which every command below starts with.</li>
+        <li>Rotating one environment's key: the block and the three steps of <a href="#sec-design-rotate">Rotating</a>.</li>
+        <li>Turning mail off on one environment: the Rollback block for it. Magic link goes off there at once; the other environment is untouched.</li>
+        <li>Removing everything: Rollback for both environments, then the identity and the DNS records.</li>
+        <li>Google sign-in: the console steps and the four <code>wrangler secret put</code> commands of <a href="#sec-design-google">Google sign-in</a>, with the two redirect URIs written out.</li>
+      </ul>
+    </section>
+
+    <section id="sec-docs-bootstrap">
+      <h3>In "One-time bootstrap"</h3>
+      <p>Under Done, dated with the day each was done:</p>
+      <ul>
+        <li><code>[x]</code> SES identity <code>sfhousing.mindlace.net</code> verified in <code>us-west-1</code> (DKIM and MAIL FROM), its six DNS records at Cloudflare.</li>
+        <li><code>[x]</code> IAM users <code>sfhousing-mail-staging</code> and <code>sfhousing-mail-production</code>; SES secrets on staging and production; a sign-in mail accepted by SES on each.</li>
+      </ul>
+      <p>Under Remaining:</p>
+      <ul>
+        <li><code>[ ]</code> Google OAuth client and <code>GOOGLE_CLIENT_ID</code>, <code>GOOGLE_CLIENT_SECRET</code> on staging and production (owner; see Sign-in mail).</li>
+        <li><code>[ ]</code> Owner confirms DKIM, SPF and DMARC pass in the received headers of the staging and production sign-in mails.</li>
+      </ul>
+    </section>
+  </section>
+
+  <section id="sec-global-constraints">
+    <h2>Global constraints</h2>
+    <ul>
+      <li>Work happens in git worktrees under <code>.claude/worktrees/</code>. Commits follow Conventional Commits. No attribution to an AI anywhere.</li>
+      <li>Code style: 2-space indent, single quotes, no trailing commas, 100 columns.</li>
+      <li>Every Vitest test calls <code>expect</code>.</li>
+      <li>Signoff fails on server stderr, on timing crutches and on a retried flake. Each unit runs <code>npm run lint</code>, <code>npm run check</code> and the Vitest projects its files belong to before it hands back.</li>
+      <li>Port 4173 is shared by every session on this machine. A unit never kills a server it did not start; it waits.</li>
+      <li>Every agent runs every command in the foreground and never ends a turn while something it started is running.</li>
+      <li>Schema changes go through <code>npm run db:generate</code>. Nobody edits a migration.</li>
+      <li>No unit runs <code>npm run signoff</code>: its dataset step fails until the dataset is uploaded. <code>closing</code> runs it once, after the upload.</li>
+      <li>The dataset version changes in this build. The dataset is built and uploaded once, from the integration branch, after the last unit that writes a hashed path has merged; no unit uploads a dataset.</li>
+      <li>A unit that writes a hashed path regenerates the fixture dataset with <code>npm run pipeline -- fixture</code> and commits it.</li>
+      <li>WCAG 2.2 AA: every new control is at least 24 px and passes <code>expectNoA11yViolations</code> in light and dark.</li>
+      <li>Page text is short. No sentence says what something is not.</li>
+      <li>Nothing on the main screen says "RHNA". The goal is read from the <code>Goal</code> value, never from a constant.</li>
+      <li>The game's rules are read from <code>src/lib/game/</code>. No component compares a level to a number.</li>
+      <li>One future: no seed control, no band, no average over runs.</li>
+      <li>Published plans and policies, their ids and their pages keep working, including every policy published before this build.</li>
+      <li>A number that is a claim about the world carries its source and tier, in the existing <code>Sourced</code>, <code>Unsourced</code> and <code>Evidence</code> shapes.</li>
+      <li>A runtime dependency that ships in the bundle gets a credit in <code>SOFTWARE</code>. This build adds none.</li>
+      <li>CSP changes are interface changes. This build makes none.</li>
+      <li>Timing is measured only on a quiet machine. A unit that cannot get one defers the measurement and says so.</li>
+    </ul>
+  </section>
+
+  <section id="sec-out-of-scope">
+    <h2>Out of scope</h2>
+    <ul>
+      <li>Changing <code>AUTH_METHODS</code> to <code>magic-link,password,google,passkey</code>: <code>game-save</code>.</li>
+      <li><code>docs/dev/auth.md</code>'s Mail and Sign-in methods sections: <code>remove-multiuser</code> and <code>game-save</code>.</li>
+      <li>The rest of <code>docs/dev/deploy.md</code>, including the takedown section and the other Worker bullets: <code>closing</code>.</li>
+      <li>Passkeys: they need no configuration; the relying party is each host's name (<code>better-auth.ts:116</code>). They switch on with <code>AUTH_METHODS</code> in <code>game-save</code>.</li>
+      <li>Mail templates, their copy and the invite mail: unchanged here; the invite mail goes with <code>remove-multiuser</code>.</li>
+      <li>Bounce and complaint handling (SES event destinations, SNS): no unit.</li>
+      <li>A mail provider for local development: <code>.dev.vars</code> stays each developer's own.</li>
+      <li>Resend: the code keeps it and nothing configures it.</li>
+      <li>Moving <code>mindlace.net</code>'s DNS or changing its own SPF, MX or DMARC: no unit.</li>
+    </ul>
+  </section>
+</article>

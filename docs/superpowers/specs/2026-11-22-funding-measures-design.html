@@ -1,0 +1,651 @@
+<article>
+  <header>
+    <h1>Funding measures design</h1>
+    <p>Every funding preset ends, a pool's bar reads its lifetime money, the funding editors end at the window, and a given measure reads as fixed text.</p>
+  </header>
+
+  <section id="sec-goal">
+    <h2>Goal</h2>
+    <p>This unit makes the funding presets that level 5 offers into finite, fixed measures and shows them so. It is the <code>funding-measures</code> subsystem of the <a href="../design/2026-11-22-1216-incremental-game.html">incremental game design</a>, built after <code>finite-funding</code> has merged (it needs F2) and against G3.</p>
+    <ul>
+      <li>Every funding preset's money ends: the two with none today get a stated term, with its source and tier (D3, R2).</li>
+      <li>A given measure's dates are counted from the start the player chooses, through <code>dateMeasure</code> (<a href="#sec-if-m1">M1</a>); its span's end cuts what arrives after it (D4).</li>
+      <li>A pool's bar on the timeline shows what is left of all the money the pool will receive, when the pool ends (<a href="../design/2026-11-22-1216-incremental-game.html#sec-model-money">Finite public money</a>).</li>
+      <li>The funding editors run to the window's last month (the calendar month that holds the window's last day), taken from the dataset date, and never offer "no end".</li>
+      <li>The federal tax-credit group is edited as any capped group, now that it has a yearly ceiling (F2).</li>
+      <li>The read-only summary of a given measure lists what it pays and when its money ends, word for word.</li>
+      <li>The funding sentences that D13 makes false are reworded.</li>
+      <li>"Your own pool", "City funding scale" and "Market terms" keep working in the code for level 6 (D4).</li>
+    </ul>
+  </section>
+
+  <section id="sec-interfaces">
+    <h2>Interfaces</h2>
+    <p>These rows and their sections are copied from the design document. A change to one is a change to the design.</p>
+    <table id="tbl-interfaces">
+      <caption>Interface table</caption>
+      <thead>
+        <tr><th scope="col">Row</th><th scope="col">Owner</th><th scope="col">Layer</th><th scope="col">Summary</th><th scope="col">Contract</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">G3</th><td><code>game-core</code></td><td>Model commitment</td><td>What a level allows; the playable document.</td><td><a href="#sec-if-g3">G3</a></td></tr>
+        <tr><th scope="row">F2</th><td><code>finite-funding</code></td><td>Model commitment</td><td>Pools with no "can always pay".</td><td><a href="#sec-if-f2">F2</a></td></tr>
+        <tr><th scope="row">M1</th><td><code>funding-measures</code></td><td>Decomposition choice</td><td>A given measure's money follows its policy's start.</td><td><a href="#sec-if-m1">M1</a></td></tr>
+      </tbody>
+    </table>
+
+    <section id="sec-if-g3">
+      <h3>G3 What a level allows</h3>
+      <pre><code data-lang="ts">// src/lib/game/allowed.ts
+import type { Policy, PolicyKind, SimPolicy4 } from '$lib/timeline/policy4';
+
+export interface Allowed {
+  /** Kinds whose policies run and can be edited. */
+  kinds: ReadonlySet&lt;PolicyKind&gt;;
+  /** 'given': only given measures run, and what they pay is read-only. */
+  money: 'given' | 'all';
+}
+
+export const ALL_ALLOWED: Allowed;
+export function allowedAt(level: Level): Allowed;
+/** permitting 3, zoning 4, money 5. */
+export function unlocksAt(kind: PolicyKind): Level;
+/** A money policy made from a funding preset: its `preset` is the preset's id. */
+export function isGiven(p: Policy): boolean;
+export function runs(kind: PolicyKind, p: Policy, a: Allowed): boolean;
+export function playable(doc: SimPolicy4, a: Allowed): SimPolicy4;
+/** The lowest level whose `allowedAt` runs every policy of `doc`; 6 when none does. */
+export function levelNeeded(doc: SimPolicy4): Level | 6;
+/** True while the game's level is below the one that opens the simulation. */
+export function simLocked(p: Progress): boolean;
+/** The level that runs all of `doc`, when it is above the game's level; null otherwise. */
+export function needsHigher(doc: SimPolicy4, p: Progress): Level | 6 | null;</code></pre>
+      <ul>
+        <li><code>allowedAt(1)</code> and <code>allowedAt(2)</code> have no kinds.</li>
+        <li><code>allowedAt(3)</code> has permitting; <code>allowedAt(4)</code> adds zoning; <code>allowedAt(5)</code> adds money with <code>money: 'given'</code>.</li>
+        <li><code>ALL_ALLOWED</code> has all three kinds and <code>money: 'all'</code>. No level in this round returns it.</li>
+        <li>The published view at <code>/s/&lt;id&gt;</code> runs under <code>ALL_ALLOWED</code>, so <code>playable</code> returns its document unchanged (D5).</li>
+        <li><code>runs</code> is false for a kind not in <code>a.kinds</code>.</li>
+        <li><code>runs</code> is false for a money policy that is not given while <code>a.money</code> is <code>'given'</code>.</li>
+        <li><code>playable</code> returns the document with only the policies that run, in their order, and returns the same object when nothing is removed.</li>
+        <li>Every money policy that <code>addPolicy</code> makes from a funding preset carries the preset's id in <code>preset</code> and the preset's label as its label.</li>
+        <li>The schema 4 parser accepts null or a preset id of 1 to 60 characters in a money policy's <code>preset</code>. Zoning and permitting are unchanged.</li>
+        <li>A money policy stored or published before this build has <code>preset</code> null, so it is not a given measure. It runs in the published view and is locked in a game.</li>
+        <li>An edit that changes what a given measure pays sets its <code>preset</code> to null.</li>
+        <li><code>isGiven</code> is false for every zoning and permitting policy.</li>
+        <li><code>isGiven</code> does not check the id against the presets on offer. A hand-made document can carry any id on any pool; nothing ranks one player against another, so that is accepted.</li>
+        <li><code>simLocked</code> is true exactly at level 1. Pages call it and <code>needsHigher</code>; no page compares a level itself.</li>
+        <li><code>levelNeeded</code> of a document with no policies is 2.</li>
+      </ul>
+    </section>
+
+    <section id="sec-if-f2">
+      <h3>F2 Pools</h3>
+      <pre><code data-lang="ts">// src/lib/timelapse/types.ts
+export interface Pool {
+  id: string;
+  kind: PoolKind;
+  label: string;
+  inflows: Inflow[];
+  /** non-null exactly for `goBond` and `cop` */
+  debt: { rate: number; termYears: number } | null;
+  /** dollars a pool may have committed or out per dollar received: 1 for every kind but `bank` */
+  leverage: number;
+}
+
+export type Inflow =
+  | { kind: 'once'; day: Day; dollars: Dollars }
+  | { kind: 'yearly'; from: Day; to: Day | null; dollarsPerYear: Dollars };</code></pre>
+      <ul>
+        <li><code>Pool</code> has no <code>uncapped</code> field. A pool can pay only from what it has received.</li>
+        <li>The baseline's federal pool has kind <code>federal</code> and one yearly inflow of the ceiling.</li>
+        <li>A baseline pool's inflows follow its source's bound (F1). A yearly inflow has <code>to: null</code> only for a bound of kind <code>none</code>.</li>
+        <li>A stored or published document whose pool carries <code>uncapped</code> loads with the field ignored.</li>
+        <li>A published plan or policy runs on its own dataset while that dataset exists, and every dataset built before this build has <code>uncapped: true</code> on its federal pool. The calibration loader reads such a pool as one yearly inflow of <code>LEGACY_UNCAPPED_DOLLARS</code> (100 billion dollars) from the dataset date with no end, and never refuses the calibration.</li>
+        <li>Where the yearly amount of such a pool is shown, it reads "No ceiling". So a policy published before this build plays as it did.</li>
+        <li><code>isNoCeiling(dollars)</code> in <code>src/lib/timelapse/model.ts</code> is the one test for such a pool: a yearly amount at or above <code>LEGACY_UNCAPPED_DOLLARS</code>.</li>
+        <li>A scale entry on the federal pool scales its ceiling, as on any pool; 0 switches it off.</li>
+        <li><code>Inflow</code>, <code>Programme</code>, <code>Instrument</code>, the award rule, the line and <code>fundBundle</code> are unchanged.</li>
+      </ul>
+      <p><strong>Removed:</strong> <code>Pool.uncapped</code>, the "no limit" text for anything but an older dataset's pool, the on/off-only editor for the federal pool, the <code>uncapped</code> sets passed to the money results.</p>
+    </section>
+
+    <section id="sec-if-m1">
+      <h3>M1 A given measure's money follows its policy's start</h3>
+      <pre><code data-lang="ts">// src/lib/sim-page/funding-presets.ts
+import type { Policy } from '$lib/timeline/policy4';
+
+/** `policy` with its money dated from its first span's start; `policy` itself when nothing moves. */
+export function dateMeasure(policy: Policy, cal: Calibration): Policy;</code></pre>
+      <ul>
+        <li>A given measure's first payment falls on the first day of its first span, and every later payment keeps its place in the preset's schedule.</li>
+        <li><code>dateMeasure</code> returns <code>policy</code> itself when it is not a given measure (G3), has no span, or names a preset that is not on offer.</li>
+        <li><code>dateMeasure</code> returns <code>policy</code> itself for a preset whose dates are set in law.</li>
+        <li><code>dateMeasure</code> returns <code>policy</code> itself when the re-dated content equals what the policy holds, so a second call changes nothing.</li>
+        <li><code>addPolicy</code> calls <code>dateMeasure</code> on every policy it makes from a funding preset, after it dates the spans.</li>
+        <li>Every edit that moves a given measure's first span's start calls <code>dateMeasure</code> on the result.</li>
+        <li>A stored or published document is never re-dated when it loads.</li>
+        <li>The stub shipped by <code>contracts</code> returns <code>policy</code> itself.</li>
+      </ul>
+    </section>
+  </section>
+
+  <section id="sec-today">
+    <h2>What is there today</h2>
+    <p>Read on commit <code>8125e557</code>. <code>finite-funding</code> merges first and removes <code>Pool.uncapped</code> from these files (F2); the operator reads the merged code before planning and treats every <code>uncapped</code> line below as gone.</p>
+    <section id="sec-today-presets">
+      <h3>Presets</h3>
+      <ul>
+        <li><code>fundingPresets(cal)</code> builds eleven presets against the calibration (<code>src/lib/sim-page/funding-presets.ts:106</code>). Every default date counts from <code>cal.asOf</code>: <code>nextFiscal</code> and <code>nextCalendar</code> (<code>:61-63</code>).</li>
+        <li><code>general-revenue</code> is one yearly inflow of <code>GENERAL_FUND_FY25</code> ($36,700,000) with <code>to: null</code> (<code>funding-presets.ts:263-274</code>, <code>funding-sources.ts:83-91</code>).</li>
+        <li><code>federal-support</code> is one yearly inflow with <code>to: null</code>, from 1 January of the later of 2028 and the year after <code>asOf</code>, of the state pool's first <code>yearly</code> amount; it is held back when the state pool has no yearly inflow (<code>funding-presets.ts:390-430</code>).</li>
+        <li><code>state-off</code>, <code>state-double</code> and <code>federal-credits-off</code> are one scale entry each, with no end of their own (<code>funding-presets.ts:372-389</code>, <code>:431-439</code>).</li>
+        <li><code>housing-bond</code>, <code>revolving-fund</code> and <code>public-bank</code> are <code>once</code> inflows; <code>htf-2026</code> is held back with fixed dates to 1 July 2057 (<code>funding-presets.ts:247-364</code>, <code>funding-sources.ts:104-119</code>).</li>
+        <li>The "+" menu adds a preset through <code>fundingPresets(cal)</code> with its default dates, then sets the new policy's spans to start on the playhead's month with no end (<code>src/lib/timeline/add.ts:192</code>, <code>:237-241</code>). A money policy made this way carries <code>preset: null</code> (<code>src/lib/timeline/upgrade.ts:21-35</code>).</li>
+        <li>Money arrives only in months a span of its policy is in force (<code>src/lib/sim/world/policy/money.ts:1-9</code>, <code>:156-163</code>), and days in a policy are absolute (<code>docs/dev/sim-funding.md:9</code>). So a bond added at a playhead month after its July date never receives its money.</li>
+      </ul>
+    </section>
+    <section id="sec-today-level">
+      <h3>The pool level</h3>
+      <ul>
+        <li><code>poolLevel</code> is the free share of the money received so far, so a yearly pool refills at each payment (<code>src/lib/timeline/pool-level.ts:24-58</code>).</li>
+        <li><code>levelSet(view, doc, baseline, asOf)</code> builds one level per fund policy with an own pool and one summed level of the baseline pools, "Current funding" (<code>pool-level.ts:196-217</code>). <code>TimelineMode</code> calls it with the document the numbers were run on (<code>src/lib/timeline/TimelineMode.svelte:439</code>).</li>
+      </ul>
+    </section>
+    <section id="sec-today-editors">
+      <h3>Editors, summary and copy</h3>
+      <ul>
+        <li>Three editors fix the last month at December 2066 (<code>FundingPoolRow.svelte:127</code>, <code>ProgrammeEditor.svelte:169</code>, <code>FundingGroupEditor.svelte:78</code>, its year input <code>max="2066"</code> at <code>:234</code>); the error says "to December 2066" (<code>funding-copy.ts:163-164</code>).</li>
+        <li>A yearly row's Until and a programme's Until have an "Ends" checkbox; unchecked stores <code>to: null</code> (<code>FundingPoolRow.svelte:371-379</code>, <code>:704-716</code>; <code>ProgrammeEditor.svelte:436-445</code>, <code>:773-783</code>). The undo label for it is "Changed date: {name}, no end" (<code>funding-copy.ts:246-254</code>).</li>
+        <li>A row switched to Every year, and a completed own-pool draft, get <code>to: null</code> (<code>funding-edit.ts:435</code>, <code>FundingPoolRow.svelte:306</code>).</li>
+        <li>Coverage steps and the pool preview read <code>HORIZON</code>, 31 December 2066 (<code>FundingTab.svelte:139</code>, <code>:212</code>; <code>funding-view.ts:509</code>; <code>PolicySummary.svelte:65</code>).</li>
+        <li>The federal group is on or off only, with "no limit" as its amount; <code>finite-funding</code> makes the federal pool an ordinary pool with a ceiling and adds no wording for it (<code>FundingGroupEditor.svelte:152-154</code>, <code>:243-264</code>; <code>FundingTab.svelte:220-221</code>; <code>funding-view.ts:285</code>).</li>
+        <li><code>WhatEditor</code> renders a read-only policy as <code>PolicySummary</code> of the selected span's projection (<code>src/lib/timeline/WhatEditor.svelte:122-125</code>). A projection holds only that span's effect in a schema 3 policy (<code>src/lib/timeline/lens.ts:70-117</code>).</li>
+        <li><code>PolicySummary</code> always renders five sections, so a money span's summary also says "No transit layers", "No painted areas", "None" and the observed timelines (<code>PolicySummary.svelte:98-171</code>). Its money rows always start with "Today's funding: as today" when there is no scale entry, and add "No money added" when there is no pool or programme (<code>funding-view.ts:1030</code>, <code>:1065-1066</code>).</li>
+        <li>A yearly inflow with <code>to: null</code> reads "$36.7 million a year from July 2027" with no end (<code>funding-view.ts:465-477</code>).</li>
+        <li><code>COVERAGE_OFF_SHORT_SENTENCE4</code> says a source that has run short makes projects wait (<code>src/lib/timeline/copy.ts:34-37</code> on <code>8125e557</code>; <code>finite-funding</code> moves it, with the other public-money sentences and their names, into <code>src/lib/timeline/money-copy.ts</code>, tested in <code>money-copy.spec.ts</code>). D13 makes it false for a source that has had its last money. <code>COVERAGE_RUN_SENTENCE</code> and <code>COVERAGE_OFF_SHORT_SENTENCE</code> in <code>funding-copy.ts:88-95</code> are imported by nothing.</li>
+      </ul>
+    </section>
+  </section>
+
+  <section id="sec-design">
+    <h2>Design</h2>
+
+    <section id="sec-design-presets">
+      <h3>Every preset ends</h3>
+      <p>The presets keep their ids, labels, groups and order. Each one's money now has an end in its own content, independent of the policy's span.</p>
+      <table id="tbl-presets">
+        <caption>What each preset pays and when its money ends (start: the start date the preset is built from)</caption>
+        <thead>
+          <tr><th scope="col">Preset</th><th scope="col">Offered</th><th scope="col">What it pays</th><th scope="col">Its end</th><th scope="col">Source and tier</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row"><code>housing-bond</code></th><td>Yes</td><td>$410,442,573 once, on the start</td><td>One payment</td><td><code>BOND_PRINCIPAL</code>, tier 2</td></tr>
+          <tr><th scope="row"><code>general-revenue</code></th><td>Yes</td><td>$36,700,000 a year from the start, 30 payments, $1,101,000,000 in all</td><td>The 30th payment, 29 years after the start</td><td><code>GENERAL_FUND_FY25</code> tier 1; <code>GENERAL_FUND_TERM_YEARS</code> tier 2</td></tr>
+          <tr><th scope="row"><code>htf-2026</code></th><td>No (held back)</td><td>$161 million over 2028 to 2033, then $60 million a year to 2057: $1,601 million</td><td>1 July 2057, fixed in law</td><td><code>PROP_C_SCHEDULE</code>, tier 2</td></tr>
+          <tr><th scope="row"><code>revolving-fund</code></th><td>Yes</td><td>$100,000,000 once, on the start; loans repaid return to it</td><td>One payment</td><td><code>REVOLVING_FUND_SIZE</code>, tier 1</td></tr>
+          <tr><th scope="row"><code>public-bank</code></th><td>Yes</td><td>Five payments on the start and its next four anniversaries, $70,000,000 in all</td><td>The fifth payment, 4 years after the start</td><td><code>PUBLIC_BANK_HOUSING</code>, tier 3</td></tr>
+          <tr><th scope="row"><code>state-bond-2026</code></th><td>No</td><td>Nothing</td><td>Not applicable</td><td><code>LAO_PROP_1</code> in its description</td></tr>
+          <tr><th scope="row"><code>state-off</code></th><td>Yes</td><td>Removes the state pool's money from the start</td><td>Adds no money; ends when the player ends its policy</td><td>None: the player's policy</td></tr>
+          <tr><th scope="row"><code>state-double</code></th><td>Yes</td><td>Twice the state pool's money for ten years from the start</td><td>Ten years after the start, or the state source's own end if sooner</td><td><code>STATE_DOUBLE_TERM_YEARS</code>, tier 4</td></tr>
+          <tr><th scope="row"><code>federal-support</code></th><td>Yes</td><td>The state pool's first payment, each year from the start, 10 payments</td><td>The 10th payment, 9 years after the start</td><td><code>FEDERAL_SUPPORT_AMOUNT_PROVENANCE</code> and <code>FEDERAL_SUPPORT_TERM_YEARS</code>, tier 4</td></tr>
+          <tr><th scope="row"><code>federal-credits-off</code></th><td>Yes</td><td>Removes the federal pool's money from the start</td><td>Adds no money; ends when the player ends its policy</td><td>None: the player's policy</td></tr>
+          <tr><th scope="row"><code>regional-bond</code></th><td>No</td><td>Nothing</td><td>Not applicable</td><td>None</td></tr>
+        </tbody>
+      </table>
+      <pre><code data-lang="ts">// src/lib/sim-page/funding-presets.ts
+export interface FundingPreset {
+  id: string;
+  label: string;
+  description: string;
+  group: 'city' | 'bank' | 'state' | 'federal';
+  /** 'start': every date is counted from the start it is built from. 'fixed': its dates are set in law. */
+  dates: 'start' | 'fixed';
+  baselineScale: FinanceLevers['baselineScale'];
+  pools: Pool[];
+  programmes: Programme[];
+  provenance: Provenance[];
+  available: boolean;
+  reason?: string;
+}
+
+/** The presets in display order. `start` given: every 'start' preset's dates count from it. */
+export function fundingPresets(cal: Calibration, start?: Day): FundingPreset[];
+
+/** `d` moved `n` years, same month and day; 29 February becomes 28 February in a common year. */
+export function yearsAfter(d: Day, n: number): Day;
+
+// src/lib/sim-page/funding-sources.ts
+export const GENERAL_FUND_TERM_YEARS: Sourced&lt;number&gt;; // 30, tier 2
+export const FEDERAL_SUPPORT_TERM_YEARS: Sourced&lt;number&gt;; // 10, tier 4
+export const STATE_DOUBLE_TERM_YEARS: Sourced&lt;number&gt;; // 10, tier 4
+export const PLAYER_START_PROVENANCE: Provenance; // tier 4</code></pre>
+      <dl>
+        <dt>The first date</dt><dd>With <code>start</code> given it is <code>start</code> for every 'start' preset. Without it, each preset keeps today's default: <code>nextFiscal(asOf)</code> for the City and bank presets and the state scales, <code>nextCalendar(asOf)</code> for <code>federal-credits-off</code>, and 1 January of the later of 2028 and the year after <code>asOf</code> for <code>federal-support</code>.</dd>
+        <dt>Later dates</dt><dd>Each later date is <code>yearsAfter(first, k)</code>: the bank's payments at k = 1 to 4, <code>general-revenue</code>'s <code>to</code> at 29, <code>federal-support</code>'s <code>to</code> at 9, <code>state-double</code>'s second entry at 10.</dd>
+      </dl>
+      <ul>
+        <li>Every pool a preset builds has only <code>once</code> inflows or <code>yearly</code> inflows whose <code>to</code> is not null.</li>
+        <li>A yearly inflow's <code>to</code> is the day of its last payment exactly, so <code>inflowArrivals</code> gives the stated number of payments.</li>
+        <li><code>state-double</code>'s scale content is two entries on the state pool: scale 2 from the first date, scale 1 from <code>yearsAfter(first, 10)</code>.</li>
+        <li><code>state-off</code> and <code>federal-credits-off</code> keep one entry at scale 0: they add no money, and their end is the end of the span the player gives them.</li>
+        <li><code>htf-2026</code> has <code>dates: 'fixed'</code> and ignores <code>start</code>; every other preset has <code>dates: 'start'</code>.</li>
+        <li>Every programme a preset builds has <code>from</code> equal to its pool's first payment and <code>to: null</code>; the money's end bounds it.</li>
+        <li><code>federal-support</code>'s yearly amount is the dollars of the baseline state pool's first arrival on or after <code>asOf</code>, from a <code>once</code> or a <code>yearly</code> inflow. It is held back only when the state pool has no arrival from <code>asOf</code>, with the reason "This data's state pool has no money to start from."</li>
+        <li>A date a preset builds may fall after the window; that money never arrives in the forecast and the preset keeps it.</li>
+        <li>With <code>start</code> given, <code>PLAYER_START_PROVENANCE</code> takes the place of <code>NEXT_FISCAL_START_PROVENANCE</code> and <code>FEDERAL_SUPPORT_START_PROVENANCE</code> in each preset's <code>provenance</code>.</li>
+        <li><code>general-revenue</code>'s provenance adds <code>GENERAL_FUND_TERM_YEARS.provenance</code>; <code>federal-support</code>'s adds <code>FEDERAL_SUPPORT_TERM_YEARS.provenance</code>; <code>state-double</code>'s is <code>[STATE_DOUBLE_TERM_YEARS.provenance]</code>.</li>
+        <li><code>valueSource</code> gives <code>general-revenue</code>'s <code>inflows[0].to</code> the provenance of <code>GENERAL_FUND_TERM_YEARS</code> while it equals <code>yearsAfter(inflows[0].from, 29)</code>. It compares every other field as today, against the preset built without <code>start</code>, so amounts keep their sources and dates stay custom.</li>
+        <li><code>addedPresets</code> recognises a preset that adds only scale entries when the policy holds entries with its pools and scales in its order, whatever their days.</li>
+      </ul>
+      <p>The three new descriptions and the new reason, word for word:</p>
+      <dl>
+        <dt><code>general-revenue</code></dt><dd>More City general-fund money every year for 30 years, shared with today's City money toward new affordable homes, so more homes get built each year while there are projects waiting for money.</dd>
+        <dt><code>state-double</code></dt><dd>Twice today's state money for ten years from a date you choose; on its own this adds no homes while the City's money is the limit, so pair it with more City or federal money.</dd>
+        <dt><code>federal-support</code></dt><dd>A new yearly federal grant for ten years from a year you choose that pays the City's part of each affordable home while it lasts; no law provides it yet, so the amount is your own.</dd>
+        <dt><code>htf-2026</code> reason</dt><dd>Not yet certified (passed November 2026).</dd>
+      </dl>
+      <p>Every other label, description and reason is unchanged.</p>
+      <p>The preset numbers that are tier 4, invented or the player's, each labelled "custom, not sourced" in the existing shapes:</p>
+      <ul id="list-tier4">
+        <li><code>FEDERAL_SUPPORT_TERM_YEARS</code>: federal support pays for 10 years. New, invented.</li>
+        <li><code>STATE_DOUBLE_TERM_YEARS</code>: state money stays doubled for 10 years. New, invented.</li>
+        <li><code>FEDERAL_SUPPORT_AMOUNT_PROVENANCE</code>: federal support's yearly amount, set equal to the state pool's first payment.</li>
+        <li><code>REVOLVING_RATE</code> (6%) and <code>REVOLVING_COST_SHARE</code> (10% of cost): the revolving fund's loan.</li>
+        <li><code>PUBLIC_BANK_COST_SHARE</code> (10% of cost): the public bank's loan.</li>
+        <li><code>PLAYER_START_PROVENANCE</code>, <code>NEXT_FISCAL_START_PROVENANCE</code> and <code>FEDERAL_SUPPORT_START_PROVENANCE</code>: every preset's first date.</li>
+      </ul>
+      <p>Every other preset number is tier 1 to 3: the bond's principal and terms (2), the General Fund amount (1) and term (2), the Proposition C schedule (2), the revolving fund's size (1), the public bank's payments (3), leverage (2) and loan rate (3), and the City's grant share (2).</p>
+      <p>The new constants, as they enter <code>funding-sources.ts</code>. The operator reads BLA 2026 pp. 44 and 108 before the term is written, as the finance data rules require.</p>
+      <pre><code data-lang="ts">/** A General Fund set-aside's term: that of the Housing Trust Fund's General Fund allocation. */
+export const GENERAL_FUND_TERM_YEARS: Sourced&lt;number&gt; = {
+  value: 30,
+  provenance: {
+    tier: 2,
+    label: "Thirty years, as the Housing Trust Fund's General Fund allocation",
+    sources: [BLA],
+    method:
+      'BLA 2026 p. 44: the Housing Trust Fund "was launched in 2013 after San Francisco voters ' +
+      'approved Proposition C to amend the City Charter in November 2012 which established ' +
+      'baseline annual funding until 2043"; p. 108: its General Fund allocation "started as $20 ' +
+      'million in 2013" and the fund "would expire" in 2043: 30 yearly allocations, FY2013-14 to ' +
+      "FY2042-43. A new set-aside is given the same term: tier 2, an inference from the City's " +
+      'one General Fund allocation for housing whose term is set in law.'
+  }
+};
+
+/** Federal support's number of yearly payments. A starting value. */
+export const FEDERAL_SUPPORT_TERM_YEARS: Sourced&lt;number&gt; = {
+  value: 10,
+  provenance: customStart(
+    'Ten yearly payments of federal support',
+    'no enacted programme gives a term; ten years is a round term.'
+  )
+};
+
+/** How long state money stays doubled. A starting value. */
+export const STATE_DOUBLE_TERM_YEARS: Sourced&lt;number&gt; = {
+  value: 10,
+  provenance: customStart(
+    'State money doubled for ten years',
+    'no measure gives a term; ten years is a round term.'
+  )
+};
+
+/** The first date of a measure the player starts. */
+export const PLAYER_START_PROVENANCE: Provenance = customStart(
+  'From the start you choose',
+  'the measure starts when its policy starts.'
+);</code></pre>
+    </section>
+
+    <section id="sec-design-dates">
+      <h3>A measure's dates and its policy's spans</h3>
+      <p><code>dateMeasure</code> is this unit's row <a href="#sec-if-m1">M1</a>: its shape, when it returns its policy unchanged, and who calls it are there. A given measure is a money policy whose <code>preset</code> is a funding preset's id (<a href="#sec-if-g3">G3</a>). Its money still arrives only in months a span of its policy is in force.</p>
+      <p><code>dateMeasure</code> tests a given measure with <code>isGiven</code> from <code>$lib/game/allowed</code>. How it re-dates, and what the spans then do to the payments:</p>
+      <ul>
+        <li>Every span's effect becomes the content of <code>fundingPresets(cal, policy.spans[0].from)</code>'s preset named by <code>policy.preset</code>, with the policy's own pool and programme ids and its label.</li>
+        <li>A scale measure's entries move with its start in the same way.</li>
+        <li>The player's end cuts the measure: a payment dated after the last day of the policy's last span never arrives.</li>
+        <li>A gap between two spans loses the payments dated inside it.</li>
+        <li>Switching the policy off loses every payment while it is off, as today.</li>
+        <li>A preset whose dates are set in law (<code>dates: 'fixed'</code>, <code>htf-2026</code>) keeps its dates; the player's start and end only cut them.</li>
+        <li><code>dateMeasure</code> also returns <code>policy</code> itself when the policy's content, with every date left out, differs from the preset's. G3 already makes an edited measure not given; this guards a document that holds one.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-level">
+      <h3>A pool's lifetime level</h3>
+      <p>The bar of a pool that ends drains from full as its money is allocated and never refills at a yearly payment. The bar of a pool with no end reads as today.</p>
+      <pre><code data-lang="ts">// src/lib/timeline/pool-level.ts
+export interface LevelPool {
+  id: string;
+  leverage: number;
+  /** All the money the pool receives in the window; null when some inflow of it has no end. */
+  lifetime: number | null;
+}
+
+export function poolLevel(money: MoneyView, pools: readonly LevelPool[]): Float64Array;
+
+/** Per pool id, the pool's lifetime receipts in the window, or null. */
+export function lifetimes(
+  doc: SimPolicy4,
+  baseline: readonly Pool[],
+  asOf: Day
+): ReadonlyMap&lt;string, number | null&gt;;
+
+// unchanged
+export function levelSet(
+  view: TimelineView | null,
+  doc: SimPolicy4,
+  baseline: readonly Pool[] | undefined,
+  asOf: Day
+): LevelSet | null;</code></pre>
+      <dl>
+        <dt>A pool that ends</dt><dd>Every inflow of every definition the document gives it is <code>once</code>, or <code>yearly</code> with <code>to</code> not null. An added pool's definitions are its spans' pools; a baseline pool's is the calibration's.</dd>
+        <dt>Lifetime receipts</dt><dd>The dollars of every arrival the money track gives the pool over months 1 to <code>WINDOW_MONTHS</code>: <code>createMoneyTrack(doc, { asOf, finance })</code> with <code>finance</code> holding the baseline pools, no programmes, no off spans, slope 0 and <code>resolveTerms(MARKET_TERMS)</code>, and month m's levers <code>moneyLeversOf(inForceAt(doc, monthFirstDay(asOf, m)))</code>.</dd>
+        <dt>used<sub>i</sub></dt><dd>committed + spent + out + lostCredit at month i, as today.</dd>
+      </dl>
+      <ul>
+        <li>When every pool given has a lifetime, month i's level is Σ(leverage × lifetime − used<sub>i</sub>) ÷ Σ(leverage × lifetime).</li>
+        <li>When some pool given has no lifetime, month i's level is today's reading for all of them: Σ(leverage × received<sub>i</sub> − used<sub>i</sub>) ÷ Σ(leverage × received<sub>i</sub>).</li>
+        <li>A level is clamped to [0, 1], and is NaN where its denominator is 0.</li>
+        <li>A pool with a lifetime reads 1 from month 0 until money is committed: all of it is still to come or free.</li>
+        <li>A pool whose policy is off, or whose payments all fall outside its spans, has a lifetime of 0 and no level.</li>
+        <li>Loan repayments and released commitments lower used<sub>i</sub>, so a lifetime level can rise; a yearly payment never raises it.</li>
+        <li>A scale policy changes a baseline pool's lifetime exactly as it changes the pool's arrivals: <code>state-double</code> doubles the state pool's lifetime receipts for its ten years.</li>
+        <li><code>levelSet</code> keeps its signature and its <code>LevelSet</code>. Each fund policy's entry and "Current funding" read <code>lifetimes(doc, baseline ?? [], asOf)</code>.</li>
+        <li>"Current funding" sums the baseline pools as today, so it reads lifetime only when every baseline pool ends.</li>
+        <li><code>lifetimes</code> is computed once per document, baseline and <code>asOf</code>: a new view with the same three reuses it.</li>
+        <li>When the money track throws for <code>doc</code>, every pool's lifetime is null and the bars read as today.</li>
+        <li>Yearly payments still arrive in lumps (R7); the bar counts each one from the start, so a lump never shows as a refill.</li>
+        <li>A pool's bar shows nothing special when the pool closes (D13): by then its lifetime level is at or near empty by its own arithmetic. Details carries the "ran out" line.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-window">
+      <h3>The window's last month in the funding editors</h3>
+      <pre><code data-lang="ts">// src/lib/sim-page/funding-view.ts
+/** The last day the forecast runs: `monthLastDay(asOf, WINDOW_MONTHS)`. */
+export function windowEnd(asOf: Day): Day;
+/** The first day of the calendar month holding `windowEnd(asOf)`: the last month a funding date may name. */
+export function windowLastMonth(asOf: Day): Day;</code></pre>
+      <ul>
+        <li>"The window's last month" is the calendar month that holds the window's last day. The goal's deadline is the last whole month, one before it; the funding editors use the window's last month, never the deadline.</li>
+        <li>On fixture-0 (<code>asOf</code> 10 October 2026) <code>windowEnd</code> is 9 October 2066 and <code>windowLastMonth</code> is 1 October 2066; the goal's deadline is September 2066.</li>
+        <li>Every funding date field accepts the first of a month from <code>asOf</code>'s month to <code>windowLastMonth(asOf)</code>: a pool's When, From and Until, a programme's From and Until, and a dated change's month.</li>
+        <li>The dated change's year input has <code>max</code> the year of <code>windowLastMonth(asOf)</code>.</li>
+        <li>Coverage steps, the pool preview and <code>PolicySummary</code>'s coverage line read to <code>windowEnd(asOf)</code> in place of <code>HORIZON</code>.</li>
+        <li>A yearly row's Until has no "Ends" checkbox: its Month select and Year input always show.</li>
+        <li>A stored yearly row with <code>to: null</code> shows <code>windowLastMonth(asOf)</code> in its Until; committing that shown value stores it.</li>
+        <li>A row switched from Once to Every year gets <code>to</code> = <code>windowLastMonth(asOf)</code>.</li>
+        <li>An own-pool draft's yearly row completes with <code>to</code> = <code>windowLastMonth(asOf)</code>.</li>
+        <li>A programme's Until has no "Ends" checkbox; a programme with <code>to: null</code> shows <code>windowLastMonth(asOf)</code>, and a new programme keeps <code>to: null</code> until its Until is committed.</li>
+        <li>No edit stores <code>to: null</code>.</li>
+      </ul>
+      <p>The range error, word for word (fixture-0):</p>
+      <pre><code data-lang="text">Choose a month from October 2026 to October 2066.</code></pre>
+    </section>
+
+    <section id="sec-design-federal">
+      <h3>The federal pool in the editors</h3>
+      <p>The federal tax-credit pool is a capped pool with one yearly inflow, its ceiling (F2). <code>finite-funding</code> makes it that pool and adds no wording; this unit owns every editor text and the group-amount rule below. Every editor treats the federal pool as it treats the state pool.</p>
+      <ul>
+        <li>Its group row reads "Federal tax credits · {perYearText(ceiling)}", for example "Federal tax credits · $565 million a year", then "pays ${perHome} of each home".</li>
+        <li>Switched off from today, it reads "Federal tax credits · switched off".</li>
+        <li>Its dated change is "Amount, % of today's", 0 to 1,000, step 5, default 0, as for the state group. There is no "Switched back on" radio group.</li>
+        <li>Its scale lines read "From {Month Year}: switched off", or "From {Month Year}: {p}% of today's amount", or "From {Month Year}: switched back on, {p}% of today's amount" after a 0.</li>
+        <li>In the read-only summary a federal change reads as <a href="#sec-design-copy"><code>summaryScaleText</code></a> gives it, for example "Federal tax credits: 150% of today's from July 2028".</li>
+        <li>A group's amount is the money its pools receive in the year from <code>asOf</code>: the arrivals on days <code>asOf</code> to <code>yearsAfter(asOf, 1) - 1</code>, <code>once</code> and <code>yearly</code> alike, at each pool's scale on <code>asOf</code>, rounded to whole dollars. A pool that pays in one-time amounts (a bound of kind <code>remaining</code>, F1) counts in its group's amount.</li>
+        <li>An older dataset's federal pool (F2: the loader reads its <code>uncapped</code> as a yearly inflow of <code>LEGACY_UNCAPPED_DOLLARS</code>) is recognised with <code>isNoCeiling</code> from <code>src/lib/timelapse/model.ts</code>, which <code>finite-funding</code> provides. This unit never compares an amount with the constant itself.</li>
+        <li>Where such a pool's yearly amount is shown, its text is "No ceiling": the group row reads "Federal tax credits · No ceiling", and its pool sentence in a summary reads "No ceiling".</li>
+        <li>Such a pool is left out of its group's amount sum; a group made only of it shows "No ceiling".</li>
+        <li>Its dated change works as for any pool; at any scale above 0 the row still reads "No ceiling".</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-summary">
+      <h3>The read-only view of a given measure</h3>
+      <p>At level 5 <code>game-sim</code> mounts <code>PolicySummary</code> through its existing props for a given measure's "what" (<code>WhatEditor</code>'s read-only branch). The published view at <code>/s/&lt;id&gt;</code> mounts it the same way for every policy.</p>
+      <ul>
+        <li>A policy is money-only when its <code>rules</code> and <code>custom</code> are empty, its <code>protect</code> and <code>timing.current</code> equal <code>DEFAULT_POLICY</code>'s, and its <code>funding</code> differs from <code>DEFAULT_POLICY.funding</code>.</li>
+        <li>For a money-only policy <code>PolicySummary</code> renders only its "Public money" section (the <code>h3</code> and the region it names).</li>
+        <li>Every other policy renders the five sections as today.</li>
+        <li>The section shows the coverage line first, as today, then <code>summaryRows</code>.</li>
+        <li><code>summaryRows</code> writes "Today's funding: as today" and "No money added" only when the funding equals <code>DEFAULT_POLICY.funding</code>.</li>
+        <li><code>summaryRows</code> writes typed market terms only when the funding has no scale entry, pool or programme: a fund's projection carries the terms in force as context, which are not the fund's.</li>
+        <li><code>summaryRows</code> marks no date with "(custom, not sourced)": a measure's dates are the player's. Amounts, rates, shares and mixes keep their marks.</li>
+        <li>A yearly inflow reads "{amount} a year from {Month Year} until {Month Year}", the second date its <code>to</code>, or <code>windowLastMonth(asOf)</code> when <code>to</code> is null.</li>
+        <li>With no calibration, a yearly inflow with <code>to: null</code> reads "{amount} a year from {Month Year}".</li>
+        <li><code>summaryRows</code> takes <code>asOf: Day | null</code> as a fourth argument for that; <code>PolicySummary</code> passes <code>calibration?.asOf ?? null</code>.</li>
+      </ul>
+      <p>The rows of each offered measure, started in month 1 on fixture-0's dates (11 October 2026) with today's live amounts (the share, the smallest project and the state amount are read from the calibration; <code>{share}</code> is <code>formatPercent</code> of <code>cityGrant</code>'s share, <code>{min}</code> the baseline's <code>minHomes</code>, <code>{state}</code> the state pool's first payment):</p>
+      <pre><code data-lang="text">A housing bond
+  Housing bond: $410 million in October 2026; repaid at 6% over 20 years
+    Grant to affordable homes of {min} homes or more: {share} of the uncovered cost
+
+General revenue, yearly
+  General revenue for housing: $36.7 million a year from October 2026 until October 2055
+    Grant to affordable homes of {min} homes or more: {share} of the uncovered cost
+
+A revolving construction-loan fund
+  Revolving construction-loan fund: $100 million in October 2026
+    Loan to private projects of 0 homes or more (custom, not sourced): 10% (custom, not sourced) of the building cost at 6% (custom, not sourced)
+
+The SF public bank, as planned
+  Public bank (housing share): $8.67 million in October 2026, $11.3 million in October 2027, $10 million in October 2028, $26.7 million in October 2029, $13.3 million in October 2030
+    Loan to affordable homes of {min} homes or more: 10% (custom, not sourced) of the building cost at 6.13%
+
+No state money from a date
+  State money: switched off from October 2026
+
+State money doubled from a date
+  State money: 200% of today's from October 2026
+  State money: as today from October 2036
+
+Federal support from a year
+  Federal support: {state} (custom, not sourced) a year from October 2026 until October 2035
+    Grant to affordable homes of {min} homes or more: {share} of the uncovered cost
+
+Federal tax credits withdrawn from a date
+  Federal tax credits: switched off from October 2026</code></pre>
+      <ul>
+        <li>Each fund row is one list item; its programme is the next item, indented, as today.</li>
+        <li>The coverage line above the rows is "Affordable homes: fully funded", or "Affordable homes: {p} covered" with "They start only by chance." behind it, as today.</li>
+        <li>The bank's loan rate carries no mark while it equals <code>POOL_KIND_DEFAULTS.bank.loanRate</code>, as today.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-copy">
+      <h3>Funding copy</h3>
+      <p>The sentences that change, word for word.</p>
+      <dl>
+        <dt><code>COVERAGE_OFF_SHORT_SENTENCE4</code> (<code>src/lib/timeline/money-copy.ts</code>)</dt>
+        <dd>Switching a source off takes it out of every offer, so projects go ahead on the rest, at lower odds. A source that runs short makes projects wait for its next money; once it has had its last money, it closes, as if switched off.</dd>
+        <dt><code>dateRangeError(asOf)</code></dt>
+        <dd><code>Choose a month from ${formatMonthYear(asOf)} to ${formatMonthYear(windowLastMonth(asOf))}.</code></dd>
+        <dt><code>labelDateChanged(name, field, day)</code></dt>
+        <dd><code>Changed date: ${name}, ${field} ${formatMonthYear(day)}</code>; <code>day</code> is a <code>Day</code>, never null.</dd>
+        <dt><code>labelScaleApplied(name, from, scale)</code></dt>
+        <dd>Scale 0: <code>Today's funding: ${name} switched off from ${when}</code>. Any other: <code>Today's funding: ${name} ${pct} from ${when}</code>.</dd>
+        <dt><code>summaryScaleText(name, from, scale, backOn)</code></dt>
+        <dd>See the list below.</dd>
+      </dl>
+      <ul>
+        <li>Scale 0: "{name}: switched off from {Month Year}".</li>
+        <li>Scale 1 right after a 0: "{name}: switched back on from {Month Year}".</li>
+        <li>Scale 1 otherwise: "{name}: as today from {Month Year}".</li>
+        <li>Any other scale: "{name}: {backOn ? 'switched back on, ' : ''}{pct} of today's from {Month Year}".</li>
+      </ul>
+      <p>Removed: <code>COVERAGE_RUN_SENTENCE</code> and <code>COVERAGE_OFF_SHORT_SENTENCE</code> in <code>funding-copy.ts</code> (imported by nothing), <code>NO_LIMIT</code>, and the <code>uncapped</code> parameters of <code>labelScaleApplied</code> and <code>summaryScaleText</code> where <code>finite-funding</code> left them. Any comment in <code>money-copy.ts</code> that says its <code>*4</code> sentences duplicate <code>funding-copy.ts</code> because <code>/lesscars</code> imports it is reworded to say they are the page's own. This unit never opens <code>src/lib/timeline/copy.ts</code> or <code>copy.spec.ts</code>, which are <code>game-sim</code>'s.</p>
+      <p>Unchanged, wherever <code>finite-funding</code> left them: <code>COVERAGE_RUN_SENTENCE4</code>, <code>COVERAGE_CHANCE_NOTE</code>, <code>coverageShortLine</code>, <code>TERMS_HINT</code>, <code>MONTH_OFFER_CAVEAT</code>, <code>smallProjectsCaveat</code> and every other string of <code>funding-copy.ts</code>.</p>
+    </section>
+
+    <section id="sec-design-locked">
+      <h3>Your own pool, City funding scale and Market terms</h3>
+      <p>They are locked by the game for level 6 (G3's <code>money: 'given'</code>). Their code, editors and tests stay and keep working.</p>
+      <ul>
+        <li>Your own pool: every yearly row has an Until, within the window (<a href="#sec-design-window">The window's last month</a>); a once row is its own end.</li>
+        <li>City funding scale: a dated change has a From only and holds until the next change on the same pool or the end of the policy's span.</li>
+        <li>Market terms: no dates.</li>
+        <li><code>FundingTab</code>, <code>FundingGroupEditor</code>, <code>FundingPoolRow</code> and <code>ProgrammeEditor</code> keep their props.</li>
+      </ul>
+    </section>
+  </section>
+
+  <section id="sec-write-set">
+    <h2>Write set</h2>
+    <p>The design doc's row for <code>funding-measures</code>, after <code>finite-funding</code> and <code>game-core</code>:</p>
+    <ul>
+      <li><code>src/lib/sim-page/funding-{presets,sources,view,copy,edit}.ts</code></li>
+      <li><code>src/lib/sim-page/Funding*.svelte</code>, <code>ProgrammeEditor.svelte</code>, <code>PolicySummary.svelte</code></li>
+      <li><code>src/lib/sim-page/test/**</code></li>
+      <li><code>src/lib/timeline/{pool-level,money-copy}.ts</code></li>
+      <li><code>e2e/sim-{funding,pools}.spec.ts</code></li>
+      <li><code>docs/dev/sim-funding.md</code></li>
+      <li>The tests, harnesses and test helpers beside these files that test only them.</li>
+    </ul>
+    <p>Ordering notes that concern this unit:</p>
+    <ul>
+      <li><code>src/lib/sim-page/funding-*</code>, <code>src/lib/timeline/{pool-level,money-copy}.ts</code> and <code>e2e/sim-funding.spec.ts</code> are written by <code>finite-funding</code> and then by <code>funding-measures</code>; the second needs F2, so they never run together.</li>
+      <li><code>src/lib/timeline/copy.ts</code> holds no public-money sentence once <code>finite-funding</code> has moved them, so <code>game-sim</code> owns all of it and this unit never opens it or <code>copy.spec.ts</code>.</li>
+      <li><code>src/lib/sim-page/funding-presets.ts</code> is written by <code>contracts</code> (the M1 stub), then <code>finite-funding</code>, then this unit. <code>contracts</code> ships no test of the stub; this unit's <code>funding-presets.spec.ts</code> tests the real <code>dateMeasure</code>.</li>
+      <li>This unit runs after <code>game-core</code>, so <code>isGiven</code> from <code>$lib/game/allowed</code> is real when <code>dateMeasure</code> calls it.</li>
+      <li><code>game-sim</code> and <code>funding-measures</code> can run together. <code>game-sim</code> calls <code>dateMeasure</code> (M1) and mounts <code>PolicySummary</code> through its existing props; <code>funding-measures</code> owns both.</li>
+      <li><code>pool-closing</code> and <code>funding-measures</code> write different files and can run together.</li>
+      <li>An e2e spec that exists before this build is edited only by the unit named for it: <code>e2e/sim-{funding,pools}.spec.ts</code> are this unit's.</li>
+    </ul>
+    <p>Files changed (none created, none deleted):</p>
+    <ul>
+      <li><code>src/lib/sim-page/funding-presets.ts</code></li>
+      <li><code>src/lib/sim-page/funding-sources.ts</code></li>
+      <li><code>src/lib/sim-page/funding-view.ts</code></li>
+      <li><code>src/lib/sim-page/funding-copy.ts</code></li>
+      <li><code>src/lib/sim-page/funding-edit.ts</code></li>
+      <li><code>src/lib/sim-page/FundingTab.svelte</code></li>
+      <li><code>src/lib/sim-page/FundingGroupEditor.svelte</code></li>
+      <li><code>src/lib/sim-page/FundingPoolRow.svelte</code></li>
+      <li><code>src/lib/sim-page/ProgrammeEditor.svelte</code></li>
+      <li><code>src/lib/sim-page/PolicySummary.svelte</code></li>
+      <li><code>src/lib/timeline/pool-level.ts</code></li>
+      <li><code>src/lib/timeline/money-copy.ts</code>: <code>COVERAGE_OFF_SHORT_SENTENCE4</code> and its comments</li>
+      <li><code>e2e/sim-funding.spec.ts</code>, <code>e2e/sim-pools.spec.ts</code></li>
+      <li><code>docs/dev/sim-funding.md</code></li>
+    </ul>
+    <p>Tests and helpers changed beside them:</p>
+    <ul>
+      <li><code>src/lib/sim-page/{funding-presets,funding-view,funding-copy,funding-edit,funding-tab-copy}.spec.ts</code></li>
+      <li><code>src/lib/sim-page/{FundingTab,PolicySummary}.svelte.spec.ts</code></li>
+      <li><code>src/lib/sim-page/test/funding.ts</code> and <code>test/FundingTabHost.svelte</code> where their values need an end</li>
+      <li><code>src/lib/timeline/pool-level.spec.ts</code>, <code>src/lib/timeline/money-copy.spec.ts</code></li>
+    </ul>
+    <p>Unchanged: <code>funding-reconcile.ts</code>, <code>funding-drafts.svelte.ts</code>, <code>ProgrammeList.svelte</code>, <code>funding-presets.fill.spec.ts</code> (the fill rule does not read ends).</p>
+  </section>
+
+  <section id="sec-tests">
+    <h2>Tests</h2>
+    <section id="sec-tests-unit">
+      <h3>Unit</h3>
+      <ul>
+        <li><code>funding-presets.spec.ts</code>: for every preset built with and without <code>start</code>, every pool inflow is <code>once</code> or <code>yearly</code> with <code>to</code> not null, and every scale entry other than 0 and 1 is followed by a scale-1 entry on the same pool.</li>
+        <li><code>funding-presets.spec.ts</code>: <code>general-revenue</code> gives 30 arrivals of $36,700,000, its <code>to</code> is <code>yearsAfter(from, 29)</code>, and its provenance holds <code>GENERAL_FUND_TERM_YEARS.provenance</code> at tier 2.</li>
+        <li><code>funding-presets.spec.ts</code>: <code>federal-support</code> gives 10 arrivals of the state pool's first arrival; it is offered when the state pool has only <code>once</code> inflows; it is held back with "This data's state pool has no money to start from." when the state pool has none from <code>asOf</code>.</li>
+        <li><code>funding-presets.spec.ts</code>: <code>state-double</code> holds scale 2 from the first date and scale 1 from <code>yearsAfter(first, 10)</code>.</li>
+        <li><code>funding-presets.spec.ts</code>: with <code>start</code>, the bond's day, the bank's five days (start and four anniversaries), the revolving fund's day, every programme's <code>from</code> and every scale entry's first <code>from</code> equal <code>start</code>; <code>htf-2026</code> is unchanged; <code>PLAYER_START_PROVENANCE</code> replaces the two default-date provenances.</li>
+        <li><code>funding-presets.spec.ts</code>: without <code>start</code>, every first date is today's default.</li>
+        <li><code>funding-presets.spec.ts</code>: <code>yearsAfter</code> on 29 February 2028 by 1 is 28 February 2029.</li>
+        <li><code>funding-presets.spec.ts</code>: <code>dateMeasure</code> re-dates a bond, a general revenue and a <code>state-double</code> policy of two spans from their first span's start, keeping pool and programme ids; it returns the same object for <code>preset: null</code>, an unknown id, <code>htf-2026</code>, an edited amount, and a second call.</li>
+        <li><code>funding-presets.spec.ts</code>: <code>valueSource</code> gives <code>general-revenue</code>'s <code>inflows[0].to</code> the term's provenance at 29 years and <code>'custom'</code> at 28; <code>addedPresets</code> finds <code>state-double</code> with its entries on other days.</li>
+        <li><code>funding-view.spec.ts</code>: <code>windowEnd</code> and <code>windowLastMonth</code> on fixture-0's <code>asOf</code> are 9 October 2066 and 1 October 2066.</li>
+        <li><code>funding-view.spec.ts</code>: <code>summaryRows</code> gives the rows of <a href="#sec-design-summary">the read-only view</a> for each offered measure; no "as today" or "No money added" for a measure; both for default funding; no typed term beside a pool; no date mark; "until {window's last month}" for a stored <code>to: null</code>; no until with <code>asOf</code> null.</li>
+        <li><code>funding-view.spec.ts</code>: <code>baselineGroups</code> counts <code>once</code> arrivals in the year from <code>asOf</code> in a group's amount; the federal group's amount is its ceiling; <code>scaleLines</code> words a federal change as a share of today's amount.</li>
+        <li><code>funding-copy.spec.ts</code>: <code>dateRangeError</code> on fixture-0 is "Choose a month from October 2026 to October 2066."; <code>summaryScaleText</code> gives each of its four forms; <code>labelScaleApplied</code> and <code>labelDateChanged</code> as written.</li>
+        <li><code>funding-edit.spec.ts</code>: a row switched to Every year, and a completed own-pool draft, store <code>to</code> = <code>windowLastMonth(asOf)</code>.</li>
+        <li><code>pool-level.spec.ts</code>: <code>lifetimes</code> gives a bond its principal, a general revenue 30 payments, nothing after a span's end, 0 for an off policy, null for a yearly inflow with no end, twice the state's ten years of arrivals under <code>state-double</code>, and null for every pool when the track throws.</li>
+        <li><code>pool-level.spec.ts</code>: <code>poolLevel</code> with lifetimes reads 1 before the first payment, drains as money is committed, does not rise at a yearly payment, rises when a loan is repaid; a set with one pool of no end reads today's formula; a lifetime of 0 gives NaN.</li>
+        <li><code>pool-level.spec.ts</code>: <code>levelSet</code>'s entries use lifetimes; "Current funding" uses them only when every baseline pool ends; a second view with the same document reuses the lifetimes.</li>
+        <li><code>money-copy.spec.ts</code>: <code>COVERAGE_OFF_SHORT_SENTENCE4</code> word for word.</li>
+      </ul>
+    </section>
+    <section id="sec-tests-component">
+      <h3>Component</h3>
+      <ul>
+        <li><code>PolicySummary.svelte.spec.ts</code>: a bond's projection renders only the "Public money" region, with the pool row and the programme row word for word and no other section.</li>
+        <li><code>PolicySummary.svelte.spec.ts</code>: general revenue reads "until October 2055"; <code>state-double</code> gives its two rows; <code>federal-credits-off</code> its one row; none of them shows "Today's funding: as today" or "No money added".</li>
+        <li><code>PolicySummary.svelte.spec.ts</code>: the default policy and a zoning projection render the five sections as today; the existing typed-term, custom-rate and null-calibration tests keep passing.</li>
+        <li><code>FundingTab.svelte.spec.ts</code>: the federal group row reads its ceiling a year; its dated change is "Amount, % of today's" with no "Switched back on".</li>
+        <li><code>FundingTab.svelte.spec.ts</code>: a pool's yearly row has no "Ends" checkbox; a stored <code>to: null</code> shows October 2066; a year after 2066 commits nothing and shows the range error.</li>
+        <li><code>FundingTab.svelte.spec.ts</code>: a programme's Until has no "Ends" checkbox and shows October 2066 for <code>to: null</code>; the group editor's year input has <code>max</code> 2066.</li>
+              </ul>
+    </section>
+    <section id="sec-tests-e2e">
+      <h3>End to end</h3>
+      <p>Both specs run on the open game (<a href="../design/2026-11-22-1216-incremental-game.html#sec-if-x1">X1</a>): every control, as today. A test changes only where the funding behaviour itself changes.</p>
+      <ul>
+        <li><code>e2e/sim-funding.spec.ts</code> test 1a stays as <code>finite-funding</code> leaves it: <code>finite-funding</code> edits its <code>NO_LIMIT</code> import and its <code>perYear</code> line first, so every group's expected amount is <code>perYearText(g.perYear)</code> or <code>SWITCHED_OFF</code>.</li>
+        <li>Test 3: after the yearly amount, the pool's Until shows the month and year of <code>windowLastMonth(ASOF)</code>, the row has no "Ends" checkbox, and the editor contains "$60 million a year from July {YEAR} until {window's last month}".</li>
+        <li>Test 8: besides the bond and the typed rate cut, it adds "General revenue, yearly" and "State money doubled from a date" before publishing. On <code>/s/&lt;id&gt;</code> each of those two policies' read-only summary shows only the Public money region with the rows <code>summaryRows</code> gives for the stored document, and the general revenue row contains "until". The bond and terms checks stay; axe clean.</li>
+        <li>Tests 1b, 1c, 1d, 2, 4, 5, 6, 7, 9 and 10 stay as written.</li>
+        <li><code>e2e/sim-pools.spec.ts</code>: the first test becomes "a housing bond: full until its money is used; after Play its bar drains". At today the bar has no level and no words; after Play past the bond's first payment its level shows; at End it is below 100 and at most the paused reading; at Home nothing again.</li>
+        <li><code>e2e/sim-pools.spec.ts</code> new test: with "General revenue, yearly" added, after Play the bar's level reads below 100 at End, and its name starts "{setting}, {n}% left, ".</li>
+        <li><code>e2e/sim-pools.spec.ts</code>: the forced-colour and axe tests stay as written.</li>
+      </ul>
+      <p>The re-dating itself is proved by the unit tests of <code>dateMeasure</code>; the e2e of a measure added at a later playhead month belongs with <code>game-sim</code>'s calls.</p>
+    </section>
+  </section>
+
+  <section id="sec-docs">
+    <h2>Docs</h2>
+    <p><code>docs/dev/sim-funding.md</code> afterwards says:</p>
+    <ul>
+      <li>Funding levers in a policy: days stay absolute and are never rewritten on load; a given measure is re-dated by <code>dateMeasure</code> only when it is added or its first span's start moves; money arrives only inside its policy's spans.</li>
+      <li>The list: <a href="#tbl-presets">the preset table</a> with each preset's end, <code>dates</code> and the <code>start</code> argument.</li>
+      <li>Sources: rows for <code>GENERAL_FUND_TERM_YEARS</code> (tier 2, BLA pp. 44 and 108), <code>FEDERAL_SUPPORT_TERM_YEARS</code> and <code>STATE_DOUBLE_TERM_YEARS</code> (tier 4) and <code>PLAYER_START_PROVENANCE</code>.</li>
+      <li>"Switched off" against "short": a short source with more money due makes projects wait; one that has had its last money closes (D13, F3).</li>
+      <li>Fields in short: every date runs to the window's last month; Until has no "no end"; the default Until is the window's last month.</li>
+      <li>Today's funding: the federal group is a capped group with a ceiling; a group's amount counts the year from <code>asOf</code>.</li>
+      <li>The read-only summary: the money-only rule, when "as today", "No money added" and typed terms show, no date marks, the until rule.</li>
+      <li>A pool's level: the lifetime reading, when it applies, its formula, and <code>lifetimes</code> through the money track.</li>
+      <li>The e2e: the tests as they now are.</li>
+      <li>Known limits: the two about a short pool's wait and the on-or-off federal pool are gone.</li>
+    </ul>
+  </section>
+
+  <section id="sec-global-constraints">
+    <h2>Global constraints</h2>
+    <ul>
+      <li>Work happens in git worktrees under <code>.claude/worktrees/</code>. Commits follow Conventional Commits. No attribution to an AI anywhere.</li>
+      <li>Code style: 2-space indent, single quotes, no trailing commas, 100 columns.</li>
+      <li>Every Vitest test calls <code>expect</code>.</li>
+      <li>Signoff fails on server stderr, on timing crutches and on a retried flake. Each unit runs <code>npm run lint</code>, <code>npm run check</code> and the Vitest projects its files belong to before it hands back.</li>
+      <li>Port 4173 is shared by every session on this machine. A unit never kills a server it did not start; it waits.</li>
+      <li>Every agent runs every command in the foreground and never ends a turn while something it started is running.</li>
+      <li>Schema changes go through <code>npm run db:generate</code>. Nobody edits a migration.</li>
+      <li>No unit runs <code>npm run signoff</code>: its dataset step fails until the dataset is uploaded. <code>closing</code> runs it once, after the upload.</li>
+      <li>The dataset version changes in this build. The dataset is built and uploaded once, from the integration branch, after the last unit that writes a hashed path has merged; no unit uploads a dataset.</li>
+      <li>A unit that writes a hashed path regenerates the fixture dataset with <code>npm run pipeline -- fixture</code> and commits it.</li>
+      <li>WCAG 2.2 AA: every new control is at least 24 px and passes <code>expectNoA11yViolations</code> in light and dark.</li>
+      <li>Page text is short. No sentence says what something is not.</li>
+      <li>Nothing on the main screen says "RHNA". The goal is read from the <code>Goal</code> value, never from a constant.</li>
+      <li>The game's rules are read from <code>src/lib/game/</code>. No component compares a level to a number.</li>
+      <li>One future: no seed control, no band, no average over runs.</li>
+      <li>Published plans and policies, their ids and their pages keep working, including every policy published before this build.</li>
+      <li>A number that is a claim about the world carries its source and tier, in the existing <code>Sourced</code>, <code>Unsourced</code> and <code>Evidence</code> shapes.</li>
+      <li>A runtime dependency that ships in the bundle gets a credit in <code>SOFTWARE</code>. This build adds none.</li>
+      <li>CSP changes are interface changes. This build makes none.</li>
+      <li>Timing is measured only on a quiet machine. A unit that cannot get one defers the measurement and says so.</li>
+    </ul>
+  </section>
+
+  <section id="sec-out-of-scope">
+    <h2>Out of scope</h2>
+    <ul>
+      <li>Which "+" choices each level offers, locked lanes, and the read-only "what" switch for a given measure: <code>game-sim</code> (G3 through <code>WhatEditor</code> and <code>add.ts</code>).</li>
+      <li>Calling <code>dateMeasure</code> when a measure is added or its start moves, setting a preset's id and label on the policies it makes, and nulling <code>preset</code> when what a measure pays is edited: <code>game-sim</code> (M1, G3).</li>
+      <li>The baseline sources' bounds, the federal ceiling and removing <code>Pool.uncapped</code>: <code>finite-funding</code> (F1, F2).</li>
+      <li>Closing a spent pool and Details' "ran out" line: <code>pool-closing</code> (F3). A closed pool's bar has no special drawing.</li>
+      <li>Certifying <code>htf-2026</code> or <code>state-bond-2026</code>: a later change, no unit in this build.</li>
+      <li>Designing funding rules (level 6).</li>
+    </ul>
+  </section>
+</article>
