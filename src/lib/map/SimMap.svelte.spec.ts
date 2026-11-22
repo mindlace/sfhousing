@@ -324,8 +324,17 @@ describe('SimMap ready', { timeout: 30_000 }, () => {
     expect(document.activeElement).toBe(creditOf(target)!.querySelector('a'));
   });
 
-  it('a pointer on the credit during creditShowMs keeps it open', async () => {
-    const settled = watchTimer(50);
+  it('a pointer on the credit pauses its collapse; leaving starts the timer again', async () => {
+    const scheduled: number[] = [];
+    const realSet = window.setTimeout.bind(window);
+    vi.spyOn(window, 'setTimeout').mockImplementation(((
+      cb: TimerHandler,
+      delay?: number,
+      ...rest: unknown[]
+    ) => {
+      if (delay === 50) scheduled.push(delay);
+      return realSet(cb, delay, ...rest);
+    }) as typeof window.setTimeout);
     const seen = atInsert((c) => {
       c.dispatchEvent(new PointerEvent('pointerenter', { pointerType: 'mouse' }));
       return true;
@@ -333,8 +342,26 @@ describe('SimMap ready', { timeout: 30_000 }, () => {
     const { target, ready } = await mount({ creditShowMs: 50 });
     await expect.poll(seen.value).toBe(true);
     await ready;
-    await expect.poll(settled).toBe(true);
+    // Loaded with the pointer on it: no timer runs, and it stays open.
+    expect(scheduled).toEqual([]);
     expect(isOpen(target)).toBe(true);
+    creditOf(target)!.dispatchEvent(new PointerEvent('pointerleave', { pointerType: 'mouse' }));
+    expect(scheduled).toEqual([50]);
+    await expect.poll(() => isOpen(target)).toBe(false);
+  });
+
+  it('a pointer passing over the credit leaves the first user zoom collapsing it', async () => {
+    const seen = atInsert((c) => {
+      c.dispatchEvent(new PointerEvent('pointerenter', { pointerType: 'mouse' }));
+      c.dispatchEvent(new PointerEvent('pointerleave', { pointerType: 'mouse' }));
+      return true;
+    });
+    const { target, ready } = await mount({ creditShowMs: LONG });
+    await expect.poll(seen.value).toBe(true);
+    const map = (await ready).getMap()!;
+    expect(isOpen(target)).toBe(true);
+    map.zoomTo(map.getZoom() + 0.5, { duration: 0 }, { originalEvent: new WheelEvent('wheel') });
+    expect(isOpen(target)).toBe(false);
   });
 
   it("the five seconds start on the map's load, not when the credit is added", async () => {

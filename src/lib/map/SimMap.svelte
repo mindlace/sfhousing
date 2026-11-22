@@ -221,6 +221,7 @@
     toggle: HTMLElement; // its <summary>
     auto: boolean;
     timer: ReturnType<typeof setTimeout> | null; // the creditShowMs timer, while it runs
+    over: boolean; // a pointer is on it: the timer is paused
     sync: () => void; // the toggle's aria-expanded from the class
     offMoves: () => void; // removes the first-move listeners
     stop: () => void; // removes its listeners and observer
@@ -717,8 +718,18 @@
       endAuto(l);
       sync();
     };
-    // A reader who has Tabbed into it or rests the pointer on it is using it: it stays open.
+    // A reader who has Tabbed into it is using it: it stays open.
     const onEngage = () => endAuto(l);
+    // A pointer on it pauses the timer; leaving starts it again, in full (once the map has loaded).
+    const onOver = () => {
+      credit.over = true;
+      if (credit.timer !== null) clearTimeout(credit.timer);
+      credit.timer = null;
+    };
+    const onOut = () => {
+      credit.over = false;
+      if (l.loaded) startCreditTimer(l);
+    };
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || e.defaultPrevented || !isOpen()) return;
       e.preventDefault();
@@ -731,12 +742,14 @@
     toggle.addEventListener('click', onPress);
     el.addEventListener('keydown', onKey);
     el.addEventListener('focusin', onEngage);
-    el.addEventListener('pointerenter', onEngage);
+    el.addEventListener('pointerenter', onOver);
+    el.addEventListener('pointerleave', onOut);
     const credit: Credit = {
       el,
       toggle,
       auto: true,
       timer: null,
+      over: false,
       sync,
       stop: () => {
         if (credit.timer !== null) clearTimeout(credit.timer);
@@ -747,7 +760,8 @@
         toggle.removeEventListener('click', onPress);
         el.removeEventListener('keydown', onKey);
         el.removeEventListener('focusin', onEngage);
-        el.removeEventListener('pointerenter', onEngage);
+        el.removeEventListener('pointerenter', onOver);
+        el.removeEventListener('pointerleave', onOut);
       },
       offMoves: () => {
         for (const t of USER_MOVES) map.off(t, onUserMove);
@@ -758,10 +772,13 @@
     if (creditShowMs <= 0) autoCollapse(l);
   }
 
-  /** On the map's load: the credit's `creditShowMs`, unless it has already stopped by itself. */
+  /**
+   * On the map's load, and when a pointer leaves it: the credit's `creditShowMs`, unless it has
+   * already stopped by itself or a pointer is on it.
+   */
   function startCreditTimer(l: Live): void {
     const c = l.credit;
-    if (!c?.auto || c.timer !== null) return;
+    if (!c?.auto || c.over || c.timer !== null) return;
     // Not in `l.timers`: clearLoading clears those on every idle.
     c.timer = setTimeout(() => autoCollapse(l), creditShowMs);
   }
