@@ -83,16 +83,10 @@ export interface TimelineSnapshot {
   /** Cells installed since construction, cumulative, never reset. */
   installs: number;
   layerIds: string[];
-  /** Halo rings in the halo layer; 0 without one (`setHalos(null)`). */
-  halos: number;
-  /** Policy marks in the halo layer. */
+  /** Policy marks in the halo layer; 0 without one (`setHalos(null)`). */
   marks: number;
-  /** Marks `evalHalo` shows on the clock's day at the map's zoom, behind `ringMinZoom`. */
+  /** Marks `evalHalo` shows on the clock's day at the map's zoom. */
   marksShown: number;
-  /** Rings `evalHalo` shows on the clock's day at the map's zoom, behind `ringMinZoom`. */
-  halosShown: number;
-  /** The rings' distinct event days, ascending, the first 500. */
-  haloDays: number[];
   /** Installed slots with parts and a flag (`slotFlags[s] !== 0`), halos on or off. */
   flagged: number;
   /** Distinct installed slots with parts. */
@@ -101,8 +95,6 @@ export interface TimelineSnapshot {
   cityMarkers: number;
   /** Of them, with a `SLOT_FLAG` bit. */
   cityFlagged: number;
-  /** The halo layer's gate: 0 without a halo layer, else MARK_AREA_ZOOM. */
-  ringMinZoom: number;
   /** `setBarMode`'s mode ('street' until it is called). */
   barMode: BarMode;
   /**

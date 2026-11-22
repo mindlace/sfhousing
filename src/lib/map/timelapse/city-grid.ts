@@ -1,5 +1,5 @@
 // The MARK_AREA_M grid (map-citywide slice 6). Its own module so halos.ts can place marks on it
-// without importing city.ts, which imports halos.ts (HALO_TOKEN).
+// without importing city.ts.
 import { CONSTRAINTS } from '../camera';
 import { MARK_AREA_M } from './constants';
 

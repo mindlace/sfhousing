@@ -1,11 +1,11 @@
 // GPU test of HaloLayer: a standalone deck over a 96×96 canvas, top-down on one anchor. Each
-// sampled pixel must match `evalHalo`, the CPU reference: the ring's radius and alpha, the
-// stage's colour, and the mark's diamond.
+// sampled pixel must match `evalHalo`, the CPU reference: the mark's diamond, in the accent, with
+// its 1 px land edge, shown or not.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Deck, MapView, type Layer, type MapViewState } from '@deck.gl/core';
 import { HaloLayer } from './halo-layer';
-import { HALO_KIND, evalHalo, type HaloAttrs } from './halos';
-import { HALO_DAYS, HALO_R_PX, HALO_STILL_R_PX, MARK_PX } from './constants';
+import { evalHalo, type HaloAttrs } from './halos';
+import { MARK_AREA_ZOOM, MARK_PX } from './constants';
 import type { TimelineClock } from './types';
 import { TOKENS, hexToRgba, type TokenName } from '../palette';
 import type { Theme } from '../types';
@@ -16,8 +16,6 @@ const CH = 96;
 const CENTRE: [number, number] = [-122.42, 37.77];
 /** The event day. */
 const D = 21000;
-/** A ring's radius at birth. */
-const HALO_R_PX_0 = HALO_R_PX[0];
 /** The clear colour (opaque magenta): unlike every halo token, so "nothing drawn" is visible. */
 const BG: Rgb = [255, 0, 255];
 /** Per-channel tolerance (0–255) for opaque pixels. */
@@ -28,27 +26,13 @@ const TOL_BLEND = TOL + 1;
 type Rgb = [number, number, number];
 const tok = (theme: Theme, name: TokenName): Rgb =>
   hexToRgba(TOKENS[theme][name]).slice(0, 3) as Rgb;
-/** `c` at alpha `a` over BG (deck's SRC_ALPHA, ONE_MINUS_SRC_ALPHA). */
-const over = (c: Rgb, a: number): Rgb => c.map((v, i) => a * v + (1 - a) * BG[i]) as Rgb;
 
-const KIND_TOKEN: Record<0 | 1 | 2, TokenName> = {
-  [HALO_KIND.approved]: 'tl-halo-approved',
-  [HALO_KIND.started]: 'tl-halo-started',
-  [HALO_KIND.completed]: 'tl-halo-complete'
-};
-
-function ring(kind: 0 | 1 | 2, policy = false): HaloAttrs {
-  const until = D + HALO_DAYS;
-  return { projectId: 'gpu', anchor: CENTRE, day: D, until, areaFrom: until, kind, policy };
-}
 const MARK: HaloAttrs = {
   projectId: 'gpu',
   anchor: CENTRE,
   day: D - 100,
   until: OPEN_DAY,
-  areaFrom: OPEN_DAY, // never its square's one diamond
-  kind: HALO_KIND.mark,
-  policy: true
+  areaFrom: OPEN_DAY // never its square's one diamond
 };
 
 const VIEW_STATE: MapViewState = {
@@ -68,13 +52,8 @@ describe('HaloLayer on the GPU', () => {
   const errors: Error[] = [];
   const clock: TimelineClock = { day: D, theme: 'light' };
 
-  function halos(data: HaloAttrs[], reduced = false, ringMinZoom?: number): HaloLayer {
-    return new HaloLayer({
-      data,
-      clock,
-      reduced,
-      ...(ringMinZoom === undefined ? {} : { ringMinZoom })
-    });
+  function halos(data: HaloAttrs[]): HaloLayer {
+    return new HaloLayer({ data, clock });
   }
 
   function linkStatuses(): string[] {
@@ -130,7 +109,7 @@ describe('HaloLayer on the GPU', () => {
         views: new MapView({ clear: true, clearColor: [...BG, 255] }),
         viewState: VIEW_STATE,
         controller: false,
-        layers: [halos([ring(HALO_KIND.started)])],
+        layers: [halos([MARK])],
         onError: (e) => {
           errors.push(e);
         },
@@ -143,7 +122,7 @@ describe('HaloLayer on the GPU', () => {
       });
     });
     gl = canvas.getContext('webgl2') as WebGL2RenderingContext;
-    await show([halos([ring(HALO_KIND.started)])]);
+    await show([halos([MARK])]);
   });
 
   afterAll(() => {
@@ -190,142 +169,47 @@ describe('HaloLayer on the GPU', () => {
       ? `${label}: ok`
       : `${label}: got rgb(${got.join(',')}) want rgb(${want.map(Math.round).join(',')})`;
 
-  /** The four points on the ring at radius `r`, and one inside and one outside it. */
-  function ringCases(label: string, r: number, colour: Rgb, alpha: number): [string, Rgb, Rgb][] {
-    const c = over(colour, alpha);
-    return [
-      [`${label} east`, at(r), c],
-      [`${label} west`, at(-r), c],
-      [`${label} north`, at(0, -r), c],
-      [`${label} south`, at(0, r), c],
-      [`${label} inside`, at(r - 3), BG],
-      [`${label} outside`, at(r + 3), BG]
-    ];
-  }
-
-  it('draws a ring of the radius evalHalo gives, in the stage colour, at ages 0, 365 and 729', async () => {
-    const got: string[] = [];
-    const want: string[] = [];
-    for (const kind of [HALO_KIND.approved, HALO_KIND.started, HALO_KIND.completed] as const) {
-      const h = ring(kind);
-      await show([halos([h])]);
-      for (const age of [0, 365, 729]) {
-        render(D + age);
-        const e = evalHalo(h, D + age, false);
-        expect(e.visible).toBe(true);
-        for (const [label, g, w] of ringCases(
-          `kind ${kind} age ${age}`,
-          e.radiusPx,
-          tok('light', KIND_TOKEN[kind]),
-          e.alpha
-        )) {
-          got.push(check(label, g, w));
-          want.push(`${label}: ok`);
-        }
-        if (age < 729) {
-          const box = drawnBox()!;
-          // The 2 px stroke is centred on the radius: the box spans about 2 · (r + 1).
-          expect(Math.abs(box[2] - box[0] + 1 - 2 * (e.radiusPx + 1))).toBeLessThanOrEqual(2);
-        }
-      }
-    }
-    expect(got).toEqual(want);
-    expect(errors).toEqual([]);
-  });
-
-  it('draws nothing at age HALO_DAYS or before the event day', async () => {
-    await show([halos([ring(HALO_KIND.started)])]);
-    render(D - 1);
-    expect(drawnBox()).toBeNull();
-    render(D + HALO_DAYS);
-    expect(drawnBox()).toBeNull();
-    render(D);
-    expect(drawnBox()).not.toBeNull();
-    expect(errors).toEqual([]);
-  });
-
-  for (const theme of ['light', 'dark'] as const) {
-    it(`a policy project's ring is in tl-halo-policy, and its mark shows from its first stage day (${theme})`, async () => {
-      const h = ring(HALO_KIND.approved, true);
-      await show([halos([h, MARK])]);
+  it.each(['light', 'dark'] as const)(
+    'a mark draws in tl-halo-policy from its first stage day, not before (%s)',
+    (theme) => {
       const policy = tok(theme, 'tl-halo-policy');
       const land = tok(theme, 'land');
-      render(MARK.day - 1, theme);
-      expect(drawnBox()).toBeNull();
       const got: string[] = [];
       const want: string[] = [];
-      const push = (label: string, g: Rgb, w: Rgb, tol = TOL) => {
-        got.push(check(label, g, w, tol));
-        want.push(`${label}: ok`);
-      };
-      for (const day of [MARK.day, D + 365]) {
-        render(day, theme);
-        push(`${day} mark fill`, at(0.5), policy);
-        // A pixel centred 3.5 px east of the anchor lies within 1 px of the diamond's edge.
-        push(`${day} mark edge`, at(3.5), land);
-        push(`${day} beyond the mark`, at(MARK_PX / 2 + 1.5, -(MARK_PX / 2 + 1.5)), BG);
-      }
-      const e = evalHalo(h, D + 365, false);
-      for (const [label, g, w] of ringCases('policy ring', e.radiusPx, policy, e.alpha))
-        push(label, g, w, TOL_BLEND);
+      render(MARK.day - 1, theme);
+      expect(evalHalo(MARK, MARK.day - 1)).toBe(false);
+      expect(drawnBox()).toBeNull();
+      render(MARK.day, theme);
+      expect(evalHalo(MARK, MARK.day)).toBe(true);
+      got.push(check('centre', at(0.5), policy, TOL));
+      // Just inside the tip: the 1 px land edge.
+      got.push(check('edge', at(MARK_PX / 2 - 1.2), land, TOL));
+      got.push(check('outside', at(MARK_PX / 2 + 3), BG, TOL));
+      for (const l of ['centre', 'edge', 'outside']) want.push(`${l}: ok`);
       expect(got).toEqual(want);
+      render(D + 5000, theme);
+      expect(drawnBox()).not.toBeNull();
       expect(errors).toEqual([]);
-    });
-  }
-
-  it('reduced: the same radius and alpha at ages 0 and 729', async () => {
-    const h = ring(HALO_KIND.completed);
-    await show([halos([h], true)]);
-    const got: string[] = [];
-    const want: string[] = [];
-    for (const age of [0, 729]) {
-      render(D + age);
-      const e = evalHalo(h, D + age, true);
-      expect(e).toEqual({ visible: true, radiusPx: HALO_STILL_R_PX, alpha: 1 });
-      for (const [label, g, w] of ringCases(
-        `age ${age}`,
-        e.radiusPx,
-        tok('light', 'tl-halo-complete'),
-        1
-      )) {
-        got.push(check(label, g, w, TOL));
-        want.push(`${label}: ok`);
-      }
     }
-    expect(got).toEqual(want);
-    render(D + HALO_DAYS);
-    expect(drawnBox()).toBeNull();
-    expect(errors).toEqual([]);
-  });
+  );
 
-  it('with ringMinZoom 14, a ring and a mark draw at zoom 14 and not at 13.9', async () => {
-    const h = ring(HALO_KIND.started);
+  it('a mark draws at zoom 14 and not at 13.9 before its areaFrom', async () => {
     const policy = tok('light', 'tl-halo-policy');
-    const colour = tok('light', 'tl-halo-started');
     const zoomTo = (zoom: number) => deck.setProps({ viewState: { ...VIEW_STATE, zoom } });
     try {
       const got: string[] = [];
       const want: string[] = [];
-      const push = (label: string, g: Rgb, w: Rgb, tol = TOL_BLEND) => {
-        got.push(check(label, g, w, tol));
-        want.push(`${label}: ok`);
-      };
-      for (const zoom of [14, 13.9]) {
+      await show([halos([MARK])]);
+      for (const zoom of [MARK_AREA_ZOOM, 13.9]) {
         zoomTo(zoom);
-        await show([halos([h, MARK], false, 14)]);
+        deck.redraw('zoom');
+        await nextFrame();
         render(D);
-        const e = evalHalo(h, D, false, zoom, 14);
-        expect(e.visible).toBe(zoom >= 14);
-        // The ring's east point: the stage colour at 14, nothing at 13.9.
-        push(`${zoom} ring`, at(HALO_R_PX_0), e.visible ? colour : BG);
-        expect(evalHalo(MARK, D, false, zoom, 14).visible).toBe(zoom >= 14);
-        push(`${zoom} mark`, at(0.5), zoom >= 14 ? policy : BG, TOL);
+        const e = evalHalo(MARK, D, zoom);
+        expect(e).toBe(zoom >= MARK_AREA_ZOOM);
+        got.push(check(`${zoom}`, at(0.5), e ? policy : BG, TOL));
+        want.push(`${zoom}: ok`);
       }
-      // Without the prop the gate is off: a ring and a mark at 13.9.
-      await show([halos([h, MARK])]);
-      render(D);
-      push('no gate ring', at(HALO_R_PX_0), colour);
-      push('no gate mark', at(0.5), policy, TOL);
       expect(got).toEqual(want);
     } finally {
       zoomTo(VIEW_STATE.zoom);
@@ -333,7 +217,7 @@ describe('HaloLayer on the GPU', () => {
     expect(errors).toEqual([]);
   });
 
-  it("with ringMinZoom 14, a mark draws at 13.9 from its areaFrom (its square's one diamond)", async () => {
+  it("a mark draws at 13.9 from its areaFrom (its square's one diamond)", async () => {
     const area: HaloAttrs = { ...MARK, areaFrom: D };
     const policy = tok('light', 'tl-halo-policy');
     const zoomTo = (zoom: number) => deck.setProps({ viewState: { ...VIEW_STATE, zoom } });
@@ -341,12 +225,12 @@ describe('HaloLayer on the GPU', () => {
       const got: string[] = [];
       const want: string[] = [];
       zoomTo(13.9);
-      await show([halos([area], false, 14)]);
+      await show([halos([area])]);
       for (const day of [D - 1, D, D + 5000]) {
         render(day);
-        const e = evalHalo(area, day, false, 13.9, 14);
-        expect(e.visible).toBe(day >= D);
-        got.push(check(`${day}`, at(0.5), e.visible ? policy : BG, TOL));
+        const e = evalHalo(area, day, 13.9);
+        expect(e).toBe(day >= D);
+        got.push(check(`${day}`, at(0.5), e ? policy : BG, TOL));
         want.push(`${day}: ok`);
       }
       expect(got).toEqual(want);

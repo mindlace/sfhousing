@@ -9,10 +9,9 @@ import { packTimedCell } from './pack-timed';
 import { MAX_CELLS_PER_SLICE, SWAP_CELLS_PER_SLICE } from './hide';
 import { TYPOLOGY_ORDER, type TimedPackedCell, type TimelineUpdate } from './types';
 import type { BarAttrs } from './timelapse/types';
-import { HALO_KIND, buildHalos, evalHalo, type HaloAttrs } from './timelapse/halos';
+import { buildHalos, evalHalo, type HaloAttrs } from './timelapse/halos';
 import { SLOT_FLAG, type CityDelta } from './types';
 import { cityGroup } from './timelapse/city-grid';
-import { MARK_AREA_ZOOM } from './timelapse/constants';
 import { buildBars, evalBar } from './timelapse/bars';
 import { FAR_UNITS_PER_SLICE, FarDeclutter, declutter } from './timelapse/declutter';
 import { SYNTHETIC_LOOKUPS, makeSyntheticTimeline } from './test/synthetic-timeline';
@@ -34,7 +33,6 @@ interface Props {
   getTlC: (o: unknown, info: { index: number }) => number[];
   chance: unknown;
   clock: unknown;
-  reduced?: boolean;
 }
 const props = (l: Layer) => l.props as unknown as Props;
 const ids = (f: FakeTimelineDeps) => f.lastLayers.map((l) => l.id);
@@ -882,6 +880,13 @@ describe('TimelineController halos', () => {
     return { ...a, slotFlags: flags };
   }
 
+  /** Every slot of a cell under the policy: only flagged slots have a mark. */
+  const flagAll = (cell: TimedPackedCell): TimedPackedCell => ({
+    ...cell,
+    slotFlags: new Uint8Array(cell.slotProjectIds.length).fill(SLOT_FLAG.zoning)
+  });
+  const allFlagged = () => ({ ...timelineSmall, cells: timelineSmall.cells.map(flagAll) });
+
   it('emits no timeline-halos until setHalos, then after timeline-bars and before the overlay', () => {
     const c = controller('label-1');
     c.apply({ ...timelineSmall, cells: [cellOf(B), cellOf(A)] });
@@ -902,14 +907,13 @@ describe('TimelineController halos', () => {
     expect(halo.beforeId).toBe('label-1');
     expect(halo.pickable).toBe(false);
     expect(halo.clock).toBe(props(byId(deps, 'timeline-bars')).clock);
-    expect(halo.reduced).toBe(false);
   });
 
   it('builds halo records once per update, when the slice queue drains', () => {
     const c = controller();
     c.setHalos({ from: FROM }); // before the first apply: kept, nothing emitted
     expect(deps.layerHistory).toHaveLength(0);
-    c.apply(update(0, { cells: manyCells(9) }));
+    c.apply(update(0, { cells: manyCells(9).map(flagAll) }));
     expect(ids(deps)).not.toContain('timeline-halos');
     deps.flushFrame();
     expect(deps.haloLayers).toHaveLength(0);
@@ -942,7 +946,7 @@ describe('TimelineController halos', () => {
 
   it('setHalos(null) removes the layer; setHalos({ from }) rebuilds the records once', () => {
     const c = controller();
-    c.apply(timelineSmall);
+    c.apply(allFlagged());
     c.setHalos({ from: FROM });
     expect(deps.haloLayers).toHaveLength(1);
     const all = halosOf(deps).length;
@@ -952,7 +956,7 @@ describe('TimelineController halos', () => {
     expect(deps.layerHistory).toHaveLength(emits);
     c.setHalos(null);
     expect(ids(deps)).not.toContain('timeline-halos');
-    expect(c.debugSnapshot()).toMatchObject({ halos: 0, marks: 0, halosShown: 0, haloDays: [] });
+    expect(c.debugSnapshot()).toMatchObject({ marks: 0, marksShown: 0 });
     c.setHalos(null);
     expect(deps.layerHistory).toHaveLength(emits + 1);
     c.setHalos({ from: DAYS.a.construction });
@@ -962,59 +966,36 @@ describe('TimelineController halos', () => {
 
   it('records leave out events on or before from', () => {
     const c = controller();
-    c.apply(timelineSmall);
+    c.apply(allFlagged());
     c.setHalos({ from: DAYS.a.construction });
     const hs = halosOf(deps);
     expect(hs.length).toBeGreaterThan(0);
     for (const h of hs) expect(h.day).toBeGreaterThan(DAYS.a.construction);
-    expect(hs.some((h) => h.projectId === SLOT.a.projectId && h.day === DAYS.a.complete)).toBe(
-      true
-    );
   });
 
-  it("a replaced cell's halos follow its new schedule; a removed cell's go", () => {
+  it("a replaced cell's marks follow its new schedule; a removed cell's go", () => {
     const c = controller();
-    c.apply(timelineSmall);
+    c.apply({ ...timelineSmall, cells: [flagAll(cellOf(A)), flagAll(cellOf(B))] });
     c.setHalos({ from: FROM });
-    const started = (hs: HaloAttrs[]) =>
-      hs.find((h) => h.projectId === SLOT.a.projectId && h.kind === HALO_KIND.started)!.day;
-    expect(started(halosOf(deps))).toBe(DAYS.a.construction);
+    const first = (hs: HaloAttrs[]) => hs.find((h) => h.projectId === SLOT.a.projectId)!.day;
+    expect(first(halosOf(deps))).toBe(DAYS.a.preApplication);
     expect(halosOf(deps).some((h) => projectsIn(B).includes(h.projectId))).toBe(true);
-    const a = cellOf(A);
+    const a = flagAll(cellOf(A));
     const stages = a.slotStages.slice();
     const at =
       STAGE_ORDER.length * a.slotProjectIds.indexOf(SLOT.a.projectId) +
-      STAGE_ORDER.indexOf('construction');
+      STAGE_ORDER.indexOf('preApplication');
     stages[at] += 100;
     c.apply(update(1, { cells: [{ ...a, slotStages: stages }], removedCells: [B] }));
     const hs = halosOf(deps);
-    expect(started(hs)).toBe(DAYS.a.construction + 100);
+    expect(first(hs)).toBe(DAYS.a.preApplication + 100);
     expect(hs.some((h) => projectsIn(B).includes(h.projectId))).toBe(false);
     expect(hs.every((h) => projectsIn(A).includes(h.projectId))).toBe(true);
   });
 
-  it('setReducedMotion sets the prop on the existing records without rebuilding them', () => {
-    const c = controller();
-    c.setReducedMotion(true); // before any layer: kept
-    c.apply(timelineSmall);
-    c.setHalos({ from: FROM });
-    expect(props(byId(deps, 'timeline-halos')).reduced).toBe(true);
-    const data = halosOf(deps);
-    const emits = deps.layerHistory.length;
-    c.setReducedMotion(false);
-    expect(props(byId(deps, 'timeline-halos')).reduced).toBe(false);
-    expect(halosOf(deps)).toBe(data);
-    expect(deps.layerHistory).toHaveLength(emits + 1);
-    c.setReducedMotion(false); // unchanged
-    expect(deps.layerHistory).toHaveLength(emits + 1);
-    c.setHalos(null);
-    c.setReducedMotion(true); // no layer: nothing emitted
-    expect(deps.layerHistory).toHaveLength(emits + 2);
-  });
-
   it('builds halos without lookups (bars need them, halos do not)', () => {
     const c = controller(undefined, false);
-    c.apply(timelineSmall);
+    c.apply(allFlagged());
     c.setHalos({ from: FROM });
     expect(ids(deps)).toContain('timeline-halos');
     expect(ids(deps)).not.toContain('timeline-bars');
@@ -1031,33 +1012,23 @@ describe('TimelineController halos', () => {
     c.destroy();
     const emits = deps.layerHistory.length;
     c.setHalos({ from: DAYS.a.construction });
-    c.setReducedMotion(true);
     expect(deps.layerHistory).toHaveLength(emits);
   });
 
-  it('reports halos, marks, halosShown and haloDays in the debug snapshot', () => {
+  it('reports marks and marksShown in the debug snapshot', () => {
     const c = controller();
     c.apply({ ...timelineSmall, cells: [flaggedA(), cellOf(B)] });
-    expect(c.debugSnapshot()).toMatchObject({ halos: 0, marks: 0, halosShown: 0, haloDays: [] });
+    expect(c.debugSnapshot()).toMatchObject({ marks: 0, marksShown: 0 });
     c.setHalos({ from: FROM });
     c.setTime(DAYS.a.construction);
     const recs = buildHalos([flaggedA(), cellOf(B)], FROM);
-    const rings = recs.filter((h) => h.kind !== HALO_KIND.mark);
-    const shown = rings.filter((h) => evalHalo(h, DAYS.a.construction, false).visible);
-    const snap = c.debugSnapshot();
-    expect(snap.marks).toBe(1);
-    expect(snap.halos).toBe(rings.length);
-    expect(snap.halosShown).toBe(shown.length);
-    expect(snap.halosShown).toBeGreaterThan(0);
-    expect(snap.haloDays).toEqual([...new Set(rings.map((h) => h.day))].sort((x, y) => x - y));
+    expect(recs).toHaveLength(1);
     expect(halosOf(deps)).toEqual(recs);
-    expect(
-      halosOf(deps)
-        .filter((h) => h.policy)
-        .map((h) => h.projectId)
-    ).toEqual(recs.filter((h) => h.projectId === SLOT.a.projectId).map(() => SLOT.a.projectId));
-    c.setTime(DAYS.start);
-    expect(c.debugSnapshot().halosShown).toBe(0);
+    expect(c.debugSnapshot()).toMatchObject({ marks: 1, marksShown: 1 });
+    expect(c.debugSnapshot()).not.toHaveProperty('halos');
+    expect(c.debugSnapshot()).not.toHaveProperty('ringMinZoom');
+    c.setTime(DAYS.start - 1);
+    expect(c.debugSnapshot()).toMatchObject({ marks: 1, marksShown: 0 });
   });
 
   it('counts the drawn slots with a flag in the debug snapshot, halos on or off', () => {
@@ -1124,8 +1095,6 @@ describe('TimelineController city', () => {
     }
   ];
   const CITY = cityDelta(3, MARKERS);
-  /** A haloLayer prop read off the emitted layer. */
-  const haloProps = () => byId(deps, 'timeline-halos').props as unknown as { ringMinZoom: number };
 
   it('stores the city from a revision 0 and replaces it on the next revision 0; a revision 0 without city clears it', () => {
     const c = controller();
@@ -1191,17 +1160,6 @@ describe('TimelineController city', () => {
     expect(c.debugSnapshot().cityMarkers).toBeGreaterThan(0);
   });
 
-  it("the halo layer's gate is MARK_AREA_ZOOM with or without a city feed", () => {
-    const c = controller();
-    c.setHalos({ from: FROM });
-    c.apply(timelineSmall); // a stream without city, as /lesscars sends
-    expect(haloProps().ringMinZoom).toBe(MARK_AREA_ZOOM);
-    expect(MARK_AREA_ZOOM).toBe(14);
-    c.apply(update(1, { city: CITY }));
-    expect(haloProps().ringMinZoom).toBe(MARK_AREA_ZOOM);
-    expect(c.debugSnapshot().ringMinZoom).toBe(MARK_AREA_ZOOM);
-  });
-
   it('a city-only update stores the markers and emits nothing', () => {
     const c = controller();
     c.setHalos({ from: FROM });
@@ -1227,10 +1185,10 @@ describe('TimelineController city', () => {
       slotFlags: new Uint8Array(cell.slotProjectIds.length).fill(SLOT_FLAG.zoning)
     });
     c.apply({ ...timelineSmall, cells: [flagAll(cellOf(A)), flagAll(cellOf(B))], city: CITY });
-    const marks = halosOf(deps).filter((h) => h.kind === HALO_KIND.mark);
+    const marks = halosOf(deps);
     for (const t of [DAYS.start, DAYS.a.construction, DAYS.horizon - 1]) {
       c.setTime(t);
-      const standing = marks.filter((h) => evalHalo(h, t, false).visible);
+      const standing = marks.filter((h) => evalHalo(h, t));
       const squares = new Set(standing.map((h) => cityGroup(...h.anchor))).size;
       deps.view = viewAt(13);
       expect(c.debugSnapshot()).toMatchObject({ marks: marks.length, marksShown: squares });
@@ -1567,7 +1525,7 @@ describe('TimelineController bar modes', () => {
     c.setTime(t);
     const inTime = barsOf(deps).filter((b) => b.from <= t && t < b.to).length;
     expect(inTime).toBeGreaterThan(0);
-    // No map: every bar in time (as halosShown without a view).
+    // No map: every bar in time (as marksShown without a view).
     expect(c.debugSnapshot().barsShown).toBe(inTime);
     // A view that holds the whole fixture (its clip is flat: every anchor's zoom is 13).
     deps.view = viewAt(13, 1);

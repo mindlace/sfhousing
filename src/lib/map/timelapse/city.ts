@@ -3,7 +3,16 @@
 import { validateCityDelta } from '../city-delta';
 import type { TokenName } from '../palette';
 import type { CityDelta } from '../types';
-import { HALO_TOKEN } from './halos';
+
+/**
+ * The tone of each stage ring the Key still lists. Held only until the Key rows go (Task 7);
+ * nothing draws with it.
+ */
+export const HALO_TOKEN = {
+  approved: 'tl-halo-approved',
+  started: 'tl-halo-started',
+  completed: 'tl-halo-complete'
+} as const satisfies Record<string, TokenName>;
 
 /**
  * The tones the Key still lists for the merged rings, by record kind: the halo stages and the

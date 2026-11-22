@@ -21,9 +21,8 @@ import {
 } from './types';
 import { validateCityDelta } from './city-delta';
 import { barZoomAt, buildBars, evalBar } from './timelapse/bars';
-import { HALO_KIND, buildHalos, evalHalo, type HaloAttrs } from './timelapse/halos';
+import { buildHalos, evalHalo, type HaloAttrs } from './timelapse/halos';
 import { CityStore } from './timelapse/city';
-import { MARK_AREA_ZOOM } from './timelapse/constants';
 import { FAR_UNITS_PER_SLICE, FarDeclutter, declutter } from './timelapse/declutter';
 import { DemolishPump, type PumpDeps } from './timelapse/demolish';
 import { encodeParts, validateTimedCell, type EncodedParts } from './timelapse/encode';
@@ -197,8 +196,6 @@ export class TimelineController {
   private barJob: BarJob | null = null;
   /** `setHalos`: events after this day ring; null (the default) emits no halo layer. */
   private haloFrom: Day | null = null;
-  /** `setReducedMotion`: the halo layer's `reduced` prop. */
-  private reduced = false;
   private halos: HaloAttrs[] = [];
   private halosLayer: Layer | null = null;
   /** Cells installed or removed since the halos were last built (a re-encode does not count). */
@@ -351,17 +348,6 @@ export class TimelineController {
     this.schedule();
   }
 
-  /**
-   * The halo layer's `reduced` prop, set on the layer there is: its records are not rebuilt.
-   */
-  setReducedMotion(reduced: boolean): void {
-    if (this.destroyed || reduced === this.reduced) return;
-    this.reduced = reduced;
-    if (!this.halosLayer) return;
-    this.halosLayer = this.halosLayer.clone({ reduced } as Partial<Layer['props']>);
-    this.emit();
-  }
-
   setOverlayLayers(layers: Layer[]): void {
     for (const l of layers)
       if (RESERVED.test(l.id)) throw new Error(`setOverlayLayers: reserved layer id ${l.id}`);
@@ -413,21 +399,9 @@ export class TimelineController {
     }
     const view = this.deps.debugView?.() ?? null;
     const zoom = view ? view.zoom : Infinity;
-    const ringMinZoom = this.halosLayer ? MARK_AREA_ZOOM : 0;
     const shown = this.halosLayer ? this.halos : [];
-    let marks = 0;
     let marksShown = 0;
-    let halosShown = 0;
-    const days = new Set<number>();
-    for (const h of shown) {
-      if (h.kind === HALO_KIND.mark) {
-        marks++;
-        if (evalHalo(h, this.clock.day, this.reduced, zoom, ringMinZoom).visible) marksShown++;
-        continue;
-      }
-      days.add(h.day);
-      if (evalHalo(h, this.clock.day, this.reduced, zoom, ringMinZoom).visible) halosShown++;
-    }
+    for (const h of shown) if (evalHalo(h, this.clock.day, zoom)) marksShown++;
     const barsShown = this.barsShown(view);
     return {
       revision: this.lastRevision,
@@ -440,16 +414,12 @@ export class TimelineController {
       pending: this.queue.length + (this.pump.pending ? 1 : 0),
       installs: this.installs,
       layerIds: this.current.map((l) => l.id),
-      halos: shown.length - marks,
-      marks,
+      marks: shown.length,
       marksShown,
-      halosShown,
-      haloDays: [...days].sort((a, b) => a - b).slice(0, 500),
       flagged,
       projects,
       cityMarkers: this.city.size,
       cityFlagged: this.city.flagged,
-      ringMinZoom,
       barMode: this.barMode,
       barsShown
     };
@@ -714,8 +684,6 @@ export class TimelineController {
     this.halosLayer = new this.deps.HaloLayer({
       data: halos,
       clock: this.clock,
-      reduced: this.reduced,
-      ringMinZoom: MARK_AREA_ZOOM,
       ...(this.labelBeforeId ? { beforeId: this.labelBeforeId } : {})
     } as ConstructorParameters<TimelineDeps['HaloLayer']>[0]) as unknown as Layer;
   }

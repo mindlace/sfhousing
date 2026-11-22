@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { STAGE_ORDER } from '$lib/timelapse/types';
 import { TOKENS, timelineTokenCss } from '$lib/map/palette';
 import { TYPOLOGY_ORDER } from '$lib/map/types';
-import { HALO_TOKEN } from '$lib/map/timelapse/halos';
+import { HALO_TOKEN } from '$lib/map/timelapse/city';
 import { CITY_KIND_TOKEN } from '$lib/map/timelapse/city';
 import { AREA_SWATCH, EDGE_SWATCH } from '$lib/timeline/SimKey.svelte';
 import { STAGE_KEY, TYPE_KEY } from './rows';

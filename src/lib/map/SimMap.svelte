@@ -188,7 +188,6 @@
     timelineLoading: boolean;
     timelineFailed: boolean; // a timelapse shader error: the error state is final for this map
     onRejection: ((e: PromiseRejectionEvent) => void) | null; // timeline mode's compile watch
-    unwatchMotion: (() => void) | null; // timeline mode's prefers-reduced-motion listener
     SolidPolygonLayer: SolidPolygonLayerClass | null; // from loadDeck(), once the overlay exists
     appliedTheme: Theme;
     paintDiff: Record<Theme, PaintSet[]> | null;
@@ -538,7 +537,6 @@
       timelineLoading: false,
       timelineFailed: false,
       onRejection: null,
-      unwatchMotion: null,
       SolidPolygonLayer: null,
       appliedTheme: 'light',
       paintDiff: null,
@@ -970,7 +968,6 @@
       }
     });
     if (pendingDay !== null) timeline.setTime(pendingDay);
-    watchReducedMotion(l, timeline);
     timeline.setHalos(pendingHalos);
     timeline.setBarMode(pendingBarMode);
     if (pendingLookups) {
@@ -992,15 +989,6 @@
       }
     }
     if (remount && queued.length === 0) resyncCb?.();
-  }
-
-  /** The halos follow `prefers-reduced-motion`, now and on each change, until teardown. */
-  function watchReducedMotion(l: Live, timeline: TimelineController): void {
-    const q = matchMedia('(prefers-reduced-motion: reduce)');
-    const onChange = (e: { matches: boolean }) => timeline.setReducedMotion(e.matches);
-    timeline.setReducedMotion(q.matches);
-    q.addEventListener('change', onChange);
-    l.unwatchMotion = () => q.removeEventListener('change', onChange);
   }
 
   /** luma device errors: logged as before, except in timeline mode (§4.8 "Errors"). */
@@ -1056,8 +1044,6 @@
     l.timeline?.destroy();
     if (l.onRejection) removeEventListener('unhandledrejection', l.onRejection);
     l.onRejection = null;
-    l.unwatchMotion?.();
-    l.unwatchMotion = null;
     l.overlay?.finalize();
     l.map?.remove();
     l.controller = null;

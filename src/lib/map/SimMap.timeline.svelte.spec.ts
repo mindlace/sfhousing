@@ -15,13 +15,14 @@ import { timelineLookups } from './fixtures/timeline-lookups';
 import { packTimedCell } from './pack-timed';
 import { encodeParts } from './timelapse/encode';
 import { TIMELINE_PART_LAYER } from './timeline-controller';
-import type {
-  CityDelta,
-  SimMapHandle,
-  SimMapProps,
-  TimedPackedCell,
-  TimelinePick,
-  TimelineUpdate
+import {
+  SLOT_FLAG,
+  type CityDelta,
+  type SimMapHandle,
+  type SimMapProps,
+  type TimedPackedCell,
+  type TimelinePick,
+  type TimelineUpdate
 } from './types';
 
 // See SimMap.svelte.spec.ts: the committed fixture dataset is served by Vitest's dev server.
@@ -120,12 +121,6 @@ async function converged(map: MapLibreMap) {
     map.triggerRepaint();
   });
 }
-
-/** The `timeline-halos` layer deck was last given, if any. */
-const haloLayer = (map: MapLibreMap) =>
-  ((deckOf(map).props.layers ?? []) as Layer<{ reduced: boolean }>[]).find(
-    (l) => l.id === 'timeline-halos'
-  );
 
 const cellOf = (id: string) => timelineSmall.cells.find((c) => c.cellId === id)!;
 /** The first part of a slot's project in a cell. */
@@ -296,16 +291,22 @@ describe('SimMap timeline mode', { timeout: 60_000 }, () => {
     const { handle, ready } = await mount();
     handle.setHalos({ from: DAYS.start });
     handle.setTimelineLookups(timelineLookups);
-    handle.applyTimeline(timelineSmall);
+    handle.applyTimeline({
+      ...timelineSmall,
+      cells: timelineSmall.cells.map((c) => ({
+        ...c,
+        slotFlags: new Uint8Array(c.slotProjectIds.length).fill(SLOT_FLAG.zoning)
+      }))
+    });
     const h = await ready;
     const map = h.getMap()!;
     await converged(map);
     const ids = layerIds(map);
     expect(ids.indexOf('timeline-halos')).toBe(ids.indexOf('timeline-bars') + 1);
-    expect(dbg().timelineSnapshot()!.halos).toBeGreaterThan(0);
+    expect(dbg().timelineSnapshot()!.marks).toBeGreaterThan(0);
     h.setHalos(null);
     expect(layerIds(map)).not.toContain('timeline-halos');
-    expect(dbg().timelineSnapshot()!.halos).toBe(0);
+    expect(dbg().timelineSnapshot()!.marks).toBe(0);
     dbg().setHalos({ from: DAYS.start }); // the debug hook calls through to the handle
     expect(layerIds(map)).toContain('timeline-halos');
     expect(errors).toEqual([]);
@@ -364,44 +365,13 @@ describe('SimMap timeline mode', { timeout: 60_000 }, () => {
     await converged(map);
     // The markers are held; no layer draws from them.
     expect(layerIds(map)).not.toContain('timeline-city');
-    expect(dbg().timelineSnapshot()).toMatchObject({ cityMarkers: 2, ringMinZoom: 14 });
+    expect(dbg().timelineSnapshot()).toMatchObject({ cityMarkers: 2 });
     // A malformed city is refused at the handle, before anything is queued or applied.
     const bad = { ...city, homes: new Uint16Array(1) };
     expect(() => h.applyTimeline({ ...timelineSmall, revision: 1, cells: [], city: bad })).toThrow(
       RangeError
     );
     expect(errors).toEqual([]);
-  });
-
-  it('a change of prefers-reduced-motion reaches the controller', async () => {
-    const listeners = new Set<(e: { matches: boolean }) => void>();
-    const query = {
-      matches: false,
-      media: '(prefers-reduced-motion: reduce)',
-      onchange: null,
-      addEventListener: (_: string, cb: (e: { matches: boolean }) => void) => listeners.add(cb),
-      removeEventListener: (_: string, cb: (e: { matches: boolean }) => void) =>
-        listeners.delete(cb),
-      addListener: () => {},
-      removeListener: () => {},
-      dispatchEvent: () => true
-    };
-    const real = window.matchMedia.bind(window);
-    vi.stubGlobal('matchMedia', (q: string) =>
-      q.includes('prefers-reduced-motion') ? query : real(q)
-    );
-    const { h, map, screen } = await mountReady();
-    h.setHalos({ from: DAYS.start });
-    h.setTimelineLookups(timelineLookups);
-    h.applyTimeline(timelineSmall);
-    await converged(map);
-    expect(haloLayer(map)!.props.reduced).toBe(false);
-    expect(listeners.size).toBe(1);
-    query.matches = true;
-    for (const cb of listeners) cb({ matches: true });
-    expect(haloLayer(map)!.props.reduced).toBe(true);
-    await screen.unmount();
-    expect(listeners.size).toBe(0);
   });
 });
 

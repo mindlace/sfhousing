@@ -46,12 +46,6 @@ export const RAMP_STOPS = [0.15, 0.45, 0.75] as const;
 export const DECLUTTER_MAX_ZOOM = 18;
 /** Tier 4: this spec; declutter ladder step from the mode's gate up to DECLUTTER_MAX_ZOOM. */
 export const DECLUTTER_STEP = 0.5;
-/** Tier 4: this slice; a halo ring's life in simulated days (2 s at 1×, 0.67 s at 3×). */
-export const HALO_DAYS = 730;
-/** Tier 4: this slice; a ring's radius in px at birth and at the end of its life. */
-export const HALO_R_PX = [6, 22] as const;
-/** Tier 4: this slice; reduced motion: a ring's one radius in px (full strength, no fade). */
-export const HALO_STILL_R_PX = 14;
 /** Tier 4: this slice; the policy mark's size in px (the diamond's diagonal). */
 export const MARK_PX = 10;
 /** Below this zoom one mark per grid square; from it each project's own mark. */

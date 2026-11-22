@@ -8,8 +8,7 @@
 -->
 <script module lang="ts">
   import { STAGE_KEY, type StageGroup, type Swatch } from '$lib/map/key/rows';
-  import { HALO_TOKEN } from '$lib/map/timelapse/halos';
-  import { CITY_KIND_TOKEN } from '$lib/map/timelapse/city';
+  import { CITY_KIND_TOKEN, HALO_TOKEN } from '$lib/map/timelapse/city';
 
   type RingKind = keyof typeof HALO_TOKEN;
   const ring = (kind: RingKind, group: StageGroup) => ({

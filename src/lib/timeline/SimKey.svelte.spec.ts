@@ -10,7 +10,7 @@ import '../../routes/layout.css';
 import { timelineTokenCss } from '$lib/map/palette';
 import { STAGE_KEY } from '$lib/map/key/rows';
 import { KEY_COPY } from '$lib/map/key/copy';
-import { HALO_KIND, HALO_TOKEN } from '$lib/map/timelapse/halos';
+import { HALO_TOKEN } from '$lib/map/timelapse/city';
 import { CITY_KIND_TOKEN } from '$lib/map/timelapse/city';
 import { longTexts } from '$lib/shell/test/rest-text';
 import SimKey, { AREA_SWATCH, EDGE_SWATCH } from './SimKey.svelte';
@@ -152,9 +152,9 @@ describe('SimKey', () => {
   it("names each ring's tone beside its stage word, with the token the halo layer draws it in", async () => {
     await render(SimKey, { props: { tally: TALLY, inForce: false } });
     const ring = document.querySelector('[data-key-extra="ring"]')!;
-    // The heading, then one ring per kind the layer draws (every HALO_KIND but the mark).
+    // The heading, then one ring per kind the layer draws (each HALO_TOKEN kind).
     expect(ring.firstElementChild!.textContent).toBe(KEY_COPY.ring);
-    const kinds = Object.keys(HALO_KIND).filter((k) => k !== 'mark');
+    const kinds = Object.keys(HALO_TOKEN);
     const rows = [...ring.querySelectorAll('[data-ring-kind]')].map((r) => [
       r.getAttribute('data-ring-kind'),
       r.querySelector('[data-swatch="ring"]')!.getAttribute('aria-hidden'),
