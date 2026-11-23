@@ -1,5 +1,6 @@
 // The Funding tab's view model (funding-ui spec section 6, "funding-view.spec.ts"). Every expected
 // coverage or per-home value is computed here with `fundBundle` on the same items, never by hand.
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   AVERAGE_DRAWN,
@@ -16,9 +17,12 @@ import {
   uncoveredPerHome
 } from '$lib/sim/finance';
 import { SLOPE_FIXTURE } from '$lib/sim/finance/test/fixtures';
+import { MAX_DOLLARS } from '$lib/sim/levers/finance';
 import type { FinanceLevers } from '$lib/sim/levers/types';
 import { dayOf } from '$lib/sim/scenario/dates';
+import { formatMonthYear } from '$lib/fzp/format';
 import { HORIZON } from '$lib/fzp/time';
+import { LEGACY_UNCAPPED_DOLLARS, isNoCeiling, parseCalibration } from '$lib/timelapse/model';
 import type { Pool, Programme } from '$lib/timelapse/types';
 import { addPreset, fundingPresets } from './funding-presets';
 import { POOL_KIND_DEFAULTS, BOND_PRINCIPAL } from './funding-sources';
@@ -31,6 +35,7 @@ import {
 } from './test/funding';
 import {
   COVERAGE_RULE_SENTENCE,
+  NO_CEILING,
   coverageLineText,
   coverageStepText,
   labelAmountChanged,
@@ -68,6 +73,8 @@ const TIERS = { veryLow: 0.52, low: 0.31, moderate: 0.17, aboveModerate: 0 };
 const D27 = dayOf(2027, 7, 1);
 const D28 = dayOf(2028, 7, 1);
 const D29 = dayOf(2029, 7, 1);
+/** fixture-0's calibration before finite funding: its federal pool carries `uncapped: true`. */
+const LEGACY_PATH = new URL('../timelapse/fixtures/calibration-uncapped.json', import.meta.url);
 
 const kindOf = (f: FinanceLevers, pool: string) =>
   [...baseline.pools, ...f.pools].find((p) => p.id === pool)!.kind;
@@ -124,8 +131,48 @@ describe('baseline groups', () => {
     }
     expect(groups[0].perYear).toBe(200_000_000);
     expect(groups[1].perYear).toBe(100_000_000);
-    expect(groups[2].perYear).toBeNull();
+    expect(groups[2].perYear).toBe(50_000_000);
     expect(groups[0].pools.map((p) => p.id)).toEqual(['city-tax', 'city-gf']);
+  });
+
+  it('lists a baseline pool with no programme in its group', () => {
+    const spent: Pool = {
+      id: 'city-spent',
+      kind: 'dedicatedTax',
+      label: 'City: spent fund',
+      inflows: [],
+      debt: null,
+      leverage: 1
+    };
+    const withSpent = { ...baseline, pools: [...baseline.pools, spent] };
+    const [city] = baselineGroups(DEFAULT, withSpent, asOf);
+    const [before] = baselineGroups(DEFAULT, baseline, asOf);
+    expect(city.pools.map((p) => p.id)).toEqual(['city-tax', 'city-gf', 'city-spent']);
+    expect(city.programmes.map((g) => g.pool)).not.toContain('city-spent');
+    expect(city.programmes).toEqual(before.programmes);
+    expect(city.perHome).toBe(before.perHome);
+    expect(city.perYear).toBe(before.perYear);
+  });
+
+  it('on an older dataset the federal group reads Switched off, then No ceiling', () => {
+    const old = parseCalibration(JSON.parse(readFileSync(LEGACY_PATH, 'utf8'))).baselineFunding!;
+    const fed = old.pools.find((p) => p.kind === 'federal')!;
+    const f = policyWith({
+      baselineScale: [
+        { pool: fed.id, from: D27, scale: 0 },
+        { pool: fed.id, from: D29, scale: 1 }
+      ]
+    }).funding;
+    const groupOn = (day: number) =>
+      baselineGroups(f, old, day).find((g) => g.group === 'federal')!;
+    expect(groupOn(D28).off).toBe(true);
+    const back = groupOn(D29);
+    expect(back.off).toBe(false);
+    expect(isNoCeiling(back.perYear)).toBe(true);
+    expect(scaleLines(f, old, 'federal').map((l) => l.text)).toEqual([
+      'From July 2027: switched off',
+      "From July 2029: switched back on, 100% of today's amount"
+    ]);
   });
 
   it("public bank: City figure counts the loan's worth, principal only in lends", () => {
@@ -315,7 +362,6 @@ describe('previews', () => {
     kind: 'generalRevenue',
     label: 'City general fund, 2027',
     inflows: [{ kind: 'yearly', from: D27, to: null, dollarsPerYear: 60_000_000 }],
-    uncapped: false,
     debt: null,
     leverage: 1
   };
@@ -454,7 +500,6 @@ describe('sentences', () => {
     kind: 'goBond',
     label: 'City bond, 2027',
     inflows: [{ kind: 'once', day: D27, dollars: 300_000_000 }],
-    uncapped: false,
     debt: { rate: 0.06, termYears: 20 },
     leverage: 1
   };
@@ -513,12 +558,51 @@ describe('sentences', () => {
     ]);
     expect(scaleLines(f, baseline, 'federal').map((l) => l.text)).toEqual([
       'From July 2027: switched off',
-      'From July 2029: switched back on'
+      "From July 2029: switched back on, 100% of today's amount"
     ]);
     expect(scaleLines(f, baseline, 'state').map((l) => l.text)).toEqual([
       'From July 2027: switched off',
       "From July 2029: switched back on, 50% of today's amount"
     ]);
+  });
+
+  it('scaleLines on the federal pool gives the text it gives a City pool at the same scale', () => {
+    const f = policyWith({
+      baselineScale: [
+        { pool: 'federal', from: D27, scale: 1.5 },
+        { pool: 'city-gf', from: D27, scale: 1.5 }
+      ]
+    }).funding;
+    const [fed] = scaleLines(f, baseline, 'federal');
+    const [city] = scaleLines(f, baseline, 'city');
+    expect(fed.text).toBe("From July 2027: 150% of today's amount");
+    expect(fed.text).toBe(city.text);
+    expect('uncapped' in fed).toBe(false);
+  });
+
+  it("poolMoneySentence names the federal pool's yearly amount", () => {
+    const fed = baseline.pools.find((p) => p.kind === 'federal')!;
+    expect(poolMoneySentence(fed)).toBe(`$50 million a year from ${formatMonthYear(asOf)}`);
+    expect(poolMoneySentence({ ...fed, inflows: [] })).toBe('');
+  });
+
+  it('poolMoneySentence of a LEGACY_UNCAPPED_DOLLARS yearly pool reads No ceiling', () => {
+    const fed = baseline.pools.find((p) => p.kind === 'federal')!;
+    const at = (dollarsPerYear: number): Pool => ({
+      ...fed,
+      inflows: [{ kind: 'yearly', from: asOf, to: null, dollarsPerYear }]
+    });
+    expect(poolMoneySentence(at(LEGACY_UNCAPPED_DOLLARS))).toBe('No ceiling');
+    expect(poolMoneySentence(at(LEGACY_UNCAPPED_DOLLARS))).toBe(NO_CEILING);
+  });
+
+  it('poolMoneySentence of a MAX_DOLLARS yearly pool names its amount', () => {
+    const fed = baseline.pools.find((p) => p.kind === 'federal')!;
+    const big: Pool = {
+      ...fed,
+      inflows: [{ kind: 'yearly', from: asOf, to: null, dollarsPerYear: MAX_DOLLARS }]
+    };
+    expect(poolMoneySentence(big)).toBe(`$100 billion a year from ${formatMonthYear(asOf)}`);
   });
 
   it('termRows: the rate cut is offered for guarantees, and a typed term always shows', () => {
@@ -557,7 +641,7 @@ describe('sentences', () => {
     expect(labelAmountChanged('City bond, 2028', 1, 250_000_000)).toBe(
       'Changed amount: City bond, 2028, row 1, $250 million'
     );
-    expect(labelScaleApplied('State', D27, 0, false)).toBe(
+    expect(labelScaleApplied('State', D27, 0)).toBe(
       "Today's funding: State switched off from July 2027"
     );
   });

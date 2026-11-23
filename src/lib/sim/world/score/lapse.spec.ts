@@ -68,7 +68,6 @@ function timelineOf(): PolicyTimeline {
     kind: 'generalRevenue',
     label: 'Added pool',
     inflows: [{ kind: 'yearly', from: asOf, to: null, dollarsPerYear: 20_000_000 }],
-    uncapped: false,
     debt: null,
     leverage: 1
   };

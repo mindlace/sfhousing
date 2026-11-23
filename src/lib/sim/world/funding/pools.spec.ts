@@ -2,11 +2,13 @@
 import { describe, expect, it } from 'vitest';
 import type { BundleFunding, ItemFunding } from '$lib/sim/finance';
 import { miniFinance } from '$lib/sim/scenario/fixtures/mini-finance';
-import { financeIndexOf, type Award } from '$lib/sim/scenario/funding';
+import { financeIndexOf, inflowArrivals, type Award } from '$lib/sim/scenario/funding';
 import { Treasury, type LedgerEvent } from '$lib/sim/scenario/money';
 import type { Schedule, SimInput } from '$lib/sim/scenario/types';
+import { LEGACY_UNCAPPED_DOLLARS } from '$lib/timelapse/model';
 import type { Day } from '$lib/timelapse/time';
 import { STAGE_ORDER } from '$lib/timelapse/types';
+import { DEFAULT_POLICY4 } from '$lib/timeline/policy4';
 import { addProject } from '../columns';
 import { monthFirstDay, monthLastDay } from '../months';
 import type { PolicyFrame, PolicyTimeline } from '../policy/frame';
@@ -18,7 +20,7 @@ import { fundOf, moneyRowsOf, poolRowOf, type FundPools } from './columns';
 import { frameMoney } from './frame-money';
 import { availableOf, commitAward, moneyOnEvent } from './pools';
 import { createFundingSystem } from './system';
-import { benchMoney, fundedMini, oneMoneyTimeline } from './test/fixtures';
+import { benchMoney, fundedMini, moneyTimeline, oneMoneyTimeline } from './test/fixtures';
 
 type Finance = NonNullable<SimInput['finance']>;
 
@@ -78,7 +80,7 @@ const item = (o: Partial<ItemFunding>): ItemFunding => ({
   ...o
 });
 
-/** An award of every mini programme: two grants (one uncapped), a loan and a guarantee. */
+/** An award of every mini programme: two grants (one federal), a loan and a guarantee. */
 const UNITS = 37;
 const AWARD: Award = {
   set: [0, 1, 2, 3],
@@ -173,7 +175,7 @@ describe('rule 12 on the bench city (synthCity, bench baseline money)', () => {
   const bt = oneMoneyTimeline(bench, money);
   const bs = staticsOf(bench);
 
-  it("rule 12: under the bench baseline, after month 1 every capped baseline pool has received its first year's inflow", () => {
+  it("rule 12: under the bench baseline, after month 1 every baseline pool has received its first year's inflow", () => {
     const ledger: LedgerEvent[] = [];
     const out: StepSink = { event() {}, ledger: (e) => ledger.push(e) };
     const core = withFunding(createFundingSystem());
@@ -183,14 +185,10 @@ describe('rule 12 on the bench city (synthCity, bench baseline money)', () => {
     expect(world.month).toBe(1);
 
     const { pools } = fundOf(world);
-    let capped = 0;
+    let received = 0;
     for (const p of money.pools) {
       const q = poolRowOf(pools, p.id);
-      if (p.uncapped) {
-        expect(pools.received[q]).toBe(0);
-        continue;
-      }
-      capped++;
+      received++;
       const fl = p.inflows[0];
       expect(fl.kind).toBe('yearly');
       if (fl.kind !== 'yearly') continue;
@@ -214,27 +212,61 @@ describe('rule 12 on the bench city (synthCity, bench baseline money)', () => {
     }
     // Serving ran in month 1: something was committed.
     expect(ledger.some((e) => e.kind === 'commit')).toBe(true);
-    expect(capped).toBe(7);
+    expect(received).toBe(8);
     const ins = ledger.filter((e) => e.kind === 'in');
     expect(ins).toEqual(
-      money.pools
-        .filter((p) => !p.uncapped)
-        .map((p) => ({
-          day: bench.asOf,
-          pool: p.id,
-          programme: null,
-          kind: 'in',
-          dollars: p.inflows[0].kind === 'yearly' ? p.inflows[0].dollarsPerYear : -1
-        }))
+      money.pools.map((p) => ({
+        day: bench.asOf,
+        pool: p.id,
+        programme: null,
+        kind: 'in',
+        dollars: p.inflows[0].kind === 'yearly' ? p.inflows[0].dollarsPerYear : -1
+      }))
     );
-    const federal = poolRowOf(pools, 'federal');
-    expect(
-      availableOf(
-        pools,
-        federal,
-        money.pools.find((p) => p.id === 'federal')!
-      )
-    ).toBe(Infinity);
+  });
+
+  it('availableOf is finite on every pool', () => {
+    const core = withFunding(createFundingSystem());
+    const out: StepSink = { event() {} };
+    const world = core.createWorld(bs, bt, 1, out);
+    core.step(world, core.planDue(world, bs, bt, 1, 1), bs, bt, 1, out);
+    const { pools } = fundOf(world);
+    const fed = money.pools.find((p) => p.id === 'federal')!;
+    // an older dataset's federal pool carried the flag; the step engine reads it as any pool
+    for (const def of [...money.pools, { ...fed, uncapped: true }]) {
+      const got = availableOf(pools, poolRowOf(pools, def.id), def);
+      expect(Number.isFinite(got)).toBe(true);
+      expect(got).toBeLessThanOrEqual(def.leverage * pools.received[poolRowOf(pools, def.id)]);
+    }
+  });
+});
+
+describe('the federal pool', () => {
+  it('the federal pool receives its yearly arrival', () => {
+    const fed = input.finance!.pools.find((p) => p.id === 'federal')!;
+    const fl = fed.inflows[0];
+    expect(fl.kind).toBe('yearly');
+    // the money track (policy/money.ts) over the empty document
+    const track = moneyTimeline(input, DEFAULT_POLICY4);
+    const ledger: LedgerEvent[] = [];
+    const out: StepSink = { event() {}, ledger: (e) => ledger.push(e) };
+    const core = withFunding(createFundingSystem());
+    const world = core.createWorld(statics, track, 1, out);
+    const due = core.planDue(world, statics, track, 1, 13);
+    for (let m = 1; m <= 13; m++) core.step(world, due, statics, track, 1, out);
+    const want = inflowArrivals(fl, input.asOf, monthLastDay(input.asOf, 13));
+    expect(want).toHaveLength(2);
+    expect(ledger.filter((e) => e.kind === 'in' && e.pool === 'federal')).toEqual(
+      want.map((day) => ({
+        day,
+        pool: 'federal',
+        programme: null,
+        kind: 'in',
+        dollars: fl.kind === 'yearly' ? fl.dollarsPerYear : -1
+      }))
+    );
+    const { pools } = fundOf(world);
+    expect(pools.received[poolRowOf(pools, 'federal')]).toBe(2 * LEGACY_UNCAPPED_DOLLARS);
   });
 });
 
@@ -307,7 +339,7 @@ describe('pools, arrivals and money events', () => {
     expect(ours.rowsAfterAward[1] - ours.rowsAfterAward[0]).toBe(4);
     expect(moneyRowsOf(pools, ours.row)).toEqual([0, 0]);
     expect(pools.mN).toBe(0);
-    // A repayment or release to a capped pool dates its money; the uncapped pool is untouched.
+    // A repayment or release to a pool dates its money; the federal pool had neither here.
     for (const id of ['m-bank', 'm-city']) {
       const q = poolRowOf(pools, id);
       expect([pools.moneyDay[q], pools.moneyMonth[q]]).toEqual([E, END_MONTH]);

@@ -20,7 +20,6 @@ const pool = (id: string, kind: Pool['kind'], inflows: Pool['inflows']): Pool =>
   kind,
   label: id,
   inflows,
-  uncapped: false,
   debt: kind === 'goBond' ? { rate: 0.04, termYears: 30 } : null,
   leverage: 1
 });
@@ -389,22 +388,6 @@ describe('Treasury inflows', () => {
     const r = run(fin, 1, []);
     expect(r.events).toEqual([]);
     expect(r.t.receive(A + 1)).toBe(false);
-  });
-
-  it('an uncapped pool gets no in event, still has its commits, and passes E6', () => {
-    const fin = finance();
-    fin.pools.push({ ...pool('fed', 'federal', []), uncapped: true });
-    fin.programmes.push(prog('g-fed', 'fed', { kind: 'grant', share: 0.5 }));
-    const a = awardOf(fin, [0, 3]);
-    const r = run(fin, 1, [{ a, s: complete(A + 500) }]);
-    expect(r.events.filter((e) => e.pool === 'fed' && e.kind === 'in')).toEqual([]);
-    const fed = r.events.filter((e) => e.pool === 'fed').map((e) => e.kind);
-    expect(fed).toEqual(['commit', 'spend']);
-    expect(r.t.state[3].received).toBe(0);
-    expect(r.t.available(3)).toBe(Infinity);
-    checkLedger(r.events, fin);
-    const bad: LedgerEvent = { day: A, pool: 'fed', programme: null, kind: 'in', dollars: 5 };
-    expect(() => checkLedger([bad], fin)).toThrow();
   });
 });
 

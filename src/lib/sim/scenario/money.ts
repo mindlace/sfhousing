@@ -58,7 +58,6 @@ export class Treasury {
     const fin = f.finance;
     this.state = fin.pools.map(() => newPoolState());
     fin.pools.forEach((p, q) => {
-      if (!f.capped[q]) return;
       for (const fl of p.inflows) {
         const dollars = fl.kind === 'once' ? fl.dollars : fl.dollarsPerYear;
         for (const day of inflowArrivals(fl, asOf, horizon)) {
@@ -182,7 +181,7 @@ export class Treasury {
           break;
         case 'repay':
           st.outLoan -= d;
-          if (this.f.capped[e.pool]) returned = true;
+          returned = true;
           break;
         case 'loss':
           if (e.instr === 'loan') {
@@ -192,7 +191,7 @@ export class Treasury {
           break;
         case 'release':
           st.committed -= d;
-          if (this.f.capped[e.pool]) returned = true;
+          returned = true;
           break;
       }
       this.out(day, e.pool, e.prog, e.kind, d);

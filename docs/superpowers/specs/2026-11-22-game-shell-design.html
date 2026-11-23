@@ -590,7 +590,7 @@ export const YOUR_GAME = 'Your game';</code></pre>
       <li><code>src/lib/sharing/{SharedBanner.svelte,copy.ts}</code></li>
       <li><code>src/routes/s/[id]/**</code></li>
       <li><code>src/routes/p/[id]/**</code></li>
-      <li><code>e2e/game-shell.spec.ts</code> and the remix tests in <code>e2e/{share-states,share-roundtrip,share-notices,sim-share,chrome-dark}.spec.ts</code></li>
+      <li><code>e2e/game-shell.spec.ts</code> and the remix tests in <code>e2e/{share-states,share-roundtrip,share-notices,sim-share,chrome-dark}.spec.ts</code> (every case that asserts the banner's Remix or "Open with current data" button)</li>
       <li><code>docs/dev/about.md</code></li>
     </ul>
     <p>Ordering notes from the design doc that concern this unit:</p>
@@ -690,6 +690,8 @@ export const YOUR_GAME = 'Your game';</code></pre>
       <p>The published plans and policies these tests open are seeded with <code>seedPlanRow</code> (<code>e2e/helpers/sharing.ts</code>, <code>POST /api/e2e/plans</code>), which the sharing e2e specs already use and which no unit of this build changes.</p>
       <p>These tests read only this unit's texts and test ids, <code>game-core</code>'s, and what <code>/sim</code> shows today. None needs <code>game-sim</code>'s work: no locked lane, no win on <code>/sim</code>, no given measure.</p>
       <p>The remix tests in <code>share-states</code>, <code>share-roundtrip</code>, <code>share-notices</code>, <code>sim-share</code> and <code>chrome-dark</code> call <code>seedGame(page, 3)</code> before navigating, drop their steps on the confirm dialog and the Remix toast, and check the remixed document on the page that loads. <code>chrome-dark</code>'s axe check of the Remix dialog checks the banner alone.</p>
+      <p>The remix tests include every case that asserts the banner's Remix or "Open with current data" button, such as <code>share-states</code>' N6 case: it calls <code>seedGame(page, 3)</code> before navigating, because in the open game the banner shows neither button.</p>
+      <p>Each e2e case waits for the page's readiness signal before it reads a game-dependent control or a test hook. A case that reads the banner's Remix state first waits for <code>html[data-hydrated]</code>: until the page has mounted the banner shows Remix as ready whatever the game holds. A case that reads Paint's brush hook (<code>ops</code>) after a Remix's full page load first calls <code>waitForMap(page)</code>: <code>toHaveURL</code> passes when the new document commits, before Paint has mounted and set the hook.</p>
     </section>
   </section>
 

@@ -949,15 +949,25 @@ export function fundedSection(x: ReportInput): string[] {
     '**Baseline funding**',
     '',
     ...table(
-      ['fill tier', 'programme', 'pool', 'kind', 'dollars a year', 'share', 'implied homes a year'],
+      [
+        'fill tier',
+        'programme',
+        'pool',
+        'kind',
+        'dollars in the first year',
+        'share',
+        'implied homes a year',
+        'end'
+      ],
       f.rows.map((r) => [
         FILL_TIER_LABEL[r.fillTier],
-        r.programme,
+        r.programme ?? 'none',
         r.pool,
         r.kind,
-        r.dollarsPerYear === null ? 'uncapped' : num(r.dollarsPerYear),
+        num(r.firstYear),
         num(r.share),
-        r.dollarsPerYear === null ? 'uncapped' : num(r.impliedHomesPerYear)
+        r.impliedHomesPerYear === null ? 'none' : num(r.impliedHomesPerYear),
+        r.end
       ])
     ),
     '',

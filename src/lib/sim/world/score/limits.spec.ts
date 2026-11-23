@@ -51,7 +51,6 @@ function baseFinance(asOf: Day): Finance {
     kind: 'goBond',
     label: 'Baseline bond',
     inflows: [{ kind: 'yearly', from: asOf, to: null, dollarsPerYear: 5_000_000 }],
-    uncapped: false,
     debt: BOND_DEBT,
     leverage: 1
   };
@@ -105,7 +104,6 @@ function addedBond(): { bond: Pool; grant: Programme } {
     kind: 'goBond',
     label: 'Added bond',
     inflows: [{ kind: 'yearly', from: asOf, to: null, dollarsPerYear: 12_000_000 }],
-    uncapped: false,
     debt: { rate: 0.04, termYears: 30 },
     leverage: 1
   };

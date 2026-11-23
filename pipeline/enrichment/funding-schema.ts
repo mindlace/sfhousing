@@ -1,8 +1,9 @@
 /**
- * Schema of the hand-transcribed baseline funding `pipeline/enrichment/funding.json`
- * (finance-data spec 4.5): the Budget and Legislative Analyst's per-home and City-source figures,
- * the state and federal pool texts, the allocation records behind the federal pool's missing
- * ceiling, and the CDLAC/CTCAC award rows. Fixture builds read
+ * Schema 2 of the hand-transcribed baseline funding `pipeline/enrichment/funding.json`
+ * (finance-data spec 4.5; finite-funding spec, the funding file): the Budget and Legislative
+ * Analyst's per-home and City-source figures, the state and federal pool texts, the federal
+ * pool's yearly ceiling, a bound on every source (when its money ends, what is left, or why
+ * nothing bounds it), and the CDLAC/CTCAC award rows. Fixture builds read
  * `pipeline/test/fixtures/mini/enrichment/funding.json`. Pipeline only (zod).
  */
 import { z } from 'zod';
@@ -18,8 +19,46 @@ export interface Cite {
   quote?: string;
 }
 
+/** What ends a source's money: a last day, the dollars left, or why nothing does. */
+export type Bound =
+  | { kind: 'ends'; on: IsoDate; method: string; tier: 1 | 2 | 3; cite: Cite }
+  | { kind: 'remaining'; dollars: number; method: string; tier: 1 | 2 | 3; cite: Cite }
+  | { kind: 'none'; reason: string; tier: 1 | 2 | 3; cite: Cite };
+
+export interface CitySource {
+  id: string;
+  label: string;
+  kind: 'goBond' | 'cop' | 'generalRevenue' | 'dedicatedTax';
+  dollarsPerYear: number;
+  debt: { rate: number; termYears: number; cite: Cite } | null;
+  note: string;
+  cite: Cite;
+  bound: Bound;
+}
+
+export interface StateSource {
+  id: string;
+  label: string;
+  dollarsPerYear: number;
+  tier: number;
+  method: string;
+  cite: Cite;
+  bound: Bound;
+}
+
+export interface FederalSource {
+  id: string;
+  label: string;
+  /** The yearly ceiling. */
+  dollarsPerYear: number;
+  tier: number;
+  method: string;
+  cite: Cite;
+  bound: Bound;
+}
+
 export interface FundingFile {
-  schema: 1;
+  schema: 2;
   /** Exhibit F: average funding per home, tax-credit projects, 2024 */
   perHome: {
     total: number;
@@ -38,26 +77,10 @@ export interface FundingFile {
     total: number;
     tier: 1;
     cite: Cite;
-    sources: {
-      id: string;
-      label: string;
-      kind: 'goBond' | 'cop' | 'generalRevenue' | 'dedicatedTax';
-      dollarsPerYear: number;
-      debt: { rate: number; termYears: number; cite: Cite } | null;
-      note: string;
-      cite: Cite;
-    }[];
+    sources: CitySource[];
   };
-  state: { id: string; label: string; dollarsPerYear: number; tier: 2; method: string; cite: Cite };
-  federal: {
-    id: string;
-    label: string;
-    tier: 2;
-    method: string;
-    cite: Cite;
-    /** the allocation records behind the pool's missing ceiling (finance-data spec 4.5) */
-    uncapped: { rounds: number; window: [IsoDate, IsoDate]; cites: Cite[] };
-  };
+  state: StateSource;
+  federal: FederalSource;
   /** awards whose homes give check.observedHomesPerYear */
   awards: {
     years: number[];
@@ -124,6 +147,27 @@ const cite = z.strictObject({
   quote: text.optional()
 });
 
+const BOUND_TIER_MESSAGE =
+  "a bound's tier is 1, 2 or 3: an end nobody has read in a source is not written";
+const boundTier = z.literal([1, 2, 3], BOUND_TIER_MESSAGE);
+
+const bound = z.discriminatedUnion('kind', [
+  z.strictObject({ kind: z.literal('ends'), on: isoDate, method: text, tier: boundTier, cite }),
+  z.strictObject({
+    kind: z.literal('remaining'),
+    dollars,
+    method: text,
+    tier: boundTier,
+    cite
+  }),
+  z.strictObject({ kind: z.literal('none'), reason: text, tier: boundTier, cite })
+]);
+
+/** The tier of the state and federal texts: 1, 2 or 3. */
+const sourceTier = z
+  .number()
+  .refine((t) => t === 1 || t === 2 || t === 3, 'tier must be 1, 2 or 3');
+
 const source = z.strictObject({
   id: text,
   label: text,
@@ -133,7 +177,8 @@ const source = z.strictObject({
     .strictObject({ rate: z.number().positive(), termYears: z.number().int().positive(), cite })
     .nullable(),
   note: text,
-  cite
+  cite,
+  bound
 });
 
 const award = z.strictObject({
@@ -151,7 +196,7 @@ const ID_MESSAGE =
 
 export const FundingSchema: z.ZodType<FundingFile> = z
   .strictObject({
-    schema: z.literal(1),
+    schema: z.literal(2),
     perHome: z
       .strictObject({
         total: dollars,
@@ -185,21 +230,19 @@ export const FundingSchema: z.ZodType<FundingFile> = z
       id: text,
       label: text,
       dollarsPerYear: dollars,
-      tier: z.literal(2),
+      tier: sourceTier,
       method: text,
-      cite
+      cite,
+      bound
     }),
     federal: z.strictObject({
       id: text,
       label: text,
-      tier: z.literal(2),
+      dollarsPerYear: dollars,
+      tier: sourceTier,
       method: text,
       cite,
-      uncapped: z.strictObject({
-        rounds: z.number(),
-        window: z.tuple([isoDate, isoDate]),
-        cites: z.array(cite)
-      })
+      bound
     }),
     awards: z.strictObject({ years: z.array(year), rows: z.array(award) }),
     retiredIds: z.array(text)
@@ -234,18 +277,35 @@ export const FundingSchema: z.ZodType<FundingFile> = z
         });
       }
     });
-    const u = f.federal.uncapped;
-    if (
-      u.cites.length === 0 ||
-      !Number.isInteger(u.rounds) ||
-      u.rounds < 1 ||
-      u.window[0] > u.window[1]
-    ) {
+    const bounded: { dollarsPerYear: number; bound: Bound; path: (string | number)[] }[] = [
+      ...f.city.sources.map((s, i) => ({ ...s, path: ['city', 'sources', i, 'bound'] })),
+      { ...f.state, path: ['state', 'bound'] },
+      { ...f.federal, path: ['federal', 'bound'] }
+    ];
+    for (const { dollarsPerYear, bound: b, path } of bounded) {
+      if (b.kind === 'remaining' && b.dollars > 0 && dollarsPerYear <= 0) {
+        ctx.addIssue({
+          code: 'custom',
+          path,
+          message: 'a source with money remaining needs a yearly amount'
+        });
+      }
+    }
+    const bestYear = Math.max(
+      0,
+      ...f.awards.years.map((y) =>
+        f.awards.rows
+          .filter((r) => r.year === y && r.newConstruction)
+          .reduce((a, r) => a + r.homes, 0)
+      )
+    );
+    if (f.federal.dollarsPerYear !== bestYear * f.perHome.federal) {
       ctx.addIssue({
         code: 'custom',
-        path: ['federal', 'uncapped'],
+        path: ['federal', 'dollarsPerYear'],
         message:
-          'federal.uncapped needs at least one cite, a whole number of rounds and an ordered window'
+          'federal.dollarsPerYear must be the most new-construction homes awarded in one year ' +
+          'times perHome.federal'
       });
     }
     const ys = f.awards.years;
@@ -269,6 +329,11 @@ export const FundingSchema: z.ZodType<FundingFile> = z
 
 /** Zod parse, then the cross-check with F4's AFFORDABLE. Throws BuildError. */
 export function parseFundingFile(json: unknown, path: string): FundingFile {
+  if (json !== null && typeof json === 'object' && (json as Record<string, unknown>).schema === 1) {
+    throw new BuildError(
+      `${path}: $.schema: funding.json is schema 1: every source needs a bound (schema 2)`
+    );
+  }
   const r = FundingSchema.safeParse(json);
   if (!r.success) {
     const issues = r.error.issues.map((i) => {

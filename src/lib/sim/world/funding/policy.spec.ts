@@ -194,7 +194,6 @@ const poolOf = (id: string, inflows: Inflow[]): Pool => ({
   kind: 'generalRevenue',
   label: id,
   inflows,
-  uncapped: false,
   debt: null,
   leverage: 1
 });

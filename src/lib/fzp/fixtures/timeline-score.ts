@@ -17,14 +17,15 @@
  * TIMELINE_SCORE_MONEY adds `money` (two pools; every other series is 0):
  *
  *   u-bond (goBond, 'Added bond')  received[i] 12,000,000 x floor(i / 12 + 1), spent[i] 1,000,000i
- *   federal (uncapped)             received 0, spent[i] 1,500,000i
+ *   federal (federal)              received[i] 20,000,000 x floor(i / 12 + 1),
+ *                                  spent[i] 1,500,000i
  *   fundedHomes[i] 4i, displacedHomes[i] i, publicSpent[i] 2,500,000i (= sum of spent + lostCredit)
  *   owed       u-bond, principal P = received[290] = 12,000,000 x 25 = 300,000,000,
  *              repayment debtService(P, { rate 0.06, termYears 20 }).total, nominal
  *   limits     limitStatements for that one goBond borrowing of P
  *
  * With committed, out, repaid and lost all 0, identity I2 reduces to C = S and I3 to no loans.
- * received stays at or above spent in every month, so I4 holds for u-bond.
+ * received stays at or above spent in every month, so I4 holds for both pools.
  */
 import { M1_TARGETS } from '$lib/scoreboard';
 import { debtService, limitStatements } from '$lib/sim/finance';
@@ -193,7 +194,7 @@ function makeMoney(): NonNullable<TimelineScore['money']> {
         id: 'federal',
         label: 'Federal tax credits',
         kind: 'federal',
-        received: zeros(),
+        received: idx.map((i) => 20_000_000 * Math.floor(i / 12 + 1)),
         committed: zeros(),
         out: zeros(),
         spent: idx.map((i) => 1_500_000 * i),

@@ -28,13 +28,13 @@ import {
   marketText,
   moneyAt,
   owedLines,
+  receivedCell,
   tiersAt,
   TIERS_FUNDED_SENTENCE,
   TIERS_UNRECORDED_SENTENCE,
-  uncappedPoolIds,
   moneyFigureAt
 } from './money-view';
-import type { Pool } from '$lib/timelapse/types';
+import { LEGACY_UNCAPPED_DOLLARS } from '$lib/timelapse/model';
 
 const money = MONEY_SCORE.money as Money;
 const tiers = MONEY_SCORE.tiers!;
@@ -204,37 +204,18 @@ describe('row texts', () => {
     ]);
   });
 
-  it('by-source columns keep Received when a pool is uncapped, even at 0 everywhere', () => {
+  it('drops an all-zero Received column', () => {
     const m = moneyAt(money, 0);
     const none = { ...m, pools: m.pools.map((p) => ({ ...p, received: 0 })) };
     expect(bySourceColumns(none)).not.toContain('received');
-    expect(bySourceColumns(none, new Set(['federal']))).toContain('received');
-    // An uncapped id that is not among the run's pools keeps nothing.
-    expect(bySourceColumns(none, new Set(['elsewhere']))).not.toContain('received');
+    expect(bySourceColumns(m)).toContain('received');
   });
 
-  it('uncapped pool ids come from Pool.uncapped, baseline and levers, never from the kind', () => {
-    const pool = (id: string, kind: Pool['kind'], uncapped: boolean): Pool => ({
-      id,
-      kind,
-      label: id,
-      inflows: [],
-      uncapped,
-      debt: null,
-      leverage: 1
-    });
-    const baseline = fixtureCalibration().baselineFunding!.pools;
-    expect([...uncappedPoolIds(baseline)]).toEqual(
-      baseline.filter((p) => p.uncapped).map((p) => p.id)
-    );
-    expect([...uncappedPoolIds(baseline)]).toEqual(['federal-tax-credits']);
-    const ids = uncappedPoolIds(
-      [pool('fed', 'federal', false), pool('a', 'state', true)],
-      undefined,
-      [pool('b', 'goBond', true), pool('c', 'cop', false)]
-    );
-    expect([...ids].sort()).toEqual(['a', 'b']);
-    expect(uncappedPoolIds().size).toBe(0);
+  it('a Received cell reads No ceiling at LEGACY_UNCAPPED_DOLLARS, dollars otherwise', () => {
+    expect(receivedCell(LEGACY_UNCAPPED_DOLLARS)).toBe('No ceiling');
+    expect(receivedCell(LEGACY_UNCAPPED_DOLLARS * 3)).toBe('No ceiling');
+    expect(receivedCell(20_000_000)).toBe(formatDollars(20_000_000));
+    expect(receivedCell(0)).toBe(formatDollars(0));
   });
 
   it('the two F13 tier sentences', () => {

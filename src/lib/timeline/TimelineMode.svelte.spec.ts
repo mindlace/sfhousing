@@ -1651,88 +1651,12 @@ describe('TimelineMode', () => {
     });
   });
 
-  it('while stale the money rows read the held document, not the edited one', async () => {
-    const bond = (uncapped: boolean): Pool => ({
-      id: 'u-bond',
-      kind: 'generalRevenue',
-      label: 'Housing bond',
-      inflows: [{ kind: 'once', day: monthFirstDay(asOf, 2), dollars: 500_000_000 }],
-      uncapped,
-      debt: null,
-      leverage: 1
-    });
-    const money = (uncapped: boolean): SimPolicy4 => ({
-      schema: 4,
-      kinds: {
-        zoning: [],
-        permitting: [],
-        money: [
-          {
-            id: 'm',
-            label: 'Bond',
-            preset: null,
-            on: true,
-            where: { tag: 'fund', pool: 'u-bond' },
-            spans: [
-              {
-                from: monthFirstDay(asOf, 2),
-                to: null,
-                what: { tag: 'fund', pool: bond(uncapped), programmes: [] }
-              }
-            ]
-          }
-        ]
-      }
-    });
-    const filledPools = (rev: number) =>
-      emit({
-        type: 'filled',
-        rev,
-        through: LAST,
-        series: chunk(0, LAST + 1, { pools: ['u-bond'] })
-      });
-    const FIN: ScoreStatics = {
-      ...baseStatics({ lastIndex: LAST, finance: true }),
-      asOf,
-      months: MONTHS
-    };
-    const s = setup({ withInspector: true, initialPolicy: money(false) });
-    await expect.poll(() => w()?.lastOf('openTimeline')).toBeTruthy();
-    emit(compiledMsg(1, FIN));
-    filledPools(1);
-    // Past today: at today Details shows no money block.
-    (slider().element() as HTMLElement).focus();
-    await userEvent.keyboard('{PageUp}');
-    await expect.poll(() => debug().day).toBeGreaterThan(asOf);
-    const results = page.getByTestId('tl-details');
-    await results.getByRole('button', { name: /Money details/ }).click();
-    const received = () => {
-      const table = results.getByTestId('fzp-money-sources').element() as HTMLTableElement;
-      const r = [...table.tBodies[0].rows].find((x) => x.cells[0].textContent === 'Pool u-bond');
-      return r?.cells[1].textContent?.trim();
-    };
-    await expect.poll(received).toBeTruthy();
-    expect(received()).not.toBe('no limit');
-
-    s.setPolicy(money(true));
-    s.setLots({});
-    await expect.poll(() => w().lastOf('setPolicy')?.rev).toBe(2);
-    expect(debug().stale).toBe(true);
-    expect(received()).not.toBe('no limit');
-    emit(compiledMsg(2, FIN));
-    emit(refillMsg(2, 0));
-    filledPools(2);
-    await expect.poll(() => debug().stale).toBe(false);
-    await expect.poll(received).toBe('no limit');
-  });
-
   it('levels rebuild with the view, never as the playhead crosses months', async () => {
     const bond: Pool = {
       id: 'u-bond',
       kind: 'generalRevenue',
       label: 'Housing bond',
       inflows: [{ kind: 'once', day: monthFirstDay(asOf, 2), dollars: 500_000_000 }],
-      uncapped: false,
       debt: null,
       leverage: 1
     };
@@ -1807,7 +1731,6 @@ describe('TimelineMode', () => {
       kind: 'generalRevenue',
       label: 'Housing bond',
       inflows: [{ kind: 'once', day: monthFirstDay(asOf, 2), dollars }],
-      uncapped: false,
       debt: null,
       leverage: 1
     });
@@ -2856,7 +2779,6 @@ describe('TimelineMode', () => {
       kind: 'goBond',
       label: 'Bond',
       inflows: [{ kind: 'once', day: monthFirstDay(asOf, 2), dollars: 100_000_000 }],
-      uncapped: false,
       debt: null,
       leverage: 1
     };

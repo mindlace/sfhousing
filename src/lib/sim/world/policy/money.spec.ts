@@ -237,7 +237,8 @@ describe('arrivals', () => {
   it('within a day, by frame pool index', () => {
     const doc = miniDoc(fund('f', pool('u-a', [{ kind: 'once', day: AS_OF, dollars: 1 }]), []));
     const day1 = track(doc, 1)[0].frame.arrivals.filter((a) => a.day === AS_OF);
-    expect(day1.map((a) => a.pool)).toEqual([0, 1, 2, 4]);
+    // every pool, the federal pool (3) included
+    expect(day1.map((a) => a.pool)).toEqual([0, 1, 2, 3, 4]);
   });
 });
 

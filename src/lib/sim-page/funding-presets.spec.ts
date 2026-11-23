@@ -178,6 +178,12 @@ describe('the list', () => {
       }
     }
   });
+
+  it('builds presets whose pools carry no uncapped', () => {
+    const list = fundingPresets(cal);
+    expect(list.some((p) => p.pools.length > 0)).toBe(true);
+    for (const p of list) expect(JSON.stringify(p.pools)).not.toContain('"uncapped"');
+  });
 });
 
 describe('date helpers', () => {
@@ -212,7 +218,6 @@ describe('available presets', () => {
         kind: 'goBond',
         label: 'Housing bond',
         inflows: [{ kind: 'once', day: dayOf(2027, 7, 1), dollars: 410_442_573 }],
-        uncapped: false,
         debt: { rate: 0.06, termYears: 20 },
         leverage: 1
       }
@@ -682,7 +687,6 @@ describe('pastItems', () => {
     kind: 'generalRevenue',
     label: id,
     inflows,
-    uncapped: false,
     debt: null,
     leverage: 1
   });

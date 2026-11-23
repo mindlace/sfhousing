@@ -157,7 +157,6 @@ export function createMoneyTrack(
       const lo = m === 1 ? asOf : first;
       const arrivals: FinanceFrame['arrivals'] = [];
       fin.pools.forEach((p, q) => {
-        if (!idx.capped[q]) return;
         const pool = poolAt.get(p.id)!;
         for (const fl of p.inflows) {
           const dollars = fl.kind === 'once' ? fl.dollars : fl.dollarsPerYear;
