@@ -113,7 +113,8 @@ export const groupLendsText = (lent: number): string =>
   `lends ${formatDollarsExact(lent)} a home, repaid at completion`;
 export const groupChangesText = (from: Day): string => `Changes from ${formatMonthYear(from)}`;
 export const perYearText = (dollars: number): string => `${formatDollars(dollars)} a year`;
-export const NO_LIMIT = 'no limit';
+/** The yearly amount of an older dataset's federal pool (`isNoCeiling`). */
+export const NO_CEILING = 'No ceiling';
 export const SWITCHED_OFF = 'switched off';
 export const NOTHING_ADDED = 'Nothing added yet.';
 export const SCALE_AMOUNT_DESC = '0% switches the source off: its programmes leave every offer.';
@@ -292,19 +293,10 @@ export const labelProgrammeKindChanged = (sentence: string): string => `Changed:
 export const labelIncomeMixChanged = (sentence: string): string =>
   `Changed income mix: ${sentence}`;
 
-/**
- * Dated change applied, named by group or source. A scale of 0 is "switched off" on any pool;
- * on the uncapped pool any scale above 0 is "switched back on".
- */
-export const labelScaleApplied = (
-  name: string,
-  from: Day,
-  scale: number,
-  uncapped: boolean
-): string => {
+/** Dated change applied, named by group or source. A scale of 0 is "switched off" on any pool. */
+export const labelScaleApplied = (name: string, from: Day, scale: number): string => {
   const when = formatMonthYear(from);
   if (scale === 0) return `Today's funding: ${name} switched off from ${when}`;
-  if (uncapped) return `Today's funding: ${name} switched back on from ${when}`;
   return `Today's funding: ${name} ${scaleText(scale)} from ${when}`;
 };
 
@@ -447,18 +439,12 @@ export const SUMMARY_GROUP_NAME: Record<GroupId, string> = {
 
 /**
  * A dated change as a summary row: "State money: switched off from July 2027", "City money:
- * 200% of today's from July 2029", "{name}: switched back on from …" on the uncapped pool.
+ * 200% of today's from July 2029"; after an off span, "{name}: switched back on, 100% of today's
+ * from …".
  */
-export function summaryScaleText(
-  name: string,
-  from: Day,
-  scale: number,
-  uncapped: boolean,
-  backOn: boolean
-): string {
+export function summaryScaleText(name: string, from: Day, scale: number, backOn: boolean): string {
   const when = formatMonthYear(from);
   if (scale === 0) return `${name}: switched off from ${when}`;
-  if (uncapped) return `${name}: switched back on from ${when}`;
   return `${name}: ${backOn ? 'switched back on, ' : ''}${ratePercent(scale)} of today's from ${when}`;
 }
 

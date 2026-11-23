@@ -23,7 +23,7 @@
     COVERAGE_OFF_SHORT_SENTENCE4,
     COVERAGE_RUN_SENTENCE4,
     coverageShortLine
-  } from '$lib/timeline/copy';
+  } from '$lib/timeline/money-copy';
   import Explain from '$lib/timeline/Explain.svelte';
   import { SvelteSet } from 'svelte/reactivity';
   import { HORIZON } from '$lib/fzp/time';
@@ -34,6 +34,7 @@
     MARKET_TERMS,
     resolveTerms
   } from '$lib/sim/finance';
+  import { isNoCeiling } from '$lib/timelapse/model';
   import type { Calibration, Day, Pool, TermKey } from '$lib/timelapse/types';
   import {
     COVERAGE_PRIVATE_SENTENCE,
@@ -42,7 +43,7 @@
     DRAFT_OPEN_DESC,
     MONTH_OFFER_CAVEAT,
     NOTHING_ADDED,
-    NO_LIMIT,
+    NO_CEILING,
     POOL_LIMIT_DESC,
     addProgrammeName,
     PROGRAMME_LIMIT_DESC,
@@ -218,7 +219,7 @@
 
   function groupAmount(g: BaselineGroup): string {
     if (g.off) return SWITCHED_OFF;
-    return g.perYear === null ? NO_LIMIT : perYearText(g.perYear);
+    return isNoCeiling(g.perYear) ? NO_CEILING : perYearText(g.perYear);
   }
 
   function groupPays(g: BaselineGroup): string {

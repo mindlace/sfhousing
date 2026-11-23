@@ -8,7 +8,7 @@
  *                                  spent[i] 100,000 x i, plus 500,000 at L (a grant lost at L:
  *                                  lost[L] 500,000, lostCredit 0)
  *   state (state)                  received[i] 5,000,000 x (floor(i / 12) + 1), spent[i] 50,000 x i
- *   federal (federal, uncapped)    received 0, spent[i] 80,000 x i
+ *   federal (federal)              received[i] 2,000,000 x (floor(i / 12) + 1), spent[i] 80,000 x i
  *   u-bond (goBond, 'Added bond')  received[i] 60,000,000 from month 12, else 0; a loan of
  *                                  2,000,000 out from month 12; at L: repaid 1,000,000, lost and
  *                                  lostCredit 250,000, out 750,000
@@ -67,7 +67,7 @@ function makeMoney(): Money {
       id: 'federal',
       label: 'Federal tax credits',
       kind: 'federal',
-      received: zeros(),
+      received: yearly(2_000_000),
       committed: zeros(),
       out: zeros(),
       spent: idx.map((i) => 80_000 * i),

@@ -4,9 +4,8 @@
   1. "Sources" (City only): each City pool and its yearly amount, its own dated changes, and its
      own "+ Change from a date".
   2. "Dated changes": scaleLines, a City-wide change as one "City money" line, each with Remove.
-  3. "+ Change from a date": the inline entry (From month and year; a capped group's
-     "Amount, % of today's", or the federal group's Switched off / Switched back on), with Apply
-     change and Cancel. aria-disabled with its reason when the entries would pass 24; checked
+  3. "+ Change from a date": the inline entry (From month and year; "Amount, % of today's"),
+     with Apply change and Cancel. aria-disabled with its reason when the entries would pass 24; checked
      again on Apply, so nothing over the limit reaches the store.
   4. "What it pays for": the baseline programmes, read-only, then (ProgrammeList) the added ones
      on the group's pools as nested rows with their editors, then "+ What it pays for" ("Pays
@@ -112,7 +111,6 @@
     month: string;
     year: number | null;
     pct: number | null;
-    on: boolean;
     error: string | null;
   } | null>(null);
 
@@ -128,7 +126,6 @@
       month: String(new Date(start * 86_400_000).getUTCMonth() + 1),
       year: utcYear(start),
       pct: 0,
-      on: false,
       error: null
     };
     void tick().then(() => root?.querySelector<HTMLElement>(`#${uid}-month`)?.focus());
@@ -149,17 +146,12 @@
       entry.error = dateRangeError(asOf);
       return;
     }
-    const uncapped = poolsOf(t).every((p) => p.uncapped);
-    let scale: number;
-    if (uncapped) scale = entry.on ? 1 : 0;
-    else {
-      const pct = typeof entry.pct === 'number' ? entry.pct : NaN;
-      if (!(Number.isFinite(pct) && pct >= 0 && pct <= 1000)) {
-        entry.error = SCALE_PCT_ERROR;
-        return;
-      }
-      scale = Math.round(pct * 1e10) / 1e12;
+    const pct = typeof entry.pct === 'number' ? entry.pct : NaN;
+    if (!(Number.isFinite(pct) && pct >= 0 && pct <= 1000)) {
+      entry.error = SCALE_PCT_ERROR;
+      return;
     }
+    const scale = Math.round(pct * 1e10) / 1e12;
     const e = addScaleEdit(policy, baseline, t.target, from, scale);
     if (isRefused(e)) {
       entry.error = e.refused;
@@ -189,7 +181,6 @@
 {#snippet change(t: Target, who: string | null)}
   {@const over = overLimit(t)}
   {@const isOpen = entry?.key === t.key}
-  {@const uncapped = poolsOf(t).every((p) => p.uncapped)}
   <div class="flex flex-col items-start gap-1">
     {#if !isOpen}
       <!-- aria-disabled, not disabled: it keeps focus, and its reason is its description. -->
@@ -240,47 +231,21 @@
             />
           </label>
         </fieldset>
-        {#if uncapped}
-          <fieldset class="flex flex-col gap-1">
-            <legend class="font-semibold">Federal tax credits</legend>
-            <label class="flex min-h-6 min-w-6 items-center gap-1.5">
-              <input
-                type="radio"
-                class="size-5"
-                name="{uid}-on"
-                checked={!entry.on}
-                onchange={() => entry && (entry.on = false)}
-              />
-              Switched off
-            </label>
-            <label class="flex min-h-6 min-w-6 items-center gap-1.5">
-              <input
-                type="radio"
-                class="size-5"
-                name="{uid}-on"
-                checked={entry.on}
-                onchange={() => entry && (entry.on = true)}
-              />
-              Switched back on
-            </label>
-          </fieldset>
-        {:else}
-          <label class="flex flex-wrap items-center gap-1">
-            Amount, % of today's
-            <input
-              type="number"
-              inputmode="decimal"
-              min="0"
-              max="1000"
-              step="5"
-              class="{field} w-24"
-              aria-invalid={entry.error === SCALE_PCT_ERROR ? 'true' : undefined}
-              aria-describedby="{uid}-pct-desc {uid}-entry-error"
-              bind:value={entry.pct}
-            />
-          </label>
-          <span id="{uid}-pct-desc" class={muted}>{SCALE_AMOUNT_DESC}</span>
-        {/if}
+        <label class="flex flex-wrap items-center gap-1">
+          Amount, % of today's
+          <input
+            type="number"
+            inputmode="decimal"
+            min="0"
+            max="1000"
+            step="5"
+            class="{field} w-24"
+            aria-invalid={entry.error === SCALE_PCT_ERROR ? 'true' : undefined}
+            aria-describedby="{uid}-pct-desc {uid}-entry-error"
+            bind:value={entry.pct}
+          />
+        </label>
+        <span id="{uid}-pct-desc" class={muted}>{SCALE_AMOUNT_DESC}</span>
         <!-- Always present and in the accessibility tree (sr-only while empty), so an error is
              spoken when it appears (WCAG 4.1.3). -->
         <p

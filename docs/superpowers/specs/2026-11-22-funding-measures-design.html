@@ -102,7 +102,7 @@ export type Inflow =
         <li>The baseline's federal pool has kind <code>federal</code> and one yearly inflow of the ceiling.</li>
         <li>A baseline pool's inflows follow its source's bound (F1). A yearly inflow has <code>to: null</code> only for a bound of kind <code>none</code>.</li>
         <li>A stored or published document whose pool carries <code>uncapped</code> loads with the field ignored.</li>
-        <li>A published plan or policy runs on its own dataset while that dataset exists, and every dataset built before this build has <code>uncapped: true</code> on its federal pool. The calibration loader reads such a pool as one yearly inflow of <code>LEGACY_UNCAPPED_DOLLARS</code> (100 billion dollars) from the dataset date with no end, and never refuses the calibration.</li>
+        <li>A published plan or policy runs on its own dataset while that dataset exists, and every dataset built before this build has <code>uncapped: true</code> on its federal pool. The calibration loader reads such a pool as one yearly inflow of <code>LEGACY_UNCAPPED_DOLLARS</code> (ten trillion dollars a year, 10<sup>13</sup>) from the dataset date with no end, and never refuses the calibration. That amount pays the federal part of about 22.6 million affordable homes a year, more than fifty times the homes San Francisco has, and is above every amount an added pool may hold (<code>MAX_DOLLARS</code>), so no San Francisco policy reaches it and no added pool reads "No ceiling".</li>
         <li>Where the yearly amount of such a pool is shown, it reads "No ceiling". So a policy published before this build plays as it did.</li>
         <li><code>isNoCeiling(dollars)</code> in <code>src/lib/timelapse/model.ts</code> is the one test for such a pool: a yearly amount at or above <code>LEGACY_UNCAPPED_DOLLARS</code>.</li>
         <li>A scale entry on the federal pool scales its ceiling, as on any pool; 0 switches it off.</li>
@@ -551,7 +551,7 @@ Federal tax credits withdrawn from a date
       <li><code>src/lib/sim-page/funding-presets.ts</code> is written by <code>contracts</code> (the M1 stub), then <code>finite-funding</code>, then this unit. <code>contracts</code> ships no test of the stub; this unit's <code>funding-presets.spec.ts</code> tests the real <code>dateMeasure</code>.</li>
       <li>This unit runs after <code>game-core</code>, so <code>isGiven</code> from <code>$lib/game/allowed</code> is real when <code>dateMeasure</code> calls it.</li>
       <li><code>game-sim</code> and <code>funding-measures</code> can run together. <code>game-sim</code> calls <code>dateMeasure</code> (M1) and mounts <code>PolicySummary</code> through its existing props; <code>funding-measures</code> owns both.</li>
-      <li>This unit runs after <code>pool-closing</code>: its pool bars read <code>MoneyView.shut</code> (F3). The two write different files.</li>
+      <li>This unit runs after <code>pool-closing</code>: its pool bars read <code>MoneyView.shut</code> (F3). The one file both write is <code>src/lib/timeline/pool-level.spec.ts</code>: <code>pool-closing</code> adds <code>closed</code> and <code>shut</code> to its <code>money()</code> helper's <code>MoneyView</code> literal, and this unit writes the file after it.</li>
       <li>An e2e spec that exists before this build is edited only by the unit named for it: <code>e2e/sim-{funding,pools}.spec.ts</code> are this unit's.</li>
     </ul>
     <p>Files changed (none created, none deleted):</p>

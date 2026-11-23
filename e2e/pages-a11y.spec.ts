@@ -13,7 +13,7 @@ async function expectCleanPage(page: Page, path: string): Promise<void> {
 }
 
 // The map pages have no footer; the header's About entry stands in for its links.
-const MAP = new Set(['/', '/fzp']);
+const MAP = new Set(['/', '/sim']);
 
 for (const path of MAP) {
   test(`${path} has no a11y violations, no horizontal overflow, no footer and the About entry`, async ({
@@ -27,14 +27,33 @@ for (const path of MAP) {
   });
 }
 
-for (const path of ['/about', '/no-such-page']) {
-  test(`${path} has no a11y violations, no horizontal overflow and visible footer link`, async ({
+test('/about has no a11y violations, no horizontal overflow and visible footer link', async ({
+  page
+}) => {
+  const res = await page.goto('/about');
+  expect(res?.status()).toBe(200);
+  await expectCleanPage(page, '/about');
+  await expect(page.getByRole('link', { name: 'Data & licences' })).toBeVisible();
+});
+
+for (const path of ['/no-such-page', '/fzp', '/lesscars']) {
+  test(`${path} answers 404 with no a11y violations, no horizontal overflow and visible footer link`, async ({
     page
   }) => {
     const res = await page.goto(path);
-    expect(res?.status()).toBe(path === '/no-such-page' ? 404 : 200);
+    expect(res?.status()).toBe(404);
+    await expect(page.getByRole('heading', { name: 'Page not found' })).toBeVisible();
     await expectCleanPage(page, path);
     await expect(page.getByRole('link', { name: 'Data & licences' })).toBeVisible();
+  });
+}
+
+for (const path of ['/fzp?seed=1', '/lesscars?day=100']) {
+  test(`${path} answers 404 with the root error page`, async ({ page }) => {
+    const res = await page.goto(path);
+    expect(res?.status()).toBe(404);
+    await expect(page.getByRole('heading', { name: 'Page not found' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Go to the home page' })).toBeVisible();
   });
 }
 

@@ -3,7 +3,7 @@
  * homes as pools and grant programmes, from the hand-transcribed `funding.json` (spec 4.5) and the
  * MOHCD affordable pipeline's income bands and sizes. A pure function of its inputs.
  */
-import { fiscalYearWindow, type FundingFile } from '../../enrichment/funding-schema';
+import { fiscalYearWindow, type Bound, type FundingFile } from '../../enrichment/funding-schema';
 import { isoOf, num } from '../../project-records/parse';
 import type { RawRow } from '../../project-records/types';
 import { tierOf } from '../../../src/lib/sim/finance/instruments';
@@ -13,6 +13,7 @@ import {
   INCOME_TIERS,
   type Calibration,
   type IncomeTier,
+  type Inflow,
   type Pool,
   type PoolKind,
   type Programme,
@@ -147,7 +148,7 @@ export function fundingWarning(
 ): string | null {
   if (Math.abs(implied - observed) <= 0.5 * observed) return null;
   return (
-    `baselineFunding: the capped pools fully fund ${implied} affordable homes a year; the ` +
+    `baselineFunding: the baseline pools fully fund ${implied} affordable homes a year; the ` +
     `${years[0]}–${years[1]} bond and tax-credit awards show ${observed} (new construction); ` +
     'they differ by more than half'
   );
@@ -155,13 +156,18 @@ export function fundingWarning(
 
 export interface FundingReport {
   rows: {
-    programme: string;
+    /** null for a pool with no programme */
+    programme: string | null;
     pool: string;
     kind: PoolKind;
     fillTier: 1 | 2 | 3;
-    dollarsPerYear: number | null;
+    /** dollars arriving in the first year */
+    firstYear: number;
     share: number;
+    /** null for a pool with no programme */
     impliedHomesPerYear: number | null;
+    /** `boundEnd(bound)` */
+    end: string;
   }[];
   mix: MohcdMix;
   check: { impliedHomesPerYear: number; observedHomesPerYear: number };
@@ -169,18 +175,122 @@ export interface FundingReport {
   awardRows: number;
 }
 
+const DAY_MS = 86_400_000;
 const halfUp = (x: number): number => Math.floor(x + 0.5);
 /** Whole dollars with thousands separators, without Intl (deterministic across runtimes). */
 const count = (n: number): string => String(Math.round(n)).replace(/\B(?=(\d{3})+$)/g, ',');
 const money = (d: number): string => `$${count(d)}`;
 const millions = (d: number): string => `$${(d / 1e6).toFixed(1)} million`;
+/** A schema-checked 'YYYY-MM-DD' as its UTC day. */
+const dayOfIso = (iso: string): Day => Date.parse(`${iso}T00:00:00Z`) / DAY_MS;
+
+/**
+ * Anniversary k of asOf (k from 0), inflowArrivals' rule (src/lib/sim/scenario/funding.ts): the
+ * same UTC month and day k years later, 29 February becoming 28 February in a common year.
+ */
+export function anniversary(asOf: Day, k: number): Day {
+  const start = new Date(asOf * DAY_MS);
+  const y = start.getUTCFullYear() + k;
+  const m = start.getUTCMonth();
+  const d = start.getUTCDate();
+  const leap = (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
+  return Date.UTC(y, m, m === 1 && d === 29 && !leap ? 28 : d) / DAY_MS;
+}
+
+/** The pool's inflows for a source of `dollarsPerYear` under `bound` (finite-funding spec). */
+export function boundInflows(bound: Bound, dollarsPerYear: number, asOf: Day): Inflow[] {
+  if (bound.kind === 'none') return [{ kind: 'yearly', from: asOf, to: null, dollarsPerYear }];
+  if (bound.kind === 'ends') {
+    const on = dayOfIso(bound.on);
+    return on < asOf ? [] : [{ kind: 'yearly', from: asOf, to: on, dollarsPerYear }];
+  }
+  if (bound.dollars > 0 && !(dollarsPerYear > 0)) {
+    throw new CalibrationError('funding: a source with money remaining needs a yearly amount');
+  }
+  const out: Inflow[] = [];
+  let left = bound.dollars;
+  for (let k = 0; left > 0; k++) {
+    const dollars = Math.min(dollarsPerYear, left);
+    out.push({ kind: 'once', day: anniversary(asOf, k), dollars });
+    left -= dollars;
+  }
+  return out;
+}
+
+/** Dollars arriving from asOf to the day before anniversary 1. */
+export function firstYearDollars(inflows: readonly Inflow[], asOf: Day): number {
+  const end = anniversary(asOf, 1);
+  let sum = 0;
+  for (const f of inflows) {
+    if (f.kind === 'once') {
+      if (f.day >= asOf && f.day < end) sum += f.dollars;
+      continue;
+    }
+    for (let k = 0; ; k++) {
+      const day = anniversary(f.from, k);
+      if (day >= end || (f.to !== null && day > f.to)) break;
+      if (day >= asOf) sum += f.dollarsPerYear;
+    }
+  }
+  return sum;
+}
+
+/** end(b): 'ends 2043-06-30' | 'ended 2026-06-30' | '$260.3 million left' | 'spent' | 'no end'. */
+export function boundEnd(bound: Bound, asOf: Day): string {
+  if (bound.kind === 'none') return 'no end';
+  if (bound.kind === 'ends') {
+    return `${dayOfIso(bound.on) < asOf ? 'ended' : 'ends'} ${bound.on}`;
+  }
+  return bound.dollars > 0 ? `${millions(bound.dollars)} left` : 'spent';
+}
+
+const cited = (b: Bound): string => `(tier ${b.tier}; ${b.cite.label}, ${b.cite.page})`;
+
+/** The bound's sentence in a provenance method: the five templates of the finite-funding spec. */
+export function boundSentence(bound: Bound, inflows: readonly Inflow[], asOf: Day): string {
+  if (bound.kind === 'none') {
+    return (
+      `No end: ${bound.reason} ${cited(bound)}. The amount is held level from the first inflow ` +
+      '(an assumption, not a forecast).'
+    );
+  }
+  if (bound.kind === 'ends') {
+    const on = dayOfIso(bound.on);
+    if (on < asOf) {
+      return (
+        `Ended on ${bound.on}: the pool receives nothing and its programme is not in the ` +
+        `baseline. ${bound.method} ${cited(bound)}.`
+      );
+    }
+    let last = asOf;
+    for (let k = 1; anniversary(asOf, k) <= on; k++) last = anniversary(asOf, k);
+    return (
+      `Ends: the amount is held level from the first inflow to ${bound.on}; the last inflow is ` +
+      `on ${isoOf(last)}. ${bound.method} ${cited(bound)}.`
+    );
+  }
+  if (bound.dollars <= 0) {
+    return (
+      'Remaining: nothing; the pool receives nothing and its programme is not in the baseline. ' +
+      `${bound.method} ${cited(bound)}.`
+    );
+  }
+  const once = inflows.filter((f): f is Extract<Inflow, { kind: 'once' }> => f.kind === 'once');
+  const final = once[once.length - 1];
+  return (
+    `Remaining: ${money(bound.dollars)}, paid at the yearly amount from the first inflow until ` +
+    `used, ${once.length} inflows, the last ${money(final.dollars)} on ${isoOf(final.day)}. ` +
+    `${bound.method} ${cited(bound)}.`
+  );
+}
 
 /** One baseline pool before it is emitted: what the shares, check and provenance need. */
 interface PoolSpec {
   pool: Pool;
   perHome: number;
-  /** null for the uncapped federal pool */
-  dollarsPerYear: number | null;
+  bound: Bound;
+  /** dollars arriving in the first year */
+  firstYear: number;
 }
 
 export function baselineFunding(
@@ -206,72 +316,79 @@ export function baselineFunding(
       `funding: perHome city + state + federal ${perHomeSum} is not the uncovered cost ${uncovered}`
     );
   }
-  const yearly = (dollarsPerYear: number) => [
-    { kind: 'yearly' as const, from: asOf, to: null, dollarsPerYear }
-  ];
+  const spec = (
+    pool: Omit<Pool, 'inflows'>,
+    source: { dollarsPerYear: number; bound: Bound },
+    perHomeOf: number
+  ): PoolSpec => {
+    const inflows = boundInflows(source.bound, source.dollarsPerYear, asOf);
+    return {
+      pool: {
+        id: pool.id,
+        kind: pool.kind,
+        label: pool.label,
+        inflows,
+        debt: pool.debt,
+        leverage: pool.leverage
+      },
+      perHome: perHomeOf,
+      bound: source.bound,
+      firstYear: firstYearDollars(inflows, asOf)
+    };
+  };
 
   const specs: PoolSpec[] = [
-    ...city.sources.map((s) => ({
-      pool: {
-        id: s.id,
-        kind: s.kind,
-        label: s.label,
-        inflows: yearly(s.dollarsPerYear),
-        uncapped: false,
-        debt: s.debt === null ? null : { rate: s.debt.rate, termYears: s.debt.termYears },
-        leverage: 1
-      },
-      perHome: (perHome.city * s.dollarsPerYear) / city.total,
-      dollarsPerYear: s.dollarsPerYear
-    })),
-    {
-      pool: {
-        id: file.state.id,
-        kind: 'state',
-        label: file.state.label,
-        inflows: yearly(file.state.dollarsPerYear),
-        uncapped: false,
-        debt: null,
-        leverage: 1
-      },
-      perHome: perHome.state,
-      dollarsPerYear: file.state.dollarsPerYear
-    },
-    {
-      pool: {
-        id: file.federal.id,
-        kind: 'federal',
-        label: file.federal.label,
-        inflows: [],
-        uncapped: true,
-        debt: null,
-        leverage: 1
-      },
-      perHome: perHome.federal,
-      dollarsPerYear: null
-    }
+    ...city.sources.map((s) =>
+      spec(
+        {
+          id: s.id,
+          kind: s.kind,
+          label: s.label,
+          debt: s.debt === null ? null : { rate: s.debt.rate, termYears: s.debt.termYears },
+          leverage: 1
+        },
+        s,
+        (perHome.city * s.dollarsPerYear) / city.total
+      )
+    ),
+    spec(
+      { id: file.state.id, kind: 'state', label: file.state.label, debt: null, leverage: 1 },
+      file.state,
+      perHome.state
+    ),
+    spec(
+      { id: file.federal.id, kind: 'federal', label: file.federal.label, debt: null, leverage: 1 },
+      file.federal,
+      perHome.federal
+    )
   ];
   const shares = roundShares(specs.map((s) => s.perHome));
 
   const mohcdRows = parseMohcdRows(mohcd);
   const mix = mohcdMix(mohcdRows);
-  const programmes: Programme[] = specs.map(({ pool }, i) => ({
-    id: `baseline-${pool.id}`,
-    label: `${pool.label}: grant toward an affordable home`,
-    pool: pool.id,
-    reach: 'affordable',
-    instrument: { kind: 'grant', share: shares[i] },
-    from: asOf,
-    to: null,
-    minHomes: mix.minHomes,
-    tiers: { ...mix.tiers }
-  }));
+  /** A programme for each pool with an inflow, in pool order; null where there is none. */
+  const programmeOf: (Programme | null)[] = specs.map(({ pool }, i) =>
+    pool.inflows.length === 0
+      ? null
+      : {
+          id: `baseline-${pool.id}`,
+          label: `${pool.label}: grant toward an affordable home`,
+          pool: pool.id,
+          reach: 'affordable',
+          instrument: { kind: 'grant', share: shares[i] },
+          from: asOf,
+          to: null,
+          minHomes: mix.minHomes,
+          tiers: { ...mix.tiers }
+        }
+  );
+  const programmes = programmeOf.filter((p): p is Programme => p !== null);
 
   const implied = specs.map((s, i) =>
-    s.dollarsPerYear === null || shares[i] <= 0 ? null : s.dollarsPerYear / (shares[i] * uncovered)
+    programmeOf[i] === null || shares[i] <= 0 ? null : s.firstYear / (shares[i] * uncovered)
   );
-  const capped = implied.filter((x): x is number => x !== null);
-  const impliedHomesPerYear = halfUp(Math.min(...capped));
+  const counted = implied.filter((x): x is number => x !== null);
+  const impliedHomesPerYear = halfUp(Math.min(...counted));
   const years = file.awards.years;
   const span: [number, number] = [years[0], years[years.length - 1]];
   const newRows = file.awards.rows.filter((r) => r.newConstruction);
@@ -302,7 +419,17 @@ export function baselineFunding(
   const fyWindow = fiscalYearWindow(fy);
   const percent = (rate: number) => `${(rate * 100).toFixed(1)}%`;
 
+  /** Today's sources, then the bound's cite unless an equal source is already there. */
+  const withBoundCite = (sources: { label: string; url: string }[], b: Bound) => {
+    const c = { label: `${b.cite.label}, ${b.cite.page}`, url: b.cite.url };
+    return sources.some((x) => x.label === c.label && x.url === c.url) ? sources : [...sources, c];
+  };
+  const tierOfBound = (b: Bound): 2 | 3 => (b.tier === 3 ? 3 : 2);
+
   const poolProvenance: Provenance[] = specs.map((s, i) => {
+    const sentence = boundSentence(s.bound, s.pool.inflows, asOf);
+    const end = boundEnd(s.bound, asOf);
+    const inflow = s.pool.inflows.length > 0 ? ` ${inflowText}` : '';
     if (i < city.sources.length) {
       const src = city.sources[i];
       const debt = src.debt;
@@ -313,12 +440,14 @@ export function baselineFunding(
             `${debt.cite.quote === undefined ? '' : `: '${debt.cite.quote}'`}), the Analyst's ` +
             'assumption (tier 2); repayment is nominal.';
       return mark({
-        tier: 2,
-        label: `${src.label}: ${millions(src.dollarsPerYear)} a year, ${fy} (held level)`,
-        sources:
+        tier: tierOfBound(s.bound),
+        label: `${src.label}: ${millions(src.dollarsPerYear)} a year, ${fy} (${end})`,
+        sources: withBoundCite(
           debt === null
             ? [blaSource]
             : [blaSource, { label: `${debt.cite.label}, ${debt.cite.page}`, url: debt.cite.url }],
+          s.bound
+        ),
         method:
           `Recorded (tier 1): Exhibit E (p. 6): ${money(src.dollarsPerYear)} of the City's ` +
           `${money(city.total)} multifamily spending in ${fy}; Exhibit F (p. 7): the City pays ` +
@@ -326,38 +455,37 @@ export function baselineFunding(
           'figure for the City and no split by source. This source is taken to pay in proportion ' +
           `to its ${fy} spending: ${money(perHome.city)} × ${money(src.dollarsPerYear)} ÷ ` +
           `${money(city.total)} = ${money(Math.round(s.perHome))} a home. ` +
-          shareText(i, money(Math.round(s.perHome))) +
-          ' The amount is held level from the first inflow, with no end (an assumption, not a ' +
-          `forecast). ${inflowText} ${fy} dollars, not adjusted. ${src.note}${debtText}`,
+          `${shareText(i, money(Math.round(s.perHome)))} ${sentence}${inflow} ${fy} dollars, ` +
+          `not adjusted. ${src.note}${debtText}`,
         n: 1,
         window: fyWindow
       });
     }
     if (s.pool.kind === 'state') {
+      const sc = file.state.cite;
       return mark({
-        tier: 2,
-        label: `${file.state.label}: ${millions(file.state.dollarsPerYear)} a year (a lower bound)`,
-        sources: [
-          { label: `${file.state.cite.label}, ${file.state.cite.page}`, url: file.state.cite.url }
-        ],
-        method: `${file.state.method} ${shareText(i, money(perHome.state))} ${inflowText}`,
+        tier: tierOfBound(s.bound),
+        label:
+          `${file.state.label}: ${millions(file.state.dollarsPerYear)} a year ` +
+          `(a lower bound; ${end})`,
+        sources: withBoundCite([{ label: `${sc.label}, ${sc.page}`, url: sc.url }], s.bound),
+        method: `${file.state.method} ${shareText(i, money(perHome.state))}${inflow} ${sentence}`,
         n: 8,
         window: ['2018-01-01', '2025-12-31']
       });
     }
-    const { uncapped } = file.federal;
+    const fc = file.federal.cite;
     return mark({
-      tier: 2,
-      label: `${file.federal.label}: uncapped`,
-      sources: [file.federal.cite, ...uncapped.cites].map((c) => ({
-        label: `${c.label}, ${c.page}`,
-        url: c.url
-      })),
+      tier: tierOfBound(s.bound),
+      label:
+        `${file.federal.label}: at most ${millions(file.federal.dollarsPerYear)} a year ` +
+        `(${end})`,
+      sources: withBoundCite([{ label: `${fc.label}, ${fc.page}`, url: fc.url }], s.bound),
       method:
         `${file.federal.method} ${awardText} ${shareText(i, money(perHome.federal))} ` +
-        `${fy} dollars, not adjusted.`,
-      n: uncapped.rounds,
-      window: [uncapped.window[0], uncapped.window[1]]
+        `${sentence} ${fy} dollars, not adjusted.`,
+      n: newRows.length,
+      window: awardWindow
     });
   });
 
@@ -395,8 +523,9 @@ export function baselineFunding(
     label: 'Homes a year the baseline funding pays for, against award records',
     sources: awardSources,
     method:
-      'Implied: over the capped pools with a share above 0, the least of dollarsPerYear ÷ ' +
-      `(share × ${money(uncovered)}), rounded half up: ${impliedHomesPerYear}. Observed: the ` +
+      'Implied: over the pools with a programme and a share above 0, the least of their first ' +
+      `year's dollars ÷ (share × ${money(uncovered)}), rounded half up: ${impliedHomesPerYear}. ` +
+      'Observed: the ' +
       `homes of the ${newRows.length} new-construction rows among the ${file.awards.rows.length} ` +
       `bond and tax-credit award rows of ${years.join(', ')}, divided by the ${years.length} ` +
       `years, rounded half up: ${observedHomesPerYear}. Award homes are total units (managers' ` +
@@ -409,13 +538,14 @@ export function baselineFunding(
     rows: specs.map((s, i) => {
       const homes = implied[i];
       return {
-        programme: programmes[i].id,
+        programme: programmeOf[i]?.id ?? null,
         pool: s.pool.id,
         kind: s.pool.kind,
         fillTier: (tierOf(s.pool.kind) + 1) as 1 | 2 | 3,
-        dollarsPerYear: s.dollarsPerYear,
+        firstYear: s.firstYear,
         share: shares[i],
-        impliedHomesPerYear: homes === null ? null : halfUp(homes)
+        impliedHomesPerYear: homes === null ? null : halfUp(homes),
+        end: boundEnd(s.bound, asOf)
       };
     }),
     mix,

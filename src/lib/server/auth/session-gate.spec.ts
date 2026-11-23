@@ -35,20 +35,35 @@ describe('routeNeedsSession', () => {
     '/account',
     '/account/security',
     '/api/account/password',
-    '/sims',
-    '/sims/abc',
-    '/api/sims/abc/members',
-    '/invite/xyz',
-    '/api/invites/xyz/accept',
     '/signin',
     '/forgot-password',
     '/reset-password',
-    '/api/e2e/login'
+    '/api/e2e/login',
+    '/api/game',
+    '/api/game/abc'
   ])('is true for %s', (path) => {
     expect(routeNeedsSession(path)).toBe(true);
   });
 
   it.each([
+    '/api/auth',
+    '/account',
+    '/api/account',
+    '/signin',
+    '/forgot-password',
+    '/reset-password',
+    '/api/e2e'
+  ])('the prefix %s is a session route', (prefix) => {
+    expect(routeNeedsSession(prefix)).toBe(true);
+    expect(routeNeedsSession(`${prefix}/x`)).toBe(true);
+  });
+
+  it.each([
+    '/sims',
+    '/sims/abc',
+    '/api/sims/abc/members',
+    '/invite/xyz',
+    '/api/invites/xyz/accept',
     '/',
     '/sim',
     '/s/abc',

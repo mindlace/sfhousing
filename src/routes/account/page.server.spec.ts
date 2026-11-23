@@ -203,7 +203,7 @@ describe('/account signOut action', () => {
     expect(signOut).toHaveBeenCalledWith({ headers: request.headers });
   });
 
-  it('keeps the known-device cookie, so the next sim on this device steers to sign-in', async () => {
+  it('keeps the known-device cookie, so the next save on this device steers to sign-in', async () => {
     const { event, cookies } = actionEvent();
     await redirectOf(() => actions.signOut(event));
     expect(cookies.delete).not.toHaveBeenCalledWith(KNOWN_DEVICE_COOKIE, expect.anything());

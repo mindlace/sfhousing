@@ -1,5 +1,8 @@
+import path from 'node:path';
 import { FTF_M } from '../src/lib/generator/constants.js';
 import { BAND_MAX_M } from './sb79-config.js';
+
+const PIPELINE_DIR = import.meta.dirname;
 
 export const BBOX = { w: -122.53, s: 37.69, e: -122.34, n: 37.84 } as const;
 export const CELL_SIZE_M = 1000;
@@ -81,6 +84,12 @@ export const STAGING_ORIGIN = 'https://sfhousing-staging.mindlace.net';
 export const PRODUCTION_ORIGIN = 'https://sfhousing.mindlace.net';
 export const IMMUTABLE = 'public, max-age=31536000, immutable';
 
+/** The freeway-land catalog: live, and the mini fixture's. */
+export const FREEWAY_LAND_JSON = {
+  live: path.join(PIPELINE_DIR, 'enrichment/freeway-land.json'),
+  fixture: path.join(PIPELINE_DIR, 'test/fixtures/mini/enrichment/freeway-land.json')
+};
+
 /** Mutable run-time settings (set by the CLI before steps run). */
 export const config: { renderSource: 'overture' | 'datasf' } = { renderSource: 'overture' };
 
@@ -149,11 +158,6 @@ export interface InvariantProfile {
   muniTier2MatchMin: number;
   /** V32 warns (still passes) when the share of parcels within ½ mile of a stop is outside it. */
   todShareWarn: [number, number] | null;
-  /**
-   * /lesscars paired-run seeds (plan and baseline each). Odd, as BAND_RUNS, so the representative
-   * future is one run.
-   */
-  lesscarsSeeds: number;
 }
 
 /**
@@ -224,10 +228,7 @@ export const LIVE_PROFILE: InvariantProfile = {
   muniTier2MatchMin: 0.95,
   // Warn band (tier 4) around Planning's "more than 75%" of parcels within ½ mile of a TOD stop
   // (Ord. 082-26 §2(e), tier 1).
-  todShareWarn: [0.6, 0.95],
-  // Builder's call (tier 4): 101 seeds, as BAND_RUNS; reduced only if the live build's paired
-  // runs exceed 30 minutes (measured in lesscars plan 3).
-  lesscarsSeeds: 101
+  todShareWarn: [0.6, 0.95]
 };
 
 /**
@@ -292,7 +293,5 @@ export const FIXTURE_PROFILE: InvariantProfile = {
   sb79MinT2Stops: 2,
   // Fixture known answer (mini README "Transit"): no MUNI_TIER2_STOP_IDS id is a mini stop, 0/438.
   muniTier2MatchMin: 0,
-  todShareWarn: null,
-  // Few seeds keep test:pipeline cheap (spec "Heavy work stays off CI"); odd, as live.
-  lesscarsSeeds: 5
+  todShareWarn: null
 };

@@ -48,11 +48,13 @@ function checked(
   s: Statics,
   t: PolicyTimeline,
   seed: number,
-  through: number
+  through: number,
+  poolClosing = true
 ): ReturnType<typeof runFunded> & { steps: number } {
   let prev: StepSums | null = null;
   let steps = 0;
   const got = runFunded(s, t, seed, through, {
+    poolClosing,
     afterStep(w, m, ledger) {
       prev = checkStep(ledger, w, t.frameAt(m).finance!, prev);
       steps++;
@@ -129,7 +131,8 @@ describe('rule 16: the known limit — an application waits on a spent pool', ()
   it.each(seeds(5))(
     'seed %i: one award spends the City once inflow; the rest wait in line at month 480',
     (seed) => {
-      const got = checked(ts, tt, seed, MONTHS);
+      // The wait on a spent pool is the older engine's; closing off keeps it (sec-design-option).
+      const got = checked(ts, tt, seed, MONTHS, false);
       expect(got.steps).toBe(MONTHS);
       expect(awards(got.events).length).toBe(1);
       const ins = got.ledger.filter((e) => e.kind === 'in' && e.pool === 't-city');
@@ -228,7 +231,7 @@ describe("permuting the lot table's rows gives the same events and ledger", () =
   });
 });
 
-describe("the plan world's calendar-month money series satisfies I1-I6", () => {
+describe("the plan world's calendar-month money series satisfies I1-I5", () => {
   it('seed 1, 480 months: poolSeries of the ledger passes checkMoneyIdentities', () => {
     const got = checked(statics, timeline, 1, MONTHS);
     expect(got.steps).toBe(MONTHS);

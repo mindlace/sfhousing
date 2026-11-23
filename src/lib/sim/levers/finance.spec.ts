@@ -19,6 +19,7 @@ import {
   buildFinance,
   parseFinanceLevers
 } from './finance';
+import { parsePolicy4 } from '$lib/timeline/parse4';
 import { DEFAULT_LEVERS, LeverFormatError, type FinanceLevers } from './types';
 
 const bad = (f: unknown): [string, string] | null => {
@@ -166,11 +167,59 @@ describe('pools', () => {
       'ok'
     );
   });
-  it('uncapped', () => {
-    expect(bad(withPools(pool({ uncapped: true, inflows: [] })))).toEqual([
-      'finance.pools[0].uncapped',
-      'expected false: an added pool has a schedule of money'
-    ]);
+  it('loads an added pool stored with uncapped false or true, without the key', () => {
+    const plain = parseFinanceLevers(withPools(pool()), 'finance');
+    for (const uncapped of [false, true]) {
+      const got = parseFinanceLevers(withPools({ ...pool(), uncapped }), 'finance');
+      expect(got).toEqual(plain);
+      expect('uncapped' in got.pools[0]).toBe(false);
+    }
+    const noKey = { ...pool() } as Record<string, unknown>;
+    delete noKey.uncapped;
+    expect(parseFinanceLevers(withPools(noKey), 'finance')).toEqual(plain);
+  });
+  it('loads a schema 4 document whose added pool carries uncapped as the same document without it', () => {
+    const mk = (extra: object) => ({
+      schema: 4,
+      kinds: {
+        zoning: [],
+        permitting: [],
+        money: [
+          {
+            id: 'm1',
+            label: 'm1',
+            preset: null,
+            on: true,
+            where: { tag: 'fund', pool: 'u-pool-1' },
+            spans: [
+              {
+                from: FIXTURE_AS_OF + 31,
+                to: null,
+                what: {
+                  tag: 'fund',
+                  pool: { ...structuredClone(base().pools[0]), id: 'u-pool-1', ...extra },
+                  programmes: [
+                    { ...structuredClone(base().programmes[0]), id: 'u-prog-1', pool: 'u-pool-1' }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      }
+    });
+    const plain = parsePolicy4(mk({}), { asOf: FIXTURE_AS_OF });
+    for (const uncapped of [false, true]) {
+      expect(parsePolicy4(mk({ uncapped }), { asOf: FIXTURE_AS_OF })).toEqual(plain);
+    }
+    expect(JSON.stringify(plain)).not.toContain('"uncapped"');
+  });
+  it('re-serialises an older document without uncapped and parses it to the same document', () => {
+    const old = withPools({ ...pool(), uncapped: false });
+    const once = parseFinanceLevers(old, 'finance');
+    const json = JSON.stringify(once);
+    expect(json).not.toContain('"uncapped"');
+    expect(parseFinanceLevers(JSON.parse(json), 'finance')).toEqual(once);
   });
   it('inflow count', () => {
     const m = 'expected 1 to 12 inflows';
@@ -523,7 +572,7 @@ describe('buildFinance: terms', () => {
   });
 });
 
-describe('buildFinance: scaling a capped pool', () => {
+describe('buildFinance: scaling a pool', () => {
   const Y27 = dayOf(2027, 1, 1);
   const Y28 = dayOf(2028, 1, 1);
   const Y29 = dayOf(2029, 1, 1);
@@ -631,7 +680,7 @@ describe('buildFinance: off spans', () => {
   const X = A + 200;
   const Y = dayOf(2030, 3, 15);
 
-  it('scale 0 then 1 on a capped pool: one off span, no arrival inside it', () => {
+  it('scale 0 then 1 on a pool: one off span, no arrival inside it', () => {
     const base = fixture();
     const f = scales({ pool: 'state', from: X, scale: 0 }, { pool: 'state', from: Y, scale: 1 });
     const out = buildFinance(base, f, A)!;
@@ -663,22 +712,43 @@ describe('buildFinance: off spans', () => {
     expect(poolOf(out, 'state').inflows).toEqual([{ kind: 'once', day: A, dollars: 3_000_000 }]);
   });
 
-  it('scale 0 on the uncapped federal pool', () => {
+  it('scale 0 on the federal pool makes an off span', () => {
     const base = fixture();
+    const fed = poolOf(base, 'federal').inflows[0];
+    expect(fed.kind).toBe('yearly');
     const out = buildFinance(base, scales({ pool: 'federal', from: X, scale: 0 }), A)!;
     expect(out.off).toEqual([{ pool: 'federal', from: X, to: null }]);
-    expect(poolOf(out, 'federal')).toBe(poolOf(base, 'federal'));
+    // the arrivals before the entry stay; none after it
+    expect(poolOf(out, 'federal').inflows).toEqual([
+      { kind: 'once', day: A, dollars: fed.kind === 'yearly' ? fed.dollarsPerYear : -1 }
+    ]);
     const g = out.programmes.find((p) => p.pool === 'federal')!;
     expect(g.id).toBe('baseline-federal');
     expect(out.programmes.map((p) => p.id)).toEqual(base.programmes.map((p) => p.id));
   });
 
-  it('scale 2 on federal gives no span and no change', () => {
+  it('a baseline scale on the federal pool scales its inflow', () => {
     const base = fixture();
-    const out = buildFinance(base, scales({ pool: 'federal', from: X, scale: 2 }), A)!;
+    const fed = poolOf(base, 'federal').inflows[0];
+    if (fed.kind !== 'yearly') throw new Error('the fixture federal pool has one yearly inflow');
+    const at = dayOf(2028, 3, 15);
+    const out = buildFinance(base, scales({ pool: 'federal', from: at, scale: 1.5 }), A)!;
     expect(out.off).toEqual([]);
-    base.pools.forEach((p, i) => expect(out.pools[i]).toBe(p));
+    expect(poolOf(out, 'federal').inflows).toEqual([
+      { kind: 'once', day: A, dollars: fed.dollarsPerYear },
+      { kind: 'once', day: dayOf(2027, 3, 15), dollars: fed.dollarsPerYear },
+      { kind: 'yearly', from: at, to: null, dollarsPerYear: fed.dollarsPerYear * 1.5 }
+    ]);
+    // the other pools are the base's own
+    base.pools.forEach((p, i) => {
+      if (p.id !== 'federal') expect(out.pools[i]).toBe(p);
+    });
     expect(out.programmes).toEqual(base.programmes);
+    // a pool object still carrying the older flag is scaled the same way
+    const flagged = fixture();
+    flagged.pools = flagged.pools.map((p) => (p.id === 'federal' ? { ...p, uncapped: true } : p));
+    const again = buildFinance(flagged, scales({ pool: 'federal', from: at, scale: 1.5 }), A)!;
+    expect(poolOf(again, 'federal').inflows).toEqual(poolOf(out, 'federal').inflows);
   });
 
   it('scale-before-asOf-then-later', () => {

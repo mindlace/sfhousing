@@ -182,7 +182,7 @@ export const DATASF: Record<
     homepage: 'https://data.sf.gov/d/wv5m-vpq2',
     label: 'DataSF Assessor Historical Secured Property Tax Rolls'
   },
-  // Page-only: street centrelines (CNNs) for the /lesscars plan; no /sim rule reads them.
+  // Street centrelines (CNNs): the road-like rule (55_road_lots.sql) and the boxes command read them.
   'datasf-streets': {
     dataset: '3psu-pn9h',
     format: 'geojson',

@@ -1,9 +1,5 @@
 import { afterAll, describe, expect, it } from 'vitest';
-import { eq } from 'drizzle-orm';
 import { createTestD1 } from '$lib/server/test/d1';
-import { freshDb, grantEvent, seedUser } from '$lib/server/test/auth-db';
-import { capabilityEvent } from './capabilityEvent';
-import { principal } from './principal';
 
 const t = createTestD1();
 afterAll(() => t.close());
@@ -32,18 +28,46 @@ function allForeignKeys(): string[] {
 }
 
 describe('auth schema', () => {
+  it('a freshly migrated database has exactly the identity tables, game_save and plan, and none of the five dropped', () => {
+    const names = (
+      t.sqlite.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as {
+        name: string;
+      }[]
+    )
+      .map((r) => r.name)
+      .filter((n) => !/^(sqlite_|_cf_|d1_)/.test(n));
+    expect(names.sort()).toEqual([
+      'account',
+      'game_save',
+      'handle_tombstone',
+      'passkey',
+      'plan',
+      'principal',
+      'session',
+      'user',
+      'user_identity',
+      'user_version',
+      'verification'
+    ]);
+    for (const gone of [
+      'sim_index',
+      'sim_commit',
+      'sim_takedown',
+      'sim_invite',
+      'capability_event'
+    ])
+      expect(names).not.toContain(gone);
+  });
+
   // A later migration that rebuilds a table (drizzle's SQLite table-recreate) could drop or
   // change an action silently; this pins the whole list, so any change shows up here.
   it('has exactly these foreign keys, targets and ON DELETE actions', () => {
     expect(allForeignKeys()).toEqual([
       'account.user_id -> user.id ON DELETE CASCADE',
-      'capability_event.principal_id -> principal.id ON DELETE CASCADE',
+      'game_save.identity_id -> user_identity.id ON DELETE NO ACTION',
       'handle_tombstone.released_by -> user_identity.id ON DELETE NO ACTION',
       'passkey.user_id -> user.id ON DELETE CASCADE',
       'session.user_id -> user.id ON DELETE CASCADE',
-      'sim_invite.accepted_by_user_id -> user_identity.id ON DELETE SET NULL',
-      'sim_invite.invited_by_user_id -> user_identity.id ON DELETE CASCADE',
-      'sim_invite.invited_user_id -> user_identity.id ON DELETE CASCADE',
       'user.user_identity -> user_identity.id ON DELETE CASCADE',
       'user_identity.id -> principal.id ON DELETE NO ACTION',
       'user_identity.superseded_by_id -> user_identity.id ON DELETE NO ACTION',
@@ -52,32 +76,14 @@ describe('auth schema', () => {
   });
 
   it('freezes the foreign-key actions planafoot uses', () => {
-    expect(fk('capability_event', 'principal_id')).toEqual({
-      table: 'principal',
-      onDelete: 'CASCADE'
-    });
     expect(fk('user', 'user_identity').onDelete).toBe('CASCADE');
     for (const table of ['session', 'account', 'passkey']) {
       expect(fk(table, 'user_id').onDelete).toBe('CASCADE');
     }
     expect(fk('user_version', 'user_identity').onDelete).toBe('CASCADE');
-    expect(fk('sim_invite', 'invited_user_id').onDelete).toBe('CASCADE');
-    expect(fk('sim_invite', 'invited_by_user_id').onDelete).toBe('CASCADE');
-    expect(fk('sim_invite', 'accepted_by_user_id').onDelete).toBe('SET NULL');
     expect(fk('user_identity', 'id').onDelete).toBe('NO ACTION');
     expect(fk('user_identity', 'superseded_by_id').onDelete).toBe('NO ACTION');
     expect(fk('handle_tombstone', 'released_by').onDelete).toBe('NO ACTION');
-  });
-
-  it('keeps sim_invite.sim_id NOT NULL with no foreign key', () => {
-    const cols = t.sqlite.prepare('PRAGMA table_info(sim_invite)').all() as {
-      name: string;
-      notnull: number;
-    }[];
-    expect(cols.find((c) => c.name === 'sim_id')?.notnull).toBe(1);
-    expect(cols.some((c) => c.name === 'body_md')).toBe(false);
-    const fks = t.sqlite.prepare('PRAGMA foreign_key_list(sim_invite)').all() as FkRow[];
-    expect(fks.some((r) => r.from === 'sim_id')).toBe(false);
   });
 
   it('has no group, user_settings or subscription table', () => {
@@ -89,22 +95,6 @@ describe('auth schema', () => {
     for (const gone of ['group', 'user_settings', 'subscription', 'quest_index', 'quest_invite']) {
       expect(names).not.toContain(gone);
     }
-    expect(names).toEqual(expect.arrayContaining(['sim_index', 'sim_invite', 'principal']));
-  });
-
-  it('removes ledger rows when their principal is deleted', async () => {
-    const { db, close } = freshDb();
-    try {
-      await db.insert(principal).values({ id: 'svc-1', kind: 'service' });
-      await seedUser(db, { id: 'u1', email: 'a@example.com' });
-      await grantEvent(db, { identityId: 'svc-1', capability: 'operator.access' });
-      await grantEvent(db, { identityId: 'u1', capability: 'operator.access' });
-      const count = async () => (await db.select().from(capabilityEvent)).length;
-      expect(await count()).toBe(2);
-      await db.delete(principal).where(eq(principal.id, 'svc-1'));
-      expect(await count()).toBe(1);
-    } finally {
-      close();
-    }
+    expect(names).toContain('principal');
   });
 });

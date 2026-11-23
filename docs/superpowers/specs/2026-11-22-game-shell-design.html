@@ -130,7 +130,7 @@ export function defaultSaveName(
 ): string;
 
 // src/lib/game/store.svelte.ts
-export type StoreChange = { ok: true } | { ok: false; reason: 'full' | 'storage' };
+export type StoreChange = { ok: true } | { ok: false; reason: 'full' | 'storage' | 'changed' };
 
 /** The win on screen that "Level up" would bank. */
 export interface Offer {
@@ -164,6 +164,8 @@ export class GameStore {
   levelUp(): void;
   /** The page's autosave wrote the current game's plan or policy record. */
   touched(): void;
+  /** Registers a function the store calls before another game becomes current; returns its remover. */
+  beforeLeave(fn: () =&gt; void): () =&gt; void;
   newGame(): StoreChange;
   switchTo(id: string): StoreChange;
   remix(doc: { kind: 'plan' | 'sim'; record: string; title: string }): StoreChange;
@@ -192,12 +194,15 @@ export function useGame(): GameStore;</code></pre>
         <li>The page calls <code>won()</code> when a win card first shows.</li>
         <li><code>allowed</code> is <code>allowedAt(progress.level)</code>.</li>
         <li>While <code>open</code> is true no page shows a game part: no level cell, no win card, no bar or "To beat" flag, no locked lane, no reworded outcome message, no Remix button, and no offer is set. The pages read <code>open</code>; they never compare <code>allowed</code> with <code>ALL_ALLOWED</code>.</li>
-        <li>The page calls <code>setOffer</code> with the win while its seen result wins the level, and with null on any edit and when it unmounts. The offer is kept in memory only.</li>
+        <li>The page calls <code>setOffer</code> with the win while its seen result wins the level, and with null as soon as its seen result stops winning and when it unmounts. On <code>/sim</code> every edit clears the seen result, so an edit clears the offer. On Paint the result is the latest complete score, so a stroke leaves the offer as it is and a complete score below the goal clears it. The offer is kept in memory only.</li>
         <li>The store's <code>levelUp()</code> banks the offer with the pure <code>levelUp</code>, clears the offer, and stores the game. The win card and the level panel both call it.</li>
         <li>The page that set the offer reacts to the level changing: <code>/sim</code> returns the clock to today, and Paint opens <code>/sim</code>.</li>
-        <li>The page calls <code>touched()</code> after its autosave writes a record key. The store sets the current game's <code>savedAt</code> and calls <code>sync.changed(currentId)</code>.</li>
+        <li>The page calls <code>touched()</code> each time its autosave's status goes from <code>saving</code> to <code>saved</code>: after the autosave writes a record key, and when an edit inside the debounce returns the document to the text already written. The store sets the current game's <code>savedAt</code> and calls <code>sync.changed(currentId)</code>.</li>
+        <li>A page that autosaves a record key registers its autosave's flush with <code>beforeLeave</code> when it mounts and removes it when it unmounts. <code>newGame</code>, <code>switchTo</code> of another game, <code>remix</code>, <code>remove</code> of the current game and <code>adopt</code> of saves that hold the current game's id call every registered function, in registration order, once they will go ahead and before they read or write a record key. So an edit still waiting in the page's autosave is in the record keys when the old game is copied out, and nothing is left waiting to be written over the new game's records when the page unloads.</li>
+        <li>When a function that <code>adopt</code> called writes a record key, the current game had an edit that was still waiting: <code>adopt</code> then changes nothing and answers <code>{ ok: false, reason: 'changed' }</code>. The save sync sends that game instead, and a 409 keeps both versions (S2, D8). No other change answers <code>changed</code>.</li>
+        <li>After <code>newGame</code>, <code>switchTo</code> of another game, <code>remix</code>, <code>remove</code> of the current game, or <code>adopt</code> of the current game's id answers <code>ok</code>, the store ignores <code>touched()</code> for the rest of the document's life: the page is about to unload, and nothing it still writes belongs to the game now in the record keys.</li>
         <li>On first construction with no <code>SAVES_KEY</code>, the store makes one saved game at level 1 whose plan and policy are whatever the two record keys hold.</li>
-        <li><code>newGame</code>, <code>switchTo</code>, <code>remix</code> and <code>remove</code> of the current game first copy the two record keys into the current game's stored save, then write the new current game's plan and policy into the two record keys.</li>
+        <li><code>newGame</code>, <code>switchTo</code> and <code>remix</code> first copy the two record keys into the current game's stored save, then write the new current game's plan and policy into the two record keys. <code>remove</code> of the current game removes its save without copying it out, then writes the new current game's plan and policy into the two record keys.</li>
         <li>After <code>newGame</code>, <code>switchTo</code> or <code>remove</code> answers <code>ok</code>, the caller loads the new current game's page with a full page load: <code>/</code> at level 1, <code>/sim</code> above it.</li>
         <li>After <code>remix</code> answers <code>ok</code>, the caller loads <code>/</code> for a plan and <code>/sim</code> for a policy, with a full page load.</li>
         <li><code>remix</code>'s <code>record</code> is the text the page's autosave holds under the record key for the published document. The caller builds it with the codec the page already uses, so the store never reads inside a plan or a policy.</li>
@@ -421,7 +426,7 @@ export function e2eGoalAmount(storage: Storage | null): number | null;</code></p
       <h3>Paint's win</h3>
       <ul>
         <li>Paint's goal is <code>{ ...GOAL_BASE, amount }</code>, where <code>amount</code> is <code>e2eGoalAmount(getStorage()) ?? GOAL_BASE.amount</code>, read once when Paint mounts. The headline is <code>paintHeadline(net, goal)</code>.</li>
-        <li>Paint is won while the simulation is locked, the latest score is <code>complete</code>, and <code>paintWon(net, goal.amount)</code>.</li>
+        <li>Paint is won while the simulation is locked and the latest <code>complete</code> score has <code>paintWon(net, goal.amount)</code>. A score that is not <code>complete</code> (during a stroke, or while the worker is still filling) leaves the won state as it is: whether Paint is won changes only when a new complete score arrives. So the card's kept state, the closed card and the offer all hold through a stroke that keeps the room at or above the goal.</li>
         <li>While Paint is won it calls <code>game.setOffer({ on: null, datasetVersion: data.datasetVersion })</code>. When it stops being won, and when the page unmounts, it calls <code>game.setOffer(null)</code>.</li>
         <li>The win card opens when Paint becomes won during the visit and has not been kept. "Keep playing" and Escape keep it closed until Paint stops being won.</li>
         <li>So a later visit whose restored plan already wins shows the card again once its first complete score wins.</li>
@@ -433,6 +438,7 @@ export function e2eGoalAmount(storage: Storage | null): number | null;</code></p
         <li>When the simulation stops being locked while Paint is mounted (the card's or the level panel's "Level up"), Paint calls <code>goto('/sim')</code>, a client-side navigation. The player lands on <code>/sim</code> at level 2 with the clock at today; <code>/sim</code> reads <code>e2eGoalAmount</code> when it mounts (X1).</li>
         <li>Above level 1 Paint has no win, no card and no offer. Its headline still says "Goal reached" as today.</li>
         <li>Each time the autosave's <code>status</code> goes from <code>saving</code> to <code>saved</code>, Paint calls <code>game.touched()</code>.</li>
+        <li>Paint registers its autosave's <code>flush</code> with <code>game.beforeLeave</code> when it mounts and removes it when it unmounts, so a stroke still in the autosave's debounce is in the plan record before the level panel's New game, switch or Delete changes the current game (G2).</li>
         <li>Paint takes no Remix hand-off: it restores the plan record with <code>autosave.restore()</code> and shows no Remix toast. A remixed plan arrives as the current game's plan record (G2).</li>
       </ul>
     </section>
@@ -580,10 +586,11 @@ export const YOUR_GAME = 'Your game';</code></pre>
       <li><code>src/routes/+page.svelte</code></li>
       <li><code>src/lib/shell/**</code></li>
       <li><code>src/lib/about/**</code></li>
+      <li><code>src/routes/about/page.svelte.spec.ts</code>: the line that lists the parts' sections</li>
       <li><code>src/lib/sharing/{SharedBanner.svelte,copy.ts}</code></li>
       <li><code>src/routes/s/[id]/**</code></li>
       <li><code>src/routes/p/[id]/**</code></li>
-      <li><code>e2e/game-shell.spec.ts</code> and the remix tests in <code>e2e/{share-states,share-roundtrip,share-notices,sim-share,chrome-dark}.spec.ts</code></li>
+      <li><code>e2e/game-shell.spec.ts</code> and the remix tests in <code>e2e/{share-states,share-roundtrip,share-notices,sim-share,chrome-dark}.spec.ts</code> (every case that asserts the banner's Remix or "Open with current data" button)</li>
       <li><code>docs/dev/about.md</code></li>
     </ul>
     <p>Ordering notes from the design doc that concern this unit:</p>
@@ -608,6 +615,8 @@ export const YOUR_GAME = 'Your game';</code></pre>
         <li><code>src/lib/about/copy.ts</code></li>
         <li><code>src/lib/about/AboutUsing.svelte</code></li>
         <li><code>src/lib/about/AboutParts.svelte.spec.ts</code></li>
+        <li><code>src/lib/about/AboutDialog.svelte.spec.ts</code></li>
+        <li><code>src/routes/about/page.svelte.spec.ts</code></li>
         <li><code>src/routes/s/[id]/+page.svelte</code></li>
         <li><code>src/routes/s/[id]/page.view.svelte.spec.ts</code></li>
         <li><code>src/routes/s/[id]/test/PageHost.svelte</code></li>
@@ -646,7 +655,7 @@ export const YOUR_GAME = 'Your game';</code></pre>
             <li>The cell and the open panel pass <code>expectNoA11yViolations</code> in light and dark.</li>
           </ul>
         </li>
-        <li><code>src/routes/page.game.svelte.spec.ts</code>, with a small goal seam and a game at level 1: a complete score crossing the goal opens the card titled "Room for {amount} homes" with focus on its "Level up", calls <code>won()</code> once and sets the offer; a win that arrives while a pointer button is held mounts the card only at <code>pointerup</code>; "Keep playing" closes it and the offer stays; a score dropping below clears the offer, and crossing again reopens the card; "Level up" raises the level to 2 and navigates to <code>/sim</code>; an autosave write calls <code>touched()</code>; at level 2 no card shows and no offer is set.</li>
+        <li><code>src/routes/page.game.svelte.spec.ts</code>, with a small goal seam and a game at level 1: a complete score crossing the goal opens the card titled "Room for {amount} homes" with focus on its "Level up", calls <code>won()</code> once and sets the offer; a win that arrives while a pointer button is held mounts the card only at <code>pointerup</code>; "Keep playing" closes it and the offer stays; after "Keep playing", a stroke whose incomplete scores arrive before a complete score still at or above the goal leaves the card closed and the offer set throughout; a complete score dropping below clears the offer, and crossing again reopens the card; "Level up" raises the level to 2 and navigates to <code>/sim</code>; an autosave write calls <code>touched()</code>; a stroke followed at once by <code>game.newGame()</code>, before the autosave's debounce ends, leaves the stroke in the old game's stored plan and the new game's plan record untouched when the page unmounts; at level 2 no card shows and no offer is set.</li>
         <li><code>src/routes/s/[id]/page.view.svelte.spec.ts</code>, under a provided game:
           <ul>
             <li>Level 1: the button reads "Unlock the simulation to remix" and a press stores nothing.</li>
@@ -658,12 +667,14 @@ export const YOUR_GAME = 'Your game';</code></pre>
             <li>A storage that refuses writes shows <code>STORAGE_TEXT</code>.</li>
             <li>A press that answers ok calls <code>loadPage('/sim')</code> (a spy on <code>src/lib/game/navigate.ts</code>).</li>
             <li>"Your game" links to <code>gamePath(level)</code>: <code>/</code> at level 1, <code>/sim</code> above it.</li>
+            <li>No case mounts <code>/sim</code> after Remix: <code>/sim</code> takes no Remix hand-off. <code>game-sim</code> deletes the case "after Remix, /sim shows the remixed document over the earlier v2 autosave" from this file; whichever of the two units merges second keeps this unit's Remix tests and no hand-off case.</li>
           </ul>
         </li>
         <li><code>src/routes/p/[id]/page.view.svelte.spec.ts</code>: at level 1 a press makes a saved game holding the published plan and the old game's policy and calls <code>loadPage('/')</code>; at 12 games it is disabled; in the open game there is no Remix button.</li>
         <li><code>SharedBanner.svelte.spec.ts</code>: the three states, a null state with no Remix button, the note, the error line and "Your game"; no dialog.</li>
         <li><code>src/routes/page.svelte.spec.ts</code> and <code>page.undo.svelte.spec.ts</code>: their Remix hand-off cases go.</li>
         <li><code>AboutParts.svelte.spec.ts</code>: the "To beat" term, the Levels list and the Saved games lines, word for word.</li>
+        <li><code>AboutDialog.svelte.spec.ts</code> and <code>src/routes/about/page.svelte.spec.ts</code>: the list of the parts' sections leaves out the sub-sections of Using it (<code>ABOUT_ID.shortcuts</code>, <code>ABOUT_ID.levels</code>, <code>ABOUT_ID.savedGames</code>) and still expects the four parts in order.</li>
         <li><code>accent.spec.ts</code>: the two game components hold no light-only colour classes.</li>
       </ul>
     </section>
@@ -676,8 +687,11 @@ export const YOUR_GAME = 'Your game';</code></pre>
         <li>At level 1 <code>/p/&lt;id&gt;</code>'s Remix opens Paint on the published plan, and the level panel lists "Remix of {title}".</li>
         <li>At level 3 (<code>seedGame(page, 3)</code>) <code>/s/&lt;id&gt;</code>'s Remix of a policy holding one permitting policy opens <code>/sim</code> with that policy's row on the timeline.</li>
       </ul>
+      <p>The published plans and policies these tests open are seeded with <code>seedPlanRow</code> (<code>e2e/helpers/sharing.ts</code>, <code>POST /api/e2e/plans</code>), which the sharing e2e specs already use and which no unit of this build changes.</p>
       <p>These tests read only this unit's texts and test ids, <code>game-core</code>'s, and what <code>/sim</code> shows today. None needs <code>game-sim</code>'s work: no locked lane, no win on <code>/sim</code>, no given measure.</p>
       <p>The remix tests in <code>share-states</code>, <code>share-roundtrip</code>, <code>share-notices</code>, <code>sim-share</code> and <code>chrome-dark</code> call <code>seedGame(page, 3)</code> before navigating, drop their steps on the confirm dialog and the Remix toast, and check the remixed document on the page that loads. <code>chrome-dark</code>'s axe check of the Remix dialog checks the banner alone.</p>
+      <p>The remix tests include every case that asserts the banner's Remix or "Open with current data" button, such as <code>share-states</code>' N6 case: it calls <code>seedGame(page, 3)</code> before navigating, because in the open game the banner shows neither button.</p>
+      <p>Each e2e case waits for the page's readiness signal before it reads a game-dependent control or a test hook. A case that reads the banner's Remix state first waits for <code>html[data-hydrated]</code>: until the page has mounted the banner shows Remix as ready whatever the game holds. A case that reads Paint's brush hook (<code>ops</code>) after a Remix's full page load first calls <code>waitForMap(page)</code>: <code>toHaveURL</code> passes when the new document commits, before Paint has mounted and set the hook.</p>
     </section>
   </section>
 

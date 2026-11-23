@@ -1,9 +1,18 @@
 // The funding system world-core's hook calls (spec S12): `create`, `planLot`, `policyChanged`,
 // `apply`, `moneyIn`, `onProjectEvent` (ordinary starts and money events), `serve`, and `shadow`
 // (shadow starts, then the line's compaction).
-import { ORIGIN_SIM, type FundingSystem, type StepCtx, type World } from '../types';
+import type { PolicyTimeline } from '../policy/frame';
+import type { Statics } from '../statics';
+import {
+  ORIGIN_SIM,
+  type FundingSystem,
+  type StepCtx,
+  type World,
+  type WorldOptions
+} from '../types';
 import { applyLots, leaveLine, planLotMonth } from './apply';
-import { fundOf, initFunding } from './columns';
+import { closedTimeline, reopenArrivals } from './closing';
+import { fundOf, initFunding, type FundPools } from './columns';
 import { policyChanged } from './policy';
 import { moneyIn, moneyOnEvent } from './pools';
 import { serveLine } from './serve';
@@ -23,8 +32,31 @@ function ensure(ctx: StepCtx): World {
   return world;
 }
 
-export function createFundingSystem(): FundingSystem {
+/**
+ * The world steps and plans under the closed view of its closings (`closedTimeline`): `timeline`
+ * itself in a world without funding columns or without a closing.
+ */
+function closedOf(world: World, statics: Statics, timeline: PolicyTimeline): PolicyTimeline {
+  if (!('shutN' in world.pools)) return timeline;
+  const pools = world.pools as FundPools;
+  if (pools.shutN === 0) return timeline;
+  return closedTimeline(timeline, pools, statics.asOf);
+}
+
+/**
+ * The funding system. `opts.poolClosing` (default true) closes spent pools in system 5 and steps
+ * and plans the world under its closings' view; false serves as the older engine does, an
+ * application waiting on a spent pool.
+ */
+export function createFundingSystem(opts: WorldOptions = {}): FundingSystem {
+  const closing = opts.poolClosing !== false;
   return {
+    beforeStep(world, statics, timeline) {
+      // A closed pool opens on its next arrival, before the month's view is taken.
+      reopenArrivals(world, statics, timeline);
+      return closedOf(world, statics, timeline);
+    },
+    timelineOf: closedOf,
     create(world, _statics, frame) {
       initFunding(
         world,
@@ -58,7 +90,7 @@ export function createFundingSystem(): FundingSystem {
     },
     serve(ctx) {
       ensure(ctx);
-      serveLine(ctx);
+      serveLine(ctx, { closing });
     },
     shadow(ctx) {
       ensure(ctx);

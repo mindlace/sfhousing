@@ -60,9 +60,12 @@ interface Change {
   after: FundLine;
 }
 
-/** A funding system that records each application joining and each `policyChanged` call. */
-function spied(): { sys: FundingSystem; joined: Joined[]; changes: Change[] } {
-  const sys = createFundingSystem();
+/**
+ * A funding system (`poolClosing` default true) that records each application joining and each
+ * `policyChanged` call.
+ */
+function spied(poolClosing = true): { sys: FundingSystem; joined: Joined[]; changes: Change[] } {
+  const sys = createFundingSystem({ poolClosing });
   const joined: Joined[] = [];
   const changes: Change[] = [];
   const apply = sys.apply;
@@ -194,7 +197,6 @@ const poolOf = (id: string, inflows: Inflow[]): Pool => ({
   kind: 'generalRevenue',
   label: id,
   inflows,
-  uncapped: false,
   debt: null,
   leverage: 1
 });
@@ -434,7 +436,8 @@ describe('rule 16 continued: ending the spent programme', () => {
   it.each([1, 2, 3])(
     'seed %i: lapses the waiting applications and redraws them on the other shares',
     (seed) => {
-      const { sys, joined, changes } = spied();
+      // The wait on the spent pool is the older engine's: closing off keeps it.
+      const { sys, joined, changes } = spied(false);
       const w = worldOf(sys, s, t, seed);
       w.stepTo(m - 1);
       const was = waiting(fundOf(w.world).line);
@@ -598,7 +601,8 @@ describe('an application whose lot-month began before a change of money', () => 
     for (let seed = 1; seed <= 120; seed++) {
       const finance = randomFinance(seed);
       const t = oneMoneyTimeline({ ...input, finance }, finance);
-      const sys = createFundingSystem();
+      // The checks read the base timeline `t`: closing off, the world steps under it.
+      const sys = createFundingSystem({ poolClosing: false });
       const apply = sys.apply;
       const changed = sys.policyChanged;
       /** Applications `apply` must join this month, as (lot, kind code, day, key day). */

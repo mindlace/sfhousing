@@ -1,6 +1,6 @@
 // finance-score, spec 6 test 9: every `tiersOf` result is non-negative and sums to the final
 // units, over random units, programme sets (the hand-built ones and random ones), weights and tiers.
-// Test 17: the ledger identities I1-I6 on the per-pool money series over seeded valid ledgers.
+// Test 17: the ledger identities I1-I5 on the per-pool money series over seeded valid ledgers.
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { INCOME_TIERS, type IncomeTier, type PoolKind } from '$lib/timelapse/types';
@@ -197,7 +197,7 @@ describe('tierSeries sums to completedNet (spec 6 test 11)', () => {
   });
 });
 
-describe('ledger identities I1-I6 (spec 6 test 17)', () => {
+describe('ledger identities I1-I5 (spec 6 test 17)', () => {
   it('ledgerModel is a pure function of the seed', () => {
     expect(ledgerModel(7)).toEqual(ledgerModel(7));
     expect(ledgerModel(7)).not.toEqual(ledgerModel(8));

@@ -86,7 +86,6 @@ const POOL: Omit<Pool, 'id'> = {
   kind: 'generalRevenue',
   label: 'City general fund, 2027',
   inflows: [{ kind: 'yearly', from: nextFiscal(FUND_ASOF), to: null, dollarsPerYear: 60_000_000 }],
-  uncapped: false,
   debt: null,
   leverage: 1
 };
@@ -179,7 +178,7 @@ describe('funding edits', () => {
       ],
       [
         addScaleEdit(p, baseline, { group: 'federal' }, july(2027), 1),
-        "Today's funding: federal switched back on from July 2027",
+        "Today's funding: federal 100% from July 2027",
         undefined
       ],
       [
@@ -315,7 +314,6 @@ describe('funding edits', () => {
       kind: 'generalRevenue',
       label: 'City general fund, 2027',
       inflows: [{ kind: 'yearly', from: july(2027), to: null, dollarsPerYear: 60_000_000 }],
-      uncapped: false,
       debt: null,
       leverage: 1
     });
@@ -682,6 +680,17 @@ describe('addScaleEdit no-op (spec 4.9)', () => {
     expect(again.change(once)).toBe(once);
     const single = edit(addScaleEdit(once, baseline, { pool: 'city-gf' }, july(2027), 0));
     expect(single.change(once)).toBe(once);
+  });
+
+  it('addScaleEdit on the federal group at 1.5 labels as on any group', () => {
+    const p0 = policyWith({});
+    const fed = edit(addScaleEdit(p0, baseline, { group: 'federal' }, july(2027), 1.5));
+    const state = edit(addScaleEdit(p0, baseline, { group: 'state' }, july(2027), 1.5));
+    expect(fed.label).toBe("Today's funding: federal 150% from July 2027");
+    expect(state.label).toBe("Today's funding: state 150% from July 2027");
+    expect(fed.change(p0).funding.baselineScale).toEqual([
+      { pool: 'federal', from: july(2027), scale: 1.5 }
+    ]);
   });
 });
 

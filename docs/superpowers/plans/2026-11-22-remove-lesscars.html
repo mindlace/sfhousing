@@ -1,0 +1,486 @@
+<article>
+  <header>
+    <h1>Remove less cars implementation plan</h1>
+    <p>Implements the <code>remove-lesscars</code> build unit: delete <code>/fzp</code>, <code>/lesscars</code> and everything only they use, keep the freeway-land catalog, and deliver interface row L1.</p>
+    <aside data-kind="note"><strong>For agentic workers</strong> REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps are checklist items; progress is kept in the workspace ledger, not in the plan.</aside>
+  </header>
+
+  <section id="sec-overview">
+    <h2>Overview</h2>
+    <dl>
+      <dt>Goal</dt>
+      <dd>The app, worker, map, manifest and pipeline carry no less cars; the freeway-land catalog moves to <code>pipeline/enrichment/freeway-land.json</code> and decides eligibility exactly as before; <code>PATHS</code> is held to the pipeline's imports by a test; the fixture is regenerated (L1).</dd>
+      <dt>Architecture</dt>
+      <dd>One serial lane of seven tasks. Deletions go leaf-first: the app and worker (nothing else imports them), then the pipeline's less-cars steps (the only readers of <code>scenarios.lesscars</code> at build time), then the manifest schema and the map style, then the catalog move, then <code>PATHS</code>, then the regenerated fixture that proves L1, then the docs. The spec is exhaustive; each step names the spec section it implements and adds only what the spec leaves open.</dd>
+      <dt>Tech Stack</dt>
+      <dd>SvelteKit 2, Svelte 5, TypeScript, Zod 4, MapLibre style JSON, Node pipeline (DuckDB, tippecanoe, pmtiles), Vitest (projects <code>server</code>, <code>client</code>, <code>pipeline</code>), Playwright, chreode.</dd>
+      <dt>Spec</dt>
+      <dd><code>/Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game/docs/superpowers/specs/2026-11-22-remove-lesscars-design.html</code> (sections <code>sec-design-*</code>, <code>sec-write-set</code>, <code>sec-tests</code>, <code>sec-docs</code>). Every line number it cites was read on <code>8125e557</code>; <code>git diff --stat 8125e557 HEAD -- src pipeline e2e scripts chreode.config.ts .prettierignore docs/dev</code> is empty on this worktree's base, so they hold.</dd>
+    </dl>
+    <aside data-kind="decision"><strong>Builder's call: task order</strong> The suggested cut put the manifest schema and the catalog move before the pipeline removal. The code argues otherwise. <code>pipeline/steps/manifest.ts:64</code> returns <code>parseManifest({... lesscars ...})</code> and <code>pipeline/steps/check-lesscars.ts:104</code> reads <code>parseManifest(...).scenarios?.lesscars</code>, so the schema change breaks the build until the less-cars step and V35 are gone. And 13 of the 22 files that import the catalog's path or module are files the removal deletes (<code>pipeline/steps/lesscars*.ts</code>, <code>pipeline/test/lesscars-*.ts</code>), so moving the catalog first would mean editing files that are about to be deleted. The order is therefore: app, pipeline removal, manifest and map, catalog move, <code>PATHS</code>, fixture, docs.</aside>
+    <aside data-kind="warning"><strong>Expected red between tasks</strong> From Task 2 until Task 6, <code>pipeline/test/golden.test.ts</code> fails. It builds the mini fixture and compares the result with the committed golden and <code>fixture-0</code>, and only Task 6 regenerates those. Tasks 2 to 5 run <code>npm run test:pipeline</code> and expect failures in <code>golden.test.ts</code> and in no other file. Any other failure is a defect.</aside>
+  </section>
+
+  <section id="sec-global-constraints">
+    <h2>Global constraints</h2>
+    <table id="tbl-interfaces">
+      <caption>Interface table</caption>
+      <thead>
+        <tr><th scope="col">Row</th><th scope="col">Owner</th><th scope="col">Layer</th><th scope="col">Summary</th><th scope="col">Contract</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">L1</th><td><code>remove-lesscars</code></td><td>Decomposition choice</td><td>The pipeline, dataset and worker with no less cars.</td><td><a href="#sec-if-l1">L1</a></td></tr>
+      </tbody>
+    </table>
+
+    <section id="sec-if-l1">
+      <h3>L1 The pipeline, dataset and worker with no less cars</h3>
+      <pre><code data-lang="ts">// src/lib/data/manifest.ts
+interface ManifestScenarios {
+  fzp: { parcels: string; projects: string; calibration: string; policy?: string; gross?: string; frontage?: string };
+}
+
+// pipeline/config.ts
+export const FREEWAY_LAND_JSON: { live: string; fixture: string };
+// live: pipeline/enrichment/freeway-land.json
+
+// src/lib/sim/router.ts
+type WorkerMode = 'editor' | 'scenario' | 'timeline';</code></pre>
+      <ul>
+        <li>A build writes no <code>scenarios/lesscars/*</code> and the manifest has no <code>scenarios.lesscars</code> key. A manifest that has one still parses: it is an older dataset's.</li>
+        <li>A published plan or policy runs on its own dataset while that dataset exists. An older dataset's basemap holds some freeway stretches in a <code>roads_lc</code> layer; the map draws that layer as ordinary roads exactly when the manifest has <code>scenarios.lesscars</code>, and never asks a newer basemap for it.</li>
+        <li><code>basemap.pmtiles</code> is a byte copy of the fetched basemap.</li>
+        <li>The freeway-land catalog is read from <code>FREEWAY_LAND_JSON</code> and feeds lot eligibility and the road-like lot rule exactly as before.</li>
+        <li><code>scenarios/fzp/parcels.bin</code> for the fixture, decoded, is identical before and after except the one provenance sentence that names the catalog's path, which names <code>FREEWAY_LAND_JSON</code>'s path.</li>
+        <li>The pipeline has no <code>lesscars-cnns</code>, <code>lesscars-freeway-land</code> or <code>lesscars-basemap</code> command.</li>
+        <li>The scenario engine keeps <code>SimInput.regimes</code> and <code>reservedFrom</code>. The step engine's referee tests use <code>regimes</code>; the scenario engine's own tests use <code>reservedFrom</code>.</li>
+        <li><code>PATHS</code> in <code>pipeline/lib/version.ts</code> lists every source path that non-test pipeline code imports, by directory, and nothing else. A pipeline test walks the imports from <code>pipeline/cli.ts</code> and fails when one falls outside <code>PATHS</code> or a <code>PATHS</code> entry is reached by none.</li>
+        <li><code>pipeline/enrichment/funding.json</code>, <code>pipeline/lib/fzp-cal/**</code> and the calibration step are not touched by this row's owner.</li>
+      </ul>
+      <p><strong>Removed:</strong> the playback worker mode, <code>scenarios.lesscars</code>, the <code>roads_lc</code> source layer from new builds, the less-cars styling of its clones, the <code>lc-*</code> palette tokens, <code>LESSCARS_*</code> config.</p>
+    </section>
+
+    <section id="sec-spec-constraints">
+      <h3>From the spec</h3>
+      <ul>
+        <li>Work happens in git worktrees under <code>.claude/worktrees/</code>. Commits follow Conventional Commits. No attribution to an AI anywhere.</li>
+        <li>Code style: 2-space indent, single quotes, no trailing commas, 100 columns.</li>
+        <li>Every Vitest test calls <code>expect</code>.</li>
+        <li>Signoff fails on server stderr, on timing crutches and on a retried flake. Each unit runs <code>npm run lint</code>, <code>npm run check</code> and the Vitest projects its files belong to before it hands back.</li>
+        <li>Port 4173 is shared by every session on this machine. A unit never kills a server it did not start; it waits.</li>
+        <li>Every agent runs every command in the foreground and never ends a turn while something it started is running.</li>
+        <li>Schema changes go through <code>npm run db:generate</code>. Nobody edits a migration.</li>
+        <li>No unit runs <code>npm run signoff</code>: its dataset step fails until the dataset is uploaded. <code>closing</code> runs it once, after the upload.</li>
+        <li>The dataset version changes in this build. The dataset is uploaded once, by <code>closing</code>, from the integration branch, after every unit has merged; no other unit uploads a dataset. <code>reach-check</code> builds one earlier to run the check and uploads nothing.</li>
+        <li>A unit that writes a hashed path regenerates the fixture dataset with <code>npm run pipeline -- fixture</code> and commits it.</li>
+        <li>WCAG 2.2 AA: every new control is at least 24 px and passes <code>expectNoA11yViolations</code> in light and dark.</li>
+        <li>Page text is short. No sentence says what something is not.</li>
+        <li>Nothing on the main screen says "RHNA". The goal is read from the <code>Goal</code> value, never from a constant.</li>
+        <li>The game's rules are read from <code>src/lib/game/</code>. No component compares a level to a number.</li>
+        <li>One future: no seed control, no band, no average over runs.</li>
+        <li>Published plans and policies, their ids and their pages keep working, including every policy published before this build.</li>
+        <li>A number that is a claim about the world carries its source and tier, in the existing <code>Sourced</code>, <code>Unsourced</code> and <code>Evidence</code> shapes.</li>
+        <li>A runtime dependency that ships in the bundle gets a credit in <code>SOFTWARE</code>. This build adds none.</li>
+        <li>CSP changes are interface changes. This build makes none.</li>
+        <li>Timing is measured only on a quiet machine. A unit that cannot get one defers the measurement and says so.</li>
+      </ul>
+    </section>
+
+    <section id="sec-project-notes">
+      <h3>Project notes</h3>
+      <ul>
+        <li>(0) Read files with the Read, Grep and Glob tools, not Bash. Every Bash call is one command that starts with a command on the allowed lists (git add/commit/rev-parse/log/diff/status/show/merge/merge-base/branch/rm; npm; npx; lsof; ls, cat, grep, head, tail, wc, pwd, uptime, mkdir): no <code>VAR=...</code> prefix, no <code>cd</code>, no <code>;</code>, <code>&amp;&amp;</code> or pipes into commands that are not on the lists, no <code>$(...)</code>, no shell loops, no redirects to files (write files with Write).</li>
+        <li>(1) Port 4173 is shared by every session running e2e on this machine: before starting the preview server or Playwright, run <code>lsof -nP -iTCP:4173 -sTCP:LISTEN</code>; if something you did not start is listening, never kill it, wait in background <code>sleep</code> stretches until it is gone, then run; leave nothing listening when done.</li>
+        <li>(2) Signoff rejects timing crutches: no <code>setTimeout</code>/<code>setInterval</code> in any spec or test helper, even zero-length, no fixed waits or raised timeouts in e2e (wait on a readiness signal); <code>npx chreode timing-check --head HEAD</code> is clean after the last commit of every task and fix round; changed e2e specs pass with <code>--repeat-each=5 --retries=0</code>; no new stderr from the preview server.</li>
+        <li>(3) Do not run <code>npm run signoff</code>, <code>git push</code>, a dataset upload or a deploy.</li>
+        <li>(4) Take no wall-clock measurements on a busy machine; <code>npm run test:perf</code> is not a gate.</li>
+        <li>(5) Conventional Commits; no Claude/AI attribution anywhere.</li>
+        <li>(6) The worktree needs <code>npm install</code> and the setup in CLAUDE.md (<code>.dev.vars</code> with <code>PUBLIC_DATASET_VERSION=fixture-0</code>, <code>npm run data:fixture</code>, <code>npm run db:migrate</code>) before tests run.</li>
+      </ul>
+      <aside data-kind="decision"><strong>Builder's call: hashing without <code>shasum</code></strong> <code>shasum</code> is not an allowed command. Where a step needs a sha256, write <code>pipeline/.cache/tmp/sha256.ts</code> with Write: a <code>tsx</code> script that prints <code>&lt;hex&gt;  &lt;basename&gt;</code> for each path in <code>process.argv.slice(2)</code>, using <code>node:crypto</code> <code>createHash('sha256')</code>. Run it with <code>npx tsx pipeline/.cache/tmp/sha256.ts &lt;files…&gt;</code>. <code>pipeline/.cache/</code> is gitignored (<code>.gitignore:14</code>), so ESLint and Prettier skip it, and it is in <code>EXCLUDE_PATHS</code>, so the code hash skips it too (<code>pipeline/lib/version.ts:55</code>). <code>svelte-check</code> still type-checks it (<code>tsconfig.json</code> includes <code>pipeline/**/*.ts</code>), so it has to be well typed. Other scratch scripts and the Task 6 commit message go in the same directory.</aside>
+    </section>
+  </section>
+
+  <section id="sec-review-focus">
+    <h2>Review focus</h2>
+    <p>Inputs the spec implies that no spec test exercises, most likely to bite first. Each has a test in the task named.</p>
+    <ol>
+      <li><strong>A published policy on a pre-unit dataset, loaded the way pages load it.</strong> <code>loadManifest</code> fetches the raw older manifest (with <code>scenarios.lesscars</code>), and the manifest that reaches <code>SimMap</code> must carry <code>splitRoads: true</code>, or the moved freeway stretches vanish from the map. Test: <code>src/lib/sim/manifest.spec.ts</code> (Task 3).</li>
+      <li><strong>An older manifest whose <code>lesscars</code> block is odd.</strong> Examples are a block naming another version's urls, an empty object, <code>null</code> or an array. Each must parse, because the old prefix refine no longer applies to a key the app ignores. An object sets the mark and <code>null</code> or an array does not. Test: <code>src/lib/data/manifest.test.ts</code> (Task 3).</li>
+      <li><strong>Old bookmarks with a query.</strong> <code>/fzp?seed=1</code> and <code>/lesscars?day=100</code> answer 404 with "Page not found" (<code>sec-design-urls</code>: "with or without a query"). Test: <code>e2e/pages-a11y.spec.ts</code> (Task 1).</li>
+      <li><strong>A stale playback message in timeline mode.</strong> An <code>initPlayback</code> that arrives after <code>openTimeline</code> must not dispose the timeline host. Today it does, at <code>router.ts:89-96</code>. Test: <code>src/lib/sim/worker-router.spec.ts</code> (Task 1).</li>
+      <li><strong><code>verify</code> on an older dataset.</strong> A manifest that names <code>scenarios.lesscars</code> urls gets no HEAD request for them, so a missing less-cars file never fails verify. Test: <code>pipeline/test/verify.test.ts</code> (Task 3).</li>
+    </ol>
+  </section>
+
+  <section id="sec-file-structure">
+    <h2>File structure</h2>
+    <p>The spec's <code>sec-write-delete</code>, <code>sec-write-move</code> and <code>sec-write-edit</code> are the file list. The plan adds two files:</p>
+    <ul>
+      <li><code>pipeline/test/helpers/mini-chain.ts</code> (Task 2): the mini step chain without the plan and the carve. It replaces <code>lesscars-helpers.ts</code> for <code>road-lots-scenario.test.ts</code> and the freeway-land test. The spec leaves "the helper's name and file" to the builder (<code>sec-tests-changed</code>).</li>
+      <li><code>pipeline/test/helpers/import-walk.ts</code> (Task 5): the walk of <code>sec-design-version</code>. It takes the root and <code>PATHS</code> as arguments, as <code>sec-tests-added</code> requires. It sits under <code>pipeline/test/</code> so that no non-test pipeline code imports it.</li>
+    </ul>
+  </section>
+
+  <section id="sec-task-1">
+    <h2>Task 1: Delete the two routes, the app modules and the playback worker mode</h2>
+    <p>Spec: <code>sec-design-urls</code>, <code>sec-design-worker</code>, <code>sec-write-delete</code> (Routes, App modules except <code>src/lib/data/lesscars/</code> and <code>filter-expr</code>), <code>sec-write-edit</code> (worker, router, scenario types, accent.spec), <code>sec-tests</code> (worker-router, types.spec, accent.spec, the four e2e specs). e2e: delete <code>e2e/lesscars.spec.ts</code>.</p>
+    <ul>
+      <li>Delete (<code>git rm</code>): <code>src/routes/fzp/**</code>, <code>src/routes/lesscars/**</code>, <code>src/lib/lesscars/**</code>, <code>src/lib/sim/lesscars/**</code>, <code>src/lib/fzp/{TimeScrubber.svelte,TimeScrubber.svelte.spec.ts,TimeScrubberHarness.svelte,high-water.svelte.ts,high-water.svelte.spec.ts}</code>, <code>e2e/lesscars.spec.ts</code></li>
+      <li>Modify: <code>src/lib/sim/router.ts</code>, <code>src/lib/sim/worker.ts</code>, <code>src/lib/sim/scenario/types.ts:35,277-279</code>, <code>src/lib/shell/accent.spec.ts:26,151-154</code></li>
+      <li>Test: <code>src/lib/sim/worker-router.spec.ts</code>, <code>src/lib/sim/scenario/types.spec.ts:33,206</code>, <code>e2e/{pages-a11y,targets,sim-citywide,sim}.spec.ts</code></li>
+    </ul>
+    <p><strong>Interfaces</strong></p>
+    <ul>
+      <li>Consumes: nothing from other tasks.</li>
+      <li>Produces: <code>RouterDeps</code> and <code>WorkerRequest</code>/<code>WorkerResponse</code> exactly as <code>sec-design-worker</code> shows; a module-level <code>type WorkerMode = 'editor' | 'scenario' | 'timeline'</code> in <code>router.ts</code> (not exported, as L1 shows it). After this task no file under <code>src/</code> or <code>e2e/</code> imports <code>src/lib/data/lesscars</code> or <code>src/lib/map/filter-expr.ts</code>.</li>
+    </ul>
+    <ol>
+      <li id="t1-s1"><input type="checkbox"> Write the failing router tests in <code>worker-router.spec.ts</code> (beside the kept cases):
+        <pre><code data-lang="ts">it('ignores an unknown message such as initPlayback or playbackCard: nothing posted, no host touched', () =&gt; {
+  const t = setup();
+  t.send({ type: 'initPlayback', rev: 3, manifest: {}, plan: {}, sites: {} }, { type: 'playbackCard', reqId: 1, projectId: 'x', day: 5 });
+  expect(t.log).toEqual([]);
+  expect(t.posted).toEqual([]);
+  expect(t.created()).toBe(0);
+});
+// inside describe('timeline mode')
+it('an initPlayback after openTimeline leaves the timeline host alone', () =&gt; {
+  const t = setup();
+  t.send(openTimeline);
+  t.log.length = 0;
+  t.send({ type: 'initPlayback' }, setPolicy);
+  expect(t.log).toEqual(['timeline:setPolicy']);
+  expect(t.posted).toEqual([]);
+});</code></pre>
+      </li>
+      <li id="t1-s2"><input type="checkbox"> Run them and see them fail (today <code>initPlayback</code> logs <code>editor:dispose</code>, and <code>playbackCard</code> posts a null card):
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/sim/worker-router.spec.ts</code></pre>
+      </li>
+      <li id="t1-s3"><input type="checkbox"> Edit <code>router.ts</code>, <code>worker.ts</code> and <code>scenario/types.ts</code> as <code>sec-write-edit</code> says. The <code>default: never</code> branch (<code>router.ts:213-216</code>) stays: once the playback types are gone it is what ignores an unknown type. In <code>worker-router.spec.ts</code>, delete what <code>sec-tests-deleted</code> lists (<code>:5</code> import, <code>:13</code> <code>PlaybackResponse</code>, <code>:42-48</code>, <code>:238-241</code>, <code>:328-435</code>, <code>:455-466</code>) and reduce "init, initScenario and initPlayback dispose the timeline host" (<code>:468-476</code>) to <code>init</code> and <code>initScenario</code>. Edit <code>types.spec.ts:33,206</code>.</li>
+      <li id="t1-s4"><input type="checkbox"> <code>git rm -r</code> the route, module and e2e files listed above. Edit <code>accent.spec.ts</code> (<code>SCANNED</code> keeps <code>...CHROME_FILES</code> and <code>RadiusPopover.svelte</code>; delete the test at <code>:151-154</code>).</li>
+      <li id="t1-s5"><input type="checkbox"> Edit the e2e specs. <code>targets.spec.ts</code>: <code>:2</code>, <code>:10</code> and <code>:506-515</code>. <code>sim-citywide.spec.ts</code>: <code>:2</code> and <code>:125-137</code>. <code>sim.spec.ts</code>: <code>:1</code>, <code>:235</code> and <code>:237-243</code>. <code>pages-a11y.spec.ts</code>: <code>MAP</code> becomes <code>new Set(['/', '/sim'])</code>; the 404 loop at <code>:30</code> becomes <code>['/about', '/no-such-page', '/fzp', '/lesscars']</code>, every path but <code>/about</code> expecting 404, plus <code>await expect(page.getByRole('heading', { name: 'Page not found' })).toBeVisible()</code> for the 404s. Add one test for Review focus 3:
+        <pre><code data-lang="ts">for (const path of ['/fzp?seed=1', '/lesscars?day=100']) {
+  test(`${path} answers 404 with the root error page`, async ({ page }) =&gt; {
+    const res = await page.goto(path);
+    expect(res?.status()).toBe(404);
+    await expect(page.getByRole('heading', { name: 'Page not found' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Go to the home page' })).toBeVisible();
+  });
+}</code></pre>
+      </li>
+      <li id="t1-s6"><input type="checkbox"> Confirm that nothing outside the deleted directories still imports them. Grep for <code>from '[^']*(lesscars|TimeScrubber|high-water)</code> in <code>src/**/*.{ts,svelte}</code> and <code>e2e/**/*.ts</code>, excluding <code>src/lib/data/lesscars/**</code>. Expected: no hits.</li>
+      <li id="t1-s7"><input type="checkbox"> Run the unit projects, lint and check:
+        <pre><code data-lang="sh">npm run test:unit
+npm run lint
+npm run check</code></pre>
+        Expected: all pass, and <code>svelte-check</code> reports 0 errors.</li>
+      <li id="t1-s8"><input type="checkbox"> Run the four changed e2e specs (Project note 1 first):
+        <pre><code data-lang="sh">lsof -nP -iTCP:4173 -sTCP:LISTEN
+npx playwright test e2e/pages-a11y.spec.ts e2e/targets.spec.ts e2e/sim-citywide.spec.ts e2e/sim.spec.ts --repeat-each=5 --retries=0</code></pre>
+        Expected: all pass, with no new preview-server stderr.</li>
+      <li id="t1-s9"><input type="checkbox"> Commit, then check timing:
+        <pre><code data-lang="sh">git add -A src e2e
+git commit -m "refactor: remove /fzp, /lesscars and the playback worker mode"
+npx chreode timing-check --head HEAD</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-2">
+    <h2>Task 2: Remove the less-cars pipeline</h2>
+    <p>Spec: <code>sec-design-pipeline</code>, <code>sec-write-delete</code> (Pipeline, Mini fixture, and <code>src/lib/data/lesscars/</code>), <code>sec-write-edit</code> (Pipeline code, except the catalog move, <code>PATHS</code> and the manifest schema; <code>.prettierignore</code>), <code>sec-tests</code> (pipeline deletions; tiles, doctor and cli.test). The catalog stays at its old path in this task, read through a trimmed <code>pipeline/lesscars-config.ts</code> that holds only <code>LESSCARS_FREEWAY_LAND_JSON</code> and its <code>PIPELINE_DIR</code>, and through <code>pipeline/lib/lesscars/freeway-land.ts</code>. Task 4 moves both.</p>
+    <ul>
+      <li>Delete: every pipeline and mini-fixture file in <code>sec-write-delete</code> except <code>pipeline/lesscars-config.ts</code> (trimmed instead). Also delete <code>src/lib/data/lesscars/**</code>, <code>pipeline/test/lesscars-helpers.ts</code> and <code>pipeline/test/lesscars-doc.ts</code>.</li>
+      <li>Modify: <code>pipeline/cli.ts:16-18,242-290</code>, <code>pipeline/config.ts:152-156,228-230,296-297</code>, <code>pipeline/steps/build.ts</code> (<code>:36-48</code> imports, <code>:349-373</code>, <code>:390-404</code>, <code>:421</code>, <code>:436</code>), <code>pipeline/steps/tiles.ts:9-12,198-232</code>, <code>pipeline/steps/manifest.ts:5,33-34,89-97</code>, <code>pipeline/steps/check.ts:34,68-72,356,854-855</code>, <code>pipeline/steps/fixture.ts:21-23,33-35,45-47,181-184</code>, <code>pipeline/steps/doctor.ts:121-132</code>, <code>pipeline/lib/scenario-files.ts:13-21</code>, and comments in <code>pipeline/lib/{scenario-eligibility,road-lots,sb79}.ts</code>, <code>pipeline/sources/{datasf,normalise}.ts</code> and <code>pipeline/sql/55_road_lots.sql:32</code>. Remove <code>.prettierignore:22-23</code>.</li>
+      <li>Create: <code>pipeline/test/helpers/mini-chain.ts</code>, <code>pipeline/test/cli.test.ts</code></li>
+      <li>Test: <code>pipeline/test/{golden,invariants,manifest,tiles,doctor,road-lots-scenario,lesscars-freeway-land}.test.ts</code></li>
+    </ul>
+    <p><strong>Interfaces</strong></p>
+    <ul>
+      <li>Consumes: Task 1, which leaves no importer of <code>src/lib/data/lesscars</code> outside the pipeline.</li>
+      <li>Produces: <code>writeBasemap(rawFile: string, outDir: string): void</code> in <code>pipeline/steps/tiles.ts</code>. It is a synchronous <code>copyFileSync</code> into <code>outDir/basemap.pmtiles</code> after <code>mkdirSync(outDir, { recursive: true })</code>. Builder's call: void, because the report no longer takes a basemap timing or count. <code>buildManifest</code> loses its <code>lesscars</code> argument. <code>InvariantProfile</code> loses <code>lesscarsSeeds</code>.</li>
+      <li>Produces: in <code>pipeline/test/helpers/mini-chain.ts</code>, <code>export interface MiniChain</code> with the fields of today's <code>LessCarsMini</code> (<code>pipeline/test/lesscars-helpers.ts:30-42</code>) and <code>export function miniChain(): Promise&lt;MiniChain&gt;</code>, memoised. It runs the chain of <code>lesscarsMini</code> (<code>:67-113</code>) without <code>carveMini</code>: <code>runSql</code>, <code>writeScenario</code> with the fixture catalog, <code>writeNeighborhoods</code>, <code>writeTransit</code>, <code>writePolicy</code>. Its temp dir prefix is <code>sfh-mini-chain-</code>.</li>
+    </ul>
+    <ol>
+      <li id="t2-s1"><input type="checkbox"> Write the failing tests. Create <code>pipeline/test/cli.test.ts</code>:
+        <pre><code data-lang="ts">it('an unknown command such as lesscars-cnns gets the usage, naming no lesscars command, and exit 2', () =&gt; {
+  const r = spawnSync(process.execPath, ['--import', 'tsx', join(REPO_ROOT, 'pipeline/cli.ts'), 'lesscars-cnns'], { encoding: 'utf8' });
+  expect(r.status).toBe(2);
+  expect(r.stderr.startsWith('Usage:')).toBe(true);
+  expect(r.stderr).not.toContain('lesscars');
+});</code></pre>
+        Builder's call: <code>node --import tsx</code> is what <code>npx tsx</code> runs, without npx's resolution overhead. <code>REPO_ROOT</code> is <code>resolve(import.meta.dirname, '../..')</code>. In <code>doctor.test.ts:49-50</code>, assert <code>checks.some((c) =&gt; c.name === 'node:sqlite')</code> is <code>false</code>. In <code>tiles.test.ts:373-380</code>, call <code>writeBasemap(raw, out)</code> and keep the byte and z12 assertions.</li>
+      <li id="t2-s2"><input type="checkbox"> Run them and see them fail. <code>cli.test</code> fails because <code>stderr</code> contains <code>lesscars</code>, and <code>doctor.test</code> fails on the <code>node:sqlite</code> check. The two-argument <code>writeBasemap</code> call may pass at runtime, because the missing <code>split</code> is <code>undefined</code>; the type error shows up in <code>npm run check</code>.
+        <pre><code data-lang="sh">npx vitest --run --project pipeline pipeline/test/cli.test.ts pipeline/test/doctor.test.ts pipeline/test/tiles.test.ts</code></pre>
+      </li>
+      <li id="t2-s3"><input type="checkbox"> Delete the files with <code>git rm</code>. Edit the pipeline code as <code>sec-write-edit</code> says. In <code>build.ts</code>, the <code>protomaps-basemap</code> lock lookup and its <code>BuildError</code> (<code>:353-355</code>) stay; the build then calls <code>writeBasemap(basemapRaw, outDir)</code> where the split was. Rewrite the catalog comment at <code>build.ts:223-225</code> to what is true now: the catalog marks its parcels ineligible, and <code>55_road_lots.sql</code> reads it. Drop the "until Plan B curates it" clause, since the live catalog has 559 parcels. Trim <code>pipeline/lesscars-config.ts</code> to <code>LESSCARS_FREEWAY_LAND_JSON</code>.</li>
+      <li id="t2-s4"><input type="checkbox"> Edit the pipeline tests. Create <code>mini-chain.ts</code> and point <code>road-lots-scenario.test.ts</code> and <code>lesscars-freeway-land.test.ts</code> at <code>miniChain</code>, keeping every assertion. In the freeway-land test, delete the <code>lesscars-freeway-land candidates</code> describe (<code>:157</code> on). In <code>invariants.test.ts</code>, delete the V35 describe (<code>:1238-1350</code>). In <code>manifest.test.ts</code>, delete <code>:102-121</code>. In <code>tiles.test.ts</code>, delete <code>:382-457</code> and the less-cars imports. In <code>golden.test.ts</code>, delete only the less-cars imports, files and timeline dump (<code>:12</code>, <code>:14</code>, <code>:41-43</code>, <code>:51</code>, <code>:86-88</code>, <code>:210</code>, <code>:663</code>, <code>:672-677</code>); its new assertions come in Task 6.</li>
+      <li id="t2-s5"><input type="checkbox"> Run the pipeline project:
+        <pre><code data-lang="sh">npm run pipeline -- doctor
+npm run test:pipeline</code></pre>
+        Expected: <code>doctor</code> passes, with no <code>node:sqlite</code> line. Every pipeline test file passes except <code>golden.test.ts</code>, whose fixture and golden comparisons fail because they still hold the less-cars outputs (see the warning in Overview). If any other file fails, stop and report it.</li>
+      <li id="t2-s6"><input type="checkbox"> Confirm that no remaining reference names a deleted module. Use Grep in <code>pipeline/</code> and <code>src/</code> for <code>steps/lesscars|lib/lesscars/(?!freeway-land)|data/lesscars|pmtiles-rewrite|check-lesscars|LESSCARS_(?!FREEWAY_LAND_JSON)|lesscarsSeeds|V35</code> (with PCRE lookahead), excluding <code>pipeline/test/fixtures/mini/golden/**</code>. Expected: no hits.</li>
+      <li id="t2-s7"><input type="checkbox"> Run unit tests, lint and check:
+        <pre><code data-lang="sh">npm run test:unit
+npm run lint
+npm run check</code></pre>
+      </li>
+      <li id="t2-s8"><input type="checkbox"> Commit, then check timing:
+        <pre><code data-lang="sh">git add -A pipeline src/lib/data .prettierignore
+git commit -m "refactor(pipeline): remove the less-cars step, commands, V35 and the basemap split"
+npx chreode timing-check --head HEAD</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-3">
+    <h2>Task 3: The manifest's <code>splitRoads</code>, the map style and the palette</h2>
+    <p>Spec: <code>sec-design-manifest</code>, <code>sec-design-older</code>, <code>sec-design-map</code>, <code>sec-write-edit</code> (manifest.ts, style.ts, palette.ts), <code>sec-tests</code> (manifest.test, style.spec, palette.spec, data-local.spec, upload.test, verify.test). Delete <code>src/lib/map/filter-expr.ts</code> and <code>filter-expr.spec.ts</code>.</p>
+    <ul>
+      <li>Modify: <code>src/lib/data/manifest.ts:43-111,160-164</code>, <code>src/lib/map/style.ts:171-215,351-352</code>, <code>src/lib/map/palette.ts</code> (<code>:43-54</code>, <code>:104-115</code>, <code>:163-174</code> and the <code>TOKENS</code> comment)</li>
+      <li>Test: <code>src/lib/data/manifest.test.ts</code>, <code>src/lib/sim/manifest.spec.ts</code>, <code>src/lib/map/style.spec.ts</code>, <code>src/lib/map/palette.spec.ts</code>, <code>scripts/data-local.spec.ts</code>, <code>pipeline/test/upload.test.ts</code>, <code>pipeline/test/verify.test.ts</code></li>
+    </ul>
+    <p><strong>Interfaces</strong></p>
+    <ul>
+      <li>Consumes: Task 2. No pipeline code reads <code>scenarios.lesscars</code> any more, and <code>buildManifest</code> never writes it.</li>
+      <li>Produces: <code>Manifest</code> gains <code>splitRoads?: true</code> and loses <code>scenarios.lesscars</code>. <code>protomapsLayers(theme: Theme, splitRoads: boolean)</code> (private), called from <code>buildStyle</code> as <code>protomapsLayers(theme, manifest.splitRoads === true)</code>. <code>buildStyle</code> and <code>themePaintDiff</code> keep their signatures.</li>
+    </ul>
+    <aside data-kind="decision"><strong>Builder's call: how <code>ManifestSchema</code> derives the mark</strong> Zod strips unknown keys, so the mark has to be set from the raw JSON before the object schema runs. Use <code>export const ManifestSchema = z.preprocess(markSplitRoads, ManifestBaseSchema.superRefine(...))</code>, with <code>splitRoads: z.literal(true).optional()</code> added to <code>ManifestBaseSchema</code>. <code>function markSplitRoads(raw: unknown): unknown</code> returns a shallow copy of a plain-object <code>raw</code>, without any raw <code>splitRoads</code>, and with <code>splitRoads: true</code> exactly when <code>raw.scenarios.lesscars</code> is a non-null, non-array object. It returns any other <code>raw</code> unchanged. <code>parseManifest</code> and every direct <code>ManifestSchema.parse</code> then agree, <code>Manifest = z.infer&lt;typeof ManifestSchema&gt;</code> carries <code>splitRoads?: true</code>, and <code>ManifestSourcesSchema</code> (a <code>pick</code> that leaves the mark out) does not change. One consequence: re-parsing a parsed manifest drops the mark. No app path does that; <code>loadManifest</code> parses once (<code>src/lib/sim/manifest.ts:11</code>).</aside>
+    <ol>
+      <li id="t3-s1"><input type="checkbox"> Write the failing tests. In <code>manifest.test.ts</code>, turn "accepts scenarios.lesscars" (<code>:169-180</code>) into the tests below. <code>older</code> is the file's valid manifest plus the four <code>lesscars</code> urls, and the full-manifest case at <code>:236-240</code> loses its <code>lesscars</code> key.
+        <pre><code data-lang="ts">it('an older manifest with scenarios.lesscars parses, without the key and without its files', () =&gt; {
+  const m = parseManifest(older);
+  expect(m.scenarios).not.toHaveProperty('lesscars');
+  expect(manifestFiles(m).filter((f) =&gt; f.key.startsWith('scenarios.lesscars'))).toEqual([]);
+});
+it('splitRoads: true exactly when the raw manifest has a scenarios.lesscars object', () =&gt; {
+  expect(parseManifest(older).splitRoads).toBe(true);
+  expect(parseManifest(valid)).not.toHaveProperty('splitRoads');
+  expect(parseManifest({ ...valid, splitRoads: true })).not.toHaveProperty('splitRoads');
+});
+it('an odd lesscars block still parses (Review focus 2)', () =&gt; {
+  const at = (lesscars: unknown) =&gt; parseManifest({ ...valid, scenarios: { ...valid.scenarios, lesscars } });
+  expect(at({ plan: '/data/2026-11-02-39fbf039/scenarios/lesscars/plan.json' }).splitRoads).toBe(true);
+  expect(at({}).splitRoads).toBe(true);
+  expect(at(null)).not.toHaveProperty('splitRoads');
+  expect(at([])).not.toHaveProperty('splitRoads');
+});</code></pre>
+        In <code>src/lib/sim/manifest.spec.ts</code> (Review focus 1), add "loadManifest keeps the older-dataset mark": a fake fetch serves an older manifest for the plan's version, and <code>(await loadManifest(v, cur, fetch)).manifest.splitRoads</code> is <code>true</code>. In <code>style.spec.ts</code>, the <code>roads_lc clones</code> describe (<code>:253-286</code>) builds from <code>const split = { ...base, splitRoads: true as const }</code>, with its assertions unchanged. Add:
+        <pre><code data-lang="ts">for (const theme of themes)
+  it(`${theme}: without splitRoads no layer ends in __lc or reads roads_lc`, () =&gt; {
+    const s = buildStyle(base, theme);
+    expect(s.layers.filter((l) =&gt; l.id.endsWith('__lc'))).toEqual([]);
+    expect(s.layers.filter((l) =&gt; (l as { 'source-layer'?: string })['source-layer'] === 'roads_lc')).toEqual([]);
+  });</code></pre>
+        In <code>palette.spec.ts</code>, delete <code>:27-38</code> and <code>:106-124</code>, add <code>expect(ALL.filter((n) =&gt; n.startsWith('lc-'))).toEqual([])</code> as "no token name starts with lc-", and make the pin test (<code>:341-347</code>) filter only <code>tl-halo-*</code>. In <code>data-local.spec.ts</code>, keep the <code>lesscars</code> block at <code>:26-31</code> and drop the <code>scenarios/lesscars/*</code> paths from the expected list at <code>:52-55</code>. In <code>verify.test.ts</code>, replace "HEAD-checks the lesscars urls" (<code>:71-83</code>) with "does not HEAD-check the lesscars urls of an older manifest" (Review focus 5). Its manifest is built from raw JSON through <code>parseManifest</code> with the four urls, and it asserts that no <code>seen</code> entry contains <code>/scenarios/lesscars/</code>. In <code>upload.test.ts</code>, the dataset and manifest it builds lose their less-cars files (<code>:43-45</code>, <code>:84-89</code>), and the expected list loses <code>:257-258</code>.</li>
+      <li id="t3-s2"><input type="checkbox"> Run them and see them fail. The <code>splitRoads</code> tests, the no-<code>__lc</code> test, the no-<code>lc-</code> test, the data-local list and the verify test fail.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/data/manifest.test.ts src/lib/sim/manifest.spec.ts src/lib/map/style.spec.ts src/lib/map/palette.spec.ts scripts/data-local.spec.ts
+npx vitest --run --project pipeline pipeline/test/verify.test.ts pipeline/test/upload.test.ts</code></pre>
+      </li>
+      <li id="t3-s3"><input type="checkbox"> Implement. Edit <code>manifest.ts</code> as the decision above says, and remove the four <code>add</code> lines at <code>:160-164</code>. In <code>style.ts</code>, make <code>protomapsLayers</code> add a clone only when <code>splitRoads</code>, and replace the comment above the constants with the one in <code>sec-design-map</code>. In <code>palette.ts</code>, remove the 12 <code>lc-*</code> names and values, the <code>lc-*</code> clause of the <code>TOKENS</code> comment and the comments that name <code>/lesscars</code>. <code>git rm src/lib/map/filter-expr.ts src/lib/map/filter-expr.spec.ts</code>.</li>
+      <li id="t3-s4"><input type="checkbox"> Run the same tests again and see them pass. Then run the full suites:
+        <pre><code data-lang="sh">npm run test:unit
+npm run test:pipeline
+npm run lint
+npm run check</code></pre>
+        Expected: unit tests green; pipeline tests red only in <code>golden.test.ts</code>.</li>
+      <li id="t3-s5"><input type="checkbox"> Run the E9 map goldens once on the old fixture. Its manifest has <code>scenarios.lesscars</code>, so the clones stay on and nothing may change:
+        <pre><code data-lang="sh">lsof -nP -iTCP:4173 -sTCP:LISTEN
+npx playwright test e2e/map.spec.ts</code></pre>
+      </li>
+      <li id="t3-s6"><input type="checkbox"> Commit, then check timing:
+        <pre><code data-lang="sh">git add -A src scripts pipeline/test
+git commit -m "refactor(map): mark older split-roads datasets in the manifest; drop lc tokens and filter-expr"
+npx chreode timing-check --head HEAD</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-4">
+    <h2>Task 4: Move the freeway-land catalog</h2>
+    <p>Spec: <code>sec-design-catalog</code>, <code>sec-write-move</code>, the <code>scenario.ts</code> provenance sentence, <code>pipeline/test/fixtures/mini/README.md</code> (Freeway land section and <code>:239-244</code>), <code>sec-tests-changed</code> (freeway-land.test, helpers, road-lots-sql, scenario-quality, invariants). This task changes no behaviour except the one sentence. Delete the trimmed <code>pipeline/lesscars-config.ts</code>.</p>
+    <ul>
+      <li>Move (<code>git mv</code>): <code>pipeline/enrichment/lesscars/freeway-land.json</code> to <code>pipeline/enrichment/freeway-land.json</code>; <code>pipeline/test/fixtures/mini/enrichment/lesscars-freeway-land.json</code> to <code>…/mini/enrichment/freeway-land.json</code>; <code>pipeline/lib/lesscars/freeway-land.ts</code> to <code>pipeline/lib/freeway-land.ts</code>; <code>pipeline/test/lesscars-freeway-land.test.ts</code> to <code>pipeline/test/freeway-land.test.ts</code></li>
+      <li>Modify: <code>pipeline/config.ts</code> (add <code>FREEWAY_LAND_JSON</code>, <code>import path from 'node:path'</code>, <code>const PIPELINE_DIR = import.meta.dirname</code>), <code>pipeline/cli.ts:23-24,149</code>, <code>pipeline/steps/build.ts</code> (catalog import and <code>:226-228</code>), <code>pipeline/steps/scenario.ts:40,409</code>, <code>pipeline/lib/freeway-land.ts</code> (header comment; <code>'../../../src/lib/data/parcel'</code> becomes <code>'../../src/lib/data/parcel'</code>), <code>pipeline/test/{helpers,road-lots-sql.test,scenario-quality.test,invariants.test}.ts</code>, <code>pipeline/test/helpers/mini-chain.ts</code>, <code>pipeline/test/fixtures/mini/README.md</code></li>
+    </ul>
+    <p><strong>Interfaces</strong></p>
+    <ul>
+      <li>Consumes: <code>miniChain()</code> from Task 2.</li>
+      <li>Produces: <code>FREEWAY_LAND_JSON</code> in <code>pipeline/config.ts</code>, and the module <code>pipeline/lib/freeway-land.ts</code> with the exports listed in <code>sec-design-catalog</code>. After this task, no file under <code>pipeline/lib/lesscars/</code> or <code>pipeline/enrichment/lesscars/</code> exists and nothing names <code>LESSCARS_</code>.</li>
+    </ul>
+    <ol>
+      <li id="t4-s1"><input type="checkbox"> Make the moves with <code>git mv</code>. In <code>freeway-land.test.ts</code>, read <code>FREEWAY_LAND_JSON.fixture</code> and import from <code>../lib/freeway-land</code>, adding at the top of the catalog describe:
+        <pre><code data-lang="ts">it('FREEWAY_LAND_JSON names the moved catalog files', () =&gt; {
+  expect(relative(REPO_ROOT, FREEWAY_LAND_JSON.live)).toBe('pipeline/enrichment/freeway-land.json');
+  expect(relative(REPO_ROOT, FREEWAY_LAND_JSON.fixture)).toBe('pipeline/test/fixtures/mini/enrichment/freeway-land.json');
+  expect(readFreewayLand(FREEWAY_LAND_JSON.live)?.segments).toHaveLength(11);
+  expect(freewayLandSet(readFreewayLand(FREEWAY_LAND_JSON.live)).size).toBe(559);
+});</code></pre>
+      </li>
+      <li id="t4-s2"><input type="checkbox"> Run it and see it fail on the missing export:
+        <pre><code data-lang="sh">npx vitest --run --project pipeline pipeline/test/freeway-land.test.ts</code></pre>
+      </li>
+      <li id="t4-s3"><input type="checkbox"> Add <code>FREEWAY_LAND_JSON</code> as <code>sec-design-catalog</code> shows. Switch every importer listed above. In <code>scenario.ts:409</code>, change only <code>pipeline/enrichment/lesscars/freeway-land.json</code> to <code>pipeline/enrichment/freeway-land.json</code>. Rewrite the mini README's Freeway land section and <code>:239-244</code> as <code>sec-write-edit</code> says. <code>git rm pipeline/lesscars-config.ts</code>.</li>
+      <li id="t4-s4"><input type="checkbox"> Check that the moved catalogs are byte for byte:
+        <pre><code data-lang="sh">npx tsx pipeline/.cache/tmp/sha256.ts pipeline/enrichment/freeway-land.json pipeline/test/fixtures/mini/enrichment/freeway-land.json</code></pre>
+        Expected: <code>d1b301c7233269565e923031dd3f79d0d5185c09b742fae061e338ef0394908a  freeway-land.json</code> and <code>caf46491cf545f6fcded8eae16f88fd185fbd055d9fde7d766a6d3607cafcf58  freeway-land.json</code>.</li>
+      <li id="t4-s5"><input type="checkbox"> Confirm that nothing still names the old paths. Grep in <code>pipeline/</code>, <code>src/</code> and <code>e2e/</code> for <code>LESSCARS_|lib/lesscars|enrichment/lesscars|lesscars-freeway-land</code>, excluding <code>pipeline/test/fixtures/mini/golden/**</code>, should return nothing. <code>git status</code> should show <code>pipeline/lib/lesscars/</code> and <code>pipeline/enrichment/lesscars/</code> gone.</li>
+      <li id="t4-s6"><input type="checkbox"> Run the suites:
+        <pre><code data-lang="sh">npm run test:pipeline
+npm run lint
+npm run check</code></pre>
+        Expected: red only in <code>golden.test.ts</code>. Lot 19's freeway-land tests (<code>:247-262</code>) read the committed <code>fixture-0</code> and still pass.</li>
+      <li id="t4-s7"><input type="checkbox"> Commit, then check timing:
+        <pre><code data-lang="sh">git add -A pipeline
+git commit -m "refactor(pipeline): move the freeway-land catalog out of less cars"
+npx chreode timing-check --head HEAD</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-5">
+    <h2>Task 5: <code>PATHS</code>, the import walk and the chreode rules</h2>
+    <p>Spec: <code>sec-design-version</code>; <code>sec-write-edit</code> (version.ts, chreode.config.ts and its two lists); <code>sec-tests</code> (version-paths.test, version.test, temp-repo).</p>
+    <ul>
+      <li>Create: <code>pipeline/test/helpers/import-walk.ts</code>, <code>pipeline/test/version-paths.test.ts</code></li>
+      <li>Modify: <code>pipeline/lib/version.ts:33-53</code>, <code>chreode.config.ts:14-30</code>, <code>pipeline/test/helpers/temp-repo.ts</code>, <code>pipeline/test/version.test.ts:90-133</code></li>
+    </ul>
+    <p><strong>Interfaces</strong></p>
+    <ul>
+      <li>Consumes: Tasks 2 and 4. After them, <code>pipeline/cli.ts</code> reaches no less-cars file and no scenario-engine module.</li>
+      <li>Produces: <code>export const PATHS: readonly string[]</code> in <code>version.ts</code>, with exactly the entries in <code>sec-design-version</code>.</li>
+      <li>Produces: in <code>import-walk.ts</code>, <code>export function reachedModules(root: string, entries: readonly string[]): { modules: Set&lt;string&gt;; unresolved: string[] }</code>. Module paths are repo-relative and posix. Each <code>unresolved</code> item is <code>`${specifier} in ${file}`</code>.</li>
+      <li>Produces: <code>export function pathsProblems(root: string, entry: string, paths: readonly string[]): string[]</code>. Its messages are <code>module outside PATHS: &lt;path&gt;</code>, <code>PATHS entry reaches no module: &lt;entry&gt;</code> and <code>unresolved import: &lt;specifier&gt; in &lt;file&gt;</code>. Builder's call: read specifiers with <code>ts.preProcessFile(text, true, true)</code> from <code>typescript</code>. It reports static imports, type-only imports, <code>export … from</code> and literal <code>import('…')</code>, so the walk needs no hand-written regex. Parse only <code>.ts</code> files; a resolved <code>.json</code> or <code>.svelte</code> is a leaf. Resolution follows <code>sec-design-version</code>.</li>
+    </ul>
+    <ol>
+      <li id="t5-s1"><input type="checkbox"> Write <code>version-paths.test.ts</code>. Each failing case builds its graph in <code>mkdtempSync(join(tmpdir(), 'sfh-walk-'))</code>:
+        <pre><code data-lang="ts">it('PATHS covers exactly what pipeline/cli.ts imports', () =&gt; {
+  expect(pathsProblems(REPO_ROOT, 'pipeline/cli.ts', PATHS)).toEqual([]);
+});
+it('names a reached module outside PATHS', () =&gt; {
+  // pipeline/cli.ts: import { a } from '../src/lib/x/a.js'; src/lib/x/a.ts exists
+  expect(pathsProblems(dir, 'pipeline/cli.ts', ['pipeline'])).toEqual(['module outside PATHS: src/lib/x/a.ts']);
+});
+it('names a PATHS entry no import reaches', () =&gt; {
+  expect(pathsProblems(dir, 'pipeline/cli.ts', ['pipeline', 'src/lib/x', 'src/lib/y'])).toEqual(['PATHS entry reaches no module: src/lib/y']);
+});
+it('names a relative or $lib specifier that resolves to no file', () =&gt; {
+  // pipeline/cli.ts also: import type { B } from '$lib/missing';
+  expect(pathsProblems(dir2, 'pipeline/cli.ts', ['pipeline'])).toEqual(['unresolved import: $lib/missing in pipeline/cli.ts']);
+});</code></pre>
+        In <code>version.test.ts</code>, the table at <code>:90-98</code> loses <code>sim/scenario</code>, <code>sim/levers</code> and <code>scoreboard</code> and gains <code>['src/lib/config.ts', 'src/lib/config.ts']</code>. Add:
+        <pre><code data-lang="ts">it.each(['src/lib/sim/scenario/engine.ts', 'src/lib/sim/levers/apply.ts', 'src/lib/scoreboard/index.ts'])(
+  'codeTreeHash ignores a change to %s', async (file) =&gt; {
+    const { dir, git } = tempRepo();
+    const clean = await codeTreeHash(dir);
+    writeFileSync(join(dir, file), 'export const changed = 1;\n');
+    git('commit', '-q', '-am', 'change');
+    expect(await codeTreeHash(dir)).toBe(clean);
+  });</code></pre>
+        <code>temp-repo.ts</code> also writes and commits <code>src/lib/config.ts</code> (<code>'export const REPO_URL = "x";\n'</code>).</li>
+      <li id="t5-s2"><input type="checkbox"> Run them and see them fail. <code>PATHS</code> is not exported, the walk is missing, and the scenario, levers and scoreboard changes still move the hash.
+        <pre><code data-lang="sh">npx vitest --run --project pipeline pipeline/test/version-paths.test.ts pipeline/test/version.test.ts</code></pre>
+      </li>
+      <li id="t5-s3"><input type="checkbox"> Implement <code>import-walk.ts</code>. Export <code>PATHS</code> with the new list and a comment that states L1's rule and names <code>pipeline/test/version-paths.test.ts</code>. <code>EXCLUDE_PATHS</code> and <code>BOXES_CODE_PATHS</code> do not change.</li>
+      <li id="t5-s4"><input type="checkbox"> Run again. Every case passes except "codeTreeHash is unchanged by the refactor" (<code>:119-133</code>). Take the three hashes it reports from the new <code>PATHS</code>, write them in, and run again. All pass.</li>
+      <li id="t5-s5"><input type="checkbox"> Measure the second chreode list. Write <code>pipeline/.cache/tmp/test-reach.ts</code>: it calls <code>reachedModules(REPO_ROOT, &lt;every .ts file under pipeline/test/&gt;)</code> and prints the sorted modules outside <code>pipeline/</code> that no <code>PATHS</code> entry covers.
+        <pre><code data-lang="sh">npx tsx pipeline/.cache/tmp/test-reach.ts</code></pre>
+        Expected: the files of the spec's second list, with every file under <code>src/lib/sim/scenario/</code>, <code>src/lib/sim/levers/</code> and <code>src/lib/scoreboard/</code> standing for its <code>/**</code> entry. If the output differs from the spec's list, stop and report it. Do not edit the list to match.</li>
+      <li id="t5-s6"><input type="checkbox"> Edit <code>chreode.config.ts</code>. The dataset rule's <code>match</code> becomes the first list in <code>sec-write-edit</code>. A new rule with the second list goes right after it, before <code>pipeline/**</code>, with triggers <code>['lint', 'check', 'unit', 'e2e', 'pipeline']</code> and a comment saying it is what the pipeline's tests import outside <code>PATHS</code>. Rewrite the comment at <code>:14-16</code> so it names <code>PATHS</code>.</li>
+      <li id="t5-s7"><input type="checkbox"> Run the suites:
+        <pre><code data-lang="sh">npm run test:pipeline
+npx vitest --run --project server scripts
+npm run lint
+npm run check</code></pre>
+        Expected: pipeline red only in <code>golden.test.ts</code>. <code>scripts/dataset-version.spec.ts</code> passes.</li>
+      <li id="t5-s8"><input type="checkbox"> Commit, then check timing:
+        <pre><code data-lang="sh">git add -A pipeline chreode.config.ts
+git commit -m "build(pipeline): hold PATHS to the pipeline's imports with a walk test"
+npx chreode timing-check --head HEAD</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-6">
+    <h2>Task 6: Regenerate the fixture and prove L1</h2>
+    <p>Delivers row L1</p>
+    <p>Spec: <code>sec-design-dataset</code>, <code>sec-design-proofs</code>, <code>sec-tests-added</code> (golden.test), <code>sec-tests-changed</code> (golden.test manifest case), the E9 note.</p>
+    <ul>
+      <li>Modify: <code>pipeline/test/golden.test.ts</code></li>
+      <li>Regenerated: <code>e2e/fixtures/data/fixture-0/**</code> and <code>pipeline/test/fixtures/mini/golden/**</code>, by <code>fixture --update-golden</code> only. Never edit them by hand.</li>
+    </ul>
+    <p><strong>Interfaces</strong></p>
+    <ul>
+      <li>Consumes: Tasks 1 to 5. The build writes no less-cars output and copies the basemap; the catalog path is <code>FREEWAY_LAND_JSON.fixture</code>.</li>
+      <li>Produces: the fixture that later units (<code>finite-funding</code>, <code>game-shell</code>) build on.</li>
+    </ul>
+    <ol>
+      <li id="t6-s1"><input type="checkbox"> Record the "before" hashes from the committed fixture, which no task has regenerated yet:
+        <pre><code data-lang="sh">npx tsx pipeline/.cache/tmp/sha256.ts e2e/fixtures/data/fixture-0/scenarios/fzp/calibration.json e2e/fixtures/data/fixture-0/scenarios/fzp/gross.bin e2e/fixtures/data/fixture-0/scenarios/fzp/parcels.bin e2e/fixtures/data/fixture-0/scenarios/fzp/policy.bin e2e/fixtures/data/fixture-0/scenarios/fzp/projects.json</code></pre>
+        Expected: the five values in <code>sec-design-proofs</code> (<code>158b54ec…</code>, <code>cb7c45d7…</code>, <code>63b50eea…</code>, <code>90f18e4f…</code>, <code>fe0fc5a4…</code>).</li>
+      <li id="t6-s2"><input type="checkbox"> Write the failing golden tests. The manifest test at <code>:649-680</code> becomes "names the three scenario files, policy.bin and gross.bin in the manifest": it keeps its existing url assertions and adds <code>expect(raw.scenarios).not.toHaveProperty('lesscars')</code> on the raw JSON of <code>fixture-0/manifest.json</code>. Add:
+        <pre><code data-lang="ts">it('basemap.pmtiles is the locked basemap, byte for byte, and the report has no split count', () =&gt; {
+  expect(readFileSync(join(e2e, 'basemap.pmtiles')).equals(readFileSync(join(MINI, 'raw/protomaps-basemap.pmtiles')))).toBe(true);
+  expect(report.counts).not.toHaveProperty('tiles.basemap_split_changed');
+});
+it('fixture-0 has no less-cars output', () =&gt; {
+  expect(existsSync(join(e2e, 'scenarios/lesscars'))).toBe(false);
+  expect(Object.keys(report.counts).filter((k) =&gt; k.startsWith('lesscars.'))).toEqual([]);
+});</code></pre>
+        <code>e2e</code>, <code>MINI</code> and a parsed <code>report.json</code> are the file's existing fixtures. If the mini raw basemap's file name differs, use the name <code>pipeline/test/fixtures/mini/raw/</code> holds.</li>
+      <li id="t6-s3"><input type="checkbox"> Run them and see them fail on the old fixture:
+        <pre><code data-lang="sh">npx vitest --run --project pipeline pipeline/test/golden.test.ts</code></pre>
+      </li>
+      <li id="t6-s4"><input type="checkbox"> Regenerate (<code>sec-design-dataset</code>):
+        <pre><code data-lang="sh">npm run pipeline -- doctor
+npm run pipeline -- fixture --update-golden</code></pre>
+        Expected: <code>doctor</code> passes, with <code>tippecanoe</code> 2.79.0, <code>pmtiles</code> 1.31.2 and the DuckDB <code>spatial</code> and <code>httpfs</code> extensions. If a tool is missing, stop and report it; do not install anything. <code>fixture</code> exits 0.</li>
+      <li id="t6-s5"><input type="checkbox"> Prove that the decoded parcels changed in one line:
+        <pre><code data-lang="sh">git diff --numstat 8125e557 -- pipeline/test/fixtures/mini/golden/scenarios/fzp/parcels.decoded.json
+git diff -U0 --word-diff 8125e557 -- pipeline/test/fixtures/mini/golden/scenarios/fzp/parcels.decoded.json</code></pre>
+        Expected: <code>1	1	pipeline/test/fixtures/mini/golden/scenarios/fzp/parcels.decoded.json</code>, and one hunk at line 109 reading <code>[-pipeline/enrichment/lesscars/freeway-land.json:-]{+pipeline/enrichment/freeway-land.json:+}</code>. Anything else means lot eligibility moved: stop.</li>
+      <li id="t6-s6"><input type="checkbox"> Prove that the other four scenario files are byte-identical. Re-run the command of step 1. Expected: <code>calibration.json</code>, <code>gross.bin</code>, <code>policy.bin</code> and <code>projects.json</code> show their step-1 values; <code>parcels.bin</code> shows a new value. If any of the four differs, stop.</li>
+      <li id="t6-s7"><input type="checkbox"> Pin <code>parcels.bin</code>. Add "fixture-0 parcels.bin is pinned by sha256": it asserts <code>createHash('sha256').update(readFileSync(join(e2e, 'scenarios/fzp/parcels.bin'))).digest('hex')</code> equals the new value from step 6, written as a literal.</li>
+      <li id="t6-s8"><input type="checkbox"> Check what else the regeneration rewrote. <code>git status</code> should show deleted <code>scenarios/lesscars/*</code> in both trees, the deleted golden <code>scenarios/lesscars/*</code>, and changes to <code>manifest.json</code>, <code>report.json</code>, <code>basemap.pmtiles</code> and <code>scenarios/fzp/parcels.bin</code>, plus any other file the regeneration rewrote (<code>sec-write-edit</code> allows those). Read the <code>git diff</code> of <code>golden/manifest.json</code> and <code>golden/report.json</code>: the only removed keys are the ones <code>sec-design-dataset</code> lists, and the <code>scenario.freeway_land.*</code> counts and the freeway-land warning line remain.</li>
+      <li id="t6-s9"><input type="checkbox"> Run everything the fixture feeds:
+        <pre><code data-lang="sh">npm run test:pipeline
+npm run test:unit
+npm run data:fixture
+lsof -nP -iTCP:4173 -sTCP:LISTEN
+npm run test:e2e
+npm run lint
+npm run check</code></pre>
+        Expected: all green, the E9 goldens of <code>e2e/map.spec.ts:825-877</code> included, and not re-taken (see the note at the end of <code>sec-tests-added</code>). A failing E9 is a defect to find; do not update the screenshots.</li>
+      <li id="t6-s10"><input type="checkbox"> Write the commit message with Write to <code>pipeline/.cache/tmp/commit-msg.txt</code>. Its subject is <code>build(fixture): regenerate fixture-0 without less cars</code>. Its body pastes the output of the two <code>git diff</code> commands in step 5 and the sha256 lines of steps 1 and 6. Then commit and check timing:
+        <pre><code data-lang="sh">git add -A e2e/fixtures/data/fixture-0 pipeline/test/fixtures/mini/golden pipeline/test/golden.test.ts
+git commit -F pipeline/.cache/tmp/commit-msg.txt
+npx chreode timing-check --head HEAD</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-7">
+    <h2>Task 7: Docs</h2>
+    <p>Spec: <code>sec-docs</code>, for <code>docs/dev/pipeline.md</code>, <code>docs/dev/road-lots.md</code> and <code>docs/dev/fzp-mode.md</code>. Do not edit <code>docs/dev/lesscars.md</code> or any other doc (<code>sec-out-of-scope</code>).</p>
+    <aside data-kind="decision"><strong>Builder's call: mentions <code>sec-docs</code> does not list</strong> <code>pipeline.md</code> has further sentences that turn false: <code>:95</code> ("<code>/fzp</code>'s output"), <code>:117</code> ("both /lesscars arms"), <code>:129</code> ("a /lesscars plan can still free it") and <code>:140</code> (the /lesscars arms and <code>notNeighboursOf</code>). Rewrite each to what is true after the removal, under the spec's rule for kept files ("say what is true after the removal"). <code>road-lots.md:338-386</code> ("Lots beside freed sites" and its live build) is a dated record. It stays, with the edits <code>sec-docs</code> names.</aside>
+    <ul>
+      <li>Modify: <code>docs/dev/pipeline.md</code>, <code>docs/dev/road-lots.md</code>, <code>docs/dev/fzp-mode.md</code></li>
+    </ul>
+    <ol>
+      <li id="t7-s1"><input type="checkbox"> Edit the three docs bullet by bullet as <code>sec-docs</code> says, plus the decision above. The dataset-version paragraph lists the eight <code>PATHS</code> entries and names <code>pipeline/test/version-paths.test.ts</code>.</li>
+      <li id="t7-s2"><input type="checkbox"> Check what is left. In <code>docs/dev/pipeline.md</code>, Grep for <code>lesscars|roads_lc|node:sqlite|V35|86_freeway|(^|[ `(])/fzp</code>. Expected: only the sentence that says V35 is retired and not reused. In <code>docs/dev/fzp-mode.md</code>, Grep for <code>lesscars|TimeScrubber|HighWater|high-water</code>. Expected: only the intro's statement that <code>/lesscars</code> answers 404. In <code>docs/dev/road-lots.md</code>, Grep for <code>lesscars\.md|__sfhLessCars|### /lesscars</code>. Expected: no hits.</li>
+      <li id="t7-s3"><input type="checkbox"> Run the doc checks:
+        <pre><code data-lang="sh">npx vitest --run --project server docs-index
+npx vitest --run --project pipeline pipeline/test/quality.test.ts
+npx prettier --check docs/dev</code></pre>
+        Expected: pass. The generated Data quality section is unchanged.</li>
+      <li id="t7-s4"><input type="checkbox"> Commit, then check timing:
+        <pre><code data-lang="sh">git add docs/dev/pipeline.md docs/dev/road-lots.md docs/dev/fzp-mode.md
+git commit -m "docs: pipeline, road-lots and fzp-mode without less cars"
+npx chreode timing-check --head HEAD</code></pre>
+      </li>
+    </ol>
+  </section>
+
+</article>

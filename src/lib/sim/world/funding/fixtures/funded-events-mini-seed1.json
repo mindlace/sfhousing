@@ -459,6 +459,7 @@
   ],
   "ledger": [
     { "day": 20742, "pool": "m-city", "programme": null, "kind": "in", "dollars": 20000000 },
+    { "day": 20742, "pool": "federal", "programme": null, "kind": "in", "dollars": 10000000000000 },
     {
       "day": 20743,
       "pool": "m-city",
@@ -642,6 +643,7 @@
       "dollars": 1679974
     },
     { "day": 21107, "pool": "m-city", "programme": null, "kind": "in", "dollars": 20000000 },
+    { "day": 21107, "pool": "federal", "programme": null, "kind": "in", "dollars": 10000000000000 },
     {
       "day": 21107,
       "pool": "m-city",
@@ -882,6 +884,7 @@
       "dollars": 1679974
     },
     { "day": 21473, "pool": "m-city", "programme": null, "kind": "in", "dollars": 20000000 },
+    { "day": 21473, "pool": "federal", "programme": null, "kind": "in", "dollars": 10000000000000 },
     {
       "day": 21473,
       "pool": "m-city",
@@ -1023,6 +1026,7 @@
       "dollars": 2239965
     },
     { "day": 21838, "pool": "m-city", "programme": null, "kind": "in", "dollars": 20000000 },
+    { "day": 21838, "pool": "federal", "programme": null, "kind": "in", "dollars": 10000000000000 },
     {
       "day": 21838,
       "pool": "m-city",
@@ -1066,6 +1070,7 @@
       "dollars": 5039921
     },
     { "day": 22203, "pool": "m-city", "programme": null, "kind": "in", "dollars": 20000000 },
+    { "day": 22203, "pool": "federal", "programme": null, "kind": "in", "dollars": 10000000000000 },
     {
       "day": 22203,
       "pool": "m-city",
@@ -1165,6 +1170,7 @@
       "dollars": 5039921
     },
     { "day": 22568, "pool": "m-city", "programme": null, "kind": "in", "dollars": 20000000 },
+    { "day": 22568, "pool": "federal", "programme": null, "kind": "in", "dollars": 10000000000000 },
     {
       "day": 22568,
       "pool": "m-city",
@@ -1250,6 +1256,7 @@
       "dollars": 5039921
     },
     { "day": 22934, "pool": "m-city", "programme": null, "kind": "in", "dollars": 20000000 },
+    { "day": 22934, "pool": "federal", "programme": null, "kind": "in", "dollars": 10000000000000 },
     {
       "day": 23117,
       "pool": "m-city",
@@ -1279,7 +1286,9 @@
       "dollars": 1679974
     },
     { "day": 23299, "pool": "m-city", "programme": null, "kind": "in", "dollars": 20000000 },
+    { "day": 23299, "pool": "federal", "programme": null, "kind": "in", "dollars": 10000000000000 },
     { "day": 23664, "pool": "m-city", "programme": null, "kind": "in", "dollars": 20000000 },
+    { "day": 23664, "pool": "federal", "programme": null, "kind": "in", "dollars": 10000000000000 },
     {
       "day": 23762,
       "pool": "m-city",
@@ -1295,6 +1304,7 @@
       "dollars": 26879580
     },
     { "day": 24029, "pool": "m-city", "programme": null, "kind": "in", "dollars": 20000000 },
+    { "day": 24029, "pool": "federal", "programme": null, "kind": "in", "dollars": 10000000000000 },
     {
       "day": 24174,
       "pool": "m-city",

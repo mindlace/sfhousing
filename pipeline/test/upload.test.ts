@@ -40,10 +40,6 @@ function outDir(v = 'fixture-7', report: Record<string, unknown> = {}) {
   for (const f of ['parcels.bin', 'projects.json', 'calibration.json', 'policy.bin']) {
     writeFileSync(join(d, 'scenarios', 'fzp', f), 'x');
   }
-  mkdirSync(join(d, 'scenarios', 'lesscars'), { recursive: true });
-  for (const f of ['plan.json', 'sites.json', 'summary.json', 'timeline.bin']) {
-    writeFileSync(join(d, 'scenarios', 'lesscars', f), 'x');
-  }
   writeFileSync(join(d, 'buildings.pmtiles'), 'b');
   writeFileSync(join(d, 'basemap.pmtiles'), 'm');
   for (const s of STACKS) {
@@ -80,12 +76,6 @@ function outDir(v = 'fixture-7', report: Record<string, unknown> = {}) {
           projects: `${base}/scenarios/fzp/projects.json`,
           calibration: `${base}/scenarios/fzp/calibration.json`,
           policy: `${base}/scenarios/fzp/policy.bin`
-        },
-        lesscars: {
-          plan: `${base}/scenarios/lesscars/plan.json`,
-          sites: `${base}/scenarios/lesscars/sites.json`,
-          summary: `${base}/scenarios/lesscars/summary.json`,
-          timeline: `${base}/scenarios/lesscars/timeline.bin`
         }
       }
     })
@@ -254,8 +244,6 @@ describe('upload', () => {
       'scenarios/fzp/projects.json',
       'scenarios/fzp/calibration.json',
       'scenarios/fzp/policy.bin',
-      'scenarios/lesscars/plan.json',
-      'scenarios/lesscars/timeline.bin',
       'parcels/50_25.json',
       'fonts/NotoSans-Italic/0-255.pbf'
     ])('a missing referenced file %s', async (rel) => {

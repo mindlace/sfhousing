@@ -12,12 +12,24 @@ import { MSG } from '$lib/brush/messages';
 import { callsOf, stub } from '$lib/fzp/test/sim-map-stub';
 import { OUTLINE_LAYER_ID } from '$lib/paint/outline-layers';
 import { emptyPlan, type Plan, type PlanOp } from '$lib/plan';
+import { FULL_TEXT } from '$lib/game/copy';
+import { SAVES_KEY } from '$lib/game/saves';
+import { YOUR_GAME } from '$lib/sharing/copy';
+import { PLAN_CODEC } from '$lib/sharing/doc-codec';
+import { PLAN_KEY, readRecord } from '$lib/sharing/storage';
+import { seededGame } from '$lib/shell/test/seeded-game';
 import { VIEW_KEY } from '$lib/view/prefs';
 import manifestJson from '../../../../e2e/fixtures/data/fixture-0/manifest.json';
 import { PageWorker, pageWorkers, scoreDiff, scoreOf } from '../../test/page-worker';
 import PageHost from './test/PageHost.svelte';
 
+const nav2 = vi.hoisted(() => ({ loadPage: vi.fn() }));
+
 vi.mock('$lib/map/SimMap.svelte', async () => import('$lib/fzp/test/FzpSimMapStub.svelte'));
+vi.mock('$lib/game/navigate', async (orig) => ({
+  ...(await orig<typeof import('$lib/game/navigate')>()),
+  loadPage: nav2.loadPage
+}));
 
 const manifest = manifestJson as unknown as Manifest;
 
@@ -191,5 +203,58 @@ describe('/p/[id] score and dock', () => {
     await expect.element(scoreButton()).toBeInTheDocument();
     expect(page.getByRole('region', { name: 'Housing scoreboard' }).elements()).toHaveLength(0);
     expect(page.getByTestId('score-live').elements()).toHaveLength(1);
+  });
+});
+
+// ---- Remix under a game (game-shell Task 6) --------------------------------------------------------
+
+/** The old game's policy record, which a plan remix keeps. */
+const OLD_POLICY_RECORD = JSON.stringify({
+  v: 1,
+  savedAt: '2026-11-01T00:00:00.000Z',
+  plan: '{"schema":4,"kind":"sim","datasetVersion":"fixture-0"}'
+});
+const mission: Plan = { ...shared, title: 'Mission' };
+const banner = () => page.getByRole('region', { name: 'Shared plan' });
+const remixBtn = () => banner().getByRole('button', { name: 'Remix', exact: true });
+
+describe('/p/[id] Remix', () => {
+  beforeEach(() => {
+    nav2.loadPage.mockClear();
+  });
+
+  it('level 1: a press makes a saved game with the published plan and the old policy, and loads /', async () => {
+    const { game, storage } = seededGame({ level: 1, policy: OLD_POLICY_RECORD });
+    await render(PageHost, { props: { data: data(manifest, mission), game } });
+    await remixBtn().click();
+    await expect.poll(() => nav2.loadPage.mock.calls.length).toBe(1);
+    expect(nav2.loadPage).toHaveBeenCalledWith('/');
+    expect(game.saves).toHaveLength(2);
+    expect(game.saves[0].name).toBe('Remix of Mission');
+    expect(game.currentId).toBe(game.saves[0].id);
+    const r = readRecord(storage);
+    expect(r.kind === 'ok' && r.plan).toEqual(PLAN_CODEC.rebase(mission, 'fixture-0'));
+    expect(game.read(game.currentId)!.policy).toBe(OLD_POLICY_RECORD);
+    expect(game.progress.level).toBe(1);
+    expect(page.getByRole('dialog').elements()).toHaveLength(0);
+    // The page's own localStorage plan stays untouched.
+    expect(localStorage.getItem(PLAN_KEY)).toBeNull();
+  });
+
+  it('at 12 games Remix is disabled', async () => {
+    const { game, storage } = seededGame({ level: 1, saves: 12 });
+    const index = storage.getItem(SAVES_KEY);
+    await render(PageHost, { props: { data: data(manifest, mission), game } });
+    await expect.element(remixBtn()).toHaveAttribute('aria-disabled', 'true');
+    await expect.element(banner().getByText(FULL_TEXT, { exact: true })).toBeVisible();
+    (remixBtn().element() as HTMLElement).click();
+    expect(storage.getItem(SAVES_KEY)).toBe(index);
+    expect(nav2.loadPage).not.toHaveBeenCalled();
+  });
+
+  it('the open game: no Remix button', async () => {
+    await render(PageHost, { props: { data: data(manifest, mission) } });
+    await expect.element(banner().getByRole('link', { name: YOUR_GAME })).toBeVisible();
+    expect(remixBtn().elements()).toHaveLength(0);
   });
 });

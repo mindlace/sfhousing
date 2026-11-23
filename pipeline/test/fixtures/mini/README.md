@@ -238,9 +238,8 @@ programme, 6 of 6: `_50_ami` 2, `_80_ami` 2, `_120_ami` 1, `ami_undeclared` 1) a
 
 ## Freeway land
 
-`enrichment/lesscars-freeway-land.json` is the fixture freeway-land catalog (`LESSCARS_FREEWAY_LAND_JSON.fixture`,
-format in `pipeline/lib/lesscars/freeway-land.ts`): one segment `fx-i80` (I-80, CNN `4000`, removed by the
-mini plan's `hwy`, curated by hand) listing lot 19 (`3512019`), with lot 18 (`3512018`, 2 homes) excluded. The
+`enrichment/freeway-land.json` is the fixture freeway-land catalog (`FREEWAY_LAND_JSON.fixture`,
+format in `pipeline/lib/freeway-land.ts`): one segment `fx-i80` (I-80, CNN `4000`, curated by hand) listing lot 19 (`3512019`), with lot 18 (`3512018`, 2 homes) excluded. The
 fixture build reads it, so lot 19 is scenario-ineligible and unhostable in `parcels.bin` while its T13 panel rows
 stay hostable (calibration ignores the rule). Lot 19 lies in x[-60, 44), so its height district is `40//65-R-4`.
 

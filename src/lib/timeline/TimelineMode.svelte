@@ -99,7 +99,6 @@
   import { BR_BLOCK, watchCardArea } from '$lib/fzp/card-area-watch';
   import { cardArea, cardPlacement, type CardArea } from '$lib/fzp/card-place';
   import { installFzpDebug } from '$lib/fzp/debug';
-  import { uncappedPoolIds } from '$lib/fzp/money-view';
   import { DEFAULT_SPEED } from '$lib/fzp/playback';
   import ProjectCardPanel from '$lib/fzp/ProjectCardPanel.svelte';
   import ProjectTooltip from '$lib/fzp/ProjectTooltip.svelte';
@@ -143,7 +142,6 @@
   import type { AddChoice } from './add';
   import { CHANGE_NOT_APPLIED, STALE_NOTE, UPDATING, WAITING_NOTE } from './copy';
   import Explain from './Explain.svelte';
-  import { fundsOf4 } from './owner';
   import Playhead from './Playhead.svelte';
   import { isPlayKey } from './shortcuts';
   import { clampDay, filledEndDay, indexOfDay, viewMonthOf } from './playhead';
@@ -647,10 +645,8 @@
   $effect(() => {
     if (!stale) untrack(() => (heldDoc = null));
   });
-  const funds = $derived(fundsOf4(resultsDoc));
   /** The market terms in force at the playhead, for Details' lost-grants line. */
   const terms = $derived(resolveTerms(MARKET_TERMS, termsInForce(resultsDoc, day)));
-  const uncapped = $derived(uncappedPoolIds(calibration?.baselineFunding?.pools, funds.pools));
   const phase = $derived<FzpPhase>(
     noScenario ? 'no-scenario' : failed ? 'failed' : (session?.phase ?? 'loading')
   );
@@ -1490,7 +1486,6 @@
       capacity={session?.capacity ?? null}
       pending={stale}
       {terms}
-      {uncapped}
       {inForce}
       {goal}
       {onactivity}

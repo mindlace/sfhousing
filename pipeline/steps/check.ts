@@ -31,7 +31,6 @@ import { scenarioEligible } from '../lib/scenario-eligibility';
 import { checkV20 } from '../project-records/invariants';
 import { CALIBRATION_JSON } from './calibration';
 import { checkPolicy } from './check-policy';
-import { checkV35 } from './check-lesscars';
 import { checkV36 } from './check-gross';
 import { PROJECTS_JSON } from './projects';
 import { PARCELS_BIN } from '../lib/scenario-files';
@@ -353,8 +352,8 @@ export function maxOf(xs: readonly number[]): number {
 /**
  * Spec §4.9 invariants V1–V13, transit spec §4.3 V14, scenario-data spec §4.10 V15–V19 and
  * project-records spec §4.9 V20 over a built dataset directory, then V21–V24 from
- * `extras.projectChecks`, V30 (T14) from the counts and V31–V33 (policy.bin), V35 (/lesscars), V36
- * (gross.bin) and V37 (render boxes). Never throws.
+ * `extras.projectChecks`, V30 (T14) from the counts and V31–V33 (policy.bin), V36 (gross.bin) and
+ * V37 (render boxes). Never throws.
  */
 export async function checkDataset(
   outDir: string,
@@ -850,9 +849,6 @@ export async function checkDataset(
 
   // V31–V33 policy.bin (sim data layers), against the decoded parcels.bin.
   out.push(...checkPolicy(outDir, profile, c, p, m, extras.stableDetail ?? false));
-
-  // V35 the /lesscars files, when the build has a plan.
-  out.push(checkV35(outDir, c));
 
   // V36 gross.bin, against parcels.bin and the decoded chunk records.
   out.push(checkV36(outDir, m, p, recById, extras.stableDetail ?? false));

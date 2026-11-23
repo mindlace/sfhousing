@@ -1,0 +1,615 @@
+<article>
+  <header>
+    <h1>Finite funding implementation plan</h1>
+    <p>Every funding source gets a bound from evidence, the federal pool gets a yearly ceiling, and <code>Pool.uncapped</code> leaves the code.</p>
+    <aside data-kind="note"><strong>For agentic workers</strong> REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps are checklist items; progress is kept in the workspace ledger, not in the plan.</aside>
+  </header>
+
+  <section id="sec-overview">
+    <h2>Overview</h2>
+    <dl>
+      <dt>Goal</dt>
+      <dd>Make today's public money finite: <code>funding.json</code> at schema 2 with a bound on every source and a federal yearly ceiling, pools whose inflows follow those bounds, and no pool anywhere that can always pay, while older datasets and documents keep loading and playing as they did.</dd>
+      <dt>Architecture</dt>
+      <dd>The pipeline (<code>pipeline/enrichment/funding-schema.ts</code>, <code>pipeline/lib/fzp-cal/funding.ts</code>) turns each bound into inflows and provenance; the calibration loader (<code>src/lib/timelapse/model.ts</code>) converts an older dataset's uncapped federal pool to one yearly inflow of <code>LEGACY_UNCAPPED_DOLLARS</code>; both engines, the score and the page then drop every read of the flag. One serial lane: the pipeline emits through <code>src/lib/timelapse</code> types and <code>checkPool</code>, so a short-lived optional <code>Pool.uncapped?</code> (added in Task 2, removed in Task 7) lets the emission land before the many readers go.</dd>
+      <dt>Tech Stack</dt>
+      <dd>TypeScript, zod 4 (pipeline schema), SvelteKit 2 + Svelte 5 runes, Vitest (projects <code>server</code>, <code>client</code>, <code>pipeline</code>), Playwright.</dd>
+      <dt>Spec</dt>
+      <dd><code>/Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game/docs/superpowers/specs/2026-11-22-finite-funding-design.html</code> (<a href="../specs/2026-11-22-finite-funding-design.html">relative copy</a>). It implements part of <a href="../design/2026-11-22-1216-incremental-game.html">the incremental game design</a>. Data values come from <code>/Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game/.superpowers/superconductor/incremental-game/surveys/funding-bounds.md</code>.</dd>
+    </dl>
+    <aside data-kind="warning"><strong>Before Task 1</strong> The operator merges the integration branch into this worktree: row L1 (<code>remove-lesscars</code>: less-cars gone from <code>pipeline/**</code>, the dataset and fixture-0; <code>PATHS</code> in <code>pipeline/lib/version.ts</code> no longer lists <code>src/lib/sim/scenario</code> or <code>src/lib/sim/levers</code>, and a pipeline test walks non-test imports from <code>pipeline/cli.ts</code> against <code>PATHS</code>) and the M1 stub (<code>dateMeasure</code> in <code>src/lib/sim-page/funding-presets.ts</code>). The worktree at <code>8f494b6a</code> still carries less-cars; every task below is written against the files the spec names and holds after L1. If L1 is not merged, stop and report.</aside>
+    <p>Spec sections implemented: §sec-design-schema, §sec-design-data (all), §sec-design-emit (-v25, -examples), §sec-design-provenance, §sec-design-pool (-types, -engines, -page), §sec-design-money-copy, §sec-design-reach, §sec-write-set (-files), §sec-tests (-pipeline, -model, -page), §sec-docs. File and line citations for today's code are in the spec's §sec-today; tasks cite them by section rather than repeating them.</p>
+  </section>
+
+  <section id="sec-project-notes">
+    <h2>Project notes (every task inherits these)</h2>
+    <ol>
+      <li><strong>Tools.</strong> Read files with Read, Grep and Glob, not Bash. Every Bash call is one command starting with an allowed command (<code>npm</code>, <code>npx</code>, <code>lsof</code>, <code>git add|commit|rev-parse|log|diff|status|show|merge|merge-base|branch|rm</code>, <code>ls</code>, <code>cat</code>, <code>grep</code>, <code>head</code>, <code>tail</code>, <code>wc</code>, <code>pwd</code>, <code>uptime</code>, <code>mkdir</code>): no <code>VAR=...</code> prefix, no <code>cd</code>, no <code>;</code> or <code>&amp;&amp;</code>, no pipes into non-allowed commands, no <code>$(...)</code>, no loops, no redirects to files (write files with Write). Commands run from the worktree root.</li>
+      <li><strong>Port 4173 is shared.</strong> Before preview or Playwright run <code>lsof -nP -iTCP:4173 -sTCP:LISTEN</code>. If something you did not start listens, never kill it: wait and check again. Leave nothing listening.</li>
+      <li><strong>No timing crutches.</strong> No <code>setTimeout</code>/<code>setInterval</code> in any spec or test helper, no fixed waits or raised timeouts in e2e. After each task's last commit <code>npx chreode timing-check --head HEAD</code> is clean. A changed e2e spec passes with <code>--repeat-each=5 --retries=0</code>. No new preview-server stderr.</li>
+      <li><strong>No</strong> <code>npm run signoff</code>, <code>git push</code>, dataset upload or deploy.</li>
+      <li><strong>No wall-clock measurements.</strong> <code>npm run test:perf</code> is not a gate.</li>
+      <li><strong>Commits</strong> follow Conventional Commits. No Claude or AI attribution anywhere (no trailers, no notes in code or docs).</li>
+      <li><strong>Setup</strong> once per worktree before tests: <code>npm install</code>; Write <code>.dev.vars</code> with <code>PUBLIC_DATASET_VERSION=fixture-0</code>; <code>npm run data:fixture</code>; <code>npm run db:migrate</code>. After a task regenerates fixture-0, run <code>npm run data:fixture</code> again before client or e2e runs.</li>
+      <li><strong>Hashed paths.</strong> After L1, non-test pipeline code must not import <code>src/lib/sim/scenario</code> or <code>src/lib/sim/levers</code> (L1's import walk fails). Pipeline tests may.</li>
+      <li><strong>Regenerating the fixture</strong> is <code>npm run pipeline -- fixture --update-golden</code>: it rebuilds <code>e2e/fixtures/data/fixture-0/</code> and the mini goldens under <code>pipeline/test/fixtures/mini/golden/</code> (<code>pipeline/test/golden.test.ts</code> compares the two). Commit every file it changes, <code>e2e/fixtures/data/fixture-0/report.json</code> included.</li>
+      <li><strong>Re-recorded numbers.</strong> Where a test pinned a number that moves because a pool changed (§sec-design-reach), re-record it and list each one (file, test, old, new) in the task report.</li>
+    </ol>
+  </section>
+
+  <section id="sec-global-constraints">
+    <h2>Global Constraints</h2>
+    <p>Copied verbatim from the spec (§sec-interfaces rows and sections; L1's section from the design document) and the spec's §sec-global-constraints. Every task's requirements include this section.</p>
+    <table id="tbl-interfaces">
+      <caption>Interface table</caption>
+      <thead>
+        <tr><th scope="col">Row</th><th scope="col">Owner</th><th scope="col">Layer</th><th scope="col">Summary</th><th scope="col">Contract</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">F1</th><td><code>finite-funding</code></td><td>Model commitment</td><td>The funding file: a bound for every source.</td><td><a href="#sec-if-f1">F1</a></td></tr>
+        <tr><th scope="row">F2</th><td><code>finite-funding</code></td><td>Model commitment</td><td>Pools with no "can always pay".</td><td><a href="#sec-if-f2">F2</a></td></tr>
+        <tr><th scope="row">L1</th><td><code>remove-lesscars</code></td><td>Decomposition choice</td><td>The pipeline, dataset and worker with no less cars.</td><td><a href="../design/2026-11-22-1216-incremental-game.html#sec-if-l1">L1</a></td></tr>
+      </tbody>
+    </table>
+
+    <section id="sec-if-f1">
+      <h3>F1 The funding file</h3>
+      <pre><code data-lang="ts">// pipeline/enrichment/funding-schema.ts (schema 2 of pipeline/enrichment/funding.json)
+type Bound =
+  | { kind: 'ends'; on: string; method: string; tier: 1 | 2 | 3; cite: Cite }
+  | { kind: 'remaining'; dollars: number; method: string; tier: 1 | 2 | 3; cite: Cite }
+  | { kind: 'none'; reason: string; tier: 1 | 2 | 3; cite: Cite };
+
+interface CitySource {
+  id: string;
+  label: string;
+  kind: 'goBond' | 'cop' | 'generalRevenue' | 'dedicatedTax';
+  dollarsPerYear: number;
+  debt: { rate: number; termYears: number; cite: Cite } | null;
+  note: string;
+  cite: Cite;
+  bound: Bound;
+}
+
+interface StateSource {
+  id: string;
+  label: string;
+  dollarsPerYear: number;
+  tier: number;
+  method: string;
+  cite: Cite;
+  bound: Bound;
+}
+
+interface FederalSource {
+  id: string;
+  label: string;
+  /** The yearly ceiling. */
+  dollarsPerYear: number;
+  tier: number;
+  method: string;
+  cite: Cite;
+  bound: Bound;
+}</code></pre>
+      <dl>
+        <dt><code>ends</code></dt><dd><code>on</code> is an ISO date. The source's last yearly arrival is the last one on or before it.</dd>
+        <dt><code>remaining</code></dt><dd>The dollars the source has left in total, as of the citation: an authorisation not yet issued, a balance being spent down.</dd>
+        <dt><code>none</code></dt><dd>Law sets no end. <code>reason</code> says what was read that shows it.</dd>
+      </dl>
+      <ul>
+        <li>Every City source, the state source and the federal source has a <code>bound</code>. A file without one is refused.</li>
+        <li>No <code>bound</code> has tier 4. An end nobody has read in a source is not written.</li>
+        <li>A source with <code>ends</code> emits one yearly inflow from the dataset date to <code>on</code>.</li>
+        <li>A source with <code>remaining</code> emits one-time inflows of <code>dollarsPerYear</code> on the dataset date and each anniversary until <code>dollars</code> is used, the last one being what is left.</li>
+        <li>A source with <code>none</code> emits one yearly inflow with no end.</li>
+        <li>A source whose <code>ends.on</code> is before the dataset date, or whose <code>remaining.dollars</code> is 0, emits a pool with no inflow, and its programme is not in the baseline.</li>
+        <li>The calibration's provenance text for each pool states its end, or that it has none, with the citation.</li>
+        <li>The "check" that compares implied homes a year with observed awards is kept and reads the first year.</li>
+      </ul>
+    </section>
+
+    <section id="sec-if-f2">
+      <h3>F2 Pools</h3>
+      <pre><code data-lang="ts">// src/lib/timelapse/types.ts
+export interface Pool {
+  id: string;
+  kind: PoolKind;
+  label: string;
+  inflows: Inflow[];
+  /** non-null exactly for `goBond` and `cop` */
+  debt: { rate: number; termYears: number } | null;
+  /** dollars a pool may have committed or out per dollar received: 1 for every kind but `bank` */
+  leverage: number;
+}
+
+export type Inflow =
+  | { kind: 'once'; day: Day; dollars: Dollars }
+  | { kind: 'yearly'; from: Day; to: Day | null; dollarsPerYear: Dollars };</code></pre>
+      <ul>
+        <li><code>Pool</code> has no <code>uncapped</code> field. A pool can pay only from what it has received.</li>
+        <li>The baseline's federal pool has kind <code>federal</code> and one yearly inflow of the ceiling.</li>
+        <li>A baseline pool's inflows follow its source's bound (F1). A yearly inflow has <code>to: null</code> only for a bound of kind <code>none</code>.</li>
+        <li>A stored or published document whose pool carries <code>uncapped</code> loads with the field ignored.</li>
+        <li>A published plan or policy runs on its own dataset while that dataset exists, and every dataset built before this build has <code>uncapped: true</code> on its federal pool. The calibration loader reads such a pool as one yearly inflow of <code>LEGACY_UNCAPPED_DOLLARS</code> (100 billion dollars) from the dataset date with no end, and never refuses the calibration.</li>
+        <li>Where the yearly amount of such a pool is shown, it reads "No ceiling". So a policy published before this build plays as it did.</li>
+        <li><code>isNoCeiling(dollars)</code> in <code>src/lib/timelapse/model.ts</code> is the one test for such a pool: a yearly amount at or above <code>LEGACY_UNCAPPED_DOLLARS</code>.</li>
+        <li>A scale entry on the federal pool scales its ceiling, as on any pool; 0 switches it off.</li>
+        <li><code>Inflow</code>, <code>Programme</code>, <code>Instrument</code>, the award rule, the line and <code>fundBundle</code> are unchanged.</li>
+      </ul>
+      <p><strong>Removed:</strong> <code>Pool.uncapped</code>, the "no limit" text for anything but an older dataset's pool, the on/off-only editor for the federal pool, the <code>uncapped</code> sets passed to the money results.</p>
+    </section>
+
+    <section id="sec-if-l1">
+      <h3>L1 The pipeline, dataset and worker with no less cars</h3>
+      <pre><code data-lang="ts">// src/lib/data/manifest.ts
+interface ManifestScenarios {
+  fzp: { parcels: string; projects: string; calibration: string; policy?: string; gross?: string; frontage?: string };
+}
+
+// pipeline/config.ts
+export const FREEWAY_LAND_JSON: { live: string; fixture: string };
+// live: pipeline/enrichment/freeway-land.json
+
+// src/lib/sim/router.ts
+type WorkerMode = 'editor' | 'scenario' | 'timeline';</code></pre>
+      <ul>
+        <li>A build writes no <code>scenarios/lesscars/*</code> and the manifest has no <code>scenarios.lesscars</code> key. A manifest that has one still parses: it is an older dataset's.</li>
+        <li>A published plan or policy runs on its own dataset while that dataset exists. An older dataset's basemap holds some freeway stretches in a <code>roads_lc</code> layer; the map draws that layer as ordinary roads exactly when the manifest has <code>scenarios.lesscars</code>, and never asks a newer basemap for it.</li>
+        <li><code>basemap.pmtiles</code> is a byte copy of the fetched basemap.</li>
+        <li>The freeway-land catalog is read from <code>FREEWAY_LAND_JSON</code> and feeds lot eligibility and the road-like lot rule exactly as before.</li>
+        <li><code>scenarios/fzp/parcels.bin</code> for the fixture, decoded, is identical before and after except the one provenance sentence that names the catalog's path, which names <code>FREEWAY_LAND_JSON</code>'s path.</li>
+        <li>The pipeline has no <code>lesscars-cnns</code>, <code>lesscars-freeway-land</code> or <code>lesscars-basemap</code> command.</li>
+        <li>The scenario engine keeps <code>SimInput.regimes</code> and <code>reservedFrom</code>. The step engine's referee tests use <code>regimes</code>; the scenario engine's own tests use <code>reservedFrom</code>.</li>
+        <li><code>PATHS</code> in <code>pipeline/lib/version.ts</code> lists every source path that non-test pipeline code imports, by directory, and nothing else. A pipeline test walks the imports from <code>pipeline/cli.ts</code> and fails when one falls outside <code>PATHS</code> or a <code>PATHS</code> entry is reached by none.</li>
+        <li><code>pipeline/enrichment/funding.json</code>, <code>pipeline/lib/fzp-cal/**</code> and the calibration step are not touched by this row's owner.</li>
+      </ul>
+      <p><strong>Removed:</strong> the playback worker mode, <code>scenarios.lesscars</code>, the <code>roads_lc</code> source layer from new builds, the less-cars styling of its clones, the <code>lc-*</code> palette tokens, <code>LESSCARS_*</code> config.</p>
+    </section>
+
+    <section id="sec-spec-constraints">
+      <h3>The spec's global constraints</h3>
+      <ul>
+        <li>Work happens in git worktrees under <code>.claude/worktrees/</code>. Commits follow Conventional Commits. No attribution to an AI anywhere.</li>
+        <li>Code style: 2-space indent, single quotes, no trailing commas, 100 columns.</li>
+        <li>Every Vitest test calls <code>expect</code>.</li>
+        <li>Signoff fails on server stderr, on timing crutches and on a retried flake. Each unit runs <code>npm run lint</code>, <code>npm run check</code> and the Vitest projects its files belong to before it hands back.</li>
+        <li>Port 4173 is shared by every session on this machine. A unit never kills a server it did not start; it waits.</li>
+        <li>Every agent runs every command in the foreground and never ends a turn while something it started is running.</li>
+        <li>Schema changes go through <code>npm run db:generate</code>. Nobody edits a migration.</li>
+        <li>No unit runs <code>npm run signoff</code>: its dataset step fails until the dataset is uploaded. <code>closing</code> runs it once, after the upload.</li>
+        <li>The dataset version changes in this build. The dataset is uploaded once, by <code>closing</code>, from the integration branch, after every unit has merged; no other unit uploads a dataset. <code>reach-check</code> builds one earlier to run the check and uploads nothing.</li>
+        <li>A unit that writes a hashed path regenerates the fixture dataset with <code>npm run pipeline -- fixture</code> and commits it.</li>
+        <li>WCAG 2.2 AA: every new control is at least 24 px and passes <code>expectNoA11yViolations</code> in light and dark.</li>
+        <li>Page text is short. No sentence says what something is not.</li>
+        <li>Nothing on the main screen says "RHNA". The goal is read from the <code>Goal</code> value, never from a constant.</li>
+        <li>The game's rules are read from <code>src/lib/game/</code>. No component compares a level to a number.</li>
+        <li>One future: no seed control, no band, no average over runs.</li>
+        <li>Published plans and policies, their ids and their pages keep working, including every policy published before this build.</li>
+        <li>A number that is a claim about the world carries its source and tier, in the existing <code>Sourced</code>, <code>Unsourced</code> and <code>Evidence</code> shapes.</li>
+        <li>A runtime dependency that ships in the bundle gets a credit in <code>SOFTWARE</code>. This build adds none.</li>
+        <li>CSP changes are interface changes. This build makes none.</li>
+        <li>Timing is measured only on a quiet machine. A unit that cannot get one defers the measurement and says so.</li>
+      </ul>
+    </section>
+  </section>
+
+  <section id="sec-review-focus">
+    <h2>Review Focus</h2>
+    <p>Inputs the spec implies but its listed tests do not exercise, most likely to bite first. Each has its test in the owning task.</p>
+    <ol>
+      <li><strong>An <code>ends</code> bound on exactly the dataset date, or the day before.</strong> On <code>asOf</code>: one yearly inflow <code>from: asOf, to: asOf</code>, one arrival, a programme. The day before: no inflow, no programme. Test in Task 2 (<a href="#t2-s1">t2-s1</a>).</li>
+      <li><strong>A <code>remaining</code> that is an exact multiple of the yearly amount, or under one year's.</strong> 161,000,000 at 80,500,000 gives exactly two inflows (no trailing 0-dollar one); 10,000,000 at 80,500,000 gives one inflow of 10,000,000, and the check reads 10,000,000 as that pool's first year. Test in Task 2.</li>
+      <li><strong>A baseline pool with no programme on the page.</strong> <code>city-housing-stability-fund</code> and <code>city-redevelopment</code> are listed in the City group, pay 0 of each home, and the Funding tab, the group editor and Details render without throwing. Tests in Task 5 (Details) and Task 7 (editors).</li>
+      <li><strong>A policy published before this build, on its older dataset, with the old federal "Switched off" then "Switched back on" entries (scale 0, then 1).</strong> The federal row reads "Switched off" while off and "No ceiling" after; the engine never runs short on that pool. Tests in Task 4 (engine, scale entries on the older calibration) and Task 7 (row text).</li>
+      <li><strong>An older stored document with <code>uncapped</code> on an added pool, loaded and saved again.</strong> The re-serialised document has no <code>uncapped</code> and parses to the same document, so loading it alone marks nothing changed. Test in Task 3.</li>
+    </ol>
+  </section>
+
+  <section id="sec-file-structure">
+    <h2>File Structure</h2>
+    <table id="tbl-files">
+      <caption>Files by task (C created, M modified, R regenerated)</caption>
+      <thead>
+        <tr><th scope="col">Task</th><th scope="col">Files</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">1</th><td>M <code>pipeline/enrichment/funding-schema.ts</code>, <code>funding.json</code>, <code>pipeline/test/fixtures/mini/enrichment/funding.json</code>, <code>pipeline/test/enrichment/funding-schema.test.ts</code>, <code>pipeline/lib/fzp-cal/funding.ts</code> (federal entry only), <code>pipeline/test/fzp-cal/funding.test.ts</code>, <code>pipeline/test/fzp-cal/calibration-invariants.test.ts</code>, <code>src/lib/timelapse/model.test.ts</code>, <code>.prettierignore</code>; C <code>src/lib/timelapse/fixtures/calibration-uncapped.json</code>; R mini goldens and fixture-0</td></tr>
+        <tr><th scope="row">2</th><td>M <code>pipeline/lib/fzp-cal/{funding,report,invariants}.ts</code>, <code>pipeline/test/fzp-cal/{funding,calibrate,calibration-invariants}.test.ts</code>, <code>src/lib/timelapse/{types,model}.ts</code> (transitional), <code>src/lib/timelapse/model.test.ts</code>, <code>docs/dev/finance-data.md</code>; R mini goldens and fixture-0; tests on fixture-0 re-recorded</td></tr>
+        <tr><th scope="row">3</th><td>M <code>src/lib/timelapse/model.ts</code>, <code>model.test.ts</code>, <code>src/lib/sim/levers/finance.ts</code> (<code>parsePool</code>), <code>finance.spec.ts</code>, <code>docs/dev/finance-data.md</code>, <code>docs/dev/finance-levers.md</code></td></tr>
+        <tr><th scope="row">4</th><td>M <code>src/lib/sim/levers/finance.ts</code> (<code>buildFinance</code>), <code>levers/finance.spec.ts</code>, <code>levers/fixtures/finance.ts</code>; <code>src/lib/sim/scenario/{funding,money,funded}.ts</code>, <code>{funding,engine-finance,finance-score,money,line}.spec.ts</code>, <code>fixtures/{bench-finance,finance-score-cases,ledger-model,mini-finance,tiny-queue}.ts</code>, <code>test/{finance-harness,money-identities}.ts</code>; <code>src/lib/sim/world/funding/pools.ts</code>, <code>funding/test/{fixtures,identities}.ts</code>, <code>funding/{memo,policy,pools,serve}.spec.ts</code>; <code>src/lib/sim/world/policy/money.ts</code>, <code>policy/roundtrip.spec.ts</code>; <code>src/lib/sim/world/score/statics.ts</code>, <code>score/{lapse,limits}.spec.ts</code>; C <code>src/lib/sim/world/funding/bounds.spec.ts</code>; R <code>src/lib/sim/scenario/fixtures/golden-finance-seed1.json</code>, <code>src/lib/sim/world/funding/fixtures/funded-events-mini-seed1.json</code> if they move; docs <code>finance-engine.md</code>, <code>world-funding.md</code>, <code>finance-levers.md</code>, <code>finance-model.md</code></td></tr>
+        <tr><th scope="row">5</th><td>M <code>src/lib/fzp/{money-view.ts,money-view.spec.ts,MoneyResults.svelte}</code>, <code>src/lib/fzp/{card.spec.ts,ProjectCardPanel.svelte.spec.ts}</code>, <code>src/lib/fzp/fixtures/{timeline-score.spec.ts,timeline-score.ts,money.ts}</code>, <code>src/lib/timeline/{pool-level.ts,pool-level.spec.ts}</code>, the <code>uncapped</code> lines of <code>src/lib/timeline/{TimelineMode.svelte,SimDetails.svelte,TimelineMode.svelte.spec.ts,SimDetails.svelte.spec.ts,owner.spec.ts,Timeline.svelte.spec.ts}</code></td></tr>
+        <tr><th scope="row">6</th><td>C <code>src/lib/timeline/money-copy.ts</code>, <code>money-copy.spec.ts</code>; M <code>src/lib/timeline/copy.ts</code>, <code>copy.spec.ts</code>; import lines of <code>src/lib/sim-page/PolicySummary.svelte</code>, <code>FundingTab.svelte</code>, <code>FundingTab.svelte.spec.ts</code>, <code>src/lib/fzp/ProvenanceBody.svelte</code>, <code>src/lib/timeline/WhatEditor.svelte</code>, <code>Inspector.svelte.spec.ts</code></td></tr>
+        <tr><th scope="row">7</th><td>M <code>src/lib/sim-page/{funding-copy,funding-edit,funding-presets,funding-view}.ts</code> and their specs, <code>FundingGroupEditor.svelte</code>, <code>FundingPoolRow.svelte</code>, <code>FundingTab.svelte</code>, <code>FundingTab.svelte.spec.ts</code>, <code>src/lib/sim-page/test/funding.ts</code>, <code>e2e/sim-funding.spec.ts</code> (lines 19 and 200), <code>src/lib/timelapse/types.ts</code> (removes the transitional field)</td></tr>
+      </tbody>
+    </table>
+    <p><code>pipeline/steps/calibration.ts</code> needs no change (it reads through <code>parseFundingFile</code>).</p>
+  </section>
+
+  <section id="sec-builders-calls">
+    <h2>Builder's calls made here</h2>
+    <ul>
+      <li><strong>Transitional field.</strong> Task 2 makes <code>Pool.uncapped</code> optional (<code>uncapped?: boolean</code>, comment "transitional: removed by Task 7 of the finite-funding plan") and lets <code>checkPool</code> accept a pool with or without it. Task 3 makes <code>checkPool</code> final (no <code>uncapped</code> key). Task 7 deletes the field. Reason: the emission must drop the key before roughly sixty readers and writers can go, and each group must compile on its own.</li>
+      <li><strong>Anniversaries in the pipeline.</strong> <code>anniversary(asOf, k)</code> is a local function in <code>pipeline/lib/fzp-cal/funding.ts</code> with <code>inflowArrivals</code>' rule (same UTC month and day k years later, 29 February becoming 28 February in a common year); a pipeline test checks it equals <code>inflowArrivals</code>. Reason: after L1 <code>src/lib/sim/scenario</code> is not in <code>PATHS</code>, so non-test pipeline code importing it fails L1's walk.</li>
+      <li><strong>The older-format fixture</strong> is copied in Task 1, before any regeneration, so it is fixture-0's calibration as L1 left it; it is then formatted with Prettier (same JSON value, so <code>.prettierignore</code>, outside the write set, is not touched). Reason: Task 1 regenerates fixture-0.</li>
+      <li><strong>Two regenerations.</strong> Task 1 regenerates fixture-0 and the goldens (the twin gains a source) and Task 2 again (the bounds). Task 7 runs it a third time and expects no change. Reason: <code>pipeline/test/golden.test.ts:205</code> compares fixture-0 with the goldens, so every task that changes pipeline output regenerates to stay green.</li>
+      <li><strong><code>funding.test.ts</code>'s <code>AS_OF</code></strong> becomes 2026-11-10 (today 2026-11-09, <code>pipeline/test/fzp-cal/funding.test.ts:30</code>), the spec's worked-example date.</li>
+      <li><strong>Federal bound cite</strong> keeps <code>retrieved</code> "2026-11-10" as the spec's block gives it; every other non-BLA bound cite takes the day the builder reads it.</li>
+      <li><strong>"No ceiling" in <code>poolMoneySentence</code></strong> replaces the whole phrase of a yearly inflow whose amount <code>isNoCeiling</code>.</li>
+      <li><strong><code>levelSet</code></strong> applies the no-level rule (a yearly inflow whose amount <code>isNoCeiling</code>) to added own pools as well as baseline pools: one rule, and an added pool cannot meet it in practice.</li>
+      <li><strong>Retired tests.</strong> <code>TimelineMode.svelte.spec.ts</code>'s case that "no limit" follows the flag (around <code>:1655-1726</code>) and <code>finance-score.spec.ts</code>'s <code>MC.uncapped</code> cases (<code>:534</code>, <code>:591</code>, with the fixture case at <code>finance-score-cases.ts:443-445</code>) are removed: their subject, the flag, is gone. Each is listed in the task report.</li>
+      <li><strong><code>src/lib/sim-page/test/funding.ts</code></strong>' federal pool gets one yearly inflow of 50,000,000 from <code>FUND_ASOF</code> in place of <code>uncapped: kind === 'federal'</code>, so page tests see a ceiling; tests of the older case build a <code>LEGACY_UNCAPPED_DOLLARS</code> pool explicitly.</li>
+    </ul>
+  </section>
+
+  <section id="sec-task-1">
+    <h2>Task 1: The funding file at schema 2, its data and the fixture twin</h2>
+    <p>Implements §sec-design-schema and §sec-design-data. Emission stays today's in this task (the new source gets today's yearly inflow and programme; the federal pool stays uncapped); Task 2 makes inflows follow bounds.</p>
+    <h3>Files</h3>
+    <ul>
+      <li>Create: <code>src/lib/timelapse/fixtures/calibration-uncapped.json</code> (copy of <code>e2e/fixtures/data/fixture-0/scenarios/fzp/calibration.json</code> as L1 left it, Prettier-formatted)</li>
+      <li>Modify: <code>src/lib/timelapse/model.test.ts</code> (one case)</li>
+      <li>Modify: <code>pipeline/enrichment/funding-schema.ts</code>, <code>pipeline/enrichment/funding.json</code>, <code>pipeline/test/fixtures/mini/enrichment/funding.json</code>, <code>pipeline/test/enrichment/funding-schema.test.ts</code></li>
+      <li>Modify: <code>pipeline/lib/fzp-cal/funding.ts</code> (the federal provenance entry only), <code>pipeline/test/fzp-cal/funding.test.ts</code>, <code>pipeline/test/fzp-cal/calibration-invariants.test.ts</code></li>
+      <li>Regenerate: <code>pipeline/test/fixtures/mini/golden/**</code>, <code>e2e/fixtures/data/fixture-0/**</code></li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>parseFundingFile</code>, <code>BuildError</code>, zod <code>z.strictObject</code> (<code>pipeline/enrichment/funding-schema.ts:119-206</code>); <code>AFFORDABLE</code>.</li>
+      <li>Produces (exported from <code>pipeline/enrichment/funding-schema.ts</code>): <code>Bound</code>, <code>CitySource</code>, <code>StateSource</code>, <code>FederalSource</code>, <code>FundingFile</code> exactly as §sec-design-schema (with <code>on: IsoDate</code>, <code>schema: 2</code>); <code>parseFundingFile(json: unknown, path: string): FundingFile</code> unchanged in signature.</li>
+    </ul>
+    <ol>
+      <li id="t1-s1"><input type="checkbox"> Copy the older-format calibration before anything regenerates it, and pin that it loads today.
+        <pre><code data-lang="sh">npx tsx -e "import('node:fs').then((fs) =&gt; fs.copyFileSync('e2e/fixtures/data/fixture-0/scenarios/fzp/calibration.json', 'src/lib/timelapse/fixtures/calibration-uncapped.json'))"
+npx prettier --write src/lib/timelapse/fixtures/calibration-uncapped.json</code></pre>
+        Expected: the file exists and is formatted; its parsed value equals fixture-0's (the test below and Task 3's "nothing else differs" case read it). Do not edit <code>.prettierignore</code>. In <code>src/lib/timelapse/model.test.ts</code> add:
+        <pre><code data-lang="ts">it('loads an older-format calibration (fixture-0 before finite funding)', () =&gt; {
+  const cal = parseCalibration(JSON.parse(readFileSync(LEGACY_PATH, 'utf8')));
+  const fed = cal.baselineFunding!.pools.find((p) =&gt; p.kind === 'federal')!;
+  expect(fed.uncapped).toBe(true);
+  expect(fed.inflows).toEqual([]);
+});</code></pre>
+        Task 3 rewrites its assertions.</li>
+      <li id="t1-s2"><input type="checkbox"> Write the failing schema tests in <code>pipeline/test/enrichment/funding-schema.test.ts</code>. <code>POOL_IDS</code> gains <code>'city-housing-stability-fund'</code> after <code>'city-general-fund'</code>. Remove "carries the federal pool's three allocation records in federal.uncapped" and "fixture twin carries an invented federal.uncapped". Add:
+        <ul>
+          <li><code>it('parses at schema 2 with the nine pinned ids, in order, and a page on every cite, bound cites included')</code>: <code>f.schema === 2</code>; City ids <code>POOL_IDS</code>, then <code>state</code>, <code>federal-tax-credits</code>; <code>pages(f)</code> includes every <code>bound.cite</code>.</li>
+          <li><code>it('gives each live source the bound of the bounds table')</code>: per id, <code>[bound.kind, on | dollars, bound.tier]</code> equals <code>city-debt</code> <code>['remaining', 260_310_000, 2]</code>, <code>city-ocoh</code> <code>['none', _, 2]</code>, <code>city-general-fund</code> <code>['none', _, 2]</code>, <code>city-housing-stability-fund</code> <code>['remaining', 0, 1]</code>, <code>city-housing-trust-fund</code> <code>['ends', '2043-06-30', 2]</code> (or the Charter-derived date of t1-s5), <code>city-redevelopment</code> <code>['remaining', 0, 1]</code>, <code>state</code> <code>['none', _, 2]</code> (or the bound t1-s5 found), <code>federal-tax-credits</code> <code>['none', _, 2]</code>; <code>city-impact-fees</code> accepts either <code>['none', _, 2]</code> or <code>['remaining', n, 2]</code> with <code>n</code> a whole number. Dollars a year: 80,500,000; 48,600,000; 21,800,000; 14,900,000; 34,800,000; 27,400,000; 6,000,000; state 150,000,000. Every City <code>note</code> does not end "Held level (OD-F3)."</li>
+          <li><code>it('sets the federal ceiling to 1,274 homes times 443,108')</code>: <code>f.federal.dollarsPerYear === 1274 * 443_108</code> and <code>=== 564_519_592</code>.</li>
+          <li><code>it.each</code> refusals, each asserting <code>parseFundingFile</code> throws a message containing: schema 1 → <code>'funding.json is schema 1: every source needs a bound (schema 2)'</code>; a City source with no bound → its path <code>$.city.sources[0].bound</code>; bound tier 4 → <code>"a bound's tier is 1, 2 or 3: an end nobody has read in a source is not written"</code>; <code>kind: 'later'</code> → the path <code>.bound.kind</code>; an extra key in a bound → the path of the bound; <code>ends.on: '2043-02-30'</code> → <code>'must be a real calendar date'</code>; <code>remaining.dollars: -1</code> → the path <code>.bound.dollars</code>; money remaining with <code>dollarsPerYear: 0</code> (also lower another source so the City total still holds) → <code>'a source with money remaining needs a yearly amount'</code>; <code>federal.dollarsPerYear</code> + 1 → <code>'federal.dollarsPerYear must be the most new-construction homes awarded in one year times perHome.federal'</code>; a <code>federal.uncapped</code> key → the path <code>$.federal</code>.</li>
+          <li>Change <code>it('fixture twin parses ...')</code> to also assert schema 2, the twin's kinds of bound cover <code>ends</code>, <code>remaining</code> and <code>none</code>, and every <code>bound.method</code>/<code>bound.reason</code> starts <code>'Fixture: invented'</code>.</li>
+        </ul>
+      </li>
+      <li id="t1-s3"><input type="checkbox"> Run and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project pipeline pipeline/test/enrichment/funding-schema.test.ts</code></pre>
+        Expected: FAIL (schema 1 parses; no <code>bound</code>).</li>
+      <li id="t1-s4"><input type="checkbox"> Implement schema 2 in <code>pipeline/enrichment/funding-schema.ts</code>. A <code>bound</code> zod union of three strict objects keyed on <code>kind</code>; <code>tier</code> refined to 1, 2 or 3 with the spec's message; <code>on</code> is <code>isoDate</code>; <code>dollars</code> is today's <code>dollars</code>. <code>bound</code> required on the City source, <code>state</code> and <code>federal</code>; <code>federal</code> gains <code>dollarsPerYear</code> and loses <code>uncapped</code> (the strict object then refuses it); <code>state.tier</code> and <code>federal.tier</code> are 1, 2 or 3. In <code>superRefine</code>: the remaining-needs-a-yearly-amount rule on each source's <code>bound</code> path; the ceiling rule on <code>['federal', 'dollarsPerYear']</code> (largest over <code>awards.years</code> of that year's new-construction homes, times <code>perHome.federal</code>); drop today's <code>federal.uncapped</code> rule (<code>:237-250</code>). The schema-1 message: check <code>schema === 1</code> before the zod parse and throw <code>BuildError(`${path}: $.schema: funding.json is schema 1: every source needs a bound (schema 2)`)</code>. Update the file-head comment (no "missing ceiling").</li>
+      <li id="t1-s5"><input type="checkbox"> Enter the live data in <code>pipeline/enrichment/funding.json</code> from the primaries. For each value: read the primary at its cited page (WebFetch) before it enters the file; record the read day as <code>retrieved</code> on that bound cite (the BLA cite keeps "2026-11-09"; the federal bound cite keeps the block's "2026-11-10"); where the primary differs from the spec, the file takes the primary and the report lists the difference.
+        <ul>
+          <li>Blocks verbatim from the spec: <code>city-debt</code> (§sec-design-data-city-debt: GOB Project Summary rows [10], [13], [16]), <code>city-ocoh</code> (BLA pp. 44, 46), <code>city-general-fund</code> at 21,800,000 with the spec's <code>note</code> and the new <code>city-housing-stability-fund</code> after it (BLA pp. 44, 100), <code>city-redevelopment</code> (BLA p. 73), the <code>federal</code> object (§sec-design-data-federal; CDLAC Exhibit A).</li>
+          <li>Impact fees (§sec-design-data-impact-fees): look for the City's development impact fee report (Gov. Code 66006(b)) for the latest fiscal year; if it states the ending balances of the Inclusionary Affordable Housing Fee and Jobs-Housing Linkage Fee accounts, write the <code>remaining</code> block with their sum and the spec's <code>method</code> text (fiscal year filled in), tier 2; else the spec's <code>none</code> block.</li>
+          <li>Housing Trust Fund (§sec-design-data-htf): read Charter §16.110 for its last fiscal year; 2042-43 or 2043 → the spec's block (Controller's statement cite); another year → <code>on</code> is that year's 30 June, cite the Charter section.</li>
+          <li>State (§sec-design-data-state): read the HCD and CalHFA reports on 2018 Propositions 1 and 2, MHP, AHSC and IIG, and the LAO cap-and-invest update of 2026-08-12. A stated last-award day → <code>ends</code>; stated San Francisco dollars left → <code>remaining</code>; a statewide balance alone makes no bound; else the spec's <code>none</code> block. <code>state.tier</code> stays 2.</li>
+          <li>Every City <code>note</code> loses its last sentence "Held level (OD-F3)."; <code>schema</code> becomes 2. Then:
+            <pre><code data-lang="sh">npx prettier --write pipeline/enrichment/funding.json</code></pre></li>
+        </ul>
+      </li>
+      <li id="t1-s6"><input type="checkbox"> Write the twin <code>pipeline/test/fixtures/mini/enrichment/funding.json</code> per §sec-design-data-fixture: live ids, kinds and order; schema 2; dollars a year and bounds as the fixture table (<code>city-debt</code> 1,500,000 remaining 3,500,000; <code>city-ocoh</code> 1,200,000 none; <code>city-general-fund</code> 600,000 none; <code>city-housing-stability-fund</code> 400,000 remaining 0; <code>city-impact-fees</code> 1,000,000 remaining 2,000,000; <code>city-housing-trust-fund</code> 800,000 ends 2043-06-30; <code>city-redevelopment</code> 500,000 remaining 0; <code>state</code> 3,000,000 none; <code>federal-tax-credits</code> 13,293,240 none); City sum 6,000,000; every bound tier 2 with <code>method</code>/<code>reason</code> starting "Fixture: invented"; every cite label starting "Fixture:". The twin's award rows must make the ceiling rule hold (30 new-construction homes in its best year).</li>
+      <li id="t1-s7"><input type="checkbox"> Run the schema tests: <code>npx vitest --run --project pipeline pipeline/test/enrichment/funding-schema.test.ts</code>. Expected: PASS.</li>
+      <li id="t1-s8"><input type="checkbox"> Make <code>pipeline/lib/fzp-cal/funding.ts</code> compile against schema 2 with today's emission otherwise: the federal entry's <code>n</code> is the number of new-construction award rows, its <code>window</code> the award window (<code>awardWindow</code>, <code>:280</code>), its <code>sources</code> <code>[federal.cite]</code> only (no <code>uncapped.cites</code>). Update <code>pipeline/test/fzp-cal/funding.test.ts</code>: <code>POOLS</code> gains <code>['city-housing-stability-fund', 'generalRevenue']</code> after the General Fund; ids 18; fill tiers <code>[3, 3, 3, 3, 3, 3, 3, 2, 1]</code>; provenance indices shift by one; the federal entry's <code>n</code> 15 and <code>window</code> <code>['2024-01-01', '2025-12-31']</code> on the live file; the shares array re-recorded (nine values summing to 1,000,000 millionths); "takes the federal entry's n, window and sources from federal.uncapped" becomes "takes the federal entry's n and window from the award rows". In <code>calibration-invariants.test.ts</code> the detail reads <code>'baselineFunding 9 pools, one programme each; ...'</code>.</li>
+      <li id="t1-s9"><input type="checkbox"> Regenerate and run.
+        <pre><code data-lang="sh">npm run pipeline -- fixture --update-golden
+npm run data:fixture
+npm run check
+npm run lint
+npm run test:pipeline
+npm run test:unit
+lsof -nP -iTCP:4173 -sTCP:LISTEN
+npx playwright test e2e/sim-funding.spec.ts --project=chromium --project=mobile</code></pre>
+        Expected: all pass (re-record any server or client test pinned on fixture-0's eight pools, per project note 9).</li>
+      <li id="t1-s10"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add src pipeline e2e/fixtures/data/fixture-0
+git commit -m "feat(funding): funding.json schema 2 with a bound on every source"</code></pre>
+        Then <code>npx chreode timing-check --head HEAD</code>: clean.</li>
+    </ol>
+    <aside data-kind="note"><strong>Report</strong> Each primary read: URL, page, the day read, the value read, and any difference from the spec. Which impact-fee block went in (with report and page, or the searches that found none); which state bound went in and why; the Charter's Housing Trust Fund year. The re-recorded tests.</aside>
+  </section>
+
+  <section id="sec-task-2">
+    <h2>Task 2: Inflows, provenance, check and report from the bounds</h2>
+    <p>Delivers row F1</p>
+    <p>Implements §sec-design-emit (with -v25, -examples), §sec-design-provenance and the F1 parts of §sec-docs. Adds the transitional optional field so the pipeline can emit pools with no <code>uncapped</code>.</p>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/lib/timelapse/types.ts</code> (<code>uncapped?: boolean</code>, transitional), <code>src/lib/timelapse/model.ts</code> (<code>checkPool</code> accepts the key absent; while present it is checked as today), <code>src/lib/timelapse/model.test.ts</code></li>
+      <li>Modify: <code>pipeline/lib/fzp-cal/funding.ts</code>, <code>pipeline/lib/fzp-cal/report.ts</code> (<code>:949-962</code>), <code>pipeline/lib/fzp-cal/invariants.ts</code> (<code>fundingOutcomes</code>, <code>:44-99</code>)</li>
+      <li>Modify: <code>pipeline/test/fzp-cal/funding.test.ts</code>, <code>calibrate.test.ts</code> (<code>:403</code>), <code>calibration-invariants.test.ts</code> (<code>:220-279</code>)</li>
+      <li>Modify: <code>docs/dev/finance-data.md</code></li>
+      <li>Regenerate: mini goldens and fixture-0; re-record tests pinned on fixture-0 (its federal pool now has a ceiling)</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: Task 1's <code>Bound</code>, <code>FundingFile</code>; <code>Inflow</code>, <code>Pool</code>, <code>Programme</code> (<code>src/lib/timelapse/types.ts</code>); <code>roundShares</code>.</li>
+      <li>Produces (<code>pipeline/lib/fzp-cal/funding.ts</code>):
+        <pre><code data-lang="ts">/** Anniversary k of asOf (k from 0), inflowArrivals' rule. */
+export function anniversary(asOf: Day, k: number): Day;
+/** The pool's inflows for a source of `dollarsPerYear` under `bound` (§sec-design-emit). */
+export function boundInflows(bound: Bound, dollarsPerYear: number, asOf: Day): Inflow[];
+/** Dollars arriving from asOf to the day before anniversary 1. */
+export function firstYearDollars(inflows: readonly Inflow[], asOf: Day): number;
+/** end(b): 'ends 2043-06-30' | 'ended 2026-06-30' | '$260.3 million left' | 'spent' | 'no end'. */
+export function boundEnd(bound: Bound, asOf: Day): string;
+/** boundSentence(b), the five templates of §sec-design-provenance. */
+export function boundSentence(bound: Bound, inflows: readonly Inflow[], asOf: Day): string;
+export interface FundingReport { /* exactly §sec-design-provenance's shape */ }</code></pre>
+        <code>baselineFunding(file, mohcd, asOf, profile)</code> keeps its signature. <code>Pool.uncapped?</code> is optional until Task 7; emitted pools have no such key.</li>
+    </ul>
+    <ol>
+      <li id="t2-s1"><input type="checkbox"> Write the failing pipeline tests in <code>pipeline/test/fzp-cal/funding.test.ts</code> (<code>AS_OF</code> = <code>day('2026-11-10')</code>, <code>day</code> a local ISO-to-<code>Day</code> helper):
+        <ul>
+          <li><code>it('emits the worked examples on the live file')</code>: the pools for <code>city-ocoh</code>, <code>federal-tax-credits</code>, <code>city-housing-trust-fund</code>, <code>city-debt</code>, <code>city-redevelopment</code> equal §sec-design-emit-examples exactly (federal <code>dollarsPerYear: 564_519_592</code>; trust fund <code>to: day('2043-06-30')</code>; <code>city-debt</code> once inflows 80,500,000 on 2026-11-10, 2027-11-10, 2028-11-10 and 18,810,000 on 2029-11-10, <code>debt: { rate: 0.06, termYears: 20 }</code>; redevelopment and <code>city-housing-stability-fund</code> <code>inflows: []</code>). The trust fund's arrivals, by <code>inflowArrivals</code> from <code>src/lib/sim/scenario/funding.ts</code> to 2066-12-31, are 17 days, 2026-11-10 to 2042-11-10. (The <code>city-debt</code> and impact-fee values follow what Task 1 entered; adjust the expected list if a primary changed them.)</li>
+          <li><code>it('takes inflowArrivals' anniversaries, 29 February as 28 February')</code>: <code>anniversary(day('2028-02-29'), k)</code> for k 0 to 4 is 2028-02-29, 2029-02-28, 2030-02-28, 2031-02-28, 2032-02-29, and equals <code>inflowArrivals({ kind: 'yearly', from, to: null, dollarsPerYear: 1 }, from, horizon)</code>; <code>boundInflows(remaining 3_500_000, 1_500_000, day('2028-02-29'))</code> gives once days 2028-02-29, 2029-02-28, 2030-02-28.</li>
+          <li><code>it('gives an ends on asOf one arrival and an ends the day before none')</code> (Review Focus 1): <code>on</code> = 2026-11-10 → <code>[{ kind: 'yearly', from: AS_OF, to: AS_OF, dollarsPerYear }]</code> and a programme; <code>on</code> = 2026-11-09 → <code>[]</code>, no programme, and in a full <code>baselineFunding</code> run the pool's programme is absent.</li>
+          <li><code>it('ends a remaining at an exact multiple and under one year')</code> (Review Focus 2): 161,000,000 at 80,500,000 → two once inflows of 80,500,000; 10,000,000 at 80,500,000 → one once inflow of 10,000,000, and with it on <code>city-debt</code> the report row's <code>firstYear</code> is 10,000,000 and its implied homes a year is <code>Math.floor(10_000_000 / (share * uncovered) + 0.5)</code>.</li>
+          <li><code>it('emits nine pools in order and seven programmes')</code>: pool ids and kinds as Task 1's <code>POOLS</code>; programme ids <code>baseline-&lt;id&gt;</code> for every pool but <code>city-housing-stability-fund</code> and <code>city-redevelopment</code>; every programme <code>to: null</code>, <code>from: AS_OF</code>; the report rows' nine shares sum to 1,000,000 millionths; no pool has an <code>uncapped</code> key (<code>Object.keys</code> is <code>['id', 'kind', 'label', 'inflows', 'debt', 'leverage']</code>).</li>
+          <li><code>it('states each bound in its provenance entry')</code>: City labels <code>"{label}: $X.X million a year, FY2024-25 ({end})"</code> (e.g. <code>'City: general-obligation bonds and other debt: $80.5 million a year, FY2024-25 ($260.3 million left)'</code>); the state label <code>"{label}: $150.0 million a year (a lower bound; no end)"</code>; the federal label <code>"{label}: at most $564.5 million a year (no end)"</code>; each method contains <code>boundSentence</code> of its bound and not "with no end (an assumption"; the inflow sentence present only where the pool has an inflow; each entry's <code>sources</code> end with the bound cite <code>{ label: `${cite.label}, ${cite.page}`, url }</code> unless an equal source is already there; tier <code>Math.max(2, bound.tier)</code>; the federal method is <code>federal.method</code>, award sentence, share sentence, <code>boundSentence</code>, "FY2024-25 dollars, not adjusted." in that order.</li>
+          <li><code>it('reads the check from the first year')</code>: on the live file 780 implied against 980 observed and no warning (if Task 1 entered an impact-fee balance under 34,800,000, the value the least pool gives, and the report says so); the federal pool's implied homes is a number; the two pools with no programme have <code>programme: null</code> and <code>impliedHomesPerYear: null</code>; the method begins <code>'Implied: over the pools with a programme and a share above 0, the least of their first year\'s dollars ÷ (share × $861,525), rounded half up: '</code>.</li>
+          <li><code>it('reports the first year by source')</code>: the live report rows' <code>firstYear</code> equal 80,500,000; 48,600,000; 21,800,000; 0; the impact-fee first year; 27,400,000; 0; 150,000,000; 564,519,592 (values as Task 1 entered them).</li>
+          <li><code>fundingWarning(780, 500, [2024, 2025])</code> reads "the baseline pools fully fund".</li>
+          <li>Fixture build: every entry tier 4 with the "Fixture (tier 4): " prefix; the federal entry's <code>n</code> and <code>window</code> from the twin's award rows; check re-recorded.</li>
+          <li>Emitted pools and programmes pass <code>checkPool</code> and <code>checkProgramme</code> (keep <code>:253-259</code>).</li>
+        </ul>
+        In <code>calibration-invariants.test.ts</code>: the fixture detail is <code>'baselineFunding 9 pools, 7 programmes; shares {n} millionths; no programme for city-housing-stability-fund, city-redevelopment; affordableRoutes tier 4'</code> (and the live-fallback variant); new failure cases: a dropped programme of a pool with an inflow, a programme added for <code>city-redevelopment</code>, a swapped pair, a share set to 0 (<code>'baselineFunding programme {id} has a share of 0'</code>), shares over 1,000,000, and shares under 1,000,000 on a copy where every pool has an inflow; the V25 run case pins the new detail. In <code>calibrate.test.ts</code>: replace <code>toContain('uncapped')</code> (<code>:403</code>) with <code>toContain('spent')</code> and <code>toContain('no end')</code>, and add a case that the mini calibration's <code>baselineFunding</code> pools follow the twin's bounds (<code>city-debt</code> once 1,500,000, 1,500,000, 500,000; impact fees once 1,000,000, 1,000,000; trust fund yearly to 2043-06-30; the two spent pools <code>[]</code>; others yearly <code>to: null</code>; federal yearly 13,293,240).</li>
+      <li id="t2-s2"><input type="checkbox"> Run and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project pipeline pipeline/test/fzp-cal/funding.test.ts</code></pre>
+        Expected: FAIL (<code>boundInflows</code> not exported; federal pool uncapped).</li>
+      <li id="t2-s3"><input type="checkbox"> Transitional model change: <code>uncapped?: boolean</code> in <code>Pool</code>; in <code>checkPool</code> (<code>model.ts:963-993</code>) the required keys lose <code>uncapped</code> and <code>uncapped</code> is an allowed optional key, checked as today when present. Add to <code>model.test.ts</code> <code>it('checkPool accepts a pool with no uncapped key')</code>. Where <code>npm run check</code> then needs a boolean from the optional field (known: <code>src/lib/timeline/pool-level.spec.ts:161</code>), write <code>=== true</code>; change nothing else in readers.</li>
+      <li id="t2-s4"><input type="checkbox"> Implement the emission in <code>baselineFunding</code>: each source's pool gets <code>boundInflows(source.bound, source.dollarsPerYear, asOf)</code>; the federal pool is built like the state pool (<code>kind: 'federal'</code>, <code>debt: null</code>, <code>leverage: 1</code>, its ceiling); no <code>uncapped</code> key anywhere; <code>PoolSpec.dollarsPerYear</code> becomes <code>firstYear: number</code>. Shares from <code>roundShares</code> over all nine; programmes only for pools with an inflow, in pool order. <code>boundInflows</code>:
+        <pre><code data-lang="ts">// none:                           [{ kind: 'yearly', from: asOf, to: null, dollarsPerYear }]
+// ends, day(on) &gt;= asOf:          [{ kind: 'yearly', from: asOf, to: day(on), dollarsPerYear }]
+// ends, day(on) &lt; asOf:           []
+// remaining, dollars 0:           []
+// remaining, dollars &gt; 0:         for k = 0, 1, ... while left &gt; 0:
+//   d = min(dollarsPerYear, left); push { kind: 'once', day: anniversary(asOf, k), dollars: d }; left -= d</code></pre>
+        A yearly inflow of 0 dollars stays (§sec-design-emit, last bullet). <code>day(on)</code> is a local ISO-to-<code>Day</code> helper (UTC). Provenance per §sec-design-provenance: <code>end(b)</code> uses <code>millions()</code> for "{$X.X million} left"; <code>cited(b)</code> is <code>`(tier ${b.tier}; ${b.cite.label}, ${b.cite.page})`</code>; the five <code>boundSentence</code> templates verbatim; "{last arrival}" is the last day <code>anniversary</code> gives on or before <code>on</code>; "{$dollars}" and "{$last}" use <code>money()</code>. The check: implied per pool with a programme and share above 0 is <code>firstYearDollars / (share × uncovered)</code>; the least, half up. <code>fundingWarning</code> text: "the baseline pools fully fund".</li>
+      <li id="t2-s5"><input type="checkbox"> <code>report.ts</code>: the Baseline funding table's columns are <code>['fill tier', 'programme', 'pool', 'kind', 'dollars in the first year', 'share', 'implied homes a year', 'end']</code>; a null programme or implied value prints <code>'none'</code>. <code>invariants.ts</code> <code>fundingOutcomes</code>: the five rules and five messages of §sec-design-emit-v25 verbatim, the detail <code>`baselineFunding ${p} pools, ${g} programmes; shares ${n} millionths`</code> plus <code>`; no programme for ${ids}`</code> when any pool has none; update its doc comment; the <code>affordableRoutes</code> part unchanged.</li>
+      <li id="t2-s6"><input type="checkbox"> Run the pipeline tests touched so far.
+        <pre><code data-lang="sh">npx vitest --run --project pipeline pipeline/test/fzp-cal/funding.test.ts pipeline/test/fzp-cal/calibrate.test.ts
+npx vitest --run --project server src/lib/timelapse/model.test.ts</code></pre>
+        Expected: PASS.</li>
+      <li id="t2-s7"><input type="checkbox"> Regenerate fixture-0 and the goldens, then run every project and e2e. fixture-0's federal pool now has a 13,293,240 ceiling and the engines treat it as paying only from what it received; re-record what moves (project note 9). <code>pipeline/test/fixture-funding.test.ts</code> must still fund a start.
+        <pre><code data-lang="sh">npm run pipeline -- fixture --update-golden
+npm run data:fixture
+npm run check
+npm run lint
+npm run test:pipeline
+npm run test:unit
+lsof -nP -iTCP:4173 -sTCP:LISTEN
+npx playwright test --project=chromium --project=mobile</code></pre>
+        Expected: all pass.</li>
+      <li id="t2-s8"><input type="checkbox"> Docs, <code>docs/dev/finance-data.md</code> (§sec-docs, first item): "<code>calibration.baselineFunding</code>" (nine pools; inflows follow bounds, the emission rules, one example per kind; programmes only for pools with an inflow; the table gains an End column and the federal row its ceiling); "Why the federal pool has no ceiling" becomes "The federal ceiling" (read from the award rows, why the best year, its schema check); "<code>pipeline/enrichment/funding.json</code>" (schema 2, bound kinds and their validation, no tier 4, an ended source stays in the file); "Stable ids" (<code>city-housing-stability-fund</code>, nine ids, <code>retiredIds</code> for removed sources); "Updating <code>funding.json</code>" step 4; "Fixture mode" (the twin's values and bounds); V25's funding rule. The "Older datasets" section and the sweep of other "uncapped" text are Task 3's.</li>
+      <li id="t2-s9"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add src/lib/timelapse pipeline e2e/fixtures/data/fixture-0 docs/dev/finance-data.md src
+git commit -m "feat(funding): emit pools whose inflows follow each source's bound"</code></pre>
+        Then <code>npx chreode timing-check --head HEAD</code>: clean.</li>
+    </ol>
+    <aside data-kind="note"><strong>Report (the F1 handback reach-check needs)</strong> The live file's first-year dollars by source (the nine values of t2-s1), the check's implied and observed homes a year, any warning, and which impact-fee block is in the file. The re-recorded tests on fixture-0, each with old and new values.</aside>
+  </section>
+
+  <section id="sec-task-3">
+    <h2>Task 3: Older datasets and documents load</h2>
+    <p>Implements §sec-design-pool-types: the legacy-load rules of F2, <code>LEGACY_UNCAPPED_DOLLARS</code> and <code>isNoCeiling</code>, and <code>checkPool</code>'s final keys.</p>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/lib/timelapse/model.ts</code>, <code>src/lib/timelapse/model.test.ts</code></li>
+      <li>Modify: <code>src/lib/sim/levers/finance.ts</code> (<code>parsePool</code>, <code>:117-146</code>), <code>src/lib/sim/levers/finance.spec.ts</code></li>
+      <li>Modify: <code>docs/dev/finance-data.md</code> (new "Older datasets"; every other "uncapped" goes), <code>docs/dev/finance-levers.md</code> (parse rules)</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>src/lib/timelapse/fixtures/calibration-uncapped.json</code> (Task 1); the transitional <code>Pool.uncapped?</code> (Task 2).</li>
+      <li>Produces (<code>src/lib/timelapse/model.ts</code>):
+        <pre><code data-lang="ts">export const LEGACY_UNCAPPED_DOLLARS = 100_000_000_000;
+/** True when a yearly amount is an older dataset's federal pool: dollars &gt;= LEGACY_UNCAPPED_DOLLARS. */
+export function isNoCeiling(dollars: number): boolean;
+/** Unchanged signature; may now return a copy whose baselineFunding.pools is a new array. */
+export function parseCalibration(json: unknown): Calibration;</code></pre>
+        <code>checkPool</code>'s keys are exactly <code>id</code>, <code>kind</code>, <code>label</code>, <code>inflows</code>, <code>debt</code>, <code>leverage</code>. <code>parsePool</code> accepts an optional <code>uncapped</code> of any value and returns the pool without it.</li>
+    </ul>
+    <ol>
+      <li id="t3-s1"><input type="checkbox"> Write the failing tests. In <code>model.test.ts</code>:
+        <ul>
+          <li>Rewrite Task 1's case as <code>it('loads an older-format calibration: the federal pool becomes one yearly inflow of LEGACY_UNCAPPED_DOLLARS')</code>: the federal pool has no <code>uncapped</code> key and <code>inflows</code> <code>[{ kind: 'yearly', from: cal.asOf, to: null, dollarsPerYear: LEGACY_UNCAPPED_DOLLARS }]</code>; every other pool equals its input without <code>uncapped</code>; <code>{ ...cal, baselineFunding: { ...cal.baselineFunding, pools: [] } }</code> deep-equals the input with the same pools emptied; every object but <code>baselineFunding</code> and its pools is the input's (<code>toBe</code>); the input is not mutated.</li>
+          <li><code>it('keeps the inflows of an uncapped pool that has some, without the key')</code>.</li>
+          <li><code>it('isNoCeiling at the constant, one dollar under and above')</code>: <code>isNoCeiling(100_000_000_000)</code> true, <code>isNoCeiling(99_999_999_999)</code> false, <code>isNoCeiling(150_000_000_000)</code> true.</li>
+          <li><code>it('refuses a non-boolean uncapped')</code>: <code>uncapped: 'yes'</code> on a baseline pool throws <code>CalibrationFormatError</code> at <code>baselineFunding.pools[0].uncapped</code> with "expected a boolean".</li>
+          <li><code>it('checkPool refuses an uncapped key')</code>. Remove the "expected no inflows on an uncapped pool" case (<code>:1374</code>) and drop <code>uncapped</code> from the pool literals (<code>:1299-1317</code>, <code>:1492</code>).</li>
+        </ul>
+        In <code>levers/finance.spec.ts</code>: replace <code>it('uncapped')</code> (<code>:169</code>) with <code>it('loads an added pool stored with uncapped false or true, without the key')</code>; add <code>it('loads a schema 4 document whose added pool carries uncapped as the same document without it')</code> through <code>parse4</code>; and Review Focus 5, <code>it('re-serialises an older document without uncapped and parses it to the same document')</code>: <code>parse(JSON.parse(JSON.stringify(parse(old))))</code> deep-equals <code>parse(old)</code> and the JSON has no <code>"uncapped"</code>.</li>
+      <li id="t3-s2"><input type="checkbox"> Run and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/timelapse/model.test.ts src/lib/sim/levers/finance.spec.ts</code></pre>
+        Expected: FAIL.</li>
+      <li id="t3-s3"><input type="checkbox"> Implement. In <code>parseCalibration</code> (<code>model.ts:1109-1127</code>), before <code>checkBaselineFunding</code>: when <code>baselineFunding.pools</code> is an array and any pool has an <code>uncapped</code> key, refuse a non-boolean with "expected a boolean", then build a new pools array (<code>uncapped: true</code> with no inflows → the yearly <code>LEGACY_UNCAPPED_DOLLARS</code> inflow from <code>asOf</code>; otherwise the key dropped) and a shallow copy of the calibration and of <code>baselineFunding</code> holding it; check and return that copy. Update the doc comment ("never mutated"; returns the input, or that copy). <code>checkPool</code>: final keys, both uncapped checks gone, doc comment updated. <code>parsePool</code>: <code>record(v, path, ['id', 'kind', 'label', 'inflows', 'debt', 'leverage'], ['uncapped'])</code>, <code>checkPool</code> on the record without <code>uncapped</code>, the "expected false" error removed, no <code>uncapped</code> in the result.</li>
+      <li id="t3-s4"><input type="checkbox"> Docs: <code>finance-data.md</code> gains "Older datasets" (how <code>parseCalibration</code> reads a pool with <code>uncapped</code>, <code>LEGACY_UNCAPPED_DOLLARS</code>, <code>isNoCeiling</code>, where "No ceiling" shows: the funding row, the By source table, the pool sentence, no level on the bar) and loses every other "uncapped"; <code>finance-levers.md</code>: an added pool's <code>uncapped</code> key from older documents is ignored.</li>
+      <li id="t3-s5"><input type="checkbox"> Run.
+        <pre><code data-lang="sh">npm run check
+npm run lint
+npm run test:unit
+npm run test:pipeline</code></pre>
+        Expected: PASS (fixture-0 is new-format since Task 2, so no fixture-0 number moves).</li>
+      <li id="t3-s6"><input type="checkbox"> Commit: <code>git add src/lib/timelapse src/lib/sim/levers docs/dev</code>, then <code>git commit -m "feat(funding): load older datasets and documents that carry uncapped"</code>; <code>npx chreode timing-check --head HEAD</code> clean.</li>
+    </ol>
+  </section>
+
+  <section id="sec-task-4">
+    <h2>Task 4: Both engines and the score pay only from what a pool received</h2>
+    <p>Implements §sec-design-pool-engines, the engine half of §sec-design-reach and §sec-tests-model's engine tests, and the docs <code>finance-engine.md</code>, <code>world-funding.md</code>, <code>finance-levers.md</code> (<code>buildFinance</code>), <code>finance-model.md</code>.</p>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/lib/sim/levers/finance.ts</code> (<code>buildFinance</code>, <code>:401</code>), <code>levers/finance.spec.ts</code> (<code>:666</code>), <code>levers/fixtures/finance.ts</code> (<code>:21-24</code>, <code>:101</code>, <code>:136</code>)</li>
+      <li>Modify: <code>src/lib/sim/scenario/funding.ts</code> (<code>:88-91</code>, <code>:227-238</code>, <code>FinanceIndex.capped</code> <code>:247-248</code>, <code>:272</code>, <code>:287</code>, readers <code>:356</code>, <code>:456</code>, <code>:469</code>), <code>scenario/money.ts</code> (<code>:61</code>, <code>:185</code>, <code>:195</code>), <code>scenario/funded.ts</code> (<code>:1409-1414</code>)</li>
+      <li>Modify: <code>src/lib/sim/scenario/{funding,engine-finance,finance-score,money,line}.spec.ts</code>, <code>fixtures/{bench-finance,finance-score-cases,ledger-model,mini-finance,tiny-queue}.ts</code>, <code>test/{finance-harness,money-identities}.ts</code></li>
+      <li>Modify: <code>src/lib/sim/world/funding/pools.ts</code> (<code>:85-87</code>, <code>:264-266</code>), <code>funding/test/fixtures.ts</code> (<code>:203-214</code>, <code>:306-311</code>), <code>funding/test/identities.ts</code> (<code>:74</code>, <code>:142</code>), <code>funding/{memo,policy,pools,serve}.spec.ts</code>, <code>src/lib/sim/world/policy/money.ts</code> (<code>:160</code>), <code>policy/roundtrip.spec.ts</code>, <code>src/lib/sim/world/score/statics.ts</code> (<code>:110</code>), <code>score/{lapse,limits}.spec.ts</code></li>
+      <li>Create: <code>src/lib/sim/world/funding/bounds.spec.ts</code></li>
+      <li>Regenerate if moved: <code>src/lib/sim/scenario/fixtures/golden-finance-seed1.json</code>, <code>src/lib/sim/world/funding/fixtures/funded-events-mini-seed1.json</code></li>
+      <li>Modify: <code>docs/dev/finance-engine.md</code>, <code>world-funding.md</code>, <code>finance-levers.md</code>, <code>finance-model.md</code></li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>LEGACY_UNCAPPED_DOLLARS</code>, <code>parseCalibration</code> (Task 3); fixture-0 with bounds (Task 2); <code>fixtureInput</code> (<code>src/lib/sim/world/test/cities.node.ts:85</code>), <code>withBaselineMoney</code>, <code>moneyTimeline</code>, <code>runFunded</code> (<code>src/lib/sim/world/funding/test/fixtures.ts:119</code>, <code>:267</code>, <code>:395</code>), <code>staticsOf</code>, <code>DEFAULT_POLICY4</code>, <code>availableOf</code>.</li>
+      <li>Produces: <code>FinanceIndex</code> without <code>capped</code>; <code>available(pool: Pool, s: PoolState): number</code> and <code>availableOf(pools: FundPools, q: number, def: Pool): number</code> both <code>leverage × received − committed − spentGrant − outLoan − lostLoan − lostGuarantee</code>, never <code>Infinity</code>. No engine file reads <code>uncapped</code>; the type still has the optional field until Task 7.</li>
+    </ul>
+    <ol>
+      <li id="t4-s1"><input type="checkbox"> Change the fixtures and write the failing tests. Every engine fixture pool with <code>uncapped: true</code> gets <code>inflows: [{ kind: 'yearly', from: &lt;its asOf&gt;, to: null, dollarsPerYear: LEGACY_UNCAPPED_DOLLARS }]</code> and no key; every <code>uncapped: false</code> line in these files goes; helper parameters named <code>uncapped</code> (<code>engine-finance.spec.ts:67</code>, <code>tiny-queue.ts:99</code>, <code>world/funding/test/fixtures.ts:306</code>, <code>levers/fixtures/finance.ts:21</code>) go. Tests:
+        <ul>
+          <li><code>scenario/funding.spec.ts</code>: <code>it('available is finite on every pool')</code> (replaces <code>:448</code>); <code>it('an application short on the federal pool waits as on any pool')</code>; drop "uncapped pool with inflows" (<code>:189</code>).</li>
+          <li><code>world/funding/pools.spec.ts</code>: <code>it('availableOf is finite on every pool')</code>; <code>it('the federal pool receives its yearly arrival')</code> (an <code>in</code> ledger event for it on its arrival day).</li>
+          <li><code>levers/finance.spec.ts</code>: <code>it('a baseline scale on the federal pool scales its inflow')</code> (1.5 → <code>dollarsPerYear</code> × 1.5 from the entry's day) and <code>it('scale 0 on the federal pool makes an off span')</code> (replaces <code>:666</code>).</li>
+          <li>Identities: <code>world/funding/test/identities.ts</code> and <code>scenario/test/money-identities.ts</code> assert E4 and I4 on every pool and lose E6 and I6; <code>scenario/test/finance-harness.ts</code> loses its E6 line (<code>:51</code>) and checks every pool (<code>:91</code>). <code>money.spec.ts:394</code> ("passes E6") goes; <code>finance-score.spec.ts</code>'s <code>MC.uncapped</code> cases and the case fixture go (builder's call above).</li>
+          <li>New <code>src/lib/sim/world/funding/bounds.spec.ts</code>, <code>describe('fixture-0 bounds')</code>: input <code>withBaselineMoney(await fixtureInput())</code>, <code>DEFAULT_POLICY4</code>, one world (seed 1) to month 480 via <code>runFunded</code>; assertions: the last <code>in</code> event of <code>city-debt</code> is on <code>anniversary 2</code> of <code>asOf</code> with 500,000 dollars; of <code>city-impact-fees</code> on anniversary 1; of <code>city-housing-trust-fund</code> on 2042-10-10; <code>city-redevelopment</code> and <code>city-housing-stability-fund</code> have no <code>in</code> event and no programme in <code>input.finance</code>; <code>city-ocoh</code>, <code>city-general-fund</code>, <code>state</code> and <code>federal-tax-credits</code> each have an <code>in</code> event in months 469 to 480; at least one funded start in months 1 to 12.</li>
+          <li><code>bounds.spec.ts</code>, <code>describe('older-format calibration')</code>: input <code>withBaselineMoney({ ...await fixtureInput(), calibration: parseCalibration(&lt;calibration-uncapped.json&gt;) })</code>, 480 months; in <code>afterStep</code>, <code>availableOf</code> of the federal pool's row never falls below 99,000,000,000 and no waiting row is short on it in any month (read the line's shortfall as <code>docs/dev/world-funding.md</code> describes it). Review Focus 4: the same run with the older policy's federal entries (scale 0 from month 13, scale 1 from month 25) awards nothing from the federal pool in months 13 to 24 and is never short on it.</li>
+        </ul>
+      </li>
+      <li id="t4-s2"><input type="checkbox"> Run and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/sim/scenario/funding.spec.ts src/lib/sim/world/funding/pools.spec.ts src/lib/sim/world/funding/bounds.spec.ts src/lib/sim/levers/finance.spec.ts</code></pre>
+        Expected: FAIL (<code>Infinity</code>; unscaled federal inflow).</li>
+      <li id="t4-s3"><input type="checkbox"> Implement §sec-design-pool-engines: <code>buildFinance</code> scales every baseline pool (drop <code>:401</code>); <code>checkFinanceShape</code> drops its uncapped rule; <code>available</code> and <code>availableOf</code> lose their <code>Infinity</code> branch; <code>FinanceIndex.capped</code> is removed and each reader treats every pool as capped (<code>asksOf</code>, <code>awardPasses</code>, <code>money.ts</code> bins every arrival and counts every release or repayment as returned, <code>funded.ts</code> collects every asked pool, <code>book</code> in <code>pools.ts</code>, the money track in <code>world/policy/money.ts</code>, <code>world/funding/test/fixtures.ts:214</code>, <code>line.spec.ts:242-244</code>, <code>ledger-model.ts</code>' reference model); <code>statics.ts</code>' comment drops "an uncapped pool has no inflows"; comments that say "capped pool" for the counters say "pool".</li>
+      <li id="t4-s4"><input type="checkbox"> Regenerate the engine goldens if they moved, and run.
+        <pre><code data-lang="sh">npx tsx src/lib/sim/scenario/fixtures/build-finance-golden.ts
+npx tsx src/lib/sim/world/funding/fixtures/build-funded-golden.ts
+git diff --stat src/lib/sim/scenario/fixtures/golden-finance-seed1.json src/lib/sim/world/funding/fixtures/funded-events-mini-seed1.json
+npm run check
+npm run lint
+npm run test:unit
+npm run test:pipeline</code></pre>
+        Expected: all pass. A golden that moved moves only by the federal pool's <code>in</code> events and the received series (the awards and starts are unchanged, since 100 billion a year never binds); if starts or awards move, stop and report.</li>
+      <li id="t4-s5"><input type="checkbox"> Docs: <code>finance-engine.md</code> (award rule and pool state lose their uncapped notes; E4 for every pool; E6 retired; the mini fixture's federal pool described with its yearly inflow; "The known limit" stays); <code>world-funding.md</code> (<code>availableOf</code> has no infinite case; arrivals for every pool); <code>finance-levers.md</code> (<code>buildFinance</code> scales every baseline pool, the federal pool included); <code>finance-model.md</code> (the bundle-order example: an added City loan would shrink the federal grant, which relieves nothing while the City pool commits the whole principal; "uncapped" and "that pool never binds" go).</li>
+      <li id="t4-s6"><input type="checkbox"> Commit: <code>git add src/lib/sim docs/dev</code>, then <code>git commit -m "feat(funding): every pool pays only from what it received, in both engines"</code>; <code>npx chreode timing-check --head HEAD</code> clean.</li>
+    </ol>
+    <aside data-kind="note"><strong>Report</strong> Each golden or pinned number that moved (file, test, old, new), and the retired tests.</aside>
+  </section>
+
+  <section id="sec-task-5">
+    <h2>Task 5: Details' money results, the timeline and the pool level</h2>
+    <p>Implements the money-results, <code>TimelineMode</code>/<code>SimDetails</code> and <code>pool-level.ts</code> bullets of §sec-design-pool-page and their §sec-tests-page tests. In <code>TimelineMode.svelte</code>, <code>SimDetails.svelte</code> and their specs only the <code>uncapped</code> lines change (<code>game-sim</code> writes these files next).</p>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/lib/fzp/money-view.ts</code> (<code>:230-255</code>), <code>money-view.spec.ts</code> (<code>:34</code>, <code>:207-237</code>), <code>MoneyResults.svelte</code> (<code>:46-49</code>, <code>:57</code>, <code>:113-117</code>)</li>
+      <li>Modify (uncapped lines only): <code>src/lib/timeline/TimelineMode.svelte</code> (<code>:102</code>, <code>:653</code>, <code>:1493</code>), <code>SimDetails.svelte</code> (<code>:58-59</code>, <code>:84</code>, <code>:236</code>), <code>TimelineMode.svelte.spec.ts</code>, <code>SimDetails.svelte.spec.ts</code>, <code>owner.spec.ts</code>, <code>Timeline.svelte.spec.ts</code></li>
+      <li>Modify: <code>src/lib/timeline/pool-level.ts</code>, <code>pool-level.spec.ts</code></li>
+      <li>Modify: <code>src/lib/fzp/card.spec.ts</code>, <code>ProjectCardPanel.svelte.spec.ts</code>, <code>fixtures/timeline-score.spec.ts</code>, <code>fixtures/timeline-score.ts</code>, <code>fixtures/money.ts</code></li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>isNoCeiling</code>, <code>LEGACY_UNCAPPED_DOLLARS</code> (Task 3).</li>
+      <li>Produces: <code>bySourceColumns(m: MoneyAt): SourceColumn[]</code> (one argument); <code>uncappedPoolIds</code> removed; <code>MoneyResults</code> and <code>SimDetails</code> without an <code>uncapped</code> prop; <code>interface LevelPool { id: string; leverage: number }</code>; <code>poolLevel(money, pools)</code> and <code>levelSet(view, doc, baseline, asOf)</code> unchanged in signature.</li>
+    </ul>
+    <ol>
+      <li id="t5-s1"><input type="checkbox"> Write the failing tests.
+        <ul>
+          <li><code>money-view.spec.ts</code>: <code>it('drops an all-zero Received column')</code>; the <code>uncappedPoolIds</code> tests go.</li>
+          <li><code>SimDetails.svelte.spec.ts</code>: the two "no limit" cases (<code>:637-654</code>, <code>:661-674</code>) go; <code>it('Received shows the federal pool's dollars')</code>; <code>it('reads No ceiling under Received for a pool that received 100 billion')</code>; Review Focus 3: <code>it('lists a baseline pool with no programme in By source')</code> with a pool received 0 everywhere rendering without error.</li>
+          <li><code>pool-level.spec.ts</code>: <code>it('gives the federal pool a level')</code>; <code>it('sums every baseline pool into Current funding')</code> (rewrite <code>:301-317</code>: city, state and federal); <code>it('gives a pool with a 100 billion yearly inflow no level and leaves it out of the sum')</code> (through <code>levelSet</code>); the "an uncapped pool gives NaN" case (<code>:116-121</code>) goes; the property case (<code>:161-164</code>) drops the flag.</li>
+          <li><code>TimelineMode.svelte.spec.ts</code>: the case pinning "no limit" on an added bond's flag (<code>:1655-1726</code>) goes; <code>uncapped: false</code> lines (<code>:1735</code>, <code>:1810</code>, <code>:2859</code>) go. <code>owner.spec.ts:67</code>, <code>Timeline.svelte.spec.ts:41</code>, the <code>src/lib/fzp</code> specs and fixtures drop <code>uncapped</code> and comments saying "uncapped".</li>
+        </ul>
+      </li>
+      <li id="t5-s2"><input type="checkbox"> Run and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/fzp/money-view.spec.ts src/lib/timeline/pool-level.spec.ts
+npx vitest --run --project client src/lib/timeline/SimDetails.svelte.spec.ts</code></pre>
+        Expected: FAIL.</li>
+      <li id="t5-s3"><input type="checkbox"> Implement: <code>bySourceColumns</code> drops every all-zero column; <code>MoneyResults</code>' Received cell is <code>No ceiling</code> where <code>isNoCeiling(received)</code>, dollars otherwise (builder's call: a local <code>const NO_CEILING = 'No ceiling'</code> in <code>money-view.ts</code>, which Task 7 replaces with <code>funding-copy.ts</code>'s export, since <code>funding-copy.ts</code> is Task 7's file); <code>TimelineMode</code> stops building and passing the set; <code>SimDetails</code> loses the prop. <code>pool-level.ts</code>: <code>LevelPool</code> without the flag; <code>poolLevel</code> reads every pool given; <code>levelSet</code> skips (own and baseline) a pool with a yearly inflow whose amount <code>isNoCeiling</code>; doc comments say so in place of "an uncapped pool has no level".</li>
+      <li id="t5-s4"><input type="checkbox"> Run.
+        <pre><code data-lang="sh">npm run check
+npm run lint
+npm run test:unit</code></pre>
+        Expected: PASS; <code>SimDetails.svelte.spec.ts</code> light and dark <code>expectNoA11yViolations</code> cases still pass.</li>
+      <li id="t5-s5"><input type="checkbox"> Commit: <code>git add src/lib/fzp src/lib/timeline</code>, then <code>git commit -m "feat(funding): money results and pool levels without uncapped"</code>; <code>npx chreode timing-check --head HEAD</code> clean.</li>
+    </ol>
+  </section>
+
+  <section id="sec-task-6">
+    <h2>Task 6: The money sentences move to money-copy.ts</h2>
+    <p>Implements §sec-design-money-copy: a move with text and signatures unchanged.</p>
+    <h3>Files</h3>
+    <ul>
+      <li>Create: <code>src/lib/timeline/money-copy.ts</code>, <code>src/lib/timeline/money-copy.spec.ts</code></li>
+      <li>Modify: <code>src/lib/timeline/copy.ts</code> (<code>:10-57</code> as far as the moved exports), <code>copy.spec.ts</code> (<code>:5</code>, <code>:11</code>, <code>:89-99</code>)</li>
+      <li>Modify import lines only: <code>src/lib/sim-page/PolicySummary.svelte:19</code>, <code>src/lib/sim-page/FundingTab.svelte:20-26</code>, <code>src/lib/sim-page/FundingTab.svelte.spec.ts:12</code>, <code>src/lib/fzp/ProvenanceBody.svelte:12</code>, <code>src/lib/timeline/WhatEditor.svelte:32</code>, <code>src/lib/timeline/Inspector.svelte.spec.ts:19</code></li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Produces (<code>src/lib/timeline/money-copy.ts</code>): <code>PER_HOME_SOURCE</code>, <code>coverageShortLine(step: CoverageStep): string</code>, <code>COVERAGE_CHANCE_NOTE</code>, <code>COVERAGE_RUN_SENTENCE4</code>, <code>COVERAGE_OFF_SHORT_SENTENCE4</code>, <code>TERMS_HINT</code>, <code>perHomeMethod(method: string): string</code>, private <code>PER_HOME_TAIL</code>; with their comments, the file-head sentence about the <code>*4</code> sentences, and the imports only they use (<code>formatPercent</code>, <code>CoverageStep</code>). Every other export stays in <code>copy.ts</code>.</li>
+    </ul>
+    <ol>
+      <li id="t6-s1"><input type="checkbox"> Move the <code>perHomeMethod</code> describe block from <code>copy.spec.ts</code> to a new <code>money-copy.spec.ts</code> importing from <code>./money-copy</code> (with the <code>MONEY_SOURCES</code> import); drop <code>PER_HOME_SOURCE</code> and <code>perHomeMethod</code> from <code>copy.spec.ts</code>'s import list. Run <code>npx vitest --run --project server src/lib/timeline/money-copy.spec.ts</code>. Expected: FAIL (no module).</li>
+      <li id="t6-s2"><input type="checkbox"> Create <code>money-copy.ts</code> by moving the exports verbatim; change the six importers' paths. Confirm nothing else imports them: Grep <code>(PER_HOME_SOURCE|coverageShortLine|COVERAGE_CHANCE_NOTE|COVERAGE_RUN_SENTENCE4|COVERAGE_OFF_SHORT_SENTENCE4|TERMS_HINT|perHomeMethod)\b</code> over <code>src</code>, <code>e2e</code>, <code>scripts</code> finds them only in <code>money-copy.ts</code>, its spec and the six importers.</li>
+      <li id="t6-s3"><input type="checkbox"> Run.
+        <pre><code data-lang="sh">npm run check
+npm run lint
+npx vitest --run --project server src/lib/timeline/money-copy.spec.ts src/lib/timeline/copy.spec.ts
+npx vitest --run --project client src/lib/sim-page/FundingTab.svelte.spec.ts src/lib/timeline/Inspector.svelte.spec.ts src/lib/sim-page/PolicySummary.svelte.spec.ts</code></pre>
+        Expected: PASS with <code>git diff -M</code> showing text unchanged in the moved lines.</li>
+      <li id="t6-s4"><input type="checkbox"> Commit: <code>git add src/lib/timeline src/lib/sim-page src/lib/fzp</code>, then <code>git commit -m "refactor(timeline): move the public-money sentences to money-copy.ts"</code>; <code>npx chreode timing-check --head HEAD</code> clean.</li>
+    </ol>
+  </section>
+
+  <section id="sec-task-7">
+    <h2>Task 7: The funding editors, and Pool without uncapped</h2>
+    <p>Delivers row F2</p>
+    <p>Implements the editor bullets of §sec-design-pool-page and their tests, removes the transitional <code>Pool.uncapped?</code> (Task 2), and closes F2: no pool can always pay across types, both engines, the score and the page, with the legacy-load rules of Task 3. <code>funding-presets.ts</code> keeps <code>contracts</code>' <code>dateMeasure</code> stub; only its <code>uncapped: false</code> goes.</p>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/lib/sim-page/funding-copy.ts</code> (<code>NO_LIMIT</code> <code>:116</code>; <code>labelScaleApplied</code> <code>:297-308</code>; <code>summaryScaleText</code> <code>:450-462</code>), <code>funding-view.ts</code> (<code>:258-312</code>, <code>:314-380</code>, <code>:479-486</code>, <code>:1034</code>, <code>:1045</code>), <code>funding-view.spec.ts</code>, <code>funding-edit.ts</code> (<code>:269</code>, <code>:742</code>, <code>:807-811</code>, <code>:941</code>), <code>funding-edit.spec.ts</code>, <code>funding-presets.ts</code> (<code>:149</code>), <code>funding-presets.spec.ts</code>, <code>src/lib/sim-page/test/funding.ts</code> (<code>:40</code>, <code>:96</code>)</li>
+      <li>Modify: <code>src/lib/sim-page/FundingGroupEditor.svelte</code> (<code>:7</code>, <code>:143-170</code>, <code>:192</code>, <code>:243-267</code>), <code>FundingPoolRow.svelte</code> (<code>:156</code>), <code>FundingTab.svelte</code> (<code>:45</code>, <code>:221</code>), <code>FundingTab.svelte.spec.ts</code> (<code>:88</code>, <code>:305</code>)</li>
+      <li>Modify: <code>e2e/sim-funding.spec.ts</code> lines 19 and 200 only</li>
+      <li>Modify: <code>src/lib/timelapse/types.ts</code> (remove the transitional field; the comment no longer mentions it); <code>src/lib/fzp/money-view.ts</code> and <code>MoneyResults.svelte</code> (use <code>funding-copy.ts</code>'s <code>NO_CEILING</code> in place of Task 5's local constant)</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>isNoCeiling</code>, <code>LEGACY_UNCAPPED_DOLLARS</code>, <code>parseCalibration</code> (Task 3); <code>calibration-uncapped.json</code> (Task 1).</li>
+      <li>Produces: <code>export const NO_CEILING = 'No ceiling'</code> (<code>funding-copy.ts</code>, replacing <code>NO_LIMIT</code>); <code>labelScaleApplied(name, from, scale)</code> and <code>summaryScaleText(name, from, scale, backOn)</code> without the <code>uncapped</code> argument (other parameters as today); <code>ScaleLine</code> without <code>uncapped</code>; <code>BaselineGroup.perYear: Dollars</code>; <code>Pool</code> exactly as F2.</li>
+    </ul>
+    <ol>
+      <li id="t7-s1"><input type="checkbox"> Write the failing tests (test helper first: <code>test/funding.ts</code>' federal pool gets a yearly 50,000,000 from <code>FUND_ASOF</code>, no flag).
+        <ul>
+          <li><code>funding-view.spec.ts</code>: <code>groups[2].perYear</code> is 50,000,000 (replaces <code>:127</code>; <code>:381</code> likewise a number); <code>it('scaleLines on the federal pool gives the text it gives a City pool at the same scale')</code> (150% → "From {Month Year}: 150% of today's amount"); <code>it('poolMoneySentence names the federal pool's yearly amount')</code>; <code>it('poolMoneySentence of a 100 billion yearly pool reads No ceiling')</code>; Review Focus 3, <code>it('lists a baseline pool with no programme in its group')</code>: a City pool with <code>inflows: []</code> and no programme is in <code>groups[0].pools</code>, not in <code>programmes</code>, and the group's <code>perHome</code> is unchanged by it; Review Focus 4, <code>it('on an older dataset the federal group reads Switched off, then No ceiling')</code>: baseline from <code>parseCalibration(calibration-uncapped.json)</code>, entries scale 0 then 1, <code>baselineGroups</code> on a day in each span gives <code>off</code> true, then <code>isNoCeiling(perYear)</code> true, and <code>scaleLines</code> gives "switched off" then "switched back on, 100% of today's amount".</li>
+          <li><code>funding-edit.spec.ts</code>: <code>it('addScaleEdit on the federal group at 1.5 labels as on any group')</code>.</li>
+          <li><code>funding-presets.spec.ts</code>: <code>it('builds presets whose pools carry no uncapped')</code> (no <code>"uncapped"</code> in <code>JSON.stringify</code> of every preset's pools); drop <code>uncapped: false</code> at <code>:215</code>, <code>:685</code>.</li>
+          <li><code>FundingTab.svelte.spec.ts</code>: <code>:88</code> becomes <code>row(/^Federal tax credits · \$50 million a year/)</code>; <code>it('the federal group's change entry is the group editor')</code>: opening "+ Change from a date" on it shows the Amount, % field and no "Switched back on"; <code>it('applies a 150% change on the federal group')</code>; <code>it('reads Federal tax credits · No ceiling on an older-dataset baseline')</code>; light and dark <code>expectNoA11yViolations</code> on the open federal entry.</li>
+        </ul>
+      </li>
+      <li id="t7-s2"><input type="checkbox"> Run and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/sim-page/funding-view.spec.ts src/lib/sim-page/funding-edit.spec.ts src/lib/sim-page/funding-presets.spec.ts
+npx vitest --run --project client src/lib/sim-page/FundingTab.svelte.spec.ts</code></pre>
+        Expected: FAIL.</li>
+      <li id="t7-s3"><input type="checkbox"> Implement §sec-design-pool-page's editor bullets: <code>baselineGroups</code> sums every group (<code>perYear</code> a number, uncapped branch gone); <code>scaleLines</code>, <code>labelScaleApplied</code>, <code>summaryScaleText</code> lose the uncapped branch and argument (update callers <code>funding-edit.ts:807-811</code>, <code>funding-view.ts:1034</code>, <code>:1045</code>); <code>poolMoneySentence</code> writes the inflow phrases for every pool, <code>NO_CEILING</code> for a yearly inflow whose amount <code>isNoCeiling</code>, an empty money phrase for a pool with no inflow; <code>FundingGroupEditor</code> loses the "Federal tax credits" fieldset, the <code>uncapped</code> branch in <code>apply</code> and the entry's <code>on</code> state, and its head comment's "capped group" wording; <code>FundingTab.svelte:221</code> is <code>isNoCeiling(g.perYear) ? NO_CEILING : perYearText(g.perYear)</code>; pool literals drop <code>uncapped: false</code>; <code>newProgramme</code>'s comment (<code>funding-edit.ts:742</code>) names "a pool with no inflows"; <code>MoneyResults</code> imports <code>NO_CEILING</code>. <code>e2e/sim-funding.spec.ts</code>: line 19 drops <code>NO_LIMIT</code>, line 200 is <code>const amount = g.off ? SWITCHED_OFF : perYearText(g.perYear);</code>. Remove <code>uncapped?</code> from <code>Pool</code> in <code>types.ts</code>.</li>
+      <li id="t7-s4"><input type="checkbox"> Prove nothing reads the flag. <code>npm run check</code> passes. Grep <code>uncapped</code> over <code>src</code>, <code>pipeline</code>, <code>e2e</code>, <code>scripts</code>: the only hits about pools are <code>model.ts</code>' older-calibration reader, <code>levers/finance.ts</code>' optional key, their tests, <code>calibration-uncapped.json</code>, and <code>LEGACY_UNCAPPED_DOLLARS</code>; every other hit is another sense of the word (density caps, SB 79 yields, unrounded values). Grep <code>no limit</code> (case-insensitive) over <code>src</code> and <code>e2e</code>: no pool text.</li>
+      <li id="t7-s5"><input type="checkbox"> Confirm the fixture is current, then run everything.
+        <pre><code data-lang="sh">npm run pipeline -- fixture --update-golden
+git status --short
+npm run data:fixture
+npm run lint
+npm run test:pipeline
+npm run test:unit
+lsof -nP -iTCP:4173 -sTCP:LISTEN
+npx playwright test --project=chromium --project=mobile
+npx playwright test e2e/sim-funding.spec.ts --project=chromium --project=mobile --repeat-each=5 --retries=0</code></pre>
+        Expected: <code>git status --short</code> shows no change under <code>e2e/fixtures</code> or <code>pipeline/test/fixtures</code> (the hashed-path changes are complete and the fixture matches them); every suite passes; no new preview-server stderr.</li>
+      <li id="t7-s6"><input type="checkbox"> Commit: <code>git add src e2e/sim-funding.spec.ts</code>, then <code>git commit -m "feat(funding): no pool can always pay; the federal pool is edited like any other"</code>; <code>npx chreode timing-check --head HEAD</code> clean.</li>
+    </ol>
+  </section>
+
+  <section id="sec-open-questions">
+    <h2>Open questions</h2>
+    <ul>
+      <li>None. The fixture is regenerated in Tasks 1, 2 and 7 (<code>pipeline/test/golden.test.ts:205</code> compares fixture-0 with the goldens, so each task that changes pipeline output regenerates to stay green; Task 7's run must show no change), which the spec's rule allows. The older-format calibration copy is Prettier-formatted, so <code>.prettierignore</code> is not touched.</li>
+    </ul>
+  </section>
+
+  <section id="sec-self-review">
+    <h2>Self-review</h2>
+    <ul>
+      <li><strong>Spec coverage.</strong> §sec-design-schema, -data → Task 1; -emit, -v25, -examples, -provenance → Task 2; -pool-types → Task 3; -pool-engines, -reach (engine and fixture tests) → Task 4; -pool-page → Tasks 5 and 7; -money-copy → Task 6; §sec-tests-pipeline → Tasks 1, 2; §sec-tests-model → Tasks 2, 3, 4; §sec-tests-page → Tasks 5, 6, 7; §sec-docs → Tasks 2, 3, 4; every file of §sec-write-set-files is in the File Structure table.</li>
+      <li><strong>Type consistency.</strong> <code>boundInflows</code>, <code>anniversary</code>, <code>firstYearDollars</code>, <code>boundEnd</code>, <code>boundSentence</code> (Task 2); <code>LEGACY_UNCAPPED_DOLLARS</code>, <code>isNoCeiling</code> (Task 3, used in 4, 5, 7); <code>NO_CEILING</code> (Task 7; Task 5 uses a local constant until then); <code>Pool.uncapped?</code> lives from Task 2 to Task 7 only.</li>
+      <li><strong>Compile coupling.</strong> Each task compiles on its own: the optional field lets readers and writers go group by group; <code>checkPool</code>'s final keys (Task 3) arrive after the emission drops the key (Task 2) and with <code>parsePool</code> and <code>parseCalibration</code> stripping it.</li>
+    </ul>
+  </section>
+</article>
