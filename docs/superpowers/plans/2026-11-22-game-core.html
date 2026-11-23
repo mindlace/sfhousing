@@ -493,7 +493,7 @@ export function e2eGoalAmount(storage: Storage | null): number | null;</code></p
     <section id="sec-q1">
       <h3>Q1: does <code>adopt</code> of the current game's id apply the <code>sfhousing:sim:v1</code> rule?</h3>
       <p>Spec, game-core lines 657, 676, 728: "When the store writes the records of a game that becomes current and <code>sfhousing:sim:v1</code> holds a value, it removes that key in the same change. When <code>sfhousing:sim:v2</code> was absent at the copy out, it first copies the v1 text to <code>sfhousing:sim:corrupt:&lt;ISO time&gt;</code>"; <code>adopt</code> writes "the current game's records when one of them is current"; "<code>adopt</code> of the current game's id replaces its progress in memory and writes its plan and policy to the two record keys. The current id does not change." An adopted game with <code>policy</code> null removes <code>sfhousing:sim:v2</code>; if v1 is still present (a player who has kept their first game since before the build), <code>migrateSimAutosave</code> (<code>src/lib/timeline/sim-doc4.ts:342</code>) brings the schema 3 policy back on the next <code>/sim</code> load.</p>
-      <p><strong>Recommendation:</strong> apply the rule: <code>adopt</code> of the current id removes v1 in the same change, copying it aside first when v2 was absent before the change.</p>
+      <p><strong>Ruled:</strong> the spec now applies the rule to <code>adopt</code> of the current id (§sec-design-store-change, line 657 and 728).</p>
     </section>
     <section id="sec-q2">
       <h3>Q2: what happens when a write during construction steps 4 to 7 is refused?</h3>
@@ -888,7 +888,7 @@ const stored = (s: Storage, key: string) =&gt; JSON.parse(s.getItem(key) as stri
   <section id="sec-task-6">
     <h2>Task 6: Changing the store</h2>
     <p>Implements §sec-design-store-change and the open game's refusals of §sec-design-open. With Task 7's layout script, this completes G2.</p>
-    <aside data-kind="note"><strong>Held on Q1</strong> Whether <code>adopt</code> of the current id applies the <code>sfhousing:sim:v1</code> rule is held on <a href="#sec-q1">Q1</a>. Build everything else; leave that one assertion out until the partner rules.</aside>
+    <aside data-kind="note"><strong>Ruled (Q1)</strong> The spec (§sec-design-store-change) now says the <code>sfhousing:sim:v1</code> rule applies to every change that writes the two record keys, <code>adopt</code> of the current game's id included: when v1 holds a value it is removed in the same change, first copied to <code>sfhousing:sim:corrupt:&lt;ISO time&gt;</code> when <code>sfhousing:sim:v2</code> was absent before the change. Test it: "adopt of the current id removes sfhousing:sim:v1, copying it aside when v2 was absent".</aside>
     <ul>
       <li>Modify: <code>src/lib/game/store.svelte.ts</code>, <code>src/lib/game/store.svelte.spec.ts</code></li>
     </ul>
