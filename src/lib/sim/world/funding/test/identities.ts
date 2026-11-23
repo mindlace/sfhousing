@@ -1,6 +1,7 @@
-// Test harness: the ledger identities E1 to E7 of the finance-engine spec (4.7) after a world's
-// step, as `scenario/test/finance-harness.ts` checks them after every event of today's engine, and
-// the world's pool columns against the ledger. Every failure is collected, then asserted at once.
+// Test harness: the ledger identities E1 to E7 (E6 retired) of the finance-engine spec (4.7) after
+// a world's step, as `scenario/test/finance-harness.ts` checks them after every event of today's
+// engine, and the world's pool columns against the ledger. Every failure is collected, then
+// asserted at once.
 import { expect } from 'vitest';
 import type { LedgerEvent } from '$lib/sim/scenario/money';
 import type { FinanceFrame } from '../../policy/frame';
@@ -70,8 +71,6 @@ export function checkStep(
     const s = sumsOf(pools, e.pool);
     if (e.kind === 'in') {
       if (e.programme !== null) bad.push(`${at}: an 'in' names a programme`);
-      // E6
-      if (def.uncapped) bad.push(`${at}: E6 'in' on an uncapped pool`);
       s.received += e.dollars;
       continue;
     }
@@ -138,13 +137,12 @@ export function checkStep(
       bad.push(`${at}: world lostLoan ${cols.lostLoan[q]} != ledger ${s.Ll}`);
     if (cols.lostGuarantee[q] !== s.Lh)
       bad.push(`${at}: world lostGuarantee ${cols.lostGuarantee[q]} != ledger ${s.Lh}`);
-    // E4: available money never below zero, and the world's own value is the ledger's.
-    if (!def.uncapped) {
-      const avail = def.leverage * s.received - committed - s.Sg - outLoan - s.Ll - s.Lh;
-      if (avail < -TOL) bad.push(`${at}: E4 available ${avail}`);
-      const got = availableOf(cols, q, def);
-      if (!(Math.abs(got - avail) <= TOL)) bad.push(`${at}: E4 world ${got} != ledger ${avail}`);
-    }
+    // E4, on every pool: available money never below zero, and the world's own value is the
+    // ledger's.
+    const avail = def.leverage * s.received - committed - s.Sg - outLoan - s.Ll - s.Lh;
+    if (avail < -TOL) bad.push(`${at}: E4 available ${avail}`);
+    const got = availableOf(cols, q, def);
+    if (!(Math.abs(got - avail) <= TOL)) bad.push(`${at}: E4 world ${got} != ledger ${avail}`);
     // E5: grant losses within grant spend.
     if (s.Lg > s.Sg) bad.push(`${at}: E5 grant loss ${s.Lg} > spent ${s.Sg}`);
   }

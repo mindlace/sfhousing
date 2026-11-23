@@ -309,7 +309,7 @@ function runsOf(entries: readonly ScaleEntry[], asOf: Day): Run[] {
   return runs;
 }
 
-/** A capped pool's inflows under its runs (spec 4.4 step 5). Arrivals only from `inflowArrivals`. */
+/** A pool's inflows under its runs (spec 4.4 step 5). Arrivals only from `inflowArrivals`. */
 function scaleInflows(inflows: readonly Inflow[], runs: readonly Run[]): Inflow[] {
   const out: { first: Day; inflow: Inflow }[] = [];
   const once = (day: Day, dollars: number) => {
@@ -396,7 +396,6 @@ export function buildFinance(
     const entries = f.baselineScale.filter((e) => e.pool === pool.id);
     if (entries.length === 0) return pool;
     off.push(...offSpans(pool.id, entries));
-    if (pool.uncapped) return pool;
     return { ...pool, inflows: scaleInflows(pool.inflows, runsOf(entries, asOf)) };
   });
 

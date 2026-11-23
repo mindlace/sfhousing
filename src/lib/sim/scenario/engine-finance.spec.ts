@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import { FILL_LEVELS } from '$lib/data/scenario-codec';
 import { MARKET_TERMS, projectDollars, resolveTerms } from '$lib/sim/finance';
-import { parseCalibration } from '$lib/timelapse/model';
+import { LEGACY_UNCAPPED_DOLLARS, parseCalibration } from '$lib/timelapse/model';
 import { parseProjectsFile } from '$lib/timelapse/projects';
 import type { Day } from '$lib/timelapse/time';
 import {
@@ -64,12 +64,11 @@ const funded = (c: Collected) => c.schedules.filter((s) => s.funding !== undefin
 const sid = (row: number, k = 0) => `sim:${TINY_IDS[row]}:${k}`;
 const firstStage = (s: Schedule): Stage => STAGE_ORDER.find((g) => s.entered[g] !== undefined)!;
 
-const pool = (id: string, kind: PoolKind, inflows: Inflow[], uncapped = false): Pool => ({
+const pool = (id: string, kind: PoolKind, inflows: Inflow[]): Pool => ({
   id,
   kind,
   label: id,
   inflows,
-  uncapped,
   debt: kind === 'goBond' || kind === 'cop' ? { rate: 0.04, termYears: 30 } : null,
   leverage: kind === 'bank' ? 0.8 : 1
 });
@@ -88,6 +87,10 @@ const grant = (id: string, poolId: string, reach: 'market' | 'affordable', share
   }) satisfies Programme;
 const once = (day: Day, dollars: number): Inflow => ({ kind: 'once', day, dollars });
 const AMPLE = 1_000_000_000_000;
+/** The federal pool as an older dataset's reads: 100 billion a year from asOf. */
+const LEGACY: Inflow[] = [
+  { kind: 'yearly', from: asOf, to: null, dollarsPerYear: LEGACY_UNCAPPED_DOLLARS }
+];
 
 /** The ids of the rows some in-flight project names (the engine's held rows). */
 function heldRows(input: SimInput): Set<number> {
@@ -230,7 +233,7 @@ function randomFinance(seed: number): Finance {
     if (p.kind === 'bank') p.leverage = 0.5 + r() * 0.5;
     pools.push(p);
   }
-  if (r() < 0.6) pools.push(pool('fed', 'federal', [], true));
+  if (r() < 0.6) pools.push(pool('fed', 'federal', LEGACY));
   const programmes: Programme[] = [];
   const nProg = 1 + Math.floor(r() * 5);
   for (let g = 0; g < nProg; g++) {
@@ -283,8 +286,8 @@ describe('conservation (property)', () => {
           if (e.kind !== 'commit') return;
           commits++;
           const probe = c.probes.find((p) => p.after === k)!;
-          finance.pools.forEach((p, q) => {
-            if (!p.uncapped) expect(probe.available[q]).toBeGreaterThanOrEqual(0);
+          finance.pools.forEach((_, q) => {
+            expect(probe.available[q]).toBeGreaterThanOrEqual(0);
           });
         });
         expect(c.probes.length).toBe(c.ledger.length);
@@ -320,7 +323,7 @@ describe('determinism and lot order', () => {
 });
 
 describe('the plan and the twin share draws', () => {
-  it('a capped pool with no inflows and a City-tier grant on it changes no schedule', () => {
+  it('a pool with no inflows and a City-tier grant on it changes no schedule', () => {
     const twin = miniFinance(asOf);
     const plan = miniFinance(asOf);
     plan.pools.push(pool('empty-city', 'dedicatedTax', []));
@@ -339,7 +342,7 @@ describe('the plan and the twin share draws', () => {
 describe('certain projects keep their counterpart’s stage times (spec 6 test 4)', () => {
   const H50 = dayOf(2050, 12, 31);
   const certainMarket = (): Finance => ({
-    pools: [pool('fed', 'federal', [], true)],
+    pools: [pool('fed', 'federal', LEGACY)],
     programmes: [grant('fed-market', 'fed', 'market', 1)],
     off: [],
     slope: 3,
@@ -432,7 +435,12 @@ describe('unlimited money, a 100% grant', () => {
       }),
       market: [],
       finance: {
-        pools: [pool('fed', 'federal', [], true)],
+        // every lot at risk at asOf asks on its first days: 100 billion a year would bind here
+        pools: [
+          pool('fed', 'federal', [
+            { kind: 'yearly', from: asOf, to: null, dollarsPerYear: 1_000_000_000_000_000 }
+          ])
+        ],
         programmes: [grant('aff', 'fed', 'affordable', 1)],
         off: [],
         slope: 3,

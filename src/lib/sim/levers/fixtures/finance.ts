@@ -3,6 +3,7 @@
 import { resolveTerms } from '$lib/sim/finance';
 import type { SimInput } from '$lib/sim/scenario/types';
 import { dayOf } from '$lib/sim/scenario/dates';
+import { LEGACY_UNCAPPED_DOLLARS } from '$lib/timelapse/model';
 import type { Calibration, Day, Pool, Programme, TermKey } from '$lib/timelapse/types';
 import type { FinanceLevers } from '../types';
 
@@ -18,10 +19,9 @@ function pool(
   id: string,
   kind: Pool['kind'],
   inflows: Pool['inflows'],
-  uncapped = false,
   debt: Pool['debt'] = null
 ): Pool {
-  return { id, kind, label: id, inflows, uncapped, debt, leverage: 1 };
+  return { id, kind, label: id, inflows, debt, leverage: 1 };
 }
 
 function grant(poolId: string, share: number): Programme {
@@ -43,10 +43,10 @@ function build(asOf: Day, cityAFrom: Day): ReturnType<typeof baselineFixture> {
     { kind: 'yearly', from, to: null, dollarsPerYear }
   ];
   const pools = [
-    pool('city-a', 'goBond', yearly(cityAFrom, 6_000_000), false, { rate: 0.06, termYears: 20 }),
+    pool('city-a', 'goBond', yearly(cityAFrom, 6_000_000), { rate: 0.06, termYears: 20 }),
     pool('city-b', 'generalRevenue', yearly(asOf, 4_000_000)),
     pool('state', 'state', yearly(asOf, 3_000_000)),
-    pool('federal', 'federal', [], true)
+    pool('federal', 'federal', yearly(asOf, LEGACY_UNCAPPED_DOLLARS))
   ];
   const shares = [0.2, 0.148251, 0.137419, 0.51433];
   const programmes = pools.map((p, i) => ({ ...grant(p.id, shares[i]), from: asOf }));

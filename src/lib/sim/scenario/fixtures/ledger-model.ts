@@ -7,6 +7,7 @@
  * Awards ignore `off` on purpose: a partly covered application can commit from a pool inside its
  * `off` span (M1, open with the partner), so the cases include commits inside an off span.
  */
+import { LEGACY_UNCAPPED_DOLLARS } from '$lib/timelapse/model';
 import type { Day } from '$lib/timelapse/time';
 import type { Instrument, Pool, Programme } from '$lib/timelapse/types';
 import { dayOf } from '../dates';
@@ -44,7 +45,6 @@ const POOLS: readonly Pool[] = [
     kind: 'generalRevenue',
     label: 'General revenue',
     inflows: [],
-    uncapped: false,
     debt: null,
     leverage: 1
   },
@@ -53,7 +53,6 @@ const POOLS: readonly Pool[] = [
     kind: 'bank',
     label: 'Bank',
     inflows: [],
-    uncapped: false,
     debt: null,
     leverage: 0.7
   },
@@ -62,7 +61,6 @@ const POOLS: readonly Pool[] = [
     kind: 'goBond',
     label: 'GO bond',
     inflows: [],
-    uncapped: false,
     debt: { rate: 0.06, termYears: 20 },
     leverage: 1
   },
@@ -71,7 +69,6 @@ const POOLS: readonly Pool[] = [
     kind: 'federal',
     label: 'Federal',
     inflows: [],
-    uncapped: true,
     debt: null,
     leverage: 1
   }
@@ -129,22 +126,24 @@ export function ledgerModel(seed: number): LedgerCase {
   const horizon = asOf + int(2 * 365, 6 * 365);
   const months = monthsOf(asOf, horizon);
 
-  // 1-4 pools, each capped pool with an opening sum on asOf and a yearly inflow
+  // 1-4 pools: the federal pool with 100 billion a year from asOf (no test reaches it), every
+  // other pool with an opening sum on asOf and a yearly inflow
   const pools: Pool[] = shuffle(POOLS)
     .slice(0, int(1, 4))
     .map((t) => ({
       ...t,
-      inflows: t.uncapped
-        ? []
-        : [
-            { kind: 'once', day: asOf, dollars: int(1, 5) * 1_000_000 },
-            {
-              kind: 'yearly',
-              from: asOf + int(30, 365),
-              to: null,
-              dollarsPerYear: int(1, 8) * 1_000_000
-            }
-          ]
+      inflows:
+        t.kind === 'federal'
+          ? [{ kind: 'yearly', from: asOf, to: null, dollarsPerYear: LEGACY_UNCAPPED_DOLLARS }]
+          : [
+              { kind: 'once', day: asOf, dollars: int(1, 5) * 1_000_000 },
+              {
+                kind: 'yearly',
+                from: asOf + int(30, 365),
+                to: null,
+                dollarsPerYear: int(1, 8) * 1_000_000
+              }
+            ]
     }));
 
   // one to three programmes per pool, of distinct instruments, in a shuffled global order
@@ -166,11 +165,11 @@ export function ledgerModel(seed: number): LedgerCase {
     )
   );
 
-  const capped = pools.flatMap((p, q) => (p.uncapped ? [] : [q]));
   const off: Finance['off'] = [];
-  if (capped.length > 0) {
+  {
     const from = asOf + int(0, Math.floor((horizon - asOf) / 2));
-    off.push({ pool: pools[pick(capped)].id, from, to: r() < 0.25 ? null : from + int(30, 400) });
+    const q = pick(pools.map((_, i) => i));
+    off.push({ pool: pools[q].id, from, to: r() < 0.25 ? null : from + int(30, 400) });
   }
   const isOff = (q: number, d: Day) =>
     off.some((o) => o.pool === pools[q].id && o.from <= d && (o.to === null || d <= o.to));
@@ -187,7 +186,6 @@ export function ledgerModel(seed: number): LedgerCase {
   // arrivals by day, by pool order then arrival order
   const arrivals = new Map<Day, { q: number; dollars: number }[]>();
   pools.forEach((p, q) => {
-    if (p.uncapped) return;
     for (const fl of p.inflows) {
       const dollars = fl.kind === 'once' ? fl.dollars : fl.dollarsPerYear;
       for (const day of inflowArrivals(fl, asOf, horizon)) {
@@ -269,7 +267,7 @@ export function ledgerModel(seed: number): LedgerCase {
       emit(day, e.pool, e.prog, e.kind, e.dollars);
     }
 
-    // 3. awards: off is ignored on purpose (M1); every capped pool asked must cover its ask
+    // 3. awards: off is ignored on purpose (M1); every pool asked must cover its ask
     const tries = r() < 0.05 ? int(1, 2) : 0;
     for (let t = 0; t < tries && programmes.length > 0; t++) {
       const set = shuffle(programmes.map((_, k) => k))
@@ -283,7 +281,7 @@ export function ledgerModel(seed: number): LedgerCase {
       });
       const asks = new Map<number, number>();
       for (const it of items) asks.set(it.pool, (asks.get(it.pool) ?? 0) + it.amount);
-      const ok = [...asks].every(([q, ask]) => pools[q].uncapped || available(q) >= ask);
+      const ok = [...asks].every(([q, ask]) => available(q) >= ask);
       if (!ok) continue;
 
       const project = projects++;

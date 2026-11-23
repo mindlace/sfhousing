@@ -572,7 +572,7 @@ describe('buildFinance: terms', () => {
   });
 });
 
-describe('buildFinance: scaling a capped pool', () => {
+describe('buildFinance: scaling a pool', () => {
   const Y27 = dayOf(2027, 1, 1);
   const Y28 = dayOf(2028, 1, 1);
   const Y29 = dayOf(2029, 1, 1);
@@ -680,7 +680,7 @@ describe('buildFinance: off spans', () => {
   const X = A + 200;
   const Y = dayOf(2030, 3, 15);
 
-  it('scale 0 then 1 on a capped pool: one off span, no arrival inside it', () => {
+  it('scale 0 then 1 on a pool: one off span, no arrival inside it', () => {
     const base = fixture();
     const f = scales({ pool: 'state', from: X, scale: 0 }, { pool: 'state', from: Y, scale: 1 });
     const out = buildFinance(base, f, A)!;
@@ -712,22 +712,43 @@ describe('buildFinance: off spans', () => {
     expect(poolOf(out, 'state').inflows).toEqual([{ kind: 'once', day: A, dollars: 3_000_000 }]);
   });
 
-  it('scale 0 on the uncapped federal pool', () => {
+  it('scale 0 on the federal pool makes an off span', () => {
     const base = fixture();
+    const fed = poolOf(base, 'federal').inflows[0];
+    expect(fed.kind).toBe('yearly');
     const out = buildFinance(base, scales({ pool: 'federal', from: X, scale: 0 }), A)!;
     expect(out.off).toEqual([{ pool: 'federal', from: X, to: null }]);
-    expect(poolOf(out, 'federal')).toBe(poolOf(base, 'federal'));
+    // the arrivals before the entry stay; none after it
+    expect(poolOf(out, 'federal').inflows).toEqual([
+      { kind: 'once', day: A, dollars: fed.kind === 'yearly' ? fed.dollarsPerYear : -1 }
+    ]);
     const g = out.programmes.find((p) => p.pool === 'federal')!;
     expect(g.id).toBe('baseline-federal');
     expect(out.programmes.map((p) => p.id)).toEqual(base.programmes.map((p) => p.id));
   });
 
-  it('scale 2 on federal gives no span and no change', () => {
+  it('a baseline scale on the federal pool scales its inflow', () => {
     const base = fixture();
-    const out = buildFinance(base, scales({ pool: 'federal', from: X, scale: 2 }), A)!;
+    const fed = poolOf(base, 'federal').inflows[0];
+    if (fed.kind !== 'yearly') throw new Error('the fixture federal pool has one yearly inflow');
+    const at = dayOf(2028, 3, 15);
+    const out = buildFinance(base, scales({ pool: 'federal', from: at, scale: 1.5 }), A)!;
     expect(out.off).toEqual([]);
-    base.pools.forEach((p, i) => expect(out.pools[i]).toBe(p));
+    expect(poolOf(out, 'federal').inflows).toEqual([
+      { kind: 'once', day: A, dollars: fed.dollarsPerYear },
+      { kind: 'once', day: dayOf(2027, 3, 15), dollars: fed.dollarsPerYear },
+      { kind: 'yearly', from: at, to: null, dollarsPerYear: fed.dollarsPerYear * 1.5 }
+    ]);
+    // the other pools are the base's own
+    base.pools.forEach((p, i) => {
+      if (p.id !== 'federal') expect(out.pools[i]).toBe(p);
+    });
     expect(out.programmes).toEqual(base.programmes);
+    // a pool object still carrying the older flag is scaled the same way
+    const flagged = fixture();
+    flagged.pools = flagged.pools.map((p) => (p.id === 'federal' ? { ...p, uncapped: true } : p));
+    const again = buildFinance(flagged, scales({ pool: 'federal', from: at, scale: 1.5 }), A)!;
+    expect(poolOf(again, 'federal').inflows).toEqual(poolOf(out, 'federal').inflows);
   });
 
   it('scale-before-asOf-then-later', () => {

@@ -49,7 +49,7 @@ describe('TimelineScore fixture: tiers', () => {
 describe('TimelineScore fixture: money', () => {
   const money = TIMELINE_SCORE_MONEY.money!;
 
-  it('satisfies I1, I4, I5 and I6 on the series', () => {
+  it('satisfies I1, I4 and I5 on the series', () => {
     checkMoneyIdentities(money, [uBond, federal]);
   });
 

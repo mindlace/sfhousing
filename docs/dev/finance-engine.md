@@ -145,9 +145,10 @@ times 2^20, plus rank × 2 plus the kind bit; the rank must be below 2^19).
 Terms. The **coverage level** is `coverageLevel(c)` = `isCertain(c) ? 1 : c`: coverage counted up to
 1, with `isCertain`'s tolerance (`CERTAIN_TOLERANCE`, 1e-9). `below(x, y)` is `x < y − 1e-9`; every
 comparison of two levels uses it. A **bundle** B is an application's programmes; **certain** is
-level 1. An **ask** of a set S on a capped pool is the sum, over S's items on that pool, of
+level 1. An **ask** of a set S on a pool is the sum, over S's items on that pool, of
 `projectDollars` of the item's `granted`, `lent` and `reserve` at the application's start size. A
-capped pool is **short for S** when `available < ask`. A pool S asks nothing of is never short.
+pool is **short for S** when `available < ask`. A pool S asks nothing of is never short. Every pool
+pays only from what it has received, the federal pool included.
 
 `awardSet` (`funding.ts`) for an application with bundle B:
 
@@ -167,8 +168,8 @@ Why each part:
   oversubscribed, the fraction every other grant of its tier pays. So a pool that could pay in one
   round may be short in the next; that is why the rule repeats. No pool is added back.
 - It ends: each round that does not stop removes at least one pool, and none returns. With the
-  baseline there are at most 7 capped pools in a bundle (six City pools and the state pool; the
-  federal pool is uncapped and never short).
+  baseline there are at most 7 pools in a bundle (the five City pools with a programme, the state
+  pool and the federal pool).
 - "Not below, with the tolerance": a certain application is awarded only with a certain set, so it
   never starts as a partly covered project. A partly covered one may be awarded with a set whose
   level is equal within 1e-9 or higher. Coverage above 1 (through loans and guarantees) counts as
@@ -225,14 +226,14 @@ monotone in them, so "passes" is "units ≤ H", H being the group's largest pass
 money now, found by bisection over whole sizes (about a dozen award tests per group). Each group
 keeps a segment tree of units in key order, so its first passing member is found in O(log n). A pass
 repeatedly takes the earliest application among the groups' first passes, confirms it with the
-award rule at its own units, awards it, and finds H again for the groups that share a capped pool
+award rule at its own units, awards it, and finds H again for the groups that share a pool
 with it. A group keeps its H across passes when no money moved outside serving and it gained no
 member and no size change (the `keep` argument of `Line.serve`).
 
 **When the line is served.** On each day of the loop with an inflow, a money event, a re-pricing or
 a new application, after those. A release on the day re-serves the line (ruling R-7a): money events
 of the day's awards are settled after each serving pass, and the line is served again while money
-returned (`released` or a loan's `repay` on a capped pool). The loop repeats until a pass awards
+returned (`released` or a loan's `repay` on any pool). The loop repeats until a pass awards
 nothing and no money returned.
 
 **Leaving the line**: awarded; the lot started by another route (its other kind's award, or its
@@ -305,12 +306,11 @@ drawn in.
 ## The pool state, availability and the events
 
 `PoolState` (`funding.ts`), whole dollars: `received`, `committed`, `spentGrant`, `outLoan`,
-`lostLoan`, `lostGuarantee`. A capped pool's availability, F9 (f) term for term:
+`lostLoan`, `lostGuarantee`. A pool's availability, F9 (f) term for term, for every pool:
 
 `available = leverage × received − committed − spentGrant − outLoan − lostLoan − lostGuarantee`
 
-`committed` includes the guarantee reserves held. An uncapped pool is never tested (`Infinity`); its
-state is still kept and its events emitted. The check is one product less integer sums, so no
+`committed` includes the guarantee reserves held. It is always finite. The check is one product less integer sums, so no
 comparison depends on floating-point summation order. For a `bank` pool, a grant removes a whole
 dollar of headroom, not `leverage` of one, which is conservative.
 
@@ -335,7 +335,7 @@ never pays more than it set aside. With λ = 1 (tier 4) a guarantee loses its wh
 per pool, and every event except `in` carries its `programme` id (`null` on `in`). Only the
 programmes of the awarded set are in the ledger.
 
-**Inflows.** Each arrival of a capped pool on a day the pool is not off emits `in` with its dollars
+**Inflows.** Each arrival of a pool on a day the pool is not off emits `in` with its dollars
 and `programme: null`, and adds to `received`. Zero-dollar arrivals emit nothing.
 
 **Order within a day** (`Treasury`, `money.ts`):
@@ -366,9 +366,9 @@ and `loss` on grants, loans and guarantees (the programme's instrument says whic
 | E1     | I1              | Every cumulative sum never decreases; `committed ≥ 0` and `outLoan ≥ 0`.                                                                                                              |
 | E2     | I2              | `C = R + Sg + Sl + committed`: guarantee reserves are committed and released, never spent.                                                                                            |
 | E3     | I3              | `Sl = outLoan + P + Ll`: every lent dollar is outstanding, repaid or lost.                                                                                                            |
-| E4     | I4              | For a capped pool, `leverage × received − committed − Sg − outLoan − Ll − Lh ≥ 0`, equal to the engine's value after every event.                                                     |
+| E4     | I4              | For every pool, `leverage × received − committed − Sg − outLoan − Ll − Lh ≥ 0`, equal to the engine's value after every event.                                                        |
 | E5     | I5              | `Lg ≤ Sg`; and `Lh` over one project's guarantee never exceeds its reserve.                                                                                                           |
-| E6     | I6              | An uncapped pool has no `in` event.                                                                                                                                                   |
+| E6     | I6              | Retired (finite funding, 2026-11-22): every pool receives its arrivals. The other identities keep their numbers.                                                                      |
 | E7     | none            | Per project and programme: Σ `commit` = Σ `release` + Σ `spend` + still committed; a loan that ended has `spend` = `repay` + `loss`; a guarantee that ended has `release` = `commit`. |
 
 `test/finance-harness.ts` (`checkLedger`, `runCollect`) asserts these after every event, with the
@@ -586,7 +586,8 @@ to load the engine, not data): two pools, three programmes, one of them certain.
 - programme `bench-afford`: grant share 0.25, reach `affordable`, `minHomes` 0, on `bench-fund`.
 
 **The bench baseline** (`benchBaseline(asOf)`): six City pools at 80.5, 48.6, 36.7, 34.8, 27.4 and
-6.0 million dollars a year, a `state` pool at 150 million, an uncapped `federal` pool, one affordable
+6.0 million dollars a year, a `state` pool at 150 million, a `federal` pool at 100 billion a year
+(`LEGACY_UNCAPPED_DOLLARS`, so it never binds on the bench), one affordable
 grant per pool with the Exhibit F shares (City 300,027 split by the Exhibit E amounts, state
 118,390, federal 443,108, over 861,525), `minHomes` 70, bench `slope` 3.0 and bench
 `affordableRoutes` 16/53, 36/53 and 1/53. The bench input has `market: []`. The slope is above the
@@ -701,7 +702,7 @@ lapses. Case 7's median (155.6 and 188.7 ms) therefore measures an off day that 
 with `state` off.
 
 **Cost of the award rule and of off days** (the design's estimates, inferred from operation counts,
-not measured): one run of the award rule is at most 1 + (capped pools in the bundle) rounds, 8 for
+not measured): one run of the award rule is at most 1 + (pools in the bundle) rounds, 8 for
 the baseline, each a memoised lookup plus a pass over the set's items, under about 100 arithmetic
 operations and no `exp` or `log`; per serve the cost is about 10 groups × 12 bisection steps × that
 bound. An off or on day is a re-pricing day: O(line), plus one new spell (an `exp` and a `log` per
@@ -719,6 +720,11 @@ determinism, the queue, certain projects, grouped serving), `engine-finance-stac
 on the baseline, a short pool, `funding.programmes`), `engine-finance-repricing.spec.ts` (a
 programme opening or ending, a pool off, the known limit, regimes), plus `card.spec.ts`,
 `input.spec.ts` and `simulate.property.spec.ts`.
+
+The mini fixture (`miniFinance()`, `fixtures/mini-finance.ts`) has three pools: `m-city`, yearly
+20,000,000 from `asOf`; `m-bank`, a `bank` pool with one 5,000,000 inflow on `asOf + 400`; and
+`federal`, one yearly inflow of 100,000,000,000 from `asOf` (`LEGACY_UNCAPPED_DOLLARS`), which no
+test reaches. The engine fixtures that once had an uncapped pool give it that same yearly inflow.
 
 The finance golden holds seeds 1 and 4 (ruling R-11a): seed 1 is the design's case (certain affordable
 funded starts; `in`, `commit` and `spend` events); seed 4 is added and gives market-funded starts

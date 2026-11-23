@@ -37,13 +37,15 @@ const CHANGE = 120;
 
 /**
  * FNV-1a hash of every event (with its month) and ledger event, and their count, recorded from
- * the build before the memo (2026-11-13, a7844ad1).
+ * the build before the memo (2026-11-13, a7844ad1). The synthCity values were re-recorded when the
+ * federal pool started to receive its yearly arrival (finite funding, 2026-11-22): its eleven `in`
+ * events are the only change; every other event and ledger event hashes as before.
  */
 const RECORDED: Record<string, string> = {
-  'synthCity baseline 1': '9bd46c06/35622',
-  'synthCity baseline 2': 'd0658336/36032',
-  'synthCity bench 1': '63fb1b40/36454',
-  'synthCity bench 2': '5fd482e3/36944',
+  'synthCity baseline 1': 'c33486ee/35633',
+  'synthCity baseline 2': 'c1317842/36043',
+  'synthCity bench 1': '7c97457c/36465',
+  'synthCity bench 2': '656bd79f/36955',
   'live 1': 'b04ec705/6292',
   'live 2': 'dbb6c92c/6849',
   'live 3': 'c590436b/6133'
@@ -189,7 +191,6 @@ function moneyPolicies(): Policy[] {
     kind: 'generalRevenue',
     label: 'Added pool',
     inflows: [{ kind: 'yearly', from: asOf, to: null, dollarsPerYear: 20_000_000 }],
-    uncapped: false,
     debt: null,
     leverage: 1
   };

@@ -321,7 +321,7 @@ function newScaleOf(f: PolicyFrame): StageScale {
 type Arrival = { pool: string; day: Day; dollars: number };
 
 /**
- * Today's arrivals by month: `inflowArrivals` from `asOf` over the window of the capped pools of
+ * Today's arrivals by month: `inflowArrivals` from `asOf` over the window of every pool of
  * `li.plan.finance`, off days skipped, each in the month holding its day (`asOf` in month 1).
  * Within a month: by day, then the frame's pool order, then inflow order.
  */
@@ -329,7 +329,6 @@ function arrivalsByMonth(fin: NonNullable<SimInput['finance']>, poolOrder: strin
   const idx = financeIndexOf(fin);
   const out = new Map<number, Arrival[]>(months.map((m) => [m, []]));
   fin.pools.forEach((p, q) => {
-    if (p.uncapped) return;
     for (const fl of p.inflows) {
       const dollars = fl.kind === 'once' ? fl.dollars : fl.dollarsPerYear;
       for (const day of inflowArrivals(fl, ASOF, monthLastDay(ASOF, W))) {
