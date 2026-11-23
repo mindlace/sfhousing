@@ -1,10 +1,12 @@
 import { getContext, setContext } from 'svelte';
-import { newId } from '$lib/ids/base58';
+import { isValidId, newId } from '$lib/ids/base58';
 import type { Day } from '$lib/timelapse/time';
 import { ALL_ALLOWED, allowedAt, type Allowed } from './allowed';
-import { NEW_GAME, type Progress } from './progress';
+import { NEW_GAME, levelUp as nextProgress, type Banked, type Progress } from './progress';
 import {
+  MAX_SAVES,
   SAVES_KEY,
+  SAVE_NAME_MAX,
   defaultSaveName,
   parseGameSave,
   saveKey,
@@ -28,30 +30,41 @@ const PLAN_RECORD = 'sfhousing:plan:v1';
 /** The policy record (`SIM_KEY4` of `$lib/timeline/sim-doc4`). */
 const POLICY_RECORD = 'sfhousing:sim:v2';
 /** The schema 3 policy record (`SIM_KEY` of `$lib/sim-page/sim-doc`), removed when a change writes the records. */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const OLD_POLICY = 'sfhousing:sim:v1';
+/** Where a removed `OLD_POLICY` is copied when `POLICY_RECORD` was absent. */
+const OLD_POLICY_ASIDE = 'sfhousing:sim:corrupt:';
 
 const SAVE_PREFIX = 'sfhousing:save:';
 const CORRUPT_PREFIX = 'sfhousing:save:corrupt:';
 
 type Write = readonly [key: string, value: string | null];
+/** The text of the two record keys. A `GameSave` is one: its stored copies. */
+type Records = { plan: string | null; policy: string | null };
+type Call = readonly [kind: 'changed' | 'removed', id: string];
 
 const EMPTY: ReadonlySet<string> = new Set();
+const OK: StoreChange = Object.freeze({ ok: true });
+const FULL: StoreChange = Object.freeze({ ok: false, reason: 'full' });
+const REFUSED: StoreChange = Object.freeze({ ok: false, reason: 'storage' });
 
 /**
  * Applies `ops` in order (null is `removeItem`). On a throw it puts back every key it had
- * already written, ignoring throws while it does, and returns false.
+ * already written, ignoring throws while it does, and answers whether a read (the old value
+ * of a key) or a write threw.
  */
-function writeAll(storage: Storage, ops: readonly Write[]): boolean {
+function writeAll(storage: Storage, ops: readonly Write[]): 'ok' | 'read' | 'write' {
   const done: (readonly [string, string | null])[] = [];
+  let failed: 'read' | 'write' = 'read';
   try {
     for (const [key, value] of ops) {
+      failed = 'read';
       const old = storage.getItem(key);
+      failed = 'write';
       if (value === null) storage.removeItem(key);
       else storage.setItem(key, value);
       done.push([key, old]);
     }
-    return true;
+    return 'ok';
   } catch {
     for (const [key, old] of done.reverse()) {
       try {
@@ -61,7 +74,7 @@ function writeAll(storage: Storage, ops: readonly Write[]): boolean {
         // Putting back is best effort.
       }
     }
-    return false;
+    return failed;
   }
 }
 
@@ -107,6 +120,29 @@ function playedTime(save: GameSave, plan: string | null, policy: string | null):
     }
   }
   return best;
+}
+
+/** The two record keys' text now, each the save's stored copy without storage or when reading throws. */
+function recordsOf(records: Storage | null, save: GameSave): Records {
+  return {
+    plan: readRecord(records, PLAN_RECORD, save.plan),
+    policy: readRecord(records, POLICY_RECORD, save.policy)
+  };
+}
+
+/** The current game "copied out": `recs` copied in, `savedAt` its played time. */
+function copiedOut(save: GameSave, recs: Records): GameSave {
+  return {
+    ...save,
+    plan: recs.plan,
+    policy: recs.policy,
+    savedAt: playedTime(save, recs.plan, recs.policy)
+  };
+}
+
+/** Trimmed, cut to `SAVE_NAME_MAX` code points, trimmed at the end again. */
+function cutName(name: string): string {
+  return Array.from(name.trim()).slice(0, SAVE_NAME_MAX).join('').trimEnd();
 }
 
 function entryOf(save: GameSave): SaveEntry {
@@ -190,7 +226,6 @@ export class GameStore {
   readonly #sync: SaveSync;
   readonly #now: () => Date;
   /** Where changes write; null in memory mode. */
-  // eslint-disable-next-line no-unused-private-class-members -- the change methods write through it
   #storage: Storage | null = null;
   /** Where the two record keys are read; null when storage could not be read at all. */
   #records: Storage | null = null;
@@ -231,8 +266,8 @@ export class GameStore {
     this.#settle([save], save.id);
   }
 
-  /** A level 1 game with the two record keys' text as its plan and policy (step 2). */
-  #fromRecords(storage: Storage, taken: readonly string[]): GameSave {
+  /** A level 1 game with a new id and the default new name, `taken` taken. */
+  #blank(taken: readonly string[], recs: Records): GameSave {
     const at = this.#now();
     return {
       v: 1,
@@ -240,10 +275,18 @@ export class GameStore {
       name: defaultSaveName({ kind: 'new', at }, taken),
       nameIsDefault: true,
       progress: structuredClone(NEW_GAME),
-      plan: storage.getItem(PLAN_RECORD),
-      policy: storage.getItem(POLICY_RECORD),
+      plan: recs.plan,
+      policy: recs.policy,
       savedAt: at.toISOString()
     };
+  }
+
+  /** A level 1 game with the two record keys' text as its plan and policy (step 2). */
+  #fromRecords(storage: Storage, taken: readonly string[]): GameSave {
+    return this.#blank(taken, {
+      plan: storage.getItem(PLAN_RECORD),
+      policy: storage.getItem(POLICY_RECORD)
+    });
   }
 
   #construct(storage: Storage | null): void {
@@ -256,31 +299,42 @@ export class GameStore {
     const ops: Write[] = [];
     try {
       const indexText = storage.getItem(SAVES_KEY);
+      let changed = true;
       if (indexText === null) {
         const first = this.#fromRecords(storage, []);
         games = [first];
         current = first.id;
         ops.push([saveKey(first.id), JSON.stringify(first)]);
-        ops.push([SAVES_KEY, this.#indexText(games, current, storage)]);
       } else {
-        ({ games, current } = this.#recover(storage, indexText, ops));
+        ({ games, current, changed } = this.#recover(storage, indexText, ops));
       }
+      const recs = { plan: storage.getItem(PLAN_RECORD), policy: storage.getItem(POLICY_RECORD) };
+      if (changed) ops.push([SAVES_KEY, this.#indexText(games, current, recs)]);
     } catch {
-      // A read after the first one threw: storage cannot be trusted.
+      // A read threw before anything was written: storage cannot be trusted.
+      this.#memoryGame(null, structuredClone(NEW_GAME));
+      return;
+    }
+    const wrote = ops.length === 0 ? 'ok' : writeAll(storage, ops);
+    if (wrote === 'read') {
+      // A read threw after construction wrote, and writeAll put storage back (step 1).
       this.#memoryGame(null, structuredClone(NEW_GAME));
       return;
     }
     this.#records = storage;
-    this.#storage = ops.length === 0 || writeAll(storage, ops) ? storage : null;
+    this.#storage = wrote === 'ok' ? storage : null;
     this.#settle(games, current);
   }
 
-  /** Steps 4 to 7: the games an index (valid or not) leads to, and the writes they need. */
+  /**
+   * Steps 4 to 6: the games an index (valid or not) leads to, the writes they need before the
+   * index, and whether the index needs rewriting (step 7).
+   */
   #recover(
     storage: Storage,
     indexText: string,
     ops: Write[]
-  ): { games: GameSave[]; current: string } {
+  ): { games: GameSave[]; current: string; changed: boolean } {
     const at = this.#now();
     const pending = new Set<string>(); // eslint-disable-line svelte/prefer-svelte-reactivity
     const moveAside = (key: string, raw: string): void => {
@@ -338,37 +392,151 @@ export class GameStore {
       ops.push([saveKey(made.id), JSON.stringify(made)]);
       changed = true;
     }
-    if (changed) ops.push([SAVES_KEY, this.#indexText(games, current, storage)]);
-    return { games, current };
+    return { games, current, changed };
   }
 
-  #indexText(games: readonly GameSave[], current: string, records: Storage | null): string {
-    return JSON.stringify({ v: 1, current, saves: this.#ordered(games, current, records) });
+  /**
+   * The index text, in `saves` order, each entry with its save's own `savedAt`. `recs` is what
+   * the two record keys hold once the writes are done.
+   */
+  #indexText(games: readonly GameSave[], current: string, recs: Records): string {
+    const saves = this.#ordered(games, current, recs).map((e) => entryOf(e.save));
+    return JSON.stringify({ v: 1, current, saves });
   }
 
-  /** One entry per game: latest first, the current game by played time, ties by id. */
-  #ordered(games: readonly GameSave[], current: string, records: Storage | null): SaveEntry[] {
+  /**
+   * One entry per game, latest first, ties by id. The current game's entry carries its played
+   * time with `recs` as `savedAt`; every other entry its save's `savedAt`.
+   */
+  #ordered(
+    games: readonly GameSave[],
+    current: string,
+    recs: Records
+  ): { save: GameSave; entry: SaveEntry }[] {
     const keyed = games.map((g) => {
-      let when = g.savedAt;
-      if (g.id === current) {
-        const plan = readRecord(records, PLAN_RECORD, g.plan);
-        const policy = readRecord(records, POLICY_RECORD, g.policy);
-        when = playedTime(g, plan, policy);
-      }
-      return { entry: entryOf(g), t: Date.parse(when) };
+      const savedAt = g.id === current ? playedTime(g, recs.plan, recs.policy) : g.savedAt;
+      return { save: g, entry: { ...entryOf(g), savedAt }, t: Date.parse(savedAt) };
     });
     keyed.sort((a, b) =>
       a.t !== b.t ? b.t - a.t : a.entry.id < b.entry.id ? -1 : a.entry.id > b.entry.id ? 1 : 0
     );
-    return keyed.map((k) => k.entry);
+    return keyed;
   }
 
   /** Puts `games` in memory with `current` as the current game, and recomputes the reactive state. */
   #settle(games: readonly GameSave[], current: string): void {
     this.#games = new Map(games.map((g) => [g.id, g])); // eslint-disable-line svelte/prefer-svelte-reactivity
     this.#currentId = current;
-    this.#progress = (this.#games.get(current) as GameSave).progress;
-    this.#saves = this.#ordered(games, current, this.#records);
+    const now = this.#games.get(current) as GameSave;
+    this.#progress = now.progress;
+    this.#saves = this.#ordered(games, current, recordsOf(this.#records, now)).map((k) => k.entry);
+  }
+
+  #current(): GameSave {
+    return this.#games.get(this.#currentId) as GameSave;
+  }
+
+  #names(): string[] {
+    return [...this.#games.values()].map((g) => g.name);
+  }
+
+  /** Every game with `drop` left out and `put` set over the stored ones by id. */
+  #gamesWith(put: readonly GameSave[], drop: readonly string[] = []): GameSave[] {
+    const next = new Map(this.#games); // eslint-disable-line svelte/prefer-svelte-reactivity
+    for (const id of drop) next.delete(id);
+    for (const g of put) next.set(g.id, g);
+    return [...next.values()];
+  }
+
+  /**
+   * Runs `ops` (nothing in memory mode), then puts `games` in memory with `current` current and
+   * makes `calls`. False, with memory as it was and no call made, when a write is refused.
+   */
+  #commit(
+    ops: readonly Write[],
+    games: readonly GameSave[],
+    current: string,
+    calls: readonly Call[]
+  ): boolean {
+    if (this.#storage !== null && writeAll(this.#storage, ops) !== 'ok') return false;
+    this.#settle(games, current);
+    for (const [kind, id] of calls) {
+      if (kind === 'changed') this.#sync.changed(id);
+      else this.#sync.removed(id);
+    }
+    return true;
+  }
+
+  /**
+   * Writes one changed save (the current one with the records copied in) and the index, then
+   * calls `changed`. In memory mode only memory changes.
+   */
+  #write(next: GameSave): boolean {
+    const current = this.#currentId;
+    const recs = recordsOf(this.#records, next.id === current ? next : this.#current());
+    const save = next.id === current ? { ...next, plan: recs.plan, policy: recs.policy } : next;
+    const games = this.#gamesWith([save]);
+    const ops: Write[] = [
+      [saveKey(save.id), JSON.stringify(save)],
+      [SAVES_KEY, this.#indexText(games, current, recs)]
+    ];
+    return this.#commit(ops, games, current, [['changed', save.id]]);
+  }
+
+  /**
+   * The `sfhousing:sim:v1` copy aside when due, and the writes of `save`'s two records with the
+   * v1 removal after them. Its reads may throw.
+   */
+  #recordOps(storage: Storage, save: GameSave): { aside: Write[]; records: Write[] } {
+    const v1 = storage.getItem(OLD_POLICY);
+    const aside: Write[] = [];
+    if (v1 !== null && storage.getItem(POLICY_RECORD) === null) {
+      aside.push([freeKey(storage, OLD_POLICY_ASIDE, this.#now()), v1]);
+    }
+    const records: Write[] = [
+      [PLAN_RECORD, save.plan],
+      [POLICY_RECORD, save.policy]
+    ];
+    if (v1 !== null) records.push([OLD_POLICY, null]);
+    return { aside, records };
+  }
+
+  /**
+   * Makes `target` current: copies the current game out (or, for `remove`, removes its save),
+   * the v1 copy aside, `target`'s save when `made`, its records, the index. Clears the offer.
+   */
+  #makeCurrent(
+    target: GameSave,
+    made: boolean,
+    leave: 'copy' | 'remove',
+    calls: readonly Call[]
+  ): StoreChange {
+    const storage = this.#storage as Storage;
+    const old = this.#current();
+    const ops: Write[] = [];
+    const put: GameSave[] = [];
+    if (leave === 'copy') {
+      const left = copiedOut(old, recordsOf(this.#records, old));
+      ops.push([saveKey(old.id), JSON.stringify(left)]);
+      put.push(left);
+    } else {
+      ops.push([saveKey(old.id), null]);
+    }
+    let rec: { aside: Write[]; records: Write[] };
+    try {
+      rec = this.#recordOps(storage, target);
+    } catch {
+      return REFUSED;
+    }
+    ops.push(...rec.aside);
+    if (made) ops.push([saveKey(target.id), JSON.stringify(target)]);
+    ops.push(...rec.records);
+    put.push(target);
+    const games = this.#gamesWith(put, leave === 'remove' ? [old.id] : []);
+    ops.push([SAVES_KEY, this.#indexText(games, target.id, target)]);
+    if (!this.#commit(ops, games, target.id, calls)) return REFUSED;
+    this.#offer = null;
+    return OK;
   }
 
   /** Reactive: the current game's progress. */
@@ -401,40 +569,101 @@ export class GameStore {
   }
   /** A win was seen. Sets `firstWinAt` the first time; later calls change nothing. */
   won(): void {
-    throw new Error('not implemented');
+    const cur = this.#current();
+    if (cur.progress.firstWinAt !== null) return;
+    const at = this.#now().toISOString();
+    this.#write({ ...cur, progress: { ...cur.progress, firstWinAt: at }, savedAt: at });
   }
   /** The page sets the offer while its seen result wins the level, and clears it with null. */
   setOffer(offer: Offer | null): void {
-    void offer;
-    throw new Error('not implemented');
+    this.#offer = offer;
   }
   /** Banks the offer and raises the level. Does nothing while `offer` is null. */
   levelUp(): void {
-    throw new Error('not implemented');
+    const offer = this.#offer;
+    if (offer === null) return;
+    const at = this.#now().toISOString();
+    const banked: Banked | null =
+      offer.on === null ? null : { on: offer.on, datasetVersion: offer.datasetVersion, at };
+    const cur = this.#current();
+    const progress = nextProgress(cur.progress, banked);
+    if (progress === cur.progress || this.#write({ ...cur, progress, savedAt: at })) {
+      this.#offer = null;
+    }
   }
   /** The page's autosave wrote the current game's plan or policy record. */
   touched(): void {
-    throw new Error('not implemented');
+    this.#write({ ...this.#current(), savedAt: this.#now().toISOString() });
   }
   newGame(): StoreChange {
-    throw new Error('not implemented');
+    if (this.#storage === null) return REFUSED;
+    if (this.#games.size >= MAX_SAVES) return FULL;
+    const old = this.#currentId;
+    const made = this.#blank(this.#names(), { plan: null, policy: null });
+    return this.#makeCurrent(made, true, 'copy', [
+      ['changed', old],
+      ['changed', made.id]
+    ]);
   }
   switchTo(id: string): StoreChange {
-    void id;
-    throw new Error('not implemented');
+    if (id === this.#currentId) return OK;
+    if (this.#storage === null) return REFUSED;
+    const other = this.#games.get(id);
+    if (!other) return REFUSED;
+    return this.#makeCurrent(other, false, 'copy', [['changed', this.#currentId]]);
   }
   remix(doc: { kind: 'plan' | 'sim'; record: string; title: string }): StoreChange {
-    void doc;
-    throw new Error('not implemented');
+    if (this.#storage === null) return REFUSED;
+    if (this.#games.size >= MAX_SAVES) return FULL;
+    const cur = this.#current();
+    const recs = recordsOf(this.#records, cur);
+    const made: GameSave = {
+      v: 1,
+      id: newId(),
+      name: defaultSaveName({ kind: 'remix', title: doc.title }, this.#names()),
+      nameIsDefault: true,
+      progress: structuredClone(cur.progress),
+      plan: doc.kind === 'plan' ? doc.record : recs.plan,
+      policy: doc.kind === 'sim' ? doc.record : recs.policy,
+      savedAt: this.#now().toISOString()
+    };
+    return this.#makeCurrent(made, true, 'copy', [
+      ['changed', cur.id],
+      ['changed', made.id]
+    ]);
   }
   rename(id: string, name: string): void {
-    void id;
-    void name;
-    throw new Error('not implemented');
+    const save = this.#games.get(id);
+    if (!save) return;
+    const cut = cutName(name);
+    if (cut === '' || (cut === save.name && !save.nameIsDefault)) return;
+    this.#write({ ...save, name: cut, nameIsDefault: false, savedAt: this.#now().toISOString() });
   }
   remove(id: string): StoreChange {
-    void id;
-    throw new Error('not implemented');
+    if (this.#storage === null) return REFUSED;
+    if (!this.#games.has(id)) return OK;
+    const current = this.#currentId;
+    if (id !== current) {
+      const games = this.#gamesWith([], [id]);
+      const ops: Write[] = [
+        [saveKey(id), null],
+        [SAVES_KEY, this.#indexText(games, current, recordsOf(this.#records, this.#current()))]
+      ];
+      return this.#commit(ops, games, current, [['removed', id]]) ? OK : REFUSED;
+    }
+    let next: GameSave | null = null;
+    for (const g of this.#games.values()) {
+      if (g.id === id) continue;
+      const t = Date.parse(g.savedAt);
+      const best = next === null ? -Infinity : Date.parse(next.savedAt);
+      if (next === null || t > best || (t === best && g.id < next.id)) next = g;
+    }
+    if (next !== null) return this.#makeCurrent(next, false, 'remove', [['removed', id]]);
+    const made = this.#blank([], { plan: null, policy: null });
+    return this.#makeCurrent(made, true, 'remove', [
+      ['removed', id],
+      ['changed', made.id]
+    ]);
   }
   /** The saved game as stored now; the current one with the plan and policy records as they are. */
   read(id: string): GameSave | null {
@@ -449,14 +678,55 @@ export class GameStore {
   }
   /** Store saved games that came from the account. */
   adopt(saves: readonly GameSave[]): StoreChange {
-    void saves;
-    throw new Error('not implemented');
+    const storage = this.#storage;
+    if (storage === null) return REFUSED;
+    const taken = new Map<string, GameSave>(); // eslint-disable-line svelte/prefer-svelte-reactivity
+    for (const s of saves) {
+      const parsed = parseGameSave(s);
+      if (parsed) taken.set(parsed.id, parsed);
+    }
+    if (taken.size === 0) return OK;
+    let added = 0;
+    for (const id of taken.keys()) if (!this.#games.has(id)) added++;
+    if (added > 0 && this.#games.size + added > MAX_SAVES) return FULL;
+    const current = this.#currentId;
+    const adopted = taken.get(current);
+    const ops: Write[] = [];
+    let records: Write[] = [];
+    if (adopted) {
+      try {
+        const rec = this.#recordOps(storage, adopted);
+        ops.push(...rec.aside);
+        records = rec.records;
+      } catch {
+        return REFUSED;
+      }
+    }
+    for (const s of taken.values()) ops.push([saveKey(s.id), JSON.stringify(s)]);
+    ops.push(...records);
+    const games = this.#gamesWith([...taken.values()]);
+    const recs = adopted ?? recordsOf(this.#records, this.#current());
+    ops.push([SAVES_KEY, this.#indexText(games, current, recs)]);
+    if (!this.#commit(ops, games, current, [])) return REFUSED;
+    if (adopted) this.#offer = null;
+    return OK;
   }
   /** Give the saved game `id` the id `newId`, keeping everything else about it. */
   rekey(id: string, newId: string): StoreChange {
-    void id;
-    void newId;
-    throw new Error('not implemented');
+    if (this.#storage === null) return REFUSED;
+    const save = this.#games.get(id);
+    if (!save || newId === id || this.#games.has(newId) || !isValidId(newId)) return REFUSED;
+    const isCurrent = id === this.#currentId;
+    const recs = recordsOf(this.#records, this.#current());
+    const moved = { ...(isCurrent ? copiedOut(save, recs) : save), id: newId };
+    const current = isCurrent ? newId : this.#currentId;
+    const games = this.#gamesWith([moved], [id]);
+    const ops: Write[] = [
+      [saveKey(newId), JSON.stringify(moved)],
+      [saveKey(id), null],
+      [SAVES_KEY, this.#indexText(games, current, recs)]
+    ];
+    return this.#commit(ops, games, current, []) ? OK : REFUSED;
   }
 }
 
