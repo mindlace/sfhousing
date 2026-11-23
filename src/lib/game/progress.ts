@@ -1,5 +1,5 @@
 import type { Day } from '$lib/timelapse/time';
-import type { Bar, Level } from './levels';
+import { LAST_LEVEL, type Bar, type Level } from './levels';
 
 export interface Banked {
   /** The day the banked result reached the goal. */
@@ -23,18 +23,21 @@ export const NEW_GAME: Progress = { v: 1, level: 1, banked: {}, firstWinAt: null
 
 /** The bar at the progress's level; null at levels 1 and 2. */
 export function barOf(p: Progress): Bar | null {
-  void p;
-  throw new Error('not implemented');
+  if (p.level < 3) return null;
+  const prev = p.banked[(p.level - 1) as 2 | 3 | 4];
+  return prev ? { on: prev.on } : null;
 }
 
 /** Level 5 has been won and banked. */
 export function roundComplete(p: Progress): boolean {
-  void p;
-  throw new Error('not implemented');
+  return p.level === LAST_LEVEL && p.banked[5] !== undefined;
 }
 
+/** Pure: a new progress, or `p` itself when there is nothing to change. */
 export function levelUp(p: Progress, banked: Banked | null): Progress {
-  void p;
-  void banked;
-  throw new Error('not implemented');
+  if (roundComplete(p)) return p;
+  if (p.level === 1) return { ...p, level: 2 };
+  if (banked === null) return p;
+  const level = p.level === LAST_LEVEL ? LAST_LEVEL : ((p.level + 1) as Level);
+  return { ...p, level, banked: { ...p.banked, [p.level]: banked } };
 }
