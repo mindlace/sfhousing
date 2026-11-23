@@ -504,7 +504,7 @@ export function e2eGoalAmount(storage: Storage | null): number | null;</code></p
         <li><code>playable(doc, a)</code> keeps, in each kind, the policies for which <code>runs</code> is true, in their order.</li>
         <li><code>playable</code> returns <code>doc</code> itself when it removes nothing. When it removes something, it returns a new document whose unchanged kinds keep their arrays.</li>
         <li><code>levelNeeded(doc)</code> is 2 for a document with no policy in any kind.</li>
-        <li>Otherwise it is the largest of: 3 for any permitting policy, 4 for any zoning policy, 5 for a given money policy, 6 for a money policy whose <code>preset</code> is null.</li>
+        <li>Otherwise it is the largest of: 3 for any permitting policy, 4 for any zoning policy, 5 for a given money policy, 6 for any money policy that is not given (<code>isGiven</code> false: its <code>preset</code> is null, or its selector is not a money selector). So <code>levelNeeded</code> and <code>runs</code> never disagree: at level <code>levelNeeded(doc)</code> or above, <code>playable</code> removes nothing.</li>
       </ul>
       <ul>
         <li><code>simLocked(p)</code> is <code>p.level === 1</code>.</li>
@@ -519,8 +519,8 @@ export function e2eGoalAmount(storage: Storage | null): number | null;</code></p
         <tbody>
           <tr><th scope="row">Permitting</th><td>No</td><td>Yes</td><td>Yes</td><td>Yes</td><td>Yes</td></tr>
           <tr><th scope="row">Zoning</th><td>No</td><td>No</td><td>Yes</td><td>Yes</td><td>Yes</td></tr>
-          <tr><th scope="row">Money, <code>preset</code> a string</th><td>No</td><td>No</td><td>No</td><td>Yes</td><td>Yes</td></tr>
-          <tr><th scope="row">Money, <code>preset</code> null</th><td>No</td><td>No</td><td>No</td><td>No</td><td>Yes</td></tr>
+          <tr><th scope="row">Money, given (<code>preset</code> a string, a money selector)</th><td>No</td><td>No</td><td>No</td><td>Yes</td><td>Yes</td></tr>
+          <tr><th scope="row">Money, not given (<code>preset</code> null, or not a money selector)</th><td>No</td><td>No</td><td>No</td><td>No</td><td>Yes</td></tr>
         </tbody>
       </table>
       <table id="tbl-level-needed">
@@ -532,8 +532,8 @@ export function e2eGoalAmount(storage: Storage | null): number | null;</code></p
           <tr><th scope="row">No policy</th><td>2</td></tr>
           <tr><th scope="row">Permitting only, on or off</th><td>3</td></tr>
           <tr><th scope="row">Zoning, with or without permitting</th><td>4</td></tr>
-          <tr><th scope="row">Any money policy with a string <code>preset</code>, and none with null</th><td>5</td></tr>
-          <tr><th scope="row">Any money policy with <code>preset</code> null</th><td>6</td></tr>
+          <tr><th scope="row">Any given money policy, and no money policy that is not given</th><td>5</td></tr>
+          <tr><th scope="row">Any money policy that is not given (<code>preset</code> null, or not a money selector)</th><td>6</td></tr>
         </tbody>
       </table>
     </section>
