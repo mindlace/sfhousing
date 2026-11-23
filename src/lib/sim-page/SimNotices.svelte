@@ -2,13 +2,14 @@
   The /sim session notices (plan 5, Task 5; timeline-ui Task 14): the autosave restore (N1 to N3
   in the policy wording), funding, the timelines refit, moved dates and "upgraded". Each is a
   `Message` (shell/Message): a notice with details is a card, whose "Details" disclosure holds a
-  list; a link goes where the notice says. Rendered in TimelineMode's notice stack (`NoticePills`): an overlay at the map's top from md that moves
-  nothing, in flow under the header below md. One always-mounted polite status region
-  (`display: contents`, so its empty box adds no gap in the stack): a notice
-  added later is announced, and the empty region stays in the accessibility tree. The region
-  mounts empty and takes the notices present on load a moment later (LIVE_DELAY_MS), since a
-  screen reader announces a change to a live region, not one that mounts already populated. A
-  notice of tone 'alert' (nothing to show) is its own alert region, announced at once.
+  list; a link goes where the notice says. Rendered in TimelineMode's notice stack
+  (`NoticePills`): an overlay at the map's top from md that moves nothing, in flow under the
+  header below md. One always-mounted polite status region (`display: contents`, so its empty
+  box adds no gap in the stack): a notice added later is announced, and the empty region stays
+  in the accessibility tree. The region mounts empty and takes the notices present on load a
+  moment later (LIVE_DELAY_MS), since a screen reader announces a change to a live region, not
+  one that mounts already populated. A notice of tone 'alert' (nothing to show) is its own
+  alert region, announced at once.
 -->
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';

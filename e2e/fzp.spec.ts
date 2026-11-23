@@ -1,10 +1,9 @@
 // The timelapse e2e (fzp-mode spec §6), on /sim's timeline: these tests open the timelapse
-// there. Runs against
-// the VITE_E2E build, which exposes window.__sfhFzp (src/lib/fzp/debug.ts) and window.__sfhMap.
-// Fixture-0 files are read from disk; counts, ids and labels are derived from them, never
-// hard-coded. Nothing plays on open; the playhead reaches as far as the forecast is filled, so a
-// test that scrubs or plays waits for the fill first (`waitFilled`). With Move (the default tool) a
-// tap on a project opens its card.
+// there. Runs against the VITE_E2E build, which exposes window.__sfhFzp (src/lib/fzp/debug.ts)
+// and window.__sfhMap. Fixture-0 files are read from disk; counts, ids and labels are derived
+// from them, never hard-coded. Nothing plays on open; the playhead reaches as far as the forecast
+// is filled, so a test that scrubs or plays waits for the fill first (`waitFilled`). With Move
+// (the default tool) a tap on a project opens its card.
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { SOURCE_DATASETS } from '../src/lib/fzp/card';
