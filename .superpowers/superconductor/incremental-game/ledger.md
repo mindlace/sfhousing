@@ -852,6 +852,10 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - merge queue: game-sim complete @ 4efdebea (all 9 tasks and the whole-branch review's fix wave passed; it did not run the whole e2e suite: the integration suite does), after the suite on pool-closing's final merge reports. For closing, from its report: stale Remix leftovers outside its write set (SimNotices.svelte:3 comment, app.d.ts sfhSimRemix, SIM.remixedToast).
 - merged pool-closing @ c523dfba into superconductor/incremental-game (complete), tests pass (check 0 errors; lint 0 errors; unit 9104 passed; pipeline 2284 passed; e2e 762 passed, 0 failed, 0 flaky), band middle
 - No drift @ c523dfba (review-pool-closing-c523dfba)
+- 06:20 merge of game-sim complete @ 4efdebea made onto a5c45f6e (merge commit f9d441e9), suite running (agent; scratchpad `merge-game-sim/`); not merged until it passes; on failure reset to a5c45f6e with ledger.md copied out and back. funding-measures told not to merge the integration branch until told; reach-check merged at 7f65b62f before launch.
+- reach-check row "G4's build check" (scripts/level2-check.ts) @ 4bc49b57 reported: the script passed review; its run on a built dataset and the verdict come with `complete`. Held to merge at complete (only closing consumes it).
+- 06:50 suite on the game-sim merge failed: check, lint, unit 9170, pipeline 2284 pass; e2e 768 passed, 2 failed (one test on both projects, also failing alone), 1 flaky under load (e2e/layout.spec.ts:494 mobile, added to the flake watch list). Merge taken back out with `git reset --hard a5c45f6e` (ledger restored from a copy). No older /sim spec met a locked page.
+- fix round game-sim @ 4efdebea: e2e/sim-funding.spec.ts:524 "8. a published policy lists its public money" fails on /s/<id>: Public money is expanded with a count of 2 but no "Housing bond" fund card button is found (spec line 559); output fixrounds/game-sim-4efdebea.txt
 
 ## Cost
 - remove-lesscars: admitted 2026-11-22T16:31 seven_day 44% | session d889ec5c-3342-4a77-99f8-993f1115a679 | finished 2026-11-22T21:14 seven_day 60%
