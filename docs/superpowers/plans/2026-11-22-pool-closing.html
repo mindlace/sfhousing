@@ -879,7 +879,7 @@ it('at February 2030 there is none', async () =&gt; {
   await expect.element(page.getByTestId('fzp-money-all')).toBeVisible();
   expect(page.getByTestId('fzp-money-closed').elements()).toHaveLength(0);
 });</code></pre></li>
-      <li id="t6-s2"><input type="checkbox"> <strong>Held (Open question 2):</strong> the light and dark accessibility test. Recommended form, pending the operator's ruling:
+      <li id="t6-s2"><input type="checkbox"> The light and dark accessibility test: axe-core run directly on the rendered money block with the tags <code>expectNoA11yViolations</code> uses (read them from <code>e2e/helpers/a11y.ts</code>), once in light and once in dark (spec §sec-tests-money). Form:
         <pre><code data-lang="ts">it('axe: clean light and dark', async () =&gt; {
   render(MoneyResults, { props: props(dayFromUtc(2030, 3, 1)) });
   for (const value of ['light', 'dark'] as const) {
@@ -954,7 +954,7 @@ npm run check</code></pre>
         Expected: both exit 0, no warnings.</li>
       <li id="t8-s2"><input type="checkbox"> The Vitest projects this unit's files belong to (server and client), whole.
         <pre><code data-lang="sh">npm run test:unit</code></pre>
-        Expected: PASS, no server stderr, no retried test. A failure in a file outside the write set caused by closing: stop and report it with the file and assertion (Open question 3).</li>
+        Expected: PASS, no server stderr, no retried test. A failure in a file outside the write set caused by closing: stop and report it with the file and assertion (Open question 2).</li>
       <li id="t8-s3"><input type="checkbox"> Cost. <code>funded-month.perf.spec.ts</code> keeps its bar (90 µs a month, mean). Run it only on a quiet machine:
         <pre><code data-lang="sh">npx vitest run --project perf src/lib/sim/world/funding/funded-month.perf.spec.ts</code></pre>
         Otherwise defer it and say so in the handback. Not a gate.</li>
@@ -967,7 +967,6 @@ npm run check</code></pre>
     <h2>Open questions for the operator</h2>
     <ol>
       <li><aside data-kind="question"><strong>Referee run</strong> The spec wants <code>tolerance.referee.spec.ts</code> to pass with <code>poolClosing: false</code> "behind <code>SFH_WORLD_FUNDING_REFEREE=1</code>". The gate is <code>process.env.SFH_WORLD_FUNDING_REFEREE === '1'</code> (<code>tolerance.referee.spec.ts:51</code>); no npm script sets it (<code>package.json:20-25</code>), and the unit's Bash rule forbids the <code>VAR=... cmd</code> form. Recommendation: the operator runs it once after Task 3, or allows an npm script <code>test:referee</code> outside this unit's write set. Step t3-s9 is held.</aside></li>
-      <li><aside data-kind="question"><strong>Accessibility helper in a component spec</strong> The spec names <code>expectNoA11yViolations</code> for <code>MoneyResults.svelte.spec.ts</code>, but that helper takes a Playwright <code>Page</code> (<code>e2e/helpers/a11y.ts:48</code>) and cannot run in the Vitest client project. Recommendation: axe-core with the same six AA tags and the <code>prefers-color-scheme</code> emulation, as <code>src/lib/map/key/MapKeyControl.svelte.spec.ts:18-22,443-458</code> does. Step t6-s2 is held with that form.</aside></li>
       <li><aside data-kind="question"><strong>Pinned runs outside the write set</strong> Closing is on by default, so any spec outside the write set that pins numbers from a funded run (for example under <code>src/lib/timeline/</code> on fixture-0, or <code>src/lib/sim/world/runner/*.spec.ts</code> other than <code>ensemble.spec.ts</code>) may move. This plan cannot edit them. Recommendation: Task 8 reports each with the moved value; the operator rules whether this unit may update it.</aside></li>
     </ol>
   </section>
