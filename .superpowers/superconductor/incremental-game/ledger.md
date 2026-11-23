@@ -1,6 +1,6 @@
 # Superconductor ledger — design: docs/superpowers/design/2026-11-22-1216-incremental-game.html
 Package worktree: /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game
-Build graph: docs/superpowers/design/2026-11-22-1216-incremental-game-build-graph.md @ 2a794bfe
+Build graph: docs/superpowers/design/2026-11-22-1216-incremental-game-build-graph.md @ 3d42b901
 SDD scripts: /Users/mindlace/.claude/plugins/cache/claude-plugins-official/superpowers/7.0.2/skills/subagent-driven-development/scripts
 HTML scripts: /Users/mindlace/.claude/plugins/cache/super/superpowers-html/0.1.0/bin
 Project commands: npm, npx, lsof, ls, cat, grep, head, tail, wc, pwd, uptime, mkdir (mail-setup only, also: aws); operators run with --permission-mode dontAsk
@@ -501,6 +501,12 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - build graph for pool-closing-2 @ 2a794bfe
 - relayed pool-closing-2 to incremental-game-pool-closing (told to read the package worktree and not merge the integration branch while 32454cbe is under test)
 - routed pool-closing-2
+- 2026-11-23 pool-closing-3 from pool-closing [defect-class: write-set-gap]: F3's required MoneyView.closed/shut break `npm run check` in src/lib/timeline/pool-level.spec.ts:43 (an `as MoneyView` literal in funding-measures' file); may pool-closing add `closed: {}, shut: {}` there → rulings/pool-closing-3.md (commit a91f3877, changes contract: no)
+- routing pool-closing-3: rulings/pool-closing-3.md, commit a91f3877
+- build graph for pool-closing-3 @ 3d42b901
+- relayed pool-closing-3 to incremental-game-pool-closing
+- relayed pool-closing-3 to incremental-game-funding-measures (not delivered: resting; write-set note only, owed in its restart's resends)
+- routed pool-closing-3
 
 ## Forks
 - fork checkpoint-2 started 2026-11-22T16:20
@@ -695,6 +701,10 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - fork graph-pool-closing-2 exited [0]: output
 - fork review-game-shell-667900a4 started 2026-11-23T02:28
 - fork review-game-shell-667900a4 exited [0]: output
+- fork rule-pool-closing-3 started 2026-11-23T02:41
+- fork rule-pool-closing-3 exited [0]: output
+- fork graph-pool-closing-3 started 2026-11-23T02:42
+- fork graph-pool-closing-3 exited [0]: output
 
 ## Frame-defect tally
 - owner-ruling-drift: 2 — instances: conductor-1 (gate-1, 2026-11-22); conductor-8 (gate-7, 2026-11-22)
@@ -724,6 +734,7 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - flaky-e2e: 2 — instances: conductor-12 (game-helpers.spec.ts:146, refiled here as the same class); conductor-14 (2026-11-23)
 - spec-silence: 7 — adds game-sim-2 (2026-11-23)
 - write-set-gap: 6 — adds pool-closing-2 (2026-11-23)
+- write-set-gap: 7 — adds pool-closing-3 (2026-11-23)
 
 ## Integration
 - 17:50 merge of contracts @ f6ee1de3 made (merge commit 5453b107), full suite running in the package worktree (agent; logs in the session scratchpad `merge-contracts/`); not ledgered as merged until it passes. No amending fork starts until then; queued questions in order: remove-multiuser-1, game-core-1, game-core-2, game-core-3, game-sim-1, pool-closing-1, conductor-10, conductor-11. Then merge remove-multiuser's row I1 @ cbd11881.
