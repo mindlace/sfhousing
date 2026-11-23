@@ -1414,7 +1414,6 @@ describe('GameStore.beforeLeave', () => {
     store.rename(b.id, 'Other');
     store.rename(a.id, 'Mine');
     expect(store.adopt([{ ...b, name: 'Adopted' }])).toEqual({ ok: true });
-    expect(store.adopt([{ ...a, name: 'Adopted current' }])).toEqual({ ok: true });
     expect(store.rekey(b.id, newId())).toEqual({ ok: true });
     expect(store.rekey(a.id, newId())).toEqual({ ok: true });
     expect(store.read(store.currentId)).not.toBeNull();
@@ -1544,6 +1543,91 @@ describe('GameStore.adopt and rekey', () => {
     expect(store.allowed).toBe(allowedAt(4));
     expect(store.saves).toEqual([entryOf(a2)]);
     expect(sync.calls).toEqual([]);
+  });
+
+  describe('adopting the current game and beforeLeave', () => {
+    const LATER = '{"v":1,"savedAt":"2026-12-02T00:00:00.000Z","plan":"edited"}';
+
+    it('runs the list in order before any record key is written', () => {
+      const a = save();
+      const { s, store } = over([a]);
+      const order: string[] = [];
+      const seen: (string | null)[] = [];
+      store.beforeLeave(() => {
+        order.push('one');
+        seen.push(s.getItem(PLAN_RECORD), s.getItem(POLICY_RECORD));
+        expect(s.writes).toEqual([]);
+      });
+      store.beforeLeave(() => {
+        order.push('two');
+        throw new Error('flush failed');
+      });
+      store.beforeLeave(() => order.push('three'));
+      const a2 = { ...a, plan: 'acct plan', policy: 'acct policy' };
+      expect(store.adopt([a2])).toEqual({ ok: true });
+      expect(order).toEqual(['one', 'two', 'three']);
+      expect(seen).toEqual([PLAN, POLICY]);
+      expect(s.getItem(PLAN_RECORD)).toBe('acct plan');
+    });
+
+    it('answers changed when a function wrote a record key, and changes nothing more', () => {
+      const a = save();
+      const { s, store, sync } = over([a]);
+      store.setOffer(offer(null));
+      store.beforeLeave(() => s.setItem(PLAN_RECORD, LATER));
+      const progress = store.progress;
+      const saves = store.saves;
+      const a2 = { ...a, progress: progressAt(4), plan: 'acct plan', policy: 'acct policy' };
+      expect(store.adopt([a2])).toEqual({ ok: false, reason: 'changed' });
+      expect(s.writes).toEqual(['set ' + PLAN_RECORD]);
+      expect(s.getItem(PLAN_RECORD)).toBe(LATER);
+      expect(s.getItem(POLICY_RECORD)).toBe(POLICY);
+      expect(stored(s, saveKey(a.id))).toEqual(a);
+      expect(store.progress).toBe(progress);
+      expect(store.saves).toBe(saves);
+      expect(store.offer).toEqual(offer(null));
+      expect(sync.calls).toEqual([]);
+    });
+
+    it('answers ok when nothing was written, then touched() does nothing', () => {
+      const a = save();
+      const { s, store, sync } = over([a]);
+      const calls: string[] = [];
+      store.beforeLeave(() => calls.push('flush'));
+      store.setOffer(offer(null));
+      const a2 = { ...a, progress: progressAt(4), plan: 'acct plan', policy: 'acct policy' };
+      expect(store.adopt([a2])).toEqual({ ok: true });
+      expect(calls).toEqual(['flush']);
+      expect(s.getItem(PLAN_RECORD)).toBe('acct plan');
+      expect(store.offer).toBeNull();
+      const writes = [...s.writes];
+      store.touched();
+      store.touched();
+      expect(s.writes).toEqual(writes);
+      expect(sync.calls).toEqual([]);
+    });
+
+    it('saves without the current id call no function', () => {
+      const a = save();
+      const b = save();
+      const { store } = over([a]);
+      const calls: string[] = [];
+      store.beforeLeave(() => calls.push('flush'));
+      expect(store.adopt([b])).toEqual({ ok: true });
+      expect(calls).toEqual([]);
+    });
+
+    it('a refused adopt calls no function', () => {
+      const a = save();
+      const calls: string[] = [];
+      const full = over(many(MAX_SAVES));
+      full.store.beforeLeave(() => calls.push('flush'));
+      expect(full.store.adopt([save()])).toEqual({ ok: false, reason: 'full' });
+      const mem = make(null).store;
+      mem.beforeLeave(() => calls.push('flush'));
+      expect(mem.adopt([a])).toEqual({ ok: false, reason: 'storage' });
+      expect(calls).toEqual([]);
+    });
   });
 
   it('adopt of the current id removes sfhousing:sim:v1, copying it aside when v2 was absent', () => {

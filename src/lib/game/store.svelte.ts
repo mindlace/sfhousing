@@ -15,7 +15,7 @@ import {
 } from './saves';
 import type { SaveSync } from './save-sync.svelte';
 
-export type StoreChange = { ok: true } | { ok: false; reason: 'full' | 'storage' };
+export type StoreChange = { ok: true } | { ok: false; reason: 'full' | 'storage' | 'changed' };
 
 /** The win on screen that "Level up" would bank. */
 export interface Offer {
@@ -45,6 +45,7 @@ type Call = readonly [kind: 'changed' | 'removed', id: string];
 const EMPTY: ReadonlySet<string> = new Set();
 const OK: StoreChange = Object.freeze({ ok: true });
 const FULL: StoreChange = Object.freeze({ ok: false, reason: 'full' });
+const CHANGED: StoreChange = Object.freeze({ ok: false, reason: 'changed' });
 const REFUSED: StoreChange = Object.freeze({ ok: false, reason: 'storage' });
 
 /**
@@ -544,6 +545,13 @@ export class GameStore {
     return OK;
   }
 
+  /** The current game's played time with the record keys' text now. */
+  #playedNow(): string {
+    const cur = this.#current();
+    const recs = recordsOf(this.#records, cur);
+    return playedTime(cur, recs.plan, recs.policy);
+  }
+
   /** Calls every `beforeLeave` function in the order added, skipping one that throws. */
   #flush(): void {
     for (const entry of [...this.#leaving]) {
@@ -721,6 +729,11 @@ export class GameStore {
     if (added > 0 && this.#games.size + added > MAX_SAVES) return FULL;
     const current = this.#currentId;
     const adopted = taken.get(current);
+    if (adopted) {
+      const before = this.#playedNow();
+      this.#flush();
+      if (this.#playedNow() !== before) return CHANGED;
+    }
     const ops: Write[] = [];
     let records: Write[] = [];
     if (adopted) {
@@ -738,7 +751,10 @@ export class GameStore {
     const recs = adopted ?? recordsOf(this.#records, this.#current());
     ops.push([SAVES_KEY, this.#indexText(games, current, recs)]);
     if (!this.#commit(ops, games, current, [])) return REFUSED;
-    if (adopted) this.#offer = null;
+    if (adopted) {
+      this.#offer = null;
+      this.#left = true;
+    }
     return OK;
   }
   /** Give the saved game `id` the id `newId`, keeping everything else about it. */
