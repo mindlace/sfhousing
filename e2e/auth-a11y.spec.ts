@@ -161,3 +161,33 @@ test('header: signed out shows Sign in, signed in shows the handle, both axe cle
   await expect(entry).toHaveAttribute('href', '/account');
   await expectNoA11yViolations(page);
 });
+
+test('removed pages /sims, /sims/abc and /invite/abc answer 404 with Page not found', async ({
+  page
+}) => {
+  for (const path of ['/sims', '/sims/abc', '/invite/abc']) {
+    const res = await page.goto(path);
+    expect(res!.status()).toBe(404);
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Page not found');
+    await expect(
+      page.getByRole('link', { name: 'Go to the home page', exact: true })
+    ).toHaveAttribute('href', '/');
+  }
+});
+
+test('GET /api/sims and POST /api/operator/sims/abc/takedown answer 404 without a redirect', async ({
+  page
+}) => {
+  expect((await page.request.get('/api/sims', { maxRedirects: 0 })).status()).toBe(404);
+  expect(
+    (
+      await page.request.post('/api/operator/sims/abc/takedown', { data: {}, maxRedirects: 0 })
+    ).status()
+  ).toBe(404);
+});
+
+test('a signed-in request to /sims resolves the session and answers 404', async ({ page }) => {
+  await loginAs(page, uniqueEmail('removed-path'));
+  expect((await page.goto('/sims'))!.status()).toBe(404);
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Page not found');
+});

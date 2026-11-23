@@ -37,7 +37,7 @@ test('an account with an email signs out from /account and lands on / signed out
 });
 
 test('a fresh pseudonymous account is offered no Sign out', async ({ page }) => {
-  await startPseudonymous(page, `No Sign Out ${Date.now()}`);
+  await startPseudonymous(page);
   await gotoAccount(page);
   await expect(page.getByRole('heading', { level: 1 })).toHaveText(ACCOUNT_COPY.heading);
   await expect(page.getByRole('button', { name: ACCOUNT_COPY.signOut, exact: true })).toHaveCount(

@@ -141,7 +141,7 @@ export async function closeAccountRows(args: {
   const { db, identityId: sid, live } = args;
   const now = new Date();
 
-  // 2. Release the old handle, scrub the live row, record the tombstone version.
+  // 1. Release the old handle, scrub the live row, record the tombstone version.
   await releaseHandle(db, sid, live.handle, now);
   await scrubLiveUser(db, sid, live.id, now);
   await recordUserVersion({
@@ -152,7 +152,7 @@ export async function closeAccountRows(args: {
     email: deletedEmail(sid)
   });
 
-  // 3. Erase PII across the full identity union (survivor + identities fused into it):
+  // 2. Erase PII across the full identity union (survivor + identities fused into it):
   //    hash prior versions for every id in the union.
   const fusedIn = await db
     .select({ id: userIdentity.id })
@@ -161,9 +161,9 @@ export async function closeAccountRows(args: {
   const idUnion = [sid, ...fusedIn.map((r) => r.id)];
   await hashPriorVersions(db, idUnion);
 
-  // 4. Purge credentials (by live user id).
+  // 3. Purge credentials (by live user id).
   await purgeCredentialsAndSettings(db, live.id);
 
-  // 5. Tombstone fuse — LAST.
+  // 4. Tombstone fuse — LAST.
   await markIdentityDeleted(db, sid, now);
 }

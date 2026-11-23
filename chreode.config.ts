@@ -217,6 +217,11 @@ export default defineConfig({
       reason: 'the expected 404s of /fzp and /lesscars that e2e/pages-a11y.spec.ts requests'
     },
     {
+      pattern:
+        /^\[WebServer\]\s+\[404\] (GET \/sims|GET \/sims\/abc|GET \/invite\/abc|GET \/api\/sims|POST \/api\/operator\/sims\/abc\/takedown)\s*$/,
+      reason: 'the expected 404s of the removed URLs that e2e/auth-a11y.spec.ts requests'
+    },
+    {
       pattern: /^\[WebServer\]\s*$/,
       reason: 'empty spacer lines wrangler dev prints around each log block'
     },
