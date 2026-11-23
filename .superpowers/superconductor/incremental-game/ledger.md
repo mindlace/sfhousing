@@ -1,6 +1,6 @@
 # Superconductor ledger — design: docs/superpowers/design/2026-11-22-1216-incremental-game.html
 Package worktree: /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game
-Build graph: docs/superpowers/design/2026-11-22-1216-incremental-game-build-graph.md @ 3d42b901
+Build graph: docs/superpowers/design/2026-11-22-1216-incremental-game-build-graph.md @ 15a97e63
 SDD scripts: /Users/mindlace/.claude/plugins/cache/claude-plugins-official/superpowers/7.0.2/skills/subagent-driven-development/scripts
 HTML scripts: /Users/mindlace/.claude/plugins/cache/super/superpowers-html/0.1.0/bin
 Project commands: npm, npx, lsof, ls, cat, grep, head, tail, wc, pwd, uptime, mkdir (mail-setup only, also: aws); operators run with --permission-mode dontAsk
@@ -510,6 +510,11 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - relayed pool-closing-3 to incremental-game-pool-closing
 - relayed pool-closing-3 to incremental-game-funding-measures (not delivered: resting; write-set note only, owed in its restart's resends)
 - routed pool-closing-3
+- 2026-11-23 pool-closing-4 from pool-closing [defect-class: spec-silence]: what an already-final money row's shut:true reads when the pool's same-month shut row is later deleted by an opening in the next month (one stray empty bar for funding-measures); non-blocking → rulings/pool-closing-4.md (commit 35fcb904, changes contract: no)
+- routing pool-closing-4: rulings/pool-closing-4.md, commit 35fcb904
+- build graph for pool-closing-4 @ 15a97e63
+- relayed pool-closing-4 to incremental-game-pool-closing (a fix round inside its still-open unit: reopenPool keeps the row)
+- routed pool-closing-4
 
 ## Forks
 - fork checkpoint-2 started 2026-11-22T16:20
@@ -709,6 +714,11 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - fork graph-pool-closing-3 started 2026-11-23T02:42
 - fork graph-pool-closing-3 exited [0]: output
 - fork review-pool-closing-ee88a46b started 2026-11-23T03:21
+- fork review-pool-closing-ee88a46b exited [0]: output
+- fork rule-pool-closing-4 started 2026-11-23T03:23
+- fork rule-pool-closing-4 exited [0]: output
+- fork graph-pool-closing-4 started 2026-11-23T03:24
+- fork graph-pool-closing-4 exited [0]: output
 
 ## Frame-defect tally
 - owner-ruling-drift: 2 — instances: conductor-1 (gate-1, 2026-11-22); conductor-8 (gate-7, 2026-11-22)
@@ -739,6 +749,7 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - spec-silence: 7 — adds game-sim-2 (2026-11-23)
 - write-set-gap: 6 — adds pool-closing-2 (2026-11-23)
 - write-set-gap: 7 — adds pool-closing-3 (2026-11-23)
+- spec-silence: 8 — adds pool-closing-4 (2026-11-23)
 
 ## Integration
 - 17:50 merge of contracts @ f6ee1de3 made (merge commit 5453b107), full suite running in the package worktree (agent; logs in the session scratchpad `merge-contracts/`); not ledgered as merged until it passes. No amending fork starts until then; queued questions in order: remove-multiuser-1, game-core-1, game-core-2, game-core-3, game-sim-1, pool-closing-1, conductor-10, conductor-11. Then merge remove-multiuser's row I1 @ cbd11881.
@@ -814,6 +825,7 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - No drift @ 667900a4 (review-game-shell-667900a4)
 - 04:10 merge of pool-closing row F3 @ ee88a46b made onto 14d677de (merge commit 995b5839), suite running (agent; scratchpad `merge-pool-closing-f3/`); not merged until it passes; on failure reset to 14d677de with ledger.md copied out and back.
 - merged pool-closing [row F3] @ ee88a46b into superconductor/incremental-game, tests pass (check 0 errors; lint 0 errors; unit 9095 passed; pipeline 2284 passed; e2e 762 passed, 0 failed, 0 flaky), band middle
+- No drift @ ee88a46b (review-pool-closing-ee88a46b)
 
 ## Cost
 - remove-lesscars: admitted 2026-11-22T16:31 seven_day 44% | session d889ec5c-3342-4a77-99f8-993f1115a679 | finished 2026-11-22T21:14 seven_day 60%
