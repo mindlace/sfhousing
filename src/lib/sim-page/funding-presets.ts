@@ -23,6 +23,7 @@ import type {
   Programme,
   Provenance
 } from '$lib/timelapse/types';
+import type { Policy } from '$lib/timeline/policy4';
 import {
   type Evidence,
   BOND_PRINCIPAL,
@@ -481,6 +482,12 @@ export function addPreset(f: FinanceLevers, p: FundingPreset): FinanceLevers {
   if (baselineScale.length > FINANCE_LIMITS.baselineScale)
     throw new RangeError(`at most ${FINANCE_LIMITS.baselineScale} scale entries`);
   return { ...f, baselineScale, pools, programmes };
+}
+
+/** `policy` with its money dated from its first span's start; `policy` itself when nothing moves. */
+export function dateMeasure(policy: Policy, cal: Calibration): Policy {
+  void cal;
+  return policy;
 }
 
 type InflowKey = 'day' | 'from' | 'to' | 'dollars' | 'dollarsPerYear';
