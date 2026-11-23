@@ -13,9 +13,6 @@ import { boxesCommand } from './steps/boxes';
 import { doctor, reportDoctor } from './steps/doctor';
 import { fetchAll } from './steps/fetch';
 import { fixture } from './steps/fixture';
-import { lesscarsBasemap } from './steps/lesscars-basemap';
-import { lesscarsCnns } from './steps/lesscars-cnns';
-import { lesscarsFreewayLand } from './steps/lesscars-freeway-land';
 import { upload } from './steps/upload';
 import { verify } from './steps/verify';
 import { readLock } from './lib/lock';
@@ -237,56 +234,6 @@ const steps: Record<string, { help: string; run: Step }> = {
         r.ok ? `OK   ${v} verified against ${origin}` : `${r.failures.length} failure(s)`
       );
       return r.ok ? 0 : 1;
-    }
-  },
-  'lesscars-cnns': {
-    help: 'resolve the /lesscars corridor selectors to CNNs from the locked datasf-streets source',
-    run: async () => lesscarsCnns({ lockPath: LOCK, rawDir: RAW })
-  },
-  'lesscars-freeway-land': {
-    help: 'propose freeway-land parcels for each segment of freeway-land.json from the locked sources',
-    run: async (args) => {
-      const dataset = str(args.flags.dataset);
-      const dir = dataset ? join(OUT, dataset) : undefined;
-      if (dir && !existsSync(dir)) {
-        console.error(`no built dataset ${dataset} under ${OUT}`);
-        return 1;
-      }
-      return lesscarsFreewayLand({
-        lockPath: LOCK,
-        rawDir: RAW,
-        catalogPath: LESSCARS_FREEWAY_LAND_JSON.live,
-        datasetDir: dir
-      });
-    }
-  },
-  'lesscars-basemap': {
-    help: 'inspect or propose the basemap road ids of the /lesscars freeway removals',
-    run: async (args) => {
-      const v = latestOut();
-      // --split reads the raw locked archive: a built basemap.pmtiles is already split.
-      const rawBasemap = () => {
-        const f = existsSync(LOCK)
-          ? readLock(LOCK).sources.find((s) => s.id === 'protomaps-basemap')?.files[0]
-          : undefined;
-        return f ? join(RAW, f.sha256) : undefined;
-      };
-      const pmtiles =
-        str(args.flags.pmtiles) ??
-        (args.flags.split ? rawBasemap() : v ? join(OUT, v, 'basemap.pmtiles') : undefined);
-      if (!pmtiles || !existsSync(pmtiles)) {
-        console.error('no basemap.pmtiles: build a dataset or pass --pmtiles <file>');
-        return 1;
-      }
-      const band = str(args.flags.band);
-      return lesscarsBasemap({
-        mode: args.flags.split ? 'split' : args.flags.report ? 'report' : 'candidates',
-        pmtiles,
-        lockPath: LOCK,
-        rawDir: RAW,
-        linesPath: str(args.flags.lines),
-        bandM: band ? Number(band) : undefined
-      });
     }
   },
   'quality-doc': {

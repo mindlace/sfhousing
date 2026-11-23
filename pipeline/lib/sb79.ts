@@ -31,7 +31,7 @@ const M2_PER_ACRE = 4046.8564224;
  * tier 1. Commuter rail is tier 1 at ≥ VHF_TPD trains a day at the station (Σ `tpd` over the
  * commuter-rail pattern stops sharing the stop's `stationId`, or its own id when null), tier 2 at
  * ≥ HF_TPD. LIGHT_RAIL_MODES and the stops in `tier2Ids` (by default MUNI_TIER2_STOP_IDS; a
- * /lesscars snapshot passes it with the plan's BRT stops added) are tier 2. The lowest tier wins.
+ * caller may pass a different set) are tier 2. The lowest tier wins.
  */
 export function stopTiers(
   net: TransitNetwork,
