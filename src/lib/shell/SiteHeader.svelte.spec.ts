@@ -9,6 +9,7 @@ import SiteHeader from './SiteHeader.svelte';
 import HeaderScoreHeader from './test/HeaderScoreHeader.svelte';
 import LevelCellHost from './test/LevelCellHost.svelte';
 import { quietSync, seededGame } from './test/seeded-game';
+import SimRowGameHeader from './test/SimRowGameHeader.svelte';
 import SimRowHeader from './test/SimRowHeader.svelte';
 
 describe('SiteHeader', () => {
@@ -836,6 +837,43 @@ describe('SiteHeader', () => {
     it('at 1280px the same row fits and the score is centred', async () => {
       expect(await expectRowFits(1280)).toBeLessThan(1);
     });
+
+    // The same row with the game's level cell (level 3), with and without an offer ("Level up").
+    for (const [touch, offered] of [
+      [false, true],
+      [true, true],
+      [false, false]
+    ])
+      it(`at 1024px with the level cell${offered ? ' and Level up' : ''}${touch ? ' on a touch laptop' : ''} the row fits`, async () => {
+        await page.viewport(1024, 800);
+        const { game } = seededGame({ level: 3 });
+        if (offered) game.setOffer({ on: 20000, datasetVersion: 'fixture-0' });
+        render(SimRowGameHeader, {
+          props: { game, user: { handle: 'a-very-long-handle-x' }, touch }
+        });
+        await expect.element(page.getByTestId('header-level')).toBeVisible();
+        if (offered) await expect.element(page.getByTestId('header-level-up')).toBeVisible();
+        const banner = page.getByRole('banner').element() as HTMLElement;
+        const box = (el: Element) => el.getBoundingClientRect();
+        const items = [
+          page.getByTestId('header-level').element(),
+          page.getByTestId('score-bar').element().parentElement!,
+          page.getByRole('button', { name: 'Publish' }).element(),
+          page.getByRole('link', { name: '@a-very-long-handle-x' }).element(),
+          page.getByRole('link', { name: 'About', exact: true }).element()
+        ];
+        const overlap = items.map((el, i) =>
+          i === 0 ? 0 : box(items[i - 1]).right - box(el).left
+        );
+        expect(Math.max(...overlap), `overlaps ${overlap}`).toBeLessThanOrEqual(0);
+        expect(banner.getBoundingClientRect().height).toBe(48);
+        expect(
+          banner.scrollWidth - banner.clientWidth,
+          `overflow; items ${items.map((el) => `${box(el).left}-${box(el).right}`)}`
+        ).toBeLessThanOrEqual(0);
+        expect(box(items.at(-1)!).right).toBeLessThanOrEqual(1024);
+        expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(1024);
+      });
   });
 
   describe('the game', () => {
