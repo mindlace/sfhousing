@@ -292,6 +292,7 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - resent to incremental-game-game-core
 - game-core was resting when conductor-13 was routed: relaunched (no rung) with its plan and sent the ruling as a fix round.
 - 23:40 told game-save that game-core's store change merged (integration green at 09e29933): it builds its Task 8 (ruling conductor-13) and re-sends complete.
+- hand-offs from finite-funding's completion report, to put in the first message to each unit: (a) funding-measures: City amounts leave out `once` inflows in two places (baselineGroups and FundingGroupEditor poolPerYear), so city-debt and impact fees read "$0 a year"; finite-funding also wrote outside its line list in e2e/sim-funding.spec.ts (hover step in test 4, about lines 329-334) and pinned PolicySummary.svelte.spec.ts. (b) game-sim: finite-funding removed dead funds/fundsOf4 from TimelineMode.svelte. (c) reach-check: the two spent sources leave every bundle, so live coverage is about 96.9% (fixture-0 94.8%) and baseline affordable starts depend on odds; F1 handback at assignments/finite-funding.f1-handback.md. (d) closing: stale docs docs/dev/pipeline.md:315 (federal.uncapped), finance-score.md I6 lines, testing.md:44, timeline-ui.md:40, sim-funding.md:134 (copy.ts to money-copy.ts); memo.spec live hashes stale until the live dataset is rebuilt; the dataset version moved with funding.json, upload before signoff.
 
 ## Questions
 - 2026-11-22 conductor-1 from conductor [defect-class: owner-ruling-drift]: gate-1, a policy already saved in the browser becomes a level-1 game, and every kind in it is locked (major) → rulings/conductor-1.md (commit 7fbb5e32, changes contract: no)
@@ -470,6 +471,7 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - relayed finite-funding-2 to incremental-game-funding-measures (not delivered: resting; F2 row text only, owed in its restart's resends)
 - relayed finite-funding-2 to incremental-game-pool-closing (not delivered: resting; F2 row text only, owed in its restart's resends)
 - routed finite-funding-2
+- 2026-11-23 conductor-14 from conductor [defect-class: flaky-e2e]: e2e/share-states.spec.ts:157 and e2e/game-shell.spec.ts:117 each failed once and passed on retry after game-shell merged; test races or page races, and who fixes them →
 
 ## Forks
 - fork checkpoint-2 started 2026-11-22T16:20
@@ -646,6 +648,7 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - fork graph-finite-funding-2 exited [0]: output
 - fork checkpoint-14 started 2026-11-23T00:22
 - fork checkpoint-14 exited [0]: output
+- fork review-finite-funding-df556eab started 2026-11-23T01:38
 
 ## Frame-defect tally
 - owner-ruling-drift: 2 — instances: conductor-1 (gate-1, 2026-11-22); conductor-8 (gate-7, 2026-11-22)
@@ -672,6 +675,7 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - source-evidence: 1 — instances: finite-funding-1 (2026-11-22)
 - unmodeled-interaction: 3 — adds conductor-13 (2026-11-22); tripwire: re-checkpoint when its ruling is routed
 - spec-code-mismatch: 3 — adds finite-funding-2 (2026-11-23); tripwire: re-checkpoint when its ruling is routed
+- flaky-e2e: 2 — instances: conductor-12 (game-helpers.spec.ts:146, refiled here as the same class); conductor-14 (2026-11-23)
 
 ## Integration
 - 17:50 merge of contracts @ f6ee1de3 made (merge commit 5453b107), full suite running in the package worktree (agent; logs in the session scratchpad `merge-contracts/`); not ledgered as merged until it passes. No amending fork starts until then; queued questions in order: remove-multiuser-1, game-core-1, game-core-2, game-core-3, game-sim-1, pool-closing-1, conductor-10, conductor-11. Then merge remove-multiuser's row I1 @ cbd11881.
@@ -733,6 +737,9 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - 2026-11-23 00:10 merge of game-save complete @ 67739d50 (Task 8, ruling conductor-13) made onto 89873c5f (merge commit c0079aeb), suite running (agent; scratchpad `merge-game-save-t8/`); not merged until it passes; on failure reset to 89873c5f with ledger.md copied out and back.
 - merged game-save @ 67739d50 into superconductor/incremental-game (complete; Task 8, ruling conductor-13), tests pass (check 0 errors; lint 0 errors; unit 9028 passed; pipeline 2266 passed; e2e 761 passed, 0 failed, 1 flaky: e2e/share-states.spec.ts:157 "N6: a share link whose dataset version is gone renders on the current data", 'Open with current data' button not visible on the first attempt, passed on retry), band low. Watch that test: shared pages are game-shell's; a second flake of it becomes a question.
 - No drift @ 67739d50 (review-game-save-67739d50)
+- 2026-11-23 01:35 merge of finite-funding rows F1 + F2 @ df556eab made onto d58c6453 (merge commit 64413ada), suite running (agent; scratchpad `merge-finite-funding/`); not merged until it passes; on failure reset to d58c6453 with ledger.md copied out and back.
+- finite-funding sent `complete` @ 5fd73c92 (docs and test titles only on top of df556eab; final whole-branch review clean). Merge queue: 5fd73c92 after the suite on the df556eab merge, and after pool-closing and game-sim are relaunched from that tested head.
+- merged finite-funding [row F1] [row F2] @ df556eab into superconductor/incremental-game, tests pass (check 0 errors; lint 0 errors; unit 9059 passed; pipeline 2284 passed; e2e 761 passed, 0 failed, 1 flaky: e2e/game-shell.spec.ts:117, question conductor-14), band low
 
 ## Cost
 - remove-lesscars: admitted 2026-11-22T16:31 seven_day 44% | session d889ec5c-3342-4a77-99f8-993f1115a679 | finished 2026-11-22T21:14 seven_day 60%
