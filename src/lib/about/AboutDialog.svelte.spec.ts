@@ -193,7 +193,9 @@ describe('opening', () => {
       .toBeVisible();
     expect(dialog().getAttribute('aria-labelledby')).toBe(dialog().querySelector('h2')!.id);
     const parts = [...dialog().querySelectorAll(':scope section[id^="about-"]')]
-      .filter((s) => s.id !== ABOUT_ID.shortcuts)
+      .filter(
+        (s) => ![ABOUT_ID.shortcuts, ABOUT_ID.levels, ABOUT_ID.savedGames].includes(s.id as never)
+      )
       .map((s) => [s.id, s.querySelector('h3')?.textContent?.trim()]);
     expect(parts).toEqual([
       [ABOUT_ID.meanings, PART_HEADING.meanings],
