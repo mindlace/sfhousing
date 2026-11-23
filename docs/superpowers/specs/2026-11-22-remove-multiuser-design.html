@@ -337,6 +337,7 @@ export function startPseudonymous(page: Page): Promise&lt;void&gt;;</code></pre>
         <li><code>POST /api/e2e/login</code> with <code>{ pseudonymous: true }</code> mints one, issues a session as for an email and answers <code>{ userId }</code> with the session cookie. The gates (<code>VITE_E2E</code>, <code>isE2eEnv</code>) are unchanged.</li>
         <li><code>startPseudonymous(page)</code> posts that body through <code>page.request</code>, so the cookie lands in the page's context. It takes no title.</li>
         <li><code>/api/e2e/mail</code> accepts the three kinds of <code>E2eMailKind</code>; <code>kind=invite</code> answers 404.</li>
+        <li><code>POST /api/e2e/plans</code> (<code>src/routes/api/e2e/plans/+server.ts</code>, with its logic in <code>src/lib/server/sharing/e2e-seed.ts</code>) is unchanged: it seeds published plan and policy rows for the e2e specs through <code>seedPlanRow</code> in <code>e2e/helpers/sharing.ts</code>, under the same gates. The <code>plan</code> table it writes is kept.</li>
       </ul>
     </section>
   </section>

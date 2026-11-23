@@ -677,6 +677,7 @@ export const YOUR_GAME = 'Your game';</code></pre>
         <li>At level 1 <code>/p/&lt;id&gt;</code>'s Remix opens Paint on the published plan, and the level panel lists "Remix of {title}".</li>
         <li>At level 3 (<code>seedGame(page, 3)</code>) <code>/s/&lt;id&gt;</code>'s Remix of a policy holding one permitting policy opens <code>/sim</code> with that policy's row on the timeline.</li>
       </ul>
+      <p>The published plans and policies these tests open are seeded with <code>seedPlanRow</code> (<code>e2e/helpers/sharing.ts</code>, <code>POST /api/e2e/plans</code>), which the sharing e2e specs already use and which no unit of this build changes.</p>
       <p>These tests read only this unit's texts and test ids, <code>game-core</code>'s, and what <code>/sim</code> shows today. None needs <code>game-sim</code>'s work: no locked lane, no win on <code>/sim</code>, no given measure.</p>
       <p>The remix tests in <code>share-states</code>, <code>share-roundtrip</code>, <code>share-notices</code>, <code>sim-share</code> and <code>chrome-dark</code> call <code>seedGame(page, 3)</code> before navigating, drop their steps on the confirm dialog and the Remix toast, and check the remixed document on the page that loads. <code>chrome-dark</code>'s axe check of the Remix dialog checks the banner alone.</p>
     </section>
