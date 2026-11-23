@@ -29,7 +29,7 @@
 -- fires. "At least" shares are inclusive with a 1e-6 tolerance. Every aggregate over geometry or
 -- area is ordered, so the result does not depend on scan order (V12).
 
--- Zoning, as 86_freeway_land.sql picks it (active rows, blklot = mapblklot first).
+-- Zoning: one row per mapblklot from the active rows, blklot = mapblklot first.
 CREATE OR REPLACE TEMP TABLE rl_zoning AS
 SELECT mapblklot AS id, zoning_code
 FROM src_parcel_attrs

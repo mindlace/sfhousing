@@ -30,7 +30,6 @@ import type { StageScale } from '../levers/timers';
 import type { LimitOwner } from '../levers/source';
 import type { SimLevers } from '../levers/types';
 import type { LotOutlines } from '../outlines';
-import type { PlaybackRequest } from '../lesscars/types';
 import type * as Protocol from '../protocol';
 import type { ChunksResponse, ParcelSummary, ReadyResponse, Rev, SimRequest } from '../protocol';
 import type * as Scenario from './types';
@@ -203,7 +202,7 @@ type RowScenarioResponse =
       capacity: LeverCapacity;
       unknownLots: number;
     };
-type RowWorkerRequest = SimRequest | RowScenarioRequest | PlaybackRequest;
+type RowWorkerRequest = SimRequest | RowScenarioRequest;
 
 // T8
 interface RowTimelineScore {

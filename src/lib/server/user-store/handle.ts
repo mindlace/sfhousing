@@ -26,12 +26,12 @@ export function seedHandle(title: string, rng?: () => string): string {
 
 export async function generateUniqueHandle(args: {
   db: Database;
-  simTitle?: string;
+  seedText?: string;
   rng?: () => string;
   now?: Date;
 }): Promise<string> {
   const now = args.now ?? new Date();
-  const title = args.simTitle ?? '';
+  const title = args.seedText ?? '';
   let candidate = seedHandle(title, args.rng);
   for (let i = 0; i < 100; i++) {
     if (await isHandleAvailable(args.db, skeleton(candidate), now)) return candidate;

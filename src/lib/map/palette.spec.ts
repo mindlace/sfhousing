@@ -24,21 +24,6 @@ const contrast = (a: string, b: string) => {
   const [x, y] = [luminance(a), luminance(b)].sort((p, q) => q - p);
   return (x + 0.05) / (y + 0.05);
 };
-const LC_STREETS = [
-  'lc-works',
-  'lc-transit',
-  'lc-bike',
-  'lc-pedestrian',
-  'lc-removed',
-  'lc-grade'
-] as const;
-const LC_MARKS = [
-  'lc-line-subway',
-  'lc-line-tram',
-  'lc-line-brt',
-  'lc-shuttle',
-  'lc-garage'
-] as const;
 const HALO_TOKENS = ['tl-halo-policy'] as const;
 
 describe('palette (U4)', () => {
@@ -102,25 +87,6 @@ describe('palette (U4)', () => {
         expect(Math.max(...ch) - Math.min(...ch), id).toBeLessThanOrEqual(12);
         expect(Number(m![4]), id).toBeLessThanOrEqual(0.4);
       }
-    });
-    it(`${theme}: lesscars marks reach 3:1 against land and road (SC 1.4.11)`, () => {
-      for (const id of [...LC_STREETS, ...LC_MARKS])
-        for (const base of ['land', 'road'] as const)
-          expect(
-            contrast(TOKENS[theme][id], TOKENS[theme][base]),
-            `${id}/${base}`
-          ).toBeGreaterThanOrEqual(3);
-    });
-    it(`${theme}: lesscars street states are distinct (ΔE2000 ≥ 8)`, () => {
-      for (let i = 0; i < LC_STREETS.length; i++)
-        for (let j = i + 1; j < LC_STREETS.length; j++) {
-          const d = de(parse(TOKENS[theme][LC_STREETS[i]])!, parse(TOKENS[theme][LC_STREETS[j]])!);
-          expect(d, `${LC_STREETS[i]} vs ${LC_STREETS[j]}`).toBeGreaterThanOrEqual(8);
-        }
-    });
-    it(`${theme}: every lc-* token is a hex colour`, () => {
-      for (const id of [...LC_STREETS, ...LC_MARKS, 'lc-site'] as const)
-        expect(TOKENS[theme][id], id).toMatch(/^#[0-9A-F]{6}$/);
     });
     it(`${theme}: the halo token has 3:1 against land`, () => {
       for (const id of HALO_TOKENS) {
@@ -338,13 +304,14 @@ describe('tokenCss / timelineTokenCss (spec §4.6.1)', () => {
   };
 
   it('tokenCss over every token and .sim-map reproduces the pinned DEFAULT_TOKENS_CSS body', () => {
-    // The pin predates the /lesscars `lc-*` and the `tl-halo-*` tokens, which SimMap's stylesheet
-    // also declares (in TOKENS order); the pinned body covers every other token byte for byte.
-    const pinned = ALL.filter((n) => !n.startsWith('lc-') && !n.startsWith('tl-halo-'));
+    // The pin predates the `tl-halo-*` tokens, which SimMap's stylesheet also declares (in TOKENS
+    // order); the pinned body covers every other token byte for byte.
+    const pinned = ALL.filter((n) => !n.startsWith('tl-halo-'));
     expect(tokenCss('.sim-map', pinned)).toBe(DEFAULT_TOKENS_BODY);
-    const lc = ALL.filter((n) => n.startsWith('lc-'));
-    expect(lc).toHaveLength(12);
-    expect(ALL.slice(-lc.length)).toEqual(lc);
+  });
+
+  it('no token name starts with lc-', () => {
+    expect(ALL.filter((n) => n.startsWith('lc-'))).toEqual([]);
   });
 
   it('declares every tl-* and legend-named token exactly once, and nothing else', () => {

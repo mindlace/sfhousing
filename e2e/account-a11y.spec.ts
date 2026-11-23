@@ -29,7 +29,7 @@ test('account: a registered account has no axe violations, closed and with each 
 test('account: a pseudonymous account has no axe violations, with the email form and after sending', async ({
   page
 }) => {
-  await startPseudonymous(page, 'A11y pseudonymous');
+  await startPseudonymous(page);
   await gotoAccount(page);
   await expect(page.getByText(ACCOUNT_COPY.emailAddPrompt)).toBeVisible();
   await expectNoA11yViolations(page);

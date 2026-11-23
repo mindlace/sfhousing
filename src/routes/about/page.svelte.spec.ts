@@ -5,6 +5,9 @@ import { REPO_URL } from '$lib/config';
 import { ABOUT_ID, ABOUT_INTRO, ABOUT_TITLE, PART_HEADING } from '$lib/about/copy';
 import Page from './+page.svelte';
 
+// The sub-sections of Using it: not parts.
+const SUBSECTIONS: string[] = [ABOUT_ID.shortcuts, ABOUT_ID.levels, ABOUT_ID.savedGames];
+
 const data = {
   datasetVersion: 'fixture-0',
   appRelease: 'dev',
@@ -28,7 +31,7 @@ describe('/about', () => {
     ]);
     const ids = [...document.querySelectorAll('section[id^="about-"]')]
       .map((s) => s.id)
-      .filter((id) => id !== ABOUT_ID.shortcuts);
+      .filter((id) => !SUBSECTIONS.includes(id));
     expect(ids).toEqual([ABOUT_ID.meanings, ABOUT_ID.assumptions, ABOUT_ID.data, ABOUT_ID.using]);
     await expect
       .element(page.getByRole('link', { name: 'MIT licensed' }))

@@ -19,7 +19,7 @@ test('a pseudonymous user sets a password and signs back in with their handle', 
   context
 }) => {
   await enableAuthMethods(context, ['password']);
-  await startPseudonymous(page, 'Password durability');
+  await startPseudonymous(page);
 
   await gotoAccount(page);
   const handle = await readHandle(page);
@@ -54,7 +54,7 @@ test('a password set can be removed only while another way in remains', async ({
   context
 }) => {
   await enableAuthMethods(context, ['password']);
-  await startPseudonymous(page, 'Password remove');
+  await startPseudonymous(page);
   await gotoAccount(page);
   await page.getByRole('button', { name: ACCOUNT_COPY.passwordSet }).click();
   await page.getByLabel(ACCOUNT_COPY.passwordLabel, { exact: true }).fill(password);

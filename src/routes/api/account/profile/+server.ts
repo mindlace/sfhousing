@@ -23,10 +23,11 @@ export const PATCH: RequestHandler = async (event) => {
   }
   const body = (await request.json().catch(() => null)) as {
     handle?: string;
-    name?: string;
+    name?: unknown;
   } | null;
   const handleRaw = String(body?.handle ?? '').trim();
-  const name = String(body?.name ?? '');
+  // No name field (or a non-string one) leaves the display name as it is; '' is applied.
+  const name = typeof body?.name === 'string' ? body.name : undefined;
   const handle = handleRaw === '' ? undefined : handleRaw;
   const res = await updateProfile(getDb(platform!), locals.user.id, { handle, name }, new Date());
   if (!res.ok) {
