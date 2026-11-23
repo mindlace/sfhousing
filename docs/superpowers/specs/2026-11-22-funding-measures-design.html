@@ -551,7 +551,7 @@ Federal tax credits withdrawn from a date
       <li><code>src/lib/sim-page/funding-presets.ts</code> is written by <code>contracts</code> (the M1 stub), then <code>finite-funding</code>, then this unit. <code>contracts</code> ships no test of the stub; this unit's <code>funding-presets.spec.ts</code> tests the real <code>dateMeasure</code>.</li>
       <li>This unit runs after <code>game-core</code>, so <code>isGiven</code> from <code>$lib/game/allowed</code> is real when <code>dateMeasure</code> calls it.</li>
       <li><code>game-sim</code> and <code>funding-measures</code> can run together. <code>game-sim</code> calls <code>dateMeasure</code> (M1) and mounts <code>PolicySummary</code> through its existing props; <code>funding-measures</code> owns both.</li>
-      <li>This unit runs after <code>pool-closing</code>: its pool bars read <code>MoneyView.shut</code> (F3). The two write different files.</li>
+      <li>This unit runs after <code>pool-closing</code>: its pool bars read <code>MoneyView.shut</code> (F3). The one file both write is <code>src/lib/timeline/pool-level.spec.ts</code>: <code>pool-closing</code> adds <code>closed</code> and <code>shut</code> to its <code>money()</code> helper's <code>MoneyView</code> literal, and this unit writes the file after it.</li>
       <li>An e2e spec that exists before this build is edited only by the unit named for it: <code>e2e/sim-{funding,pools}.spec.ts</code> are this unit's.</li>
     </ul>
     <p>Files changed (none created, none deleted):</p>

@@ -307,6 +307,7 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - relaunched game-shell
 - resent to incremental-game-game-shell
 - plan game-sim: docs/superpowers/plans/2026-11-22-game-sim.html at 9aa7f278 (brought into line with the current spec after its restart)
+- 2026-11-23 03:30 band is now MIDDLE (seven_day 70%, resets Tue 05:00): at most 2 operators running, planning-only included; start a new one only when one finishes or stops, ready units first. Running now: pool-closing, game-sim (2 of 2). When F3 merges, funding-measures and reach-check are both ready: start one per free slot (funding-measures first: closing needs both, and funding-measures is the larger unit), the other when the next slot frees. Restarts, relaunches and forks are exempt.
 
 ## Questions
 - 2026-11-22 conductor-1 from conductor [defect-class: owner-ruling-drift]: gate-1, a policy already saved in the browser becomes a level-1 game, and every kind in it is locked (major) → rulings/conductor-1.md (commit 7fbb5e32, changes contract: no)
@@ -693,6 +694,7 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - fork graph-pool-closing-2 started 2026-11-23T02:12
 - fork graph-pool-closing-2 exited [0]: output
 - fork review-game-shell-667900a4 started 2026-11-23T02:28
+- fork review-game-shell-667900a4 exited [0]: output
 
 ## Frame-defect tally
 - owner-ruling-drift: 2 — instances: conductor-1 (gate-1, 2026-11-22); conductor-8 (gate-7, 2026-11-22)
@@ -794,6 +796,7 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - 02:50 merge of game-shell complete @ 667900a4 (ruling conductor-14, e2e specs only) made onto 431914a5 (merge commit 32454cbe), suite running (agent; scratchpad `merge-game-shell-fix/`); not merged until it passes; on failure reset to 431914a5 with ledger.md copied out and back. game-sim was told to merge at 431914a5 and not again until told.
 - 03:05 pool-closing-2 blocks pool-closing's Task 3 and with it row F3 (the longest chain), so its fork runs now, while the suite on game-shell's e2e-only merge 32454cbe is still running. If that suite fails, do NOT reset (the ruling's commit sits on top): take the merge out with `git -C <package worktree> revert -m 1 --no-edit 32454cbe`, ledger it, and send game-shell the fix round.
 - merged game-shell @ 667900a4 into superconductor/incremental-game (complete; ruling conductor-14, e2e readiness waits), tests pass (check 0 errors; lint 0 errors; unit 9059 passed; pipeline 2284 passed; e2e 762 passed, 0 failed, 0 flaky; the three changed specs 81 passed at repeat-each=3, retries off), band low
+- No drift @ 667900a4 (review-game-shell-667900a4)
 
 ## Cost
 - remove-lesscars: admitted 2026-11-22T16:31 seven_day 44% | session d889ec5c-3342-4a77-99f8-993f1115a679 | finished 2026-11-22T21:14 seven_day 60%
