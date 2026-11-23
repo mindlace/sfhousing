@@ -4,7 +4,10 @@ import { FINANCE_LIMITS } from '$lib/sim/levers/finance';
 import { PolicyFormatError } from '$lib/sim-page/policy';
 import { OBSERVED_TIMING } from '$lib/sim-page/timing';
 import { monthFirstDay, monthLastDay } from '$lib/sim/world/months';
-import { parsePolicy4 } from './parse4';
+import { fixtureCalibration } from '$lib/fzp/fixtures/calibration';
+import { addPolicy } from './add';
+import { MONEY_PRESET_MAX, parsePolicy4 } from './parse4';
+import { DEFAULT_POLICY4 } from './policy4';
 
 const AS_OF = FIXTURE_AS_OF;
 const first = (m: number) => monthFirstDay(AS_OF, m);
@@ -179,9 +182,46 @@ describe('rule 1: preset', () => {
       'kinds.permitting[0].preset'
     );
   });
-  it('a zoning or money policy has a null preset', () => {
+  it('a zoning policy has a null preset', () => {
     rejects(doc([{ ...transit(), preset: 'observed' }]), 'kinds.zoning[0].preset');
-    rejects(doc([], [], [{ ...terms(), preset: 'observed' }]), 'kinds.money[0].preset');
+  });
+});
+
+describe("a money policy's preset", () => {
+  const cal = fixtureCalibration();
+  const fundPolicy = (): J => {
+    const { doc: added } = addPolicy(
+      DEFAULT_POLICY4,
+      { kind: 'money', what: 'preset', preset: 'housing-bond' },
+      { w: { asOf: cal.asOf, months: 480 }, month: 1, cal }
+    );
+    const p = added.kinds.money.find((x) => x.where.tag === 'fund');
+    if (p === undefined) throw new Error('housing-bond added no fund policy');
+    return structuredClone(p) as unknown as J;
+  };
+  const withPreset = (preset: unknown): J => doc([], [], [{ ...fundPolicy(), preset }]);
+  const opts = { asOf: cal.asOf };
+
+  it('is null or a preset id of 1 to MONEY_PRESET_MAX characters', () => {
+    expect(MONEY_PRESET_MAX).toBe(60);
+    const got = parsePolicy4(withPreset('housing-bond'), opts);
+    expect(got.kinds.money[0].preset).toBe('housing-bond');
+    expect(parsePolicy4(withPreset('x'.repeat(60)), opts).kinds.money[0].preset).toBe(
+      'x'.repeat(60)
+    );
+    expect(parsePolicy4(withPreset(null), opts).kinds.money[0].preset).toBeNull();
+    const msg = 'expected null or a preset id of 1 to 60 characters';
+    rejects(withPreset('x'.repeat(61)), 'kinds.money[0].preset', msg, opts);
+    rejects(withPreset(''), 'kinds.money[0].preset', msg, opts);
+    rejects(withPreset(7), 'kinds.money[0].preset', msg, opts);
+  });
+
+  it('a zoning policy with a preset id is still refused', () => {
+    rejects(
+      doc([{ ...transit(), preset: 'housing-bond' }]),
+      'kinds.zoning[0].preset',
+      'expected null'
+    );
   });
 });
 

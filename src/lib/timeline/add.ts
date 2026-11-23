@@ -6,9 +6,10 @@
  * area, observed timing, a baseline or terms policy with nothing typed yet) the policy is built
  * directly. Pure TS.
  */
+import { ALL_ALLOWED, isGiven, type Allowed } from '$lib/game/allowed';
 import type { LimitKind } from '$lib/sim-page/funding-copy';
 import { DEFAULT_POLICY, type SimPolicy } from '$lib/sim-page/policy';
-import { addPreset, fundingPresets, nextAddedId } from '$lib/sim-page/funding-presets';
+import { addPreset, dateMeasure, fundingPresets, nextAddedId } from '$lib/sim-page/funding-presets';
 import { PRESETS, resolvePreset, timingLabel, type PresetId } from '$lib/sim-page/timing';
 import { newLayer } from '$lib/sim-page/transit-edit';
 import { FINANCE_LIMITS } from '$lib/sim/levers/finance';
@@ -67,8 +68,10 @@ const hasMoney = (cal: Calibration): boolean =>
 export function addChoices(
   kind: PolicyKind,
   cal: Calibration,
-  doc: SimPolicy4
+  doc: SimPolicy4,
+  allowed: Allowed = ALL_ALLOWED
 ): { choice: AddOffer; label: string }[] {
+  if (!allowed.kinds.has(kind)) return [];
   switch (kind) {
     case 'zoning': {
       const has = (c: Category) =>
@@ -93,19 +96,22 @@ export function addChoices(
         })),
         { choice: { kind, what: 'custom' }, label: CUSTOM_TIMING_LABEL }
       ];
-    case 'money':
+    case 'money': {
       if (!hasMoney(cal)) return [];
+      const given = fundingPresets(cal)
+        .filter((p) => p.available)
+        .map((p) => ({
+          choice: { kind, what: 'preset' as const, preset: p.id },
+          label: p.label
+        }));
+      if (allowed.money === 'given') return given;
       return [
-        ...fundingPresets(cal)
-          .filter((p) => p.available)
-          .map((p) => ({
-            choice: { kind, what: 'preset' as const, preset: p.id },
-            label: p.label
-          })),
+        ...given,
         { choice: { kind, what: 'ownPool' }, label: 'Your own pool' },
         { choice: { kind, what: 'baseline' }, label: 'City funding scale' },
         { choice: { kind, what: 'terms' }, label: 'Market terms' }
       ];
+    }
   }
 }
 
@@ -211,7 +217,8 @@ function created(doc: SimPolicy4, choice: AddChoice, cal: Calibration): Policy[]
         programmes: all.programmes.filter((g) => !old.has(g.id)),
         terms: {}
       };
-      return upgraded();
+      // A given measure: every policy names its preset and carries the preset's label.
+      return upgraded().map((p) => ({ ...p, preset: preset.id, label: preset.label }));
     }
   }
 }
@@ -234,14 +241,33 @@ export function addPolicy(
     used.add(id);
     return id;
   };
-  const added = created(doc, choice, ctx.cal).map((p) => ({
+  const dated = created(doc, choice, ctx.cal).map((p) => ({
     ...p,
     id: idFor(p.id),
     spans: p.spans.map((s) => ({ ...s, from, to: null }))
   }));
+  // A given measure's money follows its first span's start (M1).
+  const added =
+    choice.kind === 'money' && choice.what === 'preset'
+      ? dated.map((p) => dateMeasure(p, ctx.cal))
+      : dated;
   if (added.length === 0) throw new Error(`nothing to add for ${JSON.stringify(choice)}`);
   return {
     doc: { ...doc, kinds: { ...doc.kinds, [choice.kind]: [...doc.kinds[choice.kind], ...added] } },
     ref: { kind: choice.kind, id: added[0].id, span: 0 }
   };
+}
+
+/** `after` with each given measure whose first span's `from` moved since `before` re-dated; `after` itself when none moved. */
+export function redateMoved(before: SimPolicy4, after: SimPolicy4, cal: Calibration): SimPolicy4 {
+  const was = new Map(before.kinds.money.map((p) => [p.id, p]));
+  let changed = false;
+  const money = after.kinds.money.map((p) => {
+    const old = was.get(p.id);
+    if (!isGiven(p) || old === undefined || old.spans[0]?.from === p.spans[0]?.from) return p;
+    const next = dateMeasure(p, cal);
+    if (next !== p) changed = true;
+    return next;
+  });
+  return changed ? { ...after, kinds: { ...after.kinds, money } } : after;
 }
