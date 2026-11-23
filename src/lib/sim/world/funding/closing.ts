@@ -8,8 +8,16 @@ import { lotRow } from '../columns';
 import { monthFirstDay, monthOfDay } from '../months';
 import type { PolicyFrame, PolicyTimeline } from '../policy/frame';
 import { frameIdOf } from '../policy/intern';
-import { LOT_FREE, NO_DAY, type StepCtx } from '../types';
-import { INSTR_GUARANTEE, INSTR_LOAN, addShutRow, fundOf, type FundPools } from './columns';
+import type { Statics } from '../statics';
+import { LOT_FREE, NO_DAY, type StepCtx, type World } from '../types';
+import {
+  INSTR_GUARANTEE,
+  INSTR_LOAN,
+  addShutRow,
+  fundOf,
+  reopenPool,
+  type FundPools
+} from './columns';
 import type { FrameMoney } from './frame-money';
 import { kindOf, servingMoney } from './serve';
 
@@ -23,7 +31,9 @@ import { kindOf, servingMoney } from './serve';
 export function closeSpent(ctx: StepCtx): void {
   const { pools } = fundOf(ctx.world);
   const { fm, rowOf, avail } = servingMoney(ctx);
-  const defs = fm.fin.pools;
+  // This month's definitions: frame ids leave inflows out, so `fm` (memoised by id) may hold an
+  // earlier month's, in the same pool order.
+  const defs = ctx.frame.finance!.pools;
   const asOf = ctx.statics.asOf;
   const order = defs.map((_, fq) => fq).sort((a, b) => rowOf[a] - rowOf[b]);
   for (const fq of order) {
@@ -67,6 +77,31 @@ function askedPast(ctx: StepCtx, fm: FrameMoney, fq: number, money: number): boo
     if (ask > money) return true;
   }
   return false;
+}
+
+/**
+ * Before month m = world.month + 1 is stepped: for each arrival of the base frame of month m with
+ * dollars above 0 whose pool has an open shut row, `reopenPool(pools, q, monthFirstDay(asOf, m))`.
+ * Nothing when m > timeline.readyThrough() (step then throws as today) or the frame has no finance.
+ * Pool rows are found by id without appending; an arrival whose pool has no world row is skipped.
+ */
+export function reopenArrivals(world: World, statics: Statics, timeline: PolicyTimeline): void {
+  if (!('shutN' in world.pools)) return;
+  const pools = world.pools as FundPools;
+  if (pools.shutN === 0) return;
+  const m = world.month + 1;
+  if (m > timeline.readyThrough()) return;
+  const fin = timeline.frameAt(m).finance;
+  if (fin === null) return;
+  const day = monthFirstDay(statics.asOf, m);
+  for (const a of fin.arrivals) {
+    if (!(a.dollars > 0)) continue;
+    const id = fin.pools[a.pool].id;
+    let q = 0;
+    while (q < pools.n && pools.id[q] !== id) q++;
+    if (q === pools.n || pools.closedDay[q] === NO_DAY) continue;
+    reopenPool(pools, q, day);
+  }
 }
 
 const lastArrivals = new WeakMap<Pool, Map<Day, Day | null>>();

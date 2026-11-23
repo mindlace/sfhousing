@@ -8,8 +8,11 @@ import { scenarioUrls } from '$lib/sim/scenario/load';
 import type { LedgerEvent } from '$lib/sim/scenario/money';
 import { DEFAULT_POLICY4, type SimPolicy4 } from '$lib/timeline/policy4';
 import { createFundingSystem } from '../funding';
+import { fundOf } from '../funding/columns';
+import { CLOSE_POOL, closingPolicy } from '../funding/test/fixtures';
 import { withFunding } from '../index';
 import type { MapStream } from '../map-stream';
+import { monthFirstDay, monthOfDay } from '../months';
 import { firstDifference } from '../policy/compare';
 import { compileTimeline, type CompileCtx } from '../policy/compile';
 import { span } from '../policy/test/fixtures';
@@ -27,6 +30,8 @@ const MONTHS = 130;
 let statics: Statics;
 let timeline: PolicyTimeline;
 let score: ScoreStatics;
+/** The score statics of a timeline on fixture-0. */
+let scoreOf: (t: PolicyTimeline) => ScoreStatics;
 let ctx: CompileCtx;
 
 /** The default document plus rent-controlled lots protected from model month `from`. */
@@ -45,6 +50,27 @@ function editedAt(from: number): PolicyTimeline {
   const t = c.result();
   expect(firstDifference(timeline, t)).toBe(from);
   return t;
+}
+
+/** CLOSE_POOL's one arrival in month 2 (test value): spent, and the pool closed, before month 100. */
+const CLOSE_DOLLARS = 3_000_000;
+
+/** The default document plus one `fund` policy adding CLOSE_POOL, one arrival, and CLOSE_GRANT. */
+function closingPlan(): PolicyTimeline {
+  const doc: SimPolicy4 = structuredClone(DEFAULT_POLICY4);
+  const asOf = ctx.input.asOf;
+  doc.kinds.money.push(
+    closingPolicy(asOf, [
+      {
+        from: 1,
+        to: null,
+        inflows: [{ kind: 'once', day: monthFirstDay(asOf, 2), dollars: CLOSE_DOLLARS }]
+      }
+    ])
+  );
+  const c = compileTimeline(doc, {}, ctx, 'plan');
+  expect(c.step(Infinity)).toBe(true);
+  return c.result();
 }
 
 beforeAll(async () => {
@@ -76,13 +102,9 @@ beforeAll(async () => {
   expect(c.step(Infinity)).toBe(true);
   statics = ds.statics;
   timeline = c.result();
-  score = scoreStaticsOf(
-    ds.loaded.fzp,
-    timeline,
-    'plan',
-    MONTHS,
-    ds.loaded.projects.rhnaCompletedNet
-  );
+  scoreOf = (t) =>
+    scoreStaticsOf(ds.loaded.fzp, t, 'plan', MONTHS, ds.loaded.projects.rhnaCompletedNet);
+  score = scoreOf(timeline);
   // Not vacuous: the fixture city's baseline money reaches the plan world's ledger.
   expect(timeline.frameAt(1).finance).not.toBeNull();
 });
@@ -127,10 +149,10 @@ function run(e: Ensemble, stop: () => boolean = () => false): string[] {
 
 const rowsOf = (e: Ensemble) => e.series!.rows(0, e.series!.finalThrough());
 
-/** Rows, world and ledger of a fresh ensemble run under `t` with the gate open. */
-function fresh(t: PolicyTimeline) {
+/** Rows, world and ledger of a fresh ensemble run under `t` with the gate open (statics `s`). */
+function fresh(t: PolicyTimeline, s: ScoreStatics = score) {
   const e = ensemble({ timeline: t });
-  e.setStatics(score);
+  e.setStatics(s);
   run(e);
   return { rows: rowsOf(e), world: structuredClone(e.world), ledger: [...e.ledger!] };
 }
@@ -469,5 +491,28 @@ describe('createEnsemble', () => {
     }
     expect(feeds).toBe(50);
     expect(e.next()).toBe('step');
+  });
+
+  it('a closing is made again after a restore before it, and carried on by keep after it', () => {
+    const t = closingPlan();
+    const s = scoreOf(t);
+    const ref = fresh(t, s);
+    const p = fundOf(ref.world!).pools;
+    expect(p.shutN).toBeGreaterThan(0);
+    expect(p.id[p.shutRow[0]]).toBe(CLOSE_POOL);
+    const c = monthOfDay(statics.asOf, p.shutFrom[0] - 1); // the month that found it spent
+    expect(c).toBeLessThan(100);
+    const r = ensemble({ timeline: t });
+    r.setStatics(s);
+    run(r);
+    r.restore({ ...t }, c - 1);
+    run(r);
+    same(r, ref);
+    const k = ensemble({ timeline: t });
+    k.setStatics(s);
+    run(k, () => k.month === c + 2);
+    k.keep({ ...t });
+    run(k);
+    same(k, ref);
   });
 });

@@ -13,7 +13,7 @@ import { miniDoc, span } from '../policy/test/fixtures';
 import { staticsOf } from '../statics';
 import { miniInput } from '../test/mini';
 import { frameOf, oneFrame } from '../test/timeline';
-import { NO_DAY, type FundingSystem, type World } from '../types';
+import { NO_DAY, type FundingSystem, type StepSink, type World } from '../types';
 import { withFunding } from '../world';
 import {
   INSTR_GUARANTEE,
@@ -306,9 +306,21 @@ interface Waiting {
   bundle: string;
 }
 
+interface ShutRow {
+  id: string;
+  from: Day;
+  to: Day;
+}
+
 /** What `closing` records after each month (index m), month 0 empty. */
 interface Closing {
   world: World;
+  /** The shut rows after month m, in row order. */
+  shutAfter(m: number): ShutRow[];
+  /** `shutN` after month m. */
+  shutNAfter(m: number): number;
+  /** The programmes offered by the frame the world stepped month m under (`beforeStep`'s view). */
+  offeredAt(m: number): string[];
   events: MonthEvent[];
   ledger: LedgerEvent[];
   /** The month whose step closed pool `id` first; throws when it never closed. */
@@ -344,9 +356,22 @@ function closing(
   const spells: Map<string, Day>[] = [new Map()];
   const avail: number[] = [0];
   const credit: Set<string>[] = [new Set()];
+  const shut: ShutRow[][] = [[]];
+  const offered: string[][] = [[]];
+  const sys = opts.system ?? createFundingSystem({ poolClosing: opts.poolClosing });
+  const system: FundingSystem = {
+    ...sys,
+    beforeStep(w, s, t) {
+      const v = sys.beforeStep ? sys.beforeStep(w, s, t) : t;
+      const fin = v.frameAt(w.month + 1).finance;
+      offered.push(
+        fin === null ? [] : fin.programmes.filter((_, i) => fin.offered[i] === 1).map((g) => g.id)
+      );
+      return v;
+    }
+  };
   const r = runFunded(staticsOf(input), moneyTimeline(input, doc), opts.seed ?? 1, through, {
-    poolClosing: opts.poolClosing,
-    system: opts.system,
+    system,
     afterStep(w) {
       if (!('shutN' in w.pools)) {
         closedBy.push(new Map());
@@ -354,9 +379,16 @@ function closing(
         spells.push(new Map());
         avail.push(0);
         credit.push(new Set());
+        shut.push([]);
         return;
       }
       const { line, pools } = fundOf(w);
+      const shutRows: ShutRow[] = [];
+      for (let k = 0; k < pools.shutN; k++) {
+        const id = pools.id[pools.shutRow[k]];
+        shutRows.push({ id, from: pools.shutFrom[k], to: pools.shutTo[k] });
+      }
+      shut.push(shutRows);
       closedBy.push(new Map(pools.id.slice(0, pools.n).map((id, q) => [id, pools.closedDay[q]])));
       const rows: Waiting[] = [];
       for (let i = 0; i < line.n; i++)
@@ -380,6 +412,9 @@ function closing(
   });
   return {
     ...r,
+    shutAfter: (m) => shut[m],
+    shutNAfter: (m) => shut[m].length,
+    offeredAt: (m) => offered[m],
     closedAt(id) {
       for (let m = 1; m <= through; m++) {
         const d = closedBy[m].get(id);
@@ -661,5 +696,188 @@ describe('closeSpent: a spent pool closes', () => {
     const r = runFunded(staticsOf(input), t, 1, 24);
     expect('shutN' in r.world.pools).toBe(false);
     expect(r.world.month).toBe(24);
+  });
+});
+
+// A closed pool opens on a new arrival (spec sec-design-reopen); edits, rewind and copies
+// (sec-design-edit). On SOLO, where CLOSE_POOL is the only money and m-bank never closes, the shut
+// rows are CLOSE_POOL's alone.
+
+/** The second span's first month: after CLOSE_POOL's closing under one span (test value). */
+const S2 = 60;
+/** One span from month 1: ONE_PROJECT in month 2. */
+const singleSpanInflows = [once(monthFirstDay(asOf, 2), ONE_PROJECT)];
+const singleSpanDoc = docOf(
+  closingPolicy(asOf, [{ from: 1, to: null, inflows: singleSpanInflows }])
+);
+/** Span 1 as `singleSpanDoc` to month S2 - 1; span 2 from S2 with ONE_PROJECT on its fourth day. */
+const twoSpanDoc = docOf(
+  closingPolicy(asOf, [
+    { from: 1, to: S2 - 1, inflows: [once(monthFirstDay(asOf, 2), ONE_PROJECT)] },
+    { from: S2, to: null, inflows: [once(monthFirstDay(asOf, S2) + 3, ONE_PROJECT)] }
+  ])
+);
+
+/** Every event and ledger entry a sink is sent, each event with its month. */
+function recorder(): { out: StepSink; events: MonthEvent[]; month: { m: number } } {
+  const events: MonthEvent[] = [];
+  const month = { m: 0 };
+  const out: StepSink = { event: (e) => events.push({ ...e, month: month.m }), ledger() {} };
+  return { out, events, month };
+}
+
+/**
+ * On `input`: months 1..k stepped under `a`'s timeline, then k+1..through under `b`'s, on one due
+ * list planned under `a`'s at the start (the ensemble's `keep`).
+ */
+function stepThenKeep(
+  a: SimPolicy4,
+  b: SimPolicy4,
+  k: number,
+  through: number,
+  input: SimInput = SOLO
+): World {
+  const statics = staticsOf(input);
+  const ta = moneyTimeline(input, a);
+  const tb = moneyTimeline(input, b);
+  const core = withFunding(createFundingSystem());
+  const { out } = recorder();
+  const w = core.createWorld(statics, ta, 1, out);
+  const due = core.planDue(w, statics, ta, 1, through);
+  for (let m = 1; m <= through; m++) core.step(w, due, statics, m <= k ? ta : tb, 1, out);
+  return w;
+}
+
+/**
+ * On MINI: a world stepped to month k, then cloned and the clone's due list planned with
+ * `planDue`; both stepped on to `through`.
+ */
+function stepTwins(doc: SimPolicy4, k: number, through: number) {
+  const statics = staticsOf(MINI);
+  const t = moneyTimeline(MINI, doc);
+  const core = withFunding(createFundingSystem());
+  const a = recorder();
+  const original = core.createWorld(statics, t, 1, a.out);
+  const due = core.planDue(original, statics, t, 1, through);
+  for (let m = 1; m <= k; m++) {
+    a.month.m = m;
+    core.step(original, due, statics, t, 1, a.out);
+  }
+  const clone = structuredClone(original);
+  const cloneDue = core.planDue(clone, statics, t, 1, through);
+  const b = recorder();
+  for (let m = k + 1; m <= through; m++) {
+    a.month.m = m;
+    b.month.m = m;
+    core.step(original, due, statics, t, 1, a.out);
+    core.step(clone, cloneDue, statics, t, 1, b.out);
+  }
+  return { original, clone, originalEvents: a.events, cloneEvents: b.events };
+}
+
+/**
+ * On SOLO, `twoSpanDoc` stepped to month k; `stub` is its timeline ready only through k (its frames
+ * past k still read, so only the ready check holds a step back).
+ */
+function steppedClosed(k: number) {
+  const statics = staticsOf(SOLO);
+  const t = moneyTimeline(SOLO, twoSpanDoc);
+  const core = withFunding(createFundingSystem());
+  const { out } = recorder();
+  const w = core.createWorld(statics, t, 1, out);
+  const due = core.planDue(w, statics, t, 1, k + 1);
+  for (let m = 1; m <= k; m++) core.step(w, due, statics, t, 1, out);
+  const stub: PolicyTimeline = { ...t, readyThrough: () => k };
+  return { core, w, due, statics, stub };
+}
+
+/** The shut rows of CLOSE_POOL in `world`. */
+function closeRows(world: World): ShutRow[] {
+  const { pools } = fundOf(world);
+  const out: ShutRow[] = [];
+  for (let k = 0; k < pools.shutN; k++)
+    if (pools.id[pools.shutRow[k]] === CLOSE_POOL)
+      out.push({ id: CLOSE_POOL, from: pools.shutFrom[k], to: pools.shutTo[k] });
+  return out;
+}
+
+describe('reopenArrivals: a closed pool opens on its next arrival', () => {
+  it("a closed pool opens in the month of its next span's arrival, and can close again", () => {
+    const r = closing(twoSpanDoc, 240, { input: SOLO });
+    const c = r.closedAt(CLOSE_POOL);
+    expect(c).toBeLessThan(S2);
+    expect(r.closedDayAfter(S2)).toBe(NO_DAY);
+    expect(r.shutAfter(S2)[0]).toEqual({
+      id: CLOSE_POOL,
+      from: monthLastDay(asOf, c) + 1,
+      to: monthFirstDay(asOf, S2)
+    });
+    expect(r.offeredAt(S2)).toContain(CLOSE_GRANT); // the frame the world stepped month S2 under
+    expect(r.offeredAt(S2 - 1)).not.toContain(CLOSE_GRANT);
+    const { pools } = fundOf(r.world);
+    expect(pools.shutN).toBe(2);
+    expect(pools.closedDay[pools.id.indexOf(CLOSE_POOL)]).toBe(pools.shutFrom[1]);
+  });
+
+  it('a pool closed and opened in the same month leaves no shut row', () => {
+    const c = closing(singleSpanDoc, 120, { input: SOLO }).closedAt(CLOSE_POOL);
+    const doc = docOf(
+      closingPolicy(asOf, [
+        { from: 1, to: c, inflows: singleSpanInflows },
+        { from: c + 1, to: null, inflows: [once(monthFirstDay(asOf, c + 1), ONE_PROJECT)] }
+      ])
+    );
+    const r = closing(doc, c + 1, { input: SOLO });
+    expect(r.closedDayAfter(c)).toBe(monthFirstDay(asOf, c + 1));
+    expect(r.shutNAfter(c)).toBe(1);
+    expect(r.shutNAfter(c + 1)).toBe(0);
+    expect(r.closedDayAfter(c + 1)).toBe(NO_DAY);
+  });
+
+  it('an edit before the closing that gives a later arrival (keep) defers it', () => {
+    const c = closing(singleSpanDoc, 120, { input: SOLO }).closedAt(CLOSE_POOL);
+    const j = c + 6;
+    const later = docOf(
+      closingPolicy(asOf, [
+        {
+          from: 1,
+          to: null,
+          inflows: [...singleSpanInflows, once(monthFirstDay(asOf, j) + 2, ONE_PROJECT)]
+        }
+      ])
+    );
+    // Months 1..c-1 under singleSpanDoc's timeline, then c..120 under later's, one due list.
+    const rows = closeRows(stepThenKeep(singleSpanDoc, later, c - 1, 120));
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows.map((x) => x.from >= monthFirstDay(asOf, j + 2))).toEqual(rows.map(() => true));
+  });
+
+  it('two runs of one seed give identical worlds; a clone after a closing steps on identically', () => {
+    const a = closing(closingDocA, 120);
+    const b = closing(closingDocA, 120);
+    expect(structuredClone(b.world)).toEqual(structuredClone(a.world));
+    expect(b.events).toEqual(a.events);
+    const c = a.closedAt(CLOSE_POOL);
+    const t = stepTwins(closingDocA, c, 120);
+    expect(fundOf(t.original).pools.shutN).toBeGreaterThan(0);
+    expect(structuredClone(t.clone)).toEqual(structuredClone(t.original));
+    expect(t.cloneEvents.length).toBeGreaterThan(0);
+    expect(t.cloneEvents).toEqual(t.originalEvents.filter((e) => e.month > c));
+  });
+
+  it('restore: a month-0 clone planned with planDue equals the world stepped straight', () => {
+    const t = stepTwins(closingDocA, 0, 120);
+    expect(fundOf(t.original).pools.shutN).toBeGreaterThan(0);
+    expect(structuredClone(t.clone)).toEqual(structuredClone(t.original));
+  });
+
+  // Review Focus 4
+  it('beforeStep past readyThrough leaves the world as it was', () => {
+    const { core, w, due, statics, stub } = steppedClosed(S2 - 1);
+    const { pools } = fundOf(w);
+    expect(pools.closedDay[pools.id.indexOf(CLOSE_POOL)]).not.toBe(NO_DAY); // closed
+    const before = structuredClone(w);
+    expect(() => core.step(w, due, statics, stub, 1, { event() {} })).toThrow(RangeError);
+    expect(structuredClone(w)).toEqual(before);
   });
 });

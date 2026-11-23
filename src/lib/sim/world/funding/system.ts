@@ -11,7 +11,7 @@ import {
   type WorldOptions
 } from '../types';
 import { applyLots, leaveLine, planLotMonth } from './apply';
-import { closedTimeline } from './closing';
+import { closedTimeline, reopenArrivals } from './closing';
 import { fundOf, initFunding, type FundPools } from './columns';
 import { policyChanged } from './policy';
 import { moneyIn, moneyOnEvent } from './pools';
@@ -51,7 +51,11 @@ function closedOf(world: World, statics: Statics, timeline: PolicyTimeline): Pol
 export function createFundingSystem(opts: WorldOptions = {}): FundingSystem {
   const closing = opts.poolClosing !== false;
   return {
-    beforeStep: closedOf,
+    beforeStep(world, statics, timeline) {
+      // A closed pool opens on its next arrival, before the month's view is taken.
+      reopenArrivals(world, statics, timeline);
+      return closedOf(world, statics, timeline);
+    },
     timelineOf: closedOf,
     create(world, _statics, frame) {
       initFunding(
