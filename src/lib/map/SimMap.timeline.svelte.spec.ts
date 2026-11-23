@@ -621,13 +621,11 @@ describe('SimMap timeline picking', { timeout: 60_000 }, () => {
     map.jumpTo({ center: [AT[0] + 0.00001, AT[1]] });
     expect(timelinePick).toHaveBeenCalledTimes(2);
     expect(timelinePick).toHaveBeenLastCalledWith(HOVER_MISS);
-    await new Promise<void>((r) => {
-      map.once('idle', () => r());
-      map.triggerRepaint();
-    });
-    fire('pointermove', 'mouse', at(FP));
+    // The mouse rests where it was, still over the part: the move's end picks again on its own.
     await expect.poll(() => timelinePick.mock.calls.length).toBe(3);
     expect(timelinePick).toHaveBeenLastCalledWith(expect.objectContaining({ projectId: 'fx-p' }));
+    await frames(3);
+    expect(timelinePick).toHaveBeenCalledTimes(3);
     await screen.unmount();
     expect(timelinePick).toHaveBeenCalledTimes(4);
     expect(timelinePick).toHaveBeenLastCalledWith(HOVER_MISS);
