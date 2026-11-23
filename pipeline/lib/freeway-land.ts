@@ -1,10 +1,9 @@
-// The freeway-land catalog (lesscars v1.1 spec "Freeway land"): vacant or public parcels under
-// or fronting a freeway, curated per segment. While its freeway stands such a parcel is
-// unbuildable in every simulator run (`scenarioEligible(rec, units, true)`); the highway
-// truncation that removes the segment (`removedBy`) frees it. The curated list is the source of
-// truth: candidates are only proposed, and an excluded parcel carries its reason.
+// The freeway-land catalog: vacant or public parcels under or fronting a freeway, curated per
+// segment. Such a parcel is unbuildable in every simulator run (`scenarioEligible(rec, units,
+// true)`); `removedBy` names the highway change that would free it. The curated list is the source
+// of truth: candidates are only proposed, and an excluded parcel carries its reason.
 import { existsSync, readFileSync } from 'node:fs';
-import type { ParcelId } from '../../../src/lib/data/parcel';
+import type { ParcelId } from '../../src/lib/data/parcel';
 
 export interface FreewaySegment {
   /** e.g. 'us101-james-lick'. */

@@ -1,5 +1,8 @@
+import path from 'node:path';
 import { FTF_M } from '../src/lib/generator/constants.js';
 import { BAND_MAX_M } from './sb79-config.js';
+
+const PIPELINE_DIR = import.meta.dirname;
 
 export const BBOX = { w: -122.53, s: 37.69, e: -122.34, n: 37.84 } as const;
 export const CELL_SIZE_M = 1000;
@@ -80,6 +83,12 @@ export const R2_BUCKET = 'sfhousing';
 export const STAGING_ORIGIN = 'https://sfhousing-staging.mindlace.net';
 export const PRODUCTION_ORIGIN = 'https://sfhousing.mindlace.net';
 export const IMMUTABLE = 'public, max-age=31536000, immutable';
+
+/** The freeway-land catalog: live, and the mini fixture's. */
+export const FREEWAY_LAND_JSON = {
+  live: path.join(PIPELINE_DIR, 'enrichment/freeway-land.json'),
+  fixture: path.join(PIPELINE_DIR, 'test/fixtures/mini/enrichment/freeway-land.json')
+};
 
 /** Mutable run-time settings (set by the CLI before steps run). */
 export const config: { renderSource: 'overture' | 'datasf' } = { renderSource: 'overture' };

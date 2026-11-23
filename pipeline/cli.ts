@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { FIXTURE_PROFILE, LIVE_PROFILE, STAGING_ORIGIN } from './config';
+import { FIXTURE_PROFILE, FREEWAY_LAND_JSON, LIVE_PROFILE, STAGING_ORIGIN } from './config';
 import { versionCommand } from './lib/dataset-check';
 import { build, printResults } from './steps/build';
 import {
@@ -17,8 +17,7 @@ import { upload } from './steps/upload';
 import { verify } from './steps/verify';
 import { readLock } from './lib/lock';
 import { LIDAR_LOCK, parseTiles, readLidarLock } from './sources/lidar';
-import { readFreewayLandSet } from './lib/lesscars/freeway-land';
-import { LESSCARS_FREEWAY_LAND_JSON } from './lesscars-config';
+import { readFreewayLandSet } from './lib/freeway-land';
 import { replaceQualityDocSection } from './lib/quality';
 import { wranglerTarget } from './lib/r2';
 
@@ -143,7 +142,7 @@ const steps: Record<string, { help: string; run: Step }> = {
           (CALIBRATION_CHECK_IDS as readonly string[]).includes(r.id)
         ),
         // V17 reads today's freeway-land catalog of the version's kind (docs/dev/pipeline.md).
-        freewayLand: readFreewayLandSet(LESSCARS_FREEWAY_LAND_JSON[fixtureV ? 'fixture' : 'live'])
+        freewayLand: readFreewayLandSet(FREEWAY_LAND_JSON[fixtureV ? 'fixture' : 'live'])
       });
       return printResults(results);
     }

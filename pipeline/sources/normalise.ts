@@ -277,7 +277,8 @@ async function buildSelect(
     case 'datasf-neighborhoods':
       return `SELECT ${sel(cols, 'nhood', 'VARCHAR')}, geom FROM ${p} ORDER BY nhood`;
     case 'datasf-streets':
-      // `active` is filtered by the fetch's `$where`. cnn and classcode stay text (SODA writes
+      // The road-like rule and the boxes command read it. `active` is filtered by the fetch's
+      // `$where`. cnn and classcode stay text (SODA writes
       // them as strings); geom is a MultiLineString in EPSG:7131 (the build CRS). cnn is unique,
       // the geometry breaks ties. f_st / t_st are the cross streets at each end ("COUNTY LINE" at
       // the south edge); NULL when the raw file lacks them.

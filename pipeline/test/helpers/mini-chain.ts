@@ -10,13 +10,13 @@ import type { ScenarioParcels } from '../../../src/lib/data/scenario-codec';
 import { decodeTransit } from '../../../src/lib/data/transit-codec';
 import type { TransitNetwork } from '../../../src/lib/data/transit';
 import type { Day } from '../../../src/lib/timelapse/time';
+import { FREEWAY_LAND_JSON } from '../../config';
 import type { Duck } from '../../lib/duck';
+import { readFreewayLand } from '../../lib/freeway-land';
 import { readLock } from '../../lib/lock';
 import { Report } from '../../lib/report';
 import { POLICY_BIN } from '../../lib/scenario-files';
 import { runSql } from '../../lib/sql';
-import { LESSCARS_FREEWAY_LAND_JSON } from '../../lesscars-config';
-import { readFreewayLand } from '../../lib/lesscars/freeway-land';
 import { asOfFromLock } from '../../project-records/parse';
 import { readParcelRecords, writeNeighborhoods } from '../../steps/chunks';
 import { readPolicyBin, writePolicy } from '../../steps/policy';
@@ -64,7 +64,7 @@ export function miniChain(): Promise<MiniChain> {
       capDay,
       report: new Report(),
       buildCounts,
-      freewayLand: readFreewayLand(LESSCARS_FREEWAY_LAND_JSON.fixture)
+      freewayLand: readFreewayLand(FREEWAY_LAND_JSON.fixture)
     });
     await writeNeighborhoods(db, outDir);
     writeTransit({

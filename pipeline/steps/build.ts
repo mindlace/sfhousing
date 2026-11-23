@@ -12,7 +12,7 @@ import {
 import { writeFileSync } from 'node:fs';
 import { availableParallelism, tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
-import { TOOL_VERSIONS, type InvariantProfile } from '../config';
+import { FREEWAY_LAND_JSON, TOOL_VERSIONS, type InvariantProfile } from '../config';
 import { BuildError } from '../lib/build-error';
 import { run } from '../lib/exec';
 import { openDuck, type Duck } from '../lib/duck';
@@ -31,8 +31,7 @@ import { loadNormalised, normaliseAll } from '../sources/normalise';
 import { overtureReleaseProblem } from '../sources/overture';
 import { SB79_EXEMPTIONS_CSV } from '../sources/sfbos';
 import { FIXTURE_CAL, LIVE_CAL } from '../lib/fzp-cal/config';
-import { LESSCARS_FREEWAY_LAND_JSON } from '../lesscars-config';
-import { freewayLandSet, readFreewayLand } from '../lib/lesscars/freeway-land';
+import { freewayLandSet, readFreewayLand } from '../lib/freeway-land';
 import { readFundingFile, writeCalibration } from './calibration';
 import { checkDataset, type InvariantResult } from './check';
 import { readParcelRecords, writeChunks, writeNeighborhoods, type ChunkOut } from './chunks';
@@ -214,9 +213,7 @@ export async function build(
     await createQualityTables(db);
     // Freeway land: the catalog marks its parcels ineligible (the scenario step), and
     // 55_road_lots.sql reads it too: catalog land is never road-like.
-    const freewayLand = readFreewayLand(
-      LESSCARS_FREEWAY_LAND_JSON[fixtureMode ? 'fixture' : 'live']
-    );
+    const freewayLand = readFreewayLand(FREEWAY_LAND_JSON[fixtureMode ? 'fixture' : 'live']);
     await loadRoadLotInputs(
       db,
       freewayLandSet(freewayLand),

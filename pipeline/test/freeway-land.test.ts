@@ -2,16 +2,16 @@
 // freeway stands, the homes check and V17 with and without the catalog.
 import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, relative, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { FIXTURE_PROFILE } from '../config';
-import { LESSCARS_FREEWAY_LAND_JSON } from '../lesscars-config';
+import { FIXTURE_PROFILE, FREEWAY_LAND_JSON } from '../config';
 import {
+  freewayLandSet,
   parseFreewayLand,
   readFreewayLand,
   readFreewayLandSet,
   type FreewayLandFile
-} from '../lib/lesscars/freeway-land';
+} from '../lib/freeway-land';
 import { Report } from '../lib/report';
 import { checkDataset, type CheckExtras } from '../steps/check';
 import { writeScenario } from '../steps/scenario';
@@ -78,10 +78,23 @@ async function v17(dir: string, extras: Pick<CheckExtras, 'freewayLand'>) {
   return r.find((x) => x.id === 'V17')!;
 }
 
+const REPO_ROOT = resolve(import.meta.dirname, '../..');
+
 describe('freeway-land catalog', () => {
+  it('FREEWAY_LAND_JSON names the moved catalog files', () => {
+    expect(relative(REPO_ROOT, FREEWAY_LAND_JSON.live)).toBe(
+      'pipeline/enrichment/freeway-land.json'
+    );
+    expect(relative(REPO_ROOT, FREEWAY_LAND_JSON.fixture)).toBe(
+      'pipeline/test/fixtures/mini/enrichment/freeway-land.json'
+    );
+    expect(readFreewayLand(FREEWAY_LAND_JSON.live)?.segments).toHaveLength(11);
+    expect(freewayLandSet(readFreewayLand(FREEWAY_LAND_JSON.live)).size).toBe(559);
+  });
+
   it('parses the fixture catalog and gives its parcel set', () => {
-    expect([...readFreewayLandSet(LESSCARS_FREEWAY_LAND_JSON.fixture)]).toEqual(['3512019']);
-    const f = readFreewayLand(LESSCARS_FREEWAY_LAND_JSON.fixture)!;
+    expect([...readFreewayLandSet(FREEWAY_LAND_JSON.fixture)]).toEqual(['3512019']);
+    const f = readFreewayLand(FREEWAY_LAND_JSON.fixture)!;
     expect(f.segments.map((s) => [s.id, s.freeway, s.removedBy])).toEqual([
       ['fx-i80', 'I-80', 'hwy']
     ]);

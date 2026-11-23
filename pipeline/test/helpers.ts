@@ -2,10 +2,10 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { openDuck, type Duck } from '../lib/duck';
-import { readFreewayLandSet } from '../lib/lesscars/freeway-land';
+import { FREEWAY_LAND_JSON } from '../config';
+import { readFreewayLandSet } from '../lib/freeway-land';
 import { readLock, verifyRaw } from '../lib/lock';
 import { loadRoadLotInputs, readRoadLots, ROAD_LOTS_JSON } from '../lib/road-lots';
-import { LESSCARS_FREEWAY_LAND_JSON } from '../lesscars-config';
 import { loadNormalised, normaliseAll } from '../sources/normalise';
 import { SB79_EXEMPTIONS_CSV } from '../sources/sfbos';
 
@@ -51,7 +51,7 @@ export async function openMiniDuck(opts: { roadLotInputs?: boolean } = {}): Prom
   if (opts.roadLotInputs ?? true) {
     await loadRoadLotInputs(
       db,
-      readFreewayLandSet(LESSCARS_FREEWAY_LAND_JSON.fixture),
+      readFreewayLandSet(FREEWAY_LAND_JSON.fixture),
       readRoadLots(ROAD_LOTS_JSON.fixture)
     );
   }

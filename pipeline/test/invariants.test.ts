@@ -21,7 +21,7 @@ import {
 import { parseManifest } from '../../src/lib/data/manifest';
 import { checkPolicy } from '../steps/check-policy';
 import { tinyNetwork } from '../../src/lib/data/fixtures/transit-tiny';
-import { FIXTURE_PROFILE, LIVE_PROFILE } from '../config';
+import { FIXTURE_PROFILE, FREEWAY_LAND_JSON, LIVE_PROFILE } from '../config';
 import { QUALITY_REPORT_MD, QUALITY_RULES, makeQuality } from '../lib/quality';
 import { deriveProjects } from '../project-records/derive';
 import {
@@ -43,11 +43,10 @@ import { fixture } from '../steps/fixture';
 import { PROJECTS_JSON } from '../steps/projects';
 import { miniProjectInput } from './fixtures/mini/projects-raw';
 import { PARCELS_BIN, POLICY_BIN } from '../lib/scenario-files';
-import { readFreewayLandSet } from '../lib/lesscars/freeway-land';
-import { LESSCARS_FREEWAY_LAND_JSON } from '../lesscars-config';
+import { readFreewayLandSet } from '../lib/freeway-land';
 
 /** The fixture's freeway-land catalog (lot 19), which `check` reads for a fixture version. */
-const FREEWAY_LAND = readFreewayLandSet(LESSCARS_FREEWAY_LAND_JSON.fixture);
+const FREEWAY_LAND = readFreewayLandSet(FREEWAY_LAND_JSON.fixture);
 /** checkDataset with the fixture catalog, as the build and `check` pass it. */
 const checkDataset: typeof checkDatasetOf = (dir, profile, extras) =>
   checkDatasetOf(dir, profile, { freewayLand: FREEWAY_LAND, ...extras });
