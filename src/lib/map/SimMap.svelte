@@ -519,7 +519,11 @@
         pendingGenerated: pendingApplies.length,
         theme
       }),
-      { applyTimeline, setTime, setTimelineLookups, setHalos, setBarMode, setOverlayLayers }
+      { applyTimeline, setTime, setTimelineLookups, setHalos, setBarMode, setOverlayLayers },
+      (x, y) => {
+        const r = live ? pickAt(live, x, y) : null;
+        return r && 'timeline' in r ? r.timeline : null;
+      }
     )
   );
 
