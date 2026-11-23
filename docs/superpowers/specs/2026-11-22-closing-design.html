@@ -1,15 +1,15 @@
 <article>
   <header>
     <h1>Closing design</h1>
-    <p>The level 2 build check, one end-to-end journey, the one dataset build and upload, the full-tree checks, signoff, and the project docs and leftovers as the system then is.</p>
+    <p>The level 2 check run again, one end-to-end journey, the one dataset build and upload, the full-tree checks, signoff, and the project docs and leftovers as the system then is.</p>
   </header>
 
   <section id="sec-goal">
     <h2>Goal</h2>
-    <p>This unit runs last, after every other unit of the <a href="../design/2026-11-22-1216-incremental-game.html">design doc</a> has merged into the integration branch. It holds ruling D1 ("There shouldn't be a case where it's unachievable") with a build check, proves the units work together with one journey, publishes the build's one dataset, runs the build's one signoff, and makes every doc true.</p>
+    <p>This unit runs last, after every other unit of the <a href="../design/2026-11-22-1216-incremental-game.html">design doc</a> has merged into the integration branch. It holds ruling D1 ("There shouldn't be a case where it's unachievable") by running <code>reach-check</code>'s build check on the dataset it uploads, proves the units work together with one journey, publishes the build's one dataset, runs the build's one signoff, and makes every doc true.</p>
     <ul>
-      <li><code>scripts/level2-check.ts</code>: runs the empty document through the real timeline host on a built dataset and fails when current law misses the goal inside the window (G4's build check).</li>
-      <li><code>e2e/game-journey.spec.ts</code>: a new visitor wins Paint, levels up, wins level 2 on <code>/sim</code>, levels up to 3, and the account holds the game.</li>
+      <li>The level 2 check (G4's build check, <code>scripts/level2-check.ts</code>, written by <code>reach-check</code>) run again on the dataset this unit builds, before the upload.</li>
+      <li><code>e2e/game-journey.spec.ts</code>: a new visitor wins Paint, levels up, wins level 2 on <code>/sim</code>, levels up to 3, and the account holds the game; and a given measure added at a later month has its money dated from that month.</li>
       <li>The dataset of the merged tree built, checked, passed by the level 2 check, uploaded and verified, once, from the integration branch.</li>
       <li>Nothing uploaded, and the owner told the numbers, when the level 2 check fails.</li>
       <li>The full-tree checks: <code>npm run lint</code>, <code>npm run check</code>, <code>npm run test:unit</code>, <code>npm run test:pipeline</code>, <code>npm run test:e2e</code>; then <code>npm run signoff</code>, once, after the upload.</li>
@@ -62,7 +62,8 @@ export function standing(level: Level, bar: Bar | null, seen: Result | null): St
         <li>At levels 3 to 5 a result is <code>won</code> when it beats the bar.</li>
         <li>Every other seen result is <code>short</code>.</li>
         <li><code>goalOutcome</code> is read on the playable document's forecast and never while the numbers are stale, so a standing always belongs to the policy on screen.</li>
-        <li>A build check runs the empty document on the published dataset and fails when the goal is not reached inside the window (D1).</li>
+        <li>A build check runs the empty document on a built dataset and fails when the goal is not reached inside the window (D1).</li>
+        <li><code>reach-check</code> writes the check and runs it once <code>finite-funding</code> and <code>pool-closing</code> have merged, so a miss reaches the owner while the build is still running. <code>closing</code> runs it again on the dataset it uploads.</li>
       </ul>
     </section>
   </section>
@@ -71,25 +72,10 @@ export function standing(level: Level, bar: Bar | null, seen: Result | null): St
     <h2>What is there today</h2>
     <p>Read on commit <code>8125e557</code>. Every other unit changes the tree before this one starts, so the operator re-reads each file named here on the integration branch before writing.</p>
 
-    <section id="sec-today-host">
-      <h3>What the check binds to</h3>
-      <ul>
-        <li><code>createTimelineHost(deps)</code> takes <code>fetch</code>, <code>fetchBytes</code>, <code>post</code>, <code>setTimeout</code>, <code>clearTimeout</code>, <code>now</code> and optional <code>retryDelaysMs</code> and <code>warn</code> (<code>src/lib/sim/world/host.ts:57-117</code>).</li>
-        <li>The host answers <code>openTimeline</code> with <code>compiled</code> (carrying <code>statics</code>) and then <code>filled</code> chunks; <code>error</code> carries a code and a message (<code>src/lib/sim/timeline-protocol.ts:43-50</code>, <code>:127-147</code>).</li>
-        <li>The host's own spec opens, prefetches the bbox of every chunk, and counts the window filled when the last <code>filled</code>'s <code>through</code> equals <code>statics.lastIndex</code> (<code>src/lib/sim/world/host.spec.ts:172-176</code>).</li>
-        <li><code>viewOf(chunks, statics)</code> turns the filled chunks into a <code>TimelineView</code> (<code>src/lib/sim/world/score/view.ts:87</code>).</li>
-        <li><code>defaultGoal(asOf)</code> is 82,069 homes counted from 30 Jun 2022, due at the window's last whole calendar month (<code>src/lib/goal/goal.ts:54-65</code>).</li>
-        <li><code>readGoal(goal, view, i)</code> returns <code>reachedOn</code>, the first month whose homes meet the amount, or null (<code>goal.ts:91-103</code>).</li>
-        <li><code>WINDOW_MONTHS</code> is 480 (<code>src/lib/sim/timeline-client.ts:29</code>).</li>
-        <li><code>reconcilePolicy4(doc, calibration, asOf)</code> is the reconcile the page runs before it sends a document (<code>src/lib/timeline/reconcile4.ts:254-258</code>).</li>
-        <li><code>scripts/ensemble-measure.ts</code> already serves a dataset directory to <code>loadScenario</code> from disk (<code>:148-170</code>) and reconciles <code>DEFAULT_POLICY4</code> with the loaded <code>input.calibration</code> and <code>input.asOf</code> (<code>:264-265</code>). It is the pattern the check follows.</li>
-        <li>The measurement behind <a href="../design/2026-11-22-1216-incremental-game.html#tbl-reach">the reach table</a> ran <code>DEFAULT_POLICY4</code> through <code>createTimelineHost</code> for 480 months and read <code>readGoal(defaultGoal(asOf), view, 479)</code> (<code>.superpowers/superconductor/incremental-game/surveys/reach-measurement.md</code>).</li>
-      </ul>
-    </section>
-
     <section id="sec-today-dataset">
       <h3>Datasets and the finish</h3>
       <ul>
+        <li><code>reach-check</code> has merged <code>scripts/level2-check.ts</code> and its test, and has run the check once on a dataset built from the integration branch after <code>pool-closing</code>. The command, its exit codes and its printed lines are in that unit's spec.</li>
         <li>The dataset version hashes the lock, the code under <code>PATHS</code> and the tool versions (<code>pipeline/lib/version.ts:25-53</code>). <code>scripts/</code> and <code>docs/</code> are not in <code>PATHS</code>.</li>
         <li><code>docs/dev/pipeline.md:42-56</code> gives the finish of a branch that changes the dataset: merge <code>origin/main</code>, <code>build</code>, <code>upload</code>, <code>verify</code>, signoff.</li>
         <li><code>upload</code> refuses unless <code>report.json</code> shows every invariant passing, and aborts when the version's manifest already exists (<code>pipeline.md:51</code>).</li>
@@ -134,98 +120,6 @@ export function standing(level: Level, bar: Bar | null, seen: Result | null): St
   <section id="sec-design">
     <h2>Design</h2>
 
-    <section id="sec-design-check">
-      <h3>The level 2 check</h3>
-      <p>The check is G4's last rule: it runs the empty document on the dataset about to be published and fails when the goal is not reached inside the window (D1). It is invoked with <code>npx tsx</code>, like <code>scripts/dataset-version.ts</code>; it gets no npm script, so <code>package.json</code> is not touched.</p>
-      <pre><code data-lang="sh">npx tsx scripts/level2-check.ts &lt;datasetDir&gt; [--amount &lt;homes&gt;]</code></pre>
-      <dl>
-        <dt><code>&lt;datasetDir&gt;</code></dt><dd>A built dataset directory holding <code>manifest.json</code>: <code>pipeline/out/&lt;v&gt;</code> in the finish, <code>e2e/fixtures/data/fixture-0</code> in the test. Required.</dd>
-        <dt><code>--amount</code></dt><dd>Replaces the goal's amount. For the test and for what-ifs; the finish never passes it.</dd>
-      </dl>
-      <p>The module exports its two steps, so the test runs the host once and reads it at several amounts:</p>
-      <pre><code data-lang="ts">// scripts/level2-check.ts
-import type { Day } from '../src/lib/timelapse/time';
-import type { TimelineView } from '../src/lib/sim/world/score/types';
-
-export interface EmptyRun {
-  datasetVersion: string;
-  asOf: Day;
-  view: TimelineView;
-}
-
-export interface Level2Result {
-  datasetVersion: string;
-  amount: number;
-  /** The goal's deadline: the window's last whole calendar month. */
-  deadline: Day;
-  /** The first month the amount is met; null when it is not met by the deadline. */
-  reachedOn: Day | null;
-  /** Homes counted by the goal's measure at the deadline month. */
-  homesAtDeadline: number;
-  /** Calendar months from reachedOn to the deadline; null when missed. */
-  marginMonths: number | null;
-}
-
-/** Load the dataset from disk and fill the whole window for the empty document. */
-export function runEmptyDocument(
-  dir: string,
-  opts?: { warn?: (msg: string) =&gt; void; timeoutMs?: number }
-): Promise&lt;EmptyRun&gt;;
-
-/** Read the goal over the run; `amount` defaults to the goal's own. */
-export function readLevel2(run: EmptyRun, amount?: number): Level2Result;
-
-/** The lines the command prints. */
-export function level2Lines(r: Level2Result): string[];
-
-/** 0 when reached, 1 when missed. */
-export function level2Exit(r: Level2Result): 0 | 1;</code></pre>
-      <p><code>runEmptyDocument</code>, in order:</p>
-      <ol>
-        <li>Read <code>&lt;dir&gt;/manifest.json</code> with <code>parseManifest</code>.</li>
-        <li>Serve every URL <code>/data/&lt;datasetVersion&gt;/&lt;path&gt;</code> the host asks for from <code>&lt;dir&gt;/&lt;path&gt;</code>, for <code>fetch</code> and <code>fetchBytes</code> alike, as <code>scripts/ensemble-measure.ts:148-170</code> does. A file that does not exist answers <code>ok: false</code>, status 404.</li>
-        <li>Load the scenario with <code>loadScenario(…, scenarioUrls(manifest), …)</code> and take <code>input.calibration</code> and <code>input.asOf</code>.</li>
-        <li>Reconcile <code>DEFAULT_POLICY4</code> with <code>reconcilePolicy4(DEFAULT_POLICY4, input.calibration, input.asOf).doc</code>.</li>
-        <li>Create the host with real timers, <code>retryDelaysMs: []</code> and <code>warn</code> from the options (default: drop the message).</li>
-        <li>Send <code>openTimeline</code> at rev 1 with the manifest, the reconciled document, <code>lots: {}</code> and <code>months: WINDOW_MONTHS</code>.</li>
-        <li>Send <code>prefetch</code> with the bbox that covers every chunk of the manifest, as the host spec's <code>prefetchAll</code> does.</li>
-        <li>Wait until a <code>filled</code> at rev 1 has <code>through</code> equal to the <code>compiled</code> statics' <code>lastIndex</code>. Keep the <code>filled</code> chunks in arrival order; drop <code>cells</code> payloads.</li>
-        <li>Build the view with <code>viewOf(chunks, statics)</code>, dispose the host, clear its timers.</li>
-      </ol>
-      <ul>
-        <li>An <code>error</code> post from the host rejects with <code>host error: {code}: {message}</code>.</li>
-        <li>Not filled within <code>timeoutMs</code> (default 600,000) rejects with <code>window not filled in {n} s</code>.</li>
-        <li>A missing or unreadable <code>manifest.json</code> rejects with <code>no dataset at {dir}</code>.</li>
-        <li>The function never writes a file and never touches the network.</li>
-      </ul>
-      <p><code>readLevel2</code>:</p>
-      <ul>
-        <li>The goal is <code>defaultGoal(run.asOf)</code>, with <code>amount</code> in place of its own when given.</li>
-        <li><code>reachedOn</code> is <code>readGoal(goal, view, view.lastIndex).reachedOn</code>.</li>
-        <li><code>homesAtDeadline</code> is <code>goal.measure.valueAt(view, d)</code>, where <code>d</code> is the month index of <code>goal.deadline</code> in <code>view.months</code>, capped at <code>view.lastIndex</code>.</li>
-        <li><code>marginMonths</code> is the count of calendar months from <code>reachedOn</code>'s month to the deadline's month: 0 when the goal is met in the deadline month.</li>
-      </ul>
-      <p>The command prints to stdout, three lines, numbers with thousands separators and months as <code>formatShortMonthYear</code> gives them. Reached:</p>
-      <pre><code data-lang="text">Dataset 2026-12-01-1a2b3c4d
-Goal: 82,069 homes by Oct 2066
-Reached: Nov 2064, 23 months before the window's end</code></pre>
-      <p>Missed:</p>
-      <pre><code data-lang="text">Dataset 2026-12-01-1a2b3c4d
-Goal: 82,069 homes by Oct 2066
-Missed: 81,308 homes by Oct 2066, 761 short</code></pre>
-      <p>Exit codes:</p>
-      <dl>
-        <dt>0</dt><dd>The goal is reached inside the window.</dd>
-        <dt>1</dt><dd>The goal is missed. The three lines are printed.</dd>
-        <dt>2</dt><dd>The check could not run: a missing or bad argument, no dataset, a host error, a timeout. One line on stderr, <code>level2-check: {reason}</code>, and nothing on stdout.</dd>
-      </dl>
-      <ul>
-        <li>The command passes host warnings to stderr; the exported functions never write to the console.</li>
-        <li>It runs only when executed directly, never on import.</li>
-        <li>Its imports are relative (<code>../src/lib/…</code>), as <code>scripts/ensemble-measure.ts</code>'s are; <code>tsx</code> resolves the <code>$lib</code> imports inside them.</li>
-      </ul>
-    </section>
-
     <section id="sec-design-journey">
       <h3>The journey</h3>
       <p><code>e2e/game-journey.spec.ts</code> is the one e2e spec that crosses units: Paint and the shell (<code>game-shell</code>), the store and the win card (<code>game-core</code>), <code>/sim</code> under the game (<code>game-sim</code>) and the account save (<code>game-save</code>). It binds to the design doc's rules and texts. Its selectors are the test ids and roles that the <code>game-core</code>, <code>game-shell</code>, <code>game-sim</code> and <code>game-save</code> specs under <code>docs/superpowers/specs/</code> fix; the operator reads those four specs and the merged code for them. At the time of writing they include <code>win-card</code>, <code>paint-win</code>, <code>header-level</code>, <code>header-level-panel</code>, <code>header-level-up</code>, <code>level-panel</code>, <code>sim-locked</code>, <code>tl-win</code> and <code>tl-to-beat</code>.</p>
@@ -255,6 +149,29 @@ Missed: 81,308 homes by Oct 2066, 761 short</code></pre>
       </ul>
     </section>
 
+    <section id="sec-design-measure">
+      <h3>The dated measure</h3>
+      <p>A second test in <code>e2e/game-journey.spec.ts</code> runs the real <code>dateMeasure</code> (M1, <code>funding-measures</code>) through <code>addPolicy</code> and the page (<code>game-sim</code>), which no unit's own tests join. On every Playwright project:</p>
+      <ol>
+        <li><code>seedGame(page, 5)</code>; open <code>/sim</code> with <code>gotoHydrated</code> and wait for the first fill on the debug hook (<code>window.__sfhFzp</code>).</li>
+        <li>Move the playhead three years on: focus the ruler and press Page Down three times. Read the playhead's day from <code>__sfhFzp.day</code>.</li>
+        <li>Press Public money's "+" and choose "A housing bond", the label of the <code>housing-bond</code> preset in <code>src/lib/sim-page/funding-presets.ts</code>.</li>
+        <li>Read the document from <code>__sfhFzp.policy</code> once the page is no longer stale (<code>__sfhFzp.stale</code> false).</li>
+      </ol>
+      <p>What it asserts on the new policy, found as the money policy whose <code>preset</code> is <code>housing-bond</code>:</p>
+      <ul>
+        <li>Its first span starts in the model month that holds the playhead's day, at most one month before it and no later than it (a new policy starts on the playhead's model month). Call that first day <code>start</code>; it is more than two years after <code>__sfhFzp.asOf</code>.</li>
+        <li>Its pool's first money-in, read from the first span's effect, is dated <code>start</code>: the bond's one-time principal arrives in the month the policy starts (M1: "A given measure's first payment falls on the first day of its first span").</li>
+        <li>Its label is "A housing bond" and its <code>preset</code> is the preset's id (G3).</li>
+        <li>The bar of the policy on the Public money row is named with "A housing bond" and the span's start date (<code>barLabel</code>).</li>
+      </ul>
+      <ul>
+        <li>The forecast's use of a dated money-in is proved by the engine's own tests; this test proves the dates the page sends.</li>
+        <li>The field names inside the effect are those of <code>src/lib/timeline/policy4.ts</code> on the merged tree; the operator reads them there and in the <code>funding-measures</code> and <code>game-sim</code> specs.</li>
+        <li>A failure is reported against <code>game-sim</code> (the call from <code>addPolicy</code>) or <code>funding-measures</code> (the dates <code>dateMeasure</code> writes), as the asserted field shows.</li>
+      </ul>
+    </section>
+
     <section id="sec-design-leftovers">
       <h3>Leftovers</h3>
       <ul>
@@ -271,7 +188,7 @@ Missed: 81,308 homes by Oct 2066, 761 short</code></pre>
       <p>The operator's worktree is branched from the integration branch after every other unit has merged into it. A comment rewritten under a path in <code>PATHS</code> (for example under <code>pipeline/</code>) changes the dataset version; so after the leftovers are committed the operator runs <code>npm run pipeline -- fixture</code> and commits any change it makes, as the global constraint for hashed paths requires.</p>
       <ol>
         <li>Merge the main line: <code>git fetch origin</code>, then <code>git merge origin/main</code>. A conflict stops the unit and is reported.</li>
-        <li>Write the check script and its test, the journey, the leftovers and the docs. Commit. Regenerate the fixture with <code>npm run pipeline -- fixture</code> and commit it when it changed.</li>
+        <li>Write the journey, the leftovers and the docs. Commit. Regenerate the fixture with <code>npm run pipeline -- fixture</code> and commit it when it changed.</li>
         <li>Run the full-tree checks (<a href="#sec-design-tree">below</a>). Every one passes before going on.</li>
         <li>Print the version: <code>npm run pipeline -- version</code>. Call it <code>&lt;v&gt;</code>.</li>
         <li>Note whether <code>&lt;v&gt;</code> is already published: <code>npx tsx scripts/dataset-version.ts --check</code> exits 0 when it is. Steps 6 to 9 run either way, so the level 2 check always runs.</li>
@@ -292,11 +209,10 @@ Missed: 81,308 homes by Oct 2066, 761 short</code></pre>
 
     <section id="sec-design-fail">
       <h3>When the level 2 check fails</h3>
+      <p>The failure rule is <code>reach-check</code>'s, applied to this unit's dataset:</p>
       <ul>
-        <li>Nothing is uploaded. The built <code>pipeline/out/&lt;v&gt;</code> stays on disk.</li>
-        <li>The unit stops and reports to the owner. The remedy is the owner's (D1: the goal is always reachable; the window's length is the setting the owner picked).</li>
-        <li>The report gives the version, the check's three lines, and the homes at the window's end beside the amount.</li>
-        <li>The report lists each baseline source's bound as the built <code>calibration.json</code>'s provenance states it, one line each.</li>
+        <li>Nothing is uploaded and signoff is not run. The built <code>pipeline/out/&lt;v&gt;</code> stays on disk.</li>
+        <li>The unit hands back "blocked: current law misses the goal" with the check's three lines, the homes at the window's end beside the amount, and the bounds <code>funding.json</code> holds for <code>city-impact-fees</code> and <code>state</code>. The conductor takes it to the owner: the remedy is the owner's (D1).</li>
         <li>The unit changes no code, data or window length to make the check pass.</li>
         <li>An exit 2 is reported with its stderr line and is not an answer about D1.</li>
       </ul>
@@ -357,7 +273,6 @@ git grep -n -E '\]\((\./)?(lesscars|sim-object|sim-log|sim-sync|sim-store)\.md' 
       <li><code>CLAUDE.md</code>.</li>
       <li><code>README.md</code>.</li>
       <li>Any file under <code>docs/dev/</code>, with <code>docs/dev/deploy.md</code>'s mail section left as <code>mail-setup</code> wrote it.</li>
-      <li><code>scripts/level2-check.ts</code> and its test.</li>
       <li><code>e2e/game-journey.spec.ts</code>.</li>
       <li><code>package.json</code> (dependencies nothing imports).</li>
       <li><code>chreode.config.ts</code>.</li>
@@ -370,13 +285,14 @@ git grep -n -E '\]\((\./)?(lesscars|sim-object|sim-log|sim-sync|sim-store)\.md' 
       <li><code>chreode.config.ts</code> is written by <code>remove-lesscars</code> (the dataset path list, which follows <code>PATHS</code>) and then by <code>closing</code>.</li>
       <li><code>package.json</code>, <code>src/app.d.ts</code> and <code>playwright.config.ts</code> are written by <code>remove-multiuser</code>; <code>closing</code> writes the first two after it.</li>
       <li>Links to a deleted doc file are fixed by <code>closing</code>.</li>
-      <li>The dataset is built and uploaded once, from the integration branch, after the last unit that writes a hashed path has merged; no other unit uploads a dataset.</li>
+      <li>The dataset is uploaded once, by this unit, from the integration branch, after every unit has merged; no other unit uploads a dataset. <code>reach-check</code> builds one earlier to run the check and uploads nothing.</li>
+      <li><code>scripts/level2-check.ts</code> and its test are <code>reach-check</code>'s; this unit runs the script and never changes it.</li>
       <li>No other unit runs <code>npm run signoff</code>; <code>closing</code> runs it once, after the upload.</li>
     </ul>
     <p>The mail section of <code>deploy.md</code>: the section <code>## Sign-in mail</code>; in <code>### Worker (set in Cloudflare)</code> the "Already set" line, the <code>GOOGLE_CLIENT_ID</code> bullet and the <code>SES_ACCESS_KEY_ID</code> bullet; the mail and Google items of <code>## One-time bootstrap</code>.</p>
     <p>Files:</p>
     <ul>
-      <li>Creates: <code>scripts/level2-check.ts</code>, <code>scripts/level2-check.spec.ts</code>, <code>e2e/game-journey.spec.ts</code>.</li>
+      <li>Creates: <code>e2e/game-journey.spec.ts</code>.</li>
       <li>Changes, expected: <code>CLAUDE.md</code>, <code>README.md</code>, <code>docs/dev/{developing,testing,sim-page,timeline-ui,deploy,pipeline,sim-timers,auth,fzp-mode,finance-engine,road-lots,sim-levers,map-interfaces}.md</code>, <code>package.json</code>, <code>package-lock.json</code> (by <code>npm uninstall</code>), <code>chreode.config.ts</code>, <code>src/app.d.ts</code>, and the files whose comments the sweep finds. Any other <code>docs/dev</code> file the sweep or a read finds untrue.</li>
       <li>Deletes: none.</li>
       <li>Outside the repository: R2 objects under <code>data/&lt;v&gt;/</code> and <code>sources/</code>, written by <code>npm run pipeline -- upload</code>; the <code>chreode/signoff</code> status.</li>
@@ -386,24 +302,10 @@ git grep -n -E '\]\((\./)?(lesscars|sim-object|sim-log|sim-sync|sim-store)\.md' 
   <section id="sec-tests">
     <h2>Tests</h2>
 
-    <section id="sec-tests-check">
-      <h3>The check's own test</h3>
-      <p><code>scripts/level2-check.spec.ts</code>, Vitest server project, on <code>e2e/fixtures/data/fixture-0</code>. The fixture city cannot reach 82,069 homes, so the test uses the amount argument of <code>readLevel2</code>; X1's browser seam is not involved. One <code>runEmptyDocument</code> in <code>beforeAll</code>, with no <code>warn</code>, so the test writes nothing to stderr.</p>
-      <ul>
-        <li>The run's <code>datasetVersion</code> is <code>fixture-0</code>, and <code>view.filledThrough</code> equals <code>view.lastIndex</code>, with <code>view.lastIndex + 1</code> equal to <code>WINDOW_MONTHS</code>.</li>
-        <li>At the goal's own amount the fixture misses: <code>reachedOn</code> is null, <code>marginMonths</code> null, <code>level2Exit</code> 1, and the third line starts <code>Missed: </code> and ends with the shortfall <code>amount - homesAtDeadline</code> written with separators and <code>short</code>.</li>
-        <li>At <code>homesAtDeadline</code> the goal is reached on or before the deadline: <code>level2Exit</code> 0 and the third line starts <code>Reached: </code>.</li>
-        <li>At <code>homesAtDeadline + 1</code> it is missed by exactly 1: the third line ends <code>, 1 short</code>.</li>
-        <li>At amount 1 it is reached in the first month, and <code>marginMonths</code> equals the month count from <code>view.months[0]</code> to the deadline.</li>
-        <li><code>level2Lines</code> gives three lines; the first is <code>Dataset fixture-0</code>; the second is <code>Goal: {amount} homes by {deadline month}</code>.</li>
-        <li><code>runEmptyDocument</code> on a directory with no <code>manifest.json</code> rejects with <code>no dataset at</code> and the path.</li>
-        <li><code>runEmptyDocument</code> on a copy of the fixture missing its calibration file rejects with <code>host error: </code> (the copy is made in a temporary directory and removed after).</li>
-      </ul>
-    </section>
-
     <section id="sec-tests-journey">
       <h3>The journey</h3>
       <p><code>e2e/game-journey.spec.ts</code>, as <a href="#sec-design-journey">The journey</a> gives it, step by step. It runs in <code>npm run test:e2e</code> and signoff's burn-in runs it five times with retries off, so it must pass every time.</p>
+      <p>The same file's second test is <a href="#sec-design-measure">The dated measure</a>, under the same rule.</p>
     </section>
 
     <section id="sec-tests-verify">
@@ -492,7 +394,7 @@ git grep -n -E '\]\((\./)?(lesscars|sim-object|sim-log|sim-sync|sim-store)\.md' 
         <li><code>:89</code> becomes: "Signoff's <code>test:e2e</code> step runs <code>npm run test:e2e</code>, every project; no workflow runs Playwright." The single-spec example stays.</li>
         <li>A new section, "The game in tests": <code>seedGame</code>, <code>newVisitor</code> and <code>seedGoalAmount</code> in <code>e2e/helpers/game.ts</code> (X1); with <code>VITE_E2E=1</code> a page with no <code>sfhousing:e2e:game</code> key gets the open game (level 5, every control, nothing stored), so a spec that calls neither helper sees every control; <code>seedGame</code> and <code>newVisitor</code> switch the real game on; a spec that plays a level to a win calls <code>seedGoalAmount</code>, because the fixture cannot reach 82,069 homes; a component test with no provider gets a level 5 store from <code>useGame()</code> (G2). Links to <code>game.md</code> and <code>game-save.md</code>.</li>
         <li>A new item under Playwright: <code>e2e/game-journey.spec.ts</code> is the one spec that plays the game across pages, from a new visitor's first win to a saved game at level 3.</li>
-        <li>A new section, "The level 2 check": <code>scripts/level2-check.ts</code>, what it runs and its exit codes, that the finish runs it before every upload, and that its test reads the fixture with an amount argument.</li>
+        <li>A new section, "The level 2 check": <code>scripts/level2-check.ts</code>, what it runs and its exit codes (as the <code>reach-check</code> spec gives them), that every dataset upload is preceded by it, and that its test reads the fixture with an amount argument.</li>
       </ul>
     </section>
 
@@ -595,7 +497,7 @@ git grep -n -E '\]\((\./)?(lesscars|sim-object|sim-log|sim-sync|sim-store)\.md' 
       <li>Every agent runs every command in the foreground and never ends a turn while something it started is running.</li>
       <li>Schema changes go through <code>npm run db:generate</code>. Nobody edits a migration.</li>
       <li>No unit runs <code>npm run signoff</code>: its dataset step fails until the dataset is uploaded. <code>closing</code> runs it once, after the upload.</li>
-      <li>The dataset version changes in this build. The dataset is built and uploaded once, from the integration branch, after the last unit that writes a hashed path has merged; no unit uploads a dataset.</li>
+      <li>The dataset version changes in this build. The dataset is uploaded once, by <code>closing</code>, from the integration branch, after every unit has merged; no other unit uploads a dataset. <code>reach-check</code> builds one earlier to run the check and uploads nothing.</li>
       <li>A unit that writes a hashed path regenerates the fixture dataset with <code>npm run pipeline -- fixture</code> and commits it.</li>
       <li>WCAG 2.2 AA: every new control is at least 24 px and passes <code>expectNoA11yViolations</code> in light and dark.</li>
       <li>Page text is short. No sentence says what something is not.</li>
@@ -615,6 +517,7 @@ git grep -n -E '\]\((\./)?(lesscars|sim-object|sim-log|sim-sync|sim-store)\.md' 
     <ul>
       <li><code>deploy.md</code>'s mail section and bootstrap mail items: <code>mail-setup</code>.</li>
       <li><code>playwright.config.ts</code>: <code>remove-multiuser</code>.</li>
+      <li>The level 2 check script, its test and its first run: <code>reach-check</code>.</li>
       <li>An npm script for the level 2 check, and a signoff step that runs it: the check runs with <code>npx tsx</code> in the finish.</li>
       <li>Fixing code or test code (not comments) that a full-tree check or the sweep finds wrong in another unit's file: reported with the owner unit, not fixed here.</li>
       <li>Changing the window's length, a funding bound or the goal when the check fails: the owner's call.</li>

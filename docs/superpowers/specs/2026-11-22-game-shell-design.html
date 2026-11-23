@@ -31,6 +31,7 @@
         <tr><th scope="row">G3</th><td><code>game-core</code></td><td>Model commitment</td><td>What a level allows; the playable document.</td><td><a href="#sec-if-g3">G3</a></td></tr>
         <tr><th scope="row">G4</th><td><code>game-core</code></td><td>Decomposition choice</td><td>The seen result and the player's standing.</td><td><a href="#sec-if-g4">G4</a></td></tr>
         <tr><th scope="row">G5</th><td><code>game-core</code></td><td>Decomposition choice</td><td>The win card and the level panel with its saved games.</td><td><a href="#sec-if-g5">G5</a></td></tr>
+        <tr><th scope="row">L1</th><td><code>remove-lesscars</code></td><td>Decomposition choice</td><td>The pipeline, dataset and worker with no less cars.</td><td><a href="../design/2026-11-22-1216-incremental-game.html#sec-if-l1">L1</a></td></tr>
         <tr><th scope="row">X1</th><td><code>contracts</code></td><td>Decomposition choice</td><td>The e2e seam: open by default, a seeded level, a goal amount.</td><td><a href="#sec-if-x1">X1</a></td></tr>
       </tbody>
     </table>
@@ -278,7 +279,8 @@ export function standing(level: Level, bar: Bar | null, seen: Result | null): St
         <li>At levels 3 to 5 a result is <code>won</code> when it beats the bar.</li>
         <li>Every other seen result is <code>short</code>.</li>
         <li><code>goalOutcome</code> is read on the playable document's forecast and never while the numbers are stale, so a standing always belongs to the policy on screen.</li>
-        <li>A build check runs the empty document on the published dataset and fails when the goal is not reached inside the window (D1).</li>
+        <li>A build check runs the empty document on a built dataset and fails when the goal is not reached inside the window (D1).</li>
+        <li><code>reach-check</code> writes the check and runs it once <code>finite-funding</code> and <code>pool-closing</code> have merged, so a miss reaches the owner while the build is still running. <code>closing</code> runs it again on the dataset it uploads.</li>
       </ul>
     </section>
 
@@ -352,7 +354,7 @@ export function e2eGoalAmount(storage: Storage | null): number | null;</code></p
 
   <section id="sec-today">
     <h2>What is there today</h2>
-    <p>Every claim here was read on commit <code>8125e557</code>. This unit starts after <code>game-core</code>, whose script in the root layout makes and provides the store.</p>
+    <p>Every claim here was read on commit <code>8125e557</code>. This unit starts after <code>game-core</code>, whose script in the root layout makes and provides the store, and after <code>remove-lesscars</code>, which has removed the <code>TimeScrubber</code> lines of <code>src/lib/shell/accent.spec.ts</code>.</p>
     <section id="sec-today-layout">
       <h3>The layout and the header</h3>
       <ul>
@@ -402,7 +404,7 @@ export function e2eGoalAmount(storage: Storage | null): number | null;</code></p
       <h3>Reading the game</h3>
       <ul>
         <li>Every part of this unit reads the store with <code>useGame()</code>. None constructs a store; <code>game-core</code>'s script in the root layout provides it.</li>
-        <li>This unit changes nothing else in <code>src/routes/+layout.svelte</code>.</li>
+        <li>This unit does not change <code>src/routes/+layout.svelte</code>.</li>
         <li>While <code>game.open</code> is true (the open game, <code>openGame()</code>, X1), the shell shows today's header: no level cell and both steps as links. Paint has no win and no card on it, and sets no offer.</li>
         <li>Until <code>SiteHeader</code> has mounted, it renders the steps as today and no level cell, so the server's store and the first client render never show a level. The guard is a <code>mounted</code> flag set in <code>SiteHeader</code>'s existing <code>onMount</code>.</li>
         <li>Pages in this unit read the game the same way: until mounted, Paint has no win, and the banner shows Remix as ready and "Your game" linking to <code>/</code>.</li>
@@ -573,12 +575,10 @@ export const YOUR_GAME = 'Your game';</code></pre>
 
   <section id="sec-write-set">
     <h2>Write set</h2>
-    <p>From the design doc's write-sets table, after <code>game-core</code>:</p>
+    <p>From the design doc's write-sets table, after <code>game-core</code> and <code>remove-lesscars</code>:</p>
     <ul>
-      <li><code>src/routes/+layout.svelte</code> outside the store's script</li>
       <li><code>src/routes/+page.svelte</code></li>
       <li><code>src/lib/shell/**</code></li>
-      <li><code>src/lib/paint/headline.ts</code></li>
       <li><code>src/lib/about/**</code></li>
       <li><code>src/lib/sharing/{SharedBanner.svelte,copy.ts}</code></li>
       <li><code>src/routes/s/[id]/**</code></li>
@@ -589,7 +589,8 @@ export const YOUR_GAME = 'Your game';</code></pre>
     <p>Ordering notes from the design doc that concern this unit:</p>
     <ul>
       <li>A write set includes the tests, harnesses and test helpers that sit beside its files and test only them.</li>
-      <li><code>src/routes/+layout.svelte</code> is written by <code>game-core</code> (the script that makes and provides the store) and then by <code>game-shell</code>.</li>
+      <li><code>src/routes/+layout.svelte</code> is written by <code>game-core</code> alone; this unit does not change it.</li>
+      <li><code>src/lib/shell/accent.spec.ts</code> is written by <code>remove-lesscars</code> (the lines about the deleted <code>TimeScrubber</code>) and then by <code>game-shell</code>, which adds <code>WinCard</code> and <code>LevelPanel</code> to <code>THEMED_FILES</code>; the second needs L1.</li>
       <li>An e2e spec that exists before this build is edited only by the unit named for it in the table.</li>
     </ul>
     <section id="sec-write-set-files">
@@ -626,7 +627,7 @@ export const YOUR_GAME = 'Your game';</code></pre>
         <li><code>src/routes/page.game.svelte.spec.ts</code></li>
         <li><code>e2e/game-shell.spec.ts</code></li>
       </ul>
-      <p>Deleted: none. <code>src/routes/+layout.svelte</code>, <code>src/lib/paint/headline.ts</code>, <code>src/lib/shell/header-actions.svelte.ts</code> and <code>AboutMeanings.svelte</code> need no change.</p>
+      <p>Deleted: none. <code>src/lib/shell/header-actions.svelte.ts</code> and <code>AboutMeanings.svelte</code> need no change. Paint calls the existing <code>paintHeadline(net, goal)</code> and <code>roomFor</code> as they are.</p>
     </section>
   </section>
 
@@ -698,7 +699,7 @@ export const YOUR_GAME = 'Your game';</code></pre>
       <li>Every agent runs every command in the foreground and never ends a turn while something it started is running.</li>
       <li>Schema changes go through <code>npm run db:generate</code>. Nobody edits a migration.</li>
       <li>No unit runs <code>npm run signoff</code>: its dataset step fails until the dataset is uploaded. <code>closing</code> runs it once, after the upload.</li>
-      <li>The dataset version changes in this build. The dataset is built and uploaded once, from the integration branch, after the last unit that writes a hashed path has merged; no unit uploads a dataset.</li>
+      <li>The dataset version changes in this build. The dataset is uploaded once, by <code>closing</code>, from the integration branch, after every unit has merged; no other unit uploads a dataset. <code>reach-check</code> builds one earlier to run the check and uploads nothing.</li>
       <li>A unit that writes a hashed path regenerates the fixture dataset with <code>npm run pipeline -- fixture</code> and commits it.</li>
       <li>WCAG 2.2 AA: every new control is at least 24 px and passes <code>expectNoA11yViolations</code> in light and dark.</li>
       <li>Page text is short. No sentence says what something is not.</li>

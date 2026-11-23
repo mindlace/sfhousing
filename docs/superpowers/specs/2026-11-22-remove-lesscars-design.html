@@ -373,7 +373,8 @@ shasum -a 256 e2e/fixtures/data/fixture-0/scenarios/fzp/*
     <ul>
       <li><code>src/routes/{fzp,lesscars}/**</code></li>
       <li><code>src/lib/{lesscars,sim/lesscars,data/lesscars}/**</code></li>
-      <li><code>src/lib/fzp/{TimeScrubber.svelte,high-water.svelte.ts}</code></li>
+      <li><code>src/lib/fzp/{TimeScrubber.svelte,TimeScrubberHarness.svelte,high-water.svelte.ts}</code></li>
+      <li>the <code>TimeScrubber</code> lines of <code>src/lib/shell/accent.spec.ts</code></li>
       <li><code>src/lib/sim/{worker,router}.ts</code></li>
       <li><code>src/lib/sim/scenario/types.ts</code></li>
       <li><code>src/lib/data/manifest.ts</code></li>
@@ -391,6 +392,7 @@ shasum -a 256 e2e/fixtures/data/fixture-0/scenarios/fzp/*
     <ul>
       <li><code>pipeline/**</code> and the fixture are written by <code>remove-lesscars</code> and then by <code>finite-funding</code>; the second needs L1.</li>
       <li><code>chreode.config.ts</code> is written by <code>remove-lesscars</code> (the dataset path list, which follows <code>PATHS</code>) and then by <code>closing</code>.</li>
+      <li><code>src/lib/shell/accent.spec.ts</code> is written by <code>remove-lesscars</code> (the lines about the deleted <code>TimeScrubber</code>) and then by <code>game-shell</code>; the second needs L1.</li>
       <li>An e2e spec that exists before this build is edited only by the unit named for it in the table.</li>
       <li>Links to a deleted doc file are fixed by <code>closing</code>.</li>
       <li>This unit needs nothing from another unit and can start beside <code>contracts</code>. <code>contracts</code> deletes <code>docs/dev/lesscars.md</code>; this unit neither edits that file nor depends on whether it is there.</li>
@@ -445,6 +447,7 @@ shasum -a 256 e2e/fixtures/data/fixture-0/scenarios/fzp/*
         <li><code>src/lib/data/manifest.ts</code>: removes <code>scenarios.lesscars</code> from the schema and its four <code>add</code> lines; adds the derived <code>splitRoads</code>. Everything else stays.</li>
         <li><code>src/lib/map/style.ts</code>: <code>protomapsLayers</code> adds the clones only when <code>manifest.splitRoads</code>; the constants' comment as in <a href="#sec-design-map">the style</a>. <code>buildStyle</code>'s signature stays.</li>
         <li><code>src/lib/map/palette.ts</code>: removes the 12 <code>lc-*</code> names and values and the <code>lc-*</code> clause of the <code>TOKENS</code> comment.</li>
+        <li><code>src/lib/shell/accent.spec.ts</code>: removes <code>'src/lib/fzp/TimeScrubber.svelte'</code> from <code>SCANNED</code> (<code>:26</code>) and the test "the time bar uses tokens, not hex" (<code>:151-154</code>). <code>SCANNED</code> keeps <code>...CHROME_FILES</code> and <code>RadiusPopover.svelte</code>; every other list and test stays.</li>
         <li>Their tests: <code>src/lib/sim/worker-router.spec.ts</code>, <code>src/lib/sim/scenario/types.spec.ts</code>, <code>src/lib/data/manifest.test.ts</code>, <code>src/lib/map/style.spec.ts</code>, <code>src/lib/map/palette.spec.ts</code>, as in <a href="#sec-tests">Tests</a>.</li>
       </ul>
       <p>Pipeline code:</p>
@@ -520,6 +523,7 @@ triggers: ['lint', 'check', 'unit', 'e2e', 'pipeline']</code></pre>
         <li>Every spec, test and harness listed under <a href="#sec-write-delete">Files deleted</a>.</li>
         <li><code>pipeline/test/engine-node.test.ts</code> and its smoke script: they prove the engine runs from pipeline code, and no pipeline code runs it afterwards.</li>
         <li><code>pipeline/test/lesscars-v1-1-enrichment.test.ts</code>: it binds the catalog, the draft and the basemap id list to <code>docs/lesscars/plan-v1.md</code>, and the draft and id list are deleted. The catalog stays guarded by <code>parseFreewayLand</code> at build time and by V17.</li>
+        <li>In <code>src/lib/shell/accent.spec.ts</code>: "the time bar uses tokens, not hex" (<code>:151-154</code>) and the <code>TimeScrubber.svelte</code> entry of <code>SCANNED</code> (<code>:26</code>), which the scan at <code>:245</code> reads.</li>
         <li>In <code>pipeline/test/invariants.test.ts</code>: the <code>V35 /lesscars files</code> describe (<code>:1238-1350</code>).</li>
         <li>In <code>pipeline/test/manifest.test.ts</code>: "names the four lesscars urls" (<code>:102-121</code>).</li>
         <li>In <code>pipeline/test/verify.test.ts</code>: "HEAD-checks the lesscars urls" (<code>:71-83</code>).</li>
@@ -614,7 +618,7 @@ triggers: ['lint', 'check', 'unit', 'e2e', 'pipeline']</code></pre>
       <li>Every agent runs every command in the foreground and never ends a turn while something it started is running.</li>
       <li>Schema changes go through <code>npm run db:generate</code>. Nobody edits a migration.</li>
       <li>No unit runs <code>npm run signoff</code>: its dataset step fails until the dataset is uploaded. <code>closing</code> runs it once, after the upload.</li>
-      <li>The dataset version changes in this build. The dataset is built and uploaded once, from the integration branch, after the last unit that writes a hashed path has merged; no unit uploads a dataset.</li>
+      <li>The dataset version changes in this build. The dataset is uploaded once, by <code>closing</code>, from the integration branch, after every unit has merged; no other unit uploads a dataset. <code>reach-check</code> builds one earlier to run the check and uploads nothing.</li>
       <li>A unit that writes a hashed path regenerates the fixture dataset with <code>npm run pipeline -- fixture</code> and commits it.</li>
       <li>WCAG 2.2 AA: every new control is at least 24 px and passes <code>expectNoA11yViolations</code> in light and dark.</li>
       <li>Page text is short. No sentence says what something is not.</li>

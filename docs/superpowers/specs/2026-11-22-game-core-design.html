@@ -280,7 +280,8 @@ export function standing(level: Level, bar: Bar | null, seen: Result | null): St
         <li>At levels 3 to 5 a result is <code>won</code> when it beats the bar.</li>
         <li>Every other seen result is <code>short</code>.</li>
         <li><code>goalOutcome</code> is read on the playable document's forecast and never while the numbers are stale, so a standing always belongs to the policy on screen.</li>
-        <li>A build check runs the empty document on the published dataset and fails when the goal is not reached inside the window (D1).</li>
+        <li>A build check runs the empty document on a built dataset and fails when the goal is not reached inside the window (D1).</li>
+        <li><code>reach-check</code> writes the check and runs it once <code>finite-funding</code> and <code>pool-closing</code> have merged, so a miss reaches the owner while the build is still running. <code>closing</code> runs it again on the dataset it uploads.</li>
       </ul>
     </section>
 
@@ -1047,7 +1048,7 @@ export function loadPage(path: '/' | '/sim'): void;</code></pre>
       <li>Every agent runs every command in the foreground and never ends a turn while something it started is running.</li>
       <li>Schema changes go through <code>npm run db:generate</code>. Nobody edits a migration.</li>
       <li>No unit runs <code>npm run signoff</code>: its dataset step fails until the dataset is uploaded. <code>closing</code> runs it once, after the upload.</li>
-      <li>The dataset version changes in this build. The dataset is built and uploaded once, from the integration branch, after the last unit that writes a hashed path has merged; no unit uploads a dataset.</li>
+      <li>The dataset version changes in this build. The dataset is uploaded once, by <code>closing</code>, from the integration branch, after every unit has merged; no other unit uploads a dataset. <code>reach-check</code> builds one earlier to run the check and uploads nothing.</li>
       <li>A unit that writes a hashed path regenerates the fixture dataset with <code>npm run pipeline -- fixture</code> and commits it.</li>
       <li>WCAG 2.2 AA: every new control is at least 24 px and passes <code>expectNoA11yViolations</code> in light and dark.</li>
       <li>Page text is short. No sentence says what something is not.</li>
