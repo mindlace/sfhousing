@@ -23,7 +23,9 @@ import type {
   Programme,
   Provenance
 } from '$lib/timelapse/types';
-import type { Policy } from '$lib/timeline/policy4';
+import { isGiven } from '$lib/game/allowed';
+import type { Effect, Policy } from '$lib/timeline/policy4';
+import { canonicalJson } from './policy';
 import {
   type Evidence,
   BOND_PRINCIPAL,
@@ -531,8 +533,75 @@ export function addPreset(f: FinanceLevers, p: FundingPreset): FinanceLevers {
 
 /** `policy` with its money dated from its first span's start; `policy` itself when nothing moves. */
 export function dateMeasure(policy: Policy, cal: Calibration): Policy {
-  void cal;
-  return policy;
+  if (!isGiven(policy) || policy.spans.length === 0) return policy;
+  const preset = fundingPresets(cal, policy.spans[0].from).find(
+    (p) => p.available && p.id === policy.preset
+  );
+  if (preset === undefined || preset.dates === 'fixed') return policy;
+  const fund = preset.pools.length === 1;
+  const scales = preset.pools.length === 0 && preset.baselineScale.length > 0;
+  if (fund) {
+    if (
+      policy.where.tag !== 'fund' ||
+      !policy.spans.every((s) => s.what.tag === 'fund' && s.what.pool !== null)
+    )
+      return policy;
+  } else if (
+    !scales ||
+    policy.where.tag !== 'baseline' ||
+    !policy.spans.every((s) => s.what.tag === 'scales')
+  )
+    return policy;
+
+  // What a measure pays, apart from what the player may rename or move: ids, labels, dates.
+  const shape = (e: Effect): string =>
+    canonicalJson(
+      stripDated(
+        e.tag === 'fund'
+          ? { pool: e.pool, programmes: e.programmes.map(({ pool: _pool, ...g }) => g) }
+          : e
+      )
+    );
+  const want: Effect = fund
+    ? { tag: 'fund', pool: preset.pools[0], programmes: preset.programmes }
+    : { tag: 'scales', entries: preset.baselineScale };
+  if (policy.spans.some((s) => shape(s.what) !== shape(want))) return policy;
+
+  const spans = policy.spans.map((s) => {
+    const have = s.what;
+    if (have.tag === 'fund' && want.tag === 'fund') {
+      const pool = have.pool!;
+      return {
+        ...s,
+        what: {
+          tag: 'fund' as const,
+          pool: { ...structuredClone(want.pool!), id: pool.id, label: pool.label },
+          programmes: want.programmes.map((g, i) => ({
+            ...structuredClone(g),
+            id: have.programmes[i].id,
+            label: have.programmes[i].label,
+            pool: pool.id
+          }))
+        }
+      };
+    }
+    return { ...s, what: structuredClone(want) };
+  });
+  return canonicalJson(spans) === canonicalJson(policy.spans) ? policy : { ...policy, spans };
+}
+
+const DATED_KEYS = new Set(['id', 'label', 'day', 'from', 'to']);
+
+/** `v` with every id, label and date key removed, at any depth. */
+function stripDated(v: unknown): unknown {
+  if (Array.isArray(v)) return v.map(stripDated);
+  if (typeof v === 'object' && v !== null)
+    return Object.fromEntries(
+      Object.entries(v as Record<string, unknown>)
+        .filter(([k]) => !DATED_KEYS.has(k))
+        .map(([k, x]) => [k, stripDated(x)])
+    );
+  return v;
 }
 
 type InflowKey = 'day' | 'from' | 'to' | 'dollars' | 'dollarsPerYear';

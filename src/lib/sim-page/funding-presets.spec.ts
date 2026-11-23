@@ -12,6 +12,7 @@ import type { Calibration, Inflow, PoolKind } from '$lib/timelapse/types';
 import {
   addPreset,
   cityGrant,
+  dateMeasure,
   fundingPresets,
   nextAddedId,
   nextCalendar,
@@ -42,6 +43,7 @@ import { FINANCE_LIMITS, buildFinance, parseFinanceLevers } from '$lib/sim/lever
 import { DEFAULT_POLICY, parseSimDoc } from './sim-doc';
 import type { FinanceLevers } from '$lib/sim/levers/types';
 import type { Pool, Programme } from '$lib/timelapse/types';
+import type { Effect, Policy } from '$lib/timeline/policy4';
 
 const stub = vi.hoisted(() => ({ unsourced: false }));
 vi.mock('$lib/sim/finance', async (orig) => {
@@ -954,4 +956,178 @@ describe('presets through the lever parser, the policy document and buildFinance
       }
     }
   }
+});
+
+type FundEffect = Extract<Effect, { tag: 'fund' }>;
+type Scales = Extract<Effect, { tag: 'scales' }>;
+
+/** A given measure the way addPreset of the timeline builds it: ids `u-<id>-1`, default dates. */
+function measure(presetId: string, spans: { from: number; to: number | null }[]): Policy {
+  const p = get(presetId);
+  const label = p.label;
+  if (p.pools.length === 1) {
+    const pool = p.pools[0];
+    return {
+      id: 'm1',
+      label,
+      preset: presetId,
+      on: true,
+      where: { tag: 'fund', pool: pool.id },
+      spans: spans.map((s) => ({
+        ...s,
+        what: {
+          tag: 'fund',
+          pool: structuredClone(pool),
+          programmes: structuredClone(p.programmes)
+        } satisfies FundEffect
+      }))
+    };
+  }
+  return {
+    id: 'm1',
+    label,
+    preset: presetId,
+    on: true,
+    where: { tag: 'baseline' },
+    spans: spans.map((s) => ({
+      ...s,
+      what: { tag: 'scales', entries: structuredClone(p.baselineScale) } satisfies Scales
+    }))
+  };
+}
+const fundOf = (p: Policy, i = 0): FundEffect => p.spans[i].what as FundEffect;
+
+describe('dateMeasure', () => {
+  const S = dayOf(2029, 3, 11);
+  const at = (id: string) => fundingPresets(cal, S).find((x) => x.id === id)!;
+
+  it('re-dates a bond from its first span, keeping pool and programme ids', () => {
+    const p = measure('housing-bond', [{ from: S, to: null }]);
+    const d = dateMeasure(p, cal);
+    const w = fundOf(d);
+    expect(w.pool!.inflows).toEqual([{ kind: 'once', day: S, dollars: BOND_PRINCIPAL.value }]);
+    expect(w.pool!.id).toBe(fundOf(p).pool!.id);
+    expect(w.programmes.map((g) => [g.id, g.from])).toEqual([[fundOf(p).programmes[0].id, S]]);
+  });
+
+  it('re-dates general revenue: from S, to yearsAfter(S, 29)', () => {
+    const d = dateMeasure(measure('general-revenue', [{ from: S, to: null }]), cal);
+    expect(fundOf(d).pool!.inflows).toEqual([
+      {
+        kind: 'yearly',
+        from: S,
+        to: yearsAfter(S, GENERAL_FUND_TERM_YEARS.value - 1),
+        dollarsPerYear: GENERAL_FUND_FY25.value
+      }
+    ]);
+  });
+
+  it('re-dates every span of a two-span state-double from the first span', () => {
+    const p = measure('state-double', [
+      { from: S, to: S + 400 },
+      { from: S + 500, to: null }
+    ]);
+    const d = dateMeasure(p, cal);
+    const entries = [
+      { pool: at('state-double').baselineScale[0].pool, from: S, scale: 2 },
+      {
+        pool: at('state-double').baselineScale[0].pool,
+        from: yearsAfter(S, STATE_DOUBLE_TERM_YEARS.value),
+        scale: 1
+      }
+    ];
+    expect(d.spans.map((s) => [s.from, s.to])).toEqual([
+      [S, S + 400],
+      [S + 500, null]
+    ]);
+    for (const s of d.spans) expect((s.what as Scales).entries).toEqual(entries);
+  });
+
+  it('dates every available preset the way fundingPresets(cal, S) builds it', () => {
+    for (const { id, available } of fundingPresets(cal)) {
+      if (!available) continue;
+      const want = at(id);
+      const d = dateMeasure(measure(id, [{ from: S, to: null }]), cal);
+      if (want.pools.length === 1) {
+        expect(fundOf(d).pool).toEqual(want.pools[0]);
+        expect(fundOf(d).programmes).toEqual(want.programmes);
+      } else {
+        expect((d.spans[0].what as Scales).entries).toEqual(want.baselineScale);
+      }
+    }
+  });
+
+  it('keeps the span own ids and labels, and points programmes at the span pool', () => {
+    const p = measure('housing-bond', [{ from: S, to: null }]);
+    const w = fundOf(p);
+    const renamed: Policy = {
+      ...p,
+      where: { tag: 'fund', pool: 'mine' },
+      spans: [
+        {
+          ...p.spans[0],
+          what: {
+            ...w,
+            pool: { ...w.pool!, id: 'mine', label: 'My pool' },
+            programmes: [{ ...w.programmes[0], id: 'g9', label: 'My grant', pool: 'mine' }]
+          }
+        }
+      ]
+    };
+    const d = fundOf(dateMeasure(renamed, cal));
+    expect(d.pool!.id).toBe('mine');
+    expect(d.pool!.label).toBe('My pool');
+    expect(d.pool!.inflows).toEqual([{ kind: 'once', day: S, dollars: BOND_PRINCIPAL.value }]);
+    expect(d.programmes[0]).toMatchObject({ id: 'g9', label: 'My grant', pool: 'mine', from: S });
+  });
+
+  it('returns the same object when nothing moves or the policy is not a dated measure', () => {
+    const bond = measure('housing-bond', [{ from: S, to: null }]);
+    const p0 = { ...bond, preset: null };
+    expect(dateMeasure(p0, cal)).toBe(p0);
+    const unknown = { ...bond, preset: 'no-such-preset' };
+    expect(dateMeasure(unknown, cal)).toBe(unknown);
+    const painted: Policy = { ...bond, where: { tag: 'painted' } };
+    expect(dateMeasure(painted, cal)).toBe(painted);
+    const none = { ...bond, spans: [] };
+    expect(dateMeasure(none, cal)).toBe(none);
+    const w = fundOf(bond);
+    const edited: Policy = {
+      ...bond,
+      spans: [
+        {
+          ...bond.spans[0],
+          what: {
+            ...w,
+            pool: {
+              ...w.pool!,
+              inflows: [{ kind: 'once', day: S, dollars: BOND_PRINCIPAL.value + 1 }]
+            }
+          }
+        }
+      ]
+    };
+    expect(dateMeasure(edited, cal)).toBe(edited);
+    const once = dateMeasure(bond, cal);
+    expect(once).not.toBe(bond);
+    expect(dateMeasure(once, cal)).toBe(once);
+  });
+
+  it('returns the same object when the preset is not on offer (htf-2026)', () => {
+    const htf = fundingPresets(cal).find((x) => x.id === 'htf-2026')!;
+    expect(htf.available).toBe(false);
+    const bond = measure('housing-bond', [{ from: S, to: null }]);
+    const p = { ...bond, preset: 'htf-2026' };
+    expect(dateMeasure(p, cal)).toBe(p);
+  });
+
+  it('Review Focus 1: a preset id on the wrong kind of policy returns the same object', () => {
+    const fund = { ...measure('housing-bond', [{ from: S, to: null }]), preset: 'state-double' };
+    expect(dateMeasure(fund, cal)).toBe(fund);
+    const scales = { ...measure('state-double', [{ from: S, to: null }]), preset: 'housing-bond' };
+    expect(dateMeasure(scales, cal)).toBe(scales);
+    const mixed = { ...measure('state-double', [{ from: S, to: null }]), preset: 'public-bank' };
+    expect(() => dateMeasure(mixed, cal)).not.toThrow();
+    expect(dateMeasure(mixed, cal)).toBe(mixed);
+  });
 });
