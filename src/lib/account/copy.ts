@@ -27,7 +27,6 @@ export const AUTH_COPY = {
   passwordSubmit: 'Sign in',
   forgotPassword: 'Forgot your password?',
   passwordResetDone: 'Password updated. Sign in with your new password.',
-  startFresh: 'Start fresh without an account',
   cancel: 'Cancel',
   forgotTitle: 'Reset your password',
   forgotHeading: 'Reset your password',
@@ -46,11 +45,13 @@ export const AUTH_COPY = {
   resetInvalid: 'That reset link has expired or has already been used.',
   resetRequestAnother: 'Request a new reset link',
   passwordBreached:
-    'That password has appeared in a known data breach. Please choose a different one.'
+    'That password has appeared in a known data breach. Please choose a different one.',
+  tooManyAccounts: 'Too many new accounts too quickly. Wait a moment.',
+  sessionStart: "Couldn't start your session. Try again.",
+  jsonRequired: 'Send JSON.',
+  crossOrigin: 'Cross-site requests are not allowed.'
 } as const;
 
 export const passwordTooShort = (min: number): string =>
   `Use at least ${min} characters. Length matters more than symbols: a few plain words works well.`;
 export const passwordTooLong = (max: number): string => `That's longer than ${max} characters.`;
-
-export const pendingSimLine = (title: string): string => `Signing in to create ${title}`;

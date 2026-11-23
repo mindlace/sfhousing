@@ -39,7 +39,7 @@ test('a registered user changes their email via the dual-confirm flow', async ({
 test('a pseudonymous visitor adds an email through a magic link and keeps the account', async ({
   page
 }) => {
-  await startPseudonymous(page, 'Email upgrade');
+  await startPseudonymous(page);
   await gotoAccount(page);
   const handle = await page.locator('#handle').inputValue();
   await expect(page.getByText(ACCOUNT_COPY.emailAddPrompt)).toBeVisible();
