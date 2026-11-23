@@ -204,9 +204,8 @@ export const GENERAL_FUND_TERM_YEARS: Sourced<number> = {
     method:
       'BLA 2026 p. 44: the Housing Trust Fund "was launched in 2013 after San Francisco voters ' +
       'approved Proposition C to amend the City Charter in November 2012 which established ' +
-      'baseline annual funding until 2043"; p. 108: its General Fund allocation "started as $20 ' +
-      'million in 2013" and the fund "would expire" in 2043: 30 yearly allocations, FY2013-14 to ' +
-      "FY2042-43. A new set-aside is given the same term: tier 2, an inference from the City's " +
+      'baseline annual funding until 2043": 30 yearly allocations, FY2013-14 to FY2042-43. ' +
+      "A new set-aside is given the same term: tier 2, an inference from the City's " +
       'one General Fund allocation for housing whose term is set in law.'
   }
 };
