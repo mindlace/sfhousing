@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { mulberry32 } from '../../generator/seed';
 import { PROTOTYPES, fundBundle, projectDollars, resolveTerms, uncoveredPerHome } from '../finance';
+import { LEGACY_UNCAPPED_DOLLARS } from '$lib/timelapse/model';
 import type { Calibration, Pool, Programme } from '$lib/timelapse/types';
 import { dayOf } from './dates';
 import { runEngine } from './engine';
@@ -102,7 +103,6 @@ function tinyFinanceValid(): Finance {
       kind: 'generalRevenue',
       label: 'A',
       inflows: [{ kind: 'yearly', from: A, to: null, dollarsPerYear: 1000 }],
-      uncapped: false,
       debt: null,
       leverage: 1
     },
@@ -111,7 +111,6 @@ function tinyFinanceValid(): Finance {
       kind: 'state',
       label: 'B',
       inflows: [{ kind: 'once', day: A, dollars: 500 }],
-      uncapped: false,
       debt: null,
       leverage: 1
     },
@@ -119,8 +118,7 @@ function tinyFinanceValid(): Finance {
       id: 'fed',
       kind: 'federal',
       label: 'Fed',
-      inflows: [],
-      uncapped: true,
+      inflows: [{ kind: 'yearly', from: A, to: null, dollarsPerYear: LEGACY_UNCAPPED_DOLLARS }],
       debt: null,
       leverage: 1
     }
@@ -184,12 +182,6 @@ describe('checkFinance', () => {
     bad(
       mutated((f) => (f.programmes[0].pool = 'nope')),
       'finance.programmes[0].pool nope names no pool'
-    );
-  });
-  it('uncapped pool with inflows', () => {
-    bad(
-      mutated((f) => (f.pools[2].inflows = [{ kind: 'once', day: A, dollars: 1 }])),
-      'finance.pools[2] (fed): an uncapped pool has no inflows'
     );
   });
   it('leverage', () => {
@@ -430,23 +422,30 @@ describe('available', () => {
     kind: 'bank',
     label: 'x',
     inflows: [],
-    uncapped: false,
     debt: null,
     leverage: 0.8,
     ...over
   });
+  const s = {
+    received: 1000,
+    committed: 100,
+    spentGrant: 50,
+    outLoan: 200,
+    lostLoan: 10,
+    lostGuarantee: 5
+  };
   it('is leverage times received less everything held, spent, out and lost', () => {
-    const s = {
-      received: 1000,
-      committed: 100,
-      spentGrant: 50,
-      outLoan: 200,
-      lostLoan: 10,
-      lostGuarantee: 5
-    };
     expect(available(pool({}), s)).toBeCloseTo(0.8 * 1000 - 100 - 50 - 200 - 10 - 5, 9);
-    expect(available(pool({ uncapped: true, leverage: 1 }), s)).toBe(Infinity);
     expect(available(pool({}), newPoolState())).toBe(0);
+  });
+  it('available is finite on every pool', () => {
+    const fed = { kind: 'federal', leverage: 1 } as const;
+    // an older dataset's federal pool carried the flag; it is read as an ordinary pool
+    for (const over of [fed, { ...fed, uncapped: true }, { kind: 'state', leverage: 1 } as const]) {
+      const got = available(pool(over), s);
+      expect(Number.isFinite(got)).toBe(true);
+      expect(got).toBe(1000 - 100 - 50 - 200 - 10 - 5);
+    }
   });
 });
 
@@ -572,7 +571,6 @@ describe('the award rule', () => {
       kind: 'generalRevenue',
       label: 'loan',
       inflows: [],
-      uncapped: false,
       debt: null,
       leverage: 1
     };
@@ -592,7 +590,23 @@ describe('the award rule', () => {
     expect(names(f, got!.set)).toEqual(['t-fed', 't-state', 't-city']);
     expect(got!.priced.certain).toBe(true);
   });
-  it('waits when every capped pool is short', () => {
+  it('an application short on the federal pool waits as on any pool', () => {
+    const f = financeIndexOf(ample());
+    const B = bundleOf(f);
+    const fed = f.poolOf.get('t-fed')!;
+    const asks = asksOf(f, 'affordable', B, proto, u);
+    expect(asks.get(fed)).toBeGreaterThan(0);
+    const short = availOf(f, { 't-fed': asks.get(fed)! - 1 });
+    expect(names(f, leaveOut(B, 'affordable', proto, u, short, f).set)).toEqual([
+      't-state',
+      't-city'
+    ]);
+    expect(awardSet(B, 'affordable', proto, u, short, f)).toBeNull();
+    expect(awardPasses(B, 'affordable', proto, u, short, f)).toBe(false);
+    const exact = availOf(f, { 't-fed': asks.get(fed)! });
+    expect(awardSet(B, 'affordable', proto, u, exact, f)!.set).toEqual(B);
+  });
+  it('waits when every pool is short', () => {
     const f = financeIndexOf(ample());
     const avail = availOf(f, { 't-state': 0, 't-city': 0 });
     expect(awardSet([1, 2], 'affordable', proto, u, avail, f)).toBeNull();
@@ -637,7 +651,6 @@ describe('the award rule is monotone (property)', () => {
     kind: 'generalRevenue',
     label: id,
     inflows: [],
-    uncapped: false,
     debt: null,
     leverage: 1
   });

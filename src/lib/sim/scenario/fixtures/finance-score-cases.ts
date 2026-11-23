@@ -248,14 +248,13 @@ export const MONEY_HORIZON = dayOf(2027, 12, 31);
 /** The 12 months of 2027. */
 export const MONEY_MONTHS: Day[] = monthsOf(MONEY_ASOF, MONEY_HORIZON);
 
-/** A capped `generalRevenue` pool with no inflows (the ledgers carry the `in` events). */
+/** A `generalRevenue` pool with no inflows (the ledgers carry the `in` events). */
 export function moneyPool(id: string, over: Partial<Pool> = {}): Pool {
   return {
     id,
     kind: 'generalRevenue',
     label: `Pool ${id}`,
     inflows: [],
-    uncapped: false,
     debt: null,
     leverage: 1,
     ...over
@@ -439,12 +438,6 @@ export const MONEY_CASES = {
       ev(d(12, 1), 'p-late', 'g', 'commit', 100_000),
       ev(MONEY_HORIZON + 1, 'p-late', 'g', 'release', 100_000)
     ]
-  ),
-  /** an uncapped `federal` pool: commits and spends, never an `in` */
-  uncapped: moneyCase(
-    [moneyPool('fed', { kind: 'federal', uncapped: true })],
-    [moneyProgramme('fg', 'fed', 'grant')],
-    [ev(d(2, 1), 'fed', 'fg', 'commit', 700_000), ev(d(4, 1), 'fed', 'fg', 'spend', 700_000)]
   )
 } satisfies Record<string, MoneyCase>;
 

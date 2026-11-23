@@ -16,7 +16,7 @@ import { OBSERVED_TIMING } from '$lib/sim-page/timing';
 import { WINDOW_MONTHS } from '$lib/sim/timeline-client';
 import { monthFirstDay, monthLastDay, monthOfDay } from '$lib/sim/world/months';
 import { addPolicy } from './add';
-import { TERMS_HINT } from './copy';
+import { TERMS_HINT } from './money-copy';
 import { PRESET_PER_POLICY } from './lens';
 import type { Policy, SimPolicy4 } from './policy4';
 import { FIXED_LABEL, FIXED_NOTE, formatEdge } from './rows';

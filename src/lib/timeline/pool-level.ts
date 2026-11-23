@@ -8,22 +8,22 @@
 import type { MoneyView, TimelineView } from '$lib/sim/world/score/types';
 import { WINDOW_MONTHS } from '$lib/sim/timeline-client';
 import { monthFirstDay } from '$lib/sim/world/months';
+import { isNoCeiling } from '$lib/timelapse/model';
 import type { Day } from '$lib/timelapse/time';
 import type { Pool } from '$lib/timelapse/types';
 import { filledEndDay } from './playhead';
 import type { Policy, SimPolicy4 } from './policy4';
 import { playheadAt } from './results';
 
-/** What the level needs of a pool's definition: its leverage and whether it can always pay. */
+/** What the level needs of a pool's definition: its leverage. */
 export interface LevelPool {
   id: string;
   leverage: number;
-  uncapped: boolean;
 }
 
 /**
- * The level, the one place it is defined. Per filled month i, over the capped pools given that
- * the money carries:
+ * The level, the one place it is defined. Per filled month i, over the pools given that the money
+ * carries:
  *
  *   Σ(leverage·received − committed − spent − out − lostCredit) / Σ(leverage·received)
  *
@@ -31,16 +31,14 @@ export interface LevelPool {
  * finance-score.md; `availableOf` in the step engine) over the most the pool could hold. A pool
  * paid every year refills at each payment, on purpose: yearly money arrives in yearly lumps. By I4
  * the numerator is never negative and never more than the denominator, so the clamp to [0, 1]
- * only guards rounding. NaN where the denominator is 0 (nothing received yet) or no capped pool
- * is given: an uncapped pool has no level. The funding rework may redefine the denominator (an
- * amount, an end date) here alone.
+ * only guards rounding. NaN where the denominator is 0 (nothing received yet) or no pool the
+ * money carries is given. Which pools have a level at all is `levelSet`'s rule.
  */
 export function poolLevel(money: MoneyView, pools: readonly LevelPool[]): Float64Array {
   const n = money.fundedHomes.length;
   const out = new Float64Array(n).fill(NaN);
   const rows: { lev: number; s: MoneyView['pools'][number] }[] = [];
   for (const p of pools) {
-    if (p.uncapped) continue;
     const s = money.pools.find((q) => q.id === p.id);
     if (s) rows.push({ lev: p.leverage, s });
   }
@@ -165,10 +163,19 @@ export function levelLeft(level: ArrayLike<number>, i: number): string | null {
 export interface LevelSet {
   months: readonly Day[];
   asOf: Day;
-  /** Fund policies with an own capped pool, by policy id. */
+  /** Fund policies with an own pool that has a level (`hasLevel`), by policy id. */
   byPolicy: ReadonlyMap<string, Float64Array>;
-  /** The capped baseline pools, summed: "Current funding". */
+  /** The baseline pools that have a level, summed: "Current funding". */
   fixed: Float64Array | null;
+}
+
+/**
+ * Every pool has a level except one with a yearly inflow whose amount `isNoCeiling`: an older
+ * dataset's federal pool, read as one yearly inflow of `LEGACY_UNCAPPED_DOLLARS`. Its bar draws
+ * with no level and it stays out of "Current funding".
+ */
+function hasLevel(p: Pool): boolean {
+  return !p.inflows.some((f) => f.kind === 'yearly' && isNoCeiling(f.dollarsPerYear));
 }
 
 /**
@@ -188,10 +195,12 @@ function ownPool(p: Policy, day: Day): Pool | null {
 }
 
 /**
- * The levels of `view`'s money: one entry per fund policy of `doc` with an own capped pool that
- * the money carries, and the capped `baseline` pools summed for "Current funding". Leverage and the
- * uncapped flag come from the document the numbers are from (`doc`, the held one while stale) and
- * the calibration, as the engine read them. Null without a view or without money.
+ * The levels of `view`'s money: one entry per fund policy of `doc` with an own pool that the money
+ * carries, and every `baseline` pool the money carries summed for "Current funding", the federal
+ * pool included. A pool with a yearly inflow whose amount `isNoCeiling` has no level and stays out
+ * of the sum (`hasLevel`). Leverage and inflows come from the document the numbers are from (`doc`,
+ * the held one while stale) and the calibration, as the engine read them. Null without a view or
+ * without money.
  */
 export function levelSet(
   view: TimelineView | null,
@@ -205,13 +214,13 @@ export function levelSet(
   const byPolicy = new Map<string, Float64Array>();
   for (const p of doc.kinds.money) {
     const def = ownPool(p, last);
-    if (def === null || def.uncapped) continue;
+    if (def === null || !hasLevel(def)) continue;
     if (!money.pools.some((q) => q.id === def.id)) continue;
     byPolicy.set(p.id, poolLevel(money, [def]));
   }
-  const capped = (baseline ?? []).filter(
-    (p) => !p.uncapped && money.pools.some((q) => q.id === p.id)
+  const summed = (baseline ?? []).filter(
+    (p) => hasLevel(p) && money.pools.some((q) => q.id === p.id)
   );
-  const fixed = capped.length > 0 ? poolLevel(money, capped) : null;
+  const fixed = summed.length > 0 ? poolLevel(money, summed) : null;
   return { months: view.months, asOf, byPolicy, fixed };
 }

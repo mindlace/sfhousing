@@ -17,17 +17,17 @@ import {
 import type { TimelineScore } from '$lib/sim/protocol';
 import type { MoneyView } from '$lib/sim/world/score/types';
 import { formatCount, formatPercent } from '$lib/scoreboard/format';
-import { MARKET_FUNDING_SENTENCE } from '$lib/sim-page/funding-copy';
+import { MARKET_FUNDING_SENTENCE, NO_CEILING } from '$lib/sim-page/funding-copy';
 import {
   INCOME_TIERS,
   type Calibration,
   type Dollars,
   type IncomeTier,
   type LimitStatement,
-  type Pool,
   type PoolKind,
   type Provenance
 } from '$lib/timelapse/types';
+import { isNoCeiling } from '$lib/timelapse/model';
 import { formatDollars, formatDollarsExact, formatSourcePercent } from './format';
 import { marketSentence } from './market-view';
 
@@ -227,31 +227,17 @@ export const COLUMN_NAME: Record<SourceColumn, string> = {
   lostCredit: 'Loans and guarantees lost'
 };
 
-/**
- * The "By source" columns at the month, a column whose every value is 0 dropped, except that
- * Received stays while a pool of the run is uncapped: its cell reads "no limit" (4.11).
- */
-export function bySourceColumns(
-  m: MoneyAt,
-  uncapped: ReadonlySet<string> = new Set()
-): SourceColumn[] {
-  const anyUncapped = m.pools.some((p) => uncapped.has(p.id));
-  return COLUMNS.filter(
-    (c) => (c === 'received' && anyUncapped) || m.pools.some((p) => p[c] !== 0)
-  );
+/** The "By source" columns at the month: a column whose every value is 0 is dropped. */
+export function bySourceColumns(m: MoneyAt): SourceColumn[] {
+  return COLUMNS.filter((c) => m.pools.some((p) => p[c] !== 0));
 }
 
 /**
- * The ids of the pools that can always pay, read from `Pool.uncapped` (F5): pass the calibration's
- * baseline pools and the shown levers' added pools. The run's money series carries no flag.
+ * A Received cell: "No ceiling" where `isNoCeiling(received)` (an older dataset's federal pool,
+ * read as one yearly inflow of `LEGACY_UNCAPPED_DOLLARS`), dollars otherwise.
  */
-export function uncappedPoolIds(...lists: (readonly Pool[] | undefined)[]): ReadonlySet<string> {
-  return new Set(
-    lists
-      .flatMap((l) => l ?? [])
-      .filter((p) => p.uncapped)
-      .map((p) => p.id)
-  );
+export function receivedCell(received: Dollars): string {
+  return isNoCeiling(received) ? NO_CEILING : formatDollars(received);
 }
 
 /** "Homes by income level", F13 and OD-F10: funded homes go to the paying programmes' levels. */

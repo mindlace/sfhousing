@@ -1,40 +1,17 @@
 // New wording for the timeline page (rule 38) and the explanation texts (rule 37).
-// Imported by the components that render it. The `*4` sentences duplicate texts held in
-// `src/lib/sim-page/funding-copy.ts`, which `/lesscars` imports and so stays unedited.
+// Imported by the components that render it. The public-money sentences are in `money-copy.ts`.
 // Task 5's `CUSTOM_TIMING_LABEL` and `PRESET_PER_POLICY` live in `lens.ts`.
 
 import { formatMonthYear, formatShortMonthYear } from '$lib/fzp/format';
 import { SPEED_NAME } from '$lib/fzp/playback';
 import { utcParts } from '$lib/fzp/time';
 import type { Speed } from '$lib/fzp/types';
-import { formatCount, formatPercent } from '$lib/scoreboard/format';
+import { formatCount } from '$lib/scoreboard/format';
 import type { Day } from '$lib/timelapse/time';
-import type { CoverageStep } from '$lib/sim-page/funding-view';
 import { lensOf, type ChartLens } from './chart-lens';
 
 export const capacityNote = (year: number): string => `Capacity in ${year}.`;
 export const TWIN_NOTE = 'The forecast is run twice, with and without it.';
-
-/** World-score rule 2: displaced homes count in the month their replaced start would have come. */
-export const PER_HOME_SOURCE =
-  'Displaced homes are counted in the month the start they replaced would have happened.';
-
-/** The short coverage figure; its rest is `COVERAGE_CHANCE_NOTE`, behind it. */
-export const coverageShortLine = (step: CoverageStep): string =>
-  step.certain
-    ? 'Affordable homes: fully funded'
-    : `Affordable homes: ${formatPercent(step.coverage)} covered`;
-/** Behind the short coverage figure when the cost is not fully covered. */
-export const COVERAGE_CHANCE_NOTE = 'They start only by chance.';
-
-// Why duplicated: funding-copy.ts says "a run", and the original may not change.
-export const COVERAGE_RUN_SENTENCE4 =
-  'Whether the money lasts, and how many homes it pays for, is what the forecast shows.';
-// Why duplicated: funding-copy.ts says "a run", and the original may not change.
-export const COVERAGE_OFF_SHORT_SENTENCE4 =
-  'Switching a source off takes it out of every offer, so projects go ahead on the rest, at ' +
-  'lower odds. A source that is on but has run short makes projects wait for it; how long is ' +
-  'what the forecast shows.';
 
 export const CHANGE_NOT_APPLIED = "That change couldn't be applied.";
 export const UPDATING = 'Updating';
@@ -42,20 +19,8 @@ export const UPDATING = 'Updating';
 export const STALE_NOTE = 'From before your latest change.';
 /** Behind UPDATING while Play waits at the computed edge for the forecast (rule 32). */
 export const WAITING_NOTE = 'Working out the months ahead.';
-/** Behind a tap in a fund's read-only terms. */
-export const TERMS_HINT = 'End this and add a new one to change terms.';
 /** OQ-4. */
 export const DATES_MOVED_NOTICE = 'Some policy dates moved to fit this data.';
-
-const PER_HOME_TAIL = ', counted when the funded project completes.';
-/**
- * The per-home entry's method in rule 38's wording. `MONEY_SOURCES` (hashed) keeps its own; the
- * tail that says when a displaced home is counted is replaced at render.
- */
-export function perHomeMethod(method: string): string {
-  const at = method.indexOf(PER_HOME_TAIL);
-  return at < 0 ? method : `${method.slice(0, at)}. ${PER_HOME_SOURCE}`;
-}
 
 /** The ruler's flag at the goal's deadline. */
 export const GOAL_FLAG = 'Goal';

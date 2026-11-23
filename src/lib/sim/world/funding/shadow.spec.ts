@@ -5,6 +5,7 @@ import { miniFinance } from '$lib/sim/scenario/fixtures/mini-finance';
 import { lineKey } from '$lib/sim/scenario/funded';
 import { sizeCumAgainst } from '$lib/sim/scenario/input';
 import { P, drawOn, seedHash, streamOf } from '$lib/sim/scenario/rng';
+import { LEGACY_UNCAPPED_DOLLARS } from '$lib/timelapse/model';
 import type { Day } from '$lib/timelapse/time';
 import { addProject, ensureLot, lotRow } from '../columns';
 import { monthFirstDay, monthLastDay } from '../months';
@@ -320,8 +321,17 @@ function ctxAt(world: World, month: number, log: Displaced[]): StepCtx {
   };
 }
 
+/** A new world whose federal pool has received month 1's arrival (ten trillion on `asOf`). */
 function freshWorld(): World {
-  return withFunding(createFundingSystem()).createWorld(statics, timeline, SEED, NOWHERE);
+  const w = withFunding(createFundingSystem()).createWorld(statics, timeline, SEED, NOWHERE);
+  const { pools } = fundOf(w);
+  const q = pools.id.slice(0, pools.n).indexOf('federal');
+  if (q >= 0) {
+    pools.received[q] = LEGACY_UNCAPPED_DOLLARS;
+    pools.moneyDay[q] = statics.asOf;
+    pools.moneyMonth[q] = 1;
+  }
+  return w;
 }
 
 /** Free lots (no row in a new world) whose top level has at least 2 homes, in rank order. */

@@ -3,6 +3,7 @@
 // some of them only say where the magnitudes come from). Browser-safe: no `node:` imports.
 import { MARKET_TERMS, resolveTerms } from '$lib/sim/finance';
 import type { FinanceLevers } from '$lib/sim/levers/types';
+import { LEGACY_UNCAPPED_DOLLARS } from '$lib/timelapse/model';
 import type { Day } from '$lib/timelapse/time';
 import type {
   Calibration,
@@ -85,7 +86,7 @@ function microShares(xs: readonly number[]): number[] {
 /**
  * The bench baseline (spec 4.17; tier 4 bench values): six City pools at the Exhibit E amounts
  * (80.5, 48.6, 36.7, 34.8, 27.4 and 6.0 million dollars a year), a `state` pool at 150 million a
- * year, an uncapped `federal` pool, and one affordable grant per pool with the Exhibit F shares
+ * year, a `federal` pool at ten trillion a year (`LEGACY_UNCAPPED_DOLLARS`), and one affordable grant per pool with the Exhibit F shares
  * (City 300,027 split by Exhibit E, state 118,390, federal 443,108, over 861,525), `minHomes` 70
  * and the expected live tiers. Bench `slope` 3.0. Every inflow is yearly from `asOf`.
  */
@@ -105,7 +106,6 @@ export function benchBaselineFunding(asOf: Day): NonNullable<Calibration['baseli
       kind: c.kind,
       label: c.id,
       inflows: yearly(c.dollarsPerYear),
-      uncapped: false,
       debt: c.kind === 'goBond' ? { rate: 0.06, termYears: 20 } : null,
       leverage: 1
     })),
@@ -114,7 +114,6 @@ export function benchBaselineFunding(asOf: Day): NonNullable<Calibration['baseli
       kind: 'state',
       label: 'state',
       inflows: yearly(150_000_000),
-      uncapped: false,
       debt: null,
       leverage: 1
     },
@@ -122,8 +121,7 @@ export function benchBaselineFunding(asOf: Day): NonNullable<Calibration['baseli
       id: 'federal',
       kind: 'federal',
       label: 'federal',
-      inflows: [],
-      uncapped: true,
+      inflows: yearly(LEGACY_UNCAPPED_DOLLARS),
       debt: null,
       leverage: 1
     }
@@ -196,7 +194,6 @@ export function benchFunding(asOf: Day): { pools: Pool[]; programmes: Programme[
         kind: 'goBond',
         label: 'bench-bond',
         inflows: [{ kind: 'once', day: asOf + 365, dollars: 300_000_000 }],
-        uncapped: false,
         debt: { rate: 0.06, termYears: 20 },
         leverage: 1
       },
@@ -205,7 +202,6 @@ export function benchFunding(asOf: Day): { pools: Pool[]; programmes: Programme[
         kind: 'generalRevenue',
         label: 'bench-fund',
         inflows: [{ kind: 'yearly', from: asOf, to: null, dollarsPerYear: 50_000_000 }],
-        uncapped: false,
         debt: null,
         leverage: 1
       }

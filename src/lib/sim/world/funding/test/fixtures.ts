@@ -11,6 +11,7 @@ import { miniCalibrationWithRoutes, miniFinance } from '$lib/sim/scenario/fixtur
 import { financeIndexOf, inflowArrivals, isOff, isOffered } from '$lib/sim/scenario/funding';
 import type { LedgerEvent } from '$lib/sim/scenario/money';
 import type { Schedule, SimInput } from '$lib/sim/scenario/types';
+import { LEGACY_UNCAPPED_DOLLARS } from '$lib/timelapse/model';
 import type { Day } from '$lib/timelapse/time';
 import type { Inflow, Pool, PoolKind, Programme } from '$lib/timelapse/types';
 import { DEFAULT_POLICY4, type SimPolicy4 } from '$lib/timeline/policy4';
@@ -200,8 +201,8 @@ export function sameMonthOrdinary(
 
 /**
  * Month m's money of `fin`: `offered` from `isOffered` on the month's first day, `arrivals` from
- * `inflowArrivals` over the month's days (month 1 from `asOf`), capped pools only and not on a
- * day their pool is off, as `policy/money.ts:156-168` builds them.
+ * `inflowArrivals` over the month's days (month 1 from `asOf`), every pool, not on a day its pool
+ * is off, as `policy/money.ts` builds them.
  */
 export function financeFrameOf(fin: Finance, asOf: Day, m: number): FinanceFrame {
   const idx = financeIndexOf(fin);
@@ -211,7 +212,6 @@ export function financeFrameOf(fin: Finance, asOf: Day, m: number): FinanceFrame
   const lo = m === 1 ? asOf : first;
   const arrivals: FinanceFrame['arrivals'] = [];
   fin.pools.forEach((p, q) => {
-    if (!idx.capped[q]) return;
     for (const fl of p.inflows) {
       const dollars = fl.kind === 'once' ? fl.dollars : fl.dollarsPerYear;
       for (const day of inflowArrivals(fl, lo, last))
@@ -303,12 +303,11 @@ function rng(seed: number): () => number {
 
 const TIERS = { veryLow: 0.5, low: 0.5, moderate: 0, aboveModerate: 0 };
 
-const randomPool = (id: string, kind: PoolKind, inflows: Inflow[], uncapped = false): Pool => ({
+const randomPool = (id: string, kind: PoolKind, inflows: Inflow[]): Pool => ({
   id,
   kind,
   label: id,
   inflows,
-  uncapped,
   debt: kind === 'goBond' || kind === 'cop' ? { rate: 0.04, termYears: 30 } : null,
   leverage: kind === 'bank' ? 0.8 : 1
 });
@@ -344,7 +343,15 @@ export function randomFinance(seed: number): Finance {
     if (p.kind === 'bank') p.leverage = 0.5 + r() * 0.5;
     pools.push(p);
   }
-  if (r() < 0.6) pools.push(randomPool('fed', 'federal', [], true));
+  if (r() < 0.6) {
+    const legacy: Inflow = {
+      kind: 'yearly',
+      from: asOf,
+      to: null,
+      dollarsPerYear: LEGACY_UNCAPPED_DOLLARS
+    };
+    pools.push(randomPool('fed', 'federal', [legacy]));
+  }
   const programmes: Programme[] = [];
   const nProg = 1 + Math.floor(r() * 5);
   for (let g = 0; g < nProg; g++) {

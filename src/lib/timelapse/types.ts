@@ -246,8 +246,6 @@ export interface Pool {
   kind: PoolKind;
   label: string;
   inflows: Inflow[];
-  /** can always pay and has no inflows (in the baseline, only the federal tax-credit pool) */
-  uncapped: boolean;
   /** non-null exactly for `goBond` and `cop`; rate in (0, 0.25], termYears 1 to 40 */
   debt: { rate: number; termYears: number } | null;
   /** dollars a pool may have committed or out per dollar received: 1 for every kind but `bank` */

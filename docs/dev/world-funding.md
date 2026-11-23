@@ -78,6 +78,11 @@ writing**, or the index goes stale silently (a write without a bump is not detec
   in line order, confirmed with `awardPasses`; every H is dropped after an award.
 - **Award day T17** (rule 11): `awardDay` is the later of `applied` (this month) or the month's
   first day, and the latest money day this month of any pool the award asks.
+- **Every pool pays only from what it received** (rule 12): `availableOf` (`pools.ts`) is
+  `leverage × received − committed − spentGrant − outLoan − lostLoan − lostGuarantee` for every
+  pool, the federal pool included; it has no infinite case. The money track
+  (`policy/money.ts`) makes arrivals for every pool of the frame, and a release or repayment to
+  any pool of the frame is returned money (rule 10).
 - **Money events at stage events** (rule 13): `moneyOnEvent` writes spend and lend on entering
   construction, repayment on completion, release or loss on dropping out, with today's amounts and
   `LedgerEvent`s.
@@ -293,7 +298,13 @@ All in `src/lib/sim/world/funding/`. Server project (signoff) unless noted.
   `memo` (the rowless memo and `bundleOf`: results as recorded, memo on and off; above),
   `retained` (caches outside the world per timeline, not per world; above).
 - **End to end** `funded.spec.ts`: E1 to E7 after every step on 200 random finances (mini city),
-  rule 21, rule 14, rule 16, `structuredClone`, a permuted lot table, the money series I1 to I6.
+  rule 21, rule 14, rule 16, `structuredClone`, a permuted lot table, the money series I1 to I5
+  (E6 and I6 are retired: every pool receives its arrivals).
+- **Bounds** `bounds.spec.ts`: fixture-0's pools receive what their bounds give over 480 months
+  (the last arrival of each ending pool, none for a pool with no programme, arrivals to the end
+  for the continuing ones); on the older-format calibration the federal pool (ten trillion a year)
+  never falls below 99% of it and no waiting row is short on it, also with it switched off for
+  months 13 to 24.
 - **Remedies** `remedies.spec.ts`: grouped serving equals the direct scan (events, ledger, world),
   warm and cold caches equal across a clone.
 - **Golden**: `funded.golden.test.ts` (server) and `funded.golden.svelte.spec.ts` (client) against

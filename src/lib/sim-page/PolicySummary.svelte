@@ -16,7 +16,7 @@
   import { fundingPresets } from './funding-presets';
   import { coverageSteps, summaryRows } from './funding-view';
   import Explain from '$lib/timeline/Explain.svelte';
-  import { COVERAGE_CHANCE_NOTE, coverageShortLine } from '$lib/timeline/copy';
+  import { COVERAGE_CHANCE_NOTE, coverageShortLine } from '$lib/timeline/money-copy';
 
   interface Props {
     policy: SimPolicy;

@@ -620,7 +620,6 @@ describe('the "Funded by" line (funding-ui 4.13)', () => {
     kind: 'goBond',
     label,
     inflows: [{ kind: 'once', day: FUND_ASOF, dollars: 100_000_000 }],
-    uncapped: false,
     debt: { rate: 0.06, termYears: 20 },
     leverage: 1
   });

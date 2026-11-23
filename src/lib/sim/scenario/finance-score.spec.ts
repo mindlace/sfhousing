@@ -531,15 +531,6 @@ describe('poolSeries (spec 6 test 16)', () => {
     ]);
   });
 
-  it('an uncapped pool has received 0 in every month', () => {
-    expect(series(MC.uncapped)).toEqual([
-      entry(MC.uncapped, {
-        committed: steps([1, 700_000], [3, 0]),
-        spent: steps([3, 700_000])
-      })
-    ]);
-  });
-
   it('one entry per pool in finance.pools order, a pool with no events all 0', () => {
     const fin = {
       ...MC.mixed.finance,
@@ -586,13 +577,6 @@ describe('checkMoneyIdentities catches a broken series', () => {
     const m = good();
     m.pools[0].lostCredit = m.pools[0].lostCredit.map((x) => x * 2);
     expect(() => checkMoneyIdentities(m, c.finance.pools)).toThrow(/I5/);
-  });
-
-  it('I6: an uncapped pool with received', () => {
-    const u = MC.uncapped;
-    const m = { pools: structuredClone(series(u)) };
-    m.pools[0].received[4] = 1;
-    expect(() => checkMoneyIdentities(m, u.finance.pools)).toThrow(/I6/);
   });
 
   it('I2 and I3 against the ledger', () => {
