@@ -21,7 +21,7 @@ const TIERS = { veryLow: 0.4, low: 0.4, moderate: 0.2, aboveModerate: 0 };
 
 /**
  * Three pools (`m-city`, yearly 20,000,000 from `asOf`; `m-bank`, a `bank` pool with one
- * 5,000,000 inflow on `asOf + 400` and leverage 0.8; `federal`, yearly 100 billion from `asOf`,
+ * 5,000,000 inflow on `asOf + 400` and leverage 0.8; `federal`, yearly ten trillion from `asOf`,
  * `LEGACY_UNCAPPED_DOLLARS`, which no test reaches), and four
  * programmes: a certain affordable grant stack (`m-city` 0.35 and `federal` 0.65, `minHomes` 2),
  * a market loan on `m-bank` and a market guarantee on `m-city`. `m-bank` is off from

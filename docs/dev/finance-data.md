@@ -245,7 +245,7 @@ built before finite funding has `uncapped: true` and no inflows on its federal p
 (`src/lib/timelapse/model.ts`) reads any baseline pool that has an `uncapped` key before it checks the
 funding: a non-boolean is refused at `baselineFunding.pools[i].uncapped` ("expected a boolean"); the
 pool is returned without the key; and `true` with no inflows becomes one yearly inflow from `asOf`
-with no end of `LEGACY_UNCAPPED_DOLLARS` (100 billion dollars). The calibration then loads and is
+with no end of `LEGACY_UNCAPPED_DOLLARS` (ten trillion dollars, above `MAX_DOLLARS`, so no added pool reaches it). The calibration then loads and is
 never refused for it. When a pool has the key, the loader returns a copy (new calibration,
 `baselineFunding` and pools array; every other object is the input's); otherwise it returns the
 input. `checkPool` has no `uncapped` key.

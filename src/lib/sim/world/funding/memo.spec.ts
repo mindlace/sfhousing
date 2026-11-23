@@ -39,13 +39,15 @@ const CHANGE = 120;
  * FNV-1a hash of every event (with its month) and ledger event, and their count, recorded from
  * the build before the memo (2026-11-13, a7844ad1). The synthCity values were re-recorded when the
  * federal pool started to receive its yearly arrival (finite funding, 2026-11-22): its eleven `in`
- * events are the only change; every other event and ledger event hashes as before.
+ * events are the only change; every other event and ledger event hashes as before. They were
+ * re-recorded again when `LEGACY_UNCAPPED_DOLLARS` became ten trillion: only those `in` amounts
+ * moved (the counts are unchanged).
  */
 const RECORDED: Record<string, string> = {
-  'synthCity baseline 1': 'c33486ee/35633',
-  'synthCity baseline 2': 'c1317842/36043',
-  'synthCity bench 1': '7c97457c/36465',
-  'synthCity bench 2': '656bd79f/36955',
+  'synthCity baseline 1': '6674530e/35633',
+  'synthCity baseline 2': 'c527e2fa/36043',
+  'synthCity bench 1': 'ebec5fa4/36465',
+  'synthCity bench 2': '1bcb9c67/36955',
   'live 1': 'b04ec705/6292',
   'live 2': 'dbb6c92c/6849',
   'live 3': 'c590436b/6133'

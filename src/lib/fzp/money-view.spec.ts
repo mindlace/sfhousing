@@ -211,7 +211,7 @@ describe('row texts', () => {
     expect(bySourceColumns(m)).toContain('received');
   });
 
-  it('a Received cell reads No ceiling at 100 billion, dollars otherwise', () => {
+  it('a Received cell reads No ceiling at LEGACY_UNCAPPED_DOLLARS, dollars otherwise', () => {
     expect(receivedCell(LEGACY_UNCAPPED_DOLLARS)).toBe('No ceiling');
     expect(receivedCell(LEGACY_UNCAPPED_DOLLARS * 3)).toBe('No ceiling');
     expect(receivedCell(20_000_000)).toBe(formatDollars(20_000_000));

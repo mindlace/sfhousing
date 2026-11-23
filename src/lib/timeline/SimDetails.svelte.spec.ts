@@ -679,7 +679,7 @@ describe('public money and income tiers (funding-ui 4.11)', () => {
     expect(document.body.textContent).not.toContain('No ceiling');
   });
 
-  it('reads No ceiling under Received for a pool that received 100 billion', async () => {
+  it('reads No ceiling under Received for a pool that received ten trillion', async () => {
     await page.viewport(1024, 768);
     const score = withPools((pools) =>
       pools.map((p) =>

@@ -126,7 +126,7 @@ export function ledgerModel(seed: number): LedgerCase {
   const horizon = asOf + int(2 * 365, 6 * 365);
   const months = monthsOf(asOf, horizon);
 
-  // 1-4 pools: the federal pool with 100 billion a year from asOf (no test reaches it), every
+  // 1-4 pools: the federal pool with ten trillion a year from asOf (no test reaches it), every
   // other pool with an opening sum on asOf and a yearly inflow
   const pools: Pool[] = shuffle(POOLS)
     .slice(0, int(1, 4))

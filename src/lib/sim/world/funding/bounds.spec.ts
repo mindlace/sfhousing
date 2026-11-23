@@ -1,5 +1,5 @@
 // Finite funding in the step engine: fixture-0's bounds as the pools receive them, and an older
-// dataset's federal pool (read as 100 billion a year) never running short.
+// dataset's federal pool (read as ten trillion a year) never running short.
 import { readFileSync } from 'node:fs';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { prototypeFor } from '$lib/sim/finance';
@@ -7,7 +7,7 @@ import { dayOf } from '$lib/sim/scenario/dates';
 import { asksOf, inflowArrivals } from '$lib/sim/scenario/funding';
 import type { LedgerEvent } from '$lib/sim/scenario/money';
 import type { SimInput } from '$lib/sim/scenario/types';
-import { parseCalibration } from '$lib/timelapse/model';
+import { LEGACY_UNCAPPED_DOLLARS, parseCalibration } from '$lib/timelapse/model';
 import type { Day } from '$lib/timelapse/time';
 import { DEFAULT_POLICY4, type SimPolicy4 } from '$lib/timeline/policy4';
 import { monthFirstDay, monthOfDay } from '../months';
@@ -153,7 +153,7 @@ describe('older-format calibration', () => {
     const fed = input.finance!.pools.find((p) => p.id === FEDERAL)!;
     expect('uncapped' in fed).toBe(false);
     const got = run(DEFAULT_POLICY4);
-    expect(got.least).toBeGreaterThanOrEqual(99_000_000_000);
+    expect(got.least).toBeGreaterThanOrEqual(0.99 * LEGACY_UNCAPPED_DOLLARS);
     expect(got.short).toBe(0);
     // rows waiting on other pools still ask this one: the check is not vacuous
     expect(got.asking).toBeGreaterThan(0);

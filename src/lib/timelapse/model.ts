@@ -1133,9 +1133,10 @@ export function parseCalibration(json: unknown): Calibration {
 
 /**
  * The yearly dollars an older dataset's federal pool is read as: its calibration had
- * `uncapped: true` and no inflows, and no yearly amount is read as a real one at or above this.
+ * `uncapped: true` and no inflows. Ten trillion a year, above `MAX_DOLLARS` (100 billion, the
+ * most any added pool can carry), so only an older dataset's federal pool reaches it.
  */
-export const LEGACY_UNCAPPED_DOLLARS = 100_000_000_000;
+export const LEGACY_UNCAPPED_DOLLARS = 10_000_000_000_000;
 
 /** True when a yearly amount is an older dataset's federal pool: dollars >= LEGACY_UNCAPPED_DOLLARS. */
 export function isNoCeiling(dollars: number): boolean {

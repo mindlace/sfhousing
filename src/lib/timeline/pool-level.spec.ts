@@ -335,7 +335,7 @@ describe('levelSet', () => {
     expect(list(s.fixed!)).toEqual([1, 410 / 500]);
   });
 
-  it('gives a pool with a 100 billion yearly inflow no level and leaves it out of the sum', () => {
+  it('gives a pool with a ten trillion yearly inflow no level and leaves it out of the sum', () => {
     const legacy = pool('legacy-fed', {
       kind: 'federal',
       inflows: yearly(LEGACY_UNCAPPED_DOLLARS)

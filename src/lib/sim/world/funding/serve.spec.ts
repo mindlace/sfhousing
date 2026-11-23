@@ -121,7 +121,7 @@ function harness(
 }
 
 /**
- * A new world whose federal pool has received month 1's arrival (100 billion on `asOf`), as
+ * A new world whose federal pool has received month 1's arrival (ten trillion on `asOf`), as
  * system 2 gives it; the other pools hold nothing until a test gives them money.
  */
 function freshWorld(t: PolicyTimeline = timeline): World {
@@ -669,7 +669,7 @@ describe('rule 10 on the bench city', () => {
 });
 
 /**
- * A federal 100% affordable grant on the mini city, 100 billion a year (as engine-finance.spec.ts
+ * A federal 100% affordable grant on the mini city, ten trillion a year (as engine-finance.spec.ts
  * has it).
  */
 const ROUTE_FIN: Finance = {

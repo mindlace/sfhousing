@@ -87,7 +87,7 @@ const grant = (id: string, poolId: string, reach: 'market' | 'affordable', share
   }) satisfies Programme;
 const once = (day: Day, dollars: number): Inflow => ({ kind: 'once', day, dollars });
 const AMPLE = 1_000_000_000_000;
-/** The federal pool as an older dataset's reads: 100 billion a year from asOf. */
+/** The federal pool as an older dataset's reads: ten trillion a year from asOf. */
 const LEGACY: Inflow[] = [
   { kind: 'yearly', from: asOf, to: null, dollarsPerYear: LEGACY_UNCAPPED_DOLLARS }
 ];
@@ -435,10 +435,12 @@ describe('unlimited money, a 100% grant', () => {
       }),
       market: [],
       finance: {
-        // every lot at risk at asOf asks on its first days: 100 billion a year would bind here
+        // every lot at risk at asOf asks on its first days: the legacy ten trillion a year would
+        // bind here. 2e14 is above it so nothing waits, and below 2^53 / 40 (about 2.25e14) so
+        // 40 years of arrivals stay exact integers.
         pools: [
           pool('fed', 'federal', [
-            { kind: 'yearly', from: asOf, to: null, dollarsPerYear: 1_000_000_000_000_000 }
+            { kind: 'yearly', from: asOf, to: null, dollarsPerYear: 200_000_000_000_000 }
           ])
         ],
         programmes: [grant('aff', 'fed', 'affordable', 1)],

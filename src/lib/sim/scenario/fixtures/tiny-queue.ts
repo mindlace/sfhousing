@@ -1,6 +1,6 @@
 /**
  * The finance engine's queue fixtures: `tinyQueue`, a five-lot city with hand-set hazards and
- * yields, and `tinyStack`, a small public-money stack: a federal pool (100 billion a year), a state pool and
+ * yields, and `tinyStack`, a small public-money stack: a federal pool (ten trillion a year), a state pool and
  * a City pool, each with one affordable grant programme, and optionally a bond pool. The shares
  * are tier 1 dollars per home over the tier 2 total. Test values, not data. Browser-safe.
  */

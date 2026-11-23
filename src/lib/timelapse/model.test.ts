@@ -28,6 +28,7 @@ import {
   sampleTransition,
   typicalMonths
 } from './model';
+import { MAX_DOLLARS } from '../sim/levers/finance';
 import { MONTH_DAYS, monthsIn, stageDay } from './time';
 import { validateInstrument } from '../sim/finance/instruments';
 import {
@@ -831,10 +832,14 @@ describe('parseCalibration', () => {
   });
 
   it('isNoCeiling at the constant, one dollar under and above', () => {
-    expect(LEGACY_UNCAPPED_DOLLARS).toBe(100_000_000_000);
-    expect(isNoCeiling(100_000_000_000)).toBe(true);
-    expect(isNoCeiling(99_999_999_999)).toBe(false);
-    expect(isNoCeiling(150_000_000_000)).toBe(true);
+    expect(LEGACY_UNCAPPED_DOLLARS).toBe(10_000_000_000_000);
+    expect(isNoCeiling(LEGACY_UNCAPPED_DOLLARS)).toBe(true);
+    expect(isNoCeiling(LEGACY_UNCAPPED_DOLLARS - 1)).toBe(false);
+    expect(isNoCeiling(LEGACY_UNCAPPED_DOLLARS + 1)).toBe(true);
+  });
+
+  it('isNoCeiling is false at MAX_DOLLARS: a 100 billion added pool has a ceiling', () => {
+    expect(isNoCeiling(MAX_DOLLARS)).toBe(false);
   });
 
   it('refuses a non-boolean uncapped', () => {

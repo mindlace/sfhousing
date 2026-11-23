@@ -86,7 +86,7 @@ function microShares(xs: readonly number[]): number[] {
 /**
  * The bench baseline (spec 4.17; tier 4 bench values): six City pools at the Exhibit E amounts
  * (80.5, 48.6, 36.7, 34.8, 27.4 and 6.0 million dollars a year), a `state` pool at 150 million a
- * year, a `federal` pool at 100 billion a year (`LEGACY_UNCAPPED_DOLLARS`), and one affordable grant per pool with the Exhibit F shares
+ * year, a `federal` pool at ten trillion a year (`LEGACY_UNCAPPED_DOLLARS`), and one affordable grant per pool with the Exhibit F shares
  * (City 300,027 split by Exhibit E, state 118,390, federal 443,108, over 861,525), `minHomes` 70
  * and the expected live tiers. Bench `slope` 3.0. Every inflow is yearly from `asOf`.
  */

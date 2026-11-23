@@ -302,8 +302,8 @@ All in `src/lib/sim/world/funding/`. Server project (signoff) unless noted.
   (E6 and I6 are retired: every pool receives its arrivals).
 - **Bounds** `bounds.spec.ts`: fixture-0's pools receive what their bounds give over 480 months
   (the last arrival of each ending pool, none for a pool with no programme, arrivals to the end
-  for the continuing ones); on the older-format calibration the federal pool (100 billion a year)
-  never falls below 99 billion and no waiting row is short on it, also with it switched off for
+  for the continuing ones); on the older-format calibration the federal pool (ten trillion a year)
+  never falls below 99% of it and no waiting row is short on it, also with it switched off for
   months 13 to 24.
 - **Remedies** `remedies.spec.ts`: grouped serving equals the direct scan (events, ledger, world),
   warm and cold caches equal across a clone.

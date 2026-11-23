@@ -586,7 +586,7 @@ to load the engine, not data): two pools, three programmes, one of them certain.
 - programme `bench-afford`: grant share 0.25, reach `affordable`, `minHomes` 0, on `bench-fund`.
 
 **The bench baseline** (`benchBaseline(asOf)`): six City pools at 80.5, 48.6, 36.7, 34.8, 27.4 and
-6.0 million dollars a year, a `state` pool at 150 million, a `federal` pool at 100 billion a year
+6.0 million dollars a year, a `state` pool at 150 million, a `federal` pool at ten trillion a year
 (`LEGACY_UNCAPPED_DOLLARS`, so it never binds on the bench), one affordable
 grant per pool with the Exhibit F shares (City 300,027 split by the Exhibit E amounts, state
 118,390, federal 443,108, over 861,525), `minHomes` 70, bench `slope` 3.0 and bench
@@ -723,7 +723,7 @@ programme opening or ending, a pool off, the known limit, regimes), plus `card.s
 
 The mini fixture (`miniFinance()`, `fixtures/mini-finance.ts`) has three pools: `m-city`, yearly
 20,000,000 from `asOf`; `m-bank`, a `bank` pool with one 5,000,000 inflow on `asOf + 400`; and
-`federal`, one yearly inflow of 100,000,000,000 from `asOf` (`LEGACY_UNCAPPED_DOLLARS`), which no
+`federal`, one yearly inflow of 10,000,000,000,000 from `asOf` (`LEGACY_UNCAPPED_DOLLARS`), which no
 test reaches. The engine fixtures that once had an uncapped pool give it that same yearly inflow.
 
 The finance golden holds seeds 1 and 4 (ruling R-11a): seed 1 is the design's case (certain affordable

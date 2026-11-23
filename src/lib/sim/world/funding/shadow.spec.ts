@@ -321,7 +321,7 @@ function ctxAt(world: World, month: number, log: Displaced[]): StepCtx {
   };
 }
 
-/** A new world whose federal pool has received month 1's arrival (100 billion on `asOf`). */
+/** A new world whose federal pool has received month 1's arrival (ten trillion on `asOf`). */
 function freshWorld(): World {
   const w = withFunding(createFundingSystem()).createWorld(statics, timeline, SEED, NOWHERE);
   const { pools } = fundOf(w);
