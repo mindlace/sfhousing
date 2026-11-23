@@ -178,7 +178,7 @@ export function standing(level: Level, bar: Bar | null, seen: Result | null): St
         <li><strong>Dependencies.</strong> A dependency in <code>package.json</code> that no file under <code>src</code>, <code>pipeline</code>, <code>scripts</code>, <code>e2e</code> or a root config imports goes, with <code>npm uninstall &lt;name&gt;</code> so <code>package-lock.json</code> follows. Expected: <code>@maplibre/vt-pbf</code>. A package that tooling loads by name (a Vite, ESLint, Prettier or Playwright plugin, a type package) stays.</li>
         <li><strong>chreode.config.ts.</strong> A path rule that names a file or directory that no longer exists goes (expected: <code>drizzle.sim.config.ts</code> at <code>:72</code>); a comment that names one is rewritten. The dataset path list stays as <code>remove-lesscars</code> wrote it.</li>
         <li><strong>src/app.d.ts.</strong> A declared field nothing reads or writes goes. A field that something reads stays, even when nothing writes it (<code>sfhRemix</code> and <code>sfhSimRemix</code> stay while their readers do), and its comment is made true.</li>
-        <li><strong>Comments.</strong> A comment in any file that names a removed module, route, table, binding, component or doc is rewritten to the code as it is, or removed when it says nothing else. Only the comment changes; code is never edited for this. A comment on the compatibility code of <a href="#sec-design-sweep">the sweep's allowed places</a> is true as it stands and stays.</li>
+        <li><strong>Comments.</strong> A comment in any file, test files, test helpers and e2e specs included, that names a removed module, route, table, binding, component or doc is rewritten to the code as it is, or removed when it says nothing else. Only the comment changes; code is never edited for this. A comment on the compatibility code of <a href="#sec-design-sweep">the sweep's allowed places</a> is true as it stands and stays.</li>
         <li><strong>Links.</strong> Every link to a deleted doc file is removed or pointed at the doc that now holds the subject (<code>game.md</code>, <code>game-save.md</code>, <code>auth.md</code>), with its sentence made true. The check is the link sweep in <a href="#sec-design-sweep">The final sweep</a>.</li>
       </ul>
     </section>
@@ -264,7 +264,7 @@ git grep -n -E '\]\((\./)?(lesscars|sim-object|sim-log|sim-sync|sim-store)\.md' 
       <ul>
         <li>Any other hit in <code>CLAUDE.md</code>, <code>README.md</code>, a <code>docs/dev</code> file, <code>package.json</code>, <code>chreode.config.ts</code> or <code>src/app.d.ts</code> is fixed.</li>
         <li>Any other hit in a comment, in any file, is fixed by rewriting the comment (<a href="#sec-design-leftovers">Leftovers</a>).</li>
-        <li>A hit in code or test code anywhere else is a defect of the unit that removed the name: it is reported with its <code>file:line</code> and the owner unit, and left alone.</li>
+        <li>A hit in code or test code, outside a comment, anywhere else is a defect of the unit that removed the name: it is reported with its <code>file:line</code> and the owner unit, and left alone.</li>
         <li><code>uncapped</code> in the sense of density caps (the pipeline's SB 79 and current-law code, <code>sim-page.md</code>'s "uncapped by density") and of goal fractions (<code>goal.ts</code>) is not a hit; the pattern above does not match those uses.</li>
       </ul>
     </section>
@@ -325,7 +325,7 @@ git grep -n -E '\]\((\./)?(lesscars|sim-object|sim-log|sim-sync|sim-store)\.md' 
         <li><code>npm run check</code> and <code>npm run lint</code> pass after the leftovers go, and <code>npm ls</code> reports no missing package.</li>
         <li><code>scripts/docs-index.spec.ts</code> passes (every <code>docs/dev/*.md</code> is linked from <code>CLAUDE.md</code>).</li>
       </ol>
-      <p>No existing test is deleted or changed by this unit.</p>
+      <p>No existing test is deleted, and no existing test's code or assertions change. The only edits this unit makes to an existing test file, test helper or e2e spec are the comment rewrites of <a href="#sec-design-leftovers">Leftovers</a>.</p>
     </section>
   </section>
 
