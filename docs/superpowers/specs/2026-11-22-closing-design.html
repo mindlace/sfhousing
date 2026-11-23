@@ -198,8 +198,9 @@ export function standing(level: Level, bar: Bar | null, seen: Result | null): St
         <li>The level 2 check: <code>npx tsx scripts/level2-check.ts pipeline/out/&lt;v&gt;</code>. Exit 0 goes on. Exit 1 or 2 stops the unit with nothing uploaded (<a href="#sec-design-fail">When it fails</a>).</li>
         <li>Upload, only when step 5 found <code>&lt;v&gt;</code> unpublished: <code>npm run pipeline -- upload &lt;v&gt;</code>. Then, always, verify: <code>npm run pipeline -- verify &lt;v&gt; --origin https://sfhousing-staging.mindlace.net</code>.</li>
         <li>Published is proved by <code>npx tsx scripts/dataset-version.ts --check</code> exiting 0, after <code>verify</code> has found every file the manifest names.</li>
+        <li>Clear the local live build: remove <code>pipeline/out/&lt;v&gt;</code> and <code>pipeline/.cache/derived/&lt;v&gt;</code>. Both are gitignored build output of a version that is now published, immutable and verified, and a new build makes them again. Signoff then runs <code>test:pipeline</code> with no local non-fixture build, as every signoff on <code>main</code> does, so the live block of <code>pipeline/test/simulate-replay.test.ts</code> skips (<a href="#sec-design-tree">The full-tree checks</a>).</li>
         <li>Signoff: <code>npm run signoff</code>, the build's only run of it (no other unit runs it, because its <code>dataset</code> step fails until the upload). Nothing is pushed by hand first. If signoff's merge of <code>origin/main</code> changes <code>&lt;v&gt;</code>, the <code>dataset</code> step fails; go back to step 4, and the level 2 check runs again on the new build.</li>
-        <li>Hand back with <code>&lt;v&gt;</code>, the check's three lines and the signoff result. Merging the integration branch to <code>main</code> is the conductor's.</li>
+        <li>Hand back with <code>&lt;v&gt;</code>, the check's three lines, the signoff result, and the line the live replay block printed for its failing cohort on <code>&lt;v&gt;</code> while the build was on disk, for the owner. Merging the integration branch to <code>main</code> is the conductor's.</li>
       </ol>
       <ul>
         <li>Only this unit uploads a dataset in this build, and only at step 10.</li>
@@ -231,6 +232,7 @@ npm run test:e2e</code></pre>
         <li><code>test:e2e</code> starts its server on port 4173 and fails when the port is busy. Before it, <code>lsof -nP -iTCP:4173 -sTCP:LISTEN</code>: a listener belongs to another session; the operator waits and checks again, and never stops it.</li>
         <li>A failure is a defect of a merged unit. The operator reports it with the failing test and its file, and fixes it only when the file is in this unit's write set.</li>
         <li>A test that passes only on retry counts as a failure.</li>
+        <li>The live block of <code>pipeline/test/simulate-replay.test.ts</code> runs only while a non-fixture build is on disk under <code>pipeline/out</code> and <code>pipeline/.cache/derived</code>, and skips otherwise. It judges the stage calibration (permit issued to construction start) against <code>project-histories.json</code>, which no unit of this build writes. On every live dataset of November 2026, with <code>main</code>'s code and with this build's, its pooled <code>permitIssued</code> cohort fails by the same margin (max |Δ| 0.0354 against a bar of 0.0362, eleven months). That failure is older than this build and is no merged unit's defect: the operator reports its line in the hand-back and changes nothing for it. The full-tree checks of step 3 run before the build and meet the block skipped; signoff meets it skipped because step 12 clears the local build first.</li>
       </ul>
     </section>
 
@@ -526,6 +528,7 @@ git grep -n -E '\]\((\./)?(lesscars|sim-object|sim-log|sim-sync|sim-store)\.md' 
       <li>An npm script for the level 2 check, and a signoff step that runs it: the check runs with <code>npx tsx</code> in the finish.</li>
       <li>Fixing code or test code (not comments) that a full-tree check or the sweep finds wrong in another unit's file: reported with the owner unit, not fixed here.</li>
       <li>Changing the window's length, a funding bound or the goal when the check fails: the owner's call.</li>
+      <li>The stage calibration's fit for the pooled <code>permitIssued</code> cohort, which the live replay block fails on every live dataset since early November 2026, and that test's bars: the owner's, after this build.</li>
       <li>Winning levels 3 to 5 in the journey: each unit's own e2e specs cover its level.</li>
       <li>Merging the integration branch to <code>main</code> and releasing to production: the conductor and the release flow.</li>
     </ul>
