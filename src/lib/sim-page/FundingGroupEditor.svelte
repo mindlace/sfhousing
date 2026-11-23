@@ -41,6 +41,7 @@
     programmeSentence,
     scaleLines,
     tiersText,
+    windowLastMonth,
     type Baseline,
     type BaselineGroup
   } from './funding-view';
@@ -74,7 +75,7 @@
       new Date(Date.UTC(2000, i, 1))
     )
   );
-  const LAST_MONTH: Day = dayOf(2066, 12, 1);
+  const LAST_MONTH = $derived(windowLastMonth(asOf));
   const utcYear = (d: Day): number => new Date(d * 86_400_000).getUTCFullYear();
 
   /** A pool's yearly inflows in force at `asOf`, scaled by the entry in force then. */
@@ -222,7 +223,7 @@
               type="number"
               inputmode="numeric"
               min={utcYear(asOf)}
-              max="2066"
+              max={utcYear(LAST_MONTH)}
               step="1"
               class="{field} w-24"
               aria-invalid={entry.error === dateRangeError(asOf) ? 'true' : undefined}

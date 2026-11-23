@@ -7,6 +7,7 @@ import {
   dateRangeError,
   drawAssumptionText,
   fundingNotices,
+  labelDateChanged,
   smallProjectsCaveat,
   typedTermText
 } from './funding-copy';
@@ -31,6 +32,14 @@ describe('dateRangeError', () => {
   it('on fixture-0', () => {
     expect(dateRangeError(dayOf(2026, 10, 10))).toBe(
       'Choose a month from October 2026 to October 2066.'
+    );
+  });
+});
+
+describe('labelDateChanged', () => {
+  it('names the field and the month', () => {
+    expect(labelDateChanged('Bond', 'Until', dayOf(2040, 7, 1))).toBe(
+      'Changed date: Bond, Until July 2040'
     );
   });
 });

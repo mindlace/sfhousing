@@ -244,15 +244,12 @@ export const labelInflowKindChanged = (
   kind: 'once' | 'yearly'
 ): string => `Changed: ${name}, row ${row}, ${kind === 'once' ? 'once' : 'every year'}`;
 
-/** Dates of a pool or a programme; a null `day` is an "Until" cleared to no end. */
+/** Dates of a pool or a programme. */
 export const labelDateChanged = (
   name: string,
   field: 'From' | 'When' | 'Until',
-  day: Day | null
-): string =>
-  day === null
-    ? `Changed date: ${name}, no end`
-    : `Changed date: ${name}, ${field} ${formatMonthYear(day)}`;
+  day: Day
+): string => `Changed date: ${name}, ${field} ${formatMonthYear(day)}`;
 
 /** Money-in row added. */
 export const labelInflowAdded = (name: string): string => `Added money in: ${name}`;

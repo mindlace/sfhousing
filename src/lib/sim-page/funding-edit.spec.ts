@@ -7,7 +7,7 @@ import { dayOf } from '$lib/sim/scenario/dates';
 import type { Pool, Programme } from '$lib/timelapse/types';
 import { fundingPresets, nextFiscal } from './funding-presets';
 import { POOL_KIND_DEFAULTS } from './funding-sources';
-import { programmeSentence, scaleLines, type Baseline } from './funding-view';
+import { programmeSentence, scaleLines, windowLastMonth, type Baseline } from './funding-view';
 import type { SimPolicy } from './policy';
 import {
   BOND_POLICY,
@@ -56,6 +56,7 @@ import {
   setProgrammePoolEdit,
   setTermEdit,
   updatePoolDraft,
+  yearlyRow,
   type Draft,
   type FundingEdit,
   type Refused
@@ -113,7 +114,7 @@ describe('funding edits', () => {
         'pool:u-pool-1:in:1:amount'
       ],
       [
-        setInflowKindEdit(p, bond.id, 0, 'yearly'),
+        setInflowKindEdit(p, bond.id, 0, 'yearly', FUND_ASOF),
         'Changed: City bond, 2028, row 1, every year',
         undefined
       ],
@@ -237,10 +238,12 @@ describe('funding edits', () => {
       day: july(2028),
       dollars: 250_000_000
     });
-    expect(run(setInflowKindEdit(p, id, 0, 'yearly'), p).funding.pools[0].inflows[0]).toEqual({
+    expect(
+      run(setInflowKindEdit(p, id, 0, 'yearly', FUND_ASOF), p).funding.pools[0].inflows[0]
+    ).toEqual({
       kind: 'yearly',
       from: july(2028),
-      to: null,
+      to: windowLastMonth(FUND_ASOF),
       dollarsPerYear: 300_000_000
     });
     const kinded = run(setKindEdit(p, id, 'cop'), p).funding.pools[0];
@@ -302,7 +305,7 @@ describe('funding edits', () => {
     expect(completeDraft({ kind: 'pool', pool: draft }, p, baseline)).toBeNull();
 
     const filled = updatePoolDraft(draft, {
-      inflows: [{ kind: 'yearly', from: july(2027), to: null, dollarsPerYear: 60_000_000 }]
+      inflows: [yearlyRow(july(2027), 60_000_000, FUND_ASOF)]
     });
     const done = completeDraft({ kind: 'pool', pool: filled }, p, baseline)!;
     expect(done.label).toBe('Added: your own pool');
@@ -313,9 +316,22 @@ describe('funding edits', () => {
       id: 'u-pool-2',
       kind: 'generalRevenue',
       label: 'City general fund, 2027',
-      inflows: [{ kind: 'yearly', from: july(2027), to: null, dollarsPerYear: 60_000_000 }],
+      inflows: [
+        {
+          kind: 'yearly',
+          from: july(2027),
+          to: windowLastMonth(FUND_ASOF),
+          dollarsPerYear: 60_000_000
+        }
+      ],
       debt: null,
       leverage: 1
+    });
+    expect(yearlyRow(july(2027), 60_000_000, FUND_ASOF)).toEqual({
+      kind: 'yearly',
+      from: july(2027),
+      to: windowLastMonth(FUND_ASOF),
+      dollarsPerYear: 60_000_000
     });
     const fresh = run(done, policyWith({}));
     expect(fresh.funding.pools[0].id).toBe('u-pool-1');

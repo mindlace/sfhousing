@@ -15,6 +15,7 @@ import { coverageShortLine } from '$lib/timeline/money-copy';
 import { dayOf } from '$lib/sim/scenario/dates';
 import type { FinanceLevers } from '$lib/sim/levers/types';
 import {
+  dateRangeError,
   AMOUNT_ERROR,
   CUSTOM_LINE,
   DRAFT_LINE,
@@ -49,7 +50,8 @@ import {
   coverageSteps,
   programmePreview,
   programmeSentence,
-  windowEnd
+  windowEnd,
+  windowLastMonth
 } from './funding-view';
 import type { SimPolicy } from './policy';
 import type { PolicyStore } from './policy-store.svelte';
@@ -525,7 +527,7 @@ describe('FundingTab: adding money (4.6, 4.7)', () => {
     const pool = store.policy.funding.pools[0];
     expect(pool.id).toBe('u-pool-1');
     expect(pool.inflows).toEqual([
-      { kind: 'yearly', from: JULY, to: null, dollarsPerYear: 60_000_000 }
+      { kind: 'yearly', from: JULY, to: windowLastMonth(FUND_ASOF), dollarsPerYear: 60_000_000 }
     ]);
     expect(page.getByText(DRAFT_LINE).elements()).toHaveLength(0);
     const r = page.getByRole('button', { name: new RegExp(`^City general fund, ${YEAR} ·`) });
@@ -1209,5 +1211,113 @@ describe('FundingTab: programmes and market terms (4.8, 4.8a, 4.10)', () => {
     expect(document.body.textContent).toContain(
       'Interest rate: 6% From Bond interest rate and term'
     );
+  });
+});
+
+describe('FundingTab: every date ends within the window', () => {
+  afterEach(async () => {
+    await scheme('light');
+  });
+
+  const LAST = windowLastMonth(FUND_ASOF);
+  const lastYear = new Date(LAST * 86_400_000).getUTCFullYear();
+  const lastMonth = new Date(LAST * 86_400_000).getUTCMonth() + 1;
+  const dayYearly = (to: number | null): SimPolicy =>
+    policyWith({
+      pools: [
+        {
+          ...ownPoolOf('u-pool-1'),
+          inflows: [{ kind: 'yearly', from: JULY, to, dollarsPerYear: 60_000_000 }]
+        }
+      ]
+    });
+  const untilMonth = () => page.getByRole('combobox', { name: /^Month\s?, Until, row 1/ });
+  const untilYear = () => page.getByRole('spinbutton', { name: /^Year\s?, Until, row 1/ });
+  const openPool = async (p: SimPolicy) => {
+    const r = setup(p, { only: { tag: 'fund', pool: 'u-pool-1' } });
+    await expect.element(page.getByRole('textbox', { name: 'Name' })).toBeVisible();
+    return r;
+  };
+
+  it('a yearly row has no Ends checkbox; a stored row with no end shows the last month', async () => {
+    expect(lastMonth).toBeLessThan(12);
+    await openPool(dayYearly(null));
+    expect(page.getByRole('checkbox', { name: /^Ends/ }).elements()).toHaveLength(0);
+    await expect.element(untilMonth()).toHaveValue(String(lastMonth));
+    await expect.element(untilYear()).toHaveValue(lastYear);
+  });
+
+  it('an Until year after the last year commits nothing and shows the range error', async () => {
+    const { store } = await openPool(dayYearly(null));
+    const before = store.policy;
+    await untilYear().fill(String(lastYear + 1));
+    await userEvent.keyboard('{Enter}');
+    expect(store.policy).toBe(before);
+    await expect.element(untilYear()).toHaveAttribute('aria-invalid', 'true');
+    expect(errorOf(untilYear().element())!.textContent?.trim()).toBe(dateRangeError(FUND_ASOF));
+  });
+
+  it('the month after the last month commits nothing; the last month itself commits', async () => {
+    const { store } = await openPool(dayYearly(null));
+    const before = store.policy;
+    await untilMonth().selectOptions(String(lastMonth + 1));
+    expect(store.policy).toBe(before);
+    expect(errorOf(untilMonth().element())!.textContent?.trim()).toBe(dateRangeError(FUND_ASOF));
+    await untilMonth().selectOptions(String(lastMonth));
+    expect(store.policy.funding.pools[0].inflows[0]).toMatchObject({ to: LAST });
+    expect(store.undoLabel).toMatch(/^Changed date: .*, Until /);
+  });
+
+  it('a row switched to Every year ends in the last month', async () => {
+    const { store } = setup(BOND_POLICY, { only: { tag: 'fund', pool: 'u-pool-1' } });
+    await page.getByRole('radio', { name: /^Every year\s?, row 1/ }).click();
+    expect(store.policy.funding.pools[0].inflows[0]).toMatchObject({
+      kind: 'yearly',
+      to: LAST
+    });
+    await expect.element(untilYear()).toHaveValue(lastYear);
+  });
+
+  it("an own pool's completed yearly row is stored with the last month as its end", async () => {
+    const { store } = setup();
+    await addMoney().click();
+    await ownPool().click();
+    await amountInput().fill('60');
+    await userEvent.keyboard('{Enter}');
+    expect(store.policy.funding.pools[0].inflows[0]).toMatchObject({ to: LAST });
+  });
+
+  it("a programme's Until has no Ends checkbox and shows the last month for no end", async () => {
+    setup(BOND_POLICY);
+    await page.getByRole('button', { name: /^City bond, 2028 ·/ }).click();
+    (document.querySelector('[data-prog-row="u-prog-1"] button') as HTMLElement).click();
+    await expect
+      .element(page.getByRole('combobox', { name: /^Month\s?, Until/ }))
+      .toHaveValue(String(lastMonth));
+    await expect
+      .element(page.getByRole('spinbutton', { name: /^Year\s?, Until/ }))
+      .toHaveValue(lastYear);
+    expect(page.getByRole('checkbox', { name: /^Ends/ }).elements()).toHaveLength(0);
+  });
+
+  it("the group editor's dated change year allows up to the last month's year", async () => {
+    setup();
+    await row(/^City ·/).click();
+    await page.getByRole('button', { name: 'Change from a date', exact: true }).click();
+    await expect
+      .element(page.getByRole('spinbutton', { name: /^Year/ }))
+      .toHaveAttribute('max', String(lastYear));
+  });
+
+  it('the Until fields pass axe in light and dark', async () => {
+    await openPool(dayYearly(null));
+    await expect.element(untilYear()).toBeVisible();
+    const editor = document.querySelector('[data-funding-editor]')!;
+    expect(editor).not.toBeNull();
+    for (const s of ['light', 'dark'] as const) {
+      await scheme(s);
+      const res = await axe.run(editor, { runOnly: TAGS });
+      expect(res.violations.map((v) => v.id)).toEqual([]);
+    }
   });
 });

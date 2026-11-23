@@ -58,6 +58,7 @@
     setKindEdit,
     setLeverageEdit,
     updatePoolDraft,
+    yearlyRow,
     type FieldUnit,
     type FundingEdit,
     type Parsed,
@@ -66,7 +67,7 @@
   } from './funding-edit';
   import type { FundingPreset, PoolField } from './funding-presets';
   import { POOL_KIND_DEFAULTS } from './funding-sources';
-  import { fieldSource, poolPreview, programmeSentence } from './funding-view';
+  import { fieldSource, poolPreview, programmeSentence, windowLastMonth } from './funding-view';
   import type { SimPolicy } from './policy';
   import type { ProgrammeHost } from './ProgrammeEditor.svelte';
   import ProgrammeList from './ProgrammeList.svelte';
@@ -124,7 +125,7 @@
       new Date(Date.UTC(2000, i, 1))
     )
   );
-  const LAST_MONTH: Day = dayOf(2066, 12, 1);
+  const LAST_MONTH = $derived(windowLastMonth(asOf));
   const KINDS = Object.keys(KIND_NAME) as PoolKind[];
   const parseDebtRate = parsePercent(0, 25, true, DEBT_RATE_ERROR);
 
@@ -277,7 +278,7 @@
     const x = rows[k];
     if (x.kind === next) return;
     if (stored !== null) {
-      onedit(setInflowKindEdit(policy, id!, k, next, regen));
+      onedit(setInflowKindEdit(policy, id!, k, next, asOf, regen));
       return;
     }
     const day = rowDay(x);
@@ -287,7 +288,7 @@
         ? { kind: next, empty: true, day }
         : next === 'once'
           ? { kind: 'once', day, dollars: amount }
-          : { kind: 'yearly', from: day, to: null, dollarsPerYear: amount };
+          : yearlyRow(day, amount, asOf);
     draftWith({ inflows: withRow(k, row) }, `${next}-${k}`);
   }
 
@@ -302,7 +303,7 @@
       const row: Row = isEmpty(x)
         ? x.kind === 'once'
           ? { kind: 'once', day, dollars: v }
-          : { kind: 'yearly', from: day, to: null, dollarsPerYear: v }
+          : yearlyRow(day, v, asOf)
         : x.kind === 'once'
           ? { ...x, dollars: v }
           : { ...x, dollarsPerYear: v };
@@ -347,39 +348,23 @@
     draftWith({ inflows: withRow(k, row) }, field);
   }
 
-  function setUntil(k: number, to: Day | null, text: string, field: string): void {
+  function commitUntil(k: number, field: string): void {
     const x = rows[k];
     const was = rowTo(x);
     const key = `until-${k}`;
-    if (to !== null) {
-      if (!inRange(to)) {
-        fail(key, text, dateRangeError(asOf), was);
-        return;
-      }
-      if (to <= rowDay(x)) {
-        fail(key, text, UNTIL_ERROR, was);
-        return;
-      }
+    const { day: to, text } = readDate('until-', k);
+    if (!inRange(to)) {
+      fail(key, text, dateRangeError(asOf), was);
+      return;
+    }
+    if (to <= rowDay(x)) {
+      fail(key, text, UNTIL_ERROR, was);
+      return;
     }
     clear(key);
     if (to === was || isEmpty(x) || x.kind !== 'yearly') return;
     if (stored !== null) onedit(setInflowDateEdit(policy, id!, k, 'to', to));
     else draftWith({ inflows: withRow(k, { ...x, to }) }, field);
-  }
-
-  function commitEnds(k: number, on: boolean): void {
-    if (!on) {
-      setUntil(k, null, '', `ends-${k}`);
-      return;
-    }
-    const from = rowDay(rows[k]);
-    const to = Math.min(dayOf(utcYear(from) + 1, utcMonth(from), 1), LAST_MONTH);
-    setUntil(k, to, String(utcYear(to)), `ends-${k}`);
-  }
-
-  function commitUntil(k: number, field: string): void {
-    const { day, text } = readDate('until-', k);
-    setUntil(k, day, text, field);
   }
 
   async function focusField(key: string, fallback?: string): Promise<void> {
@@ -609,6 +594,7 @@
         {@const start = rowDay(x)}
         {@const startErr = errorOf(`date-${k}`, start)}
         {@const to = rowTo(x)}
+        {@const shownTo = to ?? LAST_MONTH}
         {@const untilErr = errorOf(`until-${k}`, to)}
         {@const legend = x.kind === 'once' ? 'When' : 'From'}
         <div class="flex flex-col gap-1.5 border-t border-line pt-2 dark:border-line-dark">
@@ -701,48 +687,35 @@
             <div class="flex flex-col gap-0.5">
               <fieldset class="flex flex-wrap items-center gap-2">
                 <legend class="font-semibold">Until</legend>
-                <label class="flex min-h-6 min-w-6 items-center gap-1.5">
-                  <input
-                    type="checkbox"
-                    class="size-5"
-                    data-field="ends-{k}"
-                    checked={to !== null}
+                <label class="flex items-center gap-1">
+                  <span>Month<span class="sr-only">, Until, row {n}</span></span>
+                  <select
+                    data-field="until-month-{k}"
+                    class={input}
+                    value={String(utcMonth(shownTo))}
+                    aria-invalid={untilErr ? 'true' : undefined}
                     aria-describedby="{uid}-until-{k}-err"
-                    onchange={(e) => commitEnds(k, e.currentTarget.checked)}
-                  />
-                  <span>Ends<span class="sr-only">, row {n}</span></span>
+                    onchange={() => commitUntil(k, `until-month-${k}`)}
+                  >
+                    {#each MONTHS as m, i (i)}
+                      <option value={String(i + 1)}>{m}</option>
+                    {/each}
+                  </select>
                 </label>
-                {#if to !== null}
-                  <label class="flex items-center gap-1">
-                    <span>Month<span class="sr-only">, Until, row {n}</span></span>
-                    <select
-                      data-field="until-month-{k}"
-                      class={input}
-                      value={String(utcMonth(to))}
-                      aria-invalid={untilErr ? 'true' : undefined}
-                      aria-describedby="{uid}-until-{k}-err"
-                      onchange={() => commitUntil(k, `until-month-${k}`)}
-                    >
-                      {#each MONTHS as m, i (i)}
-                        <option value={String(i + 1)}>{m}</option>
-                      {/each}
-                    </select>
-                  </label>
-                  <label class="flex items-center gap-1">
-                    <span>Year<span class="sr-only">, Until, row {n}</span></span>
-                    <input
-                      type="number"
-                      inputmode="numeric"
-                      step="1"
-                      data-field="until-year-{k}"
-                      class="{input} w-24"
-                      value={textOf(`until-${k}`, to, String(utcYear(to)))}
-                      aria-invalid={untilErr ? 'true' : undefined}
-                      aria-describedby="{uid}-until-{k}-err"
-                      {...typed(() => commitUntil(k, `until-year-${k}`))}
-                    />
-                  </label>
-                {/if}
+                <label class="flex items-center gap-1">
+                  <span>Year<span class="sr-only">, Until, row {n}</span></span>
+                  <input
+                    type="number"
+                    inputmode="numeric"
+                    step="1"
+                    data-field="until-year-{k}"
+                    class="{input} w-24"
+                    value={textOf(`until-${k}`, to, String(utcYear(shownTo)))}
+                    aria-invalid={untilErr ? 'true' : undefined}
+                    aria-describedby="{uid}-until-{k}-err"
+                    {...typed(() => commitUntil(k, `until-year-${k}`))}
+                  />
+                </label>
               </fieldset>
               {@render alertLine(`until-${k}`, untilErr)}
               {@render sourceLine(choiceLine(`inflows[${k}].to`))}

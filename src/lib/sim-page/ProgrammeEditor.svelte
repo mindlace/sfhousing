@@ -105,7 +105,13 @@
   } from './funding-edit';
   import type { ProgrammeField } from './funding-presets';
   import { POOL_KIND_DEFAULTS } from './funding-sources';
-  import { fieldSource, programmePreview, programmeSentence, tiersSource } from './funding-view';
+  import {
+    fieldSource,
+    programmePreview,
+    programmeSentence,
+    tiersSource,
+    windowLastMonth
+  } from './funding-view';
   import type { SimPolicy } from './policy';
   import SourceList from './SourceList.svelte';
 
@@ -166,7 +172,9 @@
       new Date(Date.UTC(2000, i, 1))
     )
   );
-  const LAST_MONTH: Day = dayOf(2066, 12, 1);
+  const LAST_MONTH = $derived(windowLastMonth(asOf));
+  /** The month Until shows: a programme with no end ends with the window. */
+  const shownTo = $derived(prog.to ?? LAST_MONTH);
   const utcYear = (d: Day): number => new Date(d * 86_400_000).getUTCFullYear();
   const utcMonth = (d: Day): number => new Date(d * 86_400_000).getUTCMonth() + 1;
 
@@ -421,27 +429,16 @@
   }
 
   function setUntil(to: Day | null, text: string, field: string): void {
-    if (to !== null) {
-      if (!inRange(to)) {
-        fail('to', text, dateRangeError(asOf), prog.to);
-        return;
-      }
-      if (to <= prog.from) {
-        fail('to', text, UNTIL_ERROR, prog.to);
-        return;
-      }
+    if (!inRange(to)) {
+      fail('to', text, dateRangeError(asOf), prog.to);
+      return;
+    }
+    if (to <= prog.from) {
+      fail('to', text, UNTIL_ERROR, prog.to);
+      return;
     }
     clear('to');
     if (to !== prog.to) apply({ to }, 'to', field);
-  }
-
-  function commitEnds(on: boolean): void {
-    if (!on) {
-      setUntil(null, '', 'prog-ends');
-      return;
-    }
-    const to = Math.min(dayOf(utcYear(prog.from) + 1, utcMonth(prog.from), 1), LAST_MONTH);
-    setUntil(to, String(utcYear(to)), 'prog-ends');
   }
 
   function commitMinHomes(text: string): void {
@@ -771,55 +768,41 @@
       <div class="flex flex-col gap-0.5">
         <fieldset class="flex flex-wrap items-center gap-2">
           <legend class="font-semibold">Until</legend>
-          <label class={radioLabel}>
-            <input
-              type="checkbox"
-              class="size-5"
-              data-field="prog-ends"
-              checked={prog.to !== null}
+          <label class="flex items-center gap-1">
+            <span>Month<span class="sr-only">, Until</span></span>
+            <select
+              data-field="prog-to-month"
+              class={input}
+              value={String(utcMonth(shownTo))}
+              aria-invalid={toErr ? 'true' : undefined}
               aria-describedby="{uid}-to-err"
-              onchange={(e) => commitEnds(e.currentTarget.checked)}
-            />
-            Ends
+              onchange={() => {
+                const r = readDate('to');
+                setUntil(r.day, r.text, 'prog-to-month');
+              }}
+            >
+              {#each MONTHS as m, i (i)}
+                <option value={String(i + 1)}>{m}</option>
+              {/each}
+            </select>
           </label>
-          {#if prog.to !== null}
-            {@const to = prog.to}
-            <label class="flex items-center gap-1">
-              <span>Month<span class="sr-only">, Until</span></span>
-              <select
-                data-field="prog-to-month"
-                class={input}
-                value={String(utcMonth(to))}
-                aria-invalid={toErr ? 'true' : undefined}
-                aria-describedby="{uid}-to-err"
-                onchange={() => {
-                  const r = readDate('to');
-                  setUntil(r.day, r.text, 'prog-to-month');
-                }}
-              >
-                {#each MONTHS as m, i (i)}
-                  <option value={String(i + 1)}>{m}</option>
-                {/each}
-              </select>
-            </label>
-            <label class="flex items-center gap-1">
-              <span>Year<span class="sr-only">, Until</span></span>
-              <input
-                type="number"
-                inputmode="numeric"
-                step="1"
-                data-field="prog-to-year"
-                class="{input} w-24"
-                value={textOf('to', to, String(utcYear(to)))}
-                aria-invalid={toErr ? 'true' : undefined}
-                aria-describedby="{uid}-to-err"
-                {...typed(() => {
-                  const r = readDate('to');
-                  setUntil(r.day, r.text, 'prog-to-year');
-                })}
-              />
-            </label>
-          {/if}
+          <label class="flex items-center gap-1">
+            <span>Year<span class="sr-only">, Until</span></span>
+            <input
+              type="number"
+              inputmode="numeric"
+              step="1"
+              data-field="prog-to-year"
+              class="{input} w-24"
+              value={textOf('to', prog.to, String(utcYear(shownTo)))}
+              aria-invalid={toErr ? 'true' : undefined}
+              aria-describedby="{uid}-to-err"
+              {...typed(() => {
+                const r = readDate('to');
+                setUntil(r.day, r.text, 'prog-to-year');
+              })}
+            />
+          </label>
         </fieldset>
         {@render alertLine('to', toErr)}
         {@render sourceLine(lineFor('to'))}

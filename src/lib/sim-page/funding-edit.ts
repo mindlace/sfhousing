@@ -11,6 +11,7 @@ import { LeverFormatError, type FinanceLevers } from '$lib/sim/levers/types';
 import {
   INCOME_TIERS,
   type Day,
+  type Dollars,
   type IncomeTier,
   type Inflow,
   type Instrument,
@@ -60,6 +61,7 @@ import {
   groupOf,
   poolsOf,
   programmeSentence,
+  windowLastMonth,
   type Baseline,
   type GroupId,
   type ScaleLine
@@ -410,15 +412,26 @@ export function setInflowAmountEdit(
   };
 }
 
+/** A yearly row from `from` to the window's last month: the one rule for every new yearly row. */
+export function yearlyRow(
+  from: Day,
+  dollarsPerYear: Dollars,
+  asOf: Day
+): Extract<Inflow, { kind: 'yearly' }> {
+  return { kind: 'yearly', from, to: windowLastMonth(asOf), dollarsPerYear };
+}
+
 /**
- * Turns row `k` (from 0) into a single payment or a yearly one, keeping its date and amount.
- * `regenName` regenerates the name from the first inflow's year (4.9).
+ * Turns row `k` (from 0) into a single payment or a yearly one, keeping its date and amount; a
+ * yearly row ends in the window's last month. `regenName` regenerates the name from the first
+ * inflow's year (4.9).
  */
 export function setInflowKindEdit(
   p: SimPolicy,
   id: string,
   k: number,
   kind: 'once' | 'yearly',
+  asOf: Day,
   regenName = false
 ): FundingEdit {
   return {
@@ -431,7 +444,7 @@ export function setInflowKindEdit(
           (x): Inflow => {
             if (x.kind === kind) return x;
             return x.kind === 'once'
-              ? { kind: 'yearly', from: x.day, to: null, dollarsPerYear: x.dollars }
+              ? yearlyRow(x.day, x.dollars, asOf)
               : { kind: 'once', day: x.from, dollars: x.dollarsPerYear };
           },
           regenName
@@ -444,22 +457,21 @@ export function setInflowKindEdit(
 const DATE_FIELD = { day: 'When', from: 'From', to: 'Until' } as const;
 
 /**
- * Sets row `k`'s (from 0) date: `day` of a single payment, `from` or `to` (null: no end) of a
- * yearly one. `regenName` regenerates the name from the first inflow's year (4.9).
+ * Sets row `k`'s (from 0) date: `day` of a single payment, `from` or `to` of a yearly one.
+ * `regenName` regenerates the name from the first inflow's year (4.9).
  */
 export function setInflowDateEdit(
   p: SimPolicy,
   id: string,
   k: number,
   field: 'from' | 'to' | 'day',
-  day: Day | null,
+  day: Day,
   regenName = false
 ): FundingEdit {
   const set = (x: Inflow): Inflow | null => {
-    if (field === 'day') return x.kind === 'once' && day !== null ? { ...x, day } : null;
+    if (field === 'day') return x.kind === 'once' ? { ...x, day } : null;
     if (x.kind !== 'yearly') return null;
-    if (field === 'from') return day === null ? null : { ...x, from: day };
-    return { ...x, to: day };
+    return field === 'from' ? { ...x, from: day } : { ...x, to: day };
   };
   const cur = p.funding.pools.find((x) => x.id === id);
   let name = poolName(p, id);
@@ -628,7 +640,8 @@ export function setProgrammeEdit(
   if (field === 'reach' || field === 'instrument.kind')
     return { change, label: labelProgrammeKindChanged(s) };
   if (field === 'from' || field === 'to') {
-    const day = field === 'from' ? (patch.from ?? null) : (patch.to ?? null);
+    // The editors patch a date only with a Day; `Programme.to` stays nullable for a new one.
+    const day = (field === 'from' ? patch.from : patch.to) as Day;
     return {
       change,
       label: labelDateChanged(s, field === 'from' ? 'From' : 'Until', day),
