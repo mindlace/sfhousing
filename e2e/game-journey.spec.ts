@@ -76,6 +76,7 @@ const escape = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 test('a new visitor wins Paint and level 2, levels up to 3, and the account holds the game', async ({
   page,
+  context,
   isMobile
 }) => {
   // 1. A new visitor whose goal any stroke reaches, on Paint.
@@ -161,21 +162,23 @@ test('a new visitor wins Paint and level 2, levels up to 3, and the account hold
     })
     .toEqual({ status: 200, levels: [3] });
 
-  // 10. A reload keeps level 3 and the bar. Paint's goal amount is re-seeded on every load: the
-  // later init script writes /sim's, and the stored value shows it did.
-  await seedGoalAmount(page, SIM_AMOUNT);
-  await page.reload();
-  await expect(page.locator('html')).toHaveAttribute('data-hydrated', '');
-  expect(await page.evaluate((k) => localStorage.getItem(k), E2E_GOAL_KEY)).toBe(
+  // 10. "Reload /sim", read as a fresh load of /sim in the same context: the page's init script
+  // from step 1 would write Paint's goal amount again on a reload, and a fresh page has none. The
+  // context's storage and cookies are the game's and the account's, as on a reload.
+  await page.close();
+  const again = await context.newPage();
+  await again.emulateMedia({ reducedMotion: 'reduce' });
+  await gotoHydrated(again, '/sim');
+  expect(await again.evaluate((k) => localStorage.getItem(k), E2E_GOAL_KEY)).toBe(
     String(SIM_AMOUNT)
   );
-  await simReady(page);
-  await expect(levelCell(page)).toHaveText('Level 3');
-  await expect(page.getByTestId('tl-bar-flag')).toHaveText(/To beat/);
+  await simReady(again);
+  await expect(levelCell(again)).toHaveText('Level 3');
+  await expect(again.getByTestId('tl-bar-flag')).toHaveText(/To beat/);
 
   // 11. No axe violations at level 3 with the card closed.
-  await expect(simWin(page)).toHaveCount(0);
-  await expectNoA11yViolations(page);
+  await expect(simWin(again)).toHaveCount(0);
+  await expectNoA11yViolations(again);
 });
 
 test('a given measure added at a later month has its money dated from that month', async ({
@@ -226,7 +229,7 @@ test('a given measure added at a later month has its money dated from that month
 
   // The bar on the Public money row is named with the label and the start date.
   await expect(
-    timeline(page).getByRole('button', {
+    page.getByTestId('tl-kind-money').getByRole('button', {
       name: new RegExp(`, ${escape(BOND)}, ${escape(edgeText(start))} to `)
     })
   ).not.toHaveCount(0);
