@@ -628,6 +628,7 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - fork review-game-core-5e7fb04d started 2026-11-22T23:35
 - fork review-game-core-5e7fb04d exited [0]: output
 - fork review-game-shell-7bd6f1cb started 2026-11-22T23:55
+- fork review-game-shell-7bd6f1cb exited [0]: output
 
 ## Frame-defect tally
 - owner-ruling-drift: 2 — instances: conductor-1 (gate-1, 2026-11-22); conductor-8 (gate-7, 2026-11-22)
@@ -710,6 +711,7 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - No drift @ 5e7fb04d (review-game-core-5e7fb04d)
 - 23:50 merge of game-shell complete @ 7bd6f1cb made onto 9104d2e1 (merge commit 47ee98ae), suite running (agent; scratchpad `merge-game-shell/`); not merged until it passes; on failure reset to 9104d2e1 with ledger.md copied out and back. For closing, from its report (outside game-shell's write set): docs/dev/plan-sharing.md:132,134,201 and docs/dev/ui-parts.md:24,46 still describe "Start your own", the Remix confirm and the history-state hand-off; src/app.d.ts App.PageState.sfhRemix unused and sfhSimRemix never written; src/lib/sharing/remix.ts and remixConfirm may have only test callers.
 - merged game-shell @ 7bd6f1cb into superconductor/incremental-game (complete), tests pass (check 0 errors; lint 0 errors; unit 9024 passed; pipeline 2266 passed; e2e 762 passed, 0 failed, 0 flaky), band low
+- No drift @ 7bd6f1cb (review-game-shell-7bd6f1cb; asked to check the rewritten Task 4 against § sec-design-paint)
 
 ## Cost
 - remove-lesscars: admitted 2026-11-22T16:31 seven_day 44% | session d889ec5c-3342-4a77-99f8-993f1115a679 | finished 2026-11-22T21:14 seven_day 60%
