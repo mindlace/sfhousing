@@ -219,6 +219,7 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - game-core: incremental-game-game-core — status: admitted (admit message sent at a333bd83; branch incremental-game-game-core, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-game-core, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus, needs: G1–G5, S2, S3, X1 (merged), produces: G1–G5 (built))
 - game-save: incremental-game-game-save — status: admitted (admit message sent 22:15 at bc3d9bc0; branch incremental-game-game-save, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-game-save, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus, needs: I1, G2 built, S1–S3, X1 (all merged), produces: S1, S2, S3 (built))
 - game-core: incremental-game-game-core — status: complete (admit message sent at a333bd83; branch incremental-game-game-core, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-game-core, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus, needs: G1–G5, S2, S3, X1 (merged), produces: G1–G5 (built))
+- game-shell: incremental-game-game-shell — status: complete (relaunched 23:30 as admitted from its plan, tasks 1 to 6 and 8; branch incremental-game-game-shell brought up to f435a2da, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-game-shell, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus, needs: G1–G5 built, X1, L1 (all merged), produces: none)
 
 ## Supervision
 - status asked remove-lesscars
@@ -626,6 +627,7 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - fork checkpoint-13 exited [0]: output
 - fork review-game-core-5e7fb04d started 2026-11-22T23:35
 - fork review-game-core-5e7fb04d exited [0]: output
+- fork review-game-shell-7bd6f1cb started 2026-11-22T23:55
 
 ## Frame-defect tally
 - owner-ruling-drift: 2 — instances: conductor-1 (gate-1, 2026-11-22); conductor-8 (gate-7, 2026-11-22)
@@ -706,6 +708,8 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - finite-funding row F1 @ 40c419e5 reported (its own full suite green there): held to merge with F2, since F1 alone admits no unit (reach-check needs F1, F2 and F3). Its handback (first-year dollars by source, the impact-fee block) is copied to `assignments/finite-funding.f1-handback.md` for reach-check's assignment.
 - merged game-core @ 5e7fb04d into superconductor/incremental-game (complete; Task 14, ruling conductor-13: adopt runs the beforeLeave flushes and answers `changed`), tests pass (check 0 errors; lint 0 errors; unit 8965 passed; pipeline 2266 passed; e2e 752 passed, 0 failed, 0 flaky), band low
 - No drift @ 5e7fb04d (review-game-core-5e7fb04d)
+- 23:50 merge of game-shell complete @ 7bd6f1cb made onto 9104d2e1 (merge commit 47ee98ae), suite running (agent; scratchpad `merge-game-shell/`); not merged until it passes; on failure reset to 9104d2e1 with ledger.md copied out and back. For closing, from its report (outside game-shell's write set): docs/dev/plan-sharing.md:132,134,201 and docs/dev/ui-parts.md:24,46 still describe "Start your own", the Remix confirm and the history-state hand-off; src/app.d.ts App.PageState.sfhRemix unused and sfhSimRemix never written; src/lib/sharing/remix.ts and remixConfirm may have only test callers.
+- merged game-shell @ 7bd6f1cb into superconductor/incremental-game (complete), tests pass (check 0 errors; lint 0 errors; unit 9024 passed; pipeline 2266 passed; e2e 762 passed, 0 failed, 0 flaky), band low
 
 ## Cost
 - remove-lesscars: admitted 2026-11-22T16:31 seven_day 44% | session d889ec5c-3342-4a77-99f8-993f1115a679 | finished 2026-11-22T21:14 seven_day 60%
@@ -715,7 +719,7 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - game-core: admitted 2026-11-22T16:52 seven_day 46% | session 06c0c65b-cf92-457a-a525-9c4374e4a0b3 | finished 2026-11-22T21:14 seven_day 60%
 - finite-funding: admitted 2026-11-22T16:53 seven_day 46% | session 7949d97c-2f16-4c76-b641-a1b2d697d55f
 - game-save: admitted 2026-11-22T16:53 seven_day 46% | session 62b87f0c-3aa2-4671-b8da-e0ac391e2ac6 | finished 2026-11-22T22:49 seven_day 64%
-- game-shell: admitted 2026-11-22T16:54 seven_day 46% | session d156765a-2f62-4dbb-8145-6b1ae8d620d8
+- game-shell: admitted 2026-11-22T16:54 seven_day 46% | session d156765a-2f62-4dbb-8145-6b1ae8d620d8 | finished 2026-11-22T23:55 seven_day 65%
 - game-sim: admitted 2026-11-22T16:54 seven_day 46% | session 1f8bf796-225b-48c5-9f3e-c7e5bde5214b
 - funding-measures: admitted 2026-11-22T16:55 seven_day 46% | session a331388a-a2ba-4e3e-b829-db463a3b8c39
 - pool-closing: admitted 2026-11-22T16:55 seven_day 46% | session 03f449ba-0085-4e9d-9fd4-d178230a1c89
