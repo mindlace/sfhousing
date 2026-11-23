@@ -22,7 +22,7 @@
     if (e2eOpen(storage)) return openGame();
     const sync = createSaveSync({
       storage,
-      fetchFn: fetch,
+      fetchFn: (input, init) => fetch(input, init),
       signedIn: () => page.data.user != null
     });
     const store = new GameStore({ storage, sync });
