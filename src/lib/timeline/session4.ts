@@ -123,15 +123,14 @@ function planText(storage: Storage, key: string): string | null {
 }
 
 /**
- * Autosave or Remix restore: migrate v1 → v2 (R-3), restore, then the notices in today's order:
+ * Autosave restore: migrate v1 → v2 (R-3), restore, then the notices in today's order:
  * the autosave's, funding (from the report), timing, moved dates, 'upgraded' when the document
- * was schema 2 or 3, then the Remix toast.
+ * was schema 2 or 3.
  */
 export function restoreSim4(
   storage: Storage | null,
   autosave: Autosave<SimDoc4>,
-  ds: OpenDataset,
-  remix?: { from: string; doc?: string; upgradedFrom?: number }
+  ds: OpenDataset
 ): { doc: SimDoc4; notices: SimNotice4[] } {
   // The text the restore will load from storage: the v2 record's, or the v1 one it migrates.
   let stored: string | null = null;
@@ -151,22 +150,19 @@ export function restoreSim4(
       else if (m === 'none') lost = had;
     }
   }
-  const handoffText = remix?.doc ?? unmigrated;
+  const handoffText = unmigrated;
   const r = autosave.restore(handoffText);
   const handoff = handoffText !== undefined ? openSimDoc4(handoffText, ds) : null;
   const fresh = r.notice?.kind === 'corrupt' || r.notice?.kind === 'future';
   const opened =
     handoff?.ok === true ? handoff : !fresh && stored !== null ? openSimDoc4(stored, ds) : null;
   const report = opened?.ok ? opened.value.report : null;
-  const upgradedFrom =
-    (opened?.ok ? opened.value.upgradedFrom : undefined) ?? r.upgradedFrom ?? remix?.upgradedFrom;
+  const upgradedFrom = (opened?.ok ? opened.value.upgradedFrom : undefined) ?? r.upgradedFrom;
 
   const notices: SimNotice4[] = [];
   const first = autosaveNotice(r.notice ?? (lost ? { kind: 'corrupt' } : null));
   if (first) notices.push(first);
   notices.push(...reportNotices(report, upgradedFrom, r.plan.policy, ds));
-  if (remix !== undefined)
-    notices.push({ id: 'remix', text: SIM.remixedToast(remix.from), tone: 'toast' });
   return { doc: r.plan, notices };
 }
 

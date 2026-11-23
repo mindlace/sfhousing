@@ -23,8 +23,6 @@
     initialText?: string;
     /** View: the shared document, already opened by the route's load (with the calibration). */
     opened?: { doc: SimDoc4; notices: SimNotice4[] } | null;
-    /** Edit: the Remix hand-off from /s/<id>. */
-    remix?: { from: string; doc?: string; upgradedFrom?: number };
     /** View: the schema the shared document was upgraded from. */
     upgradedFrom?: number;
   }
@@ -35,7 +33,6 @@
     persist,
     initialText = undefined,
     opened = undefined,
-    remix = undefined,
     upgradedFrom = undefined
   }: Props = $props();
 
@@ -65,7 +62,6 @@
       {persist}
       {initialText}
       opened={opened ?? undefined}
-      {remix}
       {upgradedFrom}
       reload={() => reloadScenario(data.datasetVersion)}
     />

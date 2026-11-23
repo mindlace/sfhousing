@@ -10,7 +10,7 @@
   Opening (rule 40, R-3): with the calibration known, in the browser, the document opens before
   TimelineMode mounts, so its first `policy` is the opened one; with no calibration it opens on
   `oncalibration`, after a Retry's reload. Edit: the v1 autosave migrates to `sfhousing:sim:v2`,
-  then the autosave (or a Remix hand-off) is restored through the schema 4 codec, with today's
+  then the autosave is restored through the schema 4 codec, with today's
   notices. View (`/s/<id>`): the document the route's load opened, else (no calibration then) the
   shared text, opened here after a Retry; one that won't open is an alert notice.
   The map (rule 19): with Paint or Erase a stroke goes into the selected painted policy's selected
@@ -25,7 +25,6 @@
 <script lang="ts">
   import { onMount, tick, untrack, type Snippet } from 'svelte';
   import { MediaQuery } from 'svelte/reactivity';
-  import { replaceState } from '$app/navigation';
   import { BrushController, type ControllerMap } from '$lib/brush/BrushController.svelte';
   import { ANNOUNCE_MS } from '$lib/brush/messages';
   import type { OverlayCtors } from '$lib/brush/overlay';
@@ -117,8 +116,6 @@
     initialText?: string;
     /** View: the shared document as the route's load opened it (wins over `initialText`). */
     opened?: { doc: SimDoc4; notices: SimNotice4[] };
-    /** The Remix hand-off from /s/<id> (`history.state.sfhSimRemix`). */
-    remix?: { from: string; doc?: string; upgradedFrom?: number };
     /** View: the schema the shared document was upgraded from (`/s/<id>`). */
     upgradedFrom?: number;
     /** Tests: the autosave's and the view prefs' storage (default `localStorage`). */
@@ -142,7 +139,6 @@
     persist = undefined,
     initialText = undefined,
     opened: openedByRoute = undefined,
-    remix = undefined,
     upgradedFrom = undefined,
     storage = getStorage,
     fetchFn = undefined,
@@ -221,22 +217,12 @@
   let synced: SimPolicy4 | null = null;
   let mounted = false;
   let detach: (() => void) | null = null;
-  /** The Remix hand-off is cleared from history once the router is up (onMount). */
-  let clearHandoff = false;
 
   function load(p: SimPolicy4): void {
     store.reset(p);
     synced = p;
     // A load, not a change: no debounce (`PolicySync.open`).
     sync.open(p);
-  }
-
-  function dropHandoff(): void {
-    try {
-      replaceState('', {}); // no re-toast on reload, as on /
-    } catch (e) {
-      console.error('[sim] could not clear the remix hand-off', e);
-    }
   }
 
   /** Opens the document once the calibration is known (rule 40, R-3). */
@@ -273,15 +259,11 @@
       // Ruling R4: an over-limit document would load back as corrupt, so it is never written.
       writable: (x) => simDoc4Problems(x).length === 0
     });
-    const r = restoreSim4(storage(), a, d, remix);
+    const r = restoreSim4(storage(), a, d);
     autosave = a;
     notices = r.notices;
     title = r.doc.title;
     load(r.doc.policy);
-    if (remix) {
-      if (mounted) dropHandoff();
-      else clearHandoff = true;
-    }
     saving = true;
     if (mounted) detach = a.attach();
   }
@@ -1021,10 +1003,6 @@
 
   onMount(() => {
     mounted = true;
-    if (clearHandoff) {
-      clearHandoff = false;
-      dropHandoff();
-    }
     if (autosave) detach = autosave.attach();
     import('@deck.gl/layers').then(
       (mod) => {
