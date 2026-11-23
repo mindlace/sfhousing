@@ -490,7 +490,7 @@ export function e2eGoalAmount(storage: Storage | null): number | null;</code></p
   <section id="sec-open-questions">
     <h2>Open questions</h2>
     <ol>
-      <li><strong>A component test outside the write set goes red.</strong> <code>src/routes/s/[id]/page.view.svelte.spec.ts:215-230</code> mounts <code>/sim</code> after Remix and asserts the Remix toast (<code>:229</code>), which Task 6 removes as the spec requires (spec <code>#sec-design-other</code>, <code>#sec-write-set-files</code>). The spec's <code>#sec-tests-existing</code> names only the e2e remix tests as red between merges. The file is <code>game-shell</code>'s (<code>src/routes/s/[id]/**</code>). Recommendation: accept it red between the two merges, as for the e2e remix tests, and tell <code>game-shell</code>'s operator; do not edit it here.</li>
+      <li><strong>One component case in <code>game-shell</code>'s file.</strong> The case "after Remix, /sim shows the remixed document over the earlier v2 autosave" (<code>src/routes/s/[id]/page.view.svelte.spec.ts:215-230</code>) asserts the hand-off Task 6 removes. Per spec <code>#sec-write-set-files</code> and <code>#sec-tests-existing</code>, Task 6 deletes that one case in the same change; nothing else in the file changes.</li>
       <li><strong><code>src/app.d.ts:30</code> keeps the <code>sfhSimRemix</code> page-state type.</strong> Nothing on <code>/sim</code> reads it after Task 6; <code>/s/&lt;id&gt;</code> still writes it until <code>game-shell</code>. Recommendation: leave it for <code>closing</code> (its write set holds "types nothing uses").</li>
       <li><strong><code>seedPlanRow</code>'s route may not survive <code>remove-multiuser</code>.</strong> <code>POST /api/e2e/plans</code> sits under <code>src/routes/api/e2e/**</code>, which <code>remove-multiuser</code> writes. Recommendation (taken in Task 9): seed the published policies by publishing through the page in a second browser context, so this unit needs no e2e-only route.</li>
     </ol>
@@ -762,7 +762,7 @@ npx chreode timing-check --head HEAD</code></pre>
     <h2>Task 6: No Remix hand-off on /sim</h2>
     <ul>
       <li>Modify: <code>src/lib/timeline/session4.ts:125-171</code>; <code>src/lib/sim-page/SimPage.svelte:120-121</code>, <code>:145</code>, <code>:224-240</code>, <code>:276-284</code>, <code>:1024-1027</code> (the <code>remix</code> prop, <code>clearHandoff</code>, <code>dropHandoff</code>, the <code>replaceState</code> import); <code>src/lib/sim-page/SimRoute.svelte:26-27</code>, <code>:38</code>, <code>:68</code>; <code>src/routes/sim/+page.svelte:4</code>, <code>:14</code></li>
-      <li>Test: <code>src/lib/timeline/session4.spec.ts</code> (project <code>server</code>), <code>src/lib/sim-page/SimPage.svelte.spec.ts</code> (project <code>client</code>)</li>
+      <li>Test: <code>src/lib/timeline/session4.spec.ts</code> (project <code>server</code>), <code>src/lib/sim-page/SimPage.svelte.spec.ts</code> (project <code>client</code>), <code>src/routes/s/[id]/page.view.svelte.spec.ts</code> (project <code>client</code>; one case deleted)</li>
     </ul>
     <p><strong>Interfaces</strong></p>
     <ul>
@@ -774,6 +774,7 @@ npx chreode timing-check --head HEAD</code></pre>
           <li><code>session4.spec.ts:91-126</code>: rename "notices in order: autosave, funding, timing, moved dates"; call <code>restoreSim4(mem, autosaveOf(mem), ds)</code>; expect <code>['rebased', 'funding-dropped', 'timing', 'dates-moved']</code>; drop the 'upgraded' and Remix assertions (the 'upgraded' notice stays covered at <code>:128-144</code>).</li>
           <li><code>session4.spec.ts:162-174</code>: delete "a Remix document rides along"; add "takes no hand-off: no notice is a remix" asserting a clean v2 record's notices contain no <code>id === 'remix'</code>.</li>
           <li><code>SimPage.svelte.spec.ts:1707-</code>: delete "a remix hand-off loads the document, toasts once and clears the history state".</li>
+          <li><code>src/routes/s/[id]/page.view.svelte.spec.ts:215-230</code>: delete the case "after Remix, /sim shows the remixed document over the earlier v2 autosave"; nothing else in that file changes (the rest is <code>game-shell</code>'s).</li>
         </ul>
       </li>
       <li id="t6-s2"><input type="checkbox"> Run them and see the type check or the new test fail.
@@ -781,10 +782,10 @@ npx chreode timing-check --head HEAD</code></pre>
       </li>
       <li id="t6-s3"><input type="checkbox"> Remove the hand-off: <code>restoreSim4</code> loses its fourth parameter, the Remix toast and <code>remix?.upgradedFrom</code> (<code>handoffText = unmigrated</code>); <code>SimPage</code> loses <code>remix</code>, <code>clearHandoff</code>, <code>dropHandoff</code> and its unused <code>replaceState</code> import; <code>SimRoute</code> loses <code>remix</code>; <code>/sim</code>'s route renders <code>&lt;SimRoute {data} mode="edit" persist="restore" /&gt;</code> and drops <code>$app/state</code>. Update the comment at <code>SimPage.svelte:12-13</code>.</li>
       <li id="t6-s4"><input type="checkbox"> Run the tests and see them pass, plus <code>SimPage.svelte.spec.ts</code> and <code>src/routes/sim</code>; then <code>npm run check</code>, <code>npm run lint</code>.
-        <pre><code data-lang="sh">npx vitest run --project client src/lib/sim-page/SimPage.svelte.spec.ts src/routes/sim</code></pre>
+        <pre><code data-lang="sh">npx vitest run --project client src/lib/sim-page/SimPage.svelte.spec.ts src/routes/sim src/routes/s/[id]/page.view.svelte.spec.ts</code></pre>
       </li>
       <li id="t6-s5"><input type="checkbox"> Commit, then run the timing check.
-        <pre><code data-lang="sh">git add src/lib/timeline/session4.ts src/lib/timeline/session4.spec.ts src/lib/sim-page/SimPage.svelte src/lib/sim-page/SimPage.svelte.spec.ts src/lib/sim-page/SimRoute.svelte src/routes/sim/+page.svelte
+        <pre><code data-lang="sh">git add src/lib/timeline/session4.ts src/lib/timeline/session4.spec.ts src/lib/sim-page/SimPage.svelte src/lib/sim-page/SimPage.svelte.spec.ts src/lib/sim-page/SimRoute.svelte src/routes/sim/+page.svelte src/routes/s/[id]/page.view.svelte.spec.ts
 git commit -m "refactor(sim): drop the Remix hand-off from /sim"
 npx chreode timing-check --head HEAD</code></pre>
       </li>
