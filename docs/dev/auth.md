@@ -7,7 +7,7 @@ Sign-in and accounts. Better-Auth owns sessions and credentials; the app owns id
 Nine tables, all in D1 (`src/lib/server/db/schema/`):
 
 - `principal`: the supertype of every identity; `user_identity.id` references it (`kind` `'identity'`).
-- `user_identity`: the stable id the app keys off. `superseded_by_id` and `superseded_at` form the survivor graph used when two accounts fuse; `deleted_at` marks a deleted account. The row is never removed by a deletion.
+- `user_identity`: the stable id the app keys off. `superseded_by_id` and `superseded_at` form the survivor graph used when two accounts fuse; `deleted_at` marks a deleted account. A deletion keeps the row and sets `deleted_at`.
 - `user`: Better-Auth's live row, one per identity (`name`, `email`, `handle`, `image`, `is_anonymous`).
 - `session`, `account`, `passkey`: Better-Auth's sessions, credentials (Google, password hash) and passkeys, keyed by the live `user.id`.
 - `verification`: Better-Auth's one-time tokens (sign-in links, email confirmation, password reset).
@@ -45,7 +45,7 @@ A pseudonymous account is Better-Auth's `anonymous()` plugin with the email doma
 5. Delete the live user's `session`, `account` and `passkey` rows.
 6. Set `user_identity.deleted_at`, last.
 
-The steps are not one transaction; each is idempotent, and a completed deletion is a no-op. `resolveSessionUser` returns null for a deleted identity, so a lingering session does not authenticate.
+Each step commits on its own and is idempotent, and a completed deletion is a no-op. `resolveSessionUser` returns null for a deleted identity, so a lingering session does not authenticate.
 
 ## Sign-in methods
 
@@ -53,7 +53,7 @@ One var, `AUTH_METHODS`, switches the methods: a comma list of `magic-link`, `pa
 
 Magic link is in effect only while mail can be delivered: it switches on when `SES_ACCESS_KEY_ID` and `SES_SECRET_ACCESS_KEY`, or `EMAIL_PROVIDER=resend` and `RESEND_API_KEY`, are set. `enabledAuthMethods` drops it otherwise, through `mailCanBeDelivered` in `src/lib/server/email/provider.ts`, the same condition `sendEmail` uses to choose a provider over log mode. An e2e build keeps it, because its mail sink stands in for a provider. A local `npm run dev` or `npm run preview` without a provider has no magic link.
 
-With no sign-in method in effect, the header shows no `Sign in` for a signed-out visitor (the root layout's `signInAvailable`), `/signin` renders its heading and no form, and every path that would send a magic link or a verification mail answers 404 (below). Account deletion keeps working.
+With no sign-in method in effect, the header shows no `Sign in` for a signed-out visitor (the root layout's `signInAvailable`), `/signin` renders its heading and no form, `/account` renders no control that sends mail (add, confirm or change an address), and every path that would send a magic link or a verification mail answers 404 (below). Account deletion keeps working.
 
 Staging and production run with `AUTH_METHODS=magic-link` (in `wrangler.jsonc`): the email magic link only, once a mail provider is configured.
 
@@ -71,7 +71,7 @@ To turn a method on for local dev, put `AUTH_METHODS=magic-link,password` in `.d
 
 ## Session gate
 
-`src/hooks.server.ts` constructs Better-Auth and reads the database only when a session cookie is present or the route needs one (`shouldResolveSession` in `src/lib/server/auth/session-gate.ts`). The routes that need one are the seven `SESSION_ROUTE_PREFIXES` there: `/api/auth`, `/account`, `/api/account`, `/signin`, `/forgot-password`, `/reset-password` and `/api/e2e`. A signed-out visitor to a public page never constructs Better-Auth and gets no cookie. Everything under `/data/` never resolves a session, even with a cookie, because its responses are public and cached. Any other path with a session cookie resolves it, a path with no route included, which then answers 404.
+`src/hooks.server.ts` constructs Better-Auth and reads the database only when a session cookie is present or the route needs one (`shouldResolveSession` in `src/lib/server/auth/session-gate.ts`). The routes that need one are the seven `SESSION_ROUTE_PREFIXES` there: `/api/auth`, `/account`, `/api/account`, `/signin`, `/forgot-password`, `/reset-password` and `/api/e2e`. A signed-out visitor to a public page never constructs Better-Auth and gets no cookie. Everything under `/data/` never resolves a session, even with a cookie, because its responses are public and cached. A request on any other path that carries a session cookie still resolves the session; a path with no route then answers 404.
 
 A new page or API that reads or sets the session for a visitor with no cookie yet must be added to `SESSION_ROUTE_PREFIXES`.
 

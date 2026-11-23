@@ -260,13 +260,13 @@ test('each method renders only its own control', async () => {
 test('carries returnTo on the form actions, which would otherwise drop the query', async () => {
   const stub = (await import('$app/state')).page;
   const before = stub.url;
-  stub.url = new URL('http://localhost/signin?returnTo=/sims') as never;
+  stub.url = new URL('http://localhost/signin?returnTo=/account') as never;
   try {
     const screen = await render(Page, props());
     await screen.getByRole('button', { name: AUTH_COPY.usePassword }).click();
     const submit = screen.container.querySelector('[data-testid="password-submit"]')!;
-    expect(submit.getAttribute('formaction')).toBe('?/signInPassword&returnTo=%2Fsims');
-    expect(submit.closest('form')!.getAttribute('action')).toBe('?/sendLink&returnTo=%2Fsims');
+    expect(submit.getAttribute('formaction')).toBe('?/signInPassword&returnTo=%2Faccount');
+    expect(submit.closest('form')!.getAttribute('action')).toBe('?/sendLink&returnTo=%2Faccount');
   } finally {
     stub.url = before;
   }
