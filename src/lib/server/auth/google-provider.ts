@@ -18,10 +18,8 @@ export function googleConfigured(env: {
  *  unknown Google account is refused: Better-Auth returns `signup disabled`, creates nothing, and
  *  bounces to the caller's `errorCallbackURL` with `?error=signup_disabled`.
  *
- *  The normal onboarding button at /signin passes `requestSignUp: true`, so first-time users —
- *  including a first-time operator (a BOOTSTRAP_EMAILS address with no account yet) — still
- *  self-onboard there (Google's verified email yields `emailVerified: true`, which
- *  `isBootstrapEmail` requires). A sign-in that omits `requestSignUp` signs in existing
+ *  The normal onboarding button at /signin passes `requestSignUp: true`, so first-time users
+ *  still self-onboard there. A sign-in that omits `requestSignUp` signs in existing
  *  accounts only. Existing-account sign-in and account-linking (linkSocial) are unaffected —
  *  they never reach the create branch. */
 export function googleProvider(env: { GOOGLE_CLIENT_ID: string; GOOGLE_CLIENT_SECRET: string }) {

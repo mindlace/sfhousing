@@ -433,7 +433,8 @@ describe('the funding line', () => {
     const t = oneMoneyTimeline(input, { ...miniFinance(input.asOf), off: [] });
     let found = 0;
     for (let seed = 1; seed <= 20 && found < 3; seed++) {
-      const sys = createFundingSystem();
+      // The replans read the base timeline `t`: closing off, the world steps under it.
+      const sys = createFundingSystem({ poolClosing: false });
       const probe = withFunding(sys).createWorld(statics, t, seed, NOWHERE);
       const pair = twoMonths(probe, seed, t);
       if (pair === null || pair.second.month <= pair.first.month + 1) continue;

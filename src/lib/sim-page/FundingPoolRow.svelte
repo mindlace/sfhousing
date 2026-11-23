@@ -153,7 +153,6 @@
       kind: d.kind,
       label: d.label,
       inflows: d.inflows.filter((x): x is Inflow => !isEmpty(x)),
-      uncapped: false,
       debt: d.debt === null ? null : ({ ...d.debt } as Pool['debt']),
       leverage: d.leverage ?? 1
     };

@@ -48,7 +48,7 @@
     "buildings.underground_dropped": 1,
     "calibration.affordable.fallback": 1,
     "calibration.affordable.histories": 0,
-    "calibration.bytes": 57060,
+    "calibration.bytes": 59823,
     "calibration.funding.impliedHomesPerYear": 20,
     "calibration.funding.mohcdRows": 2,
     "calibration.funding.observedHomesPerYear": 25,
@@ -157,19 +157,6 @@
     "landuse.orphan_rows": 2,
     "landuse.rows": 26,
     "landuse.unknown_values": 0,
-    "lesscars.bytes.timeline_payload": 3603,
-    "lesscars.extra_2068.mean": 284,
-    "lesscars.freed_m2.parcels": 800,
-    "lesscars.freed_m2.row": 3684,
-    "lesscars.projects": 8,
-    "lesscars.regimes": 2,
-    "lesscars.seeds": 5,
-    "lesscars.sites": 3,
-    "lesscars.sites.held": 0,
-    "lesscars.sites.parcels": 1,
-    "lesscars.sites.zero_gain_parking": 0,
-    "lesscars.sites.zero_yield": 0,
-    "lesscars.unlocked_lots": 1,
     "link.bpMergeRejected": 0,
     "link.bpMergeSplitSkipped": 0,
     "link.bpMerged": 1,
@@ -182,7 +169,7 @@
     "link.ppaOnly": 1,
     "link.satellites": 0,
     "link.splitComponents": 1,
-    "manifest.bytes": 7047,
+    "manifest.bytes": 6803,
     "multiphase.descendants.2007.0001PRX": 1,
     "multiphase.descendants.2010.0002PRX": 1,
     "multiphase.descendants.2012-000020PRX": 1,
@@ -539,7 +526,7 @@
     "road_like.raw.r2s": 1,
     "road_like.raw.r3": 1,
     "road_like.raw.r7": 1,
-    "scenario.bytes.payload": 10786,
+    "scenario.bytes.payload": 10778,
     "scenario.density_cap.NC-1": 1,
     "scenario.density_cap.RH-1": 2,
     "scenario.density_cap.RH-2": 7,
@@ -627,7 +614,6 @@
     "scenario.yield.clamped": 0,
     "scenario.yield.fzp_net_total": 36,
     "scenario.yield.nonlp_base_mismatch": 0,
-    "tiles.basemap_split_changed": 2,
     "tiles.buildings.drops_z14plus": 0,
     "transit.bytes": 2876,
     "transit.patterns": 7,
@@ -692,7 +678,7 @@
       "ok": true
     },
     {
-      "detail": "manifest 7047/64000 B; neighborhoods 709/150000 B",
+      "detail": "manifest 6803/64000 B; neighborhoods 709/150000 B",
       "id": "V11",
       "ok": true
     },
@@ -762,7 +748,7 @@
       "ok": true
     },
     {
-      "detail": "parses, fill levels equal FILL_LEVELS, asOf matches projects.json (T4d asOf checked by the calibration step), 57060 B; baselineFunding 8 pools, one programme each; shares 1000000 millionths; affordableRoutes tier 4",
+      "detail": "parses, fill levels equal FILL_LEVELS, asOf matches projects.json (T4d asOf checked by the calibration step), 59823 B; baselineFunding 9 pools, 7 programmes; shares 947762 millionths; no programme for city-housing-stability-fund, city-redevelopment; affordableRoutes tier 4",
       "id": "V25",
       "ok": true
     },
@@ -804,11 +790,6 @@
     {
       "detail": "25 rows match §207.11 over FZP; 3 applies, 2 from §207.11",
       "id": "V33",
-      "ok": true
-    },
-    {
-      "detail": "8 projects, 3 sites, 41 year ends",
-      "id": "V35",
       "ok": true
     },
     {

@@ -29,7 +29,7 @@
   import ProtectionsSection from '$lib/sim-page/ProtectionsSection.svelte';
   import TransitLayerRow from '$lib/sim-page/TransitLayerRow.svelte';
   import type { Calibration, Day } from '$lib/timelapse/types';
-  import { TERMS_HINT } from './copy';
+  import { TERMS_HINT } from './money-copy';
   import Explain from './Explain.svelte';
   import { PRESET_PER_POLICY, type EditStore } from './lens';
   import type { Policy } from './policy4';

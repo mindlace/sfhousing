@@ -36,15 +36,5 @@ export const EMAIL_COPY = {
     heading: 'Confirm your new email',
     body: `Click below to confirm this is your new ${PRODUCT_NAME} email address.`,
     cta: 'Confirm email'
-  },
-  invite: {
-    subject: (inviterHandle: string, simTitle: string) =>
-      `${inviterHandle} invited you to "${simTitle}" on ${PRODUCT_NAME}`,
-    preview: (inviterHandle: string) => `@${inviterHandle} invited you to a sim on ${PRODUCT_NAME}`,
-    heading: (inviterHandle: string) => `@${inviterHandle} invited you to a sim`,
-    body: (simTitle: string) => `Join "${simTitle}" on ${PRODUCT_NAME}.`,
-    cta: 'View invitation',
-    footer:
-      "This invitation expires in 7 days. If you weren't expecting it, you can ignore this email."
   }
 } as const;

@@ -166,19 +166,39 @@ describe('parseManifest', () => {
       );
     });
 
-    it('accepts scenarios.lesscars and checks its url prefix', () => {
-      const lesscars = {
-        plan: `/data/${v}/scenarios/lesscars/plan.json`,
-        sites: `/data/${v}/scenarios/lesscars/sites.json`,
-        summary: `/data/${v}/scenarios/lesscars/summary.json`,
-        timeline: `/data/${v}/scenarios/lesscars/timeline.bin`
-      };
-      const m = parseManifest({ ...g(), scenarios: { fzp: fzp(), lesscars } });
-      expect(m.scenarios?.lesscars).toEqual(lesscars);
-      const bad = { ...lesscars, timeline: '/data/2026-01-01-00000000/scenarios/lesscars/t.bin' };
-      expect(() => parseManifest({ ...g(), scenarios: { fzp: fzp(), lesscars: bad } })).toThrow(
-        /scenarios\.lesscars\.timeline: url must start with/
-      );
+    const valid = g;
+    const older = () => ({
+      ...g(),
+      scenarios: {
+        fzp: fzp(),
+        lesscars: {
+          plan: `/data/${v}/scenarios/lesscars/plan.json`,
+          sites: `/data/${v}/scenarios/lesscars/sites.json`,
+          summary: `/data/${v}/scenarios/lesscars/summary.json`,
+          timeline: `/data/${v}/scenarios/lesscars/timeline.bin`
+        }
+      }
+    });
+
+    it('an older manifest with scenarios.lesscars parses, without the key and without its files', () => {
+      const m = parseManifest(older());
+      expect(m.scenarios).not.toHaveProperty('lesscars');
+      expect(manifestFiles(m).filter((f) => f.key.startsWith('scenarios.lesscars'))).toEqual([]);
+    });
+
+    it('splitRoads: true exactly when the raw manifest has a scenarios.lesscars object', () => {
+      expect(parseManifest(older()).splitRoads).toBe(true);
+      expect(parseManifest(valid())).not.toHaveProperty('splitRoads');
+      expect(parseManifest({ ...valid(), splitRoads: true })).not.toHaveProperty('splitRoads');
+    });
+
+    it('an odd lesscars block still parses', () => {
+      const at = (lesscars: unknown) =>
+        parseManifest({ ...g(), scenarios: { fzp: fzp(), lesscars } });
+      expect(at({ plan: `/data/${v}/scenarios/lesscars/plan.json` }).splitRoads).toBe(true);
+      expect(at({}).splitRoads).toBe(true);
+      expect(at(null)).not.toHaveProperty('splitRoads');
+      expect(at([])).not.toHaveProperty('splitRoads');
     });
 
     it('the golden manifest still validates', () => {
@@ -232,12 +252,6 @@ describe('manifestFiles', () => {
           policy: u('scenarios/fzp/policy.bin'),
           gross: u('scenarios/fzp/gross.bin'),
           frontage: u('scenarios/fzp/frontage.bin')
-        },
-        lesscars: {
-          plan: u('scenarios/lesscars/plan.json'),
-          sites: u('scenarios/lesscars/sites.json'),
-          summary: u('scenarios/lesscars/summary.json'),
-          timeline: u('scenarios/lesscars/timeline.bin')
         }
       }
     });
@@ -253,7 +267,7 @@ describe('manifestFiles', () => {
       else if (x && typeof x === 'object') Object.values(x).forEach(walk);
     };
     walk(m);
-    expect(found.length).toBeGreaterThan(15);
+    expect(found.length).toBeGreaterThan(11);
     for (const s of found) {
       const covered = urls.has(s) || SPRITE_SUFFIXES.every((x) => urls.has(s + x));
       expect(covered, s).toBe(true);

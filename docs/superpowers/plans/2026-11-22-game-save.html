@@ -1,0 +1,764 @@
+<article>
+  <header>
+    <h1>Game save implementation plan</h1>
+    <p>Saved games reach the account: the <code>game_save</code> table, <code>/api/game</code>, the join and deletion hooks, the browser's save sync, the account offer, the sign-in methods, the e2e spec and the docs.</p>
+    <aside data-kind="note"><strong>For agentic workers</strong> REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps are checklist items; progress is kept in the workspace ledger, not in the plan.</aside>
+  </header>
+
+  <section id="sec-overview">
+    <h2>Overview</h2>
+    <dl>
+      <dt>Goal</dt>
+      <dd>Put a player's saved games on their account (rows S1, S2, S3 built), with the anonymous account made by the first <code>PUT</code> after a first win.</dd>
+      <dt>Architecture</dt>
+      <dd>One server module (<code>src/lib/server/game/store.ts</code>) owns every query on <code>game_save</code>; two route files call it; <code>better-auth.ts</code> and <code>deletion.ts</code> call it for joins and deletion. In the browser, <code>createSaveSync</code> replaces the <code>contracts</code> stub: a debounced, event-driven sender with a keep-both conflict rule and a pull, reading and adopting through the <code>GameStore</code> (G2). <code>AccountOffer.svelte</code> replaces its stub.</dd>
+      <dt>Tech stack</dt>
+      <dd>SvelteKit 2, Svelte 5 runes, Drizzle on D1 (<code>db.batch</code>, no transactions), Better-Auth anonymous plugin, Vitest (server project on <code>freshDb</code>; client project in Chromium with <code>vitest-browser-svelte</code>), Playwright.</dd>
+      <dt>Spec</dt>
+      <dd><code>docs/superpowers/specs/2026-11-22-game-save-design.html</code>, read from the package worktree <code>/Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game</code>. Design: <code>docs/superpowers/design/2026-11-22-1216-incremental-game.html</code>.</dd>
+      <dt>Preconditions</dt>
+      <dd>This plan builds after <code>remove-multiuser</code> (I1), <code>contracts</code> (S1 types in <code>src/lib/game/save-api.ts</code>, the S2 and S3 stubs and their stub tests, X1) and <code>game-core</code> (G2 built, <code>syncText</code> in <code>src/lib/game/copy.ts</code>, the root layout script) have merged into this branch. Paths and line numbers below for <code>deletion.ts</code>, <code>better-auth.ts</code>, <code>identity.ts</code> and <code>session-gate.ts</code> were read before <code>remove-multiuser</code>; re-locate them after the merge.</dd>
+    </dl>
+  </section>
+
+  <section id="sec-global-constraints">
+    <h2>Global constraints</h2>
+    <p>Every task's requirements include this section. The interface rows and the design's global constraints below are copied verbatim from the spec.</p>
+
+    <section id="sec-gc-design">
+      <h3>Design global constraints</h3>
+      <ul>
+        <li>Work happens in git worktrees under <code>.claude/worktrees/</code>. Commits follow Conventional Commits. No attribution to an AI anywhere.</li>
+        <li>Code style: 2-space indent, single quotes, no trailing commas, 100 columns.</li>
+        <li>Every Vitest test calls <code>expect</code>.</li>
+        <li>Signoff fails on server stderr, on timing crutches and on a retried flake. Each unit runs <code>npm run lint</code>, <code>npm run check</code> and the Vitest projects its files belong to before it hands back.</li>
+        <li>Port 4173 is shared by every session on this machine. A unit never kills a server it did not start; it waits.</li>
+        <li>Every agent runs every command in the foreground and never ends a turn while something it started is running.</li>
+        <li>Schema changes go through <code>npm run db:generate</code>. Nobody edits a migration.</li>
+        <li>No unit runs <code>npm run signoff</code>: its dataset step fails until the dataset is uploaded. <code>closing</code> runs it once, after the upload.</li>
+        <li>The dataset version changes in this build. The dataset is uploaded once, by <code>closing</code>, from the integration branch, after every unit has merged; no other unit uploads a dataset. <code>reach-check</code> builds one earlier to run the check and uploads nothing.</li>
+        <li>A unit that writes a hashed path regenerates the fixture dataset with <code>npm run pipeline -- fixture</code> and commits it.</li>
+        <li>WCAG 2.2 AA: every new control is at least 24 px and passes <code>expectNoA11yViolations</code> in light and dark.</li>
+        <li>Page text is short. No sentence says what something is not.</li>
+        <li>Nothing on the main screen says "RHNA". The goal is read from the <code>Goal</code> value, never from a constant.</li>
+        <li>The game's rules are read from <code>src/lib/game/</code>. No component compares a level to a number.</li>
+        <li>One future: no seed control, no band, no average over runs.</li>
+        <li>Published plans and policies, their ids and their pages keep working, including every policy published before this build.</li>
+        <li>A number that is a claim about the world carries its source and tier, in the existing <code>Sourced</code>, <code>Unsourced</code> and <code>Evidence</code> shapes.</li>
+        <li>A runtime dependency that ships in the bundle gets a credit in <code>SOFTWARE</code>. This build adds none.</li>
+        <li>CSP changes are interface changes. This build makes none.</li>
+        <li>Timing is measured only on a quiet machine. A unit that cannot get one defers the measurement and says so.</li>
+      </ul>
+    </section>
+
+    <section id="sec-gc-project">
+      <h3>Project notes for every implementer</h3>
+      <ul>
+        <li>Read files with Read, Grep and Glob. Every Bash call is one command that starts with an allowed command (<code>npm</code>, <code>npx</code>, <code>lsof</code>, the allowed git subcommands, <code>ls</code>, <code>cat</code>, <code>grep</code>, <code>head</code>, <code>tail</code>, <code>wc</code>, <code>pwd</code>, <code>mkdir</code>): no <code>VAR=...</code> prefix, no <code>cd</code>, no <code>;</code>, <code>&amp;&amp;</code>, pipes into other commands, <code>$(...)</code>, loops or redirects. Write files with Write.</li>
+        <li>Port 4173: before the preview server or Playwright, run <code>lsof -nP -iTCP:4173 -sTCP:LISTEN</code>; if something you did not start listens, never kill it, wait in background <code>sleep</code> stretches; leave nothing listening when done.</li>
+        <li>No <code>setTimeout</code>/<code>setInterval</code> in any spec or test helper, even zero-length; no fixed waits or raised timeouts in e2e (wait on a readiness signal). <code>vi.useFakeTimers()</code> with <code>vi.advanceTimersByTimeAsync</code> is allowed. <code>npx chreode timing-check --head HEAD</code> is clean after the last commit of every task and fix round. A changed e2e spec passes with <code>--repeat-each=5 --retries=0</code>; no new stderr from the preview server.</li>
+        <li>Never run <code>npm run signoff</code>, <code>git push</code>, a dataset upload or a deploy.</li>
+        <li>No wall-clock measurements; <code>npm run test:perf</code> is not a gate.</li>
+        <li>Conventional Commits; no AI attribution anywhere (no trailers, no notes).</li>
+        <li>The worktree needs <code>npm install</code>, <code>.dev.vars</code> with <code>PUBLIC_DATASET_VERSION=fixture-0</code>, <code>npm run data:fixture</code> and <code>npm run db:migrate</code> before tests run.</li>
+        <li>Server Vitest: <code>npx vitest --run --project server &lt;path&gt;</code>. Client Vitest: <code>npx vitest --run --project client &lt;path&gt;</code>.</li>
+      </ul>
+    </section>
+
+    <section id="sec-gc-rows">
+      <h3>Interface rows</h3>
+      <table id="tbl-interfaces">
+        <caption>Interface table</caption>
+        <thead>
+          <tr><th scope="col">Row</th><th scope="col">Owner</th><th scope="col">Layer</th><th scope="col">Summary</th><th scope="col">Contract</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">G2</th><td><code>game-core</code></td><td>Model commitment</td><td>Progress, saved games, banking, the store.</td><td><a href="#sec-if-g2">G2</a></td></tr>
+          <tr><th scope="row">S1</th><td><code>game-save</code></td><td>Model commitment</td><td>The saved-games API and table; every save kept.</td><td><a href="#sec-if-s1">S1</a></td></tr>
+          <tr><th scope="row">S2</th><td><code>game-save</code></td><td>Decomposition choice</td><td>The browser's save sync the store calls.</td><td><a href="#sec-if-s2">S2</a></td></tr>
+          <tr><th scope="row">S3</th><td><code>game-save</code></td><td>Decomposition choice</td><td>The account offer the win card renders.</td><td><a href="#sec-if-s3">S3</a></td></tr>
+          <tr><th scope="row">I1</th><td><code>remove-multiuser</code></td><td>Decomposition choice</td><td>The identity code with no sims in it.</td><td><a href="#sec-if-i1">I1</a></td></tr>
+          <tr><th scope="row">X1</th><td><code>contracts</code></td><td>Decomposition choice</td><td>The e2e seam: open by default, a seeded level, a goal amount.</td><td><a href="#sec-if-x1">X1</a></td></tr>
+        </tbody>
+      </table>
+
+      <section id="sec-if-g2">
+        <h4>G2 Progress, saved games and the store</h4>
+        <pre><code data-lang="ts">// src/lib/game/progress.ts
+export interface Banked {
+  /** The day the banked result reached the goal. */
+  on: Day;
+  /** The dataset the result was earned on. */
+  datasetVersion: string;
+  /** ISO time of the level up. */
+  at: string;
+}
+
+export interface Progress {
+  v: 1;
+  level: Level;
+  /** banked[n] is the result banked on leaving level n. */
+  banked: Partial&lt;Record&lt;2 | 3 | 4 | 5, Banked&gt;&gt;;
+  /** ISO time the player first won anything; null until then. */
+  firstWinAt: string | null;
+}
+
+export const NEW_GAME: Progress;
+
+/** The bar at the progress's level; null at levels 1 and 2. */
+export function barOf(p: Progress): Bar | null;
+/** Level 5 has been won and banked. */
+export function roundComplete(p: Progress): boolean;
+export function levelUp(p: Progress, banked: Banked | null): Progress;
+
+// src/lib/game/saves.ts
+export interface GameSave {
+  v: 1;
+  /** `newId()` of `$lib/ids/base58`. */
+  id: string;
+  name: string;
+  /** True until the player types a name. */
+  nameIsDefault: boolean;
+  progress: Progress;
+  /** The plan record's text as `sfhousing:plan:v1` holds it, or null. */
+  plan: string | null;
+  /** The policy record's text as `sfhousing:sim:v2` holds it, or null. */
+  policy: string | null;
+  /** ISO time of the last change. */
+  savedAt: string;
+}
+
+/** What the list shows of a saved game. */
+export type SaveEntry = Pick&lt;GameSave, 'id' | 'name' | 'nameIsDefault' | 'savedAt'&gt; &amp; { level: Level };
+
+export const SAVES_KEY = 'sfhousing:saves:v1';
+export const saveKey = (id: string): string =&gt; `sfhousing:save:${id}`;
+export const MAX_SAVES = 12;
+export const SAVE_NAME_MAX = 60;
+
+export function parseGameSave(json: unknown): GameSave | null;
+export function defaultSaveName(
+  from: { kind: 'new'; at: Date } | { kind: 'remix'; title: string } | { kind: 'conflict'; name: string },
+  taken: readonly string[]
+): string;
+
+// src/lib/game/store.svelte.ts
+export type StoreChange = { ok: true } | { ok: false; reason: 'full' | 'storage' | 'changed' };
+
+/** The win on screen that "Level up" would bank. */
+export interface Offer {
+  /** The day the seen result reached the goal; null for Paint's win. */
+  on: Day | null;
+  /** The dataset the result was seen on. */
+  datasetVersion: string;
+}
+
+export class GameStore {
+  constructor(opts: { storage: Storage | null; sync: SaveSync; now?: () =&gt; Date });
+  /** Reactive: the current game's progress. */
+  readonly progress: Progress;
+  /** Reactive: what the current game may use (G3). */
+  readonly allowed: Allowed;
+  /** True only for `openGame()`: every control and no game parts. */
+  readonly open: boolean;
+  /** Reactive: every saved game, most recently changed first. */
+  readonly saves: readonly SaveEntry[];
+  /** Reactive. */
+  readonly currentId: string;
+  /** Reactive: the win "Level up" would bank now; null when there is none. */
+  readonly offer: Offer | null;
+  /** The save sync given at construction. */
+  readonly sync: SaveSync;
+  /** A win was seen. Sets `firstWinAt` the first time; later calls change nothing. */
+  won(): void;
+  /** The page sets the offer while its seen result wins the level, and clears it with null. */
+  setOffer(offer: Offer | null): void;
+  /** Banks the offer and raises the level. Does nothing while `offer` is null. */
+  levelUp(): void;
+  /** The page's autosave wrote the current game's plan or policy record. */
+  touched(): void;
+  /** Registers a function the store calls before another game becomes current; returns its remover. */
+  beforeLeave(fn: () =&gt; void): () =&gt; void;
+  newGame(): StoreChange;
+  switchTo(id: string): StoreChange;
+  remix(doc: { kind: 'plan' | 'sim'; record: string; title: string }): StoreChange;
+  rename(id: string, name: string): void;
+  remove(id: string): StoreChange;
+  /** The saved game as stored now; the current one with the plan and policy records as they are. */
+  read(id: string): GameSave | null;
+  /** Store saved games that came from the account. */
+  adopt(saves: readonly GameSave[]): StoreChange;
+  /** Give the saved game `id` the id `newId`, keeping everything else about it. */
+  rekey(id: string, newId: string): StoreChange;
+}
+/** A store with `open` true: one game at level 5, nothing banked, no storage, `allowed` equal to `ALL_ALLOWED`. */
+export function openGame(): GameStore;
+export function provideGame(store: GameStore): void;
+export function useGame(): GameStore;</code></pre>
+        <dl>
+          <dt><code>SAVES_KEY</code></dt><dd>Holds <code>{ v: 1, current: string, saves: SaveEntry[] }</code>.</dd>
+          <dt><code>saveKey(id)</code></dt><dd>Holds one <code>GameSave</code>. For the current game its <code>plan</code> and <code>policy</code> are stale: the records under <code>sfhousing:plan:v1</code> and <code>sfhousing:sim:v2</code> are the truth.</dd>
+        </dl>
+        <ul>
+          <li><code>barOf</code> is <code>{ on: banked[level - 1].on }</code> at levels 3 to 5.</li>
+          <li><code>levelUp</code> from level 1 takes <code>null</code> and banks nothing.</li>
+          <li><code>levelUp</code> from levels 2 to 4 stores the day under the level being left and adds one to the level.</li>
+          <li><code>levelUp</code> at level 5 stores <code>banked[5]</code> and keeps the level at 5.</li>
+          <li>The page calls <code>won()</code> when a win card first shows.</li>
+          <li><code>allowed</code> is <code>allowedAt(progress.level)</code>.</li>
+          <li>While <code>open</code> is true no page shows a game part: no level cell, no win card, no bar or "To beat" flag, no locked lane, no reworded outcome message, no Remix button, and no offer is set. The pages read <code>open</code>; they never compare <code>allowed</code> with <code>ALL_ALLOWED</code>.</li>
+          <li>The page calls <code>setOffer</code> with the win while its seen result wins the level, and with null as soon as its seen result stops winning and when it unmounts. On <code>/sim</code> every edit clears the seen result, so an edit clears the offer. On Paint the result is the latest complete score, so a stroke leaves the offer as it is and a complete score below the goal clears it. The offer is kept in memory only.</li>
+          <li>The store's <code>levelUp()</code> banks the offer with the pure <code>levelUp</code>, clears the offer, and stores the game. The win card and the level panel both call it.</li>
+          <li>The page that set the offer reacts to the level changing: <code>/sim</code> returns the clock to today, and Paint opens <code>/sim</code>.</li>
+          <li>The page calls <code>touched()</code> after its autosave writes a record key. The store sets the current game's <code>savedAt</code> and calls <code>sync.changed(currentId)</code>.</li>
+          <li>A page that autosaves a record key registers its autosave's flush with <code>beforeLeave</code> when it mounts and removes it when it unmounts. <code>newGame</code>, <code>switchTo</code> of another game, <code>remix</code>, <code>remove</code> of the current game and <code>adopt</code> of saves that hold the current game's id call every registered function, in registration order, once they will go ahead and before they read or write a record key. So an edit still waiting in the page's autosave is in the record keys when the old game is copied out, and nothing is left waiting to be written over the new game's records when the page unloads.</li>
+          <li>When a function that <code>adopt</code> called writes a record key, the current game had an edit that was still waiting: <code>adopt</code> then changes nothing and answers <code>{ ok: false, reason: 'changed' }</code>. The save sync sends that game instead, and a 409 keeps both versions (S2, D8). No other change answers <code>changed</code>.</li>
+          <li>After <code>newGame</code>, <code>switchTo</code> of another game, <code>remix</code>, <code>remove</code> of the current game, or <code>adopt</code> of the current game's id answers <code>ok</code>, the store ignores <code>touched()</code> for the rest of the document's life: the page is about to unload, and nothing it still writes belongs to the game now in the record keys.</li>
+          <li>On first construction with no <code>SAVES_KEY</code>, the store makes one saved game at level 1 whose plan and policy are whatever the two record keys hold.</li>
+          <li><code>newGame</code>, <code>switchTo</code> and <code>remix</code> first copy the two record keys into the current game's stored save, then write the new current game's plan and policy into the two record keys. <code>remove</code> of the current game removes its save without copying it out, then writes the new current game's plan and policy into the two record keys.</li>
+          <li>After <code>newGame</code>, <code>switchTo</code> or <code>remove</code> answers <code>ok</code>, the caller loads the new current game's page with a full page load: <code>/</code> at level 1, <code>/sim</code> above it.</li>
+          <li>After <code>remix</code> answers <code>ok</code>, the caller loads <code>/</code> for a plan and <code>/sim</code> for a policy, with a full page load.</li>
+          <li><code>remix</code>'s <code>record</code> is the text the page's autosave holds under the record key for the published document. The caller builds it with the codec the page already uses, so the store never reads inside a plan or a policy.</li>
+          <li><code>remix</code> of a policy copies the current game's progress and plan; <code>remix</code> of a plan copies the current game's progress and policy. The new game's name is <code>defaultSaveName({ kind: 'remix', title })</code>.</li>
+          <li><code>newGame</code>, <code>remix</code> and <code>adopt</code> answer <code>full</code> and change nothing when they would pass <code>MAX_SAVES</code>.</li>
+          <li><code>rekey</code> of the current game leaves it current, keeps the offer and needs no page load: the records and the progress are untouched. The save sync uses it when it keeps both sides of a conflict (S2).</li>
+          <li>A write that the browser refuses answers <code>storage</code> and leaves the stored games as they were.</li>
+          <li><code>remove</code> of the current game makes the most recently changed other game current; with none left it makes a new game.</li>
+          <li><code>rename</code> trims the name, cuts it at <code>SAVE_NAME_MAX</code>, ignores an empty one, and sets <code>nameIsDefault</code> false.</li>
+          <li><code>defaultSaveName</code> gives "Game, 22 Nov", "Remix of {title}" or "{name} (this device)", and adds " (2)", " (3)" while the name is in <code>taken</code>.</li>
+          <li>The store calls <code>sync.changed(id)</code> after every change to a saved game and <code>sync.removed(id)</code> after a remove.</li>
+          <li>A stored value that will not parse is copied to <code>sfhousing:save:corrupt:&lt;ISO time&gt;</code> and left out of the list.</li>
+          <li>With <code>storage: null</code> the store keeps one game in memory.</li>
+          <li><code>useGame()</code> outside a provider returns <code>openGame()</code>, so a component test that provides no game sees every control.</li>
+          <li>Only the root layout calls <code>provideGame</code>. It makes the save sync with <code>createSaveSync</code> (S2), constructs the store with it, calls <code>sync.attach(store)</code> and provides the store.</li>
+          <li>When <code>e2eOpen</code> (X1) is true, the root layout provides <code>openGame()</code> instead and makes no sync.</li>
+          <li>The root layout's script that makes and provides the store belongs to <code>game-core</code>.</li>
+        </ul>
+      </section>
+
+      <section id="sec-if-s1">
+        <h4>S1 The saved-games API</h4>
+        <pre><code data-lang="ts">// src/lib/game/save-api.ts
+import type { GameSave, SaveEntry } from './saves';
+
+export const MAX_SAVE_BYTES = 600_000;
+
+/** What every answer about the account carries. */
+export interface AccountLine {
+  handle: string;
+  /** This identity has changed its handle at least once. */
+  handleClaimed: boolean;
+}
+
+// GET /api/game
+type ListGames =
+  | { status: 200; body: AccountLine &amp; { saves: (SaveEntry &amp; { rev: number })[]; removed: string[] } }
+  | { status: 401 };
+
+// GET /api/game/[id]
+type GetGame = { status: 200; body: { rev: number; save: GameSave } } | { status: 401 | 404 | 410 };
+
+// PUT /api/game/[id]
+interface PutGameBody {
+  /** The rev this browser last saw for this saved game; null when it has never sent it. */
+  baseRev: number | null;
+  save: GameSave;
+}
+type PutGame =
+  | { status: 200; body: AccountLine &amp; { rev: number } }
+  | { status: 409; body: { rev: number; save: GameSave } }
+  | { status: 410 }
+  | { status: 401; body: { error: 'sign_in' } }
+  | { status: 422; body: { error: 'invalid' | 'too_many' | 'no_win' } }
+  | { status: 403 | 413 | 415 | 429 };
+
+// DELETE /api/game/[id]
+type DeleteGame = { status: 204 } | { status: 401 };</code></pre>
+        <pre><code data-lang="ts">// src/lib/server/db/schema/gameSave.ts
+export const gameSave = sqliteTable(
+  'game_save',
+  {
+    identityId: text('identity_id').notNull().references(() =&gt; userIdentity.id),
+    id: text('id').notNull(),
+    rev: integer('rev').notNull(),
+    name: text('name').notNull(),
+    level: integer('level').notNull(),
+    /** The GameSave as JSON; empty once removed. */
+    body: text('body').notNull(),
+    savedAt: integer('saved_at', { mode: 'timestamp_ms' }).notNull(),
+    removedAt: integer('removed_at', { mode: 'timestamp_ms' })
+  },
+  (t) =&gt; [primaryKey({ columns: [t.identityId, t.id] })]
+);</code></pre>
+        <ul>
+          <li><code>PUT</code> with no session makes an anonymous account, behind <code>PSEUDO_MINT_RL</code>, and stores the saved game at rev 1.</li>
+          <li><code>PUT</code> with no session on a device that has signed in before (the <code>sfh_known</code> cookie) answers 401 <code>sign_in</code> and makes nothing.</li>
+          <li><code>PUT</code> with no session and a save whose <code>progress.firstWinAt</code> is null answers 422 <code>no_win</code> and makes nothing: an account is made at the first win, never before.</li>
+          <li><code>PUT</code> stores the save and adds one to its rev when <code>baseRev</code> equals the stored rev, or when the account has no saved game with that id and <code>baseRev</code> is null.</li>
+          <li><code>PUT</code> of an id the account has never held stores it at rev 1 whatever <code>baseRev</code> says.</li>
+          <li><code>PUT</code> of an id the account holds with any other <code>baseRev</code> answers 409 with the stored save and changes nothing.</li>
+          <li><code>PUT</code> to a removed id answers 410.</li>
+          <li><code>PUT</code> of a new id when the account has 12 saved games answers 422 <code>too_many</code>.</li>
+          <li>The id in the path must equal <code>save.id</code>, else 422 <code>invalid</code>. A body <code>parseGameSave</code> refuses is 422 <code>invalid</code>. A body over <code>MAX_SAVE_BYTES</code> is 413.</li>
+          <li><code>DELETE</code> clears the body and sets <code>removedAt</code>; the row stays so other devices learn of it. Deleting an unknown or removed id is 204.</li>
+          <li><code>GET /api/game</code> lists the saved games that are not removed, and under <code>removed</code> the ids removed in the last 90 days.</li>
+          <li>Every write requires a same-origin JSON request, as the account routes do; a write from another origin is 403. <code>/api/game</code> is a session route prefix.</li>
+          <li>When two identities are joined, the absorbed identity's rows move to the survivor. Nothing is merged.</li>
+          <li>When both identities hold a saved game under one id, the absorbed one moves under a new id; an absorbed row that is removed is dropped. The cap of 12 is not applied to a join.</li>
+          <li>Deleting an account deletes its <code>game_save</code> rows.</li>
+          <li>The server never reads inside <code>plan</code> or <code>policy</code>.</li>
+        </ul>
+      </section>
+
+      <section id="sec-if-s2">
+        <h4>S2 The browser's save sync</h4>
+        <pre><code data-lang="ts">// src/lib/game/save-sync.svelte.ts
+export type SyncState = 'local' | 'saving' | 'saved' | 'offline' | 'sign-in' | 'full';
+
+export interface SaveSync {
+  /** Reactive. */
+  readonly state: SyncState;
+  /** Reactive: the account as the server last answered (S1's `AccountLine`); null until it has. */
+  readonly account: AccountLine | null;
+  /** The saved game `id` changed. */
+  changed(id: string): void;
+  /** The saved game `id` was deleted in this browser. */
+  removed(id: string): void;
+  /** Bring the account's saved games here and send this browser's there. */
+  pull(): Promise&lt;void&gt;;
+  /** The store saved games are read from and adopted into. Called once by the root layout. */
+  attach(store: GameStore): void;
+}
+
+export function createSaveSync(opts: {
+  storage: Storage | null;
+  fetchFn: typeof fetch;
+  /** Whether the root layout's `user` is set now. */
+  signedIn: () =&gt; boolean;
+}): SaveSync;</code></pre>
+        <ul>
+          <li><code>state</code> is <code>local</code> until this browser has a session.</li>
+          <li>A pull adopts the current game last, after every other step, and only while the current game is still unchanged here at the moment of the call. An adopt that answers <code>changed</code> sends the game instead, so a 409 keeps both. An adopt of the current game that answers <code>ok</code> reloads the page at once, so the page shows the account's version and writes nothing over it.</li>
+          <li><code>changed(id)</code> sends nothing while this browser has no session and the game's <code>firstWinAt</code> is null.</li>
+          <li>When the sync attaches with no session, every saved game that has <code>firstWinAt</code> set and has not been sent since it last changed is queued to send, so a first win whose send never went still makes the account.</li>
+          <li><code>changed(id)</code> debounces to one <code>PUT</code> per saved game per 2 seconds, with the save read from the store at send time.</li>
+          <li>The browser keeps each saved game's last seen rev under <code>sfhousing:saves:revs</code>.</li>
+          <li>A 409 keeps both: the browser's version is stored as a new saved game with a new id and the name <code>defaultSaveName({ kind: 'conflict', name })</code>, the account's version is adopted under the old id, and the new saved game is sent.</li>
+          <li>When the old id was the current game, the browser's version stays current under its new id, so nothing changes under the player's hands.</li>
+          <li>A 410 keeps the saved game in this browser under a new id and sends it again: a change made here is never lost to a delete made on another device (D8).</li>
+          <li><code>pull()</code> lists the account's saved games. It fetches and adopts those this browser lacks, and those it holds unchanged at an older rev. It removes those listed under <code>removed</code> that are unchanged here. It sends those the account lacks.</li>
+          <li><code>pull()</code> runs once on load when <code>signedIn()</code>, and again when <code>signedIn()</code> turns true.</li>
+          <li><code>account</code> is set from every answer that carries an <code>AccountLine</code>. After the <code>PUT</code> that made the account, the header shows the handle from it. The sync never invalidates page data: a page keeps its playhead, its card and its undo history.</li>
+          <li>Once a <code>PUT</code> has answered 200 the sync treats this browser as having a session, whatever <code>signedIn()</code> says.</li>
+          <li>The root layout calls <code>createSaveSync</code> once and gives the result to the store (G2). Components reach it as <code>useGame().sync</code>.</li>
+          <li>A network failure sets <code>offline</code> and the next <code>changed</code> tries again.</li>
+          <li>A 401 <code>sign_in</code> sets <code>sign-in</code> and stops sending until the page loads signed in.</li>
+          <li>A 422 <code>too_many</code>, or the store answering <code>full</code>, sets <code>full</code>.</li>
+          <li>The stub shipped by <code>contracts</code> has state <code>local</code>, a null <code>account</code>, and does nothing. <code>game-save</code> replaces the body of <code>createSaveSync</code>; no caller changes.</li>
+        </ul>
+      </section>
+
+      <section id="sec-if-s3">
+        <h4>S3 The account offer</h4>
+        <pre><code data-lang="ts">// src/lib/game/AccountOffer.svelte
+// No props. Reads the root layout's `user` from `page.data`, and `useGame().sync.account`.</code></pre>
+        <ul>
+          <li>The account it shows is the root layout's <code>user</code> when there is one, else <code>sync.account</code>.</li>
+          <li>With no account yet, it says the game is saved on this device.</li>
+          <li>With an account whose handle was never chosen, it shows one field, "Save as @…", and a Save button, which calls <code>PATCH /api/account/profile</code>.</li>
+          <li>With a chosen handle, it shows "@handle" as a link to <code>/account</code>, and "Add an email to play on another device" while the account has none.</li>
+          <li>It never blocks levelling up.</li>
+          <li>The stub shipped by <code>contracts</code> renders nothing.</li>
+        </ul>
+      </section>
+
+      <section id="sec-if-i1">
+        <h4>I1 The identity code with no sims in it</h4>
+        <pre><code data-lang="ts">// src/lib/server/onboarding/pseudonymous-mint.ts
+export async function mintPseudonymousSession(
+  event: RequestEvent,
+  deps?: Deps
+): Promise&lt;{ ok: true; user: User } | { ok: false; status: 429 | 500; message: string }&gt;;
+
+// src/lib/server/user-store/identity.ts
+export function handleAccountLink(args: {
+  db: Database;
+  /** Called with (survivorId, absorbedId) after two identities are joined. */
+  onFuse?: (survivorId: string, absorbedId: string) =&gt; Promise&lt;void&gt;;
+  /* the remaining fields as today, without `roster` */
+}): Promise&lt;void&gt;;
+
+// src/lib/server/user-store/deletion.ts
+export async function deleteAccount(args: {
+  db: Database;
+  identityId: string;
+}): Promise&lt;{ more: false }&gt;;
+
+// src/lib/server/security/same-origin-json.ts
+export function refuseUnlessSameOriginJson(event: RequestEvent): Response | null;
+
+// src/app.d.ts
+interface Locals {
+  user: User | null;
+  session: { id: string; userId: string } | null;
+}</code></pre>
+        <ul>
+          <li>No module under <code>src/lib/server/{auth,user-store,onboarding,security,email,email-templates}</code> imports from a sims, invites, members, sim-object, authz or operator module.</li>
+          <li>The mint's refusal texts and the origin check's texts live in <code>src/lib/account/copy.ts</code>.</li>
+          <li><code>deleteAccount</code> finishes in one request and always answers <code>{ more: false }</code>.</li>
+          <li><code>onFuse</code> is the one hook a join of two identities offers; <code>game-save</code> supplies it to move the absorbed identity's saved games.</li>
+          <li><code>locals.capabilities</code> and <code>locals.actorKind</code> are gone.</li>
+          <li><code>User</code>, <code>resolveSessionUser</code>, <code>updateProfile</code>, the known-device cookie and the pending-identifier cookie are unchanged.</li>
+          <li>The session route prefixes are <code>/api/auth</code>, <code>/account</code>, <code>/api/account</code>, <code>/signin</code>, <code>/forgot-password</code>, <code>/reset-password</code>, <code>/api/e2e</code>.</li>
+        </ul>
+        <p><strong>Removed:</strong> <code>reseedHandleFromSim</code>, the <code>pending-sim</code> cookie, the <code>startFresh</code> action, the invite email template, <code>requireCap</code>, <code>requireSimRole</code>, the <code>authz</code> and <code>event-log</code> directories, <code>resolveCapabilities</code>.</p>
+      </section>
+
+      <section id="sec-if-x1">
+        <h4>X1 The e2e seam</h4>
+        <pre><code data-lang="ts">// e2e/helpers/game.ts
+import type { Page } from '@playwright/test';
+
+/** Before the page loads, switch the real game on and store a game at `level` with bars that any result beats. */
+export function seedGame(page: Page, level: 1 | 2 | 3 | 4 | 5): Promise&lt;void&gt;;
+/** Before the page loads, switch the real game on with nothing stored: a new visitor. */
+export function newVisitor(page: Page): Promise&lt;void&gt;;
+/** Before the page loads, set the goal's amount for this page. */
+export function seedGoalAmount(page: Page, amount: number): Promise&lt;void&gt;;
+
+// src/lib/game/e2e.ts
+export const E2E_GAME_KEY = 'sfhousing:e2e:game';
+export const E2E_GOAL_KEY = 'sfhousing:e2e:goal';
+/** True when VITE_E2E is '1' and E2E_GAME_KEY is absent: the page gets the open game. */
+export function e2eOpen(storage: Storage | null): boolean;
+/** The amount under E2E_GOAL_KEY when VITE_E2E is '1'; null otherwise. */
+export function e2eGoalAmount(storage: Storage | null): number | null;</code></pre>
+        <ul>
+          <li>With <code>VITE_E2E=1</code>, on a build or a dev server, a page that has no <code>E2E_GAME_KEY</code> gets <code>openGame()</code> (G2): every control, no game parts, nothing stored.</li>
+          <li>Every e2e spec that exists before this build runs on the open game and needs no change for the game, except the tests of Remix: Remix makes a saved game, so they seed a game first.</li>
+          <li><code>seedGame</code> and <code>newVisitor</code> set <code>E2E_GAME_KEY</code>, so the page runs the real store.</li>
+          <li><code>seedGame</code> writes the storage keys of G2 directly and needs no store.</li>
+          <li>A seeded game's bars fall in the calendar month that holds the window's last day, which any reached result beats.</li>
+          <li>The fixture city is too small to reach 82,069 homes, so a spec that plays a level to a win first calls <code>seedGoalAmount</code>.</li>
+          <li><code>/sim</code> and Paint read <code>e2eGoalAmount</code> when they mount and build the goal.</li>
+          <li>A spec that changes the amount on a loaded page, before a client-side navigation, writes <code>E2E_GOAL_KEY</code> with <code>page.evaluate</code>.</li>
+          <li>On a build without <code>VITE_E2E=1</code>, <code>e2eOpen</code> is false and <code>e2eGoalAmount</code> is null whatever storage holds.</li>
+        </ul>
+      </section>
+    </section>
+  </section>
+
+  <section id="sec-review-focus">
+    <h2>Review focus</h2>
+    <p>Inputs the spec implies but its test list does not pin, most likely first. Each has a test in its owning task.</p>
+    <ol>
+      <li><strong>Two won saves and no session.</strong> At attach with no session and two won, unsent saves, exactly one <code>PUT</code> goes first; the other waits for its answer and goes with the new cookie, so one account is made, never two. (The spec's "every other saved game here is marked waiting and sent" after the minting 200.) Test in Task 4.</li>
+      <li><strong>Reload after a pull, once.</strong> A pull that adopts over the current game reloads the page once; a second pull at the same rev does not reload. Test in Task 5.</li>
+      <li><strong>Overlapping pulls.</strong> <code>pull()</code> called while a pull runs (load plus <code>signedIn()</code> turning true, or visibility) returns the running pull and makes one <code>GET /api/game</code>. Test in Task 5.</li>
+      <li><strong><code>nameIsDefault</code> from SQLite.</strong> <code>json_extract</code> answers 1 or 0; <code>listGames</code> answers the booleans <code>true</code> or <code>false</code>. Test in Task 1.</li>
+      <li><strong>Bytes, not characters.</strong> A body under <code>MAX_SAVE_BYTES</code> characters but over it in UTF-8 bytes (multi-byte name) answers 413. Test in Task 2.</li>
+    </ol>
+  </section>
+
+  <section id="sec-files">
+    <h2>File map</h2>
+    <table id="tbl-files">
+      <caption>Files by task</caption>
+      <thead>
+        <tr><th scope="col">File</th><th scope="col">Task</th><th scope="col">Responsibility</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row"><code>src/lib/server/db/schema/gameSave.ts</code>, <code>schema/index.ts</code>, one generated migration</th><td>1</td><td>The table</td></tr>
+        <tr><th scope="row"><code>src/lib/server/game/store.ts</code>, <code>store.spec.ts</code></th><td>1</td><td>Every query on <code>game_save</code></td></tr>
+        <tr><th scope="row"><code>src/routes/api/game/+server.ts</code>, <code>[id]/+server.ts</code>, their <code>server.spec.ts</code>; <code>src/lib/server/auth/session-gate.ts</code>, <code>session-gate.spec.ts</code></th><td>2</td><td>The routes</td></tr>
+        <tr><th scope="row"><code>src/lib/server/auth/better-auth.ts</code>, <code>better-auth.spec.ts</code>; <code>src/lib/server/user-store/deletion.ts</code>, <code>deletion.spec.ts</code></th><td>3</td><td>Join and deletion</td></tr>
+        <tr><th scope="row"><code>src/lib/game/save-sync.svelte.ts</code>, <code>save-sync.svelte.spec.ts</code></th><td>4, 5</td><td>The browser's sync</td></tr>
+        <tr><th scope="row"><code>src/lib/game/AccountOffer.svelte</code>, <code>AccountOffer.svelte.spec.ts</code></th><td>6</td><td>The account offer</td></tr>
+        <tr><th scope="row"><code>wrangler.jsonc</code> (<code>AUTH_METHODS</code>), <code>e2e/game-save.spec.ts</code>, <code>docs/dev/game-save.md</code>, <code>docs/dev/auth.md</code></th><td>7</td><td>Methods, e2e, docs</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="sec-task-1">
+    <h2>Task 1: The table and the server module</h2>
+    <p>Spec: <code>#sec-design-table</code>, <code>#sec-design-server</code>, <code>#sec-tests-server</code> (store.spec.ts).</p>
+    <h3>Files</h3>
+    <ul>
+      <li>Create: <code>src/lib/server/db/schema/gameSave.ts</code> (exactly S1's table; imports from <code>../columns</code> and <code>userIdentity</code> from <code>./users</code>)</li>
+      <li>Modify: <code>src/lib/server/db/schema/index.ts</code> (add <code>export * from './gameSave';</code>)</li>
+      <li>Create: one migration under <code>migrations/d1/</code> from <code>npm run db:generate</code>, committed as generated</li>
+      <li>Create: <code>src/lib/server/game/store.ts</code>, <code>src/lib/server/game/store.spec.ts</code></li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>Database</code> (<code>$lib/server/db</code>); <code>AccountLine</code> (<code>$lib/game/save-api</code>); <code>GameSave</code>, <code>SaveEntry</code>, <code>MAX_SAVES</code> (<code>$lib/game/saves</code>); <code>handleTombstone.releasedBy</code>; <code>newId</code> (<code>$lib/ids/base58</code>). Tests: <code>freshDb</code>, <code>seedUser</code> (<code>src/lib/server/test/auth-db.ts</code>), <code>updateProfile</code>.</li>
+      <li>Produces (exact, from the spec):
+        <pre><code data-lang="ts">export const REMOVED_LIST_DAYS = 90;
+export function accountLine(db: Database, user: { id: string; handle: string }): Promise&lt;AccountLine&gt;;
+export function listGames(db: Database, identityId: string, now: Date):
+  Promise&lt;{ saves: (SaveEntry &amp; { rev: number })[]; removed: string[] }&gt;;
+export function readGame(db: Database, identityId: string, id: string):
+  Promise&lt;{ kind: 'live'; rev: number; save: GameSave } | { kind: 'removed' } | null&gt;;
+export function putGame(db: Database, identityId: string, save: GameSave, baseRev: number | null):
+  Promise&lt;{ kind: 'stored'; rev: number } | { kind: 'conflict'; rev: number; save: GameSave }
+    | { kind: 'removed' } | { kind: 'too_many' }&gt;;
+export function removeGame(db: Database, identityId: string, id: string, now: Date): Promise&lt;void&gt;;
+export function moveGames(db: Database, survivorId: string, absorbedId: string): Promise&lt;void&gt;;
+export function deleteGamesOf(db: Database, identityIds: string[]): Promise&lt;void&gt;;</code></pre>
+      </li>
+    </ul>
+    <ol>
+      <li id="t1-s1"><input type="checkbox"> Write <code>src/lib/server/game/store.spec.ts</code> on <code>freshDb()</code> and <code>seedUser</code>, with a <code>save(id, over?)</code> helper building a valid <code>GameSave</code> (<code>firstWinAt</code> set). One test per line of the spec's store.spec.ts list, plus:
+        <ul>
+          <li><code>listGames</code> reports <code>nameIsDefault</code> as <code>toBe(true)</code> and <code>toBe(false)</code> (Review focus 4), <code>savedAt</code> as the ISO string of the save's <code>savedAt</code>, and <code>level</code> from <code>progress.level</code>.</li>
+          <li><code>removed</code> includes an id removed 89 days before <code>now</code> and excludes one removed 91 days before.</li>
+          <li><code>readGame</code> answers <code>live</code> with the parsed save, <code>removed</code>, and <code>null</code>.</li>
+          <li>A stored conflict's <code>save</code> deep-equals the stored body; the row's rev and body are unchanged after it.</li>
+          <li><code>removeGame</code> keeps the row's rev; removing a removed or unknown id changes nothing.</li>
+          <li><code>moveGames</code>: a clashing live row arrives under an id that differs from the old one, with <code>readGame(...).save.id</code> equal to the new id and its name and rev kept.</li>
+        </ul>
+      </li>
+      <li id="t1-s2"><input type="checkbox"> Run it and see it fail (module missing).
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/server/game/store.spec.ts</code></pre>
+      </li>
+      <li id="t1-s3"><input type="checkbox"> Create <code>gameSave.ts</code>, export it from the schema index, run <code>npm run db:generate</code> and check the new migration creates <code>game_save</code> and touches no other table. Then <code>npm run db:migrate</code>.</li>
+      <li id="t1-s4"><input type="checkbox"> Implement <code>store.ts</code>. <code>putGame</code> needs a write whose guard is in its own <code>WHERE</code>; use <code>.returning()</code> to learn whether it wrote:
+        <ul>
+          <li>Read the row. Removed: <code>removed</code>.</li>
+          <li>No row: one <code>INSERT … SELECT … WHERE NOT EXISTS (the row) AND (SELECT count(*) of live rows for the identity) &lt; MAX_SAVES … RETURNING rev</code> at rev 1. Nothing returned: re-read; a row now exists gives <code>conflict</code> (or <code>removed</code>), else <code>too_many</code>.</li>
+          <li>Live row and <code>baseRev === row.rev</code>: <code>UPDATE … SET rev = rev + 1, body, name, level, saved_at WHERE identity_id, id, rev = baseRev, removed_at IS NULL RETURNING rev</code>. Nothing returned: re-read and answer <code>conflict</code> with the row as it now is (or <code>removed</code>).</li>
+          <li>Live row and any other <code>baseRev</code>: <code>conflict</code> with the stored rev and parsed body.</li>
+        </ul>
+        <code>moveGames</code> reads the absorbed and survivor ids, then one <code>db.batch</code>: clashing live rows insert under <code>newId()</code> with <code>json_set(body, '$.id', newId)</code> and the old row deleted; clashing removed rows deleted; every other row's <code>identity_id</code> set to the survivor. No cap. <code>handleClaimed</code> is the existence of a <code>handle_tombstone</code> row with <code>released_by</code> equal to the identity id.</li>
+      <li id="t1-s5"><input type="checkbox"> Run the spec again; it passes. Run <code>npm run check</code> and <code>npm run lint</code>.</li>
+      <li id="t1-s6"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git commit -m "feat(game-save): game_save table and server store"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-2">
+    <h2>Task 2: The routes</h2>
+    <p>Spec: <code>#sec-design-routes</code> (all four), <code>#sec-tests-server</code> (the two route specs and session-gate.spec.ts).</p>
+    <h3>Files</h3>
+    <ul>
+      <li>Create: <code>src/routes/api/game/+server.ts</code> (<code>GET</code>), <code>src/routes/api/game/server.spec.ts</code></li>
+      <li>Create: <code>src/routes/api/game/[id]/+server.ts</code> (<code>GET</code>, <code>PUT</code>, <code>DELETE</code>), <code>src/routes/api/game/[id]/server.spec.ts</code></li>
+      <li>Modify: <code>src/lib/server/auth/session-gate.ts</code> (add <code>'/api/game'</code> to <code>SESSION_ROUTE_PREFIXES</code>), <code>session-gate.spec.ts</code></li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: Task 1's store functions; <code>refuseUnlessSameOriginJson</code>, <code>mintPseudonymousSession</code> (I1); <code>isKnownDevice(cookies)</code> (<code>src/lib/server/onboarding/known-device.ts</code>); <code>enforceRate(limiter, key, env, opts?)</code> (<code>src/lib/server/security/rate-limit.ts</code>); <code>getDb(platform)</code>; <code>parseGameSave</code>; <code>MAX_SAVE_BYTES</code>.</li>
+      <li>Produces: the HTTP contract of S1, exactly.</li>
+    </ul>
+    <ol>
+      <li id="t2-s1"><input type="checkbox"> Add <code>'/api/game'</code> and <code>'/api/game/abc'</code> to the "is true" list in <code>session-gate.spec.ts</code>.</li>
+      <li id="t2-s2"><input type="checkbox"> Write the two route specs in the real-database style of <code>src/routes/api/sims/server.spec.ts</code>: a hoisted <code>holder.db</code> behind <code>vi.mock('$lib/server/db')</code>, <code>vi.mock('$lib/server/onboarding/pseudonymous-mint')</code> with a hoisted <code>mint</code>, a Map-backed cookie stub, <code>platform: makePlatform(shim, { ENVIRONMENT: 'production', MUTATION_REGISTERED_RL: new FakeRateLimiter({ allow }) })</code>. One test per line of the spec's route-spec lists, plus:
+        <ul>
+          <li>The minting PUT: <code>mint</code> called once; the stored row's <code>identity_id</code> is the minted user's id; the 200 body is <code>{ handle, handleClaimed: false, rev: 1 }</code>.</li>
+          <li>The 401 <code>sign_in</code> and 422 <code>no_win</code> cases set no cookie and store no row.</li>
+          <li>A mint followed by a 429 from <code>MUTATION_REGISTERED_RL</code>: answer 429 and the minted account's cookie is still set (the mock records it).</li>
+          <li>413 by header: a <code>content-length</code> of <code>MAX_SAVE_BYTES + 1</code>. 413 by body: a body whose <code>save.name</code> is multi-byte so its character length is under <code>MAX_SAVE_BYTES</code> and its UTF-8 length is over (Review focus 5).</li>
+          <li>The 429 test asserts the limiter's <code>calls</code> equal <code>['game_write:&lt;identityId&gt;']</code>.</li>
+          <li><code>baseRev</code> of <code>0</code>, <code>1.5</code> and <code>'1'</code> answer 422 <code>invalid</code>.</li>
+        </ul>
+      </li>
+      <li id="t2-s3"><input type="checkbox"> Run them and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project server src/routes/api/game src/lib/server/auth/session-gate.spec.ts</code></pre>
+      </li>
+      <li id="t2-s4"><input type="checkbox"> Implement the session prefix and the route files, following the steps of <code>#sec-design-routes-put</code> in their order (the order decides which refusals make no account). Empty-body answers are <code>new Response(null, { status })</code>; JSON answers use <code>json()</code> from <code>@sveltejs/kit</code>. The PUT rate key is the minted user's id when it minted.</li>
+      <li id="t2-s5"><input type="checkbox"> Run the specs; they pass. <code>npm run check</code>, <code>npm run lint</code>.</li>
+      <li id="t2-s6"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git commit -m "feat(game-save): /api/game routes"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-3">
+    <h2>Task 3: Joins and account deletion</h2>
+    <p>Delivers row S1.</p>
+    <p>Spec: <code>#sec-design-join</code>, <code>#sec-design-deletion</code>, <code>#sec-tests-server</code> (deletion.spec.ts, better-auth.spec.ts).</p>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/lib/server/auth/better-auth.ts</code>, <code>src/lib/server/auth/better-auth.spec.ts</code></li>
+      <li>Modify: <code>src/lib/server/user-store/deletion.ts</code>, <code>src/lib/server/user-store/deletion.spec.ts</code></li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>moveGames</code>, <code>deleteGamesOf</code>, <code>putGame</code>, <code>readGame</code> (Task 1); <code>handleAccountLink</code> with <code>onFuse</code>, <code>normalizeLinkArgs</code> (<code>src/lib/server/user-store/identity.ts</code>, I1); <code>closeAccountRows</code>, <code>deleteAccount</code> (I1).</li>
+      <li>Produces: <code>export function onLinkAccountFor(db: Database, freshlyCreated: Set&lt;string&gt;): (args: { anonymousUser: { user: { id: string } }; newUser: { user: { id: string } } }) =&gt; Promise&lt;void&gt;</code> in <code>better-auth.ts</code>: the anonymous plugin's <code>onLinkAccount</code> body, moved out of <code>getAuth</code> so the test drives it. It computes <code>isUpgrade</code> from <code>freshlyCreated</code> as today and calls <code>handleAccountLink</code> with <code>onFuse: (survivorId, absorbedId) =&gt; moveGames(db, survivorId, absorbedId)</code>. <code>getAuth</code> passes <code>onLinkAccount: onLinkAccountFor(drizzleDb, freshlyCreated)</code>.</li>
+    </ul>
+    <ol>
+      <li id="t3-s1"><input type="checkbox"> In <code>better-auth.spec.ts</code>, a <code>describe('onLinkAccountFor')</code> on <code>freshDb()</code>, seeding a pseudonymous identity and an existing user with <code>seedUser</code> (follow the fuse and upgrade set-ups in <code>src/lib/server/user-store/identity.spec.ts</code>), each with a game stored by <code>putGame</code>:
+        <ul>
+          <li>Fuse (new user id not in <code>freshlyCreated</code>): afterwards the survivor holds the absorbed identity's game and the absorbed identity holds none.</li>
+          <li>Upgrade (new user id in <code>freshlyCreated</code>): the pseudonymous identity keeps its game, and no row changed identity.</li>
+        </ul>
+      </li>
+      <li id="t3-s2"><input type="checkbox"> In <code>deletion.spec.ts</code>: deleting an account deletes its <code>game_save</code> rows, live and removed, and those of an identity fused into it (seed with <code>supersededById</code>), and leaves another account's rows.</li>
+      <li id="t3-s3"><input type="checkbox"> Run them and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/server/auth/better-auth.spec.ts src/lib/server/user-store/deletion.spec.ts</code></pre>
+      </li>
+      <li id="t3-s4"><input type="checkbox"> Implement <code>onLinkAccountFor</code> and its use in <code>getAuth</code>; in <code>closeAccountRows</code> call <code>deleteGamesOf(db, idUnion)</code> after hashing earlier versions and before purging credentials.</li>
+      <li id="t3-s5"><input type="checkbox"> Run the two specs and <code>src/lib/server/user-store/identity.spec.ts</code>; all pass. <code>npm run check</code>, <code>npm run lint</code>, and the whole server project: <code>npx vitest --run --project server</code>.</li>
+      <li id="t3-s6"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git commit -m "feat(game-save): move saved games on a join and delete them with the account"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-4">
+    <h2>Task 4: The save sync: set-up, sending, keep both, removal, state</h2>
+    <p>Spec: <code>#sec-design-sync</code>, <code>#sec-design-sync-setup</code> (except the pull triggers), <code>#sec-design-sync-send</code>, <code>#sec-design-sync-conflict</code>, <code>#sec-design-sync-removed</code>, <code>#sec-design-sync-state</code>. Task 5 adds the pull.</p>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/lib/game/save-sync.svelte.ts</code> (replace the body of <code>createSaveSync</code>; keep every existing export)</li>
+      <li>Modify: <code>src/lib/game/save-sync.svelte.spec.ts</code> (replace the <code>contracts</code> stub tests)</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>GameStore</code> methods <code>read</code>, <code>rekey</code>, <code>rename</code>, <code>adopt</code>, <code>remove</code>, <code>saves</code>, <code>currentId</code> (G2); <code>defaultSaveName</code>, <code>parseGameSave</code> (G2); <code>AccountLine</code> (S1); <code>newId</code>; <code>browser</code> from <code>$app/environment</code>; <code>MemoryStorage</code> (<code>src/lib/sharing/fixtures/memory-storage.ts</code>) in tests.</li>
+      <li>Produces: S2's exports unchanged, plus <code>SAVE_REVS_KEY</code> and <code>SyncRecord</code> exactly as <code>#sec-design-sync</code> gives them. <code>pull()</code> in this task resolves at once and does nothing; Task 5 fills it.</li>
+    </ul>
+    <ol>
+      <li id="t4-s1"><input type="checkbox"> Write the spec with <code>vi.useFakeTimers()</code> and <code>vi.advanceTimersByTimeAsync</code>, a fake <code>fetchFn</code> that records <code>(method, url, body)</code> and answers from a per-test script, a <code>MemoryStorage</code>, a fake store (a plain object holding <code>GameSave</code>s by id, with <code>read</code>, <code>rekey</code>, <code>rename</code>, <code>adopt</code>, <code>remove</code>, <code>saves</code>, <code>currentId</code>, that calls back <code>sync.changed</code>/<code>sync.removed</code> as the real store would, cast to <code>GameStore</code>), and <code>signedIn</code> over a <code>$state</code> flag. The spec's save-sync list, every item not about pull, plus:
+        <ul>
+          <li>Review focus 1: signed out, two won unsent saves at attach: after 2 s exactly one <code>PUT</code> is recorded; after it answers 200 the second <code>PUT</code> follows; never two before the first answer.</li>
+          <li>One request per save in flight: a <code>changed</code> during a pending <code>PUT</code> sends a second one only after the first ends and 2 s pass.</li>
+          <li>The <code>SAVE_REVS_KEY</code> value after a 200 is <code>{ v: 1, seen: { [id]: { rev, savedAt } }, deleting: [] }</code>; a corrupt value there is replaced by an empty record.</li>
+          <li>413 and 422 <code>invalid</code> drop the save and call <code>console.error</code> with the id and status (spy on it); 422 <code>no_win</code> leaves it unsent until the next <code>changed</code>; a 429 and a 5xx set <code>offline</code>.</li>
+          <li>The state order of <code>#sec-design-sync-state</code>: <code>sign-in</code> wins over <code>full</code>, <code>full</code> over <code>offline</code>; <code>saving</code> while a timer runs.</li>
+          <li>With <code>storage: null</code> the record lives in memory and sends still work.</li>
+        </ul>
+      </li>
+      <li id="t4-s2"><input type="checkbox"> Run it and see it fail.
+        <pre><code data-lang="sh">npx vitest --run --project client src/lib/game/save-sync.svelte.spec.ts</code></pre>
+      </li>
+      <li id="t4-s3"><input type="checkbox"> Implement. State is <code>$state</code> fields behind getters; the state word is a <code>$derived</code> of the conditions in <code>#sec-design-sync-state</code>. One <code>setTimeout</code> per waiting id is the only timer. While the browser has no session, at most one <code>PUT</code> is in flight across all saves. An <code>echo</code> flag set around the sync's own store calls makes <code>changed</code>/<code>removed</code> ignore them. Listen for <code>online</code> on <code>window</code> at attach in the browser.</li>
+      <li id="t4-s4"><input type="checkbox"> Run the spec; it passes. <code>npm run check</code>, <code>npm run lint</code>, <code>npx chreode timing-check --head HEAD</code> after committing.</li>
+      <li id="t4-s5"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git commit -m "feat(game-save): save sync sends, keeps both and follows removals"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-5">
+    <h2>Task 5: The save sync: pull</h2>
+    <p>Delivers row S2.</p>
+    <p>Spec: <code>#sec-design-sync-pull</code>, the pull triggers of <code>#sec-design-sync-setup</code> (attach signed in, <code>signedIn()</code> turning true or false, visibility).</p>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/lib/game/save-sync.svelte.ts</code>, <code>src/lib/game/save-sync.svelte.spec.ts</code></li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: Task 4's sync internals.</li>
+      <li>Produces: <code>pull()</code> as the spec gives it, and one test seam: <code>export const syncReload = { reload(): void { location.reload(); } }</code>, which the pull calls for its one reload, so a test spies on it instead of reloading the test page.</li>
+    </ul>
+    <ol>
+      <li id="t5-s1"><input type="checkbox"> Add tests, spying on <code>syncReload.reload</code> with an empty implementation in every test: the spec's pull items (adopt a lacking save; replace an unchanged one at an older rev; send a changed one with its <code>baseRev</code>; remove an unchanged one listed as removed; keep a changed or current one listed as removed under a new id; send one the account lacks with <code>baseRev: null</code>; resend a failed <code>DELETE</code>); the 401 <code>sign_in</code> then <code>signedIn()</code> turning true runs a pull; attach with <code>signedIn()</code> true runs a pull; <code>signedIn()</code> turning false then <code>changed</code> of an unwon save sends nothing; the list answer sets <code>account</code>. Plus:
+        <ul>
+          <li>Review focus 2: a pull that adopts over <code>currentId</code> calls <code>syncReload.reload</code> once; a second pull at the same rev does not call it again.</li>
+          <li>Review focus 3: two <code>pull()</code> calls made together record one <code>GET /api/game</code>, and both promises resolve.</li>
+          <li>A first adopt answering <code>full</code> stops later adopts, sets <code>full</code>, and sends still go.</li>
+        </ul>
+      </li>
+      <li id="t5-s2"><input type="checkbox"> Run it and see the new tests fail.
+        <pre><code data-lang="sh">npx vitest --run --project client src/lib/game/save-sync.svelte.spec.ts</code></pre>
+      </li>
+      <li id="t5-s3"><input type="checkbox"> Implement the pull in the order of <code>#sec-design-sync-pull</code>; a running pull is kept as one promise and returned to later callers. The <code>signedIn()</code> watch is an <code>$effect</code> under <code>$effect.root</code> made at attach; the visibility listener is on <code>document</code>.</li>
+      <li id="t5-s4"><input type="checkbox"> Run the spec; it passes. <code>npm run check</code>, <code>npm run lint</code>, the client project (<code>npx vitest --run --project client</code>), and <code>npx chreode timing-check --head HEAD</code> after committing.</li>
+      <li id="t5-s5"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git commit -m "feat(game-save): save sync pull"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-6">
+    <h2>Task 6: The account offer</h2>
+    <p>Delivers row S3.</p>
+    <p>Spec: <code>#sec-design-offer</code>, <code>#sec-tests-client</code> (AccountOffer.svelte.spec.ts).</p>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/lib/game/AccountOffer.svelte</code> (replace the stub), <code>src/lib/game/AccountOffer.svelte.spec.ts</code> (replace the stub test)</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>page</code> from <code>$app/state</code> (<code>page.data.user</code>: <code>{ id, handle, pseudonymous, … } | null</code>, the root layout's <code>locals.user</code>); <code>currentUser.overlay</code>, <code>currentUser.apply(userId, { handle })</code> (<code>src/lib/account/current-user.svelte.ts</code>); <code>useGame().sync</code> (<code>state</code>, <code>account</code>, <code>pull</code>); <code>syncText</code> (<code>src/lib/game/copy.ts</code>).</li>
+      <li>Produces: the component of S3 with no props.</li>
+    </ul>
+    <ol>
+      <li id="t6-s1"><input type="checkbox"> Write the spec. The client <code>$app/state</code> stub has no <code>data</code>, so mock it in this spec: <code>vi.mock('$app/state', () =&gt; ({ page: pageStub }))</code> with a hoisted, mutable <code>{ data: { user }, url }</code>. Mock <code>useGame</code> (<code>vi.mock('$lib/game/store.svelte', …)</code>) to return <code>{ sync: fakeSync }</code>, where <code>fakeSync</code> holds <code>state</code> and <code>account</code> in <code>$state</code> and a <code>pull</code> spy. Stub fetch with <code>vi.spyOn(globalThis, 'fetch')</code>. Tests: the spec's list for this file, plus the sign-in state's link <code>href</code> is <code>/signin?returnTo=</code> and the encoded current path; a 401 shows "Sign in first."; a 500 shows "Couldn't save. Try again."; a 429 shows the body's error; Save has <code>aria-busy="true"</code> while in flight; the PATCH body is exactly <code>{ handle }</code> with the trimmed input. Accessibility: <code>expectNoA11yViolations</code> is Playwright-only, so run <code>axe.run</code> on the container and expect no violations, in light and dark switched with the <code>cdp()</code> <code>Emulation.setEmulatedMedia</code> pattern of <code>src/lib/map/key/MapKeyControl.svelte.spec.ts</code>, importing <code>src/routes/layout.css</code>; and assert the Save button's and input's bounding boxes are at least 24 px high.</li>
+      <li id="t6-s2"><input type="checkbox"> Run it and see it fail.
+        <pre><code data-lang="sh">npx vitest --run --project client src/lib/game/AccountOffer.svelte.spec.ts</code></pre>
+      </li>
+      <li id="t6-s3"><input type="checkbox"> Implement the component with the four states of <code>#sec-design-offer</code>, the exact texts given there, <code>syncText('sign-in')</code> and <code>syncText('local')</code> for the shared texts, the shared button and surface classes of <code>docs/dev/ui-parts.md</code>, and an <code>aria-live="polite"</code> region for "Saved."</li>
+      <li id="t6-s4"><input type="checkbox"> Run the spec; it passes. <code>npm run check</code>, <code>npm run lint</code>.</li>
+      <li id="t6-s5"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git commit -m "feat(game-save): account offer on the win card"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-7">
+    <h2>Task 7: Sign-in methods, the e2e spec and the docs</h2>
+    <p>Spec: <code>#sec-design-methods</code>, <code>#sec-design-e2e</code>, <code>#sec-tests-e2e</code>, <code>#sec-docs</code>.</p>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>wrangler.jsonc</code> (the two <code>AUTH_METHODS</code> values only)</li>
+      <li>Create: <code>e2e/game-save.spec.ts</code></li>
+      <li>Modify: <code>docs/dev/game-save.md</code> (the <code>contracts</code> stub, already linked from <code>CLAUDE.md</code>), <code>docs/dev/auth.md</code></li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>seedGame</code>, <code>newVisitor</code> (<code>e2e/helpers/game.ts</code>, X1); <code>loginAs</code> (<code>e2e/helpers/auth.ts</code>); the add-email flow of <code>e2e/account-email.spec.ts</code> (the email field, send-link button and <code>dev-link</code>); <code>SAVES_KEY</code>, <code>saveKey</code> by relative import from <code>../src/lib/game/saves</code>.</li>
+      <li>Produces: nothing other tasks use.</li>
+    </ul>
+    <ol>
+      <li id="t7-s1"><input type="checkbox"> Set <code>AUTH_METHODS</code> to <code>"magic-link,password,google,passkey"</code> in <code>vars</code> and <code>env.staging.vars</code>. Grep the tests for <code>AUTH_METHODS</code> and <code>wrangler.jsonc</code> readers; run any that read it.</li>
+      <li id="t7-s2"><input type="checkbox"> Write <code>e2e/game-save.spec.ts</code> with the spec's three tests. Wait on <code>page.waitForResponse</code> for <code>/api/game</code> requests (set up before the action that causes them), read <code>SAVES_KEY</code> with <code>page.evaluate</code>, and make changes by writing <code>saveKey(id)</code> and the <code>SAVES_KEY</code> entry (new <code>name</code>, new <code>savedAt</code>) then reloading. No fixed waits, no raised timeouts.</li>
+      <li id="t7-s3"><input type="checkbox"> Check port 4173 (<code>lsof -nP -iTCP:4173 -sTCP:LISTEN</code>), then run the spec, then the repeat run; both pass and the server prints no new stderr.
+        <pre><code data-lang="sh">npx playwright test e2e/game-save.spec.ts
+npx playwright test e2e/game-save.spec.ts --repeat-each=5 --retries=0</code></pre>
+      </li>
+      <li id="t7-s4"><input type="checkbox"> Write <code>docs/dev/game-save.md</code> (every item the spec's Docs list names for it) and the <code>docs/dev/auth.md</code> changes the spec lists. Run <code>npx vitest --run --project server scripts/docs-index.spec.ts</code> and <code>npm run lint</code>.</li>
+      <li id="t7-s5"><input type="checkbox"> Run <code>npm run check</code>, <code>npm run lint</code>, <code>npm run test:unit</code>, and <code>npx chreode timing-check --head HEAD</code> after committing.</li>
+      <li id="t7-s6"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git commit -m "feat(game-save): all sign-in methods, e2e and docs"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-8">
+    <h2>Task 8: The pull adopts the current game last</h2>
+    <p>Delivers row S2 (as amended by ruling conductor-13). Builds only after <code>game-core</code>'s store change (<code>adopt</code> runs the <code>beforeLeave</code> flushes and answers <code>changed</code>) has merged into this branch.</p>
+    <p>Spec: <code>#sec-if-g2</code> (the <code>adopt</code> and <code>changed</code> bullets), <code>#sec-if-s2</code>, <code>#sec-design-sync-setup</code> (the one reload), <code>#sec-design-sync-pull</code> (the last three bullets), the pull item of <code>#sec-tests-client</code>.</p>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/lib/game/save-sync.svelte.ts</code>, <code>src/lib/game/save-sync.svelte.spec.ts</code></li>
+      <li>Modify: <code>docs/dev/game-save.md</code> (the pull section: the current game last, the <code>changed</code> answer, the reload at once)</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>StoreChange</code> with <code>reason: 'changed'</code>; <code>store.adopt</code> of the current game's id running the <code>beforeLeave</code> flushes (G2, built by <code>game-core</code>).</li>
+      <li>Produces: no new export. <code>syncReload.reload()</code> stays the one reload seam.</li>
+    </ul>
+    <ol>
+      <li id="t8-s1"><input type="checkbox"> Add tests to <code>save-sync.svelte.spec.ts</code> (the fake store's <code>adopt</code> can be scripted to answer <code>changed</code>):
+        <ul>
+          <li>A pull that lists the current game at a higher rev and another lacking save adopts the other save first, the current game last (the fake store records the order).</li>
+          <li>The current game changed here between the list and its adopt (after the per-save GET answers) is sent with <code>baseRev: seen[id].rev</code>, never adopted, and no reload.</li>
+          <li>An adopt of the current game answering <code>{ ok: false, reason: 'changed' }</code> sends it with <code>baseRev: seen[id].rev</code>; the 409 that follows keeps both ("{name} (this device)" and the account's version); no reload; <code>seen[id]</code> is unchanged by the refused adopt.</li>
+          <li>An adopt of the current game answering <code>ok</code> calls <code>syncReload.reload</code> at once: before any later request the pull or its held sends would make (the fetch spy records no request after the reload call), exactly once; a second pull at the same rev does not reload.</li>
+        </ul>
+      </li>
+      <li id="t8-s2"><input type="checkbox"> Run the spec and see the new tests fail.
+        <pre><code data-lang="sh">npx vitest --run --project client src/lib/game/save-sync.svelte.spec.ts</code></pre>
+      </li>
+      <li id="t8-s3"><input type="checkbox"> Implement: during the per-save loop, a current game due for adopt is fetched but its adopt is deferred to after every other step (the removed list, the sends for saves neither listed nor removed). Then re-check "unchanged here"; changed: send with <code>baseRev: seen[id].rev</code>. Adopt; <code>changed</code>: send the same way; <code>ok</code>: <code>seen[id]</code> takes the adopted rev and <code>savedAt</code>, then <code>syncReload.reload()</code> at once and the pull starts no further request (held sends are left waiting; the reloaded page's pull sends them). Other saves keep the existing adopt and re-check path.</li>
+      <li id="t8-s4"><input type="checkbox"> Update the pull section of <code>docs/dev/game-save.md</code>. Run the spec, the whole client project for <code>src/lib/game</code>, <code>npm run check</code>, <code>npm run lint</code>; commit; then <code>npx chreode timing-check --head HEAD</code>.
+        <pre><code data-lang="sh">git commit -m "fix(game-save): pull adopts the current game last and reloads at once"</code></pre>
+      </li>
+    </ol>
+  </section>
+</article>

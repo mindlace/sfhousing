@@ -1,7 +1,6 @@
-// Thin shell: all behaviour lives in createSimHost / createScenarioHost / createPlaybackHost
+// Thin shell: all behaviour lives in createSimHost / createScenarioHost / createTimelineHost
 // (tested in Node) and the router that puts them behind this one Worker.
 import { createSimHost } from './host';
-import { createPlaybackHost } from './lesscars/playback-host';
 import { createWorkerRouter } from './router';
 import { createScenarioHost } from './scenario/scenario-host';
 import type { WorkerRequest, WorkerResponse } from './scenario/types';
@@ -36,16 +35,6 @@ const router = createWorkerRouter({
     }),
   createTimeline: () =>
     createTimelineHost({
-      fetch: (url) => fetch(url),
-      fetchBytes: (url) => fetch(url),
-      post: (msg, transfer) => scope.postMessage(msg, transfer),
-      setTimeout: (fn, ms) => setTimeout(fn, ms),
-      clearTimeout: (h) => clearTimeout(h as ReturnType<typeof setTimeout>),
-      now: () => performance.now(),
-      retryDelaysMs
-    }),
-  createPlayback: () =>
-    createPlaybackHost({
       fetch: (url) => fetch(url),
       fetchBytes: (url) => fetch(url),
       post: (msg, transfer) => scope.postMessage(msg, transfer),

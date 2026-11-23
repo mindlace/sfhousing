@@ -4,10 +4,8 @@ import { page } from 'vitest/browser';
 import type { Manifest } from '$lib/data/manifest';
 import { emptyPlan, serializePlan, type Plan } from '$lib/plan';
 import { MSG } from '$lib/brush/messages';
-import { COPY, n3, remixedToast } from '$lib/sharing/copy';
+import { COPY, n3 } from '$lib/sharing/copy';
 import { PLAN_KEY } from '$lib/sharing/storage';
-import { replaceStateCalls } from '../test-stubs/app/navigation';
-import { page as appPage } from '../test-stubs/app/state';
 import manifestJson from '../../e2e/fixtures/data/fixture-0/manifest.json';
 import Page from './+page.svelte';
 import PaintHeaderHost from './test/PaintHeaderHost.svelte';
@@ -57,8 +55,6 @@ describe('/ editor page', () => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
     localStorage.clear();
-    appPage.state = {};
-    replaceStateCalls.length = 0;
   });
 
   it('renders the heading, the map region and the Paint dock', async () => {
@@ -185,22 +181,6 @@ describe('/ editor page', () => {
       await expect.element(page.getByText(COPY.n1)).toBeVisible();
       await page.getByRole('button', { name: 'Dismiss' }).click();
       await expect.element(page.getByText(COPY.n1)).not.toBeInTheDocument();
-    });
-
-    it('Remix hand-off: shows the toast once and clears the history state', async () => {
-      seed(painted('fixture-0'));
-      appPage.state = { sfhRemix: { from: 'My plan' } };
-      await render(Page, { props: { data: data(), params: {} } });
-      await expect.element(page.getByText(remixedToast('My plan'))).toBeVisible();
-      expect(replaceStateCalls).toEqual([{ url: '', state: {} }]);
-    });
-
-    it('Remix hand-off with the plan in history state (storage write failed) loads it', async () => {
-      appPage.state = {
-        sfhRemix: { from: 'abc123', plan: serializePlan(painted('fixture-0')) }
-      };
-      await render(Page, { props: { data: data(), params: {} } });
-      await expect.element(page.getByText(remixedToast('abc123'))).toBeVisible();
     });
   });
 });

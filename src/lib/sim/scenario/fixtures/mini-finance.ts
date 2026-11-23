@@ -1,7 +1,7 @@
 // Test values for public money on the mini city (finance-engine spec section 6, "Fixtures"). Every
 // number here is a tier 4 test value, not data. Browser-safe: no `node:` imports.
 import { MARKET_TERMS, resolveTerms } from '$lib/sim/finance';
-import { parseCalibration } from '$lib/timelapse/model';
+import { LEGACY_UNCAPPED_DOLLARS, parseCalibration } from '$lib/timelapse/model';
 import type { Day } from '$lib/timelapse/time';
 import type { Calibration, Provenance } from '$lib/timelapse/types';
 import type { SimInput } from '../types';
@@ -20,8 +20,9 @@ const provenance: Provenance = {
 const TIERS = { veryLow: 0.4, low: 0.4, moderate: 0.2, aboveModerate: 0 };
 
 /**
- * Two capped pools (`m-city`, yearly 20,000,000 from `asOf`; `m-bank`, a `bank` pool with one
- * 5,000,000 inflow on `asOf + 400` and leverage 0.8), one uncapped `federal` pool, and four
+ * Three pools (`m-city`, yearly 20,000,000 from `asOf`; `m-bank`, a `bank` pool with one
+ * 5,000,000 inflow on `asOf + 400` and leverage 0.8; `federal`, yearly ten trillion from `asOf`,
+ * `LEGACY_UNCAPPED_DOLLARS`, which no test reaches), and four
  * programmes: a certain affordable grant stack (`m-city` 0.35 and `federal` 0.65, `minHomes` 2),
  * a market loan on `m-bank` and a market guarantee on `m-city`. `m-bank` is off from
  * `asOf + 2000` to `asOf + 2400`.
@@ -34,7 +35,6 @@ export function miniFinance(asOf: Day = MINI_AS_OF): Finance {
         kind: 'generalRevenue',
         label: 'Mini City',
         inflows: [{ kind: 'yearly', from: asOf, to: null, dollarsPerYear: 20_000_000 }],
-        uncapped: false,
         debt: null,
         leverage: 1
       },
@@ -43,7 +43,6 @@ export function miniFinance(asOf: Day = MINI_AS_OF): Finance {
         kind: 'bank',
         label: 'Mini Bank',
         inflows: [{ kind: 'once', day: asOf + 400, dollars: 5_000_000 }],
-        uncapped: false,
         debt: null,
         leverage: 0.8
       },
@@ -51,8 +50,9 @@ export function miniFinance(asOf: Day = MINI_AS_OF): Finance {
         id: 'federal',
         kind: 'federal',
         label: 'Federal tax credits',
-        inflows: [],
-        uncapped: true,
+        inflows: [
+          { kind: 'yearly', from: asOf, to: null, dollarsPerYear: LEGACY_UNCAPPED_DOLLARS }
+        ],
         debt: null,
         leverage: 1
       }

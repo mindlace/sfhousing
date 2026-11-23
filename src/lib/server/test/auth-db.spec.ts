@@ -3,7 +3,7 @@ import { eq } from 'drizzle-orm';
 import * as schema from '$lib/server/db/schema';
 import { getDb } from '$lib/server/db';
 import { skeleton } from '$lib/server/user-store/confusable-skeleton';
-import { freshDb, grantEvent, makePlatform, seedIdentity, seedUser } from './auth-db';
+import { freshDb, makePlatform, seedIdentity, seedUser } from './auth-db';
 
 describe('freshDb', () => {
   it('returns independent migrated databases', async () => {
@@ -63,43 +63,6 @@ describe('seedIdentity', () => {
       .where(eq(schema.userIdentity.id, 'fused'));
     expect(row.supersededById).toBe('survivor');
     expect(row.supersededAt).toBeInstanceOf(Date);
-    close();
-  });
-});
-
-describe('grantEvent', () => {
-  it('appends an app-scoped grant by default', async () => {
-    const { db, close } = freshDb();
-    await seedIdentity(db, { id: 'i1' });
-    await grantEvent(db, { identityId: 'i1', capability: 'operator.access' });
-    const [row] = await db.select().from(schema.capabilityEvent);
-    expect(row).toMatchObject({
-      principalId: 'i1',
-      resourceType: 'app',
-      resourceId: '*',
-      ability: 'operator.access',
-      action: 'grant',
-      actorId: null,
-      createdAtCounter: 0
-    });
-    close();
-  });
-
-  it('honours action, at, actorId and counter', async () => {
-    const { db, close } = freshDb();
-    await seedIdentity(db, { id: 'i1' });
-    const at = new Date('2026-01-02T03:04:05Z');
-    await grantEvent(db, {
-      identityId: 'i1',
-      capability: 'x',
-      action: 'revoke',
-      at,
-      actorId: 'boss',
-      counter: 3
-    });
-    const [row] = await db.select().from(schema.capabilityEvent);
-    expect(row).toMatchObject({ action: 'revoke', actorId: 'boss', createdAtCounter: 3 });
-    expect(row.createdAt.getTime()).toBe(at.getTime());
     close();
   });
 });

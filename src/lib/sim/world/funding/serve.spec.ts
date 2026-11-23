@@ -9,6 +9,7 @@ import { miniFinance } from '$lib/sim/scenario/fixtures/mini-finance';
 import type { LedgerEvent } from '$lib/sim/scenario/money';
 import { seedHash, streamOf } from '$lib/sim/scenario/rng';
 import type { SimInput } from '$lib/sim/scenario/types';
+import { LEGACY_UNCAPPED_DOLLARS } from '$lib/timelapse/model';
 import type { Day } from '$lib/timelapse/time';
 import { PATHWAYS, type Pathway, type ProjectKind } from '$lib/timelapse/types';
 import { addProject, ensureLot } from '../columns';
@@ -119,8 +120,20 @@ function harness(
   };
 }
 
+/**
+ * A new world whose federal pool has received month 1's arrival (ten trillion on `asOf`), as
+ * system 2 gives it; the other pools hold nothing until a test gives them money.
+ */
 function freshWorld(t: PolicyTimeline = timeline): World {
-  return withFunding(createFundingSystem()).createWorld(statics, t, SEED, { event() {} });
+  const w = withFunding(createFundingSystem()).createWorld(statics, t, SEED, { event() {} });
+  const { pools } = fundOf(w);
+  const q = pools.id.slice(0, pools.n).indexOf('federal');
+  if (q >= 0) {
+    pools.received[q] = LEGACY_UNCAPPED_DOLLARS;
+    pools.moneyDay[q] = statics.asOf;
+    pools.moneyMonth[q] = 1;
+  }
+  return w;
 }
 
 /** Free lots (no row in the new world) whose top level has at least 2 homes, in rank order. */
@@ -175,7 +188,7 @@ function awardOf(line: FundLine, i: number, month: number, t = timeline): Award 
   return a;
 }
 
-/** What row `i` asks of capped pool `id`. */
+/** What row `i` asks of pool `id`. */
 function askOf(line: FundLine, i: number, id: string, month: number): number {
   const fm = frameMoney(timeline, timeline.frameAt(month));
   return awardOf(line, i, month).asks.get(fm.pool.get(id)!) ?? 0;
@@ -546,14 +559,14 @@ describe('serveLine', () => {
     ]);
   });
 
-  it('Review Focus 3: an award asking nothing of a capped pool is dated its applied day or the first day', () => {
+  it('Review Focus 3: an award asking only a pool that had no money this month is dated its applied day or the first day', () => {
     const w = freshWorld();
     const { line, pools } = fundOf(w);
     const [a, b] = LOTS;
-    // federal-grant alone draws only the uncapped pool.
+    // federal-grant alone draws only the federal pool, whose money came in month 1.
     joinLine(line, 1, [app(a, 'affordable', day(1, 6), 'federal-grant')]);
     joinLine(line, 2, [app(b, 'affordable', day(2, 8), 'federal-grant')]);
-    // Every capped pool had money late this month.
+    // Every other pool had money late this month.
     for (const id of ['m-city', 'm-bank']) {
       const q = poolRowOf(pools, id);
       pools.received[q] = 1e12;
@@ -561,9 +574,12 @@ describe('serveLine', () => {
       pools.moneyMonth[q] = 2;
     }
     const h = harness(w, 2);
-    expect(awardOf(line, 0, 2).asks.size).toBe(0);
-    expect(awardDay(h.ctx, line, 0, pools, [])).toBe(h.ctx.firstDay);
-    expect(awardDay(h.ctx, line, 1, pools, [])).toBe(day(2, 8));
+    const fed = poolRowOf(pools, 'federal');
+    expect([...awardOf(line, 0, 2).asks.keys()]).toEqual([
+      frameMoney(timeline, timeline.frameAt(2)).pool.get('federal')
+    ]);
+    expect(awardDay(h.ctx, line, 0, pools, [fed])).toBe(h.ctx.firstDay);
+    expect(awardDay(h.ctx, line, 1, pools, [fed])).toBe(day(2, 8));
     serveLine(h.ctx);
     expect(h.starts().map((s) => [s.lot, s.day])).toEqual([
       [a, h.ctx.firstDay],
@@ -652,15 +668,19 @@ describe('rule 10 on the bench city', () => {
   });
 });
 
-/** An uncapped federal 100% affordable grant on the mini city (as engine-finance.spec.ts:420). */
+/**
+ * A federal 100% affordable grant on the mini city, ten trillion a year (as engine-finance.spec.ts
+ * has it).
+ */
 const ROUTE_FIN: Finance = {
   pools: [
     {
       id: 'fed',
       kind: 'federal',
       label: 'fed',
-      inflows: [],
-      uncapped: true,
+      inflows: [
+        { kind: 'yearly', from: input.asOf, to: null, dollarsPerYear: LEGACY_UNCAPPED_DOLLARS }
+      ],
       debt: null,
       leverage: 1
     }
