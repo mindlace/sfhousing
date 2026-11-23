@@ -1,6 +1,6 @@
 # Superconductor ledger — design: docs/superpowers/design/2026-11-22-1216-incremental-game.html
 Package worktree: /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game
-Build graph: docs/superpowers/design/2026-11-22-1216-incremental-game-build-graph.md @ 5f2c8d4d
+Build graph: docs/superpowers/design/2026-11-22-1216-incremental-game-build-graph.md @ 752486fa
 SDD scripts: /Users/mindlace/.claude/plugins/cache/claude-plugins-official/superpowers/7.0.2/skills/subagent-driven-development/scripts
 HTML scripts: /Users/mindlace/.claude/plugins/cache/super/superpowers-html/0.1.0/bin
 Project commands: npm, npx, lsof, ls, cat, grep, head, tail, wc, pwd, uptime, mkdir (mail-setup only, also: aws); operators run with --permission-mode dontAsk
@@ -21,6 +21,7 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - baa4d37b-89cb-4eed-9858-c59d3d2c3796 | model opus | package @ db7e1733 | 2026-11-22 | ruling game-core-8
 - 9459e672-7399-4f86-bb48-8053762a8537 | model opus | package @ f6c41be9 | 2026-11-22 | ruling game-shell-2
 - e3b9bcc4-2648-44a3-a40a-b19b12c28196 | model opus | package @ 5f2c8d4d | 2026-11-22 | ruling conductor-13
+- 4891e372-8da1-41cc-8fca-2ead83e76b2c | model opus | package @ 752486fa | 2026-11-23 | ruling finite-funding-2
 
 ## 2026-11-22 — composition started (supercomposer, fresh)
 
@@ -462,7 +463,13 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - relayed conductor-13 to incremental-game-game-shell
 - relayed conductor-13 to incremental-game-game-sim (not delivered: session resting; owed in its restart's resends)
 - routed conductor-13
-- 2026-11-23 finite-funding-2 from finite-funding [defect-class: spec-code-mismatch]: the spec says an older dataset's $100B/yr federal pool (LEGACY_UNCAPPED_DOLLARS) "never binds", but Task 4's synthCity test shows it can; keep, raise or reword. Holds nothing; fork after the suite on game-save's merge reports →
+- 2026-11-23 finite-funding-2 from finite-funding [defect-class: spec-code-mismatch]: the spec says an older dataset's $100B/yr federal pool (LEGACY_UNCAPPED_DOLLARS) "never binds", but Task 4's synthCity test shows it can; keep, raise or reword. Holds nothing; fork after the suite on game-save's merge reports → rulings/finite-funding-2.md (commit f45e47eb, changes contract: yes)
+- routing finite-funding-2: rulings/finite-funding-2.md, commit f45e47eb
+- build graph for finite-funding-2 @ 752486fa
+- relayed finite-funding-2 to incremental-game-finite-funding
+- relayed finite-funding-2 to incremental-game-funding-measures (not delivered: resting; F2 row text only, owed in its restart's resends)
+- relayed finite-funding-2 to incremental-game-pool-closing (not delivered: resting; F2 row text only, owed in its restart's resends)
+- routed finite-funding-2
 
 ## Forks
 - fork checkpoint-2 started 2026-11-22T16:20
@@ -632,6 +639,13 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - fork review-game-shell-7bd6f1cb started 2026-11-22T23:55
 - fork review-game-shell-7bd6f1cb exited [0]: output
 - fork review-game-save-67739d50 started 2026-11-23T00:20
+- fork rule-finite-funding-2 started 2026-11-23T00:20
+- fork review-game-save-67739d50 exited [0]: output
+- fork rule-finite-funding-2 exited [0]: output
+- fork graph-finite-funding-2 started 2026-11-23T00:21
+- fork graph-finite-funding-2 exited [0]: output
+- fork checkpoint-14 started 2026-11-23T00:22
+- fork checkpoint-14 exited [0]: output
 
 ## Frame-defect tally
 - owner-ruling-drift: 2 — instances: conductor-1 (gate-1, 2026-11-22); conductor-8 (gate-7, 2026-11-22)
@@ -718,6 +732,7 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - No drift @ 7bd6f1cb (review-game-shell-7bd6f1cb; asked to check the rewritten Task 4 against § sec-design-paint)
 - 2026-11-23 00:10 merge of game-save complete @ 67739d50 (Task 8, ruling conductor-13) made onto 89873c5f (merge commit c0079aeb), suite running (agent; scratchpad `merge-game-save-t8/`); not merged until it passes; on failure reset to 89873c5f with ledger.md copied out and back.
 - merged game-save @ 67739d50 into superconductor/incremental-game (complete; Task 8, ruling conductor-13), tests pass (check 0 errors; lint 0 errors; unit 9028 passed; pipeline 2266 passed; e2e 761 passed, 0 failed, 1 flaky: e2e/share-states.spec.ts:157 "N6: a share link whose dataset version is gone renders on the current data", 'Open with current data' button not visible on the first attempt, passed on retry), band low. Watch that test: shared pages are game-shell's; a second flake of it becomes a question.
+- No drift @ 67739d50 (review-game-save-67739d50)
 
 ## Cost
 - remove-lesscars: admitted 2026-11-22T16:31 seven_day 44% | session d889ec5c-3342-4a77-99f8-993f1115a679 | finished 2026-11-22T21:14 seven_day 60%
