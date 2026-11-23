@@ -1,0 +1,7 @@
+I rewrote the `game-shell` row, but nothing changed: the row on disk already matched the `game-shell` spec as it reads now. It cites the same spec sections and has the same write set (the about route spec and `AboutDialog.svelte.spec.ts` included). It still needs G1–G5 with `navigate.ts` from `game-core`, X1 from `contracts` and L1 from `remove-lesscars`, and produces nothing. The file came out byte-identical, so `git commit` found nothing to commit and made no new commit. The sha below is the current HEAD, where the graph already holds this row.
+
+Build graph @ 5bc853c4
+Longest chain: contracts -> finite-funding -> pool-closing -> reach-check -> closing
+Longest chain: remove-lesscars -> finite-funding -> pool-closing -> reach-check -> closing
+Longest chain: contracts -> finite-funding -> pool-closing -> funding-measures -> closing
+Longest chain: remove-lesscars -> finite-funding -> pool-closing -> funding-measures -> closing

@@ -1,3 +1,4 @@
+import { utcParts } from '$lib/fzp/time';
 import type { Day } from '$lib/timelapse/time';
 
 import type { GoalOutcome } from '$lib/timeline/outcome';
@@ -18,14 +19,13 @@ export interface Bar {
  * False in every other case: a tie never beats, and a missed result never beats.
  */
 export function beats(seen: Result, bar: Bar): boolean {
-  void seen;
-  void bar;
-  throw new Error('not implemented');
+  if (seen.kind !== 'reached') return false;
+  const a = utcParts(seen.on);
+  const b = utcParts(bar.on);
+  return a.y !== b.y ? a.y < b.y : a.m < b.m;
 }
 
 /** Paint is won: capacity is at least the goal's amount. */
 export function paintWon(net: number, amount: number): boolean {
-  void net;
-  void amount;
-  throw new Error('not implemented');
+  return net >= amount;
 }

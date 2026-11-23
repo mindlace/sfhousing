@@ -1,0 +1,150 @@
+  ✓   50 [chromium] › e2e/brush.spec.ts:198:5 › brush tool › desktop › a failed chunk shows the Retry chip, and Retry recovers (3.9s)
+  ✓   48 [chromium] › e2e/brush.spec.ts:138:5 › brush tool › desktop › paint: a drag paints 6 stories, map-view shows the buildings (4.4s)
+  ✓   49 [chromium] › e2e/brush.spec.ts:172:5 › brush tool › desktop › stamps: a click and a keyboard Enter each add one op (4.4s)
+  ✓   47 [chromium] › e2e/brush.spec.ts:154:5 › brush tool › desktop › undo and redo by keyboard revert and restore the counts (5.0s)
+  ✓   51 [chromium] › e2e/brush.spec.ts:217:5 › brush tool › desktop › a stroke while parcels failed: the stroke chip clears the failure chip and its Retry (3.3s)
+  ✓   54 [chromium] › e2e/brush.spec.ts:299:5 › brush tool › desktop › a parent loads a plan through oneditor and the buildings render (3.1s)
+  -   56 [chromium] › e2e/brush.spec.ts:340:5 › brush tool › mobile › Move pans; Paint paints; a second finger mid-stroke adds no op
+  -   57 [chromium] › e2e/brush.spec.ts:400:5 › brush tool › mobile › a stroke while parcels failed: the stroke chip clears the failure chip and its Retry
+  -   58 [chromium] › e2e/brush.spec.ts:419:5 › brush tool › mobile › axe: the editor with the radius popover open
+  ✓   59 [chromium] › e2e/cache-headers.spec.ts:9:3 › / is private, no-cache (11ms)
+  ✓   60 [chromium] › e2e/cache-headers.spec.ts:9:3 › /about is private, no-cache (11ms)
+  ✓   61 [chromium] › e2e/cache-headers.spec.ts:16:1 › /attribution answers 308 to /about#about-data (6ms)
+[WebServer] ✘ [ERROR] 
+[WebServer] 
+[WebServer]   [404] GET /no-such-page
+[WebServer] 
+[WebServer] 
+  ✓   62 [chromium] › e2e/cache-headers.spec.ts:22:1 › a 404 page is private, no-cache (7ms)
+  ✓   63 [chromium] › e2e/cache-headers.spec.ts:28:1 › the /p/:id not-found error page is private, no-cache (12ms)
+  ✓   64 [chromium] › e2e/cache-headers.spec.ts:34:1 › data files keep their immutable cache header (6ms)
+  ✓   65 [chromium] › e2e/cache-headers.spec.ts:40:1 › a stored plan keeps its explicit cache headers (22ms)
+  ✓   55 [chromium] › e2e/brush.spec.ts:324:5 › brush tool › desktop › axe: the editor with the keyboard shortcuts list open (2.0s)
+  ✓   52 [chromium] › e2e/brush.spec.ts:231:5 › brush tool › desktop › a published plan, then a stroke: the button reads Publish again (5.1s)
+  ✓   66 [chromium] › e2e/chrome-dark.spec.ts:62:1 › / header has no axe violations in dark (1.7s)
+  ✓   68 [chromium] › e2e/chrome-dark.spec.ts:87:1 › at 375px the open Menu has no axe violations in dark (1.7s)
+  ✓   69 [chromium] › e2e/chrome-dark.spec.ts:102:1 › the header is dark in dark mode (1.4s)
+  ✓   70 [chromium] › e2e/chrome-dark.spec.ts:107:1 › /'s Details face follows the dark tokens: the goal row's fill is the dark accent (1.6s)
+  ✓   53 [chromium] › e2e/brush.spec.ts:253:5 › brush tool › desktop › a restored plan undoes and redoes over its load: the score follows, no worker errors (8.9s)
+  ✓   67 [chromium] › e2e/chrome-dark.spec.ts:68:1 › /sim header, playhead and timeline have no axe violations in dark (5.0s)
+  ✓   71 [chromium] › e2e/chrome-dark.spec.ts:127:3 › the editor on Transit rule has no axe violations in dark (4.7s)
+  ✓   72 [chromium] › e2e/chrome-dark.spec.ts:127:3 › the editor on Painted area has no axe violations in dark (4.4s)
+  ✓   73 [chromium] › e2e/chrome-dark.spec.ts:127:3 › the editor on Permits at San Diego's pace has no axe violations in dark (4.7s)
+  ✓   74 [chromium] › e2e/chrome-dark.spec.ts:127:3 › the editor on Protect historic buildings has no axe violations in dark (4.9s)
+  ✓   75 [chromium] › e2e/chrome-dark.spec.ts:136:1 › /'s Details face, a plan painted and both disclosures open, has no axe violations in dark (4.7s)
+  ✓   76 [chromium] › e2e/chrome-dark.spec.ts:149:1 › /'s stroke chip has no axe violations in dark (4.6s)
+  ✓   77 [chromium] › e2e/chrome-dark.spec.ts:167:1 › /'s dock on its Paint tab, a plan painted, has no axe violations in dark (5.0s)
+  ✓   80 [chromium] › e2e/chrome-dark.spec.ts:228:1 › /p/:id's read-only Paint tab, its line and summary, has no axe violations in dark (2.5s)
+  ✓   81 [chromium] › e2e/chrome-dark.spec.ts:247:1 › /'s notice pill (N1) in the one stack has no axe violations in dark (1.7s)
+  ✓   78 [chromium] › e2e/chrome-dark.spec.ts:189:1 › /'s open map key, a height painted and pressed, has no axe violations in dark (5.9s)
+  ✘   11 [chromium] › e2e/account-a11y.spec.ts:29:1 › account: a pseudonymous account has no axe violations, with the email form and after sending (30.0s)
+  ✓   79 [chromium] › e2e/chrome-dark.spec.ts:212:1 › the open Layers panel has no axe violations in dark (6.2s)
+[WebServer] ✘ [ERROR] 
+[WebServer] 
+[WebServer]   [404] GET /sims
+[WebServer] 
+[WebServer] 
+  ✘   19 [chromium] › e2e/account-deletion.spec.ts:103:1 › a pseudonymous visitor deletes their account and ends signed out (30.0s)
+[WebServer] ✘ [ERROR] 
+[WebServer] 
+[WebServer]   [404] GET /sims
+[WebServer] 
+[WebServer] 
+  ✘   25 [chromium] › e2e/account-email.spec.ts:39:1 › a pseudonymous visitor adds an email through a magic link and keeps the account (30.0s)
+[WebServer] ✘ [ERROR] 
+[WebServer] 
+[WebServer]   [404] GET /sims
+[WebServer] 
+[WebServer] 
+  ✓   83 [chromium] › e2e/chrome-dark.spec.ts:291:1 › a permitting policy with a stage open has no axe violations in dark (5.0s)
+  ✓   82 [chromium] › e2e/chrome-dark.spec.ts:260:1 › at 375px the palette strip has no axe violations in dark, palette open and in Erase (5.5s)
+  ✓   84 [chromium] › e2e/chrome-dark.spec.ts:305:1 › a transit rule's editor at a bound, then the plan's row, has no axe violations in dark (5.7s)
+  ✓   86 [chromium] › e2e/chrome-dark.spec.ts:332:1 › the chart with a policy in force, played to the end, has no axe violations in dark (5.7s)
+  ✓   89 [chromium] › e2e/chrome-dark.spec.ts:354:1 › Details has no axe violations in dark (4.7s)
+  ✓   92 [chromium] › e2e/chrome-dark.spec.ts:406:1 › the editor's and the timeline's computed background is surface-dark in dark (4.4s)
+  ✓   90 [chromium] › e2e/chrome-dark.spec.ts:387:1 › the shared view's read-only editor has no axe violations in dark (10.1s)
+  ✓   94 [chromium] › e2e/chrome-dark.spec.ts:445:1 › the pill stack showing a notice has no axe violations in dark (3.0s)
+  ✓   93 [chromium] › e2e/chrome-dark.spec.ts:419:1 › an open project card has no axe violations in dark (6.0s)
+  ✓   91 [chromium] › e2e/chrome-dark.spec.ts:399:1 › the shared view's Details has no axe violations in dark (9.8s)
+  ✓   98 [chromium] › e2e/chrome-dark.spec.ts:527:1 › color-scheme follows the theme on the map pages, and a document page stays light (3.3s)
+  ✓   95 [chromium] › e2e/chrome-dark.spec.ts:465:1 › the Publish dialog has no axe violations in dark and draws on surface-dark (4.9s)
+  ✓   96 [chromium] › e2e/chrome-dark.spec.ts:479:1 › the Autosave off popover has no axe violations in dark (5.2s)
+  ✓   97 [chromium] › e2e/chrome-dark.spec.ts:499:1 › About on /sim in dark: surface-dark, muted text in ink-dark-muted, no axe violations (5.4s)
+  ✓  100 [chromium] › e2e/compositions.spec.ts:5:5 › light elevated composition district at 5 floors (2.8s)
+  ✓  101 [chromium] › e2e/compositions.spec.ts:5:5 › light elevated composition district at 6 floors (2.8s)
+  ✓  102 [chromium] › e2e/compositions.spec.ts:5:5 › light elevated composition district at 8 floors (2.8s)
+  ✓  103 [chromium] › e2e/compositions.spec.ts:5:5 › light elevated composition district at 12 floors (2.8s)
+  ✓  104 [chromium] › e2e/compositions.spec.ts:5:5 › light elevated composition district at 20 floors (2.9s)
+  ✓  105 [chromium] › e2e/compositions.spec.ts:5:5 › light elevated composition district at 40 floors (2.8s)
+  ✓   99 [chromium] › e2e/chrome-dark.spec.ts:539:1 › the shared view's banner and its Remix dialog have no axe violations in dark (7.5s)
+  ✓  106 [chromium] › e2e/compositions.spec.ts:5:5 › dark elevated composition district at 5 floors (2.8s)
+  ✓  107 [chromium] › e2e/compositions.spec.ts:5:5 › dark elevated composition district at 6 floors (2.8s)
+  ✓  108 [chromium] › e2e/compositions.spec.ts:5:5 › dark elevated composition district at 8 floors (2.8s)
+  ✓  112 [chromium] › e2e/data-fixture.spec.ts:3:1 › fixture-0 manifest, every chunk and a buildings range are served (48ms)
+  ✓  113 [chromium] › e2e/data-route.spec.ts:7:1 › serves a PMTiles byte range from local R2 (8ms)
+  ✓  114 [chromium] › e2e/data-route.spec.ts:21:1 › serves a suffix range clipped to the object (7ms)
+  ✓  115 [chromium] › e2e/data-route.spec.ts:30:1 › answers 416 for a range past the end (12ms)
+  ✓  116 [chromium] › e2e/data-route.spec.ts:38:1 › serves the full manifest with 200 and JSON type (11ms)
+  ✓  117 [chromium] › e2e/data-route.spec.ts:47:1 › 404s traversal and unknown versions (11ms)
+  ✓  109 [chromium] › e2e/compositions.spec.ts:5:5 › dark elevated composition district at 12 floors (2.8s)
+[WebServer] ✘ [ERROR] 
+[WebServer] 
+[WebServer]   [404] GET /sims
+[WebServer] 
+[WebServer] 
+  ✓  118 [chromium] › e2e/email-link.spec.ts:13:1 › cold signup: a never-seen email creates an account via the link (447ms)
+[WebServer] ✘ [ERROR] 
+[WebServer] 
+[WebServer]   [404] GET /sims
+[WebServer] 
+[WebServer] 
+  ✓  120 [chromium] › e2e/email-link.spec.ts:52:1 › the link lands on a safe returnTo (287ms)
+  ✓  110 [chromium] › e2e/compositions.spec.ts:5:5 › dark elevated composition district at 20 floors (2.7s)
+  ✓  111 [chromium] › e2e/compositions.spec.ts:5:5 › dark elevated composition district at 40 floors (2.7s)
+  ✓  122 [chromium] › e2e/fzp-sim.spec.ts:110:1 › the same document after a reload fills an identical forecast (878ms)
+  ✘   85 [chromium] › e2e/account-a11y.spec.ts:29:1 › account: a pseudonymous account has no axe violations, with the email form and after sending (retry #1) (30.0s)
+  ✘   87 [chromium] › e2e/account-deletion.spec.ts:103:1 › a pseudonymous visitor deletes their account and ends signed out (retry #1) (30.0s)
+  ✓  121 [chromium] › e2e/fzp-sim.spec.ts:47:1 › fetches only the viewport chunks, the scenario files, policy.bin and gross.bin (3.2s)
+  ✘   88 [chromium] › e2e/account-email.spec.ts:39:1 › a pseudonymous visitor adds an email through a magic link and keeps the account (retry #1) (30.0s)
+  ✓  123 [chromium] › e2e/fzp.spec.ts:233:1 › loads ready and the keyboard drives the playhead to both ends (5.1s)
+  ✓  124 [chromium] › e2e/fzp.spec.ts:259:1 › nothing plays on open: the day stays at asOf until Play is pressed (4.9s)
+  ✓  125 [chromium] › e2e/fzp.spec.ts:276:1 › tapping a real project opens its card with the DataSF source links (6.8s)
+  ✓  126 [chromium] › e2e/fzp.spec.ts:327:3 › from md the card opens beside the building (right of the map), inside the map (7.8s)
+  ✓  127 [chromium] › e2e/fzp.spec.ts:327:3 › from md the card opens beside the building (left of the map), inside the map (8.1s)
+  ✓  128 [chromium] › e2e/fzp.spec.ts:358:3 › from md a tall card (low on the right) stays off the attribution and the zoom controls (7.5s)
+  ✓  129 [chromium] › e2e/fzp.spec.ts:358:3 › from md a tall card (low beside the zoom controls) stays off the attribution and the zoom controls (8.0s)
+  ✓  130 [chromium] › e2e/fzp.spec.ts:382:1 › from md the card follows its building when the map pans (8.6s)
+  ✓  131 [chromium] › e2e/fzp.spec.ts:404:1 › from md the card clears a showing notice pill (8.0s)
+  ✓  136 [chromium] › e2e/fzp.spec.ts:583:1 › a dataset without scenarios shows the message and starts no worker (2.3s)
+  ✓  132 [chromium] › e2e/fzp.spec.ts:434:1 › a phase of a multi-phase project reads "Phase n of m" once the playhead reaches it (7.3s)
+  ✓  137 [chromium] › e2e/fzp.spec.ts:611:1 › a calibration that fails to load shows the failure with Retry, and passes axe (1.0s)
+  ✓  139 [chromium] › e2e/fzp.spec.ts:637:1 › /about carries the scenario notice (159ms)
+  ✓  133 [chromium] › e2e/fzp.spec.ts:503:1 › a record the data checks changed lists them under "About this record's data" (7.5s)
+  ✓  134 [chromium] › e2e/fzp.spec.ts:517:1 › clicking empty map closes the card; moving the pointer off the part does not (8.5s)
+  ✓  135 [chromium] › e2e/fzp.spec.ts:542:1 › About's assumptions list every parameter and every data check (6.0s)
+  ✓  138 [chromium] › e2e/fzp.spec.ts:627:1 › the header links move between the editor and the simulation (5.7s)
+  ✓  142 [chromium] › e2e/fzp.spec.ts:657:1 › axe: the crash chip (5.9s)
+  -  146 [chromium] › e2e/fzp.spec.ts:727:1 › at 375 px a project card stays below the header, and the header score stays pressable
+  -  147 [chromium] › e2e/fzp.spec.ts:749:1 › no footer; the About entry stays unobscured at 375 px: playhead, card and Details
+  ✓  141 [chromium] › e2e/fzp.spec.ts:650:1 › axe: About open over the map (6.8s)
+  ✓  149 [chromium] › e2e/game-helpers.spec.ts:54:1 › with no helper, nothing is stored (121ms)
+  ✓  148 [chromium] › e2e/game-helpers.spec.ts:61:1 › seedGame(page, 5) seeds a level 5 game with three bars (126ms)
+  ✓  151 [chromium] › e2e/game-helpers.spec.ts:90:1 › SEED_BAR_DAY is the first of October 2066 (0ms)
+  ✓  152 [chromium] › e2e/game-helpers.spec.ts:94:1 › seedGame at level 3 (140ms)
+  ✓  150 [chromium] › e2e/game-helpers.spec.ts:74:1 › a seeded game is what the page keeps (175ms)
+  ✓  153 [chromium] › e2e/game-helpers.spec.ts:101:1 › seedGame at level 2 (114ms)
+  ✓  154 [chromium] › e2e/game-helpers.spec.ts:109:1 › seedGame at level 1 (193ms)
+  ✓  155 [chromium] › e2e/game-helpers.spec.ts:117:1 › newVisitor switches the game on and stores nothing (145ms)
+  ✓  156 [chromium] › e2e/game-helpers.spec.ts:125:1 › the seed is written once (186ms)
+  ✓  157 [chromium] › e2e/game-helpers.spec.ts:146:1 › a stored index is never overwritten (185ms)
+  ✓  158 [chromium] › e2e/game-helpers.spec.ts:164:1 › seedGoalAmount sets the goal and leaves the game open (112ms)
+  ✓  143 [chromium] › e2e/fzp.spec.ts:668:1 › a notice is a pill at the top: it moves nothing on desktop and pushes the map down on a phone (5.6s)
+  ✓  159 [chromium] › e2e/game-helpers.spec.ts:171:1 › the helpers refuse bad calls (129ms)
+  ✓  160 [chromium] › e2e/game-helpers.spec.ts:188:1 › storage that refuses writes still loads (156ms)
+  -  163 [chromium] › e2e/layout.spec.ts:243:3 › mobile › /: no footer; the About entry stays visible, unobscured and tappable over the handle and sheet
+  -  164 [chromium] › e2e/layout.spec.ts:257:3 › mobile › /p/:id: no footer; the About entry stays visible, unobscured and tappable
+  ✓  162 [chromium] › e2e/headers.spec.ts:3:1 › home page sends CSP and referrer policy with no CSP violations (136ms)
+  -  165 [chromium] › e2e/layout.spec.ts:272:3 › mobile › /p/:id at 375 px: the header fits in 48 px and the site name waits in the Menu
+  -  166 [chromium] › e2e/layout.spec.ts:309:3 › mobile › 375 px: a stroke's chip overlays the map: the map region keeps its height, the strip stays clear
+  -  167 [chromium] › e2e/layout.spec.ts:288:3 › mobile › /: a status message is a pill under the header, clear of the strip and the map controls
+  -  168 [chromium] › e2e/layout.spec.ts:355:3 › mobile › /: the failed phase shows its Retry pill, unobscured
