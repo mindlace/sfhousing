@@ -1,0 +1,3 @@
+Build graph @ 0fe84e79
+Longest chain: contracts -> finite-funding -> pool-closing -> reach-check -> closing
+Longest chain: remove-lesscars -> finite-funding -> pool-closing -> reach-check -> closing
