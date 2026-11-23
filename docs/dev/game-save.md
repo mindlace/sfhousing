@@ -193,8 +193,8 @@ Answers:
 Retry is driven by events (`changed`, `removed`, `online`, visibility), never by a timer of its
 own: the only timer is the debounce. A `changed` while `offline` sends every waiting save.
 
-The sync never invalidates or reloads page data, except the one reload after a pull that replaced
-the current game (`syncReload.reload()`, a seam a test spies on). After the `PUT` that made the
+The sync never invalidates or reloads page data, except the one reload after a pull adopts the
+current game (`syncReload.reload()`, a seam a test spies on). After the `PUT` that made the
 account, the header and the account offer show the handle from `account`.
 
 ### Keep both
@@ -249,10 +249,17 @@ gets the running one.
    kept under a new id.
 5. Every save here that is neither listed nor under `removed` drops its `seen` entry and is sent
    with `baseRev: null`.
+6. The current game, when step 3 fetched it to adopt: its adopt waits until every other step is
+   done and its sends have answered. Just before the call the sync checks again that it is
+   unchanged here; changed, it is sent instead with `baseRev: seen[id].rev`.
 
 Adopts go one at a time; the first `full` answer stops further adopts and sets `full`, while sends
-go on. When an adopt replaced the current game, the page reloads once after the pull; the next
-pull finds the same rev and does not reload.
+go on. An adopt of the current game runs the page's `beforeLeave` flushes (G2); when one wrote an
+edit that was still waiting, the store answers `changed` and the sync sends the game the same way,
+so the 409 keeps both. An adopt of the current game that answers `ok` sets `seen[id]` and reloads
+the page at once: the pull makes no request after it, and saves that came due during the pull stay
+waiting for the reloaded page's pull, which finds them changed here or unlisted. That pull finds
+the same rev and does not reload.
 
 ### State
 

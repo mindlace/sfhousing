@@ -24,7 +24,7 @@ export interface SaveSync {
 
 export const SAVE_REVS_KEY = 'sfhousing:saves:revs';
 
-/** The one reload after a pull replaced the current game; a test spies on it. */
+/** The one reload after a pull adopted the current game; a test spies on it. */
 export const syncReload = {
   reload(): void {
     location.reload();
@@ -76,6 +76,12 @@ function lineOf(body: unknown): AccountLine | null {
   if (!isPlain(body) || typeof body.handle !== 'string') return null;
   if (typeof body.handleClaimed !== 'boolean') return null;
   return { handle: body.handle, handleClaimed: body.handleClaimed };
+}
+
+/** The account's version of a saved game, as its GET answered. */
+interface Fetched {
+  save: GameSave;
+  rev: number;
 }
 
 interface AccountList {
@@ -153,8 +159,8 @@ class BrowserSync implements SaveSync {
   #pulling = $state(false);
   /** The running pull, returned to every caller while it runs. */
   #running: Promise<void> | null = null;
-  /** An adopt in this pull replaced the current game: the page reloads once when it ends. */
-  #reloadDue = false;
+  /** This pull adopted the current game and reloaded the page: it starts no request after. */
+  #reloaded = false;
   /** Ids this pull sent a DELETE for. */
   readonly #pullDeleted = new Set<string>();
   /** Sends and DELETEs in flight, with the handling of their answers. */
@@ -341,11 +347,14 @@ class BrowserSync implements SaveSync {
 
   // --- pull ---
 
-  /** Sends that waited for the pull, then the one reload when the current game was replaced. */
+  /**
+   * Sends that waited for the pull. After the reload they stay waiting: the reloaded page's pull
+   * finds them changed here or unlisted, and sends them.
+   */
   #afterPull(): void {
-    const reload = this.#reloadDue;
-    this.#reloadDue = false;
-    if (!this.#signIn) {
+    const reloaded = this.#reloaded;
+    this.#reloaded = false;
+    if (!this.#signIn && !reloaded) {
       for (const id of [...this.#waiting]) {
         if (!this.#timers.has(id) && !this.#busy.has(id)) void this.#send(id);
       }
@@ -354,7 +363,6 @@ class BrowserSync implements SaveSync {
       }
     }
     this.#pullDeleted.clear();
-    if (reload) syncReload.reload();
   }
 
   /** A GET outside the per-save request map. */
@@ -406,6 +414,8 @@ class BrowserSync implements SaveSync {
     const removed = new Set(list.removed);
     const order = [...list.saves].sort((a, b) => Date.parse(b.savedAt) - Date.parse(a.savedAt));
     let adopting = true;
+    /** The current game, fetched: its adopt waits for every other step. */
+    let last: { id: string; got: Fetched } | null = null;
     for (const entry of order) {
       if (this.#signIn) return;
       const here = store.read(entry.id);
@@ -413,14 +423,18 @@ class BrowserSync implements SaveSync {
       if (here === null) {
         due = !this.#record.deleting.includes(entry.id);
       } else if (!this.#unchanged(here)) {
-        this.#stopTimer(here.id);
-        void this.#send(here.id, true);
+        this.#sendNow(here.id);
         due = false;
       } else {
         due = entry.rev > this.#record.seen[here.id].rev;
       }
       if (!due || !adopting) continue;
-      adopting = await this.#fetchAndAdopt(entry.id, here === null);
+      const got = await this.#fetchSave(entry.id);
+      if (got === 'stop') return;
+      if (got === 'skip') continue;
+      if (entry.id === store.currentId) last = { id: entry.id, got };
+      else adopting = this.#adoptFetched(entry.id, got, here === null);
+      if (this.#reloaded) return;
     }
 
     // 4. The saves removed on the account that are here.
@@ -429,8 +443,7 @@ class BrowserSync implements SaveSync {
       const here = store.read(id);
       if (here === null) continue;
       if (!this.#unchanged(here)) {
-        this.#stopTimer(id);
-        void this.#send(id, true);
+        this.#sendNow(id);
       } else if (id === store.currentId) {
         this.#keepRemoved(id);
       } else {
@@ -451,42 +464,61 @@ class BrowserSync implements SaveSync {
       void this.#send(entry.id, true);
     }
     await this.#settled();
+
+    // 6. The current game, last.
+    if (last === null || !adopting || this.#signIn) return;
+    this.#adoptFetched(last.id, last.got, false);
+    if (!this.#reloaded) await this.#settled();
   }
 
-  /**
-   * Fetches the account's version of `id` and adopts it, unless `id` changed here (or, `absent`
-   * before the fetch, appeared here) while the fetch ran: then it is sent instead, so a 409 keeps
-   * both. False when adopts must stop.
-   */
-  async #fetchAndAdopt(id: string, absent: boolean): Promise<boolean> {
-    const store = this.#store as GameStore;
+  /** The pull's own send of `id`, now, with `baseRev: seen[id]?.rev ?? null`. */
+  #sendNow(id: string): void {
+    this.#stopTimer(id);
+    void this.#send(id, true);
+  }
+
+  /** The account's version of `id`; `skip` when there is none to adopt, `stop` on a 401. */
+  async #fetchSave(id: string): Promise<Fetched | 'skip' | 'stop'> {
     const end = await this.#get(url(id));
     if (end.ok && end.status === 401) {
       this.#stopForSignIn();
-      return false;
+      return 'stop';
     }
     if (BrowserSync.#failed(end)) {
       this.#offline = true;
-      return true;
+      return 'skip';
     }
-    if (!end.ok || end.status === 404 || end.status === 410) return true;
+    if (!end.ok || end.status === 404 || end.status === 410) return 'skip';
     const body = end.body;
     const save = isPlain(body) ? parseGameSave(body.save) : null;
     const rev = isPlain(body) && typeof body.rev === 'number' ? body.rev : null;
     if (end.status !== 200 || save === null || rev === null || save.id !== id) {
       // A defect, never a player's act.
       console.error('save sync: the account answered a saved game unreadably', id, end.status);
-      return true;
+      return 'skip';
     }
+    return { save, rev };
+  }
+
+  /**
+   * Adopts the fetched version of `id`, unless `id` changed here (or, `absent` before the fetch,
+   * appeared here) since: then, and when the store answers `changed`, it is sent instead, so a 409
+   * keeps both. An adopt of the current game reloads the page at once. False when adopts must stop.
+   */
+  #adoptFetched(id: string, got: Fetched, absent: boolean): boolean {
+    const store = this.#store as GameStore;
     const here = store.read(id);
     if (here !== null && (absent || !this.#unchanged(here))) {
-      this.#stopTimer(id);
-      void this.#send(id, true);
+      this.#sendNow(id);
       return true;
     }
     const replacing = id === store.currentId;
-    const adopted = this.#quiet((s) => s.adopt([save]));
+    const adopted = this.#quiet((s) => s.adopt([got.save]));
     if (!adopted.ok) {
+      if (adopted.reason === 'changed') {
+        this.#sendNow(id);
+        return true;
+      }
       if (adopted.reason === 'full') {
         this.#full = true;
         return false;
@@ -494,8 +526,11 @@ class BrowserSync implements SaveSync {
       this.#offline = true;
       return true;
     }
-    this.#see(id, rev, save.savedAt);
-    if (replacing) this.#reloadDue = true;
+    this.#see(id, got.rev, got.save.savedAt);
+    if (replacing) {
+      this.#reloaded = true;
+      syncReload.reload();
+    }
     return true;
   }
 
