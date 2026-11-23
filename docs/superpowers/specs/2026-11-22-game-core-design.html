@@ -766,7 +766,7 @@ interface SavesIndex {
 
     <section id="sec-design-layout">
       <h3>The root layout's store script</h3>
-      <p>This unit writes the part of <code>src/routes/+layout.svelte</code>'s script that makes and provides the store. <code>game-shell</code> writes the rest of the layout afterwards.</p>
+      <p>This unit writes the part of <code>src/routes/+layout.svelte</code>'s script that makes and provides the store. The rest of the layout is unchanged in this build: <code>SiteHeader</code> reads the game itself with <code>useGame()</code>, so no other unit writes the layout.</p>
       <pre><code data-lang="svelte">&lt;script lang="ts"&gt;
   // added imports
   import { browser } from '$app/environment';
@@ -966,7 +966,7 @@ export function loadPage(path: '/' | '/sim'): void;</code></pre>
   <section id="sec-write-set">
     <h2>Write set</h2>
     <p>From the design doc: <code>src/lib/game/**</code> except <code>save-sync.svelte.ts</code>, <code>AccountOffer.svelte</code> and their tests; the script of <code>src/routes/+layout.svelte</code> that makes and provides the store; <code>docs/dev/game.md</code>. A write set includes the tests and harnesses beside its files.</p>
-    <p>Ordering: this unit builds after <code>contracts</code>. <code>game-sim</code>, <code>game-shell</code> and <code>game-save</code> need G2 as built here. <code>game-shell</code> writes <code>src/routes/+layout.svelte</code> after this unit, outside the store's script.</p>
+    <p>Ordering: this unit builds after <code>contracts</code>. <code>game-sim</code>, <code>game-shell</code> and <code>game-save</code> need G2 as built here. <code>src/routes/+layout.svelte</code> is written by this unit alone; no other unit changes it.</p>
     <p>Changed:</p>
     <ul>
       <li><code>src/lib/game/levels.ts</code>, <code>progress.ts</code>, <code>saves.ts</code>, <code>store.svelte.ts</code>, <code>allowed.ts</code>, <code>standing.ts</code>, <code>copy.ts</code></li>
@@ -1067,7 +1067,7 @@ export function loadPage(path: '/' | '/sim'): void;</code></pre>
   <section id="sec-out-of-scope">
     <h2>Out of scope</h2>
     <ul>
-      <li>The header's level cell and its pop-over, the rest of the root layout, Paint's win and its card, and Remix on <code>/s/&lt;id&gt;</code> and <code>/p/&lt;id&gt;</code>: <code>game-shell</code>.</li>
+      <li>The header's level cell and its pop-over, Paint's win and its card, and Remix on <code>/s/&lt;id&gt;</code> and <code>/p/&lt;id&gt;</code>: <code>game-shell</code>.</li>
       <li>Listing <code>WinCard.svelte</code> and <code>LevelPanel.svelte</code> in <code>THEMED_FILES</code>: <code>game-shell</code>.</li>
       <li>Mounting the win card on <code>/sim</code>, calling <code>won()</code>, <code>setOffer</code> and <code>touched()</code>, the reworded outcome message, the "To beat" flag and Details line, locked lanes, the playable document to the worker and to Publish, and a money policy made from a preset carrying the preset's id: <code>game-sim</code>.</li>
       <li>The save sync's behaviour and the account offer's content: <code>game-save</code>.</li>
