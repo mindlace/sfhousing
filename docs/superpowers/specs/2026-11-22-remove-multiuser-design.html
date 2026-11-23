@@ -333,7 +333,7 @@ type E2eLoginBody = { email: string } | { pseudonymous: true };
 /** Sign this context in as a fresh pseudonymous account. */
 export function startPseudonymous(page: Page): Promise&lt;void&gt;;</code></pre>
       <ul>
-        <li><code>mintTestPseudonym</code> writes a <code>principal</code>, a <code>user_identity</code> and a <code>user</code> with <code>isAnonymous</code> true, <code>emailVerified</code> false, the email <code>&lt;userId&gt;@</code> plus <code>PSEUDONYMOUS_EMAIL_DOMAIN</code>, and a handle from <code>generateUniqueHandle</code>.</li>
+        <li><code>mintTestPseudonym</code> writes a <code>principal</code>, a <code>user_identity</code> and a <code>user</code> with <code>isAnonymous</code> true, <code>emailVerified</code> false, the email <code>&lt;userId&gt;@</code> plus <code>PSEUDONYMOUS_EMAIL_DOMAIN</code>, lower-cased whole, as Better-Auth stores every email, and a handle from <code>generateUniqueHandle</code>.</li>
         <li><code>POST /api/e2e/login</code> with <code>{ pseudonymous: true }</code> mints one, issues a session as for an email and answers <code>{ userId }</code> with the session cookie. The gates (<code>VITE_E2E</code>, <code>isE2eEnv</code>) are unchanged.</li>
         <li><code>startPseudonymous(page)</code> posts that body through <code>page.request</code>, so the cookie lands in the page's context. It takes no title.</li>
         <li><code>/api/e2e/mail</code> accepts the three kinds of <code>E2eMailKind</code>; <code>kind=invite</code> answers 404.</li>
@@ -739,7 +739,7 @@ export function startPseudonymous(page: Page): Promise&lt;void&gt;;</code></pre>
         <dt><code>src/lib/server/e2e/mail-sink.spec.ts</code></dt>
         <dd>Uses <code>'password-reset'</code> where it used <code>'invite'</code>.</dd>
         <dt><code>src/lib/server/e2e/session.spec.ts</code></dt>
-        <dd>New: <code>mintTestPseudonym</code> writes an anonymous user with the pseudonymous email domain and a unique handle.</dd>
+        <dd>New: <code>mintTestPseudonym</code> writes an anonymous user with a lower-case address in the pseudonymous email domain and a unique handle.</dd>
         <dt><code>src/lib/server/db/schema/auth-schema.spec.ts</code>, <code>src/lib/server/test/auth-db.spec.ts</code></dt>
         <dd>The <code>capability_event</code> and <code>sim_invite</code> cases go. New: on a freshly migrated database the tables, leaving out names that start with <code>sqlite_</code>, <code>_cf_</code> or <code>d1_</code>, are exactly the nine identity tables and <code>plan</code>, and none of the five dropped tables exists.</dd>
         <dt><code>scripts/wrangler-config.spec.ts</code></dt>
