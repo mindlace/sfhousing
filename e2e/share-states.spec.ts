@@ -1,7 +1,8 @@
 // Plan sharing e2e states (spec §6): not-found page, a rate-limited publish (route-mocked 429; the
-// development preview bypasses the real limiter), autosave restore on reload, the Remix confirm,
-// and two states only a row seeded through the e2e-only route can produce (N6, unparsable).
+// development preview bypasses the real limiter), autosave restore on reload, Remix over local
+// work, and two states only a row seeded through the e2e-only route can produce (N6, unparsable).
 import { expect, test, type Page } from '@playwright/test';
+import { seedGame } from './helpers/game';
 import {
   PLAN_KEY,
   gotoEditor,
@@ -125,7 +126,7 @@ test('reload restores the autosaved plan', async ({ page, isMobile }) => {
   await expect.poll(() => ops(page)).toBe(1);
 });
 
-test('Remix over a non-empty local plan asks first; Cancel stays on the shared plan', async ({
+test('Remix over a non-empty local plan opens Paint on the published plan', async ({
   page,
   request,
   isMobile
@@ -137,6 +138,7 @@ test('Remix over a non-empty local plan asks first; Cancel stays on the shared p
   expect(res.ok()).toBe(true);
   const { id } = (await res.json()) as { id: string };
 
+  await seedGame(page, 3);
   await gotoEditor(page);
   await paintOnce(page, isMobile);
   await waitSaved(page);
@@ -147,11 +149,9 @@ test('Remix over a non-empty local plan asks first; Cancel stays on the shared p
   // Hydration wires the Remix handler; wait for the map so the click is not lost to SSR markup.
   await waitForMap(page);
   await banner.getByRole('button', { name: 'Remix' }).click();
-  const confirm = page.getByRole('dialog');
-  await expect(confirm).toContainText('(1 strokes)');
-  await confirm.getByRole('button', { name: 'Cancel' }).click();
-  await expect(confirm).toBeHidden();
-  await expect(page).toHaveURL(new RegExp(`/p/${id}$`));
+  await expect(page).toHaveURL(/\/$/);
+  // small.json holds 3 ops: Paint opens the published plan, not the 1-stroke local one.
+  await expect.poll(() => ops(page)).toBe(3);
 });
 
 test('N6: a share link whose dataset version is gone renders on the current data', async ({

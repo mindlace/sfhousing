@@ -1,15 +1,16 @@
-// Plan-sharing notices (spec §4.5/§4.8) on the sim-ux layout: N1 to N3 and the Remix toast are
-// pills in BrushEditor's one notice stack (`fzp-notices`, after the brush status), as on /sim
+// Plan-sharing notices (spec §4.5/§4.8) on the sim-ux layout: N1 to N3 are pills in BrushEditor's one notice stack (`fzp-notices`, after the brush status), as on /sim
 // (sim-ux spec Goal 8). From 768 px the stack overlays the map's top centre, right of the dock; below
 // 768 px it is in flow under the header. Either way a notice never covers the dock, map-view's
 // failure chips, its attribution or its navigation control, at every width from 375 to 1440 px.
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { seedGame } from './helpers/game';
 import {
   FRAME,
   PLAN_KEY,
   gotoEditor,
   jumpAndIdle,
   oldVersionText,
+  ops,
   smallText,
   waitForMap
 } from './helpers/sharing';
@@ -210,7 +211,10 @@ test.describe('desktop', () => {
     await expectChipsRightOfDock(page, rail);
   });
 
-  test('1024×768: the Remix toast is clear of the map chrome too', async ({ page, request }) => {
+  test('1024×768: after Remix, Paint opens the published plan with the parcels chip', async ({
+    page,
+    request
+  }) => {
     await page.setViewportSize({ width: 1024, height: 768 });
     const res = await request.post('/api/plans', {
       data: smallText,
@@ -218,10 +222,10 @@ test.describe('desktop', () => {
     });
     expect(res.ok()).toBe(true);
     const { id } = (await res.json()) as { id: string };
+    await seedGame(page, 3);
     await page.goto(`/p/${id}`);
     await waitForMap(page);
-    // Only the parcels chip here: a client-side navigation with the buildings archive failing
-    // can leave the fresh map loading.
+    // Only the parcels chip, on the page Remix loads.
     await page.route(CHUNK, (r) => r.abort());
     await page
       .getByRole('region', { name: 'Shared plan' })
@@ -229,10 +233,11 @@ test.describe('desktop', () => {
       .click();
     await expect(page).toHaveURL(/\/$/);
     await waitForMap(page);
+    await expect.poll(() => ops(page)).toBe(3);
     await jumpAndIdle(page, FRAME);
-    await expect(notice(page).filter({ hasText: /^Remixed from/ })).toBeVisible();
     await expect(chunkChip(page)).toBeVisible({ timeout: 10_000 });
-    await expectNoticesClear(page, ['parcels chip', 'attribution', 'dock panel']);
+    // The loaded page shows no Remix toast.
+    await expect(notice(page)).toHaveCount(0);
   });
 });
 

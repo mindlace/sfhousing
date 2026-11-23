@@ -1,15 +1,18 @@
 <script lang="ts">
   // A published /sim policy, read-only (plan 5, Task 6; spec §4.7 as /p/[id]): the banner above
-  // the map with Remix and Start your own, then the shared /sim body in view mode (no editing, no
-  // autosave, no Publish). The load opened the document (timeline-ui Task 15, R-4). The local
-  // schema 4 autosave is only read (is anything in force?) and written by an explicit Remix.
-  import { goto } from '$app/navigation';
-  import { copyFor } from '$lib/sharing/copy';
-  import { localDoc, remixToLocal } from '$lib/sharing/remix';
-  import SharedBanner from '$lib/sharing/SharedBanner.svelte';
-  import { getStorage } from '$lib/sharing/storage';
+  // the map with Remix and Your game, then the shared /sim body in view mode (no editing, no
+  // autosave, no Publish). The load opened the document (timeline-ui Task 15, R-4). Remix makes a
+  // saved game holding the opened document and loads /sim (game-shell, sec-design-remix).
+  import { onMount } from 'svelte';
+  import { needsHigher, simLocked } from '$lib/game/allowed';
+  import { STORAGE_TEXT } from '$lib/game/copy';
+  import { gamePath, loadPage, remixPath } from '$lib/game/navigate';
+  import { MAX_SAVES } from '$lib/game/saves';
+  import { useGame } from '$lib/game/store.svelte';
+  import { REMIX_LATER, copyFor, remixNeeds } from '$lib/sharing/copy';
+  import SharedBanner, { type RemixState } from '$lib/sharing/SharedBanner.svelte';
+  import type { LocalPlanRecord } from '$lib/sharing/storage';
   import SimRoute from '$lib/sim-page/SimRoute.svelte';
-  import { SIM_SERVER_CODEC4 } from '$lib/timeline/server-codec';
   import { createSimCodec4 } from '$lib/timeline/sim-doc4';
   import type { PageProps } from './$types';
 
@@ -22,35 +25,48 @@
   const heading = $derived(data.doc.title ?? 'Shared policy');
   const pageTitle = $derived(`${heading} · SF Housing Simulator`);
 
-  /** Call 18: confirm only when Remix would replace a local document with anything in force. */
-  function confirmText(): string | null {
-    // The server codec reads the v2 record without a dataset: nothing to open for this question.
-    const local = localDoc(getStorage(), SIM_SERVER_CODEC4);
-    return local && !SIM_SERVER_CODEC4.isEmpty(local) ? SIM.remixConfirm(0) : null;
-  }
+  const game = useGame();
+  let mounted = $state(false);
+  onMount(() => {
+    mounted = true;
+  });
+  /** Why the last Remix failed; null when it did not. */
+  let error = $state<string | null>(null);
+  /** Set once a Remix succeeded: the page is loading /sim, so a second press does nothing. */
+  let leaving = false;
 
-  // As /p (ruling 7): hand the remix to /sim via history state. The opened document is written
-  // under `sfhousing:sim:v2`; it rides along only when that write failed. With no calibration
-  // (nothing opened yet), the shared text rides along and /sim opens it.
+  const remixState: RemixState = $derived.by(() => {
+    if (!mounted) return { kind: 'ready', note: null };
+    if (game.open) return null;
+    if (simLocked(game.progress)) return { kind: 'locked' };
+    if (game.saves.length >= MAX_SAVES) return { kind: 'full' };
+    const need = data.opened ? needsHigher(data.opened.doc.policy, game.progress) : null;
+    return {
+      kind: 'ready',
+      note: need === null ? null : need === 6 ? REMIX_LATER : remixNeeds(need)
+    };
+  });
+  const gameHref = $derived(mounted ? gamePath(game.progress.level) : '/');
+
   function remix(): void {
-    const from = data.doc.title ?? data.id;
-    const upgradedFrom = data.upgradedFrom;
+    if (leaving || remixState?.kind !== 'ready') return;
     const cal = data.calibration;
-    let handoff: { from: string; doc?: string; upgradedFrom?: number };
+    let plan = data.doc.text;
     if (data.opened && cal) {
-      const { planText, stored } = remixToLocal(
-        data.opened.doc,
-        data.currentDatasetVersion,
-        getStorage(),
-        new Date(),
-        createSimCodec4({ asOf: cal.asOf, calibration: cal })
-      );
-      handoff = stored ? { from, upgradedFrom } : { from, doc: planText, upgradedFrom };
-    } else {
-      handoff = { from, doc: data.doc.text, upgradedFrom };
+      const codec = createSimCodec4({ asOf: cal.asOf, calibration: cal });
+      plan = codec.serialize(codec.rebase(data.opened.doc, data.currentDatasetVersion));
     }
-    if (handoff.upgradedFrom === undefined) delete handoff.upgradedFrom;
-    void goto('/sim', { state: { sfhSimRemix: handoff } });
+    const record = JSON.stringify({
+      v: 1,
+      savedAt: new Date().toISOString(),
+      plan
+    } satisfies LocalPlanRecord);
+    const r = game.remix({ kind: 'sim', record, title: data.doc.title ?? SIM.untitled });
+    if (r.ok) {
+      leaving = true;
+      error = null;
+      loadPage(remixPath('sim'));
+    } else error = r.reason === 'storage' ? STORAGE_TEXT : null;
   }
 </script>
 
@@ -71,7 +87,9 @@
     planVersion={data.doc.datasetVersion}
     currentVersion={data.currentDatasetVersion}
     kind="sim"
-    {confirmText}
+    remix={remixState}
+    {error}
+    {gameHref}
     onremix={remix}
   />
   <div class="relative min-h-0 flex-1">
