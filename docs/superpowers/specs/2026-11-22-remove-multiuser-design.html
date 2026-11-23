@@ -357,6 +357,7 @@ export function startPseudonymous(page: Page): Promise&lt;void&gt;;</code></pre>
       <li><code>src/lib/account/**</code></li>
       <li><code>scripts/worker-entry*.ts</code>, <code>scripts/wrangler-config.spec.ts</code></li>
       <li><code>wrangler.jsonc</code>, <code>package.json</code>, <code>drizzle.sim.config.ts</code>, <code>drizzle-cf.config.ts</code>, <code>svelte.config.js</code>, <code>playwright.config.ts</code></li>
+      <li>The <code>stderrAllowlist</code> entry of <code>chreode.config.ts</code> for the 404s of the removed URLs</li>
       <li>The multi-user and account e2e specs and helpers</li>
       <li><code>docs/dev/auth.md</code></li>
     </ul>
@@ -693,6 +694,7 @@ export function startPseudonymous(page: Page): Promise&lt;void&gt;;</code></pre>
         <li><code>src/routes/api/e2e/mail/+server.ts</code>: <code>'invite'</code> leaves <code>KINDS</code>.</li>
         <li><code>src/routes/api/e2e/login/+server.ts</code>: the <code>{ pseudonymous: true }</code> body (<a href="#sec-design-e2e">e2e seams</a>).</li>
         <li><code>playwright.config.ts</code>: the <code>--var SIM_TAKEDOWN_TOKEN:…</code> flag and its comment (<code>:49-51</code>) go.</li>
+        <li><code>chreode.config.ts</code>, <code>stderrAllowlist</code>: one entry, right after the <code>/no-such-page</code> entry, whose pattern matches exactly the lines <code>[WebServer] [404] GET /sims</code>, <code>GET /sims/abc</code>, <code>GET /invite/abc</code>, <code>GET /api/sims</code> and <code>POST /api/operator/sims/abc/takedown</code>, with the reason "the expected 404s of the removed URLs that e2e/auth-a11y.spec.ts requests". Nothing else in the file changes here; its line 72 is <code>closing</code>'s.</li>
         <li><code>e2e/helpers/account.ts</code>, <code>e2e/account-deletion.spec.ts</code>, <code>e2e/auth-a11y.spec.ts</code>, <code>e2e/auth-methods-default.spec.ts</code>, <code>e2e/email-link.spec.ts</code>, <code>e2e/sign-out.spec.ts</code>, <code>e2e/account-a11y.spec.ts</code>, <code>e2e/password-auth.spec.ts</code>, <code>e2e/account-email.spec.ts</code></li>
         <li><code>docs/dev/auth.md</code></li>
       </ul>
@@ -762,7 +764,7 @@ export function startPseudonymous(page: Page): Promise&lt;void&gt;;</code></pre>
         <dt><code>e2e/email-link.spec.ts</code></dt>
         <dd>"a known device resumes its sim" goes. The safe-returnTo case uses <code>returnTo=/about</code>.</dd>
         <dt>New in <code>e2e/auth-a11y.spec.ts</code></dt>
-        <dd><code>/sims</code>, <code>/sims/abc</code> and <code>/invite/abc</code> answer 404 with "Page not found"; <code>GET /api/sims</code> and <code>POST /api/operator/sims/abc/takedown</code> answer 404.</dd>
+        <dd><code>/sims</code>, <code>/sims/abc</code> and <code>/invite/abc</code> answer 404 with "Page not found"; <code>GET /api/sims</code> and <code>POST /api/operator/sims/abc/takedown</code> answer 404. The <code>[WebServer] [404]</code> lines they log are allowed by this unit's <code>stderrAllowlist</code> entry in <code>chreode.config.ts</code>.</dd>
       </dl>
     </section>
   </section>
