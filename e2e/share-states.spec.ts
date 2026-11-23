@@ -150,6 +150,8 @@ test('Remix over a non-empty local plan opens Paint on the published plan', asyn
   await waitForMap(page);
   await banner.getByRole('button', { name: 'Remix' }).click();
   await expect(page).toHaveURL(/\/$/);
+  // toHaveURL passes when the new document commits; wait for Paint to mount and set its hook.
+  await waitForMap(page);
   // small.json holds 3 ops: Paint opens the published plan, not the 1-stroke local one.
   await expect.poll(() => ops(page)).toBe(3);
 });
@@ -159,6 +161,8 @@ test('N6: a share link whose dataset version is gone renders on the current data
   request
 }) => {
   const id = await seedPlanRow(request, { body: oldVersionText });
+  // In the open game the banner shows neither Remix nor "Open with current data".
+  await seedGame(page, 3);
   const res = await page.goto(`/p/${id}`);
   expect(res?.status()).toBe(200);
   const banner = page.getByRole('region', { name: 'Shared plan' });
@@ -166,6 +170,8 @@ test('N6: a share link whose dataset version is gone renders on the current data
     'Made with map data fixture-0000, which is no longer available. Shown on the current data ' +
       '(fixture-0); numbers may differ from when it was published.'
   );
+  // Until the page mounts, the banner shows Remix as ready whatever the game holds.
+  await expect(page.locator('html')).toHaveAttribute('data-hydrated', '');
   await expect(banner.getByRole('button', { name: 'Open with current data' })).toBeVisible();
   await waitForMap(page);
   await expect.poll(() => headerNet(page)).toBeGreaterThan(0);
