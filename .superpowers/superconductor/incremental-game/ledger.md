@@ -220,6 +220,7 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - game-save: incremental-game-game-save — status: admitted (admit message sent 22:15 at bc3d9bc0; branch incremental-game-game-save, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-game-save, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus, needs: I1, G2 built, S1–S3, X1 (all merged), produces: S1, S2, S3 (built))
 - game-core: incremental-game-game-core — status: complete (admit message sent at a333bd83; branch incremental-game-game-core, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-game-core, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus, needs: G1–G5, S2, S3, X1 (merged), produces: G1–G5 (built))
 - game-shell: incremental-game-game-shell — status: complete (relaunched 23:30 as admitted from its plan, tasks 1 to 6 and 8; branch incremental-game-game-shell brought up to f435a2da, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-game-shell, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus, needs: G1–G5 built, X1, L1 (all merged), produces: none)
+- game-save: incremental-game-game-save — status: complete (admit message sent 22:15 at bc3d9bc0; branch incremental-game-game-save, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-game-save, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus, needs: I1, G2 built, S1–S3, X1 (all merged), produces: S1, S2, S3 (built))
 
 ## Supervision
 - status asked remove-lesscars
@@ -461,6 +462,7 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - relayed conductor-13 to incremental-game-game-shell
 - relayed conductor-13 to incremental-game-game-sim (not delivered: session resting; owed in its restart's resends)
 - routed conductor-13
+- 2026-11-23 finite-funding-2 from finite-funding [defect-class: spec-code-mismatch]: the spec says an older dataset's $100B/yr federal pool (LEGACY_UNCAPPED_DOLLARS) "never binds", but Task 4's synthCity test shows it can; keep, raise or reword. Holds nothing; fork after the suite on game-save's merge reports →
 
 ## Forks
 - fork checkpoint-2 started 2026-11-22T16:20
@@ -629,6 +631,7 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - fork review-game-core-5e7fb04d exited [0]: output
 - fork review-game-shell-7bd6f1cb started 2026-11-22T23:55
 - fork review-game-shell-7bd6f1cb exited [0]: output
+- fork review-game-save-67739d50 started 2026-11-23T00:20
 
 ## Frame-defect tally
 - owner-ruling-drift: 2 — instances: conductor-1 (gate-1, 2026-11-22); conductor-8 (gate-7, 2026-11-22)
@@ -654,6 +657,7 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - spec-disagreement: 7 — adds game-shell-2 (2026-11-22), a leftover of the game-shell-1 ruling
 - source-evidence: 1 — instances: finite-funding-1 (2026-11-22)
 - unmodeled-interaction: 3 — adds conductor-13 (2026-11-22); tripwire: re-checkpoint when its ruling is routed
+- spec-code-mismatch: 3 — adds finite-funding-2 (2026-11-23); tripwire: re-checkpoint when its ruling is routed
 
 ## Integration
 - 17:50 merge of contracts @ f6ee1de3 made (merge commit 5453b107), full suite running in the package worktree (agent; logs in the session scratchpad `merge-contracts/`); not ledgered as merged until it passes. No amending fork starts until then; queued questions in order: remove-multiuser-1, game-core-1, game-core-2, game-core-3, game-sim-1, pool-closing-1, conductor-10, conductor-11. Then merge remove-multiuser's row I1 @ cbd11881.
@@ -712,6 +716,8 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - 23:50 merge of game-shell complete @ 7bd6f1cb made onto 9104d2e1 (merge commit 47ee98ae), suite running (agent; scratchpad `merge-game-shell/`); not merged until it passes; on failure reset to 9104d2e1 with ledger.md copied out and back. For closing, from its report (outside game-shell's write set): docs/dev/plan-sharing.md:132,134,201 and docs/dev/ui-parts.md:24,46 still describe "Start your own", the Remix confirm and the history-state hand-off; src/app.d.ts App.PageState.sfhRemix unused and sfhSimRemix never written; src/lib/sharing/remix.ts and remixConfirm may have only test callers.
 - merged game-shell @ 7bd6f1cb into superconductor/incremental-game (complete), tests pass (check 0 errors; lint 0 errors; unit 9024 passed; pipeline 2266 passed; e2e 762 passed, 0 failed, 0 flaky), band low
 - No drift @ 7bd6f1cb (review-game-shell-7bd6f1cb; asked to check the rewritten Task 4 against § sec-design-paint)
+- 2026-11-23 00:10 merge of game-save complete @ 67739d50 (Task 8, ruling conductor-13) made onto 89873c5f (merge commit c0079aeb), suite running (agent; scratchpad `merge-game-save-t8/`); not merged until it passes; on failure reset to 89873c5f with ledger.md copied out and back.
+- merged game-save @ 67739d50 into superconductor/incremental-game (complete; Task 8, ruling conductor-13), tests pass (check 0 errors; lint 0 errors; unit 9028 passed; pipeline 2266 passed; e2e 761 passed, 0 failed, 1 flaky: e2e/share-states.spec.ts:157 "N6: a share link whose dataset version is gone renders on the current data", 'Open with current data' button not visible on the first attempt, passed on retry), band low. Watch that test: shared pages are game-shell's; a second flake of it becomes a question.
 
 ## Cost
 - remove-lesscars: admitted 2026-11-22T16:31 seven_day 44% | session d889ec5c-3342-4a77-99f8-993f1115a679 | finished 2026-11-22T21:14 seven_day 60%
