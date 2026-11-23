@@ -228,7 +228,7 @@ describe("permuting the lot table's rows gives the same events and ledger", () =
   });
 });
 
-describe("the plan world's calendar-month money series satisfies I1-I6", () => {
+describe("the plan world's calendar-month money series satisfies I1-I5", () => {
   it('seed 1, 480 months: poolSeries of the ledger passes checkMoneyIdentities', () => {
     const got = checked(statics, timeline, 1, MONTHS);
     expect(got.steps).toBe(MONTHS);
