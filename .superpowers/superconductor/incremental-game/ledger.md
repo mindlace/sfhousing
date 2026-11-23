@@ -235,6 +235,7 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - pool-closing: incremental-game-pool-closing — status: complete (branch incremental-game-pool-closing, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-pool-closing, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus — rationale: engine funding system change with determinism and cost bounds, needs: F2 from finite-funding (not merged yet), produces: F3)
 - reach-check: incremental-game-reach-check — status: admitted (branch incremental-game-reach-check, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-reach-check, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus — rationale: small script, but its verdict gates the owner's D1; consumes four rows, needs: L1 from remove-lesscars (not merged yet); F1, F2 from finite-funding (not merged yet); F3 from pool-closing (not merged yet), produces: G4's build check (scripts/level2-check.ts, to closing))
 - reach-check: incremental-game-reach-check — status: complete (branch incremental-game-reach-check, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-reach-check, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus — rationale: small script, but its verdict gates the owner's D1; consumes four rows, needs: L1 from remove-lesscars (not merged yet); F1, F2 from finite-funding (not merged yet); F3 from pool-closing (not merged yet), produces: G4's build check (scripts/level2-check.ts, to closing))
+- game-sim: incremental-game-game-sim — status: complete (branch incremental-game-game-sim, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-game-sim, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus — rationale: largest consumer of game rows on /sim, needs: G1–G5 built from game-core (not merged yet); F2 from finite-funding (not merged yet); M1 signature, X1 from contracts (not merged yet), produces: none)
 
 ## Supervision
 - status asked remove-lesscars
@@ -756,6 +757,7 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - fork checkpoint-16 exited [0]: output
 - fork review-reach-check-d0245c1b started 2026-11-23T05:11
 - fork review-reach-check-d0245c1b exited [0]: output
+- fork review-game-sim-ecdaaa67 started 2026-11-23T05:48
 
 ## Frame-defect tally
 - owner-ruling-drift: 2 — instances: conductor-1 (gate-1, 2026-11-22); conductor-8 (gate-7, 2026-11-22)
@@ -878,6 +880,8 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - merged reach-check [row G4's build check] @ d0245c1b into superconductor/incremental-game (complete), tests pass (check 0 errors; lint 0 errors; unit 9112 passed, scripts/level2-check.spec.ts 8/8; pipeline 2284 passed; e2e 762 passed, 0 failed, 0 flaky), band middle
 - No drift @ d0245c1b (review-reach-check-d0245c1b)
 - funding-measures row M1 (real dateMeasure in src/lib/sim-page/funding-presets.ts) @ c423eea0 reported, its own full suite green there. Held to merge at its complete (closing is M1's only consumer by row; game-sim built against the M1 stub). Its note: addPolicy (src/lib/timeline/add.ts) and the edit paths that call dateMeasure, and G3's "an edit that changes what a given measure pays sets preset to null", are game-sim's; the real dateMeasure first meets game-sim's calls on the integration branch, whichever merges second. The merge review of the second one checks that seam; closing's journey e2e covers the real dateMeasure.
+- 08:20 merge of game-sim complete @ ecdaaa67 (fix round done: test-8 locator per ruling game-sim-3; its whole suite green there, e2e 776 passed, 0 flaky) made onto 9bac5aa9 (merge commit 5476e01e), suite running (agent; scratchpad `merge-game-sim-2/`); not merged until it passes; on failure reset to 9bac5aa9 with ledger.md copied out and back. funding-measures told the branch was green at 340245fc; it is not told to merge again until this reports.
+- merged game-sim @ ecdaaa67 into superconductor/incremental-game (complete), tests pass (check 0 errors; lint 0 errors; unit 9178 passed; pipeline 2284 passed; e2e 776 passed, 0 failed, 0 flaky; sim-funding test 8 passes on both projects), band middle
 
 ## Cost
 - remove-lesscars: admitted 2026-11-22T16:31 seven_day 44% | session d889ec5c-3342-4a77-99f8-993f1115a679 | finished 2026-11-22T21:14 seven_day 60%
@@ -888,7 +892,7 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - finite-funding: admitted 2026-11-22T16:53 seven_day 46% | session 7949d97c-2f16-4c76-b641-a1b2d697d55f | finished 2026-11-23T02:05 seven_day 69%
 - game-save: admitted 2026-11-22T16:53 seven_day 46% | session 62b87f0c-3aa2-4671-b8da-e0ac391e2ac6 | finished 2026-11-22T22:49 seven_day 64%
 - game-shell: admitted 2026-11-22T16:54 seven_day 46% | session d156765a-2f62-4dbb-8145-6b1ae8d620d8 | finished 2026-11-22T23:55 seven_day 65%
-- game-sim: admitted 2026-11-22T16:54 seven_day 46% | session 1f8bf796-225b-48c5-9f3e-c7e5bde5214b
+- game-sim: admitted 2026-11-22T16:54 seven_day 46% | session 1f8bf796-225b-48c5-9f3e-c7e5bde5214b | finished 2026-11-23T05:48 seven_day 76%
 - funding-measures: admitted 2026-11-22T16:55 seven_day 46% | session a331388a-a2ba-4e3e-b829-db463a3b8c39
 - pool-closing: admitted 2026-11-22T16:55 seven_day 46% | session 03f449ba-0085-4e9d-9fd4-d178230a1c89 | finished 2026-11-23T04:20 seven_day 73%
 - reach-check: admitted 2026-11-22T16:55 seven_day 46% | session c0bed174-aec2-4512-a95a-75e2f45d284e | finished 2026-11-23T05:11 seven_day 75%
