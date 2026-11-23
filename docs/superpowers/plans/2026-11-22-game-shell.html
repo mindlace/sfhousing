@@ -893,7 +893,7 @@ git commit -m "feat(sharing): banner remix states for the game, Your game link, 
     <ul>
       <li>Modify: <code>src/routes/s/[id]/+page.svelte</code>: imports <code>:6-14</code>; <code>confirmText</code> and <code>remix</code> <code>:25-54</code>; the banner <code>:66-76</code></li>
       <li>Modify: <code>src/routes/s/[id]/test/PageHost.svelte</code> <code>:1-21</code>: optional <code>game?: GameStore</code>, <code>provideGame(game)</code> when given</li>
-      <li>Test: <code>src/routes/s/[id]/page.view.svelte.spec.ts</code>: the <code>$app/navigation</code> mock <code>:50-56</code> stays; add a <code>$lib/game/navigate</code> mock; rewrite <code>:148-157</code> (Your game) and the Remix tests <code>:195-253</code></li>
+      <li>Test: <code>src/routes/s/[id]/page.view.svelte.spec.ts</code>: the <code>$app/navigation</code> mock <code>:50-56</code> stays; add a <code>$lib/game/navigate</code> mock; rewrite <code>:148-157</code> (Your game) and the Remix tests <code>:195-253</code>. The case "after Remix, /sim shows the remixed document over the earlier v2 autosave" (<code>:215</code>) goes and nothing replaces it: no case mounts <code>/sim</code> after Remix, since <code>/sim</code> takes no Remix hand-off. <code>game-sim</code> deletes the same case on its branch; whichever unit merges second keeps this task's Remix tests and no hand-off case.</li>
       <li>Modify: <code>src/routes/p/[id]/+page.svelte</code>: imports <code>:8-20</code>; <code>remix</code> <code>:41-47</code>; the banner <code>:131-144</code></li>
       <li>Modify: <code>src/routes/p/[id]/test/PageHost.svelte</code> <code>:1-14</code>: optional <code>game</code> as above</li>
       <li>Test: <code>src/routes/p/[id]/page.view.svelte.spec.ts</code>: a new <code>describe('/p/[id] Remix')</code></li>
@@ -1127,7 +1127,7 @@ test('at level 3 /s/&lt;id&gt;\'s Remix of one permitting policy opens /sim with
   // "Permits at San Diego's pace", then read SIM_KEY, as sim-share.spec.ts:107-115);
   // seed it as a 'sim' row; open /s/&lt;id&gt; hydrated; Remix; URL /sim; waitFilled;
   // openKind 'Permitting': a button named /, Permits at San Diego's pace, / is visible</code></pre>
-        These read only this unit's words and test ids, <code>game-core</code>'s, and what <code>/sim</code> shows today.</li>
+        Published plans and policies are seeded with <code>seedPlanRow</code> (<code>POST /api/e2e/plans</code>), which no unit of this build changes. These read only this unit's words and test ids, <code>game-core</code>'s, and what <code>/sim</code> shows today.</li>
       <li id="t8-s2"><input type="checkbox"> Run it (port check first; leave nothing listening).
         <pre><code data-lang="sh">lsof -nP -iTCP:4173 -sTCP:LISTEN</code></pre>
         <pre><code data-lang="sh">npx playwright test e2e/game-shell.spec.ts --repeat-each=5 --retries=0</code></pre>
