@@ -477,11 +477,23 @@ describe('SimMap timeline picking', { timeout: 60_000 }, () => {
       fire('pointerdown', pointerType, p);
       fire('pointerup', pointerType, p);
     };
+    /**
+     * Moves the mouse to `p` until `timelinePick` has `count` calls. A single move is one-shot:
+     * SimMap drops a move that arrives while the map moves, and nothing sends it again. The move
+     * is re-sent only while the call is missing, and a pending pick frame absorbs a re-send, so at
+     * most one pick reports.
+     */
+    const moveUntil = async (p: { x: number; y: number }, count: number) => {
+      await expect
+        .poll(() => {
+          if (calls() < count) fire('pointermove', 'mouse', p);
+          return calls();
+        })
+        .toBe(count);
+    };
     /** A mouse hover hit on the part: exactly one more call, the hit. */
     const hoverPart = async () => {
-      const n = calls();
-      fire('pointermove', 'mouse', part);
-      await expect.poll(calls).toBe(n + 1);
+      await moveUntil(part, calls() + 1);
       expect(timelinePick).toHaveBeenLastCalledWith(
         expect.objectContaining({ projectId: 'fx-p', kind: 'hover' })
       );
@@ -493,8 +505,7 @@ describe('SimMap timeline picking', { timeout: 60_000 }, () => {
     expect(timelinePick).not.toHaveBeenCalled();
 
     // Hits: a hover with x and y, the tooltip suppressed, then a click.
-    fire('pointermove', 'mouse', part);
-    await expect.poll(calls).toBe(1);
+    await moveUntil(part, 1);
     expect(timelinePick).toHaveBeenLastCalledWith({
       projectId: 'fx-p',
       parcelId: '9100001',
@@ -525,8 +536,7 @@ describe('SimMap timeline picking', { timeout: 60_000 }, () => {
 
     // Part → empty map (hover): one hover miss; two further misses add nothing.
     await hoverPart();
-    fire('pointermove', 'mouse', empty);
-    await expect.poll(calls).toBe(5);
+    await moveUntil(empty, 5);
     expect(timelinePick).toHaveBeenLastCalledWith(HOVER_MISS);
     fire('pointermove', 'mouse', { x: empty.x + 1, y: empty.y });
     await frames(3);
@@ -578,8 +588,7 @@ describe('SimMap timeline picking', { timeout: 60_000 }, () => {
     click(empty, 'touch');
     await expect.poll(calls).toBe(15);
     expect(timelinePick).toHaveBeenLastCalledWith(TAP_MISS);
-    fire('pointermove', 'mouse', empty);
-    await expect.poll(calls).toBe(16);
+    await moveUntil(empty, 16);
     expect(timelinePick).toHaveBeenLastCalledWith(HOVER_MISS);
     await frames(3);
     expect(timelinePick).toHaveBeenCalledTimes(16);
