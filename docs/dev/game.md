@@ -122,7 +122,7 @@ in the same change.
 | `won()`, `firstWinAt` set         | None                                                                               | None                                                    |
 | `setOffer(offer)`                 | None                                                                               | None                                                    |
 | `levelUp()` that changes progress | Current save with the records copied in; the index                                 | `changed(current)`                                      |
-| `touched()`                       | Current save with the records copied in; the index                                 | `changed(current)`                                      |
+| `touched()` (none after a leave)  | Current save with the records copied in; the index                                 | `changed(current)`                                      |
 | `newGame()`                       | Copy out; the new save; its records; the index                                     | `changed(old)`, `changed(new)`                          |
 | `switchTo(other)`                 | Copy out; the other game's records; the index                                      | `changed(old)`                                          |
 | `remix(doc)`                      | Copy out; the new save; its records; the index                                     | `changed(old)`, `changed(new)`                          |
@@ -152,6 +152,23 @@ in the same change.
   entry carries its played time as `savedAt`; the stored index keeps each save's own. `read(id)` of
   the current game returns the record keys' text now (the stored copy when a read throws) and its
   played time; of another game, a copy as stored.
+
+### Leaving the current game: `beforeLeave`
+
+`beforeLeave(fn)` adds `fn` to a list and returns a remover; removing twice does nothing, and
+each registration is its own entry. A page that autosaves a record key registers its autosave's
+`flush()` when it mounts and calls the remover when it unmounts.
+
+`newGame`, `switchTo` of another game, `remix` and `remove` of the current game call every
+function in the list, in the order added, once their checks pass (`full`, an unknown id, memory
+mode) and before they read or write a record key. A function that throws is skipped and the rest
+still run; the change goes ahead. So an edit still in the autosave's debounce reaches the record
+keys and is copied out with the old game. No other change calls the list. In memory mode and the
+open game the list adds and removes as elsewhere; the changes that would call it refuse first.
+
+After one of those four changes answers `ok`, `touched()` does nothing for the rest of the
+store's life: the caller loads a page in full next, and a write the autosave makes while the page
+unloads was already copied out with the old game. A refused change does not stop `touched()`.
 
 ### The offer
 

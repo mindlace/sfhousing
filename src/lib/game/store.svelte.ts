@@ -237,6 +237,10 @@ export class GameStore {
   #offer = $state.raw<Offer | null>(null);
   #saves = $state.raw<readonly SaveEntry[]>([]);
   #allowed = $derived(this.#open ? ALL_ALLOWED : allowedAt(this.#progress.level));
+  /** `beforeLeave`'s functions in the order added; each registration is its own entry. */
+  readonly #leaving: { fn: () => void }[] = [];
+  /** Set once another game has become current: `touched()` does nothing from then on. */
+  #left = false;
 
   constructor(opts: { storage: Storage | null; sync: SaveSync; now?: () => Date }) {
     this.#sync = opts.sync;
@@ -536,7 +540,19 @@ export class GameStore {
     ops.push([SAVES_KEY, this.#indexText(games, target.id, target)]);
     if (!this.#commit(ops, games, target.id, calls)) return REFUSED;
     this.#offer = null;
+    this.#left = true;
     return OK;
+  }
+
+  /** Calls every `beforeLeave` function in the order added, skipping one that throws. */
+  #flush(): void {
+    for (const entry of [...this.#leaving]) {
+      try {
+        entry.fn();
+      } catch {
+        // A failed flush does not stop the change.
+      }
+    }
   }
 
   /** Reactive: the current game's progress. */
@@ -593,11 +609,22 @@ export class GameStore {
   }
   /** The page's autosave wrote the current game's plan or policy record. */
   touched(): void {
+    if (this.#left) return;
     this.#write({ ...this.#current(), savedAt: this.#now().toISOString() });
+  }
+  /** Registers a function the store calls before another game becomes current; returns its remover. */
+  beforeLeave(fn: () => void): () => void {
+    const entry = { fn };
+    this.#leaving.push(entry);
+    return () => {
+      const at = this.#leaving.indexOf(entry);
+      if (at >= 0) this.#leaving.splice(at, 1);
+    };
   }
   newGame(): StoreChange {
     if (this.#storage === null) return REFUSED;
     if (this.#games.size >= MAX_SAVES) return FULL;
+    this.#flush();
     const old = this.#currentId;
     const made = this.#blank(this.#names(), { plan: null, policy: null });
     return this.#makeCurrent(made, true, 'copy', [
@@ -610,11 +637,13 @@ export class GameStore {
     if (this.#storage === null) return REFUSED;
     const other = this.#games.get(id);
     if (!other) return REFUSED;
+    this.#flush();
     return this.#makeCurrent(other, false, 'copy', [['changed', this.#currentId]]);
   }
   remix(doc: { kind: 'plan' | 'sim'; record: string; title: string }): StoreChange {
     if (this.#storage === null) return REFUSED;
     if (this.#games.size >= MAX_SAVES) return FULL;
+    this.#flush();
     const cur = this.#current();
     const recs = recordsOf(this.#records, cur);
     const made: GameSave = {
@@ -651,6 +680,7 @@ export class GameStore {
       ];
       return this.#commit(ops, games, current, [['removed', id]]) ? OK : REFUSED;
     }
+    this.#flush();
     let next: GameSave | null = null;
     for (const g of this.#games.values()) {
       if (g.id === id) continue;

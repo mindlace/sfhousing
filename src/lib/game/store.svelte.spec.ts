@@ -1253,6 +1253,227 @@ describe('GameStore.remove', () => {
   });
 });
 
+describe('GameStore.beforeLeave', () => {
+  /** The page's autosave flush: an edit still waiting reaches the plan record. */
+  const EDIT = '{"v":1,"savedAt":"2026-12-02T00:00:00.000Z","plan":"edited"}';
+  const EDIT_TIME = '2026-12-02T00:00:00.000Z';
+
+  /** Registers a flush that writes EDIT and notes how many writes the store had made by then. */
+  function flushing(s: LogStorage, store: GameStore): { seen: number[] } {
+    const seen: number[] = [];
+    store.beforeLeave(() => {
+      seen.push(s.writes.length);
+      s.setItem(PLAN_RECORD, EDIT);
+    });
+    return { seen };
+  }
+
+  const leaving = ['newGame', 'switchTo', 'remix'] as const;
+
+  it.each(leaving)(
+    '%s runs the flush first and copies its edit out with the old game',
+    (change) => {
+      const a = save();
+      const b = save({ plan: 'b plan', savedAt: '2026-10-05T00:00:00.000Z' });
+      const { s, store } = over([a, b]);
+      const { seen } = flushing(s, store);
+      const answer =
+        change === 'newGame'
+          ? store.newGame()
+          : change === 'switchTo'
+            ? store.switchTo(b.id)
+            : store.remix({ kind: 'sim', record: 'remixed', title: 'T' });
+      expect(answer).toEqual({ ok: true });
+      expect(seen).toEqual([0]);
+      expect(s.writes[0]).toBe('set ' + PLAN_RECORD);
+      expect(s.writes[1]).toBe('set ' + saveKey(a.id));
+      expect(stored(s, saveKey(a.id))).toEqual({
+        ...a,
+        plan: EDIT,
+        policy: POLICY,
+        savedAt: EDIT_TIME
+      });
+      if (change === 'remix') expect(stored(s, saveKey(store.currentId)).plan).toBe(EDIT);
+      expect(store.currentId).not.toBe(a.id);
+    }
+  );
+
+  it('remove of the current game runs the flush before its writes', () => {
+    const a = save();
+    const b = save({ plan: 'b plan', savedAt: '2026-10-05T00:00:00.000Z' });
+    const { s, store, sync } = over([a, b]);
+    const { seen } = flushing(s, store);
+    expect(store.remove(a.id)).toEqual({ ok: true });
+    expect(seen).toEqual([0]);
+    expect(s.writes).toEqual([
+      'set ' + PLAN_RECORD,
+      'remove ' + saveKey(a.id),
+      'set ' + PLAN_RECORD,
+      'remove ' + POLICY_RECORD,
+      'set ' + SAVES_KEY
+    ]);
+    expect(s.getItem(PLAN_RECORD)).toBe('b plan');
+    expect(store.currentId).toBe(b.id);
+    expect(sync.calls).toEqual([{ kind: 'removed', id: a.id }]);
+  });
+
+  it('a flush that calls touched() is stored before the change goes ahead', () => {
+    const a = save();
+    const b = save();
+    const { s, store, sync } = over([a, b]);
+    store.beforeLeave(() => {
+      s.setItem(PLAN_RECORD, EDIT);
+      store.touched();
+    });
+    expect(store.switchTo(b.id)).toEqual({ ok: true });
+    expect(stored(s, saveKey(a.id)).plan).toBe(EDIT);
+    expect(store.currentId).toBe(b.id);
+    expect(sync.calls).toEqual([
+      { kind: 'changed', id: a.id },
+      { kind: 'changed', id: a.id }
+    ]);
+  });
+
+  it('runs every function in the order added; one that throws is skipped', () => {
+    const a = save();
+    const { s, store } = over([a, save()]);
+    const order: string[] = [];
+    store.beforeLeave(() => order.push('one'));
+    store.beforeLeave(() => {
+      order.push('two');
+      throw new Error('flush failed');
+    });
+    store.beforeLeave(() => order.push('three'));
+    expect(store.newGame()).toEqual({ ok: true });
+    expect(order).toEqual(['one', 'two', 'three']);
+    expect(store.currentId).not.toBe(a.id);
+    expect(stored(s, SAVES_KEY).current).toBe(store.currentId);
+  });
+
+  it('a remover takes out only its own function, and twice does nothing more', () => {
+    const { store } = over([save(), save()]);
+    const order: string[] = [];
+    const fn = () => order.push('shared');
+    const offOne = store.beforeLeave(() => order.push('one'));
+    const offFirst = store.beforeLeave(fn);
+    store.beforeLeave(fn);
+    store.beforeLeave(() => order.push('last'));
+    offOne();
+    offFirst();
+    offOne();
+    offFirst();
+    expect(store.newGame()).toEqual({ ok: true });
+    expect(order).toEqual(['shared', 'last']);
+  });
+
+  it('a change that refuses before its writes calls none', () => {
+    const calls: string[] = [];
+    const watch = (store: GameStore) => store.beforeLeave(() => calls.push('flush'));
+
+    const full = over(many(MAX_SAVES));
+    watch(full.store);
+    expect(full.store.newGame()).toEqual({ ok: false, reason: 'full' });
+    expect(full.store.remix({ kind: 'plan', record: 'r', title: 't' })).toEqual({
+      ok: false,
+      reason: 'full'
+    });
+
+    const a = save();
+    const b = save();
+    const two = over([a, b]);
+    watch(two.store);
+    expect(two.store.switchTo(newId())).toEqual({ ok: false, reason: 'storage' });
+    expect(two.store.switchTo(a.id)).toEqual({ ok: true });
+    expect(two.store.remove(b.id)).toEqual({ ok: true });
+    expect(two.store.remove(newId())).toEqual({ ok: true });
+    expect(two.store.currentId).toBe(a.id);
+
+    for (const store of [make(null).store, openGame()]) {
+      watch(store);
+      expect(store.newGame()).toEqual({ ok: false, reason: 'storage' });
+      expect(store.switchTo(newId())).toEqual({ ok: false, reason: 'storage' });
+      expect(store.remix({ kind: 'sim', record: 'r', title: 't' })).toEqual({
+        ok: false,
+        reason: 'storage'
+      });
+      expect(store.remove(store.currentId)).toEqual({ ok: false, reason: 'storage' });
+    }
+    expect(calls).toEqual([]);
+  });
+
+  it('no other change calls the list', () => {
+    const a = save();
+    const b = save();
+    const { store } = over([a, b]);
+    const calls: string[] = [];
+    store.beforeLeave(() => calls.push('flush'));
+    store.won();
+    store.setOffer(offer(null));
+    store.levelUp();
+    store.touched();
+    store.rename(b.id, 'Other');
+    store.rename(a.id, 'Mine');
+    expect(store.adopt([{ ...b, name: 'Adopted' }])).toEqual({ ok: true });
+    expect(store.adopt([{ ...a, name: 'Adopted current' }])).toEqual({ ok: true });
+    expect(store.rekey(b.id, newId())).toEqual({ ok: true });
+    expect(store.rekey(a.id, newId())).toEqual({ ok: true });
+    expect(store.read(store.currentId)).not.toBeNull();
+    expect(calls).toEqual([]);
+  });
+
+  it.each([...leaving, 'remove'] as const)(
+    'after %s answers ok, touched() writes nothing and calls no sync',
+    (change) => {
+      const a = save();
+      const b = save();
+      const { s, store, sync } = over([a, b]);
+      store.touched();
+      expect(s.writes).toEqual(['set ' + saveKey(a.id), 'set ' + SAVES_KEY]);
+      const answer =
+        change === 'newGame'
+          ? store.newGame()
+          : change === 'switchTo'
+            ? store.switchTo(b.id)
+            : change === 'remix'
+              ? store.remix({ kind: 'plan', record: 'r', title: 't' })
+              : store.remove(a.id);
+      expect(answer).toEqual({ ok: true });
+      const writes = [...s.writes];
+      const calls = [...sync.calls];
+      const saves = store.saves;
+      store.touched();
+      store.touched();
+      expect(s.writes).toEqual(writes);
+      expect(sync.calls).toEqual(calls);
+      expect(store.saves).toBe(saves);
+    }
+  );
+
+  it('a refused change does not stop touched()', () => {
+    const a = save();
+    const b = save();
+    const { s, store, sync } = over([a, b]);
+    expect(store.switchTo(newId())).toEqual({ ok: false, reason: 'storage' });
+    expect(store.switchTo(a.id)).toEqual({ ok: true });
+    expect(store.remove(b.id)).toEqual({ ok: true });
+    s.reset();
+    s.failAt = 2;
+    expect(store.newGame()).toEqual({ ok: false, reason: 'storage' });
+    s.failAt = null;
+    s.reset();
+    sync.calls.length = 0;
+    store.touched();
+    expect(s.writes).toEqual(['set ' + saveKey(a.id), 'set ' + SAVES_KEY]);
+    expect(sync.calls).toEqual([{ kind: 'changed', id: a.id }]);
+
+    const full = over(many(MAX_SAVES));
+    expect(full.store.newGame()).toEqual({ ok: false, reason: 'full' });
+    full.store.touched();
+    expect(full.s.writes).toHaveLength(2);
+    expect(full.sync.calls).toEqual([{ kind: 'changed', id: full.store.currentId }]);
+  });
+});
+
 describe('GameStore.adopt and rekey', () => {
   it('full at 12', () => {
     const games = many(MAX_SAVES);
