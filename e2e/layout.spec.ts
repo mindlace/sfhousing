@@ -491,12 +491,14 @@ test.describe('mobile', () => {
     }
   });
 
-  test('375 and 320 px on / and /sim: Reset view and the expanded credit do not overlap', async ({
-    page
-  }) => {
-    const reset = page.getByRole('button', { name: 'Reset view' });
-    for (const path of ['/', '/sim']) {
-      for (const width of [375, 320]) {
+  // One page load per test (issue #144): the four loads in one test outran the 30 s budget on a
+  // loaded machine.
+  for (const path of ['/', '/sim']) {
+    for (const width of [375, 320]) {
+      test(`${width} px on ${path}: Reset view and the expanded credit do not overlap`, async ({
+        page
+      }) => {
+        const reset = page.getByRole('button', { name: 'Reset view' });
         await page.setViewportSize({ width, height: 812 });
         if (path === '/') await gotoEditor(page);
         else {
@@ -525,8 +527,52 @@ test.describe('mobile', () => {
         expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
           width
         );
-      }
+      });
     }
+  }
+
+  // Issue #111: Reset view showed with the map, but the sheet's height reached SimMap only at
+  // onready (after deck.gl loads), so for those frames Reset view and the credit sat under the
+  // handle. A sampler checks every painted frame from the first.
+  test('/: from the first frame Reset view and the credit sit above the dock handle', async ({
+    page
+  }) => {
+    type Sampled = { __overlaps: string[]; __resetFrames: number };
+    await page.addInitScript(() => {
+      const w = window as unknown as Sampled;
+      w.__overlaps = [];
+      w.__resetFrames = 0;
+      const sample = () => {
+        const h = document.querySelector('[data-testid=dock-handle]')?.getBoundingClientRect();
+        for (const sel of ['.sim-map-reset', '.maplibregl-ctrl-attrib']) {
+          const r = document.querySelector(sel)?.getBoundingClientRect();
+          if (!r || !h) continue;
+          if (sel === '.sim-map-reset') w.__resetFrames++;
+          if (r.left < h.right && h.left < r.right && r.top < h.bottom && h.top < r.bottom)
+            w.__overlaps.push(`${sel} bottom ${Math.round(r.bottom)} under handle top ${h.top}`);
+        }
+        requestAnimationFrame(sample);
+      };
+      requestAnimationFrame(sample);
+    });
+    await gotoEditor(page);
+    // Settled: the map's inset is the folded sheet's height.
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          const root = document.querySelector('[data-testid=map-root]')!;
+          const sheet = document.querySelector('.sfh-dock-sheet')!.getBoundingClientRect();
+          return (
+            getComputedStyle(root).getPropertyValue('--map-bottom-inset') === `${sheet.height}px`
+          );
+        })
+      )
+      .toBe(true);
+    await expect
+      .poll(() => page.evaluate(() => (window as unknown as Sampled).__resetFrames))
+      .toBeGreaterThan(0);
+    const overlaps = await page.evaluate(() => (window as unknown as Sampled).__overlaps);
+    expect(overlaps, overlaps.join('\n')).toEqual([]);
   });
 
   test('375 px on /: with the strip showing the credit is collapsed; opened, its links are on top and pressable', async ({

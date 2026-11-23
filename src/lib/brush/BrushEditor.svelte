@@ -166,6 +166,8 @@
   /** The palette strip's height while it shows: the map key rests 10 px above it. */
   let stripH = $state(0);
   let paletteStrip = $state<PaletteStrip>();
+  /** The mounted SimMap: it takes the inset before its map exists, not only from onready. */
+  let simMap = $state<SimMap>();
 
   untrack(() => {
     onmanifest?.(manifest);
@@ -331,12 +333,19 @@
   /**
    * The map's bottom inset: the dock sheet's height (its handle while closed; 0 from md, where the
    * dock sits beside the map), so the map's centre and controls sit above it. Nothing sits under
-   * the sheet on `/` (no time bar; the score is in the header).
+   * the sheet on `/` (no time bar; the score is in the header). Handed to the SimMap component
+   * itself, not the onready handle: the credit and Reset view show before onready (which waits
+   * for deck.gl), and with no inset they would sit under the sheet's handle until then.
    */
   function applyInset(): void {
     insetPx = sheetH;
-    handle?.setBottomInset(sheetH);
+    simMap?.setBottomInset(sheetH);
   }
+
+  // SimMap mounted (or remounted for a new manifest): it takes the current inset at once.
+  $effect(() => {
+    if (simMap) untrack(applyInset);
+  });
 
   /** SimMap remounted its map (a new manifest): move the controller to the new one. */
   function rebindController(): void {
@@ -384,7 +393,6 @@
     const renders = pendingRenders;
     pendingRenders = [];
     for (const u of renders) h.applyGenerated(u);
-    applyInset();
     attachController();
     if (untrack(() => stripShown)) h.collapseCredit();
   }
@@ -592,6 +600,7 @@
   <div class="relative min-h-0 flex-1">
     {#if manifest}
       <SimMap
+        bind:this={simMap}
         {manifest}
         requestParcelSummary={(id) => client?.parcelSummary(id) ?? Promise.resolve(null)}
         onRetryChunks={() => client?.retryChunks()}

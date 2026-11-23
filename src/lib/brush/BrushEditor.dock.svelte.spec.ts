@@ -835,7 +835,7 @@ describe("BrushEditor's map key", () => {
 
   describe('at 375 px the map toolbar sits above the sheet handle in every map state', () => {
     const BL = '--map-controls-br-block-size';
-    /** The map handle's inset calls: none while onready has not fired. */
+    /** The inset handed to SimMap (its component's `setBottomInset`), latest last. */
     const insetCalls = () => stub.calls.filter((c) => c.method === 'setBottomInset');
     afterEach(() => {
       stub.autoReady = true;
@@ -854,10 +854,14 @@ describe("BrushEditor's map key", () => {
         render: () => '<label><input type="checkbox" /> Transit stops</label>'
       }));
       await setup({ width: 375, layers });
-      expect(insetCalls()).toEqual([]);
       const handle = page.getByTestId('dock-handle');
       await expect.element(handle).toBeVisible();
       const top = handle.element().getBoundingClientRect().top;
+      // SimMap has the sheet's height before its map is ready (onready has not fired), so its
+      // controls and Reset view sit above the handle from their first frame (issue #111).
+      const sheetH = document.querySelector('.sfh-dock-sheet')!.getBoundingClientRect().height;
+      expect(callsOf('onResyncNeeded')).toEqual([]);
+      await expect.poll(() => insetCalls().at(-1)?.args[0]).toBe(sheetH);
       for (const id of ['map-layers-toggle', 'map-key-toggle']) {
         const t = page.getByTestId(id);
         await expect.element(t).toBeVisible();
