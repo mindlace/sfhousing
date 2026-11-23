@@ -517,6 +517,7 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - fork review-game-core-87e473e4 exited [0]: output
 - fork review-game-shell-1-a1930ffc started 2026-11-22T19:38
 - fork review-game-shell-1-a1930ffc exited [0]: output
+- fork review-game-core-38941417 started 2026-11-22T20:05
 
 ## Frame-defect tally
 - owner-ruling-drift: 2 — instances: conductor-1 (gate-1, 2026-11-22); conductor-8 (gate-7, 2026-11-22)
@@ -564,6 +565,9 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - merged game-shell-1 @ a1930ffc into superconductor/incremental-game, tests pass (check 0 errors; lint 0 errors; unit 10591 passed; e2e 850 passed, 0 failed, 1 flaky: e2e/perf/loaded-500.perf.spec.ts:8 wall-clock budget 160.5 ms > 150 ms under load, passed on retry), band low
 - remove-lesscars sent `complete` @ d1dfea45 (L1 delivered at 19eab2f0; every task and a whole-branch review passed; its own runs show only the two known inherited failures). Not merged yet: its branch carries remove-multiuser's partial work, so it merges after remove-multiuser. When remove-multiuser has merged, tell remove-lesscars to merge the integration branch, run the full suite and send complete (with L1) again. While it waits it shows no evidence: mark it seen on beats.
 - No drift @ a1930ffc (review-game-shell-1-a1930ffc)
+- 21:10 merge of game-core rows G2 + G5 @ 38941417 made onto 20d15473 (merge commit ccfaa059), suite running (agent; scratchpad `merge-game-core-g5/`); not merged until it passes; on failure reset to 20d15473 with ledger.md copied out and back. No "merge the integration branch" relay until it reports.
+- merge queue: remove-multiuser row I1 (and the whole unit; its `complete` follows) @ 2e101f6f, its own full suite green there after merging bf22c443; next after the suite on the game-core G2+G5 merge reports
+- merged game-core [row G2] [row G5] @ 38941417 into superconductor/incremental-game, tests pass (check 0 errors; lint 0 errors; unit 10708 passed; e2e 859 passed, 0 failed, 0 flaky), band low
 
 ## Cost
 - remove-lesscars: admitted 2026-11-22T16:31 seven_day 44% | session d889ec5c-3342-4a77-99f8-993f1115a679
