@@ -11,11 +11,12 @@ import { simulateDetailed } from '$lib/sim/scenario/simulate';
 import type { SimInput } from '$lib/sim/scenario/types';
 import type { Day } from '$lib/timelapse/time';
 import { benchFunded } from '../funding/test/cities.node';
+import { createFundingSystem } from '../funding';
 import { fundedMini, oneMoneyTimeline } from '../funding/test/fixtures';
 import type { PolicyTimeline } from '../policy/frame';
 import { staticsOf, type Statics } from '../statics';
 import { readAll } from '../test/run';
-import type { World, WorldEvent } from '../types';
+import type { FundingSystem, World, WorldEvent } from '../types';
 import { chunkOf } from './chunk';
 import { moneyRowsOf } from './money';
 import { createWorldSeries, extrasOf } from './series';
@@ -63,15 +64,30 @@ function cityOf(input: SimInput, months: number): City {
   };
 }
 
-function run(c: City, seed: number, onEvent?: (e: WorldEvent, w: World) => void): Run {
+/** `system` is the funding system (default `createFundingSystem()`, closing spent pools). */
+function run(
+  c: City,
+  seed: number,
+  onEvent?: (e: WorldEvent, w: World) => void,
+  system?: FundingSystem
+): Run {
   const series = createWorldSeries(c.score);
   const displaced: Displaced[] = [];
   const completed = new Map<number, Day>();
-  const got = feedFunded(c.statics, c.timeline, seed, c.months, series, (e, w) => {
-    if (e.kind === 'displaced') displaced.push(e);
-    else if (e.kind === 'end' && e.how === 'complete') completed.set(e.row, e.day);
-    onEvent?.(e, w);
-  });
+  const got = feedFunded(
+    c.statics,
+    c.timeline,
+    seed,
+    c.months,
+    series,
+    (e, w) => {
+      if (e.kind === 'displaced') displaced.push(e);
+      else if (e.kind === 'end' && e.how === 'complete') completed.set(e.row, e.day);
+      onEvent?.(e, w);
+    },
+    'live',
+    system
+  );
   const feed: MoneyFeed = {
     ledger: got.ledger,
     finance: c.timeline.frameAt(1).finance!,
@@ -404,7 +420,8 @@ describe("rule 12 against today's engine, funded mini", () => {
     const same: number[] = [];
     const nonNull: number[] = [];
     for (let seed = 1; seed <= 50; seed++) {
-      const r = run(c, seed);
+      // Today's engine never closes a pool: compared like for like (spec sec-design-option).
+      const r = run(c, seed, undefined, createFundingSystem({ poolClosing: false }));
       const money = viewOf([chunkOf(r.series, r.series, r.feed, 0, last)], c.score).money!;
       const old = simulateDetailed(c.input, seed, horizon);
       const want = moneyOf({

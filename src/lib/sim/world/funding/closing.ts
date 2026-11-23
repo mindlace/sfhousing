@@ -1,13 +1,73 @@
 // Closing a spent pool: when a pool last receives money, and the timeline view in which the
 // programmes of the world's closed pools are not offered.
-import { inflowArrivals } from '$lib/sim/scenario/funding';
+import { prototypeFor } from '$lib/sim/finance';
+import { asksOf, inflowArrivals } from '$lib/sim/scenario/funding';
 import type { Day } from '$lib/timelapse/time';
 import type { Pool } from '$lib/timelapse/types';
+import { lotRow } from '../columns';
 import { monthFirstDay, monthOfDay } from '../months';
 import type { PolicyFrame, PolicyTimeline } from '../policy/frame';
 import { frameIdOf } from '../policy/intern';
-import { NO_DAY } from '../types';
-import type { FundPools } from './columns';
+import { LOT_FREE, NO_DAY, type StepCtx } from '../types';
+import { INSTR_GUARANTEE, INSTR_LOAN, addShutRow, fundOf, type FundPools } from './columns';
+import type { FrameMoney } from './frame-money';
+import { kindOf, servingMoney } from './serve';
+
+/**
+ * System 5, end of the scan: closes each spent pool from `ctx.lastDay + 1` (spec sec-design-spent).
+ * A pool of the frame is spent when it is open, the month begins after its last arrival, it has
+ * no loan out and no guarantee reserve held, and some waiting application of a free lot whose
+ * bundle draws on it asks it for more than serving's available money (the whole bundle's ask).
+ * The pools are judged in world pool row order, the cheap conditions first.
+ */
+export function closeSpent(ctx: StepCtx): void {
+  const { pools } = fundOf(ctx.world);
+  const { fm, rowOf, avail } = servingMoney(ctx);
+  const defs = fm.fin.pools;
+  const asOf = ctx.statics.asOf;
+  const order = defs.map((_, fq) => fq).sort((a, b) => rowOf[a] - rowOf[b]);
+  for (const fq of order) {
+    const q = rowOf[fq];
+    if (pools.closedDay[q] !== NO_DAY) continue;
+    const last = lastArrivalOf(defs[fq], asOf);
+    if (last === null || last >= ctx.firstDay) continue;
+    if (holdsCredit(pools, pools.id[q])) continue;
+    if (askedPast(ctx, fm, fq, avail(fq))) addShutRow(pools, q, ctx.lastDay + 1);
+  }
+}
+
+/** Whether some money row of pool `id` is a loan or a guarantee (a loan out, a reserve held). */
+function holdsCredit(pools: FundPools, id: string): boolean {
+  for (let k = 0; k < pools.mN; k++) {
+    if (pools.mPool[k] !== id) continue;
+    const instr = pools.mInstr[k];
+    if (instr === INSTR_LOAN || instr === INSTR_GUARANTEE) return true;
+  }
+  return false;
+}
+
+/**
+ * Whether some waiting row of a free lot has a bundle holding a programme of frame pool `fq` and
+ * asks that pool, for the whole bundle, more than `money`. A bundle the frame no longer offers
+ * whole (`bundleIds` null) is skipped.
+ */
+function askedPast(ctx: StepCtx, fm: FrameMoney, fq: number, money: number): boolean {
+  const { line } = fundOf(ctx.world);
+  const lots = ctx.world.lots;
+  const progPool = fm.index.progPool;
+  for (let i = 0; i < line.n; i++) {
+    if (line.gone[i] === 1) continue;
+    const bundle = fm.bundleIds(line.bundle[i]);
+    if (bundle === null || !bundle.some((g) => progPool[g] === fq)) continue;
+    const li = lotRow(lots, line.lot[i]);
+    if (li >= 0 && lots.state[li] !== LOT_FREE) continue;
+    const units = line.units[i];
+    const protoId = prototypeFor(line.stories[i], units).id;
+    const ask = asksOf(fm.index, kindOf(line, i), bundle, protoId, units).get(fq) ?? 0;
+    if (ask > money) return true;
+  }
+  return false;
+}
 
 const lastArrivals = new WeakMap<Pool, Map<Day, Day | null>>();
 
