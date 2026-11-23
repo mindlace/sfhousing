@@ -420,7 +420,7 @@ class BrowserSync implements SaveSync {
         due = entry.rev > this.#record.seen[here.id].rev;
       }
       if (!due || !adopting) continue;
-      adopting = await this.#fetchAndAdopt(entry.id);
+      adopting = await this.#fetchAndAdopt(entry.id, here === null);
     }
 
     // 4. The saves removed on the account that are here.
@@ -453,8 +453,12 @@ class BrowserSync implements SaveSync {
     await this.#settled();
   }
 
-  /** Fetches the account's version of `id` and adopts it. False when adopts must stop. */
-  async #fetchAndAdopt(id: string): Promise<boolean> {
+  /**
+   * Fetches the account's version of `id` and adopts it, unless `id` changed here (or, `absent`
+   * before the fetch, appeared here) while the fetch ran: then it is sent instead, so a 409 keeps
+   * both. False when adopts must stop.
+   */
+  async #fetchAndAdopt(id: string, absent: boolean): Promise<boolean> {
     const store = this.#store as GameStore;
     const end = await this.#get(url(id));
     if (end.ok && end.status === 401) {
@@ -465,11 +469,21 @@ class BrowserSync implements SaveSync {
       this.#offline = true;
       return true;
     }
-    if (!end.ok || end.status !== 200) return true;
+    if (!end.ok || end.status === 404 || end.status === 410) return true;
     const body = end.body;
     const save = isPlain(body) ? parseGameSave(body.save) : null;
     const rev = isPlain(body) && typeof body.rev === 'number' ? body.rev : null;
-    if (save === null || rev === null || save.id !== id) return true;
+    if (end.status !== 200 || save === null || rev === null || save.id !== id) {
+      // A defect, never a player's act.
+      console.error('save sync: the account answered a saved game unreadably', id, end.status);
+      return true;
+    }
+    const here = store.read(id);
+    if (here !== null && (absent || !this.#unchanged(here))) {
+      this.#stopTimer(id);
+      void this.#send(id, true);
+      return true;
+    }
     const replacing = id === store.currentId;
     const adopted = this.#quiet((s) => s.adopt([save]));
     if (!adopted.ok) {

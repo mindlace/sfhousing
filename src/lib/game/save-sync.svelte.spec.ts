@@ -936,6 +936,104 @@ describe('pull', () => {
     expect(reload).toHaveBeenCalledTimes(1);
   });
 
+  it('an edit reaching the store during the fetch is sent, not overwritten', async () => {
+    const cur = mk('Here', true);
+    const theirs: GameSave = { ...cur, plan: 'their plan', savedAt: '2026-11-21T10:00:00.000Z' };
+    const storage = new MemoryStorage();
+    storage.setItem(SAVE_REVS_KEY, JSON.stringify({ v: 1, seen: seenOf(cur), deleting: [] }));
+    const h = harness({ saves: [cur], signedIn: true, storage, attach: false });
+    const one = held();
+    h.answer((r) => {
+      if (r.url === '/api/game') return json(200, listBody([{ save: theirs, rev: 2 }], []));
+      if (r.method === 'GET') return one.promise;
+      return r.url.endsWith(cur.id) ? json(409, { rev: 2, save: theirs }) : json(200, line(1));
+    });
+    h.sync.attach(h.store as unknown as GameStore);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(calls(h.reqs)).toEqual(['GET /api/game', `GET /api/game/${cur.id}`]);
+    h.store.edit(cur.id, { plan: 'my plan' });
+    one.resolve(json(200, { rev: 2, save: theirs }));
+    await h.sync.pull();
+    await vi.advanceTimersByTimeAsync(0);
+    const put = h.puts()[0];
+    expect(put.url).toBe(`/api/game/${cur.id}`);
+    expect(put.body?.baseRev).toBe(1);
+    expect(put.body?.save.plan).toBe('my plan');
+    // Keep both: the edit lives on, current, as "(this device)"; theirs under the old id.
+    expect(h.store.read(h.store.currentId)).toMatchObject({
+      name: 'Here (this device)',
+      plan: 'my plan'
+    });
+    expect(h.store.read(cur.id)).toEqual(theirs);
+    expect(reload).not.toHaveBeenCalled();
+  });
+
+  it('a save absent before the fetch and present after it is sent, not overwritten', async () => {
+    const cur = mk('Here', false);
+    const x = mk('There', true, '2026-11-21T10:00:00.000Z');
+    const mine: GameSave = { ...x, plan: 'my plan' };
+    const storage = new MemoryStorage();
+    storage.setItem(SAVE_REVS_KEY, JSON.stringify({ v: 1, seen: seenOf(cur), deleting: [] }));
+    const h = harness({ saves: [cur], signedIn: true, storage, attach: false });
+    const one = held();
+    h.answer((r) => {
+      if (r.url === '/api/game') {
+        return json(
+          200,
+          listBody(
+            [
+              { save: cur, rev: 1 },
+              { save: x, rev: 3 }
+            ],
+            []
+          )
+        );
+      }
+      if (r.method === 'GET') return one.promise;
+      return json(200, line(4));
+    });
+    h.sync.attach(h.store as unknown as GameStore);
+    await vi.advanceTimersByTimeAsync(0);
+    h.store.games.set(x.id, structuredClone(mine));
+    one.resolve(json(200, { rev: 3, save: x }));
+    await h.sync.pull();
+    expect(h.store.read(x.id)).toEqual(mine);
+    expect(calls(h.puts())).toEqual([`PUT /api/game/${x.id}`]);
+    expect(h.puts()[0].body?.baseRev).toBeNull();
+  });
+
+  it('a per-save GET with an unexpected answer is logged and skipped', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const cur = mk('Here', false);
+    const x = mk('Odd', true, '2026-11-21T10:00:00.000Z');
+    const y = mk('Unreadable', true, '2026-11-21T08:00:00.000Z');
+    const gone = mk('Gone', true, '2026-11-21T06:00:00.000Z');
+    const storage = new MemoryStorage();
+    storage.setItem(SAVE_REVS_KEY, JSON.stringify({ v: 1, seen: seenOf(cur), deleting: [] }));
+    const h = harness({ saves: [cur], signedIn: true, storage, attach: false });
+    const list = [
+      { save: cur, rev: 1 },
+      { save: x, rev: 1 },
+      { save: y, rev: 1 },
+      { save: gone, rev: 1 }
+    ];
+    h.answer((r) => {
+      if (r.url === '/api/game') return json(200, listBody(list, []));
+      if (r.url.endsWith(x.id)) return json(418, {});
+      if (r.url.endsWith(y.id)) return json(200, { rev: 1, save: { nope: true } });
+      return new Response(null, { status: 404 });
+    });
+    h.sync.attach(h.store as unknown as GameStore);
+    await h.sync.pull();
+    expect(err).toHaveBeenCalledWith(expect.any(String), x.id, 418);
+    expect(err).toHaveBeenCalledWith(expect.any(String), y.id, 200);
+    expect(err).toHaveBeenCalledTimes(2);
+    expect(h.store.read(x.id)).toBeNull();
+    expect(h.store.read(y.id)).toBeNull();
+    // Its listeners outlive the test: a later visibility pull must log nothing.
+    h.answer(account([{ save: cur, rev: 1 }]));
+  });
+
   it('two pulls made together make one GET, and both resolve', async () => {
     const h = harness({ saves: [mk('Here', false)], signedIn: true, attach: false });
     const list = held();
