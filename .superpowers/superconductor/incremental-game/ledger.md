@@ -209,6 +209,8 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - game-shell-1: incremental-game-game-shell-1 — status: complete (branch incremental-game-game-shell-1, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-game-shell-1, start cf1ff6e50e891279a77dc411c45e929643ffb936, model opus — rationale: sibling lane of game-shell, same tier as its plan's author, needs: G2 stub (merged), produces: none)
 - remove-multiuser: incremental-game-remove-multiuser — status: complete (branch incremental-game-remove-multiuser, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-remove-multiuser, start 7fbb5e32c72b3dcd416f7ef214536376a7c22b5c, model opus — rationale: auth, schema, Durable Object and config removal across subsystems, needs: none, produces: I1)
 - game-save: incremental-game-game-save — status: admitted (admit message sent 22:15 at bc3d9bc0; branch incremental-game-game-save, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-game-save, model opus, needs: I1, G2 built, S1–S3, X1 (all merged), produces: S1, S2, S3 (built))
+- remove-lesscars: incremental-game-remove-lesscars — status: complete (branch incremental-game-remove-lesscars, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-remove-lesscars, start 11ce28aafa6d22ec71ed65e3c1a9bafea6f2e742, model opus — rationale: pipeline, map, dataset and fixture changes across subsystems, needs: none, produces: L1 (to finite-funding, game-shell, reach-check))
+- game-core: incremental-game-game-core — status: complete (admit message sent at a333bd83; branch incremental-game-game-core, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-game-core, model opus, needs: G1–G5, S2, S3, X1 (merged), produces: G1–G5 (built))
 
 ## Supervision
 - status asked remove-lesscars
@@ -549,6 +551,8 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - fork rule-conductor-12 exited [0]: output
 - fork graph-conductor-12 started 2026-11-22T20:27
 - fork graph-conductor-12 exited [0]: output
+- fork review-remove-lesscars-cbe95a44 started 2026-11-22T21:14
+- fork review-game-core-29ae2ad3 started 2026-11-22T21:14
 
 ## Frame-defect tally
 - owner-ruling-drift: 2 — instances: conductor-1 (gate-1, 2026-11-22); conductor-8 (gate-7, 2026-11-22)
@@ -607,13 +611,19 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - merged remove-multiuser [row I1] @ 2e101f6f into superconductor/incremental-game, tests pass (check 0 errors; lint 0 errors; unit 9083 passed; e2e 776 passed, 0 failed, 1 flaky: e2e/game-helpers.spec.ts:146, question conductor-12), band low
 - No drift @ 2e101f6f (review-remove-multiuser-2e101f6f)
 - game-core's `complete` @ 48b19b3e is superseded: rulings game-core-8 (G2 `beforeLeave`, `touched()` after a game change) and conductor-12 (hydration wait in e2e/game-helpers.spec.ts) add work to it; it sends complete again. Its rows G1 to G5 stay merged at 38941417.
+- 22:35 merge of remove-lesscars complete (row L1) @ cbe95a44 made onto 10f1214d (merge commit 40ffbbad), suite running with test:pipeline (agent; scratchpad `merge-remove-lesscars/`); not merged until it passes; on failure reset to 10f1214d with ledger.md copied out and back. No "merge the integration branch" message until it reports. For closing's signoff, from its report: the preview server logs a Better Auth "User not found" warning (not remove-lesscars') and the pre-existing devalue sideEffects warning.
+- merge queue: game-core complete @ 29ae2ad3 (beforeLeave ee935cd9, game-helpers hydration waits 29ae2ad3; unit 9100 passed, game-helpers 140/140 at repeat-each=5), next after the suite on the remove-lesscars merge reports
+- 23:05 suite on the remove-lesscars merge (40ffbbad): check, lint, unit 8817, pipeline 2266 pass; e2e 740 passed, 1 failed: e2e/game-helpers.spec.ts:146, the test of question conductor-12, already unreliable on the integration branch before this merge and fixed on game-core @ 29ae2ad3. Nothing in the run points at remove-lesscars. So game-core complete @ 29ae2ad3 is merged on top (merge commit 0eedcd80) and one suite runs on both (agent; scratchpad `merge-lesscars-gamecore/`). Safe to hold two untested merges because no operator merges the integration branch now (game-core and game-save were told not to; every planner is resting). On failure: reset to 10f1214d with ledger.md copied out and back, then one at a time, game-core first.
+- game-save row S1 @ 754fa235 reported: held to merge with its later rows or complete (only `closing` consumes S1 to S3, and it runs last), one merge at the newest reported sha.
+- merged remove-lesscars [row L1] @ cbe95a44 into superconductor/incremental-game, tests pass (one suite on 0eedcd80 for both merges: check 0 errors; lint 0 errors; unit 8834 passed; pipeline 2266 passed; e2e 746 passed, 0 failed, 0 flaky; e2e/game-helpers.spec.ts 140/140 at repeat-each=5, retries off), band low
+- merged game-core @ 29ae2ad3 into superconductor/incremental-game (complete; G2 now with `beforeLeave`), tests pass (one suite on 0eedcd80 for both merges: check 0 errors; lint 0 errors; unit 8834 passed; pipeline 2266 passed; e2e 746 passed, 0 failed, 0 flaky; e2e/game-helpers.spec.ts 140/140 at repeat-each=5, retries off), band low
 
 ## Cost
-- remove-lesscars: admitted 2026-11-22T16:31 seven_day 44% | session d889ec5c-3342-4a77-99f8-993f1115a679
+- remove-lesscars: admitted 2026-11-22T16:31 seven_day 44% | session d889ec5c-3342-4a77-99f8-993f1115a679 | finished 2026-11-22T21:14 seven_day 60%
 - remove-multiuser: admitted 2026-11-22T16:32 seven_day 44% | session 954945e3-efc5-42a8-8f8f-2233f4008011 | finished 2026-11-22T20:22 seven_day 58%
 - mail-setup: admitted 2026-11-22T16:32 seven_day 44% | session b1e978f2-51f4-46a7-a9b0-92ea6e61597f | finished 2026-11-22T19:20 seven_day 56%
 - contracts: admitted 2026-11-22T16:33 seven_day 44% | session 343d79b0-ac75-4280-b643-22398f92f1a8 | finished 2026-11-22T17:56 seven_day 50%
-- game-core: admitted 2026-11-22T16:52 seven_day 46% | session 06c0c65b-cf92-457a-a525-9c4374e4a0b3
+- game-core: admitted 2026-11-22T16:52 seven_day 46% | session 06c0c65b-cf92-457a-a525-9c4374e4a0b3 | finished 2026-11-22T21:14 seven_day 60%
 - finite-funding: admitted 2026-11-22T16:53 seven_day 46% | session 7949d97c-2f16-4c76-b641-a1b2d697d55f
 - game-save: admitted 2026-11-22T16:53 seven_day 46% | session 62b87f0c-3aa2-4671-b8da-e0ac391e2ac6
 - game-shell: admitted 2026-11-22T16:54 seven_day 46% | session d156765a-2f62-4dbb-8145-6b1ae8d620d8
