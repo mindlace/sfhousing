@@ -116,26 +116,27 @@ answers `{ ok: false, reason: 'storage' }`. `full` is the other refusal.
 `savedAt` its played time. `remove` of the current game does not copy it out: its save is removed
 in the same change.
 
-| Change                            | Writes                                                                             | Sync                                                    |
-| --------------------------------- | ---------------------------------------------------------------------------------- | ------------------------------------------------------- |
-| `won()`, `firstWinAt` null        | Current save with the records copied in; the index                                 | `changed(current)`                                      |
-| `won()`, `firstWinAt` set         | None                                                                               | None                                                    |
-| `setOffer(offer)`                 | None                                                                               | None                                                    |
-| `levelUp()` that changes progress | Current save with the records copied in; the index                                 | `changed(current)`                                      |
-| `touched()` (none after a leave)  | Current save with the records copied in; the index                                 | `changed(current)`                                      |
-| `newGame()`                       | Copy out; the new save; its records; the index                                     | `changed(old)`, `changed(new)`                          |
-| `switchTo(other)`                 | Copy out; the other game's records; the index                                      | `changed(old)`                                          |
-| `remix(doc)`                      | Copy out; the new save; its records; the index                                     | `changed(old)`, `changed(new)`                          |
-| `rename` that changes the save    | That save (the current one with records); the index                                | `changed(id)`                                           |
-| `rekey(id, newId)`                | Save under the new key; remove the old key; the index                              | None                                                    |
-| `remove(other)`                   | Remove its save; the index                                                         | `removed(other)`                                        |
-| `remove(current)`                 | Remove its save; the next game's records, or a new save and its records; the index | `removed(old)`, and `changed(new)` when a game was made |
-| `adopt(saves)`                    | Each save; the current game's records when it is among them; the index             | None                                                    |
+| Change                            | Writes                                                                                                                                         | Sync                                                    |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| `won()`, `firstWinAt` null        | Current save with the records copied in; the index                                                                                             | `changed(current)`                                      |
+| `won()`, `firstWinAt` set         | None                                                                                                                                           | None                                                    |
+| `setOffer(offer)`                 | None                                                                                                                                           | None                                                    |
+| `levelUp()` that changes progress | Current save with the records copied in; the index                                                                                             | `changed(current)`                                      |
+| `touched()` (none after a leave)  | Current save with the records copied in; the index                                                                                             | `changed(current)`                                      |
+| `newGame()`                       | Copy out; the new save; its records; the index                                                                                                 | `changed(old)`, `changed(new)`                          |
+| `switchTo(other)`                 | Copy out; the other game's records; the index                                                                                                  | `changed(old)`                                          |
+| `remix(doc)`                      | Copy out; the new save; its records; the index                                                                                                 | `changed(old)`, `changed(new)`                          |
+| `rename` that changes the save    | That save (the current one with records); the index                                                                                            | `changed(id)`                                           |
+| `rekey(id, newId)`                | Save under the new key; remove the old key; the index                                                                                          | None                                                    |
+| `remove(other)`                   | Remove its save; the index                                                                                                                     | `removed(other)`                                        |
+| `remove(current)`                 | Remove its save; the next game's records, or a new save and its records; the index                                                             | `removed(old)`, and `changed(new)` when a game was made |
+| `adopt(saves)`                    | When the current game is among them: the `beforeLeave` list first. Then each save; the current game's records when it is among them; the index | None                                                    |
 
 `StoreChange` is `{ ok: true }` or `{ ok: false; reason: 'full' | 'storage' | 'changed' }`; only
 `adopt` of the current game's id answers `changed`.
 
-- Every change that is not `ok` leaves memory and storage as they were.
+- Every change that is not `ok` leaves memory and storage as they were, apart from what a
+  `beforeLeave` function wrote.
 - `newGame` and `remix` answer `full` at `MAX_SAVES` games; `adopt` when it would take the list past.
 - `newGame`, `switchTo` of another id, `remix`, `rekey`, `remove` and `adopt` answer `storage` in
   memory mode. `won`, `setOffer`, `levelUp`, `touched` and `rename` change memory and call the sync
@@ -167,7 +168,7 @@ that hold the current game's id call every function in the list, in the order ad
 checks pass (`full`, an unknown id, memory mode, parse skips) and before they read or write a
 record key. A function that throws is skipped and the rest still run; the change goes ahead. So an
 edit still in the autosave's debounce reaches the record keys and is copied out with the old game.
-`adopt` of saves without the current id, and no other change, calls the list. In memory mode and
+`adopt` of saves without the current id calls none, and no other change calls the list. In memory mode and
 the open game the list adds and removes as elsewhere; the changes that would call it refuse first.
 
 `adopt` of the current id reads the current game's played time before it calls the list and again

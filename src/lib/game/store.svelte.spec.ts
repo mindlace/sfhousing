@@ -1546,17 +1546,18 @@ describe('GameStore.adopt and rekey', () => {
   });
 
   describe('adopting the current game and beforeLeave', () => {
-    const LATER = '{"v":1,"savedAt":"2026-12-02T00:00:00.000Z","plan":"edited"}';
+    const LATER = '{"v":1,"savedAt":"2026-12-02T00:00:00.000Z","policy":"edited"}';
 
     it('runs the list in order before any record key is written', () => {
       const a = save();
       const { s, store } = over([a]);
       const order: string[] = [];
       const seen: (string | null)[] = [];
+      let writesSeen: string[] = [];
       store.beforeLeave(() => {
         order.push('one');
         seen.push(s.getItem(PLAN_RECORD), s.getItem(POLICY_RECORD));
-        expect(s.writes).toEqual([]);
+        writesSeen = [...s.writes];
       });
       store.beforeLeave(() => {
         order.push('two');
@@ -1567,6 +1568,7 @@ describe('GameStore.adopt and rekey', () => {
       expect(store.adopt([a2])).toEqual({ ok: true });
       expect(order).toEqual(['one', 'two', 'three']);
       expect(seen).toEqual([PLAN, POLICY]);
+      expect(writesSeen).toEqual([]);
       expect(s.getItem(PLAN_RECORD)).toBe('acct plan');
     });
 
@@ -1574,19 +1576,33 @@ describe('GameStore.adopt and rekey', () => {
       const a = save();
       const { s, store, sync } = over([a]);
       store.setOffer(offer(null));
-      store.beforeLeave(() => s.setItem(PLAN_RECORD, LATER));
+      store.beforeLeave(() => s.setItem(POLICY_RECORD, LATER));
       const progress = store.progress;
       const saves = store.saves;
       const a2 = { ...a, progress: progressAt(4), plan: 'acct plan', policy: 'acct policy' };
       expect(store.adopt([a2])).toEqual({ ok: false, reason: 'changed' });
-      expect(s.writes).toEqual(['set ' + PLAN_RECORD]);
-      expect(s.getItem(PLAN_RECORD)).toBe(LATER);
-      expect(s.getItem(POLICY_RECORD)).toBe(POLICY);
+      expect(s.writes).toEqual(['set ' + POLICY_RECORD]);
+      expect(s.getItem(POLICY_RECORD)).toBe(LATER);
+      expect(s.getItem(PLAN_RECORD)).toBe(PLAN);
       expect(stored(s, saveKey(a.id))).toEqual(a);
       expect(store.progress).toBe(progress);
       expect(store.saves).toBe(saves);
       expect(store.offer).toEqual(offer(null));
       expect(sync.calls).toEqual([]);
+    });
+
+    it('touched() still writes after adopt answers changed', () => {
+      const a = save();
+      const { s, store, sync } = over([a]);
+      store.beforeLeave(() => s.setItem(POLICY_RECORD, LATER));
+      expect(store.adopt([{ ...a, plan: 'acct plan' }])).toEqual({
+        ok: false,
+        reason: 'changed'
+      });
+      s.reset();
+      store.touched();
+      expect(s.writes).toEqual(['set ' + saveKey(a.id), 'set ' + SAVES_KEY]);
+      expect(sync.calls).toEqual([{ kind: 'changed', id: a.id }]);
     });
 
     it('answers ok when nothing was written, then touched() does nothing', () => {
