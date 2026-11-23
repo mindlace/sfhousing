@@ -29,18 +29,6 @@ const SCHEMA2_TEXT = readFileSync(
 /** The Steps nav on show: from lg the header's, below lg the open Menu's. */
 const steps = (page: Page): Locator => page.getByRole('navigation', { name: 'Steps' });
 
-/**
- * Below lg, opens the header's Menu by `[data-header-menu]`, which matches whatever its name
- * ("Menu, level up ready" while an offer is set); from lg, does nothing.
- */
-async function openMenu(page: Page): Promise<void> {
-  await expect(page.locator('html')).toHaveAttribute('data-hydrated', '');
-  const menu = page.locator('[data-header-menu]');
-  if (!(await menu.isVisible())) return;
-  if ((await menu.getAttribute('aria-expanded')) !== 'true') await menu.click();
-  await expect(menu).toHaveAttribute('aria-expanded', 'true');
-}
-
 /** The policy the app autosaves on /sim after adding the San Diego permitting preset. */
 async function capturePresetDoc(page: Page): Promise<{ datasetVersion: string }> {
   await page.emulateMedia({ reducedMotion: 'reduce' });
@@ -86,7 +74,7 @@ test('a new visitor paints past the goal, levels up and lands on /sim at level 2
   await card.getByRole('button', { name: 'Level up' }).click();
 
   await expect(page).toHaveURL(/\/sim$/);
-  await openMenu(page);
+  await openHeaderMenu(page);
   await expect(page.getByTestId('header-level')).toHaveText('Level 2');
   await expect(steps(page).getByRole('link', { name: 'Simulate', exact: true })).toHaveAttribute(
     'href',

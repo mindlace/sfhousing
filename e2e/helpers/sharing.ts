@@ -77,12 +77,15 @@ export async function clientNavigate(page: Page, path: string): Promise<void> {
 
 /**
  * Below 1024 px, opens the header's Menu (where the actions live); from 1024 px, does nothing.
- * Waits for hydration first: the Menu toggle does nothing before it, so a click on a loaded
- * machine left `aria-expanded` false.
+ * Every spec opens the Menu through this. It waits for hydration first: a tap on the Menu button
+ * before hydration is lost (the toggle is a Svelte handler, and the server's HTML has none), so a
+ * click on a loaded machine left `aria-expanded` false (issues #96, #109). It finds the button by
+ * `[data-header-menu]`, which matches whatever its name ("Menu, level up ready" while an offer is
+ * set).
  */
 export async function openHeaderMenu(page: Page): Promise<void> {
   await expect(page.locator('html')).toHaveAttribute('data-hydrated', '');
-  const menu = page.getByRole('banner').getByRole('button', { name: 'Menu', exact: true });
+  const menu = page.getByRole('banner').locator('[data-header-menu]');
   if (!(await menu.isVisible())) return;
   if ((await menu.getAttribute('aria-expanded')) !== 'true') await menu.click();
   await expect(menu).toHaveAttribute('aria-expanded', 'true');
@@ -128,27 +131,6 @@ export async function jumpAndIdle(page: Page, frame: typeof FRAME = FRAME): Prom
   );
 }
 
-/**
- * Waits until the map draws the timeline's parts: at least `cells` chunks installed, nothing
- * queued, the map settled. The map's `idle` does not cover them: a jump makes the worker load the
- * chunks in view, then the map installs them, so a tap right after `jumpAndIdle` can land on a lot
- * whose part is not drawn yet (a miss: /sim then selects the lot's plan).
- */
-export async function waitTimelineDrawn(page: Page, cells: number): Promise<void> {
-  await page.waitForFunction((n) => {
-    const s = (window as Win).__sfhMap?.timelineSnapshot();
-    return !!s && s.cells >= n && s.pending === 0;
-  }, cells);
-  await page.evaluate(
-    () =>
-      new Promise<void>((resolve) => {
-        const map = (window as Win).__sfhMap!.map!;
-        if (map.loaded() && !map.isMoving()) resolve();
-        else map.once('idle', () => resolve());
-      })
-  );
-}
-
 export async function projectToPage(page: Page, lngLat: LngLat): Promise<[number, number]> {
   return page.evaluate((ll) => {
     const map = (window as Win).__sfhMap!.map!;
@@ -156,6 +138,61 @@ export async function projectToPage(page: Page, lngLat: LngLat): Promise<[number
     const r = map.getCanvas().getBoundingClientRect();
     return [r.left + p.x, r.top + p.y] as [number, number];
   }, lngLat);
+}
+
+/**
+ * Waits until a tap would open project `projectId`'s card (or one of its phases',
+ * `<projectId>:phase:<n>`) at one of `candidates`, tried in order, and returns the page point to
+ * tap. The gate is the map's own pick
+ * (`__sfhMap.timelinePartAt`) with the canvas topmost there, so it covers the chunk not yet
+ * installed, the part not yet drawn at the playhead's day and a sheet over the map. Tap once: on
+ * /sim a miss is not idempotent (it selects the lot's plan, and on a phone that sheet covers the
+ * map), so a retried tap after a miss can never land. With `nudge`, each candidate also tries a
+ * few pixels outwards from the map's centre, past a taller neighbour's roof leaning over it.
+ */
+export async function waitProjectAt(
+  page: Page,
+  projectId: string,
+  candidates: LngLat[],
+  opts: { nudge?: boolean } = {}
+): Promise<[number, number]> {
+  const handle = await page.waitForFunction(
+    ([id, lls, nudge]) => {
+      const debug = (window as Win).__sfhMap;
+      const map = debug?.map;
+      if (!debug || !map) return null;
+      const canvas = map.getCanvas();
+      const r = canvas.getBoundingClientRect();
+      for (const ll of lls) {
+        const p = map.project(ll);
+        const out = Math.sign(p.x - r.width / 2);
+        for (const step of nudge ? [0, 4, 8, 12] : [0]) {
+          const x = p.x + out * step;
+          if (x < 0 || x >= r.width || p.y < 0 || p.y >= r.height) continue;
+          const point: [number, number] = [r.left + x, r.top + p.y];
+          if (document.elementFromPoint(point[0], point[1]) !== canvas) continue;
+          const hit = debug.timelinePartAt(x, p.y)?.projectId;
+          if (hit === id || hit?.startsWith(`${id}:phase:`)) return point;
+        }
+      }
+      return null;
+    },
+    [projectId, candidates, opts.nudge ?? false] as const
+  );
+  return (await handle.jsonValue())!;
+}
+
+/** Clicks (taps on the phone) project `projectId` at `at` once, as soon as it is pickable there. */
+export async function tapProject(
+  page: Page,
+  isMobile: boolean,
+  projectId: string,
+  at: LngLat,
+  opts: { nudge?: boolean } = {}
+): Promise<void> {
+  const point = await waitProjectAt(page, projectId, [at], opts);
+  if (isMobile) await page.touchscreen.tap(point[0], point[1]);
+  else await page.mouse.click(point[0], point[1]);
 }
 
 /**
@@ -204,8 +241,13 @@ export async function touchDrag(
   await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
 }
 
-export const ops = (page: Page): Promise<number> =>
-  page.evaluate(() => (window as Win).__sfhBrush!.ops);
+/**
+ * The brush hook's op count, or null while the page has no hook (between documents, or before the
+ * BrushEditor of a page that just loaded has mounted). Use it under `expect.poll`: a null keeps the
+ * poll going, where a throw would end it at once (#141).
+ */
+export const ops = (page: Page): Promise<number | null> =>
+  page.evaluate(() => (window as Win).__sfhBrush?.ops ?? null);
 
 /**
  * Chooses a brush tool from `/`'s Paint tab. From md the tab is open in the dock. Below md it sits

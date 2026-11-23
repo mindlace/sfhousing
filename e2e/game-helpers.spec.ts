@@ -122,11 +122,24 @@ test('newVisitor switches the game on and stores nothing', async ({ page }) => {
   expect(Object.keys(p).filter((k) => k.startsWith(saveKey('')))).toEqual([]);
 });
 
+/**
+ * A same-origin document the app never runs on: a dataset file. Storage edited here has no game
+ * store or save sync beside it (an /about page would, and its sync sends a won game after 2 s),
+ * so only the next page load reads the edit.
+ */
+const OFF_APP = '/data/fixture-0/manifest.json';
+
+/** Leaves the app for OFF_APP; the helpers' init scripts still run there. */
+async function leaveApp(page: Page): Promise<void> {
+  const response = await page.goto(OFF_APP);
+  expect(response?.ok()).toBe(true);
+}
+
 test('the seed is written once', async ({ page }) => {
   await seedGame(page, 3);
   const first = seededParts(await load(page));
   const id = first.index.current;
-  await expect(page.locator('html')).toHaveAttribute('data-hydrated', '');
+  await leaveApp(page);
   await page.evaluate(
     (k) => {
       const save = JSON.parse(localStorage.getItem(k.key) ?? 'null');
@@ -138,7 +151,7 @@ test('the seed is written once', async ({ page }) => {
     },
     { key: saveKey(id), saves: SAVES_KEY }
   );
-  await page.reload();
+  await page.goto('/about');
   const p = await read(page);
   expect(JSON.parse(p[saveKey(id)]).name).toBe('Renamed');
   expect(JSON.parse(p[SAVES_KEY]).saves[0].name).toBe('Renamed');
@@ -147,7 +160,7 @@ test('the seed is written once', async ({ page }) => {
 test('a stored index is never overwritten', async ({ page }) => {
   await seedGame(page, 3);
   const id = seededParts(await load(page)).index.current;
-  await expect(page.locator('html')).toHaveAttribute('data-hydrated', '');
+  await leaveApp(page);
   await page.evaluate(
     (k) => {
       localStorage.removeItem(k.key);
@@ -157,7 +170,7 @@ test('a stored index is never overwritten', async ({ page }) => {
     },
     { key: saveKey(id), saves: SAVES_KEY }
   );
-  await page.reload();
+  await page.goto('/about');
   const p = await read(page);
   expect(p[saveKey(id)]).toBeUndefined();
   expect(JSON.parse(p[SAVES_KEY]).current).toBe('other');

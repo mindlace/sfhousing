@@ -1,5 +1,5 @@
-// Wall-clock budget, so it runs alone: the chromium-perf / mobile-perf projects start only after
-// the parallel chromium and mobile projects finish (see playwright.config.ts). The behaviour of
+// Wall-clock budget: not in test:e2e or signoff. `npm run test:perf` runs it alone, one worker,
+// on an idle machine (SFH_E2E_PERF=1, see playwright.config.ts). The behaviour of
 // the same stroke (its announcement, the op, the buildings) is asserted in e2e/brush.spec.ts.
 import { expect, test } from '@playwright/test';
 import {
