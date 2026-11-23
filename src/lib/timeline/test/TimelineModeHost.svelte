@@ -7,10 +7,14 @@
   `readonly` is the page's (default false). `regionHeight` is the mode box's height (700 px unless given). With
   `saveStatus` the status is the real SaveIndicator, as SimPage renders it (`ctl.setSaveStatus`),
   and `saveOff` follows it as SimPage passes it (autosave off) unless the test gives its own.
+  A `game` is provided to the context, as the root layout does, and passed through with
+  `goalAmount`; `initialRun` (with `ctl.setRun`) is the document the worker runs, apart from
+  `policy`; without it no `run` is passed.
 -->
 <script lang="ts">
   import { untrack, type ComponentProps, type Snippet } from 'svelte';
   import type { SaveStatus } from '$lib/sharing/autosave.svelte';
+  import { provideGame } from '$lib/game/store.svelte';
   import SaveIndicator from '$lib/sharing/SaveIndicator.svelte';
   import { provideHeaderActions } from '$lib/shell/header-actions.svelte';
   import SiteHeader from '$lib/shell/SiteHeader.svelte';
@@ -41,10 +45,13 @@
     /** Overrides the page's rule (`saveOff` while the save state is 'off'). */
     saveOff?: boolean;
     initialPolicy: SimPolicy4;
+    /** The document the worker runs, apart from `policy`; none given, no `run` is passed. */
+    initialRun?: SimPolicy4;
     initialLots: Lots | null;
     ctl: {
       setSaveStatus?: (s: SaveStatus) => void;
       setPolicy?: (p: SimPolicy4) => void;
+      setRun?: (p: SimPolicy4) => void;
       setLots?: (l: Lots | null) => void;
       setLotsFailed?: (f: boolean) => void;
       showDetails?: () => Promise<void>;
@@ -54,6 +61,7 @@
 
   let {
     initialPolicy,
+    initialRun = undefined,
     initialLots,
     ctl,
     onundoto = undefined,
@@ -66,8 +74,13 @@
     ...rest
   }: Props = $props();
   const slot = provideHeaderActions();
+  // As the root layout does: the win card reads the game from the context.
+  untrack(() => {
+    if (rest.game) provideGame(rest.game);
+  });
   let save = $state<SaveStatus | undefined>(untrack(() => initialSave));
   let policy = $state.raw<SimPolicy4>(untrack(() => initialPolicy));
+  let run = $state.raw<SimPolicy4 | undefined>(untrack(() => initialRun));
   let lots = $state.raw<Lots | null>(untrack(() => initialLots));
   let lotsFailed = $state(false);
   let selected = $state.raw<SpanRef | null>(null);
@@ -77,6 +90,7 @@
     ctl.showActivity = () => mode!.showActivity();
     ctl.setSaveStatus = (s) => (save = s);
     ctl.setPolicy = (p) => (policy = p);
+    ctl.setRun = (p) => (run = p);
     ctl.setLots = (l) => (lots = l);
     ctl.setLotsFailed = (f) => (lotsFailed = f);
   });
@@ -105,6 +119,7 @@
     bind:this={mode}
     {...rest}
     {policy}
+    {...run ? { run } : {}}
     {lots}
     {lotsFailed}
     {readonly}
