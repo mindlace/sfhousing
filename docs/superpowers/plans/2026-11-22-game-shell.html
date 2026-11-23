@@ -1,0 +1,1153 @@
+<article>
+  <header>
+    <h1>Game shell implementation plan</h1>
+    <p>Paint's win, the header's steps, level cell and account entry, Remix into a saved game, and About's words for levels and saved games.</p>
+    <aside data-kind="note"><strong>For agentic workers</strong> REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps are checklist items; progress is kept in the workspace ledger, not in the plan.</aside>
+  </header>
+
+  <section id="sec-overview">
+    <h2>Overview</h2>
+    <p><strong>Goal:</strong> wire the incremental game into the shell: Paint wins level 1 and levels up to <code>/sim</code>, the header's Simulate step locks at level 1, a level cell opens <code>LevelPanel</code> and offers "Level up", Remix on <code>/s/&lt;id&gt;</code> and <code>/p/&lt;id&gt;</code> makes a saved game, and About explains levels and saved games.</p>
+    <p><strong>Architecture:</strong> every part reads the store with <code>useGame()</code> (provided by <code>game-core</code>'s root layout script; this unit never touches <code>src/routes/+layout.svelte</code>). Game markup renders only after the component's own <code>mounted</code> flag is set, and never while <code>game.open</code>. Rules come from <code>src/lib/game/</code> (<code>simLocked</code>, <code>needsHigher</code>, <code>roundComplete</code>, <code>paintWon</code>, <code>levelText</code>); no component compares a level to a number.</p>
+    <p><strong>Tech Stack:</strong> SvelteKit 2, Svelte 5 runes, Tailwind 4, Vitest (client project: browser via Playwright; server project: node, <code>svelte/server</code> SSR), Playwright e2e against the <code>VITE_E2E=1</code> preview.</p>
+    <p><strong>Spec:</strong> <code>docs/superpowers/specs/2026-11-22-game-shell-design.html</code> (sections <code>sec-design-game</code>, <code>sec-design-sim-locked</code>, <code>sec-design-paint</code>, <code>sec-design-steps</code>, <code>sec-design-cell</code>, <code>sec-design-account</code>, <code>sec-design-remix</code>, <code>sec-design-about</code>, <code>sec-design-testids</code>, <code>sec-write-set-files</code>, <code>sec-tests-component</code>, <code>sec-tests-e2e</code>, <code>sec-docs</code>). Consumed contracts: <code>docs/superpowers/specs/2026-11-22-game-core-design.html</code> (G1 to G5, <code>copy.ts</code>, <code>navigate.ts</code>) and <code>docs/superpowers/specs/2026-11-22-contracts-design.html</code> (X1, S1's <code>AccountLine</code>).</p>
+    <aside data-kind="warning"><strong>Prerequisite</strong> <code>game-core</code>, <code>contracts</code> and <code>remove-lesscars</code> must have merged into this branch before Task 1 starts: every task imports <code>src/lib/game/**</code> and <code>e2e/helpers/game.ts</code>, and Task 3 edits <code>accent.spec.ts</code> after L1. Line numbers below were read on this branch before those merges; re-locate by the quoted code where they moved.</aside>
+  </section>
+
+  <section id="sec-global-constraints">
+    <h2>Global Constraints</h2>
+    <p>The spec's global constraints, verbatim:</p>
+    <ul>
+      <li>Work happens in git worktrees under <code>.claude/worktrees/</code>. Commits follow Conventional Commits. No attribution to an AI anywhere.</li>
+      <li>Code style: 2-space indent, single quotes, no trailing commas, 100 columns.</li>
+      <li>Every Vitest test calls <code>expect</code>.</li>
+      <li>Signoff fails on server stderr, on timing crutches and on a retried flake. Each unit runs <code>npm run lint</code>, <code>npm run check</code> and the Vitest projects its files belong to before it hands back.</li>
+      <li>Port 4173 is shared by every session on this machine. A unit never kills a server it did not start; it waits.</li>
+      <li>Every agent runs every command in the foreground and never ends a turn while something it started is running.</li>
+      <li>Schema changes go through <code>npm run db:generate</code>. Nobody edits a migration.</li>
+      <li>No unit runs <code>npm run signoff</code>: its dataset step fails until the dataset is uploaded. <code>closing</code> runs it once, after the upload.</li>
+      <li>The dataset version changes in this build. The dataset is uploaded once, by <code>closing</code>, from the integration branch, after every unit has merged; no other unit uploads a dataset. <code>reach-check</code> builds one earlier to run the check and uploads nothing.</li>
+      <li>A unit that writes a hashed path regenerates the fixture dataset with <code>npm run pipeline -- fixture</code> and commits it.</li>
+      <li>WCAG 2.2 AA: every new control is at least 24 px and passes <code>expectNoA11yViolations</code> in light and dark.</li>
+      <li>Page text is short. No sentence says what something is not.</li>
+      <li>Nothing on the main screen says "RHNA". The goal is read from the <code>Goal</code> value, never from a constant.</li>
+      <li>The game's rules are read from <code>src/lib/game/</code>. No component compares a level to a number.</li>
+      <li>One future: no seed control, no band, no average over runs.</li>
+      <li>Published plans and policies, their ids and their pages keep working, including every policy published before this build.</li>
+      <li>A number that is a claim about the world carries its source and tier, in the existing <code>Sourced</code>, <code>Unsourced</code> and <code>Evidence</code> shapes.</li>
+      <li>A runtime dependency that ships in the bundle gets a credit in <code>SOFTWARE</code>. This build adds none.</li>
+      <li>CSP changes are interface changes. This build makes none.</li>
+      <li>Timing is measured only on a quiet machine. A unit that cannot get one defers the measurement and says so.</li>
+    </ul>
+
+    <section id="sec-project-notes">
+      <h3>Project notes (implementers must follow)</h3>
+      <ul>
+        <li>(0) Read files with Read/Grep/Glob, not Bash. Every Bash call is one command starting with an allowed command (<code>npm</code>, <code>npx</code>, <code>lsof</code>, <code>git add/commit/rev-parse/log/diff/status/show</code>, <code>ls</code>, <code>cat</code>, <code>grep</code>, <code>head</code>, <code>tail</code>, <code>wc</code>, <code>pwd</code>, <code>mkdir</code>): no <code>VAR=</code> prefix, no <code>cd</code>, no <code>;</code> or <code>&amp;&amp;</code> or pipes, no <code>$(...)</code>, no loops, no redirects to files.</li>
+        <li>(1) Port 4173 is shared: before preview or Playwright run <code>lsof -nP -iTCP:4173 -sTCP:LISTEN</code>; if something you did not start is listening, never kill it, wait; leave nothing listening.</li>
+        <li>(2) No <code>setTimeout</code>/<code>setInterval</code> in any spec or test helper, no fixed waits or raised timeouts in e2e (wait on a readiness signal); <code>npx chreode timing-check --head HEAD</code> clean after every task's last commit; changed e2e specs pass with <code>--repeat-each=5 --retries=0</code>; no new preview-server stderr.</li>
+        <li>(3) No <code>npm run signoff</code>, <code>git push</code>, dataset upload or deploy.</li>
+        <li>(4) No wall-clock measurements; <code>test:perf</code> is not a gate.</li>
+        <li>(5) Conventional Commits; no AI attribution anywhere.</li>
+        <li>(6) Worktree setup before tests: <code>npm install</code>, <code>.dev.vars</code> with <code>PUBLIC_DATASET_VERSION=fixture-0</code> (write it with the Write tool), <code>npm run data:fixture</code>, <code>npm run db:migrate</code>.</li>
+      </ul>
+    </section>
+
+    <p>The spec's interface table and its row sections, verbatim:</p>
+    <table id="tbl-interfaces">
+      <caption>Interface table</caption>
+      <thead>
+        <tr><th scope="col">Row</th><th scope="col">Owner</th><th scope="col">Layer</th><th scope="col">Summary</th><th scope="col">Contract</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">G1</th><td><code>game-core</code></td><td>Model commitment</td><td>Levels, results, and what beats what.</td><td><a href="#sec-if-g1">G1</a></td></tr>
+        <tr><th scope="row">G2</th><td><code>game-core</code></td><td>Model commitment</td><td>Progress, saved games, banking, the store.</td><td><a href="#sec-if-g2">G2</a></td></tr>
+        <tr><th scope="row">G3</th><td><code>game-core</code></td><td>Model commitment</td><td>What a level allows; the playable document.</td><td><a href="#sec-if-g3">G3</a></td></tr>
+        <tr><th scope="row">G4</th><td><code>game-core</code></td><td>Decomposition choice</td><td>The seen result and the player's standing.</td><td><a href="#sec-if-g4">G4</a></td></tr>
+        <tr><th scope="row">G5</th><td><code>game-core</code></td><td>Decomposition choice</td><td>The win card and the level panel with its saved games.</td><td><a href="#sec-if-g5">G5</a></td></tr>
+        <tr><th scope="row">L1</th><td><code>remove-lesscars</code></td><td>Decomposition choice</td><td>The pipeline, dataset and worker with no less cars.</td><td><a href="../design/2026-11-22-1216-incremental-game.html#sec-if-l1">L1</a></td></tr>
+        <tr><th scope="row">X1</th><td><code>contracts</code></td><td>Decomposition choice</td><td>The e2e seam: open by default, a seeded level, a goal amount.</td><td><a href="#sec-if-x1">X1</a></td></tr>
+      </tbody>
+    </table>
+
+    <section id="sec-if-g1">
+      <h3>G1 Levels and results</h3>
+      <pre><code data-lang="ts">// src/lib/game/levels.ts
+import type { Day } from '$lib/timelapse/time';
+
+import type { GoalOutcome } from '$lib/timeline/outcome';
+
+export type Level = 1 | 2 | 3 | 4 | 5;
+export const LAST_LEVEL: Level = 5;
+
+/** What the months reached so far show: `{ kind: 'reached'; on }` or `{ kind: 'missed'; short }`. */
+export type Result = GoalOutcome;
+
+/** The result to beat: the day a banked result reached the goal. */
+export interface Bar {
+  on: Day;
+}
+
+export function beats(seen: Result, bar: Bar): boolean;
+
+/** Paint is won: capacity is at least the goal's amount. */
+export function paintWon(net: number, amount: number): boolean;</code></pre>
+      <dl>
+        <dt><code>reached.on</code></dt><dd>The first day of the calendar month in which the goal's amount is first met, as <code>readGoal</code> gives it.</dd>
+      </dl>
+      <ul>
+        <li><code>beats(seen, bar)</code> is true when <code>seen</code> reached the goal and <code>seen.on</code> is in an earlier calendar month than <code>bar.on</code>.</li>
+        <li>It is false in every other case: a tie never beats, and a missed result never beats.</li>
+        <li><code>paintWon(net, amount)</code> is <code>net &gt;= amount</code>.</li>
+        <li>Only a reached result is ever banked, so a bar is always a date.</li>
+      </ul>
+    </section>
+
+    <section id="sec-if-g2">
+      <h3>G2 Progress, saved games and the store</h3>
+      <pre><code data-lang="ts">// src/lib/game/progress.ts
+export interface Banked {
+  /** The day the banked result reached the goal. */
+  on: Day;
+  /** The dataset the result was earned on. */
+  datasetVersion: string;
+  /** ISO time of the level up. */
+  at: string;
+}
+
+export interface Progress {
+  v: 1;
+  level: Level;
+  /** banked[n] is the result banked on leaving level n. */
+  banked: Partial&lt;Record&lt;2 | 3 | 4 | 5, Banked&gt;&gt;;
+  /** ISO time the player first won anything; null until then. */
+  firstWinAt: string | null;
+}
+
+export const NEW_GAME: Progress;
+
+/** The bar at the progress's level; null at levels 1 and 2. */
+export function barOf(p: Progress): Bar | null;
+/** Level 5 has been won and banked. */
+export function roundComplete(p: Progress): boolean;
+export function levelUp(p: Progress, banked: Banked | null): Progress;
+
+// src/lib/game/saves.ts
+export interface GameSave {
+  v: 1;
+  /** `newId()` of `$lib/ids/base58`. */
+  id: string;
+  name: string;
+  /** True until the player types a name. */
+  nameIsDefault: boolean;
+  progress: Progress;
+  /** The plan record's text as `sfhousing:plan:v1` holds it, or null. */
+  plan: string | null;
+  /** The policy record's text as `sfhousing:sim:v2` holds it, or null. */
+  policy: string | null;
+  /** ISO time of the last change. */
+  savedAt: string;
+}
+
+/** What the list shows of a saved game. */
+export type SaveEntry = Pick&lt;GameSave, 'id' | 'name' | 'nameIsDefault' | 'savedAt'&gt; &amp; { level: Level };
+
+export const SAVES_KEY = 'sfhousing:saves:v1';
+export const saveKey = (id: string): string =&gt; `sfhousing:save:${id}`;
+export const MAX_SAVES = 12;
+export const SAVE_NAME_MAX = 60;
+
+export function parseGameSave(json: unknown): GameSave | null;
+export function defaultSaveName(
+  from: { kind: 'new'; at: Date } | { kind: 'remix'; title: string } | { kind: 'conflict'; name: string },
+  taken: readonly string[]
+): string;
+
+// src/lib/game/store.svelte.ts
+export type StoreChange = { ok: true } | { ok: false; reason: 'full' | 'storage' };
+
+/** The win on screen that "Level up" would bank. */
+export interface Offer {
+  /** The day the seen result reached the goal; null for Paint's win. */
+  on: Day | null;
+  /** The dataset the result was seen on. */
+  datasetVersion: string;
+}
+
+export class GameStore {
+  constructor(opts: { storage: Storage | null; sync: SaveSync; now?: () =&gt; Date });
+  /** Reactive: the current game's progress. */
+  readonly progress: Progress;
+  /** Reactive: what the current game may use (G3). */
+  readonly allowed: Allowed;
+  /** True only for `openGame()`: every control and no game parts. */
+  readonly open: boolean;
+  /** Reactive: every saved game, most recently changed first. */
+  readonly saves: readonly SaveEntry[];
+  /** Reactive. */
+  readonly currentId: string;
+  /** Reactive: the win "Level up" would bank now; null when there is none. */
+  readonly offer: Offer | null;
+  /** The save sync given at construction. */
+  readonly sync: SaveSync;
+  /** A win was seen. Sets `firstWinAt` the first time; later calls change nothing. */
+  won(): void;
+  /** The page sets the offer while its seen result wins the level, and clears it with null. */
+  setOffer(offer: Offer | null): void;
+  /** Banks the offer and raises the level. Does nothing while `offer` is null. */
+  levelUp(): void;
+  /** The page's autosave wrote the current game's plan or policy record. */
+  touched(): void;
+  newGame(): StoreChange;
+  switchTo(id: string): StoreChange;
+  remix(doc: { kind: 'plan' | 'sim'; record: string; title: string }): StoreChange;
+  rename(id: string, name: string): void;
+  remove(id: string): StoreChange;
+  /** The saved game as stored now; the current one with the plan and policy records as they are. */
+  read(id: string): GameSave | null;
+  /** Store saved games that came from the account. */
+  adopt(saves: readonly GameSave[]): StoreChange;
+  /** Give the saved game `id` the id `newId`, keeping everything else about it. */
+  rekey(id: string, newId: string): StoreChange;
+}
+/** A store with `open` true: one game at level 5, nothing banked, no storage, `allowed` equal to `ALL_ALLOWED`. */
+export function openGame(): GameStore;
+export function provideGame(store: GameStore): void;
+export function useGame(): GameStore;</code></pre>
+      <dl>
+        <dt><code>SAVES_KEY</code></dt><dd>Holds <code>{ v: 1, current: string, saves: SaveEntry[] }</code>.</dd>
+        <dt><code>saveKey(id)</code></dt><dd>Holds one <code>GameSave</code>. For the current game its <code>plan</code> and <code>policy</code> are stale: the records under <code>sfhousing:plan:v1</code> and <code>sfhousing:sim:v2</code> are the truth.</dd>
+      </dl>
+      <ul>
+        <li><code>barOf</code> is <code>{ on: banked[level - 1].on }</code> at levels 3 to 5.</li>
+        <li><code>levelUp</code> from level 1 takes <code>null</code> and banks nothing.</li>
+        <li><code>levelUp</code> from levels 2 to 4 stores the day under the level being left and adds one to the level.</li>
+        <li><code>levelUp</code> at level 5 stores <code>banked[5]</code> and keeps the level at 5.</li>
+        <li>The page calls <code>won()</code> when a win card first shows.</li>
+        <li><code>allowed</code> is <code>allowedAt(progress.level)</code>.</li>
+        <li>While <code>open</code> is true no page shows a game part: no level cell, no win card, no bar or "To beat" flag, no locked lane, no reworded outcome message, no Remix button, and no offer is set. The pages read <code>open</code>; they never compare <code>allowed</code> with <code>ALL_ALLOWED</code>.</li>
+        <li>The page calls <code>setOffer</code> with the win while its seen result wins the level, and with null on any edit and when it unmounts. The offer is kept in memory only.</li>
+        <li>The store's <code>levelUp()</code> banks the offer with the pure <code>levelUp</code>, clears the offer, and stores the game. The win card and the level panel both call it.</li>
+        <li>The page that set the offer reacts to the level changing: <code>/sim</code> returns the clock to today, and Paint opens <code>/sim</code>.</li>
+        <li>The page calls <code>touched()</code> after its autosave writes a record key. The store sets the current game's <code>savedAt</code> and calls <code>sync.changed(currentId)</code>.</li>
+        <li>On first construction with no <code>SAVES_KEY</code>, the store makes one saved game at level 1 whose plan and policy are whatever the two record keys hold.</li>
+        <li><code>newGame</code>, <code>switchTo</code>, <code>remix</code> and <code>remove</code> of the current game first copy the two record keys into the current game's stored save, then write the new current game's plan and policy into the two record keys.</li>
+        <li>After <code>newGame</code>, <code>switchTo</code> or <code>remove</code> answers <code>ok</code>, the caller loads the new current game's page with a full page load: <code>/</code> at level 1, <code>/sim</code> above it.</li>
+        <li>After <code>remix</code> answers <code>ok</code>, the caller loads <code>/</code> for a plan and <code>/sim</code> for a policy, with a full page load.</li>
+        <li><code>remix</code>'s <code>record</code> is the text the page's autosave holds under the record key for the published document. The caller builds it with the codec the page already uses, so the store never reads inside a plan or a policy.</li>
+        <li><code>remix</code> of a policy copies the current game's progress and plan; <code>remix</code> of a plan copies the current game's progress and policy. The new game's name is <code>defaultSaveName({ kind: 'remix', title })</code>.</li>
+        <li><code>newGame</code>, <code>remix</code> and <code>adopt</code> answer <code>full</code> and change nothing when they would pass <code>MAX_SAVES</code>.</li>
+        <li><code>rekey</code> of the current game leaves it current, keeps the offer and needs no page load: the records and the progress are untouched. The save sync uses it when it keeps both sides of a conflict (S2).</li>
+        <li>A write that the browser refuses answers <code>storage</code> and leaves the stored games as they were.</li>
+        <li><code>remove</code> of the current game makes the most recently changed other game current; with none left it makes a new game.</li>
+        <li><code>rename</code> trims the name, cuts it at <code>SAVE_NAME_MAX</code>, ignores an empty one, and sets <code>nameIsDefault</code> false.</li>
+        <li><code>defaultSaveName</code> gives "Game, 22 Nov", "Remix of {title}" or "{name} (this device)", and adds " (2)", " (3)" while the name is in <code>taken</code>.</li>
+        <li>The store calls <code>sync.changed(id)</code> after every change to a saved game and <code>sync.removed(id)</code> after a remove.</li>
+        <li>A stored value that will not parse is copied to <code>sfhousing:save:corrupt:&lt;ISO time&gt;</code> and left out of the list.</li>
+        <li>With <code>storage: null</code> the store keeps one game in memory.</li>
+        <li><code>useGame()</code> outside a provider returns <code>openGame()</code>, so a component test that provides no game sees every control.</li>
+        <li>Only the root layout calls <code>provideGame</code>. It makes the save sync with <code>createSaveSync</code> (S2), constructs the store with it, calls <code>sync.attach(store)</code> and provides the store.</li>
+        <li>When <code>e2eOpen</code> (X1) is true, the root layout provides <code>openGame()</code> instead and makes no sync.</li>
+        <li>The root layout's script that makes and provides the store belongs to <code>game-core</code>.</li>
+      </ul>
+    </section>
+
+    <section id="sec-if-g3">
+      <h3>G3 What a level allows</h3>
+      <pre><code data-lang="ts">// src/lib/game/allowed.ts
+import type { Policy, PolicyKind, SimPolicy4 } from '$lib/timeline/policy4';
+
+export interface Allowed {
+  /** Kinds whose policies run and can be edited. */
+  kinds: ReadonlySet&lt;PolicyKind&gt;;
+  /** 'given': only given measures run, and what they pay is read-only. */
+  money: 'given' | 'all';
+}
+
+export const ALL_ALLOWED: Allowed;
+export function allowedAt(level: Level): Allowed;
+/** permitting 3, zoning 4, money 5. */
+export function unlocksAt(kind: PolicyKind): Level;
+/** A money policy made from a funding preset: its `preset` is the preset's id. */
+export function isGiven(p: Policy): boolean;
+export function runs(kind: PolicyKind, p: Policy, a: Allowed): boolean;
+export function playable(doc: SimPolicy4, a: Allowed): SimPolicy4;
+/** The lowest level whose `allowedAt` runs every policy of `doc`; 6 when none does. */
+export function levelNeeded(doc: SimPolicy4): Level | 6;
+/** True while the game's level is below the one that opens the simulation. */
+export function simLocked(p: Progress): boolean;
+/** The level that runs all of `doc`, when it is above the game's level; null otherwise. */
+export function needsHigher(doc: SimPolicy4, p: Progress): Level | 6 | null;</code></pre>
+      <ul>
+        <li><code>allowedAt(1)</code> and <code>allowedAt(2)</code> have no kinds.</li>
+        <li><code>allowedAt(3)</code> has permitting; <code>allowedAt(4)</code> adds zoning; <code>allowedAt(5)</code> adds money with <code>money: 'given'</code>.</li>
+        <li><code>ALL_ALLOWED</code> has all three kinds and <code>money: 'all'</code>. No level in this round returns it.</li>
+        <li>The published view at <code>/s/&lt;id&gt;</code> runs under <code>ALL_ALLOWED</code>, so <code>playable</code> returns its document unchanged (D5).</li>
+        <li><code>runs</code> is false for a kind not in <code>a.kinds</code>.</li>
+        <li><code>runs</code> is false for a money policy that is not given while <code>a.money</code> is <code>'given'</code>.</li>
+        <li><code>playable</code> returns the document with only the policies that run, in their order, and returns the same object when nothing is removed.</li>
+        <li>Every money policy that <code>addPolicy</code> makes from a funding preset carries the preset's id in <code>preset</code> and the preset's label as its label.</li>
+        <li>The schema 4 parser accepts null or a preset id of 1 to 60 characters in a money policy's <code>preset</code>. Zoning and permitting are unchanged.</li>
+        <li>A money policy stored or published before this build has <code>preset</code> null, so it is not a given measure. It runs in the published view and is locked in a game.</li>
+        <li>An edit that changes what a given measure pays sets its <code>preset</code> to null.</li>
+        <li><code>isGiven</code> is false for every zoning and permitting policy.</li>
+        <li><code>isGiven</code> does not check the id against the presets on offer. A hand-made document can carry any id on any pool; nothing ranks one player against another, so that is accepted.</li>
+        <li><code>simLocked</code> is true exactly at level 1. Pages call it and <code>needsHigher</code>; no page compares a level itself.</li>
+        <li><code>levelNeeded</code> of a document with no policies is 2.</li>
+      </ul>
+    </section>
+
+    <section id="sec-if-g4">
+      <h3>G4 The seen result and the standing</h3>
+      <pre><code data-lang="ts">// src/lib/game/standing.ts
+export type Standing =
+  | { kind: 'playing' }
+  | { kind: 'short'; seen: Result; bar: Bar | null }
+  | { kind: 'won'; on: Day };
+
+/** `seen` is `goalOutcome(...)` for the months reached; null while no result is seen. */
+export function standing(level: Level, bar: Bar | null, seen: Result | null): Standing;</code></pre>
+      <ul>
+        <li><code>standing</code> is <code>playing</code> at level 1 and while <code>seen</code> is null.</li>
+        <li>At level 2 a reached result is <code>won</code>.</li>
+        <li>At levels 3 to 5 a result is <code>won</code> when it beats the bar.</li>
+        <li>Every other seen result is <code>short</code>.</li>
+        <li><code>goalOutcome</code> is read on the playable document's forecast and never while the numbers are stale, so a standing always belongs to the policy on screen.</li>
+        <li>A build check runs the empty document on a built dataset and fails when the goal is not reached inside the window (D1).</li>
+        <li><code>reach-check</code> writes the check and runs it once <code>finite-funding</code> and <code>pool-closing</code> have merged, so a miss reaches the owner while the build is still running. <code>closing</code> runs it again on the dataset it uploads.</li>
+      </ul>
+    </section>
+
+    <section id="sec-if-g5">
+      <h3>G5 The win card and the level panel</h3>
+      <pre><code data-lang="ts">// src/lib/game/WinCard.svelte
+interface WinCardProps {
+  /** 'Room for 82,069 homes' | 'Goal reached in Mar 2049'. */
+  title: string;
+  /** What levelling up unlocks, in words; null when the round is complete. */
+  unlocks: string | null;
+  onlevelup: () =&gt; void;
+  onkeep: () =&gt; void;
+}
+
+// src/lib/game/LevelPanel.svelte
+// No props. Reads the game from `useGame()`.
+
+// src/lib/game/copy.ts
+export function barText(bar: Bar): string;           // 'Beat Jun 2057'
+export function unlockText(next: Level | 6): string; // 'Permitting' | 'Zoning' | 'Public money' | …
+export function lockedLane(kind: PolicyKind, level: Level): string;</code></pre>
+      <ul>
+        <li>The win card is a dialog, not modal: the map and the timeline stay usable.</li>
+        <li>The win card sits where the page shows its notices: over the map from md, above the map below md.</li>
+        <li>It renders <code>AccountOffer</code> (S3) under its buttons.</li>
+        <li>When it mounts, the win card moves focus to "Level up", on Paint and on <code>/sim</code> alike.</li>
+        <li>Escape and "Keep playing" both call <code>onkeep</code>.</li>
+        <li>The level panel is the content the header's level cell opens.</li>
+        <li>The win card's <code>onlevelup</code> is given <code>() =&gt; game.levelUp()</code> by the page that mounts it.</li>
+        <li>The level panel shows the level, the bar, what the next level unlocks, "Level up" while <code>game.offer</code> is not null, and the saved games (<a href="../design/2026-11-22-1216-incremental-game.html#sec-model-saves">Saved games</a>) with "New game".</li>
+        <li>After a switch, a new game or a delete of the current game, the panel loads the new current game's page.</li>
+        <li>"Level up" in the panel calls <code>game.levelUp()</code>.</li>
+        <li>The panel shows <code>game.sync.state</code> in words when it is not <code>saved</code>: "On this device only", "Saving", "Offline", "Sign in to save".</li>
+        <li><code>lockedLane</code> gives "Unlocks when you level up" for the kind <code>level + 1</code> unlocks and "Unlocks at level N" for the others.</li>
+      </ul>
+    </section>
+
+    <section id="sec-if-x1">
+      <h3>X1 The e2e seam</h3>
+      <pre><code data-lang="ts">// e2e/helpers/game.ts
+import type { Page } from '@playwright/test';
+
+/** Before the page loads, switch the real game on and store a game at `level` with bars that any result beats. */
+export function seedGame(page: Page, level: 1 | 2 | 3 | 4 | 5): Promise&lt;void&gt;;
+/** Before the page loads, switch the real game on with nothing stored: a new visitor. */
+export function newVisitor(page: Page): Promise&lt;void&gt;;
+/** Before the page loads, set the goal's amount for this page. */
+export function seedGoalAmount(page: Page, amount: number): Promise&lt;void&gt;;
+
+// src/lib/game/e2e.ts
+export const E2E_GAME_KEY = 'sfhousing:e2e:game';
+export const E2E_GOAL_KEY = 'sfhousing:e2e:goal';
+/** True when VITE_E2E is '1' and E2E_GAME_KEY is absent: the page gets the open game. */
+export function e2eOpen(storage: Storage | null): boolean;
+/** The amount under E2E_GOAL_KEY when VITE_E2E is '1'; null otherwise. */
+export function e2eGoalAmount(storage: Storage | null): number | null;</code></pre>
+      <ul>
+        <li>With <code>VITE_E2E=1</code>, on a build or a dev server, a page that has no <code>E2E_GAME_KEY</code> gets <code>openGame()</code> (G2): every control, no game parts, nothing stored.</li>
+        <li>Every e2e spec that exists before this build runs on the open game and needs no change for the game, except the tests of Remix: Remix makes a saved game, so they seed a game first.</li>
+        <li><code>seedGame</code> and <code>newVisitor</code> set <code>E2E_GAME_KEY</code>, so the page runs the real store.</li>
+        <li><code>seedGame</code> writes the storage keys of G2 directly and needs no store.</li>
+        <li>A seeded game's bars fall in the calendar month that holds the window's last day, which any reached result beats.</li>
+        <li>The fixture city is too small to reach 82,069 homes, so a spec that plays a level to a win first calls <code>seedGoalAmount</code>.</li>
+        <li><code>/sim</code> and Paint read <code>e2eGoalAmount</code> when they mount and build the goal.</li>
+        <li>A spec that changes the amount on a loaded page, before a client-side navigation, writes <code>E2E_GOAL_KEY</code> with <code>page.evaluate</code>.</li>
+        <li>On a build without <code>VITE_E2E=1</code>, <code>e2eOpen</code> is false and <code>e2eGoalAmount</code> is null whatever storage holds.</li>
+      </ul>
+    </section>
+  </section>
+
+  <section id="sec-review-focus">
+    <h2>Review Focus</h2>
+    <p>Inputs the spec implies but its listed tests do not exercise, most likely to bite first. Each has a test in the owning task.</p>
+    <ol>
+      <li><strong>Storage refuses the Level up write on Paint.</strong> The store keeps level 1 and clears the offer. A person expects to stay on Paint with the card and "Level up" still there, not a dead button. Test: Task 4 step <a href="#t4-s1">t4-s1</a>, "a refused Level up stays on Paint and offers again".</li>
+      <li><strong>Remix pressed twice before the page load lands.</strong> A double press must make one saved game, not two "Remix of …" entries. Test: Task 6 step <a href="#t6-s1">t6-s1</a>, "a double press makes one saved game".</li>
+      <li><strong>The level cell below lg with its panel open, inside the Menu.</strong> "Level up" there, Escape there, and a press inside the panel keep the Menu open. The first Escape closes the panel, the second closes the Menu. Test: Task 3 step <a href="#t3-s1">t3-s1</a>, "below lg, Level up and Escape inside the Menu keep the Menu".</li>
+      <li><strong>The viewport crosses lg while the panel is open.</strong> A phone rotated or a window resized leaves exactly one level cell, closed, with no duplicate test id. Test: Task 3 step <a href="#t3-s1">t3-s1</a>, "crossing lg leaves one cell, closed".</li>
+      <li><strong>Server render, then hydration, of a real level 1 game.</strong> The server holds the open game; the browser holds level 1. The first render must match the server's (no level cell, Simulate a link, account only from <code>user</code>), then lock after mount, with no hydration warning. Tests: Task 2 step <a href="#t2-s1">t2-s1</a> (<code>SiteHeader.ssr.spec.ts</code>) and Task 8 step <a href="#t8-s1">t8-s1</a>, "a new visitor's first load has no hydration warning".</li>
+    </ol>
+  </section>
+
+  <section id="sec-file-structure">
+    <h2>File Structure</h2>
+    <table id="tbl-files">
+      <caption>Files by task</caption>
+      <thead>
+        <tr><th scope="col">Task</th><th scope="col">Creates</th><th scope="col">Modifies</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">1 Seeded game</th><td><code>src/lib/shell/test/seeded-game.ts</code>, <code>src/lib/shell/test/seeded-game.svelte.spec.ts</code></td><td>none</td></tr>
+        <tr><th scope="row">2 Steps and account</th><td><code>src/lib/shell/test/LevelCellHost.svelte</code>, <code>src/lib/shell/SiteHeader.ssr.spec.ts</code></td><td><code>src/lib/shell/SiteHeader.svelte</code>, <code>src/lib/shell/SiteHeader.svelte.spec.ts</code></td></tr>
+        <tr><th scope="row">3 Level cell</th><td><code>src/lib/shell/LevelCell.svelte</code>, <code>src/lib/shell/LevelCell.svelte.spec.ts</code></td><td><code>src/lib/shell/SiteHeader.svelte</code>, <code>src/lib/shell/accent.spec.ts</code></td></tr>
+        <tr><th scope="row">4 Paint's win</th><td><code>src/routes/page.game.svelte.spec.ts</code></td><td><code>src/routes/+page.svelte</code>, <code>src/routes/test/PageHost.svelte</code>, <code>src/routes/page.svelte.spec.ts</code>, <code>src/routes/page.undo.svelte.spec.ts</code></td></tr>
+        <tr><th scope="row">5 Banner</th><td>none</td><td><code>src/lib/sharing/copy.ts</code>, <code>src/lib/sharing/copy.spec.ts</code>, <code>src/lib/sharing/SharedBanner.svelte</code>, <code>src/lib/sharing/SharedBanner.svelte.spec.ts</code></td></tr>
+        <tr><th scope="row">6 Remix pages</th><td>none</td><td><code>src/routes/s/[id]/+page.svelte</code>, <code>src/routes/s/[id]/page.view.svelte.spec.ts</code>, <code>src/routes/s/[id]/test/PageHost.svelte</code>, <code>src/routes/p/[id]/+page.svelte</code>, <code>src/routes/p/[id]/page.view.svelte.spec.ts</code>, <code>src/routes/p/[id]/test/PageHost.svelte</code>, the remix tests of <code>e2e/{share-states,share-roundtrip,share-notices,sim-share,chrome-dark}.spec.ts</code></td></tr>
+        <tr><th scope="row">7 About</th><td>none</td><td><code>src/lib/about/copy.ts</code>, <code>src/lib/about/AboutUsing.svelte</code>, <code>src/lib/about/AboutParts.svelte.spec.ts</code>, <code>docs/dev/about.md</code></td></tr>
+        <tr><th scope="row">8 Game shell e2e</th><td><code>e2e/game-shell.spec.ts</code></td><td>none</td></tr>
+      </tbody>
+    </table>
+    <p>Order and lanes: Task 1 first (Tasks 2, 3, 4 and 6 import its helper). Then four lanes share no file: header (2 then 3), Paint (4), Remix (5 then 6; 5 needs nothing), About (7, needs nothing, may start at once). Task 8 runs last, after all.</p>
+    <p>Two helpers this plan adds beyond the spec's file list, both inside the write set <code>src/lib/shell/**</code>: <code>seeded-game.ts</code> (builder's call: one way to build a store at a given level for every component test, so no test reaches into <code>game-core</code>'s test files) and <code>SiteHeader.ssr.spec.ts</code> (builder's call: the only way to test the header before mount).</p>
+  </section>
+
+  <section id="sec-task-1">
+    <h2>Task 1: Seeded game for component tests</h2>
+    <p>Files:</p>
+    <ul>
+      <li>Create: <code>src/lib/shell/test/seeded-game.ts</code></li>
+      <li>Test: <code>src/lib/shell/test/seeded-game.svelte.spec.ts</code> (client project)</li>
+    </ul>
+    <p>Interfaces:</p>
+    <ul>
+      <li>Consumes: <code>GameStore</code> (constructor <code>{ storage: Storage | null; sync: SaveSync; now?: () =&gt; Date }</code>), <code>SAVES_KEY</code>, <code>saveKey(id)</code>, <code>parseGameSave</code>, <code>roundComplete</code>, <code>type Level</code>, <code>type SaveSync</code> (<code>src/lib/game/save-sync.svelte.ts</code>), <code>type AccountLine</code> (<code>src/lib/game/save-api.ts</code>: <code>{ handle: string; handleClaimed: boolean }</code>), <code>newId()</code> (<code>src/lib/ids/base58.ts</code>), <code>MemoryStorage</code> (<code>src/lib/sharing/fixtures/memory-storage.ts:2</code>, with <code>failWrites</code>).</li>
+      <li>Produces:
+        <pre><code data-lang="ts">// src/lib/shell/test/seeded-game.ts
+/** A SaveSync that does nothing: state 'local' (or 'saved' with an account), the given account. */
+export function quietSync(account?: AccountLine | null): SaveSync;
+
+export interface SeededGame {
+  game: GameStore;
+  storage: MemoryStorage;
+}
+
+/**
+ * Writes SAVES_KEY and one saveKey(id) per game into a new MemoryStorage, then constructs the
+ * store on it. The first game is current, at `level`; the others are level 1.
+ */
+export function seededGame(opts: {
+  level: Level;
+  /** Saved games in the list; default 1. */
+  saves?: number;
+  /** Level 5 with banked[5] set. */
+  roundComplete?: boolean;
+  /** Raw text under 'sfhousing:plan:v1' and 'sfhousing:sim:v2' before construction. */
+  plan?: string | null;
+  policy?: string | null;
+  sync?: SaveSync;
+}): SeededGame;</code></pre>
+      </li>
+    </ul>
+    <ol>
+      <li id="t1-s1"><input type="checkbox"> Write the failing tests in <code>seeded-game.svelte.spec.ts</code>:
+        <pre><code data-lang="ts">it('builds a stored game at the level asked, current and parseable', () =&gt; {
+  const { game, storage } = seededGame({ level: 3 });
+  expect(game.open).toBe(false);
+  expect(game.progress.level).toBe(3);
+  expect(game.saves).toHaveLength(1);
+  expect(parseGameSave(JSON.parse(storage.getItem(saveKey(game.currentId))!))).not.toBeNull();
+});
+it('holds 12 games when asked', () =&gt; {
+  expect(seededGame({ level: 1, saves: 12 }).game.saves).toHaveLength(12);
+});
+it('completes the round when asked', () =&gt; {
+  expect(roundComplete(seededGame({ level: 5, roundComplete: true }).game.progress)).toBe(true);
+});
+it('keeps the record keys as the current game\'s plan and policy', () =&gt; {
+  const { game } = seededGame({ level: 1, plan: 'P', policy: 'Q' });
+  expect(game.read(game.currentId)).toMatchObject({ plan: 'P', policy: 'Q' });
+});
+it('quietSync carries the account it is given', () =&gt; {
+  expect(quietSync({ handle: 'ada', handleClaimed: true }).account?.handle).toBe('ada');
+  expect(quietSync().account).toBeNull();
+});</code></pre>
+      </li>
+      <li id="t1-s2"><input type="checkbox"> Run and see them fail (module not found).
+        <pre><code data-lang="sh">npx vitest run --project client src/lib/shell/test/seeded-game.svelte.spec.ts</code></pre>
+      </li>
+      <li id="t1-s3"><input type="checkbox"> Implement <code>seededGame</code> and <code>quietSync</code>. Pinned values: each save is <code>{ v: 1, id: newId(), name: 'Seeded game' | 'Seeded game N', nameIsDefault: false, progress, plan: null, policy: null, savedAt }</code>; <code>banked[n]</code> for <code>n</code> from 2 to <code>level - 1</code> (and 5 when <code>roundComplete</code>) is <code>{ on: Date.UTC(2080, 0, 1) / 86_400_000, datasetVersion: 'fixture-0', at: savedAt }</code>; <code>firstWinAt</code> is <code>savedAt</code> above level 1, else null; <code>savedAt</code> strictly decreasing down the list so the first game sorts first; the index <code>{ v: 1, current: firstId, saves: entries }</code>. <code>plan</code>/<code>policy</code> go to the record keys only when given. Default sync is <code>quietSync()</code>. <code>quietSync(account)</code> returns a plain object with <code>state: account ? 'saved' : 'local'</code>, <code>account: account ?? null</code> and no-op <code>changed</code>, <code>removed</code>, <code>pull</code> (resolved promise), <code>attach</code>.</li>
+      <li id="t1-s4"><input type="checkbox"> Run the tests and see them pass.
+        <pre><code data-lang="sh">npx vitest run --project client src/lib/shell/test/seeded-game.svelte.spec.ts</code></pre>
+      </li>
+      <li id="t1-s5"><input type="checkbox"> <code>npm run check</code> and <code>npm run lint</code> pass.</li>
+      <li id="t1-s6"><input type="checkbox"> Commit, then <code>npx chreode timing-check --head HEAD</code> is clean.
+        <pre><code data-lang="sh">git add src/lib/shell/test/seeded-game.ts src/lib/shell/test/seeded-game.svelte.spec.ts
+git commit -m "test(shell): seeded game store for component tests"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-2">
+    <h2>Task 2: The header's steps and account entry</h2>
+    <p>Files:</p>
+    <ul>
+      <li>Modify: <code>src/lib/shell/SiteHeader.svelte</code>: imports <code>:16-19</code>; state <code>:41-63</code>; <code>onMount</code> <code>:106-113</code>; the <code>steps</code> snippet <code>:119-132</code>; the account entry <code>:213-221</code></li>
+      <li>Create: <code>src/lib/shell/test/LevelCellHost.svelte</code></li>
+      <li>Create: <code>src/lib/shell/SiteHeader.ssr.spec.ts</code> (server project)</li>
+      <li>Test: <code>src/lib/shell/SiteHeader.svelte.spec.ts</code> (new <code>describe('the game')</code> after <code>:837</code>; every existing test stays unchanged: with no provider the header is today's)</li>
+    </ul>
+    <p>Interfaces:</p>
+    <ul>
+      <li>Consumes: <code>useGame(): GameStore</code>, <code>provideGame(store)</code>, <code>GameStore.open</code>, <code>.progress</code>, <code>.sync.account: AccountLine | null</code>, <code>simLocked(p: Progress): boolean</code>; Task 1's <code>seededGame</code>, <code>quietSync</code>.</li>
+      <li>Produces: <code>LevelCellHost.svelte</code> props <code>{ game: GameStore; routeId?: string | null; user?: { handle: string } | null; signInAvailable?: boolean; actions?: Snippet; pinned?: Snippet; status?: Snippet }</code>: calls <code>provideGame(game)</code> at init and renders <code>&lt;SiteHeader&gt;</code> with the other props, then <code>&lt;div data-testid="outside" style="height: 400px"&gt;Map&lt;/div&gt;</code> (as <code>test/HeaderScoreHeader.svelte</code> does). In <code>SiteHeader</code>: a <code>mounted</code> flag (<code>$state(false)</code>, set true in the existing <code>onMount</code>) that Task 3 reuses.</li>
+    </ul>
+    <ol>
+      <li id="t2-s1"><input type="checkbox"> Write the failing tests.
+        <p><code>SiteHeader.ssr.spec.ts</code> (server project, as <code>src/lib/map/SimMap.ssr.spec.ts</code> renders with <code>render</code> from <code>svelte/server</code>):</p>
+        <pre><code data-lang="ts">it('before mount a level 1 game renders today\'s steps, no level cell, the account from user only', () =&gt; {
+  const { game } = seededGame({ level: 1, sync: quietSync({ handle: 'ada', handleClaimed: true }) });
+  const { body } = render(LevelCellHost, { props: { game, routeId: '/' } });
+  expect(body).toContain('href="/sim"');
+  expect(body).not.toContain('data-step-locked');
+  expect(body).not.toContain('data-testid="header-level"');
+  expect(body).toContain('Sign in');
+  expect(body).not.toContain('@ada');
+});</code></pre>
+        <p><code>SiteHeader.svelte.spec.ts</code>, <code>describe('the game')</code>:</p>
+        <pre><code data-lang="ts">for (const width of [1280, 375])
+  it(`at ${width}px, level 1: Simulate is no link, in the bar and in the Menu`, async () =&gt; {
+    await page.viewport(width, 800);
+    render(LevelCellHost, { game: seededGame({ level: 1 }).game, routeId: '/' });
+    if (width &lt; 1024) await page.getByRole('button', { name: 'Menu' }).click();
+    const nav = page.getByRole('navigation', { name: 'Steps' });
+    await expect.element(nav.getByRole('link', { name: 'Paint' })).toBeVisible();
+    expect(nav.getByRole('link', { name: 'Simulate' }).elements()).toHaveLength(0);
+    const locked = [...document.querySelectorAll&lt;HTMLElement&gt;('[data-step-locked]')];
+    expect(locked).toHaveLength(2); // both navs
+    expect(document.querySelector('a[href="/sim"]')).toBeNull();
+    for (const el of locked) {
+      expect(el.tabIndex).toBe(-1);
+      expect(el.querySelector('.sr-only')?.textContent).toBe('Simulate. Unlocks when you level up');
+      expect(getComputedStyle(el).borderTopStyle).toBe('dashed');
+    }
+  });
+it('at level 2 both steps are links', ...);           // links Paint and Simulate, no [data-step-locked]
+it('with no game provided the steps are today\'s and there is no level cell', ...);
+  // render(SiteHeader, { routeId: '/' }): link Simulate href '/sim'; no [data-step-locked];
+  // no [data-testid="header-level"]
+it('the account entry reads @handle from the layout\'s user first', ...);
+  // game with quietSync({ handle: 'bob', ... }), user { handle: 'ada' }: link '@ada' to /account
+it('with no user, the account entry reads the sync\'s account, whatever signInAvailable says', ...);
+  // quietSync({ handle: 'bob', handleClaimed: true }), signInAvailable: false: link '@bob' href '/account'
+it('with neither, Sign in links /signin while a method is in effect', ...);
+  // quietSync(): link 'Sign in' href '/signin'; with signInAvailable false, no [data-header-account]</code></pre>
+      </li>
+      <li id="t2-s2"><input type="checkbox"> Run and see them fail.
+        <pre><code data-lang="sh">npx vitest run --project client src/lib/shell/SiteHeader.svelte.spec.ts</code></pre>
+        <pre><code data-lang="sh">npx vitest run --project server src/lib/shell/SiteHeader.ssr.spec.ts</code></pre>
+      </li>
+      <li id="t2-s3"><input type="checkbox"> Create <code>LevelCellHost.svelte</code> with the props above.</li>
+      <li id="t2-s4"><input type="checkbox"> Change <code>SiteHeader.svelte</code>:
+        <ul>
+          <li><code>const game = useGame();</code> at init; <code>mounted</code> set in the existing <code>onMount</code>.</li>
+          <li><code>const locked = $derived(mounted &amp;&amp; !game.open &amp;&amp; simLocked(game.progress));</code> In <code>steps</code>, while <code>locked</code> the Simulate <code>li</code> holds a <code>span</code> instead of the link:
+            <pre><code data-lang="svelte">&lt;span data-step-locked class={lockedStep}
+  &gt;{@render stepNumber(2)}&lt;span aria-hidden="true"&gt;Simulate&lt;/span&gt;&lt;span class="sr-only"
+    &gt;Simulate. Unlocks when you level up&lt;/span
+  &gt;&lt;/span
+&gt;</code></pre>
+            <code>lockedStep</code> is the <code>link</code> classes' shape without focus classes, plus <code>border-dashed border-gray-500 text-ink-muted dark:border-gray-400 dark:text-ink-dark-muted</code> in one string (the <code>accent.spec.ts</code> pairing rules read per string).</li>
+          <li>Account: <code>const account = $derived(user ?? (mounted ? game.sync.account : null));</code> The entry shows while <code>account || signInAvailable</code>; its <code>href</code>, <code>title</code> and text read <code>account</code> where they read <code>user</code> today.</li>
+        </ul>
+      </li>
+      <li id="t2-s5"><input type="checkbox"> Run both specs and see them pass, the existing <code>SiteHeader</code> tests included.
+        <pre><code data-lang="sh">npx vitest run --project client src/lib/shell/SiteHeader.svelte.spec.ts</code></pre>
+        <pre><code data-lang="sh">npx vitest run --project server src/lib/shell/SiteHeader.ssr.spec.ts src/lib/shell/accent.spec.ts</code></pre>
+      </li>
+      <li id="t2-s6"><input type="checkbox"> <code>npm run check</code> and <code>npm run lint</code> pass.</li>
+      <li id="t2-s7"><input type="checkbox"> Commit, then <code>npx chreode timing-check --head HEAD</code> is clean.
+        <pre><code data-lang="sh">git add src/lib/shell/SiteHeader.svelte src/lib/shell/SiteHeader.svelte.spec.ts src/lib/shell/SiteHeader.ssr.spec.ts src/lib/shell/test/LevelCellHost.svelte
+git commit -m "feat(shell): lock the Simulate step at level 1 and read the account from the save sync"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-3">
+    <h2>Task 3: The level cell</h2>
+    <p>Files:</p>
+    <ul>
+      <li>Create: <code>src/lib/shell/LevelCell.svelte</code></li>
+      <li>Modify: <code>src/lib/shell/SiteHeader.svelte</code>: the lg nav <code>:154-156</code> (cell after it); the Menu button <code>:173-186</code> (name and dot); the Menu panel's nav <code>:206-208</code> (cell after it); <code>onpanelclick</code> <code>:96-104</code>; <code>onMount</code>'s media listener <code>:106-113</code> (a <code>wide</code> flag)</li>
+      <li>Modify: <code>src/lib/shell/accent.spec.ts</code>: <code>THEMED_FILES</code> (today <code>:29-88</code>) gains <code>'src/lib/game/WinCard.svelte'</code>, <code>'src/lib/game/LevelPanel.svelte'</code> and <code>'src/lib/shell/LevelCell.svelte'</code> (the third is builder's call: the cell uses the shared parts like the other header files)</li>
+      <li>Test: <code>src/lib/shell/LevelCell.svelte.spec.ts</code> (client project, through <code>LevelCellHost</code>)</li>
+    </ul>
+    <p>Interfaces:</p>
+    <ul>
+      <li>Consumes: <code>useGame()</code>; <code>GameStore.progress</code>, <code>.offer: Offer | null</code>, <code>.levelUp(): void</code>, <code>.setOffer(offer: Offer | null)</code>, <code>.open</code>; <code>roundComplete(p: Progress): boolean</code>; <code>levelText(level: Level): string</code> (<code>src/lib/game/copy.ts</code>, "Level 3"); <code>LevelPanel.svelte</code> (no props); <code>headerOverlay(id, close): () =&gt; void</code> (<code>src/lib/shell/header-actions.svelte.ts:77</code>); <code>BUTTON</code>, <code>BUTTON_PRIMARY</code>, <code>SURFACE_POP</code> (<code>src/lib/shell/ui.ts:28,34,55</code>); Task 2's <code>LevelCellHost</code> and <code>mounted</code>; Task 1's <code>seededGame</code>.</li>
+      <li>Produces: <code>LevelCell.svelte</code> with props <code>{ inMenu: boolean }</code> (builder's call: the cell needs to know whether it is the lg pop-over or the in-Menu panel; <code>SiteHeader</code> passes it, the page passes nothing). Test ids <code>header-level</code>, <code>header-level-up</code>, <code>header-level-panel</code>.</li>
+    </ul>
+    <ol>
+      <li id="t3-s1"><input type="checkbox"> Write the failing tests in <code>LevelCell.svelte.spec.ts</code> (axe and <code>scheme()</code> as in <code>src/lib/map/key/MapKeyControl.svelte.spec.ts:18-22,443-458</code>):
+        <pre><code data-lang="ts">const cell = () =&gt; page.getByTestId('header-level');
+const levelUp = () =&gt; page.getByTestId('header-level-up');
+const panel = () =&gt; page.getByTestId('header-level-panel');
+const offer = { on: 20000, datasetVersion: 'fixture-0' };
+
+it('reads "Level 3"; with level 5 banked, "Round complete"', ...);
+  // seededGame({ level: 3 }) at 1280: cell text 'Level 3';
+  // seededGame({ level: 5, roundComplete: true }): 'Round complete', and setOffer(offer) shows no header-level-up
+it('"Level up" shows only while an offer is set; pressing it raises the level and focuses the cell', async () =&gt; {
+  await page.viewport(1280, 800);
+  const { game } = seededGame({ level: 3 });
+  render(LevelCellHost, { game, routeId: '/sim' });
+  await expect.element(cell()).toHaveTextContent('Level 3');
+  expect(levelUp().elements()).toHaveLength(0);
+  game.setOffer(offer);
+  await levelUp().click();
+  expect(game.progress.level).toBe(4);
+  await expect.element(cell()).toHaveTextContent('Level 4');
+  await expect.element(cell()).toHaveFocus();
+  expect(levelUp().elements()).toHaveLength(0);
+});
+it('from lg it sits after the steps and before the status', ...);
+  // 1280, status snippet 'st': nav.right &lt;= cell.left, cell (or header-level-up).right &lt;= st.left
+it('the button opens the panel; Escape closes it and focuses the button; a press outside closes it', ...);
+  // aria-expanded 'true', aria-controls === panel id, panel holds [data-testid="level-panel"];
+  // Escape: aria-expanded 'false', cell focused; reopen, click getByTestId('outside'): closed
+it('from lg the panel sits under the header at the cell\'s left edge, 20 rem wide, inside the viewport', ...);
+  // panel.top &gt;= banner.bottom; |panel.left - cell.left| &lt; 1; width 320 at 1280;
+  // at 1280x500, panel.bottom &lt;= 500 - 16 and overflow-y scrolls
+it('another header overlay opening closes the panel', ...);
+  // window.dispatchEvent(new CustomEvent('sfh-header-overlay-open', { detail: 'other' })): closed
+it('below lg the cell is in the Menu after the steps; a press inside the panel keeps the Menu open', ...);
+  // 375: open Menu; Menu panel contains cell; steps nav precedes cell; open the cell's panel;
+  // press a row's 'Rename Seeded game' inside it: the Menu's aria-expanded stays 'true' and the
+  // rename field shows
+it('below lg the Menu is named "Menu, level up ready" with a dot while an offer is set', ...);
+  // 375: game.setOffer(offer): getByRole('button', { name: 'Menu, level up ready' }) visible,
+  // it holds [data-level-dot]; setOffer(null): name 'Menu', no dot
+it('below lg, Level up and Escape inside the Menu keep the Menu', ...);       // Review Focus 3
+  // 375, level 3, offer set, Menu open: click header-level-up: Menu still open, cell focused;
+  // open the panel, Escape: panel closed, Menu open, cell focused; Escape again: Menu closed
+it('crossing lg leaves one cell, closed', ...);                                // Review Focus 4
+  // 1280, open the panel; viewport 768 (wait on the (min-width: 1024px) change event, as
+  // MapKeyControl.svelte.spec.ts's atViewport does): exactly one [data-testid="header-level"],
+  // no [data-testid="header-level-panel"]; back to 1280: still one
+it('the cell and the open panel pass axe in light and dark', ...);
+  // for each scheme: axe.run(banner) closed and open, violations []</code></pre>
+      </li>
+      <li id="t3-s2"><input type="checkbox"> Run and see them fail.
+        <pre><code data-lang="sh">npx vitest run --project client src/lib/shell/LevelCell.svelte.spec.ts</code></pre>
+      </li>
+      <li id="t3-s3"><input type="checkbox"> Implement <code>LevelCell.svelte</code>:
+        <ul>
+          <li>Root <code>div</code> with <code>data-header-keep-open</code>; from lg a row; <code>inMenu</code> a column (<code>flex flex-col items-start gap-2</code>) with the panel under the row.</li>
+          <li>The cell: <code>button</code>, <code>class={BUTTON}</code>, <code>data-testid="header-level"</code>, <code>aria-expanded={open}</code>, <code>aria-controls={panelId}</code>, text <code>roundComplete(game.progress) ? 'Round complete' : levelText(game.progress.level)</code>.</li>
+          <li>"Level up": shown while <code>game.offer !== null &amp;&amp; !roundComplete(game.progress)</code>; <code>BUTTON_PRIMARY</code>, <code>data-testid="header-level-up"</code>; on press <code>game.levelUp()</code>, <code>await tick()</code>, and when the button is gone, focus the cell.</li>
+          <li>The panel, while <code>open</code>: <code>div id={panelId} data-testid="header-level-panel"</code> holding <code>&lt;LevelPanel /&gt;</code>. From lg: <code>{SURFACE_POP} absolute top-full z-50 mt-1 w-80 max-w-[calc(100vw-2rem)] max-h-[calc(100vh-4rem)] overflow-y-auto</code>, with <code>style:left</code> set at open to the cell's left minus the header's left (the header is the nearest positioned ancestor; builder's call: measured once per open, so the pop-over follows the cell without a positioned wrapper inside the 48 px row). In the Menu: in flow, no pop-over classes.</li>
+          <li><code>const openOnly = headerOverlay(panelId, () =&gt; (open = false));</code> at init. Opening calls <code>openOnly()</code> only when <code>!inMenu</code> (builder's call: below lg the panel lives inside the Menu, and <code>openOnly</code> would close the Menu that holds it).</li>
+          <li><code>&lt;svelte:window&gt;</code> <code>onkeydown</code>: while open, on an Escape not <code>defaultPrevented</code> and with no <code>dialog:modal</code>, close, <code>e.preventDefault()</code> (so <code>SiteHeader</code>'s Menu ignores it), and focus the cell after <code>tick()</code>. <code>onpointerdown</code>: while open, a press outside the root closes it.</li>
+        </ul>
+      </li>
+      <li id="t3-s4"><input type="checkbox"> Change <code>SiteHeader.svelte</code>:
+        <ul>
+          <li><code>let wide = $state(false)</code>, set from <code>mq.matches</code> in <code>onMount</code> and in its <code>change</code> listener.</li>
+          <li>After the lg Steps nav: <code>{#if mounted &amp;&amp; !game.open &amp;&amp; wide}&lt;LevelCell inMenu={false} /&gt;{/if}</code>. After the Menu panel's Steps nav: <code>{#if mounted &amp;&amp; !game.open &amp;&amp; !wide}&lt;LevelCell inMenu /&gt;{/if}</code>. One instance at any width (builder's call: unique test ids and one panel state; a resize across lg remounts it closed).</li>
+          <li>Menu button: <code>const ready = $derived(mounted &amp;&amp; !game.open &amp;&amp; game.offer !== null &amp;&amp; !roundComplete(game.progress));</code> <code>aria-label={ready ? 'Menu, level up ready' : 'Menu'}</code>; the button takes <code>relative</code>; while <code>ready</code> it holds <code>&lt;span aria-hidden="true" data-level-dot class="absolute -top-0.5 -right-0.5 size-2 rounded-full bg-accent dark:bg-accent-dark"&gt;&lt;/span&gt;</code>.</li>
+          <li><code>onpanelclick</code>: return before closing when the item is a <code>button</code> inside <code>[data-header-keep-open]</code>. Links inside the level panel still close the Menu (a navigation).</li>
+        </ul>
+      </li>
+      <li id="t3-s5"><input type="checkbox"> Add the three files to <code>THEMED_FILES</code> in <code>accent.spec.ts</code>.</li>
+      <li id="t3-s6"><input type="checkbox"> Run the tests and see them pass, with the header's other specs.
+        <pre><code data-lang="sh">npx vitest run --project client src/lib/shell/LevelCell.svelte.spec.ts src/lib/shell/SiteHeader.svelte.spec.ts src/lib/shell/header-actions.svelte.spec.ts</code></pre>
+        <pre><code data-lang="sh">npx vitest run --project server src/lib/shell/accent.spec.ts src/lib/shell/SiteHeader.ssr.spec.ts</code></pre>
+      </li>
+      <li id="t3-s7"><input type="checkbox"> <code>npm run check</code> and <code>npm run lint</code> pass.</li>
+      <li id="t3-s8"><input type="checkbox"> Commit, then <code>npx chreode timing-check --head HEAD</code> is clean.
+        <pre><code data-lang="sh">git add src/lib/shell/LevelCell.svelte src/lib/shell/LevelCell.svelte.spec.ts src/lib/shell/SiteHeader.svelte src/lib/shell/accent.spec.ts
+git commit -m "feat(shell): level cell in the header with the level panel and Level up"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-4">
+    <h2>Task 4: Paint's win</h2>
+    <p>Files:</p>
+    <ul>
+      <li>Modify: <code>src/routes/+page.svelte</code>: imports <code>:8-34</code>; the restore <code>onMount</code> <code>:57-77</code>; the headline <code>:146-148</code>; the <code>noticeStack</code> snippet <code>:170-172</code>; a <code>&lt;svelte:window&gt;</code> beside <code>&lt;svelte:head&gt;</code> <code>:194</code></li>
+      <li>Modify: <code>src/routes/test/PageHost.svelte</code> <code>:1-14</code>: an optional <code>game?: GameStore</code> prop, <code>provideGame(game)</code> when given</li>
+      <li>Modify: <code>src/routes/page.svelte.spec.ts</code>: delete the two Remix hand-off tests <code>:190-204</code> and the imports only they used (<code>remixedToast</code> at <code>:7</code>, <code>replaceStateCalls</code> at <code>:9</code> with its reset at <code>:61</code>)</li>
+      <li>Modify: <code>src/routes/page.undo.svelte.spec.ts</code>: delete the hand-off test <code>:79-83</code>, and <code>appPage</code> (<code>:11</code>, <code>:58</code>) if nothing else uses it</li>
+      <li>Test: <code>src/routes/page.game.svelte.spec.ts</code> (client project)</li>
+    </ul>
+    <p>Interfaces:</p>
+    <ul>
+      <li>Consumes: <code>useGame()</code>; <code>GameStore.open</code>, <code>.progress</code>, <code>.offer</code>, <code>.won()</code>, <code>.setOffer(offer: Offer | null)</code>, <code>.levelUp()</code>, <code>.touched()</code>; <code>simLocked(p)</code>; <code>paintWon(net: number, amount: number): boolean</code>; <code>unlockText(next: Level | 6): string</code> (2 gives "The simulation"); <code>WinCard.svelte</code> props <code>{ title: string; unlocks: string | null; onlevelup: () =&gt; void; onkeep: () =&gt; void }</code>; <code>e2eGoalAmount(storage: Storage | null): number | null</code> (<code>src/lib/game/e2e.ts</code>); <code>getStorage()</code> (<code>src/lib/sharing/storage.ts:15</code>); <code>GOAL_BASE</code> (<code>src/lib/goal/goal.ts</code>); <code>paintHeadline(net, goal)</code> and <code>roomFor(net)</code> (<code>src/lib/paint/headline.ts:14,27</code>); <code>goto</code> (<code>$app/navigation</code>; in client tests the stub <code>src/test-stubs/app/navigation.ts</code> records <code>gotoCalls</code>); Task 1's <code>seededGame</code>.</li>
+      <li>Produces: test id <code>paint-win</code> on the card's wrapper.</li>
+    </ul>
+    <ol>
+      <li id="t4-s1"><input type="checkbox"> Write the failing tests in <code>page.game.svelte.spec.ts</code>. Setup as <code>src/routes/p/[id]/page.view.svelte.spec.ts:20,44-56</code> (SimMap mocked to <code>FzpSimMapStub</code>, <code>stub.map.zoom = 18</code>, <code>PageWorker</code>) plus the goal seam, which reads null in client tests because <code>VITE_E2E</code> is unset:
+        <pre><code data-lang="ts">vi.mock('$lib/game/e2e', async (orig) =&gt; ({
+  ...(await orig&lt;typeof import('$lib/game/e2e')&gt;()),
+  e2eGoalAmount: () =&gt; 1000
+}));
+// render(PageHost, { props: { data: data(), game } }); w = pageWorkers[0]; w.ready();
+const win = (net: number, complete = true) =&gt; w.emit({ ...scoreDiff(scoreOf(net)), complete });
+const card = () =&gt; page.getByTestId('paint-win');
+
+it('the headline reads the seam\'s goal', ...);
+  // win(1000): score-bar 'Room for 1,000 homes', score-detail 'Goal reached'
+it('a complete score crossing the goal opens the card on Level up, calls won() once and sets the offer', async () =&gt; {
+  const { game } = seededGame({ level: 1 });
+  const won = vi.spyOn(game, 'won');
+  // render, ready, win(999): no card, game.offer null
+  win(1000);
+  await expect.element(card().getByRole('heading', { name: 'Room for 1,000 homes' })).toBeVisible();
+  await expect.element(card().getByRole('button', { name: 'Level up' })).toHaveFocus();
+  await expect.element(card()).toHaveTextContent('Unlocks: The simulation');
+  expect(won).toHaveBeenCalledTimes(1);
+  expect(game.offer).toEqual({ on: null, datasetVersion: 'fixture-0' });
+});
+it('an incomplete score at the goal opens nothing', ...);       // win(1000, false): no card, offer null
+it('a win while a pointer is held mounts the card at pointerup', ...);
+  // window.dispatchEvent(new PointerEvent('pointerdown')); win(1000); poll game.offer set,
+  // card absent; dispatch 'pointerup': card visible, Level up focused
+it('a pointercancel ends the hold too', ...);                     // as above with 'pointercancel'
+it('Keep playing closes the card, focuses the header score, and the offer stays', ...);
+  // click 'Keep playing': card gone, getByTestId('score-bar') focused, game.offer not null;
+  // a later win(1001) does not reopen it
+it('Escape closes the card as Keep playing does', ...);
+it('dropping below clears the offer; crossing again reopens the card', ...);
+  // keep, win(10): offer null; win(1000): card visible again, won() called twice in all
+it('Level up raises the level to 2 and goes to /sim', ...);
+  // click Level up: game.progress.level 2, gotoCalls.at(-1).url '/sim', card gone, offer null
+it('a refused Level up stays on Paint and offers again', ...);   // Review Focus 1
+  // storage.failWrites = true; click Level up: level 1, gotoCalls empty,
+  // poll game.offer not null, card still visible
+it('an autosave write calls touched()', ...);
+  // seed PLAN_KEY with a painted plan (as page.undo.svelte.spec.ts:61-68); spy game.touched;
+  // poll Ctrl+Z until the brush-announcement reads 'Undid paint, 6 stories';
+  // window.dispatchEvent(new Event('pagehide')): touched called once
+it('at level 2 no card shows and no offer is set', ...);
+  // seededGame({ level: 2 }), win(1000): no paint-win, offer null, score-detail still 'Goal reached'
+it('the open game (no game given): no card and no offer', ...);  // win(1000): no paint-win</code></pre>
+      </li>
+      <li id="t4-s2"><input type="checkbox"> Run and see them fail.
+        <pre><code data-lang="sh">npx vitest run --project client src/routes/page.game.svelte.spec.ts</code></pre>
+      </li>
+      <li id="t4-s3"><input type="checkbox"> Add the <code>game</code> prop to <code>src/routes/test/PageHost.svelte</code>.</li>
+      <li id="t4-s4"><input type="checkbox"> Change <code>src/routes/+page.svelte</code>:
+        <ul>
+          <li>Remove the hand-off: <code>onMount</code> calls <code>autosave.restore()</code> with no argument; drop the <code>sfhRemix</code> branch, <code>replaceState</code>, <code>page</code> and <code>remixedToast</code> imports.</li>
+          <li><code>onMount</code> first sets <code>mounted = true</code> and <code>goalAmount = e2eGoalAmount(getStorage()) ?? GOAL_BASE.amount</code> (before the existing <code>if (!editor) return</code>). <code>const goal = $derived({ ...GOAL_BASE, amount: goalAmount })</code>; <code>headText = paintHeadline(shown.netUnits, goal)</code>.</li>
+          <li>The win, the offer and the pointer deferral (the algorithm the spec fixes; Paint clears only an offer it set, builder's call, so it never clears another page's):
+            <pre><code data-lang="ts">const game = useGame();
+let held = $state(false);      // a pointer button is down on the page
+let kept = $state(false);      // "Keep playing" or Escape, until Paint stops being won
+let cardOpen = $state(false);
+let offered = false;           // this page set the store's offer
+const won = $derived(
+  mounted &amp;&amp; !game.open &amp;&amp; simLocked(game.progress) &amp;&amp;
+    latestScore.current.complete &amp;&amp; paintWon(shown.netUnits, goal.amount)
+);
+$effect(() =&gt; {
+  if (!won) {
+    kept = false;
+    cardOpen = false;
+    if (offered) untrack(() =&gt; game.setOffer(null));
+    offered = false;
+    return;
+  }
+  // Re-set after a refused levelUp() cleared it (Review Focus 1).
+  if (game.offer === null) {
+    untrack(() =&gt; game.setOffer({ on: null, datasetVersion: data.datasetVersion }));
+    offered = true;
+  }
+  if (!kept &amp;&amp; !held &amp;&amp; !cardOpen) {
+    cardOpen = true;
+    untrack(() =&gt; game.won());
+  }
+});
+onDestroy(() =&gt; { if (offered) game.setOffer(null); });</code></pre>
+          </li>
+          <li><code>&lt;svelte:window onpointerdown={() =&gt; (held = true)} onpointerup={() =&gt; (held = false)} onpointercancel={() =&gt; (held = false)} /&gt;</code></li>
+          <li>Leaving level 1: record <code>simLocked(game.progress)</code> at mount; an <code>$effect</code> calls <code>goto('/sim')</code> once when it turns from true to false while mounted.</li>
+          <li><code>keep()</code>: <code>kept = true; cardOpen = false;</code> then after <code>tick()</code> focus <code>document.querySelector&lt;HTMLElement&gt;('[data-testid="score-bar"]')</code>.</li>
+          <li><code>touched()</code>: an <code>$effect</code> reads <code>autosave.status</code> and calls <code>untrack(() =&gt; game.touched())</code> when the previous value was <code>'saving'</code> and this one is <code>'saved'</code>.</li>
+          <li>In <code>noticeStack</code>, after <code>&lt;NoticeStack&gt;</code>: <code>{#if cardOpen}&lt;div data-testid="paint-win" class="pointer-events-auto"&gt;&lt;WinCard title={roomFor(goal.amount)} unlocks={unlockText(2)} onlevelup={() =&gt; game.levelUp()} onkeep={keep} /&gt;&lt;/div&gt;{/if}</code> (<code>pointer-events-auto</code>: the stack lets clicks through, <code>src/lib/shell/NoticePills.svelte:40</code>).</li>
+        </ul>
+      </li>
+      <li id="t4-s5"><input type="checkbox"> Delete the hand-off tests from <code>page.svelte.spec.ts</code> and <code>page.undo.svelte.spec.ts</code>, and their now unused imports.</li>
+      <li id="t4-s6"><input type="checkbox"> Run Paint's specs and see them pass.
+        <pre><code data-lang="sh">npx vitest run --project client src/routes/page.game.svelte.spec.ts src/routes/page.svelte.spec.ts src/routes/page.undo.svelte.spec.ts src/routes/page.view.svelte.spec.ts src/routes/page.header.svelte.spec.ts src/routes/page.rest-text.svelte.spec.ts</code></pre>
+      </li>
+      <li id="t4-s7"><input type="checkbox"> <code>npm run check</code> and <code>npm run lint</code> pass.</li>
+      <li id="t4-s8"><input type="checkbox"> Commit, then <code>npx chreode timing-check --head HEAD</code> is clean.
+        <pre><code data-lang="sh">git add src/routes/+page.svelte src/routes/test/PageHost.svelte src/routes/page.game.svelte.spec.ts src/routes/page.svelte.spec.ts src/routes/page.undo.svelte.spec.ts
+git commit -m "feat(paint): win level 1 at the goal with the win card and Level up"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-5">
+    <h2>Task 5: Remix copy and the shared banner</h2>
+    <p>Files:</p>
+    <ul>
+      <li>Modify: <code>src/lib/sharing/copy.ts</code>: add the four exports after <code>remixConfirm</code> (<code>:42-43</code>); every existing export stays</li>
+      <li>Test: <code>src/lib/sharing/copy.spec.ts</code> (server project): a new test after <code>:52</code></li>
+      <li>Modify: <code>src/lib/sharing/SharedBanner.svelte</code> <code>:1-107</code>: new props, no dialog</li>
+      <li>Test: <code>src/lib/sharing/SharedBanner.svelte.spec.ts</code>: replace <code>setup</code> (<code>:10-27</code>) and the dialog tests (<code>:50-72</code>, <code>:98-146</code>); keep the title, fallback, notice and markup tests with the new props</li>
+    </ul>
+    <p>Interfaces:</p>
+    <ul>
+      <li>Consumes: <code>FULL_TEXT</code> ("12 saved games. Delete one first.") from <code>src/lib/game/copy.ts</code>; <code>BUTTON</code>, <code>BUTTON_PRIMARY</code>.</li>
+      <li>Produces:
+        <pre><code data-lang="ts">// src/lib/sharing/copy.ts
+export const REMIX_LOCKED = 'Unlock the simulation to remix';
+/** 'Level 4 runs all of it' */
+export function remixNeeds(level: number): string;
+export const REMIX_LATER = 'Parts unlock in a later round';
+export const YOUR_GAME = 'Your game';
+
+// src/lib/sharing/SharedBanner.svelte props (confirmText removed; title, id, createdAt,
+// datasetNotice, planVersion, currentVersion, kind unchanged)
+export type RemixState =
+  | { kind: 'ready'; note: string | null }
+  | { kind: 'locked' }
+  | { kind: 'full' }
+  | null;
+remix: RemixState;
+error?: string | null;
+gameHref: string;
+onremix: () =&gt; void;</code></pre>
+        <code>RemixState</code> is exported from the component's <code>&lt;script module&gt;</code> (builder's call: Task 6's pages type their derived state with it).</li>
+    </ul>
+    <ol>
+      <li id="t5-s1"><input type="checkbox"> Write the failing tests.
+        <pre><code data-lang="ts">// copy.spec.ts
+it('remix words for the game', () =&gt; {
+  expect(REMIX_LOCKED).toBe('Unlock the simulation to remix');
+  expect(remixNeeds(4)).toBe('Level 4 runs all of it');
+  expect(REMIX_LATER).toBe('Parts unlock in a later round');
+  expect(YOUR_GAME).toBe('Your game');
+});
+
+// SharedBanner.svelte.spec.ts
+function setup(p: { remix?: RemixState; error?: string | null; gameHref?: string; datasetNotice?: Notice; title?: string } = {}) {
+  const onremix = vi.fn();
+  render(SharedBanner, { /* as today */ remix: p.remix === undefined ? { kind: 'ready', note: null } : p.remix,
+    error: p.error ?? null, gameHref: p.gameHref ?? '/', onremix });
+  return { onremix };
+}
+it('ready: Remix remixes once, with no dialog', ...);
+  // click Remix: onremix once; page.getByRole('dialog') has no elements; document has no &lt;dialog&gt;
+it('ready with a note shows it under the buttons', ...);
+  // remix { kind: 'ready', note: 'Level 4 runs all of it' }: text visible inside the banner
+it('locked: the button reads "Unlock the simulation to remix", aria-disabled, and a press does nothing', ...);
+  // getByRole('button', { name: 'Unlock the simulation to remix' }) aria-disabled 'true';
+  // click({ force: true }) or element().click(): onremix not called; no 'Remix' button
+it('full: Remix is aria-disabled and the full line shows', ...);
+  // Remix aria-disabled 'true', banner text contains '12 saved games. Delete one first.', no call
+it('null: no Remix and no Open with current data; the notice text stays', ...);
+  // remix null, datasetNotice 'gone': no 'Remix' button, no 'Open with current data',
+  // n6('2026-01-01', '2026-09-01') visible
+it('Open with current data follows the state and calls the same action', ...);
+  // ready + 'remix' notice: click it, onremix once; locked: it is aria-disabled, no call
+it('the error shows as an alert', ...);
+  // error 'This browser refused to save.': getByRole('alert') has that text
+it('"Your game" links the current game\'s page in every state', ...);
+  // for remix of ready, locked, full, null: link 'Your game' href gameHref ('/sim');
+  // no 'Start your own' link
+it('the banner draws on the surface tokens, with dark partners', ...); // :50-72 without the dialog half</code></pre>
+      </li>
+      <li id="t5-s2"><input type="checkbox"> Run and see them fail.
+        <pre><code data-lang="sh">npx vitest run --project server src/lib/sharing/copy.spec.ts</code></pre>
+        <pre><code data-lang="sh">npx vitest run --project client src/lib/sharing/SharedBanner.svelte.spec.ts</code></pre>
+      </li>
+      <li id="t5-s3"><input type="checkbox"> Add the four exports to <code>copy.ts</code> with the pinned strings.</li>
+      <li id="t5-s4"><input type="checkbox"> Rewrite <code>SharedBanner.svelte</code>: drop <code>confirmText</code>, the <code>&lt;dialog&gt;</code>, <code>flushSync</code>, <code>SURFACE_DIALOG</code> and <code>startRemix</code>. One handler <code>press()</code> calls <code>onremix()</code> only when <code>remix?.kind === 'ready'</code>. The Remix button, while <code>remix</code> is not null: text <code>REMIX_LOCKED</code> when locked, else "Remix"; <code>aria-disabled="true"</code> when locked or full; <code>BUTTON_PRIMARY</code>. Then <code>&lt;a href={gameHref} class={BUTTON}&gt;{YOUR_GAME}&lt;/a&gt;</code> always. Under the buttons: the <code>note</code> line while ready with a note; <code>FULL_TEXT</code> while full; <code>&lt;p role="alert"&gt;{error}&lt;/p&gt;</code> while <code>error</code> is set. "Open with current data" renders while the notice shows and <code>remix</code> is not null, <code>aria-disabled</code> like Remix, calling <code>press</code> (builder's call: its text stays "Open with current data" in every state).</li>
+      <li id="t5-s5"><input type="checkbox"> Run the tests and see them pass, with the accent checks.
+        <pre><code data-lang="sh">npx vitest run --project client src/lib/sharing/SharedBanner.svelte.spec.ts</code></pre>
+        <pre><code data-lang="sh">npx vitest run --project server src/lib/sharing/copy.spec.ts src/lib/shell/accent.spec.ts</code></pre>
+      </li>
+      <li id="t5-s6"><input type="checkbox"> <code>npm run lint</code> passes. <code>npm run check</code> fails only in <code>src/routes/s/[id]/+page.svelte</code> and <code>src/routes/p/[id]/+page.svelte</code> (they still pass <code>confirmText</code>): Task 6 fixes them, and this lane's next commit is Task 6.</li>
+      <li id="t5-s7"><input type="checkbox"> Commit, then <code>npx chreode timing-check --head HEAD</code> is clean.
+        <pre><code data-lang="sh">git add src/lib/sharing/copy.ts src/lib/sharing/copy.spec.ts src/lib/sharing/SharedBanner.svelte src/lib/sharing/SharedBanner.svelte.spec.ts
+git commit -m "feat(sharing): banner remix states for the game, Your game link, no confirm"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-6">
+    <h2>Task 6: Remix on /s/&lt;id&gt; and /p/&lt;id&gt;</h2>
+    <p>Files:</p>
+    <ul>
+      <li>Modify: <code>src/routes/s/[id]/+page.svelte</code>: imports <code>:6-14</code>; <code>confirmText</code> and <code>remix</code> <code>:25-54</code>; the banner <code>:66-76</code></li>
+      <li>Modify: <code>src/routes/s/[id]/test/PageHost.svelte</code> <code>:1-21</code>: optional <code>game?: GameStore</code>, <code>provideGame(game)</code> when given</li>
+      <li>Test: <code>src/routes/s/[id]/page.view.svelte.spec.ts</code>: the <code>$app/navigation</code> mock <code>:50-56</code> stays; add a <code>$lib/game/navigate</code> mock; rewrite <code>:148-157</code> (Your game) and the Remix tests <code>:195-253</code></li>
+      <li>Modify: <code>src/routes/p/[id]/+page.svelte</code>: imports <code>:8-20</code>; <code>remix</code> <code>:41-47</code>; the banner <code>:131-144</code></li>
+      <li>Modify: <code>src/routes/p/[id]/test/PageHost.svelte</code> <code>:1-14</code>: optional <code>game</code> as above</li>
+      <li>Test: <code>src/routes/p/[id]/page.view.svelte.spec.ts</code>: a new <code>describe('/p/[id] Remix')</code></li>
+      <li>Modify (remix tests only): <code>e2e/share-states.spec.ts:128-155</code>, <code>e2e/share-roundtrip.spec.ts:55-77</code>, <code>e2e/share-notices.spec.ts:213-236</code>, <code>e2e/sim-share.spec.ts:220-240</code> and <code>:355-381</code>, <code>e2e/chrome-dark.spec.ts:539-576</code></li>
+    </ul>
+    <p>Interfaces:</p>
+    <ul>
+      <li>Consumes: <code>useGame()</code>; <code>GameStore.open</code>, <code>.progress</code>, <code>.saves</code>, <code>.currentId</code>, <code>.read(id)</code>, <code>.remix(doc: { kind: 'plan' | 'sim'; record: string; title: string }): StoreChange</code>; <code>MAX_SAVES</code>, <code>SAVES_KEY</code>; <code>simLocked(p)</code>; <code>needsHigher(doc: SimPolicy4, p: Progress): Level | 6 | null</code>; <code>STORAGE_TEXT</code> ("This browser refused to save."), <code>FULL_TEXT</code>; <code>gamePath(level: Level): '/' | '/sim'</code>, <code>remixPath(kind: 'plan' | 'sim'): '/' | '/sim'</code>, <code>loadPage(path: '/' | '/sim'): void</code> (<code>src/lib/game/navigate.ts</code>); <code>LocalPlanRecord</code> (<code>src/lib/sharing/storage.ts:7</code>); <code>createSimCodec4</code>, <code>PLAN_CODEC</code>, <code>copyFor(kind).untitled</code> ("Untitled policy" / "Untitled plan"); Task 5's <code>RemixState</code>, <code>remixNeeds</code>, <code>REMIX_LATER</code>; Task 1's <code>seededGame</code>; X1's <code>seedGame(page, level)</code> (<code>e2e/helpers/game.ts</code>).</li>
+      <li>Produces: nothing other tasks read.</li>
+    </ul>
+    <ol>
+      <li id="t6-s1"><input type="checkbox"> Write the failing component tests. In <code>/s/[id]/page.view.svelte.spec.ts</code>:
+        <pre><code data-lang="ts">const nav2 = vi.hoisted(() =&gt; ({ loadPage: vi.fn() }));
+vi.mock('$lib/game/navigate', async (orig) =&gt; ({
+  ...(await orig&lt;typeof import('$lib/game/navigate')&gt;()),
+  loadPage: nav2.loadPage
+}));
+const remixBtn = () =&gt; banner().getByRole('button', { name: 'Remix', exact: true });
+
+it('level 1: the button reads "Unlock the simulation to remix" and a press stores nothing', ...);
+  // seededGame({ level: 1 }); index = storage.getItem(SAVES_KEY); press (element().click()):
+  // storage.getItem(SAVES_KEY) === index, loadPage not called
+it('the open game: no Remix button, and Your game shows', ...);
+  // render without game: no Remix, no 'Unlock the simulation to remix'; link 'Your game'
+it('level 3 with a zoning policy: "Level 4 runs all of it"', ...);       // zoning(historic)
+it('level 3 with an own pool: "Parts unlock in a later round"', ...);
+  // a money policy with preset null (where.tag 'fund'; build it like the schema 4 money
+  // fixtures under src/lib/timeline/**/*.spec.ts)
+it('level 3: a press makes "Remix of {title}" with the rebased policy and the old plan, current, and loads /sim', async () =&gt; {
+  const { game, storage } = seededGame({ level: 3, plan: OLD_PLAN_RECORD });
+  // render with doc4(zoning(historic), 'SD permits'); press Remix
+  expect(game.saves).toHaveLength(2);
+  expect(game.saves[0].name).toBe('Remix of SD permits');
+  expect(game.currentId).toBe(game.saves[0].id);
+  const r = readRecord(storage, SIM_SERVER_CODEC4);
+  expect(r.kind === 'ok' &amp;&amp; r.plan.policy).toEqual(zoning(historic));
+  expect(game.read(game.currentId)!.plan).toBe(OLD_PLAN_RECORD);
+  expect(nav2.loadPage).toHaveBeenCalledWith('/sim');
+  expect(page.getByRole('dialog').elements()).toHaveLength(0);
+});
+it('a double press makes one saved game', ...);                          // Review Focus 2
+  // level 3: two element().click() in a row: saves length 2, loadPage called once
+it('at 12 saved games Remix is disabled and the full line shows', ...);
+  // seededGame({ level: 3, saves: 12 }): Remix aria-disabled 'true', text FULL_TEXT, no change
+it('a storage that refuses writes shows the refused line', ...);
+  // storage.failWrites = true; press: getByRole('alert') STORAGE_TEXT, loadPage not called
+it('Your game links gamePath(level): / at level 1, /sim above it', ...);
+it('a schema 2 link remixes as schema 4', ...);
+  // dataFor(schema2Painted, { upgradedFrom: 2 }), level 5: press; readRecord(storage,
+  // SIM_SERVER_CODEC4) ok with plan.schema 4
+it('after Remix, /sim opens the remixed policy from the record', ...);
+  // replaces :215-230: level 3, press, unmount; render SimRoutePage with the same data and no
+  // history state, its autosave reading localStorage: copy storage's 'sfhousing:sim:v2' into
+  // localStorage first; openTimeline policy equals zoning(historic); no remixedToast text</code></pre>
+        <p>In <code>/p/[id]/page.view.svelte.spec.ts</code>, <code>describe('/p/[id] Remix')</code> with the same <code>loadPage</code> mock:</p>
+        <pre><code data-lang="ts">it('level 1: a press makes a saved game with the published plan and the old policy, and loads /', ...);
+  // seededGame({ level: 1, policy: OLD_POLICY_RECORD }); data(manifest, painted plan, title 'Mission');
+  // press Remix: saves[0].name 'Remix of Mission', storage 'sfhousing:plan:v1' parses (readRecord)
+  // to the plan rebased to fixture-0, read(current).policy === OLD_POLICY_RECORD,
+  // loadPage called with '/', progress.level still 1
+it('at 12 games Remix is disabled', ...);
+it('the open game: no Remix button', ...);</code></pre>
+      </li>
+      <li id="t6-s2"><input type="checkbox"> Run and see them fail.
+        <pre><code data-lang="sh">npx vitest run --project client 'src/routes/s/[id]/page.view.svelte.spec.ts' 'src/routes/p/[id]/page.view.svelte.spec.ts'</code></pre>
+        <p>Quote every path with <code>[id]</code>: zsh reads unquoted brackets as a glob.</p>
+      </li>
+      <li id="t6-s3"><input type="checkbox"> Add the <code>game</code> prop to both <code>test/PageHost.svelte</code> files.</li>
+      <li id="t6-s4"><input type="checkbox"> Change <code>src/routes/s/[id]/+page.svelte</code>: drop <code>goto</code>, <code>localDoc</code>, <code>remixToLocal</code>, <code>getStorage</code>, <code>SIM_SERVER_CODEC4</code> and <code>confirmText</code>. Add <code>const game = useGame()</code>, a <code>mounted</code> flag, <code>let error = $state&lt;string | null&gt;(null)</code> and a plain <code>let leaving = false</code>.
+        <pre><code data-lang="ts">const remixState: RemixState = $derived.by(() =&gt; {
+  if (!mounted) return { kind: 'ready', note: null };
+  if (game.open) return null;
+  if (simLocked(game.progress)) return { kind: 'locked' };
+  if (game.saves.length &gt;= MAX_SAVES) return { kind: 'full' };
+  const need = data.opened ? needsHigher(data.opened.doc.policy, game.progress) : null;
+  return { kind: 'ready', note: need === null ? null : need === 6 ? REMIX_LATER : remixNeeds(need) };
+});
+const gameHref = $derived(mounted ? gamePath(game.progress.level) : '/');
+
+function remix(): void {
+  if (leaving || remixState?.kind !== 'ready') return;
+  const cal = data.calibration;
+  let plan = data.doc.text;
+  if (data.opened &amp;&amp; cal) {
+    const codec = createSimCodec4({ asOf: cal.asOf, calibration: cal });
+    plan = codec.serialize(codec.rebase(data.opened.doc, data.currentDatasetVersion));
+  }
+  const record = JSON.stringify({ v: 1, savedAt: new Date().toISOString(), plan } satisfies LocalPlanRecord);
+  const r = game.remix({ kind: 'sim', record, title: data.doc.title ?? SIM.untitled });
+  if (r.ok) {
+    leaving = true;
+    error = null;
+    loadPage(remixPath('sim'));
+  } else error = r.reason === 'storage' ? STORAGE_TEXT : null;
+}</code></pre>
+        The banner takes <code>remix={remixState} {error} {gameHref} onremix={remix}</code>. <code>SimRoute</code> below it is unchanged.</li>
+      <li id="t6-s5"><input type="checkbox"> Change <code>src/routes/p/[id]/+page.svelte</code> the same way, with <code>kind: 'plan'</code>, no locked state and no note (Remix at every level), <code>plan: PLAN_CODEC.serialize(PLAN_CODEC.rebase(data.plan, data.currentDatasetVersion))</code>, title <code>data.plan.title ?? copyFor('plan').untitled</code>, and <code>loadPage(remixPath('plan'))</code>. Drop <code>goto</code>, <code>remixConfirm</code>, <code>localOpCount</code>, <code>remixToLocal</code>, <code>getStorage</code>.</li>
+      <li id="t6-s6"><input type="checkbox"> Run the component tests and see them pass.
+        <pre><code data-lang="sh">npx vitest run --project client 'src/routes/s/[id]/page.view.svelte.spec.ts' 'src/routes/p/[id]/page.view.svelte.spec.ts' src/lib/sharing/SharedBanner.svelte.spec.ts</code></pre>
+      </li>
+      <li id="t6-s7"><input type="checkbox"> Update the remix tests of the five e2e specs. Each calls <code>seedGame(page, 3)</code> (from <code>./helpers/game</code>) on the page that remixes before its first navigation, drops the confirm dialog and the toast, and checks the remixed document on the page that loads:
+        <ul>
+          <li><code>share-states</code> <code>:128-155</code>: becomes "Remix over a non-empty local plan opens Paint on the published plan": seed, paint once, wait saved, open <code>/p/&lt;id&gt;</code>, wait for the map, Remix, URL <code>/</code>, <code>expect.poll(() =&gt; ops(page)).toBe(3)</code> (<code>small.json</code> holds 3 ops).</li>
+          <li><code>share-roundtrip</code> <code>:55-77</code>: <code>await seedGame(visitor, 3)</code> before <code>visitor.goto(link)</code>; after Remix, URL <code>/</code> and <code>ops(visitor)</code> polls to 1; the toast line goes.</li>
+          <li><code>share-notices</code> <code>:213-236</code>: seed before <code>page.goto</code>; no toast assertion; after Remix, URL <code>/</code>, <code>ops</code> polls to 3, the parcels chip shows, and the notices-clear check stays only if <code>expectNoticesClear</code> passes with no page notice (else it goes, with the test renamed for what it checks).</li>
+          <li><code>sim-share</code> <code>:220-240</code>: seed before <code>capturePresetDoc</code>; the toast line goes; the rest stands. <code>:355-381</code>: seed before <code>page.goto</code>; the toast line goes; <code>storedDoc</code> schema 4 stays.</li>
+          <li><code>chrome-dark</code> <code>:539-576</code>: becomes "the shared view's banner has no axe violations in dark": seed, open <code>/p/&lt;id&gt;</code>, wait for the map, the background and the banner's axe check; the local paint and the dialog half go.</li>
+        </ul>
+      </li>
+      <li id="t6-s8"><input type="checkbox"> Run the changed e2e specs (port check first; leave nothing listening).
+        <pre><code data-lang="sh">lsof -nP -iTCP:4173 -sTCP:LISTEN</code></pre>
+        <pre><code data-lang="sh">npx playwright test e2e/share-states.spec.ts e2e/share-roundtrip.spec.ts e2e/share-notices.spec.ts e2e/sim-share.spec.ts e2e/chrome-dark.spec.ts --repeat-each=5 --retries=0</code></pre>
+      </li>
+      <li id="t6-s9"><input type="checkbox"> <code>npm run check</code> and <code>npm run lint</code> pass.</li>
+      <li id="t6-s10"><input type="checkbox"> Commit, then <code>npx chreode timing-check --head HEAD</code> is clean.
+        <pre><code data-lang="sh">git add 'src/routes/s/[id]' 'src/routes/p/[id]' e2e/share-states.spec.ts e2e/share-roundtrip.spec.ts e2e/share-notices.spec.ts e2e/sim-share.spec.ts e2e/chrome-dark.spec.ts
+git commit -m "feat(sharing): Remix makes a saved game and opens it"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-7">
+    <h2>Task 7: About's levels and saved games</h2>
+    <p>Files:</p>
+    <ul>
+      <li>Modify: <code>src/lib/about/copy.ts</code>: <code>ABOUT_ID</code> <code>:14-20</code>; <code>MEANINGS</code> <code>:42-69</code> (a term after "The goal + 15%"); new exports after <code>YOUR_PLANS</code> <code>:71-74</code></li>
+      <li>Modify: <code>src/lib/about/AboutUsing.svelte</code>: imports <code>:10</code>; two sections between <code>:44</code> and <code>:46</code>; the header comment <code>:1-6</code></li>
+      <li>Test: <code>src/lib/about/AboutParts.svelte.spec.ts</code>: the term list <code>:87-95</code>; new tests in <code>describe('AboutUsing')</code> after <code>:255</code></li>
+      <li>Modify: <code>docs/dev/about.md</code>: the parts table <code>:13-18</code>; the strings section <code>:25-33</code></li>
+    </ul>
+    <p>Interfaces:</p>
+    <ul>
+      <li>Consumes: <code>MAX_SAVES</code> (<code>src/lib/game/saves.ts</code>, 12).</li>
+      <li>Produces:
+        <pre><code data-lang="ts">// src/lib/about/copy.ts
+ABOUT_ID.levels === 'about-levels';
+ABOUT_ID.savedGames === 'about-saved-games';
+export const LEVELS: readonly string[];      // five lines, in order
+export const LEVEL_NOTES: readonly string[]; // three paragraphs
+export const SAVED_GAMES: readonly string[]; // three paragraphs; the first reads MAX_SAVES</code></pre>
+      </li>
+    </ul>
+    <ol>
+      <li id="t7-s1"><input type="checkbox"> Write the failing tests:
+        <pre><code data-lang="ts">// in 'meanings: every term in order', the list gains 'To beat' after 'The goal + 15%', and:
+expect(text()).toContain(
+  'The month you reached the goal when you last levelled up. Reach the goal in an earlier month to win the level.'
+);
+
+it('using: Levels, an ordered list, then its three notes, word for word', async () =&gt; {
+  render(AboutUsing, { level: 2 });
+  const s = document.getElementById('about-levels')!;
+  expect(s.tagName).toBe('SECTION');
+  expect(s.querySelector('h3')?.textContent?.trim()).toBe('Levels');
+  expect([...s.querySelectorAll('ol &gt; li')].map((li) =&gt; li.textContent?.trim())).toEqual([
+    'Level 1: paint room for the goal. Winning opens the simulation.',
+    'Level 2: play current law to the goal.',
+    'Level 3: change permitting, and beat the month you reached at level 2.',
+    'Level 4: change zoning too, and beat your month to beat.',
+    'Level 5: add the public money on offer, and beat your month to beat.'
+  ]);
+  expect([...s.querySelectorAll('p')].map((p) =&gt; p.textContent?.trim())).toEqual([
+    'Levelling up is your choice. Your policies stay, and the clock goes back to today.',
+    'A month to beat keeps the data it was earned on. After a data update your policy may reach the goal in another month; the month to beat stays.',
+    'A published policy plays in full for everyone, whatever their level.'
+  ]);
+});
+it('using: Saved games, word for word, the 12 from MAX_SAVES', async () =&gt; {
+  render(AboutUsing, { level: 2 });
+  const s = document.getElementById('about-saved-games')!;
+  expect(s.querySelector('h3')?.textContent?.trim()).toBe('Saved games');
+  expect([...s.querySelectorAll('p')].map((p) =&gt; p.textContent?.trim())).toEqual([
+    `Each saved game has its own level, months to beat, plan and policy. You can keep ${MAX_SAVES}.`,
+    'Remix makes a new saved game from a published plan or policy, at your current level.',
+    'Games are saved in this browser, and to your account from your first win.'
+  ]);
+  expect(SAVED_GAMES[0]).toContain('You can keep 12.');
+});
+it('using: the order is Keyboard shortcuts, Levels, Saved games, Your plans', ...);
+  // the h3 texts under #about-using, in document order</code></pre>
+        The existing "every part" test (<code>:268-294</code>) then checks the new headings sit at <code>level + 1</code>, and the colour test (<code>:296-306</code>) that they carry no theme classes.</li>
+      <li id="t7-s2"><input type="checkbox"> Run and see them fail.
+        <pre><code data-lang="sh">npx vitest run --project client src/lib/about/AboutParts.svelte.spec.ts</code></pre>
+      </li>
+      <li id="t7-s3"><input type="checkbox"> Add the strings to <code>copy.ts</code> exactly as the test reads them (<code>SAVED_GAMES[0]</code> built from <code>MAX_SAVES</code>), the <code>MEANINGS</code> term <code>{ term: 'To beat', body: … }</code>, and the two <code>ABOUT_ID</code> entries.</li>
+      <li id="t7-s4"><input type="checkbox"> In <code>AboutUsing.svelte</code>, after the shortcuts section: <code>&lt;section id={ABOUT_ID.levels}&gt;</code> with a <code>{sub}</code> heading "Levels" (<code>class="mt-4 font-semibold"</code>, as Keyboard shortcuts), an <code>&lt;ol class="mt-2 list-decimal pl-5"&gt;</code> of <code>LEVELS</code> and a <code>&lt;p class="mt-2"&gt;</code> per <code>LEVEL_NOTES</code>; then <code>&lt;section id={ABOUT_ID.savedGames}&gt;</code> with "Saved games" and a paragraph per <code>SAVED_GAMES</code>. No colour classes.</li>
+      <li id="t7-s5"><input type="checkbox"> Update <code>docs/dev/about.md</code> per the spec's Docs section: the Using it row lists Keyboard shortcuts (<code>about-shortcuts</code>), Levels (<code>about-levels</code>), Saved games (<code>about-saved-games</code>) and Your plans; the strings section names <code>LEVELS</code>, <code>LEVEL_NOTES</code>, <code>SAVED_GAMES</code> and the "To beat" term, and says the 12 is read from <code>MAX_SAVES</code>.</li>
+      <li id="t7-s6"><input type="checkbox"> Run the About specs and see them pass.
+        <pre><code data-lang="sh">npx vitest run --project client src/lib/about</code></pre>
+        <pre><code data-lang="sh">npx vitest run --project server src/lib/shell/accent.spec.ts scripts/docs-index.spec.ts</code></pre>
+      </li>
+      <li id="t7-s7"><input type="checkbox"> <code>npm run check</code> and <code>npm run lint</code> pass.</li>
+      <li id="t7-s8"><input type="checkbox"> Commit, then <code>npx chreode timing-check --head HEAD</code> is clean.
+        <pre><code data-lang="sh">git add src/lib/about/copy.ts src/lib/about/AboutUsing.svelte src/lib/about/AboutParts.svelte.spec.ts docs/dev/about.md
+git commit -m "docs(about): levels, months to beat and saved games"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-8">
+    <h2>Task 8: The game shell end to end</h2>
+    <p>Files:</p>
+    <ul>
+      <li>Create: <code>e2e/game-shell.spec.ts</code></li>
+    </ul>
+    <p>Interfaces:</p>
+    <ul>
+      <li>Consumes: X1's <code>newVisitor(page)</code>, <code>seedGame(page, level)</code>, <code>seedGoalAmount(page, amount)</code> (<code>e2e/helpers/game.ts</code>); <code>gotoEditor</code>, <code>paintOnce</code>, <code>waitForMap</code>, <code>gotoHydrated</code>, <code>openHeaderMenu</code>, <code>ops</code>, <code>smallText</code>, <code>SIM_KEY</code>, <code>seedPlanRow</code> (<code>e2e/helpers/sharing.ts</code>); <code>addPolicy</code>, <code>openKind</code>, <code>waitFilled</code> (<code>e2e/helpers/run.ts</code>); test ids <code>paint-win</code>, <code>header-level</code>, <code>header-level-panel</code>, <code>level-panel</code>, <code>save-row</code> (game-core) and <code>data-step-locked</code>.</li>
+      <li>Produces: nothing.</li>
+    </ul>
+    <ol>
+      <li id="t8-s1"><input type="checkbox"> Write the spec (both Playwright projects; the header's level cell is in the Menu below lg, so open it with <code>openHeaderMenu</code>, which matches only the name "Menu": reach the Menu by <code>[data-header-menu]</code> whenever an offer is set):
+        <pre><code data-lang="ts">test('a new visitor\'s first load has no hydration warning and locks Simulate after hydration', ...);
+  // Review Focus 5: newVisitor; collect console messages; gotoHydrated(page, '/about');
+  // no message matching /hydrat/i; openHeaderMenu; [data-step-locked] visible in the Steps nav,
+  // no link named 'Simulate'
+test('a new visitor paints past the goal, levels up and lands on /sim at level 2', ...);
+  // newVisitor, seedGoalAmount(page, 1); gotoEditor; paintOnce;
+  // paint-win holds heading 'Room for 1 homes' and 'Unlocks: The simulation';
+  // click its 'Level up'; URL /sim; openHeaderMenu; header-level 'Level 2';
+  // Steps nav link 'Simulate' (exact) href '/sim'; no [data-step-locked]
+test('at level 1 the Simulate step is no link, and /s/&lt;id&gt;\'s Remix asks to unlock', ...);
+  // seedGame(page, 1); a policy row (seedPlanRow kind 'sim', as sim-share.spec.ts seeds one);
+  // gotoHydrated /s/&lt;id&gt;: banner button 'Unlock the simulation to remix' aria-disabled 'true'
+test('at level 1 /p/&lt;id&gt;\'s Remix opens Paint on the published plan, listed in the level panel', ...);
+  // seedGame(page, 1); post smallText; open /p/&lt;id&gt;, waitForMap, Remix; URL '/';
+  // ops polls to 3; openHeaderMenu; click header-level; header-level-panel lists a save-row
+  // with 'Remix of Untitled plan'
+test('at level 3 /s/&lt;id&gt;\'s Remix of one permitting policy opens /sim with its row', ...);
+  // seedGame(page, 3); capture a preset doc on /sim (addPolicy 'Permitting',
+  // "Permits at San Diego's pace", then read SIM_KEY, as sim-share.spec.ts:107-115);
+  // seed it as a 'sim' row; open /s/&lt;id&gt; hydrated; Remix; URL /sim; waitFilled;
+  // openKind 'Permitting': a button named /, Permits at San Diego's pace, / is visible</code></pre>
+        These read only this unit's words and test ids, <code>game-core</code>'s, and what <code>/sim</code> shows today.</li>
+      <li id="t8-s2"><input type="checkbox"> Run it (port check first; leave nothing listening).
+        <pre><code data-lang="sh">lsof -nP -iTCP:4173 -sTCP:LISTEN</code></pre>
+        <pre><code data-lang="sh">npx playwright test e2e/game-shell.spec.ts --repeat-each=5 --retries=0</code></pre>
+      </li>
+      <li id="t8-s3"><input type="checkbox"> Run the unit suites and the checks.
+        <pre><code data-lang="sh">npm run test:unit</code></pre>
+        <pre><code data-lang="sh">npm run check</code></pre>
+        <pre><code data-lang="sh">npm run lint</code></pre>
+      </li>
+      <li id="t8-s4"><input type="checkbox"> Commit, then <code>npx chreode timing-check --head HEAD</code> is clean.
+        <pre><code data-lang="sh">git add e2e/game-shell.spec.ts
+git commit -m "test(e2e): game shell: paint to level 2, locked Simulate, Remix into a saved game"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-open-questions">
+    <h2>Open questions</h2>
+    <ul>
+      <li>None that block. The calls this plan makes where the spec is silent are marked "builder's call" in the tasks: the cell's <code>inMenu</code> prop, one cell instance chosen by width, <code>openOnly</code> only from lg, the Menu keeping open for buttons in the cell, Paint re-offering after a refused Level up, Remix ignoring a second press, "Open with current data" keeping its words, and the two test helpers.</li>
+    </ul>
+  </section>
+</article>
