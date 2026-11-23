@@ -1,6 +1,7 @@
 // The funding side of the world's columns (spec S1): the funding line, the spell and shadow side
 // tables, the pools' counters and the money rows. All typed arrays and string arrays, so
 // `structuredClone(world)` stays a full copy.
+import type { Day } from '$lib/timelapse/time';
 import { NO_DAY, type LineColumns, type PoolColumns, type World } from '../types';
 
 export const KIND_MARKET = 0;
@@ -82,6 +83,16 @@ export interface FundPools extends PoolColumns {
   mGuaranteed: Float64Array;
   /** `terms.lossOnExit` of the award's frame. */
   mLoss: Float64Array;
+  /** Per pool row: the first day the pool is closed; `NO_DAY` while open. */
+  closedDay: Int32Array;
+  /** The closings so far, oldest first: one row per time a pool closed. */
+  shutN: number;
+  /** World pool row. */
+  shutRow: Int32Array;
+  /** The first day closed: a model month's first day. */
+  shutFrom: Int32Array;
+  /** The first day open again (a model month's first day), or `NO_DAY` while still closed. */
+  shutTo: Int32Array;
 }
 
 type Col = Int32Array | Uint8Array | Float64Array | string[];
@@ -94,8 +105,9 @@ const SPELLS = ['spellLot', 'spellKind', 'spellK', 'spellR'];
 const SHADOWS = ['shadowLot', 'shadowRow', 'shadowK', 'shadowR', 'shadowExisting', 'shadowMonth'];
 const POOL_ROWS = [
   'id', 'received', 'committed', 'spentGrant', 'outLoan', 'lostLoan', 'lostGuarantee', 'moneyDay',
-  'moneyMonth'
+  'moneyMonth', 'closedDay'
 ]; // prettier-ignore
+const SHUTS = ['shutRow', 'shutFrom', 'shutTo'];
 const MONEY_ROWS = [
   'mRow', 'mProg', 'mPool', 'mInstr', 'mGrant', 'mLent', 'mReserve', 'mGuaranteed', 'mLoss'
 ]; // prettier-ignore
@@ -186,7 +198,12 @@ function emptyPools(): FundPools {
     mLent: new Float64Array(0),
     mReserve: new Float64Array(0),
     mGuaranteed: new Float64Array(0),
-    mLoss: new Float64Array(0)
+    mLoss: new Float64Array(0),
+    closedDay: new Int32Array(0),
+    shutN: 0,
+    shutRow: new Int32Array(0),
+    shutFrom: new Int32Array(0),
+    shutTo: new Int32Array(0)
   };
 }
 
@@ -213,7 +230,34 @@ export function poolRowOf(pools: FundPools, id: string): number {
   grow(pools, POOL_ROWS, row + 1);
   pools.n = row + 1;
   pools.id[row] = id;
+  pools.closedDay[row] = NO_DAY;
   return row;
+}
+
+/** Opens a shut row for pool row `q` from `from` and sets `closedDay[q] = from`. Throws when q is closed. */
+export function addShutRow(pools: FundPools, q: number, from: Day): void {
+  if (pools.closedDay[q] !== NO_DAY) throw new Error(`addShutRow: pool row ${q} is already closed`);
+  const i = pools.shutN;
+  grow(pools, SHUTS, i + 1);
+  pools.shutN = i + 1;
+  pools.shutRow[i] = q;
+  pools.shutFrom[i] = from;
+  pools.shutTo[i] = NO_DAY;
+  pools.closedDay[q] = from;
+}
+
+/**
+ * Sets `shutTo = to` on pool row q's open shut row and `closedDay[q] = NO_DAY`. The row stays, even
+ * when `shutTo` equals its `shutFrom` (it then closes no month): the history only grows. Throws
+ * when q is open.
+ */
+export function reopenPool(pools: FundPools, q: number, to: Day): void {
+  if (pools.closedDay[q] === NO_DAY) throw new Error(`reopenPool: pool row ${q} is open`);
+  let i = pools.shutN - 1;
+  while (i >= 0 && !(pools.shutRow[i] === q && pools.shutTo[i] === NO_DAY)) i--;
+  if (i < 0) throw new Error(`reopenPool: pool row ${q} has no open shut row`);
+  pools.closedDay[q] = NO_DAY;
+  pools.shutTo[i] = to;
 }
 
 /** Appends a line row with defaults and returns its index. */

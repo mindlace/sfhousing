@@ -1,6 +1,6 @@
 # Superconductor ledger — design: docs/superpowers/design/2026-11-22-1216-incremental-game.html
 Package worktree: /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game
-Build graph: docs/superpowers/design/2026-11-22-1216-incremental-game-build-graph.md @ 2a794bfe
+Build graph: docs/superpowers/design/2026-11-22-1216-incremental-game-build-graph.md @ a693285d
 SDD scripts: /Users/mindlace/.claude/plugins/cache/claude-plugins-official/superpowers/7.0.2/skills/subagent-driven-development/scripts
 HTML scripts: /Users/mindlace/.claude/plugins/cache/super/superpowers-html/0.1.0/bin
 Project commands: npm, npx, lsof, ls, cat, grep, head, tail, wc, pwd, uptime, mkdir (mail-setup only, also: aws); operators run with --permission-mode dontAsk
@@ -228,6 +228,11 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - game-shell: incremental-game-game-shell — status: admitted (relaunched 23:30 as admitted from its plan, tasks 1 to 6 and 8; branch incremental-game-game-shell brought up to f435a2da, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-game-shell, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus, needs: G1–G5 built, X1, L1 (all merged), produces: none)
 - finite-funding: incremental-game-finite-funding — status: complete (admit message sent 23:30 at f435a2da; branch incremental-game-finite-funding, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-finite-funding, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus, needs: L1, M1 stub (merged), produces: F1, F2)
 - game-shell: incremental-game-game-shell — status: complete (relaunched 23:30 as admitted from its plan, tasks 1 to 6 and 8; branch incremental-game-game-shell brought up to f435a2da, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-game-shell, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus, needs: G1–G5 built, X1, L1 (all merged), produces: none)
+- funding-measures: incremental-game-funding-measures — status: deferred (branch incremental-game-funding-measures, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-funding-measures, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus — rationale: funding editors and presets consuming three rows, needs: F2 from finite-funding (not merged yet); F3 from pool-closing (not merged yet); G3 built from game-core (not merged yet), produces: M1 (built))
+- reach-check: incremental-game-reach-check — status: deferred (branch incremental-game-reach-check, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-reach-check, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus — rationale: small script, but its verdict gates the owner's D1; consumes four rows, needs: L1 from remove-lesscars (not merged yet); F1, F2 from finite-funding (not merged yet); F3 from pool-closing (not merged yet), produces: G4's build check (scripts/level2-check.ts, to closing))
+- funding-measures: incremental-game-funding-measures — status: admitted (branch incremental-game-funding-measures, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-funding-measures, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus — rationale: funding editors and presets consuming three rows, needs: F2 from finite-funding (not merged yet); F3 from pool-closing (not merged yet); G3 built from game-core (not merged yet), produces: M1 (built))
+- pool-closing: incremental-game-pool-closing — status: complete (branch incremental-game-pool-closing, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-pool-closing, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus — rationale: engine funding system change with determinism and cost bounds, needs: F2 from finite-funding (not merged yet), produces: F3)
+- reach-check: incremental-game-reach-check — status: admitted (branch incremental-game-reach-check, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-reach-check, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus — rationale: small script, but its verdict gates the owner's D1; consumes four rows, needs: L1 from remove-lesscars (not merged yet); F1, F2 from finite-funding (not merged yet); F3 from pool-closing (not merged yet), produces: G4's build check (scripts/level2-check.ts, to closing))
 
 ## Supervision
 - status asked remove-lesscars
@@ -307,6 +312,15 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - relaunched game-shell
 - resent to incremental-game-game-shell
 - plan game-sim: docs/superpowers/plans/2026-11-22-game-sim.html at 9aa7f278 (brought into line with the current spec after its restart)
+- 2026-11-23 03:30 band is now MIDDLE (seven_day 70%, resets Tue 05:00): at most 2 operators running, planning-only included; start a new one only when one finishes or stops, ready units first. Running now: pool-closing, game-sim (2 of 2). When F3 merges, funding-measures and reach-check are both ready: start one per free slot (funding-measures first: closing needs both, and funding-measures is the larger unit), the other when the next slot frees. Restarts, relaunches and forks are exempt.
+- 04:35 F3 merged: funding-measures (F2, F3, G3 all merged) and reach-check (L1, F1, F2, F3 all merged) are ready and DEFERRED by the middle band (71%): pool-closing (tasks after F3) and game-sim hold the two slots. When either sends `complete`, start funding-measures first, then reach-check at the next free slot; both restart from their plans (resting), each with its hand-off notes and missed rulings (funding-measures: conductor-5, finite-funding-2, pool-closing-3, finite-funding's `once` inflow note, web tools; reach-check: conductor-3, finite-funding's coverage note and F1 handback).
+- relaunched funding-measures
+- resent to incremental-game-funding-measures
+- 05:25 pool-closing sent `complete` @ c523dfba, freeing a slot: funding-measures relaunched as admitted from its plan (band middle, 73%; running: game-sim, funding-measures = 2 of 2). reach-check stays deferred until game-sim or funding-measures finishes.
+- 05:45 game-sim sent `complete`, freeing the second slot: reach-check starts as soon as the suite on pool-closing's final merge passes, from that tested head (so its level 2 check runs on pool closing as merged, ruling pool-closing-4 included). Running then: funding-measures, reach-check.
+- relaunched reach-check
+- resent to incremental-game-reach-check
+- 06:05 reach-check relaunched as admitted from its plan at the tested head 7f65b62f (pool-closing complete merged). Band middle (73%): running funding-measures, reach-check = 2 of 2. Told: a verdict that level 2 misses the goal inside the window is a question at once (owner's D1).
 
 ## Questions
 - 2026-11-22 conductor-1 from conductor [defect-class: owner-ruling-drift]: gate-1, a policy already saved in the browser becomes a level-1 game, and every kind in it is locked (major) → rulings/conductor-1.md (commit 7fbb5e32, changes contract: no)
@@ -500,6 +514,22 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - build graph for pool-closing-2 @ 2a794bfe
 - relayed pool-closing-2 to incremental-game-pool-closing (told to read the package worktree and not merge the integration branch while 32454cbe is under test)
 - routed pool-closing-2
+- 2026-11-23 pool-closing-3 from pool-closing [defect-class: write-set-gap]: F3's required MoneyView.closed/shut break `npm run check` in src/lib/timeline/pool-level.spec.ts:43 (an `as MoneyView` literal in funding-measures' file); may pool-closing add `closed: {}, shut: {}` there → rulings/pool-closing-3.md (commit a91f3877, changes contract: no)
+- routing pool-closing-3: rulings/pool-closing-3.md, commit a91f3877
+- build graph for pool-closing-3 @ 3d42b901
+- relayed pool-closing-3 to incremental-game-pool-closing
+- relayed pool-closing-3 to incremental-game-funding-measures (not delivered: resting; write-set note only, owed in its restart's resends)
+- routed pool-closing-3
+- 2026-11-23 pool-closing-4 from pool-closing [defect-class: spec-silence]: what an already-final money row's shut:true reads when the pool's same-month shut row is later deleted by an opening in the next month (one stray empty bar for funding-measures); non-blocking → rulings/pool-closing-4.md (commit 35fcb904, changes contract: no)
+- routing pool-closing-4: rulings/pool-closing-4.md, commit 35fcb904
+- build graph for pool-closing-4 @ 15a97e63
+- relayed pool-closing-4 to incremental-game-pool-closing (a fix round inside its still-open unit: reopenPool keeps the row)
+- routed pool-closing-4
+- 2026-11-23 funding-measures-1 from funding-measures [defect-class: source-evidence]: BLA p. 108 does not contain the "started as $20 million in 2013" / "would expire" quotes the spec puts in GENERAL_FUND_TERM_YEARS's method (p. 44 confirmed). Fork after the suite on pool-closing's final merge reports → rulings/funding-measures-1.md (commit ab3f4882, changes contract: no)
+- routing funding-measures-1: rulings/funding-measures-1.md, commit ab3f4882
+- build graph for funding-measures-1 @ a693285d
+- relayed funding-measures-1 to incremental-game-funding-measures
+- routed funding-measures-1
 
 ## Forks
 - fork checkpoint-2 started 2026-11-22T16:20
@@ -693,6 +723,23 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - fork graph-pool-closing-2 started 2026-11-23T02:12
 - fork graph-pool-closing-2 exited [0]: output
 - fork review-game-shell-667900a4 started 2026-11-23T02:28
+- fork review-game-shell-667900a4 exited [0]: output
+- fork rule-pool-closing-3 started 2026-11-23T02:41
+- fork rule-pool-closing-3 exited [0]: output
+- fork graph-pool-closing-3 started 2026-11-23T02:42
+- fork graph-pool-closing-3 exited [0]: output
+- fork review-pool-closing-ee88a46b started 2026-11-23T03:21
+- fork review-pool-closing-ee88a46b exited [0]: output
+- fork rule-pool-closing-4 started 2026-11-23T03:23
+- fork rule-pool-closing-4 exited [0]: output
+- fork graph-pool-closing-4 started 2026-11-23T03:24
+- fork graph-pool-closing-4 exited [0]: output
+- fork review-pool-closing-c523dfba started 2026-11-23T04:20
+- fork review-pool-closing-c523dfba exited [0]: output
+- fork rule-funding-measures-1 started 2026-11-23T04:20
+- fork rule-funding-measures-1 exited [0]: output
+- fork graph-funding-measures-1 started 2026-11-23T04:21
+- fork graph-funding-measures-1 exited [0]: output
 
 ## Frame-defect tally
 - owner-ruling-drift: 2 — instances: conductor-1 (gate-1, 2026-11-22); conductor-8 (gate-7, 2026-11-22)
@@ -722,6 +769,9 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - flaky-e2e: 2 — instances: conductor-12 (game-helpers.spec.ts:146, refiled here as the same class); conductor-14 (2026-11-23)
 - spec-silence: 7 — adds game-sim-2 (2026-11-23)
 - write-set-gap: 6 — adds pool-closing-2 (2026-11-23)
+- write-set-gap: 7 — adds pool-closing-3 (2026-11-23)
+- spec-silence: 8 — adds pool-closing-4 (2026-11-23)
+- source-evidence: 2 — adds funding-measures-1 (2026-11-23)
 
 ## Integration
 - 17:50 merge of contracts @ f6ee1de3 made (merge commit 5453b107), full suite running in the package worktree (agent; logs in the session scratchpad `merge-contracts/`); not ledgered as merged until it passes. No amending fork starts until then; queued questions in order: remove-multiuser-1, game-core-1, game-core-2, game-core-3, game-sim-1, pool-closing-1, conductor-10, conductor-11. Then merge remove-multiuser's row I1 @ cbd11881.
@@ -794,6 +844,18 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - 02:50 merge of game-shell complete @ 667900a4 (ruling conductor-14, e2e specs only) made onto 431914a5 (merge commit 32454cbe), suite running (agent; scratchpad `merge-game-shell-fix/`); not merged until it passes; on failure reset to 431914a5 with ledger.md copied out and back. game-sim was told to merge at 431914a5 and not again until told.
 - 03:05 pool-closing-2 blocks pool-closing's Task 3 and with it row F3 (the longest chain), so its fork runs now, while the suite on game-shell's e2e-only merge 32454cbe is still running. If that suite fails, do NOT reset (the ruling's commit sits on top): take the merge out with `git -C <package worktree> revert -m 1 --no-edit 32454cbe`, ledger it, and send game-shell the fix round.
 - merged game-shell @ 667900a4 into superconductor/incremental-game (complete; ruling conductor-14, e2e readiness waits), tests pass (check 0 errors; lint 0 errors; unit 9059 passed; pipeline 2284 passed; e2e 762 passed, 0 failed, 0 flaky; the three changed specs 81 passed at repeat-each=3, retries off), band low
+- No drift @ 667900a4 (review-game-shell-667900a4)
+- 04:10 merge of pool-closing row F3 @ ee88a46b made onto 14d677de (merge commit 995b5839), suite running (agent; scratchpad `merge-pool-closing-f3/`); not merged until it passes; on failure reset to 14d677de with ledger.md copied out and back.
+- merged pool-closing [row F3] @ ee88a46b into superconductor/incremental-game, tests pass (check 0 errors; lint 0 errors; unit 9095 passed; pipeline 2284 passed; e2e 762 passed, 0 failed, 0 flaky), band middle
+- No drift @ ee88a46b (review-pool-closing-ee88a46b)
+- 05:30 merge of pool-closing complete @ c523dfba (tasks after F3 and ruling pool-closing-4) made onto 8c98cd64 (merge commit 24800de2), suite running (agent; scratchpad `merge-pool-closing-final/`); not merged until it passes; on failure reset to 8c98cd64 with ledger.md copied out and back. funding-measures and game-sim told not to merge the integration branch until told.
+- merge queue: game-sim complete @ 4efdebea (all 9 tasks and the whole-branch review's fix wave passed; it did not run the whole e2e suite: the integration suite does), after the suite on pool-closing's final merge reports. For closing, from its report: stale Remix leftovers outside its write set (SimNotices.svelte:3 comment, app.d.ts sfhSimRemix, SIM.remixedToast).
+- merged pool-closing @ c523dfba into superconductor/incremental-game (complete), tests pass (check 0 errors; lint 0 errors; unit 9104 passed; pipeline 2284 passed; e2e 762 passed, 0 failed, 0 flaky), band middle
+- No drift @ c523dfba (review-pool-closing-c523dfba)
+- 06:20 merge of game-sim complete @ 4efdebea made onto a5c45f6e (merge commit f9d441e9), suite running (agent; scratchpad `merge-game-sim/`); not merged until it passes; on failure reset to a5c45f6e with ledger.md copied out and back. funding-measures told not to merge the integration branch until told; reach-check merged at 7f65b62f before launch.
+- reach-check row "G4's build check" (scripts/level2-check.ts) @ 4bc49b57 reported: the script passed review; its run on a built dataset and the verdict come with `complete`. Held to merge at complete (only closing consumes it).
+- 06:50 suite on the game-sim merge failed: check, lint, unit 9170, pipeline 2284 pass; e2e 768 passed, 2 failed (one test on both projects, also failing alone), 1 flaky under load (e2e/layout.spec.ts:494 mobile, added to the flake watch list). Merge taken back out with `git reset --hard a5c45f6e` (ledger restored from a copy). No older /sim spec met a locked page.
+- fix round game-sim @ 4efdebea: e2e/sim-funding.spec.ts:524 "8. a published policy lists its public money" fails on /s/<id>: Public money is expanded with a count of 2 but no "Housing bond" fund card button is found (spec line 559); output fixrounds/game-sim-4efdebea.txt
 
 ## Cost
 - remove-lesscars: admitted 2026-11-22T16:31 seven_day 44% | session d889ec5c-3342-4a77-99f8-993f1115a679 | finished 2026-11-22T21:14 seven_day 60%
@@ -806,7 +868,7 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - game-shell: admitted 2026-11-22T16:54 seven_day 46% | session d156765a-2f62-4dbb-8145-6b1ae8d620d8 | finished 2026-11-22T23:55 seven_day 65%
 - game-sim: admitted 2026-11-22T16:54 seven_day 46% | session 1f8bf796-225b-48c5-9f3e-c7e5bde5214b
 - funding-measures: admitted 2026-11-22T16:55 seven_day 46% | session a331388a-a2ba-4e3e-b829-db463a3b8c39
-- pool-closing: admitted 2026-11-22T16:55 seven_day 46% | session 03f449ba-0085-4e9d-9fd4-d178230a1c89
+- pool-closing: admitted 2026-11-22T16:55 seven_day 46% | session 03f449ba-0085-4e9d-9fd4-d178230a1c89 | finished 2026-11-23T04:20 seven_day 73%
 - reach-check: admitted 2026-11-22T16:55 seven_day 46% | session c0bed174-aec2-4512-a95a-75e2f45d284e
 - closing: admitted 2026-11-22T16:56 seven_day 46% | session 34af1a00-4be6-4ebd-a442-ddb896dfe9f9
 - game-shell-1: admitted 2026-11-22T17:57 seven_day 50% | session 20b9f13e-31fb-4c2f-b44b-10d478c01e5f | finished 2026-11-22T19:38 seven_day 57%

@@ -24,16 +24,20 @@ const NOWHERE = { event() {} };
 const timelineOf = (): PolicyTimeline =>
   replanAt(replanAt(oneMoneyTimeline(INPUT, INPUT.finance!), A), B);
 
-/** One world on `t` with its own funding system: created, planned through `W`, stepped `W` months. */
+/**
+ * One world on `t` with its own funding system (`poolClosing` default true): created, planned
+ * through `W`, stepped `W` months.
+ */
 function runWorld(
   statics: Statics,
   t: PolicyTimeline,
   seed: number,
-  memo = true
+  memo = true,
+  poolClosing = true
 ): { world: World; due: Due } {
   ELIGIBILITY.memo = memo;
   try {
-    const core = withFunding(createFundingSystem());
+    const core = withFunding(createFundingSystem({ poolClosing }));
     const world = core.createWorld(statics, t, seed, NOWHERE);
     const due = core.planDue(world, statics, t, seed, W);
     for (let m = 1; m <= W; m++) core.step(world, due, statics, t, seed, NOWHERE);
@@ -67,9 +71,10 @@ describe('funding memory: held per timeline, not per world', () => {
 
   it('six worlds on one timeline, each with its own funding system, leave the caches one world left', () => {
     const t = timelineOf();
-    runWorld(statics, t, 1);
+    // Closing off: every world steps under `t` itself, not under a closed view of its own.
+    runWorld(statics, t, 1, true, false);
     const one = { memo: rowlessMemoSize(t), frames: frameMoneySize(t) };
-    for (let seed = 2; seed <= 6; seed++) runWorld(statics, t, seed);
+    for (let seed = 2; seed <= 6; seed++) runWorld(statics, t, seed, true, false);
     const six = { memo: rowlessMemoSize(t), frames: frameMoneySize(t) };
     expect(six).toEqual(one);
     // The bound: a table per (first month, last change read) within the stepped months, a byte

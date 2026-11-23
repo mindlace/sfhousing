@@ -295,7 +295,7 @@ export const PLAYER_START_PROVENANCE: Provenance; // tier 4</code></pre>
         <li><code>PLAYER_START_PROVENANCE</code>, <code>NEXT_FISCAL_START_PROVENANCE</code> and <code>FEDERAL_SUPPORT_START_PROVENANCE</code>: every preset's first date.</li>
       </ul>
       <p>Every other preset number is tier 1 to 3: the bond's principal and terms (2), the General Fund amount (1) and term (2), the Proposition C schedule (2), the revolving fund's size (1), the public bank's payments (3), leverage (2) and loan rate (3), and the City's grant share (2).</p>
-      <p>The new constants, as they enter <code>funding-sources.ts</code>. The operator reads BLA 2026 pp. 44 and 108 before the term is written, as the finance data rules require.</p>
+      <p>The new constants, as they enter <code>funding-sources.ts</code>. The operator reads BLA 2026 p. 44 before the term is written, as the finance data rules require.</p>
       <pre><code data-lang="ts">/** A General Fund set-aside's term: that of the Housing Trust Fund's General Fund allocation. */
 export const GENERAL_FUND_TERM_YEARS: Sourced&lt;number&gt; = {
   value: 30,
@@ -306,9 +306,8 @@ export const GENERAL_FUND_TERM_YEARS: Sourced&lt;number&gt; = {
     method:
       'BLA 2026 p. 44: the Housing Trust Fund "was launched in 2013 after San Francisco voters ' +
       'approved Proposition C to amend the City Charter in November 2012 which established ' +
-      'baseline annual funding until 2043"; p. 108: its General Fund allocation "started as $20 ' +
-      'million in 2013" and the fund "would expire" in 2043: 30 yearly allocations, FY2013-14 to ' +
-      "FY2042-43. A new set-aside is given the same term: tier 2, an inference from the City's " +
+      'baseline annual funding until 2043": 30 yearly allocations, FY2013-14 to FY2042-43. ' +
+      "A new set-aside is given the same term: tier 2, an inference from the City's " +
       'one General Fund allocation for housing whose term is set in law.'
   }
 };
@@ -551,7 +550,7 @@ Federal tax credits withdrawn from a date
       <li><code>src/lib/sim-page/funding-presets.ts</code> is written by <code>contracts</code> (the M1 stub), then <code>finite-funding</code>, then this unit. <code>contracts</code> ships no test of the stub; this unit's <code>funding-presets.spec.ts</code> tests the real <code>dateMeasure</code>.</li>
       <li>This unit runs after <code>game-core</code>, so <code>isGiven</code> from <code>$lib/game/allowed</code> is real when <code>dateMeasure</code> calls it.</li>
       <li><code>game-sim</code> and <code>funding-measures</code> can run together. <code>game-sim</code> calls <code>dateMeasure</code> (M1) and mounts <code>PolicySummary</code> through its existing props; <code>funding-measures</code> owns both.</li>
-      <li>This unit runs after <code>pool-closing</code>: its pool bars read <code>MoneyView.shut</code> (F3). The two write different files.</li>
+      <li>This unit runs after <code>pool-closing</code>: its pool bars read <code>MoneyView.shut</code> (F3). The one file both write is <code>src/lib/timeline/pool-level.spec.ts</code>: <code>pool-closing</code> adds <code>closed</code> and <code>shut</code> to its <code>money()</code> helper's <code>MoneyView</code> literal, and this unit writes the file after it.</li>
       <li>An e2e spec that exists before this build is edited only by the unit named for it: <code>e2e/sim-{funding,pools}.spec.ts</code> are this unit's.</li>
     </ul>
     <p>Files changed (none created, none deleted):</p>
@@ -639,7 +638,7 @@ Federal tax credits withdrawn from a date
     <ul>
       <li>Funding levers in a policy: days stay absolute and are never rewritten on load; a given measure is re-dated by <code>dateMeasure</code> only when it is added or its first span's start moves; money arrives only inside its policy's spans.</li>
       <li>The list: <a href="#tbl-presets">the preset table</a> with each preset's end, <code>dates</code> and the <code>start</code> argument.</li>
-      <li>Sources: rows for <code>GENERAL_FUND_TERM_YEARS</code> (tier 2, BLA pp. 44 and 108), <code>FEDERAL_SUPPORT_TERM_YEARS</code> and <code>STATE_DOUBLE_TERM_YEARS</code> (tier 4) and <code>PLAYER_START_PROVENANCE</code>.</li>
+      <li>Sources: rows for <code>GENERAL_FUND_TERM_YEARS</code> (tier 2, BLA p. 44), <code>FEDERAL_SUPPORT_TERM_YEARS</code> and <code>STATE_DOUBLE_TERM_YEARS</code> (tier 4) and <code>PLAYER_START_PROVENANCE</code>.</li>
       <li>"Switched off" against "short": a short source with more money due makes projects wait; one that has had its last money closes (D13, F3).</li>
       <li>Fields in short: every date runs to the window's last month; Until has no "no end"; the default Until is the window's last month.</li>
       <li>Today's funding: the federal group is a capped group with a ceiling; a group's amount counts the year from <code>asOf</code>.</li>
