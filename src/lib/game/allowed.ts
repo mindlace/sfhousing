@@ -65,7 +65,7 @@ export function playable(doc: SimPolicy4, a: Allowed): SimPolicy4 {
 /** The lowest level whose `allowedAt` runs every policy of `doc`; 6 when none does. */
 export function levelNeeded(doc: SimPolicy4): Level | 6 {
   const { zoning, permitting, money } = doc.kinds;
-  if (money.some((p) => p.preset === null)) return 6;
+  if (money.some((p) => !isGiven(p))) return 6;
   if (money.length > 0) return 5;
   if (zoning.length > 0) return 4;
   if (permitting.length > 0) return 3;

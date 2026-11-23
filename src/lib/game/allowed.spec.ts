@@ -117,6 +117,16 @@ describe('playable', () => {
     expect(r.kinds.permitting).toBe(d.kinds.permitting);
   });
 
+  it('keeps policy order', () => {
+    const [a, b, c] = [permit(), permit(false), permit()];
+    const g1 = given();
+    const g2 = given({ tag: 'terms' });
+    const d = doc({ permitting: [a, b, c], money: [g1, custom(), g2] });
+    const r = playable(d, allowedAt(5));
+    expect(r.kinds.permitting).toEqual([a, b, c]);
+    expect(r.kinds.money).toEqual([g1, g2]);
+  });
+
   it('at level 5 drops custom money and keeps given', () => {
     const g = given();
     const d = doc({ money: [custom(), g] });
@@ -134,6 +144,15 @@ describe('levelNeeded, simLocked, needsHigher', () => {
     expect(levelNeeded(doc({ money: [given()] }))).toBe(5);
     expect(levelNeeded(doc({ money: [given(), custom()] }))).toBe(6);
     expect(levelNeeded(doc({ permitting: [permit()], money: [custom()] }))).toBe(6);
+  });
+
+  it('a string preset on a selector that is not a money one is not given', () => {
+    const odd = pol({ tag: 'painted' }, 'housing-bond');
+    const d = doc({ money: [odd] });
+    expect(isGiven(odd)).toBe(false);
+    expect(levelNeeded(d)).toBe(6);
+    expect(needsHigher(d, lv(5))).toBe(6);
+    expect(playable(d, allowedAt(5)).kinds.money).toEqual([]);
   });
 
   it('simLocked', () => {
