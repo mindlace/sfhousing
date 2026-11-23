@@ -28,7 +28,14 @@ import {
   type Provenance
 } from '$lib/timelapse/types';
 import { isNoCeiling } from '$lib/timelapse/model';
-import { formatDollars, formatDollarsExact, formatSourcePercent } from './format';
+import { addMonths } from '$lib/sim/scenario/dates';
+import type { Day } from '$lib/timelapse/time';
+import {
+  formatDollars,
+  formatDollarsExact,
+  formatShortMonthYear,
+  formatSourcePercent
+} from './format';
 import { marketSentence } from './market-view';
 
 /**
@@ -198,6 +205,24 @@ export function owedLines(money: Money, i: number): string[] {
     out.push(
       `${pool.label}: ${formatDollars(received)} borrowed, ${formatDollars(owedAt(entry, received))} to repay over the years it is paid (not adjusted for inflation).`
     );
+  }
+  return out;
+}
+
+/** One line per pool of `money` that ran out by the end of the calendar month starting `at`. */
+export function closedLines(money: Money | MoneyView, at: Day): string[] {
+  return closedPools(money, at).map((c) => c.line);
+}
+
+/** `closedLines` with each line's pool id, for a keyed list. */
+export function closedPools(money: Money | MoneyView, at: Day): { id: string; line: string }[] {
+  const closed = 'closed' in money ? money.closed : null;
+  const end = addMonths(at, 1);
+  const out: { id: string; line: string }[] = [];
+  for (const p of money.pools) {
+    const day = closed?.[p.id] ?? null;
+    if (day === null || day - 1 >= end) continue;
+    out.push({ id: p.id, line: `${p.label}: ran out ${formatShortMonthYear(day - 1)}` });
   }
   return out;
 }

@@ -26,7 +26,10 @@ import { kindOf, servingMoney } from './serve';
  * A pool of the frame is spent when it is open, the month begins after its last arrival, it has
  * no loan out and no guarantee reserve held, and some waiting application of a free lot whose
  * bundle draws on it asks it for more than serving's available money (the whole bundle's ask).
- * The pools are judged in world pool row order, the cheap conditions first.
+ * A pool none of whose programmes the frame offers is never asked (`bundleIds` refuses a bundle
+ * holding one), so it is no candidate. The candidates are found first, the cheap conditions
+ * first; one pass over the line then finds those asked past their money, and they close in world
+ * pool row order.
  */
 export function closeSpent(ctx: StepCtx): void {
   const { pools } = fundOf(ctx.world);
@@ -35,48 +38,75 @@ export function closeSpent(ctx: StepCtx): void {
   // earlier month's, in the same pool order.
   const defs = ctx.frame.finance!.pools;
   const asOf = ctx.statics.asOf;
-  const order = defs.map((_, fq) => fq).sort((a, b) => rowOf[a] - rowOf[b]);
-  for (const fq of order) {
+  const progPool = fm.index.progPool;
+  const drawn = new Set<number>();
+  for (const i of fm.offered.market) drawn.add(progPool[i]);
+  for (const i of fm.offered.affordable) drawn.add(progPool[i]);
+  // Frame pool index -> serving's available money, for each candidate.
+  const money = new Map<number, number>();
+  let credit: Set<string> | null = null;
+  for (let fq = 0; fq < defs.length; fq++) {
+    if (!drawn.has(fq)) continue;
     const q = rowOf[fq];
     if (pools.closedDay[q] !== NO_DAY) continue;
     const last = lastArrivalOf(defs[fq], asOf);
     if (last === null || last >= ctx.firstDay) continue;
-    if (holdsCredit(pools, pools.id[q])) continue;
-    if (askedPast(ctx, fm, fq, avail(fq))) addShutRow(pools, q, ctx.lastDay + 1);
+    credit ??= creditPools(pools);
+    if (credit.has(pools.id[q])) continue;
+    money.set(fq, avail(fq));
   }
+  if (money.size === 0) return;
+  const short = askedPast(ctx, fm, money);
+  const order = [...short].sort((a, b) => rowOf[a] - rowOf[b]);
+  for (const fq of order) addShutRow(pools, rowOf[fq], ctx.lastDay + 1);
 }
 
-/** Whether some money row of pool `id` is a loan or a guarantee (a loan out, a reserve held). */
-function holdsCredit(pools: FundPools, id: string): boolean {
+/** The ids of the pools some money row of which is a loan or a guarantee (a loan out, a reserve). */
+function creditPools(pools: FundPools): Set<string> {
+  const out = new Set<string>();
   for (let k = 0; k < pools.mN; k++) {
-    if (pools.mPool[k] !== id) continue;
     const instr = pools.mInstr[k];
-    if (instr === INSTR_LOAN || instr === INSTR_GUARANTEE) return true;
+    if (instr === INSTR_LOAN || instr === INSTR_GUARANTEE) out.add(pools.mPool[k]);
   }
-  return false;
+  return out;
 }
 
 /**
- * Whether some waiting row of a free lot has a bundle holding a programme of frame pool `fq` and
- * asks that pool, for the whole bundle, more than `money`. A bundle the frame no longer offers
- * whole (`bundleIds` null) is skipped.
+ * The frame pools of `money` (frame pool index -> money) that some waiting row of a free lot asks,
+ * for its whole bundle, more than their money; the row's bundle must hold a programme of the
+ * pool. A bundle the frame no longer offers whole (`bundleIds` null) is skipped. One pass over the
+ * line, the cheap checks first, each distinct bundle read once; it stops when every pool is found.
  */
-function askedPast(ctx: StepCtx, fm: FrameMoney, fq: number, money: number): boolean {
+function askedPast(ctx: StepCtx, fm: FrameMoney, money: Map<number, number>): Set<number> {
   const { line } = fundOf(ctx.world);
   const lots = ctx.world.lots;
   const progPool = fm.index.progPool;
-  for (let i = 0; i < line.n; i++) {
+  const short = new Set<number>();
+  /** Whether frame pool `fq` is a candidate not yet found short. */
+  const pending = (fq: number): boolean => money.has(fq) && !short.has(fq);
+  // Joined ids -> the bundle when it holds a programme of a pool of `money`, else null.
+  const asking = new Map<string, number[] | null>();
+  for (let i = 0; i < line.n && short.size < money.size; i++) {
     if (line.gone[i] === 1) continue;
-    const bundle = fm.bundleIds(line.bundle[i]);
-    if (bundle === null || !bundle.some((g) => progPool[g] === fq)) continue;
     const li = lotRow(lots, line.lot[i]);
     if (li >= 0 && lots.state[li] !== LOT_FREE) continue;
+    const ids = line.bundle[i];
+    let bundle = asking.get(ids);
+    if (bundle === undefined) {
+      const b = fm.bundleIds(ids);
+      bundle = b !== null && b.some((g) => money.has(progPool[g])) ? b : null;
+      asking.set(ids, bundle);
+    }
+    if (bundle === null || !bundle.some((g) => pending(progPool[g]))) continue;
     const units = line.units[i];
     const protoId = prototypeFor(line.stories[i], units).id;
-    const ask = asksOf(fm.index, kindOf(line, i), bundle, protoId, units).get(fq) ?? 0;
-    if (ask > money) return true;
+    const asks = asksOf(fm.index, kindOf(line, i), bundle, protoId, units);
+    for (const g of bundle) {
+      const fq = progPool[g];
+      if (pending(fq) && (asks.get(fq) ?? 0) > money.get(fq)!) short.add(fq);
+    }
   }
-  return false;
+  return short;
 }
 
 /**
