@@ -466,7 +466,7 @@ export function defaultSaveName(
 ): string;
 
 // src/lib/game/store.svelte.ts
-export type StoreChange = { ok: true } | { ok: false; reason: 'full' | 'storage' };
+export type StoreChange = { ok: true } | { ok: false; reason: 'full' | 'storage' | 'changed' };
 
 /** The win on screen that "Level up" would bank. */
 export interface Offer {
@@ -534,8 +534,9 @@ export function useGame(): GameStore;</code></pre>
         <li>The store's <code>levelUp()</code> banks the offer with the pure <code>levelUp</code>, clears the offer, and stores the game. The win card and the level panel both call it.</li>
         <li>The page that set the offer reacts to the level changing: <code>/sim</code> returns the clock to today, and Paint opens <code>/sim</code>.</li>
         <li>The page calls <code>touched()</code> after its autosave writes a record key. The store sets the current game's <code>savedAt</code> and calls <code>sync.changed(currentId)</code>.</li>
-        <li>A page that autosaves a record key registers its autosave's flush with <code>beforeLeave</code> when it mounts and removes it when it unmounts. <code>newGame</code>, <code>switchTo</code> of another game, <code>remix</code> and <code>remove</code> of the current game call every registered function, in registration order, once they will go ahead and before they read or write a record key. So an edit still waiting in the page's autosave is in the record keys when the old game is copied out, and nothing is left waiting to be written over the new game's records when the page unloads.</li>
-        <li>After <code>newGame</code>, <code>switchTo</code> of another game, <code>remix</code> or <code>remove</code> of the current game answers <code>ok</code>, the store ignores <code>touched()</code> for the rest of the document's life: the page is about to unload, and its last write was copied out with the old game.</li>
+        <li>A page that autosaves a record key registers its autosave's flush with <code>beforeLeave</code> when it mounts and removes it when it unmounts. <code>newGame</code>, <code>switchTo</code> of another game, <code>remix</code>, <code>remove</code> of the current game and <code>adopt</code> of saves that hold the current game's id call every registered function, in registration order, once they will go ahead and before they read or write a record key. So an edit still waiting in the page's autosave is in the record keys when the old game is copied out, and nothing is left waiting to be written over the new game's records when the page unloads.</li>
+        <li>When a function that <code>adopt</code> called writes a record key, the current game had an edit that was still waiting: <code>adopt</code> then changes nothing and answers <code>{ ok: false, reason: 'changed' }</code>. The save sync sends that game instead, and a 409 keeps both versions (S2, D8). No other change answers <code>changed</code>.</li>
+        <li>After <code>newGame</code>, <code>switchTo</code> of another game, <code>remix</code>, <code>remove</code> of the current game, or <code>adopt</code> of the current game's id answers <code>ok</code>, the store ignores <code>touched()</code> for the rest of the document's life: the page is about to unload, and nothing it still writes belongs to the game now in the record keys.</li>
         <li>On first construction with no <code>SAVES_KEY</code>, the store makes one saved game at level 1 whose plan and policy are whatever the two record keys hold.</li>
         <li><code>newGame</code>, <code>switchTo</code> and <code>remix</code> first copy the two record keys into the current game's stored save, then write the new current game's plan and policy into the two record keys. <code>remove</code> of the current game removes its save without copying it out, then writes the new current game's plan and policy into the two record keys.</li>
         <li>After <code>newGame</code>, <code>switchTo</code> or <code>remove</code> answers <code>ok</code>, the caller loads the new current game's page with a full page load: <code>/</code> at level 1, <code>/sim</code> above it.</li>
@@ -769,6 +770,7 @@ export function createSaveSync(opts: {
         <li>When the old id was the current game, the browser's version stays current under its new id, so nothing changes under the player's hands.</li>
         <li>A 410 keeps the saved game in this browser under a new id and sends it again: a change made here is never lost to a delete made on another device (D8).</li>
         <li><code>pull()</code> lists the account's saved games. It fetches and adopts those this browser lacks, and those it holds unchanged at an older rev. It removes those listed under <code>removed</code> that are unchanged here. It sends those the account lacks.</li>
+        <li>A pull adopts the current game last, after every other step, and only while the current game is still unchanged here at the moment of the call. An adopt that answers <code>changed</code> sends the game instead, so a 409 keeps both. An adopt of the current game that answers <code>ok</code> reloads the page at once, so the page shows the account's version and writes nothing over it.</li>
         <li><code>pull()</code> runs once on load when <code>signedIn()</code>, and again when <code>signedIn()</code> turns true.</li>
         <li><code>account</code> is set from every answer that carries an <code>AccountLine</code>. After the <code>PUT</code> that made the account, the header shows the handle from it. The sync never invalidates page data: a page keeps its playhead, its card and its undo history.</li>
         <li>Once a <code>PUT</code> has answered 200 the sync treats this browser as having a session, whatever <code>signedIn()</code> says.</li>
