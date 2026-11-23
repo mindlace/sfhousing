@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ACCOUNT_COPY } from '$lib/account/account-copy';
 import { AUTH_COPY } from '$lib/account/copy';
-import { SIMS_COPY } from '$lib/members/copy';
 import { PASSWORD_MAX_LENGTH } from '$lib/server/auth/password-policy';
 
 const {
@@ -371,7 +370,7 @@ describe('cross-site guard on /api/account/password', () => {
     const request = req({ password: validPassword }, { 'content-type': 'text/plain' });
     const res = await POST(evt(null, { request }));
     expect(res.status).toBe(415);
-    expect(await errorOf(res)).toBe(SIMS_COPY.jsonRequired);
+    expect(await errorOf(res)).toBe(AUTH_COPY.jsonRequired);
     expect(enforceRate).not.toHaveBeenCalled();
     expect(setPassword).not.toHaveBeenCalled();
   });

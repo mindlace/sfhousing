@@ -3,10 +3,6 @@ import type { BatchItem } from 'drizzle-orm/batch';
 import type { Database } from '$lib/server/db';
 import { principal, user, userIdentity } from '$lib/server/db/schema';
 import { newId } from '$lib/server/ids/factory';
-import { loggable } from '$lib/server/sim-object/object-rules';
-import { rosterChangedAll } from '$lib/server/sims/roster-hook';
-import type { SimEnv } from '$lib/server/sim-object/stub';
-import { foldSimsForUser } from '$lib/server/sims/sim-roles';
 import { skeleton } from './confusable-skeleton';
 import { generateUniqueHandle } from './handle';
 import { recordUserVersion } from './history';
@@ -124,31 +120,20 @@ async function applyUpgrade(db: Database, pseudoUserId: string, newUserId: strin
 /** Fuse: the Google account belongs to a pre-existing identity whose LIVE survivor S wins.
  *  Pseudonymous identity A points DIRECTLY at S (depth-1 star), A's live row is snapshotted then
  *  hard-deleted, and any identity already pointing at A is collapsed onto S.
- *  Returns the ids of the sims A held a role on, read before the fuse writes (empty when
- *  `readSims` is false, when nothing fused, or when the read failed: it never blocks the fuse). */
+ *  Returns the pair it fused, or null when it wrote nothing (a missing live row, or the two
+ *  identities already one). */
 async function applyFuse(
   db: Database,
   pseudoUserId: string,
-  newUserId: string,
-  readSims: boolean
-): Promise<string[]> {
+  newUserId: string
+): Promise<{ survivorId: string; absorbedId: string } | null> {
   const [pseudo] = await db.select().from(user).where(eq(user.id, pseudoUserId));
   const [fresh] = await db.select().from(user).where(eq(user.id, newUserId));
-  if (!pseudo || !fresh) return [];
+  if (!pseudo || !fresh) return null;
   const pseudoIdentity = pseudo.userIdentity; // A
   const survivor = await survivorId(db, fresh.userIdentity); // S (fresh's identity may itself be fused)
-  if (!survivor || pseudoIdentity === survivor) return [];
+  if (!survivor || pseudoIdentity === survivor) return null;
   const now = new Date();
-  // Read A's sims now: after the batch below A's own row is gone. A failed read is logged
-  // (safe text only) and the fuse proceeds; nobody is told.
-  let simIds: string[] = [];
-  if (readSims) {
-    try {
-      simIds = (await foldSimsForUser(db, pseudoIdentity)).map((s) => s.simId);
-    } catch (e) {
-      console.error('[fuse] sims read failed', loggable(e));
-    }
-  }
   // Snapshot A's live row under A BEFORE deleting it (preserve pre-fusion attribution).
   await recordUserVersion({
     db,
@@ -168,7 +153,7 @@ async function applyFuse(
       .where(eq(userIdentity.supersededById, pseudoIdentity)),
     db.delete(user).where(eq(user.id, pseudoUserId))
   ]);
-  return simIds;
+  return { survivorId: survivor, absorbedId: pseudoIdentity };
 }
 
 export async function handleAccountLink(args: {
@@ -176,30 +161,15 @@ export async function handleAccountLink(args: {
   isUpgrade: boolean;
   pseudonymousUserId: string;
   newUserId: string;
-  /** R49: after a fuse, the absorbed identity's sims are told to re-read roles, handed to
-   *  `defer` (the request's waitUntil) so a sign-in never waits on it. Absent where only the
-   *  graph is under test: then nobody is told. */
-  roster?: { env: SimEnv; defer: (work: Promise<void>) => void };
+  /** Called with (survivorId, absorbedId) after two identities are joined: once, after the
+   *  fuse has committed, and only on a fuse that wrote. A rejection propagates, so the sign-in
+   *  fails loudly. */
+  onFuse?: (survivorId: string, absorbedId: string) => Promise<void>;
 }): Promise<void> {
   if (args.isUpgrade) {
     await applyUpgrade(args.db, args.pseudonymousUserId, args.newUserId);
     return;
   }
-  const simIds = await applyFuse(
-    args.db,
-    args.pseudonymousUserId,
-    args.newUserId,
-    args.roster !== undefined
-  );
-  if (args.roster && simIds.length > 0) {
-    // rosterChangedAll never rejects; the guard keeps a throwing defer from failing the sign-in.
-    // The number of sims is not capped, so the fan-out may outrun waitUntil's time limit: a sim
-    // it does not reach keeps its open sockets' old rights until they reconnect.
-    const work = rosterChangedAll(args.roster.env, simIds);
-    try {
-      args.roster.defer(work);
-    } catch (e) {
-      console.error('[fuse] defer failed', loggable(e));
-    }
-  }
+  const fused = await applyFuse(args.db, args.pseudonymousUserId, args.newUserId);
+  if (fused && args.onFuse) await args.onFuse(fused.survivorId, fused.absorbedId);
 }
