@@ -31,15 +31,19 @@ import {
   CITY_PER_HOME,
   FEDERAL_SUPPORT_AMOUNT_PROVENANCE,
   FEDERAL_SUPPORT_START_PROVENANCE,
+  FEDERAL_SUPPORT_TERM_YEARS,
   GENERAL_FUND_FY25,
+  GENERAL_FUND_TERM_YEARS,
   NEXT_FISCAL_START_PROVENANCE,
+  PLAYER_START_PROVENANCE,
   POOL_KIND_DEFAULTS,
   PROP_C_SCHEDULE,
   PUBLIC_BANK_COST_SHARE,
   PUBLIC_BANK_HOUSING,
   REVOLVING_COST_SHARE,
   REVOLVING_FUND_SIZE,
-  REVOLVING_RATE
+  REVOLVING_RATE,
+  STATE_DOUBLE_TERM_YEARS
 } from './funding-sources';
 
 export interface FundingPreset {
@@ -47,6 +51,8 @@ export interface FundingPreset {
   label: string;
   description: string;
   group: 'city' | 'bank' | 'state' | 'federal';
+  /** 'start': every date is counted from the start it is built from. 'fixed': its dates are set in law. */
+  dates: 'start' | 'fixed';
   baselineScale: FinanceLevers['baselineScale'];
   pools: Pool[];
   programmes: Programme[];
@@ -62,6 +68,17 @@ const utcYear = (d: Day): number => new Date(d * 86_400_000).getUTCFullYear();
 export const nextFiscal = (asOf: Day): Day => dayOf(utcYear(asOf) + 1, 7, 1);
 /** 1 January of the year after `asOf`'s UTC year. Tier 4 default date. */
 export const nextCalendar = (asOf: Day): Day => dayOf(utcYear(asOf) + 1, 1, 1);
+
+const isLeap = (y: number): boolean => (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
+
+/** `d` moved `n` years, same month and day; 29 February becomes 28 February in a common year. */
+export function yearsAfter(d: Day, n: number): Day {
+  const at = new Date(d * 86_400_000);
+  const y = at.getUTCFullYear() + n;
+  const m = at.getUTCMonth() + 1;
+  const day = at.getUTCDate();
+  return m === 2 && day === 29 && !isLeap(y) ? dayOf(y, 2, 28) : dayOf(y, m, day);
+}
 
 /**
  * The City's grant toward an affordable home: CITY_PER_HOME over the uncovered cost, from the
@@ -93,6 +110,7 @@ const unavailable = (
   label,
   description,
   group,
+  dates: 'start',
   baselineScale: [],
   pools: [],
   programmes: [],
@@ -103,12 +121,18 @@ const unavailable = (
 
 const NO_MODEL = 'This data has no funding model.';
 
-/** The presets, in display order, against the page's calibration. */
-export function fundingPresets(cal: Calibration): FundingPreset[] {
+/**
+ * The presets, in display order, against the page's calibration. With `start` given, every
+ * 'start' preset's dates count from it.
+ */
+export function fundingPresets(cal: Calibration, start?: Day): FundingPreset[] {
   const asOf = cal.asOf;
   const bf = cal.baselineFunding;
   const hasModel = cal.market !== undefined && bf !== undefined;
-  const fiscal = nextFiscal(asOf);
+  const fiscal = start ?? nextFiscal(asOf);
+  const startProv = start === undefined ? NEXT_FISCAL_START_PROVENANCE : PLAYER_START_PROVENANCE;
+  const federalStartProv =
+    start === undefined ? FEDERAL_SUPPORT_START_PROVENANCE : PLAYER_START_PROVENANCE;
   const base = bf?.programmes.find((g) => g.reach === 'affordable');
   const statePool = bf?.pools.find((p) => p.kind === 'state');
   const federalPool = bf?.pools.find((p) => p.kind === 'federal');
@@ -133,7 +157,7 @@ export function fundingPresets(cal: Calibration): FundingPreset[] {
       const held = unavailable(id, label, description, group, reason);
       return keepContent && base !== undefined ? { ...held, ...build() } : held;
     }
-    return { id, label, description, group, available: true, ...build() };
+    return { id, label, description, group, dates: 'start', available: true, ...build() };
   };
 
   const pool = (
@@ -220,7 +244,9 @@ export function fundingPresets(cal: Calibration): FundingPreset[] {
     group: 'state' | 'federal',
     kind: Pool['kind'],
     from: Day,
-    scale: number
+    scale: number,
+    /** A later entry: the scale `years` after `from`. */
+    then?: { years: number; scale: number }
   ): FundingPreset => {
     const target = kind === 'state' ? statePool : federalPool;
     return mk(
@@ -230,20 +256,33 @@ export function fundingPresets(cal: Calibration): FundingPreset[] {
       group,
       () => needsModel() ?? (target === undefined ? `This data has no ${kind} pool.` : null),
       () => ({
-        baselineScale: [{ pool: target!.id, from, scale }],
+        baselineScale: [
+          { pool: target!.id, from, scale },
+          ...(then === undefined
+            ? []
+            : [{ pool: target!.id, from: yearsAfter(from, then.years), scale: then.scale }])
+        ],
         pools: [],
         programmes: [],
-        provenance: []
+        provenance: then === undefined ? [] : [STATE_DOUBLE_TERM_YEARS.provenance]
       })
     );
   };
 
-  const stateYearly = statePool?.inflows.find(
-    (f): f is Extract<Inflow, { kind: 'yearly' }> => f.kind === 'yearly'
-  );
+  /** The state pool's first arrival on or after `asOf`: its day and dollars. */
+  const stateFirst = statePool?.inflows
+    .flatMap((f) =>
+      inflowArrivals(f, asOf, LAST_DAY)
+        .slice(0, 1)
+        .map((day) => ({
+          day,
+          dollars: f.kind === 'once' ? f.dollars : f.dollarsPerYear
+        }))
+    )
+    .sort((a, b) => a.day - b.day)[0];
   const goBondDebt = POOL_KIND_DEFAULTS.goBond.debt;
 
-  return [
+  const list: FundingPreset[] = [
     grantPreset(
       'housing-bond',
       'A housing bond',
@@ -253,23 +292,26 @@ export function fundingPresets(cal: Calibration): FundingPreset[] {
       'goBond',
       [{ kind: 'once', day: fiscal, dollars: BOND_PRINCIPAL.value }],
       { debt: goBondDebt?.value ? { ...goBondDebt.value } : null },
-      [
-        BOND_PRINCIPAL.provenance,
-        ...(goBondDebt?.value ? [goBondDebt.provenance] : []),
-        NEXT_FISCAL_START_PROVENANCE
-      ],
+      [BOND_PRINCIPAL.provenance, ...(goBondDebt?.value ? [goBondDebt.provenance] : []), startProv],
       needsGrantBase
     ),
     grantPreset(
       'general-revenue',
       'General revenue, yearly',
-      "More City general-fund money every year, shared with today's City money toward new affordable homes, so more homes get built each year while there are projects waiting for money.",
+      "More City general-fund money every year for 30 years, shared with today's City money toward new affordable homes, so more homes get built each year while there are projects waiting for money.",
       'General revenue for housing',
       'General revenue: grant toward an affordable home',
       'generalRevenue',
-      [{ kind: 'yearly', from: fiscal, to: null, dollarsPerYear: GENERAL_FUND_FY25.value }],
+      [
+        {
+          kind: 'yearly',
+          from: fiscal,
+          to: yearsAfter(fiscal, GENERAL_FUND_TERM_YEARS.value - 1),
+          dollarsPerYear: GENERAL_FUND_FY25.value
+        }
+      ],
       {},
-      [GENERAL_FUND_FY25.provenance, NEXT_FISCAL_START_PROVENANCE],
+      [GENERAL_FUND_FY25.provenance, GENERAL_FUND_TERM_YEARS.provenance, startProv],
       needsGrantBase
     ),
     grantPreset(
@@ -282,7 +324,7 @@ export function fundingPresets(cal: Calibration): FundingPreset[] {
       PROP_C_SCHEDULE.value.map((f) => ({ ...f })),
       {},
       [PROP_C_SCHEDULE.provenance],
-      () => 'Not yet certified (passed on early counts, November 2026).',
+      () => 'Not yet certified (passed November 2026).',
       true
     ),
     mk(
@@ -317,7 +359,7 @@ export function fundingPresets(cal: Calibration): FundingPreset[] {
             REVOLVING_FUND_SIZE.provenance,
             REVOLVING_RATE.provenance,
             REVOLVING_COST_SHARE.provenance,
-            NEXT_FISCAL_START_PROVENANCE
+            startProv
           ]
         };
       }
@@ -335,7 +377,7 @@ export function fundingPresets(cal: Calibration): FundingPreset[] {
           'Public bank (housing share)',
           PUBLIC_BANK_HOUSING.value.map((dollars, k): Inflow => ({
             kind: 'once',
-            day: dayOf(utcYear(fiscal) + k, 7, 1),
+            day: yearsAfter(fiscal, k),
             dollars
           })),
           { leverage: bank.leverage?.value ?? 1 }
@@ -357,7 +399,7 @@ export function fundingPresets(cal: Calibration): FundingPreset[] {
             ...(bank.leverage?.value !== null && bank.leverage ? [bank.leverage.provenance] : []),
             ...(bank.loanRate.value !== null ? [bank.loanRate.provenance] : []),
             PUBLIC_BANK_COST_SHARE.provenance,
-            NEXT_FISCAL_START_PROVENANCE
+            startProv
           ])
         };
       }
@@ -381,32 +423,33 @@ export function fundingPresets(cal: Calibration): FundingPreset[] {
     scalePreset(
       'state-double',
       'State money doubled from a date',
-      "Twice today's state money from a date you choose; on its own this adds no homes while the City's money is the limit, so pair it with more City or federal money.",
+      "Twice today's state money for ten years from a date you choose; on its own this adds no homes while the City's money is the limit, so pair it with more City or federal money.",
       'state',
       'state',
       fiscal,
-      2
+      2,
+      { years: STATE_DOUBLE_TERM_YEARS.value, scale: 1 }
     ),
     mk(
       'federal-support',
       'Federal support from a year',
-      "A new yearly federal grant from a year you choose that pays the City's part of each affordable home while it lasts; no law provides it yet, so the amount is your own.",
+      "A new yearly federal grant for ten years from a year you choose that pays the City's part of each affordable home while it lasts; no law provides it yet, so the amount is your own.",
       'federal',
       () =>
         needsGrantBase() ??
         (statePool === undefined
           ? 'This data has no state pool.'
-          : stateYearly === undefined
-            ? "This data's state pool has no yearly amount to start from."
+          : stateFirst === undefined
+            ? "This data's state pool has no money to start from."
             : null),
       () => {
-        const from = dayOf(Math.max(2028, utcYear(asOf) + 1), 1, 1);
+        const from = start ?? dayOf(Math.max(2028, utcYear(asOf) + 1), 1, 1);
         const p = pool('federal-support', 'federal', 'Federal support', [
           {
             kind: 'yearly',
             from,
-            to: null,
-            dollarsPerYear: stateYearly!.dollarsPerYear
+            to: yearsAfter(from, FEDERAL_SUPPORT_TERM_YEARS.value - 1),
+            dollarsPerYear: stateFirst!.dollars
           }
         ]);
         return {
@@ -423,7 +466,8 @@ export function fundingPresets(cal: Calibration): FundingPreset[] {
           provenance: withBase([
             CITY_GRANT_SHARE_PROVENANCE,
             FEDERAL_SUPPORT_AMOUNT_PROVENANCE,
-            FEDERAL_SUPPORT_START_PROVENANCE
+            FEDERAL_SUPPORT_TERM_YEARS.provenance,
+            federalStartProv
           ])
         };
       }
@@ -434,7 +478,7 @@ export function fundingPresets(cal: Calibration): FundingPreset[] {
       'Federal tax credits withdrawn from a date you choose, which shows how few affordable homes start when the City and the state cannot cover what the credits paid.',
       'federal',
       'federal',
-      nextCalendar(asOf),
+      start ?? nextCalendar(asOf),
       0
     ),
     unavailable(
@@ -445,6 +489,8 @@ export function fundingPresets(cal: Calibration): FundingPreset[] {
       'There is no regional measure yet.'
     )
   ];
+  // Proposition C's dates are set in law: they ignore `start`.
+  return list.map((p) => (p.id === 'htf-2026' ? { ...p, dates: 'fixed' } : p));
 }
 
 /** The least positive n with neither `u-<presetId>-<n>` a pool id nor a programme id in `f`. */
