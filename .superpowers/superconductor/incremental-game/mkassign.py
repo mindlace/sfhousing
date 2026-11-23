@@ -19,6 +19,11 @@ SLUG = 'incremental-game'
 
 NOTES = (
     'Project notes (put these in every implementer and fix-round brief they apply to): '
+    '(0) Read files with the Read, Grep and Glob tools, not Bash. Every Bash call is one command '
+    'that starts with a command on your allowed lists: no `VAR=...` prefix, no `cd`, no `;`, `&&` '
+    'or pipes into commands that are not on the lists, no `$(...)`, no shell loops, no redirects '
+    'to files (write files with Write). Read the package with Read, or `git -C <package worktree> '
+    'log|show|diff|rev-parse|status`. Give subagents the same rule. '
     '(1) Port 4173 is shared by every session running e2e on this machine: before starting the '
     'preview server or Playwright, run `lsof -nP -iTCP:4173 -sTCP:LISTEN`; if something you did '
     'not start is listening, never kill it, wait in background `sleep` stretches until it is gone, '
@@ -47,12 +52,25 @@ def row(unit):
 
 
 def main():
-    unit, admitted, needs = sys.argv[1:4]
+    unit = sys.argv[1]
+    if len(sys.argv) == 2:  # relaunch: keep the Needs rows and Admitted lines the file has
+        old = open('%s/assignments/%s.md' % (L, unit)).read()
+        needs = re.search(r'^- Needs rows: (.*)$', old, re.M).group(1)
+        admitted = re.search(r'^- Admitted: (.*)$', old, re.M).group(1)
+        needs = os.environ.get('NEEDS', needs)
+        admitted = os.environ.get('ADMITTED', admitted)
+        assert os.environ.get('PLAN') or re.search(r'^- Plan: none$', old, re.M), 'has a plan: pass PLAN="<path> at <sha>, tasks <n> (already written)"'
+    else:
+        admitted, needs = sys.argv[2:4]
     assert admitted in ('yes', 'no')
     _, impl, writes, _, produces = row(unit)
     name = '%s-%s' % (SLUG, unit)
     wt = '%s/.claude/worktrees/%s' % (PROJECT, name)
-    cmds = ['npm', 'npx', 'lsof'] + (['aws'] if unit == 'mail-setup' else [])
+    cmds = ['npm', 'npx', 'lsof'] + (['aws', 'dig', 'curl', 'jq', 'timeout', 'bash -c'] if unit == 'mail-setup' else [])
+    if unit == 'pool-closing':  # the tolerance referee runs only with this variable set
+        cmds += ['SFH_WORLD_FUNDING_REFEREE=1 npx', 'SFH_WORLD_FUNDING_REFEREE=1 npm']
+    reads = ['ls', 'cat', 'grep', 'head', 'tail', 'wc', 'pwd', 'uptime', 'mkdir'] + [
+        'git -C %s %s' % (PKG, g) for g in ('log', 'show', 'diff', 'rev-parse', 'status')]
     block = f"""
 ## Your assignment
 - Name: {name}
@@ -65,14 +83,16 @@ def main():
 - Writes: {writes}
 - Needs rows: {needs}
 - Produces rows others wait on: {'none' if produces in ('—', '') else produces}
-- Plan: none
+- Plan: {os.environ.get('PLAN', 'none')}
 - Siblings: none
 - Admitted: {admitted}
 - Replaces: none
-- Permission mode: acceptEdits
-- Allowed git commands: git add, git commit, git rev-parse, git log, git diff, git status, git show, git merge, git merge-base, git branch, git rm
+- Permission mode: dontAsk (a tool call outside your list is refused at once, with no prompt; nothing can approve one)
+- Allowed git commands: git add, git commit, git rev-parse, git log, git diff, git status, git show, git merge, git merge-base, git branch, git rm{', git fetch' if unit == 'closing' else ''}
 - Allowed SDD scripts: bash {SDD}/sdd-workspace, bash {SDD}/task-brief, bash {SDD}/review-package, bash {HTML}/task-brief, python3 {HTML}/superpowers-html
 - Allowed project commands: {', '.join(cmds)}
+- Allowed read-only commands: {', '.join(reads)}
+- Allowed web tools: {'WebFetch, WebSearch (read primary sources; give them to the subagents that need them)' if unit in ('finite-funding', 'funding-measures') else 'none'}
 - Allowed for waiting: sleep (run in the background), TaskStop, sh {SKILL}/beat.sh changed
 - Before superpowers:writing-plans, load superpowers-html:html-docs.
 - {NOTES}
@@ -85,13 +105,17 @@ def main():
         'TaskCreate', 'TaskUpdate', 'TaskList', 'TaskGet', 'TaskStop', 'Bash(sleep:*)',
         'Bash(sh %s/beat.sh changed:*)' % SKILL
     ]
+    if unit == 'closing':  # its finish merges origin/main (spec § sec-design-finish)
+        tools += ['Bash(git fetch:*)']
     tools += ['Bash(git %s:*)' % g for g in
               'add commit rev-parse log diff status show merge merge-base branch rm'.split()]
     tools += ['Bash(bash %s/%s:*)' % (SDD, s) for s in ('sdd-workspace', 'task-brief', 'review-package')]
     tools += ['Bash(bash %s/task-brief:*)' % HTML, 'Bash(python3 %s/superpowers-html:*)' % HTML]
-    tools += ['Bash(%s:*)' % c for c in cmds] + ['Bash(jev:*)']
+    tools += ['Bash(%s:*)' % c for c in cmds + reads] + ['Bash(jev:*)']
+    web = unit in ('finite-funding', 'funding-measures')  # their specs require reading primary sources
+    tools += ['WebFetch', 'WebSearch'] if web else []
     model = sys.argv[4] if len(sys.argv) > 4 else 'opus'
-    print('env -C "%s" CLAUDE_CODE_EXPERIMENTAL_CODE_MODE=1 claude --bg -n %s --model %s --permission-mode acceptEdits '
+    print('env -C "%s" CLAUDE_CODE_EXPERIMENTAL_CODE_MODE=1 claude --bg -n %s --model %s --permission-mode dontAsk '
           '--allowedTools="%s" --add-dir="%s" "$(cat %s)"'
           % (wt, name, model, ','.join(tools), L, path))
 

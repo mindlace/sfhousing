@@ -277,6 +277,13 @@ export function tryWriteBack(
     )
   };
   if (canonicalJson(policy.spans) === canonicalJson(p.spans)) policy.spans = p.spans;
+  // An edit to what a given measure pays makes it the player's own measure; the label stays.
+  if (
+    ref.kind === 'money' &&
+    p.preset !== null &&
+    canonicalJson(policy.spans.map((s) => s.what)) !== canonicalJson(p.spans.map((s) => s.what))
+  )
+    policy.preset = null;
   const next: SimPolicy4 = {
     ...doc,
     kinds: {

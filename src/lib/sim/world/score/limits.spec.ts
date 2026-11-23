@@ -51,7 +51,6 @@ function baseFinance(asOf: Day): Finance {
     kind: 'goBond',
     label: 'Baseline bond',
     inflows: [{ kind: 'yearly', from: asOf, to: null, dollarsPerYear: 5_000_000 }],
-    uncapped: false,
     debt: BOND_DEBT,
     leverage: 1
   };
@@ -105,7 +104,6 @@ function addedBond(): { bond: Pool; grant: Programme } {
     kind: 'goBond',
     label: 'Added bond',
     inflows: [{ kind: 'yearly', from: asOf, to: null, dollarsPerYear: 12_000_000 }],
-    uncapped: false,
     debt: { rate: 0.04, termYears: 30 },
     leverage: 1
   };
@@ -357,7 +355,9 @@ describe('the money view at filledThrough (rule 12)', () => {
       'displacedShare',
       'displacedShareByMonth',
       'perAddedHome',
-      'perAddedHomeByMonth'
+      'perAddedHomeByMonth',
+      'closed',
+      'shut'
     ];
     expect(Object.keys(v.money!).sort()).toEqual([...Object.keys(today), ...extra].sort());
     // `displacedHomes` counts each 'displaced' event in its own month (rule 2), not at the funded
@@ -369,8 +369,12 @@ describe('the money view at filledThrough (rule 12)', () => {
       perAddedHome: _p,
       displacedShareByMonth: _sm,
       perAddedHomeByMonth: _pm,
+      closed: _c,
+      shut: _sh,
       ...rest
     } = v.money!;
+    void _c;
+    void _sh;
     void _s;
     void _p;
     void _sm;

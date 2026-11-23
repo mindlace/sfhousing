@@ -5,12 +5,6 @@ import { BOXES } from '../boxes-config';
 import { FONT_STACKS, type BBOX } from '../config';
 import type { Duck } from '../lib/duck';
 import { run } from '../lib/exec';
-import {
-  LC_ROADS_VECTOR_LAYER,
-  splitRoadsTile,
-  type SplitPhase
-} from '../lib/lesscars/basemap-split';
-import { rewritePmtiles } from '../lib/pmtiles-rewrite';
 
 interface ExportRow {
   parcel_id: string | null;
@@ -195,40 +189,10 @@ export async function writeBuildingsTiles(
   return { dropsAtSplit };
 }
 
-/**
- * outDir/basemap.pmtiles from the locked protomaps archive. Without split phases it is copied byte
- * for byte. With them every tile goes through splitRoadsTile (docs/dev/lesscars.md "Basemap ids"):
- * the removed freeway stretches move to source layer `roads_lc`, unlisted freeway roads clipped
- * only on `clipZooms`; parts nearer a kept freeway line (`keep`) and roads whose refs only kept
- * freeways carry (`keepRefs`) stay. Returns the tiles
- * rewritten and how many changed (0, 0 for a copy).
- */
-export async function writeBasemap(
-  rawFile: string,
-  outDir: string,
-  split: {
-    phases: SplitPhase[];
-    keep?: [number, number][][];
-    keepRefs?: string[];
-    clipZooms: readonly number[];
-    workDir: string;
-  } | null
-): Promise<{ tiles: number; changed: number }> {
+/** outDir/basemap.pmtiles: the locked protomaps archive, copied byte for byte. */
+export function writeBasemap(rawFile: string, outDir: string): void {
   mkdirSync(outDir, { recursive: true });
-  const out = join(outDir, 'basemap.pmtiles');
-  if (split === null || split.phases.length === 0) {
-    copyFileSync(rawFile, out);
-    return { tiles: 0, changed: 0 };
-  }
-  const { phases, clipZooms } = split;
-  const opts = { keep: split.keep ?? [], keepRefs: split.keepRefs ?? [] };
-  return rewritePmtiles({
-    input: rawFile,
-    output: out,
-    workDir: join(split.workDir, 'basemap-split'),
-    transform: (z, x, y, mvt) => splitRoadsTile(mvt, z, x, y, phases, clipZooms.includes(z), opts),
-    extraLayers: [LC_ROADS_VECTOR_LAYER]
-  });
+  copyFileSync(rawFile, join(outDir, 'basemap.pmtiles'));
 }
 
 /**

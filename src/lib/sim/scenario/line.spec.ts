@@ -239,10 +239,8 @@ describe('scanLine and groupedLine agree (property, spec 6)', () => {
     ]
   };
   const f = financeIndexOf(fin);
-  const capped = fin.pools.map((_, q) => q).filter((q) => f.capped[q]);
-  const poolsOf = (b: readonly number[]) => [
-    ...new Set(b.map((g) => f.progPool[g]).filter((q) => f.capped[q]))
-  ];
+  const every = fin.pools.map((_, q) => q);
+  const poolsOf = (b: readonly number[]) => [...new Set(b.map((g) => f.progPool[g]))];
   const AFF = [0, 1, 2, 3];
   const CITY_HOME = 300027;
 
@@ -270,7 +268,7 @@ describe('scanLine and groupedLine agree (property, spec 6)', () => {
     const r = rng(seed);
     const line = makeLine();
     const money = new Map<number, number>();
-    for (const q of capped) money.set(q, Math.floor(r() * CITY_HOME * 120));
+    for (const q of every) money.set(q, Math.floor(r() * CITY_HOME * 120));
     const avail = (q: number) => money.get(q) ?? 0;
     const test: AwardTest = (g, units) => awardSet(g.bundle, g.kind, g.protoId, units, avail, f);
     const passes: AwardProbe | undefined = probe ? (g, u) => test(g, u) !== null : undefined;
@@ -313,7 +311,7 @@ describe('scanLine and groupedLine agree (property, spec 6)', () => {
           }
         }
         for (const a of live()) if (r() < 0.05) line.remove(a);
-        for (const q of capped) money.set(q, avail(q) + Math.floor(r() * CITY_HOME * 60));
+        for (const q of every) money.set(q, avail(q) + Math.floor(r() * CITY_HOME * 60));
       }
       const take = (p: number) => (a: App, w: Award) => {
         for (const [q, d] of w.asks) money.set(q, avail(q) - d);

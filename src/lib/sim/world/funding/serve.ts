@@ -10,19 +10,43 @@ import { lotRow } from '../columns';
 import { lotEntity } from '../rates';
 import { LOT_FREE, type FundedStart, type StepCtx } from '../types';
 import { leaveLine } from './apply';
+import { closeSpent } from './closing';
 import { KIND_AFFORDABLE, fundOf, poolRowOf, type FundLine, type FundPools } from './columns';
 import { frameMoney, type FrameMoney } from './frame-money';
 import { firstAtMost, lineIndex, rowOfSeq, startAfter, type Group } from './line-index';
 import { availableOf, commitAward, heldOf, holdingReturns } from './pools';
 import { shadowAward } from './shadow';
 
-const kindOf = (line: FundLine, i: number): ProjectKind =>
+/** Line row `i`'s kind as the award rule reads it. */
+export const kindOf = (line: FundLine, i: number): ProjectKind =>
   line.kind[i] === KIND_AFFORDABLE ? 'affordable' : 'market';
 
-/** `serveLine`'s test seam. */
+/** `serveLine`'s options. */
 export interface ServeOpts {
   /** False serves by the direct scan (every waiting row asks the award rule); default true. */
   grouped?: boolean;
+  /** True runs `closeSpent` after the scan, inside `holdingReturns`; default false. */
+  closing?: boolean;
+}
+
+/** The money serving reads in `ctx`'s month (rule 10). */
+export interface ServingMoney {
+  fm: FrameMoney;
+  /** The world pool row of each frame pool index. */
+  rowOf: number[];
+  /** Available money of frame pool index `q`, less what was returned during this scan. */
+  avail: (q: number) => number;
+}
+
+/** Serving's view of the pools under `ctx.frame`; `avail` reads them as they stand when called. */
+export function servingMoney(ctx: StepCtx): ServingMoney {
+  const { pools } = fundOf(ctx.world);
+  const fm = frameMoney(ctx.timeline, ctx.frame);
+  const fin = fm.fin;
+  const rowOf = fin.pools.map((p) => poolRowOf(pools, p.id));
+  const avail = (q: number): number =>
+    availableOf(pools, rowOf[q], fin.pools[q]) - heldOf(pools, rowOf[q]);
+  return { fm, rowOf, avail };
 }
 
 /**
@@ -48,22 +72,22 @@ export interface ServeOpts {
  * with the rule at its own size; and drops every H after an award (its commit and its chain's
  * money events move money). The rows awarded, their order and their days are the direct scan's
  * (`opts.grouped === false`, a test seam).
+ *
+ * With `opts.closing`, the spent pools close after the scan's last row (`closeSpent`), against
+ * the money the scan held out.
  */
 export function serveLine(ctx: StepCtx, opts: ServeOpts = {}): void {
   const { pools } = fundOf(ctx.world);
-  holdingReturns(pools, () => scanLine(ctx, opts));
+  holdingReturns(pools, () => {
+    scanLine(ctx, opts);
+    if (opts.closing) closeSpent(ctx);
+  });
 }
 
 /** `serveLine`'s scan, with money returned during it held (`holdingReturns`). */
 function scanLine(ctx: StepCtx, opts: ServeOpts): void {
-  const { line, pools } = fundOf(ctx.world);
-  const fm = frameMoney(ctx.timeline, ctx.frame);
-  const fin = fm.fin;
-  // The world pool row of each frame pool index.
-  const rowOf = fin.pools.map((p) => poolRowOf(pools, p.id));
-  // Available money less what was returned during this scan (rule 10).
-  const avail = (q: number): number =>
-    availableOf(pools, rowOf[q], fin.pools[q]) - heldOf(pools, rowOf[q]);
+  const { line } = fundOf(ctx.world);
+  const { fm, rowOf, avail } = servingMoney(ctx);
   if (opts.grouped === false) {
     const n = line.n;
     for (let i = 0; i < n; i++) {

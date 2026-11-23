@@ -111,7 +111,9 @@ function record(to: Series, schedules: readonly Schedule[], c: Case, seed: numbe
 /** Seed `seed` on both engines to month 480, the world's ledger identities after every step. */
 function runSeed(c: Case, seed: number): void {
   let prev: StepSums | null = null;
+  // The older engine never closes a pool: compared like for like (spec sec-design-option).
   const { world } = runFunded(c.statics, c.timeline, seed, MONTHS, {
+    poolClosing: false,
     afterStep(w, m, ledger) {
       prev = checkStep(ledger, w, c.timeline.frameAt(m).finance!, prev);
       c.steps++;

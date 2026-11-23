@@ -9,6 +9,7 @@ import { readFileSync } from 'node:fs';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import type { SfhFzpDebug } from '../src/lib/fzp/debug';
 import { expectNoA11yViolations } from './helpers/a11y';
+import { seedGame } from './helpers/game';
 import { addPolicy, openKind, waitFilled } from './helpers/run';
 import { SIM_KEY, SIM_KEY_V1, openPublish, seedPlanRow, type Win } from './helpers/sharing';
 import { PLUS_NAME } from '../src/lib/timeline/test/plus';
@@ -218,8 +219,9 @@ test('publish round trip', async ({ page, browser }, testInfo) => {
 });
 
 test('Remix on /s/<id> opens /sim on a copy of the policy', async ({ page }) => {
+  await seedGame(page, 3);
   const id = await seedPolicy(page, { ...(await capturePresetDoc(page)), title: 'SD permits' });
-  // An empty autosave, so a default local policy: Remix asks no confirm.
+  // Clear the current game's policy, so the preset /sim shows can only be the remixed one.
   await page.evaluate((k) => localStorage.removeItem(k), SIM_KEY);
   const errors = pageErrors(page);
   await page.goto(`/s/${id}`);
@@ -227,10 +229,7 @@ test('Remix on /s/<id> opens /sim on a copy of the policy', async ({ page }) => 
   await expect(page.locator('html')).toHaveAttribute('data-hydrated', '');
   await sharedBanner(page).getByRole('button', { name: 'Remix' }).click();
   await expect(page).toHaveURL(/\/sim$/);
-  await expect(
-    page.getByText("Remixed from SD permits. You're editing your own copy.")
-  ).toBeVisible();
-  // The /sim header is whole after the client navigation from /s/<id>.
+  // The /sim header is whole after the page load from /s/<id>.
   await expect(page.getByTestId('score-bar')).toBeVisible();
   await waitSession(page);
   const view = await selectPolicy(page, 'Permitting', PRESET);
@@ -361,6 +360,7 @@ test('a stored schema-2 policy opens with the upgraded notice and remixes as sch
     kind: 'sim'
   });
   const errors = pageErrors(page);
+  await seedGame(page, 3);
   await page.emulateMedia({ reducedMotion: 'reduce' });
   const res = await page.goto(`/s/${id}`);
   expect(res?.status()).toBe(200);
@@ -370,10 +370,8 @@ test('a stored schema-2 policy opens with the upgraded notice and remixes as sch
   expect(await paintedCount(page)).toBe(1);
   await expectNoA11yViolations(page);
 
-  // An empty autosave, so a default local policy: Remix asks no confirm.
   await sharedBanner(page).getByRole('button', { name: 'Remix' }).click();
   await expect(page).toHaveURL(/\/sim$/);
-  await expect(page.getByText(/^Remixed from .*\. You're editing your own copy\.$/)).toBeVisible();
   await waitSession(page);
   expect(await paintedCount(page)).toBe(1);
   await expect.poll(async () => (await storedDoc(page))?.schema).toBe(4);

@@ -1,0 +1,10 @@
+Build graph @ f4d1f349
+
+The `game-core` and `game-sim` rows didn't need any change, so nothing was committed. f4d1f349 is the current HEAD (the game-core-5 ruling commit), and the graph file there is the same as at 8c333372.
+
+The game-core-5 ruling changed only the wording inside existing sections: `levelNeeded` gives 6 for any money policy that is not a given measure, and game-sim's "Unlocks in a later round" line now matches. Both rows still cite every design section their specs have, and their writes, needs and produced rows are unchanged.
+
+Longest chain: contracts -> finite-funding -> pool-closing -> reach-check -> closing
+Longest chain: remove-lesscars -> finite-funding -> pool-closing -> reach-check -> closing
+Longest chain: contracts -> finite-funding -> pool-closing -> funding-measures -> closing
+Longest chain: remove-lesscars -> finite-funding -> pool-closing -> funding-measures -> closing

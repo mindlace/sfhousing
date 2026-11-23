@@ -42,6 +42,7 @@ import {
   tierBaselineLabel,
   type Money
 } from '$lib/sim/scenario/finance-score';
+import { LEGACY_UNCAPPED_DOLLARS } from '$lib/timelapse/model';
 import type { ResolvedTerms } from '$lib/timelapse/types';
 import { EMPTY_LOG, logCompiled, logFilled, viewOfLog } from '$lib/timeline/chunk-log';
 import {
@@ -77,10 +78,10 @@ type Overrides = Partial<{
   stale: boolean;
   pending: boolean;
   terms: ResolvedTerms;
-  uncapped: ReadonlySet<string>;
   inForce: boolean;
   lens: ChartLens;
   onactivity: () => void;
+  bar: number | null;
 }>;
 
 const props = (over: Overrides = {}) => {
@@ -344,6 +345,23 @@ describe('what the plan added', () => {
     await expect.element(page.getByTestId('fzp-city')).not.toBeInTheDocument();
     await expect.element(page.getByText(/8 in 10/)).not.toBeInTheDocument();
     await expect.element(page.getByTestId('fzp-scope')).not.toBeInTheDocument();
+  });
+});
+
+describe('the bar', () => {
+  it('shows "To beat" after the last goal row, and nothing without a bar', async () => {
+    await page.viewport(1024, 768);
+    const first = await renderAtRest({ ...props(), bar: dayFromUtc(2057, 6, 1) });
+    const line = page.getByTestId('tl-to-beat');
+    await expect.element(line).toHaveTextContent('To beat: Jun 2057');
+    const rows = page.getByRole('meter').elements();
+    const last = rows[rows.length - 1];
+    expect(
+      last.compareDocumentPosition(line.element()) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+    await first.unmount();
+    await renderAtRest({ ...props(), bar: null });
+    expect(document.querySelector('[data-testid=tl-to-beat]')).toBeNull();
   });
 });
 
@@ -634,7 +652,7 @@ describe('public money and income tiers (funding-ui 4.11)', () => {
 
   it('Loans and guarantees lost column', async () => {
     await page.viewport(1024, 768);
-    await renderAtRest(at(MONEY_LAST, { uncapped: new Set(['federal']) }));
+    await renderAtRest(at(MONEY_LAST));
     await open('Money details');
     const table = el('fzp-money-sources') as HTMLTableElement;
     const heads = [...table.tHead!.rows[0].cells].map((c) => c.textContent!.trim());
@@ -651,28 +669,74 @@ describe('public money and income tiers (funding-ui 4.11)', () => {
     // lostCredit, not lost: the City grant lost at the last month is in Spent, not here.
     expect(row('Added bond').cells[5].textContent!.trim()).toBe(formatDollars(250_000));
     expect(row('General fund').cells[5].textContent!.trim()).toBe('$0');
-    expect(row('Federal tax credits').cells[1].textContent!.trim()).toBe('no limit');
     expect(el('fzp-money-lost')!.textContent).toContain(
       `counted as lost (assumption): ${formatDollars(500_000)}. They are in Spent.`
     );
     expect(el('fzp-money-owed')!.textContent).toContain('(not adjusted for inflation)');
   });
 
-  it('"no limit" follows the uncapped prop (Pool.uncapped), not the pool kind', async () => {
+  /** The Received cell of the row labelled `label` in "By source". */
+  const received = (label: string) => {
+    const table = el('fzp-money-sources') as HTMLTableElement;
+    const r = [...table.tBodies[0].rows].find((x) => x.cells[0].textContent === label)!;
+    return r.cells[1].textContent!.trim();
+  };
+  /** MONEY_SCORE with its pools changed by `f`. */
+  const withPools = (f: (pools: Money['pools']) => Money['pools']): TimelineScore => ({
+    ...MONEY_SCORE,
+    money: { ...money, pools: f(money.pools) }
+  });
+
+  it("Received shows the federal pool's dollars", async () => {
     await page.viewport(1024, 768);
-    const view = await renderAtRest(at(MONEY_LAST));
+    await renderAtRest(at(MONEY_LAST));
     await open('Money details');
-    const received = (label: string) => {
-      const table = el('fzp-money-sources') as HTMLTableElement;
-      const r = [...table.tBodies[0].rows].find((x) => x.cells[0].textContent === label)!;
-      return r.cells[1].textContent!.trim();
-    };
-    // Without the set, the federal pool shows its received amount like any other.
-    expect(received('Federal tax credits')).toBe('$0');
-    expect(document.body.textContent).not.toContain('no limit');
-    await view.rerender(at(MONEY_LAST, { uncapped: new Set(['state']) }));
-    expect(received('State housing programmes')).toBe('no limit');
-    expect(received('Federal tax credits')).toBe('$0');
+    const fed = moneyAt(money, MONEY_LAST).pools.find((p) => p.id === 'federal')!;
+    expect(fed.received).toBeGreaterThan(0);
+    expect(received('Federal tax credits')).toBe(formatDollars(fed.received));
+    expect(document.body.textContent).not.toContain('No ceiling');
+  });
+
+  it('reads No ceiling under Received for a pool that received ten trillion', async () => {
+    await page.viewport(1024, 768);
+    const score = withPools((pools) =>
+      pools.map((p) =>
+        p.id === 'federal' ? { ...p, received: p.received.map(() => LEGACY_UNCAPPED_DOLLARS) } : p
+      )
+    );
+    await renderAtRest(at(MONEY_LAST, { score }));
+    await open('Money details');
+    expect(received('Federal tax credits')).toBe('No ceiling');
+    // Every other cell shows dollars.
+    expect(received('State housing programmes')).toBe(
+      formatDollars(moneyAt(money, MONEY_LAST).pools.find((p) => p.id === 'state')!.received)
+    );
+  });
+
+  it('lists a baseline pool with no programme in By source', async () => {
+    await page.viewport(1024, 768);
+    const zero = money.pools[0].received.map(() => 0);
+    const score = withPools((pools) => [
+      ...pools,
+      {
+        id: 'city-housing-stability-fund',
+        label: 'Housing Stability Fund',
+        kind: 'dedicatedTax',
+        received: zero,
+        committed: zero,
+        out: zero,
+        spent: zero,
+        repaid: zero,
+        lost: zero,
+        lostCredit: zero
+      }
+    ]);
+    await renderAtRest(at(MONEY_LAST, { score }));
+    await open('Money details');
+    expect(received('Housing Stability Fund')).toBe('$0');
+    expect(el('fzp-money-all')!.textContent).toBe(
+      allLine(moneyAt(money, MONEY_LAST), money.publicSpent[MONEY_LAST])
+    );
   });
 
   it('the two F13 sentences under Homes by income level', async () => {

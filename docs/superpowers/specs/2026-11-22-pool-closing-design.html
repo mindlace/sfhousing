@@ -52,7 +52,7 @@ export type Inflow =
         <li>The baseline's federal pool has kind <code>federal</code> and one yearly inflow of the ceiling.</li>
         <li>A baseline pool's inflows follow its source's bound (F1). A yearly inflow has <code>to: null</code> only for a bound of kind <code>none</code>.</li>
         <li>A stored or published document whose pool carries <code>uncapped</code> loads with the field ignored.</li>
-        <li>A published plan or policy runs on its own dataset while that dataset exists, and every dataset built before this build has <code>uncapped: true</code> on its federal pool. The calibration loader reads such a pool as one yearly inflow of <code>LEGACY_UNCAPPED_DOLLARS</code> (100 billion dollars) from the dataset date with no end, and never refuses the calibration.</li>
+        <li>A published plan or policy runs on its own dataset while that dataset exists, and every dataset built before this build has <code>uncapped: true</code> on its federal pool. The calibration loader reads such a pool as one yearly inflow of <code>LEGACY_UNCAPPED_DOLLARS</code> (ten trillion dollars a year, 10<sup>13</sup>) from the dataset date with no end, and never refuses the calibration. That amount pays the federal part of about 22.6 million affordable homes a year, more than fifty times the homes San Francisco has, and is above every amount an added pool may hold (<code>MAX_DOLLARS</code>), so no San Francisco policy reaches it and no added pool reads "No ceiling".</li>
         <li>Where the yearly amount of such a pool is shown, it reads "No ceiling". So a policy published before this build plays as it did.</li>
         <li><code>isNoCeiling(dollars)</code> in <code>src/lib/timelapse/model.ts</code> is the one test for such a pool: a yearly amount at or above <code>LEGACY_UNCAPPED_DOLLARS</code>.</li>
         <li>A scale entry on the federal pool scales its ceiling, as on any pool; 0 switches it off.</li>
@@ -247,7 +247,8 @@ export interface MoneyRow {
         <li>A closed pool stays closed until it receives a new arrival.</li>
         <li><code>beforeStep</code>, before month m = <code>world.month + 1</code> is stepped, reads the base frame of month m. For each arrival with dollars above 0 whose pool is closed, it sets <code>shutTo</code> of that pool's open <code>shut</code> row to <code>monthFirstDay(asOf, m)</code> and <code>closedDay</code> to <code>NO_DAY</code>.</li>
         <li>Then it returns <code>closedTimeline</code> of the updated history, so month m's frame offers the pool's programmes again and system 1 re-makes the waiting rows.</li>
-        <li>A <code>shut</code> row whose <code>shutTo</code> equals its <code>shutFrom</code> (closed and opened in the same month) is removed, keeping the order of the rest.</li>
+        <li>A <code>shut</code> row whose <code>shutTo</code> equals its <code>shutFrom</code> (found spent in model month m and opened by an arrival in month m + 1) stays in the history. It closes no month, because a month's closed set needs <code>shutFrom ≤ monthFirstDay(asOf, k) &lt; shutTo</code>; it records that the pool was found spent in month m.</li>
+        <li>The history only grows: a closing adds a row and an opening sets that row's <code>shutTo</code>. No row is ever removed, so the money rows of a calendar month that is already final read the same after every later month.</li>
         <li>From the month it opens, <code>closedDay</code> holds <code>NO_DAY</code>.</li>
         <li>After it opens, <code>MoneyView.closed</code> still holds the first day the pool was closed.</li>
         <li>A pool opened again can close again later: a new <code>shut</code> row, and <code>closedDay</code> holds that closing's first day.</li>
@@ -276,6 +277,8 @@ export interface MoneyRow {
         <li>The tolerance referee (<code>tolerance.referee.spec.ts</code>) runs <code>poolClosing: false</code>.</li>
         <li><code>score/money.spec.ts</code>'s "rule 12 against today's engine" runs its world with <code>createFundingSystem({ poolClosing: false })</code>.</li>
         <li>The ledger identities (<code>referee-ledger.spec.ts</code>) run with closing on: closing moves no money.</li>
+        <li>The funding specs that pin the wait on a spent pool, or test serving, re-making and caching on the base timeline, run their worlds with <code>poolClosing: false</code>: <code>funding/funded.spec.ts</code>'s "rule 16: the known limit", <code>funding/policy.spec.ts</code>'s "rule 16 continued: ending the spent programme" and its random-finances case, <code>funding/retained.spec.ts</code>'s "six worlds on one timeline" and <code>funding/apply.spec.ts</code>'s "a kind whose day fell in a month already applied". Their assertions are unchanged. Closing itself is tested in <code>closing.spec.ts</code>.</li>
+        <li><code>funding/pools.spec.ts</code>'s guard that nothing reads <code>pools[q].inflows</code> holds for serving and arrivals. The closing check reads the frame definition's <code>inflows</code> through <code>lastArrivalOf</code>, and the guard allows that one read.</li>
         <li>The older scenario engine (<code>src/lib/sim/scenario/**</code>) is unchanged; its known limit stands.</li>
       </ul>
     </section>
@@ -337,12 +340,13 @@ export function closedLines(money: Money | MoneyView, at: Day): string[];</code>
       <li><code>src/lib/sim/world/score/**</code></li>
       <li><code>src/lib/sim/world/runner/**</code> where the option and the rewind are carried</li>
       <li><code>src/lib/fzp/{money-view.ts,MoneyResults.svelte}</code></li>
+      <li>the <code>MoneyView</code> literal of <code>src/lib/timeline/pool-level.spec.ts</code> (its <code>closed</code> and <code>shut</code> fields only)</li>
       <li><code>docs/dev/{world-funding,finance-score}.md</code></li>
     </ul>
     <p>Ordering notes from the design document that concern this unit:</p>
     <ul>
       <li><code>src/lib/sim/world/funding/**</code> and the money results are written by <code>finite-funding</code> and then by <code>pool-closing</code>; this unit needs F2.</li>
-      <li><code>funding-measures</code> runs after this unit: its pool bars read <code>MoneyView.shut</code> (F3). The two write different files.</li>
+      <li><code>funding-measures</code> runs after this unit: its pool bars read <code>MoneyView.shut</code> (F3). The one file both write is <code>src/lib/timeline/pool-level.spec.ts</code>: this unit adds <code>closed: {}</code> and <code>shut: {}</code> to the <code>MoneyView</code> literal its <code>money()</code> helper returns, because F3 makes both fields required, and <code>funding-measures</code> writes the file after it.</li>
     </ul>
     <section id="sec-write-set-files">
       <h3>Files</h3>
@@ -356,10 +360,12 @@ export function closedLines(money: Money | MoneyView, at: Day): string[];</code>
         <li><code>src/lib/sim/world/types.ts</code> (<code>WorldOptions</code>, the two optional hooks), <code>src/lib/sim/world/world.ts</code> (<code>withFunding</code>'s <code>step</code> and <code>planDue</code>)</li>
         <li><code>src/lib/sim/world/funding/columns.ts</code>, <code>serve.ts</code>, <code>system.ts</code></li>
         <li><code>src/lib/sim/world/funding/test/fixtures.ts</code> (<code>runFunded</code>'s option), <code>funding/tolerance.referee.spec.ts</code>, <code>funding/columns.spec.ts</code></li>
+        <li><code>src/lib/sim/world/funding/{funded,policy,retained,apply,pools}.spec.ts</code> (the option on the cases named in The option and the older engine, and the guard's allowance)</li>
         <li><code>src/lib/sim/world/funding/fixtures/funded-events-mini-seed1.json</code>, regenerated by <code>build-funded-golden.ts</code> if closing moves it</li>
         <li><code>src/lib/sim/world/score/types.ts</code>, <code>score/money.ts</code>, <code>score/view.ts</code>, <code>score/money.spec.ts</code>, <code>score/view.spec.ts</code></li>
         <li><code>src/lib/sim/world/runner/ensemble.spec.ts</code> (the restore and keep cases)</li>
         <li><code>src/lib/fzp/money-view.ts</code>, <code>money-view.spec.ts</code>, <code>MoneyResults.svelte</code></li>
+        <li><code>src/lib/timeline/pool-level.spec.ts</code>: <code>closed: {}</code> and <code>shut: {}</code> in the <code>money()</code> helper's <code>MoneyView</code> literal, and nothing else</li>
         <li><code>docs/dev/world-funding.md</code>, <code>docs/dev/finance-score.md</code></li>
       </ul>
       <p>Deleted: none. Unchanged: <code>src/lib/sim/world/runner/*.ts</code>, <code>src/lib/sim/scenario/**</code>.</p>
@@ -382,7 +388,7 @@ export function closedLines(money: Money | MoneyView, at: Day): string[];</code>
         <li>Re-made and lapsed: in the closing month every waiting row whose bundle held P is re-made without it or lapses with its kind respelled from the month's first day; no row's bundle names P afterwards; no award asks P.</li>
         <li>Money returned to a closed pool (a grant released by a project that exits before construction) raises its available money and is never awarded; <code>closedDay</code> is unchanged.</li>
         <li>Opening again: an added pool with two spans, a <code>once</code> inflow in each, closes after the first span's money is spent and opens in the month of the second span's arrival: <code>closedDay</code> is <code>NO_DAY</code> from then, its programmes are offered, the <code>shut</code> row's <code>shutTo</code> is that month's first day, and it can close again later.</li>
-        <li>A pool closed and opened in the same month leaves no <code>shut</code> row.</li>
+        <li>A pool found spent in month m and opened by an arrival in month m + 1 keeps one <code>shut</code> row whose <code>shutTo</code> equals its <code>shutFrom</code>: no month's frame leaves out its programmes, <code>MoneyView.closed</code> holds that <code>shutFrom</code>, and <code>shut</code> is true only in the calendar month that holds the last day of month m, when that calendar month ends on that day. A money row of that calendar month made final after step m reads the same after step m + 1.</li>
         <li>An edit before the pool closes that gives it a later arrival (applied with <code>keep</code>): it does not close before the month after that arrival.</li>
         <li><code>closedTimeline</code>: base frames when nothing is closed; a closed pool's programmes have <code>offered</code> 0 and no other programme changes; ids differ from the base and are equal for equal content; <code>changes()</code> holds the closing and opening months and the base's, ascending; <code>touched()</code> is empty at a closing month; the view is the same object while the history is unchanged.</li>
         <li><code>poolClosing: false</code>: no <code>shut</code> row is ever made; an application waits on a spent pool to the horizon.</li>
@@ -399,6 +405,7 @@ export function closedLines(money: Money | MoneyView, at: Day): string[];</code>
         <li><code>referee-ledger.spec.ts</code>, unchanged, passes with closing on, on fixture-0's finite pools.</li>
         <li><code>tolerance.referee.spec.ts</code> runs with <code>poolClosing: false</code> and passes (behind <code>SFH_WORLD_FUNDING_REFEREE=1</code>).</li>
         <li><code>score/money.spec.ts</code>'s comparison with today's engine runs with <code>poolClosing: false</code> and passes.</li>
+        <li>The five funding spec cases named in The option and the older engine pass with <code>poolClosing: false</code> and their assertions as they are; <code>pools.spec.ts</code>'s guard passes with closing on, allowing only <code>lastArrivalOf</code>'s read of <code>inflows</code>.</li>
         <li>The funded golden (<code>funded.golden.test.ts</code>) passes on its regenerated file if closing moved it; the handback says whether it did.</li>
       </ul>
     </section>
@@ -408,7 +415,7 @@ export function closedLines(money: Money | MoneyView, at: Day): string[];</code>
         <li><code>src/lib/sim/world/score/money.spec.ts</code>: on a funded world that closes a pool, each month's pool entry has <code>closed</code> null before the month that found it spent and the closed day from that month on; a pool never closed has null in every month. <code>shut</code> is false before the month that found the pool spent, true from that month through the month before an arrival opens it again, and false from then on.</li>
         <li><code>src/lib/sim/world/score/view.spec.ts</code>: <code>MoneyView.closed</code> has every pool id, the last row's value; a row without <code>closed</code> reads null; <code>chunksBefore</code> before the spent month gives null. <code>MoneyView.shut</code> has every pool id with one entry per filled month, each the month's row value, false for a row without <code>shut</code>.</li>
         <li><code>src/lib/fzp/money-view.spec.ts</code>: <code>closedLines</code> lists nothing before the spent month, "City: general-obligation bonds and other debt: ran out Mar 2030" from March 2030, in pool order; a money without <code>closed</code> gives none.</li>
-        <li><code>src/lib/fzp/MoneyResults.svelte.spec.ts</code> (new): with a money whose pool closed on 2030-04-01, at March 2030 one <code>fzp-money-closed</code> line reads "City: general-obligation bonds and other debt: ran out Mar 2030", after <code>fzp-money-all</code> and before the "Money details" button; at February 2030 there is none; light and dark pass <code>expectNoA11yViolations</code>.</li>
+        <li><code>src/lib/fzp/MoneyResults.svelte.spec.ts</code> (new): with a money whose pool closed on 2030-04-01, at March 2030 one <code>fzp-money-closed</code> line reads "City: general-obligation bonds and other debt: ran out Mar 2030", after <code>fzp-money-all</code> and before the "Money details" button; at February 2030 there is none; axe-core (<code>axe.run</code> on the rendered money block, with the WCAG 2.0, 2.1 and 2.2 A and AA tags <code>expectNoA11yViolations</code> uses) finds no violation in light and in dark, the colour scheme set with <code>Emulation.setEmulatedMedia</code> as <code>src/lib/map/key/MapKeyControl.svelte.spec.ts</code> does. The "ran out" lines are text, not controls, so no e2e check is added for them.</li>
       </ul>
     </section>
   </section>

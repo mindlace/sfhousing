@@ -136,7 +136,7 @@ export function defaultSaveName(
 ): string;
 
 // src/lib/game/store.svelte.ts
-export type StoreChange = { ok: true } | { ok: false; reason: 'full' | 'storage' };
+export type StoreChange = { ok: true } | { ok: false; reason: 'full' | 'storage' | 'changed' };
 
 /** The win on screen that "Level up" would bank. */
 export interface Offer {
@@ -170,6 +170,8 @@ export class GameStore {
   levelUp(): void;
   /** The page's autosave wrote the current game's plan or policy record. */
   touched(): void;
+  /** Registers a function the store calls before another game becomes current; returns its remover. */
+  beforeLeave(fn: () =&gt; void): () =&gt; void;
   newGame(): StoreChange;
   switchTo(id: string): StoreChange;
   remix(doc: { kind: 'plan' | 'sim'; record: string; title: string }): StoreChange;
@@ -198,12 +200,15 @@ export function useGame(): GameStore;</code></pre>
         <li>The page calls <code>won()</code> when a win card first shows.</li>
         <li><code>allowed</code> is <code>allowedAt(progress.level)</code>.</li>
         <li>While <code>open</code> is true no page shows a game part: no level cell, no win card, no bar or "To beat" flag, no locked lane, no reworded outcome message, no Remix button, and no offer is set. The pages read <code>open</code>; they never compare <code>allowed</code> with <code>ALL_ALLOWED</code>.</li>
-        <li>The page calls <code>setOffer</code> with the win while its seen result wins the level, and with null on any edit and when it unmounts. The offer is kept in memory only.</li>
+        <li>The page calls <code>setOffer</code> with the win while its seen result wins the level, and with null as soon as its seen result stops winning and when it unmounts. On <code>/sim</code> every edit clears the seen result, so an edit clears the offer. On Paint the result is the latest complete score, so a stroke leaves the offer as it is and a complete score below the goal clears it. The offer is kept in memory only.</li>
         <li>The store's <code>levelUp()</code> banks the offer with the pure <code>levelUp</code>, clears the offer, and stores the game. The win card and the level panel both call it.</li>
         <li>The page that set the offer reacts to the level changing: <code>/sim</code> returns the clock to today, and Paint opens <code>/sim</code>.</li>
-        <li>The page calls <code>touched()</code> after its autosave writes a record key. The store sets the current game's <code>savedAt</code> and calls <code>sync.changed(currentId)</code>.</li>
+        <li>The page calls <code>touched()</code> each time its autosave's status goes from <code>saving</code> to <code>saved</code>: after the autosave writes a record key, and when an edit inside the debounce returns the document to the text already written. The store sets the current game's <code>savedAt</code> and calls <code>sync.changed(currentId)</code>.</li>
+        <li>A page that autosaves a record key registers its autosave's flush with <code>beforeLeave</code> when it mounts and removes it when it unmounts. <code>newGame</code>, <code>switchTo</code> of another game, <code>remix</code>, <code>remove</code> of the current game and <code>adopt</code> of saves that hold the current game's id call every registered function, in registration order, once they will go ahead and before they read or write a record key. So an edit still waiting in the page's autosave is in the record keys when the old game is copied out, and nothing is left waiting to be written over the new game's records when the page unloads.</li>
+        <li>When a function that <code>adopt</code> called writes a record key, the current game had an edit that was still waiting: <code>adopt</code> then changes nothing and answers <code>{ ok: false, reason: 'changed' }</code>. The save sync sends that game instead, and a 409 keeps both versions (S2, D8). No other change answers <code>changed</code>.</li>
+        <li>After <code>newGame</code>, <code>switchTo</code> of another game, <code>remix</code>, <code>remove</code> of the current game, or <code>adopt</code> of the current game's id answers <code>ok</code>, the store ignores <code>touched()</code> for the rest of the document's life: the page is about to unload, and nothing it still writes belongs to the game now in the record keys.</li>
         <li>On first construction with no <code>SAVES_KEY</code>, the store makes one saved game at level 1 whose plan and policy are whatever the two record keys hold.</li>
-        <li><code>newGame</code>, <code>switchTo</code>, <code>remix</code> and <code>remove</code> of the current game first copy the two record keys into the current game's stored save, then write the new current game's plan and policy into the two record keys.</li>
+        <li><code>newGame</code>, <code>switchTo</code> and <code>remix</code> first copy the two record keys into the current game's stored save, then write the new current game's plan and policy into the two record keys. <code>remove</code> of the current game removes its save without copying it out, then writes the new current game's plan and policy into the two record keys.</li>
         <li>After <code>newGame</code>, <code>switchTo</code> or <code>remove</code> answers <code>ok</code>, the caller loads the new current game's page with a full page load: <code>/</code> at level 1, <code>/sim</code> above it.</li>
         <li>After <code>remix</code> answers <code>ok</code>, the caller loads <code>/</code> for a plan and <code>/sim</code> for a policy, with a full page load.</li>
         <li><code>remix</code>'s <code>record</code> is the text the page's autosave holds under the record key for the published document. The caller builds it with the codec the page already uses, so the store never reads inside a plan or a policy.</li>
@@ -437,6 +442,7 @@ export function e2eGoalAmount(storage: Storage | null): number | null;</code></p
       <h3>Where the game is read</h3>
       <ul>
         <li><code>SimRoute</code> reads the store with <code>useGame()</code> in edit mode, and passes it to <code>SimPage</code> as a new prop, <code>game</code>.</li>
+        <li><code>SimRoute</code> takes an optional <code>storage</code> prop, <code>() =&gt; Storage | null</code>, default <code>getStorage</code>, and passes it to <code>SimPage</code>'s existing <code>storage</code> prop. It is a test seam: a component test gives the page's autosave and the <code>GameStore</code> one memory storage.</li>
         <li><code>SimRoute</code> passes <code>game={null}</code> in view mode, and also while <code>game.open</code> is true: the open game (G2, X1), which runs as the page runs today with no game part.</li>
         <li><code>SimPage</code> and TimelineMode without a game (the default, null) behave as today, under <code>ALL_ALLOWED</code>, with no game parts. The published view, the open game and component tests that pass no game take this path.</li>
         <li>With a game, the page reads <code>game.allowed</code> for what may run and be edited, <code>game.progress.level</code>, <code>barOf(game.progress)</code> and <code>roundComplete(game.progress)</code>. No page calls <code>allowedAt</code>, and no component compares a level to a number.</li>
@@ -470,6 +476,7 @@ goalAmount?: number | null;</code></pre>
         <li><code>onPublished</code> keeps the title and records <code>lastPublished</code> against the whole document, as today. The button reads "Share link" while the playable document is unchanged.</li>
         <li>Autosave, undo and redo keep working on <code>store.policy</code>, the whole document. A locked policy is never dropped from storage.</li>
         <li>Each time the autosave's <code>status</code> goes from <code>saving</code> to <code>saved</code>, <code>SimPage</code> calls <code>game.touched()</code>. Without a game it calls nothing.</li>
+        <li>With a game, <code>SimPage</code> registers its autosave's flush with <code>game.beforeLeave</code> when it mounts and removes it when it unmounts. The registered function hands the autosave the current document (<code>schedule</code>) and then calls <code>flush</code>, so an edit is in the policy record before the level panel's New game, switch or Delete changes the current game (G2), whether it is still in the autosave's debounce or not yet handed to the autosave by the page's effect.</li>
         <li>At level 2 the playable document is empty, so Publish is disabled with its hint, "Change the policy first."</li>
       </ul>
     </section>
@@ -483,7 +490,7 @@ goalAmount?: number | null;</code></pre>
         <li>The toggle's <code>aria-describedby</code> names the count and the lane's text, so a screen reader hears the kind, its count, then the lane's text.</li>
         <li>A locked kind that holds policies shows its count. Closed, its lane shows the lock text and no miniature. Open, it shows the fixed row and a row per policy.</li>
         <li>A locked policy's row draws its bars dimmed. A locked bar is no button: it is not focusable, takes no press, no keys and no drag, and has no edge handles.</li>
-        <li>In a kind that is not locked, a locked policy's label has a second, muted line, "Unlocks in a later round". At level 5 this marks a money policy whose <code>preset</code> is null, including every money policy stored or published before this build (G3).</li>
+        <li>In a kind that is not locked, a locked policy's label has a second, muted line, "Unlocks in a later round". At level 5 this marks a money policy that is not a given measure (<code>isGiven</code> false): one whose <code>preset</code> is null, including every money policy stored or published before this build, or one whose selector is not a money selector (G3).</li>
         <li>The Inspector never shows a locked policy. <code>select(ref)</code> ignores a ref to a locked policy, and <code>startAdd(kind)</code> ignores a locked kind.</li>
         <li>If the selection names a policy that stops running, the selection clears and focus goes where Close sends it. The same holds for an open "+" menu of a locked kind. The level only rises on this page, so this is a guard, not a flow.</li>
         <li>A tap on the map selects only what the worker reports, which only knows policies that run.</li>
@@ -682,7 +689,7 @@ export const GO_TO_PAINT = 'Go to Paint';</code></pre>
     <p>From the design doc's write-sets table, after <code>finite-funding</code> and <code>game-core</code>:</p>
     <ul>
       <li><code>src/lib/sim-page/{SimRoute,SimPage}.svelte</code></li>
-      <li><code>src/lib/timeline/**</code> except <code>pool-level.ts</code> and <code>money-copy.ts</code></li>
+      <li><code>src/lib/timeline/**</code> except <code>pool-level.ts</code>, <code>money-copy.ts</code> and, in <code>Inspector.svelte.spec.ts</code>'s case "a given measure at level 5", the assertion on the What section's text (<code>funding-measures</code>')</li>
       <li><code>src/routes/sim/**</code></li>
       <li>the <code>/sim</code> e2e specs it adds</li>
       <li><code>docs/dev/{sim-page,timeline-ui,policy-timeline}.md</code></li>
@@ -719,6 +726,7 @@ export const GO_TO_PAINT = 'Go to Paint';</code></pre>
         <li><code>src/lib/timeline/session4.ts</code> and <code>session4.spec.ts</code>: the Remix hand-off and its toast leave <code>restoreSim4</code></li>
         <li><code>src/routes/sim/+page.svelte</code>: no <code>remix</code> prop</li>
         <li><code>src/lib/sim-page/SimPage.svelte.spec.ts</code>: its Remix hand-off cases go</li>
+        <li><code>src/routes/s/[id]/page.view.svelte.spec.ts</code>: the case "after Remix, /sim shows the remixed document over the earlier v2 autosave" goes; nothing else in the file changes</li>
         <li><code>src/lib/timeline/test/TimelineModeHost.svelte</code></li>
         <li><code>src/lib/timeline/test/TimelineHost.svelte</code></li>
         <li><code>src/lib/timeline/test/PlayheadHost.svelte</code></li>
@@ -726,6 +734,7 @@ export const GO_TO_PAINT = 'Go to Paint';</code></pre>
         <li><code>src/lib/timeline/test/SimDetailsHost.svelte</code></li>
         <li><code>src/lib/timeline/{add,lens,parse4,activity-view,server-codec}.spec.ts</code></li>
         <li><code>src/lib/timeline/{Timeline,Playhead,Inspector,SimDetails}.svelte.spec.ts</code></li>
+        <li><code>e2e/sim-funding.spec.ts</code>: in test 8, the one locator line that finds the housing bond's bar, which finds it by the policy's label ("A housing bond")</li>
         <li><code>docs/dev/sim-page.md</code>, <code>docs/dev/timeline-ui.md</code>, <code>docs/dev/policy-timeline.md</code></li>
       </ul>
       <p>Created:</p>
@@ -765,7 +774,7 @@ export const GO_TO_PAINT = 'Go to Paint';</code></pre>
       <ul>
         <li><code>Timeline.svelte.spec.ts</code>: at level 2 no kind has "+"; each locked lane reads <code>lockedLane(kind, 2)</code> for its kind; a locked kind's toggle still opens it; a locked policy's bar is not a button and is not in the tab order; at level 5 a money policy with <code>preset</code> null says "Unlocks in a later round".</li>
         <li><code>Playhead.svelte.spec.ts</code>: <code>barDay</code> shows "To beat" at its month; a bar within 30 months of the deadline shows one "Goal · To beat" flag; the description ends with "To beat June 2057."; no <code>barDay</code>, no flag.</li>
-        <li><code>Inspector.svelte.spec.ts</code>: a given measure at level 5 shows On, Move up, Move down, Remove and an editable When, and its What as <code>PolicySummary</code> with no editor; the "+" menu on Public money at level 5 lists no "Your own pool", "City funding scale" or "Market terms".</li>
+        <li><code>Inspector.svelte.spec.ts</code>: a given measure at level 5 shows On, Move up, Move down, Remove and an editable When, and its What as <code>PolicySummary</code> with no editor (the assertion on the What section's text is <code>funding-measures</code>', whose money-only summary it reads); the "+" menu on Public money at level 5 lists no "Your own pool", "City funding scale" or "Market terms".</li>
         <li><code>SimDetails.svelte.spec.ts</code>: <code>bar</code> shows "To beat: Jun 2057" under the goal rows; null shows nothing.</li>
         <li><code>TimelineMode.game.svelte.spec.ts</code>, with <code>FakeTimelineWorker</code>, a goal seam and a <code>GameStore</code> on memory storage:
           <ul>
@@ -782,12 +791,13 @@ export const GO_TO_PAINT = 'Go to Paint';</code></pre>
             <li><code>run</code> differing from <code>policy</code>: the worker's <code>open</code> and <code>setPolicy</code> carry <code>run</code>; the rows draw <code>policy</code>.</li>
           </ul>
         </li>
-        <li><code>src/routes/sim/game.svelte.spec.ts</code>, with <code>GameSimHost</code> (the <code>/sim</code> page under a provided <code>GameStore</code> on memory storage):
+        <li><code>src/routes/sim/game.svelte.spec.ts</code>, with <code>GameSimHost</code> (the <code>/sim</code> page, rendered through <code>SimRoute</code>, under a provided <code>GameStore</code>; the store and <code>SimRoute</code>'s <code>storage</code> prop share one memory storage):
           <ul>
             <li>Level 1: the locked page's text and its link to <code>/</code>; no SimPage.</li>
             <li>Level 3 with a stored policy holding a zoning and a permitting policy: Publish's request body holds the permitting policy only, and the stored record still holds both.</li>
             <li>Level 3: no brush controller (no "Stop painting", no palette strip).</li>
             <li>An autosave write calls <code>game.touched()</code> once.</li>
+            <li>An edit, then at once <code>game.newGame()</code> before the autosave's debounce ends: the old game's stored save holds the edited policy, and the new game's policy record is not overwritten when the page unmounts.</li>
             <li>A store with <code>open</code> true (<code>openGame()</code>): no lock text, no win card, no offer, and today's outcome text.</li>
             <li>Every new control passes <code>expectNoA11yViolations</code> in light and dark: the locked page, a locked kind open and closed, the win card in place.</li>
           </ul>
@@ -811,8 +821,10 @@ export const GO_TO_PAINT = 'Go to Paint';</code></pre>
     <section id="sec-tests-existing">
       <h3>Existing tests</h3>
       <ul>
-        <li>Every e2e spec that exists before this build runs on the open game (X1), which this page treats as no game, so this unit changes none of them.</li>
+        <li>Every e2e spec that exists before this build runs on the open game (X1), which this page treats as no game, so this unit changes none of them for the game.</li>
+        <li><code>e2e/sim-funding.spec.ts</code> test 8 finds the housing bond's bar by its accessible name, which carries the policy's label. A policy made from a funding preset takes the preset's label (<a href="#sec-design-given">Given measures</a>), so the bar is named "A housing bond", not the pool's "Housing bond". This unit changes that one locator to the policy's label. The file is <code>funding-measures</code>', which runs beside this unit and writes the rest of test 8; whichever of the two merges second keeps this locator and <code>funding-measures</code>' additions.</li>
         <li>The remix tests in <code>e2e/{share-states,share-roundtrip,share-notices,sim-share,chrome-dark}.spec.ts</code> assert the Remix hand-off and toast this unit removes. <code>game-shell</code> rewrites those tests; they are red between the two merges, and nobody runs e2e until <code>closing</code>.</li>
+        <li>In <code>src/routes/s/[id]/page.view.svelte.spec.ts</code>, the case "after Remix, /sim shows the remixed document over the earlier v2 autosave" mounts <code>/sim</code> with the Remix hand-off and asserts the Remix toast. This unit deletes that one case, so its branch passes <code>npm run test:unit</code>. The file's other cases are <code>game-shell</code>'s, which rewrites its Remix tests; whichever of the two merges second keeps <code>game-shell</code>'s Remix tests and no hand-off case.</li>
         <li>Component tests that mount <code>SimPage</code> or <code>TimelineMode</code> without a game keep today's behaviour.</li>
         <li><code>src/routes/sim/page.svelte.spec.ts</code> mounts <code>/sim</code> without a provider, so <code>useGame()</code> gives <code>openGame()</code> (G2): no game parts. Its remount test waits for mount.</li>
       </ul>

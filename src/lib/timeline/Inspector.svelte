@@ -8,6 +8,8 @@
   - a policy: its switch, Move up / Move down and Remove (rule 13), When (WhenEditor) and What
     (WhatEditor, today's editors on the selected span through `spanLens`). A refused edit's
     reason shows in the alert line.
+  `allowed` (the game's level, G3): "+" offers only what it allows, and while `money` is 'given' a
+  given measure's What is `PolicySummary`; its switch, order, Remove and When edit as today.
   Read-only (rule 17): When as text, What as `PolicySummary`; nothing edits. Selecting another
   policy, opening "+" or closing discards an unfinished funding draft and says so (rule 15). Close
   and Escape call `onclose` (the page focuses the selected bar) and then clear the selection.
@@ -15,6 +17,7 @@
 -->
 <script lang="ts">
   import { tick, untrack, type Snippet } from 'svelte';
+  import { ALL_ALLOWED, isGiven, type Allowed } from '$lib/game/allowed';
   import type { BrushCatalog } from '$lib/sim/levers/brushes';
   import { FINANCE_LIMITS } from '$lib/sim/levers/finance';
   import { marketLevel } from '$lib/sim/scenario/market';
@@ -72,6 +75,8 @@
     paint: Snippet;
     /** The kind whose "+" menu is open (the timeline's "+" sets it), or null. */
     adding?: PolicyKind | null;
+    /** What the level allows: "+" offers only that, and a given measure's What is read-only. */
+    allowed?: Allowed;
   }
 
   let {
@@ -88,7 +93,8 @@
     announce,
     onclose,
     paint,
-    adding = $bindable(null)
+    adding = $bindable(null),
+    allowed = ALL_ALLOWED
   }: Props = $props();
 
   const uid = $props.id();
@@ -384,7 +390,7 @@
     </div>
 
     {#if menu !== null}
-      <AddMenu kind={menu} {calibration} doc={store.policy} onpick={pick} />
+      <AddMenu kind={menu} {calibration} doc={store.policy} {allowed} onpick={pick} />
       <p role="alert" class={alertClass(addAlert)}>{addAlert}</p>
     {:else if poolDraft !== null}
       <ul class="flex flex-col">
@@ -475,7 +481,7 @@
           {catalog}
           {drafts}
           {playheadDay}
-          {readonly}
+          readonly={readonly || (allowed.money === 'given' && isGiven(policy))}
           {announce}
           onremove={removeThis}
           {paint}

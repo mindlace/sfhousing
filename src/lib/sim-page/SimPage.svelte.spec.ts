@@ -49,7 +49,6 @@ import { statics as baseStatics } from '$lib/timeline/test/fixtures';
 import { formatMonthYear } from '$lib/fzp/format';
 import { DEFAULT_VIEW, VIEW_KEY } from '$lib/view/prefs';
 import manifestJson from '../../../e2e/fixtures/data/fixture-0/manifest.json';
-import { replaceStateCalls } from '../../test-stubs/app/navigation';
 import './debug';
 import { clampBbox } from './lid-request';
 import { DEFAULT_POLICY, SIM_CODEC, SIM_KEY, type SimDoc } from './sim-doc';
@@ -1702,21 +1701,6 @@ describe('SimPage autosave and publish', () => {
     await page.getByRole('button', { name: 'Menu' }).click();
     await expect.element(publish()).toBeVisible();
     expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(375);
-  });
-
-  it('a remix hand-off loads the document, toasts once and clears the history state', async () => {
-    replaceStateCalls.length = 0;
-    const mem = new MemoryStorage();
-    await opened({
-      storage: () => mem,
-      remix: { from: 'SD permits', doc: serializeSimDoc4(doc4(zoning(historic), 'SD permits')) }
-    });
-    await expect
-      .element(notices().getByText("Remixed from SD permits. You're editing your own copy."))
-      .toBeVisible();
-    expect(w().lastOf('openTimeline')!.policy).toEqual(zoning(historic));
-    expect(replaceStateCalls).toEqual([{ url: '', state: {} }]);
-    expect(storedDoc(mem).title).toBe('SD permits');
   });
 
   it('Share link after publish, Publish again after an edit', async () => {

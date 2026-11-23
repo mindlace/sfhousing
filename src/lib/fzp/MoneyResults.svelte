@@ -21,12 +21,14 @@
     allLine,
     bySourceColumns,
     cityLine,
+    closedPools,
     displacementLine,
     fundedLine,
     limitLines,
     lostGrantsLine,
     moneyAt,
     owedLines,
+    receivedCell,
     tiersAt,
     TIERS_FUNDED_SENTENCE,
     TIERS_UNRECORDED_SENTENCE,
@@ -43,10 +45,8 @@
     /** A revision is pending: both blocks carry aria-busy. */
     pending: boolean;
     part: 'money' | 'tiers';
-    /** Ids of the pools whose `Pool.uncapped` is true: Received reads "no limit" (4.11). */
-    uncapped?: ReadonlySet<string>;
   }
-  let { score, i, at, terms, pending, part, uncapped = new Set() }: Props = $props();
+  let { score, i, at, terms, pending, part }: Props = $props();
 
   const uid = $props.id();
   let detailsOpen = $state(false);
@@ -54,13 +54,14 @@
 
   const money = $derived(score.money ?? null);
   const m = $derived(money ? moneyAt(money, i) : null);
-  const columns = $derived(m ? bySourceColumns(m, uncapped) : []);
+  const columns = $derived(m ? bySourceColumns(m) : []);
   const lossOnExit = $derived(terms.lossOnExit ?? 1);
   const lostLine = $derived(m ? lostGrantsLine(m, lossOnExit) : null);
   const lossCustom = $derived(terms.custom.includes('lossOnExit'));
   const owed = $derived(money ? owedLines(money, i) : []);
   const limits = $derived(money ? limitLines(money.limits) : []);
   const city = $derived(m ? cityLine(m) : null);
+  const closed = $derived(money ? closedPools(money, at) : []);
 
   const tiers = $derived(score.tiers ?? null);
   const t = $derived(tiers ? tiersAt(tiers, i) : null);
@@ -83,6 +84,9 @@
       <p class="mt-1 tabular-nums" data-testid="fzp-money-city">{city}</p>
     {/if}
     <p class="tabular-nums" data-testid="fzp-money-all">{allLine(m, money.publicSpent[i])}</p>
+    {#each closed as c (c.id)}
+      <p class="tabular-nums" data-testid="fzp-money-closed">{c.line}</p>
+    {/each}
     <button
       type="button"
       class="mt-1 {button}"
@@ -110,11 +114,7 @@
               <th scope="row" class="py-1 pr-2 align-top font-normal break-words">{p.label}</th>
               {#each columns as c (c)}
                 <td class="py-1 pr-2 align-top break-words tabular-nums">
-                  {#if c === 'received' && uncapped.has(p.id)}
-                    no limit
-                  {:else}
-                    {formatDollars(p[c])}
-                  {/if}
+                  {c === 'received' ? receivedCell(p[c]) : formatDollars(p[c])}
                 </td>
               {/each}
             </tr>

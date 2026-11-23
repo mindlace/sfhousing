@@ -31,25 +31,22 @@ export function computeDatasetVersion(input: {
 }
 
 /**
- * Code whose bytes shape the published data. geometry.ts is the shared projection (transit);
- * generator, timelapse and plan/types.ts feed the scenario step (yields, the Day type and time
- * helpers, FeatureId). The lesscars step runs the simulation engine, so sim/scenario, sim/levers
- * and scoreboard shape the published data too (whole directories: over-hashing only costs a new
- * version on the next build). sim/finance is hashed because the calibration step imports the
- * prototypes for the odds-shift slope and, from Release 2, the /lesscars step runs the baseline
- * funding through it.
+ * Code whose bytes shape the published data: pipeline/ and every module it imports. The rule: a
+ * module that pipeline/cli.ts reaches through its imports is under an entry here, and an entry
+ * covers at least one reached module. An entry ending in `.ts` covers that file; any other entry
+ * covers the directory and everything under it. pipeline/test/version-paths.test.ts walks the
+ * imports and fails on any difference, so a new import from the pipeline into `src/` lands here
+ * in the same change.
  */
-const PATHS = [
+export const PATHS: readonly string[] = [
   'pipeline',
+  'src/lib/config.ts',
   'src/lib/data',
   'src/lib/generator',
   'src/lib/timelapse',
   'src/lib/plan/geometry.ts',
   'src/lib/plan/types.ts',
-  'src/lib/sim/scenario',
-  'src/lib/sim/levers',
-  'src/lib/sim/finance',
-  'src/lib/scoreboard'
+  'src/lib/sim/finance'
 ];
 /** Inputs and outputs under `pipeline`, not code: never part of the code hash. */
 const EXCLUDE_PATHS = ['pipeline/sources.lock.json', 'pipeline/.cache', 'pipeline/out'];
@@ -79,7 +76,11 @@ async function git(root: string, args: string[]): Promise<string> {
   return r.stdout;
 }
 
-async function dirtyLines(repoRoot: string, paths: string[], specs: string[]): Promise<string[]> {
+async function dirtyLines(
+  repoRoot: string,
+  paths: readonly string[],
+  specs: string[]
+): Promise<string[]> {
   const status = await git(repoRoot, ['status', '--porcelain', '--', ...paths, ...specs]);
   return status.split('\n').filter((l) => l.trim() !== '');
 }
@@ -97,7 +98,7 @@ export async function codePathsDirty(repoRoot: string): Promise<string[]> {
  */
 export async function treeHash(
   repoRoot: string,
-  paths: string[],
+  paths: readonly string[],
   excludes: string[]
 ): Promise<string> {
   const notCode = (f: string): boolean => excludes.some((e) => f === e || f.startsWith(`${e}/`));

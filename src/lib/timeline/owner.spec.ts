@@ -64,7 +64,6 @@ describe('fundingName4', () => {
     kind: 'generalRevenue',
     label: 'Housing bond',
     inflows: [{ kind: 'once', day: FROM, dollars: 500_000_000 }],
-    uncapped: false,
     debt: null,
     leverage: 1
   };

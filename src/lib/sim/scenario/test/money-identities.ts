@@ -1,7 +1,8 @@
 /**
- * Test harness: finance-score's identities I1 to I6 (spec 4.4) on the per-pool money series, every
- * pool, every month. I2 and I3 need the ledger: they are checked against the ledger's own monthly
- * sums, computed here apart from `poolSeries`. Every failure is collected, then asserted at once.
+ * Test harness: finance-score's identities I1 to I5 (spec 4.4; I6 is retired) on the per-pool
+ * money series, every pool, every month. I2 and I3 need the ledger: they are checked against the
+ * ledger's own monthly sums, computed here apart from `poolSeries`. Every failure is collected,
+ * then asserted at once.
  */
 import { expect } from 'vitest';
 import type { Day } from '$lib/timelapse/time';
@@ -52,7 +53,7 @@ function ledgerSums(
 }
 
 /**
- * Asserts I1, I4, I5 and I6 on `money.pools` (matched to `pools` by position, ids equal) every
+ * Asserts I1, I4 and I5 on `money.pools` (matched to `pools` by position, ids equal) every
  * month and, when `ledger` is given, I2 (`C = R + S + committed`) and I3
  * (`S_loan = out + repaid + L_loan`) from the ledger's own monthly sums.
  */
@@ -87,22 +88,16 @@ export function checkMoneyIdentities(
       }
       if (s.committed[i] < 0) bad.push(`${at}: I1 committed ${s.committed[i]}`);
       if (s.out[i] < 0) bad.push(`${at}: I1 out ${s.out[i]}`);
-      // I4
-      if (!pool.uncapped) {
-        const avail =
-          pool.leverage * s.received[i] - s.committed[i] - s.spent[i] - s.out[i] - s.lostCredit[i];
-        if (avail < -TOL) bad.push(`${at}: I4 available ${avail}`);
-      }
+      // I4, on every pool
+      const avail =
+        pool.leverage * s.received[i] - s.committed[i] - s.spent[i] - s.out[i] - s.lostCredit[i];
+      if (avail < -TOL) bad.push(`${at}: I4 available ${avail}`);
       // I5: lost = lostCredit + L_grant, L_grant <= spent
       if (s.lost[i] < s.lostCredit[i]) {
         bad.push(`${at}: I5 lost ${s.lost[i]} < lostCredit ${s.lostCredit[i]}`);
       }
       if (s.lost[i] - s.lostCredit[i] > s.spent[i]) {
         bad.push(`${at}: I5 grant loss ${s.lost[i] - s.lostCredit[i]} > spent ${s.spent[i]}`);
-      }
-      // I6
-      if (pool.uncapped && s.received[i] !== 0) {
-        bad.push(`${at}: I6 uncapped received ${s.received[i]}`);
       }
       if (sums) {
         const t = sums[q][i];

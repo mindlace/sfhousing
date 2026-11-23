@@ -194,6 +194,46 @@ export const NEXT_FISCAL_START_PROVENANCE: Provenance = customStart(
   'the date is yours to change.'
 );
 
+/** A General Fund set-aside's term: that of the Housing Trust Fund's General Fund allocation. */
+export const GENERAL_FUND_TERM_YEARS: Sourced<number> = {
+  value: 30,
+  provenance: {
+    tier: 2,
+    label: "Thirty years, as the Housing Trust Fund's General Fund allocation",
+    sources: [BLA],
+    method:
+      'BLA 2026 p. 44: the Housing Trust Fund "was launched in 2013 after San Francisco voters ' +
+      'approved Proposition C to amend the City Charter in November 2012 which established ' +
+      'baseline annual funding until 2043": 30 yearly allocations, FY2013-14 to FY2042-43. ' +
+      "A new set-aside is given the same term: tier 2, an inference from the City's " +
+      'one General Fund allocation for housing whose term is set in law.'
+  }
+};
+
+/** Federal support's number of yearly payments. A starting value. */
+export const FEDERAL_SUPPORT_TERM_YEARS: Sourced<number> = {
+  value: 10,
+  provenance: customStart(
+    'Ten yearly payments of federal support',
+    'no enacted programme gives a term; ten years is a round term.'
+  )
+};
+
+/** How long state money stays doubled. A starting value. */
+export const STATE_DOUBLE_TERM_YEARS: Sourced<number> = {
+  value: 10,
+  provenance: customStart(
+    'State money doubled for ten years',
+    'no measure gives a term; ten years is a round term.'
+  )
+};
+
+/** The first date of a measure the player starts. */
+export const PLAYER_START_PROVENANCE: Provenance = customStart(
+  'From the start you choose',
+  'the measure starts when its policy starts.'
+);
+
 /** What `loanRate` says when no source gives a rate for a kind of money. */
 export const NO_LOAN_RATE =
   'No source gives the rate a public loan programme funded from this kind of money charges in ' +

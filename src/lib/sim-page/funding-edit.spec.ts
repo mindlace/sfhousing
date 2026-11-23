@@ -7,7 +7,7 @@ import { dayOf } from '$lib/sim/scenario/dates';
 import type { Pool, Programme } from '$lib/timelapse/types';
 import { fundingPresets, nextFiscal } from './funding-presets';
 import { POOL_KIND_DEFAULTS } from './funding-sources';
-import { programmeSentence, scaleLines, type Baseline } from './funding-view';
+import { programmeSentence, scaleLines, windowLastMonth, type Baseline } from './funding-view';
 import type { SimPolicy } from './policy';
 import {
   BOND_POLICY,
@@ -56,8 +56,10 @@ import {
   setProgrammePoolEdit,
   setTermEdit,
   updatePoolDraft,
+  yearlyRow,
   type Draft,
   type FundingEdit,
+  type ProgrammePatch,
   type Refused
 } from './funding-edit';
 
@@ -86,12 +88,23 @@ const POOL: Omit<Pool, 'id'> = {
   kind: 'generalRevenue',
   label: 'City general fund, 2027',
   inflows: [{ kind: 'yearly', from: nextFiscal(FUND_ASOF), to: null, dollarsPerYear: 60_000_000 }],
-  uncapped: false,
   debt: null,
   leverage: 1
 };
 
 const july = (y: number) => dayOf(y, 7, 1);
+
+describe('programme date patches', () => {
+  it('take a day, never null (the compiler rules a null out)', () => {
+    const p = BOND_POLICY;
+    const prog = p.funding.programmes[0];
+    // @ts-expect-error a programme's end is never stored as null
+    const bad: ProgrammePatch = { to: null };
+    expect(bad.to).toBeNull();
+    const e = setProgrammeEdit(p, baseline, prog.id, { to: july(2031) }, 'to');
+    expect(e.label).toContain('Until July 2031');
+  });
+});
 
 describe('funding edits', () => {
   it('labels and coalesce keys follow table 4.9', () => {
@@ -114,7 +127,7 @@ describe('funding edits', () => {
         'pool:u-pool-1:in:1:amount'
       ],
       [
-        setInflowKindEdit(p, bond.id, 0, 'yearly'),
+        setInflowKindEdit(p, bond.id, 0, 'yearly', FUND_ASOF),
         'Changed: City bond, 2028, row 1, every year',
         undefined
       ],
@@ -179,7 +192,7 @@ describe('funding edits', () => {
       ],
       [
         addScaleEdit(p, baseline, { group: 'federal' }, july(2027), 1),
-        "Today's funding: federal switched back on from July 2027",
+        "Today's funding: federal 100% from July 2027",
         undefined
       ],
       [
@@ -238,10 +251,12 @@ describe('funding edits', () => {
       day: july(2028),
       dollars: 250_000_000
     });
-    expect(run(setInflowKindEdit(p, id, 0, 'yearly'), p).funding.pools[0].inflows[0]).toEqual({
+    expect(
+      run(setInflowKindEdit(p, id, 0, 'yearly', FUND_ASOF), p).funding.pools[0].inflows[0]
+    ).toEqual({
       kind: 'yearly',
       from: july(2028),
-      to: null,
+      to: windowLastMonth(FUND_ASOF),
       dollarsPerYear: 300_000_000
     });
     const kinded = run(setKindEdit(p, id, 'cop'), p).funding.pools[0];
@@ -303,7 +318,7 @@ describe('funding edits', () => {
     expect(completeDraft({ kind: 'pool', pool: draft }, p, baseline)).toBeNull();
 
     const filled = updatePoolDraft(draft, {
-      inflows: [{ kind: 'yearly', from: july(2027), to: null, dollarsPerYear: 60_000_000 }]
+      inflows: [yearlyRow(july(2027), 60_000_000, FUND_ASOF)]
     });
     const done = completeDraft({ kind: 'pool', pool: filled }, p, baseline)!;
     expect(done.label).toBe('Added: your own pool');
@@ -314,10 +329,22 @@ describe('funding edits', () => {
       id: 'u-pool-2',
       kind: 'generalRevenue',
       label: 'City general fund, 2027',
-      inflows: [{ kind: 'yearly', from: july(2027), to: null, dollarsPerYear: 60_000_000 }],
-      uncapped: false,
+      inflows: [
+        {
+          kind: 'yearly',
+          from: july(2027),
+          to: windowLastMonth(FUND_ASOF),
+          dollarsPerYear: 60_000_000
+        }
+      ],
       debt: null,
       leverage: 1
+    });
+    expect(yearlyRow(july(2027), 60_000_000, FUND_ASOF)).toEqual({
+      kind: 'yearly',
+      from: july(2027),
+      to: windowLastMonth(FUND_ASOF),
+      dollarsPerYear: 60_000_000
     });
     const fresh = run(done, policyWith({}));
     expect(fresh.funding.pools[0].id).toBe('u-pool-1');
@@ -682,6 +709,17 @@ describe('addScaleEdit no-op (spec 4.9)', () => {
     expect(again.change(once)).toBe(once);
     const single = edit(addScaleEdit(once, baseline, { pool: 'city-gf' }, july(2027), 0));
     expect(single.change(once)).toBe(once);
+  });
+
+  it('addScaleEdit on the federal group at 1.5 labels as on any group', () => {
+    const p0 = policyWith({});
+    const fed = edit(addScaleEdit(p0, baseline, { group: 'federal' }, july(2027), 1.5));
+    const state = edit(addScaleEdit(p0, baseline, { group: 'state' }, july(2027), 1.5));
+    expect(fed.label).toBe("Today's funding: federal 150% from July 2027");
+    expect(state.label).toBe("Today's funding: state 150% from July 2027");
+    expect(fed.change(p0).funding.baselineScale).toEqual([
+      { pool: 'federal', from: july(2027), scale: 1.5 }
+    ]);
   });
 });
 

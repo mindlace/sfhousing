@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { RequestEvent } from '@sveltejs/kit';
-import { SIMS_COPY } from '$lib/members/copy';
+import { AUTH_COPY } from '$lib/account/copy';
 import { FakeRateLimiter } from '$lib/server/test/fake-rate-limiter';
 import { mintPseudonymousSession } from './pseudonymous-mint';
 
@@ -19,12 +19,12 @@ function fakeEvent(
 }
 
 describe('mintPseudonymousSession', () => {
-  it('returns ok:false 500 when the auth API yields no user', async () => {
+  it('answers 500 with AUTH_COPY.sessionStart when the auth API yields no user', async () => {
     const res = await mintPseudonymousSession(fakeEvent(), {
       signIn: async () => null,
       resolve: async () => null
     });
-    expect(res).toMatchObject({ ok: false, status: 500, message: SIMS_COPY.sessionStart });
+    expect(res).toEqual({ ok: false, status: 500, message: AUTH_COPY.sessionStart });
   });
 
   it('returns ok:false 500 when sign-in succeeds but the live user cannot be resolved', async () => {
@@ -44,7 +44,7 @@ describe('mintPseudonymousSession', () => {
     expect(res).toMatchObject({ ok: true, user: { id: 'ident-1' } });
   });
 
-  it('answers 429 with the too-many-sims copy when the mint limiter denies', async () => {
+  it('answers 429 with AUTH_COPY.tooManyAccounts when the mint limiter denies', async () => {
     const limiter = new FakeRateLimiter({ allow: 0 });
     let signedIn = false;
     const res = await mintPseudonymousSession(fakeEvent({ PSEUDO_MINT_RL: limiter }), {
@@ -53,8 +53,15 @@ describe('mintPseudonymousSession', () => {
         return null;
       }
     });
-    expect(res).toEqual({ ok: false, status: 429, message: SIMS_COPY.tooManySims });
+    expect(res).toEqual({ ok: false, status: 429, message: AUTH_COPY.tooManyAccounts });
     expect(limiter.calls).toEqual(['pseudo_mint:1.2.3.4']);
     expect(signedIn).toBe(false);
+  });
+
+  it('words the four texts that left the members copy', () => {
+    expect(AUTH_COPY.tooManyAccounts).toBe('Too many new accounts too quickly. Wait a moment.');
+    expect(AUTH_COPY.sessionStart).toBe("Couldn't start your session. Try again.");
+    expect(AUTH_COPY.jsonRequired).toBe('Send JSON.');
+    expect(AUTH_COPY.crossOrigin).toBe('Cross-site requests are not allowed.');
   });
 });

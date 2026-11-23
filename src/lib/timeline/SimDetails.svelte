@@ -29,6 +29,7 @@
   import { LENS_NAME, TWIN_NOTE, capacityNote } from './copy';
   import { YEAR_COLUMNS, yearRows } from './details';
   import Explain from './Explain.svelte';
+  import { toBeatLine } from './game-copy';
   import { BUTTON, TARGET } from '$lib/shell/ui';
   import { ABOUT_ID, WORKED_OUT } from '$lib/about/copy';
   import type { PlayheadAt } from './results';
@@ -55,8 +56,6 @@
     pending?: boolean;
     /** The resolved market terms of the shown levers: the lost-grants line reads `lossOnExit`. */
     terms?: ResolvedTerms;
-    /** Ids of the pools whose `Pool.uncapped` is true (baseline and levers): "no limit" (4.11). */
-    uncapped?: ReadonlySet<string>;
     /**
      * A policy is in force in the document the numbers on show came from (the chart's own
      * `inForce`): "From your policy" is offered only then, and the table gets its column.
@@ -66,6 +65,8 @@
     lens?: ChartLens;
     /** The page's goal (TimelineMode's `goal`), which the rows read. */
     goal: Goal;
+    /** The date to beat: a "To beat" line under the goal rows; null for none. */
+    bar?: Day | null;
     /** Shows Activity in the column: the heading row's button (none without it). */
     onactivity?: () => void;
   }
@@ -81,10 +82,10 @@
     stale = false,
     pending = false,
     terms = resolveTerms(),
-    uncapped = new Set(),
     inForce = false,
     lens = $bindable<ChartLens>('homes'),
     goal,
+    bar = null,
     onactivity = undefined
   }: Props = $props();
 
@@ -176,6 +177,9 @@
       {#each rows as row, k (row.id)}
         <GoalRow {row} {max} primary={k === 0} />
       {/each}
+      {#if bar !== null}
+        <p class="mt-1 text-sm" data-testid="tl-to-beat">{toBeatLine(bar)}</p>
+      {/if}
     </div>
 
     <section class="mt-4" aria-busy={planPending ? 'true' : undefined}>
@@ -233,7 +237,6 @@
         at={score.months[at.monthIndex]}
         {terms}
         {pending}
-        {uncapped}
         part="money"
       />
 

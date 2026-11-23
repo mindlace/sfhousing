@@ -28,14 +28,11 @@ const SESSION_ROUTE_PREFIXES = [
   '/api/auth',
   '/account',
   '/api/account',
-  '/sims',
-  '/api/sims',
-  '/invite',
-  '/api/invites',
   '/signin',
   '/forgot-password',
   '/reset-password',
-  '/api/e2e'
+  '/api/e2e',
+  '/api/game'
 ] as const;
 
 /** True for a path at or under one of the session route prefixes. */

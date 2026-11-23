@@ -1,0 +1,10 @@
+I ruled for option 1: `levelNeeded` gives 6 for any money policy that isn't a given measure, so it can never disagree with `runs` or `playable`. The case in the question is a money policy with a string `preset` on a selector other than `fund`, `baseline` or `terms`. It now needs level 6, not 5. A given measure still needs 5.
+
+- **game-core spec:** the `levelNeeded` rule, the runs-at-each-level table and the `levelNeeded` table now say "given" and "not given" instead of "preset a string" and "preset null".
+- **game-sim spec:** the "Unlocks in a later round" line at level 5 now marks every money policy that isn't given, not only those with a null `preset`.
+
+The G3 interface row didn't change. Both units are listed as clarification only. The built code at `src/lib/game/allowed.ts:250` sets 6 only when `preset` is null, so game-core's fix round on task 3 needs to change that line. I skipped the optional Jev citation check.
+
+Committed as `f4d1f349`.
+
+/Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game/.superpowers/superconductor/incremental-game/rulings/game-core-5.md

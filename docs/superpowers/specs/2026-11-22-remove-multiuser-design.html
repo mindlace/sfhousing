@@ -333,10 +333,11 @@ type E2eLoginBody = { email: string } | { pseudonymous: true };
 /** Sign this context in as a fresh pseudonymous account. */
 export function startPseudonymous(page: Page): Promise&lt;void&gt;;</code></pre>
       <ul>
-        <li><code>mintTestPseudonym</code> writes a <code>principal</code>, a <code>user_identity</code> and a <code>user</code> with <code>isAnonymous</code> true, <code>emailVerified</code> false, the email <code>&lt;userId&gt;@</code> plus <code>PSEUDONYMOUS_EMAIL_DOMAIN</code>, and a handle from <code>generateUniqueHandle</code>.</li>
+        <li><code>mintTestPseudonym</code> writes a <code>principal</code>, a <code>user_identity</code> and a <code>user</code> with <code>isAnonymous</code> true, <code>emailVerified</code> false, the email <code>&lt;userId&gt;@</code> plus <code>PSEUDONYMOUS_EMAIL_DOMAIN</code>, lower-cased whole, as Better-Auth stores every email, and a handle from <code>generateUniqueHandle</code>.</li>
         <li><code>POST /api/e2e/login</code> with <code>{ pseudonymous: true }</code> mints one, issues a session as for an email and answers <code>{ userId }</code> with the session cookie. The gates (<code>VITE_E2E</code>, <code>isE2eEnv</code>) are unchanged.</li>
         <li><code>startPseudonymous(page)</code> posts that body through <code>page.request</code>, so the cookie lands in the page's context. It takes no title.</li>
         <li><code>/api/e2e/mail</code> accepts the three kinds of <code>E2eMailKind</code>; <code>kind=invite</code> answers 404.</li>
+        <li><code>POST /api/e2e/plans</code> (<code>src/routes/api/e2e/plans/+server.ts</code>, with its logic in <code>src/lib/server/sharing/e2e-seed.ts</code>) is unchanged: it seeds published plan and policy rows for the e2e specs through <code>seedPlanRow</code> in <code>e2e/helpers/sharing.ts</code>, under the same gates. The <code>plan</code> table it writes is kept.</li>
       </ul>
     </section>
   </section>
@@ -356,6 +357,7 @@ export function startPseudonymous(page: Page): Promise&lt;void&gt;;</code></pre>
       <li><code>src/lib/account/**</code></li>
       <li><code>scripts/worker-entry*.ts</code>, <code>scripts/wrangler-config.spec.ts</code></li>
       <li><code>wrangler.jsonc</code>, <code>package.json</code>, <code>drizzle.sim.config.ts</code>, <code>drizzle-cf.config.ts</code>, <code>svelte.config.js</code>, <code>playwright.config.ts</code></li>
+      <li>The <code>stderrAllowlist</code> entry of <code>chreode.config.ts</code> for the 404s of the removed URLs</li>
       <li>The multi-user and account e2e specs and helpers</li>
       <li><code>docs/dev/auth.md</code></li>
     </ul>
@@ -692,6 +694,7 @@ export function startPseudonymous(page: Page): Promise&lt;void&gt;;</code></pre>
         <li><code>src/routes/api/e2e/mail/+server.ts</code>: <code>'invite'</code> leaves <code>KINDS</code>.</li>
         <li><code>src/routes/api/e2e/login/+server.ts</code>: the <code>{ pseudonymous: true }</code> body (<a href="#sec-design-e2e">e2e seams</a>).</li>
         <li><code>playwright.config.ts</code>: the <code>--var SIM_TAKEDOWN_TOKEN:…</code> flag and its comment (<code>:49-51</code>) go.</li>
+        <li><code>chreode.config.ts</code>, <code>stderrAllowlist</code>: one entry, right after the <code>/no-such-page</code> entry, whose pattern matches exactly the lines <code>[WebServer] [404] GET /sims</code>, <code>GET /sims/abc</code>, <code>GET /invite/abc</code>, <code>GET /api/sims</code> and <code>POST /api/operator/sims/abc/takedown</code>, with the reason "the expected 404s of the removed URLs that e2e/auth-a11y.spec.ts requests". Nothing else in the file changes here; its line 72 is <code>closing</code>'s.</li>
         <li><code>e2e/helpers/account.ts</code>, <code>e2e/account-deletion.spec.ts</code>, <code>e2e/auth-a11y.spec.ts</code>, <code>e2e/auth-methods-default.spec.ts</code>, <code>e2e/email-link.spec.ts</code>, <code>e2e/sign-out.spec.ts</code>, <code>e2e/account-a11y.spec.ts</code>, <code>e2e/password-auth.spec.ts</code>, <code>e2e/account-email.spec.ts</code></li>
         <li><code>docs/dev/auth.md</code></li>
       </ul>
@@ -738,7 +741,7 @@ export function startPseudonymous(page: Page): Promise&lt;void&gt;;</code></pre>
         <dt><code>src/lib/server/e2e/mail-sink.spec.ts</code></dt>
         <dd>Uses <code>'password-reset'</code> where it used <code>'invite'</code>.</dd>
         <dt><code>src/lib/server/e2e/session.spec.ts</code></dt>
-        <dd>New: <code>mintTestPseudonym</code> writes an anonymous user with the pseudonymous email domain and a unique handle.</dd>
+        <dd>New: <code>mintTestPseudonym</code> writes an anonymous user with a lower-case address in the pseudonymous email domain and a unique handle.</dd>
         <dt><code>src/lib/server/db/schema/auth-schema.spec.ts</code>, <code>src/lib/server/test/auth-db.spec.ts</code></dt>
         <dd>The <code>capability_event</code> and <code>sim_invite</code> cases go. New: on a freshly migrated database the tables, leaving out names that start with <code>sqlite_</code>, <code>_cf_</code> or <code>d1_</code>, are exactly the nine identity tables and <code>plan</code>, and none of the five dropped tables exists.</dd>
         <dt><code>scripts/wrangler-config.spec.ts</code></dt>
@@ -761,7 +764,7 @@ export function startPseudonymous(page: Page): Promise&lt;void&gt;;</code></pre>
         <dt><code>e2e/email-link.spec.ts</code></dt>
         <dd>"a known device resumes its sim" goes. The safe-returnTo case uses <code>returnTo=/about</code>.</dd>
         <dt>New in <code>e2e/auth-a11y.spec.ts</code></dt>
-        <dd><code>/sims</code>, <code>/sims/abc</code> and <code>/invite/abc</code> answer 404 with "Page not found"; <code>GET /api/sims</code> and <code>POST /api/operator/sims/abc/takedown</code> answer 404.</dd>
+        <dd><code>/sims</code>, <code>/sims/abc</code> and <code>/invite/abc</code> answer 404 with "Page not found"; <code>GET /api/sims</code> and <code>POST /api/operator/sims/abc/takedown</code> answer 404. The <code>[WebServer] [404]</code> lines they log are allowed by this unit's <code>stderrAllowlist</code> entry in <code>chreode.config.ts</code>.</dd>
       </dl>
     </section>
   </section>

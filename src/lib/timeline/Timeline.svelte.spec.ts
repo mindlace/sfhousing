@@ -1,9 +1,15 @@
 /// <reference types="@vitest/browser-playwright" />
-import { describe, expect, it, onTestFinished, vi } from 'vitest';
+import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
-import { page, userEvent } from 'vitest/browser';
+import { cdp, page, userEvent } from 'vitest/browser';
+import axe from 'axe-core';
 import '../../routes/layout.css';
-import { dayPct, formatEdge } from './rows';
+import { allowedAt, isGiven, type Allowed } from '$lib/game/allowed';
+import { lockedLane } from '$lib/game/copy';
+import type { Level } from '$lib/game/levels';
+import { fundingPresets } from '$lib/sim-page/funding-presets';
+import { LATER_ROUND } from './game-copy';
+import { dayPct, fixedRef, formatEdge } from './rows';
 import { baselineFixture } from '$lib/sim/levers/fixtures/finance';
 import miniCalibrationJson from '$lib/sim/scenario/fixtures/mini-calibration.json';
 import { miniMarket } from '$lib/sim/scenario/fixtures/mini-market';
@@ -38,7 +44,6 @@ const pool: Pool = {
   kind: 'generalRevenue',
   label: 'Housing bond',
   inflows: [{ kind: 'once', day: first(10), dollars: 500_000_000 }],
-  uncapped: false,
   debt: null,
   leverage: 1
 };
@@ -105,6 +110,8 @@ interface Over {
   levels?: LevelSet | null;
   reached?: number;
   stale?: boolean;
+  allowed?: Allowed;
+  level?: Level | null;
 }
 
 async function setup(over: Over = {}) {
@@ -1051,4 +1058,155 @@ describe("a pool's level in its bar", () => {
       expect(ratio(dimmed, filled), `${theme} dimmed words`).toBeGreaterThanOrEqual(4.5);
     }
   });
+});
+
+describe('locked kinds', () => {
+  const KINDS = ['zoning', 'permitting', 'money'] as const;
+  const NAME = { zoning: 'Zoning', permitting: 'Permitting', money: 'Public money' } as const;
+  const lane = (kind: string) =>
+    document.querySelector(`[data-testid=tl-kind-${kind}] [data-testid=tl-locked-lane]`);
+
+  afterEach(async () => {
+    await cdp().send('Emulation.setEmulatedMedia', {
+      features: [{ name: 'prefers-color-scheme', value: 'light' }]
+    });
+  });
+
+  it("at level 2 no kind has '+'", async () => {
+    await setup({ allowed: allowedAt(2), level: 2 });
+    await expect.element(page.getByTestId('tl-kind-money')).toBeInTheDocument();
+    expect(page.getByRole('button', { name: /^Add .* policy$/ }).all()).toHaveLength(0);
+    expect(all('[data-testid=tl-empty-lane]')).toHaveLength(0);
+    for (const name of Object.values(PLUS_NAME)) {
+      expect(page.getByRole('button', { name }).all()).toHaveLength(0);
+    }
+  });
+
+  it('each locked lane reads lockedLane(kind, 2)', async () => {
+    await setup({ allowed: allowedAt(2), level: 2 });
+    for (const kind of KINDS) {
+      await expect.poll(() => lane(kind)?.textContent).toBe(lockedLane(kind, 2));
+    }
+    for (const kind of KINDS) await kindButton(NAME[kind]).click();
+    for (const kind of KINDS) {
+      await expect.element(kindButton(NAME[kind])).toHaveAttribute('aria-expanded', 'true');
+      expect(lane(kind)?.textContent).toBe(lockedLane(kind, 2));
+    }
+  });
+
+  it('the toggle is described by the count and the lane', async () => {
+    await setup({ allowed: allowedAt(2), level: 2 });
+    await expect
+      .element(kindButton('Permitting'))
+      .toHaveAccessibleDescription(`2 ${lockedLane('permitting', 2)}`);
+  });
+
+  it("a locked kind's toggle still opens it", async () => {
+    const { onselect } = await setup({ allowed: allowedAt(2), level: 2 });
+    await kindButton('Permitting').click();
+    await expect.element(kindButton('Permitting')).toHaveAttribute('aria-expanded', 'true');
+    const fixed = page.getByTestId('tl-kind-permitting').getByTestId('tl-fixed');
+    await expect.element(fixed).toHaveTextContent('Current timelines');
+    const bar = fixed.getByRole('button');
+    await bar.click();
+    expect(onselect).toHaveBeenCalledWith(fixedRef('permitting'));
+  });
+
+  it('a closed locked kind shows its count and no miniature', async () => {
+    await setup({ allowed: allowedAt(2), level: 2 });
+    const zoningRow = page.getByTestId('tl-kind-zoning');
+    await expect.element(zoningRow.getByTestId('tl-count')).toHaveTextContent('1');
+    expect(all('[data-testid=tl-kind-zoning] [data-testid=tl-mini]')).toHaveLength(0);
+    expect(all('[data-testid=tl-mini]')).toHaveLength(0);
+  });
+
+  it('a locked policy’s bar is not a button and is not in the tab order', async () => {
+    const { onselect, onedit } = await setup({
+      allowed: allowedAt(2),
+      level: 2,
+      policy: { schema: 4, kinds: { zoning: [zoning], permitting: [], money: [] } }
+    });
+    await kindButton('Zoning').click();
+    const bar = page.getByTestId('tl-kind-zoning').getByTestId('tl-bar');
+    await expect.element(bar).toBeInTheDocument();
+    const el = bar.element() as HTMLElement;
+    expect(el.hasAttribute('data-locked')).toBe(true);
+    expect(el.tagName).not.toBe('BUTTON');
+    expect(el.hasAttribute('tabindex')).toBe(false);
+    expect(all('[data-testid=tl-kind-zoning] [data-edge]')).toHaveLength(0);
+    const row = page.getByTestId('tl-kind-zoning').getByTestId('tl-policy').element();
+    expect(row.hasAttribute('data-locked')).toBe(true);
+    el.click();
+    el.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    expect(onselect).not.toHaveBeenCalled();
+    expect(onedit).not.toHaveBeenCalled();
+  });
+
+  it("at level 5 a money policy that is not given says 'Unlocks in a later round'", async () => {
+    const presetId = fundingPresets(cal)[0].id;
+    const strayPreset: Policy = {
+      ...money,
+      id: 'm2',
+      label: 'Stray preset',
+      preset: presetId,
+      where: { tag: 'routes' }
+    };
+    const given: Policy = { ...money, id: 'm3', label: 'Given measure', preset: presetId };
+    expect(isGiven(money)).toBe(false);
+    expect(isGiven(strayPreset)).toBe(false);
+    expect(isGiven(given)).toBe(true);
+    await setup({
+      allowed: allowedAt(5),
+      level: 5,
+      policy: {
+        schema: 4,
+        kinds: { zoning: [], permitting: [], money: [money, strayPreset, given] }
+      }
+    });
+    await kindButton('Public money').click();
+    const rows = page.getByTestId('tl-kind-money').getByTestId('tl-policy');
+    await expect.element(rows.nth(2)).toBeInTheDocument();
+    const [own, stray, measure] = rows.all().map((r) => r.element() as HTMLElement);
+    for (const r of [own, stray]) {
+      expect(r.hasAttribute('data-locked')).toBe(true);
+      expect(r.querySelector('[data-testid=tl-policy-note]')?.textContent).toBe(LATER_ROUND);
+      expect(r.querySelector('[data-testid=tl-bar]')?.tagName).not.toBe('BUTTON');
+    }
+    expect(measure.hasAttribute('data-locked')).toBe(false);
+    expect(measure.textContent).not.toContain(LATER_ROUND);
+    expect(measure.querySelector('[data-testid=tl-bar]')?.tagName).toBe('BUTTON');
+    expect(lane('money')).toBeNull();
+  });
+
+  it('without a game nothing is locked', async () => {
+    await setup();
+    for (const name of ['Zoning', 'Permitting', 'Public money']) await kindButton(name).click();
+    await expect
+      .element(page.getByTestId('tl-kind-money').getByTestId('tl-bar').first())
+      .toBeInTheDocument();
+    expect(all('[data-testid=tl-locked-lane]')).toHaveLength(0);
+    expect(all('[data-locked]')).toHaveLength(0);
+    for (const name of Object.values(PLUS_NAME)) {
+      await expect.element(page.getByRole('button', { name })).toBeVisible();
+    }
+  });
+
+  for (const mode of ['light', 'dark'] as const) {
+    it(`locked lanes and bars pass axe in ${mode}`, async () => {
+      await cdp().send('Emulation.setEmulatedMedia', {
+        features: [{ name: 'prefers-color-scheme', value: mode }]
+      });
+      const { view } = await setup({ allowed: allowedAt(3), level: 3 });
+      // The page gives the timeline its ground; the test host has none.
+      view.container.style.background = `var(--color-surface${mode === 'dark' ? '-dark' : ''})`;
+      for (const name of ['Zoning', 'Public money']) await kindButton(name).click();
+      await expect
+        .element(page.getByTestId('tl-kind-zoning').getByTestId('tl-bar'))
+        .toBeInTheDocument();
+      const r = await axe.run(view.container, {
+        runOnly: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22a', 'wcag22aa']
+      });
+      expect(r.violations).toEqual([]);
+    });
+  }
 });

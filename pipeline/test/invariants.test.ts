@@ -21,7 +21,7 @@ import {
 import { parseManifest } from '../../src/lib/data/manifest';
 import { checkPolicy } from '../steps/check-policy';
 import { tinyNetwork } from '../../src/lib/data/fixtures/transit-tiny';
-import { FIXTURE_PROFILE, LIVE_PROFILE } from '../config';
+import { FIXTURE_PROFILE, FREEWAY_LAND_JSON, LIVE_PROFILE } from '../config';
 import { QUALITY_REPORT_MD, QUALITY_RULES, makeQuality } from '../lib/quality';
 import { deriveProjects } from '../project-records/derive';
 import {
@@ -42,12 +42,11 @@ import {
 import { fixture } from '../steps/fixture';
 import { PROJECTS_JSON } from '../steps/projects';
 import { miniProjectInput } from './fixtures/mini/projects-raw';
-import { LESSCARS_FILES, PARCELS_BIN, POLICY_BIN } from '../lib/scenario-files';
-import { readFreewayLandSet } from '../lib/lesscars/freeway-land';
-import { LESSCARS_FREEWAY_LAND_JSON } from '../lesscars-config';
+import { PARCELS_BIN, POLICY_BIN } from '../lib/scenario-files';
+import { readFreewayLandSet } from '../lib/freeway-land';
 
 /** The fixture's freeway-land catalog (lot 19), which `check` reads for a fixture version. */
-const FREEWAY_LAND = readFreewayLandSet(LESSCARS_FREEWAY_LAND_JSON.fixture);
+const FREEWAY_LAND = readFreewayLandSet(FREEWAY_LAND_JSON.fixture);
 /** checkDataset with the fixture catalog, as the build and `check` pass it. */
 const checkDataset: typeof checkDatasetOf = (dir, profile, extras) =>
   checkDatasetOf(dir, profile, { freewayLand: FREEWAY_LAND, ...extras });
@@ -1232,120 +1231,6 @@ describe('maxOf', () => {
     const xs = Array.from({ length: 500_000 }, (_, i) => i % 1000);
     expect(maxOf(xs)).toBe(999);
     expect(maxOf([])).toBe(-Infinity);
-  });
-});
-
-describe('V35 /lesscars files', () => {
-  const v35 = async (dir: string) => (await result(dir, 'V35'))!;
-  const edit = (
-    dir: string,
-    file: string,
-    f: (j: Record<string, any>) => void // eslint-disable-line @typescript-eslint/no-explicit-any
-  ) => {
-    const p = join(dir, file);
-    const j = JSON.parse(readFileSync(p, 'utf8'));
-    f(j);
-    writeFileSync(p, JSON.stringify(j));
-  };
-  /** Rewrites timeline.bin's JSON payload (raw deflate, as the step writes it). */
-  const editTimeline = (
-    dir: string,
-    f: (doc: Record<string, any>) => void // eslint-disable-line @typescript-eslint/no-explicit-any
-  ) => {
-    const p = join(dir, LESSCARS_FILES.timeline);
-    const doc = JSON.parse(inflateRawSync(readFileSync(p)).toString('utf8'));
-    f(doc);
-    writeFileSync(p, deflateRawSync(Buffer.from(JSON.stringify(doc), 'utf8')));
-  };
-  it('V35 passes on the fixture build', async () => {
-    const r = await v35(base);
-    expect(r.ok, r.detail).toBe(true);
-    expect(r.detail).not.toBe('no plan');
-  });
-  it('V35 fails when a source sum is edited', async () => {
-    const d = copy();
-    edit(d, LESSCARS_FILES.summary, (s) => {
-      s.bySource.freed[3] += 1;
-    });
-    const r = await v35(d);
-    expect(r.ok).toBe(false);
-    expect(r.detail).toMatch(/year \d{4}: source sums/);
-  });
-  it('V35 fails when plan times disagree with schedulePlan', async () => {
-    const d = copy();
-    edit(d, LESSCARS_FILES.plan, (p) => {
-      p.times[0].openDay += 1;
-    });
-    const r = await v35(d);
-    expect(r.ok).toBe(false);
-    expect(r.detail).toMatch(/times differ from schedulePlan/);
-  });
-  it('V35 fails when the timeline lacks a reserved parcel', async () => {
-    const d = copy();
-    editTimeline(d, (doc) => {
-      expect(doc.reservations.row.length).toBeGreaterThan(0);
-      doc.reservations.row.shift();
-      doc.reservations.kept.shift();
-    });
-    const r = await v35(d);
-    expect(r.ok).toBe(false);
-    expect(r.detail).toMatch(/timeline reservations/);
-  });
-  it('V35 fails when a freed parcel row is scenario-eligible', async () => {
-    const d = copy();
-    editScenario(d, (p) => {
-      p.eligible[p.index.get('3512019')!] = 1;
-    });
-    const r = await v35(d);
-    expect(r.ok).toBe(false);
-    expect(r.detail).toMatch(
-      /freed parcel 3512019 is scenario-eligible: its homes would count twice/
-    );
-  });
-  it('V35 fails when a basemapHide project is not a highway truncation', async () => {
-    const d = copy();
-    edit(d, LESSCARS_FILES.plan, (p) => {
-      expect(p.basemapHide?.length).toBeGreaterThan(0);
-      p.basemapHide.push({ projectId: 'subway', ids: [1] });
-    });
-    const r = await v35(d);
-    expect(r.ok).toBe(false);
-    expect(r.detail).toMatch(/basemapHide: subway is not a highway truncation/);
-  });
-  it('V35 fails when a freewayLand parcel is in no site', async () => {
-    const d = copy();
-    edit(d, LESSCARS_FILES.sites, (f) => {
-      for (const s of f.sites) delete s.parcels;
-    });
-    const r = await v35(d);
-    expect(r.ok).toBe(false);
-    expect(r.detail).toMatch(/freed parcel 3512019 is in 0 sites/);
-  });
-  it('V35 fails when a site is held by no garage on its parcels, or a build is on it', async () => {
-    const d = copy();
-    edit(d, LESSCARS_FILES.sites, (f) => {
-      f.sites.find((s: { parcels?: string[] }) => s.parcels).heldBy = 'garage';
-    });
-    const r = await v35(d);
-    expect(r.ok).toBe(false);
-    // The fixture's garage stands on lot 15, not on lot 19.
-    expect(r.detail).toMatch(/site lc:hwy:1 is held by garage, which is no edge garage on/);
-    expect(r.detail).toMatch(/timeline builds on held site lc:hwy:1/);
-  });
-  it('V35 fails when a named file is missing', async () => {
-    const d = copy();
-    rmSync(join(d, LESSCARS_FILES.sites));
-    const r = await v35(d);
-    expect(r.ok).toBe(false);
-    expect(r.detail).toMatch(/sites\.json is missing/);
-  });
-  it('V35 is OK with "no plan" when the manifest has no lesscars key', async () => {
-    const d = copy();
-    edit(d, 'manifest.json', (m) => {
-      delete m.scenarios.lesscars;
-    });
-    const r = await v35(d);
-    expect(r).toMatchObject({ id: 'V35', ok: true, detail: 'no plan' });
   });
 });
 

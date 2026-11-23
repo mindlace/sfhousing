@@ -1,0 +1,62 @@
+954:AssertionError: expected [ 'about-meanings', …(5) ] to deeply equal [ 'about-meanings', …(3) ]
+964:[31m+   "about-levels",[39m
+ ✓ |server| src/lib/sim/scenario/funded.spec.ts (50 tests) 551ms
+ ✓ |client (chromium)| src/lib/sim-page/PermittingSection.svelte.spec.ts (14 tests) 473ms
+ ✓ |client (chromium)| src/routes/signin/page.svelte.spec.ts (36 tests) 514ms
+ ✓ |server| src/lib/sim/scenario/simulate.spec.ts (34 tests) 514ms
+ ✓ |client (chromium)| src/routes/p/[id]/page.view.svelte.spec.ts (4 tests) 406ms
+ ✓ |server| src/lib/sim/scenario/engine-finance-stack.spec.ts (7 tests) 472ms
+ ✓ |client (chromium)| src/lib/shell/more-below.svelte.spec.ts (3 tests) 464ms
+ ✓ |server| src/lib/sim/scenario/scenario-host.preview.spec.ts (5 tests) 503ms
+ ✓ |client (chromium)| src/routes/page.svelte.spec.ts (11 tests) 389ms
+ ✓ |server| src/lib/sim/scenario/scenario-host.limits.spec.ts (4 tests) 697ms
+ ✓ |client (chromium)| src/routes/page.undo.svelte.spec.ts (4 tests) 411ms
+ ✓ |client (chromium)| src/lib/sim-page/SimNotices.svelte.spec.ts (3 tests) 485ms
+ ✓ |client (chromium)| src/lib/sharing/SaveIndicator.svelte.spec.ts (9 tests) 479ms
+ ✓ |client (chromium)| src/lib/scoreboard/ScoreboardPanel.svelte.spec.ts (15 tests) 431ms
+ ✓ |server| src/lib/sim/levers/display-engine.spec.ts (33 tests) 1582ms
+ ✓ |client (chromium)| src/lib/lesscars/TimelineDialog.svelte.spec.ts (6 tests) 378ms
+ ✓ |client (chromium)| src/lib/brush/BrushEditor.svelte.spec.ts (21 tests) 364ms
+ ✓ |client (chromium)| src/lib/goal/GoalRow.svelte.spec.ts (4 tests) 319ms
+ ✓ |client (chromium)| src/lib/members/InviteBanner.svelte.spec.ts (8 tests) 281ms
+ ✓ |server| src/lib/sim/world/policy/roundtrip.spec.ts (18 tests) 1415ms
+ ✓ |client (chromium)| src/lib/map/timelapse/halo-layer.gpu.svelte.spec.ts (4 tests) 433ms
+--
+     ✓ random finances 1 to 120: it joins re-made, or lapses and applies again as policyChanged has it  1542ms
+ ✓ |client (chromium)| src/routes/page.header.svelte.spec.ts (6 tests) 223ms
+ ✓ |client (chromium)| src/routes/account/page.svelte.spec.ts (11 tests) 201ms
+ ✓ |client (chromium)| src/lib/view/LayerSwitches.svelte.spec.ts (8 tests) 138ms
+ ✓ |client (chromium)| src/lib/brush/BrushEditor.inset.svelte.spec.ts (2 tests) 193ms
+ ✓ |client (chromium)| src/lib/fzp/ProjectTooltip.svelte.spec.ts (9 tests) 151ms
+ ✓ |client (chromium)| src/lib/timeline/SimKey.svelte.spec.ts (11 tests) 215ms
+ ✓ |client (chromium)| src/lib/lesscars/EvidenceDialog.svelte.spec.ts (3 tests) 84ms
+ ✓ |client (chromium)| src/lib/timeline/policy-sync.svelte.spec.ts (11 tests) 121ms
+ ✓ |client (chromium)| src/lib/account/ProfilePane.svelte.spec.ts (5 tests) 119ms
+ ✓ |client (chromium)| src/lib/paint/HistoryButtons.svelte.spec.ts (3 tests) 110ms
+ ✓ |client (chromium)| src/lib/brush/BrushEditor.title.svelte.spec.ts (1 test) 55ms
+ ✓ |client (chromium)| src/lib/brush/BrushEditor.load.svelte.spec.ts (1 test) 161ms
+ ✓ |server| src/hooks.server.spec.ts (20 tests) 2240ms
+     ✓ works with no BETTER_AUTH_SECRET on a signed-out page  2222ms
+--
+ ✓ |client (chromium)| src/lib/brush/BrushEditor.restart.svelte.spec.ts (3 tests) 61ms
+ ✓ |client (chromium)| src/lib/shell/Message.svelte.spec.ts (9 tests) 65ms
+ ✓ |client (chromium)| src/routes/lesscars/page.svelte.spec.ts (1 test) 57ms
+ ✓ |client (chromium)| src/lib/about/AboutParts.svelte.spec.ts (16 tests) 25ms
+ ✓ |server| src/lib/sim/world/runner/lookups.spec.ts (15 tests) 403ms
+ ✓ |client (chromium)| src/routes/sim/page.svelte.spec.ts (3 tests) 20ms
+ ✓ |client (chromium)| src/lib/generator/generator.svelte.spec.ts (1 test) 16ms
+ ✓ |client (chromium)| src/lib/sim/scenario/simulate.finance.golden.svelte.spec.ts (4 tests) 16ms
+ ✓ |client (chromium)| src/lib/brush/BrushController.svelte.spec.ts (49 tests) 15ms
+ ✓ |client (chromium)| src/lib/sim/world/funding/funded.golden.svelte.spec.ts (2 tests) 14ms
+ ✓ |server| src/lib/sim-log/diff.spec.ts (19 tests) 470ms
+ ✓ |client (chromium)| src/lib/scoreboard/TargetRow.svelte.spec.ts (1 test) 20ms
+ ✓ |client (chromium)| src/lib/brush/editor.svelte.spec.ts (25 tests) 8ms
+ ✓ |client (chromium)| src/lib/timelapse/model.golden.svelte.spec.ts (3 tests) 8ms
+ ❯ |client (chromium)| src/routes/about/page.svelte.spec.ts (2 tests | 1 failed) 9ms
+     × the page: h1 About this model, the intro, the four parts in order, the source code link 7ms (retry x1)
+     ✓ sets the two colour properties to the light tokens on its root 1ms
+ ✓ |client (chromium)| src/lib/sharing/autosave.svelte.spec.ts (30 tests) 6ms
+ ✓ |client (chromium)| src/lib/timeline/session.svelte.spec.ts (43 tests) 5ms
+ ✓ |server| src/lib/timelapse/model.test.ts (188 tests) 381ms
+ ✓ |client (chromium)| src/lib/shell/header-actions.svelte.spec.ts (7 tests) 4ms
+ ✓ |client (chromium)| src/lib/shell/SiteFooter.svelte.spec.ts (2 tests) 4ms

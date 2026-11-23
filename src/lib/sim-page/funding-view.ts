@@ -31,8 +31,11 @@ import {
   formatMonthYear,
   formatOddsChange
 } from '$lib/fzp/format';
-import { HORIZON } from '$lib/fzp/time';
+import { firstOfMonth } from '$lib/sim/scenario/dates';
+import { WINDOW_MONTHS } from '$lib/sim/timeline-client';
+import { monthLastDay } from '$lib/sim/world/months';
 import { formatCount, formatPercent } from '$lib/scoreboard/format';
+import { isNoCeiling } from '$lib/timelapse/model';
 import {
   INCOME_TIERS,
   type Calibration,
@@ -54,6 +57,7 @@ import {
   GROUP_NAME,
   GROUP_OWNER,
   GUARANTEE_NEEDS_TERM,
+  NO_CEILING,
   NO_MONEY_ADDED,
   SUMMARY_GROUP_NAME,
   TERM_NAME,
@@ -66,9 +70,11 @@ import {
   valueSource,
   type FundingPreset,
   type PoolField,
-  type ProgrammeField
+  type ProgrammeField,
+  yearsAfter
 } from './funding-presets';
 import { POOL_KIND_DEFAULTS } from './funding-sources';
+import { DEFAULT_POLICY, canonicalJson, type SimPolicy } from './policy';
 
 export type Baseline = NonNullable<Calibration['baselineFunding']>;
 export type GroupId = 'city' | 'state' | 'federal';
@@ -255,12 +261,31 @@ export function coverageSizeMixed(
   return new Set(bundleOn(f, baseline, day).programmes.map((g) => g.minHomes)).size > 1;
 }
 
+/**
+ * The money `pool` receives in the year from `asOf`: its `once` and `yearly` arrivals on days
+ * `asOf` to `yearsAfter(asOf, 1) - 1`, times the scale in force on `asOf` (1 without an entry),
+ * rounded to whole dollars. Null for a pool with a yearly inflow whose amount `isNoCeiling` (an
+ * older dataset's federal pool), which has no yearly amount to show.
+ */
+export function poolYearAmount(f: FinanceLevers, pool: Pool, asOf: Day): Dollars | null {
+  if (pool.inflows.some((x) => x.kind === 'yearly' && isNoCeiling(x.dollarsPerYear))) return null;
+  const last = yearsAfter(asOf, 1) - 1;
+  let sum = 0;
+  for (const x of pool.inflows) {
+    const amount = x.kind === 'once' ? x.dollars : x.dollarsPerYear;
+    sum += inflowArrivals(x, asOf, last).length * amount;
+  }
+  return Math.round(sum * (entryAt(f, pool.id, asOf)?.scale ?? 1));
+}
+
 export interface BaselineGroup {
   group: GroupId;
   name: string;
   pools: Pool[];
-  /** The yearly inflows in force at the present; null for the uncapped group. */
-  perYear: Dollars | null;
+  /** The sum of the pools' `poolYearAmount`, the null ones left out. */
+  perYear: Dollars;
+  /** Every pool of the group has no ceiling (`poolYearAmount` null): its amount reads "No ceiling". */
+  noCeiling: boolean;
   /** Every pool of the group is off at the present. */
   off: boolean;
   perHome: Dollars;
@@ -281,26 +306,15 @@ export function baselineGroups(f: FinanceLevers, baseline: Baseline, asOf: Day):
     const pools = baseline.pools.filter((p) => groupOf(p.kind) === group);
     if (pools.length === 0) continue;
     const ids = new Set(pools.map((p) => p.id));
-    let perYear: number | null = null;
-    if (!pools.every((p) => p.uncapped)) {
-      perYear = 0;
-      for (const p of pools) {
-        const scale = entryAt(f, p.id, asOf)?.scale ?? 1;
-        for (const x of p.inflows) {
-          if (x.kind === 'yearly' && x.from <= asOf && (x.to === null || x.to >= asOf)) {
-            perYear += x.dollarsPerYear * scale;
-          }
-        }
-      }
-      perYear = Math.round(perYear);
-    }
+    const amounts = pools.map((p) => poolYearAmount(f, p, asOf));
     const sums = groupSums(f, baseline, priced, group);
     const dates = f.baselineScale.filter((e) => ids.has(e.pool)).map((e) => e.from);
     out.push({
       group,
       name: GROUP_NAME[group],
       pools,
-      perYear,
+      perYear: amounts.reduce<number>((s, a) => s + (a ?? 0), 0),
+      noCeiling: amounts.every((a) => a === null),
       off: pools.every((p) => isOff(f, p.id, asOf)),
       perHome: Math.round(sums.perHome),
       lentPerHome: Math.round(sums.lent),
@@ -317,8 +331,6 @@ export interface ScaleLine {
   name: string;
   from: Day;
   scale: number;
-  /** Every pool of the line is uncapped: any scale above 0 is "switched back on". */
-  uncapped: boolean;
   /** Every pool of the line was switched off the day before (scale 0). */
   backOn: boolean;
   text: string;
@@ -336,7 +348,7 @@ export function scaleLines(f: FinanceLevers, baseline: Baseline, group: GroupId)
   const byId = new Map(pools.map((p) => [p.id, p]));
   const entries = f.baselineScale.filter((e) => order.has(e.pool));
   const used = new Set<(typeof entries)[number]>();
-  const raw: Omit<ScaleLine, 'text' | 'uncapped' | 'backOn'>[] = [];
+  const raw: Omit<ScaleLine, 'text' | 'backOn'>[] = [];
   if (group === 'city') {
     for (const e of entries) {
       if (used.has(e)) continue;
@@ -368,14 +380,12 @@ export function scaleLines(f: FinanceLevers, baseline: Baseline, group: GroupId)
   raw.sort((a, b) => a.from - b.from || order.get(a.pools[0])! - order.get(b.pools[0])!);
   return raw.map((l) => {
     const when = `From ${formatMonthYear(l.from)}`;
-    const uncapped = l.pools.every((id) => byId.get(id)!.uncapped);
     const prevZero = l.pools.every((id) => entryAt(f, id, l.from - 1)?.scale === 0);
-    let text: string;
-    if (l.scale === 0) text = `${when}: switched off`;
-    else if (uncapped) text = `${when}: switched back on`;
-    else
-      text = `${when}: ${prevZero ? 'switched back on, ' : ''}${pctOfScale(l.scale)} of today's amount`;
-    return { ...l, uncapped, backOn: prevZero, text };
+    const text =
+      l.scale === 0
+        ? `${when}: switched off`
+        : `${when}: ${prevZero ? 'switched back on, ' : ''}${pctOfScale(l.scale)} of today's amount`;
+    return { ...l, backOn: prevZero, text };
   });
 }
 
@@ -462,10 +472,22 @@ export function programmeSentence(
   );
 }
 
-function inflowPhrase(x: Pool['inflows'][number], m: (key: string) => string = () => ''): string {
+/** One inflow's phrase; a yearly inflow whose amount `isNoCeiling` is "No ceiling". */
+function inflowPhrase(
+  x: Pool['inflows'][number],
+  m: (key: string) => string = () => '',
+  asOf: Day | null = null
+): string {
+  if (x.kind === 'yearly' && isNoCeiling(x.dollarsPerYear)) return NO_CEILING;
   if (x.kind === 'once')
     return `${formatDollars(x.dollars)}${m('dollars')} in ${formatMonthYear(x.day)}${m('day')}`;
-  const until = x.to === null ? '' : ` until ${formatMonthYear(x.to)}${m('to')}`;
+  // A stored end of null runs to the window's last month.
+  const until =
+    x.to === null
+      ? asOf === null
+        ? ''
+        : ` until ${formatMonthYear(windowLastMonth(asOf))}`
+      : ` until ${formatMonthYear(x.to)}${m('to')}`;
   return (
     `${formatDollars(x.dollarsPerYear)}${m('dollarsPerYear')} a year from ` +
     `${formatMonthYear(x.from)}${m('from')}${until}`
@@ -474,16 +496,18 @@ function inflowPhrase(x: Pool['inflows'][number], m: (key: string) => string = (
 
 /**
  * "$300 million in July 2028; repaid at 6% over 20 years" (4.14 item 3). `custom` names the
- * evidence fields holding custom values; each is followed by "(custom, not sourced)".
+ * evidence fields holding custom values; each is followed by "(custom, not sourced)". A pool with
+ * no inflow has an empty money phrase.
  */
-export function poolMoneySentence(pool: Pool, custom: ReadonlySet<PoolField> = new Set()): string {
+export function poolMoneySentence(
+  pool: Pool,
+  custom: ReadonlySet<PoolField> = new Set(),
+  asOf: Day | null = null
+): string {
   const m = (field: PoolField) => (custom.has(field) ? CUSTOM_MARK : '');
-  const money =
-    pool.uncapped && pool.inflows.length === 0
-      ? 'no limit'
-      : pool.inflows
-          .map((x, k) => inflowPhrase(x, (key) => m(`inflows[${k}].${key}` as PoolField)))
-          .join(', ');
+  const money = pool.inflows
+    .map((x, k) => inflowPhrase(x, (key) => m(`inflows[${k}].${key}` as PoolField), asOf))
+    .join(', ');
   const debt =
     pool.debt === null
       ? ''
@@ -491,6 +515,12 @@ export function poolMoneySentence(pool: Pool, custom: ReadonlySet<PoolField> = n
         `${pool.debt.termYears} years${m('debt.termYears')}`;
   return `${money}${debt}`;
 }
+
+/** The window's last day: the end of the last model month. */
+export const windowEnd = (asOf: Day): Day => monthLastDay(asOf, WINDOW_MONTHS);
+
+/** The first day of the calendar month holding the window's last day: the last month to choose. */
+export const windowLastMonth = (asOf: Day): Day => firstOfMonth(windowEnd(asOf));
 
 /**
  * The pool preview (4.7): yearly and once amounts, the repayment of what arrives from `asOf` to
@@ -506,7 +536,7 @@ export function poolPreview(
   let perYear: number | null = null;
   for (const x of pool.inflows) {
     const amount = x.kind === 'once' ? x.dollars : x.dollarsPerYear;
-    received += inflowArrivals(x, asOf, HORIZON).length * amount;
+    received += inflowArrivals(x, asOf, windowEnd(asOf)).length * amount;
     if (x.kind === 'once') once += x.dollars;
     else perYear = (perYear ?? 0) + x.dollarsPerYear;
   }
@@ -857,22 +887,27 @@ const POOL_FIELD_WORD = {
 /**
  * The presets with something in the policy, in `presets` order (4.10 "each added preset's
  * provenance"): one that added a pool or programme (ids `u-<presetId>-<n>`), or one that only adds
- * dated changes while every change it adds is in `f.baselineScale` as it added it (a change
- * edited to another amount is the user's own).
+ * dated changes while the policy's changes on its pools hold its (pool, scale) list in its order,
+ * on whatever days (a change edited to another amount is the user's own).
  */
 export function addedPresets(f: FinanceLevers, presets: FundingPreset[]): FundingPreset[] {
   const ids = [...f.pools, ...f.programmes].map((x) => x.id);
   return presets.filter((p) => {
     const made = new RegExp(`^u-${p.id}-\\d+$`);
     if (ids.some((id) => made.test(id))) return true;
-    return (
-      p.pools.length === 0 &&
-      p.programmes.length === 0 &&
-      p.baselineScale.length > 0 &&
-      p.baselineScale.every((n) =>
-        f.baselineScale.some((e) => e.pool === n.pool && e.from === n.from && e.scale === n.scale)
+    if (p.pools.length > 0 || p.programmes.length > 0 || p.baselineScale.length === 0) return false;
+    // Its (pool, scale) list as a consecutive run among the entries on its pools, whatever the days.
+    const pools = new Set(p.baselineScale.map((n) => n.pool));
+    const held = f.baselineScale.filter((e) => pools.has(e.pool)).sort((a, b) => a.from - b.from);
+    for (let i = 0; i + p.baselineScale.length <= held.length; i++) {
+      if (
+        p.baselineScale.every(
+          (n, k) => held[i + k].pool === n.pool && held[i + k].scale === n.scale
+        )
       )
-    );
+        return true;
+    }
+    return false;
   });
 }
 
@@ -1014,6 +1049,26 @@ export interface SummaryRow {
 
 const row = (text: string, indent = false, muted = false): SummaryRow => ({ text, indent, muted });
 
+/** A measure's dates are the player's: the summary marks none of them. */
+function withoutDates<T extends string>(fields: ReadonlySet<T>): Set<T> {
+  return new Set([...fields].filter((k) => !/(^|\.)(day|from|to)$/.test(k)));
+}
+
+/**
+ * A policy that changes only its public money: no rules, no painted areas, the default
+ * protections and current timing, and funding that differs from the default's. The read-only
+ * summary shows only "Public money" for it.
+ */
+export function moneyOnly(p: SimPolicy): boolean {
+  return (
+    p.rules.length === 0 &&
+    p.custom.length === 0 &&
+    canonicalJson(p.protect) === canonicalJson(DEFAULT_POLICY.protect) &&
+    canonicalJson(p.timing.current) === canonicalJson(DEFAULT_POLICY.timing.current) &&
+    canonicalJson(p.funding) !== canonicalJson(DEFAULT_POLICY.funding)
+  );
+}
+
 /**
  * The "Public money" rows of the read-only summary (4.14 items 1-6, in order): today's funding
  * ("as today", or one row per dated change, a City-group change once), added programmes on
@@ -1024,14 +1079,18 @@ const row = (text: string, indent = false, muted = false): SummaryRow => ({ text
 export function summaryRows(
   f: FinanceLevers,
   baseline: Baseline | undefined,
-  presets: FundingPreset[]
+  presets: FundingPreset[],
+  asOf: Day | null
 ): SummaryRow[] {
   const rows: SummaryRow[] = [];
-  if (f.baselineScale.length === 0) rows.push(row(AS_TODAY));
-  else if (baseline === undefined) {
+  const asToday = canonicalJson(f) === canonicalJson(DEFAULT_POLICY.funding);
+  if (asToday) rows.push(row(AS_TODAY));
+  else if (f.baselineScale.length === 0) {
+    // A measure that adds only pools or programmes: nothing to say about today's pools.
+  } else if (baseline === undefined) {
     for (const e of [...f.baselineScale].sort((a, b) => a.from - b.from)) {
       const backOn = entryAt(f, e.pool, e.from - 1)?.scale === 0;
-      rows.push(row(summaryScaleText(e.pool, e.from, e.scale, false, backOn)));
+      rows.push(row(summaryScaleText(e.pool, e.from, e.scale, backOn)));
     }
   } else {
     const lines = GROUPS.flatMap((group) =>
@@ -1041,33 +1100,35 @@ export function summaryRows(
         name: group === 'city' ? l.name : SUMMARY_GROUP_NAME[group]
       }))
     ).sort((a, b) => a.from - b.from);
-    for (const l of lines)
-      rows.push(row(summaryScaleText(l.name, l.from, l.scale, l.uncapped, l.backOn)));
+    for (const l of lines) rows.push(row(summaryScaleText(l.name, l.from, l.scale, l.backOn)));
   }
 
   const basePools = new Map((baseline?.pools ?? []).map((p) => [p.id, p]));
   for (const g of f.programmes) {
     const pool = basePools.get(g.pool);
     if (pool === undefined) continue;
-    const custom = programmeCustomFields(g, pool.kind, baseline, presets);
+    const custom = withoutDates(programmeCustomFields(g, pool.kind, baseline, presets));
     rows.push(
       row(`Added to ${GROUP_OWNER[groupOf(pool.kind)]}: ${programmeSentence(g, pool, custom)}`)
     );
   }
   for (const p of f.pools) {
-    rows.push(row(`${p.label}: ${poolMoneySentence(p, poolCustomFields(p, presets))}`));
+    const custom = withoutDates(poolCustomFields(p, presets));
+    rows.push(row(`${p.label}: ${poolMoneySentence(p, custom, asOf)}`));
     for (const g of f.programmes) {
       if (g.pool !== p.id) continue;
-      const custom = programmeCustomFields(g, p.kind, baseline, presets);
-      rows.push(row(programmeSentence(g, p, custom), true));
+      const pc = withoutDates(programmeCustomFields(g, p.kind, baseline, presets));
+      rows.push(row(programmeSentence(g, p, pc), true));
     }
   }
-  if (f.pools.length === 0 && f.programmes.length === 0)
-    rows.push(row(NO_MONEY_ADDED, false, true));
+  if (asToday) rows.push(row(NO_MONEY_ADDED, false, true));
 
-  for (const key of TERM_KEYS) {
-    const v = f.terms[key];
-    if (v !== undefined && v !== null) rows.push(row(typedTermSummary(key, v)));
+  // A measure's terms are context, not its own: typed terms read only when nothing else does.
+  if (f.baselineScale.length === 0 && f.pools.length === 0 && f.programmes.length === 0) {
+    for (const key of TERM_KEYS) {
+      const v = f.terms[key];
+      if (v !== undefined && v !== null) rows.push(row(typedTermSummary(key, v)));
+    }
   }
   return rows;
 }

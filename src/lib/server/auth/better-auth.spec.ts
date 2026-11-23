@@ -1,9 +1,14 @@
 import { afterEach, describe, it, test, expect, vi } from 'vitest';
 import { parseAdditionalUserInputFromProviderProfile, parseUserInput } from 'better-auth/db';
-import { freshDb, makePlatform } from '$lib/server/test/auth-db';
+import { freshDb, makePlatform, seedUser } from '$lib/server/test/auth-db';
 import { mockConsole } from '$lib/server/test/mock-console';
 import { clearE2eMail, readE2eMail } from '$lib/server/e2e/mail-sink';
-import { getAuth, verifyAuthSecret, authGenerateId } from './better-auth';
+import { eq } from 'drizzle-orm';
+import { gameSave } from '$lib/server/db/schema';
+import { putGame } from '$lib/server/game/store';
+import { parseGameSave, type GameSave } from '$lib/game/saves';
+import { newId } from '$lib/ids/base58';
+import { getAuth, verifyAuthSecret, authGenerateId, onLinkAccountFor } from './better-auth';
 import { PSEUDONYMOUS_EMAIL_DOMAIN } from './brand';
 import type { AuthMethod } from './methods';
 import { PASSWORD_MIN_LENGTH, PASSWORD_MAX_LENGTH } from './password-policy';
@@ -271,5 +276,67 @@ describe('change-email mail records', () => {
       url: 'https://example.com/verify?token=v'
     } as never);
     expect(readE2eMail('change-email-verify', 'new@example.com')).toBeNull();
+  });
+});
+
+function gameOf(): GameSave {
+  const s: GameSave = {
+    v: 1,
+    id: newId(),
+    name: 'Game, 22 Nov',
+    nameIsDefault: true,
+    progress: { v: 1, level: 2, banked: {}, firstWinAt: '2026-11-22T10:00:00.000Z' },
+    plan: null,
+    policy: null,
+    savedAt: '2026-11-22T12:00:00.000Z'
+  };
+  if (!parseGameSave(s)) throw new Error('test save is not valid');
+  return s;
+}
+
+describe('onLinkAccountFor', () => {
+  async function setup() {
+    const { db } = freshDb();
+    await seedUser(db, { id: 'pseudo', email: 'p@pseudonymous.sfhousing.invalid', handle: 'pp' });
+    await seedUser(db, { id: 'other', email: 'real@x.com', handle: 'real' });
+    const pseudoGame = gameOf();
+    const otherGame = gameOf();
+    await putGame(db, 'pseudo', pseudoGame, null);
+    await putGame(db, 'other', otherGame, null);
+    const idsOf = async (identityId: string) =>
+      (await db.select().from(gameSave).where(eq(gameSave.identityId, identityId))).map(
+        (r) => r.id
+      );
+    return { db, pseudoGame, otherGame, idsOf };
+  }
+
+  test('a fuse moves the absorbed identity games to the survivor', async () => {
+    const { db, pseudoGame, otherGame, idsOf } = await setup();
+    await onLinkAccountFor(
+      db,
+      new Set()
+    )({
+      anonymousUser: { user: { id: 'pseudo-live' } },
+      newUser: { user: { id: 'other-live' } }
+    });
+    expect((await idsOf('other')).sort()).toEqual([pseudoGame.id, otherGame.id].sort());
+    expect(await idsOf('pseudo')).toEqual([]);
+  });
+
+  test('an upgrade leaves every game on its identity', async () => {
+    const { db, pseudoGame, idsOf } = await setup();
+    // The freshly minted identity is an orphan with no games; the upgrade discards it.
+    await db.delete(gameSave).where(eq(gameSave.identityId, 'other'));
+    const fresh = new Set(['other-live']);
+    await onLinkAccountFor(
+      db,
+      fresh
+    )({
+      anonymousUser: { user: { id: 'pseudo-live' } },
+      newUser: { user: { id: 'other-live' } }
+    });
+    expect(await idsOf('pseudo')).toEqual([pseudoGame.id]);
+    expect(await db.select().from(gameSave)).toHaveLength(1);
+    expect(fresh.has('other-live')).toBe(false);
   });
 });

@@ -168,7 +168,10 @@ export function rewriteFont(v: unknown, isStack: boolean): unknown {
   return v.map((x) => (Array.isArray(x) ? rewriteFont(x, false) : x));
 }
 
-function protomapsLayers(theme: Theme): {
+function protomapsLayers(
+  theme: Theme,
+  splitRoads: boolean
+): {
   base: LayerSpecification[];
   labels: LayerSpecification[];
 } {
@@ -186,7 +189,9 @@ function protomapsLayers(theme: Theme): {
       layout['text-font'] = rewriteFont(tf, stack);
     }
   }
-  const withClones = kept.flatMap((l) => (isRoadsLayer(l) ? [l, roadsClone(l)] : [l]));
+  const withClones = splitRoads
+    ? kept.flatMap((l) => (isRoadsLayer(l) ? [l, roadsClone(l)] : [l]))
+    : kept;
   return {
     base: withClones.filter((l) => l.type !== 'symbol'),
     labels: withClones.filter((l) => l.type === 'symbol')
@@ -194,10 +199,9 @@ function protomapsLayers(theme: Theme): {
 }
 
 /**
- * The /lesscars removed freeway stretches: the tiles step moves them from the basemap's `roads`
- * source layer into this one (docs/dev/lesscars.md "Basemap ids"). Every `roads` layer has a clone
- * on it, `${id}__lc`, right after it, so the moved parts draw as before; an archive without the
- * layer draws nothing on the clones. /lesscars filters the clones by day (basemap-hide.ts).
+ * Datasets built before the less-cars removal move some freeway stretches into this source layer;
+ * their manifests have `scenarios.lesscars` (`manifest.splitRoads`). Each `roads` layer then has a
+ * clone, `${id}__lc`, right after it, drawing that layer as roads.
  */
 export const LC_ROADS_SOURCE_LAYER = 'roads_lc';
 export const LC_CLONE_SUFFIX = '__lc';
@@ -349,7 +353,7 @@ const emptyCollection = (): GeoJSONSourceSpecification => ({
  * `firstSymbolLayerId(style)` (§4.4). No sprite is ever set: pois and icon layers are dropped.
  */
 export function buildStyle(manifest: Manifest, theme: Theme): StyleSpecification {
-  const { base, labels } = protomapsLayers(theme);
+  const { base, labels } = protomapsLayers(theme, manifest.splitRoads === true);
   const transit = manifest.transit !== undefined;
   // Stops sit above terrain, landuse and water but beneath the roads. Airport runways draw before
   // water, so look for the first road after it (the tunnels).

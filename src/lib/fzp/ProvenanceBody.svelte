@@ -9,7 +9,7 @@
 <script lang="ts">
   import { tick } from 'svelte';
   import type { ProjectsFile } from '$lib/timelapse/projects';
-  import { perHomeMethod } from '$lib/timeline/copy';
+  import { perHomeMethod } from '$lib/timeline/money-copy';
   import { TIER_LABEL } from './labels';
   import {
     NOT_SF_NOTE,

@@ -3,16 +3,19 @@
 // disclosure, today's funding rows and the group editor with dated changes, "Money you add"
 // when empty, and the selection clearing on an undo that removes the selected row.
 import { tick, type ComponentProps } from 'svelte';
-import { describe, expect, it } from 'vitest';
+import axe from 'axe-core';
+import { afterEach, describe, expect, it } from 'vitest';
 import { render } from 'vitest-browser-svelte';
-import { page, userEvent } from 'vitest/browser';
+import { cdp, page, userEvent } from 'vitest/browser';
 import '../../routes/layout.css';
+import { LEGACY_UNCAPPED_DOLLARS } from '$lib/timelapse/model';
+import type { Calibration } from '$lib/timelapse/types';
 import { formatDollarsExact } from '$lib/fzp/format';
-import { HORIZON } from '$lib/fzp/time';
-import { coverageShortLine } from '$lib/timeline/copy';
+import { coverageShortLine } from '$lib/timeline/money-copy';
 import { dayOf } from '$lib/sim/scenario/dates';
 import type { FinanceLevers } from '$lib/sim/levers/types';
 import {
+  dateRangeError,
   AMOUNT_ERROR,
   CUSTOM_LINE,
   DRAFT_LINE,
@@ -26,6 +29,7 @@ import {
   PROGRAMME_LIMIT_DESC,
   RATE_CUT_DESC,
   RATE_CUT_ERROR,
+  SCALE_AMOUNT_DESC,
   TERM_IN_USE_DESC,
   YOUR_MIX_LINE,
   YOUR_VALUE_LINE,
@@ -41,7 +45,14 @@ import type { FundingDrafts } from './funding-drafts.svelte';
 import { addPresetEdit, isRefused, newProgramme } from './funding-edit';
 import { fundingPresets, nextFiscal, type FundingPreset } from './funding-presets';
 import { NO_LOAN_RATE } from './funding-sources';
-import { baselineGroups, coverageSteps, programmePreview, programmeSentence } from './funding-view';
+import {
+  baselineGroups,
+  coverageSteps,
+  programmePreview,
+  programmeSentence,
+  windowEnd,
+  windowLastMonth
+} from './funding-view';
 import type { SimPolicy } from './policy';
 import type { PolicyStore } from './policy-store.svelte';
 import { BOND_POLICY, FUND_ASOF, fundingCalibration, policyWith } from './test/funding';
@@ -56,16 +67,17 @@ function setup(
     only?: ComponentProps<typeof FundingTabHost>['only'];
     priceDay?: number;
     termsReadOnly?: boolean;
+    calibration?: Calibration;
   } = {}
 ) {
-  const calibration = fundingCalibration();
+  const { calibration = fundingCalibration(), ...rest } = extra;
   let store!: PolicyStore<SimPolicy>;
   let drafts!: FundingDrafts;
   render(FundingTabHost, {
     props: {
       policy,
       calibration,
-      ...extra,
+      ...rest,
       onready: (s: PolicyStore<SimPolicy>, d: FundingDrafts) => {
         store = s;
         drafts = d;
@@ -85,7 +97,7 @@ describe('FundingTab', () => {
     const groups = baselineGroups(policyWith({}).funding, calibration.baselineFunding!, FUND_ASOF);
     await expect.element(row(/^City · \$200 million a year/)).toBeVisible();
     await expect.element(row(/^State · \$100 million a year/)).toBeVisible();
-    await expect.element(row(/^Federal tax credits · no limit/)).toBeVisible();
+    await expect.element(row(/^Federal tax credits · \$50 million a year/)).toBeVisible();
     for (const g of groups) {
       const r = row(new RegExp(`^${g.name} ·`));
       await expect.element(r).toHaveAttribute('aria-pressed', 'false');
@@ -172,7 +184,7 @@ describe('FundingTab', () => {
       store.policy.funding,
       calibration.baselineFunding!,
       FUND_ASOF,
-      HORIZON
+      windowEnd(FUND_ASOF)
     );
     const summary = coverageSummaryText(steps);
     expect(summary).toBe(`Affordable homes: fully funded today; from July ${YEAR}, 86%.`);
@@ -276,6 +288,135 @@ describe('FundingTab', () => {
   });
 });
 
+const TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22a', 'wcag22aa'];
+
+async function scheme(value: 'light' | 'dark') {
+  await cdp().send('Emulation.setEmulatedMedia', {
+    features: [{ name: 'prefers-color-scheme', value }]
+  });
+}
+
+/** `fundingCalibration` with an older dataset's federal pool, as `parseCalibration` reads it. */
+function olderCalibration(): Calibration {
+  const cal = fundingCalibration();
+  const funding = cal.baselineFunding!;
+  cal.baselineFunding = {
+    ...funding,
+    pools: funding.pools.map((p) =>
+      p.kind === 'federal'
+        ? {
+            ...p,
+            inflows: [
+              { kind: 'yearly', from: FUND_ASOF, to: null, dollarsPerYear: LEGACY_UNCAPPED_DOLLARS }
+            ]
+          }
+        : p
+    )
+  };
+  return cal;
+}
+
+describe('FundingTab: the federal group', () => {
+  afterEach(async () => {
+    await scheme('light');
+  });
+
+  const federal = () => row(/^Federal tax credits ·/);
+  const openChange = async () => {
+    await federal().click();
+    await page.getByRole('button', { name: 'Change from a date', exact: true }).click();
+  };
+  const amount = () => page.getByRole('spinbutton', { name: /^Amount, % of today's/ });
+
+  it("the federal group's change entry is the group editor", async () => {
+    setup();
+    await openChange();
+    await expect.element(page.getByRole('combobox', { name: /^Month/ })).toHaveFocus();
+    await expect.element(amount()).toHaveValue(0);
+    await expect.element(amount()).toHaveAccessibleDescription(new RegExp(`^${SCALE_AMOUNT_DESC}`));
+    expect(page.getByRole('radio', { name: 'Switched back on' }).elements()).toHaveLength(0);
+    expect(page.getByRole('radio', { name: 'Switched off' }).elements()).toHaveLength(0);
+    expect(document.body.textContent).not.toContain('Switched back on');
+  });
+
+  it('applies a 150% change on the federal group', async () => {
+    const { store } = setup();
+    await openChange();
+    await amount().fill('150');
+    await page.getByRole('button', { name: 'Apply change' }).click();
+    expect(store.policy.funding.baselineScale).toEqual([
+      { pool: 'federal', from: JULY, scale: 1.5 }
+    ]);
+    expect(store.undoLabel).toBe(`Today's funding: federal 150% from July ${YEAR}`);
+    await expect.element(federal()).toHaveTextContent(`Changes from July ${YEAR}`);
+    const lines = [...document.querySelectorAll('[data-scale-line]')].map((l) => l.textContent);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain(`From July ${YEAR}: 150% of today's amount`);
+  });
+
+  it('reads Federal tax credits · No ceiling on an older-dataset baseline', async () => {
+    setup(policyWith({}), { calibration: olderCalibration() });
+    await expect.element(row(/^Federal tax credits · No ceiling/)).toBeVisible();
+    await expect.element(row(/^State · \$100 million a year/)).toBeVisible();
+  });
+
+  it('switched off from today, the federal row reads switched off', async () => {
+    setup(policyWith({ baselineScale: [{ pool: 'federal', from: FUND_ASOF, scale: 0 }] }));
+    await expect.element(row(/^Federal tax credits · switched off/)).toBeVisible();
+    await expect.element(row(/^State · \$100 million a year/)).toBeVisible();
+  });
+
+  it('the City row and its sources count one-time money arriving in the year', async () => {
+    const cal = fundingCalibration();
+    const funding = cal.baselineFunding!;
+    cal.baselineFunding = {
+      ...funding,
+      pools: funding.pools.map((p) =>
+        p.id === 'city-tax'
+          ? {
+              ...p,
+              inflows: [
+                { kind: 'once', day: FUND_ASOF, dollars: 30_000_000 },
+                { kind: 'once', day: FUND_ASOF + 400, dollars: 9_000_000 }
+              ]
+            }
+          : p.id === 'city-gf'
+            ? {
+                ...p,
+                inflows: [
+                  {
+                    kind: 'yearly',
+                    from: FUND_ASOF,
+                    to: null,
+                    dollarsPerYear: LEGACY_UNCAPPED_DOLLARS
+                  }
+                ]
+              }
+            : p
+      )
+    };
+    setup(policyWith({}), { calibration: cal });
+    const city = row(/^City · \$30 million a year/);
+    await expect.element(city).toBeVisible();
+    await city.click();
+    await expect.element(page.getByText('city-tax: $30 million a year')).toBeVisible();
+    await expect.element(page.getByText('city-gf: No ceiling')).toBeVisible();
+  });
+
+  it('the open federal entry passes axe in light and dark', async () => {
+    setup();
+    await openChange();
+    await expect.element(amount()).toBeVisible();
+    const editor = document.querySelector('[data-funding-editor]')!;
+    expect(editor).not.toBeNull();
+    for (const s of ['light', 'dark'] as const) {
+      await scheme(s);
+      const res = await axe.run(editor, { runOnly: TAGS });
+      expect(res.violations.map((v) => v.id)).toEqual([]);
+    }
+  });
+});
+
 const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const addMoney = () => page.getByRole('button', { name: 'Add money', exact: true });
 const ownPool = () => page.getByRole('button', { name: 'Your own pool', exact: true });
@@ -302,7 +443,6 @@ const ownPoolOf = (id: string, kind: 'generalRevenue' | 'goBond' = 'generalReven
   kind,
   label: `Pool ${id}`,
   inflows: [{ kind: 'once' as const, day: JULY, dollars: 10_000_000 }],
-  uncapped: false,
   debt: kind === 'goBond' ? { rate: 0.06, termYears: 20 } : null,
   leverage: 1
 });
@@ -430,7 +570,7 @@ describe('FundingTab: adding money (4.6, 4.7)', () => {
     const pool = store.policy.funding.pools[0];
     expect(pool.id).toBe('u-pool-1');
     expect(pool.inflows).toEqual([
-      { kind: 'yearly', from: JULY, to: null, dollarsPerYear: 60_000_000 }
+      { kind: 'yearly', from: JULY, to: windowLastMonth(FUND_ASOF), dollarsPerYear: 60_000_000 }
     ]);
     expect(page.getByText(DRAFT_LINE).elements()).toHaveLength(0);
     const r = page.getByRole('button', { name: new RegExp(`^City general fund, ${YEAR} ·`) });
@@ -1023,7 +1163,9 @@ describe('FundingTab: programmes and market terms (4.8, 4.8a, 4.10)', () => {
     });
     const cal = fundingCalibration();
     const line = (day: number) =>
-      coverageShortLine(coverageSteps(policy.funding, cal.baselineFunding!, day, HORIZON)[0]);
+      coverageShortLine(
+        coverageSteps(policy.funding, cal.baselineFunding!, day, windowEnd(cal.asOf))[0]
+      );
     expect(line(JULY)).not.toBe(line(FUND_ASOF));
     setup(policy, { priceDay: JULY });
     await expect.element(page.getByText(line(JULY), { exact: true })).toBeVisible();
@@ -1091,7 +1233,7 @@ describe('FundingTab: programmes and market terms (4.8, 4.8a, 4.10)', () => {
   it('shows the coverage line for every only tag', async () => {
     const cal = fundingCalibration();
     const line = coverageShortLine(
-      coverageSteps(BOND_POLICY.funding, cal.baselineFunding!, FUND_ASOF, HORIZON)[0]
+      coverageSteps(BOND_POLICY.funding, cal.baselineFunding!, FUND_ASOF, windowEnd(FUND_ASOF))[0]
     );
     setup(BOND_POLICY, { only: { tag: 'fund', pool: 'u-pool-1' } });
     await expect.element(page.getByText(line, { exact: true })).toBeVisible();
@@ -1112,5 +1254,113 @@ describe('FundingTab: programmes and market terms (4.8, 4.8a, 4.10)', () => {
     expect(document.body.textContent).toContain(
       'Interest rate: 6% From Bond interest rate and term'
     );
+  });
+});
+
+describe('FundingTab: every date ends within the window', () => {
+  afterEach(async () => {
+    await scheme('light');
+  });
+
+  const LAST = windowLastMonth(FUND_ASOF);
+  const lastYear = new Date(LAST * 86_400_000).getUTCFullYear();
+  const lastMonth = new Date(LAST * 86_400_000).getUTCMonth() + 1;
+  const dayYearly = (to: number | null): SimPolicy =>
+    policyWith({
+      pools: [
+        {
+          ...ownPoolOf('u-pool-1'),
+          inflows: [{ kind: 'yearly', from: JULY, to, dollarsPerYear: 60_000_000 }]
+        }
+      ]
+    });
+  const untilMonth = () => page.getByRole('combobox', { name: /^Month\s?, Until, row 1/ });
+  const untilYear = () => page.getByRole('spinbutton', { name: /^Year\s?, Until, row 1/ });
+  const openPool = async (p: SimPolicy) => {
+    const r = setup(p, { only: { tag: 'fund', pool: 'u-pool-1' } });
+    await expect.element(page.getByRole('textbox', { name: 'Name' })).toBeVisible();
+    return r;
+  };
+
+  it('a yearly row has no Ends checkbox; a stored row with no end shows the last month', async () => {
+    expect(lastMonth).toBeLessThan(12);
+    await openPool(dayYearly(null));
+    expect(page.getByRole('checkbox', { name: /^Ends/ }).elements()).toHaveLength(0);
+    await expect.element(untilMonth()).toHaveValue(String(lastMonth));
+    await expect.element(untilYear()).toHaveValue(lastYear);
+  });
+
+  it('an Until year after the last year commits nothing and shows the range error', async () => {
+    const { store } = await openPool(dayYearly(null));
+    const before = store.policy;
+    await untilYear().fill(String(lastYear + 1));
+    await userEvent.keyboard('{Enter}');
+    expect(store.policy).toBe(before);
+    await expect.element(untilYear()).toHaveAttribute('aria-invalid', 'true');
+    expect(errorOf(untilYear().element())!.textContent?.trim()).toBe(dateRangeError(FUND_ASOF));
+  });
+
+  it('the month after the last month commits nothing; the last month itself commits', async () => {
+    const { store } = await openPool(dayYearly(null));
+    const before = store.policy;
+    await untilMonth().selectOptions(String(lastMonth + 1));
+    expect(store.policy).toBe(before);
+    expect(errorOf(untilMonth().element())!.textContent?.trim()).toBe(dateRangeError(FUND_ASOF));
+    await untilMonth().selectOptions(String(lastMonth));
+    expect(store.policy.funding.pools[0].inflows[0]).toMatchObject({ to: LAST });
+    expect(store.undoLabel).toMatch(/^Changed date: .*, Until /);
+  });
+
+  it('a row switched to Every year ends in the last month', async () => {
+    const { store } = setup(BOND_POLICY, { only: { tag: 'fund', pool: 'u-pool-1' } });
+    await page.getByRole('radio', { name: /^Every year\s?, row 1/ }).click();
+    expect(store.policy.funding.pools[0].inflows[0]).toMatchObject({
+      kind: 'yearly',
+      to: LAST
+    });
+    await expect.element(untilYear()).toHaveValue(lastYear);
+  });
+
+  it("an own pool's completed yearly row is stored with the last month as its end", async () => {
+    const { store } = setup();
+    await addMoney().click();
+    await ownPool().click();
+    await amountInput().fill('60');
+    await userEvent.keyboard('{Enter}');
+    expect(store.policy.funding.pools[0].inflows[0]).toMatchObject({ to: LAST });
+  });
+
+  it("a programme's Until has no Ends checkbox and shows the last month for no end", async () => {
+    setup(BOND_POLICY);
+    await page.getByRole('button', { name: /^City bond, 2028 ·/ }).click();
+    (document.querySelector('[data-prog-row="u-prog-1"] button') as HTMLElement).click();
+    await expect
+      .element(page.getByRole('combobox', { name: /^Month\s?, Until/ }))
+      .toHaveValue(String(lastMonth));
+    await expect
+      .element(page.getByRole('spinbutton', { name: /^Year\s?, Until/ }))
+      .toHaveValue(lastYear);
+    expect(page.getByRole('checkbox', { name: /^Ends/ }).elements()).toHaveLength(0);
+  });
+
+  it("the group editor's dated change year allows up to the last month's year", async () => {
+    setup();
+    await row(/^City ·/).click();
+    await page.getByRole('button', { name: 'Change from a date', exact: true }).click();
+    await expect
+      .element(page.getByRole('spinbutton', { name: /^Year/ }))
+      .toHaveAttribute('max', String(lastYear));
+  });
+
+  it('the Until fields pass axe in light and dark', async () => {
+    await openPool(dayYearly(null));
+    await expect.element(untilYear()).toBeVisible();
+    const editor = document.querySelector('[data-funding-editor]')!;
+    expect(editor).not.toBeNull();
+    for (const s of ['light', 'dark'] as const) {
+      await scheme(s);
+      const res = await axe.run(editor, { runOnly: TAGS });
+      expect(res.violations.map((v) => v.id)).toEqual([]);
+    }
   });
 });

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { chunkOf } from './chunk';
 import { chunksBefore, viewOf } from './view';
-import type { MonthRow, ScoreStatics, SeriesChunk, WorldSeries } from './types';
+import type { MonthRow, MoneyRow, ScoreStatics, SeriesChunk, WorldSeries } from './types';
 
 function row(completedNet: number, entitledNew = 0, completedNetNew = 0): MonthRow {
   return {
@@ -63,6 +63,64 @@ describe('viewOf', () => {
     expect(v.baseline).toEqual({ completedNet: 1000, since: 'x', provenance: 'p' });
     expect(v.tierTargets).toBeNull();
     expect(v.money).toBeNull();
+  });
+
+  describe('money: when pools closed', () => {
+    const D = 4242;
+    const entry = (
+      id: string,
+      closed?: number | null,
+      shut?: boolean
+    ): MoneyRow['pools'][number] => ({
+      id,
+      label: id,
+      kind: 'generalRevenue',
+      received: 0,
+      committed: 0,
+      out: 0,
+      spent: 0,
+      repaid: 0,
+      lost: 0,
+      lostCredit: 0,
+      ...(closed === undefined ? {} : { closed }),
+      ...(shut === undefined ? {} : { shut })
+    });
+    const moneyRow = (pools: MoneyRow['pools']): MoneyRow => ({
+      pools,
+      fundedHomes: 0,
+      displacedHomes: 0,
+      displacedHomesCompleted: 0,
+      publicSpent: 0
+    });
+    // Row 0 is built without closed or shut; pool a is closed from month 1.
+    const rows: MoneyRow[] = [
+      moneyRow([entry('a'), entry('b')]),
+      moneyRow([entry('a', D, true), entry('b', null, false)]),
+      moneyRow([entry('a', D, true), entry('b', null, false)])
+    ];
+    const moneyChunk = (from: number, money: MoneyRow[]): SeriesChunk => ({
+      ...c(from, from + money.length - 1),
+      money
+    });
+    const moneyStatics = { ...statics, limits: [], debts: [] } as unknown as ScoreStatics;
+
+    it("MoneyView.closed is the last row's value for every pool", () => {
+      const m = viewOf([moneyChunk(0, rows)], moneyStatics).money!;
+      expect(m.closed).toEqual({ a: D, b: null });
+      expect(viewOf(chunksBefore([moneyChunk(0, rows)], 1), moneyStatics).money!.closed).toEqual({
+        a: null,
+        b: null
+      });
+    });
+
+    it('MoneyView.shut has one entry per filled month, false for a row without shut', () => {
+      const m = viewOf([moneyChunk(0, rows)], moneyStatics).money!;
+      expect(m.shut).toEqual({ a: [false, true, true], b: [false, false, false] });
+      expect(viewOf(chunksBefore([moneyChunk(0, rows)], 2), moneyStatics).money!.shut).toEqual({
+        a: [false, true],
+        b: [false, false]
+      });
+    });
   });
 
   it('empty view has filledThrough -1 and empty series', () => {
