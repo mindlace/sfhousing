@@ -1,5 +1,5 @@
 // Target size (WCAG 2.2 AA, 2.5.8; docs/dev/accessibility.md): at 375 px on the mobile project
-// (touch, coarse pointer), every visible interactive element on `/`, `/sim`, `/lesscars` and
+// (touch, coarse pointer), every visible interactive element on `/`, `/sim` and
 // `/about` is at least 24 by 24 CSS px, at rest and with the page's sheets, menus, panels and
 // dialogs open (About over `/sim`, the assumptions open on `/about`). One size for
 // every pointer: nothing here needs 44 px. The exemptions are listed below with their reasons.
@@ -7,7 +7,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { addPolicy, waitFilled } from './helpers/run';
 import { gotoEditor, openHeaderMenu } from './helpers/sharing';
 
-type W = Window & { __sfhFzp?: { phase?: string }; __sfhLessCars?: { phase?: string } };
+type W = Window & { __sfhFzp?: { phase?: string } };
 
 /** What counts as a target. */
 const INTERACTIVE = [
@@ -501,16 +501,5 @@ test.describe('targets at 375 px', () => {
     // The data checks have loaded: the whole body is there.
     await expect(dialog.locator('[id="src-quality"] tbody tr').first()).toBeVisible();
     await expectTargets(page, '/sim About open', 20);
-  });
-
-  test('/lesscars at rest', async ({ page }) => {
-    await page.goto('/lesscars');
-    await page.waitForFunction(() => (window as W).__sfhLessCars?.phase === 'ready');
-    await page.waitForFunction(
-      () =>
-        document.querySelector('[data-testid="map-root"]')?.getAttribute('data-state') === 'ready'
-    );
-    await expect(page.getByTestId('map-root')).toHaveAttribute('data-state', 'ready');
-    await expectTargets(page, '/lesscars at rest', 8);
   });
 });

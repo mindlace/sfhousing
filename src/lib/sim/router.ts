@@ -1,8 +1,5 @@
-// The worker router (spec §4.1): the scenario host beside the unchanged editor host, behind the
-// same Worker, plus the /lesscars playback host (lesscars Plan 2 Task 4). Worker-bundle module:
-// DOM-free and $app-free.
-import type { PlaybackHostRequest } from './lesscars/playback-host';
-import type { PlaybackResponse } from './lesscars/types';
+// The worker router (spec §4.1): the scenario host beside the unchanged editor host and the
+// timeline host, behind the same Worker. Worker-bundle module: DOM-free and $app-free.
 import type { SimRequest, SimResponse } from './protocol';
 import type { ScenarioRequest, ScenarioResponse, WorkerRequest } from './scenario/types';
 import type {
@@ -11,50 +8,43 @@ import type {
   TimelineRequest
 } from './timeline-protocol';
 
+type WorkerMode = 'editor' | 'scenario' | 'timeline';
+
 export interface RouterDeps {
   editor: { handle(r: SimRequest): void; dispose(): void };
   /**
-   * Called on the first `initScenario` (or a `reroll` or `setLevers` outside playback mode that
-   * arrives before one), and again on the next one after an `initPlayback` disposed it.
+   * Called on the first `initScenario` (or a `reroll` or `setLevers` outside timeline mode that
+   * arrives before one), and again on the next one after an `init` or `openTimeline` disposed it.
    */
   createScenario: () => { handle(r: ScenarioRequest): void; dispose(): void };
-  /** Called on the first `initPlayback`, and again after `init` or `initScenario` disposed it. */
-  createPlayback: () => { handle(r: PlaybackHostRequest): void; dispose(): void };
   /**
    * Called on the first `openTimeline` (timeline mode), and again on the next one after an
-   * `init`, `initScenario` or `initPlayback` disposed it.
+   * `init` or `initScenario` disposed it.
    */
   createTimeline: () => { handle(r: TimelineHostRequest): void; dispose(): void };
   /**
    * The router's own answers: brush, outline, preview and lid requests outside scenario mode
-   * (`no-session`), and the requests playback mode does not serve (a null summary or card,
-   * `bad-request`), and the editor's `heightLots` outside editor mode (`result: null`).
+   * (`no-session`), `bad-request` errors, and the editor's `heightLots` outside editor mode
+   * (`result: null`).
    */
-  post(msg: ScenarioResponse | PlaybackResponse | SimResponse | TimelineHostResponse): void;
+  post(msg: ScenarioResponse | SimResponse | TimelineHostResponse): void;
 }
 
 export function createWorkerRouter(deps: RouterDeps): {
   handle(req: WorkerRequest | TimelineRequest): void;
 } {
   type ScenarioHandle = ReturnType<RouterDeps['createScenario']>;
-  type PlaybackHandle = ReturnType<RouterDeps['createPlayback']>;
   type TimelineHandle = ReturnType<RouterDeps['createTimeline']>;
   let timeline: TimelineHandle | null = null;
   let scenario: ScenarioHandle | null = null;
-  let playback: PlaybackHandle | null = null;
-  // Which host received the latest `init` / `initScenario` / `initPlayback`; the editor before any.
-  let mode: 'editor' | 'scenario' | 'playback' | 'timeline' = 'editor';
+  // Which host received the latest `init` / `initScenario` / `openTimeline`; the editor before any.
+  let mode: WorkerMode = 'editor';
 
   const scenarioHost = (): ScenarioHandle => (scenario ??= deps.createScenario());
-  const playbackHost = (): PlaybackHandle => (playback ??= deps.createPlayback());
   const timelineHost = (): TimelineHandle => (timeline ??= deps.createTimeline());
   const endTimeline = () => {
     timeline?.dispose();
     timeline = null;
-  };
-  const endPlayback = () => {
-    playback?.dispose();
-    playback = null;
   };
 
   return {
@@ -63,7 +53,6 @@ export function createWorkerRouter(deps: RouterDeps): {
         case 'init':
           mode = 'editor';
           scenario?.dispose();
-          endPlayback();
           endTimeline();
           deps.editor.handle(req);
           return;
@@ -82,17 +71,8 @@ export function createWorkerRouter(deps: RouterDeps): {
         case 'initScenario':
           mode = 'scenario';
           deps.editor.dispose();
-          endPlayback();
           endTimeline();
           scenarioHost().handle(req);
-          return;
-        case 'initPlayback':
-          mode = 'playback';
-          deps.editor.dispose();
-          scenario?.dispose();
-          scenario = null;
-          endTimeline();
-          playbackHost().handle(req);
           return;
         case 'openTimeline':
           // One dataset in memory: every other host goes.
@@ -100,7 +80,6 @@ export function createWorkerRouter(deps: RouterDeps): {
           deps.editor.dispose();
           scenario?.dispose();
           scenario = null;
-          endPlayback();
           timelineHost().handle(req);
           return;
         case 'setPolicy':
@@ -114,14 +93,10 @@ export function createWorkerRouter(deps: RouterDeps): {
         case 'resyncMap':
           if (mode === 'timeline') timelineHost().handle(req);
           return;
-        case 'playbackCard':
-          if (mode === 'playback') playbackHost().handle(req);
-          else deps.post({ type: 'playbackCard', reqId: req.reqId, card: null });
-          return;
         case 'reroll':
         case 'setLevers':
-          // Playback mode has no scenario session: answered here, no scenario host is created.
-          if (mode === 'playback' || mode === 'timeline') {
+          // Timeline mode has no scenario session: answered here, no scenario host is created.
+          if (mode === 'timeline') {
             const message = `${req.type} needs a /sim scenario session`;
             deps.post({ type: 'error', rev: req.rev, code: 'bad-request', message });
           }
@@ -131,14 +106,11 @@ export function createWorkerRouter(deps: RouterDeps): {
         case 'prefetch':
         case 'retryChunks':
           if (mode === 'scenario') scenarioHost().handle(req);
-          else if (mode === 'playback') playbackHost().handle(req);
           else if (mode === 'timeline') timelineHost().handle(req);
           else deps.editor.handle(req);
           return;
         case 'parcelSummary':
-          if (mode === 'playback') {
-            deps.post({ type: 'parcelSummary', reqId: req.reqId, summary: null });
-          } else if (mode === 'timeline') timelineHost().handle(req as TimelineHostRequest);
+          if (mode === 'timeline') timelineHost().handle(req as TimelineHostRequest);
           // `req` may be the editor's shape (no `day`); a scenario client always sends the full one.
           else if (mode === 'scenario') scenarioHost().handle(req as ScenarioRequest);
           // The editor's request shape has no `day` or `projectId`.

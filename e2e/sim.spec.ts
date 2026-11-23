@@ -1,4 +1,4 @@
-// /sim e2e on the timeline (timeline-ui): the /fzp redirect, the header score and the phone Menu,
+// /sim e2e on the timeline (timeline-ui): the header score and the phone Menu,
 // Details and the editor in the inspector, a transit rule, a painted area and its undo, selecting
 // on the map, a category protection, permitting presets and edits, the map overlays, the header
 // layout and the live paint preview, with the accessibility checks. Runs against the VITE_E2E
@@ -232,15 +232,7 @@ async function expectNoHorizontalScroll(page: Page): Promise<void> {
   expect(scroll, 'the page scrolls sideways').toBeLessThanOrEqual(client);
 }
 
-// ---- the redirect and the shell -----------------------------------------------------------------
-
-test('/fzp lands on /sim and the forecast fills', async ({ page }) => {
-  await page.goto('/fzp');
-  await expect(page).toHaveURL(/\/sim$/);
-  await waitReady(page);
-  expect(await fzp(page, 'phase')).toBe('ready');
-  expect(await fzp(page, 'filledThrough')).toBe(await fzp(page, 'lastIndex'));
-});
+// ---- the shell ----------------------------------------------------------------------------------
 
 test('/sim opens on the Family Zoning Plan; Activity at rest, the header score shows Details', async ({
   isMobile,
