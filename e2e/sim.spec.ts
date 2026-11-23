@@ -37,7 +37,7 @@ import {
   openHeaderMenu,
   projectToPage,
   touchDrag,
-  waitTimelineDrawn,
+  tapProject,
   type Win
 } from './helpers/sharing';
 
@@ -773,13 +773,10 @@ test('a project card names the rule that allowed its lot', async ({ isMobile, pa
   await addTallRule(page);
   await scrollToTop(page);
   await jumpAndIdle(page, { ...FRAME, center: PROJECT_LOT });
-  // The part drawn first: a miss selects the lot's plan (on a phone its sheet moves the map away).
-  // The frame shows one chunk, 50_25.
-  await waitTimelineDrawn(page, 1);
+  // Tapped once the map would pick the project there: a miss selects the lot's plan (on a phone its
+  // sheet moves the map away).
   const card = page.getByRole('region', { name: '100 Fixture St', exact: true });
-  const [x, y] = await projectToPage(page, PROJECT_LOT);
-  if (isMobile) await page.touchscreen.tap(x, y);
-  else await page.mouse.click(x, y);
+  await tapProject(page, isMobile, 'PRJ:2019-000001PRJ', PROJECT_LOT);
   await expect(card).toBeVisible();
   const line = card.getByTestId('card-allowed-by');
   await expect(line).toHaveText(/^Allowed by: Transit rule/);

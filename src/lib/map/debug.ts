@@ -2,7 +2,7 @@
 // constant-false branch that Vite dead-code-eliminates.
 import type { Map as MapLibreMap } from 'maplibre-gl';
 import type { ControllerSnapshot, GeneratedController } from './generated-controller';
-import type { TimelineController } from './timeline-controller';
+import type { TimelineController, TimelinePartLookup } from './timeline-controller';
 import type { TimelineLookups, TimelineSnapshot } from './timelapse/types';
 import type { BarMode, GeneratedUpdate, SimMapHandle, Theme, TimelineUpdate } from './types';
 import type { Day } from '$lib/timelapse/time';
@@ -72,6 +72,13 @@ export interface SfhMapDebug {
   setBarMode(mode: BarMode): void;
   /** The TimelineController's snapshot; null outside timeline mode or while its module loads. */
   timelineSnapshot(): TimelineSnapshot | null;
+  /**
+   * The timeline part a tap or click at canvas point (`x`, `y`) would pick now, through the same
+   * pick as the pointer handlers; null for anything else (no part drawn there yet, a transit stop,
+   * an existing building). e2e gates a tap on it: a miss is not idempotent on /sim (it selects the
+   * lot's plan, whose sheet on a phone covers the map).
+   */
+  timelinePartAt(x: number, y: number): TimelinePartLookup | null;
   /** The demolish pump's largest feature-state call count in one frame; 0 without a timeline. */
   readonly demolishMaxFrameOps: number;
   /** Generated updates SimMap holds for a GeneratedController that does not exist yet. */
@@ -92,7 +99,8 @@ export function installDebug(
     pendingGenerated: number;
     theme: Theme;
   },
-  timeline: TimelineHandleFns
+  timeline: TimelineHandleFns,
+  partAt: (x: number, y: number) => TimelinePartLookup | null
 ): () => void {
   if (import.meta.env.VITE_E2E !== '1') return () => {};
   const hook: SfhMapDebug = {
@@ -105,6 +113,7 @@ export function installDebug(
     setHalos: (o) => timeline.setHalos(o),
     setBarMode: (mode) => timeline.setBarMode(mode),
     timelineSnapshot: () => get().timeline?.debugSnapshot() ?? null,
+    timelinePartAt: (x, y) => partAt(x, y),
     get demolishMaxFrameOps() {
       return get().timeline?.demolishMaxFrameOps ?? 0;
     },

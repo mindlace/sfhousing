@@ -20,7 +20,8 @@ import {
   jumpAndIdle,
   openHeaderMenu,
   projectToPage,
-  waitTimelineDrawn,
+  tapProject,
+  waitProjectAt,
   type LngLat,
   type Win
 } from './helpers/sharing';
@@ -148,31 +149,15 @@ async function frameOn(page: Page, lngLat: LngLat, zoom = FRAME.zoom): Promise<v
 }
 
 /**
- * Picks the part at `lngLat` until the card named `name` shows. The parts are drawn first (every
- * caller frames the real project's lot, in chunk 50_25): a pick before that misses, and a miss
- * selects the lot's plan, whose sheet on a phone moves the map away.
+ * Opens the real project's card by picking its part at `lngLat`, once the map would pick it there
+ * (a miss selects the lot's plan, whose sheet on a phone moves the map away). Off the map's centre
+ * a taller neighbour nearer the centre can lean outwards over the label point: the pick then goes
+ * a few pixels further out, past its roof.
  */
-async function openCardAt(
-  page: Page,
-  isMobile: boolean,
-  lngLat: LngLat,
-  name: string
-): Promise<Locator> {
-  const c = card(page, name);
-  await waitTimelineDrawn(page, 1);
-  // Off the map's centre a taller neighbour nearer the centre can lean outwards over the label
-  // point: each try nudges the pick a few pixels further out, past its roof.
-  let tries = 0;
-  await expect(async () => {
-    const [x, y] = await projectToPage(page, lngLat);
-    const centre = await page.evaluate(() => {
-      const r = (window as Win).__sfhMap!.map!.getCanvas().getBoundingClientRect();
-      return r.left + r.width / 2;
-    });
-    const nudge = Math.sign(x - centre) * 4 * (tries++ % 4);
-    await pick(page, isMobile, [x + nudge, y]);
-    await expect(c).toBeVisible({ timeout: 1_500 });
-  }).toPass();
+async function openCardAt(page: Page, isMobile: boolean, lngLat: LngLat): Promise<Locator> {
+  await tapProject(page, isMobile, REAL.id, lngLat, { nudge: true });
+  const c = card(page, REAL_LABEL);
+  await expect(c).toBeVisible();
   return c;
 }
 
@@ -180,7 +165,7 @@ async function openCardAt(
 async function openRealCard(page: Page, isMobile: boolean): Promise<Locator> {
   const at = LABELS.get(ownParcel(REAL))!;
   await frameOn(page, at);
-  return openCardAt(page, isMobile, at, REAL_LABEL);
+  return openCardAt(page, isMobile, at);
 }
 
 /** A page point on the map with no part under it, north of the fixture's parcel row. */
@@ -334,7 +319,7 @@ for (const [where, fx] of [
     const at = LABELS.get(ownParcel(REAL))!;
     await placeLot(page, at, fx, 0.5);
     const [x, y] = await projectToPage(page, at);
-    const c = await openCardAt(page, isMobile, at, REAL_LABEL);
+    const c = await openCardAt(page, isMobile, at);
     const box = (await c.boundingBox())!;
     const map = (await page.getByTestId('tl-map').boundingBox())!;
     // Right of the click by about a gap, or left of it when the right side would overflow.
@@ -364,7 +349,7 @@ for (const [where, fx, fy] of [
     await gotoFzp(page);
     const at = LABELS.get(ownParcel(REAL))!;
     await placeLot(page, at, fx, fy);
-    const c = await openCardAt(page, isMobile, at, REAL_LABEL);
+    const c = await openCardAt(page, isMobile, at);
     const box = (await c.boundingBox())!;
     const attribution = page.locator('.maplibregl-ctrl-bottom-right').first();
     const zoom = page.locator('.maplibregl-ctrl-bottom-left').first();
@@ -383,7 +368,7 @@ test('from md the card follows its building when the map pans', async ({ isMobil
   await gotoFzp(page);
   const at = LABELS.get(ownParcel(REAL))!;
   await placeLot(page, at, 0.45, 0.4);
-  const c = await openCardAt(page, isMobile, at, REAL_LABEL);
+  const c = await openCardAt(page, isMobile, at);
   const before = (await c.boundingBox())!;
   const [x0] = await projectToPage(page, at);
   await page.evaluate(
@@ -406,7 +391,7 @@ test('from md the card clears a showing notice pill', async ({ isMobile, page })
   const at = LABELS.get(ownParcel(REAL))!;
   // The building near the map's top centre, where the pill stack overlays the map.
   await placeLot(page, at, 0.5, 0.06);
-  await openCardAt(page, isMobile, at, REAL_LABEL);
+  await openCardAt(page, isMobile, at);
 
   // A real crash shows the "Part of the simulation stopped" pill.
   await crashWorker(page);
@@ -444,30 +429,17 @@ test('a phase of a multi-phase project reads "Phase n of m" once the playhead re
   const phase = new RegExp(`^Phase (\\d+) of (\\d+), ${label}$`);
   const shipyard = card(page, label);
   const phaseLine = shipyard.getByText(phase);
-  // `isVisible` does not wait; this does, and says whether the line appeared.
-  const appears = (loc: Locator): Promise<boolean> =>
-    expect(loc)
-      .toBeVisible({ timeout: 1_000 })
-      .then(
-        () => true,
-        () => false
-      );
-  // From the window's end back a year at a time (PageDown), until a phase is pickable: every phase
-  // that will start has started by then.
+  // At the window's end every phase that will start has started: pick the first phase lot where
+  // the map draws one (a pick on a lot with no part is a miss, which selects the lot's plan).
   await slider(page).focus();
   await page.keyboard.press('End');
-  const asOf = await fzp(page, 'asOf');
-  let found = false;
-  for (let step = 0; step <= 42 && !found; step++) {
-    for (const at of points) {
-      await pick(page, isMobile, await projectToPage(page, at));
-      found = await appears(phaseLine);
-      if (found) break;
-    }
-    if (found || (await fzp(page, 'day')) <= asOf) break;
-    await slider(page).press('PageDown');
-  }
-  expect(found, `no phase of ${label} was pickable in the window`).toBe(true);
+  // The map's clock at the playhead's new day: until then the parts drawn are today's.
+  await page.waitForFunction(() => {
+    const f = (window as FzpWin).__sfhFzp!;
+    return f.day > f.asOf && (window as Win).__sfhMap?.timelineSnapshot()?.day === f.day;
+  });
+  await pick(page, isMobile, await waitProjectAt(page, SHIPYARD.id, points));
+  await expect(phaseLine).toBeVisible();
 
   // "Phase n of m" with 1 <= n <= m, and that phase has filed its building permit by the playhead's
   // day: the "This phase" timeline carries a "Building permit filed" row dated on or before it.
@@ -520,7 +492,7 @@ test('clicking empty map closes the card; moving the pointer off the part does n
   await gotoFzp(page);
   const at = LABELS.get(ownParcel(REAL))!;
   await frameOn(page, at);
-  const c = await openCardAt(page, isMobile, at, REAL_LABEL);
+  const c = await openCardAt(page, isMobile, at);
 
   if (!isMobile) {
     await page.mouse.move(...(await emptyPoint(page, at)), { steps: 5 });

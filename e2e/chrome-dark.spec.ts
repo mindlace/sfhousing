@@ -26,12 +26,11 @@ import {
   openResults,
   ops,
   paintOnce,
-  projectToPage,
   seedPlanRow,
   SIM_KEY,
   smallText,
   waitForMap,
-  waitTimelineDrawn,
+  tapProject,
   type LngLat
 } from './helpers/sharing';
 
@@ -428,16 +427,13 @@ test('an open project card has no axe violations in dark', async ({ isMobile, pa
   const i = chunk.id.indexOf(own);
   const at: LngLat = [chunk.label[2 * i] / 1e7, chunk.label[2 * i + 1] / 1e7];
 
-  // With Move a tap on a project opens its card (rule 19). The tap waits for the part to be
-  // drawn: a miss selects the lot's plan, and on a phone its editor sheet moves the map away.
-  // The frame shows one chunk, 50_25.
+  // With Move a tap on a project opens its card (rule 19). The tap waits until the map would pick
+  // the project there: a miss selects the lot's plan, and on a phone its editor sheet moves the
+  // map away.
   await gotoSim(page);
   await jumpAndIdle(page, { ...FRAME, center: at });
-  await waitTimelineDrawn(page, 1);
   const card = page.getByRole('region', { name: real.label ?? real.id, exact: true });
-  const [x, y] = await projectToPage(page, at);
-  if (isMobile) await page.touchscreen.tap(x, y);
-  else await page.mouse.click(x, y);
+  await tapProject(page, isMobile, real.id, at);
   await expect(card).toBeVisible();
   await expectNoA11yViolations(page, { include: ['section[aria-labelledby]'] });
   await expect(card).toHaveCSS('background-color', 'rgb(28, 29, 31)');

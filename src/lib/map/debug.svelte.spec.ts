@@ -22,7 +22,8 @@ describe('installDebug loadSyntheticLimits', () => {
           setHalos: vi.fn(),
           setBarMode: vi.fn(),
           setOverlayLayers
-        }
+        },
+        () => null
       );
       try {
         const counts = await window.__sfhMap!.loadSyntheticLimits(1);
@@ -52,7 +53,8 @@ describe('installDebug timeline handle functions', () => {
     };
     const uninstall = installDebug(
       () => ({ map: null, controller: null, timeline: null, pendingGenerated: 0, theme: 'light' }),
-      fns
+      fns,
+      () => null
     );
     try {
       const hook = window.__sfhMap!;
@@ -65,6 +67,45 @@ describe('installDebug timeline handle functions', () => {
       hook.setBarMode('street');
       expect(fns.setBarMode.mock.calls).toEqual([['far'], ['street']]);
       expect(hook.timelineSnapshot()).toBeNull();
+    } finally {
+      uninstall();
+    }
+  });
+});
+
+describe('installDebug timelinePartAt', () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("answers with SimMap's pick at the canvas point", () => {
+    vi.stubEnv('VITE_E2E', '1');
+    const part = {
+      projectId: 'PRJ:1',
+      parcelId: '3512011',
+      typology: 'midrise',
+      stories: 6,
+      units: 24,
+      existingUnits: 3
+    } as const;
+    const partAt = vi.fn((x: number) => (x === 10 ? part : null));
+    const uninstall = installDebug(
+      () => ({ map: null, controller: null, timeline: null, pendingGenerated: 0, theme: 'light' }),
+      {
+        applyTimeline: vi.fn(),
+        setTime: vi.fn(),
+        setTimelineLookups: vi.fn(),
+        setHalos: vi.fn(),
+        setBarMode: vi.fn(),
+        setOverlayLayers: vi.fn()
+      },
+      partAt
+    );
+    try {
+      expect(window.__sfhMap!.timelinePartAt(10, 20)).toEqual(part);
+      expect(window.__sfhMap!.timelinePartAt(11, 20)).toBeNull();
+      expect(partAt.mock.calls).toEqual([
+        [10, 20],
+        [11, 20]
+      ]);
     } finally {
       uninstall();
     }
