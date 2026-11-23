@@ -1,6 +1,6 @@
 # Superconductor ledger — design: docs/superpowers/design/2026-11-22-1216-incremental-game.html
 Package worktree: /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game
-Build graph: docs/superpowers/design/2026-11-22-1216-incremental-game-build-graph.md @ 00bede63
+Build graph: docs/superpowers/design/2026-11-22-1216-incremental-game-build-graph.md @ 2a794bfe
 SDD scripts: /Users/mindlace/.claude/plugins/cache/claude-plugins-official/superpowers/7.0.2/skills/subagent-driven-development/scripts
 HTML scripts: /Users/mindlace/.claude/plugins/cache/super/superpowers-html/0.1.0/bin
 Project commands: npm, npx, lsof, ls, cat, grep, head, tail, wc, pwd, uptime, mkdir (mail-setup only, also: aws); operators run with --permission-mode dontAsk
@@ -227,6 +227,7 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - game-sim: incremental-game-game-sim — status: admitted (branch incremental-game-game-sim, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-game-sim, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus — rationale: largest consumer of game rows on /sim, needs: G1–G5 built from game-core (not merged yet); F2 from finite-funding (not merged yet); M1 signature, X1 from contracts (not merged yet), produces: none)
 - game-shell: incremental-game-game-shell — status: admitted (relaunched 23:30 as admitted from its plan, tasks 1 to 6 and 8; branch incremental-game-game-shell brought up to f435a2da, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-game-shell, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus, needs: G1–G5 built, X1, L1 (all merged), produces: none)
 - finite-funding: incremental-game-finite-funding — status: complete (admit message sent 23:30 at f435a2da; branch incremental-game-finite-funding, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-finite-funding, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus, needs: L1, M1 stub (merged), produces: F1, F2)
+- game-shell: incremental-game-game-shell — status: complete (relaunched 23:30 as admitted from its plan, tasks 1 to 6 and 8; branch incremental-game-game-shell brought up to f435a2da, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-game-shell, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus, needs: G1–G5 built, X1, L1 (all merged), produces: none)
 
 ## Supervision
 - status asked remove-lesscars
@@ -494,6 +495,11 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - build graph for game-sim-2 @ 00bede63
 - relayed game-sim-2 to incremental-game-game-sim
 - routed game-sim-2
+- 2026-11-23 pool-closing-2 from pool-closing [defect-class: write-set-gap]: with closing on by default, six existing funding specs fail (rule 16 twice, policy random finances, pools.spec inflows guard, retained caches, apply kinds); may the unit switch them to poolClosing:false or rewrite them. Fork as soon as the suite on game-shell's fix reports (critical path) → rulings/pool-closing-2.md (commit a3551571, changes contract: no)
+- routing pool-closing-2: rulings/pool-closing-2.md, commit a3551571
+- build graph for pool-closing-2 @ 2a794bfe
+- relayed pool-closing-2 to incremental-game-pool-closing (told to read the package worktree and not merge the integration branch while 32454cbe is under test)
+- routed pool-closing-2
 
 ## Forks
 - fork checkpoint-2 started 2026-11-22T16:20
@@ -682,6 +688,11 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - fork graph-game-sim-2 exited [0]: output
 - fork checkpoint-15 started 2026-11-23T02:07
 - fork checkpoint-15 exited [0]: output
+- fork rule-pool-closing-2 started 2026-11-23T02:11
+- fork rule-pool-closing-2 exited [0]: output
+- fork graph-pool-closing-2 started 2026-11-23T02:12
+- fork graph-pool-closing-2 exited [0]: output
+- fork review-game-shell-667900a4 started 2026-11-23T02:28
 
 ## Frame-defect tally
 - owner-ruling-drift: 2 — instances: conductor-1 (gate-1, 2026-11-22); conductor-8 (gate-7, 2026-11-22)
@@ -710,6 +721,7 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - spec-code-mismatch: 3 — adds finite-funding-2 (2026-11-23); tripwire: re-checkpoint when its ruling is routed
 - flaky-e2e: 2 — instances: conductor-12 (game-helpers.spec.ts:146, refiled here as the same class); conductor-14 (2026-11-23)
 - spec-silence: 7 — adds game-sim-2 (2026-11-23)
+- write-set-gap: 6 — adds pool-closing-2 (2026-11-23)
 
 ## Integration
 - 17:50 merge of contracts @ f6ee1de3 made (merge commit 5453b107), full suite running in the package worktree (agent; logs in the session scratchpad `merge-contracts/`); not ledgered as merged until it passes. No amending fork starts until then; queued questions in order: remove-multiuser-1, game-core-1, game-core-2, game-core-3, game-sim-1, pool-closing-1, conductor-10, conductor-11. Then merge remove-multiuser's row I1 @ cbd11881.
@@ -779,6 +791,9 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - 02:10 merge of finite-funding complete @ 5fd73c92 (docs and test titles after df556eab) made onto 953b8859 (merge commit 8fa1cb6d), suite running (agent; scratchpad `merge-finite-funding-final/`); not merged until it passes; on failure reset to 953b8859 with ledger.md copied out and back. Operators told not to merge the integration branch meanwhile: game-shell. pool-closing and game-sim merged at 924abcbd before launch.
 - merged finite-funding @ 5fd73c92 into superconductor/incremental-game (complete), tests pass (check 0 errors; lint 0 errors; unit 9059 passed; pipeline 2284 passed; e2e 760 passed, 0 failed, 2 flaky under load: e2e/sim.spec.ts:729 and :771, `locator.click` 30 s timeouts, both passed on retry; the merge touched one doc and three test titles), band low. Flake watch list for closing's signoff (needs a quiet machine): e2e/perf/loaded-500.perf.spec.ts:8, e2e/sim.spec.ts:729, :771.
 - merge queue: game-shell complete @ 667900a4 (ruling conductor-14: readiness waits in share-states, game-shell and share-roundtrip e2e cases; its npm test green, changed cases 30/30 and share-roundtrip 10/10 at repeat-each=5 retries off), after the game-sim-2 fork exits
+- 02:50 merge of game-shell complete @ 667900a4 (ruling conductor-14, e2e specs only) made onto 431914a5 (merge commit 32454cbe), suite running (agent; scratchpad `merge-game-shell-fix/`); not merged until it passes; on failure reset to 431914a5 with ledger.md copied out and back. game-sim was told to merge at 431914a5 and not again until told.
+- 03:05 pool-closing-2 blocks pool-closing's Task 3 and with it row F3 (the longest chain), so its fork runs now, while the suite on game-shell's e2e-only merge 32454cbe is still running. If that suite fails, do NOT reset (the ruling's commit sits on top): take the merge out with `git -C <package worktree> revert -m 1 --no-edit 32454cbe`, ledger it, and send game-shell the fix round.
+- merged game-shell @ 667900a4 into superconductor/incremental-game (complete; ruling conductor-14, e2e readiness waits), tests pass (check 0 errors; lint 0 errors; unit 9059 passed; pipeline 2284 passed; e2e 762 passed, 0 failed, 0 flaky; the three changed specs 81 passed at repeat-each=3, retries off), band low
 
 ## Cost
 - remove-lesscars: admitted 2026-11-22T16:31 seven_day 44% | session d889ec5c-3342-4a77-99f8-993f1115a679 | finished 2026-11-22T21:14 seven_day 60%
