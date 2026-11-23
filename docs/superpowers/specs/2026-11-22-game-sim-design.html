@@ -689,7 +689,7 @@ export const GO_TO_PAINT = 'Go to Paint';</code></pre>
     <p>From the design doc's write-sets table, after <code>finite-funding</code> and <code>game-core</code>:</p>
     <ul>
       <li><code>src/lib/sim-page/{SimRoute,SimPage}.svelte</code></li>
-      <li><code>src/lib/timeline/**</code> except <code>pool-level.ts</code> and <code>money-copy.ts</code></li>
+      <li><code>src/lib/timeline/**</code> except <code>pool-level.ts</code>, <code>money-copy.ts</code> and, in <code>Inspector.svelte.spec.ts</code>'s case "a given measure at level 5", the assertion on the What section's text (<code>funding-measures</code>')</li>
       <li><code>src/routes/sim/**</code></li>
       <li>the <code>/sim</code> e2e specs it adds</li>
       <li><code>docs/dev/{sim-page,timeline-ui,policy-timeline}.md</code></li>
@@ -774,7 +774,7 @@ export const GO_TO_PAINT = 'Go to Paint';</code></pre>
       <ul>
         <li><code>Timeline.svelte.spec.ts</code>: at level 2 no kind has "+"; each locked lane reads <code>lockedLane(kind, 2)</code> for its kind; a locked kind's toggle still opens it; a locked policy's bar is not a button and is not in the tab order; at level 5 a money policy with <code>preset</code> null says "Unlocks in a later round".</li>
         <li><code>Playhead.svelte.spec.ts</code>: <code>barDay</code> shows "To beat" at its month; a bar within 30 months of the deadline shows one "Goal · To beat" flag; the description ends with "To beat June 2057."; no <code>barDay</code>, no flag.</li>
-        <li><code>Inspector.svelte.spec.ts</code>: a given measure at level 5 shows On, Move up, Move down, Remove and an editable When, and its What as <code>PolicySummary</code> with no editor; the "+" menu on Public money at level 5 lists no "Your own pool", "City funding scale" or "Market terms".</li>
+        <li><code>Inspector.svelte.spec.ts</code>: a given measure at level 5 shows On, Move up, Move down, Remove and an editable When, and its What as <code>PolicySummary</code> with no editor (the assertion on the What section's text is <code>funding-measures</code>', whose money-only summary it reads); the "+" menu on Public money at level 5 lists no "Your own pool", "City funding scale" or "Market terms".</li>
         <li><code>SimDetails.svelte.spec.ts</code>: <code>bar</code> shows "To beat: Jun 2057" under the goal rows; null shows nothing.</li>
         <li><code>TimelineMode.game.svelte.spec.ts</code>, with <code>FakeTimelineWorker</code>, a goal seam and a <code>GameStore</code> on memory storage:
           <ul>
