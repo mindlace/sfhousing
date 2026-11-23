@@ -57,6 +57,8 @@ def main():
         old = open('%s/assignments/%s.md' % (L, unit)).read()
         needs = re.search(r'^- Needs rows: (.*)$', old, re.M).group(1)
         admitted = re.search(r'^- Admitted: (.*)$', old, re.M).group(1)
+        needs = os.environ.get('NEEDS', needs)
+        admitted = os.environ.get('ADMITTED', admitted)
         assert os.environ.get('PLAN') or re.search(r'^- Plan: none$', old, re.M), 'has a plan: pass PLAN="<path> at <sha>, tasks <n> (already written)"'
     else:
         admitted, needs = sys.argv[2:4]
