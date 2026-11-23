@@ -42,11 +42,14 @@ export function parseCalibrationText(json: string): { cal: Calibration } | { err
 }
 
 /**
- * V25's build-side funding checks (finance-data spec 4.10), which `parseCalibration` cannot see:
- * every pool has exactly one programme `baseline-<pool id>`, in pool order; the shares sum to
- * 1,000,000 millionths; and a `live` build has `affordableRoutes` at tier 0 or the tier 4 fallback
- * (method `Only …`), which the calibration step always warns about on a live build. `detail` states
- * the outcomes; an absent key is ok and says so.
+ * V25's build-side funding checks (finance-data spec 4.10; finite-funding spec, V25's funding
+ * rule), which `parseCalibration` cannot see: the programmes are exactly one `baseline-<pool id>`
+ * per pool with at least one inflow, in pool order, each on that pool; at least one programme
+ * exists; every grant share is above 0; the shares sum to at most 1,000,000 millionths, and to
+ * exactly 1,000,000 when every pool has an inflow. A `live` build has `affordableRoutes` at tier 0
+ * or the tier 4 fallback (method `Only …`), which the calibration step always warns about on a
+ * live build. `detail` states the outcomes and names the pools with no programme; an absent key is
+ * ok and says so.
  */
 export function fundingOutcomes(
   cal: Calibration,
@@ -57,16 +60,24 @@ export function fundingOutcomes(
   const bf = cal.baselineFunding;
   if (!bf) detail.push('no baselineFunding');
   else {
-    const want = bf.pools.map((p) => `baseline-${p.id}`);
+    const funded = bf.pools.filter((p) => p.inflows.length > 0);
+    const unfunded = bf.pools.filter((p) => p.inflows.length === 0).map((p) => p.id);
+    const want = funded.map((p) => `baseline-${p.id}`);
     const got = bf.programmes.map((p) => p.id);
     const pools = bf.programmes.map((p) => p.pool);
     if (
       got.length !== want.length ||
-      got.some((id, i) => id !== want[i] || pools[i] !== bf.pools[i].id)
+      got.some((id, i) => id !== want[i] || pools[i] !== funded[i].id)
     ) {
       problems.push(
-        `baselineFunding programmes [${got.join(', ')}] are not one baseline-<pool id> per pool in pool order [${want.join(', ')}]`
+        `baselineFunding programmes [${got.join(', ')}] are not one baseline-<pool id> per pool with an inflow, in pool order [${want.join(', ')}]`
       );
+    }
+    if (bf.programmes.length === 0) problems.push('baselineFunding has no programme');
+    for (const p of bf.programmes) {
+      if (p.instrument.kind === 'grant' && !(p.instrument.share > 0)) {
+        problems.push(`baselineFunding programme ${p.id} has a share of 0`);
+      }
     }
     const millionths = Math.round(
       bf.programmes.reduce(
@@ -74,11 +85,15 @@ export function fundingOutcomes(
         0
       ) * 1e6
     );
-    if (millionths !== 1e6) {
+    if (millionths > 1e6) {
+      problems.push(`baselineFunding shares sum to ${millionths} millionths, over 1000000`);
+    } else if (unfunded.length === 0 && millionths !== 1e6) {
       problems.push(`baselineFunding shares sum to ${millionths} millionths, not 1000000`);
     }
     detail.push(
-      `baselineFunding ${bf.pools.length} pools, one programme each; shares ${millionths} millionths`
+      `baselineFunding ${bf.pools.length} pools, ${bf.programmes.length} programmes; ` +
+        `shares ${millionths} millionths` +
+        (unfunded.length > 0 ? `; no programme for ${unfunded.join(', ')}` : '')
     );
   }
   const ar = cal.affordableRoutes;

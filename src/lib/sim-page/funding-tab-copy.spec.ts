@@ -11,7 +11,16 @@ import {
   coverageSummaryText,
   notOfferedText
 } from './funding-copy';
+import * as copy from './funding-copy';
 import { groupProvenance, tiersText, type CoverageStep } from './funding-view';
+
+describe('removed copy', () => {
+  it('the coverage sentences that say "a run" are gone; the page\'s own are in money-copy', () => {
+    expect('COVERAGE_RUN_SENTENCE' in copy).toBe(false);
+    expect('COVERAGE_OFF_SHORT_SENTENCE' in copy).toBe(false);
+    expect('NO_LIMIT' in copy).toBe(false);
+  });
+});
 
 const step = (from: number, coverage: number, certain: boolean): CoverageStep => ({
   from,
@@ -55,10 +64,10 @@ describe('groupProvenance', () => {
     const b = fixtureCalibration().baselineFunding!;
     const labels = (g: 'city' | 'state' | 'federal') => groupProvenance(b, g).map((p) => p.label);
     expect(labels('state')).toEqual([
-      'Fixture (tier 4): State of California: housing programmes: $3.0 million a year (a lower bound)',
+      'Fixture (tier 4): State of California: housing programmes: $3.0 million a year (a lower bound; no end)',
       "Fixture (tier 4): Income mix and smallest size of the City's 100% affordable new construction"
     ]);
-    expect(labels('city')).toHaveLength(7);
+    expect(labels('city')).toHaveLength(8);
     expect(labels('city').every((l) => !l.includes('State of California'))).toBe(true);
     expect(labels('federal')[0]).toContain('Federal: low-income housing tax credits');
   });

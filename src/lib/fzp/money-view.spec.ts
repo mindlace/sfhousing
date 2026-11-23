@@ -12,7 +12,10 @@ import { INCOME_TIERS } from '$lib/timelapse/types';
 import { MARKET_FUNDING_SENTENCE } from '$lib/sim-page/funding-copy';
 import { fixtureCalibration } from './fixtures/calibration';
 import { MONEY_LAST, MONEY_SCORE } from './fixtures/money';
-import { plainSources } from './money-view';
+import type { MoneyView } from '$lib/sim/world/score/types';
+import type { Day } from '$lib/timelapse/time';
+import { dayFromUtc } from './time';
+import { closedLines, plainSources } from './money-view';
 import { TIER_SOURCES as TIERS } from '$lib/sim/scenario/finance-score';
 import { formatDollars, formatDollarsExact, formatSourcePercent } from './format';
 import { marketSentence } from './market-view';
@@ -28,13 +31,13 @@ import {
   marketText,
   moneyAt,
   owedLines,
+  receivedCell,
   tiersAt,
   TIERS_FUNDED_SENTENCE,
   TIERS_UNRECORDED_SENTENCE,
-  uncappedPoolIds,
   moneyFigureAt
 } from './money-view';
-import type { Pool } from '$lib/timelapse/types';
+import { LEGACY_UNCAPPED_DOLLARS } from '$lib/timelapse/model';
 
 const money = MONEY_SCORE.money as Money;
 const tiers = MONEY_SCORE.tiers!;
@@ -204,37 +207,18 @@ describe('row texts', () => {
     ]);
   });
 
-  it('by-source columns keep Received when a pool is uncapped, even at 0 everywhere', () => {
+  it('drops an all-zero Received column', () => {
     const m = moneyAt(money, 0);
     const none = { ...m, pools: m.pools.map((p) => ({ ...p, received: 0 })) };
     expect(bySourceColumns(none)).not.toContain('received');
-    expect(bySourceColumns(none, new Set(['federal']))).toContain('received');
-    // An uncapped id that is not among the run's pools keeps nothing.
-    expect(bySourceColumns(none, new Set(['elsewhere']))).not.toContain('received');
+    expect(bySourceColumns(m)).toContain('received');
   });
 
-  it('uncapped pool ids come from Pool.uncapped, baseline and levers, never from the kind', () => {
-    const pool = (id: string, kind: Pool['kind'], uncapped: boolean): Pool => ({
-      id,
-      kind,
-      label: id,
-      inflows: [],
-      uncapped,
-      debt: null,
-      leverage: 1
-    });
-    const baseline = fixtureCalibration().baselineFunding!.pools;
-    expect([...uncappedPoolIds(baseline)]).toEqual(
-      baseline.filter((p) => p.uncapped).map((p) => p.id)
-    );
-    expect([...uncappedPoolIds(baseline)]).toEqual(['federal-tax-credits']);
-    const ids = uncappedPoolIds(
-      [pool('fed', 'federal', false), pool('a', 'state', true)],
-      undefined,
-      [pool('b', 'goBond', true), pool('c', 'cop', false)]
-    );
-    expect([...ids].sort()).toEqual(['a', 'b']);
-    expect(uncappedPoolIds().size).toBe(0);
+  it('a Received cell reads No ceiling at LEGACY_UNCAPPED_DOLLARS, dollars otherwise', () => {
+    expect(receivedCell(LEGACY_UNCAPPED_DOLLARS)).toBe('No ceiling');
+    expect(receivedCell(LEGACY_UNCAPPED_DOLLARS * 3)).toBe('No ceiling');
+    expect(receivedCell(20_000_000)).toBe(formatDollars(20_000_000));
+    expect(receivedCell(0)).toBe(formatDollars(0));
   });
 
   it('the two F13 tier sentences', () => {
@@ -289,6 +273,60 @@ describe('moneyFigureAt', () => {
     expect(displacementLine(view, 3)).toContain('(3.0% of funded homes)');
     expect(displacementLine(view, 3)).not.toMatch(/ by \d{4}/);
     expect(moneyFigureAt(base, 1).perAddedHome.all).toBe(moneyAt(base, 1).perAddedHome);
+  });
+});
+
+describe('closedLines', () => {
+  const CITY = 'City: general-obligation bonds and other debt';
+  const plainMoney = (): Money => money;
+  /** The fixture money with pools of the given ids and labels, and a `closed` map. */
+  function viewWith(pools: { id: string; label: string }[], closed: Record<string, Day | null>) {
+    const n = money.fundedHomes.length;
+    const view: MoneyView = {
+      ...money,
+      pools: pools.map((p) => ({ ...money.pools[0], ...p })),
+      displacedHomesCompleted: Array.from({ length: n }, () => 0),
+      perAddedHome: { all: null, city: null },
+      displacedShare: null,
+      perAddedHomeByMonth: {
+        all: Array.from({ length: n }, () => null),
+        city: Array.from({ length: n }, () => null)
+      },
+      displacedShareByMonth: Array.from({ length: n }, () => null),
+      closed,
+      shut: {}
+    };
+    return view;
+  }
+  const v = viewWith(
+    [
+      { id: 'go', label: CITY },
+      { id: 'st', label: 'State' }
+    ],
+    { go: dayFromUtc(2030, 4, 1), st: null }
+  );
+  it('lists nothing before the spent month', () => {
+    expect(closedLines(v, dayFromUtc(2030, 2, 1))).toEqual([]);
+  });
+  it('lists the pool from its spent month on', () => {
+    expect(closedLines(v, dayFromUtc(2030, 3, 1))).toEqual([`${CITY}: ran out Mar 2030`]);
+    expect(closedLines(v, dayFromUtc(2031, 7, 1))).toEqual([`${CITY}: ran out Mar 2030`]);
+  });
+  it('follows the pools order', () => {
+    const two = viewWith(
+      [
+        { id: 'b', label: 'B' },
+        { id: 'a', label: 'A' }
+      ],
+      { a: dayFromUtc(2029, 1, 1), b: dayFromUtc(2030, 4, 1) }
+    );
+    expect(closedLines(two, dayFromUtc(2031, 1, 1))).toEqual([
+      'B: ran out Mar 2030',
+      'A: ran out Dec 2028'
+    ]);
+  });
+  it('a money without closed gives none', () => {
+    expect(closedLines(plainMoney(), dayFromUtc(2031, 1, 1))).toEqual([]);
   });
 });
 

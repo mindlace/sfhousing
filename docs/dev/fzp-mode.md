@@ -1,58 +1,31 @@
 # src/lib/fzp: what is left of the FZP timelapse page
 
-Developer notes for `src/lib/fzp/`. `FzpMode.svelte` is gone (timeline-ui): `/sim` and `/s/<id>` are `TimelineMode` ([timeline-ui.md](timeline-ui.md)), `/lesscars` has its own mode ([lesscars.md](lesscars.md)). What stays here is what those two share. The original design is `docs/superpowers/specs/2026-10-16-fzp-mode-design.md`.
+Developer notes for `src/lib/fzp/`, the shared kernel of `/sim` and `/s/<id>`, both `TimelineMode` ([timeline-ui.md](timeline-ui.md)). `/fzp` and `/lesscars` answer 404. The original design is `docs/superpowers/specs/2026-10-16-fzp-mode-design.md`.
 
-**Routing.** `/fzp` is no longer a page: its load (`src/routes/fzp/+page.ts`) is a 307 redirect to `/sim` with every query parameter kept except the retired `start`. The header link is "Simulate" (`/sim`). `/sim` ignores `?seed=` and drops it from the address ([timeline-ui.md](timeline-ui.md)).
+**Routing.** The header's second step is "Simulate" (`/sim`), a link once the current game is past level 1 ([game.md](game.md)). `/sim` ignores `?seed=` and drops it from the address ([timeline-ui.md](timeline-ui.md)).
 
 ## What is here
 
-| Group                      | Files                                                                                                                                                                                                                   | Used by                                                                                                                                                                         |
-| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| The scrubber and its clock | `TimeScrubber.svelte`, `playback.ts`, `time.ts`, `high-water.svelte.ts`                                                                                                                                                 | `/lesscars` (`LessCarsMode`); `/sim`'s `Playhead` takes `playback.ts` and `time.ts`                                                                                             |
-| Details' pieces            | `MoneyResults.svelte`, `score-view.ts`, `money-view.ts`, `market-view.ts`, `chart.ts`, `format.ts`, `ProvenanceBody.svelte`, `provenance.ts` (About's dialog, `src/lib/about/AboutDialog.svelte`, shows them on `/sim`) | `/sim`'s Details (`src/lib/timeline/SimDetails.svelte`, fed from `TimelineView` by `src/lib/timeline/results.ts`); `/lesscars` imports `chart.ts`, `format.ts`, `provenance.ts` |
-| The map's card and tooltip | `ProjectCardPanel.svelte`, `ProjectTooltip.svelte`, `summary-request.ts`, `card.ts`, `card-place.ts`, `card-area-watch.ts`, `labels.ts`                                                                                 | `/sim` (`TimelineMode`)                                                                                                                                                         |
-| Loading and shared types   | `load.ts`, `types.ts`, `copy.ts`                                                                                                                                                                                        | `/sim`, `/lesscars`                                                                                                                                                             |
-| The e2e hook               | `debug.ts` (`window.__sfhFzp`)                                                                                                                                                                                          | `/sim`; fields in [timeline-ui.md](timeline-ui.md)                                                                                                                              |
+| Group                      | Files                                                                                                                                                                                                                   | Used by                                                                                                           |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| The clock                  | `playback.ts`, `time.ts`                                                                                                                                                                                                | `/sim`'s `Playhead`                                                                                               |
+| Details' pieces            | `MoneyResults.svelte`, `score-view.ts`, `money-view.ts`, `market-view.ts`, `chart.ts`, `format.ts`, `ProvenanceBody.svelte`, `provenance.ts` (About's dialog, `src/lib/about/AboutDialog.svelte`, shows them on `/sim`) | `/sim`'s Details (`src/lib/timeline/SimDetails.svelte`, fed from `TimelineView` by `src/lib/timeline/results.ts`) |
+| The map's card and tooltip | `ProjectCardPanel.svelte`, `ProjectTooltip.svelte`, `summary-request.ts`, `card.ts`, `card-place.ts`, `card-area-watch.ts`, `labels.ts`                                                                                 | `/sim` (`TimelineMode`)                                                                                           |
+| Loading and shared types   | `load.ts`, `types.ts`, `copy.ts`                                                                                                                                                                                        | `/sim`                                                                                                            |
+| The e2e hook               | `debug.ts` (`window.__sfhFzp`)                                                                                                                                                                                          | `/sim`; fields in [timeline-ui.md](timeline-ui.md)                                                                |
 
-Details holds no map key: the key is on the map (`MapKeyControl` with `SimKey`, [timeline-ui.md](timeline-ui.md), "The screen"). A file `/lesscars` imports is not edited by `/sim` work ([lesscars.md](lesscars.md)). Run phases, the run slider, `RunSwitcher`, the swap reroll and `HighWater` are gone from `/sim`.
+Details holds no map key: the key is on the map (`MapKeyControl` with `SimKey`, [timeline-ui.md](timeline-ui.md), "The screen").
 
-## The scrubber contract
-
-`TimeScrubber.svelte` is a native `<input type="range">` over `[asOf, horizon]` in days (`step=1`), where `asOf` is `calibration.asOf` and `horizon` is `HORIZON` (2066-12-31, `src/lib/fzp/time.ts`). Its accessible name is "Date in the simulation" and `aria-valuetext` is the readout ("October 2026").
-
-| Key                 | Effect                                                                    |
-| ------------------- | ------------------------------------------------------------------------- |
-| Left / Down         | the previous first-of-month strictly before the day, clamped up to `asOf` |
-| Right / Up          | the next first-of-month strictly after the day, clamped to `horizon`      |
-| Page Down / Page Up | twelve months back or forward from the month start, clamped to the range  |
-| Home / End          | `asOf` / `horizon`                                                        |
-
-Keys with Alt, Ctrl or Meta are left to the browser. Every handled key, a drag on the track, the start and end marker buttons and the marker buttons under the track **pause** playback and move the day (`jump`).
-
-**Transport.** Left to right: Pause (`fzp-pause`), Play (`fzp-play`), Faster (`fzp-faster`, `title` "3 years per second"), the readout (`fzp-readout`), then the track row: the start marker (`fzp-start`, text `startLabel`, default the short month and year of `asOf`; `/sim` passes "Today"), the range, the end marker (`fzp-end`, the horizon year), and the marker row under the range. Pause stops. Play plays at 1 year per second (`year`); Faster plays at 3 years per second (`threeYears`). Either one, pressed at `horizon`, restarts from `asOf` first (Replay). Play and Faster carry `aria-pressed` (`playing` and their speed), so a test reads the play state from `fzp-play`'s `aria-pressed` and the speed from `fzp-faster`'s, not from a label. There is no speed select.
-
-**`ontoday`.** Called when a user jump lands on `asOf` outside setup: Home, the start marker, an arrow or Page key clamped to `asOf`, or a drag released there (the range's `change`; `input` events passing through `asOf` do not count). Not called by Replay, by the frame loop or by a programmatic `day` change. It fires even when the day was already `asOf`.
-
-**Fixed width.** The Play button (`fzp-play`) and the readout (`fzp-readout`) stack every label (Run, Play, Replay; the 12 month names of the current year, `monthYearLabels`) in one grid cell, the extras `invisible` and `aria-hidden`, so the bar never shifts. The visible text has its own testid (`fzp-play-label`, `fzp-readout-label`); assert on those, because the readout's own text contains every month. There is no "Simulation" pill.
-
-**Setup mode** (`/sim`'s `Playhead` has none). With `setup` Play reads "Run" and calls `onrun`; Pause and Faster are `invisible` (they keep their space and leave the tab order, so the bar does not shift); the range, the start and end markers and the marker buttons are `disabled` and keys do nothing.
+## The clock
 
 - **Speeds** (`playback.ts`, a tier 4 UI choice): `Speed` is `year` ("1 year per second", the default, Play) or `threeYears` ("3 years per second", Faster; `SPEED_NAME`), as days of simulated time per second of wall time (`12 x MONTH_DAYS`, `36 x MONTH_DAYS`). `window.__sfhFzp.speed` reports the current one.
 - **Frame step:** only while `playing`, through `requestAnimationFrame`: `t += min(dt, 100 ms) x daysPerSecond`, `day = min(floor(t), horizon)`. The 100 ms clamp stops a background tab from making the clock jump. If something else moves the day mid-play, the clock continues from there.
-- **No autoplay:** playback never starts on its own; the page opens paused at `asOf` and waits on Play (`/sim`'s `Playhead` is the same: Play is the reader's act).
-- **`onday`:** called exactly once per day change (`setDay` compares with the current day first). The page's handler does O(1) work: `handle.setTime(day)`, and a card refresh only when the month changed.
-- **Opening About over the map pauses** (`AboutDialog`'s `onopen` sets `playing = false`), however it opens: the header's About, Details' last link, a card's source. Closing it leaves the playhead, the furthest date reached and Play as they are. Opening a card does not pause.
-- The readout is not a live region (it changes every frame). The header score's live region (`HeaderScore`, `data-testid="score-live"`) speaks only when playback is paused, 1000 ms after the day settles.
-
-The page always opens paused, so tests get a stable day without any media emulation.
-
-**The high-water mark** (`/lesscars` only). `HighWater` (`src/lib/fzp/high-water.svelte.ts`) holds the furthest day reached by playback or scrubbing; `/lesscars` keeps its own `HighWater(LESSCARS_START)` (`window.__sfhLessCars.highWater`, [lesscars.md](lesscars.md)). `/sim` has its own, the furthest date reached (`src/lib/timeline/reveal.ts`, the ruler's seen zone, [timeline-ui.md](timeline-ui.md)); its rows show the playhead's month, and the playhead waits at the computed edge (`TimelineView.filledThrough`).
 
 ## Layout variables
 
-`--map-controls-br-block-size` is set by `SimMap` ([map-interfaces.md](map-interfaces.md)); the card on a phone sits above it (`bottom-[calc(var(--map-controls-br-block-size,60px)+8px)]`) and a tall card is capped by it. `--dock-w` and `--fzp-scrubber-h` were `Dock`'s and `FzpMode`'s; `/sim` sets neither. The notice stack (`NoticePills`, [sim-page.md](sim-page.md)) is an overlay at the map's top from md and in flow below it; the header, its status slot and the timeline layout is [timeline-ui.md](timeline-ui.md).
+`--map-controls-br-block-size` is set by `SimMap` ([map-interfaces.md](map-interfaces.md)); the card on a phone sits above it (`bottom-[calc(var(--map-controls-br-block-size,60px)+8px)]`) and a tall card is capped by it. `/sim` sets neither `--dock-w` nor `--fzp-scrubber-h`. The notice stack (`NoticePills`, [sim-page.md](sim-page.md)) is an overlay at the map's top from md and in flow below it; the header, its status slot and the timeline layout is [timeline-ui.md](timeline-ui.md).
 
-## Props `TimelineMode` keeps from `FzpMode`
+## `TimelineMode`'s map and card props
 
 `manifest`, `calibration`, `datasetVersion`, the load and error props, `noScenario`, `reload`, `createWorker`, `view` (`ViewPrefs`, default `HIDDEN_VIEW`), `cards` (default true; taps and clicks open project cards, and `SimMap`'s own `tapCards` follows it; `/sim` always passes true), `ownerName`, `fundingName`, `onmanifest`, `onheights`, `onchunks`, `onmapready` and the snippets. Hover tooltips and `timelinePick` reports are unaffected by `cards`. `SimClientApi.lotAt(point)` forwards the worker's `lotAt` ([sim-levers.md](sim-levers.md)); `/sim` calls it for a tap on a lot with no project.
 
@@ -132,9 +105,9 @@ dialog; so do the typed terms of a policy.
   visible text (the header score is the busy sign). A failed edit keeps the old
   numbers under the existing stale line instead.
 - `terms`: the market terms in force at the playhead, for the lost-grants line (`lossOnExit`).
-- `uncapped`: the ids of pools whose `Pool.uncapped` is true, which read "no limit" under Received.
-  `TimelineMode` derives it with `uncappedPoolIds` over the calibration's baseline pools and the document's money policies
-  (`money-view.ts`), because the money series carries no flag.
+
+A Received cell reads "No ceiling" (`NO_CEILING`) where `isNoCeiling(received)`, an older dataset's
+federal pool (`receivedCell`, `money-view.ts`).
 
 The rows and their wording are in [sim-funding.md](sim-funding.md) ("Details, card and summary").
 

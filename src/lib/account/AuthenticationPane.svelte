@@ -56,7 +56,7 @@
   let devLink = $state<string | undefined>(undefined);
   let emailError = $state('');
 
-  // A registered account whose address is not confirmed (a cold join from an emailed invite).
+  // A registered account whose address is not confirmed.
   const unconfirmed = $derived(!user.pseudonymous && user.emailVerified === false);
 
   async function sendVerify(e: SubmitEvent) {

@@ -253,4 +253,17 @@ export interface FundingSystem {
    * (`ctx.month` before system 4 has run, `ctx.month + 1` after) counts as 0.
    */
   planLot(ctx: StepCtx, lot: number): number;
+  /**
+   * Before model month `world.month + 1` is stepped: opens again each closed pool that the
+   * month's frame of `timeline` gives an arrival above 0, then returns the timeline the
+   * world steps under. Absent: `timeline`.
+   */
+  beforeStep?(world: World, statics: Statics, timeline: PolicyTimeline): PolicyTimeline;
+  /** The timeline the world plans under; changes nothing. Absent: `timeline`. */
+  timelineOf?(world: World, statics: Statics, timeline: PolicyTimeline): PolicyTimeline;
+}
+
+export interface WorldOptions {
+  /** Default true. The referee against the older engine runs with false. */
+  poolClosing?: boolean;
 }

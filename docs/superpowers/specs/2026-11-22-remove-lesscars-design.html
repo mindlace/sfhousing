@@ -1,0 +1,657 @@
+<article>
+  <header>
+    <h1>Remove less cars design</h1>
+    <p>Delete <code>/fzp</code>, <code>/lesscars</code> and everything only they use, and keep the freeway-land catalog, the scenario engine and <code>src/lib/fzp</code>.</p>
+  </header>
+
+  <section id="sec-goal">
+    <h2>Goal</h2>
+    <p>This unit is the <code>remove-lesscars</code> subsystem of the <a href="../design/2026-11-22-1216-incremental-game.html">incremental game design</a>. It carries rulings R4 ("delete less cars now") and D11 ("what stays from less cars") and owns interface row <a href="#sec-if-l1">L1</a>. A later unlock rebuilds less cars on the step engine; nothing here is kept for it except what D11 names.</p>
+    <ul>
+      <li>The routes <code>/fzp</code> and <code>/lesscars</code> are gone and answer 404.</li>
+      <li>The app modules built for <code>/lesscars</code> are gone: <code>src/lib/lesscars</code>, <code>src/lib/sim/lesscars</code>, <code>src/lib/data/lesscars</code>, and the two <code>src/lib/fzp</code> files only <code>/lesscars</code> used.</li>
+      <li>The sim worker has three modes: editor, scenario and timeline.</li>
+      <li>The map style draws an older dataset's <code>roads_lc</code> layer as ordinary roads, and names that layer only for a dataset that has it. The palette has no <code>lc-*</code> tokens, and <code>filter-expr.ts</code> is gone.</li>
+      <li>The pipeline has no less-cars step, command, SQL, enrichment or test. A build copies the basemap byte for byte and writes no <code>scenarios/lesscars/*</code>.</li>
+      <li>The freeway-land catalog moves to <code>pipeline/enrichment/freeway-land.json</code> and decides lot eligibility exactly as before.</li>
+      <li><code>PATHS</code> in <code>pipeline/lib/version.ts</code> lists exactly what the pipeline imports, and a test holds it there.</li>
+      <li>The fixture dataset is regenerated and committed; no dataset is uploaded.</li>
+    </ul>
+  </section>
+
+  <section id="sec-interfaces">
+    <h2>Interfaces</h2>
+    <p>These rows and their sections are copied from the design document. A change to one is a change to the design.</p>
+    <table id="tbl-interfaces">
+      <caption>Interface table</caption>
+      <thead>
+        <tr><th scope="col">Row</th><th scope="col">Owner</th><th scope="col">Layer</th><th scope="col">Summary</th><th scope="col">Contract</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">L1</th><td><code>remove-lesscars</code></td><td>Decomposition choice</td><td>The pipeline, dataset and worker with no less cars.</td><td><a href="#sec-if-l1">L1</a></td></tr>
+      </tbody>
+    </table>
+
+    <section id="sec-if-l1">
+      <h3>L1 The pipeline, dataset and worker with no less cars</h3>
+      <pre><code data-lang="ts">// src/lib/data/manifest.ts
+interface ManifestScenarios {
+  fzp: { parcels: string; projects: string; calibration: string; policy?: string; gross?: string; frontage?: string };
+}
+
+// pipeline/config.ts
+export const FREEWAY_LAND_JSON: { live: string; fixture: string };
+// live: pipeline/enrichment/freeway-land.json
+
+// src/lib/sim/router.ts
+type WorkerMode = 'editor' | 'scenario' | 'timeline';</code></pre>
+      <ul>
+        <li>A build writes no <code>scenarios/lesscars/*</code> and the manifest has no <code>scenarios.lesscars</code> key. A manifest that has one still parses: it is an older dataset's.</li>
+        <li>A published plan or policy runs on its own dataset while that dataset exists. An older dataset's basemap holds some freeway stretches in a <code>roads_lc</code> layer; the map draws that layer as ordinary roads exactly when the manifest has <code>scenarios.lesscars</code>, and never asks a newer basemap for it.</li>
+        <li><code>basemap.pmtiles</code> is a byte copy of the fetched basemap.</li>
+        <li>The freeway-land catalog is read from <code>FREEWAY_LAND_JSON</code> and feeds lot eligibility and the road-like lot rule exactly as before.</li>
+        <li><code>scenarios/fzp/parcels.bin</code> for the fixture, decoded, is identical before and after except the one provenance sentence that names the catalog's path, which names <code>FREEWAY_LAND_JSON</code>'s path.</li>
+        <li>The pipeline has no <code>lesscars-cnns</code>, <code>lesscars-freeway-land</code> or <code>lesscars-basemap</code> command.</li>
+        <li>The scenario engine keeps <code>SimInput.regimes</code> and <code>reservedFrom</code>. The step engine's referee tests use <code>regimes</code>; the scenario engine's own tests use <code>reservedFrom</code>.</li>
+        <li><code>PATHS</code> in <code>pipeline/lib/version.ts</code> lists every source path that non-test pipeline code imports, by directory, and nothing else. A pipeline test walks the imports from <code>pipeline/cli.ts</code> and fails when one falls outside <code>PATHS</code> or a <code>PATHS</code> entry is reached by none.</li>
+        <li><code>pipeline/enrichment/funding.json</code>, <code>pipeline/lib/fzp-cal/**</code> and the calibration step are not touched by this row's owner.</li>
+      </ul>
+      <p><strong>Removed:</strong> the playback worker mode, <code>scenarios.lesscars</code>, the <code>roads_lc</code> source layer from new builds, the less-cars styling of its clones, the <code>lc-*</code> palette tokens, <code>LESSCARS_*</code> config.</p>
+    </section>
+  </section>
+
+  <section id="sec-today">
+    <h2>What is there today</h2>
+    <p>Every line below was read on commit <code>8125e557</code>.</p>
+
+    <section id="sec-today-routes">
+      <h3>The two routes</h3>
+      <ul>
+        <li><code>src/routes/fzp/+page.ts:7-12</code> is a 307 redirect to <code>/sim</code> that keeps the query but <code>start</code>. Its comment (<code>:1-3</code>) says 307 was chosen so "the route can change again".</li>
+        <li><code>src/routes/lesscars/+page.ts:12-15</code> loads <code>loadLessCars</code>; <code>+page.svelte:16</code> mounts <code>LessCarsMode</code>.</li>
+        <li>No product page links to either route. The header's links are <code>/</code>, <code>/sim</code>, <code>/account</code> or <code>/signin</code>, and <code>/about</code>.</li>
+        <li>The root <code>src/routes/+error.svelte:4-5</code> renders "Page not found" for a 404, with a link to the home page.</li>
+        <li><code>src/lib/shell/layout.ts:6</code> lists <code>/lesscars</code> as a full-height route.</li>
+      </ul>
+    </section>
+
+    <section id="sec-today-app">
+      <h3>App modules</h3>
+      <ul>
+        <li><code>src/lib/lesscars/</code> (18 modules, 15 specs, 2 test hosts) is imported only by <code>src/routes/lesscars/</code>.</li>
+        <li><code>src/lib/sim/lesscars/</code> is the playback host and client. <code>types.ts:29-49</code> defines <code>PlaybackRequest</code> and <code>PlaybackResponse</code>.</li>
+        <li><code>src/lib/data/lesscars/</code> is the plan format, schedule, network and the <code>sfh-lesscars/1</code> codec. Its only importers outside less cars are pipeline less-cars files.</li>
+        <li><code>src/lib/fzp/TimeScrubber.svelte</code> is imported only by <code>src/lib/lesscars/LessCarsMode.svelte:16</code> and <code>TimeScrubberHarness.svelte</code>. <code>src/lib/fzp/high-water.svelte.ts</code> is imported only by <code>LessCarsMode.svelte:13</code>.</li>
+        <li>The other 21 modules of <code>src/lib/fzp/</code> are imported by <code>/sim</code> code.</li>
+      </ul>
+    </section>
+
+    <section id="sec-today-worker">
+      <h3>The sim worker</h3>
+      <ul>
+        <li><code>src/lib/sim/worker.ts:4</code> imports <code>createPlaybackHost</code>, and <code>:47-56</code> passes it to the router as <code>createPlayback</code>.</li>
+        <li><code>src/lib/sim/router.ts:46</code> has four modes: <code>'editor' | 'scenario' | 'playback' | 'timeline'</code>.</li>
+        <li>The router's playback branches are <code>initPlayback</code> (<code>:89-96</code>), <code>playbackCard</code> (<code>:117-120</code>), the playback case of <code>reroll</code> and <code>setLevers</code> (<code>:124</code>), of <code>prefetch</code> and <code>retryChunks</code> (<code>:134</code>), and of <code>parcelSummary</code> (<code>:139-140</code>). <code>init</code>, <code>initScenario</code> and <code>openTimeline</code> call <code>endPlayback</code>.</li>
+        <li><code>src/lib/sim/scenario/types.ts:35</code> imports the playback types; <code>:277-279</code> puts them in <code>WorkerRequest</code> and <code>WorkerResponse</code>.</li>
+        <li>No file outside less cars and the router sends or reads a playback message.</li>
+      </ul>
+    </section>
+
+    <section id="sec-today-data">
+      <h3>Manifest and map</h3>
+      <ul>
+        <li><code>src/lib/data/manifest.ts:69-77</code> has an optional <code>scenarios.lesscars</code> with four urls; <code>:160-164</code> lists them in <code>manifestFiles</code>, which upload, verify and <code>data:local</code> use.</li>
+        <li><code>src/lib/map/style.ts:189</code> adds a clone of every <code>roads</code> layer; <code>:196-214</code> define <code>LC_ROADS_SOURCE_LAYER</code> (<code>'roads_lc'</code>), <code>LC_CLONE_SUFFIX</code> (<code>'__lc'</code>), <code>isRoadsLayer</code> and <code>roadsClone</code>.</li>
+        <li><code>src/lib/map/palette.ts:43-54</code> adds 12 <code>lc-*</code> token names, with values at <code>:104-115</code> and <code>:163-174</code>.</li>
+        <li><code>src/lib/map/filter-expr.ts</code> (122 lines) has one importer outside its spec: <code>src/lib/lesscars/basemap-hide.ts:9</code>.</li>
+        <li>The clones copy their <code>roads</code> layer whole (<code>style.ts:209-214</code>): same filter, same paint, only the id and source layer change. The less-cars day filter on them lived in <code>src/lib/lesscars/basemap-hide.ts</code>, on <code>/lesscars</code> only.</li>
+        <li>Every page gets its manifest from <code>parseManifest</code> through <code>loadManifest</code> (<code>src/lib/sim/manifest.ts:11</code>, <code>:21-36</code>): <code>/sim</code> and <code>/s/&lt;id&gt;</code> through <code>src/lib/sim-page/load.ts:33</code>, <code>/</code> through <code>src/routes/+page.ts:19</code>, <code>/p/&lt;id&gt;</code> through <code>src/routes/p/[id]/+page.ts:8</code> and its Retry (<code>+page.svelte:38</code>).</li>
+        <li><code>loadManifest</code> loads the plan's or policy's own dataset when its manifest exists, else the current one (<code>src/lib/sim/manifest.ts:17-35</code>; <code>src/routes/s/[id]/+page.ts:14-18</code>).</li>
+        <li><code>SimMap</code> builds its style from that manifest (<code>src/lib/map/SimMap.svelte:590</code>), and the theme switch reads <code>themePaintDiff(manifest)</code> and skips a layer the map lacks (<code>:1118-1120</code>).</li>
+        <li>Live builds split the basemap: the live id list has 5 phases (<code>pipeline/enrichment/lesscars/basemap-ids.json</code>), and <code>docs/dev/lesscars.md:543</code> records <code>tiles.basemap_split_changed</code> 29 on a live build. The moved parts keep their road attributes and gain <code>lc_project</code> (<code>pipeline/lib/lesscars/basemap-split.ts:2-6</code>, <code>:18</code>).</li>
+        <li>No code in <code>src</code> reads <code>report.json</code>.</li>
+      </ul>
+    </section>
+
+    <section id="sec-today-pipeline">
+      <h3>Pipeline</h3>
+      <ul>
+        <li><code>pipeline/cli.ts:16-18</code> import the three offline commands, registered at <code>:242-290</code>: <code>lesscars-cnns</code>, <code>lesscars-freeway-land</code>, <code>lesscars-basemap</code>.</li>
+        <li><code>pipeline/cli.ts:148-149</code> and <code>pipeline/steps/build.ts:223-233</code> read the freeway-land catalog through <code>LESSCARS_FREEWAY_LAND_JSON</code> from <code>pipeline/lesscars-config.ts:88-91</code> and <code>readFreewayLand</code> from <code>pipeline/lib/lesscars/freeway-land.ts:139</code>.</li>
+        <li><code>build.ts:349-373</code> runs <code>writeLessCars</code>, which runs the scenario engine at build time and writes <code>scenarios/lesscars/*</code>.</li>
+        <li><code>build.ts:390-404</code> splits the basemap into <code>roads</code> and <code>roads_lc</code> when the build has split phases; else <code>writeBasemap</code> copies it (<code>pipeline/steps/tiles.ts:198-232</code>).</li>
+        <li><code>build.ts:421</code> and <code>pipeline/steps/manifest.ts:89-97</code> add <code>scenarios.lesscars</code> to the manifest; <code>build.ts:436</code> adds the <code>lesscars.*</code> counts.</li>
+        <li><code>pipeline/steps/check.ts:34</code> and <code>:854-855</code> run V35 from <code>check-lesscars.ts</code>.</li>
+        <li><code>pipeline/steps/fixture.ts:21-23</code>, <code>:45-47</code> and <code>:180-183</code> pin the less-cars files in the golden.</li>
+        <li><code>pipeline/steps/doctor.ts:121-132</code> checks <code>node:sqlite</code>, which only the basemap split uses (<code>pipeline/lib/pmtiles-rewrite.ts:44-46</code>).</li>
+        <li><code>pipeline/config.ts:152-156</code>, <code>:228-230</code> and <code>:296-297</code> carry <code>lesscarsSeeds</code> in <code>InvariantProfile</code>.</li>
+        <li><code>pipeline/lib/scenario-files.ts:13-21</code> name the less-cars outputs.</li>
+        <li><code>pipeline/lib/version.ts:42-53</code> hash <code>pipeline</code>, <code>src/lib/{data,generator,timelapse,sim/scenario,sim/levers,sim/finance,scoreboard}</code> and two plan files. Its comment (<code>:33-41</code>) says the scenario, levers and scoreboard entries are there because the less-cars step runs the engine.</li>
+      </ul>
+    </section>
+
+    <section id="sec-today-kept">
+      <h3>What other code uses</h3>
+      <ul>
+        <li>The freeway-land catalog (<code>pipeline/enrichment/lesscars/freeway-land.json</code>, 11 segments, 559 parcels) makes its parcels ineligible in <code>parcels.bin</code> (<code>pipeline/steps/scenario.ts:687</code>, <code>:786</code>, <code>:804</code>; <code>pipeline/lib/scenario-eligibility.ts:23</code>), keeps them out of the road-like rule (<code>pipeline/lib/road-lots.ts:160</code>, <code>pipeline/sql/55_road_lots.sql:150</code>, <code>:202</code>), and feeds V17 (<code>build.ts:453</code>, <code>cli.ts:149</code>).</li>
+        <li><code>datasf-streets</code> (<code>src_streets</code>) is read by <code>pipeline/sql/55_road_lots.sql:114</code>, <code>:135</code>, <code>:141</code> and <code>pipeline/steps/boxes.ts:76</code>.</li>
+        <li><code>SimInput.regimes</code> (<code>src/lib/sim/scenario/types.ts:117</code>) is the referee's oracle input: <code>src/lib/sim/world/frames.referee.spec.ts:64</code>, <code>:105</code>, <code>:167</code> through <code>src/lib/sim/world/test/timeline.ts:112</code>, <code>:125</code>.</li>
+        <li><code>SimInput.reservedFrom</code> (<code>types.ts:122</code>) is used by the scenario engine's own specs: <code>src/lib/sim/scenario/engine-regimes.spec.ts:229-234</code>.</li>
+        <li><code>docs/lesscars/plan-v1.md</code> is read by three pipeline tests this unit deletes, and by no other code.</li>
+        <li>The fixture's <code>basemap.pmtiles</code> is split today: its sha256 is <code>6de6e1cd…</code> against the raw <code>c0d004aa…</code>, and its <code>report.json</code> has <code>tiles.basemap_split_changed: 2</code>.</li>
+        <li>The fixture's <code>scenarios/fzp/parcels.bin</code> has sha256 <code>63b50eea1dad679fc0ede49c571c93fcd760930430b9bd06ef540928f105691f</code>.</li>
+      </ul>
+    </section>
+  </section>
+
+  <section id="sec-design">
+    <h2>Design</h2>
+
+    <section id="sec-design-urls">
+      <h3>What the two URLs answer</h3>
+      <ul>
+        <li><code>/fzp</code> and <code>/lesscars</code>, with or without a query, answer 404 with the root error page: title and heading "Page not found", and the link "Go to the home page".</li>
+        <li>No redirect is kept. R4 says delete it all; the redirect's own comment calls it temporary; no product page and no published link has pointed at <code>/fzp</code> since <code>/sim</code> replaced it.</li>
+        <li>The reserved handle words <code>lesscars</code> and <code>fzp</code> (<code>src/lib/server/user-store/handle-normalize.ts:20-21</code>) stay reserved. This unit does not edit that file.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-worker">
+      <h3>The sim worker</h3>
+      <p>The router keeps its behaviour for the three remaining modes, request for request.</p>
+      <pre><code data-lang="ts">// src/lib/sim/router.ts
+type WorkerMode = 'editor' | 'scenario' | 'timeline';
+
+export interface RouterDeps {
+  editor: { handle(r: SimRequest): void; dispose(): void };
+  createScenario: () =&gt; { handle(r: ScenarioRequest): void; dispose(): void };
+  createTimeline: () =&gt; { handle(r: TimelineHostRequest): void; dispose(): void };
+  post(msg: ScenarioResponse | SimResponse | TimelineHostResponse): void;
+}
+
+// src/lib/sim/scenario/types.ts
+export type WorkerRequest = SimRequest | ScenarioRequest;
+export type WorkerResponse = SimResponse | ScenarioResponse;</code></pre>
+      <ul>
+        <li><code>init</code> disposes the scenario and timeline hosts; <code>initScenario</code> disposes the editor and the timeline host; <code>openTimeline</code> disposes the editor and the scenario host. None of them calls a playback host.</li>
+        <li><code>reroll</code> and <code>setLevers</code> in timeline mode answer <code>error</code> with <code>code: 'bad-request'</code> and the message <code>`${type} needs a /sim scenario session`</code>, as today.</li>
+        <li><code>prefetch</code> and <code>retryChunks</code> go to the scenario host, the timeline host or the editor by mode.</li>
+        <li><code>parcelSummary</code> goes to the timeline host, the scenario host or the editor by mode.</li>
+        <li>A message whose <code>type</code> the router does not know, such as an old <code>initPlayback</code> or <code>playbackCard</code>, is ignored: nothing is posted and no host changes.</li>
+        <li><code>worker.ts</code> builds no playback host.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-manifest">
+      <h3>The manifest</h3>
+      <ul>
+        <li><code>ManifestBaseSchema.scenarios</code> has only <code>fzp</code>. An older manifest with <code>scenarios.lesscars</code> parses; the parsed value has no <code>scenarios.lesscars</code>.</li>
+        <li>The parsed manifest carries one derived mark of an older dataset, shown below. <code>ManifestSchema</code> sets it, so <code>parseManifest</code> and every direct <code>ManifestSchema.parse</code> agree.</li>
+        <li><code>manifestFiles</code> lists no <code>scenarios.lesscars.*</code> entry, so <code>upload</code>, <code>verify</code> and <code>data:local</code> neither send, check nor copy those files, even for an older manifest that names them.</li>
+        <li>The pipeline's <code>buildManifest</code> takes no <code>lesscars</code> argument and never writes the key.</li>
+        <li><code>npm run data:transit</code> (<code>scripts/data-transit.ts</code>) writes the local dataset's raw manifest JSON back with only its <code>transit</code> key set. It parses the manifest to check it and to build that entry, and never writes the parsed value, so an older manifest keeps its <code>scenarios.lesscars</code> object, and with it the mark, after the script runs.</li>
+      </ul>
+      <pre><code data-lang="ts">// src/lib/data/manifest.ts, on the parsed Manifest (not in ManifestScenarios)
+/**
+ * Derived at parse, never read from the file: true exactly when the raw manifest has a
+ * `scenarios.lesscars` object, so its basemap holds a `roads_lc` source layer.
+ */
+splitRoads?: true;</code></pre>
+      <ul>
+        <li><code>splitRoads</code> is <code>true</code> when the raw JSON's <code>scenarios.lesscars</code> is an object, and absent otherwise.</li>
+        <li>A <code>splitRoads</code> key in the raw JSON is ignored; only <code>scenarios.lesscars</code> sets the mark.</li>
+        <li>No build writes the mark or the key. <code>ManifestSourcesSchema</code> (<code>/attribution</code>) is unchanged.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-older">
+      <h3>Datasets built before this unit</h3>
+      <p>A published plan or policy keeps loading its own dataset. What such a dataset holds, rule by rule:</p>
+      <ul>
+        <li><strong>Its manifest</strong> has <code>scenarios.lesscars</code>. It parses, with <code>splitRoads: true</code> (<a href="#sec-design-manifest">the manifest</a>). The worker hosts' <code>checkManifestShape</code> does not look at <code>scenarios</code> (<code>src/lib/sim/scenario/load.ts:113</code>), so they take it as they do today.</li>
+        <li><strong>Its <code>scenarios/lesscars/*</code></strong> are never fetched: no code reads them and <code>manifestFiles</code> does not list them, so <code>data:local</code>, <code>upload</code> and <code>verify</code> skip them.</li>
+        <li><strong>Its <code>basemap.pmtiles</code></strong> holds the moved freeway stretches in <code>roads_lc</code>. The map draws them through the clones (<a href="#sec-design-map">the style</a>).</li>
+        <li><strong>Its <code>report.json</code></strong> has V35 and <code>lesscars.*</code> counts. Nothing in the app reads it; <code>pipeline check &lt;v&gt;</code> on such an out dir reports what the current checks measure and ignores the rest.</li>
+        <li><strong>Its <code>scenarios/fzp/*</code>, chunks, buildings, fonts, neighbourhoods and <code>transit.json</code></strong> use codecs this unit does not change.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-map">
+      <h3>The map style and palette</h3>
+      <ul>
+        <li><code>style.ts</code> keeps <code>LC_ROADS_SOURCE_LAYER</code> (<code>'roads_lc'</code>), <code>LC_CLONE_SUFFIX</code> (<code>'__lc'</code>), <code>isRoadsLayer</code> and <code>roadsClone</code>. A clone is its <code>roads</code> layer copied whole with id <code>${id}__lc</code> and source layer <code>roads_lc</code>: no other filter, no other paint, no <code>lc-*</code> colour.</li>
+        <li><code>manifest.splitRoads</code> is the one input that switches the clones on. <code>protomapsLayers</code> takes it from <code>buildStyle(manifest, theme)</code> and puts each clone right after its <code>roads</code> layer.</li>
+        <li>For a manifest without <code>splitRoads</code>, no style layer names <code>roads_lc</code> and no layer id ends in <code>__lc</code>.</li>
+        <li><code>themePaintDiff(manifest)</code> builds from the same manifest, so its clone entries exist exactly when the style has clones.</li>
+        <li>The comment above the constants says: datasets built before this unit move some freeway stretches into <code>roads_lc</code>; their manifests have <code>scenarios.lesscars</code>, and the clones draw that layer as roads.</li>
+        <li><code>TokenName</code>, both <code>TOKENS</code> themes and every CSS the palette emits have no <code>lc-*</code> token.</li>
+        <li><code>src/lib/map/filter-expr.ts</code> and its spec are deleted: nothing else imports <code>toExpressionFilter</code>.</li>
+        <li>The comments that name <code>/lesscars</code> in <code>palette.ts</code> go with the tokens.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-catalog">
+      <h3>The freeway-land catalog</h3>
+      <pre><code data-lang="ts">// pipeline/config.ts
+/** The freeway-land catalog: live, and the mini fixture's. */
+export const FREEWAY_LAND_JSON = {
+  live: path.join(PIPELINE_DIR, 'enrichment/freeway-land.json'),
+  fixture: path.join(PIPELINE_DIR, 'test/fixtures/mini/enrichment/freeway-land.json')
+};
+
+// pipeline/lib/freeway-land.ts (moved from pipeline/lib/lesscars/freeway-land.ts, unchanged)
+export interface FreewaySegment { /* as today */ }
+export interface FreewayLandFile { schema: 1; segments: FreewaySegment[] }
+export class FreewayLandFormatError extends Error {}
+export function parseFreewayLand(json: unknown): FreewayLandFile;
+export function readFreewayLand(path: string): FreewayLandFile | null;
+export function readFreewayLandSet(path: string): ReadonlySet&lt;ParcelId&gt;;
+export function freewayLandSet(f: FreewayLandFile | null | undefined): ReadonlySet&lt;ParcelId&gt;;</code></pre>
+      <ul>
+        <li>The live catalog is moved with <code>git mv</code> and stays byte for byte: sha256 <code>d1b301c7233269565e923031dd3f79d0d5185c09b742fae061e338ef0394908a</code>.</li>
+        <li>The mini catalog moves from <code>pipeline/test/fixtures/mini/enrichment/lesscars-freeway-land.json</code> to <code>…/mini/enrichment/freeway-land.json</code>, byte for byte (sha256 <code>caf46491cf545f6fcded8eae16f88fd185fbd055d9fde7d766a6d3607cafcf58</code>).</li>
+        <li>The file format stays schema 1 with every field, <code>removedBy</code> and <code>cnn</code> included. The later unlock reads them; this unit's code reads only the parcel sets and the segment freeways.</li>
+        <li><code>build.ts</code>, <code>cli.ts</code>, <code>scenario.ts</code> and every test read the catalog through <code>FREEWAY_LAND_JSON</code> and <code>pipeline/lib/freeway-land.ts</code>. Nothing else about how the catalog is applied changes.</li>
+        <li>The yield provenance sentence in <code>pipeline/steps/scenario.ts:408-410</code> names <code>pipeline/enrichment/freeway-land.json</code> in place of <code>pipeline/enrichment/lesscars/freeway-land.json</code>. Every other word of it stays. The sentence is written into <code>parcels.bin</code>'s header, so it is the one difference <a href="#sec-if-l1">L1</a> allows there.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-pipeline">
+      <h3>The pipeline</h3>
+      <ul>
+        <li><code>build</code> runs SQL, the scenario step, projects, calibration, gross, transit, the policy step, the quality report, tiles, the basemap copy, fonts, the manifest and the check, in today's order, without the less-cars step between policy and the quality report.</li>
+        <li><code>writeBasemap(rawFile, outDir)</code> copies the locked archive to <code>basemap.pmtiles</code> byte for byte. It has no split argument and the report has no <code>tiles.basemap_split_changed</code> key.</li>
+        <li>The commands are <code>doctor</code>, <code>fetch</code>, <code>version</code>, <code>build</code>, <code>check</code>, <code>upload</code>, <code>verify</code>, <code>fixture</code>, <code>quality-doc</code>, <code>boxes</code> and <code>all</code>, as today without the three <code>lesscars-*</code> commands. An unknown command, such as <code>lesscars-cnns</code>, gets the CLI's existing answer: the usage on stderr, listing only those commands, and exit code 2 (<code>pipeline/cli.ts:322-328</code>).</li>
+        <li><code>check</code> runs V1 to V33, V36 and V37. The id V35 is retired and not reused; no other id is renumbered.</li>
+        <li><code>doctor</code> has no <code>node:sqlite</code> check. Its other checks are unchanged.</li>
+        <li><code>InvariantProfile</code> has no <code>lesscarsSeeds</code>.</li>
+        <li><code>datasf-streets</code> keeps its fetch, its lock entry and its <code>src_streets</code> columns, <code>f_st</code> and <code>t_st</code> included. Changing the fetch would change the lock and the dataset for no reason this unit has.</li>
+        <li>The comments that call <code>datasf-streets</code> page-only (<code>pipeline/sources/datasf.ts:185</code>, <code>pipeline/sources/normalise.ts:280-283</code>) say instead that the road-like rule and the boxes command read it.</li>
+        <li><code>pipeline/sql/55_road_lots.sql:32</code> describes its zoning pick in its own words ("active rows, <code>blklot = mapblklot</code> first"), with no reference to the deleted <code>86_freeway_land.sql</code>. The SQL itself is unchanged.</li>
+        <li>Comments in kept files that name <code>/lesscars</code> or a deleted file (<code>build.ts:223-225</code>, <code>pipeline/lib/sb79.ts:34</code>, <code>pipeline/lib/scenario-eligibility.ts:14</code>, <code>pipeline/lib/road-lots.ts:150</code>, <code>check.ts:68-72</code>, <code>pipeline/test/fixtures/mini/README.md:239-244</code>) say what is true after the removal.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-version">
+      <h3>The dataset version's paths</h3>
+      <pre><code data-lang="ts">// pipeline/lib/version.ts
+/** Code whose bytes shape the published data: pipeline/ and every module it imports. */
+export const PATHS = [
+  'pipeline',
+  'src/lib/config.ts',
+  'src/lib/data',
+  'src/lib/generator',
+  'src/lib/timelapse',
+  'src/lib/plan/geometry.ts',
+  'src/lib/plan/types.ts',
+  'src/lib/sim/finance'
+];</code></pre>
+      <ul>
+        <li>The list is what a walk of the imports from <code>pipeline/cli.ts</code> reaches once the less-cars files are gone. It was measured on <code>8125e557</code> with those files left out.</li>
+        <li><code>src/lib/config.ts</code> is new: <code>pipeline/lib/fzp-cal/fallback.ts:6</code> imports <code>REPO_URL</code> from it, and today's list misses it.</li>
+        <li><code>src/lib/sim/scenario</code>, <code>src/lib/sim/levers</code> and <code>src/lib/scoreboard</code> leave the list: after this unit no pipeline code imports them.</li>
+        <li>An entry ending in <code>.ts</code> covers that file; any other entry covers the directory and everything under it.</li>
+        <li><code>EXCLUDE_PATHS</code> and <code>BOXES_CODE_PATHS</code> are unchanged.</li>
+        <li>The dataset rule in <code>chreode.config.ts</code> matches the <code>src/lib</code> entries of <code>PATHS</code> (<a href="#sec-write-edit">Files edited</a>).</li>
+        <li>The comment above <code>PATHS</code> states the rule of <a href="#sec-if-l1">L1</a> and names the test that holds it.</li>
+      </ul>
+      <p>The walk the test does:</p>
+      <ul>
+        <li>It starts at <code>pipeline/cli.ts</code> and follows every static <code>import</code> and <code>export … from</code>, type-only ones included, and every <code>import('…')</code> with a literal specifier.</li>
+        <li>It resolves relative specifiers and <code>$lib/…</code> (to <code>src/lib/…</code>), trying the path, then <code>.ts</code>, then <code>/index.ts</code>, and maps a <code>.js</code> specifier to its <code>.ts</code> file. Package specifiers are not followed.</li>
+        <li>It fails naming the module when a reached module outside <code>pipeline/</code> is under no entry.</li>
+        <li>It fails naming the entry when an entry covers no reached module.</li>
+        <li>It fails naming the specifier when a relative or <code>$lib</code> specifier resolves to no file.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-dataset">
+      <h3>The dataset and the fixture</h3>
+      <p>A build no longer emits:</p>
+      <ul>
+        <li><code>scenarios/lesscars/plan.json</code>, <code>sites.json</code>, <code>summary.json</code> and <code>timeline.bin</code>.</li>
+        <li>The manifest key <code>scenarios.lesscars</code>.</li>
+        <li>The <code>roads_lc</code> source layer in <code>basemap.pmtiles</code>.</li>
+        <li>In <code>report.json</code>: every <code>lesscars.*</code> count, <code>tiles.basemap_split_changed</code>, the <code>lesscars</code> and <code>basemap</code> timings, and the V35 result.</li>
+      </ul>
+      <p>The <code>scenario.freeway_land.*</code> counts and the freeway-land warning line stay.</p>
+      <ul>
+        <li>This unit changes hashed paths: everything it edits or deletes under <code>pipeline/</code>, <code>src/lib/data/manifest.ts</code>, <code>src/lib/data/lesscars/**</code>, and <code>PATHS</code> itself. The live dataset version changes.</li>
+        <li>The unit regenerates the fixture and the golden and commits both. It uploads no dataset and runs no signoff.</li>
+        <li>The fixture keeps the version name <code>fixture-0</code>.</li>
+        <li>Regenerating needs the tools <code>doctor</code> checks: <code>tippecanoe</code> 2.79.0 and the <code>pmtiles</code> CLI 1.31.2 on <code>PATH</code>, and DuckDB's <code>spatial</code> and <code>httpfs</code> extensions.</li>
+      </ul>
+      <pre><code data-lang="sh">npm run pipeline -- doctor
+npm run pipeline -- fixture --update-golden
+npm run test:pipeline</code></pre>
+    </section>
+
+    <section id="sec-design-kept">
+      <h3>What stays, and who uses it</h3>
+      <ul>
+        <li>The freeway-land catalog, as a pipeline input (D11). Users: <code>pipeline/steps/build.ts:226-233</code> (read and loaded into <code>rl_catalog</code>), <code>build.ts:276</code> (the scenario step), <code>build.ts:453</code> and <code>pipeline/cli.ts:149</code> (V17), <code>pipeline/steps/scenario.ts:687</code> and <code>:786</code> (eligibility), <code>pipeline/sql/55_road_lots.sql:150</code> and <code>:202</code> (never road-like).</li>
+        <li><code>docs/lesscars/plan-v1.md</code> (D11), unedited. After this unit no code reads it; it is the starting point of the later unlock.</li>
+        <li>The scenario engine's <code>SimInput.regimes</code>, <code>Schedule.regime</code> and <code>SimInput.reservedFrom</code>, and the engine code behind them (<code>src/lib/sim/scenario/{engine,funded,input}.ts</code>). Users: <code>src/lib/sim/world/frames.referee.spec.ts:64</code>, <code>:105</code>, <code>:167</code> through <code>src/lib/sim/world/test/timeline.ts:112</code>, <code>:125</code> (<code>regimes</code>), and <code>src/lib/sim/scenario/engine-regimes.spec.ts:229</code> (<code>reservedFrom</code>).</li>
+        <li><code>src/lib/fzp/</code> except its two less-cars files: the shared kernel of <code>/sim</code>, imported by more than 30 files under <code>src/lib/{timeline,sim-page,about,scoreboard}</code>, for example <code>src/lib/timeline/TimelineMode.svelte:98-110</code>.</li>
+        <li><code>src/lib/fzp/playback.ts</code> and <code>time.ts</code>, which <code>TimeScrubber</code> used, stay: <code>src/lib/timeline/Playhead.svelte:15-16</code> imports them.</li>
+        <li><code>datasf-streets</code>, read by the road-like rule and the boxes command (<a href="#sec-today-kept">above</a>).</li>
+        <li><code>pipeline/lib/pmtiles-file.ts</code>: <code>pipeline/sources/land.ts:7</code> uses it.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-proofs">
+      <h3>How the L1 rules are proven</h3>
+      <ul>
+        <li><strong>Lot eligibility unchanged.</strong> <code>pipeline/test/golden.test.ts</code> already compares the decoded <code>fixture-0/scenarios/fzp/parcels.bin</code> with <code>pipeline/test/fixtures/mini/golden/scenarios/fzp/parcels.decoded.json</code>. After <code>fixture --update-golden</code>, the diff of that golden file against <code>8125e557</code> is one line: line 109, the yield <code>method</code>, where only the catalog path changes. The operator shows it with the commands below and puts their output in the commit message.</li>
+        <li><strong>The file stays pinned.</strong> <code>golden.test.ts</code> asserts the sha256 of <code>fixture-0/scenarios/fzp/parcels.bin</code> equals the value the regeneration produced, taken once and written into the test.</li>
+        <li><strong>Basemap is a byte copy.</strong> <code>golden.test.ts</code> asserts <code>fixture-0/basemap.pmtiles</code> equals <code>pipeline/test/fixtures/mini/raw/protomaps-basemap.pmtiles</code> byte for byte, and that <code>report.json</code>'s counts have no <code>tiles.basemap_split_changed</code> key.</li>
+        <li><strong>No less-cars output.</strong> <code>golden.test.ts</code> asserts <code>fixture-0</code> has no <code>scenarios/lesscars</code> directory, its manifest has no <code>scenarios.lesscars</code> key, and no report count key starts with <code>lesscars.</code>.</li>
+        <li><strong>No less-cars command.</strong> <code>pipeline/test/cli.test.ts</code> runs <code>lesscars-cnns</code> and gets the usage, which names no <code>lesscars</code> command, and exit code 2.</li>
+        <li><strong>PATHS is exact.</strong> The walk test (<a href="#sec-design-version">above</a>).</li>
+        <li><strong>An older manifest still parses.</strong> <code>src/lib/data/manifest.test.ts</code> parses a manifest with a <code>scenarios.lesscars</code> key, gets no such key back, and finds no <code>scenarios.lesscars.*</code> entry in <code>manifestFiles</code>.</li>
+        <li><strong>The other scenario files are byte-identical.</strong> Before committing, the operator compares the sha256 of the other four <code>fixture-0/scenarios/fzp/*</code> files with the values on <code>8125e557</code> and stops on any difference: no step this unit removes runs before them, and none of them carries the sentence.</li>
+      </ul>
+      <pre><code data-lang="sh"># one changed line in the decoded parcels.bin, and only the path in it
+git diff --numstat 8125e557 -- pipeline/test/fixtures/mini/golden/scenarios/fzp/parcels.decoded.json
+# expected: 1	1	pipeline/test/fixtures/mini/golden/scenarios/fzp/parcels.decoded.json
+git diff -U0 --word-diff 8125e557 -- pipeline/test/fixtures/mini/golden/scenarios/fzp/parcels.decoded.json
+# expected: one hunk at line 109:
+# [-pipeline/enrichment/lesscars/freeway-land.json:-]{+pipeline/enrichment/freeway-land.json:+}
+
+shasum -a 256 e2e/fixtures/data/fixture-0/scenarios/fzp/*
+# 8125e557; every file but parcels.bin must match:
+# 158b54ec0bcc7f8bf2bf42d8b4f1b0edb7eff4ab1d9d9d8aeadacc3c77be210f  calibration.json
+# cb7c45d7a2598611aa79fa6671fec5b763bf662eb38e1e0a0e8d6d09b923fcac  gross.bin
+# 63b50eea1dad679fc0ede49c571c93fcd760930430b9bd06ef540928f105691f  parcels.bin
+# 90f18e4fc05a54e05f182b63fabf65ce2a0451e90dcc6547d8a846b59283c840  policy.bin
+# fe0fc5a43fbe199e1c7950bd3cfb6ded38fae32bb412f948083e389817d0809a  projects.json</code></pre>
+    </section>
+  </section>
+
+  <section id="sec-write-set">
+    <h2>Write set</h2>
+    <p>The design document's row for <code>remove-lesscars</code>:</p>
+    <ul>
+      <li><code>src/routes/{fzp,lesscars}/**</code></li>
+      <li><code>src/lib/{lesscars,sim/lesscars,data/lesscars}/**</code></li>
+      <li><code>src/lib/fzp/{TimeScrubber.svelte,TimeScrubberHarness.svelte,high-water.svelte.ts}</code></li>
+      <li>the <code>TimeScrubber</code> lines of <code>src/lib/shell/accent.spec.ts</code></li>
+      <li><code>src/lib/sim/{worker,router}.ts</code></li>
+      <li><code>src/lib/sim/scenario/types.ts</code></li>
+      <li><code>src/lib/data/manifest.ts</code></li>
+      <li><code>src/lib/map/{style,palette,filter-expr}.ts</code></li>
+      <li><code>pipeline/**</code> except <code>enrichment/funding*.ts|json</code>, <code>lib/fzp-cal/**</code> and <code>steps/calibration.ts</code></li>
+      <li><code>e2e/fixtures/data/fixture-0/**</code></li>
+      <li><code>e2e/lesscars.spec.ts</code> and the less-cars and <code>/fzp</code> tests in <code>e2e/{targets,sim-citywide,sim,pages-a11y}.spec.ts</code></li>
+      <li><code>scripts/data-local.spec.ts</code></li>
+      <li><code>scripts/data-transit.ts</code> and <code>scripts/data-transit.spec.ts</code></li>
+      <li><code>.prettierignore</code></li>
+      <li>the dataset path list of <code>chreode.config.ts</code> and its <code>stderrAllowlist</code> entry for the 404s of <code>/fzp</code> and <code>/lesscars</code></li>
+      <li><code>docs/dev/{pipeline,road-lots,fzp-mode}.md</code></li>
+      <li>by the general rule, the tests, harnesses and test helpers beside those files that test only them</li>
+    </ul>
+    <p>Ordering notes from the design document that concern this unit:</p>
+    <ul>
+      <li><code>pipeline/**</code> and the fixture are written by <code>remove-lesscars</code> and then by <code>finite-funding</code>; the second needs L1.</li>
+      <li><code>chreode.config.ts</code> is written by <code>remove-lesscars</code> (the dataset path list, which follows <code>PATHS</code>, and one <code>stderrAllowlist</code> entry) and by <code>remove-multiuser</code> (one <code>stderrAllowlist</code> entry), in either order because their hunks do not touch, and then by <code>closing</code>.</li>
+      <li>A unit whose e2e case requests a path that answers 404 on purpose adds, in the same change, one <code>stderrAllowlist</code> entry to <code>chreode.config.ts</code> that matches exactly the <code>[WebServer] [404]</code> lines those requests log, beside the existing <code>/no-such-page</code> entry. The <code>✘ [ERROR]</code> header and spacer lines of each 404 block are already allowed.</li>
+      <li><code>src/lib/shell/accent.spec.ts</code> is written by <code>remove-lesscars</code> (the lines about the deleted <code>TimeScrubber</code>) and then by <code>game-shell</code>; the second needs L1.</li>
+      <li>An e2e spec that exists before this build is edited only by the unit named for it in the table.</li>
+      <li>Links to a deleted doc file are fixed by <code>closing</code>.</li>
+      <li>This unit needs nothing from another unit and can start beside <code>contracts</code>. <code>contracts</code> deletes <code>docs/dev/lesscars.md</code>; this unit neither edits that file nor depends on whether it is there.</li>
+    </ul>
+
+    <section id="sec-write-delete">
+      <h3>Files deleted</h3>
+      <p>Routes:</p>
+      <ul>
+        <li><code>src/routes/fzp/+page.ts</code>, <code>page.spec.ts</code></li>
+        <li><code>src/routes/lesscars/+page.svelte</code>, <code>+page.ts</code>, <code>page.spec.ts</code>, <code>page.svelte.spec.ts</code></li>
+      </ul>
+      <p>App modules (every tracked file under the three directories):</p>
+      <ul>
+        <li><code>src/lib/lesscars/</code>: <code>DetailsPanel.svelte</code>, <code>EvidenceDialog.svelte</code>, <code>ExtraChart.svelte</code>, <code>HeadlineBar.svelte</code>, <code>LessCarsCard.svelte</code>, <code>LessCarsMode.svelte</code>, <code>TimelineDialog.svelte</code>, <code>basemap-hide.ts</code>, <code>chart-colors.ts</code>, <code>copy.ts</code>, <code>debug.ts</code>, <code>evidence.ts</code>, <code>features.ts</code>, <code>legend.ts</code>, <code>load.ts</code>, <code>map-layers.ts</code>, <code>summary-view.ts</code>, <code>timeline-view.ts</code>; the specs <code>{DetailsPanel,EvidenceDialog,ExtraChart,HeadlineBar,LessCarsMode,TimelineDialog}.svelte.spec.ts</code>, <code>{basemap-hide,chart-colors,evidence,features,load,map-layers,market-pairing,summary-view,timeline-view}.spec.ts</code>; <code>test/HeadlineHeader.svelte</code>, <code>test/LessCarsModeHost.svelte</code></li>
+        <li><code>src/lib/sim/lesscars/</code>: <code>builds.ts</code>, <code>playback-client.ts</code>, <code>playback-host.ts</code>, <code>types.ts</code>, <code>{builds,playback-client,playback-host}.spec.ts</code>, <code>test/fake-playback-worker.ts</code></li>
+        <li><code>src/lib/data/lesscars/</code>: <code>codec.ts</code>, <code>network.ts</code>, <code>plan.ts</code>, <code>schedule.ts</code>, <code>{codec,network,plan,schedule}.test.ts</code>, <code>fixtures/tiny-plan.ts</code>, <code>fixtures/v1/{plan,sites,summary}.json</code></li>
+        <li><code>src/lib/fzp/TimeScrubber.svelte</code>, <code>TimeScrubber.svelte.spec.ts</code>, <code>TimeScrubberHarness.svelte</code>, <code>high-water.svelte.ts</code>, <code>high-water.svelte.spec.ts</code></li>
+        <li><code>src/lib/map/filter-expr.ts</code>, <code>filter-expr.spec.ts</code></li>
+      </ul>
+      <p>Pipeline:</p>
+      <ul>
+        <li>Config: <code>pipeline/lesscars-config.ts</code></li>
+        <li>Lib: <code>pipeline/lib/lesscars/{basemap-ids,basemap-roads,basemap-split,corridors,regimes,runs,sites,streets}.ts</code>, <code>pipeline/lib/pmtiles-rewrite.ts</code></li>
+        <li>Steps: <code>pipeline/steps/{lesscars,lesscars-sql,lesscars-basemap,lesscars-cnns,lesscars-freeway-land,check-lesscars}.ts</code></li>
+        <li>SQL: <code>pipeline/sql/84_lesscars_sites.sql</code>, <code>85_lesscars_reach.sql</code>, <code>86_freeway_land.sql</code></li>
+        <li>Enrichment: <code>pipeline/enrichment/lesscars/{plan,corridors,corridors.resolved,basemap-ids,basemap-ids.candidates,freeway-land.draft,freeway-land.candidates}.json</code></li>
+        <li>Tests: <code>pipeline/test/lesscars-{basemap-roads,basemap-split,corridors,live-plan,regimes,runs,sites,step,v1-1-enrichment}.test.ts</code>, <code>pipeline/test/lesscars-doc.ts</code>, <code>pipeline/test/lesscars-helpers.ts</code>, <code>pipeline/test/pmtiles-rewrite.test.ts</code>, <code>pipeline/test/engine-node.test.ts</code>, <code>pipeline/test/fixtures/engine-node-smoke.ts</code></li>
+        <li>Mini fixture: <code>pipeline/test/fixtures/mini/enrichment/lesscars-{plan,basemap-ids}.json</code>; <code>pipeline/test/fixtures/mini/golden/scenarios/lesscars/{plan,sites,summary,timeline.decoded}.json</code></li>
+      </ul>
+      <p>Dataset fixture: <code>e2e/fixtures/data/fixture-0/scenarios/lesscars/{plan,sites,summary}.json</code>, <code>timeline.bin</code>.</p>
+      <p>e2e: <code>e2e/lesscars.spec.ts</code>.</p>
+    </section>
+
+    <section id="sec-write-move">
+      <h3>Files moved</h3>
+      <ul>
+        <li><code>pipeline/enrichment/lesscars/freeway-land.json</code> to <code>pipeline/enrichment/freeway-land.json</code>, bytes unchanged</li>
+        <li><code>pipeline/test/fixtures/mini/enrichment/lesscars-freeway-land.json</code> to <code>pipeline/test/fixtures/mini/enrichment/freeway-land.json</code>, bytes unchanged</li>
+        <li><code>pipeline/lib/lesscars/freeway-land.ts</code> to <code>pipeline/lib/freeway-land.ts</code> (only its header comment and its one relative import change)</li>
+        <li><code>pipeline/test/lesscars-freeway-land.test.ts</code> to <code>pipeline/test/freeway-land.test.ts</code>, edited as in <a href="#sec-tests">Tests</a></li>
+      </ul>
+    </section>
+
+    <section id="sec-write-edit">
+      <h3>Files edited</h3>
+      <p>App and worker:</p>
+      <ul>
+        <li><code>src/lib/sim/worker.ts</code>: removes the playback import and <code>createPlayback</code>; the header comment names the three hosts. The editor, scenario and timeline wiring stay.</li>
+        <li><code>src/lib/sim/router.ts</code>: removes the playback imports, <code>createPlayback</code>, the <code>playback</code> handle and mode, <code>endPlayback</code>, the <code>initPlayback</code> and <code>playbackCard</code> cases and every <code>mode === 'playback'</code> branch; adds <code>WorkerMode</code>; the header and <code>RouterDeps</code> comments drop playback. Every other case stays.</li>
+        <li><code>src/lib/sim/scenario/types.ts</code>: removes the import at <code>:35</code> and the playback members of <code>WorkerRequest</code> and <code>WorkerResponse</code>. <code>regimes</code>, <code>regime</code> and <code>reservedFrom</code> stay with their comments.</li>
+        <li><code>src/lib/data/manifest.ts</code>: removes <code>scenarios.lesscars</code> from the schema and its four <code>add</code> lines; adds the derived <code>splitRoads</code>. Everything else stays.</li>
+        <li><code>src/lib/map/style.ts</code>: <code>protomapsLayers</code> adds the clones only when <code>manifest.splitRoads</code>; the constants' comment as in <a href="#sec-design-map">the style</a>. <code>buildStyle</code>'s signature stays.</li>
+        <li><code>src/lib/map/palette.ts</code>: removes the 12 <code>lc-*</code> names and values and the <code>lc-*</code> clause of the <code>TOKENS</code> comment.</li>
+        <li><code>src/lib/shell/accent.spec.ts</code>: removes <code>'src/lib/fzp/TimeScrubber.svelte'</code> from <code>SCANNED</code> (<code>:26</code>) and the test "the time bar uses tokens, not hex" (<code>:151-154</code>). <code>SCANNED</code> keeps <code>...CHROME_FILES</code> and <code>RadiusPopover.svelte</code>; every other list and test stays.</li>
+        <li>Their tests: <code>src/lib/sim/worker-router.spec.ts</code>, <code>src/lib/sim/scenario/types.spec.ts</code>, <code>src/lib/data/manifest.test.ts</code>, <code>src/lib/map/style.spec.ts</code>, <code>src/lib/map/palette.spec.ts</code>, as in <a href="#sec-tests">Tests</a>.</li>
+      </ul>
+      <p>Pipeline code:</p>
+      <ul>
+        <li><code>pipeline/cli.ts</code>: removes the three <code>lesscars-*</code> commands and their imports; <code>check</code> reads <code>FREEWAY_LAND_JSON</code> through <code>pipeline/lib/freeway-land.ts</code>.</li>
+        <li><code>pipeline/config.ts</code>: adds <code>FREEWAY_LAND_JSON</code> (and the <code>path</code> import and pipeline directory it needs); removes <code>lesscarsSeeds</code> from <code>InvariantProfile</code> and both profiles.</li>
+        <li><code>pipeline/steps/build.ts</code>: removes the less-cars imports, <code>writeLessCars</code>, the split, <code>lesscars:</code> in the manifest call and <code>...lesscars.counts</code>; reads the catalog from <code>FREEWAY_LAND_JSON</code>; calls <code>writeBasemap(basemapRaw, outDir)</code>. The lock lookup of <code>protomaps-basemap</code> and its <code>BuildError</code> stay.</li>
+        <li><code>pipeline/steps/tiles.ts</code>: <code>writeBasemap</code> becomes a byte copy; removes the split and <code>rewritePmtiles</code> imports. <code>writeBuildingsTiles</code> and <code>installFonts</code> stay.</li>
+        <li><code>pipeline/steps/manifest.ts</code>: removes the <code>lesscars</code> argument and key and the <code>LESSCARS_FILES</code> import.</li>
+        <li><code>pipeline/steps/check.ts</code>: removes <code>checkV35</code> and its call; the header comment drops V35. V17 stays.</li>
+        <li><code>pipeline/steps/fixture.ts</code>: removes the less-cars golden files, the timeline dump and their imports.</li>
+        <li><code>pipeline/steps/scenario.ts</code>: imports from <code>../lib/freeway-land</code>; the provenance sentence at <code>:409</code> names <code>pipeline/enrichment/freeway-land.json</code>.</li>
+        <li><code>pipeline/steps/doctor.ts</code>: removes the <code>node:sqlite</code> check.</li>
+        <li><code>pipeline/lib/scenario-files.ts</code>: removes <code>LESSCARS_FILES</code> and <code>LESSCARS_TIMELINE_DUMP</code>.</li>
+        <li><code>pipeline/lib/version.ts</code>: <code>PATHS</code> as in <a href="#sec-design-version">the design</a>, exported, with the new comment.</li>
+        <li>Comments only: <code>pipeline/lib/scenario-eligibility.ts</code>, <code>pipeline/lib/road-lots.ts</code>, <code>pipeline/lib/sb79.ts</code>, <code>pipeline/sources/datasf.ts</code>, <code>pipeline/sources/normalise.ts</code>, <code>pipeline/sql/55_road_lots.sql</code>.</li>
+      </ul>
+      <p>Pipeline tests and the mini fixture:</p>
+      <ul>
+        <li><code>pipeline/test/golden.test.ts</code>, <code>invariants.test.ts</code>, <code>manifest.test.ts</code>, <code>upload.test.ts</code>, <code>verify.test.ts</code>, <code>tiles.test.ts</code>, <code>doctor.test.ts</code>, <code>version.test.ts</code>, <code>helpers.ts</code>, <code>helpers/temp-repo.ts</code>, <code>road-lots-sql.test.ts</code>, <code>road-lots-scenario.test.ts</code>, <code>scenario-quality.test.ts</code>: as in <a href="#sec-tests">Tests</a>.</li>
+        <li><code>pipeline/test/fixtures/mini/README.md</code>: the "Freeway land" section names <code>enrichment/freeway-land.json</code>, <code>FREEWAY_LAND_JSON.fixture</code> and <code>pipeline/lib/freeway-land.ts</code>; the segment description drops "removed by the mini plan's <code>hwy</code>". The rest stays.</li>
+        <li><code>pipeline/test/fixtures/mini/golden/manifest.json</code>, <code>golden/report.json</code>, <code>golden/scenarios/fzp/parcels.decoded.json</code>: regenerated by <code>fixture --update-golden</code>.</li>
+      </ul>
+      <p>Dataset fixture, regenerated: <code>e2e/fixtures/data/fixture-0/manifest.json</code>, <code>report.json</code>, <code>basemap.pmtiles</code>, <code>scenarios/fzp/parcels.bin</code>, and any other file the regeneration rewrites. The other four <code>scenarios/fzp/*</code> files come out byte-identical (<a href="#sec-design-proofs">proofs</a>).</p>
+      <p>Repository config:</p>
+      <ul>
+        <li><code>chreode.config.ts</code>: the <code>match</code> list of the dataset rule (<code>:18-28</code>) becomes the <code>src/lib</code> part of <code>PATHS</code>. A new rule right after it, before the <code>pipeline/**</code> rule, matches the other <code>src</code> files the pipeline's tests import, with every trigger but <code>dataset</code>. Both lists are below. The first matching rule wins, so a file in both lists takes the dataset rule. Every other rule stays.</li>
+        <li>The second list is what a walk of the imports from every file under <code>pipeline/test/</code> reaches outside <code>PATHS</code>, measured on <code>8125e557</code> with the deleted files left out. Its comment says so.</li>
+        <li><code>.prettierignore</code>: removes lines 22-23 (the comment and <code>src/lib/data/lesscars/fixtures/v1</code>). The rest stays.</li>
+        <li><code>chreode.config.ts</code>, <code>stderrAllowlist</code>: one entry, right after the <code>/no-such-page</code> entry, whose pattern matches exactly <code>[WebServer] [404] GET /fzp</code> and <code>[WebServer] [404] GET /lesscars</code>, with the reason "the expected 404s of /fzp and /lesscars that e2e/pages-a11y.spec.ts requests". <code>e2e/pages-a11y.spec.ts</code> requests them on purpose and signoff fails on server output that no entry allows.</li>
+      </ul>
+      <pre><code data-lang="ts">// chreode.config.ts, the dataset rule
+match: [
+  'src/lib/config.ts',
+  'src/lib/data/**',
+  'src/lib/generator/**',
+  'src/lib/timelapse/**',
+  'src/lib/plan/types.ts',
+  'src/lib/plan/geometry.ts',
+  'src/lib/sim/finance/**'
+],
+triggers: ['lint', 'check', 'unit', 'e2e', 'pipeline', 'dataset']
+
+// chreode.config.ts, the new rule: src files only the pipeline's tests import
+match: [
+  'src/lib/sim/scenario/**',
+  'src/lib/sim/levers/**',
+  'src/lib/scoreboard/**',
+  'src/lib/fzp/time.ts',
+  'src/lib/map/types.ts',
+  'src/lib/map/height/types.ts',
+  'src/lib/plan/constants.ts',
+  'src/lib/plan/index.ts',
+  'src/lib/plan/parcel-index.ts',
+  'src/lib/plan/resolve.ts',
+  'src/lib/plan/schema.ts',
+  'src/lib/sim/outlines.ts',
+  'src/lib/sim/protocol.ts',
+  'src/lib/view/prefs.ts'
+],
+triggers: ['lint', 'check', 'unit', 'e2e', 'pipeline']</code></pre>
+      <p>Scripts: <code>scripts/data-local.spec.ts</code>, as in <a href="#sec-tests">Tests</a>; <code>scripts/data-transit.ts</code> writes the raw manifest with <code>transit</code> set, as in <a href="#sec-design-manifest">the manifest</a>.</p>
+      <p>e2e: <code>e2e/targets.spec.ts</code>, <code>e2e/sim-citywide.spec.ts</code>, <code>e2e/sim.spec.ts</code>, <code>e2e/pages-a11y.spec.ts</code>, only their less-cars and <code>/fzp</code> tests and the header comments that name them, as in <a href="#sec-tests">Tests</a>.</p>
+      <p>Docs: <code>docs/dev/pipeline.md</code>, <code>docs/dev/road-lots.md</code>, <code>docs/dev/fzp-mode.md</code>, as in <a href="#sec-docs">Docs</a>.</p>
+    </section>
+  </section>
+
+  <section id="sec-tests">
+    <h2>Tests</h2>
+
+    <section id="sec-tests-deleted">
+      <h3>Deleted</h3>
+      <ul>
+        <li>Every spec, test and harness listed under <a href="#sec-write-delete">Files deleted</a>.</li>
+        <li><code>pipeline/test/engine-node.test.ts</code> and its smoke script: they prove the engine runs from pipeline code, and no pipeline code runs it afterwards.</li>
+        <li><code>pipeline/test/lesscars-v1-1-enrichment.test.ts</code>: it binds the catalog, the draft and the basemap id list to <code>docs/lesscars/plan-v1.md</code>, and the draft and id list are deleted. The catalog stays guarded by <code>parseFreewayLand</code> at build time and by V17.</li>
+        <li>In <code>src/lib/shell/accent.spec.ts</code>: "the time bar uses tokens, not hex" (<code>:151-154</code>) and the <code>TimeScrubber.svelte</code> entry of <code>SCANNED</code> (<code>:26</code>), which the scan at <code>:245</code> reads.</li>
+        <li>In <code>pipeline/test/invariants.test.ts</code>: the <code>V35 /lesscars files</code> describe (<code>:1238-1350</code>).</li>
+        <li>In <code>pipeline/test/manifest.test.ts</code>: "names the four lesscars urls" (<code>:102-121</code>).</li>
+        <li>In <code>pipeline/test/verify.test.ts</code>: "HEAD-checks the lesscars urls" (<code>:71-83</code>).</li>
+        <li>In <code>pipeline/test/tiles.test.ts</code>: "with the fixture phase, the listed street inside the corridor is only in roads_lc" (<code>:382-457</code>).</li>
+        <li>In <code>pipeline/test/freeway-land.test.ts</code> (moved): the <code>lesscars-freeway-land candidates</code> describe (<code>:157</code> on).</li>
+        <li>In <code>src/lib/map/palette.spec.ts</code>: <code>LC_STREETS</code> and <code>LC_MARKS</code> (<code>:27-38</code>) and the three <code>lc-*</code> tests (<code>:106-124</code>).</li>
+        <li>In <code>src/lib/sim/worker-router.spec.ts</code>: the <code>createPlayback</code> dep (<code>:42-46</code>), the playback cases (<code>:239</code>, <code>:328-435</code>) and the timeline-mode cases about playback (<code>:455-475</code>; the <code>init</code> and <code>initScenario</code> halves of "init, initScenario and initPlayback dispose the timeline host" stay).</li>
+        <li>In <code>e2e/targets.spec.ts</code>: "/lesscars at rest" (<code>:506-515</code>), <code>__sfhLessCars</code> in the window type (<code>:10</code>), and <code>/lesscars</code> in the header comment (<code>:2</code>).</li>
+        <li>In <code>e2e/sim-citywide.spec.ts</code>: "/lesscars keeps street bars and draws no city feed" (<code>:125-137</code>) and the <code>/lesscars</code> clause of the header comment (<code>:2</code>).</li>
+        <li>In <code>e2e/sim.spec.ts</code>: "/fzp lands on /sim and the forecast fills" (<code>:237-243</code>); the section comment (<code>:235</code>) reads "the shell" and the header comment (<code>:1</code>) drops "the /fzp redirect".</li>
+      </ul>
+    </section>
+
+    <section id="sec-tests-changed">
+      <h3>Changed</h3>
+      <ul>
+        <li><code>pipeline/test/golden.test.ts</code>: no less-cars files or timeline dump; the manifest test (<code>:649-680</code>) names the three scenario files, <code>policy.bin</code> and <code>gross.bin</code> and asserts no <code>scenarios.lesscars</code>. Lot 19's freeway-land tests (<code>:247-262</code>) stay.</li>
+        <li><code>pipeline/test/freeway-land.test.ts</code>: the catalog parse tests and the "freeway land in the mini build" tests stay, reading <code>FREEWAY_LAND_JSON.fixture</code>; the mini-build tests run the step chain without the plan and the carve.</li>
+        <li><code>pipeline/test/road-lots-scenario.test.ts</code>: runs the mini step chain (SQL, scenario step with the fixture catalog, neighbourhoods, transit, policy) without the less-cars plan and carve. The helper's name and file are the operator's. Every assertion stays.</li>
+        <li><code>pipeline/test/helpers.ts</code>, <code>road-lots-sql.test.ts</code>, <code>scenario-quality.test.ts</code>, <code>invariants.test.ts</code>: import the catalog through <code>FREEWAY_LAND_JSON</code> and <code>../lib/freeway-land</code>; assertions unchanged.</li>
+        <li><code>pipeline/test/upload.test.ts</code>: the dataset and manifest it builds have no less-cars files; the expected upload list (<code>:257-258</code>) drops them.</li>
+        <li><code>pipeline/test/tiles.test.ts</code>: the byte-copy test (<code>:373-380</code>) calls <code>writeBasemap(raw, out)</code> and keeps its byte and z12 assertions; the less-cars imports go.</li>
+        <li><code>pipeline/test/doctor.test.ts</code>: asserts no check is named <code>node:sqlite</code> (<code>:49-50</code>).</li>
+        <li><code>pipeline/test/version.test.ts</code>: the "changes when a file under %s changes" table (<code>:90-98</code>) drops <code>sim/scenario</code>, <code>sim/levers</code> and <code>scoreboard</code> and adds <code>src/lib/config.ts</code>; a new case asserts a change under each of <code>src/lib/sim/scenario</code>, <code>src/lib/sim/levers</code> and <code>src/lib/scoreboard</code> leaves <code>codeTreeHash</code> unchanged. The pinned hashes of "codeTreeHash is unchanged by the refactor" (<code>:119-133</code>) are re-taken from the new <code>PATHS</code>.</li>
+        <li><code>pipeline/test/helpers/temp-repo.ts</code>: also commits <code>src/lib/config.ts</code>.</li>
+        <li><code>src/lib/sim/scenario/types.spec.ts</code>: drops the playback import (<code>:33</code>) and <code>PlaybackRequest</code> from <code>RowWorkerRequest</code> (<code>:206</code>).</li>
+        <li><code>src/lib/map/palette.spec.ts</code>: the pin test (<code>:341-347</code>) compares every token but <code>tl-halo-*</code> with the pinned body and drops its <code>lc-*</code> assertions.</li>
+        <li><code>src/lib/data/manifest.test.ts</code>: "accepts scenarios.lesscars" (<code>:169-180</code>) becomes the parse test under Added; the full-manifest case (<code>:236-240</code>) has no <code>lesscars</code> key.</li>
+        <li><code>scripts/data-local.spec.ts</code>: the manifest (<code>:26-31</code>) keeps its <code>lesscars</code> block, which the parse drops, and the expected list (<code>:52-55</code>) has no <code>scenarios/lesscars/*</code> path. That proves <code>data:local</code> copies no less-cars file from an older manifest.</li>
+        <li><code>src/lib/map/style.spec.ts</code>: the <code>roads_lc clones</code> describe (<code>:253-286</code>) builds its styles from the fixture manifest with <code>splitRoads: true</code>; its assertions stay (each <code>roads</code> layer followed by its clone, equal but for id and source layer; the clones theme-diff as their roads layers).</li>
+        <li><code>e2e/pages-a11y.spec.ts</code>: the map-page set (<code>:16</code>) is <code>/</code> and <code>/sim</code>.</li>
+      </ul>
+    </section>
+
+    <section id="sec-tests-added">
+      <h3>Added</h3>
+      <ul>
+        <li><code>pipeline/test/golden.test.ts</code>: the sha256 of <code>fixture-0/scenarios/fzp/parcels.bin</code> equals the value the regeneration produced, written into the test.</li>
+        <li><code>pipeline/test/golden.test.ts</code>: <code>fixture-0/basemap.pmtiles</code> equals <code>mini/raw/protomaps-basemap.pmtiles</code> byte for byte, and <code>report.json</code> has no <code>tiles.basemap_split_changed</code> count.</li>
+        <li><code>pipeline/test/golden.test.ts</code>: <code>fixture-0</code> has no <code>scenarios/lesscars</code>, and no count key in <code>report.json</code> starts with <code>lesscars.</code>.</li>
+        <li><code>pipeline/test/version-paths.test.ts</code>: the import walk of <a href="#sec-design-version">the design</a>, with one case that it passes on the tree and one that it fails, naming the module, on a synthetic import graph with a module outside <code>PATHS</code>, and naming the entry on a graph that reaches none under an entry. The walk takes the root and <code>PATHS</code> as arguments so the failing cases run on a temporary directory.</li>
+        <li><code>pipeline/test/cli.test.ts</code>: <code>npx tsx pipeline/cli.ts lesscars-cnns</code> exits 2 with a stderr that starts with "Usage:" and does not contain <code>lesscars</code>.</li>
+        <li><code>src/lib/data/manifest.test.ts</code>: a manifest with <code>scenarios.lesscars</code> parses, the result has no <code>scenarios.lesscars</code>, and <code>manifestFiles</code> has no key starting with <code>scenarios.lesscars</code>.</li>
+        <li><code>src/lib/map/style.spec.ts</code>: in both themes, a style built for a manifest without <code>splitRoads</code> has no layer whose id ends in <code>__lc</code> and none with source layer <code>roads_lc</code>.</li>
+        <li><code>src/lib/data/manifest.test.ts</code>: a raw manifest with a <code>scenarios.lesscars</code> object parses with <code>splitRoads: true</code>; one without it has no <code>splitRoads</code>; a raw top-level <code>splitRoads: true</code> without <code>scenarios.lesscars</code> gives none.</li>
+        <li><code>src/lib/map/palette.spec.ts</code>: no token name starts with <code>lc-</code>.</li>
+        <li><code>scripts/data-transit.spec.ts</code>: on an older manifest with a <code>scenarios.lesscars</code> object, the written JSON keeps that object, has no <code>splitRoads</code> key and carries the new <code>transit</code>, and parsing it again gives <code>splitRoads: true</code>.</li>
+        <li><code>src/lib/sim/worker-router.spec.ts</code>: a message of type <code>initPlayback</code> or <code>playbackCard</code> posts nothing and creates or disposes no host.</li>
+        <li><code>e2e/pages-a11y.spec.ts</code>: the 404 loop (<code>:30</code>) also covers <code>/fzp</code> and <code>/lesscars</code>, each answering 404 with heading "Page not found" and passing the same a11y and overflow checks. The <code>[WebServer] [404]</code> lines they log are allowed by this unit's <code>stderrAllowlist</code> entry.</li>
+      </ul>
+      <p>The E9 map goldens (<code>e2e/map.spec.ts:825-877</code>) are not re-taken. The unsplit basemap draws the same roads with the same paint the clones had, so a failing E9 is a defect to find.</p>
+    </section>
+  </section>
+
+  <section id="sec-docs">
+    <h2>Docs</h2>
+    <ul>
+      <li><code>docs/dev/pipeline.md</code>:
+        <ul>
+          <li>Line 5: <code>datasf-streets</code> is read by the road-like rule (<code>55_road_lots.sql</code>) and the boxes command; refresh it with <code>fetch --only datasf-streets</code>. No mention of a page or of <code>lesscars-cnns</code>.</li>
+          <li>The command table has no <code>lesscars-*</code> rows; the paragraph at line 40 has no less-cars step.</li>
+          <li>The <code>basemap.pmtiles</code> bullet: the locked protomaps extract, copied byte for byte. The <code>scenarios/lesscars</code> bullet is gone.</li>
+          <li>The dataset version paragraph (line 91) lists the new <code>PATHS</code> and says the version-paths test holds it to the pipeline's imports.</li>
+          <li>"Freeway land": the catalog is <code>pipeline/enrichment/freeway-land.json</code> (<code>FREEWAY_LAND_JSON.live</code>; the mini's is <code>…/mini/enrichment/freeway-land.json</code>), parsed in <code>pipeline/lib/freeway-land.ts</code>; the live catalog has 11 segments and 559 parcels; no mention of a spec for less cars, of "/lesscars arms" or of Plan B.</li>
+          <li>The road-like "Evaluated lots" bullet describes the zoning pick without naming <code>86_freeway_land.sql</code>.</li>
+          <li>The checks paragraph (line 158) says V1 to V33, V36 and V37.</li>
+          <li>Line 363 has no clause about <code>/fzp</code>.</li>
+          <li>No link to <code>lesscars.md</code> anywhere.</li>
+        </ul>
+      </li>
+      <li><code>docs/dev/road-lots.md</code>: the "### /lesscars" section (lines 465-485), the <code>/lesscars</code> paragraph of "Live check" (lines 564-567) and every link to <code>lesscars.md</code> go. "Lots beside freed sites" stays as the record of the 2026-11-08 measurement, with the freed-site phases read from the catalog and the deleted plan file named as the source of that day. "Live check" names the pages it checked as <code>/sim</code> and Paint, and <code>window.__sfhLessCars</code> goes from its list.</li>
+      <li><code>docs/dev/fzp-mode.md</code>:
+        <ul>
+          <li>Intro: <code>src/lib/fzp</code> is the shared kernel of <code>/sim</code> and <code>/s/&lt;id&gt;</code>; <code>/fzp</code> and <code>/lesscars</code> do not exist and answer 404.</li>
+          <li>"What is here": the first row is "The clock": <code>playback.ts</code>, <code>time.ts</code>, used by <code>/sim</code>'s <code>Playhead</code>. No row or cell names <code>/lesscars</code>, <code>TimeScrubber</code> or <code>HighWater</code>.</li>
+          <li>The rule "A file <code>/lesscars</code> imports is not edited by <code>/sim</code> work" goes.</li>
+          <li>"The scrubber contract" goes, except the speeds and the frame clamp of <code>playback.ts</code>, which stay as two bullets under "The clock".</li>
+          <li>"The high-water mark" paragraph goes.</li>
+          <li>Every other section stays.</li>
+        </ul>
+      </li>
+    </ul>
+  </section>
+
+  <section id="sec-global-constraints">
+    <h2>Global constraints</h2>
+    <ul>
+      <li>Work happens in git worktrees under <code>.claude/worktrees/</code>. Commits follow Conventional Commits. No attribution to an AI anywhere.</li>
+      <li>Code style: 2-space indent, single quotes, no trailing commas, 100 columns.</li>
+      <li>Every Vitest test calls <code>expect</code>.</li>
+      <li>Signoff fails on server stderr, on timing crutches and on a retried flake. Each unit runs <code>npm run lint</code>, <code>npm run check</code> and the Vitest projects its files belong to before it hands back.</li>
+      <li>Port 4173 is shared by every session on this machine. A unit never kills a server it did not start; it waits.</li>
+      <li>Every agent runs every command in the foreground and never ends a turn while something it started is running.</li>
+      <li>Schema changes go through <code>npm run db:generate</code>. Nobody edits a migration.</li>
+      <li>No unit runs <code>npm run signoff</code>: its dataset step fails until the dataset is uploaded. <code>closing</code> runs it once, after the upload.</li>
+      <li>The dataset version changes in this build. The dataset is uploaded once, by <code>closing</code>, from the integration branch, after every unit has merged; no other unit uploads a dataset. <code>reach-check</code> builds one earlier to run the check and uploads nothing.</li>
+      <li>A unit that writes a hashed path regenerates the fixture dataset with <code>npm run pipeline -- fixture</code> and commits it.</li>
+      <li>WCAG 2.2 AA: every new control is at least 24 px and passes <code>expectNoA11yViolations</code> in light and dark.</li>
+      <li>Page text is short. No sentence says what something is not.</li>
+      <li>Nothing on the main screen says "RHNA". The goal is read from the <code>Goal</code> value, never from a constant.</li>
+      <li>The game's rules are read from <code>src/lib/game/</code>. No component compares a level to a number.</li>
+      <li>One future: no seed control, no band, no average over runs.</li>
+      <li>Published plans and policies, their ids and their pages keep working, including every policy published before this build.</li>
+      <li>A number that is a claim about the world carries its source and tier, in the existing <code>Sourced</code>, <code>Unsourced</code> and <code>Evidence</code> shapes.</li>
+      <li>A runtime dependency that ships in the bundle gets a credit in <code>SOFTWARE</code>. This build adds none.</li>
+      <li>CSP changes are interface changes. This build makes none.</li>
+      <li>Timing is measured only on a quiet machine. A unit that cannot get one defers the measurement and says so.</li>
+    </ul>
+  </section>
+
+  <section id="sec-out-of-scope">
+    <h2>Out of scope</h2>
+    <ul>
+      <li>Less-cars unlocks (adding transit, removing highways, freed land): a later round, rebuilt on the step engine.</li>
+      <li>Removing the scenario engine or its <code>regimes</code> and <code>reservedFrom</code> inputs: the design keeps it as the referee.</li>
+      <li>Renaming <code>src/lib/fzp</code> or the e2e files named <code>fzp</code>, which test <code>/sim</code>.</li>
+      <li>Deleting <code>docs/dev/lesscars.md</code> and its <code>CLAUDE.md</code> line: <code>contracts</code>.</li>
+      <li>Links to <code>docs/dev/lesscars.md</code> from other docs (<code>sim-levers</code>, <code>map-interfaces</code>, <code>finance-engine</code>), and other docs' mentions of <code>/lesscars</code>: <code>closing</code>.</li>
+      <li><code>package.json</code>: <code>closing</code> removes <code>@maplibre/vt-pbf</code>, which no file imports after this unit.</li>
+      <li>Stale comments and dead entries in other units' files and in <code>CLAUDE.md</code>, the final sweep in <code>closing</code>: <code>src/lib/shell/layout.ts:6</code> and its specs, <code>SiteHeader.svelte:7</code>, <code>header-actions.svelte.ts:10</code>, <code>src/lib/timeline/copy.ts:3</code>, <code>src/lib/fzp/{market-view.ts:14,chart.ts:4,test/sim-map-stub.ts:73}</code>, <code>src/lib/map/SimMap.svelte:1547</code>, <code>e2e/fzp.spec.ts:1-2</code>, <code>e2e/fzp-sim.spec.ts:22</code>, and <code>CLAUDE.md</code>'s command table and doc list line for <code>fzp-mode.md</code>.</li>
+      <li><code>e2e/helpers/sharing.ts</code>'s <code>clientNavigate</code>, whose only caller was <code>e2e/lesscars.spec.ts</code>: left in place.</li>
+      <li>The funding data, <code>pipeline/lib/fzp-cal/**</code>, <code>steps/calibration.ts</code> and <code>calibration.json</code>: <code>finite-funding</code>.</li>
+      <li>Uploading a dataset and running signoff: <code>closing</code>, once, from the integration branch.</li>
+      <li>The reserved handle words in <code>handle-normalize.ts</code>: unchanged, in <code>remove-multiuser</code>'s write set.</li>
+    </ul>
+  </section>
+</article>

@@ -541,7 +541,6 @@ describe('funded by (funding-ui 4.13)', () => {
     kind: 'goBond',
     label,
     inflows: [{ kind: 'once', day: FUND_ASOF, dollars: 100_000_000 }],
-    uncapped: false,
     debt: { rate: 0.06, termYears: 20 },
     leverage: 1
   });
@@ -556,7 +555,7 @@ describe('funded by (funding-ui 4.13)', () => {
     minHomes: 20,
     tiers: { veryLow: 0.52, low: 0.31, moderate: 0.17, aboveModerate: 0 }
   });
-  /** What FzpMode passes: the page's `fundingName` over the card's funding. */
+  /** What TimelineMode passes: the page's `fundingName` over the card's funding. */
   const fundedBy = (card: ProjectCard, f = policyWith({}).funding) =>
     fundingName(f, baseline)(cardFunding(card)!);
   const line = () => page.getByTestId('card-funded-by');

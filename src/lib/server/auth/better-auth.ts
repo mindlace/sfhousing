@@ -21,6 +21,7 @@ import {
   handleAccountLink,
   normalizeLinkArgs
 } from '$lib/server/user-store/identity';
+import { moveGames } from '$lib/server/game/store';
 import { recordUserVersion } from '$lib/server/user-store/history';
 import { recordE2eMail } from '$lib/server/e2e/mail-sink';
 import { buildResetPasswordEmail } from '$lib/server/email-templates/reset-password';
@@ -85,6 +86,28 @@ async function recordHistoryFor(
 export interface GetAuthOptions {
   captureMagicLink?: (link: { email: string; url: string }) => void;
   methods?: ReadonlySet<AuthMethod>;
+}
+
+/** The anonymous plugin's `onLinkAccount`. Fail-loud: a reconcile failure means the identity
+ *  graph is inconsistent, and surfacing beats hiding it. A fuse moves the absorbed identity's
+ *  saved games to the survivor. */
+export function onLinkAccountFor(
+  db: Database,
+  freshlyCreated: Set<string>
+): (args: {
+  anonymousUser: { user: { id: string } };
+  newUser: { user: { id: string } };
+}) => Promise<void> {
+  return async (args) => {
+    const isUpgrade = freshlyCreated.has(args.newUser.user.id);
+    freshlyCreated.delete(args.newUser.user.id);
+    await handleAccountLink({
+      db,
+      isUpgrade,
+      ...normalizeLinkArgs(args),
+      onFuse: (survivorId, absorbedId) => moveGames(db, survivorId, absorbedId)
+    });
+  };
 }
 
 export function getAuth(
@@ -289,21 +312,7 @@ export function getAuth(
       anonymous({
         emailDomainName: PSEUDONYMOUS_EMAIL_DOMAIN,
         disableDeleteAnonymousUser: true,
-        onLinkAccount: async (args) => {
-          // Fail-loud: a reconcile failure here means the identity graph is inconsistent —
-          // surfacing beats silently hiding a bad graph.
-          const isUpgrade = freshlyCreated.has(args.newUser.user.id);
-          freshlyCreated.delete(args.newUser.user.id);
-          await handleAccountLink({
-            db: drizzleDb,
-            isUpgrade,
-            ...normalizeLinkArgs(args),
-            // R49: told after the fuse, off the sign-in's path. Without a request context the
-            // promise is simply left to run (it never rejects); `ctx` is called as a method,
-            // since an unbound waitUntil throws.
-            roster: { env: platform.env, defer: (work) => platform.ctx?.waitUntil(work) }
-          });
-        }
+        onLinkAccount: onLinkAccountFor(drizzleDb, freshlyCreated)
       }),
       magicLink({
         // A never-seen email creates an account on verify (cold signup).

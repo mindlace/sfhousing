@@ -7,6 +7,7 @@ import { MSG } from '../src/lib/brush/messages';
 import type { SfhFzpDebug } from '../src/lib/fzp/debug';
 import { COPY } from '../src/lib/sharing/copy';
 import { expectNoA11yViolations } from './helpers/a11y';
+import { seedGame } from './helpers/game';
 import {
   addPolicy,
   holdPolicy,
@@ -536,41 +537,21 @@ test('color-scheme follows the theme on the map pages, and a document page stays
   await expect(page.locator('html')).toHaveCSS('color-scheme', 'normal');
 });
 
-test("the shared view's banner and its Remix dialog have no axe violations in dark", async ({
-  page,
-  request,
-  isMobile
-}) => {
+test("the shared view's banner has no axe violations in dark", async ({ page, request }) => {
   const res = await request.post('/api/plans', {
     data: smallText,
     headers: { 'content-type': 'application/json' }
   });
   expect(res.ok()).toBe(true);
   const { id } = (await res.json()) as { id: string };
-  // Local work to replace, so Remix asks first.
-  await gotoEditor(page);
-  await paintOnce(page, isMobile);
-  await expect
-    .poll(() =>
-      page.evaluate((k) => {
-        const raw = localStorage.getItem(k);
-        if (!raw) return 0;
-        const record = JSON.parse(raw) as { plan: string };
-        return (JSON.parse(record.plan) as { ops: unknown[] }).ops.length;
-      }, PLAN_KEY)
-    )
-    .toBe(1);
+  await seedGame(page, 3);
 
   await page.goto(`/p/${id}`);
   const banner = page.getByRole('region', { name: 'Shared plan' });
   await expect(banner).toBeVisible();
-  // Hydration wires the Remix handler; wait for the map so the click is not lost to SSR markup.
+  // Mounted, so the banner shows the game's Remix state and Your game link.
   await waitForMap(page);
+  await expect(banner.getByRole('button', { name: 'Remix' })).toBeVisible();
   await expect(banner).toHaveCSS('background-color', SURFACE_DARK);
   await expectNoA11yViolations(page, { include: ['section[aria-label="Shared plan"]'] });
-  await banner.getByRole('button', { name: 'Remix' }).click();
-  const confirm = page.getByRole('dialog');
-  await expect(confirm).toContainText('(1 strokes)');
-  await expect(confirm).toHaveCSS('background-color', SURFACE_DARK);
-  await expectNoA11yViolations(page, { include: ['dialog[open]'] });
 });

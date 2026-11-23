@@ -10,6 +10,9 @@
 -->
 <script lang="ts">
   import { tick, type Snippet } from 'svelte';
+  import { ALL_ALLOWED, runs, type Allowed } from '$lib/game/allowed';
+  import { lockedLane } from '$lib/game/copy';
+  import type { Level } from '$lib/game/levels';
   import { marketLevel } from '$lib/sim/scenario/market';
   import { WINDOW_MONTHS } from '$lib/sim/timeline-client';
   import { monthLastDay } from '$lib/sim/world/months';
@@ -20,7 +23,7 @@
   import FixedRow from './FixedRow.svelte';
   import KindRow from './KindRow.svelte';
   import Lane from './Lane.svelte';
-  import type { PolicyKind, SimPolicy4 } from './policy4';
+  import type { Policy, PolicyKind, SimPolicy4 } from './policy4';
   import type { LevelSet } from './pool-level';
   import {
     dayPct,
@@ -72,6 +75,10 @@
      * that the page's box scrolls. Default true.
      */
     pinned?: boolean;
+    /** What the game allows: a kind it leaves out is locked, as is a policy that does not run. */
+    allowed?: Allowed;
+    /** The game's level, read only for a locked lane's words. */
+    level?: Level | null;
   }
 
   let {
@@ -94,8 +101,15 @@
     reached = playheadDay,
     stale = false,
     pinHeight = $bindable(0),
-    pinned = true
+    pinned = true,
+    allowed = ALL_ALLOWED,
+    level = null
   }: Props = $props();
+
+  /** A locked kind's lane words; null while the game allows the kind. */
+  const lockOf = (kind: PolicyKind): string | null =>
+    allowed.kinds.has(kind) ? null : lockedLane(kind, level!);
+  const lockedIn = (kind: PolicyKind) => (p: Policy) => !runs(kind, p, allowed);
 
   const windowEnd = $derived(monthLastDay(asOf, WINDOW_MONTHS));
   const playheadPct = $derived(dayPct(playheadDay, asOf, windowEnd));
@@ -288,6 +302,8 @@
           day={playheadDay}
           {reached}
           {stale}
+          locked={lockOf(kind)}
+          isLocked={lockedIn(kind)}
         />
       {/each}
 
@@ -354,6 +370,8 @@
           day={playheadDay}
           {reached}
           {stale}
+          locked={lockOf(sheet)}
+          isLocked={lockedIn(sheet)}
         />
         <div
           class="line"

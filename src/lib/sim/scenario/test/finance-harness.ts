@@ -47,8 +47,6 @@ export function checkLedger(
     let instr: string | null = null;
     if (e.kind === 'in') {
       expect(e.programme, `${at}: in has no programme`).toBeNull();
-      // E6
-      expect(pool.uncapped, `${at}: E6 uncapped pool has an in`).toBe(false);
       s.received += e.dollars;
     } else {
       const g = progs.get(e.programme!)!;
@@ -87,13 +85,11 @@ export function checkLedger(
         expect(pp.Lh, `${at}: E5 guarantee loss within commit`).toBeLessThanOrEqual(pp.C);
       }
     }
-    // E4
-    if (!pool.uncapped) {
-      const avail = pool.leverage * s.received - committed - s.Sg - outLoan - s.Ll - s.Lh;
-      expect(avail, `${at}: E4 available`).toBeGreaterThanOrEqual(-1e-6);
-      const pr = probes.get(n);
-      if (pr) expect(pr[q], `${at}: E4 engine value`).toBeCloseTo(avail, 6);
-    }
+    // E4, on every pool
+    const avail = pool.leverage * s.received - committed - s.Sg - outLoan - s.Ll - s.Lh;
+    expect(avail, `${at}: E4 available`).toBeGreaterThanOrEqual(-1e-6);
+    const pr = probes.get(n);
+    if (pr) expect(pr[q], `${at}: E4 engine value`).toBeCloseTo(avail, 6);
   });
 }
 

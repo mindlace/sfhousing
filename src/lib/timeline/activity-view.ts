@@ -4,6 +4,7 @@
  * at today the starter policies. Pure TS.
  */
 import { formatShortMonthYear } from '$lib/fzp/format';
+import { ALL_ALLOWED, type Allowed } from '$lib/game/allowed';
 import { moneyFigureAt } from '$lib/fzp/money-view';
 import { STAGE_KEY } from '$lib/map/key/rows';
 import { formatCount } from '$lib/scoreboard/format';
@@ -86,12 +87,18 @@ const sameChoice = (a: object, b: object): boolean => JSON.stringify(a) === JSON
 /**
  * Taller near transit (the default transit rule, label 'Transit rule'), SB 423 approval clock
  * (the permitting preset) and A housing bond (the funding preset), each only when
- * `addChoices(kind, cal, doc)` offers it, labelled as the add menu labels it.
+ * `addChoices(kind, cal, doc, allowed)` offers it, labelled as the add menu labels it.
  */
-export function startersFor(cal: Calibration, doc: SimPolicy4): Starter[] {
+export function startersFor(
+  cal: Calibration,
+  doc: SimPolicy4,
+  allowed: Allowed = ALL_ALLOWED
+): Starter[] {
   const out: Starter[] = [];
   for (const s of STARTERS) {
-    const offer = addChoices(s.choice.kind, cal, doc).find((o) => sameChoice(o.choice, s.choice));
+    const offer = addChoices(s.choice.kind, cal, doc, allowed).find((o) =>
+      sameChoice(o.choice, s.choice)
+    );
     if (offer) out.push({ choice: s.choice, text: s.text, label: offer.label });
   }
   return out;

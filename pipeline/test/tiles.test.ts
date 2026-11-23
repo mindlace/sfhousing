@@ -9,10 +9,7 @@ import { runSql } from '../lib/sql';
 import { VectorTile } from '@mapbox/vector-tile';
 import Pbf from 'pbf';
 import { PMTiles } from 'pmtiles';
-import { LC, LESSCARS_BASEMAP_IDS_JSON } from '../lesscars-config';
-import { openDuck, type Duck } from '../lib/duck';
-import { readBasemapIds } from '../lib/lesscars/basemap-ids';
-import { splitPhasesOf, type SplitPhase } from '../lib/lesscars/basemap-split';
+import type { Duck } from '../lib/duck';
 import { BOXES_ID, boxesFilesOf } from '../lib/lidar/artifact';
 import { readLock, writeLock } from '../lib/lock';
 import { NodeFileSource } from '../lib/pmtiles-file';
@@ -28,11 +25,6 @@ import {
 } from '../steps/tiles';
 import { MINI, miniDuck, openMiniDuck } from './helpers';
 
-/** The mini I-80 (src_streets 4000), as fixture-0's plan.json has it. */
-const MINI_I80: [number, number][] = [
-  [-122.4194997, 37.7606757],
-  [-122.4179109, 37.7606753]
-];
 const lngX = (lng: number, z: number) => Math.floor(((lng + 180) / 360) * 2 ** z);
 const latY = (lat: number, z: number) => {
   const r = (lat * Math.PI) / 180;
@@ -370,89 +362,13 @@ describe.skipIf(!hasTippecanoe || !hasPmtiles)('buildings tiles zoom split [tool
 
 describe.skipIf(!hasPmtiles)('basemap [tools]', () => {
   const raw = join(MINI, 'raw/protomaps-basemap.pmtiles');
-  it('without split phases copies the basemap byte for byte, z12 bytes within the budget', async () => {
+  it('copies the basemap byte for byte, z12 bytes within the budget', async () => {
     const out = mkdtempSync(join(tmpdir(), 'sfh-basemap-'));
-    expect(await writeBasemap(raw, out, null)).toEqual({ tiles: 0, changed: 0 });
+    writeBasemap(raw, out);
     expect(readFileSync(join(out, 'basemap.pmtiles')).equals(readFileSync(raw))).toBe(true);
     const bytes = await z12TileBytes(join(out, 'basemap.pmtiles'), BBOX);
     expect(bytes).toBeGreaterThan(0);
     expect(bytes).toBeLessThan(LIVE_PROFILE.z12BasemapMax);
-  });
-
-  it('with the fixture phase, the listed street inside the corridor is only in roads_lc', async () => {
-    const ids = readBasemapIds(LESSCARS_BASEMAP_IDS_JSON.fixture)!;
-    const db = await openDuck();
-    let phases: SplitPhase[];
-    try {
-      phases = await splitPhasesOf(
-        db,
-        ids.phases.map((p) => ({ ...p, lines: [MINI_I80] })),
-        LC.basemapBandM
-      );
-    } finally {
-      db.close();
-    }
-    const out = mkdtempSync(join(tmpdir(), 'sfh-basemap-'));
-    const work = mkdtempSync(join(tmpdir(), 'sfh-basemap-w-'));
-    const r = await writeBasemap(raw, out, {
-      phases,
-      clipZooms: LC.basemapClipZooms,
-      workDir: work
-    });
-    expect(r.changed).toBeGreaterThan(0);
-    const [id] = ids.phases[0].ids;
-    const meta = JSON.parse(
-      (await run('pmtiles', ['show', join(out, 'basemap.pmtiles'), '--metadata'])).stdout
-    );
-    expect(meta.vector_layers.map((l: { id: string }) => l.id)).toContain('roads_lc');
-    // The crossing of the listed street (Mission Street) with the mini I-80, at each page zoom.
-    const pm = new PMTiles(new NodeFileSource(join(out, 'basemap.pmtiles')));
-    const crossing: [number, number] = [-122.41929, 37.76067];
-    // The listed id is in the mini archive at z14 and z15 only (protomaps merges Mission Street
-    // under other ids below z14; the live phases rely on the freeway-road rule there).
-    const src = new PMTiles(new NodeFileSource(raw));
-    const zooms: number[] = [];
-    for (const z of LC.basemapClipZooms) {
-      const t = await src.getZxy(z, lngX(crossing[0], z), latY(crossing[1], z));
-      const roads = t ? new VectorTile(new Pbf(new Uint8Array(t.data))).layers.roads : undefined;
-      for (let i = 0; i < (roads?.length ?? 0); i++)
-        if (roads!.feature(i).id === id && !zooms.includes(z)) zooms.push(z);
-    }
-    expect(zooms).toEqual([14, 15]);
-    for (const z of zooms) {
-      const [tx, ty] = [lngX(crossing[0], z), latY(crossing[1], z)];
-      const t = await pm.getZxy(z, tx, ty);
-      expect(t, `z${z}`).toBeDefined();
-      const vt = new VectorTile(new Pbf(new Uint8Array(t!.data)));
-      const lc = vt.layers.roads_lc;
-      expect(lc, `z${z}`).toBeDefined();
-      const moved = [...Array(lc.length).keys()]
-        .map((i) => lc.feature(i))
-        .filter((f) => f.id === id);
-      expect(moved.length, `z${z}`).toBe(1);
-      expect(moved[0].properties.lc_project).toBe('hwy');
-      // what stays in roads under that id lies outside the corridor (25 m of the line)
-      const roads = vt.layers.roads;
-      let kept = 0;
-      for (let i = 0; i < roads.length; i++) {
-        const f = roads.feature(i);
-        if (f.id !== id) continue;
-        const g = f.toGeoJSON(tx, ty, z).geometry as
-          | { type: 'LineString'; coordinates: [number, number][] }
-          | { type: 'MultiLineString'; coordinates: [number, number][][] };
-        const parts = g.type === 'LineString' ? [g.coordinates] : g.coordinates;
-        for (const part of parts)
-          for (let k = 1; k < part.length; k++) {
-            const mid = [(part[k - 1][0] + part[k][0]) / 2, (part[k - 1][1] + part[k][1]) / 2];
-            const dy = Math.abs(mid[1] - MINI_I80[0][1]) * 111_320;
-            const within = mid[0] > MINI_I80[0][0] && mid[0] < MINI_I80[1][0] && dy < 20;
-            expect(within, `z${z} roads part at ${mid}`).toBe(false);
-            kept++;
-          }
-      }
-      // the street runs on beyond the corridor: those parts keep the id in roads
-      expect(kept, `z${z}`).toBeGreaterThan(0);
-    }
   });
 });
 

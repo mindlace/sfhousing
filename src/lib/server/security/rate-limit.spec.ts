@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { FakeRateLimiter } from '$lib/server/test/fake-rate-limiter';
-import { isHttpError } from '@sveltejs/kit';
-import { enforceMutationRate, enforceRate, RATE_LIMIT_MESSAGES } from './rate-limit';
+import { enforceRate } from './rate-limit';
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -74,38 +73,5 @@ describe('enforceRate', () => {
     const limiter = new FakeRateLimiter({ allow: 0 });
     const env = { ENVIRONMENT: 'development' };
     expect(await enforceRate(limiter, 'invite:u1', env, { critical: true })).toBe(true);
-  });
-});
-
-describe('enforceMutationRate', () => {
-  const message = RATE_LIMIT_MESSAGES.invites;
-
-  it('throws a 429 with the given message when the limiter denies', async () => {
-    const limiter = new FakeRateLimiter({ allow: 0 });
-    const event = { platform: { env: { ENVIRONMENT: 'production' } } as unknown as App.Platform };
-    let thrown: unknown;
-    try {
-      await enforceMutationRate(event, 'invite:u1', { limiter, message });
-    } catch (e) {
-      thrown = e;
-    }
-    expect(isHttpError(thrown, 429)).toBe(true);
-    expect((thrown as { body: { message: string } }).body.message).toBe(message);
-  });
-
-  it('resolves when the limiter allows', async () => {
-    const limiter = new FakeRateLimiter({ allow: 1 });
-    const event = { platform: { env: { ENVIRONMENT: 'production' } } as unknown as App.Platform };
-    await expect(enforceMutationRate(event, 'invite:u1', { limiter, message })).resolves.toBe(
-      undefined
-    );
-  });
-
-  it('fails closed for a critical limiter with no binding in production', async () => {
-    vi.spyOn(console, 'error').mockImplementation(() => {});
-    const event = { platform: { env: { ENVIRONMENT: 'production' } } as unknown as App.Platform };
-    await expect(
-      enforceMutationRate(event, 'invite:u1', { limiter: undefined, message, critical: true })
-    ).rejects.toMatchObject({ status: 429 });
   });
 });

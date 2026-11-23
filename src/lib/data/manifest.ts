@@ -65,41 +65,60 @@ const ManifestBaseSchema = z.object({
         gross: RootRelativeUrl.optional(),
         /** Older datasets' lot-to-street frontage. Accepted so they still validate; nothing reads it. */
         frontage: RootRelativeUrl.optional()
-      }),
-      /** /lesscars playback (docs/dev/lesscars.md). Optional: only builds with a plan have it. */
-      lesscars: z
-        .object({
-          plan: RootRelativeUrl,
-          sites: RootRelativeUrl,
-          summary: RootRelativeUrl,
-          timeline: RootRelativeUrl
-        })
-        .optional()
+      })
     })
-    .optional()
+    .optional(),
+  /**
+   * Derived at parse, never read from the file: true exactly when the raw manifest has a
+   * `scenarios.lesscars` object, so its basemap holds a `roads_lc` source layer.
+   */
+  splitRoads: z.literal(true).optional()
 });
 
-export const ManifestSchema = ManifestBaseSchema.superRefine((m, ctx) => {
-  const prefix = `/data/${m.datasetVersion}/`;
-  const reported = new Set<string>();
-  for (const f of manifestFiles(m)) {
-    if (!f.url.startsWith(prefix) && !reported.has(f.key)) {
-      reported.add(f.key);
-      ctx.addIssue({
-        code: 'custom',
-        path: f.key.split('.'),
-        message: `url must start with ${prefix}`
-      });
+/**
+ * Sets `splitRoads` from the raw JSON (Zod strips `scenarios.lesscars`, so it must run first). A
+ * raw `splitRoads` key is dropped; only a `scenarios.lesscars` object sets the mark.
+ */
+function markSplitRoads(raw: unknown): unknown {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return raw;
+  const { splitRoads: _ignored, ...rest } = raw as Record<string, unknown>;
+  const scenarios = rest.scenarios;
+  const lesscars =
+    typeof scenarios === 'object' && scenarios !== null
+      ? (scenarios as Record<string, unknown>).lesscars
+      : undefined;
+  const older = typeof lesscars === 'object' && lesscars !== null && !Array.isArray(lesscars);
+  return older ? { ...rest, splitRoads: true } : rest;
+}
+
+export const ManifestSchema = z.preprocess(
+  markSplitRoads,
+  ManifestBaseSchema.superRefine((m, ctx) => {
+    const prefix = `/data/${m.datasetVersion}/`;
+    const reported = new Set<string>();
+    for (const f of manifestFiles(m)) {
+      if (!f.url.startsWith(prefix) && !reported.has(f.key)) {
+        reported.add(f.key);
+        ctx.addIssue({
+          code: 'custom',
+          path: f.key.split('.'),
+          message: `url must start with ${prefix}`
+        });
+      }
     }
-  }
-  const seen = new Set<string>();
-  m.chunks.forEach((c, i) => {
-    if (seen.has(c.cellId)) {
-      ctx.addIssue({ code: 'custom', path: ['chunks', i, 'cellId'], message: 'duplicate cellId' });
-    }
-    seen.add(c.cellId);
-  });
-});
+    const seen = new Set<string>();
+    m.chunks.forEach((c, i) => {
+      if (seen.has(c.cellId)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['chunks', i, 'cellId'],
+          message: 'duplicate cellId'
+        });
+      }
+      seen.add(c.cellId);
+    });
+  })
+);
 export type Manifest = z.infer<typeof ManifestSchema>;
 
 /** The subset /attribution needs; tolerant of the rest of the manifest. */
@@ -157,11 +176,6 @@ export function manifestFiles(m: Manifest, glyphs?: GlyphSet): ManifestFile[] {
   add('scenarios.fzp.policy', fzp?.policy);
   add('scenarios.fzp.gross', fzp?.gross);
   add('scenarios.fzp.frontage', fzp?.frontage);
-  const lc = m.scenarios?.lesscars;
-  add('scenarios.lesscars.plan', lc?.plan);
-  add('scenarios.lesscars.sites', lc?.sites);
-  add('scenarios.lesscars.summary', lc?.summary);
-  add('scenarios.lesscars.timeline', lc?.timeline);
   m.chunks.forEach((c, i) => add(`chunks.${i}.url`, c.url));
   return out;
 }

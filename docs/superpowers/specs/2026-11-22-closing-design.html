@@ -1,0 +1,536 @@
+<article>
+  <header>
+    <h1>Closing design</h1>
+    <p>The level 2 check run again, one end-to-end journey, the one dataset build and upload, the full-tree checks, signoff, and the project docs and leftovers as the system then is.</p>
+  </header>
+
+  <section id="sec-goal">
+    <h2>Goal</h2>
+    <p>This unit runs last, after every other unit of the <a href="../design/2026-11-22-1216-incremental-game.html">design doc</a> has merged into the integration branch. It holds ruling D1 ("There shouldn't be a case where it's unachievable") by running <code>reach-check</code>'s build check on the dataset it uploads, proves the units work together with one journey, publishes the build's one dataset, runs the build's one signoff, and makes every doc true.</p>
+    <ul>
+      <li>The level 2 check (G4's build check, <code>scripts/level2-check.ts</code>, written by <code>reach-check</code>) run again on the dataset this unit builds, before the upload.</li>
+      <li><code>e2e/game-journey.spec.ts</code>: a new visitor wins Paint, levels up, wins level 2 on <code>/sim</code>, levels up to 3, and the account holds the game; and a given measure added at a later month has its money dated from that month.</li>
+      <li>The dataset of the merged tree built, checked, passed by the level 2 check, uploaded and verified, once, from the integration branch.</li>
+      <li>Nothing uploaded, and the owner told the numbers, when the level 2 check fails.</li>
+      <li>The full-tree checks: <code>npm run lint</code>, <code>npm run check</code>, <code>npm run test:unit</code>, <code>npm run test:pipeline</code>, <code>npm run test:e2e</code>; then <code>npm run signoff</code>, once, after the upload.</li>
+      <li><code>CLAUDE.md</code> (its doc list included), <code>README.md</code> and every file under <code>docs/dev/</code> true to the tree, with no link to a deleted doc.</li>
+      <li>Leftovers removed: dependencies nothing imports, stale entries of <code>chreode.config.ts</code>, types in <code>src/app.d.ts</code> nothing uses, and comments that name removed things.</li>
+      <li>A final sweep for names the build removed.</li>
+    </ul>
+  </section>
+
+  <section id="sec-interfaces">
+    <h2>Interfaces</h2>
+    <p>These rows and their sections are copied from the design document. A change to one is a change to the design.</p>
+    <table id="tbl-interfaces">
+      <caption>Interface table</caption>
+      <thead>
+        <tr><th scope="col">Row</th><th scope="col">Owner</th><th scope="col">Layer</th><th scope="col">Summary</th><th scope="col">Contract</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">G1</th><td><code>game-core</code></td><td>Model commitment</td><td>Levels, results, and what beats what.</td><td><a href="../design/2026-11-22-1216-incremental-game.html#sec-if-g1">G1</a></td></tr>
+        <tr><th scope="row">G2</th><td><code>game-core</code></td><td>Model commitment</td><td>Progress, saved games, banking, the store.</td><td><a href="../design/2026-11-22-1216-incremental-game.html#sec-if-g2">G2</a></td></tr>
+        <tr><th scope="row">G3</th><td><code>game-core</code></td><td>Model commitment</td><td>What a level allows; the playable document.</td><td><a href="../design/2026-11-22-1216-incremental-game.html#sec-if-g3">G3</a></td></tr>
+        <tr><th scope="row">G4</th><td><code>game-core</code></td><td>Decomposition choice</td><td>The seen result and the player's standing.</td><td><a href="#sec-if-g4">G4</a></td></tr>
+        <tr><th scope="row">G5</th><td><code>game-core</code></td><td>Decomposition choice</td><td>The win card and the level panel with its saved games.</td><td><a href="../design/2026-11-22-1216-incremental-game.html#sec-if-g5">G5</a></td></tr>
+        <tr><th scope="row">S1</th><td><code>game-save</code></td><td>Model commitment</td><td>The saved-games API and table; every save kept.</td><td><a href="../design/2026-11-22-1216-incremental-game.html#sec-if-s1">S1</a></td></tr>
+        <tr><th scope="row">S2</th><td><code>game-save</code></td><td>Decomposition choice</td><td>The browser's save sync the store calls.</td><td><a href="../design/2026-11-22-1216-incremental-game.html#sec-if-s2">S2</a></td></tr>
+        <tr><th scope="row">S3</th><td><code>game-save</code></td><td>Decomposition choice</td><td>The account offer the win card renders.</td><td><a href="../design/2026-11-22-1216-incremental-game.html#sec-if-s3">S3</a></td></tr>
+        <tr><th scope="row">I1</th><td><code>remove-multiuser</code></td><td>Decomposition choice</td><td>The identity code with no sims in it.</td><td><a href="../design/2026-11-22-1216-incremental-game.html#sec-if-i1">I1</a></td></tr>
+        <tr><th scope="row">F1</th><td><code>finite-funding</code></td><td>Model commitment</td><td>The funding file: a bound for every source.</td><td><a href="../design/2026-11-22-1216-incremental-game.html#sec-if-f1">F1</a></td></tr>
+        <tr><th scope="row">F2</th><td><code>finite-funding</code></td><td>Model commitment</td><td>Pools with no "can always pay".</td><td><a href="../design/2026-11-22-1216-incremental-game.html#sec-if-f2">F2</a></td></tr>
+        <tr><th scope="row">F3</th><td><code>pool-closing</code></td><td>Model commitment</td><td>A spent pool closes and leaves every bundle.</td><td><a href="../design/2026-11-22-1216-incremental-game.html#sec-if-f3">F3</a></td></tr>
+        <tr><th scope="row">M1</th><td><code>funding-measures</code></td><td>Decomposition choice</td><td>A given measure's money follows its policy's start.</td><td><a href="../design/2026-11-22-1216-incremental-game.html#sec-if-m1">M1</a></td></tr>
+        <tr><th scope="row">L1</th><td><code>remove-lesscars</code></td><td>Decomposition choice</td><td>The pipeline, dataset and worker with no less cars.</td><td><a href="../design/2026-11-22-1216-incremental-game.html#sec-if-l1">L1</a></td></tr>
+        <tr><th scope="row">X1</th><td><code>contracts</code></td><td>Decomposition choice</td><td>The e2e seam: open by default, a seeded level, a goal amount.</td><td><a href="../design/2026-11-22-1216-incremental-game.html#sec-if-x1">X1</a></td></tr>
+      </tbody>
+    </table>
+
+    <section id="sec-if-g4">
+      <h3>G4 The seen result and the standing</h3>
+      <pre><code data-lang="ts">// src/lib/game/standing.ts
+export type Standing =
+  | { kind: 'playing' }
+  | { kind: 'short'; seen: Result; bar: Bar | null }
+  | { kind: 'won'; on: Day };
+
+/** `seen` is `goalOutcome(...)` for the months reached; null while no result is seen. */
+export function standing(level: Level, bar: Bar | null, seen: Result | null): Standing;</code></pre>
+      <ul>
+        <li><code>standing</code> is <code>playing</code> at level 1 and while <code>seen</code> is null.</li>
+        <li>At level 2 a reached result is <code>won</code>.</li>
+        <li>At levels 3 to 5 a result is <code>won</code> when it beats the bar.</li>
+        <li>Every other seen result is <code>short</code>.</li>
+        <li><code>goalOutcome</code> is read on the playable document's forecast and never while the numbers are stale, so a standing always belongs to the policy on screen.</li>
+        <li>A build check runs the empty document on a built dataset and fails when the goal is not reached inside the window (D1).</li>
+        <li><code>reach-check</code> writes the check and runs it once <code>finite-funding</code> and <code>pool-closing</code> have merged, so a miss reaches the owner while the build is still running. <code>closing</code> runs it again on the dataset it uploads.</li>
+      </ul>
+    </section>
+  </section>
+
+  <section id="sec-today">
+    <h2>What is there today</h2>
+    <p>Read on commit <code>8125e557</code>. Every other unit changes the tree before this one starts, so the operator re-reads each file named here on the integration branch before writing.</p>
+
+    <section id="sec-today-dataset">
+      <h3>Datasets and the finish</h3>
+      <ul>
+        <li><code>reach-check</code> has merged <code>scripts/level2-check.ts</code> and its test, and has run the check once on a dataset built from the integration branch after <code>pool-closing</code>. The command, its exit codes and its printed lines are in that unit's spec.</li>
+        <li>The dataset version hashes the lock, the code under <code>PATHS</code> and the tool versions (<code>pipeline/lib/version.ts:25-53</code>). <code>scripts/</code> and <code>docs/</code> are not in <code>PATHS</code>.</li>
+        <li><code>docs/dev/pipeline.md:42-56</code> gives the finish of a branch that changes the dataset: merge <code>origin/main</code>, <code>build</code>, <code>upload</code>, <code>verify</code>, signoff.</li>
+        <li><code>upload</code> refuses unless <code>report.json</code> shows every invariant passing, and aborts when the version's manifest already exists (<code>pipeline.md:51</code>).</li>
+        <li><code>npx tsx scripts/dataset-version.ts --check</code> exits 1 unless staging serves the tree's manifest; it is chreode's <code>dataset</code> step (<code>chreode.config.ts:87</code>) and the deploy guard (<code>docs/dev/deploy.md:37</code>).</li>
+        <li>Scripts run with <code>npx tsx</code> (<code>chreode.config.ts:87</code>, <code>package.json:24</code>). A change under <code>scripts/**</code> triggers lint, check, unit and e2e at signoff (<code>chreode.config.ts:46</code>), and <code>scripts/**/*.spec.ts</code> run in the Vitest server project (<code>docs/dev/testing.md:7</code>).</li>
+        <li><code>package.json</code> is written by <code>remove-multiuser</code> and then by this unit, for dependencies only.</li>
+      </ul>
+    </section>
+
+    <section id="sec-today-docs">
+      <h3>Doc statements that the build makes false</h3>
+      <ul>
+        <li><code>CLAUDE.md:7</code> describes a tool for painting zoning and seeing the maximum buildout; it says nothing of the game.</li>
+        <li><code>CLAUDE.md:88</code> lists <code>npm run db:generate:sim</code>; <code>CLAUDE.md:91</code> lists <code>lesscars-cnns</code>, <code>lesscars-freeway-land</code> and <code>lesscars-basemap</code>.</li>
+        <li><code>CLAUDE.md:102</code> names seven rate limits including <code>INVITE_RL</code>, which goes with invitations, the <code>SIM</code> Durable Object, the secret <code>SIM_TAKEDOWN_TOKEN</code>, and the build wrapping <code>_worker.js</code> to export <code>SimObject</code>.</li>
+        <li><code>CLAUDE.md:104</code> lists the header's entries without a level cell, and its steps as always-open links.</li>
+        <li><code>CLAUDE.md</code>, Conventions: "There is no CI workflow on pull requests". The workflow <code>pipeline.yml</code> runs on <code>pull_request</code> (its lines 3-12) and runs <code>test:pipeline</code> and the fixture byte check.</li>
+        <li><code>README.md:3</code> describes the painting tool; <code>README.md:28</code> sends readers to <code>/attribution</code>, which is a 308 to <code>/about#about-data</code> (<code>docs/dev/deploy.md:38</code>).</li>
+        <li><code>docs/dev/developing.md:37</code> names <code>Start fresh without an account</code> and emailed invites; <code>:39</code> gives <code>AUTH_METHODS</code>' value as <code>magic-link</code>; <code>:45</code> calls the fixture a placeholder; <code>:51-53</code> is "The sim object"; <code>:61</code> is the sim migration track; <code>:79</code> names the <code>/lesscars</code> headline.</li>
+        <li><code>docs/dev/testing.md:24</code> is the sim object's Node harness; <code>:44</code> says the mini finance has "one uncapped" pool; <code>:79</code> names <code>SIM_TAKEDOWN_TOKEN</code>; <code>:85</code> lists the invite mail and <code>grantEvent</code>; <code>:87</code> is the sim socket specs; <code>:89</code> says "CI runs <code>npm run test:e2e</code>", which no workflow does.</li>
+        <li><code>docs/dev/sim-page.md:3</code> says <code>/fzp</code> is a 307 redirect; <code>:91</code> says Publish posts the schema 4 document; <code>:92</code> describes the read-only view's banner as "Remix, Start your own" with no game.</li>
+        <li><code>docs/dev/timeline-ui.md:10</code> says <code>TimelineMode</code> "takes <code>FzpMode</code>'s place"; <code>:32</code> defines a pool's level as the free share received so far; <code>:40</code> and <code>:44</code> give <code>/lesscars</code> as a reason; <code>:69</code> gives the goal notice's text with no bar.</li>
+        <li><code>docs/dev/deploy.md:23</code> repeats "no CI workflow on pull requests"; <code>:27</code> is the <code>SIM</code> binding; <code>:55</code> gives <code>AUTH_METHODS=magic-link</code>; <code>:61</code> gives <code>BOOTSTRAP_EMAILS</code> operator capabilities; <code>:63</code> is <code>SIM_TAKEDOWN_TOKEN</code>; <code>:67-105</code> is "Operator takedown of a sim", ending with a link to <code>sim-object.md</code>.</li>
+        <li><code>CLAUDE.md</code>'s doc list: the auth entry (<code>:30</code>) names sims, invitations, roles, sim registration and the roster hook; the deploy entry (<code>:32</code>) names the operator takedown; the fzp-mode entry (<code>:42</code>) names <code>/fzp</code> redirecting and <code>/lesscars</code>; the sim-timers entry (<code>:47</code>) names "Save and Revert".</li>
+        <li><code>docs/dev/pipeline.md:42-56</code>, the finishing steps, has no level 2 check; <code>:99</code> says CI loads the fixture in <code>.github/workflows/ci.yml</code>, a file that does not exist (the workflows are <code>deploy-prod.yml</code>, <code>deploy-staging.yml</code>, <code>pipeline.yml</code>, <code>release-please.yml</code>).</li>
+        <li><code>docs/dev/sim-timers.md:73-80</code> describes Save and "Revert to saved" as live; the only page that mounts <code>PermittingSection</code> passes <code>snapshot={false}</code> (<code>sim-timers.md:70</code>, <code>src/lib/sim-page/PermittingSection.svelte:31</code>), so no page shows them.</li>
+        <li>Links to doc files that <code>contracts</code> deletes (<code>lesscars.md</code>, <code>sim-object.md</code>, <code>sim-sync.md</code>, <code>sim-store.md</code>, <code>sim-log.md</code>), outside those files: <code>auth.md:66</code>, <code>:99</code>, <code>:131</code>, <code>:148</code>; <code>deploy.md:27</code>, <code>:105</code>; <code>developing.md:53</code>, <code>:61</code>; <code>testing.md:24</code>; <code>finance-engine.md:500</code>; <code>fzp-mode.md:3</code>, <code>:17</code>, <code>:49</code>; <code>pipeline.md:34-36</code>, <code>:40</code>, <code>:71-72</code>, <code>:140</code>, <code>:158</code>; <code>road-lots.md:483</code>, <code>:502</code>; <code>sim-levers.md:235</code>; and <code>CLAUDE.md:102</code> (<code>sim-object.md</code>). <code>map-interfaces.md:42</code>, <code>:54</code>, <code>:92-94</code>, <code>:124</code> name <code>/lesscars</code> and <code>lesscars.md</code> in prose. Units that own some of these files may fix their lines first.</li>
+      </ul>
+    </section>
+
+    <section id="sec-today-leftovers">
+      <h3>Leftovers outside the docs</h3>
+      <ul>
+        <li><code>package.json:80</code> depends on <code>@maplibre/vt-pbf</code>, imported only by the less-cars basemap split (<code>pipeline/lib/lesscars/basemap-split.ts</code>) and its tests.</li>
+        <li><code>chreode.config.ts:72</code> names <code>drizzle.sim.config.ts</code>, which <code>remove-multiuser</code> deletes.</li>
+        <li><code>src/app.d.ts:27</code> and <code>:30</code> declare the page states <code>sfhRemix</code> and <code>sfhSimRemix</code>, read today by <code>src/routes/+page.svelte:61</code> and <code>src/lib/sim-page/SimPage.svelte:120</code>. Whether they still have a reader after <code>game-shell</code> and <code>game-sim</code> merge is read on the merged tree.</li>
+        <li>Comments name removed things, for example <code>src/lib/fzp/ProjectCardPanel.svelte:49</code> ("FzpMode's <code>fundingName</code>").</li>
+      </ul>
+    </section>
+  </section>
+
+  <section id="sec-design">
+    <h2>Design</h2>
+
+    <section id="sec-design-journey">
+      <h3>The journey</h3>
+      <p><code>e2e/game-journey.spec.ts</code> is the one e2e spec that crosses units: Paint and the shell (<code>game-shell</code>), the store and the win card (<code>game-core</code>), <code>/sim</code> under the game (<code>game-sim</code>) and the account save (<code>game-save</code>). It binds to the design doc's rules and texts. Its selectors are the test ids and roles that the <code>game-core</code>, <code>game-shell</code>, <code>game-sim</code> and <code>game-save</code> specs under <code>docs/superpowers/specs/</code> fix; the operator reads those four specs and the merged code for them. At the time of writing they include <code>win-card</code>, <code>paint-win</code>, <code>header-level</code>, <code>header-level-panel</code>, <code>header-level-up</code>, <code>level-panel</code>, <code>sim-locked</code>, <code>tl-win</code> and <code>tl-to-beat</code>.</p>
+      <p>Two goal amounts, both constants at the top of the spec with a comment that says how each was found:</p>
+      <dl>
+        <dt><code>PAINT_AMOUNT</code></dt><dd>1: any stroke that adds a home wins Paint.</dd>
+        <dt><code>SIM_AMOUNT</code></dt><dd>The homes current law reaches on <code>fixture-0</code> at month 60, read once as <code>goal.measure.valueAt(run.view, 60)</code> on the <code>run</code> that <code>runEmptyDocument</code> of <code>scripts/level2-check.ts</code> returns for <code>e2e/fixtures/data/fixture-0</code>, with the goal of <code>defaultGoal(run.asOf)</code>, so level 2 is won after some play and inside the window.</dd>
+      </dl>
+      <p>The one test, in order, on every Playwright project (<code>paintOnce</code> handles the phone layout):</p>
+      <ol>
+        <li><code>newVisitor(page)</code> and <code>seedGoalAmount(page, PAINT_AMOUNT)</code>; open <code>/</code>.</li>
+        <li>The header's level cell reads "Level 1"; the Simulate step is not a link.</li>
+        <li>Paint one stroke with <code>paintOnce</code>. The header says "Goal reached" and the win card shows, naming the simulation as the unlock, with "Level up" and "Keep playing".</li>
+        <li>Write <code>SIM_AMOUNT</code> under <code>E2E_GOAL_KEY</code> with <code>page.evaluate</code> (X1), then press the win card's "Level up". Paint opens <code>/sim</code> with a client-side navigation, and <code>/sim</code> reads the amount when it mounts. The level cell reads "Level 2"; no "+" is offered on any kind.</li>
+        <li>Play to the goal with the existing run helpers (<code>e2e/helpers/run.ts</code>), waiting on the debug hook, never on time. The win card shows "Goal reached in {month}" and names Permitting as the unlock.</li>
+        <li>Press the win card's "Level up". The level cell reads "Level 3"; the playhead is at today; Permitting offers "+"; Zoning's lane says "Unlocks when you level up"; Public money's says "Unlocks at level 5".</li>
+        <li>The bar shows: the level panel says "Beat {month}" with the month level 2 was won in, and the ruler carries the "To beat" flag.</li>
+        <li>The account exists: the header's account entry shows an <code>@handle</code>, which comes from <code>game.sync.account</code> after the save that made the account (S2); no page data is reloaded and <code>/sim</code> keeps its playhead.</li>
+        <li><code>page.request.get('/api/game')</code> answers 200, and its <code>saves</code> hold one game at level 3 (polled with <code>expect.poll</code> until the level-up's save has landed).</li>
+        <li>Reload <code>/sim</code>: the level cell still reads "Level 3" and the "To beat" flag is still there.</li>
+        <li><code>expectNoA11yViolations</code> on <code>/sim</code> at level 3 with the win card closed.</li>
+      </ol>
+      <ul>
+        <li>Nothing in the spec waits a fixed time or raises a timeout; every wait is a readiness signal.</li>
+        <li>It needs nothing new from any helper: <code>newVisitor</code>, <code>seedGoalAmount</code>, <code>paintOnce</code>, <code>gotoHydrated</code> and the run helpers exist by then.</li>
+        <li>A step the merged code cannot pass is a defect of the unit that owns that behaviour; the operator reports it with the step and the owner unit.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-measure">
+      <h3>The dated measure</h3>
+      <p>A second test in <code>e2e/game-journey.spec.ts</code> runs the real <code>dateMeasure</code> (M1, <code>funding-measures</code>) through <code>addPolicy</code> and the page (<code>game-sim</code>), which no unit's own tests join. On every Playwright project:</p>
+      <ol>
+        <li><code>seedGame(page, 5)</code>; open <code>/sim</code> with <code>gotoHydrated</code> and wait for the first fill on the debug hook (<code>window.__sfhFzp</code>).</li>
+        <li>Move the playhead three years on: focus the ruler and press Page Down three times. Read the playhead's day from <code>__sfhFzp.day</code>.</li>
+        <li>Press Public money's "+" and choose "A housing bond", the label of the <code>housing-bond</code> preset in <code>src/lib/sim-page/funding-presets.ts</code>.</li>
+        <li>Read the document from <code>__sfhFzp.policy</code> once the page is no longer stale (<code>__sfhFzp.stale</code> false).</li>
+      </ol>
+      <p>What it asserts on the new policy, found as the money policy whose <code>preset</code> is <code>housing-bond</code>:</p>
+      <ul>
+        <li>Its first span starts in the model month that holds the playhead's day, at most one month before it and no later than it (a new policy starts on the playhead's model month). Call that first day <code>start</code>; it is more than two years after <code>__sfhFzp.asOf</code>.</li>
+        <li>Its pool's first money-in, read from the first span's effect, is dated <code>start</code>: the bond's one-time principal arrives in the month the policy starts (M1: "A given measure's first payment falls on the first day of its first span").</li>
+        <li>Its label is "A housing bond" and its <code>preset</code> is the preset's id (G3).</li>
+        <li>The bar of the policy on the Public money row is named with "A housing bond" and the span's start date (<code>barLabel</code>).</li>
+      </ul>
+      <ul>
+        <li>The forecast's use of a dated money-in is proved by the engine's own tests; this test proves the dates the page sends.</li>
+        <li>The field names inside the effect are those of <code>src/lib/timeline/policy4.ts</code> on the merged tree; the operator reads them there and in the <code>funding-measures</code> and <code>game-sim</code> specs.</li>
+        <li>A failure is reported against <code>game-sim</code> (the call from <code>addPolicy</code>) or <code>funding-measures</code> (the dates <code>dateMeasure</code> writes), as the asserted field shows.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-leftovers">
+      <h3>Leftovers</h3>
+      <ul>
+        <li><strong>Dependencies.</strong> A dependency in <code>package.json</code> that no file under <code>src</code>, <code>pipeline</code>, <code>scripts</code>, <code>e2e</code> or a root config imports goes, with <code>npm uninstall &lt;name&gt;</code> so <code>package-lock.json</code> follows. Expected: <code>@maplibre/vt-pbf</code>. A package that tooling loads by name (a Vite, ESLint, Prettier or Playwright plugin, a type package) stays.</li>
+        <li><strong>chreode.config.ts.</strong> A path rule that names a file or directory that no longer exists goes (expected: <code>drizzle.sim.config.ts</code> at <code>:72</code>); a comment that names one is rewritten. The dataset path list stays as <code>remove-lesscars</code> wrote it.</li>
+        <li><strong>src/app.d.ts.</strong> A declared field nothing reads or writes goes. A field that something reads stays, even when nothing writes it (<code>sfhRemix</code> and <code>sfhSimRemix</code> stay while their readers do), and its comment is made true.</li>
+        <li><strong>Comments.</strong> A comment in any file, test files, test helpers and e2e specs included, that names a removed module, route, table, binding, component or doc is rewritten to the code as it is, or removed when it says nothing else. Only the comment changes; code is never edited for this. A comment on the compatibility code of <a href="#sec-design-sweep">the sweep's allowed places</a> is true as it stands and stays.</li>
+        <li><strong>Links.</strong> Every link to a deleted doc file is removed or pointed at the doc that now holds the subject (<code>game.md</code>, <code>game-save.md</code>, <code>auth.md</code>), with its sentence made true. The check is the link sweep in <a href="#sec-design-sweep">The final sweep</a>.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-finish">
+      <h3>The finish: checks, build, check, upload</h3>
+      <p>The operator's worktree is branched from the integration branch after every other unit has merged into it. A comment rewritten under a path in <code>PATHS</code> (for example under <code>pipeline/</code>) changes the dataset version; so after the leftovers are committed the operator runs <code>npm run pipeline -- fixture</code> and commits any change it makes, as the global constraint for hashed paths requires.</p>
+      <ol>
+        <li>Merge the main line: <code>git fetch origin</code>, then <code>git merge origin/main</code>. A conflict stops the unit and is reported.</li>
+        <li>Write the journey, the leftovers and the docs. Commit. Regenerate the fixture with <code>npm run pipeline -- fixture</code> and commit it when it changed.</li>
+        <li>Run the full-tree checks (<a href="#sec-design-tree">below</a>). Every one passes before going on.</li>
+        <li>Print the version: <code>npm run pipeline -- version</code>. Call it <code>&lt;v&gt;</code>.</li>
+        <li>Note whether <code>&lt;v&gt;</code> is already published: <code>npx tsx scripts/dataset-version.ts --check</code> exits 0 when it is. Steps 6 to 9 run either way, so the level 2 check always runs.</li>
+        <li>If <code>pipeline/.cache</code> is missing: <code>npm run pipeline -- fetch --restore</code>.</li>
+        <li>Build: <code>npm run pipeline -- build</code>, without <code>--skip-tiles</code>. Every invariant passes.</li>
+        <li>Check: <code>npm run pipeline -- check &lt;v&gt;</code>.</li>
+        <li>The level 2 check: <code>npx tsx scripts/level2-check.ts pipeline/out/&lt;v&gt;</code>. Exit 0 goes on. Exit 1 or 2 stops the unit with nothing uploaded (<a href="#sec-design-fail">When it fails</a>).</li>
+        <li>Upload, only when step 5 found <code>&lt;v&gt;</code> unpublished: <code>npm run pipeline -- upload &lt;v&gt;</code>. Then, always, verify: <code>npm run pipeline -- verify &lt;v&gt; --origin https://sfhousing-staging.mindlace.net</code>.</li>
+        <li>Published is proved by <code>npx tsx scripts/dataset-version.ts --check</code> exiting 0, after <code>verify</code> has found every file the manifest names.</li>
+        <li>Clear the local live build: remove <code>pipeline/out/&lt;v&gt;</code> and <code>pipeline/.cache/derived/&lt;v&gt;</code>. Both are gitignored build output of a version that is now published, immutable and verified, and a new build makes them again. Signoff then runs <code>test:pipeline</code> with no local non-fixture build, as every signoff on <code>main</code> does, so the live block of <code>pipeline/test/simulate-replay.test.ts</code> skips (<a href="#sec-design-tree">The full-tree checks</a>).</li>
+        <li>Signoff: <code>npm run signoff</code>, the build's only run of it (no other unit runs it, because its <code>dataset</code> step fails until the upload). Nothing is pushed by hand first. If signoff's merge of <code>origin/main</code> changes <code>&lt;v&gt;</code>, the <code>dataset</code> step fails; go back to step 4, and the level 2 check runs again on the new build.</li>
+        <li>Hand back with <code>&lt;v&gt;</code>, the check's three lines, the signoff result, and the line the live replay block printed for its failing cohort on <code>&lt;v&gt;</code> while the build was on disk, for the owner. Merging the integration branch to <code>main</code> is the conductor's.</li>
+      </ol>
+      <ul>
+        <li>Only this unit uploads a dataset in this build, and only at step 10.</li>
+        <li>A published version is immutable, so the order is fixed: the level 2 check always runs on the exact directory that is then uploaded.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-fail">
+      <h3>When the level 2 check fails</h3>
+      <p>The failure rule is <code>reach-check</code>'s, applied to this unit's dataset:</p>
+      <ul>
+        <li>Nothing is uploaded and signoff is not run. The built <code>pipeline/out/&lt;v&gt;</code> stays on disk.</li>
+        <li>The unit hands back "blocked: current law misses the goal" with the check's three lines, the homes at the window's end beside the amount, and the bounds <code>funding.json</code> holds for <code>city-impact-fees</code> and <code>state</code>. The conductor takes it to the owner: the remedy is the owner's (D1).</li>
+        <li>The unit changes no code, data or window length to make the check pass.</li>
+        <li>An exit 2 is reported with its stderr line and is not an answer about D1.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-tree">
+      <h3>The full-tree checks</h3>
+      <pre><code data-lang="sh">npm run lint
+npm run check
+npm run test:unit
+npm run test:pipeline
+npm run test:e2e</code></pre>
+      <ul>
+        <li>All five run on the merged tree, in this order, in the foreground.</li>
+        <li><code>test:pipeline</code> needs <code>tippecanoe</code> and <code>pmtiles</code>; <code>npm run pipeline -- doctor</code> says what is missing.</li>
+        <li><code>test:e2e</code> starts its server on port 4173 and fails when the port is busy. Before it, <code>lsof -nP -iTCP:4173 -sTCP:LISTEN</code>: a listener belongs to another session; the operator waits and checks again, and never stops it.</li>
+        <li>A failure is a defect of a merged unit. The operator reports it with the failing test and its file, and fixes it only when the file is in this unit's write set.</li>
+        <li>A test that passes only on retry counts as a failure.</li>
+        <li>The live block of <code>pipeline/test/simulate-replay.test.ts</code> runs only while a non-fixture build is on disk under <code>pipeline/out</code> and <code>pipeline/.cache/derived</code>, and skips otherwise. It judges the stage calibration (permit issued to construction start) against <code>project-histories.json</code>, which no unit of this build writes. On every live dataset of November 2026, with <code>main</code>'s code and with this build's, its pooled <code>permitIssued</code> cohort fails by the same margin (max |Δ| 0.0354 against a bar of 0.0362, eleven months). That failure is older than this build and is no merged unit's defect: the operator reports its line in the hand-back and changes nothing for it. The full-tree checks of step 3 run before the build and meet the block skipped; signoff meets it skipped because step 12 clears the local build first.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-sweep">
+      <h3>The final sweep</h3>
+      <p>After the docs are written, these must find nothing outside the allowed places:</p>
+      <pre><code data-lang="sh">X=(-- . ':!docs/superpowers/**' ':!.superpowers/**' ':!CHANGELOG.md' ':!migrations/**' ':!docs/lesscars/**')
+git grep -n -i -E 'lesscars|less-cars|less cars' "${X[@]}"
+git grep -n -E 'SimObject|sim-object|sim_object|SIM_TAKEDOWN_TOKEN|INVITE_RL' "${X[@]}"
+git grep -n -E 'sim_invite|sim_index|sim_commit|sim_takedown|capability_event' "${X[@]}"
+git grep -n -E '(\$lib|src/lib)/(sim-log|sim-store|sim-sync|sim-stream|members)\b' "${X[@]}"
+git grep -n -E "[\"'\`( ]/(sims|invite|fzp|lesscars)\b|api/(sims|invites|operator)\b" "${X[@]}"
+git grep -n -E 'requireCap|requireSimRole|reseedHandleFromSim|resolveCapabilities|startFresh|Start fresh without an account|sfh_pending_sim|locals\.capabilities|actorKind' "${X[@]}"
+git grep -n -E "\.uncapped\b|\buncapped\??:|\"uncapped\"|'uncapped'" "${X[@]}"
+git grep -n -E 'roads_lc|LESSCARS_|playback-host|TimeScrubber|high-water|FzpMode' "${X[@]}"
+git grep -n -E '\]\((\./)?(lesscars|sim-object|sim-log|sim-sync|sim-store)\.md' -- CLAUDE.md README.md docs/dev</code></pre>
+      <p>The allowed places, and why:</p>
+      <ul>
+        <li><code>docs/superpowers/**</code>: designs, specs and plans are dated records.</li>
+        <li><code>.superpowers/**</code>: run ledgers and surveys.</li>
+        <li><code>CHANGELOG.md</code>: release history.</li>
+        <li><code>migrations/**</code>: generated; earlier migrations create the dropped tables and the drop migration names them.</li>
+        <li><code>docs/lesscars/**</code>: the written plan kept for the later unlock (D11).</li>
+        <li>A test that asserts a removed path answers 404, or is not a session route (for example the session-gate cases for <code>/sims</code> and <code>/api/sims/...</code>, and the 404 checks in <code>e2e/auth-a11y.spec.ts</code>): those lines only.</li>
+        <li>A Vitest file whose test proves F2's rule that a stored or published document whose pool carries <code>uncapped</code> loads with the field ignored: its <code>uncapped</code> lines only.</li>
+        <li>The code that keeps datasets built before this build loading, which <code>remove-lesscars</code> (L1) and <code>finite-funding</code> (F2) keep on purpose, with its comments and tests: in <code>src/lib/data/manifest.ts</code>, the parse of an older manifest's <code>scenarios.lesscars</code> and the derived <code>splitRoads</code>; in <code>src/lib/map/style.ts</code>, <code>LC_ROADS_SOURCE_LAYER</code> (<code>'roads_lc'</code>), <code>LC_CLONE_SUFFIX</code>, <code>isRoadsLayer</code>, <code>roadsClone</code> and the comment above them; in <code>src/lib/timelapse/model.ts</code>, <code>parseCalibration</code>'s reading of a pool's <code>uncapped</code>; in <code>src/lib/sim/levers/finance.ts</code>, <code>parsePool</code>'s acceptance of an ignored <code>uncapped</code>; and the tests and fixtures that prove those rules (<code>src/lib/data/manifest.test.ts</code>, <code>src/lib/map/style.spec.ts</code>'s <code>roads_lc</code> cases, <code>scripts/data-local.spec.ts</code>'s <code>lesscars</code> block, <code>scripts/data-transit.spec.ts</code>'s older-manifest case, <code>src/lib/timelapse/model.test.ts</code>, <code>src/lib/timelapse/fixtures/calibration-uncapped.json</code>, <code>src/lib/sim/levers/finance.spec.ts</code>): those lines only. They are compatibility code, not leftovers; nobody removes or rewrites them.</li>
+        <li>The reserved handle words <code>lesscars</code> and <code>fzp</code> in <code>src/lib/server/user-store/handle-normalize.ts</code>, and their tests: kept reserved on purpose.</li>
+        <li>The <code>stderrAllowlist</code> entries of <code>chreode.config.ts</code> that allow the expected 404s of the removed URLs, which <code>remove-lesscars</code> and <code>remove-multiuser</code> add for the 404 checks of <code>e2e/pages-a11y.spec.ts</code> and <code>e2e/auth-a11y.spec.ts</code>: they stay while those checks do.</li>
+        <li>A <code>docs/dev</code> sentence that states what the code does now about a removed name: that <code>/fzp</code> and <code>/lesscars</code> answer 404, how an older dataset's <code>scenarios.lesscars</code> and <code>roads_lc</code> layer are read, how an older calibration's <code>uncapped</code> pool loads (<code>finance-data.md</code>'s "Older datasets", <code>finance-levers.md</code>'s parse rules), or a dated measurement record that names the deleted plan file as its source (<code>road-lots.md</code>'s "Lots beside freed sites"). Such a sentence is true and stays.</li>
+      </ul>
+      <ul>
+        <li>Any other hit in <code>CLAUDE.md</code>, <code>README.md</code>, a <code>docs/dev</code> file, <code>package.json</code>, <code>chreode.config.ts</code> or <code>src/app.d.ts</code> is fixed.</li>
+        <li>Any other hit in a comment, in any file, is fixed by rewriting the comment (<a href="#sec-design-leftovers">Leftovers</a>).</li>
+        <li>A hit in code or test code, outside a comment, anywhere else is a defect of the unit that removed the name: it is reported with its <code>file:line</code> and the owner unit, and left alone.</li>
+        <li><code>uncapped</code> in the sense of density caps (the pipeline's SB 79 and current-law code, <code>sim-page.md</code>'s "uncapped by density") and of goal fractions (<code>goal.ts</code>) is not a hit; the pattern above does not match those uses.</li>
+      </ul>
+    </section>
+  </section>
+
+  <section id="sec-write-set">
+    <h2>Write set</h2>
+    <p>From the design doc's write-sets table, after every other unit:</p>
+    <ul>
+      <li><code>CLAUDE.md</code>.</li>
+      <li><code>README.md</code>.</li>
+      <li>Any file under <code>docs/dev/</code>, with <code>docs/dev/deploy.md</code>'s mail section left as <code>mail-setup</code> wrote it.</li>
+      <li><code>e2e/game-journey.spec.ts</code>.</li>
+      <li><code>package.json</code> (dependencies nothing imports).</li>
+      <li><code>chreode.config.ts</code>.</li>
+      <li><code>src/app.d.ts</code> (types nothing uses).</li>
+      <li>Comments in any file that name removed things.</li>
+    </ul>
+    <p>Ordering notes that concern this unit:</p>
+    <ul>
+      <li><code>docs/dev/deploy.md</code> is written by <code>mail-setup</code> (its mail section) and by <code>closing</code> (the rest), which needs every other unit's rows.</li>
+      <li><code>chreode.config.ts</code> is written by <code>remove-lesscars</code> (the dataset path list, which follows <code>PATHS</code>, and one <code>stderrAllowlist</code> entry) and by <code>remove-multiuser</code> (one <code>stderrAllowlist</code> entry), in either order because their hunks do not touch, and then by <code>closing</code>.</li>
+      <li>A unit whose e2e case requests a path that answers 404 on purpose adds, in the same change, one <code>stderrAllowlist</code> entry to <code>chreode.config.ts</code> that matches exactly the <code>[WebServer] [404]</code> lines those requests log, beside the existing <code>/no-such-page</code> entry. The <code>✘ [ERROR]</code> header and spacer lines of each 404 block are already allowed.</li>
+      <li><code>package.json</code>, <code>src/app.d.ts</code> and <code>playwright.config.ts</code> are written by <code>remove-multiuser</code>; <code>closing</code> writes the first two after it.</li>
+      <li>Links to a deleted doc file are fixed by <code>closing</code>.</li>
+      <li>The dataset is uploaded once, by this unit, from the integration branch, after every unit has merged; no other unit uploads a dataset. <code>reach-check</code> builds one earlier to run the check and uploads nothing.</li>
+      <li><code>scripts/level2-check.ts</code> and its test are <code>reach-check</code>'s; this unit runs the script and never changes it.</li>
+      <li>No other unit runs <code>npm run signoff</code>; <code>closing</code> runs it once, after the upload.</li>
+    </ul>
+    <p>The mail section of <code>deploy.md</code>: the section <code>## Sign-in mail</code>; in <code>### Worker (set in Cloudflare)</code> the "Already set" line, the <code>GOOGLE_CLIENT_ID</code> bullet and the <code>SES_ACCESS_KEY_ID</code> bullet; the mail and Google items of <code>## One-time bootstrap</code>.</p>
+    <p>Files:</p>
+    <ul>
+      <li>Creates: <code>e2e/game-journey.spec.ts</code>.</li>
+      <li>Changes, expected: <code>CLAUDE.md</code>, <code>README.md</code>, <code>docs/dev/{developing,testing,sim-page,timeline-ui,deploy,pipeline,sim-timers,auth,fzp-mode,finance-engine,road-lots,sim-levers,map-interfaces}.md</code>, <code>package.json</code>, <code>package-lock.json</code> (by <code>npm uninstall</code>), <code>chreode.config.ts</code>, <code>src/app.d.ts</code>, and the files whose comments the sweep finds. Any other <code>docs/dev</code> file the sweep or a read finds untrue.</li>
+      <li>Deletes: none.</li>
+      <li>Outside the repository: R2 objects under <code>data/&lt;v&gt;/</code> and <code>sources/</code>, written by <code>npm run pipeline -- upload</code>; the <code>chreode/signoff</code> status.</li>
+    </ul>
+  </section>
+
+  <section id="sec-tests">
+    <h2>Tests</h2>
+
+    <section id="sec-tests-journey">
+      <h3>The journey</h3>
+      <p><code>e2e/game-journey.spec.ts</code>, as <a href="#sec-design-journey">The journey</a> gives it, step by step. It runs in <code>npm run test:e2e</code> and signoff's burn-in runs it five times with retries off, so it must pass every time.</p>
+      <p>The same file's second test is <a href="#sec-design-measure">The dated measure</a>, under the same rule.</p>
+    </section>
+
+    <section id="sec-tests-verify">
+      <h3>The verification list</h3>
+      <ol>
+        <li>The five full-tree checks pass, with no test passing only on retry; <code>e2e/game-journey.spec.ts</code> among them.</li>
+        <li><code>npm run pipeline -- build</code> and <code>check &lt;v&gt;</code> pass every invariant.</li>
+        <li><code>npx tsx scripts/level2-check.ts pipeline/out/&lt;v&gt;</code> exits 0; its lines go in the handback.</li>
+        <li><code>upload</code> and <code>verify</code> succeed, and <code>npx tsx scripts/dataset-version.ts --check</code> exits 0.</li>
+        <li><code>npm run signoff</code> posts <code>chreode/signoff</code>.</li>
+        <li>The final sweep finds nothing outside the allowed places, or every hit left in code is in the handback with its owner unit; the link sweep finds nothing.</li>
+        <li><code>npm run check</code> and <code>npm run lint</code> pass after the leftovers go, and <code>npm ls</code> reports no missing package.</li>
+        <li><code>scripts/docs-index.spec.ts</code> passes (every <code>docs/dev/*.md</code> is linked from <code>CLAUDE.md</code>).</li>
+      </ol>
+      <p>No existing test is deleted, and no existing test's code or assertions change. The only edits this unit makes to an existing test file, test helper or e2e spec are the comment rewrites of <a href="#sec-design-leftovers">Leftovers</a>.</p>
+    </section>
+  </section>
+
+  <section id="sec-docs">
+    <h2>Docs</h2>
+    <p>Every doc this unit writes describes the merged tree. Where this spec gives a value (a binding, a script, a label), the code wins: the operator writes what the tree holds and reports the difference. Each item below is one statement and what it becomes.</p>
+    <ul>
+      <li>Other units document their own work first (<code>game-sim</code> writes <code>sim-page.md</code>, <code>timeline-ui.md</code> and <code>policy-timeline.md</code>; <code>remove-lesscars</code> writes <code>pipeline.md</code>; <code>game-save</code> writes <code>auth.md</code>). An item below that such a unit already made true changes nothing.</li>
+      <li>The operator reads every file under <code>docs/dev/</code> once on the merged tree for statements about removed things, the game's absence, or <code>uncapped</code> pools, and makes each true, beyond the items listed.</li>
+    </ul>
+
+    <section id="sec-docs-claude">
+      <h3><code>CLAUDE.md</code></h3>
+      <ul>
+        <li><strong>What This Is</strong> becomes: SF Housing Simulator is a free, open-source educational game on a map of San Francisco. Level 1 paints zoning until there is room for the homes goal. Levels 2 to 5 run the simulation to the goal, unlocking permitting, zoning and the given public-money measures one level at a time; from level 3 a level is won by reaching the goal in an earlier month than the result banked on leaving the one before. Plans (<code>/p</code>) and policies (<code>/s</code>) are published as before. The stack and licence sentences stay.</li>
+        <li><strong>Commands</strong>: the table has a row for each <code>npm run</code> script it lists today that <code>package.json</code> still has, and none for one it lacks. Expected removals: <code>db:generate:sim</code>.</li>
+        <li><strong>Commands</strong>, the <code>pipeline</code> row: the command list is <code>pipeline/cli.ts</code>'s. Expected: <code>doctor</code>, <code>fetch</code>, <code>version</code>, <code>build</code>, <code>check</code>, <code>upload</code>, <code>verify</code>, <code>fixture</code>, <code>quality-doc</code>, <code>boxes</code>, <code>all</code>.</li>
+        <li><strong>Commands</strong>, a new row: <code>npx tsx scripts/level2-check.ts &lt;datasetDir&gt;</code>, "Run current law over the window on a built dataset; exit 1 when the goal is missed. Run before every dataset upload."</li>
+        <li><strong>Architecture</strong>, the bindings: <code>DB</code>, <code>BUCKET</code>, <code>ASSETS</code> and the rate limits <code>wrangler.jsonc</code> declares (expected six: <code>PUBLISH_RL</code>, <code>AUTH_LINK_RL</code>, <code>AUTH_PASSWORD_RL</code>, <code>PSEUDO_MINT_RL</code>, <code>ACCOUNT_EDIT_RL</code>, and <code>MUTATION_REGISTERED_RL</code>, which guards saved-game writes). No <code>SIM</code> and no Durable Object.</li>
+        <li><strong>Architecture</strong>, vars and secrets: the vars <code>ENVIRONMENT</code>, <code>AUTH_METHODS</code> (<code>magic-link,password,google,passkey</code>), <code>SES_FROM</code>, <code>PUBLIC_APP_RELEASE</code>; the secrets <code>BETTER_AUTH_SECRET</code>, <code>SES_ACCESS_KEY_ID</code> and <code>SES_SECRET_ACCESS_KEY</code>, with <code>GOOGLE_CLIENT_ID</code> and <code>GOOGLE_CLIENT_SECRET</code> switching Google on once set (link to <code>deploy.md</code>). No <code>SIM_TAKEDOWN_TOKEN</code>.</li>
+        <li><strong>Architecture</strong>: the sentence on wrapping <code>_worker.js</code> to export <code>SimObject</code> goes. If the build still wraps the adapter's output, the sentence says what the wrapper exports now.</li>
+        <li><strong>Architecture</strong>, a new sentence: accounts own saved games (<code>game_save</code>, <code>/api/game</code>, link to <code>docs/dev/game-save.md</code>); the game's rules are in <code>src/lib/game/</code> (link to <code>docs/dev/game.md</code>).</li>
+        <li><strong>Shell</strong>: the steps "1 Paint, 2 Simulate", with Simulate not a link while the current game is at level 1.</li>
+        <li><strong>Shell</strong>: the header carries the level cell ("Level N") where <code>src/lib/shell/</code> puts it, opening the level panel (the bar, what the next level unlocks, "Level up" while it is offered, the saved games); its place below lg as the code has it.</li>
+        <li><strong>Shell</strong>: the rest of the paragraph (actions, <code>pinned</code>, <code>status</code>, the account and About entries) stays as true to the code.</li>
+        <li><strong>Conventions</strong>, "There is no CI workflow on pull requests; signoff is the only check." becomes: "Signoff is the only required check. One workflow runs on pull requests, <code>pipeline.yml</code>: the pipeline tests and the fixture byte check, for changes under the paths it lists."</li>
+        <li><strong>Doc list</strong>: every entry names only what its file then covers, and every <code>docs/dev/*.md</code> has one entry (<code>scripts/docs-index.spec.ts</code>). The auth entry becomes: accounts (identity model, anonymous accounts made at the first win, <code>AUTH_METHODS</code> and the method switch, session gate, JSON-route origin check, mail log mode, accounts and their deletion, e2e seams). The deploy entry drops "the operator takedown of a sim" and adds "sign-in mail". The fzp-mode entry becomes "<code>src/lib/fzp/</code>, the code <code>/sim</code> shares: card and Details' pieces, lookups on the map, known gaps". The sim-timers entry drops "Save and Revert". The game and game-save entries name what those files then hold.</li>
+        <li><strong>Conventions</strong>, a new item: a dataset is uploaded only after <code>npx tsx scripts/level2-check.ts pipeline/out/&lt;v&gt;</code> exits 0 (D1: current law reaches the goal inside the window).</li>
+      </ul>
+    </section>
+
+    <section id="sec-docs-readme">
+      <h3><code>README.md</code></h3>
+      <ul>
+        <li>The first paragraph becomes: a free, open-source educational game about housing in San Francisco. Paint zoning until there is room for the homes goal, then reach the goal in a simulation of the city, unlocking permitting, zoning and public money one level at a time. Plans and policies can be published and remixed.</li>
+        <li>The stack paragraph, Quick start, Documentation and the last paragraph stay.</li>
+        <li>Licences: "listed in the app at <code>/attribution</code>" becomes "listed in the app at <code>/about</code>".</li>
+      </ul>
+    </section>
+
+    <section id="sec-docs-developing">
+      <h3><code>docs/dev/developing.md</code></h3>
+      <ul>
+        <li><code>:37</code> becomes: magic link is on only while mail can be delivered (link to <code>auth.md</code>). With no provider in <code>.dev.vars</code>, <code>npm run dev</code> and <code>npm run preview</code> have no magic link, and <code>/signin</code> offers the other methods <code>AUTH_METHODS</code> lists. Mail runs in log mode (from, recipient and subject only, never the link). Adding <code>SES_ACCESS_KEY_ID</code> and <code>SES_SECRET_ACCESS_KEY</code>, or <code>EMAIL_PROVIDER=resend</code> and <code>RESEND_API_KEY</code>, sends real mail. No invite and no "Start fresh".</li>
+        <li><code>:39</code>: <code>AUTH_METHODS</code> in <code>.dev.vars</code> overrides the <code>wrangler.jsonc</code> value (<code>magic-link,password,google,passkey</code>), for example <code>AUTH_METHODS=magic-link,password</code> to leave passkey and Google out.</li>
+        <li><code>:41</code> describes <code>playwright.config.ts</code>'s <code>--var</code> pins as the file has them.</li>
+        <li><code>:45</code>: <code>npm run data:fixture</code> loads <code>e2e/fixtures/data/fixture-0/</code>, generated by <code>npm run pipeline -- fixture</code> (link to <code>pipeline.md</code>). The "placeholder" sentence goes.</li>
+        <li>"The sim object" section (<code>:51-53</code>) goes.</li>
+        <li><code>:61</code>, the sim object's migration track, goes. Migrations has one track, <code>migrations/d1</code>.</li>
+        <li><code>:71</code>: below lg the steps, the level cell and the actions move into the header's Menu, as the code has it.</li>
+        <li><code>:79</code>: "the <code>/lesscars</code> headline" goes from the <code>pinned</code> sentence.</li>
+        <li>A new section, "Levels while developing", each its own item:
+          <ul>
+            <li>Plain <code>npm run dev</code> plays the real game: a fresh browser is at level 1, <code>/sim</code> shows its locked page until Paint is won, and <code>fixture-0</code> cannot reach the goal's 82,069 homes.</li>
+            <li><code>VITE_E2E=1 npm run dev</code> gives every page the open game (X1): level 5, every control, nothing stored. This is the way to work on <code>/sim</code> on the fixture.</li>
+            <li>Under <code>VITE_E2E=1</code>, setting <code>localStorage['sfhousing:e2e:game']</code> (any value) plays the real game, and <code>localStorage['sfhousing:e2e:goal']</code> sets the goal's amount, so a level can be won on the fixture.</li>
+            <li>A real dataset (<code>npm run data:local</code>) can reach the real goal without the seam.</li>
+          </ul>
+        </li>
+      </ul>
+    </section>
+
+    <section id="sec-docs-testing">
+      <h3><code>docs/dev/testing.md</code></h3>
+      <ul>
+        <li><code>:24</code>, the sim object's Node harness, goes.</li>
+        <li><code>:44</code>: the mini finance fixture's pools as <code>src/lib/sim/scenario/fixtures/mini-finance.ts</code> then defines them, with no "uncapped" pool.</li>
+        <li><code>:79</code>: the <code>webServer</code> command as <code>playwright.config.ts</code> has it. The <code>SIM_TAKEDOWN_TOKEN</code> sentence goes when the flag is gone from that file.</li>
+        <li><code>:85</code>: the mail kinds <code>/api/e2e/mail</code> answers and the helpers of <code>src/lib/server/test/auth-db.ts</code>, as the code has them (no invite, no <code>grantEvent</code>).</li>
+        <li><code>:87</code>, the sim socket specs, goes.</li>
+        <li><code>:89</code> becomes: "Signoff's <code>test:e2e</code> step runs <code>npm run test:e2e</code>, every project; no workflow runs Playwright." The single-spec example stays.</li>
+        <li>A new section, "The game in tests": <code>seedGame</code>, <code>newVisitor</code> and <code>seedGoalAmount</code> in <code>e2e/helpers/game.ts</code> (X1); with <code>VITE_E2E=1</code> a page with no <code>sfhousing:e2e:game</code> key gets the open game (level 5, every control, nothing stored), so a spec that calls neither helper sees every control; <code>seedGame</code> and <code>newVisitor</code> switch the real game on; a spec that plays a level to a win calls <code>seedGoalAmount</code>, because the fixture cannot reach 82,069 homes; a component test with no provider gets a level 5 store from <code>useGame()</code> (G2). Links to <code>game.md</code> and <code>game-save.md</code>.</li>
+        <li>A new item under Playwright: <code>e2e/game-journey.spec.ts</code> is the one spec that plays the game across pages, from a new visitor's first win to a saved game at level 3.</li>
+        <li>A new section, "The level 2 check": <code>scripts/level2-check.ts</code>, what it runs and its exit codes (as the <code>reach-check</code> spec gives them), that every dataset upload is preceded by it, and that its test reads the fixture with an amount argument.</li>
+      </ul>
+    </section>
+
+    <section id="sec-docs-simpage">
+      <h3><code>docs/dev/sim-page.md</code></h3>
+      <ul>
+        <li><code>:3</code>: the <code>/fzp</code> redirect sentence goes. <code>/sim</code> opens on the current saved game's policy (the <code>sfhousing:sim:v2</code> record), else <code>DEFAULT_POLICY4</code>.</li>
+        <li>A new section after Layout, "The page in the game", one item each, with the names the code uses and a link to <code>game.md</code>:
+          <ul>
+            <li>The page reads what the current game allows (<code>game.allowed</code>) and the bar (<code>barOf(game.progress)</code>) from the store (<code>useGame()</code>).</li>
+            <li>A locked kind's lane says <code>lockedLane</code>'s text, has no "+", and its policies cannot be selected.</li>
+            <li>The worker and Publish get the playable document (<code>playable</code>).</li>
+            <li>The standing (G4) is read on the playable document's forecast, never while the numbers are stale.</li>
+            <li>A win sets the store's offer (<code>setOffer</code>) and shows the win card with "Level up" and "Keep playing"; the level cell keeps "Level up" while <code>game.offer</code> is set, and clears it when the policy changes.</li>
+            <li>A result short of the bar shows "Goal reached in {month}. Beat {bar} to level up." or "Goal missed by {n} homes. Reach it before {bar} to level up."</li>
+            <li>The ruler has a "To beat" flag at the bar's month; Details has "To beat: {month}".</li>
+            <li>Levelling up returns the clock to today.</li>
+            <li>At level 1 <code>/sim</code> is a locked page that says what unlocks it and links to Paint.</li>
+          </ul>
+        </li>
+        <li><code>:88</code>, Autosave: the <code>sfhousing:sim:v2</code> record holds the current saved game's policy; the store copies it into the saved game on a switch, a new game, a remix or a delete (G2).</li>
+        <li><code>:91</code>, Publish: posts the playable document.</li>
+        <li><code>:92</code>, the read-only view: <code>/s/&lt;id&gt;</code> runs the whole published document for every viewer (<code>ALL_ALLOWED</code>), with no locked lanes, no "To beat" flag, no win card and no level-up offer, and the goal message with no bar. Remix makes a saved game from the current game's level, bars and plan with the published policy, and opens <code>/sim</code>; at level 1 it is disabled with "Unlock the simulation to remix"; a line under it names the level that runs all of the document. The banner's other controls as the code has them.</li>
+      </ul>
+    </section>
+
+    <section id="sec-docs-timeline">
+      <h3><code>docs/dev/timeline-ui.md</code></h3>
+      <ul>
+        <li><code>:10</code>: "takes <code>FzpMode</code>'s place:" goes; the row lists what <code>TimelineMode</code> owns.</li>
+        <li><code>:21</code> and <code>:26</code>: a locked kind's row stays in place, its lane says "Unlocks at level N" or "Unlocks when you level up", with no "+" and no empty-lane button.</li>
+        <li><code>:27</code>: the ruler carries a "To beat" flag at the bar's month beside the Goal flag, in a saved game only.</li>
+        <li><code>:32</code>: a pool's level is what is left of all the money the pool receives in the window, drained as it is allocated and never refilled by a payment; a closed pool reads empty (link to <code>sim-funding.md</code>).</li>
+        <li><code>:40</code>: the <code>/lesscars</code> clause goes; the sentence states what <code>copy.ts</code> holds.</li>
+        <li><code>:44</code>: the old scenario messages are routed only by the worker's <code>scenario</code> mode (L1), and no page sends them. The "<code>/lesscars</code> cut-over" clause goes.</li>
+        <li><code>:69</code>: in a saved game the goal notice names the bar, in the two forms of the sim-page item above; the published view keeps today's text.</li>
+      </ul>
+    </section>
+
+    <section id="sec-docs-deploy">
+      <h3><code>docs/dev/deploy.md</code> (outside the mail section)</h3>
+      <ul>
+        <li><code>:23</code> becomes: signoff is the only required check, and it runs locally. One workflow runs on pull requests, <code>pipeline.yml</code> (the pipeline tests and the fixture byte check, path-filtered).</li>
+        <li><code>:27</code>: the <code>SIM</code> binding paragraph becomes one sentence per entry of <code>wrangler.jsonc</code>'s <code>migrations</code> as the file then holds them, and the rule that a migration tag is never edited or reused. No link to <code>sim-object.md</code>.</li>
+        <li>Datasets ship with their code, a new bullet: <strong>Level 2 check.</strong> Before <code>upload</code>, <code>npx tsx scripts/level2-check.ts pipeline/out/&lt;v&gt;</code> must exit 0; exit 1 means current law misses the goal inside the window on that data, nothing is uploaded, and the owner decides the remedy.</li>
+        <li><code>:55</code>: <code>AUTH_METHODS</code> is <code>magic-link,password,google,passkey</code> in both environments.</li>
+        <li><code>:61</code>, <code>BOOTSTRAP_EMAILS</code>: goes when no code under <code>src/</code> reads it; otherwise it says what the code then does with it.</li>
+        <li><code>:63</code>, <code>SIM_TAKEDOWN_TOKEN</code>, goes.</li>
+        <li>"Operator takedown of a sim" (<code>:67-105</code>) goes.</li>
+        <li>The table of environments, Release flow, Contributors, the GitHub secrets list and the non-mail bootstrap items stay as true to the code.</li>
+      </ul>
+    </section>
+
+    <section id="sec-docs-pipeline">
+      <h3><code>docs/dev/pipeline.md</code></h3>
+      <ul>
+        <li>Finishing a branch that changes the dataset: a step between <code>build</code> and <code>upload</code>, "<code>npx tsx scripts/level2-check.ts pipeline/out/&lt;v&gt;</code> must exit 0; on exit 1 nothing is uploaded and the owner decides" (D1).</li>
+        <li>Finishing, the signoff step: in a multi-unit build only the closing unit runs signoff, after the upload.</li>
+        <li><code>:99</code>: "CI loads it (<code>npm run data:fixture</code> in <code>.github/workflows/ci.yml</code>)" becomes: "<code>pipeline.yml</code> regenerates it and fails on any byte change outside <code>buildings.pmtiles</code>; <code>npm run test:e2e</code> loads it."</li>
+        <li>Every link to <code>lesscars.md</code> and every command or output of less cars that is still there goes.</li>
+      </ul>
+    </section>
+
+    <section id="sec-docs-timers">
+      <h3><code>docs/dev/sim-timers.md</code></h3>
+      <ul>
+        <li><code>:73-80</code> becomes: Save ("Save timelines") and "Revert to saved" exist in <code>PermittingSection</code> only with <code>snapshot</code> true, and no page mounts it so. The codec facts (<code>timing.saved</code>, Publish stripping it, reconcile on load) stay, stated as what the schema 3 codec does with a stored snapshot.</li>
+      </ul>
+    </section>
+
+    <section id="sec-docs-auth">
+      <h3><code>docs/dev/auth.md</code></h3>
+      <ul>
+        <li>Every statement still about sims, invitations, roles, members, the roster hook, the sim socket, the operator, <code>startFresh</code> or <code>capability_event</code> goes or is made true to the code.</li>
+        <li><code>:8</code>: the number of identity tables is the count the schema then holds.</li>
+        <li><code>:72</code>: the routes the JSON-route origin check covers, as the code has them (the publish routes are checked or not as the code says).</li>
+        <li>Links to <code>sim-object.md</code> and <code>sim-sync.md</code> go.</li>
+      </ul>
+    </section>
+
+    <section id="sec-docs-links">
+      <h3>Other <code>docs/dev</code> files</h3>
+      <ul>
+        <li><code>fzp-mode.md</code>: the statements that <code>/fzp</code> redirects and that pieces serve <code>/lesscars</code> go, with their links to <code>lesscars.md</code>; the high-water mark section (<code>:49</code>) goes with <code>high-water.svelte.ts</code>.</li>
+        <li><code>finance-engine.md:500</code>, <code>road-lots.md:483</code>, <code>:502</code>, <code>sim-levers.md:235</code>: each link to <code>lesscars.md</code> goes, and its sentence says what the code does now.</li>
+        <li><code>map-interfaces.md:42</code>, <code>:54</code>, <code>:92-94</code>, <code>:124</code>: <code>/lesscars</code>, <code>roads_lc</code> and <code>installBasemapHide</code> go from the prose.</li>
+        <li>Any other file the link sweep or the read finds.</li>
+      </ul>
+    </section>
+  </section>
+
+  <section id="sec-global-constraints">
+    <h2>Global constraints</h2>
+    <ul>
+      <li>Work happens in git worktrees under <code>.claude/worktrees/</code>. Commits follow Conventional Commits. No attribution to an AI anywhere.</li>
+      <li>Code style: 2-space indent, single quotes, no trailing commas, 100 columns.</li>
+      <li>Every Vitest test calls <code>expect</code>.</li>
+      <li>Signoff fails on server stderr, on timing crutches and on a retried flake. Each unit runs <code>npm run lint</code>, <code>npm run check</code> and the Vitest projects its files belong to before it hands back.</li>
+      <li>Port 4173 is shared by every session on this machine. A unit never kills a server it did not start; it waits.</li>
+      <li>Every agent runs every command in the foreground and never ends a turn while something it started is running.</li>
+      <li>Schema changes go through <code>npm run db:generate</code>. Nobody edits a migration.</li>
+      <li>No unit runs <code>npm run signoff</code>: its dataset step fails until the dataset is uploaded. <code>closing</code> runs it once, after the upload.</li>
+      <li>The dataset version changes in this build. The dataset is uploaded once, by <code>closing</code>, from the integration branch, after every unit has merged; no other unit uploads a dataset. <code>reach-check</code> builds one earlier to run the check and uploads nothing.</li>
+      <li>A unit that writes a hashed path regenerates the fixture dataset with <code>npm run pipeline -- fixture</code> and commits it.</li>
+      <li>WCAG 2.2 AA: every new control is at least 24 px and passes <code>expectNoA11yViolations</code> in light and dark.</li>
+      <li>Page text is short. No sentence says what something is not.</li>
+      <li>Nothing on the main screen says "RHNA". The goal is read from the <code>Goal</code> value, never from a constant.</li>
+      <li>The game's rules are read from <code>src/lib/game/</code>. No component compares a level to a number.</li>
+      <li>One future: no seed control, no band, no average over runs.</li>
+      <li>Published plans and policies, their ids and their pages keep working, including every policy published before this build.</li>
+      <li>A number that is a claim about the world carries its source and tier, in the existing <code>Sourced</code>, <code>Unsourced</code> and <code>Evidence</code> shapes.</li>
+      <li>A runtime dependency that ships in the bundle gets a credit in <code>SOFTWARE</code>. This build adds none.</li>
+      <li>CSP changes are interface changes. This build makes none.</li>
+      <li>Timing is measured only on a quiet machine. A unit that cannot get one defers the measurement and says so.</li>
+    </ul>
+  </section>
+
+  <section id="sec-out-of-scope">
+    <h2>Out of scope</h2>
+    <ul>
+      <li><code>deploy.md</code>'s mail section and bootstrap mail items: <code>mail-setup</code>.</li>
+      <li><code>playwright.config.ts</code>: <code>remove-multiuser</code>.</li>
+      <li>The level 2 check script, its test and its first run: <code>reach-check</code>.</li>
+      <li>An npm script for the level 2 check, and a signoff step that runs it: the check runs with <code>npx tsx</code> in the finish.</li>
+      <li>Fixing code or test code (not comments) that a full-tree check or the sweep finds wrong in another unit's file: reported with the owner unit, not fixed here.</li>
+      <li>Changing the window's length, a funding bound or the goal when the check fails: the owner's call.</li>
+      <li>The stage calibration's fit for the pooled <code>permitIssued</code> cohort, which the live replay block fails on every live dataset since early November 2026, and that test's bars: the owner's, after this build.</li>
+      <li>Winning levels 3 to 5 in the journey: each unit's own e2e specs cover its level.</li>
+      <li>Merging the integration branch to <code>main</code> and releasing to production: the conductor and the release flow.</li>
+    </ul>
+  </section>
+</article>

@@ -23,10 +23,9 @@
     COVERAGE_OFF_SHORT_SENTENCE4,
     COVERAGE_RUN_SENTENCE4,
     coverageShortLine
-  } from '$lib/timeline/copy';
+  } from '$lib/timeline/money-copy';
   import Explain from '$lib/timeline/Explain.svelte';
   import { SvelteSet } from 'svelte/reactivity';
-  import { HORIZON } from '$lib/fzp/time';
   import {
     AFFORDABLE,
     AVERAGE_DRAWN,
@@ -42,7 +41,7 @@
     DRAFT_OPEN_DESC,
     MONTH_OFFER_CAVEAT,
     NOTHING_ADDED,
-    NO_LIMIT,
+    NO_CEILING,
     POOL_LIMIT_DESC,
     addProgrammeName,
     PROGRAMME_LIMIT_DESC,
@@ -85,6 +84,7 @@
     groupOf,
     poolsOf,
     termRows,
+    windowEnd,
     type BaselineGroup,
     type FundingRowId
   } from './funding-view';
@@ -136,7 +136,7 @@
   const f = $derived(store.policy.funding);
   const presets = $derived(fundingPresets(calibration));
 
-  const steps = $derived(baseline ? coverageSteps(f, baseline, priced, HORIZON) : []);
+  const steps = $derived(baseline ? coverageSteps(f, baseline, priced, windowEnd(asOf)) : []);
   const summary = $derived(steps.length > 0 ? coverageSummaryText(steps) : '');
   const sized = $derived(steps.map((s) => coverageSizeMixed(f, baseline, s.from)));
   const groups = $derived(baseline ? baselineGroups(f, baseline, priced) : []);
@@ -209,7 +209,7 @@
     store.apply(e.change, e.label, e.coalesce === undefined ? undefined : `${e.coalesce}@${run}`);
     if (store.policy === before || !baseline) return;
     const after = coverageSummaryText(
-      coverageSteps(store.policy.funding, baseline, priced, HORIZON)
+      coverageSteps(store.policy.funding, baseline, priced, windowEnd(asOf))
     );
     announce(`${e.label}.${after === said ? '' : ` ${after}`}`);
   }
@@ -218,7 +218,7 @@
 
   function groupAmount(g: BaselineGroup): string {
     if (g.off) return SWITCHED_OFF;
-    return g.perYear === null ? NO_LIMIT : perYearText(g.perYear);
+    return g.noCeiling ? NO_CEILING : perYearText(g.perYear);
   }
 
   function groupPays(g: BaselineGroup): string {

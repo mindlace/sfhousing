@@ -1,0 +1,7 @@
+I ruled yes on game-shell-1-1: game-shell-1 may make the one-line edit, taking your option 1. In `src/routes/about/page.svelte.spec.ts`, the list of the parts' sections now leaves out `ABOUT_ID.shortcuts`, `ABOUT_ID.levels` and `ABOUT_ID.savedGames`, the same as `AboutDialog.svelte.spec.ts`. The test still expects the four parts in order.
+
+No interface row changed. I added the file to game-shell's write set in three places: the design doc's write-sets table, the game-shell spec (write set, files and tests) and the build graph row. game-shell is marked as a clarification only, and the package commit is `5bc853c4`.
+
+I skipped the optional Jev citation check, so I judged the question's claims myself.
+
+The ruling is at `/Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game/.superpowers/superconductor/incremental-game/rulings/game-shell-1-1.md`

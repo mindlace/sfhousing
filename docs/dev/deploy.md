@@ -20,11 +20,11 @@ release-please runs with a GitHub App token (`actions/create-github-app-token`),
 
 There is no automated staging-to-prod interlock (as in planafoot): do not merge a release PR over a red staging deploy.
 
-There is no CI workflow on pull requests: `npm run signoff` is the only check, and it runs locally. Add a workflow deliberately if checks move off the maintainer's machine.
+`npm run signoff` is the only required check, and it runs locally. One workflow runs on pull requests, `pipeline.yml`: the pipeline tests and the fixture byte check, for changes under the paths it lists.
 
 `PUBLIC_APP_RELEASE` is set at deploy time to the commit SHA (staging) or tag (production).
 
-The `SIM` Durable Object binding and its `new_sqlite_classes` migration (`wrangler.jsonc`, tag `v1-sim-object`) ship with the deploy in both environments, with no manual step. A migration tag is never edited or reused. After this deploy, rolling the Worker back to a version without the `SimObject` class is not safe. See [sim-object.md](sim-object.md).
+`wrangler.jsonc` holds two Durable Object migrations, the same in both environments, applied by the deploy with no manual step. `v1-sim-object` created the class `SimObject` (`new_sqlite_classes`). `v2-delete-sim-object` deletes it and its stored data (`deleted_classes`); the Worker binds no Durable Object. A migration tag is never edited or reused.
 
 ### Contributors (fork PRs)
 
@@ -36,6 +36,7 @@ Nothing is promoted. The build computes the dataset version `<v>` from the sourc
 
 - **Guard.** Both deploy workflows run the step "Guard: this commit's dataset is published" before `npm run build`. It runs `npx tsx scripts/dataset-version.ts --check <host>` and sends a `HEAD` request (Node `fetch`, 15 s timeout, retried) for `/data/<v>/manifest.json` on the deployed host (either host serves any published version, so no R2 credentials are needed). If the manifest is missing the job fails without deploying and the running version stays up. The fix is to build and upload the dataset ([pipeline.md](pipeline.md), "Finishing a branch that changes the dataset").
 - **Smoke.** After the deploy, "Smoke: dataset manifest is served and the build uses it" checks the manifest again and that `/about` on the deployed host shows `<v>` (`/attribution` is a 308 to `/about#about-data`, and `curl -fsS` does not follow it).
+- **Level 2 check.** Before `upload`, `npx tsx scripts/level2-check.ts pipeline/out/<v>` must exit 0. Exit 1 means current law misses the goal inside the window on that data: nothing is uploaded, and the owner decides the remedy ([testing.md](testing.md), "The level 2 check").
 - **Releases.** A release tag's tree computes its own `<v>`, so cutting a release is what moves production to a new dataset. `release-please.yml` needs no dataset step.
 - **Rollback** is a code revert. The reverted tree computes the old version, which is still in R2.
 - Versions are immutable and retained forever. There are no `chore(data)` or `data:` pointer PRs any more.
@@ -50,59 +51,146 @@ These are the GitHub Actions ones; nothing else is set there.
 
 ### Worker (set in Cloudflare)
 
-Already set: `BETTER_AUTH_SECRET` as a secret on staging and on production, each with its own value (never share one between them).
+Already set: `BETTER_AUTH_SECRET` as a secret on staging and on production, each with its own value (never share one between them); `SES_ACCESS_KEY_ID` and `SES_SECRET_ACCESS_KEY` on staging and on production, each environment with its own key (see [Sign-in mail](#sign-in-mail)).
 
-In `wrangler.jsonc` `vars`, per environment: `ENVIRONMENT`, `AUTH_METHODS=magic-link` (the pseudonymous account and the email magic link only), `SES_FROM` (needed even in mail log mode) and `PUBLIC_APP_RELEASE`.
+In `wrangler.jsonc` `vars`, per environment: `ENVIRONMENT`, `AUTH_METHODS=magic-link,password,google,passkey` (the same in both), `SES_FROM` (needed even in mail log mode) and `PUBLIC_APP_RELEASE`.
 
 Each of these only switches a feature on, and is read through a typed cast of `platform.env`:
 
-- `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`: Google sign-in, and only if `AUTH_METHODS` lists `google`.
-- `SES_ACCESS_KEY_ID` and `SES_SECRET_ACCESS_KEY` (and optional `SES_REGION`), or `EMAIL_PROVIDER=resend` and `RESEND_API_KEY`: real mail delivery. Magic link switches on when one of these pairs is set, and is off until then: the header shows no `Sign in`, `/signin` shows no email form (only `Start fresh without an account`), `/account` offers no email change, and every path that sends a link or a verification mail answers 404. Pseudonymous accounts, sims, invites by handle and account deletion work either way. Without a provider, mail that is still sent (an invite to an email address) runs in log mode: only the from address, recipient and subject are logged, never the link.
-- `BOOTSTRAP_EMAILS`: comma list of verified addresses that get operator capabilities.
+- `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`: Google sign-in while `AUTH_METHODS` lists `google`. How they are made is under [Sign-in mail](#sign-in-mail).
+- `SES_ACCESS_KEY_ID` and `SES_SECRET_ACCESS_KEY`: make mail deliverable. Magic link is in effect exactly while both are set; without them mail runs in log mode (see [auth.md](auth.md), Mail). `SES_REGION` is unset, so mail goes through `us-west-1`. `EMAIL_PROVIDER=resend` with `RESEND_API_KEY` is the other provider the code accepts, and is unused.
 - `BETTER_AUTH_URL`: base URL override; unset, the request origin is used.
-- `SIM_TAKEDOWN_TOKEN`: a secret, optional and unset by default in both environments. It switches on the operator takedown route (below); nothing else reads it, and no build, deploy or other route needs it.
 
 See [auth.md](auth.md).
 
-## Operator takedown of a sim
+## Sign-in mail
 
-`POST /api/operator/sims/<simId>/takedown` removes a sim: it bars the id for ever, clears the sim's stored log, closes its open sockets (close code 4410), and deletes its `sim_index` and `sim_commit` rows and its pending invitations. The ledger's old grants stay and grant nothing. It cannot be undone, and nothing a member does can do it.
+Mail goes through Amazon SES in the AWS account planafoot uses, region `us-west-1`, with production access.
 
-The route is off until the secret is set: every same-origin JSON request answers 404 while `SIM_TAKEDOWN_TOKEN` is unset or shorter than 32 characters (a request that is not JSON gets 415, and one with a foreign `Origin` 403, first). The secret is unset in staging and in production.
+- **Identity:** `sfhousing.mindlace.net`, Easy DKIM at 2048 bits, MAIL FROM `mail.sfhousing.mindlace.net` with the SES default on MX failure. It is a subdomain because `mindlace.net` carries the owner's own mail.
+- **From:** `SES_FROM` in `wrangler.jsonc`, the same in both environments.
+- **Senders:** one IAM user per environment, `sfhousing-mail-staging` and `sfhousing-mail-production`, each with the inline policy `send-from-sfhousing`:
 
-1. Set the secret on the environment, a value of at least 32 characters (for example `openssl rand -hex 32`). Keep it where you can read it back; never commit it.
+  ```json
+  {
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Sid": "SendFromSfhousing",
+        "Effect": "Allow",
+        "Action": "ses:SendEmail",
+        "Resource": "arn:aws:ses:us-west-1:<account>:identity/sfhousing.mindlace.net"
+      }
+    ]
+  }
+  ```
 
-   ```sh
-   wrangler secret put SIM_TAKEDOWN_TOKEN              # production
-   wrangler secret put SIM_TAKEDOWN_TOKEN --env staging  # staging
-   ```
+- **Keys:** each user holds one access key, set as that environment's two secrets. No copy of a key is kept anywhere but the Worker secret.
 
-2. Call the route. The header is `Authorization: Bearer <token>`, spelled that way, and `Content-Type: application/json` is required. Send no `Origin` header (`curl` sends none). Put the token in your shell first: with the variable empty the header is `Bearer `, which answers 404 like a wrong token.
+### DNS records
 
-   ```sh
-   read -rs SIM_TAKEDOWN_TOKEN   # paste the token; it is not echoed
-   curl -X POST https://<host>/api/operator/sims/<simId>/takedown \
-     -H 'Content-Type: application/json' \
-     -H "Authorization: Bearer $SIM_TAKEDOWN_TOKEN" \
-     -d '{}'
-   ```
+The zone `mindlace.net` is on Cloudflare. Names are relative to it. The CNAMEs must be "DNS only" (grey cloud): a proxied DKIM record never verifies. TTL is Auto. No record sits at `sfhousing.mindlace.net` itself.
 
-3. Optionally remove the secret afterwards, which turns the route off again: `wrangler secret delete SIM_TAKEDOWN_TOKEN` (add `--env staging` for staging).
+| Name                           | Type  | Content                                              | Proxy         |
+| ------------------------------ | ----- | ---------------------------------------------------- | ------------- |
+| `<token>._domainkey.sfhousing` | CNAME | `<token>.dkim.amazonses.com`                         | DNS only      |
+| `<token>._domainkey.sfhousing` | CNAME | `<token>.dkim.amazonses.com`                         | DNS only      |
+| `<token>._domainkey.sfhousing` | CNAME | `<token>.dkim.amazonses.com`                         | DNS only      |
+| `mail.sfhousing`               | MX    | `feedback-smtp.us-west-1.amazonses.com`, priority 10 | Not proxiable |
+| `mail.sfhousing`               | TXT   | `v=spf1 include:amazonses.com ~all`                  | Not proxiable |
+| `_dmarc.sfhousing`             | TXT   | `v=DMARC1; p=quarantine; adkim=r; aspf=r`            | Not proxiable |
 
-Answers, in the order the route checks:
+The three `<token>` values are the identity's DKIM tokens, one per CNAME:
 
-| Status | Means                                                                                                                                                              |
-| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 415    | Not `application/json`                                                                                                                                             |
-| 403    | The request carried an `Origin` that is not the host's                                                                                                             |
-| 404    | The token is missing, wrong, short or the secret is unset, or `<simId>` is not a valid id. One body for all of them                                                |
-| 503    | The sim object cannot be reached (no `SIM` binding, as under `npm run dev`). Nothing was written                                                                   |
-| 200    | `{ "simId": "<simId>" }`: done. The id is marked, the object is cleared and the D1 rows are gone. The Worker logs one info line, `[takedown] done` with the sim id |
-| 500    | A step failed. Call again: every step is safe to repeat, so a retry finishes the job                                                                               |
+```sh
+aws sesv2 get-email-identity --region us-west-1 --email-identity sfhousing.mindlace.net --query DkimAttributes.Tokens --output text
+```
 
-Any valid id with the right token is taken down and barred, whether or not it has a `sim_index` row. That clears a log whose index row is already gone, and bars an id nobody registered yet. The id can never be registered again.
+### Health check
 
-See [sim-object.md](sim-object.md) (`takeDown()`) and [auth.md](auth.md) (Sims with no members).
+```sh
+aws sesv2 get-email-identity --region us-west-1 --email-identity sfhousing.mindlace.net \
+  --query '{sending:VerifiedForSendingStatus,identity:VerificationStatus,dkim:DkimAttributes.Status,mailFrom:MailFromAttributes.MailFromDomainStatus}'
+```
+
+Healthy: `sending` is `true`, and `identity`, `dkim` and `mailFrom` are all `SUCCESS`.
+
+### Commands per environment
+
+Every command below starts with this prelude, in the same shell command. `E` is the one parameter:
+
+```sh
+E=staging   # the one parameter: staging or production
+U="sfhousing-mail-$E"
+ENVF=(); [ "$E" = staging ] && ENVF=(--env staging)
+HOST=$([ "$E" = staging ] && echo sfhousing-staging.mindlace.net || echo sfhousing.mindlace.net)
+```
+
+`ENVF` is an array, so `"${ENVF[@]}"` expands to nothing for production and to `--env staging` for staging, in bash and in zsh.
+
+#### Rotate a key
+
+The user has one key. A rotation makes a second, swaps the secrets, proves a mail, and deletes the first (prelude first):
+
+```sh
+OLD=$(aws iam list-access-keys --user-name "$U" --query 'AccessKeyMetadata[0].AccessKeyId' --output text) && \
+[ "$(aws iam list-access-keys --user-name "$U" --query 'length(AccessKeyMetadata)' --output text)" = 1 ] && \
+read -r KEY_ID KEY_SECRET <<<"$(aws iam create-access-key --user-name "$U" \
+  --query 'AccessKey.[AccessKeyId,SecretAccessKey]' --output text)" && \
+printf '%s' "$KEY_ID" | npx wrangler secret put SES_ACCESS_KEY_ID "${ENVF[@]}" && \
+printf '%s' "$KEY_SECRET" | npx wrangler secret put SES_SECRET_ACCESS_KEY "${ENVF[@]}" && \
+echo "old key ends ${OLD: -4}"
+```
+
+1. Run the block above. It refuses unless the user has exactly one key.
+2. Send a proof mail: submit the `/signin` form's `sendLink` action on the same environment (`curl -sS -X POST "https://$HOST/signin?/sendLink" -H "Origin: https://$HOST" -H 'Accept: application/json' -H 'x-sveltekit-action: true' --data-urlencode 'identifier=<address>'`). It must answer `"type":"success"`.
+3. Delete the old key, the one of the user's two keys with the older `CreateDate` in `aws iam list-access-keys --user-name "$U"`, whose last four characters the block printed: `aws iam delete-access-key --user-name "$U" --access-key-id <old key id>`.
+
+Mail keeps flowing throughout: the old key works until it is deleted.
+
+#### Turn mail off on one environment
+
+Rollback for one environment (prelude first). Magic link goes off there at once; the other environment keeps sending:
+
+```sh
+npx wrangler secret delete SES_ACCESS_KEY_ID "${ENVF[@]}"
+npx wrangler secret delete SES_SECRET_ACCESS_KEY "${ENVF[@]}"
+for k in $(aws iam list-access-keys --user-name "$U" --query 'AccessKeyMetadata[].AccessKeyId' --output text); do
+  aws iam delete-access-key --user-name "$U" --access-key-id "$k"
+done
+aws iam delete-user-policy --user-name "$U" --policy-name send-from-sfhousing
+aws iam delete-user --user-name "$U"
+```
+
+#### Remove everything
+
+Run the rollback above for both environments. Then delete the identity, and have the owner remove the six DNS records:
+
+```sh
+aws sesv2 delete-email-identity --region us-west-1 --email-identity sfhousing.mindlace.net
+```
+
+### Google sign-in
+
+Google sign-in shows once its two secrets are on an environment and `AUTH_METHODS` lists `google`. The client secret is the owner's to make and to set. In the owner's Google Cloud console, one project for the site:
+
+1. Google Auth Platform, Branding: app name `SF Housing Simulator`, the owner's support and developer contact address, home page `https://sfhousing.mindlace.net`, authorised domain `mindlace.net`.
+2. Audience: External, published to production, so any Google account can sign in.
+3. Data access: the scopes `openid`, `.../auth/userinfo.email` and `.../auth/userinfo.profile` only. These need no Google review.
+4. Clients, Create client: type Web application, name `sfhousing`.
+5. Authorised JavaScript origins: `https://sfhousing.mindlace.net` and `https://sfhousing-staging.mindlace.net`.
+6. Authorised redirect URIs: `https://sfhousing.mindlace.net/api/auth/callback/google` and `https://sfhousing-staging.mindlace.net/api/auth/callback/google`.
+
+One client serves both environments. Paste the client id and secret at each prompt:
+
+```sh
+npx wrangler secret put GOOGLE_CLIENT_ID
+npx wrangler secret put GOOGLE_CLIENT_SECRET
+npx wrangler secret put GOOGLE_CLIENT_ID --env staging
+npx wrangler secret put GOOGLE_CLIENT_SECRET --env staging
+```
+
+Check: `npx wrangler secret list` and `npx wrangler secret list --env staging` each list both names.
 
 ## One-time bootstrap
 
@@ -113,6 +201,8 @@ Done:
 - [x] GitHub repo `mindlace/sfhousing` exists.
 - [x] release-please App credentials configured as repository variables.
 - [x] First real dataset uploaded (X1, 2026-10-11): `2026-10-11-697b4599` (918 objects) in R2; `PUBLIC_DATASET_VERSION` was bumped to it for production and staging in `wrangler.jsonc` (history: the version is now computed from the tree).
+- [x] SES identity `sfhousing.mindlace.net` verified in `us-west-1` (DKIM and MAIL FROM), its six DNS records at Cloudflare (2026-11-22).
+- [x] IAM users `sfhousing-mail-staging` and `sfhousing-mail-production`; SES secrets on staging and production; a sign-in mail accepted by SES on each (2026-11-22).
 
 Remaining:
 
@@ -120,3 +210,5 @@ Remaining:
 - [ ] Create the `staging` and `production` GitHub environments if they do not exist.
 - [x] Branch protection requires chreode/signoff (applied by `npm run branch-protection` during the chreode adoption).
 - [ ] Attach the custom domains (declared as `custom_domain` routes in `wrangler.jsonc`; the zone must be on the Cloudflare account).
+- [ ] Google OAuth client and `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` on staging and production (owner; see Sign-in mail).
+- [ ] Owner confirms DKIM, SPF and DMARC pass in the received headers of the staging and production sign-in mails.

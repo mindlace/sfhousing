@@ -1,0 +1,881 @@
+<article>
+  <header>
+    <h1>Game sim design</h1>
+    <p>The <code>/sim</code> page under the game: locks by level, the playable document, given measures, the seen result, the win card, the bar, levelling up, the locked page, and the published view outside the game.</p>
+  </header>
+
+  <section id="sec-goal">
+    <h2>Goal</h2>
+    <p>This unit puts <code>/sim</code> inside the game of the <a href="../design/2026-11-22-1216-incremental-game.html">incremental game design</a>. A saved game runs and edits only what its level allows, sees its result, wins against its bar and levels up on the page. The published view at <code>/s/&lt;id&gt;</code> and the open game stay outside the game.</p>
+    <ul>
+      <li>The page reads the current game from the store: what is allowed, the level and the bar.</li>
+      <li>Locked kinds and locked policies stay on the timeline, cannot be selected, and have no "+".</li>
+      <li>The worker and Publish get the playable document. The stored document and autosave keep every policy.</li>
+      <li>Money policies made from a funding preset carry the preset's id and label, and are dated from their start (M1).</li>
+      <li>The page knows when a result is seen, and the player's standing against the bar. It sets the store's offer while the result wins.</li>
+      <li>A win shows the win card. A seen result short of the bar shows the outcome message naming the bar.</li>
+      <li>The ruler has a "To beat" flag and Details a "To beat" line.</li>
+      <li>When the level rises, the clock returns to today and the new kind's row opens, with the policies kept.</li>
+      <li>At level 1 <code>/sim</code> is a locked page that links to Paint.</li>
+      <li>At level 5 a given measure's dates, switch, order and Remove work, and what it pays is read-only text. "+" on Public money lists the given measures only.</li>
+      <li>The page reads the e2e goal seam (X1), and tells the store when autosave writes.</li>
+    </ul>
+  </section>
+
+  <section id="sec-interfaces">
+    <h2>Interfaces</h2>
+    <p>These rows and their sections are copied from the design document. A change to one is a change to the design.</p>
+    <table id="tbl-interfaces">
+      <caption>Interface table</caption>
+      <thead>
+        <tr><th scope="col">Row</th><th scope="col">Owner</th><th scope="col">Layer</th><th scope="col">Summary</th><th scope="col">Contract</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">G1</th><td><code>game-core</code></td><td>Model commitment</td><td>Levels, results, and what beats what.</td><td><a href="#sec-if-g1">G1</a></td></tr>
+        <tr><th scope="row">G2</th><td><code>game-core</code></td><td>Model commitment</td><td>Progress, saved games, banking, the store.</td><td><a href="#sec-if-g2">G2</a></td></tr>
+        <tr><th scope="row">G3</th><td><code>game-core</code></td><td>Model commitment</td><td>What a level allows; the playable document.</td><td><a href="#sec-if-g3">G3</a></td></tr>
+        <tr><th scope="row">G4</th><td><code>game-core</code></td><td>Decomposition choice</td><td>The seen result and the player's standing.</td><td><a href="#sec-if-g4">G4</a></td></tr>
+        <tr><th scope="row">G5</th><td><code>game-core</code></td><td>Decomposition choice</td><td>The win card and the level panel with its saved games.</td><td><a href="#sec-if-g5">G5</a></td></tr>
+        <tr><th scope="row">F2</th><td><code>finite-funding</code></td><td>Model commitment</td><td>Pools with no "can always pay".</td><td><a href="../design/2026-11-22-1216-incremental-game.html#sec-if-f2">F2</a></td></tr>
+        <tr><th scope="row">M1</th><td><code>funding-measures</code></td><td>Decomposition choice</td><td>A given measure's money follows its policy's start.</td><td><a href="#sec-if-m1">M1</a></td></tr>
+        <tr><th scope="row">X1</th><td><code>contracts</code></td><td>Decomposition choice</td><td>The e2e seam: open by default, a seeded level, a goal amount.</td><td><a href="#sec-if-x1">X1</a></td></tr>
+      </tbody>
+    </table>
+
+    <section id="sec-if-g1">
+      <h3>G1 Levels and results</h3>
+      <pre><code data-lang="ts">// src/lib/game/levels.ts
+import type { Day } from '$lib/timelapse/time';
+
+import type { GoalOutcome } from '$lib/timeline/outcome';
+
+export type Level = 1 | 2 | 3 | 4 | 5;
+export const LAST_LEVEL: Level = 5;
+
+/** What the months reached so far show: `{ kind: 'reached'; on }` or `{ kind: 'missed'; short }`. */
+export type Result = GoalOutcome;
+
+/** The result to beat: the day a banked result reached the goal. */
+export interface Bar {
+  on: Day;
+}
+
+export function beats(seen: Result, bar: Bar): boolean;
+
+/** Paint is won: capacity is at least the goal's amount. */
+export function paintWon(net: number, amount: number): boolean;</code></pre>
+      <dl>
+        <dt><code>reached.on</code></dt><dd>The first day of the calendar month in which the goal's amount is first met, as <code>readGoal</code> gives it.</dd>
+      </dl>
+      <ul>
+        <li><code>beats(seen, bar)</code> is true when <code>seen</code> reached the goal and <code>seen.on</code> is in an earlier calendar month than <code>bar.on</code>.</li>
+        <li>It is false in every other case: a tie never beats, and a missed result never beats.</li>
+        <li><code>paintWon(net, amount)</code> is <code>net &gt;= amount</code>.</li>
+        <li>Only a reached result is ever banked, so a bar is always a date.</li>
+      </ul>
+    </section>
+
+    <section id="sec-if-g2">
+      <h3>G2 Progress, saved games and the store</h3>
+      <pre><code data-lang="ts">// src/lib/game/progress.ts
+export interface Banked {
+  /** The day the banked result reached the goal. */
+  on: Day;
+  /** The dataset the result was earned on. */
+  datasetVersion: string;
+  /** ISO time of the level up. */
+  at: string;
+}
+
+export interface Progress {
+  v: 1;
+  level: Level;
+  /** banked[n] is the result banked on leaving level n. */
+  banked: Partial&lt;Record&lt;2 | 3 | 4 | 5, Banked&gt;&gt;;
+  /** ISO time the player first won anything; null until then. */
+  firstWinAt: string | null;
+}
+
+export const NEW_GAME: Progress;
+
+/** The bar at the progress's level; null at levels 1 and 2. */
+export function barOf(p: Progress): Bar | null;
+/** Level 5 has been won and banked. */
+export function roundComplete(p: Progress): boolean;
+export function levelUp(p: Progress, banked: Banked | null): Progress;
+
+// src/lib/game/saves.ts
+export interface GameSave {
+  v: 1;
+  /** `newId()` of `$lib/ids/base58`. */
+  id: string;
+  name: string;
+  /** True until the player types a name. */
+  nameIsDefault: boolean;
+  progress: Progress;
+  /** The plan record's text as `sfhousing:plan:v1` holds it, or null. */
+  plan: string | null;
+  /** The policy record's text as `sfhousing:sim:v2` holds it, or null. */
+  policy: string | null;
+  /** ISO time of the last change. */
+  savedAt: string;
+}
+
+/** What the list shows of a saved game. */
+export type SaveEntry = Pick&lt;GameSave, 'id' | 'name' | 'nameIsDefault' | 'savedAt'&gt; &amp; { level: Level };
+
+export const SAVES_KEY = 'sfhousing:saves:v1';
+export const saveKey = (id: string): string =&gt; `sfhousing:save:${id}`;
+export const MAX_SAVES = 12;
+export const SAVE_NAME_MAX = 60;
+
+export function parseGameSave(json: unknown): GameSave | null;
+export function defaultSaveName(
+  from: { kind: 'new'; at: Date } | { kind: 'remix'; title: string } | { kind: 'conflict'; name: string },
+  taken: readonly string[]
+): string;
+
+// src/lib/game/store.svelte.ts
+export type StoreChange = { ok: true } | { ok: false; reason: 'full' | 'storage' | 'changed' };
+
+/** The win on screen that "Level up" would bank. */
+export interface Offer {
+  /** The day the seen result reached the goal; null for Paint's win. */
+  on: Day | null;
+  /** The dataset the result was seen on. */
+  datasetVersion: string;
+}
+
+export class GameStore {
+  constructor(opts: { storage: Storage | null; sync: SaveSync; now?: () =&gt; Date });
+  /** Reactive: the current game's progress. */
+  readonly progress: Progress;
+  /** Reactive: what the current game may use (G3). */
+  readonly allowed: Allowed;
+  /** True only for `openGame()`: every control and no game parts. */
+  readonly open: boolean;
+  /** Reactive: every saved game, most recently changed first. */
+  readonly saves: readonly SaveEntry[];
+  /** Reactive. */
+  readonly currentId: string;
+  /** Reactive: the win "Level up" would bank now; null when there is none. */
+  readonly offer: Offer | null;
+  /** The save sync given at construction. */
+  readonly sync: SaveSync;
+  /** A win was seen. Sets `firstWinAt` the first time; later calls change nothing. */
+  won(): void;
+  /** The page sets the offer while its seen result wins the level, and clears it with null. */
+  setOffer(offer: Offer | null): void;
+  /** Banks the offer and raises the level. Does nothing while `offer` is null. */
+  levelUp(): void;
+  /** The page's autosave wrote the current game's plan or policy record. */
+  touched(): void;
+  /** Registers a function the store calls before another game becomes current; returns its remover. */
+  beforeLeave(fn: () =&gt; void): () =&gt; void;
+  newGame(): StoreChange;
+  switchTo(id: string): StoreChange;
+  remix(doc: { kind: 'plan' | 'sim'; record: string; title: string }): StoreChange;
+  rename(id: string, name: string): void;
+  remove(id: string): StoreChange;
+  /** The saved game as stored now; the current one with the plan and policy records as they are. */
+  read(id: string): GameSave | null;
+  /** Store saved games that came from the account. */
+  adopt(saves: readonly GameSave[]): StoreChange;
+  /** Give the saved game `id` the id `newId`, keeping everything else about it. */
+  rekey(id: string, newId: string): StoreChange;
+}
+/** A store with `open` true: one game at level 5, nothing banked, no storage, `allowed` equal to `ALL_ALLOWED`. */
+export function openGame(): GameStore;
+export function provideGame(store: GameStore): void;
+export function useGame(): GameStore;</code></pre>
+      <dl>
+        <dt><code>SAVES_KEY</code></dt><dd>Holds <code>{ v: 1, current: string, saves: SaveEntry[] }</code>.</dd>
+        <dt><code>saveKey(id)</code></dt><dd>Holds one <code>GameSave</code>. For the current game its <code>plan</code> and <code>policy</code> are stale: the records under <code>sfhousing:plan:v1</code> and <code>sfhousing:sim:v2</code> are the truth.</dd>
+      </dl>
+      <ul>
+        <li><code>barOf</code> is <code>{ on: banked[level - 1].on }</code> at levels 3 to 5.</li>
+        <li><code>levelUp</code> from level 1 takes <code>null</code> and banks nothing.</li>
+        <li><code>levelUp</code> from levels 2 to 4 stores the day under the level being left and adds one to the level.</li>
+        <li><code>levelUp</code> at level 5 stores <code>banked[5]</code> and keeps the level at 5.</li>
+        <li>The page calls <code>won()</code> when a win card first shows.</li>
+        <li><code>allowed</code> is <code>allowedAt(progress.level)</code>.</li>
+        <li>While <code>open</code> is true no page shows a game part: no level cell, no win card, no bar or "To beat" flag, no locked lane, no reworded outcome message, no Remix button, and no offer is set. The pages read <code>open</code>; they never compare <code>allowed</code> with <code>ALL_ALLOWED</code>.</li>
+        <li>The page calls <code>setOffer</code> with the win while its seen result wins the level, and with null as soon as its seen result stops winning and when it unmounts. On <code>/sim</code> every edit clears the seen result, so an edit clears the offer. On Paint the result is the latest complete score, so a stroke leaves the offer as it is and a complete score below the goal clears it. The offer is kept in memory only.</li>
+        <li>The store's <code>levelUp()</code> banks the offer with the pure <code>levelUp</code>, clears the offer, and stores the game. The win card and the level panel both call it.</li>
+        <li>The page that set the offer reacts to the level changing: <code>/sim</code> returns the clock to today, and Paint opens <code>/sim</code>.</li>
+        <li>The page calls <code>touched()</code> each time its autosave's status goes from <code>saving</code> to <code>saved</code>: after the autosave writes a record key, and when an edit inside the debounce returns the document to the text already written. The store sets the current game's <code>savedAt</code> and calls <code>sync.changed(currentId)</code>.</li>
+        <li>A page that autosaves a record key registers its autosave's flush with <code>beforeLeave</code> when it mounts and removes it when it unmounts. <code>newGame</code>, <code>switchTo</code> of another game, <code>remix</code>, <code>remove</code> of the current game and <code>adopt</code> of saves that hold the current game's id call every registered function, in registration order, once they will go ahead and before they read or write a record key. So an edit still waiting in the page's autosave is in the record keys when the old game is copied out, and nothing is left waiting to be written over the new game's records when the page unloads.</li>
+        <li>When a function that <code>adopt</code> called writes a record key, the current game had an edit that was still waiting: <code>adopt</code> then changes nothing and answers <code>{ ok: false, reason: 'changed' }</code>. The save sync sends that game instead, and a 409 keeps both versions (S2, D8). No other change answers <code>changed</code>.</li>
+        <li>After <code>newGame</code>, <code>switchTo</code> of another game, <code>remix</code>, <code>remove</code> of the current game, or <code>adopt</code> of the current game's id answers <code>ok</code>, the store ignores <code>touched()</code> for the rest of the document's life: the page is about to unload, and nothing it still writes belongs to the game now in the record keys.</li>
+        <li>On first construction with no <code>SAVES_KEY</code>, the store makes one saved game at level 1 whose plan and policy are whatever the two record keys hold.</li>
+        <li><code>newGame</code>, <code>switchTo</code> and <code>remix</code> first copy the two record keys into the current game's stored save, then write the new current game's plan and policy into the two record keys. <code>remove</code> of the current game removes its save without copying it out, then writes the new current game's plan and policy into the two record keys.</li>
+        <li>After <code>newGame</code>, <code>switchTo</code> or <code>remove</code> answers <code>ok</code>, the caller loads the new current game's page with a full page load: <code>/</code> at level 1, <code>/sim</code> above it.</li>
+        <li>After <code>remix</code> answers <code>ok</code>, the caller loads <code>/</code> for a plan and <code>/sim</code> for a policy, with a full page load.</li>
+        <li><code>remix</code>'s <code>record</code> is the text the page's autosave holds under the record key for the published document. The caller builds it with the codec the page already uses, so the store never reads inside a plan or a policy.</li>
+        <li><code>remix</code> of a policy copies the current game's progress and plan; <code>remix</code> of a plan copies the current game's progress and policy. The new game's name is <code>defaultSaveName({ kind: 'remix', title })</code>.</li>
+        <li><code>newGame</code>, <code>remix</code> and <code>adopt</code> answer <code>full</code> and change nothing when they would pass <code>MAX_SAVES</code>.</li>
+        <li><code>rekey</code> of the current game leaves it current, keeps the offer and needs no page load: the records and the progress are untouched. The save sync uses it when it keeps both sides of a conflict (S2).</li>
+        <li>A write that the browser refuses answers <code>storage</code> and leaves the stored games as they were.</li>
+        <li><code>remove</code> of the current game makes the most recently changed other game current; with none left it makes a new game.</li>
+        <li><code>rename</code> trims the name, cuts it at <code>SAVE_NAME_MAX</code>, ignores an empty one, and sets <code>nameIsDefault</code> false.</li>
+        <li><code>defaultSaveName</code> gives "Game, 22 Nov", "Remix of {title}" or "{name} (this device)", and adds " (2)", " (3)" while the name is in <code>taken</code>.</li>
+        <li>The store calls <code>sync.changed(id)</code> after every change to a saved game and <code>sync.removed(id)</code> after a remove.</li>
+        <li>A stored value that will not parse is copied to <code>sfhousing:save:corrupt:&lt;ISO time&gt;</code> and left out of the list.</li>
+        <li>With <code>storage: null</code> the store keeps one game in memory.</li>
+        <li><code>useGame()</code> outside a provider returns <code>openGame()</code>, so a component test that provides no game sees every control.</li>
+        <li>Only the root layout calls <code>provideGame</code>. It makes the save sync with <code>createSaveSync</code> (S2), constructs the store with it, calls <code>sync.attach(store)</code> and provides the store.</li>
+        <li>When <code>e2eOpen</code> (X1) is true, the root layout provides <code>openGame()</code> instead and makes no sync.</li>
+        <li>The root layout's script that makes and provides the store belongs to <code>game-core</code>.</li>
+      </ul>
+    </section>
+
+    <section id="sec-if-g3">
+      <h3>G3 What a level allows</h3>
+      <pre><code data-lang="ts">// src/lib/game/allowed.ts
+import type { Policy, PolicyKind, SimPolicy4 } from '$lib/timeline/policy4';
+
+export interface Allowed {
+  /** Kinds whose policies run and can be edited. */
+  kinds: ReadonlySet&lt;PolicyKind&gt;;
+  /** 'given': only given measures run, and what they pay is read-only. */
+  money: 'given' | 'all';
+}
+
+export const ALL_ALLOWED: Allowed;
+export function allowedAt(level: Level): Allowed;
+/** permitting 3, zoning 4, money 5. */
+export function unlocksAt(kind: PolicyKind): Level;
+/** A money policy made from a funding preset: its `preset` is the preset's id. */
+export function isGiven(p: Policy): boolean;
+export function runs(kind: PolicyKind, p: Policy, a: Allowed): boolean;
+export function playable(doc: SimPolicy4, a: Allowed): SimPolicy4;
+/** The lowest level whose `allowedAt` runs every policy of `doc`; 6 when none does. */
+export function levelNeeded(doc: SimPolicy4): Level | 6;
+/** True while the game's level is below the one that opens the simulation. */
+export function simLocked(p: Progress): boolean;
+/** The level that runs all of `doc`, when it is above the game's level; null otherwise. */
+export function needsHigher(doc: SimPolicy4, p: Progress): Level | 6 | null;</code></pre>
+      <ul>
+        <li><code>allowedAt(1)</code> and <code>allowedAt(2)</code> have no kinds.</li>
+        <li><code>allowedAt(3)</code> has permitting; <code>allowedAt(4)</code> adds zoning; <code>allowedAt(5)</code> adds money with <code>money: 'given'</code>.</li>
+        <li><code>ALL_ALLOWED</code> has all three kinds and <code>money: 'all'</code>. No level in this round returns it.</li>
+        <li>The published view at <code>/s/&lt;id&gt;</code> runs under <code>ALL_ALLOWED</code>, so <code>playable</code> returns its document unchanged (D5).</li>
+        <li><code>runs</code> is false for a kind not in <code>a.kinds</code>.</li>
+        <li><code>runs</code> is false for a money policy that is not given while <code>a.money</code> is <code>'given'</code>.</li>
+        <li><code>playable</code> returns the document with only the policies that run, in their order, and returns the same object when nothing is removed.</li>
+        <li>Every money policy that <code>addPolicy</code> makes from a funding preset carries the preset's id in <code>preset</code> and the preset's label as its label.</li>
+        <li>The schema 4 parser accepts null or a preset id of 1 to 60 characters in a money policy's <code>preset</code>. Zoning and permitting are unchanged.</li>
+        <li>A money policy stored or published before this build has <code>preset</code> null, so it is not a given measure. It runs in the published view and is locked in a game.</li>
+        <li>An edit that changes what a given measure pays sets its <code>preset</code> to null.</li>
+        <li><code>isGiven</code> is false for every zoning and permitting policy.</li>
+        <li><code>isGiven</code> does not check the id against the presets on offer. A hand-made document can carry any id on any pool; nothing ranks one player against another, so that is accepted.</li>
+        <li><code>simLocked</code> is true exactly at level 1. Pages call it and <code>needsHigher</code>; no page compares a level itself.</li>
+        <li><code>levelNeeded</code> of a document with no policies is 2.</li>
+      </ul>
+    </section>
+
+    <section id="sec-if-g4">
+      <h3>G4 The seen result and the standing</h3>
+      <pre><code data-lang="ts">// src/lib/game/standing.ts
+export type Standing =
+  | { kind: 'playing' }
+  | { kind: 'short'; seen: Result; bar: Bar | null }
+  | { kind: 'won'; on: Day };
+
+/** `seen` is `goalOutcome(...)` for the months reached; null while no result is seen. */
+export function standing(level: Level, bar: Bar | null, seen: Result | null): Standing;</code></pre>
+      <ul>
+        <li><code>standing</code> is <code>playing</code> at level 1 and while <code>seen</code> is null.</li>
+        <li>At level 2 a reached result is <code>won</code>.</li>
+        <li>At levels 3 to 5 a result is <code>won</code> when it beats the bar.</li>
+        <li>Every other seen result is <code>short</code>.</li>
+        <li><code>goalOutcome</code> is read on the playable document's forecast and never while the numbers are stale, so a standing always belongs to the policy on screen.</li>
+        <li>A build check runs the empty document on a built dataset and fails when the goal is not reached inside the window (D1).</li>
+        <li><code>reach-check</code> writes the check and runs it once <code>finite-funding</code> and <code>pool-closing</code> have merged, so a miss reaches the owner while the build is still running. <code>closing</code> runs it again on the dataset it uploads.</li>
+      </ul>
+    </section>
+
+    <section id="sec-if-g5">
+      <h3>G5 The win card and the level panel</h3>
+      <pre><code data-lang="ts">// src/lib/game/WinCard.svelte
+interface WinCardProps {
+  /** 'Room for 82,069 homes' | 'Goal reached in Mar 2049'. */
+  title: string;
+  /** What levelling up unlocks, in words; null when the round is complete. */
+  unlocks: string | null;
+  onlevelup: () => void;
+  onkeep: () => void;
+}
+
+// src/lib/game/LevelPanel.svelte
+// No props. Reads the game from `useGame()`.
+
+// src/lib/game/copy.ts
+export function barText(bar: Bar): string;           // 'Beat Jun 2057'
+export function unlockText(next: Level | 6): string; // 'Permitting' | 'Zoning' | 'Public money' | …
+export function lockedLane(kind: PolicyKind, level: Level): string;</code></pre>
+      <ul>
+        <li>The win card is a dialog, not modal: the map and the timeline stay usable.</li>
+        <li>The win card sits where the page shows its notices: over the map from md, above the map below md.</li>
+        <li>It renders <code>AccountOffer</code> (S3) under its buttons.</li>
+        <li>When it mounts, the win card moves focus to "Level up", on Paint and on <code>/sim</code> alike.</li>
+        <li>Escape and "Keep playing" both call <code>onkeep</code>.</li>
+        <li>The level panel is the content the header's level cell opens.</li>
+        <li>The win card's <code>onlevelup</code> is given <code>() =&gt; game.levelUp()</code> by the page that mounts it.</li>
+        <li>The level panel shows the level, the bar, what the next level unlocks, "Level up" while <code>game.offer</code> is not null, and the saved games (<a href="../design/2026-11-22-1216-incremental-game.html#sec-model-saves">Saved games</a>) with "New game".</li>
+        <li>After a switch, a new game or a delete of the current game, the panel loads the new current game's page.</li>
+        <li>"Level up" in the panel calls <code>game.levelUp()</code>.</li>
+        <li>The panel shows <code>game.sync.state</code> in words when it is not <code>saved</code>: "On this device only", "Saving", "Offline", "Sign in to save".</li>
+        <li><code>lockedLane</code> gives "Unlocks when you level up" for the kind <code>level + 1</code> unlocks and "Unlocks at level N" for the others.</li>
+      </ul>
+    </section>
+
+    <section id="sec-if-m1">
+      <h3>M1 A given measure's money follows its policy's start</h3>
+      <pre><code data-lang="ts">// src/lib/sim-page/funding-presets.ts
+import type { Policy } from '$lib/timeline/policy4';
+
+/** `policy` with its money dated from its first span's start; `policy` itself when nothing moves. */
+export function dateMeasure(policy: Policy, cal: Calibration): Policy;</code></pre>
+      <ul>
+        <li>A given measure's first payment falls on the first day of its first span, and every later payment keeps its place in the preset's schedule.</li>
+        <li><code>dateMeasure</code> returns <code>policy</code> itself when it is not a given measure (G3), has no span, or names a preset that is not on offer.</li>
+        <li><code>dateMeasure</code> returns <code>policy</code> itself for a preset whose dates are set in law.</li>
+        <li><code>dateMeasure</code> returns <code>policy</code> itself when the re-dated content equals what the policy holds, so a second call changes nothing.</li>
+        <li><code>addPolicy</code> calls <code>dateMeasure</code> on every policy it makes from a funding preset, after it dates the spans.</li>
+        <li>Every edit that moves a given measure's first span's start calls <code>dateMeasure</code> on the result.</li>
+        <li>A stored or published document is never re-dated when it loads.</li>
+        <li>The stub shipped by <code>contracts</code> returns <code>policy</code> itself.</li>
+      </ul>
+    </section>
+
+    <section id="sec-if-x1">
+      <h3>X1 The e2e seam</h3>
+      <pre><code data-lang="ts">// e2e/helpers/game.ts
+import type { Page } from '@playwright/test';
+
+/** Before the page loads, switch the real game on and store a game at `level` with bars that any result beats. */
+export function seedGame(page: Page, level: 1 | 2 | 3 | 4 | 5): Promise&lt;void&gt;;
+/** Before the page loads, switch the real game on with nothing stored: a new visitor. */
+export function newVisitor(page: Page): Promise&lt;void&gt;;
+/** Before the page loads, set the goal's amount for this page. */
+export function seedGoalAmount(page: Page, amount: number): Promise&lt;void&gt;;
+
+// src/lib/game/e2e.ts
+export const E2E_GAME_KEY = 'sfhousing:e2e:game';
+export const E2E_GOAL_KEY = 'sfhousing:e2e:goal';
+/** True when VITE_E2E is '1' and E2E_GAME_KEY is absent: the page gets the open game. */
+export function e2eOpen(storage: Storage | null): boolean;
+/** The amount under E2E_GOAL_KEY when VITE_E2E is '1'; null otherwise. */
+export function e2eGoalAmount(storage: Storage | null): number | null;</code></pre>
+      <ul>
+        <li>With <code>VITE_E2E=1</code>, on a build or a dev server, a page that has no <code>E2E_GAME_KEY</code> gets <code>openGame()</code> (G2): every control, no game parts, nothing stored.</li>
+        <li>Every e2e spec that exists before this build runs on the open game and needs no change for the game, except the tests of Remix: Remix makes a saved game, so they seed a game first.</li>
+        <li><code>seedGame</code> and <code>newVisitor</code> set <code>E2E_GAME_KEY</code>, so the page runs the real store.</li>
+        <li><code>seedGame</code> writes the storage keys of G2 directly and needs no store.</li>
+        <li>A seeded game's bars fall in the calendar month that holds the window's last day, which any reached result beats.</li>
+        <li>The fixture city is too small to reach 82,069 homes, so a spec that plays a level to a win first calls <code>seedGoalAmount</code>.</li>
+        <li><code>/sim</code> and Paint read <code>e2eGoalAmount</code> when they mount and build the goal.</li>
+        <li>A spec that changes the amount on a loaded page, before a client-side navigation, writes <code>E2E_GOAL_KEY</code> with <code>page.evaluate</code>.</li>
+        <li>On a build without <code>VITE_E2E=1</code>, <code>e2eOpen</code> is false and <code>e2eGoalAmount</code> is null whatever storage holds.</li>
+      </ul>
+    </section>
+  </section>
+
+  <section id="sec-today">
+    <h2>What is there today</h2>
+    <p>Every claim here was read on commit <code>8125e557</code>. This unit starts after <code>finite-funding</code> and <code>game-core</code>; the <code>uncapped</code> reads in <code>TimelineMode.svelte</code> and <code>SimDetails.svelte</code> are gone by then.</p>
+    <section id="sec-today-chain">
+      <h3>The mount chain and the edit path</h3>
+      <ul>
+        <li><code>/sim</code> renders <code>SimRoute mode="edit" persist="restore"</code> with the Remix hand-off from history state (<code>src/routes/sim/+page.svelte:14</code>).</li>
+        <li><code>/s/&lt;id&gt;</code> renders <code>SimRoute mode="view" persist="off"</code> with the opened document (<code>src/routes/s/[id]/+page.svelte:78-85</code>).</li>
+        <li><code>SimRoute</code> renders <code>SimPage</code> inside <code>#map-region</code>, remounted on a new load result (<code>src/lib/sim-page/SimRoute.svelte:54-72</code>).</li>
+        <li>Read-only is one boolean fixed at mount, <code>mode === 'view'</code> (<code>src/lib/sim-page/SimPage.svelte:155</code>).</li>
+        <li>The document lives in <code>PolicyStore</code>, whose <code>normalize</code> runs on every applied change with the new and the previous document (<code>SimPage.svelte:182-194</code>; <code>src/lib/sim-page/policy-store.svelte.ts:59-63</code>). Undo, redo and a load do not run it.</li>
+        <li>Every change goes to <code>PolicySync.update</code> (<code>SimPage.svelte:294-301</code>), and TimelineMode gets <code>policy={store.policy}</code> and <code>lots={sync.lots}</code> (<code>SimPage.svelte:1173-1174</code>).</li>
+        <li>TimelineMode opens the session on <code>policy</code> (<code>src/lib/timeline/TimelineMode.svelte:1171-1174</code>), treats a new <code>policy</code> object as an edit (<code>:1189-1201</code>) and sends it with its lots (<code>:1249</code>). The same <code>policy</code> draws the rows (<code>:1765-1787</code>).</li>
+        <li>Autosave writes the policy record after a debounce and reports it through its <code>status</code>, which goes from <code>saving</code> to <code>saved</code> (<code>src/lib/sharing/autosave.svelte.ts:175</code>, <code>:241-244</code>). <code>SimPage</code> schedules each change (<code>SimPage.svelte:305-312</code>).</li>
+        <li>Publish gets the whole document (<code>SimPage.svelte:1083-1091</code>). After publishing, <code>onPublished</code> records <code>lastPublished</code> against the current document (<code>:316-321</code>).</li>
+        <li>On the map a stroke with no painted policy selected adds a painted policy (<code>SimPage.svelte:513-542</code>). The brush controller attaches unless read-only (<code>:587</code>), and the palette strip shows below md while a stroke tool is chosen (<code>:1209-1218</code>).</li>
+      </ul>
+    </section>
+    <section id="sec-today-goal">
+      <h3>The goal, the outcome and the ruler</h3>
+      <ul>
+        <li>The goal is the <code>goal</code> test seam or <code>defaultGoal(asOf)</code> (<code>TimelineMode.svelte:383</code>). SimPage passes no goal.</li>
+        <li>The outcome is computed only while the numbers are current and no search for an edit's first changed month is under way. A view that does not yet cover the months read keeps the last outcome (<code>TimelineMode.svelte:592-622</code>).</li>
+        <li><code>outcomeText</code> says "Goal reached in Mar 2049, by the Sep 2066 deadline." or "Goal missed by 3,313 homes. Change the policy and play again." (<code>src/lib/timeline/outcome.ts:67-73</code>).</li>
+        <li>The goal notice is a dismissible <code>Message</code> in a polite region in the notice stack, once per distinct outcome per visit (<code>TimelineMode.svelte:625-645</code>, <code>:1606-1612</code>).</li>
+        <li>The ruler's "Goal" flag sits at the goal's deadline while the chart draws the goal's step (<code>TimelineMode.svelte:577</code>; <code>src/lib/timeline/Playhead.svelte:294-300</code>). The ruler's description is <code>rulerDescription(seenTo, deadline)</code> (<code>Playhead.svelte:103</code>; <code>src/lib/timeline/copy.ts:69-74</code>).</li>
+        <li>Details renders the goal rows from <code>goalRows</code> (<code>src/lib/timeline/SimDetails.svelte:130</code>).</li>
+        <li>The playhead's moves go through <code>handleDay</code> (<code>TimelineMode.svelte:1082-1088</code>). Nothing returns the clock to today but a Retry with a new calibration.</li>
+      </ul>
+    </section>
+    <section id="sec-today-rows">
+      <h3>Rows, "+" and the editor</h3>
+      <ul>
+        <li>The kinds shown are zoning, permitting, and money when the data can run money (<code>src/lib/timeline/Timeline.svelte:102-104</code>).</li>
+        <li>A kind's "+" shows unless read-only, and a closed empty kind says in its lane what "+" adds (<code>src/lib/timeline/KindRow.svelte:74</code>, <code>:97-126</code>).</li>
+        <li>A span bar is a button with <code>aria-pressed</code>. Keys and edge handles are off when read-only (<code>src/lib/timeline/SpanBar.svelte:103</code>, <code>:151-182</code>). Its keys and drag edit through <code>moveEdge</code>, <code>moveSpan</code>, <code>setFrom</code> and <code>setTo</code> (<code>SpanBar.svelte:107-108</code>, <code>:142-143</code>).</li>
+        <li>WhenEditor edits through <code>setFrom</code>, <code>setTo</code>, <code>addSpan</code>, <code>splitSpan</code> and <code>removeSpan</code> (<code>src/lib/timeline/WhenEditor.svelte:121-144</code>), handed to the Inspector's <code>whenEdit</code>, which applies them to the store (<code>src/lib/timeline/Inspector.svelte:259-266</code>).</li>
+        <li><code>addChoices</code> offers on Public money every available preset, then "Your own pool", "City funding scale" and "Market terms" (<code>src/lib/timeline/add.ts:96-109</code>). <code>addPolicy</code> dates the new policies' spans and appends them (<code>add.ts:237-246</code>).</li>
+        <li>Activity's starters come from <code>startersFor(calibration, policy)</code> while nothing is in force (<code>TimelineMode.svelte:565-567</code>).</li>
+        <li>The Inspector shows the switch, Move up, Move down, Remove and the policy part only when not read-only, then When and What (<code>Inspector.svelte:415-483</code>). WhatEditor shows <code>PolicySummary</code> for the span part when read-only (<code>src/lib/timeline/WhatEditor.svelte:122-125</code>).</li>
+        <li>The funding editors in What write through the span lens: <code>tryWriteBack</code> reads the edited projection back into the policy (<code>src/lib/timeline/lens.ts:261-290</code>).</li>
+      </ul>
+    </section>
+    <section id="sec-today-preset">
+      <h3>Money policies carry no preset</h3>
+      <ul>
+        <li>A money policy made from a funding preset is built by <code>upgradePolicy</code>, whose <code>make</code> defaults <code>preset</code> to null, under labels such as the pool's (<code>src/lib/timeline/upgrade.ts:21-35</code>, <code>:95-133</code>).</li>
+        <li>The schema 4 parser refuses a non-null <code>preset</code> on any zoning or money policy (<code>src/lib/timeline/parse4.ts:266-274</code>).</li>
+        <li>The server's publish route parses with the same parser: <code>SIM_SERVER_CODEC4.parse</code> calls <code>parseSimDoc4(text, null)</code> (<code>src/lib/timeline/server-codec.ts:101-104</code>).</li>
+      </ul>
+    </section>
+  </section>
+
+  <section id="sec-design">
+    <h2>Design</h2>
+
+    <section id="sec-design-game">
+      <h3>Where the game is read</h3>
+      <ul>
+        <li><code>SimRoute</code> reads the store with <code>useGame()</code> in edit mode, and passes it to <code>SimPage</code> as a new prop, <code>game</code>.</li>
+        <li><code>SimRoute</code> takes an optional <code>storage</code> prop, <code>() =&gt; Storage | null</code>, default <code>getStorage</code>, and passes it to <code>SimPage</code>'s existing <code>storage</code> prop. It is a test seam: a component test gives the page's autosave and the <code>GameStore</code> one memory storage.</li>
+        <li><code>SimRoute</code> passes <code>game={null}</code> in view mode, and also while <code>game.open</code> is true: the open game (G2, X1), which runs as the page runs today with no game part.</li>
+        <li><code>SimPage</code> and TimelineMode without a game (the default, null) behave as today, under <code>ALL_ALLOWED</code>, with no game parts. The published view, the open game and component tests that pass no game take this path.</li>
+        <li>With a game, the page reads <code>game.allowed</code> for what may run and be edited, <code>game.progress.level</code>, <code>barOf(game.progress)</code> and <code>roundComplete(game.progress)</code>. No page calls <code>allowedAt</code>, and no component compares a level to a number.</li>
+        <li>The level can only rise while <code>/sim</code> is mounted. Switching games, a new game, a remix and a delete each load a page in full (G2).</li>
+        <li>The save sync never invalidates page data (S2), so a save never remounts <code>SimPage</code>: the playhead, the card, the kept month and the undo history survive the first save.</li>
+      </ul>
+      <pre><code data-lang="ts">// src/lib/sim-page/SimPage.svelte (new prop)
+/** The current game; null: no game parts (the published view, the open game, tests). */
+game?: GameStore | null;
+
+// src/lib/timeline/TimelineMode.svelte (new props)
+/** The current game; null: no game parts. */
+game?: GameStore | null;
+/** The document the worker runs; default `policy`. */
+run?: SimPolicy4;
+/** The goal's amount (X1's seam); null: the goal's own. */
+goalAmount?: number | null;</code></pre>
+      <dl>
+        <dt><code>run</code></dt><dd>The playable document. TimelineMode opens the session on it, sends it, treats a new <code>run</code> object as an edit, and falls back to it for the numbers' document. <code>policy</code> draws the rows and the Inspector.</dd>
+      </dl>
+    </section>
+
+    <section id="sec-design-playable">
+      <h3>The playable document</h3>
+      <ul>
+        <li><code>SimPage</code> derives <code>allowed</code> as <code>game?.allowed ?? ALL_ALLOWED</code>, and <code>run = playable(store.policy, allowed)</code> once per change of either.</li>
+        <li>PolicySync takes <code>run</code>, not <code>store.policy</code>, so it resolves the brush queries of the policies that run and no others. Its first <code>open</code> takes the playable document of the opened one.</li>
+        <li>TimelineMode gets <code>policy={store.policy}</code> and <code>run={run}</code>. <code>playable</code> returns the same object when it removes nothing, so a level up that unlocks a kind with no policies is no edit.</li>
+        <li>Starters, the key's mark row and the "From your policy" wording read <code>run</code>, so a locked policy never counts as in force.</li>
+        <li>Publish gets <code>{ ...doc, policy: run }</code>, and the published policy plays for everyone as it played for its author (D5).</li>
+        <li><code>onPublished</code> keeps the title and records <code>lastPublished</code> against the whole document, as today. The button reads "Share link" while the playable document is unchanged.</li>
+        <li>Autosave, undo and redo keep working on <code>store.policy</code>, the whole document. A locked policy is never dropped from storage.</li>
+        <li>Each time the autosave's <code>status</code> goes from <code>saving</code> to <code>saved</code>, <code>SimPage</code> calls <code>game.touched()</code>. Without a game it calls nothing.</li>
+        <li>With a game, <code>SimPage</code> registers its autosave's flush with <code>game.beforeLeave</code> when it mounts and removes it when it unmounts. The registered function hands the autosave the current document (<code>schedule</code>) and then calls <code>flush</code>, so an edit is in the policy record before the level panel's New game, switch or Delete changes the current game (G2), whether it is still in the autosave's debounce or not yet handed to the autosave by the page's effect.</li>
+        <li>At level 2 the playable document is empty, so Publish is disabled with its hint, "Change the policy first."</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-locks">
+      <h3>Locked kinds and locked policies</h3>
+      <p>A kind is locked when it is not in <code>allowed.kinds</code>. A policy is locked when <code>runs(kind, policy, allowed)</code> is false. Fixed rows are never locked.</p>
+      <ul>
+        <li>A locked kind's row stays in the timeline in its usual place. Its toggle opens and closes it as today; below md a tap opens its sheet as today.</li>
+        <li>A locked kind has no "+" and no "+" in words. Its label row's lane shows <code>lockedLane(kind, level)</code> whether the kind is open or closed. Its words are <code>lockedLane</code>'s (<a href="#sec-if-g5">G5</a>).</li>
+        <li>The toggle's <code>aria-describedby</code> names the count and the lane's text, so a screen reader hears the kind, its count, then the lane's text.</li>
+        <li>A locked kind that holds policies shows its count. Closed, its lane shows the lock text and no miniature. Open, it shows the fixed row and a row per policy.</li>
+        <li>A locked policy's row draws its bars dimmed. A locked bar is no button: it is not focusable, takes no press, no keys and no drag, and has no edge handles.</li>
+        <li>In a kind that is not locked, a locked policy's label has a second, muted line, "Unlocks in a later round". At level 5 this marks a money policy that is not a given measure (<code>isGiven</code> false): one whose <code>preset</code> is null, including every money policy stored or published before this build, or one whose selector is not a money selector (G3).</li>
+        <li>The Inspector never shows a locked policy. <code>select(ref)</code> ignores a ref to a locked policy, and <code>startAdd(kind)</code> ignores a locked kind.</li>
+        <li>If the selection names a policy that stops running, the selection clears and focus goes where Close sends it. The same holds for an open "+" menu of a locked kind. The level only rises on this page, so this is a guard, not a flow.</li>
+        <li>A tap on the map selects only what the worker reports, which only knows policies that run.</li>
+        <li>While zoning is locked, the brush controller does not attach, the palette strip does not show, the tool stays Move, and Space plays as in read-only mode. When zoning becomes allowed, the controller attaches as it does on load.</li>
+        <li>The fixed rows ("Current law", "Current timelines", "Current funding", "Market conditions") are unchanged and stay selectable.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-given">
+      <h3>Given measures</h3>
+      <p>G3 defines a given measure as a money policy whose <code>preset</code> is a funding preset's id. This unit makes the code carry that id.</p>
+      <ul>
+        <li><code>addPolicy</code> of a money preset sets, on every policy the preset makes, <code>preset</code> to the preset's id and <code>label</code> to the preset's label (<code>FundingPreset.label</code>).</li>
+        <li>After it dates the new policies' spans (<code>add.ts:237-241</code>), <code>addPolicy</code> calls <code>dateMeasure(policy, cal)</code> (M1) on each policy it made from a funding preset.</li>
+        <li><code>parsePolicy4</code> accepts on a money policy a <code>preset</code> that is null or a string of 1 to 60 characters. Zoning keeps requiring null. Permitting keeps requiring a timing preset id. The 60 is a named constant, <code>MONEY_PRESET_MAX</code>.</li>
+        <li>Nothing fills <code>preset</code> on load: <code>upgradePolicy</code>, <code>reconcilePolicy4</code> and the loaders leave a stored null as null.</li>
+        <li>The server's publish route uses the same parser, so a published policy may hold a given measure. In its body a given measure is a money policy such as <code>{ "id": "fund-u-housing-bond-1", "label": "A housing bond", "preset": "housing-bond", "on": true, "where": { "tag": "fund", "pool": "u-housing-bond-1" }, "spans": [ … ] }</code>.</li>
+        <li>A "City funding scale", "Market terms" or own pool policy has <code>preset</code> null.</li>
+      </ul>
+      <p>An edit to what a given measure pays sets its <code>preset</code> to null (G3):</p>
+      <ul>
+        <li>Every such edit goes through the span lens. <code>tryWriteBack</code> sets <code>preset</code> to null on a money policy whose spans' <code>what</code> it changes. Its label stays.</li>
+        <li>The editors that reach it are the funding editors in What (<code>FundingTab</code> and what it mounts: the pool row, the programme list and editor, the scale lines, the market terms), through the Inspector's <code>edit</code> store.</li>
+        <li>In a game at level 5 they are never shown for a given measure (What is read-only). Without a game, in the open game, every editor is reachable, and an edit there makes the measure an own measure.</li>
+        <li>The switch, Move up, Move down, Remove and every When edit keep <code>preset</code>.</li>
+      </ul>
+      <p>A given measure's money follows its start (M1):</p>
+      <ul>
+        <li><code>SimPage</code>'s <code>normalize</code> compares, for each given measure in the new document, its first span's <code>from</code> with the same policy's in the previous document. Each one that moved is replaced by <code>dateMeasure(policy, cal)</code>.</li>
+        <li>This covers every edit that moves a first start: <code>setFrom</code>, <code>moveEdge</code> on the start, <code>moveSpan</code>, <code>addSpan</code> and <code>removeSpan</code> from <code>spans.ts</code>, whether they come from SpanBar's keys and drag (through Timeline's <code>onedit</code>) or from WhenEditor (through the Inspector's <code>whenEdit</code>).</li>
+        <li>A policy that is new in the document was dated by <code>addPolicy</code> and is left alone.</li>
+        <li>Undo, redo and a load never re-date, because <code>normalize</code> runs only on applied changes.</li>
+        <li>The comparison is a pure function in <code>src/lib/timeline/add.ts</code>, <code>redateMoved(before, after, cal)</code>, returning <code>after</code> itself when nothing moved.</li>
+      </ul>
+      <p>At level 5, where <code>allowed.money</code> is <code>'given'</code>:</p>
+      <ul>
+        <li>"+" on Public money lists only the available funding presets, in today's order and labels. "Your own pool", "City funding scale" and "Market terms" are not listed.</li>
+        <li><code>addChoices(kind, cal, doc, allowed)</code> takes <code>allowed</code> as a fourth argument, default <code>ALL_ALLOWED</code>. It returns no entries for a locked kind. The AddMenu and <code>startersFor</code> pass the page's <code>allowed</code>.</li>
+        <li>Selecting a given measure shows its switch, Move up, Move down, Remove and its When editor, all working as today. Its bars' keys and drag work.</li>
+        <li>Its What section renders <code>WhatEditor</code> with <code>readonly</code> for the span part, so <code>PolicySummary</code> shows what it pays as text through its existing props. The Inspector does this when <code>allowed.money</code> is <code>'given'</code> and <code>isGiven(policy)</code>.</li>
+        <li>Move up and Move down move the measure past its neighbour in the list, whether or not the neighbour runs.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-seen">
+      <h3>The seen result and the offer</h3>
+      <ul>
+        <li>TimelineMode keeps a <code>seen: GoalOutcome | null</code> beside today's <code>outcome</code>.</li>
+        <li>Every edit (a new <code>run</code>) sets <code>seen</code> to null at once.</li>
+        <li><code>seen</code> is set only when the outcome effect computes a fresh outcome with the numbers current, no search under way, the open not provisional, and the view covering the months read. It is then that outcome, which may be null.</li>
+        <li>A view that does not yet cover the months read leaves <code>seen</code> as it is. After an edit that is null, so a held outcome from an older document is never seen.</li>
+        <li>So a result is seen when the playhead has reached the month the goal is met, or the window's end, under the current playable document.</li>
+        <li>After an edit whose first changed month is later than the month the goal is met, the result is seen as soon as the scan ends, because the months the player saw are unchanged.</li>
+        <li>The standing is <code>standing(level, barOf(progress), seen)</code>.</li>
+        <li>While the standing is <code>won</code>, TimelineMode calls <code>game.setOffer({ on: standing.on, datasetVersion })</code> with the dataset the page runs on.</li>
+        <li>It calls <code>game.setOffer(null)</code> as soon as the standing stops being <code>won</code> (any edit does this), and when it unmounts.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-messages">
+      <h3>The outcome message in a game</h3>
+      <p>With a game, the goal notice reads the standing, not <code>outcomeText</code>. It shows only for a <code>short</code> standing. Its region, dismissal and testid are today's, keyed by <code>outcomeKey(seen)</code>.</p>
+      <ul>
+        <li>Reached, short of the bar: "Goal reached in Mar 2058. Beat Jun 2057 to level up."</li>
+        <li>Missed, with a bar: "Goal missed by 3,313 homes. Reach it before Jun 2057 to level up."</li>
+        <li>Missed, with no bar (level 2): "Goal missed by 3,313 homes."</li>
+        <li>Won: no notice. The win card is the message.</li>
+        <li>Playing (nothing seen): no notice.</li>
+      </ul>
+      <p>Months are <code>formatShortMonthYear</code>, counts <code>formatCount</code>, and the unit is <code>goal.measure.unit</code>. The texts live in <code>src/lib/timeline/game-copy.ts</code>.</p>
+      <pre><code data-lang="ts">// src/lib/timeline/game-copy.ts
+/** 'Goal reached in Mar 2058. Beat Jun 2057 to level up.' */
+export function shortOfBar(on: Day, bar: Day): string;
+/** 'Goal missed by 3,313 homes. Reach it before Jun 2057 to level up.' */
+export function missedBar(short: number, unit: string, bar: Day): string;
+/** 'Goal missed by 3,313 homes.' */
+export function missed(short: number, unit: string): string;
+/** 'Goal reached in Mar 2049' */
+export function winTitle(on: Day): string;
+export const TO_BEAT_FLAG = 'To beat';
+export const GOAL_AND_BAR_FLAG = 'Goal · To beat';
+/** 'To beat: Jun 2057' */
+export function toBeatLine(bar: Day): string;
+/** 'To beat June 2057.' (formatMonthYear) */
+export function toBeatDescription(bar: Day): string;
+export const LATER_ROUND = 'Unlocks in a later round';
+/** 'Level 3. Permitting unlocked.' | 'Round complete.' (unlocked null) */
+export function levelledUp(level: Level, unlocked: string | null): string;
+/** 'Paint room for 82,069 homes to unlock the simulation.' */
+export function lockedSim(amount: number, unit: string): string;
+export const GO_TO_PAINT = 'Go to Paint';</code></pre>
+      <p>Without a game the notice is today's, <code>outcomeText</code> over the held <code>outcome</code>, unchanged (D5).</p>
+    </section>
+
+    <section id="sec-design-card">
+      <h3>The win card</h3>
+      <ul>
+        <li>TimelineMode renders G5's <code>WinCard</code> in the notice stack, right after the goal notice's region, in a wrapper with <code>data-testid="tl-win"</code>. From md the stack lies over the top of the map; below md it is in flow above the map.</li>
+        <li>Its props are <code>title = winTitle(standing.on)</code>, <code>unlocks</code>, <code>onlevelup = () =&gt; game.levelUp()</code> and <code>onkeep</code>.</li>
+        <li><code>unlocks</code> is <code>unlockText(next)</code>, where <code>next</code> is the level after the current one (6 at level 5), and null once <code>roundComplete(progress)</code>.</li>
+        <li>The card opens when the standing becomes <code>won</code> and its <code>on</code> is not the one last kept at this level in this visit.</li>
+        <li>When it opens, playback pauses and the page calls <code>game.won()</code>. The card moves focus to its "Level up" on mount (G5).</li>
+        <li>"Keep playing" and Escape record <code>on</code> as kept, close the card and move focus to the ruler (<code>tl-ruler</code>). The offer stays, so the level panel keeps offering "Level up".</li>
+        <li>The card closes when the standing stops being <code>won</code>, for example on an edit, without recording anything as kept.</li>
+        <li>So after "Keep playing", a later edit that wins with a different month opens the card again. One that wins with the kept month does not, and the offer is set again.</li>
+        <li>Without a game there is no card.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-levelup">
+      <h3>When the level rises on <code>/sim</code></h3>
+      <p>The card's "Level up" and the level panel's both call <code>game.levelUp()</code>, which banks the offer and raises the level (G2). The page reacts to <code>game.progress.level</code> rising, and at level 5 to <code>roundComplete(game.progress)</code> turning true, whoever pressed. Nothing reacts to the offer going to null. In order:</p>
+      <ol>
+        <li>TimelineMode stops playback and returns the clock to today: the day becomes <code>asOf</code> through <code>handleDay</code>, so the session, the map and the card follow.</li>
+        <li>The reveal returns to <code>revealOpen(asOf)</code>. <code>seen</code>, <code>outcome</code>, the dismissed outcomes and the kept month are cleared, and the card closes. Focus that was in the card moves to the ruler (<code>tl-ruler</code>).</li>
+        <li><code>SimPage</code> works out the kinds the new <code>game.allowed</code> has that the old one did not. From md, after the next tick, it opens each one's row if closed (<code>openKind</code>). Below md nothing opens.</li>
+        <li><code>SimPage</code> announces <code>levelledUp(level, unlocked)</code> in its polite status region, for example "Level 3. Permitting unlocked.", or "Round complete." once the round is complete.</li>
+        <li>The policies stay. If the new level runs policies the old one did not, <code>run</code> changes and the page refills as for any edit.</li>
+      </ol>
+      <ul>
+        <li>A level up is not a document change: undo and redo do not see it, and the undo history is kept. Every entry in it touches only kinds the old level allowed, which every later level allows too.</li>
+        <li>At level 5 the level stays 5 when the store banks <code>banked[5]</code> (G2). There the trigger is <code>roundComplete(game.progress)</code> turning true: steps 1, 2 and 4 run, with no kind to open. Once the round is complete no control offers "Level up" (the card has none and the panel and the level cell hide it), and a <code>game.levelUp()</code> call changes no progress and banks nothing (G2): it only clears the offer, so the page does nothing and the clock stays where it is.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-bar">
+      <h3>The bar on the ruler and in Details</h3>
+      <ul>
+        <li>Playhead takes a new prop, <code>barDay: Day | null</code>. TimelineMode passes <code>barOf(game.progress)?.on ?? null</code>.</li>
+        <li>The ruler shows a "To beat" flag at <code>barDay</code>, beside the Goal flag, under the track, styled as the Goal flag, with <code>data-testid="tl-bar-flag"</code> and <code>aria-hidden</code>.</li>
+        <li>When the bar's month is fewer than 30 months before the Goal flag's day, one flag, "Goal · To beat", shows at the Goal flag's place and the "To beat" flag does not.</li>
+        <li>With the Goal flag hidden (no goal step), the "To beat" flag shows alone.</li>
+        <li>The ruler's description adds <code>toBeatDescription(barDay)</code>, "To beat June 2057.", after today's sentences.</li>
+        <li>SimDetails takes a new prop, <code>bar: Day | null</code>. Under the goal rows it shows one line, <code>toBeatLine(bar)</code>, "To beat: Jun 2057", with <code>data-testid="tl-to-beat"</code>. With no bar there is no line.</li>
+        <li>The headline's two lines and the chart are unchanged.</li>
+        <li>Without a game, or at levels 1 and 2, there is no bar, no flag and no line.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-locked-page">
+      <h3>The locked page at level 1</h3>
+      <ul>
+        <li>In edit mode, <code>SimRoute</code> renders the locked page instead of <code>SimPage</code> while <code>simLocked(game.progress)</code> (G3), true exactly at level 1. No page compares a level itself.</li>
+        <li>Until mounted, <code>SimRoute</code> in edit mode renders the empty <code>#map-region</code> box and decides nothing, so neither the server's store nor the first client render shows the locked page to a game above level 1.</li>
+        <li>The locked page fills <code>#map-region</code>, centred, with <code>data-testid="sim-locked"</code>. It holds one paragraph, "Paint room for 82,069 homes to unlock the simulation.", and one link, "Go to Paint", to <code>/</code>.</li>
+        <li>The amount is <code>e2eGoalAmount(getStorage()) ?? GOAL_BASE.amount</code>, the unit <code>GOAL_BASE.measure.unit</code>.</li>
+        <li>The page puts nothing in the header's slots. Its <code>&lt;title&gt;</code> and its sr-only <code>h1</code> are today's.</li>
+        <li>The route's load still runs and its data is unused.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-view">
+      <h3>The published view</h3>
+      <ul>
+        <li><code>/s/&lt;id&gt;</code> keeps mounting <code>SimRoute</code> in view mode through its existing props. <code>SimRoute</code> passes <code>game={null}</code> whatever <code>game.allowed</code> says, so the page runs under <code>ALL_ALLOWED</code> directly.</li>
+        <li>So the view runs the whole document, read-only as today.</li>
+        <li>It shows no locked lanes, no "To beat" flag or line, no win card, no standing, and today's outcome message (D5). It never sets the store's offer.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-goal-seam">
+      <h3>The e2e goal seam</h3>
+      <ul>
+        <li><code>SimPage</code> reads <code>e2eGoalAmount(storage())</code> once, when it mounts, and passes it to TimelineMode as <code>goalAmount</code>, in both modes. A client-side navigation to <code>/sim</code> (Paint's "Level up") mounts it again, so it reads the amount then.</li>
+        <li>TimelineMode's goal is the <code>goal</code> seam, else <code>{ ...defaultGoal(asOf), amount: goalAmount }</code> when <code>goalAmount</code> is not null, else <code>defaultGoal(asOf)</code>.</li>
+        <li>A build without <code>VITE_E2E=1</code> always gets null (X1), so its goal is today's.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-other">
+      <h3>Other rules</h3>
+      <ul>
+        <li>Activity's starters show only for kinds that are not locked, and only while nothing is in force in <code>run</code>. At level 2 there are none.</li>
+        <li>Undo and Redo work as today. While zoning is locked, Ctrl+Z goes through the page's own key handler, since no brush controller is attached.</li>
+        <li>The page takes no Remix hand-off from history state. <code>/sim</code>'s route passes none, <code>SimRoute</code> and <code>SimPage</code> have no <code>remix</code> prop, and <code>restoreSim4</code> (<code>session4.ts</code>) takes no hand-off and shows no Remix toast. A remix arrives as the current game's policy record (G2), which autosave restores as any record.</li>
+        <li>A span edge with no end reads "no end" as today (<code>spanEdgeText</code>, <code>rows.ts</code>). A policy's span may still run to the window's end; what ends is a given measure's money (M1).</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-testids">
+      <h3>Test hooks</h3>
+      <dl>
+        <dt><code>sim-locked</code></dt><dd>The locked page.</dd>
+        <dt><code>tl-win</code></dt><dd>The win card's wrapper in the notice stack.</dd>
+        <dt><code>tl-locked-lane</code></dt><dd>A locked kind's lane text.</dd>
+        <dt><code>tl-bar-flag</code></dt><dd>The ruler's "To beat" flag, or the merged flag.</dd>
+        <dt><code>tl-to-beat</code></dt><dd>Details' "To beat" line.</dd>
+        <dt><code>data-locked</code></dt><dd>On a locked policy row (<code>tl-policy</code>) and on a locked bar.</dd>
+      </dl>
+      <p><code>TimelineModeHost</code> gains a <code>game</code> seam that it passes through. <code>TimelineHost</code>, <code>PlayheadHost</code>, <code>InspectorHost</code> and <code>SimDetailsHost</code> gain the new props of their components.</p>
+    </section>
+  </section>
+
+  <section id="sec-write-set">
+    <h2>Write set</h2>
+    <p>From the design doc's write-sets table, after <code>finite-funding</code> and <code>game-core</code>:</p>
+    <ul>
+      <li><code>src/lib/sim-page/{SimRoute,SimPage}.svelte</code></li>
+      <li><code>src/lib/timeline/**</code> except <code>pool-level.ts</code>, <code>money-copy.ts</code> and, in <code>Inspector.svelte.spec.ts</code>'s case "a given measure at level 5", the assertion on the What section's text (<code>funding-measures</code>')</li>
+      <li><code>src/routes/sim/**</code></li>
+      <li>the <code>/sim</code> e2e specs it adds</li>
+      <li><code>docs/dev/{sim-page,timeline-ui,policy-timeline}.md</code></li>
+    </ul>
+    <p>Ordering notes from the design doc that concern this unit:</p>
+    <ul>
+      <li>A write set includes the tests, harnesses and test helpers that sit beside its files and test only them.</li>
+      <li><code>src/lib/timeline/{TimelineMode,SimDetails}.svelte</code> are written by <code>finite-funding</code> (the lines that read <code>uncapped</code>) and then by <code>game-sim</code>.</li>
+      <li><code>game-sim</code> and <code>funding-measures</code> can run together. <code>game-sim</code> calls <code>dateMeasure</code> (M1) and mounts <code>PolicySummary</code> through its existing props; <code>funding-measures</code> owns both.</li>
+    </ul>
+    <ul>
+      <li><code>src/lib/timeline/copy.ts</code> holds no public-money sentence once <code>finite-funding</code> has moved them to <code>money-copy.ts</code>, so <code>game-sim</code> owns all of <code>copy.ts</code> and <code>copy.spec.ts</code> and never opens <code>money-copy.ts</code>.</li>
+    </ul>
+    <p>This unit leaves <code>copy.ts</code> unchanged and puts its own strings in a new file, <code>game-copy.ts</code>.</p>
+    <section id="sec-write-set-files">
+      <h3>Files</h3>
+      <p>Changed:</p>
+      <ul>
+        <li><code>src/lib/sim-page/SimRoute.svelte</code></li>
+        <li><code>src/lib/sim-page/SimPage.svelte</code></li>
+        <li><code>src/lib/timeline/TimelineMode.svelte</code></li>
+        <li><code>src/lib/timeline/Timeline.svelte</code></li>
+        <li><code>src/lib/timeline/KindRow.svelte</code></li>
+        <li><code>src/lib/timeline/PolicyRow.svelte</code></li>
+        <li><code>src/lib/timeline/SpanBar.svelte</code></li>
+        <li><code>src/lib/timeline/Playhead.svelte</code></li>
+        <li><code>src/lib/timeline/SimDetails.svelte</code></li>
+        <li><code>src/lib/timeline/Inspector.svelte</code></li>
+        <li><code>src/lib/timeline/AddMenu.svelte</code></li>
+        <li><code>src/lib/timeline/add.ts</code></li>
+        <li><code>src/lib/timeline/lens.ts</code></li>
+        <li><code>src/lib/timeline/activity-view.ts</code></li>
+        <li><code>src/lib/timeline/parse4.ts</code></li>
+        <li><code>src/lib/timeline/session4.ts</code> and <code>session4.spec.ts</code>: the Remix hand-off and its toast leave <code>restoreSim4</code></li>
+        <li><code>src/routes/sim/+page.svelte</code>: no <code>remix</code> prop</li>
+        <li><code>src/lib/sim-page/SimPage.svelte.spec.ts</code>: its Remix hand-off cases go</li>
+        <li><code>src/routes/s/[id]/page.view.svelte.spec.ts</code>: the case "after Remix, /sim shows the remixed document over the earlier v2 autosave" goes; nothing else in the file changes</li>
+        <li><code>src/lib/timeline/test/TimelineModeHost.svelte</code></li>
+        <li><code>src/lib/timeline/test/TimelineHost.svelte</code></li>
+        <li><code>src/lib/timeline/test/PlayheadHost.svelte</code></li>
+        <li><code>src/lib/timeline/test/InspectorHost.svelte</code></li>
+        <li><code>src/lib/timeline/test/SimDetailsHost.svelte</code></li>
+        <li><code>src/lib/timeline/{add,lens,parse4,activity-view,server-codec}.spec.ts</code></li>
+        <li><code>src/lib/timeline/{Timeline,Playhead,Inspector,SimDetails}.svelte.spec.ts</code></li>
+        <li><code>e2e/sim-funding.spec.ts</code>: in test 8, the one locator line that finds the housing bond's bar, which finds it by the policy's label ("A housing bond")</li>
+        <li><code>docs/dev/sim-page.md</code>, <code>docs/dev/timeline-ui.md</code>, <code>docs/dev/policy-timeline.md</code></li>
+      </ul>
+      <p>Created:</p>
+      <ul>
+        <li><code>src/lib/timeline/game-copy.ts</code> and <code>game-copy.spec.ts</code></li>
+        <li><code>src/lib/timeline/TimelineMode.game.svelte.spec.ts</code></li>
+        <li><code>src/routes/sim/test/GameSimHost.svelte</code></li>
+        <li><code>src/routes/sim/game.svelte.spec.ts</code></li>
+        <li><code>e2e/game-sim.spec.ts</code></li>
+      </ul>
+      <p>Deleted: none. <code>src/lib/timeline/WhatEditor.svelte</code> already takes <code>readonly</code> and needs no change. Pure helpers the operator splits out stay under <code>src/lib/timeline/</code>.</p>
+    </section>
+  </section>
+
+  <section id="sec-tests">
+    <h2>Tests</h2>
+    <section id="sec-tests-unit">
+      <h3>Unit</h3>
+      <ul>
+        <li><code>game-copy.spec.ts</code>: each text of <a href="#sec-design-messages">the outcome message</a> word for word, with a fixed day and count; <code>levelledUp</code> at levels 3, 4, 5 and once complete.</li>
+        <li><code>add.spec.ts</code>:
+          <ul>
+            <li>Under <code>allowedAt(5)</code> money offers only the available presets; under <code>allowedAt(3)</code> zoning and money offer nothing; under <code>ALL_ALLOWED</code> offers are today's.</li>
+            <li>Every policy a money preset makes carries the preset's id and label.</li>
+            <li><code>addPolicy</code> calls <code>dateMeasure</code> once per policy made from a preset, after the spans are dated, and on no other policy (a spy on the M1 stub).</li>
+            <li><code>redateMoved</code> calls <code>dateMeasure</code> on a given measure whose first start moved, not on one whose second span moved, not on an own pool, and returns <code>after</code> itself when nothing moved.</li>
+          </ul>
+        </li>
+        <li><code>lens.spec.ts</code>: a pool or programme edit through <code>tryWriteBack</code> on a given measure sets <code>preset</code> to null and keeps the label; an edit that changes nothing keeps it.</li>
+        <li><code>parse4.spec.ts</code>: a money policy with a preset id parses; one of 61 characters and an empty string are refused; a zoning policy with one is still refused.</li>
+        <li><code>server-codec.spec.ts</code>: a schema 4 document holding a given measure parses through <code>SIM_SERVER_CODEC4.parse</code>.</li>
+        <li><code>activity-view.spec.ts</code>: <code>startersFor</code> under <code>allowedAt(2)</code> is empty and under <code>allowedAt(3)</code> holds only the permitting starter.</li>
+      </ul>
+    </section>
+    <section id="sec-tests-component">
+      <h3>Component</h3>
+      <ul>
+        <li><code>Timeline.svelte.spec.ts</code>: at level 2 no kind has "+"; each locked lane reads <code>lockedLane(kind, 2)</code> for its kind; a locked kind's toggle still opens it; a locked policy's bar is not a button and is not in the tab order; at level 5 a money policy with <code>preset</code> null says "Unlocks in a later round".</li>
+        <li><code>Playhead.svelte.spec.ts</code>: <code>barDay</code> shows "To beat" at its month; a bar within 30 months of the deadline shows one "Goal · To beat" flag; the description ends with "To beat June 2057."; no <code>barDay</code>, no flag.</li>
+        <li><code>Inspector.svelte.spec.ts</code>: a given measure at level 5 shows On, Move up, Move down, Remove and an editable When, and its What as <code>PolicySummary</code> with no editor (the assertion on the What section's text is <code>funding-measures</code>', whose money-only summary it reads); the "+" menu on Public money at level 5 lists no "Your own pool", "City funding scale" or "Market terms".</li>
+        <li><code>SimDetails.svelte.spec.ts</code>: <code>bar</code> shows "To beat: Jun 2057" under the goal rows; null shows nothing.</li>
+        <li><code>TimelineMode.game.svelte.spec.ts</code>, with <code>FakeTimelineWorker</code>, a goal seam and a <code>GameStore</code> on memory storage:
+          <ul>
+            <li>Level 2: playing to the month the goal is met opens the win card titled "Goal reached in …"; playback pauses; <code>won()</code> runs once; <code>game.offer</code> holds the month and the dataset.</li>
+            <li>The card's "Keep playing" closes it and focus is on the ruler; Escape does the same; the offer stays.</li>
+            <li>An edit closes the card and clears the offer; a refill that wins with a different month opens the card again; one with the kept month does not, and sets the offer again.</li>
+            <li>Level 3 with a bar: a later reached month shows "Goal reached in Mar 2058. Beat Jun 2057 to level up."; the same month (a tie) shows it too; a missed result shows "Goal missed by … Reach it before Jun 2057 to level up."</li>
+            <li>Level 2 missed shows "Goal missed by 3,313 homes."</li>
+            <li>The card's "Level up" raises the level; the playhead moves to today, the reveal clears, focus is on the ruler, and no notice or card shows until a new result is seen.</li>
+            <li>Level 5 with <code>banked[4]</code>: the card's "Level up" makes <code>roundComplete</code> true and returns the playhead to today. An edit that clears the offer leaves the playhead where it is.</li>
+            <li>A store change from outside the page (a test calling <code>game.levelUp()</code> directly, as the level panel does) has the same effect as the card's button.</li>
+            <li>Unmounting clears the offer.</li>
+            <li>No game: today's outcome text, no card, no "To beat" flag, no offer.</li>
+            <li><code>run</code> differing from <code>policy</code>: the worker's <code>open</code> and <code>setPolicy</code> carry <code>run</code>; the rows draw <code>policy</code>.</li>
+          </ul>
+        </li>
+        <li><code>src/routes/sim/game.svelte.spec.ts</code>, with <code>GameSimHost</code> (the <code>/sim</code> page, rendered through <code>SimRoute</code>, under a provided <code>GameStore</code>; the store and <code>SimRoute</code>'s <code>storage</code> prop share one memory storage):
+          <ul>
+            <li>Level 1: the locked page's text and its link to <code>/</code>; no SimPage.</li>
+            <li>Level 3 with a stored policy holding a zoning and a permitting policy: Publish's request body holds the permitting policy only, and the stored record still holds both.</li>
+            <li>Level 3: no brush controller (no "Stop painting", no palette strip).</li>
+            <li>An autosave write calls <code>game.touched()</code> once.</li>
+            <li>An edit, then at once <code>game.newGame()</code> before the autosave's debounce ends: the old game's stored save holds the edited policy, and the new game's policy record is not overwritten when the page unmounts.</li>
+            <li>A store with <code>open</code> true (<code>openGame()</code>): no lock text, no win card, no offer, and today's outcome text.</li>
+            <li>Every new control passes <code>expectNoA11yViolations</code> in light and dark: the locked page, a locked kind open and closed, the win card in place.</li>
+          </ul>
+        </li>
+      </ul>
+    </section>
+    <section id="sec-tests-e2e">
+      <h3>End to end (<code>e2e/game-sim.spec.ts</code>)</h3>
+      <p>Each test switches the real game on with X1's helpers before its first navigation. Every level up in these tests goes through the win card, which this unit mounts; none uses the header's level cell, which <code>game-shell</code> builds at the same time. The published view of a given measure is tested here, since the parser that accepts it is this unit's.</p>
+      <ul>
+        <li>Level 1 (<code>seedGame(page, 1)</code>): <code>/sim</code> shows the locked page; "Go to Paint" leads to <code>/</code>.</li>
+        <li>Level 2 (<code>seedGame(page, 2)</code>, <code>seedGoalAmount</code> small): no "+" anywhere; the lanes say what unlocks them; End plays to the window's end; the win card shows "Goal reached in …"; "Level up" leaves the playhead at today with the Permitting row open and its "+" shown, and the ruler's "To beat" flag at the month just won.</li>
+        <li>Level 2 to 3 without a change: playing again reaches the same month, which is a tie, and the goal notice says "Beat … to level up."; no card.</li>
+        <li>Level 3 (<code>seedGame(page, 3)</code>, small goal): adding a timing preset and playing to the goal opens the card; "Keep playing" closes it; a later edit that wins in another month opens it again, and its "Level up" returns the playhead to today.</li>
+        <li>Level 4: zoning's "+" offers "Painted area"; a stroke on the map adds a painted policy; Public money's lane shows the lock text.</li>
+        <li>Level 5: "+" on Public money lists "A housing bond" and no "Your own pool", "City funding scale" or "Market terms"; the bond's What is text; its start date changes from the When editor.</li>
+        <li>The published view (<code>seedGame(page, 2)</code>): a seeded published policy holding a zoning policy opens at <code>/s/&lt;id&gt;</code> with no lock text, no "To beat" flag, and the zoning policy on its row.</li>
+        <li>The published view of a given measure (<code>seedGame(page, 3)</code>): a policy published from level 5 with "A housing bond" opens at <code>/s/&lt;id&gt;</code> and runs the bond.</li>
+      </ul>
+    </section>
+    <section id="sec-tests-existing">
+      <h3>Existing tests</h3>
+      <ul>
+        <li>Every e2e spec that exists before this build runs on the open game (X1), which this page treats as no game, so this unit changes none of them for the game.</li>
+        <li><code>e2e/sim-funding.spec.ts</code> test 8 finds the housing bond's bar by its accessible name, which carries the policy's label. A policy made from a funding preset takes the preset's label (<a href="#sec-design-given">Given measures</a>), so the bar is named "A housing bond", not the pool's "Housing bond". This unit changes that one locator to the policy's label. The file is <code>funding-measures</code>', which runs beside this unit and writes the rest of test 8; whichever of the two merges second keeps this locator and <code>funding-measures</code>' additions.</li>
+        <li>The remix tests in <code>e2e/{share-states,share-roundtrip,share-notices,sim-share,chrome-dark}.spec.ts</code> assert the Remix hand-off and toast this unit removes. <code>game-shell</code> rewrites those tests; they are red between the two merges, and nobody runs e2e until <code>closing</code>.</li>
+        <li>In <code>src/routes/s/[id]/page.view.svelte.spec.ts</code>, the case "after Remix, /sim shows the remixed document over the earlier v2 autosave" mounts <code>/sim</code> with the Remix hand-off and asserts the Remix toast. This unit deletes that one case, so its branch passes <code>npm run test:unit</code>. The file's other cases are <code>game-shell</code>'s, which rewrites its Remix tests; whichever of the two merges second keeps <code>game-shell</code>'s Remix tests and no hand-off case.</li>
+        <li>Component tests that mount <code>SimPage</code> or <code>TimelineMode</code> without a game keep today's behaviour.</li>
+        <li><code>src/routes/sim/page.svelte.spec.ts</code> mounts <code>/sim</code> without a provider, so <code>useGame()</code> gives <code>openGame()</code> (G2): no game parts. Its remount test waits for mount.</li>
+      </ul>
+    </section>
+  </section>
+
+  <section id="sec-docs">
+    <h2>Docs</h2>
+    <ul>
+      <li><code>docs/dev/sim-page.md</code>: <code>SimRoute</code> reads the game in edit mode and passes none in view mode or for the open game; the locked page at level 1 and its text; <code>SimPage</code>'s <code>game</code> prop, <code>allowed</code> from <code>game.allowed</code>, and <code>run</code>, the playable document, going to PolicySync, the worker and Publish while autosave keeps the whole document; <code>game.touched()</code> after each autosave write; the brush controller only while zoning is allowed; <code>normalize</code> re-dating a given measure whose first start moved (M1); the e2e goal seam, read on mount; no Remix hand-off (a remix arrives as the current game's record).</li>
+      <li><code>docs/dev/timeline-ui.md</code>: TimelineMode's <code>game</code>, <code>run</code> and <code>goalAmount</code> props; locked kinds, their lane text and keyboard behaviour; locked policies and "Unlocks in a later round"; the seen result and the offer; the outcome messages in a game word for word; the win card's place and its open, keep and reopen rules; what happens when the level rises; the "To beat" flag, the merged flag and its 30-month rule, and Details' line; the published view and the open game showing none of it; the new test hooks.</li>
+      <li><code>docs/dev/policy-timeline.md</code>: a money policy's <code>preset</code> is null or a funding preset's id of 1 to 60 characters, set by <code>addPolicy</code> with the preset's label; a given measure is one with an id; a stored null is never filled; an edit through the span lens to what it pays sets it to null; <code>addPolicy</code> and a moved first start call <code>dateMeasure</code>; the published body's form of a given measure; "+" lists given measures only when <code>allowed.money</code> is <code>'given'</code>.</li>
+    </ul>
+  </section>
+
+  <section id="sec-global-constraints">
+    <h2>Global constraints</h2>
+    <ul>
+      <li>Work happens in git worktrees under <code>.claude/worktrees/</code>. Commits follow Conventional Commits. No attribution to an AI anywhere.</li>
+      <li>Code style: 2-space indent, single quotes, no trailing commas, 100 columns.</li>
+      <li>Every Vitest test calls <code>expect</code>.</li>
+      <li>Signoff fails on server stderr, on timing crutches and on a retried flake. Each unit runs <code>npm run lint</code>, <code>npm run check</code> and the Vitest projects its files belong to before it hands back.</li>
+      <li>Port 4173 is shared by every session on this machine. A unit never kills a server it did not start; it waits.</li>
+      <li>Every agent runs every command in the foreground and never ends a turn while something it started is running.</li>
+      <li>Schema changes go through <code>npm run db:generate</code>. Nobody edits a migration.</li>
+      <li>No unit runs <code>npm run signoff</code>: its dataset step fails until the dataset is uploaded. <code>closing</code> runs it once, after the upload.</li>
+      <li>The dataset version changes in this build. The dataset is uploaded once, by <code>closing</code>, from the integration branch, after every unit has merged; no other unit uploads a dataset. <code>reach-check</code> builds one earlier to run the check and uploads nothing.</li>
+      <li>A unit that writes a hashed path regenerates the fixture dataset with <code>npm run pipeline -- fixture</code> and commits it.</li>
+      <li>WCAG 2.2 AA: every new control is at least 24 px and passes <code>expectNoA11yViolations</code> in light and dark.</li>
+      <li>Page text is short. No sentence says what something is not.</li>
+      <li>Nothing on the main screen says "RHNA". The goal is read from the <code>Goal</code> value, never from a constant.</li>
+      <li>The game's rules are read from <code>src/lib/game/</code>. No component compares a level to a number.</li>
+      <li>One future: no seed control, no band, no average over runs.</li>
+      <li>Published plans and policies, their ids and their pages keep working, including every policy published before this build.</li>
+      <li>A number that is a claim about the world carries its source and tier, in the existing <code>Sourced</code>, <code>Unsourced</code> and <code>Evidence</code> shapes.</li>
+      <li>A runtime dependency that ships in the bundle gets a credit in <code>SOFTWARE</code>. This build adds none.</li>
+      <li>CSP changes are interface changes. This build makes none.</li>
+      <li>Timing is measured only on a quiet machine. A unit that cannot get one defers the measurement and says so.</li>
+    </ul>
+  </section>
+
+  <section id="sec-out-of-scope">
+    <h2>Out of scope</h2>
+    <ul>
+      <li>The game's rules, the store, its offer, <code>WinCard</code>, <code>LevelPanel</code> and <code>lockedLane</code>: <code>game-core</code>.</li>
+      <li>The header's level cell, the steps, Paint's win, Remix on <code>/s/&lt;id&gt;</code> and <code>/p/&lt;id&gt;</code>, and the banner: <code>game-shell</code>.</li>
+      <li><code>dateMeasure</code>'s body, what <code>PolicySummary</code> says of a given measure, the pool levels and the funding editors: <code>funding-measures</code>.</li>
+      <li>The account offer on the win card and the save sync: <code>game-save</code>.</li>
+      <li>The build check that current law reaches the goal (G4): <code>reach-check</code> writes and first runs it; <code>closing</code> runs it again before the upload.</li>
+      <li>Doc text still stale after this unit: <code>closing</code>.</li>
+      <li>Bringing the Paint plan into the simulation; a free-play switch: no unit.</li>
+    </ul>
+  </section>
+</article>

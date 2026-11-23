@@ -1,6 +1,6 @@
 <script lang="ts">
   // Test host: NoticePills around two chips (none with `empty`), and with `card` a notice with
-  // details, inside a positioned host as FzpMode and BrushEditor render it.
+  // details, inside a positioned host as TimelineMode and BrushEditor render it.
   import Message from '../Message.svelte';
   import NoticePills from '../NoticePills.svelte';
   import { BUTTON_QUIET } from '../ui';

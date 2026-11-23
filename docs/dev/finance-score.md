@@ -145,12 +145,11 @@ available-money identity use, so a lost grant is never counted twice.
   are never negative.
 - I2. `C = R + S + committed`.
 - I3. `S_loan = out + repaid + L_loan`.
-- I4. For a capped pool, `leverage x received - committed - spent - out - lostCredit >= 0`.
+- I4. For every pool, `leverage x received - committed - spent - out - lostCredit >= 0`.
 - I5. `lost = lostCredit + L_grant`, and `L_grant <= spent`.
-- I6. An uncapped pool's `received` is 0 in every month.
 
-(The engine page's table maps its E5 to I6 and E6 to I5; by the definitions above E5 is I5 and E6
-is I6. A label swap only.)
+[finance-engine.md](finance-engine.md)'s table maps E1 to E5 to I1 to I5; E6 is retired and E7 has
+no counterpart.
 
 ## Funded and displaced homes
 
@@ -209,6 +208,33 @@ completion, keeping today's meaning (partner ruling). `limits` come from `scoreS
 independent of the ledger: the same in every world, fixed as the forecast fills; debt terms live in
 `ScoreStatics.debts`.
 
+**Closed pools.** Each `MoneyRow` pool entry of calendar month i carries two optional fields, read
+from the world's shut rows ([world-funding.md](world-funding.md), "Pool closing"); a world without
+funding columns gives null and false, and a row built without them reads so.
+
+- `closed`: the `shutFrom` of the pool's first shut row once that day less 1 (the day the pool was
+  found spent) is on or before the last day of month i; null before.
+- `shut`: true when the pool has such a row whose `shutTo` is `NO_DAY` or after that last day;
+  false otherwise, and false again from the month an arrival opens the pool.
+
+A row whose `shutTo` equals its `shutFrom` (found spent in model month m, opened by an arrival in
+m + 1) sets `closed`, and is `shut` only in the calendar month holding its spent day, when that
+month ends on that day. Shut rows are never removed, so a final month's row never changes.
+
+`MoneyView` gains `closed`, each pool id's `closed` in the last row (null when absent): the first
+day the pool was ever closed, kept when it opens again; and `shut`, each pool id's `shut` for every
+filled month (`boolean[]`, false for a row without it). A rewind (`chunksBefore`) cuts both with
+the rows, and a chunk built from a re-stepped world reads its re-made history.
+
+**Details' "ran out" line.** `closedLines(money, at)` (`src/lib/fzp/money-view.ts`) gives one line
+per pool of `money.pools`, in that order, whose `closed` day less 1 is before the end of the
+calendar month starting `at`: `{label}: ran out {Mon YYYY}`, the month being that of the day less
+1, the month the pool was found spent; for example "City: general-obligation bonds and other debt:
+ran out Mar 2030". A money without `closed` (the older engine's) gives none. `closedPools` is the
+same list with each pool's id. `MoneyResults` (part `money`) renders each line as a `p`,
+`data-testid="fzp-money-closed"`, after the all-money line (`fzp-money-all`) and before the "Money
+details" button; with no line it renders nothing.
+
 ## The limit statements
 
 **`limits` measure only the borrowing the policy adds**, never the baseline's own bond programme
@@ -259,21 +285,14 @@ statements carry their own provenance.
 | Shown run (`/sim`, `/s/<id>`) | yes, every run | when `finance` has a pool | `shownRun`, once per run, from `simulateDetailed` |
 | Twin                          | no             | no                        | `simulateNet`, unchanged                          |
 | Band runs                     | no             | no                        | `simulateNet`, unchanged                          |
-| `/lesscars` build             | no             | no                        | `addNet` and `runEngine`, unchanged               |
 
 **`simulateDetailed` is the one ledger collector**: it passes a `ledger` sink that pushes each event
 in arrival order, and only when the input has `finance` (otherwise `ledger` is `[]` and no sink
 is passed, so a run without finance is untouched). **The fast path is untouched:** `addNet`,
-`NetAcc` and `simulateNet` are unchanged, so the band, the twin and `/lesscars` cost what they
-cost before. `shownRun` computes `tiers` with `tierSeries` and `money` with `moneyOf` (the twin's
+`NetAcc` and `simulateNet` are unchanged, so the band and the twin cost what they cost before.
+`shownRun` computes `tiers` with `tierSeries` and `money` with `moneyOf` (the twin's
 `finance.pools` as `baseline`), after `shownSeries`; `postTimeline` posts the same objects on every
 post. `TierCtx` is built when the loaded input changes (a lever revision), not per run.
-
-`pipeline/lib/lesscars/runs.ts` calls `runEngine` with its own sinks (`runs.ts:336`, `:339`, `:448`)
-and passes no `ledger` sink, so it collects no ledger; its outputs are unchanged.
-`src/lib/sim/scenario` and `src/lib/scoreboard` are hashed into the dataset version
-(`pipeline/lib/version.ts`), so this subsystem changes the dataset version; the dataset is built
-and uploaded once, at the release.
 
 ## The budget
 

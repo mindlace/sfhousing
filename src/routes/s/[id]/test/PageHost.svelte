@@ -1,13 +1,18 @@
 <script lang="ts">
   // Test host: the shared-policy page under the real SiteHeader, wired as the root layout wires
-  // it, so the header's actions, pinned score bar and status slot are all reachable.
+  // it, so the header's actions, pinned score bar and status slot are all reachable, and the game
+  // store provided when one is given.
   import type { ComponentProps } from 'svelte';
+  import { provideGame, type GameStore } from '$lib/game/store.svelte';
   import { provideHeaderActions } from '$lib/shell/header-actions.svelte';
   import SiteHeader from '$lib/shell/SiteHeader.svelte';
   import Page from '../+page.svelte';
 
-  let { data }: { data: ComponentProps<typeof Page>['data'] } = $props();
+  let { data, game }: { data: ComponentProps<typeof Page>['data']; game?: GameStore } = $props();
   const slot = provideHeaderActions();
+  // The store is fixed for the host's life, as the root layout's is.
+  // svelte-ignore state_referenced_locally
+  if (game) provideGame(game);
 </script>
 
 <SiteHeader

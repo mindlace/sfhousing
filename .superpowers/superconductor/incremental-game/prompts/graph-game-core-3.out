@@ -1,0 +1,8 @@
+The `game-core` row already matches the spec on disk, so there was nothing to commit. The three rulings since the last graph (game-core-1 to 3) only clarify how the store behaves inside sections the row already cites: store construction (`§sec-design-store-construct`) and store changes (`§sec-design-store-change`). They don't change the unit's write set, what it needs or what it produces. The graph file is unchanged from its last commit.
+
+Build graph @ 62daef28
+
+Longest chain: contracts -> finite-funding -> pool-closing -> reach-check -> closing
+Longest chain: remove-lesscars -> finite-funding -> pool-closing -> reach-check -> closing
+Longest chain: contracts -> finite-funding -> pool-closing -> funding-measures -> closing
+Longest chain: remove-lesscars -> finite-funding -> pool-closing -> funding-measures -> closing

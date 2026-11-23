@@ -21,7 +21,7 @@ describe('header actions slot', () => {
   });
 
   it('keeps a replacing page that registered the same snippet object when the first unmounts', async () => {
-    // Two instances of one component (FzpMode on /s/<id>, then on /sim) can hand over the same
+    // Two instances of one component (TimelineMode on /s/<id>, then on /sim) can hand over the same
     // snippet object; the new page mounts before the old one is destroyed.
     const { rerender } = await render(Host, { shared: true, pinnedA: 'Score A', statusA: 'S' });
     await rerender({

@@ -11,6 +11,7 @@ import { LeverFormatError, type FinanceLevers } from '$lib/sim/levers/types';
 import {
   INCOME_TIERS,
   type Day,
+  type Dollars,
   type IncomeTier,
   type Inflow,
   type Instrument,
@@ -60,6 +61,7 @@ import {
   groupOf,
   poolsOf,
   programmeSentence,
+  windowLastMonth,
   type Baseline,
   type GroupId,
   type ScaleLine
@@ -266,7 +268,6 @@ function sentence(f: FinanceLevers, baseline: Baseline | undefined, g: Programme
     kind: 'generalRevenue',
     label: g.pool,
     inflows: [],
-    uncapped: false,
     debt: null,
     leverage: 1
   };
@@ -411,15 +412,26 @@ export function setInflowAmountEdit(
   };
 }
 
+/** A yearly row from `from` to the window's last month: the one rule for every new yearly row. */
+export function yearlyRow(
+  from: Day,
+  dollarsPerYear: Dollars,
+  asOf: Day
+): Extract<Inflow, { kind: 'yearly' }> {
+  return { kind: 'yearly', from, to: windowLastMonth(asOf), dollarsPerYear };
+}
+
 /**
- * Turns row `k` (from 0) into a single payment or a yearly one, keeping its date and amount.
- * `regenName` regenerates the name from the first inflow's year (4.9).
+ * Turns row `k` (from 0) into a single payment or a yearly one, keeping its date and amount; a
+ * yearly row ends in the window's last month. `regenName` regenerates the name from the first
+ * inflow's year (4.9).
  */
 export function setInflowKindEdit(
   p: SimPolicy,
   id: string,
   k: number,
   kind: 'once' | 'yearly',
+  asOf: Day,
   regenName = false
 ): FundingEdit {
   return {
@@ -432,7 +444,7 @@ export function setInflowKindEdit(
           (x): Inflow => {
             if (x.kind === kind) return x;
             return x.kind === 'once'
-              ? { kind: 'yearly', from: x.day, to: null, dollarsPerYear: x.dollars }
+              ? yearlyRow(x.day, x.dollars, asOf)
               : { kind: 'once', day: x.from, dollars: x.dollarsPerYear };
           },
           regenName
@@ -445,22 +457,21 @@ export function setInflowKindEdit(
 const DATE_FIELD = { day: 'When', from: 'From', to: 'Until' } as const;
 
 /**
- * Sets row `k`'s (from 0) date: `day` of a single payment, `from` or `to` (null: no end) of a
- * yearly one. `regenName` regenerates the name from the first inflow's year (4.9).
+ * Sets row `k`'s (from 0) date: `day` of a single payment, `from` or `to` of a yearly one.
+ * `regenName` regenerates the name from the first inflow's year (4.9).
  */
 export function setInflowDateEdit(
   p: SimPolicy,
   id: string,
   k: number,
   field: 'from' | 'to' | 'day',
-  day: Day | null,
+  day: Day,
   regenName = false
 ): FundingEdit {
   const set = (x: Inflow): Inflow | null => {
-    if (field === 'day') return x.kind === 'once' && day !== null ? { ...x, day } : null;
+    if (field === 'day') return x.kind === 'once' ? { ...x, day } : null;
     if (x.kind !== 'yearly') return null;
-    if (field === 'from') return day === null ? null : { ...x, from: day };
-    return { ...x, to: day };
+    return field === 'from' ? { ...x, from: day } : { ...x, to: day };
   };
   const cur = p.funding.pools.find((x) => x.id === id);
   let name = poolName(p, id);
@@ -587,12 +598,14 @@ function baselineTiers(baseline: Baseline | undefined): Record<IncomeTier, numbe
   return t ? { ...t } : { veryLow: 0.25, low: 0.25, moderate: 0.25, aboveModerate: 0.25 };
 }
 
+/** One programme edit's fields: its dates, when given, are days (a stored `to` is never null). */
+export type ProgrammePatch = Partial<Omit<Programme, 'id' | 'pool' | 'from' | 'to'>> & {
+  from?: Day;
+  to?: Day;
+};
+
 /** The programme with `patch`; a change of reach sets `tiers` when the patch does not. */
-function patched(
-  g: Programme,
-  patch: Partial<Omit<Programme, 'id' | 'pool'>>,
-  baseline: Baseline | undefined
-): Programme {
+function patched(g: Programme, patch: ProgrammePatch, baseline: Baseline | undefined): Programme {
   const next: Programme = { ...g, ...structuredClone(patch) };
   if (patch.reach !== undefined && !('tiers' in patch))
     next.tiers = patch.reach === 'market' ? null : (g.tiers ?? baselineTiers(baseline));
@@ -612,7 +625,7 @@ export function setProgrammeEdit(
   p: SimPolicy,
   baseline: Baseline | undefined,
   id: string,
-  patch: Partial<Omit<Programme, 'id' | 'pool'>>,
+  patch: ProgrammePatch,
   field: string
 ): FundingEdit {
   const cur = p.funding.programmes.find((x) => x.id === id);
@@ -629,7 +642,9 @@ export function setProgrammeEdit(
   if (field === 'reach' || field === 'instrument.kind')
     return { change, label: labelProgrammeKindChanged(s) };
   if (field === 'from' || field === 'to') {
-    const day = field === 'from' ? (patch.from ?? null) : (patch.to ?? null);
+    // A date patch is a Day (`ProgrammePatch`): no edit stores `to: null`.
+    const day = field === 'from' ? patch.from : patch.to;
+    if (day === undefined) return { change, coalesce: key, label: labelProgrammeNumberChanged(s) };
     return {
       change,
       label: labelDateChanged(s, field === 'from' ? 'From' : 'Until', day),
@@ -739,7 +754,7 @@ export const startTiers = (baseline: Baseline | undefined): Record<IncomeTier, n
 /**
  * A new programme on `pool` (4.8): a grant to affordable homes at 35% of the uncovered cost,
  * from the pool's first inflow, with the baseline programmes' tiers and `minHomes`. A pool with no
- * inflows (the uncapped tax-credit pool) starts at its baseline programme's `from`.
+ * inflows starts at its baseline programme's `from`.
  */
 export function newProgramme(pool: Pool, baseline: Baseline): Omit<Programme, 'id'> {
   const base = baseline.programmes.find((g) => g.reach === 'affordable');
@@ -804,12 +819,7 @@ export function addScaleEdit(
           ...pools.map((x) => ({ pool: x.id, from, scale }))
         ].sort(byPoolThenFrom)
       })),
-    label: labelScaleApplied(
-      name,
-      from,
-      scale,
-      pools.every((x) => x.uncapped)
-    )
+    label: labelScaleApplied(name, from, scale)
   };
 }
 
@@ -938,7 +948,6 @@ function draftPool(d: PoolDraft): Omit<Pool, 'id'> | null {
     kind: d.kind,
     label: name.value,
     inflows: (d.inflows as Inflow[]).map((x) => ({ ...x })),
-    uncapped: false,
     debt: needsDebt ? { rate: d.debt!.rate!, termYears: d.debt!.termYears } : null,
     leverage: d.kind === 'bank' ? d.leverage! : 1
   };

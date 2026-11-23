@@ -1,0 +1,13 @@
+I ruled on game-core-6 and committed the spec change as `83d857d0`. I skipped the optional Jev citation check.
+
+**Ruling:** if any read of storage throws while the store is being built, the store behaves as it already does when the first read throws. It runs in memory with one fresh level 1 game and writes nothing more. This covers reading the index, a save, a record key, or a key during the step 4 rebuild, and listing keys in step 4. A later page load tries again.
+
+That is close to option 1, which the game-core operator already built, with one addition taken from option 2. If construction has already set or removed a key before the throw (for example, the corrupt-index copy in step 4), the store first puts every such key back. Storage then holds exactly what it held before construction.
+
+I rejected the other two options:
+- **Option 3, treat the throwing key as missing:** the store would rewrite the index without a game the player still has.
+- **Option 2, keep the games read before the throw:** the player would see only part of their games, from a storage that has already failed once.
+
+**What changed:** only step 1 of `sec-design-store-construct` in the game-core spec. No interface row changes, so game-core is affected only as a clarification. Its Task 5 branch may still need one change: if it doesn't put written keys back before falling to memory mode, it should, with a test.
+
+Ruling file: `/Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game/.superpowers/superconductor/incremental-game/rulings/game-core-6.md`

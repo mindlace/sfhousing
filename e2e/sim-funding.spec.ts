@@ -16,7 +16,6 @@ import type { Calibration, Pool, Programme } from '../src/lib/timelapse/types';
 import {
   AMOUNT_ERROR,
   DRAFT_LINE,
-  NO_LIMIT,
   SWITCHED_OFF,
   addProgrammeName,
   fundingNotices,
@@ -29,7 +28,13 @@ import {
   nextFiscal,
   type FundingPreset
 } from '../src/lib/sim-page/funding-presets';
-import { baselineGroups, programmeSentence } from '../src/lib/sim-page/funding-view';
+import {
+  baselineGroups,
+  programmeSentence,
+  summaryRows,
+  windowLastMonth
+} from '../src/lib/sim-page/funding-view';
+import { formatMonthYear } from '../src/lib/fzp/format';
 import { expectNoA11yViolations } from './helpers/a11y';
 import { touchLaptop } from './helpers/pointer';
 import { addPolicy, openKind, slider, waitFilled } from './helpers/run';
@@ -197,7 +202,7 @@ test('1a. City funding scale and its rows, a11y light and dark', async ({ page }
   const groups = baselineGroups(NO_FUNDING, BASELINE, ASOF);
   expect(groups.length).toBeGreaterThanOrEqual(3);
   for (const g of groups) {
-    const amount = g.off ? SWITCHED_OFF : g.perYear === null ? NO_LIMIT : perYearText(g.perYear);
+    const amount = g.off ? SWITCHED_OFF : perYearText(g.perYear);
     const row = editor(page).getByRole('button', { name: new RegExp(`^${esc(g.name)} · `) });
     await expect(row).toContainText(`${g.name} · ${amount}`);
     await expect(row).toContainText(groupPaysText(g.perHome));
@@ -317,8 +322,18 @@ test('3. your own pool: the amount error, then a yearly amount', async ({ page }
   await expect(added).not.toHaveAttribute('aria-invalid', 'true');
   await expect(await alertOf(added)).toHaveText('');
   await expect(editor(page).getByRole('heading', { name: f.pools[0].label })).toBeVisible();
+  // Every date runs to the window's last month: Until shows it, and there is no "no end" box.
+  const last = new Date(windowLastMonth(ASOF) * 86_400_000);
+  // The label's text and its screen-reader text join with a space: "Month , Until, row 1".
+  await expect(
+    poolRow(page).getByRole('combobox', { name: /^Month\s*, Until, row 1$/ })
+  ).toHaveValue(String(last.getUTCMonth() + 1));
+  await expect(
+    poolRow(page).getByRole('spinbutton', { name: /^Year\s*, Until, row 1$/ })
+  ).toHaveValue(String(last.getUTCFullYear()));
+  await expect(poolRow(page).getByRole('checkbox', { name: /^Ends/ })).toHaveCount(0);
   await expect(poolRow(page).locator('[data-funding-editor]')).toContainText(
-    `$60 million a year from July ${YEAR}`
+    `$60 million a year from July ${YEAR} until ${formatMonthYear(windowLastMonth(ASOF))}`
   );
   await waitRefilled(page, before);
 });
@@ -328,6 +343,12 @@ test('4. a dated change: the state switched off from next July', async ({ page }
   await addPolicy(page, 'Public money', 'City funding scale');
   const state = baselineGroups(NO_FUNDING, BASELINE, ASOF).find((g) => g.group === 'state')!;
   const row = editor(page).getByRole('button', { name: new RegExp(`^${esc(state.name)} · `) });
+  // The baseline covers less than every home (fixture-0's spent pools have no programme), so the
+  // coverage line is an explanation; the pointer left over it by the "+" menu opens it, and below
+  // md its text is a line that closes, moving the rows up, when the pointer leaves. Settle that
+  // before the press.
+  await row.hover();
+  await expect(editor(page).locator('[data-explain-open]')).toHaveCount(0);
   await row.click();
   await expect(row).toHaveAttribute('aria-pressed', 'true');
   await editor(page).getByRole('button', { name: 'Change from a date', exact: true }).click();
@@ -530,6 +551,14 @@ test('8. a published policy lists its public money', async ({ page }) => {
     (x) => x.pools.length === 1 && x.programmes.length === 1 && x.terms.guaranteeRateCut === 0.005
   );
   await editor(page).getByRole('button', { name: 'Close editor' }).click();
+  // Two more measures: a yearly City fund and a dated change to the state's money.
+  for (const label of ['General revenue, yearly', 'State money doubled from a date']) {
+    const before = await refillCount(page);
+    await addPolicy(page, 'Public money', label);
+    await waitRefilled(page, before);
+    await editor(page).getByRole('button', { name: 'Close editor' }).click();
+  }
+  await fundingWhen(page, (x) => x.pools.length === 2 && x.baselineScale.length === 2);
 
   const opener = await openPublish(page);
   await expect(opener).toBeEnabled();
@@ -549,7 +578,7 @@ test('8. a published policy lists its public money', async ({ page }) => {
   const g = f.programmes[0];
   // The fund's read-only summary: its pool and what it pays for.
   await page
-    .getByRole('button', { name: new RegExp(`, ${esc(pool.label)}, `) })
+    .getByRole('button', { name: /, A housing bond, / })
     .last()
     .click();
   const fund = editor(page).getByRole('region', { name: 'Public money' });
@@ -566,6 +595,35 @@ test('8. a published policy lists its public money', async ({ page }) => {
   await expect(editor(page).getByRole('region', { name: 'Public money' })).toContainText(
     typedTermSummary('guaranteeRateCut', 0.005)
   );
+
+  // Each other measure: its money alone, one row for every line of its stored document.
+  const doc = await docOf(page);
+  const measures: [label: string, words: string[]][] = [
+    ['General revenue, yearly', ['until']],
+    ['State money doubled from a date', []]
+  ];
+  for (const [label, words] of measures) {
+    const policy = doc.kinds.money.find((p) => p.label === label)!;
+    expect(policy, label).toBeDefined();
+    await editor(page).getByRole('button', { name: 'Close editor' }).click();
+    await openKind(page, 'Public money');
+    await page
+      .getByRole('button', { name: new RegExp(`, ${esc(label)}, `) })
+      .last()
+      .click();
+    const money = editor(page).getByRole('region', { name: 'Public money' });
+    await expect(editor(page).getByRole('heading', { name: 'Transit layers' })).toHaveCount(0);
+    const rows = summaryRows(
+      fundingOf({ ...doc, kinds: { ...doc.kinds, money: [policy] } }),
+      BASELINE,
+      PRESETS,
+      ASOF
+    );
+    expect(rows.length, label).toBeGreaterThan(0);
+    for (const r of rows) await expect(money).toContainText(r.text);
+    for (const w of words) await expect(money).toContainText(w);
+    await expectNoA11yViolations(page);
+  }
 });
 
 test('9. a schema-2 document opens on /s/<id> with the funding-added notice', async ({ page }) => {

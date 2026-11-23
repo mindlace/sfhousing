@@ -1,5 +1,5 @@
 {
-  "schema": 1,
+  "schema": 2,
   "perHome": {
     "total": 954127,
     "city": 300027,
@@ -47,6 +47,18 @@
           "url": "https://fixture.invalid/funding",
           "page": "Exhibit E",
           "retrieved": "2026-11-09"
+        },
+        "bound": {
+          "kind": "remaining",
+          "dollars": 3500000,
+          "method": "Fixture: invented amount remaining (tier 4), not a transcription.",
+          "tier": 2,
+          "cite": {
+            "label": "Fixture: invented bound (tier 4)",
+            "url": "https://fixture.invalid/funding",
+            "page": "bound",
+            "retrieved": "2026-11-22"
+          }
         }
       },
       {
@@ -61,13 +73,24 @@
           "url": "https://fixture.invalid/funding",
           "page": "Exhibit E",
           "retrieved": "2026-11-09"
+        },
+        "bound": {
+          "kind": "none",
+          "reason": "Fixture: invented, no end (tier 4), not a transcription.",
+          "tier": 2,
+          "cite": {
+            "label": "Fixture: invented bound (tier 4)",
+            "url": "https://fixture.invalid/funding",
+            "page": "bound",
+            "retrieved": "2026-11-22"
+          }
         }
       },
       {
         "id": "city-general-fund",
         "label": "City: General Fund",
         "kind": "generalRevenue",
-        "dollarsPerYear": 1000000,
+        "dollarsPerYear": 600000,
         "debt": null,
         "note": "A fixture amount, invented (tier 4), not a transcription.",
         "cite": {
@@ -75,6 +98,43 @@
           "url": "https://fixture.invalid/funding",
           "page": "Exhibit E",
           "retrieved": "2026-11-09"
+        },
+        "bound": {
+          "kind": "none",
+          "reason": "Fixture: invented, no end (tier 4), not a transcription.",
+          "tier": 2,
+          "cite": {
+            "label": "Fixture: invented bound (tier 4)",
+            "url": "https://fixture.invalid/funding",
+            "page": "bound",
+            "retrieved": "2026-11-22"
+          }
+        }
+      },
+      {
+        "id": "city-housing-stability-fund",
+        "label": "City: Housing Stability Fund (Proposition I, 2020)",
+        "kind": "generalRevenue",
+        "dollarsPerYear": 400000,
+        "debt": null,
+        "note": "A fixture amount, invented (tier 4), not a transcription.",
+        "cite": {
+          "label": "Fixture: invented funding (tier 4)",
+          "url": "https://fixture.invalid/funding",
+          "page": "Exhibit E",
+          "retrieved": "2026-11-09"
+        },
+        "bound": {
+          "kind": "remaining",
+          "dollars": 0,
+          "method": "Fixture: invented, spent down (tier 4), not a transcription.",
+          "tier": 2,
+          "cite": {
+            "label": "Fixture: invented bound (tier 4)",
+            "url": "https://fixture.invalid/funding",
+            "page": "bound",
+            "retrieved": "2026-11-22"
+          }
         }
       },
       {
@@ -89,6 +149,18 @@
           "url": "https://fixture.invalid/funding",
           "page": "Exhibit E",
           "retrieved": "2026-11-09"
+        },
+        "bound": {
+          "kind": "remaining",
+          "dollars": 2000000,
+          "method": "Fixture: invented amount remaining (tier 4), not a transcription.",
+          "tier": 2,
+          "cite": {
+            "label": "Fixture: invented bound (tier 4)",
+            "url": "https://fixture.invalid/funding",
+            "page": "bound",
+            "retrieved": "2026-11-22"
+          }
         }
       },
       {
@@ -103,6 +175,18 @@
           "url": "https://fixture.invalid/funding",
           "page": "Exhibit E",
           "retrieved": "2026-11-09"
+        },
+        "bound": {
+          "kind": "ends",
+          "on": "2043-06-30",
+          "method": "Fixture: invented last day (tier 4), not a transcription.",
+          "tier": 2,
+          "cite": {
+            "label": "Fixture: invented bound (tier 4)",
+            "url": "https://fixture.invalid/funding",
+            "page": "bound",
+            "retrieved": "2026-11-22"
+          }
         }
       },
       {
@@ -117,6 +201,18 @@
           "url": "https://fixture.invalid/funding",
           "page": "Exhibit E",
           "retrieved": "2026-11-09"
+        },
+        "bound": {
+          "kind": "remaining",
+          "dollars": 0,
+          "method": "Fixture: invented, spent down (tier 4), not a transcription.",
+          "tier": 2,
+          "cite": {
+            "label": "Fixture: invented bound (tier 4)",
+            "url": "https://fixture.invalid/funding",
+            "page": "bound",
+            "retrieved": "2026-11-22"
+          }
         }
       }
     ]
@@ -132,30 +228,41 @@
       "url": "https://fixture.invalid/funding",
       "page": "p. 42",
       "retrieved": "2026-11-09"
+    },
+    "bound": {
+      "kind": "none",
+      "reason": "Fixture: invented, no end (tier 4), not a transcription.",
+      "tier": 2,
+      "cite": {
+        "label": "Fixture: invented bound (tier 4)",
+        "url": "https://fixture.invalid/funding",
+        "page": "bound",
+        "retrieved": "2026-11-22"
+      }
     }
   },
   "federal": {
     "id": "federal-tax-credits",
     "label": "Federal: low-income housing tax credits",
+    "dollarsPerYear": 13293240,
     "tier": 2,
-    "method": "The fixture pool is uncapped; invented (tier 4).",
+    "method": "The fixture ceiling is 30 homes in 2025 times $443,108; invented (tier 4).",
     "cite": {
       "label": "Fixture: invented funding (tier 4)",
       "url": "https://fixture.invalid/funding",
       "page": "Exhibit F",
       "retrieved": "2026-11-09"
     },
-    "uncapped": {
-      "rounds": 1,
-      "window": ["2026-01-01", "2026-01-01"],
-      "cites": [
-        {
-          "label": "Fixture: invented allocation record (tier 4)",
-          "url": "https://fixture.invalid/funding",
-          "page": "fixture",
-          "retrieved": "2026-11-10"
-        }
-      ]
+    "bound": {
+      "kind": "none",
+      "reason": "Fixture: invented, no end (tier 4), not a transcription.",
+      "tier": 2,
+      "cite": {
+        "label": "Fixture: invented bound (tier 4)",
+        "url": "https://fixture.invalid/funding",
+        "page": "bound",
+        "retrieved": "2026-11-22"
+      }
     }
   },
   "awards": {

@@ -1,0 +1,794 @@
+<article>
+  <header>
+    <h1>Funding measures implementation plan</h1>
+    <p>Every funding preset ends, a given measure follows its policy's start, a pool's bar reads its lifetime money, the funding editors end at the window, and a given measure reads as fixed text.</p>
+    <aside data-kind="note"><strong>For agentic workers</strong> REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development to implement this plan task-by-task. Steps are checklist items; progress is kept in the workspace ledger, not in the plan.</aside>
+  </header>
+
+  <section id="sec-overview">
+    <h2>Overview</h2>
+    <dl>
+      <dt>Goal</dt>
+      <dd>Make the level 5 funding presets finite, fixed measures (each preset's money ends, dated from the start the player chooses through <code>dateMeasure</code>, row M1), and show them so: lifetime pool bars, editors bounded by the window's last month, the federal pool edited as a capped pool, a money-only read-only summary, and reworded funding copy.</dd>
+      <dt>Architecture</dt>
+      <dd>Pure modules first (<code>funding-sources.ts</code>, <code>funding-presets.ts</code>, <code>funding-view.ts</code>, <code>funding-copy.ts</code>, <code>funding-edit.ts</code>, <code>src/lib/timeline/pool-level.ts</code>, <code>money-copy.ts</code>), each with its server Vitest spec; then the Svelte editors and <code>PolicySummary</code> that read them, with client (browser) specs; then the two e2e specs and <code>docs/dev/sim-funding.md</code>. <code>lifetimes</code> reuses the engine's money track (<code>createMoneyTrack</code>, <code>src/lib/sim/world/policy/money.ts:112</code>) so a bar's denominator is exactly what the engine pays in.</dd>
+      <dt>Tech Stack</dt>
+      <dd>SvelteKit 2, Svelte 5 runes, TypeScript, Vitest (projects <code>server</code> and <code>client</code>), Playwright.</dd>
+      <dt>Spec</dt>
+      <dd><code>/Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game/docs/superpowers/specs/2026-11-22-funding-measures-design.html</code> (implements §sec-design-presets, §sec-design-dates, §sec-design-level, §sec-design-window, §sec-design-federal, §sec-design-summary, §sec-design-copy, §sec-design-locked, §sec-write-set, §sec-tests, §sec-docs). Read it from that package worktree, not from this one.</dd>
+    </dl>
+    <aside data-kind="warning"><strong>Upstream rows</strong> This plan is written against rows F2 (<code>finite-funding</code>), F3 (<code>pool-closing</code>) and G3 (<code>game-core</code>), which were not merged when it was written. Treat every <code>uncapped</code> line in the code as gone. Line numbers below are from commit <code>8f494b6a</code> and are hints; where a task depends on merged code it names the symbol and its first step checks it.</aside>
+  </section>
+
+  <section id="sec-global-constraints">
+    <h2>Global Constraints</h2>
+    <p>Every task's requirements include this section.</p>
+
+    <section id="sec-gc-rows">
+      <h3>Interface rows (verbatim from the spec)</h3>
+      <table id="tbl-rows">
+        <caption>Interface table</caption>
+        <thead>
+          <tr><th scope="col">Row</th><th scope="col">Owner</th><th scope="col">Layer</th><th scope="col">Summary</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">G3</th><td><code>game-core</code></td><td>Model commitment</td><td>What a level allows; the playable document.</td></tr>
+          <tr><th scope="row">F2</th><td><code>finite-funding</code></td><td>Model commitment</td><td>Pools with no "can always pay".</td></tr>
+          <tr><th scope="row">F3</th><td><code>pool-closing</code></td><td>Model commitment</td><td>A spent pool closes and leaves every bundle.</td></tr>
+          <tr><th scope="row">M1</th><td><code>funding-measures</code></td><td>Decomposition choice</td><td>A given measure's money follows its policy's start.</td></tr>
+        </tbody>
+      </table>
+
+      <section id="sec-gc-g3">
+        <h4>G3 What a level allows</h4>
+        <pre><code data-lang="ts">// src/lib/game/allowed.ts
+import type { Policy, PolicyKind, SimPolicy4 } from '$lib/timeline/policy4';
+
+export interface Allowed {
+  /** Kinds whose policies run and can be edited. */
+  kinds: ReadonlySet&lt;PolicyKind&gt;;
+  /** 'given': only given measures run, and what they pay is read-only. */
+  money: 'given' | 'all';
+}
+
+export const ALL_ALLOWED: Allowed;
+export function allowedAt(level: Level): Allowed;
+/** permitting 3, zoning 4, money 5. */
+export function unlocksAt(kind: PolicyKind): Level;
+/** A money policy made from a funding preset: its `preset` is the preset's id. */
+export function isGiven(p: Policy): boolean;
+export function runs(kind: PolicyKind, p: Policy, a: Allowed): boolean;
+export function playable(doc: SimPolicy4, a: Allowed): SimPolicy4;
+/** The lowest level whose `allowedAt` runs every policy of `doc`; 6 when none does. */
+export function levelNeeded(doc: SimPolicy4): Level | 6;
+/** True while the game's level is below the one that opens the simulation. */
+export function simLocked(p: Progress): boolean;
+/** The level that runs all of `doc`, when it is above the game's level; null otherwise. */
+export function needsHigher(doc: SimPolicy4, p: Progress): Level | 6 | null;</code></pre>
+        <ul>
+          <li><code>allowedAt(1)</code> and <code>allowedAt(2)</code> have no kinds.</li>
+          <li><code>allowedAt(3)</code> has permitting; <code>allowedAt(4)</code> adds zoning; <code>allowedAt(5)</code> adds money with <code>money: 'given'</code>.</li>
+          <li><code>ALL_ALLOWED</code> has all three kinds and <code>money: 'all'</code>. No level in this round returns it.</li>
+          <li>The published view at <code>/s/&lt;id&gt;</code> runs under <code>ALL_ALLOWED</code>, so <code>playable</code> returns its document unchanged (D5).</li>
+          <li><code>runs</code> is false for a kind not in <code>a.kinds</code>.</li>
+          <li><code>runs</code> is false for a money policy that is not given while <code>a.money</code> is <code>'given'</code>.</li>
+          <li><code>playable</code> returns the document with only the policies that run, in their order, and returns the same object when nothing is removed.</li>
+          <li>Every money policy that <code>addPolicy</code> makes from a funding preset carries the preset's id in <code>preset</code> and the preset's label as its label.</li>
+          <li>The schema 4 parser accepts null or a preset id of 1 to 60 characters in a money policy's <code>preset</code>. Zoning and permitting are unchanged.</li>
+          <li>A money policy stored or published before this build has <code>preset</code> null, so it is not a given measure. It runs in the published view and is locked in a game.</li>
+          <li>An edit that changes what a given measure pays sets its <code>preset</code> to null.</li>
+          <li><code>isGiven</code> is false for every zoning and permitting policy.</li>
+          <li><code>isGiven</code> does not check the id against the presets on offer. A hand-made document can carry any id on any pool; nothing ranks one player against another, so that is accepted.</li>
+          <li><code>simLocked</code> is true exactly at level 1. Pages call it and <code>needsHigher</code>; no page compares a level itself.</li>
+          <li><code>levelNeeded</code> of a document with no policies is 2.</li>
+        </ul>
+      </section>
+
+      <section id="sec-gc-f2">
+        <h4>F2 Pools</h4>
+        <pre><code data-lang="ts">// src/lib/timelapse/types.ts
+export interface Pool {
+  id: string;
+  kind: PoolKind;
+  label: string;
+  inflows: Inflow[];
+  /** non-null exactly for `goBond` and `cop` */
+  debt: { rate: number; termYears: number } | null;
+  /** dollars a pool may have committed or out per dollar received: 1 for every kind but `bank` */
+  leverage: number;
+}
+
+export type Inflow =
+  | { kind: 'once'; day: Day; dollars: Dollars }
+  | { kind: 'yearly'; from: Day; to: Day | null; dollarsPerYear: Dollars };</code></pre>
+        <ul>
+          <li><code>Pool</code> has no <code>uncapped</code> field. A pool can pay only from what it has received.</li>
+          <li>The baseline's federal pool has kind <code>federal</code> and one yearly inflow of the ceiling.</li>
+          <li>A baseline pool's inflows follow its source's bound (F1). A yearly inflow has <code>to: null</code> only for a bound of kind <code>none</code>.</li>
+          <li>A stored or published document whose pool carries <code>uncapped</code> loads with the field ignored.</li>
+          <li>A published plan or policy runs on its own dataset while that dataset exists, and every dataset built before this build has <code>uncapped: true</code> on its federal pool. The calibration loader reads such a pool as one yearly inflow of <code>LEGACY_UNCAPPED_DOLLARS</code> (100 billion dollars) from the dataset date with no end, and never refuses the calibration.</li>
+          <li>Where the yearly amount of such a pool is shown, it reads "No ceiling". So a policy published before this build plays as it did.</li>
+          <li><code>isNoCeiling(dollars)</code> in <code>src/lib/timelapse/model.ts</code> is the one test for such a pool: a yearly amount at or above <code>LEGACY_UNCAPPED_DOLLARS</code>.</li>
+          <li>A scale entry on the federal pool scales its ceiling, as on any pool; 0 switches it off.</li>
+          <li><code>Inflow</code>, <code>Programme</code>, <code>Instrument</code>, the award rule, the line and <code>fundBundle</code> are unchanged.</li>
+        </ul>
+        <p><strong>Removed:</strong> <code>Pool.uncapped</code>, the "no limit" text for anything but an older dataset's pool, the on/off-only editor for the federal pool, the <code>uncapped</code> sets passed to the money results.</p>
+      </section>
+
+      <section id="sec-gc-f3">
+        <h4>F3 Pool closing</h4>
+        <pre><code data-lang="ts">// src/lib/sim/world/funding/columns.ts
+export interface FundPools {
+  /* the columns as today, and: */
+  /** The first day the pool is closed; NO_DAY while it is open. One per pool row. */
+  closedDay: Int32Array;
+}
+
+// src/lib/sim/world/types.ts
+export interface WorldOptions {
+  /** Default true. The referee against the older engine runs with false. */
+  poolClosing?: boolean;
+}
+
+// src/lib/sim/world/score/types.ts (TimelineView.money)
+export interface MoneyView {
+  /* the series as today, and: */
+  /** Per pool id: the first day it was closed, or null. */
+  closed: Record&lt;string, Day | null&gt;;
+  /** Per pool id, by calendar month: true while the pool is closed at the end of that month. */
+  shut: Record&lt;string, boolean[]&gt;;
+}</code></pre>
+        <ul>
+          <li>A pool's last arrival is the last arrival the document in force gives it; a pool with a yearly inflow with no end has none.</li>
+          <li>A pool is spent in a month when the month begins after its last arrival, it has no loan out and holds no guarantee reserve, and that month's serving finds an application short on it.</li>
+          <li>A spent pool is closed from the first day of the next month, and stays closed until it receives a new arrival.</li>
+          <li>A closed pool is treated exactly as a pool switched off from that day: its programmes are in no bundle, and the applications waiting on them are re-made as on a re-pricing day.</li>
+          <li>Money returned to a closed pool stays in it and is never awarded.</li>
+          <li>A pool whose last arrival changes because the policy changed is judged again from the month the change takes effect; a closed pool that receives a new arrival is open again from that arrival's month.</li>
+          <li>The worker's rewind restores each pool's open or closed state with the world.</li>
+          <li>The older scenario engine keeps its behaviour: an application waits on a spent pool.</li>
+          <li>Details lists each closed source by its pool's label with the month it ran out: "{label}: ran out Mar 2030".</li>
+          <li><code>shut[id][i]</code> is true from the calendar month the pool ran out (the month that found it spent) through the last calendar month before it opens again.</li>
+          <li>A pool's bar on the timeline reads empty in every month <code>shut</code> marks: what a closed pool still holds is never awarded.</li>
+        </ul>
+      </section>
+
+      <section id="sec-gc-m1">
+        <h4>M1 A given measure's money follows its policy's start</h4>
+        <pre><code data-lang="ts">// src/lib/sim-page/funding-presets.ts
+import type { Policy } from '$lib/timeline/policy4';
+
+/** `policy` with its money dated from its first span's start; `policy` itself when nothing moves. */
+export function dateMeasure(policy: Policy, cal: Calibration): Policy;</code></pre>
+        <ul>
+          <li>A given measure's first payment falls on the first day of its first span, and every later payment keeps its place in the preset's schedule.</li>
+          <li><code>dateMeasure</code> returns <code>policy</code> itself when it is not a given measure (G3), has no span, or names a preset that is not on offer.</li>
+          <li><code>dateMeasure</code> returns <code>policy</code> itself for a preset whose dates are set in law.</li>
+          <li><code>dateMeasure</code> returns <code>policy</code> itself when the re-dated content equals what the policy holds, so a second call changes nothing.</li>
+          <li><code>addPolicy</code> calls <code>dateMeasure</code> on every policy it makes from a funding preset, after it dates the spans.</li>
+          <li>Every edit that moves a given measure's first span's start calls <code>dateMeasure</code> on the result.</li>
+          <li>A stored or published document is never re-dated when it loads.</li>
+          <li>The stub shipped by <code>contracts</code> returns <code>policy</code> itself.</li>
+        </ul>
+      </section>
+    </section>
+
+    <section id="sec-gc-spec">
+      <h3>The spec's global constraints (verbatim)</h3>
+      <ul>
+        <li>Work happens in git worktrees under <code>.claude/worktrees/</code>. Commits follow Conventional Commits. No attribution to an AI anywhere.</li>
+        <li>Code style: 2-space indent, single quotes, no trailing commas, 100 columns.</li>
+        <li>Every Vitest test calls <code>expect</code>.</li>
+        <li>Signoff fails on server stderr, on timing crutches and on a retried flake. Each unit runs <code>npm run lint</code>, <code>npm run check</code> and the Vitest projects its files belong to before it hands back.</li>
+        <li>Port 4173 is shared by every session on this machine. A unit never kills a server it did not start; it waits.</li>
+        <li>Every agent runs every command in the foreground and never ends a turn while something it started is running.</li>
+        <li>Schema changes go through <code>npm run db:generate</code>. Nobody edits a migration.</li>
+        <li>No unit runs <code>npm run signoff</code>: its dataset step fails until the dataset is uploaded. <code>closing</code> runs it once, after the upload.</li>
+        <li>The dataset version changes in this build. The dataset is uploaded once, by <code>closing</code>, from the integration branch, after every unit has merged; no other unit uploads a dataset. <code>reach-check</code> builds one earlier to run the check and uploads nothing.</li>
+        <li>A unit that writes a hashed path regenerates the fixture dataset with <code>npm run pipeline -- fixture</code> and commits it.</li>
+        <li>WCAG 2.2 AA: every new control is at least 24 px and passes <code>expectNoA11yViolations</code> in light and dark.</li>
+        <li>Page text is short. No sentence says what something is not.</li>
+        <li>Nothing on the main screen says "RHNA". The goal is read from the <code>Goal</code> value, never from a constant.</li>
+        <li>The game's rules are read from <code>src/lib/game/</code>. No component compares a level to a number.</li>
+        <li>One future: no seed control, no band, no average over runs.</li>
+        <li>Published plans and policies, their ids and their pages keep working, including every policy published before this build.</li>
+        <li>A number that is a claim about the world carries its source and tier, in the existing <code>Sourced</code>, <code>Unsourced</code> and <code>Evidence</code> shapes.</li>
+        <li>A runtime dependency that ships in the bundle gets a credit in <code>SOFTWARE</code>. This build adds none.</li>
+        <li>CSP changes are interface changes. This build makes none.</li>
+        <li>Timing is measured only on a quiet machine. A unit that cannot get one defers the measurement and says so.</li>
+      </ul>
+    </section>
+
+    <section id="sec-gc-project">
+      <h3>Project notes (carry into every implementer and fix-round brief)</h3>
+      <ul>
+        <li>(0) Read files with the Read, Grep and Glob tools, not Bash. Every Bash call is one command that starts with an allowed command (npm, npx, lsof, git add/commit/rev-parse/log/diff/status/show, ls, cat, grep, head, tail, wc, pwd, mkdir): no <code>VAR=...</code> prefix, no <code>cd</code>, no <code>;</code>, <code>&amp;&amp;</code> or pipes into commands not on the lists, no <code>$(...)</code>, no loops, no redirects to files (write files with Write).</li>
+        <li>(1) Port 4173 is shared by every session on this machine: before the preview server or Playwright, run <code>lsof -nP -iTCP:4173 -sTCP:LISTEN</code>; if something you did not start is listening, never kill it, wait in background <code>sleep</code> stretches until it is gone; leave nothing listening when done.</li>
+        <li>(2) Signoff rejects timing crutches: no <code>setTimeout</code>/<code>setInterval</code> in any spec or test helper, no fixed waits or raised timeouts in e2e (wait on a readiness signal); <code>npx chreode timing-check --head HEAD</code> clean after the last commit of every task and fix round; changed e2e specs pass with <code>--repeat-each=5 --retries=0</code>; no new stderr from the preview server.</li>
+        <li>(3) No <code>npm run signoff</code>, <code>git push</code>, dataset upload or deploy.</li>
+        <li>(4) No wall-clock measurements; <code>npm run test:perf</code> is not a gate.</li>
+        <li>(5) Conventional Commits; no AI attribution anywhere (no Co-Authored-By trailers, no "generated with" notes).</li>
+        <li>(6) The worktree needs <code>npm install</code> and the CLAUDE.md setup (<code>.dev.vars</code> with <code>PUBLIC_DATASET_VERSION=fixture-0</code>, <code>npm run data:fixture</code>, <code>npm run db:migrate</code>) before tests run (Task 1, step 1).</li>
+      </ul>
+    </section>
+
+    <section id="sec-gc-plan">
+      <h3>Plan-wide rules</h3>
+      <ul>
+        <li>Write set (nothing outside it): <code>src/lib/sim-page/funding-{presets,sources,view,copy,edit}.ts</code>, <code>src/lib/sim-page/Funding*.svelte</code>, <code>ProgrammeEditor.svelte</code>, <code>PolicySummary.svelte</code>, <code>src/lib/sim-page/test/**</code>, their specs (<code>funding-tab-copy.spec.ts</code> included), <code>src/lib/timeline/{pool-level,money-copy}.ts</code>, <code>pool-level.spec.ts</code>, <code>money-copy.spec.ts</code>, <code>e2e/sim-{funding,pools}.spec.ts</code>, <code>docs/dev/sim-funding.md</code>. Never open <code>src/lib/timeline/copy.ts</code>, <code>copy.spec.ts</code>, <code>add.ts</code>, <code>WhatEditor.svelte</code>, <code>src/lib/game/**</code>, <code>src/lib/timelapse/**</code>, <code>src/lib/sim/**</code> for writing.</li>
+        <li>Vitest commands: server specs <code>npx vitest run --project server &lt;path&gt;</code>; Svelte component specs (<code>*.svelte.spec.ts</code>) <code>npx vitest run --project client &lt;path&gt;</code> (project names from <code>vite.config.ts:57</code> and <code>vite.config.client-test.ts:49</code>).</li>
+        <li>Every task ends with <code>npm run check</code> (0 errors), <code>npm run lint</code> (clean), then the commit, then <code>npx chreode timing-check --head HEAD</code> (clean). A task never leaves <code>npm run check</code> failing: a signature it changes is followed into every caller inside the task.</li>
+        <li>Fixture-0's calibration (<code>e2e/fixtures/data/fixture-0/scenarios/fzp/calibration.json</code>) has <code>asOf</code> 10 October 2026: <code>windowEnd</code> 9 October 2066, <code>windowLastMonth</code> 1 October 2066, month 1 starts 11 October 2026. Server specs that need it read it with <code>readFileSync</code> and <code>parseCalibration</code>, as <code>e2e/sim-funding.spec.ts:51-55</code> reads it.</li>
+      </ul>
+    </section>
+  </section>
+
+  <section id="sec-review-focus">
+    <h2>Review Focus</h2>
+    <p>Inputs the spec implies but its listed tests do not exercise, most likely to bite first. Each has its test in the owning task.</p>
+    <ol>
+      <li><strong>A preset id on the wrong kind of policy</strong> (a fund preset's id on a <code>baseline</code>/<code>scales</code> policy, or <code>state-double</code>'s id on a <code>fund</code> policy): G3 accepts any id on any pool, so <code>dateMeasure</code> must return the policy itself rather than throw or graft a pool onto a scale policy. Test in Task 2 (<code>t2-s1</code>).</li>
+      <li><strong>A measure started on 29 February</strong> (a model month can start on it): <code>yearsAfter</code> lands on 28 February in common years and <code>general-revenue</code> still pays exactly 30 times. Test in Task 1 (<code>t1-s4</code>).</li>
+      <li><strong>The month right after the window's last month</strong> (November 2066 on fixture-0) in a pool's Until: the range error, nothing committed. Test in Task 5 (<code>t5-s2</code>).</li>
+      <li><strong>Group amount boundaries</strong>: a <code>once</code> arrival on <code>asOf</code> counts, one on <code>yearsAfter(asOf, 1)</code> does not; a scale entry dated after <code>asOf</code> does not change the amount. Test in Task 6 (<code>t6-s2</code>).</li>
+      <li><strong>A measure started late in the window</strong> (month 470): its later payments fall past the window; <code>lifetimes</code> counts only those inside it, and a new document object recomputes lifetimes rather than reusing a stale map. Test in Task 8 (<code>t8-s2</code>).</li>
+    </ol>
+  </section>
+
+  <section id="sec-file-structure">
+    <h2>File Structure</h2>
+    <ul>
+      <li><code>src/lib/sim-page/funding-sources.ts</code>: four new constants (term years, the player's start provenance).</li>
+      <li><code>src/lib/sim-page/funding-presets.ts</code>: <code>FundingPreset.dates</code>, <code>fundingPresets(cal, start?)</code>, <code>yearsAfter</code>, <code>dateMeasure</code> (M1), <code>valueSource</code>'s term rule.</li>
+      <li><code>src/lib/sim-page/funding-view.ts</code>: <code>windowEnd</code>, <code>windowLastMonth</code>, <code>poolYearAmount</code>, group amounts, <code>scaleLines</code>, <code>addedPresets</code>, <code>summaryRows(…, asOf)</code>, <code>moneyOnly</code>, "No ceiling" sentences.</li>
+      <li><code>src/lib/sim-page/funding-copy.ts</code>: <code>dateRangeError</code>, <code>labelDateChanged</code>, <code>labelScaleApplied</code>, <code>summaryScaleText</code>; removals.</li>
+      <li><code>src/lib/sim-page/funding-edit.ts</code>: <code>yearlyRow</code>, no stored <code>to: null</code>.</li>
+      <li><code>FundingPoolRow.svelte</code>, <code>ProgrammeEditor.svelte</code>, <code>FundingGroupEditor.svelte</code>, <code>FundingTab.svelte</code>, <code>PolicySummary.svelte</code>: window bounds, no "Ends", federal wording, money-only summary.</li>
+      <li><code>src/lib/timeline/pool-level.ts</code>: <code>LevelPool.lifetime</code>, <code>lifetimes</code>, the lifetime <code>poolLevel</code>.</li>
+      <li><code>src/lib/timeline/money-copy.ts</code>: <code>COVERAGE_OFF_SHORT_SENTENCE4</code> and its comments.</li>
+      <li><code>e2e/sim-funding.spec.ts</code>, <code>e2e/sim-pools.spec.ts</code>, <code>docs/dev/sim-funding.md</code>.</li>
+    </ul>
+  </section>
+
+  <section id="sec-task-1">
+    <h2>Task 1: Every preset ends</h2>
+    <p>Spec §sec-design-presets (the table, <code>FundingPreset</code>, the first and later dates, the constants, descriptions and reason).</p>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/lib/sim-page/funding-sources.ts</code> (append after <code>NEXT_FISCAL_START_PROVENANCE</code>, <code>:192-195</code>)</li>
+      <li>Modify: <code>src/lib/sim-page/funding-presets.ts</code> (<code>FundingPreset</code> <code>:44-55</code>, <code>fundingPresets</code> <code>:106-448</code>)</li>
+      <li>Test: <code>src/lib/sim-page/funding-presets.spec.ts</code></li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>inflowArrivals(inflow, asOf, horizon)</code> (<code>src/lib/sim/scenario/funding.ts:32</code>), <code>dayOf</code>, <code>LAST_DAY</code>; F2's <code>Pool</code> (no <code>uncapped</code>).</li>
+      <li>Produces: <code>FundingPreset.dates: 'start' | 'fixed'</code>; <code>fundingPresets(cal: Calibration, start?: Day): FundingPreset[]</code>; <code>yearsAfter(d: Day, n: number): Day</code>; <code>GENERAL_FUND_TERM_YEARS</code>, <code>FEDERAL_SUPPORT_TERM_YEARS</code>, <code>STATE_DOUBLE_TERM_YEARS</code> (<code>Sourced&lt;number&gt;</code>), <code>PLAYER_START_PROVENANCE: Provenance</code>.</li>
+    </ul>
+    <ol>
+      <li id="t1-s1"><input type="checkbox"> Set up the worktree if <code>node_modules</code> is absent: <code>npm install</code>; write <code>.dev.vars</code> with the Write tool containing <code>PUBLIC_DATASET_VERSION=fixture-0</code>; <code>npm run data:fixture</code>; <code>npm run db:migrate</code>. Then confirm the merged upstream rows: read <code>src/lib/timelapse/types.ts</code> and confirm <code>Pool</code> matches F2 (no <code>uncapped</code>), read <code>src/lib/timelapse/model.ts</code> and confirm <code>isNoCeiling(dollars: number): boolean</code> and <code>LEGACY_UNCAPPED_DOLLARS</code>, read <code>src/lib/game/allowed.ts</code> and confirm <code>isGiven(p: Policy): boolean</code> matches G3, read <code>src/lib/sim/world/score/types.ts</code> and confirm <code>MoneyView.closed</code> and <code>MoneyView.shut</code> match F3, read <code>src/lib/sim-page/funding-presets.ts</code> and confirm the <code>contracts</code> stub <code>dateMeasure(policy: Policy, cal: Calibration): Policy</code>. If any does not match its row, stop and report BLOCKED with the difference.</li>
+      <li id="t1-s2"><input type="checkbox"> Check the BLA quotations before writing <code>GENERAL_FUND_TERM_YEARS</code>. Find the <code>BLA</code> source in <code>funding-sources.ts</code> (<code>:14-19</code>, URL <code>https://media.api.sf.gov/documents/BLA_Financing_Affordable_Housing_060526.pdf</code>) and read p. 44 and p. 108 of the report. Confirm both quotations in the spec's <code>method</code> string word for word: p. 44 "was launched in 2013 after San Francisco voters approved Proposition C to amend the City Charter in November 2012 which established baseline annual funding until 2043"; p. 108 "started as $20 million in 2013" and "would expire". If you cannot open the report, or either quotation differs, stop and report it as a question (the quotation as found, the page) and do not alter the text.</li>
+      <li id="t1-s3"><input type="checkbox"> Write the failing tests in <code>funding-presets.spec.ts</code> (the spec's §sec-tests-unit lines for presets):
+        <pre><code data-lang="ts">it('every pool a preset builds ends; every scale other than 0 and 1 is followed by a 1', () =&gt; {
+  for (const list of [fundingPresets(cal), fundingPresets(cal, START)])
+    for (const p of list) {
+      for (const pool of p.pools)
+        for (const f of pool.inflows) expect(f.kind === 'once' || f.to !== null).toBe(true);
+      p.baselineScale.forEach((e, i) =&gt; {
+        if (e.scale === 0 || e.scale === 1) return;
+        expect(p.baselineScale.slice(i + 1).some((n) =&gt; n.pool === e.pool &amp;&amp; n.scale === 1)).toBe(true);
+      });
+    }
+});
+it('general-revenue: 30 arrivals of $36,700,000; to = yearsAfter(from, 29); tier 2 term', () =&gt; {
+  const g = get('general-revenue');
+  const f = g.pools[0].inflows[0] as Extract&lt;Inflow, { kind: 'yearly' }&gt;;
+  expect(inflowArrivals(f, cal.asOf, LAST_DAY)).toHaveLength(30);
+  expect(f.dollarsPerYear).toBe(36_700_000);
+  expect(f.to).toBe(yearsAfter(f.from, 29));
+  expect(g.provenance).toContain(GENERAL_FUND_TERM_YEARS.provenance);
+  expect(GENERAL_FUND_TERM_YEARS.provenance.tier).toBe(2);
+  expect(GENERAL_FUND_TERM_YEARS.value).toBe(30);
+});
+it("federal-support: 10 arrivals of the state pool's first arrival; offered on once-only state money; held back without", () =&gt; {
+  /* 10 arrivals of the state pool's first arrival on or after asOf;
+     a calibration whose state pool has only `once` inflows: available;
+     a state pool with no arrival from asOf: reason
+     "This data's state pool has no money to start from." */
+});
+it('state-double: scale 2 from the first date, scale 1 ten years later', () =&gt; {
+  const p = get('state-double');
+  const first = nextFiscal(cal.asOf);
+  expect(p.baselineScale.map((e) =&gt; [e.from, e.scale])).toEqual([[first, 2], [yearsAfter(first, 10), 1]]);
+  expect(p.provenance).toEqual([STATE_DOUBLE_TERM_YEARS.provenance]);
+});
+it('with start: every first date is start; htf-2026 unchanged; PLAYER_START_PROVENANCE', () =&gt; {
+  /* bond day, bank's five days = [START, yearsAfter(START, 1..4)], revolving day,
+     every programme's from, every preset's first scale entry's from all equal START;
+     fundingPresets(cal, START) htf-2026 deep-equals fundingPresets(cal) htf-2026;
+     no preset's provenance holds NEXT_FISCAL_START_PROVENANCE or FEDERAL_SUPPORT_START_PROVENANCE;
+     each that held one holds PLAYER_START_PROVENANCE instead */
+});
+it("without start: today's default first dates", () =&gt; {
+  /* nextFiscal(asOf) for City, bank and state presets, nextCalendar(asOf) for federal-credits-off,
+     dayOf(max(2028, year(asOf) + 1), 1, 1) for federal-support */
+});
+it('yearsAfter: same month and day; 29 February 2028 by 1 is 28 February 2029', () =&gt; {
+  expect(yearsAfter(dayOf(2028, 2, 29), 1)).toBe(dayOf(2029, 2, 28));
+  expect(yearsAfter(dayOf(2027, 7, 1), 29)).toBe(dayOf(2056, 7, 1));
+});
+it('dates and descriptions', () =&gt; {
+  /* htf-2026.dates === 'fixed'; every other preset 'start';
+     every programme's from equals its pool's first payment, to null;
+     the three descriptions and the htf-2026 reason word for word (below) */
+});</code></pre>
+        The exact copy the last test asserts:
+        <ul>
+          <li><code>general-revenue</code>: "More City general-fund money every year for 30 years, shared with today's City money toward new affordable homes, so more homes get built each year while there are projects waiting for money."</li>
+          <li><code>state-double</code>: "Twice today's state money for ten years from a date you choose; on its own this adds no homes while the City's money is the limit, so pair it with more City or federal money."</li>
+          <li><code>federal-support</code>: "A new yearly federal grant for ten years from a year you choose that pays the City's part of each affordable home while it lasts; no law provides it yet, so the amount is your own."</li>
+          <li><code>htf-2026</code> reason: "Not yet certified (passed November 2026)."</li>
+        </ul>
+        Update the existing tests whose expectations encode <code>to: null</code>, the old descriptions, the old reason or "no yearly amount to start from".</li>
+      <li id="t1-s4"><input type="checkbox"> Review Focus 2, in the same spec:
+        <pre><code data-lang="ts">it('a measure started on 29 February: general revenue still pays 30 times', () =&gt; {
+  const leap = dayOf(2028, 2, 29);
+  const f = fundingPresets(cal, leap).find((p) =&gt; p.id === 'general-revenue')!.pools[0].inflows[0];
+  expect(f.kind === 'yearly' &amp;&amp; f.to).toBe(dayOf(2057, 2, 28));
+  expect(inflowArrivals(f, cal.asOf, LAST_DAY)).toHaveLength(30);
+});</code></pre></li>
+      <li id="t1-s5"><input type="checkbox"> Run <code>npx vitest run --project server src/lib/sim-page/funding-presets.spec.ts</code>. Expected: FAIL (<code>yearsAfter</code> and the new constants are not exported).</li>
+      <li id="t1-s6"><input type="checkbox"> Add the four constants to <code>funding-sources.ts</code> exactly as the spec's §sec-design-presets code block writes them (<code>GENERAL_FUND_TERM_YEARS</code> value 30, tier 2, label "Thirty years, as the Housing Trust Fund's General Fund allocation", sources <code>[BLA]</code>, the quoted method; <code>FEDERAL_SUPPORT_TERM_YEARS</code> and <code>STATE_DOUBLE_TERM_YEARS</code> value 10 through <code>customStart</code>; <code>PLAYER_START_PROVENANCE = customStart('From the start you choose', 'the measure starts when its policy starts.')</code>).</li>
+      <li id="t1-s7"><input type="checkbox"> In <code>funding-presets.ts</code>: add <code>dates</code> to <code>FundingPreset</code> (and to <code>unavailable()</code>, <code>'start'</code>); export <code>yearsAfter(d: Day, n: number): Day</code> (UTC year + n, same month and day, 29 February to 28 February in a common year, as <code>inflowArrivals</code> steps a yearly inflow); change <code>fundingPresets(cal: Calibration, start?: Day)</code> per the spec's "first date" and "later dates": each 'start' preset's first date is <code>start ?? its default</code>; later dates <code>yearsAfter(first, k)</code> (bank k = 1 to 4, <code>general-revenue</code> <code>to</code> at 29 with <code>GENERAL_FUND_TERM_YEARS.value - 1</code>, <code>federal-support</code> <code>to</code> at <code>FEDERAL_SUPPORT_TERM_YEARS.value - 1</code>, <code>state-double</code>'s scale-1 entry at <code>STATE_DOUBLE_TERM_YEARS.value</code>); <code>htf-2026</code> <code>dates: 'fixed'</code> ignoring <code>start</code>; <code>federal-support</code>'s amount from the baseline state pool's first arrival on or after <code>asOf</code> (once or yearly, via <code>inflowArrivals(…, asOf, LAST_DAY)</code>); provenance as the spec's bullets; the new descriptions and reason. Remove the <code>uncapped</code> key from the local <code>pool()</code> builder if the merge left it.</li>
+      <li id="t1-s8"><input type="checkbox"> Run <code>npx vitest run --project server src/lib/sim-page</code>. Expected: PASS (including <code>funding-presets.fill.spec.ts</code>, unchanged).</li>
+      <li id="t1-s9"><input type="checkbox"> Run <code>npm run check</code> and <code>npm run lint</code>. Expected: 0 errors, clean.</li>
+      <li id="t1-s10"><input type="checkbox"> Commit, then check timing:
+        <pre><code data-lang="sh">git add src/lib/sim-page/funding-sources.ts src/lib/sim-page/funding-presets.ts src/lib/sim-page/funding-presets.spec.ts
+git commit -m "feat(funding): every funding preset's money ends"
+npx chreode timing-check --head HEAD</code></pre></li>
+    </ol>
+  </section>
+
+  <section id="sec-task-2">
+    <h2>Task 2: dateMeasure</h2>
+    <p><strong>Delivers row M1.</strong> Spec §sec-if-m1 and §sec-design-dates.</p>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/lib/sim-page/funding-presets.ts</code> (replace the <code>contracts</code> stub of <code>dateMeasure</code>)</li>
+      <li>Test: <code>src/lib/sim-page/funding-presets.spec.ts</code></li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>fundingPresets(cal, start)</code> (Task 1); <code>isGiven</code> from <code>$lib/game/allowed</code> (G3); <code>Policy</code>, <code>Effect</code> from <code>$lib/timeline/policy4</code> (<code>:26-48</code>); <code>canonicalJson</code> from <code>./policy</code>.</li>
+      <li>Produces: <code>dateMeasure(policy: Policy, cal: Calibration): Policy</code>, exactly M1. <code>game-sim</code> calls it from <code>addPolicy</code> and on every edit that moves a given measure's first span's start.</li>
+    </ul>
+    <ol>
+      <li id="t2-s1"><input type="checkbox"> Write the failing tests. Build given measures the way <code>addPolicy</code> will (<code>src/lib/timeline/add.ts:237-241</code> with G3): a fund preset is <code>{ preset: id, where: { tag: 'fund', pool: &lt;pool id&gt; }, spans: [{ from, to, what: { tag: 'fund', pool, programmes } }] }</code>; a scale preset is <code>{ preset: id, where: { tag: 'baseline' }, spans: [{ …, what: { tag: 'scales', entries } }] }</code> (shapes as <code>src/lib/timeline/upgrade.ts:97-117</code>). Use a helper <code>measure(presetId, spans)</code> that takes the content of <code>fundingPresets(cal)</code> with ids <code>u-&lt;id&gt;-1</code>.
+        <pre><code data-lang="ts">describe('dateMeasure', () =&gt; {
+  const S = dayOf(2029, 3, 11); // a first span's start
+  it('re-dates a bond from its first span, keeping pool and programme ids', () =&gt; {
+    const p = measure('housing-bond', [{ from: S, to: null }]);
+    const d = dateMeasure(p, cal);
+    const w = d.spans[0].what as Extract&lt;Effect, { tag: 'fund' }&gt;;
+    expect(w.pool!.inflows).toEqual([{ kind: 'once', day: S, dollars: BOND_PRINCIPAL.value }]);
+    expect(w.pool!.id).toBe(fundOf(p).pool!.id);
+    expect(w.programmes.map((g) =&gt; [g.id, g.from])).toEqual([[fundOf(p).programmes[0].id, S]]);
+  });
+  it('re-dates general revenue: from S, to yearsAfter(S, 29)', () =&gt; { /* … */ });
+  it('re-dates every span of a two-span state-double from the first span', () =&gt; {
+    /* spans [S..S+400], [S+500..null]; both spans' entries
+       = [{ pool: state, from: S, scale: 2 }, { pool: state, from: yearsAfter(S, 10), scale: 1 }] */
+  });
+  it('returns the same object', () =&gt; {
+    const p0 = { ...measure('housing-bond', [{ from: S, to: null }]), preset: null };
+    expect(dateMeasure(p0, cal)).toBe(p0);
+    /* an unknown preset id; 'htf-2026' (fixed); no spans; an edited bond amount (dollars + 1);
+       a second call: dateMeasure(dateMeasure(p, cal), cal) toBe its argument */
+  });
+  it("Review Focus 1: a preset id on the wrong kind of policy returns the same object", () =&gt; {
+    /* 'state-double' on a fund policy; 'housing-bond' on a baseline/scales policy:
+       expect(dateMeasure(p, cal)).toBe(p) and no throw */
+  });
+});</code></pre></li>
+      <li id="t2-s2"><input type="checkbox"> Run <code>npx vitest run --project server src/lib/sim-page/funding-presets.spec.ts</code>. Expected: FAIL (the stub returns the policy unchanged, so the re-dating tests fail).</li>
+      <li id="t2-s3"><input type="checkbox"> Implement <code>dateMeasure(policy: Policy, cal: Calibration): Policy</code> in <code>funding-presets.ts</code>. The order of checks, each returning <code>policy</code> itself:
+        <ol>
+          <li><code>!isGiven(policy)</code>, or <code>policy.spans.length === 0</code>;</li>
+          <li><code>fundingPresets(cal, policy.spans[0].from)</code> has no <code>available</code> preset with <code>id === policy.preset</code>;</li>
+          <li>the preset has <code>dates: 'fixed'</code>;</li>
+          <li>the preset's shape does not fit the policy: a fund preset (one pool) needs <code>where.tag === 'fund'</code> and every span's <code>what.tag === 'fund'</code> with a pool; a scale-only preset needs <code>where.tag === 'baseline'</code> and every span <code>'scales'</code>;</li>
+          <li>some span's content with ids, labels and every date (<code>day</code>, <code>from</code>, <code>to</code>) left out differs from the preset's with the same left out (compare <code>canonicalJson</code>);</li>
+          <li>the re-dated spans equal the policy's (<code>canonicalJson</code>).</li>
+        </ol>
+        Otherwise return <code>{ ...policy, spans }</code> where every span keeps its <code>from</code> and <code>to</code> and its effect becomes the preset's content: for a fund preset the preset's pool with the span's own pool <code>id</code> and <code>label</code>, and each preset programme with the span's own programme <code>id</code> and <code>label</code> at the same index and <code>pool</code> set to the span's pool id; for a scale preset the preset's <code>baselineScale</code> entries. Builder's call: ids and labels come from the span, everything else from the preset, because a rename is not a change to what the measure pays (G3 nulls <code>preset</code> only for that).</li>
+      <li id="t2-s4"><input type="checkbox"> Run <code>npx vitest run --project server src/lib/sim-page/funding-presets.spec.ts</code>. Expected: PASS.</li>
+      <li id="t2-s5"><input type="checkbox"> Run <code>npm run check</code> and <code>npm run lint</code>. Expected: 0 errors, clean. If importing <code>isGiven</code> from <code>$lib/game/allowed</code> makes an import cycle that leaves a binding undefined at test time, stop and report it rather than copying <code>isGiven</code>'s rule here.</li>
+      <li id="t2-s6"><input type="checkbox"> Commit, then check timing:
+        <pre><code data-lang="sh">git add src/lib/sim-page/funding-presets.ts src/lib/sim-page/funding-presets.spec.ts
+git commit -m "feat(funding): dateMeasure dates a given measure from its policy's start"
+npx chreode timing-check --head HEAD</code></pre></li>
+    </ol>
+  </section>
+
+  <section id="sec-task-3">
+    <h2>Task 3: Sources of a measure's values</h2>
+    <p>Spec §sec-design-presets, the <code>valueSource</code> and <code>addedPresets</code> bullets.</p>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/lib/sim-page/funding-presets.ts</code> (<code>valueSource</code>, <code>:588-605</code>)</li>
+      <li>Modify: <code>src/lib/sim-page/funding-view.ts</code> (<code>addedPresets</code>, <code>:863-877</code>)</li>
+      <li>Test: <code>src/lib/sim-page/funding-presets.spec.ts</code>, <code>src/lib/sim-page/funding-view.spec.ts</code></li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>yearsAfter</code>, <code>GENERAL_FUND_TERM_YEARS</code> (Task 1).</li>
+      <li>Produces: unchanged signatures <code>valueSource(item, field, presets): Provenance | 'custom'</code> and <code>addedPresets(f, presets): FundingPreset[]</code>, with the new rules.</li>
+    </ul>
+    <ol>
+      <li id="t3-s1"><input type="checkbox"> Write the failing tests:
+        <pre><code data-lang="ts">// funding-presets.spec.ts
+it("valueSource: general-revenue's to is the term's while it is 29 years after from", () =&gt; {
+  const presets = fundingPresets(cal);
+  const pool = structuredClone(get('general-revenue').pools[0]);
+  const f = pool.inflows[0] as Extract&lt;Inflow, { kind: 'yearly' }&gt;;
+  f.from = dayOf(2030, 3, 1);
+  f.to = yearsAfter(f.from, 29);
+  expect(valueSource(pool, 'inflows[0].to', presets)).toBe(GENERAL_FUND_TERM_YEARS.provenance);
+  f.to = yearsAfter(f.from, 28);
+  expect(valueSource(pool, 'inflows[0].to', presets)).toBe('custom');
+  expect(valueSource(pool, 'inflows[0].dollarsPerYear', presets)).toBe(GENERAL_FUND_FY25.provenance);
+  expect(valueSource(pool, 'inflows[0].from', presets)).toBe('custom');
+});
+// funding-view.spec.ts
+it('addedPresets finds state-double with its entries on other days', () =&gt; {
+  /* f.baselineScale = [{ state, from: D1, scale: 2 }, { state, from: D2, scale: 1 }] with D1, D2
+     unlike the preset's days: addedPresets(f, presets).map(p =&gt; p.id) contains 'state-double'
+     and not 'state-off'; [{ state, from: D1, scale: 0 }] finds 'state-off' only */
+});</code></pre></li>
+      <li id="t3-s2"><input type="checkbox"> Run <code>npx vitest run --project server src/lib/sim-page/funding-presets.spec.ts src/lib/sim-page/funding-view.spec.ts</code>. Expected: FAIL on the two new tests.</li>
+      <li id="t3-s3"><input type="checkbox"> In <code>valueSource</code>: for a <code>general-revenue</code> pool and field <code>inflows[0].to</code>, return <code>GENERAL_FUND_TERM_YEARS.provenance</code> while the stored <code>to</code> equals <code>yearsAfter(stored inflows[0].from, GENERAL_FUND_TERM_YEARS.value - 1)</code>, else <code>'custom'</code>; every other field as today, against the preset built without <code>start</code>. In <code>addedPresets</code>, a preset that adds only scale entries is found when the entries of <code>f.baselineScale</code> on the preset's pools, sorted by <code>from</code>, hold the preset's <code>(pool, scale)</code> list as a consecutive run in its order, whatever their days (builder's call: a consecutive run, so <code>state-off</code>'s single 0 is not found inside a doubling that later switches off unless that 0 is its own entry).</li>
+      <li id="t3-s4"><input type="checkbox"> Run the two specs again. Expected: PASS. Then <code>npm run check</code> and <code>npm run lint</code>: 0 errors, clean.</li>
+      <li id="t3-s5"><input type="checkbox"> Commit, then check timing:
+        <pre><code data-lang="sh">git add src/lib/sim-page/funding-presets.ts src/lib/sim-page/funding-view.ts src/lib/sim-page/funding-presets.spec.ts src/lib/sim-page/funding-view.spec.ts
+git commit -m "feat(funding): a measure's term keeps its source; scale presets found on any day"
+npx chreode timing-check --head HEAD</code></pre></li>
+    </ol>
+  </section>
+
+  <section id="sec-task-4">
+    <h2>Task 4: The window's last day and month</h2>
+    <p>Spec §sec-design-window: <code>windowEnd</code>, <code>windowLastMonth</code>, the range error, coverage and previews read to <code>windowEnd</code>.</p>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/lib/sim-page/funding-view.ts</code> (new exports; <code>poolPreview</code> <code>:509</code>)</li>
+      <li>Modify: <code>src/lib/sim-page/funding-copy.ts</code> (<code>dateRangeError</code> <code>:163-164</code>)</li>
+      <li>Modify: <code>src/lib/sim-page/FundingTab.svelte</code> (<code>:139</code>, <code>:212</code>), <code>src/lib/sim-page/PolicySummary.svelte</code> (<code>:65</code>)</li>
+      <li>Test: <code>src/lib/sim-page/funding-view.spec.ts</code>, <code>src/lib/sim-page/funding-copy.spec.ts</code>, <code>src/lib/sim-page/FundingTab.svelte.spec.ts</code> (its <code>HORIZON</code> uses become <code>windowEnd(asOf)</code>)</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>monthLastDay</code> (<code>src/lib/sim/world/months.ts:15</code>), <code>WINDOW_MONTHS</code> (<code>src/lib/sim/timeline-client.ts:29</code>), <code>firstOfMonth</code> (<code>$lib/sim/scenario/dates</code>).</li>
+      <li>Produces: <code>windowEnd(asOf: Day): Day</code> = <code>monthLastDay(asOf, WINDOW_MONTHS)</code>; <code>windowLastMonth(asOf: Day): Day</code> = the first day of the calendar month holding <code>windowEnd(asOf)</code>; <code>dateRangeError(asOf: Day): string</code>.</li>
+    </ul>
+    <ol>
+      <li id="t4-s1"><input type="checkbox"> Write the failing tests, with fixture-0's calibration:
+        <pre><code data-lang="ts">// funding-view.spec.ts
+it("windowEnd and windowLastMonth on fixture-0", () =&gt; {
+  expect(F0.asOf).toBe(dayOf(2026, 10, 10));
+  expect(windowEnd(F0.asOf)).toBe(dayOf(2066, 10, 9));
+  expect(windowLastMonth(F0.asOf)).toBe(dayOf(2066, 10, 1));
+});
+// funding-copy.spec.ts
+it('dateRangeError on fixture-0', () =&gt; {
+  expect(dateRangeError(dayOf(2026, 10, 10))).toBe('Choose a month from October 2026 to October 2066.');
+});</code></pre></li>
+      <li id="t4-s2"><input type="checkbox"> Run <code>npx vitest run --project server src/lib/sim-page/funding-view.spec.ts src/lib/sim-page/funding-copy.spec.ts</code>. Expected: FAIL (no <code>windowEnd</code>; the old "to December 2066" text).</li>
+      <li id="t4-s3"><input type="checkbox"> Add the two functions to <code>funding-view.ts</code>; set <code>dateRangeError</code> to exactly <code>`Choose a month from ${formatMonthYear(asOf)} to ${formatMonthYear(windowLastMonth(asOf))}.`</code> (funding-copy imports only types from funding-view today and funding-view imports values from funding-copy; importing <code>windowLastMonth</code> as a value makes a cycle that is safe because each side uses the other only inside function bodies; keep it that way); replace <code>HORIZON</code> with <code>windowEnd(asOf)</code> in <code>poolPreview</code>, <code>FundingTab.svelte</code>'s two <code>coverageSteps</code> calls (with its own <code>asOf</code>, not <code>priced</code>) and <code>PolicySummary.svelte</code>'s coverage line; drop the unused <code>HORIZON</code> imports.</li>
+      <li id="t4-s4"><input type="checkbox"> Run <code>npx vitest run --project server src/lib/sim-page</code> and <code>npx vitest run --project client src/lib/sim-page/FundingTab.svelte.spec.ts src/lib/sim-page/PolicySummary.svelte.spec.ts</code>. Expected: PASS.</li>
+      <li id="t4-s5"><input type="checkbox"> Run <code>npm run check</code> and <code>npm run lint</code>: 0 errors, clean. Commit, then check timing:
+        <pre><code data-lang="sh">git add src/lib/sim-page/funding-view.ts src/lib/sim-page/funding-copy.ts src/lib/sim-page/FundingTab.svelte src/lib/sim-page/PolicySummary.svelte src/lib/sim-page/funding-view.spec.ts src/lib/sim-page/funding-copy.spec.ts src/lib/sim-page/FundingTab.svelte.spec.ts
+git commit -m "feat(funding): funding dates and previews run to the window's last month"
+npx chreode timing-check --head HEAD</code></pre></li>
+    </ol>
+  </section>
+
+  <section id="sec-task-5">
+    <h2>Task 5: No "no end" in the editors</h2>
+    <p>Spec §sec-design-window (the editor bullets), §sec-design-locked, and <code>labelDateChanged</code> from §sec-design-copy.</p>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/lib/sim-page/funding-edit.ts</code> (<code>setInflowKindEdit</code> <code>:418-443</code>, <code>setInflowDateEdit</code> <code>:451-476</code>, <code>setProgrammeEdit</code> <code>:631-638</code>)</li>
+      <li>Modify: <code>src/lib/sim-page/funding-copy.ts</code> (<code>labelDateChanged</code> <code>:247-254</code>)</li>
+      <li>Modify: <code>src/lib/sim-page/FundingPoolRow.svelte</code> (<code>LAST_MONTH</code> <code>:127</code>, draft rows <code>:291</code>, <code>:306</code>, <code>commitEnds</code> <code>:371-379</code>, Until markup <code>:701-751</code>)</li>
+      <li>Modify: <code>src/lib/sim-page/ProgrammeEditor.svelte</code> (<code>LAST_MONTH</code> <code>:169</code>, <code>commitEnds</code> <code>:438-445</code>, Until markup <code>:771-</code>)</li>
+      <li>Modify: <code>src/lib/sim-page/FundingGroupEditor.svelte</code> (<code>LAST_MONTH</code> <code>:78</code>, year <code>max</code> <code>:234</code>)</li>
+      <li>Test: <code>src/lib/sim-page/funding-edit.spec.ts</code>, <code>src/lib/sim-page/funding-copy.spec.ts</code>, <code>src/lib/sim-page/FundingTab.svelte.spec.ts</code>; <code>src/lib/sim-page/test/funding.ts</code> and <code>test/FundingTabHost.svelte</code> only where a value needs an end</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>windowLastMonth</code>, <code>dateRangeError</code> (Task 4).</li>
+      <li>Produces: <code>yearlyRow(from: Day, dollarsPerYear: Dollars, asOf: Day): Inflow</code> in <code>funding-edit.ts</code> (<code>{ kind: 'yearly', from, to: windowLastMonth(asOf), dollarsPerYear }</code>; builder's call, so the draft paths and the stored edit share one rule and it is testable without the component); <code>setInflowKindEdit(p, id, k, kind, asOf: Day, regenName = false)</code>; <code>setInflowDateEdit(p, id, k, field, day: Day, regenName = false)</code>; <code>labelDateChanged(name, field, day: Day): string</code>. Component props unchanged (§sec-design-locked).</li>
+    </ul>
+    <ol>
+      <li id="t5-s1"><input type="checkbox"> Write the failing unit tests:
+        <pre><code data-lang="ts">// funding-edit.spec.ts
+it("a row switched to Every year ends in the window's last month", () =&gt; {
+  expect(run(setInflowKindEdit(p, id, 0, 'yearly', ASOF), p).funding.pools[0].inflows[0])
+    .toEqual({ kind: 'yearly', from: DAY, to: windowLastMonth(ASOF), dollarsPerYear: DOLLARS });
+});
+it("a completed own-pool draft's yearly row ends in the window's last month", () =&gt; {
+  const d = newOwnPool(ASOF);
+  const full = updatePoolDraft(d, { inflows: [yearlyRow(d.inflows[0].day, 60e6, ASOF)] });
+  const e = completeDraft({ kind: 'pool', pool: full }, p, baseline)!;
+  expect(e.change(p).funding.pools.at(-1)!.inflows[0]).toMatchObject({ to: windowLastMonth(ASOF) });
+});
+// funding-copy.spec.ts
+it('labelDateChanged', () =&gt; {
+  expect(labelDateChanged('Bond', 'Until', dayOf(2040, 7, 1))).toBe('Changed date: Bond, Until July 2040');
+});</code></pre>
+        Update the existing <code>setInflowKindEdit</code> calls (<code>funding-edit.spec.ts:117</code>, <code>:241</code>) to pass <code>asOf</code>, and drop any test of the "no end" label.</li>
+      <li id="t5-s2"><input type="checkbox"> Write the failing component tests in <code>FundingTab.svelte.spec.ts</code> (fixture asOf the host's; use the host's <code>windowLastMonth</code>):
+        <ul>
+          <li>A pool's yearly row has no checkbox named <code>/^Ends/</code>; a stored row with <code>to: null</code> shows Until month = the month of <code>windowLastMonth(asOf)</code> and Until year = its year; on fixture-0 that is October 2066.</li>
+          <li>Typing a year after the window's last year in Until commits nothing (the store's policy is the same object) and the field's alert reads <code>dateRangeError(asOf)</code>.</li>
+          <li>Review Focus 3: with Until year at the window's last year, choosing the month after <code>windowLastMonth(asOf)</code> (November 2066 on fixture-0) commits nothing and shows <code>dateRangeError(asOf)</code>; choosing its month commits it.</li>
+          <li>A programme's Until has no checkbox named <code>/^Ends/</code> and shows <code>windowLastMonth(asOf)</code> for <code>to: null</code>.</li>
+          <li>The group editor's dated change Year input has <code>max</code> the year of <code>windowLastMonth(asOf)</code> (2066).</li>
+        </ul></li>
+      <li id="t5-s3"><input type="checkbox"> Run <code>npx vitest run --project server src/lib/sim-page/funding-edit.spec.ts src/lib/sim-page/funding-copy.spec.ts</code> and <code>npx vitest run --project client src/lib/sim-page/FundingTab.svelte.spec.ts</code>. Expected: FAIL on the new tests.</li>
+      <li id="t5-s4"><input type="checkbox"> Implement:
+        <ul>
+          <li><code>labelDateChanged(name, field, day: Day)</code> returns <code>`Changed date: ${name}, ${field} ${formatMonthYear(day)}`</code>; the no-end branch is gone.</li>
+          <li><code>yearlyRow</code>; <code>setInflowKindEdit</code> takes <code>asOf</code> and builds the yearly row with <code>yearlyRow</code>; <code>setInflowDateEdit</code>'s <code>day</code> is <code>Day</code>; in <code>setProgrammeEdit</code> the date label reads <code>patch.from</code> or <code>patch.to</code> as a <code>Day</code> (throw a <code>TypeError</code> for a null date patch: no edit stores <code>to: null</code>).</li>
+          <li><code>FundingPoolRow.svelte</code>: <code>LAST_MONTH</code> becomes <code>$derived(windowLastMonth(asOf))</code>; both draft paths build yearly rows with <code>yearlyRow(day, amount, asOf)</code>; <code>commitEnds</code> and the "Ends" checkbox go; the Until Month select and Year input always show for a yearly row, reading <code>rowTo(x) ?? windowLastMonth(asOf)</code>; committing the shown value stores it; pass <code>asOf</code> to <code>setInflowKindEdit</code>.</li>
+          <li><code>ProgrammeEditor.svelte</code>: <code>LAST_MONTH</code> as above; <code>commitEnds</code> and its checkbox go; Until always shows, reading <code>prog.to ?? windowLastMonth(asOf)</code>; a new programme keeps <code>to: null</code> until its Until is committed.</li>
+          <li><code>FundingGroupEditor.svelte</code>: <code>LAST_MONTH</code> as above; the Year input's <code>max</code> is the year of <code>windowLastMonth(asOf)</code>.</li>
+        </ul></li>
+      <li id="t5-s5"><input type="checkbox"> Run <code>npx vitest run --project server src/lib/sim-page</code> and <code>npx vitest run --project client src/lib/sim-page</code>. Expected: PASS. Then <code>npm run check</code> and <code>npm run lint</code>: 0 errors, clean.</li>
+      <li id="t5-s6"><input type="checkbox"> Commit, then check timing:
+        <pre><code data-lang="sh">git add src/lib/sim-page/funding-edit.ts src/lib/sim-page/funding-copy.ts src/lib/sim-page/FundingPoolRow.svelte src/lib/sim-page/ProgrammeEditor.svelte src/lib/sim-page/FundingGroupEditor.svelte src/lib/sim-page/funding-edit.spec.ts src/lib/sim-page/funding-copy.spec.ts src/lib/sim-page/FundingTab.svelte.spec.ts src/lib/sim-page/test
+git commit -m "feat(funding): every funding date ends within the window"
+npx chreode timing-check --head HEAD</code></pre></li>
+    </ol>
+  </section>
+
+  <section id="sec-task-6">
+    <h2>Task 6: The federal pool and the funding copy</h2>
+    <p>Spec §sec-design-federal and §sec-design-copy.</p>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/lib/sim-page/funding-view.ts</code> (<code>BaselineGroup</code>, <code>baselineGroups</code> <code>:258-312</code>, <code>ScaleLine</code> and <code>scaleLines</code> <code>:314-380</code>, <code>inflowPhrase</code>/<code>poolMoneySentence</code> <code>:465-493</code>, the <code>summaryScaleText</code> calls in <code>summaryRows</code>)</li>
+      <li>Modify: <code>src/lib/sim-page/funding-copy.ts</code> (<code>labelScaleApplied</code>, <code>summaryScaleText</code>, removals)</li>
+      <li>Modify: <code>src/lib/sim-page/funding-edit.ts</code> (<code>addScaleEdit</code>'s label <code>:807-812</code>)</li>
+      <li>Modify: <code>src/lib/sim-page/FundingTab.svelte</code> (<code>groupAmount</code> <code>:219-222</code>), <code>src/lib/sim-page/FundingGroupEditor.svelte</code> (<code>poolPerYear</code> <code>:82-92</code>, <code>apply</code> <code>:143-170</code>, the federal radio group <code>:243-266</code> if the merge left it)</li>
+      <li>Modify: <code>src/lib/timeline/money-copy.ts</code> (<code>COVERAGE_OFF_SHORT_SENTENCE4</code> and its comments)</li>
+      <li>Test: <code>src/lib/sim-page/funding-view.spec.ts</code>, <code>funding-copy.spec.ts</code>, <code>funding-tab-copy.spec.ts</code>, <code>FundingTab.svelte.spec.ts</code>, <code>src/lib/timeline/money-copy.spec.ts</code></li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>isNoCeiling</code> (F2); <code>yearsAfter</code> (Task 1); <code>inflowArrivals</code>.</li>
+      <li>Produces: <code>poolYearAmount(f: FinanceLevers, pool: Pool, asOf: Day): Dollars | null</code> (builder's call: one rule for the group row and the City editor's per-pool amounts; null for a pool with a yearly inflow whose amount <code>isNoCeiling</code>); <code>BaselineGroup.perYear: Dollars | null</code> (null only for a group made only of such pools); <code>ScaleLine</code> without <code>uncapped</code>; <code>labelScaleApplied(name: string, from: Day, scale: number): string</code>; <code>summaryScaleText(name: string, from: Day, scale: number, backOn: boolean): string</code>; <code>NO_CEILING = 'No ceiling'</code> in <code>funding-copy.ts</code> unless the merged code already exports a constant with that text (then reuse it).</li>
+    </ul>
+    <ol>
+      <li id="t6-s1"><input type="checkbox"> Read the merged <code>src/lib/timeline/money-copy.ts</code> and confirm <code>COVERAGE_OFF_SHORT_SENTENCE4</code> is there and <code>money-copy.spec.ts</code> exists (F2's move); read the merged <code>FundingGroupEditor.svelte</code>, <code>FundingTab.svelte</code> and <code>funding-view.ts</code> for what <code>finite-funding</code> left in place of <code>uncapped</code> and <code>NO_LIMIT</code>. If <code>money-copy.ts</code> is absent, stop and report BLOCKED (row F2).</li>
+      <li id="t6-s2"><input type="checkbox"> Write the failing tests:
+        <pre><code data-lang="ts">// funding-copy.spec.ts
+it('summaryScaleText: its four forms', () =&gt; {
+  const D = dayOf(2028, 7, 1);
+  expect(summaryScaleText('State money', D, 0, false)).toBe('State money: switched off from July 2028');
+  expect(summaryScaleText('State money', D, 1, true)).toBe('State money: switched back on from July 2028');
+  expect(summaryScaleText('State money', D, 1, false)).toBe('State money: as today from July 2028');
+  expect(summaryScaleText('Federal tax credits', D, 1.5, false)).toBe("Federal tax credits: 150% of today's from July 2028");
+  expect(summaryScaleText('State money', D, 2, true)).toBe("State money: switched back on, 200% of today's from July 2028");
+});
+it('labelScaleApplied', () =&gt; {
+  expect(labelScaleApplied('State', D, 0)).toBe("Today's funding: State switched off from July 2028");
+  expect(labelScaleApplied('State', D, 1.5)).toBe("Today's funding: State 150% from July 2028");
+});
+// money-copy.spec.ts
+it('COVERAGE_OFF_SHORT_SENTENCE4 word for word', () =&gt; {
+  expect(COVERAGE_OFF_SHORT_SENTENCE4).toBe(
+    'Switching a source off takes it out of every offer, so projects go ahead on the rest, at lower odds. A source that runs short makes projects wait for its next money; once it has had its last money, it closes, as if switched off.'
+  );
+});
+// funding-view.spec.ts
+it("a group's amount is the money its pools receive in the year from asOf", () =&gt; {
+  /* the federal group's perYear is its ceiling (fixture's federal yearly dollarsPerYear);
+     a group with a once inflow inside [asOf, yearsAfter(asOf, 1) - 1] counts it;
+     Review Focus 4: a once on asOf counts, a once on yearsAfter(asOf, 1) does not,
+     and a scale entry dated asOf + 1 leaves perYear unchanged (scale is the one on asOf);
+     a federal pool of one yearly inflow of LEGACY_UNCAPPED_DOLLARS: left out of the sum,
+     and a group of only it has perYear null */
+});
+it('scaleLines words a federal change as a share of today\'s amount', () =&gt; {
+  /* entries on the federal pool at 0 then 1.5: texts
+     'From July 2028: switched off' and "From July 2029: switched back on, 150% of today's amount" */
+});
+it('poolMoneySentence of a no-ceiling pool reads "No ceiling"', () =&gt; { /* … */ });</code></pre>
+        In <code>FundingTab.svelte.spec.ts</code>: the federal group row reads <code>`Federal tax credits · ${perYearText(ceiling)}`</code> then <code>groupPaysText(perHome)</code> (replace the <code>/^Federal tax credits · no limit/</code> expectation at <code>:88</code>); switched off from today it reads "Federal tax credits · switched off"; its dated change shows "Amount, % of today's" (min 0, max 1000, step 5, default 0) and no radio named "Switched back on"; a calibration whose federal pool is a no-ceiling pool shows "Federal tax credits · No ceiling". Update <code>funding-tab-copy.spec.ts</code> for the removed constants.</li>
+      <li id="t6-s3"><input type="checkbox"> Run <code>npx vitest run --project server src/lib/sim-page src/lib/timeline/money-copy.spec.ts</code> and <code>npx vitest run --project client src/lib/sim-page/FundingTab.svelte.spec.ts</code>. Expected: FAIL on the new tests.</li>
+      <li id="t6-s4"><input type="checkbox"> Implement:
+        <ul>
+          <li><code>poolYearAmount</code>: the sum of <code>inflowArrivals(x, asOf, yearsAfter(asOf, 1) - 1)</code> dollars over the pool's <code>once</code> and <code>yearly</code> inflows, times the pool's scale entry in force on <code>asOf</code> (1 without one), rounded to whole dollars; null when a yearly inflow's amount <code>isNoCeiling</code>. <code>baselineGroups</code> sums it over the group's pools leaving null ones out; <code>perYear</code> is null when every pool is null. <code>FundingGroupEditor</code>'s <code>poolPerYear</code> becomes <code>poolYearAmount</code>.</li>
+          <li><code>FundingTab</code>'s <code>groupAmount</code>: <code>SWITCHED_OFF</code> when off, else <code>NO_CEILING</code> when <code>perYear</code> is null, else <code>perYearText(perYear)</code>.</li>
+          <li><code>FundingGroupEditor</code>: the federal group's dated change is the same "Amount, % of today's" entry as the state group's; no "Switched back on" radio group; no <code>uncapped</code> branch in <code>apply</code>.</li>
+          <li><code>scaleLines</code>: drop <code>uncapped</code>; texts "From {Month Year}: switched off", "From {Month Year}: {p}% of today's amount", "From {Month Year}: switched back on, {p}% of today's amount" after a 0.</li>
+          <li><code>labelScaleApplied</code>: scale 0 <code>`Today's funding: ${name} switched off from ${when}`</code>, any other <code>`Today's funding: ${name} ${pct} from ${when}`</code>; <code>addScaleEdit</code> passes three arguments.</li>
+          <li><code>summaryScaleText(name, from, scale, backOn)</code> per the four forms; both calls in <code>summaryRows</code> pass <code>l.backOn</code>/<code>backOn</code>.</li>
+          <li><code>inflowPhrase</code>/<code>poolMoneySentence</code>: a yearly inflow whose amount <code>isNoCeiling</code> reads <code>NO_CEILING</code>.</li>
+          <li>Remove <code>COVERAGE_RUN_SENTENCE</code>, <code>COVERAGE_OFF_SHORT_SENTENCE</code> and <code>NO_LIMIT</code> from <code>funding-copy.ts</code> (grep the repo first: <code>e2e/sim-funding.spec.ts</code> must no longer import <code>NO_LIMIT</code> after F2; if it still does, stop and report BLOCKED on row F2: that line is <code>finite-funding</code>'s).</li>
+          <li><code>money-copy.ts</code>: <code>COVERAGE_OFF_SHORT_SENTENCE4</code> to the text above; reword any comment that says its <code>*4</code> sentences duplicate <code>funding-copy.ts</code> because <code>/lesscars</code> imports it, to say they are the page's own. Every other string unchanged.</li>
+        </ul></li>
+      <li id="t6-s5"><input type="checkbox"> Run the specs of step 3 again. Expected: PASS. Then <code>npm run check</code> and <code>npm run lint</code>: 0 errors, clean.</li>
+      <li id="t6-s6"><input type="checkbox"> Commit, then check timing:
+        <pre><code data-lang="sh">git add src/lib/sim-page src/lib/timeline/money-copy.ts src/lib/timeline/money-copy.spec.ts
+git commit -m "feat(funding): the federal pool is edited as a capped pool; funding copy for closing pools"
+npx chreode timing-check --head HEAD</code></pre></li>
+    </ol>
+  </section>
+
+  <section id="sec-task-7">
+    <h2>Task 7: The read-only view of a given measure</h2>
+    <p>Spec §sec-design-summary.</p>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/lib/sim-page/funding-view.ts</code> (<code>summaryRows</code> <code>:1024-1073</code>, new <code>moneyOnly</code>)</li>
+      <li>Modify: <code>src/lib/sim-page/PolicySummary.svelte</code> (<code>moneyRows</code> <code>:68-74</code>, sections <code>:98-171</code>)</li>
+      <li>Test: <code>src/lib/sim-page/funding-view.spec.ts</code>, <code>src/lib/sim-page/PolicySummary.svelte.spec.ts</code></li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>windowLastMonth</code> (Task 4), <code>summaryScaleText</code> (Task 6), <code>dateMeasure</code> (Task 2, to build measures in tests), <code>DEFAULT_POLICY</code> and <code>canonicalJson</code> from <code>./policy</code>.</li>
+      <li>Produces: <code>summaryRows(f: FinanceLevers, baseline: Baseline | undefined, presets: FundingPreset[], asOf: Day | null): SummaryRow[]</code>; <code>moneyOnly(p: SimPolicy): boolean</code> (builder's call: a pure helper in <code>funding-view.ts</code> so the rule is unit-tested). <code>PolicySummary</code>'s props are unchanged (<code>game-sim</code> mounts it through them).</li>
+    </ul>
+    <ol>
+      <li id="t7-s1"><input type="checkbox"> Write the failing tests in <code>funding-view.spec.ts</code>, on fixture-0 (<code>F0</code>): for each offered measure build the policy's funding as the projection of a measure added in month 1 (start <code>monthFirstDay(F0.asOf, 1)</code>, 11 October 2026): <code>fundingPresets(F0, start)</code>'s preset passed through <code>addPreset(DEFAULT_FUNDING, preset)</code>; call <code>summaryRows(f, F0.baselineFunding, fundingPresets(F0), F0.asOf)</code>; assert the texts and indents exactly. <code>{share}</code> is <code>formatPercent</code> of <code>cityGrant</code>'s share, <code>{min}</code> the baseline's affordable <code>minHomes</code>, <code>{state}</code> <code>formatDollars</code> of the state pool's first payment:
+        <pre><code data-lang="text">A housing bond
+  Housing bond: $410 million in October 2026; repaid at 6% over 20 years
+    Grant to affordable homes of {min} homes or more: {share} of the uncovered cost
+
+General revenue, yearly
+  General revenue for housing: $36.7 million a year from October 2026 until October 2055
+    Grant to affordable homes of {min} homes or more: {share} of the uncovered cost
+
+A revolving construction-loan fund
+  Revolving construction-loan fund: $100 million in October 2026
+    Loan to private projects of 0 homes or more (custom, not sourced): 10% (custom, not sourced) of the building cost at 6% (custom, not sourced)
+
+The SF public bank, as planned
+  Public bank (housing share): $8.67 million in October 2026, $11.3 million in October 2027, $10 million in October 2028, $26.7 million in October 2029, $13.3 million in October 2030
+    Loan to affordable homes of {min} homes or more: 10% (custom, not sourced) of the building cost at 6.13%
+
+No state money from a date
+  State money: switched off from October 2026
+
+State money doubled from a date
+  State money: 200% of today's from October 2026
+  State money: as today from October 2036
+
+Federal support from a year
+  Federal support: {state} (custom, not sourced) a year from October 2026 until October 2035
+    Grant to affordable homes of {min} homes or more: {share} of the uncovered cost
+
+Federal tax credits withdrawn from a date
+  Federal tax credits: switched off from October 2026</code></pre>
+        Also: none of these rows is "Today's funding: as today" or "No money added"; for <code>DEFAULT_POLICY.funding</code> the rows are exactly <code>[AS_TODAY, NO_MONEY_ADDED]</code>; a bond with <code>terms: { guaranteeRateCut: 0.005 }</code> shows no typed-term row, a funding of terms only shows <code>typedTermSummary('guaranteeRateCut', 0.005)</code>; no row contains <code>(custom, not sourced)</code> right after a month and year (regex <code>/(January|…|December) \d{4} \(custom/</code>); a stored yearly inflow with <code>to: null</code> reads "… a year from {Month Year} until October 2066"; with <code>asOf</code> null it reads "… a year from {Month Year}" with no until. And <code>moneyOnly</code>: true for a policy that differs from <code>DEFAULT_POLICY</code> only in <code>funding</code>; false for <code>DEFAULT_POLICY</code>, for one with a rule, and for one with changed <code>timing.current</code>.</li>
+      <li id="t7-s2"><input type="checkbox"> Write the failing component tests in <code>PolicySummary.svelte.spec.ts</code>:
+        <ul>
+          <li>A bond's projection (a <code>SimPolicy</code> whose funding is the bond measure's) renders exactly one <code>h3</code>, "Public money", and its region holds the pool row and the indented programme row word for word; no "Transit layers", "Painted areas", "Protections" or "Permitting timelines" heading.</li>
+          <li>General revenue's region contains "until October 2055"; <code>state-double</code> gives its two rows; <code>federal-credits-off</code> its one row; none contains "Today's funding: as today" or "No money added".</li>
+          <li><code>DEFAULT_POLICY</code> and a zoning projection render the five sections as today; the existing typed-term, custom-rate and null-calibration tests still pass.</li>
+        </ul></li>
+      <li id="t7-s3"><input type="checkbox"> Run <code>npx vitest run --project server src/lib/sim-page/funding-view.spec.ts</code> and <code>npx vitest run --project client src/lib/sim-page/PolicySummary.svelte.spec.ts</code>. Expected: FAIL on the new tests.</li>
+      <li id="t7-s4"><input type="checkbox"> Implement:
+        <ul>
+          <li><code>moneyOnly(p)</code>: <code>rules</code> and <code>custom</code> empty, <code>canonicalJson(p.protect)</code> and <code>canonicalJson(p.timing.current)</code> equal <code>DEFAULT_POLICY</code>'s, <code>canonicalJson(p.funding)</code> differs from <code>DEFAULT_POLICY.funding</code>'s.</li>
+          <li><code>summaryRows(f, baseline, presets, asOf)</code>: <code>AS_TODAY</code> and <code>NO_MONEY_ADDED</code> only when <code>f</code> equals <code>DEFAULT_POLICY.funding</code>; scale rows as today; typed terms only when <code>f</code> has no scale entry, pool or programme; the custom-field sets it passes to <code>poolMoneySentence</code> and <code>programmeSentence</code> drop every date field (<code>inflows[k].day</code>, <code>.from</code>, <code>.to</code>, a programme's <code>from</code>, <code>to</code>); a yearly inflow with <code>to: null</code> reads "until {formatMonthYear(windowLastMonth(asOf))}" when <code>asOf</code> is not null (builder's call: pass <code>asOf</code> into <code>poolMoneySentence</code> as an optional third parameter, defaulting to null so the editor's existing callers are unchanged).</li>
+          <li><code>PolicySummary.svelte</code>: pass <code>calibration?.asOf ?? null</code> as the fourth argument; when <code>moneyOnly(policy)</code> render only the "Public money" section (its <code>h3</code> and region: coverage line first, then the rows); otherwise the five sections as today.</li>
+        </ul></li>
+      <li id="t7-s5"><input type="checkbox"> Run <code>npx vitest run --project server src/lib/sim-page</code> and <code>npx vitest run --project client src/lib/sim-page</code>. Expected: PASS. Then <code>npm run check</code> and <code>npm run lint</code>: 0 errors, clean.</li>
+      <li id="t7-s6"><input type="checkbox"> Commit, then check timing:
+        <pre><code data-lang="sh">git add src/lib/sim-page/funding-view.ts src/lib/sim-page/PolicySummary.svelte src/lib/sim-page/funding-view.spec.ts src/lib/sim-page/PolicySummary.svelte.spec.ts
+git commit -m "feat(funding): a given measure's summary lists only what it pays and when"
+npx chreode timing-check --head HEAD</code></pre></li>
+    </ol>
+  </section>
+
+  <section id="sec-task-8">
+    <h2>Task 8: A pool's lifetime level</h2>
+    <p>Spec §sec-design-level.</p>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/lib/timeline/pool-level.ts</code> (<code>LevelPool</code> <code>:18-22</code>, <code>poolLevel</code> <code>:24-58</code>, <code>levelSet</code> <code>:190-217</code>, new <code>lifetimes</code>)</li>
+      <li>Test: <code>src/lib/timeline/pool-level.spec.ts</code></li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>createMoneyTrack(doc, { asOf, finance })</code> (<code>src/lib/sim/world/policy/money.ts:112</code>; <code>frame.arrivals[].pool</code> indexes <code>frame.pools</code>), <code>moneyLeversOf</code>, <code>inForceAt</code> (<code>src/lib/sim/world/policy/combine.ts:48</code>, <code>:211</code>), <code>monthFirstDay</code>, <code>WINDOW_MONTHS</code>, <code>MARKET_TERMS</code>, <code>resolveTerms</code>, <code>isNoCeiling</code> (F2), <code>MoneyView.shut</code> (F3).</li>
+      <li>Produces: <code>LevelPool { id: string; leverage: number; lifetime: number | null }</code>; <code>poolLevel(money: MoneyView, pools: readonly LevelPool[]): Float64Array</code>; <code>lifetimes(doc: SimPolicy4, baseline: readonly Pool[], asOf: Day): ReadonlyMap&lt;string, number | null&gt;</code>; <code>levelSet</code> signature and <code>LevelSet</code> unchanged (<code>TimelineMode.svelte:439</code> keeps calling it).</li>
+    </ul>
+    <ol>
+      <li id="t8-s1"><input type="checkbox"> Read the merged <code>src/lib/sim/world/score/types.ts</code> and confirm <code>MoneyView.shut: Record&lt;string, boolean[]&gt;</code> matches F3; if not, stop and report BLOCKED. Update the spec's <code>money()</code> helper to give <code>shut: {}</code> and <code>closed: {}</code>, and the <code>pool()</code> helper to drop <code>uncapped</code>.</li>
+      <li id="t8-s2"><input type="checkbox"> Write the failing tests (the spec's §sec-tests-unit pool-level lines, then Review Focus 5):
+        <pre><code data-lang="ts">describe('lifetimes', () =&gt; {
+  it('a bond: its principal; general revenue: 30 payments; nothing after a span ends', () =&gt; { /* … */ });
+  it('an off policy: 0', () =&gt; { /* policy.on = false: lifetime 0 */ });
+  it('a yearly inflow with no end: its payments to the window\'s last month', () =&gt; {
+    /* baseline pool, yearly from asOf+1, to null: count(inflowArrivals(x, asOf, monthLastDay(asOf, WINDOW_MONTHS))) * amount */
+  });
+  it('a no-ceiling pool: null', () =&gt; { /* yearly dollarsPerYear LEGACY_UNCAPPED_DOLLARS */ });
+  it("state-double: twice the state's ten years of arrivals", () =&gt; { /* … */ });
+  it('null for every pool when the track throws', () =&gt; {
+    /* a fund policy whose programme needs a term with no source: every value null */
+  });
+  it('Review Focus 5: a measure started in month 470 counts only arrivals in the window', () =&gt; {
+    /* general revenue dated from monthFirstDay(asOf, 470): lifetime = 36.7e6 x the arrivals on or before windowEnd */
+  });
+});
+describe('poolLevel with lifetimes', () =&gt; {
+  it('1 before the first payment; drains as money is committed; no rise at a yearly payment; rises when a loan is repaid', () =&gt; {});
+  it('a pool with no end drains and never refills', () =&gt; {});
+  it('a month shut marks reads 0, also after money returns; the reopening month reads by the formula', () =&gt; {});
+  it('in a summed set a closed pool counts its whole lifetime as used', () =&gt; {
+    /* a: life 100, used 0, shut; b: life 300, used 30: (0 + 270) / 400 */
+  });
+  it('a lifetime of 0 gives NaN', () =&gt; {});
+});
+describe('levelSet with lifetimes', () =&gt; {
+  it("entries use lifetimes; Current funding reads baseline pools with no end and leaves out a no-ceiling pool", () =&gt; {});
+  it('a second view with the same document reuses the lifetimes; a new document recomputes', () =&gt; {
+    expect(lifetimes(doc, base, ASOF)).toBe(lifetimes(doc, base, ASOF));
+    const doc2 = structuredClone(doc); // a bigger bond in doc2's pool
+    expect(lifetimes(doc2, base, ASOF)).not.toBe(lifetimes(doc, base, ASOF));
+    /* and levelSet(view(m), doc2, …)'s bond level differs from levelSet(view(m), doc, …)'s */
+  });
+});</code></pre>
+        Replace the old tests that encode "free share of the money received so far" and "an uncapped pool has no level"; keep the engine-series test (<code>:134-181</code>) as a check that every level stays in [0, 1], passing <code>lifetimes</code> of its document.</li>
+      <li id="t8-s3"><input type="checkbox"> Run <code>npx vitest run --project server src/lib/timeline/pool-level.spec.ts</code>. Expected: FAIL.</li>
+      <li id="t8-s4"><input type="checkbox"> Implement <code>poolLevel</code> with this formula, over the pools given whose <code>lifetime</code> is not null and whose series is in <code>money.pools</code> (builder's call: a pool the money does not carry is skipped, as today, and <code>levelSet</code> only passes carried pools), <code>shut</code> false where <code>money.shut[id]</code> is absent:
+        <pre><code data-lang="text">used(p, i) = committed[i] + spent[i] + out[i] + lostCredit[i]
+cap        = Σ_p leverage(p) × lifetime(p)
+level[i]   = cap &gt; 0 ? clamp( Σ_p (shut(p, i) ? 0 : leverage(p) × lifetime(p) − used(p, i)) / cap, 0, 1 ) : NaN</code></pre>
+        Implement <code>lifetimes</code>: <code>createMoneyTrack(doc, { asOf, finance: { pools: [...baseline], programmes: [], off: [], slope: 0, terms: resolveTerms(MARKET_TERMS) } })</code>, then for m = 1 to <code>WINDOW_MONTHS</code> call <code>track.month(m, moneyLeversOf(inForceAt(doc, monthFirstDay(asOf, m))))</code> and add each arrival's dollars to <code>frame.pools[a.pool].id</code>. Every pool id the track orders starts at 0. A pool is null when one of its definitions (the calibration's for a baseline pool, every span's pool for an added one) has a yearly inflow whose amount <code>isNoCeiling</code>. If the track throws, every id maps to null. Cache the last result keyed by the identity of <code>doc</code> and <code>baseline</code> and the value of <code>asOf</code>. Rewrite <code>levelSet</code>: <code>const life = lifetimes(doc, baseline ?? [], asOf)</code>; each fund policy's own pool (<code>ownPool</code>, unchanged) with <code>lifetime: life.get(def.id) ?? null</code>, skipped when null or not carried; <code>fixed</code> the baseline pools with a non-null lifetime that the money carries, or null when none. Update the module's header comment and <code>poolLevel</code>'s doc comment to the lifetime reading.</li>
+      <li id="t8-s5"><input type="checkbox"> Run <code>npx vitest run --project server src/lib/timeline</code>. Expected: PASS. Then <code>npm run check</code> and <code>npm run lint</code>: 0 errors, clean.</li>
+      <li id="t8-s6"><input type="checkbox"> Commit, then check timing:
+        <pre><code data-lang="sh">git add src/lib/timeline/pool-level.ts src/lib/timeline/pool-level.spec.ts
+git commit -m "feat(timeline): a pool's bar drains over its lifetime money and reads empty while closed"
+npx chreode timing-check --head HEAD</code></pre></li>
+    </ol>
+  </section>
+
+  <section id="sec-task-9">
+    <h2>Task 9: End to end and the doc</h2>
+    <p>Spec §sec-tests-e2e and §sec-docs.</p>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>e2e/sim-funding.spec.ts</code> (tests 3 and 8 only), <code>e2e/sim-pools.spec.ts</code> (the first test, one new test)</li>
+      <li>Modify: <code>docs/dev/sim-funding.md</code></li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>windowLastMonth</code>, <code>summaryRows</code>, <code>fundingPresets</code>, <code>formatMonthYear</code>; the helpers already in the two specs (<code>addPolicy</code>, <code>openKind</code>, <code>slider</code>, <code>waitFilled</code>, <code>fundingOf</code>, <code>docOf</code>, <code>poolRow</code>).</li>
+      <li>Produces: nothing other units read.</li>
+    </ul>
+    <ol>
+      <li id="t9-s1"><input type="checkbox"> Read the merged <code>e2e/sim-funding.spec.ts</code> and confirm test 1a no longer imports <code>NO_LIMIT</code> (F2); if it does, stop and report BLOCKED. Leave tests 1a to 1d, 2, 4 to 7, 9 and 10 as written.</li>
+      <li id="t9-s2"><input type="checkbox"> Test 3: after the yearly amount, assert the pool row's <code>getByRole('combobox', { name: 'Month, Until, row 1' })</code> has value <code>String(month of windowLastMonth(ASOF))</code> and <code>getByRole('spinbutton', { name: 'Year, Until, row 1' })</code> has the value of its year; <code>poolRow(page).getByRole('checkbox', { name: /^Ends/ })</code> has count 0; the editor contains <code>`$60 million a year from July ${YEAR} until ${formatMonthYear(windowLastMonth(ASOF))}`</code>.</li>
+      <li id="t9-s3"><input type="checkbox"> Test 8: after the terms and the bond, also add "General revenue, yearly" and "State money doubled from a date" (each with <code>addPolicy</code> and its refill) before publishing. On <code>/s/&lt;id&gt;</code>, for each of those two policies: open its bar, then assert the editor holds the "Public money" region and no heading "Transit layers"; for every row of <code>summaryRows(fundingOf({ ...doc, kinds: { ...doc.kinds, money: [policy] } }), BASELINE, PRESETS, ASOF)</code> (the stored document, that policy alone) the region contains its text; the general revenue region contains "until". Keep the bond and terms checks and <code>expectNoA11yViolations(page)</code>.</li>
+      <li id="t9-s4"><input type="checkbox"> <code>e2e/sim-pools.spec.ts</code>: rename the first test "a housing bond: full until its money is used; after Play its bar drains" (header comment to match); at today the bar has no level and no words; after Play past the bond's first payment its level shows; at End it is below 100 and at most the paused reading; at Home nothing again (the existing steps). Add a test: with "General revenue, yearly" added, after Play (as the bond test plays) the bar's <code>data-left</code> at End is below 100, and its <code>aria-label</code> starts <code>"{setting}, {n}% left, "</code> (the existing <code>/^\S+, ${left}% left, /</code> shape). The forced-colour and axe tests stay as written.</li>
+      <li id="t9-s5"><input type="checkbox"> Port check, then run the two specs with repeats and no retries; leave nothing listening:
+        <pre><code data-lang="sh">lsof -nP -iTCP:4173 -sTCP:LISTEN
+npx playwright test e2e/sim-funding.spec.ts e2e/sim-pools.spec.ts --repeat-each=5 --retries=0</code></pre>
+        If <code>lsof</code> shows a listener you did not start, wait in background <code>sleep</code> stretches until it is gone. Expected: every run passes and no new preview-server stderr.</li>
+      <li id="t9-s6"><input type="checkbox"> Update <code>docs/dev/sim-funding.md</code> per §sec-docs: "Funding levers in a policy" (days stay absolute and are never rewritten on load; a given measure is re-dated by <code>dateMeasure</code> only when added or its first span's start moves; money arrives only inside its policy's spans); "The list" (the preset table with each preset's end, <code>dates</code> and the <code>start</code> argument); "Sources" (rows for <code>GENERAL_FUND_TERM_YEARS</code> tier 2, BLA pp. 44 and 108, <code>FEDERAL_SUPPORT_TERM_YEARS</code> and <code>STATE_DOUBLE_TERM_YEARS</code> tier 4, <code>PLAYER_START_PROVENANCE</code>); "Switched off" against "short" (a short source with more money due makes projects wait; one that has had its last money closes, D13, F3); "Fields in short" (every date runs to the window's last month; Until has no "no end"; the default Until is the window's last month); Today's funding (the federal group is a capped group with a ceiling; a group's amount counts the year from <code>asOf</code>); the read-only summary (the money-only rule, when "as today", "No money added" and typed terms show, no date marks, the until rule); "A pool's level" (the lifetime reading, its formula, a closed pool reading empty from <code>MoneyView.shut</code>, <code>lifetimes</code> through the money track); "The e2e" (the tests as they now are); "Known limits" (drop the two about a short pool's wait and the on-or-off federal pool).</li>
+      <li id="t9-s7"><input type="checkbox"> Run <code>npm run lint</code> (prettier covers the doc) and <code>npm run check</code>: clean, 0 errors. Commit, then check timing:
+        <pre><code data-lang="sh">git add e2e/sim-funding.spec.ts e2e/sim-pools.spec.ts docs/dev/sim-funding.md
+git commit -m "test(funding): e2e for finite measures; docs: sim-funding after funding-measures"
+npx chreode timing-check --head HEAD</code></pre></li>
+    </ol>
+  </section>
+
+  <section id="sec-open-questions">
+    <h2>Open questions</h2>
+    <aside data-kind="question"><strong>Question</strong> If the implementer cannot open the BLA report (Task 1 step 2), the term's quotations cannot be confirmed in this run. Recommendation: the operator files it as a question and the partner confirms pp. 44 and 108 from the local copy cited in <code>funding-sources.ts</code>'s COP method; Tasks 2 to 9 do not depend on the method text and can proceed while it is open.</aside>
+  </section>
+</article>

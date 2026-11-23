@@ -30,7 +30,6 @@ import type { StageScale } from '../levers/timers';
 import type { LimitOwner } from '../levers/source';
 import type { SimLevers } from '../levers/types';
 import type { LotOutlines } from '../outlines';
-import type { PlaybackRequest } from '../lesscars/types';
 import type * as Protocol from '../protocol';
 import type { ChunksResponse, ParcelSummary, ReadyResponse, Rev, SimRequest } from '../protocol';
 import type * as Scenario from './types';
@@ -64,7 +63,7 @@ interface RowSchedule {
     of: number;
     start: 'scheduled' | 'estimated';
   } | null;
-  regime?: number; // lesscars plan 1 Task 4
+  regime?: number; // the dated regime the project started in
   inFlight?: true; // plan 4 Task 6 (Call 15)
   kind?: 'affordable';
   funding?: {
@@ -85,7 +84,7 @@ type RowSimInput = {
   districtMaxStories: number | null;
   newProjects?: { calibration: Calibration; scale: StageScale }; // plan 2 Task 8
   inFlightScale?: StageScale;
-  regimes?: { day: Day; parcels: ScenarioParcels }[]; // lesscars plan 1 Task 4
+  regimes?: { day: Day; parcels: ScenarioParcels }[]; // dated parcel views
   reservedFrom?: Int32Array;
   market?: MarketStep[];
   finance?: {
@@ -203,7 +202,7 @@ type RowScenarioResponse =
       capacity: LeverCapacity;
       unknownLots: number;
     };
-type RowWorkerRequest = SimRequest | RowScenarioRequest | PlaybackRequest;
+type RowWorkerRequest = SimRequest | RowScenarioRequest;
 
 // T8
 interface RowTimelineScore {

@@ -1,5 +1,5 @@
 // V36 over `scenarios/fzp/gross.bin` (the gross table). Kept out of check.ts beside the other
-// per-file checks; checkDataset calls checkV36 after V35.
+// per-file checks; checkDataset calls checkV36 after V33.
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { inflateRawSync } from 'node:zlib';

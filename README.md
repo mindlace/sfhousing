@@ -1,6 +1,6 @@
 # SF Housing Simulator
 
-A free, open-source tool for painting zoning and building changes onto a map of San Francisco and seeing the theoretical maximum buildout against housing targets. Numbers are a ceiling on what the rules allow, not a forecast.
+A free, open-source educational game about housing in San Francisco. Paint zoning until there is room for the homes goal, then reach the goal in a simulation of the city, unlocking permitting, zoning and public money one level at a time. Plans and policies can be published and remixed.
 
 Built with SvelteKit 2, Svelte 5 and Tailwind 4 on Cloudflare Workers (D1 + R2). No paid APIs or vendor keys are needed to run or build it.
 
@@ -25,6 +25,6 @@ Contributor and agent guidance lives in [CLAUDE.md](CLAUDE.md), which indexes th
 ## Licences
 
 - **Code:** MIT, see [LICENSE](LICENSE).
-- **Data:** the OpenStreetMap/Protomaps basemap and Overture Maps data are under the ODbL; DataSF data is under the PDDL / public domain. Derived files served under `/data/` that incorporate OpenStreetMap or Overture data are made available under the ODbL 1.0. Sources, vintages and licences for the current dataset are listed in the app at `/attribution`.
+- **Data:** the OpenStreetMap/Protomaps basemap and Overture Maps data are under the ODbL; DataSF data is under the PDDL / public domain. Derived files served under `/data/` that incorporate OpenStreetMap or Overture data are made available under the ODbL 1.0. Sources, vintages and licences for the current dataset are listed in the app at `/about`.
 
 Generated buildings use parcel-fitted terraces, divided rooflines, slabs, shoulders, offset towers and paired towers with restrained geometry and flat colors. Estimated housing capacity under the modeled building forms, not a forecast. Reopening a saved plan uses the current building model, so its appearance and estimated totals can change.

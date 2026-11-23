@@ -38,9 +38,12 @@ vi.mock('$lib/sim/scenario/funding', async (importOriginal) => {
 const MONTHS = 480;
 const seeds = (n: number) => Array.from({ length: n }, (_, i) => i + 1);
 
-/** The funding system serving by the direct scan. */
+/** The funding system serving by the direct scan, closing spent pools as the grouped one does. */
 function directSystem(): FundingSystem {
-  return { ...createFundingSystem(), serve: (ctx) => serveLine(ctx, { grouped: false }) };
+  return {
+    ...createFundingSystem(),
+    serve: (ctx) => serveLine(ctx, { grouped: false, closing: true })
+  };
 }
 
 interface Run {

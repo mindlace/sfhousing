@@ -41,7 +41,7 @@ function noteMoney(pools: FundPools, q: number, month: number, day: Day): void {
 }
 
 /**
- * Rule 10: the dollars returned to each capped pool row (releases and repayments) while serve's
+ * Rule 10: the dollars returned to each pool row (releases and repayments) while serve's
  * scan is open, held out of the scan's available money until it ends; null outside the scan, so
  * nothing is held between steps and the world carries no column for it.
  */
@@ -82,9 +82,8 @@ export function moneyIn(ctx: StepCtx): void {
   }
 }
 
-/** Available money of world pool row `q` under the frame's definition of that pool (Infinity uncapped). */
+/** Available money of world pool row `q` under the frame's definition of that pool. */
 export function availableOf(pools: FundPools, q: number, def: Pool): number {
-  if (def.uncapped) return Infinity;
   return (
     def.leverage * pools.received[q] -
     pools.committed[q] -
@@ -262,8 +261,7 @@ function book(
       break;
   }
   if (kind === 'repay' || kind === 'release') {
-    const fq = fm.pool.get(pools.mPool[m]);
-    if (fq === undefined || fm.index.capped[fq] !== 1) return;
+    if (!fm.pool.has(pools.mPool[m])) return;
     // Rule 10: returned during serve's scan, it waits for next month's scan (and its money day).
     if (scan !== null && scan.pools === pools) scan.held.set(q, (scan.held.get(q) ?? 0) + d);
     else noteMoney(pools, q, ctx.month, day);

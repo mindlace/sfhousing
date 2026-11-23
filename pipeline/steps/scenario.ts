@@ -37,7 +37,7 @@ import { localProgramEnvelope } from '../lib/local-program';
 import { recordQuality, recordSqlQuality } from '../lib/quality';
 import type { Report } from '../lib/report';
 import { scenarioEligible } from '../lib/scenario-eligibility';
-import { freewayLandSet, type FreewayLandFile } from '../lib/lesscars/freeway-land';
+import { freewayLandSet, type FreewayLandFile } from '../lib/freeway-land';
 import {
   ROAD_LOTS_CSV,
   readRoadLotReview,
@@ -274,7 +274,7 @@ export type V18Panel = Pick<
  * RM/RC maximum, so the two caps can differ, each correct for its own date. Where they differ
  * (`capPeriodDiffers`), the features derived from the base cap (`potentialRatio.base`, from the
  * capped base yield) are not compared; every other feature, the mask and `hostableBase` (which
- * reads no cap) are compared on every parcel. On freeway land (`freewayLand`, lesscars v1.1) T11
+ * reads no cap) are compared on every parcel. On freeway land (`freewayLand`, the curated catalog) T11
  * applies the rule and the panel does not (calibration describes the past market), so T11's
  * base-yield features must be the rule's instead: `hostableBase` 0 and `potentialRatio.base` 0.
  */
@@ -406,7 +406,7 @@ function provenance(capDay: Day, rollYear: number): ScenarioParcels['provenance'
         'land-use record and no homes on the roll) have 0: a parcel without a land-use record ' +
         'is eligible when the roll shows homes on it (sd.landuse.none-with-units, 4 / 4), in ' +
         `the panel on each roll year's homes. Freeway land ` +
-        '(pipeline/enrichment/lesscars/freeway-land.json: vacant or public parcels under or ' +
+        '(pipeline/enrichment/freeway-land.json: vacant or public parcels under or ' +
         'fronting a freeway, curated) is ineligible while its freeway stands. ' +
         'Road-like lots (public lots that are street remnants, medians, slopes or strips ' +
         'beside freeways; pipeline/sql/55_road_lots.sql, overrides in ' +
@@ -681,7 +681,7 @@ export async function writeScenario(a: {
   const roadReview = await readRoadLotReview(db);
   const roadReviewNet = new Map(roadReview.map((r) => [r.id, 0]));
   const roadWithUnits: string[] = [];
-  // Freeway land (lesscars v1.1): catalog parcels are unbuildable while their freeway stands.
+  // Freeway land: catalog parcels are unbuildable while their freeway stands.
   // `net_removed` is the static net capacity the rule takes away: over catalog rows the rule turns
   // unhostable, max(0, FZP full-fill yield − existing homes), the measure of /sim's netCapacity.
   const freewayLand = freewayLandSet(a.freewayLand);

@@ -85,11 +85,6 @@ function checkFinanceShape(f: Finance): void {
     }
   });
   f.pools.forEach((p, i) => {
-    if (p.uncapped && p.inflows.length > 0) {
-      throw new RangeError(`finance.pools[${i}] (${p.id}): an uncapped pool has no inflows`);
-    }
-  });
-  f.pools.forEach((p, i) => {
     if (!(typeof p.leverage === 'number' && Number.isFinite(p.leverage) && p.leverage > 0)) {
       throw new RangeError(
         `finance.pools[${i}] (${p.id}): leverage must be a finite number above 0; got ${p.leverage}`
@@ -203,7 +198,7 @@ export function below(x: number, y: number): boolean {
   return x < y - CERTAIN_TOLERANCE;
 }
 
-/** A capped pool's counters, in whole dollars (spec 4.7). */
+/** A pool's counters, in whole dollars (spec 4.7). */
 export interface PoolState {
   received: number;
   committed: number;
@@ -224,9 +219,8 @@ export function newPoolState(): PoolState {
   };
 }
 
-/** Money a pool can still commit; `Infinity` for an uncapped pool (spec 4.7). */
+/** Money a pool can still commit, from what it has received (spec 4.7). */
 export function available(pool: Pool, s: PoolState): number {
-  if (pool.uncapped) return Infinity;
   return (
     pool.leverage * s.received -
     s.committed -
@@ -244,8 +238,6 @@ export interface FinanceIndex {
   /** programme index to pool index */
   progPool: Int32Array;
   progPoolKind: PoolKind[];
-  /** 1 for a capped pool, by pool */
-  capped: Uint8Array;
   /** by pool: the `finance.off` spans, sorted by `from`; a null `to` is Infinity */
   offSpans: [Day, Day][][];
   /**
@@ -269,7 +261,6 @@ export function financeIndexOf(finance: Finance): FinanceIndex {
     progPool[i] = q;
     progPoolKind.push(finance.pools[q].kind);
   });
-  const capped = Uint8Array.from(finance.pools, (p) => (p.uncapped ? 0 : 1));
   const offSpans: [Day, Day][][] = finance.pools.map(() => []);
   for (const o of finance.off) {
     offSpans[poolOf.get(o.pool)!].push([o.from, o.to === null ? Infinity : o.to]);
@@ -284,7 +275,6 @@ export function financeIndexOf(finance: Finance): FinanceIndex {
     poolOf,
     progPool,
     progPoolKind,
-    capped,
     offSpans,
     price(kind, set, protoId) {
       // first by the array itself (the engine passes the same bundle arrays again and again),
@@ -337,11 +327,11 @@ export function isOffered(f: FinanceIndex, prog: number, d: Day): boolean {
 export interface Award {
   set: number[];
   priced: BundleFunding;
-  /** whole dollars asked of each capped pool, by pool index; a pool asked 0 is absent */
+  /** whole dollars asked of each pool, by pool index; a pool asked 0 is absent */
   asks: Map<number, number>;
 }
 
-/** What the programmes `set` ask of each capped pool for a project of `units` homes (spec 4.6). */
+/** What the programmes `set` ask of each pool for a project of `units` homes (spec 4.6). */
 export function asksOf(
   f: FinanceIndex,
   kind: ProjectKind,
@@ -353,7 +343,6 @@ export function asksOf(
   const asks = new Map<number, number>();
   set.forEach((g, i) => {
     const q = f.progPool[g];
-    if (!f.capped[q]) return;
     const it = priced.items[i];
     const dollars =
       projectDollars(it.granted, units) +
@@ -453,7 +442,7 @@ export function awardPasses(
   // the kept positions are a 31-bit mask
   if (n > 30) return awardSet(bundle, kind, protoId, units, avail, f) !== null;
   if (n === 0) return false;
-  const P = f.capped.length;
+  const P = f.finance.pools.length;
   if (passAsk.length < P) {
     passAsk = new Float64Array(P);
     passShort = new Uint8Array(P);
@@ -463,10 +452,9 @@ export function awardPasses(
   let set = bundle;
   for (;;) {
     const priced = f.price(kind, set, protoId);
-    // sum each capped pool's positive asks, in set order
+    // sum each pool's positive asks, in set order
     for (let j = 0; j < set.length; j++) {
       const q = f.progPool[set[j]];
-      if (!f.capped[q]) continue;
       const it = priced.items[j];
       const dollars =
         projectDollars(it.granted, units) +

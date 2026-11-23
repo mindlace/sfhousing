@@ -4,7 +4,7 @@
   centre, never clips), and the actions on the right. Below lg: the site name, the status, the
   pinned item and a hamburger Menu button whose panel (under the header) holds the steps and the
   actions.
-  Below sm, on a page that pins an item (Paint, /sim, /lesscars, /p/:id), the site name moves into
+  Below sm, on a page that pins an item (Paint, /sim, /p/:id), the site name moves into
   the panel too. The account entry (Sign in, or @handle) follows the actions in the same group;
   Sign in shows only while a sign-in method is in effect (`signInAvailable`). The About entry
   follows the account entry on every route (the map pages have no footer). The status is the
@@ -12,11 +12,17 @@
   the save state (nothing when saved), and on /sim "Updating" takes its place while the numbers
   are stale or Play waits, beside it when autosave is off, with its explanation button. The status
   and the actions render once at every width: from lg the panel is `display: contents`, so the actions sit in the header row.
+  With a game provided, the level cell (LevelCell) follows the steps: from lg in the bar, below lg
+  in the panel, where a "Level up" it offers puts a dot on the Menu button.
 -->
 <script lang="ts">
   import { onMount, tick, type Snippet } from 'svelte';
   import { AUTH_COPY } from '$lib/account/copy';
+  import { simLocked } from '$lib/game/allowed';
+  import { roundComplete } from '$lib/game/progress';
+  import { useGame } from '$lib/game/store.svelte';
   import { headerOverlay } from './header-actions.svelte';
+  import LevelCell from './LevelCell.svelte';
 
   let {
     actions,
@@ -54,6 +60,23 @@
       ? 'cursor-default border-transparent bg-accent text-on-accent dark:bg-accent-dark dark:text-on-accent-dark'
       : 'border-gray-500 hover:bg-gray-100 dark:border-gray-400 dark:hover:bg-chrome-dark-raised'
   ];
+
+  // Simulate before it unlocks: no link, the same shape with a dashed border.
+  const lockedStep =
+    'inline-flex min-h-6 min-w-6 cursor-default items-center whitespace-nowrap rounded-md border border-dashed border-gray-500 px-2 text-ink-muted dark:border-gray-400 dark:text-ink-dark-muted';
+
+  const game = useGame();
+  // The first client render matches the server's: the game's state shows only after mount.
+  let mounted = $state(false);
+  const locked = $derived(mounted && !game.open && simLocked(game.progress));
+  const account = $derived(user ?? (mounted ? game.sync.account : null));
+  // From lg the level cell is in the bar, below lg in the Menu: one instance at any width, so a
+  // resize across lg remounts it closed.
+  let wide = $state(false);
+  // Below lg the Menu button tells of a "Level up" waiting inside it.
+  const ready = $derived(
+    mounted && !game.open && game.offer !== null && !roundComplete(game.progress)
+  );
 
   let open = $state(false);
   let header = $state<HTMLElement>();
@@ -100,12 +123,17 @@
     if (item.matches('[aria-expanded], [aria-haspopup]')) return;
     // Inside a dialog an action opened (Publish's own buttons): closing would hide the dialog.
     if (item.closest('dialog')) return;
+    // The level cell's buttons (its own, Level up, the panel's rows) act in place.
+    if (item.matches('button') && item.closest('[data-header-keep-open]')) return;
     void close(false);
   }
 
   onMount(() => {
+    mounted = true;
     const mq = matchMedia(WIDE);
+    wide = mq.matches;
     const onChange = () => {
+      wide = mq.matches;
       if (mq.matches) open = false;
     };
     mq.addEventListener('change', onChange);
@@ -124,9 +152,17 @@
       >
     </li>
     <li>
-      <a href="/sim" class={tab(onSim)} aria-current={onSim ? 'page' : undefined}
-        >{@render stepNumber(2)}Simulate</a
-      >
+      {#if locked}
+        <span data-step-locked class={lockedStep}
+          >{@render stepNumber(2)}<span aria-hidden="true">Simulate</span><span class="sr-only"
+            >Simulate. Unlocks when you level up</span
+          ></span
+        >
+      {:else}
+        <a href="/sim" class={tab(onSim)} aria-current={onSim ? 'page' : undefined}
+          >{@render stepNumber(2)}Simulate</a
+        >
+      {/if}
     </li>
   </ol>
 {/snippet}
@@ -154,6 +190,7 @@
     <nav aria-label="Steps" class="flex shrink-0 items-center gap-3 text-sm max-lg:hidden">
       {@render steps()}
     </nav>
+    {#if mounted && !game.open && wide}<LevelCell inMenu={false} />{/if}
     <!-- The status, then the space that pushes the pinned item and the actions right. -->
     <!-- In the grid (from lg, with a pinned item) it takes its content's width, so a status too
          wide for the left track widens the track (the score moves) rather than running under it. -->
@@ -173,8 +210,8 @@
   <button
     bind:this={menuButton}
     type="button"
-    class="inline-flex min-h-8 min-w-8 shrink-0 items-center justify-center rounded-md border border-gray-300 lg:hidden dark:border-gray-600"
-    aria-label="Menu"
+    class="relative inline-flex min-h-8 min-w-8 shrink-0 items-center justify-center rounded-md border border-gray-300 lg:hidden dark:border-gray-600"
+    aria-label={ready ? 'Menu, level up ready' : 'Menu'}
     aria-expanded={open}
     aria-controls={panelId}
     data-header-menu
@@ -183,6 +220,13 @@
     <svg aria-hidden="true" viewBox="0 0 16 16" width="16" height="16" fill="none">
       <path d="M2 4h12M2 8h12M2 12h12" stroke="currentColor" stroke-width="2" />
     </svg>
+    {#if ready}
+      <span
+        aria-hidden="true"
+        data-level-dot
+        class="absolute -top-0.5 -right-0.5 size-2 rounded-full bg-accent dark:bg-accent-dark"
+      ></span>
+    {/if}
   </button>
   <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
   <div
@@ -206,17 +250,18 @@
     <nav aria-label="Steps" class="flex flex-wrap items-center gap-4 text-sm lg:hidden">
       {@render steps()}
     </nav>
+    {#if mounted && !game.open && !wide}<LevelCell inMenu />{/if}
     <!-- From lg nothing here shrinks, so the group's full width counts in the right track's
          minimum (a row too wide moves the score rather than squeezing a control). -->
     <div class="flex items-center gap-2 max-lg:flex-wrap lg:justify-self-end lg:*:shrink-0">
       {@render actions?.()}
-      {#if user || signInAvailable}
+      {#if account || signInAvailable}
         <a
-          href={user ? '/account' : '/signin'}
+          href={account ? '/account' : '/signin'}
           class={[tab(false), 'max-w-40 text-sm lg:max-xl:max-w-24']}
-          title={user ? `@${user.handle}` : undefined}
+          title={account ? `@${account.handle}` : undefined}
           data-header-account
-          ><span class="truncate">{user ? `@${user.handle}` : AUTH_COPY.signIn}</span></a
+          ><span class="truncate">{account ? `@${account.handle}` : AUTH_COPY.signIn}</span></a
         >
       {/if}
       <a

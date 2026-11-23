@@ -1,7 +1,7 @@
 /**
  * Latest-wins parcel-summary requests for the project card and tooltip (spec §4.8). One instance
  * per surface: at most one request in flight, one queued behind it, and only the latest query's
- * answer reaches `onstate`. FzpMode owns the instances and supplies `send`.
+ * answer reaches `onstate`. TimelineMode owns the instances and supplies `send`.
  */
 import type { ParcelId } from '$lib/data/parcel';
 import type { LotLimits } from '$lib/map/types';

@@ -11,18 +11,20 @@ import { miniCalibrationWithRoutes, miniFinance } from '$lib/sim/scenario/fixtur
 import { financeIndexOf, inflowArrivals, isOff, isOffered } from '$lib/sim/scenario/funding';
 import type { LedgerEvent } from '$lib/sim/scenario/money';
 import type { Schedule, SimInput } from '$lib/sim/scenario/types';
+import { LEGACY_UNCAPPED_DOLLARS } from '$lib/timelapse/model';
 import type { Day } from '$lib/timelapse/time';
 import type { Inflow, Pool, PoolKind, Programme } from '$lib/timelapse/types';
-import { DEFAULT_POLICY4, type SimPolicy4 } from '$lib/timeline/policy4';
+import { DEFAULT_POLICY4, type Policy, type SimPolicy4 } from '$lib/timeline/policy4';
 import { monthFirstDay, monthLastDay, monthOfDay } from '../../months';
 import { inForceAt, moneyLeversOf } from '../../policy/combine';
 import type { FinanceFrame, PolicyFrame, PolicyTimeline } from '../../policy/frame';
 import { createMoneyTrack } from '../../policy/money';
 import { frameIdOf } from '../../policy/intern';
+import { span } from '../../policy/test/fixtures';
 import type { Statics } from '../../statics';
 import { miniInput } from '../../test/mini';
 import { frameOf } from '../../test/timeline';
-import type { StepSink, World, WorldEvent } from '../../types';
+import type { FundingSystem, StepSink, World, WorldEvent } from '../../types';
 import { withFunding } from '../../world';
 import { createFundingSystem } from '../system';
 
@@ -200,8 +202,8 @@ export function sameMonthOrdinary(
 
 /**
  * Month m's money of `fin`: `offered` from `isOffered` on the month's first day, `arrivals` from
- * `inflowArrivals` over the month's days (month 1 from `asOf`), capped pools only and not on a
- * day their pool is off, as `policy/money.ts:156-168` builds them.
+ * `inflowArrivals` over the month's days (month 1 from `asOf`), every pool, not on a day its pool
+ * is off, as `policy/money.ts` builds them.
  */
 export function financeFrameOf(fin: Finance, asOf: Day, m: number): FinanceFrame {
   const idx = financeIndexOf(fin);
@@ -211,7 +213,6 @@ export function financeFrameOf(fin: Finance, asOf: Day, m: number): FinanceFrame
   const lo = m === 1 ? asOf : first;
   const arrivals: FinanceFrame['arrivals'] = [];
   fin.pools.forEach((p, q) => {
-    if (!idx.capped[q]) return;
     for (const fl of p.inflows) {
       const dollars = fl.kind === 'once' ? fl.dollars : fl.dollarsPerYear;
       for (const day of inflowArrivals(fl, lo, last))
@@ -303,12 +304,11 @@ function rng(seed: number): () => number {
 
 const TIERS = { veryLow: 0.5, low: 0.5, moderate: 0, aboveModerate: 0 };
 
-const randomPool = (id: string, kind: PoolKind, inflows: Inflow[], uncapped = false): Pool => ({
+const randomPool = (id: string, kind: PoolKind, inflows: Inflow[]): Pool => ({
   id,
   kind,
   label: id,
   inflows,
-  uncapped,
   debt: kind === 'goBond' || kind === 'cop' ? { rate: 0.04, termYears: 30 } : null,
   leverage: kind === 'bank' ? 0.8 : 1
 });
@@ -344,7 +344,15 @@ export function randomFinance(seed: number): Finance {
     if (p.kind === 'bank') p.leverage = 0.5 + r() * 0.5;
     pools.push(p);
   }
-  if (r() < 0.6) pools.push(randomPool('fed', 'federal', [], true));
+  if (r() < 0.6) {
+    const legacy: Inflow = {
+      kind: 'yearly',
+      from: asOf,
+      to: null,
+      dollarsPerYear: LEGACY_UNCAPPED_DOLLARS
+    };
+    pools.push(randomPool('fed', 'federal', [legacy]));
+  }
   const programmes: Programme[] = [];
   const nProg = 1 + Math.floor(r() * 5);
   for (let g = 0; g < nProg; g++) {
@@ -383,14 +391,94 @@ export function randomFinance(seed: number): Finance {
   };
 }
 
+/** The added pool the closing tests spend (an added pool's id starts `u-`: `buildFinance`). */
+export const CLOSE_POOL = 'u-close';
+/** CLOSE_POOL's affordable grant. */
+export const CLOSE_GRANT = 'u-close-grant';
+
+/** An added pool CLOSE_POOL (generalRevenue, leverage 1, debt null) with `inflows`. */
+export function closePool(inflows: Inflow[]): Pool {
+  return {
+    id: CLOSE_POOL,
+    kind: 'generalRevenue',
+    label: CLOSE_POOL,
+    inflows: structuredClone(inflows),
+    debt: null,
+    leverage: 1
+  };
+}
+
+/**
+ * CLOSE_POOL's programmes (test values): the certain affordable grant CLOSE_GRANT from 2 homes,
+ * and with `extra` one affordable programme of that instrument from 2 homes (`u-close-loan`,
+ * `u-close-guarantee`). Affordable, not market: no market application joins the mini city's line.
+ */
+function closeProgrammes(asOf: Day, extra?: 'loan' | 'guarantee'): Programme[] {
+  const out: Programme[] = [
+    {
+      id: CLOSE_GRANT,
+      label: CLOSE_GRANT,
+      pool: CLOSE_POOL,
+      reach: 'affordable',
+      instrument: { kind: 'grant', share: 1 },
+      from: asOf,
+      to: null,
+      minHomes: 2,
+      tiers: { ...TIERS }
+    }
+  ];
+  if (extra !== undefined)
+    out.push({
+      id: `u-close-${extra}`,
+      label: `u-close-${extra}`,
+      pool: CLOSE_POOL,
+      reach: 'affordable',
+      instrument:
+        extra === 'loan'
+          ? { kind: 'loan', costShare: 0.6, rate: 0.04, requiredReturn: null }
+          : { kind: 'guarantee', costShare: 0.5, reserve: 0.1 },
+      from: asOf,
+      to: null,
+      minHomes: 2,
+      tiers: { ...TIERS }
+    });
+  return out;
+}
+
+/**
+ * One `fund` policy for CLOSE_POOL: one span per entry (model months, `to` null: no end), each
+ * with its own pool definition and the affordable grant CLOSE_GRANT (and, with `loan` or
+ * `guarantee`, one programme of that instrument on the same pool: `closeProgrammes`).
+ */
+export function closingPolicy(
+  asOf: Day,
+  spans: { from: number; to: number | null; inflows: Inflow[] }[],
+  extra?: 'loan' | 'guarantee'
+): Policy {
+  return {
+    id: `fund-${CLOSE_POOL}`,
+    label: CLOSE_POOL,
+    preset: null,
+    on: true,
+    where: { tag: 'fund', pool: CLOSE_POOL },
+    spans: spans.map((s) =>
+      span(asOf, s.from, s.to, {
+        tag: 'fund',
+        pool: closePool(s.inflows),
+        programmes: closeProgrammes(asOf, extra)
+      })
+    )
+  };
+}
+
 /** A world event with the month of the call that sent it (0 during `createWorld`). */
 export type MonthEvent = WorldEvent & { month: number };
 
 /**
- * A funded world (`withFunding(createFundingSystem())`) created and stepped through month
- * `through` on one due list planned at the start; every event with its month. With
- * `ledger: false` the sink has no `ledger` (rule 14). `afterStep` runs after each month's step,
- * with the ledger so far.
+ * A funded world (`withFunding(createFundingSystem({ poolClosing }))`, `poolClosing` default true,
+ * or `withFunding(system)`) created and stepped through month `through` on one due list planned
+ * at the start; every event with its month. With `ledger: false` the sink has no `ledger` (rule
+ * 14). `afterStep` runs after each month's step, with the ledger so far.
  */
 export function runFunded(
   statics: Statics,
@@ -400,6 +488,9 @@ export function runFunded(
   opts: {
     ledger?: boolean;
     afterStep?: (w: World, m: number, ledger: readonly LedgerEvent[]) => void;
+    poolClosing?: boolean;
+    /** Overrides `poolClosing`. */
+    system?: FundingSystem;
   } = {}
 ): { world: World; events: MonthEvent[]; ledger: LedgerEvent[] } {
   const events: MonthEvent[] = [];
@@ -407,7 +498,9 @@ export function runFunded(
   let month = 0;
   const out: StepSink = { event: (e) => events.push({ ...e, month }) };
   if (opts.ledger !== false) out.ledger = (e) => ledger.push(e);
-  const core = withFunding(createFundingSystem());
+  const core = withFunding(
+    opts.system ?? createFundingSystem({ poolClosing: opts.poolClosing ?? true })
+  );
   const world = core.createWorld(statics, timeline, seed, out);
   const due = core.planDue(world, statics, timeline, seed, through);
   for (let m = 1; m <= through; m++) {

@@ -503,6 +503,39 @@ describe('programmes through the lens', () => {
     expect(store.labels).toEqual([]);
   });
 
+  it('a What edit makes a given measure an own measure', () => {
+    const given = fundDoc(1);
+    given.kinds.money[0] = { ...given.kinds.money[0], preset: 'housing-bond', label: 'A bond' };
+    const r = ref('money', 'fund-u-pool-1');
+    const p = project(given, r);
+
+    const inflow = tryWriteBack(given, r, {
+      ...p,
+      funding: {
+        ...p.funding,
+        pools: p.funding.pools.map((x) =>
+          x.id === pool.id ? { ...x, inflows: [{ ...x.inflows[0], dollars: 2_000_000 }] } : x
+        )
+      }
+    });
+    expect(inflow.refused).toBeNull();
+    expect(inflow.doc.kinds.money[0]).toMatchObject({ preset: null, label: 'A bond' });
+
+    const programme = tryWriteBack(given, r, {
+      ...p,
+      funding: {
+        ...p.funding,
+        programmes: p.funding.programmes.map((g, i) => (i === 0 ? { ...g, label: 'Changed' } : g))
+      }
+    });
+    expect(programme.refused).toBeNull();
+    expect(programme.doc.kinds.money[0]).toMatchObject({ preset: null, label: 'A bond' });
+
+    const same = tryWriteBack(given, r, project(given, r));
+    expect(same.doc).toBe(given);
+    expect(same.doc.kinds.money[0].preset).toBe('housing-bond');
+  });
+
   it('a missing ref projects the default policy and writes nothing', () => {
     const r = ref('zoning', 'nope');
     expect(project(richDoc, r)).toBe(DEFAULT_POLICY);

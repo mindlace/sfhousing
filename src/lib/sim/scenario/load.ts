@@ -108,12 +108,12 @@ export function datasetUrl(m: Manifest, u: unknown): string | null {
 }
 
 /**
- * §4.2 step 2: the FZP file URLs (three required, `policy` and `gross` optional), or null when `scenarios.fzp` is absent or any URL is
- * missing or not under `/data/<datasetVersion>/` (the host answers `scenario-missing`). The
- * manifest has passed `checkManifestShape`, which does not look at `scenarios`. The optional
- * `policy` URL is null when absent or outside the prefix: /fzp never needs it, so it never makes
- * the result null; the optional `gross` URL likewise. `scenarios.fzp.frontage` (older datasets)
- * is ignored.
+ * §4.2 step 2: the FZP file URLs (three required, `policy` and `gross` optional), or null when
+ * `scenarios.fzp` is absent or any URL is missing or not under `/data/<datasetVersion>/` (the
+ * host answers `scenario-missing`). The manifest has passed `checkManifestShape`, which does not
+ * look at `scenarios`. The optional `policy` URL is null when absent or outside the prefix: a
+ * session without levers never needs it, so it never makes the result null; the optional `gross`
+ * URL likewise. `scenarios.fzp.frontage` (older datasets) is ignored.
  */
 export function scenarioUrls(m: Manifest): ScenarioUrls | null {
   const fzp: unknown = (m.scenarios as { fzp?: unknown } | undefined)?.fzp;

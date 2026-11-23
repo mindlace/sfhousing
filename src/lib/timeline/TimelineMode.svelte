@@ -3,8 +3,7 @@
   and the status slot, the notice stack, the map with the project card and tooltip, and under the
   map the bottom pane: the timeline (the playhead, the chart and the rows) beside the detail
   column (the inspector, Details, or at rest Activity; a sheet on a phone), over a
-  `TimelineSession`. It takes
-  FzpMode's place; the load states before the worker are FzpMode's (rule 30). The policy store and
+  `TimelineSession`. The load states before the worker are its own (rule 30). The policy store and
   its editors are the page's: edits arrive as a new `policy`, their lots as a new `lots`
   (PolicySync).
 -->
@@ -45,7 +44,7 @@
 
   /**
    * One lookups object per calibration object: SimMap compares lookups by identity, and nothing
-   * may mutate them (as FzpMode).
+   * may mutate them.
    */
   const lookupCache = new WeakMap<Calibration, Lookups>();
   function lookupsFor(cal: Calibration): Lookups {
@@ -99,7 +98,6 @@
   import { BR_BLOCK, watchCardArea } from '$lib/fzp/card-area-watch';
   import { cardArea, cardPlacement, type CardArea } from '$lib/fzp/card-place';
   import { installFzpDebug } from '$lib/fzp/debug';
-  import { uncappedPoolIds } from '$lib/fzp/money-view';
   import { DEFAULT_SPEED } from '$lib/fzp/playback';
   import ProjectCardPanel from '$lib/fzp/ProjectCardPanel.svelte';
   import ProjectTooltip from '$lib/fzp/ProjectTooltip.svelte';
@@ -143,7 +141,6 @@
   import type { AddChoice } from './add';
   import { CHANGE_NOT_APPLIED, STALE_NOTE, UPDATING, WAITING_NOTE } from './copy';
   import Explain from './Explain.svelte';
-  import { fundsOf4 } from './owner';
   import Playhead from './Playhead.svelte';
   import { isPlayKey } from './shortcuts';
   import { clampDay, filledEndDay, indexOfDay, viewMonthOf } from './playhead';
@@ -168,6 +165,14 @@
   import MapKeyControl from '$lib/map/key/MapKeyControl.svelte';
   import { keyTally } from './key';
   import SimKey from './SimKey.svelte';
+  import { ALL_ALLOWED } from '$lib/game/allowed';
+  import { unlockText } from '$lib/game/copy';
+  import type { Level } from '$lib/game/levels';
+  import { barOf, roundComplete } from '$lib/game/progress';
+  import { standing, type Standing } from '$lib/game/standing';
+  import type { GameStore } from '$lib/game/store.svelte';
+  import WinCard from '$lib/game/WinCard.svelte';
+  import { missed, missedBar, shortOfBar, winTitle } from './game-copy';
 
   interface Props {
     manifest: Manifest | null;
@@ -202,8 +207,20 @@
     saveOff?: boolean;
     /** The page's own notices, first in the notice stack; each should be a `Message`. */
     notices?: Snippet;
-    /** The document on show; a new object after open is an edit (rule 25). */
+    /** The document on show (the rows); a new object after open is an edit (rule 25). */
     policy: SimPolicy4;
+    /**
+     * The document the worker runs, when it is not `policy` (the playable document in a game); a
+     * new object after open is an edit. Default `policy`.
+     */
+    run?: SimPolicy4;
+    /**
+     * The game: the seen result, the standing, the offer, the win card, the bar and the locks. The
+     * open game (`game.open`) is no game: today's page. Default null.
+     */
+    game?: GameStore | null;
+    /** The goal's amount, over the default goal (the `goal` seam wins). Default null: the default's. */
+    goalAmount?: number | null;
     /** The lots of `policy`'s brush queries; null while one is unresolved (PolicySync). */
     lots: Lots | null;
     /**
@@ -305,6 +322,9 @@
     saveOff = false,
     notices = undefined,
     policy,
+    run = undefined,
+    game = null,
+    goalAmount = null,
     lots,
     lotsFailed = false,
     onlotsretry = undefined,
@@ -369,7 +389,7 @@
   /** Every refill's `from`, in arrival order (the e2e hook). */
   const refills: number[] = [];
 
-  // Until SimMap's handle exists, cells and chunk statuses wait here, in order (as FzpMode).
+  // Until SimMap's handle exists, cells and chunk statuses wait here, in order.
   let pendingUpdates: TimelineUpdate[] = [];
   const pendingStatus = new Map<string, ChunkStatus>(); // eslint-disable-line svelte/prefer-svelte-reactivity
   const statusCells = new Set<string>(); // eslint-disable-line svelte/prefer-svelte-reactivity
@@ -379,8 +399,20 @@
 
   const asOf = $derived(calibration?.asOf ?? 0);
   const windowEnd = $derived(monthLastDay(asOf, WINDOW_MONTHS));
-  /** The page's goal: the seam, else the default goal built from the dataset's date. */
-  const goal = $derived(goalSeam ?? defaultGoal(asOf));
+  /**
+   * The page's goal: the seam, else the default goal built from the dataset's date, with
+   * `goalAmount` as its amount when given.
+   */
+  const goal = $derived(
+    goalSeam ??
+      (goalAmount !== null ? { ...defaultGoal(asOf), amount: goalAmount } : defaultGoal(asOf))
+  );
+  /** The game in play; the open game is no game (G2). */
+  const g = $derived(game && !game.open ? game : null);
+  /** The document the worker runs: `run`, else the one on show. */
+  const runDoc = $derived(run ?? policy);
+  /** What the game allows (G3); every control without one. */
+  const allowed = $derived(g?.allowed ?? ALL_ALLOWED);
   const current = $derived(session?.view ?? null);
   const statics = $derived(session?.statics ?? null);
   const months = $derived(statics?.months ?? current?.months ?? null);
@@ -420,17 +452,17 @@
   });
   /**
    * The document the shown numbers are from: the one the worker runs, or while stale the one it
-   * ran when the held view was taken; the edited `policy` until the session has one.
+   * ran when the held view was taken; the edited run document until the session has one.
    */
   let heldDoc = $state.raw<SimPolicy4 | null>(null);
-  const resultsDoc = $derived((stale ? heldDoc : null) ?? session?.accepted ?? policy);
+  const resultsDoc = $derived((stale ? heldDoc : null) ?? session?.accepted ?? runDoc);
   /** A policy of the person's is in force in the document the numbers on show are from. */
   const inForce = $derived(!nothingInForce(resultsDoc));
   /**
    * The key's mark row shows while the map can show marks of the edited document: a policy in
    * force in the numbers on show, or, while they are stale, in the edited one.
    */
-  const keyMarks = $derived(inForce || (stale && !nothingInForce(policy)));
+  const keyMarks = $derived(inForce || (stale && !nothingInForce(runDoc)));
   /**
    * The pool levels the Public money bars draw: from the view on show and the document and
    * calibration it was run on, rebuilt with them, never as the playhead moves.
@@ -561,9 +593,14 @@
       )
     }))
   );
-  /** At today with nothing in force in the edited document and the page editable: the starters. */
+  /**
+   * At today with nothing in force in the edited run document and the page editable: the starters
+   * the game allows.
+   */
   const starters = $derived(
-    onstarter && calibration && nothingInForce(policy) ? startersFor(calibration, policy) : []
+    onstarter && calibration && nothingInForce(runDoc)
+      ? startersFor(calibration, runDoc, allowed)
+      : []
   );
   /** The map key control's box: the card's area ends at its left edge. */
   let keyEl = $state<HTMLElement>();
@@ -595,12 +632,22 @@
    * wait, so the notice's wording and numbers are always one document's.
    */
   let outcomeInForce = $state(false);
+  /**
+   * The seen result (spec `seen`): the outcome under the run document, set only when the outcome
+   * is read with the numbers current, no search under way, the open not provisional and the view
+   * covering the months read. Every edit clears it at once, so an older document's outcome is
+   * never seen.
+   */
+  let seenResult = $state.raw<GoalOutcome | null>(null);
   $effect(() => {
     const view = shown.view;
     const m = reachedMonth;
-    const g = goal;
+    const gl = goal;
     const f = inForce;
     const wait = stale || searching;
+    const provisional = session?.provisional ?? false;
+    // Failed lots: the numbers on show are the last sent document's, not the one on screen (G4).
+    const failed = lotsFailed && lots === null;
     untrack(() => {
       if (wait) return;
       // The window's last month stands for the window's last day, which is where a goal due at
@@ -612,45 +659,134 @@
             ? filledEndDay(view.months, view.lastIndex, asOf)
             : view.months[m];
       // A view not yet covering the months read is no answer: the last outcome stays.
-      if (awaitsView(g, view, day, asOf)) return;
-      const next = goalOutcome(g, view, day, asOf);
+      if (awaitsView(gl, view, day, asOf)) return;
+      const next = goalOutcome(gl, view, day, asOf);
       const same =
         next === outcome ||
         (next !== null && outcome !== null && outcomeKey(next) === outcomeKey(outcome));
       if (!same) outcome = next;
       outcomeInForce = f;
+      // Keyed as `outcome`: an unchanged result keeps its object.
+      if (!provisional && !failed) seenResult = outcome;
     });
   });
   /** Outcomes dismissed this visit, by key. */
   const dismissed = new SvelteSet<string>();
+
+  // ---- the game (spec #sec-design-seen, -messages, -card, -levelup) ----
+
+  /** The result to beat at the game's level; null without one, and at levels 1 and 2. */
+  const bar = $derived(g ? barOf(g.progress) : null);
+  const stand = $derived<Standing>(
+    g ? standing(g.progress.level, bar, seenResult) : { kind: 'playing' }
+  );
+  /** The outcome the goal notice speaks of: a short standing's in a game, else today's. */
+  const noticeOutcome = $derived(g ? (stand.kind === 'short' ? stand.seen : null) : outcome);
   /**
    * Dismissing removes the focused button: focus goes to the next notice's button in the stack,
    * else to the ruler, so it never drops to the page.
    */
   async function dismissGoal(e: MouseEvent) {
-    if (!outcome) return;
+    if (!noticeOutcome) return;
     const buttons = [...(pillsEl?.querySelectorAll('button') ?? [])];
     const next = buttons[buttons.indexOf(e.currentTarget as HTMLButtonElement) + 1];
-    dismissed.add(outcomeKey(outcome));
+    dismissed.add(outcomeKey(noticeOutcome));
     await tick();
-    const target = next?.isConnected
-      ? next
-      : (modeEl ?? document).querySelector<HTMLElement>('[data-testid=tl-ruler]');
+    const target = next?.isConnected ? next : rulerEl();
     target?.focus();
   }
-  const goalNotice = $derived(
-    outcome && !dismissed.has(outcomeKey(outcome))
-      ? outcomeText(outcome, goal, outcomeInForce)
-      : null
-  );
+  function rulerEl(): HTMLElement | null {
+    return (modeEl ?? document).querySelector<HTMLElement>('[data-testid=tl-ruler]');
+  }
+  /** In a game, the standing's words (a short standing only); without one, today's. */
+  const goalNotice = $derived.by(() => {
+    const o = noticeOutcome;
+    if (!o || dismissed.has(outcomeKey(o))) return null;
+    if (!g) return outcomeText(o, goal, outcomeInForce);
+    const barOn = stand.kind === 'short' ? (stand.bar?.on ?? null) : null;
+    if (o.kind === 'reached') return barOn === null ? null : shortOfBar(o.on, barOn);
+    const unit = goal.measure.unit;
+    return barOn === null ? missed(o.short, unit) : missedBar(o.short, unit, barOn);
+  });
+
+  /** The month the open win card names; null while it is closed. */
+  let cardOn = $state<Day | null>(null);
+  /** The month whose card was kept ("Keep playing", Escape) at this level in this visit. */
+  let kept = $state<Day | null>(null);
+  let winEl = $state<HTMLElement>();
+  /** The level and completion the level-up reaction last saw. */
+  let lastLevel: Level | null = untrack(() => g?.progress.level ?? null);
+  let lastComplete = untrack(() => (g ? roundComplete(g.progress) : false));
+  // The level rose, or the round completed (whoever pressed): the clock returns to today and
+  // what was seen at the old level goes. A `levelUp()` that changes no progress (the round
+  // complete) changes neither input, so nothing happens. A pre-effect: it runs before the card and
+  // offer effects, so a level up clears the seen result first, and before the DOM updates, so
+  // focus is read in the card before the completing level up takes the card's "Level up" away.
+  $effect.pre(() => {
+    const level = g?.progress.level ?? null;
+    const complete = g ? roundComplete(g.progress) : false;
+    untrack(() => {
+      const rose = level !== null && lastLevel !== null && level > lastLevel;
+      const completed = complete && !lastComplete;
+      lastLevel = level;
+      lastComplete = complete;
+      if (!rose && !completed) return;
+      playing = false;
+      day = asOf;
+      handleDay(asOf);
+      reveal = revealOpen(asOf);
+      seenResult = null;
+      outcome = null;
+      dismissed.clear();
+      kept = null;
+      const inCard = !!winEl?.contains(document.activeElement);
+      cardOn = null;
+      if (inCard) void tick().then(() => rulerEl()?.focus());
+    });
+  });
+  // The card opens when the standing becomes won with a month not kept; it closes when the
+  // standing stops being won, keeping nothing. Focus in the card (an edit by Ctrl+Z from its
+  // button) goes to the ruler, so it never drops to the page.
+  $effect(() => {
+    const s = stand;
+    untrack(() => {
+      if (s.kind !== 'won') {
+        const inCard = cardOn !== null && !!winEl?.contains(document.activeElement);
+        cardOn = null;
+        if (inCard) void tick().then(() => rulerEl()?.focus());
+        return;
+      }
+      if (s.on === kept || cardOn === s.on) return;
+      cardOn = s.on;
+      playing = false;
+      g?.won();
+    });
+  });
+  /** The store the offer was last set on, cleared at unmount. */
+  let offerStore: GameStore | null = null;
+  // The offer follows the standing: the win while it is won, null as soon as it is not.
+  $effect(() => {
+    const s = stand;
+    const store = g;
+    const version = datasetVersion;
+    untrack(() => {
+      offerStore = store;
+      store?.setOffer(s.kind === 'won' ? { on: s.on, datasetVersion: version } : null);
+    });
+  });
+  /** "Keep playing" and Escape: the month is kept, the card closes, focus goes to the ruler. */
+  async function keep(): Promise<void> {
+    kept = cardOn;
+    cardOn = null;
+    await tick();
+    rulerEl()?.focus();
+  }
   // The held document goes once the numbers on show are current again.
   $effect(() => {
     if (!stale) untrack(() => (heldDoc = null));
   });
-  const funds = $derived(fundsOf4(resultsDoc));
   /** The market terms in force at the playhead, for Details' lost-grants line. */
   const terms = $derived(resolveTerms(MARKET_TERMS, termsInForce(resultsDoc, day)));
-  const uncapped = $derived(uncappedPoolIds(calibration?.baselineFunding?.pools, funds.pools));
   const phase = $derived<FzpPhase>(
     noScenario ? 'no-scenario' : failed ? 'failed' : (session?.phase ?? 'loading')
   );
@@ -996,7 +1132,7 @@
     pendingStatus.set(cellId, s);
   }
 
-  /** The restarted worker reports only the cells it fetches (as FzpMode). */
+  /** The restarted worker reports only the cells it fetches. */
   function resetChunkStatuses(): void {
     for (const cellId of statusCells) setChunkStatus(cellId, 'ready');
     statusCells.clear();
@@ -1168,7 +1304,7 @@
       }
     });
     s.oncardrefresh = refreshCard;
-    const [p, l] = untrack(() => [policy, lots] as const);
+    const [p, l] = untrack(() => [runDoc, lots] as const);
     seenPolicy = p;
     seenLots = l;
     s.open(p, l);
@@ -1184,11 +1320,11 @@
     return !stale || heldDoc === null ? s.accepted : heldDoc;
   }
 
-  // An edit (a new document): the edit is marked at once and playback pauses (rule 25). The
+  // An edit (a new run document): the edit is marked at once and playback pauses (rule 25). The
   // reveal starts looking for the first month it changed, against the numbers on show now (a
-  // search already under way keeps what was seen first).
+  // search already under way keeps what was seen first). In a game the seen result goes at once.
   $effect(() => {
-    const p = policy;
+    const p = runDoc;
     untrack(() => {
       if (!session || p === seenPolicy) return;
       seenPolicy = p;
@@ -1197,6 +1333,7 @@
       session.edited();
       reveal = editedReveal(reveal, seen);
       playing = false;
+      seenResult = null;
     });
   });
 
@@ -1213,7 +1350,7 @@
     const wait = waiting;
     untrack(() => {
       if (wait || !session) return;
-      const now = v ? { view: v, inForce: !nothingInForce(session.accepted ?? policy) } : null;
+      const now = v ? { view: v, inForce: !nothingInForce(session.accepted ?? runDoc) } : null;
       reveal = scanned(reveal, now, { day, playing, asOf });
     });
   });
@@ -1228,7 +1365,7 @@
   // PolicySync settled with a failure: the unsent edit ends (it goes out once Retry finds its
   // lots), so the page shows the last sent document's forecast, current, with the notice.
   $effect(() => {
-    void policy;
+    void runDoc;
     const failedNow = lotsFailed && lots === null;
     untrack(() => {
       if (session && failedNow) session.dropUnsent();
@@ -1246,7 +1383,7 @@
       seenLots = l;
       const seen = reveal.finding === null && shown.view ? { view: shown.view, inForce } : null;
       const held = hold(session);
-      if (!session.send(policy, l)) return;
+      if (!session.send(runDoc, l)) return;
       heldDoc = held;
       if (seen) reveal = editedReveal(reveal, seen);
     });
@@ -1392,6 +1529,7 @@
 
     return () => {
       dead = true;
+      offerStore?.setOffer(null);
       if (client) onclient?.(null);
       uninstall();
       playing = false;
@@ -1490,10 +1628,10 @@
       capacity={session?.capacity ?? null}
       pending={stale}
       {terms}
-      {uncapped}
       {inForce}
       {goal}
       {onactivity}
+      bar={bar?.on ?? null}
       bind:lens
     />
   </div>
@@ -1539,6 +1677,7 @@
     reached={reveal.reached}
     playFrom={playFromDay}
     {goalDeadline}
+    barDay={bar?.on ?? null}
     onday={handleDay}
   />
 {/snippet}
@@ -1575,7 +1714,7 @@
   <!-- The notice stack's host (its parent): from md the stack overlays the map's top, under the
        header. Below md the stack is in flow and this box is no box. -->
   <div class="relative flex min-h-0 flex-1 flex-col max-md:contents">
-    <!-- Every notice is a chip or a card (Message) in this one stack (as FzpMode). -->
+    <!-- Every notice is a chip or a card (Message) in this one stack. -->
     <NoticePills bind:el={pillsEl}>
       {#if noScenario}
         {#snippet editorLink()}
@@ -1606,10 +1745,23 @@
           <!-- The goal notice's polite region, mounted empty with the session so the first notice
                is announced. -->
           <div role="status" data-testid="tl-goal" class="contents">
-            {#if outcome && goalNotice !== null}
+            {#if goalNotice !== null}
               <Message text={goalNotice} ondismiss={dismissGoal} testid="tl-goal-notice" />
             {/if}
           </div>
+          {#if g && cardOn !== null}
+            <!-- The win card (G5): a dialog, not modal, where the notices are. -->
+            <div bind:this={winEl} data-testid="tl-win" class="pointer-events-auto max-w-full">
+              <WinCard
+                title={winTitle(cardOn)}
+                unlocks={roundComplete(g.progress)
+                  ? null
+                  : unlockText((g.progress.level + 1) as Level | 6)}
+                onlevelup={() => g.levelUp()}
+                onkeep={keep}
+              />
+            </div>
+          {/if}
         {/if}
         {#if phase === 'loading' && !halted}
           <div role="status" class="contents">
@@ -1783,6 +1935,8 @@
           {stale}
           bind:pinHeight
           {pinned}
+          {allowed}
+          level={g?.progress.level ?? null}
         />
       </div>
 
