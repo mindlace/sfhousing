@@ -12,6 +12,7 @@ import {
   unlocksAt
 } from './allowed';
 import { barText, lockedLane, unlockText } from './copy';
+import { E2E_GAME_KEY, E2E_GOAL_KEY } from './e2e';
 import { LAST_LEVEL, beats, paintWon } from './levels';
 import { NEW_GAME, barOf, levelUp, roundComplete } from './progress';
 import { MAX_SAVE_BYTES } from './save-api';
@@ -58,6 +59,10 @@ describe('constants', () => {
   it('the storage keys', () => {
     expect(SAVES_KEY).toBe('sfhousing:saves:v1');
     expect(saveKey('abc')).toBe('sfhousing:save:abc');
+  });
+  it('the e2e keys', () => {
+    expect(E2E_GAME_KEY).toBe('sfhousing:e2e:game');
+    expect(E2E_GOAL_KEY).toBe('sfhousing:e2e:goal');
   });
   it('the limits', () => {
     expect(MAX_SAVES).toBe(12);
