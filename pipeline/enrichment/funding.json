@@ -1,5 +1,5 @@
 {
-  "schema": 1,
+  "schema": 2,
   "perHome": {
     "total": 954127,
     "city": 300027,
@@ -42,12 +42,24 @@
             "quote": "Assuming G.O. bonds are issued at a 6.0 percent interest rate for a 20-year term"
           }
         },
-        "note": "General-obligation bonds and other debt, FY2024-25 (p. 43). It includes the 2016 Preservation and Seismic Safety (PASS) bond, which funds preservation, not new building (p. 43), and commercial paper and certificates of participation, with no split given. Future bonds 'will require periodic City authorization and voter approval' (p. 72). Held level (OD-F3).",
+        "note": "General-obligation bonds and other debt, FY2024-25 (p. 43). It includes the 2016 Preservation and Seismic Safety (PASS) bond, which funds preservation, not new building (p. 43), and commercial paper and certificates of participation, with no split given. Future bonds 'will require periodic City authorization and voter approval' (p. 72).",
         "cite": {
           "label": "Budget and Legislative Analyst, \"Funding and Incentivizing Affordable Housing in San Francisco\", 2026-06-05",
           "url": "https://media.api.sf.gov/documents/BLA_Financing_Affordable_Housing_060526.pdf",
           "page": "p. 43",
           "retrieved": "2026-11-09"
+        },
+        "bound": {
+          "kind": "remaining",
+          "dollars": 260310000,
+          "method": "Unissued authorisation of the affordable-housing bonds on 30 September 2026: 2019 Proposition A, $107,540,000 of $600,000,000 (row [13]); 2024 Proposition A, $152,770,000 of $300,000,000 (row [16]). 2015 Proposition A is fully issued (row [10]). The capital plan's next housing bond (November 2034, $200 million) needs voters and is not current law. Proceeds issued and not yet spent, and the source's other debt, are not counted.",
+          "tier": 2,
+          "cite": {
+            "label": "City and County of San Francisco, General Obligation Bonds Project Summary, 30 September 2026",
+            "url": "https://media.api.sf.gov/documents/08c._GOB_Project_Summary_2027_September_2026.pdf",
+            "page": "rows [10], [13] and [16]",
+            "retrieved": "2026-11-22"
+          }
         }
       },
       {
@@ -56,26 +68,74 @@
         "kind": "dedicatedTax",
         "dollarsPerYear": 48600000,
         "debt": null,
-        "note": "Our City, Our Home Fund, approved by voters in 2018; it funds affordable housing and three service areas for people experiencing homelessness (p. 44). Held level (OD-F3).",
+        "note": "Our City, Our Home Fund, approved by voters in 2018; it funds affordable housing and three service areas for people experiencing homelessness (p. 44).",
         "cite": {
           "label": "Budget and Legislative Analyst, \"Funding and Incentivizing Affordable Housing in San Francisco\", 2026-06-05",
           "url": "https://media.api.sf.gov/documents/BLA_Financing_Affordable_Housing_060526.pdf",
           "page": "p. 44",
           "retrieved": "2026-11-09"
+        },
+        "bound": {
+          "kind": "none",
+          "reason": "A gross receipts tax approved by voters in 2018 (Proposition C) for a continuing fund; no sunset was found in what was read.",
+          "tier": 2,
+          "cite": {
+            "label": "Budget and Legislative Analyst, \"Funding and Incentivizing Affordable Housing in San Francisco\", 2026-06-05",
+            "url": "https://media.api.sf.gov/documents/BLA_Financing_Affordable_Housing_060526.pdf",
+            "page": "pp. 44, 46",
+            "retrieved": "2026-11-09"
+          }
         }
       },
       {
         "id": "city-general-fund",
         "label": "City: General Fund",
         "kind": "generalRevenue",
-        "dollarsPerYear": 36700000,
+        "dollarsPerYear": 21800000,
         "debt": null,
-        "note": "General Fund, from unrestricted tax revenue (p. 44). It includes $14.9 million from the Housing Stability Fund (Proposition I, 2020), spent down by February 2026 (p. 100), and $14.5 million work-ordered from the Department of Homelessness and Supportive Housing for homeless housing (p. 44). Held level (OD-F3).",
+        "note": "General Fund, from unrestricted tax revenue (p. 44): $36.7 million in Exhibit E, less the $14.9 million from the Housing Stability Fund, which is its own source here. It includes $14.5 million work-ordered from the Department of Homelessness and Supportive Housing for homeless housing (p. 44).",
         "cite": {
           "label": "Budget and Legislative Analyst, \"Funding and Incentivizing Affordable Housing in San Francisco\", 2026-06-05",
           "url": "https://media.api.sf.gov/documents/BLA_Financing_Affordable_Housing_060526.pdf",
           "page": "p. 44",
           "retrieved": "2026-11-09"
+        },
+        "bound": {
+          "kind": "none",
+          "reason": "A yearly appropriation from unrestricted tax revenue; no law sets an end.",
+          "tier": 2,
+          "cite": {
+            "label": "Budget and Legislative Analyst, \"Funding and Incentivizing Affordable Housing in San Francisco\", 2026-06-05",
+            "url": "https://media.api.sf.gov/documents/BLA_Financing_Affordable_Housing_060526.pdf",
+            "page": "p. 44",
+            "retrieved": "2026-11-09"
+          }
+        }
+      },
+      {
+        "id": "city-housing-stability-fund",
+        "label": "City: Housing Stability Fund (Proposition I, 2020)",
+        "kind": "generalRevenue",
+        "dollarsPerYear": 14900000,
+        "debt": null,
+        "note": "The part of Exhibit E's General Fund line that came from the Housing Stability Fund (Proposition I, 2020), $14.9 million in FY2024-25 (p. 44).",
+        "cite": {
+          "label": "Budget and Legislative Analyst, \"Funding and Incentivizing Affordable Housing in San Francisco\", 2026-06-05",
+          "url": "https://media.api.sf.gov/documents/BLA_Financing_Affordable_Housing_060526.pdf",
+          "page": "p. 44",
+          "retrieved": "2026-11-09"
+        },
+        "bound": {
+          "kind": "remaining",
+          "dollars": 0,
+          "method": "The Housing Stability Fund was spent down by February 2026 (p. 100).",
+          "tier": 1,
+          "cite": {
+            "label": "Budget and Legislative Analyst, \"Funding and Incentivizing Affordable Housing in San Francisco\", 2026-06-05",
+            "url": "https://media.api.sf.gov/documents/BLA_Financing_Affordable_Housing_060526.pdf",
+            "page": "p. 100",
+            "retrieved": "2026-11-09"
+          }
         }
       },
       {
@@ -84,12 +144,23 @@
         "kind": "dedicatedTax",
         "dollarsPerYear": 34800000,
         "debt": null,
-        "note": "Affordable-housing impact fees: a fee, not a tax (classed with dedicated revenue because no fee kind exists). FY2024-25 spending was 'spending from prior year fee collections and loan repayments' (p. 44), while fee revenue was $422,048 in FY2024-25 against an $18.0 million average (Exhibit I, p. 9). Held level (OD-F3).",
+        "note": "Affordable-housing impact fees: a fee, not a tax (classed with dedicated revenue because no fee kind exists). FY2024-25 spending was 'spending from prior year fee collections and loan repayments' (p. 44), while fee revenue was $422,048 in FY2024-25 against an $18.0 million average (Exhibit I, p. 9).",
         "cite": {
           "label": "Budget and Legislative Analyst, \"Funding and Incentivizing Affordable Housing in San Francisco\", 2026-06-05",
           "url": "https://media.api.sf.gov/documents/BLA_Financing_Affordable_Housing_060526.pdf",
           "page": "p. 44",
           "retrieved": "2026-11-09"
+        },
+        "bound": {
+          "kind": "none",
+          "reason": "The fees are charged on development under the Planning Code with no end in law. FY2024-25 spending came from earlier balances (p. 44) while collections were $422,048 (p. 9, Exhibit I); the balance was not found in a primary, so the source keeps paying.",
+          "tier": 2,
+          "cite": {
+            "label": "Budget and Legislative Analyst, \"Funding and Incentivizing Affordable Housing in San Francisco\", 2026-06-05",
+            "url": "https://media.api.sf.gov/documents/BLA_Financing_Affordable_Housing_060526.pdf",
+            "page": "pp. 9, 44",
+            "retrieved": "2026-11-09"
+          }
         }
       },
       {
@@ -98,12 +169,25 @@
         "kind": "generalRevenue",
         "dollarsPerYear": 27400000,
         "debt": null,
-        "note": "Housing Trust Fund, a charter baseline approved in 2012 (Proposition C) and running to 2043, about $52 million a year in all, of which $27.4 million went to multifamily housing in FY2024-25 (p. 44). Held level (OD-F3).",
+        "note": "Housing Trust Fund, a charter baseline approved in 2012 (Proposition C) and running to 2043, about $52 million a year in all, of which $27.4 million went to multifamily housing in FY2024-25 (p. 44).",
         "cite": {
           "label": "Budget and Legislative Analyst, \"Funding and Incentivizing Affordable Housing in San Francisco\", 2026-06-05",
           "url": "https://media.api.sf.gov/documents/BLA_Financing_Affordable_Housing_060526.pdf",
           "page": "p. 44",
           "retrieved": "2026-11-09"
+        },
+        "bound": {
+          "kind": "ends",
+          "on": "2043-06-30",
+          "method": "The Charter's Housing Trust Fund runs to 2043; the Controller's statement on the 2026 measure extends it 'from 2043 to 2058'. Read as the end of fiscal year 2042-43, 30 June 2043. The 2026 extension (Proposition C) is not certified and is a measure a player adds.",
+          "tier": 2,
+          "cite": {
+            "label": "Controller, Proposition C: Contributions to the Housing Fund, statement of 2026-08-10",
+            "url": "https://media.api.sf.gov/documents/Proposition_C__Contributions_to_the_Housing_Fund_-_Signed.pdf",
+            "page": "p. 1",
+            "retrieved": "2026-11-22",
+            "quote": "from 2043 to 2058"
+          }
         }
       },
       {
@@ -112,12 +196,25 @@
         "kind": "dedicatedTax",
         "dollarsPerYear": 6000000,
         "debt": null,
-        "note": "Former Redevelopment Agency housing assets (the Low- and Moderate-Income Housing Asset Fund, p. 44); 'that source has now been spent down' (p. 73). Held level (OD-F3).",
+        "note": "Former Redevelopment Agency housing assets (the Low- and Moderate-Income Housing Asset Fund, p. 44); 'that source has now been spent down' (p. 73).",
         "cite": {
           "label": "Budget and Legislative Analyst, \"Funding and Incentivizing Affordable Housing in San Francisco\", 2026-06-05",
           "url": "https://media.api.sf.gov/documents/BLA_Financing_Affordable_Housing_060526.pdf",
           "page": "p. 44",
           "retrieved": "2026-11-09"
+        },
+        "bound": {
+          "kind": "remaining",
+          "dollars": 0,
+          "method": "The Low- and Moderate-Income Housing Asset Fund is spent down. The later SB 593 bond route for replacement homes is not this source.",
+          "tier": 1,
+          "cite": {
+            "label": "Budget and Legislative Analyst, \"Funding and Incentivizing Affordable Housing in San Francisco\", 2026-06-05",
+            "url": "https://media.api.sf.gov/documents/BLA_Financing_Affordable_Housing_060526.pdf",
+            "page": "p. 73",
+            "retrieved": "2026-11-09",
+            "quote": "that source has now been spent down"
+          }
         }
       }
     ]
@@ -134,42 +231,42 @@
       "page": "p. 42",
       "retrieved": "2026-11-09",
       "quote": "have provided more than $1.2 billion in funding for affordable housing in San Francisco since 2018, according to MOHCD staff"
+    },
+    "bound": {
+      "kind": "none",
+      "reason": "Could not be settled. Whether the 2018 state housing bonds (Propositions 1 and 2) are spent was not found in a primary, and the state's housing programmes are funded every year. A source with no end found keeps paying at its yearly amount.",
+      "tier": 2,
+      "cite": {
+        "label": "Budget and Legislative Analyst, \"Funding and Incentivizing Affordable Housing in San Francisco\", 2026-06-05",
+        "url": "https://media.api.sf.gov/documents/BLA_Financing_Affordable_Housing_060526.pdf",
+        "page": "p. 42",
+        "retrieved": "2026-11-09",
+        "quote": "have provided more than $1.2 billion in funding for affordable housing in San Francisco since 2018, according to MOHCD staff"
+      }
     }
   },
   "federal": {
     "id": "federal-tax-credits",
     "label": "Federal: low-income housing tax credits",
+    "dollarsPerYear": 564519592,
     "tier": 2,
-    "method": "Federal funding pays $443,108 of an affordable home (Exhibit F, p. 7). The Analyst says it 'includes the Low-Income Housing Tax Credit' (p. 6) and gives no split; this pool treats all of it as tax credits, which follow the project. The pool has no ceiling, an inference (tier 2) from the 2026 allocation rounds awarded by 14 September 2026. Awards with the 4% credit take a share of California's bond ceiling for rental housing, $4.83 billion in 2026. That ceiling is divided among state-wide pools and six regions, and San Francisco has no share of its own. The Bay Area region used $75.2 million of $128.6 million in round 1 and $170.1 million of $181.9 million in round 2. The 9% credit has a San Francisco share of $2,861,626 a year; no San Francisco project was recommended in round 1, and $3,437,486 was left. Limits: San Francisco projects also compete in state-wide pools, some of which were fully used, and the records do not say which pool paid for a San Francisco award. The simulation pays this share for any number of funded homes. A policy that funds many more homes than today could meet the bond ceiling, and the simulation does not show that.",
+    "method": "Federal funding pays $443,108 of an affordable home (Exhibit F, p. 7). The Analyst says it 'includes the Low-Income Housing Tax Credit' (p. 6) and gives no split; this pool treats all of it as tax credits, which follow the project. The yearly ceiling is the most San Francisco won in one year of the award rows: 1,274 new-construction homes in 2024, times $443,108, $564,519,592 (an inference from the award records, tier 2). California sets both credits' ceilings each year: in 2026, $4.83 billion of bond ceiling for rental housing, divided among state-wide pools and six regions with no San Francisco share, and a San Francisco share of $2,861,626 a year of the 9% credit.",
     "cite": {
       "label": "Budget and Legislative Analyst, \"Funding and Incentivizing Affordable Housing in San Francisco\", 2026-06-05",
       "url": "https://media.api.sf.gov/documents/BLA_Financing_Affordable_Housing_060526.pdf",
       "page": "p. 7, Exhibit F",
       "retrieved": "2026-11-09"
     },
-    "uncapped": {
-      "rounds": 3,
-      "window": ["2026-01-01", "2026-09-14"],
-      "cites": [
-        {
-          "label": "California Debt Limit Allocation Committee, Exhibit A, \"Pool and Set-Aside Recommendation of 2026 State Debt Ceiling\", updated 2026-09-14",
-          "url": "https://www.treasurer.ca.gov/sites/default/files/2026-09/Allocation_by_Round_9-14-2026.pdf",
-          "page": "Exhibit A, row Bay Area Region",
-          "retrieved": "2026-11-10"
-        },
-        {
-          "label": "California Tax Credit Allocation Committee, \"CTCAC Allocation Process for Set Asides and Geographic Regions, Estimated for Calendar Year 2026\", updated 2026-09-02",
-          "url": "https://www.treasurer.ca.gov/sites/default/files/2026-03/2026-credit-estimates.pdf",
-          "page": "p. 1, Step 3, row San Francisco County",
-          "retrieved": "2026-11-10"
-        },
-        {
-          "label": "California Tax Credit Allocation Committee, \"CTCAC 2026 First Round 9% Final Approved Recommendations for the Geographic Regions\", 2026-06-22",
-          "url": "https://www.treasurer.ca.gov/sites/default/files/ctcac/2026_R1_Final_Recommendations.pdf",
-          "page": "p. 2, San Francisco County",
-          "retrieved": "2026-11-10"
-        }
-      ]
+    "bound": {
+      "kind": "none",
+      "reason": "California sets both credits' ceilings every calendar year, and no end to the credit was read.",
+      "tier": 2,
+      "cite": {
+        "label": "California Debt Limit Allocation Committee, Exhibit A, \"Pool and Set-Aside Recommendation of 2026 State Debt Ceiling\", updated 2026-09-14",
+        "url": "https://www.treasurer.ca.gov/sites/default/files/2026-09/Allocation_by_Round_9-14-2026.pdf",
+        "page": "Exhibit A",
+        "retrieved": "2026-11-10"
+      }
     }
   },
   "awards": {

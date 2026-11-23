@@ -1,7 +1,12 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { fiscalYearWindow, parseFundingFile } from '../../enrichment/funding-schema';
+import {
+  fiscalYearWindow,
+  parseFundingFile,
+  type Bound,
+  type FundingFile
+} from '../../enrichment/funding-schema';
 
 const LIVE = resolve(__dirname, '../../enrichment/funding.json');
 const FIXTURE = resolve(__dirname, '../fixtures/mini/enrichment/funding.json');
@@ -12,10 +17,16 @@ const POOL_IDS = [
   'city-debt',
   'city-ocoh',
   'city-general-fund',
+  'city-housing-stability-fund',
   'city-impact-fees',
   'city-housing-trust-fund',
   'city-redevelopment'
 ];
+
+/** The Housing Trust Fund's end: the Charter's last fiscal year (spec, the data). */
+const HTF_PIN = ['ends', '2043-06-30', 2];
+/** The state bound: none found in a primary (spec, the data). */
+const STATE_PIN = ['none', null, 2];
 
 function pages(v: unknown, out: unknown[] = []): unknown[] {
   if (Array.isArray(v)) v.forEach((x) => pages(x, out));
@@ -27,63 +38,71 @@ function pages(v: unknown, out: unknown[] = []): unknown[] {
   return out;
 }
 
+/** Every source's id and bound, City sources first, then state and federal. */
+function boundsOf(f: FundingFile): [string, Bound][] {
+  return [
+    ...f.city.sources.map((s): [string, Bound] => [s.id, s.bound]),
+    [f.state.id, f.state.bound],
+    [f.federal.id, f.federal.bound]
+  ];
+}
+
+/** [kind, on | dollars | null, tier]: the parts of a bound the bounds table pins. */
+const pinOf = (b: Bound): [string, string | number | null, number] => [
+  b.kind,
+  b.kind === 'ends' ? b.on : b.kind === 'remaining' ? b.dollars : null,
+  b.tier
+];
+
 describe('funding.json', () => {
-  it('parses, with the pinned ids and a page on every cite', () => {
+  it('parses at schema 2 with the nine pinned ids, in order, and a page on every cite, bound cites included', () => {
     const f = parseFundingFile(load(LIVE), 'funding.json');
+    expect(f.schema).toBe(2);
     expect(f.retiredIds).toEqual([]);
     expect(f.city.sources.map((s) => s.id)).toEqual(POOL_IDS);
     expect(f.state.id).toBe('state');
     expect(f.federal.id).toBe('federal-tax-credits');
+    expect(boundsOf(f).map(([id]) => id)).toEqual([...POOL_IDS, 'state', 'federal-tax-credits']);
     const all = pages(f);
     expect(all.length).toBeGreaterThan(20);
     for (const p of all) expect(typeof p === 'string' && p.length > 0).toBe(true);
-  });
-
-  it("carries the federal pool's three allocation records in federal.uncapped", () => {
-    const f = parseFundingFile(load(LIVE), 'funding.json');
-    expect(f.federal.uncapped.rounds).toBe(3);
-    expect(f.federal.uncapped.window).toEqual(['2026-01-01', '2026-09-14']);
-    expect(f.federal.uncapped.cites.map((c) => c.url)).toEqual([
-      'https://www.treasurer.ca.gov/sites/default/files/2026-09/Allocation_by_Round_9-14-2026.pdf',
-      'https://www.treasurer.ca.gov/sites/default/files/2026-03/2026-credit-estimates.pdf',
-      'https://www.treasurer.ca.gov/sites/default/files/ctcac/2026_R1_Final_Recommendations.pdf'
-    ]);
-    expect(f.federal.uncapped.cites.map((c) => [c.label, c.page])).toEqual([
-      [
-        'California Debt Limit Allocation Committee, Exhibit A, "Pool and Set-Aside ' +
-          'Recommendation of 2026 State Debt Ceiling", updated 2026-09-14',
-        'Exhibit A, row Bay Area Region'
-      ],
-      [
-        'California Tax Credit Allocation Committee, "CTCAC Allocation Process for Set Asides ' +
-          'and Geographic Regions, Estimated for Calendar Year 2026", updated 2026-09-02',
-        'p. 1, Step 3, row San Francisco County'
-      ],
-      [
-        'California Tax Credit Allocation Committee, "CTCAC 2026 First Round 9% Final Approved ' +
-          'Recommendations for the Geographic Regions", 2026-06-22',
-        'p. 2, San Francisco County'
-      ]
-    ]);
-    for (const c of f.federal.uncapped.cites) expect(c.retrieved).toBe('2026-11-10');
-    expect(f.federal.method).not.toContain('is published for the City');
+    for (const [, b] of boundsOf(f)) {
+      expect(typeof b.cite.page === 'string' && b.cite.page.length > 0).toBe(true);
+      expect(all).toContain(b.cite.page);
+    }
     expect(f.federal.method).toContain("'includes the Low-Income Housing Tax Credit' (p. 6)");
   });
 
-  it('fixture twin carries an invented federal.uncapped', () => {
-    const fx = parseFundingFile(load(FIXTURE), 'funding.json');
-    expect(fx.federal.uncapped).toEqual({
-      rounds: 1,
-      window: ['2026-01-01', '2026-01-01'],
-      cites: [
-        {
-          label: 'Fixture: invented allocation record (tier 4)',
-          url: 'https://fixture.invalid/funding',
-          page: 'fixture',
-          retrieved: '2026-11-10'
-        }
-      ]
-    });
+  it('gives each live source the bound of the bounds table', () => {
+    const f = parseFundingFile(load(LIVE), 'funding.json');
+    const pins = Object.fromEntries(boundsOf(f).map(([id, b]) => [id, pinOf(b)]));
+    expect(pins['city-debt']).toEqual(['remaining', 260_310_000, 2]);
+    expect(pins['city-ocoh']).toEqual(['none', null, 2]);
+    expect(pins['city-general-fund']).toEqual(['none', null, 2]);
+    expect(pins['city-housing-stability-fund']).toEqual(['remaining', 0, 1]);
+    expect(pins['city-housing-trust-fund']).toEqual(HTF_PIN);
+    expect(pins['city-redevelopment']).toEqual(['remaining', 0, 1]);
+    expect(pins['state']).toEqual(STATE_PIN);
+    expect(pins['federal-tax-credits']).toEqual(['none', null, 2]);
+    const [kind, amount, tier] = pins['city-impact-fees'];
+    expect(tier).toBe(2);
+    if (kind === 'none') expect(amount).toBeNull();
+    else {
+      expect(kind).toBe('remaining');
+      expect(Number.isInteger(amount)).toBe(true);
+    }
+    expect(f.city.sources.map((s) => s.dollarsPerYear)).toEqual([
+      80_500_000, 48_600_000, 21_800_000, 14_900_000, 34_800_000, 27_400_000, 6_000_000
+    ]);
+    expect(f.state.dollarsPerYear).toBe(150_000_000);
+    expect(f.state.tier).toBe(2);
+    for (const s of f.city.sources) expect(s.note.endsWith('Held level (OD-F3).')).toBe(false);
+  });
+
+  it('sets the federal ceiling to 1,274 homes times 443,108', () => {
+    const f = parseFundingFile(load(LIVE), 'funding.json');
+    expect(f.federal.dollarsPerYear).toBe(1274 * 443_108);
+    expect(f.federal.dollarsPerYear).toBe(564_519_592);
   });
 
   it('has the expected award sums', () => {
@@ -98,9 +117,31 @@ describe('funding.json', () => {
     ]);
   });
 
-  it('fixture twin parses with the live ids and kinds and Fixture: labels', () => {
+  it('fixture twin parses at schema 2 with the live ids and kinds, every kind of bound and Fixture: labels', () => {
     const live = parseFundingFile(load(LIVE), 'funding.json');
     const fx = parseFundingFile(load(FIXTURE), 'funding.json');
+    expect(fx.schema).toBe(2);
+    const fxBounds = boundsOf(fx).map(([, b]) => b);
+    expect([...new Set(fxBounds.map((b) => b.kind))].sort()).toEqual(['ends', 'none', 'remaining']);
+    for (const b of fxBounds) {
+      expect(b.tier).toBe(2);
+      expect(b.kind === 'none' ? b.reason : b.method).toMatch(/^Fixture: invented/);
+    }
+    expect(boundsOf(fx).map(([, b]) => pinOf(b).slice(0, 2))).toEqual([
+      ['remaining', 3_500_000],
+      ['none', null],
+      ['none', null],
+      ['remaining', 0],
+      ['remaining', 2_000_000],
+      ['ends', '2043-06-30'],
+      ['remaining', 0],
+      ['none', null],
+      ['none', null]
+    ]);
+    expect([...fx.city.sources.map((s) => s.dollarsPerYear), fx.state.dollarsPerYear]).toEqual([
+      1_500_000, 1_200_000, 600_000, 400_000, 1_000_000, 800_000, 500_000, 3_000_000
+    ]);
+    expect(fx.federal.dollarsPerYear).toBe(13_293_240);
     expect(fx.city.sources.map((s) => [s.id, s.kind])).toEqual(
       live.city.sources.map((s) => [s.id, s.kind])
     );
@@ -202,27 +243,64 @@ describe('funding.json', () => {
       (f) => (f.city.fiscalYear = 'FY2099-01'),
       'fiscalYear must be FYyyyy-yy, two consecutive years'
     ],
-    ['no federal.uncapped', (f) => delete f.federal.uncapped, 'federal.uncapped'],
     [
-      'federal.uncapped with no cites',
-      (f) => (f.federal.uncapped.cites = []),
-      'federal.uncapped needs at least one cite, a whole number of rounds and an ordered window'
+      'schema 1',
+      (f) => (f.schema = 1),
+      'funding.json: $.schema: funding.json is schema 1: every source needs a bound (schema 2)'
     ],
     [
-      'federal.uncapped with 0 rounds',
-      (f) => (f.federal.uncapped.rounds = 0),
-      'federal.uncapped needs at least one cite, a whole number of rounds and an ordered window'
+      'a City source with no bound',
+      (f) => delete f.city.sources[0].bound,
+      '$.city.sources[0].bound'
+    ],
+    ['a state with no bound', (f) => delete f.state.bound, '$.state.bound'],
+    ['a federal with no bound', (f) => delete f.federal.bound, '$.federal.bound'],
+    [
+      'bound tier 4',
+      (f) => (f.city.sources[0].bound.tier = 4),
+      "a bound's tier is 1, 2 or 3: an end nobody has read in a source is not written"
+    ],
+    ['bound kind later', (f) => (f.city.sources[0].bound.kind = 'later'), '.bound.kind'],
+    [
+      'an extra key in a bound',
+      (f) => (f.city.sources[0].bound.extra = 1),
+      '$.city.sources[0].bound: '
     ],
     [
-      'federal.uncapped with 1.5 rounds',
-      (f) => (f.federal.uncapped.rounds = 1.5),
-      'federal.uncapped needs at least one cite, a whole number of rounds and an ordered window'
+      'ends.on 2043-02-30',
+      (f) =>
+        (f.city.sources[0].bound = {
+          kind: 'ends',
+          on: '2043-02-30',
+          method: 'm',
+          tier: 2,
+          cite: f.city.sources[0].cite
+        }),
+      'must be a real calendar date'
     ],
     [
-      'federal.uncapped with a backwards window',
-      (f) => (f.federal.uncapped.window = ['2026-09-14', '2026-01-01']),
-      'federal.uncapped needs at least one cite, a whole number of rounds and an ordered window'
+      'remaining.dollars -1',
+      (f) => (f.city.sources[0].bound.dollars = -1),
+      '$.city.sources[0].bound.dollars'
     ],
+    [
+      'money remaining with no yearly amount',
+      (f) => {
+        f.city.sources[1].dollarsPerYear += f.city.sources[0].dollarsPerYear;
+        f.city.sources[0].dollarsPerYear = 0;
+        f.city.sources[0].bound.dollars = 1;
+      },
+      '$.city.sources[0].bound: a source with money remaining needs a yearly amount'
+    ],
+    [
+      'federal.dollarsPerYear + 1',
+      (f) => (f.federal.dollarsPerYear += 1),
+      'federal.dollarsPerYear must be the most new-construction homes awarded in one year times ' +
+        'perHome.federal'
+    ],
+    ['a federal.uncapped key', (f) => (f.federal.uncapped = {}), '$.federal: '],
+    ['state tier 4', (f) => (f.state.tier = 4), '$.state.tier'],
+    ['federal tier 0', (f) => (f.federal.tier = 0), '$.federal.tier'],
     [
       'no city sources',
       (f) => {

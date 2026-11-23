@@ -33,6 +33,7 @@ const POOLS: [string, string][] = [
   ['city-debt', 'goBond'],
   ['city-ocoh', 'dedicatedTax'],
   ['city-general-fund', 'generalRevenue'],
+  ['city-housing-stability-fund', 'generalRevenue'],
   ['city-impact-fees', 'dedicatedTax'],
   ['city-housing-trust-fund', 'generalRevenue'],
   ['city-redevelopment', 'dedicatedTax'],
@@ -78,20 +79,20 @@ describe('baselineFunding on the live file', () => {
   const out = baselineFunding(live, PER_BAND, AS_OF, LIVE_CAL);
   const bf = out.baselineFunding;
 
-  it('gives the eight expected shares, summing to 1,000,000 millionths', () => {
+  it('gives the nine expected shares, summing to 1,000,000 millionths', () => {
     const shares = bf.programmes.map((p) => (p.instrument as { share: number }).share);
     expect(shares).toEqual([
-      0.119804, 0.072329, 0.054619, 0.051791, 0.040778, 0.00893, 0.137419, 0.51433
+      0.119804, 0.072329, 0.032444, 0.022175, 0.051791, 0.040778, 0.00893, 0.137419, 0.51433
     ]);
     expect(Math.round(shares.reduce((a, b) => a + b, 0) * 1e6)).toBe(1e6);
   });
 
-  it('emits the eight pools of spec 4.5 in order and their programmes', () => {
+  it('emits the nine pools in order and their programmes', () => {
     expect(bf.pools.map((p) => [p.id, p.kind])).toEqual(POOLS);
     expect(bf.programmes.map((p) => p.id)).toEqual(POOLS.map(([id]) => `baseline-${id}`));
     expect(bf.programmes.map((p) => p.pool)).toEqual(POOLS.map(([id]) => id));
     const ids = [...bf.pools.map((p) => p.id), ...bf.programmes.map((p) => p.id)];
-    expect(ids).toHaveLength(16);
+    expect(ids).toHaveLength(18);
     for (const id of ids) {
       expect(id).toMatch(BASELINE_ID_RE);
       expect(id.startsWith('u-')).toBe(false);
@@ -99,13 +100,13 @@ describe('baselineFunding on the live file', () => {
   });
 
   it('puts federal in fill tier 1, state in 2 and the City in 3', () => {
-    expect(out.report.rows.map((r) => r.fillTier)).toEqual([3, 3, 3, 3, 3, 3, 2, 1]);
+    expect(out.report.rows.map((r) => r.fillTier)).toEqual([3, 3, 3, 3, 3, 3, 3, 2, 1]);
   });
 
   it('has debt only on city-debt, inflows from asOf and an uncapped federal pool', () => {
     expect(bf.pools.filter((p) => p.debt !== null).map((p) => p.id)).toEqual(['city-debt']);
     expect(bf.pools[0].debt).toEqual({ rate: 0.06, termYears: 20 });
-    for (const p of bf.pools.slice(0, 7)) {
+    for (const p of bf.pools.slice(0, 8)) {
       expect(p.uncapped).toBe(false);
       expect(p.inflows).toHaveLength(1);
       expect(p.inflows[0]).toEqual({
@@ -115,7 +116,7 @@ describe('baselineFunding on the live file', () => {
         dollarsPerYear: p.id === 'state' ? 150_000_000 : expect.any(Number)
       });
     }
-    const federal = bf.pools[7];
+    const federal = bf.pools[8];
     expect(federal.uncapped).toBe(true);
     expect(federal.inflows).toEqual([]);
     expect(bf.pools.every((p) => p.leverage === 1)).toBe(true);
@@ -203,9 +204,9 @@ describe('baselineFunding on the live file', () => {
           "Analyst's assumption (tier 2); repayment is nominal."
       )
     ).toBe(true);
-    expect(bf.provenance[6].tier).toBe(2);
-    expect(bf.provenance[6].method).toContain(live.state.method);
-    const federal = bf.provenance[7];
+    expect(bf.provenance[7].tier).toBe(2);
+    expect(bf.provenance[7].method).toContain(live.state.method);
+    const federal = bf.provenance[8];
     expect(federal.tier).toBe(2);
     expect(federal.label).toBe('Federal: low-income housing tax credits: uncapped');
     expect(federal.method.startsWith(live.federal.method)).toBe(true);
@@ -219,20 +220,16 @@ describe('baselineFunding on the live file', () => {
       {
         label: `${live.federal.cite.label}, ${live.federal.cite.page}`,
         url: live.federal.cite.url
-      },
-      ...live.federal.uncapped.cites.map((c) => ({ label: `${c.label}, ${c.page}`, url: c.url }))
+      }
     ]);
-    expect(federal.sources).toHaveLength(4);
-    expect(federal.n).toBe(live.federal.uncapped.rounds);
-    expect(federal.n).toBe(3);
-    expect(federal.window).toEqual(live.federal.uncapped.window);
-    expect(federal.window).toEqual(['2026-01-01', '2026-09-14']);
-    for (const p of bf.provenance.slice(0, 8)) expect(p.tier).toBe(2);
+    expect(federal.n).toBe(15);
+    expect(federal.window).toEqual(['2024-01-01', '2025-12-31']);
+    for (const p of bf.provenance.slice(0, 9)) expect(p.tier).toBe(2);
     expect(bf.provenance.some((p) => p.tier === 1)).toBe(false);
     for (const p of [...bf.provenance, bf.check.provenance]) {
       expect(p.method).not.toMatch(/rests on .*not on a source listed/);
     }
-    const last = bf.provenance[8];
+    const last = bf.provenance[9];
     expect(last.tier).toBe(0);
     expect(last.sources).toEqual([
       {
@@ -384,29 +381,27 @@ describe('baselineFunding in a fixture build', () => {
     }
   });
 
-  it("takes the federal entry's n, window and sources from federal.uncapped", () => {
-    const federal = bf.provenance[7];
-    expect(federal.n).toBe(1);
-    expect(federal.window).toEqual(['2026-01-01', '2026-01-01']);
+  it("takes the federal entry's n and window from the award rows", () => {
+    const federal = bf.provenance[8];
+    expect(federal.n).toBe(2);
+    expect(federal.window).toEqual(['2024-01-01', '2025-12-31']);
     expect(federal.sources).toEqual([
       {
         label: 'Fixture: invented funding (tier 4), Exhibit F',
         url: 'https://fixture.invalid/funding'
-      },
-      {
-        label: 'Fixture: invented allocation record (tier 4), fixture',
-        url: 'https://fixture.invalid/funding'
       }
     ]);
     expect(
-      federal.method.startsWith('The fixture pool is uncapped; invented (tier 4). Of the 2 ')
+      federal.method.startsWith(
+        'The fixture ceiling is 30 homes in 2025 times $443,108; invented (tier 4). Of the 2 '
+      )
     ).toBe(true);
   });
 
   it('has the funding shape funding-ui needs', () => {
     expect(bf.pools.map((p) => [p.id, p.kind])).toEqual(POOLS);
     expect(bf.pools.filter((p) => p.uncapped).map((p) => p.id)).toEqual(['federal-tax-credits']);
-    expect(bf.programmes).toHaveLength(8);
+    expect(bf.programmes).toHaveLength(9);
     for (const p of bf.programmes) {
       expect(p.instrument.kind).toBe('grant');
       expect(p.reach).toBe('affordable');

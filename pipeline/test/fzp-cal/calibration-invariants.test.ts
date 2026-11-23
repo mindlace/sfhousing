@@ -222,13 +222,13 @@ describe('calibration invariants on fixture-0', () => {
     expect(fundingOutcomes(cal, false)).toEqual({
       problems: [],
       detail:
-        'baselineFunding 8 pools, one programme each; shares 1000000 millionths; affordableRoutes tier 4'
+        'baselineFunding 9 pools, one programme each; shares 1000000 millionths; affordableRoutes tier 4'
     });
     // A live build with the fallback: the method starts `Only `, and the step warned.
     expect(fundingOutcomes(cal, true)).toEqual({
       problems: [],
       detail:
-        'baselineFunding 8 pools, one programme each; shares 1000000 millionths; affordableRoutes fallback, warned'
+        'baselineFunding 9 pools, one programme each; shares 1000000 millionths; affordableRoutes fallback, warned'
     });
   });
 
@@ -280,7 +280,7 @@ describe('calibration invariants on fixture-0', () => {
     const r = (await run(outDir)).find((x) => x.id === 'V25')!;
     expect(r.ok).toBe(true);
     expect(r.detail).toContain(
-      'baselineFunding 8 pools, one programme each; shares 1000000 millionths; affordableRoutes tier 4'
+      'baselineFunding 9 pools, one programme each; shares 1000000 millionths; affordableRoutes tier 4'
     );
   });
 

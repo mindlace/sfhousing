@@ -345,19 +345,16 @@ export function baselineFunding(
         window: ['2018-01-01', '2025-12-31']
       });
     }
-    const { uncapped } = file.federal;
+    const fc = file.federal.cite;
     return mark({
       tier: 2,
       label: `${file.federal.label}: uncapped`,
-      sources: [file.federal.cite, ...uncapped.cites].map((c) => ({
-        label: `${c.label}, ${c.page}`,
-        url: c.url
-      })),
+      sources: [{ label: `${fc.label}, ${fc.page}`, url: fc.url }],
       method:
         `${file.federal.method} ${awardText} ${shareText(i, money(perHome.federal))} ` +
         `${fy} dollars, not adjusted.`,
-      n: uncapped.rounds,
-      window: [uncapped.window[0], uncapped.window[1]]
+      n: newRows.length,
+      window: awardWindow
     });
   });
 

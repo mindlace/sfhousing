@@ -38,6 +38,8 @@ import {
 } from './types';
 
 const cal = small as unknown as Calibration;
+/** fixture-0's calibration as it was before finite funding (an uncapped federal pool). */
+const LEGACY_PATH = new URL('./fixtures/calibration-uncapped.json', import.meta.url);
 const t = cal.transitions.discretionary.permitFiled as Transition;
 
 // Closed form for k > K = 12 with C(K) = 0.7 and rho = 0.06 (tail advance 0.05, expired 0.01).
@@ -785,6 +787,13 @@ describe('parseCalibration', () => {
     const parsed = parseCalibration(JSON.parse(readFileSync(file, 'utf8')));
     expect(parsed.size.fillLevels).toHaveLength(5);
     expect(Object.keys(parsed.transitions)).toEqual([...PATHWAYS]);
+  });
+
+  it('loads an older-format calibration (fixture-0 before finite funding)', () => {
+    const cal = parseCalibration(JSON.parse(readFileSync(LEGACY_PATH, 'utf8')));
+    const fed = cal.baselineFunding!.pools.find((p) => p.kind === 'federal')!;
+    expect(fed.uncapped).toBe(true);
+    expect(fed.inflows).toEqual([]);
   });
 
   const clone = (): any => structuredClone(cal);

@@ -58,7 +58,7 @@ describe('groupProvenance', () => {
       'Fixture (tier 4): State of California: housing programmes: $3.0 million a year (a lower bound)',
       "Fixture (tier 4): Income mix and smallest size of the City's 100% affordable new construction"
     ]);
-    expect(labels('city')).toHaveLength(7);
+    expect(labels('city')).toHaveLength(8);
     expect(labels('city').every((l) => !l.includes('State of California'))).toBe(true);
     expect(labels('federal')[0]).toContain('Federal: low-income housing tax credits');
   });
