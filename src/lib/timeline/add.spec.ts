@@ -1,4 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { ALL_ALLOWED, allowedAt } from '$lib/game/allowed';
+import { dateMeasure, fundingPresets } from '$lib/sim-page/funding-presets';
 import { baselineFixture, fundingOnly } from '$lib/sim/levers/fixtures/finance';
 import miniCalibrationJson from '$lib/sim/scenario/fixtures/mini-calibration.json';
 import { miniMarket } from '$lib/sim/scenario/fixtures/mini-market';
@@ -6,12 +8,17 @@ import { monthFirstDay } from '$lib/sim/world/months';
 import { parseCalibration } from '$lib/timelapse/model';
 import type { Calibration, Pool } from '$lib/timelapse/types';
 import { FINANCE_LIMITS } from '$lib/sim/levers/finance';
-import { addChoices, addPolicy, type AddChoice } from './add';
+import { addChoices, addPolicy, redateMoved, type AddChoice } from './add';
 import { CUSTOM_TIMING_LABEL } from './lens';
 import { parsePolicy4 } from './parse4';
-import { DEFAULT_POLICY4, type PolicyKind, type SimPolicy4 } from './policy4';
+import { DEFAULT_POLICY4, type Policy, type PolicyKind, type SimPolicy4 } from './policy4';
 import { reconcilePolicy4 } from './reconcile4';
 import { policyOf, type TimelineWindow } from './spans';
+
+vi.mock('$lib/sim-page/funding-presets', async (orig) => ({
+  ...(await orig<typeof import('$lib/sim-page/funding-presets')>()),
+  dateMeasure: vi.fn((p: Policy) => p)
+}));
 
 const miniCal = parseCalibration(structuredClone(miniCalibrationJson) as unknown);
 const cal: Calibration = {
@@ -226,5 +233,147 @@ describe('addPolicy fixes', () => {
     for (let i = 0; i < FINANCE_LIMITS.pools; i++) doc = addPolicy(doc, fundChoice, ctx(13)).doc;
     expect(() => parsePolicy4(structuredClone(doc), { asOf })).not.toThrow();
     expect(() => addPolicy(doc, fundChoice, ctx(13))).toThrow(RangeError);
+  });
+});
+
+describe('addChoices under what a level allows', () => {
+  const labels = (kind: PolicyKind, a = ALL_ALLOWED) =>
+    addChoices(kind, cal, DEFAULT_POLICY4, a).map((c) => c.label);
+
+  it('under allowedAt(5) money offers only the available presets', () => {
+    const got = labels('money', allowedAt(5));
+    expect(got).toEqual(
+      fundingPresets(cal)
+        .filter((p) => p.available)
+        .map((p) => p.label)
+    );
+    expect(got.length).toBeGreaterThan(0);
+    for (const own of ['Your own pool', 'City funding scale', 'Market terms'])
+      expect(got).not.toContain(own);
+  });
+
+  it('under allowedAt(3) zoning and money offer nothing', () => {
+    expect(labels('zoning', allowedAt(3))).toEqual([]);
+    expect(labels('money', allowedAt(3))).toEqual([]);
+    expect(labels('permitting', allowedAt(3))).toEqual(labels('permitting', ALL_ALLOWED));
+  });
+
+  it('under ALL_ALLOWED offers are today’s', () => {
+    for (const kind of KINDS)
+      expect(labels(kind, ALL_ALLOWED)).toEqual(
+        addChoices(kind, cal, DEFAULT_POLICY4).map((c) => c.label)
+      );
+  });
+});
+
+describe('given measures', () => {
+  const spy = vi.mocked(dateMeasure);
+  beforeEach(() => {
+    spy.mockReset();
+    spy.mockImplementation((p) => p);
+  });
+  const presets = fundingPresets(cal).filter((p) => p.available);
+  const addedMoney = (choice: AddChoice, month = 13) =>
+    addPolicy(DEFAULT_POLICY4, choice, ctx(month)).doc.kinds.money.slice(
+      DEFAULT_POLICY4.kinds.money.length
+    );
+  const bond: AddChoice = { kind: 'money', what: 'preset', preset: 'housing-bond' };
+
+  it('every policy a money preset makes carries the preset’s id and label', () => {
+    expect(presets.length).toBeGreaterThan(0);
+    for (const p of presets) {
+      const added = addedMoney({ kind: 'money', what: 'preset', preset: p.id });
+      expect(added.length).toBeGreaterThan(0);
+      for (const x of added)
+        expect({ preset: x.preset, label: x.label }).toEqual({
+          preset: p.id,
+          label: p.label
+        });
+    }
+    for (const c of [
+      { kind: 'money', what: 'baseline' },
+      { kind: 'money', what: 'terms' },
+      fundChoice
+    ] as AddChoice[])
+      for (const x of addedMoney(c)) expect(x.preset).toBeNull();
+  });
+
+  it('addPolicy calls dateMeasure once per preset policy, after the spans are dated', () => {
+    for (const p of presets) {
+      spy.mockClear();
+      const added = addedMoney({ kind: 'money', what: 'preset', preset: p.id }, 25);
+      expect(spy.mock.calls.map((c) => c[0])).toEqual(added);
+      for (const c of spy.mock.calls) {
+        expect(c[0].spans[0].from).toBe(monthFirstDay(asOf, 25));
+        expect(c[1]).toBe(cal);
+      }
+    }
+    spy.mockClear();
+    addPolicy(
+      DEFAULT_POLICY4,
+      { kind: 'permitting', what: 'preset', preset: 'benchmarkPermits' },
+      ctx(3)
+    );
+    addPolicy(DEFAULT_POLICY4, { kind: 'money', what: 'baseline' }, ctx(3));
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  describe('redateMoved', () => {
+    const before = addPolicy(DEFAULT_POLICY4, bond, ctx(13)).doc;
+    const own = addPolicy(before, fundChoice, ctx(13)).doc;
+    const withMoney = (doc: SimPolicy4, money: Policy[]): SimPolicy4 => ({
+      ...doc,
+      kinds: { ...doc.kinds, money }
+    });
+    const moveFirst = (p: Policy, month: number): Policy => ({
+      ...p,
+      spans: [{ ...p.spans[0], from: monthFirstDay(asOf, month) }, ...p.spans.slice(1)]
+    });
+
+    it('a given measure whose first start moved is re-dated in place', () => {
+      spy.mockClear();
+      spy.mockImplementation((p) => ({ ...p, label: 'dated' }));
+      const moved = moveFirst(before.kinds.money[0], 20);
+      const after = withMoney(before, [moved, ...before.kinds.money.slice(1)]);
+      const got = redateMoved(before, after, cal);
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(spy.mock.calls[0][0]).toBe(moved);
+      expect(spy.mock.calls[0][1]).toBe(cal);
+      expect(got.kinds.money[0]).toEqual({ ...moved, label: 'dated' });
+      expect(got.kinds.money.slice(1)).toEqual(before.kinds.money.slice(1));
+    });
+
+    it('a second span moved, an own pool moved, or a new policy: no call', () => {
+      const p = before.kinds.money[0];
+      const two: Policy = {
+        ...p,
+        spans: [
+          { ...p.spans[0], to: monthFirstDay(asOf, 30) - 1 },
+          { ...p.spans[0], from: monthFirstDay(asOf, 30) }
+        ]
+      };
+      const b2 = withMoney(before, [two]);
+      const a2 = withMoney(before, [
+        { ...two, spans: [two.spans[0], { ...two.spans[1], from: monthFirstDay(asOf, 40) }] }
+      ]);
+      const ownIdx = own.kinds.money.findIndex((x) => x.preset === null);
+      expect(ownIdx).toBeGreaterThanOrEqual(0);
+      const ownMoved = withMoney(
+        own,
+        own.kinds.money.map((x, i) => (i === ownIdx ? moveFirst(x, 30) : x))
+      );
+      spy.mockClear();
+      redateMoved(b2, a2, cal);
+      redateMoved(own, ownMoved, cal);
+      redateMoved(DEFAULT_POLICY4, before, cal);
+      expect(spy).not.toHaveBeenCalled();
+    });
+
+    it('nothing moved returns after itself', () => {
+      const after = withMoney(before, [...before.kinds.money]);
+      expect(redateMoved(before, after, cal)).toBe(after);
+      const moved = withMoney(before, [moveFirst(before.kinds.money[0], 20)]);
+      expect(redateMoved(before, moved, cal)).toBe(moved);
+    });
   });
 });

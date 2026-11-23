@@ -20,6 +20,8 @@ import type { Effect, Policy, PolicyKind, Selector, SimPolicy4, Span } from './p
 
 const SENTINEL = '#';
 const LABEL_MAX = 80;
+/** The longest funding preset id a money policy's `preset` may hold. */
+export const MONEY_PRESET_MAX = 60;
 const KINDS: readonly PolicyKind[] = ['zoning', 'permitting', 'money'];
 const WHERE_TAGS: Record<PolicyKind, readonly Selector['tag'][]> = {
   zoning: ['transit', 'painted', 'category'],
@@ -267,6 +269,17 @@ function parsePolicy(
   if (kind === 'permitting') {
     if (typeof r.preset !== 'string' || r.preset.length === 0)
       fail(j(path, 'preset'), 'expected a preset id');
+    preset = r.preset;
+  } else if (kind === 'money') {
+    // A given measure carries its funding preset's id; an own measure carries null.
+    if (
+      r.preset !== null &&
+      (typeof r.preset !== 'string' || r.preset.length < 1 || r.preset.length > MONEY_PRESET_MAX)
+    )
+      fail(
+        j(path, 'preset'),
+        `expected null or a preset id of 1 to ${MONEY_PRESET_MAX} characters`
+      );
     preset = r.preset;
   } else {
     if (r.preset !== null) fail(j(path, 'preset'), 'expected null');

@@ -87,6 +87,7 @@ describe('/sim page', () => {
     expect(workers[0].lastOf('openTimeline')!.policy).toEqual(DEFAULT_POLICY4);
 
     await r.rerender({ data: first, params: {} });
+    await expect.poll(() => workers.length).toBe(1);
     expect(workers).toHaveLength(1);
 
     await r.rerender({ data: data(), params: {} });
