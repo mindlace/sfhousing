@@ -758,6 +758,7 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - fork review-reach-check-d0245c1b started 2026-11-23T05:11
 - fork review-reach-check-d0245c1b exited [0]: output
 - fork review-game-sim-ecdaaa67 started 2026-11-23T05:48
+- fork review-game-sim-ecdaaa67 exited [0]: output
 
 ## Frame-defect tally
 - owner-ruling-drift: 2 — instances: conductor-1 (gate-1, 2026-11-22); conductor-8 (gate-7, 2026-11-22)
@@ -882,6 +883,7 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - funding-measures row M1 (real dateMeasure in src/lib/sim-page/funding-presets.ts) @ c423eea0 reported, its own full suite green there. Held to merge at its complete (closing is M1's only consumer by row; game-sim built against the M1 stub). Its note: addPolicy (src/lib/timeline/add.ts) and the edit paths that call dateMeasure, and G3's "an edit that changes what a given measure pays sets preset to null", are game-sim's; the real dateMeasure first meets game-sim's calls on the integration branch, whichever merges second. The merge review of the second one checks that seam; closing's journey e2e covers the real dateMeasure.
 - 08:20 merge of game-sim complete @ ecdaaa67 (fix round done: test-8 locator per ruling game-sim-3; its whole suite green there, e2e 776 passed, 0 flaky) made onto 9bac5aa9 (merge commit 5476e01e), suite running (agent; scratchpad `merge-game-sim-2/`); not merged until it passes; on failure reset to 9bac5aa9 with ledger.md copied out and back. funding-measures told the branch was green at 340245fc; it is not told to merge again until this reports.
 - merged game-sim @ ecdaaa67 into superconductor/incremental-game (complete), tests pass (check 0 errors; lint 0 errors; unit 9178 passed; pipeline 2284 passed; e2e 776 passed, 0 failed, 0 flaky; sim-funding test 8 passes on both projects), band middle
+- No drift @ ecdaaa67 (review-game-sim-ecdaaa67)
 
 ## Cost
 - remove-lesscars: admitted 2026-11-22T16:31 seven_day 44% | session d889ec5c-3342-4a77-99f8-993f1115a679 | finished 2026-11-22T21:14 seven_day 60%
