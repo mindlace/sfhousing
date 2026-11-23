@@ -2,7 +2,8 @@
   One span's bar on an open policy's row (rules 6, 11): a focusable button carrying the span's short
   setting. Enter or click selects it; Arrow keys move the nearer edge (Shift: twelve months; Alt: the
   whole span) through `onedit`. Dragging an edge snaps to months and commits one `onedit` on
-  pointer-up. Read-only: no keys, no edges. An open end fades at the right edge.
+  pointer-up. Read-only: no keys, no edges. Locked: a dimmed box that is no control. An open end
+  fades at the right edge.
 -->
 <script lang="ts">
   import type { Day } from '$lib/timelapse/time';
@@ -37,6 +38,8 @@
     reached?: Day;
     /** The level is held numbers: it and its words dim. */
     stale?: boolean;
+    /** The game does not run the policy: a dimmed box, with no click, keys or edges. */
+    locked?: boolean;
   }
 
   let {
@@ -58,7 +61,8 @@
     levels = null,
     day = asOf,
     reached = day,
-    stale = false
+    stale = false,
+    locked = false
   }: Props = $props();
 
   const ref = $derived<SpanRef>({ kind, id: policyId, span: index });
@@ -71,7 +75,7 @@
 
   // The level: drawn on an on bar only, over the days its box spans (as `barBox` places it), and
   // hidden while an edge is dragged (the box then no longer matches the run's months).
-  const shownLevel = $derived(!off && drag === null && levels !== null ? level : null);
+  const shownLevel = $derived(!off && !locked && drag === null && levels !== null ? level : null);
   const boxFrom = $derived(Math.max(monthFirstDay(asOf, spanMonths(span, asOf).from), asOf));
   const boxTo = $derived.by(() => {
     const m = spanMonths(span, asOf);
@@ -148,38 +152,46 @@
 </script>
 
 <div class="wrap absolute" style:left="{box.left}%" style:width="{box.width}%">
-  <button
-    type="button"
-    class="bar k-{kind}"
-    class:sel={selected}
-    class:off
-    class:open
-    class:leveled={shownLevel !== null}
-    class:stale={shownLevel !== null && stale}
-    data-testid="tl-bar"
-    data-open={open}
-    aria-label={barLabel(settingOf(span.what), policyLabel, span, asOf, { off, left })}
-    aria-pressed={selected}
-    onclick={() => onselect(ref)}
-    {onkeydown}
-  >
-    {#if shownLevel && levels}
-      <LevelFill
-        level={shownLevel}
-        months={levels.months}
-        asOf={levels.asOf}
-        from={boxFrom}
-        to={boxTo}
-        {day}
-        {reached}
-        {stale}
-      />
-    {/if}
-    <span class="txt"
-      >{settingOf(span.what)}{#if left}<span class="left">{left}</span>{/if}</span
+  {#if locked}
+    <div class="bar locked k-{kind}" class:open data-testid="tl-bar" data-open={open} data-locked>
+      <span class="txt" aria-hidden="true">{settingOf(span.what)}</span>
+      <span class="sr-only">{barLabel(settingOf(span.what), policyLabel, span, asOf, { off })}</span
+      >
+    </div>
+  {:else}
+    <button
+      type="button"
+      class="bar k-{kind}"
+      class:sel={selected}
+      class:off
+      class:open
+      class:leveled={shownLevel !== null}
+      class:stale={shownLevel !== null && stale}
+      data-testid="tl-bar"
+      data-open={open}
+      aria-label={barLabel(settingOf(span.what), policyLabel, span, asOf, { off, left })}
+      aria-pressed={selected}
+      onclick={() => onselect(ref)}
+      {onkeydown}
     >
-  </button>
-  {#if !readonly}
+      {#if shownLevel && levels}
+        <LevelFill
+          level={shownLevel}
+          months={levels.months}
+          asOf={levels.asOf}
+          from={boxFrom}
+          to={boxTo}
+          {day}
+          {reached}
+          {stale}
+        />
+      {/if}
+      <span class="txt"
+        >{settingOf(span.what)}{#if left}<span class="left">{left}</span>{/if}</span
+      >
+    </button>
+  {/if}
+  {#if !readonly && !locked}
     <span
       class="edge from"
       data-edge="from"
@@ -257,11 +269,19 @@
     -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 26px), transparent);
     mask-image: linear-gradient(90deg, #000 calc(100% - 26px), transparent);
   }
-  /* Off: no whole-element fade (it would lighten the ground under white text). */
-  .bar.off {
+  /* Off: no whole-element fade (it would lighten the ground under white text). Locked takes the
+     same dimmed look, with a dashed edge and no pointer. */
+  .bar.off,
+  .bar.locked {
     background: var(--color-surface-raised);
     color: var(--color-ink-muted);
     box-shadow: inset 0 0 0 2px var(--k);
+  }
+  .bar.locked {
+    box-shadow: none;
+    outline: 2px dashed var(--k);
+    outline-offset: -2px;
+    cursor: default;
   }
   .bar.sel {
     outline: 2px solid var(--color-accent);
@@ -286,7 +306,8 @@
     right: -4px;
   }
   @media (prefers-color-scheme: dark) {
-    .bar.off {
+    .bar.off,
+    .bar.locked {
       background: var(--color-surface-dark-raised);
       color: var(--color-ink-dark-muted);
     }
