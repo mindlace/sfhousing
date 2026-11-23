@@ -180,8 +180,8 @@ carries them and a rewind needs nothing more.
 month whose first day falls in a shut row, the programmes of the closed pools offered 0 (a frame
 with a new id from the base's id and the closed ids; the other programmes are unchanged). Its
 `changes()` are the base's plus each month where the set of closed pools of the frame changes;
-`touched(k)` is the base's at a base change and empty at a closing or opening month, so the core
-replans every free lot. `readyThrough` is the base's. It is the switched-off path: the world's
+`touched(k)` is the base's at a base change and empty at a closing or opening month; the core
+still replans every free lot there, because money is in force (`world.ts`). `readyThrough` is the base's. It is the switched-off path: the world's
 `policyChanged` re-makes each waiting row whose bundle held the pool without it, or lapses the
 row, exactly as a policy that switches the programmes off does. Views are cached per timeline by
 the shut rows' signature (the same object while the history is unchanged); with no shut row it is
