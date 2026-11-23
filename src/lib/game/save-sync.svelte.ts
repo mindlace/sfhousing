@@ -1,3 +1,4 @@
+import { untrack } from 'svelte';
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 import { newId } from '$lib/ids/base58';
 import type { AccountLine } from './save-api';
@@ -22,6 +23,13 @@ export interface SaveSync {
 }
 
 export const SAVE_REVS_KEY = 'sfhousing:saves:revs';
+
+/** The one reload after a pull replaced the current game; a test spies on it. */
+export const syncReload = {
+  reload(): void {
+    location.reload();
+  }
+};
 
 /** What this browser last agreed with the account. */
 export interface SyncRecord {
@@ -68,6 +76,27 @@ function lineOf(body: unknown): AccountLine | null {
   if (!isPlain(body) || typeof body.handle !== 'string') return null;
   if (typeof body.handleClaimed !== 'boolean') return null;
   return { handle: body.handle, handleClaimed: body.handleClaimed };
+}
+
+interface AccountList {
+  line: AccountLine;
+  saves: { id: string; savedAt: string; rev: number }[];
+  removed: string[];
+}
+
+/** The list answer when it reads as one, else null. */
+function listOf(body: unknown): AccountList | null {
+  const line = lineOf(body);
+  if (line === null || !isPlain(body)) return null;
+  if (!Array.isArray(body.saves) || !Array.isArray(body.removed)) return null;
+  const saves: AccountList['saves'] = [];
+  for (const e of body.saves as unknown[]) {
+    if (!isPlain(e) || typeof e.id !== 'string' || typeof e.savedAt !== 'string') return null;
+    if (typeof e.rev !== 'number') return null;
+    saves.push({ id: e.id, savedAt: e.savedAt, rev: e.rev });
+  }
+  if (!body.removed.every((r) => typeof r === 'string')) return null;
+  return { line, saves, removed: [...(body.removed as string[])] };
 }
 
 function errorOf(body: unknown): string | null {
@@ -120,12 +149,22 @@ class BrowserSync implements SaveSync {
   readonly #busy = new SvelteMap<string, 'put' | 'delete'>();
   /** Ids changed while their request was in flight: their timer starts when it ends. */
   readonly #again = new Set<string>();
+  /** A pull runs: sends other than its own wait for its end. */
+  #pulling = $state(false);
+  /** The running pull, returned to every caller while it runs. */
+  #running: Promise<void> | null = null;
+  /** An adopt in this pull replaced the current game: the page reloads once when it ends. */
+  #reloadDue = false;
+  /** Ids this pull sent a DELETE for. */
+  readonly #pullDeleted = new Set<string>();
+  /** Sends and DELETEs in flight, with the handling of their answers. */
+  readonly #ops = new Set<Promise<void>>();
 
   readonly #state: SyncState = $derived.by(() => {
     if (this.#signIn) return 'sign-in';
     if (this.#full) return 'full';
     if (this.#offline && (this.#waiting.size > 0 || this.#deletingCount > 0)) return 'offline';
-    if (this.#timers.size > 0 || this.#busy.size > 0) return 'saving';
+    if (this.#timers.size > 0 || this.#busy.size > 0 || this.#pulling) return 'saving';
     if (this.#hasSession()) return 'saved';
     return 'local';
   });
@@ -222,6 +261,33 @@ class BrowserSync implements SaveSync {
         this.#mark(save.id);
       }
     }
+    this.#watchSignIn();
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState !== 'visible') return;
+      if (this.#hasSession()) void this.pull();
+      else this.#sendWaiting();
+    });
+    if (this.#signedIn()) void this.pull();
+  }
+
+  /** `signedIn()` turning true clears `sign-in` and pulls; turning false ends the session. */
+  #watchSignIn(): void {
+    let was = untrack(() => this.#signedIn());
+    $effect.root(() => {
+      $effect(() => {
+        const now = this.#signedIn();
+        if (now === was) return;
+        was = now;
+        untrack(() => {
+          if (now) {
+            this.#signIn = false;
+            void this.pull();
+          } else {
+            this.#putSession = false;
+          }
+        });
+      });
+    });
   }
 
   changed(id: string): void {
@@ -261,7 +327,176 @@ class BrowserSync implements SaveSync {
   }
 
   pull(): Promise<void> {
-    return Promise.resolve();
+    if (this.#store === null || this.#signIn || !this.#hasSession()) return Promise.resolve();
+    if (this.#running !== null) return this.#running;
+    this.#pulling = true;
+    const run = this.#pullNow().finally(() => {
+      this.#running = null;
+      this.#pulling = false;
+      this.#afterPull();
+    });
+    this.#running = run;
+    return run;
+  }
+
+  // --- pull ---
+
+  /** Sends that waited for the pull, then the one reload when the current game was replaced. */
+  #afterPull(): void {
+    const reload = this.#reloadDue;
+    this.#reloadDue = false;
+    if (!this.#signIn) {
+      for (const id of [...this.#waiting]) {
+        if (!this.#timers.has(id) && !this.#busy.has(id)) void this.#send(id);
+      }
+      for (const id of [...this.#record.deleting]) {
+        if (!this.#pullDeleted.has(id)) this.#sendDelete(id);
+      }
+    }
+    this.#pullDeleted.clear();
+    if (reload) syncReload.reload();
+  }
+
+  /** A GET outside the per-save request map. */
+  async #get(path: string): Promise<Ended> {
+    try {
+      const fetchFn = this.#fetch;
+      const res = await fetchFn(path, { method: 'GET' });
+      let body: unknown = null;
+      try {
+        body = await res.json();
+      } catch {
+        // No body, or not JSON.
+      }
+      return { ok: true, status: res.status, body };
+    } catch {
+      return { ok: false };
+    }
+  }
+
+  /** Whether `id` here is as it was last sent or adopted. */
+  #unchanged(here: GameSave): boolean {
+    return this.#record.seen[here.id]?.savedAt === here.savedAt;
+  }
+
+  async #pullNow(): Promise<void> {
+    const store = this.#store as GameStore;
+    // 1. Wait for in-flight sends to end, then list (at once when none is in flight).
+    if (this.#ops.size > 0) await this.#settled();
+    const end = await this.#get('/api/game');
+    if (end.ok && end.status === 401) return this.#stopForSignIn();
+    if (BrowserSync.#failed(end)) {
+      this.#offline = true;
+      return;
+    }
+    const list = end.ok && end.status === 200 ? listOf(end.body) : null;
+    // Any other answer, or a list that does not read, changes nothing.
+    if (list === null) return;
+    this.#offline = false;
+    this.#account = list.line;
+
+    // 2. Deletes not yet answered.
+    for (const id of [...this.#record.deleting]) {
+      this.#pullDeleted.add(id);
+      this.#sendDelete(id, true);
+    }
+
+    // 3. The listed saves, most recent first.
+    const listed = new Set(list.saves.map((s) => s.id));
+    const removed = new Set(list.removed);
+    const order = [...list.saves].sort((a, b) => Date.parse(b.savedAt) - Date.parse(a.savedAt));
+    let adopting = true;
+    for (const entry of order) {
+      if (this.#signIn) return;
+      const here = store.read(entry.id);
+      let due: boolean;
+      if (here === null) {
+        due = !this.#record.deleting.includes(entry.id);
+      } else if (!this.#unchanged(here)) {
+        this.#stopTimer(here.id);
+        void this.#send(here.id, true);
+        due = false;
+      } else {
+        due = entry.rev > this.#record.seen[here.id].rev;
+      }
+      if (!due || !adopting) continue;
+      adopting = await this.#fetchAndAdopt(entry.id);
+    }
+
+    // 4. The saves removed on the account that are here.
+    for (const id of removed) {
+      if (this.#signIn) return;
+      const here = store.read(id);
+      if (here === null) continue;
+      if (!this.#unchanged(here)) {
+        this.#stopTimer(id);
+        void this.#send(id, true);
+      } else if (id === store.currentId) {
+        this.#keepRemoved(id);
+      } else {
+        const gone = this.#quiet((s) => s.remove(id));
+        if (gone.ok) {
+          this.#forget(id);
+          this.#unsee(id);
+        }
+      }
+    }
+
+    // 5. The saves the account lacks.
+    for (const entry of store.saves) {
+      if (this.#signIn) return;
+      if (listed.has(entry.id) || removed.has(entry.id) || this.#busy.has(entry.id)) continue;
+      this.#unsee(entry.id);
+      this.#stopTimer(entry.id);
+      void this.#send(entry.id, true);
+    }
+    await this.#settled();
+  }
+
+  /** Fetches the account's version of `id` and adopts it. False when adopts must stop. */
+  async #fetchAndAdopt(id: string): Promise<boolean> {
+    const store = this.#store as GameStore;
+    const end = await this.#get(url(id));
+    if (end.ok && end.status === 401) {
+      this.#stopForSignIn();
+      return false;
+    }
+    if (BrowserSync.#failed(end)) {
+      this.#offline = true;
+      return true;
+    }
+    if (!end.ok || end.status !== 200) return true;
+    const body = end.body;
+    const save = isPlain(body) ? parseGameSave(body.save) : null;
+    const rev = isPlain(body) && typeof body.rev === 'number' ? body.rev : null;
+    if (save === null || rev === null || save.id !== id) return true;
+    const replacing = id === store.currentId;
+    const adopted = this.#quiet((s) => s.adopt([save]));
+    if (!adopted.ok) {
+      if (adopted.reason === 'full') {
+        this.#full = true;
+        return false;
+      }
+      this.#offline = true;
+      return true;
+    }
+    this.#see(id, rev, save.savedAt);
+    if (replacing) this.#reloadDue = true;
+    return true;
+  }
+
+  /** Resolves once no send or DELETE is in flight. */
+  async #settled(): Promise<void> {
+    while (this.#ops.size > 0) await Promise.allSettled([...this.#ops]);
+  }
+
+  #track(p: Promise<void>): Promise<void> {
+    this.#ops.add(p);
+    const done = (): void => {
+      this.#ops.delete(p);
+    };
+    p.then(done, done);
+    return p;
   }
 
   // --- waiting and timers ---
@@ -347,7 +582,16 @@ class BrowserSync implements SaveSync {
     this.#again.clear();
   }
 
-  async #send(id: string): Promise<void> {
+  /** Sends `id`; while a pull runs only the pull's own sends (`now`) go, the rest wait for its end. */
+  #send(id: string, now = false): Promise<void> {
+    if (this.#pulling && !now) {
+      if (this.#store?.read(id)) this.#waiting.add(id);
+      return Promise.resolve();
+    }
+    return this.#track(this.#put(id));
+  }
+
+  async #put(id: string): Promise<void> {
     const store = this.#store;
     if (store === null || this.#signIn || this.#busy.has(id)) return;
     const save = store.read(id);
@@ -472,9 +716,13 @@ class BrowserSync implements SaveSync {
     this.#again.delete(id);
   }
 
-  #sendDelete(id: string): void {
-    if (!this.#hasSession() || this.#busy.has(id)) return;
-    void this.#request(id, 'delete', {
+  #sendDelete(id: string, now = false): void {
+    if (!this.#hasSession() || this.#busy.has(id) || (this.#pulling && !now)) return;
+    void this.#track(this.#deleteNow(id));
+  }
+
+  async #deleteNow(id: string): Promise<void> {
+    return this.#request(id, 'delete', {
       method: 'DELETE',
       headers: { 'content-type': 'application/json' },
       body: '{}'
