@@ -1,5 +1,6 @@
-// Plan-sharing notices (spec §4.5/§4.8) on the sim-ux layout: N1 to N3 are pills in BrushEditor's one notice stack (`fzp-notices`, after the brush status), as on /sim
-// (sim-ux spec Goal 8). From 768 px the stack overlays the map's top centre, right of the dock; below
+// Plan-sharing notices (spec §4.5/§4.8) on the sim-ux layout: N1 to N3 are pills in
+// BrushEditor's one notice stack (`fzp-notices`, after the brush status), as on /sim (sim-ux
+// spec Goal 8). From 768 px the stack overlays the map's top centre, right of the dock; below
 // 768 px it is in flow under the header. Either way a notice never covers the dock, map-view's
 // failure chips, its attribution or its navigation control, at every width from 375 to 1440 px.
 import { expect, test, type Locator, type Page } from '@playwright/test';
