@@ -102,6 +102,10 @@ interface Req {
   method: string;
   url: string;
   body: { baseRev: number | null; save: GameSave } | null;
+  /** The request's content-type header, null when none. */
+  type: string | null;
+  /** The body as sent. */
+  raw: string | null;
 }
 
 type Answer = Response | Promise<Response>;
@@ -132,12 +136,19 @@ function harness(
   // The root layout passes the global `fetch`, which throws when called on another receiver.
   const fetchFn = async function (this: unknown, input: RequestInfo | URL, init?: RequestInit) {
     if (this !== undefined && this !== globalThis) throw new TypeError('Illegal invocation');
+    const raw = typeof init?.body === 'string' ? init.body : null;
     const r: Req = {
       method: init?.method ?? 'GET',
       url: String(input),
-      body: typeof init?.body === 'string' ? JSON.parse(init.body) : null
+      body: raw === null ? null : JSON.parse(raw),
+      type: new Headers(init?.headers).get('content-type'),
+      raw
     };
     reqs.push(r);
+    // As the routes' same-origin JSON check: a write not sent as JSON is 415.
+    if (r.method !== 'GET' && r.type !== 'application/json') {
+      return new Response(null, { status: 415 });
+    }
     return answer(r);
   } as typeof fetch;
   const storage = o.storage === undefined ? new MemoryStorage() : o.storage;
@@ -578,6 +589,36 @@ describe('removal', () => {
     await vi.advanceTimersByTimeAsync(2000);
     expect(h.reqs.filter((r) => r.method === 'DELETE')).toHaveLength(1);
   });
+
+  it('a DELETE is sent as JSON with the body {}', async () => {
+    const a = mk('A', true);
+    const h = harness({ saves: [a], signedIn: true });
+    h.store.edit(a.id);
+    await vi.advanceTimersByTimeAsync(2000);
+    h.store.remove(a.id);
+    await vi.advanceTimersByTimeAsync(0);
+    const del = h.reqs.filter((r) => r.method === 'DELETE');
+    expect(del).toHaveLength(1);
+    expect(del[0]).toMatchObject({ type: 'application/json', raw: '{}' });
+    expect(h.record().deleting).toEqual([]);
+  });
+
+  it.each([415, 403, 500])(
+    'a DELETE answering %i sets offline and keeps the id in deleting',
+    async (status) => {
+      const a = mk('A', true);
+      const h = harness({ saves: [a], signedIn: true });
+      h.store.edit(a.id);
+      await vi.advanceTimersByTimeAsync(2000);
+      h.answer((r) =>
+        r.method === 'DELETE' ? new Response(null, { status }) : json(200, line(1))
+      );
+      h.store.remove(a.id);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(h.sync.state).toBe('offline');
+      expect(h.record().deleting).toEqual([a.id]);
+    }
+  );
 
   it('a DELETE that failed stays in deleting and goes again with the waiting saves', async () => {
     const a = mk('A', true);

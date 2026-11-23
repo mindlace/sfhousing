@@ -474,19 +474,22 @@ class BrowserSync implements SaveSync {
 
   #sendDelete(id: string): void {
     if (!this.#hasSession() || this.#busy.has(id)) return;
-    void this.#request(id, 'delete', { method: 'DELETE' }).then((end) => {
-      if (BrowserSync.#failed(end)) {
-        this.#offline = true;
-        return;
-      }
-      if (!end.ok) return;
-      this.#offline = false;
-      if (end.status === 204) {
+    void this.#request(id, 'delete', {
+      method: 'DELETE',
+      headers: { 'content-type': 'application/json' },
+      body: '{}'
+    }).then((end) => {
+      if (end.ok && end.status === 204) {
+        this.#offline = false;
         this.#record.deleting = this.#record.deleting.filter((d) => d !== id);
         delete this.#record.seen[id];
         this.#writeRecord();
-      } else if (end.status === 401) {
+      } else if (end.ok && end.status === 401) {
+        this.#offline = false;
         this.#stopForSignIn();
+      } else {
+        // Any other answer, or none: a failure; the id stays in `deleting` and goes again.
+        this.#offline = true;
       }
     });
   }
