@@ -719,6 +719,7 @@ export const GO_TO_PAINT = 'Go to Paint';</code></pre>
         <li><code>src/lib/timeline/session4.ts</code> and <code>session4.spec.ts</code>: the Remix hand-off and its toast leave <code>restoreSim4</code></li>
         <li><code>src/routes/sim/+page.svelte</code>: no <code>remix</code> prop</li>
         <li><code>src/lib/sim-page/SimPage.svelte.spec.ts</code>: its Remix hand-off cases go</li>
+        <li><code>src/routes/s/[id]/page.view.svelte.spec.ts</code>: the case "after Remix, /sim shows the remixed document over the earlier v2 autosave" goes; nothing else in the file changes</li>
         <li><code>src/lib/timeline/test/TimelineModeHost.svelte</code></li>
         <li><code>src/lib/timeline/test/TimelineHost.svelte</code></li>
         <li><code>src/lib/timeline/test/PlayheadHost.svelte</code></li>
@@ -813,6 +814,7 @@ export const GO_TO_PAINT = 'Go to Paint';</code></pre>
       <ul>
         <li>Every e2e spec that exists before this build runs on the open game (X1), which this page treats as no game, so this unit changes none of them.</li>
         <li>The remix tests in <code>e2e/{share-states,share-roundtrip,share-notices,sim-share,chrome-dark}.spec.ts</code> assert the Remix hand-off and toast this unit removes. <code>game-shell</code> rewrites those tests; they are red between the two merges, and nobody runs e2e until <code>closing</code>.</li>
+        <li>In <code>src/routes/s/[id]/page.view.svelte.spec.ts</code>, the case "after Remix, /sim shows the remixed document over the earlier v2 autosave" mounts <code>/sim</code> with the Remix hand-off and asserts the Remix toast. This unit deletes that one case, so its branch passes <code>npm run test:unit</code>. The file's other cases are <code>game-shell</code>'s, which rewrites its Remix tests; whichever of the two merges second keeps <code>game-shell</code>'s Remix tests and no hand-off case.</li>
         <li>Component tests that mount <code>SimPage</code> or <code>TimelineMode</code> without a game keep today's behaviour.</li>
         <li><code>src/routes/sim/page.svelte.spec.ts</code> mounts <code>/sim</code> without a provider, so <code>useGame()</code> gives <code>openGame()</code> (G2): no game parts. Its remount test waits for mount.</li>
       </ul>
