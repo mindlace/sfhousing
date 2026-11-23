@@ -56,8 +56,21 @@
     return change.ok;
   }
 
+  /**
+   * Renames from the open field, as focus leaving it would, and closes it. Presses keep focus in
+   * the field (`keepFocus`), so an action other than Rename or Delete commits it here.
+   */
+  function commitOpenRename(): void {
+    if (open?.kind !== 'rename') return;
+    const id = open.id;
+    const field = document.getElementById(fieldId(id));
+    open = null;
+    if (field instanceof HTMLInputElement) game.rename(id, field.value);
+  }
+
   async function levelUp(): Promise<void> {
     error = '';
+    commitOpenRename();
     game.levelUp();
     await tick();
     if (!showLevelUp) document.getElementById(headingId)?.focus();
@@ -65,6 +78,7 @@
 
   function switchTo(id: string): void {
     error = '';
+    commitOpenRename();
     open = null;
     settle(game.switchTo(id));
   }
@@ -72,6 +86,7 @@
   function newGame(): void {
     if (full) return;
     error = '';
+    commitOpenRename();
     open = null;
     settle(game.newGame());
   }
@@ -94,6 +109,7 @@
   /** Closes the field once; renames when `value` is given. */
   function closeRename(id: string, value: string | null): void {
     if (!renaming(id)) return;
+    error = '';
     open = null;
     if (value !== null) game.rename(id, value);
     void focusLater(renameId(id));
@@ -111,17 +127,18 @@
   }
 
   function onFieldBlur(event: FocusEvent, id: string): void {
-    if (!renaming(id)) return;
-    error = '';
     closeRename(id, (event.currentTarget as HTMLInputElement).value);
   }
 
   /**
-   * A press on a row's Rename or Delete leaves focus where it is, so an open field closes by the
-   * press's own action, without renaming. Focus moves after the action.
+   * While a field is open, a press on any of the panel's controls leaves focus in the field: a blur
+   * would close it and move the rows under the pointer before the click. The press's own action
+   * then closes the field: Rename and Delete without renaming, every other action renaming first.
    */
   function keepFocus(event: MouseEvent): void {
-    if (open?.kind === 'rename') event.preventDefault();
+    if (open?.kind !== 'rename') return;
+    const target = event.target;
+    if (target instanceof Element && target.closest('button, a')) event.preventDefault();
   }
 
   function asking(id: string): boolean {
@@ -135,6 +152,7 @@
   }
 
   function cancelDelete(id: string): void {
+    error = '';
     open = null;
     void focusLater(deleteId(id));
   }
@@ -165,6 +183,7 @@
     aria-labelledby={headingId}
     data-testid="level-panel"
     class="flex w-80 max-w-full flex-col gap-3 text-sm"
+    onmousedowncapture={keepFocus}
   >
     <div class="flex flex-col gap-1">
       <h2 id={headingId} tabindex="-1" class="text-base font-semibold">
@@ -179,7 +198,7 @@
     {#if sync !== null}
       <p data-testid="level-sync">
         {#if game.sync.state === 'sign-in'}
-          <a class={BUTTON_QUIET} href={signInHref}>{sync}</a>
+          <a class={BUTTON_QUIET} href={signInHref} onclick={commitOpenRename}>{sync}</a>
         {:else}
           {sync}
         {/if}
@@ -245,7 +264,6 @@
                 type="button"
                 class={BUTTON_QUIET}
                 aria-label="Rename {entry.name}"
-                onmousedown={keepFocus}
                 onclick={() => startRename(entry.id)}
               >
                 Rename
@@ -255,7 +273,6 @@
                 type="button"
                 class={BUTTON_QUIET}
                 aria-label="Delete {entry.name}"
-                onmousedown={keepFocus}
                 onclick={() => askDelete(entry.id)}
               >
                 Delete

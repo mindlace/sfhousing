@@ -306,6 +306,38 @@ describe('LevelPanel', () => {
     expect(loadPage).toHaveBeenCalledWith('/');
   });
 
+  it('with a field open, New game renames and loads Paint', async () => {
+    const { store, games } = await mount();
+    await page.getByRole('button', { name: 'Rename Sunset' }).click();
+    await field().fill('Outer');
+    await newGameButton().click();
+    expect(store.saves.find((e) => e.id === games[1].id)?.name).toBe('Outer');
+    expect(store.saves).toHaveLength(4);
+    expect(loadPage).toHaveBeenCalledWith('/');
+  });
+
+  it("with a field open, a lower row's name renames and switches", async () => {
+    const { store, games } = await mount();
+    await page.getByRole('button', { name: 'Rename Sunset' }).click();
+    await field().fill('Outer');
+    await page.getByRole('button', { name: 'Richmond', exact: true }).click();
+    expect(store.saves.find((e) => e.id === games[1].id)?.name).toBe('Outer');
+    expect(store.currentId).toBe(games[2].id);
+    expect(loadPage).toHaveBeenCalledWith(gamePath(4));
+  });
+
+  it('Cancel after a refused delete clears the alert', async () => {
+    const { storage } = await mount();
+    const error = page.getByTestId('level-error');
+    storage.failWrites = true;
+    await page.getByRole('button', { name: 'Delete Sunset' }).click();
+    await page.getByRole('button', { name: 'Delete', exact: true }).click();
+    await expect.element(error).toHaveTextContent(STORAGE_TEXT);
+    await expect.element(rowOf('Sunset')).toBeVisible();
+    await page.getByRole('button', { name: 'Cancel' }).click();
+    await expect.element(error).toHaveTextContent(/^$/);
+  });
+
   it('at 12 games New game is aria-disabled and does nothing', async () => {
     const seeds = Array.from({ length: MAX_SAVES }, (_, i) => ({
       name: `Game ${i + 1}`,
