@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
@@ -635,7 +636,7 @@ describe('fixture-0 project records report (project-records spec §4.9)', () => 
   });
 
   it('names the three scenario files, policy.bin and gross.bin in the manifest', () => {
-    const m = JSON.parse(readFileSync(join(e2e, 'manifest.json'), 'utf8')) as {
+    const raw = JSON.parse(readFileSync(join(e2e, 'manifest.json'), 'utf8')) as {
       scenarios?: unknown;
     };
     for (const f of [
@@ -648,7 +649,7 @@ describe('fixture-0 project records report (project-records spec §4.9)', () => 
       expect(existsSync(join(e2e, 'scenarios/fzp', f)), f).toBe(true);
     }
     expect(existsSync(join(e2e, 'scenarios/fzp', 'frontage.bin'))).toBe(false);
-    expect(m.scenarios).toEqual({
+    expect(raw.scenarios).toEqual({
       fzp: {
         parcels: '/data/fixture-0/scenarios/fzp/parcels.bin',
         projects: '/data/fixture-0/scenarios/fzp/projects.json',
@@ -657,5 +658,28 @@ describe('fixture-0 project records report (project-records spec §4.9)', () => 
         gross: '/data/fixture-0/scenarios/fzp/gross.bin'
       }
     });
+    expect(raw.scenarios).not.toHaveProperty('lesscars');
+  });
+
+  it('basemap.pmtiles is the locked basemap, byte for byte, and the report has no split count', () => {
+    expect(
+      readFileSync(join(e2e, 'basemap.pmtiles')).equals(
+        readFileSync(join(MINI, 'raw/protomaps-basemap.pmtiles'))
+      )
+    ).toBe(true);
+    expect(report().counts).not.toHaveProperty('tiles.basemap_split_changed');
+  });
+
+  it('fixture-0 parcels.bin is pinned by sha256', () => {
+    expect(
+      createHash('sha256')
+        .update(readFileSync(join(e2e, 'scenarios/fzp/parcels.bin')))
+        .digest('hex')
+    ).toBe('6716a99bb2d70426fac5ea759fe8e326bc94c19a1cbc10ab31d9329a75b9f583');
+  });
+
+  it('fixture-0 has no less-cars output', () => {
+    expect(existsSync(join(e2e, 'scenarios/lesscars'))).toBe(false);
+    expect(Object.keys(report().counts).filter((k) => k.startsWith('lesscars.'))).toEqual([]);
   });
 });
