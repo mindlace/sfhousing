@@ -1,30 +1,664 @@
-import { describe, expect, it, vi } from 'vitest';
+// The save sync: sending, keep both, removal and state (pull is covered with its own task).
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { newId } from '$lib/ids/base58';
 import { MemoryStorage } from '$lib/sharing/fixtures/memory-storage';
-import { createSaveSync } from './save-sync.svelte';
-import type { GameStore } from './store.svelte';
+import { SAVE_REVS_KEY, createSaveSync, type SaveSync, type SyncRecord } from './save-sync.svelte';
+import type { GameSave, SaveEntry } from './saves';
+import type { GameStore, StoreChange } from './store.svelte';
 
-describe('createSaveSync stub', () => {
-  it('starts local with no account', () => {
-    const s = createSaveSync({
-      storage: new MemoryStorage(),
-      fetchFn: vi.fn<typeof fetch>(),
-      signedIn: () => false
-    });
-    expect(s.state).toBe('local');
-    expect(s.account).toBeNull();
+const WON = '2026-11-01T10:00:00.000Z';
+const T0 = Date.parse('2026-11-22T12:00:00.000Z');
+
+function mk(name: string, won: boolean, savedAt = '2026-11-20T10:00:00.000Z'): GameSave {
+  return {
+    v: 1,
+    id: newId(),
+    name,
+    nameIsDefault: false,
+    progress: { v: 1, level: 1, banked: {}, firstWinAt: won ? WON : null },
+    plan: null,
+    policy: null,
+    savedAt
+  };
+}
+
+/** A store holding saves by id that calls the sync back as `GameStore` does. */
+class FakeStore {
+  games = new Map<string, GameSave>();
+  currentId = '';
+  sync: SaveSync;
+  adoptAnswer: StoreChange | null = null;
+  rekeyAnswer: StoreChange | null = null;
+  switchTo = vi.fn();
+  clock = T0;
+
+  constructor(sync: SaveSync, saves: GameSave[]) {
+    this.sync = sync;
+    for (const s of saves) this.games.set(s.id, structuredClone(s));
+    this.currentId = saves[0]?.id ?? '';
+  }
+
+  #stamp(): string {
+    this.clock += 1000;
+    return new Date(this.clock).toISOString();
+  }
+
+  get saves(): readonly SaveEntry[] {
+    return [...this.games.values()]
+      .sort((a, b) => Date.parse(b.savedAt) - Date.parse(a.savedAt))
+      .map((g) => ({
+        id: g.id,
+        name: g.name,
+        nameIsDefault: g.nameIsDefault,
+        savedAt: g.savedAt,
+        level: g.progress.level
+      }));
+  }
+
+  read(id: string): GameSave | null {
+    const g = this.games.get(id);
+    return g ? structuredClone(g) : null;
+  }
+
+  /** A change the player made: stored, then `changed` as the store's `#write` calls it. */
+  edit(id: string, patch: Partial<GameSave> = {}): void {
+    const g = this.games.get(id) as GameSave;
+    this.games.set(id, { ...g, ...patch, savedAt: this.#stamp() });
+    this.sync.changed(id);
+  }
+
+  rename(id: string, name: string): void {
+    const g = this.games.get(id);
+    if (!g) return;
+    this.games.set(id, { ...g, name, nameIsDefault: false, savedAt: this.#stamp() });
+    this.sync.changed(id);
+  }
+
+  rekey(id: string, to: string): StoreChange {
+    if (this.rekeyAnswer) return this.rekeyAnswer;
+    const g = this.games.get(id);
+    if (!g || this.games.has(to)) return { ok: false, reason: 'storage' };
+    this.games.delete(id);
+    this.games.set(to, { ...g, id: to });
+    if (this.currentId === id) this.currentId = to;
+    return { ok: true };
+  }
+
+  adopt(saves: readonly GameSave[]): StoreChange {
+    if (this.adoptAnswer) return this.adoptAnswer;
+    for (const s of saves) this.games.set(s.id, structuredClone(s));
+    return { ok: true };
+  }
+
+  remove(id: string): StoreChange {
+    if (!this.games.has(id)) return { ok: true };
+    this.games.delete(id);
+    this.sync.removed(id);
+    return { ok: true };
+  }
+}
+
+interface Req {
+  method: string;
+  url: string;
+  body: { baseRev: number | null; save: GameSave } | null;
+}
+
+type Answer = Response | Promise<Response>;
+
+function json(status: number, body: unknown): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'content-type': 'application/json' }
   });
-  it('does nothing when called', async () => {
-    const fetchFn = vi.fn<typeof fetch>();
-    const signedIn = vi.fn(() => false);
+}
+
+const line = (rev: number, handle = 'sunny-otter') => ({ handle, handleClaimed: false, rev });
+
+function held(): { promise: Promise<Response>; resolve: (r: Response) => void } {
+  let resolve!: (r: Response) => void;
+  const promise = new Promise<Response>((res) => (resolve = res));
+  return { promise, resolve };
+}
+
+function harness(
+  o: { saves?: GameSave[]; signedIn?: boolean; storage?: Storage | null; attach?: boolean } = {}
+) {
+  let signed = $state(o.signedIn ?? false);
+  const reqs: Req[] = [];
+  let rev = 0;
+  let answer: (r: Req) => Answer = (r) =>
+    r.method === 'DELETE' ? new Response(null, { status: 204 }) : json(200, line(++rev));
+  // The root layout passes the global `fetch`, which throws when called on another receiver.
+  const fetchFn = async function (this: unknown, input: RequestInfo | URL, init?: RequestInit) {
+    if (this !== undefined && this !== globalThis) throw new TypeError('Illegal invocation');
+    const r: Req = {
+      method: init?.method ?? 'GET',
+      url: String(input),
+      body: typeof init?.body === 'string' ? JSON.parse(init.body) : null
+    };
+    reqs.push(r);
+    return answer(r);
+  } as typeof fetch;
+  const storage = o.storage === undefined ? new MemoryStorage() : o.storage;
+  const sync = createSaveSync({ storage, fetchFn, signedIn: () => signed });
+  const store = new FakeStore(sync, o.saves ?? []);
+  if (o.attach !== false) sync.attach(store as unknown as GameStore);
+  return {
+    sync,
+    store,
+    reqs,
+    storage,
+    puts: () => reqs.filter((r) => r.method === 'PUT'),
+    answer(fn: (r: Req) => Answer) {
+      answer = fn;
+    },
+    setSignedIn(v: boolean) {
+      signed = v;
+    },
+    record(): SyncRecord {
+      return JSON.parse((storage as Storage).getItem(SAVE_REVS_KEY) as string);
+    }
+  };
+}
+
+beforeEach(() => {
+  vi.useFakeTimers();
+});
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
+
+describe('sending', () => {
+  it('signed out, an unwon save sends nothing; a won one is PUT after 2 s, read then', async () => {
+    const plain = mk('Plain', false);
+    const won = mk('Won', true);
     const storage = new MemoryStorage();
-    const s = createSaveSync({ storage, fetchFn, signedIn });
-    s.changed('x');
-    s.removed('x');
-    s.attach({} as GameStore);
-    expect(await s.pull()).toBeUndefined();
-    expect(fetchFn).not.toHaveBeenCalled();
-    expect(signedIn).not.toHaveBeenCalled();
-    expect(storage.length).toBe(0);
-    expect(s.state).toBe('local');
+    const rec: SyncRecord = {
+      v: 1,
+      seen: { [won.id]: { rev: 1, savedAt: won.savedAt } },
+      deleting: []
+    };
+    storage.setItem(SAVE_REVS_KEY, JSON.stringify(rec));
+    const h = harness({ saves: [plain, won], storage });
+    h.store.edit(plain.id);
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(h.reqs).toEqual([]);
+    expect(h.sync.state).toBe('local');
+    h.store.edit(won.id);
+    h.store.games.set(won.id, { ...(h.store.read(won.id) as GameSave), name: 'Later' });
+    await vi.advanceTimersByTimeAsync(1999);
+    expect(h.puts()).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(h.puts()).toHaveLength(1);
+    expect(h.puts()[0].url).toBe(`/api/game/${won.id}`);
+    expect(h.puts()[0].body?.save.name).toBe('Later');
+    expect(h.puts()[0].body?.baseRev).toBe(1);
+  });
+
+  it('three changes inside 2 s make one PUT; two saves make two', async () => {
+    const a = mk('A', true);
+    const b = mk('B', false);
+    const h = harness({ saves: [a, b], signedIn: true });
+    h.store.edit(a.id);
+    await vi.advanceTimersByTimeAsync(500);
+    h.store.edit(a.id);
+    await vi.advanceTimersByTimeAsync(500);
+    h.store.edit(a.id);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(h.puts()).toHaveLength(1);
+    h.store.edit(a.id);
+    h.store.edit(b.id);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(h.puts()).toHaveLength(3);
+    expect(h.puts().map((r) => r.url)).toEqual([
+      `/api/game/${a.id}`,
+      `/api/game/${a.id}`,
+      `/api/game/${b.id}`
+    ]);
+    expect(h.puts()[1].body?.baseRev).toBe(1);
+  });
+
+  it('a 200 with no session sets account and saved, then sends the others without a pull', async () => {
+    const won = mk('Won', true);
+    const other = mk('Other', false);
+    const h = harness({ saves: [won, other] });
+    expect(h.sync.account).toBeNull();
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(h.sync.account).toEqual({ handle: 'sunny-otter', handleClaimed: false });
+    expect(h.puts().map((r) => r.url)).toEqual([`/api/game/${won.id}`, `/api/game/${other.id}`]);
+    expect(h.reqs.some((r) => r.method === 'GET')).toBe(false);
+    expect(h.sync.state).toBe('saved');
+    h.store.edit(other.id);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(h.puts()).toHaveLength(3);
+  });
+
+  it('every PUT 200 sets account from its line', async () => {
+    const a = mk('A', true);
+    const h = harness({ saves: [a], signedIn: true });
+    h.answer(() => json(200, { handle: 'first', handleClaimed: false, rev: 1 }));
+    h.store.edit(a.id);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(h.sync.account).toEqual({ handle: 'first', handleClaimed: false });
+    h.answer(() => json(200, { handle: 'chosen', handleClaimed: true, rev: 2 }));
+    h.store.edit(a.id);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(h.sync.account).toEqual({ handle: 'chosen', handleClaimed: true });
+  });
+
+  it('after signedIn() turns false, a change of an unwon save sends nothing', async () => {
+    const plain = mk('Plain', false);
+    const h = harness({ saves: [plain], signedIn: true });
+    h.store.edit(plain.id);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(h.puts()).toHaveLength(1);
+    h.setSignedIn(false);
+    h.store.edit(plain.id);
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(h.puts()).toHaveLength(1);
+  });
+
+  it('at attach signed out, a won save never sent goes after 2 s; others do not', async () => {
+    const won = mk('Won', true);
+    const plain = mk('Plain', false);
+    const sent = mk('Sent', true);
+    const storage = new MemoryStorage();
+    const rec: SyncRecord = {
+      v: 1,
+      seen: { [sent.id]: { rev: 3, savedAt: sent.savedAt } },
+      deleting: []
+    };
+    storage.setItem(SAVE_REVS_KEY, JSON.stringify(rec));
+    // No 200: the account is not made, so nothing else is marked.
+    const h = harness({ saves: [won, plain, sent], storage, attach: false });
+    h.answer(() => json(422, { error: 'no_win' }));
+    h.sync.attach(h.store as unknown as GameStore);
+    await vi.advanceTimersByTimeAsync(1999);
+    expect(h.puts()).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(1);
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(h.puts().map((r) => r.url)).toEqual([`/api/game/${won.id}`]);
+  });
+
+  it('calls made before attach are acted on at attach', async () => {
+    const a = mk('A', false);
+    const h = harness({ saves: [a], signedIn: true, attach: false });
+    h.store.edit(a.id);
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(h.puts()).toHaveLength(0);
+    h.sync.attach(h.store as unknown as GameStore);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(h.puts().map((r) => r.url)).toEqual([`/api/game/${a.id}`]);
+  });
+
+  it('two won unsent saves at attach with no session: one PUT until it answers', async () => {
+    const a = mk('A', true, '2026-11-20T10:00:00.000Z');
+    const b = mk('B', true, '2026-11-20T09:00:00.000Z');
+    const first = held();
+    const h = harness({ saves: [a, b], attach: false });
+    let n = 0;
+    h.answer(() => (++n === 1 ? first.promise : json(200, line(1))));
+    h.sync.attach(h.store as unknown as GameStore);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(h.puts()).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(h.puts()).toHaveLength(1);
+    first.resolve(json(200, line(1)));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.puts()).toHaveLength(2);
+    expect(new Set(h.puts().map((r) => r.url))).toEqual(
+      new Set([`/api/game/${a.id}`, `/api/game/${b.id}`])
+    );
+  });
+
+  it('one request per save: a change during a PUT sends again 2 s after it ends', async () => {
+    const a = mk('A', true);
+    const h = harness({ saves: [a], signedIn: true });
+    const first = held();
+    let n = 0;
+    h.answer(() => (++n === 1 ? first.promise : json(200, line(2))));
+    h.store.edit(a.id);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(h.puts()).toHaveLength(1);
+    h.store.edit(a.id, { name: 'Edited' });
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(h.puts()).toHaveLength(1);
+    expect(h.sync.state).toBe('saving');
+    first.resolve(json(200, line(1)));
+    await vi.advanceTimersByTimeAsync(1999);
+    expect(h.puts()).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(h.puts()).toHaveLength(2);
+    expect(h.puts()[1].body).toMatchObject({ baseRev: 1, save: { name: 'Edited' } });
+  });
+
+  it('records the rev and savedAt after a 200; a corrupt record is replaced', async () => {
+    const a = mk('A', true);
+    const storage = new MemoryStorage();
+    storage.setItem(SAVE_REVS_KEY, '{nope');
+    const h = harness({ saves: [a], signedIn: true, storage });
+    expect(h.record()).toEqual({ v: 1, seen: {}, deleting: [] });
+    h.store.edit(a.id);
+    await vi.advanceTimersByTimeAsync(2000);
+    const sent = h.puts()[0].body?.save as GameSave;
+    expect(h.record()).toEqual({
+      v: 1,
+      seen: { [a.id]: { rev: 1, savedAt: sent.savedAt } },
+      deleting: []
+    });
+  });
+
+  it('with storage null the record lives in memory and sends still work', async () => {
+    const a = mk('A', true);
+    const h = harness({ saves: [a], signedIn: true, storage: null });
+    h.store.edit(a.id);
+    await vi.advanceTimersByTimeAsync(2000);
+    h.store.edit(a.id);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(h.puts().map((r) => r.body?.baseRev)).toEqual([null, 1]);
+    expect(h.sync.state).toBe('saved');
+  });
+});
+
+describe('answers', () => {
+  it('413 and 422 invalid drop the save and log the id and status', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const a = mk('A', true);
+    const b = mk('B', true);
+    const h = harness({ saves: [a, b], signedIn: true });
+    h.answer((r) =>
+      r.url.endsWith(a.id) ? new Response(null, { status: 413 }) : json(422, { error: 'invalid' })
+    );
+    h.store.edit(a.id);
+    h.store.edit(b.id);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(err).toHaveBeenCalledWith(expect.any(String), a.id, 413);
+    expect(err).toHaveBeenCalledWith(expect.any(String), b.id, 422);
+    window.dispatchEvent(new Event('online'));
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(h.puts()).toHaveLength(2);
+    expect(h.sync.state).toBe('saved');
+  });
+
+  it('422 no_win leaves the save unsent until its next change', async () => {
+    const a = mk('A', true);
+    const h = harness({ saves: [a], attach: false });
+    h.answer(() => json(422, { error: 'no_win' }));
+    h.sync.attach(h.store as unknown as GameStore);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(h.puts()).toHaveLength(1);
+    window.dispatchEvent(new Event('online'));
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(h.puts()).toHaveLength(1);
+    expect(h.sync.state).toBe('local');
+    h.store.edit(a.id);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(h.puts()).toHaveLength(2);
+  });
+
+  it('a thrown fetch, a 429 and a 5xx set offline; online resends', async () => {
+    const a = mk('A', true);
+    const h = harness({ saves: [a], signedIn: true });
+    for (const fail of [
+      () => {
+        throw new TypeError('Failed to fetch');
+      },
+      () => new Response(null, { status: 429 }),
+      () => new Response(null, { status: 503 })
+    ]) {
+      h.answer(fail);
+      h.store.edit(a.id);
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(h.sync.state).toBe('offline');
+    }
+    expect(h.puts()).toHaveLength(3);
+    h.answer(() => json(200, line(1)));
+    window.dispatchEvent(new Event('online'));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.puts()).toHaveLength(4);
+    expect(h.sync.state).toBe('saved');
+  });
+
+  it('the next change of any save resends the waiting ones', async () => {
+    const a = mk('A', true);
+    const b = mk('B', true);
+    const h = harness({ saves: [a, b], signedIn: true });
+    h.answer(() => {
+      throw new TypeError('Failed to fetch');
+    });
+    h.store.edit(a.id);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(h.sync.state).toBe('offline');
+    h.answer(() => json(200, line(1)));
+    h.store.edit(b.id);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.puts().map((r) => r.url)).toEqual([`/api/game/${a.id}`, `/api/game/${a.id}`]);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(h.puts()).toHaveLength(3);
+    expect(h.sync.state).toBe('saved');
+  });
+
+  it('a 401 sign_in sets sign-in and later changes send nothing', async () => {
+    const a = mk('A', true);
+    const h = harness({ saves: [a], signedIn: true });
+    h.answer(() => json(401, { error: 'sign_in' }));
+    h.store.edit(a.id);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(h.sync.state).toBe('sign-in');
+    h.answer(() => json(200, line(1)));
+    h.store.edit(a.id);
+    window.dispatchEvent(new Event('online'));
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(h.puts()).toHaveLength(1);
+    expect(h.sync.state).toBe('sign-in');
+  });
+
+  it('a 422 too_many and a full adopt set full; a removed call clears it', async () => {
+    const a = mk('A', true);
+    const b = mk('B', true);
+    const h = harness({ saves: [a, b], signedIn: true });
+    h.answer(() => json(422, { error: 'too_many' }));
+    h.store.edit(a.id);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(h.sync.state).toBe('full');
+    h.answer(() => json(200, line(1)));
+    h.store.remove(b.id);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.sync.state).toBe('saved');
+    // The waiting save went with the removed call.
+    expect(h.puts().map((r) => r.url)).toEqual([`/api/game/${a.id}`, `/api/game/${a.id}`]);
+
+    const theirs = { ...(h.store.read(a.id) as GameSave), name: 'Theirs' };
+    h.store.adoptAnswer = { ok: false, reason: 'full' };
+    h.answer((r) =>
+      r.url.endsWith(a.id) ? json(409, { rev: 5, save: theirs }) : json(200, line(1))
+    );
+    h.store.edit(a.id);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(h.sync.state).toBe('full');
+    expect(h.record().seen[a.id]).toBeUndefined();
+  });
+});
+
+describe('keep both', () => {
+  it('a 409 on the current game keeps a "(this device)" copy current and adopts theirs', async () => {
+    const a = mk('Home', true);
+    const other = mk('Other', false);
+    const h = harness({ saves: [a, other], signedIn: true });
+    const theirs: GameSave = { ...a, name: 'Home', plan: 'their plan', savedAt: WON };
+    h.answer((r) =>
+      r.url.endsWith(a.id) ? json(409, { rev: 4, save: theirs }) : json(200, line(1))
+    );
+    h.store.edit(a.id, { plan: 'my plan' });
+    await vi.advanceTimersByTimeAsync(2000);
+    const copyId = h.store.currentId;
+    expect(copyId).not.toBe(a.id);
+    expect(h.store.read(copyId)).toMatchObject({ name: 'Home (this device)', plan: 'my plan' });
+    expect(h.store.read(a.id)).toEqual(theirs);
+    expect(h.store.switchTo).not.toHaveBeenCalled();
+    expect(h.record().seen[a.id]).toEqual({ rev: 4, savedAt: WON });
+    expect(h.puts().map((r) => [r.url, r.body?.baseRev])).toEqual([
+      [`/api/game/${a.id}`, null],
+      [`/api/game/${copyId}`, null]
+    ]);
+    // The rename's echo is not sent again.
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(h.puts()).toHaveLength(2);
+    expect(h.sync.state).toBe('saved');
+  });
+
+  it('a 409 on another game keeps the current one current', async () => {
+    const cur = mk('Current', false);
+    const a = mk('Away', true);
+    const h = harness({ saves: [cur, a], signedIn: true });
+    const theirs: GameSave = { ...a, savedAt: WON };
+    h.answer((r) =>
+      r.url.endsWith(a.id) ? json(409, { rev: 2, save: theirs }) : json(200, line(1))
+    );
+    h.store.edit(a.id);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(h.store.currentId).toBe(cur.id);
+    const names = h.store.saves.map((s) => s.name).sort();
+    expect(names).toEqual(['Away', 'Away (this device)', 'Current']);
+  });
+
+  it('a store refusing the rekey sets offline and leaves the save waiting', async () => {
+    const a = mk('A', true);
+    const h = harness({ saves: [a], signedIn: true });
+    h.store.rekeyAnswer = { ok: false, reason: 'storage' };
+    h.answer(() => json(409, { rev: 2, save: { ...a, savedAt: WON } }));
+    h.store.edit(a.id);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(h.sync.state).toBe('offline');
+    expect(h.store.read(a.id)?.name).toBe('A');
+    expect(h.puts()).toHaveLength(1);
+  });
+});
+
+describe('removal', () => {
+  it('a 410 keeps the current game and another under new ids and sends them fresh', async () => {
+    const cur = mk('Current', true);
+    const other = mk('Other', true);
+    const h = harness({ saves: [cur, other], signedIn: true });
+    const gone = new Set([cur.id, other.id]);
+    h.answer((r) =>
+      gone.has(r.url.slice('/api/game/'.length))
+        ? new Response(null, { status: 410 })
+        : json(200, line(1))
+    );
+    h.store.edit(cur.id);
+    h.store.edit(other.id);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(h.store.read(cur.id)).toBeNull();
+    expect(h.store.read(other.id)).toBeNull();
+    const ids = h.store.saves.map((s) => s.id);
+    expect(ids).toHaveLength(2);
+    expect(ids).toContain(h.store.currentId);
+    expect(h.store.read(h.store.currentId)?.name).toBe('Current');
+    const fresh = h.puts().filter((r) => !gone.has(r.body?.save.id as string));
+    expect(fresh.map((r) => r.body?.baseRev)).toEqual([null, null]);
+    expect(new Set(fresh.map((r) => r.body?.save.id))).toEqual(new Set(ids));
+    expect(Object.keys(h.record().seen).sort()).toEqual([...ids].sort());
+  });
+
+  it('a removed save is deleted on the account; one never sent is not', async () => {
+    const a = mk('A', true);
+    const b = mk('B', true);
+    const c = mk('C', true);
+    const h = harness({ saves: [a, b, c], signedIn: true });
+    h.store.edit(a.id);
+    await vi.advanceTimersByTimeAsync(2000);
+    h.store.remove(a.id);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.reqs.at(-1)).toMatchObject({ method: 'DELETE', url: `/api/game/${a.id}` });
+    expect(h.record()).toEqual({ v: 1, seen: {}, deleting: [] });
+    h.store.remove(b.id);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(h.reqs.filter((r) => r.method === 'DELETE')).toHaveLength(1);
+  });
+
+  it('a DELETE that failed stays in deleting and goes again with the waiting saves', async () => {
+    const a = mk('A', true);
+    const b = mk('B', true);
+    const h = harness({ saves: [a, b], signedIn: true });
+    h.store.edit(a.id);
+    await vi.advanceTimersByTimeAsync(2000);
+    h.answer(() => {
+      throw new TypeError('Failed to fetch');
+    });
+    h.store.remove(a.id);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.record().deleting).toEqual([a.id]);
+    expect(h.sync.state).toBe('offline');
+    h.answer((r) =>
+      r.method === 'DELETE' ? new Response(null, { status: 204 }) : json(200, line(1))
+    );
+    window.dispatchEvent(new Event('online'));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.reqs.filter((r) => r.method === 'DELETE')).toHaveLength(2);
+    expect(h.record()).toEqual({ v: 1, seen: {}, deleting: [] });
+    expect(h.sync.state).toBe('saved');
+  });
+
+  it("the store's echoes of the sync's own adopts and renames are not sent", async () => {
+    const a = mk('A', true);
+    const h = harness({ saves: [a], signedIn: true });
+    const adopt = h.store.adopt.bind(h.store);
+    h.store.adopt = (saves) => {
+      const r = adopt(saves);
+      for (const s of saves) h.store.sync.changed(s.id);
+      return r;
+    };
+    h.answer((r) =>
+      r.url.endsWith(a.id)
+        ? json(409, { rev: 3, save: { ...a, savedAt: WON } })
+        : json(200, line(1))
+    );
+    h.store.edit(a.id);
+    await vi.advanceTimersByTimeAsync(2000);
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(h.puts()).toHaveLength(2);
+  });
+});
+
+describe('state', () => {
+  it('saving while a timer runs; sign-in over full over offline', async () => {
+    const a = mk('A', true);
+    const b = mk('B', true);
+    const h = harness({ saves: [a, b], signedIn: true });
+    expect(h.sync.state).toBe('saved');
+    h.store.edit(a.id);
+    expect(h.sync.state).toBe('saving');
+    h.answer(() => {
+      throw new TypeError('Failed to fetch');
+    });
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(h.sync.state).toBe('offline');
+    h.answer((r) => (r.url.endsWith(b.id) ? json(422, { error: 'too_many' }) : json(200, line(1))));
+    h.store.edit(b.id);
+    await vi.advanceTimersByTimeAsync(0);
+    // a went again with the change of b and succeeded; b's timer is still running.
+    expect(h.sync.state).toBe('saving');
+    h.answer(() => {
+      throw new TypeError('Failed to fetch');
+    });
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(h.sync.state).toBe('offline');
+    h.answer(() => json(422, { error: 'too_many' }));
+    window.dispatchEvent(new Event('online'));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.sync.state).toBe('full');
+    h.answer(() => {
+      throw new TypeError('Failed to fetch');
+    });
+    h.store.edit(a.id);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(h.sync.state).toBe('full');
+    h.answer(() => json(401, { error: 'sign_in' }));
+    window.dispatchEvent(new Event('online'));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.sync.state).toBe('sign-in');
   });
 });
