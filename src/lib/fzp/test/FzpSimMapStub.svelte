@@ -13,6 +13,11 @@
   onMount(() => {
     if (stub.autoReady) props.onready?.(stub.handle);
   });
+
+  /** SimMap's own export (a page with the component bound calls it before onready). */
+  export function setBottomInset(px: number): void {
+    stub.handle.setBottomInset(px);
+  }
 </script>
 
 <div data-testid="fzp-sim-map-stub"></div>

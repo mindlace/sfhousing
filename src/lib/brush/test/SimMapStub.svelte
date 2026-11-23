@@ -11,4 +11,9 @@
     stubProps.view = view && { ...view };
   });
   onMount(() => onready?.(stubHandle));
+
+  /** SimMap's own export (a page with the component bound calls it before onready). */
+  export function setBottomInset(px: number): void {
+    stubHandle.setBottomInset(px);
+  }
 </script>
