@@ -29,6 +29,9 @@ import manifestJson from '../../../e2e/fixtures/data/fixture-0/manifest.json';
 import { ABOUT_ID, ABOUT_TITLE, PART_HEADING } from './copy';
 import AboutDialogHarness from './test/AboutDialogHarness.svelte';
 
+// The sub-sections of Using it: not parts.
+const SUBSECTIONS: string[] = [ABOUT_ID.shortcuts, ABOUT_ID.levels, ABOUT_ID.savedGames];
+
 const cal = fixtureCalibration();
 const manifest = parseManifest(manifestJson);
 const URL_ = '/data/fixture-0/scenarios/fzp/projects.json';
@@ -193,9 +196,7 @@ describe('opening', () => {
       .toBeVisible();
     expect(dialog().getAttribute('aria-labelledby')).toBe(dialog().querySelector('h2')!.id);
     const parts = [...dialog().querySelectorAll(':scope section[id^="about-"]')]
-      .filter(
-        (s) => ![ABOUT_ID.shortcuts, ABOUT_ID.levels, ABOUT_ID.savedGames].includes(s.id as never)
-      )
+      .filter((s) => !SUBSECTIONS.includes(s.id))
       .map((s) => [s.id, s.querySelector('h3')?.textContent?.trim()]);
     expect(parts).toEqual([
       [ABOUT_ID.meanings, PART_HEADING.meanings],
