@@ -4,7 +4,7 @@
   centre, never clips), and the actions on the right. Below lg: the site name, the status, the
   pinned item and a hamburger Menu button whose panel (under the header) holds the steps and the
   actions.
-  Below sm, on a page that pins an item (Paint, /sim, /lesscars, /p/:id), the site name moves into
+  Below sm, on a page that pins an item (Paint, /sim, /p/:id), the site name moves into
   the panel too. The account entry (Sign in, or @handle) follows the actions in the same group;
   Sign in shows only while a sign-in method is in effect (`signInAvailable`). The About entry
   follows the account entry on every route (the map pages have no footer). The status is the

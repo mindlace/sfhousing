@@ -17,7 +17,7 @@ export const DEFAULT_VIEW: ViewPrefs = {
   transitAccess: false,
   heightLimits: true
 };
-/** Every layer off: FzpMode's default, and what /sim's map gets during a run. */
+/** Every layer off: TimelineMode's default, and what /sim's map gets during a run. */
 export const HIDDEN_VIEW: ViewPrefs = {
   transitStops: false,
   transitAccess: false,

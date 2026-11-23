@@ -110,7 +110,7 @@
     results?: Snippet;
     /**
      * The page's own notices (`/`: plan sharing's), each a `Message`, rendered after the brush status
-     * in this component's one notice stack (`NoticePills`), as FzpMode's `notices`.
+     * in this component's one notice stack (`NoticePills`), as TimelineMode's `notices`.
      */
     notices?: Snippet;
     /** The user opened the dock (the page's header score): focus moves into it. */

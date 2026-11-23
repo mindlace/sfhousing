@@ -11,7 +11,7 @@ export const MARKET_HOLD_SENTENCE =
 /**
  * Under About's "Today's level" while today's public funding is modelled (the private level).
  * Why duplicated: `MARKET_FUNDING_SENTENCE` in `src/lib/sim-page/funding-copy.ts` says "FZP as
- * written", and `/lesscars` imports it, so the original may not change.
+ * written", and `money-view.ts` still uses it, so the original is not edited.
  */
 export const MARKET_FUNDING_SENTENCE4 =
   "Today's public funding is part of every run, including the comparison with current law, " +

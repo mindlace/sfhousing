@@ -174,7 +174,7 @@ their own titles. `/s/<id>`'s share description says "the goal". `src/lib/about/
   click, so the keyboard follows the same rule. A modified or middle click, a `target=_blank` link
   and links to other pages are left to the browser (a new tab on `/about`; the run untouched).
 
-Pages that mount no dialog (`/about` itself, Paint, `/p/<id>`, `/lesscars`) have no listener: their
+Pages that mount no dialog (`/about` itself, Paint, `/p/<id>`) have no listener: their
 About links navigate.
 
 ## The map's credit

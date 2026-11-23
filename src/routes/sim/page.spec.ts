@@ -1,4 +1,4 @@
-// The /sim universal load (spec §4.1, moved from /fzp): manifest, calibration, scenario presence,
+// The /sim universal load (spec §4.1): manifest, calibration, scenario presence,
 // never the URL (`?seed=` and `start` are retired). Every failure is a flag, never a thrown 500.
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { manifestUrl, parseManifest } from '$lib/data/manifest';

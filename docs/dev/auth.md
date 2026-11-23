@@ -79,7 +79,7 @@ A new page or API that reads or sets the session for a visitor with no cookie ye
 
 ### JSON routes
 
-SvelteKit's origin check covers only form content types. Every state-changing JSON route therefore calls `refuseUnlessSameOriginJson` (`src/lib/server/security/same-origin-json.ts`) first: it answers 415 `{ error: AUTH_COPY.jsonRequired }` ("Send JSON.") for a request that is not `application/json`, and 403 `{ error: AUTH_COPY.crossOrigin }` ("Cross-site requests are not allowed.") for a foreign `Origin` (`refuseForeignOrigin`). A new route of this kind must do the same, and its client must send `content-type: application/json` even with no body. `AUTH_COPY` is in `src/lib/account/copy.ts`.
+SvelteKit's origin check covers only form content types. The account and game routes that change state (under `/api/account`, and `PUT` and `DELETE /api/game/[id]`) therefore call `refuseUnlessSameOriginJson` (`src/lib/server/security/same-origin-json.ts`) first: it answers 415 `{ error: AUTH_COPY.jsonRequired }` ("Send JSON.") for a request that is not `application/json`, and 403 `{ error: AUTH_COPY.crossOrigin }` ("Cross-site requests are not allowed.") for a foreign `Origin` (`refuseForeignOrigin`). A new route of this kind must do the same, and its client must send `content-type: application/json` even with no body. The publish routes (`POST /api/plans`, `POST /api/policies`) read no session: they answer 415 for a body that is not JSON and take any origin ([plan-sharing.md](plan-sharing.md)). `AUTH_COPY` is in `src/lib/account/copy.ts`.
 
 ### Rate limits
 

@@ -6,8 +6,8 @@ export class HeaderActions {
   /** The right-aligned actions: in the header from lg, in the header's Menu below lg. */
   current = $state<Snippet | null>(null);
   /**
-   * The page's one always-visible item (the header score on `/`, `/p/:id`, `/sim` and `/s/<id>`;
-   * the `/lesscars` headline): in the header at every width.
+   * The page's one always-visible item (the header score on `/`, `/p/:id`, `/sim` and `/s/<id>`):
+   * in the header at every width.
    */
   pinned = $state<Snippet | null>(null);
   /**
@@ -17,7 +17,7 @@ export class HeaderActions {
   status = $state<Snippet | null>(null);
   /**
    * The registration that filled the slots. Not the snippet: two instances of one component
-   * (FzpMode on /s/<id>, then on /sim) can register the same snippet object, and the new page
+   * (TimelineMode on /s/<id>, then on /sim) can register the same snippet object, and the new page
    * mounts before the old one is destroyed.
    */
   owner: object | null = null;

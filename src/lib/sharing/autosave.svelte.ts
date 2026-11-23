@@ -67,7 +67,7 @@ export class Autosave<D = Plan> {
   }
 
   /**
-   * Reads (or, when `handoff` is given — Remix via history.state — parses that instead),
+   * Reads (or, when `handoff` is given, a serialized document from the page, parses that instead),
    * rebases, writes back, and returns the plan to load. Never throws on storage problems;
    * an invalid `currentVersion` throws a TypeError (the page cannot work without it).
    */

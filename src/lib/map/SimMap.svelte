@@ -1544,7 +1544,7 @@
        (`--dock-w`, published by the Dock from md, as the notice stack centres), below the page's
        notices when they overlay the map (`--notice-pills-bottom`, published by NoticePills from
        md), so neither covers the other. Parcels' one line is a chip, buildings' sentence a card;
-       both keep the map palette (/lesscars shares them). The column's top offset is its padding,
+       both keep the map palette. The column's top offset is its padding,
        so its border box (which publishes `--map-chips-bottom`) moves with the notices; see
        map-interfaces.md. -->
   <div

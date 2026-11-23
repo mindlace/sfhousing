@@ -7,7 +7,6 @@ declare global {
   namespace App {
     interface Error {
       message: string;
-      reference?: string;
     }
     interface Locals {
       user: User | null;
@@ -15,14 +14,9 @@ declare global {
       // NOT the stable identity id on `user`.
       session: { id: string; userId: string } | null;
     }
-    interface PageState {
-      /** Remix hand-off from /p/:id to / (plan-sharing ruling 7). `plan` (serialized) only
-       *  when the localStorage write failed. Cleared by / after the toast. */
-      sfhRemix?: { from: string; plan?: string };
-      /** Remix hand-off from /s/:id to /sim (plan 5). `doc` (serialized) only when the
-       *  localStorage write failed. Cleared by /sim after the toast. */
-      sfhSimRemix?: { from: string; doc?: string; upgradedFrom?: number };
-    }
+    // No page sets history state; SimRoute passes the current one through replaceState.
+    // eslint-disable-next-line @typescript-eslint/no-empty-object-type
+    interface PageState {}
     interface Platform {
       env: Env;
       ctx: ExecutionContext;

@@ -373,8 +373,8 @@ The released version is `2026-11-08-3b7fa918` (`<v2>`). It differs from `2026-11
 by the two block keep rows for `8953` and `8958`: `road_like.kept` is 91 (was 89), and
 `road_like.lots` and `scenario.road_like.lots` are 491 (493), with `.r1n` 123 (124) and `.r2s` 59
 (60). `scenario.road_like.unhostable` and `.net_removed` are equal (202, 6,861), `calibration.json`
-is byte-identical, and `scenarios/lesscars/summary.json` differs only in `datasetVersion`. All 34
-invariants passed. The figures below were measured on `7d2097ac`, built the same way:
+is byte-identical, and the freeway-removal step's summary file (removed since) differs only in
+`datasetVersion`. All 34 invariants passed. The figures below were measured on `7d2097ac`, built the same way:
 
 Built 2026-11-08 on the owner's laptop (Apple M5 Pro, Mac17,9) as `2026-11-08-7d2097ac`, with the
 road-like rule and the curated `pipeline/enrichment/road-lots.json` of the imagery review, from the
@@ -382,9 +382,9 @@ committed lock (unchanged). All 34 invariants passed, V17 and V18 included. The 
 is `2026-11-02-0d40e1e2`, the v1.1 live build before the rule; its values follow in brackets.
 
 - **Time:** the phase timings in `report.json` sum to 177.2 s (2 min 57 s); `timings.scenario` was
-  73.1 s and `timings.lesscars` 7.8 s. The build wrote `manifest.json` at 12:18 UTC.
-- **Stop thresholds:** `scenario.road_like.net_removed` is 6,861 (limit 20,000). The /lesscars
-  2068 extra mean is 29,095.78 against 29,080.99 (+0.05%, limit 5%). Both pass.
+  73.1 s and the freeway-removal step's 7.8 s. The build wrote `manifest.json` at 12:18 UTC.
+- **Stop thresholds:** `scenario.road_like.net_removed` is 6,861 (limit 20,000). The freeway-removal
+  step's 2068 extra mean is 29,095.78 against 29,080.99 (+0.05%, limit 5%). Both pass.
 - **Warning line:** "scenario: road-like lots make 202 lots unbuildable, 6861 net homes of
   static capacity (r7 3560, r1n 201, r2s 438, r3 2662, override 0)", followed by "road-like lot(s)
   5431A010 have homes on the latest roll; they keep them and stay ineligible".

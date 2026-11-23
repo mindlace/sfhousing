@@ -336,7 +336,7 @@ describe('scenario host: heightLids', () => {
     const r0 = askLids(none, around(LOT_A));
     expect(answerOf(none, r0)).toMatchObject({ ok: false, reason: 'no-session' });
 
-    // /fzp: a session without levers
+    // A session without levers
     const fzp = harness({ policy: false });
     fzp.init();
     await fzp.runAll();

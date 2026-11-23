@@ -1,5 +1,5 @@
-// Plan 2 Task 9: the time-switched envelope (ruling 1, the law switch), restored by lesscars plan 1
-// Task 4 as a single regime. From `regimes[0].day` a second parcels view is in force, and a project
+// Plan 2 Task 9: the time-switched envelope (ruling 1, the law switch) as a single
+// regime. From `regimes[0].day` a second parcels view is in force, and a project
 // keeps the regime of the month it initiated in.
 import { describe, expect, it } from 'vitest';
 import type { ParcelId } from '$lib/data/parcel';

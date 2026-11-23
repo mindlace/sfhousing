@@ -1,11 +1,11 @@
 <!--
   The project card (spec §4.8): an interactive panel over the map. It renders a `SummaryState` and
-  never requests anything itself; FzpMode owns the requests. All text comes from card.ts.
+  never requests anything itself; TimelineMode owns the requests. All text comes from card.ts.
   Below md it sits above the map's bottom-right controls (`--map-controls-br-block-size`, which
   includes the map inset: the scrubber and, on /sim, the dock's sheet) and is at most half the
   map, never taller than the room above it, so it never rises over the header. From md it sits
-  where `anchor` puts it (FzpMode places it beside the clicked building), else at the top, right
-  of the dock (`--dock-w`). It reports its box through `onsize` for that placement.
+  where `anchor` puts it (TimelineMode places it beside the clicked building), else at the top,
+  right of the dock (`--dock-w`). It reports its box through `onsize` for that placement.
 -->
 <script lang="ts">
   import type { Day } from '$lib/timelapse/time';
@@ -34,7 +34,7 @@
     state: SummaryState;
     day: Day;
     asOf: Day;
-    /** The provenance behind the chance, by `card.lookups`; on /fzp both are the base. */
+    /** The provenance behind the chance, by `card.lookups`; with no levers both are the base. */
     calibration: CardCalibration;
     chance: CardChance;
     onclose: () => void;
@@ -46,7 +46,7 @@
     /** The layer that set the lot's limit, shown as "Allowed by: …"; null or absent: no line. */
     allowedBy?: string | null;
     /**
-     * The "Funded by" line (funding-ui 4.13), from FzpMode's `fundingName`; shown on a simulated
+     * The "Funded by" line (funding-ui 4.13), from the page's `fundingName`; shown on a simulated
      * card that carries `funding` only. Null or absent: no line.
      */
     fundedBy?: string | null;

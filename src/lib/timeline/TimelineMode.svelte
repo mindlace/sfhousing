@@ -3,8 +3,7 @@
   and the status slot, the notice stack, the map with the project card and tooltip, and under the
   map the bottom pane: the timeline (the playhead, the chart and the rows) beside the detail
   column (the inspector, Details, or at rest Activity; a sheet on a phone), over a
-  `TimelineSession`. It takes
-  FzpMode's place; the load states before the worker are FzpMode's (rule 30). The policy store and
+  `TimelineSession`. The load states before the worker are its own (rule 30). The policy store and
   its editors are the page's: edits arrive as a new `policy`, their lots as a new `lots`
   (PolicySync).
 -->
@@ -45,7 +44,7 @@
 
   /**
    * One lookups object per calibration object: SimMap compares lookups by identity, and nothing
-   * may mutate them (as FzpMode).
+   * may mutate them.
    */
   const lookupCache = new WeakMap<Calibration, Lookups>();
   function lookupsFor(cal: Calibration): Lookups {
@@ -390,7 +389,7 @@
   /** Every refill's `from`, in arrival order (the e2e hook). */
   const refills: number[] = [];
 
-  // Until SimMap's handle exists, cells and chunk statuses wait here, in order (as FzpMode).
+  // Until SimMap's handle exists, cells and chunk statuses wait here, in order.
   let pendingUpdates: TimelineUpdate[] = [];
   const pendingStatus = new Map<string, ChunkStatus>(); // eslint-disable-line svelte/prefer-svelte-reactivity
   const statusCells = new Set<string>(); // eslint-disable-line svelte/prefer-svelte-reactivity
@@ -1133,7 +1132,7 @@
     pendingStatus.set(cellId, s);
   }
 
-  /** The restarted worker reports only the cells it fetches (as FzpMode). */
+  /** The restarted worker reports only the cells it fetches. */
   function resetChunkStatuses(): void {
     for (const cellId of statusCells) setChunkStatus(cellId, 'ready');
     statusCells.clear();
@@ -1715,7 +1714,7 @@
   <!-- The notice stack's host (its parent): from md the stack overlays the map's top, under the
        header. Below md the stack is in flow and this box is no box. -->
   <div class="relative flex min-h-0 flex-1 flex-col max-md:contents">
-    <!-- Every notice is a chip or a card (Message) in this one stack (as FzpMode). -->
+    <!-- Every notice is a chip or a card (Message) in this one stack. -->
     <NoticePills bind:el={pillsEl}>
       {#if noScenario}
         {#snippet editorLink()}

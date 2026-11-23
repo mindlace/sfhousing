@@ -1,4 +1,4 @@
-// The render-time remaps of texts that hashed or /lesscars-imported files keep (rule 38).
+// The render-time remaps of texts that engine or imported files keep (rule 38).
 import { describe, expect, it } from 'vitest';
 import {
   GOAL_FLAG,

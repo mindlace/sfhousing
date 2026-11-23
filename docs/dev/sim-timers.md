@@ -66,20 +66,17 @@ details line "At the minimum"; it is announced. A custom edit replaces the prese
 stage, and both are clamped to the engine's scale range before they are stored, so a stage never
 carries a product past the clamp.
 
-## Save and Revert
+## Revert and the stored snapshot
 
-**On `/sim` (timeline-ui)** there is no Save and no "Revert to saved": `PermittingSection` takes `snapshot={false}`, because schema 4 carries a saved set as its own off policy and each policy has an on/off switch and Undo. Revert reads "Revert to <preset name>" and returns the selected span's set to its preset's resolved set (a custom timing policy keeps preset `observed` with the label `CUSTOM_TIMING_LABEL`, so it reverts to the observed timings). The preset belongs to the policy: on a policy of several spans the preset select is disabled, with the reason behind a tap (`PRESET_PER_POLICY`). The paragraphs below describe the schema 3 snapshot, which `upgrade.ts` turns into an off policy.
+Save ("Save timelines") and "Revert to saved" exist in `PermittingSection` only with `snapshot` true, and no page mounts it so: its one host, `WhatEditor` (`src/lib/timeline/`), passes `snapshot={false}`, because schema 4 carries a saved set as its own off policy and each policy has an on/off switch and Undo. Revert reads "Revert to <preset name>" and returns the selected span's set to its preset's resolved set (a custom timing policy keeps preset `observed` with the label `CUSTOM_TIMING_LABEL`, so it reverts to the observed timings). The preset belongs to the policy: on a policy of several spans the preset select is disabled, with the reason behind a tap (`PRESET_PER_POLICY`).
 
-Save ("Save timelines") stores the current set as `timing.saved` with the label shown at that
-moment. Plan 5 persists it: autosave keeps it, so "Revert to saved" survives a reload, but Publish
-strips it (`SIM_CODEC.publishable`), so a shared link carries no snapshot. Every load (autosave
-restore, `/s/<id>`, Remix) reconciles both the current set and the snapshot with the calibration
-the page runs on (`reconcileTiming`, `src/lib/sim-page/reconcile.ts`): presets are re-resolved by
-their rule and custom edits clamped, with a notice listing what moved ([plan-sharing.md](plan-sharing.md),
-"Policies"). Revert reads "Revert to saved" when there is a snapshot
-and "Revert to <preset name>" otherwise. Choosing a preset keeps the saved snapshot. Each is one
-labelled store change, so Undo covers it. Editing a preset's set makes the label
-"Custom (from <preset name>)".
+A schema 3 document can hold a stored snapshot, `timing.saved` (a set with its label). The schema 3
+codec keeps it in a stored body, Publish strips it (`SIM_CODEC.publishable`), and every load
+reconciles both the current set and the snapshot with the calibration the page runs on
+(`reconcileTiming`, `src/lib/sim-page/reconcile.ts`): presets are re-resolved by their rule and
+custom edits clamped, with a notice listing what moved ([plan-sharing.md](plan-sharing.md),
+"Policies"). `upgrade.ts` then turns the snapshot into an off policy. Editing a preset's set makes
+the label "Custom (from <preset name>)".
 
 ## The route timelines
 

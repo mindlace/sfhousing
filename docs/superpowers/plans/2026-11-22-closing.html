@@ -1,0 +1,272 @@
+<article>
+  <header>
+    <h1>Closing implementation plan</h1>
+    <p>Leftovers, the cross-unit journey, the docs made true, the final sweep, then the full-tree checks, the one dataset build, the level 2 check, the upload and the one signoff.</p>
+    <aside data-kind="note"><strong>For agentic workers</strong> REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps are checklist items; progress is kept in the workspace ledger, not in the plan.</aside>
+  </header>
+
+  <section id="sec-overview">
+    <h2>Overview</h2>
+    <dl>
+      <dt>Goal</dt><dd>Close the incremental-game build: remove what nothing uses, prove the units work together with <code>e2e/game-journey.spec.ts</code>, make <code>CLAUDE.md</code>, <code>README.md</code> and <code>docs/dev/</code> true to the merged tree, then build, check (level 2), upload and verify the one dataset and run the one signoff.</dd>
+      <dt>Architecture</dt><dd>No new runtime code. One new Playwright spec built on X1's helpers and the existing run helpers; edits to docs, configs and comments; then a fixed operational sequence whose order guarantees the level 2 check runs on the exact directory that is uploaded.</dd>
+      <dt>Tech stack</dt><dd>SvelteKit 2 / Svelte 5, Playwright, Vitest, the <code>pipeline/</code> CLI, <code>npx tsx scripts/level2-check.ts</code>, chreode signoff.</dd>
+      <dt>Spec</dt><dd><code>/Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game/docs/superpowers/specs/2026-11-22-closing-design.html</code> (read it from the package worktree, never from this branch's copy). The design doc is <code>docs/superpowers/design/2026-11-22-1216-incremental-game.html</code> in the same worktree.</dd>
+    </dl>
+    <aside data-kind="warning"><strong>Merged tree first</strong> This unit runs after every other unit has merged into the integration branch. Every task starts by reading the files it touches on the merged tree; line numbers in the spec were read at <code>8125e557</code> and have moved. Where the spec and the tree disagree on a value (a binding, a label, a test id), the tree wins and the difference goes in the task report.</aside>
+  </section>
+
+  <section id="sec-global-constraints">
+    <h2>Global constraints</h2>
+    <section id="sec-gc-rows">
+      <h3>Interface rows (copied from the spec)</h3>
+      <table id="tbl-interfaces">
+        <caption>Interface table</caption>
+        <thead>
+          <tr><th scope="col">Row</th><th scope="col">Owner</th><th scope="col">Layer</th><th scope="col">Summary</th><th scope="col">Contract</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">G1</th><td><code>game-core</code></td><td>Model commitment</td><td>Levels, results, and what beats what.</td><td><a href="../design/2026-11-22-1216-incremental-game.html#sec-if-g1">G1</a></td></tr>
+          <tr><th scope="row">G2</th><td><code>game-core</code></td><td>Model commitment</td><td>Progress, saved games, banking, the store.</td><td><a href="../design/2026-11-22-1216-incremental-game.html#sec-if-g2">G2</a></td></tr>
+          <tr><th scope="row">G3</th><td><code>game-core</code></td><td>Model commitment</td><td>What a level allows; the playable document.</td><td><a href="../design/2026-11-22-1216-incremental-game.html#sec-if-g3">G3</a></td></tr>
+          <tr><th scope="row">G4</th><td><code>game-core</code></td><td>Decomposition choice</td><td>The seen result and the player's standing.</td><td><a href="#sec-if-g4">G4</a></td></tr>
+          <tr><th scope="row">G5</th><td><code>game-core</code></td><td>Decomposition choice</td><td>The win card and the level panel with its saved games.</td><td><a href="../design/2026-11-22-1216-incremental-game.html#sec-if-g5">G5</a></td></tr>
+          <tr><th scope="row">S1</th><td><code>game-save</code></td><td>Model commitment</td><td>The saved-games API and table; every save kept.</td><td><a href="../design/2026-11-22-1216-incremental-game.html#sec-if-s1">S1</a></td></tr>
+          <tr><th scope="row">S2</th><td><code>game-save</code></td><td>Decomposition choice</td><td>The browser's save sync the store calls.</td><td><a href="../design/2026-11-22-1216-incremental-game.html#sec-if-s2">S2</a></td></tr>
+          <tr><th scope="row">S3</th><td><code>game-save</code></td><td>Decomposition choice</td><td>The account offer the win card renders.</td><td><a href="../design/2026-11-22-1216-incremental-game.html#sec-if-s3">S3</a></td></tr>
+          <tr><th scope="row">I1</th><td><code>remove-multiuser</code></td><td>Decomposition choice</td><td>The identity code with no sims in it.</td><td><a href="../design/2026-11-22-1216-incremental-game.html#sec-if-i1">I1</a></td></tr>
+          <tr><th scope="row">F1</th><td><code>finite-funding</code></td><td>Model commitment</td><td>The funding file: a bound for every source.</td><td><a href="../design/2026-11-22-1216-incremental-game.html#sec-if-f1">F1</a></td></tr>
+          <tr><th scope="row">F2</th><td><code>finite-funding</code></td><td>Model commitment</td><td>Pools with no "can always pay".</td><td><a href="../design/2026-11-22-1216-incremental-game.html#sec-if-f2">F2</a></td></tr>
+          <tr><th scope="row">F3</th><td><code>pool-closing</code></td><td>Model commitment</td><td>A spent pool closes and leaves every bundle.</td><td><a href="../design/2026-11-22-1216-incremental-game.html#sec-if-f3">F3</a></td></tr>
+          <tr><th scope="row">M1</th><td><code>funding-measures</code></td><td>Decomposition choice</td><td>A given measure's money follows its policy's start.</td><td><a href="../design/2026-11-22-1216-incremental-game.html#sec-if-m1">M1</a></td></tr>
+          <tr><th scope="row">L1</th><td><code>remove-lesscars</code></td><td>Decomposition choice</td><td>The pipeline, dataset and worker with no less cars.</td><td><a href="../design/2026-11-22-1216-incremental-game.html#sec-if-l1">L1</a></td></tr>
+          <tr><th scope="row">X1</th><td><code>contracts</code></td><td>Decomposition choice</td><td>The e2e seam: open by default, a seeded level, a goal amount.</td><td><a href="../design/2026-11-22-1216-incremental-game.html#sec-if-x1">X1</a></td></tr>
+        </tbody>
+      </table>
+      <section id="sec-if-g4">
+        <h4>G4 The seen result and the standing</h4>
+        <pre><code data-lang="ts">// src/lib/game/standing.ts
+export type Standing =
+  | { kind: 'playing' }
+  | { kind: 'short'; seen: Result; bar: Bar | null }
+  | { kind: 'won'; on: Day };
+
+/** `seen` is `goalOutcome(...)` for the months reached; null while no result is seen. */
+export function standing(level: Level, bar: Bar | null, seen: Result | null): Standing;</code></pre>
+        <ul>
+          <li><code>standing</code> is <code>playing</code> at level 1 and while <code>seen</code> is null.</li>
+          <li>At level 2 a reached result is <code>won</code>.</li>
+          <li>At levels 3 to 5 a result is <code>won</code> when it beats the bar.</li>
+          <li>Every other seen result is <code>short</code>.</li>
+          <li><code>goalOutcome</code> is read on the playable document's forecast and never while the numbers are stale, so a standing always belongs to the policy on screen.</li>
+          <li>A build check runs the empty document on a built dataset and fails when the goal is not reached inside the window (D1).</li>
+          <li><code>reach-check</code> writes the check and runs it once <code>finite-funding</code> and <code>pool-closing</code> have merged, so a miss reaches the owner while the build is still running. <code>closing</code> runs it again on the dataset it uploads.</li>
+        </ul>
+      </section>
+    </section>
+    <section id="sec-gc-design">
+      <h3>Design global constraints (verbatim)</h3>
+      <ul>
+        <li>Work happens in git worktrees under <code>.claude/worktrees/</code>. Commits follow Conventional Commits. No attribution to an AI anywhere.</li>
+        <li>Code style: 2-space indent, single quotes, no trailing commas, 100 columns.</li>
+        <li>Every Vitest test calls <code>expect</code>.</li>
+        <li>Signoff fails on server stderr, on timing crutches and on a retried flake. Each unit runs <code>npm run lint</code>, <code>npm run check</code> and the Vitest projects its files belong to before it hands back.</li>
+        <li>Port 4173 is shared by every session on this machine. A unit never kills a server it did not start; it waits.</li>
+        <li>Every agent runs every command in the foreground and never ends a turn while something it started is running.</li>
+        <li>Schema changes go through <code>npm run db:generate</code>. Nobody edits a migration.</li>
+        <li>No unit runs <code>npm run signoff</code>: its dataset step fails until the dataset is uploaded. <code>closing</code> runs it once, after the upload.</li>
+        <li>The dataset version changes in this build. The dataset is uploaded once, by <code>closing</code>, from the integration branch, after every unit has merged; no other unit uploads a dataset. <code>reach-check</code> builds one earlier to run the check and uploads nothing.</li>
+        <li>A unit that writes a hashed path regenerates the fixture dataset with <code>npm run pipeline -- fixture</code> and commits it.</li>
+        <li>WCAG 2.2 AA: every new control is at least 24 px and passes <code>expectNoA11yViolations</code> in light and dark.</li>
+        <li>Page text is short. No sentence says what something is not.</li>
+        <li>Nothing on the main screen says "RHNA". The goal is read from the <code>Goal</code> value, never from a constant.</li>
+        <li>The game's rules are read from <code>src/lib/game/</code>. No component compares a level to a number.</li>
+        <li>One future: no seed control, no band, no average over runs.</li>
+        <li>Published plans and policies, their ids and their pages keep working, including every policy published before this build.</li>
+        <li>A number that is a claim about the world carries its source and tier, in the existing <code>Sourced</code>, <code>Unsourced</code> and <code>Evidence</code> shapes.</li>
+        <li>A runtime dependency that ships in the bundle gets a credit in <code>SOFTWARE</code>. This build adds none.</li>
+        <li>CSP changes are interface changes. This build makes none.</li>
+        <li>Timing is measured only on a quiet machine. A unit that cannot get one defers the measurement and says so.</li>
+      </ul>
+    </section>
+    <section id="sec-gc-unit">
+      <h3>Unit rules</h3>
+      <ul>
+        <li><strong>Write set</strong> (spec <code>#sec-write-set</code>): <code>CLAUDE.md</code>; <code>README.md</code>; any file under <code>docs/dev/</code> except <code>deploy.md</code>'s mail section (<code>## Sign-in mail</code>; in <code>### Worker (set in Cloudflare)</code> the "Already set" line and the <code>GOOGLE_CLIENT_ID</code> and <code>SES_ACCESS_KEY_ID</code> bullets; the mail and Google items of <code>## One-time bootstrap</code>); <code>e2e/game-journey.spec.ts</code>; <code>package.json</code> and <code>package-lock.json</code> (unused dependencies only); <code>chreode.config.ts</code> (not its dataset path list); <code>src/app.d.ts</code> (unused types); comments that name removed things; the fixture when a comment under <code>PATHS</code> changes it.</li>
+        <li><strong>Never touched</strong>: <code>scripts/level2-check.ts</code> and its test; <code>playwright.config.ts</code>; an existing test's code or assertions (comments that name removed things are rewritten in every file, test files, test helpers and e2e specs included; that is the only edit to an existing test file); code (not comments) in another unit's file; the allowed places of the spec's <code>#sec-design-sweep</code>, among them the compatibility code (<code>src/lib/data/manifest.ts</code>'s older-manifest parse and <code>splitRoads</code>; <code>src/lib/map/style.ts</code>'s <code>LC_ROADS_SOURCE_LAYER</code>, <code>LC_CLONE_SUFFIX</code>, <code>isRoadsLayer</code>, <code>roadsClone</code> and the comment above them; the legacy <code>uncapped</code> reads in <code>src/lib/timelapse/model.ts</code> and <code>src/lib/sim/levers/finance.ts</code>; their tests and fixtures: <code>manifest.test.ts</code>, <code>style.spec.ts</code>'s <code>roads_lc</code> cases, <code>scripts/data-local.spec.ts</code>'s <code>lesscars</code> block, <code>scripts/data-transit.spec.ts</code>'s older-manifest case, <code>model.test.ts</code>, <code>fixtures/calibration-uncapped.json</code>, <code>finance.spec.ts</code>), the reserved handles in <code>handle-normalize.ts</code>, the 404 <code>stderrAllowlist</code> entries of <code>chreode.config.ts</code>, the tests asserting a removed path answers 404, and <code>docs/dev</code> sentences that state what the code does now about a removed name.</li>
+        <li>A check failure or sweep hit in code outside the write set is a defect of the unit that owns it: report <code>file:line</code>, the failing test and the owner unit; do not fix it.</li>
+        <li>Bash discipline: every Bash call is one command starting with an allowed command (<code>npm</code>, <code>npx</code>, <code>lsof</code>, the allowed git subcommands, <code>ls</code>, <code>cat</code>, <code>grep</code>, <code>head</code>, <code>tail</code>, <code>wc</code>, <code>pwd</code>, <code>mkdir</code>); no <code>cd</code>, no <code>VAR=</code> prefix, no <code>;</code>/<code>&amp;&amp;</code>/pipes, no <code>$(...)</code>, no redirects. Read files with Read/Grep/Glob; write with Write/Edit. <code>git grep</code> is not allowed: the sweep runs with the Grep tool.</li>
+        <li>Port 4173: before any preview server or Playwright run, <code>lsof -nP -iTCP:4173 -sTCP:LISTEN</code>; if a listener you did not start is there, never kill it, wait and check again. Leave nothing listening.</li>
+        <li>No <code>setTimeout</code>/<code>setInterval</code>, fixed waits or raised timeouts in any spec or helper; <code>npx chreode timing-check --head HEAD</code> is clean after every task's last commit.</li>
+        <li>Conventional Commits; no Claude attribution anywhere.</li>
+        <li>Setup before the first test run in this worktree: <code>npm install</code>, <code>.dev.vars</code> with <code>PUBLIC_DATASET_VERSION=fixture-0</code> (Write tool), <code>npm run data:fixture</code>, <code>npm run db:migrate</code>, <code>npx playwright install chromium</code>.</li>
+      </ul>
+    </section>
+  </section>
+
+  <section id="sec-review-focus">
+    <h2>Review focus</h2>
+    <ol>
+      <li><strong>The journey on the phone project.</strong> Every Playwright project runs both tests; the level cell, win card and lanes may sit in the Menu below lg. A reviewer expects the spec to pass five times on every project with retries off. Pinned in Task 2 (burn-in step).</li>
+      <li><strong>A comment rewrite under a hashed path.</strong> Any comment changed under <code>PATHS</code> (<code>pipeline/</code>, <code>src/lib/{data,generator,timelapse,config.ts}</code>, …) changes <code>&lt;v&gt;</code> and the fixture; a forgotten regeneration fails <code>pipeline.yml</code>'s byte check. Pinned in Task 1 and Task 5 (fixture regeneration step).</li>
+      <li><strong>A dependency that tooling loads by name.</strong> Removing a Vite/ESLint/Prettier/Playwright plugin or a type package breaks the build without any import showing it. Pinned in Task 1 (<code>npm ls</code>, <code>check</code>, <code>lint</code>, <code>build</code>).</li>
+      <li><strong>A doc link to a deleted doc, or a <code>docs/dev</code> file missing from <code>CLAUDE.md</code>.</strong> Pinned in Tasks 3 and 4 (link sweep and <code>scripts/docs-index.spec.ts</code>).</li>
+      <li><strong>Signoff's merge of <code>origin/main</code> moving <code>&lt;v&gt;</code> after the upload.</strong> Then the <code>dataset</code> step fails and the finish loops back to the version step with a fresh build and a fresh level 2 check. Pinned in Task 8.</li>
+    </ol>
+  </section>
+
+  <section id="sec-task-1">
+    <h2>Task 1: Leftovers outside the docs</h2>
+    <p>Spec: <code>#sec-design-leftovers</code>, <code>#sec-today-leftovers</code>, <code>#sec-design-sweep</code> (allowed places).</p>
+    <ul>
+      <li>Modify: <code>package.json</code>, <code>package-lock.json</code> (via <code>npm uninstall</code>), <code>chreode.config.ts</code>, <code>src/app.d.ts</code>, comments in any file that name removed things.</li>
+      <li>Possibly modify: <code>e2e/fixtures/data/fixture-0/**</code> (by <code>npm run pipeline -- fixture</code> only).</li>
+      <li>Interfaces: consumes none; produces none.</li>
+    </ul>
+    <ol>
+      <li id="t1-s1"><input type="checkbox"> Run the worktree setup (Unit rules), then confirm the baseline builds: <code>npm run check</code> passes before any edit. A failure here is a merged unit's defect: record it in the report and go on.</li>
+      <li id="t1-s2"><input type="checkbox"> Dependencies: for each name in <code>package.json</code>'s <code>dependencies</code> and <code>devDependencies</code>, Grep for an import or require of it (and of its subpaths) under <code>src</code>, <code>pipeline</code>, <code>scripts</code>, <code>e2e</code> and root config files (<code>*.config.*</code>, <code>.prettierrc*</code>, <code>eslint.config.*</code>). A name with no hit that is not a tool-loaded package (Vite, ESLint, Prettier, Playwright or Svelte plugin, <code>@types/*</code>, a CLI an npm script calls) goes with <code>npm uninstall &lt;name&gt;</code>. Expected: <code>@maplibre/vt-pbf</code>. List every name removed and every name kept as tool-loaded with the script or config that loads it.</li>
+      <li id="t1-s3"><input type="checkbox"> <code>chreode.config.ts</code>: remove each path rule naming a file or directory that no longer exists (expected <code>drizzle.sim.config.ts</code>); rewrite comments naming removed things. Leave the dataset path list as it is.</li>
+      <li id="t1-s4"><input type="checkbox"> <code>src/app.d.ts</code>: for each declared field, Grep for readers and writers. A field with neither goes; a field with a reader stays (<code>sfhRemix</code>, <code>sfhSimRemix</code> stay while read) and its comment is made true. Code with only test callers (reported: <code>src/lib/sharing/remix.ts</code>'s <code>remixConfirm</code>, <code>SIM.remixedToast</code>) is code, not a leftover this unit removes: list it in the report with its owner unit (<code>game-shell</code>, <code>game-sim</code>). A comment naming a removed thing there (for example <code>SimNotices.svelte:3</code>) is rewritten.</li>
+      <li id="t1-s5"><input type="checkbox"> Comments: run the sweep patterns (Task 5's table) with the Grep tool across the tree; for each hit that is in a comment outside the allowed places, rewrite the comment to the code as it is, or delete it when it says nothing else. Code lines are never edited; a hit in code goes in the report with its owner unit. Example known hit: <code>src/lib/fzp/ProjectCardPanel.svelte</code>'s "FzpMode's <code>fundingName</code>".</li>
+      <li id="t1-s6"><input type="checkbox"> Verify:
+        <pre><code data-lang="sh">npm ls
+npm run check
+npm run lint
+npm run build
+npm run test:unit</code></pre>
+        Expected: <code>npm ls</code> reports no missing or extraneous package; the others pass.</li>
+      <li id="t1-s7"><input type="checkbox"> Commit: <code>git commit -m "chore: remove leftovers of the removed subsystems"</code> (stage the named files with <code>git add</code>).</li>
+      <li id="t1-s8"><input type="checkbox"> If any changed file is under a <code>PATHS</code> entry of <code>pipeline/lib/version.ts</code>: <code>npm run pipeline -- fixture</code>, then <code>git status</code>; commit any fixture change with <code>git commit -m "chore: regenerate fixture dataset"</code>. Run <code>npx chreode timing-check --head HEAD</code>: clean.</li>
+    </ol>
+  </section>
+
+  <section id="sec-task-2">
+    <h2>Task 2: The game journey e2e</h2>
+    <p>Spec: <code>#sec-design-journey</code>, <code>#sec-design-measure</code>, <code>#sec-tests-journey</code>. Also read, on the merged tree, the <code>game-core</code>, <code>game-shell</code>, <code>game-sim</code>, <code>game-save</code> and <code>funding-measures</code> specs in the package worktree for test ids and texts, and <code>e2e/helpers/game.ts</code>, <code>e2e/helpers/run.ts</code>, <code>src/lib/timeline/policy4.ts</code>, <code>src/lib/sim-page/funding-presets.ts</code>.</p>
+    <ul>
+      <li>Create: <code>e2e/game-journey.spec.ts</code>.</li>
+      <li>Consumes: X1 <code>seedGame(page, level)</code>, <code>newVisitor(page)</code>, <code>seedGoalAmount(page, amount)</code>, <code>E2E_GOAL_KEY</code> (<code>'sfhousing:e2e:goal'</code>) from <code>e2e/helpers/game.ts</code>; <code>paintOnce</code>, <code>gotoHydrated</code>, <code>expectNoA11yViolations</code> and the run helpers as they exist; the debug hook <code>window.__sfhFzp</code> (<code>day</code>, <code>asOf</code>, <code>policy</code>, <code>stale</code>); <code>runEmptyDocument(dir)</code>, <code>defaultGoal(asOf)</code> for computing <code>SIM_AMOUNT</code> once.</li>
+      <li>Produces: none.</li>
+    </ul>
+    <ol>
+      <li id="t2-s1"><input type="checkbox"> Find <code>SIM_AMOUNT</code>: write a throwaway script under the job's tmp dir (not in the repo) that calls <code>runEmptyDocument('e2e/fixtures/data/fixture-0')</code> from <code>scripts/level2-check.ts</code> and prints <code>defaultGoal(run.asOf).measure.valueAt(run.view, 60)</code> (<code>defaultGoal</code> is exported by <code>src/lib/goal/goal.ts</code>, not by the script); run it with <code>npx tsx &lt;path&gt;</code>. Record the number and the command in the report.</li>
+      <li id="t2-s2"><input type="checkbox"> Write test 1, <code>'a new visitor wins Paint and level 2, levels up to 3, and the account holds the game'</code>, with the constants at the top, each with a comment saying how it was found:
+        <pre><code data-lang="ts">// Any stroke that adds a home wins Paint.
+const PAINT_AMOUNT = 1;
+// Homes current law reaches on fixture-0 at month 60: goal.measure.valueAt(run.view, 60)
+// on runEmptyDocument('e2e/fixtures/data/fixture-0'), goal = defaultGoal(run.asOf).
+const SIM_AMOUNT = /* t2-s1's number */;</code></pre>
+        Its steps and assertions are the spec's eleven, in order (<code>#sec-design-journey</code>, "The one test"). Pinned values: level cell texts <code>"Level 1"</code>, <code>"Level 2"</code>, <code>"Level 3"</code>; Paint header <code>"Goal reached"</code>; win card buttons <code>"Level up"</code> and <code>"Keep playing"</code>; at level 2 no "+" on any kind; level 2's card <code>"Goal reached in {month}"</code> naming Permitting; at level 3 Permitting offers "+", Zoning's lane <code>"Unlocks when you level up"</code>, Public money's <code>"Unlocks at level 5"</code>; the level panel <code>"Beat {month}"</code> with level 2's month; the ruler's <code>"To beat"</code> flag; the header's <code>@handle</code>; <code>page.request.get('/api/game')</code> 200 with <code>saves</code> holding one game at level 3 via <code>expect.poll</code>; after reload still <code>"Level 3"</code> and the flag; <code>expectNoA11yViolations</code> with the card closed. Selectors are the merged test ids and roles (<code>win-card</code>, <code>paint-win</code>, <code>header-level</code>, <code>header-level-panel</code>, <code>header-level-up</code>, <code>level-panel</code>, <code>sim-locked</code>, <code>tl-win</code>, <code>tl-to-beat</code> at the time of writing).</li>
+      <li id="t2-s3"><input type="checkbox"> Write test 2, <code>'a given measure added at a later month has its money dated from that month'</code>: the spec's four steps (<code>seedGame(page, 5)</code>, <code>gotoHydrated</code> to <code>/sim</code>, wait for the first fill on <code>__sfhFzp</code>; focus the ruler, <kbd>PageDown</kbd> three times, read <code>__sfhFzp.day</code>; Public money "+" → <code>"A housing bond"</code>; read <code>__sfhFzp.policy</code> once <code>__sfhFzp.stale</code> is false) and its four assertions on the money policy whose <code>preset</code> is <code>'housing-bond'</code>: first span starts in the playhead's model month (at most one month before the day, never after) and more than two years after <code>__sfhFzp.asOf</code>; the pool's first money-in, from the first span's effect, is dated that start; label <code>"A housing bond"</code> and <code>preset</code> <code>'housing-bond'</code>; the Public money bar's accessible name holds <code>"A housing bond"</code> and the start date (<code>barLabel</code>). Field names come from <code>policy4.ts</code> on the merged tree.</li>
+      <li id="t2-s4"><input type="checkbox"> Run once, after the port check:
+        <pre><code data-lang="sh">lsof -nP -iTCP:4173 -sTCP:LISTEN
+npx playwright test e2e/game-journey.spec.ts --retries=0</code></pre>
+        Expected: both tests pass on every project. A step the merged code cannot pass is reported with the step and owner unit (<code>game-shell</code>, <code>game-core</code>, <code>game-sim</code>, <code>game-save</code>, <code>funding-measures</code>), never worked around.</li>
+      <li id="t2-s5"><input type="checkbox"> Burn-in: <code>npx playwright test e2e/game-journey.spec.ts --repeat-each=5 --retries=0</code>. Expected: all pass, and no new stderr from the preview server.</li>
+      <li id="t2-s6"><input type="checkbox"> <code>npm run lint</code>, <code>npm run check</code>; commit <code>git commit -m "test(e2e): game journey across Paint, /sim and the account"</code>; <code>npx chreode timing-check --head HEAD</code> clean.</li>
+    </ol>
+  </section>
+
+  <section id="sec-task-3">
+    <h2>Task 3: CLAUDE.md and README.md</h2>
+    <p>Spec: <code>#sec-docs</code> (preamble), <code>#sec-docs-claude</code>, <code>#sec-docs-readme</code>, <code>#sec-today-docs</code>. Every item there is one statement and what it becomes; write each as the merged tree has it.</p>
+    <ul>
+      <li>Modify: <code>CLAUDE.md</code>, <code>README.md</code>.</li>
+      <li>Interfaces: none.</li>
+    </ul>
+    <ol>
+      <li id="t3-s1"><input type="checkbox"> Gather the facts the items depend on from the tree: <code>package.json</code> scripts; <code>pipeline/cli.ts</code>'s command list; <code>wrangler.jsonc</code> bindings, rate limits, vars, <code>migrations</code>; whether the build still wraps <code>_worker.js</code> and what it exports; <code>src/lib/shell/</code>'s level cell and where it sits below lg; the files under <code>docs/dev/</code> (including <code>game.md</code>, <code>game-save.md</code>); <code>.github/workflows/</code>.</li>
+      <li id="t3-s2"><input type="checkbox"> Edit <code>CLAUDE.md</code>: every item of <code>#sec-docs-claude</code> (What This Is; Commands rows, the <code>pipeline</code> row, the new <code>level2-check</code> row; Architecture bindings, vars and secrets, the wrapper sentence, the saved-games sentence; Shell steps and level cell; Conventions' CI sentence and the new level 2 item; the doc list with one entry per <code>docs/dev/*.md</code>, no entry for a deleted file).</li>
+      <li id="t3-s3"><input type="checkbox"> Edit <code>README.md</code>: the three items of <code>#sec-docs-readme</code>.</li>
+      <li id="t3-s4"><input type="checkbox"> Verify: <code>npx vitest run scripts/docs-index.spec.ts</code> passes; Grep <code>CLAUDE.md</code> and <code>README.md</code> with the link pattern <code>\]\((\./)?(lesscars|sim-object|sim-log|sim-sync|sim-store)\.md</code> and with Task 5's name patterns: no hits; <code>npx prettier --check CLAUDE.md README.md</code> passes.</li>
+      <li id="t3-s5"><input type="checkbox"> Commit: <code>git commit -m "docs: describe the game in CLAUDE.md and README"</code>.</li>
+    </ol>
+  </section>
+
+  <section id="sec-task-4">
+    <h2>Task 4: docs/dev made true</h2>
+    <p>Spec: <code>#sec-docs-developing</code>, <code>#sec-docs-testing</code>, <code>#sec-docs-simpage</code>, <code>#sec-docs-timeline</code>, <code>#sec-docs-deploy</code>, <code>#sec-docs-pipeline</code>, <code>#sec-docs-timers</code>, <code>#sec-docs-auth</code>, <code>#sec-docs-links</code>, and the reach-check spec for the level 2 check's command and exit codes (0 reached, 1 missed, 2 could not run).</p>
+    <ul>
+      <li>Modify: <code>docs/dev/{developing,testing,sim-page,timeline-ui,deploy,pipeline,sim-timers,auth,fzp-mode,finance-engine,road-lots,sim-levers,map-interfaces}.md</code> and any other <code>docs/dev</code> file found untrue. <code>deploy.md</code>'s mail section is not touched.</li>
+      <li>Interfaces: none.</li>
+    </ul>
+    <ol>
+      <li id="t4-s1"><input type="checkbox"> Apply every item of the named sections, each as the merged tree has it. An item another unit already made true changes nothing; note it in the report. Other units reported these lines as stale (testimony, verify each on the tree): <code>pipeline.md</code> about line 315 (<code>federal.uncapped</code>); <code>finance-score.md</code>'s I6 lines; <code>testing.md:44</code>; <code>timeline-ui.md:40</code>; <code>sim-funding.md</code> about line 134 (<code>copy.ts</code> is now <code>money-copy.ts</code>); <code>deploy.md:55</code> and <code>developing.md:39</code> (<code>AUTH_METHODS=magic-link</code>); <code>plan-sharing.md</code> about lines 132, 134, 201 and <code>ui-parts.md</code> about lines 24, 46 ("Start your own", the Remix confirm, the history-state hand-off), each made true to the code as it now is.</li>
+      <li id="t4-s2"><input type="checkbox"> Read every file under <code>docs/dev/</code> once for statements about removed things (sims, invitations, roles, members, the sim object, the operator takedown, <code>/fzp</code>, <code>/lesscars</code>, <code>FzpMode</code>), the game's absence, or <code>uncapped</code> pools, and make each true. Keep the true statements the sweep allows (<code>#sec-design-sweep</code>, last allowed-places item).</li>
+      <li id="t4-s3"><input type="checkbox"> Verify: Grep <code>docs/dev</code> with the link pattern <code>\]\((\./)?(lesscars|sim-object|sim-log|sim-sync|sim-store)\.md</code>: no hits; Grep for every <code>](</code> link target under <code>docs/dev</code> to a relative <code>.md</code> and confirm the file exists; <code>npx vitest run scripts/docs-index.spec.ts</code> passes; <code>npx prettier --check docs/dev</code> passes.</li>
+      <li id="t4-s4"><input type="checkbox"> Commit: <code>git commit -m "docs(dev): make the developer docs true to the game"</code>.</li>
+    </ol>
+  </section>
+
+  <section id="sec-task-5">
+    <h2>Task 5: The final sweep</h2>
+    <p>Spec: <code>#sec-design-sweep</code>. Each pattern runs with the Grep tool over the repository, excluding <code>docs/superpowers/**</code>, <code>.superpowers/**</code>, <code>CHANGELOG.md</code>, <code>migrations/**</code>, <code>docs/lesscars/**</code>, <code>node_modules</code>, <code>.svelte-kit</code>, <code>pipeline/out</code>, <code>pipeline/.cache</code> and other gitignored output.</p>
+    <table id="tbl-sweep">
+      <caption>Sweep patterns</caption>
+      <thead><tr><th scope="col">#</th><th scope="col">Pattern (ripgrep)</th><th scope="col">Flags</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">1</th><td><code>lesscars|less-cars|less cars</code></td><td>case-insensitive</td></tr>
+        <tr><th scope="row">2</th><td><code>SimObject|sim-object|sim_object|SIM_TAKEDOWN_TOKEN|INVITE_RL</code></td><td></td></tr>
+        <tr><th scope="row">3</th><td><code>sim_invite|sim_index|sim_commit|sim_takedown|capability_event</code></td><td></td></tr>
+        <tr><th scope="row">4</th><td><code>(\$lib|src/lib)/(sim-log|sim-store|sim-sync|sim-stream|members)\b</code></td><td></td></tr>
+        <tr><th scope="row">5</th><td><code>["'`( ]/(sims|invite|fzp|lesscars)\b|api/(sims|invites|operator)\b</code></td><td></td></tr>
+        <tr><th scope="row">6</th><td><code>requireCap|requireSimRole|reseedHandleFromSim|resolveCapabilities|startFresh|Start fresh without an account|sfh_pending_sim|locals\.capabilities|actorKind</code></td><td></td></tr>
+        <tr><th scope="row">7</th><td><code>\.uncapped\b|\buncapped\??:|"uncapped"|'uncapped'</code></td><td></td></tr>
+        <tr><th scope="row">8</th><td><code>roads_lc|LESSCARS_|playback-host|TimeScrubber|high-water|FzpMode</code></td><td></td></tr>
+        <tr><th scope="row">9</th><td><code>\]\((\./)?(lesscars|sim-object|sim-log|sim-sync|sim-store)\.md</code></td><td>only <code>CLAUDE.md</code>, <code>README.md</code>, <code>docs/dev</code></td></tr>
+      </tbody>
+    </table>
+    <ol>
+      <li id="t5-s1"><input type="checkbox"> Run all nine. Classify each hit: allowed place (with which allowed-places item), doc or config hit in the write set (fix), comment hit (rewrite the comment only), code hit outside the write set (report with <code>file:line</code> and owner unit).</li>
+      <li id="t5-s2"><input type="checkbox"> Fix the write-set and comment hits, comments in existing test files, test helpers and e2e specs included (Task 1 left these: <code>header-actions.svelte.spec.ts:24</code>, <code>ProjectCardPanel.svelte.spec.ts:558</code>, <code>timeline/copy.spec.ts:1</code>, <code>routes/sim/page.spec.ts:1</code>, <code>engine-regimes.spec.ts:1</code>, <code>engine-switch.spec.ts:1</code>, <code>scenario/types.spec.ts:66,87</code>, <code>scenario-host.{gross,heights,levers,load}.spec.ts</code>, <code>e2e/fzp-sim.spec.ts:22</code>, <code>e2e/fzp.spec.ts:1,129</code>); reflow Task 1's comment lines over 100 columns (<code>SimNotices.svelte:3</code>, <code>ProjectCardPanel.svelte</code>'s TimelineMode line, <code>routes/sim/+page.svelte:2</code>); re-run all nine until only allowed places and reported code hits remain. The classified list goes in the task report, not in the repository.</li>
+      <li id="t5-s3"><input type="checkbox"> If a fix touched a <code>PATHS</code> file: <code>npm run pipeline -- fixture</code> and commit any change. Then <code>npm run lint</code>, <code>npm run check</code>.</li>
+      <li id="t5-s4"><input type="checkbox"> Commit (if anything changed): <code>git commit -m "chore: final sweep of removed names"</code>; <code>npx chreode timing-check --head HEAD</code> clean.</li>
+    </ol>
+  </section>
+
+  <section id="sec-task-6">
+    <h2>Task 6: The full-tree checks</h2>
+    <p>Spec: <code>#sec-design-finish</code> steps 1 to 3, <code>#sec-design-tree</code>.</p>
+    <ul>
+      <li>Modify: nothing outside the write set; a failure elsewhere is reported.</li>
+    </ul>
+    <ol>
+      <li id="t6-s1"><input type="checkbox"> The operator merged <code>origin/main</code> (release 0.7.0) before Task 1 (spec finish step 1). Here, run <code>git fetch origin</code> and <code>git log --oneline HEAD..origin/main</code>; if it lists anything, <code>git merge --no-ff --no-edit origin/main</code>. A conflict stops the unit and is reported.</li>
+      <li id="t6-s2"><input type="checkbox"> <code>npm run pipeline -- doctor</code>: <code>tippecanoe</code> and <code>pmtiles</code> present.</li>
+      <li id="t6-s3"><input type="checkbox"> In order, in the foreground, each passing before the next (port check before e2e):
+        <pre><code data-lang="sh">npm run lint
+npm run check
+npm run test:unit
+npm run test:pipeline
+lsof -nP -iTCP:4173 -sTCP:LISTEN
+npm run test:e2e</code></pre>
+        A test that passes only on retry counts as a failure. Each failure is reported with its test, file and owner unit; fixed here only when the file is in the write set. Run only when <code>uptime</code> shows a low load; otherwise wait in background sleep stretches. Known load-sensitive tests (testimony): <code>src/lib/map/hide-diff.spec.ts</code>, <code>e2e/sim.spec.ts:729</code>, <code>:771</code>, <code>e2e/layout.spec.ts:494</code> (mobile), <code>e2e/perf/loaded-500.perf.spec.ts:8</code>. Preview stderr expected and to be checked against <code>stderrAllowlist</code> before signoff: Better Auth <code>User not found</code> / <code>Invalid password</code> warnings, the devalue ignored-bare-import warning, the expected 404 blocks. A warning signoff would reject and the allow-list does not cover is a question, never a local allow-list edit.</li>
+    </ol>
+  </section>
+
+  <section id="sec-task-7">
+    <h2>Task 7: Build the dataset and run the level 2 check</h2>
+    <p>Spec: <code>#sec-design-finish</code> steps 4 to 9, <code>#sec-design-fail</code>. Run by the operator directly, in the foreground, because the build is long and every step's output is the handback. Nothing here writes outside <code>pipeline/out</code> and <code>pipeline/.cache</code>.</p>
+    <ol>
+      <li id="t7-s1"><input type="checkbox"> <code>npm run pipeline -- version</code>; record <code>&lt;v&gt;</code>.</li>
+      <li id="t7-s2"><input type="checkbox"> <code>npx tsx scripts/dataset-version.ts --check</code>; record whether <code>&lt;v&gt;</code> is already published (exit 0).</li>
+      <li id="t7-s3"><input type="checkbox"> If <code>pipeline/.cache</code> is missing: <code>npm run pipeline -- fetch --restore</code>.</li>
+      <li id="t7-s4"><input type="checkbox"> <code>npm run pipeline -- build</code> (no <code>--skip-tiles</code>): every invariant passes.</li>
+      <li id="t7-s5"><input type="checkbox"> <code>npm run pipeline -- check &lt;v&gt;</code>: passes.</li>
+      <li id="t7-s6"><input type="checkbox"> <code>npx tsx scripts/level2-check.ts pipeline/out/&lt;v&gt;</code>. Exit 0: record the three lines and go on. Exit 1: stop; nothing uploaded, no signoff; hand back "blocked: current law misses the goal" with the three lines, the homes at the window's end beside the amount, and the bounds <code>pipeline/enrichment/funding.json</code> holds for <code>city-impact-fees</code> and <code>state</code>; change nothing. Exit 2: report its stderr line; it is not an answer about D1.</li>
+    </ol>
+  </section>
+
+  <section id="sec-task-8">
+    <h2>Task 8: Upload, verify, signoff</h2>
+    <p>Spec: <code>#sec-design-finish</code> steps 10 to 13. Only after Task 7 exits 0. Run by the operator directly.</p>
+    <ol>
+      <li id="t8-s1"><input type="checkbox"> Only if Task 7 found <code>&lt;v&gt;</code> unpublished: <code>npm run pipeline -- upload &lt;v&gt;</code>.</li>
+      <li id="t8-s2"><input type="checkbox"> Always: <code>npm run pipeline -- verify &lt;v&gt; --origin https://sfhousing-staging.mindlace.net</code>; every file the manifest names is found.</li>
+      <li id="t8-s3"><input type="checkbox"> <code>npx tsx scripts/dataset-version.ts --check</code> exits 0.</li>
+      <li id="t8-s4"><input type="checkbox"> <code>npm run signoff</code> (nothing pushed by hand first). If its merge of <code>origin/main</code> changes <code>&lt;v&gt;</code> and the <code>dataset</code> step fails, return to Task 7 step 1: new build, new level 2 check, then this task again.</li>
+      <li id="t8-s5"><input type="checkbox"> Hand back to the conductor: <code>&lt;v&gt;</code>, the check's three lines, the signoff result, the sweep's reported code hits with owner units, and any check failures reported against other units.</li>
+    </ol>
+  </section>
+</article>

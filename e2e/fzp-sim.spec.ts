@@ -19,7 +19,7 @@ const manifest = JSON.parse(readFileSync(MANIFEST_URL, 'utf8')) as {
   };
 };
 const { fzp } = manifest.scenarios;
-// /sim (where /fzp redirects) reads these five: the timelapse's three, the lever engine's
+// /sim reads these five: the timelapse's three, the lever engine's
 // policy.bin and the optional gross.bin. The brush catalog (asked for when the editor first shows
 // something) reads only transit.json and neighborhoods.geojson, never frontage.bin.
 const SIM_FILES = [fzp.parcels, fzp.projects, fzp.calibration, fzp.policy, fzp.gross!];

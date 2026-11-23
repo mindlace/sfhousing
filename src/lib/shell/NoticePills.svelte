@@ -6,7 +6,7 @@
   map; each message takes them (a chip or a card by its words, see docs/dev/ui-parts.md). Below md it sits in flow under the header, full width, and pushes the
   map down (the phone rule, spec Goal 8).
   Map-view's failure chips sit at the same top centre, so from md the stack publishes its
-  bottom edge, in px from its host's top, on its host (the parent element: FzpMode's or
+  bottom edge, in px from its host's top, on its host (the parent element: TimelineMode's or
   BrushEditor's root) as `--notice-pills-bottom`, and SimMap places the chips below it. It is `0px`
   while the stack is empty and below md (in flow, the map is already below it).
 -->

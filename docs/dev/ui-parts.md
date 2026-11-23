@@ -21,8 +21,8 @@ geometry only, with a comment saying so.
 
 | Kind             | Use                                                                   | Look                                                                                         |
 | ---------------- | --------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| `BUTTON`         | Any other action (Cancel, Copy link, Remix's "Start your own")        | control-line border, surface, ink, text-sm semibold, rounded-md, px-2; hover one step raised |
-| `BUTTON_PRIMARY` | The page's main action (Publish, Done, Replace)                       | accent fill, on-accent text; otherwise as `BUTTON`                                           |
+| `BUTTON`         | Any other action (Cancel, Copy link, the shared banner's "Your game") | control-line border, surface, ink, text-sm semibold, rounded-md, px-2; hover one step raised |
+| `BUTTON_PRIMARY` | The page's main action (Publish, Done, Remix)                         | accent fill, on-accent text; otherwise as `BUTTON`                                           |
 | `BUTTON_QUIET`   | An action inside a message (Retry, Details, a link), a dialog's Close | no border, underlined, semibold                                                              |
 | `BUTTON_DISMISS` | A message's dismiss (`Message` draws it, the drawn ×)                 | as `BUTTON_QUIET` without the underline, icon centred, hover one step raised                 |
 | `ON_MAP`         | Added to a button over the map                                        | a small shadow, so it reads on any map                                                       |
@@ -43,7 +43,7 @@ take no hover, and show `cursor: not-allowed`. A button that must say why it is 
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------- |
 | `SURFACE_POP`          | Menus, panels, pop-overs (the key's panels, the palette strip's pop-overs, Shortcuts, the "Autosave off" pop-over) | rounded-lg, line border, surface, ink, shadow-lg, p-2, text-sm |
 | `SURFACE_TIP`          | An explanation's tooltip (`Explain`)                                                                               | as `SURFACE_POP` with rounded, px-2 py-1, shadow-md            |
-| `SURFACE_DIALOG`       | A modal dialog (Publish, Remix's confirm)                                                                          | rounded-lg, surface, ink, shadow-xl, p-4, a 40% black backdrop |
+| `SURFACE_DIALOG`       | A modal dialog (Publish)                                                                                           | rounded-lg, surface, ink, shadow-xl, p-4, a 40% black backdrop |
 | `SURFACE_DIALOG_FLUSH` | A dialog that pads its own regions (About this model)                                                              | `SURFACE_DIALOG` without the padding                           |
 
 In dark every surface is `surface-dark` with `ink-dark` text; a dialog also takes a `line-dark`
@@ -104,5 +104,5 @@ Every notice on the four map pages is a `Message`: the notice stack (`NoticePill
 (TimelineMode's notices, `SimNotices`) and on `/` and `/p/:id` (the brush status, `NoticeStack`),
 the stroke chip (always `shape="chip"` and `still`, whatever its words: a stroke can start under
 it), and Activity's refused starter (a card). Map-view's failure messages keep the map palette
-(`.sim-map-panel`, shared with `/lesscars`) but follow the same shapes: parcels' one line is
+(`.sim-map-panel`) but follow the same shapes: parcels' one line is
 rounded-full, buildings' sentence rounded-lg ([map-interfaces.md](map-interfaces.md)).

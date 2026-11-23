@@ -1,6 +1,6 @@
-// The /fzp data the main thread needs before the worker answers (spec §4.1): the current
+// The /sim data the main thread needs before the worker answers (spec §4.1): the current
 // dataset's manifest and, when it names a scenario, the calibration (parsed by the worker's own
-// parser, T12). Used by the route load and by FzpMode's Retry (step 3).
+// parser, T12). Used by the route load and by TimelineMode's Retry (step 3).
 import type { Manifest } from '$lib/data/manifest';
 import { loadManifest } from '$lib/sim/manifest';
 import { parseCalibration } from '$lib/timelapse/model';
