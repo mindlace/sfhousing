@@ -218,6 +218,7 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - game-save: incremental-game-game-save — status: complete (admit message sent 22:15 at bc3d9bc0; branch incremental-game-game-save, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-game-save, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus, needs: I1, G2 built, S1–S3, X1 (all merged), produces: S1, S2, S3 (built))
 - game-core: incremental-game-game-core — status: admitted (admit message sent at a333bd83; branch incremental-game-game-core, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-game-core, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus, needs: G1–G5, S2, S3, X1 (merged), produces: G1–G5 (built))
 - game-save: incremental-game-game-save — status: admitted (admit message sent 22:15 at bc3d9bc0; branch incremental-game-game-save, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-game-save, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus, needs: I1, G2 built, S1–S3, X1 (all merged), produces: S1, S2, S3 (built))
+- game-core: incremental-game-game-core — status: complete (admit message sent at a333bd83; branch incremental-game-game-core, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-game-core, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus, needs: G1–G5, S2, S3, X1 (merged), produces: G1–G5 (built))
 
 ## Supervision
 - status asked remove-lesscars
@@ -622,6 +623,7 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - fork graph-conductor-13 exited [0]: output
 - fork checkpoint-13 started 2026-11-22T22:53
 - fork checkpoint-13 exited [0]: output
+- fork review-game-core-5e7fb04d started 2026-11-22T23:35
 
 ## Frame-defect tally
 - owner-ruling-drift: 2 — instances: conductor-1 (gate-1, 2026-11-22); conductor-8 (gate-7, 2026-11-22)
@@ -698,6 +700,9 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - merged game-save [row S1] [row S2] [row S3] @ 8a71ea14 into superconductor/incremental-game, tests pass (check 0 errors; lint 0 errors; unit 8959 passed; pipeline 2266 passed; e2e 752 passed, 0 failed, 0 flaky), band low. Preview stderr in that run, for closing's signoff: Better Auth `Reset Password: User not found` and `Invalid password` warnings, the devalue ignored-bare-import warning, and the expected 404 blocks.
 - No drift @ 8a71ea14 (review-game-save-8a71ea14)
 - ruling conductor-13 reopens two merged units: game-core (store: adopt of the current game runs the beforeLeave flushes, answers `changed`, `touched()` rule) and game-save (sync: current game adopted last, re-check, `changed` handling, immediate reload). Order: game-core builds, re-sends complete, merges; then tell game-save to build (it was told to plan and wait for that word), which re-sends complete and merges.
+- 23:15 merge of game-core complete @ 5e7fb04d (Task 14, ruling conductor-13) made onto 226f5ff8 (merge commit bb1c0332), suite running (agent; scratchpad `merge-game-core-t14/`); not merged until it passes; on failure reset to 226f5ff8 with ledger.md copied out and back. No "merge the integration branch" message until it reports.
+- finite-funding row F1 @ 40c419e5 reported (its own full suite green there): held to merge with F2, since F1 alone admits no unit (reach-check needs F1, F2 and F3). Its handback (first-year dollars by source, the impact-fee block) is copied to `assignments/finite-funding.f1-handback.md` for reach-check's assignment.
+- merged game-core @ 5e7fb04d into superconductor/incremental-game (complete; Task 14, ruling conductor-13: adopt runs the beforeLeave flushes and answers `changed`), tests pass (check 0 errors; lint 0 errors; unit 8965 passed; pipeline 2266 passed; e2e 752 passed, 0 failed, 0 flaky), band low
 
 ## Cost
 - remove-lesscars: admitted 2026-11-22T16:31 seven_day 44% | session d889ec5c-3342-4a77-99f8-993f1115a679 | finished 2026-11-22T21:14 seven_day 60%
