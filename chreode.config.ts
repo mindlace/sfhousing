@@ -11,22 +11,43 @@ export default defineConfig({
     // rule wins.
     { match: ['docs/dev/pipeline.md'], triggers: ['format', 'unit', 'pipeline'] },
     { match: ['CLAUDE.md', 'docs/dev/**'], triggers: ['format', 'unit'] },
-    // The scenario step and the dataset-version code hash read these (the code hash is load-bearing
-    // for deploys: both workflows refuse a commit whose dataset is unpublished), so a change here
-    // also runs test:pipeline and the dataset check. Before the **/*.md and src/** rules: the first matching rule wins.
+    // The src entries of PATHS (pipeline/lib/version.ts): the code the pipeline imports, hashed
+    // into the dataset version (load-bearing for deploys: both workflows refuse a commit whose
+    // dataset is unpublished), so a change here also runs test:pipeline and the dataset check.
+    // pipeline/test/version-paths.test.ts holds PATHS to what pipeline/cli.ts imports; keep this
+    // list in step with it. Before the **/*.md and src/** rules: the first matching rule wins.
     {
       match: [
+        'src/lib/config.ts',
+        'src/lib/data/**',
         'src/lib/generator/**',
         'src/lib/timelapse/**',
-        'src/lib/data/**',
         'src/lib/plan/types.ts',
         'src/lib/plan/geometry.ts',
-        'src/lib/sim/scenario/**',
-        'src/lib/sim/levers/**',
-        'src/lib/sim/finance/**',
-        'src/lib/scoreboard/**'
+        'src/lib/sim/finance/**'
       ],
       triggers: ['lint', 'check', 'unit', 'e2e', 'pipeline', 'dataset']
+    },
+    // What the pipeline's tests import outside PATHS (a walk of the imports from every file under
+    // pipeline/test/): not in the dataset version, so no dataset step, but test:pipeline runs.
+    {
+      match: [
+        'src/lib/sim/scenario/**',
+        'src/lib/sim/levers/**',
+        'src/lib/scoreboard/**',
+        'src/lib/fzp/time.ts',
+        'src/lib/map/types.ts',
+        'src/lib/map/height/types.ts',
+        'src/lib/plan/constants.ts',
+        'src/lib/plan/index.ts',
+        'src/lib/plan/parcel-index.ts',
+        'src/lib/plan/resolve.ts',
+        'src/lib/plan/schema.ts',
+        'src/lib/sim/outlines.ts',
+        'src/lib/sim/protocol.ts',
+        'src/lib/view/prefs.ts'
+      ],
+      triggers: ['lint', 'check', 'unit', 'e2e', 'pipeline']
     },
     // The pipeline and the lock feed codeTreeHash/the version, so a change needs its dataset
     // published on staging (docs/dev/pipeline.md).
