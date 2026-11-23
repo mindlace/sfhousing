@@ -523,7 +523,7 @@ describe('Inspector under what the level allows', () => {
     const whatSection = [...box.querySelectorAll('section')].find(
       (s) => s.querySelector('h3')?.textContent === 'What'
     )!;
-    expect(whatSection.textContent).toContain('No transit layers');
+    expect(whatSection.textContent).not.toContain('No transit layers');
     expect(whatSection.textContent).toContain('Public money');
   });
 
