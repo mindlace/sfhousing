@@ -41,7 +41,7 @@ export type TokenName =
   | 'tl-bar-dead'
   | 'tl-halo-policy';
 
-/** Spec §4.3 verbatim, with the one-hue-per-meaning transit, pipeline and brush tokens from spec 2026-10-31 §8; `transit-*` from transit spec §6.1; `tl-*` from timelapse-render spec §4.6 (`tl-halo-*`: map-on-screen slice 5, the stage tones and the site accent); Hex, or rgba() for highlight. */
+/** Spec §4.3 verbatim, with the one-hue-per-meaning transit, pipeline and brush tokens from spec 2026-10-31 §8; `transit-*` from transit spec §6.1; `tl-*` from timelapse-render spec §4.6 (`tl-halo-*`: map-on-screen slice 5, the stage tones and the site accent). Hex, or rgba() for highlight. */
 export const TOKENS: Record<Theme, Record<TokenName, string>> = {
   light: {
     land: '#F3EFE6',
