@@ -3,7 +3,7 @@ Package worktree: /Users/mindlace/Projects/sfhousing/.claude/worktrees/increment
 Build graph: docs/superpowers/design/2026-11-22-1216-incremental-game-build-graph.md @ 62daef28
 SDD scripts: /Users/mindlace/.claude/plugins/cache/claude-plugins-official/superpowers/7.0.2/skills/subagent-driven-development/scripts
 HTML scripts: /Users/mindlace/.claude/plugins/cache/super/superpowers-html/0.1.0/bin
-Project commands: npm, npx, lsof (mail-setup only, also: aws)
+Project commands: npm, npx, lsof, ls, cat, grep, head, tail, wc, pwd, uptime, mkdir (mail-setup only, also: aws); operators run with --permission-mode dontAsk
 Ledger note: this ledger dir is tracked on the integration branch. Before any merge, reset, `checkout -- .` or `clean` in the package worktree, commit it: `git -C <package worktree> add .superpowers/superconductor/incremental-game && git -C <package worktree> commit -m "docs(incremental-game): ledger"`. Beat, session, pid and timer files are in `.git/info/exclude`.
 
 ## Checkpoints
@@ -167,6 +167,7 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - Comprehension gate back (`surveys/gate-findings.md`; general-purpose, opus): 0 blockers, 1 major (gate-1: a policy already saved in the browser becomes a level-1 game with its kinds locked, against D5), 8 minors. Write-set check: `remove-multiuser`'s e2e files share none with `remove-lesscars`'. Each finding filed as a question, conductor-1 to conductor-9 (gate-1, 2, 3, 9, 4, 5, 6, 7, 8 in that order), ruled one at a time. `remove-lesscars`, `remove-multiuser` and `mail-setup` start now (no finding changes their approach); `contracts` and the planning-only operators start once conductor-1 (the major, on the game's types) is routed, so no plan is written on a spec about to change.
 - Owner, 2026-11-22: the Cloudflare API MCP is re-authorised in the conductor's session and "should allow you to set up dns records for sfhousing.mindlace.net or further subdomains as needed". So the conductor adds `mail-setup`'s DNS records: the operator writes them to `assignments/mail-setup.dns.md` (mechanical ruling sent 2026-11-22); on each beat, if that file exists with no `added` line, add the records with the Cloudflare API tool and append `added <date-time>`.
 - All nine gate questions ruled and routed by 16:55 (`rulings/conductor-1..9.md`): four stand as written (1, 6, 7, 8, with reasons added to the text for 1, 7, 8), five amend (2, 3, 4, 5, 9); contract changes in 5 (F3 gains `MoneyView.shut`; `funding-measures` now runs after `pool-closing`) and 9 (S2: a 410 keeps the game under a new id). Tripwires: `spec-disagreement` reached 3 at conductor-4 and `source-fidelity` at conductor-7; checkpoints rebuilt (current: the last `## Checkpoints` line). Planning-only operators start now for the nine units not yet ready. Helpers in this dir: `start.sh` (first launch), `mkassign.py`, `rulechain.py` (queued amending forks).
+- 17:05: every operator was blocked on a permission prompt from launch (`claude agents --json`: `waitingFor: permission prompt`): each ran a compound Bash read (`D=...; cat ...; grep ...`) outside its list, and a `--bg` session waits on the prompt without limit instead of failing. Remedy, applied to all 13 as relaunches (no rung): `--permission-mode dontAsk` (a call outside the list is refused at once), read-only commands added (`ls, cat, grep, head, tail, wc, pwd, uptime, mkdir`, `git -C <package worktree> log|show|diff|rev-parse|status`), and project note (0) in every assignment. `mkassign.py` carries all three; `relaunch.sh <unit>` relaunches a unit that has no plan. Verified on `remove-lesscars`: a refused call falls back to Read/Glob and the operator went on to plan. On a beat, a session `waitingFor: permission prompt` is this failure, not a stall.
 
 ## Units
 - remove-lesscars: incremental-game-remove-lesscars — status: launching (branch incremental-game-remove-lesscars, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-remove-lesscars, start 11ce28aafa6d22ec71ed65e3c1a9bafea6f2e742, model opus — rationale: pipeline, map, dataset and fixture changes across subsystems, needs: none, produces: L1 (to finite-funding, game-shell, reach-check))
@@ -177,11 +178,56 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - mail-setup: incremental-game-mail-setup — status: admitted (branch incremental-game-mail-setup, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-mail-setup, start 7fbb5e32c72b3dcd416f7ef214536376a7c22b5c, model opus — rationale: outward-facing AWS and secrets work needs judgment, needs: none, produces: none)
 - contracts: incremental-game-contracts — status: launching (branch incremental-game-contracts, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-contracts, start 7fbb5e32c72b3dcd416f7ef214536376a7c22b5c, model opus — rationale: every contract row; root of the longest chain, needs: none, produces: G1–G5 (types and stubs), S1 (types), S2 and S3 (stubs), M1 (stub), X1 (working))
 - contracts: incremental-game-contracts — status: admitted (branch incremental-game-contracts, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-contracts, start 7fbb5e32c72b3dcd416f7ef214536376a7c22b5c, model opus — rationale: every contract row; root of the longest chain, needs: none, produces: G1–G5 (types and stubs), S1 (types), S2 and S3 (stubs), M1 (stub), X1 (working))
+- game-core: incremental-game-game-core — status: launching (branch incremental-game-game-core, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-game-core, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus — rationale: store and level model, greenfield judgment, needs: G1–G5, S2, S3, X1 from contracts (not merged yet), produces: G1–G5 (built))
+- game-core: incremental-game-game-core — status: planning (branch incremental-game-game-core, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-game-core, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus — rationale: store and level model, greenfield judgment, needs: G1–G5, S2, S3, X1 from contracts (not merged yet), produces: G1–G5 (built))
+- finite-funding: incremental-game-finite-funding — status: launching (branch incremental-game-finite-funding, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-finite-funding, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus — rationale: pipeline research and engine changes across subsystems, needs: L1 from remove-lesscars (not merged yet); M1 stub from contracts (not merged yet), produces: F1, F2)
+- finite-funding: incremental-game-finite-funding — status: planning (branch incremental-game-finite-funding, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-finite-funding, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus — rationale: pipeline research and engine changes across subsystems, needs: L1 from remove-lesscars (not merged yet); M1 stub from contracts (not merged yet), produces: F1, F2)
+- game-save: incremental-game-game-save — status: launching (branch incremental-game-game-save, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-game-save, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus — rationale: server, schema and sync across subsystems, needs: I1 from remove-multiuser (not merged yet); G2 built from game-core (not merged yet); S1–S3, X1 from contracts (not merged yet), produces: S1, S2, S3 (built))
+- game-save: incremental-game-game-save — status: planning (branch incremental-game-game-save, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-game-save, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus — rationale: server, schema and sync across subsystems, needs: I1 from remove-multiuser (not merged yet); G2 built from game-core (not merged yet); S1–S3, X1 from contracts (not merged yet), produces: S1, S2, S3 (built))
+- game-shell: incremental-game-game-shell — status: launching (branch incremental-game-game-shell, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-game-shell, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus — rationale: cross-subsystem consumption of game rows, needs: G1–G5 built from game-core (not merged yet); X1 from contracts (not merged yet); L1 from remove-lesscars (not merged yet), produces: none)
+- game-shell: incremental-game-game-shell — status: planning (branch incremental-game-game-shell, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-game-shell, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus — rationale: cross-subsystem consumption of game rows, needs: G1–G5 built from game-core (not merged yet); X1 from contracts (not merged yet); L1 from remove-lesscars (not merged yet), produces: none)
+- game-sim: incremental-game-game-sim — status: launching (branch incremental-game-game-sim, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-game-sim, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus — rationale: largest consumer of game rows on /sim, needs: G1–G5 built from game-core (not merged yet); F2 from finite-funding (not merged yet); M1 signature, X1 from contracts (not merged yet), produces: none)
+- game-sim: incremental-game-game-sim — status: planning (branch incremental-game-game-sim, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-game-sim, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus — rationale: largest consumer of game rows on /sim, needs: G1–G5 built from game-core (not merged yet); F2 from finite-funding (not merged yet); M1 signature, X1 from contracts (not merged yet), produces: none)
+- funding-measures: incremental-game-funding-measures — status: launching (branch incremental-game-funding-measures, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-funding-measures, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus — rationale: funding editors and presets consuming three rows, needs: F2 from finite-funding (not merged yet); F3 from pool-closing (not merged yet); G3 built from game-core (not merged yet), produces: M1 (built))
+- funding-measures: incremental-game-funding-measures — status: planning (branch incremental-game-funding-measures, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-funding-measures, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus — rationale: funding editors and presets consuming three rows, needs: F2 from finite-funding (not merged yet); F3 from pool-closing (not merged yet); G3 built from game-core (not merged yet), produces: M1 (built))
+- pool-closing: incremental-game-pool-closing — status: launching (branch incremental-game-pool-closing, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-pool-closing, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus — rationale: engine funding system change with determinism and cost bounds, needs: F2 from finite-funding (not merged yet), produces: F3)
+- pool-closing: incremental-game-pool-closing — status: planning (branch incremental-game-pool-closing, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-pool-closing, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus — rationale: engine funding system change with determinism and cost bounds, needs: F2 from finite-funding (not merged yet), produces: F3)
+- reach-check: incremental-game-reach-check — status: launching (branch incremental-game-reach-check, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-reach-check, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus — rationale: small script, but its verdict gates the owner's D1; consumes four rows, needs: L1 from remove-lesscars (not merged yet); F1, F2 from finite-funding (not merged yet); F3 from pool-closing (not merged yet), produces: G4's build check (scripts/level2-check.ts, to closing))
+- reach-check: incremental-game-reach-check — status: planning (branch incremental-game-reach-check, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-reach-check, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus — rationale: small script, but its verdict gates the owner's D1; consumes four rows, needs: L1 from remove-lesscars (not merged yet); F1, F2 from finite-funding (not merged yet); F3 from pool-closing (not merged yet), produces: G4's build check (scripts/level2-check.ts, to closing))
+- closing: incremental-game-closing — status: launching (branch incremental-game-closing, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-closing, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus — rationale: whole-tree sweep, dataset upload and signoff, needs: G4's build check from reach-check (not merged yet); G1–G5, S1–S3, I1, F1, F2, F3, M1, L1, X1, all built (not merged yet); every other unit merged (not merged yet), produces: none)
+- closing: incremental-game-closing — status: planning (branch incremental-game-closing, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-closing, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus — rationale: whole-tree sweep, dataset upload and signoff, needs: G4's build check from reach-check (not merged yet); G1–G5, S1–S3, I1, F1, F2, F3, M1, L1, X1, all built (not merged yet); every other unit merged (not merged yet), produces: none)
 
 ## Supervision
 - status asked remove-lesscars
 - status asked remove-multiuser
 - status asked contracts
+- relaunched remove-lesscars
+- relaunched contracts
+- relaunched remove-multiuser
+- relaunched mail-setup
+- relaunched game-core
+- relaunched finite-funding
+- relaunched game-save
+- relaunched game-shell
+- relaunched game-sim
+- relaunched funding-measures
+- relaunched pool-closing
+- relaunched reach-check
+- relaunched closing
+- relaunched mail-setup
+- plan mail-setup: docs/superpowers/plans/2026-11-22-mail-setup.html at 27d95ad5c8811ed2c2239292283c78825c05e6d8
+- mail-setup `need command` (dig, curl, jq, timeout, `bash -c` for the spec's runbook blocks, which keep keys out of the transcript): belongs to the unit's work; relaunched with them (mail-setup only). `mail-setup-1` is an owner action, not a design question, so no fork: the six DNS records were created in Cloudflare by the conductor 2026-11-22 (`assignments/mail-setup.dns.md`); the test address for the two proof mails waits on the owner, who is asked; pass it to the operator by message only, never in a file.
+- plan reach-check: docs/superpowers/plans/2026-11-22-reach-check.html at 56566e3e
+- plan closing: docs/superpowers/plans/2026-11-22-closing.html at 8728bf08
+- plan game-save: docs/superpowers/plans/2026-11-22-game-save.html at 93b494e3
+- plan game-core: docs/superpowers/plans/2026-11-22-game-core.html at 78e9ae8a
+- plan funding-measures: docs/superpowers/plans/2026-11-22-funding-measures.html at 5c563fc1
+- plan game-sim: docs/superpowers/plans/2026-11-22-game-sim.html at ae907e80
+- plan game-shell: docs/superpowers/plans/2026-11-22-game-shell.html at a95cc8deee8a8aea7a934af1b3d0f2fb3608c5dd
+- plan pool-closing: docs/superpowers/plans/2026-11-22-pool-closing.html at 380fcae8
+- plan finite-funding: docs/superpowers/plans/2026-11-22-finite-funding.html at d7594b0d
+- owner named the test address 2026-11-22 (their account email); sent to incremental-game-mail-setup by message only.
+- noted for admission: `closing` needs `git fetch` (spec §sec-design-finish step 1) and `pool-closing` needs `SFH_WORLD_FUNDING_REFEREE=1` on a test run at its Task 3: relaunch each with the entry when it is admitted. `game-shell` handed back task 7 (files src/lib/about/{copy.ts,AboutUsing.svelte,AboutParts.svelte.spec.ts}, docs/dev/about.md; needs G2 stub from contracts) at a95cc8de: sibling `game-shell-1` starts once contracts has merged. contracts' deferred notes for consumers: S3's `page.data` read needs `$app/state`, which vite.config.client-test.ts:29 forbids in src/lib (for game-save); code comments naming docs/dev/lesscars.md outside contracts' list (for closing).
 
 ## Questions
 - 2026-11-22 conductor-1 from conductor [defect-class: owner-ruling-drift]: gate-1, a policy already saved in the browser becomes a level-1 game, and every kind in it is locked (major) → rulings/conductor-1.md (commit 7fbb5e32, changes contract: no)
@@ -220,6 +266,14 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - build graph for conductor-9 @ 62daef28
 - relayed conductor-9 to incremental-game-contracts
 - routed conductor-9
+- 2026-11-22 remove-multiuser-1 from remove-multiuser [defect-class: interface-signature]: I1 names refuseUnlessSameOriginJson(event: RequestEvent) but the code takes a structural { request; url } →
+- 2026-11-22 game-core-1 from game-core [defect-class: spec-silence]: does adopt() of the current game's id apply the sfhousing:sim:v1 removal rule →
+- 2026-11-22 game-core-2 from game-core [defect-class: spec-silence]: what the store does when a write is refused during construction steps 4–7 →
+- 2026-11-22 game-core-3 from game-core [defect-class: spec-silence]: in the rebuild, what happens to a found save whose id differs from its key →
+- 2026-11-22 game-sim-1 from game-sim [defect-class: write-set-gap]: removing /sim's Remix hand-off breaks src/routes/s/[id]/page.view.svelte.spec.ts:215-230, outside game-sim's write set →
+- 2026-11-22 pool-closing-1 from pool-closing [defect-class: spec-code-mismatch]: expectNoA11yViolations takes a Playwright Page; which a11y check does MoneyResults.svelte.spec.ts run →
+- 2026-11-22 conductor-10 from conductor [defect-class: spec-disagreement]: game-core and game-shell specs disagree on who writes the rest of +layout.svelte (reported by game-shell) →
+- 2026-11-22 conductor-11 from conductor [defect-class: write-set-gap]: game-shell e2e uses /api/e2e/plans, in remove-multiuser's write set, with no row between them (reported by game-shell) →
 
 ## Forks
 - fork checkpoint-2 started 2026-11-22T16:20
@@ -272,6 +326,11 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - spec-disagreement: 3 — instances: conductor-2 (gate-2, 2026-11-22); conductor-3 (gate-3, 2026-11-22); conductor-4 (gate-9, 2026-11-22)
 - source-fidelity: 3 — instances: conductor-5 (gate-4, 2026-11-22); conductor-6 (gate-5, 2026-11-22); conductor-7 (gate-6, 2026-11-22)
 - sync-data-loss: 1 — instances: conductor-9 (gate-8, 2026-11-22)
+- interface-signature: 1 — instances: remove-multiuser-1 (2026-11-22)
+- spec-silence: 3 — instances: game-core-1; game-core-2; game-core-3 (2026-11-22)
+- write-set-gap: 2 — instances: game-sim-1; conductor-11 (2026-11-22)
+- spec-code-mismatch: 1 — instances: pool-closing-1 (2026-11-22)
+- spec-disagreement: 4 — adds conductor-10 (2026-11-22)
 
 ## Integration
 
@@ -280,3 +339,12 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - remove-multiuser: admitted 2026-11-22T16:32 seven_day 44% | session 954945e3-efc5-42a8-8f8f-2233f4008011
 - mail-setup: admitted 2026-11-22T16:32 seven_day 44% | session b1e978f2-51f4-46a7-a9b0-92ea6e61597f
 - contracts: admitted 2026-11-22T16:33 seven_day 44% | session 343d79b0-ac75-4280-b643-22398f92f1a8
+- game-core: admitted 2026-11-22T16:52 seven_day 46% | session 06c0c65b-cf92-457a-a525-9c4374e4a0b3
+- finite-funding: admitted 2026-11-22T16:53 seven_day 46% | session 7949d97c-2f16-4c76-b641-a1b2d697d55f
+- game-save: admitted 2026-11-22T16:53 seven_day 46% | session 62b87f0c-3aa2-4671-b8da-e0ac391e2ac6
+- game-shell: admitted 2026-11-22T16:54 seven_day 46% | session d156765a-2f62-4dbb-8145-6b1ae8d620d8
+- game-sim: admitted 2026-11-22T16:54 seven_day 46% | session 1f8bf796-225b-48c5-9f3e-c7e5bde5214b
+- funding-measures: admitted 2026-11-22T16:55 seven_day 46% | session a331388a-a2ba-4e3e-b829-db463a3b8c39
+- pool-closing: admitted 2026-11-22T16:55 seven_day 46% | session 03f449ba-0085-4e9d-9fd4-d178230a1c89
+- reach-check: admitted 2026-11-22T16:55 seven_day 46% | session c0bed174-aec2-4512-a95a-75e2f45d284e
+- closing: admitted 2026-11-22T16:56 seven_day 46% | session 34af1a00-4be6-4ebd-a442-ddb896dfe9f9
