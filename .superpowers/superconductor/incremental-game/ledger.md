@@ -237,6 +237,7 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - reach-check: incremental-game-reach-check — status: complete (branch incremental-game-reach-check, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-reach-check, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus — rationale: small script, but its verdict gates the owner's D1; consumes four rows, needs: L1 from remove-lesscars (not merged yet); F1, F2 from finite-funding (not merged yet); F3 from pool-closing (not merged yet), produces: G4's build check (scripts/level2-check.ts, to closing))
 - game-sim: incremental-game-game-sim — status: complete (branch incremental-game-game-sim, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-game-sim, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus — rationale: largest consumer of game rows on /sim, needs: G1–G5 built from game-core (not merged yet); F2 from finite-funding (not merged yet); M1 signature, X1 from contracts (not merged yet), produces: none)
 - funding-measures: incremental-game-funding-measures — status: complete (branch incremental-game-funding-measures, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-funding-measures, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus — rationale: funding editors and presets consuming three rows, needs: F2 from finite-funding (not merged yet); F3 from pool-closing (not merged yet); G3 built from game-core (not merged yet), produces: M1 (built))
+- closing: incremental-game-closing — status: admitted (branch incremental-game-closing, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-closing, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus — rationale: whole-tree sweep, dataset upload and signoff, needs: G4's build check from reach-check (not merged yet); G1–G5, S1–S3, I1, F1, F2, F3, M1, L1, X1, all built (not merged yet); every other unit merged (not merged yet), produces: none)
 
 ## Supervision
 - status asked remove-lesscars
@@ -325,6 +326,9 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - relaunched reach-check
 - resent to incremental-game-reach-check
 - 06:05 reach-check relaunched as admitted from its plan at the tested head 7f65b62f (pool-closing complete merged). Band middle (73%): running funding-measures, reach-check = 2 of 2. Told: a verdict that level 2 misses the goal inside the window is a question at once (owner's D1).
+- relaunched closing
+- resent to incremental-game-closing
+- 10:00 closing relaunched as admitted at the tested head 83f31670 (all twelve other units merged), with `git fetch` allowed, the notes file `assignments/closing.notes.md`, and told to rewrite its plan from the current spec. Per its spec (§ sec-design-finish) it merges origin/main, builds the dataset, runs the level 2 check, uploads the dataset if unpublished, verifies against staging, and runs `npm run signoff` (the build's only run), then hands back; merging the integration branch to main is the conductor's. A level 2 failure stops it with nothing uploaded and goes to the owner (D1).
 
 ## Questions
 - 2026-11-22 conductor-1 from conductor [defect-class: owner-ruling-drift]: gate-1, a policy already saved in the browser becomes a level-1 game, and every kind in it is locked (major) → rulings/conductor-1.md (commit 7fbb5e32, changes contract: no)
@@ -771,6 +775,7 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - fork graph-funding-measures-2 started 2026-11-23T06:21
 - fork graph-funding-measures-2 exited [0]: output
 - fork review-funding-measures-05933f2e started 2026-11-23T06:54
+- fork review-funding-measures-05933f2e exited [0]: output
 
 ## Frame-defect tally
 - owner-ruling-drift: 2 — instances: conductor-1 (gate-1, 2026-11-22); conductor-8 (gate-7, 2026-11-22)
@@ -899,6 +904,7 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - No drift @ ecdaaa67 (review-game-sim-ecdaaa67)
 - 09:35 merge of funding-measures complete (row M1) @ 05933f2e made onto 16c286b8 (merge commit 8ec592c2), suite running (agent; scratchpad `merge-funding-measures/`); not merged until it passes; on failure reset to 16c286b8 with ledger.md copied out and back. Its own full suite at 05933f2e: unit 9244, e2e 778 passed, 0 flaky.
 - merged funding-measures [row M1] @ 05933f2e into superconductor/incremental-game (complete), tests pass (check 0 errors; lint 0 errors; unit 9244 passed; pipeline 2284 passed; e2e 778 passed, 0 failed, 0 flaky), band middle. Every unit but closing has merged; every interface row is built.
+- No drift @ 05933f2e (review-funding-measures-05933f2e; the real dateMeasure behind game-sim's calls)
 
 ## Cost
 - remove-lesscars: admitted 2026-11-22T16:31 seven_day 44% | session d889ec5c-3342-4a77-99f8-993f1115a679 | finished 2026-11-22T21:14 seven_day 60%
