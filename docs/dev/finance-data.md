@@ -115,8 +115,8 @@ source's `bound` (below). Every pool with at least one inflow has one grant prog
 `baseline-<pool id>`, in pool order; a pool with no inflow has none. Every programme is
 `reach: 'affordable'`, `from` the build's `asOf` and `to` null, under every bound: ending a programme
 on its pool's last inflow would strand the last year's money. Dollars are FY2024-25 dollars, not
-adjusted. No pool has `uncapped`: the federal pool is built like the state pool (`kind: 'federal'`,
-`debt: null`, `leverage: 1`) with one yearly inflow of its ceiling.
+adjusted. The federal pool is built like the state pool (`kind: 'federal'`, `debt: null`,
+`leverage: 1`) with one yearly inflow of its ceiling.
 
 Shares are in millionths, computed with `roundShares` over all nine sources (those with no programme
 included), so they sum to exactly 1,000,000 over the nine. A programme's share is
@@ -237,6 +237,25 @@ pays its full share, so the tiers change no dollar. The arithmetic is in
 Analyst's assumption, tier 2). `leverage` is 1 on every pool. A pool with debt has its terms in its
 provenance: the method ends "Debt terms: rate 6.0%, 20 years (p. 106, Exhibit 40: '…'), the
 Analyst's assumption (tier 2); repayment is nominal.", and the debt cite is added to its `sources`.
+
+### Older datasets
+
+A plan or policy runs on the dataset it was published on while that dataset exists. Every dataset
+built before finite funding has `uncapped: true` and no inflows on its federal pool. `parseCalibration`
+(`src/lib/timelapse/model.ts`) reads any baseline pool that has an `uncapped` key before it checks the
+funding: a non-boolean is refused at `baselineFunding.pools[i].uncapped` ("expected a boolean"); the
+pool is returned without the key; and `true` with no inflows becomes one yearly inflow from `asOf`
+with no end of `LEGACY_UNCAPPED_DOLLARS` (100 billion dollars). The calibration then loads and is
+never refused for it. When a pool has the key, the loader returns a copy (new calibration,
+`baselineFunding` and pools array; every other object is the input's); otherwise it returns the
+input. `checkPool` has no `uncapped` key.
+
+`isNoCeiling(dollars)` is the one test for such a pool: a yearly amount at or above
+`LEGACY_UNCAPPED_DOLLARS`. Where a yearly amount is shown it reads "No ceiling": the funding row, the
+By source table and the pool sentence. The money bar gets no level for it. A scale entry on the pool
+scales the amount as on any pool, so a policy that switched it off and back on plays as it did.
+`src/lib/timelapse/fixtures/calibration-uncapped.json` is fixture-0's calibration before finite
+funding, kept for the loader's test.
 
 ### `tiers` and `minHomes` (MOHCD)
 
@@ -361,7 +380,7 @@ source needs a bound (schema 2)".
 Each kind is a strict object holding exactly its own keys; a missing bound, an unknown kind or an
 extra key is refused at the bound's path. **No bound has tier 4**: the tier is 1, 2 or 3, else "a
 bound's tier is 1, 2 or 3: an end nobody has read in a source is not written". `state.tier` and
-`federal.tier` are 1, 2 or 3 too, and `federal` holds no `uncapped` key. **A source whose money has
+`federal.tier` are 1, 2 or 3 too. **A source whose money has
 ended stays in the file with its bound** (`remaining` 0, or an `ends` in the past), so stored
 policies that name its pool keep loading; its pool has no inflow and no programme.
 

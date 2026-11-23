@@ -212,7 +212,6 @@ describe('available presets', () => {
         kind: 'goBond',
         label: 'Housing bond',
         inflows: [{ kind: 'once', day: dayOf(2027, 7, 1), dollars: 410_442_573 }],
-        uncapped: false,
         debt: { rate: 0.06, termYears: 20 },
         leverage: 1
       }
@@ -682,7 +681,6 @@ describe('pastItems', () => {
     kind: 'generalRevenue',
     label: id,
     inflows,
-    uncapped: false,
     debt: null,
     leverage: 1
   });

@@ -19,6 +19,7 @@ import {
   buildFinance,
   parseFinanceLevers
 } from './finance';
+import { parsePolicy4 } from '$lib/timeline/parse4';
 import { DEFAULT_LEVERS, LeverFormatError, type FinanceLevers } from './types';
 
 const bad = (f: unknown): [string, string] | null => {
@@ -166,11 +167,59 @@ describe('pools', () => {
       'ok'
     );
   });
-  it('uncapped', () => {
-    expect(bad(withPools(pool({ uncapped: true, inflows: [] })))).toEqual([
-      'finance.pools[0].uncapped',
-      'expected false: an added pool has a schedule of money'
-    ]);
+  it('loads an added pool stored with uncapped false or true, without the key', () => {
+    const plain = parseFinanceLevers(withPools(pool()), 'finance');
+    for (const uncapped of [false, true]) {
+      const got = parseFinanceLevers(withPools({ ...pool(), uncapped }), 'finance');
+      expect(got).toEqual(plain);
+      expect('uncapped' in got.pools[0]).toBe(false);
+    }
+    const noKey = { ...pool() } as Record<string, unknown>;
+    delete noKey.uncapped;
+    expect(parseFinanceLevers(withPools(noKey), 'finance')).toEqual(plain);
+  });
+  it('loads a schema 4 document whose added pool carries uncapped as the same document without it', () => {
+    const mk = (extra: object) => ({
+      schema: 4,
+      kinds: {
+        zoning: [],
+        permitting: [],
+        money: [
+          {
+            id: 'm1',
+            label: 'm1',
+            preset: null,
+            on: true,
+            where: { tag: 'fund', pool: 'u-pool-1' },
+            spans: [
+              {
+                from: FIXTURE_AS_OF + 31,
+                to: null,
+                what: {
+                  tag: 'fund',
+                  pool: { ...structuredClone(base().pools[0]), id: 'u-pool-1', ...extra },
+                  programmes: [
+                    { ...structuredClone(base().programmes[0]), id: 'u-prog-1', pool: 'u-pool-1' }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      }
+    });
+    const plain = parsePolicy4(mk({}), { asOf: FIXTURE_AS_OF });
+    for (const uncapped of [false, true]) {
+      expect(parsePolicy4(mk({ uncapped }), { asOf: FIXTURE_AS_OF })).toEqual(plain);
+    }
+    expect(JSON.stringify(plain)).not.toContain('"uncapped"');
+  });
+  it('re-serialises an older document without uncapped and parses it to the same document', () => {
+    const old = withPools({ ...pool(), uncapped: false });
+    const once = parseFinanceLevers(old, 'finance');
+    const json = JSON.stringify(once);
+    expect(json).not.toContain('"uncapped"');
+    expect(parseFinanceLevers(JSON.parse(json), 'finance')).toEqual(once);
   });
   it('inflow count', () => {
     const m = 'expected 1 to 12 inflows';

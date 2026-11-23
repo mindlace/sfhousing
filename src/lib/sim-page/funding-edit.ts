@@ -266,7 +266,6 @@ function sentence(f: FinanceLevers, baseline: Baseline | undefined, g: Programme
     kind: 'generalRevenue',
     label: g.pool,
     inflows: [],
-    uncapped: false,
     debt: null,
     leverage: 1
   };
@@ -938,7 +937,6 @@ function draftPool(d: PoolDraft): Omit<Pool, 'id'> | null {
     kind: d.kind,
     label: name.value,
     inflows: (d.inflows as Inflow[]).map((x) => ({ ...x })),
-    uncapped: false,
     debt: needsDebt ? { rate: d.debt!.rate!, termYears: d.debt!.termYears } : null,
     leverage: d.kind === 'bank' ? d.leverage! : 1
   };

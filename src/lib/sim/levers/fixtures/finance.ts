@@ -98,7 +98,6 @@ export function fundingOnly(): FinanceLevers {
         kind: 'generalRevenue',
         label: 'Added pool',
         inflows: [{ kind: 'once', day: FIXTURE_AS_OF + 100, dollars: 1_000_000 }],
-        uncapped: false,
         debt: null,
         leverage: 1
       }
@@ -133,7 +132,6 @@ export function maxFunding(): FinanceLevers {
       to: null,
       dollarsPerYear: 1_000_000 + k
     })),
-    uncapped: false,
     debt: null,
     leverage: 1
   }));

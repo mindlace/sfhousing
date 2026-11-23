@@ -115,9 +115,10 @@ function parseInflow(v: unknown, path: string): Inflow {
 }
 
 function parsePool(v: unknown, path: string, seen: Set<string>): Pool {
-  const r = record(v, path, ['id', 'kind', 'label', 'inflows', 'uncapped', 'debt', 'leverage']);
+  const r = record(v, path, ['id', 'kind', 'label', 'inflows', 'debt', 'leverage'], ['uncapped']);
   try {
-    checkPool(v, path);
+    const { uncapped: _ignored, ...rest } = r;
+    checkPool(rest, path);
   } catch (e) {
     if (e instanceof CalibrationFormatError)
       throw new LeverFormatError(e.path, e.message.slice(e.path.length + 2));
@@ -125,8 +126,6 @@ function parsePool(v: unknown, path: string, seen: Set<string>): Pool {
   }
   const id = addedId(r.id, `${path}.id`, seen);
   const lab = label(r.label, `${path}.label`);
-  if (r.uncapped !== false)
-    fail(`${path}.uncapped`, 'expected false: an added pool has a schedule of money');
   const raw = r.inflows as unknown[];
   if (raw.length < 1 || raw.length > FINANCE_LIMITS.inflowsPerPool)
     fail(`${path}.inflows`, `expected 1 to ${FINANCE_LIMITS.inflowsPerPool} inflows`);
@@ -139,7 +138,6 @@ function parsePool(v: unknown, path: string, seen: Set<string>): Pool {
     kind: r.kind as Pool['kind'],
     label: lab,
     inflows,
-    uncapped: false,
     debt: r.debt === null ? null : { ...(r.debt as NonNullable<Pool['debt']>) },
     leverage
   };

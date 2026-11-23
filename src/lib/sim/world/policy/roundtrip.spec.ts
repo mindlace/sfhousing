@@ -172,7 +172,6 @@ const latePool: Pool = {
     { kind: 'once', day: ASOF + 31, dollars: 310_000 },
     { kind: 'yearly', from: ASOF + 60, to: null, dollarsPerYear: 2_000_000 }
   ],
-  uncapped: false,
   debt: null,
   leverage: 1
 };

@@ -86,7 +86,6 @@ const POOL: Omit<Pool, 'id'> = {
   kind: 'generalRevenue',
   label: 'City general fund, 2027',
   inflows: [{ kind: 'yearly', from: nextFiscal(FUND_ASOF), to: null, dollarsPerYear: 60_000_000 }],
-  uncapped: false,
   debt: null,
   leverage: 1
 };
@@ -315,7 +314,6 @@ describe('funding edits', () => {
       kind: 'generalRevenue',
       label: 'City general fund, 2027',
       inflows: [{ kind: 'yearly', from: july(2027), to: null, dollarsPerYear: 60_000_000 }],
-      uncapped: false,
       debt: null,
       leverage: 1
     });

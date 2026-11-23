@@ -10,6 +10,7 @@ import fc from 'fast-check';
 import { arbTransition } from './test/arbitraries';
 import {
   CalibrationFormatError,
+  LEGACY_UNCAPPED_DOLLARS,
   binIndex,
   checkPool,
   checkProgramme,
@@ -19,6 +20,7 @@ import {
   eventualProbabilities,
   initiationHazard,
   initiationLogit,
+  isNoCeiling,
   parseCalibration,
   sampleAdvance,
   sampleKind,
@@ -789,11 +791,64 @@ describe('parseCalibration', () => {
     expect(Object.keys(parsed.transitions)).toEqual([...PATHWAYS]);
   });
 
-  it('loads an older-format calibration (fixture-0 before finite funding)', () => {
-    const cal = parseCalibration(JSON.parse(readFileSync(LEGACY_PATH, 'utf8')));
+  it('loads an older-format calibration: the federal pool becomes one yearly inflow of LEGACY_UNCAPPED_DOLLARS', () => {
+    const raw = JSON.parse(readFileSync(LEGACY_PATH, 'utf8'));
+    const before = JSON.stringify(raw);
+    const cal = parseCalibration(raw);
+    expect(JSON.stringify(raw)).toBe(before);
     const fed = cal.baselineFunding!.pools.find((p) => p.kind === 'federal')!;
-    expect(fed.uncapped).toBe(true);
-    expect(fed.inflows).toEqual([]);
+    expect('uncapped' in fed).toBe(false);
+    expect(fed.inflows).toEqual([
+      { kind: 'yearly', from: cal.asOf, to: null, dollarsPerYear: LEGACY_UNCAPPED_DOLLARS }
+    ]);
+    raw.baselineFunding.pools.forEach((p: any, i: number) => {
+      if (p.kind === 'federal') return;
+      const { uncapped: _u, ...rest } = p;
+      expect(cal.baselineFunding!.pools[i]).toEqual(rest);
+    });
+    expect({ ...cal, baselineFunding: { ...cal.baselineFunding, pools: [] } }).toEqual({
+      ...raw,
+      baselineFunding: { ...raw.baselineFunding, pools: [] }
+    });
+    for (const k of Object.keys(raw)) {
+      if (k === 'baselineFunding') continue;
+      expect((cal as any)[k]).toBe(raw[k]);
+    }
+    for (const k of Object.keys(raw.baselineFunding)) {
+      if (k === 'pools') continue;
+      expect((cal.baselineFunding as any)[k]).toBe(raw.baselineFunding[k]);
+    }
+  });
+
+  it('keeps the inflows of an uncapped pool that has some, without the key', () => {
+    const raw = JSON.parse(readFileSync(LEGACY_PATH, 'utf8'));
+    const inflows = [{ kind: 'yearly', from: raw.asOf, to: null, dollarsPerYear: 5 }];
+    const fed = raw.baselineFunding.pools.find((p: any) => p.kind === 'federal');
+    fed.inflows = inflows;
+    const out = parseCalibration(raw).baselineFunding!.pools.find((p) => p.kind === 'federal')!;
+    expect(out.inflows).toEqual(inflows);
+    expect('uncapped' in out).toBe(false);
+  });
+
+  it('isNoCeiling at the constant, one dollar under and above', () => {
+    expect(LEGACY_UNCAPPED_DOLLARS).toBe(100_000_000_000);
+    expect(isNoCeiling(100_000_000_000)).toBe(true);
+    expect(isNoCeiling(99_999_999_999)).toBe(false);
+    expect(isNoCeiling(150_000_000_000)).toBe(true);
+  });
+
+  it('refuses a non-boolean uncapped', () => {
+    const raw = JSON.parse(readFileSync(LEGACY_PATH, 'utf8'));
+    raw.baselineFunding.pools[0].uncapped = 'yes';
+    let err: unknown;
+    try {
+      parseCalibration(raw);
+    } catch (e) {
+      err = e;
+    }
+    expect(err).toBeInstanceOf(CalibrationFormatError);
+    expect((err as CalibrationFormatError).path).toBe('baselineFunding.pools[0].uncapped');
+    expect((err as CalibrationFormatError).message).toContain('expected a boolean');
   });
 
   const clone = (): any => structuredClone(cal);
@@ -1305,7 +1360,6 @@ describe('affordableRoutes and baselineFunding', () => {
       kind,
       label: id,
       inflows: [{ kind: 'yearly', from: asOf, to: null, dollarsPerYear }],
-      uncapped: false,
       debt: id === 'city-debt' ? { rate: 0.06, termYears: 20 } : null,
       leverage: 1
     }));
@@ -1314,7 +1368,6 @@ describe('affordableRoutes and baselineFunding', () => {
       kind: 'state',
       label: 'state',
       inflows: [{ kind: 'yearly', from: asOf, to: null, dollarsPerYear: 3000000 }],
-      uncapped: false,
       debt: null,
       leverage: 1
     });
@@ -1322,8 +1375,7 @@ describe('affordableRoutes and baselineFunding', () => {
       id: 'federal-tax-credits',
       kind: 'federal',
       label: 'federal',
-      inflows: [],
-      uncapped: true,
+      inflows: [{ kind: 'yearly', from: asOf, to: null, dollarsPerYear: 50000000 }],
       debt: null,
       leverage: 1
     });
@@ -1375,12 +1427,6 @@ describe('affordableRoutes and baselineFunding', () => {
       (c) => (c.baselineFunding.pools[2].debt = { rate: 0.06, termYears: 20 }),
       'baselineFunding.pools[2].debt',
       'expected null debt for kind generalRevenue'
-    ],
-    [
-      'inflow on the federal pool',
-      (c) => (c.baselineFunding.pools[7].inflows = [{ kind: 'once', day: asOf, dollars: 1 }]),
-      'baselineFunding.pools[7].inflows',
-      'expected no inflows on an uncapped pool'
     ],
     [
       'pool id with the u- prefix',
@@ -1498,7 +1544,6 @@ describe('affordableRoutes and baselineFunding', () => {
       kind: 'goBond',
       label: 'A bond',
       inflows: [{ kind: 'once', day: asOf, dollars: 5 }],
-      uncapped: false,
       debt: { rate: 0.05, termYears: 30 },
       leverage: 1
     });
@@ -1515,16 +1560,12 @@ describe('affordableRoutes and baselineFunding', () => {
       expect(() => checkPool(bond(), 'p')).not.toThrow();
     });
 
-    it('checkPool accepts a pool with no uncapped key', () => {
-      const a = bond();
-      delete a.uncapped;
-      expect(() => checkPool(a, 'p')).not.toThrow();
-      const b = { ...bond(), uncapped: 'yes' };
-      expect(msg(() => checkPool(b, 'p'))).toBe('p.uncapped: expected a boolean');
-      const c = { ...bond(), uncapped: true };
-      expect(msg(() => checkPool(c, 'p'))).toBe(
-        'p.inflows: expected no inflows on an uncapped pool'
-      );
+    it('checkPool refuses an uncapped key', () => {
+      for (const uncapped of [false, true, 'yes']) {
+        expect(msg(() => checkPool({ ...bond(), uncapped }, 'p'))).toBe(
+          'p.uncapped: unexpected key'
+        );
+      }
     });
 
     it("rejects out-of-bounds debt with validateDebt's text", () => {
