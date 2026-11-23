@@ -1,7 +1,10 @@
 import { describe, expect, test } from 'vitest';
 import { eq } from 'drizzle-orm';
-import { freshDb, seedUser } from '$lib/server/test/auth-db';
+import { freshDb, seedIdentity, seedUser } from '$lib/server/test/auth-db';
 import type { Database } from '$lib/server/db';
+import { putGame, removeGame } from '$lib/server/game/store';
+import { parseGameSave, type GameSave } from '$lib/game/saves';
+import { newId } from '$lib/ids/base58';
 import { deleteAccount } from './deletion';
 import {
   user,
@@ -10,7 +13,8 @@ import {
   session,
   account,
   passkey,
-  handleTombstone
+  handleTombstone,
+  gameSave
 } from '$lib/server/db/schema';
 import { recordUserVersion } from './history';
 import { sha256Hex } from '$lib/sharing/hash';
@@ -26,6 +30,21 @@ import {
 } from './deletion';
 
 const NOW = new Date('2026-06-15T00:00:00Z');
+
+function gameOf(): GameSave {
+  const s: GameSave = {
+    v: 1,
+    id: newId(),
+    name: 'Game, 22 Nov',
+    nameIsDefault: true,
+    progress: { v: 1, level: 2, banked: {}, firstWinAt: '2026-11-22T10:00:00.000Z' },
+    plan: null,
+    policy: null,
+    savedAt: '2026-11-22T12:00:00.000Z'
+  };
+  if (!parseGameSave(s)) throw new Error('test save is not valid');
+  return s;
+}
 
 /** One session, one account and one passkey row for the live user `liveId`. */
 async function seedCredentials(db: Database, liveId: string, tag: string): Promise<void> {
@@ -180,6 +199,27 @@ describe('deleteAccount', () => {
     expect(await db.select().from(userIdentity)).toHaveLength(0);
     expect(await db.select().from(userVersion)).toHaveLength(0);
     expect(await db.select().from(handleTombstone)).toHaveLength(0);
+  });
+
+  test('deletes the saved games of the account and of identities fused into it', async () => {
+    const { db } = freshDb();
+    await seedUser(db, { id: 'surv', email: 'surv@x.com', handle: 'surv' });
+    await seedIdentity(db, { id: 'fused', supersededById: 'surv' });
+    await seedUser(db, { id: 'keep', email: 'keep@x.com', handle: 'keep' });
+    const live = gameOf();
+    const removed = gameOf();
+    const fusedGame = gameOf();
+    const kept = gameOf();
+    await putGame(db, 'surv', live, null);
+    await putGame(db, 'surv', removed, null);
+    await removeGame(db, 'surv', removed.id, NOW);
+    await putGame(db, 'fused', fusedGame, null);
+    await putGame(db, 'keep', kept, null);
+
+    await deleteAccount({ db, identityId: 'surv' });
+
+    const left = await db.select().from(gameSave);
+    expect(left.map((r) => [r.identityId, r.id])).toEqual([['keep', kept.id]]);
   });
 
   test('erases PII for an identity fused into the survivor', async () => {

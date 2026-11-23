@@ -90,6 +90,7 @@ def main():
 - Allowed SDD scripts: bash {SDD}/sdd-workspace, bash {SDD}/task-brief, bash {SDD}/review-package, bash {HTML}/task-brief, python3 {HTML}/superpowers-html
 - Allowed project commands: {', '.join(cmds)}
 - Allowed read-only commands: {', '.join(reads)}
+- Allowed web tools: {'WebFetch, WebSearch (read primary sources; give them to the subagents that need them)' if unit in ('finite-funding', 'funding-measures') else 'none'}
 - Allowed for waiting: sleep (run in the background), TaskStop, sh {SKILL}/beat.sh changed
 - Before superpowers:writing-plans, load superpowers-html:html-docs.
 - {NOTES}
@@ -107,6 +108,8 @@ def main():
     tools += ['Bash(bash %s/%s:*)' % (SDD, s) for s in ('sdd-workspace', 'task-brief', 'review-package')]
     tools += ['Bash(bash %s/task-brief:*)' % HTML, 'Bash(python3 %s/superpowers-html:*)' % HTML]
     tools += ['Bash(%s:*)' % c for c in cmds + reads] + ['Bash(jev:*)']
+    web = unit in ('finite-funding', 'funding-measures')  # their specs require reading primary sources
+    tools += ['WebFetch', 'WebSearch'] if web else []
     model = sys.argv[4] if len(sys.argv) > 4 else 'opus'
     print('env -C "%s" CLAUDE_CODE_EXPERIMENTAL_CODE_MODE=1 claude --bg -n %s --model %s --permission-mode dontAsk '
           '--allowedTools="%s" --add-dir="%s" "$(cat %s)"'
