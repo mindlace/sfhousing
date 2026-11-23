@@ -149,7 +149,7 @@ describe('older-format calibration', () => {
     return { least, short, asking, ledger };
   }
 
-  it('the federal pool never falls below 99 billion and no waiting row is short on it', () => {
+  it('the federal pool never falls below 99% of LEGACY_UNCAPPED_DOLLARS and no waiting row is short on it', () => {
     const fed = input.finance!.pools.find((p) => p.id === FEDERAL)!;
     expect('uncapped' in fed).toBe(false);
     const got = run(DEFAULT_POLICY4);
