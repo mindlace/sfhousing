@@ -207,8 +207,13 @@ export async function touchDrag(
   await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
 }
 
-export const ops = (page: Page): Promise<number> =>
-  page.evaluate(() => (window as Win).__sfhBrush!.ops);
+/**
+ * The brush hook's op count, or null while the page has no hook (between documents, or before the
+ * BrushEditor of a page that just loaded has mounted). Use it under `expect.poll`: a null keeps the
+ * poll going, where a throw would end it at once (#141).
+ */
+export const ops = (page: Page): Promise<number | null> =>
+  page.evaluate(() => (window as Win).__sfhBrush?.ops ?? null);
 
 /**
  * Chooses a brush tool from `/`'s Paint tab. From md the tab is open in the dock. Below md it sits
