@@ -213,6 +213,10 @@ export default defineConfig({
       reason: 'the expected /no-such-page 404 that the e2e cache-headers and a11y specs request'
     },
     {
+      pattern: /^\[WebServer\]\s+\[404\] GET \/(fzp|lesscars)\s*$/,
+      reason: 'the expected 404s of /fzp and /lesscars that e2e/pages-a11y.spec.ts requests'
+    },
+    {
       pattern: /^\[WebServer\]\s*$/,
       reason: 'empty spacer lines wrangler dev prints around each log block'
     },
