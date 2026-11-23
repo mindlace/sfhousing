@@ -122,7 +122,7 @@ export function makeScenarioHarness(opts?: {
   bodies?: Record<string, unknown>;
   horizon?: Day;
   deps?: Partial<ScenarioHostDeps>;
-  /** The manifest names `MINI_POLICY_URL` (served either way). Default false: /fzp's manifest. */
+  /** The manifest names `MINI_POLICY_URL` (served either way). Default false: a manifest without it. */
   policy?: boolean;
   /** The manifest names `MINI_GROSS_URL` (served either way). Default false: the fallback. */
   gross?: boolean;

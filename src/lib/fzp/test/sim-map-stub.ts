@@ -1,4 +1,4 @@
-// Recording SimMap double for FzpMode tests (FzpSimMapStub.svelte): every handle call, the latest
+// Recording SimMap double for TimelineMode tests (FzpSimMapStub.svelte): every handle call, the latest
 // props, and a fake MapLibre map whose events a test fires by hand. Reset it per test.
 import type { Map as MapLibreMap } from 'maplibre-gl';
 import type { SimMapHandle, SimMapProps } from '$lib/map/types';
@@ -70,7 +70,7 @@ export class FakeMap {
     return { x: (lng - w) / 1e-5, y: (n - lat) / 1e-5 };
   }
 
-  // What /lesscars' installLessCarsLayers calls: recording no-ops over sources and layers.
+  // What the map's layer installers call: recording no-ops over sources and layers.
   #sources = new Map<string, { data: unknown }>();
   #layers = new Map<string, unknown>();
   filters = new Map<string, unknown>();

@@ -1,5 +1,5 @@
 <!--
-  `/`'s plan-sharing notices (plan-sharing spec §4.5/§4.8: N1 to N3 and the Remix toast), each a
+  `/`'s plan-sharing notices (plan-sharing spec §4.5/§4.8: N1 to N3), each a
   `Message` (a chip or a card by its words, shell/Message). The page passes this as BrushEditor's
   `notices` snippet, so they sit in BrushEditor's one notice stack (`NoticePills`, `fzp-notices`) after the brush status
   (sim-ux spec Goal 8): an overlay at the map's top from md that moves nothing, in flow under the

@@ -1,7 +1,7 @@
 /**
  * Details' public money and income tiers at one month (funding-ui spec 4.11), and the
  * market paragraph's text (4.12). Pure. Every value is read at the month index the caller passes,
- * the scrubbed month, never past the high-water mark; only the limit statements are not series.
+ * the playhead's month; only the limit statements are not series.
  * The per-home figures are `finance-score`'s `perAddedHome`: nothing here divides.
  */
 import { DISPLACEMENT_RANGE } from '$lib/sim/finance';

@@ -278,7 +278,7 @@
      0.5rem above the map inset (the bar and the sheet handle, which the page adds to the inset), so a control at
      the map's bottom left clears it at 0.5rem + 3.5rem: the navigation control's container (fine
      pointers) and SimMap's Reset view button (coarse pointers). `.sim-map` outranks SimMap's own
-     `bottom` rules. The host is the dock's (`.sfh-dock-host`: FzpMode's root on /sim,
+     `bottom` rules. The host is the dock's (`.sfh-dock-host`: TimelineMode's root on /sim,
      BrushEditor's on /). */
   :global(.sfh-dock-host:has(.sfh-palette-strip) .sim-map .maplibregl-ctrl-bottom-left),
   :global(.sfh-dock-host:has(.sfh-palette-strip) .sim-map .sim-map-reset) {

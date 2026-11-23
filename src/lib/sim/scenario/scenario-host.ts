@@ -17,8 +17,8 @@
 // largest of its last few measured costs) fits in 45 ms, 5 ms short of the 50 ms slice so that
 // a job over its estimate still ends within it; the first job of a slice always runs, and the
 // shown run's job (simulate and score only) runs in a slice of its own. Other requests are
-// handled between slices. Job priority: (0) once per loaded input with a finance (at the load on
-// /fzp, at each `current` on /sim), its finance precompute, each in a slice of its own, so the
+// handled between slices. Job priority: (0) once per loaded input with a finance (at the load with
+// no levers, at each `current` with levers), its finance precompute, each in a slice of its own, so the
 // first run on the input does not pay for it in its task; (1) the current run's revision 0, after
 // the FZP band runs it needs when its seed is null: the shown run, then in the next slice its
 // geometry set-up, then its geometry packing for up to 2.5 s (a swap reroll's: one packing slice,
@@ -33,7 +33,7 @@
 // generator memo lives across sessions and is cleared when an init names another datasetVersion.
 //
 // Levers (plan 2 Task 12). An `initScenario` with `levers` (/sim) also loads policy.bin; one
-// without (/fzp) takes the path above unchanged. A lever revision (that init, or a `setLevers`)
+// without takes the path above unchanged. A lever revision (that init, or a `setLevers`)
 // is pending until it is `current`: while one is, the scheduler runs only its 'recompute' job,
 // ahead of every other job (resolve the envelopes, then compute the touched lots' yields from
 // their chunk records as they arrive), so no timeline of the old levers, or of half-resolved new
@@ -49,7 +49,7 @@
 // for that file, fetched once per session on the first request needing it. Every waiting request
 // is answered `no-session` when its session ends (a new init, a failed load, dispose). The
 // `LotIndex` is built once per session on the base parcels; the resolver memoises on object
-// identity, so the session's own decoded objects are passed every time. /fzp never fetches them.
+// identity, so the session's own decoded objects are passed every time. A session without levers never fetches them.
 //
 // Height limits (height-lids Task 8). Each lever revision's resolve step starts a staged city
 // build (`city.ts`) on its effective stories; its steps run next (job kind 'heights'), ahead of
@@ -358,9 +358,9 @@ interface Work {
   costs: Partial<Record<JobKind, number[]>>;
   /** A due band post could not go out yet; the next timeline (which carries the band) is it. */
   bandPostDue: boolean;
-  /** The current levers' references; undefined = `REFERENCES` (/fzp). */
+  /** The current levers' references; undefined = `REFERENCES`. */
   references: TimelineScore['references'] | undefined;
-  /** Null for /fzp. */
+  /** Null without levers. */
   levers: LeverWork | null;
   /**
    * The warms (`financeWarm`) of the loaded inputs with a finance still to finish, in order: each
@@ -408,9 +408,9 @@ interface Session {
   loaded: Loaded | null;
   /** The timeline work, created with `loaded`. */
   work: Work | null;
-  /** The latest lever document and the rev that named it; null for /fzp (no levers). */
+  /** The latest lever document and the rev that named it; null without levers. */
   levers: { rev: Rev; levers: SimLevers } | null;
-  /** Null for /fzp: brush requests are answered `no-session`. */
+  /** Null without levers: brush requests are answered `no-session`. */
   brush: BrushSession | null;
   /** The latest `heightLids` not yet answered (lever sessions only). */
   lidWant: { reqId: number; bbox: [number, number, number, number] } | null;
@@ -1355,7 +1355,7 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
     const st = s;
     const rec = st?.chunks.records.get(req.parcelId);
     if (!st || !rec || !st.loaded) return null;
-    // the shown levers' envelopes under /sim; for /fzp `work.loaded` is `st.loaded`
+    // the shown levers' envelopes with levers; without them `work.loaded` is `st.loaded`
     const parcels = (st.work?.loaded ?? st.loaded).fzp.parcels;
     const i = parcels.index.get(req.parcelId);
     const envelope = i === undefined ? null : envelopeOf(parcels, i);

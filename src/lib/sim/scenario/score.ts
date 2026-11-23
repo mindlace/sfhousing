@@ -397,7 +397,7 @@ export const REFERENCES: TimelineScore['references'] = [
 
 /**
  * A `TimelineScore` from its parts; the baseline is T3 `rhnaCompletedNet`, passed through.
- * `references` defaults to `REFERENCES` (/fzp); /sim passes its compare's subset (plan 2 ruling 3).
+ * `references` defaults to `REFERENCES`; /sim passes its compare's subset (plan 2 ruling 3).
  */
 export function assembleScore(p: {
   months: Day[];

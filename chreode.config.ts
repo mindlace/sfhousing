@@ -87,12 +87,7 @@ export default defineConfig({
     // The headed bench (`npm run bench:map`) and the drizzle-kit configs (db:generate, db:migrate)
     // are not signoff steps; lint and check still cover the files themselves.
     {
-      match: [
-        'playwright.bench.config.ts',
-        'drizzle.config.ts',
-        'drizzle.sim.config.ts',
-        'drizzle-cf.config.ts'
-      ],
+      match: ['playwright.bench.config.ts', 'drizzle.config.ts', 'drizzle-cf.config.ts'],
       triggers: ['lint', 'check']
     },
     { match: ['playwright.config.ts'], triggers: ['lint', 'check', 'e2e'] },

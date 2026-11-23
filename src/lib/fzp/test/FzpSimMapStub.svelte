@@ -1,5 +1,5 @@
 <script lang="ts">
-  // Test double for SimMap on /fzp: records its props and hands FzpMode the recording handle at
+  // Test double for SimMap on /sim: records its props and hands TimelineMode the recording handle at
   // mount (or on `stub.fireReady()` when `stub.autoReady` is false). No WebGL, no map.
   import { onMount } from 'svelte';
   import type { SimMapProps } from '$lib/map/types';

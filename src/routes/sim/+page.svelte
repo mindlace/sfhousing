@@ -1,6 +1,6 @@
 <script lang="ts">
   // /sim (spec §4.1, §4.2, §4.7; plan 3): the policy simulation (which opens on the
-  // Family Zoning Plan comparison, /fzp's timelapse). The body (the URL seed, the remounts) is SimRoute, shared with /s/<id>.
+  // Family Zoning Plan comparison). The body (the URL seed, the remounts) is SimRoute, shared with /s/<id>.
   import SimRoute from '$lib/sim-page/SimRoute.svelte';
   import type { PageProps } from './$types';
 

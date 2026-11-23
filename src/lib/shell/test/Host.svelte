@@ -18,7 +18,7 @@
     pinnedB?: string;
     statusA?: string;
     statusB?: string;
-    /** A and B register one snippet object (two instances of one component, as FzpMode's). */
+    /** A and B register one snippet object (two instances of one component, as TimelineMode's). */
     shared?: boolean;
   } = $props();
   const slot = provideHeaderActions();

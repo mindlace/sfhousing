@@ -1,7 +1,7 @@
 /**
  * What the deleted score chart left behind (spec §4.6): the stroke colours the timeline chart and
  * its legend use, the series names About's assumptions compare published estimates with, and
- * `niceCeil`, the scale rounding the timeline chart and /lesscars share. Pure.
+ * `niceCeil`, the scale rounding the timeline chart. Pure.
  */
 import { GOAL_BASE } from '$lib/goal/goal';
 import type { TimelineScore } from '$lib/sim/protocol';

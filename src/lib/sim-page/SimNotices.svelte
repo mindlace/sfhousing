@@ -1,7 +1,6 @@
 <!--
   The /sim session notices (plan 5, Task 5; timeline-ui Task 14): the autosave restore (N1 to N3
-  in the policy wording), funding, the timelines refit, moved dates, "upgraded", and the Remix
-  toast. Each is a `Message` (shell/Message): a notice with details is a card, whose "Details"
+  in the policy wording), funding, the timelines refit, moved dates and "upgraded". Each is a `Message` (shell/Message): a notice with details is a card, whose "Details"
   disclosure holds a list; a link goes where the notice says. Rendered
   in TimelineMode's notice stack (`NoticePills`): an overlay at the map's top from md that moves
   nothing, in flow under the header below md. One always-mounted polite status region
