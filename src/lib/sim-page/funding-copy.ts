@@ -85,14 +85,8 @@ export function coverageStepText(step: CoverageStep, sizeClause = false): string
   );
 }
 
-export const COVERAGE_RUN_SENTENCE =
-  'Whether the money lasts, and how many homes it pays for, is what a run shows.';
 export const COVERAGE_RULE_SENTENCE =
   "Federal and state money count first. The City's sources share what is left.";
-export const COVERAGE_OFF_SHORT_SENTENCE =
-  'Switching a source off takes it out of every offer, so projects go ahead on the rest, at ' +
-  'lower odds. A source that is on but has run short makes projects wait for it; how long is ' +
-  'what a run shows.';
 export const COVERAGE_SIZE_SENTENCE =
   'Smaller projects get only the programmes that reach their size.';
 export const COVERAGE_PRIVATE_SENTENCE =
@@ -436,12 +430,14 @@ export const SUMMARY_GROUP_NAME: Record<GroupId, string> = {
 
 /**
  * A dated change as a summary row: "State money: switched off from July 2027", "City money:
- * 200% of today's from July 2029"; after an off span, "{name}: switched back on, 100% of today's
- * from …".
+ * 200% of today's from July 2029"; at scale 1, "{name}: switched back on from …" right after an
+ * off span, else "{name}: as today from …"; any other scale after an off span, "{name}: switched
+ * back on, 200% of today's from …".
  */
 export function summaryScaleText(name: string, from: Day, scale: number, backOn: boolean): string {
   const when = formatMonthYear(from);
   if (scale === 0) return `${name}: switched off from ${when}`;
+  if (scale === 1) return `${name}: ${backOn ? 'switched back on' : 'as today'} from ${when}`;
   return `${name}: ${backOn ? 'switched back on, ' : ''}${ratePercent(scale)} of today's from ${when}`;
 }
 

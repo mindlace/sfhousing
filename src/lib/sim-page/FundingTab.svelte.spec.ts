@@ -360,6 +360,49 @@ describe('FundingTab: the federal group', () => {
     await expect.element(row(/^State · \$100 million a year/)).toBeVisible();
   });
 
+  it('switched off from today, the federal row reads switched off', async () => {
+    setup(policyWith({ baselineScale: [{ pool: 'federal', from: FUND_ASOF, scale: 0 }] }));
+    await expect.element(row(/^Federal tax credits · switched off/)).toBeVisible();
+    await expect.element(row(/^State · \$100 million a year/)).toBeVisible();
+  });
+
+  it('the City row and its sources count one-time money arriving in the year', async () => {
+    const cal = fundingCalibration();
+    const funding = cal.baselineFunding!;
+    cal.baselineFunding = {
+      ...funding,
+      pools: funding.pools.map((p) =>
+        p.id === 'city-tax'
+          ? {
+              ...p,
+              inflows: [
+                { kind: 'once', day: FUND_ASOF, dollars: 30_000_000 },
+                { kind: 'once', day: FUND_ASOF + 400, dollars: 9_000_000 }
+              ]
+            }
+          : p.id === 'city-gf'
+            ? {
+                ...p,
+                inflows: [
+                  {
+                    kind: 'yearly',
+                    from: FUND_ASOF,
+                    to: null,
+                    dollarsPerYear: LEGACY_UNCAPPED_DOLLARS
+                  }
+                ]
+              }
+            : p
+      )
+    };
+    setup(policyWith({}), { calibration: cal });
+    const city = row(/^City · \$30 million a year/);
+    await expect.element(city).toBeVisible();
+    await city.click();
+    await expect.element(page.getByText('city-tax: $30 million a year')).toBeVisible();
+    await expect.element(page.getByText('city-gf: No ceiling')).toBeVisible();
+  });
+
   it('the open federal entry passes axe in light and dark', async () => {
     setup();
     await openChange();

@@ -70,7 +70,8 @@ import {
   valueSource,
   type FundingPreset,
   type PoolField,
-  type ProgrammeField
+  type ProgrammeField,
+  yearsAfter
 } from './funding-presets';
 import { POOL_KIND_DEFAULTS } from './funding-sources';
 
@@ -259,12 +260,31 @@ export function coverageSizeMixed(
   return new Set(bundleOn(f, baseline, day).programmes.map((g) => g.minHomes)).size > 1;
 }
 
+/**
+ * The money `pool` receives in the year from `asOf`: its `once` and `yearly` arrivals on days
+ * `asOf` to `yearsAfter(asOf, 1) - 1`, times the scale in force on `asOf` (1 without an entry),
+ * rounded to whole dollars. Null for a pool with a yearly inflow whose amount `isNoCeiling` (an
+ * older dataset's federal pool), which has no yearly amount to show.
+ */
+export function poolYearAmount(f: FinanceLevers, pool: Pool, asOf: Day): Dollars | null {
+  if (pool.inflows.some((x) => x.kind === 'yearly' && isNoCeiling(x.dollarsPerYear))) return null;
+  const last = yearsAfter(asOf, 1) - 1;
+  let sum = 0;
+  for (const x of pool.inflows) {
+    const amount = x.kind === 'once' ? x.dollars : x.dollarsPerYear;
+    sum += inflowArrivals(x, asOf, last).length * amount;
+  }
+  return Math.round(sum * (entryAt(f, pool.id, asOf)?.scale ?? 1));
+}
+
 export interface BaselineGroup {
   group: GroupId;
   name: string;
   pools: Pool[];
-  /** The yearly inflows in force at the present, at their scale. */
+  /** The sum of the pools' `poolYearAmount`, the null ones left out. */
   perYear: Dollars;
+  /** Every pool of the group has no ceiling (`poolYearAmount` null): its amount reads "No ceiling". */
+  noCeiling: boolean;
   /** Every pool of the group is off at the present. */
   off: boolean;
   perHome: Dollars;
@@ -285,22 +305,15 @@ export function baselineGroups(f: FinanceLevers, baseline: Baseline, asOf: Day):
     const pools = baseline.pools.filter((p) => groupOf(p.kind) === group);
     if (pools.length === 0) continue;
     const ids = new Set(pools.map((p) => p.id));
-    let perYear = 0;
-    for (const p of pools) {
-      const scale = entryAt(f, p.id, asOf)?.scale ?? 1;
-      for (const x of p.inflows) {
-        if (x.kind === 'yearly' && x.from <= asOf && (x.to === null || x.to >= asOf)) {
-          perYear += x.dollarsPerYear * scale;
-        }
-      }
-    }
+    const amounts = pools.map((p) => poolYearAmount(f, p, asOf));
     const sums = groupSums(f, baseline, priced, group);
     const dates = f.baselineScale.filter((e) => ids.has(e.pool)).map((e) => e.from);
     out.push({
       group,
       name: GROUP_NAME[group],
       pools,
-      perYear: Math.round(perYear),
+      perYear: amounts.reduce<number>((s, a) => s + (a ?? 0), 0),
+      noCeiling: amounts.every((a) => a === null),
       off: pools.every((p) => isOff(f, p.id, asOf)),
       perHome: Math.round(sums.perHome),
       lentPerHome: Math.round(sums.lent),

@@ -11,7 +11,16 @@ import {
   coverageSummaryText,
   notOfferedText
 } from './funding-copy';
+import * as copy from './funding-copy';
 import { groupProvenance, tiersText, type CoverageStep } from './funding-view';
+
+describe('removed copy', () => {
+  it('the coverage sentences that say "a run" are gone; the page\'s own are in money-copy', () => {
+    expect('COVERAGE_RUN_SENTENCE' in copy).toBe(false);
+    expect('COVERAGE_OFF_SHORT_SENTENCE' in copy).toBe(false);
+    expect('NO_LIMIT' in copy).toBe(false);
+  });
+});
 
 const step = (from: number, coverage: number, certain: boolean): CoverageStep => ({
   from,

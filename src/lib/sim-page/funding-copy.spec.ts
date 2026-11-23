@@ -9,6 +9,7 @@ import {
   fundingNotices,
   labelDateChanged,
   smallProjectsCaveat,
+  summaryScaleText,
   typedTermText
 } from './funding-copy';
 import type { FundingLoadReport } from './funding-reconcile';
@@ -32,6 +33,27 @@ describe('dateRangeError', () => {
   it('on fixture-0', () => {
     expect(dateRangeError(dayOf(2026, 10, 10))).toBe(
       'Choose a month from October 2026 to October 2066.'
+    );
+  });
+});
+
+describe('summaryScaleText', () => {
+  it('its four forms', () => {
+    const D = dayOf(2028, 7, 1);
+    expect(summaryScaleText('State money', D, 0, false)).toBe(
+      'State money: switched off from July 2028'
+    );
+    expect(summaryScaleText('State money', D, 1, true)).toBe(
+      'State money: switched back on from July 2028'
+    );
+    expect(summaryScaleText('State money', D, 1, false)).toBe(
+      'State money: as today from July 2028'
+    );
+    expect(summaryScaleText('Federal tax credits', D, 1.5, false)).toBe(
+      "Federal tax credits: 150% of today's from July 2028"
+    );
+    expect(summaryScaleText('State money', D, 2, true)).toBe(
+      "State money: switched back on, 200% of today's from July 2028"
     );
   });
 });

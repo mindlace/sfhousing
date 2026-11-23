@@ -33,7 +33,6 @@
     MARKET_TERMS,
     resolveTerms
   } from '$lib/sim/finance';
-  import { isNoCeiling } from '$lib/timelapse/model';
   import type { Calibration, Day, Pool, TermKey } from '$lib/timelapse/types';
   import {
     COVERAGE_PRIVATE_SENTENCE,
@@ -219,7 +218,7 @@
 
   function groupAmount(g: BaselineGroup): string {
     if (g.off) return SWITCHED_OFF;
-    return isNoCeiling(g.perYear) ? NO_CEILING : perYearText(g.perYear);
+    return g.noCeiling ? NO_CEILING : perYearText(g.perYear);
   }
 
   function groupPays(g: BaselineGroup): string {
