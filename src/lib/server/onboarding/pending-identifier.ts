@@ -6,7 +6,7 @@ import type { Cookies } from '@sveltejs/kit';
  *  form field only, and authentication still requires a real factor. */
 export const PENDING_IDENTIFIER_COOKIE = 'sfh_pending_identifier';
 
-const MAX_AGE_SECONDS = 600; // 10 minutes — matches sfh_pending_sim
+const MAX_AGE_SECONDS = 600; // 10 minutes
 
 export function stashPendingIdentifier(cookies: Cookies, identifier: string): void {
   const value = identifier.trim();

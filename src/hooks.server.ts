@@ -4,13 +4,10 @@ import { getAuth } from '$lib/server/auth/better-auth';
 import { shouldResolveSession } from '$lib/server/auth/session-gate';
 import { getDb } from '$lib/server/db';
 import { resolveSessionUser } from '$lib/server/user-store/user';
-import { resolveCapabilities } from '$lib/server/operator/capabilities';
 
 function setPublicLocals(locals: App.Locals) {
   locals.user = null;
   locals.session = null;
-  locals.capabilities = [];
-  locals.actorKind = 'public';
 }
 
 /**
@@ -27,21 +24,13 @@ export const sessionHandle: Handle = async ({ event, resolve }) => {
     return resolve(event);
   }
   const auth = getAuth(event.platform!, event.url.origin);
-  // A WebSocket upgrade returns a 101 whose headers are immutable in the Workers
-  // runtime. Better-Auth's rolling-session refresh would stage a `set-cookie` that
-  // SvelteKit then folds in via `add_cookies_to_headers`, throwing "Can't modify
-  // immutable headers". `disableRefresh` reads the session WITHOUT that write, so no
-  // cookie is staged; the session still resolves, and the next ordinary HTTP request
-  // refreshes it. Keyed on the request's own `upgrade` header (not route id): this is
-  // about the 101 response shape, and disableRefresh is harmless on any request.
-  const isWsUpgrade = event.request.headers.get('upgrade')?.toLowerCase() === 'websocket';
-  const session = await auth.api.getSession({
-    headers: event.request.headers,
-    ...(isWsUpgrade ? { query: { disableRefresh: true } } : {})
-  });
-  if (session?.user) {
-    const db = getDb(event.platform!);
-    const u = await resolveSessionUser(db, session.user.id);
+  const session = await auth.api.getSession({ headers: event.request.headers });
+  // A tombstoned identity survives `getSession` but `resolveSessionUser` returns null:
+  // that request gets the public locals, session included.
+  const u = session?.user
+    ? await resolveSessionUser(getDb(event.platform!), session.user.id)
+    : null;
+  if (session && u) {
     event.locals.user = u; // the seam's User IS the locals.user shape
     // `locals.session.userId` is the LIVE Better-Auth `user.id` — the FK target of
     // `account`/`passkey`/`session`. It is deliberately NOT `u.id` (the stable
@@ -50,15 +39,6 @@ export const sessionHandle: Handle = async ({ event, resolve }) => {
     event.locals.session = session.session
       ? { id: session.session.id, userId: session.session.userId }
       : null;
-    // Operator capabilities: a verified BOOTSTRAP_EMAILS address gets the app wildcard with no
-    // read; anyone else gets the ledger fold (one capability_event read, plus the identity
-    // chain reads). Runs only here, on a request that already resolved a session user.
-    // BOOTSTRAP_EMAILS is a secret, not a wrangler var, so it is not in `Env`.
-    const { BOOTSTRAP_EMAILS } = event.platform!.env as { BOOTSTRAP_EMAILS?: string };
-    event.locals.capabilities = u ? await resolveCapabilities(db, u, BOOTSTRAP_EMAILS) : [];
-    // A tombstoned identity survives `getSession` but `resolveSessionUser` returns
-    // null; treat that as anonymous ('public'), not 'human'.
-    event.locals.actorKind = u ? 'human' : 'public';
   } else {
     setPublicLocals(event.locals);
   }
