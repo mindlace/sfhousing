@@ -80,7 +80,10 @@ const THEMED_FILES = [
   'src/lib/shell/SiteHeader.svelte',
   'src/lib/shell/Message.svelte',
   'src/lib/sharing/NoticeStack.svelte',
-  'src/lib/sim-page/SimNotices.svelte'
+  'src/lib/sim-page/SimNotices.svelte',
+  'src/lib/game/WinCard.svelte',
+  'src/lib/game/LevelPanel.svelte',
+  'src/lib/shell/LevelCell.svelte'
 ];
 /** Themed files whose colours come from tokens and custom properties only: no hex at all. */
 const NO_HEX_FILES = [
