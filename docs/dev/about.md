@@ -10,12 +10,12 @@ Four parts, in this order. Each part's root is a `<section>` with its id; links 
 `/about#<id>` (`ABOUT_ID`, `src/lib/about/copy.ts`). The ids carry an `about-` prefix so that the
 dialog on `/sim` never duplicates an id the page already holds.
 
-| Part                  | Id                  | Component                                                                                     |
-| --------------------- | ------------------- | --------------------------------------------------------------------------------------------- |
-| What the numbers mean | `about-meanings`    | `AboutMeanings.svelte`: the terms of `MEANINGS`                                               |
-| Assumptions           | `about-assumptions` | `AboutAssumptions.svelte`: `ProvenanceBody`, live in the dialog, loaded on demand on the page |
-| Data and licences     | `about-data`        | `AboutData.svelte`: version, sources, notices, Software, the code line                        |
-| Using it              | `about-using`       | `AboutUsing.svelte`: Keyboard shortcuts (`about-shortcuts`) and Your plans                    |
+| Part                  | Id                  | Component                                                                                                                              |
+| --------------------- | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| What the numbers mean | `about-meanings`    | `AboutMeanings.svelte`: the terms of `MEANINGS`                                                                                        |
+| Assumptions           | `about-assumptions` | `AboutAssumptions.svelte`: `ProvenanceBody`, live in the dialog, loaded on demand on the page                                          |
+| Data and licences     | `about-data`        | `AboutData.svelte`: version, sources, notices, Software, the code line                                                                 |
+| Using it              | `about-using`       | `AboutUsing.svelte`: Keyboard shortcuts (`about-shortcuts`), Levels (`about-levels`), Saved games (`about-saved-games`) and Your plans |
 
 Every part takes `level` (`2 | 3`): its heading's level, 2 on the page and 3 in a dialog; its
 sub-headings are one deeper. `AboutData` also takes `datasetVersion` and `manifest`
@@ -31,6 +31,11 @@ never copied; "Room for N homes" reads `ROOM_MEANS` (`src/lib/paint/details.ts`)
 shortcuts table is `SHORTCUTS` (`src/lib/brush/shortcuts.ts`), the list Paint's Shortcuts button
 shows; the Timeline table after it is `TIMELINE_SHORTCUTS` (`src/lib/timeline/shortcuts.ts`).
 Keyboard shortcuts live here only on `/sim`: its header has no Shortcuts button.
+
+Part 1 ends with the "To beat" term (the month to beat, `MEANINGS`). Using it's Levels section is
+`LEVELS` (an ordered list of the five levels) then `LEVEL_NOTES` (three paragraphs); Saved games is
+`SAVED_GAMES` (three paragraphs). The 12 in `SAVED_GAMES[0]` is read from `MAX_SAVES`
+(`src/lib/game/saves.ts`), never typed. The game's rules are in [game.md](game.md).
 
 ## The Overture notice
 
