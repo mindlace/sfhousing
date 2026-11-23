@@ -22,13 +22,8 @@ const raw = JSON.parse(readFileSync('e2e/fixtures/data/fixture-0/manifest.json',
   string,
   unknown
 >;
-// The fixture's manifest still names scenarios.lesscars (an older dataset), which marks
-// splitRoads; the base here is a current dataset, so it drops the block.
-const rawScenarios = raw.scenarios as Record<string, unknown>;
-const { lesscars: _older, ...currentScenarios } = rawScenarios;
-const current = { ...raw, scenarios: currentScenarios };
-const base: Manifest = parseManifest(current);
-const withSprite: Manifest = parseManifest({ ...current, sprite: '/data/fixture-0/sprite' });
+const base: Manifest = parseManifest(raw);
+const withSprite: Manifest = parseManifest({ ...raw, sprite: '/data/fixture-0/sprite' });
 const themes: Theme[] = ['light', 'dark'];
 
 function fontStrings(v: unknown, out: string[] = []): string[] {

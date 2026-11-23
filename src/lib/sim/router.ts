@@ -14,7 +14,8 @@ export interface RouterDeps {
   editor: { handle(r: SimRequest): void; dispose(): void };
   /**
    * Called on the first `initScenario` (or a `reroll` or `setLevers` outside timeline mode that
-   * arrives before one), and again on the next one after an `init` or `openTimeline` disposed it.
+   * arrives before one), and again on the next one after an `openTimeline` disposed and dropped
+   * it. An `init` disposes the host but keeps the handle, so later requests reuse it.
    */
   createScenario: () => { handle(r: ScenarioRequest): void; dispose(): void };
   /**
