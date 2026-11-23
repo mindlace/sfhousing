@@ -743,7 +743,8 @@ interface SavesIndex {
         <li><code>progress</code>, <code>allowed</code>, <code>currentId</code>, <code>offer</code> and <code>saves</code> are reactive (<code>$state</code> or <code>$derived</code>), and replaced, never mutated, on each change.</li>
         <li><code>sync</code> is the <code>SaveSync</code> given to the constructor, the same object for the store's life.</li>
         <li><code>saves</code> is one <code>SaveEntry</code> per saved game, recomputed after construction and after each change.</li>
-        <li><code>saves</code> is ordered by <code>savedAt</code>, latest first, with the current game's played time in place of its <code>savedAt</code>. Equal times order by id.</li>
+        <li>In <code>saves</code>, the current game's entry carries its played time as <code>savedAt</code>, as <code>read</code> of the current game does; every other entry carries its save's <code>savedAt</code>. The stored index keeps each save's own <code>savedAt</code>.</li>
+        <li><code>saves</code> is ordered by those <code>savedAt</code> values, latest first. Equal times order by id.</li>
         <li><code>read(id)</code> of an id not in the list is null.</li>
         <li><code>read(id)</code> of another game is a deep copy of its save as stored.</li>
         <li><code>read(id)</code> of the current game is its save with <code>plan</code> and <code>policy</code> read from the two record keys now, and <code>savedAt</code> its played time. When reading a record key throws, the stored copy is used.</li>
