@@ -1,0 +1,187 @@
+<article>
+  <header>
+    <h1>Reach check implementation plan</h1>
+    <p>Implements the reach check spec: <code>scripts/level2-check.ts</code>, its test, and one run on a dataset built from the integration branch.</p>
+    <aside data-kind="note"><strong>For agentic workers</strong> REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps are checklist items; progress is kept in the workspace ledger, not in the plan.</aside>
+  </header>
+
+  <section id="sec-overview">
+    <h2>Overview</h2>
+    <dl>
+      <dt>Goal</dt>
+      <dd>A command that runs the empty policy document through the real timeline host on a built dataset and exits 1 when current law misses the goal inside the window (G4's build check, ruling D1), then one run of it on the live dataset built from the integration branch.</dd>
+      <dt>Architecture</dt>
+      <dd>One module with four exports (<code>runEmptyDocument</code>, <code>readLevel2</code>, <code>level2Lines</code>, <code>level2Exit</code>) and a <code>main</code> that runs only when executed directly. <code>runEmptyDocument</code> serves the dataset directory from disk to <code>loadScenario</code> and to <code>createTimelineHost</code> as <code>scripts/ensemble-measure.ts:148-177</code> and <code>:1279-1347</code> do, and resolves when a <code>filled</code> reaches the <code>compiled</code> statics' <code>lastIndex</code>. <code>readLevel2</code> reads <code>defaultGoal</code> over the view with <code>readGoal</code>.</dd>
+      <dt>Tech stack</dt>
+      <dd>TypeScript run by <code>npx tsx</code>; Vitest server project; the data pipeline (<code>npm run pipeline</code>).</dd>
+      <dt>Spec</dt>
+      <dd>Package worktree <code>/Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game</code>, <code>docs/superpowers/specs/2026-11-22-reach-check-design.html</code>: <code>#sec-if-g4</code>, <code>#sec-design-check</code>, <code>#sec-design-run</code>, <code>#sec-design-verdict</code>, <code>#sec-write-set</code>, <code>#sec-tests</code>. Read it from the package worktree, never from this branch's copy.</dd>
+    </dl>
+    <aside data-kind="warning"><strong>Before Task 1</strong> This plan was written on commit <code>8f494b6a</code>, before <code>remove-lesscars</code>, <code>finite-funding</code> and <code>pool-closing</code> merged. Task 1 starts only after the operator has merged the integration branch carrying all three (<code>git merge --no-ff --no-edit</code>). Every file and line cited here is re-read on the merged tree; where a name moved, follow the code, and where a binding the spec names is gone, stop and report it (it becomes a question).</aside>
+  </section>
+
+  <section id="sec-global-constraints">
+    <h2>Global constraints</h2>
+    <p>Interface row G4, copied verbatim from the spec (<code>#sec-if-g4</code>):</p>
+    <pre><code data-lang="ts">// src/lib/game/standing.ts
+export type Standing =
+  | { kind: 'playing' }
+  | { kind: 'short'; seen: Result; bar: Bar | null }
+  | { kind: 'won'; on: Day };
+
+/** `seen` is `goalOutcome(...)` for the months reached; null while no result is seen. */
+export function standing(level: Level, bar: Bar | null, seen: Result | null): Standing;</code></pre>
+    <ul>
+      <li><code>standing</code> is <code>playing</code> at level 1 and while <code>seen</code> is null.</li>
+      <li>At level 2 a reached result is <code>won</code>.</li>
+      <li>At levels 3 to 5 a result is <code>won</code> when it beats the bar.</li>
+      <li>Every other seen result is <code>short</code>.</li>
+      <li><code>goalOutcome</code> is read on the playable document's forecast and never while the numbers are stale, so a standing always belongs to the policy on screen.</li>
+      <li>A build check runs the empty document on a built dataset and fails when the goal is not reached inside the window (D1).</li>
+      <li><code>reach-check</code> writes the check and runs it once <code>finite-funding</code> and <code>pool-closing</code> have merged, so a miss reaches the owner while the build is still running. <code>closing</code> runs it again on the dataset it uploads.</li>
+    </ul>
+    <p>This unit consumes F2, F3 and L1 only through the merged tree (the host, the pipeline and <code>funding.json</code>); it calls none of their new names directly. <code>standing</code> itself is <code>game-core</code>'s; this unit writes only the build check.</p>
+    <p>The design's global constraints, verbatim:</p>
+    <ul>
+      <li>Work happens in git worktrees under <code>.claude/worktrees/</code>. Commits follow Conventional Commits. No attribution to an AI anywhere.</li>
+      <li>Code style: 2-space indent, single quotes, no trailing commas, 100 columns.</li>
+      <li>Every Vitest test calls <code>expect</code>.</li>
+      <li>Signoff fails on server stderr, on timing crutches and on a retried flake. Each unit runs <code>npm run lint</code>, <code>npm run check</code> and the Vitest projects its files belong to before it hands back.</li>
+      <li>Port 4173 is shared by every session on this machine. A unit never kills a server it did not start; it waits.</li>
+      <li>Every agent runs every command in the foreground and never ends a turn while something it started is running.</li>
+      <li>Schema changes go through <code>npm run db:generate</code>. Nobody edits a migration.</li>
+      <li>No unit runs <code>npm run signoff</code>: its dataset step fails until the dataset is uploaded. <code>closing</code> runs it once, after the upload.</li>
+      <li>The dataset version changes in this build. The dataset is uploaded once, by <code>closing</code>, from the integration branch, after every unit has merged; no other unit uploads a dataset. <code>reach-check</code> builds one earlier to run the check and uploads nothing.</li>
+      <li>A unit that writes a hashed path regenerates the fixture dataset with <code>npm run pipeline -- fixture</code> and commits it.</li>
+      <li>WCAG 2.2 AA: every new control is at least 24 px and passes <code>expectNoA11yViolations</code> in light and dark.</li>
+      <li>Page text is short. No sentence says what something is not.</li>
+      <li>Nothing on the main screen says "RHNA". The goal is read from the <code>Goal</code> value, never from a constant.</li>
+      <li>The game's rules are read from <code>src/lib/game/</code>. No component compares a level to a number.</li>
+      <li>One future: no seed control, no band, no average over runs.</li>
+      <li>Published plans and policies, their ids and their pages keep working, including every policy published before this build.</li>
+      <li>A number that is a claim about the world carries its source and tier, in the existing <code>Sourced</code>, <code>Unsourced</code> and <code>Evidence</code> shapes.</li>
+      <li>A runtime dependency that ships in the bundle gets a credit in <code>SOFTWARE</code>. This build adds none.</li>
+      <li>CSP changes are interface changes. This build makes none.</li>
+      <li>Timing is measured only on a quiet machine. A unit that cannot get one defers the measurement and says so.</li>
+    </ul>
+    <p>Unit rules from the spec: the branch's diff touches only <code>scripts/level2-check.ts</code> and <code>scripts/level2-check.spec.ts</code> (and this plan); no <code>package.json</code> change, no npm script; no existing test changed; no upload, no signoff, no <code>origin/main</code> merge, no push. Project rule: no <code>setTimeout</code>/<code>setInterval</code> in the spec file or any test helper, and <code>npx chreode timing-check --head HEAD</code> is clean after each commit.</p>
+  </section>
+
+  <section id="sec-review-focus">
+    <h2>Review focus</h2>
+    <ul>
+      <li>A host that posts <code>error</code> after the window started filling, or never posts <code>compiled</code>: the promise rejects once and the host is disposed and every timer cleared, so the process exits instead of hanging. Pinned by the missing-calibration test (t1-s1) and by the command exiting on its own in Task 2.</li>
+      <li>A deadline month later than <code>view.months</code>' last entry, or absent from it: <code>homesAtDeadline</code> reads at <code>view.lastIndex</code>, never at -1. Pinned by the amount-1 margin assertion, which needs the deadline's index.</li>
+      <li>The goal met exactly in the deadline month: margin 0 and a "Reached" line, never "Missed". Pinned by the <code>homesAtDeadline</code> amount test (reached on or before the deadline, exit 0).</li>
+      <li>Stdout carries exactly three lines on exit 0 and 1 and nothing on exit 2; host warnings go to stderr only from <code>main</code>. Pinned by the <code>level2Lines</code> tests and checked by running the command in Task 2.</li>
+      <li>A file the host asks for that is not in the directory: a 404 answer (<code>ok: false</code>), never a thrown <code>ENOENT</code> escaping as an unhandled rejection. Pinned by the missing-calibration test, which must reject with <code>host error: </code>.</li>
+    </ul>
+  </section>
+
+  <section id="sec-files">
+    <h2>Files</h2>
+    <ul>
+      <li>Create: <code>scripts/level2-check.ts</code> (the check: the four exports and <code>main</code>).</li>
+      <li>Create: <code>scripts/level2-check.spec.ts</code> (its test, Vitest server project, on <code>e2e/fixtures/data/fixture-0</code>).</li>
+      <li>Outside the repository (gitignored, never committed): <code>pipeline/.cache/</code>, <code>pipeline/out/&lt;v&gt;/</code>.</li>
+    </ul>
+  </section>
+
+  <section id="sec-task-1">
+    <h2>Task 1: The level 2 check and its test</h2>
+    <p>Delivers row G4's build check (<code>scripts/level2-check.ts</code>, to <code>closing</code>).</p>
+    <ul>
+      <li>Create: <code>scripts/level2-check.ts</code></li>
+      <li>Test: <code>scripts/level2-check.spec.ts</code></li>
+    </ul>
+    <p>Interfaces:</p>
+    <ul>
+      <li>Consumes (re-read each on the merged tree): <code>parseManifest</code> (<code>src/lib/data/manifest.ts</code>); <code>loadScenario</code>, <code>scenarioUrls</code> (<code>src/lib/sim/scenario/load.ts</code>); <code>DEFAULT_POLICY4</code> (<code>src/lib/timeline/policy4.ts</code>); <code>reconcilePolicy4(doc, cal, asOf).doc</code> (<code>src/lib/timeline/reconcile4.ts</code>); <code>createTimelineHost(deps)</code> (<code>src/lib/sim/world/host.ts</code>); <code>TimelineHostRequest</code>, <code>TimelineHostResponse</code> (<code>src/lib/sim/timeline-protocol.ts</code>: <code>compiled.statics</code>, <code>filled.{rev, through, series}</code>, <code>error.{code, message}</code>); <code>viewOf(chunks: SeriesChunk[], statics: ScoreStatics): TimelineView</code> (<code>src/lib/sim/world/score/view.ts</code>); <code>WINDOW_MONTHS</code> (<code>src/lib/sim/timeline-client.ts</code>); <code>defaultGoal(asOf)</code>, <code>readGoal(goal, view, i)</code> (<code>src/lib/goal/goal.ts</code>); <code>formatShortMonthYear(day)</code> (<code>src/lib/fzp/format.ts</code>). All imports relative (<code>../src/lib/…</code>).</li>
+      <li>Produces, exactly as the spec's <code>#sec-design-check</code> block:
+        <pre><code data-lang="ts">export interface EmptyRun { datasetVersion: string; asOf: Day; view: TimelineView }
+export interface Level2Result {
+  datasetVersion: string;
+  amount: number;
+  deadline: Day;
+  reachedOn: Day | null;
+  homesAtDeadline: number;
+  marginMonths: number | null;
+}
+export function runEmptyDocument(
+  dir: string,
+  opts?: { warn?: (msg: string) =&gt; void; timeoutMs?: number }
+): Promise&lt;EmptyRun&gt;;
+export function readLevel2(run: EmptyRun, amount?: number): Level2Result;
+export function level2Lines(r: Level2Result): string[];
+export function level2Exit(r: Level2Result): 0 | 1;</code></pre>
+        Command: <code>npx tsx scripts/level2-check.ts &lt;datasetDir&gt; [--amount &lt;homes&gt;]</code>; exits 0 reached, 1 missed, 2 could not run.</li>
+    </ul>
+    <ol>
+      <li id="t1-s1"><input type="checkbox"> Write the failing test <code>scripts/level2-check.spec.ts</code>. One <code>runEmptyDocument('e2e/fixtures/data/fixture-0')</code> in <code>beforeAll</code> (no <code>warn</code>; give the hook a timeout argument large enough for one fill, as an argument to <code>beforeAll</code>, not a wait). Tests and their assertions, from <code>#sec-tests-check</code>:
+        <ul>
+          <li><code>run covers the window</code>: <code>run.datasetVersion === 'fixture-0'</code>; <code>view.filledThrough === view.lastIndex</code>; <code>view.lastIndex + 1 === WINDOW_MONTHS</code>.</li>
+          <li><code>the fixture misses the goal's own amount</code>: <code>r = readLevel2(run)</code>; <code>r.amount === defaultGoal(run.asOf).amount</code>; <code>r.reachedOn</code> and <code>r.marginMonths</code> null; <code>level2Exit(r) === 1</code>; line 3 starts <code>'Missed: '</code> and ends <code>`, ${(r.amount - r.homesAtDeadline).toLocaleString('en-US')} short`</code>.</li>
+          <li><code>reached at homesAtDeadline</code>: <code>readLevel2(run, h)</code> with <code>h = readLevel2(run).homesAtDeadline</code>; <code>reachedOn</code> not null and <code>reachedOn &lt;= deadline</code>; <code>level2Exit === 0</code>; line 3 starts <code>'Reached: '</code>.</li>
+          <li><code>missed by one</code>: amount <code>h + 1</code>; line 3 ends <code>', 1 short'</code>; exit 1.</li>
+          <li><code>amount 1 is reached in the first month</code>: <code>reachedOn === view.months[0]</code> (or the first month's day as <code>readGoal</code> reports it); <code>marginMonths</code> equals the calendar-month count from <code>view.months[0]</code> to <code>deadline</code>, computed in the test from year and month.</li>
+          <li><code>lines</code>: <code>level2Lines(r).length === 3</code>; line 1 <code>'Dataset fixture-0'</code>; line 2 <code>`Goal: ${r.amount.toLocaleString('en-US')} homes by ${formatShortMonthYear(r.deadline)}`</code>.</li>
+          <li><code>no manifest</code>: <code>runEmptyDocument(emptyTmpDir)</code> rejects with a message containing <code>'no dataset at'</code> and the path.</li>
+          <li><code>missing calibration</code>: copy the fixture with <code>fs.cpSync</code> into <code>fs.mkdtempSync(join(os.tmpdir(), 'level2-'))</code>, delete the file <code>scenarioUrls(manifest).calibration</code> names, and <code>runEmptyDocument(copy)</code> rejects with a message starting <code>'host error: '</code>; remove the copy in <code>afterAll</code>.</li>
+        </ul>
+        No <code>setTimeout</code>, <code>setInterval</code> or fixed wait anywhere in the file.</li>
+      <li id="t1-s2"><input type="checkbox"> Run it and see it fail (module not found).
+        <pre><code data-lang="sh">npx vitest --run --project server scripts/level2-check.spec.ts</code></pre>
+      </li>
+      <li id="t1-s3"><input type="checkbox"> Implement <code>scripts/level2-check.ts</code> to the spec's <code>#sec-design-check</code>, which is authoritative for every step, message and line. Decisions the spec leaves to the plan:
+        <ul>
+          <li>Waiting: the host's <code>post</code> callback settles one promise (resolve on the filled condition, reject on <code>error</code>); no polling. The only timers are those the host is given (<code>setTimeout</code>/<code>clearTimeout</code> wrappers that track live handles so they can all be cleared) and one <code>timeoutMs</code> guard; on settle, dispose the host (as <code>host.spec.ts</code> does) and clear every tracked handle and the guard.</li>
+          <li>Rejection order for errors: a missing or unparsable <code>manifest.json</code>, or one <code>parseManifest</code> rejects, gives <code>no dataset at {dir}</code>; a <code>loadScenario</code> failure (no <code>fzp</code> in the result) gives <code>host error: {code}: {message}</code>, like a host <code>error</code> post.</li>
+          <li>The <code>filled</code> condition is at rev 1 and is checked against the last <code>compiled</code> received before it; <code>cells</code> posts are dropped on arrival.</li>
+          <li><code>marginMonths</code>: <code>(dy.year - ry.year) * 12 + (dy.month - ry.month)</code> on the two days' calendar months, using the date helpers <code>goal.ts</code> already imports.</li>
+          <li>Number formatting: <code>toLocaleString('en-US')</code> (the spec's "82,069").</li>
+          <li><code>main</code> runs only when <code>import.meta.url</code> is the executed file (<code>pathToFileURL(process.argv[1]).href</code>). Argument errors (no directory, a non-positive or non-integer <code>--amount</code>, an unknown flag) and every rejection give exit 2 with one stderr line <code>level2-check: {reason}</code>; host warnings go to <code>console.error</code>. Set <code>process.exitCode</code>; do not call <code>process.exit</code> while timers could be pending.</li>
+        </ul>
+      </li>
+      <li id="t1-s4"><input type="checkbox"> Run the test and see every case pass; then the whole server project, lint, check and the timing check.
+        <pre><code data-lang="sh">npx vitest --run --project server scripts/level2-check.spec.ts
+npx vitest --run --project server
+npm run lint
+npm run check</code></pre>
+        Expected: all pass, the spec writes nothing to stderr.</li>
+      <li id="t1-s5"><input type="checkbox"> Run the command on the fixture and see the miss: three lines on stdout, exit status 1, the process ends on its own.
+        <pre><code data-lang="sh">npx tsx scripts/level2-check.ts e2e/fixtures/data/fixture-0</code></pre>
+        Then <code>npx tsx scripts/level2-check.ts /nonexistent</code>: exit 2, one stderr line starting <code>level2-check: no dataset at</code>, empty stdout.</li>
+      <li id="t1-s6"><input type="checkbox"> Commit, then run the timing check.
+        <pre><code data-lang="sh">git add scripts/level2-check.ts scripts/level2-check.spec.ts
+git commit -m "feat(scripts): level 2 reach check on a built dataset"
+npx chreode timing-check --head HEAD</code></pre>
+        Expected: the timing check is clean. If it flags the script's host timer wrappers or the <code>timeoutMs</code> guard, report it as BLOCKED with its output (the spec names <code>timeoutMs</code>); do not remove the guard.</li>
+    </ol>
+  </section>
+
+  <section id="sec-task-2">
+    <h2>Task 2: The one run on the live dataset</h2>
+    <p>Spec <code>#sec-design-run</code> and <code>#sec-design-verdict</code>. No code change; the deliverable is a run report. Every command runs in the foreground in this worktree.</p>
+    <p>Interfaces:</p>
+    <ul>
+      <li>Consumes: Task 1's command; the merged pipeline (<code>npm run pipeline -- doctor|fetch --restore|version|build|check</code>); <code>pipeline/enrichment/funding.json</code>'s <code>bound</code> fields (F1).</li>
+      <li>Produces: the run report, written with the Write tool to the path the brief names (under the SDD workspace), holding every command run with its exit status and last output lines, the dataset version <code>&lt;v&gt;</code>, and the check's three stdout lines.</li>
+    </ul>
+    <ol>
+      <li id="t2-s1"><input type="checkbox"> Confirm the three merges: <code>git log --oneline --merges</code> shows the merges of <code>remove-lesscars</code>, <code>finite-funding</code> and <code>pool-closing</code>. If one is missing, stop: BLOCKED.</li>
+      <li id="t2-s2"><input type="checkbox"> <code>npm run pipeline -- doctor</code> passes. On a failure, stop with "blocked: cannot build the live dataset", the command and the exact missing tool, version, credential or resource from its output. Install nothing that needs a password.</li>
+      <li id="t2-s3"><input type="checkbox"> If <code>pipeline/.cache</code> does not exist (<code>ls pipeline</code>): <code>npm run pipeline -- fetch --restore</code>. A failure is "blocked: cannot build the live dataset" as above.</li>
+      <li id="t2-s4"><input type="checkbox"> <code>npm run pipeline -- version</code>; record the answer as <code>&lt;v&gt;</code>.</li>
+      <li id="t2-s5"><input type="checkbox"> <code>npm run pipeline -- build</code>, without <code>--skip-tiles</code>; every invariant passes. A failing invariant is reported with its id and message. Out of memory or disk is "blocked: cannot build the live dataset".</li>
+      <li id="t2-s6"><input type="checkbox"> <code>npm run pipeline -- check &lt;v&gt;</code> passes.</li>
+      <li id="t2-s7"><input type="checkbox"> <code>npx tsx scripts/level2-check.ts pipeline/out/&lt;v&gt;</code>; record its three lines and exit status. Exit 2 is not a verdict: report its stderr line (a script fault goes back to Task 1 as a fix round).</li>
+      <li id="t2-s8"><input type="checkbox"> On exit 1 only: add to the report the <code>bound</code> of <code>city-impact-fees</code> and of <code>state</code> as <code>pipeline/enrichment/funding.json</code> holds them (kind, date or dollars, tier, citation). Change no code, data or window length.</li>
+      <li id="t2-s9"><input type="checkbox"> <code>git status</code> shows a clean tree (nothing under <code>pipeline/out</code> or <code>pipeline/.cache</code> tracked), and <code>git diff --stat &lt;start&gt;..HEAD</code> lists only the two script files and this plan. Nothing is uploaded, pushed or signed off.</li>
+    </ol>
+  </section>
+
+  <section id="sec-handoff">
+    <h2>Hand-back</h2>
+    <p>After Task 2, the operator sends <code>complete</code> carrying <code>&lt;v&gt;</code> and the three lines (exit 0), or files the miss "blocked: current law misses the goal" with the three lines and the two bounds (exit 1) as a question to the conductor; the script is finished and mergeable either way.</p>
+  </section>
+</article>

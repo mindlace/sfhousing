@@ -734,6 +734,7 @@ export const GO_TO_PAINT = 'Go to Paint';</code></pre>
         <li><code>src/lib/timeline/test/SimDetailsHost.svelte</code></li>
         <li><code>src/lib/timeline/{add,lens,parse4,activity-view,server-codec}.spec.ts</code></li>
         <li><code>src/lib/timeline/{Timeline,Playhead,Inspector,SimDetails}.svelte.spec.ts</code></li>
+        <li><code>e2e/sim-funding.spec.ts</code>: in test 8, the one locator line that finds the housing bond's bar, which finds it by the policy's label ("A housing bond")</li>
         <li><code>docs/dev/sim-page.md</code>, <code>docs/dev/timeline-ui.md</code>, <code>docs/dev/policy-timeline.md</code></li>
       </ul>
       <p>Created:</p>
@@ -820,7 +821,8 @@ export const GO_TO_PAINT = 'Go to Paint';</code></pre>
     <section id="sec-tests-existing">
       <h3>Existing tests</h3>
       <ul>
-        <li>Every e2e spec that exists before this build runs on the open game (X1), which this page treats as no game, so this unit changes none of them.</li>
+        <li>Every e2e spec that exists before this build runs on the open game (X1), which this page treats as no game, so this unit changes none of them for the game.</li>
+        <li><code>e2e/sim-funding.spec.ts</code> test 8 finds the housing bond's bar by its accessible name, which carries the policy's label. A policy made from a funding preset takes the preset's label (<a href="#sec-design-given">Given measures</a>), so the bar is named "A housing bond", not the pool's "Housing bond". This unit changes that one locator to the policy's label. The file is <code>funding-measures</code>', which runs beside this unit and writes the rest of test 8; whichever of the two merges second keeps this locator and <code>funding-measures</code>' additions.</li>
         <li>The remix tests in <code>e2e/{share-states,share-roundtrip,share-notices,sim-share,chrome-dark}.spec.ts</code> assert the Remix hand-off and toast this unit removes. <code>game-shell</code> rewrites those tests; they are red between the two merges, and nobody runs e2e until <code>closing</code>.</li>
         <li>In <code>src/routes/s/[id]/page.view.svelte.spec.ts</code>, the case "after Remix, /sim shows the remixed document over the earlier v2 autosave" mounts <code>/sim</code> with the Remix hand-off and asserts the Remix toast. This unit deletes that one case, so its branch passes <code>npm run test:unit</code>. The file's other cases are <code>game-shell</code>'s, which rewrites its Remix tests; whichever of the two merges second keeps <code>game-shell</code>'s Remix tests and no hand-off case.</li>
         <li>Component tests that mount <code>SimPage</code> or <code>TimelineMode</code> without a game keep today's behaviour.</li>
