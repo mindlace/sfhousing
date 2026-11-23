@@ -51,7 +51,9 @@ function money(pools: Series[]): MoneyView {
     perAddedHome: { all: null, city: null },
     displacedShare: null,
     perAddedHomeByMonth: { all: zeros.map(() => null), city: zeros.map(() => null) },
-    displacedShareByMonth: zeros.map(() => null)
+    displacedShareByMonth: zeros.map(() => null),
+    closed: {},
+    shut: {}
   } as MoneyView;
 }
 

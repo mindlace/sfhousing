@@ -9,7 +9,9 @@ import type { MoneyRow, MoneyView, ScoreStatics, SeriesChunk, TimelineView } fro
  * month, and `limits` the statics' (fixed as the forecast fills). `perAddedHome` and
  * `displacedShare` are today's, read that month over a money whose displaced homes are those of
  * completed funded projects (`displacedHomesCompleted`), paired with `fundedHomes`; the `ByMonth`
- * series give the same figures read at each month, the last entry the scalar.
+ * series give the same figures read at each month, the last entry the scalar. `closed` is each
+ * pool's value in the last row and `shut` its value in every row (a row without them reads as null
+ * and false).
  */
 function moneyViewOf(rows: MoneyRow[], statics: ScoreStatics): MoneyView {
   const limits = statics.limits;
@@ -42,6 +44,12 @@ function moneyViewOf(rows: MoneyRow[], statics: ScoreStatics): MoneyView {
     });
   }
   const last = rows.length - 1;
+  const closed: MoneyView['closed'] = {};
+  const shut: MoneyView['shut'] = {};
+  rows[0].pools.forEach((p, q) => {
+    closed[p.id] = rows[last].pools[q].closed ?? null;
+    shut[p.id] = rows.map((r) => r.pools[q].shut ?? false);
+  });
   const owed: MoneyView['owed'] = [];
   const debtOf = new Map(debts.map((d) => [d.pool, d.debt]));
   for (const p of pools) {
@@ -79,7 +87,9 @@ function moneyViewOf(rows: MoneyRow[], statics: ScoreStatics): MoneyView {
     perAddedHome: { all: all[last], city: city[last] },
     displacedShare: share[last],
     perAddedHomeByMonth: { all, city },
-    displacedShareByMonth: share
+    displacedShareByMonth: share,
+    closed,
+    shut
   };
 }
 

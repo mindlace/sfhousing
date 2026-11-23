@@ -6,6 +6,8 @@ import {
   KIND_AFFORDABLE,
   KIND_MARKET,
   addLineRow,
+  addShutRow,
+  reopenPool,
   addMoneyRow,
   addShadow,
   compactLine,
@@ -23,6 +25,39 @@ function funded(pools: string[] = ['city', 'state']): World {
   initFunding(w, pools);
   return w;
 }
+
+describe('closing columns', () => {
+  it('a new pool row has closedDay NO_DAY; the shut columns grow and clone', () => {
+    const w = funded(['a', 'b']);
+    const { pools } = fundOf(w);
+    expect(Array.from(pools.closedDay.subarray(0, 2))).toEqual([NO_DAY, NO_DAY]);
+    expect(poolRowOf(pools, 'c')).toBe(2);
+    expect(pools.closedDay[2]).toBe(NO_DAY);
+    expect(pools.shutN).toBe(0);
+    // 20 closings across three pools: past the first growth (8 rows).
+    for (let k = 0; k < 20; k++) {
+      const q = k % 3;
+      addShutRow(pools, q, 1000 + 31 * k);
+      expect(pools.closedDay[q]).toBe(1000 + 31 * k);
+      reopenPool(pools, q, 1000 + 31 * k + 62);
+      expect(pools.closedDay[q]).toBe(NO_DAY);
+    }
+    expect(pools.shutN).toBe(20);
+    expect(pools.shutTo[19]).toBe(1000 + 31 * 19 + 62);
+    expect(structuredClone(w)).toEqual(w);
+  });
+
+  it('a pool closed and opened on the same day leaves no shut row', () => {
+    const { pools } = fundOf(funded(['a', 'b']));
+    addShutRow(pools, 0, 500);
+    addShutRow(pools, 1, 600);
+    reopenPool(pools, 0, 500);
+    expect(pools.shutN).toBe(1);
+    expect([pools.shutRow[0], pools.shutFrom[0], pools.shutTo[0]]).toEqual([1, 600, NO_DAY]);
+    expect(() => reopenPool(pools, 0, 700)).toThrow();
+    expect(() => addShutRow(pools, 1, 700)).toThrow();
+  });
+});
 
 describe('funding columns', () => {
   it('a world with funding columns survives structuredClone', () => {

@@ -434,7 +434,10 @@ describe('pools, arrivals and money events', () => {
     expect(moneyRowsOf(pools, second)).toEqual([0, 1]);
   });
 
-  it('nothing reads pools[q].inflows', () => {
+  it('nothing reads pools[q].inflows but the closing check', () => {
+    // Serving and arrivals read `frame.finance.arrivals` only. The one read allowed is the
+    // closing check's last arrival of the frame's definition (`lastArrivalOf` in `closeSpent`).
+    let allowed = 0;
     const frames = new Map<number, PolicyFrame>();
     const guarded: PolicyTimeline = {
       ...timeline,
@@ -447,6 +450,11 @@ describe('pools, arrivals and money events', () => {
             Object.defineProperty(copy, 'inflows', {
               enumerable: false,
               get() {
+                const stack = new Error().stack ?? '';
+                if (/\blastArrivalOf\b/.test(stack) && /\bcloseSpent\b/.test(stack)) {
+                  allowed++;
+                  return p.inflows;
+                }
                 throw new Error(`pools[${p.id}].inflows was read`);
               }
             });
@@ -467,5 +475,7 @@ describe('pools, arrivals and money events', () => {
     expect(world.month).toBe(24);
     expect(ledger.some((e) => e.kind === 'in')).toBe(true);
     expect(() => guarded.frameAt(1).finance!.pools[0].inflows).toThrow(/inflows was read/);
+    // Closing is on, and its check read the definitions.
+    expect(allowed).toBeGreaterThan(0);
   });
 });

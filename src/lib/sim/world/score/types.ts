@@ -30,6 +30,13 @@ export interface MoneyRow {
     repaid: number;
     lost: number;
     lostCredit: number;
+    /**
+     * The first day the pool was closed, once the day before it (the pool's spent day) is within
+     * this month; null before. A row built without it reads as null.
+     */
+    closed?: Day | null;
+    /** The pool is closed at the end of this calendar month. A row without it reads as false. */
+    shut?: boolean;
   }[];
   fundedHomes: number;
   /** Homes in 'displaced' events by each event's own day (rule 2). */
@@ -61,6 +68,10 @@ export type MoneyView = NonNullable<TimelineScore['money']> & {
   perAddedHomeByMonth: { all: (number | null)[]; city: (number | null)[] };
   /** `displacedShare` by month, as `perAddedHomeByMonth`; entry `filledThrough` equals it. */
   displacedShareByMonth: (number | null)[];
+  /** Each pool's `closed` at `filledThrough`, by pool id: null while it has not closed. */
+  closed: Record<string, Day | null>;
+  /** Each pool's `shut` by calendar month, by pool id; one entry per filled month. */
+  shut: Record<string, boolean[]>;
 };
 
 /** The score numbers for a run of final months, one entry per calendar month from `from`. */

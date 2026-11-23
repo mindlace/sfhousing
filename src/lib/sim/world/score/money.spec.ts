@@ -11,11 +11,22 @@ import { simulateDetailed } from '$lib/sim/scenario/simulate';
 import type { SimInput } from '$lib/sim/scenario/types';
 import type { Day } from '$lib/timelapse/time';
 import { benchFunded } from '../funding/test/cities.node';
-import { fundedMini, oneMoneyTimeline } from '../funding/test/fixtures';
+import { createFundingSystem } from '../funding';
+import { fundOf } from '../funding/columns';
+import {
+  CLOSE_POOL,
+  closingPolicy,
+  fundedMini,
+  moneyTimeline,
+  oneMoneyTimeline
+} from '../funding/test/fixtures';
 import type { PolicyTimeline } from '../policy/frame';
+import { miniDoc, span } from '../policy/test/fixtures';
+import { monthFirstDay } from '../months';
 import { staticsOf, type Statics } from '../statics';
 import { readAll } from '../test/run';
-import type { World, WorldEvent } from '../types';
+import { NO_DAY, type FundingSystem, type World, type WorldEvent } from '../types';
+import type { Policy, SimPolicy4 } from '$lib/timeline/policy4';
 import { chunkOf } from './chunk';
 import { moneyRowsOf } from './money';
 import { createWorldSeries, extrasOf } from './series';
@@ -50,9 +61,9 @@ interface City {
   months: number;
 }
 
-function cityOf(input: SimInput, months: number): City {
+function cityOf(input: SimInput, months: number, doc?: SimPolicy4): City {
   const fin = input.finance!;
-  const timeline = oneMoneyTimeline(input, fin);
+  const timeline = doc ? moneyTimeline(input, doc) : oneMoneyTimeline(input, fin);
   return {
     input,
     fin,
@@ -63,15 +74,30 @@ function cityOf(input: SimInput, months: number): City {
   };
 }
 
-function run(c: City, seed: number, onEvent?: (e: WorldEvent, w: World) => void): Run {
+/** `system` is the funding system (default `createFundingSystem()`, closing spent pools). */
+function run(
+  c: City,
+  seed: number,
+  onEvent?: (e: WorldEvent, w: World) => void,
+  system?: FundingSystem
+): Run {
   const series = createWorldSeries(c.score);
   const displaced: Displaced[] = [];
   const completed = new Map<number, Day>();
-  const got = feedFunded(c.statics, c.timeline, seed, c.months, series, (e, w) => {
-    if (e.kind === 'displaced') displaced.push(e);
-    else if (e.kind === 'end' && e.how === 'complete') completed.set(e.row, e.day);
-    onEvent?.(e, w);
-  });
+  const got = feedFunded(
+    c.statics,
+    c.timeline,
+    seed,
+    c.months,
+    series,
+    (e, w) => {
+      if (e.kind === 'displaced') displaced.push(e);
+      else if (e.kind === 'end' && e.how === 'complete') completed.set(e.row, e.day);
+      onEvent?.(e, w);
+    },
+    'live',
+    system
+  );
   const feed: MoneyFeed = {
     ledger: got.ledger,
     finance: c.timeline.frameAt(1).finance!,
@@ -95,6 +121,24 @@ function today(c: City, r: Run, through: number) {
   });
 }
 
+/**
+ * Pool `id`'s `closed` and `shut` at the end of calendar month `i`, read off the world's shut rows:
+ * `closed` is the first shut row's `shutFrom` once its spent day (`shutFrom - 1`) is within month
+ * `i`; `shut` holds when some such row is still unopened at the month's last day.
+ */
+function shutAt(w: World, asOf: Day, id: string, i: number): { closed: Day | null; shut: boolean } {
+  const p = fundOf(w).pools;
+  const last = lastDay(asOf, i);
+  let closed: Day | null = null;
+  let shut = false;
+  for (let k = 0; k < p.shutN; k++) {
+    if (p.id[p.shutRow[k]] !== id || p.shutFrom[k] - 1 > last) continue;
+    closed ??= p.shutFrom[k];
+    if (p.shutTo[k] === NO_DAY || p.shutTo[k] > last) shut = true;
+  }
+  return { closed, shut };
+}
+
 function checkPools(c: City, r: Run): void {
   const through = r.series.finalThrough();
   const got = moneyRowsOf(r.feed, extrasOf(r.series), 0, through);
@@ -113,7 +157,8 @@ function checkPools(c: City, r: Run): void {
         spent: q.spent[i],
         repaid: q.repaid[i],
         lost: q.lost[i],
-        lostCredit: q.lostCredit[i]
+        lostCredit: q.lostCredit[i],
+        ...shutAt(r.world, c.input.asOf, q.id, i)
       }))
     );
   }
@@ -372,6 +417,66 @@ describe('plan world money, funded mini', () => {
   });
 });
 
+// Pool closing in the money rows (spec sec-design-money). Test values.
+
+/** Enough for one affordable project on the mini city. */
+const ONE_PROJECT = 3_000_000;
+/** The second span's first month: after CLOSE_POOL's closing under one span. */
+const S2 = 60;
+/** The mini money's guarantee needs `guaranteeRateCut` once money levers are in force. */
+const TERMS: Policy = {
+  id: 'terms',
+  label: 'terms',
+  preset: null,
+  on: true,
+  where: { tag: 'terms' },
+  spans: [span(fundedMini().asOf, 1, null, { tag: 'terms', terms: { guaranteeRateCut: 0.01 } })]
+};
+
+describe('plan world money, a pool that closes and opens', () => {
+  it('closed and shut by month on a world that closes and opens a pool', () => {
+    const input = fundedMini();
+    const once = (m: number, d: number) => ({ kind: 'once' as const, day: m, dollars: d });
+    const doc = miniDoc(
+      closingPolicy(input.asOf, [
+        { from: 1, to: S2 - 1, inflows: [once(monthFirstDay(input.asOf, 2), ONE_PROJECT)] },
+        { from: S2, to: null, inflows: [once(monthFirstDay(input.asOf, S2) + 3, ONE_PROJECT)] }
+      ]),
+      TERMS
+    );
+    const c = cityOf(input, 150, doc);
+    const r = run(c, 1);
+    const through = r.series.finalThrough();
+    const rows = moneyRowsOf(r.feed, extrasOf(r.series), 0, through);
+    const p = fundOf(r.world).pools;
+    const mine: number[] = [];
+    for (let k = 0; k < p.shutN; k++) if (p.id[p.shutRow[k]] === CLOSE_POOL) mine.push(k);
+    // Not vacuous: CLOSE_POOL closes, opens again and closes again within the window.
+    expect(mine.length).toBeGreaterThanOrEqual(2);
+    expect(p.shutTo[mine[0]]).not.toBe(NO_DAY);
+    const idx = monthIndexer(
+      monthsOf(input.asOf, lastDay(input.asOf, through)),
+      lastDay(input.asOf, through)
+    );
+    const spent = idx(p.shutFrom[mine[0]] - 1);
+    const open = idx(p.shutTo[mine[0]]);
+    expect(open).toBeLessThanOrEqual(through);
+    const shutSeen: boolean[] = [];
+    rows.forEach((row, i) => {
+      for (const e of row.pools) {
+        expect([e.closed, e.shut]).toEqual(Object.values(shutAt(r.world, input.asOf, e.id, i)));
+        if (e.id !== CLOSE_POOL) continue;
+        expect(e.closed).toBe(i < spent ? null : p.shutFrom[mine[0]]);
+        if (i < spent) expect(e.shut).toBe(false);
+        else if (i < open) expect(e.shut).toBe(true);
+        if (e.shut !== undefined) shutSeen.push(e.shut);
+      }
+    });
+    // It reads shut, open, then shut again.
+    expect(shutSeen.join()).toMatch(/true.*false.*true/);
+  });
+});
+
 describe('plan world money, funded bench', () => {
   let c: City;
   let r: Run;
@@ -404,7 +509,8 @@ describe("rule 12 against today's engine, funded mini", () => {
     const same: number[] = [];
     const nonNull: number[] = [];
     for (let seed = 1; seed <= 50; seed++) {
-      const r = run(c, seed);
+      // Today's engine never closes a pool: compared like for like (spec sec-design-option).
+      const r = run(c, seed, undefined, createFundingSystem({ poolClosing: false }));
       const money = viewOf([chunkOf(r.series, r.series, r.feed, 0, last)], c.score).money!;
       const old = simulateDetailed(c.input, seed, horizon);
       const want = moneyOf({
