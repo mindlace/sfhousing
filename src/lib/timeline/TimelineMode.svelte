@@ -647,6 +647,8 @@
     const f = inForce;
     const wait = stale || searching;
     const provisional = session?.provisional ?? false;
+    // Failed lots: the numbers on show are the last sent document's, not the one on screen (G4).
+    const failed = lotsFailed && lots === null;
     untrack(() => {
       if (wait) return;
       // The window's last month stands for the window's last day, which is where a goal due at
@@ -666,7 +668,7 @@
       if (!same) outcome = next;
       outcomeInForce = f;
       // Keyed as `outcome`: an unchanged result keeps its object.
-      if (!provisional) seenResult = outcome;
+      if (!provisional && !failed) seenResult = outcome;
     });
   });
   /** Outcomes dismissed this visit, by key. */
@@ -725,7 +727,7 @@
     const level = g?.progress.level ?? null;
     const complete = g ? roundComplete(g.progress) : false;
     untrack(() => {
-      const rose = level !== null && lastLevel !== null && level !== lastLevel;
+      const rose = level !== null && lastLevel !== null && level > lastLevel;
       const completed = complete && !lastComplete;
       lastLevel = level;
       lastComplete = complete;
@@ -744,12 +746,15 @@
     });
   });
   // The card opens when the standing becomes won with a month not kept; it closes when the
-  // standing stops being won, keeping nothing.
+  // standing stops being won, keeping nothing. Focus in the card (an edit by Ctrl+Z from its
+  // button) goes to the ruler, so it never drops to the page.
   $effect(() => {
     const s = stand;
     untrack(() => {
       if (s.kind !== 'won') {
+        const inCard = cardOn !== null && !!winEl?.contains(document.activeElement);
         cardOn = null;
+        if (inCard) void tick().then(() => rulerEl()?.focus());
         return;
       }
       if (s.on === kept || cardOn === s.on) return;

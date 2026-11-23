@@ -1,5 +1,5 @@
 // Restore and open for the schema 4 /sim page: the autosave's outcome and the reconcile report as
-// today's notices, the "upgraded" notice, the moved-dates notice (OQ-4) and the Remix toast.
+// today's notices, the "upgraded" notice and the moved-dates notice (OQ-4).
 import { describe, expect, it } from 'vitest';
 import { fixtureCalibration } from '$lib/fzp/fixtures/calibration';
 import { formatMonthYear } from '$lib/fzp/format';

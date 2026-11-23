@@ -30,6 +30,7 @@ import type { Policy, SimPolicy4 } from '$lib/timeline/policy4';
 import { SIM_KEY4, parseSimDoc4, serializeSimDoc4, type SimDoc4 } from '$lib/timeline/sim-doc4';
 import {
   compiledMsg,
+  errorMsg,
   filledMsg,
   type FakeTimelineWorker
 } from '$lib/timeline/test/fake-timeline-worker';
@@ -287,6 +288,22 @@ describe('/sim in a game', () => {
     await expect.poll(() => debug().policy.kinds.permitting).toEqual([]);
   });
 
+  it('an edit the worker rejects keeps the locked policies', async () => {
+    const mem = new MemoryStorage();
+    store(mem, { schema: 4, kinds: { zoning: [historic], permitting: [], money: [] } });
+    await opened(gameAt(3, { bar: BAR, storage: mem }), mem);
+    await expect.element(saveState()).toHaveAttribute('data-save-status', 'saved');
+    await addClock();
+    await expect.poll(() => w().lastOf('setPolicy')?.rev).toBe(2);
+    expect(w().lastOf('setPolicy')!.policy.kinds.zoning).toEqual([]);
+    w().emit(errorMsg(2, 'bad-request'));
+    await expect.poll(() => debug().policy.kinds.permitting).toEqual([]);
+    expect(debug().policy.kinds.zoning.map((p) => p.id)).toEqual(['historic']);
+    await expect.element(saveState()).toHaveAttribute('data-save-status', 'saved');
+    expect(storedPolicy(mem).kinds.zoning.map((p) => p.id)).toEqual(['historic']);
+    expect(storedPolicy(mem).kinds.permitting).toEqual([]);
+  });
+
   it('an autosave write touches the game once', async () => {
     const mem = new MemoryStorage();
     const game = gameAt(3, { bar: BAR, storage: mem });
@@ -323,9 +340,10 @@ describe('/sim in a game', () => {
     const r = await opened(game, mem);
     await expect.element(saveState()).toHaveAttribute('data-save-status', 'saved');
     const oldId = game.currentId;
-    const touched = vi.spyOn(game, 'touched');
     await addClock();
     expect(game.newGame()).toEqual({ ok: true });
+    const fresh = game.read(game.currentId);
+    expect(fresh).not.toBeNull();
     const old = game.read(oldId)!;
     const rec = JSON.parse(old.policy!) as { plan: string };
     const policy = (JSON.parse(rec.plan) as SimDoc4).policy;
@@ -333,7 +351,8 @@ describe('/sim in a game', () => {
     await tick();
     r.unmount();
     expect(mem.getItem(SIM_KEY4)).toBeNull();
-    expect(touched).not.toHaveBeenCalled();
+    // The flush's write touches like any write; after an `ok` change the store ignores it.
+    expect(game.read(game.currentId)).toEqual(fresh);
   });
 
   it('the page registers one flush and removes it on unmount', async () => {
@@ -424,6 +443,24 @@ describe('/sim in a game', () => {
     await expect
       .element(page.getByRole('status').filter({ hasText: 'Level 3. Permitting unlocked.' }))
       .toBeInTheDocument();
+  });
+
+  it('a level that falls (a new game) announces nothing', async () => {
+    const mem = new MemoryStorage();
+    const game = gameAt(3, { bar: BAR, storage: mem });
+    await opened(game, mem);
+    expect(game.newGame()).toEqual({ ok: true });
+    game.setOffer({ on: null, datasetVersion: 'fixture-0' });
+    game.levelUp();
+    expect(game.progress.level).toBe(2);
+    await tick();
+    await tick();
+    expect(
+      page
+        .getByRole('status')
+        .filter({ hasText: /Level \d/ })
+        .elements()
+    ).toHaveLength(0);
   });
 
   it('new controls pass axe in light and dark', async () => {

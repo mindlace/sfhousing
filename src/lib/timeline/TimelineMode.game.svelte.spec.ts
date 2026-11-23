@@ -88,6 +88,7 @@ function setup(over: Over = {}) {
     setPolicy?: (p: SimPolicy4) => void;
     setRun?: (p: SimPolicy4) => void;
     setLots?: (l: Lots | null) => void;
+    setLotsFailed?: (f: boolean) => void;
   } = {};
   const createWorker = vi.fn(() => {
     const f = new FakeTimelineWorker();
@@ -122,7 +123,8 @@ function setup(over: Over = {}) {
     r,
     setPolicy: (p: SimPolicy4) => ctl.setPolicy!(p),
     setRun: (p: SimPolicy4) => ctl.setRun!(p),
-    setLots: (l: Lots | null) => ctl.setLots!(l)
+    setLots: (l: Lots | null) => ctl.setLots!(l),
+    setLotsFailed: (f: boolean) => ctl.setLotsFailed!(f)
   };
 }
 
@@ -277,6 +279,29 @@ describe('TimelineMode in a game', () => {
     expect(none('tl-win')).toBeNull();
   });
 
+  it('an edit that closes the card with focus in it moves focus to the ruler', async () => {
+    const s = await opened({ game: gameAt(2), goal: metAt8, initialPolicy: mk(protect(5)) });
+    await keysTo(8);
+    await expect.poll(() => document.activeElement).toBe(cardButton('Level up').element());
+    await edit(s);
+    expect(none('tl-win')).toBeNull();
+    await expect.poll(() => document.activeElement).toBe(ruler());
+  });
+
+  it("an edit whose lots fail sees no result: the numbers on show are the last sent document's", async () => {
+    const game = gameAt(2);
+    const s = await opened({ game, goal: metAt8, initialPolicy: mk(protect(5)) });
+    await edit(s);
+    s.setLots(null);
+    s.setLotsFailed(true);
+    await expect.poll(() => debug().stale).toBe(false);
+    await keysTo(8);
+    await tick();
+    expect(none('tl-win')).toBeNull();
+    expect(none('tl-goal-notice')).toBeNull();
+    expect(game.offer).toBeNull();
+  });
+
   it('level 3 messages name the bar', async () => {
     const s = await opened({ game: gameAt(3, { bar: MONTHS[6] }), goal: metAt8 });
     await keysTo(8);
@@ -342,6 +367,19 @@ describe('TimelineMode in a game', () => {
     await levelsUp(async (game) => {
       game.levelUp();
     });
+  });
+
+  it('a level that falls (a new game) is no level up: the clock stays', async () => {
+    const game = gameAt(3, { bar: MONTHS[6] });
+    await opened({ game, goal: metAt8 });
+    await keysTo(8);
+    expect(game.newGame()).toEqual({ ok: true });
+    game.setOffer({ on: null, datasetVersion: 'fixture-0' });
+    game.levelUp();
+    expect(game.progress.level).toBe(2);
+    await tick();
+    await tick();
+    expect(debug().day).toBe(MONTHS[8]);
   });
 
   /** Level 5 won at month 8 and levelled up: the round is complete. */

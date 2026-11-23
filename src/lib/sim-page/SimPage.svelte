@@ -205,8 +205,15 @@
 
   /** What the game lets run and be edited; every control without one. */
   const allowed = $derived<Allowed>(game?.allowed ?? ALL_ALLOWED);
+  /** Each playable document that differs from its whole one, to the whole one it came from. */
+  const wholeOf = new WeakMap<SimPolicy4, SimPolicy4>();
   /** The playable document: what the worker runs and Publish sends. Autosave keeps the whole one. */
-  const run = $derived(playable(store.policy, allowed));
+  const run = $derived.by(() => {
+    const whole = store.policy;
+    const r = playable(whole, allowed);
+    if (r !== whole) wholeOf.set(r, whole);
+    return r;
+  });
   const zoningLocked = $derived(!allowed.kinds.has('zoning'));
   /** The goal's amount over the default (X1's seam), read once. */
   const goalAmount = untrack(() => e2eGoalAmount(storage()));
@@ -332,14 +339,13 @@
   /**
    * Before the game changes (G2 `beforeLeave`): the current document goes to the autosave, which
    * writes it now, so an edit still in the debounce, or not yet handed over by the effect above,
-   * is in the policy record. The store copies the records out next, so this write touches nothing.
+   * is in the policy record. The write touches the game like any write.
    */
   function leave(): void {
     const a = autosave;
     if (!a || !saving) return;
     a.schedule(doc);
     a.flush();
-    statusBefore = a.status;
   }
 
   // `onpublished` may fire after the dialog closed and the user kept editing: take the title
@@ -525,7 +531,7 @@
     const complete = g ? roundComplete(g.progress) : false;
     const now = allowed;
     untrack(() => {
-      const rose = level !== null && levelBefore !== null && level !== levelBefore;
+      const rose = level !== null && levelBefore !== null && level > levelBefore;
       const completed = complete && !completeBefore;
       const was = allowedBefore;
       levelBefore = level;
@@ -1270,7 +1276,7 @@
   onlotsretry={() => sync.failed.forEach((k) => sync.retry(k))}
   {readonly}
   onedit={(change, label) => store.apply(change, label)}
-  onundoto={(p) => store.undoTo(p, 'Reverted a change')}
+  onundoto={(p) => store.undoTo(wholeOf.get(p) ?? p, 'Reverted a change')}
   {selected}
   onselect={select}
   onadd={startAdd}

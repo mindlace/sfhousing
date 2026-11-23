@@ -258,7 +258,10 @@ export function addPolicy(
   };
 }
 
-/** `after` with each given measure whose first span's `from` moved since `before` re-dated; `after` itself when none moved. */
+/**
+ * `after` with each given measure whose first span's `from` moved since `before` re-dated;
+ * `after` itself when none moved.
+ */
 export function redateMoved(before: SimPolicy4, after: SimPolicy4, cal: Calibration): SimPolicy4 {
   const was = new Map(before.kinds.money.map((p) => [p.id, p]));
   let changed = false;
