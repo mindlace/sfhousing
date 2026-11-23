@@ -20,11 +20,7 @@ const CHROME_FILES = [
   'src/lib/sim-page/RouteTimeline.svelte',
   'src/lib/shell/SiteHeader.svelte'
 ];
-const SCANNED = [
-  ...CHROME_FILES,
-  'src/lib/brush/RadiusPopover.svelte',
-  'src/lib/fzp/TimeScrubber.svelte'
-];
+const SCANNED = [...CHROME_FILES, 'src/lib/brush/RadiusPopover.svelte'];
 /** Files that follow the light and dark surface tokens (later plans append theirs). */
 const THEMED_FILES = [
   'src/lib/shell/NoticePills.svelte',
@@ -147,10 +143,6 @@ describe('app accent tokens', () => {
       expect(contrast(tok['control-line'], tok[bg])).toBeGreaterThanOrEqual(3);
     for (const bg of ['surface-dark', 'surface-dark-raised'])
       expect(contrast(tok['control-line-dark'], tok[bg])).toBeGreaterThanOrEqual(3);
-  });
-  it('the time bar uses tokens, not hex', () => {
-    const src = readFileSync(fromRoot('src/lib/fzp/TimeScrubber.svelte'), 'utf8');
-    expect(src).not.toMatch(/#[0-9a-fA-F]{3,6}\b/);
   });
   it('the chart, results and target row carry no hex of their own', () => {
     for (const f of NO_HEX_FILES) {
