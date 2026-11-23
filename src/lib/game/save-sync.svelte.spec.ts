@@ -37,9 +37,14 @@ class FakeStore {
   rekeyAnswer: StoreChange | null = null;
   switchTo = vi.fn();
   clock = T0;
+  /** The harness's requests and the store's adopts, in the order they were made. */
+  log: string[];
+  /** `beforeLeave`'s functions, called by an adopt of the current game as the store does. */
+  leaving: (() => void)[] = [];
 
-  constructor(sync: SaveSync, saves: GameSave[]) {
+  constructor(sync: SaveSync, saves: GameSave[], log: string[] = []) {
     this.sync = sync;
+    this.log = log;
     for (const s of saves) this.games.set(s.id, structuredClone(s));
     this.currentId = saves[0]?.id ?? '';
   }
@@ -90,9 +95,23 @@ class FakeStore {
     return { ok: true };
   }
 
+  beforeLeave(fn: () => void): () => void {
+    this.leaving.push(fn);
+    return () => {
+      this.leaving = this.leaving.filter((f) => f !== fn);
+    };
+  }
+
+  /** As `GameStore.adopt`: saves holding the current id run the flushes; one that wrote answers changed. */
   adopt(saves: readonly GameSave[]): StoreChange {
     if (this.adoptAnswer) return this.adoptAnswer;
+    if (saves.some((s) => s.id === this.currentId)) {
+      const before = this.read(this.currentId)?.savedAt;
+      for (const fn of [...this.leaving]) fn();
+      if (this.read(this.currentId)?.savedAt !== before) return { ok: false, reason: 'changed' };
+    }
     for (const s of saves) this.games.set(s.id, structuredClone(s));
+    this.log.push(`adopt ${saves.map((s) => s.id).join(' ')}`);
     return { ok: true };
   }
 
@@ -147,6 +166,7 @@ function harness(
 ) {
   let signed = $state(o.signedIn ?? false);
   const reqs: Req[] = [];
+  const log: string[] = [];
   let rev = 0;
   // A GET answers 404 unless a test answers it: the pull at attach signed in then changes nothing,
   // so the tests about sending see only their own requests.
@@ -168,6 +188,7 @@ function harness(
       raw
     };
     reqs.push(r);
+    log.push(`${r.method} ${r.url}`);
     // As the routes' same-origin JSON check: a write not sent as JSON is 415.
     if (r.method !== 'GET' && r.type !== 'application/json') {
       return quick(new Response(null, { status: 415 }));
@@ -176,12 +197,13 @@ function harness(
   } as typeof fetch;
   const storage = o.storage === undefined ? new MemoryStorage() : o.storage;
   const sync = createSaveSync({ storage, fetchFn, signedIn: () => signed });
-  const store = new FakeStore(sync, o.saves ?? []);
+  const store = new FakeStore(sync, o.saves ?? [], log);
   if (o.attach !== false) sync.attach(store as unknown as GameStore);
   return {
     sync,
     store,
     reqs,
+    log,
     storage,
     puts: () => reqs.filter((r) => r.method === 'PUT'),
     answer(fn: (r: Req) => Answer) {
@@ -741,6 +763,7 @@ async function pulled(o: {
   const rec: SyncRecord = { v: 1, seen: o.seen ?? {}, deleting: o.deleting ?? [] };
   storage.setItem(SAVE_REVS_KEY, JSON.stringify(rec));
   const h = harness({ saves: o.saves, signedIn: true, storage, attach: false });
+  reload.mockImplementation(() => void h.log.push('reload'));
   h.answer(account(o.listed ?? [], o.removed ?? []));
   h.sync.attach(h.store as unknown as GameStore);
   // The pull attach started: a pull called while one runs is that pull.
@@ -1096,6 +1119,169 @@ describe('pull', () => {
     expect(calls(h.puts())).toEqual([`PUT /api/game/${z.id}`]);
     expect(h.sync.state).toBe('full');
     expect(h.record().seen[x.id]).toBeUndefined();
+  });
+
+  it('adopts the current game last, after every other step', async () => {
+    const cur = mk('Here', true);
+    const theirs: GameSave = { ...cur, plan: 'their plan', savedAt: '2026-11-21T10:00:00.000Z' };
+    const x = mk('There', true, '2026-11-21T08:00:00.000Z');
+    const y = mk('Unsent', true);
+    const h = await pulled({
+      saves: [cur, y],
+      seen: seenOf(cur),
+      listed: [
+        { save: theirs, rev: 2 },
+        { save: x, rev: 3 }
+      ]
+    });
+    expect(h.log).toEqual([
+      'GET /api/game',
+      `GET /api/game/${cur.id}`,
+      `GET /api/game/${x.id}`,
+      `adopt ${x.id}`,
+      `PUT /api/game/${y.id}`,
+      `adopt ${cur.id}`,
+      'reload'
+    ]);
+    expect(h.store.read(cur.id)).toEqual(theirs);
+    expect(h.record().seen[cur.id]).toEqual({ rev: 2, savedAt: theirs.savedAt });
+  });
+
+  it('the current game changed after its GET answered is sent, never adopted', async () => {
+    const cur = mk('Here', true);
+    const theirs: GameSave = { ...cur, plan: 'their plan', savedAt: '2026-11-21T10:00:00.000Z' };
+    const x = mk('There', true, '2026-11-21T08:00:00.000Z');
+    const storage = new MemoryStorage();
+    storage.setItem(SAVE_REVS_KEY, JSON.stringify({ v: 1, seen: seenOf(cur), deleting: [] }));
+    const h = harness({ saves: [cur], signedIn: true, storage, attach: false });
+    const later = held();
+    h.answer((r) => {
+      if (r.url === '/api/game') {
+        return json(
+          200,
+          listBody(
+            [
+              { save: theirs, rev: 2 },
+              { save: x, rev: 3 }
+            ],
+            []
+          )
+        );
+      }
+      if (r.method === 'GET') {
+        return r.url.endsWith(cur.id) ? json(200, { rev: 2, save: theirs }) : later.promise;
+      }
+      return r.url.endsWith(cur.id) ? json(409, { rev: 2, save: theirs }) : json(200, line(1));
+    });
+    h.sync.attach(h.store as unknown as GameStore);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(calls(h.reqs)).toEqual([
+      'GET /api/game',
+      `GET /api/game/${cur.id}`,
+      `GET /api/game/${x.id}`
+    ]);
+    h.store.edit(cur.id, { plan: 'my plan' });
+    later.resolve(json(200, { rev: 3, save: x }));
+    await h.sync.pull();
+    await vi.advanceTimersByTimeAsync(0);
+    const put = h.puts()[0];
+    expect(put.url).toBe(`/api/game/${cur.id}`);
+    expect(put.body?.baseRev).toBe(1);
+    expect(put.body?.save.plan).toBe('my plan');
+    // The only adopt under the old id is keep both's, after the 409.
+    const copyId = h.store.currentId;
+    expect(h.log.slice(3)).toEqual([
+      `adopt ${x.id}`,
+      `PUT /api/game/${cur.id}`,
+      `adopt ${cur.id}`,
+      `PUT /api/game/${copyId}`
+    ]);
+    expect(h.store.read(copyId)).toMatchObject({ name: 'Here (this device)', plan: 'my plan' });
+    expect(h.store.read(cur.id)).toEqual(theirs);
+    expect(reload).not.toHaveBeenCalled();
+  });
+
+  it('an adopt of the current game answering changed sends it; the 409 keeps both', async () => {
+    const cur = mk('Here', true);
+    const theirs: GameSave = { ...cur, plan: 'their plan', savedAt: '2026-11-21T10:00:00.000Z' };
+    const storage = new MemoryStorage();
+    storage.setItem(SAVE_REVS_KEY, JSON.stringify({ v: 1, seen: seenOf(cur), deleting: [] }));
+    const h = harness({ saves: [cur], signedIn: true, storage, attach: false });
+    // An edit still waiting in the page's autosave, written by the flush the adopt runs.
+    let flushed = false;
+    h.store.beforeLeave(() => {
+      if (flushed) return;
+      flushed = true;
+      h.store.edit(cur.id, { plan: 'my plan' });
+    });
+    const put = held();
+    h.answer((r) => {
+      if (r.url === '/api/game') return json(200, listBody([{ save: theirs, rev: 2 }], []));
+      if (r.method === 'GET') return json(200, { rev: 2, save: theirs });
+      return r.url.endsWith(cur.id) ? put.promise : json(200, line(1));
+    });
+    h.sync.attach(h.store as unknown as GameStore);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(flushed).toBe(true);
+    expect(calls(h.reqs)).toEqual([
+      'GET /api/game',
+      `GET /api/game/${cur.id}`,
+      `PUT /api/game/${cur.id}`
+    ]);
+    expect(h.puts()[0].body?.baseRev).toBe(1);
+    expect(h.puts()[0].body?.save.plan).toBe('my plan');
+    expect(h.record().seen[cur.id]).toEqual({ rev: 1, savedAt: cur.savedAt });
+    put.resolve(json(409, { rev: 2, save: theirs }));
+    await h.sync.pull();
+    await vi.advanceTimersByTimeAsync(0);
+    const copyId = h.store.currentId;
+    expect(copyId).not.toBe(cur.id);
+    expect(h.store.read(copyId)).toMatchObject({ name: 'Here (this device)', plan: 'my plan' });
+    expect(h.store.read(cur.id)).toEqual(theirs);
+    expect(h.record().seen[cur.id]).toEqual({ rev: 2, savedAt: theirs.savedAt });
+    expect(reload).not.toHaveBeenCalled();
+  });
+
+  it('an adopt of the current game reloads at once, before any later request', async () => {
+    const cur = mk('Here', true);
+    const theirs: GameSave = { ...cur, plan: 'their plan', savedAt: '2026-11-21T10:00:00.000Z' };
+    const a = mk('A', true, '2026-11-21T12:00:00.000Z');
+    const storage = new MemoryStorage();
+    storage.setItem(SAVE_REVS_KEY, JSON.stringify({ v: 1, seen: seenOf(cur, a), deleting: [] }));
+    const h = harness({ saves: [cur, a], signedIn: true, storage, attach: false });
+    reload.mockImplementation(() => void h.log.push('reload'));
+    const get = held();
+    const listed = [
+      { save: a, rev: 1 },
+      { save: theirs, rev: 2 }
+    ];
+    h.answer((r) => {
+      if (r.url === '/api/game') return json(200, listBody(listed, []));
+      if (r.method === 'GET') return get.promise;
+      return json(200, line(2));
+    });
+    h.sync.attach(h.store as unknown as GameStore);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(calls(h.reqs)).toEqual(['GET /api/game', `GET /api/game/${cur.id}`]);
+    // A send that comes due during the pull waits for its end.
+    h.store.edit(a.id);
+    await vi.advanceTimersByTimeAsync(2000);
+    get.resolve(json(200, { rev: 2, save: theirs }));
+    await h.sync.pull();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.log).toEqual([
+      'GET /api/game',
+      `GET /api/game/${cur.id}`,
+      `adopt ${cur.id}`,
+      'reload'
+    ]);
+    expect(reload).toHaveBeenCalledTimes(1);
+    expect(h.record().seen[cur.id]).toEqual({ rev: 2, savedAt: theirs.savedAt });
+    // The next pull finds the same rev: no adopt, no reload; the waiting send goes.
+    await h.sync.pull();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.log.slice(4)).toEqual(['GET /api/game', `PUT /api/game/${a.id}`]);
+    expect(reload).toHaveBeenCalledTimes(1);
   });
 
   it('runs when the page becomes visible with a session, not without', async () => {
