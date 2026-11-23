@@ -251,9 +251,10 @@ const count = (n: number) => n.toLocaleString('en-US');
 /** The lines the command prints. */
 export function level2Lines(r: Level2Result): string[] {
   const by = formatShortMonthYear(r.deadline);
+  const short = count(r.amount - r.homesAtDeadline);
   const third =
     r.reachedOn === null
-      ? `Missed: ${count(r.homesAtDeadline)} homes by ${by}, ${count(r.amount - r.homesAtDeadline)} short`
+      ? `Missed: ${count(r.homesAtDeadline)} homes by ${by}, ${short} short`
       : `Reached: ${formatShortMonthYear(r.reachedOn)}, ${count(r.marginMonths!)} ` +
         `${r.marginMonths === 1 ? 'month' : 'months'} before the window's end`;
   return [`Dataset ${r.datasetVersion}`, `Goal: ${count(r.amount)} homes by ${by}`, third];
