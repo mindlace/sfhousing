@@ -251,6 +251,9 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - resent to incremental-game-closing
 - notified incremental-game-game-shell: sibling incremental-game-game-shell-1
 - 18:25 `session absent` for reach-check and closing is not a death: `claude agents --json --all` lists both in state `done` (turn finished, plan ready, waiting for admission); a finished `--bg` session leaves the default listing after a while, and a message to its name resumes it. For a planning unit with its plan ledgered, or a unit that sent `complete`, treat `absent` as resting: no rung, no restart; send the admit or fix-round message when due and restart only if that send fails. mail-setup and contracts, complete and waiting to merge, are marked `seen` on each beat rather than asked.
+- status asked game-core
+- 18:55 correction to the 18:25 note: a `done` session that has left the default listing is NOT reachable by message (SendMessage to incremental-game-closing: "No agent named ... is reachable"). So for a planning unit with its plan ledgered that shows `absent` (closing, reach-check, funding-measures so far): no rung and no restart while it has nothing to do; at admission, launch it again as a restart from its assignment (Plan: its plan, Admitted: yes), with its resends. The `relayed remove-lesscars-1 to incremental-game-closing` line records a relay that was not delivered and is owed in those resends; at that restart also tell closing to re-read § sec-design-sweep and § sec-design-leftovers (rulings conductor-4, conductor-5, remove-lesscars-1) and funding-measures to re-read its level and window sections (ruling conductor-5: it needs F3, `MoneyView.shut`).
+- game-core status reply 18:55: tasks 1, 2, 4 passed review; task 3 in a fix round for ruling game-core-5 (row G3 follows); working on task 5; held on nothing.
 
 ## Questions
 - 2026-11-22 conductor-1 from conductor [defect-class: owner-ruling-drift]: gate-1, a policy already saved in the browser becomes a level-1 game, and every kind in it is locked (major) → rulings/conductor-1.md (commit 7fbb5e32, changes contract: no)
@@ -354,6 +357,12 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - routed game-core-4
 - routing remove-lesscars-1: rulings/remove-lesscars-1.md, commit e4098219
 - build graph for remove-lesscars-1 @ none
+- relayed remove-lesscars-1 to incremental-game-remove-lesscars
+- relayed remove-lesscars-1 to incremental-game-closing
+- routed remove-lesscars-1
+- 2026-11-22 game-core-6 from game-core [defect-class: spec-silence]: what construction does when a getItem throws after the first one succeeded; blocks nothing (fork waits for the suite on the four merges) →
+- 2026-11-22 remove-multiuser-3 from remove-multiuser [defect-class: write-set-gap]: the removed-URL 404 e2e cases log `[WebServer] [404]` lines signoff rejects unless allow-listed in chreode.config.ts, which is closing's file (queued after game-core-6) →
+- 2026-11-22 game-core-7 from game-core [defect-class: spec-silence]: does the current game's entry in store.saves show its played time as savedAt, or only sort by it (spec :746); blocks nothing (queued after remove-multiuser-3) →
 
 ## Forks
 - fork checkpoint-2 started 2026-11-22T16:20
@@ -471,6 +480,9 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - spec-disagreement: 5 — adds game-core-4 (2026-11-22)
 - spec-disagreement: 6 — adds game-core-5 (2026-11-22)
 - write-set-gap: 3 — adds remove-lesscars-1 (2026-11-22); tripwire: re-checkpoint when its ruling is routed
+- spec-silence: 4 — adds game-core-6 (2026-11-22)
+- write-set-gap: 4 — adds remove-multiuser-3 (2026-11-22)
+- spec-silence: 5 — adds game-core-7 (2026-11-22)
 
 ## Integration
 - 17:50 merge of contracts @ f6ee1de3 made (merge commit 5453b107), full suite running in the package worktree (agent; logs in the session scratchpad `merge-contracts/`); not ledgered as merged until it passes. No amending fork starts until then; queued questions in order: remove-multiuser-1, game-core-1, game-core-2, game-core-3, game-sim-1, pool-closing-1, conductor-10, conductor-11. Then merge remove-multiuser's row I1 @ cbd11881.
@@ -480,6 +492,12 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - merge queue (after the running amending forks; one at a time, full suite each): remove-multiuser row I1 @ cbd11881; mail-setup complete @ 22dfc451; game-core row G1 @ 7d468698
 - merge queue adds: game-shell-1 complete @ 9285d15c (it also changed src/lib/about/AboutDialog.svelte.spec.ts, outside its assignment's Writes but inside game-shell's `src/lib/about` area; the operator decided that itself; the merge review checks it)
 - merge queue: game-core row G4 @ 2e20abaa contains G1 @ 7d468698; one merge at the newest reported sha delivers both rows
+- 18:50 four queued merges made in one pass onto 7473edeb (the ledger commit before them): I1 cbd11881 -> 87e02a7e, mail-setup 22dfc451 -> 47a3e6cf, game-core G1+G4 2e20abaa -> a7422aa6, game-shell-1 9285d15c -> 82bc19d4; one full suite running on 82bc19d4 (agent; logs in scratchpad `merge-batch2/`). One suite for four merges is the conductor's choice, to keep the package worktree free for rulings: nothing else writes there until it reports. None is ledgered as merged until it passes; on a failure, `git reset --hard 7473edeb` and merge them one at a time, each with its own suite.
+- merge queue: game-core row G3 @ 87e473e4 (after the suite on the four merges reports)
+- 19:20 suite on the four merges failed (check and lint pass; unit 1 failed; e2e 26 failed): all four taken back out with `git reset --hard 7473edeb` (ledger restored from a copy; none was ledgered as merged). The failures belong to two of them.
+- fix round game-shell-1 @ 9285d15c: unit src/routes/about/page.svelte.spec.ts:17 expects four parts, page now renders about-levels and about-saved-games; output fixrounds/game-shell-1-9285d15c.txt
+- fix round remove-multiuser @ cbd11881: 26 e2e failures in the account and auth specs that still drive /sims and POST /api/sims (the row report's commit is mid-unit); output fixrounds/remove-multiuser-cbd11881.txt
+- merge queue now: mail-setup complete @ 22dfc451 and game-core rows G1, G4, G3 @ 87e473e4 (no failure in the batch run pointed at either), after the queued rulings game-core-6, remove-multiuser-3, game-core-7; then one suite each.
 
 ## Cost
 - remove-lesscars: admitted 2026-11-22T16:31 seven_day 44% | session d889ec5c-3342-4a77-99f8-993f1115a679
