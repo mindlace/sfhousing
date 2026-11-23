@@ -77,12 +77,15 @@ export async function clientNavigate(page: Page, path: string): Promise<void> {
 
 /**
  * Below 1024 px, opens the header's Menu (where the actions live); from 1024 px, does nothing.
- * Waits for hydration first: the Menu toggle does nothing before it, so a click on a loaded
- * machine left `aria-expanded` false.
+ * Every spec opens the Menu through this. It waits for hydration first: a tap on the Menu button
+ * before hydration is lost (the toggle is a Svelte handler, and the server's HTML has none), so a
+ * click on a loaded machine left `aria-expanded` false (issues #96, #109). It finds the button by
+ * `[data-header-menu]`, which matches whatever its name ("Menu, level up ready" while an offer is
+ * set).
  */
 export async function openHeaderMenu(page: Page): Promise<void> {
   await expect(page.locator('html')).toHaveAttribute('data-hydrated', '');
-  const menu = page.getByRole('banner').getByRole('button', { name: 'Menu', exact: true });
+  const menu = page.getByRole('banner').locator('[data-header-menu]');
   if (!(await menu.isVisible())) return;
   if ((await menu.getAttribute('aria-expanded')) !== 'true') await menu.click();
   await expect(menu).toHaveAttribute('aria-expanded', 'true');
