@@ -5,6 +5,7 @@
   as the page does. Every announcement is recorded in order for the test to read.
 -->
 <script lang="ts">
+  import type { Allowed } from '$lib/game/allowed';
   import type { BrushCatalog } from '$lib/sim/levers/brushes';
   import { FundingDrafts } from '$lib/sim-page/funding-drafts.svelte';
   import { PolicyStore } from '$lib/sim-page/policy-store.svelte';
@@ -23,6 +24,8 @@
     initial?: SpanRef | null;
     catalog?: BrushCatalog | null;
     onready?: (h: { store: PolicyStore<SimPolicy4>; drafts: FundingDrafts }) => void;
+    /** What the level allows; the Inspector's default when absent. */
+    allowed?: Allowed;
   }
 
   let {
@@ -32,7 +35,8 @@
     readonly = false,
     initial = null,
     catalog = null,
-    onready = undefined
+    onready = undefined,
+    allowed = undefined
   }: Props = $props();
 
   // svelte-ignore state_referenced_locally
@@ -91,6 +95,7 @@
   {playheadDay}
   asOf={calibration.asOf}
   {readonly}
+  {allowed}
   announce={(m) => (announced = [...announced, m])}
   onclose={close}
   bind:adding
