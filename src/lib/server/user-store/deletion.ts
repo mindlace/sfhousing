@@ -13,6 +13,7 @@ import { skeleton } from './confusable-skeleton';
 import { sha256Hex } from '$lib/sharing/hash';
 import { survivorId } from './user';
 import { recordUserVersion } from './history';
+import { deleteGamesOf } from '$lib/server/game/store';
 
 const TOMBSTONE_TTL_MS = 365 * 24 * 60 * 60 * 1000;
 const HEX64 = /^[a-f0-9]{64}$/;
@@ -161,9 +162,12 @@ export async function closeAccountRows(args: {
   const idUnion = [sid, ...fusedIn.map((r) => r.id)];
   await hashPriorVersions(db, idUnion);
 
-  // 3. Purge credentials (by live user id).
+  // 3. Delete the saved games of every identity in the union, live and removed.
+  await deleteGamesOf(db, idUnion);
+
+  // 4. Purge credentials (by live user id).
   await purgeCredentialsAndSettings(db, live.id);
 
-  // 4. Tombstone fuse — LAST.
+  // 5. Tombstone fuse — LAST.
   await markIdentityDeleted(db, sid, now);
 }

@@ -28,7 +28,7 @@ function allForeignKeys(): string[] {
 }
 
 describe('auth schema', () => {
-  it('a freshly migrated database has exactly the nine identity tables and plan, and none of the five dropped', () => {
+  it('a freshly migrated database has exactly the identity tables, game_save and plan, and none of the five dropped', () => {
     const names = (
       t.sqlite.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as {
         name: string;
@@ -38,6 +38,7 @@ describe('auth schema', () => {
       .filter((n) => !/^(sqlite_|_cf_|d1_)/.test(n));
     expect(names.sort()).toEqual([
       'account',
+      'game_save',
       'handle_tombstone',
       'passkey',
       'plan',
@@ -63,6 +64,7 @@ describe('auth schema', () => {
   it('has exactly these foreign keys, targets and ON DELETE actions', () => {
     expect(allForeignKeys()).toEqual([
       'account.user_id -> user.id ON DELETE CASCADE',
+      'game_save.identity_id -> user_identity.id ON DELETE NO ACTION',
       'handle_tombstone.released_by -> user_identity.id ON DELETE NO ACTION',
       'passkey.user_id -> user.id ON DELETE CASCADE',
       'session.user_id -> user.id ON DELETE CASCADE',
