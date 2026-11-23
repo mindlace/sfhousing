@@ -1,0 +1,9 @@
+I checked the `game-core` row against its spec on disk. It still matches, so the row stays as it was. The game-core-4 and game-core-5 rulings changed what the spec says, but not its section ids or its write set.
+
+Because the file didn't change, nothing new was committed. The sha below is the current HEAD, the commit for game-core-4.
+
+Build graph @ ea38eb64
+Longest chain: contracts -> finite-funding -> pool-closing -> reach-check -> closing
+Longest chain: remove-lesscars -> finite-funding -> pool-closing -> reach-check -> closing
+Longest chain: contracts -> finite-funding -> pool-closing -> funding-measures -> closing
+Longest chain: remove-lesscars -> finite-funding -> pool-closing -> funding-measures -> closing

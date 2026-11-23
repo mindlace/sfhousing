@@ -1,6 +1,6 @@
 # Superconductor ledger — design: docs/superpowers/design/2026-11-22-1216-incremental-game.html
 Package worktree: /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game
-Build graph: docs/superpowers/design/2026-11-22-1216-incremental-game-build-graph.md @ 62daef28
+Build graph: docs/superpowers/design/2026-11-22-1216-incremental-game-build-graph.md @ 8c333372
 SDD scripts: /Users/mindlace/.claude/plugins/cache/claude-plugins-official/superpowers/7.0.2/skills/subagent-driven-development/scripts
 HTML scripts: /Users/mindlace/.claude/plugins/cache/super/superpowers-html/0.1.0/bin
 Project commands: npm, npx, lsof, ls, cat, grep, head, tail, wc, pwd, uptime, mkdir (mail-setup only, also: aws); operators run with --permission-mode dontAsk
@@ -14,6 +14,10 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - b8fa7c6a-de2e-40f3-a04f-15f90d42a5fe | model opus | package @ 9e29eca2 | 2026-11-22 | ruling conductor-5
 - a9ddd16a-7b25-4934-a4c9-9d0eac8629f1 | model opus | package @ 273fd4b8 | 2026-11-22 | ruling conductor-7
 - a3ad481c-36b0-4bc2-9764-7c4fab5441b4 | model opus | package @ 62daef28 | 2026-11-22 | ruling conductor-9
+- 3404b8e7-a3d2-41ad-95b9-d74ce9d23446 | model opus | package @ 216723b7 | 2026-11-22 | ruling game-core-3
+- 8ac96a89-fb8e-4362-93a2-9d59d1eb043c | model opus | package @ 8c333372 | 2026-11-22 | ruling remove-multiuser-2
+- 1a5b1e8d-355d-4d56-a465-f13004c40ffd | model opus | package @ ea38eb64 | 2026-11-22 | ruling game-core-4
+- 541c3a39-ec25-44a6-9ed7-fc100c2444b5 | model opus | package @ e4098219 | 2026-11-22 | ruling remove-lesscars-1
 
 ## 2026-11-22 — composition started (supercomposer, fresh)
 
@@ -197,6 +201,9 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - closing: incremental-game-closing — status: launching (branch incremental-game-closing, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-closing, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus — rationale: whole-tree sweep, dataset upload and signoff, needs: G4's build check from reach-check (not merged yet); G1–G5, S1–S3, I1, F1, F2, F3, M1, L1, X1, all built (not merged yet); every other unit merged (not merged yet), produces: none)
 - closing: incremental-game-closing — status: planning (branch incremental-game-closing, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-closing, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus — rationale: whole-tree sweep, dataset upload and signoff, needs: G4's build check from reach-check (not merged yet); G1–G5, S1–S3, I1, F1, F2, F3, M1, L1, X1, all built (not merged yet); every other unit merged (not merged yet), produces: none)
 - contracts: incremental-game-contracts — status: complete (branch incremental-game-contracts, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-contracts, start 7fbb5e32c72b3dcd416f7ef214536376a7c22b5c, model opus — rationale: every contract row; root of the longest chain, needs: none, produces: G1–G5 (types and stubs), S1 (types), S2 and S3 (stubs), M1 (stub), X1 (working))
+- game-shell-1: incremental-game-game-shell-1 — status: launching (branch incremental-game-game-shell-1, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-game-shell-1, start cf1ff6e50e891279a77dc411c45e929643ffb936, model opus — rationale: sibling lane of game-shell, same tier as its plan's author, needs: G2 stub (merged), produces: none)
+- game-shell-1: incremental-game-game-shell-1 — status: admitted (branch incremental-game-game-shell-1, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-game-shell-1, start cf1ff6e50e891279a77dc411c45e929643ffb936, model opus — rationale: sibling lane of game-shell, same tier as its plan's author, needs: G2 stub (merged), produces: none)
+- game-core: incremental-game-game-core — status: admitted (admit message sent at a333bd83; branch incremental-game-game-core, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-game-core, model opus, needs: G1–G5, S2, S3, X1 (merged), produces: G1–G5 (built))
 
 ## Supervision
 - status asked remove-lesscars
@@ -242,6 +249,8 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - resent to incremental-game-pool-closing
 - resent to incremental-game-reach-check
 - resent to incremental-game-closing
+- notified incremental-game-game-shell: sibling incremental-game-game-shell-1
+- 18:25 `session absent` for reach-check and closing is not a death: `claude agents --json --all` lists both in state `done` (turn finished, plan ready, waiting for admission); a finished `--bg` session leaves the default listing after a while, and a message to its name resumes it. For a planning unit with its plan ledgered, or a unit that sent `complete`, treat `absent` as resting: no rung, no restart; send the admit or fix-round message when due and restart only if that send fails. mail-setup and contracts, complete and waiting to merge, are marked `seen` on each beat rather than asked.
 
 ## Questions
 - 2026-11-22 conductor-1 from conductor [defect-class: owner-ruling-drift]: gate-1, a policy already saved in the browser becomes a level-1 game, and every kind in it is locked (major) → rulings/conductor-1.md (commit 7fbb5e32, changes contract: no)
@@ -280,17 +289,71 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - build graph for conductor-9 @ 62daef28
 - relayed conductor-9 to incremental-game-contracts
 - routed conductor-9
-- 2026-11-22 remove-multiuser-1 from remove-multiuser [defect-class: interface-signature]: I1 names refuseUnlessSameOriginJson(event: RequestEvent) but the code takes a structural { request; url } →
-- 2026-11-22 game-core-1 from game-core [defect-class: spec-silence]: does adopt() of the current game's id apply the sfhousing:sim:v1 removal rule →
-- 2026-11-22 game-core-2 from game-core [defect-class: spec-silence]: what the store does when a write is refused during construction steps 4–7 →
-- 2026-11-22 game-core-3 from game-core [defect-class: spec-silence]: in the rebuild, what happens to a found save whose id differs from its key →
-- 2026-11-22 game-sim-1 from game-sim [defect-class: write-set-gap]: removing /sim's Remix hand-off breaks src/routes/s/[id]/page.view.svelte.spec.ts:215-230, outside game-sim's write set →
-- 2026-11-22 pool-closing-1 from pool-closing [defect-class: spec-code-mismatch]: expectNoA11yViolations takes a Playwright Page; which a11y check does MoneyResults.svelte.spec.ts run →
-- 2026-11-22 conductor-10 from conductor [defect-class: spec-disagreement]: game-core and game-shell specs disagree on who writes the rest of +layout.svelte (reported by game-shell) →
-- 2026-11-22 conductor-11 from conductor [defect-class: write-set-gap]: game-shell e2e uses /api/e2e/plans, in remove-multiuser's write set, with no row between them (reported by game-shell) →
+- 2026-11-22 remove-multiuser-1 from remove-multiuser [defect-class: interface-signature]: I1 names refuseUnlessSameOriginJson(event: RequestEvent) but the code takes a structural { request; url } → rulings/remove-multiuser-1.md (commit none, changes contract: no)
+- 2026-11-22 game-core-1 from game-core [defect-class: spec-silence]: does adopt() of the current game's id apply the sfhousing:sim:v1 removal rule → rulings/game-core-1.md (commit 5bde42a0, changes contract: no)
+- 2026-11-22 game-core-2 from game-core [defect-class: spec-silence]: what the store does when a write is refused during construction steps 4–7 → rulings/game-core-2.md (commit 84820370, changes contract: no)
+- 2026-11-22 game-core-3 from game-core [defect-class: spec-silence]: in the rebuild, what happens to a found save whose id differs from its key → rulings/game-core-3.md (commit 216723b7, changes contract: no)
+- 2026-11-22 game-sim-1 from game-sim [defect-class: write-set-gap]: removing /sim's Remix hand-off breaks src/routes/s/[id]/page.view.svelte.spec.ts:215-230, outside game-sim's write set → rulings/game-sim-1.md (commit 70f0bc16, changes contract: no)
+- 2026-11-22 pool-closing-1 from pool-closing [defect-class: spec-code-mismatch]: expectNoA11yViolations takes a Playwright Page; which a11y check does MoneyResults.svelte.spec.ts run → rulings/pool-closing-1.md (commit →, changes contract: no)
+- 2026-11-22 conductor-10 from conductor [defect-class: spec-disagreement]: game-core and game-shell specs disagree on who writes the rest of +layout.svelte (reported by game-shell) → rulings/conductor-10.md (commit 464b4eca, changes contract: no)
+- 2026-11-22 conductor-11 from conductor [defect-class: write-set-gap]: game-shell e2e uses /api/e2e/plans, in remove-multiuser's write set, with no row between them (reported by game-shell) → rulings/conductor-11.md (commit f688728b, changes contract: no)
 - 2026-11-22 mail-setup-1 from mail-setup [defect-class: owner-action]: DNS records and a test address → answered by message, no fork (owner action: records added by the conductor, address from the owner)
 - routed mail-setup-1
-- 2026-11-22 remove-multiuser-2 from remove-multiuser [defect-class: spec-code-mismatch]: mintTestPseudonym's email literal is mixed-case, Better-Auth lower-cases emails (queued after conductor-11) →
+- 2026-11-22 remove-multiuser-2 from remove-multiuser [defect-class: spec-code-mismatch]: mintTestPseudonym's email literal is mixed-case, Better-Auth lower-cases emails (queued after conductor-11) → rulings/remove-multiuser-2.md (commit d9ff075b, changes contract: no)
+- routing remove-multiuser-1: rulings/remove-multiuser-1.md, commit none
+- routed remove-multiuser-1
+- routing game-core-1: rulings/game-core-1.md, commit 5bde42a0
+- build graph for game-core-1 @ none
+- relayed remove-multiuser-1 to incremental-game-remove-multiuser
+- relayed game-core-1 to incremental-game-game-core
+- routed game-core-1
+- routing game-core-2: rulings/game-core-2.md, commit 84820370
+- build graph for game-core-2 @ none
+- routing game-core-3: rulings/game-core-3.md, commit 216723b7
+- build graph for game-core-3 @ none
+- relayed game-core-2 to incremental-game-game-core
+- routed game-core-2
+- relayed game-core-3 to incremental-game-game-core
+- routed game-core-3
+- 2026-11-22 game-core-4 from game-core [defect-class: spec-disagreement]: spec :657 says remove(current) copies out, the transitions table :676 says it does not (queued after remove-multiuser-2) → rulings/game-core-4.md (commit ea38eb64, changes contract: yes)
+- routing game-sim-1: rulings/game-sim-1.md, commit 70f0bc16
+- build graph for game-sim-1 @ 3807f089
+- routing pool-closing-1: rulings/pool-closing-1.md, commit 0af26e4b (the ruling file's header carries a stray lint-staged line before the sha)
+- build graph for pool-closing-1 @ d0a773d8
+- routing conductor-10: rulings/conductor-10.md, commit 464b4eca
+- build graph for conductor-10 @ d7b7c269
+- routing conductor-11: rulings/conductor-11.md, commit f688728b
+- build graph for conductor-11 @ 2a881de8
+- routing remove-multiuser-2: rulings/remove-multiuser-2.md, commit d9ff075b
+- build graph for remove-multiuser-2 @ 8c333372
+- 2026-11-22 game-core-5 from game-core [defect-class: spec-disagreement]: levelNeeded of a money policy with a string preset on a non-money selector: G3's definition says 6, tbl-level-needed :535 says 5; holds row G3 → rulings/game-core-5.md (commit f4d1f349, changes contract: no)
+- relayed game-sim-1 to incremental-game-game-sim
+- relayed game-sim-1 to incremental-game-game-shell
+- routed game-sim-1
+- relayed pool-closing-1 to incremental-game-pool-closing
+- routed pool-closing-1
+- relayed conductor-10 to incremental-game-game-core
+- routed conductor-10
+- relayed conductor-11 to incremental-game-remove-multiuser
+- relayed conductor-11 to incremental-game-game-shell
+- routed conductor-11
+- relayed remove-multiuser-2 to incremental-game-remove-multiuser
+- routed remove-multiuser-2
+- routing game-core-5: rulings/game-core-5.md, commit f4d1f349
+- build graph for game-core-5 @ none
+- routing game-core-4: rulings/game-core-4.md, commit ea38eb64
+- build graph for game-core-4 @ none
+- 2026-11-22 remove-lesscars-1 from remove-lesscars [defect-class: write-set-gap]: scripts/data-transit.ts writes the parsed manifest back, losing L1's derived splitRoads mark on an older local dataset; the file is outside its write set → rulings/remove-lesscars-1.md (commit e4098219, changes contract: no)
+- relayed game-core-5 to incremental-game-game-core
+- relayed game-core-5 to incremental-game-game-sim
+- routed game-core-5
+- relayed game-core-4 to incremental-game-game-core
+- relayed game-core-4 to incremental-game-game-sim
+- relayed game-core-4 to incremental-game-game-save
+- relayed game-core-4 to incremental-game-game-shell
+- routed game-core-4
+- routing remove-lesscars-1: rulings/remove-lesscars-1.md, commit e4098219
+- build graph for remove-lesscars-1 @ none
 
 ## Forks
 - fork checkpoint-2 started 2026-11-22T16:20
@@ -338,6 +401,61 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - fork checkpoint-6 started 2026-11-22T16:50
 - fork checkpoint-6 exited [0]: output
 - fork review-contracts-f6ee1de3 started 2026-11-22T17:56
+- fork rule-remove-multiuser-1 started 2026-11-22T17:56
+- fork rule-remove-multiuser-1 exited [0]: output
+- fork rule-game-core-1 started 2026-11-22T17:56
+- fork review-contracts-f6ee1de3 exited [0]: output
+- fork rule-game-core-1 exited [0]: output
+- fork graph-game-core-1 started 2026-11-22T17:57
+- fork graph-game-core-1 exited [0]: output
+- fork rule-game-core-2 started 2026-11-22T17:57
+- fork rule-game-core-2 exited [0]: output
+- fork graph-game-core-2 started 2026-11-22T17:58
+- fork graph-game-core-2 exited [0]: output
+- fork rule-game-core-3 started 2026-11-22T17:58
+- fork rule-game-core-3 exited [0]: output
+- fork graph-game-core-3 started 2026-11-22T17:58
+- fork graph-game-core-3 exited [0]: output
+- fork checkpoint-7 started 2026-11-22T17:59
+- fork checkpoint-7 exited [0]: output
+- fork rule-game-sim-1 started 2026-11-22T18:01
+- fork rule-game-sim-1 exited [0]: output
+- fork graph-game-sim-1 started 2026-11-22T18:02
+- fork graph-game-sim-1 exited [0]: output
+- fork rule-pool-closing-1 started 2026-11-22T18:03
+- fork rule-pool-closing-1 exited [0]: output
+- fork graph-pool-closing-1 started 2026-11-22T18:03
+- fork graph-pool-closing-1 exited [0]: output
+- fork rule-conductor-10 started 2026-11-22T18:04
+- fork rule-conductor-10 exited [0]: output
+- fork graph-conductor-10 started 2026-11-22T18:04
+- fork graph-conductor-10 exited [0]: output
+- fork rule-conductor-11 started 2026-11-22T18:04
+- fork rule-conductor-11 exited [0]: output
+- fork graph-conductor-11 started 2026-11-22T18:05
+- fork graph-conductor-11 exited [0]: output
+- fork rule-remove-multiuser-2 started 2026-11-22T18:06
+- fork rule-remove-multiuser-2 exited [0]: output
+- fork graph-remove-multiuser-2 started 2026-11-22T18:06
+- fork graph-remove-multiuser-2 exited [0]: output
+- fork checkpoint-8 started 2026-11-22T18:07
+- fork checkpoint-8 exited [0]: output
+- fork rule-game-core-5 started 2026-11-22T18:08
+- fork rule-game-core-5 exited [0]: output
+- fork graph-game-core-5 started 2026-11-22T18:09
+- fork graph-game-core-5 exited [0]: output
+- fork rule-game-core-4 started 2026-11-22T18:09
+- fork rule-game-core-4 exited [0]: output
+- fork graph-game-core-4 started 2026-11-22T18:10
+- fork graph-game-core-4 exited [0]: output
+- fork checkpoint-9 started 2026-11-22T18:10
+- fork checkpoint-9 exited [0]: output
+- fork rule-remove-lesscars-1 started 2026-11-22T18:12
+- fork rule-remove-lesscars-1 exited [0]: output
+- fork graph-remove-lesscars-1 started 2026-11-22T18:13
+- fork graph-remove-lesscars-1 exited [0]: output
+- fork checkpoint-10 started 2026-11-22T18:13
+- fork checkpoint-10 exited [0]: output
 
 ## Frame-defect tally
 - owner-ruling-drift: 2 — instances: conductor-1 (gate-1, 2026-11-22); conductor-8 (gate-7, 2026-11-22)
@@ -350,11 +468,18 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - spec-code-mismatch: 1 — instances: pool-closing-1 (2026-11-22)
 - spec-disagreement: 4 — adds conductor-10 (2026-11-22)
 - spec-code-mismatch: 2 — adds remove-multiuser-2 (2026-11-22)
+- spec-disagreement: 5 — adds game-core-4 (2026-11-22)
+- spec-disagreement: 6 — adds game-core-5 (2026-11-22)
+- write-set-gap: 3 — adds remove-lesscars-1 (2026-11-22); tripwire: re-checkpoint when its ruling is routed
 
 ## Integration
 - 17:50 merge of contracts @ f6ee1de3 made (merge commit 5453b107), full suite running in the package worktree (agent; logs in the session scratchpad `merge-contracts/`); not ledgered as merged until it passes. No amending fork starts until then; queued questions in order: remove-multiuser-1, game-core-1, game-core-2, game-core-3, game-sim-1, pool-closing-1, conductor-10, conductor-11. Then merge remove-multiuser's row I1 @ cbd11881.
 - mail-setup sent `complete` @ 22dfc451 (doc only; both proof mails sent, SES identity verified, secrets set on staging and production): merge queued after contracts' suite and I1. Owner still to do, told: check dkim/spf/dmarc pass in both received mails, follow the staging link, the Google client step.
 - merged contracts [rows G1–G5 (types and stubs), S1 (types), S2, S3 (stubs), M1 (stub), X1 (working)] @ f6ee1de3 into superconductor/incremental-game, tests pass (check 0 errors; lint 0 errors; unit 10482 passed; e2e 851 passed, 0 failed), band low
+- No drift @ f6ee1de3 (review-contracts-f6ee1de3)
+- merge queue (after the running amending forks; one at a time, full suite each): remove-multiuser row I1 @ cbd11881; mail-setup complete @ 22dfc451; game-core row G1 @ 7d468698
+- merge queue adds: game-shell-1 complete @ 9285d15c (it also changed src/lib/about/AboutDialog.svelte.spec.ts, outside its assignment's Writes but inside game-shell's `src/lib/about` area; the operator decided that itself; the merge review checks it)
+- merge queue: game-core row G4 @ 2e20abaa contains G1 @ 7d468698; one merge at the newest reported sha delivers both rows
 
 ## Cost
 - remove-lesscars: admitted 2026-11-22T16:31 seven_day 44% | session d889ec5c-3342-4a77-99f8-993f1115a679
@@ -370,3 +495,4 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - pool-closing: admitted 2026-11-22T16:55 seven_day 46% | session 03f449ba-0085-4e9d-9fd4-d178230a1c89
 - reach-check: admitted 2026-11-22T16:55 seven_day 46% | session c0bed174-aec2-4512-a95a-75e2f45d284e
 - closing: admitted 2026-11-22T16:56 seven_day 46% | session 34af1a00-4be6-4ebd-a442-ddb896dfe9f9
+- game-shell-1: admitted 2026-11-22T17:57 seven_day 50% | session 20b9f13e-31fb-4c2f-b44b-10d478c01e5f
