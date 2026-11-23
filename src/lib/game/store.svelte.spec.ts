@@ -1000,6 +1000,35 @@ describe('GameStore.newGame and switchTo', () => {
       expect(sync.calls).toEqual([]);
     }
   });
+
+  it('a write refused after the v1 copy was written puts the keys back and removes the copy', () => {
+    const a = save();
+    const { s, store, sync } = over([a], { [PLAN_RECORD]: PLAN, [OLD_POLICY]: 'v1 text' });
+    const before = new Map(s.map);
+    const saves = store.saves;
+    const progress = store.progress;
+    s.failAt = 3;
+    expect(store.newGame()).toEqual({ ok: false, reason: 'storage' });
+    expect(s.writes.slice(0, 2)).toEqual([
+      'set ' + saveKey(a.id),
+      'set sfhousing:sim:corrupt:' + NOW
+    ]);
+    expect(s.getItem('sfhousing:sim:corrupt:' + NOW)).toBeNull();
+    expect(s.map).toEqual(before);
+    expect(store.currentId).toBe(a.id);
+    expect(store.saves).toBe(saves);
+    expect(store.progress).toBe(progress);
+    expect(sync.calls).toEqual([]);
+  });
+
+  it('a newGame refused mid-change keeps the offer', () => {
+    const a = save();
+    const { s, store } = over([a]);
+    store.setOffer(offer(1));
+    s.failAt = 2;
+    expect(store.newGame()).toEqual({ ok: false, reason: 'storage' });
+    expect(store.offer).toEqual(offer(1));
+  });
 });
 
 describe('GameStore.remix', () => {
