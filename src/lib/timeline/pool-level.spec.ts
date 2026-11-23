@@ -13,6 +13,7 @@ import { viewOf } from '$lib/sim/world/score/view';
 import { staticsOf } from '$lib/sim/world/statics';
 import { dayFromUtc } from '$lib/fzp/time';
 import type { Day } from '$lib/timelapse/time';
+import { isNoCeiling, LEGACY_UNCAPPED_DOLLARS } from '$lib/timelapse/model';
 import type { Pool } from '$lib/timelapse/types';
 import type { Policy, SimPolicy4 } from './policy4';
 import { levelLeft, levelPath, levelSet, poolLevel, type LevelPool } from './pool-level';
@@ -54,7 +55,7 @@ function money(pools: Series[]): MoneyView {
   } as MoneyView;
 }
 
-const capped = (id: string, leverage = 1): LevelPool => ({ id, leverage, uncapped: false });
+const capped = (id: string, leverage = 1): LevelPool => ({ id, leverage });
 const list = (a: ArrayLike<number>) => Array.from(a);
 
 describe('poolLevel', () => {
@@ -113,14 +114,11 @@ describe('poolLevel', () => {
     expect(list(poolLevel(money([a, b]), [capped('a'), capped('b')]))).toEqual([350 / 400]);
   });
 
-  it('an uncapped pool gives NaN; a policy with no own pool has no entry', () => {
+  it('NaN for a pool the money does not carry, and for no pool at all', () => {
     const fed = series('fed', [
       [0, 50, 0, 0, 0],
       [0, 80, 20, 0, 0]
     ]);
-    const l = poolLevel(money([fed]), [{ id: 'fed', leverage: 1, uncapped: true }]);
-    expect(list(l).every(Number.isNaN)).toBe(true);
-    // A pool the money does not carry, and no pool at all.
     expect(list(poolLevel(money([fed]), [capped('other')])).every(Number.isNaN)).toBe(true);
     expect(list(poolLevel(money([fed]), [])).every(Number.isNaN)).toBe(true);
   });
@@ -133,7 +131,7 @@ describe('poolLevel', () => {
 
 describe('poolLevel on a real ledger (the funded mini city)', () => {
   // The engine's own series for the funded mini city: a yearly City pool, a bank pool at leverage
-  // 0.8 paid once, an uncapped federal pool (finance-engine.md, the mini fixture).
+  // 0.8 paid once, a federal pool (finance-engine.md, the mini fixture).
   let m: MoneyView;
   let defs: Pool[];
   beforeAll(() => {
@@ -158,10 +156,10 @@ describe('poolLevel on a real ledger (the funded mini city)', () => {
     let refilled = 0;
     for (const def of defs) {
       const q = m.pools.find((p) => p.id === def.id)!;
-      const l = poolLevel(m, [{ id: def.id, leverage: def.leverage, uncapped: def.uncapped }]);
+      const l = poolLevel(m, [{ id: def.id, leverage: def.leverage }]);
       for (let i = 0; i < l.length; i++) {
         const cap = def.leverage * q.received[i];
-        if (def.uncapped || cap === 0) {
+        if (cap === 0) {
           expect(Number.isNaN(l[i]), `${def.id} ${i}`).toBe(true);
           continue;
         }
@@ -248,7 +246,6 @@ describe('levelSet', () => {
     kind: 'generalRevenue',
     label: id,
     inflows: [],
-    uncapped: false,
     debt: null,
     leverage: 1,
     ...over
@@ -282,8 +279,12 @@ describe('levelSet', () => {
       [300, 0, 0, 0, 0]
     ]),
     series('fed', [
+      [100, 0, 0, 0, 0],
+      [100, 40, 0, 0, 0]
+    ]),
+    series('legacy-fed', [
       [0, 0, 0, 0, 0],
-      [0, 40, 0, 0, 0]
+      [0, 30, 10, 0, 0]
     ]),
     series('u-bond', [
       [0, 0, 0, 0, 0],
@@ -298,12 +299,16 @@ describe('levelSet', () => {
       [100, 100, 0, 0, 0]
     ])
   ]);
-  const baseline = [pool('city'), pool('state'), pool('fed', { kind: 'federal', uncapped: true })];
+  /** A yearly inflow from the dataset date with no end. */
+  const yearly = (dollarsPerYear: number): Pool['inflows'] => [
+    { kind: 'yearly', from: ASOF, to: null, dollarsPerYear }
+  ];
+  const fed = pool('fed', { kind: 'federal', inflows: yearly(20_000_000) });
+  const baseline = [pool('city'), pool('state'), fed];
 
-  it('levelSet: one entry per fund policy with a capped pool; fixed sums the capped baseline pools', () => {
+  it('levelSet: one entry per fund policy with an own pool the money carries', () => {
     const d = doc(
       fund('bond', pool('u-bond')),
-      fund('free', pool('u-free', { uncapped: true })),
       fund('rides', null, 'city'),
       fund('bank', pool('u-bank', { kind: 'bank', leverage: 2 }))
     );
@@ -314,8 +319,34 @@ describe('levelSet', () => {
     expect(list(s.byPolicy.get('bond')!)).toEqual([NaN, 0.75]);
     // Leverage from the document's pool: 2 x 100 received, 100 committed.
     expect(list(s.byPolicy.get('bank')!)).toEqual([1, 0.5]);
-    // City and state, not the uncapped federal pool: (400 - 50) / 400.
-    expect(list(s.fixed!)).toEqual([1, 350 / 400]);
+  });
+
+  it('gives the federal pool a level', () => {
+    // Alone in the baseline: 100 received, 40 committed.
+    expect(list(levelSet(view(m), doc(), [fed], ASOF)!.fixed!)).toEqual([1, 0.6]);
+    // As a fund policy's own pool.
+    const s = levelSet(view(m), doc(fund('fed-own', fed)), [], ASOF)!;
+    expect(list(s.byPolicy.get('fed-own')!)).toEqual([1, 0.6]);
+  });
+
+  it('sums every baseline pool into Current funding', () => {
+    const s = levelSet(view(m), doc(), baseline, ASOF)!;
+    // City, state and federal: (500 - 50 - 40) / 500.
+    expect(list(s.fixed!)).toEqual([1, 410 / 500]);
+  });
+
+  it('gives a pool with a 100 billion yearly inflow no level and leaves it out of the sum', () => {
+    const legacy = pool('legacy-fed', {
+      kind: 'federal',
+      inflows: yearly(LEGACY_UNCAPPED_DOLLARS)
+    });
+    expect(isNoCeiling(LEGACY_UNCAPPED_DOLLARS)).toBe(true);
+    const s = levelSet(view(m), doc(fund('legacy-own', legacy)), [...baseline, legacy], ASOF)!;
+    expect(s.byPolicy.has('legacy-own')).toBe(false);
+    // The same sum as without it: (500 - 50 - 40) / 500.
+    expect(list(s.fixed!)).toEqual([1, 410 / 500]);
+    // Alone, nothing is summed.
+    expect(levelSet(view(m), doc(), [legacy], ASOF)!.fixed).toBeNull();
   });
 
   it("a pool's leverage is its definition in the window's last month, as the score's", () => {

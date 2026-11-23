@@ -3,14 +3,13 @@ import { RHNA_TIER_TARGETS } from '$lib/scoreboard';
 import { debtService } from '$lib/sim/finance';
 import { checkMoneyIdentities } from '$lib/sim/scenario/test/money-identities';
 import { INCOME_TIERS, type Pool } from '$lib/timelapse/types';
-import { TIMELINE_SCORE, TIMELINE_SCORE_MONEY } from './timeline-score';
+import { FIX_ASOF, TIMELINE_SCORE, TIMELINE_SCORE_MONEY } from './timeline-score';
 
 const uBond: Pool = {
   id: 'u-bond',
   kind: 'goBond',
   label: 'Added bond',
   inflows: [],
-  uncapped: false,
   debt: { rate: 0.06, termYears: 20 },
   leverage: 1
 };
@@ -18,8 +17,7 @@ const federal: Pool = {
   id: 'federal',
   kind: 'federal',
   label: 'Federal tax credits',
-  inflows: [],
-  uncapped: true,
+  inflows: [{ kind: 'yearly', from: FIX_ASOF, to: null, dollarsPerYear: 20_000_000 }],
   debt: null,
   leverage: 1
 };
