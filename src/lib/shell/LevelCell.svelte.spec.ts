@@ -6,7 +6,7 @@ import { cdp, page, userEvent } from 'vitest/browser';
 import axe from 'axe-core';
 import '../../routes/layout.css';
 import LevelCellHost from './test/LevelCellHost.svelte';
-import { seededGame } from './test/seeded-game';
+import { quietSync, seededGame } from './test/seeded-game';
 
 const cell = () => page.getByTestId('header-level');
 const levelUp = () => page.getByTestId('header-level-up');
@@ -141,6 +141,27 @@ describe('LevelCell', () => {
     expect(getComputedStyle(el).overflowY).toBe('auto');
     expect(el.scrollHeight).toBeGreaterThan(el.clientHeight);
   });
+
+  for (const width of [1280, 375])
+    it(`at ${width}px following a link in the panel closes it`, async () => {
+      await page.viewport(width, 800);
+      const sync = { ...quietSync(), state: 'sign-in' as const };
+      const { game } = seededGame({ level: 3, sync });
+      render(LevelCellHost, { game, routeId: '/sim' });
+      if (width < 1024) await menu().click();
+      await cell().click();
+      await expect.element(panel()).toBeVisible();
+      // The header outlives a client navigation (it is the root layout's): keep the frame here.
+      const stay = (e: MouseEvent) => e.preventDefault();
+      window.addEventListener('click', stay);
+      try {
+        await panel().getByRole('link').click();
+      } finally {
+        window.removeEventListener('click', stay);
+      }
+      await expect.element(panel()).not.toBeInTheDocument();
+      await expect.element(cell()).toHaveAttribute('aria-expanded', 'false');
+    });
 
   it('another header overlay opening closes the panel', async () => {
     await page.viewport(1280, 800);

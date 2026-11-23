@@ -70,6 +70,14 @@
     if (!open || !t || root?.contains(t)) return;
     open = false;
   }
+
+  /**
+   * A link in the panel (Sign in to save) navigates, and the header outlives a client navigation
+   * (it is the root layout's): the panel closes with it, so nothing stays open over the next page.
+   */
+  function onpanelclick(e: MouseEvent): void {
+    if ((e.target as Element | null)?.closest('a')) open = false;
+  }
 </script>
 
 <svelte:window {onkeydown} {onpointerdown} />
@@ -97,7 +105,10 @@
     {/if}
   </div>
   {#if open}
+    <!-- The click only watches for a link's activation; the link itself takes the keys. -->
+    <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
     <div
+      onclick={onpanelclick}
       id={panelId}
       data-testid="header-level-panel"
       class={inMenu
