@@ -23,7 +23,7 @@
     COVERAGE_OFF_SHORT_SENTENCE4,
     COVERAGE_RUN_SENTENCE4,
     coverageShortLine
-  } from '$lib/timeline/copy';
+  } from '$lib/timeline/money-copy';
   import Explain from '$lib/timeline/Explain.svelte';
   import { SvelteSet } from 'svelte/reactivity';
   import { HORIZON } from '$lib/fzp/time';

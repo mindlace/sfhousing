@@ -9,7 +9,7 @@ import { page, userEvent } from 'vitest/browser';
 import '../../routes/layout.css';
 import { formatDollarsExact } from '$lib/fzp/format';
 import { HORIZON } from '$lib/fzp/time';
-import { coverageShortLine } from '$lib/timeline/copy';
+import { coverageShortLine } from '$lib/timeline/money-copy';
 import { dayOf } from '$lib/sim/scenario/dates';
 import type { FinanceLevers } from '$lib/sim/levers/types';
 import {
