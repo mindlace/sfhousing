@@ -13,7 +13,7 @@ import { PLUS_NAME } from '../src/lib/timeline/test/plus';
 import { expectNoA11yViolations } from './helpers/a11y';
 import { newVisitor, seedGame, seedGoalAmount } from './helpers/game';
 import { addPolicy, openKind, slider, waitFilled } from './helpers/run';
-import { gotoEditor, gotoHydrated, paintOnce } from './helpers/sharing';
+import { gotoEditor, gotoHydrated, openHeaderMenu, paintOnce } from './helpers/sharing';
 
 // Any stroke that adds a home wins Paint.
 const PAINT_AMOUNT = 1;
@@ -40,18 +40,6 @@ const lockedLane = (page: Page, kind: string): Locator =>
 async function simReady(page: Page): Promise<void> {
   await page.waitForFunction(() => (window as JourneyWin).__sfhFzp?.phase === 'ready');
   await waitFilled(page);
-}
-
-/**
- * Below lg, opens the header's Menu by `[data-header-menu]`, which matches whatever its name
- * ("Menu, level up ready" while an offer is set); from lg, does nothing.
- */
-async function openMenu(page: Page): Promise<void> {
-  await expect(page.locator('html')).toHaveAttribute('data-hydrated', '');
-  const menu = page.locator('[data-header-menu]');
-  if (!(await menu.isVisible())) return;
-  if ((await menu.getAttribute('aria-expanded')) !== 'true') await menu.click();
-  await expect(menu).toHaveAttribute('aria-expanded', 'true');
 }
 
 /** "10 Dec 2030": a span edge as the bar's name writes it (rows.ts `formatEdge`). */
@@ -137,7 +125,7 @@ test('a new visitor wins Paint and level 2, levels up to 3, and the account hold
   await expect(lockedLane(page, 'money')).toHaveText('Unlocks at level 5');
 
   // 7. The bar: the level panel's aim and the ruler's flag.
-  await openMenu(page);
+  await openHeaderMenu(page);
   await levelCell(page).click();
   await expect(page.getByTestId('header-level-panel').getByTestId('level-aim')).toHaveText(
     `Beat ${month}`
