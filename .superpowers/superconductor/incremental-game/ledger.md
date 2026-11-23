@@ -225,6 +225,7 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - pool-closing: incremental-game-pool-closing — status: admitted (branch incremental-game-pool-closing, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-pool-closing, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus — rationale: engine funding system change with determinism and cost bounds, needs: F2 from finite-funding (not merged yet), produces: F3)
 - game-sim: incremental-game-game-sim — status: admitted (branch incremental-game-game-sim, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-game-sim, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus — rationale: largest consumer of game rows on /sim, needs: G1–G5 built from game-core (not merged yet); F2 from finite-funding (not merged yet); M1 signature, X1 from contracts (not merged yet), produces: none)
 - game-shell: incremental-game-game-shell — status: admitted (relaunched 23:30 as admitted from its plan, tasks 1 to 6 and 8; branch incremental-game-game-shell brought up to f435a2da, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-game-shell, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus, needs: G1–G5 built, X1, L1 (all merged), produces: none)
+- finite-funding: incremental-game-finite-funding — status: complete (admit message sent 23:30 at f435a2da; branch incremental-game-finite-funding, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-finite-funding, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus, needs: L1, M1 stub (merged), produces: F1, F2)
 
 ## Supervision
 - status asked remove-lesscars
@@ -303,6 +304,7 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - 2026-11-23 01:55 pool-closing and game-sim relaunched as admitted from their plans at the tested head 924abcbd (F2 merged), each with a first message listing the rulings it missed; pool-closing's list adds `SFH_WORLD_FUNDING_REFEREE=1 npx|npm` for the referee run. Band low (67%).
 - relaunched game-shell
 - resent to incremental-game-game-shell
+- plan game-sim: docs/superpowers/plans/2026-11-22-game-sim.html at 9aa7f278 (brought into line with the current spec after its restart)
 
 ## Questions
 - 2026-11-22 conductor-1 from conductor [defect-class: owner-ruling-drift]: gate-1, a policy already saved in the browser becomes a level-1 game, and every kind in it is locked (major) → rulings/conductor-1.md (commit 7fbb5e32, changes contract: no)
@@ -486,6 +488,7 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - build graph for conductor-14 @ d1e210bc
 - relayed conductor-14 to incremental-game-game-shell
 - routed conductor-14
+- 2026-11-23 game-sim-2 from game-sim [defect-class: spec-silence]: how /sim drives G2's touched() and the beforeLeave flush, and a SimRoute storage test seam; blocks its Task 8 only. Fork after the suite on finite-funding's final merge reports →
 
 ## Forks
 - fork checkpoint-2 started 2026-11-22T16:20
@@ -695,6 +698,7 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - unmodeled-interaction: 3 — adds conductor-13 (2026-11-22); tripwire: re-checkpoint when its ruling is routed
 - spec-code-mismatch: 3 — adds finite-funding-2 (2026-11-23); tripwire: re-checkpoint when its ruling is routed
 - flaky-e2e: 2 — instances: conductor-12 (game-helpers.spec.ts:146, refiled here as the same class); conductor-14 (2026-11-23)
+- spec-silence: 7 — adds game-sim-2 (2026-11-23)
 
 ## Integration
 - 17:50 merge of contracts @ f6ee1de3 made (merge commit 5453b107), full suite running in the package worktree (agent; logs in the session scratchpad `merge-contracts/`); not ledgered as merged until it passes. No amending fork starts until then; queued questions in order: remove-multiuser-1, game-core-1, game-core-2, game-core-3, game-sim-1, pool-closing-1, conductor-10, conductor-11. Then merge remove-multiuser's row I1 @ cbd11881.
@@ -761,6 +765,8 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - merged finite-funding [row F1] [row F2] @ df556eab into superconductor/incremental-game, tests pass (check 0 errors; lint 0 errors; unit 9059 passed; pipeline 2284 passed; e2e 761 passed, 0 failed, 1 flaky: e2e/game-shell.spec.ts:117, question conductor-14), band low
 - No drift @ df556eab (review-finite-funding-df556eab)
 - ruling conductor-14 reopens game-shell for a test-only fix round (hydration and waitForMap waits in its remix e2e cases); it was resting, so relaunched (no rung) with the ruling; it re-sends complete.
+- 02:10 merge of finite-funding complete @ 5fd73c92 (docs and test titles after df556eab) made onto 953b8859 (merge commit 8fa1cb6d), suite running (agent; scratchpad `merge-finite-funding-final/`); not merged until it passes; on failure reset to 953b8859 with ledger.md copied out and back. Operators told not to merge the integration branch meanwhile: game-shell. pool-closing and game-sim merged at 924abcbd before launch.
+- merged finite-funding @ 5fd73c92 into superconductor/incremental-game (complete), tests pass (check 0 errors; lint 0 errors; unit 9059 passed; pipeline 2284 passed; e2e 760 passed, 0 failed, 2 flaky under load: e2e/sim.spec.ts:729 and :771, `locator.click` 30 s timeouts, both passed on retry; the merge touched one doc and three test titles), band low. Flake watch list for closing's signoff (needs a quiet machine): e2e/perf/loaded-500.perf.spec.ts:8, e2e/sim.spec.ts:729, :771.
 
 ## Cost
 - remove-lesscars: admitted 2026-11-22T16:31 seven_day 44% | session d889ec5c-3342-4a77-99f8-993f1115a679 | finished 2026-11-22T21:14 seven_day 60%
@@ -768,7 +774,7 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - mail-setup: admitted 2026-11-22T16:32 seven_day 44% | session b1e978f2-51f4-46a7-a9b0-92ea6e61597f | finished 2026-11-22T19:20 seven_day 56%
 - contracts: admitted 2026-11-22T16:33 seven_day 44% | session 343d79b0-ac75-4280-b643-22398f92f1a8 | finished 2026-11-22T17:56 seven_day 50%
 - game-core: admitted 2026-11-22T16:52 seven_day 46% | session 06c0c65b-cf92-457a-a525-9c4374e4a0b3 | finished 2026-11-22T21:14 seven_day 60%
-- finite-funding: admitted 2026-11-22T16:53 seven_day 46% | session 7949d97c-2f16-4c76-b641-a1b2d697d55f
+- finite-funding: admitted 2026-11-22T16:53 seven_day 46% | session 7949d97c-2f16-4c76-b641-a1b2d697d55f | finished 2026-11-23T02:05 seven_day 69%
 - game-save: admitted 2026-11-22T16:53 seven_day 46% | session 62b87f0c-3aa2-4671-b8da-e0ac391e2ac6 | finished 2026-11-22T22:49 seven_day 64%
 - game-shell: admitted 2026-11-22T16:54 seven_day 46% | session d156765a-2f62-4dbb-8145-6b1ae8d620d8 | finished 2026-11-22T23:55 seven_day 65%
 - game-sim: admitted 2026-11-22T16:54 seven_day 46% | session 1f8bf796-225b-48c5-9f3e-c7e5bde5214b
