@@ -12,9 +12,8 @@
   import { count, customSummary, lotsText, ruleSummary, type LotStatus } from './brush-summary';
   import type { SimPolicy } from './policy';
   import { OBSERVED_TIMING, routeView, shownRouteShares, timingLabel } from './timing';
-  import { HORIZON } from '$lib/fzp/time';
   import { fundingPresets } from './funding-presets';
-  import { coverageSteps, summaryRows } from './funding-view';
+  import { coverageSteps, moneyOnly, summaryRows, windowEnd } from './funding-view';
   import Explain from '$lib/timeline/Explain.svelte';
   import { COVERAGE_CHANCE_NOTE, coverageShortLine } from '$lib/timeline/money-copy';
 
@@ -62,16 +61,24 @@
   const coverageLine = $derived.by(() => {
     const baseline = calibration?.baselineFunding;
     if (!calibration || !baseline) return null;
-    const steps = coverageSteps(policy.funding, baseline, calibration.asOf, HORIZON);
+    const steps = coverageSteps(
+      policy.funding,
+      baseline,
+      calibration.asOf,
+      windowEnd(calibration.asOf)
+    );
     return steps.length > 0 ? steps[0] : null;
   });
   const moneyRows = $derived(
     summaryRows(
       policy.funding,
       calibration?.baselineFunding,
-      calibration ? fundingPresets(calibration) : []
+      calibration ? fundingPresets(calibration) : [],
+      calibration?.asOf ?? null
     )
   );
+  /** A given measure reads as its money alone. */
+  const onlyMoney = $derived(moneyOnly(policy));
 
   /** The shares (when not observed) and each stage whose months differ from observed. */
   const timingLines = $derived.by(() => {
@@ -96,56 +103,58 @@
 </script>
 
 <div class="flex flex-col gap-4 text-sm text-ink dark:text-ink-dark">
-  <section class="flex flex-col gap-1" aria-labelledby="{uid}-rules">
-    <h3 id="{uid}-rules" class="font-semibold">Transit layers</h3>
-    {#if policy.rules.length === 0}
-      <p class={MUTED}>No transit layers</p>
-    {:else}
-      <ul class="flex flex-col gap-1">
-        {#each policy.rules as r (r.id)}
-          <li class={ROW}>{ruleSummary(r, lotsText(lotsOf(`rule:${r.id}`)))}</li>
-        {/each}
-      </ul>
-    {/if}
-  </section>
+  {#if !onlyMoney}
+    <section class="flex flex-col gap-1" aria-labelledby="{uid}-rules">
+      <h3 id="{uid}-rules" class="font-semibold">Transit layers</h3>
+      {#if policy.rules.length === 0}
+        <p class={MUTED}>No transit layers</p>
+      {:else}
+        <ul class="flex flex-col gap-1">
+          {#each policy.rules as r (r.id)}
+            <li class={ROW}>{ruleSummary(r, lotsText(lotsOf(`rule:${r.id}`)))}</li>
+          {/each}
+        </ul>
+      {/if}
+    </section>
 
-  <section class="flex flex-col gap-1" aria-labelledby="{uid}-custom">
-    <h3 id="{uid}-custom" class="font-semibold">Painted areas</h3>
-    {#if policy.custom.length === 0}
-      <p class={MUTED}>No painted areas</p>
-    {:else}
-      <ul class="flex flex-col gap-1">
-        {#each policy.custom as b (b.id)}
-          <li class={ROW}>{customSummary(b, lotsText(lotsOf(`custom:${b.id}`)))}</li>
-        {/each}
-      </ul>
-    {/if}
-  </section>
+    <section class="flex flex-col gap-1" aria-labelledby="{uid}-custom">
+      <h3 id="{uid}-custom" class="font-semibold">Painted areas</h3>
+      {#if policy.custom.length === 0}
+        <p class={MUTED}>No painted areas</p>
+      {:else}
+        <ul class="flex flex-col gap-1">
+          {#each policy.custom as b (b.id)}
+            <li class={ROW}>{customSummary(b, lotsText(lotsOf(`custom:${b.id}`)))}</li>
+          {/each}
+        </ul>
+      {/if}
+    </section>
 
-  <section class="flex flex-col gap-1" aria-labelledby="{uid}-protections">
-    <h3 id="{uid}-protections" class="font-semibold">Protections</h3>
-    <p class={ROW}>{protections}</p>
-  </section>
+    <section class="flex flex-col gap-1" aria-labelledby="{uid}-protections">
+      <h3 id="{uid}-protections" class="font-semibold">Protections</h3>
+      <p class={ROW}>{protections}</p>
+    </section>
 
-  <section class="flex flex-col gap-1" aria-labelledby="{uid}-timing">
-    <h3 id="{uid}-timing" class="font-semibold">Permitting timelines</h3>
-    <p class={ROW}>{timingLabel(current)}</p>
-    {#if timingLines.length > 0}
-      <button
-        type="button"
-        class="flex min-h-6 min-w-6 items-center gap-1 rounded-md px-2 text-left font-semibold hover:bg-surface-raised dark:hover:bg-surface-dark-raised"
-        aria-expanded={open}
-        aria-controls={detailsId}
-        onclick={() => (open = !open)}
-        >Shares and changed stages<span aria-hidden="true">{open ? '−' : '+'}</span></button
-      >
-      <ul id={detailsId} hidden={!open} class="flex flex-col gap-1">
-        {#each timingLines as line (line)}
-          <li class={ROW}>{line}</li>
-        {/each}
-      </ul>
-    {/if}
-  </section>
+    <section class="flex flex-col gap-1" aria-labelledby="{uid}-timing">
+      <h3 id="{uid}-timing" class="font-semibold">Permitting timelines</h3>
+      <p class={ROW}>{timingLabel(current)}</p>
+      {#if timingLines.length > 0}
+        <button
+          type="button"
+          class="flex min-h-6 min-w-6 items-center gap-1 rounded-md px-2 text-left font-semibold hover:bg-surface-raised dark:hover:bg-surface-dark-raised"
+          aria-expanded={open}
+          aria-controls={detailsId}
+          onclick={() => (open = !open)}
+          >Shares and changed stages<span aria-hidden="true">{open ? '−' : '+'}</span></button
+        >
+        <ul id={detailsId} hidden={!open} class="flex flex-col gap-1">
+          {#each timingLines as line (line)}
+            <li class={ROW}>{line}</li>
+          {/each}
+        </ul>
+      {/if}
+    </section>
+  {/if}
 
   <section class="flex flex-col gap-1" aria-labelledby="{uid}-money">
     <h3 id="{uid}-money" class="font-semibold">Public money</h3>

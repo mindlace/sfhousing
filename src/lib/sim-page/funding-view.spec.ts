@@ -20,11 +20,14 @@ import { SLOPE_FIXTURE } from '$lib/sim/finance/test/fixtures';
 import { MAX_DOLLARS } from '$lib/sim/levers/finance';
 import type { FinanceLevers } from '$lib/sim/levers/types';
 import { dayOf } from '$lib/sim/scenario/dates';
-import { formatMonthYear } from '$lib/fzp/format';
-import { HORIZON } from '$lib/fzp/time';
+import { formatDollars, formatMonthYear } from '$lib/fzp/format';
+import { formatPercent } from '$lib/scoreboard/format';
+import { monthFirstDay } from '$lib/sim/world/months';
+import { DEFAULT_POLICY } from './sim-doc';
+import { inflowArrivals } from '$lib/sim/scenario/funding';
 import { LEGACY_UNCAPPED_DOLLARS, isNoCeiling, parseCalibration } from '$lib/timelapse/model';
 import type { Pool, Programme } from '$lib/timelapse/types';
-import { addPreset, fundingPresets } from './funding-presets';
+import { addPreset, cityGrant, fundingPresets, yearsAfter } from './funding-presets';
 import { POOL_KIND_DEFAULTS, BOND_PRINCIPAL } from './funding-sources';
 import {
   BOND_POLICY,
@@ -40,7 +43,8 @@ import {
   coverageStepText,
   labelAmountChanged,
   labelScaleApplied,
-  sourcedLine
+  sourcedLine,
+  typedTermSummary
 } from './funding-copy';
 import {
   addedPresets,
@@ -52,20 +56,35 @@ import {
   fieldSource,
   groupOf,
   isOff,
+  moneyOnly,
   poolMoneySentence,
   poolPreview,
+  poolYearAmount,
   priceOn,
   programmePreview,
   programmeSentence,
   scaleLines,
+  summaryRows,
   termRows,
   tiersSource,
-  tiersText
+  tiersText,
+  windowEnd,
+  windowLastMonth
 } from './funding-view';
+
+describe('the window', () => {
+  it('windowEnd and windowLastMonth on fixture-0', () => {
+    expect(F0.asOf).toBe(dayOf(2026, 10, 10));
+    expect(windowEnd(F0.asOf)).toBe(dayOf(2066, 10, 9));
+    expect(windowLastMonth(F0.asOf)).toBe(dayOf(2066, 10, 1));
+  });
+});
 
 const cal = fundingCalibration();
 const baseline = cal.baselineFunding!;
 const asOf = FUND_ASOF;
+/** Coverage reads to the window's last day. */
+const END = windowEnd(asOf);
 const DEFAULT: FinanceLevers = policyWith({}).funding;
 const P0 = PROTOTYPES[0];
 const U = uncoveredPerHome('affordable', P0);
@@ -74,6 +93,11 @@ const D27 = dayOf(2027, 7, 1);
 const D28 = dayOf(2028, 7, 1);
 const D29 = dayOf(2029, 7, 1);
 /** fixture-0's calibration before finite funding: its federal pool carries `uncapped: true`. */
+const F0_PATH = new URL(
+  '../../../e2e/fixtures/data/fixture-0/scenarios/fzp/calibration.json',
+  import.meta.url
+);
+const F0 = parseCalibration(JSON.parse(readFileSync(F0_PATH, 'utf8')));
 const LEGACY_PATH = new URL('../timelapse/fixtures/calibration-uncapped.json', import.meta.url);
 
 const kindOf = (f: FinanceLevers, pool: string) =>
@@ -152,11 +176,112 @@ describe('baseline groups', () => {
     expect(city.programmes).toEqual(before.programmes);
     expect(city.perHome).toBe(before.perHome);
     expect(city.perYear).toBe(before.perYear);
+    expect(poolYearAmount(DEFAULT, spent, asOf)).toBe(0);
+    expect(city.noCeiling).toBe(false);
+  });
+
+  describe("a group's amount is the money its pools receive in the year from asOf", () => {
+    const NEXT = yearsAfter(asOf, 1);
+    const fed = baseline.pools.find((p) => p.kind === 'federal')!;
+    const tax = baseline.pools.find((p) => p.id === 'city-tax')!;
+    const withInflows = (p: Pool, inflows: Pool['inflows']): Pool => ({ ...p, inflows });
+    const swap = (p: Pool) => ({
+      ...baseline,
+      pools: baseline.pools.map((q) => (q.id === p.id ? p : q))
+    });
+    const groupIn = (b: typeof baseline, group: string, f = DEFAULT) =>
+      baselineGroups(f, b, asOf).find((g) => g.group === group)!;
+
+    it("the federal group's amount is its ceiling", () => {
+      expect(poolYearAmount(DEFAULT, fed, asOf)).toBe(50_000_000);
+      expect(groupIn(baseline, 'federal').perYear).toBe(50_000_000);
+      expect(groupIn(baseline, 'federal').noCeiling).toBe(false);
+    });
+
+    it('a once on asOf counts; one on yearsAfter(asOf, 1) does not', () => {
+      const once = withInflows(tax, [
+        { kind: 'once', day: asOf - 1, dollars: 1_000_000 },
+        { kind: 'once', day: asOf, dollars: 10_000_000 },
+        { kind: 'once', day: NEXT - 1, dollars: 3_000_000 },
+        { kind: 'once', day: NEXT, dollars: 7_000_000 }
+      ]);
+      expect(poolYearAmount(DEFAULT, once, asOf)).toBe(13_000_000);
+      // City is city-tax and city-gf; city-gf keeps its $100 million a year.
+      expect(groupIn(swap(once), 'city').perYear).toBe(113_000_000);
+    });
+
+    it('a yearly inflow counts when it arrives in the year, not when it starts after it', () => {
+      const later = (from: number) =>
+        withInflows(tax, [{ kind: 'yearly', from, to: null, dollarsPerYear: 4_000_000 }]);
+      expect(poolYearAmount(DEFAULT, later(asOf + 100), asOf)).toBe(4_000_000);
+      expect(poolYearAmount(DEFAULT, later(NEXT - 1), asOf)).toBe(4_000_000);
+      expect(poolYearAmount(DEFAULT, later(NEXT), asOf)).toBe(0);
+      const ended = withInflows(tax, [
+        { kind: 'yearly', from: asOf - 400, to: asOf - 1, dollarsPerYear: 4_000_000 }
+      ]);
+      expect(poolYearAmount(DEFAULT, ended, asOf)).toBe(0);
+    });
+
+    it('the scale is the one in force on asOf, rounded to whole dollars', () => {
+      const on = (from: number, scale: number) =>
+        policyWith({ baselineScale: [{ pool: 'state', from, scale }] }).funding;
+      const state = baseline.pools.find((p) => p.id === 'state')!;
+      expect(poolYearAmount(on(asOf + 1, 0.5), state, asOf)).toBe(100_000_000);
+      expect(groupIn(baseline, 'state', on(asOf + 1, 0.5)).perYear).toBe(100_000_000);
+      expect(poolYearAmount(on(asOf, 0.5), state, asOf)).toBe(50_000_000);
+      expect(poolYearAmount(on(asOf, 1 / 3), state, asOf)).toBe(33_333_333);
+      expect(poolYearAmount(on(asOf, 0), state, asOf)).toBe(0);
+    });
+
+    it('a no-ceiling pool is null and left out of the sum; a group of only it has noCeiling', () => {
+      const legacy = withInflows(fed, [
+        { kind: 'yearly', from: asOf, to: null, dollarsPerYear: LEGACY_UNCAPPED_DOLLARS }
+      ]);
+      expect(poolYearAmount(DEFAULT, legacy, asOf)).toBeNull();
+      const only = groupIn(swap(legacy), 'federal');
+      expect(only.noCeiling).toBe(true);
+      expect(only.perYear).toBe(0);
+      const big = withInflows(fed, [
+        { kind: 'yearly', from: asOf, to: null, dollarsPerYear: MAX_DOLLARS }
+      ]);
+      expect(poolYearAmount(DEFAULT, big, asOf)).toBe(MAX_DOLLARS);
+      // Beside a pool with a ceiling, the no-ceiling pool is left out of the group's sum.
+      const mixed = {
+        ...baseline,
+        pools: [...baseline.pools, { ...legacy, id: 'federal-old' }]
+      };
+      const both = groupIn(mixed, 'federal');
+      expect(both.noCeiling).toBe(false);
+      expect(both.perYear).toBe(50_000_000);
+    });
+
+    it("fixture-0's City amount counts its one-time amounts arriving in the year", () => {
+      const base = F0.baselineFunding!;
+      const city = baselineGroups(DEFAULT, base, F0.asOf).find((g) => g.group === 'city')!;
+      const expected = city.pools.reduce((s, p) => {
+        let sum = 0;
+        for (const x of p.inflows) {
+          if (x.kind === 'once' && x.day >= F0.asOf && x.day < yearsAfter(F0.asOf, 1))
+            sum += x.dollars;
+          if (x.kind === 'yearly') {
+            sum += inflowArrivals(x, F0.asOf, yearsAfter(F0.asOf, 1) - 1).length * x.dollarsPerYear;
+          }
+        }
+        return s + sum;
+      }, 0);
+      expect(city.pools.some((p) => p.inflows.some((x) => x.kind === 'once'))).toBe(true);
+      expect(city.perYear).toBe(expected);
+      const debt = city.pools.find((p) => p.id === 'city-debt')!;
+      expect(poolYearAmount(DEFAULT, debt, F0.asOf)).toBe(1_500_000);
+    });
   });
 
   it('on an older dataset the federal group reads Switched off, then No ceiling', () => {
     const old = parseCalibration(JSON.parse(readFileSync(LEGACY_PATH, 'utf8'))).baselineFunding!;
     const fed = old.pools.find((p) => p.kind === 'federal')!;
+    expect(fed.inflows.some((x) => x.kind === 'yearly' && isNoCeiling(x.dollarsPerYear))).toBe(
+      true
+    );
     const f = policyWith({
       baselineScale: [
         { pool: fed.id, from: D27, scale: 0 },
@@ -168,7 +293,8 @@ describe('baseline groups', () => {
     expect(groupOn(D28).off).toBe(true);
     const back = groupOn(D29);
     expect(back.off).toBe(false);
-    expect(isNoCeiling(back.perYear)).toBe(true);
+    expect(back.noCeiling).toBe(true);
+    expect(back.perYear).toBe(0);
     expect(scaleLines(f, old, 'federal').map((l) => l.text)).toEqual([
       'From July 2027: switched off',
       "From July 2029: switched back on, 100% of today's amount"
@@ -218,7 +344,7 @@ describe('baseline groups', () => {
 
 describe('coverageSteps', () => {
   it('default: one step, certain', () => {
-    const steps = coverageSteps(DEFAULT, baseline, asOf, HORIZON);
+    const steps = coverageSteps(DEFAULT, baseline, asOf, END);
     const expected = price(DEFAULT, baseline.programmes);
     expect(steps).toHaveLength(1);
     expect(steps[0].from).toBe(asOf);
@@ -230,7 +356,7 @@ describe('coverageSteps', () => {
 
   it('state off from a date: second step, not certain, equals fundBundle without state', () => {
     const f = policyWith({ baselineScale: [{ pool: 'state', from: D27, scale: 0 }] }).funding;
-    const steps = coverageSteps(f, baseline, asOf, HORIZON);
+    const steps = coverageSteps(f, baseline, asOf, END);
     expect(steps).toHaveLength(2);
     expect(steps[1].from).toBe(D27);
     expect(steps[1].certain).toBe(false);
@@ -239,12 +365,12 @@ describe('coverageSteps', () => {
 
   it('City pool at 0.5: no new step', () => {
     const f = policyWith({ baselineScale: [{ pool: 'city-gf', from: D27, scale: 0.5 }] }).funding;
-    expect(coverageSteps(f, baseline, asOf, HORIZON)).toHaveLength(1);
+    expect(coverageSteps(f, baseline, asOf, END)).toHaveLength(1);
   });
 
   it('City pool at 0: like state', () => {
     const f = policyWith({ baselineScale: [{ pool: 'city-gf', from: D27, scale: 0 }] }).funding;
-    const steps = coverageSteps(f, baseline, asOf, HORIZON);
+    const steps = coverageSteps(f, baseline, asOf, END);
     expect(steps).toHaveLength(2);
     expect(steps[1].certain).toBe(false);
     const expected = price(f, without('city-gf-grant'));
@@ -259,7 +385,7 @@ describe('coverageSteps', () => {
         { pool: 'federal', from: D29, scale: 1 }
       ]
     }).funding;
-    const steps = coverageSteps(f, baseline, asOf, HORIZON);
+    const steps = coverageSteps(f, baseline, asOf, END);
     expect(steps.map((s) => s.from)).toEqual([asOf, D27, D29]);
     expect(steps[1].coverage).toBe(price(f, without('federal-grant')).coverage);
     expect(steps[2].certain).toBe(true);
@@ -267,7 +393,7 @@ describe('coverageSteps', () => {
 
   it('added bond grant shares the City tier', () => {
     const f = BOND_POLICY.funding;
-    const steps = coverageSteps(f, baseline, asOf, HORIZON);
+    const steps = coverageSteps(f, baseline, asOf, END);
     expect(steps.every((s) => s.certain)).toBe(true);
     expect(steps).toHaveLength(1);
     const bond = f.programmes[0];
@@ -297,8 +423,8 @@ describe('coverageSteps', () => {
 
   it('added federal grant lowers cityPerHome by what it pays', () => {
     const f = policyWith({ programmes: [grantOn('u-prog-1', 'federal', 0.1)] }).funding;
-    const steps = coverageSteps(f, baseline, asOf, HORIZON);
-    const base = coverageSteps(DEFAULT, baseline, asOf, HORIZON);
+    const steps = coverageSteps(f, baseline, asOf, END);
+    const base = coverageSteps(DEFAULT, baseline, asOf, END);
     expect(steps[0].certain).toBe(true);
     const priced = price(f, [...baseline.programmes, f.programmes[0]]);
     const pays = priced.items.at(-1)!.granted;
@@ -333,7 +459,7 @@ describe('coverageSteps', () => {
     const f = policyWith({
       programmes: [grantOn('u-prog-1', 'city-tax', 0.1, { minHomes: 50 })]
     }).funding;
-    const steps = coverageSteps(f, baseline, asOf, HORIZON);
+    const steps = coverageSteps(f, baseline, asOf, END);
     expect(steps[0].minHomes).toBe(50);
     expect(coverageSizeMixed(f, baseline, asOf)).toBe(true);
     expect(coverageSizeMixed(DEFAULT, baseline, asOf)).toBe(false);
@@ -624,10 +750,10 @@ describe('sentences', () => {
   });
 
   it('coverage copy', () => {
-    const [today] = coverageSteps(DEFAULT, baseline, asOf, HORIZON);
+    const [today] = coverageSteps(DEFAULT, baseline, asOf, END);
     expect(coverageLineText(today)).toBe('Affordable homes: fully funded today');
     const f = policyWith({ baselineScale: [{ pool: 'state', from: D27, scale: 0 }] }).funding;
-    const steps = coverageSteps(f, baseline, asOf, HORIZON);
+    const steps = coverageSteps(f, baseline, asOf, END);
     expect(coverageStepText(steps[1])).toMatch(
       /^From July 2027: \d+%, not fully funded; the City pays \$[\d,]+ of each home$/
     );
@@ -752,5 +878,154 @@ describe('addedPresets (4.10, final M3)', () => {
     };
     expect(addedPresets(edited, presets)).toEqual([]);
     expect(addedPresets(policyWith({}).funding, presets)).toEqual([]);
+  });
+
+  it('addedPresets finds state-double with its entries on other days', () => {
+    const double = presets.find((p) => p.id === 'state-double')!;
+    const pool = double.baselineScale[0].pool;
+    const base = policyWith({}).funding;
+    const D1 = dayOf(2041, 2, 3);
+    const D2 = dayOf(2043, 4, 5);
+    const moved: FinanceLevers = {
+      ...base,
+      baselineScale: [
+        { pool, from: D1, scale: 2 },
+        { pool, from: D2, scale: 1 }
+      ]
+    };
+    const ids = addedPresets(moved, presets).map((p) => p.id);
+    expect(ids).toContain('state-double');
+    expect(ids).not.toContain('state-off');
+    const off: FinanceLevers = { ...base, baselineScale: [{ pool, from: D1, scale: 0 }] };
+    expect(addedPresets(off, presets).map((p) => p.id)).toEqual(['state-off']);
+  });
+});
+
+describe('summaryRows: a given measure', () => {
+  const START = monthFirstDay(F0.asOf, 1);
+  const fb = F0.baselineFunding!;
+  const base = fb.programmes.find((g) => g.reach === 'affordable')!;
+  const share = formatPercent(
+    (cityGrant(START, base).instrument as { kind: 'grant'; share: number }).share
+  );
+  const min = String(base.minHomes);
+  const statePool = fb.pools.find((p) => p.kind === 'state')!;
+  const stateFirst = statePool.inflows[0];
+  const state = formatDollars(
+    stateFirst.kind === 'once' ? stateFirst.dollars : stateFirst.dollarsPerYear
+  );
+  const rowsOf = (id: string, asOf: typeof F0.asOf | null = F0.asOf) => {
+    const preset = fundingPresets(F0, START).find((p) => p.id === id)!;
+    const f = addPreset(structuredClone(DEFAULT_POLICY.funding), preset);
+    return summaryRows(f, fb, fundingPresets(F0), asOf).map(
+      (r) => `${r.indent ? '  ' : ''}${r.text}`
+    );
+  };
+  const grant = `Grant to affordable homes of ${min} homes or more: ${share} of the uncovered cost`;
+
+  it('each offered measure lists what it pays and when', () => {
+    expect(rowsOf('housing-bond')).toEqual([
+      'Housing bond: $410 million in October 2026; repaid at 6% over 20 years',
+      `  ${grant}`
+    ]);
+    expect(rowsOf('general-revenue')).toEqual([
+      'General revenue for housing: $36.7 million a year from October 2026 until October 2055',
+      `  ${grant}`
+    ]);
+    expect(rowsOf('revolving-fund')).toEqual([
+      'Revolving construction-loan fund: $100 million in October 2026',
+      '  Loan to private projects of 0 homes or more (custom, not sourced): 10% (custom, not sourced) of the building cost at 6% (custom, not sourced)'
+    ]);
+    expect(rowsOf('public-bank')).toEqual([
+      'Public bank (housing share): $8.67 million in October 2026, $11.3 million in October 2027, $10 million in October 2028, $26.7 million in October 2029, $13.3 million in October 2030',
+      `  Loan to affordable homes of ${min} homes or more: 10% (custom, not sourced) of the building cost at 6.13%`
+    ]);
+    expect(rowsOf('state-off')).toEqual(['State money: switched off from October 2026']);
+    expect(rowsOf('state-double')).toEqual([
+      "State money: 200% of today's from October 2026",
+      'State money: as today from October 2036'
+    ]);
+    expect(rowsOf('federal-support')).toEqual([
+      `Federal support: ${state} (custom, not sourced) a year from October 2026 until October 2035`,
+      `  ${grant}`
+    ]);
+    expect(rowsOf('federal-credits-off')).toEqual([
+      'Federal tax credits: switched off from October 2026'
+    ]);
+  });
+
+  it('no measure row says as today or no money added, or marks a date custom', () => {
+    const month =
+      /(January|February|March|April|May|June|July|August|September|October|November|December) \d{4} \(custom/;
+    for (const id of [
+      'housing-bond',
+      'general-revenue',
+      'revolving-fund',
+      'public-bank',
+      'state-off',
+      'state-double',
+      'federal-support',
+      'federal-credits-off'
+    ]) {
+      for (const r of rowsOf(id)) {
+        expect(r).not.toBe("Today's funding: as today");
+        expect(r).not.toBe('No money added');
+        expect(r).not.toMatch(month);
+      }
+    }
+  });
+
+  it('default funding reads as today with no money added', () => {
+    const rows = summaryRows(DEFAULT_POLICY.funding, fb, fundingPresets(F0), F0.asOf);
+    expect(rows.map((r) => r.text)).toEqual(["Today's funding: as today", 'No money added']);
+  });
+
+  it('typed terms show only for a funding with no scale entry, pool or programme', () => {
+    const bond = addPreset(
+      structuredClone(DEFAULT_POLICY.funding),
+      fundingPresets(F0, START).find((p) => p.id === 'housing-bond')!
+    );
+    const withTerm = { ...bond, terms: { guaranteeRateCut: 0.005 } };
+    const rows = summaryRows(withTerm, fb, fundingPresets(F0), F0.asOf).map((r) => r.text);
+    expect(rows.some((t) => t.startsWith('Guarantee rate cut'))).toBe(false);
+    const termsOnly = {
+      ...structuredClone(DEFAULT_POLICY.funding),
+      terms: { guaranteeRateCut: 0.005 }
+    };
+    const only = summaryRows(termsOnly, fb, fundingPresets(F0), F0.asOf).map((r) => r.text);
+    expect(only).toContain(typedTermSummary('guaranteeRateCut', 0.005));
+  });
+
+  it('a yearly inflow with no end reads until the window last month, or no until without asOf', () => {
+    const preset = fundingPresets(F0, START).find((p) => p.id === 'general-revenue')!;
+    const f = addPreset(structuredClone(DEFAULT_POLICY.funding), preset);
+    const open = structuredClone(f);
+    for (const x of open.pools[0].inflows) if (x.kind === 'yearly') x.to = null;
+    const until = summaryRows(open, fb, fundingPresets(F0), F0.asOf)[0].text;
+    expect(until).toMatch(/ a year from October 2026 until October 2066$/);
+    const none = summaryRows(open, fb, fundingPresets(F0), null)[0].text;
+    expect(none).toMatch(/ a year from October 2026$/);
+  });
+});
+
+describe('moneyOnly', () => {
+  const funded = policyWith({ ...BOND_POLICY.funding });
+  it('is true when only funding differs from the default policy', () => {
+    expect(moneyOnly(funded)).toBe(true);
+    expect(moneyOnly(BOND_POLICY)).toBe(true);
+  });
+  it('is false for the default policy, a rule, or changed current timing', () => {
+    expect(moneyOnly(DEFAULT_POLICY)).toBe(false);
+    const rule = {
+      ...funded,
+      rules: [{ id: 't1', kind: 'transit' as const, stopTypes: ['metro' as const], bands: [] }]
+    };
+    expect(moneyOnly(rule as never)).toBe(false);
+    const timed = structuredClone(funded);
+    timed.timing.current = {
+      ...timed.timing.current,
+      localProgramStreamlined: !timed.timing.current.localProgramStreamlined
+    };
+    expect(moneyOnly(timed)).toBe(false);
   });
 });

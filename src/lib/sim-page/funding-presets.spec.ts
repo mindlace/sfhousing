@@ -8,22 +8,31 @@ import { inflowArrivals } from '$lib/sim/scenario/funding';
 import miniCalibrationJson from '$lib/sim/scenario/fixtures/mini-calibration.json';
 import { miniMarket } from '$lib/sim/scenario/fixtures/mini-market';
 import { parseCalibration } from '$lib/timelapse/model';
-import type { Calibration, PoolKind } from '$lib/timelapse/types';
+import type { Calibration, Inflow, PoolKind } from '$lib/timelapse/types';
 import {
   addPreset,
   cityGrant,
+  dateMeasure,
   fundingPresets,
   nextAddedId,
   nextCalendar,
   nextFiscal,
   pastItems,
-  valueSource
+  valueSource,
+  yearsAfter
 } from './funding-presets';
 import {
   BOND_PRINCIPAL,
   CITY_GRANT_SHARE_PROVENANCE,
   CITY_PER_HOME,
+  FEDERAL_SUPPORT_AMOUNT_PROVENANCE,
+  FEDERAL_SUPPORT_START_PROVENANCE,
+  FEDERAL_SUPPORT_TERM_YEARS,
   GENERAL_FUND_FY25,
+  GENERAL_FUND_TERM_YEARS,
+  NEXT_FISCAL_START_PROVENANCE,
+  PLAYER_START_PROVENANCE,
+  STATE_DOUBLE_TERM_YEARS,
   POOL_KIND_DEFAULTS,
   type Sourced,
   PROP_C_SCHEDULE,
@@ -34,6 +43,7 @@ import { FINANCE_LIMITS, buildFinance, parseFinanceLevers } from '$lib/sim/lever
 import { DEFAULT_POLICY, parseSimDoc } from './sim-doc';
 import type { FinanceLevers } from '$lib/sim/levers/types';
 import type { Pool, Programme } from '$lib/timelapse/types';
+import type { Effect, Policy } from '$lib/timeline/policy4';
 
 const stub = vi.hoisted(() => ({ unsourced: false }));
 vi.mock('$lib/sim/finance', async (orig) => {
@@ -87,7 +97,7 @@ const TABLE: Record<string, [label: string, group: string, description: string]>
   'general-revenue': [
     'General revenue, yearly',
     'city',
-    "More City general-fund money every year, shared with today's City money toward new affordable homes, so more homes get built each year while there are projects waiting for money."
+    "More City general-fund money every year for 30 years, shared with today's City money toward new affordable homes, so more homes get built each year while there are projects waiting for money."
   ],
   'htf-2026': [
     'Housing Trust Fund increase (Proposition C, 2026)',
@@ -117,12 +127,12 @@ const TABLE: Record<string, [label: string, group: string, description: string]>
   'state-double': [
     'State money doubled from a date',
     'state',
-    "Twice today's state money from a date you choose; on its own this adds no homes while the City's money is the limit, so pair it with more City or federal money."
+    "Twice today's state money for ten years from a date you choose; on its own this adds no homes while the City's money is the limit, so pair it with more City or federal money."
   ],
   'federal-support': [
     'Federal support from a year',
     'federal',
-    "A new yearly federal grant from a year you choose that pays the City's part of each affordable home while it lasts; no law provides it yet, so the amount is your own."
+    "A new yearly federal grant for ten years from a year you choose that pays the City's part of each affordable home while it lasts; no law provides it yet, so the amount is your own."
   ],
   'federal-credits-off': [
     'Federal tax credits withdrawn from a date',
@@ -152,7 +162,7 @@ describe('the list', () => {
     expect(avail).toEqual({
       'housing-bond': [true, undefined],
       'general-revenue': [true, undefined],
-      'htf-2026': [false, 'Not yet certified (passed on early counts, November 2026).'],
+      'htf-2026': [false, 'Not yet certified (passed November 2026).'],
       'revolving-fund': [true, undefined],
       'public-bank': [true, undefined],
       'state-bond-2026': [false, "Not yet certified, and San Francisco's share is not published."],
@@ -246,7 +256,14 @@ describe('available presets', () => {
     expect(p.pools[0]).toMatchObject({
       kind: 'generalRevenue',
       label: 'General revenue for housing',
-      inflows: [{ kind: 'yearly', from: dayOf(2027, 7, 1), to: null, dollarsPerYear: 36_700_000 }],
+      inflows: [
+        {
+          kind: 'yearly',
+          from: dayOf(2027, 7, 1),
+          to: dayOf(2056, 7, 1),
+          dollarsPerYear: 36_700_000
+        }
+      ],
       debt: null,
       leverage: 1
     });
@@ -301,7 +318,8 @@ describe('available presets', () => {
   it('state-off, state-double, federal-credits-off scale a baseline pool', () => {
     expect(get('state-off').baselineScale).toEqual([{ pool: 'state', from: jul(2027), scale: 0 }]);
     expect(get('state-double').baselineScale).toEqual([
-      { pool: 'state', from: jul(2027), scale: 2 }
+      { pool: 'state', from: jul(2027), scale: 2 },
+      { pool: 'state', from: jul(2037), scale: 1 }
     ]);
     expect(get('federal-credits-off').baselineScale).toEqual([
       { pool: 'federal', from: dayOf(2027, 1, 1), scale: 0 }
@@ -317,7 +335,14 @@ describe('available presets', () => {
     expect(p.pools[0]).toMatchObject({
       kind: 'federal',
       label: 'Federal support',
-      inflows: [{ kind: 'yearly', from: dayOf(2028, 1, 1), to: null, dollarsPerYear: 3_000_000 }]
+      inflows: [
+        {
+          kind: 'yearly',
+          from: dayOf(2028, 1, 1),
+          to: dayOf(2037, 1, 1),
+          dollarsPerYear: 3_000_000
+        }
+      ]
     });
     expect(p.programmes[0].label).toBe('Federal support: grant toward an affordable home');
     const later = get('federal-support', { ...cal, asOf: dayOf(2030, 5, 1) });
@@ -346,6 +371,149 @@ describe('available presets', () => {
     for (const p of fundingPresets(cal).filter((x) => x.available && x.pools.length > 0)) {
       expect(p.provenance.length).toBeGreaterThan(0);
     }
+  });
+});
+
+const START = dayOf(2029, 3, 15);
+type Yearly = Extract<Inflow, { kind: 'yearly' }>;
+
+describe('every preset ends', () => {
+  it('every pool a preset builds ends; every scale other than 0 and 1 is followed by a 1', () => {
+    for (const list of [fundingPresets(cal), fundingPresets(cal, START)])
+      for (const p of list) {
+        for (const pool of p.pools)
+          for (const f of pool.inflows) expect(f.kind === 'once' || f.to !== null).toBe(true);
+        p.baselineScale.forEach((e, i) => {
+          if (e.scale === 0 || e.scale === 1) return;
+          expect(p.baselineScale.slice(i + 1).some((n) => n.pool === e.pool && n.scale === 1)).toBe(
+            true
+          );
+        });
+      }
+  });
+
+  it('general-revenue: 30 arrivals of $36,700,000; to = yearsAfter(from, 29); tier 2 term', () => {
+    const g = get('general-revenue');
+    const f = g.pools[0].inflows[0] as Yearly;
+    expect(inflowArrivals(f, cal.asOf, LAST_DAY)).toHaveLength(30);
+    expect(f.dollarsPerYear).toBe(36_700_000);
+    expect(f.to).toBe(yearsAfter(f.from, 29));
+    expect(g.provenance).toContain(GENERAL_FUND_TERM_YEARS.provenance);
+    expect(GENERAL_FUND_TERM_YEARS.provenance.tier).toBe(2);
+    expect(GENERAL_FUND_TERM_YEARS.value).toBe(30);
+  });
+
+  it("federal-support: 10 arrivals of the state pool's first arrival", () => {
+    const p = get('federal-support');
+    const f = p.pools[0].inflows[0] as Yearly;
+    expect(inflowArrivals(f, cal.asOf, LAST_DAY)).toHaveLength(10);
+    expect(f.dollarsPerYear).toBe(3_000_000);
+    expect(f.to).toBe(yearsAfter(f.from, FEDERAL_SUPPORT_TERM_YEARS.value - 1));
+    expect(p.provenance).toContain(FEDERAL_SUPPORT_TERM_YEARS.provenance);
+    expect(p.provenance).toContain(FEDERAL_SUPPORT_AMOUNT_PROVENANCE);
+  });
+
+  it('state-double: scale 2 from the first date, scale 1 ten years later', () => {
+    const p = get('state-double');
+    const first = nextFiscal(cal.asOf);
+    expect(p.baselineScale.map((e) => [e.from, e.scale])).toEqual([
+      [first, 2],
+      [yearsAfter(first, 10), 1]
+    ]);
+    expect(STATE_DOUBLE_TERM_YEARS.value).toBe(10);
+    expect(p.provenance).toEqual([STATE_DOUBLE_TERM_YEARS.provenance]);
+  });
+
+  it('with start: every first date is start; htf-2026 unchanged; PLAYER_START_PROVENANCE', () => {
+    const list = fundingPresets(cal, START);
+    const at = (id: string) => list.find((x) => x.id === id)!;
+    expect(at('housing-bond').pools[0].inflows).toEqual([
+      { kind: 'once', day: START, dollars: 410_442_573 }
+    ]);
+    expect(at('public-bank').pools[0].inflows.map((f) => (f.kind === 'once' ? f.day : -1))).toEqual(
+      [0, 1, 2, 3, 4].map((k) => (k === 0 ? START : yearsAfter(START, k)))
+    );
+    expect(at('revolving-fund').pools[0].inflows[0]).toMatchObject({ kind: 'once', day: START });
+    for (const p of list.filter((x) => x.id !== 'htf-2026')) {
+      for (const g of p.programmes) expect(g.from).toBe(START);
+      if (p.baselineScale.length > 0) expect(p.baselineScale[0].from).toBe(START);
+      expect(p.provenance).not.toContainEqual(NEXT_FISCAL_START_PROVENANCE);
+      expect(p.provenance).not.toContainEqual(FEDERAL_SUPPORT_START_PROVENANCE);
+    }
+    const f = at('general-revenue').pools[0].inflows[0] as Yearly;
+    expect(f.from).toBe(START);
+    expect(at('federal-support').pools[0].inflows[0]).toMatchObject({ from: START });
+    expect(at('state-double').baselineScale[1].from).toBe(yearsAfter(START, 10));
+    expect(at('htf-2026')).toEqual(fundingPresets(cal).find((x) => x.id === 'htf-2026'));
+    const plain = fundingPresets(cal);
+    for (const id of [
+      'housing-bond',
+      'general-revenue',
+      'revolving-fund',
+      'public-bank',
+      'federal-support'
+    ]) {
+      expect(plain.find((x) => x.id === id)!.provenance.length).toBe(at(id).provenance.length);
+      expect(at(id).provenance).toContainEqual(PLAYER_START_PROVENANCE);
+    }
+    expect(PLAYER_START_PROVENANCE.tier).toBe(4);
+  });
+
+  it("without start: today's default first dates", () => {
+    const first = (id: string) => get(id).pools[0].inflows[0];
+    const fiscal = nextFiscal(cal.asOf);
+    expect(first('housing-bond')).toMatchObject({ day: fiscal });
+    expect(first('general-revenue')).toMatchObject({ from: fiscal });
+    expect(first('revolving-fund')).toMatchObject({ day: fiscal });
+    expect(first('public-bank')).toMatchObject({ day: fiscal });
+    expect(get('state-off').baselineScale[0].from).toBe(fiscal);
+    expect(get('state-double').baselineScale[0].from).toBe(fiscal);
+    expect(get('federal-credits-off').baselineScale[0].from).toBe(nextCalendar(cal.asOf));
+    expect(first('federal-support')).toMatchObject({
+      from: dayOf(Math.max(2028, 2026 + 1), 1, 1)
+    });
+    expect(get('housing-bond').provenance).toContainEqual(NEXT_FISCAL_START_PROVENANCE);
+    expect(get('federal-support').provenance).toContainEqual(FEDERAL_SUPPORT_START_PROVENANCE);
+  });
+
+  it('yearsAfter: same month and day; 29 February 2028 by 1 is 28 February 2029', () => {
+    expect(yearsAfter(dayOf(2028, 2, 29), 1)).toBe(dayOf(2029, 2, 28));
+    expect(yearsAfter(dayOf(2028, 2, 29), 4)).toBe(dayOf(2032, 2, 29));
+    expect(yearsAfter(dayOf(2027, 7, 1), 29)).toBe(dayOf(2056, 7, 1));
+  });
+
+  it('dates and descriptions', () => {
+    const list = fundingPresets(cal);
+    for (const p of list) expect(p.dates).toBe(p.id === 'htf-2026' ? 'fixed' : 'start');
+    for (const p of list)
+      for (const g of p.programmes) {
+        const pool = p.pools.find((q) => q.id === g.pool)!;
+        expect(g.from).toBe(
+          Math.min(...pool.inflows.flatMap((f) => inflowArrivals(f, 0, LAST_DAY)))
+        );
+        expect(g.to).toBeNull();
+      }
+    const text = (id: string) => list.find((x) => x.id === id)!.description;
+    expect(text('general-revenue')).toBe(
+      "More City general-fund money every year for 30 years, shared with today's City money toward new affordable homes, so more homes get built each year while there are projects waiting for money."
+    );
+    expect(text('state-double')).toBe(
+      "Twice today's state money for ten years from a date you choose; on its own this adds no homes while the City's money is the limit, so pair it with more City or federal money."
+    );
+    expect(text('federal-support')).toBe(
+      "A new yearly federal grant for ten years from a year you choose that pays the City's part of each affordable home while it lasts; no law provides it yet, so the amount is your own."
+    );
+    expect(list.find((x) => x.id === 'htf-2026')!.reason).toBe(
+      'Not yet certified (passed November 2026).'
+    );
+  });
+
+  it('a measure started on 29 February: general revenue still pays 30 times', () => {
+    const leap = dayOf(2028, 2, 29);
+    const f = fundingPresets(cal, leap).find((p) => p.id === 'general-revenue')!.pools[0]
+      .inflows[0];
+    expect(f.kind === 'yearly' && f.to).toBe(dayOf(2057, 2, 28));
+    expect(inflowArrivals(f, cal.asOf, LAST_DAY)).toHaveLength(30);
   });
 });
 
@@ -381,19 +549,36 @@ describe('unavailable presets', () => {
     expect(get('federal-credits-off', c).available).toBe(true);
   });
 
-  it('federal-support needs a yearly state amount', () => {
+  it('federal-support needs a state arrival from asOf', () => {
     const bf = baselineFixture(FIXTURE_AS_OF).baselineFunding;
-    const c = {
+    const withState = (inflows: Inflow[]): Calibration => ({
       ...cal,
       baselineFunding: {
         ...bf,
-        pools: bf.pools.map((p) => (p.kind === 'state' ? { ...p, inflows: [] } : p))
+        pools: bf.pools.map((p) => (p.kind === 'state' ? { ...p, inflows } : p))
+      }
+    });
+    expect(get('federal-support', withState([]))).toMatchObject({
+      available: false,
+      reason: "This data's state pool has no money to start from."
+    });
+    const past: Inflow = { kind: 'once', day: FIXTURE_AS_OF - 10, dollars: 5 };
+    expect(get('federal-support', withState([past])).available).toBe(false);
+  });
+
+  it("federal-support is offered on once-only state money, with that payment's dollars", () => {
+    const bf = baselineFixture(FIXTURE_AS_OF).baselineFunding;
+    const once: Inflow = { kind: 'once', day: FIXTURE_AS_OF + 30, dollars: 7_000_000 };
+    const c: Calibration = {
+      ...cal,
+      baselineFunding: {
+        ...bf,
+        pools: bf.pools.map((p) => (p.kind === 'state' ? { ...p, inflows: [once] } : p))
       }
     };
-    expect(get('federal-support', c)).toMatchObject({
-      available: false,
-      reason: "This data's state pool has no yearly amount to start from."
-    });
+    const p = get('federal-support', c);
+    expect(p.available).toBe(true);
+    expect(p.pools[0].inflows[0]).toMatchObject({ kind: 'yearly', dollarsPerYear: 7_000_000 });
   });
 
   it('federal-credits-off says there is no federal pool', () => {
@@ -513,7 +698,10 @@ describe('addPreset and nextAddedId', () => {
       { pool: 'state', from: day + 100, scale: 2 }
     ]);
     const g = addPreset(addPreset(empty(), get('state-double')), off);
-    expect(g.baselineScale).toEqual([{ pool: 'state', from: day, scale: 0 }]);
+    expect(g.baselineScale).toEqual([
+      { pool: 'state', from: day, scale: 0 },
+      { pool: 'state', from: yearsAfter(day, 10), scale: 1 }
+    ]);
   });
 
   it('sorts a new entry into place', () => {
@@ -574,7 +762,23 @@ describe('valueSource', () => {
       REVOLVING_FUND_SIZE.provenance
     );
     expect(valueSource(poolOf('general-revenue'), 'inflows[0].from', presets)).toBe('custom');
-    expect(valueSource(poolOf('general-revenue'), 'inflows[0].to', presets)).toBe('custom');
+    expect(valueSource(poolOf('general-revenue'), 'inflows[0].to', presets)).toEqual(
+      GENERAL_FUND_TERM_YEARS.provenance
+    );
+  });
+
+  it("gives general-revenue's to the term's source while it is 29 years after from", () => {
+    const pool = structuredClone(poolOf('general-revenue'));
+    const f = pool.inflows[0] as Extract<Inflow, { kind: 'yearly' }>;
+    f.from = dayOf(2030, 3, 1);
+    f.to = yearsAfter(f.from, 29);
+    expect(valueSource(pool, 'inflows[0].to', presets)).toBe(GENERAL_FUND_TERM_YEARS.provenance);
+    f.to = yearsAfter(f.from, 28);
+    expect(valueSource(pool, 'inflows[0].to', presets)).toBe('custom');
+    expect(valueSource(pool, 'inflows[0].dollarsPerYear', presets)).toBe(
+      GENERAL_FUND_FY25.provenance
+    );
+    expect(valueSource(pool, 'inflows[0].from', presets)).toBe('custom');
   });
 
   it('labels the htf-2026 inflows, which are held back but still map', () => {
@@ -768,4 +972,178 @@ describe('presets through the lever parser, the policy document and buildFinance
       }
     }
   }
+});
+
+type FundEffect = Extract<Effect, { tag: 'fund' }>;
+type Scales = Extract<Effect, { tag: 'scales' }>;
+
+/** A given measure the way addPreset of the timeline builds it: ids `u-<id>-1`, default dates. */
+function measure(presetId: string, spans: { from: number; to: number | null }[]): Policy {
+  const p = get(presetId);
+  const label = p.label;
+  if (p.pools.length === 1) {
+    const pool = p.pools[0];
+    return {
+      id: 'm1',
+      label,
+      preset: presetId,
+      on: true,
+      where: { tag: 'fund', pool: pool.id },
+      spans: spans.map((s) => ({
+        ...s,
+        what: {
+          tag: 'fund',
+          pool: structuredClone(pool),
+          programmes: structuredClone(p.programmes)
+        } satisfies FundEffect
+      }))
+    };
+  }
+  return {
+    id: 'm1',
+    label,
+    preset: presetId,
+    on: true,
+    where: { tag: 'baseline' },
+    spans: spans.map((s) => ({
+      ...s,
+      what: { tag: 'scales', entries: structuredClone(p.baselineScale) } satisfies Scales
+    }))
+  };
+}
+const fundOf = (p: Policy, i = 0): FundEffect => p.spans[i].what as FundEffect;
+
+describe('dateMeasure', () => {
+  const S = dayOf(2029, 3, 11);
+  const at = (id: string) => fundingPresets(cal, S).find((x) => x.id === id)!;
+
+  it('re-dates a bond from its first span, keeping pool and programme ids', () => {
+    const p = measure('housing-bond', [{ from: S, to: null }]);
+    const d = dateMeasure(p, cal);
+    const w = fundOf(d);
+    expect(w.pool!.inflows).toEqual([{ kind: 'once', day: S, dollars: BOND_PRINCIPAL.value }]);
+    expect(w.pool!.id).toBe(fundOf(p).pool!.id);
+    expect(w.programmes.map((g) => [g.id, g.from])).toEqual([[fundOf(p).programmes[0].id, S]]);
+  });
+
+  it('re-dates general revenue: from S, to yearsAfter(S, 29)', () => {
+    const d = dateMeasure(measure('general-revenue', [{ from: S, to: null }]), cal);
+    expect(fundOf(d).pool!.inflows).toEqual([
+      {
+        kind: 'yearly',
+        from: S,
+        to: yearsAfter(S, GENERAL_FUND_TERM_YEARS.value - 1),
+        dollarsPerYear: GENERAL_FUND_FY25.value
+      }
+    ]);
+  });
+
+  it('re-dates every span of a two-span state-double from the first span', () => {
+    const p = measure('state-double', [
+      { from: S, to: S + 400 },
+      { from: S + 500, to: null }
+    ]);
+    const d = dateMeasure(p, cal);
+    const entries = [
+      { pool: at('state-double').baselineScale[0].pool, from: S, scale: 2 },
+      {
+        pool: at('state-double').baselineScale[0].pool,
+        from: yearsAfter(S, STATE_DOUBLE_TERM_YEARS.value),
+        scale: 1
+      }
+    ];
+    expect(d.spans.map((s) => [s.from, s.to])).toEqual([
+      [S, S + 400],
+      [S + 500, null]
+    ]);
+    for (const s of d.spans) expect((s.what as Scales).entries).toEqual(entries);
+  });
+
+  it('dates every available preset the way fundingPresets(cal, S) builds it', () => {
+    for (const { id, available } of fundingPresets(cal)) {
+      if (!available) continue;
+      const want = at(id);
+      const d = dateMeasure(measure(id, [{ from: S, to: null }]), cal);
+      if (want.pools.length === 1) {
+        expect(fundOf(d).pool).toEqual(want.pools[0]);
+        expect(fundOf(d).programmes).toEqual(want.programmes);
+      } else {
+        expect((d.spans[0].what as Scales).entries).toEqual(want.baselineScale);
+      }
+    }
+  });
+
+  it('keeps the span own ids and labels, and points programmes at the span pool', () => {
+    const p = measure('housing-bond', [{ from: S, to: null }]);
+    const w = fundOf(p);
+    const renamed: Policy = {
+      ...p,
+      where: { tag: 'fund', pool: 'mine' },
+      spans: [
+        {
+          ...p.spans[0],
+          what: {
+            ...w,
+            pool: { ...w.pool!, id: 'mine', label: 'My pool' },
+            programmes: [{ ...w.programmes[0], id: 'g9', label: 'My grant', pool: 'mine' }]
+          }
+        }
+      ]
+    };
+    const d = fundOf(dateMeasure(renamed, cal));
+    expect(d.pool!.id).toBe('mine');
+    expect(d.pool!.label).toBe('My pool');
+    expect(d.pool!.inflows).toEqual([{ kind: 'once', day: S, dollars: BOND_PRINCIPAL.value }]);
+    expect(d.programmes[0]).toMatchObject({ id: 'g9', label: 'My grant', pool: 'mine', from: S });
+  });
+
+  it('returns the same object when nothing moves or the policy is not a dated measure', () => {
+    const bond = measure('housing-bond', [{ from: S, to: null }]);
+    const p0 = { ...bond, preset: null };
+    expect(dateMeasure(p0, cal)).toBe(p0);
+    const unknown = { ...bond, preset: 'no-such-preset' };
+    expect(dateMeasure(unknown, cal)).toBe(unknown);
+    const painted: Policy = { ...bond, where: { tag: 'painted' } };
+    expect(dateMeasure(painted, cal)).toBe(painted);
+    const none = { ...bond, spans: [] };
+    expect(dateMeasure(none, cal)).toBe(none);
+    const w = fundOf(bond);
+    const edited: Policy = {
+      ...bond,
+      spans: [
+        {
+          ...bond.spans[0],
+          what: {
+            ...w,
+            pool: {
+              ...w.pool!,
+              inflows: [{ kind: 'once', day: S, dollars: BOND_PRINCIPAL.value + 1 }]
+            }
+          }
+        }
+      ]
+    };
+    expect(dateMeasure(edited, cal)).toBe(edited);
+    const once = dateMeasure(bond, cal);
+    expect(once).not.toBe(bond);
+    expect(dateMeasure(once, cal)).toBe(once);
+  });
+
+  it('returns the same object when the preset is not on offer (htf-2026)', () => {
+    const htf = fundingPresets(cal).find((x) => x.id === 'htf-2026')!;
+    expect(htf.available).toBe(false);
+    const bond = measure('housing-bond', [{ from: S, to: null }]);
+    const p = { ...bond, preset: 'htf-2026' };
+    expect(dateMeasure(p, cal)).toBe(p);
+  });
+
+  it('Review Focus 1: a preset id on the wrong kind of policy returns the same object', () => {
+    const fund = { ...measure('housing-bond', [{ from: S, to: null }]), preset: 'state-double' };
+    expect(dateMeasure(fund, cal)).toBe(fund);
+    const scales = { ...measure('state-double', [{ from: S, to: null }]), preset: 'housing-bond' };
+    expect(dateMeasure(scales, cal)).toBe(scales);
+    const mixed = { ...measure('state-double', [{ from: S, to: null }]), preset: 'public-bank' };
+    expect(() => dateMeasure(mixed, cal)).not.toThrow();
+    expect(dateMeasure(mixed, cal)).toBe(mixed);
+  });
 });

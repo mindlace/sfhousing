@@ -1,8 +1,8 @@
 <!--
   The editor of one of today's funding groups (funding-ui spec 4.5, items 1 to 5), expanded in
   place under its row in the Funding tab:
-  1. "Sources" (City only): each City pool and its yearly amount, its own dated changes, and its
-     own "+ Change from a date".
+  1. "Sources" (City only): each City pool and the money it receives in the year from asOf
+     (poolYearAmount), its own dated changes, and its own "+ Change from a date".
   2. "Dated changes": scaleLines, a City-wide change as one "City money" line, each with Remove.
   3. "+ Change from a date": the inline entry (From month and year; "Amount, % of today's"),
      with Apply change and Cancel. aria-disabled with its reason when the entries would pass 24; checked
@@ -19,6 +19,7 @@
   import { FINANCE_LIMITS } from '$lib/sim/levers/finance';
   import type { Day, Pool } from '$lib/timelapse/types';
   import {
+    NO_CEILING,
     SCALE_AMOUNT_DESC,
     SCALE_PCT_ERROR,
     addProgrammeName,
@@ -38,9 +39,11 @@
   import { nextFiscal } from './funding-presets';
   import {
     groupProvenance,
+    poolYearAmount,
     programmeSentence,
     scaleLines,
     tiersText,
+    windowLastMonth,
     type Baseline,
     type BaselineGroup
   } from './funding-view';
@@ -74,20 +77,13 @@
       new Date(Date.UTC(2000, i, 1))
     )
   );
-  const LAST_MONTH: Day = dayOf(2066, 12, 1);
+  const LAST_MONTH = $derived(windowLastMonth(asOf));
   const utcYear = (d: Day): number => new Date(d * 86_400_000).getUTCFullYear();
 
-  /** A pool's yearly inflows in force at `asOf`, scaled by the entry in force then. */
-  function poolPerYear(p: Pool): number {
-    let best: { from: Day; scale: number } | undefined;
-    for (const e of f.baselineScale)
-      if (e.pool === p.id && e.from <= asOf && (best === undefined || e.from >= best.from))
-        best = e;
-    let sum = 0;
-    for (const x of p.inflows)
-      if (x.kind === 'yearly' && x.from <= asOf && (x.to === null || x.to >= asOf))
-        sum += x.dollarsPerYear;
-    return Math.round(sum * (best?.scale ?? 1));
+  /** A City source's amount: what it receives in the year from `asOf`, or "No ceiling". */
+  function poolAmountText(p: Pool): string {
+    const amount = poolYearAmount(f, p, asOf);
+    return amount === null ? NO_CEILING : perYearText(amount);
   }
 
   /** What an entry targets: the whole group, or one City source. */
@@ -222,7 +218,7 @@
               type="number"
               inputmode="numeric"
               min={utcYear(asOf)}
-              max="2066"
+              max={utcYear(LAST_MONTH)}
               step="1"
               class="{field} w-24"
               aria-invalid={entry.error === dateRangeError(asOf) ? 'true' : undefined}
@@ -271,7 +267,7 @@
       <ul class="flex flex-col gap-2">
         {#each group.pools as pool (pool.id)}
           <li class="flex flex-col gap-0.5">
-            <span>{pool.label}: {perYearText(poolPerYear(pool))}</span>
+            <span>{pool.label}: {poolAmountText(pool)}</span>
             {#each lines.filter((l) => l.pools.length === 1 && l.pools[0] === pool.id) as l (l.from)}
               <span class={muted}>{l.text}</span>
             {/each}
