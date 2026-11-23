@@ -20,6 +20,7 @@ is imported, never changed; rules defined by unexported code (`segValue`, `fundi
 | `apply.ts`       | `planLotMonth` (the hook's `planLot`), `applyLots`, `joinLine` (rule 9 order), `remakeRow` (rule 17), `leaveLine` (rule 8), `fundableAny`, the rowless memo. |
 | `serve.ts`       | `serveLine` (rule 10, grouped by default), `awardDay` (rule 11, T17), `fundedStartOf`; `awardRow` is the one award site.                                     |
 | `pools.ts`       | `moneyIn` (rule 12), `commitAward`, `moneyOnEvent` (rule 13), `availableOf`.                                                                                 |
+| `closing.ts`     | `closeSpent`, `reopenArrivals`, `lastArrivalOf`, `closedTimeline`: pool closing (below).                                                                     |
 | `policy.ts`      | `policyChanged` (rules 17 to 19): re-make or lapse each waiting row, respell, plan again.                                                                    |
 | `shadow.ts`      | `shadowAward`, `stepShadows` (rule 20), then the line's (amortized) compaction.                                                                              |
 | `frame-money.ts` | `frameMoney` (one frame's offers, bundles and money key, memoised per timeline and frame id), `sameMoney`.                                                   |
@@ -44,10 +45,17 @@ month whose `apply` ran). Side tables on the line: spells (`spellLot`, `spellKin
 and shadows (`shadowLot`, `shadowRow`, `shadowK`, `shadowR`, `shadowExisting`, `shadowMonth`).
 
 **Pools**: one row per pool id (`id`, `received`, `committed`, `spentGrant`, `outLoan`,
-`lostLoan`, `lostGuarantee`, `moneyDay`, `moneyMonth`: the latest money that reached it), and one
+`lostLoan`, `lostGuarantee`, `moneyDay`, `moneyMonth`: the latest money that reached it;
+`closedDay`: the first day the pool is closed, `NO_DAY` while open), and one
 money row per (awarded project, paying programme) with events still to come, by project row
 ascending (`mRow`, `mProg`, `mPool`, `mInstr`, `mGrant`, `mLent`, `mReserve`, `mGuaranteed`,
 `mLoss` = the award frame's `terms.lossOnExit`).
+
+**Shut rows** (`FundPools`, one per time a pool closed, oldest first; `shutN` rows): `shutRow` (the
+world pool row), `shutFrom` (the first day closed, a model month's first day), `shutTo` (the first
+day open again, a model month's first day, or `NO_DAY` while closed). `addShutRow` opens a row and
+sets `closedDay`; `reopenPool` closes it with `shutTo` and clears `closedDay`, and removes a row
+whose `shutTo` equals its `shutFrom`.
 
 **`version` and the caches.** `line-index.ts` and `frameMoney` keep caches in `WeakMap`s outside
 the world; a `structuredClone` is a new object and builds its own, so clones stay exact. The line
@@ -112,21 +120,88 @@ writing**, or the index goes stale silently (a write without a bump is not detec
 
 ## Hook calls by system
 
-| System   | Hook             | Funding work                                                                    |
-| -------- | ---------------- | ------------------------------------------------------------------------------- |
-| create   | `create`         | `initFunding` with the frame's pool ids.                                        |
-| 1 policy | `policyChanged`  | Unless view and money identity (`sameMoney`) are unchanged: re-make or lapse.   |
-| 2        | `moneyIn`        | The frame's `finance.arrivals` into the pools (rule 12).                        |
-| 3, 5, 6  | `onProjectEvent` | `'start'` of an ordinary lot start: its rows leave the line. Else money events. |
-| 4        | `apply`          | The due lots' applications, joined in key order; `appliedThrough`.              |
-| 5        | `serve`          | Grouped scan, awards (`startProject` with a `FundedStart`), `'award'`.          |
-| 7        | `shadow`         | Shadow starts and `'displaced'`, then the amortized compaction.                 |
-| any      | `planLot`        | The first month the lot applies, or 0. Pure (it may build caches).              |
+| System   | Hook             | Funding work                                                                                                  |
+| -------- | ---------------- | ------------------------------------------------------------------------------------------------------------- |
+| create   | `create`         | `initFunding` with the frame's pool ids.                                                                      |
+| before 1 | `beforeStep`     | `reopenArrivals`, then the timeline the step runs under (`closedTimeline`).                                   |
+| 1 policy | `policyChanged`  | Unless view and money identity (`sameMoney`) are unchanged: re-make or lapse.                                 |
+| 2        | `moneyIn`        | The frame's `finance.arrivals` into the pools (rule 12).                                                      |
+| 3, 5, 6  | `onProjectEvent` | `'start'` of an ordinary lot start: its rows leave the line. Else money events.                               |
+| 4        | `apply`          | The due lots' applications, joined in key order; `appliedThrough`.                                            |
+| 5        | `serve`          | Grouped scan, awards (`startProject` with a `FundedStart`), `'award'`, then the closing check (`closeSpent`). |
+| 7        | `shadow`         | Shadow starts and `'displaced'`, then the amortized compaction.                                               |
+| any      | `planLot`        | The first month the lot applies, or 0. Pure (it may build caches).                                            |
+| planning | `timelineOf`     | The timeline `planDue` plans under (`closedTimeline`); changes nothing.                                       |
 
 **Compaction** (`line-index.ts` `compact`, perf): a line of `COMPACT_MIN` (1024) rows or more is
 compacted only once an eighth of it is `gone`; a shorter one whenever it holds a `gone` row. So
 `gone` rows may survive a step on a long line; every reader skips them. The count comes from the
 index (rebuilt from columns when stale), so a clone compacts in the same months.
+
+## Pool closing
+
+A pool that has received its last arrival and cannot pay a waiting application is closed: the
+world then steps and plans as if the pool's programmes were switched off. Spec:
+[2026-11-22-pool-closing-design.html](../superpowers/specs/2026-11-22-pool-closing-design.html).
+`closing.ts`.
+
+**The last arrival** (`lastArrivalOf(pool, asOf)`): the last day the frame's pool definition
+receives money, from `inflowArrivals` over each inflow with dollars above 0 (a `once` inflow's
+day, a `yearly` inflow's last anniversary up to its `to`); `NO_DAY` when no arrival falls on or
+after `asOf`; null when a `yearly` inflow with dollars above 0 has `to: null` (the pool never
+stops). Memoised per pool object and `asOf`. It reads the definition's `inflows`, the one read of
+them (`pools.spec.ts` guards that nothing else reads them).
+
+**The four conditions** (`closeSpent`), judged per pool of the month's frame in world pool row
+order, cheap ones first. The pool closes when:
+
+1. it is open (`closedDay` is `NO_DAY`);
+2. the month begins after its last arrival (`last` not null and before `ctx.firstDay`);
+3. no money row of it is a loan or a guarantee (no loan out, no reserve held);
+4. some waiting row of a free lot, whose bundle (as the frame offers it whole) holds a programme
+   of the pool, asks it for more than serving's available money (`asksOf` for the whole bundle).
+
+**Where the check runs.** In system 5, inside `serveLine`'s `holdingReturns`, after the scan's last
+row (`serveLine(ctx, { closing })`): money returned during the scan has not reached the pool, and
+the pool is judged against the money the scan held out. The closed day is `ctx.lastDay + 1`: the
+next month's first day. In the month of its last arrival a short application closes nothing.
+
+**The `shut` history.** `closeSpent` calls `addShutRow(pools, q, closedDay)`; the pool's
+`closedDay` is the open row's `shutFrom`. A pool opened again keeps its row with `shutTo` set. A
+pool closed and opened on the same day leaves no row. The columns are in the world, so a
+`structuredClone` carries them and a rewind needs nothing more.
+
+**The closed view** (`closedTimeline(timeline, pools, asOf)`): the base timeline with, in each
+month whose first day falls in a shut row, the programmes of the closed pools offered 0 (a frame
+with a new id from the base's id and the closed ids; the other programmes are unchanged). Its
+`changes()` are the base's plus each month where the set of closed pools of the frame changes;
+`touched(k)` is the base's at a base change and empty at a closing or opening month, so the core
+replans every free lot. `readyThrough` is the base's. It is the switched-off path: the world's
+`policyChanged` re-makes each waiting row whose bundle held the pool without it, or lapses the
+row, exactly as a policy that switches the programmes off does. Views are cached per timeline by
+the shut rows' signature (the same object while the history is unchanged); with no shut row it is
+the timeline itself. `beforeStep` hands the step this view and `timelineOf` hands it to `planDue`,
+both through `withFunding` (`world.ts`).
+
+**Opening again.** `reopenArrivals(world, statics, timeline)` runs in `beforeStep`, before the
+view is taken: for each arrival of the base frame of the month about to step with dollars above 0
+whose pool is closed, `reopenPool` at the month's first day. The month then steps with the pool's
+programmes offered; it can close again later. Nothing runs past `timeline.readyThrough()`.
+
+**Edits and rewind.** Closing reads only the world and the frames; it draws nothing. An edit that
+gives a pool a later arrival before it closes keeps it open: condition 2 reads the current frame.
+A restore to a month before a closing re-steps and closes it again in the same month; an edit
+after it keeps the history.
+
+**`WorldOptions.poolClosing`** (default true; `createFundingSystem(opts)`): false makes
+`serveLine` skip the check, so no pool closes and an application waits on a spent pool, as the
+older engine does. `runFunded` (`test/fixtures.ts`) takes `poolClosing`. The specs that pin that
+wait or test serving, re-making and caching on the base timeline run with it false:
+`funded.spec.ts`'s rule 16 limit, `policy.spec.ts`'s rule 16 case and random finances,
+`retained.spec.ts`'s six worlds, `apply.spec.ts`'s kind whose day fell in an applied month, the
+tolerance referee, and `score/money.spec.ts`'s rule 12 comparison with today's engine.
+`closing.spec.ts` holds closing itself; `referee-ledger.spec.ts` runs with closing on, since
+closing moves no money.
 
 ## Rule 1's measurement (Task 1)
 
@@ -305,6 +380,9 @@ All in `src/lib/sim/world/funding/`. Server project (signoff) unless noted.
   for the continuing ones); on the older-format calibration the federal pool (ten trillion a year)
   never falls below 99% of it and no waiting row is short on it, also with it switched off for
   months 13 to 24.
+- **Closing** `closing.spec.ts`: `lastArrivalOf`, the four conditions, the closed day and `shut`
+  rows, equality with a switched-off pool, re-make and lapse, opening again, `closedTimeline`,
+  `poolClosing: false`, grouped and direct serving, clone and restore.
 - **Remedies** `remedies.spec.ts`: grouped serving equals the direct scan (events, ledger, world),
   warm and cold caches equal across a clone.
 - **Golden**: `funded.golden.test.ts` (server) and `funded.golden.svelte.spec.ts` (client) against
@@ -320,7 +398,9 @@ All in `src/lib/sim/world/funding/`. Server project (signoff) unless noted.
 `tolerance.referee.spec.ts` runs both engines over seeds 1 to 200 to month 480 and compares, at
 years 5, 10, 20 and 40, the mean of completed net homes (1%), its standard deviation (15%) and the
 mean awards and funded homes (3%), with E1 to E7 checked after every step. About 4 minutes, so it
-runs only with the switch on, never in signoff (which runs `referee-ledger.spec.ts`, above):
+runs only with the switch on, never in signoff (which runs `referee-ledger.spec.ts`, above). It
+runs the step engine with `poolClosing: false`: today's engine waits on a spent pool, so closing
+would move the means it compares.
 
 ```
 SFH_WORLD_FUNDING_REFEREE=1 SFH_WORLD_LIVE=<dataset dir> npx vitest --run --project server src/lib/sim/world/funding/tolerance.referee.spec.ts
@@ -378,3 +458,5 @@ whenever a capped fund opens to many lots in one month.
 - **A month's first-day bundle**: the offer is read on the first day of the month (S5 `offered`);
   today's engine reads each day.
 - **Replan cost**: every free lot's `planLot` runs in a frame-change month (see Cost).
+- **Spent pools**: the step engine closes a spent pool (see Pool closing); today's engine keeps
+  an application waiting on it.
