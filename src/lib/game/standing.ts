@@ -10,5 +10,5 @@ export function standing(level: Level, bar: Bar | null, seen: Result | null): St
   const against = level === 2 ? null : bar;
   const won = against === null ? seen.kind === 'reached' : beats(seen, against);
   if (won && seen.kind === 'reached') return { kind: 'won', on: seen.on };
-  return { kind: 'short', seen, bar: against };
+  return { kind: 'short', seen, bar };
 }

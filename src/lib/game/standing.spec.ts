@@ -25,6 +25,9 @@ describe('standing', () => {
   it('level 2 missed is short with no bar', () => {
     expect(standing(2, null, missed)).toEqual({ kind: 'short', seen: missed, bar: null });
   });
+  it('level 2 missed returns the bar as given', () => {
+    expect(standing(2, BAR, missed)).toEqual({ kind: 'short', seen: missed, bar: BAR });
+  });
   it.each([3, 4, 5] as const)('level %i reached before the bar month is won', (n) => {
     expect(standing(n, BAR, reached(2057, 5, 31))).toEqual({
       kind: 'won',
