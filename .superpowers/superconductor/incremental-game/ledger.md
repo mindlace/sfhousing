@@ -1,6 +1,6 @@
 # Superconductor ledger — design: docs/superpowers/design/2026-11-22-1216-incremental-game.html
 Package worktree: /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game
-Build graph: docs/superpowers/design/2026-11-22-1216-incremental-game-build-graph.md @ d1e210bc
+Build graph: docs/superpowers/design/2026-11-22-1216-incremental-game-build-graph.md @ 00bede63
 SDD scripts: /Users/mindlace/.claude/plugins/cache/claude-plugins-official/superpowers/7.0.2/skills/subagent-driven-development/scripts
 HTML scripts: /Users/mindlace/.claude/plugins/cache/super/superpowers-html/0.1.0/bin
 Project commands: npm, npx, lsof, ls, cat, grep, head, tail, wc, pwd, uptime, mkdir (mail-setup only, also: aws); operators run with --permission-mode dontAsk
@@ -22,6 +22,7 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - 9459e672-7399-4f86-bb48-8053762a8537 | model opus | package @ f6c41be9 | 2026-11-22 | ruling game-shell-2
 - e3b9bcc4-2648-44a3-a40a-b19b12c28196 | model opus | package @ 5f2c8d4d | 2026-11-22 | ruling conductor-13
 - 4891e372-8da1-41cc-8fca-2ead83e76b2c | model opus | package @ 752486fa | 2026-11-23 | ruling finite-funding-2
+- f6605ed3-3ecf-4134-8ac7-679f1c3e0b68 | model opus | package @ 00bede63 | 2026-11-23 | ruling game-sim-2
 
 ## 2026-11-22 — composition started (supercomposer, fresh)
 
@@ -488,7 +489,11 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - build graph for conductor-14 @ d1e210bc
 - relayed conductor-14 to incremental-game-game-shell
 - routed conductor-14
-- 2026-11-23 game-sim-2 from game-sim [defect-class: spec-silence]: how /sim drives G2's touched() and the beforeLeave flush, and a SimRoute storage test seam; blocks its Task 8 only. Fork after the suite on finite-funding's final merge reports →
+- 2026-11-23 game-sim-2 from game-sim [defect-class: spec-silence]: how /sim drives G2's touched() and the beforeLeave flush, and a SimRoute storage test seam; blocks its Task 8 only. Fork after the suite on finite-funding's final merge reports → rulings/game-sim-2.md (commit bc1ad851, changes contract: yes)
+- routing game-sim-2: rulings/game-sim-2.md, commit bc1ad851
+- build graph for game-sim-2 @ 00bede63
+- relayed game-sim-2 to incremental-game-game-sim
+- routed game-sim-2
 
 ## Forks
 - fork checkpoint-2 started 2026-11-22T16:20
@@ -671,6 +676,12 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - fork rule-conductor-14 exited [0]: output
 - fork graph-conductor-14 started 2026-11-23T01:41
 - fork graph-conductor-14 exited [0]: output
+- fork rule-game-sim-2 started 2026-11-23T02:06
+- fork rule-game-sim-2 exited [0]: output
+- fork graph-game-sim-2 started 2026-11-23T02:07
+- fork graph-game-sim-2 exited [0]: output
+- fork checkpoint-15 started 2026-11-23T02:07
+- fork checkpoint-15 exited [0]: output
 
 ## Frame-defect tally
 - owner-ruling-drift: 2 — instances: conductor-1 (gate-1, 2026-11-22); conductor-8 (gate-7, 2026-11-22)
@@ -767,6 +778,7 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - ruling conductor-14 reopens game-shell for a test-only fix round (hydration and waitForMap waits in its remix e2e cases); it was resting, so relaunched (no rung) with the ruling; it re-sends complete.
 - 02:10 merge of finite-funding complete @ 5fd73c92 (docs and test titles after df556eab) made onto 953b8859 (merge commit 8fa1cb6d), suite running (agent; scratchpad `merge-finite-funding-final/`); not merged until it passes; on failure reset to 953b8859 with ledger.md copied out and back. Operators told not to merge the integration branch meanwhile: game-shell. pool-closing and game-sim merged at 924abcbd before launch.
 - merged finite-funding @ 5fd73c92 into superconductor/incremental-game (complete), tests pass (check 0 errors; lint 0 errors; unit 9059 passed; pipeline 2284 passed; e2e 760 passed, 0 failed, 2 flaky under load: e2e/sim.spec.ts:729 and :771, `locator.click` 30 s timeouts, both passed on retry; the merge touched one doc and three test titles), band low. Flake watch list for closing's signoff (needs a quiet machine): e2e/perf/loaded-500.perf.spec.ts:8, e2e/sim.spec.ts:729, :771.
+- merge queue: game-shell complete @ 667900a4 (ruling conductor-14: readiness waits in share-states, game-shell and share-roundtrip e2e cases; its npm test green, changed cases 30/30 and share-roundtrip 10/10 at repeat-each=5 retries off), after the game-sim-2 fork exits
 
 ## Cost
 - remove-lesscars: admitted 2026-11-22T16:31 seven_day 44% | session d889ec5c-3342-4a77-99f8-993f1115a679 | finished 2026-11-22T21:14 seven_day 60%
