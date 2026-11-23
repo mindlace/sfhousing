@@ -172,6 +172,17 @@ describe('LevelPanel', () => {
     expect(document.activeElement).toBe(heading().element());
   });
 
+  it('a refused Level up shows the storage line and keeps the level', async () => {
+    const { store, storage } = await mount();
+    store.setOffer({ on: 31000, datasetVersion: 'fixture-0' });
+    storage.failWrites = true;
+    await levelUpButton().click();
+    await expect.element(page.getByTestId('level-error')).toHaveTextContent(STORAGE_TEXT);
+    await expect.element(heading()).toHaveTextContent('Level 3');
+    expect(store.progress.level).toBe(3);
+    await expect.element(levelUpButton()).toBeVisible();
+  });
+
   it("each sync state's words", async () => {
     appPage.url = new URL('http://localhost/sim?x=1') as never;
     const { sync } = await mount();

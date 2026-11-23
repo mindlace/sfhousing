@@ -126,6 +126,7 @@ test('the seed is written once', async ({ page }) => {
   await seedGame(page, 3);
   const first = seededParts(await load(page));
   const id = first.index.current;
+  await expect(page.locator('html')).toHaveAttribute('data-hydrated', '');
   await page.evaluate(
     (k) => {
       const save = JSON.parse(localStorage.getItem(k.key) ?? 'null');
@@ -146,6 +147,7 @@ test('the seed is written once', async ({ page }) => {
 test('a stored index is never overwritten', async ({ page }) => {
   await seedGame(page, 3);
   const id = seededParts(await load(page)).index.current;
+  await expect(page.locator('html')).toHaveAttribute('data-hydrated', '');
   await page.evaluate(
     (k) => {
       localStorage.removeItem(k.key);

@@ -71,7 +71,10 @@
   async function levelUp(): Promise<void> {
     error = '';
     commitOpenRename();
+    const offer = game.offer;
     game.levelUp();
+    // A refused write keeps the offer, and the store has no result to report it with.
+    if (offer !== null && game.offer === offer) error = STORAGE_TEXT;
     await tick();
     if (!showLevelUp) document.getElementById(headingId)?.focus();
   }
