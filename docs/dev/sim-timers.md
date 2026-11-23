@@ -68,7 +68,9 @@ carries a product past the clamp.
 
 ## Revert and the stored snapshot
 
-Save ("Save timelines") and "Revert to saved" exist in `PermittingSection` only with `snapshot` true, and no page mounts it so: its one host, `WhatEditor` (`src/lib/timeline/`), passes `snapshot={false}`, because schema 4 carries a saved set as its own off policy and each policy has an on/off switch and Undo. Revert reads "Revert to <preset name>" and returns the selected span's set to its preset's resolved set (a custom timing policy keeps preset `observed` with the label `CUSTOM_TIMING_LABEL`, so it reverts to the observed timings). The preset belongs to the policy: on a policy of several spans the preset select is disabled, with the reason behind a tap (`PRESET_PER_POLICY`). A schema 3 document can hold a stored snapshot, `timing.saved` (a set with its label). The schema 3
+Save ("Save timelines") and "Revert to saved" exist in `PermittingSection` only with `snapshot` true, and no page mounts it so: its one host, `WhatEditor` (`src/lib/timeline/`), passes `snapshot={false}`, because schema 4 carries a saved set as its own off policy and each policy has an on/off switch and Undo. Revert reads "Revert to <preset name>" and returns the selected span's set to its preset's resolved set (a custom timing policy keeps preset `observed` with the label `CUSTOM_TIMING_LABEL`, so it reverts to the observed timings). The preset belongs to the policy: on a policy of several spans the preset select is disabled, with the reason behind a tap (`PRESET_PER_POLICY`).
+
+A schema 3 document can hold a stored snapshot, `timing.saved` (a set with its label). The schema 3
 codec keeps it in a stored body, Publish strips it (`SIM_CODEC.publishable`), and every load
 reconciles both the current set and the snapshot with the calibration the page runs on
 (`reconcileTiming`, `src/lib/sim-page/reconcile.ts`): presets are re-resolved by their rule and

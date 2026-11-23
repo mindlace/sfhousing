@@ -289,7 +289,8 @@ statements carry their own provenance.
 **`simulateDetailed` is the one ledger collector**: it passes a `ledger` sink that pushes each event
 in arrival order, and only when the input has `finance` (otherwise `ledger` is `[]` and no sink
 is passed, so a run without finance is untouched). **The fast path is untouched:** `addNet`,
-`NetAcc` and `simulateNet` are unchanged, so the band and the twin cost what they cost before. `shownRun` computes `tiers` with `tierSeries` and `money` with `moneyOf` (the twin's
+`NetAcc` and `simulateNet` are unchanged, so the band and the twin cost what they cost before.
+`shownRun` computes `tiers` with `tierSeries` and `money` with `moneyOf` (the twin's
 `finance.pools` as `baseline`), after `shownSeries`; `postTimeline` posts the same objects on every
 post. `TierCtx` is built when the loaded input changes (a lever revision), not per run.
 

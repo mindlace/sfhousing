@@ -373,8 +373,8 @@ The released version is `2026-11-08-3b7fa918` (`<v2>`). It differs from `2026-11
 by the two block keep rows for `8953` and `8958`: `road_like.kept` is 91 (was 89), and
 `road_like.lots` and `scenario.road_like.lots` are 491 (493), with `.r1n` 123 (124) and `.r2s` 59
 (60). `scenario.road_like.unhostable` and `.net_removed` are equal (202, 6,861), `calibration.json`
-is byte-identical, and the freeway-removal step's summary file (removed since) differs only in `datasetVersion`. All 34
-invariants passed. The figures below were measured on `7d2097ac`, built the same way:
+is byte-identical, and the freeway-removal step's summary file (removed since) differs only in
+`datasetVersion`. All 34 invariants passed. The figures below were measured on `7d2097ac`, built the same way:
 
 Built 2026-11-08 on the owner's laptop (Apple M5 Pro, Mac17,9) as `2026-11-08-7d2097ac`, with the
 road-like rule and the curated `pipeline/enrichment/road-lots.json` of the imagery review, from the

@@ -231,8 +231,8 @@ Count keys added to the build's counts (and so to `report.json`; they are not fi
 
 `src/lib/sim/finance/` is in the dataset version (`PATHS` in `pipeline/lib/version.ts`; chreode's
 `dataset` rule and the Pipeline workflow's path lists cover it): the calibration step imports the
-prototypes for the slope. Any change there is a dataset change, made at a release. `src/lib/fzp/market-view.ts` is page
-code and stays outside the hashed paths.
+prototypes for the slope. Any change there is a dataset change, made at a release.
+`src/lib/fzp/market-view.ts` is page code and stays outside the hashed paths.
 
 ## The page
 
