@@ -1,6 +1,6 @@
 # Superconductor ledger — design: docs/superpowers/design/2026-11-22-1216-incremental-game.html
 Package worktree: /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game
-Build graph: docs/superpowers/design/2026-11-22-1216-incremental-game-build-graph.md @ 2132c5bc
+Build graph: docs/superpowers/design/2026-11-22-1216-incremental-game-build-graph.md @ fb46e5da
 SDD scripts: /Users/mindlace/.claude/plugins/cache/claude-plugins-official/superpowers/7.0.2/skills/subagent-driven-development/scripts
 HTML scripts: /Users/mindlace/.claude/plugins/cache/super/superpowers-html/0.1.0/bin
 Project commands: npm, npx, lsof, ls, cat, grep, head, tail, wc, pwd, uptime, mkdir (mail-setup only, also: aws); operators run with --permission-mode dontAsk
@@ -550,6 +550,11 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - relayed funding-measures-2 to incremental-game-funding-measures
 - relayed funding-measures-2 to incremental-game-game-sim (not sent: game-sim is merged and complete and the ruling gives it nothing to change; the write-set note is in its spec)
 - routed funding-measures-2
+- 2026-11-23 closing-1 from closing [defect-class: spec-disagreement]: may closing rewrite comment-only hits inside existing test files, given "No existing test is changed by this unit" → rulings/closing-1.md (commit fc506543, changes contract: no)
+- routing closing-1: rulings/closing-1.md, commit fc506543
+- build graph for closing-1 @ fb46e5da
+- relayed closing-1 to incremental-game-closing
+- routed closing-1
 
 ## Forks
 - fork checkpoint-2 started 2026-11-22T16:20
@@ -776,6 +781,10 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - fork graph-funding-measures-2 exited [0]: output
 - fork review-funding-measures-05933f2e started 2026-11-23T06:54
 - fork review-funding-measures-05933f2e exited [0]: output
+- fork rule-closing-1 started 2026-11-23T07:10
+- fork rule-closing-1 exited [0]: output
+- fork graph-closing-1 started 2026-11-23T07:10
+- fork graph-closing-1 exited [0]: output
 
 ## Frame-defect tally
 - owner-ruling-drift: 2 — instances: conductor-1 (gate-1, 2026-11-22); conductor-8 (gate-7, 2026-11-22)
@@ -810,6 +819,7 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - source-evidence: 2 — adds funding-measures-1 (2026-11-23)
 - write-set-gap: 8 — adds game-sim-3 (2026-11-23)
 - spec-disagreement: 8 — adds funding-measures-2 (2026-11-23), the seam between the real summary and game-sim's test
+- spec-disagreement: 9 — adds closing-1 (2026-11-23)
 
 ## Integration
 - 17:50 merge of contracts @ f6ee1de3 made (merge commit 5453b107), full suite running in the package worktree (agent; logs in the session scratchpad `merge-contracts/`); not ledgered as merged until it passes. No amending fork starts until then; queued questions in order: remove-multiuser-1, game-core-1, game-core-2, game-core-3, game-sim-1, pool-closing-1, conductor-10, conductor-11. Then merge remove-multiuser's row I1 @ cbd11881.
