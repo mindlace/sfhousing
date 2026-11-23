@@ -23,7 +23,7 @@
   let announce = $state('');
   let input = $state<HTMLInputElement | null>(null);
 
-  const user = $derived(currentUser.overlay(page.data.user ?? null));
+  const user = $derived(currentUser.overlay(page.data?.user ?? null));
   const account = $derived(game.sync.account);
   const handle = $derived(savedHandle ?? user?.handle ?? account?.handle ?? '');
   const claimed = $derived(

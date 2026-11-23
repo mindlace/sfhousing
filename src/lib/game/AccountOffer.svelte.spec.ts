@@ -131,6 +131,18 @@ describe('AccountOffer states', () => {
       .toBeVisible();
   });
 
+  it('renders the no-account state when the page has no data', async () => {
+    const stub = hoisted.pageStub as { data?: unknown };
+    const data = stub.data;
+    delete stub.data;
+    try {
+      await render(AccountOffer);
+      await expect.element(page.getByText(syncText('local')!)).toBeVisible();
+    } finally {
+      stub.data = data;
+    }
+  });
+
   it('renders nothing under the open game', async () => {
     hoisted.holder.open = true;
     sync.account = { handle: 'a', handleClaimed: false };
