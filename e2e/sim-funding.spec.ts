@@ -16,7 +16,6 @@ import type { Calibration, Pool, Programme } from '../src/lib/timelapse/types';
 import {
   AMOUNT_ERROR,
   DRAFT_LINE,
-  NO_LIMIT,
   SWITCHED_OFF,
   addProgrammeName,
   fundingNotices,
@@ -197,7 +196,7 @@ test('1a. City funding scale and its rows, a11y light and dark', async ({ page }
   const groups = baselineGroups(NO_FUNDING, BASELINE, ASOF);
   expect(groups.length).toBeGreaterThanOrEqual(3);
   for (const g of groups) {
-    const amount = g.off ? SWITCHED_OFF : g.perYear === null ? NO_LIMIT : perYearText(g.perYear);
+    const amount = g.off ? SWITCHED_OFF : perYearText(g.perYear);
     const row = editor(page).getByRole('button', { name: new RegExp(`^${esc(g.name)} · `) });
     await expect(row).toContainText(`${g.name} · ${amount}`);
     await expect(row).toContainText(groupPaysText(g.perHome));
@@ -328,6 +327,12 @@ test('4. a dated change: the state switched off from next July', async ({ page }
   await addPolicy(page, 'Public money', 'City funding scale');
   const state = baselineGroups(NO_FUNDING, BASELINE, ASOF).find((g) => g.group === 'state')!;
   const row = editor(page).getByRole('button', { name: new RegExp(`^${esc(state.name)} · `) });
+  // The baseline covers less than every home (fixture-0's spent pools have no programme), so the
+  // coverage line is an explanation; the pointer left over it by the "+" menu opens it, and below
+  // md its text is a line that closes, moving the rows up, when the pointer leaves. Settle that
+  // before the press.
+  await row.hover();
+  await expect(editor(page).locator('[data-explain-open]')).toHaveCount(0);
   await row.click();
   await expect(row).toHaveAttribute('aria-pressed', 'true');
   await editor(page).getByRole('button', { name: 'Change from a date', exact: true }).click();

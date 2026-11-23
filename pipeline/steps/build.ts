@@ -12,7 +12,7 @@ import {
 import { writeFileSync } from 'node:fs';
 import { availableParallelism, tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
-import { TOOL_VERSIONS, type InvariantProfile } from '../config';
+import { FREEWAY_LAND_JSON, TOOL_VERSIONS, type InvariantProfile } from '../config';
 import { BuildError } from '../lib/build-error';
 import { run } from '../lib/exec';
 import { openDuck, type Duck } from '../lib/duck';
@@ -31,21 +31,12 @@ import { loadNormalised, normaliseAll } from '../sources/normalise';
 import { overtureReleaseProblem } from '../sources/overture';
 import { SB79_EXEMPTIONS_CSV } from '../sources/sfbos';
 import { FIXTURE_CAL, LIVE_CAL } from '../lib/fzp-cal/config';
-import {
-  LC,
-  LESSCARS_BASEMAP_IDS_JSON,
-  LESSCARS_FREEWAY_LAND_JSON,
-  LESSCARS_PLAN_JSON
-} from '../lesscars-config';
-import { readBasemapIds } from '../lib/lesscars/basemap-ids';
-import { splitPhasesOf } from '../lib/lesscars/basemap-split';
-import { freewayLandSet, readFreewayLand } from '../lib/lesscars/freeway-land';
+import { freewayLandSet, readFreewayLand } from '../lib/freeway-land';
 import { readFundingFile, writeCalibration } from './calibration';
 import { checkDataset, type InvariantResult } from './check';
 import { readParcelRecords, writeChunks, writeNeighborhoods, type ChunkOut } from './chunks';
 import { writeGross } from './gross';
 import { buildManifest, writeManifest } from './manifest';
-import { writeLessCars } from './lesscars';
 import { writePolicy } from './policy';
 import { writeProjectRecords } from './projects';
 import { writeRenderBoxes } from './render-boxes';
@@ -220,12 +211,9 @@ export async function build(
     });
     // T14 (scenario-data spec §4.12): SQL rules insert into these, so they precede the first file.
     await createQualityTables(db);
-    // Freeway land (lesscars v1.1): the live catalog lists its segments with empty parcel lists until
-    // Plan B curates it, so no parcel is marked (a live build still reports zero-valued counts).
+    // Freeway land: the catalog marks its parcels ineligible (the scenario step), and
     // 55_road_lots.sql reads it too: catalog land is never road-like.
-    const freewayLand = readFreewayLand(
-      LESSCARS_FREEWAY_LAND_JSON[fixtureMode ? 'fixture' : 'live']
-    );
+    const freewayLand = readFreewayLand(FREEWAY_LAND_JSON[fixtureMode ? 'fixture' : 'live']);
     await loadRoadLotInputs(
       db,
       freewayLandSet(freewayLand),
@@ -346,31 +334,10 @@ export async function build(
       writePolicy({ db, outDir, datasetVersion, records, capDay: asOf, buildCounts: counts })
     );
     report.warnings.push(...policy.warnings);
-    // /lesscars (docs/dev/lesscars.md): after the policy step (pol_tod, policy.bin), projects,
-    // calibration and transit. Without a plan file (the live build until the authored plan
-    // lands) it writes nothing and the manifest has no lesscars key.
-    // The basemap archive's raw path is resolved here: the id list is checked against it.
+    // The basemap archive's raw path: the build copies it to basemap.pmtiles.
     const basemap = lock.sources.find((s) => s.id === 'protomaps-basemap')?.files[0];
     if (!basemap) throw new BuildError('lock has no protomaps-basemap file');
     const basemapRaw = rawPath(opts.rawDir, basemap, byName);
-    const lesscars = await report.time('lesscars', () =>
-      writeLessCars({
-        basemap: {
-          pmtiles: basemapRaw,
-          ids: readBasemapIds(LESSCARS_BASEMAP_IDS_JSON[fixtureMode ? 'fixture' : 'live']),
-          sha256: basemap.sha256
-        },
-        db,
-        outDir,
-        datasetVersion,
-        records,
-        planPath: fixtureMode ? LESSCARS_PLAN_JSON.fixture : LESSCARS_PLAN_JSON.live,
-        profile: opts.profile,
-        capDay: asOf,
-        freewayLand
-      })
-    );
-    report.warnings.push(...lesscars.warnings);
     // After the last step that records T14 counts (spec §4.10), so the report covers every owner.
     writeQualityReport(join(derivedDir, QUALITY_REPORT_MD), datasetVersion, counts, [
       await landClipSection(db)
@@ -387,21 +354,8 @@ export async function build(
         counts['tiles.buildings.bytes'] = statSync(join(outDir, 'buildings.pmtiles')).size;
       }
     }
-    // The removed freeway stretches of the basemap id list move to source layer roads_lc
-    // (docs/dev/lesscars.md "Basemap ids"); without phases the archive is copied byte for byte
-    // and the report gains no key (a live build without an id list reports as before).
-    const splitPhases = await splitPhasesOf(db, lesscars.basemapPhases, LC.basemapBandM);
-    if (splitPhases.length > 0) {
-      const split = {
-        phases: splitPhases,
-        keep: lesscars.basemapKeep,
-        keepRefs: lesscars.basemapKeepRefs,
-        clipZooms: LC.basemapClipZooms,
-        workDir: work
-      };
-      const r = await report.time('basemap', () => writeBasemap(basemapRaw, outDir, split));
-      counts['tiles.basemap_split_changed'] = r.changed;
-    } else await writeBasemap(basemapRaw, outDir, null);
+    // The locked protomaps extract, copied byte for byte.
+    writeBasemap(basemapRaw, outDir);
     await materialiseFonts(lock, opts.rawDir, byName, join(work, 'fonts'));
     installFonts(join(work, 'fonts'), outDir);
 
@@ -418,7 +372,6 @@ export async function build(
       scenarios: SCENARIO_FILES.every((f) => existsSync(join(outDir, 'scenarios/fzp', f))),
       policy: existsSync(join(outDir, POLICY_BIN)),
       gross: existsSync(join(outDir, GROSS_BIN)),
-      lesscars: lesscars.written,
       warn: (w) => report.warnings.push(w)
     });
     const manifestBytes = writeManifest(outDir, manifest);
@@ -433,7 +386,6 @@ export async function build(
       ...scenario.counts,
       ...gross.counts,
       ...policy.counts,
-      ...lesscars.counts,
       ...renderBoxes.counts,
       ...Object.fromEntries(overtureContrib.map((o) => [`overture.contrib.${o.dataset}`, o.n])),
       'units.total': totals.units,

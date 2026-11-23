@@ -37,7 +37,7 @@ import { localProgramEnvelope } from '../lib/local-program';
 import { recordQuality, recordSqlQuality } from '../lib/quality';
 import type { Report } from '../lib/report';
 import { scenarioEligible } from '../lib/scenario-eligibility';
-import { freewayLandSet, type FreewayLandFile } from '../lib/lesscars/freeway-land';
+import { freewayLandSet, type FreewayLandFile } from '../lib/freeway-land';
 import {
   ROAD_LOTS_CSV,
   readRoadLotReview,
@@ -406,7 +406,7 @@ function provenance(capDay: Day, rollYear: number): ScenarioParcels['provenance'
         'land-use record and no homes on the roll) have 0: a parcel without a land-use record ' +
         'is eligible when the roll shows homes on it (sd.landuse.none-with-units, 4 / 4), in ' +
         `the panel on each roll year's homes. Freeway land ` +
-        '(pipeline/enrichment/lesscars/freeway-land.json: vacant or public parcels under or ' +
+        '(pipeline/enrichment/freeway-land.json: vacant or public parcels under or ' +
         'fronting a freeway, curated) is ineligible while its freeway stands. ' +
         'Road-like lots (public lots that are street remnants, medians, slopes or strips ' +
         'beside freeways; pipeline/sql/55_road_lots.sql, overrides in ' +

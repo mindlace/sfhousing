@@ -136,7 +136,7 @@ export function defaultSaveName(
 ): string;
 
 // src/lib/game/store.svelte.ts
-export type StoreChange = { ok: true } | { ok: false; reason: 'full' | 'storage' };
+export type StoreChange = { ok: true } | { ok: false; reason: 'full' | 'storage' | 'changed' };
 
 /** The win on screen that "Level up" would bank. */
 export interface Offer {
@@ -170,6 +170,8 @@ export class GameStore {
   levelUp(): void;
   /** The page's autosave wrote the current game's plan or policy record. */
   touched(): void;
+  /** Registers a function the store calls before another game becomes current; returns its remover. */
+  beforeLeave(fn: () =&gt; void): () =&gt; void;
   newGame(): StoreChange;
   switchTo(id: string): StoreChange;
   remix(doc: { kind: 'plan' | 'sim'; record: string; title: string }): StoreChange;
@@ -198,10 +200,13 @@ export function useGame(): GameStore;</code></pre>
         <li>The page calls <code>won()</code> when a win card first shows.</li>
         <li><code>allowed</code> is <code>allowedAt(progress.level)</code>.</li>
         <li>While <code>open</code> is true no page shows a game part: no level cell, no win card, no bar or "To beat" flag, no locked lane, no reworded outcome message, no Remix button, and no offer is set. The pages read <code>open</code>; they never compare <code>allowed</code> with <code>ALL_ALLOWED</code>.</li>
-        <li>The page calls <code>setOffer</code> with the win while its seen result wins the level, and with null on any edit and when it unmounts. The offer is kept in memory only.</li>
+        <li>The page calls <code>setOffer</code> with the win while its seen result wins the level, and with null as soon as its seen result stops winning and when it unmounts. On <code>/sim</code> every edit clears the seen result, so an edit clears the offer. On Paint the result is the latest complete score, so a stroke leaves the offer as it is and a complete score below the goal clears it. The offer is kept in memory only.</li>
         <li>The store's <code>levelUp()</code> banks the offer with the pure <code>levelUp</code>, clears the offer, and stores the game. The win card and the level panel both call it.</li>
         <li>The page that set the offer reacts to the level changing: <code>/sim</code> returns the clock to today, and Paint opens <code>/sim</code>.</li>
         <li>The page calls <code>touched()</code> after its autosave writes a record key. The store sets the current game's <code>savedAt</code> and calls <code>sync.changed(currentId)</code>.</li>
+        <li>A page that autosaves a record key registers its autosave's flush with <code>beforeLeave</code> when it mounts and removes it when it unmounts. <code>newGame</code>, <code>switchTo</code> of another game, <code>remix</code>, <code>remove</code> of the current game and <code>adopt</code> of saves that hold the current game's id call every registered function, in registration order, once they will go ahead and before they read or write a record key. So an edit still waiting in the page's autosave is in the record keys when the old game is copied out, and nothing is left waiting to be written over the new game's records when the page unloads.</li>
+        <li>When a function that <code>adopt</code> called writes a record key, the current game had an edit that was still waiting: <code>adopt</code> then changes nothing and answers <code>{ ok: false, reason: 'changed' }</code>. The save sync sends that game instead, and a 409 keeps both versions (S2, D8). No other change answers <code>changed</code>.</li>
+        <li>After <code>newGame</code>, <code>switchTo</code> of another game, <code>remix</code>, <code>remove</code> of the current game, or <code>adopt</code> of the current game's id answers <code>ok</code>, the store ignores <code>touched()</code> for the rest of the document's life: the page is about to unload, and nothing it still writes belongs to the game now in the record keys.</li>
         <li>On first construction with no <code>SAVES_KEY</code>, the store makes one saved game at level 1 whose plan and policy are whatever the two record keys hold.</li>
         <li><code>newGame</code>, <code>switchTo</code> and <code>remix</code> first copy the two record keys into the current game's stored save, then write the new current game's plan and policy into the two record keys. <code>remove</code> of the current game removes its save without copying it out, then writes the new current game's plan and policy into the two record keys.</li>
         <li>After <code>newGame</code>, <code>switchTo</code> or <code>remove</code> answers <code>ok</code>, the caller loads the new current game's page with a full page load: <code>/</code> at level 1, <code>/sim</code> above it.</li>
@@ -470,6 +475,7 @@ goalAmount?: number | null;</code></pre>
         <li><code>onPublished</code> keeps the title and records <code>lastPublished</code> against the whole document, as today. The button reads "Share link" while the playable document is unchanged.</li>
         <li>Autosave, undo and redo keep working on <code>store.policy</code>, the whole document. A locked policy is never dropped from storage.</li>
         <li>Each time the autosave's <code>status</code> goes from <code>saving</code> to <code>saved</code>, <code>SimPage</code> calls <code>game.touched()</code>. Without a game it calls nothing.</li>
+        <li>With a game, <code>SimPage</code> registers its autosave's <code>flush</code> with <code>game.beforeLeave</code> when it mounts and removes it when it unmounts, so an edit still in the autosave's debounce is in the policy record before the level panel's New game, switch or Delete changes the current game (G2).</li>
         <li>At level 2 the playable document is empty, so Publish is disabled with its hint, "Change the policy first."</li>
       </ul>
     </section>
@@ -789,6 +795,7 @@ export const GO_TO_PAINT = 'Go to Paint';</code></pre>
             <li>Level 3 with a stored policy holding a zoning and a permitting policy: Publish's request body holds the permitting policy only, and the stored record still holds both.</li>
             <li>Level 3: no brush controller (no "Stop painting", no palette strip).</li>
             <li>An autosave write calls <code>game.touched()</code> once.</li>
+            <li>An edit, then at once <code>game.newGame()</code> before the autosave's debounce ends: the old game's stored save holds the edited policy, and the new game's policy record is not overwritten when the page unmounts.</li>
             <li>A store with <code>open</code> true (<code>openGame()</code>): no lock text, no win card, no offer, and today's outcome text.</li>
             <li>Every new control passes <code>expectNoA11yViolations</code> in light and dark: the locked page, a locked kind open and closed, the win card in place.</li>
           </ul>

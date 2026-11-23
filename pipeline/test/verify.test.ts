@@ -68,7 +68,7 @@ describe('verify', () => {
     expect(r).toEqual({ ok: true, failures: [] });
     expect(seen).toContain(`HEAD /data/${V}/scenarios/fzp/gross.bin`);
   });
-  it('HEAD-checks the lesscars urls when the manifest names them', async () => {
+  it('does not HEAD-check the lesscars urls of an older manifest', async () => {
     const withKeys = JSON.parse(golden) as {
       scenarios: Record<string, Record<string, string>>;
     };
@@ -79,7 +79,7 @@ describe('verify', () => {
     const { f, seen } = fakeFetch(undefined, JSON.stringify(withKeys));
     const r = await verify({ datasetVersion: V, origin: 'http://o', fetch: f });
     expect(r).toEqual({ ok: true, failures: [] });
-    for (const n of names) expect(seen).toContain(`HEAD /data/${V}/scenarios/lesscars/${n}`);
+    expect(seen.filter((s) => s.includes('/scenarios/lesscars/'))).toEqual([]);
   });
   it('does not request policy when the manifest lacks it', async () => {
     const without = JSON.parse(golden) as { scenarios: { fzp: Record<string, string> } };

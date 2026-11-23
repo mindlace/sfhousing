@@ -957,22 +957,22 @@ function checkInflow(v: unknown, path: string): void {
 }
 
 /**
- * F5: shape, id pattern, kind, label, inflows, uncapped (no inflows), debt exactly for goBond and
- * cop (validateDebt's bounds), leverage. Not the `u-` prefix: the caller's rule.
+ * F5: shape, id pattern, kind, label, inflows, debt exactly for goBond and cop (validateDebt's
+ * bounds), leverage. Not the `u-` prefix: the caller's rule. A pool has no `uncapped` key: an
+ * older document's is dropped before this runs (`parseCalibration`, the lever parsers).
  */
 export function checkPool(v: unknown, path: string): void {
   const p = record(v, path);
-  exactKeys(p, path, ['id', 'kind', 'label', 'inflows', 'uncapped', 'debt', 'leverage']);
+  for (const k of ['id', 'kind', 'label', 'inflows', 'debt', 'leverage']) {
+    if (p[k] === undefined) fail(`${path}.${k}`, 'missing');
+  }
+  checkKeys(p, path, ['id', 'kind', 'label', 'inflows', 'debt', 'leverage']);
   checkId(p.id, `${path}.id`);
   const kind = p.kind as PoolKind;
   if (!POOL_KINDS.includes(kind)) fail(`${path}.kind`, `expected a pool kind, got ${String(kind)}`);
   text(p.label, `${path}.label`);
   const inflows = array(p.inflows, `${path}.inflows`);
   inflows.forEach((f, i) => checkInflow(f, `${path}.inflows[${i}]`));
-  if (typeof p.uncapped !== 'boolean') fail(`${path}.uncapped`, 'expected a boolean');
-  if (p.uncapped && inflows.length > 0) {
-    fail(`${path}.inflows`, 'expected no inflows on an uncapped pool');
-  }
   const hasDebt = kind === 'goBond' || kind === 'cop';
   if (p.debt === null) {
     if (hasDebt) fail(`${path}.debt`, `expected debt for kind ${kind}`);
@@ -1103,8 +1103,11 @@ function checkBaselineFunding(v: unknown): void {
 /**
  * Validate a parsed `calibration.json` (design doc T12, spec section 4.2). Throws a
  * `CalibrationFormatError` naming the path of the first violation; otherwise returns the same
- * value, typed. The input is never mutated or copied. `size.fillLevels` is checked internally
- * only (ruling A2): equality with T11's `FILL_LEVELS` is V25's and timelapse-sim's job.
+ * value, typed, or, when a baseline pool carries an older dataset's `uncapped` key, a copy with
+ * that key dropped (an `uncapped: true` pool with no inflows gains one yearly inflow of
+ * `LEGACY_UNCAPPED_DOLLARS` from `asOf`, no end). The input is never mutated. `size.fillLevels` is
+ * checked internally only (ruling A2): equality with T11's `FILL_LEVELS` is V25's and
+ * timelapse-sim's job.
  */
 export function parseCalibration(json: unknown): Calibration {
   const c = record(json, '$');
@@ -1122,6 +1125,49 @@ export function parseCalibration(json: unknown): Calibration {
   if (c.market !== undefined) checkMarket(c.market);
   if (c.affordableRoutes !== undefined)
     checkPathwayMap(c.affordableRoutes, 'affordableRoutes', true);
-  if (c.baselineFunding !== undefined) checkBaselineFunding(c.baselineFunding);
-  return json as Calibration;
+  if (c.baselineFunding === undefined) return json as Calibration;
+  const migrated = dropLegacyUncapped(c);
+  checkBaselineFunding(migrated.baselineFunding);
+  return migrated as unknown as Calibration;
+}
+
+/**
+ * The yearly dollars an older dataset's federal pool is read as: its calibration had
+ * `uncapped: true` and no inflows. Ten trillion a year, above `MAX_DOLLARS` (100 billion, the
+ * most any added pool can carry), so only an older dataset's federal pool reaches it.
+ */
+export const LEGACY_UNCAPPED_DOLLARS = 10_000_000_000_000;
+
+/** True when a yearly amount is an older dataset's federal pool: dollars >= LEGACY_UNCAPPED_DOLLARS. */
+export function isNoCeiling(dollars: number): boolean {
+  return dollars >= LEGACY_UNCAPPED_DOLLARS;
+}
+
+/**
+ * When a baseline pool has an `uncapped` key (an older dataset's), the calibration and its
+ * `baselineFunding` as shallow copies holding a new pools array without the key; `true` with no
+ * inflows becomes one yearly inflow of `LEGACY_UNCAPPED_DOLLARS` from `asOf`. Otherwise `c`.
+ */
+function dropLegacyUncapped(c: Record<string, unknown>): Record<string, unknown> {
+  const bf = c.baselineFunding;
+  if (typeof bf !== 'object' || bf === null || Array.isArray(bf)) return c;
+  const pools = (bf as Record<string, unknown>).pools;
+  if (!Array.isArray(pools)) return c;
+  const has = (p: unknown) =>
+    typeof p === 'object' && p !== null && !Array.isArray(p) && 'uncapped' in p;
+  if (!pools.some(has)) return c;
+  const out = pools.map((p, i) => {
+    if (!has(p)) return p;
+    const { uncapped, ...rest } = p as Record<string, unknown>;
+    if (typeof uncapped !== 'boolean') {
+      fail(`baselineFunding.pools[${i}].uncapped`, 'expected a boolean');
+    }
+    if (uncapped && Array.isArray(rest.inflows) && rest.inflows.length === 0) {
+      rest.inflows = [
+        { kind: 'yearly', from: c.asOf, to: null, dollarsPerYear: LEGACY_UNCAPPED_DOLLARS }
+      ];
+    }
+    return rest;
+  });
+  return { ...c, baselineFunding: { ...(bf as Record<string, unknown>), pools: out } };
 }

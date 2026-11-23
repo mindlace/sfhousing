@@ -1,5 +1,5 @@
 // Pure helpers for scripts/data-transit.ts, kept free of pipeline imports so tests can load them.
-import type { Manifest } from '../../src/lib/data/manifest';
+import { parseManifest, type Manifest } from '../../src/lib/data/manifest';
 import type { Lock } from '../../pipeline/lib/lock';
 
 export function devVarsVersion(text: string): string | null {
@@ -9,6 +9,15 @@ export function devVarsVersion(text: string): string | null {
 
 export function withTransit(m: Manifest): Manifest {
   return { ...m, transit: `/data/${m.datasetVersion}/transit.json` };
+}
+
+/**
+ * The raw manifest JSON with only `transit` set. The manifest is parsed to check it and to build
+ * the entry, never written back parsed: that would drop an older manifest's `scenarios.lesscars`
+ * and with it the `splitRoads` mark.
+ */
+export function manifestWithTransit(raw: unknown): Record<string, unknown> {
+  return { ...(raw as Record<string, unknown>), transit: withTransit(parseManifest(raw)).transit };
 }
 
 export function lockDrift(committed: Lock, fetched: Lock): string[] {

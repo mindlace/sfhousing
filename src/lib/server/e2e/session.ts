@@ -3,6 +3,8 @@ import type { Database } from '$lib/server/db';
 import { newId } from '$lib/server/ids/factory';
 import { principal, userIdentity, user, session } from '$lib/server/db/schema';
 import { skeleton } from '$lib/server/user-store/confusable-skeleton';
+import { generateUniqueHandle } from '$lib/server/user-store/handle';
+import { PSEUDONYMOUS_EMAIL_DOMAIN } from '$lib/server/auth/brand';
 
 // Session-cookie machinery for the e2e-only login seam (/api/e2e/login).
 export const SESSION_COOKIE_NAME = 'better-auth.session_token';
@@ -37,6 +39,32 @@ export async function mintTestUser(
     userIdentity: identityId,
     handle: email.split('@')[0],
     handleSkeleton: skeleton(email.split('@')[0])
+  });
+  return { userId, identityId };
+}
+
+/** A live pseudonymous `user` row and its identity, as the anonymous plugin would make them. */
+export async function mintTestPseudonym(
+  db: Database,
+  now: Date
+): Promise<{ userId: string; identityId: string }> {
+  const identityId = newId();
+  const userId = newId();
+  const handle = await generateUniqueHandle({ db, now });
+  await db.insert(principal).values({ id: identityId, kind: 'identity' });
+  await db.insert(userIdentity).values({ id: identityId, createdAt: now });
+  await db.insert(user).values({
+    id: userId,
+    name: handle,
+    // Lower-cased: Better-Auth stores every email that way and looks it up so on sign-in.
+    email: `${userId}@${PSEUDONYMOUS_EMAIL_DOMAIN}`.toLowerCase(),
+    emailVerified: false,
+    isAnonymous: true,
+    createdAt: now,
+    updatedAt: now,
+    userIdentity: identityId,
+    handle,
+    handleSkeleton: skeleton(handle)
   });
   return { userId, identityId };
 }

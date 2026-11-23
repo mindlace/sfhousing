@@ -215,8 +215,7 @@ City kinds would not: an added `generalRevenue` grant would pay before the basel
 programme and only displace bond money that is then never spent, while the earlier City pools
 still bind. Loans and guarantees count inside their own pool's tier for the same reason: if every
 loan counted before every grant, an added City loan on a project the baseline already covers would
-shrink the uncapped federal grant, which relieves nothing because that pool never binds while the
-City pool commits the whole principal; counted in the City tier, it relieves the City's own
+shrink the federal grant, which relieves nothing while the City pool commits the whole principal; counted in the City tier, it relieves the City's own
 grants. This is tier 2 reasoning (F8, OD-F10, ruled by R12).
 
 **The four worked bundles** (affordable, `U` = 861,525; all unit tests in `bundle.spec.ts`):

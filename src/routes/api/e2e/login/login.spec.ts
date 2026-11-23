@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { freshDb, makePlatform } from '$lib/server/test/auth-db';
-import { user } from '$lib/server/db/schema';
+import { session, user } from '$lib/server/db/schema';
 import { POST } from './+server';
 
 const ENV = { ENVIRONMENT: 'development', BETTER_AUTH_SECRET: 'a'.repeat(40) };
@@ -62,6 +62,26 @@ describe('POST /api/e2e/login', () => {
     const setCookie = res.headers.get('set-cookie');
     expect(setCookie).toBeTruthy();
     expect(setCookie!).toMatch(/^better-auth\.session_token=/);
+  });
+
+  it('{ pseudonymous: true } mints an anonymous account, sets the session cookie and answers its identity id', async () => {
+    const { db, shim } = freshDb();
+    const res = await POST(event(makePlatform(shim, ENV), makeRequest({ pseudonymous: true })));
+    expect(res.status).toBe(200);
+    expect(res.headers.get('set-cookie')!).toMatch(/^better-auth\.session_token=/);
+    const body = (await res.json()) as { userId: string };
+    const [row] = await db.select().from(user).where(eq(user.userIdentity, body.userId));
+    expect(row.isAnonymous).toBe(true);
+    expect(row.userIdentity).toBe(body.userId);
+    const sessions = await db.select().from(session).where(eq(session.userId, row.id));
+    expect(sessions.length).toBe(1);
+  });
+
+  it('{ pseudonymous: false } with no email answers 400', async () => {
+    const { db, shim } = freshDb();
+    const res = await POST(event(makePlatform(shim, ENV), makeRequest({ pseudonymous: false })));
+    expect(res.status).toBe(400);
+    expect(await db.select().from(user)).toHaveLength(0);
   });
 
   it('upserts user: same email twice returns same userId (stable identity id)', async () => {

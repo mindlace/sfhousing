@@ -266,7 +266,6 @@ function sentence(f: FinanceLevers, baseline: Baseline | undefined, g: Programme
     kind: 'generalRevenue',
     label: g.pool,
     inflows: [],
-    uncapped: false,
     debt: null,
     leverage: 1
   };
@@ -739,7 +738,7 @@ export const startTiers = (baseline: Baseline | undefined): Record<IncomeTier, n
 /**
  * A new programme on `pool` (4.8): a grant to affordable homes at 35% of the uncovered cost,
  * from the pool's first inflow, with the baseline programmes' tiers and `minHomes`. A pool with no
- * inflows (the uncapped tax-credit pool) starts at its baseline programme's `from`.
+ * inflows starts at its baseline programme's `from`.
  */
 export function newProgramme(pool: Pool, baseline: Baseline): Omit<Programme, 'id'> {
   const base = baseline.programmes.find((g) => g.reach === 'affordable');
@@ -804,12 +803,7 @@ export function addScaleEdit(
           ...pools.map((x) => ({ pool: x.id, from, scale }))
         ].sort(byPoolThenFrom)
       })),
-    label: labelScaleApplied(
-      name,
-      from,
-      scale,
-      pools.every((x) => x.uncapped)
-    )
+    label: labelScaleApplied(name, from, scale)
   };
 }
 
@@ -938,7 +932,6 @@ function draftPool(d: PoolDraft): Omit<Pool, 'id'> | null {
     kind: d.kind,
     label: name.value,
     inflows: (d.inflows as Inflow[]).map((x) => ({ ...x })),
-    uncapped: false,
     debt: needsDebt ? { rate: d.debt!.rate!, termYears: d.debt!.termYears } : null,
     leverage: d.kind === 'bank' ? d.leverage! : 1
   };

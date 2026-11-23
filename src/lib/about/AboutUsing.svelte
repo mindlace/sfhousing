@@ -1,13 +1,14 @@
 <!--
   About, part 4: using it. Keyboard shortcuts (the Painting table, from SHORTCUTS, the list
-  Paint's Shortcuts button shows; the Timeline table, from TIMELINE_SHORTCUTS) and Your plans.
+  Paint's Shortcuts button shows; the Timeline table, from TIMELINE_SHORTCUTS), Levels, Saved games
+  and Your plans.
   Headings at `level` and `level + 1`; colours only from --about-muted and --about-line, which the
   container sets (docs/dev/about.md).
 -->
 <script lang="ts">
   import { SHORTCUTS } from '$lib/brush/shortcuts';
   import { TIMELINE_SHORTCUTS } from '$lib/timeline/shortcuts';
-  import { ABOUT_ID, PART_HEADING, YOUR_PLANS } from './copy';
+  import { ABOUT_ID, LEVEL_NOTES, LEVELS, PART_HEADING, SAVED_GAMES, YOUR_PLANS } from './copy';
 
   let { level }: { level: 2 | 3 } = $props();
 
@@ -40,6 +41,25 @@
           {/each}
         </tbody>
       </table>
+    {/each}
+  </section>
+
+  <section id={ABOUT_ID.levels}>
+    <svelte:element this={sub} class="mt-4 font-semibold">Levels</svelte:element>
+    <ol class="mt-2 list-decimal pl-5">
+      {#each LEVELS as line (line)}
+        <li>{line}</li>
+      {/each}
+    </ol>
+    {#each LEVEL_NOTES as line (line)}
+      <p class="mt-2">{line}</p>
+    {/each}
+  </section>
+
+  <section id={ABOUT_ID.savedGames}>
+    <svelte:element this={sub} class="mt-4 font-semibold">Saved games</svelte:element>
+    {#each SAVED_GAMES as line (line)}
+      <p class="mt-2">{line}</p>
     {/each}
   </section>
 
