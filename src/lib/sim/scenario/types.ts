@@ -32,7 +32,6 @@ import type { LimitOwner } from '../levers/source';
 import type { StageScale } from '../levers/timers';
 import type { LotOutlines } from '../outlines';
 import type { SimLevers } from '../levers/types';
-import type { PlaybackRequest, PlaybackResponse } from '../lesscars/types';
 import type {
   ChunksResponse,
   ParcelSummary,
@@ -274,9 +273,9 @@ export type LeversResponse =
       capacity: LeverCapacity;
       unknownLots: number;
     };
-export type WorkerRequest = SimRequest | ScenarioRequest | PlaybackRequest;
-/** Everything the Worker posts: the editor's, the scenario host's and the playback host's. */
-export type WorkerResponse = SimResponse | ScenarioResponse | PlaybackResponse;
+export type WorkerRequest = SimRequest | ScenarioRequest;
+/** Everything the Worker posts: the editor's and the scenario host's. */
+export type WorkerResponse = SimResponse | ScenarioResponse;
 export type ProjectCard = {
   projectId: string;
   origin: 'pipeline' | 'simulated';

@@ -46,8 +46,8 @@ describe('doctor', () => {
       ok: true,
       optional: true
     });
-    // the basemap split writes MBTiles with node:sqlite
-    expect(checks.find((c) => c.name === 'node:sqlite')).toMatchObject({ ok: true });
+    // the basemap is a byte copy: nothing needs node:sqlite
+    expect(checks.some((c) => c.name === 'node:sqlite')).toBe(false);
   });
 
   it('fails with an install hint when tippecanoe is missing or the wrong version', async () => {

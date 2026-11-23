@@ -23,10 +23,11 @@ Schema files import with relative paths (`../columns`), never `$lib/...`: drizzl
 A pseudonymous account is Better-Auth's `anonymous()` plugin with the email domain `PSEUDONYMOUS_EMAIL_DOMAIN` (`src/lib/server/auth/brand.ts`).
 
 - One mint seam: `mintPseudonymousSession` (`src/lib/server/onboarding/pseudonymous-mint.ts`), behind `PSEUDO_MINT_RL` (key `pseudo_mint:<ip>`, critical). Its refusals are 429 with `AUTH_COPY.tooManyAccounts` and 500 with `AUTH_COPY.sessionStart`. `POST /api/auth/sign-in/anonymous` answers 404, so the rate limit cannot be bypassed.
+- The mint's one caller is `PUT /api/game/[id]` with no session, at a first win: a save whose `progress.firstWinAt` is null answers 422 `no_win` and makes nothing. A known device (`sfh_known`) is asked to sign in instead: 401 `{ error: 'sign_in' }`, and nothing is made. See [game-save.md](game-save.md).
 - The known-device cookie `sfh_known` (`src/lib/server/onboarding/known-device.ts`) is set by the root layout load on any signed-in request whose account is not pseudonymous or holds a passkey.
 - No account is reaped. A pseudonymous account whose session has expired is kept.
 - Email and Google end pseudonymity, through the plugin's `onLinkAccount` and `handleAccountLink` (`src/lib/server/user-store/identity.ts`). When the address or Google account is new, the pseudonymous identity survives and takes the new live row (an upgrade). When it already belongs to another identity, the two fuse: the pseudonymous identity points at that identity's survivor and its live row is deleted. Only email and Google fuse.
-- `handleAccountLink` takes an optional `onFuse(survivorId, absorbedId)`. It runs once, after the fuse batch has committed, and only on a fuse that wrote: never on an upgrade, when the two identities are already one, or when either live row is missing. A rejection propagates, so the sign-in fails. `onLinkAccount` calls `handleAccountLink` with `db`, `isUpgrade` and the two live user ids.
+- `handleAccountLink` takes an optional `onFuse(survivorId, absorbedId)`. It runs once, after the fuse batch has committed, and only on a fuse that wrote: never on an upgrade, when the two identities are already one, or when either live row is missing. A rejection propagates, so the sign-in fails. `onLinkAccount` calls `handleAccountLink` with `db`, `isUpgrade` and the two live user ids. `onLinkAccountFor` in `better-auth.ts` supplies `onFuse` as `moveGames`: a fuse moves the absorbed identity's saved games to the survivor ([game-save.md](game-save.md)).
 - A password makes an account durable and keeps it pseudonymous. Sign-in is by handle and password: the action resolves the handle itself (`resolveHandleToEmail` in `src/lib/server/auth/magic-link.ts`). A password is set from `/account` on a signed-in session. Policy is length plus a breach check (`password-breach.ts`).
 - Password reset mails only a verified, deliverable address (`mayReceivePasswordReset` in `src/lib/server/auth/password-reset-gate.ts`).
 
@@ -42,8 +43,9 @@ A pseudonymous account is Better-Auth's `anonymous()` plugin with the email doma
 2. Scrub the live `user` row to `deleted-<id>`, `deleted-<id>@example.com` and `Deleted User`.
 3. Record that tombstone as a `user_version` row.
 4. Hash the email and name of earlier `user_version` rows across the identity union (the survivor and every identity fused into it).
-5. Delete the live user's `session`, `account` and `passkey` rows.
-6. Set `user_identity.deleted_at`, last.
+5. Delete every `game_save` row, live and removed, of the identity union (`deleteGamesOf`).
+6. Delete the live user's `session`, `account` and `passkey` rows.
+7. Set `user_identity.deleted_at`, last.
 
 Each step commits on its own and is idempotent, and a completed deletion is a no-op. `resolveSessionUser` returns null for a deleted identity, so a lingering session does not authenticate.
 
@@ -55,7 +57,7 @@ Magic link is in effect only while mail can be delivered: it switches on when `S
 
 With no sign-in method in effect, the header shows no `Sign in` for a signed-out visitor (the root layout's `signInAvailable`), `/signin` renders its heading and no form, `/account` renders no control that sends mail (add, confirm or change an address), and every path that would send a magic link or a verification mail answers 404 (below). Account deletion keeps working.
 
-Staging and production run with `AUTH_METHODS=magic-link` (in `wrangler.jsonc`): the email magic link only, once a mail provider is configured.
+Staging and production run with `AUTH_METHODS=magic-link,password,google,passkey` (in `wrangler.jsonc`). Password and passkey are on. Google stays off, exactly as if unlisted, until both `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are set; adding them switches it on with no deploy of code. Magic link stays off until a mail provider is configured.
 
 A disabled method is off in three places:
 
@@ -67,11 +69,11 @@ A disabled method is off in three places:
 
 In an e2e build, a cookie named `sfh_e2e_auth_methods` (`E2E_AUTH_METHODS_COOKIE`) replaces `AUTH_METHODS` for that browser context. Specs call `enableAuthMethods(context, ['password'])` from `e2e/helpers/auth.ts`. The server honours the cookie only when `isE2eEnv` is true (`src/lib/server/e2e/env.ts`): `VITE_E2E=1` was set at build time, which inlines the check so a normal build drops the branch, and `ENVIRONMENT=development` at run time. Staging and production fail both tests.
 
-To turn a method on for local dev, put `AUTH_METHODS=magic-link,password` in `.dev.vars` (magic link itself also needs a mail provider there; see [developing.md](developing.md)). The e2e server pins `AUTH_METHODS=magic-link` and empty mail keys with `--var` flags, which override `.dev.vars`: the suite always runs with magic link only and in mail log mode.
+Local dev reads `wrangler.jsonc`'s `AUTH_METHODS`, so it runs every method the environments do; to narrow it, put `AUTH_METHODS=magic-link,password` (say) in `.dev.vars` (magic link itself also needs a mail provider there; see [developing.md](developing.md)). The e2e server pins `AUTH_METHODS=magic-link` and empty mail keys with `--var` flags, which override `.dev.vars`: the suite always runs with magic link only and in mail log mode.
 
 ## Session gate
 
-`src/hooks.server.ts` constructs Better-Auth and reads the database only when a session cookie is present or the route needs one (`shouldResolveSession` in `src/lib/server/auth/session-gate.ts`). The routes that need one are the seven `SESSION_ROUTE_PREFIXES` there: `/api/auth`, `/account`, `/api/account`, `/signin`, `/forgot-password`, `/reset-password` and `/api/e2e`. A signed-out visitor to a public page never constructs Better-Auth and gets no cookie. Everything under `/data/` never resolves a session, even with a cookie, because its responses are public and cached. A request on any other path that carries a session cookie still resolves the session; a path with no route then answers 404.
+`src/hooks.server.ts` constructs Better-Auth and reads the database only when a session cookie is present or the route needs one (`shouldResolveSession` in `src/lib/server/auth/session-gate.ts`). The routes that need one are the eight `SESSION_ROUTE_PREFIXES` there: `/api/auth`, `/account`, `/api/account`, `/signin`, `/forgot-password`, `/reset-password`, `/api/e2e` and `/api/game`. A signed-out visitor to a public page never constructs Better-Auth and gets no cookie. Everything under `/data/` never resolves a session, even with a cookie, because its responses are public and cached. A request on any other path that carries a session cookie still resolves the session; a path with no route then answers 404.
 
 A new page or API that reads or sets the session for a visitor with no cookie yet must be added to `SESSION_ROUTE_PREFIXES`.
 
@@ -90,7 +92,7 @@ SvelteKit's origin check covers only form content types. Every state-changing JS
 | `AUTH_PASSWORD_RL`       | 4103, 4203                      | 5          | `/signin` `signInPassword`, `/reset-password`, `/api/auth/sign-in/email`, `/api/auth/reset-password`                              |
 | `PSEUDO_MINT_RL`         | 4104, 4204                      | 5          | `mintPseudonymousSession`                                                                                                         |
 | `ACCOUNT_EDIT_RL`        | 4106, 4206                      | 10         | `/api/account/password`, `/api/account/profile`                                                                                   |
-| `MUTATION_REGISTERED_RL` | 4107, 4207                      | 120        | Nothing yet: kept for writes of saved games                                                                                       |
+| `MUTATION_REGISTERED_RL` | 4107, 4207                      | 120        | `PUT` and `DELETE /api/game/[id]`, keyed `game_write:<identityId>`                                                                |
 
 ## Mail
 

@@ -96,7 +96,7 @@ export function defaultSaveName(
 ): string;
 
 // src/lib/game/store.svelte.ts
-export type StoreChange = { ok: true } | { ok: false; reason: 'full' | 'storage' };
+export type StoreChange = { ok: true } | { ok: false; reason: 'full' | 'storage' | 'changed' };
 
 /** The win on screen that "Level up" would bank. */
 export interface Offer {
@@ -160,12 +160,13 @@ export function useGame(): GameStore;</code></pre>
         <li>The page calls <code>won()</code> when a win card first shows.</li>
         <li><code>allowed</code> is <code>allowedAt(progress.level)</code>.</li>
         <li>While <code>open</code> is true no page shows a game part: no level cell, no win card, no bar or "To beat" flag, no locked lane, no reworded outcome message, no Remix button, and no offer is set. The pages read <code>open</code>; they never compare <code>allowed</code> with <code>ALL_ALLOWED</code>.</li>
-        <li>The page calls <code>setOffer</code> with the win while its seen result wins the level, and with null on any edit and when it unmounts. The offer is kept in memory only.</li>
+        <li>The page calls <code>setOffer</code> with the win while its seen result wins the level, and with null as soon as its seen result stops winning and when it unmounts. On <code>/sim</code> every edit clears the seen result, so an edit clears the offer. On Paint the result is the latest complete score, so a stroke leaves the offer as it is and a complete score below the goal clears it. The offer is kept in memory only.</li>
         <li>The store's <code>levelUp()</code> banks the offer with the pure <code>levelUp</code>, clears the offer, and stores the game. The win card and the level panel both call it.</li>
         <li>The page that set the offer reacts to the level changing: <code>/sim</code> returns the clock to today, and Paint opens <code>/sim</code>.</li>
         <li>The page calls <code>touched()</code> after its autosave writes a record key. The store sets the current game's <code>savedAt</code> and calls <code>sync.changed(currentId)</code>.</li>
-        <li>A page that autosaves a record key registers its autosave's flush with <code>beforeLeave</code> when it mounts and removes it when it unmounts. <code>newGame</code>, <code>switchTo</code> of another game, <code>remix</code> and <code>remove</code> of the current game call every registered function, in registration order, once they will go ahead and before they read or write a record key. So an edit still waiting in the page's autosave is in the record keys when the old game is copied out, and nothing is left waiting to be written over the new game's records when the page unloads.</li>
-        <li>After <code>newGame</code>, <code>switchTo</code> of another game, <code>remix</code> or <code>remove</code> of the current game answers <code>ok</code>, the store ignores <code>touched()</code> for the rest of the document's life: the page is about to unload, and its last write was copied out with the old game.</li>
+        <li>A page that autosaves a record key registers its autosave's flush with <code>beforeLeave</code> when it mounts and removes it when it unmounts. <code>newGame</code>, <code>switchTo</code> of another game, <code>remix</code>, <code>remove</code> of the current game and <code>adopt</code> of saves that hold the current game's id call every registered function, in registration order, once they will go ahead and before they read or write a record key. So an edit still waiting in the page's autosave is in the record keys when the old game is copied out, and nothing is left waiting to be written over the new game's records when the page unloads.</li>
+        <li>When a function that <code>adopt</code> called writes a record key, the current game had an edit that was still waiting: <code>adopt</code> then changes nothing and answers <code>{ ok: false, reason: 'changed' }</code>. The save sync sends that game instead, and a 409 keeps both versions (S2, D8). No other change answers <code>changed</code>.</li>
+        <li>After <code>newGame</code>, <code>switchTo</code> of another game, <code>remix</code>, <code>remove</code> of the current game, or <code>adopt</code> of the current game's id answers <code>ok</code>, the store ignores <code>touched()</code> for the rest of the document's life: the page is about to unload, and nothing it still writes belongs to the game now in the record keys.</li>
         <li>On first construction with no <code>SAVES_KEY</code>, the store makes one saved game at level 1 whose plan and policy are whatever the two record keys hold.</li>
         <li><code>newGame</code>, <code>switchTo</code> and <code>remix</code> first copy the two record keys into the current game's stored save, then write the new current game's plan and policy into the two record keys. <code>remove</code> of the current game removes its save without copying it out, then writes the new current game's plan and policy into the two record keys.</li>
         <li>After <code>newGame</code>, <code>switchTo</code> or <code>remove</code> answers <code>ok</code>, the caller loads the new current game's page with a full page load: <code>/</code> at level 1, <code>/sim</code> above it.</li>
@@ -298,6 +299,7 @@ export function createSaveSync(opts: {
         <li>When the old id was the current game, the browser's version stays current under its new id, so nothing changes under the player's hands.</li>
         <li>A 410 keeps the saved game in this browser under a new id and sends it again: a change made here is never lost to a delete made on another device (D8).</li>
         <li><code>pull()</code> lists the account's saved games. It fetches and adopts those this browser lacks, and those it holds unchanged at an older rev. It removes those listed under <code>removed</code> that are unchanged here. It sends those the account lacks.</li>
+        <li>A pull adopts the current game last, after every other step, and only while the current game is still unchanged here at the moment of the call. An adopt that answers <code>changed</code> sends the game instead, so a 409 keeps both. An adopt of the current game that answers <code>ok</code> reloads the page at once, so the page shows the account's version and writes nothing over it.</li>
         <li><code>pull()</code> runs once on load when <code>signedIn()</code>, and again when <code>signedIn()</code> turns true.</li>
         <li><code>account</code> is set from every answer that carries an <code>AccountLine</code>. After the <code>PUT</code> that made the account, the header shows the handle from it. The sync never invalidates page data: a page keeps its playhead, its card and its undo history.</li>
         <li>Once a <code>PUT</code> has answered 200 the sync treats this browser as having a session, whatever <code>signedIn()</code> says.</li>
@@ -578,7 +580,7 @@ export interface SyncRecord {
           <li>It reads <code>signedIn()</code> inside an <code>$effect</code> under <code>$effect.root</code>. When it turns true (a sign-in, which is a page load or a form action's navigation), the sync clears <code>sign-in</code> and runs <code>pull()</code>. When it turns from true to false (a sign-out), the browser has no session.</li>
           <li>It runs <code>pull()</code> when <code>document.visibilityState</code> becomes <code>visible</code> while it has a session, and on the window's <code>online</code> event it sends every waiting save.</li>
           <li>It reads and writes <code>SAVE_REVS_KEY</code> through the <code>storage</code> it was given; a value that does not parse is replaced by an empty record. With <code>storage: null</code> the record lives in memory.</li>
-          <li>It never invalidates or reloads page data, except the one reload after a pull that replaced the current game (<a href="#sec-design-sync-pull">Pull</a>).</li>
+          <li>It never invalidates or reloads page data, except the one reload after a pull adopts the current game (<a href="#sec-design-sync-pull">Pull</a>).</li>
         </ul>
       </section>
 
@@ -642,7 +644,9 @@ export interface SyncRecord {
           <li>For each id under <code>removed</code> that is present here: unchanged here and not current, remove it here; unchanged and current, keep it under a new id as for a 410; changed here, send it, which answers 410 and follows the 410 rule, so it is kept under a new id.</li>
           <li>Every save present here that is neither listed nor under <code>removed</code> is sent with <code>baseRev: null</code>, and its <code>seen</code> entry is dropped first.</li>
           <li>Adopts go one save at a time. The first that answers <code>full</code> stops further adopts and sets <code>full</code>; sends go on.</li>
-          <li>When an adopt replaced the current game's content, the page reloads once (<code>location.reload()</code>) after the pull, so the page shows the account's version. The next pull finds the same rev and does not reload.</li>
+          <li>The current game, when the pull would adopt it, is adopted last, after every other step of the pull. Just before the call the sync checks again that it is unchanged here; changed, it is sent instead, with <code>baseRev: seen[id].rev</code>.</li>
+          <li>An adopt of the current game that answers <code>changed</code> (an edit was still waiting in the page's autosave, G2) sends the game the same way; the account's version is newer, so the send answers 409 and the keep-both rule keeps both.</li>
+          <li>An adopt of the current game that answers <code>ok</code> reloads the page at once (<code>location.reload()</code>), so the page shows the account's version and writes nothing over it. The next pull finds the same rev and does not reload.</li>
         </ol>
       </section>
 
@@ -815,6 +819,7 @@ export interface SyncRecord {
             <li>At attach signed out, a won save never sent is sent after 2 seconds; a save with no win is not.</li>
             <li>A 409 adopts a "{name} (this device)" copy and the account's version under the old id, keeps the copy current through <code>rekey</code> when the old id was current, never calls <code>switchTo</code>, and sends the copy with <code>baseRev: null</code>.</li>
             <li>A 410 keeps the save under a new id, for the current game and for another one, and sends it with <code>baseRev: null</code>; a pull removes an unchanged save listed under <code>removed</code> and keeps a changed one the same way.</li>
+            <li>A pull that would adopt the current game adopts it after every other step; an adopt that answers <code>changed</code> sends the current game with its seen rev and, on the 409, keeps both; an adopt that answers <code>ok</code> calls <code>location.reload()</code> at once (a spy), before any later request; the current game changed here between the list and the adopt is sent, not adopted.</li>
             <li>A thrown fetch sets <code>offline</code>; the <code>online</code> event resends; a 401 <code>sign_in</code> sets <code>sign-in</code> and later changes send nothing until <code>signedIn()</code> turns true, which runs a pull.</li>
             <li>A 422 <code>too_many</code> and a <code>full</code> adopt set <code>full</code>; a <code>removed</code> call clears it.</li>
             <li>Pull adopts a save this browser lacks, replaces an unchanged one at an older rev, sends a changed one, removes an unchanged one listed as removed, and sends one the account lacks with <code>baseRev: null</code>.</li>

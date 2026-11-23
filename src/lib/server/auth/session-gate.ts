@@ -31,7 +31,8 @@ const SESSION_ROUTE_PREFIXES = [
   '/signin',
   '/forgot-password',
   '/reset-password',
-  '/api/e2e'
+  '/api/e2e',
+  '/api/game'
 ] as const;
 
 /** True for a path at or under one of the session route prefixes. */

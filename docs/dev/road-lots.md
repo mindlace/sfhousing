@@ -338,8 +338,8 @@ least one live lot.
 ## Lots beside freed sites
 
 Six lots touch the sites that freeway removal frees. Reason code and net homes are from the
-rebuild `2026-11-08-4350be8f`. The phase is the /lesscars project whose freed site the lot touches,
-where the freeway-land catalog or the plan names it.
+rebuild `2026-11-08-4350be8f`. The phase is the project of that day's less-cars plan (removed since) whose freed site the lot touches,
+where the freeway-land catalog or the plan names it. A catalog segment's `removedBy` holds the phase.
 
 | Lot        | Reason in rebuild | Net homes | Phase                                                                         |
 | ---------- | ----------------- | --------: | ----------------------------------------------------------------------------- |
@@ -350,9 +350,9 @@ where the freeway-land catalog or the plan names it.
 | `3526017`  | r3                |       217 | `us101-interchange` (within 15 m of its freed sites; see below)               |
 | `3503004`  | not flagged       |         - | `central-freeway-stub` (McCoppin Hub plaza, listed `out`)                     |
 
-For `3761063`, `4339002A` and `3503004` the phase is read from
-`pipeline/enrichment/lesscars/plan.json` (the `freewayLand.excluded` rows of `i80-rincon`,
-`us101-james-lick` and `central-freeway-stub`). The catalog and plan do not mention `3758130`,
+For `3761063`, `4339002A` and `3503004` the phase is read from the catalog's `excluded` rows of
+the segments removed by `i80-rincon`, `us101-james-lick` and `central-freeway-stub`, as the
+deleted plan file `pipeline/enrichment/lesscars/plan.json` of that day listed them. The catalog and plan do not mention `3758130`,
 `5573023` or `3526017`; their phases come from the 2026-11-07 investigation on
 `2026-11-02-0d40e1e2`, which measured each lot as touching or within 15 m of that phase's
 `lc:` sites in `sites.json`.
@@ -462,28 +462,6 @@ The parcel-years excluded rise in every roll year, by 188 in 2007 (8,060 against
 on covered parcel-months), so the exposure falls by 0.13% and the hazard rises with it: the
 intercept moves by +0.0249 (about 2.5% on the hazard) and `fzpRatio` by +0.0014.
 
-### /lesscars
-
-| 2068             |     Now |  Before |
-| ---------------- | ------: | ------: |
-| mean extra homes | +29,096 | +29,081 |
-| p10              |  28,381 |  28,371 |
-| p50              |  29,184 |  29,175 |
-| p90              |  29,526 |  29,505 |
-| plan             | 116,212 | 116,181 |
-| baseline         |  87,116 |  87,100 |
-
-By source, as the page rounds it (largest remainder, summing to 29,096): freed 22,959 (22,947),
-parking 6,018 (6,020), transit-unlocked 119 (114), other 0.
-
-`lesscars.sites` is 166, as before, and `lesscars.sites.parcels` (115), `.held` (1),
-`.zero_gain_parking` (2) and the freed area (`lesscars.freed_m2.parcels` 388,806 m² and `.row`
-42,951 m²) are unchanged; every site's outline and parcel list in `sites.json` are the same.
-`lesscars.sites.zero_yield` rises from 15 to 17, and the freed homes at 2068 rise by 12 (22,947 to
-22,959). This is the `notNeighboursOf` change (see [lesscars.md](lesscars.md)): road-like lots no
-longer lend their zoning to a freed site, which moves what its neighbours allow. The mean moves by
-+15 homes, inside the p10 to p90 band (1,145 wide).
-
 ### Bytes and what did not move
 
 `scenarios/fzp/parcels.bin` is 2,106,151 B (2,106,971 B). Equal to `2026-11-02-0d40e1e2`:
@@ -498,19 +476,17 @@ longer lend their zoning to a freed site, which moves what its neighbours allow.
 
 ## Live check
 
-The pages were checked on 2026-11-08 in local R2, as the v1.1 live check did
-([lesscars.md](lesscars.md) "v1.1 live check"): a `VITE_E2E=1` build served by `wrangler dev`
-with `PUBLIC_DATASET_VERSION` passed as `--var` (and `--var ENVIRONMENT:development`, without which the override is ignored), in headless Chromium at 1280 px (and 375 px for
-`/lesscars`), reading `window.__sfhFzp`, `window.__sfhBrush`, `window.__sfhLessCars` and the
+The pages checked were `/sim` and Paint (`/`), on 2026-11-08 in local R2: a `VITE_E2E=1` build served by `wrangler dev`
+with `PUBLIC_DATASET_VERSION` passed as `--var` (and `--var ENVIRONMENT:development`, without which the override is ignored), in headless Chromium at 1280 px, reading `window.__sfhFzp`, `window.__sfhBrush` and the
 rendered map features, and looking at the screenshots. Before is `2026-11-02-0d40e1e2`, after is
 `2026-11-08-7d2097ac`, both served by the same build of this branch. The page figures were measured on
-`7d2097ac`. The released `2026-11-08-3b7fa918` has identical scenario counts, calibration and
-/lesscars summary (see "Live build"), so they carry over. The before dataset was
+`7d2097ac`. The released `2026-11-08-3b7fa918` has identical scenario counts and calibration
+(see "Live build"), so they carry over. The before dataset was
 loaded from its local build output with `scripts/r2-load-local.ts`, because `npm run data:local`
 fetches only the manifest, chunks, tiles, neighbourhoods and transit, not `scenarios/`, so `/sim`
 fails on a missing `calibration.json`.
 
-`/sim` and FZP (`/fzp` redirects to `/sim`, which opens on the FZP comparison). Each figure gave
+`/sim`, which opened on the FZP comparison. Each figure gave
 the same number on a second load:
 
 | `/sim` headline                          | `0d40e1e2` | `7d2097ac` | Change |
@@ -560,11 +536,5 @@ label point, 30 m brush, 6 stories:
 
 The editor keeps the stroke as an op with 0 lots, as it does for any stroke over ineligible land
 (open space, the Bay), so `__sfhBrush.ops` is 1; no lot takes the paint.
-
-**`/lesscars`** on `7d2097ac`, at 1280 and 375 px: the headline is "+29,096 homes by 2068", band
-+28,381 to +29,526, as the build measured. The four parts (freed 22,959; parking 6,018;
-transit-unlocked 119; other 0) add to it. The disclosure still reads "38.9 ha of former freeway
-land and 4.3 ha of former roadway" and "take the place of 982 homes". No horizontal scroll at
-375 px. On `0d40e1e2` the same build shows +29,081 (22,947; 6,020; 114; 0), as in v1.1.
 
 No console errors, page errors, failed requests or HTTP errors on any page, on either dataset.

@@ -45,6 +45,24 @@ describe('loadManifest', () => {
     expect(calls).toEqual([URL7]);
   });
 
+  it('loadManifest keeps the older-dataset mark', async () => {
+    const base = manifestFor('fixture-7') as { scenarios?: Record<string, unknown> };
+    const older = {
+      ...base,
+      scenarios: {
+        ...base.scenarios,
+        lesscars: {
+          plan: '/data/fixture-7/scenarios/lesscars/plan.json',
+          sites: '/data/fixture-7/scenarios/lesscars/sites.json',
+          summary: '/data/fixture-7/scenarios/lesscars/summary.json',
+          timeline: '/data/fixture-7/scenarios/lesscars/timeline.bin'
+        }
+      }
+    };
+    const { fetchFn } = fakeFetch({ [URL7]: older });
+    expect((await loadManifest('fixture-7', 'fixture-8', fetchFn)).manifest.splitRoads).toBe(true);
+  });
+
   it('falls back to current on a plan-version 404', async () => {
     const { calls, fetchFn } = fakeFetch({ [URL7]: 404, [URL8]: manifestFor('fixture-8') });
     const r = await loadManifest('fixture-7', 'fixture-8', fetchFn);

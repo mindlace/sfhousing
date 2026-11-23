@@ -2,8 +2,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { decodeParcelChunk, encodeParcelChunk } from '../../src/lib/data/parcel-chunk';
+import { FREEWAY_LAND_JSON } from '../config';
 import type { Duck } from '../lib/duck';
-import { readFreewayLandSet } from '../lib/lesscars/freeway-land';
+import { readFreewayLandSet } from '../lib/freeway-land';
 import {
   loadRoadLotInputs,
   readRoadLots,
@@ -12,7 +13,6 @@ import {
   type RoadLotsFile
 } from '../lib/road-lots';
 import { runSql } from '../lib/sql';
-import { LESSCARS_FREEWAY_LAND_JSON } from '../lesscars-config';
 import { readParcelRecords } from '../steps/chunks';
 import { miniDuck, openMiniDuck } from './helpers';
 
@@ -200,7 +200,7 @@ describe('55_road_lots on the mini fixture', () => {
     afterAll(async () => {
       await loadRoadLotInputs(
         db,
-        readFreewayLandSet(LESSCARS_FREEWAY_LAND_JSON.fixture),
+        readFreewayLandSet(FREEWAY_LAND_JSON.fixture),
         readRoadLots(ROAD_LOTS_JSON.fixture)
       );
       await runSql(db);
@@ -223,7 +223,7 @@ describe('55_road_lots on the mini fixture', () => {
           { parcel: '3512016', reason: 'underwater' }
         ]
       };
-      await loadRoadLotInputs(db, readFreewayLandSet(LESSCARS_FREEWAY_LAND_JSON.fixture), bad);
+      await loadRoadLotInputs(db, readFreewayLandSet(FREEWAY_LAND_JSON.fixture), bad);
       await runSql(db);
       const problems = await roadLotProblems(db);
       expect(problems).toHaveLength(8);

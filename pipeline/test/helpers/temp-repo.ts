@@ -63,6 +63,7 @@ export function tempRepo(): { dir: string; git: (...a: string[]) => void } {
   mkdirSync(join(dir, 'src/lib/sim/other'), { recursive: true });
   mkdirSync(join(dir, 'src/lib/scoreboard'), { recursive: true });
   writeFileSync(join(dir, 'pipeline/a.ts'), 'export const a = 1;\n');
+  writeFileSync(join(dir, 'src/lib/config.ts'), 'export const REPO_URL = "x";\n');
   writeFileSync(join(dir, 'src/lib/data/b.ts'), 'export const b = 2;\n');
   writeFileSync(join(dir, 'src/lib/plan/geometry.ts'), 'export const g = 3;\n');
   writeFileSync(join(dir, 'src/lib/plan/other.ts'), 'export const o = 4;\n');
