@@ -1,6 +1,7 @@
 // /sim's pool levels (timeline-ui, "A pool's bar shows its level"): with A housing bond added, its
-// bar in the open Public money kind shows no level until its money arrives and drains after Play;
-// the bar's name carries ", N% left" at the playhead's month. axe on the rows, light and dark.
+// bar in the open Public money kind is full until its money is used and drains after Play, and
+// "General revenue, yearly" drains too (a yearly payment never refills it); the bar's name carries
+// ", N% left" at the playhead's month. axe on the rows, light and dark.
 // fixture-0, the VITE_E2E build's debug hooks, never pixels. Below md the kind is a sheet over an
 // inert timeline, so the playhead moves with the sheet closed.
 import { expect, test, type Locator, type Page } from '@playwright/test';
@@ -18,13 +19,16 @@ async function gotoSim(page: Page, colorScheme: 'light' | 'dark' = 'light'): Pro
   await waitFilled(page);
 }
 
-/** A housing bond, as the starter and the "+" menu add it, filled, its editor closed. */
-async function addBond(page: Page): Promise<void> {
-  await addPolicy(page, 'Public money', 'A housing bond');
+/** A preset measure, as the "+" menu adds it, filled, its editor closed. */
+async function addMeasure(page: Page, label: string): Promise<void> {
+  await addPolicy(page, 'Public money', label);
   await page.keyboard.press('Escape');
   await expect(page.getByTestId('inspector')).toHaveCount(0);
   await waitFilled(page);
 }
+
+/** A housing bond. */
+const addBond = (page: Page): Promise<void> => addMeasure(page, 'A housing bond');
 
 /** The bond's bar, Public money open. */
 async function bondBar(page: Page): Promise<Locator> {
@@ -39,7 +43,7 @@ async function closeSheet(page: Page, isMobile: boolean): Promise<void> {
   await expect(page.getByRole('dialog', { name: 'Public money' })).toHaveCount(0);
 }
 
-test('a housing bond: no level before its money arrives; after Play its bar drains', async ({
+test('a housing bond: full until its money is used; after Play its bar drains', async ({
   page,
   isMobile
 }) => {
@@ -97,6 +101,39 @@ test('a housing bond: no level before its money arrives; after Play its bar drai
   bar = await bondBar(page);
   await expect(bar.getByTestId('tl-level')).toHaveAttribute('data-left', '');
   await expect(bar).not.toHaveAttribute('aria-label', /left/);
+});
+
+test('general revenue, yearly: after Play its bar has drawn down; a payment does not refill it', async ({
+  page,
+  isMobile
+}) => {
+  await gotoSim(page);
+  await addMeasure(page, 'General revenue, yearly');
+  await bondBar(page);
+  await closeSheet(page, isMobile);
+  const first = await page.evaluate(() => {
+    const p = (window as FzpWin).__sfhFzp!.policy.kinds.money[0].spans[0].what;
+    return p.tag === 'fund' && p.pool?.inflows[0].kind === 'yearly' ? p.pool.inflows[0].from : 0;
+  });
+  expect(first).toBeGreaterThan(0);
+  await page.getByTestId('tl-speed').click();
+  const play = page.getByTestId('tl-play');
+  await play.click();
+  await page.waitForFunction((a) => (window as FzpWin).__sfhFzp!.day > a + 365, first);
+  await play.click();
+  await expect.poll(() => page.evaluate(() => (window as FzpWin).__sfhFzp!.playing)).toBe(false);
+  const ruler = slider(page);
+  const edge = await ruler.getAttribute('aria-valuemax');
+  await ruler.focus();
+  await page.keyboard.press('End');
+  await expect(ruler).toHaveAttribute('aria-valuenow', edge!);
+  const bar = await bondBar(page);
+  const level = bar.getByTestId('tl-level');
+  await expect(level).toHaveAttribute('data-left', /^\d+$/);
+  const left = await level.getAttribute('data-left');
+  expect(Number(left)).toBeLessThan(100);
+  // The name starts with the words on the bar (WCAG 2.5.3): the setting, then the level.
+  await expect(bar).toHaveAttribute('aria-label', new RegExp(`^[^,]+, ${left}% left, `));
 });
 
 test("forced colours: the bond's level is drawn in a system colour", async ({ page }) => {
