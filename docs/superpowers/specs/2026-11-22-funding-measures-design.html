@@ -551,6 +551,7 @@ Federal tax credits withdrawn from a date
       <li>This unit runs after <code>game-core</code>, so <code>isGiven</code> from <code>$lib/game/allowed</code> is real when <code>dateMeasure</code> calls it.</li>
       <li><code>game-sim</code> and <code>funding-measures</code> can run together. <code>game-sim</code> calls <code>dateMeasure</code> (M1) and mounts <code>PolicySummary</code> through its existing props; <code>funding-measures</code> owns both.</li>
       <li>This unit runs after <code>pool-closing</code>: its pool bars read <code>MoneyView.shut</code> (F3). The one file both write is <code>src/lib/timeline/pool-level.spec.ts</code>: <code>pool-closing</code> adds <code>closed</code> and <code>shut</code> to its <code>money()</code> helper's <code>MoneyView</code> literal, and this unit writes the file after it.</li>
+      <li><code>src/lib/timeline/Inspector.svelte.spec.ts</code> is <code>game-sim</code>'s, except the assertion on the text of a given measure's What section in its case "a given measure at level 5", which reads this unit's money-only summary and is this unit's. Whichever of the two merges second keeps that assertion and <code>game-sim</code>'s other lines.</li>
       <li>An e2e spec that exists before this build is edited only by the unit named for it: <code>e2e/sim-{funding,pools}.spec.ts</code> are this unit's, except the one locator line of <code>e2e/sim-funding.spec.ts</code> test 8 that finds the housing bond's bar, which <code>game-sim</code> writes: a given measure's label is its preset's label, "A housing bond" (G3), and the bar's name carries it. The two units can run together; whichever merges second keeps <code>game-sim</code>'s locator and this unit's additions.</li>
     </ul>
     <p>Files changed (none created, none deleted):</p>
@@ -576,6 +577,7 @@ Federal tax credits withdrawn from a date
       <li><code>src/lib/sim-page/{FundingTab,PolicySummary}.svelte.spec.ts</code></li>
       <li><code>src/lib/sim-page/test/funding.ts</code> and <code>test/FundingTabHost.svelte</code> where their values need an end</li>
       <li><code>src/lib/timeline/pool-level.spec.ts</code>, <code>src/lib/timeline/money-copy.spec.ts</code></li>
+      <li>in <code>src/lib/timeline/Inspector.svelte.spec.ts</code>, the assertion on the text of a given measure's What section in the case "a given measure at level 5" only: the section contains "Public money" and does not contain "No transit layers"; the rest of the file is <code>game-sim</code>'s</li>
     </ul>
     <p>Unchanged: <code>funding-reconcile.ts</code>, <code>funding-drafts.svelte.ts</code>, <code>ProgrammeList.svelte</code>, <code>funding-presets.fill.spec.ts</code> (the fill rule does not read ends).</p>
   </section>
