@@ -88,7 +88,7 @@ def main():
 - Admitted: {admitted}
 - Replaces: none
 - Permission mode: dontAsk (a tool call outside your list is refused at once, with no prompt; nothing can approve one)
-- Allowed git commands: git add, git commit, git rev-parse, git log, git diff, git status, git show, git merge, git merge-base, git branch, git rm
+- Allowed git commands: git add, git commit, git rev-parse, git log, git diff, git status, git show, git merge, git merge-base, git branch, git rm{', git fetch' if unit == 'closing' else ''}
 - Allowed SDD scripts: bash {SDD}/sdd-workspace, bash {SDD}/task-brief, bash {SDD}/review-package, bash {HTML}/task-brief, python3 {HTML}/superpowers-html
 - Allowed project commands: {', '.join(cmds)}
 - Allowed read-only commands: {', '.join(reads)}
@@ -105,6 +105,8 @@ def main():
         'TaskCreate', 'TaskUpdate', 'TaskList', 'TaskGet', 'TaskStop', 'Bash(sleep:*)',
         'Bash(sh %s/beat.sh changed:*)' % SKILL
     ]
+    if unit == 'closing':  # its finish merges origin/main (spec § sec-design-finish)
+        tools += ['Bash(git fetch:*)']
     tools += ['Bash(git %s:*)' % g for g in
               'add commit rev-parse log diff status show merge merge-base branch rm'.split()]
     tools += ['Bash(bash %s/%s:*)' % (SDD, s) for s in ('sdd-workspace', 'task-brief', 'review-package')]
