@@ -234,6 +234,7 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - funding-measures: incremental-game-funding-measures — status: admitted (branch incremental-game-funding-measures, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-funding-measures, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus — rationale: funding editors and presets consuming three rows, needs: F2 from finite-funding (not merged yet); F3 from pool-closing (not merged yet); G3 built from game-core (not merged yet), produces: M1 (built))
 - pool-closing: incremental-game-pool-closing — status: complete (branch incremental-game-pool-closing, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-pool-closing, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus — rationale: engine funding system change with determinism and cost bounds, needs: F2 from finite-funding (not merged yet), produces: F3)
 - reach-check: incremental-game-reach-check — status: admitted (branch incremental-game-reach-check, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-reach-check, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus — rationale: small script, but its verdict gates the owner's D1; consumes four rows, needs: L1 from remove-lesscars (not merged yet); F1, F2 from finite-funding (not merged yet); F3 from pool-closing (not merged yet), produces: G4's build check (scripts/level2-check.ts, to closing))
+- reach-check: incremental-game-reach-check — status: complete (branch incremental-game-reach-check, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-reach-check, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus — rationale: small script, but its verdict gates the owner's D1; consumes four rows, needs: L1 from remove-lesscars (not merged yet); F1, F2 from finite-funding (not merged yet); F3 from pool-closing (not merged yet), produces: G4's build check (scripts/level2-check.ts, to closing))
 
 ## Supervision
 - status asked remove-lesscars
@@ -753,6 +754,7 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - fork graph-game-sim-3 exited [0]: output
 - fork checkpoint-16 started 2026-11-23T04:45
 - fork checkpoint-16 exited [0]: output
+- fork review-reach-check-d0245c1b started 2026-11-23T05:11
 
 ## Frame-defect tally
 - owner-ruling-drift: 2 — instances: conductor-1 (gate-1, 2026-11-22); conductor-8 (gate-7, 2026-11-22)
@@ -871,6 +873,8 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - 06:50 suite on the game-sim merge failed: check, lint, unit 9170, pipeline 2284 pass; e2e 768 passed, 2 failed (one test on both projects, also failing alone), 1 flaky under load (e2e/layout.spec.ts:494 mobile, added to the flake watch list). Merge taken back out with `git reset --hard a5c45f6e` (ledger restored from a copy). No older /sim spec met a locked page.
 - fix round game-sim @ 4efdebea: e2e/sim-funding.spec.ts:524 "8. a published policy lists its public money" fails on /s/<id>: Public money is expanded with a count of 2 but no "Housing bond" fund card button is found (spec line 559); output fixrounds/game-sim-4efdebea.txt
 - reach-check sent `complete` @ d0245c1b. Its live run on dataset 2026-11-14-3a25a7ad (doctor, fetch --restore, full build, check all pass) exits 0: "Goal: 82,069 homes by Oct 2066 / Reached: Apr 2065, 18 months before the window's end" (the operator's numbers; closing runs the script again on the dataset it builds). D1 holds on this build. Merge queued after the game-sim-3 fork exits. For closing: src/lib/map/hide-diff.spec.ts times out at 5 s in the full server run under load (passes alone); the check prints singular "1 month" for a one-month margin.
+- 07:15 merge of reach-check complete @ d0245c1b made onto b5e966c8 (merge commit 6b7f4fdb), suite running (agent; scratchpad `merge-reach-check/`); not merged until it passes; on failure reset to b5e966c8 with ledger.md copied out and back. game-sim and funding-measures told not to merge the integration branch until told.
+- merged reach-check [row G4's build check] @ d0245c1b into superconductor/incremental-game (complete), tests pass (check 0 errors; lint 0 errors; unit 9112 passed, scripts/level2-check.spec.ts 8/8; pipeline 2284 passed; e2e 762 passed, 0 failed, 0 flaky), band middle
 
 ## Cost
 - remove-lesscars: admitted 2026-11-22T16:31 seven_day 44% | session d889ec5c-3342-4a77-99f8-993f1115a679 | finished 2026-11-22T21:14 seven_day 60%
@@ -884,6 +888,6 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - game-sim: admitted 2026-11-22T16:54 seven_day 46% | session 1f8bf796-225b-48c5-9f3e-c7e5bde5214b
 - funding-measures: admitted 2026-11-22T16:55 seven_day 46% | session a331388a-a2ba-4e3e-b829-db463a3b8c39
 - pool-closing: admitted 2026-11-22T16:55 seven_day 46% | session 03f449ba-0085-4e9d-9fd4-d178230a1c89 | finished 2026-11-23T04:20 seven_day 73%
-- reach-check: admitted 2026-11-22T16:55 seven_day 46% | session c0bed174-aec2-4512-a95a-75e2f45d284e
+- reach-check: admitted 2026-11-22T16:55 seven_day 46% | session c0bed174-aec2-4512-a95a-75e2f45d284e | finished 2026-11-23T05:11 seven_day 75%
 - closing: admitted 2026-11-22T16:56 seven_day 46% | session 34af1a00-4be6-4ebd-a442-ddb896dfe9f9
 - game-shell-1: admitted 2026-11-22T17:57 seven_day 50% | session 20b9f13e-31fb-4c2f-b44b-10d478c01e5f | finished 2026-11-22T19:38 seven_day 57%
