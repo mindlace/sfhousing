@@ -23,7 +23,8 @@ import {
   initFunding,
   reopenPool
 } from './columns';
-import { closedTimeline, lastArrivalOf } from './closing';
+import { closeSpent, closedTimeline, lastArrivalOf } from './closing';
+import { frameMoney } from './frame-money';
 import { availableOf } from './pools';
 import { serveLine } from './serve';
 import { createFundingSystem } from './system';
@@ -687,6 +688,48 @@ describe('closeSpent: a spent pool closes', () => {
     expect(b.events).toEqual(a.events);
     expect(b.ledger).toEqual(a.ledger);
     expect(structuredClone(b.world)).toEqual(structuredClone(a.world));
+  });
+
+  it('a pool with no programme on offer past its last arrival is no candidate: no line scan', () => {
+    // CLOSE_POOL is asked by no one through month T (as `unaskedDoc`), then its policy ends: the
+    // pool stays in the frame, past its last arrival, with nothing offered. m-bank, the other pool
+    // that runs out, closes in month 29.
+    const T = 36;
+    const doc = docOf(
+      withMinHomes(
+        closingPolicy(asOf, [
+          { from: 1, to: T, inflows: [once(monthFirstDay(asOf, 2), ONE_PROJECT)] }
+        ]),
+        1_000_000
+      )
+    );
+    const scanned = new Set<number>();
+    const system: FundingSystem = {
+      ...createFundingSystem(),
+      serve(ctx) {
+        serveLine(ctx, { grouped: true, closing: false });
+        const fm = frameMoney(ctx.timeline, ctx.frame);
+        const read = fm.bundleIds;
+        fm.bundleIds = (ids) => {
+          scanned.add(ctx.month);
+          return read(ids);
+        };
+        try {
+          closeSpent(ctx);
+        } finally {
+          fm.bundleIds = read;
+        }
+      }
+    };
+    const r = closing(doc, 120, { system });
+    expect(r.closedDayOf(CLOSE_POOL)).toBe(NO_DAY);
+    expect(r.closedAt('m-bank')).toBeLessThan(T);
+    // Not vacuous: applications wait on the line after T, and closeSpent scanned it before.
+    let waited = 0;
+    for (let m = T + 1; m <= 120; m++) waited += r.waitingAt(m).length;
+    expect(waited).toBeGreaterThan(0);
+    expect([...scanned].some((m) => m <= T)).toBe(true);
+    expect([...scanned].filter((m) => m > T)).toEqual([]);
   });
 
   // Review Focus 2
