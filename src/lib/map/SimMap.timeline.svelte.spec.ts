@@ -621,17 +621,121 @@ describe('SimMap timeline picking', { timeout: 60_000 }, () => {
     map.jumpTo({ center: [AT[0] + 0.00001, AT[1]] });
     expect(timelinePick).toHaveBeenCalledTimes(2);
     expect(timelinePick).toHaveBeenLastCalledWith(HOVER_MISS);
-    await new Promise<void>((r) => {
-      map.once('idle', () => r());
-      map.triggerRepaint();
-    });
-    fire('pointermove', 'mouse', at(FP));
+    // The mouse rests where it was, still over the part: the move's end picks again on its own.
     await expect.poll(() => timelinePick.mock.calls.length).toBe(3);
     expect(timelinePick).toHaveBeenLastCalledWith(expect.objectContaining({ projectId: 'fx-p' }));
+    await frames(3);
+    expect(timelinePick).toHaveBeenCalledTimes(3);
     await screen.unmount();
     expect(timelinePick).toHaveBeenCalledTimes(4);
     expect(timelinePick).toHaveBeenLastCalledWith(HOVER_MISS);
     expect(timelinePick.mock.calls.every(([p]) => p !== null)).toBe(true);
+  });
+
+  describe('a camera move under a resting mouse picks again when it ends', () => {
+    const REST = { x: 8, y: 8 }; // empty map in the starting view
+    /** Jumps the camera so `ll` lands under canvas point `p`, and waits for the map to draw. */
+    async function bring(map: MapLibreMap, ll: [number, number], p: { x: number; y: number }) {
+      const now = map.project(ll);
+      const c = map.project(map.getCenter());
+      const at = map.unproject([c.x + now.x - p.x, c.y + now.y - p.y]);
+      await jumpIdle(map, [at.lng, at.lat], map.getZoom());
+    }
+
+    it('(a) a part moved under the mouse is reported as a hover hit, with no new move', async () => {
+      const timelinePick = vi.fn<(p: TimelinePick) => void>();
+      const { fire, map } = await readyOverPart({ timelinePick });
+      fire('pointermove', 'mouse', REST);
+      await frames(3);
+      expect(timelinePick).not.toHaveBeenCalled();
+      await bring(map, FP, REST);
+      await expect.poll(() => timelinePick.mock.calls.length).toBe(1);
+      expect(timelinePick).toHaveBeenLastCalledWith({
+        projectId: 'fx-p',
+        parcelId: '9100001',
+        x: REST.x,
+        y: REST.y,
+        kind: 'hover'
+      });
+      await frames(3);
+      expect(timelinePick).toHaveBeenCalledTimes(1);
+    });
+
+    it('(b) a building moved under the mouse shows its tooltip, with no new move', async () => {
+      const { fire, map } = await readyOverPart();
+      fire('pointermove', 'mouse', REST);
+      await frames(3);
+      expect(tooltip()).toBeNull();
+      await bring(map, AT, REST);
+      await expect.poll(() => tooltip()?.textContent ?? '').toContain(`Parcel ${P}`);
+    });
+
+    it('(c) moving a part away from the mouse sends one hover miss, and the tooltip follows', async () => {
+      const timelinePick = vi.fn<(p: TimelinePick) => void>();
+      const { at, fire, map } = await readyOverPart({ timelinePick });
+      const part = at(FP);
+      fire('pointermove', 'mouse', part);
+      await expect.poll(() => timelinePick.mock.calls.length).toBe(1);
+      // The existing building now under the resting mouse: one miss, and its tooltip.
+      await bring(map, AT, part);
+      await expect.poll(() => tooltip()?.textContent ?? '').toContain(`Parcel ${P}`);
+      await frames(3);
+      expect(timelinePick).toHaveBeenCalledTimes(2);
+      expect(timelinePick).toHaveBeenLastCalledWith(HOVER_MISS);
+      // Then empty map under it: the tooltip clears, and no second miss.
+      await bring(map, [AT[0] - 0.01, AT[1]], part);
+      await expect.poll(tooltip).toBeNull();
+      await frames(3);
+      expect(timelinePick).toHaveBeenCalledTimes(2);
+    });
+
+    it('a drag-pan picks under the released mouse when the move ends', async () => {
+      const timelinePick = vi.fn<(p: TimelinePick) => void>();
+      const { fire, map } = await readyOverPart({ timelinePick });
+      fire('pointerdown', 'mouse', REST, { buttons: 1 });
+      fire('pointermove', 'mouse', REST, { buttons: 1 });
+      fire('pointerup', 'mouse', REST);
+      await frames(3);
+      timelinePick.mockClear(); // the click's own tap miss
+      await bring(map, FP, REST);
+      await expect.poll(() => timelinePick.mock.calls.length).toBe(1);
+      expect(timelinePick).toHaveBeenLastCalledWith(
+        expect.objectContaining({ projectId: 'fx-p', kind: 'hover' })
+      );
+    });
+
+    it('(d) no pick after touch only, off the canvas, after leaving, or during a stroke', async () => {
+      const timelinePick = vi.fn<(p: TimelinePick) => void>();
+      const { fire, h, map, root } = await readyOverPart({ timelinePick });
+      const home = map.getCenter().toArray() as [number, number];
+      const hovers = () => timelinePick.mock.calls.filter(([p]) => p.kind === 'hover').length;
+      const partComesAndGoes = async () => {
+        await bring(map, FP, REST);
+        await frames(3);
+        expect(hovers()).toBe(0);
+        await jumpIdle(map, home, 18);
+      };
+      // A touch tap only.
+      fire('pointerdown', 'touch', REST);
+      fire('pointerup', 'touch', REST);
+      await expect.poll(() => timelinePick.mock.calls.length).toBe(1);
+      await partComesAndGoes();
+      // A mouse on another element than the canvas.
+      root.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerType: 'mouse' }));
+      await partComesAndGoes();
+      // A mouse that rested, then left the map.
+      fire('pointermove', 'mouse', REST);
+      await frames(3);
+      fire('pointerleave', 'mouse', REST);
+      await partComesAndGoes();
+      // A brush stroke (pan off, button held) while the camera moves.
+      h.setPanEnabled(false);
+      fire('pointermove', 'mouse', REST);
+      await frames(3);
+      fire('pointerdown', 'mouse', REST, { buttons: 1 });
+      fire('pointermove', 'mouse', REST, { buttons: 1 });
+      await partComesAndGoes();
+    });
   });
 
   it('a touch tap on a part reports a tap and shows no card', async () => {
