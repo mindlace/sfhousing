@@ -288,6 +288,7 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - relaunched game-core
 - resent to incremental-game-game-core
 - game-core was resting when conductor-13 was routed: relaunched (no rung) with its plan and sent the ruling as a fix round.
+- 23:40 told game-save that game-core's store change merged (integration green at 09e29933): it builds its Task 8 (ruling conductor-13) and re-sends complete.
 
 ## Questions
 - 2026-11-22 conductor-1 from conductor [defect-class: owner-ruling-drift]: gate-1, a policy already saved in the browser becomes a level-1 game, and every kind in it is locked (major) → rulings/conductor-1.md (commit 7fbb5e32, changes contract: no)
@@ -624,6 +625,7 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - fork checkpoint-13 started 2026-11-22T22:53
 - fork checkpoint-13 exited [0]: output
 - fork review-game-core-5e7fb04d started 2026-11-22T23:35
+- fork review-game-core-5e7fb04d exited [0]: output
 
 ## Frame-defect tally
 - owner-ruling-drift: 2 — instances: conductor-1 (gate-1, 2026-11-22); conductor-8 (gate-7, 2026-11-22)
@@ -703,6 +705,7 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - 23:15 merge of game-core complete @ 5e7fb04d (Task 14, ruling conductor-13) made onto 226f5ff8 (merge commit bb1c0332), suite running (agent; scratchpad `merge-game-core-t14/`); not merged until it passes; on failure reset to 226f5ff8 with ledger.md copied out and back. No "merge the integration branch" message until it reports.
 - finite-funding row F1 @ 40c419e5 reported (its own full suite green there): held to merge with F2, since F1 alone admits no unit (reach-check needs F1, F2 and F3). Its handback (first-year dollars by source, the impact-fee block) is copied to `assignments/finite-funding.f1-handback.md` for reach-check's assignment.
 - merged game-core @ 5e7fb04d into superconductor/incremental-game (complete; Task 14, ruling conductor-13: adopt runs the beforeLeave flushes and answers `changed`), tests pass (check 0 errors; lint 0 errors; unit 8965 passed; pipeline 2266 passed; e2e 752 passed, 0 failed, 0 flaky), band low
+- No drift @ 5e7fb04d (review-game-core-5e7fb04d)
 
 ## Cost
 - remove-lesscars: admitted 2026-11-22T16:31 seven_day 44% | session d889ec5c-3342-4a77-99f8-993f1115a679 | finished 2026-11-22T21:14 seven_day 60%
