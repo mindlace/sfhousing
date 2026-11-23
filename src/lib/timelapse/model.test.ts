@@ -1515,6 +1515,18 @@ describe('affordableRoutes and baselineFunding', () => {
       expect(() => checkPool(bond(), 'p')).not.toThrow();
     });
 
+    it('checkPool accepts a pool with no uncapped key', () => {
+      const a = bond();
+      delete a.uncapped;
+      expect(() => checkPool(a, 'p')).not.toThrow();
+      const b = { ...bond(), uncapped: 'yes' };
+      expect(msg(() => checkPool(b, 'p'))).toBe('p.uncapped: expected a boolean');
+      const c = { ...bond(), uncapped: true };
+      expect(msg(() => checkPool(c, 'p'))).toBe(
+        'p.inflows: expected no inflows on an uncapped pool'
+      );
+    });
+
     it("rejects out-of-bounds debt with validateDebt's text", () => {
       const a = bond();
       a.debt.rate = 0.26;

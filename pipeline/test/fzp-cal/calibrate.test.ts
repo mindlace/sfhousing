@@ -366,6 +366,34 @@ describe('publicly funded housing (finance-data spec 4.4, 4.6-4.9)', () => {
     expect(a.counts['calibration.funding.observedHomesPerYear']).toBe(25);
   });
 
+  it("follows the twin's bounds in the baseline pools", () => {
+    const pools = a.calibration.baselineFunding!.pools;
+    const inflows = (id: string) => pools.find((p) => p.id === id)!.inflows;
+    const once = (iso: string, dollars: number) => ({ kind: 'once', day: d(iso), dollars });
+    const yearly = (dollarsPerYear: number, to: number | null = null) => ({
+      kind: 'yearly',
+      from: AS_OF,
+      to,
+      dollarsPerYear
+    });
+    expect(inflows('city-debt')).toEqual([
+      once('2026-06-30', 1_500_000),
+      once('2027-06-30', 1_500_000),
+      once('2028-06-30', 500_000)
+    ]);
+    expect(inflows('city-impact-fees')).toEqual([
+      once('2026-06-30', 1_000_000),
+      once('2027-06-30', 1_000_000)
+    ]);
+    expect(inflows('city-housing-trust-fund')).toEqual([yearly(800_000, d('2043-06-30'))]);
+    expect(inflows('city-housing-stability-fund')).toEqual([]);
+    expect(inflows('city-redevelopment')).toEqual([]);
+    expect(inflows('city-ocoh')).toEqual([yearly(1_200_000)]);
+    expect(inflows('city-general-fund')).toEqual([yearly(600_000)]);
+    expect(inflows('state')).toEqual([yearly(3_000_000)]);
+    expect(inflows('federal-tax-credits')).toEqual([yearly(13_293_240)]);
+  });
+
   it('tallies the undeclared MOHCD homes', () => {
     expect(a.tallies['sc.funding.ami-undeclared']).toMatchObject({ fired: 1, of: 8 });
   });
@@ -400,7 +428,9 @@ describe('publicly funded housing (finance-data spec 4.4, 4.6-4.9)', () => {
     expect(twelve).toContain('| 1, federal | baseline-federal-tax-credits |');
     expect(twelve).toContain('| 2, state | baseline-state |');
     expect(twelve).toContain('| 3, City | baseline-city-debt |');
-    expect(twelve).toContain('uncapped');
+    expect(twelve).toContain('spent');
+    expect(twelve).toContain('no end');
+    expect(twelve).not.toContain('uncapped');
     const thirteen = section(md, '## 13. Where publicly funded housing starts');
     expect(thirteen).toContain(SITE_SENTENCE);
     expect(md).not.toMatch(/Infinity|NaN|\bnull\b|undefined/);

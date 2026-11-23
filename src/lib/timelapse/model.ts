@@ -957,20 +957,26 @@ function checkInflow(v: unknown, path: string): void {
 }
 
 /**
- * F5: shape, id pattern, kind, label, inflows, uncapped (no inflows), debt exactly for goBond and
- * cop (validateDebt's bounds), leverage. Not the `u-` prefix: the caller's rule.
+ * F5: shape, id pattern, kind, label, inflows, uncapped when present (no inflows), debt exactly
+ * for goBond and cop (validateDebt's bounds), leverage. Not the `u-` prefix: the caller's rule.
+ * `uncapped` is optional while it is transitional (finite-funding plan, Tasks 2 to 7).
  */
 export function checkPool(v: unknown, path: string): void {
   const p = record(v, path);
-  exactKeys(p, path, ['id', 'kind', 'label', 'inflows', 'uncapped', 'debt', 'leverage']);
+  for (const k of ['id', 'kind', 'label', 'inflows', 'debt', 'leverage']) {
+    if (p[k] === undefined) fail(`${path}.${k}`, 'missing');
+  }
+  checkKeys(p, path, ['id', 'kind', 'label', 'inflows', 'uncapped', 'debt', 'leverage']);
   checkId(p.id, `${path}.id`);
   const kind = p.kind as PoolKind;
   if (!POOL_KINDS.includes(kind)) fail(`${path}.kind`, `expected a pool kind, got ${String(kind)}`);
   text(p.label, `${path}.label`);
   const inflows = array(p.inflows, `${path}.inflows`);
   inflows.forEach((f, i) => checkInflow(f, `${path}.inflows[${i}]`));
-  if (typeof p.uncapped !== 'boolean') fail(`${path}.uncapped`, 'expected a boolean');
-  if (p.uncapped && inflows.length > 0) {
+  if (p.uncapped !== undefined && typeof p.uncapped !== 'boolean') {
+    fail(`${path}.uncapped`, 'expected a boolean');
+  }
+  if (p.uncapped === true && inflows.length > 0) {
     fail(`${path}.inflows`, 'expected no inflows on an uncapped pool');
   }
   const hasDebt = kind === 'goBond' || kind === 'cop';

@@ -29,6 +29,8 @@ const REPO = join(import.meta.dirname, '../../..');
 const skipTiles = !(await which('tippecanoe'));
 const ids = ['V25', 'V26', 'V27', 'V28', 'V29'];
 const FUNDING_JSON = join(REPO, 'pipeline/test/fixtures/mini/enrichment/funding.json');
+/** The fixture's programme shares: every pool's but the two spent City sources'. */
+const FIXTURE_MILLIONTHS = 947_762;
 
 describe('calibration invariants on fixture-0', () => {
   const outDir = mkdtempSync(join(tmpdir(), 'sfh-calinv-out-'));
@@ -219,34 +221,88 @@ describe('calibration invariants on fixture-0', () => {
 
   it('fundingOutcomes holds on the fixture calibration and names the three outcomes', () => {
     const cal = parseCalibration(JSON.parse(json));
+    const funding = `baselineFunding 9 pools, 7 programmes; shares ${FIXTURE_MILLIONTHS} millionths; no programme for city-housing-stability-fund, city-redevelopment`;
     expect(fundingOutcomes(cal, false)).toEqual({
       problems: [],
-      detail:
-        'baselineFunding 9 pools, one programme each; shares 1000000 millionths; affordableRoutes tier 4'
+      detail: `${funding}; affordableRoutes tier 4`
     });
     // A live build with the fallback: the method starts `Only `, and the step warned.
     expect(fundingOutcomes(cal, true)).toEqual({
       problems: [],
-      detail:
-        'baselineFunding 9 pools, one programme each; shares 1000000 millionths; affordableRoutes fallback, warned'
+      detail: `${funding}; affordableRoutes fallback, warned`
     });
   });
 
-  it('fundingOutcomes fails on a dropped or reordered programme and on a share off by 1e-6', () => {
+  it('fundingOutcomes fails when the programmes are not one per pool with an inflow, in order', () => {
     const cal = () => parseCalibration(JSON.parse(json));
+    const order =
+      /^baselineFunding programmes \[.*\] are not one baseline-<pool id> per pool with an inflow, in pool order \[baseline-city-debt, baseline-city-ocoh, baseline-city-general-fund, baseline-city-impact-fees, baseline-city-housing-trust-fund, baseline-state, baseline-federal-tax-credits\]$/;
     const dropped = cal();
     dropped.baselineFunding!.programmes.pop();
-    expect(fundingOutcomes(dropped, false).problems.length).toBeGreaterThan(0);
+    expect(fundingOutcomes(dropped, false).problems).toEqual([expect.stringMatching(order)]);
+    const added = cal();
+    const aps = added.baselineFunding!.programmes;
+    aps.splice(5, 0, {
+      ...aps[4],
+      id: 'baseline-city-redevelopment',
+      pool: 'city-redevelopment',
+      instrument: { kind: 'grant', share: 1e-6 }
+    });
+    expect(fundingOutcomes(added, false).problems).toEqual([expect.stringMatching(order)]);
     const swapped = cal();
     const ps = swapped.baselineFunding!.programmes;
     [ps[0], ps[1]] = [ps[1], ps[0]];
-    expect(fundingOutcomes(swapped, false).problems.length).toBeGreaterThan(0);
-    const off = cal();
-    const g = off.baselineFunding!.programmes[0].instrument as { kind: 'grant'; share: number };
-    g.share += 1e-6;
-    expect(fundingOutcomes(off, false).problems).toEqual([
-      'baselineFunding shares sum to 1000001 millionths, not 1000000'
+    expect(fundingOutcomes(swapped, false).problems).toEqual([expect.stringMatching(order)]);
+  });
+
+  it('fundingOutcomes fails on a share of 0 and on shares that sum wrong', () => {
+    const cal = () => parseCalibration(JSON.parse(json));
+    const grant = (c: Calibration, i: number) =>
+      c.baselineFunding!.programmes[i].instrument as { kind: 'grant'; share: number };
+    const zero = cal();
+    const z = grant(zero, 1);
+    z.share = 0;
+    expect(fundingOutcomes(zero, false).problems).toEqual([
+      'baselineFunding programme baseline-city-ocoh has a share of 0'
     ]);
+    const over = cal();
+    grant(over, 0).share += 0.5;
+    const overSum = FIXTURE_MILLIONTHS + 500_000;
+    expect(fundingOutcomes(over, false).problems).toEqual([
+      `baselineFunding shares sum to ${overSum} millionths, over 1000000`
+    ]);
+    // Every pool with an inflow: the shares must sum to exactly 1,000,000.
+    const full = cal();
+    const bf = full.baselineFunding!;
+    for (const id of ['city-housing-stability-fund', 'city-redevelopment']) {
+      const pool = bf.pools.find((p) => p.id === id)!;
+      pool.inflows = [{ kind: 'yearly', from: full.asOf, to: null, dollarsPerYear: 1 }];
+    }
+    const template = bf.programmes[0];
+    bf.programmes.splice(3, 0, {
+      ...template,
+      id: 'baseline-city-housing-stability-fund',
+      pool: 'city-housing-stability-fund',
+      instrument: { kind: 'grant', share: 0.01 }
+    });
+    bf.programmes.splice(6, 0, {
+      ...template,
+      id: 'baseline-city-redevelopment',
+      pool: 'city-redevelopment',
+      instrument: { kind: 'grant', share: 0.01 }
+    });
+    const fullSum = FIXTURE_MILLIONTHS + 20_000;
+    expect(fullSum).toBeLessThan(1_000_000);
+    expect(fundingOutcomes(full, false).problems).toEqual([
+      `baselineFunding shares sum to ${fullSum} millionths, not 1000000`
+    ]);
+  });
+
+  it('fundingOutcomes fails when there is no programme', () => {
+    const c = parseCalibration(JSON.parse(json));
+    for (const p of c.baselineFunding!.pools) p.inflows = [];
+    c.baselineFunding!.programmes = [];
+    expect(fundingOutcomes(c, false).problems).toEqual(['baselineFunding has no programme']);
   });
 
   it('fundingOutcomes fails a live build whose tier 4 routes are not the warned fallback', () => {
@@ -280,7 +336,7 @@ describe('calibration invariants on fixture-0', () => {
     const r = (await run(outDir)).find((x) => x.id === 'V25')!;
     expect(r.ok).toBe(true);
     expect(r.detail).toContain(
-      'baselineFunding 9 pools, one programme each; shares 1000000 millionths; affordableRoutes tier 4'
+      `baselineFunding 9 pools, 7 programmes; shares ${FIXTURE_MILLIONTHS} millionths; no programme for city-housing-stability-fund, city-redevelopment; affordableRoutes tier 4`
     );
   });
 

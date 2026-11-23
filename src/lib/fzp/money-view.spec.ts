@@ -227,7 +227,8 @@ describe('row texts', () => {
     expect([...uncappedPoolIds(baseline)]).toEqual(
       baseline.filter((p) => p.uncapped).map((p) => p.id)
     );
-    expect([...uncappedPoolIds(baseline)]).toEqual(['federal-tax-credits']);
+    // fixture-0's federal pool has a ceiling (a yearly inflow), so no baseline pool is uncapped.
+    expect([...uncappedPoolIds(baseline)]).toEqual([]);
     const ids = uncappedPoolIds(
       [pool('fed', 'federal', false), pool('a', 'state', true)],
       undefined,

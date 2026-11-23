@@ -18,7 +18,8 @@ import { playheadAt } from './results';
 export interface LevelPool {
   id: string;
   leverage: number;
-  uncapped: boolean;
+  /** Transitional, as `Pool.uncapped`: removed by the finite-funding plan. */
+  uncapped?: boolean;
 }
 
 /**
