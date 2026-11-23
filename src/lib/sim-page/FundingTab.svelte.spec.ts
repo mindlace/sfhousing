@@ -11,7 +11,6 @@ import '../../routes/layout.css';
 import { LEGACY_UNCAPPED_DOLLARS } from '$lib/timelapse/model';
 import type { Calibration } from '$lib/timelapse/types';
 import { formatDollarsExact } from '$lib/fzp/format';
-import { HORIZON } from '$lib/fzp/time';
 import { coverageShortLine } from '$lib/timeline/money-copy';
 import { dayOf } from '$lib/sim/scenario/dates';
 import type { FinanceLevers } from '$lib/sim/levers/types';
@@ -45,7 +44,13 @@ import type { FundingDrafts } from './funding-drafts.svelte';
 import { addPresetEdit, isRefused, newProgramme } from './funding-edit';
 import { fundingPresets, nextFiscal, type FundingPreset } from './funding-presets';
 import { NO_LOAN_RATE } from './funding-sources';
-import { baselineGroups, coverageSteps, programmePreview, programmeSentence } from './funding-view';
+import {
+  baselineGroups,
+  coverageSteps,
+  programmePreview,
+  programmeSentence,
+  windowEnd
+} from './funding-view';
 import type { SimPolicy } from './policy';
 import type { PolicyStore } from './policy-store.svelte';
 import { BOND_POLICY, FUND_ASOF, fundingCalibration, policyWith } from './test/funding';
@@ -177,7 +182,7 @@ describe('FundingTab', () => {
       store.policy.funding,
       calibration.baselineFunding!,
       FUND_ASOF,
-      HORIZON
+      windowEnd(FUND_ASOF)
     );
     const summary = coverageSummaryText(steps);
     expect(summary).toBe(`Affordable homes: fully funded today; from July ${YEAR}, 86%.`);
@@ -1113,7 +1118,9 @@ describe('FundingTab: programmes and market terms (4.8, 4.8a, 4.10)', () => {
     });
     const cal = fundingCalibration();
     const line = (day: number) =>
-      coverageShortLine(coverageSteps(policy.funding, cal.baselineFunding!, day, HORIZON)[0]);
+      coverageShortLine(
+        coverageSteps(policy.funding, cal.baselineFunding!, day, windowEnd(cal.asOf))[0]
+      );
     expect(line(JULY)).not.toBe(line(FUND_ASOF));
     setup(policy, { priceDay: JULY });
     await expect.element(page.getByText(line(JULY), { exact: true })).toBeVisible();
@@ -1181,7 +1188,7 @@ describe('FundingTab: programmes and market terms (4.8, 4.8a, 4.10)', () => {
   it('shows the coverage line for every only tag', async () => {
     const cal = fundingCalibration();
     const line = coverageShortLine(
-      coverageSteps(BOND_POLICY.funding, cal.baselineFunding!, FUND_ASOF, HORIZON)[0]
+      coverageSteps(BOND_POLICY.funding, cal.baselineFunding!, FUND_ASOF, windowEnd(FUND_ASOF))[0]
     );
     setup(BOND_POLICY, { only: { tag: 'fund', pool: 'u-pool-1' } });
     await expect.element(page.getByText(line, { exact: true })).toBeVisible();

@@ -26,7 +26,6 @@
   } from '$lib/timeline/money-copy';
   import Explain from '$lib/timeline/Explain.svelte';
   import { SvelteSet } from 'svelte/reactivity';
-  import { HORIZON } from '$lib/fzp/time';
   import {
     AFFORDABLE,
     AVERAGE_DRAWN,
@@ -86,6 +85,7 @@
     groupOf,
     poolsOf,
     termRows,
+    windowEnd,
     type BaselineGroup,
     type FundingRowId
   } from './funding-view';
@@ -137,7 +137,7 @@
   const f = $derived(store.policy.funding);
   const presets = $derived(fundingPresets(calibration));
 
-  const steps = $derived(baseline ? coverageSteps(f, baseline, priced, HORIZON) : []);
+  const steps = $derived(baseline ? coverageSteps(f, baseline, priced, windowEnd(asOf)) : []);
   const summary = $derived(steps.length > 0 ? coverageSummaryText(steps) : '');
   const sized = $derived(steps.map((s) => coverageSizeMixed(f, baseline, s.from)));
   const groups = $derived(baseline ? baselineGroups(f, baseline, priced) : []);
@@ -210,7 +210,7 @@
     store.apply(e.change, e.label, e.coalesce === undefined ? undefined : `${e.coalesce}@${run}`);
     if (store.policy === before || !baseline) return;
     const after = coverageSummaryText(
-      coverageSteps(store.policy.funding, baseline, priced, HORIZON)
+      coverageSteps(store.policy.funding, baseline, priced, windowEnd(asOf))
     );
     announce(`${e.label}.${after === said ? '' : ` ${after}`}`);
   }

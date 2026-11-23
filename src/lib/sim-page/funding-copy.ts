@@ -4,7 +4,7 @@ import { formatDollars, formatDollarsExact, formatMonthYear } from '$lib/fzp/for
 import { formatCount, formatPercent } from '$lib/scoreboard/format';
 import type { Day, PoolKind, TermKey } from '$lib/timelapse/types';
 import type { FundingLoadReport } from './funding-reconcile';
-import type { CoverageStep, GroupId } from './funding-view';
+import { windowLastMonth, type CoverageStep, type GroupId } from './funding-view';
 import type { SimNotice } from './sim-session';
 
 const plain = (max: number) => new Intl.NumberFormat('en-US', { maximumFractionDigits: max });
@@ -162,7 +162,7 @@ export const limitAlert = (k: LimitKind): string =>
 export const NAME_ERROR = 'Enter a name of up to 48 characters.';
 export const AMOUNT_ERROR = 'Enter an amount above $0 and at most $100,000 million.';
 export const dateRangeError = (asOf: Day): string =>
-  `Choose a month from ${formatMonthYear(asOf)} to December 2066.`;
+  `Choose a month from ${formatMonthYear(asOf)} to ${formatMonthYear(windowLastMonth(asOf))}.`;
 export const UNTIL_ERROR = 'The end must come after the start.';
 export const INFLOW_LIMIT_DESC = 'A source can have 12 rows of money in.';
 export const INFLOW_MIN_DESC = 'A source needs at least one row of money in.';

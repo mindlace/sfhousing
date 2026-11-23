@@ -4,6 +4,7 @@ import { dayOf } from '$lib/sim/scenario/dates';
 import {
   MONTH_OFFER_CAVEAT,
   customValueText,
+  dateRangeError,
   drawAssumptionText,
   fundingNotices,
   smallProjectsCaveat,
@@ -24,6 +25,14 @@ const prog = (over: Partial<FundingLoadReport['droppedProgrammes'][number]>) => 
   reason: 'pool' as const,
   term: null,
   ...over
+});
+
+describe('dateRangeError', () => {
+  it('on fixture-0', () => {
+    expect(dateRangeError(dayOf(2026, 10, 10))).toBe(
+      'Choose a month from October 2026 to October 2066.'
+    );
+  });
 });
 
 describe('fundingNotices', () => {

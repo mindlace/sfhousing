@@ -31,7 +31,9 @@ import {
   formatMonthYear,
   formatOddsChange
 } from '$lib/fzp/format';
-import { HORIZON } from '$lib/fzp/time';
+import { firstOfMonth } from '$lib/sim/scenario/dates';
+import { WINDOW_MONTHS } from '$lib/sim/timeline-client';
+import { monthLastDay } from '$lib/sim/world/months';
 import { formatCount, formatPercent } from '$lib/scoreboard/format';
 import { isNoCeiling } from '$lib/timelapse/model';
 import {
@@ -486,6 +488,12 @@ export function poolMoneySentence(pool: Pool, custom: ReadonlySet<PoolField> = n
   return `${money}${debt}`;
 }
 
+/** The window's last day: the end of the last model month. */
+export const windowEnd = (asOf: Day): Day => monthLastDay(asOf, WINDOW_MONTHS);
+
+/** The first day of the calendar month holding the window's last day: the last month to choose. */
+export const windowLastMonth = (asOf: Day): Day => firstOfMonth(windowEnd(asOf));
+
 /**
  * The pool preview (4.7): yearly and once amounts, the repayment of what arrives from `asOf` to
  * the horizon, a bank's lending capacity on the same sum, and the preview's sentences. `sources`
@@ -500,7 +508,7 @@ export function poolPreview(
   let perYear: number | null = null;
   for (const x of pool.inflows) {
     const amount = x.kind === 'once' ? x.dollars : x.dollarsPerYear;
-    received += inflowArrivals(x, asOf, HORIZON).length * amount;
+    received += inflowArrivals(x, asOf, windowEnd(asOf)).length * amount;
     if (x.kind === 'once') once += x.dollars;
     else perYear = (perYear ?? 0) + x.dollarsPerYear;
   }

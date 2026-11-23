@@ -60,8 +60,18 @@ import {
   scaleLines,
   termRows,
   tiersSource,
-  tiersText
+  tiersText,
+  windowEnd,
+  windowLastMonth
 } from './funding-view';
+
+describe('the window', () => {
+  it('windowEnd and windowLastMonth on fixture-0', () => {
+    expect(F0.asOf).toBe(dayOf(2026, 10, 10));
+    expect(windowEnd(F0.asOf)).toBe(dayOf(2066, 10, 9));
+    expect(windowLastMonth(F0.asOf)).toBe(dayOf(2066, 10, 1));
+  });
+});
 
 const cal = fundingCalibration();
 const baseline = cal.baselineFunding!;
@@ -74,6 +84,11 @@ const D27 = dayOf(2027, 7, 1);
 const D28 = dayOf(2028, 7, 1);
 const D29 = dayOf(2029, 7, 1);
 /** fixture-0's calibration before finite funding: its federal pool carries `uncapped: true`. */
+const F0_PATH = new URL(
+  '../../../e2e/fixtures/data/fixture-0/scenarios/fzp/calibration.json',
+  import.meta.url
+);
+const F0 = parseCalibration(JSON.parse(readFileSync(F0_PATH, 'utf8')));
 const LEGACY_PATH = new URL('../timelapse/fixtures/calibration-uncapped.json', import.meta.url);
 
 const kindOf = (f: FinanceLevers, pool: string) =>

@@ -12,9 +12,8 @@
   import { count, customSummary, lotsText, ruleSummary, type LotStatus } from './brush-summary';
   import type { SimPolicy } from './policy';
   import { OBSERVED_TIMING, routeView, shownRouteShares, timingLabel } from './timing';
-  import { HORIZON } from '$lib/fzp/time';
   import { fundingPresets } from './funding-presets';
-  import { coverageSteps, summaryRows } from './funding-view';
+  import { coverageSteps, summaryRows, windowEnd } from './funding-view';
   import Explain from '$lib/timeline/Explain.svelte';
   import { COVERAGE_CHANCE_NOTE, coverageShortLine } from '$lib/timeline/money-copy';
 
@@ -62,7 +61,12 @@
   const coverageLine = $derived.by(() => {
     const baseline = calibration?.baselineFunding;
     if (!calibration || !baseline) return null;
-    const steps = coverageSteps(policy.funding, baseline, calibration.asOf, HORIZON);
+    const steps = coverageSteps(
+      policy.funding,
+      baseline,
+      calibration.asOf,
+      windowEnd(calibration.asOf)
+    );
     return steps.length > 0 ? steps[0] : null;
   });
   const moneyRows = $derived(
