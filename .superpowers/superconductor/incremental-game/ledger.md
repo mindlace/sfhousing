@@ -228,6 +228,8 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - game-shell: incremental-game-game-shell — status: admitted (relaunched 23:30 as admitted from its plan, tasks 1 to 6 and 8; branch incremental-game-game-shell brought up to f435a2da, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-game-shell, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus, needs: G1–G5 built, X1, L1 (all merged), produces: none)
 - finite-funding: incremental-game-finite-funding — status: complete (admit message sent 23:30 at f435a2da; branch incremental-game-finite-funding, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-finite-funding, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus, needs: L1, M1 stub (merged), produces: F1, F2)
 - game-shell: incremental-game-game-shell — status: complete (relaunched 23:30 as admitted from its plan, tasks 1 to 6 and 8; branch incremental-game-game-shell brought up to f435a2da, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-game-shell, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus, needs: G1–G5 built, X1, L1 (all merged), produces: none)
+- funding-measures: incremental-game-funding-measures — status: deferred (branch incremental-game-funding-measures, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-funding-measures, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus — rationale: funding editors and presets consuming three rows, needs: F2 from finite-funding (not merged yet); F3 from pool-closing (not merged yet); G3 built from game-core (not merged yet), produces: M1 (built))
+- reach-check: incremental-game-reach-check — status: deferred (branch incremental-game-reach-check, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-reach-check, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus — rationale: small script, but its verdict gates the owner's D1; consumes four rows, needs: L1 from remove-lesscars (not merged yet); F1, F2 from finite-funding (not merged yet); F3 from pool-closing (not merged yet), produces: G4's build check (scripts/level2-check.ts, to closing))
 
 ## Supervision
 - status asked remove-lesscars
@@ -308,6 +310,7 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - resent to incremental-game-game-shell
 - plan game-sim: docs/superpowers/plans/2026-11-22-game-sim.html at 9aa7f278 (brought into line with the current spec after its restart)
 - 2026-11-23 03:30 band is now MIDDLE (seven_day 70%, resets Tue 05:00): at most 2 operators running, planning-only included; start a new one only when one finishes or stops, ready units first. Running now: pool-closing, game-sim (2 of 2). When F3 merges, funding-measures and reach-check are both ready: start one per free slot (funding-measures first: closing needs both, and funding-measures is the larger unit), the other when the next slot frees. Restarts, relaunches and forks are exempt.
+- 04:35 F3 merged: funding-measures (F2, F3, G3 all merged) and reach-check (L1, F1, F2, F3 all merged) are ready and DEFERRED by the middle band (71%): pool-closing (tasks after F3) and game-sim hold the two slots. When either sends `complete`, start funding-measures first, then reach-check at the next free slot; both restart from their plans (resting), each with its hand-off notes and missed rulings (funding-measures: conductor-5, finite-funding-2, pool-closing-3, finite-funding's `once` inflow note, web tools; reach-check: conductor-3, finite-funding's coverage note and F1 handback).
 
 ## Questions
 - 2026-11-22 conductor-1 from conductor [defect-class: owner-ruling-drift]: gate-1, a policy already saved in the browser becomes a level-1 game, and every kind in it is locked (major) → rulings/conductor-1.md (commit 7fbb5e32, changes contract: no)
@@ -705,6 +708,7 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - fork rule-pool-closing-3 exited [0]: output
 - fork graph-pool-closing-3 started 2026-11-23T02:42
 - fork graph-pool-closing-3 exited [0]: output
+- fork review-pool-closing-ee88a46b started 2026-11-23T03:21
 
 ## Frame-defect tally
 - owner-ruling-drift: 2 — instances: conductor-1 (gate-1, 2026-11-22); conductor-8 (gate-7, 2026-11-22)
@@ -808,6 +812,8 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - 03:05 pool-closing-2 blocks pool-closing's Task 3 and with it row F3 (the longest chain), so its fork runs now, while the suite on game-shell's e2e-only merge 32454cbe is still running. If that suite fails, do NOT reset (the ruling's commit sits on top): take the merge out with `git -C <package worktree> revert -m 1 --no-edit 32454cbe`, ledger it, and send game-shell the fix round.
 - merged game-shell @ 667900a4 into superconductor/incremental-game (complete; ruling conductor-14, e2e readiness waits), tests pass (check 0 errors; lint 0 errors; unit 9059 passed; pipeline 2284 passed; e2e 762 passed, 0 failed, 0 flaky; the three changed specs 81 passed at repeat-each=3, retries off), band low
 - No drift @ 667900a4 (review-game-shell-667900a4)
+- 04:10 merge of pool-closing row F3 @ ee88a46b made onto 14d677de (merge commit 995b5839), suite running (agent; scratchpad `merge-pool-closing-f3/`); not merged until it passes; on failure reset to 14d677de with ledger.md copied out and back.
+- merged pool-closing [row F3] @ ee88a46b into superconductor/incremental-game, tests pass (check 0 errors; lint 0 errors; unit 9095 passed; pipeline 2284 passed; e2e 762 passed, 0 failed, 0 flaky), band middle
 
 ## Cost
 - remove-lesscars: admitted 2026-11-22T16:31 seven_day 44% | session d889ec5c-3342-4a77-99f8-993f1115a679 | finished 2026-11-22T21:14 seven_day 60%
