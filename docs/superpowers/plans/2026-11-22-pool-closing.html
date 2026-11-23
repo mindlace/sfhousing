@@ -1,0 +1,974 @@
+<article>
+  <header>
+    <h1>Pool closing implementation plan</h1>
+    <p>The step engine closes a spent pool, opens it again on a new arrival, and the money view and Details say when each source ran out.</p>
+    <aside data-kind="note"><strong>For agentic workers</strong> REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps are checklist items; progress is kept in the workspace ledger, not in the plan.</aside>
+  </header>
+
+  <section id="sec-overview">
+    <h2>Overview</h2>
+    <dl>
+      <dt>Goal</dt>
+      <dd>A pool that has had its last money and cannot pay a waiting application closes from the next month, exactly as if switched off that day; it opens again on a new arrival; <code>MoneyView.closed</code> and <code>MoneyView.shut</code> carry it, and Details prints "{label}: ran out {Mon YYYY}".</dd>
+      <dt>Architecture</dt>
+      <dd>The world gains <code>closedDay</code> and a <code>shut</code> history (world columns, so <code>structuredClone</code>, rewind and copies carry them). System 5 closes spent pools at the end of serving. Two optional hooks, <code>beforeStep</code> and <code>timelineOf</code>, make <code>withFunding</code> step and plan under <code>closedTimeline</code>: a view of the base timeline whose frames do not offer a closed pool's programmes. The frame id changes in the closing month, so today's frame-change code (replan, <code>policyChanged</code>, <code>remakeRow</code>) does the re-making. The older scenario engine is untouched; the comparisons with it run with <code>poolClosing: false</code>.</dd>
+      <dt>Tech Stack</dt>
+      <dd>TypeScript, Svelte 5 (runes), Vitest (projects <code>server</code> and <code>client</code>), axe-core in the client project.</dd>
+      <dt>Spec</dt>
+      <dd><code>/Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game/docs/superpowers/specs/2026-11-22-pool-closing-design.html</code> (the package worktree's copy is the authority). Design context: <code>docs/superpowers/design/2026-11-22-1216-incremental-game.html</code>, D13 and rows F2, F3.</dd>
+    </dl>
+    <aside data-kind="warning"><strong>Read after F2</strong> This plan runs after <code>finite-funding</code> (F2) has merged: <code>Pool.uncapped</code>, <code>FinanceIndex.capped</code>-style "can always pay" paths, the <code>uncapped</code> props of <code>MoneyResults</code> and <code>bySourceColumns</code>, and the fixture pools change there. Every task that touches <code>funding/test/fixtures.ts</code>, <code>pools.ts</code>, <code>src/lib/fzp/money-view.ts</code>, <code>MoneyResults.svelte</code>, <code>docs/dev/world-funding.md</code> or the mini and fixture-0 pools reads the current file first; the line numbers cited here are from commit <code>8f494b6a</code>, before F2.</aside>
+  </section>
+
+  <section id="sec-global-constraints">
+    <h2>Global Constraints</h2>
+    <p>Every task's requirements include this section.</p>
+
+    <section id="sec-gc-interfaces">
+      <h3>Interface rows (verbatim from the spec)</h3>
+      <table id="tbl-interfaces">
+        <caption>Interface table</caption>
+        <thead>
+          <tr><th scope="col">Row</th><th scope="col">Owner</th><th scope="col">Layer</th><th scope="col">Summary</th><th scope="col">Contract</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">F2</th><td><code>finite-funding</code></td><td>Model commitment</td><td>Pools with no "can always pay".</td><td><a href="#sec-if-f2">F2</a></td></tr>
+          <tr><th scope="row">F3</th><td><code>pool-closing</code></td><td>Model commitment</td><td>A spent pool closes and leaves every bundle.</td><td><a href="#sec-if-f3">F3</a></td></tr>
+        </tbody>
+      </table>
+
+      <section id="sec-if-f2">
+        <h4>F2 Pools</h4>
+        <pre><code data-lang="ts">// src/lib/timelapse/types.ts
+export interface Pool {
+  id: string;
+  kind: PoolKind;
+  label: string;
+  inflows: Inflow[];
+  /** non-null exactly for `goBond` and `cop` */
+  debt: { rate: number; termYears: number } | null;
+  /** dollars a pool may have committed or out per dollar received: 1 for every kind but `bank` */
+  leverage: number;
+}
+
+export type Inflow =
+  | { kind: 'once'; day: Day; dollars: Dollars }
+  | { kind: 'yearly'; from: Day; to: Day | null; dollarsPerYear: Dollars };</code></pre>
+        <ul>
+          <li><code>Pool</code> has no <code>uncapped</code> field. A pool can pay only from what it has received.</li>
+          <li>The baseline's federal pool has kind <code>federal</code> and one yearly inflow of the ceiling.</li>
+          <li>A baseline pool's inflows follow its source's bound (F1). A yearly inflow has <code>to: null</code> only for a bound of kind <code>none</code>.</li>
+          <li>A stored or published document whose pool carries <code>uncapped</code> loads with the field ignored.</li>
+          <li>A published plan or policy runs on its own dataset while that dataset exists, and every dataset built before this build has <code>uncapped: true</code> on its federal pool. The calibration loader reads such a pool as one yearly inflow of <code>LEGACY_UNCAPPED_DOLLARS</code> (100 billion dollars) from the dataset date with no end, and never refuses the calibration.</li>
+          <li>Where the yearly amount of such a pool is shown, it reads "No ceiling". So a policy published before this build plays as it did.</li>
+          <li><code>isNoCeiling(dollars)</code> in <code>src/lib/timelapse/model.ts</code> is the one test for such a pool: a yearly amount at or above <code>LEGACY_UNCAPPED_DOLLARS</code>.</li>
+          <li>A scale entry on the federal pool scales its ceiling, as on any pool; 0 switches it off.</li>
+          <li><code>Inflow</code>, <code>Programme</code>, <code>Instrument</code>, the award rule, the line and <code>fundBundle</code> are unchanged.</li>
+        </ul>
+        <p><strong>Removed:</strong> <code>Pool.uncapped</code>, the "no limit" text for anything but an older dataset's pool, the on/off-only editor for the federal pool, the <code>uncapped</code> sets passed to the money results.</p>
+      </section>
+
+      <section id="sec-if-f3">
+        <h4>F3 Pool closing</h4>
+        <pre><code data-lang="ts">// src/lib/sim/world/funding/columns.ts
+export interface FundPools {
+  /* the columns as today, and: */
+  /** The first day the pool is closed; NO_DAY while it is open. One per pool row. */
+  closedDay: Int32Array;
+}
+
+// src/lib/sim/world/types.ts
+export interface WorldOptions {
+  /** Default true. The referee against the older engine runs with false. */
+  poolClosing?: boolean;
+}
+
+// src/lib/sim/world/score/types.ts (TimelineView.money)
+export interface MoneyView {
+  /* the series as today, and: */
+  /** Per pool id: the first day it was closed, or null. */
+  closed: Record&lt;string, Day | null&gt;;
+  /** Per pool id, by calendar month: true while the pool is closed at the end of that month. */
+  shut: Record&lt;string, boolean[]&gt;;
+}</code></pre>
+        <ul>
+          <li>A pool's last arrival is the last arrival the document in force gives it; a pool with a yearly inflow with no end has none.</li>
+          <li>A pool is spent in a month when the month begins after its last arrival, it has no loan out and holds no guarantee reserve, and that month's serving finds an application short on it.</li>
+          <li>A spent pool is closed from the first day of the next month, and stays closed until it receives a new arrival.</li>
+          <li>A closed pool is treated exactly as a pool switched off from that day: its programmes are in no bundle, and the applications waiting on them are re-made as on a re-pricing day.</li>
+          <li>Money returned to a closed pool stays in it and is never awarded.</li>
+          <li>A pool whose last arrival changes because the policy changed is judged again from the month the change takes effect; a closed pool that receives a new arrival is open again from that arrival's month.</li>
+          <li>The worker's rewind restores each pool's open or closed state with the world.</li>
+          <li>The older scenario engine keeps its behaviour: an application waits on a spent pool.</li>
+          <li>Details lists each closed source by its pool's label with the month it ran out: "{label}: ran out Mar 2030".</li>
+          <li><code>shut[id][i]</code> is true from the calendar month the pool ran out (the month that found it spent) through the last calendar month before it opens again.</li>
+          <li>A pool's bar on the timeline reads empty in every month <code>shut</code> marks: what a closed pool still holds is never awarded.</li>
+        </ul>
+      </section>
+    </section>
+
+    <section id="sec-gc-spec">
+      <h3>The spec's global constraints (verbatim)</h3>
+      <ul>
+        <li>Work happens in git worktrees under <code>.claude/worktrees/</code>. Commits follow Conventional Commits. No attribution to an AI anywhere.</li>
+        <li>Code style: 2-space indent, single quotes, no trailing commas, 100 columns.</li>
+        <li>Every Vitest test calls <code>expect</code>.</li>
+        <li>Signoff fails on server stderr, on timing crutches and on a retried flake. Each unit runs <code>npm run lint</code>, <code>npm run check</code> and the Vitest projects its files belong to before it hands back.</li>
+        <li>Port 4173 is shared by every session on this machine. A unit never kills a server it did not start; it waits.</li>
+        <li>Every agent runs every command in the foreground and never ends a turn while something it started is running.</li>
+        <li>Schema changes go through <code>npm run db:generate</code>. Nobody edits a migration.</li>
+        <li>No unit runs <code>npm run signoff</code>: its dataset step fails until the dataset is uploaded. <code>closing</code> runs it once, after the upload.</li>
+        <li>The dataset version changes in this build. The dataset is uploaded once, by <code>closing</code>, from the integration branch, after every unit has merged; no other unit uploads a dataset. <code>reach-check</code> builds one earlier to run the check and uploads nothing.</li>
+        <li>A unit that writes a hashed path regenerates the fixture dataset with <code>npm run pipeline -- fixture</code> and commits it.</li>
+        <li>WCAG 2.2 AA: every new control is at least 24 px and passes <code>expectNoA11yViolations</code> in light and dark.</li>
+        <li>Page text is short. No sentence says what something is not.</li>
+        <li>Nothing on the main screen says "RHNA". The goal is read from the <code>Goal</code> value, never from a constant.</li>
+        <li>The game's rules are read from <code>src/lib/game/</code>. No component compares a level to a number.</li>
+        <li>One future: no seed control, no band, no average over runs.</li>
+        <li>Published plans and policies, their ids and their pages keep working, including every policy published before this build.</li>
+        <li>A number that is a claim about the world carries its source and tier, in the existing <code>Sourced</code>, <code>Unsourced</code> and <code>Evidence</code> shapes.</li>
+        <li>A runtime dependency that ships in the bundle gets a credit in <code>SOFTWARE</code>. This build adds none.</li>
+        <li>CSP changes are interface changes. This build makes none.</li>
+        <li>Timing is measured only on a quiet machine. A unit that cannot get one defers the measurement and says so.</li>
+      </ul>
+    </section>
+
+    <section id="sec-gc-project">
+      <h3>Project notes for this unit</h3>
+      <ol>
+        <li>Read files with Read, Grep and Glob, not Bash. Every Bash call is one command starting with an allowed command (<code>npm</code>, <code>npx</code>, <code>lsof</code>, <code>git add/commit/diff/status/log/show</code>, <code>ls</code>, <code>cat</code>, <code>grep</code>, <code>head</code>, <code>tail</code>, <code>wc</code>, <code>pwd</code>): no <code>VAR=...</code> prefix, no <code>cd</code>, no <code>;</code> or <code>&amp;&amp;</code> or pipes, no <code>$(...)</code>, no loops, no redirects to files (write files with the Write tool). No npm script sets <code>SFH_WORLD_FUNDING_REFEREE</code> (<code>package.json:20-25</code>), so the env-gated referee cannot be run here: see Open questions.</li>
+        <li>Port 4173 is shared: before any preview or Playwright run, <code>lsof -nP -iTCP:4173 -sTCP:LISTEN</code>; never kill something you did not start; wait. (No task here needs the preview server.)</li>
+        <li>No <code>setTimeout</code> or <code>setInterval</code> in any spec or test helper this unit writes; no fixed waits. <code>npx chreode timing-check --head HEAD</code> is clean after the last commit of every task. (<code>runner/ensemble.spec.ts:55-56</code> already holds a <code>setTimeout</code> in its dataset deps; leave those lines as they are.)</li>
+        <li>No <code>npm run signoff</code>, <code>git push</code>, dataset upload or deploy.</li>
+        <li>No wall-clock measurement on a busy machine; <code>npm run test:perf</code> is not a gate.</li>
+        <li>Conventional Commits; no AI or Claude attribution anywhere (code, comments, commits).</li>
+        <li>The worktree needs <code>npm install</code> and the CLAUDE.md setup (<code>.dev.vars</code> with <code>PUBLIC_DATASET_VERSION=fixture-0</code>, <code>npm run data:fixture</code>, <code>npm run db:migrate</code>) before tests run: Task 1, step 1.</li>
+        <li>Write set: <code>src/lib/sim/world/funding/**</code>, <code>src/lib/sim/world/{types,world}.ts</code>, <code>src/lib/sim/world/score/**</code>, <code>src/lib/sim/world/runner/ensemble.spec.ts</code> (runner <code>.ts</code> files unchanged), <code>src/lib/fzp/{money-view.ts,MoneyResults.svelte,money-view.spec.ts,MoneyResults.svelte.spec.ts}</code>, <code>docs/dev/{world-funding,finance-score}.md</code>. A test outside it that fails because closing changed a run is not edited: stop and report it.</li>
+        <li>Test commands: <code>npx vitest run --project server &lt;path&gt;</code> for <code>*.spec.ts</code> and <code>*.test.ts</code>; <code>npx vitest run --project client &lt;path&gt;</code> for <code>*.svelte.spec.ts</code> (project names from <code>vite.config.ts:57</code> and <code>vite.config.client-test.ts:49</code>).</li>
+      </ol>
+    </section>
+  </section>
+
+  <section id="sec-review-focus">
+    <h2>Review Focus</h2>
+    <p>Five failure modes the spec implies and its test list does not pin, most likely first. Each has its test in the owning task.</p>
+    <ol>
+      <li><strong>A closed view that reads the live world.</strong> If <code>closedTimeline</code> reads <code>pools</code> at <code>frameAt</code> time rather than a snapshot taken when built, a later closing rewrites the frames of months already stepped, <code>frameAt(month - 1).id</code> stops matching <code>world.frame</code>, and <code>policyChanged</code> re-makes every waiting row every month. Expected: a view built before a closing keeps its frames. Test: Task 2, "a view is a snapshot".</li>
+      <li><strong>A world without funding columns.</strong> A timeline with no money (<code>finance</code> null in every frame) stepped through <code>withFunding(createFundingSystem())</code>: <code>beforeStep</code> and <code>timelineOf</code> must return the timeline itself without calling <code>fundOf</code> (which throws, <code>columns.ts:203-207</code>). Expected: the run steps as before. Test: Task 3, "a world without money steps under its own timeline".</li>
+      <li><strong>Two worlds on one base timeline.</strong> The plan and its twin, or two copies, can share a base timeline with different <code>shut</code> histories. A cache keyed on the base alone would hand one world the other's closed set. Expected: each history gets its own view, the same object each time it is asked for. Test: Task 2, "two histories over one base".</li>
+      <li><strong>The next frame not ready.</strong> <code>beforeStep</code> reads <code>frameAt(world.month + 1)</code> to open pools again; past <code>readyThrough()</code> that frame does not exist. Expected: <code>step</code> throws its <code>RangeError</code> as today and the world, its <code>shut</code> history included, is unchanged. Test: Task 4, "beforeStep past readyThrough".</li>
+      <li><strong>A closed pool missing from a later frame.</strong> A policy edit applied with <code>keep</code> can drop a closed pool's id from the frames. Expected: the closed view and <code>beforeStep</code> skip <code>shut</code> rows whose pool the frame does not hold, no throw, and the other closed pools still lose their programmes. Test: Task 2, "a closed pool the frame does not hold".</li>
+    </ol>
+  </section>
+
+  <section id="sec-file-structure">
+    <h2>File structure</h2>
+    <table id="tbl-files">
+      <caption>Files this plan creates or changes</caption>
+      <thead>
+        <tr><th scope="col">File</th><th scope="col">Responsibility</th><th scope="col">Tasks</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row"><code>funding/columns.ts</code></th><td><code>closedDay</code>, the <code>shut*</code> columns, <code>addShutRow</code>, <code>reopenPool</code></td><td>1</td></tr>
+        <tr><th scope="row"><code>world/types.ts</code>, <code>world/world.ts</code></th><td><code>WorldOptions</code>, the two optional hooks, <code>withFunding</code>'s use of them</td><td>1</td></tr>
+        <tr><th scope="row"><code>funding/closing.ts</code> (new)</th><td><code>lastArrivalOf</code>, <code>closedTimeline</code>, <code>closeSpent</code>, <code>reopenArrivals</code></td><td>2, 3, 4</td></tr>
+        <tr><th scope="row"><code>funding/serve.ts</code>, <code>funding/system.ts</code></th><td>The check at the end of the scan; <code>createFundingSystem(opts)</code> and its hooks</td><td>3, 4</td></tr>
+        <tr><th scope="row"><code>funding/test/fixtures.ts</code></th><td><code>runFunded</code>'s <code>poolClosing</code> and <code>system</code>; the closing pool builders</td><td>3</td></tr>
+        <tr><th scope="row"><code>funding/closing.spec.ts</code> (new)</th><td>Every engine test of the spec</td><td>1 to 4</td></tr>
+        <tr><th scope="row"><code>funding/{columns,remedies,tolerance.referee}.spec.ts</code>, the funded golden</th><td>Columns; like-for-like direct scan; the referee off</td><td>1, 3</td></tr>
+        <tr><th scope="row"><code>runner/ensemble.spec.ts</code></th><td>Restore and keep across a closing</td><td>4</td></tr>
+        <tr><th scope="row"><code>score/{types,money,view}.ts</code> and their specs, <code>score/limits.spec.ts</code></th><td><code>MoneyRow.closed</code>/<code>shut</code>, <code>MoneyView.closed</code>/<code>shut</code></td><td>3, 5</td></tr>
+        <tr><th scope="row"><code>fzp/money-view.ts</code>, <code>fzp/MoneyResults.svelte</code> and specs</th><td><code>closedLines</code>; the "ran out" lines</td><td>6</td></tr>
+        <tr><th scope="row"><code>docs/dev/world-funding.md</code>, <code>docs/dev/finance-score.md</code></th><td>The spec's Docs list</td><td>7</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="sec-task-1">
+    <h2>Task 1: Closing columns and the two hooks</h2>
+    <ul>
+      <li>Modify: <code>src/lib/sim/world/funding/columns.ts:61-98</code> (<code>FundPools</code>, <code>POOL_ROWS</code>), <code>:168-191</code> (<code>emptyPools</code>), <code>:210-217</code> (<code>poolRowOf</code>)</li>
+      <li>Modify: <code>src/lib/sim/world/types.ts:224-256</code> (<code>FundingSystem</code>), new <code>WorldOptions</code></li>
+      <li>Modify: <code>src/lib/sim/world/world.ts:101-113</code> (<code>withFunding</code>)</li>
+      <li>Test: <code>src/lib/sim/world/funding/columns.spec.ts</code>, <code>src/lib/sim/world/funding/closing.spec.ts</code> (created)</li>
+    </ul>
+    <p><strong>Interfaces</strong></p>
+    <ul>
+      <li>Consumes: <code>NO_DAY</code> (<code>types.ts:8</code>), <code>grow</code>/<code>moveRows</code> (<code>columns.ts:104-131</code>), <code>planDueWith</code> (<code>due.ts:152</code>).</li>
+      <li>Produces (<code>columns.ts</code>):
+        <pre><code data-lang="ts">export interface FundPools extends PoolColumns {
+  /* today's columns, and: */
+  closedDay: Int32Array; // per pool row; NO_DAY while open
+  shutN: number;
+  shutRow: Int32Array;   // world pool row
+  shutFrom: Int32Array;  // first day closed (a model month's first day)
+  shutTo: Int32Array;    // first day open again, or NO_DAY while closed
+}
+/** Opens a shut row for pool row `q` from `from` and sets `closedDay[q] = from`. Throws when q is closed. */
+export function addShutRow(pools: FundPools, q: number, from: Day): void;
+/**
+ * Sets `shutTo = to` on pool row q's open shut row and `closedDay[q] = NO_DAY`; a row whose
+ * `shutTo` equals its `shutFrom` is removed, keeping the order of the rest. Throws when q is open.
+ */
+export function reopenPool(pools: FundPools, q: number, to: Day): void;</code></pre>
+      </li>
+      <li>Produces (<code>types.ts</code>):
+        <pre><code data-lang="ts">export interface WorldOptions {
+  /** Default true. The referee against the older engine runs with false. */
+  poolClosing?: boolean;
+}
+export interface FundingSystem {
+  /* today's hooks, and: */
+  beforeStep?(world: World, statics: Statics, timeline: PolicyTimeline): PolicyTimeline;
+  timelineOf?(world: World, statics: Statics, timeline: PolicyTimeline): PolicyTimeline;
+}</code></pre>
+        Doc comments copied from the spec's <code>sec-design-shapes</code>.</li>
+      <li>Produces (<code>world.ts</code>): <code>withFunding(f).step</code> runs <code>stepWith</code> under <code>f.beforeStep(world, statics, timeline)</code> when <code>f?.beforeStep</code> exists; <code>withFunding(f).planDue</code> plans under <code>f.timelineOf(world, statics, timeline)</code> when it exists. <code>createWorld</code> unchanged.</li>
+    </ul>
+    <ol>
+      <li id="t1-s1"><input type="checkbox"> Set up the worktree. Confirm F2 has merged: <code>Grep</code> for <code>uncapped</code> in <code>src/lib/timelapse/types.ts</code> finds nothing (if it does, stop: this unit needs F2). Then, one command each:
+        <pre><code data-lang="sh">npm install
+npx playwright install chromium
+npm run data:fixture
+npm run db:migrate</code></pre>
+        Before <code>data:fixture</code>, write <code>.dev.vars</code> with the Write tool holding the one line <code>PUBLIC_DATASET_VERSION=fixture-0</code>. Expected: each exits 0.</li>
+      <li id="t1-s2"><input type="checkbox"> Write the failing tests. In <code>columns.spec.ts</code> (its <code>funded()</code> helper is at <code>:21-25</code>):
+        <pre><code data-lang="ts">it('a new pool row has closedDay NO_DAY; the shut columns grow and clone', () => {
+  const w = funded(['a', 'b']);
+  const { pools } = fundOf(w);
+  expect(Array.from(pools.closedDay.subarray(0, 2))).toEqual([NO_DAY, NO_DAY]);
+  expect(poolRowOf(pools, 'c')).toBe(2);
+  expect(pools.closedDay[2]).toBe(NO_DAY);
+  expect(pools.shutN).toBe(0);
+  // 20 closings across three pools: past the first growth (8 rows).
+  for (let k = 0; k &lt; 20; k++) {
+    const q = k % 3;
+    addShutRow(pools, q, 1000 + 31 * k);
+    expect(pools.closedDay[q]).toBe(1000 + 31 * k);
+    reopenPool(pools, q, 1000 + 31 * k + 62);
+    expect(pools.closedDay[q]).toBe(NO_DAY);
+  }
+  expect(pools.shutN).toBe(20);
+  expect(pools.shutTo[19]).toBe(1000 + 31 * 19 + 62);
+  expect(structuredClone(w)).toEqual(w);
+});
+
+it('a pool closed and opened on the same day leaves no shut row', () => {
+  const { pools } = fundOf(funded(['a', 'b']));
+  addShutRow(pools, 0, 500);
+  addShutRow(pools, 1, 600);
+  reopenPool(pools, 0, 500);
+  expect(pools.shutN).toBe(1);
+  expect([pools.shutRow[0], pools.shutFrom[0], pools.shutTo[0]]).toEqual([1, 600, NO_DAY]);
+  expect(() =&gt; reopenPool(pools, 0, 700)).toThrow();
+  expect(() =&gt; addShutRow(pools, 1, 700)).toThrow();
+});</code></pre>
+        Create <code>closing.spec.ts</code> with the hook wiring test (a stub system over <code>createFundingSystem()</code>, the mini city with money, <code>oneMoneyTimeline</code> and <code>replanAt</code> from <code>test/fixtures.ts</code>):
+        <pre><code data-lang="ts">describe('withFunding and the closing hooks', () =&gt; {
+  it('step runs under beforeStep and planDue under timelineOf', () =&gt; {
+    const input = fundedMini();
+    const statics = staticsOf(input);
+    const base = oneMoneyTimeline(input, input.finance!);
+    const other = replanAt(base, 3);
+    const seen: PolicyTimeline[] = [];
+    const asked: number[] = [];
+    const sys: FundingSystem = {
+      ...createFundingSystem(),
+      beforeStep: (w, _s, t) =&gt; { expect(t).toBe(base); asked.push(w.month); return other; },
+      timelineOf: (_w, _s, t) =&gt; { expect(t).toBe(base); return other; },
+      serve: (ctx) =&gt; { seen.push(ctx.timeline); }
+    };
+    const core = withFunding(sys);
+    const out = { event() {} };
+    const w = core.createWorld(statics, base, 1, out);
+    const due = core.planDue(w, statics, base, 1, 4);
+    for (let m = 1; m &lt;= 4; m++) core.step(w, due, statics, base, 1, out);
+    expect(asked).toEqual([0, 1, 2, 3]);
+    expect(seen).toEqual([other, other, other, other]);
+  });
+});</code></pre></li>
+      <li id="t1-s3"><input type="checkbox"> Run them and see them fail.
+        <pre><code data-lang="sh">npx vitest run --project server src/lib/sim/world/funding/columns.spec.ts src/lib/sim/world/funding/closing.spec.ts</code></pre>
+        Expected: FAIL (<code>addShutRow</code> not exported; <code>beforeStep</code> not called).</li>
+      <li id="t1-s4"><input type="checkbox"> Implement. <code>closedDay</code> joins <code>POOL_ROWS</code>; <code>poolRowOf</code> sets <code>closedDay[row] = NO_DAY</code> (a grown <code>Int32Array</code> is zero-filled, and day 0 would read as closed). <code>shutRow</code>, <code>shutFrom</code>, <code>shutTo</code> are a side table grown like <code>SPELLS</code> (<code>columns.ts:93</code>), <code>shutN</code> its count; <code>emptyPools</code> gives them length 0 and <code>shutN: 0</code>. Add <code>WorldOptions</code> and the two optional hooks to <code>types.ts</code>; wire them in <code>withFunding</code> as the Interfaces block says.</li>
+      <li id="t1-s5"><input type="checkbox"> Run the two files again, then the world folder.
+        <pre><code data-lang="sh">npx vitest run --project server src/lib/sim/world/funding/columns.spec.ts src/lib/sim/world/funding/closing.spec.ts
+npx vitest run --project server src/lib/sim/world</code></pre>
+        Expected: PASS; nothing else changes (no system has the hooks yet).</li>
+      <li id="t1-s6"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add src/lib/sim/world/funding/columns.ts src/lib/sim/world/funding/columns.spec.ts src/lib/sim/world/funding/closing.spec.ts src/lib/sim/world/types.ts src/lib/sim/world/world.ts
+git commit -m "feat(world-funding): closedDay, the shut history and the closing hooks"</code></pre></li>
+      <li id="t1-s7"><input type="checkbox"> Check timing crutches.
+        <pre><code data-lang="sh">npx chreode timing-check --head HEAD</code></pre>
+        Expected: no findings.</li>
+    </ol>
+  </section>
+
+  <section id="sec-task-2">
+    <h2>Task 2: Last arrival and the closed view</h2>
+    <ul>
+      <li>Create: <code>src/lib/sim/world/funding/closing.ts</code></li>
+      <li>Test: <code>src/lib/sim/world/funding/closing.spec.ts</code></li>
+    </ul>
+    <p><strong>Interfaces</strong></p>
+    <ul>
+      <li>Consumes: <code>inflowArrivals(inflow, asOf, horizon)</code> (<code>src/lib/sim/scenario/funding.ts:32</code>), <code>frameIdOf</code> (<code>policy/intern.ts:127</code>), <code>monthFirstDay</code>, <code>monthOfDay</code> (<code>months.ts:10,20</code>), <code>FundPools</code> and <code>addShutRow</code>/<code>reopenPool</code> (Task 1).</li>
+      <li>Produces:
+        <pre><code data-lang="ts">/** The last day `pool` receives money under this definition; null when it never stops. */
+export function lastArrivalOf(pool: Pool, asOf: Day): Day | null;
+/** `timeline` with the world's closed pools' programmes not offered; `timeline` itself with none. */
+export function closedTimeline(timeline: PolicyTimeline, pools: FundPools, asOf: Day): PolicyTimeline;</code></pre>
+      </li>
+    </ul>
+    <p>Pinned behaviour (spec <code>sec-design-last</code>, <code>sec-design-closed</code>):</p>
+    <ul>
+      <li><code>lastArrivalOf</code>: null when some inflow is <code>yearly</code>, <code>to: null</code>, <code>dollarsPerYear &gt; 0</code>. Otherwise the latest day on or after <code>asOf</code> on which an inflow with dollars above 0 arrives under <code>inflowArrivals</code> (a <code>yearly</code> inflow read through its own <code>to</code>, which may lie past the window); <code>NO_DAY</code> when there is none. Memoised per <code>Pool</code> object (<code>WeakMap</code>; builder's call to key the inner value by <code>asOf</code>, since one worker can hold two datasets).</li>
+      <li>Closed set of month k: the pool ids of shut rows with <code>shutFrom &lt;= monthFirstDay(asOf, k)</code> and (<code>shutTo === NO_DAY</code> or <code>monthFirstDay(asOf, k) &lt; shutTo</code>).</li>
+      <li><code>frameAt(k)</code>: the base frame when the set is empty, or when no pool of the set is in the base frame's <code>finance.pools</code>; else the base frame with <code>finance</code> replaced by a copy whose <code>offered</code> is 0 for each programme of a closed pool, pools, programmes, arrivals, slope and terms the base's. Its <code>id</code> is <code>frameIdOf(`closed|${base.id}|${ids}`)</code>, <code>ids</code> the closed ids present in the frame, sorted, joined with <code>,</code>. Derived frames are cached in a module <code>WeakMap&lt;PolicyFrame, Map&lt;string, PolicyFrame&gt;&gt;</code> keyed by the base frame object and <code>ids</code>.</li>
+      <li><code>changes()</code>: the base's months and every month k &gt;= 2 whose closed set differs from month k - 1's, ascending, each once; recomputed when the base's <code>changes()</code> array is another object or another length. <code>touched(k)</code>: the base's for a month in the base's changes, else <code>new Int32Array(0)</code>. <code>readyThrough()</code>: the base's.</li>
+      <li>The view is a snapshot: it copies the shut rows (pool id, from, to) when built and never reads <code>pools</code> again.</li>
+      <li>Cache: builder's call, <code>WeakMap&lt;PolicyTimeline, Map&lt;string, PolicyTimeline&gt;&gt;</code> keyed by the base and a signature of the shut rows (<code>id:from:to</code> joined), holding the last 8 views per base, oldest dropped. Reason: the plan world and its twin may share a base (Review Focus 3) and alternate every month, and an unbounded map grows with every closing.</li>
+    </ul>
+    <ol>
+      <li id="t2-s1"><input type="checkbox"> Write the failing tests (asOf is <code>fundedMini().asOf</code>, 2026-10-16; <code>dayFromUtc</code> from <code>$lib/fzp/time</code>; a <code>pool(inflows)</code> helper builds a <code>generalRevenue</code> pool with leverage 1 and <code>debt: null</code>):
+        <pre><code data-lang="ts">describe('lastArrivalOf', () =&gt; {
+  const y = (from: Day, to: Day | null, d = 1e6): Inflow =&gt; ({ kind: 'yearly', from, to, dollarsPerYear: d });
+  const once = (day: Day, d = 1e6): Inflow =&gt; ({ kind: 'once', day, dollars: d });
+  it('reads each inflow kind', () =&gt; {
+    expect(lastArrivalOf(pool([once(asOf + 100)]), asOf)).toBe(asOf + 100);
+    expect(lastArrivalOf(pool([y(dayFromUtc(2027, 3, 15), dayFromUtc(2030, 6, 1))]), asOf))
+      .toBe(dayFromUtc(2030, 3, 15));
+    expect(lastArrivalOf(pool([y(dayFromUtc(2027, 3, 15), dayFromUtc(2090, 1, 1))]), asOf))
+      .toBe(dayFromUtc(2089, 3, 15));
+    expect(lastArrivalOf(pool([y(asOf, null)]), asOf)).toBeNull();
+    expect(lastArrivalOf(pool([y(asOf, null, 0), once(asOf + 50)]), asOf)).toBe(asOf + 50);
+    expect(lastArrivalOf(pool([y(dayFromUtc(2028, 2, 29), dayFromUtc(2031, 12, 31))]), asOf))
+      .toBe(dayFromUtc(2031, 2, 28));
+    expect(lastArrivalOf(pool([once(asOf - 1)]), asOf)).toBe(NO_DAY);
+    expect(lastArrivalOf(pool([]), asOf)).toBe(NO_DAY);
+    expect(lastArrivalOf(pool([once(asOf + 10, 0)]), asOf)).toBe(NO_DAY);
+    expect(lastArrivalOf(pool([once(asOf + 900), once(asOf + 300), y(asOf, asOf + 400)]), asOf))
+      .toBe(asOf + 900);
+  });
+});
+
+describe('closedTimeline', () =&gt; {
+  // base: moneyTimeline(input, doc) whose finance holds pools 'a' (programmes 'a-1', 'a-2')
+  // and 'b' (programme 'b-1'), all offered; pools: funded(['a', 'b']) as in columns.spec.
+  it('is the base itself with no closing', () =&gt; {
+    expect(closedTimeline(base, pools, asOf)).toBe(base);
+  });
+  it('drops the closed pool from month 5 and only it', () =&gt; {
+    addShutRow(pools, 0, monthFirstDay(asOf, 5));
+    const v = closedTimeline(base, pools, asOf);
+    expect(v.frameAt(4)).toBe(base.frameAt(4));
+    const f = v.frameAt(5);
+    expect(f.id).not.toBe(base.frameAt(5).id);
+    expect(offeredIds(f)).toEqual(['b-1']);
+    expect(f.finance!.pools).toBe(base.frameAt(5).finance!.pools);
+    expect(f.finance!.arrivals).toBe(base.frameAt(5).finance!.arrivals);
+    expect(v.frameAt(6).id).toBe(f.id); // equal content, equal id (one base frame id)
+    expect(v.changes()).toEqual([...new Set([...base.changes(), 5])].sort((x, y) =&gt; x - y));
+    expect(v.touched(5)).toEqual(new Int32Array(0));
+    expect(closedTimeline(base, pools, asOf)).toBe(v);
+  });
+  it('holds the opening month in changes()', () =&gt; {
+    addShutRow(pools, 0, monthFirstDay(asOf, 5));
+    reopenPool(pools, 0, monthFirstDay(asOf, 9));
+    const v = closedTimeline(base, pools, asOf);
+    expect(v.frameAt(9)).toBe(base.frameAt(9));
+    expect(v.changes()).toEqual(expect.arrayContaining([5, 9]));
+  });
+  // Review Focus 1
+  it('a view is a snapshot', () =&gt; {
+    addShutRow(pools, 0, monthFirstDay(asOf, 5));
+    const v = closedTimeline(base, pools, asOf);
+    const at7 = v.frameAt(7);
+    addShutRow(pools, 1, monthFirstDay(asOf, 7));
+    expect(v.frameAt(7)).toBe(at7);
+    const w = closedTimeline(base, pools, asOf);
+    expect(w).not.toBe(v);
+    expect(offeredIds(w.frameAt(7))).toEqual([]);
+  });
+  // Review Focus 3
+  it('two histories over one base', () =&gt; {
+    const p1 = fundOf(funded(['a', 'b'])).pools;
+    const p2 = fundOf(funded(['a', 'b'])).pools;
+    addShutRow(p1, 0, monthFirstDay(asOf, 5));
+    addShutRow(p2, 1, monthFirstDay(asOf, 5));
+    const v1 = closedTimeline(base, p1, asOf);
+    const v2 = closedTimeline(base, p2, asOf);
+    expect(offeredIds(v1.frameAt(5))).toEqual(['b-1']);
+    expect(offeredIds(v2.frameAt(5))).toEqual(['a-1', 'a-2']);
+    expect(closedTimeline(base, p1, asOf)).toBe(v1);
+    expect(closedTimeline(base, p2, asOf)).toBe(v2);
+  });
+  // Review Focus 5
+  it('a closed pool the frame does not hold', () =&gt; {
+    const p = fundOf(funded(['a', 'b', 'gone'])).pools;
+    addShutRow(p, 2, monthFirstDay(asOf, 5));
+    addShutRow(p, 0, monthFirstDay(asOf, 6));
+    const v = closedTimeline(base, p, asOf);
+    expect(v.frameAt(5)).toBe(base.frameAt(5));
+    expect(offeredIds(v.frameAt(6))).toEqual(['b-1']);
+  });
+});</code></pre>
+        <code>offeredIds(f)</code> is a local helper: the ids of <code>f.finance.programmes</code> whose <code>offered</code> is 1. The doc is built with <code>fundPolicy</code> and <code>miniDoc</code> from <code>policy/test/fixtures.ts:68-101</code>; builder's call on the pools' inflows (any with arrivals). Each test builds its own <code>pools</code>.</li>
+      <li id="t2-s2"><input type="checkbox"> Run and see them fail.
+        <pre><code data-lang="sh">npx vitest run --project server src/lib/sim/world/funding/closing.spec.ts</code></pre>
+        Expected: FAIL (<code>./closing</code> has no exports).</li>
+      <li id="t2-s3"><input type="checkbox"> Implement <code>lastArrivalOf</code> and <code>closedTimeline</code> in <code>closing.ts</code> as pinned above.</li>
+      <li id="t2-s4"><input type="checkbox"> Run again. Expected: PASS.</li>
+      <li id="t2-s5"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add src/lib/sim/world/funding/closing.ts src/lib/sim/world/funding/closing.spec.ts
+git commit -m "feat(world-funding): a pool's last arrival and the closed timeline view"</code></pre></li>
+      <li id="t2-s6"><input type="checkbox"> <code>npx chreode timing-check --head HEAD</code>. Expected: no findings.</li>
+    </ol>
+  </section>
+
+  <section id="sec-task-3">
+    <h2>Task 3: Spent pools close (and the older engine keeps waiting)</h2>
+    <ul>
+      <li>Modify: <code>src/lib/sim/world/funding/closing.ts</code> (<code>closeSpent</code>), <code>serve.ts:22-55</code> (<code>ServeOpts</code>, <code>serveLine</code>), <code>system.ts:26-71</code> (<code>createFundingSystem(opts)</code>, both hooks)</li>
+      <li>Modify: <code>src/lib/sim/world/funding/test/fixtures.ts:395-419</code> (<code>runFunded</code>), plus the closing builders (read the file after F2)</li>
+      <li>Modify: <code>src/lib/sim/world/funding/remedies.spec.ts:42-44</code>, <code>tolerance.referee.spec.ts:114</code>, <code>src/lib/sim/world/score/money.spec.ts:398-439</code></li>
+      <li>Maybe regenerate: <code>src/lib/sim/world/funding/fixtures/funded-events-mini-seed1.json</code></li>
+      <li>Test: <code>src/lib/sim/world/funding/closing.spec.ts</code></li>
+    </ul>
+    <p><strong>Interfaces</strong></p>
+    <ul>
+      <li>Consumes: <code>closedTimeline</code>, <code>lastArrivalOf</code> (Task 2); <code>addShutRow</code> (Task 1); <code>frameMoney</code> (<code>frame-money.ts:58</code>), <code>asksOf</code> (<code>scenario/funding.ts:345</code>), <code>prototypeFor</code>, <code>availableOf</code>/<code>heldOf</code> (<code>pools.ts:66,86</code>), <code>lotRow</code>, <code>INSTR_LOAN</code>/<code>INSTR_GUARANTEE</code>.</li>
+      <li>Produces:
+        <pre><code data-lang="ts">// closing.ts
+/** System 5, end of the scan: closes each spent pool from `ctx.lastDay + 1` (spec sec-design-spent). */
+export function closeSpent(ctx: StepCtx): void;
+// serve.ts
+export interface ServeOpts {
+  grouped?: boolean;
+  /** True runs `closeSpent` after the scan, inside `holdingReturns`; default false. */
+  closing?: boolean;
+}
+// system.ts
+export function createFundingSystem(opts?: WorldOptions): FundingSystem;
+// test/fixtures.ts: runFunded's opts gain
+//   poolClosing?: boolean   (default true, passed to createFundingSystem)
+//   system?: FundingSystem  (overrides poolClosing; for the direct-scan comparison)
+export const CLOSE_POOL = 'p-close';
+export const CLOSE_GRANT = 'p-close-grant';
+/** An added pool CLOSE_POOL (generalRevenue, leverage 1, debt null) with `inflows`. */
+export function closePool(inflows: Inflow[]): Pool;
+/** One `fund` policy for CLOSE_POOL: one span per entry, each with its own pool definition and
+ *  the affordable grant CLOSE_GRANT (and, with `loan` or `guarantee`, one market programme of
+ *  that instrument on the same pool). */
+export function closingPolicy(
+  asOf: Day,
+  spans: { from: number; to: number | null; inflows: Inflow[] }[],
+  extra?: 'loan' | 'guarantee'
+): Policy;</code></pre>
+      </li>
+      <li><code>ServeOpts.closing</code> defaults to false: builder's call, so <code>serve.spec.ts</code>'s hand-built harness calls are unchanged; <code>createFundingSystem</code> serves with <code>{ closing: poolClosing }</code>.</li>
+      <li>Both hooks of <code>createFundingSystem</code>: return <code>timeline</code> itself when <code>!('shutN' in world.pools)</code> (no funding columns) or <code>shutN === 0</code>; else <code>closedTimeline(timeline, pools, statics.asOf)</code>. Task 4 adds the opening to <code>beforeStep</code>.</li>
+    </ul>
+    <p>Pinned behaviour of <code>closeSpent</code> (spec <code>sec-design-spent</code>; the conditions in this order, cheapest first, <code>sec-design-cost</code>): for each frame pool index <code>fq</code> of <code>ctx.frame.finance.pools</code>, in world pool row order, with <code>q</code> its world row and <code>def</code> its definition, the pool is spent when</p>
+    <ol>
+      <li><code>closedDay[q] === NO_DAY</code>;</li>
+      <li><code>L = lastArrivalOf(def, asOf)</code> is not null and <code>L &lt; ctx.firstDay</code>;</li>
+      <li>no money row <code>k &lt; mN</code> has <code>mPool[k] === id[q]</code> and <code>mInstr[k]</code> of <code>INSTR_LOAN</code> or <code>INSTR_GUARANTEE</code>;</li>
+      <li>some line row <code>i</code> with <code>gone[i] === 0</code> and a free lot has a bundle (<code>fm.bundleIds(bundle[i])</code>) holding a programme of pool <code>fq</code>, and <code>asksOf(fm.index, kind, bundle, protoId, units[i]).get(fq)</code> exceeds <code>availableOf(pools, q, def) - heldOf(pools, q)</code>, <code>protoId = prototypeFor(stories[i], units[i]).id</code>.</li>
+    </ol>
+    <p>A spent pool takes <code>addShutRow(pools, q, ctx.lastDay + 1)</code>. Condition 4 is the direct test over every waiting row; the per-group form the spec allows is the builder's call only if every test below passes unchanged. Placement:</p>
+    <pre><code data-lang="ts">holdingReturns(pools, () =&gt; {
+  scanLine(ctx, opts);
+  if (opts.closing) closeSpent(ctx);
+});</code></pre>
+    <ol>
+      <li id="t3-s1"><input type="checkbox"> Add <code>poolClosing</code> and <code>system</code> to <code>runFunded</code>, and <code>CLOSE_POOL</code>, <code>CLOSE_GRANT</code>, <code>closePool</code>, <code>closingPolicy</code> to <code>test/fixtures.ts</code> (programme values are the builder's call; tiers as <code>TIERS</code> at <code>fixtures.ts:304</code>). Then write the failing tests in <code>closing.spec.ts</code>. A local <code>closing(doc, through, opts)</code> runs <code>runFunded(staticsOf(input), moneyTimeline(input, doc), seed, through, opts)</code> on <code>fundedMini()</code> and records, through <code>afterStep</code>, <code>closedDay</code> of <code>CLOSE_POOL</code> after each month. <code>dollars</code> values are the builder's call where the spec says "enough for one project"; each test asserts it is not vacuous.
+        <pre><code data-lang="ts">it('spent: closes from the first day of the month after an application finds it short', () =&gt; {
+  const arrive = monthFirstDay(asOf, 3) + 4;
+  const r = closing(miniDoc(closingPolicy(asOf, [{ from: 1, to: null, inflows: [once(arrive, ONE_PROJECT)] }])), 120);
+  const { pools } = fundOf(r.world);
+  const q = pools.id.indexOf(CLOSE_POOL);
+  expect(commitsOn(r.ledger, CLOSE_POOL)).toBe(1); // enough for one project
+  expect(pools.shutN).toBe(1);
+  const m = r.closedAt(CLOSE_POOL); // the month whose step set closedDay
+  expect(m).toBeGreaterThan(monthOfDay(asOf, arrive));
+  expect(pools.closedDay[q]).toBe(monthLastDay(asOf, m) + 1);
+  expect([pools.shutRow[0], pools.shutFrom[0], pools.shutTo[0]])
+    .toEqual([q, monthLastDay(asOf, m) + 1, NO_DAY]);
+});
+
+it('in the arrival month a short application closes nothing', () =&gt; {
+  const arrive = monthFirstDay(asOf, 6);
+  const r = closing(miniDoc(closingPolicy(asOf, [{ from: 1, to: null, inflows: [once(arrive, 1)] }])), 24);
+  expect(r.waitingWith(6, CLOSE_GRANT)).toBeGreaterThan(0); // short in month 6: 1 dollar
+  expect(r.closedDayAfter(6)).toBe(NO_DAY);
+  expect(r.closedAt(CLOSE_POOL)).toBeGreaterThanOrEqual(7);
+});
+
+it.each(['loan', 'guarantee'] as const)('a %s money row holds the pool open', (extra) =&gt; {
+  const r = closing(miniDoc(closingPolicy(asOf, [{ from: 1, to: null, inflows: [once(monthFirstDay(asOf, 2), ONE_PROJECT)] }], extra)), 240);
+  const last = r.lastMonthWithRow(CLOSE_POOL, extra); // end-of-month money rows of that instrument
+  expect(last).toBeGreaterThan(2);
+  expect(r.closedAt(CLOSE_POOL)).toBeGreaterThan(last);
+});
+
+it('past its last arrival and asked by no one, or able to pay every ask, it stays open', () =&gt; {
+  // a: a pool whose programme reaches no waiting kind (minHomes above every lot's size);
+  // b: a pool whose one arrival covers every ask through the horizon.
+  for (const r of [closing(unaskedDoc, 120), closing(richDoc, 120)]) {
+    expect(fundOf(r.world).pools.shutN).toBe(0);
+  }
+});
+
+it('a yearly inflow with no end never closes, however short', () =&gt; {
+  const r = closing(miniDoc(closingPolicy(asOf, [{ from: 1, to: null, inflows: [{ kind: 'yearly', from: asOf, to: null, dollarsPerYear: 1 }] }])), 120);
+  expect(r.waitingWith(60, CLOSE_GRANT)).toBeGreaterThan(0);
+  expect(fundOf(r.world).pools.shutN).toBe(0);
+});
+
+it.each(['baseline', 'added'] as const)('closing is switching the pool off from D (%s pool)', (which) =&gt; {
+  const a = runCase(which, { poolClosing: true });
+  const D = a.closedDayOf(P);
+  expect(D).not.toBe(NO_DAY);
+  const mD = monthOfDay(asOf, D);
+  // baseline: baselinePolicy('off', [{ pool: P, from: D, scale: 0 }]) on a finance that holds P;
+  // added: closingPolicy with its span ending at month mD - 1 (to = D - 1).
+  const b = runCase(which, { poolClosing: false, offFrom: D });
+  expect(fundOf(b.world).pools.shutN).toBe(0);
+  const from = (ev: MonthEvent[]) =&gt; ev.filter((e) =&gt; e.month &gt;= mD);
+  expect(from(a.events)).toEqual(from(b.events));
+  expect(a.ledger.filter((e) =&gt; e.day &gt;= D)).toEqual(b.ledger.filter((e) =&gt; e.day &gt;= D));
+  expect(waitingRows(a.world)).toEqual(waitingRows(b.world)); // every LINE_ROWS column of rows with gone 0
+});
+
+it('in the closing month every row on P is re-made without it or lapses', () =&gt; {
+  // afterStep snapshots the waiting rows at the end of month mD - 1 and mD.
+  const r = closing(closingDocA, 120, { snapshots: true });
+  const mD = monthOfDay(asOf, r.closedDayOf(CLOSE_POOL));
+  const before = r.waitingAt(mD - 1).filter((w) =&gt; w.bundle.split(',').includes(CLOSE_GRANT));
+  expect(before.length).toBeGreaterThan(0);
+  for (const w of before) {
+    const now = r.waitingAt(mD).find((x) =&gt; x.lot === w.lot &amp;&amp; x.kind === w.kind);
+    if (now) expect(now.bundle.split(',')).not.toContain(CLOSE_GRANT);
+    else expect(r.spellAt(mD, w.lot, w.kind)).toBe(r.respellDay(mD)); // as remakeRow writes a lapse (apply.ts:438-477)
+  }
+  for (let m = mD; m &lt;= 120; m++)
+    for (const w of r.waitingAt(m)) expect(w.bundle.split(',')).not.toContain(CLOSE_GRANT);
+  expect(r.ledger.some((e) =&gt; e.kind === 'commit' &amp;&amp; e.pool === CLOSE_POOL &amp;&amp; e.day &gt;= r.closedDayOf(CLOSE_POOL))).toBe(false);
+});
+
+it('money returned to a closed pool stays in it', () =&gt; {
+  // a seed (builder's call) where a project paid by P exits before construction after D
+  const r = closing(closingDocA, 240, { seed: RELEASE_SEED });
+  const D = r.closedDayOf(CLOSE_POOL);
+  const release = r.ledger.find((e) =&gt; e.kind === 'release' &amp;&amp; e.pool === CLOSE_POOL &amp;&amp; e.day &gt;= D);
+  expect(release).toBeDefined();
+  const m = monthOfDay(asOf, release!.day);
+  expect(r.availableAfter(m)).toBeGreaterThan(r.availableAfter(m - 1));
+  expect(r.ledger.some((e) =&gt; e.kind === 'commit' &amp;&amp; e.pool === CLOSE_POOL &amp;&amp; e.day &gt;= D)).toBe(false);
+  expect(fundOf(r.world).pools.closedDay[fundOf(r.world).pools.id.indexOf(CLOSE_POOL)]).toBe(D);
+});
+
+it('poolClosing false: no shut row; an application waits on a spent pool to the horizon', () =&gt; {
+  const r = closing(closingDocA, 120, { poolClosing: false });
+  expect(fundOf(r.world).pools.shutN).toBe(0);
+  expect(r.waitingWith(120, CLOSE_GRANT)).toBeGreaterThan(0);
+});
+
+it('grouped serving and the direct scan give the same closings and events', () =&gt; {
+  const direct: FundingSystem = {
+    ...createFundingSystem(),
+    serve: (ctx) =&gt; serveLine(ctx, { grouped: false, closing: true })
+  };
+  const a = closing(closingDocA, 120);
+  const b = closing(closingDocA, 120, { system: direct });
+  expect(fundOf(a.world).pools.shutN).toBeGreaterThan(0);
+  expect(b.events).toEqual(a.events);
+  expect(b.ledger).toEqual(a.ledger);
+  expect(structuredClone(b.world)).toEqual(structuredClone(a.world));
+});
+
+// Review Focus 2
+it('a world without money steps under its own timeline', () =&gt; {
+  const input = miniInput();
+  const t = oneFrame(frameOf(input)); // finance null in every month
+  const r = runFunded(staticsOf(input), t, 1, 24);
+  expect('shutN' in r.world.pools).toBe(false);
+  expect(r.world.month).toBe(24);
+});</code></pre>
+        Spec-local constants and documents, values the builder's call: <code>once(day, dollars)</code>, <code>ONE_PROJECT</code>, <code>RELEASE_SEED</code>, <code>closingDocA</code> (one span from month 1, one <code>once</code> inflow of <code>ONE_PROJECT</code> in month 2), <code>unaskedDoc</code>, <code>richDoc</code>, and <code>runCase(which, opts)</code> with <code>P</code> (<code>'b-close'</code>, a baseline pool added to <code>miniFinance</code> through <code>fundedMini(finance)</code>, for <code>'baseline'</code>; <code>CLOSE_POOL</code> for <code>'added'</code>).
+        The run record's helpers (<code>closedAt</code>, <code>closedDayOf</code>, <code>closedDayAfter</code>, <code>waitingWith</code>, <code>waitingAt</code>, <code>spellAt</code>, <code>respellDay</code>, <code>availableAfter</code>, <code>lastMonthWithRow</code>, <code>commitsOn</code>) are local to the spec and read only world columns and the ledger; <code>respellDay(m)</code> reads the value <code>remakeRow</code> writes for a lapse in month m (read <code>apply.ts:430-477</code> to name it). <code>miniInput</code> from <code>../test/mini</code>, <code>frameOf</code> and <code>oneFrame</code> from <code>../test/timeline</code> (as <code>score/test/feed.ts:9</code> imports them).</li>
+      <li id="t3-s2"><input type="checkbox"> Run and see them fail.
+        <pre><code data-lang="sh">npx vitest run --project server src/lib/sim/world/funding/closing.spec.ts</code></pre>
+        Expected: FAIL (no pool closes; <code>createFundingSystem</code> takes no options).</li>
+      <li id="t3-s3"><input type="checkbox"> Implement <code>closeSpent</code>, <code>ServeOpts.closing</code>, and <code>createFundingSystem(opts)</code> with <code>beforeStep</code> and <code>timelineOf</code> as pinned above. <code>ensure</code> (<code>system.ts:16-24</code>) is unchanged; the hooks never call <code>fundOf</code> on a world without funding columns.</li>
+      <li id="t3-s4"><input type="checkbox"> Keep the older-engine comparisons like for like (spec <code>sec-design-option</code>):
+        <ul>
+          <li><code>remedies.spec.ts:42-44</code>: <code>directSystem</code> serves with <code>serveLine(ctx, { grouped: false, closing: true })</code>.</li>
+          <li><code>tolerance.referee.spec.ts:114</code>: <code>runFunded(..., { ..., poolClosing: false })</code>.</li>
+          <li><code>score/money.spec.ts</code> "rule 12 against today's engine" (<code>:398-439</code>): its <code>run</code> passes <code>createFundingSystem({ poolClosing: false })</code> as <code>feedFunded</code>'s <code>system</code> argument (<code>score/test/feed.ts:63</code>); only that describe changes.</li>
+        </ul></li>
+      <li id="t3-s5"><input type="checkbox"> Run the closing spec, then the whole world folder.
+        <pre><code data-lang="sh">npx vitest run --project server src/lib/sim/world/funding/closing.spec.ts
+npx vitest run --project server src/lib/sim/world</code></pre>
+        Expected: closing.spec PASS. <code>funded.golden.test.ts</code> may fail if closing moves the golden (next step). <code>referee-ledger.spec.ts</code> is unchanged and must pass with closing on. Any other failure in <code>src/lib/sim/world/**</code>: if it compares with the older engine, switch that comparison to <code>poolClosing: false</code> and say so in the handback; otherwise stop and report it (do not loosen an assertion).</li>
+      <li id="t3-s6"><input type="checkbox"> The funded golden. If <code>funded.golden.test.ts</code> failed, regenerate it and look at the diff:
+        <pre><code data-lang="sh">npx tsx src/lib/sim/world/funding/fixtures/build-funded-golden.ts
+git diff --stat src/lib/sim/world/funding/fixtures/funded-events-mini-seed1.json</code></pre>
+        Then both golden specs must pass:
+        <pre><code data-lang="sh">npx vitest run --project server src/lib/sim/world/funding/funded.golden.test.ts
+npx vitest run --project client src/lib/sim/world/funding/funded.golden.svelte.spec.ts</code></pre>
+        The handback says whether the golden moved, and in which month the first event differs.</li>
+      <li id="t3-s7"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add src/lib/sim/world/funding src/lib/sim/world/score/money.spec.ts
+git commit -m "feat(world-funding): close a spent pool; the older engine's comparisons run with closing off"</code></pre></li>
+      <li id="t3-s8"><input type="checkbox"> <code>npx chreode timing-check --head HEAD</code>. Expected: no findings.</li>
+      <li id="t3-s9"><input type="checkbox"> <strong>Held (Open question 1):</strong> the tolerance referee run itself (<code>SFH_WORLD_FUNDING_REFEREE=1</code>). Typecheck covers the edit in t3-s4; the run waits for the operator.</li>
+    </ol>
+  </section>
+
+  <section id="sec-task-4">
+    <h2>Task 4: Opening again, edits, rewind and copies</h2>
+    <ul>
+      <li>Modify: <code>src/lib/sim/world/funding/closing.ts</code>, <code>system.ts</code> (<code>beforeStep</code>)</li>
+      <li>Test: <code>src/lib/sim/world/funding/closing.spec.ts</code>, <code>src/lib/sim/world/runner/ensemble.spec.ts</code></li>
+    </ul>
+    <p><strong>Interfaces</strong></p>
+    <ul>
+      <li>Consumes: <code>reopenPool</code> (Task 1), <code>closedTimeline</code> (Task 2), <code>closingPolicy</code>, <code>runFunded</code> (Task 3), <code>createEnsemble</code>, <code>compileTimeline</code> (as <code>ensemble.spec.ts:33-48,75</code> use them).</li>
+      <li>Produces:
+        <pre><code data-lang="ts">/**
+ * Before month m = world.month + 1 is stepped: for each arrival of the base frame of month m with
+ * dollars above 0 whose pool has an open shut row, `reopenPool(pools, q, monthFirstDay(asOf, m))`.
+ * Nothing when m &gt; timeline.readyThrough() (step then throws as today) or the frame has no finance.
+ */
+export function reopenArrivals(world: World, statics: Statics, timeline: PolicyTimeline): void;</code></pre>
+        <code>beforeStep</code> becomes <code>reopenArrivals(...)</code> then the Task 3 return. Pool rows are found by id without appending (not <code>poolRowOf</code>); an arrival whose pool has no world row is skipped.</li>
+    </ul>
+    <ol>
+      <li id="t4-s1"><input type="checkbox"> Write the failing tests in <code>closing.spec.ts</code> (<code>closing(...)</code> and its helpers from Task 3; <code>s2</code>, <code>c</code> and dollars are the builder's call, each asserted not vacuous):
+        <pre><code data-lang="ts">it('a closed pool opens in the month of its next span's arrival, and can close again', () =&gt; {
+  const doc = miniDoc(closingPolicy(asOf, [
+    { from: 1, to: S2 - 1, inflows: [once(monthFirstDay(asOf, 2), ONE_PROJECT)] },
+    { from: S2, to: null, inflows: [once(monthFirstDay(asOf, S2) + 3, ONE_PROJECT)] }
+  ]));
+  const r = closing(doc, 240);
+  const c = r.closedAt(CLOSE_POOL);
+  expect(c).toBeLessThan(S2);
+  expect(r.closedDayAfter(S2)).toBe(NO_DAY);
+  expect(r.shutAfter(S2)[0]).toEqual({ id: CLOSE_POOL, from: monthLastDay(asOf, c) + 1, to: monthFirstDay(asOf, S2) });
+  expect(r.offeredAt(S2)).toContain(CLOSE_GRANT); // the frame the world stepped month S2 under
+  const { pools } = fundOf(r.world);
+  expect(pools.shutN).toBe(2);
+  expect(pools.closedDay[pools.id.indexOf(CLOSE_POOL)]).toBe(pools.shutFrom[1]);
+});
+
+it('a pool closed and opened in the same month leaves no shut row', () =&gt; {
+  const c = closing(singleSpanDoc, 120).closedAt(CLOSE_POOL); // the closing month under one span
+  const doc = miniDoc(closingPolicy(asOf, [
+    { from: 1, to: c, inflows: singleSpanInflows },
+    { from: c + 1, to: null, inflows: [once(monthFirstDay(asOf, c + 1), ONE_PROJECT)] }
+  ]));
+  const r = closing(doc, c + 1);
+  expect(r.closedDayAfter(c)).toBe(monthFirstDay(asOf, c + 1));
+  expect(r.shutNAfter(c + 1)).toBe(0);
+  expect(r.closedDayAfter(c + 1)).toBe(NO_DAY);
+});
+
+it('an edit before the closing that gives a later arrival (keep) defers it', () =&gt; {
+  const c = closing(singleSpanDoc, 120).closedAt(CLOSE_POOL);
+  const j = c + 6;
+  const later = miniDoc(closingPolicy(asOf, [{ from: 1, to: null,
+    inflows: [...singleSpanInflows, once(monthFirstDay(asOf, j) + 2, ONE_PROJECT)] }]));
+  // step months 1..c-1 under singleSpanDoc's timeline, then c..120 under later's, one due list
+  const w = stepThenKeep(singleSpanDoc, later, c - 1, 120);
+  const { pools } = fundOf(w);
+  for (let k = 0; k &lt; pools.shutN; k++)
+    expect(pools.shutFrom[k]).toBeGreaterThanOrEqual(monthFirstDay(asOf, j + 2));
+});
+
+it('two runs of one seed give identical worlds; a clone after a closing steps on identically', () =&gt; {
+  const a = closing(closingDocA, 120);
+  const b = closing(closingDocA, 120);
+  expect(structuredClone(b.world)).toEqual(structuredClone(a.world));
+  expect(b.events).toEqual(a.events);
+  const c = a.closedAt(CLOSE_POOL);
+  // stepTwins: steps one world to c, clones it, plans the clone with core.planDue, steps both to 120
+  const t = stepTwins(closingDocA, c, 120);
+  expect(fundOf(t.original).pools.shutN).toBeGreaterThan(0);
+  expect(structuredClone(t.clone)).toEqual(structuredClone(t.original));
+  expect(t.cloneEvents).toEqual(t.originalEvents.filter((e) =&gt; e.month &gt; c));
+});
+
+it('restore: a month-0 clone planned with planDue equals the world stepped straight', () =&gt; {
+  const t = stepTwins(closingDocA, 0, 120);
+  expect(fundOf(t.original).pools.shutN).toBeGreaterThan(0);
+  expect(structuredClone(t.clone)).toEqual(structuredClone(t.original));
+});
+
+// Review Focus 4
+it('beforeStep past readyThrough leaves the world as it was', () =&gt; {
+  // a two-span doc as above, stepped to S2 - 1 (closed), then stepped under a view of its
+  // timeline with readyThrough() = S2 - 1
+  const { core, w, due, statics, stub } = steppedClosed(S2 - 1);
+  const before = structuredClone(w);
+  expect(() =&gt; core.step(w, due, statics, stub, 1, { event() {} })).toThrow(RangeError);
+  expect(structuredClone(w)).toEqual(before);
+});</code></pre>
+        The new record helpers (<code>shutAfter(m)</code>, <code>shutNAfter(m)</code>, <code>offeredAt(m)</code>) and <code>singleSpanDoc</code>/<code>singleSpanInflows</code>, <code>stepThenKeep</code>, <code>stepTwins</code>, <code>steppedClosed</code> are spec-local, built on <code>withFunding(createFundingSystem())</code>, <code>planDue</code> and <code>step</code> as <code>runFunded</code> is (<code>test/fixtures.ts:395-419</code>); <code>stepThenKeep</code> keeps one due list across the change of timeline, as the ensemble's <code>keep</code> does.
+        In <code>ensemble.spec.ts</code>, a <code>closingPlan()</code> compiles <code>DEFAULT_POLICY4</code> plus one <code>fund</code> policy adding <code>CLOSE_POOL</code> with one <code>once</code> inflow and <code>CLOSE_GRANT</code> on fixture-0 (<code>compileTimeline(doc, {}, ctx, 'plan')</code>, as <code>editedAt</code> does; dollars the builder's call so the pool closes before month 100):
+        <pre><code data-lang="ts">it('a closing is made again after a restore before it, and carried on by keep after it', () =&gt; {
+  const t = closingPlan();
+  const ref = fresh(t);
+  const p = fundOf(ref.world).pools;
+  expect(p.shutN).toBeGreaterThan(0);
+  const c = monthOfDay(statics.asOf, p.shutFrom[0] - 1); // the month that found it spent
+  const r = ensemble({ timeline: t });
+  r.setStatics(score);
+  run(r);
+  r.restore({ ...t }, c - 1);
+  run(r);
+  same(r, ref);
+  const k = ensemble({ timeline: t });
+  k.setStatics(score);
+  run(k, () =&gt; k.month === c + 2);
+  k.keep({ ...t });
+  run(k);
+  same(k, ref);
+});</code></pre></li>
+      <li id="t4-s2"><input type="checkbox"> Run and see them fail.
+        <pre><code data-lang="sh">npx vitest run --project server src/lib/sim/world/funding/closing.spec.ts src/lib/sim/world/runner/ensemble.spec.ts</code></pre>
+        Expected: the opening and same-month tests FAIL (nothing opens); others may already pass.</li>
+      <li id="t4-s3"><input type="checkbox"> Implement <code>reopenArrivals</code> and call it first in <code>beforeStep</code>.</li>
+      <li id="t4-s4"><input type="checkbox"> Run again, then the world folder and the golden.
+        <pre><code data-lang="sh">npx vitest run --project server src/lib/sim/world/funding/closing.spec.ts src/lib/sim/world/runner/ensemble.spec.ts
+npx vitest run --project server src/lib/sim/world</code></pre>
+        Expected: PASS, golden included (a constant pool definition never gets an arrival after its last one, so opening cannot move it).</li>
+      <li id="t4-s5"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add src/lib/sim/world/funding/closing.ts src/lib/sim/world/funding/system.ts src/lib/sim/world/funding/closing.spec.ts src/lib/sim/world/runner/ensemble.spec.ts
+git commit -m "feat(world-funding): a closed pool opens on its next arrival; rewind and copies carry closings"</code></pre></li>
+      <li id="t4-s6"><input type="checkbox"> <code>npx chreode timing-check --head HEAD</code>. Expected: no findings (the pre-existing <code>setTimeout</code> at <code>ensemble.spec.ts:55</code> is not this diff's; report it if the check names it).</li>
+    </ol>
+  </section>
+
+  <section id="sec-task-5">
+    <h2>Task 5: The money view carries closed and shut</h2>
+    <p><strong>Delivers row F3</strong>: with this task, <code>closedDay</code>, <code>WorldOptions.poolClosing</code>, the engine's closing and opening, <code>MoneyView.closed</code> and <code>MoneyView.shut</code> all exist. <code>reach-check</code> and <code>funding-measures</code> may start once it merges.</p>
+    <ul>
+      <li>Modify: <code>src/lib/sim/world/score/types.ts:21-64</code> (<code>MoneyRow.pools[]</code>, <code>MoneyView</code>), <code>score/money.ts:16-57</code>, <code>score/view.ts:14-84</code></li>
+      <li>Test: <code>src/lib/sim/world/score/money.spec.ts</code>, <code>score/view.spec.ts</code>, and <code>score/limits.spec.ts:355-377</code> (its key list)</li>
+    </ul>
+    <p><strong>Interfaces</strong></p>
+    <ul>
+      <li>Consumes: the world's <code>shut*</code> columns (Task 1), a world that closes and opens (Tasks 3, 4), <code>closingPolicy</code> (Task 3), <code>feedFunded</code> and <code>timelineStatics</code> (<code>score/test/feed.ts:39,55</code>).</li>
+      <li>Produces:
+        <pre><code data-lang="ts">// score/types.ts, MoneyRow.pools[number] gains
+closed?: Day | null; // first shut row's shutFrom once shutFrom - 1 &lt;= the month's last day
+shut?: boolean;      // closed at the end of this calendar month
+// MoneyView (a type alias today, types.ts:50) gains
+closed: Record&lt;string, Day | null&gt;;
+shut: Record&lt;string, boolean[]&gt;;</code></pre>
+      </li>
+      <li>Pinned (spec <code>sec-design-money</code>): with <code>last(i) = addMonths(firstOfMonth(asOf), i + 1) - 1</code>, <code>moneyRowsOf</code> writes each pool entry's <code>closed</code> as the <code>shutFrom</code> of that pool's first shut row when <code>shutFrom - 1 &lt;= last(i)</code>, else null; <code>shut</code> true when some shut row of the pool has <code>shutFrom - 1 &lt;= last(i)</code> and (<code>shutTo === NO_DAY</code> or <code>shutTo &gt; last(i)</code>). A world without funding columns (<code>!('shutN' in feed.world.pools)</code>) gives null and false. <code>moneyViewOf</code>: <code>shut[id]</code> is the rows' <code>shut ?? false</code> by month; <code>closed[id]</code> the last row's <code>closed ?? null</code>; one key per pool id of the view.</li>
+    </ul>
+    <ol>
+      <li id="t5-s1"><input type="checkbox"> Write the failing tests. In <code>money.spec.ts</code>, a city on <code>fundedMini()</code> under <code>moneyTimeline(input, doc)</code> with the two-span <code>closingPolicy</code> of Task 4 (closes, opens, closes); <code>score = timelineStatics(input, timeline, months)</code>, fed with <code>feedFunded</code>:
+        <pre><code data-lang="ts">it('closed and shut by month on a world that closes and opens a pool', () =&gt; {
+  const r = runClosing(); // { world, rows: moneyRowsOf(feed, extrasOf(series), 0, through), asOf }
+  const p = fundOf(r.world).pools;
+  expect(p.shutN).toBeGreaterThan(0);
+  const idx = monthIndexer(monthsOf(r.asOf, lastDay(r.asOf, r.through)), lastDay(r.asOf, r.through));
+  const spent = idx(p.shutFrom[0] - 1);
+  const open = p.shutTo[0] === NO_DAY ? Infinity : idx(p.shutTo[0]);
+  expect(open).toBeLessThan(Infinity); // not vacuous: it opens again in the window
+  r.rows.forEach((row, i) =&gt; {
+    for (const e of row.pools) {
+      if (e.id !== CLOSE_POOL) {
+        expect([e.closed, e.shut]).toEqual([null, false]);
+        continue;
+      }
+      expect(e.closed).toBe(i &lt; spent ? null : p.shutFrom[0]);
+      if (i &lt; idx(p.shutFrom[p.shutN - 1] - 1)) expect(e.shut).toBe(i &gt;= spent &amp;&amp; i &lt; open);
+    }
+  });
+});</code></pre>
+        Also update <code>checkPools</code> (<code>money.spec.ts:98-120</code>): each expected entry gains <code>closed: null, shut: false</code> (its world never closes; assert that first). In <code>limits.spec.ts</code> add <code>'closed'</code> and <code>'shut'</code> to <code>extra</code> and drop them in the destructuring. In <code>view.spec.ts</code>, with hand-made chunks (three months, pools <code>a</code> and <code>b</code>, <code>a</code> closed on day <code>D</code> from month 1, row 0 built without <code>closed</code>/<code>shut</code>; statics with <code>limits: []</code> and <code>debts: []</code>):
+        <pre><code data-lang="ts">it('MoneyView.closed is the last row's value for every pool', () =&gt; {
+  const m = viewOf([moneyChunk(0, rows)], moneyStatics).money!;
+  expect(m.closed).toEqual({ a: D, b: null });
+  expect(viewOf(chunksBefore([moneyChunk(0, rows)], 1), moneyStatics).money!.closed)
+    .toEqual({ a: null, b: null });
+});
+it('MoneyView.shut has one entry per filled month, false for a row without shut', () =&gt; {
+  const m = viewOf([moneyChunk(0, rows)], moneyStatics).money!;
+  expect(m.shut).toEqual({ a: [false, true, true], b: [false, false, false] });
+  expect(viewOf(chunksBefore([moneyChunk(0, rows)], 2), moneyStatics).money!.shut)
+    .toEqual({ a: [false, true], b: [false, false] });
+});</code></pre></li>
+      <li id="t5-s2"><input type="checkbox"> Run and see them fail.
+        <pre><code data-lang="sh">npx vitest run --project server src/lib/sim/world/score/money.spec.ts src/lib/sim/world/score/view.spec.ts src/lib/sim/world/score/limits.spec.ts</code></pre>
+        Expected: FAIL (no <code>closed</code>/<code>shut</code>).</li>
+      <li id="t5-s3"><input type="checkbox"> Implement the types, <code>moneyRowsOf</code> and <code>moneyViewOf</code> as pinned. <code>chunksBefore</code> needs no change: it slices whole rows.</li>
+      <li id="t5-s4"><input type="checkbox"> Run the three files, then the score folder.
+        <pre><code data-lang="sh">npx vitest run --project server src/lib/sim/world/score</code></pre>
+        Expected: PASS.</li>
+      <li id="t5-s5"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add src/lib/sim/world/score
+git commit -m "feat(world-score): MoneyRow and MoneyView carry when each pool closed"</code></pre></li>
+      <li id="t5-s6"><input type="checkbox"> <code>npx chreode timing-check --head HEAD</code>. Expected: no findings.</li>
+    </ol>
+  </section>
+
+  <section id="sec-task-6">
+    <h2>Task 6: Details says when a source ran out</h2>
+    <ul>
+      <li>Modify: <code>src/lib/fzp/money-view.ts</code>, <code>src/lib/fzp/MoneyResults.svelte</code> (read both after F2: the <code>uncapped</code> prop and helpers are gone)</li>
+      <li>Test: <code>src/lib/fzp/money-view.spec.ts</code>, <code>src/lib/fzp/MoneyResults.svelte.spec.ts</code> (created)</li>
+    </ul>
+    <p><strong>Interfaces</strong></p>
+    <ul>
+      <li>Consumes: <code>MoneyView.closed</code> (Task 5), <code>formatShortMonthYear</code> (<code>fzp/format.ts:40</code>), <code>addMonths</code> (<code>$lib/sim/scenario/dates</code>), <code>Money</code> (<code>$lib/sim/scenario/finance-score</code>, as <code>money-view.ts:15</code> imports it).</li>
+      <li>Produces:
+        <pre><code data-lang="ts">/** One line per pool of `money` that ran out by the end of the calendar month starting `at`. */
+export function closedLines(money: Money | MoneyView, at: Day): string[];</code></pre>
+        A pool is listed when <code>day = 'closed' in money ? (money.closed[id] ?? null) : null</code> is not null and <code>day - 1 &lt; addMonths(at, 1)</code>; lines follow <code>money.pools</code>' order; a line is <code>`${label}: ran out ${formatShortMonthYear(day - 1)}`</code>.</li>
+      <li>Markup, after the <code>fzp-money-all</code> line and before the "Money details" button (exact):
+        <pre><code data-lang="svelte">{#each closed as line (line)}
+  &lt;p class="tabular-nums" data-testid="fzp-money-closed"&gt;{line}&lt;/p&gt;
+{/each}</code></pre>
+        with <code>const closed = $derived(money ? closedLines(money, at) : [])</code>. Not live regions; nothing rendered with no line.</li>
+    </ul>
+    <ol>
+      <li id="t6-s1"><input type="checkbox"> Write the failing tests. In <code>money-view.spec.ts</code>, extend the spec's existing <code>MoneyView</code> builder (near <code>:270-282</code> today) with <code>closed</code> and <code>shut</code>:
+        <pre><code data-lang="ts">describe('closedLines', () =&gt; {
+  const CITY = 'City: general-obligation bonds and other debt';
+  const v = viewWith([{ id: 'go', label: CITY }, { id: 'st', label: 'State' }],
+    { go: dayFromUtc(2030, 4, 1), st: null });
+  it('lists nothing before the spent month', () =&gt; {
+    expect(closedLines(v, dayFromUtc(2030, 2, 1))).toEqual([]);
+  });
+  it('lists the pool from its spent month on', () =&gt; {
+    expect(closedLines(v, dayFromUtc(2030, 3, 1))).toEqual([`${CITY}: ran out Mar 2030`]);
+    expect(closedLines(v, dayFromUtc(2031, 7, 1))).toEqual([`${CITY}: ran out Mar 2030`]);
+  });
+  it('follows the pools order', () =&gt; {
+    const two = viewWith([{ id: 'b', label: 'B' }, { id: 'a', label: 'A' }],
+      { a: dayFromUtc(2029, 1, 1), b: dayFromUtc(2030, 4, 1) });
+    expect(closedLines(two, dayFromUtc(2031, 1, 1)))
+      .toEqual(['B: ran out Mar 2030', 'A: ran out Dec 2028']);
+  });
+  it('a money without closed gives none', () =&gt; {
+    expect(closedLines(plainMoney(), dayFromUtc(2031, 1, 1))).toEqual([]);
+  });
+});</code></pre>
+        Create <code>MoneyResults.svelte.spec.ts</code> (pattern of <code>src/lib/map/key/MapKeyControl.svelte.spec.ts:1-25</code>: <code>render</code> from <code>vitest-browser-svelte</code>, <code>page</code> and <code>cdp</code> from <code>vitest/browser</code>, <code>'../../routes/layout.css'</code>). The score is <code>{ money } as unknown as TimelineScore</code> (builder's call: the money part reads only <code>score.money</code>), <code>money</code> a <code>MoneyView</code> of 60 zero months with the one pool <code>{ id: 'go', label: CITY, kind: 'goBond' }</code>, <code>closed: { go: dayFromUtc(2030, 4, 1) }</code>, <code>terms: resolveTerms(MARKET_TERMS)</code>, <code>part: 'money'</code>, <code>pending: false</code>:
+        <pre><code data-lang="ts">it('at March 2030 one ran-out line sits after the all-money line, before Money details', async () =&gt; {
+  render(MoneyResults, { props: props(dayFromUtc(2030, 3, 1)) });
+  const lines = page.getByTestId('fzp-money-closed');
+  await expect.element(lines).toHaveTextContent(`${CITY}: ran out Mar 2030`);
+  expect(lines.elements()).toHaveLength(1);
+  const all = page.getByTestId('fzp-money-all').element();
+  const button = page.getByRole('button', { name: /Money details/ }).element();
+  const line = lines.element();
+  expect(all.compareDocumentPosition(line) &amp; Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(line.compareDocumentPosition(button) &amp; Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(line.closest('[aria-live]')).toBeNull();
+});
+it('at February 2030 there is none', async () =&gt; {
+  render(MoneyResults, { props: props(dayFromUtc(2030, 2, 1)) });
+  await expect.element(page.getByTestId('fzp-money-all')).toBeVisible();
+  expect(page.getByTestId('fzp-money-closed').elements()).toHaveLength(0);
+});</code></pre></li>
+      <li id="t6-s2"><input type="checkbox"> <strong>Held (Open question 2):</strong> the light and dark accessibility test. Recommended form, pending the operator's ruling:
+        <pre><code data-lang="ts">it('axe: clean light and dark', async () =&gt; {
+  render(MoneyResults, { props: props(dayFromUtc(2030, 3, 1)) });
+  for (const value of ['light', 'dark'] as const) {
+    await cdp().send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value }] });
+    const r = await axe.run(page.getByTestId('fzp-money').element(), {
+      runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22a', 'wcag22aa'] }
+    });
+    expect(r.violations).toEqual([]);
+  }
+});</code></pre></li>
+      <li id="t6-s3"><input type="checkbox"> Run and see them fail.
+        <pre><code data-lang="sh">npx vitest run --project server src/lib/fzp/money-view.spec.ts
+npx vitest run --project client src/lib/fzp/MoneyResults.svelte.spec.ts</code></pre>
+        Expected: FAIL (<code>closedLines</code> not exported; no <code>fzp-money-closed</code>).</li>
+      <li id="t6-s4"><input type="checkbox"> Implement <code>closedLines</code> and the markup as pinned.</li>
+      <li id="t6-s5"><input type="checkbox"> Run both again. Expected: PASS.</li>
+      <li id="t6-s6"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add src/lib/fzp/money-view.ts src/lib/fzp/money-view.spec.ts src/lib/fzp/MoneyResults.svelte src/lib/fzp/MoneyResults.svelte.spec.ts
+git commit -m "feat(fzp): Details says when each source ran out"</code></pre></li>
+      <li id="t6-s7"><input type="checkbox"> <code>npx chreode timing-check --head HEAD</code>. Expected: no findings.</li>
+    </ol>
+  </section>
+
+  <section id="sec-task-7">
+    <h2>Task 7: Docs</h2>
+    <ul>
+      <li>Modify: <code>docs/dev/world-funding.md</code> (read after F2), <code>docs/dev/finance-score.md</code></li>
+    </ul>
+    <p><strong>Interfaces</strong></p>
+    <ul>
+      <li>Consumes: the names of Tasks 1 to 6 exactly as they landed.</li>
+      <li>Produces: the spec's <code>sec-docs</code> list, item for item.</li>
+    </ul>
+    <ol>
+      <li id="t7-s1"><input type="checkbox"> <code>docs/dev/world-funding.md</code>:
+        <ul>
+          <li>A section "Pool closing": the last arrival, the four conditions, where the check runs in the month, the closed day, the <code>shut</code> history, the closed view and how it reuses the switched-off path, opening again, edits and rewind, <code>WorldOptions.poolClosing</code>.</li>
+          <li>The files table (<code>:15-27</code>) gains <code>closing.ts</code>; "The columns" (<code>:29-56</code>) gains <code>closedDay</code> and the <code>shut</code> columns.</li>
+          <li>"Hook calls by system" (<code>:108-119</code>) gains <code>beforeStep</code> before system 1 and the check after serving in system 5.</li>
+          <li>"Tolerance referee" (<code>:307</code>) says it runs with closing off, and why.</li>
+          <li>"Known differences from today" (<code>:361</code>) gains: the step engine closes a spent pool; the older engine waits on it.</li>
+        </ul></li>
+      <li id="t7-s2"><input type="checkbox"> <code>docs/dev/finance-score.md</code>:
+        <ul>
+          <li>"In the step engine" (<code>:200</code>): <code>MoneyRow</code>'s <code>closed</code> and <code>shut</code>, <code>MoneyView.closed</code> and <code>MoneyView.shut</code>, and Details' "ran out" line, word for word.</li>
+          <li>The identities (<code>:102-153</code>): I4 holds for every pool and I6 (an uncapped pool's <code>received</code>) is gone, as <code>finite-funding</code> left them in the code (check the code before writing).</li>
+          <li>The parenthesis after the identities (<code>:152-153</code>) goes; in its place one sentence: <code>finance-engine.md</code>'s table maps E1 to E5 to I1 to I5, E6 is retired with I6, and E7 has no counterpart.</li>
+        </ul></li>
+      <li id="t7-s3"><input type="checkbox"> Format check.
+        <pre><code data-lang="sh">npx prettier --check docs/dev/world-funding.md docs/dev/finance-score.md</code></pre>
+        Expected: no warnings (run <code>npx prettier --write</code> on the two files if any).</li>
+      <li id="t7-s4"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add docs/dev/world-funding.md docs/dev/finance-score.md
+git commit -m "docs(world-funding): pool closing, and the money view's closed and shut"</code></pre></li>
+      <li id="t7-s5"><input type="checkbox"> <code>npx chreode timing-check --head HEAD</code>. Expected: no findings.</li>
+    </ol>
+  </section>
+
+  <section id="sec-task-8">
+    <h2>Task 8: Whole-unit verification</h2>
+    <ul>
+      <li>No new files. Fixes found here go in the file that owns them, committed with a <code>fix:</code> message.</li>
+    </ul>
+    <p><strong>Interfaces</strong></p>
+    <ul>
+      <li>Consumes: everything above. Produces: the handback.</li>
+    </ul>
+    <ol>
+      <li id="t8-s1"><input type="checkbox"> Lint and types.
+        <pre><code data-lang="sh">npm run lint
+npm run check</code></pre>
+        Expected: both exit 0, no warnings.</li>
+      <li id="t8-s2"><input type="checkbox"> The Vitest projects this unit's files belong to (server and client), whole.
+        <pre><code data-lang="sh">npm run test:unit</code></pre>
+        Expected: PASS, no server stderr, no retried test. A failure in a file outside the write set caused by closing: stop and report it with the file and assertion (Open question 3).</li>
+      <li id="t8-s3"><input type="checkbox"> Cost. <code>funded-month.perf.spec.ts</code> keeps its bar (90 µs a month, mean). Run it only on a quiet machine:
+        <pre><code data-lang="sh">npx vitest run --project perf src/lib/sim/world/funding/funded-month.perf.spec.ts</code></pre>
+        Otherwise defer it and say so in the handback. Not a gate.</li>
+      <li id="t8-s4"><input type="checkbox"> <code>npx chreode timing-check --head HEAD</code> after the last commit. Expected: no findings.</li>
+      <li id="t8-s5"><input type="checkbox"> Handback: whether the funded golden moved (Task 3), whether the perf measurement ran or was deferred, every Open question still held, and any spec in <code>src/lib/sim/world/**</code> switched to <code>poolClosing: false</code> with why.</li>
+    </ol>
+  </section>
+
+  <section id="sec-open-questions">
+    <h2>Open questions for the operator</h2>
+    <ol>
+      <li><aside data-kind="question"><strong>Referee run</strong> The spec wants <code>tolerance.referee.spec.ts</code> to pass with <code>poolClosing: false</code> "behind <code>SFH_WORLD_FUNDING_REFEREE=1</code>". The gate is <code>process.env.SFH_WORLD_FUNDING_REFEREE === '1'</code> (<code>tolerance.referee.spec.ts:51</code>); no npm script sets it (<code>package.json:20-25</code>), and the unit's Bash rule forbids the <code>VAR=... cmd</code> form. Recommendation: the operator runs it once after Task 3, or allows an npm script <code>test:referee</code> outside this unit's write set. Step t3-s9 is held.</aside></li>
+      <li><aside data-kind="question"><strong>Accessibility helper in a component spec</strong> The spec names <code>expectNoA11yViolations</code> for <code>MoneyResults.svelte.spec.ts</code>, but that helper takes a Playwright <code>Page</code> (<code>e2e/helpers/a11y.ts:48</code>) and cannot run in the Vitest client project. Recommendation: axe-core with the same six AA tags and the <code>prefers-color-scheme</code> emulation, as <code>src/lib/map/key/MapKeyControl.svelte.spec.ts:18-22,443-458</code> does. Step t6-s2 is held with that form.</aside></li>
+      <li><aside data-kind="question"><strong>Pinned runs outside the write set</strong> Closing is on by default, so any spec outside the write set that pins numbers from a funded run (for example under <code>src/lib/timeline/</code> on fixture-0, or <code>src/lib/sim/world/runner/*.spec.ts</code> other than <code>ensemble.spec.ts</code>) may move. This plan cannot edit them. Recommendation: Task 8 reports each with the moved value; the operator rules whether this unit may update it.</aside></li>
+    </ol>
+  </section>
+</article>
