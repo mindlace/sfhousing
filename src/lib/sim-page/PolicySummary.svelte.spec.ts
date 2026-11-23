@@ -11,6 +11,8 @@ import PolicySummary from './PolicySummary.svelte';
 import { DEFAULT_POLICY } from './sim-doc';
 import { OBSERVED_TIMING, setStageMonths } from './timing';
 import { dayOf } from '$lib/sim/scenario/dates';
+import { monthFirstDay } from '$lib/sim/world/months';
+import { addPreset, fundingPresets } from './funding-presets';
 import {
   BOND_POLICY,
   FUND_ASOF,
@@ -268,6 +270,103 @@ describe('PolicySummary: Public money (funding-ui 4.14)', () => {
     const none = region().getByText('No money added', { exact: true });
     await expect.element(none).toBeVisible();
     expect(none.element().className).toContain('text-ink-muted');
+  });
+
+  describe('a given measure', () => {
+    const START = monthFirstDay(fcal.asOf, 1);
+    const measure = (id: string): SimPolicy => {
+      const preset = fundingPresets(fcal, START).find((p) => p.id === id)!;
+      return {
+        ...DEFAULT_POLICY,
+        funding: addPreset(structuredClone(DEFAULT_POLICY.funding), preset)
+      };
+    };
+    const texts = () => rows().filter((t): t is string => t !== undefined);
+    const NOT_MONEY = ['Transit layers', 'Painted areas', 'Protections', 'Permitting timelines'];
+
+    it('a bond renders only Public money, the pool row then the indented programme row', async () => {
+      render(PolicySummary, {
+        policy: measure('housing-bond'),
+        calibration: fcal,
+        lotsOf: () => FINDING
+      });
+      await expect.element(region()).toBeVisible();
+      expect([...document.querySelectorAll('h3')].map((h) => h.textContent)).toEqual([
+        'Public money'
+      ]);
+      for (const name of NOT_MONEY)
+        expect(page.getByRole('heading', { name }).elements()).toHaveLength(0);
+      const items = [...region().element().querySelectorAll('li')];
+      expect(items).toHaveLength(2);
+      expect(items[0].textContent?.trim()).toMatch(
+        /^Housing bond: \$\d[\d.,]* (million|billion) in [A-Z][a-z]+ \d{4}; repaid at 6% over 20 years$/
+      );
+      expect(items[0].getAttribute('data-indent')).toBe('false');
+      expect(items[1].textContent?.trim()).toMatch(
+        /^Grant to affordable homes of \d+ homes or more: \d+(\.\d+)?% of the uncovered cost$/
+      );
+      expect(items[1].getAttribute('data-indent')).toBe('true');
+      expect(texts()).not.toContain("Today's funding: as today");
+      expect(texts()).not.toContain('No money added');
+    });
+
+    it('the coverage line stays first in the region', async () => {
+      render(PolicySummary, {
+        policy: measure('housing-bond'),
+        calibration: fcal,
+        lotsOf: () => FINDING
+      });
+      await expect.element(region()).toBeVisible();
+      const first = region().element().children[1];
+      expect(first.tagName).toBe('P');
+    });
+
+    it('general revenue reads until the end of its term', async () => {
+      render(PolicySummary, {
+        policy: measure('general-revenue'),
+        calibration: fcal,
+        lotsOf: () => FINDING
+      });
+      await expect.element(region()).toBeVisible();
+      expect(texts()[0]).toMatch(/ a year from [A-Z][a-z]+ \d{4} until [A-Z][a-z]+ \d{4}$/);
+      expect(texts()).not.toContain('No money added');
+    });
+
+    it('state money doubled gives its two rows', async () => {
+      render(PolicySummary, {
+        policy: measure('state-double'),
+        calibration: fcal,
+        lotsOf: () => FINDING
+      });
+      await expect.element(region()).toBeVisible();
+      expect(texts()).toHaveLength(2);
+      expect(texts()[0]).toMatch(/^State money: 200% of today's from /);
+      expect(texts()[1]).toMatch(/^State money: as today from /);
+    });
+
+    it('federal tax credits withdrawn gives its one row', async () => {
+      render(PolicySummary, {
+        policy: measure('federal-credits-off'),
+        calibration: fcal,
+        lotsOf: () => FINDING
+      });
+      await expect.element(region()).toBeVisible();
+      expect(texts()).toHaveLength(1);
+      expect(texts()[0]).toMatch(/^Federal tax credits: switched off from /);
+    });
+
+    it('a zoning projection renders the five sections as today', async () => {
+      render(PolicySummary, {
+        policy: { ...DEFAULT_POLICY, rules: [transit] },
+        calibration: fcal,
+        lotsOf: () => FINDING
+      });
+      await expect.element(region()).toBeVisible();
+      expect([...document.querySelectorAll('h3')].map((h) => h.textContent)).toEqual([
+        ...NOT_MONEY.slice(0, 4),
+        'Public money'
+      ]);
+    });
   });
 
   it('with a null calibration the section shows the rows only', async () => {

@@ -20,11 +20,14 @@ import { SLOPE_FIXTURE } from '$lib/sim/finance/test/fixtures';
 import { MAX_DOLLARS } from '$lib/sim/levers/finance';
 import type { FinanceLevers } from '$lib/sim/levers/types';
 import { dayOf } from '$lib/sim/scenario/dates';
-import { formatMonthYear } from '$lib/fzp/format';
+import { formatDollars, formatMonthYear } from '$lib/fzp/format';
+import { formatPercent } from '$lib/scoreboard/format';
+import { monthFirstDay } from '$lib/sim/world/months';
+import { DEFAULT_POLICY } from './sim-doc';
 import { inflowArrivals } from '$lib/sim/scenario/funding';
 import { LEGACY_UNCAPPED_DOLLARS, isNoCeiling, parseCalibration } from '$lib/timelapse/model';
 import type { Pool, Programme } from '$lib/timelapse/types';
-import { addPreset, fundingPresets, yearsAfter } from './funding-presets';
+import { addPreset, cityGrant, fundingPresets, yearsAfter } from './funding-presets';
 import { POOL_KIND_DEFAULTS, BOND_PRINCIPAL } from './funding-sources';
 import {
   BOND_POLICY,
@@ -40,7 +43,8 @@ import {
   coverageStepText,
   labelAmountChanged,
   labelScaleApplied,
-  sourcedLine
+  sourcedLine,
+  typedTermSummary
 } from './funding-copy';
 import {
   addedPresets,
@@ -52,6 +56,7 @@ import {
   fieldSource,
   groupOf,
   isOff,
+  moneyOnly,
   poolMoneySentence,
   poolPreview,
   poolYearAmount,
@@ -59,6 +64,7 @@ import {
   programmePreview,
   programmeSentence,
   scaleLines,
+  summaryRows,
   termRows,
   tiersSource,
   tiersText,
@@ -892,5 +898,134 @@ describe('addedPresets (4.10, final M3)', () => {
     expect(ids).not.toContain('state-off');
     const off: FinanceLevers = { ...base, baselineScale: [{ pool, from: D1, scale: 0 }] };
     expect(addedPresets(off, presets).map((p) => p.id)).toEqual(['state-off']);
+  });
+});
+
+describe('summaryRows: a given measure', () => {
+  const START = monthFirstDay(F0.asOf, 1);
+  const fb = F0.baselineFunding!;
+  const base = fb.programmes.find((g) => g.reach === 'affordable')!;
+  const share = formatPercent(
+    (cityGrant(START, base).instrument as { kind: 'grant'; share: number }).share
+  );
+  const min = String(base.minHomes);
+  const statePool = fb.pools.find((p) => p.kind === 'state')!;
+  const stateFirst = statePool.inflows[0];
+  const state = formatDollars(
+    stateFirst.kind === 'once' ? stateFirst.dollars : stateFirst.dollarsPerYear
+  );
+  const rowsOf = (id: string, asOf: typeof F0.asOf | null = F0.asOf) => {
+    const preset = fundingPresets(F0, START).find((p) => p.id === id)!;
+    const f = addPreset(structuredClone(DEFAULT_POLICY.funding), preset);
+    return summaryRows(f, fb, fundingPresets(F0), asOf).map(
+      (r) => `${r.indent ? '  ' : ''}${r.text}`
+    );
+  };
+  const grant = `Grant to affordable homes of ${min} homes or more: ${share} of the uncovered cost`;
+
+  it('each offered measure lists what it pays and when', () => {
+    expect(rowsOf('housing-bond')).toEqual([
+      'Housing bond: $410 million in October 2026; repaid at 6% over 20 years',
+      `  ${grant}`
+    ]);
+    expect(rowsOf('general-revenue')).toEqual([
+      'General revenue for housing: $36.7 million a year from October 2026 until October 2055',
+      `  ${grant}`
+    ]);
+    expect(rowsOf('revolving-fund')).toEqual([
+      'Revolving construction-loan fund: $100 million in October 2026',
+      '  Loan to private projects of 0 homes or more (custom, not sourced): 10% (custom, not sourced) of the building cost at 6% (custom, not sourced)'
+    ]);
+    expect(rowsOf('public-bank')).toEqual([
+      'Public bank (housing share): $8.67 million in October 2026, $11.3 million in October 2027, $10 million in October 2028, $26.7 million in October 2029, $13.3 million in October 2030',
+      `  Loan to affordable homes of ${min} homes or more: 10% (custom, not sourced) of the building cost at 6.13%`
+    ]);
+    expect(rowsOf('state-off')).toEqual(['State money: switched off from October 2026']);
+    expect(rowsOf('state-double')).toEqual([
+      "State money: 200% of today's from October 2026",
+      'State money: as today from October 2036'
+    ]);
+    expect(rowsOf('federal-support')).toEqual([
+      `Federal support: ${state} (custom, not sourced) a year from October 2026 until October 2035`,
+      `  ${grant}`
+    ]);
+    expect(rowsOf('federal-credits-off')).toEqual([
+      'Federal tax credits: switched off from October 2026'
+    ]);
+  });
+
+  it('no measure row says as today or no money added, or marks a date custom', () => {
+    const month =
+      /(January|February|March|April|May|June|July|August|September|October|November|December) \d{4} \(custom/;
+    for (const id of [
+      'housing-bond',
+      'general-revenue',
+      'revolving-fund',
+      'public-bank',
+      'state-off',
+      'state-double',
+      'federal-support',
+      'federal-credits-off'
+    ]) {
+      for (const r of rowsOf(id)) {
+        expect(r).not.toBe("Today's funding: as today");
+        expect(r).not.toBe('No money added');
+        expect(r).not.toMatch(month);
+      }
+    }
+  });
+
+  it('default funding reads as today with no money added', () => {
+    const rows = summaryRows(DEFAULT_POLICY.funding, fb, fundingPresets(F0), F0.asOf);
+    expect(rows.map((r) => r.text)).toEqual(["Today's funding: as today", 'No money added']);
+  });
+
+  it('typed terms show only for a funding with no scale entry, pool or programme', () => {
+    const bond = addPreset(
+      structuredClone(DEFAULT_POLICY.funding),
+      fundingPresets(F0, START).find((p) => p.id === 'housing-bond')!
+    );
+    const withTerm = { ...bond, terms: { guaranteeRateCut: 0.005 } };
+    const rows = summaryRows(withTerm, fb, fundingPresets(F0), F0.asOf).map((r) => r.text);
+    expect(rows.some((t) => t.startsWith('Guarantee rate cut'))).toBe(false);
+    const termsOnly = {
+      ...structuredClone(DEFAULT_POLICY.funding),
+      terms: { guaranteeRateCut: 0.005 }
+    };
+    const only = summaryRows(termsOnly, fb, fundingPresets(F0), F0.asOf).map((r) => r.text);
+    expect(only).toContain(typedTermSummary('guaranteeRateCut', 0.005));
+  });
+
+  it('a yearly inflow with no end reads until the window last month, or no until without asOf', () => {
+    const preset = fundingPresets(F0, START).find((p) => p.id === 'general-revenue')!;
+    const f = addPreset(structuredClone(DEFAULT_POLICY.funding), preset);
+    const open = structuredClone(f);
+    for (const x of open.pools[0].inflows) if (x.kind === 'yearly') x.to = null;
+    const until = summaryRows(open, fb, fundingPresets(F0), F0.asOf)[0].text;
+    expect(until).toMatch(/ a year from October 2026 until October 2066$/);
+    const none = summaryRows(open, fb, fundingPresets(F0), null)[0].text;
+    expect(none).toMatch(/ a year from October 2026$/);
+  });
+});
+
+describe('moneyOnly', () => {
+  const funded = policyWith({ ...BOND_POLICY.funding });
+  it('is true when only funding differs from the default policy', () => {
+    expect(moneyOnly(funded)).toBe(true);
+    expect(moneyOnly(BOND_POLICY)).toBe(true);
+  });
+  it('is false for the default policy, a rule, or changed current timing', () => {
+    expect(moneyOnly(DEFAULT_POLICY)).toBe(false);
+    const rule = {
+      ...funded,
+      rules: [{ id: 't1', kind: 'transit' as const, stopTypes: ['metro' as const], bands: [] }]
+    };
+    expect(moneyOnly(rule as never)).toBe(false);
+    const timed = structuredClone(funded);
+    timed.timing.current = {
+      ...timed.timing.current,
+      localProgramStreamlined: !timed.timing.current.localProgramStreamlined
+    };
+    expect(moneyOnly(timed)).toBe(false);
   });
 });
