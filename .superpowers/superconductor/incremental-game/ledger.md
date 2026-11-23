@@ -196,6 +196,7 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - reach-check: incremental-game-reach-check — status: planning (branch incremental-game-reach-check, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-reach-check, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus — rationale: small script, but its verdict gates the owner's D1; consumes four rows, needs: L1 from remove-lesscars (not merged yet); F1, F2 from finite-funding (not merged yet); F3 from pool-closing (not merged yet), produces: G4's build check (scripts/level2-check.ts, to closing))
 - closing: incremental-game-closing — status: launching (branch incremental-game-closing, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-closing, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus — rationale: whole-tree sweep, dataset upload and signoff, needs: G4's build check from reach-check (not merged yet); G1–G5, S1–S3, I1, F1, F2, F3, M1, L1, X1, all built (not merged yet); every other unit merged (not merged yet), produces: none)
 - closing: incremental-game-closing — status: planning (branch incremental-game-closing, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-closing, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus — rationale: whole-tree sweep, dataset upload and signoff, needs: G4's build check from reach-check (not merged yet); G1–G5, S1–S3, I1, F1, F2, F3, M1, L1, X1, all built (not merged yet); every other unit merged (not merged yet), produces: none)
+- contracts: incremental-game-contracts — status: complete (branch incremental-game-contracts, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-contracts, start 7fbb5e32c72b3dcd416f7ef214536376a7c22b5c, model opus — rationale: every contract row; root of the longest chain, needs: none, produces: G1–G5 (types and stubs), S1 (types), S2 and S3 (stubs), M1 (stub), X1 (working))
 
 ## Supervision
 - status asked remove-lesscars
@@ -228,6 +229,19 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - plan finite-funding: docs/superpowers/plans/2026-11-22-finite-funding.html at d7594b0d
 - owner named the test address 2026-11-22 (their account email); sent to incremental-game-mail-setup by message only.
 - noted for admission: `closing` needs `git fetch` (spec §sec-design-finish step 1) and `pool-closing` needs `SFH_WORLD_FUNDING_REFEREE=1` on a test run at its Task 3: relaunch each with the entry when it is admitted. `game-shell` handed back task 7 (files src/lib/about/{copy.ts,AboutUsing.svelte,AboutParts.svelte.spec.ts}, docs/dev/about.md; needs G2 stub from contracts) at a95cc8de: sibling `game-shell-1` starts once contracts has merged. contracts' deferred notes for consumers: S3's `page.data` read needs `$app/state`, which vite.config.client-test.ts:29 forbids in src/lib (for game-save); code comments naming docs/dev/lesscars.md outside contracts' list (for closing).
+- resent to incremental-game-remove-lesscars
+- resent to incremental-game-remove-multiuser
+- resent to incremental-game-mail-setup
+- resent to incremental-game-contracts
+- resent to incremental-game-game-core
+- resent to incremental-game-finite-funding
+- resent to incremental-game-game-save
+- resent to incremental-game-game-shell
+- resent to incremental-game-game-sim
+- resent to incremental-game-funding-measures
+- resent to incremental-game-pool-closing
+- resent to incremental-game-reach-check
+- resent to incremental-game-closing
 
 ## Questions
 - 2026-11-22 conductor-1 from conductor [defect-class: owner-ruling-drift]: gate-1, a policy already saved in the browser becomes a level-1 game, and every kind in it is locked (major) → rulings/conductor-1.md (commit 7fbb5e32, changes contract: no)
@@ -274,6 +288,9 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - 2026-11-22 pool-closing-1 from pool-closing [defect-class: spec-code-mismatch]: expectNoA11yViolations takes a Playwright Page; which a11y check does MoneyResults.svelte.spec.ts run →
 - 2026-11-22 conductor-10 from conductor [defect-class: spec-disagreement]: game-core and game-shell specs disagree on who writes the rest of +layout.svelte (reported by game-shell) →
 - 2026-11-22 conductor-11 from conductor [defect-class: write-set-gap]: game-shell e2e uses /api/e2e/plans, in remove-multiuser's write set, with no row between them (reported by game-shell) →
+- 2026-11-22 mail-setup-1 from mail-setup [defect-class: owner-action]: DNS records and a test address → answered by message, no fork (owner action: records added by the conductor, address from the owner)
+- routed mail-setup-1
+- 2026-11-22 remove-multiuser-2 from remove-multiuser [defect-class: spec-code-mismatch]: mintTestPseudonym's email literal is mixed-case, Better-Auth lower-cases emails (queued after conductor-11) →
 
 ## Forks
 - fork checkpoint-2 started 2026-11-22T16:20
@@ -320,6 +337,7 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - fork graph-conductor-9 exited [0]: output
 - fork checkpoint-6 started 2026-11-22T16:50
 - fork checkpoint-6 exited [0]: output
+- fork review-contracts-f6ee1de3 started 2026-11-22T17:56
 
 ## Frame-defect tally
 - owner-ruling-drift: 2 — instances: conductor-1 (gate-1, 2026-11-22); conductor-8 (gate-7, 2026-11-22)
@@ -331,14 +349,18 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - write-set-gap: 2 — instances: game-sim-1; conductor-11 (2026-11-22)
 - spec-code-mismatch: 1 — instances: pool-closing-1 (2026-11-22)
 - spec-disagreement: 4 — adds conductor-10 (2026-11-22)
+- spec-code-mismatch: 2 — adds remove-multiuser-2 (2026-11-22)
 
 ## Integration
+- 17:50 merge of contracts @ f6ee1de3 made (merge commit 5453b107), full suite running in the package worktree (agent; logs in the session scratchpad `merge-contracts/`); not ledgered as merged until it passes. No amending fork starts until then; queued questions in order: remove-multiuser-1, game-core-1, game-core-2, game-core-3, game-sim-1, pool-closing-1, conductor-10, conductor-11. Then merge remove-multiuser's row I1 @ cbd11881.
+- mail-setup sent `complete` @ 22dfc451 (doc only; both proof mails sent, SES identity verified, secrets set on staging and production): merge queued after contracts' suite and I1. Owner still to do, told: check dkim/spf/dmarc pass in both received mails, follow the staging link, the Google client step.
+- merged contracts [rows G1–G5 (types and stubs), S1 (types), S2, S3 (stubs), M1 (stub), X1 (working)] @ f6ee1de3 into superconductor/incremental-game, tests pass (check 0 errors; lint 0 errors; unit 10482 passed; e2e 851 passed, 0 failed), band low
 
 ## Cost
 - remove-lesscars: admitted 2026-11-22T16:31 seven_day 44% | session d889ec5c-3342-4a77-99f8-993f1115a679
 - remove-multiuser: admitted 2026-11-22T16:32 seven_day 44% | session 954945e3-efc5-42a8-8f8f-2233f4008011
 - mail-setup: admitted 2026-11-22T16:32 seven_day 44% | session b1e978f2-51f4-46a7-a9b0-92ea6e61597f
-- contracts: admitted 2026-11-22T16:33 seven_day 44% | session 343d79b0-ac75-4280-b643-22398f92f1a8
+- contracts: admitted 2026-11-22T16:33 seven_day 44% | session 343d79b0-ac75-4280-b643-22398f92f1a8 | finished 2026-11-22T17:56 seven_day 50%
 - game-core: admitted 2026-11-22T16:52 seven_day 46% | session 06c0c65b-cf92-457a-a525-9c4374e4a0b3
 - finite-funding: admitted 2026-11-22T16:53 seven_day 46% | session 7949d97c-2f16-4c76-b641-a1b2d697d55f
 - game-save: admitted 2026-11-22T16:53 seven_day 46% | session 62b87f0c-3aa2-4671-b8da-e0ac391e2ac6
