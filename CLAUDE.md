@@ -46,7 +46,6 @@ Fetch the file when working in the relevant area:
 - **`/sim` page (the page shell, schema 3 recipe the editors project, map overlays, autosave and the read-only view, request flow, dataset requirement)** — [docs/dev/sim-page.md](docs/dev/sim-page.md)
 - **Permitting timers on `/sim` (presets, floors, evidence, Save and Revert, route timelines)** — [docs/dev/sim-timers.md](docs/dev/sim-timers.md)
 - **Public money on `/sim` (`FinanceLevers`, schema 3 loader, presets and their sources, Funding editors per policy, drafts, Details' money and income rows, card line, notices)** — [docs/dev/sim-funding.md](docs/dev/sim-funding.md)
-- **`/lesscars` (plan format, checks, dated regimes and reservations, freed land, paired runs, output files, the page)** — [docs/dev/lesscars.md](docs/dev/lesscars.md)
 - **Road-like lots (imagery review behind `road-lots.json`, lots beside freed sites, live build measurements)** — [docs/dev/road-lots.md](docs/dev/road-lots.md)
 - **Building boxes (LiDAR fetch → `boxes` → `build`, `BOXES` thresholds, `src` values, the `building-boxes` artifact, z14+ tiles, V37, tuning loop)** — [docs/dev/building-boxes.md](docs/dev/building-boxes.md)
 - **Policies with dates (schema 4 document, compiling to frames, frame ids, the comparison)** — [docs/dev/policy-timeline.md](docs/dev/policy-timeline.md)
@@ -60,10 +59,8 @@ Fetch the file when working in the relevant area:
 - **Scores from the step engine (WorldSeries, chunks, TimelineView, cardAt)** — [docs/dev/world-score.md](docs/dev/world-score.md)
 - **Public money in the step engine (world-funding: the line by month, funded clocks over frames, money events at stage events, shadows, the tolerance referee)** — [docs/dev/world-funding.md](docs/dev/world-funding.md)
 - **Ensemble runner (the /sim timeline worker host: openTimeline, setPolicy, filling, copies and refill, lookups)** — [docs/dev/ensemble-runner.md](docs/dev/ensemble-runner.md)
-- **Sim log core (commits, changes, item keys, the shape registry, fold, diff, re-apply, undo and redo, the hash chain)** — [docs/dev/sim-log.md](docs/dev/sim-log.md)
-- **Sim object (the per-sim Durable Object, its socket and frames, append rules, limits, the sim migration track, the D1 copy, `rereadRoles`, `appendAs` and the rename, `takeDown`)** — [docs/dev/sim-object.md](docs/dev/sim-object.md)
-- **Sim sync (registering a sim from the browser, the socket client, tabs and their claims, the save state, the dev rule)** — [docs/dev/sim-sync.md](docs/dev/sim-sync.md)
-- **Browser log store (`LocalLog`, `LogStore`, `DocStore`, pending and drafts, the dataset rule, restore commits, IndexedDB)** — [docs/dev/sim-store.md](docs/dev/sim-store.md)
+- **The game (levels, bars, what each level allows, the playable document, saved games and the store's keys, the win card, the level panel, the e2e seam and its helpers)** — [docs/dev/game.md](docs/dev/game.md)
+- **Game save (`/api/game`, the `game_save` table, the browser's save sync, the account offer)** — [docs/dev/game-save.md](docs/dev/game-save.md)
 - **Design, specs and plans** — `docs/superpowers/design/`, `docs/superpowers/specs/`, `docs/superpowers/plans/`
 
 Subsystems add their own docs here (`plan-sharing.md`, `pipeline.md`) and link them from this list.

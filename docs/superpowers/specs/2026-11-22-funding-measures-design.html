@@ -6,11 +6,11 @@
 
   <section id="sec-goal">
     <h2>Goal</h2>
-    <p>This unit makes the funding presets that level 5 offers into finite, fixed measures and shows them so. It is the <code>funding-measures</code> subsystem of the <a href="../design/2026-11-22-1216-incremental-game.html">incremental game design</a>, built after <code>finite-funding</code> has merged (it needs F2) and against G3.</p>
+    <p>This unit makes the funding presets that level 5 offers into finite, fixed measures and shows them so. It is the <code>funding-measures</code> subsystem of the <a href="../design/2026-11-22-1216-incremental-game.html">incremental game design</a>, built after <code>finite-funding</code> and <code>pool-closing</code> have merged (it needs F2 and F3) and against G3.</p>
     <ul>
       <li>Every funding preset's money ends: the two with none today get a stated term, with its source and tier (D3, R2).</li>
       <li>A given measure's dates are counted from the start the player chooses, through <code>dateMeasure</code> (<a href="#sec-if-m1">M1</a>); its span's end cuts what arrives after it (D4).</li>
-      <li>A pool's bar on the timeline shows what is left of all the money the pool will receive, when the pool ends (<a href="../design/2026-11-22-1216-incremental-game.html#sec-model-money">Finite public money</a>).</li>
+      <li>A pool's bar on the timeline shows what is left of all the money the pool receives in the window, and reads empty while the pool is closed (<a href="../design/2026-11-22-1216-incremental-game.html#sec-model-money">Finite public money</a>).</li>
       <li>The funding editors run to the window's last month (the calendar month that holds the window's last day), taken from the dataset date, and never offer "no end".</li>
       <li>The federal tax-credit group is edited as any capped group, now that it has a yearly ceiling (F2).</li>
       <li>The read-only summary of a given measure lists what it pays and when its money ends, word for word.</li>
@@ -30,6 +30,7 @@
       <tbody>
         <tr><th scope="row">G3</th><td><code>game-core</code></td><td>Model commitment</td><td>What a level allows; the playable document.</td><td><a href="#sec-if-g3">G3</a></td></tr>
         <tr><th scope="row">F2</th><td><code>finite-funding</code></td><td>Model commitment</td><td>Pools with no "can always pay".</td><td><a href="#sec-if-f2">F2</a></td></tr>
+        <tr><th scope="row">F3</th><td><code>pool-closing</code></td><td>Model commitment</td><td>A spent pool closes and leaves every bundle.</td><td><a href="#sec-if-f3">F3</a></td></tr>
         <tr><th scope="row">M1</th><td><code>funding-measures</code></td><td>Decomposition choice</td><td>A given measure's money follows its policy's start.</td><td><a href="#sec-if-m1">M1</a></td></tr>
       </tbody>
     </table>
@@ -108,6 +109,44 @@ export type Inflow =
         <li><code>Inflow</code>, <code>Programme</code>, <code>Instrument</code>, the award rule, the line and <code>fundBundle</code> are unchanged.</li>
       </ul>
       <p><strong>Removed:</strong> <code>Pool.uncapped</code>, the "no limit" text for anything but an older dataset's pool, the on/off-only editor for the federal pool, the <code>uncapped</code> sets passed to the money results.</p>
+    </section>
+
+    <section id="sec-if-f3">
+      <h3>F3 Pool closing</h3>
+      <pre><code data-lang="ts">// src/lib/sim/world/funding/columns.ts
+export interface FundPools {
+  /* the columns as today, and: */
+  /** The first day the pool is closed; NO_DAY while it is open. One per pool row. */
+  closedDay: Int32Array;
+}
+
+// src/lib/sim/world/types.ts
+export interface WorldOptions {
+  /** Default true. The referee against the older engine runs with false. */
+  poolClosing?: boolean;
+}
+
+// src/lib/sim/world/score/types.ts (TimelineView.money)
+export interface MoneyView {
+  /* the series as today, and: */
+  /** Per pool id: the first day it was closed, or null. */
+  closed: Record&lt;string, Day | null&gt;;
+  /** Per pool id, by calendar month: true while the pool is closed at the end of that month. */
+  shut: Record&lt;string, boolean[]&gt;;
+}</code></pre>
+      <ul>
+        <li>A pool's last arrival is the last arrival the document in force gives it; a pool with a yearly inflow with no end has none.</li>
+        <li>A pool is spent in a month when the month begins after its last arrival, it has no loan out and holds no guarantee reserve, and that month's serving finds an application short on it.</li>
+        <li>A spent pool is closed from the first day of the next month, and stays closed until it receives a new arrival.</li>
+        <li>A closed pool is treated exactly as a pool switched off from that day: its programmes are in no bundle, and the applications waiting on them are re-made as on a re-pricing day.</li>
+        <li>Money returned to a closed pool stays in it and is never awarded.</li>
+        <li>A pool whose last arrival changes because the policy changed is judged again from the month the change takes effect; a closed pool that receives a new arrival is open again from that arrival's month.</li>
+        <li>The worker's rewind restores each pool's open or closed state with the world.</li>
+        <li>The older scenario engine keeps its behaviour: an application waits on a spent pool.</li>
+        <li>Details lists each closed source by its pool's label with the month it ran out: "{label}: ran out Mar 2030".</li>
+        <li><code>shut[id][i]</code> is true from the calendar month the pool ran out (the month that found it spent) through the last calendar month before it opens again.</li>
+        <li>A pool's bar on the timeline reads empty in every month <code>shut</code> marks: what a closed pool still holds is never awarded.</li>
+      </ul>
     </section>
 
     <section id="sec-if-m1">
@@ -316,12 +355,12 @@ export const PLAYER_START_PROVENANCE: Provenance = customStart(
 
     <section id="sec-design-level">
       <h3>A pool's lifetime level</h3>
-      <p>The bar of a pool that ends drains from full as its money is allocated and never refills at a yearly payment. The bar of a pool with no end reads as today.</p>
+      <p>Every pool's bar drains from full as its money is allocated and never refills at a yearly payment. A closed pool's bar reads empty.</p>
       <pre><code data-lang="ts">// src/lib/timeline/pool-level.ts
 export interface LevelPool {
   id: string;
   leverage: number;
-  /** All the money the pool receives in the window; null when some inflow of it has no end. */
+  /** All the money the pool receives in the window; null when it has no level. */
   lifetime: number | null;
 }
 
@@ -342,24 +381,24 @@ export function levelSet(
   asOf: Day
 ): LevelSet | null;</code></pre>
       <dl>
-        <dt>A pool that ends</dt><dd>Every inflow of every definition the document gives it is <code>once</code>, or <code>yearly</code> with <code>to</code> not null. An added pool's definitions are its spans' pools; a baseline pool's is the calibration's.</dd>
-        <dt>Lifetime receipts</dt><dd>The dollars of every arrival the money track gives the pool over months 1 to <code>WINDOW_MONTHS</code>: <code>createMoneyTrack(doc, { asOf, finance })</code> with <code>finance</code> holding the baseline pools, no programmes, no off spans, slope 0 and <code>resolveTerms(MARKET_TERMS)</code>, and month m's levers <code>moneyLeversOf(inForceAt(doc, monthFirstDay(asOf, m)))</code>.</dd>
+        <dt>Lifetime receipts</dt><dd>The dollars of every arrival the money track gives the pool over months 1 to <code>WINDOW_MONTHS</code>: <code>createMoneyTrack(doc, { asOf, finance })</code> with <code>finance</code> holding the baseline pools, no programmes, no off spans, slope 0 and <code>resolveTerms(MARKET_TERMS)</code>, and month m's levers <code>moneyLeversOf(inForceAt(doc, monthFirstDay(asOf, m)))</code>. A pool with a yearly inflow with no end counts each payment up to the window's last month. An added pool's definitions are its spans' pools; a baseline pool's is the calibration's.</dd>
         <dt>used<sub>i</sub></dt><dd>committed + spent + out + lostCredit at month i, as today.</dd>
+        <dt>shut<sub>i</sub></dt><dd><code>money.shut[id][i]</code> (<a href="#sec-if-f3">F3</a>); false where it is absent.</dd>
       </dl>
       <ul>
-        <li>When every pool given has a lifetime, month i's level is Σ(leverage × lifetime − used<sub>i</sub>) ÷ Σ(leverage × lifetime).</li>
-        <li>When some pool given has no lifetime, month i's level is today's reading for all of them: Σ(leverage × received<sub>i</sub> − used<sub>i</sub>) ÷ Σ(leverage × received<sub>i</sub>).</li>
+        <li>Month i's level is Σ(shut<sub>i</sub> ? 0 : leverage × lifetime − used<sub>i</sub>) ÷ Σ(leverage × lifetime), over the pools given whose lifetime is not null.</li>
         <li>A level is clamped to [0, 1], and is NaN where its denominator is 0.</li>
+        <li><code>lifetimes</code> gives null, so the pool has no level and stays out of every sum, for a pool with a yearly inflow whose amount <code>isNoCeiling</code> (an older dataset's federal pool, F2), and for every pool when the money track throws for <code>doc</code>.</li>
         <li>A pool with a lifetime reads 1 from month 0 until money is committed: all of it is still to come or free.</li>
         <li>A pool whose policy is off, or whose payments all fall outside its spans, has a lifetime of 0 and no level.</li>
-        <li>Loan repayments and released commitments lower used<sub>i</sub>, so a lifetime level can rise; a yearly payment never raises it.</li>
+        <li>A closed pool reads 0 in every month <code>MoneyView.shut</code> marks, whatever it still holds: money in a closed pool is never awarded (D13, F3). From the month an arrival opens it again it reads by the formula.</li>
+        <li>Loan repayments and released commitments lower used<sub>i</sub>, so an open pool's level can rise; a yearly payment never raises it.</li>
         <li>A scale policy changes a baseline pool's lifetime exactly as it changes the pool's arrivals: <code>state-double</code> doubles the state pool's lifetime receipts for its ten years.</li>
         <li><code>levelSet</code> keeps its signature and its <code>LevelSet</code>. Each fund policy's entry and "Current funding" read <code>lifetimes(doc, baseline ?? [], asOf)</code>.</li>
-        <li>"Current funding" sums the baseline pools as today, so it reads lifetime only when every baseline pool ends.</li>
+        <li>"Current funding" sums the baseline pools, so it drains through the window: today's sources with no end count their payments to the window's last month.</li>
         <li><code>lifetimes</code> is computed once per document, baseline and <code>asOf</code>: a new view with the same three reuses it.</li>
-        <li>When the money track throws for <code>doc</code>, every pool's lifetime is null and the bars read as today.</li>
         <li>Yearly payments still arrive in lumps (R7); the bar counts each one from the start, so a lump never shows as a refill.</li>
-        <li>A pool's bar shows nothing special when the pool closes (D13): by then its lifetime level is at or near empty by its own arithmetic. Details carries the "ran out" line.</li>
+        <li>Details carries the "ran out" line (F3).</li>
       </ul>
     </section>
 
@@ -495,7 +534,7 @@ Federal tax credits withdrawn from a date
 
   <section id="sec-write-set">
     <h2>Write set</h2>
-    <p>The design doc's row for <code>funding-measures</code>, after <code>finite-funding</code> and <code>game-core</code>:</p>
+    <p>The design doc's row for <code>funding-measures</code>, after <code>finite-funding</code>, <code>pool-closing</code> and <code>game-core</code>:</p>
     <ul>
       <li><code>src/lib/sim-page/funding-{presets,sources,view,copy,edit}.ts</code></li>
       <li><code>src/lib/sim-page/Funding*.svelte</code>, <code>ProgrammeEditor.svelte</code>, <code>PolicySummary.svelte</code></li>
@@ -512,7 +551,7 @@ Federal tax credits withdrawn from a date
       <li><code>src/lib/sim-page/funding-presets.ts</code> is written by <code>contracts</code> (the M1 stub), then <code>finite-funding</code>, then this unit. <code>contracts</code> ships no test of the stub; this unit's <code>funding-presets.spec.ts</code> tests the real <code>dateMeasure</code>.</li>
       <li>This unit runs after <code>game-core</code>, so <code>isGiven</code> from <code>$lib/game/allowed</code> is real when <code>dateMeasure</code> calls it.</li>
       <li><code>game-sim</code> and <code>funding-measures</code> can run together. <code>game-sim</code> calls <code>dateMeasure</code> (M1) and mounts <code>PolicySummary</code> through its existing props; <code>funding-measures</code> owns both.</li>
-      <li><code>pool-closing</code> and <code>funding-measures</code> write different files and can run together.</li>
+      <li>This unit runs after <code>pool-closing</code>: its pool bars read <code>MoneyView.shut</code> (F3). The two write different files.</li>
       <li>An e2e spec that exists before this build is edited only by the unit named for it: <code>e2e/sim-{funding,pools}.spec.ts</code> are this unit's.</li>
     </ul>
     <p>Files changed (none created, none deleted):</p>
@@ -561,9 +600,9 @@ Federal tax credits withdrawn from a date
         <li><code>funding-view.spec.ts</code>: <code>baselineGroups</code> counts <code>once</code> arrivals in the year from <code>asOf</code> in a group's amount; the federal group's amount is its ceiling; <code>scaleLines</code> words a federal change as a share of today's amount.</li>
         <li><code>funding-copy.spec.ts</code>: <code>dateRangeError</code> on fixture-0 is "Choose a month from October 2026 to October 2066."; <code>summaryScaleText</code> gives each of its four forms; <code>labelScaleApplied</code> and <code>labelDateChanged</code> as written.</li>
         <li><code>funding-edit.spec.ts</code>: a row switched to Every year, and a completed own-pool draft, store <code>to</code> = <code>windowLastMonth(asOf)</code>.</li>
-        <li><code>pool-level.spec.ts</code>: <code>lifetimes</code> gives a bond its principal, a general revenue 30 payments, nothing after a span's end, 0 for an off policy, null for a yearly inflow with no end, twice the state's ten years of arrivals under <code>state-double</code>, and null for every pool when the track throws.</li>
-        <li><code>pool-level.spec.ts</code>: <code>poolLevel</code> with lifetimes reads 1 before the first payment, drains as money is committed, does not rise at a yearly payment, rises when a loan is repaid; a set with one pool of no end reads today's formula; a lifetime of 0 gives NaN.</li>
-        <li><code>pool-level.spec.ts</code>: <code>levelSet</code>'s entries use lifetimes; "Current funding" uses them only when every baseline pool ends; a second view with the same document reuses the lifetimes.</li>
+        <li><code>pool-level.spec.ts</code>: <code>lifetimes</code> gives a bond its principal, a general revenue 30 payments, nothing after a span's end, 0 for an off policy, a yearly inflow with no end its payments to the window's last month, null for a pool whose yearly amount <code>isNoCeiling</code>, twice the state's ten years of arrivals under <code>state-double</code>, and null for every pool when the track throws.</li>
+        <li><code>pool-level.spec.ts</code>: <code>poolLevel</code> with lifetimes reads 1 before the first payment, drains as money is committed, does not rise at a yearly payment, rises when a loan is repaid; a pool with no end drains and never refills; a month <code>MoneyView.shut</code> marks reads 0 for that pool, also after money is returned to it, and the month an arrival opens it again reads by the formula; in a summed set a closed pool counts its whole lifetime as used; a lifetime of 0 gives NaN.</li>
+        <li><code>pool-level.spec.ts</code>: <code>levelSet</code>'s entries use lifetimes; "Current funding" reads lifetimes with baseline pools that have no end, and leaves out a pool whose yearly amount <code>isNoCeiling</code>; a second view with the same document reuses the lifetimes.</li>
         <li><code>money-copy.spec.ts</code>: <code>COVERAGE_OFF_SHORT_SENTENCE4</code> word for word.</li>
       </ul>
     </section>
@@ -605,7 +644,7 @@ Federal tax credits withdrawn from a date
       <li>Fields in short: every date runs to the window's last month; Until has no "no end"; the default Until is the window's last month.</li>
       <li>Today's funding: the federal group is a capped group with a ceiling; a group's amount counts the year from <code>asOf</code>.</li>
       <li>The read-only summary: the money-only rule, when "as today", "No money added" and typed terms show, no date marks, the until rule.</li>
-      <li>A pool's level: the lifetime reading, when it applies, its formula, and <code>lifetimes</code> through the money track.</li>
+      <li>A pool's level: the lifetime reading for every pool, its formula, a closed pool reading empty from <code>MoneyView.shut</code>, and <code>lifetimes</code> through the money track.</li>
       <li>The e2e: the tests as they now are.</li>
       <li>Known limits: the two about a short pool's wait and the on-or-off federal pool are gone.</li>
     </ul>
@@ -643,7 +682,7 @@ Federal tax credits withdrawn from a date
       <li>Which "+" choices each level offers, locked lanes, and the read-only "what" switch for a given measure: <code>game-sim</code> (G3 through <code>WhatEditor</code> and <code>add.ts</code>).</li>
       <li>Calling <code>dateMeasure</code> when a measure is added or its start moves, setting a preset's id and label on the policies it makes, and nulling <code>preset</code> when what a measure pays is edited: <code>game-sim</code> (M1, G3).</li>
       <li>The baseline sources' bounds, the federal ceiling and removing <code>Pool.uncapped</code>: <code>finite-funding</code> (F1, F2).</li>
-      <li>Closing a spent pool and Details' "ran out" line: <code>pool-closing</code> (F3). A closed pool's bar has no special drawing.</li>
+      <li>Closing a spent pool, <code>MoneyView.shut</code> and Details' "ran out" line: <code>pool-closing</code> (F3).</li>
       <li>Certifying <code>htf-2026</code> or <code>state-bond-2026</code>: a later change, no unit in this build.</li>
       <li>Designing funding rules (level 6).</li>
     </ul>

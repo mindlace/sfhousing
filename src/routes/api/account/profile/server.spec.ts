@@ -1,20 +1,27 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ACCOUNT_COPY } from '$lib/account/account-copy';
-import { SIMS_COPY } from '$lib/members/copy';
-import type { UpdateProfileResult } from '$lib/server/user-store/profile';
+import { AUTH_COPY } from '$lib/account/copy';
+import type { UpdateProfileInput, UpdateProfileResult } from '$lib/server/user-store/profile';
 import { PATCH } from './+server';
 
 vi.mock('$lib/server/db', () => ({ getDb: () => ({}) }));
 
 const { enforceRate, updateProfile } = vi.hoisted(() => ({
   enforceRate: vi.fn(async (): Promise<boolean> => true),
-  updateProfile: vi.fn(async (): Promise<UpdateProfileResult> => ({
-    ok: true,
-    handleChanged: true,
-    oldHandleFreesAt: null,
-    handle: 'ada2',
-    name: 'Ada'
-  }))
+  updateProfile: vi.fn(
+    async (
+      _db: unknown,
+      _identityId: string,
+      _input: UpdateProfileInput,
+      _now: Date
+    ): Promise<UpdateProfileResult> => ({
+      ok: true,
+      handleChanged: true,
+      oldHandleFreesAt: null,
+      handle: 'ada2',
+      name: 'Ada'
+    })
+  )
 }));
 
 vi.mock('$lib/server/security/rate-limit', () => ({ enforceRate }));
@@ -68,6 +75,22 @@ describe('PATCH /api/account/profile', () => {
     expect(body.error).toBe(ACCOUNT_COPY.tooManyChanges);
   });
 
+  it('a body with only handle passes no name to updateProfile', async () => {
+    const res = await PATCH(evt({ handle: 'ada2' }));
+    expect(res.status).toBe(200);
+    expect(updateProfile.mock.calls[0][2].name).toBeUndefined();
+  });
+
+  it("a body with name: '' passes ''", async () => {
+    await PATCH(evt({ name: '' }));
+    expect(updateProfile.mock.calls[0][2]).toEqual({ handle: undefined, name: '' });
+  });
+
+  it('a body with name: null passes no name', async () => {
+    await PATCH(evt({ name: null }));
+    expect(updateProfile.mock.calls[0][2].name).toBeUndefined();
+  });
+
   it('401 when not signed in', async () => {
     const res = await PATCH(evt({ name: 'Ada' }, { locals: { user: null } }));
     expect(res.status).toBe(401);
@@ -76,7 +99,7 @@ describe('PATCH /api/account/profile', () => {
   it('415 and no write when the body is not JSON', async () => {
     const res = await PATCH(evt({ name: 'Ada' }, {}, { 'content-type': 'text/plain' }));
     expect(res.status).toBe(415);
-    expect(await res.json()).toEqual({ error: SIMS_COPY.jsonRequired });
+    expect(await res.json()).toEqual({ error: AUTH_COPY.jsonRequired });
     expect(updateProfile).not.toHaveBeenCalled();
   });
 

@@ -1,0 +1,587 @@
+<article>
+  <header>
+    <h1>Remove multiuser plan</h1>
+    <p>Implements the remove-multiuser spec: shared sims, invitations, roles and the per-sim Durable Object go; accounts stay, with no sims in them.</p>
+    <aside data-kind="note"><strong>For agentic workers</strong> REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps are checklist items; progress is kept in the workspace ledger, not in the plan.</aside>
+  </header>
+
+  <section id="sec-overview">
+    <h2>Overview</h2>
+    <dl>
+      <dt>Goal</dt>
+      <dd>Delete the multi-user stack (sim log, browser store, sync, socket protocol, members UI, server sims, invitations, the Durable Object, operator takedown, capability ledger, authorization) and leave the identity code standing on its own, with one generated migration dropping the five tables.</dd>
+      <dt>Architecture</dt>
+      <dd>Six tasks, ordered so every deletion follows the removal of its last importer: the identity code first stops calling into sims (Task 1); the request layer and the locals it read go together (Task 2); sign-in and the e2e seams lose sims (Task 3); the remaining multi-user modules, the Durable Object and its config go (Task 4); the schema and the modules only it still imports go, and the migration is generated (Task 5); then the new 404 e2e cases and the auth doc (Task 6). The tree passes <code>npm run check</code> and its Vitest projects after every task.</dd>
+      <dt>Tech Stack</dt>
+      <dd>SvelteKit 2, Svelte 5, Better-Auth (anonymous, magic link, passkey plugins), Drizzle on D1, Wrangler, Vitest (<code>server</code> and <code>client</code> projects in <code>vite.config.ts:57</code> and <code>vite.config.client-test.ts:49</code>), Playwright.</dd>
+      <dt>Spec</dt>
+      <dd><a href="../specs/2026-11-22-remove-multiuser-design.html">docs/superpowers/specs/2026-11-22-remove-multiuser-design.html</a> (binding). Context: the incremental-game design, rulings R1 and D10 and interface row I1.</dd>
+    </dl>
+    <aside data-kind="decision"><strong>Ordering differs from the dispatch in four places, all forced by imports</strong>
+      <ul>
+        <li><code>app.d.ts</code>'s <code>Locals</code> and <code>Error.resource</code> are read by <code>authz/require-cap.ts:17,60</code> and <code>require-sim-role.ts:20</code>, whose only callers are the sims and invite routes. So Task 2 deletes the five route trees, <code>require-cap</code>, <code>require-sim-role</code> and <code>enforcement-parity.spec.ts</code> with the locals change. <code>enforceMutationRate</code>'s only callers are those routes, so its removal stays in Task 2.</li>
+        <li><code>reseedHandleFromSim</code> and the <code>simTitle</code> parameter are used by <code>src/lib/server/sims/start-sim.ts:13,154</code> and the invite page (<code>src/routes/invite/[token]/+page.server.ts:15-16,129,133</code>). Both go in Task 4 (after the invite page in Task 2 and <code>start-sim</code> in Task 4), not Task 1.</li>
+        <li><code>pending-sim.ts</code> is imported by <code>start-sim.ts:8</code>; the invite template by <code>invites/email.ts:2</code>; the <code>'invite'</code> mail kind is recorded by <code>invites/email.ts:16</code>. All three move from Task 3 to Task 4.</li>
+        <li><code>schema/simControlPlane.ts:2</code> imports <code>$lib/sim-log</code>, <code>sim-log/shapes.ts:1</code> imports <code>$lib/members/copy</code>, and <code>db/capability-events.ts:4</code> imports <code>$lib/server/event-log/append</code>. So <code>src/lib/sim-log/</code>, <code>src/lib/members/</code> and <code>src/lib/server/event-log/</code> are deleted in Task 5 with the schema files, not in Task 4.</li>
+        <li>e2e files are type-checked (<code>tsconfig.json</code> includes <code>e2e/**/*.ts</code>), so each e2e change lands in the task that removes what it imports: the six route-driving specs and the invite a11y case in Task 2; the account specs, <code>email-link</code>, <code>auth-methods-default</code>, <code>pseudonymous-onboarding</code> and the two helpers in Task 3. Task 6 keeps the new 404 cases and the full e2e run.</li>
+      </ul>
+    </aside>
+  </section>
+
+  <section id="sec-global-constraints">
+    <h2>Global Constraints</h2>
+    <section id="sec-gc-i1">
+      <h3>Interface row I1 (verbatim from the spec)</h3>
+      <pre><code data-lang="ts">// src/lib/server/onboarding/pseudonymous-mint.ts
+export async function mintPseudonymousSession(
+  event: RequestEvent,
+  deps?: Deps
+): Promise&lt;{ ok: true; user: User } | { ok: false; status: 429 | 500; message: string }&gt;;
+
+// src/lib/server/user-store/identity.ts
+export function handleAccountLink(args: {
+  db: Database;
+  /** Called with (survivorId, absorbedId) after two identities are joined. */
+  onFuse?: (survivorId: string, absorbedId: string) =&gt; Promise&lt;void&gt;;
+  /* the remaining fields as today, without `roster` */
+}): Promise&lt;void&gt;;
+
+// src/lib/server/user-store/deletion.ts
+export async function deleteAccount(args: {
+  db: Database;
+  identityId: string;
+}): Promise&lt;{ more: false }&gt;;
+
+// src/lib/server/security/same-origin-json.ts
+export function refuseUnlessSameOriginJson(event: RequestEvent): Response | null;
+
+// src/app.d.ts
+interface Locals {
+  user: User | null;
+  session: { id: string; userId: string } | null;
+}</code></pre>
+      <ul>
+        <li>No module under <code>src/lib/server/{auth,user-store,onboarding,security,email,email-templates}</code> imports from a sims, invites, members, sim-object, authz or operator module.</li>
+        <li>The mint's refusal texts and the origin check's texts live in <code>src/lib/account/copy.ts</code>.</li>
+        <li><code>deleteAccount</code> finishes in one request and always answers <code>{ more: false }</code>.</li>
+        <li><code>onFuse</code> is the one hook a join of two identities offers; <code>game-save</code> supplies it to move the absorbed identity's saved games.</li>
+        <li><code>locals.capabilities</code> and <code>locals.actorKind</code> are gone.</li>
+        <li><code>User</code>, <code>resolveSessionUser</code>, <code>updateProfile</code>, the known-device cookie and the pending-identifier cookie are unchanged.</li>
+        <li>The session route prefixes are <code>/api/auth</code>, <code>/account</code>, <code>/api/account</code>, <code>/signin</code>, <code>/forgot-password</code>, <code>/reset-password</code>, <code>/api/e2e</code>.</li>
+      </ul>
+      <p><strong>Removed:</strong> <code>reseedHandleFromSim</code>, the <code>pending-sim</code> cookie, the <code>startFresh</code> action, the invite email template, <code>requireCap</code>, <code>requireSimRole</code>, the <code>authz</code> and <code>event-log</code> directories, <code>resolveCapabilities</code>.</p>
+    </section>
+    <section id="sec-gc-spec">
+      <h3>The spec's global constraints (verbatim)</h3>
+      <ul>
+        <li>Work happens in git worktrees under <code>.claude/worktrees/</code>. Commits follow Conventional Commits. No attribution to an AI anywhere.</li>
+        <li>Code style: 2-space indent, single quotes, no trailing commas, 100 columns.</li>
+        <li>Every Vitest test calls <code>expect</code>.</li>
+        <li>Signoff fails on server stderr, on timing crutches and on a retried flake. Each unit runs <code>npm run lint</code>, <code>npm run check</code> and the Vitest projects its files belong to before it hands back.</li>
+        <li>Port 4173 is shared by every session on this machine. A unit never kills a server it did not start; it waits.</li>
+        <li>Every agent runs every command in the foreground and never ends a turn while something it started is running.</li>
+        <li>Schema changes go through <code>npm run db:generate</code>. Nobody edits a migration.</li>
+        <li>No unit runs <code>npm run signoff</code>: its dataset step fails until the dataset is uploaded. <code>closing</code> runs it once, after the upload.</li>
+        <li>The dataset version changes in this build. The dataset is uploaded once, by <code>closing</code>, from the integration branch, after every unit has merged; no other unit uploads a dataset. <code>reach-check</code> builds one earlier to run the check and uploads nothing.</li>
+        <li>A unit that writes a hashed path regenerates the fixture dataset with <code>npm run pipeline -- fixture</code> and commits it.</li>
+        <li>WCAG 2.2 AA: every new control is at least 24 px and passes <code>expectNoA11yViolations</code> in light and dark.</li>
+        <li>Page text is short. No sentence says what something is not.</li>
+        <li>Nothing on the main screen says "RHNA". The goal is read from the <code>Goal</code> value, never from a constant.</li>
+        <li>The game's rules are read from <code>src/lib/game/</code>. No component compares a level to a number.</li>
+        <li>One future: no seed control, no band, no average over runs.</li>
+        <li>Published plans and policies, their ids and their pages keep working, including every policy published before this build.</li>
+        <li>A number that is a claim about the world carries its source and tier, in the existing <code>Sourced</code>, <code>Unsourced</code> and <code>Evidence</code> shapes.</li>
+        <li>A runtime dependency that ships in the bundle gets a credit in <code>SOFTWARE</code>. This build adds none.</li>
+        <li>CSP changes are interface changes. This build makes none.</li>
+        <li>Timing is measured only on a quiet machine. A unit that cannot get one defers the measurement and says so.</li>
+      </ul>
+    </section>
+    <section id="sec-gc-project">
+      <h3>Project notes</h3>
+      <ul>
+        <li>e2e runs on the shared port 4173. Before any Playwright run, check <code>lsof -nP -iTCP:4173 -sTCP:LISTEN</code>. If another session's server holds it, never kill it: wait, and check again.</li>
+        <li>No <code>setTimeout</code> or <code>setInterval</code> in specs or test helpers. No fixed waits and no raised timeouts in e2e.</li>
+        <li><code>npx chreode timing-check --head HEAD</code> is clean after each task's commit.</li>
+        <li>Changed e2e specs pass with <code>npx playwright test &lt;files&gt; --repeat-each=5 --retries=0</code>.</li>
+        <li>No new preview-server stderr (read the Playwright <code>webServer</code> output after each run).</li>
+        <li>Do not run <code>npm run signoff</code>, <code>git push</code>, uploads or deploys.</li>
+        <li>Conventional Commits, no AI attribution in commits, code or comments.</li>
+        <li>Every task's verification runs <code>npm run check</code>, <code>npm run lint</code> and <code>npx vitest run --project server|client &lt;paths&gt;</code>. Project names: <code>server</code> (<code>src/**/*.{test,spec}.ts</code> and <code>scripts/**/*.spec.ts</code>, not <code>*.svelte.spec.ts</code>) and <code>client</code> (<code>src/**/*.svelte.{test,spec}.ts</code>).</li>
+        <li>After any <code>wrangler.jsonc</code> change run <code>npm run types</code> before <code>npm run check</code>: <code>worker-configuration.d.ts</code> is generated and untracked.</li>
+        <li>Tests are named with their assertions (spec §sec-tests); the names below are the names to use.</li>
+        <li>Deleted code needs no plan text beyond its path: <code>git rm -r</code> it.</li>
+      </ul>
+    </section>
+  </section>
+
+  <section id="sec-review-focus">
+    <h2>Review Focus</h2>
+    <ol>
+      <li><strong>A profile PATCH with <code>name: null</code></strong> (or any non-string <code>name</code>) must leave the display name alone, as an absent field does; today <code>String(body?.name ?? '')</code> (<code>profile/+server.ts:29</code>) turns it into <code>''</code>. Test in Task 1.</li>
+      <li><strong>A 401 on the delete pane's one request</strong> (the session ended between page load and delete) must show the network text and never call <code>onDeleted</code>. Test in Task 1.</li>
+      <li><strong>A signed-in request to a removed path</strong> resolves the session in the hook and still answers 404 with "Page not found", never a 500. Test in Task 6.</li>
+      <li><strong>The preview server with the <code>v2-delete-sim-object</code> migration and no class export</strong> must boot and serve with no new stderr, including on a machine whose local <code>.wrangler</code> state holds SimObject storage. Checked in Task 4's e2e run.</li>
+      <li><strong>The delete-confirm UI keeps an axe check</strong> once "deleting the account signs out and keeps both sims" (the only case that ran <code>expectNoA11yViolations</code> on it) is gone. Test in Task 3.</li>
+    </ol>
+  </section>
+
+  <section id="sec-file-structure">
+    <h2>File Structure</h2>
+    <p>No file is created except one generated migration and none is split. Every change is a deletion or an edit in place. The kept identity code stays where it is:</p>
+    <ul>
+      <li><code>src/lib/server/user-store/{identity,deletion,handle}.ts</code>: the identity graph, deletion, handle generation.</li>
+      <li><code>src/lib/server/onboarding/{pseudonymous-mint,known-device,pending-identifier}.ts</code>: the mint seam and two cookies.</li>
+      <li><code>src/lib/server/security/{same-origin-json,rate-limit}.ts</code>: the origin check and <code>enforceRate</code>.</li>
+      <li><code>src/lib/server/e2e/session.ts</code>: gains <code>mintTestPseudonym</code> beside <code>mintTestUser</code>.</li>
+      <li><code>src/lib/account/copy.ts</code>: <code>AUTH_COPY</code> gains the four texts that leave <code>SIMS_COPY</code>.</li>
+    </ul>
+    <table id="tbl-task-map">
+      <caption>What each task deletes</caption>
+      <thead><tr><th scope="col">Task</th><th scope="col">Deleted</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">2</th><td><code>src/routes/{sims,invite}/</code>, <code>src/routes/api/{sims,invites,operator}/</code>, <code>authz/require-cap*</code>, <code>authz/require-sim-role*</code>, <code>authz/enforcement-parity.spec.ts</code>, <code>e2e/{invite,invite-redundant-entry,leave-sim,sim-control-plane,sim-object,sims-onboarding}.spec.ts</code></td></tr>
+        <tr><th scope="row">3</th><td><code>e2e/pseudonymous-onboarding.spec.ts</code>, <code>e2e/helpers/{members,sim-socket}.ts</code></td></tr>
+        <tr><th scope="row">4</th><td><code>src/lib/{sim-store,sim-sync,sim-stream}/</code>, <code>src/lib/server/{sims,invites,sim-object,operator}/</code>, the rest of <code>src/lib/server/authz/</code>, <code>onboarding/pending-sim*</code>, <code>email-templates/{invite.ts,invite.spec.ts,InviteEmail.svelte}</code>, <code>test/sim-env.ts</code>, <code>scripts/worker-entry*</code>, <code>drizzle.sim.config.ts</code>, <code>migrations/sim/</code></td></tr>
+        <tr><th scope="row">5</th><td><code>schema/{simControlPlane,simInvite,capabilityEvent}.ts</code>, <code>db/capability-events*</code>, <code>src/lib/sim-log/</code>, <code>src/lib/members/</code>, <code>src/lib/server/event-log/</code></td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="sec-task-1">
+    <h2>Task 1: Texts and the user store</h2>
+    <p>Part of I1. The identity code stops importing sims; deletion runs in one request.</p>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/lib/account/copy.ts:1-50</code> (four texts added), <code>src/lib/account/account-copy.ts:58-59,67-68</code></li>
+      <li>Modify: <code>src/lib/server/onboarding/pseudonymous-mint.ts:6,13-16,28,38</code>, <code>pseudonymous-mint.spec.ts</code>; <code>pending-identifier.ts:9</code> (comment)</li>
+      <li>Modify: <code>src/lib/server/security/same-origin-json.ts:2,13,25</code>, <code>same-origin-json.spec.ts</code></li>
+      <li>Modify: <code>src/lib/server/user-store/identity.ts:6-9,124-205</code>, <code>identity.spec.ts:3-18,181-319</code></li>
+      <li>Modify: <code>src/lib/server/user-store/deletion.ts:3-22,101-193</code>, <code>deletion.spec.ts</code></li>
+      <li>Modify: <code>src/lib/server/auth/better-auth.ts:301-304</code>; <code>google-provider.ts:21-24</code> (comment)</li>
+      <li>Modify: <code>src/routes/api/account/+server.ts:24-52</code>, <code>server.spec.ts</code>, <code>delete-pseudonymous.spec.ts</code></li>
+      <li>Modify: <code>src/routes/api/account/profile/+server.ts:24-31</code>, <code>profile/server.spec.ts</code></li>
+      <li>Modify (copy import only): <code>src/routes/api/account/email/server.spec.ts</code>, <code>email/verify/server.spec.ts</code>, <code>password/server.spec.ts</code></li>
+      <li>Modify: <code>src/lib/account/DeleteAccountPane.svelte:13-14,37-71</code>, <code>DeleteAccountPane.svelte.spec.ts</code>; <code>AuthenticationPane.svelte:59</code> (comment); <code>safe-redirect.spec.ts:6,9</code></li>
+      <li>Modify: <code>src/routes/account/+page.server.ts:11-15,55-59</code> (comments), <code>page.server.spec.ts:206</code> (name)</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: nothing from other tasks.</li>
+      <li>Produces: <code>AUTH_COPY.tooManyAccounts</code>, <code>.sessionStart</code>, <code>.jsonRequired</code>, <code>.crossOrigin</code>; <code>handleAccountLink(args: { db: Database; isUpgrade: boolean; pseudonymousUserId: string; newUserId: string; onFuse?: (survivorId: string, absorbedId: string) =&gt; Promise&lt;void&gt; }): Promise&lt;void&gt;</code>; <code>deleteAccount(args: { db: Database; identityId: string }): Promise&lt;{ more: false }&gt;</code>; <code>purgeCredentialsAndSettings(db: Database, liveUserId: string): Promise&lt;void&gt;</code>. <code>reseedHandleFromSim</code> and <code>generateUniqueHandle({ simTitle })</code> are untouched here (Task 4).</li>
+    </ul>
+    <h3>Steps</h3>
+    <ol>
+      <li id="t1-s1"><input type="checkbox"> Write the failing copy and texts tests. In <code>pseudonymous-mint.spec.ts</code> and <code>same-origin-json.spec.ts</code> replace <code>SIMS_COPY</code> with <code>AUTH_COPY</code> and rename the 429 case; add one copy test to <code>pseudonymous-mint.spec.ts</code>:
+        <pre><code data-lang="ts">it('answers 429 with AUTH_COPY.tooManyAccounts when the mint limiter denies', ...)
+  expect(res).toEqual({ ok: false, status: 429, message: AUTH_COPY.tooManyAccounts });
+it('answers 500 with AUTH_COPY.sessionStart when the auth API yields no user', ...)
+it('words the four texts that left the members copy', () =&gt; {
+  expect(AUTH_COPY.tooManyAccounts).toBe('Too many new accounts too quickly. Wait a moment.');
+  expect(AUTH_COPY.sessionStart).toBe("Couldn't start your session. Try again.");
+  expect(AUTH_COPY.jsonRequired).toBe('Send JSON.');
+  expect(AUTH_COPY.crossOrigin).toBe('Cross-site requests are not allowed.');
+});
+// same-origin-json.spec.ts
+expect(await res.json()).toEqual({ error: AUTH_COPY.jsonRequired });   // 415
+expect(await res.json()).toEqual({ error: AUTH_COPY.crossOrigin });    // 403</code></pre>
+        In the five account route specs swap the <code>SIMS_COPY</code> import for <code>AUTH_COPY</code> (same keys).
+      </li>
+      <li id="t1-s2"><input type="checkbox"> Write the failing identity tests in <code>identity.spec.ts</code>. Delete the <code>'the fuse tells the absorbed identity sims (R49)'</code> describe and the roster-hook, sim-roles, <code>seedSim</code> and <code>fakeSimEnv</code> imports and mocks; keep <code>reseedHandleFromSim</code>'s describe. Add, inside <code>describe('handleAccountLink')</code>, using its <code>mintLive</code>:
+        <pre><code data-lang="ts">it('a fuse calls onFuse once with (survivor, absorbed) after the absorbed identity is superseded')
+  // onFuse reads the absorbed user_identity row inside the callback
+  expect(onFuse).toHaveBeenCalledTimes(1);
+  expect(onFuse).toHaveBeenCalledWith(existing.userIdentity, pseudo.userIdentity);
+  expect(supersededByAtCall).toBe(existing.userIdentity);
+it('an upgrade never calls onFuse')
+  expect(onFuse).not.toHaveBeenCalled();
+it('a link whose new row already resolves to the pseudonymous identity never calls onFuse')
+  // fresh identity's supersededById = pseudo identity, so survivor === absorbed
+  expect(onFuse).not.toHaveBeenCalled();
+it('a link with a missing live row never calls onFuse')
+  // newUserId: 'nobody'
+  expect(onFuse).not.toHaveBeenCalled();
+it('a rejecting onFuse rejects handleAccountLink, with the fuse already written')
+  await expect(handleAccountLink({ ..., onFuse: async () =&gt; { throw new Error('move failed'); } }))
+    .rejects.toThrow('move failed');
+  expect(ident.supersededById).toBe(existing.userIdentity);</code></pre>
+      </li>
+      <li id="t1-s3"><input type="checkbox"> Write the failing deletion tests. In <code>deletion.spec.ts</code> delete every case that seeds a sim or a <code>simInvite</code> row, the roster-hook mock, <code>fakeSimEnv</code>, <code>sim-index</code> and <code>DELETE_SIMS_PER_PASS</code> imports, and drop <code>env</code> and <code>actor</code> from every <code>deleteAccount</code> call. Rewrite or add:
+        <pre><code data-lang="ts">test('purgeCredentialsAndSettings deletes the session, account and passkey rows of the live user')
+  await purgeCredentialsAndSettings(db, 'id1-live');
+  // session, account, passkey each toHaveLength(0); a second user's rows survive (toHaveLength(1))
+test('deleteAccount scrubs, tombstones and purges in one call and answers more: false')
+  expect(await deleteAccount({ db, identityId: 'id1' })).toEqual({ more: false });
+  // live row email deletedEmail('id1'), handle_tombstone for 'alice', no session, deletedAt set
+test('a second deleteAccount is a no-op that answers more: false')
+  expect(after).toHaveLength(before.length); // user_version rows
+test('an unknown identity answers more: false and writes nothing')
+test('erases PII for an identity fused into the survivor')  // kept, without the invite rows
+test('marks the identity deleted last: a failure in a prior step leaves it live') // kept</code></pre>
+        In <code>delete-pseudonymous.spec.ts</code> drop <code>seedSim</code> and <code>sim-index</code>; the first case becomes <code>'marks the identity deleted, removes the session and releases the handle in one 200'</code> (status 200, <code>deletedAt</code> not null, no session row, live handle not <code>'wandering-wren'</code>, <code>signOut</code> called once).
+      </li>
+      <li id="t1-s4"><input type="checkbox"> Write the failing route and pane tests.
+        <pre><code data-lang="ts">// src/routes/api/account/server.spec.ts (delete the 202 case and the waitUntil assertions)
+it('200 { ok: true }: deletes with exactly { db, identityId } and signs out')
+  expect(deleteAccount).toHaveBeenCalledWith({ db: {}, identityId: 'u1' });
+  expect(await res.json()).toEqual({ ok: true });
+it('never answers 202')  // every DELETE case: expect(res.status).not.toBe(202)
+
+// profile/server.spec.ts
+it('a body with only handle passes no name to updateProfile')
+  expect(updateProfile.mock.calls[0][2].name).toBeUndefined();
+it("a body with name: '' passes ''")
+  expect(updateProfile.mock.calls[0][2]).toEqual({ handle: undefined, name: '' });
+it('a body with name: null passes no name')        // Review Focus 1
+  expect(updateProfile.mock.calls[0][2].name).toBeUndefined();
+
+// DeleteAccountPane.svelte.spec.ts (delete the 202, 100-pass and 401-after-202 cases)
+it('sends one request; a 200 calls onDeleted')        // fetch toHaveBeenCalledTimes(1)
+it('a 400 shows the mismatch text')                     // ACCOUNT_COPY.handleMismatch, one fetch
+it('a 500 shows the network text')                      // ACCOUNT_COPY.networkError, onDeleted not called
+it('a 401 shows the network text and does not report deleted')   // Review Focus 2
+it('describes what deletion removes')
+  expect(ACCOUNT_COPY.deleteDescription).toBe(
+    'Deletes your account and the games saved to it. Published plans and policies stay. This cannot be undone.');</code></pre>
+        Also: <code>safe-redirect.spec.ts:6,9</code> use <code>/account</code> and <code>/account#section</code>; <code>src/routes/account/page.server.spec.ts:206</code> is renamed <code>'keeps the known-device cookie, so the next save on this device steers to sign-in'</code>, assertion unchanged.
+      </li>
+      <li id="t1-s5"><input type="checkbox"> Run them and see them fail
+        <pre><code data-lang="sh">npx vitest run --project server src/lib/server/onboarding src/lib/server/security src/lib/server/user-store src/routes/api/account src/routes/account src/lib/account
+npx vitest run --project client src/lib/account/DeleteAccountPane.svelte.spec.ts</code></pre>
+        Expected: the new and renamed cases fail (missing <code>AUTH_COPY</code> keys, <code>onFuse</code> never called, 202 path, multi-request pane); the rest pass.
+      </li>
+      <li id="t1-s6"><input type="checkbox"> Add the four texts to <code>AUTH_COPY</code> (<code>src/lib/account/copy.ts</code>), exactly as in the spec's §sec-design-copy. Point <code>pseudonymous-mint.ts</code> and <code>same-origin-json.ts</code> at them and drop their <code>$lib/members/copy</code> imports. Reword the mint's doc comment (<code>:13-16</code>) to say it is the one mint seam and name no caller. Keep <code>refuseUnlessSameOriginJson(event: { request: Request; url: URL })</code> as it is (see Open questions).</li>
+      <li id="t1-s7"><input type="checkbox"> In <code>identity.ts</code> drop the <code>loggable</code>, <code>rosterChangedAll</code>, <code>SimEnv</code> and <code>foldSimsForUser</code> imports (<code>:6-9</code>). <code>applyFuse(db, pseudoUserId, newUserId): Promise&lt;{ survivorId: string; absorbedId: string } | null&gt;</code> (builder's call: return the pair it fused, or null when it wrote nothing, so the caller knows when to call the hook) loses <code>readSims</code> and the sims read. <code>handleAccountLink</code> takes <code>onFuse</code> in place of <code>roster</code> and awaits <code>onFuse(survivorId, absorbedId)</code> once after <code>db.batch</code> resolves, never on an upgrade; an error propagates. The fuse's writes, <code>applyUpgrade</code>, <code>normalizeLinkArgs</code> and <code>createIdentityForNewVersion</code> are unchanged.</li>
+      <li id="t1-s8"><input type="checkbox"> In <code>deletion.ts</code> remove the <code>simInvite</code>, <code>Actor</code>, sims and sim-object imports, <code>DELETE_SIMS_PER_PASS</code>, the membership loop and the fan-out. <code>purgeCredentialsAndSettings(db, liveUserId)</code> deletes session, account and passkey rows only. <code>deleteAccount({ db, identityId })</code> resolves the survivor, returns <code>{ more: false }</code> for an unknown, deleted or row-less identity, otherwise awaits <code>closeAccountRows</code> and returns <code>{ more: false }</code>. <code>closeAccountRows</code> keeps its steps and order; its step 4 call becomes <code>purgeCredentialsAndSettings(db, live.id)</code>. Rewrite the doc comments to describe one request.</li>
+      <li id="t1-s9"><input type="checkbox"> <code>better-auth.ts:297-305</code>: <code>handleAccountLink({ db: drizzleDb, isUpgrade, ...normalizeLinkArgs(args) })</code>, with the R49 comment gone. <code>DELETE /api/account</code>: <code>await deleteAccount({ db: getDb(platform!), identityId: locals.user.id })</code>, then the best-effort sign-out and <code>json({ ok: true })</code>; the 202 branch and its comments go. <code>PATCH /api/account/profile</code>: <code>name</code> is <code>typeof body?.name === 'string' ? body.name : undefined</code>; the handle rule is unchanged.</li>
+      <li id="t1-s10"><input type="checkbox"> <code>DeleteAccountPane.svelte</code>: one <code>fetch</code>; <code>res.ok</code> calls <code>onDeleted</code>; 400 shows <code>body.deleteError ?? ACCOUNT_COPY.handleMismatch</code>; anything else and a thrown fetch show <code>ACCOUNT_COPY.networkError</code>. Delete <code>DELETE_PASSES_MAX</code>, <code>ACCOUNT_COPY.deleteNotFinished</code> and <code>.deleteSignedOut</code>; set <code>deleteDescription</code> to the spec's text.</li>
+      <li id="t1-s11"><input type="checkbox"> Comments: <code>src/routes/account/+page.server.ts:14</code> says a pseudonymous account with no way back in would be lost; <code>:56-57</code> says the known-device cookie steers the next save from this device to sign-in. <code>pending-identifier.ts:9</code> drops "matches sfh_pending_sim". <code>google-provider.ts:21-24</code> says first-time users, without the operator and <code>BOOTSTRAP_EMAILS</code> clause. <code>AuthenticationPane.svelte:59</code>: builder's call, "A registered account whose address is not confirmed." (the invite that made such accounts is gone).</li>
+      <li id="t1-s12"><input type="checkbox"> Run the tests and see them pass, then the checks
+        <pre><code data-lang="sh">npx vitest run --project server src/lib/server/onboarding src/lib/server/security src/lib/server/user-store src/lib/server/auth src/lib/server/sims src/routes/api/account src/routes/account src/lib/account
+npx vitest run --project client src/lib/account
+npm run check
+npm run lint</code></pre>
+        Expected: all pass; <code>src/lib/server/sims/sims.spec.ts</code> still passes (it calls <code>handleAccountLink</code> without <code>roster</code>).
+      </li>
+      <li id="t1-s13"><input type="checkbox"> Confirm I1's import rule for the files this task touched
+        <pre><code data-lang="sh">git grep -nE "server/(sims|invites|sim-object|operator|authz)|lib/members" -- src/lib/server/user-store src/lib/server/onboarding/pseudonymous-mint.ts src/lib/server/security src/lib/server/auth</code></pre>
+        Expected: no output.
+      </li>
+      <li id="t1-s14"><input type="checkbox"> Commit, then <code>npx chreode timing-check --head HEAD</code> (clean)
+        <pre><code data-lang="sh">git commit -m "refactor(accounts): untie identity, deletion and copy from sims"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-2">
+    <h2>Task 2: Locals, hook, session gate and rate limits</h2>
+    <p>Delivers row I1</p>
+    <p>With Task 1 this gives every I1 signature and the locals. I1's Removed line finishes in Task 3 (<code>startFresh</code>), Task 4 (<code>reseedHandleFromSim</code>, <code>pending-sim</code>, the invite template, the rest of <code>authz</code>, <code>resolveCapabilities</code>) and Task 5 (<code>event-log</code>).</p>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/app.d.ts:3-4,12,20-22</code></li>
+      <li>Modify: <code>src/hooks.server.ts:7,9-14,30-41,53-61</code>, <code>src/hooks.server.spec.ts</code></li>
+      <li>Modify: <code>src/lib/server/auth/session-gate.ts:27-39</code>, <code>session-gate.spec.ts:31-67</code></li>
+      <li>Modify: <code>src/lib/server/security/rate-limit.ts:1,40-55</code>, <code>rate-limit.spec.ts:4,80-end</code></li>
+      <li>Delete: <code>src/routes/sims/</code>, <code>src/routes/invite/</code>, <code>src/routes/api/sims/</code>, <code>src/routes/api/invites/</code>, <code>src/routes/api/operator/</code></li>
+      <li>Delete: <code>src/lib/server/authz/require-cap.ts</code>, <code>require-cap.spec.ts</code>, <code>require-sim-role.ts</code>, <code>require-sim-role.spec.ts</code>, <code>enforcement-parity.spec.ts</code></li>
+      <li>Delete: <code>e2e/invite.spec.ts</code>, <code>e2e/invite-redundant-entry.spec.ts</code>, <code>e2e/leave-sim.spec.ts</code>, <code>e2e/sim-control-plane.spec.ts</code>, <code>e2e/sim-object.spec.ts</code>, <code>e2e/sims-onboarding.spec.ts</code></li>
+      <li>Modify: <code>e2e/auth-a11y.spec.ts:6-7,167-207</code> (the invite page case and its imports go)</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: Task 1's <code>AUTH_COPY</code> (the route specs left assert it).</li>
+      <li>Produces: <code>App.Locals = { user: User | null; session: { id: string; userId: string } | null }</code>; <code>App.Error = { message: string; reference?: string }</code>; <code>SESSION_ROUTE_PREFIXES</code> as the spec's §sec-design-gate; <code>rate-limit.ts</code> exports <code>RateLimiter</code>, <code>EnforceRateOptions</code>, <code>enforceRate</code> only.</li>
+    </ul>
+    <h3>Steps</h3>
+    <ol>
+      <li id="t2-s1"><input type="checkbox"> Write the failing hook and gate tests.
+        <pre><code data-lang="ts">// src/hooks.server.spec.ts: drop resolveCapabilities from the hoisted mocks and the
+// operator/capabilities mock; delete 'resolves capabilities ... BOOTSTRAP_EMAILS' and
+// 'gives a verified BOOTSTRAP_EMAILS user cap.grant'.
+const PUBLIC_LOCALS = { user: null, session: null };
+it('a resolved session sets exactly user and session')
+  expect(e.locals).toEqual({ user: ALICE, session: { id: 'sess-1', userId: 'live-1' } });
+it('reads the session with the request headers only, even on an upgrade request')
+  expect(getSession).toHaveBeenCalledWith({ headers: e.request.headers });
+it('treats a deleted identity as public: locals are exactly { user: null, session: null }')
+  expect(e.locals).toEqual(PUBLIC_LOCALS);
+
+// session-gate.spec.ts: move '/sims', '/sims/abc', '/api/sims/abc/members', '/invite/xyz',
+// '/api/invites/xyz/accept' from the true list to the false list.
+it.each(['/api/auth', '/account', '/api/account', '/signin', '/forgot-password',
+  '/reset-password', '/api/e2e'])('the prefix %s is a session route', ...)</code></pre>
+        The deleted-identity case is a builder's call on the spec's line "A request that resolves no session user gets <code>{ user: null, session: null }</code>": a tombstoned identity's session row resolves no user, and every reader checks <code>locals.user</code> first.
+      </li>
+      <li id="t2-s2"><input type="checkbox"> Run them and see them fail
+        <pre><code data-lang="sh">npx vitest run --project server src/hooks.server.spec.ts src/lib/server/auth/session-gate.spec.ts</code></pre>
+        Expected: the locals-equality, upgrade and gate cases fail.
+      </li>
+      <li id="t2-s3"><input type="checkbox"> Delete the five route trees, the three <code>authz</code> files and two specs above, the six e2e specs, and the invite page case in <code>e2e/auth-a11y.spec.ts</code> with its <code>MEMBERS_COPY</code> and <code>newId</code> imports.
+        <pre><code data-lang="sh">git rm -r src/routes/sims src/routes/invite src/routes/api/sims src/routes/api/invites src/routes/api/operator</code></pre>
+      </li>
+      <li id="t2-s4"><input type="checkbox"> <code>app.d.ts</code>: the <code>Error</code> and <code>Locals</code> of the spec's §sec-design-locals; drop the two <code>authz</code> imports; <code>PageState</code> and <code>Platform</code> unchanged. <code>hooks.server.ts</code>: <code>setPublicLocals</code> sets <code>user</code> and <code>session</code>; <code>sessionHandle</code> calls <code>auth.api.getSession({ headers })</code>; when <code>session?.user</code> resolves to a <code>User</code> it sets <code>user</code> and <code>session</code>, otherwise public locals; the websocket comment and branch, the capability block and the <code>resolveCapabilities</code> import go. <code>headersHandle</code> unchanged.</li>
+      <li id="t2-s5"><input type="checkbox"> <code>session-gate.ts</code>: the seven prefixes. <code>rate-limit.ts</code>: delete <code>RATE_LIMIT_MESSAGES</code>, <code>enforceMutationRate</code> and the <code>error</code> import; the header comment lists the bindings <code>enforceRate</code> serves (<code>PUBLISH_RL</code>, <code>AUTH_LINK_RL</code>, <code>AUTH_PASSWORD_RL</code>, <code>PSEUDO_MINT_RL</code>, <code>ACCOUNT_EDIT_RL</code>, and <code>MUTATION_REGISTERED_RL</code> for saved games). <code>rate-limit.spec.ts</code>: delete the <code>enforceMutationRate</code> describe and its imports.</li>
+      <li id="t2-s6"><input type="checkbox"> Run the tests and the checks
+        <pre><code data-lang="sh">npx vitest run --project server src/hooks.server.spec.ts src/lib/server/auth src/lib/server/security src/lib/server/authz src/lib/server/operator src/routes
+npx vitest run --project client src/routes
+npm run check
+npm run lint</code></pre>
+        Expected: all pass. <code>git grep -n "locals.capabilities\|actorKind\|resource: 'sim'" -- src</code> prints only lines under <code>src/lib/server/{authz,operator}/</code> (deleted in Task 4).
+      </li>
+      <li id="t2-s7"><input type="checkbox"> Run the changed e2e spec (check port 4173 first, as in Global Constraints)
+        <pre><code data-lang="sh">npx playwright test e2e/auth-a11y.spec.ts --repeat-each=5 --retries=0</code></pre>
+        Expected: pass, no new server stderr.
+      </li>
+      <li id="t2-s8"><input type="checkbox"> Commit, then <code>npx chreode timing-check --head HEAD</code> (clean)
+        <pre><code data-lang="sh">git commit -m "refactor(auth): drop capabilities from locals and the sims and invite routes"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-3">
+    <h2>Task 3: Sign-in and the e2e seams</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/routes/signin/+page.server.ts:11-12,17,20-23,40-42,114-115,208-257</code>, <code>page.server.spec.ts</code></li>
+      <li>Modify: <code>src/routes/signin/+page.svelte:5,15,120-122,275-290</code>, <code>page.svelte.spec.ts</code></li>
+      <li>Modify: <code>src/lib/account/copy.ts:30,56</code> (<code>startFresh</code>, <code>pendingSimLine</code> deleted)</li>
+      <li>Modify: <code>src/lib/server/e2e/session.ts</code> (after <code>mintTestUser</code>, <code>:20-42</code>), <code>session.spec.ts</code></li>
+      <li>Modify: <code>src/routes/api/e2e/login/+server.ts:13-35</code>, <code>login.spec.ts</code></li>
+      <li>Modify: <code>e2e/helpers/account.ts:4,12-19</code>; <code>e2e/sign-out.spec.ts:40</code>, <code>e2e/account-a11y.spec.ts:32</code>, <code>e2e/password-auth.spec.ts:22,57</code>, <code>e2e/account-email.spec.ts:42</code> (call sites); <code>e2e/account-deletion.spec.ts</code>; <code>e2e/auth-methods-default.spec.ts:18</code>; <code>e2e/email-link.spec.ts</code></li>
+      <li>Delete: <code>e2e/pseudonymous-onboarding.spec.ts</code>, <code>e2e/helpers/members.ts</code>, <code>e2e/helpers/sim-socket.ts</code></li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>generateUniqueHandle({ db, simTitle?, rng?, now? })</code> (<code>handle.ts:27</code>; renamed in Task 4, so call it with no title here), <code>PSEUDONYMOUS_EMAIL_DOMAIN</code> (<code>src/lib/server/auth/brand.ts</code>), <code>issueTestSession</code>.</li>
+      <li>Produces: <code>mintTestPseudonym(db: Database, now: Date): Promise&lt;{ userId: string; identityId: string }&gt;</code>; <code>POST /api/e2e/login</code> body <code>{ email: string } | { pseudonymous: true }</code> answering <code>{ userId: identityId }</code> with the cookie; <code>startPseudonymous(page: Page): Promise&lt;void&gt;</code>.</li>
+    </ul>
+    <h3>Steps</h3>
+    <ol>
+      <li id="t3-s1"><input type="checkbox"> Write the failing unit tests.
+        <pre><code data-lang="ts">// signin/page.server.spec.ts: delete the pending-sim, reseed, createSim and start-sim mocks,
+// 'surfaces a stashed pending-sim title', 'returns pendingSim: null ...' and the whole
+// 'signin startFresh action' describe; drop the SIM_TITLE_MAX import.
+it('the load returns exactly signup, linkError, googleError, pendingIdentifier, reset and methods')
+  expect(Object.keys(res).sort()).toEqual(
+    ['googleError', 'linkError', 'methods', 'pendingIdentifier', 'reset', 'signup']);
+it('the actions are sendLink and signInPassword')
+  expect(Object.keys(actions).sort()).toEqual(['sendLink', 'signInPassword']);
+
+// signin/page.svelte.spec.ts: delete the pending-sim line and the four start-fresh cases;
+// drop pendingSim from props().
+test('renders no "Start fresh without an account"')
+  expect(screen.getByText('Start fresh without an account').elements()).toHaveLength(0);
+test('with no sign-in method in effect renders its heading and no form')
+  // props({ methods: [] })
+  await expect.element(screen.getByRole('heading', { level: 1 })).toHaveTextContent(AUTH_COPY.signIn);
+  expect(container.querySelector('form')).toBeNull();
+
+// e2e/session.spec.ts
+it('mintTestPseudonym writes an anonymous user with the pseudonymous email domain and a unique handle')
+  expect(live).toMatchObject({ userIdentity: identityId, isAnonymous: true, emailVerified: false,
+    email: `${userId}@${PSEUDONYMOUS_EMAIL_DOMAIN}` });
+  expect(live.handle).not.toBe(other.handle);           // two mints
+  expect((await resolveSessionUser(db, userId))!.pseudonymous).toBe(true);
+
+// api/e2e/login/login.spec.ts (builder's call: the route changes, so its spec does)
+it('{ pseudonymous: true } mints an anonymous account, sets the session cookie and answers its identity id')
+  expect(res.status).toBe(200);
+  expect(res.headers.get('set-cookie')!).toMatch(/^better-auth\.session_token=/);
+  expect(row.isAnonymous).toBe(true);  expect(row.userIdentity).toBe(body.userId);
+it('{ pseudonymous: false } with no email answers 400')</code></pre>
+      </li>
+      <li id="t3-s2"><input type="checkbox"> Run them and see them fail
+        <pre><code data-lang="sh">npx vitest run --project server src/routes/signin src/lib/server/e2e src/routes/api/e2e
+npx vitest run --project client src/routes/signin</code></pre>
+      </li>
+      <li id="t3-s3"><input type="checkbox"> <code>/signin</code>: the load drops <code>pendingSim</code>; the <code>startFresh</code> action and the imports only it used (<code>newId</code>, <code>loggable</code>, <code>pending-sim</code>, <code>mintPseudonymousSession</code>, <code>createSim</code>, <code>checkSimTitle</code>, <code>reseedHandleFromSim</code>) go. The page drops the pending line, the start-fresh form and <code>pendingSimLine</code>. Comments: <code>+page.server.ts:114-115</code> becomes "The link is sent: the stash has served its purpose." and <code>+page.svelte:15</code> drops the pending-sim parenthesis (builder's call; both name the deleted cookie). Delete <code>AUTH_COPY.startFresh</code> and <code>pendingSimLine</code>.</li>
+      <li id="t3-s4"><input type="checkbox"> <code>mintTestPseudonym</code> in <code>src/lib/server/e2e/session.ts</code>: writes <code>principal</code>, <code>user_identity</code> and <code>user</code> (<code>isAnonymous: true</code>, <code>emailVerified: false</code>, <code>name</code> = the handle, <code>email</code> <code>`${userId}@${PSEUDONYMOUS_EMAIL_DOMAIN}`</code>, handle from <code>generateUniqueHandle({ db, now })</code>, <code>handleSkeleton</code> from <code>skeleton</code>). <code>/api/e2e/login</code>: a body with <code>pseudonymous === true</code> calls it and issues the session; otherwise the email path as today; neither answers 400. Gates unchanged.</li>
+      <li id="t3-s5"><input type="checkbox"> e2e. <code>startPseudonymous(page)</code> posts <code>{ pseudonymous: true }</code> to <code>/api/e2e/login</code> through <code>page.request</code> and expects <code>ok()</code>; the <code>SIMS_COPY</code> import goes. Drop the title argument at the five call sites. <code>account-deletion.spec.ts</code>: delete "deleting the account signs out and keeps both sims" and the <code>members</code>, <code>sim-socket</code>, <code>newId</code>, <code>MEMBERS_COPY</code> imports; the wrong-handle case starts with <code>loginAs(page, uniqueEmail('delete-guard'))</code>; the pseudonymous case drops <code>simPath</code> and the sim-page request, keeps its sign-out assertions, and gains, after revealing the confirm UI, <code>await expect(page.getByText(deleteConfirmLine(handle))).toBeVisible()</code> and <code>await expectNoA11yViolations(page)</code> (Review Focus 5). <code>auth-methods-default.spec.ts:18</code>: <code>await expect(page.getByRole('button', { name: 'Start fresh without an account' })).toHaveCount(0)</code>. <code>email-link.spec.ts</code>: delete "a known device resumes its sim after signing in by link" and the <code>SIMS_COPY</code> import; the safe-returnTo case uses <code>/signin?returnTo=/about</code> and expects <code>/\/about$/</code>. Delete <code>pseudonymous-onboarding.spec.ts</code> and the two helpers.</li>
+      <li id="t3-s6"><input type="checkbox"> Run the tests and the checks
+        <pre><code data-lang="sh">npx vitest run --project server src/routes/signin src/lib/server/e2e src/routes/api/e2e src/lib/account
+npx vitest run --project client src/routes/signin
+npm run check
+npm run lint</code></pre>
+      </li>
+      <li id="t3-s7"><input type="checkbox"> Run the changed e2e specs (check port 4173 first)
+        <pre><code data-lang="sh">npx playwright test e2e/sign-out.spec.ts e2e/account-a11y.spec.ts e2e/password-auth.spec.ts e2e/account-email.spec.ts e2e/account-deletion.spec.ts e2e/auth-methods-default.spec.ts e2e/email-link.spec.ts --repeat-each=5 --retries=0</code></pre>
+        Expected: pass, no new server stderr.
+      </li>
+      <li id="t3-s8"><input type="checkbox"> Commit, then <code>npx chreode timing-check --head HEAD</code> (clean)
+        <pre><code data-lang="sh">git commit -m "refactor(signin): drop start fresh and the pending sim; mint test pseudonyms"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-4">
+    <h2>Task 4: Delete the multi-user code, the Durable Object and its config</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Delete: <code>src/lib/sim-store/</code>, <code>src/lib/sim-sync/</code>, <code>src/lib/sim-stream/</code>, <code>src/lib/server/sims/</code>, <code>src/lib/server/invites/</code>, <code>src/lib/server/sim-object/</code>, <code>src/lib/server/operator/</code>, <code>src/lib/server/authz/</code> (what Task 2 left)</li>
+      <li>Delete: <code>src/lib/server/onboarding/pending-sim.ts</code>, <code>pending-sim.spec.ts</code>; <code>src/lib/server/email-templates/invite.ts</code>, <code>invite.spec.ts</code>, <code>InviteEmail.svelte</code>; <code>src/lib/server/test/sim-env.ts</code>; <code>scripts/worker-entry.ts</code>, <code>worker-entry.spec.ts</code>; <code>drizzle.sim.config.ts</code>; <code>migrations/sim/</code></li>
+      <li>Modify: <code>src/lib/server/email-templates/copy.ts:40-49</code> (the <code>invite</code> block)</li>
+      <li>Modify: <code>src/lib/server/test/auth-db.ts:8-9,103-161</code> (<code>seedSim</code>, <code>seedManagedSims</code> and their imports; <code>grantEvent</code> stays until Task 5)</li>
+      <li>Modify: <code>src/lib/server/user-store/identity.ts:33-36,45-73</code>, <code>identity.spec.ts:55-85</code>; <code>handle.ts:27-36</code>, <code>handle.spec.ts</code></li>
+      <li>Modify: <code>src/lib/server/e2e/mail-sink.ts:4-5</code>, <code>mail-sink.spec.ts</code>; <code>src/routes/api/e2e/mail/+server.ts:9-14</code>, <code>mail.spec.ts</code></li>
+      <li>Modify: <code>wrangler.jsonc:6-10,31,51-52,81</code>; <code>package.json:13,28</code>; <code>drizzle-cf.config.ts:7-15,18</code>; <code>playwright.config.ts:49-51</code>; <code>scripts/wrangler-config.spec.ts</code></li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: nothing new.</li>
+      <li>Produces: <code>generateUniqueHandle(args: { db: Database; seedText?: string; rng?: () =&gt; string; now?: Date }): Promise&lt;string&gt;</code>; <code>E2eMailKind = 'password-reset' | 'change-email-approve' | 'change-email-verify'</code>; <code>auth-db.ts</code> exports <code>freshDb</code>, <code>makePlatform</code>, <code>seedUser</code>, <code>seedIdentity</code>, <code>grantEvent</code>.</li>
+    </ul>
+    <h3>Steps</h3>
+    <ol>
+      <li id="t4-s1"><input type="checkbox"> Write the failing tests.
+        <pre><code data-lang="ts">// scripts/wrangler-config.spec.ts, for both config and config.env.staging:
+it.each(['production', 'staging'])('%s has no durable_objects', ...)
+  expect(cfg).not.toHaveProperty('durable_objects');
+it.each(...)('%s keeps v1-sim-object first and ends with v2-delete-sim-object deleting SimObject')
+  expect(cfg.migrations[0]).toEqual({ tag: 'v1-sim-object', new_sqlite_classes: ['SimObject'] });
+  expect(cfg.migrations.at(-1)).toEqual({ tag: 'v2-delete-sim-object', deleted_classes: ['SimObject'] });
+it.each(...)('%s rate-limit names are exactly the six', ...)
+  expect(cfg.ratelimits.map((r) =&gt; r.name).sort()).toEqual(['ACCOUNT_EDIT_RL', 'AUTH_LINK_RL',
+    'AUTH_PASSWORD_RL', 'MUTATION_REGISTERED_RL', 'PSEUDO_MINT_RL', 'PUBLISH_RL']);
+it('has no top-level alias')  expect(config).not.toHaveProperty('alias');
+
+// handle.spec.ts: every simTitle becomes seedText; assertions unchanged.
+// mail-sink.spec.ts: 'password-reset' where it used 'invite'.
+// api/e2e/mail/mail.spec.ts: 'password-reset' where it recorded 'invite', plus
+it('kind=invite answers 404')  expect((await GET(event('?kind=invite&to=ann@x.test'))).status).toBe(404);</code></pre>
+      </li>
+      <li id="t4-s2"><input type="checkbox"> Run them and see them fail
+        <pre><code data-lang="sh">npx vitest run --project server scripts/wrangler-config.spec.ts src/lib/server/user-store/handle.spec.ts src/routes/api/e2e/mail</code></pre>
+        Expected: the wrangler cases and the <code>seedText</code> cases fail.
+      </li>
+      <li id="t4-s3"><input type="checkbox"> Delete the directories and files listed above (<code>git rm -r</code>). Delete <code>reseedHandleFromSim</code> (<code>identity.ts:45-73</code>) and its describe in <code>identity.spec.ts</code>. Rename <code>simTitle</code> to <code>seedText</code> in <code>generateUniqueHandle</code>; <code>createIdentityForNewVersion</code> passes <code>seedText: args.displayName ?? undefined</code>. Remove the <code>invite</code> block from <code>EMAIL_COPY</code>, <code>'invite'</code> from <code>E2eMailKind</code> and <code>KINDS</code>, and <code>seedSim</code>/<code>seedManagedSims</code> with the <code>ROLE_BUNDLE</code> and <code>addSimRole</code> imports from <code>auth-db.ts</code>.</li>
+      <li id="t4-s4"><input type="checkbox"> Config. <code>wrangler.jsonc</code>: the <code>alias</code> and its comment go; <code>durable_objects</code> goes at the top level and under <code>env.staging</code>; both <code>migrations</code> arrays become the spec's two entries; <code>INVITE_RL</code> goes from both environments; <code>MUTATION_REGISTERED_RL</code> stays. <code>package.json</code>: <code>"build": "vite build"</code>, <code>db:generate:sim</code> gone, no dependency removed. <code>drizzle-cf.config.ts</code>: only the <code>d1</code> track and its schema import. <code>playwright.config.ts</code>: drop <code>--var SIM_TAKEDOWN_TOKEN:…</code> and the comment at <code>:49-50</code>. <code>svelte.config.js</code> is not touched.</li>
+      <li id="t4-s5"><input type="checkbox"> Regenerate the Worker types and check them
+        <pre><code data-lang="sh">npm run types</code></pre>
+        Then search the regenerated, untracked <code>worker-configuration.d.ts</code> (with the Grep tool) for <code>SIM:</code>, <code>INVITE_RL</code> and <code>SIM_TAKEDOWN_TOKEN</code>. Expected: no match.
+      </li>
+      <li id="t4-s6"><input type="checkbox"> Run the tests and the checks
+        <pre><code data-lang="sh">npx vitest run --project server scripts src/lib/server src/routes
+npx vitest run --project client src/lib src/routes
+npm run check
+npm run lint</code></pre>
+        Expected: all pass. This import sweep prints only lines in files Task 5 deletes (<code>schema/simControlPlane.ts</code>, <code>db/capability-events.ts</code>, <code>src/lib/sim-log/</code>, <code>src/lib/members/</code>, <code>src/lib/server/event-log/</code>):
+        <pre><code data-lang="sh">git grep -nE "lib/(sim-log|sim-store|sim-sync|sim-stream|members)|server/(sims|invites|sim-object|operator|authz|event-log)|pending-sim|worker-entry|SimObject" -- src scripts e2e "*.config.ts" wrangler.jsonc package.json</code></pre>
+      </li>
+      <li id="t4-s7"><input type="checkbox"> Prove the preview build boots with the delete migration (Review Focus 4; check port 4173 first)
+        <pre><code data-lang="sh">npx playwright test e2e/auth-a11y.spec.ts e2e/sign-out.spec.ts --repeat-each=5 --retries=0</code></pre>
+        Expected: pass; the <code>webServer</code> output shows <code>vite build</code> with no <code>worker-entry</code> step and no new stderr from <code>wrangler dev</code>.
+      </li>
+      <li id="t4-s8"><input type="checkbox"> Commit, then <code>npx chreode timing-check --head HEAD</code> (clean)
+        <pre><code data-lang="sh">git commit -m "refactor!: delete shared sims, invitations and the sim Durable Object"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-5">
+    <h2>Task 5: Tables and the migration</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Delete: <code>src/lib/server/db/schema/simControlPlane.ts</code>, <code>simInvite.ts</code>, <code>capabilityEvent.ts</code>; <code>src/lib/server/db/capability-events.ts</code>, <code>capability-events.spec.ts</code>; <code>src/lib/sim-log/</code>; <code>src/lib/members/</code>; <code>src/lib/server/event-log/</code></li>
+      <li>Modify: <code>src/lib/server/db/schema/index.ts:5,6,8</code>; <code>principal.ts:3-10</code> (comment)</li>
+      <li>Modify: <code>src/lib/server/test/auth-db.ts:1-2,5,74-101</code> (<code>grantEvent</code>, <code>newId</code> import, header comment), <code>auth-db.spec.ts:6,70-105</code></li>
+      <li>Modify: <code>src/lib/server/db/schema/auth-schema.spec.ts</code></li>
+      <li>Create (generated, never edited): <code>migrations/d1/&lt;stamp&gt;_&lt;name&gt;.sql</code> and its <code>&lt;stamp&gt;_&lt;name&gt;/</code> directory</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: Task 4's <code>auth-db.ts</code>.</li>
+      <li>Produces: the schema index of the spec's §sec-design-schema (<code>plan</code>, <code>principal</code>, <code>users</code>, <code>auth</code>, <code>userVersion</code>, <code>handleTombstone</code>); <code>auth-db.ts</code> exports <code>freshDb</code>, <code>makePlatform</code>, <code>seedUser</code>, <code>seedIdentity</code>.</li>
+    </ul>
+    <h3>Steps</h3>
+    <ol>
+      <li id="t5-s1"><input type="checkbox"> Write the failing table-set test in <code>auth-schema.spec.ts</code> (builder's call: one copy here, since <code>freshDb</code> and <code>createTestD1</code> apply the same <code>migrations/d1</code> files; <code>auth-db.spec.ts</code> only loses its <code>grantEvent</code> describe):
+        <pre><code data-lang="ts">it('a freshly migrated database has exactly the nine identity tables and plan, and none of the five dropped')
+  // names from sqlite_master type='table', leaving out /^(sqlite_|_cf_|d1_)/
+  expect(names.sort()).toEqual(['account', 'handle_tombstone', 'passkey', 'plan', 'principal',
+    'session', 'user', 'user_identity', 'user_version', 'verification']);
+  for (const gone of ['sim_index', 'sim_commit', 'sim_takedown', 'sim_invite', 'capability_event'])
+    expect(names).not.toContain(gone);</code></pre>
+      </li>
+      <li id="t5-s2"><input type="checkbox"> Run it and see it fail
+        <pre><code data-lang="sh">npx vitest run --project server src/lib/server/db/schema/auth-schema.spec.ts</code></pre>
+        Expected: FAIL, the five tables are still there.
+      </li>
+      <li id="t5-s3"><input type="checkbox"> Delete the three schema files, <code>capability-events*</code>, <code>src/lib/sim-log/</code>, <code>src/lib/members/</code> and <code>src/lib/server/event-log/</code>. Set <code>schema/index.ts</code> to the spec's six exports. Reword the <code>principal</code> comment: the supertype of every identity, which <code>user_identity.id</code> references. Remove <code>grantEvent</code>, its <code>newId</code> import and the "ledger rows" wording from <code>auth-db.ts</code>, and the <code>grantEvent</code> describe from <code>auth-db.spec.ts</code>.</li>
+      <li id="t5-s4"><input type="checkbox"> Generate the migration
+        <pre><code data-lang="sh">npm run db:generate</code></pre>
+        Read the new top-level <code>.sql</code>: it drops <code>sim_index</code>, <code>sim_commit</code>, <code>sim_takedown</code>, <code>sim_invite</code> and <code>capability_event</code> and touches no other table. If it touches a kept table, fix the schema and regenerate; never edit the file.
+      </li>
+      <li id="t5-s5"><input type="checkbox"> Update the rest of <code>auth-schema.spec.ts</code>: the foreign-key list loses <code>capability_event.principal_id</code> and the three <code>sim_invite</code> lines; the freeze test loses the <code>capability_event</code> and <code>sim_invite</code> checks; "keeps sim_invite.sim_id NOT NULL" and "removes ledger rows when their principal is deleted" go; "has no group, user_settings or subscription table" asserts only that <code>principal</code> exists besides the absent names.</li>
+      <li id="t5-s6"><input type="checkbox"> Run the tests and the checks
+        <pre><code data-lang="sh">npx vitest run --project server src/lib/server scripts src/routes
+npx vitest run --project client src/lib src/routes
+npm run db:migrate
+npm run check
+npm run lint</code></pre>
+        Expected: all pass; the local D1 applies the new migration. <code>git grep -nE "lib/(sim-log|members)|server/event-log|capabilityEvent|simInvite|simIndex" -- src e2e scripts</code> prints nothing.
+      </li>
+      <li id="t5-s7"><input type="checkbox"> Commit, then <code>npx chreode timing-check --head HEAD</code> (clean)
+        <pre><code data-lang="sh">git commit -m "feat(db)!: drop the sim, invitation and capability tables"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-6">
+    <h2>Task 6: Removed URLs in e2e, and the accounts doc</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>e2e/auth-a11y.spec.ts</code> (new cases)</li>
+      <li>Modify: <code>docs/dev/auth.md</code> (rewritten as "Accounts")</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: the root error page (<code>src/routes/+error.svelte:5,15</code>: "Page not found", "Go to the home page"); <code>loginAs</code> from <code>e2e/helpers/auth.ts</code>.</li>
+      <li>Produces: nothing code consumes.</li>
+    </ul>
+    <h3>Steps</h3>
+    <ol>
+      <li id="t6-s1"><input type="checkbox"> Write the new e2e cases in <code>e2e/auth-a11y.spec.ts</code>:
+        <pre><code data-lang="ts">test('removed pages /sims, /sims/abc and /invite/abc answer 404 with Page not found')
+  // for each path: const res = await page.goto(path);
+  expect(res!.status()).toBe(404);
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Page not found');
+  await expect(page.getByRole('link', { name: 'Go to the home page' })).toHaveAttribute('href', '/');
+test('GET /api/sims and POST /api/operator/sims/abc/takedown answer 404 without a redirect')
+  expect((await page.request.get('/api/sims', { maxRedirects: 0 })).status()).toBe(404);
+  expect((await page.request.post('/api/operator/sims/abc/takedown',
+    { data: {}, maxRedirects: 0 })).status()).toBe(404);
+test('a signed-in request to /sims resolves the session and answers 404')   // Review Focus 3
+  await loginAs(page, uniqueEmail('removed-path'));
+  expect((await page.goto('/sims'))!.status()).toBe(404);
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Page not found');</code></pre>
+      </li>
+      <li id="t6-s2"><input type="checkbox"> Run them (check port 4173 first)
+        <pre><code data-lang="sh">npx playwright test e2e/auth-a11y.spec.ts --repeat-each=5 --retries=0</code></pre>
+        Expected: pass, no new server stderr. A failure here is a finding against Tasks 2 to 5, not a test to loosen.
+      </li>
+      <li id="t6-s3"><input type="checkbox"> Rewrite <code>docs/dev/auth.md</code> as "Accounts", with exactly the content the spec's §sec-docs lists: the identity model (nine tables, stable identity id and live user id, survivor graph); pseudonymous accounts (one mint seam behind <code>PSEUDO_MINT_RL</code>, the known-device cookie, no reaping, what ends pseudonymity and what fuses, <code>onFuse</code> and when it runs); sign out; deletion (<code>closeAccountRows</code>'s steps in order, in one request); sign-in methods without "Start fresh"; the session gate's seven prefixes, no websocket paragraph; JSON routes and their <code>AUTH_COPY</code> texts; the six rate-limit bindings with namespaces and their readers, <code>MUTATION_REGISTERED_RL</code> kept for saved games; the four mail templates; the e2e seams (<code>/api/e2e/login</code> with an email or <code>{ pseudonymous: true }</code>, <code>/api/e2e/mail</code> with three kinds); secrets and vars. The authorization, sims, registration, no-members, roster-hook and invitation sections go. Do not edit <code>CLAUDE.md</code> (out of scope).</li>
+      <li id="t6-s4"><input type="checkbox"> Run every changed e2e spec together, then the checks
+        <pre><code data-lang="sh">npx playwright test e2e/auth-a11y.spec.ts e2e/account-deletion.spec.ts e2e/auth-methods-default.spec.ts e2e/email-link.spec.ts e2e/sign-out.spec.ts e2e/account-a11y.spec.ts e2e/password-auth.spec.ts e2e/account-email.spec.ts --repeat-each=5 --retries=0
+npm run check
+npm run lint</code></pre>
+      </li>
+      <li id="t6-s5"><input type="checkbox"> Commit, then <code>npx chreode timing-check --head HEAD</code> (clean)
+        <pre><code data-lang="sh">git commit -m "docs(auth): accounts without sims; e2e for the removed URLs"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-open-questions">
+    <h2>Open questions</h2>
+    <aside data-kind="question"><strong>I1's <code>refuseUnlessSameOriginJson(event: RequestEvent)</code></strong> The code takes <code>event: { request: Request; url: URL }</code> (<code>same-origin-json.ts:10</code>, and <code>refuseForeignOrigin</code> at <code>:22</code>). Every <code>RequestEvent</code> satisfies it, so every caller I1 promises works. Recommendation: keep the structural type and read I1's signature as "accepts a <code>RequestEvent</code>"; narrowing the parameter would only break callers that pass a smaller object, such as the specs. Filed as question <code>remove-multiuser-1</code>. Until it is ruled, Task 1 leaves the parameter type as it is.</aside>
+  </section>
+
+  <section id="sec-self-review">
+    <h2>Self-review</h2>
+    <ul>
+      <li>Spec coverage: §sec-design-removed-urls (Tasks 2, 6), locals (2), gate (2), copy (1, 3), identity files (1, 4), sign-in (3), account (1), schema (5), Durable Object and config (4), e2e seams (3, 4), tests (each task), docs (6). Every file in §sec-write-set-deleted and §sec-write-set-changed appears in one task's Files.</li>
+      <li>Type consistency: <code>handleAccountLink</code>'s <code>onFuse</code>, <code>deleteAccount</code>, <code>purgeCredentialsAndSettings(db, liveUserId)</code>, <code>generateUniqueHandle({ seedText })</code> (Task 4; Task 3 calls it with no title), <code>mintTestPseudonym</code>, <code>startPseudonymous(page)</code> match across tasks.</li>
+      <li>Each task leaves the tree type-clean: every deletion follows its last importer (see the Overview decision).</li>
+    </ul>
+  </section>
+</article>

@@ -3,6 +3,7 @@
  * and the goal's source are read from the goal and the targets, never copied.
  */
 import { formatMonthYear } from '$lib/fzp/format';
+import { MAX_SAVES } from '$lib/game/saves';
 import { BUFFER_SHARE, bufferAmount, GOAL_BASE } from '$lib/goal/goal';
 import { ROOM_MEANS } from '$lib/paint/details';
 import { formatCount } from '$lib/scoreboard/format';
@@ -16,7 +17,9 @@ export const ABOUT_ID = {
   assumptions: 'about-assumptions',
   data: 'about-data',
   using: 'about-using',
-  shortcuts: 'about-shortcuts'
+  shortcuts: 'about-shortcuts',
+  levels: 'about-levels',
+  savedGames: 'about-saved-games'
 } as const;
 export type AboutPart = keyof typeof ABOUT_ID;
 
@@ -65,12 +68,37 @@ export const MEANINGS: readonly {
   {
     term: `The goal + ${bufferPercent}%`,
     body: `The state asks for room for at least ${bufferPercent}% more: ${formatCount(bufferAmount(GOAL_BASE))} ${GOAL_BASE.measure.unit}.`
+  },
+  {
+    term: 'To beat',
+    body: 'The month you reached the goal when you last levelled up. Reach the goal in an earlier month to win the level.'
   }
 ];
 
 export const YOUR_PLANS: readonly [string, string] = [
   "Published plans and policies are public and permanent: anyone with the link can see them, and I can't take them back.",
   'Reopening a saved plan uses the current data, so its totals can change.'
+];
+
+/** Using it: the five levels, in order. */
+export const LEVELS: readonly string[] = [
+  'Level 1: paint room for the goal. Winning opens the simulation.',
+  'Level 2: play current law to the goal.',
+  'Level 3: change permitting, and beat the month you reached at level 2.',
+  'Level 4: change zoning too, and beat your month to beat.',
+  'Level 5: add the public money on offer, and beat your month to beat.'
+];
+
+export const LEVEL_NOTES: readonly string[] = [
+  'Levelling up is your choice. Your policies stay, and the clock goes back to today.',
+  'A month to beat keeps the data it was earned on. After a data update your policy may reach the goal in another month; the month to beat stays.',
+  'A published policy plays in full for everyone, whatever their level.'
+];
+
+export const SAVED_GAMES: readonly string[] = [
+  `Each saved game has its own level, months to beat, plan and policy. You can keep ${MAX_SAVES}.`,
+  'Remix makes a new saved game from a published plan or policy, at your current level.',
+  'Games are saved in this browser, and to your account from your first win.'
 ];
 
 export const WORKED_OUT = 'How this is worked out';

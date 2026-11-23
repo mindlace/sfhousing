@@ -386,7 +386,7 @@ export interface FundingFile {
           <li>A statewide balance with no San Francisco share makes no bound: turning it into one would need an invented share.</li>
           <li>When no primary settles it, the bound is the block below: <code>none</code> under <a href="../design/2026-11-22-1216-incremental-game.html#d3">D3</a>, saying plainly it could not be settled.</li>
           <li>The operator's handback names each report and page read and says which bound went in.</li>
-          <li>An <code>ends</code> or <code>remaining</code> bound here is expected to make current law miss the goal. Then <code>closing</code>'s check fails, and the owner decides the remedy.</li>
+          <li>An <code>ends</code> or <code>remaining</code> bound here is expected to make current law miss the goal. Then the level 2 check fails (run by <code>reach-check</code>, and again by <code>closing</code> before the upload), and the owner decides the remedy.</li>
         </ul>
         <pre><code data-lang="json">"bound": {
   "kind": "none",
@@ -400,6 +400,7 @@ export interface FundingFile {
         <h4>Federal tax credits and the ceiling</h4>
         <p>The ceiling is the most San Francisco won in one year of the award rows: 1,274 new-construction homes in 2024, times $443,108, which is $564,519,592 a year.</p>
         <aside data-kind="decision" id="dec-ff-ceiling"><strong>Decision: the ceiling is the best year, not the average</strong> The award rows give two readings, the average year (980 homes, $434,245,840) and the best year (1,274 homes, $564,519,592). A ceiling below a year the records show was reached would contradict per-record data, so the best year is the ceiling. Neither binds in the measured runs.</aside>
+        <p>The ceiling is what the federal pool receives each year. Like every pool, it pays from all it has received less what is committed, so credits not awarded in their year stay in the pool and can be awarded later, as California carries unused private-activity bond ceiling forward. No yearly limit on awards is added.</p>
         <pre><code data-lang="json">"federal": {
   "id": "federal-tax-credits",
   "label": "Federal: low-income housing tax credits",
@@ -675,11 +676,11 @@ interface FundingReport {
     <section id="sec-design-reach">
       <h3>The goal must stay reachable (D1), and the dataset</h3>
       <ul>
-        <li>The real-data check that current law reaches the goal inside the window (<a href="../design/2026-11-22-1216-incremental-game.html#d1">D1</a>, <a href="../design/2026-11-22-1216-incremental-game.html#sec-if-g4">G4</a>) is <code>closing</code>'s <code>scripts/level2-check.ts</code>, run after <code>pool-closing</code> lands. This unit does not run it.</li>
+        <li>The real-data check that current law reaches the goal inside the window (<a href="../design/2026-11-22-1216-incremental-game.html#d1">D1</a>, <a href="../design/2026-11-22-1216-incremental-game.html#sec-if-g4">G4</a>) is <code>scripts/level2-check.ts</code>, written by <code>reach-check</code> and run by it once <code>pool-closing</code> has landed, then again by <code>closing</code> on the dataset it uploads. This unit does not run it.</li>
         <li>Until <code>pool-closing</code> lands, an affordable application that asks a spent pool waits to the window's end in the step engine (the known limit, <code>docs/dev/finance-engine.md</code>). The live goal month is therefore not meaningful between the two units, and this unit asserts none.</li>
         <li>Fixture-level tests stay meaningful through the fixture's bounds: every bound kind is built, and the continuing pools (<code>city-ocoh</code>, <code>city-general-fund</code>, <code>state</code>, federal) keep receiving money to the window's end. A new test pins that (<a href="#sec-tests">Tests</a>).</li>
         <li>Tests that pin funded numbers on a fixture with an uncapped pool give that pool one yearly inflow, <code>{ kind: 'yearly', from: &lt;the fixture's asOf&gt;, to: null, dollarsPerYear: 100_000_000_000 }</code>, which no test reaches. Their recorded numbers are re-recorded where they move, and the handback lists each one.</li>
-        <li>The unit's handback reports the live file's first-year dollars by source and the impact-fee block chosen, for <code>closing</code>'s check.</li>
+        <li>The unit's handback reports the live file's first-year dollars by source and the impact-fee block chosen, for the level 2 check that <code>reach-check</code> runs.</li>
         <li>This unit writes hashed paths: <code>pipeline/**</code> and <code>src/lib/timelapse</code>, under <code>PATHS</code> as <code>remove-lesscars</code> leaves it (<code>src/lib/sim/scenario</code> and <code>src/lib/sim/levers</code> are no longer hashed). So the dataset version changes.</li>
         <li>The unit regenerates the fixture with <code>npm run pipeline -- fixture</code> and commits every file that changes, <code>e2e/fixtures/data/fixture-0/report.json</code> included.</li>
         <li>It runs no signoff and uploads no dataset.</li>
@@ -895,7 +896,7 @@ interface FundingReport {
     <ul>
       <li>Closing a spent pool in the step engine, and Details' "ran out" line: <code>pool-closing</code>.</li>
       <li>Ends for the presets ("General Fund set-aside", "federal support", "state money doubled"), a pool's lifetime level, the window's last month in the funding editors, how a group's amount counts <code>once</code> inflows, any new sentence for the federal group, the read-only view of a given measure: <code>funding-measures</code>.</li>
-      <li>The real-data check that current law reaches the goal (<code>scripts/level2-check.ts</code>): <code>closing</code>.</li>
+      <li>The real-data check that current law reaches the goal (<code>scripts/level2-check.ts</code>): written and first run by <code>reach-check</code>, run again by <code>closing</code> before the upload.</li>
       <li>Building and uploading the live dataset: done once from the integration branch after the last unit that writes a hashed path.</li>
       <li>The two November 2026 measures (the Housing Trust Fund extension, the state bond) as given measures: a later change, no unit in this build.</li>
       <li>Making debt service or the legal borrowing limits bind: level 6, not built.</li>

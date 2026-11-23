@@ -46,7 +46,11 @@ export const AUTH_COPY = {
   resetInvalid: 'That reset link has expired or has already been used.',
   resetRequestAnother: 'Request a new reset link',
   passwordBreached:
-    'That password has appeared in a known data breach. Please choose a different one.'
+    'That password has appeared in a known data breach. Please choose a different one.',
+  tooManyAccounts: 'Too many new accounts too quickly. Wait a moment.',
+  sessionStart: "Couldn't start your session. Try again.",
+  jsonRequired: 'Send JSON.',
+  crossOrigin: 'Cross-site requests are not allowed.'
 } as const;
 
 export const passwordTooShort = (min: number): string =>

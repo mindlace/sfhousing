@@ -1,21 +1,10 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { eq } from 'drizzle-orm';
-import { freshDb, seedSim } from '$lib/server/test/auth-db';
-import { fakeSimEnv } from '$lib/server/test/sim-env';
-import { rosterChangedAll } from '$lib/server/sims/roster-hook';
-import { foldSimsForUser } from '$lib/server/sims/sim-roles';
+import { freshDb } from '$lib/server/test/auth-db';
 import { user, userIdentity, userVersion } from '$lib/server/db/schema';
 import { createIdentityForNewVersion, reseedHandleFromSim, handleAccountLink } from './identity';
 import { skeleton } from './confusable-skeleton';
 import { getUser } from './user';
-
-vi.mock('$lib/server/sims/roster-hook', () => ({
-  rosterChangedAll: vi.fn(async () => {})
-}));
-vi.mock('$lib/server/sims/sim-roles', async (importOriginal) => {
-  const real = await importOriginal<typeof import('$lib/server/sims/sim-roles')>();
-  return { ...real, foldSimsForUser: vi.fn(real.foldSimsForUser) };
-});
 
 async function getIdentity(db: Awaited<ReturnType<typeof freshDb>>['db'], identityId: string) {
   const rows = await db.select().from(userIdentity).where(eq(userIdentity.id, identityId));
@@ -178,143 +167,107 @@ describe('handleAccountLink', () => {
     expect(o.supersededById).toBe(existing.userIdentity);
   });
 
-  describe('the fuse tells the absorbed identity sims (R49)', () => {
-    const env = fakeSimEnv();
-
-    beforeEach(() => {
-      vi.mocked(rosterChangedAll).mockClear();
+  it('a fuse calls onFuse once with (survivor, absorbed) after the absorbed identity is superseded', async () => {
+    const { db } = freshDb();
+    const pseudo = await mintLive(db, {
+      id: 'u-pseudo',
+      email: 'p@pseudonymous.sfhousing.invalid'
     });
-    afterEach(() => {
-      vi.restoreAllMocks();
+    const existing = await mintLive(db, {
+      pseudonymous: false,
+      id: 'u-exist',
+      email: 'real@x.com'
     });
+    let supersededByAtCall: string | null | undefined;
+    const onFuse = vi.fn(async (_survivor: string, absorbed: string) => {
+      supersededByAtCall = (await getIdentity(db, absorbed))?.supersededById;
+    });
+    await handleAccountLink({
+      db,
+      isUpgrade: false,
+      pseudonymousUserId: 'u-pseudo',
+      newUserId: 'u-exist',
+      onFuse
+    });
+    expect(onFuse).toHaveBeenCalledTimes(1);
+    expect(onFuse).toHaveBeenCalledWith(existing.userIdentity, pseudo.userIdentity);
+    expect(supersededByAtCall).toBe(existing.userIdentity);
+  });
 
-    async function pair(db: Awaited<ReturnType<typeof freshDb>>['db']) {
-      const pseudo = await mintLive(db, {
-        id: 'u-pseudo',
-        email: 'p@pseudonymous.sfhousing.invalid'
-      });
-      const surv = await mintLive(db, { pseudonymous: false, id: 'u-exist', email: 'real@x.com' });
-      return { pseudo, surv };
-    }
+  it('an upgrade never calls onFuse', async () => {
+    const { db } = freshDb();
+    await mintLive(db, { id: 'u-pseudo', email: 'p@pseudonymous.sfhousing.invalid' });
+    await mintLive(db, { pseudonymous: false, id: 'u-fresh', email: 'real@x.com' });
+    const onFuse = vi.fn(async () => {});
+    await handleAccountLink({
+      db,
+      isUpgrade: true,
+      pseudonymousUserId: 'u-pseudo',
+      newUserId: 'u-fresh',
+      onFuse
+    });
+    expect(onFuse).not.toHaveBeenCalled();
+  });
 
-    it('a fuse defers one fan-out over exactly the absorbed identity sims', async () => {
-      const { db } = freshDb();
-      const { pseudo, surv } = await pair(db);
-      const a = await seedSim(db, { title: 'A', managerId: pseudo.userIdentity });
-      const b = await seedSim(db, { title: 'B', managerId: pseudo.userIdentity });
-      await seedSim(db, { title: 'S', managerId: surv.userIdentity });
-      const defer = vi.fn();
-      await handleAccountLink({
+  it('a link whose new row already resolves to the pseudonymous identity never calls onFuse', async () => {
+    const { db } = freshDb();
+    const pseudo = await mintLive(db, {
+      id: 'u-pseudo',
+      email: 'p@pseudonymous.sfhousing.invalid'
+    });
+    const fresh = await mintLive(db, { pseudonymous: false, id: 'u-fresh', email: 'real@x.com' });
+    await db
+      .update(userIdentity)
+      .set({ supersededById: pseudo.userIdentity, supersededAt: new Date() })
+      .where(eq(userIdentity.id, fresh.userIdentity));
+    const onFuse = vi.fn(async () => {});
+    await handleAccountLink({
+      db,
+      isUpgrade: false,
+      pseudonymousUserId: 'u-pseudo',
+      newUserId: 'u-fresh',
+      onFuse
+    });
+    expect(onFuse).not.toHaveBeenCalled();
+  });
+
+  it('a link with a missing live row never calls onFuse', async () => {
+    const { db } = freshDb();
+    await mintLive(db, { id: 'u-pseudo', email: 'p@pseudonymous.sfhousing.invalid' });
+    const onFuse = vi.fn(async () => {});
+    await handleAccountLink({
+      db,
+      isUpgrade: false,
+      pseudonymousUserId: 'u-pseudo',
+      newUserId: 'nobody',
+      onFuse
+    });
+    expect(onFuse).not.toHaveBeenCalled();
+  });
+
+  it('a rejecting onFuse rejects handleAccountLink, with the fuse already written', async () => {
+    const { db } = freshDb();
+    const pseudo = await mintLive(db, {
+      id: 'u-pseudo',
+      email: 'p@pseudonymous.sfhousing.invalid'
+    });
+    const existing = await mintLive(db, {
+      pseudonymous: false,
+      id: 'u-exist',
+      email: 'real@x.com'
+    });
+    await expect(
+      handleAccountLink({
         db,
         isUpgrade: false,
         pseudonymousUserId: 'u-pseudo',
         newUserId: 'u-exist',
-        roster: { env, defer }
-      });
-      expect(defer).toHaveBeenCalledTimes(1);
-      expect(defer.mock.calls[0][0]).toBeInstanceOf(Promise);
-      expect(rosterChangedAll).toHaveBeenCalledTimes(1);
-      const [gotEnv, ids] = vi.mocked(rosterChangedAll).mock.calls[0];
-      expect(gotEnv).toBe(env);
-      expect([...ids].sort()).toEqual([a, b].sort());
-    });
-
-    it('a defer that throws leaves the fuse standing and the link resolved', async () => {
-      const { db } = freshDb();
-      const { pseudo, surv } = await pair(db);
-      await seedSim(db, { title: 'A', managerId: pseudo.userIdentity });
-      const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
-      const defer = vi.fn(() => {
-        throw new Error('defer boom');
-      });
-      await expect(
-        handleAccountLink({
-          db,
-          isUpgrade: false,
-          pseudonymousUserId: 'u-pseudo',
-          newUserId: 'u-exist',
-          roster: { env, defer }
-        })
-      ).resolves.toBeUndefined();
-      expect(defer).toHaveBeenCalledOnce();
-      expect(rosterChangedAll).toHaveBeenCalledOnce();
-      const ident = await getIdentity(db, pseudo.userIdentity);
-      expect(ident?.supersededById).toBe(surv.userIdentity);
-      expect(await db.select().from(user).where(eq(user.id, 'u-pseudo'))).toHaveLength(0);
-      expect(await getUser(db, pseudo.userIdentity)).toMatchObject({ id: surv.userIdentity });
-      expect(errors).toHaveBeenCalledWith('[fuse] defer failed', 'defer boom');
-    });
-
-    it('a fuse of an identity with no sims tells nobody', async () => {
-      const { db } = freshDb();
-      await pair(db);
-      const defer = vi.fn();
-      await handleAccountLink({
-        db,
-        isUpgrade: false,
-        pseudonymousUserId: 'u-pseudo',
-        newUserId: 'u-exist',
-        roster: { env, defer }
-      });
-      expect(defer).not.toHaveBeenCalled();
-      expect(rosterChangedAll).not.toHaveBeenCalled();
-    });
-
-    it('an upgrade calls neither defer nor the hook', async () => {
-      const { db } = freshDb();
-      const { pseudo } = await pair(db);
-      await seedSim(db, { title: 'A', managerId: pseudo.userIdentity });
-      const defer = vi.fn();
-      await handleAccountLink({
-        db,
-        isUpgrade: true,
-        pseudonymousUserId: 'u-pseudo',
-        newUserId: 'u-exist',
-        roster: { env, defer }
-      });
-      expect(defer).not.toHaveBeenCalled();
-      expect(rosterChangedAll).not.toHaveBeenCalled();
-    });
-
-    it('a failed sims read still fuses, logs safe text only and defers nothing', async () => {
-      const { db } = freshDb();
-      const { pseudo, surv } = await pair(db);
-      await seedSim(db, { title: 'Secret title', managerId: pseudo.userIdentity });
-      vi.mocked(foldSimsForUser).mockRejectedValueOnce(new Error('boom'));
-      const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
-      const defer = vi.fn();
-      await handleAccountLink({
-        db,
-        isUpgrade: false,
-        pseudonymousUserId: 'u-pseudo',
-        newUserId: 'u-exist',
-        roster: { env, defer }
-      });
-      const [ident] = await db
-        .select()
-        .from(userIdentity)
-        .where(eq(userIdentity.id, pseudo.userIdentity));
-      expect(ident.supersededById).toBe(surv.userIdentity);
-      expect(await db.select().from(user).where(eq(user.id, 'u-pseudo'))).toHaveLength(0);
-      expect(defer).not.toHaveBeenCalled();
-      expect(errors).toHaveBeenCalledTimes(1);
-      expect(errors.mock.calls[0][0]).toBe('[fuse] sims read failed');
-      expect(JSON.stringify(errors.mock.calls)).not.toMatch(/real@x\.com|Secret title|u-pseudo/);
-    });
-
-    it('without roster a fuse reads nothing and tells nobody', async () => {
-      const { db } = freshDb();
-      const { pseudo } = await pair(db);
-      await seedSim(db, { title: 'A', managerId: pseudo.userIdentity });
-      vi.mocked(foldSimsForUser).mockClear();
-      await handleAccountLink({
-        db,
-        isUpgrade: false,
-        pseudonymousUserId: 'u-pseudo',
-        newUserId: 'u-exist'
-      });
-      expect(rosterChangedAll).not.toHaveBeenCalled();
-      expect(foldSimsForUser).not.toHaveBeenCalled();
-    });
+        onFuse: async () => {
+          throw new Error('move failed');
+        }
+      })
+    ).rejects.toThrow('move failed');
+    const ident = await getIdentity(db, pseudo.userIdentity);
+    expect(ident?.supersededById).toBe(existing.userIdentity);
   });
 });

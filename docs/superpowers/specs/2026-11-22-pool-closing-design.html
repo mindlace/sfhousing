@@ -12,7 +12,7 @@
       <li>A closed pool opens again when it receives a new arrival.</li>
       <li>Each pool's open or closed state is part of the world, so the worker's rewind and copies restore it.</li>
       <li><code>WorldOptions.poolClosing</code>, true by default; the referee against the older engine runs with it false, and the older engine is unchanged.</li>
-      <li><code>MoneyView.closed</code>, and Details' line "{source}: ran out {Mon YYYY}".</li>
+      <li><code>MoneyView.closed</code> and <code>MoneyView.shut</code>, and Details' line "{source}: ran out {Mon YYYY}".</li>
     </ul>
   </section>
 
@@ -81,6 +81,8 @@ export interface MoneyView {
   /* the series as today, and: */
   /** Per pool id: the first day it was closed, or null. */
   closed: Record&lt;string, Day | null&gt;;
+  /** Per pool id, by calendar month: true while the pool is closed at the end of that month. */
+  shut: Record&lt;string, boolean[]&gt;;
 }</code></pre>
       <ul>
         <li>A pool's last arrival is the last arrival the document in force gives it; a pool with a yearly inflow with no end has none.</li>
@@ -92,6 +94,8 @@ export interface MoneyView {
         <li>The worker's rewind restores each pool's open or closed state with the world.</li>
         <li>The older scenario engine keeps its behaviour: an application waits on a spent pool.</li>
         <li>Details lists each closed source by its pool's label with the month it ran out: "{label}: ran out Mar 2030".</li>
+        <li><code>shut[id][i]</code> is true from the calendar month the pool ran out (the month that found it spent) through the last calendar month before it opens again.</li>
+        <li>A pool's bar on the timeline reads empty in every month <code>shut</code> marks: what a closed pool still holds is never awarded.</li>
       </ul>
     </section>
   </section>
@@ -163,6 +167,8 @@ export interface MoneyRow {
     /* the fields as today, and: */
     /** The pool's first closed day, once the month that found it spent has been reached; absent reads as null. */
     closed?: Day | null;
+    /** The pool is closed at the end of this calendar month; absent reads as false. */
+    shut?: boolean;
   }[];
   /* the rest as today */
 }</code></pre>
@@ -278,10 +284,12 @@ export interface MoneyRow {
       <h3>The money view</h3>
       <ul>
         <li><code>moneyRowsOf</code> gives each pool entry of calendar month i <code>closed</code>: the <code>shutFrom</code> of that pool's first <code>shut</code> row in <code>feed.world</code>, when that day less 1 is on or before the last day of calendar month i; otherwise null. A world without funding columns gives null.</li>
+        <li><code>moneyRowsOf</code> gives each pool entry of calendar month i <code>shut</code>: true when the pool has a <code>shut</code> row whose <code>shutFrom</code> less 1 is on or before the last day of calendar month i and whose <code>shutTo</code> is <code>NO_DAY</code> or later than that day; otherwise false. A world without funding columns gives false.</li>
+        <li><code>moneyViewOf</code> gives <code>shut</code> (<a href="#sec-if-f3">F3</a>): for each pool id of the view, its rows' <code>shut</code> by calendar month, false where a row has none.</li>
         <li><code>moneyViewOf</code> gives <code>closed</code> (<a href="#sec-if-f3">F3</a>): for each pool id of the view, the last row's <code>closed</code>, null when absent.</li>
         <li>So <code>MoneyView.closed</code> is the first day the pool was ever closed, through the view's last filled month. A pool opened again keeps it: it did run out then.</li>
-        <li>Chunks cut on a rewind (<code>chunksBefore</code>) cut <code>closed</code> with the rows, and a chunk built from a re-stepped world reads its re-made history.</li>
-        <li>A row built without <code>closed</code> (the page's zero rows in <code>src/lib/timeline/chunk-log.ts</code>) reads as null.</li>
+        <li>Chunks cut on a rewind (<code>chunksBefore</code>) cut <code>closed</code> and <code>shut</code> with the rows, and a chunk built from a re-stepped world reads its re-made history.</li>
+        <li>A row built without <code>closed</code> or <code>shut</code> (the page's zero rows in <code>src/lib/timeline/chunk-log.ts</code>) reads as null and false.</li>
       </ul>
     </section>
 
@@ -334,7 +342,7 @@ export function closedLines(money: Money | MoneyView, at: Day): string[];</code>
     <p>Ordering notes from the design document that concern this unit:</p>
     <ul>
       <li><code>src/lib/sim/world/funding/**</code> and the money results are written by <code>finite-funding</code> and then by <code>pool-closing</code>; this unit needs F2.</li>
-      <li><code>pool-closing</code> and <code>funding-measures</code> write different files and can run together.</li>
+      <li><code>funding-measures</code> runs after this unit: its pool bars read <code>MoneyView.shut</code> (F3). The two write different files.</li>
     </ul>
     <section id="sec-write-set-files">
       <h3>Files</h3>
@@ -397,10 +405,10 @@ export function closedLines(money: Money | MoneyView, at: Day): string[];</code>
     <section id="sec-tests-money">
       <h3>The money view and Details</h3>
       <ul>
-        <li><code>src/lib/sim/world/score/money.spec.ts</code>: on a funded world that closes a pool, each month's pool entry has <code>closed</code> null before the month that found it spent and the closed day from that month on; a pool never closed has null in every month.</li>
-        <li><code>src/lib/sim/world/score/view.spec.ts</code>: <code>MoneyView.closed</code> has every pool id, the last row's value; a row without <code>closed</code> reads null; <code>chunksBefore</code> before the spent month gives null.</li>
+        <li><code>src/lib/sim/world/score/money.spec.ts</code>: on a funded world that closes a pool, each month's pool entry has <code>closed</code> null before the month that found it spent and the closed day from that month on; a pool never closed has null in every month. <code>shut</code> is false before the month that found the pool spent, true from that month through the month before an arrival opens it again, and false from then on.</li>
+        <li><code>src/lib/sim/world/score/view.spec.ts</code>: <code>MoneyView.closed</code> has every pool id, the last row's value; a row without <code>closed</code> reads null; <code>chunksBefore</code> before the spent month gives null. <code>MoneyView.shut</code> has every pool id with one entry per filled month, each the month's row value, false for a row without <code>shut</code>.</li>
         <li><code>src/lib/fzp/money-view.spec.ts</code>: <code>closedLines</code> lists nothing before the spent month, "City: general-obligation bonds and other debt: ran out Mar 2030" from March 2030, in pool order; a money without <code>closed</code> gives none.</li>
-        <li><code>src/lib/fzp/MoneyResults.svelte.spec.ts</code> (new): with a money whose pool closed on 2030-04-01, at March 2030 one <code>fzp-money-closed</code> line reads "City: general-obligation bonds and other debt: ran out Mar 2030", after <code>fzp-money-all</code> and before the "Money details" button; at February 2030 there is none; light and dark pass <code>expectNoA11yViolations</code>.</li>
+        <li><code>src/lib/fzp/MoneyResults.svelte.spec.ts</code> (new): with a money whose pool closed on 2030-04-01, at March 2030 one <code>fzp-money-closed</code> line reads "City: general-obligation bonds and other debt: ran out Mar 2030", after <code>fzp-money-all</code> and before the "Money details" button; at February 2030 there is none; axe-core (<code>axe.run</code> on the rendered money block, with the WCAG 2.0, 2.1 and 2.2 A and AA tags <code>expectNoA11yViolations</code> uses) finds no violation in light and in dark, the colour scheme set with <code>Emulation.setEmulatedMedia</code> as <code>src/lib/map/key/MapKeyControl.svelte.spec.ts</code> does. The "ran out" lines are text, not controls, so no e2e check is added for them.</li>
       </ul>
     </section>
   </section>
@@ -419,7 +427,7 @@ export function closedLines(money: Money | MoneyView, at: Day): string[];</code>
       </li>
       <li><code>docs/dev/finance-score.md</code>:
         <ul>
-          <li>"In the step engine": <code>MoneyRow</code>'s <code>closed</code>, <code>MoneyView.closed</code> and Details' "ran out" line, word for word.</li>
+          <li>"In the step engine": <code>MoneyRow</code>'s <code>closed</code> and <code>shut</code>, <code>MoneyView.closed</code> and <code>MoneyView.shut</code>, and Details' "ran out" line, word for word.</li>
           <li>The identities: I4 holds for every pool and I6 (an uncapped pool's <code>received</code>) is gone, as <code>finite-funding</code> left them in the code.</li>
           <li>The parenthesis after the identities, which says the engine page maps E5 to I6 and E6 to I5, goes: <code>finance-engine.md</code>'s table maps E1 to E5 to I1 to I5, E6 is retired with I6, and E7 has no counterpart. The doc says that in one sentence.</li>
         </ul>
@@ -458,9 +466,9 @@ export function closedLines(money: Money | MoneyView, at: Day): string[];</code>
     <ul>
       <li>The bounds, the federal ceiling and the removal of <code>uncapped</code>: <code>finite-funding</code>.</li>
       <li>A pool's lifetime level on the timeline, preset ends and funding copy: <code>funding-measures</code>.</li>
-      <li>The real-data check that current law reaches the goal with closing on: <code>closing</code>'s <code>scripts/level2-check.ts</code>.</li>
+      <li>The real-data check that current law reaches the goal with closing on: <code>scripts/level2-check.ts</code>, written and first run by <code>reach-check</code> after this unit lands, run again by <code>closing</code> before the upload.</li>
       <li>Closing in the older scenario engine: it keeps waiting on a spent pool, as the referee.</li>
-      <li>Anything on a pool's bar when it closes: the bar shows nothing special (the design's "Finite public money"), and <code>pool-level.ts</code> is not this unit's. Details carries the "ran out" line.</li>
+      <li>Drawing a closed pool's bar as empty from <code>MoneyView.shut</code>: <code>funding-measures</code>, which owns <code>pool-level.ts</code>.</li>
       <li>Looking ahead at inflows to decide an award: the award rule is unchanged.</li>
     </ul>
   </section>

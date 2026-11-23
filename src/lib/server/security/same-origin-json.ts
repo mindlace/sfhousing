@@ -1,5 +1,5 @@
 import { json } from '@sveltejs/kit';
-import { SIMS_COPY } from '$lib/members/copy';
+import { AUTH_COPY } from '$lib/account/copy';
 
 /**
  * Cross-site defence for a JSON route that changes state. SvelteKit's origin check covers
@@ -10,7 +10,7 @@ import { SIMS_COPY } from '$lib/members/copy';
 export function refuseUnlessSameOriginJson(event: { request: Request; url: URL }): Response | null {
   const contentType = event.request.headers.get('content-type') ?? '';
   if (contentType.split(';')[0].trim().toLowerCase() !== 'application/json') {
-    return json({ error: SIMS_COPY.jsonRequired }, { status: 415 });
+    return json({ error: AUTH_COPY.jsonRequired }, { status: 415 });
   }
   return refuseForeignOrigin(event);
 }
@@ -22,7 +22,7 @@ export function refuseUnlessSameOriginJson(event: { request: Request; url: URL }
 export function refuseForeignOrigin(event: { request: Request; url: URL }): Response | null {
   const origin = event.request.headers.get('origin');
   if (origin !== null && origin !== event.url.origin) {
-    return json({ error: SIMS_COPY.crossOrigin }, { status: 403 });
+    return json({ error: AUTH_COPY.crossOrigin }, { status: 403 });
   }
   return null;
 }
