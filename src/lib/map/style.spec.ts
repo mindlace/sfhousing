@@ -22,8 +22,13 @@ const raw = JSON.parse(readFileSync('e2e/fixtures/data/fixture-0/manifest.json',
   string,
   unknown
 >;
-const base: Manifest = parseManifest(raw);
-const withSprite: Manifest = parseManifest({ ...raw, sprite: '/data/fixture-0/sprite' });
+// The fixture's manifest still names scenarios.lesscars (an older dataset), which marks
+// splitRoads; the base here is a current dataset, so it drops the block.
+const rawScenarios = raw.scenarios as Record<string, unknown>;
+const { lesscars: _older, ...currentScenarios } = rawScenarios;
+const current = { ...raw, scenarios: currentScenarios };
+const base: Manifest = parseManifest(current);
+const withSprite: Manifest = parseManifest({ ...current, sprite: '/data/fixture-0/sprite' });
 const themes: Theme[] = ['light', 'dark'];
 
 function fontStrings(v: unknown, out: string[] = []): string[] {
@@ -250,10 +255,22 @@ describe('transit layers', () => {
   });
 });
 
-describe('the roads_lc clones (lesscars v1.1)', () => {
+describe('the roads_lc clones (datasets built before the less-cars removal)', () => {
+  const split = { ...base, splitRoads: true as const };
+  for (const theme of themes)
+    it(`${theme}: without splitRoads no layer ends in __lc or reads roads_lc`, () => {
+      const s = buildStyle(base, theme);
+      expect(s.layers.filter((l) => l.id.endsWith('__lc'))).toEqual([]);
+      expect(
+        s.layers.filter(
+          (l) => (l as { 'source-layer'?: string })['source-layer'] === LC_ROADS_SOURCE_LAYER
+        )
+      ).toEqual([]);
+    });
+
   for (const theme of themes) {
     it(`${theme}: every roads layer has a roads_lc clone right after it`, () => {
-      const s = buildStyle(base, theme);
+      const s = buildStyle(split, theme);
       const ids = s.layers.map((l) => l.id);
       const of = (id: string) => s.layers.find((l) => l.id === id) as Record<string, unknown>;
       const roadIds = s.layers
@@ -276,7 +293,7 @@ describe('the roads_lc clones (lesscars v1.1)', () => {
   }
 
   it('theme-diffs the clones as their roads layers', () => {
-    const d = themePaintDiff(base);
+    const d = themePaintDiff(split);
     const own = d.dark.filter(([id]) => id === 'roads_highway').map(([, p, v]) => [p, v]);
     expect(own.length).toBeGreaterThan(0);
     expect(d.dark.filter(([id]) => id === 'roads_highway__lc').map(([, p, v]) => [p, v])).toEqual(
