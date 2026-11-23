@@ -165,6 +165,8 @@ export class GameStore {
   levelUp(): void;
   /** The page's autosave wrote the current game's plan or policy record. */
   touched(): void;
+  /** Registers a function the store calls before another game becomes current; returns its remover. */
+  beforeLeave(fn: () =&gt; void): () =&gt; void;
   newGame(): StoreChange;
   switchTo(id: string): StoreChange;
   remix(doc: { kind: 'plan' | 'sim'; record: string; title: string }): StoreChange;
@@ -197,8 +199,10 @@ export function useGame(): GameStore;</code></pre>
         <li>The store's <code>levelUp()</code> banks the offer with the pure <code>levelUp</code>, clears the offer, and stores the game. The win card and the level panel both call it.</li>
         <li>The page that set the offer reacts to the level changing: <code>/sim</code> returns the clock to today, and Paint opens <code>/sim</code>.</li>
         <li>The page calls <code>touched()</code> after its autosave writes a record key. The store sets the current game's <code>savedAt</code> and calls <code>sync.changed(currentId)</code>.</li>
+        <li>A page that autosaves a record key registers its autosave's flush with <code>beforeLeave</code> when it mounts and removes it when it unmounts. <code>newGame</code>, <code>switchTo</code> of another game, <code>remix</code> and <code>remove</code> of the current game call every registered function, in registration order, once they will go ahead and before they read or write a record key. So an edit still waiting in the page's autosave is in the record keys when the old game is copied out, and nothing is left waiting to be written over the new game's records when the page unloads.</li>
+        <li>After <code>newGame</code>, <code>switchTo</code> of another game, <code>remix</code> or <code>remove</code> of the current game answers <code>ok</code>, the store ignores <code>touched()</code> for the rest of the document's life: the page is about to unload, and its last write was copied out with the old game.</li>
         <li>On first construction with no <code>SAVES_KEY</code>, the store makes one saved game at level 1 whose plan and policy are whatever the two record keys hold.</li>
-        <li><code>newGame</code>, <code>switchTo</code>, <code>remix</code> and <code>remove</code> of the current game first copy the two record keys into the current game's stored save, then write the new current game's plan and policy into the two record keys.</li>
+        <li><code>newGame</code>, <code>switchTo</code> and <code>remix</code> first copy the two record keys into the current game's stored save, then write the new current game's plan and policy into the two record keys. <code>remove</code> of the current game removes its save without copying it out, then writes the new current game's plan and policy into the two record keys.</li>
         <li>After <code>newGame</code>, <code>switchTo</code> or <code>remove</code> answers <code>ok</code>, the caller loads the new current game's page with a full page load: <code>/</code> at level 1, <code>/sim</code> above it.</li>
         <li>After <code>remix</code> answers <code>ok</code>, the caller loads <code>/</code> for a plan and <code>/sim</code> for a policy, with a full page load.</li>
         <li><code>remix</code>'s <code>record</code> is the text the page's autosave holds under the record key for the published document. The caller builds it with the codec the page already uses, so the store never reads inside a plan or a policy.</li>
@@ -504,7 +508,7 @@ export function e2eGoalAmount(storage: Storage | null): number | null;</code></p
         <li><code>playable(doc, a)</code> keeps, in each kind, the policies for which <code>runs</code> is true, in their order.</li>
         <li><code>playable</code> returns <code>doc</code> itself when it removes nothing. When it removes something, it returns a new document whose unchanged kinds keep their arrays.</li>
         <li><code>levelNeeded(doc)</code> is 2 for a document with no policy in any kind.</li>
-        <li>Otherwise it is the largest of: 3 for any permitting policy, 4 for any zoning policy, 5 for a given money policy, 6 for a money policy whose <code>preset</code> is null.</li>
+        <li>Otherwise it is the largest of: 3 for any permitting policy, 4 for any zoning policy, 5 for a given money policy, 6 for any money policy that is not given (<code>isGiven</code> false: its <code>preset</code> is null, or its selector is not a money selector). So <code>levelNeeded</code> and <code>runs</code> never disagree: at level <code>levelNeeded(doc)</code> or above, <code>playable</code> removes nothing.</li>
       </ul>
       <ul>
         <li><code>simLocked(p)</code> is <code>p.level === 1</code>.</li>
@@ -519,8 +523,8 @@ export function e2eGoalAmount(storage: Storage | null): number | null;</code></p
         <tbody>
           <tr><th scope="row">Permitting</th><td>No</td><td>Yes</td><td>Yes</td><td>Yes</td><td>Yes</td></tr>
           <tr><th scope="row">Zoning</th><td>No</td><td>No</td><td>Yes</td><td>Yes</td><td>Yes</td></tr>
-          <tr><th scope="row">Money, <code>preset</code> a string</th><td>No</td><td>No</td><td>No</td><td>Yes</td><td>Yes</td></tr>
-          <tr><th scope="row">Money, <code>preset</code> null</th><td>No</td><td>No</td><td>No</td><td>No</td><td>Yes</td></tr>
+          <tr><th scope="row">Money, given (<code>preset</code> a string, a money selector)</th><td>No</td><td>No</td><td>No</td><td>Yes</td><td>Yes</td></tr>
+          <tr><th scope="row">Money, not given (<code>preset</code> null, or not a money selector)</th><td>No</td><td>No</td><td>No</td><td>No</td><td>Yes</td></tr>
         </tbody>
       </table>
       <table id="tbl-level-needed">
@@ -532,8 +536,8 @@ export function e2eGoalAmount(storage: Storage | null): number | null;</code></p
           <tr><th scope="row">No policy</th><td>2</td></tr>
           <tr><th scope="row">Permitting only, on or off</th><td>3</td></tr>
           <tr><th scope="row">Zoning, with or without permitting</th><td>4</td></tr>
-          <tr><th scope="row">Any money policy with a string <code>preset</code>, and none with null</th><td>5</td></tr>
-          <tr><th scope="row">Any money policy with <code>preset</code> null</th><td>6</td></tr>
+          <tr><th scope="row">Any given money policy, and no money policy that is not given</th><td>5</td></tr>
+          <tr><th scope="row">Any money policy that is not given (<code>preset</code> null, or not a money selector)</th><td>6</td></tr>
         </tbody>
       </table>
     </section>
@@ -635,13 +639,14 @@ interface SavesIndex {
       <h3>Constructing the store</h3>
       <p>The store reads storage once, when it is constructed, and keeps every saved game in memory. After that it writes through and never reads the index or a save again; it reads the two record keys whenever it copies or reports the current game.</p>
       <ol>
-        <li>With <code>storage</code> null, or when the first <code>getItem</code> throws, the store is in memory mode: one game, at <code>NEW_GAME</code>, with a new id, the default new name, null plan and policy, and <code>savedAt</code> now. It writes nothing, ever.</li>
+        <li>With <code>storage</code> null, or when any read of storage throws during construction (a <code>getItem</code> of the index, a save, a record key or a rebuilt key, or the key listing of step 4), the store is in memory mode: one game, at <code>NEW_GAME</code>, with a new id, the default new name, null plan and policy, and <code>savedAt</code> now. When the throw comes after construction has set or removed a key, the store first puts back every such key as in step 8, ignoring throws while it does, so storage holds what it held before construction. After that it writes nothing, ever, and a later load tries construction again. Reason: a storage that failed one read is not trusted for the rest, and treating the failed key as absent would rewrite the index without a game the player still has.</li>
         <li>With no value under <code>SAVES_KEY</code>, the store makes the first game: a new id, the default new name with nothing taken, <code>nameIsDefault</code> true, <code>NEW_GAME</code>, the raw text of <code>sfhousing:plan:v1</code> and <code>sfhousing:sim:v2</code> as plan and policy (null where absent), and <code>savedAt</code> now. It writes the save, then the index. It does not touch the record keys or <code>sfhousing:sim:v1</code>.</li>
         <li>When the first game's writes are refused, the store is in memory mode with that game, which keeps the plan and policy it read.</li>
-        <li>With an index that is not valid, the store copies the raw index to a corrupt key and rebuilds: every key that starts with <code>sfhousing:save:</code> and not with <code>sfhousing:save:corrupt:</code> is read as a save. Those that parse become entries; those that do not are moved aside as in step 5. Then the store makes a new game from the two record keys as in step 2, with the found games' names taken, and makes it current. The list may then hold more than <code>MAX_SAVES</code> games.</li>
+        <li>With an index that is not valid, the store copies the raw index to a corrupt key and rebuilds: every key that starts with <code>sfhousing:save:</code> and not with <code>sfhousing:save:corrupt:</code> is read as a save. A value that parses and whose <code>id</code> equals the rest of its key after <code>sfhousing:save:</code> becomes an entry. Every other value, one that will not parse or whose <code>id</code> differs from its key's, is moved aside as in step 5. Because each key holds at most one save and its id is the key's, the entries' ids are distinct. Then the store makes a new game from the two record keys as in step 2, with the found games' names taken, and makes it current. The list may then hold more than <code>MAX_SAVES</code> games.</li>
         <li>With a valid index, the store reads <code>saveKey(id)</code> for each entry. A save that is absent, will not parse, or has a different <code>id</code> is left out of the list. Its raw text, when there is one, is copied to a corrupt key, and its key is removed.</li>
         <li>When the current game was left out in step 5, or <code>current</code> names no entry, the store makes a new game from the two record keys as in step 2 and makes it current.</li>
         <li>When anything was left out, added or corrected, the store rewrites the index.</li>
+        <li>When a write in steps 4 to 7 is refused, the store puts back every key construction had already set or removed (ignoring throws while it does), so storage holds what it held before construction. The store is then in memory mode with the saved games it read and made, the current one as steps 4 to 6 chose it, its plan and policy as read. A later load tries construction again.</li>
       </ol>
       <ul>
         <li>A level 1 game made from earlier record keys keeps them as its plan and policy: a plan or policy saved before the game existed becomes the first saved game, at level 1. The store gives it no other level and banks nothing for it; its policies run as its level unlocks their kinds (G3).</li>
@@ -653,8 +658,10 @@ interface SavesIndex {
     <section id="sec-design-store-change">
       <h3>Changing the store</h3>
       <p>A change is one sequence of writes. The store remembers the old value of every key it will set or remove. When a write throws, it puts back every key it had already written (ignoring throws while it does), keeps its memory as it was, calls no sync method, and answers <code>{ ok: false, reason: 'storage' }</code>.</p>
-      <p>Before the current game stops being current (<code>newGame</code>, <code>switchTo</code>, <code>remix</code>, <code>remove</code> of the current game), the store "copies it out": it writes the current game's save with <code>plan</code> and <code>policy</code> read from the two record keys and <code>savedAt</code> set to its played time.</p>
-      <p>When the store writes the records of a game that becomes current and <code>sfhousing:sim:v1</code> holds a value, it removes that key in the same change. When <code>sfhousing:sim:v2</code> was absent at the copy out, it first copies the v1 text to <code>sfhousing:sim:corrupt:&lt;ISO time&gt;</code>. Without this, opening <code>/sim</code> would carry the old schema 3 policy into every new game.</p>
+      <p>Before the current game stops being current through <code>newGame</code>, <code>switchTo</code> or <code>remix</code>, the store "copies it out": it writes the current game's save with <code>plan</code> and <code>policy</code> read from the two record keys and <code>savedAt</code> set to its played time. <code>remove</code> of the current game does not copy it out: the save is removed in the same change, and a delete never needs a write that storage could refuse for want of space.</p>
+      <p>Leaving the current game: <code>beforeLeave(fn)</code> adds <code>fn</code> to a list and returns a function that takes it out again; removing twice does nothing. <code>newGame</code>, <code>switchTo</code> of another game, <code>remix</code> and <code>remove</code> of the current game, once their checks have passed (<code>full</code>, an unknown id, memory mode), call every function in the list, in the order they were added, before the change reads or writes a record key. A function that throws is skipped and the rest still run. The pages register their autosave's <code>flush()</code>, so an edit still inside the autosave's debounce reaches the record keys and is copied out with the old game. No other change calls the list. In memory mode and in the open game, <code>beforeLeave</code> adds and removes as elsewhere; the changes that would call the list refuse first.</p>
+      <p>After <code>newGame</code>, <code>switchTo</code> of another game, <code>remix</code> or <code>remove</code> of the current game answers <code>ok</code>, <code>touched()</code> does nothing for the rest of the store's life: the caller loads a page in full next, and a write the page's autosave makes while it unloads was already copied out with the old game, so it must not be stored as a change to the new one.</p>
+      <p>Whenever a change writes the two record keys (a game that becomes current, and <code>adopt</code> of the current game's id) and <code>sfhousing:sim:v1</code> holds a value, the store removes that key in the same change. When <code>sfhousing:sim:v2</code> was absent before the change, it first copies the v1 text to <code>sfhousing:sim:corrupt:&lt;ISO time&gt;</code>. Without this, opening <code>/sim</code> would carry the old schema 3 policy into every new game.</p>
       <table id="tbl-transitions">
         <caption>Each change, its writes in order, and the sync calls after it</caption>
         <thead>
@@ -703,7 +710,7 @@ interface SavesIndex {
       <ul>
         <li><code>won()</code> sets the current game's <code>firstWinAt</code> to now, the first time only.</li>
         <li><code>levelUp()</code>, <code>won()</code>, <code>touched()</code> and <code>rename</code> set the changed save's <code>savedAt</code> to now.</li>
-        <li><code>touched()</code> always writes and always calls <code>changed(current)</code>, also when nothing else changed.</li>
+        <li><code>touched()</code> always writes and always calls <code>changed(current)</code>, also when nothing else changed, until a change has made another game current (above).</li>
         <li><code>allowed</code> is <code>allowedAt(progress.level)</code>, recomputed with <code>progress</code>; in the open game it is <code>ALL_ALLOWED</code>.</li>
         <li><code>newGame()</code> answers <code>full</code> when the list already holds <code>MAX_SAVES</code> or more games. Otherwise it makes a game with a new id, <code>defaultSaveName({ kind: 'new', at: now }, names)</code> where <code>names</code> is every saved game's name, <code>nameIsDefault</code> true, a copy of <code>NEW_GAME</code>, null plan and policy, and <code>savedAt</code> now, and makes it current.</li>
         <li><code>switchTo(id)</code> of the current game answers <code>ok</code> and changes nothing, the offer included.</li>
@@ -725,7 +732,7 @@ interface SavesIndex {
         <li><code>remove</code> of the current game makes current the other game with the latest <code>savedAt</code>. With no other game, it makes a new game as <code>newGame</code> does, with no names taken.</li>
         <li><code>adopt(saves)</code> skips each save that <code>parseGameSave</code> refuses. It answers <code>full</code> and changes nothing when the saves whose ids are not in the list would take the list past <code>MAX_SAVES</code>.</li>
         <li><code>adopt</code> replaces a save whose id is in the list and adds the others, keeping each one's name, <code>nameIsDefault</code> and <code>savedAt</code> as given. Two saved games may have the same name.</li>
-        <li><code>adopt</code> of the current game's id replaces its progress in memory and writes its plan and policy to the two record keys. The current id does not change. A page already showing the current game keeps its own copy until it loads again.</li>
+        <li><code>adopt</code> of the current game's id replaces its progress in memory and writes its plan and policy to the two record keys, removing <code>sfhousing:sim:v1</code> by the rule above. The current id does not change. A page already showing the current game keeps its own copy until it loads again.</li>
         <li><code>adopt</code> calls no sync method: the saves came from the sync.</li>
         <li>Every <code>StoreChange</code> that is not <code>ok</code> leaves memory and storage as they were.</li>
       </ul>
@@ -742,7 +749,8 @@ interface SavesIndex {
         <li><code>progress</code>, <code>allowed</code>, <code>currentId</code>, <code>offer</code> and <code>saves</code> are reactive (<code>$state</code> or <code>$derived</code>), and replaced, never mutated, on each change.</li>
         <li><code>sync</code> is the <code>SaveSync</code> given to the constructor, the same object for the store's life.</li>
         <li><code>saves</code> is one <code>SaveEntry</code> per saved game, recomputed after construction and after each change.</li>
-        <li><code>saves</code> is ordered by <code>savedAt</code>, latest first, with the current game's played time in place of its <code>savedAt</code>. Equal times order by id.</li>
+        <li>In <code>saves</code>, the current game's entry carries its played time as <code>savedAt</code>, as <code>read</code> of the current game does; every other entry carries its save's <code>savedAt</code>. The stored index keeps each save's own <code>savedAt</code>.</li>
+        <li><code>saves</code> is ordered by those <code>savedAt</code> values, latest first. Equal times order by id.</li>
         <li><code>read(id)</code> of an id not in the list is null.</li>
         <li><code>read(id)</code> of another game is a deep copy of its save as stored.</li>
         <li><code>read(id)</code> of the current game is its save with <code>plan</code> and <code>policy</code> read from the two record keys now, and <code>savedAt</code> its played time. When reading a record key throws, the stored copy is used.</li>
@@ -765,7 +773,7 @@ interface SavesIndex {
 
     <section id="sec-design-layout">
       <h3>The root layout's store script</h3>
-      <p>This unit writes the part of <code>src/routes/+layout.svelte</code>'s script that makes and provides the store. <code>game-shell</code> writes the rest of the layout afterwards.</p>
+      <p>This unit writes the part of <code>src/routes/+layout.svelte</code>'s script that makes and provides the store. The rest of the layout is unchanged in this build: <code>SiteHeader</code> reads the game itself with <code>useGame()</code>, so no other unit writes the layout.</p>
       <pre><code data-lang="svelte">&lt;script lang="ts"&gt;
   // added imports
   import { browser } from '$app/environment';
@@ -965,13 +973,14 @@ export function loadPage(path: '/' | '/sim'): void;</code></pre>
   <section id="sec-write-set">
     <h2>Write set</h2>
     <p>From the design doc: <code>src/lib/game/**</code> except <code>save-sync.svelte.ts</code>, <code>AccountOffer.svelte</code> and their tests; the script of <code>src/routes/+layout.svelte</code> that makes and provides the store; <code>docs/dev/game.md</code>. A write set includes the tests and harnesses beside its files.</p>
-    <p>Ordering: this unit builds after <code>contracts</code>. <code>game-sim</code>, <code>game-shell</code> and <code>game-save</code> need G2 as built here. <code>game-shell</code> writes <code>src/routes/+layout.svelte</code> after this unit, outside the store's script.</p>
+    <p>Ordering: this unit builds after <code>contracts</code>. <code>game-sim</code>, <code>game-shell</code> and <code>game-save</code> need G2 as built here. <code>src/routes/+layout.svelte</code> is written by this unit alone; no other unit changes it.</p>
     <p>Changed:</p>
     <ul>
       <li><code>src/lib/game/levels.ts</code>, <code>progress.ts</code>, <code>saves.ts</code>, <code>store.svelte.ts</code>, <code>allowed.ts</code>, <code>standing.ts</code>, <code>copy.ts</code></li>
       <li><code>src/lib/game/WinCard.svelte</code>, <code>LevelPanel.svelte</code></li>
       <li><code>src/routes/+layout.svelte</code>: the imports, <code>makeGame</code> and the <code>provideGame</code> call</li>
       <li><code>docs/dev/game.md</code></li>
+      <li><code>e2e/game-helpers.spec.ts</code>: each case that changes storage after a load waits for <code>html[data-hydrated]</code> before the change</li>
     </ul>
     <p>Created:</p>
     <ul>
@@ -1005,8 +1014,9 @@ export function loadPage(path: '/' | '/sim'): void;</code></pre>
     <p>Client project (<code>*.svelte.spec.ts</code>), with <code>MemoryStorage</code> and the fake sync:</p>
     <ul>
       <li><code>store.svelte.spec.ts</code>, construction: empty storage makes one level 1 game named by <code>defaultSaveName</code> and writes the save and the index; earlier plan and policy records become its plan and policy text, byte for byte, and stay under their keys; <code>storage: null</code> keeps one game and writes nothing; a corrupt index is copied to a corrupt key and its games are recovered with a new current game from the records; a corrupt save is copied aside, its key removed and its entry dropped; a corrupt current save gives a new current game from the records; an index entry whose name differs from its save is rewritten from the save; <code>failWrites</code> at construction gives memory mode; <code>offer</code> is null and <code>allowed</code> is <code>allowedAt(1)</code>; <code>sync</code> is the object given; <code>open</code> is false.</li>
+      <li><code>store.svelte.spec.ts</code>, leaving: a function registered with <code>beforeLeave</code> that writes the plan record key runs before <code>newGame</code>, <code>switchTo</code> of another game, <code>remix</code> and <code>remove</code> of the current game, and the old game's stored save holds what it wrote; two functions run in the order added; one that throws does not stop the change; a removed function is not called; <code>switchTo</code> of the current game, <code>remove</code> of another game, <code>rename</code>, <code>rekey</code>, <code>adopt</code> and a <code>newGame</code> that answers <code>full</code> call none; after a <code>switchTo</code> that answered <code>ok</code>, <code>touched()</code> writes nothing and calls no sync method.</li>
       <li><code>store.svelte.spec.ts</code>, the offer: every row of <a href="#tbl-store-levelup">the store's levelUp table</a>, asserting <code>progress</code>, <code>allowed</code>, <code>offer</code>, the stored save and the sync's calls; <code>setOffer</code> writes nothing and calls nothing; the offer is cleared by <code>setOffer(null)</code>, <code>newGame</code>, <code>switchTo</code> of another game, <code>remix</code>, <code>remove</code> of the current game and <code>adopt</code> of the current id, and kept by <code>switchTo</code> of the current game, <code>remove</code> of another game and a refused <code>newGame</code>.</li>
-      <li><code>store.svelte.spec.ts</code>, changes: each row of <a href="#tbl-transitions">the transitions table</a>, asserting the keys written, the record keys afterwards, <code>currentId</code>, <code>progress</code>, <code>saves</code> order and the sync's calls; <code>won</code> twice writes once; <code>touched()</code> sets <code>savedAt</code> and calls <code>changed(current)</code> each time; remix of a plan and of a policy store <code>record</code> byte for byte in the right half and name "Remix of {title}"; rename trims, cuts at 60, ignores an empty name, accepts a duplicate; remove of another game, of the current game with others (the latest becomes current and its records are written), and of the last game (a new game); <code>newGame</code>, <code>remix</code> and <code>adopt</code> answer <code>full</code> at 12 and change nothing; <code>failWrites</code> during <code>switchTo</code> answers <code>storage</code> and leaves every key and the store's state as before; <code>sfhousing:sim:v1</code> is removed, and copied aside when <code>sfhousing:sim:v2</code> was absent, when a new game becomes current; <code>read</code> of the current game returns the record keys' text and its played time; adopt of a new id, of an existing id, and of the current id (records written, current kept), with no sync call; <code>rekey</code> of another game and of the current game (key moved, entry in place, <code>currentId</code> follows, records and offer unchanged, no sync call), and refused for an unknown id, a taken new id, the same id and an invalid id; memory mode answers <code>storage</code> to the six refusing changes.</li>
+      <li><code>store.svelte.spec.ts</code>, changes: each row of <a href="#tbl-transitions">the transitions table</a>, asserting the keys written, the record keys afterwards, <code>currentId</code>, <code>progress</code>, <code>saves</code> order and the sync's calls; <code>won</code> twice writes once; <code>touched()</code> sets <code>savedAt</code> and calls <code>changed(current)</code> each time; remix of a plan and of a policy store <code>record</code> byte for byte in the right half and name "Remix of {title}"; rename trims, cuts at 60, ignores an empty name, accepts a duplicate; remove of another game, of the current game with others (the latest becomes current and its records are written), and of the last game (a new game); <code>newGame</code>, <code>remix</code> and <code>adopt</code> answer <code>full</code> at 12 and change nothing; <code>failWrites</code> during <code>switchTo</code> answers <code>storage</code> and leaves every key and the store's state as before; <code>sfhousing:sim:v1</code> is removed, and copied aside when <code>sfhousing:sim:v2</code> was absent, when a new game becomes current and when <code>adopt</code> writes the current game's records; <code>read</code> of the current game returns the record keys' text and its played time; adopt of a new id, of an existing id, and of the current id (records written, current kept), with no sync call; <code>rekey</code> of another game and of the current game (key moved, entry in place, <code>currentId</code> follows, records and offer unchanged, no sync call), and refused for an unknown id, a taken new id, the same id and an invalid id; memory mode answers <code>storage</code> to the six refusing changes.</li>
       <li><code>store.svelte.spec.ts</code>, the open game and context: <code>openGame()</code> is level 5 with nothing banked, <code>open</code> true, <code>allowed</code> <code>ALL_ALLOWED</code>, sync state <code>'local'</code>, refuses the six changes, and completes the round on <code>levelUp()</code> with an offer; inside a provider <code>useGame()</code> returns the provided store; outside, an open game.</li>
       <li><code>WinCard.svelte.spec.ts</code>: the title, "Unlocks: Permitting", and both buttons; "Level up" has focus on mount; each button calls its callback once; Escape inside calls <code>onkeep</code> and does not reach the ancestor; with <code>unlocks</code> null, "Round complete" and only "Keep playing", which has focus; the dialog has <code>aria-modal="false"</code> and the title as its name; under an open store it renders nothing; axe finds no violation in light and dark.</li>
       <li><code>LevelPanel.svelte.spec.ts</code>, with <code>vi.mock('./navigate')</code> keeping <code>gamePath</code> and spying on <code>loadPage</code>: the heading, aim and next lines at levels 1, 2, 3 and 5 and after the round; "Level up" only while <code>offer</code> is set and never after the round, and pressing it raises the level and moves focus to the heading; each sync state's words, and the sign-in link with <code>returnTo</code> set to the current path; rows in store order with the current one marked and "Playing"; pressing another name switches and calls <code>loadPage</code> with its game's path; rename by Enter, by blur, cancelled by Escape (the ancestor's Escape record stays empty), and focus back on "Rename"; delete asks once, Cancel and Escape put the row back, confirming another game's row removes it and focuses "New game", confirming the current game calls <code>loadPage</code>; "New game" calls <code>loadPage('/')</code>; at 12 games "New game" is <code>aria-disabled</code>, does nothing, and the full line shows; under an open store it renders nothing; a store whose <code>switchTo</code> answers <code>storage</code> shows "This browser refused to save."; axe finds no violation in light and dark, with a row in rename and with a row asking to delete.</li>
@@ -1017,6 +1027,8 @@ export function loadPage(path: '/' | '/sim'): void;</code></pre>
       <li>After <code>newVisitor(page)</code>, the page stores one saved game at level 1 under <code>SAVES_KEY</code> and <code>saveKey(id)</code>, and the console has no hydration warning.</li>
       <li>After <code>seedGame(page, 3)</code>, the stored index is the seeded one, unchanged by the store.</li>
       <li>After a seeded load, the test sets the stored index's <code>current</code> to an id that names no entry and reloads: the store makes a new level 1 game current, keeps the seeded game in the list, and rewrites the index.</li>
+      <li>Every case that changes storage after a load, here and in <code>e2e/game-helpers.spec.ts</code>, first waits for <code>html[data-hydrated]</code>. The store reads storage once, in the root layout's init, before hydration ends; a change made before that read is a change the store sees and may repair (a <code>current</code> that names no entry gets a new game and a rewritten index), so a case that changes storage without the wait races the store.</li>
+      <li><code>e2e/game-helpers.spec.ts</code>'s cases keep their assertions: the probe reads storage before the page's scripts run, so "the seed is written once" and "a stored index is never overwritten" read what the case wrote, with the helper's init script leaving a stored index alone.</li>
     </ul>
     <p><code>contracts.spec.ts</code> and <code>contracts.svelte.spec.ts</code> are deleted; their stub assertions no longer hold.</p>
   </section>
@@ -1028,7 +1040,7 @@ export function loadPage(path: '/' | '/sim'): void;</code></pre>
       <li>The ladder: what each level allows and unlocks, by pointing at <code>allowedAt</code>, <code>unlocksAt</code> and <code>unlockText</code>, and the rule that no component compares a level to a number.</li>
       <li>Results and bars: <code>beats</code> compares calendar months, a tie never beats, a bar is stored with its dataset and does not move after a data update.</li>
       <li>The playable document and <code>levelNeeded</code>, and that a given measure is a money policy whose <code>preset</code> is a funding preset's id.</li>
-      <li>The storage layout of <a href="#sec-design-store-layout">The store's storage</a>, the construction steps, the transitions table with its sync calls, the offer and the store's <code>levelUp()</code> table.</li>
+      <li>The storage layout of <a href="#sec-design-store-layout">The store's storage</a>, the construction steps, the transitions table with its sync calls, the offer and the store's <code>levelUp()</code> table, and <code>beforeLeave</code>: the pages' autosave flush that runs before another game becomes current.</li>
       <li>The <code>sfhousing:sim:v1</code> rule and why it exists.</li>
       <li>Memory mode, the open game, and that two tabs share storage with the last write winning.</li>
       <li>The root layout's store script, <code>open</code>, and the until-mounted rule for markup that depends on the game.</li>
@@ -1066,7 +1078,7 @@ export function loadPage(path: '/' | '/sim'): void;</code></pre>
   <section id="sec-out-of-scope">
     <h2>Out of scope</h2>
     <ul>
-      <li>The header's level cell and its pop-over, the rest of the root layout, Paint's win and its card, and Remix on <code>/s/&lt;id&gt;</code> and <code>/p/&lt;id&gt;</code>: <code>game-shell</code>.</li>
+      <li>The header's level cell and its pop-over, Paint's win and its card, and Remix on <code>/s/&lt;id&gt;</code> and <code>/p/&lt;id&gt;</code>: <code>game-shell</code>.</li>
       <li>Listing <code>WinCard.svelte</code> and <code>LevelPanel.svelte</code> in <code>THEMED_FILES</code>: <code>game-shell</code>.</li>
       <li>Mounting the win card on <code>/sim</code>, calling <code>won()</code>, <code>setOffer</code> and <code>touched()</code>, the reworded outcome message, the "To beat" flag and Details line, locked lanes, the playable document to the worker and to Publish, and a money policy made from a preset carrying the preset's id: <code>game-sim</code>.</li>
       <li>The save sync's behaviour and the account offer's content: <code>game-save</code>.</li>

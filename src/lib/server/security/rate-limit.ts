@@ -1,6 +1,6 @@
-// Rate limiting over the Workers rate-limit bindings (PUBLISH_RL, the auth and invite limiters).
-// development (e2e preview, local dev) always allows.
-import { error } from '@sveltejs/kit';
+// Rate limiting over the Workers rate-limit bindings: PUBLISH_RL, AUTH_LINK_RL,
+// AUTH_PASSWORD_RL, PSEUDO_MINT_RL, ACCOUNT_EDIT_RL, and MUTATION_REGISTERED_RL for saved
+// games. development (e2e preview, local dev) always allows.
 
 export type RateLimiter = { limit(opts: { key: string }): Promise<{ success: boolean }> };
 
@@ -35,21 +35,4 @@ export async function enforceRate(
   }
   const { success } = await limiter.limit({ key });
   return success;
-}
-
-/** Canonical 429 copy per rate-bucket family. */
-export const RATE_LIMIT_MESSAGES = {
-  invites: 'Too many invites too quickly. Please slow down.'
-} as const;
-
-/** enforceRate for JSON mutation routes: throws the route's 429 itself on a hit. */
-export async function enforceMutationRate(
-  event: { platform?: App.Platform },
-  key: string,
-  opts: { limiter: RateLimiter | undefined; message: string; critical?: boolean }
-): Promise<void> {
-  const ok = await enforceRate(opts.limiter, key, event.platform!.env, {
-    critical: opts.critical
-  });
-  if (!ok) throw error(429, opts.message);
 }

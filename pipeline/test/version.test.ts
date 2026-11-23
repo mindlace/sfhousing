@@ -91,10 +91,8 @@ describe('codeTreeHash', () => {
     ['src/lib/generator', 'src/lib/generator/gen.ts'],
     ['src/lib/timelapse', 'src/lib/timelapse/time.ts'],
     ['src/lib/plan/types.ts', 'src/lib/plan/types.ts'],
-    ['src/lib/sim/scenario', 'src/lib/sim/scenario/engine.ts'],
-    ['src/lib/sim/levers', 'src/lib/sim/levers/apply.ts'],
-    ['src/lib/sim/finance', 'src/lib/sim/finance/prototypes.ts'],
-    ['src/lib/scoreboard', 'src/lib/scoreboard/index.ts']
+    ['src/lib/config.ts', 'src/lib/config.ts'],
+    ['src/lib/sim/finance', 'src/lib/sim/finance/prototypes.ts']
   ])('codeTreeHash changes when a file under %s changes', async (_label, file) => {
     const { dir, git } = tempRepo();
     const clean = await codeTreeHash(dir);
@@ -105,6 +103,17 @@ describe('codeTreeHash', () => {
     const committed = await codeTreeHash(dir);
     expect(committed).not.toBe(clean);
     expect(committed).not.toBe(dirty);
+  });
+  it.each([
+    'src/lib/sim/scenario/engine.ts',
+    'src/lib/sim/levers/apply.ts',
+    'src/lib/scoreboard/index.ts'
+  ])('codeTreeHash ignores a change to %s', async (file) => {
+    const { dir, git } = tempRepo();
+    const clean = await codeTreeHash(dir);
+    writeFileSync(join(dir, file), 'export const changed = 1;\n');
+    git('commit', '-q', '-am', 'change');
+    expect(await codeTreeHash(dir)).toBe(clean);
   });
   it('does not cover other sim code', async () => {
     const { dir, git } = tempRepo();
@@ -120,13 +129,13 @@ describe('treeHash refactor', () => {
     // Values computed with the pre-refactor codeTreeHash on this fixed temp repo state.
     const { dir } = tempRepo();
     expect(await codeTreeHash(dir)).toBe(
-      '80e040f68e7c955600718bf2b975a1c0d6c62b3e100caedfdfe3e4da0df90dc5'
+      '5a89e8309b76d99eb074bf2f03abdbabb2743b6eb8882c8250f39f0e287fc0fe'
     );
     writeFileSync(join(dir, 'pipeline/a.ts'), 'export const a = 2;\n');
     writeFileSync(join(dir, 'pipeline/new.ts'), 'export const n = 1;\n');
     writeFileSync(join(dir, 'pipeline/sources.lock.json'), '{}\n');
     expect(await codeTreeHash(dir)).toBe(
-      '80e040f68e7c955600718bf2b975a1c0d6c62b3e100caedfdfe3e4da0df90dc5' +
+      '5a89e8309b76d99eb074bf2f03abdbabb2743b6eb8882c8250f39f0e287fc0fe' +
         '33c7af423bbd34db2bd634dbdc009ffe7e642a922904ccaba46f44f58f2f53f2' +
         'e22445c7c5ef7b19b64996dfd7c78b39a0f9436fb265185ae056d4f7b93f51a2'
     );

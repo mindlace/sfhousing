@@ -1,8 +1,7 @@
 import { isE2eEnv } from './env';
 
 /** The mails whose link an e2e test must follow but no HTTP response carries. */
-export type E2eMailKind =
-  'password-reset' | 'change-email-approve' | 'change-email-verify' | 'invite';
+export type E2eMailKind = 'password-reset' | 'change-email-approve' | 'change-email-verify';
 
 /** In-process record of the latest link per kind and address. e2e runs one worker, so a
  *  module-level map is shared by the request that sends and the request that reads. */

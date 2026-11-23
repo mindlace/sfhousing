@@ -1,0 +1,10 @@
+Build graph @ 3807f089
+
+Longest chain: contracts -> finite-funding -> pool-closing -> reach-check -> closing
+Longest chain: remove-lesscars -> finite-funding -> pool-closing -> reach-check -> closing
+Longest chain: contracts -> finite-funding -> pool-closing -> funding-measures -> closing
+Longest chain: remove-lesscars -> finite-funding -> pool-closing -> funding-measures -> closing
+
+These rows break the graph rule that two units able to run together never write the same file. `game-sim` and `game-shell` now both write `src/routes/s/[id]/page.view.svelte.spec.ts`: `game-sim` deletes one hand-off case and `game-shell` owns the rest. The design doc says the two can run together and that whichever merges second keeps `game-shell`'s Remix tests. Both rows state that merge rule.
+
+Ordering them would follow the rule, but it would need an edge that names no interface row, because neither unit produces one for the other.

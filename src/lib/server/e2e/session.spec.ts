@@ -7,9 +7,38 @@ import {
   SESSION_MAX_AGE_SECONDS,
   sessionCookieName,
   mintTestUser,
+  mintTestPseudonym,
   issueTestSession
 } from './session';
 import { resolveSessionUser } from '$lib/server/user-store/user';
+import { PSEUDONYMOUS_EMAIL_DOMAIN } from '$lib/server/auth/brand';
+import { skeleton } from '$lib/server/user-store/confusable-skeleton';
+
+describe('mintTestPseudonym', () => {
+  it('mintTestPseudonym writes an anonymous user with the pseudonymous email domain and a unique handle', async () => {
+    const { db } = freshDb();
+    const now = new Date();
+    const { userId, identityId } = await mintTestPseudonym(db, now);
+    const other = await mintTestPseudonym(db, now);
+
+    const [identity] = await db.select().from(userIdentity).where(eq(userIdentity.id, identityId));
+    expect(identity).toBeTruthy();
+    const [live] = await db.select().from(user).where(eq(user.id, userId));
+    expect(live).toMatchObject({
+      userIdentity: identityId,
+      isAnonymous: true,
+      emailVerified: false,
+      // Lower-cased, as Better-Auth stores every email and looks it up on sign-in.
+      email: `${userId}@${PSEUDONYMOUS_EMAIL_DOMAIN}`.toLowerCase()
+    });
+    expect(live.handle).toBeTruthy();
+    expect(live.name).toBe(live.handle);
+    expect(live.handleSkeleton).toBe(skeleton(live.handle!));
+    const [otherLive] = await db.select().from(user).where(eq(user.id, other.userId));
+    expect(live.handle).not.toBe(otherLive.handle);
+    expect((await resolveSessionUser(db, userId))!.pseudonymous).toBe(true);
+  });
+});
 
 describe('mintTestUser', () => {
   it('creates a stable identity + a registered live user row', async () => {

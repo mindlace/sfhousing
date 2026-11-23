@@ -1,5 +1,5 @@
 // The map citywide on /sim: the feed carries a marker for every project, one diamond an area shows
-// below zoom 14, and bars are in far mode. /lesscars and Paint stay as they were: street bars.
+// below zoom 14, and bars are in far mode. Paint stays as it was: street bars.
 // Reads the map's debug snapshot (window.__sfhMap.timelineSnapshot) and the playhead
 // (window.__sfhFzp), never pixels. Runs against the VITE_E2E build on fixture-0.
 import { expect, test, type Locator, type Page } from '@playwright/test';
@@ -120,20 +120,6 @@ test('/sim: axe clean with the key open, light and dark', async ({ page }) => {
     await openKey(page);
     await expectNoA11yViolations(page, { include: '[data-testid="map-key-control"]' });
   }
-});
-
-test('/lesscars keeps street bars and draws no city feed', async ({ page }) => {
-  await page.emulateMedia({ reducedMotion: 'reduce' });
-  await gotoHydrated(page, '/lesscars');
-  await expect(page.getByTestId('map-root')).toHaveAttribute('data-state', 'ready');
-  await page.waitForFunction(() => {
-    const s = (window as Win).__sfhMap?.timelineSnapshot();
-    return !!s && s.cells > 0 && s.pending === 0;
-  });
-  const s = (await snap(page))!;
-  expect(s.barMode).toBe('street');
-  expect(s.cityMarkers).toBe(0);
-  expect(s.layerIds).not.toContain('timeline-city');
 });
 
 test('Paint draws no timeline: no bars', async ({ page }) => {

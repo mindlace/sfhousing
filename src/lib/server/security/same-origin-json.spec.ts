@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SIMS_COPY } from '$lib/members/copy';
+import { AUTH_COPY } from '$lib/account/copy';
 import { refuseForeignOrigin, refuseUnlessSameOriginJson } from './same-origin-json';
 
 function check(headers: Record<string, string>) {
@@ -23,7 +23,7 @@ describe('refuseUnlessSameOriginJson', () => {
   it('answers 415 with no content type', async () => {
     const res = check({})!;
     expect(res.status).toBe(415);
-    expect(await res.json()).toEqual({ error: SIMS_COPY.jsonRequired });
+    expect(await res.json()).toEqual({ error: AUTH_COPY.jsonRequired });
   });
 
   it('answers 415 for a form content type', () => {
@@ -33,7 +33,7 @@ describe('refuseUnlessSameOriginJson', () => {
   it('answers 403 for a foreign Origin', async () => {
     const res = check({ 'content-type': 'application/json', origin: 'https://evil.example' })!;
     expect(res.status).toBe(403);
-    expect(await res.json()).toEqual({ error: SIMS_COPY.crossOrigin });
+    expect(await res.json()).toEqual({ error: AUTH_COPY.crossOrigin });
   });
 
   it('answers 403 for the string Origin "null" (an opaque origin)', () => {
