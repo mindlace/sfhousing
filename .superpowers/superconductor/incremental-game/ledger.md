@@ -1,6 +1,6 @@
 # Superconductor ledger — design: docs/superpowers/design/2026-11-22-1216-incremental-game.html
 Package worktree: /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game
-Build graph: docs/superpowers/design/2026-11-22-1216-incremental-game-build-graph.md @ 752486fa
+Build graph: docs/superpowers/design/2026-11-22-1216-incremental-game-build-graph.md @ d1e210bc
 SDD scripts: /Users/mindlace/.claude/plugins/cache/claude-plugins-official/superpowers/7.0.2/skills/subagent-driven-development/scripts
 HTML scripts: /Users/mindlace/.claude/plugins/cache/super/superpowers-html/0.1.0/bin
 Project commands: npm, npx, lsof, ls, cat, grep, head, tail, wc, pwd, uptime, mkdir (mail-setup only, also: aws); operators run with --permission-mode dontAsk
@@ -222,6 +222,9 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - game-core: incremental-game-game-core — status: complete (admit message sent at a333bd83; branch incremental-game-game-core, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-game-core, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus, needs: G1–G5, S2, S3, X1 (merged), produces: G1–G5 (built))
 - game-shell: incremental-game-game-shell — status: complete (relaunched 23:30 as admitted from its plan, tasks 1 to 6 and 8; branch incremental-game-game-shell brought up to f435a2da, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-game-shell, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus, needs: G1–G5 built, X1, L1 (all merged), produces: none)
 - game-save: incremental-game-game-save — status: complete (admit message sent 22:15 at bc3d9bc0; branch incremental-game-game-save, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-game-save, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus, needs: I1, G2 built, S1–S3, X1 (all merged), produces: S1, S2, S3 (built))
+- pool-closing: incremental-game-pool-closing — status: admitted (branch incremental-game-pool-closing, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-pool-closing, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus — rationale: engine funding system change with determinism and cost bounds, needs: F2 from finite-funding (not merged yet), produces: F3)
+- game-sim: incremental-game-game-sim — status: admitted (branch incremental-game-game-sim, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-game-sim, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus — rationale: largest consumer of game rows on /sim, needs: G1–G5 built from game-core (not merged yet); F2 from finite-funding (not merged yet); M1 signature, X1 from contracts (not merged yet), produces: none)
+- game-shell: incremental-game-game-shell — status: admitted (relaunched 23:30 as admitted from its plan, tasks 1 to 6 and 8; branch incremental-game-game-shell brought up to f435a2da, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-game-shell, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus, needs: G1–G5 built, X1, L1 (all merged), produces: none)
 
 ## Supervision
 - status asked remove-lesscars
@@ -293,6 +296,13 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - game-core was resting when conductor-13 was routed: relaunched (no rung) with its plan and sent the ruling as a fix round.
 - 23:40 told game-save that game-core's store change merged (integration green at 09e29933): it builds its Task 8 (ruling conductor-13) and re-sends complete.
 - hand-offs from finite-funding's completion report, to put in the first message to each unit: (a) funding-measures: City amounts leave out `once` inflows in two places (baselineGroups and FundingGroupEditor poolPerYear), so city-debt and impact fees read "$0 a year"; finite-funding also wrote outside its line list in e2e/sim-funding.spec.ts (hover step in test 4, about lines 329-334) and pinned PolicySummary.svelte.spec.ts. (b) game-sim: finite-funding removed dead funds/fundsOf4 from TimelineMode.svelte. (c) reach-check: the two spent sources leave every bundle, so live coverage is about 96.9% (fixture-0 94.8%) and baseline affordable starts depend on odds; F1 handback at assignments/finite-funding.f1-handback.md. (d) closing: stale docs docs/dev/pipeline.md:315 (federal.uncapped), finance-score.md I6 lines, testing.md:44, timeline-ui.md:40, sim-funding.md:134 (copy.ts to money-copy.ts); memo.spec live hashes stale until the live dataset is rebuilt; the dataset version moved with funding.json, upload before signoff.
+- relaunched pool-closing
+- relaunched game-sim
+- resent to incremental-game-pool-closing
+- resent to incremental-game-game-sim
+- 2026-11-23 01:55 pool-closing and game-sim relaunched as admitted from their plans at the tested head 924abcbd (F2 merged), each with a first message listing the rulings it missed; pool-closing's list adds `SFH_WORLD_FUNDING_REFEREE=1 npx|npm` for the referee run. Band low (67%).
+- relaunched game-shell
+- resent to incremental-game-game-shell
 
 ## Questions
 - 2026-11-22 conductor-1 from conductor [defect-class: owner-ruling-drift]: gate-1, a policy already saved in the browser becomes a level-1 game, and every kind in it is locked (major) → rulings/conductor-1.md (commit 7fbb5e32, changes contract: no)
@@ -471,7 +481,11 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - relayed finite-funding-2 to incremental-game-funding-measures (not delivered: resting; F2 row text only, owed in its restart's resends)
 - relayed finite-funding-2 to incremental-game-pool-closing (not delivered: resting; F2 row text only, owed in its restart's resends)
 - routed finite-funding-2
-- 2026-11-23 conductor-14 from conductor [defect-class: flaky-e2e]: e2e/share-states.spec.ts:157 and e2e/game-shell.spec.ts:117 each failed once and passed on retry after game-shell merged; test races or page races, and who fixes them →
+- 2026-11-23 conductor-14 from conductor [defect-class: flaky-e2e]: e2e/share-states.spec.ts:157 and e2e/game-shell.spec.ts:117 each failed once and passed on retry after game-shell merged; test races or page races, and who fixes them → rulings/conductor-14.md (commit 004ddfa3, changes contract: no)
+- routing conductor-14: rulings/conductor-14.md, commit 004ddfa3
+- build graph for conductor-14 @ d1e210bc
+- relayed conductor-14 to incremental-game-game-shell
+- routed conductor-14
 
 ## Forks
 - fork checkpoint-2 started 2026-11-22T16:20
@@ -649,6 +663,11 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - fork checkpoint-14 started 2026-11-23T00:22
 - fork checkpoint-14 exited [0]: output
 - fork review-finite-funding-df556eab started 2026-11-23T01:38
+- fork review-finite-funding-df556eab exited [0]: output
+- fork rule-conductor-14 started 2026-11-23T01:40
+- fork rule-conductor-14 exited [0]: output
+- fork graph-conductor-14 started 2026-11-23T01:41
+- fork graph-conductor-14 exited [0]: output
 
 ## Frame-defect tally
 - owner-ruling-drift: 2 — instances: conductor-1 (gate-1, 2026-11-22); conductor-8 (gate-7, 2026-11-22)
@@ -740,6 +759,8 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - 2026-11-23 01:35 merge of finite-funding rows F1 + F2 @ df556eab made onto d58c6453 (merge commit 64413ada), suite running (agent; scratchpad `merge-finite-funding/`); not merged until it passes; on failure reset to d58c6453 with ledger.md copied out and back.
 - finite-funding sent `complete` @ 5fd73c92 (docs and test titles only on top of df556eab; final whole-branch review clean). Merge queue: 5fd73c92 after the suite on the df556eab merge, and after pool-closing and game-sim are relaunched from that tested head.
 - merged finite-funding [row F1] [row F2] @ df556eab into superconductor/incremental-game, tests pass (check 0 errors; lint 0 errors; unit 9059 passed; pipeline 2284 passed; e2e 761 passed, 0 failed, 1 flaky: e2e/game-shell.spec.ts:117, question conductor-14), band low
+- No drift @ df556eab (review-finite-funding-df556eab)
+- ruling conductor-14 reopens game-shell for a test-only fix round (hydration and waitForMap waits in its remix e2e cases); it was resting, so relaunched (no rung) with the ruling; it re-sends complete.
 
 ## Cost
 - remove-lesscars: admitted 2026-11-22T16:31 seven_day 44% | session d889ec5c-3342-4a77-99f8-993f1115a679 | finished 2026-11-22T21:14 seven_day 60%
