@@ -214,6 +214,7 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - game-core: incremental-game-game-core — status: complete (admit message sent at a333bd83; branch incremental-game-game-core, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-game-core, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus, needs: G1–G5, S2, S3, X1 (merged), produces: G1–G5 (built))
 - game-shell: incremental-game-game-shell — status: admitted (relaunched 23:30 as admitted from its plan, tasks 1 to 6 and 8; branch incremental-game-game-shell brought up to f435a2da, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-game-shell, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus, needs: G1–G5 built, X1, L1 (all merged), produces: none)
 - finite-funding: incremental-game-finite-funding — status: admitted (admit message sent 23:30 at f435a2da; branch incremental-game-finite-funding, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-finite-funding, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus, needs: L1, M1 stub (merged), produces: F1, F2)
+- game-save: incremental-game-game-save — status: complete (admit message sent 22:15 at bc3d9bc0; branch incremental-game-game-save, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-game-save, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus, needs: I1, G2 built, S1–S3, X1 (all merged), produces: S1, S2, S3 (built))
 
 ## Supervision
 - status asked remove-lesscars
@@ -600,6 +601,7 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - fork rule-finite-funding-1 exited [0]: output
 - fork graph-finite-funding-1 started 2026-11-22T21:51
 - fork graph-finite-funding-1 exited [0]: output
+- fork review-game-save-8a71ea14 started 2026-11-22T22:49
 
 ## Frame-defect tally
 - owner-ruling-drift: 2 — instances: conductor-1 (gate-1, 2026-11-22); conductor-8 (gate-7, 2026-11-22)
@@ -672,6 +674,8 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - No drift @ 29ae2ad3 (review-game-core-29ae2ad3)
 - game-save row S2 @ 8ab1c25c reported: held with S1, to merge at its complete (only `closing` consumes them).
 - game-save row S3 @ 11f902b5 reported (S1, S2, S3 all reported): merges at its `complete`, one suite.
+- 22:40 merge of game-save complete (rows S1, S2, S3) @ 8a71ea14 made onto f499541e (merge commit aa6f944c), suite running (agent; scratchpad `merge-game-save/`); not merged until it passes; on failure reset to f499541e with ledger.md copied out and back. No "merge the integration branch" message until it reports. For closing, from its report: docs/dev/deploy.md:55 and developing.md:39 still say AUTH_METHODS=magic-link.
+- merged game-save [row S1] [row S2] [row S3] @ 8a71ea14 into superconductor/incremental-game, tests pass (check 0 errors; lint 0 errors; unit 8959 passed; pipeline 2266 passed; e2e 752 passed, 0 failed, 0 flaky), band low. Preview stderr in that run, for closing's signoff: Better Auth `Reset Password: User not found` and `Invalid password` warnings, the devalue ignored-bare-import warning, and the expected 404 blocks.
 
 ## Cost
 - remove-lesscars: admitted 2026-11-22T16:31 seven_day 44% | session d889ec5c-3342-4a77-99f8-993f1115a679 | finished 2026-11-22T21:14 seven_day 60%
@@ -680,7 +684,7 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - contracts: admitted 2026-11-22T16:33 seven_day 44% | session 343d79b0-ac75-4280-b643-22398f92f1a8 | finished 2026-11-22T17:56 seven_day 50%
 - game-core: admitted 2026-11-22T16:52 seven_day 46% | session 06c0c65b-cf92-457a-a525-9c4374e4a0b3 | finished 2026-11-22T21:14 seven_day 60%
 - finite-funding: admitted 2026-11-22T16:53 seven_day 46% | session 7949d97c-2f16-4c76-b641-a1b2d697d55f
-- game-save: admitted 2026-11-22T16:53 seven_day 46% | session 62b87f0c-3aa2-4671-b8da-e0ac391e2ac6
+- game-save: admitted 2026-11-22T16:53 seven_day 46% | session 62b87f0c-3aa2-4671-b8da-e0ac391e2ac6 | finished 2026-11-22T22:49 seven_day 64%
 - game-shell: admitted 2026-11-22T16:54 seven_day 46% | session d156765a-2f62-4dbb-8145-6b1ae8d620d8
 - game-sim: admitted 2026-11-22T16:54 seven_day 46% | session 1f8bf796-225b-48c5-9f3e-c7e5bde5214b
 - funding-measures: admitted 2026-11-22T16:55 seven_day 46% | session a331388a-a2ba-4e3e-b829-db463a3b8c39
