@@ -1,6 +1,6 @@
 # Superconductor ledger — design: docs/superpowers/design/2026-11-22-1216-incremental-game.html
 Package worktree: /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game
-Build graph: docs/superpowers/design/2026-11-22-1216-incremental-game-build-graph.md @ a693285d
+Build graph: docs/superpowers/design/2026-11-22-1216-incremental-game-build-graph.md @ da5ca46a
 SDD scripts: /Users/mindlace/.claude/plugins/cache/claude-plugins-official/superpowers/7.0.2/skills/subagent-driven-development/scripts
 HTML scripts: /Users/mindlace/.claude/plugins/cache/super/superpowers-html/0.1.0/bin
 Project commands: npm, npx, lsof, ls, cat, grep, head, tail, wc, pwd, uptime, mkdir (mail-setup only, also: aws); operators run with --permission-mode dontAsk
@@ -23,6 +23,7 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - e3b9bcc4-2648-44a3-a40a-b19b12c28196 | model opus | package @ 5f2c8d4d | 2026-11-22 | ruling conductor-13
 - 4891e372-8da1-41cc-8fca-2ead83e76b2c | model opus | package @ 752486fa | 2026-11-23 | ruling finite-funding-2
 - f6605ed3-3ecf-4134-8ac7-679f1c3e0b68 | model opus | package @ 00bede63 | 2026-11-23 | ruling game-sim-2
+- d18e8c4d-8447-4d8d-a2de-233b0dc8edb9 | model opus | package @ da5ca46a | 2026-11-23 | ruling game-sim-3
 
 ## 2026-11-22 — composition started (supercomposer, fresh)
 
@@ -530,6 +531,12 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - build graph for funding-measures-1 @ a693285d
 - relayed funding-measures-1 to incremental-game-funding-measures
 - routed funding-measures-1
+- 2026-11-23 game-sim-3 from game-sim [defect-class: write-set-gap]: e2e/sim-funding.spec.ts:557 finds the bond bar by its pool label "Housing bond", but § sec-design-given makes the policy label the preset's "A housing bond"; one line in funding-measures' file; holds its fix round → rulings/game-sim-3.md (commit 1a991821, changes contract: no)
+- routing game-sim-3: rulings/game-sim-3.md, commit 1a991821
+- build graph for game-sim-3 @ da5ca46a
+- relayed game-sim-3 to incremental-game-game-sim
+- relayed game-sim-3 to incremental-game-funding-measures
+- routed game-sim-3
 
 ## Forks
 - fork checkpoint-2 started 2026-11-22T16:20
@@ -740,6 +747,12 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - fork rule-funding-measures-1 exited [0]: output
 - fork graph-funding-measures-1 started 2026-11-23T04:21
 - fork graph-funding-measures-1 exited [0]: output
+- fork rule-game-sim-3 started 2026-11-23T04:43
+- fork rule-game-sim-3 exited [0]: output
+- fork graph-game-sim-3 started 2026-11-23T04:44
+- fork graph-game-sim-3 exited [0]: output
+- fork checkpoint-16 started 2026-11-23T04:45
+- fork checkpoint-16 exited [0]: output
 
 ## Frame-defect tally
 - owner-ruling-drift: 2 — instances: conductor-1 (gate-1, 2026-11-22); conductor-8 (gate-7, 2026-11-22)
@@ -772,6 +785,7 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - write-set-gap: 7 — adds pool-closing-3 (2026-11-23)
 - spec-silence: 8 — adds pool-closing-4 (2026-11-23)
 - source-evidence: 2 — adds funding-measures-1 (2026-11-23)
+- write-set-gap: 8 — adds game-sim-3 (2026-11-23)
 
 ## Integration
 - 17:50 merge of contracts @ f6ee1de3 made (merge commit 5453b107), full suite running in the package worktree (agent; logs in the session scratchpad `merge-contracts/`); not ledgered as merged until it passes. No amending fork starts until then; queued questions in order: remove-multiuser-1, game-core-1, game-core-2, game-core-3, game-sim-1, pool-closing-1, conductor-10, conductor-11. Then merge remove-multiuser's row I1 @ cbd11881.
@@ -856,6 +870,7 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - reach-check row "G4's build check" (scripts/level2-check.ts) @ 4bc49b57 reported: the script passed review; its run on a built dataset and the verdict come with `complete`. Held to merge at complete (only closing consumes it).
 - 06:50 suite on the game-sim merge failed: check, lint, unit 9170, pipeline 2284 pass; e2e 768 passed, 2 failed (one test on both projects, also failing alone), 1 flaky under load (e2e/layout.spec.ts:494 mobile, added to the flake watch list). Merge taken back out with `git reset --hard a5c45f6e` (ledger restored from a copy). No older /sim spec met a locked page.
 - fix round game-sim @ 4efdebea: e2e/sim-funding.spec.ts:524 "8. a published policy lists its public money" fails on /s/<id>: Public money is expanded with a count of 2 but no "Housing bond" fund card button is found (spec line 559); output fixrounds/game-sim-4efdebea.txt
+- reach-check sent `complete` @ d0245c1b. Its live run on dataset 2026-11-14-3a25a7ad (doctor, fetch --restore, full build, check all pass) exits 0: "Goal: 82,069 homes by Oct 2066 / Reached: Apr 2065, 18 months before the window's end" (the operator's numbers; closing runs the script again on the dataset it builds). D1 holds on this build. Merge queued after the game-sim-3 fork exits. For closing: src/lib/map/hide-diff.spec.ts times out at 5 s in the full server run under load (passes alone); the check prints singular "1 month" for a one-month margin.
 
 ## Cost
 - remove-lesscars: admitted 2026-11-22T16:31 seven_day 44% | session d889ec5c-3342-4a77-99f8-993f1115a679 | finished 2026-11-22T21:14 seven_day 60%
