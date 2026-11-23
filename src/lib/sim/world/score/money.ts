@@ -15,8 +15,8 @@ import type { MoneyFeed, MoneyRow } from './types';
  * with no off spans, which `poolSeries` does not read. Each pool's `closed` and `shut` are read
  * from the world's shut rows at the last day of the month: `closed` is the first shut row's
  * `shutFrom` once its spent day (`shutFrom - 1`) is within the month, `shut` holds while some such
- * row is not yet open again; a world without funding columns gives null and false. `publicSpent` is `spent + lostCredit` over
- * every pool, summed as `moneyOf` sums it.
+ * row is not yet open again; a world without funding columns gives null and false. `publicSpent`
+ * is `spent + lostCredit` over every pool, summed as `moneyOf` sums it.
  */
 export function moneyRowsOf(
   feed: MoneyFeed,

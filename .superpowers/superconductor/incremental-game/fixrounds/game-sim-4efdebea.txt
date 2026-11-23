@@ -1,0 +1,120 @@
+  ✘  1 [mobile] › e2e/sim-funding.spec.ts:524:1 › 8. a published policy lists its public money (30.1s)
+  ✘  2 [chromium] › e2e/sim-funding.spec.ts:524:1 › 8. a published policy lists its public money (30.1s)
+  ✘  3 [mobile] › e2e/sim-funding.spec.ts:524:1 › 8. a published policy lists its public money (retry #1) (30.1s)
+  ✘  4 [chromium] › e2e/sim-funding.spec.ts:524:1 › 8. a published policy lists its public money (retry #1) (30.1s)
+
+
+  1) [chromium] › e2e/sim-funding.spec.ts:524:1 › 8. a published policy lists its public money ─────
+
+    Test timeout of 30000ms exceeded.
+
+    Error: locator.click: Test timeout of 30000ms exceeded.
+    Call log:
+      - waiting for getByRole('button', { name: /, Housing bond, / }).last()
+
+
+      557 |     .getByRole('button', { name: new RegExp(`, ${esc(pool.label)}, `) })
+      558 |     .last()
+    > 559 |     .click();
+          |      ^
+      560 |   const fund = editor(page).getByRole('region', { name: 'Public money' });
+      561 |   await expect(fund).toContainText(pool.label);
+      562 |   await expect(fund).toContainText(programmeSentence(g, pool));
+        at /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game/e2e/sim-funding.spec.ts:559:6
+
+    Error Context: test-results/sim-funding-8-a-published-policy-lists-its-public-money-chromium/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/sim-funding-8-a-published-policy-lists-its-public-money-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/sim-funding-8-a-published-policy-lists-its-public-money-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Test timeout of 30000ms exceeded.
+
+    Error: locator.click: Test timeout of 30000ms exceeded.
+    Call log:
+      - waiting for getByRole('button', { name: /, Housing bond, / }).last()
+
+
+      557 |     .getByRole('button', { name: new RegExp(`, ${esc(pool.label)}, `) })
+      558 |     .last()
+    > 559 |     .click();
+          |      ^
+      560 |   const fund = editor(page).getByRole('region', { name: 'Public money' });
+      561 |   await expect(fund).toContainText(pool.label);
+      562 |   await expect(fund).toContainText(programmeSentence(g, pool));
+        at /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game/e2e/sim-funding.spec.ts:559:6
+
+    Error Context: test-results/sim-funding-8-a-published-policy-lists-its-public-money-chromium-retry1/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/sim-funding-8-a-published-policy-lists-its-public-money-chromium-retry1/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/sim-funding-8-a-published-policy-lists-its-public-money-chromium-retry1/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  2) [mobile] › e2e/sim-funding.spec.ts:524:1 › 8. a published policy lists its public money ───────
+
+    Test timeout of 30000ms exceeded.
+
+    Error: locator.click: Test timeout of 30000ms exceeded.
+    Call log:
+      - waiting for getByRole('button', { name: /, Housing bond, / }).last()
+
+
+      557 |     .getByRole('button', { name: new RegExp(`, ${esc(pool.label)}, `) })
+      558 |     .last()
+    > 559 |     .click();
+          |      ^
+      560 |   const fund = editor(page).getByRole('region', { name: 'Public money' });
+      561 |   await expect(fund).toContainText(pool.label);
+      562 |   await expect(fund).toContainText(programmeSentence(g, pool));
+        at /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game/e2e/sim-funding.spec.ts:559:6
+
+    Error Context: test-results/sim-funding-8-a-published-policy-lists-its-public-money-mobile/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/sim-funding-8-a-published-policy-lists-its-public-money-mobile/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/sim-funding-8-a-published-policy-lists-its-public-money-mobile/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Test timeout of 30000ms exceeded.
+
+    Error: locator.click: Test timeout of 30000ms exceeded.
+    Call log:
+      - waiting for getByRole('button', { name: /, Housing bond, / }).last()
+
+
+      557 |     .getByRole('button', { name: new RegExp(`, ${esc(pool.label)}, `) })
+      558 |     .last()
+    > 559 |     .click();
+          |      ^
+      560 |   const fund = editor(page).getByRole('region', { name: 'Public money' });
+      561 |   await expect(fund).toContainText(pool.label);
+      562 |   await expect(fund).toContainText(programmeSentence(g, pool));
+        at /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game/e2e/sim-funding.spec.ts:559:6
+
+    Error Context: test-results/sim-funding-8-a-published-policy-lists-its-public-money-mobile-retry1/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/sim-funding-8-a-published-policy-lists-its-public-money-mobile-retry1/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/sim-funding-8-a-published-policy-lists-its-public-money-mobile-retry1/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  2 failed
+    [chromium] › e2e/sim-funding.spec.ts:524:1 › 8. a published policy lists its public money ──────

@@ -22,7 +22,7 @@ import {
 } from '../funding/test/fixtures';
 import type { PolicyTimeline } from '../policy/frame';
 import { miniDoc, span } from '../policy/test/fixtures';
-import { monthFirstDay } from '../months';
+import { monthFirstDay, monthOfDay } from '../months';
 import { staticsOf, type Statics } from '../statics';
 import { readAll } from '../test/run';
 import { NO_DAY, type FundingSystem, type World, type WorldEvent } from '../types';
@@ -474,6 +474,59 @@ describe('plan world money, a pool that closes and opens', () => {
     });
     // It reads shut, open, then shut again.
     expect(shutSeen.join()).toMatch(/true.*false.*true/);
+  });
+
+  it('a pool found spent in month m and opened in month m + 1: closed holds, rows stay final', () => {
+    const input = fundedMini();
+    const asOf = input.asOf;
+    const once = (d: Day, dollars: number) => ({ kind: 'once' as const, day: d, dollars });
+    const first = [once(monthFirstDay(asOf, 2), ONE_PROJECT)];
+    const mineOf = (w: World): { from: Day; to: Day }[] => {
+      const p = fundOf(w).pools;
+      const out: { from: Day; to: Day }[] = [];
+      for (let k = 0; k < p.shutN; k++)
+        if (p.id[p.shutRow[k]] === CLOSE_POOL) out.push({ from: p.shutFrom[k], to: p.shutTo[k] });
+      return out;
+    };
+    // The month m whose step finds CLOSE_POOL spent under one span.
+    const one = miniDoc(closingPolicy(asOf, [{ from: 1, to: null, inflows: first }]), TERMS);
+    const m = monthOfDay(asOf, mineOf(run(cityOf(input, 120, one), 1).world)[0].from - 1);
+    const doc = miniDoc(
+      closingPolicy(asOf, [
+        { from: 1, to: m, inflows: first },
+        { from: m + 1, to: null, inflows: [once(monthFirstDay(asOf, m + 1), ONE_PROJECT)] }
+      ]),
+      TERMS
+    );
+    const F = monthFirstDay(asOf, m + 1);
+    const afterM = run(cityOf(input, m, doc), 1);
+    const afterM1 = run(cityOf(input, m + 1, doc), 1);
+    expect(mineOf(afterM.world)).toEqual([{ from: F, to: NO_DAY }]);
+    expect(mineOf(afterM1.world)).toEqual([{ from: F, to: F }]);
+    // The calendar month holding the last day of month m (the spent day F - 1), and whether it
+    // ends on that day.
+    const horizon = lastDay(asOf, 240);
+    const spent = monthIndexer(monthsOf(asOf, horizon), horizon)(F - 1);
+    const ends = lastDay(asOf, spent) === F - 1;
+    // A money row made final after step m reads the same after step m + 1 (that calendar month's
+    // among them when it ends on F - 1).
+    const through = afterM.series.finalThrough();
+    expect(through >= spent).toBe(ends);
+    expect(afterM1.series.finalThrough()).toBeGreaterThanOrEqual(through);
+    expect(moneyRowsOf(afterM1.feed, extrasOf(afterM1.series), 0, through)).toEqual(
+      moneyRowsOf(afterM.feed, extrasOf(afterM.series), 0, through)
+    );
+    // The view: closed holds F; shut only in that calendar month, when it ends on F - 1.
+    const c = cityOf(input, m + 4, doc);
+    const r = run(c, 1);
+    const last = r.series.finalThrough();
+    expect(last).toBeGreaterThanOrEqual(spent);
+    const money = viewOf([chunkOf(r.series, r.series, r.feed, 0, last)], c.score).money!;
+    expect(money.closed[CLOSE_POOL]).toBe(F);
+    // Up to a later closing of it, if any.
+    const again = mineOf(r.world)[1]?.from ?? Infinity;
+    for (let i = 0; i <= last && lastDay(asOf, i) < again - 1; i++)
+      expect(money.shut[CLOSE_POOL][i]).toBe(i === spent && ends);
   });
 });
 

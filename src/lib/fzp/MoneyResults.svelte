@@ -21,6 +21,7 @@
     allLine,
     bySourceColumns,
     cityLine,
+    closedPools,
     displacementLine,
     fundedLine,
     limitLines,
@@ -60,6 +61,7 @@
   const owed = $derived(money ? owedLines(money, i) : []);
   const limits = $derived(money ? limitLines(money.limits) : []);
   const city = $derived(m ? cityLine(m) : null);
+  const closed = $derived(money ? closedPools(money, at) : []);
 
   const tiers = $derived(score.tiers ?? null);
   const t = $derived(tiers ? tiersAt(tiers, i) : null);
@@ -82,6 +84,9 @@
       <p class="mt-1 tabular-nums" data-testid="fzp-money-city">{city}</p>
     {/if}
     <p class="tabular-nums" data-testid="fzp-money-all">{allLine(m, money.publicSpent[i])}</p>
+    {#each closed as c (c.id)}
+      <p class="tabular-nums" data-testid="fzp-money-closed">{c.line}</p>
+    {/each}
     <button
       type="button"
       class="mt-1 {button}"

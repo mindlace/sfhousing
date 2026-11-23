@@ -247,8 +247,9 @@ export function addShutRow(pools: FundPools, q: number, from: Day): void {
 }
 
 /**
- * Sets `shutTo = to` on pool row q's open shut row and `closedDay[q] = NO_DAY`; a row whose
- * `shutTo` equals its `shutFrom` is removed, keeping the order of the rest. Throws when q is open.
+ * Sets `shutTo = to` on pool row q's open shut row and `closedDay[q] = NO_DAY`. The row stays, even
+ * when `shutTo` equals its `shutFrom` (it then closes no month): the history only grows. Throws
+ * when q is open.
  */
 export function reopenPool(pools: FundPools, q: number, to: Day): void {
   if (pools.closedDay[q] === NO_DAY) throw new Error(`reopenPool: pool row ${q} is open`);
@@ -256,10 +257,7 @@ export function reopenPool(pools: FundPools, q: number, to: Day): void {
   while (i >= 0 && !(pools.shutRow[i] === q && pools.shutTo[i] === NO_DAY)) i--;
   if (i < 0) throw new Error(`reopenPool: pool row ${q} has no open shut row`);
   pools.closedDay[q] = NO_DAY;
-  if (pools.shutFrom[i] === to) {
-    moveRows(pools, SHUTS, i + 1, pools.shutN, i);
-    pools.shutN--;
-  } else pools.shutTo[i] = to;
+  pools.shutTo[i] = to;
 }
 
 /** Appends a line row with defaults and returns its index. */
