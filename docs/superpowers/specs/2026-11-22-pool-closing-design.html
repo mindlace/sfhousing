@@ -339,12 +339,13 @@ export function closedLines(money: Money | MoneyView, at: Day): string[];</code>
       <li><code>src/lib/sim/world/score/**</code></li>
       <li><code>src/lib/sim/world/runner/**</code> where the option and the rewind are carried</li>
       <li><code>src/lib/fzp/{money-view.ts,MoneyResults.svelte}</code></li>
+      <li>the <code>MoneyView</code> literal of <code>src/lib/timeline/pool-level.spec.ts</code> (its <code>closed</code> and <code>shut</code> fields only)</li>
       <li><code>docs/dev/{world-funding,finance-score}.md</code></li>
     </ul>
     <p>Ordering notes from the design document that concern this unit:</p>
     <ul>
       <li><code>src/lib/sim/world/funding/**</code> and the money results are written by <code>finite-funding</code> and then by <code>pool-closing</code>; this unit needs F2.</li>
-      <li><code>funding-measures</code> runs after this unit: its pool bars read <code>MoneyView.shut</code> (F3). The two write different files.</li>
+      <li><code>funding-measures</code> runs after this unit: its pool bars read <code>MoneyView.shut</code> (F3). The one file both write is <code>src/lib/timeline/pool-level.spec.ts</code>: this unit adds <code>closed: {}</code> and <code>shut: {}</code> to the <code>MoneyView</code> literal its <code>money()</code> helper returns, because F3 makes both fields required, and <code>funding-measures</code> writes the file after it.</li>
     </ul>
     <section id="sec-write-set-files">
       <h3>Files</h3>
@@ -363,6 +364,7 @@ export function closedLines(money: Money | MoneyView, at: Day): string[];</code>
         <li><code>src/lib/sim/world/score/types.ts</code>, <code>score/money.ts</code>, <code>score/view.ts</code>, <code>score/money.spec.ts</code>, <code>score/view.spec.ts</code></li>
         <li><code>src/lib/sim/world/runner/ensemble.spec.ts</code> (the restore and keep cases)</li>
         <li><code>src/lib/fzp/money-view.ts</code>, <code>money-view.spec.ts</code>, <code>MoneyResults.svelte</code></li>
+        <li><code>src/lib/timeline/pool-level.spec.ts</code>: <code>closed: {}</code> and <code>shut: {}</code> in the <code>money()</code> helper's <code>MoneyView</code> literal, and nothing else</li>
         <li><code>docs/dev/world-funding.md</code>, <code>docs/dev/finance-score.md</code></li>
       </ul>
       <p>Deleted: none. Unchanged: <code>src/lib/sim/world/runner/*.ts</code>, <code>src/lib/sim/scenario/**</code>.</p>
