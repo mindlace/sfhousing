@@ -168,7 +168,7 @@ inflows: []; // no programme
 | `city-ocoh`                   | `baseline-city-ocoh`               | `dedicatedTax`   | 3, City    | 48,600,000            | no end              | 0.072329   |
 | `city-general-fund`           | `baseline-city-general-fund`       | `generalRevenue` | 3, City    | 21,800,000            | no end              | 0.032444   |
 | `city-housing-stability-fund` | none                               | `generalRevenue` | 3, City    | 14,900,000            | spent               | 0.022175   |
-| `city-impact-fees`            | `baseline-city-impact-fees`        | `dedicatedTax`   | 3, City    | 34,800,000            | no end              | 0.051791   |
+| `city-impact-fees`            | `baseline-city-impact-fees`        | `dedicatedTax`   | 3, City    | 34,800,000            | $45.2 million left  | 0.051791   |
 | `city-housing-trust-fund`     | `baseline-city-housing-trust-fund` | `generalRevenue` | 3, City    | 27,400,000            | ends 2043-06-30     | 0.040778   |
 | `city-redevelopment`          | none                               | `dedicatedTax`   | 3, City    | 6,000,000             | spent               | 0.00893    |
 
@@ -403,8 +403,8 @@ When the Budget Analyst, CDLAC or CTCAC publish new figures:
 4. Each year, re-read each bound's primary at its cited page and update the bound (`on`,
    `dollars`, `reason`, the cite and its retrieval date): the City's bond summary for `city-debt`'s
    unissued authorisation, the Charter and the Controller for the Housing Trust Fund's last year,
-   and the impact-fee balance from the City's yearly development impact fee report (Gov. Code
-   66006(b)). Recompute the federal ceiling from the new award year (the most new-construction
+   and the impact-fee balance from MOHCD's yearly annual report (Table 2, Affordable Housing Fund
+   Summary). Recompute the federal ceiling from the new award year (the most new-construction
    homes in one year times `perHome.federal`) and rewrite its figures in `federal.method`; the
    schema refuses a ceiling that disagrees with the award rows.
 5. Run `npx prettier --write pipeline/enrichment/funding.json`, then the pipeline funding tests, then
@@ -441,7 +441,8 @@ in the levers. Three of them are one-off by the report's own account, and each p
 says so:
 
 - `city-impact-fees`: FY2024-25 spending came mostly from earlier years' fee balances; fee revenue
-  was $422,048 in FY2024-25 against an $18.0 million average.
+  was $422,048 in FY2024-25 against an $18.0 million average. Its bound is the $45,158,744 balance
+  at 30 June 2025 (MOHCD annual report, Table 2, p. 21), so the held level stops when it is spent.
 - `city-redevelopment`: "that source has now been spent down" (p. 73).
 - `city-debt`: bonds need voter approval each time (p. 72).
 

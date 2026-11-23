@@ -172,6 +172,10 @@ describe('baselineFunding on the live file', () => {
       debt: { rate: 0.06, termYears: 20 },
       leverage: 1
     });
+    expect(poolOf(bf.pools, 'city-impact-fees').inflows).toEqual([
+      { kind: 'once', day: day('2026-11-10'), dollars: 34_800_000 },
+      { kind: 'once', day: day('2027-11-10'), dollars: 10_358_744 }
+    ]);
     for (const id of ['city-redevelopment', 'city-housing-stability-fund']) {
       expect(poolOf(bf.pools, id).inflows).toEqual([]);
       expect(bf.programmes.some((p) => p.pool === id)).toBe(false);
@@ -259,7 +263,7 @@ describe('baselineFunding on the live file', () => {
       'no end',
       'no end',
       'spent',
-      'no end',
+      '$45.2 million left',
       'ends 2043-06-30',
       'spent',
       'no end',
@@ -274,7 +278,7 @@ describe('baselineFunding on the live file', () => {
       'no end',
       'no end',
       'spent',
-      'no end',
+      '$45.2 million left',
       'ends 2043-06-30',
       'spent'
     ];

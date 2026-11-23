@@ -52,7 +52,7 @@
         "bound": {
           "kind": "remaining",
           "dollars": 260310000,
-          "method": "Unissued authorisation of the affordable-housing bonds on 30 September 2026: 2019 Proposition A, $107,540,000 of $600,000,000 (row [13]); 2024 Proposition A, $152,770,000 of $300,000,000 (row [16]). 2015 Proposition A is fully issued (row [10]). The capital plan's next housing bond (November 2034, $200 million) needs voters and is not current law. Proceeds issued and not yet spent, and the source's other debt, are not counted.",
+          "method": "Unissued authorisation of the affordable-housing bonds on 30 September 2026: 2019 Proposition A, $107,540,000 of $600,000,000 (row [13]); 2024 Proposition A, $152,770,000 of $300,000,000 (row [16]). 2015 Proposition A is fully issued (row [10]). The PASS loan programme under the 1992 Seismic Safety Loan Program authorisation (row [2]) preserves existing buildings and is not counted. The capital plan's next housing bond (November 2034, $200 million) needs voters and is not current law. Proceeds issued and not yet spent, and the source's other debt, are not counted.",
           "tier": 2,
           "cite": {
             "label": "City and County of San Francisco, General Obligation Bonds Project Summary, 30 September 2026",
@@ -82,7 +82,7 @@
           "cite": {
             "label": "Budget and Legislative Analyst, \"Funding and Incentivizing Affordable Housing in San Francisco\", 2026-06-05",
             "url": "https://media.api.sf.gov/documents/BLA_Financing_Affordable_Housing_060526.pdf",
-            "page": "pp. 44, 46",
+            "page": "p. 44",
             "retrieved": "2026-11-09"
           }
         }
@@ -152,14 +152,15 @@
           "retrieved": "2026-11-09"
         },
         "bound": {
-          "kind": "none",
-          "reason": "The fees are charged on development under the Planning Code with no end in law. FY2024-25 spending came from earlier balances (p. 44) while collections were $422,048 (p. 9, Exhibit I); the balance was not found in a primary, so the source keeps paying.",
+          "kind": "remaining",
+          "dollars": 45158744,
+          "method": "Ending balance at 30 June 2025 of the Inclusionary Affordable Housing Fee (Planning Code sections 415 and 419) and Jobs-Housing Linkage Fee (section 413) accounts, net of loan encumbrances: $28,865,155 and $16,293,589. FY2024-25 spending came from earlier balances while collections were $422,048 (BLA p. 9, Exhibit I; p. 44). Spending and collections after 30 June 2025 are not counted.",
           "tier": 2,
           "cite": {
-            "label": "Budget and Legislative Analyst, \"Funding and Incentivizing Affordable Housing in San Francisco\", 2026-06-05",
-            "url": "https://media.api.sf.gov/documents/BLA_Financing_Affordable_Housing_060526.pdf",
-            "page": "pp. 9, 44",
-            "retrieved": "2026-11-09"
+            "label": "Mayor's Office of Housing and Community Development, FY2024-25 Annual Report, Table 2: Affordable Housing Fund Summary",
+            "url": "https://media.api.sf.gov/documents/MOHCD_FY_2024-2025_Annual_Report.pdf",
+            "page": "p. 21",
+            "retrieved": "2026-11-22"
           }
         }
       },
@@ -179,7 +180,7 @@
         "bound": {
           "kind": "ends",
           "on": "2043-06-30",
-          "method": "The Charter's Housing Trust Fund runs to 2043; the Controller's statement on the 2026 measure extends it 'from 2043 to 2058'. Read as the end of fiscal year 2042-43, 30 June 2043. The 2026 extension (Proposition C) is not certified and is a measure a player adds.",
+          "method": "The Charter's Housing Trust Fund runs to 2043; the Controller's statement on the 2026 measure extends it 'from 2043 to 2058'. Read as the end of fiscal year 2042-43, 30 June 2043. The 2026 extension (Proposition C) was not certified when this was read and is a measure a player adds.",
           "tier": 2,
           "cite": {
             "label": "Controller, Proposition C: Contributions to the Housing Fund, statement of 2026-08-10",

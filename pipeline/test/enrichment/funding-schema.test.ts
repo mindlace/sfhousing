@@ -84,13 +84,7 @@ describe('funding.json', () => {
     expect(pins['city-redevelopment']).toEqual(['remaining', 0, 1]);
     expect(pins['state']).toEqual(STATE_PIN);
     expect(pins['federal-tax-credits']).toEqual(['none', null, 2]);
-    const [kind, amount, tier] = pins['city-impact-fees'];
-    expect(tier).toBe(2);
-    if (kind === 'none') expect(amount).toBeNull();
-    else {
-      expect(kind).toBe('remaining');
-      expect(Number.isInteger(amount)).toBe(true);
-    }
+    expect(pins['city-impact-fees']).toEqual(['remaining', 45_158_744, 2]);
     expect(f.city.sources.map((s) => s.dollarsPerYear)).toEqual([
       80_500_000, 48_600_000, 21_800_000, 14_900_000, 34_800_000, 27_400_000, 6_000_000
     ]);
