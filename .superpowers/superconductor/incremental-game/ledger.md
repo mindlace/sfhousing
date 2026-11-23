@@ -1,6 +1,6 @@
 # Superconductor ledger — design: docs/superpowers/design/2026-11-22-1216-incremental-game.html
 Package worktree: /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game
-Build graph: docs/superpowers/design/2026-11-22-1216-incremental-game-build-graph.md @ f6c41be9
+Build graph: docs/superpowers/design/2026-11-22-1216-incremental-game-build-graph.md @ 94b45d9f
 SDD scripts: /Users/mindlace/.claude/plugins/cache/claude-plugins-official/superpowers/7.0.2/skills/subagent-driven-development/scripts
 HTML scripts: /Users/mindlace/.claude/plugins/cache/super/superpowers-html/0.1.0/bin
 Project commands: npm, npx, lsof, ls, cat, grep, head, tail, wc, pwd, uptime, mkdir (mail-setup only, also: aws); operators run with --permission-mode dontAsk
@@ -275,6 +275,10 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - relaunched game-shell
 - resent to incremental-game-game-shell
 - 23:30 game-shell's resends carried rulings game-sim-1, conductor-11, game-core-4, game-shell-1-1 and game-core-8; finite-funding's admit message named rulings conductor-3 and conductor-7. Both told to bring their plans into line with the spec as it reads now.
+- relaunched finite-funding
+- plan finite-funding: docs/superpowers/plans/2026-11-22-finite-funding.html at d7594b0d
+- finite-funding `need command` 00:20: WebFetch and WebSearch, to read each primary source § sec-design-data requires before a value enters funding.json; belongs to the unit's work (read-only web). Relaunched with both (`mkassign.py` gives them to finite-funding and funding-measures, whose specs cite sources). It had committed Task 1 @ 57b2a1fb with the spec's values unread and the `none` fallbacks; the primary reads are a Task 1 fix round. D1's margin rests on the state source's bound, so this read matters for reach-check.
+- resent to incremental-game-finite-funding
 
 ## Questions
 - 2026-11-22 conductor-1 from conductor [defect-class: owner-ruling-drift]: gate-1, a policy already saved in the browser becomes a level-1 game, and every kind in it is locked (major) → rulings/conductor-1.md (commit 7fbb5e32, changes contract: no)
@@ -433,6 +437,11 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - relayed game-shell-2 to incremental-game-game-core (complete; asked to re-send complete only if a comment or doc of its unit states the old rule)
 - relayed game-shell-2 to incremental-game-game-sim (not delivered: session resting; owed in its restart's resends, with § sec-design-seen)
 - routed game-shell-2
+- 2026-11-22 finite-funding-1 from finite-funding [defect-class: source-evidence]: the primaries show an impact-fee balance ($45.2M) in MOHCD's annual report rather than a 66006(b) report, an unissued 2016 PASS housing bond row ($47.5M), and two passed-but-uncertified measures; what enters funding.json → rulings/finite-funding-1.md (commit a552b3a5, changes contract: no)
+- routing finite-funding-1: rulings/finite-funding-1.md, commit a552b3a5
+- build graph for finite-funding-1 @ 94b45d9f
+- relayed finite-funding-1 to incremental-game-finite-funding
+- routed finite-funding-1
 
 ## Forks
 - fork checkpoint-2 started 2026-11-22T16:20
@@ -585,6 +594,10 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - fork graph-game-shell-2 exited [0]: output
 - fork checkpoint-12 started 2026-11-22T21:31
 - fork checkpoint-12 exited [0]: output
+- fork rule-finite-funding-1 started 2026-11-22T21:50
+- fork rule-finite-funding-1 exited [0]: output
+- fork graph-finite-funding-1 started 2026-11-22T21:51
+- fork graph-finite-funding-1 exited [0]: output
 
 ## Frame-defect tally
 - owner-ruling-drift: 2 — instances: conductor-1 (gate-1, 2026-11-22); conductor-8 (gate-7, 2026-11-22)
@@ -608,6 +621,7 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - unmodeled-interaction: 2 — adds conductor-12 (2026-11-22)
 - spec-silence: 6 — adds game-shell-1 the question (2026-11-22)
 - spec-disagreement: 7 — adds game-shell-2 (2026-11-22), a leftover of the game-shell-1 ruling
+- source-evidence: 1 — instances: finite-funding-1 (2026-11-22)
 
 ## Integration
 - 17:50 merge of contracts @ f6ee1de3 made (merge commit 5453b107), full suite running in the package worktree (agent; logs in the session scratchpad `merge-contracts/`); not ledgered as merged until it passes. No amending fork starts until then; queued questions in order: remove-multiuser-1, game-core-1, game-core-2, game-core-3, game-sim-1, pool-closing-1, conductor-10, conductor-11. Then merge remove-multiuser's row I1 @ cbd11881.
@@ -653,6 +667,8 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - merged game-core @ 29ae2ad3 into superconductor/incremental-game (complete; G2 now with `beforeLeave`), tests pass (one suite on 0eedcd80 for both merges: check 0 errors; lint 0 errors; unit 8834 passed; pipeline 2266 passed; e2e 746 passed, 0 failed, 0 flaky; e2e/game-helpers.spec.ts 140/140 at repeat-each=5, retries off), band low
 - No drift @ cbe95a44 (review-remove-lesscars-cbe95a44)
 - No drift @ 29ae2ad3 (review-game-core-29ae2ad3)
+- game-save row S2 @ 8ab1c25c reported: held with S1, to merge at its complete (only `closing` consumes them).
+- game-save row S3 @ 11f902b5 reported (S1, S2, S3 all reported): merges at its `complete`, one suite.
 
 ## Cost
 - remove-lesscars: admitted 2026-11-22T16:31 seven_day 44% | session d889ec5c-3342-4a77-99f8-993f1115a679 | finished 2026-11-22T21:14 seven_day 60%
