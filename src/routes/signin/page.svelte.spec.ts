@@ -1,6 +1,6 @@
 import { expect, test, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
-import { AUTH_COPY, pendingSimLine } from '$lib/account/copy';
+import { AUTH_COPY } from '$lib/account/copy';
 import type { AuthMethod } from '$lib/server/auth/methods';
 import Page from './+page.svelte';
 
@@ -26,7 +26,6 @@ function props(data: Record<string, unknown> = {}, form: Record<string, unknown>
       signup: false,
       googleError: false,
       linkError: false,
-      pendingSim: null,
       pendingIdentifier: null,
       reset: false,
       methods: ALL,
@@ -181,50 +180,10 @@ test('no aria-invalid/describedby without an error', async () => {
   expect(input.getAttribute('aria-describedby')).toBeNull();
 });
 
-test('shows the pending-sim continuity line when a sim title is stashed', async () => {
-  const screen = await render(Page, props({ pendingSim: 'Learn to swim' }));
-  await expect.element(screen.getByText(pendingSimLine('Learn to swim'))).toBeInTheDocument();
-});
-
-test('omits the continuity line when there is no stashed sim', async () => {
+test('renders no "Start fresh without an account"', async () => {
   const screen = await render(Page, props());
-  expect(screen.getByText(pendingSimLine('Learn to swim')).elements()).toHaveLength(0);
-});
-
-test('offers the start-fresh escape hatch posting to the startFresh action', async () => {
-  const screen = await render(Page, props());
-  await expect
-    .element(screen.getByRole('button', { name: AUTH_COPY.startFresh }))
-    .toBeInTheDocument();
-  const button = screen.container.querySelector('[data-testid="start-fresh"]')!;
-  const form = button.closest('form')!;
-  expect(form.getAttribute('action')).toBe('?/startFresh');
-  expect(form.getAttribute('method')).toBe('POST');
-});
-
-test('a startFresh failure renders by the escape hatch and never marks the identifier invalid', async () => {
-  const startFreshError = 'Too many new sims too quickly. Wait a moment.';
-  const { container } = await render(Page, props({}, { startFreshError }));
-  // The error is associated with the start-fresh control, inside its own form.
-  const button = container.querySelector('[data-testid="start-fresh"]')!;
-  expect(button.getAttribute('aria-describedby')).toBe('start-fresh-error');
-  const error = container.querySelector('#start-fresh-error')!;
-  expect(error.textContent).toContain(startFreshError);
-  expect(error.closest('form')).toBe(button.closest('form'));
-  // The sendLink identifier field is untouched by a startFresh failure.
-  const input = container.querySelector('#identifier')!;
-  expect(input.getAttribute('aria-invalid')).toBeNull();
-  expect(input.getAttribute('aria-describedby')).toBeNull();
-  expect(container.querySelector('#identifier-error')).toBeNull();
-  // Focus-first-invalid lands on the start-fresh control (FieldError contract).
-  await expect.poll(() => document.activeElement).toBe(button);
-});
-
-test('no aria-describedby on the escape hatch without a startFresh error', async () => {
-  const { container } = await render(Page, props());
-  const button = container.querySelector('[data-testid="start-fresh"]')!;
-  expect(button.getAttribute('aria-describedby')).toBeNull();
-  expect(container.querySelector('#start-fresh-error')).toBeNull();
+  await expect.element(screen.getByRole('heading', { level: 1 })).toBeInTheDocument();
+  expect(screen.getByText('Start fresh without an account').elements()).toHaveLength(0);
 });
 
 test('offers a forgot-password link once password mode is open', async () => {
@@ -261,12 +220,9 @@ test('default methods render no password field, no passkey button, no Google but
   expect(screen.getByRole('button', { name: AUTH_COPY.passkeyButton }).elements()).toHaveLength(0);
   expect(screen.getByRole('button', { name: AUTH_COPY.googleButton }).elements()).toHaveLength(0);
   expect(screen.getByText(AUTH_COPY.chooseOne).elements()).toHaveLength(0);
-  // The magic link and the escape hatch stay.
+  // The magic link stays.
   await expect
     .element(screen.getByRole('button', { name: AUTH_COPY.emailMeLink }))
-    .toBeInTheDocument();
-  await expect
-    .element(screen.getByRole('button', { name: AUTH_COPY.startFresh }))
     .toBeInTheDocument();
 });
 
@@ -337,9 +293,12 @@ test('a stale form error does not reveal a password field when password is off',
   expect(screen.getByLabelText(AUTH_COPY.passwordLabel).elements()).toHaveLength(0);
 });
 
-test('with no sign-in method in effect: no email form, start-fresh stays', async () => {
+test('with no sign-in method in effect renders its heading and no form', async () => {
   const screen = await render(Page, props({ methods: [] }));
-  await expect.element(screen.getByTestId('start-fresh')).toBeInTheDocument();
+  await expect
+    .element(screen.getByRole('heading', { level: 1 }))
+    .toHaveTextContent(AUTH_COPY.signIn);
+  expect(screen.container.querySelector('form')).toBeNull();
   expect(screen.container.querySelector('#identifier')).toBeNull();
   expect(screen.getByTestId('sendlink-submit').elements()).toHaveLength(0);
   expect(screen.getByRole('button', { name: AUTH_COPY.emailMeLink }).elements()).toHaveLength(0);

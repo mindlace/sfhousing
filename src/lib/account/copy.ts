@@ -27,7 +27,6 @@ export const AUTH_COPY = {
   passwordSubmit: 'Sign in',
   forgotPassword: 'Forgot your password?',
   passwordResetDone: 'Password updated. Sign in with your new password.',
-  startFresh: 'Start fresh without an account',
   cancel: 'Cancel',
   forgotTitle: 'Reset your password',
   forgotHeading: 'Reset your password',
@@ -56,5 +55,3 @@ export const AUTH_COPY = {
 export const passwordTooShort = (min: number): string =>
   `Use at least ${min} characters. Length matters more than symbols: a few plain words works well.`;
 export const passwordTooLong = (max: number): string => `That's longer than ${max} characters.`;
-
-export const pendingSimLine = (title: string): string => `Signing in to create ${title}`;

@@ -1,22 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { isRedirect, type ActionFailure } from '@sveltejs/kit';
 import { AUTH_COPY } from '$lib/account/copy';
-import { SIM_TITLE_MAX } from '$lib/members/copy';
-import { isValidId } from '$lib/server/ids/factory';
-import { mockConsole } from '$lib/server/test/mock-console';
 
 // Mocks for the action's collaborators.
 const enforceRate = vi.fn();
 const resolveHandleToEmail = vi.fn();
 const signInMagicLink = vi.fn();
 const signInEmail = vi.fn();
-const readPendingSim = vi.fn();
-const clearPendingSim = vi.fn();
 const readPendingIdentifier = vi.fn();
 const clearPendingIdentifier = vi.fn();
-const mintPseudonymousSession = vi.fn();
-const reseedHandleFromSim = vi.fn();
-const createSim = vi.fn();
 let e2e = false;
 
 vi.mock('$lib/server/e2e/env', () => ({ isE2eEnv: () => e2e }));
@@ -27,30 +19,10 @@ vi.mock('$lib/server/auth/magic-link', () => ({
   resolveHandleToEmail: (...a: unknown[]) => resolveHandleToEmail(...a)
 }));
 vi.mock('$lib/server/db', () => ({ getDb: () => ({}) }));
-vi.mock('$lib/server/onboarding/pending-sim', () => ({
-  readPendingSim: (...a: unknown[]) => readPendingSim(...a),
-  clearPendingSim: (...a: unknown[]) => clearPendingSim(...a)
-}));
 vi.mock('$lib/server/onboarding/pending-identifier', () => ({
   readPendingIdentifier: (...a: unknown[]) => readPendingIdentifier(...a),
   clearPendingIdentifier: (...a: unknown[]) => clearPendingIdentifier(...a)
 }));
-vi.mock('$lib/server/onboarding/pseudonymous-mint', () => ({
-  mintPseudonymousSession: (...a: unknown[]) => mintPseudonymousSession(...a)
-}));
-vi.mock('$lib/server/user-store/identity', () => ({
-  reseedHandleFromSim: (...a: unknown[]) => reseedHandleFromSim(...a)
-}));
-vi.mock('$lib/server/sims/sims', () => ({
-  createSim: (...a: unknown[]) => createSim(...a)
-}));
-// start-sim's title check is the real one; the rest of that module is not under test here.
-vi.mock('$lib/server/sims/start-sim', async () => {
-  const actual = await vi.importActual<typeof import('$lib/server/sims/start-sim')>(
-    '$lib/server/sims/start-sim'
-  );
-  return { checkSimTitle: actual.checkSimTitle };
-});
 // The magic-link verify URL the fake sendMagicLink hands to captureMagicLink.
 const MAGIC_VERIFY_URL = 'https://app.test/api/auth/magic-link/verify?token=xyz';
 const fakeAuth = (opts?: { captureMagicLink?: (l: { email: string; url: string }) => void }) => ({
@@ -121,16 +93,8 @@ beforeEach(() => {
   resolveHandleToEmail.mockResolvedValue(null);
   signInMagicLink.mockResolvedValue({});
   signInEmail.mockResolvedValue({});
-  readPendingSim.mockReturnValue(null);
-  clearPendingSim.mockReturnValue(undefined);
   readPendingIdentifier.mockReturnValue(null);
   clearPendingIdentifier.mockReturnValue(undefined);
-  mintPseudonymousSession.mockResolvedValue({
-    ok: true,
-    user: { id: 'pseudo-u1', pseudonymous: true }
-  });
-  reseedHandleFromSim.mockResolvedValue('some-handle');
-  createSim.mockResolvedValue({ simId: 'sid-1', created: true });
 });
 
 function makeLoadEvent(url: string, envExtra: Record<string, unknown> = {}) {
@@ -142,20 +106,23 @@ function makeLoadEvent(url: string, envExtra: Record<string, unknown> = {}) {
   } as never;
 }
 
-function makeStartFreshEvent(envExtra: Record<string, unknown> = {}) {
-  return {
-    cookies: { get: vi.fn(), set: vi.fn(), delete: vi.fn() },
-    request: new Request('https://app.test/signin', {
-      method: 'POST',
-      headers: { 'CF-Connecting-IP': '1.2.3.4' }
-    }),
-    locals: { user: null },
-    platform: { env: { ...MAIL, ...envExtra } },
-    url: new URL('https://app.test/signin')
-  } as never;
-}
-
 describe('signin load', () => {
+  it('the load returns exactly signup, linkError, googleError, pendingIdentifier, reset and methods', async () => {
+    const res = (await load(makeLoadEvent('https://app.test/signin'))) as object;
+    expect(Object.keys(res).sort()).toEqual([
+      'googleError',
+      'linkError',
+      'methods',
+      'pendingIdentifier',
+      'reset',
+      'signup'
+    ]);
+  });
+
+  it('the actions are sendLink and signInPassword', () => {
+    expect(Object.keys(actions).sort()).toEqual(['sendLink', 'signInPassword']);
+  });
+
   it('returns signup: true when the URL has ?signup=1', async () => {
     const res = await load(makeLoadEvent('https://app.test/signin?signup=1'));
     expect(res).toMatchObject({ signup: true });
@@ -164,17 +131,6 @@ describe('signin load', () => {
   it('returns signup: false without the query param', async () => {
     const res = await load(makeLoadEvent('https://app.test/signin'));
     expect(res).toMatchObject({ signup: false });
-  });
-
-  it('surfaces a stashed pending-sim title', async () => {
-    readPendingSim.mockReturnValue('Learn to swim');
-    const res = await load(makeLoadEvent('https://app.test/signin'));
-    expect(res).toMatchObject({ pendingSim: 'Learn to swim' });
-  });
-
-  it('returns pendingSim: null when nothing is stashed', async () => {
-    const res = await load(makeLoadEvent('https://app.test/signin'));
-    expect(res).toMatchObject({ pendingSim: null });
   });
 
   it('surfaces a stashed pending identifier so the form can seed it', async () => {
@@ -305,8 +261,7 @@ describe('signin sendLink action', () => {
     e2e = true;
     const res = await actions.sendLink(makeEvent({ identifier: 'guest@test.com' }));
     expect(res).toEqual({ sent: true, devLink: MAGIC_VERIFY_URL });
-    // A link actually went out: the stashed identifier (if any) has served its purpose,
-    // same one-shot treatment as the pending-sim cookie.
+    // A link actually went out: the stashed identifier (if any) has served its purpose.
     expect(clearPendingIdentifier).toHaveBeenCalled();
   });
 
@@ -545,133 +500,5 @@ describe('signin signInPassword action', () => {
   it('redirects to / instead of an off-site returnTo', async () => {
     expect(await passwordRedirect('https://evil.example/')).toBe('/');
     expect(await passwordRedirect('//evil.example/')).toBe('/');
-  });
-});
-
-describe('signin startFresh action', () => {
-  it('redirects to /sims when the stash has expired (no pending title)', async () => {
-    readPendingSim.mockReturnValue(null);
-    let caught: unknown;
-    try {
-      await actions.startFresh(makeStartFreshEvent());
-    } catch (e) {
-      caught = e;
-    }
-    expect(isRedirect(caught)).toBe(true);
-    expect((caught as { location: string }).location).toBe('/sims');
-    // Nothing to clear or create when the stash was already empty.
-    expect(clearPendingSim).not.toHaveBeenCalled();
-    expect(createSim).not.toHaveBeenCalled();
-    // A fresh identity was minted regardless: "I am not that person" must not leave a
-    // stranger's address seeded for whoever looks at /signin next within the window.
-    expect(clearPendingIdentifier).toHaveBeenCalled();
-  });
-
-  it('reseeds the handle, creates the sim, and redirects into it for a valid stash', async () => {
-    readPendingSim.mockReturnValue('Learn to swim');
-    createSim.mockResolvedValue({ simId: 'sid-99', created: true });
-
-    const event = makeStartFreshEvent();
-    let caught: unknown;
-    try {
-      await actions.startFresh(event);
-    } catch (e) {
-      caught = e;
-    }
-    expect(isRedirect(caught)).toBe(true);
-    expect((caught as { location: string }).location).toBe('/sims/sid-99');
-    expect(clearPendingSim).toHaveBeenCalled();
-    expect(reseedHandleFromSim).toHaveBeenCalledWith(
-      expect.objectContaining({ identityId: 'pseudo-u1', simTitle: 'Learn to swim' })
-    );
-    expect(createSim).toHaveBeenCalledWith(
-      expect.objectContaining({
-        env: (event as { platform: App.Platform }).platform.env,
-        title: 'Learn to swim',
-        managerId: 'pseudo-u1'
-      })
-    );
-    // The server mints the sim's id here: there is no browser store on this path.
-    const [{ simId }] = createSim.mock.calls[0] as [{ simId: string }];
-    expect(isValidId(simId)).toBe(true);
-    expect(clearPendingIdentifier).toHaveBeenCalled();
-  });
-
-  it.each([
-    ['throws', () => createSim.mockRejectedValue(new Error('batch failed'))],
-    ['does not create', () => createSim.mockResolvedValue({ simId: 'sid-x', created: false })]
-  ])(
-    'a create that %s lands on /sims with the stash kept, for the /sims load to resume',
-    async (_name, arrange) => {
-      readPendingSim.mockReturnValue('Learn to swim');
-      arrange();
-      const { error } = mockConsole('error');
-      let caught: unknown;
-      try {
-        await actions.startFresh(makeStartFreshEvent());
-      } catch (e) {
-        caught = e;
-      }
-      expect(isRedirect(caught)).toBe(true);
-      expect((caught as { location: string }).location).toBe('/sims');
-      expect(clearPendingSim).not.toHaveBeenCalled();
-      expect(error).toHaveBeenCalledWith(
-        '[signin] start fresh create failed',
-        expect.any(String),
-        expect.any(String)
-      );
-      expect(JSON.stringify(error.mock.calls)).not.toContain('pseudo-u1');
-      error.mockRestore();
-    }
-  );
-
-  it('drops a stashed title that fails the title check and lands on /sims', async () => {
-    // The cookie is user-controlled: it gets the same checks as a typed title.
-    readPendingSim.mockReturnValue('x'.repeat(SIM_TITLE_MAX + 1));
-    let caught: unknown;
-    try {
-      await actions.startFresh(makeStartFreshEvent());
-    } catch (e) {
-      caught = e;
-    }
-    expect((caught as { location: string }).location).toBe('/sims');
-    expect(createSim).not.toHaveBeenCalled();
-    expect(reseedHandleFromSim).not.toHaveBeenCalled();
-    expect(clearPendingSim).toHaveBeenCalled();
-  });
-
-  it('mints regardless of the known-device cookie: no known-device gate on this path', async () => {
-    // The action never consults the known-device cookie at all; it just mints. This
-    // asserts the mint seam is invoked unconditionally, which is the whole point of the
-    // escape hatch.
-    readPendingSim.mockReturnValue('Learn to swim');
-    try {
-      await actions.startFresh(makeStartFreshEvent());
-    } catch {
-      // A redirect throw is expected on success; irrelevant to this assertion.
-    }
-    expect(mintPseudonymousSession).toHaveBeenCalledTimes(1);
-  });
-
-  it('returns fail(status) under startFreshError, never the identifier field key, when the mint seam rejects', async () => {
-    readPendingSim.mockReturnValue('Learn to swim');
-    mintPseudonymousSession.mockResolvedValue({
-      ok: false,
-      status: 429,
-      message: 'slow down'
-    });
-    const res = (await actions.startFresh(makeStartFreshEvent())) as ActionFailure<{
-      startFreshError: string;
-    }>;
-    expect(res.status).toBe(429);
-    // Exact shape: the message rides its own key so the page never associates a
-    // startFresh failure with the sendLink identifier field (aria-invalid).
-    expect(res.data).toEqual({ startFreshError: 'slow down' });
-    expect(clearPendingSim).not.toHaveBeenCalled();
-    expect(createSim).not.toHaveBeenCalled();
-    // "I am not that person" is complete the instant the action runs, independent of
-    // whether the mint itself succeeds: a rate-limited mint (shared device, IP brake
-    // tripped) must not leave the PREVIOUS visitor's address seeded on the re-render.
-    expect(clearPendingIdentifier).toHaveBeenCalled();
   });
 });

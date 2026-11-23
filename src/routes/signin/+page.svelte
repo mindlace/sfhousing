@@ -2,7 +2,7 @@
   import { page } from '$app/state';
   import { enhance } from '$app/forms';
   import { authClient } from '$lib/account/auth-client';
-  import { AUTH_COPY, pendingSimLine } from '$lib/account/copy';
+  import { AUTH_COPY } from '$lib/account/copy';
   import FieldError from '$lib/account/FieldError.svelte';
   import FormStatus from '$lib/account/FormStatus.svelte';
   import { safeReturnTo } from '$lib/account/safe-redirect';
@@ -12,7 +12,7 @@
 
   const returnTo = safeReturnTo(page.url.searchParams.get('returnTo'));
   // A form action URL replaces the page's query, so carry returnTo on it: the actions read it
-  // to land the visitor back where they were headed (the pending-sim resume is at /sims).
+  // to land the visitor back where they were headed.
   const keep = returnTo === '/' ? '' : `&returnTo=${encodeURIComponent(returnTo)}`;
   // Arrived with ?signup=1: email only, no passkey, no handle.
   const signingUp = $derived(!!data.signup);
@@ -116,10 +116,6 @@
   <h1 class="text-2xl font-semibold">{signingUp ? AUTH_COPY.signUp : AUTH_COPY.signIn}</h1>
 
   <FormStatus message={statusText} focus={!!form?.sent} tone={statusIsError ? 'error' : 'info'} />
-
-  {#if data.pendingSim}
-    <p>{pendingSimLine(data.pendingSim)}</p>
-  {/if}
 
   {#if form?.sent}
     {#if form.devLink}
@@ -271,21 +267,4 @@
       </form>
     {/if}
   {/if}
-
-  <!-- Signed out is the only way to reach this page (load redirects a signed-in user
-       away), so the escape hatch is shown unconditionally: a shared-device visitor
-       deserves it even with no sim title stashed. -->
-  <form method="POST" action="?/startFresh" class="flex flex-col gap-3">
-    <button
-      type="submit"
-      id="start-fresh"
-      class={bare}
-      data-testid="start-fresh"
-      aria-describedby={form?.startFreshError ? 'start-fresh-error' : undefined}
-      >{AUTH_COPY.startFresh}</button
-    >
-    {#if form?.startFreshError}
-      <FieldError id="start-fresh-error" forId="start-fresh" message={form.startFreshError} />
-    {/if}
-  </form>
 </div>

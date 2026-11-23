@@ -8,19 +8,12 @@ import { enabledAuthMethods } from '$lib/server/auth/methods';
 import { requireMethod } from '$lib/server/auth/require-method';
 import { getDb } from '$lib/server/db';
 import { isE2eEnv } from '$lib/server/e2e/env';
-import { newId } from '$lib/server/ids/factory';
-import { loggable } from '$lib/server/sim-object/object-rules';
 import {
   clearPendingIdentifier,
   readPendingIdentifier
 } from '$lib/server/onboarding/pending-identifier';
-import { clearPendingSim, readPendingSim } from '$lib/server/onboarding/pending-sim';
-import { mintPseudonymousSession } from '$lib/server/onboarding/pseudonymous-mint';
 import { enforceRate } from '$lib/server/security/rate-limit';
-import { createSim } from '$lib/server/sims/sims';
-import { checkSimTitle } from '$lib/server/sims/start-sim';
 import { normalizeHandle } from '$lib/server/user-store/handle-normalize';
-import { reseedHandleFromSim } from '$lib/server/user-store/identity';
 
 export const load: PageServerLoad = async (event) => {
   const { locals, url, cookies } = event;
@@ -37,10 +30,7 @@ export const load: PageServerLoad = async (event) => {
     signup: url.searchParams.has('signup'),
     linkError,
     googleError: !linkError && methods.has('google') && url.searchParams.has('error'),
-    // A sim title stashed by startSim's known-device redirect: resumed once auth
-    // completes, or handed to the start-fresh escape hatch below.
-    pendingSim: readPendingSim(cookies),
-    // An identifier typed on a prior step (the invite page): seeded into the form
+    // An identifier typed on a prior step: seeded into the form
     // rather than asked for again. WCAG 2.2 SC 3.3.7 Redundant Entry.
     pendingIdentifier: readPendingIdentifier(cookies),
     // Set by the reset-password action's redirect: all sessions were revoked, so the
@@ -111,8 +101,7 @@ export const actions: Actions = {
             errorCallbackURL: `/signin?link=failed${keep}`
           }
         });
-        // The link is sent: the stash has served its purpose, same one-shot
-        // treatment as the pending-sim cookie.
+        // The link is sent: the stash has served its purpose.
         clearPendingIdentifier(event.cookies);
         if (wantDevLink) {
           return { sent: true, devLink };
@@ -203,56 +192,5 @@ export const actions: Actions = {
     }
     clearPendingIdentifier(event.cookies);
     throw redirect(303, safeReturnTo(url.searchParams.get('returnTo')));
-  },
-
-  // The escape hatch for a shared or known device: mints a fresh pseudonymous identity
-  // regardless of the known-device cookie (that's the whole point), still behind the mint
-  // seam's IP velocity brake. Resumes the stashed sim title if present; an expired stash
-  // lands on /sims.
-  startFresh: async (event) => {
-    const title = readPendingSim(event.cookies);
-    // "I am not that person" is a declaration of intent, complete the instant this action
-    // runs, regardless of whether the mint below succeeds. Clearing only on the mint's
-    // success path would leave a stranger's address seeded on the very re-render (a
-    // rate-limited mint) where the escape hatch most needs to have worked.
-    clearPendingIdentifier(event.cookies);
-    const minted = await mintPseudonymousSession(event);
-    // Distinct key: `error` belongs to sendLink's identifier field, so reusing it
-    // here would stamp aria-invalid on a field this action never touched.
-    if (!minted.ok) return fail(minted.status, { startFreshError: minted.message });
-    if (!title) throw redirect(303, '/sims');
-    // The cookie is user-controlled: it gets the same checks as a typed title.
-    const checked = checkSimTitle(title);
-    if (!('title' in checked)) {
-      clearPendingSim(event.cookies);
-      throw redirect(303, '/sims');
-    }
-    const db = getDb(event.platform!);
-    await reseedHandleFromSim({ db, identityId: minted.user.id, simTitle: checked.title });
-    // There is no browser store on this path: the server mints the sim's id.
-    let simId = newId();
-    let created = false;
-    let failure = 'not created';
-    try {
-      // The answer names the id it registered (the one passed).
-      ({ created, simId } = await createSim({
-        db,
-        env: event.platform?.env,
-        simId,
-        title: checked.title,
-        managerId: minted.user.id
-      }));
-    } catch (e) {
-      failure = loggable(e);
-    }
-    if (created) {
-      clearPendingSim(event.cookies);
-      throw redirect(303, `/sims/${simId}`);
-    }
-    // The session is minted either way. A failed create, or a server-minted id that was somehow
-    // not new (never this person's sim then): keep the stash and land on /sims, whose load
-    // resumes it (rate-limited) as for any signed-in person.
-    console.error('[signin] start fresh create failed', simId, failure);
-    throw redirect(303, '/sims');
   }
 };
