@@ -9,8 +9,7 @@ import { readE2eMail, type E2eMailKind } from '$lib/server/e2e/mail-sink';
 const KINDS: ReadonlySet<string> = new Set<E2eMailKind>([
   'password-reset',
   'change-email-approve',
-  'change-email-verify',
-  'invite'
+  'change-email-verify'
 ]);
 
 export const GET: RequestHandler = ({ platform, url }) => {

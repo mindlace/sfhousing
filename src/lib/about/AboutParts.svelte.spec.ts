@@ -11,7 +11,8 @@ import type { ManifestSources } from '$lib/data/manifest';
 import AboutData from './AboutData.svelte';
 import AboutMeanings from './AboutMeanings.svelte';
 import AboutUsing from './AboutUsing.svelte';
-import { ABOUT_ID, MEANINGS, PART_HEADING, YOUR_PLANS } from './copy';
+import { MAX_SAVES } from '$lib/game/saves';
+import { ABOUT_ID, MEANINGS, PART_HEADING, SAVED_GAMES, YOUR_PLANS } from './copy';
 
 const text = () => (document.body.textContent ?? '').replace(/\s+/g, ' ');
 
@@ -91,7 +92,8 @@ describe('AboutMeanings', () => {
       'From your policy',
       'Current law',
       'The goal',
-      'The goal + 15%'
+      'The goal + 15%',
+      'To beat'
     ]);
     expect(MEANINGS.map((m) => m.term)).toEqual(terms);
     const t = text();
@@ -103,6 +105,9 @@ describe('AboutMeanings', () => {
       '82,069 homes by the end of the 40-year window, counted from June 2022, so homes built since ' +
         "then count. It is San Francisco's share of RHNA 2023–2031, the state's Regional Housing " +
         'Needs Allocation, which asks for them by January 2031.'
+    );
+    expect(t).toContain(
+      'The month you reached the goal when you last levelled up. Reach the goal in an earlier month to win the level.'
     );
   });
 
@@ -252,6 +257,45 @@ describe('AboutUsing', () => {
       c.textContent?.trim()
     );
     expect(tables).toEqual(['Painting', 'Timeline']);
+  });
+
+  it('using: Levels, an ordered list, then its three notes, word for word', async () => {
+    render(AboutUsing, { level: 2 });
+    const s = document.getElementById('about-levels')!;
+    expect(s.tagName).toBe('SECTION');
+    expect(s.querySelector('h3')?.textContent?.trim()).toBe('Levels');
+    expect([...s.querySelectorAll('ol > li')].map((li) => li.textContent?.trim())).toEqual([
+      'Level 1: paint room for the goal. Winning opens the simulation.',
+      'Level 2: play current law to the goal.',
+      'Level 3: change permitting, and beat the month you reached at level 2.',
+      'Level 4: change zoning too, and beat your month to beat.',
+      'Level 5: add the public money on offer, and beat your month to beat.'
+    ]);
+    expect([...s.querySelectorAll('p')].map((p) => p.textContent?.trim())).toEqual([
+      'Levelling up is your choice. Your policies stay, and the clock goes back to today.',
+      'A month to beat keeps the data it was earned on. After a data update your policy may reach the goal in another month; the month to beat stays.',
+      'A published policy plays in full for everyone, whatever their level.'
+    ]);
+  });
+
+  it('using: Saved games, word for word, the 12 from MAX_SAVES', async () => {
+    render(AboutUsing, { level: 2 });
+    const s = document.getElementById('about-saved-games')!;
+    expect(s.querySelector('h3')?.textContent?.trim()).toBe('Saved games');
+    expect([...s.querySelectorAll('p')].map((p) => p.textContent?.trim())).toEqual([
+      `Each saved game has its own level, months to beat, plan and policy. You can keep ${MAX_SAVES}.`,
+      'Remix makes a new saved game from a published plan or policy, at your current level.',
+      'Games are saved in this browser, and to your account from your first win.'
+    ]);
+    expect(SAVED_GAMES[0]).toContain('You can keep 12.');
+  });
+
+  it('using: the order is Keyboard shortcuts, Levels, Saved games, Your plans', async () => {
+    render(AboutUsing, { level: 2 });
+    const subs = [...document.querySelectorAll('#about-using h3')].map((h) =>
+      h.textContent?.trim()
+    );
+    expect(subs).toEqual(['Keyboard shortcuts', 'Levels', 'Saved games', 'Your plans']);
   });
 });
 

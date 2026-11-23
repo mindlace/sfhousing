@@ -192,6 +192,11 @@ export default defineConfig({
       reason: 'the expected /no-such-page 404 that the e2e cache-headers and a11y specs request'
     },
     {
+      pattern:
+        /^\[WebServer\]\s+\[404\] (GET \/sims|GET \/sims\/abc|GET \/invite\/abc|GET \/api\/sims|POST \/api\/operator\/sims\/abc\/takedown)\s*$/,
+      reason: 'the expected 404s of the removed URLs that e2e/auth-a11y.spec.ts requests'
+    },
+    {
       pattern: /^\[WebServer\]\s*$/,
       reason: 'empty spacer lines wrangler dev prints around each log block'
     },

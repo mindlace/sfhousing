@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ACCOUNT_COPY } from '$lib/account/account-copy';
-import { SIMS_COPY } from '$lib/members/copy';
+import { AUTH_COPY } from '$lib/account/copy';
 import { GET, DELETE } from './+server';
 
 const { deleteAccount, signOut } = vi.hoisted(() => ({
@@ -93,39 +93,29 @@ describe('DELETE /api/account', () => {
     expect(deleteAccount).not.toHaveBeenCalled();
   });
 
-  it('200 + deletes on match, as the human actor, then signs out', async () => {
+  it('200 { ok: true }: deletes with exactly { db, identityId } and signs out', async () => {
     const res = await DELETE(evt({ request: del({ confirmHandle: 'ada' }) }));
     expect(res.status).toBe(200);
-    expect(((await res.json()) as Record<string, unknown>).ok).toBe(true);
+    expect(await res.json()).toEqual({ ok: true });
     expect(deleteAccount).toHaveBeenCalledOnce();
-    expect(deleteAccount).toHaveBeenCalledWith({
-      db: {},
-      env: platform.env,
-      identityId: 'u1',
-      actor: { actorId: 'u1', actorKind: 'human' },
-      defer: expect.any(Function)
-    });
-    // The fan-out over the sims it left runs after the response, through waitUntil.
-    const { defer } = deleteAccount.mock.calls[0][0] as { defer: (p: Promise<void>) => void };
-    const work = Promise.resolve();
-    defer(work);
-    expect(waitUntil).toHaveBeenCalledWith(work);
+    expect(deleteAccount).toHaveBeenCalledWith({ db: {}, identityId: 'u1' });
+    expect(waitUntil).not.toHaveBeenCalled();
     expect(signOut).toHaveBeenCalledOnce();
   });
 
-  it('202 { more: true } while passes remain, without signing out', async () => {
+  it('never answers 202', async () => {
+    // Even a store that still says more is left gets one 200: the route has no pass loop.
     deleteAccount.mockResolvedValueOnce({ more: true });
-    const res = await DELETE(evt({ request: del({ confirmHandle: 'ada' }) }));
-    expect(res.status).toBe(202);
-    expect(await res.json()).toEqual({ more: true });
-    expect(deleteAccount).toHaveBeenCalledWith({
-      db: {},
-      env: platform.env,
-      identityId: 'u1',
-      actor: { actorId: 'u1', actorKind: 'human' },
-      defer: expect.any(Function)
-    });
-    expect(signOut).not.toHaveBeenCalled();
+    const cases = [
+      evt({ request: del({ confirmHandle: 'ada' }) }),
+      evt({ request: del({ confirmHandle: 'ada' }) }),
+      evt({ request: del({ confirmHandle: 'wrong' }) }),
+      evt({ locals: { user: null, session: null }, request: del({ confirmHandle: 'ada' }) })
+    ];
+    for (const e of cases) {
+      const res = await DELETE(e);
+      expect(res.status).not.toBe(202);
+    }
   });
 
   it('still answers 200 when the sign-out has nothing left to sign out', async () => {
@@ -142,7 +132,7 @@ describe('DELETE /api/account', () => {
     });
     const res = await DELETE(evt({ request }));
     expect(res.status).toBe(415);
-    expect(await res.json()).toEqual({ error: SIMS_COPY.jsonRequired });
+    expect(await res.json()).toEqual({ error: AUTH_COPY.jsonRequired });
     expect(deleteAccount).not.toHaveBeenCalled();
   });
 

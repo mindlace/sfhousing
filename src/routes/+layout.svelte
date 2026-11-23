@@ -7,9 +7,29 @@
   import { provideHeaderActions } from '$lib/shell/header-actions.svelte';
   import { isFullHeightRoute } from '$lib/shell/layout';
   import { onMount } from 'svelte';
+  import { browser } from '$app/environment';
+  import { e2eOpen } from '$lib/game/e2e';
+  import { createSaveSync } from '$lib/game/save-sync.svelte';
+  import { GameStore, openGame, provideGame } from '$lib/game/store.svelte';
+  import { getStorage } from '$lib/sharing/storage';
 
   let { children } = $props();
   const headerActions = provideHeaderActions();
+
+  function makeGame(): GameStore {
+    if (!browser) return openGame();
+    const storage = getStorage();
+    if (e2eOpen(storage)) return openGame();
+    const sync = createSaveSync({
+      storage,
+      fetchFn: fetch,
+      signedIn: () => page.data.user != null
+    });
+    const store = new GameStore({ storage, sync });
+    sync.attach(store);
+    return store;
+  }
+  provideGame(makeGame());
   const full = $derived(isFullHeightRoute(page.route.id));
 
   // VITE_E2E build only: marks hydration for e2e (helpers/sharing.ts gotoHydrated). SvelteKit

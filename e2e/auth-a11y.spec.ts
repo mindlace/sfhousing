@@ -3,10 +3,8 @@
 // Later auth pages add their cases here.
 import { expect, test, type Page } from '@playwright/test';
 import { AUTH_COPY } from '../src/lib/account/copy';
-import { newId } from '../src/lib/ids/base58';
-import { MEMBERS_COPY } from '../src/lib/members/copy';
 import { expectNoA11yViolations } from './helpers/a11y';
-import { enableAuthMethods, loginAs, readMail, uniqueEmail } from './helpers/auth';
+import { enableAuthMethods, loginAs, uniqueEmail } from './helpers/auth';
 import { openHeaderMenu } from './helpers/sharing';
 
 test.use({ storageState: { cookies: [], origins: [] } });
@@ -164,44 +162,32 @@ test('header: signed out shows Sign in, signed in shows the handle, both axe cle
   await expectNoA11yViolations(page);
 });
 
-test('invite page: no axe violations for a bad link, the join form and the accept button', async ({
-  page,
-  browser
+test('removed pages /sims, /sims/abc and /invite/abc answer 404 with Page not found', async ({
+  page
 }) => {
-  await page.goto('/invite/not-a-real-token');
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText(MEMBERS_COPY.inviteInvalidTitle);
-  await expectNoA11yViolations(page);
+  for (const path of ['/sims', '/sims/abc', '/invite/abc']) {
+    const res = await page.goto(path);
+    expect(res!.status()).toBe(404);
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Page not found');
+    await expect(
+      page.getByRole('link', { name: 'Go to the home page', exact: true })
+    ).toHaveAttribute('href', '/');
+  }
+});
 
-  // A manager invites a registered user by handle; the link arrives through the mail sink.
-  const inviteeEmail = uniqueEmail('a11y-invitee');
-  const inviteeCtx = await browser.newContext({ storageState: { cookies: [], origins: [] } });
+test('GET /api/sims and POST /api/operator/sims/abc/takedown answer 404 without a redirect', async ({
+  page
+}) => {
+  expect((await page.request.get('/api/sims', { maxRedirects: 0 })).status()).toBe(404);
   expect(
-    (await inviteeCtx.request.post('/api/e2e/login', { data: { email: inviteeEmail } })).ok()
-  ).toBeTruthy();
-  await loginAs(page, uniqueEmail('a11y-inviter'));
-  const created = await page.request.post('/api/sims', {
-    data: { simId: newId(), title: 'Invite A11y' }
-  });
-  const { simId } = (await created.json()) as { simId: string };
-  const invited = await page.request.post(`/api/sims/${simId}/invites`, {
-    data: { target: `@${inviteeEmail.split('@')[0]}` }
-  });
-  expect(invited.status()).toBe(201);
-  const invitePath = new URL(await readMail(page.request, 'invite', inviteeEmail)).pathname;
+    (
+      await page.request.post('/api/operator/sims/abc/takedown', { data: {}, maxRedirects: 0 })
+    ).status()
+  ).toBe(404);
+});
 
-  // Signed out: the join form with its email field.
-  const visitor = await browser.newContext({ storageState: { cookies: [], origins: [] } });
-  const visitorPage = await visitor.newPage();
-  await visitorPage.goto(invitePath);
-  await expect(visitorPage.locator('html')).toHaveAttribute('data-hydrated', '');
-  await expect(visitorPage.getByLabel(MEMBERS_COPY.inviteEmailLabel)).toBeVisible();
-  await expectNoA11yViolations(visitorPage);
-  await visitor.close();
-
-  // Signed in as the invitee: the accept button.
-  const inviteePage = await inviteeCtx.newPage();
-  await inviteePage.goto(invitePath);
-  await expect(inviteePage.getByRole('button', { name: MEMBERS_COPY.inviteAccept })).toBeVisible();
-  await expectNoA11yViolations(inviteePage);
-  await inviteeCtx.close();
+test('a signed-in request to /sims resolves the session and answers 404', async ({ page }) => {
+  await loginAs(page, uniqueEmail('removed-path'));
+  expect((await page.goto('/sims'))!.status()).toBe(404);
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Page not found');
 });

@@ -15,8 +15,8 @@ export const POST: RequestHandler = async (event) => {
   if (refused) return refused;
   const { locals, request, platform } = event;
   if (!locals.user) return json({ error: ACCOUNT_COPY.signinRequired }, { status: 401 });
-  // A pseudonymous user adds an address; a registered one with an unconfirmed address (a cold
-  // join from an emailed invite) confirms that address, and only that one.
+  // A pseudonymous user adds an address; a registered one whose address is unconfirmed
+  // (`emailVerified` false) confirms that address, and only that one.
   const confirmingOwn = !locals.user.pseudonymous && !locals.user.emailVerified;
   if (!locals.user.pseudonymous && !confirmingOwn) {
     return json({ emailError: ACCOUNT_COPY.emailAlreadySet }, { status: 400 });

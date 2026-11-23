@@ -11,7 +11,7 @@ import { hasPassword } from '$lib/server/user-store/password-credential';
 /**
  * Whether this account could sign back in after signing out: it is not pseudonymous (it has a
  * real email), or it holds a passkey, a password or a Google account. A pseudonymous account
- * with none of them would be lost, with every sim only it manages.
+ * with no way back in would be lost.
  */
 function canSignBackIn(
   pseudonymous: boolean,
@@ -54,7 +54,7 @@ export const load: PageServerLoad = async (event) => {
 export const actions: Actions = {
   // Ends this session (Better-Auth deletes its row and clears the session cookies) and lands
   // on the home page signed out. The known-device cookie stays, as planafoot kept it: the
-  // next sim started on this device steers to sign-in rather than minting a second account.
+  // next save from this device steers to sign-in rather than minting a second account.
   // An account that could not sign back in keeps its session (back to /account), so a
   // hand-made post cannot strand it.
   signOut: async (event) => {

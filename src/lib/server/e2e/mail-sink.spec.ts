@@ -16,14 +16,14 @@ afterEach(() => {
 describe('e2e mail sink', () => {
   it('records nothing outside an e2e build', () => {
     vi.stubEnv('VITE_E2E', '');
-    recordE2eMail(DEV, 'invite', 'a@example.com', 'https://x/1');
-    expect(readE2eMail('invite', 'a@example.com')).toBeNull();
+    recordE2eMail(DEV, 'password-reset', 'a@example.com', 'https://x/1');
+    expect(readE2eMail('password-reset', 'a@example.com')).toBeNull();
   });
 
   it('records nothing in an e2e build outside development', () => {
     vi.stubEnv('VITE_E2E', '1');
-    recordE2eMail(PROD, 'invite', 'a@example.com', 'https://x/1');
-    expect(readE2eMail('invite', 'a@example.com')).toBeNull();
+    recordE2eMail(PROD, 'password-reset', 'a@example.com', 'https://x/1');
+    expect(readE2eMail('password-reset', 'a@example.com')).toBeNull();
   });
 
   it('records and reads by kind and lower-cased address', () => {
@@ -43,8 +43,8 @@ describe('e2e mail sink', () => {
 
   it('forgets everything on clear', () => {
     vi.stubEnv('VITE_E2E', '1');
-    recordE2eMail(DEV, 'invite', 'a@example.com', 'https://x/1');
+    recordE2eMail(DEV, 'password-reset', 'a@example.com', 'https://x/1');
     clearE2eMail();
-    expect(readE2eMail('invite', 'a@example.com')).toBeNull();
+    expect(readE2eMail('password-reset', 'a@example.com')).toBeNull();
   });
 });

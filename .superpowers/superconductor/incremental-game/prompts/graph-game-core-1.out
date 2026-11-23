@@ -1,0 +1,9 @@
+I checked the `game-core` row against its spec as it reads on disk now. It still matches, so the build graph didn't change and there was nothing to commit. The sha below is the current HEAD.
+
+The spec's latest edit (ruling game-core-1) only adds a rule that removes the old `sfhousing:sim:v1` policy key whenever the store writes the current game's records, including `adopt`. That changes no file the row lists, no spec section it cites, and none of its inputs or outputs.
+
+Build graph @ 5bde42a0
+Longest chain: contracts -> finite-funding -> pool-closing -> reach-check -> closing
+Longest chain: remove-lesscars -> finite-funding -> pool-closing -> reach-check -> closing
+Longest chain: contracts -> finite-funding -> pool-closing -> funding-measures -> closing
+Longest chain: remove-lesscars -> finite-funding -> pool-closing -> funding-measures -> closing
