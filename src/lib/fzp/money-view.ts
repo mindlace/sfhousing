@@ -17,7 +17,7 @@ import {
 import type { TimelineScore } from '$lib/sim/protocol';
 import type { MoneyView } from '$lib/sim/world/score/types';
 import { formatCount, formatPercent } from '$lib/scoreboard/format';
-import { MARKET_FUNDING_SENTENCE } from '$lib/sim-page/funding-copy';
+import { MARKET_FUNDING_SENTENCE, NO_CEILING } from '$lib/sim-page/funding-copy';
 import {
   INCOME_TIERS,
   type Calibration,
@@ -231,9 +231,6 @@ export const COLUMN_NAME: Record<SourceColumn, string> = {
 export function bySourceColumns(m: MoneyAt): SourceColumn[] {
   return COLUMNS.filter((c) => m.pools.some((p) => p[c] !== 0));
 }
-
-/** What an older dataset's federal pool reads where its amount would show. */
-const NO_CEILING = 'No ceiling';
 
 /**
  * A Received cell: "No ceiling" where `isNoCeiling(received)` (an older dataset's federal pool,

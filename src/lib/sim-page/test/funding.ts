@@ -33,11 +33,14 @@ const basePool = (id: string, kind: PoolKind): Pool => ({
   id,
   kind,
   label: id,
-  inflows:
-    kind === 'federal'
-      ? []
-      : [{ kind: 'yearly', from: FUND_ASOF, to: null, dollarsPerYear: 100_000_000 }],
-  uncapped: kind === 'federal',
+  inflows: [
+    {
+      kind: 'yearly',
+      from: FUND_ASOF,
+      to: null,
+      dollarsPerYear: kind === 'federal' ? 50_000_000 : 100_000_000
+    }
+  ],
   debt: null,
   leverage: 1
 });

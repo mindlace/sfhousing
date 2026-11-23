@@ -33,6 +33,7 @@ import {
 } from '$lib/fzp/format';
 import { HORIZON } from '$lib/fzp/time';
 import { formatCount, formatPercent } from '$lib/scoreboard/format';
+import { isNoCeiling } from '$lib/timelapse/model';
 import {
   INCOME_TIERS,
   type Calibration,
@@ -54,6 +55,7 @@ import {
   GROUP_NAME,
   GROUP_OWNER,
   GUARANTEE_NEEDS_TERM,
+  NO_CEILING,
   NO_MONEY_ADDED,
   SUMMARY_GROUP_NAME,
   TERM_NAME,
@@ -259,8 +261,8 @@ export interface BaselineGroup {
   group: GroupId;
   name: string;
   pools: Pool[];
-  /** The yearly inflows in force at the present; null for the uncapped group. */
-  perYear: Dollars | null;
+  /** The yearly inflows in force at the present, at their scale. */
+  perYear: Dollars;
   /** Every pool of the group is off at the present. */
   off: boolean;
   perHome: Dollars;
@@ -281,18 +283,14 @@ export function baselineGroups(f: FinanceLevers, baseline: Baseline, asOf: Day):
     const pools = baseline.pools.filter((p) => groupOf(p.kind) === group);
     if (pools.length === 0) continue;
     const ids = new Set(pools.map((p) => p.id));
-    let perYear: number | null = null;
-    if (!pools.every((p) => p.uncapped)) {
-      perYear = 0;
-      for (const p of pools) {
-        const scale = entryAt(f, p.id, asOf)?.scale ?? 1;
-        for (const x of p.inflows) {
-          if (x.kind === 'yearly' && x.from <= asOf && (x.to === null || x.to >= asOf)) {
-            perYear += x.dollarsPerYear * scale;
-          }
+    let perYear = 0;
+    for (const p of pools) {
+      const scale = entryAt(f, p.id, asOf)?.scale ?? 1;
+      for (const x of p.inflows) {
+        if (x.kind === 'yearly' && x.from <= asOf && (x.to === null || x.to >= asOf)) {
+          perYear += x.dollarsPerYear * scale;
         }
       }
-      perYear = Math.round(perYear);
     }
     const sums = groupSums(f, baseline, priced, group);
     const dates = f.baselineScale.filter((e) => ids.has(e.pool)).map((e) => e.from);
@@ -300,7 +298,7 @@ export function baselineGroups(f: FinanceLevers, baseline: Baseline, asOf: Day):
       group,
       name: GROUP_NAME[group],
       pools,
-      perYear,
+      perYear: Math.round(perYear),
       off: pools.every((p) => isOff(f, p.id, asOf)),
       perHome: Math.round(sums.perHome),
       lentPerHome: Math.round(sums.lent),
@@ -317,8 +315,6 @@ export interface ScaleLine {
   name: string;
   from: Day;
   scale: number;
-  /** Every pool of the line is uncapped: any scale above 0 is "switched back on". */
-  uncapped: boolean;
   /** Every pool of the line was switched off the day before (scale 0). */
   backOn: boolean;
   text: string;
@@ -336,7 +332,7 @@ export function scaleLines(f: FinanceLevers, baseline: Baseline, group: GroupId)
   const byId = new Map(pools.map((p) => [p.id, p]));
   const entries = f.baselineScale.filter((e) => order.has(e.pool));
   const used = new Set<(typeof entries)[number]>();
-  const raw: Omit<ScaleLine, 'text' | 'uncapped' | 'backOn'>[] = [];
+  const raw: Omit<ScaleLine, 'text' | 'backOn'>[] = [];
   if (group === 'city') {
     for (const e of entries) {
       if (used.has(e)) continue;
@@ -368,14 +364,12 @@ export function scaleLines(f: FinanceLevers, baseline: Baseline, group: GroupId)
   raw.sort((a, b) => a.from - b.from || order.get(a.pools[0])! - order.get(b.pools[0])!);
   return raw.map((l) => {
     const when = `From ${formatMonthYear(l.from)}`;
-    const uncapped = l.pools.every((id) => byId.get(id)!.uncapped);
     const prevZero = l.pools.every((id) => entryAt(f, id, l.from - 1)?.scale === 0);
-    let text: string;
-    if (l.scale === 0) text = `${when}: switched off`;
-    else if (uncapped) text = `${when}: switched back on`;
-    else
-      text = `${when}: ${prevZero ? 'switched back on, ' : ''}${pctOfScale(l.scale)} of today's amount`;
-    return { ...l, uncapped, backOn: prevZero, text };
+    const text =
+      l.scale === 0
+        ? `${when}: switched off`
+        : `${when}: ${prevZero ? 'switched back on, ' : ''}${pctOfScale(l.scale)} of today's amount`;
+    return { ...l, backOn: prevZero, text };
   });
 }
 
@@ -462,7 +456,9 @@ export function programmeSentence(
   );
 }
 
+/** One inflow's phrase; a yearly inflow whose amount `isNoCeiling` is "No ceiling". */
 function inflowPhrase(x: Pool['inflows'][number], m: (key: string) => string = () => ''): string {
+  if (x.kind === 'yearly' && isNoCeiling(x.dollarsPerYear)) return NO_CEILING;
   if (x.kind === 'once')
     return `${formatDollars(x.dollars)}${m('dollars')} in ${formatMonthYear(x.day)}${m('day')}`;
   const until = x.to === null ? '' : ` until ${formatMonthYear(x.to)}${m('to')}`;
@@ -474,16 +470,14 @@ function inflowPhrase(x: Pool['inflows'][number], m: (key: string) => string = (
 
 /**
  * "$300 million in July 2028; repaid at 6% over 20 years" (4.14 item 3). `custom` names the
- * evidence fields holding custom values; each is followed by "(custom, not sourced)".
+ * evidence fields holding custom values; each is followed by "(custom, not sourced)". A pool with
+ * no inflow has an empty money phrase.
  */
 export function poolMoneySentence(pool: Pool, custom: ReadonlySet<PoolField> = new Set()): string {
   const m = (field: PoolField) => (custom.has(field) ? CUSTOM_MARK : '');
-  const money =
-    pool.uncapped && pool.inflows.length === 0
-      ? 'no limit'
-      : pool.inflows
-          .map((x, k) => inflowPhrase(x, (key) => m(`inflows[${k}].${key}` as PoolField)))
-          .join(', ');
+  const money = pool.inflows
+    .map((x, k) => inflowPhrase(x, (key) => m(`inflows[${k}].${key}` as PoolField)))
+    .join(', ');
   const debt =
     pool.debt === null
       ? ''
@@ -1031,7 +1025,7 @@ export function summaryRows(
   else if (baseline === undefined) {
     for (const e of [...f.baselineScale].sort((a, b) => a.from - b.from)) {
       const backOn = entryAt(f, e.pool, e.from - 1)?.scale === 0;
-      rows.push(row(summaryScaleText(e.pool, e.from, e.scale, false, backOn)));
+      rows.push(row(summaryScaleText(e.pool, e.from, e.scale, backOn)));
     }
   } else {
     const lines = GROUPS.flatMap((group) =>
@@ -1041,8 +1035,7 @@ export function summaryRows(
         name: group === 'city' ? l.name : SUMMARY_GROUP_NAME[group]
       }))
     ).sort((a, b) => a.from - b.from);
-    for (const l of lines)
-      rows.push(row(summaryScaleText(l.name, l.from, l.scale, l.uncapped, l.backOn)));
+    for (const l of lines) rows.push(row(summaryScaleText(l.name, l.from, l.scale, l.backOn)));
   }
 
   const basePools = new Map((baseline?.pools ?? []).map((p) => [p.id, p]));

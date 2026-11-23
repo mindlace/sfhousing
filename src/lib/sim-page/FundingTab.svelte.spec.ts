@@ -3,10 +3,13 @@
 // disclosure, today's funding rows and the group editor with dated changes, "Money you add"
 // when empty, and the selection clearing on an undo that removes the selected row.
 import { tick, type ComponentProps } from 'svelte';
-import { describe, expect, it } from 'vitest';
+import axe from 'axe-core';
+import { afterEach, describe, expect, it } from 'vitest';
 import { render } from 'vitest-browser-svelte';
-import { page, userEvent } from 'vitest/browser';
+import { cdp, page, userEvent } from 'vitest/browser';
 import '../../routes/layout.css';
+import { LEGACY_UNCAPPED_DOLLARS } from '$lib/timelapse/model';
+import type { Calibration } from '$lib/timelapse/types';
 import { formatDollarsExact } from '$lib/fzp/format';
 import { HORIZON } from '$lib/fzp/time';
 import { coverageShortLine } from '$lib/timeline/money-copy';
@@ -26,6 +29,7 @@ import {
   PROGRAMME_LIMIT_DESC,
   RATE_CUT_DESC,
   RATE_CUT_ERROR,
+  SCALE_AMOUNT_DESC,
   TERM_IN_USE_DESC,
   YOUR_MIX_LINE,
   YOUR_VALUE_LINE,
@@ -56,16 +60,17 @@ function setup(
     only?: ComponentProps<typeof FundingTabHost>['only'];
     priceDay?: number;
     termsReadOnly?: boolean;
+    calibration?: Calibration;
   } = {}
 ) {
-  const calibration = fundingCalibration();
+  const { calibration = fundingCalibration(), ...rest } = extra;
   let store!: PolicyStore<SimPolicy>;
   let drafts!: FundingDrafts;
   render(FundingTabHost, {
     props: {
       policy,
       calibration,
-      ...extra,
+      ...rest,
       onready: (s: PolicyStore<SimPolicy>, d: FundingDrafts) => {
         store = s;
         drafts = d;
@@ -85,7 +90,7 @@ describe('FundingTab', () => {
     const groups = baselineGroups(policyWith({}).funding, calibration.baselineFunding!, FUND_ASOF);
     await expect.element(row(/^City · \$200 million a year/)).toBeVisible();
     await expect.element(row(/^State · \$100 million a year/)).toBeVisible();
-    await expect.element(row(/^Federal tax credits · no limit/)).toBeVisible();
+    await expect.element(row(/^Federal tax credits · \$50 million a year/)).toBeVisible();
     for (const g of groups) {
       const r = row(new RegExp(`^${g.name} ·`));
       await expect.element(r).toHaveAttribute('aria-pressed', 'false');
@@ -276,6 +281,92 @@ describe('FundingTab', () => {
   });
 });
 
+const TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22a', 'wcag22aa'];
+
+async function scheme(value: 'light' | 'dark') {
+  await cdp().send('Emulation.setEmulatedMedia', {
+    features: [{ name: 'prefers-color-scheme', value }]
+  });
+}
+
+/** `fundingCalibration` with an older dataset's federal pool, as `parseCalibration` reads it. */
+function olderCalibration(): Calibration {
+  const cal = fundingCalibration();
+  const funding = cal.baselineFunding!;
+  cal.baselineFunding = {
+    ...funding,
+    pools: funding.pools.map((p) =>
+      p.kind === 'federal'
+        ? {
+            ...p,
+            inflows: [
+              { kind: 'yearly', from: FUND_ASOF, to: null, dollarsPerYear: LEGACY_UNCAPPED_DOLLARS }
+            ]
+          }
+        : p
+    )
+  };
+  return cal;
+}
+
+describe('FundingTab: the federal group', () => {
+  afterEach(async () => {
+    await scheme('light');
+  });
+
+  const federal = () => row(/^Federal tax credits ·/);
+  const openChange = async () => {
+    await federal().click();
+    await page.getByRole('button', { name: 'Change from a date', exact: true }).click();
+  };
+  const amount = () => page.getByRole('spinbutton', { name: /^Amount, % of today's/ });
+
+  it("the federal group's change entry is the group editor", async () => {
+    setup();
+    await openChange();
+    await expect.element(page.getByRole('combobox', { name: /^Month/ })).toHaveFocus();
+    await expect.element(amount()).toHaveValue(0);
+    await expect.element(amount()).toHaveAccessibleDescription(new RegExp(`^${SCALE_AMOUNT_DESC}`));
+    expect(page.getByRole('radio', { name: 'Switched back on' }).elements()).toHaveLength(0);
+    expect(page.getByRole('radio', { name: 'Switched off' }).elements()).toHaveLength(0);
+    expect(document.body.textContent).not.toContain('Switched back on');
+  });
+
+  it('applies a 150% change on the federal group', async () => {
+    const { store } = setup();
+    await openChange();
+    await amount().fill('150');
+    await page.getByRole('button', { name: 'Apply change' }).click();
+    expect(store.policy.funding.baselineScale).toEqual([
+      { pool: 'federal', from: JULY, scale: 1.5 }
+    ]);
+    expect(store.undoLabel).toBe(`Today's funding: federal 150% from July ${YEAR}`);
+    await expect.element(federal()).toHaveTextContent(`Changes from July ${YEAR}`);
+    const lines = [...document.querySelectorAll('[data-scale-line]')].map((l) => l.textContent);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain(`From July ${YEAR}: 150% of today's amount`);
+  });
+
+  it('reads Federal tax credits · No ceiling on an older-dataset baseline', async () => {
+    setup(policyWith({}), { calibration: olderCalibration() });
+    await expect.element(row(/^Federal tax credits · No ceiling/)).toBeVisible();
+    await expect.element(row(/^State · \$100 million a year/)).toBeVisible();
+  });
+
+  it('the open federal entry passes axe in light and dark', async () => {
+    setup();
+    await openChange();
+    await expect.element(amount()).toBeVisible();
+    const editor = document.querySelector('[data-funding-editor]')!;
+    expect(editor).not.toBeNull();
+    for (const s of ['light', 'dark'] as const) {
+      await scheme(s);
+      const res = await axe.run(editor, { runOnly: TAGS });
+      expect(res.violations.map((v) => v.id)).toEqual([]);
+    }
+  });
+});
+
 const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const addMoney = () => page.getByRole('button', { name: 'Add money', exact: true });
 const ownPool = () => page.getByRole('button', { name: 'Your own pool', exact: true });
@@ -302,7 +393,6 @@ const ownPoolOf = (id: string, kind: 'generalRevenue' | 'goBond' = 'generalReven
   kind,
   label: `Pool ${id}`,
   inflows: [{ kind: 'once' as const, day: JULY, dollars: 10_000_000 }],
-  uncapped: false,
   debt: kind === 'goBond' ? { rate: 0.06, termYears: 20 } : null,
   leverage: 1
 });

@@ -178,6 +178,12 @@ describe('the list', () => {
       }
     }
   });
+
+  it('builds presets whose pools carry no uncapped', () => {
+    const list = fundingPresets(cal);
+    expect(list.some((p) => p.pools.length > 0)).toBe(true);
+    for (const p of list) expect(JSON.stringify(p.pools)).not.toContain('"uncapped"');
+  });
 });
 
 describe('date helpers', () => {

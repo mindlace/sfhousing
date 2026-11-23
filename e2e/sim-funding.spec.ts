@@ -16,7 +16,6 @@ import type { Calibration, Pool, Programme } from '../src/lib/timelapse/types';
 import {
   AMOUNT_ERROR,
   DRAFT_LINE,
-  NO_LIMIT,
   SWITCHED_OFF,
   addProgrammeName,
   fundingNotices,
@@ -197,7 +196,7 @@ test('1a. City funding scale and its rows, a11y light and dark', async ({ page }
   const groups = baselineGroups(NO_FUNDING, BASELINE, ASOF);
   expect(groups.length).toBeGreaterThanOrEqual(3);
   for (const g of groups) {
-    const amount = g.off ? SWITCHED_OFF : g.perYear === null ? NO_LIMIT : perYearText(g.perYear);
+    const amount = g.off ? SWITCHED_OFF : perYearText(g.perYear);
     const row = editor(page).getByRole('button', { name: new RegExp(`^${esc(g.name)} · `) });
     await expect(row).toContainText(`${g.name} · ${amount}`);
     await expect(row).toContainText(groupPaysText(g.perHome));
