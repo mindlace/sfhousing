@@ -143,7 +143,7 @@ export function defaultSaveName(
 ): string;
 
 // src/lib/game/store.svelte.ts
-export type StoreChange = { ok: true } | { ok: false; reason: 'full' | 'storage' };
+export type StoreChange = { ok: true } | { ok: false; reason: 'full' | 'storage' | 'changed' };
 
 /** The win on screen that "Level up" would bank. */
 export interface Offer {
@@ -211,8 +211,9 @@ export function useGame(): GameStore;</code></pre>
           <li>The store's <code>levelUp()</code> banks the offer with the pure <code>levelUp</code>, clears the offer, and stores the game. The win card and the level panel both call it.</li>
           <li>The page that set the offer reacts to the level changing: <code>/sim</code> returns the clock to today, and Paint opens <code>/sim</code>.</li>
           <li>The page calls <code>touched()</code> after its autosave writes a record key. The store sets the current game's <code>savedAt</code> and calls <code>sync.changed(currentId)</code>.</li>
-          <li>A page that autosaves a record key registers its autosave's flush with <code>beforeLeave</code> when it mounts and removes it when it unmounts. <code>newGame</code>, <code>switchTo</code> of another game, <code>remix</code> and <code>remove</code> of the current game call every registered function, in registration order, once they will go ahead and before they read or write a record key. So an edit still waiting in the page's autosave is in the record keys when the old game is copied out, and nothing is left waiting to be written over the new game's records when the page unloads.</li>
-          <li>After <code>newGame</code>, <code>switchTo</code> of another game, <code>remix</code> or <code>remove</code> of the current game answers <code>ok</code>, the store ignores <code>touched()</code> for the rest of the document's life: the page is about to unload, and its last write was copied out with the old game.</li>
+          <li>A page that autosaves a record key registers its autosave's flush with <code>beforeLeave</code> when it mounts and removes it when it unmounts. <code>newGame</code>, <code>switchTo</code> of another game, <code>remix</code>, <code>remove</code> of the current game and <code>adopt</code> of saves that hold the current game's id call every registered function, in registration order, once they will go ahead and before they read or write a record key. So an edit still waiting in the page's autosave is in the record keys when the old game is copied out, and nothing is left waiting to be written over the new game's records when the page unloads.</li>
+          <li>When a function that <code>adopt</code> called writes a record key, the current game had an edit that was still waiting: <code>adopt</code> then changes nothing and answers <code>{ ok: false, reason: 'changed' }</code>. The save sync sends that game instead, and a 409 keeps both versions (S2, D8). No other change answers <code>changed</code>.</li>
+          <li>After <code>newGame</code>, <code>switchTo</code> of another game, <code>remix</code>, <code>remove</code> of the current game, or <code>adopt</code> of the current game's id answers <code>ok</code>, the store ignores <code>touched()</code> for the rest of the document's life: the page is about to unload, and nothing it still writes belongs to the game now in the record keys.</li>
           <li>On first construction with no <code>SAVES_KEY</code>, the store makes one saved game at level 1 whose plan and policy are whatever the two record keys hold.</li>
           <li><code>newGame</code>, <code>switchTo</code> and <code>remix</code> first copy the two record keys into the current game's stored save, then write the new current game's plan and policy into the two record keys. <code>remove</code> of the current game removes its save without copying it out, then writes the new current game's plan and policy into the two record keys.</li>
           <li>After <code>newGame</code>, <code>switchTo</code> or <code>remove</code> answers <code>ok</code>, the caller loads the new current game's page with a full page load: <code>/</code> at level 1, <code>/sim</code> above it.</li>
@@ -337,6 +338,7 @@ export function createSaveSync(opts: {
 }): SaveSync;</code></pre>
         <ul>
           <li><code>state</code> is <code>local</code> until this browser has a session.</li>
+          <li>A pull adopts the current game last, after every other step, and only while the current game is still unchanged here at the moment of the call. An adopt that answers <code>changed</code> sends the game instead, so a 409 keeps both. An adopt of the current game that answers <code>ok</code> reloads the page at once, so the page shows the account's version and writes nothing over it.</li>
           <li><code>changed(id)</code> sends nothing while this browser has no session and the game's <code>firstWinAt</code> is null.</li>
           <li>When the sync attaches with no session, every saved game that has <code>firstWinAt</code> set and has not been sent since it last changed is queued to send, so a first win whose send never went still makes the account.</li>
           <li><code>changed(id)</code> debounces to one <code>PUT</code> per saved game per 2 seconds, with the save read from the store at send time.</li>
@@ -723,6 +725,39 @@ npx playwright test e2e/game-save.spec.ts --repeat-each=5 --retries=0</code></pr
       <li id="t7-s5"><input type="checkbox"> Run <code>npm run check</code>, <code>npm run lint</code>, <code>npm run test:unit</code>, and <code>npx chreode timing-check --head HEAD</code> after committing.</li>
       <li id="t7-s6"><input type="checkbox"> Commit.
         <pre><code data-lang="sh">git commit -m "feat(game-save): all sign-in methods, e2e and docs"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-8">
+    <h2>Task 8: The pull adopts the current game last</h2>
+    <p>Delivers row S2 (as amended by ruling conductor-13). Builds only after <code>game-core</code>'s store change (<code>adopt</code> runs the <code>beforeLeave</code> flushes and answers <code>changed</code>) has merged into this branch.</p>
+    <p>Spec: <code>#sec-if-g2</code> (the <code>adopt</code> and <code>changed</code> bullets), <code>#sec-if-s2</code>, <code>#sec-design-sync-setup</code> (the one reload), <code>#sec-design-sync-pull</code> (the last three bullets), the pull item of <code>#sec-tests-client</code>.</p>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/lib/game/save-sync.svelte.ts</code>, <code>src/lib/game/save-sync.svelte.spec.ts</code></li>
+      <li>Modify: <code>docs/dev/game-save.md</code> (the pull section: the current game last, the <code>changed</code> answer, the reload at once)</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>StoreChange</code> with <code>reason: 'changed'</code>; <code>store.adopt</code> of the current game's id running the <code>beforeLeave</code> flushes (G2, built by <code>game-core</code>).</li>
+      <li>Produces: no new export. <code>syncReload.reload()</code> stays the one reload seam.</li>
+    </ul>
+    <ol>
+      <li id="t8-s1"><input type="checkbox"> Add tests to <code>save-sync.svelte.spec.ts</code> (the fake store's <code>adopt</code> can be scripted to answer <code>changed</code>):
+        <ul>
+          <li>A pull that lists the current game at a higher rev and another lacking save adopts the other save first, the current game last (the fake store records the order).</li>
+          <li>The current game changed here between the list and its adopt (after the per-save GET answers) is sent with <code>baseRev: seen[id].rev</code>, never adopted, and no reload.</li>
+          <li>An adopt of the current game answering <code>{ ok: false, reason: 'changed' }</code> sends it with <code>baseRev: seen[id].rev</code>; the 409 that follows keeps both ("{name} (this device)" and the account's version); no reload; <code>seen[id]</code> is unchanged by the refused adopt.</li>
+          <li>An adopt of the current game answering <code>ok</code> calls <code>syncReload.reload</code> at once: before any later request the pull or its held sends would make (the fetch spy records no request after the reload call), exactly once; a second pull at the same rev does not reload.</li>
+        </ul>
+      </li>
+      <li id="t8-s2"><input type="checkbox"> Run the spec and see the new tests fail.
+        <pre><code data-lang="sh">npx vitest --run --project client src/lib/game/save-sync.svelte.spec.ts</code></pre>
+      </li>
+      <li id="t8-s3"><input type="checkbox"> Implement: during the per-save loop, a current game due for adopt is fetched but its adopt is deferred to after every other step (the removed list, the sends for saves neither listed nor removed). Then re-check "unchanged here"; changed: send with <code>baseRev: seen[id].rev</code>. Adopt; <code>changed</code>: send the same way; <code>ok</code>: <code>seen[id]</code> takes the adopted rev and <code>savedAt</code>, then <code>syncReload.reload()</code> at once and the pull starts no further request (held sends are left waiting; the reloaded page's pull sends them). Other saves keep the existing adopt and re-check path.</li>
+      <li id="t8-s4"><input type="checkbox"> Update the pull section of <code>docs/dev/game-save.md</code>. Run the spec, the whole client project for <code>src/lib/game</code>, <code>npm run check</code>, <code>npm run lint</code>; commit; then <code>npx chreode timing-check --head HEAD</code>.
+        <pre><code data-lang="sh">git commit -m "fix(game-save): pull adopts the current game last and reloads at once"</code></pre>
       </li>
     </ol>
   </section>

@@ -41,6 +41,11 @@ export const remixedToast = (label: string): string =>
   `Remixed from ${label}. You're editing your own copy.`;
 export const remixConfirm = (n: number): string =>
   `Replace your current plan (${n} strokes) with a copy of this one? Your current plan will be lost unless you publish it first.`;
+export const REMIX_LOCKED = 'Unlock the simulation to remix';
+/** 'Level 4 runs all of it' */
+export const remixNeeds = (level: number): string => `Level ${level} runs all of it`;
+export const REMIX_LATER = 'Parts unlock in a later round';
+export const YOUR_GAME = 'Your game';
 export const ogDescription = (n: number): string =>
   `A plan for San Francisco housing with ${n} brush strokes. Open it to see the buildings and net new units.`;
 
