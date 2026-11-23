@@ -755,6 +755,7 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - fork checkpoint-16 started 2026-11-23T04:45
 - fork checkpoint-16 exited [0]: output
 - fork review-reach-check-d0245c1b started 2026-11-23T05:11
+- fork review-reach-check-d0245c1b exited [0]: output
 
 ## Frame-defect tally
 - owner-ruling-drift: 2 — instances: conductor-1 (gate-1, 2026-11-22); conductor-8 (gate-7, 2026-11-22)
@@ -875,6 +876,8 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - reach-check sent `complete` @ d0245c1b. Its live run on dataset 2026-11-14-3a25a7ad (doctor, fetch --restore, full build, check all pass) exits 0: "Goal: 82,069 homes by Oct 2066 / Reached: Apr 2065, 18 months before the window's end" (the operator's numbers; closing runs the script again on the dataset it builds). D1 holds on this build. Merge queued after the game-sim-3 fork exits. For closing: src/lib/map/hide-diff.spec.ts times out at 5 s in the full server run under load (passes alone); the check prints singular "1 month" for a one-month margin.
 - 07:15 merge of reach-check complete @ d0245c1b made onto b5e966c8 (merge commit 6b7f4fdb), suite running (agent; scratchpad `merge-reach-check/`); not merged until it passes; on failure reset to b5e966c8 with ledger.md copied out and back. game-sim and funding-measures told not to merge the integration branch until told.
 - merged reach-check [row G4's build check] @ d0245c1b into superconductor/incremental-game (complete), tests pass (check 0 errors; lint 0 errors; unit 9112 passed, scripts/level2-check.spec.ts 8/8; pipeline 2284 passed; e2e 762 passed, 0 failed, 0 flaky), band middle
+- No drift @ d0245c1b (review-reach-check-d0245c1b)
+- funding-measures row M1 (real dateMeasure in src/lib/sim-page/funding-presets.ts) @ c423eea0 reported, its own full suite green there. Held to merge at its complete (closing is M1's only consumer by row; game-sim built against the M1 stub). Its note: addPolicy (src/lib/timeline/add.ts) and the edit paths that call dateMeasure, and G3's "an edit that changes what a given measure pays sets preset to null", are game-sim's; the real dateMeasure first meets game-sim's calls on the integration branch, whichever merges second. The merge review of the second one checks that seam; closing's journey e2e covers the real dateMeasure.
 
 ## Cost
 - remove-lesscars: admitted 2026-11-22T16:31 seven_day 44% | session d889ec5c-3342-4a77-99f8-993f1115a679 | finished 2026-11-22T21:14 seven_day 60%
