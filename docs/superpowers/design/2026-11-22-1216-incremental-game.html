@@ -205,10 +205,10 @@
         <li>Every one of today's sources carries a bound: the day its money stops and where that was read, or the statement that law sets no end and where that was read.</li>
         <li>Federal tax credits become a pool with a yearly amount, the ceiling. No pool can always pay: the <code>uncapped</code> flag leaves the model.</li>
         <li>Every funding preset has an end. The three whose money has none today ("General Fund set-aside", "federal support", "state money doubled") get a stated term.</li>
-        <li>A pool's bar on the timeline shows what is left of all the money the pool will ever receive, when every inflow of the pool has an end. A pool with no end keeps today's reading, the free share of what it has received so far.</li>
+        <li>A pool's bar on the timeline shows what is left of all the money the pool receives in the window. It starts full and drains as its money is allocated; a yearly payment never refills it. A pool with no end counts its payments to the window's end.</li>
         <li>The funding editors take the window's last month from the dataset date, in place of the fixed December 2066.</li>
         <li>The window's last month is the calendar month that holds the window's last day. The goal's deadline is the last whole month, one before it. On today's live data those are November 2066 and October 2066; on the fixture, October 2066 and September 2066.</li>
-        <li>A pool's bar shows nothing special when the pool closes: by then its lifetime level is at or near empty by its own arithmetic. Details carries the "ran out" line.</li>
+        <li>A closed pool's bar reads empty from the month it ran out until it opens again, because what it still holds is never awarded (F3). Details carries the "ran out" line.</li>
         <li>A source that has had its last money and cannot pay a project closes (D13). From the next month its share is out of every project's funding, as when a source is switched off, and Details says when it ran out.</li>
         <li>Yearly lumps, the line and re-pricing are unchanged. The award rule changes only in that a closed source is never part of a bundle.</li>
         <li>Debt service is still reported and not paid from a pool, and the legal borrowing limits are still statements. Making them bind belongs with level 6.</li>
@@ -299,7 +299,7 @@
       <dt><code>reach-check</code></dt>
       <dd>The check that current law reaches the goal (G4, D1): a script that runs the empty document on a built dataset, its test, and one run of it on a dataset built from the integration branch as soon as the money rules are in. It uploads nothing. A miss stops the unit and goes to the owner with the numbers, while the rest of the build carries on. Needs F2, F3 and L1.</dd>
       <dt><code>funding-measures</code></dt>
-      <dd>Every preset ends; a pool's lifetime level; the window's last month in the funding editors; the read-only view of a given measure; a given measure's money dated from its policy's start (M1); funding copy. Needs F2, and G3 as built by <code>game-core</code>.</dd>
+      <dd>Every preset ends; a pool's lifetime level; the window's last month in the funding editors; the read-only view of a given measure; a given measure's money dated from its policy's start (M1); funding copy. Needs F2, F3, and G3 as built by <code>game-core</code>.</dd>
       <dt><code>remove-multiuser</code></dt>
       <dd>Removes invitations, members, roles, the per-sim Durable Object, the sim log and store and sync, the <code>/sims</code> and <code>/invite</code> pages and their API, the operator takedown and the capability ledger; unties the identity code from sims; drops the tables. Needs nothing: it can start beside <code>contracts</code>.</dd>
       <dt><code>game-save</code></dt>
@@ -939,6 +939,8 @@ export interface MoneyView {
   /* the series as today, and: */
   /** Per pool id: the first day it was closed, or null. */
   closed: Record&lt;string, Day | null&gt;;
+  /** Per pool id, by calendar month: true while the pool is closed at the end of that month. */
+  shut: Record&lt;string, boolean[]&gt;;
 }</code></pre>
       <ul>
         <li>A pool's last arrival is the last arrival the document in force gives it; a pool with a yearly inflow with no end has none.</li>
@@ -950,6 +952,8 @@ export interface MoneyView {
         <li>The worker's rewind restores each pool's open or closed state with the world.</li>
         <li>The older scenario engine keeps its behaviour: an application waits on a spent pool.</li>
         <li>Details lists each closed source by its pool's label with the month it ran out: "{label}: ran out Mar 2030".</li>
+        <li><code>shut[id][i]</code> is true from the calendar month the pool ran out (the month that found it spent) through the last calendar month before it opens again.</li>
+        <li>A pool's bar on the timeline reads empty in every month <code>shut</code> marks: what a closed pool still holds is never awarded.</li>
       </ul>
     </section>
 
@@ -1065,7 +1069,7 @@ export function e2eGoalAmount(storage: Storage | null): number | null;</code></p
         <tr><th scope="row"><code>pool-closing</code></th><td>After <code>finite-funding</code>: <code>src/lib/sim/world/funding/**</code>, <code>src/lib/sim/world/{types,world}.ts</code>, <code>src/lib/sim/world/score/**</code>, <code>src/lib/sim/world/runner/**</code> where the option and the rewind are carried, <code>src/lib/fzp/{money-view.ts,MoneyResults.svelte}</code>; <code>docs/dev/{world-funding,finance-score}.md</code>.</td></tr>
         <tr><th scope="row"><code>reach-check</code></th><td>After <code>remove-lesscars</code>, <code>finite-funding</code> and <code>pool-closing</code>: <code>scripts/level2-check.ts</code> and <code>scripts/level2-check.spec.ts</code>. It builds a dataset on its own machine and uploads nothing.</td></tr>
         <tr><th scope="row"><code>mail-setup</code></th><td><code>docs/dev/deploy.md</code>'s mail section and bootstrap checklist; AWS, DNS and Worker secrets outside the repository.</td></tr>
-        <tr><th scope="row"><code>funding-measures</code></th><td>After <code>finite-funding</code> and <code>game-core</code>: <code>src/lib/sim-page/funding-{presets,sources,view,copy,edit}.ts</code>, <code>Funding*.svelte</code>, <code>ProgrammeEditor.svelte</code>, <code>PolicySummary.svelte</code>, <code>src/lib/sim-page/test/**</code>; <code>src/lib/timeline/{pool-level,money-copy}.ts</code>; <code>e2e/sim-{funding,pools}.spec.ts</code>; <code>docs/dev/sim-funding.md</code>.</td></tr>
+        <tr><th scope="row"><code>funding-measures</code></th><td>After <code>finite-funding</code>, <code>pool-closing</code> and <code>game-core</code>: <code>src/lib/sim-page/funding-{presets,sources,view,copy,edit}.ts</code>, <code>Funding*.svelte</code>, <code>ProgrammeEditor.svelte</code>, <code>PolicySummary.svelte</code>, <code>src/lib/sim-page/test/**</code>; <code>src/lib/timeline/{pool-level,money-copy}.ts</code>; <code>e2e/sim-{funding,pools}.spec.ts</code>; <code>docs/dev/sim-funding.md</code>.</td></tr>
         <tr><th scope="row"><code>remove-multiuser</code></th><td><code>src/lib/{sim-log,sim-store,sim-sync,sim-stream,members}/**</code>; <code>src/lib/server/{sims,invites,sim-object,operator,authz,event-log}/**</code>; <code>src/lib/server/{auth,user-store,onboarding,security,email-templates,e2e,test}/**</code>; <code>src/lib/server/db/**</code>; <code>migrations/**</code>; <code>src/routes/{sims,invite,signin,account}/**</code>; <code>src/routes/api/{sims,invites,operator,account,e2e}/**</code>; <code>src/hooks.server.ts</code>; <code>src/app.d.ts</code>; <code>src/lib/account/**</code>; <code>scripts/worker-entry*.ts</code>, <code>scripts/wrangler-config.spec.ts</code>; <code>wrangler.jsonc</code>; <code>package.json</code>; <code>drizzle.sim.config.ts</code>, <code>drizzle-cf.config.ts</code>; <code>svelte.config.js</code>; <code>playwright.config.ts</code>; the multi-user and account e2e specs and helpers; <code>docs/dev/auth.md</code>.</td></tr>
         <tr><th scope="row"><code>game-save</code></th><td><code>src/lib/game/{save-sync.svelte.ts,AccountOffer.svelte}</code>; <code>src/lib/server/game/**</code>; <code>src/routes/api/game/**</code>; after <code>remove-multiuser</code>: <code>src/lib/server/db/schema/{gameSave,index}.ts</code>, one new migration, <code>src/lib/server/auth/{better-auth,session-gate}.ts</code>, <code>src/lib/server/user-store/deletion.ts</code>, <code>wrangler.jsonc</code>'s <code>AUTH_METHODS</code>, <code>docs/dev/auth.md</code>; <code>e2e/game-save.spec.ts</code>; <code>docs/dev/game-save.md</code>.</td></tr>
         <tr><th scope="row"><code>closing</code></th><td>After every other unit: <code>CLAUDE.md</code>, <code>README.md</code>, any file under <code>docs/dev/</code>, <code>e2e/game-journey.spec.ts</code>, <code>package.json</code> (dependencies nothing imports), <code>chreode.config.ts</code>, <code>src/app.d.ts</code> (types nothing uses), and comments in any file that name removed things.</td></tr>
@@ -1081,7 +1085,7 @@ export function e2eGoalAmount(storage: Storage | null): number | null;</code></p
       <li><code>src/lib/timeline/copy.ts</code> holds no public-money sentence once <code>finite-funding</code> has moved them, so <code>game-sim</code> owns all of it and <code>funding-measures</code> never opens it.</li>
       <li><code>src/lib/sim-page/funding-presets.ts</code> is written by <code>contracts</code> (the M1 stub), then <code>finite-funding</code>, then <code>funding-measures</code>.</li>
       <li><code>game-sim</code> and <code>funding-measures</code> can run together. <code>game-sim</code> calls <code>dateMeasure</code> (M1) and mounts <code>PolicySummary</code> through its existing props; <code>funding-measures</code> owns both.</li>
-      <li><code>src/lib/sim/world/funding/**</code> and the money results are written by <code>finite-funding</code> and then by <code>pool-closing</code>; the second needs F2. <code>pool-closing</code> and <code>funding-measures</code> write different files and can run together.</li>
+      <li><code>src/lib/sim/world/funding/**</code> and the money results are written by <code>finite-funding</code> and then by <code>pool-closing</code>; the second needs F2. <code>funding-measures</code> runs after <code>pool-closing</code>: its pool bars read F3's <code>MoneyView.shut</code>. The two write different files.</li>
       <li><code>docs/dev/deploy.md</code> is written by <code>mail-setup</code> (its mail section) and by <code>closing</code> (the rest), which needs every other unit's rows.</li>
       <li><code>pipeline/**</code> and the fixture are written by <code>remove-lesscars</code> and then by <code>finite-funding</code>; the second needs L1.</li>
       <li>The schema index, <code>wrangler.jsonc</code>, the auth files and <code>docs/dev/auth.md</code> are written by <code>remove-multiuser</code> and then by <code>game-save</code>; the second needs I1.</li>
@@ -1148,7 +1152,7 @@ export function e2eGoalAmount(storage: Storage | null): number | null;</code></p
         <tr><th scope="row">The goal is one replaceable thing</th><td>Memory; goal-window spec</td><td>Unchanged <code>Goal</code>; global constraint</td></tr>
         <tr><th scope="row">Finite funding pools; real ends from sources</th><td>Request, R2</td><td>F1 (<code>Bound</code>), F2, D3</td></tr>
         <tr><th scope="row">Federal credits get a yearly ceiling</th><td>R2</td><td>F1 (<code>FederalSource.dollarsPerYear</code>), F2 (no <code>uncapped</code>)</td></tr>
-        <tr><th scope="row">A pool's bar drains as its money is allocated</th><td>Information design spec, Public money on the timeline</td><td><code>funding-measures</code> (lifetime level)</td></tr>
+        <tr><th scope="row">A pool's bar drains as its money is allocated</th><td>Information design spec, Public money on the timeline</td><td><code>funding-measures</code> (lifetime level), <code>pool-closing</code> (<code>MoneyView.shut</code>)</td></tr>
         <tr><th scope="row">Funding arrives yearly on purpose</th><td>R7</td><td>F2 (unchanged <code>Inflow</code>)</td></tr>
         <tr><th scope="row">Remove invitations and concurrent users</th><td>Request</td><td><code>remove-multiuser</code>, I1, D10</td></tr>
         <tr><th scope="row">Keep publishing</th><td>Request</td><td>Global constraint; D6; <code>playable</code> on Publish</td></tr>
