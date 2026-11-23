@@ -605,7 +605,7 @@ export const GO_TO_PAINT = 'Go to Paint';</code></pre>
       </ol>
       <ul>
         <li>A level up is not a document change: undo and redo do not see it, and the undo history is kept. Every entry in it touches only kinds the old level allowed, which every later level allows too.</li>
-        <li>At level 5 the level stays 5 when the store banks <code>banked[5]</code> (G2). There the trigger is <code>roundComplete(game.progress)</code> turning true: steps 1, 2 and 4 run, with no kind to open. A later level up at level 5 changes neither the level nor <code>roundComplete</code>, so it banks the new result and the clock stays where it is.</li>
+        <li>At level 5 the level stays 5 when the store banks <code>banked[5]</code> (G2). There the trigger is <code>roundComplete(game.progress)</code> turning true: steps 1, 2 and 4 run, with no kind to open. Once the round is complete no control offers "Level up" (the card has none and the panel and the level cell hide it), and a <code>game.levelUp()</code> call changes no progress and banks nothing (G2): it only clears the offer, so the page does nothing and the clock stays where it is.</li>
       </ul>
     </section>
 
