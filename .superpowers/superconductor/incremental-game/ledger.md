@@ -1,6 +1,6 @@
 # Superconductor ledger — design: docs/superpowers/design/2026-11-22-1216-incremental-game.html
 Package worktree: /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game
-Build graph: docs/superpowers/design/2026-11-22-1216-incremental-game-build-graph.md @ 8c333372
+Build graph: docs/superpowers/design/2026-11-22-1216-incremental-game-build-graph.md @ 9e0f7fd2
 SDD scripts: /Users/mindlace/.claude/plugins/cache/claude-plugins-official/superpowers/7.0.2/skills/subagent-driven-development/scripts
 HTML scripts: /Users/mindlace/.claude/plugins/cache/super/superpowers-html/0.1.0/bin
 Project commands: npm, npx, lsof, ls, cat, grep, head, tail, wc, pwd, uptime, mkdir (mail-setup only, also: aws); operators run with --permission-mode dontAsk
@@ -360,9 +360,26 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - relayed remove-lesscars-1 to incremental-game-remove-lesscars
 - relayed remove-lesscars-1 to incremental-game-closing
 - routed remove-lesscars-1
-- 2026-11-22 game-core-6 from game-core [defect-class: spec-silence]: what construction does when a getItem throws after the first one succeeded; blocks nothing (fork waits for the suite on the four merges) →
-- 2026-11-22 remove-multiuser-3 from remove-multiuser [defect-class: write-set-gap]: the removed-URL 404 e2e cases log `[WebServer] [404]` lines signoff rejects unless allow-listed in chreode.config.ts, which is closing's file (queued after game-core-6) →
-- 2026-11-22 game-core-7 from game-core [defect-class: spec-silence]: does the current game's entry in store.saves show its played time as savedAt, or only sort by it (spec :746); blocks nothing (queued after remove-multiuser-3) →
+- 2026-11-22 game-core-6 from game-core [defect-class: spec-silence]: what construction does when a getItem throws after the first one succeeded; blocks nothing (fork waits for the suite on the four merges) → rulings/game-core-6.md (commit 83d857d0, changes contract: no)
+- 2026-11-22 remove-multiuser-3 from remove-multiuser [defect-class: write-set-gap]: the removed-URL 404 e2e cases log `[WebServer] [404]` lines signoff rejects unless allow-listed in chreode.config.ts, which is closing's file (queued after game-core-6) → rulings/remove-multiuser-3.md (commit 576a23d9, changes contract: no)
+- 2026-11-22 game-core-7 from game-core [defect-class: spec-silence]: does the current game's entry in store.saves show its played time as savedAt, or only sort by it (spec :746); blocks nothing (queued after remove-multiuser-3) → rulings/game-core-7.md (commit 47e545f5, changes contract: no)
+- 2026-11-22 game-shell-1-1 from game-shell-1 [defect-class: write-set-gap]: the failing src/routes/about/page.svelte.spec.ts is outside game-shell's write set (src/lib/about/**); may it make the one-line filter edit there (holds its fix round; queued after game-core-7) → rulings/game-shell-1-1.md (commit 5bc853c4, changes contract: no)
+- routing game-core-6: rulings/game-core-6.md, commit 83d857d0
+- build graph for game-core-6 @ none
+- routing remove-multiuser-3: rulings/remove-multiuser-3.md, commit 576a23d9
+- build graph for remove-multiuser-3 @ ef253ce5
+- routing game-core-7: rulings/game-core-7.md, commit 47e545f5
+- build graph for game-core-7 @ 9e0f7fd2
+- relayed game-core-6 to incremental-game-game-core
+- routed game-core-6
+- relayed remove-multiuser-3 to incremental-game-remove-multiuser
+- relayed remove-multiuser-3 to incremental-game-remove-lesscars
+- relayed remove-multiuser-3 to incremental-game-closing
+- routed remove-multiuser-3
+- relayed game-core-7 to incremental-game-game-core
+- routed game-core-7
+- routing game-shell-1-1: rulings/game-shell-1-1.md, commit 5bc853c4
+- build graph for game-shell-1-1 @ none
 
 ## Forks
 - fork checkpoint-2 started 2026-11-22T16:20
@@ -465,6 +482,22 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - fork graph-remove-lesscars-1 exited [0]: output
 - fork checkpoint-10 started 2026-11-22T18:13
 - fork checkpoint-10 exited [0]: output
+- fork rule-game-core-6 started 2026-11-22T18:40
+- fork rule-game-core-6 exited [0]: output
+- fork graph-game-core-6 started 2026-11-22T18:40
+- fork graph-game-core-6 exited [0]: output
+- fork rule-remove-multiuser-3 started 2026-11-22T18:41
+- fork rule-remove-multiuser-3 exited [0]: output
+- fork graph-remove-multiuser-3 started 2026-11-22T18:44
+- fork graph-remove-multiuser-3 exited [0]: output
+- fork rule-game-core-7 started 2026-11-22T18:45
+- fork rule-game-core-7 exited [0]: output
+- fork graph-game-core-7 started 2026-11-22T18:45
+- fork graph-game-core-7 exited [0]: output
+- fork rule-game-shell-1-1 started 2026-11-22T18:46
+- fork rule-game-shell-1-1 exited [0]: output
+- fork graph-game-shell-1-1 started 2026-11-22T18:47
+- fork graph-game-shell-1-1 exited [0]: output
 
 ## Frame-defect tally
 - owner-ruling-drift: 2 — instances: conductor-1 (gate-1, 2026-11-22); conductor-8 (gate-7, 2026-11-22)
@@ -483,6 +516,7 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - spec-silence: 4 — adds game-core-6 (2026-11-22)
 - write-set-gap: 4 — adds remove-multiuser-3 (2026-11-22)
 - spec-silence: 5 — adds game-core-7 (2026-11-22)
+- write-set-gap: 5 — adds game-shell-1-1 (2026-11-22)
 
 ## Integration
 - 17:50 merge of contracts @ f6ee1de3 made (merge commit 5453b107), full suite running in the package worktree (agent; logs in the session scratchpad `merge-contracts/`); not ledgered as merged until it passes. No amending fork starts until then; queued questions in order: remove-multiuser-1, game-core-1, game-core-2, game-core-3, game-sim-1, pool-closing-1, conductor-10, conductor-11. Then merge remove-multiuser's row I1 @ cbd11881.

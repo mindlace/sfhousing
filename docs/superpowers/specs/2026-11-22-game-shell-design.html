@@ -580,6 +580,7 @@ export const YOUR_GAME = 'Your game';</code></pre>
       <li><code>src/routes/+page.svelte</code></li>
       <li><code>src/lib/shell/**</code></li>
       <li><code>src/lib/about/**</code></li>
+      <li><code>src/routes/about/page.svelte.spec.ts</code>: the line that lists the parts' sections</li>
       <li><code>src/lib/sharing/{SharedBanner.svelte,copy.ts}</code></li>
       <li><code>src/routes/s/[id]/**</code></li>
       <li><code>src/routes/p/[id]/**</code></li>
@@ -608,6 +609,8 @@ export const YOUR_GAME = 'Your game';</code></pre>
         <li><code>src/lib/about/copy.ts</code></li>
         <li><code>src/lib/about/AboutUsing.svelte</code></li>
         <li><code>src/lib/about/AboutParts.svelte.spec.ts</code></li>
+        <li><code>src/lib/about/AboutDialog.svelte.spec.ts</code></li>
+        <li><code>src/routes/about/page.svelte.spec.ts</code></li>
         <li><code>src/routes/s/[id]/+page.svelte</code></li>
         <li><code>src/routes/s/[id]/page.view.svelte.spec.ts</code></li>
         <li><code>src/routes/s/[id]/test/PageHost.svelte</code></li>
@@ -665,6 +668,7 @@ export const YOUR_GAME = 'Your game';</code></pre>
         <li><code>SharedBanner.svelte.spec.ts</code>: the three states, a null state with no Remix button, the note, the error line and "Your game"; no dialog.</li>
         <li><code>src/routes/page.svelte.spec.ts</code> and <code>page.undo.svelte.spec.ts</code>: their Remix hand-off cases go.</li>
         <li><code>AboutParts.svelte.spec.ts</code>: the "To beat" term, the Levels list and the Saved games lines, word for word.</li>
+        <li><code>AboutDialog.svelte.spec.ts</code> and <code>src/routes/about/page.svelte.spec.ts</code>: the list of the parts' sections leaves out the sub-sections of Using it (<code>ABOUT_ID.shortcuts</code>, <code>ABOUT_ID.levels</code>, <code>ABOUT_ID.savedGames</code>) and still expects the four parts in order.</li>
         <li><code>accent.spec.ts</code>: the two game components hold no light-only colour classes.</li>
       </ul>
     </section>
