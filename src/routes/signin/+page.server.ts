@@ -131,8 +131,8 @@ export const actions: Actions = {
    * Timing side channel (deliberately not closed): an unknown handle short-circuits
    * after a single D1 select, while a known handle proceeds into signInEmail and a KDF
    * comparison: a measurable handle-existence oracle despite the byte-identical error.
-   * This is accepted, not fixed, on two grounds: handles are already PUBLIC identifiers
-   * in this product (they appear in invites and member lists), so existence is not a
+   * This is accepted, not fixed, on two grounds: handles are PUBLIC identifiers in this
+   * product (each account's handle is its public name), so existence is not a
    * secret the error message was protecting; and the oracle sits behind the 5/60s rate
    * limit above, which is what actually makes bulk probing impractical. Do not add a
    * dummy KDF comparison to "fix" this: that would just be a different,

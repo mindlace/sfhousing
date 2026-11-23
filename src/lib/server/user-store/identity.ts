@@ -28,7 +28,7 @@ export async function createIdentityForNewVersion(args: {
   await args.db.insert(userIdentity).values({ id, createdAt: new Date() });
   const handle = await generateUniqueHandle({
     db: args.db,
-    simTitle: args.displayName ?? undefined
+    seedText: args.displayName ?? undefined
   });
   return {
     userIdentity: id,
@@ -36,36 +36,6 @@ export async function createIdentityForNewVersion(args: {
     handleSkeleton: skeleton(handle),
     isAnonymous: args.pseudonymous === true
   };
-}
-
-/** Reseed the live row's handle (+ name) from the sim title — pseudonymous onboarding. */
-export async function reseedHandleFromSim(args: {
-  db: Database;
-  identityId: string;
-  simTitle: string;
-  rng?: () => string;
-}): Promise<string> {
-  const handle = await generateUniqueHandle({
-    db: args.db,
-    simTitle: args.simTitle,
-    rng: args.rng
-  });
-  await args.db
-    .update(user)
-    .set({ handle, name: handle, handleSkeleton: skeleton(handle), updatedAt: new Date() })
-    .where(eq(user.userIdentity, args.identityId));
-  const [row] = await args.db
-    .select({ email: user.email })
-    .from(user)
-    .where(eq(user.userIdentity, args.identityId));
-  await recordUserVersion({
-    db: args.db,
-    identityId: args.identityId,
-    handle,
-    name: handle,
-    email: row?.email ?? ''
-  });
-  return handle;
 }
 
 /** Normalize Better-Auth's onLinkAccount args (wrapped { user, session }) to ids. */

@@ -175,7 +175,7 @@ describe('signin load', () => {
 
   it('flags a failed magic link, and not as a Google error', async () => {
     const res = await load(
-      makeLoadEvent('https://app.test/signin?returnTo=%2Fsims&link=failed&error=INVALID_TOKEN')
+      makeLoadEvent('https://app.test/signin?returnTo=%2Faccount&link=failed&error=INVALID_TOKEN')
     );
     expect(res).toMatchObject({ linkError: true, googleError: false });
   });
@@ -197,7 +197,7 @@ describe('signin load', () => {
   });
 
   it('redirects a signed-in user to a safe returnTo', async () => {
-    const event = makeLoadEvent('https://app.test/signin?returnTo=/sims') as unknown as {
+    const event = makeLoadEvent('https://app.test/signin?returnTo=/account') as unknown as {
       locals: { user: unknown };
     };
     event.locals.user = { id: 'u1' };
@@ -208,7 +208,7 @@ describe('signin load', () => {
       caught = e;
     }
     expect(isRedirect(caught)).toBe(true);
-    expect((caught as { location: string }).location).toBe('/sims');
+    expect((caught as { location: string }).location).toBe('/account');
   });
 });
 
@@ -286,21 +286,21 @@ describe('signin sendLink action', () => {
 
   it('carries a safe returnTo into the link as its callbackURL', async () => {
     await actions.sendLink(
-      makeEvent({ identifier: 'x@y.com' }, {}, 'https://app.test/signin?returnTo=%2Fsims')
+      makeEvent({ identifier: 'x@y.com' }, {}, 'https://app.test/signin?returnTo=%2Faccount')
     );
     expect(signInMagicLink).toHaveBeenCalledWith(
-      expect.objectContaining({ body: expect.objectContaining({ callbackURL: '/sims' }) })
+      expect.objectContaining({ body: expect.objectContaining({ callbackURL: '/account' }) })
     );
   });
 
   it('sends a failed link back to /signin, keeping returnTo, so the page can say so', async () => {
     await actions.sendLink(
-      makeEvent({ identifier: 'x@y.com' }, {}, 'https://app.test/signin?returnTo=%2Fsims')
+      makeEvent({ identifier: 'x@y.com' }, {}, 'https://app.test/signin?returnTo=%2Faccount')
     );
     expect(signInMagicLink).toHaveBeenCalledWith(
       expect.objectContaining({
         body: expect.objectContaining({
-          errorCallbackURL: '/signin?link=failed&returnTo=%2Fsims'
+          errorCallbackURL: '/signin?link=failed&returnTo=%2Faccount'
         })
       })
     );
@@ -494,7 +494,8 @@ describe('signin signInPassword action', () => {
   }
 
   it('redirects to a safe returnTo after signing in', async () => {
-    expect(await passwordRedirect('/sims')).toBe('/sims');
+    expect(await passwordRedirect('/account')).toBe('/account');
+    expect(await passwordRedirect('/account#section')).toBe('/account#section');
   });
 
   it('redirects to / instead of an off-site returnTo', async () => {

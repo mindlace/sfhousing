@@ -1,8 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { freshDb } from '$lib/server/test/auth-db';
-import { user, userIdentity, userVersion } from '$lib/server/db/schema';
-import { createIdentityForNewVersion, reseedHandleFromSim, handleAccountLink } from './identity';
+import { user, userIdentity } from '$lib/server/db/schema';
+import { createIdentityForNewVersion, handleAccountLink } from './identity';
 import { skeleton } from './confusable-skeleton';
 import { getUser } from './user';
 
@@ -38,38 +38,6 @@ describe('createIdentityForNewVersion', () => {
     const { db } = freshDb();
     const cols = await createIdentityForNewVersion({ db });
     expect(cols.isAnonymous).toBe(false);
-  });
-});
-
-describe('reseedHandleFromSim', () => {
-  it('reseeds handle+name from the sim title and snapshots history', async () => {
-    const { db } = freshDb();
-    const cols = await createIdentityForNewVersion({ db, pseudonymous: true });
-    await db.insert(user).values({
-      id: 'live-pseudo',
-      name: cols.handle,
-      email: 'live-pseudo@pseudonymous.sfhousing.invalid',
-      userIdentity: cols.userIdentity,
-      handle: cols.handle,
-      handleSkeleton: cols.handleSkeleton,
-      isAnonymous: true,
-      createdAt: new Date(),
-      updatedAt: new Date()
-    });
-    const handle = await reseedHandleFromSim({
-      db,
-      identityId: cols.userIdentity,
-      simTitle: 'Garden Party'
-    });
-    expect(handle).toMatch(/^garden/);
-    const [row] = await db.select().from(user).where(eq(user.userIdentity, cols.userIdentity));
-    expect(row.handle).toBe(handle);
-    expect(row.name).toBe(handle);
-    const versions = await db
-      .select()
-      .from(userVersion)
-      .where(eq(userVersion.userIdentity, cols.userIdentity));
-    expect(versions.map((v) => v.handle)).toContain(handle);
   });
 });
 
