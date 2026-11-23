@@ -6,6 +6,7 @@ import { parseCalibration } from '$lib/timelapse/model';
 import type { Calibration, TierUnits } from '$lib/timelapse/types';
 import type { TimelineView } from '$lib/sim/world/score/types';
 import { moneyFigureAt } from '$lib/fzp/money-view';
+import { allowedAt } from '$lib/game/allowed';
 import { addChoices } from './add';
 import { EMPTY_LOG, logCompiled, logFilled, viewOfLog } from './chunk-log';
 import { DEFAULT_POLICY4, type Policy, type SimPolicy4 } from './policy4';
@@ -155,6 +156,13 @@ describe('startersFor', () => {
     }
     expect(startersFor(calNoMoney, DEFAULT_POLICY4).map((x) => x.text)).toEqual([
       'Taller near transit',
+      'SB 423 approval clock'
+    ]);
+  });
+
+  it('only what the level allows', () => {
+    expect(startersFor(cal, DEFAULT_POLICY4, allowedAt(2))).toEqual([]);
+    expect(startersFor(cal, DEFAULT_POLICY4, allowedAt(3)).map((x) => x.text)).toEqual([
       'SB 423 approval clock'
     ]);
   });

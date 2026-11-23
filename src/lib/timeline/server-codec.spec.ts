@@ -18,6 +18,8 @@ import {
   SIM_CODEC,
   serializeSimDoc
 } from '$lib/sim-page/sim-doc';
+import { fixtureCalibration } from '$lib/fzp/fixtures/calibration';
+import { addPolicy } from './add';
 import { DEFAULT_POLICY4 } from './policy4';
 import { SIM_SERVER_CODEC4 } from './server-codec';
 import { SIM_KEY4, serializeSimDoc4 } from './sim-doc4';
@@ -54,6 +56,20 @@ describe('SIM_SERVER_CODEC4.parse (publish)', () => {
     const canonical = painted4Text();
     const r = C.parse(JSON.stringify(JSON.parse(canonical), null, 2));
     expect(r.ok && C.serialize(r.value)).toBe(canonical);
+  });
+
+  it('a given measure parses on the server', () => {
+    const cal = fixtureCalibration();
+    const ctx = { w: { asOf: cal.asOf, months: 480 }, month: 1, cal };
+    const policy = addPolicy(
+      DEFAULT_POLICY4,
+      { kind: 'money', what: 'preset', preset: 'housing-bond' },
+      ctx
+    ).doc;
+    const r = C.parse(serializeSimDoc4(simDoc4(policy)));
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.policy?.kinds.money[0].preset).toBe('housing-bond');
   });
 
   it('an unaligned span is accepted: the server has no dataset date', () => {

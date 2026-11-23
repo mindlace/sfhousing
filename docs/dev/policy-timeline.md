@@ -38,11 +38,35 @@ Rules the parser enforces (`parsePolicy4`; errors are `PolicyFormatError` naming
 - Rule 4: `from` is the first day of a model month, `to` the last day of one, spans ascending and not overlapping, none on or before `asOf`. Month m covers `asOf + floor((m - 1) * 30.436875) + 1` to `asOf + floor(m * 30.436875)` (`months.ts`). `asOf: null` skips only the alignment checks.
 - Rule 5: each `what` goes through its schema 3 parser, so nothing schema 3 rejects gets in. `FINANCE_LIMITS` apply to the union over the document. `MAX_PLAN_BYTES` applies to the canonical document.
 - Rule 6: days inside a `what` (a baseline scale's `from`, a programme's `from` and `to`, inflow dates) are not spans and are not month starts. A span cuts them: one counts only while its policy is on and a span covers it.
+- `preset`: a permitting policy names its timing preset; a zoning policy holds null; a money policy holds null or a funding preset's id of 1 to 60 characters (`MONEY_PRESET_MAX`).
 - Rule 9: "nothing in force" (`nothingInForce`: no policy that is on has a span) is what the comparison and the page mean by the default. `DEFAULT_POLICY4` has three empty lists: the plan as adopted, observed permitting times, today's City funding.
 
 The comparison is one pair: the plan's world and the comparison's world, both seed 1, with the same per-lot dice. "Because of this policy" is the plan's rows minus the comparison's. It can be negative: funding pools award once a year and spend nearly all of it, so a project the policy makes eligible can push another's award back a full year. The page shows that one future as it is.
 
 `canonicalJson` of a document is its identity for saving.
+
+### Given measures
+
+A given measure is a money policy whose `preset` holds an id (`isGiven` in `src/lib/game/allowed.ts`); an own measure (an own pool, City funding scale, Market terms, or anything stored before given measures) holds null.
+
+- `addPolicy` of a money preset sets, on every policy the preset makes, `preset` to the preset's id and `label` to `FundingPreset.label`. After it dates the spans it calls `dateMeasure(policy, cal)` (`src/lib/sim-page/funding-presets.ts`) on each.
+- `redateMoved(before, after, cal)` (`add.ts`) calls `dateMeasure` on each given measure whose first span's `from` moved between the two documents, and returns `after` itself when none did.
+- Nothing fills a stored null: `upgradePolicy`, `reconcilePolicy4` and the loaders leave it as it is, and a stored or published document is never re-dated when it loads.
+- An edit through the span lens (`tryWriteBack`) that changes a given measure's spans' `what` sets `preset` to null and keeps the label. The switch, the order, Remove and When edits keep it.
+- "+" (`addChoices(kind, cal, doc, allowed)`) lists nothing for a kind not in `allowed.kinds`, and for money lists the funding presets only while `allowed.money` is `'given'`. `startersFor` passes `allowed` through.
+
+The publish route uses the same parser, so a published body may hold a given measure:
+
+```text
+{
+  "id": "fund-u-housing-bond-1",
+  "label": "A housing bond",
+  "preset": "housing-bond",
+  "on": true,
+  "where": { "tag": "fund", "pool": "u-housing-bond-1" },
+  "spans": [ … ]
+}
+```
 
 ## Opening and reconciling
 

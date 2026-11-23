@@ -10,7 +10,7 @@
   Opening (rule 40, R-3): with the calibration known, in the browser, the document opens before
   TimelineMode mounts, so its first `policy` is the opened one; with no calibration it opens on
   `oncalibration`, after a Retry's reload. Edit: the v1 autosave migrates to `sfhousing:sim:v2`,
-  then the autosave (or a Remix hand-off) is restored through the schema 4 codec, with today's
+  then the autosave is restored through the schema 4 codec, with today's
   notices. View (`/s/<id>`): the document the route's load opened, else (no calibration then) the
   shared text, opened here after a Retry; one that won't open is an alert notice.
   The map (rule 19): with Paint or Erase a stroke goes into the selected painted policy's selected
@@ -25,7 +25,6 @@
 <script lang="ts">
   import { onMount, tick, untrack, type Snippet } from 'svelte';
   import { MediaQuery } from 'svelte/reactivity';
-  import { replaceState } from '$app/navigation';
   import { BrushController, type ControllerMap } from '$lib/brush/BrushController.svelte';
   import { ANNOUNCE_MS } from '$lib/brush/messages';
   import type { OverlayCtors } from '$lib/brush/overlay';
@@ -33,6 +32,11 @@
   import { BrushState } from '$lib/brush/state.svelte';
   import type { Manifest } from '$lib/data/manifest';
   import type { ParcelId } from '$lib/data/parcel';
+  import { ALL_ALLOWED, playable, runs, type Allowed } from '$lib/game/allowed';
+  import { unlockText } from '$lib/game/copy';
+  import { e2eGoalAmount } from '$lib/game/e2e';
+  import { roundComplete } from '$lib/game/progress';
+  import type { GameStore } from '$lib/game/store.svelte';
   import { packedCellLayer, type SolidPolygonLayerCtor } from '$lib/map/generated-controller';
   import { LID_MAX_SPAN_M } from '$lib/map/height/lids';
   import { LIDS_FADE, type LimitsView } from '$lib/map/height/limits-style';
@@ -58,7 +62,8 @@
   import { WINDOW_MONTHS } from '$lib/sim/timeline-client';
   import type { Day } from '$lib/timelapse/time';
   import type { Calibration } from '$lib/timelapse/types';
-  import { AddLimitError, addPolicy, type AddChoice } from '$lib/timeline/add';
+  import { AddLimitError, addPolicy, redateMoved, type AddChoice } from '$lib/timeline/add';
+  import { levelledUp } from '$lib/timeline/game-copy';
   import Inspector from '$lib/timeline/Inspector.svelte';
   import { project, spanLens, writeBack, type StrokeStore } from '$lib/timeline/lens';
   import { fundingName4, ownerName4 } from '$lib/timeline/owner';
@@ -117,8 +122,6 @@
     initialText?: string;
     /** View: the shared document as the route's load opened it (wins over `initialText`). */
     opened?: { doc: SimDoc4; notices: SimNotice4[] };
-    /** The Remix hand-off from /s/<id> (`history.state.sfhSimRemix`). */
-    remix?: { from: string; doc?: string; upgradedFrom?: number };
     /** View: the schema the shared document was upgraded from (`/s/<id>`). */
     upgradedFrom?: number;
     /** Tests: the autosave's and the view prefs' storage (default `localStorage`). */
@@ -127,6 +130,8 @@
     fetchFn?: typeof fetch;
     /** Tests: PolicySync's debounce timers (default the global ones). */
     timers?: { setTimeout: typeof setTimeout; clearTimeout: typeof clearTimeout };
+    /** The current game; null: no game parts (the published view, the open game, tests). */
+    game?: GameStore | null;
   }
 
   let {
@@ -142,11 +147,11 @@
     persist = undefined,
     initialText = undefined,
     opened: openedByRoute = undefined,
-    remix = undefined,
     upgradedFrom = undefined,
     storage = getStorage,
     fetchFn = undefined,
-    timers = undefined
+    timers = undefined,
+    game = null
   }: Props = $props();
 
   const SIM = copyFor('sim');
@@ -177,11 +182,14 @@
 
   /**
    * Every change settles through `reconcilePolicy4` once the calibration is known (T4 ruling):
-   * programmes or scales the edit leaves without a source are dropped, with today's notice.
+   * programmes or scales the edit leaves without a source are dropped, with today's notice. First,
+   * a given measure whose first start the change moved is re-dated (M1), so reconcile checks the
+   * re-dated programmes. Applied changes only: undo, redo and a load never re-date.
    */
-  function normalize(next: SimPolicy4): SimPolicy4 {
+  function normalize(changed: SimPolicy4, prev: SimPolicy4): SimPolicy4 {
     const c = cal;
-    if (!c) return next;
+    if (!c) return changed;
+    const next = redateMoved(prev, changed, c);
     const r = reconcilePolicy4(next, c, c.asOf);
     const { droppedProgrammes, droppedScales } = r.report.funding;
     if (droppedProgrammes.length > 0 || droppedScales.length > 0)
@@ -191,7 +199,24 @@
     return r.doc;
   }
 
-  const store = new PolicyStore<SimPolicy4>(DEFAULT_POLICY4, (next) => normalize(next));
+  const store = new PolicyStore<SimPolicy4>(DEFAULT_POLICY4, (next, prev) => normalize(next, prev));
+
+  // ---- the game (spec #sec-design-playable, -locks, -levelup) ----
+
+  /** What the game lets run and be edited; every control without one. */
+  const allowed = $derived<Allowed>(game?.allowed ?? ALL_ALLOWED);
+  /** Each playable document that differs from its whole one, to the whole one it came from. */
+  const wholeOf = new WeakMap<SimPolicy4, SimPolicy4>();
+  /** The playable document: what the worker runs and Publish sends. Autosave keeps the whole one. */
+  const run = $derived.by(() => {
+    const whole = store.policy;
+    const r = playable(whole, allowed);
+    if (r !== whole) wholeOf.set(r, whole);
+    return r;
+  });
+  const zoningLocked = $derived(!allowed.kinds.has('zoning'));
+  /** The goal's amount over the default (X1's seam), read once. */
+  const goalAmount = untrack(() => e2eGoalAmount(storage()));
 
   /** The scenario client's requests; null before the session opens, after a crash and unmount. */
   let api: TimelineClientApi | null = null;
@@ -212,6 +237,8 @@
       ? { schema: 4, kind: 'sim', datasetVersion, policy: store.policy }
       : { schema: 4, kind: 'sim', datasetVersion, title, policy: store.policy }
   );
+  /** What Publish sends: the playable document. One object per change, as PublishButton keys on it. */
+  const publishDoc = $derived<SimDoc4>(run === store.policy ? doc : { ...doc, policy: run });
   let autosave = $state.raw<Autosave<SimDoc4> | null>(null);
   /** Autosave writes once this is set: after the restore. */
   let saving = false;
@@ -221,22 +248,14 @@
   let synced: SimPolicy4 | null = null;
   let mounted = false;
   let detach: (() => void) | null = null;
-  /** The Remix hand-off is cleared from history once the router is up (onMount). */
-  let clearHandoff = false;
 
   function load(p: SimPolicy4): void {
     store.reset(p);
-    synced = p;
+    // The playable document of `p`, as `run` holds it, so the sync effect sees no change.
+    const r = run;
+    synced = r;
     // A load, not a change: no debounce (`PolicySync.open`).
-    sync.open(p);
-  }
-
-  function dropHandoff(): void {
-    try {
-      replaceState('', {}); // no re-toast on reload, as on /
-    } catch (e) {
-      console.error('[sim] could not clear the remix hand-off', e);
-    }
+    sync.open(r);
   }
 
   /** Opens the document once the calibration is known (rule 40, R-3). */
@@ -273,15 +292,11 @@
       // Ruling R4: an over-limit document would load back as corrupt, so it is never written.
       writable: (x) => simDoc4Problems(x).length === 0
     });
-    const r = restoreSim4(storage(), a, d, remix);
+    const r = restoreSim4(storage(), a, d);
     autosave = a;
     notices = r.notices;
     title = r.doc.title;
     load(r.doc.policy);
-    if (remix) {
-      if (mounted) dropHandoff();
-      else clearHandoff = true;
-    }
     saving = true;
     if (mounted) detach = a.attach();
   }
@@ -290,9 +305,9 @@
   // mounts, so the session's first `policy` is the opened one.
   if (typeof window !== 'undefined') untrack(openDoc);
 
-  // Every change after the open goes to PolicySync (debounced, rule 16).
+  // Every change of the playable document after the open goes to PolicySync (debounced, rule 16).
   $effect(() => {
-    const p = store.policy;
+    const p = run;
     untrack(() => {
       if (!opened || p === synced) return;
       synced = p;
@@ -310,6 +325,28 @@
       if (saving) a.schedule(d);
     });
   });
+
+  /** The autosave's status as the touch effect last saw it. */
+  let statusBefore: Autosave<SimDoc4>['status'] | null = null;
+  // Each `saving` → `saved` step touches the game: a write, or an edit inside the debounce back to
+  // the written text. Without a game nothing is called.
+  $effect(() => {
+    const status = autosave?.status ?? null;
+    if (statusBefore === 'saving' && status === 'saved') untrack(() => game?.touched());
+    statusBefore = status;
+  });
+
+  /**
+   * Before the game changes (G2 `beforeLeave`): the current document goes to the autosave, which
+   * writes it now, so an edit still in the debounce, or not yet handed over by the effect above,
+   * is in the policy record. The write touches the game like any write.
+   */
+  function leave(): void {
+    const a = autosave;
+    if (!a || !saving) return;
+    a.schedule(doc);
+    a.flush();
+  }
 
   // `onpublished` may fire after the dialog closed and the user kept editing: take the title
   // only, and record lastPublished against the current document.
@@ -360,7 +397,15 @@
       : `${adding ?? ''}:${selected ? `${selected.kind}:${selected.id}:${selected.span}` : ''}`
   );
 
+  /** `ref` names a policy the game does not run (a locked policy); fixed rows never are. */
+  function locked(ref: SpanRef, doc: SimPolicy4, a: Allowed): boolean {
+    if (isFixedRef(ref)) return false;
+    const p = policyOf(doc, ref.kind, ref.id);
+    return p !== undefined && !runs(ref.kind, p, a);
+  }
+
   function select(ref: SpanRef | null): void {
+    if (ref !== null && locked(ref, store.policy, allowed)) return;
     selected = ref;
     if (ref === null) return;
     panel = null;
@@ -372,6 +417,7 @@
   }
 
   function startAdd(kind: PolicyKind): void {
+    if (!allowed.kinds.has(kind)) return;
     panel = null;
     focusKind = kind;
     adding = kind;
@@ -455,6 +501,51 @@
     const p = store.policy;
     if (s === null || isFixedRef(s) || policyOf(p, s.kind, s.id)) return;
     untrack(() => (selected = null));
+  });
+
+  // A selection that stops running, or an open "+" of a kind that locks, closes as Close does.
+  $effect(() => {
+    const s = selected;
+    const k = adding;
+    const a = allowed;
+    const p = store.policy;
+    untrack(() => {
+      const dropSelection = s !== null && locked(s, p, a);
+      const dropAdding = k !== null && !a.kinds.has(k);
+      if (!dropSelection && !dropAdding) return;
+      closeEditor();
+      if (dropSelection) selected = null;
+      if (dropAdding) adding = null;
+    });
+  });
+
+  /** The level, completion and allowed kinds the level-up reaction last saw. */
+  let levelBefore = untrack(() => game?.progress.level ?? null);
+  let completeBefore = untrack(() => (game ? roundComplete(game.progress) : false));
+  let allowedBefore = untrack(() => allowed);
+  // The level rose, or the round completed, whoever pressed: from md the kinds it unlocks open, and
+  // the polite status says so. A level up once the round is complete changes neither input.
+  $effect(() => {
+    const g = game;
+    const level = g?.progress.level ?? null;
+    const complete = g ? roundComplete(g.progress) : false;
+    const now = allowed;
+    untrack(() => {
+      const rose = level !== null && levelBefore !== null && level > levelBefore;
+      const completed = complete && !completeBefore;
+      const was = allowedBefore;
+      levelBefore = level;
+      completeBefore = complete;
+      allowedBefore = now;
+      if (level === null || (!rose && !completed)) return;
+      const unlocked = [...now.kinds].filter((k) => !was.kinds.has(k));
+      if (unlocked.length > 0) {
+        void tick().then(() => {
+          if (!dead) unlocked.forEach(openKind);
+        });
+      }
+      brush.announce(levelledUp(level, complete ? null : unlockText(level)), ANNOUNCE_MS);
+    });
   });
 
   const PRESSED =
@@ -584,7 +675,8 @@
       overlayHandle = h;
       overlay = createOverlayMux((l) => h.setOverlayLayers(l));
     }
-    if (readonly || controller) return;
+    // While zoning is locked there is no brush: the tool stays Move (spec #sec-design-locks).
+    if (readonly || zoningLocked || controller) return;
     const map = h.getMap();
     if (!map || !overlay) return;
     controllerMap = map;
@@ -603,6 +695,11 @@
     });
     controller.attach();
   }
+
+  // Zoning unlocked (a level up): the controller attaches as it does on load.
+  $effect(() => {
+    if (!zoningLocked) untrack(attachController);
+  });
 
   function onMapReady(h: SimMapHandle, m: MapLike): void {
     const map = m as unknown as ControllerMap & ClickMap;
@@ -1021,11 +1118,9 @@
 
   onMount(() => {
     mounted = true;
-    if (clearHandoff) {
-      clearHandoff = false;
-      dropHandoff();
-    }
     if (autosave) detach = autosave.attach();
+    // Before the game changes, the document still waiting is written to its record (G2).
+    const offLeave = game?.beforeLeave(leave) ?? null;
     import('@deck.gl/layers').then(
       (mod) => {
         if (dead) return;
@@ -1045,6 +1140,7 @@
     return () => {
       dead = true;
       uninstall();
+      offLeave?.();
       detach?.();
       strokePreview.reset();
       viewMap?.off('moveend', readView);
@@ -1083,7 +1179,7 @@
     {#if codec}
       <PublishButton
         {codec}
-        {doc}
+        doc={publishDoc}
         lastPublished={autosave?.lastPublished}
         onpublished={onPublished}
         {fetchFn}
@@ -1141,6 +1237,7 @@
       playheadDay={at}
       asOf={cal.asOf}
       {readonly}
+      {allowed}
       announce={(m) => brush.announce(m, ANNOUNCE_MS)}
       onclose={closeEditor}
       paint={paintPart}
@@ -1162,7 +1259,7 @@
   {reload}
   view={viewPrefs}
   cards={readonly || tools.tool === 'move'}
-  spacePlays={!canPaint(brush, readonly)}
+  spacePlays={!canPaint(brush, readonly || zoningLocked)}
   ownerName={(o) => ownerName4(o, store.policy)}
   fundingName={(c) => fundingName4(store.policy, cal?.baselineFunding)(c)}
   {actions}
@@ -1171,12 +1268,15 @@
   saveOff={autosave?.status === 'off'}
   notices={sessionNotices}
   policy={store.policy}
+  {run}
+  {game}
+  {goalAmount}
   lots={sync.lots}
   lotsFailed={sync.lots === null && !sync.pending && sync.failed.length > 0}
   onlotsretry={() => sync.failed.forEach((k) => sync.retry(k))}
   {readonly}
   onedit={(change, label) => store.apply(change, label)}
-  onundoto={(p) => store.undoTo(p, 'Reverted a change')}
+  onundoto={(p) => store.undoTo(wholeOf.get(p) ?? p, 'Reverted a change')}
   {selected}
   onselect={select}
   onadd={startAdd}
@@ -1206,7 +1306,7 @@
   scoreExpanded={panel !== null && inspectorOpen}
   scoreControls={inspectorId}
 />
-{#if !readonly && !wide.current && tools.tool !== 'move'}
+{#if !readonly && !zoningLocked && !wide.current && tools.tool !== 'move'}
   <PaletteStrip
     bind:this={paletteStrip}
     {brush}

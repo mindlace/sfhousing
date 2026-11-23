@@ -554,7 +554,7 @@ test('8. a published policy lists its public money', async ({ page }) => {
   const g = f.programmes[0];
   // The fund's read-only summary: its pool and what it pays for.
   await page
-    .getByRole('button', { name: new RegExp(`, ${esc(pool.label)}, `) })
+    .getByRole('button', { name: /, A housing bond, / })
     .last()
     .click();
   const fund = editor(page).getByRole('region', { name: 'Public money' });

@@ -7,6 +7,7 @@ import { render } from 'vitest-browser-svelte';
 import { page, userEvent } from 'vitest/browser';
 import '../../routes/layout.css';
 import { formatMonthYear } from '$lib/fzp/format';
+import { allowedAt, type Allowed } from '$lib/game/allowed';
 import { DRAFT_DISCARDED, limitAlert } from '$lib/sim-page/funding-copy';
 import { FINANCE_LIMITS } from '$lib/sim/levers/finance';
 import type { FundingDrafts } from '$lib/sim-page/funding-drafts.svelte';
@@ -83,7 +84,13 @@ const DOC: SimPolicy4 = {
 };
 
 function setup(
-  opts: { doc?: SimPolicy4; initial?: SpanRef | null; readonly?: boolean; month?: number } = {}
+  opts: {
+    doc?: SimPolicy4;
+    initial?: SpanRef | null;
+    readonly?: boolean;
+    month?: number;
+    allowed?: Allowed;
+  } = {}
 ) {
   let store!: PolicyStore<SimPolicy4>;
   let drafts!: FundingDrafts;
@@ -95,6 +102,7 @@ function setup(
       playheadDay: first(month) + 3,
       readonly: opts.readonly ?? false,
       initial: opts.initial ?? null,
+      allowed: opts.allowed,
       onready: (h) => {
         store = h.store;
         drafts = h.drafts;
@@ -472,5 +480,95 @@ describe('Inspector', () => {
     ]);
     await page.getByRole('button', { name: 'Add zoning' }).click();
     expect(document.body.textContent).not.toContain('Transit rule');
+  });
+});
+
+describe('Inspector under what the level allows', () => {
+  // The housing bond as `addPolicy` makes it, then a neighbour below it on the money row.
+  const EMPTY: SimPolicy4 = { schema: 4, kinds: { zoning: [], permitting: [], money: [] } };
+  const made = addPolicy(
+    EMPTY,
+    { kind: 'money', what: 'preset', preset: 'housing-bond' },
+    { w, month: 13, cal }
+  );
+  const GIVEN_DOC: SimPolicy4 = {
+    ...made.doc,
+    kinds: { ...made.doc.kinds, money: [...made.doc.kinds.money, ...bond] }
+  };
+  const givenRef = made.ref;
+  const measure = (store: PolicyStore<SimPolicy4>) =>
+    store.policy.kinds.money.find((p) => p.id === givenRef.id);
+  const menuNames = () =>
+    [...document.querySelectorAll('[data-add-menu] button')].map((b) => b.textContent?.trim());
+
+  it('a given measure at level 5', async () => {
+    expect(GIVEN_DOC.kinds.money[0].preset).toBe('housing-bond');
+    const { store } = setup({ doc: GIVEN_DOC, initial: givenRef, allowed: allowedAt(5) });
+    await expect.element(page.getByRole('switch', { name: 'On' })).toBeVisible();
+    await expect.element(page.getByRole('button', { name: 'Move up' })).toBeVisible();
+    await expect.element(page.getByRole('button', { name: 'Move down' })).toBeVisible();
+    await expect.element(page.getByRole('button', { name: 'Remove policy' })).toBeVisible();
+
+    // When's start is editable, and an edit through it reaches the store.
+    const fromYear = page.getByRole('combobox', { name: 'From year' });
+    await expect.element(fromYear).toBeEnabled();
+    const before = measure(store)!.spans[0].from;
+    const y = new Date(first(40) * 86_400_000).getUTCFullYear();
+    await userEvent.selectOptions(fromYear.element(), String(y));
+    expect(measure(store)!.spans[0].from).not.toBe(before);
+
+    // What is the summary: no funding editor.
+    const box = editor()!;
+    expect(box.querySelector('[data-funding-editor]')).toBeNull();
+    const whatSection = [...box.querySelectorAll('section')].find(
+      (s) => s.querySelector('h3')?.textContent === 'What'
+    )!;
+    expect(whatSection.textContent).toContain('No transit layers');
+    expect(whatSection.textContent).toContain('Public money');
+  });
+
+  it('Move, the switch and a When edit keep it given', async () => {
+    const { store } = setup({ doc: GIVEN_DOC, initial: givenRef, allowed: allowedAt(5) });
+    const ids = () => store.policy.kinds.money.map((p) => p.id);
+    const at = ids().indexOf(givenRef.id);
+    await page.getByRole('button', { name: 'Move down' }).click();
+    expect(ids().indexOf(givenRef.id)).toBe(at + 1);
+    expect(measure(store)!.preset).toBe('housing-bond');
+
+    await page.getByRole('switch', { name: 'On' }).click();
+    expect(measure(store)!.on).toBe(false);
+    await page.getByRole('switch', { name: 'On' }).click();
+    expect(measure(store)!.on).toBe(true);
+    expect(measure(store)!.preset).toBe('housing-bond');
+
+    const before = measure(store)!.spans[0].from;
+    const y = new Date(first(40) * 86_400_000).getUTCFullYear();
+    await userEvent.selectOptions(
+      page.getByRole('combobox', { name: 'From year' }).element(),
+      String(y)
+    );
+    expect(measure(store)!.spans[0].from).not.toBe(before);
+    expect(measure(store)!.preset).toBe('housing-bond');
+  });
+
+  it("'+' on Public money at level 5 lists given measures only", async () => {
+    setup({ doc: EMPTY, allowed: allowedAt(5) });
+    await page.getByRole('button', { name: 'Add money', exact: true }).click();
+    const group = page.getByRole('group', { name: 'Add to Public money' });
+    await expect.element(group).toBeVisible();
+    await expect.element(group.getByRole('button', { name: 'A housing bond' })).toBeVisible();
+    const names = menuNames();
+    expect(names).not.toContain('Your own pool');
+    expect(names).not.toContain('City funding scale');
+    expect(names).not.toContain('Market terms');
+  });
+
+  it('without allowed a given measure is edited as today', async () => {
+    setup({ doc: GIVEN_DOC, initial: givenRef });
+    await expect
+      .poll(() => editor()?.querySelector('[data-funding-editor]') ?? null)
+      .not.toBeNull();
+    await page.getByRole('button', { name: 'Add money', exact: true }).click();
+    await expect.element(page.getByRole('button', { name: 'Your own pool' })).toBeVisible();
   });
 });

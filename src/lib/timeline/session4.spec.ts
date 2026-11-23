@@ -1,5 +1,5 @@
 // Restore and open for the schema 4 /sim page: the autosave's outcome and the reconcile report as
-// today's notices, the "upgraded" notice, the moved-dates notice (OQ-4) and the Remix toast.
+// today's notices, the "upgraded" notice and the moved-dates notice (OQ-4).
 import { describe, expect, it } from 'vitest';
 import { fixtureCalibration } from '$lib/fzp/fixtures/calibration';
 import { formatMonthYear } from '$lib/fzp/format';
@@ -14,7 +14,7 @@ import { monthFirstDay } from '$lib/sim/world/months';
 import type { Programme } from '$lib/timelapse/types';
 import { DATES_MOVED_NOTICE } from './copy';
 import type { Policy, SimPolicy4 } from './policy4';
-import { openShared, restoreSim4, UPGRADED_TEXT } from './session4';
+import { openShared, restoreSim4 } from './session4';
 import {
   SIM_KEY4,
   createSimCodec4,
@@ -88,24 +88,19 @@ const autosaveOf = (mem: MemoryStorage) =>
   });
 
 describe('restoreSim4', () => {
-  it('notices in order: autosave, funding, timing, moved dates, upgraded, remix', () => {
+  it('notices in order: autosave, funding, timing, moved dates', () => {
     const mem = new MemoryStorage();
     const policy: SimPolicy4 = {
       schema: 4,
       kinds: { zoning: [protect], permitting: [tampered], money: [fund] }
     };
     mem.setItem(SIM_KEY4, record(serializeSimDoc4(doc4(policy, 'fixture-9'))));
-    const { doc, notices } = restoreSim4(mem, autosaveOf(mem), ds, {
-      from: 'SD permits',
-      upgradedFrom: 3
-    });
+    const { doc, notices } = restoreSim4(mem, autosaveOf(mem), ds);
     expect(notices.map((n) => n.id)).toEqual([
       'rebased',
       'funding-dropped',
       'timing',
-      'dates-moved',
-      'upgraded',
-      'remix'
+      'dates-moved'
     ]);
     expect(notices.find((n) => n.id === 'timing')?.text).toBe(TIMING_NOTICE_TEXT);
     const moved = notices.find((n) => n.id === 'dates-moved')!;
@@ -115,10 +110,6 @@ describe('restoreSim4', () => {
     expect(moved.details).toEqual([
       `Protect rent-controlled buildings: ${formatMonthYear(M2)} – no end`
     ]);
-    expect(notices.find((n) => n.id === 'upgraded')?.text).toBe(
-      UPGRADED_TEXT(formatMonthYear(monthFirstDay(asOf, 1)))
-    );
-    expect(notices.at(-1)).toMatchObject({ text: SIM.remixedToast('SD permits'), tone: 'toast' });
     // The document is the reconciled one: the guarantee is gone.
     const f = doc.policy.kinds.money[0].spans[0].what;
     expect(f.tag === 'fund' && f.programmes).toEqual([]);
@@ -159,18 +150,19 @@ describe('restoreSim4', () => {
     expect(doc.policy).toEqual(policy);
   });
 
-  it('a Remix document rides along when storage failed, with its report', () => {
+  it('takes no hand-off: no notice is a remix', () => {
     const mem = new MemoryStorage();
     const policy: SimPolicy4 = {
       schema: 4,
-      kinds: { zoning: [protect], permitting: [], money: [] }
+      kinds: {
+        zoning: [{ ...protect, spans: [{ ...protect.spans[0], from: M2 }] }],
+        permitting: [],
+        money: []
+      }
     };
-    const { doc, notices } = restoreSim4(mem, autosaveOf(mem), ds, {
-      from: 'Shared',
-      doc: serializeSimDoc4(doc4(policy))
-    });
-    expect(doc.policy.kinds.zoning[0].spans[0].from).toBe(M2);
-    expect(notices.map((n) => n.id)).toEqual(['dates-moved', 'remix']);
+    mem.setItem(SIM_KEY4, record(serializeSimDoc4(doc4(policy))));
+    const { notices } = restoreSim4(mem, autosaveOf(mem), ds);
+    expect(notices.some((n) => n.id === 'remix')).toBe(false);
   });
 
   it('a v1 record the migration could not write still opens, from its text', () => {
