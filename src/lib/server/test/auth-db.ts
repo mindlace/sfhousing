@@ -1,8 +1,7 @@
-// Seeding helpers for specs that need identities, users and ledger rows on a real
+// Seeding helpers for specs that need identities and users on a real
 // migrated in-memory D1 (better-sqlite3, foreign keys on).
 import { drizzle } from 'drizzle-orm/d1';
 import * as schema from '$lib/server/db/schema';
-import { newId } from '$lib/server/ids/base58';
 import type { Database } from '$lib/server/db';
 import { skeleton } from '$lib/server/user-store/confusable-skeleton';
 import { createTestD1, testPlatform } from './d1';
@@ -67,33 +66,4 @@ export async function seedIdentity(
     supersededAt: opts.supersededById ? now : null
   });
   return { id: opts.id };
-}
-
-/** Append a single app-scoped capability_event row. `at` controls the timestamp (for
- *  latest-wins fold tests); `action` defaults to 'grant'. `counter` sets
- *  `createdAtCounter` (default 0) so same-`at` seeded rows fold deterministically. */
-export async function grantEvent(
-  db: Database,
-  opts: {
-    identityId: string;
-    capability: string;
-    action?: 'grant' | 'revoke';
-    at?: Date;
-    actorId?: string | null;
-    counter?: number;
-  }
-): Promise<void> {
-  await db.insert(schema.capabilityEvent).values({
-    id: newId(),
-    principalId: opts.identityId,
-    resourceType: 'app',
-    resourceId: '*',
-    ability: opts.capability,
-    action: opts.action ?? 'grant',
-    caveats: null,
-    parentId: null,
-    actorId: opts.actorId ?? null,
-    createdAt: opts.at ?? new Date(),
-    createdAtCounter: opts.counter ?? 0
-  });
 }
