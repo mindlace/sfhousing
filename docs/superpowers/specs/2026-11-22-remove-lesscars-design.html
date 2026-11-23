@@ -189,6 +189,7 @@ export type WorkerResponse = SimResponse | ScenarioResponse;</code></pre>
         <li>The parsed manifest carries one derived mark of an older dataset, shown below. <code>ManifestSchema</code> sets it, so <code>parseManifest</code> and every direct <code>ManifestSchema.parse</code> agree.</li>
         <li><code>manifestFiles</code> lists no <code>scenarios.lesscars.*</code> entry, so <code>upload</code>, <code>verify</code> and <code>data:local</code> neither send, check nor copy those files, even for an older manifest that names them.</li>
         <li>The pipeline's <code>buildManifest</code> takes no <code>lesscars</code> argument and never writes the key.</li>
+        <li><code>npm run data:transit</code> (<code>scripts/data-transit.ts</code>) writes the local dataset's raw manifest JSON back with only its <code>transit</code> key set. It parses the manifest to check it and to build that entry, and never writes the parsed value, so an older manifest keeps its <code>scenarios.lesscars</code> object, and with it the mark, after the script runs.</li>
       </ul>
       <pre><code data-lang="ts">// src/lib/data/manifest.ts, on the parsed Manifest (not in ManifestScenarios)
 /**
@@ -383,6 +384,7 @@ shasum -a 256 e2e/fixtures/data/fixture-0/scenarios/fzp/*
       <li><code>e2e/fixtures/data/fixture-0/**</code></li>
       <li><code>e2e/lesscars.spec.ts</code> and the less-cars and <code>/fzp</code> tests in <code>e2e/{targets,sim-citywide,sim,pages-a11y}.spec.ts</code></li>
       <li><code>scripts/data-local.spec.ts</code></li>
+      <li><code>scripts/data-transit.ts</code> and <code>scripts/data-transit.spec.ts</code></li>
       <li><code>.prettierignore</code></li>
       <li>the dataset path list of <code>chreode.config.ts</code></li>
       <li><code>docs/dev/{pipeline,road-lots,fzp-mode}.md</code></li>
@@ -508,7 +510,7 @@ match: [
   'src/lib/view/prefs.ts'
 ],
 triggers: ['lint', 'check', 'unit', 'e2e', 'pipeline']</code></pre>
-      <p>Scripts: <code>scripts/data-local.spec.ts</code>, as in <a href="#sec-tests">Tests</a>.</p>
+      <p>Scripts: <code>scripts/data-local.spec.ts</code>, as in <a href="#sec-tests">Tests</a>; <code>scripts/data-transit.ts</code> writes the raw manifest with <code>transit</code> set, as in <a href="#sec-design-manifest">the manifest</a>.</p>
       <p>e2e: <code>e2e/targets.spec.ts</code>, <code>e2e/sim-citywide.spec.ts</code>, <code>e2e/sim.spec.ts</code>, <code>e2e/pages-a11y.spec.ts</code>, only their less-cars and <code>/fzp</code> tests and the header comments that name them, as in <a href="#sec-tests">Tests</a>.</p>
       <p>Docs: <code>docs/dev/pipeline.md</code>, <code>docs/dev/road-lots.md</code>, <code>docs/dev/fzp-mode.md</code>, as in <a href="#sec-docs">Docs</a>.</p>
     </section>
@@ -570,6 +572,7 @@ triggers: ['lint', 'check', 'unit', 'e2e', 'pipeline']</code></pre>
         <li><code>src/lib/map/style.spec.ts</code>: in both themes, a style built for a manifest without <code>splitRoads</code> has no layer whose id ends in <code>__lc</code> and none with source layer <code>roads_lc</code>.</li>
         <li><code>src/lib/data/manifest.test.ts</code>: a raw manifest with a <code>scenarios.lesscars</code> object parses with <code>splitRoads: true</code>; one without it has no <code>splitRoads</code>; a raw top-level <code>splitRoads: true</code> without <code>scenarios.lesscars</code> gives none.</li>
         <li><code>src/lib/map/palette.spec.ts</code>: no token name starts with <code>lc-</code>.</li>
+        <li><code>scripts/data-transit.spec.ts</code>: on an older manifest with a <code>scenarios.lesscars</code> object, the written JSON keeps that object, has no <code>splitRoads</code> key and carries the new <code>transit</code>, and parsing it again gives <code>splitRoads: true</code>.</li>
         <li><code>src/lib/sim/worker-router.spec.ts</code>: a message of type <code>initPlayback</code> or <code>playbackCard</code> posts nothing and creates or disposes no host.</li>
         <li><code>e2e/pages-a11y.spec.ts</code>: the 404 loop (<code>:30</code>) also covers <code>/fzp</code> and <code>/lesscars</code>, each answering 404 with heading "Page not found" and passing the same a11y and overflow checks.</li>
       </ul>
