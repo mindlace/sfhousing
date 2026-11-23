@@ -103,10 +103,7 @@ test('a housing bond: full until its money is used; after Play its bar drains', 
   await expect(bar).not.toHaveAttribute('aria-label', /left/);
 });
 
-test('general revenue, yearly: after Play its bar has drawn down; a payment does not refill it', async ({
-  page,
-  isMobile
-}) => {
+test('general revenue, yearly: after Play its bar has drawn down', async ({ page, isMobile }) => {
   await gotoSim(page);
   await addMeasure(page, 'General revenue, yearly');
   await bondBar(page);

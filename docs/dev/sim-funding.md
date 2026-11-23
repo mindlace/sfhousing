@@ -8,7 +8,7 @@ The page side of the funding levers. Source: `src/lib/sim-page/` (`policy.ts`, `
 
 `restoreSimDoc` returns `{ doc, notices, funding: FundingLoadReport }`; the report is what the page's notices are built from (`funding-ui` owns their text). Days in a policy stay absolute and are never rewritten on load or when the dataset's `asOf` moves: money dated before `asOf` never arrives, a programme with `from` before `asOf` is active from `asOf`, and one whose `to` is before it is never active.
 
-A given measure is a policy made from a preset: it carries the preset's id (`Policy.preset`) and its label. `dateMeasure(policy, cal)` (`funding-presets.ts`) re-dates its money from its first span's start, by building the preset again with that start as the `start` argument of `fundingPresets`. It runs only when the measure is added (`addPolicy` in `src/lib/timeline/add.ts`) and when its first span's start moves (`redateMoved`). Ids, labels and the player's own edits to anything but dates stop it: a measure whose money no longer has the preset's shape is left as it is. A preset with `dates: 'fixed'` is never re-dated. Money arrives only inside its policy's spans: a span's start and end bound every payment of its pool.
+A given measure is a policy made from a preset: it carries the preset's id (`Policy.preset`) and its label. `dateMeasure(policy, cal)` (`funding-presets.ts`) re-dates its money from its first span's start, by building the preset again with that start as the `start` argument of `fundingPresets`. It runs only when the measure is added (`addPolicy` in `src/lib/timeline/add.ts`) and when its first span's start moves (`redateMoved`). It compares what the measure pays with the preset's, leaving out ids, labels and dates, so the player may rename or move a measure and it is still re-dated. An edit to any other field stops it: a measure whose money no longer has the preset's shape is left as it is. A preset with `dates: 'fixed'` is never re-dated. Money arrives only inside its policy's spans: a span's start and end bound every payment of its pool.
 
 `pastItems(f, asOf)` returns the added pools with no arrival on or after `asOf`, the programmes whose `to` is before it, and the inflows with no arrival on or after it, for the page to mark "not counted".
 
@@ -116,7 +116,7 @@ The editor is one column at every width (the inspector column and the phone shee
 5. **"Market terms you set"** (`h3`, `MarketTerms`): rendered only when some term has no source and an offered instrument needs it, or the policy already holds a typed term (today: the guarantee's rate cut).
 6. **"Sources and tiers"**: a closed `details` with the baseline's provenance and its check line, each added preset's provenance, every custom evidence value and typed term, `MARKET_TERMS` (unsourced ones as "No sourced value: {reason}"), the draw assumption of ruling R11, the pricing rule, the presets not offered and the affordable cost line from `AFFORDABLE`.
 
-The federal group is a capped group with a ceiling, like the others (`isNoCeiling` is true only for an older dataset's federal pool, ten trillion dollars a year, above `MAX_DOLLARS`). A group's amount is what its pools receive in the year from `asOf` (every `once` and `yearly` arrival from `asOf` to a year after, times the scale in force on `asOf`, rounded to whole dollars), so one-time arrivals count: on fixture-0 the City's is about $5.1 million, not $2.6 million.
+The federal group is a capped group with a ceiling, like the others (`isNoCeiling` is true only for an older dataset's federal pool, ten trillion dollars a year, above `MAX_DOLLARS`). A group's amount is what its pools receive in the year from `asOf` (every `once` and `yearly` arrival from `asOf` through the day before its first anniversary, times the scale in force on `asOf`, rounded to whole dollars). A one-time arrival counts once, a yearly one for each payment in that year.
 
 One row is selected at a time; selecting scrolls it into view (`block: 'nearest'`). A programme's editor is `ProgrammeEditor`, nested under its pool's row (`data-prog-row="<id>"`, a new draft programme `"draft"`; its editor `data-programme-editor`). A programme's pool is the pool it is nested under; only under the City group does a "Pays from" select choose a City pool.
 
@@ -193,13 +193,13 @@ Every edit is a pure `(p: SimPolicy) => SimPolicy` in `funding-edit.ts` returnin
   - "Today's funding: as today" when the funding equals the default, else one row per dated change (none when the measure only adds pools or programmes);
   - added programmes on baseline pools, then each added pool with its money sentence and its programmes indented;
   - "No money added", muted, only with "as today";
-  - typed terms ("Guarantee rate cut: 0.5 points (custom, not sourced)"), only when nothing else is in the funding: a measure's terms are context, not its own.
+  - typed terms ("Guarantee rate cut: 0.5 points (custom, not sourced)"), only when nothing else is in the funding.
 
   " (custom, not sourced)" follows a custom evidence value. A date is never marked: the dates are the player's (`withoutDates`). The until rule: a programme's sentence has " until {Month Year}" when its `to` is set; a yearly inflow reads " until {Month Year}" always, a stored end of null reading the window's last month.
 
 ### A pool's level
 
-A pool's bar shows what is left of all the money the pool receives in the window (`poolLevel`, `src/lib/timeline/pool-level.ts`, drawn as in [timeline-ui.md](timeline-ui.md), "A pool's bar shows its level"). Per filled calendar month i, over the pools read together whose lifetime is not null ("Current funding" reads the baseline pools together):
+A pool's bar shows what is left of all the money the pool receives in the window (`poolLevel`, `src/lib/timeline/pool-level.ts`, drawn as in [timeline-ui.md](timeline-ui.md), "A pool's bar shows its level"). Per filled calendar month i, over the pools read together whose lifetime is not null and that the money view carries ("Current funding" reads the baseline pools together):
 
 `level = Σ(shut ? 0 : leverage × lifetime − used) ÷ Σ(leverage × lifetime)`
 
@@ -208,7 +208,7 @@ A pool's bar shows what is left of all the money the pool receives in the window
 - A bar starts full and drains as the money is used. It rises only when used money returns: a loan repaid, a commitment released.
 - A yearly payment never refills it: each payment is already in the lifetime.
 - A closed pool reads empty. `MoneyView.shut` marks the months in which a pool has had its last money (F3: it awards nothing); `poolLevel` reads 0 in each, and a pool with no `shut` series is never shut.
-- The lifetime is all the money the pool receives in the window. `lifetimes(doc, baseline, asOf)` takes it through the engine's own money track (`createMoneyTrack`), month by month over the window, on the baseline pools with no programmes, no off spans, slope 0 and the market terms, month m's levers those in force on its first day. A yearly inflow with no end counts each payment to the window's last month; a payment after a span ends, or past the window, counts nothing; an off policy's pool is 0. The last result is kept by the identity of the document and the baseline.
+- The lifetime is all the money the pool receives in the window. `lifetimes(doc, baseline, asOf)` takes it through the engine's own money track (`createMoneyTrack`), month by month over the window, on the baseline pools with no programmes, no off spans, slope 0 and the market terms, month m's levers those in force on its first day. A yearly inflow with no end counts each payment to the window's last month; a payment after a span ends, or past the window, counts nothing; an off policy's pool is 0. The last result is kept by the identity of the document and the baseline and the value of `asOf`.
 - A pool with no lifetime has no level: one whose definition has a yearly inflow that `isNoCeiling` (an older dataset's federal pool), and every pool when the track throws. It stays out of the sums.
 - Leverage comes from the document the numbers were run on (the held one while stale) and the calibration's baseline pools. An added pool's definition is its last span's begun by the window's last month, as the score takes a pool's shape (`planFinanceOf`).
 
