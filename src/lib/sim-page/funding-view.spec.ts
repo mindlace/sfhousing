@@ -753,4 +753,24 @@ describe('addedPresets (4.10, final M3)', () => {
     expect(addedPresets(edited, presets)).toEqual([]);
     expect(addedPresets(policyWith({}).funding, presets)).toEqual([]);
   });
+
+  it('addedPresets finds state-double with its entries on other days', () => {
+    const double = presets.find((p) => p.id === 'state-double')!;
+    const pool = double.baselineScale[0].pool;
+    const base = policyWith({}).funding;
+    const D1 = dayOf(2041, 2, 3);
+    const D2 = dayOf(2043, 4, 5);
+    const moved: FinanceLevers = {
+      ...base,
+      baselineScale: [
+        { pool, from: D1, scale: 2 },
+        { pool, from: D2, scale: 1 }
+      ]
+    };
+    const ids = addedPresets(moved, presets).map((p) => p.id);
+    expect(ids).toContain('state-double');
+    expect(ids).not.toContain('state-off');
+    const off: FinanceLevers = { ...base, baselineScale: [{ pool, from: D1, scale: 0 }] };
+    expect(addedPresets(off, presets).map((p) => p.id)).toEqual(['state-off']);
+  });
 });

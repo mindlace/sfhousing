@@ -762,7 +762,23 @@ describe('valueSource', () => {
       REVOLVING_FUND_SIZE.provenance
     );
     expect(valueSource(poolOf('general-revenue'), 'inflows[0].from', presets)).toBe('custom');
-    expect(valueSource(poolOf('general-revenue'), 'inflows[0].to', presets)).toBe('custom');
+    expect(valueSource(poolOf('general-revenue'), 'inflows[0].to', presets)).toEqual(
+      GENERAL_FUND_TERM_YEARS.provenance
+    );
+  });
+
+  it("gives general-revenue's to the term's source while it is 29 years after from", () => {
+    const pool = structuredClone(poolOf('general-revenue'));
+    const f = pool.inflows[0] as Extract<Inflow, { kind: 'yearly' }>;
+    f.from = dayOf(2030, 3, 1);
+    f.to = yearsAfter(f.from, 29);
+    expect(valueSource(pool, 'inflows[0].to', presets)).toBe(GENERAL_FUND_TERM_YEARS.provenance);
+    f.to = yearsAfter(f.from, 28);
+    expect(valueSource(pool, 'inflows[0].to', presets)).toBe('custom');
+    expect(valueSource(pool, 'inflows[0].dollarsPerYear', presets)).toBe(
+      GENERAL_FUND_FY25.provenance
+    );
+    expect(valueSource(pool, 'inflows[0].from', presets)).toBe('custom');
   });
 
   it('labels the htf-2026 inflows, which are held back but still map', () => {

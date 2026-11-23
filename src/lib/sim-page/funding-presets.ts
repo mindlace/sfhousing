@@ -718,6 +718,14 @@ export function valueSource(
   if (preset === undefined) return 'custom';
   const built = ('inflows' in item ? preset.pools : preset.programmes)[0];
   if (built === undefined) return 'custom';
+  if (preset.id === 'general-revenue' && field === 'inflows[0].to') {
+    // The end is the term's while it stays that many years after the stored start.
+    const first = 'inflows' in item ? item.inflows[0] : undefined;
+    return first?.kind === 'yearly' &&
+      first.to === yearsAfter(first.from, GENERAL_FUND_TERM_YEARS.value - 1)
+      ? GENERAL_FUND_TERM_YEARS.provenance
+      : 'custom';
+  }
   const source = tableSource(preset.id, preset, item, field);
   if (source === null) return 'custom';
   const stored = valueAt(item, field);

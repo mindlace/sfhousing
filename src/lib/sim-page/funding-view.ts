@@ -851,22 +851,27 @@ const POOL_FIELD_WORD = {
 /**
  * The presets with something in the policy, in `presets` order (4.10 "each added preset's
  * provenance"): one that added a pool or programme (ids `u-<presetId>-<n>`), or one that only adds
- * dated changes while every change it adds is in `f.baselineScale` as it added it (a change
- * edited to another amount is the user's own).
+ * dated changes while the policy's changes on its pools hold its (pool, scale) list in its order,
+ * on whatever days (a change edited to another amount is the user's own).
  */
 export function addedPresets(f: FinanceLevers, presets: FundingPreset[]): FundingPreset[] {
   const ids = [...f.pools, ...f.programmes].map((x) => x.id);
   return presets.filter((p) => {
     const made = new RegExp(`^u-${p.id}-\\d+$`);
     if (ids.some((id) => made.test(id))) return true;
-    return (
-      p.pools.length === 0 &&
-      p.programmes.length === 0 &&
-      p.baselineScale.length > 0 &&
-      p.baselineScale.every((n) =>
-        f.baselineScale.some((e) => e.pool === n.pool && e.from === n.from && e.scale === n.scale)
+    if (p.pools.length > 0 || p.programmes.length > 0 || p.baselineScale.length === 0) return false;
+    // Its (pool, scale) list as a consecutive run among the entries on its pools, whatever the days.
+    const pools = new Set(p.baselineScale.map((n) => n.pool));
+    const held = f.baselineScale.filter((e) => pools.has(e.pool)).sort((a, b) => a.from - b.from);
+    for (let i = 0; i + p.baselineScale.length <= held.length; i++) {
+      if (
+        p.baselineScale.every(
+          (n, k) => held[i + k].pool === n.pool && held[i + k].scale === n.scale
+        )
       )
-    );
+        return true;
+    }
+    return false;
   });
 }
 
