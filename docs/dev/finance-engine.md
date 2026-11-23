@@ -497,8 +497,7 @@ level itself, so the page can never state a level the engine is not running. The
 table: a dataset from before Release 1 has neither field and its saved plans keep loading as they
 did; without a market model there is no slope, so no programme can be priced. The mini calibration
 has neither, so `goldenInput()` gets neither and `golden-seed1.json` does not change. The site's
-default run, the twin, and the `/lesscars` build step ([lesscars.md](lesscars.md)) all run the
-baseline funding on the private-starts level.
+default run and the twin both run the baseline funding on the private-starts level.
 
 ## Net fast path
 
@@ -553,7 +552,7 @@ with homes) on the canonical bundle, and then the skip bounds for the horizon. I
 between candidates: `step(maxCandidates)` does the next chunk and returns true once everything is
 built; the step that first builds `financePreOf` does only that. The pass is per input, so a
 second horizon only adds its bounds. `marketSkip`, `affordableSkip` and the run's tables finish an
-unfinished warm synchronously, so a run with no warm (pipeline, lesscars, tests) or a part-done one
+unfinished warm synchronously, so a run with no warm (pipeline, tests) or a part-done one
 gives the same output. A run still fills, lazily, an entry the warm skips (a level with 0 homes).
 On the bench funding input the whole warm is about 190 ms in a bundle (250 ms under vitest), in
 chunks of `WARM_CHUNK` (16,384 candidates, about 23 ms bundled); before, `marketSkip` and

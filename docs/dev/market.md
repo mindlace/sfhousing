@@ -184,8 +184,8 @@ on a project's first filing.
   and stage steps. Only the initiation month of simulated starts does.
 - **Candidates**: the unshifted rule, unless a hazard underflows to 0 under the shift.
 
-Pass-through: `applyPolicies`, `bare()`, `twinInput` (both twins), `load.ts` and `/lesscars`' plan
-and baseline inputs all carry `market` unchanged ([sim-levers.md](sim-levers.md)).
+Pass-through: `applyPolicies`, `bare()`, `twinInput` (both twins) and `load.ts` all carry `market`
+unchanged ([sim-levers.md](sim-levers.md)).
 
 ## `marketLevel`: the one rule for the level
 
@@ -231,8 +231,7 @@ Count keys added to the build's counts (and so to `report.json`; they are not fi
 
 `src/lib/sim/finance/` is in the dataset version (`PATHS` in `pipeline/lib/version.ts`; chreode's
 `dataset` rule and the Pipeline workflow's path lists cover it): the calibration step imports the
-prototypes for the slope, and from Release 2 the `/lesscars` step runs the baseline funding through
-it. Any change there is a dataset change, made at a release. `src/lib/fzp/market-view.ts` is page
+prototypes for the slope. Any change there is a dataset change, made at a release. `src/lib/fzp/market-view.ts` is page
 code and stays outside the hashed paths.
 
 ## The page

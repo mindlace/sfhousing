@@ -20,11 +20,11 @@ release-please runs with a GitHub App token (`actions/create-github-app-token`),
 
 There is no automated staging-to-prod interlock (as in planafoot): do not merge a release PR over a red staging deploy.
 
-There is no CI workflow on pull requests: `npm run signoff` is the only check, and it runs locally. Add a workflow deliberately if checks move off the maintainer's machine.
+`npm run signoff` is the only required check, and it runs locally. One workflow runs on pull requests, `pipeline.yml`: the pipeline tests and the fixture byte check, for changes under the paths it lists.
 
 `PUBLIC_APP_RELEASE` is set at deploy time to the commit SHA (staging) or tag (production).
 
-The `SIM` Durable Object binding and its `new_sqlite_classes` migration (`wrangler.jsonc`, tag `v1-sim-object`) ship with the deploy in both environments, with no manual step. A migration tag is never edited or reused. After this deploy, rolling the Worker back to a version without the `SimObject` class is not safe. See [sim-object.md](sim-object.md).
+`wrangler.jsonc` holds two Durable Object migrations, the same in both environments, applied by the deploy with no manual step. `v1-sim-object` created the class `SimObject` (`new_sqlite_classes`). `v2-delete-sim-object` deletes it and its stored data (`deleted_classes`); the Worker binds no Durable Object. A migration tag is never edited or reused.
 
 ### Contributors (fork PRs)
 
@@ -36,6 +36,7 @@ Nothing is promoted. The build computes the dataset version `<v>` from the sourc
 
 - **Guard.** Both deploy workflows run the step "Guard: this commit's dataset is published" before `npm run build`. It runs `npx tsx scripts/dataset-version.ts --check <host>` and sends a `HEAD` request (Node `fetch`, 15 s timeout, retried) for `/data/<v>/manifest.json` on the deployed host (either host serves any published version, so no R2 credentials are needed). If the manifest is missing the job fails without deploying and the running version stays up. The fix is to build and upload the dataset ([pipeline.md](pipeline.md), "Finishing a branch that changes the dataset").
 - **Smoke.** After the deploy, "Smoke: dataset manifest is served and the build uses it" checks the manifest again and that `/about` on the deployed host shows `<v>` (`/attribution` is a 308 to `/about#about-data`, and `curl -fsS` does not follow it).
+- **Level 2 check.** Before `upload`, `npx tsx scripts/level2-check.ts pipeline/out/<v>` must exit 0. Exit 1 means current law misses the goal inside the window on that data: nothing is uploaded, and the owner decides the remedy ([testing.md](testing.md), "The level 2 check").
 - **Releases.** A release tag's tree computes its own `<v>`, so cutting a release is what moves production to a new dataset. `release-please.yml` needs no dataset step.
 - **Rollback** is a code revert. The reverted tree computes the old version, which is still in R2.
 - Versions are immutable and retained forever. There are no `chore(data)` or `data:` pointer PRs any more.
@@ -52,15 +53,13 @@ These are the GitHub Actions ones; nothing else is set there.
 
 Already set: `BETTER_AUTH_SECRET` as a secret on staging and on production, each with its own value (never share one between them); `SES_ACCESS_KEY_ID` and `SES_SECRET_ACCESS_KEY` on staging and on production, each environment with its own key (see [Sign-in mail](#sign-in-mail)).
 
-In `wrangler.jsonc` `vars`, per environment: `ENVIRONMENT`, `AUTH_METHODS=magic-link` (the pseudonymous account and the email magic link only), `SES_FROM` (needed even in mail log mode) and `PUBLIC_APP_RELEASE`.
+In `wrangler.jsonc` `vars`, per environment: `ENVIRONMENT`, `AUTH_METHODS=magic-link,password,google,passkey` (the same in both), `SES_FROM` (needed even in mail log mode) and `PUBLIC_APP_RELEASE`.
 
 Each of these only switches a feature on, and is read through a typed cast of `platform.env`:
 
 - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`: Google sign-in while `AUTH_METHODS` lists `google`. How they are made is under [Sign-in mail](#sign-in-mail).
 - `SES_ACCESS_KEY_ID` and `SES_SECRET_ACCESS_KEY`: make mail deliverable. Magic link is in effect exactly while both are set; without them mail runs in log mode (see [auth.md](auth.md), Mail). `SES_REGION` is unset, so mail goes through `us-west-1`. `EMAIL_PROVIDER=resend` with `RESEND_API_KEY` is the other provider the code accepts, and is unused.
-- `BOOTSTRAP_EMAILS`: comma list of verified addresses that get operator capabilities.
 - `BETTER_AUTH_URL`: base URL override; unset, the request origin is used.
-- `SIM_TAKEDOWN_TOKEN`: a secret, optional and unset by default in both environments. It switches on the operator takedown route (below); nothing else reads it, and no build, deploy or other route needs it.
 
 See [auth.md](auth.md).
 
@@ -192,46 +191,6 @@ npx wrangler secret put GOOGLE_CLIENT_SECRET --env staging
 ```
 
 Check: `npx wrangler secret list` and `npx wrangler secret list --env staging` each list both names.
-
-## Operator takedown of a sim
-
-`POST /api/operator/sims/<simId>/takedown` removes a sim: it bars the id for ever, clears the sim's stored log, closes its open sockets (close code 4410), and deletes its `sim_index` and `sim_commit` rows and its pending invitations. The ledger's old grants stay and grant nothing. It cannot be undone, and nothing a member does can do it.
-
-The route is off until the secret is set: every same-origin JSON request answers 404 while `SIM_TAKEDOWN_TOKEN` is unset or shorter than 32 characters (a request that is not JSON gets 415, and one with a foreign `Origin` 403, first). The secret is unset in staging and in production.
-
-1. Set the secret on the environment, a value of at least 32 characters (for example `openssl rand -hex 32`). Keep it where you can read it back; never commit it.
-
-   ```sh
-   wrangler secret put SIM_TAKEDOWN_TOKEN              # production
-   wrangler secret put SIM_TAKEDOWN_TOKEN --env staging  # staging
-   ```
-
-2. Call the route. The header is `Authorization: Bearer <token>`, spelled that way, and `Content-Type: application/json` is required. Send no `Origin` header (`curl` sends none). Put the token in your shell first: with the variable empty the header is `Bearer `, which answers 404 like a wrong token.
-
-   ```sh
-   read -rs SIM_TAKEDOWN_TOKEN   # paste the token; it is not echoed
-   curl -X POST https://<host>/api/operator/sims/<simId>/takedown \
-     -H 'Content-Type: application/json' \
-     -H "Authorization: Bearer $SIM_TAKEDOWN_TOKEN" \
-     -d '{}'
-   ```
-
-3. Optionally remove the secret afterwards, which turns the route off again: `wrangler secret delete SIM_TAKEDOWN_TOKEN` (add `--env staging` for staging).
-
-Answers, in the order the route checks:
-
-| Status | Means                                                                                                                                                              |
-| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 415    | Not `application/json`                                                                                                                                             |
-| 403    | The request carried an `Origin` that is not the host's                                                                                                             |
-| 404    | The token is missing, wrong, short or the secret is unset, or `<simId>` is not a valid id. One body for all of them                                                |
-| 503    | The sim object cannot be reached (no `SIM` binding, as under `npm run dev`). Nothing was written                                                                   |
-| 200    | `{ "simId": "<simId>" }`: done. The id is marked, the object is cleared and the D1 rows are gone. The Worker logs one info line, `[takedown] done` with the sim id |
-| 500    | A step failed. Call again: every step is safe to repeat, so a retry finishes the job                                                                               |
-
-Any valid id with the right token is taken down and barred, whether or not it has a `sim_index` row. That clears a log whose index row is already gone, and bars an id nobody registered yet. The id can never be registered again.
-
-See [sim-object.md](sim-object.md) (`takeDown()`) and [auth.md](auth.md) (Sims with no members).
 
 ## One-time bootstrap
 

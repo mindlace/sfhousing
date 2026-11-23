@@ -285,18 +285,14 @@ statements carry their own provenance.
 | Shown run (`/sim`, `/s/<id>`) | yes, every run | when `finance` has a pool | `shownRun`, once per run, from `simulateDetailed` |
 | Twin                          | no             | no                        | `simulateNet`, unchanged                          |
 | Band runs                     | no             | no                        | `simulateNet`, unchanged                          |
-| `/lesscars` build             | no             | no                        | `addNet` and `runEngine`, unchanged               |
 
 **`simulateDetailed` is the one ledger collector**: it passes a `ledger` sink that pushes each event
 in arrival order, and only when the input has `finance` (otherwise `ledger` is `[]` and no sink
 is passed, so a run without finance is untouched). **The fast path is untouched:** `addNet`,
-`NetAcc` and `simulateNet` are unchanged, so the band, the twin and `/lesscars` cost what they
-cost before. `shownRun` computes `tiers` with `tierSeries` and `money` with `moneyOf` (the twin's
+`NetAcc` and `simulateNet` are unchanged, so the band and the twin cost what they cost before. `shownRun` computes `tiers` with `tierSeries` and `money` with `moneyOf` (the twin's
 `finance.pools` as `baseline`), after `shownSeries`; `postTimeline` posts the same objects on every
 post. `TierCtx` is built when the loaded input changes (a lever revision), not per run.
 
-`pipeline/lib/lesscars/runs.ts` calls `runEngine` with its own sinks (`runs.ts:336`, `:339`, `:448`)
-and passes no `ledger` sink, so it collects no ledger; its outputs are unchanged.
 `src/lib/sim/scenario` and `src/lib/scoreboard` are hashed into the dataset version
 (`pipeline/lib/version.ts`), so this subsystem changes the dataset version; the dataset is built
 and uploaded once, at the release.

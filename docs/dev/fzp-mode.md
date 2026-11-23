@@ -1,8 +1,8 @@
 # src/lib/fzp: what is left of the FZP timelapse page
 
-Developer notes for `src/lib/fzp/`. `FzpMode.svelte` is gone (timeline-ui). `src/lib/fzp` is the shared kernel of `/sim` and `/s/<id>`, both `TimelineMode` ([timeline-ui.md](timeline-ui.md)). `/fzp` and `/lesscars` do not exist and answer 404. The original design is `docs/superpowers/specs/2026-10-16-fzp-mode-design.md`.
+Developer notes for `src/lib/fzp/`, the shared kernel of `/sim` and `/s/<id>`, both `TimelineMode` ([timeline-ui.md](timeline-ui.md)). `/fzp` and `/lesscars` answer 404. The original design is `docs/superpowers/specs/2026-10-16-fzp-mode-design.md`.
 
-**Routing.** The header link is "Simulate" (`/sim`). `/sim` ignores `?seed=` and drops it from the address ([timeline-ui.md](timeline-ui.md)).
+**Routing.** The header's second step is "Simulate" (`/sim`), a link once the current game is past level 1 ([game.md](game.md)). `/sim` ignores `?seed=` and drops it from the address ([timeline-ui.md](timeline-ui.md)).
 
 ## What is here
 
@@ -14,7 +14,7 @@ Developer notes for `src/lib/fzp/`. `FzpMode.svelte` is gone (timeline-ui). `src
 | Loading and shared types   | `load.ts`, `types.ts`, `copy.ts`                                                                                                                                                                                        | `/sim`                                                                                                            |
 | The e2e hook               | `debug.ts` (`window.__sfhFzp`)                                                                                                                                                                                          | `/sim`; fields in [timeline-ui.md](timeline-ui.md)                                                                |
 
-Details holds no map key: the key is on the map (`MapKeyControl` with `SimKey`, [timeline-ui.md](timeline-ui.md), "The screen"). Run phases, the run slider, `RunSwitcher` and the swap reroll are gone from `/sim`.
+Details holds no map key: the key is on the map (`MapKeyControl` with `SimKey`, [timeline-ui.md](timeline-ui.md), "The screen").
 
 ## The clock
 
@@ -23,9 +23,9 @@ Details holds no map key: the key is on the map (`MapKeyControl` with `SimKey`, 
 
 ## Layout variables
 
-`--map-controls-br-block-size` is set by `SimMap` ([map-interfaces.md](map-interfaces.md)); the card on a phone sits above it (`bottom-[calc(var(--map-controls-br-block-size,60px)+8px)]`) and a tall card is capped by it. `--dock-w` and `--fzp-scrubber-h` were `Dock`'s and `FzpMode`'s; `/sim` sets neither. The notice stack (`NoticePills`, [sim-page.md](sim-page.md)) is an overlay at the map's top from md and in flow below it; the header, its status slot and the timeline layout is [timeline-ui.md](timeline-ui.md).
+`--map-controls-br-block-size` is set by `SimMap` ([map-interfaces.md](map-interfaces.md)); the card on a phone sits above it (`bottom-[calc(var(--map-controls-br-block-size,60px)+8px)]`) and a tall card is capped by it. `/sim` sets neither `--dock-w` nor `--fzp-scrubber-h`. The notice stack (`NoticePills`, [sim-page.md](sim-page.md)) is an overlay at the map's top from md and in flow below it; the header, its status slot and the timeline layout is [timeline-ui.md](timeline-ui.md).
 
-## Props `TimelineMode` keeps from `FzpMode`
+## `TimelineMode`'s map and card props
 
 `manifest`, `calibration`, `datasetVersion`, the load and error props, `noScenario`, `reload`, `createWorker`, `view` (`ViewPrefs`, default `HIDDEN_VIEW`), `cards` (default true; taps and clicks open project cards, and `SimMap`'s own `tapCards` follows it; `/sim` always passes true), `ownerName`, `fundingName`, `onmanifest`, `onheights`, `onchunks`, `onmapready` and the snippets. Hover tooltips and `timelinePick` reports are unaffected by `cards`. `SimClientApi.lotAt(point)` forwards the worker's `lotAt` ([sim-levers.md](sim-levers.md)); `/sim` calls it for a tap on a lot with no project.
 
@@ -105,9 +105,9 @@ dialog; so do the typed terms of a policy.
   visible text (the header score is the busy sign). A failed edit keeps the old
   numbers under the existing stale line instead.
 - `terms`: the market terms in force at the playhead, for the lost-grants line (`lossOnExit`).
-- `uncapped`: the ids of pools whose `Pool.uncapped` is true, which read "no limit" under Received.
-  `TimelineMode` derives it with `uncappedPoolIds` over the calibration's baseline pools and the document's money policies
-  (`money-view.ts`), because the money series carries no flag.
+
+A Received cell reads "No ceiling" (`NO_CEILING`) where `isNoCeiling(received)`, an older dataset's
+federal pool (`receivedCell`, `money-view.ts`).
 
 The rows and their wording are in [sim-funding.md](sim-funding.md) ("Details, card and summary").
 
