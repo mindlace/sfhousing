@@ -8,7 +8,6 @@ import type { Manifest } from '$lib/data/manifest';
 import { stub } from '$lib/fzp/test/sim-map-stub';
 import { emptyPlan, serializePlan, type Plan } from '$lib/plan';
 import { PLAN_KEY } from '$lib/sharing/storage';
-import { page as appPage } from '../test-stubs/app/state';
 import manifestJson from '../../e2e/fixtures/data/fixture-0/manifest.json';
 import Page from './+page.svelte';
 import PaintHeaderHost from './test/PaintHeaderHost.svelte';
@@ -55,7 +54,6 @@ describe('/ keyboard undo', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     localStorage.clear();
-    appPage.state = {};
   });
 
   it('Ctrl+Z undoes the autosaved plan and the chip says so', async () => {
@@ -74,12 +72,6 @@ describe('/ keyboard undo', () => {
     ctrlZ();
     await expect.element(chip()).toHaveTextContent('');
     expect(page.getByTestId('stroke-chip').elements()).toHaveLength(0);
-  });
-
-  it('Ctrl+Z undoes a Remix hand-off plan carried in history state', async () => {
-    appPage.state = { sfhRemix: { from: 'abc123', plan: serializePlan(painted) } };
-    await render(Page, { props: { data: data(), params: {} } });
-    await expect.poll(undoes).toBe('Undid paint, 6 stories');
   });
 
   it('Ctrl+Z on the focused header score undoes too', async () => {

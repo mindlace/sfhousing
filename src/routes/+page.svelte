@@ -5,24 +5,31 @@
 </script>
 
 <script lang="ts">
-  import { onDestroy, onMount, untrack } from 'svelte';
+  import { onDestroy, onMount, tick, untrack } from 'svelte';
   import { MediaQuery } from 'svelte/reactivity';
-  import { replaceState } from '$app/navigation';
-  import { page } from '$app/state';
+  import { goto } from '$app/navigation';
   import BrushEditor from '$lib/brush/BrushEditor.svelte';
   import { exposeEditorForDebug } from '$lib/brush/debug';
   import type { Editor } from '$lib/brush/editor.svelte';
   import type { Manifest } from '$lib/data/manifest';
   import { DockState } from '$lib/dock/dock-state.svelte';
-  import { paintHeadline } from '$lib/paint/headline';
+  import { simLocked } from '$lib/game/allowed';
+  import { unlockText } from '$lib/game/copy';
+  import { e2eGoalAmount } from '$lib/game/e2e';
+  import { paintWon } from '$lib/game/levels';
+  import { useGame } from '$lib/game/store.svelte';
+  import WinCard from '$lib/game/WinCard.svelte';
+  import { GOAL_BASE } from '$lib/goal/goal';
+  import { paintHeadline, roomFor } from '$lib/paint/headline';
   import PaintDetails from '$lib/paint/PaintDetails.svelte';
   import { frameLatest, viewState, type Score, type ScoreStatus } from '$lib/scoreboard';
   import { Autosave } from '$lib/sharing/autosave.svelte';
-  import { COPY, n3, remixedToast } from '$lib/sharing/copy';
+  import { COPY, n3 } from '$lib/sharing/copy';
   import NoticeStack from '$lib/sharing/NoticeStack.svelte';
   import { PLAN_CODEC } from '$lib/sharing/doc-codec';
   import PublishButton from '$lib/sharing/PublishButton.svelte';
   import SaveIndicator from '$lib/sharing/SaveIndicator.svelte';
+  import { getStorage } from '$lib/sharing/storage';
   import { applyTitle } from '$lib/sharing/title';
   import { useHeaderActions } from '$lib/shell/header-actions.svelte';
   import { loadManifest } from '$lib/sim/manifest';
@@ -41,13 +48,15 @@
   }
 
   // Plan sharing (spec §4.5/§4.6): restore the autosaved plan on mount (ruling 6), autosave every
-  // committed change, notices N1–N3 and the Remix toast, and Publish + Saved in the header.
+  // committed change, notices N1–N3, and Publish + Saved in the header. A remixed plan arrives
+  // as the current game's plan record.
   type Notice = { id: string; text: string; tone?: 'info' | 'toast' };
   // The dataset version is fixed for the page's life.
   // svelte-ignore state_referenced_locally
   const autosave = new Autosave({ currentVersion: data.datasetVersion });
   let editor = $state.raw<Editor>();
   let notices = $state<Notice[]>([]);
+  const game = useGame();
 
   function onEditor(e: Editor): void {
     disposeDebugEditor = exposeEditorForDebug(e);
@@ -57,23 +66,22 @@
   // Runs after BrushEditor's own onMount (children mount first): its onLoad hook posts the
   // restored plan if the worker is ready, else the worker's onReady sends editor.plan.
   onMount(() => {
+    mounted = true;
+    goalAmount = e2eGoalAmount(getStorage()) ?? GOAL_BASE.amount;
     if (!editor) return;
-    const remix = page.state.sfhRemix;
-    const r = autosave.restore(remix?.plan);
+    const r = autosave.restore();
     editor.load(r.plan);
     if (r.notice?.kind === 'corrupt') notices.push({ id: 'n1', text: COPY.n1 });
     else if (r.notice?.kind === 'future') notices.push({ id: 'n2', text: COPY.n2 });
     else if (r.notice?.kind === 'rebased')
       notices.push({ id: 'n3', text: n3(r.notice.from, r.notice.to) });
-    if (remix) {
-      notices.push({ id: 'remix', text: remixedToast(remix.from), tone: 'toast' });
-      try {
-        replaceState('', {}); // ruling 7: no re-toast on reload
-      } catch (e) {
-        console.error('[sharing] could not clear the remix hand-off', e);
-      }
-    }
-    return autosave.attach();
+    const detach = autosave.attach();
+    // Before the game changes, the plan still in the debounce is written to its record.
+    const offLeave = game.beforeLeave(() => autosave.flush());
+    return () => {
+      offLeave();
+      detach();
+    };
   });
 
   // The restored plan serializes the same as what restore() wrote, so this first run is a no-op.
@@ -145,8 +153,91 @@
   });
   const shown = $derived(latestScore.current.score ?? EMPTY);
   const scoreView = $derived(viewState(shown, scoreStatus));
-  const headText = $derived(paintHeadline(shown.netUnits));
+  /** Read once on mount (the e2e seam needs the browser's storage). */
+  let goalAmount = $state(GOAL_BASE.amount);
+  const goal = $derived({ ...GOAL_BASE, amount: goalAmount });
+  const headText = $derived(paintHeadline(shown.netUnits, goal));
   const systemTheme = useSystemTheme();
+
+  // Paint's win (game-shell spec): at level 1 the latest complete score at the goal wins. A score
+  // that is not complete (a stroke, the worker filling) leaves the won state as it is.
+  let mounted = $state(false);
+  /** The net homes of the latest complete score; null before the first. */
+  let completeNet = $state<number | null>(null);
+  /** A pointer button is down on the page (window events; never rendered). */
+  let held = false;
+  /** This page set the store's offer. */
+  let offered = false;
+
+  const locked = $derived(mounted && !game.open && simLocked(game.progress));
+  const won = $derived(locked && completeNet !== null && paintWon(completeNet, goal.amount));
+  /** "Keep playing" or Escape; false again whenever Paint starts or stops being won. */
+  let kept = $derived.by(() => {
+    void won;
+    return false;
+  });
+  /** The card is mounted; false again whenever Paint starts or stops being won. */
+  let cardOpen = $derived.by(() => {
+    void won;
+    return false;
+  });
+
+  /** Opens the card when Paint is won, not kept, not open, and no pointer is held. */
+  function maybeOpen(): void {
+    if (!won || kept || cardOpen || held) return;
+    cardOpen = true;
+    game.won();
+  }
+
+  /** Judged here, before frameLatest coalesces, so no complete score is lost to a frame. */
+  function onScore(s: Score, meta: { complete: boolean }): void {
+    latestScore.push({ score: s, complete: meta.complete });
+    if (!meta.complete) return;
+    completeNet = s.netUnits;
+    maybeOpen();
+  }
+
+  function release(): void {
+    held = false;
+    maybeOpen();
+  }
+
+  async function keep(): Promise<void> {
+    kept = true;
+    cardOpen = false;
+    await tick();
+    document.querySelector<HTMLElement>('[data-testid="score-bar"]')?.focus();
+  }
+
+  // The offer follows `won`; it reads only `won`, writes only the store and `offered`.
+  $effect(() => {
+    if (won) {
+      untrack(() => game.setOffer({ on: null, datasetVersion: data.datasetVersion }));
+      offered = true;
+    } else if (offered) {
+      untrack(() => game.setOffer(null));
+      offered = false;
+    }
+  });
+  onDestroy(() => {
+    if (offered) game.setOffer(null);
+  });
+
+  // Leaving level 1 (the card's or the level panel's Level up): on to the simulation.
+  let lockedBefore = false;
+  $effect(() => {
+    const now = locked;
+    if (lockedBefore && !now) untrack(() => void goto('/sim'));
+    lockedBefore = now;
+  });
+
+  // Each autosave write of the plan record touches the current game.
+  let statusBefore = autosave.status;
+  $effect(() => {
+    const status = autosave.status;
+    if (statusBefore === 'saving' && status === 'saved') untrack(() => game.touched());
+    statusBefore = status;
+  });
 </script>
 
 {#snippet scoreBar()}
@@ -169,6 +260,17 @@
 
 {#snippet noticeStack()}
   <NoticeStack {notices} ondismiss={(id) => (notices = notices.filter((n) => n.id !== id))} />
+  {#if cardOpen}
+    <!-- The stack lets clicks through; the card takes them. -->
+    <div data-testid="paint-win" class="pointer-events-auto">
+      <WinCard
+        title={roomFor(goal.amount)}
+        unlocks={unlockText(2)}
+        onlevelup={() => game.levelUp()}
+        onkeep={keep}
+      />
+    </div>
+  {/if}
 {/snippet}
 
 {#snippet layerSwitches()}
@@ -192,6 +294,11 @@
 {/snippet}
 
 <svelte:head><title>SF Housing Simulator</title></svelte:head>
+<svelte:window
+  onpointerdown={() => (held = true)}
+  onpointerup={release}
+  onpointercancel={release}
+/>
 
 <h1 class="sr-only">SF Housing Simulator</h1>
 <div id="map-region" class="relative h-full">
@@ -203,7 +310,7 @@
     currentVersion={data.datasetVersion}
     {reloadManifest}
     oneditor={onEditor}
-    onscore={(s, meta) => latestScore.push({ score: s, complete: meta.complete })}
+    onscore={onScore}
     onchunks={(c) => (chunkState = c)}
     {view}
     onmanifest={(m) => (mapManifest = m)}
