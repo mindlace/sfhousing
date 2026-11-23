@@ -206,6 +206,7 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - game-core: incremental-game-game-core — status: admitted (admit message sent at a333bd83; branch incremental-game-game-core, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-game-core, model opus, needs: G1–G5, S2, S3, X1 (merged), produces: G1–G5 (built))
 - mail-setup: incremental-game-mail-setup — status: complete (branch incremental-game-mail-setup, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-mail-setup, start 7fbb5e32c72b3dcd416f7ef214536376a7c22b5c, model opus — rationale: outward-facing AWS and secrets work needs judgment, needs: none, produces: none)
 - game-shell-1: incremental-game-game-shell-1 — status: complete (branch incremental-game-game-shell-1, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-game-shell-1, start cf1ff6e50e891279a77dc411c45e929643ffb936, model opus — rationale: sibling lane of game-shell, same tier as its plan's author, needs: G2 stub (merged), produces: none)
+- remove-multiuser: incremental-game-remove-multiuser — status: complete (branch incremental-game-remove-multiuser, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-remove-multiuser, start 7fbb5e32c72b3dcd416f7ef214536376a7c22b5c, model opus — rationale: auth, schema, Durable Object and config removal across subsystems, needs: none, produces: I1)
 
 ## Supervision
 - status asked remove-lesscars
@@ -262,6 +263,7 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - plan remove-multiuser: docs/superpowers/plans/2026-11-22-remove-multiuser.html at af1e4602
 - remove-multiuser status 20:45: all six tasks passed review, final review clean, head 5d85d571 (e2e 769 passed, 0 failed; unit 1 failure = the /about case game-shell-1 fixed). Held only on the conductor's word that game-shell-1 @ a1930ffc has merged; then it merges the integration branch and re-reports I1 and complete. While held it shows no evidence: mark it seen on beats, do not treat as a stall.
 - 20:55 told remove-multiuser that game-shell-1's fix merged (integration at bf22c443, suite green): it merges and re-reports I1 and complete. Still owed: tell remove-lesscars once remove-multiuser has merged.
+- 21:50: remove-lesscars, remove-multiuser and game-core have all sent `complete` and wait on merges; no operator is building. No heartbeat timer runs while the only thing moving is the merge suite (its agent's report is the next event); start the timer again when an operator is admitted or a fork starts.
 
 ## Questions
 - 2026-11-22 conductor-1 from conductor [defect-class: owner-ruling-drift]: gate-1, a policy already saved in the browser becomes a level-1 game, and every kind in it is locked (major) → rulings/conductor-1.md (commit 7fbb5e32, changes contract: no)
@@ -393,6 +395,8 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - routed game-shell-1-1
 - 2026-11-22 remove-multiuser-4 from remove-multiuser [defect-class: conductor-merge-window]: its branch merged the integration branch at 82bc19d4, before the 19:20 reset → answered by message, no fork (mechanical: which branch to merge from)
 - routed remove-multiuser-4
+- 2026-11-22 game-core-8 from game-core [defect-class: unmodeled-interaction]: a pending Paint or /sim autosave can write the old game's document into the new game after New game, switch or delete; no spec owns flushing it (it recommends a G2 `beforeLeave` hook). Fork starts when the suite on the remove-multiuser merge reports; rule it before admitting game-save, game-shell or game-sim →
+- 2026-11-22 conductor-12 from conductor [defect-class: unmodeled-interaction]: e2e/game-helpers.spec.ts:146 (contracts' X1 test) is flaky once game-core's store is built; who owns making it deterministic →
 
 ## Forks
 - fork checkpoint-2 started 2026-11-22T16:20
@@ -518,6 +522,8 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - fork review-game-shell-1-a1930ffc started 2026-11-22T19:38
 - fork review-game-shell-1-a1930ffc exited [0]: output
 - fork review-game-core-38941417 started 2026-11-22T20:05
+- fork review-game-core-38941417 exited [0]: output
+- fork review-remove-multiuser-2e101f6f started 2026-11-22T20:22
 
 ## Frame-defect tally
 - owner-ruling-drift: 2 — instances: conductor-1 (gate-1, 2026-11-22); conductor-8 (gate-7, 2026-11-22)
@@ -537,6 +543,8 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - write-set-gap: 4 — adds remove-multiuser-3 (2026-11-22)
 - spec-silence: 5 — adds game-core-7 (2026-11-22)
 - write-set-gap: 5 — adds game-shell-1-1 (2026-11-22)
+- unmodeled-interaction: 1 — instances: game-core-8 (2026-11-22)
+- unmodeled-interaction: 2 — adds conductor-12 (2026-11-22)
 
 ## Integration
 - 17:50 merge of contracts @ f6ee1de3 made (merge commit 5453b107), full suite running in the package worktree (agent; logs in the session scratchpad `merge-contracts/`); not ledgered as merged until it passes. No amending fork starts until then; queued questions in order: remove-multiuser-1, game-core-1, game-core-2, game-core-3, game-sim-1, pool-closing-1, conductor-10, conductor-11. Then merge remove-multiuser's row I1 @ cbd11881.
@@ -568,10 +576,14 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - 21:10 merge of game-core rows G2 + G5 @ 38941417 made onto 20d15473 (merge commit ccfaa059), suite running (agent; scratchpad `merge-game-core-g5/`); not merged until it passes; on failure reset to 20d15473 with ledger.md copied out and back. No "merge the integration branch" relay until it reports.
 - merge queue: remove-multiuser row I1 (and the whole unit; its `complete` follows) @ 2e101f6f, its own full suite green there after merging bf22c443; next after the suite on the game-core G2+G5 merge reports
 - merged game-core [row G2] [row G5] @ 38941417 into superconductor/incremental-game, tests pass (check 0 errors; lint 0 errors; unit 10708 passed; e2e 859 passed, 0 failed, 0 flaky), band low
+- 21:35 merge of remove-multiuser complete (row I1) @ 2e101f6f made onto 0f6aa7a1 (merge commit 94d4bab8), suite running (agent; scratchpad `merge-remove-multiuser/`); not merged until it passes; on failure reset to 0f6aa7a1 with ledger.md copied out and back. No "merge the integration branch" relay until it reports.
+- merge queue: game-core complete @ 48b19b3e (final review fix wave after 38941417; question game-core-8 open and may bring a fix round to it), after the remove-multiuser suite and the game-core-8 ruling
+- No drift @ 38941417 (review-game-core-38941417)
+- merged remove-multiuser [row I1] @ 2e101f6f into superconductor/incremental-game, tests pass (check 0 errors; lint 0 errors; unit 9083 passed; e2e 776 passed, 0 failed, 1 flaky: e2e/game-helpers.spec.ts:146, question conductor-12), band low
 
 ## Cost
 - remove-lesscars: admitted 2026-11-22T16:31 seven_day 44% | session d889ec5c-3342-4a77-99f8-993f1115a679
-- remove-multiuser: admitted 2026-11-22T16:32 seven_day 44% | session 954945e3-efc5-42a8-8f8f-2233f4008011
+- remove-multiuser: admitted 2026-11-22T16:32 seven_day 44% | session 954945e3-efc5-42a8-8f8f-2233f4008011 | finished 2026-11-22T20:22 seven_day 58%
 - mail-setup: admitted 2026-11-22T16:32 seven_day 44% | session b1e978f2-51f4-46a7-a9b0-92ea6e61597f | finished 2026-11-22T19:20 seven_day 56%
 - contracts: admitted 2026-11-22T16:33 seven_day 44% | session 343d79b0-ac75-4280-b643-22398f92f1a8 | finished 2026-11-22T17:56 seven_day 50%
 - game-core: admitted 2026-11-22T16:52 seven_day 46% | session 06c0c65b-cf92-457a-a525-9c4374e4a0b3
