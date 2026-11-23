@@ -197,7 +197,7 @@ export function useGame(): GameStore;</code></pre>
         <li>The page that set the offer reacts to the level changing: <code>/sim</code> returns the clock to today, and Paint opens <code>/sim</code>.</li>
         <li>The page calls <code>touched()</code> after its autosave writes a record key. The store sets the current game's <code>savedAt</code> and calls <code>sync.changed(currentId)</code>.</li>
         <li>On first construction with no <code>SAVES_KEY</code>, the store makes one saved game at level 1 whose plan and policy are whatever the two record keys hold.</li>
-        <li><code>newGame</code>, <code>switchTo</code>, <code>remix</code> and <code>remove</code> of the current game first copy the two record keys into the current game's stored save, then write the new current game's plan and policy into the two record keys.</li>
+        <li><code>newGame</code>, <code>switchTo</code> and <code>remix</code> first copy the two record keys into the current game's stored save, then write the new current game's plan and policy into the two record keys. <code>remove</code> of the current game removes its save without copying it out, then writes the new current game's plan and policy into the two record keys.</li>
         <li>After <code>newGame</code>, <code>switchTo</code> or <code>remove</code> answers <code>ok</code>, the caller loads the new current game's page with a full page load: <code>/</code> at level 1, <code>/sim</code> above it.</li>
         <li>After <code>remix</code> answers <code>ok</code>, the caller loads <code>/</code> for a plan and <code>/sim</code> for a policy, with a full page load.</li>
         <li><code>remix</code>'s <code>record</code> is the text the page's autosave holds under the record key for the published document. The caller builds it with the codec the page already uses, so the store never reads inside a plan or a policy.</li>
@@ -658,6 +658,7 @@ export const YOUR_GAME = 'Your game';</code></pre>
             <li>A storage that refuses writes shows <code>STORAGE_TEXT</code>.</li>
             <li>A press that answers ok calls <code>loadPage('/sim')</code> (a spy on <code>src/lib/game/navigate.ts</code>).</li>
             <li>"Your game" links to <code>gamePath(level)</code>: <code>/</code> at level 1, <code>/sim</code> above it.</li>
+            <li>No case mounts <code>/sim</code> after Remix: <code>/sim</code> takes no Remix hand-off. <code>game-sim</code> deletes the case "after Remix, /sim shows the remixed document over the earlier v2 autosave" from this file; whichever of the two units merges second keeps this unit's Remix tests and no hand-off case.</li>
           </ul>
         </li>
         <li><code>src/routes/p/[id]/page.view.svelte.spec.ts</code>: at level 1 a press makes a saved game holding the published plan and the old game's policy and calls <code>loadPage('/')</code>; at 12 games it is disabled; in the open game there is no Remix button.</li>
@@ -676,6 +677,7 @@ export const YOUR_GAME = 'Your game';</code></pre>
         <li>At level 1 <code>/p/&lt;id&gt;</code>'s Remix opens Paint on the published plan, and the level panel lists "Remix of {title}".</li>
         <li>At level 3 (<code>seedGame(page, 3)</code>) <code>/s/&lt;id&gt;</code>'s Remix of a policy holding one permitting policy opens <code>/sim</code> with that policy's row on the timeline.</li>
       </ul>
+      <p>The published plans and policies these tests open are seeded with <code>seedPlanRow</code> (<code>e2e/helpers/sharing.ts</code>, <code>POST /api/e2e/plans</code>), which the sharing e2e specs already use and which no unit of this build changes.</p>
       <p>These tests read only this unit's texts and test ids, <code>game-core</code>'s, and what <code>/sim</code> shows today. None needs <code>game-sim</code>'s work: no locked lane, no win on <code>/sim</code>, no given measure.</p>
       <p>The remix tests in <code>share-states</code>, <code>share-roundtrip</code>, <code>share-notices</code>, <code>sim-share</code> and <code>chrome-dark</code> call <code>seedGame(page, 3)</code> before navigating, drop their steps on the confirm dialog and the Remix toast, and check the remixed document on the page that loads. <code>chrome-dark</code>'s axe check of the Remix dialog checks the banner alone.</p>
     </section>

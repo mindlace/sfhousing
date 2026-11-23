@@ -1,0 +1,9 @@
+Code Mode is on, but this session isn't using it, so it continues with the ordinary tools. New sessions use Code Mode.
+I ruled that game-core is the spec that states the system. One sentence in game-sim is changed to agree with it, committed as `f7506ffd`. I skipped the optional Jev citation check and judged the finding by reading the specs on disk.
+
+- **The rule:** once the round is complete (level 5 with `banked[5]` stored), a level up changes nothing. Progress stays as it is, nothing new is banked, and only the offer is cleared. The first level-5 result banked is final.
+- **Why game-core wins:** it matches the interface row G2 ("`levelUp` at level 5 stores `banked[5]` and keeps the level at 5") and the owner's D2: levelling up banks the result once, when the player levels up. No control offers "Level up" after the round anyway: the win card, the level panel and the header's level cell all hide it.
+- **What changed:** the game-sim passage in `#sec-design-levelup` used to say a later level up "banks the new result". It now says such a call changes no progress, banks nothing and only clears the offer, so the page does nothing and the clock stays put.
+- **Affected unit:** game-sim, as a clarification only. No interface row or contracts code changed, and no unit has a plan yet, so no work is cut back.
+
+Ruling file: `/Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game/.superpowers/superconductor/incremental-game/rulings/conductor-2.md`

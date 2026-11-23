@@ -163,7 +163,7 @@ export function useGame(): GameStore;</code></pre>
         <li>The page that set the offer reacts to the level changing: <code>/sim</code> returns the clock to today, and Paint opens <code>/sim</code>.</li>
         <li>The page calls <code>touched()</code> after its autosave writes a record key. The store sets the current game's <code>savedAt</code> and calls <code>sync.changed(currentId)</code>.</li>
         <li>On first construction with no <code>SAVES_KEY</code>, the store makes one saved game at level 1 whose plan and policy are whatever the two record keys hold.</li>
-        <li><code>newGame</code>, <code>switchTo</code>, <code>remix</code> and <code>remove</code> of the current game first copy the two record keys into the current game's stored save, then write the new current game's plan and policy into the two record keys.</li>
+        <li><code>newGame</code>, <code>switchTo</code> and <code>remix</code> first copy the two record keys into the current game's stored save, then write the new current game's plan and policy into the two record keys. <code>remove</code> of the current game removes its save without copying it out, then writes the new current game's plan and policy into the two record keys.</li>
         <li>After <code>newGame</code>, <code>switchTo</code> or <code>remove</code> answers <code>ok</code>, the caller loads the new current game's page with a full page load: <code>/</code> at level 1, <code>/sim</code> above it.</li>
         <li>After <code>remix</code> answers <code>ok</code>, the caller loads <code>/</code> for a plan and <code>/sim</code> for a policy, with a full page load.</li>
         <li><code>remix</code>'s <code>record</code> is the text the page's autosave holds under the record key for the published document. The caller builds it with the codec the page already uses, so the store never reads inside a plan or a policy.</li>
@@ -292,7 +292,7 @@ export function createSaveSync(opts: {
         <li>The browser keeps each saved game's last seen rev under <code>sfhousing:saves:revs</code>.</li>
         <li>A 409 keeps both: the browser's version is stored as a new saved game with a new id and the name <code>defaultSaveName({ kind: 'conflict', name })</code>, the account's version is adopted under the old id, and the new saved game is sent.</li>
         <li>When the old id was the current game, the browser's version stays current under its new id, so nothing changes under the player's hands.</li>
-        <li>A 410 removes the saved game from this browser, unless it is the current one, which is kept under a new id.</li>
+        <li>A 410 keeps the saved game in this browser under a new id and sends it again: a change made here is never lost to a delete made on another device (D8).</li>
         <li><code>pull()</code> lists the account's saved games. It fetches and adopts those this browser lacks, and those it holds unchanged at an older rev. It removes those listed under <code>removed</code> that are unchanged here. It sends those the account lacks.</li>
         <li><code>pull()</code> runs once on load when <code>signedIn()</code>, and again when <code>signedIn()</code> turns true.</li>
         <li><code>account</code> is set from every answer that carries an <code>AccountLine</code>. After the <code>PUT</code> that made the account, the header shows the handle from it. The sync never invalidates page data: a page keeps its playhead, its card and its undo history.</li>
@@ -614,8 +614,7 @@ export interface SyncRecord {
       <section id="sec-design-sync-removed">
         <h4>A saved game removed elsewhere</h4>
         <ul>
-          <li>A 410 to the send of a save that is not the current game removes it here (<code>store.remove</code>) and drops it from <code>seen</code>.</li>
-          <li>A 410 to the send of the current game keeps it: <code>store.rekey(oldId, newId())</code> leaves it current under the new id with its name, its offer and no page load; <code>seen[oldId]</code> is dropped, and the game is sent under the new id with <code>baseRev: null</code>.</li>
+          <li>A 410 to the send of a save keeps it, current or not: the sync only sends a save that changed here, so the account removed a game this browser still changed (D8). <code>store.rekey(oldId, newId())</code> keeps it under the new id with its name and, for the current game, its offer and no page load; <code>seen[oldId]</code> is dropped, and the game is sent under the new id with <code>baseRev: null</code>.</li>
           <li><code>removed(id)</code> of a save in <code>seen</code> adds the id to <code>deleting</code> and, while the browser has a session, sends <code>DELETE /api/game/&lt;id&gt;</code>. A 204 drops the id from <code>deleting</code> and <code>seen</code>. A failure leaves it in <code>deleting</code>, sent again with the waiting saves.</li>
           <li><code>removed(id)</code> of a save not in <code>seen</code> sends nothing: the account never had it.</li>
           <li>A <code>removed</code> call clears state <code>full</code> and sends every waiting save.</li>
@@ -636,7 +635,7 @@ export interface SyncRecord {
               <li>Present, unchanged, same rev: nothing.</li>
             </ul>
           </li>
-          <li>For each id under <code>removed</code> that is present here: unchanged here and not current, remove it here; unchanged and current, keep it under a new id as for a 410; changed here, send it, which answers 410 and follows the 410 rule.</li>
+          <li>For each id under <code>removed</code> that is present here: unchanged here and not current, remove it here; unchanged and current, keep it under a new id as for a 410; changed here, send it, which answers 410 and follows the 410 rule, so it is kept under a new id.</li>
           <li>Every save present here that is neither listed nor under <code>removed</code> is sent with <code>baseRev: null</code>, and its <code>seen</code> entry is dropped first.</li>
           <li>Adopts go one save at a time. The first that answers <code>full</code> stops further adopts and sets <code>full</code>; sends go on.</li>
           <li>When an adopt replaced the current game's content, the page reloads once (<code>location.reload()</code>) after the pull, so the page shows the account's version. The next pull finds the same rev and does not reload.</li>
@@ -811,7 +810,7 @@ export interface SyncRecord {
             <li>When <code>signedIn()</code> turns from true to false, the next <code>changed</code> of an unwon save sends nothing.</li>
             <li>At attach signed out, a won save never sent is sent after 2 seconds; a save with no win is not.</li>
             <li>A 409 adopts a "{name} (this device)" copy and the account's version under the old id, keeps the copy current through <code>rekey</code> when the old id was current, never calls <code>switchTo</code>, and sends the copy with <code>baseRev: null</code>.</li>
-            <li>A 410 removes a non-current save and re-homes the current one.</li>
+            <li>A 410 keeps the save under a new id, for the current game and for another one, and sends it with <code>baseRev: null</code>; a pull removes an unchanged save listed under <code>removed</code> and keeps a changed one the same way.</li>
             <li>A thrown fetch sets <code>offline</code>; the <code>online</code> event resends; a 401 <code>sign_in</code> sets <code>sign-in</code> and later changes send nothing until <code>signedIn()</code> turns true, which runs a pull.</li>
             <li>A 422 <code>too_many</code> and a <code>full</code> adopt set <code>full</code>; a <code>removed</code> call clears it.</li>
             <li>Pull adopts a save this browser lacks, replaces an unchanged one at an older rev, sends a changed one, removes an unchanged one listed as removed, and sends one the account lacks with <code>baseRev: null</code>.</li>
