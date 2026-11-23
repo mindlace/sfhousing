@@ -1,0 +1,8 @@
+I checked the `game-core` row against its spec as it reads on disk now, and it still matches. It cites the same spec sections, lists the same files written, created and deleted, and has the same `needs` and `produces` cells. I wrote the file back unchanged, so `git commit` found nothing to commit and made no new commit. The sha below is the current HEAD, not a build-graph commit.
+
+Build graph @ 83d857d0
+
+Longest chain: contracts -> finite-funding -> pool-closing -> reach-check -> closing
+Longest chain: remove-lesscars -> finite-funding -> pool-closing -> reach-check -> closing
+Longest chain: contracts -> finite-funding -> pool-closing -> funding-measures -> closing
+Longest chain: remove-lesscars -> finite-funding -> pool-closing -> funding-measures -> closing

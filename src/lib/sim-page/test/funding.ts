@@ -33,11 +33,14 @@ const basePool = (id: string, kind: PoolKind): Pool => ({
   id,
   kind,
   label: id,
-  inflows:
-    kind === 'federal'
-      ? []
-      : [{ kind: 'yearly', from: FUND_ASOF, to: null, dollarsPerYear: 100_000_000 }],
-  uncapped: kind === 'federal',
+  inflows: [
+    {
+      kind: 'yearly',
+      from: FUND_ASOF,
+      to: null,
+      dollarsPerYear: kind === 'federal' ? 50_000_000 : 100_000_000
+    }
+  ],
   debt: null,
   leverage: 1
 });
@@ -93,7 +96,6 @@ export const BOND_POLICY: SimPolicy = policyWith({
       kind: 'goBond',
       label: 'City bond, 2028',
       inflows: [{ kind: 'once', day: BOND_DAY, dollars: 300_000_000 }],
-      uncapped: false,
       debt: { rate: 0.06, termYears: 20 },
       leverage: 1
     }

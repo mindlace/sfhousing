@@ -1,7 +1,6 @@
 // Helpers for the /account page specs.
 import { expect, type Page } from '@playwright/test';
 import { ACCOUNT_COPY } from '../../src/lib/account/account-copy';
-import { SIMS_COPY } from '../../src/lib/members/copy';
 
 /** Open /account and wait for hydration (the panes are client components). */
 export async function gotoAccount(page: Page): Promise<void> {
@@ -9,13 +8,10 @@ export async function gotoAccount(page: Page): Promise<void> {
   await expect(page.locator('html')).toHaveAttribute('data-hydrated', '');
 }
 
-/** Become a pseudonymous visitor by creating a sim, which mints the account. */
-export async function startPseudonymous(page: Page, title: string): Promise<void> {
-  await page.goto('/sims');
-  await expect(page.locator('html')).toHaveAttribute('data-hydrated', '');
-  await page.getByLabel(SIMS_COPY.titleLabel).fill(title);
-  await page.getByRole('button', { name: SIMS_COPY.create }).click();
-  await page.waitForURL(/\/sims\/[^/]+$/);
+/** Sign this context in as a fresh pseudonymous account. */
+export async function startPseudonymous(page: Page): Promise<void> {
+  const res = await page.request.post('/api/e2e/login', { data: { pseudonymous: true } });
+  expect(res.ok()).toBe(true);
 }
 
 /** The signed-in account's handle, read from the Profile pane. */

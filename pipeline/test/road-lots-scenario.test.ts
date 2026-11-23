@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { ROAD_LIKE_REASONS } from '../../src/lib/data/parcel';
 import { readRoadLotRows, ROAD_LOTS_CSV, writeRoadLotsCsv } from '../lib/road-lots';
-import { lesscarsMini, type LessCarsMini } from './lesscars-helpers';
+import { miniChain, type MiniChain } from './helpers/mini-chain';
 
 const FIVE: [string, string][] = [
   ['3512020', 'r1n'],
@@ -17,10 +17,10 @@ const FIVE: [string, string][] = [
 ];
 const KEPT = '3513001';
 
-let mini: LessCarsMini;
+let mini: MiniChain;
 let counts: Record<string, number>;
 beforeAll(async () => {
-  mini = await lesscarsMini();
+  mini = await miniChain();
   counts = mini.counts;
 });
 

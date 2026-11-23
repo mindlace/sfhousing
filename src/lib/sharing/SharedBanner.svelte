@@ -1,7 +1,12 @@
+<script module lang="ts">
+  export type RemixState =
+    { kind: 'ready'; note: string | null } | { kind: 'locked' } | { kind: 'full' } | null;
+</script>
+
 <script lang="ts">
-  import { flushSync } from 'svelte';
-  import { BUTTON, BUTTON_PRIMARY, SURFACE_DIALOG } from '$lib/shell/ui';
-  import { copyFor, formatPublished } from './copy';
+  import { FULL_TEXT } from '$lib/game/copy';
+  import { BUTTON, BUTTON_PRIMARY } from '$lib/shell/ui';
+  import { REMIX_LOCKED, YOUR_GAME, copyFor, formatPublished } from './copy';
   import type { DocKind } from './doc-codec';
 
   // Mirrors DatasetNotice in $lib/server/sharing/shared-page (kept local: client code).
@@ -15,7 +20,9 @@
     planVersion,
     currentVersion,
     kind,
-    confirmText,
+    remix,
+    error = null,
+    gameHref,
     onremix
   }: {
     title?: string;
@@ -25,17 +32,13 @@
     planVersion: string;
     currentVersion: string;
     kind: DocKind;
-    /** The confirm text when remixing would replace local work, else null (no confirm). */
-    confirmText: () => string | null;
+    remix: RemixState;
+    error?: string | null;
+    /** The current game's page. */
+    gameHref: string;
     onremix: () => void;
   } = $props();
 
-  const uid = $props.id();
-  const confirmId = `${uid}-confirm`;
-
-  let dlg: HTMLDialogElement | undefined = $state();
-  let cancelEl: HTMLButtonElement | undefined = $state();
-  let pending = $state('');
   const copy = $derived(copyFor(kind));
 
   const notice = $derived(
@@ -46,27 +49,11 @@
         : undefined
   );
 
-  /** Spec §4.7 Remix: confirm only when `confirmText` says local work would be replaced. */
-  function startRemix() {
-    const text = confirmText();
-    if (text !== null) {
-      // Commit the text to the DOM first, so the dialog's accessible name is current when focus
-      // moves into it.
-      flushSync(() => (pending = text));
-      dlg?.showModal();
-      cancelEl?.focus(); // the non-destructive choice takes focus
-      return;
-    }
-    onremix();
-  }
+  const disabled = $derived(remix?.kind === 'locked' || remix?.kind === 'full');
 
-  function replace() {
-    dlg?.close();
-    onremix();
+  function press() {
+    if (remix?.kind === 'ready') onremix();
   }
-
-  const primary = BUTTON_PRIMARY;
-  const secondary = BUTTON;
 </script>
 
 <!-- Sticky at the top of the /p/:id and /s/:id page column; every row wraps at 375 px. -->
@@ -80,28 +67,30 @@
       {formatPublished(createdAt)}
     </p>
     <div class="flex flex-wrap gap-2">
-      <button type="button" class={primary} onclick={startRemix}>Remix</button>
-      <a href={copy.startHref} class={secondary}>Start your own</a>
+      {#if remix}
+        <button type="button" class={BUTTON_PRIMARY} aria-disabled={disabled} onclick={press}>
+          {remix.kind === 'locked' ? REMIX_LOCKED : 'Remix'}
+        </button>
+      {/if}
+      <a href={gameHref} class={BUTTON}>{YOUR_GAME}</a>
     </div>
   </div>
+  {#if remix?.kind === 'ready' && remix.note}
+    <p class="mt-2">{remix.note}</p>
+  {:else if remix?.kind === 'full'}
+    <p class="mt-2">{FULL_TEXT}</p>
+  {/if}
+  {#if error}
+    <p role="alert" class="mt-2">{error}</p>
+  {/if}
   {#if notice}
     <div class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2">
       <p class="min-w-0 flex-1 basis-64">{notice}</p>
-      <button type="button" class={secondary} onclick={startRemix}>Open with current data</button>
+      {#if remix}
+        <button type="button" class={BUTTON} aria-disabled={disabled} onclick={press}>
+          Open with current data
+        </button>
+      {/if}
     </div>
   {/if}
 </section>
-
-<dialog
-  bind:this={dlg}
-  aria-labelledby={confirmId}
-  class="m-auto w-[calc(100vw-2rem)] max-w-md {SURFACE_DIALOG}"
->
-  <p id={confirmId} class="text-sm">{pending}</p>
-  <div class="mt-4 flex flex-wrap justify-end gap-2">
-    <button type="button" class={primary} onclick={replace}>Replace</button>
-    <button bind:this={cancelEl} type="button" class={secondary} onclick={() => dlg?.close()}>
-      Cancel
-    </button>
-  </div>
-</dialog>

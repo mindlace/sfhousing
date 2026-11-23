@@ -55,8 +55,6 @@
     pending?: boolean;
     /** The resolved market terms of the shown levers: the lost-grants line reads `lossOnExit`. */
     terms?: ResolvedTerms;
-    /** Ids of the pools whose `Pool.uncapped` is true (baseline and levers): "no limit" (4.11). */
-    uncapped?: ReadonlySet<string>;
     /**
      * A policy is in force in the document the numbers on show came from (the chart's own
      * `inForce`): "From your policy" is offered only then, and the table gets its column.
@@ -81,7 +79,6 @@
     stale = false,
     pending = false,
     terms = resolveTerms(),
-    uncapped = new Set(),
     inForce = false,
     lens = $bindable<ChartLens>('homes'),
     goal,
@@ -233,7 +230,6 @@
         at={score.months[at.monthIndex]}
         {terms}
         {pending}
-        {uncapped}
         part="money"
       />
 

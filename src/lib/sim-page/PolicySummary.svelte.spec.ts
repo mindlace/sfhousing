@@ -70,8 +70,12 @@ describe('PolicySummary', () => {
     // No zoning layers or comparison line any more.
     expect(page.getByText(/zoning layers|Compared with/i).elements()).toHaveLength(0);
     expect(page.getByText('Family Zoning Plan map').elements()).toHaveLength(0);
-    // Nothing differs from observed: no disclosure to open (the Public money section has none).
-    expect(page.getByRole('button').elements()).toHaveLength(0);
+    // Nothing differs from observed: no timing disclosure. fixture-0's two spent City pools have
+    // no programme, so the baseline covers less than every home and the coverage line is a chance,
+    // explained behind its one button in Public money.
+    const money = page.getByRole('region', { name: 'Public money' });
+    expect(page.getByRole('button').elements()).toHaveLength(1);
+    expect(money.getByRole('button').elements()).toHaveLength(1);
   });
 
   it('lists the rule, the custom brush, the protections and the changed stage', async () => {

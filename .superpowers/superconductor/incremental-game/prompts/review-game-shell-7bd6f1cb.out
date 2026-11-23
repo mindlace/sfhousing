@@ -1,0 +1,10 @@
+I checked the merged game-shell work against the design doc and its spec as they are on disk now, and nothing departs from them:
+
+- **Paint's win, against § sec-design-paint as rewritten after rulings game-shell-1 and game-shell-2:** only complete scores decide the win, and the card waits until no pointer button is held. "Keep playing" keeps the card closed and moves focus to `score-bar`, and the offer stays. Paint registers its autosave flush with `beforeLeave`, calls `touched()` on each save, goes to `/sim` once the simulation unlocks, and no longer reads the Remix hand-off.
+- **Header:** the Simulate step is not a link while the simulation is locked, the level cell and its panel are in place, and the Menu reads "Menu, level up ready" when an offer is waiting. The account entry falls back to `game.sync.account`, and the header shows no game state until it has mounted.
+- **Remix on `/s` and `/p`:** both use the banner states the spec gives (ready, locked, full, or none in the open game). `/s` shows the `needsHigher` note, and a remix calls `loadPage(remixPath(...))`. The copy strings match the spec word for word.
+- **Write set:** every file the unit touched is inside it, and `src/routes/+layout.svelte` was not touched.
+
+The unit produces no rows, so no consumer contract can have drifted.
+
+No drift @ 7bd6f1cb

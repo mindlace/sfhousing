@@ -1406,12 +1406,12 @@ function passOn(run: Run, holds: Holds, sink: Sink, opts: EngineOpts, lots: LotT
   const { candidates, entity } = pre;
   const rank = fp.rank;
   const job = newJob(run);
-  // the capped pools of a bundle, for the grouped line's "shares a pool" (spec 4.17 item 5)
+  // the pools of a bundle, for the grouped line's "shares a pool" (spec 4.17 item 5)
   const poolsOf = (bundle: readonly number[]): number[] => {
     const qs: number[] = [];
     for (const g of bundle) {
       const q = f.progPool[g];
-      if (f.capped[q] && !qs.includes(q)) qs.push(q);
+      if (!qs.includes(q)) qs.push(q);
     }
     return qs;
   };

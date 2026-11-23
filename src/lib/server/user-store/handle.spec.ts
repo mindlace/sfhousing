@@ -39,7 +39,7 @@ describe('generateUniqueHandle', () => {
     });
     const h = await generateUniqueHandle({
       db,
-      simTitle: 'Move',
+      seedText: 'Move',
       rng: deterministicRng('wren', 'otter'),
       now: new Date('2026-06-08')
     });
@@ -54,7 +54,7 @@ describe('generateUniqueHandle', () => {
     // rng yields 'wren' first (candidate 'move-wren' → skeleton collides), then 'otter'.
     const h = await generateUniqueHandle({
       db,
-      simTitle: 'Move',
+      seedText: 'Move',
       rng: deterministicRng('wren', 'otter')
     });
     expect(h).not.toBe('move-wren');
@@ -68,7 +68,7 @@ describe('generateUniqueHandle', () => {
     // rng yields 'wren' — no live row has 'move-wren' so it is free immediately
     const h = await generateUniqueHandle({
       db,
-      simTitle: 'Move',
+      seedText: 'Move',
       rng: deterministicRng('wren')
     });
     expect(h).toBe('move-wren');

@@ -1,7 +1,5 @@
 // See https://svelte.dev/docs/kit/types#app.d.ts
 import type { User } from '$lib/server/user-store/user';
-import type { Capability } from '$lib/server/authz';
-import type { ActorKind } from '$lib/server/authz/actor';
 
 declare global {
   /** The tree's dataset version, defined at build time by datasetVersionPlugin (scripts/lib). */
@@ -9,7 +7,6 @@ declare global {
   namespace App {
     interface Error {
       message: string;
-      resource?: 'sim';
       reference?: string;
     }
     interface Locals {
@@ -17,9 +14,6 @@ declare global {
       // `userId` is the LIVE Better-Auth `user.id` (FK target of account/passkey),
       // NOT the stable identity id on `user`.
       session: { id: string; userId: string } | null;
-      capabilities: Capability[];
-      // Who is acting: 'human' via a session cookie, 'public' when no principal resolved.
-      actorKind: ActorKind;
     }
     interface PageState {
       /** Remix hand-off from /p/:id to / (plan-sharing ruling 7). `plan` (serialized) only

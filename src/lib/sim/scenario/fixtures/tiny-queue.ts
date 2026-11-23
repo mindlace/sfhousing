@@ -1,10 +1,11 @@
 /**
  * The finance engine's queue fixtures: `tinyQueue`, a five-lot city with hand-set hazards and
- * yields, and `tinyStack`, a small public-money stack: a federal pool (uncapped), a state pool and
+ * yields, and `tinyStack`, a small public-money stack: a federal pool (ten trillion a year), a state pool and
  * a City pool, each with one affordable grant programme, and optionally a bond pool. The shares
  * are tier 1 dollars per home over the tier 2 total. Test values, not data. Browser-safe.
  */
 import { FILL_LEVELS } from '$lib/data/scenario-codec';
+import { LEGACY_UNCAPPED_DOLLARS } from '$lib/timelapse/model';
 import type { Day } from '$lib/timelapse/time';
 import type { Inflow, Pool, PoolKind, Programme } from '$lib/timelapse/types';
 import { resolveTerms } from '../../finance';
@@ -96,12 +97,11 @@ export function tinyStack(o: TinyStackOpts): NonNullable<SimInput['finance']> {
   const ample = (): Inflow[] => [
     { kind: 'yearly', from: o.asOf, to: null, dollarsPerYear: 1_000_000_000_000 }
   ];
-  const pool = (id: string, kind: PoolKind, inflows: Inflow[], uncapped = false): Pool => ({
+  const pool = (id: string, kind: PoolKind, inflows: Inflow[]): Pool => ({
     id,
     kind,
     label: id,
     inflows,
-    uncapped,
     debt: kind === 'goBond' ? { rate: 0.04, termYears: 30 } : null,
     leverage: 1
   });
@@ -124,7 +124,9 @@ export function tinyStack(o: TinyStackOpts): NonNullable<SimInput['finance']> {
     tiers: { veryLow: 0.5, low: 0.5, moderate: 0, aboveModerate: 0 }
   });
   const pools = [
-    pool('t-fed', 'federal', [], true),
+    pool('t-fed', 'federal', [
+      { kind: 'yearly', from: o.asOf, to: null, dollarsPerYear: LEGACY_UNCAPPED_DOLLARS }
+    ]),
     pool('t-state', 'state', o.state ?? ample()),
     pool('t-city', 'generalRevenue', o.city ?? ample())
   ];

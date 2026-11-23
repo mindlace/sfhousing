@@ -23,8 +23,8 @@ import {
   qualityRule,
   writeQualityReport
 } from '../lib/quality';
-import { LESSCARS_FREEWAY_LAND_JSON } from '../lesscars-config';
-import { readFreewayLand } from '../lib/lesscars/freeway-land';
+import { FREEWAY_LAND_JSON } from '../config';
+import { readFreewayLand } from '../lib/freeway-land';
 import { scenarioEligible } from '../lib/scenario-eligibility';
 import { Report } from '../lib/report';
 import { runSql } from '../lib/sql';
@@ -120,7 +120,7 @@ async function synthetic(
       report: new Report(),
       buildCounts: quality,
       // As the fixture build does: lot 19 (3512019) is freeway land, never hostable.
-      freewayLand: readFreewayLand(LESSCARS_FREEWAY_LAND_JSON.fixture)
+      freewayLand: readFreewayLand(FREEWAY_LAND_JSON.fixture)
     });
     return {
       schema,

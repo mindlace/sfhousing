@@ -147,7 +147,6 @@ export function fundingPresets(cal: Calibration): FundingPreset[] {
     kind,
     label,
     inflows,
-    uncapped: false,
     debt: null,
     leverage: 1,
     ...extra

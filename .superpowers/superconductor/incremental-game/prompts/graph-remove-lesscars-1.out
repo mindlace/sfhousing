@@ -1,0 +1,7 @@
+The `remove-lesscars` row on disk already matches the spec: its writes cell includes `scripts/data-transit.ts` and `scripts/data-transit.spec.ts`, which ruling remove-lesscars-1 added. That ruling's own commit (`e4098219`) put the change in, so the file had nothing new to stage. `git commit` found no staged change and exited without making a commit, and HEAD stays at that ruling commit. No other row changed and no edge changed.
+
+Build graph @ e4098219
+Longest chain: contracts -> finite-funding -> pool-closing -> reach-check -> closing
+Longest chain: remove-lesscars -> finite-funding -> pool-closing -> reach-check -> closing
+Longest chain: contracts -> finite-funding -> pool-closing -> funding-measures -> closing
+Longest chain: remove-lesscars -> finite-funding -> pool-closing -> funding-measures -> closing

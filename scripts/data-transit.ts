@@ -4,13 +4,13 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { DATASET_VERSION_RE, parseManifest } from '../src/lib/data/manifest';
+import { DATASET_VERSION_RE } from '../src/lib/data/manifest';
 import { readLock } from '../pipeline/lib/lock';
 import { wranglerTarget } from '../pipeline/lib/r2';
 import { fetchAll } from '../pipeline/steps/fetch';
 import { writeTransit } from '../pipeline/steps/transit';
 import { GTFS_IDS } from '../pipeline/transit-config';
-import { devVarsVersion, lockDrift, withTransit } from './lib/data-transit-helpers';
+import { devVarsVersion, lockDrift, manifestWithTransit } from './lib/data-transit-helpers';
 import { putLocal } from './r2-put-local';
 
 const ROOT = resolve(import.meta.dirname, '..');
@@ -53,8 +53,8 @@ async function main(): Promise<number> {
       strict: false
     });
     for (const w of r.warnings) console.warn(`warning: ${w}`);
-    const manifest = withTransit(
-      parseManifest(JSON.parse(readFileSync(join(work, 'manifest.json'), 'utf8')))
+    const manifest = manifestWithTransit(
+      JSON.parse(readFileSync(join(work, 'manifest.json'), 'utf8'))
     );
     writeFileSync(join(work, 'manifest.json'), JSON.stringify(manifest));
     putLocal(version, 'transit.json', join(work, 'transit.json'));

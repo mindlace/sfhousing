@@ -3,10 +3,10 @@ import { safeReturnTo } from './safe-redirect';
 
 describe('safeReturnTo', () => {
   it('accepts a same-origin absolute path', () => {
-    expect(safeReturnTo('/sims/abc')).toBe('/sims/abc');
+    expect(safeReturnTo('/account')).toBe('/account');
     expect(safeReturnTo('/')).toBe('/');
     expect(safeReturnTo('/signin?returnTo=%2Fx')).toBe('/signin?returnTo=%2Fx');
-    expect(safeReturnTo('/sims/x#section')).toBe('/sims/x#section');
+    expect(safeReturnTo('/account#section')).toBe('/account#section');
   });
 
   it('rejects absolute URLs with a scheme', () => {

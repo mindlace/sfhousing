@@ -55,8 +55,6 @@ export const ACCOUNT_COPY = {
   passwordLastFactor: 'This is your only way in. Add a passkey or confirm an email first.',
   passwordAddRecoveryNudge: 'Add a passkey or confirm an email as a way back in.',
   networkError: "Couldn't reach the server. Check your connection.",
-  deleteNotFinished: 'Not finished yet. Try again to continue.',
-  deleteSignedOut: 'Signed out before deletion finished. Sign in to check.',
 
   googleHeading: 'Google',
   googleConnected: 'Google connected.',
@@ -65,7 +63,7 @@ export const ACCOUNT_COPY = {
 
   deleteHeading: 'Delete account',
   deleteDescription:
-    'Deletes your account. You leave every sim; their links still open. This cannot be undone.',
+    'Deletes your account and the games saved to it. Published plans and policies stay. This cannot be undone.',
   deleteButton: 'Delete my account',
   deleteConfirmLabel: 'Type your handle to confirm',
   deletePermanently: 'Delete permanently',

@@ -57,6 +57,8 @@ def main():
         old = open('%s/assignments/%s.md' % (L, unit)).read()
         needs = re.search(r'^- Needs rows: (.*)$', old, re.M).group(1)
         admitted = re.search(r'^- Admitted: (.*)$', old, re.M).group(1)
+        needs = os.environ.get('NEEDS', needs)
+        admitted = os.environ.get('ADMITTED', admitted)
         assert os.environ.get('PLAN') or re.search(r'^- Plan: none$', old, re.M), 'has a plan: pass PLAN="<path> at <sha>, tasks <n> (already written)"'
     else:
         admitted, needs = sys.argv[2:4]
@@ -88,6 +90,7 @@ def main():
 - Allowed SDD scripts: bash {SDD}/sdd-workspace, bash {SDD}/task-brief, bash {SDD}/review-package, bash {HTML}/task-brief, python3 {HTML}/superpowers-html
 - Allowed project commands: {', '.join(cmds)}
 - Allowed read-only commands: {', '.join(reads)}
+- Allowed web tools: {'WebFetch, WebSearch (read primary sources; give them to the subagents that need them)' if unit in ('finite-funding', 'funding-measures') else 'none'}
 - Allowed for waiting: sleep (run in the background), TaskStop, sh {SKILL}/beat.sh changed
 - Before superpowers:writing-plans, load superpowers-html:html-docs.
 - {NOTES}
@@ -105,6 +108,8 @@ def main():
     tools += ['Bash(bash %s/%s:*)' % (SDD, s) for s in ('sdd-workspace', 'task-brief', 'review-package')]
     tools += ['Bash(bash %s/task-brief:*)' % HTML, 'Bash(python3 %s/superpowers-html:*)' % HTML]
     tools += ['Bash(%s:*)' % c for c in cmds + reads] + ['Bash(jev:*)']
+    web = unit in ('finite-funding', 'funding-measures')  # their specs require reading primary sources
+    tools += ['WebFetch', 'WebSearch'] if web else []
     model = sys.argv[4] if len(sys.argv) > 4 else 'opus'
     print('env -C "%s" CLAUDE_CODE_EXPERIMENTAL_CODE_MODE=1 claude --bg -n %s --model %s --permission-mode dontAsk '
           '--allowedTools="%s" --add-dir="%s" "$(cat %s)"'
