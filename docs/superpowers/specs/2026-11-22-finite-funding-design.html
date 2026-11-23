@@ -251,7 +251,7 @@ export interface FundingFile {
           <tr><th scope="row"><code>city-ocoh</code></th><td>48,600,000</td><td>None</td><td>2</td></tr>
           <tr><th scope="row"><code>city-general-fund</code></th><td>21,800,000</td><td>None</td><td>2</td></tr>
           <tr><th scope="row"><code>city-housing-stability-fund</code></th><td>14,900,000</td><td>Remaining $0</td><td>1</td></tr>
-          <tr><th scope="row"><code>city-impact-fees</code></th><td>34,800,000</td><td>Remaining, the fee accounts' balance (see the rule below)</td><td>2</td></tr>
+          <tr><th scope="row"><code>city-impact-fees</code></th><td>34,800,000</td><td>Remaining $45,158,744</td><td>2</td></tr>
           <tr><th scope="row"><code>city-housing-trust-fund</code></th><td>27,400,000</td><td>Ends 2043-06-30</td><td>2</td></tr>
           <tr><th scope="row"><code>city-redevelopment</code></th><td>6,000,000</td><td>Remaining $0</td><td>1</td></tr>
           <tr><th scope="row"><code>state</code></th><td>150,000,000</td><td>None</td><td>2</td></tr>
@@ -261,11 +261,11 @@ export interface FundingFile {
 
       <section id="sec-design-data-city-debt">
         <h4>City bonds and other debt</h4>
-        <p>The unissued part of the two housing bonds not yet fully issued. The capital plan's next housing bond needs voters, so it is a measure a player adds, not current law.</p>
+        <p>The unissued part of the two affordable-housing bonds not yet fully issued. The capital plan's next housing bond needs voters, so it is a measure a player adds, not current law. Row [2] of the same summary, the 2016 PASS programme ($47,464,550 unissued), lends from the 1992 Seismic Safety Loan Program authorisation to preserve existing buildings; it adds no new homes and is not counted.</p>
         <pre><code data-lang="json">"bound": {
   "kind": "remaining",
   "dollars": 260310000,
-  "method": "Unissued authorisation of the affordable-housing bonds on 30 September 2026: 2019 Proposition A, $107,540,000 of $600,000,000 (row [13]); 2024 Proposition A, $152,770,000 of $300,000,000 (row [16]). 2015 Proposition A is fully issued (row [10]). The capital plan's next housing bond (November 2034, $200 million) needs voters and is not current law. Proceeds issued and not yet spent, and the source's other debt, are not counted.",
+  "method": "Unissued authorisation of the affordable-housing bonds on 30 September 2026: 2019 Proposition A, $107,540,000 of $600,000,000 (row [13]); 2024 Proposition A, $152,770,000 of $300,000,000 (row [16]). 2015 Proposition A is fully issued (row [10]). The PASS loan programme under the 1992 Seismic Safety Loan Program authorisation (row [2]) preserves existing buildings and is not counted. The capital plan's next housing bond (November 2034, $200 million) needs voters and is not current law. Proceeds issued and not yet spent, and the source's other debt, are not counted.",
   "tier": 2,
   "cite": {
     "label": "City and County of San Francisco, General Obligation Bonds Project Summary, 30 September 2026",
@@ -281,7 +281,7 @@ export interface FundingFile {
   "kind": "none",
   "reason": "A gross receipts tax approved by voters in 2018 (Proposition C) for a continuing fund; no sunset was found in what was read.",
   "tier": 2,
-  "cite": { BLA, "page": "pp. 44, 46" }
+  "cite": { BLA, "page": "p. 44" }
 }</code></pre>
       </section>
 
@@ -322,26 +322,24 @@ export interface FundingFile {
 
       <section id="sec-design-data-impact-fees">
         <h4>Impact fees</h4>
-        <p>FY2024-25 spending of $34.8 million came from earlier years' balances; collections that year were $422,048. The source's bound is the balance it is spending down. The research did not read that balance.</p>
+        <p>FY2024-25 spending of $34.8 million came from earlier years' balances; collections that year were $422,048. The source's bound is the balance it is spending down: the ending balance of the two affordable-housing fee accounts, the Inclusionary Affordable Housing Fee (Planning Code sections 415 and 419) and the Jobs-Housing Linkage Fee (section 413), as MOHCD's annual report states it.</p>
         <ul>
-          <li>The builder reads the ending balance of the affordable-housing fee accounts (the Inclusionary Affordable Housing Fee and the Jobs-Housing Linkage Fee) for the latest fiscal year in the City's annual development impact fee report, which Government Code section 66006(b) requires.</li>
-          <li>When no primary states it, the bound is the block below: law sets no end to the fees (<a href="../design/2026-11-22-1216-incremental-game.html#d3">D3</a>), and the reason says the balance was not found.</li>
-          <li>The operator's handback states which bound went in, with the report and page read, or the search that found none. In the second case $34.8 million a year keeps arriving for a source whose collections were $0.42 million, and the owner is told.</li>
+          <li>The primary is MOHCD's FY2024-25 Annual Report, Table 2 "Affordable Housing Fund Summary", p. 21: at 30 June 2025, Inclusionary $28,865,155 and Jobs-Housing Linkage $16,293,589, net of loan encumbrances, $45,158,744 in all.</li>
+          <li>At $34.8 million a year that balance pays one year in full and a last $10,358,744 on the next anniversary.</li>
+          <li>Spending between 30 June 2025 and the dataset date is not subtracted, and collections after 30 June 2025 are not added: the balance is taken as it is recorded.</li>
         </ul>
-        <p>When a primary states the balance, the bound is a <code>remaining</code>:</p>
-        <dl>
-          <dt><code>dollars</code></dt><dd>The sum of the two accounts' ending balances in the report.</dd>
-          <dt><code>method</code></dt><dd>"Ending balance of the Inclusionary Affordable Housing Fee and Jobs-Housing Linkage Fee accounts, fiscal year FYyyyy-yy, from the City's development impact fee report (Government Code section 66006(b)). FY2024-25 spending came from earlier balances while collections were $422,048 (BLA p. 9, Exhibit I; p. 44). Collections after that report are not counted.", with the report's fiscal year written in.</dd>
-          <dt><code>tier</code></dt><dd>2: the balance is recorded; taking it as all the source has left is an inference.</dd>
-          <dt><code>cite</code></dt><dd>The report, with its URL, the page of the two accounts and the day it was read.</dd>
-        </dl>
-        <p>When no primary states it:</p>
         <pre><code data-lang="json">"bound": {
-  "kind": "none",
-  "reason": "The fees are charged on development under the Planning Code with no end in law. FY2024-25 spending came from earlier balances (p. 44) while collections were $422,048 (p. 9, Exhibit I); the balance was not found in a primary, so the source keeps paying.",
+  "kind": "remaining",
+  "dollars": 45158744,
+  "method": "Ending balance at 30 June 2025 of the Inclusionary Affordable Housing Fee (Planning Code sections 415 and 419) and Jobs-Housing Linkage Fee (section 413) accounts, net of loan encumbrances: $28,865,155 and $16,293,589. FY2024-25 spending came from earlier balances while collections were $422,048 (BLA p. 9, Exhibit I; p. 44). Spending and collections after 30 June 2025 are not counted.",
   "tier": 2,
-  "cite": { BLA, "page": "pp. 9, 44" }
+  "cite": {
+    "label": "Mayor's Office of Housing and Community Development, FY2024-25 Annual Report, Table 2: Affordable Housing Fund Summary",
+    "url": "https://media.api.sf.gov/documents/MOHCD_FY_2024-2025_Annual_Report.pdf",
+    "page": "p. 21"
+  }
 }</code></pre>
+        <p>Tier 2: the balance is recorded; taking it as all the source has left is an inference. The cite's <code>retrieved</code> is the day the builder read the report.</p>
       </section>
 
       <section id="sec-design-data-htf">
@@ -354,7 +352,7 @@ export interface FundingFile {
         <pre><code data-lang="json">"bound": {
   "kind": "ends",
   "on": "2043-06-30",
-  "method": "The Charter's Housing Trust Fund runs to 2043; the Controller's statement on the 2026 measure extends it 'from 2043 to 2058'. Read as the end of fiscal year 2042-43, 30 June 2043. The 2026 extension (Proposition C) is not certified and is a measure a player adds.",
+  "method": "The Charter's Housing Trust Fund runs to 2043; the Controller's statement on the 2026 measure extends it 'from 2043 to 2058'. Read as the end of fiscal year 2042-43, 30 June 2043. The 2026 extension (Proposition C) was not certified when this was read and is a measure a player adds.",
   "tier": 2,
   "cite": {
     "label": "Controller, Proposition C: Contributions to the Housing Fund, statement of 2026-08-10",
@@ -564,7 +562,7 @@ none:
         <li><code>impliedHomesPerYear</code> is the least of those, rounded half up. The federal pool counts like any other.</li>
         <li>The check's method begins "Implied: over the pools with a programme and a share above 0, the least of their first year's dollars ÷ (share × {uncovered}), rounded half up: {n}." and continues as today.</li>
         <li><code>fundingWarning</code>'s text says "the baseline pools fully fund" in place of "the capped pools fully fund".</li>
-        <li>On the live file the check stays 780 implied against 980 observed, with no warning, unless the impact-fee balance read is under one year's amount; then the least is that pool's, and the handback reports the check and any warning.</li>
+        <li>On the live file the check stays 780 implied against 980 observed, with no warning: the impact-fee balance is above one year's amount, so that pool's first year is its full $34.8 million.</li>
       </ul>
       <p>The report's baseline-funding table:</p>
       <pre><code data-lang="ts">// pipeline/lib/fzp-cal/funding.ts
@@ -680,7 +678,7 @@ interface FundingReport {
         <li>Until <code>pool-closing</code> lands, an affordable application that asks a spent pool waits to the window's end in the step engine (the known limit, <code>docs/dev/finance-engine.md</code>). The live goal month is therefore not meaningful between the two units, and this unit asserts none.</li>
         <li>Fixture-level tests stay meaningful through the fixture's bounds: every bound kind is built, and the continuing pools (<code>city-ocoh</code>, <code>city-general-fund</code>, <code>state</code>, federal) keep receiving money to the window's end. A new test pins that (<a href="#sec-tests">Tests</a>).</li>
         <li>Tests that pin funded numbers on a fixture with an uncapped pool give that pool one yearly inflow, <code>{ kind: 'yearly', from: &lt;the fixture's asOf&gt;, to: null, dollarsPerYear: 100_000_000_000 }</code>, which no test reaches. Their recorded numbers are re-recorded where they move, and the handback lists each one.</li>
-        <li>The unit's handback reports the live file's first-year dollars by source and the impact-fee block chosen, for the level 2 check that <code>reach-check</code> runs.</li>
+        <li>The unit's handback reports the live file's first-year dollars by source, for the level 2 check that <code>reach-check</code> runs.</li>
         <li>This unit writes hashed paths: <code>pipeline/**</code> and <code>src/lib/timelapse</code>, under <code>PATHS</code> as <code>remove-lesscars</code> leaves it (<code>src/lib/sim/scenario</code> and <code>src/lib/sim/levers</code> are no longer hashed). So the dataset version changes.</li>
         <li>The unit regenerates the fixture with <code>npm run pipeline -- fixture</code> and commits every file that changes, <code>e2e/fixtures/data/fixture-0/report.json</code> included.</li>
         <li>It runs no signoff and uploads no dataset.</li>
@@ -775,7 +773,7 @@ interface FundingReport {
         <li><code>pipeline/test/enrichment/funding-schema.test.ts</code>:
           <ul>
             <li>The live file parses at schema 2 with the nine pinned ids, in order, and a page on every cite, bound cites included.</li>
-            <li>Each live bound's kind, date or dollars and tier are those of <a href="#tbl-ff-bounds">the bounds table</a>; the impact-fee row accepts either block.</li>
+            <li>Each live bound's kind, date or dollars and tier are those of <a href="#tbl-ff-bounds">the bounds table</a>.</li>
             <li>The federal ceiling equals 1,274 times 443,108.</li>
             <li>Refusals, one case each, with the message: schema 1; a source with no bound; tier 4; an unknown bound kind; an extra key in a bound; <code>ends.on</code> not a real date; negative <code>remaining.dollars</code>; money remaining with a yearly amount of 0; a federal ceiling one dollar off; a <code>federal.uncapped</code> key.</li>
             <li>The fixture twin parses with the live ids and kinds, schema 2, every bound kind, and "Fixture:" labels.</li>
@@ -851,7 +849,7 @@ interface FundingReport {
           <li>"Why the federal pool has no ceiling" becomes "The federal ceiling": how it is read from the award rows, why the best year, and its check in the schema.</li>
           <li>"<code>pipeline/enrichment/funding.json</code>": schema 2, the bound kinds and their validation, the tier rule (no tier 4), and that a source whose money ended stays in the file with its bound.</li>
           <li>"Stable ids": <code>city-housing-stability-fund</code> added; the pinned ids are nine; a spent source stays, <code>retiredIds</code> is for sources removed.</li>
-          <li>"Updating <code>funding.json</code>": step 4 re-reads each bound's primary each year and recomputes the federal ceiling from the new award year; the impact-fee balance from the yearly fee report.</li>
+          <li>"Updating <code>funding.json</code>": step 4 re-reads each bound's primary each year and recomputes the federal ceiling from the new award year; the impact-fee balance from MOHCD's yearly annual report.</li>
           <li>"Fixture mode": the twin's values and bounds.</li>
           <li>A section "Older datasets": how <code>parseCalibration</code> reads a pool with <code>uncapped</code>, <code>LEGACY_UNCAPPED_DOLLARS</code>, <code>isNoCeiling</code> and where "No ceiling" shows.</li>
           <li>V25's funding rule, as <a href="#sec-design-emit-v25">above</a>.</li>
