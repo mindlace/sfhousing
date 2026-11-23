@@ -4,8 +4,8 @@
   Below md it sits above the map's bottom-right controls (`--map-controls-br-block-size`, which
   includes the map inset: the scrubber and, on /sim, the dock's sheet) and is at most half the
   map, never taller than the room above it, so it never rises over the header. From md it sits
-  where `anchor` puts it (TimelineMode places it beside the clicked building), else at the top, right
-  of the dock (`--dock-w`). It reports its box through `onsize` for that placement.
+  where `anchor` puts it (TimelineMode places it beside the clicked building), else at the top,
+  right of the dock (`--dock-w`). It reports its box through `onsize` for that placement.
 -->
 <script lang="ts">
   import type { Day } from '$lib/timelapse/time';

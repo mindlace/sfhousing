@@ -1,5 +1,5 @@
-// /fzp e2e (fzp-mode spec §6), on /sim's timeline. /fzp redirects to /sim (plan 3, Call 14), so
-// these tests open the timelapse there; e2e/sim.spec.ts covers the redirect itself. Runs against
+// The timelapse e2e (fzp-mode spec §6), on /sim's timeline: these tests open the timelapse
+// there. Runs against
 // the VITE_E2E build, which exposes window.__sfhFzp (src/lib/fzp/debug.ts) and window.__sfhMap.
 // Fixture-0 files are read from disk; counts, ids and labels are derived from them, never
 // hard-coded. Nothing plays on open; the playhead reaches as far as the forecast is filled, so a
@@ -126,7 +126,7 @@ async function waitForMapOnly(page: Page): Promise<void> {
   await page.waitForFunction(() => !!(window as Win).__sfhMap?.map);
 }
 
-/** Where /fzp's redirect lands: the timelapse on /sim. */
+/** Where the timelapse is: /sim. */
 const FZP_PATH = '/sim';
 
 /** The timelapse on /sim, ready, the forecast filled to the window's end. */

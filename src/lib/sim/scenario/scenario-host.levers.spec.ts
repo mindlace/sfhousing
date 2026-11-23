@@ -1,6 +1,6 @@
 // The scenario host's lever plumbing (plan 2 Task 12): `initScenario.levers`, `setLevers`, the
 // `levers` resolving/current posts, the touched-lot recompute as the scheduler's first job, latest
-// lever revision wins, a failed needed chunk holds the revision, and /fzp (no levers) unchanged.
+// lever revision wins, a failed needed chunk holds the revision, and a session with no levers unchanged.
 // Each revision's height limits: scenario-host.heights.spec.ts.
 import { createHash } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';

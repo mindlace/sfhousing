@@ -721,7 +721,7 @@ describe('loadScenario: policy.bin (plan 2 Task 10)', () => {
     expect(scenarioUrls(m)).toEqual({ ...URLS, policy: null, gross: null });
     const fzp = { ...m.scenarios!.fzp, policy: POLICY_URL };
     expect(scenarioUrls({ ...m, scenarios: { fzp } })).toEqual(WITH_POLICY);
-    // /fzp never needs policy.bin, so a bad one leaves the other three usable.
+    // A session without levers never needs policy.bin, so a bad one leaves the other three usable.
     for (const policy of ['/data/fixture-1/scenarios/fzp/policy.bin', 7]) {
       const bad = { ...fzp, policy: policy as string };
       expect(scenarioUrls({ ...m, scenarios: { fzp: bad } })).toEqual({

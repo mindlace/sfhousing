@@ -1,4 +1,4 @@
-// lesscars plan 1 Task 4: the retired law switch generalised to K dated regimes (a project keeps
+// The law switch generalised to K dated regimes (a project keeps
 // the regime of the month it initiated in), and dated parcel reservations (`reservedFrom`).
 import { describe, expect, it } from 'vitest';
 import type { ParcelId } from '$lib/data/parcel';

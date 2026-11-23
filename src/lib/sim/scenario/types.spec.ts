@@ -63,7 +63,7 @@ interface RowSchedule {
     of: number;
     start: 'scheduled' | 'estimated';
   } | null;
-  regime?: number; // lesscars plan 1 Task 4
+  regime?: number; // the dated regime the project started in
   inFlight?: true; // plan 4 Task 6 (Call 15)
   kind?: 'affordable';
   funding?: {
@@ -84,7 +84,7 @@ type RowSimInput = {
   districtMaxStories: number | null;
   newProjects?: { calibration: Calibration; scale: StageScale }; // plan 2 Task 8
   inFlightScale?: StageScale;
-  regimes?: { day: Day; parcels: ScenarioParcels }[]; // lesscars plan 1 Task 4
+  regimes?: { day: Day; parcels: ScenarioParcels }[]; // dated parcel views
   reservedFrom?: Int32Array;
   market?: MarketStep[];
   finance?: {
