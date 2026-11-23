@@ -67,6 +67,8 @@ def main():
     name = '%s-%s' % (SLUG, unit)
     wt = '%s/.claude/worktrees/%s' % (PROJECT, name)
     cmds = ['npm', 'npx', 'lsof'] + (['aws', 'dig', 'curl', 'jq', 'timeout', 'bash -c'] if unit == 'mail-setup' else [])
+    if unit == 'pool-closing':  # the tolerance referee runs only with this variable set
+        cmds += ['SFH_WORLD_FUNDING_REFEREE=1 npx', 'SFH_WORLD_FUNDING_REFEREE=1 npm']
     reads = ['ls', 'cat', 'grep', 'head', 'tail', 'wc', 'pwd', 'uptime', 'mkdir'] + [
         'git -C %s %s' % (PKG, g) for g in ('log', 'show', 'diff', 'rev-parse', 'status')]
     block = f"""

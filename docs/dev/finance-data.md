@@ -452,20 +452,14 @@ row needs a judgement:
 Live rows today: 19 (2024 new construction 1,274 homes, 2025 new construction 686, four
 rehabilitation rows with `newConstruction: false`), giving `observedHomesPerYear` 980.
 
-### Held-level sources (OD-F3)
+### Level sources (OD-F3)
 
-The six City sources are held at their FY2024-25 amounts: "funding as the recent records show it,
-held level". That is a ruled assumption, not a forecast, and the user can scale any pool from a date
-in the levers. Three of them are one-off by the report's own account, and each pool's provenance
-says so:
+Each source follows its `bound` (the table above): `ends` stops on a date, `remaining` pays until
+the stated balance is spent, and only `none` keeps paying its yearly amount for the whole run. That
+level is "funding as the recent records show it", a ruled assumption, not a forecast; the user can
+scale any pool from a date in the levers. Each pool's provenance states its bound and its cite.
 
-- `city-impact-fees`: FY2024-25 spending came mostly from earlier years' fee balances; fee revenue
-  was $422,048 in FY2024-25 against an $18.0 million average. Its bound is the $45,158,744 balance
-  at 30 June 2025 (MOHCD annual report, Table 2, p. 21), so the held level stops when it is spent.
-- `city-redevelopment`: "that source has now been spent down" (p. 73).
-- `city-debt`: bonds need voter approval each time (p. 72).
-
-Two more caveats are held level as if they paid for new building, and they do not:
+Two caveats on what a City source's dollars pay for:
 
 - `city-debt` includes the 2016 Preservation and Seismic Safety (PASS) bond, which funds
   preservation, not new building (p. 43).

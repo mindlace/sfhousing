@@ -134,6 +134,8 @@ test("at level 1 /p/<id>'s Remix opens Paint on the published plan, listed in th
     .getByRole('button', { name: 'Remix' })
     .click();
   await expect(page).toHaveURL(/\/$/);
+  // toHaveURL passes when the new document commits; wait for Paint to mount and set its hook.
+  await waitForMap(page);
   // small.json holds 3 ops: Paint opens the published plan.
   await expect.poll(() => ops(page)).toBe(3);
 
