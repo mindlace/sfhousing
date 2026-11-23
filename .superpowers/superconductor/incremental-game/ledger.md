@@ -204,6 +204,7 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - game-shell-1: incremental-game-game-shell-1 — status: launching (branch incremental-game-game-shell-1, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-game-shell-1, start cf1ff6e50e891279a77dc411c45e929643ffb936, model opus — rationale: sibling lane of game-shell, same tier as its plan's author, needs: G2 stub (merged), produces: none)
 - game-shell-1: incremental-game-game-shell-1 — status: admitted (branch incremental-game-game-shell-1, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-game-shell-1, start cf1ff6e50e891279a77dc411c45e929643ffb936, model opus — rationale: sibling lane of game-shell, same tier as its plan's author, needs: G2 stub (merged), produces: none)
 - game-core: incremental-game-game-core — status: admitted (admit message sent at a333bd83; branch incremental-game-game-core, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-game-core, model opus, needs: G1–G5, S2, S3, X1 (merged), produces: G1–G5 (built))
+- mail-setup: incremental-game-mail-setup — status: complete (branch incremental-game-mail-setup, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-mail-setup, start 7fbb5e32c72b3dcd416f7ef214536376a7c22b5c, model opus — rationale: outward-facing AWS and secrets work needs judgment, needs: none, produces: none)
 
 ## Supervision
 - status asked remove-lesscars
@@ -254,6 +255,9 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - status asked game-core
 - 18:55 correction to the 18:25 note: a `done` session that has left the default listing is NOT reachable by message (SendMessage to incremental-game-closing: "No agent named ... is reachable"). So for a planning unit with its plan ledgered that shows `absent` (closing, reach-check, funding-measures so far): no rung and no restart while it has nothing to do; at admission, launch it again as a restart from its assignment (Plan: its plan, Admitted: yes), with its resends. The `relayed remove-lesscars-1 to incremental-game-closing` line records a relay that was not delivered and is owed in those resends; at that restart also tell closing to re-read § sec-design-sweep and § sec-design-leftovers (rulings conductor-4, conductor-5, remove-lesscars-1) and funding-measures to re-read its level and window sections (ruling conductor-5: it needs F3, `MoneyView.shut`).
 - game-core status reply 18:55: tasks 1, 2, 4 passed review; task 3 in a fix round for ruling game-core-5 (row G3 follows); working on task 5; held on nothing.
+- status asked game-core
+- plan remove-lesscars: docs/superpowers/plans/2026-11-22-remove-lesscars.html at fe73a444
+- remove-lesscars status 20:05: passed review through task 5; on task 6 (fixture regeneration, delivers L1); its L1 report waits on the conductor's word that game-shell-1's and remove-multiuser's fixes have merged.
 
 ## Questions
 - 2026-11-22 conductor-1 from conductor [defect-class: owner-ruling-drift]: gate-1, a policy already saved in the browser becomes a level-1 game, and every kind in it is locked (major) → rulings/conductor-1.md (commit 7fbb5e32, changes contract: no)
@@ -380,6 +384,11 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - routed game-core-7
 - routing game-shell-1-1: rulings/game-shell-1-1.md, commit 5bc853c4
 - build graph for game-shell-1-1 @ none
+- relayed game-shell-1-1 to incremental-game-game-shell-1
+- relayed game-shell-1-1 to incremental-game-game-shell
+- routed game-shell-1-1
+- 2026-11-22 remove-multiuser-4 from remove-multiuser [defect-class: conductor-merge-window]: its branch merged the integration branch at 82bc19d4, before the 19:20 reset → answered by message, no fork (mechanical: which branch to merge from)
+- routed remove-multiuser-4
 
 ## Forks
 - fork checkpoint-2 started 2026-11-22T16:20
@@ -498,6 +507,8 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - fork rule-game-shell-1-1 exited [0]: output
 - fork graph-game-shell-1-1 started 2026-11-22T18:47
 - fork graph-game-shell-1-1 exited [0]: output
+- fork review-mail-setup-22dfc451 started 2026-11-22T19:20
+- fork review-game-core-87e473e4 started 2026-11-22T19:20
 
 ## Frame-defect tally
 - owner-ruling-drift: 2 — instances: conductor-1 (gate-1, 2026-11-22); conductor-8 (gate-7, 2026-11-22)
@@ -532,11 +543,18 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - fix round game-shell-1 @ 9285d15c: unit src/routes/about/page.svelte.spec.ts:17 expects four parts, page now renders about-levels and about-saved-games; output fixrounds/game-shell-1-9285d15c.txt
 - fix round remove-multiuser @ cbd11881: 26 e2e failures in the account and auth specs that still drive /sims and POST /api/sims (the row report's commit is mid-unit); output fixrounds/remove-multiuser-cbd11881.txt
 - merge queue now: mail-setup complete @ 22dfc451 and game-core rows G1, G4, G3 @ 87e473e4 (no failure in the batch run pointed at either), after the queued rulings game-core-6, remove-multiuser-3, game-core-7; then one suite each.
+- 19:45 merges made onto 5f6eec8d (the ledger commit before them): mail-setup 22dfc451 -> e4a8f689, game-core G1+G4+G3 87e473e4 -> b2ebd5ce; one suite running on b2ebd5ce (agent; logs in scratchpad `merge-batch3/`). Not ledgered as merged until it passes; on a failure `git reset --hard 5f6eec8d` (copy ledger.md out first and back after) and merge one at a time.
+- merge queue: game-core row G2 @ e5e6256c (store, navigate.ts, root layout's store script), after the suite on b2ebd5ce reports
+- 20:00 consequence of the 18:50 batch: between the four merges and their reset (18:50 to 19:20) ruling relays told operators to merge the integration branch, so `incremental-game-remove-lesscars` and `incremental-game-remove-multiuser` contain 82bc19d4 (remove-multiuser's partial I1 cbd11881, game-shell-1 9285d15c, game-core 2e20abaa, mail-setup 22dfc451). No other unit branch does (checked with merge-base). Mechanical ruling sent to both: keep the commits, rewrite nothing. Merge order this forces: (1) game-shell-1's fix, (2) remove-multiuser (I1 and complete) after it merges the integration branch again, (3) remove-lesscars' L1 after both. Tell remove-multiuser when (1) has merged and remove-lesscars when (1) and (2) have. Rule from now on: no relay that says "merge the integration branch" goes out while an untested merge sits on it, and one merge is tested at a time unless nothing else is running.
+- merge queue: game-shell-1 complete again @ a1930ffc (fix round done per ruling game-shell-1-1; its whole-unit run had 11 timeouts under load in files it does not touch, each passing alone), next after the suite on b2ebd5ce; then game-core G2 @ e5e6256c
+- merged mail-setup @ 22dfc451 into superconductor/incremental-game, tests pass (check 0 errors; lint 0 errors; unit 10588 passed; e2e 851 passed, 0 failed; one suite on b2ebd5ce for both merges), band low
+- merged game-core [row G1] [row G4] [row G3] @ 87e473e4 into superconductor/incremental-game, tests pass (check 0 errors; lint 0 errors; unit 10588 passed; e2e 851 passed, 0 failed; one suite on b2ebd5ce for both merges), band low
+- game-core row G2 @ e5e6256c is held to merge with its next report (G5 or complete): G2 alone admits no unit, and one merge at the newest reported sha delivers both.
 
 ## Cost
 - remove-lesscars: admitted 2026-11-22T16:31 seven_day 44% | session d889ec5c-3342-4a77-99f8-993f1115a679
 - remove-multiuser: admitted 2026-11-22T16:32 seven_day 44% | session 954945e3-efc5-42a8-8f8f-2233f4008011
-- mail-setup: admitted 2026-11-22T16:32 seven_day 44% | session b1e978f2-51f4-46a7-a9b0-92ea6e61597f
+- mail-setup: admitted 2026-11-22T16:32 seven_day 44% | session b1e978f2-51f4-46a7-a9b0-92ea6e61597f | finished 2026-11-22T19:20 seven_day 56%
 - contracts: admitted 2026-11-22T16:33 seven_day 44% | session 343d79b0-ac75-4280-b643-22398f92f1a8 | finished 2026-11-22T17:56 seven_day 50%
 - game-core: admitted 2026-11-22T16:52 seven_day 46% | session 06c0c65b-cf92-457a-a525-9c4374e4a0b3
 - finite-funding: admitted 2026-11-22T16:53 seven_day 46% | session 7949d97c-2f16-4c76-b641-a1b2d697d55f
