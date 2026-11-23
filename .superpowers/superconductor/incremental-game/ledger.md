@@ -238,6 +238,7 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - game-sim: incremental-game-game-sim — status: complete (branch incremental-game-game-sim, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-game-sim, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus — rationale: largest consumer of game rows on /sim, needs: G1–G5 built from game-core (not merged yet); F2 from finite-funding (not merged yet); M1 signature, X1 from contracts (not merged yet), produces: none)
 - funding-measures: incremental-game-funding-measures — status: complete (branch incremental-game-funding-measures, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-funding-measures, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus — rationale: funding editors and presets consuming three rows, needs: F2 from finite-funding (not merged yet); F3 from pool-closing (not merged yet); G3 built from game-core (not merged yet), produces: M1 (built))
 - closing: incremental-game-closing — status: admitted (branch incremental-game-closing, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-closing, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus — rationale: whole-tree sweep, dataset upload and signoff, needs: G4's build check from reach-check (not merged yet); G1–G5, S1–S3, I1, F1, F2, F3, M1, L1, X1, all built (not merged yet); every other unit merged (not merged yet), produces: none)
+- closing: incremental-game-closing — status: complete (branch incremental-game-closing, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-closing, start 8f494b6ace77a44ba546649b4d1ab06513b34333, model opus — rationale: whole-tree sweep, dataset upload and signoff, needs: G4's build check from reach-check (not merged yet); G1–G5, S1–S3, I1, F1, F2, F3, M1, L1, X1, all built (not merged yet); every other unit merged (not merged yet), produces: none)
 
 ## Supervision
 - status asked remove-lesscars
@@ -796,6 +797,8 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - fork rule-closing-2 exited [0]: output
 - fork graph-closing-2 started 2026-11-23T08:44
 - fork graph-closing-2 exited [0]: output
+- fork review-closing-b9581ee9 started 2026-11-23T09:05
+- fork review-closing-b9581ee9 exited [0]: output
 
 ## Frame-defect tally
 - owner-ruling-drift: 2 — instances: conductor-1 (gate-1, 2026-11-22); conductor-8 (gate-7, 2026-11-22)
@@ -927,6 +930,9 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - 09:35 merge of funding-measures complete (row M1) @ 05933f2e made onto 16c286b8 (merge commit 8ec592c2), suite running (agent; scratchpad `merge-funding-measures/`); not merged until it passes; on failure reset to 16c286b8 with ledger.md copied out and back. Its own full suite at 05933f2e: unit 9244, e2e 778 passed, 0 flaky.
 - merged funding-measures [row M1] @ 05933f2e into superconductor/incremental-game (complete), tests pass (check 0 errors; lint 0 errors; unit 9244 passed; pipeline 2284 passed; e2e 778 passed, 0 failed, 0 flaky), band middle. Every unit but closing has merged; every interface row is built.
 - No drift @ 05933f2e (review-funding-measures-05933f2e; the real dateMeasure behind game-sim's calls)
+- merged closing @ b9581ee9 into superconductor/incremental-game (complete; onto 2cab52cb, merge commit 1c9021aa), tests pass on closing's own signoff of b9581ee9 (chreode/signoff success: lint/check 0 errors, unit 9244, pipeline 2284 with the live replay block skipped after the closing-2 clearing, e2e 782 passed 0 flaky); the merged tree differs from b9581ee9 only in the closing spec, the build graph and the ledger dir, so the suite was not run again here; the integration branch's own signoff follows. Band middle (79%). Every unit has merged.
+- No drift @ b9581ee9 (closing)
+- every unit merged and reviewed; finishing: `npm run signoff` on superconductor/incremental-game, then PR and merge to main; operators and the heartbeat timer are stopped after the merge
 
 ## Cost
 - remove-lesscars: admitted 2026-11-22T16:31 seven_day 44% | session d889ec5c-3342-4a77-99f8-993f1115a679 | finished 2026-11-22T21:14 seven_day 60%
@@ -941,5 +947,5 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - funding-measures: admitted 2026-11-22T16:55 seven_day 46% | session a331388a-a2ba-4e3e-b829-db463a3b8c39 | finished 2026-11-23T06:54 seven_day 77%
 - pool-closing: admitted 2026-11-22T16:55 seven_day 46% | session 03f449ba-0085-4e9d-9fd4-d178230a1c89 | finished 2026-11-23T04:20 seven_day 73%
 - reach-check: admitted 2026-11-22T16:55 seven_day 46% | session c0bed174-aec2-4512-a95a-75e2f45d284e | finished 2026-11-23T05:11 seven_day 75%
-- closing: admitted 2026-11-22T16:56 seven_day 46% | session 34af1a00-4be6-4ebd-a442-ddb896dfe9f9
+- closing: admitted 2026-11-22T16:56 seven_day 46% | session 34af1a00-4be6-4ebd-a442-ddb896dfe9f9 | finished 2026-11-23T09:05 seven_day 79%
 - game-shell-1: admitted 2026-11-22T17:57 seven_day 50% | session 20b9f13e-31fb-4c2f-b44b-10d478c01e5f | finished 2026-11-22T19:38 seven_day 57%
