@@ -1,0 +1,9 @@
+Ruling written to `/Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game/.superpowers/superconductor/incremental-game/rulings/closing-2.md`; the spec change is committed as `56fc7650`. I skipped the optional Jev citation check and ruled from the conductor's read-only check instead.
+
+The failing replay test is not a defect of any unit in this build. Its permit-issued cohort fails by the same margin on `main`'s own code and dataset, and it was already failing on 2026-11-04. The closing spec now does three things:
+
+- **New finish step 12:** after the upload is proved, closing deletes `pipeline/out/<v>` and `pipeline/.cache/derived/<v>`. Then signoff runs with no live build on disk, the same way every signoff on `main` has met this test. Signoff moves to step 13.
+- **The hand-back** now carries the failing cohort line for the owner.
+- **The calibration fit and the test's bars** go to the owner after this build. No test or chreode config is changed.
+
+Closing's command list has no `rm`, so the conductor must either allow `rm -rf` for those two paths or delete them itself. No task is cut: closing's branch head `b9581ee9` stands.

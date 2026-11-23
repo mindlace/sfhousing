@@ -1,6 +1,6 @@
 # Superconductor ledger — design: docs/superpowers/design/2026-11-22-1216-incremental-game.html
 Package worktree: /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game
-Build graph: docs/superpowers/design/2026-11-22-1216-incremental-game-build-graph.md @ fb46e5da
+Build graph: docs/superpowers/design/2026-11-22-1216-incremental-game-build-graph.md @ 81d37d5e
 SDD scripts: /Users/mindlace/.claude/plugins/cache/claude-plugins-official/superpowers/7.0.2/skills/subagent-driven-development/scripts
 HTML scripts: /Users/mindlace/.claude/plugins/cache/super/superpowers-html/0.1.0/bin
 Project commands: npm, npx, lsof, ls, cat, grep, head, tail, wc, pwd, uptime, mkdir (mail-setup only, also: aws); operators run with --permission-mode dontAsk
@@ -555,6 +555,13 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - build graph for closing-1 @ fb46e5da
 - relayed closing-1 to incremental-game-closing
 - routed closing-1
+- 2026-11-23 closing-2 from closing [defect-class: live-check-failure]: signoff fails at test:pipeline on simulate-replay's live-build block (pooled permitIssued, 11 months over), which runs only with a local build; who owns it and what unblocks signoff → rulings/closing-2.md (commit 56fc7650, changes contract: no)
+- routing closing-2: rulings/closing-2.md, commit 56fc7650
+- build graph for closing-2 @ 81d37d5e
+- closing-2 not relayed: the ruling has closing clear `pipeline/out/<v>` and `pipeline/.cache/derived/<v>` so the failing live replay block skips at signoff. The conductor's own removal of those directories was refused by the permission classifier (it makes a failing gate skip); not worked around, no relaunch with `rm`. Put to the owner 2026-11-23; closing told to hold signoff.
+- owner chose "Clear local build" for closing-2 (2026-11-23); conductor removed the two directories for 2026-11-14-09ca30c8 in closing's worktree
+- relayed closing-2 to incremental-game-closing
+- routed closing-2
 
 ## Forks
 - fork checkpoint-2 started 2026-11-22T16:20
@@ -785,6 +792,10 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - fork rule-closing-1 exited [0]: output
 - fork graph-closing-1 started 2026-11-23T07:10
 - fork graph-closing-1 exited [0]: output
+- fork rule-closing-2 started 2026-11-23T08:43
+- fork rule-closing-2 exited [0]: output
+- fork graph-closing-2 started 2026-11-23T08:44
+- fork graph-closing-2 exited [0]: output
 
 ## Frame-defect tally
 - owner-ruling-drift: 2 — instances: conductor-1 (gate-1, 2026-11-22); conductor-8 (gate-7, 2026-11-22)
@@ -820,6 +831,7 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - write-set-gap: 8 — adds game-sim-3 (2026-11-23)
 - spec-disagreement: 8 — adds funding-measures-2 (2026-11-23), the seam between the real summary and game-sim's test
 - spec-disagreement: 9 — adds closing-1 (2026-11-23)
+- live-check-failure: 1 — instances: closing-2 (2026-11-23); provenance check (main vs integration) running as an investigator agent before the ruling fork starts
 
 ## Integration
 - 17:50 merge of contracts @ f6ee1de3 made (merge commit 5453b107), full suite running in the package worktree (agent; logs in the session scratchpad `merge-contracts/`); not ledgered as merged until it passes. No amending fork starts until then; queued questions in order: remove-multiuser-1, game-core-1, game-core-2, game-core-3, game-sim-1, pool-closing-1, conductor-10, conductor-11. Then merge remove-multiuser's row I1 @ cbd11881.
