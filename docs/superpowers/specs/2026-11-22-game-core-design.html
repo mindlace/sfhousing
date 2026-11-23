@@ -980,6 +980,7 @@ export function loadPage(path: '/' | '/sim'): void;</code></pre>
       <li><code>src/lib/game/WinCard.svelte</code>, <code>LevelPanel.svelte</code></li>
       <li><code>src/routes/+layout.svelte</code>: the imports, <code>makeGame</code> and the <code>provideGame</code> call</li>
       <li><code>docs/dev/game.md</code></li>
+      <li><code>e2e/game-helpers.spec.ts</code>: each case that changes storage after a load waits for <code>html[data-hydrated]</code> before the change</li>
     </ul>
     <p>Created:</p>
     <ul>
@@ -1026,6 +1027,8 @@ export function loadPage(path: '/' | '/sim'): void;</code></pre>
       <li>After <code>newVisitor(page)</code>, the page stores one saved game at level 1 under <code>SAVES_KEY</code> and <code>saveKey(id)</code>, and the console has no hydration warning.</li>
       <li>After <code>seedGame(page, 3)</code>, the stored index is the seeded one, unchanged by the store.</li>
       <li>After a seeded load, the test sets the stored index's <code>current</code> to an id that names no entry and reloads: the store makes a new level 1 game current, keeps the seeded game in the list, and rewrites the index.</li>
+      <li>Every case that changes storage after a load, here and in <code>e2e/game-helpers.spec.ts</code>, first waits for <code>html[data-hydrated]</code>. The store reads storage once, in the root layout's init, before hydration ends; a change made before that read is a change the store sees and may repair (a <code>current</code> that names no entry gets a new game and a rewritten index), so a case that changes storage without the wait races the store.</li>
+      <li><code>e2e/game-helpers.spec.ts</code>'s cases keep their assertions: the probe reads storage before the page's scripts run, so "the seed is written once" and "a stored index is never overwritten" read what the case wrote, with the helper's init script leaving a stored index alone.</li>
     </ul>
     <p><code>contracts.spec.ts</code> and <code>contracts.svelte.spec.ts</code> are deleted; their stub assertions no longer hold.</p>
   </section>
