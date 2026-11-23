@@ -106,9 +106,24 @@ export function withFunding(f: FundingSystem | null): {
   return {
     createWorld: (statics, timeline, seed, out) => createWorldWith(f, statics, timeline, seed, out),
     step: (world, due, statics, timeline, seed, out) =>
-      stepWith(f, world, due, statics, timeline, seed, out),
+      stepWith(
+        f,
+        world,
+        due,
+        statics,
+        f?.beforeStep ? f.beforeStep(world, statics, timeline) : timeline,
+        seed,
+        out
+      ),
     planDue: (world, statics, timeline, seed, through) =>
-      planDueWith(world, statics, timeline, seed, through, { skip: true, funding: f })
+      planDueWith(
+        world,
+        statics,
+        f?.timelineOf ? f.timelineOf(world, statics, timeline) : timeline,
+        seed,
+        through,
+        { skip: true, funding: f }
+      )
   };
 }
 
