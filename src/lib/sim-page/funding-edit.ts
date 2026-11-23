@@ -598,12 +598,14 @@ function baselineTiers(baseline: Baseline | undefined): Record<IncomeTier, numbe
   return t ? { ...t } : { veryLow: 0.25, low: 0.25, moderate: 0.25, aboveModerate: 0.25 };
 }
 
+/** One programme edit's fields: its dates, when given, are days (a stored `to` is never null). */
+export type ProgrammePatch = Partial<Omit<Programme, 'id' | 'pool' | 'from' | 'to'>> & {
+  from?: Day;
+  to?: Day;
+};
+
 /** The programme with `patch`; a change of reach sets `tiers` when the patch does not. */
-function patched(
-  g: Programme,
-  patch: Partial<Omit<Programme, 'id' | 'pool'>>,
-  baseline: Baseline | undefined
-): Programme {
+function patched(g: Programme, patch: ProgrammePatch, baseline: Baseline | undefined): Programme {
   const next: Programme = { ...g, ...structuredClone(patch) };
   if (patch.reach !== undefined && !('tiers' in patch))
     next.tiers = patch.reach === 'market' ? null : (g.tiers ?? baselineTiers(baseline));
@@ -623,7 +625,7 @@ export function setProgrammeEdit(
   p: SimPolicy,
   baseline: Baseline | undefined,
   id: string,
-  patch: Partial<Omit<Programme, 'id' | 'pool'>>,
+  patch: ProgrammePatch,
   field: string
 ): FundingEdit {
   const cur = p.funding.programmes.find((x) => x.id === id);
@@ -640,8 +642,9 @@ export function setProgrammeEdit(
   if (field === 'reach' || field === 'instrument.kind')
     return { change, label: labelProgrammeKindChanged(s) };
   if (field === 'from' || field === 'to') {
-    // The editors patch a date only with a Day; `Programme.to` stays nullable for a new one.
-    const day = (field === 'from' ? patch.from : patch.to) as Day;
+    // A date patch is a Day (`ProgrammePatch`): no edit stores `to: null`.
+    const day = field === 'from' ? patch.from : patch.to;
+    if (day === undefined) return { change, coalesce: key, label: labelProgrammeNumberChanged(s) };
     return {
       change,
       label: labelDateChanged(s, field === 'from' ? 'From' : 'Until', day),

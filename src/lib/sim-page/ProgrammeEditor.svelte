@@ -101,6 +101,7 @@
     type FieldUnit,
     type FundingEdit,
     type Parsed,
+    type ProgrammePatch,
     type Refused
   } from './funding-edit';
   import type { ProgrammeField } from './funding-presets';
@@ -321,9 +322,14 @@
    * One change of the programme: a stored programme's edit (`path` is its field for the undo
    * label and coalesce key), or the draft's next state.
    */
-  function apply(patch: Partial<DraftProg>, path: string, field: string): void {
+  function apply(
+    patch: Partial<Omit<DraftProg, 'from' | 'to'>> & { from?: Day; to?: Day },
+    path: string,
+    field: string
+  ): void {
     if (stored !== null) {
-      onedit(setProgrammeEdit(policy, baseline, stored.id, patch as Partial<Programme>, path));
+      // A stored programme's patch is complete (a loan without a rate is a draft only).
+      onedit(setProgrammeEdit(policy, baseline, stored.id, patch as ProgrammePatch, path));
       return;
     }
     toDraft({ ...asDraft(), ...patch }, field);

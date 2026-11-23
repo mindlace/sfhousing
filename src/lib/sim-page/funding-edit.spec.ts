@@ -59,6 +59,7 @@ import {
   yearlyRow,
   type Draft,
   type FundingEdit,
+  type ProgrammePatch,
   type Refused
 } from './funding-edit';
 
@@ -92,6 +93,18 @@ const POOL: Omit<Pool, 'id'> = {
 };
 
 const july = (y: number) => dayOf(y, 7, 1);
+
+describe('programme date patches', () => {
+  it('take a day, never null (the compiler rules a null out)', () => {
+    const p = BOND_POLICY;
+    const prog = p.funding.programmes[0];
+    // @ts-expect-error a programme's end is never stored as null
+    const bad: ProgrammePatch = { to: null };
+    expect(bad.to).toBeNull();
+    const e = setProgrammeEdit(p, baseline, prog.id, { to: july(2031) }, 'to');
+    expect(e.label).toContain('Until July 2031');
+  });
+});
 
 describe('funding edits', () => {
   it('labels and coalesce keys follow table 4.9', () => {
