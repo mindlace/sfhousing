@@ -3,6 +3,9 @@ import { defineConfig, devices } from '@playwright/test';
 const port = process.env.SFH_E2E_PORT ?? '4173';
 
 const perf = '**/*.perf.spec.ts';
+// Wall-clock budgets measure the machine as much as the code, so `npm run test:e2e` (and signoff)
+// leaves them out. `npm run test:perf` runs them with SFH_E2E_PERF=1, alone, on an idle machine.
+const perfRun = process.env.SFH_E2E_PERF === '1';
 // bench/** is the headed GPU benchmark, run only via `npm run bench:map`.
 const ignored = ['fixtures/**', 'helpers/**', 'bench/**', perf];
 const desktop = devices['Desktop Chrome'];
@@ -16,7 +19,11 @@ const mobile = {
 export default defineConfig({
   testDir: 'e2e',
   fullyParallel: true,
-  workers: process.env.SFH_E2E_WORKERS ? Number(process.env.SFH_E2E_WORKERS) : undefined,
+  workers: perfRun
+    ? 1
+    : process.env.SFH_E2E_WORKERS
+      ? Number(process.env.SFH_E2E_WORKERS)
+      : undefined,
   forbidOnly: !!process.env.CI,
   // One retry everywhere: a retried pass still passes, but chreode's reporter records it, and
   // from the third occurrence on, a signoff run that sees the same flake fails.
@@ -26,19 +33,15 @@ export default defineConfig({
     : [['list'], ['@mindlace/chreode/reporters/playwright']],
   // A failed first attempt keeps its trace, so a recorded flake has evidence to diagnose.
   use: { baseURL: `http://localhost:${port}`, trace: 'retain-on-failure' },
-  projects: [
-    { name: 'chromium', testIgnore: ignored, use: desktop },
-    { name: 'mobile', testIgnore: ignored, use: mobile },
-    // Wall-clock budgets run alone, after every parallel test: parallel workers compete for CPU and
-    // inflate the timings. The chain chromium+mobile -> chromium-perf -> mobile-perf keeps them serial.
-    {
-      name: 'chromium-perf',
-      testMatch: perf,
-      use: desktop,
-      dependencies: ['chromium', 'mobile']
-    },
-    { name: 'mobile-perf', testMatch: perf, use: mobile, dependencies: ['chromium-perf'] }
-  ],
+  projects: perfRun
+    ? [
+        { name: 'chromium-perf', testMatch: perf, use: desktop },
+        { name: 'mobile-perf', testMatch: perf, use: mobile }
+      ]
+    : [
+        { name: 'chromium', testIgnore: ignored, use: desktop },
+        { name: 'mobile', testIgnore: ignored, use: mobile }
+      ],
   webServer: {
     // VITE_E2E=1 compiles the map debug hook (window.__sfhMap) and the e2e seams into this build
     // only. wrangler dev also loads .dev.vars, and each --var overrides it: these pin what the

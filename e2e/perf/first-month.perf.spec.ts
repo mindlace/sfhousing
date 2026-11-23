@@ -1,5 +1,5 @@
-// Wall-clock budget, so it runs alone: the chromium-perf / mobile-perf projects start only after
-// the parallel chromium and mobile projects finish (see playwright.config.ts). Moved here from
+// Wall-clock budget: not in test:e2e or signoff. `npm run test:perf` runs it alone, one worker,
+// on an idle machine (SFH_E2E_PERF=1, see playwright.config.ts). Moved here from
 // e2e/fzp-sim.spec.ts (timeline-ui Task 17): signoff tests assert behaviour and order, not time.
 import { expect, test } from '@playwright/test';
 import type { SfhFzpDebug } from '../../src/lib/fzp/debug';
