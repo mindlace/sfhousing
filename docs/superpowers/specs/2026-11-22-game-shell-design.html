@@ -658,6 +658,7 @@ export const YOUR_GAME = 'Your game';</code></pre>
             <li>A storage that refuses writes shows <code>STORAGE_TEXT</code>.</li>
             <li>A press that answers ok calls <code>loadPage('/sim')</code> (a spy on <code>src/lib/game/navigate.ts</code>).</li>
             <li>"Your game" links to <code>gamePath(level)</code>: <code>/</code> at level 1, <code>/sim</code> above it.</li>
+            <li>No case mounts <code>/sim</code> after Remix: <code>/sim</code> takes no Remix hand-off. <code>game-sim</code> deletes the case "after Remix, /sim shows the remixed document over the earlier v2 autosave" from this file; whichever of the two units merges second keeps this unit's Remix tests and no hand-off case.</li>
           </ul>
         </li>
         <li><code>src/routes/p/[id]/page.view.svelte.spec.ts</code>: at level 1 a press makes a saved game holding the published plan and the old game's policy and calls <code>loadPage('/')</code>; at 12 games it is disabled; in the open game there is no Remix button.</li>
