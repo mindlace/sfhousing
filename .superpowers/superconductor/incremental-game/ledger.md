@@ -261,6 +261,7 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - remove-lesscars status 20:05: passed review through task 5; on task 6 (fixture regeneration, delivers L1); its L1 report waits on the conductor's word that game-shell-1's and remove-multiuser's fixes have merged.
 - plan remove-multiuser: docs/superpowers/plans/2026-11-22-remove-multiuser.html at af1e4602
 - remove-multiuser status 20:45: all six tasks passed review, final review clean, head 5d85d571 (e2e 769 passed, 0 failed; unit 1 failure = the /about case game-shell-1 fixed). Held only on the conductor's word that game-shell-1 @ a1930ffc has merged; then it merges the integration branch and re-reports I1 and complete. While held it shows no evidence: mark it seen on beats, do not treat as a stall.
+- 20:55 told remove-multiuser that game-shell-1's fix merged (integration at bf22c443, suite green): it merges and re-reports I1 and complete. Still owed: tell remove-lesscars once remove-multiuser has merged.
 
 ## Questions
 - 2026-11-22 conductor-1 from conductor [defect-class: owner-ruling-drift]: gate-1, a policy already saved in the browser becomes a level-1 game, and every kind in it is locked (major) → rulings/conductor-1.md (commit 7fbb5e32, changes contract: no)
@@ -515,6 +516,7 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - fork review-mail-setup-22dfc451 exited [0]: output
 - fork review-game-core-87e473e4 exited [0]: output
 - fork review-game-shell-1-a1930ffc started 2026-11-22T19:38
+- fork review-game-shell-1-a1930ffc exited [0]: output
 
 ## Frame-defect tally
 - owner-ruling-drift: 2 — instances: conductor-1 (gate-1, 2026-11-22); conductor-8 (gate-7, 2026-11-22)
@@ -560,6 +562,8 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - No drift @ 22dfc451 (review-mail-setup-22dfc451)
 - No drift @ 87e473e4 (review-game-core-87e473e4)
 - merged game-shell-1 @ a1930ffc into superconductor/incremental-game, tests pass (check 0 errors; lint 0 errors; unit 10591 passed; e2e 850 passed, 0 failed, 1 flaky: e2e/perf/loaded-500.perf.spec.ts:8 wall-clock budget 160.5 ms > 150 ms under load, passed on retry), band low
+- remove-lesscars sent `complete` @ d1dfea45 (L1 delivered at 19eab2f0; every task and a whole-branch review passed; its own runs show only the two known inherited failures). Not merged yet: its branch carries remove-multiuser's partial work, so it merges after remove-multiuser. When remove-multiuser has merged, tell remove-lesscars to merge the integration branch, run the full suite and send complete (with L1) again. While it waits it shows no evidence: mark it seen on beats.
+- No drift @ a1930ffc (review-game-shell-1-a1930ffc)
 
 ## Cost
 - remove-lesscars: admitted 2026-11-22T16:31 seven_day 44% | session d889ec5c-3342-4a77-99f8-993f1115a679
