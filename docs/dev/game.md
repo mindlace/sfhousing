@@ -136,12 +136,12 @@ in the same change.
 - `newGame` and `remix` answer `full` at `MAX_SAVES` games; `adopt` when it would take the list past.
 - `newGame`, `switchTo` of another id, `remix`, `rekey`, `remove` and `adopt` answer `storage` in
   memory mode. `won`, `setOffer`, `levelUp`, `touched` and `rename` change memory and call the sync
-  there, and write nothing. `switchTo` of the current id is `ok` and changes nothing. `remove` of an
-  unknown id is `ok`.
+  there, and write nothing. `switchTo` of the current id is `ok` and changes nothing; of an id not
+  in the list it answers `storage`. `remove` of an unknown id is `ok`.
 - `remove` of the current game makes current the other game with the latest `savedAt`, or a new
   game when it was the last.
 - `rename` trims, keeps the first 60 code points, and ignores an empty result. A duplicate name is
-  allowed. `switchTo` leaves the other game's `savedAt` as it was.
+  allowed. The same name does nothing when `nameIsDefault` is already false. `switchTo` leaves the other game's `savedAt` as it was.
 - `remix` copies the current progress; its `doc.record` goes byte for byte to the plan or the
   policy, and the other half is the current game's record. The store never parses it.
 - `rekey` keeps everything but the id. It answers `storage` for an unknown id, a taken new id, the
@@ -160,8 +160,8 @@ cleared by `levelUp()`, `setOffer(null)`, and by a new, switched-to, remixed or 
 game and an adopted current id, each when `ok`.
 
 `levelUp()` builds `banked` (null when `offer.on` is null, else `{ on, datasetVersion, at }`) and
-calls the pure `levelUp`. The offer is cleared; when progress did not change, nothing is written
-and no sync method is called.
+calls the pure `levelUp`. The offer is cleared when the write is accepted, or when progress did not
+change (then nothing is written and no sync method is called). A refused write keeps the offer.
 
 | Level                 | offer              | Afterwards                                           |
 | --------------------- | ------------------ | ---------------------------------------------------- |
@@ -252,16 +252,16 @@ full load even when the path is on screen, so the page reads the new records.
 
 ## The e2e seam
 
-On a `VITE_E2E=1` build, `e2eOpen` is true for a page with no `sfhousing:e2e:game` key: the layout
-provides the open game (every control, no game parts, nothing stored). Without `VITE_E2E=1`,
+On a `VITE_E2E=1` build, `e2eOpen` is true when the `sfhousing:e2e:game` key is absent, storage is
+null, or reading the key throws: the layout provides the open game (every control, no game parts, nothing stored). Without `VITE_E2E=1`,
 `e2eOpen` is false and `e2eGoalAmount` null whatever storage holds. Helpers in
 `e2e/helpers/game.ts`, called before the page loads:
 
 - `seedGame(page, level)` sets the key and stores a game at that level whose bars (`SEED_BAR_DAY`,
   the first day of the month holding the window's last day) any reached result beats. It writes
-  the storage keys directly and needs no store.
+  its save and index directly, only when `sfhousing:saves:v1` is absent, and needs no store.
 - `newVisitor(page)` sets the key with nothing stored: the real store makes the first game.
-- `seedGoalAmount(page, amount)` sets `sfhousing:e2e:goal`, read by `e2eGoalAmount` when `/sim` and
-  Paint mount. The fixture city is too small for the real goal, so a spec that plays a level to a
+- `seedGoalAmount(page, amount)` sets `sfhousing:e2e:goal`. `e2eGoalAmount(storage)` returns that
+  amount (a whole number of at least 1) for pages to read when they build the goal. The fixture city is too small for the real goal, so a spec that plays a level to a
   win calls it first. Changing the amount on a loaded page, before a client navigation, is a
   `page.evaluate` write of the key.
