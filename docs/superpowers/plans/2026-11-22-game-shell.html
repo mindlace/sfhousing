@@ -231,7 +231,7 @@ export function useGame(): GameStore;</code></pre>
         <li>The page that set the offer reacts to the level changing: <code>/sim</code> returns the clock to today, and Paint opens <code>/sim</code>.</li>
         <li>The page calls <code>touched()</code> after its autosave writes a record key. The store sets the current game's <code>savedAt</code> and calls <code>sync.changed(currentId)</code>.</li>
         <li>On first construction with no <code>SAVES_KEY</code>, the store makes one saved game at level 1 whose plan and policy are whatever the two record keys hold.</li>
-        <li><code>newGame</code>, <code>switchTo</code>, <code>remix</code> and <code>remove</code> of the current game first copy the two record keys into the current game's stored save, then write the new current game's plan and policy into the two record keys.</li>
+        <li><code>newGame</code>, <code>switchTo</code> and <code>remix</code> first copy the two record keys into the current game's stored save, then write the new current game's plan and policy into the two record keys. <code>remove</code> of the current game removes its save without copying it out, then writes the new current game's plan and policy into the two record keys.</li>
         <li>After <code>newGame</code>, <code>switchTo</code> or <code>remove</code> answers <code>ok</code>, the caller loads the new current game's page with a full page load: <code>/</code> at level 1, <code>/sim</code> above it.</li>
         <li>After <code>remix</code> answers <code>ok</code>, the caller loads <code>/</code> for a plan and <code>/sim</code> for a policy, with a full page load.</li>
         <li><code>remix</code>'s <code>record</code> is the text the page's autosave holds under the record key for the published document. The caller builds it with the codec the page already uses, so the store never reads inside a plan or a policy.</li>
@@ -390,7 +390,7 @@ export function e2eGoalAmount(storage: Storage | null): number | null;</code></p
     <h2>Review Focus</h2>
     <p>Inputs the spec implies but its listed tests do not exercise, most likely to bite first. Each has a test in the owning task.</p>
     <ol>
-      <li><strong>Storage refuses the Level up write on Paint.</strong> The store keeps level 1 and clears the offer. A person expects to stay on Paint with the card and "Level up" still there, not a dead button. Test: Task 4 step <a href="#t4-s1">t4-s1</a>, "a refused Level up stays on Paint and offers again".</li>
+      <li><strong>Storage refuses the Level up write on Paint.</strong> The store keeps level 1 and keeps the offer (<code>src/lib/game/store.svelte.ts:606-608</code> clears it only on a stored write). A person expects to stay on Paint with the card and "Level up" still there, so a second press tries again, not a dead button and no navigation. Test: Task 4 step <a href="#t4-s1">t4-s1</a>, "a refused Level up stays on Paint and offers again".</li>
       <li><strong>Remix pressed twice before the page load lands.</strong> A double press must make one saved game, not two "Remix of …" entries. Test: Task 6 step <a href="#t6-s1">t6-s1</a>, "a double press makes one saved game".</li>
       <li><strong>The level cell below lg with its panel open, inside the Menu.</strong> "Level up" there, Escape there, and a press inside the panel keep the Menu open. The first Escape closes the panel, the second closes the Menu. Test: Task 3 step <a href="#t3-s1">t3-s1</a>, "below lg, Level up and Escape inside the Menu keep the Menu".</li>
       <li><strong>The viewport crosses lg while the panel is open.</strong> A phone rotated or a window resized leaves exactly one level cell, closed, with no duplicate test id. Test: Task 3 step <a href="#t3-s1">t3-s1</a>, "crossing lg leaves one cell, closed".</li>
@@ -683,16 +683,16 @@ git commit -m "feat(shell): level cell in the header with the level panel and Le
     <h2>Task 4: Paint's win</h2>
     <p>Files:</p>
     <ul>
-      <li>Modify: <code>src/routes/+page.svelte</code>: imports <code>:8-34</code>; the restore <code>onMount</code> <code>:57-77</code>; the headline <code>:146-148</code>; the <code>noticeStack</code> snippet <code>:170-172</code>; a <code>&lt;svelte:window&gt;</code> beside <code>&lt;svelte:head&gt;</code> <code>:194</code></li>
-      <li>Modify: <code>src/routes/test/PageHost.svelte</code> <code>:1-14</code>: an optional <code>game?: GameStore</code> prop, <code>provideGame(game)</code> when given</li>
+      <li>Modify: <code>src/routes/+page.svelte</code>: imports <code>:8-34</code>; the restore <code>onMount</code> <code>:59-77</code>; the headline <code>:148</code>; the <code>noticeStack</code> snippet <code>:170-172</code>; a <code>&lt;svelte:window&gt;</code> beside <code>&lt;svelte:head&gt;</code> <code>:194</code>; BrushEditor's <code>onscore</code> <code>:206</code></li>
+      <li>Modify: <code>src/routes/test/PageHost.svelte</code> <code>:1-14</code>: an optional <code>game?: GameStore</code> prop, <code>provideGame(game)</code> when given; a <code>header-status</code> div rendering <code>slot.status</code> (builder's call: the <code>beforeLeave</code> test reads the save state there to prove the debounce was pending)</li>
       <li>Modify: <code>src/routes/page.svelte.spec.ts</code>: delete the two Remix hand-off tests <code>:190-204</code> and the imports only they used (<code>remixedToast</code> at <code>:7</code>, <code>replaceStateCalls</code> at <code>:9</code> with its reset at <code>:61</code>)</li>
       <li>Modify: <code>src/routes/page.undo.svelte.spec.ts</code>: delete the hand-off test <code>:79-83</code>, and <code>appPage</code> (<code>:11</code>, <code>:58</code>) if nothing else uses it</li>
       <li>Test: <code>src/routes/page.game.svelte.spec.ts</code> (client project)</li>
     </ul>
     <p>Interfaces:</p>
     <ul>
-      <li>Consumes: <code>useGame()</code>; <code>GameStore.open</code>, <code>.progress</code>, <code>.offer</code>, <code>.won()</code>, <code>.setOffer(offer: Offer | null)</code>, <code>.levelUp()</code>, <code>.touched()</code>; <code>simLocked(p)</code>; <code>paintWon(net: number, amount: number): boolean</code>; <code>unlockText(next: Level | 6): string</code> (2 gives "The simulation"); <code>WinCard.svelte</code> props <code>{ title: string; unlocks: string | null; onlevelup: () =&gt; void; onkeep: () =&gt; void }</code>; <code>e2eGoalAmount(storage: Storage | null): number | null</code> (<code>src/lib/game/e2e.ts</code>); <code>getStorage()</code> (<code>src/lib/sharing/storage.ts:15</code>); <code>GOAL_BASE</code> (<code>src/lib/goal/goal.ts</code>); <code>paintHeadline(net, goal)</code> and <code>roomFor(net)</code> (<code>src/lib/paint/headline.ts:14,27</code>); <code>goto</code> (<code>$app/navigation</code>; in client tests the stub <code>src/test-stubs/app/navigation.ts</code> records <code>gotoCalls</code>); Task 1's <code>seededGame</code>.</li>
-      <li>Produces: test id <code>paint-win</code> on the card's wrapper.</li>
+      <li>Consumes: <code>useGame()</code>; <code>GameStore.open</code>, <code>.progress</code>, <code>.offer</code>, <code>.won()</code>, <code>.setOffer(offer: Offer | null)</code>, <code>.levelUp()</code> (keeps the offer when its write is refused, <code>src/lib/game/store.svelte.ts:598-609</code>), <code>.touched()</code>, <code>.beforeLeave(fn: () =&gt; void): () =&gt; void</code> (<code>:616-623</code>), <code>.newGame(): StoreChange</code> (<code>:624</code>, calls the registered functions before it copies the record keys), <code>.read(id): GameSave | null</code>, <code>.currentId</code>; <code>Autosave.flush()</code>, <code>.attach()</code>, <code>.status</code> (<code>src/lib/sharing/autosave.svelte.ts:150-209</code>, debounce 500 ms); <code>SaveIndicator</code>'s <code>data-save-status</code> (<code>src/lib/sharing/SaveIndicator.svelte:65</code>); <code>BrushEditor</code>'s <code>onscore(s: Score, meta: { complete: boolean })</code>, called for every diff (<code>src/lib/brush/BrushEditor.svelte:79,262</code>); <code>PageWorker</code>, <code>pageWorkers</code>, <code>scoreOf</code>, <code>scoreDiff</code> (<code>src/routes/test/page-worker.ts:12-37</code>); <code>simLocked(p)</code> (<code>src/lib/game/allowed.ts:76</code>); <code>paintWon(net: number, amount: number): boolean</code>; <code>unlockText(next: Level | 6): string</code> (2 gives "The simulation"); <code>WinCard.svelte</code> props <code>{ title: string; unlocks: string | null; onlevelup: () =&gt; void; onkeep: () =&gt; void }</code>; <code>e2eGoalAmount(storage: Storage | null): number | null</code> (<code>src/lib/game/e2e.ts</code>); <code>getStorage()</code> (<code>src/lib/sharing/storage.ts:15</code>); <code>GOAL_BASE</code> (<code>src/lib/goal/goal.ts</code>); <code>paintHeadline(net, goal)</code> and <code>roomFor(net)</code> (<code>src/lib/paint/headline.ts:14,27</code>); <code>goto</code> (<code>$app/navigation</code>; in client tests the stub <code>src/test-stubs/app/navigation.ts:8</code> records <code>gotoCalls</code>); Task 1's <code>seededGame</code>, <code>quietSync</code>; <code>MemoryStorage.failWrites</code>.</li>
+      <li>Produces: test id <code>paint-win</code> on the card's wrapper; <code>PageHost</code> props <code>{ data; game?: GameStore }</code> and test id <code>header-status</code>.</li>
     </ul>
     <ol>
       <li id="t4-s1"><input type="checkbox"> Write the failing tests in <code>page.game.svelte.spec.ts</code>. Setup as <code>src/routes/p/[id]/page.view.svelte.spec.ts:20,44-56</code> (SimMap mocked to <code>FzpSimMapStub</code>, <code>stub.map.zoom = 18</code>, <code>PageWorker</code>) plus the goal seam, which reads null in client tests because <code>VITE_E2E</code> is unset:
@@ -700,9 +700,16 @@ git commit -m "feat(shell): level cell in the header with the level panel and Le
   ...(await orig&lt;typeof import('$lib/game/e2e')&gt;()),
   e2eGoalAmount: () =&gt; 1000
 }));
-// render(PageHost, { props: { data: data(), game } }); w = pageWorkers[0]; w.ready();
+// beforeEach: stub.reset(); stub.map.zoom = 18; viewport 1024x768; pageWorkers.length = 0;
+//   vi.stubGlobal('Worker', PageWorker).
+// afterEach: vi.restoreAllMocks(); vi.unstubAllGlobals(); localStorage.clear(); gotoCalls.length = 0.
+// mount(game?): render(PageHost, { props: { data: data(), game } }); poll pageWorkers.length 1;
+//   w = pageWorkers[0]; w.ready().
 const win = (net: number, complete = true) =&gt; w.emit({ ...scoreDiff(scoreOf(net)), complete });
 const card = () =&gt; page.getByTestId('paint-win');
+const bar = () =&gt; page.getByTestId('score-bar');
+const down = (type: 'pointerdown' | 'pointerup' | 'pointercancel') =&gt;
+  window.dispatchEvent(new PointerEvent(type));
 
 it('the headline reads the seam\'s goal', ...);
   // win(1000): score-bar 'Room for 1,000 homes', score-detail 'Goal reached'
@@ -717,26 +724,98 @@ it('a complete score crossing the goal opens the card on Level up, calls won() o
   expect(won).toHaveBeenCalledTimes(1);
   expect(game.offer).toEqual({ on: null, datasetVersion: 'fixture-0' });
 });
-it('an incomplete score at the goal opens nothing', ...);       // win(1000, false): no card, offer null
+it('an incomplete score at the goal opens nothing', ...);
+  // win(1000, false): bar 'Room for 1,000 homes'; no card, game.offer null
 it('a win while a pointer is held mounts the card at pointerup', ...);
-  // window.dispatchEvent(new PointerEvent('pointerdown')); win(1000); poll game.offer set,
-  // card absent; dispatch 'pointerup': card visible, Level up focused
+  // down('pointerdown'); win(1000); poll game.offer set, card absent;
+  // down('pointerup'): card visible, Level up focused
 it('a pointercancel ends the hold too', ...);                     // as above with 'pointercancel'
 it('Keep playing closes the card, focuses the header score, and the offer stays', ...);
-  // click 'Keep playing': card gone, getByTestId('score-bar') focused, game.offer not null;
+  // click 'Keep playing': card gone, bar() focused, game.offer not null;
   // a later win(1001) does not reopen it
 it('Escape closes the card as Keep playing does', ...);
-it('dropping below clears the offer; crossing again reopens the card', ...);
-  // keep, win(10): offer null; win(1000): card visible again, won() called twice in all
+it('after Keep playing, a stroke of incomplete scores then a complete win leaves the card closed and the offer set', async () =&gt; {
+  const { game } = seededGame({ level: 1 });
+  // mount(game); win(1000); card visible
+  await card().getByRole('button', { name: 'Keep playing' }).click();
+  await expect.element(card()).not.toBeInTheDocument();
+  const setOffer = vi.spyOn(game, 'setOffer');
+  const won = vi.spyOn(game, 'won');
+  down('pointerdown');
+  win(400, false); // the room dips below the goal mid-stroke
+  await expect.element(bar()).toHaveTextContent('Room for 400 homes');
+  expect(game.offer).not.toBeNull();
+  win(1200, false);
+  await expect.element(bar()).toHaveTextContent('Room for 1,200 homes');
+  down('pointerup');
+  win(1100);
+  await expect.element(bar()).toHaveTextContent('Room for 1,100 homes');
+  expect(card().elements()).toHaveLength(0);
+  expect(game.offer).toEqual({ on: null, datasetVersion: 'fixture-0' });
+  expect(setOffer).not.toHaveBeenCalledWith(null);
+  expect(won).not.toHaveBeenCalled();
+});
+it('a complete score below the goal clears the offer and the kept state; crossing again reopens the card', async () =&gt; {
+  const { game } = seededGame({ level: 1 });
+  const won = vi.spyOn(game, 'won');
+  // mount(game); win(1000); click 'Keep playing'
+  win(10);
+  await expect.poll(() =&gt; game.offer).toBeNull();
+  expect(card().elements()).toHaveLength(0);
+  win(1000);
+  await expect.element(card().getByRole('button', { name: 'Level up' })).toHaveFocus();
+  expect(game.offer).not.toBeNull();
+  expect(won).toHaveBeenCalledTimes(2);
+});
 it('Level up raises the level to 2 and goes to /sim', ...);
   // click Level up: game.progress.level 2, gotoCalls.at(-1).url '/sim', card gone, offer null
 it('a refused Level up stays on Paint and offers again', ...);   // Review Focus 1
-  // storage.failWrites = true; click Level up: level 1, gotoCalls empty,
-  // poll game.offer not null, card still visible
+  // seededGame's storage.failWrites = true; click Level up: level 1, gotoCalls empty,
+  // game.offer not null, card and its Level up still visible; failWrites = false and click
+  // again: level 2, gotoCalls.at(-1).url '/sim'
 it('an autosave write calls touched()', ...);
   // seed PLAN_KEY with a painted plan (as page.undo.svelte.spec.ts:61-68); spy game.touched;
   // poll Ctrl+Z until the brush-announcement reads 'Undid paint, 6 stories';
   // window.dispatchEvent(new Event('pagehide')): touched called once
+it('an edit followed at once by New game is in the old game\'s save; the new plan record stays empty', async () =&gt; {
+  localStorage.setItem(
+    PLAN_KEY,
+    JSON.stringify({ v: 1, savedAt: '2026-10-11T00:00:00.000Z', plan: serializePlan(painted) })
+  );
+  // Paint's Autosave writes through getStorage(), localStorage: the store shares it.
+  const game = new GameStore({ storage: localStorage, sync: quietSync() });
+  const oldId = game.currentId;
+  const { unmount } = await render(PageHost, { props: { data: data(), game } });
+  await expect.poll(undoes).toBe('Undid paint, 6 stories');
+  // The undo sits in the 500 ms debounce: without the flush the old save would keep the paint.
+  expect(
+    document.querySelector('[data-testid="header-status"] [data-save-status]')
+      ?.getAttribute('data-save-status')
+  ).toBe('saving');
+  expect(game.newGame()).toEqual({ ok: true });
+  const old = game.read(oldId);
+  const record = JSON.parse(old!.plan!) as { plan: string };
+  const plan = parsePlan(record.plan);
+  expect(plan.ok &amp;&amp; plan.value.ops).toEqual([]);
+  unmount();
+  expect(localStorage.getItem(PLAN_KEY)).toBeNull(); // nothing flushed over the new game's record
+});
+// (painted, ctrlZ and undoes as page.undo.svelte.spec.ts:29-38; parsePlan from $lib/plan)
+it('Paint registers one flush on mount and removes it on unmount', async () =&gt; {
+  const { game } = seededGame({ level: 1 });
+  const register = game.beforeLeave.bind(game);
+  const removers: ReturnType&lt;typeof vi.fn&gt;[] = [];
+  vi.spyOn(game, 'beforeLeave').mockImplementation((fn) =&gt; {
+    const remove = vi.fn(register(fn));
+    removers.push(remove);
+    return remove;
+  });
+  const { unmount } = await render(PageHost, { props: { data: data(), game } });
+  expect(game.beforeLeave).toHaveBeenCalledTimes(1);
+  expect(removers[0]).not.toHaveBeenCalled();
+  unmount();
+  expect(removers[0]).toHaveBeenCalledTimes(1);
+});
 it('at level 2 no card shows and no offer is set', ...);
   // seededGame({ level: 2 }), win(1000): no paint-win, offer null, score-detail still 'Goal reached'
 it('the open game (no game given): no card and no offer', ...);  // win(1000): no paint-win</code></pre>
@@ -744,45 +823,67 @@ it('the open game (no game given): no card and no offer', ...);  // win(1000): n
       <li id="t4-s2"><input type="checkbox"> Run and see them fail.
         <pre><code data-lang="sh">npx vitest run --project client src/routes/page.game.svelte.spec.ts</code></pre>
       </li>
-      <li id="t4-s3"><input type="checkbox"> Add the <code>game</code> prop to <code>src/routes/test/PageHost.svelte</code>.</li>
+      <li id="t4-s3"><input type="checkbox"> Change <code>src/routes/test/PageHost.svelte</code>: the <code>game</code> prop (<code>if (game) provideGame(game)</code> at init, before <code>&lt;Page&gt;</code> renders) and <code>&lt;div data-testid="header-status"&gt;{@render slot.status?.()}&lt;/div&gt;</code> beside the other two slots. <code>page.view.svelte.spec.ts</code>'s users of the host need nothing new.</li>
       <li id="t4-s4"><input type="checkbox"> Change <code>src/routes/+page.svelte</code>:
         <ul>
-          <li>Remove the hand-off: <code>onMount</code> calls <code>autosave.restore()</code> with no argument; drop the <code>sfhRemix</code> branch, <code>replaceState</code>, <code>page</code> and <code>remixedToast</code> imports.</li>
-          <li><code>onMount</code> first sets <code>mounted = true</code> and <code>goalAmount = e2eGoalAmount(getStorage()) ?? GOAL_BASE.amount</code> (before the existing <code>if (!editor) return</code>). <code>const goal = $derived({ ...GOAL_BASE, amount: goalAmount })</code>; <code>headText = paintHeadline(shown.netUnits, goal)</code>.</li>
-          <li>The win, the offer and the pointer deferral (the algorithm the spec fixes; Paint clears only an offer it set, builder's call, so it never clears another page's):
+          <li>Remove the hand-off: <code>onMount</code> calls <code>autosave.restore()</code> with no argument; drop the <code>sfhRemix</code> branch (<code>:61</code>, <code>:68-75</code>), the <code>replaceState</code>, <code>page</code> and <code>remixedToast</code> imports (<code>:10</code>, <code>:11</code>, <code>:21</code>).</li>
+          <li><code>onMount</code> first sets <code>mounted = true</code> and <code>goalAmount = e2eGoalAmount(getStorage()) ?? GOAL_BASE.amount</code> (before the existing <code>if (!editor) return</code>). <code>let goalAmount = $state(GOAL_BASE.amount)</code>; <code>const goal = $derived({ ...GOAL_BASE, amount: goalAmount })</code>; <code>headText = paintHeadline(shown.netUnits, goal)</code>.</li>
+          <li><code>beforeLeave</code>: the end of the restore <code>onMount</code> becomes
+            <pre><code data-lang="ts">const detach = autosave.attach();
+const offLeave = game.beforeLeave(() =&gt; autosave.flush());
+return () =&gt; {
+  offLeave();
+  detach();
+};</code></pre>
+            (<code>offLeave</code> first, so a game change during teardown never calls a flush whose listeners are gone.)</li>
+          <li>The win, the offer and the pointer deferral. The won state is a pure <code>$derived</code> of the latest complete score's net; the kept and open states are writable deriveds that fall back to <code>false</code> whenever <code>won</code> changes, so no effect writes state it reads.
             <pre><code data-lang="ts">const game = useGame();
-let held = $state(false);      // a pointer button is down on the page
-let kept = $state(false);      // "Keep playing" or Escape, until Paint stops being won
-let cardOpen = $state(false);
-let offered = false;           // this page set the store's offer
-const won = $derived(
-  mounted &amp;&amp; !game.open &amp;&amp; simLocked(game.progress) &amp;&amp;
-    latestScore.current.complete &amp;&amp; paintWon(shown.netUnits, goal.amount)
-);
+let mounted = $state(false);
+/** The net homes of the latest complete score; null before the first. */
+let completeNet = $state&lt;number | null&gt;(null);
+/** A pointer button is down on the page (window events; never rendered). */
+let held = false;
+/** This page set the store's offer. */
+let offered = false;
+
+const locked = $derived(mounted &amp;&amp; !game.open &amp;&amp; simLocked(game.progress));
+const won = $derived(locked &amp;&amp; completeNet !== null &amp;&amp; paintWon(completeNet, goal.amount));
+/** "Keep playing" or Escape; false again whenever Paint starts or stops being won. */
+let kept = $derived.by(() =&gt; {
+  void won;
+  return false;
+});
+/** The card is mounted; false again whenever Paint starts or stops being won. */
+let cardOpen = $derived.by(() =&gt; {
+  void won;
+  return false;
+});
+
+/** Opens the card when Paint is won, not kept, not open, and no pointer is held. */
+function maybeOpen(): void;   // sets cardOpen = true, then game.won()
+
+/** BrushEditor's onscore: pushes to latestScore as today; a complete score sets completeNet, then maybeOpen(). */
+function onScore(s: Score, meta: { complete: boolean }): void;
+
+// The offer follows `won`; it reads only `won`, writes only the store and `offered`.
 $effect(() =&gt; {
-  if (!won) {
-    kept = false;
-    cardOpen = false;
-    if (offered) untrack(() =&gt; game.setOffer(null));
-    offered = false;
-    return;
-  }
-  // Re-set after a refused levelUp() cleared it (Review Focus 1).
-  if (game.offer === null) {
+  if (won) {
     untrack(() =&gt; game.setOffer({ on: null, datasetVersion: data.datasetVersion }));
     offered = true;
-  }
-  if (!kept &amp;&amp; !held &amp;&amp; !cardOpen) {
-    cardOpen = true;
-    untrack(() =&gt; game.won());
+  } else if (offered) {
+    untrack(() =&gt; game.setOffer(null));
+    offered = false;
   }
 });
-onDestroy(() =&gt; { if (offered) game.setOffer(null); });</code></pre>
-          </li>
-          <li><code>&lt;svelte:window onpointerdown={() =&gt; (held = true)} onpointerup={() =&gt; (held = false)} onpointercancel={() =&gt; (held = false)} /&gt;</code></li>
-          <li>Leaving level 1: record <code>simLocked(game.progress)</code> at mount; an <code>$effect</code> calls <code>goto('/sim')</code> once when it turns from true to false while mounted.</li>
+onDestroy(() =&gt; {
+  if (offered) game.setOffer(null);
+});</code></pre>
+            Builder's call: judge in <code>onscore</code>, before <code>frameLatest</code> coalesces, so a complete score that shares a frame with the next stroke's first preview is never lost. Builder's call: Paint clears only an offer it set, so it never clears another page's. A refused <code>levelUp()</code> keeps the offer (<code>store.svelte.ts:606-608</code>) and changes no progress, so <code>won</code>, the card and the offer all stay with nothing to re-set.</li>
+          <li><code>&lt;svelte:window onpointerdown={() =&gt; (held = true)} onpointerup={release} onpointercancel={release} /&gt;</code>; <code>release()</code> sets <code>held = false</code> then <code>maybeOpen()</code>.</li>
+          <li>Leaving level 1: a plain <code>let lockedBefore = false</code>; an <code>$effect</code> reads <code>locked</code>, calls <code>untrack(() =&gt; void goto('/sim'))</code> when <code>lockedBefore</code> is true and <code>locked</code> is false, then sets <code>lockedBefore = locked</code>. (<code>locked</code> holds <code>mounted</code> and <code>game.open</code>, which never turn back, so only a level change turns it from true to false; that also makes <code>won</code> false, which closes the card and clears the offer.)</li>
           <li><code>keep()</code>: <code>kept = true; cardOpen = false;</code> then after <code>tick()</code> focus <code>document.querySelector&lt;HTMLElement&gt;('[data-testid="score-bar"]')</code>.</li>
-          <li><code>touched()</code>: an <code>$effect</code> reads <code>autosave.status</code> and calls <code>untrack(() =&gt; game.touched())</code> when the previous value was <code>'saving'</code> and this one is <code>'saved'</code>.</li>
+          <li><code>touched()</code>: an <code>$effect</code> reads <code>autosave.status</code> and calls <code>untrack(() =&gt; game.touched())</code> when the previous value (a plain variable) was <code>'saving'</code> and this one is <code>'saved'</code>.</li>
+          <li>BrushEditor takes <code>onscore={onScore}</code> in place of the inline push at <code>:206</code>.</li>
           <li>In <code>noticeStack</code>, after <code>&lt;NoticeStack&gt;</code>: <code>{#if cardOpen}&lt;div data-testid="paint-win" class="pointer-events-auto"&gt;&lt;WinCard title={roomFor(goal.amount)} unlocks={unlockText(2)} onlevelup={() =&gt; game.levelUp()} onkeep={keep} /&gt;&lt;/div&gt;{/if}</code> (<code>pointer-events-auto</code>: the stack lets clicks through, <code>src/lib/shell/NoticePills.svelte:40</code>).</li>
         </ul>
       </li>
@@ -893,7 +994,7 @@ git commit -m "feat(sharing): banner remix states for the game, Your game link, 
     <ul>
       <li>Modify: <code>src/routes/s/[id]/+page.svelte</code>: imports <code>:6-14</code>; <code>confirmText</code> and <code>remix</code> <code>:25-54</code>; the banner <code>:66-76</code></li>
       <li>Modify: <code>src/routes/s/[id]/test/PageHost.svelte</code> <code>:1-21</code>: optional <code>game?: GameStore</code>, <code>provideGame(game)</code> when given</li>
-      <li>Test: <code>src/routes/s/[id]/page.view.svelte.spec.ts</code>: the <code>$app/navigation</code> mock <code>:50-56</code> stays; add a <code>$lib/game/navigate</code> mock; rewrite <code>:148-157</code> (Your game) and the Remix tests <code>:195-253</code></li>
+      <li>Test: <code>src/routes/s/[id]/page.view.svelte.spec.ts</code>: the <code>$app/navigation</code> mock <code>:50-56</code> stays; add a <code>$lib/game/navigate</code> mock; rewrite <code>:148-157</code> (Your game) and the Remix tests <code>:195-253</code>. The case "after Remix, /sim shows the remixed document over the earlier v2 autosave" (<code>:215</code>) goes and nothing replaces it: no case mounts <code>/sim</code> after Remix, since <code>/sim</code> takes no Remix hand-off. <code>game-sim</code> deletes the same case on its branch; whichever unit merges second keeps this task's Remix tests and no hand-off case.</li>
       <li>Modify: <code>src/routes/p/[id]/+page.svelte</code>: imports <code>:8-20</code>; <code>remix</code> <code>:41-47</code>; the banner <code>:131-144</code></li>
       <li>Modify: <code>src/routes/p/[id]/test/PageHost.svelte</code> <code>:1-14</code>: optional <code>game</code> as above</li>
       <li>Test: <code>src/routes/p/[id]/page.view.svelte.spec.ts</code>: a new <code>describe('/p/[id] Remix')</code></li>
@@ -1127,7 +1228,7 @@ test('at level 3 /s/&lt;id&gt;\'s Remix of one permitting policy opens /sim with
   // "Permits at San Diego's pace", then read SIM_KEY, as sim-share.spec.ts:107-115);
   // seed it as a 'sim' row; open /s/&lt;id&gt; hydrated; Remix; URL /sim; waitFilled;
   // openKind 'Permitting': a button named /, Permits at San Diego's pace, / is visible</code></pre>
-        These read only this unit's words and test ids, <code>game-core</code>'s, and what <code>/sim</code> shows today.</li>
+        Published plans and policies are seeded with <code>seedPlanRow</code> (<code>POST /api/e2e/plans</code>), which no unit of this build changes. These read only this unit's words and test ids, <code>game-core</code>'s, and what <code>/sim</code> shows today.</li>
       <li id="t8-s2"><input type="checkbox"> Run it (port check first; leave nothing listening).
         <pre><code data-lang="sh">lsof -nP -iTCP:4173 -sTCP:LISTEN</code></pre>
         <pre><code data-lang="sh">npx playwright test e2e/game-shell.spec.ts --repeat-each=5 --retries=0</code></pre>

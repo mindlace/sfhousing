@@ -10,7 +10,11 @@ import {
   n5,
   n6,
   ogDescription,
+  REMIX_LATER,
+  REMIX_LOCKED,
+  YOUR_GAME,
   remixConfirm,
+  remixNeeds,
   remixedToast,
   serverMessage,
   sizeLine,
@@ -55,6 +59,12 @@ describe('copy', () => {
     expect(COPY.rateLimited).toBe(
       'Too many plans published from your network. Try again in a minute.'
     );
+  });
+  it('remix words for the game', () => {
+    expect(REMIX_LOCKED).toBe('Unlock the simulation to remix');
+    expect(remixNeeds(4)).toBe('Level 4 runs all of it');
+    expect(REMIX_LATER).toBe('Parts unlock in a later round');
+    expect(YOUR_GAME).toBe('Your game');
   });
   it('serverMessage', () => {
     expect(serverMessage('invalid_plan')).toBe(cannotRead('invalid_plan'));

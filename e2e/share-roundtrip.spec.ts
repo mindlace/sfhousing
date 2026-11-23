@@ -1,6 +1,7 @@
 // Plan sharing e2e (spec §6, acceptance 1/2/6): paint → publish → open the link in a fresh
 // context → same score → Remix → editing a copy. Runs against the VITE_E2E development preview.
 import { expect, test } from '@playwright/test';
+import { seedGame } from './helpers/game';
 import {
   PLAN_KEY,
   committedNet,
@@ -54,6 +55,7 @@ test('share roundtrip: publish, open in a fresh browser, same score, Remix', asy
   });
   try {
     const visitor = await ctx.newPage();
+    await seedGame(visitor, 3);
     const res = await visitor.goto(link);
     expect(res?.status()).toBe(200);
     const banner = visitor.getByRole('region', { name: 'Shared plan' });
@@ -67,13 +69,9 @@ test('share roundtrip: publish, open in a fresh browser, same score, Remix', asy
     // Acceptance 6: viewing a shared plan never writes the visitor's autosave.
     expect(await visitor.evaluate((k) => localStorage.getItem(k), PLAN_KEY)).toBeNull();
 
-    // Empty local plan: Remix goes straight to `/` without a confirm.
+    // Remix makes a saved game holding the plan and loads `/` on it.
     await banner.getByRole('button', { name: 'Remix' }).click();
     await expect(visitor).toHaveURL(new URL('/', link).toString());
-    await expect(
-      visitor.getByText("Remixed from Roundtrip. You're editing your own copy.")
-    ).toBeVisible();
-    // `/` loads the remixed plan in the same onMount that shows the toast: no map wait needed.
     await expect.poll(() => ops(visitor)).toBe(1);
   } finally {
     await ctx.close();
