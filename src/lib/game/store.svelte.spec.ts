@@ -20,6 +20,8 @@ class LogStorage extends MemoryStorage {
   /** The write (setItem or removeItem) with this 1-based index since reset throws. */
   failAt: number | null = null;
   getThrows: string | RegExp | null = null;
+  /** `getThrows` applies only once this many writes have been made. */
+  getThrowsFrom = 0;
 
   /** Clears `writes` and the write count. */
   reset(): void {
@@ -28,7 +30,11 @@ class LogStorage extends MemoryStorage {
 
   override getItem(key: string): string | null {
     const g = this.getThrows;
-    if (g !== null && (typeof g === 'string' ? key === g : g.test(key))) {
+    if (
+      g !== null &&
+      this.writes.length >= this.getThrowsFrom &&
+      (typeof g === 'string' ? key === g : g.test(key))
+    ) {
       throw new DOMException('denied', 'SecurityError');
     }
     return super.getItem(key);
@@ -190,6 +196,46 @@ describe('GameStore construction', () => {
     expect(s.keys().filter((k) => k.startsWith('sfhousing:save:corrupt:'))).toEqual([]);
     expect(store.saves.map((e) => e.id)).toEqual([a.id]);
     expect(stored(s, SAVES_KEY)).toEqual({ v: 1, current: a.id, saves: [entryOf(a)] });
+  });
+
+  /** Memory mode with one fresh level 1 game, nothing read into it. */
+  function expectFresh(store: GameStore): void {
+    expect(store.saves).toHaveLength(1);
+    expect(store.saves[0].name).toBe('Game, 22 Nov');
+    expect(store.saves[0].level).toBe(1);
+    expect(store.progress).toEqual(NEW_GAME);
+    expect(store.read(store.currentId)?.plan).toBeNull();
+    expect(store.read(store.currentId)?.policy).toBeNull();
+    expect(store.newGame()).toEqual({ ok: false, reason: 'storage' });
+  }
+
+  it('a save key read that throws in step 5 gives memory mode with a fresh game', () => {
+    const s = new LogStorage();
+    const a = save();
+    const b = save();
+    const c = save();
+    seedGames(s, [a, b, c], a.id);
+    seed(s, { [saveKey(b.id)]: 'broken', [PLAN_RECORD]: PLAN });
+    const before = new Map(s.map);
+    s.getThrows = saveKey(c.id);
+    const { store } = make(s);
+    expect(s.map).toEqual(before);
+    expect(s.writes).toEqual([]);
+    expectFresh(store);
+  });
+
+  it('a read that throws in the step 4 rebuild after the corrupt copy was written puts it back', () => {
+    const s = new LogStorage();
+    const a = save();
+    seed(s, { [SAVES_KEY]: 'not json', [saveKey(a.id)]: JSON.stringify(a), [PLAN_RECORD]: PLAN });
+    const before = new Map(s.map);
+    s.getThrows = /^sfhousing:save:(?!corrupt:)/;
+    s.getThrowsFrom = 1;
+    const { store } = make(s);
+    expect(s.writes[0]).toBe('set ' + corrupt());
+    expect(s.writes.at(-1)).toBe('remove ' + corrupt());
+    expect(s.map).toEqual(before);
+    expectFresh(store);
   });
 
   it('a first getItem that throws gives memory mode', () => {
@@ -427,6 +473,20 @@ describe('GameStore.read', () => {
     expect(store.read(a.id)?.policy).toBe(POLICY);
   });
 
+  it("the current entry in saves carries its played time; the stored index the save's own", () => {
+    const s = new LogStorage();
+    const a = save({ savedAt: '2026-10-01T00:00:00.000Z' });
+    const b = save({ savedAt: '2026-11-15T00:00:00.000Z' });
+    seedGames(s, [a, b], a.id);
+    seed(s, { [PLAN_RECORD]: PLAN, [POLICY_RECORD]: POLICY });
+    s.map.set(saveKey(b.id), 'broken');
+    const { store } = make(s);
+    expect(store.saves).toEqual([{ ...entryOf(a), savedAt: '2026-12-01T00:00:00.000Z' }]);
+    expect(store.saves[0].savedAt).toBe(store.read(a.id)?.savedAt);
+    expect(stored(s, SAVES_KEY).saves).toEqual([entryOf(a)]);
+    expect(stored(s, saveKey(a.id)).savedAt).toBe('2026-10-01T00:00:00.000Z');
+  });
+
   it('played time ignores record text without a finite savedAt', () => {
     const s = new LogStorage();
     const a = save();
@@ -494,6 +554,9 @@ const earned = (on: number): Banked => ({
   at: '2026-10-01T00:00:00.000Z'
 });
 
+/** The current game's entry in `saves`: its played time (PLAN's, by default) as `savedAt`. */
+const playing = (e: SaveEntry, at = PLAN_TIME): SaveEntry => ({ ...e, savedAt: at });
+
 /** A valid progress at `level`, banked below it; `complete` banks level 5 too. */
 function progressAt(level: Level, complete = false): Progress {
   const banked: Progress['banked'] = {};
@@ -543,8 +606,9 @@ describe('GameStore.levelUp and the offer', () => {
     });
     expect(s.getItem(PLAN_RECORD)).toBe(PLAN);
     expect(s.getItem(POLICY_RECORD)).toBe(POLICY);
-    expect(store.saves).toEqual([{ ...entryOf(g), savedAt: NOW, level: progress.level }]);
-    expect(stored(s, SAVES_KEY)).toEqual({ v: 1, current: g.id, saves: store.saves });
+    const entry = { ...entryOf(g), savedAt: NOW, level: progress.level };
+    expect(store.saves).toEqual([playing(entry)]);
+    expect(stored(s, SAVES_KEY)).toEqual({ v: 1, current: g.id, saves: [entry] });
     expect(sync.calls).toEqual([{ kind: 'changed', id: g.id }]);
   }
 
@@ -561,7 +625,7 @@ describe('GameStore.levelUp and the offer', () => {
     const { s, store, sync } = over([g]);
     store.levelUp();
     expectUnchanged(s, store, sync, progressAt(3));
-    expect(store.saves).toEqual([entryOf(g)]);
+    expect(store.saves).toEqual([playing(entryOf(g))]);
   });
 
   it.each([null, 35000])('level 1 with on %s goes to level 2 banking nothing', (on) => {
@@ -646,7 +710,7 @@ describe('GameStore.levelUp and the offer', () => {
     store.levelUp();
     expect(s.map).toEqual(before);
     expect(store.progress).toEqual(progressAt(3));
-    expect(store.saves).toEqual([entryOf(g)]);
+    expect(store.saves).toEqual([playing(entryOf(g))]);
     expect(store.offer).toEqual(offer(35000));
     expect(sync.calls).toEqual([]);
   });
@@ -732,8 +796,9 @@ describe('GameStore.won and touched', () => {
       policy: POLICY,
       savedAt: NOW
     });
-    expect(store.saves).toEqual([{ ...entryOf(g), savedAt: NOW }]);
-    expect(stored(s, SAVES_KEY)).toEqual({ v: 1, current: g.id, saves: store.saves });
+    const entry = { ...entryOf(g), savedAt: NOW };
+    expect(store.saves).toEqual([playing(entry)]);
+    expect(stored(s, SAVES_KEY)).toEqual({ v: 1, current: g.id, saves: [entry] });
     expect(sync.calls).toEqual([{ kind: 'changed', id: g.id }]);
     store.won();
     expect(s.writes).toHaveLength(2);
@@ -1013,8 +1078,12 @@ describe('GameStore.rename', () => {
     const cut = { ...b, name: 'x'.repeat(59), nameIsDefault: false, savedAt: NOW };
     expect(s.writes).toEqual(['set ' + saveKey(b.id), 'set ' + SAVES_KEY]);
     expect(stored(s, saveKey(b.id))).toEqual(cut);
-    expect(store.saves).toEqual([entryOf(a), entryOf(cut)]);
-    expect(stored(s, SAVES_KEY)).toEqual({ v: 1, current: a.id, saves: store.saves });
+    expect(store.saves).toEqual([playing(entryOf(a)), entryOf(cut)]);
+    expect(stored(s, SAVES_KEY)).toEqual({
+      v: 1,
+      current: a.id,
+      saves: [entryOf(a), entryOf(cut)]
+    });
     expect(sync.calls).toEqual([{ kind: 'changed', id: b.id }]);
 
     store.rename(b.id, 'A');
@@ -1079,8 +1148,8 @@ describe('GameStore.remove', () => {
     expect(store.remove(b.id)).toEqual({ ok: true });
     expect(s.writes).toEqual(['remove ' + saveKey(b.id), 'set ' + SAVES_KEY]);
     expect(s.getItem(saveKey(b.id))).toBeNull();
-    expect(store.saves).toEqual([entryOf(a)]);
-    expect(stored(s, SAVES_KEY)).toEqual({ v: 1, current: a.id, saves: store.saves });
+    expect(store.saves).toEqual([playing(entryOf(a))]);
+    expect(stored(s, SAVES_KEY)).toEqual({ v: 1, current: a.id, saves: [entryOf(a)] });
     expect(store.currentId).toBe(a.id);
     expect(s.getItem(PLAN_RECORD)).toBe(PLAN);
     expect(sync.calls).toEqual([{ kind: 'removed', id: b.id }]);
@@ -1191,8 +1260,12 @@ describe('GameStore.adopt and rekey', () => {
     expect(stored(s, saveKey(c.id))).toEqual(c);
     expect(stored(s, saveKey(b.id))).toEqual(b2);
     expect(s.getItem(saveKey('not-an-id'))).toBeNull();
-    expect(store.saves).toEqual([entryOf(a), entryOf(b2), entryOf(c)]);
-    expect(stored(s, SAVES_KEY)).toEqual({ v: 1, current: a.id, saves: store.saves });
+    expect(store.saves).toEqual([playing(entryOf(a)), entryOf(b2), entryOf(c)]);
+    expect(stored(s, SAVES_KEY)).toEqual({
+      v: 1,
+      current: a.id,
+      saves: [entryOf(a), entryOf(b2), entryOf(c)]
+    });
     expect(store.currentId).toBe(a.id);
     expect(store.progress).toEqual(a.progress);
     expect(s.getItem(PLAN_RECORD)).toBe(PLAN);
@@ -1254,7 +1327,11 @@ describe('GameStore.adopt and rekey', () => {
     expect(stored(s, saveKey(n))).toEqual({ ...b, id: n });
     expect(s.getItem(saveKey(b.id))).toBeNull();
     expect(store.saves.map((e) => e.id)).toEqual([a.id, n, c.id]);
-    expect(stored(s, SAVES_KEY)).toEqual({ v: 1, current: a.id, saves: store.saves });
+    expect(stored(s, SAVES_KEY)).toEqual({
+      v: 1,
+      current: a.id,
+      saves: [entryOf(a), { ...entryOf(b), id: n }, entryOf(c)]
+    });
     expect(store.currentId).toBe(a.id);
     expect(sync.calls).toEqual([]);
   });

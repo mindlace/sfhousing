@@ -49,18 +49,22 @@ const REFUSED: StoreChange = Object.freeze({ ok: false, reason: 'storage' });
 
 /**
  * Applies `ops` in order (null is `removeItem`). On a throw it puts back every key it had
- * already written, ignoring throws while it does, and returns false.
+ * already written, ignoring throws while it does, and answers whether a read (the old value
+ * of a key) or a write threw.
  */
-function writeAll(storage: Storage, ops: readonly Write[]): boolean {
+function writeAll(storage: Storage, ops: readonly Write[]): 'ok' | 'read' | 'write' {
   const done: (readonly [string, string | null])[] = [];
+  let failed: 'read' | 'write' = 'read';
   try {
     for (const [key, value] of ops) {
+      failed = 'read';
       const old = storage.getItem(key);
+      failed = 'write';
       if (value === null) storage.removeItem(key);
       else storage.setItem(key, value);
       done.push([key, old]);
     }
-    return true;
+    return 'ok';
   } catch {
     for (const [key, old] of done.reverse()) {
       try {
@@ -70,7 +74,7 @@ function writeAll(storage: Storage, ops: readonly Write[]): boolean {
         // Putting back is best effort.
       }
     }
-    return false;
+    return failed;
   }
 }
 
@@ -295,31 +299,42 @@ export class GameStore {
     const ops: Write[] = [];
     try {
       const indexText = storage.getItem(SAVES_KEY);
+      let changed = true;
       if (indexText === null) {
         const first = this.#fromRecords(storage, []);
         games = [first];
         current = first.id;
         ops.push([saveKey(first.id), JSON.stringify(first)]);
-        ops.push([SAVES_KEY, this.#indexText(games, current, first)]);
       } else {
-        ({ games, current } = this.#recover(storage, indexText, ops));
+        ({ games, current, changed } = this.#recover(storage, indexText, ops));
       }
+      const recs = { plan: storage.getItem(PLAN_RECORD), policy: storage.getItem(POLICY_RECORD) };
+      if (changed) ops.push([SAVES_KEY, this.#indexText(games, current, recs)]);
     } catch {
-      // A read after the first one threw: storage cannot be trusted.
+      // A read threw before anything was written: storage cannot be trusted.
+      this.#memoryGame(null, structuredClone(NEW_GAME));
+      return;
+    }
+    const wrote = ops.length === 0 ? 'ok' : writeAll(storage, ops);
+    if (wrote === 'read') {
+      // A read threw after construction wrote, and writeAll put storage back (step 1).
       this.#memoryGame(null, structuredClone(NEW_GAME));
       return;
     }
     this.#records = storage;
-    this.#storage = ops.length === 0 || writeAll(storage, ops) ? storage : null;
+    this.#storage = wrote === 'ok' ? storage : null;
     this.#settle(games, current);
   }
 
-  /** Steps 4 to 7: the games an index (valid or not) leads to, and the writes they need. */
+  /**
+   * Steps 4 to 6: the games an index (valid or not) leads to, the writes they need before the
+   * index, and whether the index needs rewriting (step 7).
+   */
   #recover(
     storage: Storage,
     indexText: string,
     ops: Write[]
-  ): { games: GameSave[]; current: string } {
+  ): { games: GameSave[]; current: string; changed: boolean } {
     const at = this.#now();
     const pending = new Set<string>(); // eslint-disable-line svelte/prefer-svelte-reactivity
     const moveAside = (key: string, raw: string): void => {
@@ -377,28 +392,35 @@ export class GameStore {
       ops.push([saveKey(made.id), JSON.stringify(made)]);
       changed = true;
     }
-    if (changed) {
-      const now = games.find((g) => g.id === current) as GameSave;
-      ops.push([SAVES_KEY, this.#indexText(games, current, recordsOf(storage, now))]);
-    }
-    return { games, current };
+    return { games, current, changed };
   }
 
-  /** The index text; `recs` is what the two record keys hold once the writes are done. */
+  /**
+   * The index text, in `saves` order, each entry with its save's own `savedAt`. `recs` is what
+   * the two record keys hold once the writes are done.
+   */
   #indexText(games: readonly GameSave[], current: string, recs: Records): string {
-    return JSON.stringify({ v: 1, current, saves: this.#ordered(games, current, recs) });
+    const saves = this.#ordered(games, current, recs).map((e) => entryOf(e.save));
+    return JSON.stringify({ v: 1, current, saves });
   }
 
-  /** One entry per game: latest first, the current game by played time with `recs`, ties by id. */
-  #ordered(games: readonly GameSave[], current: string, recs: Records): SaveEntry[] {
+  /**
+   * One entry per game, latest first, ties by id. The current game's entry carries its played
+   * time with `recs` as `savedAt`; every other entry its save's `savedAt`.
+   */
+  #ordered(
+    games: readonly GameSave[],
+    current: string,
+    recs: Records
+  ): { save: GameSave; entry: SaveEntry }[] {
     const keyed = games.map((g) => {
-      const when = g.id === current ? playedTime(g, recs.plan, recs.policy) : g.savedAt;
-      return { entry: entryOf(g), t: Date.parse(when) };
+      const savedAt = g.id === current ? playedTime(g, recs.plan, recs.policy) : g.savedAt;
+      return { save: g, entry: { ...entryOf(g), savedAt }, t: Date.parse(savedAt) };
     });
     keyed.sort((a, b) =>
       a.t !== b.t ? b.t - a.t : a.entry.id < b.entry.id ? -1 : a.entry.id > b.entry.id ? 1 : 0
     );
-    return keyed.map((k) => k.entry);
+    return keyed;
   }
 
   /** Puts `games` in memory with `current` as the current game, and recomputes the reactive state. */
@@ -407,7 +429,7 @@ export class GameStore {
     this.#currentId = current;
     const now = this.#games.get(current) as GameSave;
     this.#progress = now.progress;
-    this.#saves = this.#ordered(games, current, recordsOf(this.#records, now));
+    this.#saves = this.#ordered(games, current, recordsOf(this.#records, now)).map((k) => k.entry);
   }
 
   #current(): GameSave {
@@ -436,7 +458,7 @@ export class GameStore {
     current: string,
     calls: readonly Call[]
   ): boolean {
-    if (this.#storage !== null && !writeAll(this.#storage, ops)) return false;
+    if (this.#storage !== null && writeAll(this.#storage, ops) !== 'ok') return false;
     this.#settle(games, current);
     for (const [kind, id] of calls) {
       if (kind === 'changed') this.#sync.changed(id);
