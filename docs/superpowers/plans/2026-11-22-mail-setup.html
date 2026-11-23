@@ -1,0 +1,113 @@
+<article>
+  <header>
+    <h1>Mail setup plan</h1>
+    <p>Runs the mail-setup runbook (SES identity, DNS, IAM, secrets, proof mails) and writes the mail section of <code>docs/dev/deploy.md</code>.</p>
+    <aside data-kind="note"><strong>For agentic workers</strong> REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps are checklist items; progress is kept in the workspace ledger, not in the plan.</aside>
+  </header>
+
+  <section id="sec-overview">
+    <h2>Overview</h2>
+    <ul>
+      <li><strong>Goal:</strong> sign-in mail from <code>sfhousing.mindlace.net</code> deliverable through Amazon SES on staging and production, proved by one real mail each, and documented.</li>
+      <li><strong>Architecture:</strong> no application code. Tasks 1 to 4 are outward-facing runbook steps that the operator runs itself, in the foreground, exactly as the spec's numbered subsections write them: they handle secrets and the owner's test address, which never pass to a subagent. Task 5 is the one repository change, <code>docs/dev/deploy.md</code>, implemented and reviewed through subagent-driven development.</li>
+      <li><strong>Tech stack:</strong> <code>aws</code> CLI (sesv2, iam, sts), <code>npx wrangler secret</code>, <code>dig</code>, <code>curl</code>, Markdown + Prettier.</li>
+      <li><strong>Spec:</strong> <code>docs/superpowers/specs/2026-11-22-mail-setup-design.html</code>, read from the package worktree <code>/Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game</code>.</li>
+    </ul>
+  </section>
+
+  <section id="sec-global-constraints">
+    <h2>Global constraints</h2>
+    <p>Interface rows: this unit needs none and produces none.</p>
+    <p>From the spec's Rules for the operator (verbatim):</p>
+    <ul>
+      <li>Every command runs from the unit's worktree, in the foreground.</li>
+      <li>No secret value is ever printed, logged, written to a file, put in a commit or put in the handback. The access key is passed from <code>aws</code> to <code>wrangler</code> inside one shell command.</li>
+      <li>The AWS account id is never printed whole. Commands that need it read it into a shell variable in the same command.</li>
+      <li>The test address is never written to a file, a commit, a doc or the handback. The handback says "an address the owner named".</li>
+      <li>No SES identity, IAM user, key or DNS record other than those named here is created, changed or deleted. The <code>planafoot</code> user, its policy and its keys are never touched.</li>
+      <li>Secrets go on an environment only after the identity reads verified, because SES refuses mail from an identity that is not verified.</li>
+      <li>The DNS step is the one wait.</li>
+    </ul>
+    <p>From the design's global constraints (verbatim, those that apply):</p>
+    <ul>
+      <li>Work happens in git worktrees under <code>.claude/worktrees/</code>. Commits follow Conventional Commits. No attribution to an AI anywhere.</li>
+      <li>Code style: 2-space indent, single quotes, no trailing commas, 100 columns.</li>
+      <li>Signoff fails on server stderr, on timing crutches and on a retried flake. Each unit runs <code>npm run lint</code>, <code>npm run check</code> and the Vitest projects its files belong to before it hands back.</li>
+      <li>No unit runs <code>npm run signoff</code>: its dataset step fails until the dataset is uploaded. <code>closing</code> runs it once, after the upload.</li>
+      <li>Page text is short. No sentence says what something is not.</li>
+    </ul>
+  </section>
+
+  <section id="sec-review-focus">
+    <h2>Review focus</h2>
+    <ul>
+      <li>A key id, secret, account id or the test address leaking into the diff or a doc example: Task 5's review greps the diff for <code>AKIA</code>, 12-digit numbers and <code>@</code> addresses other than <code>noreply@sfhousing.mindlace.net</code>.</li>
+      <li>A doc command that runs against the wrong environment: every block in Sign-in mail starts with the environment prelude, and production carries no <code>--env</code>.</li>
+      <li>The <code>deploy.md</code> edit straying outside the mail section's boundary (the takedown section and the other Worker bullets belong to <code>closing</code>).</li>
+      <li>DKIM CNAMEs added proxied: the doc states the "DNS only" rule beside the table.</li>
+      <li>A rotation leaving two keys: the doc's rotation keeps the three steps, ending in the delete.</li>
+    </ul>
+  </section>
+
+  <section id="sec-task-1">
+    <h2>Task 1: SES identity, DNS records, verification</h2>
+    <p>Operator-run. Spec §sec-design-identity, §sec-design-dns, §sec-design-wait, §sec-design-relay.</p>
+    <ol>
+      <li id="t1-s1"><input type="checkbox"> Create the identity with Easy DKIM 2048 and keep the three tokens (spec step 1, first block).</li>
+      <li id="t1-s2"><input type="checkbox"> Set MAIL FROM <code>mail.sfhousing.mindlace.net</code> with <code>USE_DEFAULT_VALUE</code> (spec step 1, second block).</li>
+      <li id="t1-s3"><input type="checkbox"> Hand back partial, "waiting on owner: DNS records and a test address", as a question file holding the six records with the tokens filled in.</li>
+      <li id="t1-s4"><input type="checkbox"> On the owner's answer, check each record with <code>dig</code> against the table (spec step 3); a wrong record goes back alone.</li>
+      <li id="t1-s5"><input type="checkbox"> Read the identity state; go on only at sending <code>true</code> and identity, DKIM, MAIL FROM <code>SUCCESS</code>. <code>PENDING</code> hands back "waiting on SES verification"; <code>FAILED</code> stops and is reported.</li>
+    </ol>
+  </section>
+
+  <section id="sec-task-2">
+    <h2>Task 2: The sending users</h2>
+    <p>Operator-run. Spec §sec-design-env, §sec-design-iam.</p>
+    <ol>
+      <li id="t2-s1"><input type="checkbox"> With <code>E=staging</code>, run the prelude and the step 4 block; the last line printed is <code>allowed</code> then <code>implicitDeny</code>.</li>
+      <li id="t2-s2"><input type="checkbox"> The same with <code>E=production</code>.</li>
+    </ol>
+  </section>
+
+  <section id="sec-task-3">
+    <h2>Task 3: Staging key, secrets and proof mail</h2>
+    <p>Operator-run. Spec §sec-design-staging, §sec-design-proof, §sec-design-rollback.</p>
+    <ol>
+      <li id="t3-s1"><input type="checkbox"> With <code>E=staging</code>, run the step 5 block; <code>npx wrangler secret list --env staging</code> lists <code>BETTER_AUTH_SECRET</code>, <code>SES_ACCESS_KEY_ID</code>, <code>SES_SECRET_ACCESS_KEY</code>.</li>
+      <li id="t3-s2"><input type="checkbox"> <code>/signin</code> on the staging host contains <code>sendLink</code> at least once.</li>
+      <li id="t3-s3"><input type="checkbox"> POST <code>sendLink</code> with the owner's address; the answer is JSON with <code>"type":"success"</code>. A 500 is read under the bounded tail; an unfixable one runs Rollback for staging and is reported.</li>
+    </ol>
+  </section>
+
+  <section id="sec-task-4">
+    <h2>Task 4: Production key, secrets and proof mail</h2>
+    <p>Operator-run, only after Task 3's POST answered <code>success</code>. Same steps as Task 3 with <code>E=production</code> (no <code>--env</code>).</p>
+    <ol>
+      <li id="t4-s1"><input type="checkbox"> Step 5 block; <code>npx wrangler secret list</code> lists the three names.</li>
+      <li id="t4-s2"><input type="checkbox"> <code>/signin</code> on <code>sfhousing.mindlace.net</code> contains <code>sendLink</code>.</li>
+      <li id="t4-s3"><input type="checkbox"> POST <code>sendLink</code>; <code>"type":"success"</code>.</li>
+      <li id="t4-s4"><input type="checkbox"> Step 7 checks: each user's <code>list-access-keys</code> prints exactly one <code>Active</code>; <code>SES_FROM</code> in <code>wrangler.jsonc</code> unchanged.</li>
+    </ol>
+  </section>
+
+  <section id="sec-task-5">
+    <h2>Task 5: The mail section of deploy.md</h2>
+    <p>Implementer task. Spec §sec-docs (all three subsections) and §sec-write-set for the boundary. Dates under Done are the days Tasks 1 to 4 finished, which the operator puts in the brief.</p>
+    <ul>
+      <li>Modify: <code>docs/dev/deploy.md</code> only: the "Already set" line (<code>:53</code>), the <code>GOOGLE_CLIENT_ID</code> bullet (<code>:59</code>) and the <code>SES_ACCESS_KEY_ID</code> bullet (<code>:60</code>) of <code>### Worker (set in Cloudflare)</code>; a new <code>## Sign-in mail</code> after <code>## Secrets and variables</code> and before <code>## Operator takedown of a sim</code>; the mail and Google items of <code>## One-time bootstrap</code>.</li>
+      <li>Interfaces: none consumed or produced.</li>
+    </ul>
+    <ol>
+      <li id="t5-s1"><input type="checkbox"> Rewrite the three Worker lines as §sec-docs-worker states them. The SES bullet links <code>auth.md</code>'s Mail section and names no page, sim or invitation.</li>
+      <li id="t5-s2"><input type="checkbox"> Write <code>## Sign-in mail</code> with every item of §sec-docs-mail, in that order: the DNS table as a Markdown table with <code>&lt;token&gt;</code> placeholders, the policy JSON with <code>&lt;account&gt;</code>, the health-check query, the prelude, the rotation block and its three steps, Rollback per environment, removing everything, and the Google console steps with the four <code>wrangler secret put</code> commands and both redirect URIs.</li>
+      <li id="t5-s3"><input type="checkbox"> Add the two Done items (dated) and the two Remaining items of §sec-docs-bootstrap.</li>
+      <li id="t5-s4"><input type="checkbox"> Run <code>npx prettier --write docs/dev/deploy.md</code>, then <code>npm run lint</code>; it passes.</li>
+      <li id="t5-s5"><input type="checkbox"> <code>git diff</code> holds no key id (<code>AKIA</code>), no 12-digit account id and no address but <code>noreply@sfhousing.mindlace.net</code>.</li>
+      <li id="t5-s6"><input type="checkbox"> Commit
+        <pre><code data-lang="sh">git add docs/dev/deploy.md
+git commit -m "docs(deploy): sign-in mail through SES and the Google client step"</code></pre>
+      </li>
+    </ol>
+  </section>
+</article>

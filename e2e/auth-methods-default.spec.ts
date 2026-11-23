@@ -15,7 +15,7 @@ async function gotoSignin(page: Page): Promise<void> {
 test('/signin renders no password, passkey or Google control by default', async ({ page }) => {
   await gotoSignin(page);
   await expect(page.getByRole('button', { name: AUTH_COPY.emailMeLink })).toBeVisible();
-  await expect(page.getByRole('button', { name: AUTH_COPY.startFresh })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Start fresh without an account' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: AUTH_COPY.usePassword })).toHaveCount(0);
   await expect(page.getByLabel(AUTH_COPY.passwordLabel)).toHaveCount(0);
   await expect(page.getByRole('button', { name: AUTH_COPY.passkeyButton })).toHaveCount(0);

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { SIMS_COPY } from '$lib/members/copy';
+import { AUTH_COPY } from '$lib/account/copy';
 import { POST } from './+server';
 
 vi.mock('$lib/server/email/validate', () => ({ isValidEmail: (e: string) => e.includes('@') }));
@@ -166,7 +166,7 @@ describe('POST /api/account/email/verify', () => {
       evt({ email: 'a@b.com' }, undefined, platform, { 'content-type': 'text/plain' })
     );
     expect(res.status).toBe(415);
-    expect(await res.json()).toEqual({ error: SIMS_COPY.jsonRequired });
+    expect(await res.json()).toEqual({ error: AUTH_COPY.jsonRequired });
     expect(signInMagicLink).not.toHaveBeenCalled();
   });
 

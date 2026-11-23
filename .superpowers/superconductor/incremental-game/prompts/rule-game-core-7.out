@@ -1,0 +1,9 @@
+I ruled for option 1: in the store's live `saves` list, the current game's entry now carries its played time as `savedAt`, which is the value `read(current)` already returns. Every other entry keeps its own save's `savedAt`. The stored index under `sfhousing:saves:v1` still keeps each save's own value, and the list's order is unchanged.
+
+One correction to the question: the level panel's current row reads "Level N · Playing" and never calls `playedText`. So the "2 hours ago" example can't actually show up in the panel. The ruling only makes the live list agree with `read(current)` and with the time the game is saved with when you switch away from it.
+
+The only change is one passage in the game-core spec (§ sec-design-store-read), committed as `47e545f5`. No interface row or contracts code changed, so game-core is a clarification only. Its next task needs one line changed in how the store builds `saves`, plus one assertion in `store.svelte.spec.ts`.
+
+I skipped the optional Jev citation check: this fork has no Skill tool to load the plugin. I checked the question's claims against the spec on disk instead.
+
+Ruling file: /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game/.superpowers/superconductor/incremental-game/rulings/game-core-7.md
