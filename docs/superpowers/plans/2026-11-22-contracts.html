@@ -1,0 +1,1032 @@
+<article>
+  <header>
+    <h1>Contracts implementation plan</h1>
+    <p>The incremental game's interface rows as code: types and throwing stubs, the save sync and component stubs, the measure-dating stub, the e2e seam with its helpers, and the doc index.</p>
+    <aside data-kind="note"><strong>For agentic workers</strong> REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps are checklist items; progress is kept in the workspace ledger, not in the plan.</aside>
+  </header>
+
+  <section id="sec-overview">
+    <h2>Overview</h2>
+    <p><strong>Goal:</strong> Land every shape the later units of the incremental game build against (rows G1 to G5, S1 to S3, M1 and X1), so they can be written in parallel, while the application and every existing suite run unchanged.</p>
+    <p><strong>Architecture:</strong> Pure type modules in <code>src/lib/game/</code> whose functions throw <code>Error('not implemented')</code>, linked only by <code>import type</code>; a throwing <code>GameStore</code>, a working do-nothing <code>createSaveSync</code> and three components that render nothing; a <code>dateMeasure</code> stub that returns its policy. The e2e seam (<code>src/lib/game/e2e.ts</code>, no imports) and its Playwright helpers (<code>e2e/helpers/game.ts</code>) are implemented in full. No app module imports <code>src/lib/game/</code> in this unit.</p>
+    <p><strong>Tech Stack:</strong> TypeScript, Svelte 5 (runes), Vitest 4 (projects <code>server</code> and <code>client</code>, <code>vite.config.ts:57</code>, <code>vite.config.client-test.ts:49</code>), <code>vitest-browser-svelte</code> 3 for component rendering, Playwright 1.62 (projects <code>chromium</code> and <code>mobile</code>, <code>playwright.config.ts:30-31</code>; the web server builds with <code>VITE_E2E=1</code>, <code>playwright.config.ts:51</code>).</p>
+    <p><strong>Spec:</strong> <a href="../specs/2026-11-22-contracts-design.html">docs/superpowers/specs/2026-11-22-contracts-design.html</a>. This plan implements its sections <code>sec-design-files</code>, <code>sec-design-imports</code>, <code>sec-design-stubs</code>, <code>sec-design-x1</code>, <code>sec-design-green</code>, <code>sec-design-links</code>, <code>sec-tests</code> and <code>sec-docs</code>.</p>
+    <aside data-kind="note"><strong>Setup</strong> The operator prepares the worktree before Task 1 dispatches: <code>npm install</code>, <code>.dev.vars</code> holding <code>PUBLIC_DATASET_VERSION=fixture-0</code>, <code>npm run data:fixture</code>, <code>npm run db:migrate</code>, <code>npx playwright install chromium</code>. No task repeats them.</aside>
+
+    <section id="sec-overview-files">
+      <h3>File structure</h3>
+      <table id="tbl-files">
+        <caption>Files by task</caption>
+        <thead>
+          <tr><th scope="col">Task</th><th scope="col">File</th><th scope="col">Responsibility</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">1</th><td><code>src/lib/game/levels.ts</code></td><td>G1: levels, results, bars</td></tr>
+          <tr><th scope="row">1</th><td><code>src/lib/game/progress.ts</code></td><td>G2: progress and banking</td></tr>
+          <tr><th scope="row">1</th><td><code>src/lib/game/saves.ts</code></td><td>G2: saved games, storage keys, default names</td></tr>
+          <tr><th scope="row">1</th><td><code>src/lib/game/allowed.ts</code></td><td>G3: what a level allows</td></tr>
+          <tr><th scope="row">1</th><td><code>src/lib/game/standing.ts</code></td><td>G4: the standing</td></tr>
+          <tr><th scope="row">1</th><td><code>src/lib/game/copy.ts</code></td><td>G5: the game's words</td></tr>
+          <tr><th scope="row">1</th><td><code>src/lib/game/save-api.ts</code></td><td>S1: the saved-games API types</td></tr>
+          <tr><th scope="row">1</th><td><code>src/lib/sim-page/funding-presets.ts</code> (modify)</td><td>M1: <code>dateMeasure</code> stub</td></tr>
+          <tr><th scope="row">1</th><td><code>src/lib/game/contracts.spec.ts</code></td><td>Constants and throwing pure functions (server)</td></tr>
+          <tr><th scope="row">2</th><td><code>src/lib/game/store.svelte.ts</code></td><td>G2: <code>GameStore</code>, <code>openGame</code>, <code>provideGame</code>, <code>useGame</code></td></tr>
+          <tr><th scope="row">2</th><td><code>src/lib/game/save-sync.svelte.ts</code></td><td>S2: <code>SaveSync</code> and its do-nothing <code>createSaveSync</code></td></tr>
+          <tr><th scope="row">2</th><td><code>src/lib/game/WinCard.svelte</code>, <code>LevelPanel.svelte</code>, <code>AccountOffer.svelte</code></td><td>G5, S3: components that render nothing</td></tr>
+          <tr><th scope="row">2</th><td><code>src/lib/game/contracts.svelte.spec.ts</code>, <code>save-sync.svelte.spec.ts</code>, <code>AccountOffer.svelte.spec.ts</code></td><td>Store, sync and component stubs (client)</td></tr>
+          <tr><th scope="row">3</th><td><code>src/lib/game/e2e.ts</code>, <code>src/lib/game/e2e.spec.ts</code></td><td>X1: the seam, in full (server test)</td></tr>
+          <tr><th scope="row">3</th><td><code>e2e/helpers/game.ts</code>, <code>e2e/game-helpers.spec.ts</code></td><td>X1: <code>seedGame</code>, <code>newVisitor</code>, <code>seedGoalAmount</code>, <code>SEED_BAR_DAY</code></td></tr>
+          <tr><th scope="row">3</th><td><code>docs/dev/game.md</code>, <code>docs/dev/game-save.md</code>, <code>CLAUDE.md</code> (doc list); five docs deleted</td><td>The doc index</td></tr>
+        </tbody>
+      </table>
+      <p>One serial lane: Task 2 imports types from Task 1, and Task 3 appends to Task 1's spec. No Task 1 file imports a Task 2 or Task 3 file: <code>save-api.ts</code> imports only <code>saves.ts</code>, and <code>Allowed</code>/<code>SaveSync</code> are needed only by <code>store.svelte.ts</code>.</p>
+    </section>
+  </section>
+
+  <section id="sec-global-constraints">
+    <h2>Global Constraints</h2>
+    <p>Every task's requirements include this section. The interface rows and their sections are copied verbatim from the spec (ids prefixed <code>gc-</code>, table links pointed at the copies).</p>
+
+    <table id="gc-tbl-interfaces">
+      <caption>Interface table</caption>
+      <thead>
+        <tr><th scope="col">Row</th><th scope="col">Owner</th><th scope="col">Layer</th><th scope="col">Summary</th><th scope="col">Contract</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">G1</th><td><code>game-core</code></td><td>Model commitment</td><td>Levels, results, and what beats what.</td><td><a href="#gc-sec-if-g1">G1</a></td></tr>
+        <tr><th scope="row">G2</th><td><code>game-core</code></td><td>Model commitment</td><td>Progress, saved games, banking, the store.</td><td><a href="#gc-sec-if-g2">G2</a></td></tr>
+        <tr><th scope="row">G3</th><td><code>game-core</code></td><td>Model commitment</td><td>What a level allows; the playable document.</td><td><a href="#gc-sec-if-g3">G3</a></td></tr>
+        <tr><th scope="row">G4</th><td><code>game-core</code></td><td>Decomposition choice</td><td>The seen result and the player's standing.</td><td><a href="#gc-sec-if-g4">G4</a></td></tr>
+        <tr><th scope="row">G5</th><td><code>game-core</code></td><td>Decomposition choice</td><td>The win card and the level panel with its saved games.</td><td><a href="#gc-sec-if-g5">G5</a></td></tr>
+        <tr><th scope="row">S1</th><td><code>game-save</code></td><td>Model commitment</td><td>The saved-games API and table; every save kept.</td><td><a href="#gc-sec-if-s1">S1</a></td></tr>
+        <tr><th scope="row">S2</th><td><code>game-save</code></td><td>Decomposition choice</td><td>The browser's save sync the store calls.</td><td><a href="#gc-sec-if-s2">S2</a></td></tr>
+        <tr><th scope="row">S3</th><td><code>game-save</code></td><td>Decomposition choice</td><td>The account offer the win card renders.</td><td><a href="#gc-sec-if-s3">S3</a></td></tr>
+        <tr><th scope="row">M1</th><td><code>funding-measures</code></td><td>Decomposition choice</td><td>A given measure's money follows its policy's start.</td><td><a href="#gc-sec-if-m1">M1</a></td></tr>
+        <tr><th scope="row">X1</th><td><code>contracts</code></td><td>Decomposition choice</td><td>The e2e seam: open by default, a seeded level, a goal amount.</td><td><a href="#gc-sec-if-x1">X1</a></td></tr>
+      </tbody>
+    </table>
+
+    <section id="gc-sec-if-g1">
+      <h3>G1 Levels and results</h3>
+      <pre><code data-lang="ts">// src/lib/game/levels.ts
+import type { Day } from '$lib/timelapse/time';
+
+import type { GoalOutcome } from '$lib/timeline/outcome';
+
+export type Level = 1 | 2 | 3 | 4 | 5;
+export const LAST_LEVEL: Level = 5;
+
+/** What the months reached so far show: `{ kind: 'reached'; on }` or `{ kind: 'missed'; short }`. */
+export type Result = GoalOutcome;
+
+/** The result to beat: the day a banked result reached the goal. */
+export interface Bar {
+  on: Day;
+}
+
+export function beats(seen: Result, bar: Bar): boolean;
+
+/** Paint is won: capacity is at least the goal's amount. */
+export function paintWon(net: number, amount: number): boolean;</code></pre>
+      <dl>
+        <dt><code>reached.on</code></dt><dd>The first day of the calendar month in which the goal's amount is first met, as <code>readGoal</code> gives it.</dd>
+      </dl>
+      <ul>
+        <li><code>beats(seen, bar)</code> is true when <code>seen</code> reached the goal and <code>seen.on</code> is in an earlier calendar month than <code>bar.on</code>.</li>
+        <li>It is false in every other case: a tie never beats, and a missed result never beats.</li>
+        <li><code>paintWon(net, amount)</code> is <code>net &gt;= amount</code>.</li>
+        <li>Only a reached result is ever banked, so a bar is always a date.</li>
+      </ul>
+    </section>
+
+    <section id="gc-sec-if-g2">
+      <h3>G2 Progress, saved games and the store</h3>
+      <pre><code data-lang="ts">// src/lib/game/progress.ts
+export interface Banked {
+  /** The day the banked result reached the goal. */
+  on: Day;
+  /** The dataset the result was earned on. */
+  datasetVersion: string;
+  /** ISO time of the level up. */
+  at: string;
+}
+
+export interface Progress {
+  v: 1;
+  level: Level;
+  /** banked[n] is the result banked on leaving level n. */
+  banked: Partial&lt;Record&lt;2 | 3 | 4 | 5, Banked&gt;&gt;;
+  /** ISO time the player first won anything; null until then. */
+  firstWinAt: string | null;
+}
+
+export const NEW_GAME: Progress;
+
+/** The bar at the progress's level; null at levels 1 and 2. */
+export function barOf(p: Progress): Bar | null;
+/** Level 5 has been won and banked. */
+export function roundComplete(p: Progress): boolean;
+export function levelUp(p: Progress, banked: Banked | null): Progress;
+
+// src/lib/game/saves.ts
+export interface GameSave {
+  v: 1;
+  /** `newId()` of `$lib/ids/base58`. */
+  id: string;
+  name: string;
+  /** True until the player types a name. */
+  nameIsDefault: boolean;
+  progress: Progress;
+  /** The plan record's text as `sfhousing:plan:v1` holds it, or null. */
+  plan: string | null;
+  /** The policy record's text as `sfhousing:sim:v2` holds it, or null. */
+  policy: string | null;
+  /** ISO time of the last change. */
+  savedAt: string;
+}
+
+/** What the list shows of a saved game. */
+export type SaveEntry = Pick&lt;GameSave, 'id' | 'name' | 'nameIsDefault' | 'savedAt'&gt; &amp; { level: Level };
+
+export const SAVES_KEY = 'sfhousing:saves:v1';
+export const saveKey = (id: string): string =&gt; `sfhousing:save:${id}`;
+export const MAX_SAVES = 12;
+export const SAVE_NAME_MAX = 60;
+
+export function parseGameSave(json: unknown): GameSave | null;
+export function defaultSaveName(
+  from: { kind: 'new'; at: Date } | { kind: 'remix'; title: string } | { kind: 'conflict'; name: string },
+  taken: readonly string[]
+): string;
+
+// src/lib/game/store.svelte.ts
+export type StoreChange = { ok: true } | { ok: false; reason: 'full' | 'storage' };
+
+/** The win on screen that "Level up" would bank. */
+export interface Offer {
+  /** The day the seen result reached the goal; null for Paint's win. */
+  on: Day | null;
+  /** The dataset the result was seen on. */
+  datasetVersion: string;
+}
+
+export class GameStore {
+  constructor(opts: { storage: Storage | null; sync: SaveSync; now?: () =&gt; Date });
+  /** Reactive: the current game's progress. */
+  readonly progress: Progress;
+  /** Reactive: what the current game may use (G3). */
+  readonly allowed: Allowed;
+  /** True only for `openGame()`: every control and no game parts. */
+  readonly open: boolean;
+  /** Reactive: every saved game, most recently changed first. */
+  readonly saves: readonly SaveEntry[];
+  /** Reactive. */
+  readonly currentId: string;
+  /** Reactive: the win "Level up" would bank now; null when there is none. */
+  readonly offer: Offer | null;
+  /** The save sync given at construction. */
+  readonly sync: SaveSync;
+  /** A win was seen. Sets `firstWinAt` the first time; later calls change nothing. */
+  won(): void;
+  /** The page sets the offer while its seen result wins the level, and clears it with null. */
+  setOffer(offer: Offer | null): void;
+  /** Banks the offer and raises the level. Does nothing while `offer` is null. */
+  levelUp(): void;
+  /** The page's autosave wrote the current game's plan or policy record. */
+  touched(): void;
+  newGame(): StoreChange;
+  switchTo(id: string): StoreChange;
+  remix(doc: { kind: 'plan' | 'sim'; record: string; title: string }): StoreChange;
+  rename(id: string, name: string): void;
+  remove(id: string): StoreChange;
+  /** The saved game as stored now; the current one with the plan and policy records as they are. */
+  read(id: string): GameSave | null;
+  /** Store saved games that came from the account. */
+  adopt(saves: readonly GameSave[]): StoreChange;
+  /** Give the saved game `id` the id `newId`, keeping everything else about it. */
+  rekey(id: string, newId: string): StoreChange;
+}
+/** A store with `open` true: one game at level 5, nothing banked, no storage, `allowed` equal to `ALL_ALLOWED`. */
+export function openGame(): GameStore;
+export function provideGame(store: GameStore): void;
+export function useGame(): GameStore;</code></pre>
+      <dl>
+        <dt><code>SAVES_KEY</code></dt><dd>Holds <code>{ v: 1, current: string, saves: SaveEntry[] }</code>.</dd>
+        <dt><code>saveKey(id)</code></dt><dd>Holds one <code>GameSave</code>. For the current game its <code>plan</code> and <code>policy</code> are stale: the records under <code>sfhousing:plan:v1</code> and <code>sfhousing:sim:v2</code> are the truth.</dd>
+      </dl>
+      <ul>
+        <li><code>barOf</code> is <code>{ on: banked[level - 1].on }</code> at levels 3 to 5.</li>
+        <li><code>levelUp</code> from level 1 takes <code>null</code> and banks nothing.</li>
+        <li><code>levelUp</code> from levels 2 to 4 stores the day under the level being left and adds one to the level.</li>
+        <li><code>levelUp</code> at level 5 stores <code>banked[5]</code> and keeps the level at 5.</li>
+        <li>The page calls <code>won()</code> when a win card first shows.</li>
+        <li><code>allowed</code> is <code>allowedAt(progress.level)</code>.</li>
+        <li>While <code>open</code> is true no page shows a game part: no level cell, no win card, no bar or "To beat" flag, no locked lane, no reworded outcome message, no Remix button, and no offer is set. The pages read <code>open</code>; they never compare <code>allowed</code> with <code>ALL_ALLOWED</code>.</li>
+        <li>The page calls <code>setOffer</code> with the win while its seen result wins the level, and with null on any edit and when it unmounts. The offer is kept in memory only.</li>
+        <li>The store's <code>levelUp()</code> banks the offer with the pure <code>levelUp</code>, clears the offer, and stores the game. The win card and the level panel both call it.</li>
+        <li>The page that set the offer reacts to the level changing: <code>/sim</code> returns the clock to today, and Paint opens <code>/sim</code>.</li>
+        <li>The page calls <code>touched()</code> after its autosave writes a record key. The store sets the current game's <code>savedAt</code> and calls <code>sync.changed(currentId)</code>.</li>
+        <li>On first construction with no <code>SAVES_KEY</code>, the store makes one saved game at level 1 whose plan and policy are whatever the two record keys hold.</li>
+        <li><code>newGame</code>, <code>switchTo</code>, <code>remix</code> and <code>remove</code> of the current game first copy the two record keys into the current game's stored save, then write the new current game's plan and policy into the two record keys.</li>
+        <li>After <code>newGame</code>, <code>switchTo</code> or <code>remove</code> answers <code>ok</code>, the caller loads the new current game's page with a full page load: <code>/</code> at level 1, <code>/sim</code> above it.</li>
+        <li>After <code>remix</code> answers <code>ok</code>, the caller loads <code>/</code> for a plan and <code>/sim</code> for a policy, with a full page load.</li>
+        <li><code>remix</code>'s <code>record</code> is the text the page's autosave holds under the record key for the published document. The caller builds it with the codec the page already uses, so the store never reads inside a plan or a policy.</li>
+        <li><code>remix</code> of a policy copies the current game's progress and plan; <code>remix</code> of a plan copies the current game's progress and policy. The new game's name is <code>defaultSaveName({ kind: 'remix', title })</code>.</li>
+        <li><code>newGame</code>, <code>remix</code> and <code>adopt</code> answer <code>full</code> and change nothing when they would pass <code>MAX_SAVES</code>.</li>
+        <li><code>rekey</code> of the current game leaves it current, keeps the offer and needs no page load: the records and the progress are untouched. The save sync uses it when it keeps both sides of a conflict (S2).</li>
+        <li>A write that the browser refuses answers <code>storage</code> and leaves the stored games as they were.</li>
+        <li><code>remove</code> of the current game makes the most recently changed other game current; with none left it makes a new game.</li>
+        <li><code>rename</code> trims the name, cuts it at <code>SAVE_NAME_MAX</code>, ignores an empty one, and sets <code>nameIsDefault</code> false.</li>
+        <li><code>defaultSaveName</code> gives "Game, 22 Nov", "Remix of {title}" or "{name} (this device)", and adds " (2)", " (3)" while the name is in <code>taken</code>.</li>
+        <li>The store calls <code>sync.changed(id)</code> after every change to a saved game and <code>sync.removed(id)</code> after a remove.</li>
+        <li>A stored value that will not parse is copied to <code>sfhousing:save:corrupt:&lt;ISO time&gt;</code> and left out of the list.</li>
+        <li>With <code>storage: null</code> the store keeps one game in memory.</li>
+        <li><code>useGame()</code> outside a provider returns <code>openGame()</code>, so a component test that provides no game sees every control.</li>
+        <li>Only the root layout calls <code>provideGame</code>. It makes the save sync with <code>createSaveSync</code> (S2), constructs the store with it, calls <code>sync.attach(store)</code> and provides the store.</li>
+        <li>When <code>e2eOpen</code> (X1) is true, the root layout provides <code>openGame()</code> instead and makes no sync.</li>
+        <li>The root layout's script that makes and provides the store belongs to <code>game-core</code>.</li>
+      </ul>
+    </section>
+
+    <section id="gc-sec-if-g3">
+      <h3>G3 What a level allows</h3>
+      <pre><code data-lang="ts">// src/lib/game/allowed.ts
+import type { Policy, PolicyKind, SimPolicy4 } from '$lib/timeline/policy4';
+
+export interface Allowed {
+  /** Kinds whose policies run and can be edited. */
+  kinds: ReadonlySet&lt;PolicyKind&gt;;
+  /** 'given': only given measures run, and what they pay is read-only. */
+  money: 'given' | 'all';
+}
+
+export const ALL_ALLOWED: Allowed;
+export function allowedAt(level: Level): Allowed;
+/** permitting 3, zoning 4, money 5. */
+export function unlocksAt(kind: PolicyKind): Level;
+/** A money policy made from a funding preset: its `preset` is the preset's id. */
+export function isGiven(p: Policy): boolean;
+export function runs(kind: PolicyKind, p: Policy, a: Allowed): boolean;
+export function playable(doc: SimPolicy4, a: Allowed): SimPolicy4;
+/** The lowest level whose `allowedAt` runs every policy of `doc`; 6 when none does. */
+export function levelNeeded(doc: SimPolicy4): Level | 6;
+/** True while the game's level is below the one that opens the simulation. */
+export function simLocked(p: Progress): boolean;
+/** The level that runs all of `doc`, when it is above the game's level; null otherwise. */
+export function needsHigher(doc: SimPolicy4, p: Progress): Level | 6 | null;</code></pre>
+      <ul>
+        <li><code>allowedAt(1)</code> and <code>allowedAt(2)</code> have no kinds.</li>
+        <li><code>allowedAt(3)</code> has permitting; <code>allowedAt(4)</code> adds zoning; <code>allowedAt(5)</code> adds money with <code>money: 'given'</code>.</li>
+        <li><code>ALL_ALLOWED</code> has all three kinds and <code>money: 'all'</code>. No level in this round returns it.</li>
+        <li>The published view at <code>/s/&lt;id&gt;</code> runs under <code>ALL_ALLOWED</code>, so <code>playable</code> returns its document unchanged (D5).</li>
+        <li><code>runs</code> is false for a kind not in <code>a.kinds</code>.</li>
+        <li><code>runs</code> is false for a money policy that is not given while <code>a.money</code> is <code>'given'</code>.</li>
+        <li><code>playable</code> returns the document with only the policies that run, in their order, and returns the same object when nothing is removed.</li>
+        <li>Every money policy that <code>addPolicy</code> makes from a funding preset carries the preset's id in <code>preset</code> and the preset's label as its label.</li>
+        <li>The schema 4 parser accepts null or a preset id of 1 to 60 characters in a money policy's <code>preset</code>. Zoning and permitting are unchanged.</li>
+        <li>A money policy stored or published before this build has <code>preset</code> null, so it is not a given measure. It runs in the published view and is locked in a game.</li>
+        <li>An edit that changes what a given measure pays sets its <code>preset</code> to null.</li>
+        <li><code>isGiven</code> is false for every zoning and permitting policy.</li>
+        <li><code>isGiven</code> does not check the id against the presets on offer. A hand-made document can carry any id on any pool; nothing ranks one player against another, so that is accepted.</li>
+        <li><code>simLocked</code> is true exactly at level 1. Pages call it and <code>needsHigher</code>; no page compares a level itself.</li>
+        <li><code>levelNeeded</code> of a document with no policies is 2.</li>
+      </ul>
+    </section>
+
+    <section id="gc-sec-if-g4">
+      <h3>G4 The seen result and the standing</h3>
+      <pre><code data-lang="ts">// src/lib/game/standing.ts
+export type Standing =
+  | { kind: 'playing' }
+  | { kind: 'short'; seen: Result; bar: Bar | null }
+  | { kind: 'won'; on: Day };
+
+/** `seen` is `goalOutcome(...)` for the months reached; null while no result is seen. */
+export function standing(level: Level, bar: Bar | null, seen: Result | null): Standing;</code></pre>
+      <ul>
+        <li><code>standing</code> is <code>playing</code> at level 1 and while <code>seen</code> is null.</li>
+        <li>At level 2 a reached result is <code>won</code>.</li>
+        <li>At levels 3 to 5 a result is <code>won</code> when it beats the bar.</li>
+        <li>Every other seen result is <code>short</code>.</li>
+        <li><code>goalOutcome</code> is read on the playable document's forecast and never while the numbers are stale, so a standing always belongs to the policy on screen.</li>
+        <li>A build check runs the empty document on a built dataset and fails when the goal is not reached inside the window (D1).</li>
+        <li><code>reach-check</code> writes the check and runs it once <code>finite-funding</code> and <code>pool-closing</code> have merged, so a miss reaches the owner while the build is still running. <code>closing</code> runs it again on the dataset it uploads.</li>
+      </ul>
+    </section>
+
+    <section id="gc-sec-if-g5">
+      <h3>G5 The win card and the level panel</h3>
+      <pre><code data-lang="ts">// src/lib/game/WinCard.svelte
+interface WinCardProps {
+  /** 'Room for 82,069 homes' | 'Goal reached in Mar 2049'. */
+  title: string;
+  /** What levelling up unlocks, in words; null when the round is complete. */
+  unlocks: string | null;
+  onlevelup: () =&gt; void;
+  onkeep: () =&gt; void;
+}
+
+// src/lib/game/LevelPanel.svelte
+// No props. Reads the game from `useGame()`.
+
+// src/lib/game/copy.ts
+export function barText(bar: Bar): string;           // 'Beat Jun 2057'
+export function unlockText(next: Level | 6): string; // 'Permitting' | 'Zoning' | 'Public money' | …
+export function lockedLane(kind: PolicyKind, level: Level): string;</code></pre>
+      <ul>
+        <li>The win card is a dialog, not modal: the map and the timeline stay usable.</li>
+        <li>The win card sits where the page shows its notices: over the map from md, above the map below md.</li>
+        <li>It renders <code>AccountOffer</code> (S3) under its buttons.</li>
+        <li>When it mounts, the win card moves focus to "Level up", on Paint and on <code>/sim</code> alike.</li>
+        <li>Escape and "Keep playing" both call <code>onkeep</code>.</li>
+        <li>The level panel is the content the header's level cell opens.</li>
+        <li>The win card's <code>onlevelup</code> is given <code>() =&gt; game.levelUp()</code> by the page that mounts it.</li>
+        <li>The level panel shows the level, the bar, what the next level unlocks, "Level up" while <code>game.offer</code> is not null, and the saved games (<a href="../design/2026-11-22-1216-incremental-game.html#sec-model-saves">Saved games</a>) with "New game".</li>
+        <li>After a switch, a new game or a delete of the current game, the panel loads the new current game's page.</li>
+        <li>"Level up" in the panel calls <code>game.levelUp()</code>.</li>
+        <li>The panel shows <code>game.sync.state</code> in words when it is not <code>saved</code>: "On this device only", "Saving", "Offline", "Sign in to save".</li>
+        <li><code>lockedLane</code> gives "Unlocks when you level up" for the kind <code>level + 1</code> unlocks and "Unlocks at level N" for the others.</li>
+      </ul>
+    </section>
+
+    <section id="gc-sec-if-s1">
+      <h3>S1 The saved-games API</h3>
+      <pre><code data-lang="ts">// src/lib/game/save-api.ts
+import type { GameSave, SaveEntry } from './saves';
+
+export const MAX_SAVE_BYTES = 600_000;
+
+/** What every answer about the account carries. */
+export interface AccountLine {
+  handle: string;
+  /** This identity has changed its handle at least once. */
+  handleClaimed: boolean;
+}
+
+// GET /api/game
+type ListGames =
+  | { status: 200; body: AccountLine &amp; { saves: (SaveEntry &amp; { rev: number })[]; removed: string[] } }
+  | { status: 401 };
+
+// GET /api/game/[id]
+type GetGame = { status: 200; body: { rev: number; save: GameSave } } | { status: 401 | 404 | 410 };
+
+// PUT /api/game/[id]
+interface PutGameBody {
+  /** The rev this browser last saw for this saved game; null when it has never sent it. */
+  baseRev: number | null;
+  save: GameSave;
+}
+type PutGame =
+  | { status: 200; body: AccountLine &amp; { rev: number } }
+  | { status: 409; body: { rev: number; save: GameSave } }
+  | { status: 410 }
+  | { status: 401; body: { error: 'sign_in' } }
+  | { status: 422; body: { error: 'invalid' | 'too_many' | 'no_win' } }
+  | { status: 403 | 413 | 415 | 429 };
+
+// DELETE /api/game/[id]
+type DeleteGame = { status: 204 } | { status: 401 };</code></pre>
+      <pre><code data-lang="ts">// src/lib/server/db/schema/gameSave.ts
+export const gameSave = sqliteTable(
+  'game_save',
+  {
+    identityId: text('identity_id').notNull().references(() =&gt; userIdentity.id),
+    id: text('id').notNull(),
+    rev: integer('rev').notNull(),
+    name: text('name').notNull(),
+    level: integer('level').notNull(),
+    /** The GameSave as JSON; empty once removed. */
+    body: text('body').notNull(),
+    savedAt: integer('saved_at', { mode: 'timestamp_ms' }).notNull(),
+    removedAt: integer('removed_at', { mode: 'timestamp_ms' })
+  },
+  (t) =&gt; [primaryKey({ columns: [t.identityId, t.id] })]
+);</code></pre>
+      <ul>
+        <li><code>PUT</code> with no session makes an anonymous account, behind <code>PSEUDO_MINT_RL</code>, and stores the saved game at rev 1.</li>
+        <li><code>PUT</code> with no session on a device that has signed in before (the <code>sfh_known</code> cookie) answers 401 <code>sign_in</code> and makes nothing.</li>
+        <li><code>PUT</code> with no session and a save whose <code>progress.firstWinAt</code> is null answers 422 <code>no_win</code> and makes nothing: an account is made at the first win, never before.</li>
+        <li><code>PUT</code> stores the save and adds one to its rev when <code>baseRev</code> equals the stored rev, or when the account has no saved game with that id and <code>baseRev</code> is null.</li>
+        <li><code>PUT</code> of an id the account has never held stores it at rev 1 whatever <code>baseRev</code> says.</li>
+        <li><code>PUT</code> of an id the account holds with any other <code>baseRev</code> answers 409 with the stored save and changes nothing.</li>
+        <li><code>PUT</code> to a removed id answers 410.</li>
+        <li><code>PUT</code> of a new id when the account has 12 saved games answers 422 <code>too_many</code>.</li>
+        <li>The id in the path must equal <code>save.id</code>, else 422 <code>invalid</code>. A body <code>parseGameSave</code> refuses is 422 <code>invalid</code>. A body over <code>MAX_SAVE_BYTES</code> is 413.</li>
+        <li><code>DELETE</code> clears the body and sets <code>removedAt</code>; the row stays so other devices learn of it. Deleting an unknown or removed id is 204.</li>
+        <li><code>GET /api/game</code> lists the saved games that are not removed, and under <code>removed</code> the ids removed in the last 90 days.</li>
+        <li>Every write requires a same-origin JSON request, as the account routes do; a write from another origin is 403. <code>/api/game</code> is a session route prefix.</li>
+        <li>When two identities are joined, the absorbed identity's rows move to the survivor. Nothing is merged.</li>
+        <li>When both identities hold a saved game under one id, the absorbed one moves under a new id; an absorbed row that is removed is dropped. The cap of 12 is not applied to a join.</li>
+        <li>Deleting an account deletes its <code>game_save</code> rows.</li>
+        <li>The server never reads inside <code>plan</code> or <code>policy</code>.</li>
+      </ul>
+    </section>
+
+    <section id="gc-sec-if-s2">
+      <h3>S2 The browser's save sync</h3>
+      <pre><code data-lang="ts">// src/lib/game/save-sync.svelte.ts
+export type SyncState = 'local' | 'saving' | 'saved' | 'offline' | 'sign-in' | 'full';
+
+export interface SaveSync {
+  /** Reactive. */
+  readonly state: SyncState;
+  /** Reactive: the account as the server last answered (S1's `AccountLine`); null until it has. */
+  readonly account: AccountLine | null;
+  /** The saved game `id` changed. */
+  changed(id: string): void;
+  /** The saved game `id` was deleted in this browser. */
+  removed(id: string): void;
+  /** Bring the account's saved games here and send this browser's there. */
+  pull(): Promise&lt;void&gt;;
+  /** The store saved games are read from and adopted into. Called once by the root layout. */
+  attach(store: GameStore): void;
+}
+
+export function createSaveSync(opts: {
+  storage: Storage | null;
+  fetchFn: typeof fetch;
+  /** Whether the root layout's `user` is set now. */
+  signedIn: () =&gt; boolean;
+}): SaveSync;</code></pre>
+      <ul>
+        <li><code>state</code> is <code>local</code> until this browser has a session.</li>
+        <li><code>changed(id)</code> sends nothing while this browser has no session and the game's <code>firstWinAt</code> is null.</li>
+        <li>When the sync attaches with no session, every saved game that has <code>firstWinAt</code> set and has not been sent since it last changed is queued to send, so a first win whose send never went still makes the account.</li>
+        <li><code>changed(id)</code> debounces to one <code>PUT</code> per saved game per 2 seconds, with the save read from the store at send time.</li>
+        <li>The browser keeps each saved game's last seen rev under <code>sfhousing:saves:revs</code>.</li>
+        <li>A 409 keeps both: the browser's version is stored as a new saved game with a new id and the name <code>defaultSaveName({ kind: 'conflict', name })</code>, the account's version is adopted under the old id, and the new saved game is sent.</li>
+        <li>When the old id was the current game, the browser's version stays current under its new id, so nothing changes under the player's hands.</li>
+        <li>A 410 keeps the saved game in this browser under a new id and sends it again: a change made here is never lost to a delete made on another device (D8).</li>
+        <li><code>pull()</code> lists the account's saved games. It fetches and adopts those this browser lacks, and those it holds unchanged at an older rev. It removes those listed under <code>removed</code> that are unchanged here. It sends those the account lacks.</li>
+        <li><code>pull()</code> runs once on load when <code>signedIn()</code>, and again when <code>signedIn()</code> turns true.</li>
+        <li><code>account</code> is set from every answer that carries an <code>AccountLine</code>. After the <code>PUT</code> that made the account, the header shows the handle from it. The sync never invalidates page data: a page keeps its playhead, its card and its undo history.</li>
+        <li>Once a <code>PUT</code> has answered 200 the sync treats this browser as having a session, whatever <code>signedIn()</code> says.</li>
+        <li>The root layout calls <code>createSaveSync</code> once and gives the result to the store (G2). Components reach it as <code>useGame().sync</code>.</li>
+        <li>A network failure sets <code>offline</code> and the next <code>changed</code> tries again.</li>
+        <li>A 401 <code>sign_in</code> sets <code>sign-in</code> and stops sending until the page loads signed in.</li>
+        <li>A 422 <code>too_many</code>, or the store answering <code>full</code>, sets <code>full</code>.</li>
+        <li>The stub shipped by <code>contracts</code> has state <code>local</code>, a null <code>account</code>, and does nothing. <code>game-save</code> replaces the body of <code>createSaveSync</code>; no caller changes.</li>
+      </ul>
+    </section>
+
+    <section id="gc-sec-if-s3">
+      <h3>S3 The account offer</h3>
+      <pre><code data-lang="ts">// src/lib/game/AccountOffer.svelte
+// No props. Reads the root layout's `user` from `page.data`, and `useGame().sync.account`.</code></pre>
+      <ul>
+        <li>The account it shows is the root layout's <code>user</code> when there is one, else <code>sync.account</code>.</li>
+        <li>With no account yet, it says the game is saved on this device.</li>
+        <li>With an account whose handle was never chosen, it shows one field, "Save as @…", and a Save button, which calls <code>PATCH /api/account/profile</code>.</li>
+        <li>With a chosen handle, it shows "@handle" as a link to <code>/account</code>, and "Add an email to play on another device" while the account has none.</li>
+        <li>It never blocks levelling up.</li>
+        <li>The stub shipped by <code>contracts</code> renders nothing.</li>
+      </ul>
+    </section>
+
+    <section id="gc-sec-if-m1">
+      <h3>M1 A given measure's money follows its policy's start</h3>
+      <pre><code data-lang="ts">// src/lib/sim-page/funding-presets.ts
+import type { Policy } from '$lib/timeline/policy4';
+
+/** `policy` with its money dated from its first span's start; `policy` itself when nothing moves. */
+export function dateMeasure(policy: Policy, cal: Calibration): Policy;</code></pre>
+      <ul>
+        <li>A given measure's first payment falls on the first day of its first span, and every later payment keeps its place in the preset's schedule.</li>
+        <li><code>dateMeasure</code> returns <code>policy</code> itself when it is not a given measure (G3), has no span, or names a preset that is not on offer.</li>
+        <li><code>dateMeasure</code> returns <code>policy</code> itself for a preset whose dates are set in law.</li>
+        <li><code>dateMeasure</code> returns <code>policy</code> itself when the re-dated content equals what the policy holds, so a second call changes nothing.</li>
+        <li><code>addPolicy</code> calls <code>dateMeasure</code> on every policy it makes from a funding preset, after it dates the spans.</li>
+        <li>Every edit that moves a given measure's first span's start calls <code>dateMeasure</code> on the result.</li>
+        <li>A stored or published document is never re-dated when it loads.</li>
+        <li>The stub shipped by <code>contracts</code> returns <code>policy</code> itself.</li>
+      </ul>
+    </section>
+
+    <section id="gc-sec-if-x1">
+      <h3>X1 The e2e seam</h3>
+      <pre><code data-lang="ts">// e2e/helpers/game.ts
+import type { Page } from '@playwright/test';
+
+/** Before the page loads, switch the real game on and store a game at `level` with bars that any result beats. */
+export function seedGame(page: Page, level: 1 | 2 | 3 | 4 | 5): Promise&lt;void&gt;;
+/** Before the page loads, switch the real game on with nothing stored: a new visitor. */
+export function newVisitor(page: Page): Promise&lt;void&gt;;
+/** Before the page loads, set the goal's amount for this page. */
+export function seedGoalAmount(page: Page, amount: number): Promise&lt;void&gt;;
+
+// src/lib/game/e2e.ts
+export const E2E_GAME_KEY = 'sfhousing:e2e:game';
+export const E2E_GOAL_KEY = 'sfhousing:e2e:goal';
+/** True when VITE_E2E is '1' and E2E_GAME_KEY is absent: the page gets the open game. */
+export function e2eOpen(storage: Storage | null): boolean;
+/** The amount under E2E_GOAL_KEY when VITE_E2E is '1'; null otherwise. */
+export function e2eGoalAmount(storage: Storage | null): number | null;</code></pre>
+      <ul>
+        <li>With <code>VITE_E2E=1</code>, on a build or a dev server, a page that has no <code>E2E_GAME_KEY</code> gets <code>openGame()</code> (G2): every control, no game parts, nothing stored.</li>
+        <li>Every e2e spec that exists before this build runs on the open game and needs no change for the game, except the tests of Remix: Remix makes a saved game, so they seed a game first.</li>
+        <li><code>seedGame</code> and <code>newVisitor</code> set <code>E2E_GAME_KEY</code>, so the page runs the real store.</li>
+        <li><code>seedGame</code> writes the storage keys of G2 directly and needs no store.</li>
+        <li>A seeded game's bars fall in the calendar month that holds the window's last day, which any reached result beats.</li>
+        <li>The fixture city is too small to reach 82,069 homes, so a spec that plays a level to a win first calls <code>seedGoalAmount</code>.</li>
+        <li><code>/sim</code> and Paint read <code>e2eGoalAmount</code> when they mount and build the goal.</li>
+        <li>A spec that changes the amount on a loaded page, before a client-side navigation, writes <code>E2E_GOAL_KEY</code> with <code>page.evaluate</code>.</li>
+        <li>On a build without <code>VITE_E2E=1</code>, <code>e2eOpen</code> is false and <code>e2eGoalAmount</code> is null whatever storage holds.</li>
+      </ul>
+    </section>
+
+    <section id="gc-sec-build-constraints">
+      <h3>Build constraints</h3>
+      <p>The design document's global constraints, verbatim. The spec's own list is identical.</p>
+      <ul>
+        <li>Work happens in git worktrees under <code>.claude/worktrees/</code>. Commits follow Conventional Commits. No attribution to an AI anywhere.</li>
+        <li>Code style: 2-space indent, single quotes, no trailing commas, 100 columns.</li>
+        <li>Every Vitest test calls <code>expect</code>.</li>
+        <li>Signoff fails on server stderr, on timing crutches and on a retried flake. Each unit runs <code>npm run lint</code>, <code>npm run check</code> and the Vitest projects its files belong to before it hands back.</li>
+        <li>Port 4173 is shared by every session on this machine. A unit never kills a server it did not start; it waits.</li>
+        <li>Every agent runs every command in the foreground and never ends a turn while something it started is running.</li>
+        <li>Schema changes go through <code>npm run db:generate</code>. Nobody edits a migration.</li>
+        <li>No unit runs <code>npm run signoff</code>: its dataset step fails until the dataset is uploaded. <code>closing</code> runs it once, after the upload.</li>
+        <li>The dataset version changes in this build. The dataset is uploaded once, by <code>closing</code>, from the integration branch, after every unit has merged; no other unit uploads a dataset. <code>reach-check</code> builds one earlier to run the check and uploads nothing.</li>
+        <li>A unit that writes a hashed path regenerates the fixture dataset with <code>npm run pipeline -- fixture</code> and commits it.</li>
+        <li>WCAG 2.2 AA: every new control is at least 24 px and passes <code>expectNoA11yViolations</code> in light and dark.</li>
+        <li>Page text is short. No sentence says what something is not.</li>
+        <li>Nothing on the main screen says "RHNA". The goal is read from the <code>Goal</code> value, never from a constant.</li>
+        <li>The game's rules are read from <code>src/lib/game/</code>. No component compares a level to a number.</li>
+        <li>One future: no seed control, no band, no average over runs.</li>
+        <li>Published plans and policies, their ids and their pages keep working, including every policy published before this build.</li>
+        <li>A number that is a claim about the world carries its source and tier, in the existing <code>Sourced</code>, <code>Unsourced</code> and <code>Evidence</code> shapes.</li>
+        <li>A runtime dependency that ships in the bundle gets a credit in <code>SOFTWARE</code>. This build adds none.</li>
+        <li>CSP changes are interface changes. This build makes none.</li>
+        <li>Timing is measured only on a quiet machine. A unit that cannot get one defers the measurement and says so.</li>
+      </ul>
+    </section>
+
+    <section id="gc-sec-plan-rules">
+      <h3>Rules this plan adds</h3>
+      <ul>
+        <li>Each file holds exactly the declarations of its interface section, with the section's comments kept as doc comments, and the imports of spec <code>sec-design-imports</code> (every import between game files is <code>import type</code>).</li>
+        <li>Every throwing function is <code>void</code> of each parameter, then <code>throw new Error('not implemented');</code> (spec <code>sec-design-stubs</code>).</li>
+        <li>No app module imports <code>src/lib/game/</code>; nothing calls <code>dateMeasure</code>; no existing spec, shared e2e helper or <code>playwright.config.ts</code> changes.</li>
+        <li>No <code>setTimeout</code>, <code>setInterval</code>, <code>waitForTimeout</code> or other fixed wait in any spec or helper. Every task ends with <code>npx chreode timing-check --head HEAD</code> clean.</li>
+        <li>Never compound <code>cd ... &amp;&amp; cmd</code>; run commands from the worktree root.</li>
+      </ul>
+    </section>
+  </section>
+
+  <section id="sec-review-focus">
+    <h2>Review Focus</h2>
+    <p>Inputs the spec implies but its listed tests leave open, most likely to bite first. Each has a test in the owning task.</p>
+    <ol>
+      <li id="rf-1"><strong>A page whose storage itself throws.</strong> <code>localStorage</code>'s getter throwing (opaque origins such as <code>about:blank</code>, blocked site data) rather than <code>setItem</code>: the seed's init script must swallow it and the page must load. Test: Task 3, step <a href="#t3-s5">t3-s5</a>, "storage that throws on access".</li>
+      <li id="rf-2"><strong>A reload after the page stored its own index.</strong> When <code>SAVES_KEY</code> exists but names another current game and the seeded save key is gone, a reload must not re-write the seed. Test: Task 3, step <a href="#t3-s5">t3-s5</a>, "a stored index is never overwritten".</li>
+      <li id="rf-3"><strong><code>VITE_E2E</code> read at call time, not at module load.</strong> On a dev server the value comes from the environment, in a build Vite inlines it, and Playwright loads <code>e2e.ts</code> in Node where <code>import.meta.env</code> is undefined. Reading it at module scope breaks the helper's import and freezes the answer. Test: Task 3, step <a href="#t3-s1">t3-s1</a>, "reads VITE_E2E on every call"; the Playwright spec importing the helper proves the Node load.</li>
+      <li id="rf-4"><strong>Goal amounts with leading zeros or near-digits.</strong> <code>'007'</code> is digits only, so it gives 7; <code>'00'</code> gives null (0 is below 1); <code>'+5'</code>, <code>'5\n'</code> and <code>'0x10'</code> give null; <code>'9007199254740991'</code> gives itself. Test: Task 3, step <a href="#t3-s1">t3-s1</a>.</li>
+      <li id="rf-5"><strong>Stub components emitting whitespace text.</strong> A template newline or stray space renders a text node; the assertion is <code>textContent</code> <code>toBe('')</code> with no trim, and <code>children.length</code> 0 (comment anchors allowed). Test: Task 2, step <a href="#t2-s1">t2-s1</a>.</li>
+    </ol>
+  </section>
+
+  <section id="sec-task-1">
+    <h2>Task 1: Pure type modules and stubs</h2>
+    <p>Delivers row S1. Delivers row M1. G1 to G5 are completed by Task 2.</p>
+    <p><strong>Files</strong></p>
+    <ul>
+      <li>Create: <code>src/lib/game/levels.ts</code>, <code>progress.ts</code>, <code>saves.ts</code>, <code>allowed.ts</code>, <code>standing.ts</code>, <code>copy.ts</code>, <code>save-api.ts</code></li>
+      <li>Modify: <code>src/lib/sim-page/funding-presets.ts</code>: one import after the <code>$lib/timelapse/types</code> import (<code>:17-25</code>, so it lands at <code>:26</code>); <code>dateMeasure</code> after <code>addPreset</code> (<code>:463-484</code>), before <code>type InflowKey</code> (<code>:486</code>)</li>
+      <li>Test: <code>src/lib/game/contracts.spec.ts</code> (server project, <code>vite.config.ts:59</code>)</li>
+    </ul>
+    <p><strong>Interfaces</strong></p>
+    <ul>
+      <li>Consumes: <code>Day</code> (<code>src/lib/timelapse/time.ts:7</code>), <code>GoalOutcome</code> (<code>src/lib/timeline/outcome.ts:10</code>), <code>Policy</code>, <code>SimPolicy4</code>, <code>PolicyKind</code> (<code>src/lib/timeline/policy4.ts:41</code>, <code>:50</code>, <code>:55</code>), <code>Calibration</code> (already imported in <code>funding-presets.ts:18</code>).</li>
+      <li>Produces: every declaration of <a href="#gc-sec-if-g1">G1</a>; <code>progress.ts</code> and <code>saves.ts</code> of <a href="#gc-sec-if-g2">G2</a>; <a href="#gc-sec-if-g3">G3</a>; <a href="#gc-sec-if-g4">G4</a>; <code>copy.ts</code> of <a href="#gc-sec-if-g5">G5</a>; <code>save-api.ts</code> of <a href="#gc-sec-if-s1">S1</a> with <code>ListGames</code>, <code>GetGame</code>, <code>PutGameBody</code>, <code>PutGame</code>, <code>DeleteGame</code> exported; <code>dateMeasure</code> of <a href="#gc-sec-if-m1">M1</a>. Task 2 imports <code>Allowed</code>, <code>Progress</code>, <code>GameSave</code>, <code>SaveEntry</code>, <code>AccountLine</code> as types. Task 3 imports <code>SAVES_KEY</code>, <code>saveKey</code>, <code>GameSave</code>, <code>Banked</code>.</li>
+    </ul>
+    <p><strong>Steps</strong></p>
+    <ol>
+      <li id="t1-s1"><input type="checkbox"> Write the failing test <code>src/lib/game/contracts.spec.ts</code>. The arguments below are the valid arguments for each stub.
+        <pre><code data-lang="ts">import { describe, expect, it } from 'vitest';
+import type { Policy, SimPolicy4 } from '$lib/timeline/policy4';
+import { ALL_ALLOWED, allowedAt, isGiven, levelNeeded, needsHigher, playable, runs, simLocked,
+  unlocksAt } from './allowed';
+import { barText, lockedLane, unlockText } from './copy';
+import { LAST_LEVEL, beats, paintWon } from './levels';
+import { NEW_GAME, barOf, levelUp, roundComplete } from './progress';
+import { MAX_SAVE_BYTES } from './save-api';
+import { MAX_SAVES, SAVES_KEY, SAVE_NAME_MAX, defaultSaveName, parseGameSave, saveKey,
+  type GameSave } from './saves';
+import { standing } from './standing';
+
+const NI = /^not implemented$/;
+const GIVEN: Policy = {
+  id: 'p1', label: 'Housing bond', preset: 'bond-2024', on: true, where: { tag: 'fund', pool: 'bond' },
+  spans: [{ from: 20736, to: null, what: { tag: 'fund', pool: null, programmes: [] } }]
+};
+const EMPTY: SimPolicy4 = { schema: 4, kinds: { zoning: [], permitting: [], money: [] } };
+const SAVE: GameSave = { v: 1, id: 'abc', name: 'Game, 22 Nov', nameIsDefault: true,
+  progress: NEW_GAME, plan: null, policy: null, savedAt: '2026-11-22T12:00:00.000Z' };
+
+describe('constants', () =&gt; {
+  it('LAST_LEVEL is 5');                       // toBe(5)
+  it('NEW_GAME is level 1 with nothing banked'); // toEqual({ v: 1, level: 1, banked: {}, firstWinAt: null })
+  it('the storage keys');                      // SAVES_KEY 'sfhousing:saves:v1'; saveKey('abc') 'sfhousing:save:abc'
+  it('the limits');                            // MAX_SAVES 12; SAVE_NAME_MAX 60; MAX_SAVE_BYTES 600_000
+  it('ALL_ALLOWED has the three kinds and all money');
+  // [...ALL_ALLOWED.kinds].sort() toEqual ['money', 'permitting', 'zoning']; ALL_ALLOWED.money 'all'
+});
+
+describe('the stubs throw not implemented', () =&gt; {
+  it('beats', () =&gt; expect(() =&gt; beats({ kind: 'reached', on: 20736 }, { on: 35337 })).toThrow(NI));
+  // One `it` per function, same shape, with these calls:
+  // paintWon(100, 82069)
+  // barOf(NEW_GAME)
+  // roundComplete(NEW_GAME)
+  // levelUp(NEW_GAME, null)
+  // parseGameSave(SAVE)
+  // defaultSaveName({ kind: 'new', at: new Date('2026-11-22T12:00:00Z') }, [])
+  // allowedAt(3)
+  // unlocksAt('permitting')
+  // isGiven(GIVEN)
+  // runs('money', GIVEN, ALL_ALLOWED)
+  // playable(EMPTY, ALL_ALLOWED)
+  // levelNeeded(EMPTY)
+  // simLocked(NEW_GAME)
+  // needsHigher(EMPTY, NEW_GAME)
+  // standing(2, null, { kind: 'reached', on: 20736 })
+  // barText({ on: 35337 })
+  // unlockText(3)
+  // lockedLane('zoning', 3)
+});</code></pre>
+        Each stub test also asserts the throw is an <code>Error</code>: use <code>toThrowError(NI)</code>. Prettier will rewrap the imports; write them however it formats.
+      </li>
+      <li id="t1-s2"><input type="checkbox"> Run it and see it fail on the missing modules.
+        <pre><code data-lang="sh">npx vitest run --project server src/lib/game/contracts.spec.ts</code></pre>
+        Expected: FAIL, "Failed to resolve import './allowed'" (or the first missing module).
+      </li>
+      <li id="t1-s3"><input type="checkbox"> Create <code>levels.ts</code>, <code>progress.ts</code> and <code>saves.ts</code>: the declarations of <a href="#gc-sec-if-g1">G1</a> and of G2's <code>progress.ts</code>/<code>saves.ts</code> blocks, with the imports of spec <code>sec-design-imports</code> (<code>levels.ts</code>: <code>Day</code>, <code>GoalOutcome</code>; <code>progress.ts</code>: <code>Day</code>, <code>Bar</code>, <code>Level</code>; <code>saves.ts</code>: <code>Level</code>, <code>Progress</code>). Constants carry their real values:
+        <pre><code data-lang="ts">export const LAST_LEVEL: Level = 5;
+export const NEW_GAME: Progress = { v: 1, level: 1, banked: {}, firstWinAt: null };
+export const SAVES_KEY = 'sfhousing:saves:v1';
+export const saveKey = (id: string): string =&gt; `sfhousing:save:${id}`;
+export const MAX_SAVES = 12;
+export const SAVE_NAME_MAX = 60;</code></pre>
+        Every function follows the stub shape:
+        <pre><code data-lang="ts">export function beats(seen: Result, bar: Bar): boolean {
+  void seen;
+  void bar;
+  throw new Error('not implemented');
+}</code></pre>
+      </li>
+      <li id="t1-s4"><input type="checkbox"> Create <code>allowed.ts</code> (<a href="#gc-sec-if-g3">G3</a>; imports <code>Policy</code>, <code>PolicyKind</code>, <code>SimPolicy4</code>, <code>Level</code>, <code>Progress</code>), <code>standing.ts</code> (<a href="#gc-sec-if-g4">G4</a>; imports <code>Day</code>, <code>Bar</code>, <code>Level</code>, <code>Result</code>) and <code>copy.ts</code> (<a href="#gc-sec-if-g5">G5</a>'s <code>copy.ts</code>; imports <code>PolicyKind</code>, <code>Bar</code>, <code>Level</code>), all <code>import type</code>. <code>copy.ts</code>'s trailing example comments (<code>// 'Beat Jun 2057'</code> and so on) become doc comments on the declarations.
+        <pre><code data-lang="ts">export const ALL_ALLOWED: Allowed = {
+  kinds: new Set&lt;PolicyKind&gt;(['zoning', 'permitting', 'money']),
+  money: 'all'
+};</code></pre>
+      </li>
+      <li id="t1-s5"><input type="checkbox"> Create <code>save-api.ts</code>: the <a href="#gc-sec-if-s1">S1</a> block for <code>save-api.ts</code> (not the <code>gameSave</code> schema, which is <code>game-save</code>'s), with <code>export const MAX_SAVE_BYTES = 600_000;</code> and <code>export</code> added to <code>ListGames</code>, <code>GetGame</code>, <code>PutGameBody</code>, <code>PutGame</code> and <code>DeleteGame</code>. Keep the route comments (<code>// GET /api/game</code>) as doc comments on each type.</li>
+      <li id="t1-s6"><input type="checkbox"> Edit <code>src/lib/sim-page/funding-presets.ts</code>: add <code>import type { Policy } from '$lib/timeline/policy4';</code> as the line directly after the closing <code>} from '$lib/timelapse/types';</code> (<code>:25</code>), and directly after <code>addPreset</code>'s closing brace (<code>:484</code>), before <code>type InflowKey</code>, add:
+        <pre><code data-lang="ts">/** `policy` with its money dated from its first span's start; `policy` itself when nothing moves. */
+export function dateMeasure(policy: Policy, cal: Calibration): Policy {
+  void cal;
+  return policy;
+}</code></pre>
+        No test: <code>npm run check</code> is the only check on this stub (spec <code>sec-tests</code>).
+      </li>
+      <li id="t1-s7"><input type="checkbox"> Run the test and see it pass.
+        <pre><code data-lang="sh">npx vitest run --project server src/lib/game/contracts.spec.ts</code></pre>
+        Expected: 24 passed (5 constants, 19 stubs).
+      </li>
+      <li id="t1-s8"><input type="checkbox"> Type-check and lint.
+        <pre><code data-lang="sh">npm run check
+npm run lint</code></pre>
+        Expected: <code>svelte-check found 0 errors and 0 warnings</code>; prettier and eslint clean. An unused-type lint error means a route type is not exported.
+      </li>
+      <li id="t1-s9"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add src/lib/game src/lib/sim-page/funding-presets.ts
+git commit -m "feat(game): add the game's type modules, stubs and the dateMeasure stub"</code></pre>
+      </li>
+      <li id="t1-s10"><input type="checkbox"> Check timing crutches on the committed lines.
+        <pre><code data-lang="sh">npx chreode timing-check --head HEAD</code></pre>
+        Expected: no findings. On a finding, fix it and commit again (it reads only committed lines, so it runs after the commit).
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-2">
+    <h2>Task 2: Store, save sync and components</h2>
+    <p>Delivers row G1. Delivers row G2. Delivers row G3. Delivers row G4. Delivers row G5. Delivers row S2. Delivers row S3. (G1 to G5 are complete only once the store and the components exist.)</p>
+    <p><strong>Files</strong></p>
+    <ul>
+      <li>Create: <code>src/lib/game/store.svelte.ts</code>, <code>save-sync.svelte.ts</code>, <code>WinCard.svelte</code>, <code>LevelPanel.svelte</code>, <code>AccountOffer.svelte</code></li>
+      <li>Test: <code>src/lib/game/contracts.svelte.spec.ts</code>, <code>save-sync.svelte.spec.ts</code>, <code>AccountOffer.svelte.spec.ts</code> (client project, <code>vite.config.client-test.ts:59</code>)</li>
+    </ul>
+    <p><strong>Interfaces</strong></p>
+    <ul>
+      <li>Consumes (Task 1, all <code>import type</code>): <code>Allowed</code> from <code>./allowed</code>; <code>Progress</code> from <code>./progress</code>; <code>GameSave</code>, <code>SaveEntry</code> from <code>./saves</code>; <code>AccountLine</code> from <code>./save-api</code>; <code>Day</code> from <code>$lib/timelapse/time</code>. Test-only: <code>MemoryStorage</code> (<code>src/lib/sharing/fixtures/memory-storage.ts:2</code>), <code>render</code> from <code>vitest-browser-svelte</code> (as in <code>src/lib/about/AboutParts.svelte.spec.ts:2</code>).</li>
+      <li>Produces: G2's <code>store.svelte.ts</code> block (<code>StoreChange</code>, <code>Offer</code>, <code>GameStore</code>, <code>openGame</code>, <code>provideGame</code>, <code>useGame</code>); <a href="#gc-sec-if-s2">S2</a> (<code>SyncState</code>, <code>SaveSync</code>, <code>createSaveSync</code>); <code>WinCard</code> with <code>WinCardProps</code>, <code>LevelPanel</code> (G5) and <code>AccountOffer</code> (S3), none with an export beyond the component.</li>
+    </ul>
+    <p><strong>Steps</strong></p>
+    <ol>
+      <li id="t2-s1"><input type="checkbox"> Write the failing tests.
+        <pre><code data-lang="ts">// src/lib/game/contracts.svelte.spec.ts
+import { describe, expect, it } from 'vitest';
+import { render } from 'vitest-browser-svelte';
+import LevelPanel from './LevelPanel.svelte';
+import WinCard from './WinCard.svelte';
+import { createSaveSync } from './save-sync.svelte';
+import { GameStore, openGame, provideGame, useGame } from './store.svelte';
+
+const NI = /^not implemented$/;
+const sync = () =&gt; createSaveSync({ storage: null, fetchFn: fetch, signedIn: () =&gt; false });
+
+it('the GameStore constructor throws');
+// expect(() =&gt; new GameStore({ storage: null, sync: sync() })).toThrowError(NI)
+it('openGame throws');    // expect(() =&gt; openGame()).toThrowError(NI)
+it('provideGame throws'); // expect(() =&gt; provideGame({} as GameStore)).toThrowError(NI)
+it('useGame throws');     // expect(() =&gt; useGame()).toThrowError(NI)
+it('WinCard renders nothing');
+// const view = render(WinCard, { title: 'Room for 82,069 homes', unlocks: 'Permitting',
+//   onlevelup: () =&gt; {}, onkeep: () =&gt; {} });
+// expect(view.container.children.length).toBe(0); expect(view.container.textContent).toBe('');
+it('LevelPanel renders nothing'); // render(LevelPanel); same two assertions
+
+// src/lib/game/save-sync.svelte.spec.ts
+it('starts local with no account');
+// createSaveSync({ storage: new MemoryStorage(), fetchFn, signedIn }): state 'local', account null
+it('does nothing when called');
+// fetchFn = vi.fn&lt;typeof fetch&gt;(); signedIn = vi.fn(() =&gt; false); storage = new MemoryStorage();
+// s.changed('x'); s.removed('x'); s.attach({} as GameStore); expect(await s.pull()).toBeUndefined();
+// expect(fetchFn).not.toHaveBeenCalled(); expect(signedIn).not.toHaveBeenCalled();
+// expect(storage.length).toBe(0); expect(s.state).toBe('local')
+
+// src/lib/game/AccountOffer.svelte.spec.ts
+it('AccountOffer renders nothing'); // render(AccountOffer); children.length 0; textContent toBe('')</code></pre>
+        The text assertion is <code>toBe('')</code> with no trim (Review Focus <a href="#rf-5">5</a>). <code>provideGame</code>'s stub throws before it touches a context, so calling it outside a component is valid here.
+      </li>
+      <li id="t2-s2"><input type="checkbox"> Run them and see them fail on the missing modules.
+        <pre><code data-lang="sh">npx vitest run --project client src/lib/game/contracts.svelte.spec.ts src/lib/game/save-sync.svelte.spec.ts src/lib/game/AccountOffer.svelte.spec.ts</code></pre>
+        Expected: FAIL, unresolved imports.
+      </li>
+      <li id="t2-s3"><input type="checkbox"> Create <code>store.svelte.ts</code> with G2's <code>store.svelte.ts</code> declarations and the imports of spec <code>sec-design-imports</code>. <code>GameStore</code>:
+        <pre><code data-lang="ts">export class GameStore {
+  constructor(opts: { storage: Storage | null; sync: SaveSync; now?: () =&gt; Date }) {
+    void opts;
+    throw new Error('not implemented');
+  }
+  /** Reactive: the current game's progress. */
+  get progress(): Progress {
+    throw new Error('not implemented');
+  }
+  // allowed, open, saves, currentId, offer, sync: getters of their G2 types, same body
+  // won, setOffer, levelUp, touched, newGame, switchTo, remix, rename, remove, read, adopt, rekey:
+  // G2 signatures; `void` each parameter, then throw
+}</code></pre>
+        <code>openGame()</code>, <code>provideGame(store)</code>, <code>useGame()</code> throw the same way. Every G2 comment stays as a doc comment.
+      </li>
+      <li id="t2-s4"><input type="checkbox"> Create <code>save-sync.svelte.ts</code> with S2's declarations (imports <code>AccountLine</code> from <code>./save-api</code>, <code>GameStore</code> from <code>./store.svelte</code>, both <code>import type</code>). <code>createSaveSync(opts)</code> does <code>void opts</code> and returns a plain object: <code>state: 'local'</code>, <code>account: null</code>, <code>changed</code>, <code>removed</code> and <code>attach</code> that <code>void</code> their argument and return, and <code>pull: () =&gt; Promise.resolve()</code>. It never reads <code>opts.fetchFn</code>, <code>opts.signedIn</code> or <code>opts.storage</code>. No runes needed (builder's call: nothing changes, so nothing needs <code>$state</code>).</li>
+      <li id="t2-s5"><input type="checkbox"> Create the three components. <code>WinCard.svelte</code> is only an instance script:
+        <pre><code data-lang="svelte">&lt;script lang="ts"&gt;
+  interface WinCardProps {
+    /** 'Room for 82,069 homes' | 'Goal reached in Mar 2049'. */
+    title: string;
+    /** What levelling up unlocks, in words; null when the round is complete. */
+    unlocks: string | null;
+    onlevelup: () =&gt; void;
+    onkeep: () =&gt; void;
+  }
+
+  const props: WinCardProps = $props();
+  void props;
+&lt;/script&gt;</code></pre>
+        Builder's call: <code>const props ... void props</code> reads <code>$props()</code> without destructuring, so no unused-variable lint fires. <code>LevelPanel.svelte</code> and <code>AccountOffer.svelte</code> hold only a <code>&lt;script lang="ts"&gt;</code> with one doc comment naming their row (G5, S3) and no markup.
+      </li>
+      <li id="t2-s6"><input type="checkbox"> Run the tests and see them pass.
+        <pre><code data-lang="sh">npx vitest run --project client src/lib/game/contracts.svelte.spec.ts src/lib/game/save-sync.svelte.spec.ts src/lib/game/AccountOffer.svelte.spec.ts</code></pre>
+        Expected: 9 passed, none retried (a retried pass is a flake and fails signoff).
+      </li>
+      <li id="t2-s7"><input type="checkbox"> Re-run Task 1's spec, then type-check and lint.
+        <pre><code data-lang="sh">npx vitest run --project server src/lib/game/contracts.spec.ts
+npm run check
+npm run lint</code></pre>
+        Expected: 24 passed; 0 errors and 0 warnings; lint clean.
+      </li>
+      <li id="t2-s8"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add src/lib/game
+git commit -m "feat(game): add the store, save sync and component stubs"</code></pre>
+      </li>
+      <li id="t2-s9"><input type="checkbox"> Check timing crutches on the committed lines.
+        <pre><code data-lang="sh">npx chreode timing-check --head HEAD</code></pre>
+        Expected: no findings. On a finding, fix it and commit again.
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-3">
+    <h2>Task 3: The e2e seam, its helpers, and the docs</h2>
+    <p>Delivers row X1. The docs ride here deliberately: <code>docs/dev/game.md</code> describes the seam.</p>
+    <p><strong>Files</strong></p>
+    <ul>
+      <li>Create: <code>src/lib/game/e2e.ts</code>, <code>e2e/helpers/game.ts</code>, <code>docs/dev/game.md</code>, <code>docs/dev/game-save.md</code></li>
+      <li>Modify: <code>src/lib/game/contracts.spec.ts</code> (one constants case); <code>CLAUDE.md</code> doc list only (remove <code>:49</code>, <code>:63-66</code>; add two lines before <code>:67</code> "Design, specs and plans")</li>
+      <li>Delete (<code>git rm</code>): <code>docs/dev/lesscars.md</code>, <code>docs/dev/sim-log.md</code>, <code>docs/dev/sim-object.md</code>, <code>docs/dev/sim-sync.md</code>, <code>docs/dev/sim-store.md</code></li>
+      <li>Test: <code>src/lib/game/e2e.spec.ts</code> (server), <code>e2e/game-helpers.spec.ts</code> (Playwright <code>chromium</code> and <code>mobile</code>), <code>scripts/docs-index.spec.ts</code> (server, unchanged)</li>
+    </ul>
+    <p><strong>Interfaces</strong></p>
+    <ul>
+      <li>Consumes: <code>SAVES_KEY</code>, <code>saveKey</code>, <code>GameSave</code> (Task 1, <code>saves.ts</code>), <code>Banked</code> (Task 1, <code>progress.ts</code>), <code>newId</code> (<code>src/lib/ids/base58.ts:15</code>), <code>MONTH_DAYS</code> (<code>src/lib/timelapse/time.ts:10</code>), <code>MemoryStorage</code>. The helper reaches app modules by relative path only (as <code>e2e/helpers/members.ts:9</code> does).</li>
+      <li>Produces: <code>E2E_GAME_KEY</code>, <code>E2E_GOAL_KEY</code>, <code>e2eOpen(storage: Storage | null): boolean</code>, <code>e2eGoalAmount(storage: Storage | null): number | null</code> in <code>src/lib/game/e2e.ts</code>; <code>seedGame(page, level)</code>, <code>newVisitor(page)</code>, <code>seedGoalAmount(page, amount)</code> (all <code>Promise&lt;void&gt;</code>) and <code>export const SEED_BAR_DAY: number</code> in <code>e2e/helpers/game.ts</code>. <code>game-core</code>, <code>game-sim</code> and <code>game-shell</code> read the seam; their e2e specs call the helpers.</li>
+    </ul>
+    <p><strong>Steps</strong></p>
+    <ol>
+      <li id="t3-s1"><input type="checkbox"> Write the failing server test <code>src/lib/game/e2e.spec.ts</code>, with <code>afterEach(() =&gt; vi.unstubAllEnvs())</code> (as <code>src/lib/brush/debug.svelte.spec.ts:12</code>) and <code>vi.stubEnv('VITE_E2E', '1')</code> in each case unless it says unset. "Unset" is <code>vi.stubEnv('VITE_E2E', undefined)</code> (builder's call: a shell that exports <code>VITE_E2E=1</code> must not leak into the case; Vitest 4 deletes the variable on <code>undefined</code>). A throwing storage is a <code>MemoryStorage</code> whose <code>getItem</code> is replaced by <code>() =&gt; { throw new DOMException('denied', 'SecurityError'); }</code>.
+        <pre><code data-lang="ts">it('with VITE_E2E unset, e2eOpen is false');           // empty MemoryStorage and null
+it('with VITE_E2E unset, e2eGoalAmount is null');       // goal key holding '5000'
+it('e2eOpen is true with storage null, empty storage, and a throwing getItem');
+it('e2eOpen is false while E2E_GAME_KEY holds a value'); // '1' and ''
+it('e2eGoalAmount reads whole numbers');                 // '5000' -&gt; 5000; '1' -&gt; 1
+it('e2eGoalAmount is null for anything else');
+// storage null; key absent; '0'; '-3'; '12.5'; ' 40'; '1e3'; 'abc'; ''; '9007199254740993';
+// throwing getItem; and (Review Focus 4) '00'; '+5'; '5\n'; '0x10'
+it('e2eGoalAmount takes leading zeros and the largest safe integer');
+// '007' -&gt; 7; '9007199254740991' -&gt; 9007199254740991  (Review Focus 4)
+it('reads VITE_E2E on every call');                      // Review Focus 3
+// one storage, empty: stub '1' -&gt; e2eOpen true; stub undefined -&gt; false; stub '1' -&gt; true</code></pre>
+        Add to <code>contracts.spec.ts</code>'s <code>constants</code> block: <code>it('the e2e keys')</code>, <code>E2E_GAME_KEY</code> is <code>'sfhousing:e2e:game'</code> and <code>E2E_GOAL_KEY</code> is <code>'sfhousing:e2e:goal'</code> (spec <code>sec-tests</code> puts every constant there).
+      </li>
+      <li id="t3-s2"><input type="checkbox"> Run them and see them fail.
+        <pre><code data-lang="sh">npx vitest run --project server src/lib/game/e2e.spec.ts src/lib/game/contracts.spec.ts</code></pre>
+        Expected: FAIL, "Failed to resolve import './e2e'".
+      </li>
+      <li id="t3-s3"><input type="checkbox"> Implement <code>src/lib/game/e2e.ts</code>, no imports: the two constants, <code>e2eOpen</code> and <code>e2eGoalAmount</code> with the X1 doc comments. Each function reads <code>import.meta.env.VITE_E2E === '1'</code> inside its body, never at module scope (Review Focus <a href="#rf-3">3</a>: Playwright loads this module in Node, where <code>import.meta.env</code> is undefined). Each wraps <code>storage.getItem</code> in <code>try</code>. <code>e2eGoalAmount</code> accepts a value only when it matches <code>/^[0-9]+$/</code> and <code>Number(value)</code> is a safe integer of at least 1 (builder's call: <code>[0-9]</code> spells out "decimal digits only").</li>
+      <li id="t3-s4"><input type="checkbox"> Run the server tests and see them pass.
+        <pre><code data-lang="sh">npx vitest run --project server src/lib/game/e2e.spec.ts src/lib/game/contracts.spec.ts</code></pre>
+        Expected: 8 passed in <code>e2e.spec.ts</code>, 25 in <code>contracts.spec.ts</code>.
+      </li>
+      <li id="t3-s5"><input type="checkbox"> Write the failing Playwright spec <code>e2e/game-helpers.spec.ts</code>. Import <code>test</code> and <code>expect</code> from <code>@playwright/test</code>; the helpers and <code>SEED_BAR_DAY</code> from <code>./helpers/game</code>; the keys from <code>../src/lib/game/e2e</code> and <code>../src/lib/game/saves</code>. The spec's own probe:
+        <pre><code data-lang="ts">/** Registered after the helpers' scripts: copies the game's keys before the page's scripts run. */
+async function probe(page: Page): Promise&lt;void&gt; {
+  await page.addInitScript(
+    (k) =&gt; {
+      const out: Record&lt;string, string&gt; = {};
+      try {
+        for (let i = 0; i &lt; localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key === null) continue;
+          if (key === k.game || key === k.goal || key === k.saves || key.startsWith(k.prefix))
+            out[key] = localStorage.getItem(key) ?? '';
+        }
+      } catch {
+        // storage refused: the probe stays empty
+      }
+      (window as unknown as { __gameProbe: Record&lt;string, string&gt; }).__gameProbe = out;
+    },
+    { game: E2E_GAME_KEY, goal: E2E_GOAL_KEY, saves: SAVES_KEY, prefix: saveKey('') }
+  );
+}</code></pre>
+        A <code>read(page)</code> helper returns <code>page.evaluate(() =&gt; window.__gameProbe)</code>. Each test calls its helpers, then <code>probe(page)</code>, then <code>page.goto('/about')</code>, then reads the probe. Cases (spec <code>sec-tests</code>):
+        <pre><code data-lang="ts">test('with no helper, nothing is stored');
+// probe has no E2E_GAME_KEY, no SAVES_KEY, no key starting 'sfhousing:save:'
+test('seedGame(page, 5) seeds a level 5 game with three bars');
+// probe[E2E_GAME_KEY] '1'; index = JSON.parse(probe[SAVES_KEY]); save = JSON.parse(probe[saveKey(index.current)]);
+// index.saves.length 1, index.saves[0].id === index.current; save.progress.level 5;
+// Object.keys(save.progress.banked).sort() toEqual ['2','3','4']; each .on === SEED_BAR_DAY;
+// typeof save.progress.firstWinAt 'string'
+test('a seeded game is what the page keeps');
+// after the load: await expect(page.locator('html[data-hydrated]')).toHaveCount(1); then read
+// localStorage with page.evaluate: the save under its key has level 5; the index's current names it
+test('SEED_BAR_DAY is the first of October 2066');
+// new Date(SEED_BAR_DAY * 86_400_000).toISOString().slice(0, 10) === '2066-10-01'
+test('seedGame at level 3'); // level 3; banked keys ['2']
+test('seedGame at level 2'); // level 2; banked {}; firstWinAt a string
+test('seedGame at level 1'); // level 1; banked {}; firstWinAt null
+test('newVisitor switches the game on and stores nothing');
+// probe[E2E_GAME_KEY] '1'; no SAVES_KEY; no 'sfhousing:save:' key
+test('the seed is written once');
+// seeded load; page.evaluate sets name 'Renamed' in the stored save and its index entry; page.reload();
+// read(page): both show 'Renamed'
+test('a stored index is never overwritten');                       // Review Focus 2
+// seeded load; page.evaluate removes saveKey(seededId) and sets the index's current to 'other';
+// page.reload(); probe has no saveKey(seededId) and index.current 'other'
+test('seedGoalAmount sets the goal and leaves the game open');
+// seedGoalAmount(page, 5000): probe[E2E_GOAL_KEY] '5000'; no E2E_GAME_KEY
+test('the helpers refuse bad calls');
+// newVisitor then seedGame(page, 3): rejects 'seedGame: this page already has a game';
+// on a fresh page seedGame(page, 6 as never) rejects 'seedGame: level must be 1 to 5', and a following
+// seedGame(page, 3) resolves (a refused call does not mark the page);
+// seedGoalAmount(page, 0) rejects 'seedGoalAmount: amount must be a whole number of at least 1';
+// newVisitor after seedGame rejects 'newVisitor: this page already has a game'
+test('storage that refuses writes still loads');
+// first: addInitScript replacing Storage.prototype.setItem with a throwing function (as
+// e2e/sim-timeline.spec.ts:180); then seedGame(page, 3); page.goto('/about') response ok;
+// page.getByRole('heading', { level: 1 }) visible
+test('storage that throws on access still loads');               // Review Focus 1
+// first: addInitScript defining window.localStorage with a getter that throws a SecurityError
+// DOMException; then seedGame(page, 3); page.goto('/about') response ok; h1 visible</code></pre>
+        Rejections are asserted with <code>await expect(promise).rejects.toThrow('...')</code> using the exact messages. No fixed waits: every wait is an <code>expect</code> on a locator or the <code>goto</code> response.
+      </li>
+      <li id="t3-s6"><input type="checkbox"> Run <code>npm run check</code> and see the spec fail to type-check on the missing helper module <code>./helpers/game</code>. (Running Playwright first would build the app for nothing.)</li>
+      <li id="t3-s7"><input type="checkbox"> Implement <code>e2e/helpers/game.ts</code> with exactly the imports of spec <code>sec-design-imports</code>:
+        <pre><code data-lang="ts">import type { Page } from '@playwright/test';
+import { readFileSync } from 'node:fs';
+import { newId } from '../../src/lib/ids/base58';
+import { MONTH_DAYS } from '../../src/lib/timelapse/time';
+import { E2E_GAME_KEY, E2E_GOAL_KEY } from '../../src/lib/game/e2e';
+import { SAVES_KEY, saveKey, type GameSave } from '../../src/lib/game/saves';
+import type { Banked } from '../../src/lib/game/progress';</code></pre>
+        <code>SEED_BAR_DAY</code>, computed when the module loads (fixed by the spec):
+        <pre><code data-lang="ts">/** The fixture's window: WINDOW_MONTHS in src/lib/sim/timeline-client.ts. */
+const WINDOW_MONTHS = 480;
+const asOf: number = JSON.parse(
+  readFileSync(
+    new URL('../fixtures/data/fixture-0/scenarios/fzp/calibration.json', import.meta.url),
+    'utf8'
+  )
+).asOf;
+const end = new Date((asOf + Math.floor(WINDOW_MONTHS * MONTH_DAYS)) * 86_400_000);
+/** The first day of the calendar month that holds the window's last day: 35337 on the fixture. */
+export const SEED_BAR_DAY = Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), 1) / 86_400_000;</code></pre>
+        A module-level <code>const seeded = new WeakSet&lt;Page&gt;()</code>. <code>seedGame(page, level)</code> is <code>async</code>: it rejects with <code>Error('seedGame: this page already has a game')</code> when <code>seeded.has(page)</code>, then with <code>Error('seedGame: level must be 1 to 5')</code> unless <code>level</code> is one of 1 to 5, and only then adds the page (builder's call: a refused call leaves the page usable). It builds the save and index in Node (fixed by the spec):
+        <pre><code data-lang="ts">const id = newId();
+const at = new Date().toISOString();
+const banked: Record&lt;number, Banked&gt; = {};
+for (let n = 2; n &lt; level; n++) banked[n] = { on: SEED_BAR_DAY, datasetVersion: 'fixture-0', at };
+
+const save: GameSave = {
+  v: 1,
+  id,
+  name: 'Seeded game',
+  nameIsDefault: false,
+  progress: { v: 1, level, banked, firstWinAt: level &gt; 1 ? at : null },
+  plan: null,
+  policy: null,
+  savedAt: at
+};
+const index = {
+  v: 1,
+  current: id,
+  saves: [{ id, name: 'Seeded game', nameIsDefault: false, savedAt: at, level }]
+};</code></pre>
+        and passes one argument <code>{ gameKey: E2E_GAME_KEY, savesKey: SAVES_KEY, key: saveKey(id), save: JSON.stringify(save), index: JSON.stringify(index) }</code> to <code>page.addInitScript</code>, whose body is:
+        <pre><code data-lang="ts">try {
+  localStorage.setItem(a.gameKey, '1');
+  if (localStorage.getItem(a.savesKey) === null) {
+    localStorage.setItem(a.key, a.save);
+    localStorage.setItem(a.savesKey, a.index);
+  }
+} catch {
+  // storage refused: write nothing more, so the page still loads
+}</code></pre>
+        It never writes <code>sfhousing:plan:v1</code> or <code>sfhousing:sim:v2</code>. <code>newVisitor(page)</code> rejects with <code>Error('newVisitor: this page already has a game')</code> when <code>seeded.has(page)</code>, else adds the page and an init script setting <code>E2E_GAME_KEY</code> to <code>'1'</code> inside a <code>try</code> that ignores a throw. <code>seedGoalAmount(page, amount)</code> rejects with <code>Error('seedGoalAmount: amount must be a whole number of at least 1')</code> unless <code>Number.isSafeInteger(amount) &amp;&amp; amount &gt;= 1</code>, else adds an init script setting <code>E2E_GOAL_KEY</code> to <code>String(amount)</code> in a <code>try</code>; it does not touch the <code>WeakSet</code> or <code>E2E_GAME_KEY</code>. The three exported functions keep X1's doc comments.
+      </li>
+      <li id="t3-s8"><input type="checkbox"> Type-check, then run the Playwright spec. Port 4173 is shared: first check it.
+        <pre><code data-lang="sh">npm run check
+lsof -nP -iTCP:4173 -sTCP:LISTEN</code></pre>
+        If <code>lsof</code> prints a listener, another session owns it: never kill it; wait (a Monitor until-loop on the same <code>lsof</code>) until it prints nothing. Then:
+        <pre><code data-lang="sh">npx playwright test e2e/game-helpers.spec.ts --repeat-each=5 --retries=0</code></pre>
+        Expected: every test passes in both <code>chromium</code> and <code>mobile</code>, five times each, no server stderr.
+      </li>
+      <li id="t3-s9"><input type="checkbox"> Write the docs. <code>docs/dev/game.md</code>, exactly:
+        <pre><code data-lang="md"># The game
+
+The incremental game's rules and saved games live in `src/lib/game/`: levels and results
+(`levels.ts`), progress and banking (`progress.ts`), saved games and their default names
+(`saves.ts`), the store that keeps them in `localStorage` under `sfhousing:saves:v1` and
+`sfhousing:save:&lt;id&gt;` (`store.svelte.ts`), what each level allows and the playable document
+(`allowed.ts`), the player's standing (`standing.ts`), the game's words (`copy.ts`), the win card
+(`WinCard.svelte`) and the level panel (`LevelPanel.svelte`). For the current game the plan and
+policy records under `sfhousing:plan:v1` and `sfhousing:sim:v2` are the truth. On a `VITE_E2E=1`
+build a page with no `sfhousing:e2e:game` key gets the open game (level 5, every control, nothing
+stored); an e2e spec switches the real game on with `seedGame` or `newVisitor` from
+`e2e/helpers/game.ts`, and sets the goal's amount with `seedGoalAmount`.</code></pre>
+        <code>docs/dev/game-save.md</code>, exactly:
+        <pre><code data-lang="md"># Game save
+
+Saved games leave the browser for the player's account through `/api/game` (types in
+`src/lib/game/save-api.ts`), stored in the `game_save` table, one row per saved game with a rev
+that every write checks. The browser side is the save sync (`src/lib/game/save-sync.svelte.ts`),
+which the root layout makes once and the store calls after each change, and which keeps both
+versions when two devices changed the same game. The account offer on the win card is
+`src/lib/game/AccountOffer.svelte`.</code></pre>
+      </li>
+      <li id="t3-s10"><input type="checkbox"> Delete the five docs and edit the doc list.
+        <pre><code data-lang="sh">git rm docs/dev/lesscars.md docs/dev/sim-log.md docs/dev/sim-object.md docs/dev/sim-sync.md docs/dev/sim-store.md</code></pre>
+        In <code>CLAUDE.md</code> remove the lines for <code>lesscars.md</code> (<code>:49</code>) and <code>sim-log.md</code>, <code>sim-object.md</code>, <code>sim-sync.md</code>, <code>sim-store.md</code> (<code>:63-66</code>), and add these two directly before the line "Design, specs and plans" (the separator is the em dash the other lines use):
+        <pre><code data-lang="md">- **The game (levels, bars, what each level allows, the playable document, saved games and the store's keys, the win card, the level panel, the e2e seam and its helpers)** — [docs/dev/game.md](docs/dev/game.md)
+- **Game save (`/api/game`, the `game_save` table, the browser's save sync, the account offer)** — [docs/dev/game-save.md](docs/dev/game-save.md)</code></pre>
+        No other line changes: the Architecture paragraph's <code>sim-object.md</code> link (<code>CLAUDE.md:102</code>) and every other link to the deleted docs stay for <code>closing</code>.
+      </li>
+      <li id="t3-s11"><input type="checkbox"> Run the doc index test, the server specs, type-check and lint.
+        <pre><code data-lang="sh">npx vitest run --project server scripts/docs-index.spec.ts src/lib/game/e2e.spec.ts src/lib/game/contracts.spec.ts
+npm run check
+npm run lint</code></pre>
+        Expected: all pass; lint clean, the new markdown included.
+      </li>
+      <li id="t3-s12"><input type="checkbox"> Commit (the five deletions are already staged by <code>git rm</code>).
+        <pre><code data-lang="sh">git add src/lib/game e2e/helpers/game.ts e2e/game-helpers.spec.ts docs/dev/game.md docs/dev/game-save.md CLAUDE.md
+git commit -m "feat(game): add the e2e seam, its helpers and the game docs"</code></pre>
+      </li>
+      <li id="t3-s13"><input type="checkbox"> Check timing crutches on the committed lines.
+        <pre><code data-lang="sh">npx chreode timing-check --head HEAD</code></pre>
+        Expected: no findings. On a finding, fix it and commit again.
+      </li>
+    </ol>
+  </section>
+</article>
