@@ -11,7 +11,8 @@ import {
   paintOnce,
   publishDialog,
   openPublish,
-  publishOpen
+  publishOpen,
+  waitForMap
 } from './helpers/sharing';
 
 test('share roundtrip: publish, open in a fresh browser, same score, Remix', async ({
@@ -70,8 +71,12 @@ test('share roundtrip: publish, open in a fresh browser, same score, Remix', asy
     expect(await visitor.evaluate((k) => localStorage.getItem(k), PLAN_KEY)).toBeNull();
 
     // Remix makes a saved game holding the plan and loads `/` on it.
+    // Until the page mounts, the banner shows Remix as ready whatever the game holds.
+    await expect(visitor.locator('html')).toHaveAttribute('data-hydrated', '');
     await banner.getByRole('button', { name: 'Remix' }).click();
     await expect(visitor).toHaveURL(new URL('/', link).toString());
+    // toHaveURL passes when the new document commits; wait for Paint to mount and set its hook.
+    await waitForMap(visitor);
     await expect.poll(() => ops(visitor)).toBe(1);
   } finally {
     await ctx.close();
