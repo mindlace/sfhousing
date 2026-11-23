@@ -258,7 +258,7 @@
         <li>Each win card shows the account line. While the handle has never been chosen it is a field: "Save as @…". Once chosen it reads "@handle" and links to the account page, where an email, a password, a passkey and Google are added.</li>
         <li>Signing in on another device brings the account's saved games to that device and sends the device's own to the account. All are kept (D8).</li>
         <li>When two devices have changed the same saved game, the one that saves second keeps its version as a new saved game named "{name} (this device)" and takes the account's version under the old name.</li>
-        <li>A saved game deleted on one device is deleted on the others the next time they sync.</li>
+        <li>A saved game deleted on one device is deleted on the others the next time they sync, where it is unchanged. A device that changed it before learning of the delete keeps its version as its own saved game, under the same name: a delete never discards a change (D8).</li>
         <li>Deleting the account deletes its saved games. Published plans and policies stay. Reason: a saved game is its player's own and is never shared; once the account is gone nobody can sign in to open it, so keeping it would keep nothing anyone can reach. What others can open, the published plans and policies and their links, is kept.</li>
         <li>The header's account entry, <code>/account</code>, <code>/signin</code>, password reset and email verification stay. "Start fresh without an account" on <code>/signin</code> goes: the game makes the anonymous account.</li>
       </ul>
@@ -763,7 +763,7 @@ export function createSaveSync(opts: {
         <li>The browser keeps each saved game's last seen rev under <code>sfhousing:saves:revs</code>.</li>
         <li>A 409 keeps both: the browser's version is stored as a new saved game with a new id and the name <code>defaultSaveName({ kind: 'conflict', name })</code>, the account's version is adopted under the old id, and the new saved game is sent.</li>
         <li>When the old id was the current game, the browser's version stays current under its new id, so nothing changes under the player's hands.</li>
-        <li>A 410 removes the saved game from this browser, unless it is the current one, which is kept under a new id.</li>
+        <li>A 410 keeps the saved game in this browser under a new id and sends it again: a change made here is never lost to a delete made on another device (D8).</li>
         <li><code>pull()</code> lists the account's saved games. It fetches and adopts those this browser lacks, and those it holds unchanged at an older rev. It removes those listed under <code>removed</code> that are unchanged here. It sends those the account lacks.</li>
         <li><code>pull()</code> runs once on load when <code>signedIn()</code>, and again when <code>signedIn()</code> turns true.</li>
         <li><code>account</code> is set from every answer that carries an <code>AccountLine</code>. After the <code>PUT</code> that made the account, the header shows the handle from it. The sync never invalidates page data: a page keeps its playhead, its card and its undo history.</li>

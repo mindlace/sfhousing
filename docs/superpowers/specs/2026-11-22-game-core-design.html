@@ -354,7 +354,7 @@ export function createSaveSync(opts: {
         <li>The browser keeps each saved game's last seen rev under <code>sfhousing:saves:revs</code>.</li>
         <li>A 409 keeps both: the browser's version is stored as a new saved game with a new id and the name <code>defaultSaveName({ kind: 'conflict', name })</code>, the account's version is adopted under the old id, and the new saved game is sent.</li>
         <li>When the old id was the current game, the browser's version stays current under its new id, so nothing changes under the player's hands.</li>
-        <li>A 410 removes the saved game from this browser, unless it is the current one, which is kept under a new id.</li>
+        <li>A 410 keeps the saved game in this browser under a new id and sends it again: a change made here is never lost to a delete made on another device (D8).</li>
         <li><code>pull()</code> lists the account's saved games. It fetches and adopts those this browser lacks, and those it holds unchanged at an older rev. It removes those listed under <code>removed</code> that are unchanged here. It sends those the account lacks.</li>
         <li><code>pull()</code> runs once on load when <code>signedIn()</code>, and again when <code>signedIn()</code> turns true.</li>
         <li><code>account</code> is set from every answer that carries an <code>AccountLine</code>. After the <code>PUT</code> that made the account, the header shows the handle from it. The sync never invalidates page data: a page keeps its playhead, its card and its undo history.</li>
