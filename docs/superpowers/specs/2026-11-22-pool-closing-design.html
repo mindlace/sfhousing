@@ -458,7 +458,7 @@ export function closedLines(money: Money | MoneyView, at: Day): string[];</code>
     <ul>
       <li>The bounds, the federal ceiling and the removal of <code>uncapped</code>: <code>finite-funding</code>.</li>
       <li>A pool's lifetime level on the timeline, preset ends and funding copy: <code>funding-measures</code>.</li>
-      <li>The real-data check that current law reaches the goal with closing on: <code>closing</code>'s <code>scripts/level2-check.ts</code>.</li>
+      <li>The real-data check that current law reaches the goal with closing on: <code>scripts/level2-check.ts</code>, written and first run by <code>reach-check</code> after this unit lands, run again by <code>closing</code> before the upload.</li>
       <li>Closing in the older scenario engine: it keeps waiting on a spent pool, as the referee.</li>
       <li>Anything on a pool's bar when it closes: the bar shows nothing special (the design's "Finite public money"), and <code>pool-level.ts</code> is not this unit's. Details carries the "ran out" line.</li>
       <li>Looking ahead at inflows to decide an award: the award rule is unchanged.</li>

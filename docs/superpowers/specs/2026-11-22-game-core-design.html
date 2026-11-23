@@ -1070,7 +1070,7 @@ export function loadPage(path: '/' | '/sim'): void;</code></pre>
       <li>Listing <code>WinCard.svelte</code> and <code>LevelPanel.svelte</code> in <code>THEMED_FILES</code>: <code>game-shell</code>.</li>
       <li>Mounting the win card on <code>/sim</code>, calling <code>won()</code>, <code>setOffer</code> and <code>touched()</code>, the reworded outcome message, the "To beat" flag and Details line, locked lanes, the playable document to the worker and to Publish, and a money policy made from a preset carrying the preset's id: <code>game-sim</code>.</li>
       <li>The save sync's behaviour and the account offer's content: <code>game-save</code>.</li>
-      <li>The build check that current law reaches the goal: <code>closing</code>.</li>
+      <li>The build check that current law reaches the goal: <code>reach-check</code> writes and first runs it; <code>closing</code> runs it again before the upload.</li>
       <li>Merging two saved games, and sharing one with another player: no unit.</li>
     </ul>
   </section>
