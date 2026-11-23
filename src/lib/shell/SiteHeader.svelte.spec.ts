@@ -7,6 +7,8 @@ import '../../routes/layout.css';
 import { focusHeaderMenu } from './header-actions.svelte';
 import SiteHeader from './SiteHeader.svelte';
 import HeaderScoreHeader from './test/HeaderScoreHeader.svelte';
+import LevelCellHost from './test/LevelCellHost.svelte';
+import { quietSync, seededGame } from './test/seeded-game';
 import SimRowHeader from './test/SimRowHeader.svelte';
 
 describe('SiteHeader', () => {
@@ -833,6 +835,93 @@ describe('SiteHeader', () => {
 
     it('at 1280px the same row fits and the score is centred', async () => {
       expect(await expectRowFits(1280)).toBeLessThan(1);
+    });
+  });
+
+  describe('the game', () => {
+    for (const width of [1280, 375])
+      it(`at ${width}px, level 1: Simulate is no link, in the bar and in the Menu`, async () => {
+        await page.viewport(width, 800);
+        render(LevelCellHost, { game: seededGame({ level: 1 }).game, routeId: '/' });
+        if (width < 1024) await page.getByRole('button', { name: 'Menu' }).click();
+        const nav = page.getByRole('navigation', { name: 'Steps' });
+        await expect.element(nav.getByRole('link', { name: 'Paint' })).toBeVisible();
+        expect(nav.getByRole('link', { name: 'Simulate' }).elements()).toHaveLength(0);
+        const locked = [...document.querySelectorAll<HTMLElement>('[data-step-locked]')];
+        expect(locked).toHaveLength(2);
+        expect(document.querySelector('a[href="/sim"]')).toBeNull();
+        for (const el of locked) {
+          expect(el.tabIndex).toBe(-1);
+          expect(el.querySelector('.sr-only')?.textContent).toBe(
+            'Simulate. Unlocks when you level up'
+          );
+          expect(getComputedStyle(el).borderTopStyle).toBe('dashed');
+        }
+      });
+
+    it('at level 2 both steps are links', async () => {
+      await page.viewport(1280, 800);
+      render(LevelCellHost, { game: seededGame({ level: 2 }).game, routeId: '/' });
+      const nav = page.getByRole('navigation', { name: 'Steps' });
+      await expect.element(nav.getByRole('link', { name: 'Paint' })).toBeVisible();
+      await expect.element(nav.getByRole('link', { name: 'Simulate' })).toBeVisible();
+      expect(document.querySelector('[data-step-locked]')).toBeNull();
+    });
+
+    it("with no game provided the steps are today's and there is no level cell", async () => {
+      await page.viewport(1280, 800);
+      render(SiteHeader, { routeId: '/' });
+      const nav = page.getByRole('navigation', { name: 'Steps' });
+      await expect
+        .element(nav.getByRole('link', { name: 'Simulate' }))
+        .toHaveAttribute('href', '/sim');
+      expect(document.querySelector('[data-step-locked]')).toBeNull();
+      expect(document.querySelector('[data-testid="header-level"]')).toBeNull();
+    });
+
+    it("the account entry reads @handle from the layout's user first", async () => {
+      await page.viewport(1280, 800);
+      const sync = quietSync({ handle: 'bob', handleClaimed: true });
+      render(LevelCellHost, {
+        game: seededGame({ level: 1, sync }).game,
+        routeId: '/',
+        user: { handle: 'ada' }
+      });
+      const link = page.getByRole('link', { name: '@ada' });
+      await expect.element(link).toHaveAttribute('href', '/account');
+      expect(page.getByRole('link', { name: '@bob' }).elements()).toHaveLength(0);
+    });
+
+    it("with no user, the account entry reads the sync's account, whatever signInAvailable says", async () => {
+      await page.viewport(1280, 800);
+      const sync = quietSync({ handle: 'bob', handleClaimed: true });
+      render(LevelCellHost, {
+        game: seededGame({ level: 1, sync }).game,
+        routeId: '/',
+        signInAvailable: false
+      });
+      await expect
+        .element(page.getByRole('link', { name: '@bob' }))
+        .toHaveAttribute('href', '/account');
+    });
+
+    it('with neither, Sign in links /signin while a method is in effect', async () => {
+      await page.viewport(1280, 800);
+      render(LevelCellHost, { game: seededGame({ level: 1 }).game, routeId: '/' });
+      await expect
+        .element(page.getByRole('link', { name: 'Sign in' }))
+        .toHaveAttribute('href', '/signin');
+    });
+
+    it('with neither and no sign-in method, there is no account entry', async () => {
+      await page.viewport(1280, 800);
+      render(LevelCellHost, {
+        game: seededGame({ level: 1 }).game,
+        routeId: '/',
+        signInAvailable: false
+      });
+      await expect.element(page.getByRole('link', { name: 'About' })).toBeVisible();
+      expect(document.querySelector('[data-header-account]')).toBeNull();
     });
   });
 });

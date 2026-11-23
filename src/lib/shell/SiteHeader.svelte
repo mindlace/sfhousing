@@ -16,6 +16,8 @@
 <script lang="ts">
   import { onMount, tick, type Snippet } from 'svelte';
   import { AUTH_COPY } from '$lib/account/copy';
+  import { simLocked } from '$lib/game/allowed';
+  import { useGame } from '$lib/game/store.svelte';
   import { headerOverlay } from './header-actions.svelte';
 
   let {
@@ -54,6 +56,16 @@
       ? 'cursor-default border-transparent bg-accent text-on-accent dark:bg-accent-dark dark:text-on-accent-dark'
       : 'border-gray-500 hover:bg-gray-100 dark:border-gray-400 dark:hover:bg-chrome-dark-raised'
   ];
+
+  // Simulate before it unlocks: no link, the same shape with a dashed border.
+  const lockedStep =
+    'inline-flex min-h-6 min-w-6 cursor-default items-center whitespace-nowrap rounded-md border border-dashed border-gray-500 px-2 text-ink-muted dark:border-gray-400 dark:text-ink-dark-muted';
+
+  const game = useGame();
+  // The first client render matches the server's: the game's state shows only after mount.
+  let mounted = $state(false);
+  const locked = $derived(mounted && !game.open && simLocked(game.progress));
+  const account = $derived(user ?? (mounted ? game.sync.account : null));
 
   let open = $state(false);
   let header = $state<HTMLElement>();
@@ -104,6 +116,7 @@
   }
 
   onMount(() => {
+    mounted = true;
     const mq = matchMedia(WIDE);
     const onChange = () => {
       if (mq.matches) open = false;
@@ -124,9 +137,17 @@
       >
     </li>
     <li>
-      <a href="/sim" class={tab(onSim)} aria-current={onSim ? 'page' : undefined}
-        >{@render stepNumber(2)}Simulate</a
-      >
+      {#if locked}
+        <span data-step-locked class={lockedStep}
+          >{@render stepNumber(2)}<span aria-hidden="true">Simulate</span><span class="sr-only"
+            >Simulate. Unlocks when you level up</span
+          ></span
+        >
+      {:else}
+        <a href="/sim" class={tab(onSim)} aria-current={onSim ? 'page' : undefined}
+          >{@render stepNumber(2)}Simulate</a
+        >
+      {/if}
     </li>
   </ol>
 {/snippet}
@@ -210,13 +231,13 @@
          minimum (a row too wide moves the score rather than squeezing a control). -->
     <div class="flex items-center gap-2 max-lg:flex-wrap lg:justify-self-end lg:*:shrink-0">
       {@render actions?.()}
-      {#if user || signInAvailable}
+      {#if account || signInAvailable}
         <a
-          href={user ? '/account' : '/signin'}
+          href={account ? '/account' : '/signin'}
           class={[tab(false), 'max-w-40 text-sm lg:max-xl:max-w-24']}
-          title={user ? `@${user.handle}` : undefined}
+          title={account ? `@${account.handle}` : undefined}
           data-header-account
-          ><span class="truncate">{user ? `@${user.handle}` : AUTH_COPY.signIn}</span></a
+          ><span class="truncate">{account ? `@${account.handle}` : AUTH_COPY.signIn}</span></a
         >
       {/if}
       <a
