@@ -819,7 +819,7 @@ describe('reopenArrivals: a closed pool opens on its next arrival', () => {
     expect(pools.closedDay[pools.id.indexOf(CLOSE_POOL)]).toBe(pools.shutFrom[1]);
   });
 
-  it('a pool closed and opened in the same month leaves no shut row', () => {
+  it('a pool found spent in month m and opened in month m + 1 keeps a row shutTo = shutFrom', () => {
     const c = closing(singleSpanDoc, 120, { input: SOLO }).closedAt(CLOSE_POOL);
     const doc = docOf(
       closingPolicy(asOf, [
@@ -828,10 +828,20 @@ describe('reopenArrivals: a closed pool opens on its next arrival', () => {
       ])
     );
     const r = closing(doc, c + 1, { input: SOLO });
-    expect(r.closedDayAfter(c)).toBe(monthFirstDay(asOf, c + 1));
-    expect(r.shutNAfter(c)).toBe(1);
-    expect(r.shutNAfter(c + 1)).toBe(0);
+    const day = monthFirstDay(asOf, c + 1);
+    expect(r.closedDayAfter(c)).toBe(day);
+    expect(r.shutAfter(c)).toEqual([{ id: CLOSE_POOL, from: day, to: NO_DAY }]);
+    // The history only grows: the opening sets the row's shutTo and keeps it.
+    expect(r.shutAfter(c + 1)).toEqual([{ id: CLOSE_POOL, from: day, to: day }]);
     expect(r.closedDayAfter(c + 1)).toBe(NO_DAY);
+    // It closes no month: every month stepped offered its programme ...
+    for (let k = 1; k <= c + 1; k++) expect(r.offeredAt(k)).toContain(CLOSE_GRANT);
+    // ... and the closed view of the final world is the base, frame for frame, with no change
+    // month added.
+    const base = moneyTimeline(SOLO, doc);
+    const view = closedTimeline(base, fundOf(r.world).pools, asOf);
+    for (let k = 1; k <= c + 1; k++) expect(view.frameAt(k)).toBe(base.frameAt(k));
+    expect(view.changes()).toEqual(base.changes());
   });
 
   it('an edit before the closing that gives a later arrival (keep) defers it', () => {

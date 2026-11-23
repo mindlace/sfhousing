@@ -217,6 +217,10 @@ funding columns gives null and false, and a row built without them reads so.
 - `shut`: true when the pool has such a row whose `shutTo` is `NO_DAY` or after that last day;
   false otherwise, and false again from the month an arrival opens the pool.
 
+A row whose `shutTo` equals its `shutFrom` (found spent in model month m, opened by an arrival in
+m + 1) sets `closed`, and is `shut` only in the calendar month holding its spent day, when that
+month ends on that day. Shut rows are never removed, so a final month's row never changes.
+
 `MoneyView` gains `closed`, each pool id's `closed` in the last row (null when absent): the first
 day the pool was ever closed, kept when it opens again; and `shut`, each pool id's `shut` for every
 filled month (`boolean[]`, false for a row without it). A rewind (`chunksBefore`) cuts both with

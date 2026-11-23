@@ -54,8 +54,8 @@ ascending (`mRow`, `mProg`, `mPool`, `mInstr`, `mGrant`, `mLent`, `mReserve`, `m
 **Shut rows** (`FundPools`, one per time a pool closed, oldest first; `shutN` rows): `shutRow` (the
 world pool row), `shutFrom` (the first day closed, a model month's first day), `shutTo` (the first
 day open again, a model month's first day, or `NO_DAY` while closed). `addShutRow` opens a row and
-sets `closedDay`; `reopenPool` closes it with `shutTo` and clears `closedDay`, and removes a row
-whose `shutTo` equals its `shutFrom`.
+sets `closedDay`; `reopenPool` closes it with `shutTo` and clears `closedDay`. No row is ever
+removed, one whose `shutTo` equals its `shutFrom` included.
 
 **`version` and the caches.** `line-index.ts` and `frameMoney` keep caches in `WeakMap`s outside
 the world; a `structuredClone` is a new object and builds its own, so clones stay exact. The line
@@ -167,9 +167,14 @@ the pool is judged against the money the scan held out. The closed day is `ctx.l
 next month's first day. In the month of its last arrival a short application closes nothing.
 
 **The `shut` history.** `closeSpent` calls `addShutRow(pools, q, closedDay)`; the pool's
-`closedDay` is the open row's `shutFrom`. A pool opened again keeps its row with `shutTo` set. A
-pool closed and opened on the same day leaves no row. The columns are in the world, so a
-`structuredClone` carries them and a rewind needs nothing more.
+`closedDay` is the open row's `shutFrom`. A pool opened again keeps its row with `shutTo` set. The
+history only grows: a closing adds a row, an opening sets that row's `shutTo`, and no row is
+removed, so the money rows of a calendar month already final read the same after every later
+month. A pool found spent in month m and opened by an arrival in month m + 1 keeps a row whose
+`shutTo` equals its `shutFrom`: it closes no month (a month's closed set needs
+`shutFrom ≤ monthFirstDay(asOf, k) < shutTo`) and adds no change month to the view, and records
+that the pool was found spent in month m. The columns are in the world, so a `structuredClone`
+carries them and a rewind needs nothing more.
 
 **The closed view** (`closedTimeline(timeline, pools, asOf)`): the base timeline with, in each
 month whose first day falls in a shut row, the programmes of the closed pools offered 0 (a frame

@@ -47,13 +47,15 @@ describe('closing columns', () => {
     expect(structuredClone(w)).toEqual(w);
   });
 
-  it('a pool closed and opened on the same day leaves no shut row', () => {
+  it('a pool closed and opened on the same day keeps its shut row, shutTo = shutFrom', () => {
     const { pools } = fundOf(funded(['a', 'b']));
     addShutRow(pools, 0, 500);
     addShutRow(pools, 1, 600);
     reopenPool(pools, 0, 500);
-    expect(pools.shutN).toBe(1);
-    expect([pools.shutRow[0], pools.shutFrom[0], pools.shutTo[0]]).toEqual([1, 600, NO_DAY]);
+    expect(pools.shutN).toBe(2);
+    expect(pools.closedDay[0]).toBe(NO_DAY);
+    expect([pools.shutRow[0], pools.shutFrom[0], pools.shutTo[0]]).toEqual([0, 500, 500]);
+    expect([pools.shutRow[1], pools.shutFrom[1], pools.shutTo[1]]).toEqual([1, 600, NO_DAY]);
     expect(() => reopenPool(pools, 0, 700)).toThrow();
     expect(() => addShutRow(pools, 1, 700)).toThrow();
   });
