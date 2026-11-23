@@ -634,7 +634,11 @@
       if (shown?.surface === 'tooltip') clearShown();
       unreportHover();
     });
-    map.on('moveend', () => (l.moving = false));
+    map.on('moveend', () => {
+      l.moving = false;
+      // The mouse rests while the camera moves: pick what is under it now, as a 1 px move would.
+      if (l.pointer) hoverSoon(l);
+    });
     map.on('webglcontextlost', () => {
       if (!l.dead) mapState = 'context-lost';
     });
@@ -1412,19 +1416,24 @@
     if (!l || !map || e.pointerType === 'touch') return;
     // `e.buttons` is live per event, so it covers a brush stroke (pan disabled + pointer down)
     // without trusting a down-counter that a release outside the map would leave stale.
-    const suppressed = e.target !== map.getCanvas() || e.buttons !== 0 || l.moving;
-    if (suppressed) {
-      l.pointer = null;
+    const off = e.target !== map.getCanvas() || e.buttons !== 0;
+    l.pointer = off ? null : canvasPoint(map, e);
+    // While the camera moves the point is only kept: moveend picks there.
+    if (off || l.moving) {
       if (shown?.surface === 'tooltip') clearShown();
       unreportHover();
       return;
     }
-    l.pointer = canvasPoint(map, e);
+    hoverSoon(l);
+  }
+
+  /** A hover pick at `l.pointer` on the next frame; requests within one frame share it. */
+  function hoverSoon(l: Live): void {
     if (l.pickRaf !== null) return;
     l.pickRaf = requestAnimationFrame(() => {
       l.pickRaf = null;
       const p = l.pointer;
-      if (l.dead || !p) return;
+      if (l.dead || l.moving || !p) return;
       deliver('hover', p.x, p.y, pickAt(l, p.x, p.y));
     });
   }
@@ -1444,6 +1453,7 @@
     const l = live;
     const map = l?.map;
     if (!l || !map) return;
+    l.pointer = null; // a press (a drag, a stroke, a touch) is no resting mouse
     if (e.pointerType !== 'touch') {
       // Mouse/pen clicks pick only for timelinePick (§4.8); the editor ignores them.
       if (!timelinePick || e.button !== 0 || e.target !== map.getCanvas()) l.click = null;
@@ -1463,6 +1473,8 @@
     const map = l?.map;
     if (!l || !map) return;
     if (e.pointerType !== 'touch') {
+      // Released on the canvas, the mouse rests there: a drag-pan's moveend picks under it.
+      if (e.target === map.getCanvas() && e.buttons === 0) l.pointer = canvasPoint(map, e);
       const click = l.click;
       l.click = null;
       if (!click || click.id !== e.pointerId || !timelinePick || !panEnabled) return;
