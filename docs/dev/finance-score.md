@@ -294,10 +294,6 @@ is passed, so a run without finance is untouched). **The fast path is untouched:
 `finance.pools` as `baseline`), after `shownSeries`; `postTimeline` posts the same objects on every
 post. `TierCtx` is built when the loaded input changes (a lever revision), not per run.
 
-`src/lib/sim/scenario` and `src/lib/scoreboard` are hashed into the dataset version
-(`pipeline/lib/version.ts`), so this subsystem changes the dataset version; the dataset is built
-and uploaded once, at the release.
-
 ## The budget
 
 On the bench city with the bench funding set, `tierSeries` plus `moneyOf` add at most 15 ms to the

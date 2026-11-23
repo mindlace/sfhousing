@@ -2,8 +2,8 @@
   The Results face's "Public money" and "Who the homes are for" blocks (funding-ui spec 4.11).
   `part` picks one, so SimDetails renders this twice and keeps the face order of 4.11 without
   moving its own markup. Every value is the month `i`'s (the playhead's month); only the limit
-  statements are not series. The first lines are not live
-  regions: they change every frame during play, as the headline does.
+  statements are not series. The first lines are not live regions: they change every frame
+  during play, as the headline does.
 -->
 <script lang="ts">
   import { formatCount, formatPercent } from '$lib/scoreboard/format';

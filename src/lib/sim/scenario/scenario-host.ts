@@ -18,11 +18,11 @@
 // a job over its estimate still ends within it; the first job of a slice always runs, and the
 // shown run's job (simulate and score only) runs in a slice of its own. Other requests are
 // handled between slices. Job priority: (0) once per loaded input with a finance (at the load with
-// no levers, at each `current` with levers), its finance precompute, each in a slice of its own, so the
-// first run on the input does not pay for it in its task; (1) the current run's revision 0, after
-// the FZP band runs it needs when its seed is null: the shown run, then in the next slice its
-// geometry set-up, then its geometry packing for up to 2.5 s (a swap reroll's: one packing slice,
-// no cap); (2) its twin, posted as a band-only update with `planEffect`; (3) its later geometry,
+// no levers, at each `current` with levers), its finance precompute, each in a slice of its own,
+// so the first run on the input does not pay for it in its task; (1) the current run's revision
+// 0, after the FZP band runs it needs when its seed is null: the shown run, then in the next
+// slice its geometry set-up, then its geometry packing for up to 2.5 s (a swap reroll's: one
+// packing slice, no cap); (2) its twin, posted as a band-only update with `planEffect`; (3) its later geometry,
 // one revision per packing slice; (4) the band: FZP run then twin per pair, a band-only update
 // every 16 pairs and after the last. Twins run through `simulateNet` only, so no twin Schedule
 // ever exists. Every run packs the latest viewport's cells (`Chunks.view`) before the rest.
@@ -49,7 +49,8 @@
 // for that file, fetched once per session on the first request needing it. Every waiting request
 // is answered `no-session` when its session ends (a new init, a failed load, dispose). The
 // `LotIndex` is built once per session on the base parcels; the resolver memoises on object
-// identity, so the session's own decoded objects are passed every time. A session without levers never fetches them.
+// identity, so the session's own decoded objects are passed every time. A session without levers
+// never fetches them.
 //
 // Height limits (height-lids Task 8). Each lever revision's resolve step starts a staged city
 // build (`city.ts`) on its effective stories; its steps run next (job kind 'heights'), ahead of

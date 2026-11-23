@@ -124,8 +124,8 @@ export class ScenarioClient {
   }
 
   /**
-   * `levers` absent = the base (no policy.bin, no `levers` responses). `awaitLevers` (sent only with
-   * levers): the levers lack their brush lots, so the worker runs nothing until the first
+   * `levers` absent = the base (no policy.bin, no `levers` responses). `awaitLevers` (sent only
+   * with levers): the levers lack their brush lots, so the worker runs nothing until the first
    * `setLevers`.
    */
   initScenario(

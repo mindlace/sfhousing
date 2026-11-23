@@ -1,5 +1,5 @@
-// Recording SimMap double for TimelineMode tests (FzpSimMapStub.svelte): every handle call, the latest
-// props, and a fake MapLibre map whose events a test fires by hand. Reset it per test.
+// Recording SimMap double for TimelineMode tests (FzpSimMapStub.svelte): every handle call, the
+// latest props, and a fake MapLibre map whose events a test fires by hand. Reset it per test.
 import type { Map as MapLibreMap } from 'maplibre-gl';
 import type { SimMapHandle, SimMapProps } from '$lib/map/types';
 

@@ -15,7 +15,10 @@ import type { CardStatus } from './types';
 
 export type ChanceTable = ReturnType<typeof chanceTable>;
 
-/** The chance tables a card reads, by `ProjectCard.lookups`. With no levers both are the base table. */
+/**
+ * The chance tables a card reads, by `ProjectCard.lookups`. With no levers both are the base
+ * table.
+ */
 export type CardChance = { inFlight: ChanceTable; fresh: ChanceTable };
 
 /** The calibrations behind a card's chance, by `ProjectCard.lookups` (its provenance). */

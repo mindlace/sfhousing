@@ -119,7 +119,7 @@ On `/sim` the map stream sets them from `slotFlags` (`src/lib/sim/world/runner/f
 - `zoning`: a simulated row whose lot's limit owner (`limitsAt`) is not current law: a painted policy or a transit rule above it. It over-counts (some would have started under current law) and never means "because of". Pipeline and phase rows never carry it.
 - `money`: a funded row with a programme whose pool is not a baseline pool (`ds.loaded.fzp.finance.pools`): a pool you added. Scaling the baseline funds through baseline pools and sets no bit.
 
-The bits do not sum to "+N from your policy". The hashed `scenario/geometry.ts` packs zeros.
+The bits do not sum to "+N from your policy". `scenario/geometry.ts` packs zeros.
 
 ## Policy marks
 
@@ -145,7 +145,7 @@ Draw order: solids, ghosts, `timeline-bars`, `timeline-halos`, then the overlay 
 - Days run ahead of the playhead: the worker reads the world as of its last stepped month, and the page hides what the clock has not reached.
 - `validateCityDelta` (`src/lib/map/city-delta.ts`) throws `RangeError` on a wrong length, a row not ascending or at or past `rows`, a bad `rows`, a `from` that is not an integer in [0, `rows`], or a flag above 3.
 
-Producers: only `/sim`'s map stream ([map-stream.md](map-stream.md), "The city feed"). The hashed `scenario/geometry.ts` sends no `city`.
+Producers: only `/sim`'s map stream ([map-stream.md](map-stream.md), "The city feed"). `scenario/geometry.ts` sends no `city`.
 
 Consumers: Activity on `/sim`, and the map's controller for its debug counts. `TimelineMode.applyRender` feeds every update with `city` (and every revision 0) to its own `CityStore`, inside `ActivityIndex` (`src/lib/timeline/activity.ts`), before it forwards the update to the map (or queues it until the map is ready), so Activity's list needs no map and the buffers are read before the map may take them. The controller keeps its own `CityStore` (`src/lib/map/timelapse/city.ts`) only for the snapshot's `cityMarkers` and `cityFlagged`; nothing draws from it. That is a second copy of the markers, 27 bytes a row. See [timeline-ui.md](timeline-ui.md), "Activity".
 
