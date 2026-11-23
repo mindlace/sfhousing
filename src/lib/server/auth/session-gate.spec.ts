@@ -38,7 +38,9 @@ describe('routeNeedsSession', () => {
     '/signin',
     '/forgot-password',
     '/reset-password',
-    '/api/e2e/login'
+    '/api/e2e/login',
+    '/api/game',
+    '/api/game/abc'
   ])('is true for %s', (path) => {
     expect(routeNeedsSession(path)).toBe(true);
   });
