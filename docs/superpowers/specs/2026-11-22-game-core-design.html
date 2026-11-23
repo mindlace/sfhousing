@@ -642,6 +642,7 @@ interface SavesIndex {
         <li>With a valid index, the store reads <code>saveKey(id)</code> for each entry. A save that is absent, will not parse, or has a different <code>id</code> is left out of the list. Its raw text, when there is one, is copied to a corrupt key, and its key is removed.</li>
         <li>When the current game was left out in step 5, or <code>current</code> names no entry, the store makes a new game from the two record keys as in step 2 and makes it current.</li>
         <li>When anything was left out, added or corrected, the store rewrites the index.</li>
+        <li>When a write in steps 4 to 7 is refused, the store puts back every key construction had already set or removed (ignoring throws while it does), so storage holds what it held before construction. The store is then in memory mode with the saved games it read and made, the current one as steps 4 to 6 chose it, its plan and policy as read. A later load tries construction again.</li>
       </ol>
       <ul>
         <li>A level 1 game made from earlier record keys keeps them as its plan and policy: a plan or policy saved before the game existed becomes the first saved game, at level 1. The store gives it no other level and banks nothing for it; its policies run as its level unlocks their kinds (G3).</li>
