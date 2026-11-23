@@ -1,6 +1,6 @@
 # Superconductor ledger — design: docs/superpowers/design/2026-11-22-1216-incremental-game.html
 Package worktree: /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game
-Build graph: docs/superpowers/design/2026-11-22-1216-incremental-game-build-graph.md @ 9e0f7fd2
+Build graph: docs/superpowers/design/2026-11-22-1216-incremental-game-build-graph.md @ dc39a79f
 SDD scripts: /Users/mindlace/.claude/plugins/cache/claude-plugins-official/superpowers/7.0.2/skills/subagent-driven-development/scripts
 HTML scripts: /Users/mindlace/.claude/plugins/cache/super/superpowers-html/0.1.0/bin
 Project commands: npm, npx, lsof, ls, cat, grep, head, tail, wc, pwd, uptime, mkdir (mail-setup only, also: aws); operators run with --permission-mode dontAsk
@@ -18,6 +18,7 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - 8ac96a89-fb8e-4362-93a2-9d59d1eb043c | model opus | package @ 8c333372 | 2026-11-22 | ruling remove-multiuser-2
 - 1a5b1e8d-355d-4d56-a465-f13004c40ffd | model opus | package @ ea38eb64 | 2026-11-22 | ruling game-core-4
 - 541c3a39-ec25-44a6-9ed7-fc100c2444b5 | model opus | package @ e4098219 | 2026-11-22 | ruling remove-lesscars-1
+- baa4d37b-89cb-4eed-9858-c59d3d2c3796 | model opus | package @ db7e1733 | 2026-11-22 | ruling game-core-8
 
 ## 2026-11-22 — composition started (supercomposer, fresh)
 
@@ -207,6 +208,7 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - mail-setup: incremental-game-mail-setup — status: complete (branch incremental-game-mail-setup, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-mail-setup, start 7fbb5e32c72b3dcd416f7ef214536376a7c22b5c, model opus — rationale: outward-facing AWS and secrets work needs judgment, needs: none, produces: none)
 - game-shell-1: incremental-game-game-shell-1 — status: complete (branch incremental-game-game-shell-1, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-game-shell-1, start cf1ff6e50e891279a77dc411c45e929643ffb936, model opus — rationale: sibling lane of game-shell, same tier as its plan's author, needs: G2 stub (merged), produces: none)
 - remove-multiuser: incremental-game-remove-multiuser — status: complete (branch incremental-game-remove-multiuser, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-remove-multiuser, start 7fbb5e32c72b3dcd416f7ef214536376a7c22b5c, model opus — rationale: auth, schema, Durable Object and config removal across subsystems, needs: none, produces: I1)
+- game-save: incremental-game-game-save — status: admitted (admit message sent 22:15 at bc3d9bc0; branch incremental-game-game-save, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game-game-save, model opus, needs: I1, G2 built, S1–S3, X1 (all merged), produces: S1, S2, S3 (built))
 
 ## Supervision
 - status asked remove-lesscars
@@ -264,6 +266,7 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - remove-multiuser status 20:45: all six tasks passed review, final review clean, head 5d85d571 (e2e 769 passed, 0 failed; unit 1 failure = the /about case game-shell-1 fixed). Held only on the conductor's word that game-shell-1 @ a1930ffc has merged; then it merges the integration branch and re-reports I1 and complete. While held it shows no evidence: mark it seen on beats, do not treat as a stall.
 - 20:55 told remove-multiuser that game-shell-1's fix merged (integration at bf22c443, suite green): it merges and re-reports I1 and complete. Still owed: tell remove-lesscars once remove-multiuser has merged.
 - 21:50: remove-lesscars, remove-multiuser and game-core have all sent `complete` and wait on merges; no operator is building. No heartbeat timer runs while the only thing moving is the merge suite (its agent's report is the next event); start the timer again when an operator is admitted or a fork starts.
+- restart notes for resting planners: game-shell and game-sim must re-read their G2, Paint / playable and component-test sections for ruling game-core-8 (`beforeLeave`) when restarted at admission.
 
 ## Questions
 - 2026-11-22 conductor-1 from conductor [defect-class: owner-ruling-drift]: gate-1, a policy already saved in the browser becomes a level-1 game, and every kind in it is locked (major) → rulings/conductor-1.md (commit 7fbb5e32, changes contract: no)
@@ -395,8 +398,19 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - routed game-shell-1-1
 - 2026-11-22 remove-multiuser-4 from remove-multiuser [defect-class: conductor-merge-window]: its branch merged the integration branch at 82bc19d4, before the 19:20 reset → answered by message, no fork (mechanical: which branch to merge from)
 - routed remove-multiuser-4
-- 2026-11-22 game-core-8 from game-core [defect-class: unmodeled-interaction]: a pending Paint or /sim autosave can write the old game's document into the new game after New game, switch or delete; no spec owns flushing it (it recommends a G2 `beforeLeave` hook). Fork starts when the suite on the remove-multiuser merge reports; rule it before admitting game-save, game-shell or game-sim →
-- 2026-11-22 conductor-12 from conductor [defect-class: unmodeled-interaction]: e2e/game-helpers.spec.ts:146 (contracts' X1 test) is flaky once game-core's store is built; who owns making it deterministic →
+- 2026-11-22 game-core-8 from game-core [defect-class: unmodeled-interaction]: a pending Paint or /sim autosave can write the old game's document into the new game after New game, switch or delete; no spec owns flushing it (it recommends a G2 `beforeLeave` hook). Fork starts when the suite on the remove-multiuser merge reports; rule it before admitting game-save, game-shell or game-sim → rulings/game-core-8.md (commit d2432bd6, changes contract: yes)
+- 2026-11-22 conductor-12 from conductor [defect-class: unmodeled-interaction]: e2e/game-helpers.spec.ts:146 (contracts' X1 test) is flaky once game-core's store is built; who owns making it deterministic → rulings/conductor-12.md (commit 5b08a7ae, changes contract: no)
+- routing game-core-8: rulings/game-core-8.md, commit d2432bd6
+- build graph for game-core-8 @ db7e1733
+- routing conductor-12: rulings/conductor-12.md, commit 5b08a7ae
+- build graph for conductor-12 @ dc39a79f
+- relayed game-core-8 to incremental-game-game-core
+- relayed game-core-8 to incremental-game-game-save
+- relayed game-core-8 to incremental-game-game-shell (not delivered: session resting; owed in its restart's resends)
+- relayed game-core-8 to incremental-game-game-sim (not delivered: session resting; owed in its restart's resends)
+- routed game-core-8
+- relayed conductor-12 to incremental-game-game-core
+- routed conductor-12
 
 ## Forks
 - fork checkpoint-2 started 2026-11-22T16:20
@@ -524,6 +538,17 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - fork review-game-core-38941417 started 2026-11-22T20:05
 - fork review-game-core-38941417 exited [0]: output
 - fork review-remove-multiuser-2e101f6f started 2026-11-22T20:22
+- fork rule-game-core-8 started 2026-11-22T20:22
+- fork review-remove-multiuser-2e101f6f exited [0]: output
+- fork rule-game-core-8 exited [0]: output
+- fork graph-game-core-8 started 2026-11-22T20:24
+- fork graph-game-core-8 exited [0]: output
+- fork checkpoint-11 started 2026-11-22T20:24
+- fork checkpoint-11 exited [0]: output
+- fork rule-conductor-12 started 2026-11-22T20:26
+- fork rule-conductor-12 exited [0]: output
+- fork graph-conductor-12 started 2026-11-22T20:27
+- fork graph-conductor-12 exited [0]: output
 
 ## Frame-defect tally
 - owner-ruling-drift: 2 — instances: conductor-1 (gate-1, 2026-11-22); conductor-8 (gate-7, 2026-11-22)
@@ -580,6 +605,8 @@ Ledger note: this ledger dir is tracked on the integration branch. Before any me
 - merge queue: game-core complete @ 48b19b3e (final review fix wave after 38941417; question game-core-8 open and may bring a fix round to it), after the remove-multiuser suite and the game-core-8 ruling
 - No drift @ 38941417 (review-game-core-38941417)
 - merged remove-multiuser [row I1] @ 2e101f6f into superconductor/incremental-game, tests pass (check 0 errors; lint 0 errors; unit 9083 passed; e2e 776 passed, 0 failed, 1 flaky: e2e/game-helpers.spec.ts:146, question conductor-12), band low
+- No drift @ 2e101f6f (review-remove-multiuser-2e101f6f)
+- game-core's `complete` @ 48b19b3e is superseded: rulings game-core-8 (G2 `beforeLeave`, `touched()` after a game change) and conductor-12 (hydration wait in e2e/game-helpers.spec.ts) add work to it; it sends complete again. Its rows G1 to G5 stay merged at 38941417.
 
 ## Cost
 - remove-lesscars: admitted 2026-11-22T16:31 seven_day 44% | session d889ec5c-3342-4a77-99f8-993f1115a679
