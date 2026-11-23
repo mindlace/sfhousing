@@ -188,10 +188,15 @@ view is taken: for each arrival of the base frame of the month about to step wit
 whose pool is closed, `reopenPool` at the month's first day. The month then steps with the pool's
 programmes offered; it can close again later. Nothing runs past `timeline.readyThrough()`.
 
-**Edits and rewind.** Closing reads only the world and the frames; it draws nothing. An edit that
-gives a pool a later arrival before it closes keeps it open: condition 2 reads the current frame.
-A restore to a month before a closing re-steps and closes it again in the same month; an edit
-after it keeps the history.
+Money returned to a closed pool (a release or repayment) is booked as usual and stays in it: no
+offered programme draws on it, so it is never awarded, and it does not open the pool.
+
+**Edits and rewind.** Closing reads only the world and the frames; it draws nothing. A pool whose
+last arrival changes because the policy changed is judged again from the month the change takes
+effect: an edit that gives a pool a later arrival before it closes keeps it open (condition 2
+reads the current frame), and a closed pool that receives a new arrival opens from that arrival's
+month. A restore to a month before a closing re-steps and closes it again in the same month; an
+edit after it keeps the history.
 
 **`WorldOptions.poolClosing`** (default true; `createFundingSystem(opts)`): false makes
 `serveLine` skip the check, so no pool closes and an application waits on a spent pool, as the
@@ -399,8 +404,8 @@ All in `src/lib/sim/world/funding/`. Server project (signoff) unless noted.
 years 5, 10, 20 and 40, the mean of completed net homes (1%), its standard deviation (15%) and the
 mean awards and funded homes (3%), with E1 to E7 checked after every step. About 4 minutes, so it
 runs only with the switch on, never in signoff (which runs `referee-ledger.spec.ts`, above). It
-runs the step engine with `poolClosing: false`: today's engine waits on a spent pool, so closing
-would move the means it compares.
+compares against today's engine, which waits on a spent pool, so it runs the step engine with
+`poolClosing: false`.
 
 ```
 SFH_WORLD_FUNDING_REFEREE=1 SFH_WORLD_LIVE=<dataset dir> npx vitest --run --project server src/lib/sim/world/funding/tolerance.referee.spec.ts
