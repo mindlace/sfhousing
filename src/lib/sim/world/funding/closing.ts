@@ -15,7 +15,7 @@ const lastArrivals = new WeakMap<Pool, Map<Day, Day | null>>();
 export function lastArrivalOf(pool: Pool, asOf: Day): Day | null {
   let byAsOf = lastArrivals.get(pool);
   if (byAsOf === undefined) lastArrivals.set(pool, (byAsOf = new Map()));
-  if (byAsOf.has(asOf)) return byAsOf.get(asOf)!;
+  if (byAsOf.has(asOf)) return byAsOf.get(asOf) as Day | null;
   let last: Day | null = NO_DAY;
   for (const fl of pool.inflows) {
     if (fl.kind === 'yearly' && fl.to === null && fl.dollarsPerYear > 0) {
@@ -84,58 +84,68 @@ function buildView(base: PolicyTimeline, rows: Shut[], asOf: Day): PolicyTimelin
       .filter((id) => held.has(id))
       .join(',');
   };
-  // Months at which some row opens or ends.
+  // Months at which some row opens or ends: the first month whose first day is on or after the day.
   const edges = new Set<number>();
   for (const r of rows) {
-    edges.add(monthOfDay(asOf, r.from));
-    if (r.to !== NO_DAY) edges.add(monthOfDay(asOf, r.to));
+    edges.add(monthOfDay(asOf, r.from - 1) + 1);
+    if (r.to !== NO_DAY) edges.add(monthOfDay(asOf, r.to - 1) + 1);
   }
-  let seen: number[] | null = null;
-  let seenLength = -1;
+  // The base's changes as last read (it may hand out a new array each call), and what they gave.
+  let seen: number[] = [];
   let seenReady = -1;
   let result: number[] = [];
   let baseSet = new Set<number>();
+  const sameAsSeen = (b: number[]): boolean => {
+    if (b.length !== seen.length) return false;
+    for (let i = 0; i < b.length; i++) if (b[i] !== seen[i]) return false;
+    return true;
+  };
+  /** Read-only: the same array while neither the base's changes nor its ready months move. */
   const changes = (): number[] => {
     const b = base.changes();
     const ready = base.readyThrough();
-    if (b !== seen || b.length !== seenLength || ready !== seenReady) {
+    if (ready !== seenReady || !sameAsSeen(b)) {
       const all = new Set(b);
       for (const k of edges)
         if (k >= 2 && k <= ready && presentKey(k) !== presentKey(k - 1)) all.add(k);
       result = [...all].sort((x, y) => x - y);
       baseSet = new Set(b);
-      seen = b;
-      seenLength = b.length;
+      seen = [...b];
       seenReady = ready;
     }
     return result;
   };
+  /** Month k's view frame with the base frame it came from; the base's frame of a month is fixed. */
+  const frames = new Map<number, { from: PolicyFrame; out: PolicyFrame }>();
+  const derive = (frame: PolicyFrame, k: number): PolicyFrame => {
+    const fin = frame.finance;
+    if (fin === null) return frame;
+    const held = new Set(fin.pools.map((p) => p.id));
+    const ids = closedIn(k)
+      .filter((id) => held.has(id))
+      .join(',');
+    if (ids === '') return frame;
+    let cache = derived.get(frame);
+    if (cache === undefined) derived.set(frame, (cache = new Map()));
+    let out = cache.get(ids);
+    if (out === undefined) {
+      const shut = new Set(ids.split(','));
+      const offered = fin.offered.slice();
+      fin.programmes.forEach((g, i) => {
+        if (shut.has(g.pool)) offered[i] = 0;
+      });
+      out = { ...frame, id: frameIdOf(`closed|${frame.id}|${ids}`), finance: { ...fin, offered } };
+      cache.set(ids, out);
+    }
+    return out;
+  };
   return {
     frameAt(k) {
       const frame = base.frameAt(k);
-      const fin = frame.finance;
-      if (fin === null) return frame;
-      const held = new Set(fin.pools.map((p) => p.id));
-      const ids = closedIn(k)
-        .filter((id) => held.has(id))
-        .join(',');
-      if (ids === '') return frame;
-      let cache = derived.get(frame);
-      if (cache === undefined) derived.set(frame, (cache = new Map()));
-      let out = cache.get(ids);
-      if (out === undefined) {
-        const shut = new Set(ids.split(','));
-        const offered = fin.offered.slice();
-        fin.programmes.forEach((g, i) => {
-          if (shut.has(g.pool)) offered[i] = 0;
-        });
-        out = {
-          ...frame,
-          id: frameIdOf(`closed|${frame.id}|${ids}`),
-          finance: { ...fin, offered }
-        };
-        cache.set(ids, out);
-      }
+      const got = frames.get(k);
+      if (got !== undefined && got.from === frame) return got.out;
+      const out = derive(frame, k);
+      frames.set(k, { from: frame, out });
       return out;
     },
     changes,

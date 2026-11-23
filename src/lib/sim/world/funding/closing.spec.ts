@@ -58,6 +58,8 @@ describe('lastArrivalOf', () => {
     expect(lastArrivalOf(p, asOf)).toBe(asOf + 5);
     expect(lastArrivalOf(p, asOf + 10)).toBe(NO_DAY);
     expect(lastArrivalOf(p, asOf)).toBe(asOf + 5);
+    p.inflows.push(once(asOf + 99)); // a change the memo does not see
+    expect(lastArrivalOf(p, asOf)).toBe(asOf + 5);
   });
 });
 
@@ -102,6 +104,17 @@ describe('closedTimeline', () => {
     expect(v.changes()).toEqual([...new Set([...base.changes(), 5])].sort((x, y) => x - y));
     expect(v.touched(5)).toEqual(new Int32Array(0));
     expect(closedTimeline(base, pools, asOf)).toBe(v);
+  });
+  it('changes() is stable over a base that hands out a new array each call', () => {
+    const fresh: PolicyTimeline = { ...base, changes: () => [...base.changes()] };
+    const pools = fundOf2(['a', 'b']);
+    addShutRow(pools, 0, monthFirstDay(asOf, 5));
+    const v = closedTimeline(fresh, pools, asOf);
+    const first = v.changes();
+    expect(first).toEqual([5]);
+    expect(v.changes()).toBe(first);
+    v.touched(5);
+    expect(v.changes()).toBe(first);
   });
   it('holds the opening month in changes()', () => {
     const pools = fundOf2(['a', 'b']);
