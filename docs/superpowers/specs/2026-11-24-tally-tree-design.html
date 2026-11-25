@@ -974,7 +974,7 @@ export function branchRows(nodes: readonly NodeView[]): BranchRows[];</code></pr
       <pre><code data-lang="svelte">&lt;span class="inline-flex" data-testid="goal-headline"&gt;
   &lt;div bind:this={box} data-testid="goal-box" data-met={met || undefined} data-flash={flash || undefined}
     class="relative flex max-w-80 min-w-6 flex-col justify-center gap-0.5 rounded-md border
-      border-gray-300 bg-surface px-2 py-0.5 text-sm leading-tight whitespace-nowrap text-ink
+      border-gray-300 bg-surface px-2 text-sm leading-tight whitespace-nowrap text-ink
       tabular-nums hover:bg-surface-raised has-[button:focus-visible]:outline-2
       has-[button:focus-visible]:outline-offset-2 has-[button:focus-visible]:outline-accent
       dark:border-gray-600 dark:bg-surface-dark dark:text-ink-dark dark:hover:bg-surface-dark-raised
@@ -985,7 +985,7 @@ export function branchRows(nodes: readonly NodeView[]): BranchRows[];</code></pr
         focus-visible:outline-none"&gt;line 1&lt;/button&gt;
     &lt;span aria-hidden="true" data-testid="goal-bar" data-fill={pct} class="track"&gt;fill&lt;/span&gt;
     &lt;span aria-hidden="true" data-testid="goal-line2" class="pointer-events-none truncate text-xs
-      font-medium text-ink-muted max-sm:hidden dark:text-ink-dark-muted"&gt;line 2&lt;/span&gt;
+      leading-tight font-medium text-ink-muted max-sm:hidden dark:text-ink-dark-muted"&gt;line 2&lt;/span&gt;
     &lt;span id={line2Id} class="sr-only"&gt;line 2&lt;/span&gt;
     {#if sideMet &gt; 0}&lt;span aria-hidden="true" data-testid="goal-side-mark"
       class="absolute -top-0.5 -right-0.5 size-2 rounded-full bg-accent dark:bg-accent-dark"&gt;&lt;/span&gt;{/if}
@@ -1002,7 +1002,7 @@ export function branchRows(nodes: readonly NodeView[]): BranchRows[];</code></pr
           <li>Line 2 is, joined by " · ": <code>GOAL_MET</code> when <code>met</code>; else <code>unlocksText(unlocks)</code> when <code>unlocks</code> is not null; else <code>LAST_GOAL</code>. Then <code>sideMetText(n)</code> when <code>n</code>, the count of <code>side</code> entries with <code>met</code> true, is above 0.</li>
           <li>Line 2 shows from sm and truncates with an ellipsis in the 20rem box; its <code>sr-only</code> copy is whole at every width.</li>
           <li>The mark when a side goal is met is the dot at the box's top right, at every width, while <code>n</code> is above 0.</li>
-          <li>Measured sizes: line 1 17.5 px, the bar 4 px, line 2 15 px, two 2 px gaps, 2 px of padding each side and the border: 44.5 px at most. Below sm line 2 is hidden and the box is about 28 px.</li>
+          <li>Measured sizes: line 1 17.5 px, the bar 4 px, line 2 15 px (<code>text-xs</code> with its own <code>leading-tight</code>, since <code>text-xs</code> sets a 16 px line height of its own), two 2 px gaps, no vertical padding, and a 1 px border each side: 42.5 px. Below sm line 2 is hidden and the box is 25.5 px.</li>
         </ul>
       </section>
       <section id="sec-design-headline-pop">
