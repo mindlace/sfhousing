@@ -4,27 +4,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import { page } from 'vitest/browser';
-import type { Manifest } from '$lib/data/manifest';
 import { stub } from '$lib/fzp/test/sim-map-stub';
-import { emptyPlan, serializePlan, type Plan } from '$lib/plan';
+import { serializePlan, type Plan } from '$lib/plan';
 import { PLAN_KEY } from '$lib/sharing/storage';
-import manifestJson from '../../e2e/fixtures/data/fixture-0/manifest.json';
-import Page from './+page.svelte';
+import { homeData } from './test/home-data';
+import PageHost from './test/PageHost.svelte';
 import PaintHeaderHost from './test/PaintHeaderHost.svelte';
 
 vi.mock('$lib/map/SimMap.svelte', () => import('$lib/fzp/test/FzpSimMapStub.svelte'));
+vi.mock('$lib/sim-page/SimRoute.svelte', () => import('./test/SimRouteStub.svelte'));
 
-const manifest = manifestJson as unknown as Manifest;
-const data = () => ({
-  plan: emptyPlan('fixture-0'),
-  manifest,
-  fellBack: false,
-  manifestError: false,
-  datasetVersion: 'fixture-0',
-  appRelease: 'dev',
-  user: null,
-  signInAvailable: true
-});
+const data = () => homeData();
 const painted: Plan = {
   schema: 1,
   datasetVersion: 'fixture-0',
@@ -61,13 +51,13 @@ describe('/ keyboard undo', () => {
       PLAN_KEY,
       JSON.stringify({ v: 1, savedAt: '2026-10-11T00:00:00.000Z', plan: serializePlan(painted) })
     );
-    await render(Page, { props: { data: data(), params: {} } });
+    await render(PageHost, { props: { data: data() } });
     expect(page.getByRole('button', { name: /^Undo/ }).elements()).toHaveLength(0);
     await expect.poll(undoes).toBe('Undid paint, 6 stories');
   });
 
   it('with nothing saved Ctrl+Z says nothing', async () => {
-    await render(Page, { props: { data: data(), params: {} } });
+    await render(PageHost, { props: { data: data() } });
     await expect.poll(() => stub.map.listenerCount('moveend')).toBeGreaterThan(0);
     ctrlZ();
     await expect.element(chip()).toHaveTextContent('');

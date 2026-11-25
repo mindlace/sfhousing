@@ -7,29 +7,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import { page, userEvent } from 'vitest/browser';
 import './layout.css';
-import type { Manifest } from '$lib/data/manifest';
 import { MSG } from '$lib/brush/messages';
-import { emptyPlan, serializePlan, type Plan } from '$lib/plan';
+import { serializePlan, type Plan } from '$lib/plan';
 import { PLAN_KEY } from '$lib/sharing/storage';
 import { longTexts } from '$lib/shell/test/rest-text';
 import { page as appPage } from '../test-stubs/app/state';
-import manifestJson from '../../e2e/fixtures/data/fixture-0/manifest.json';
+import { homeData } from './test/home-data';
 import PaintHeaderHost from './test/PaintHeaderHost.svelte';
 
 vi.mock('$lib/map/SimMap.svelte', () => import('$lib/fzp/test/FzpSimMapStub.svelte'));
+vi.mock('$lib/sim-page/SimRoute.svelte', () => import('./test/SimRouteStub.svelte'));
 
-const manifest = manifestJson as unknown as Manifest;
-
-const data = () => ({
-  plan: emptyPlan('fixture-0'),
-  manifest,
-  fellBack: false,
-  manifestError: false,
-  datasetVersion: 'fixture-0',
-  appRelease: 'dev',
-  user: null,
-  signInAvailable: true
-});
+const data = () => homeData();
 
 describe('/ at rest (rule: no text of 12 words or more)', () => {
   beforeEach(async () => {

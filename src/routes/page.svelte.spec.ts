@@ -1,30 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import { page } from 'vitest/browser';
-import type { Manifest } from '$lib/data/manifest';
-import { emptyPlan, serializePlan, type Plan } from '$lib/plan';
+import { serializePlan, type Plan } from '$lib/plan';
 import { MSG } from '$lib/brush/messages';
 import { COPY, n3 } from '$lib/sharing/copy';
 import { PLAN_KEY } from '$lib/sharing/storage';
-import manifestJson from '../../e2e/fixtures/data/fixture-0/manifest.json';
-import Page from './+page.svelte';
+import { homeData } from './test/home-data';
+import PageHost from './test/PageHost.svelte';
 import PaintHeaderHost from './test/PaintHeaderHost.svelte';
 
-const manifest = manifestJson as unknown as Manifest;
-const plan = emptyPlan('fixture-0');
+vi.mock('$lib/sim-page/SimRoute.svelte', () => import('./test/SimRouteStub.svelte'));
 
-function data(over: { manifest?: Manifest | null; manifestError?: boolean } = {}) {
-  return {
-    plan,
-    manifest: over.manifest === undefined ? manifest : over.manifest,
-    fellBack: false,
-    manifestError: over.manifestError ?? false,
-    datasetVersion: 'fixture-0',
-    appRelease: 'dev',
-    user: null,
-    signInAvailable: true
-  };
-}
+const data = homeData;
 
 describe('/ editor page', () => {
   beforeEach(async () => {
@@ -58,10 +45,8 @@ describe('/ editor page', () => {
   });
 
   it('renders the heading, the map region and the Paint dock', async () => {
-    await render(Page, { props: { data: data(), params: {} } });
-    await expect
-      .element(page.getByRole('heading', { level: 1 }))
-      .toHaveTextContent('SF Housing Simulator');
+    await render(PageHost, { props: { data: data() } });
+    await expect.element(page.getByRole('heading', { level: 1 })).toHaveTextContent('SF Housing');
     const region = document.getElementById('map-region');
     expect(region).not.toBeNull();
     await expect
@@ -110,8 +95,8 @@ describe('/ editor page', () => {
   });
 
   it('shows the city-data failure with Retry and no map when the manifest failed', async () => {
-    await render(Page, {
-      props: { data: data({ manifest: null, manifestError: true }), params: {} }
+    await render(PageHost, {
+      props: { data: data({ manifest: null, manifestError: true }) }
     });
     await expect.element(page.getByText("Couldn't load city data.")).toBeInTheDocument();
     await expect.element(page.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
@@ -137,7 +122,7 @@ describe('/ editor page', () => {
 
     it('loads the autosaved plan (no Undo button on a fine pointer), no notice', async () => {
       seed(painted('fixture-0'));
-      await render(Page, { props: { data: data(), params: {} } });
+      await render(PageHost, { props: { data: data() } });
       await expect.element(page.getByRole('radiogroup', { name: 'Tool' })).toBeVisible();
       noUndoButton();
       // Only a restored plan hides the starting sentence.
@@ -150,7 +135,7 @@ describe('/ editor page', () => {
     });
 
     it('starts empty with nothing saved (no Undo button)', async () => {
-      await render(Page, { props: { data: data(), params: {} } });
+      await render(PageHost, { props: { data: data() } });
       await expect.element(page.getByRole('radiogroup', { name: 'Tool' })).toBeVisible();
       noUndoButton();
       await expect.element(page.getByText(MSG.start)).toBeVisible();
@@ -158,7 +143,7 @@ describe('/ editor page', () => {
 
     it('shows N1 for a corrupt record and preserves it', async () => {
       localStorage.setItem(PLAN_KEY, '{not json');
-      await render(Page, { props: { data: data(), params: {} } });
+      await render(PageHost, { props: { data: data() } });
       await expect.element(page.getByText(COPY.n1)).toBeVisible();
       noUndoButton();
       // The corrupt record is not a plan: the page starts empty.
@@ -169,7 +154,7 @@ describe('/ editor page', () => {
 
     it('rebases an older-dataset plan, shows N3 and writes it back', async () => {
       seed(painted('fixture-9'));
-      await render(Page, { props: { data: data(), params: {} } });
+      await render(PageHost, { props: { data: data() } });
       await expect.element(page.getByText(n3('fixture-9', 'fixture-0'))).toBeVisible();
       const rec = JSON.parse(localStorage.getItem(PLAN_KEY)!);
       expect(JSON.parse(rec.plan).datasetVersion).toBe('fixture-0');
@@ -177,7 +162,7 @@ describe('/ editor page', () => {
 
     it('a notice can be dismissed', async () => {
       localStorage.setItem(PLAN_KEY, '{not json');
-      await render(Page, { props: { data: data(), params: {} } });
+      await render(PageHost, { props: { data: data() } });
       await expect.element(page.getByText(COPY.n1)).toBeVisible();
       await page.getByRole('button', { name: 'Dismiss' }).click();
       await expect.element(page.getByText(COPY.n1)).not.toBeInTheDocument();

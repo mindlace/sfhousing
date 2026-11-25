@@ -2,25 +2,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import { page } from 'vitest/browser';
-import type { Manifest } from '$lib/data/manifest';
-import { emptyPlan } from '$lib/plan';
 import { stubProps } from '$lib/brush/test/sim-map-stub';
 import './layout.css';
-import manifestJson from '../../e2e/fixtures/data/fixture-0/manifest.json';
+import { homeData } from './test/home-data';
 import PaintHeaderHost from './test/PaintHeaderHost.svelte';
 
 vi.mock('$lib/map/SimMap.svelte', async () => import('$lib/brush/test/SimMapStub.svelte'));
+vi.mock('$lib/sim-page/SimRoute.svelte', () => import('./test/SimRouteStub.svelte'));
 
-const data = {
-  plan: emptyPlan('fixture-0'),
-  manifest: manifestJson as unknown as Manifest,
-  fellBack: false,
-  manifestError: false,
-  datasetVersion: 'fixture-0',
-  appRelease: 'dev',
-  user: null,
-  signInAvailable: true
-};
+const data = homeData();
 
 const box = (el: Element) => el.getBoundingClientRect();
 
@@ -54,8 +44,8 @@ describe('/ header save state', () => {
     const publish = page.getByRole('button', { name: /Publish/ });
     await expect.element(publish).toBeVisible();
     expect(status.contains(publish.element())).toBe(false);
-    const simulate = page.getByRole('link', { name: 'Simulate' }).element();
-    expect(box(saved.element()).left).toBeGreaterThanOrEqual(box(simulate).right);
+    const units = page.getByTestId('header-units').element();
+    expect(box(saved.element()).left).toBeGreaterThanOrEqual(box(units).right);
     expect(box(saved.element()).right).toBeLessThanOrEqual(box(publish.element()).left);
   });
 
@@ -72,7 +62,26 @@ describe('/ header save state', () => {
     // Paint pins its score, so below sm the site title waits in the closed Menu.
     expect(page.getByRole('link', { name: /SF Housing/ }).elements()).toEqual([]);
     await page.getByRole('button', { name: 'Menu' }).click();
-    await expect.element(page.getByRole('link', { name: 'SF Housing Simulator' })).toBeVisible();
+    await expect.element(page.getByRole('link', { name: 'SF Housing', exact: true })).toBeVisible();
+  });
+
+  it('in the opening at 1280px: name, unit count, save state, Room for 0 homes, Publish, Sign in, About, in order', async () => {
+    await page.viewport(1280, 800);
+    render(PaintHeaderHost, { props: { data: homeData() } });
+    await expect.element(page.getByTestId('score-bar')).toHaveTextContent('Room for 0 homes');
+    const row = [
+      page.getByRole('link', { name: 'SF Housing', exact: true }),
+      page.getByTestId('header-units'),
+      page.getByTestId('save-state'),
+      page.getByTestId('score-bar'),
+      page.getByRole('button', { name: /Publish/ }),
+      page.getByRole('link', { name: 'Sign in' }),
+      page.getByRole('link', { name: 'About', exact: true })
+    ].map((l) => l.element());
+    for (let i = 1; i < row.length; i++)
+      expect(box(row[i]).left, `item ${i} after item ${i - 1}`).toBeGreaterThanOrEqual(
+        box(row[i - 1]).right
+      );
   });
 
   for (const width of [1280, 1024, 768, 375]) {
@@ -96,7 +105,7 @@ describe('/ header save state', () => {
       const row = [
         // Below sm the site title waits in the Menu (Paint pins its score).
         ...(width >= 640 ? [page.getByRole('link', { name: /SF Housing/ }).element()] : []),
-        ...(width >= 1024 ? [page.getByRole('navigation', { name: 'Steps' }).element()] : []),
+        ...(width >= 1024 ? [page.getByTestId('header-units').element()] : []),
         chip.element(),
         // The pinned score sits between the status cell and the actions.
         page.getByTestId('score-bar').element(),

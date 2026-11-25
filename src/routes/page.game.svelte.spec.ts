@@ -208,15 +208,21 @@ describe('/ the opening', () => {
     expect(simRoute.props!.initialFrame).toEqual(CAMERA);
     expect(page.getByRole('radiogroup', { name: 'Tool' }).elements()).toEqual([]);
     expect(removers[0]).toHaveBeenCalledTimes(1);
+    // The opening's header slots are empty once it is gone.
+    await expect.element(page.getByTestId('header-actions')).toBeEmptyDOMElement();
+    await expect.element(page.getByTestId('header-pinned')).toBeEmptyDOMElement();
+    await expect.element(page.getByTestId('header-status')).toBeEmptyDOMElement();
   });
 
   it('a double Start mounts the simulation once, on the first camera, with no notice', async () => {
     const { game } = seededGame();
+    const startRuns = vi.spyOn(game, 'startRuns');
     Object.assign(stub.map, { getPitch: () => 40, getBearing: () => -20 });
     await mount(game);
     win(1000);
     await card().getByTestId('opening-start').dblClick();
     await expect.element(page.getByTestId('sim-route-stub')).toBeInTheDocument();
+    expect(startRuns).toHaveBeenCalledTimes(1);
     expect(game.state.phase).toBe('runs');
     expect(simRoute.mounts).toBe(1);
     expect(simRoute.props!.initialFrame).toEqual(CAMERA);
