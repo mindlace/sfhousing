@@ -161,6 +161,8 @@ stage on `sampleAdvance` lengths with no revisions (rule 15).
 
 ## The car hook
 
+The subsystem as a whole: [cars.md](cars.md).
+
 `withFunding(f, cars)` also plugs in a `CarSystem` (`types.ts`; `world/cars/`, built by
 `createCarSystem(data, model)`; for a loaded dataset by `carSystemOf(loaded, { off })` in
 `world/cars/dataset.ts`, which the timeline host's `loadDataset` calls once per load). `createWorld` ends with `cars.create` (after `f.create`); `step`

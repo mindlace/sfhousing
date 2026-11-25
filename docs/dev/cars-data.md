@@ -457,9 +457,10 @@ level. The 2026 annual average is not yet published, so 2025's (356.005) stands 
 | Podium      | $28,700, 2012       | 112.3/98.2 | 356.005/239.65  | $48,756      |
 | Surface     | none                |            |                 | none         |
 
-The below-grade figure, $120,083, falls inside the derived cross-check above ($98,000-$144,000 at
-$245-$360/GSF × 400 GSF; $114,000-$145,000 at the below-grade $/GSF). The derived figure stays a
-cross-check and is never used.
+Against the derived cross-check above: $245/GSF is the at-grade low end, so $98,000-$144,000
+($245-$360/GSF × 400 GSF) mixes at grade and below grade. Below grade alone ($322-$360/GSF × 400
+GSF) is about $128,800-$144,000; the escalated below-grade figure, $120,083 in 2026 dollars, sits
+7% to 17% under it. The derived figure stays a cross-check and is never used.
 
 ## SF AMI by year and household size
 
