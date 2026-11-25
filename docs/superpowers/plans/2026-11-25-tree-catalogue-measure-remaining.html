@@ -223,6 +223,7 @@ git commit -m "chore(catalogue): measure the ladder years on dataset 2026-11-14-
     <h3>Files</h3>
     <ul>
       <li>Modify (by hand): <code>src/lib/game/catalogue/tuning.ts</code></li>
+      <li>Modify: <code>src/lib/game/catalogue/tuning.spec.ts</code> (the side-goal ids rule of §sec-tests-tuning)</li>
     </ul>
     <h3>Interfaces</h3>
     <ul>
@@ -237,12 +238,15 @@ git commit -m "chore(catalogue): measure the ladder years on dataset 2026-11-14-
           <li>Any whole price above 0; each later level of a node costs more than the one before.</li>
           <li>The cheapest level shown at rung 0 stays at or under <code>RUNG_LUMP</code>.</li>
           <li>A side goal flagged <code>at-or-below-current-law</code> gets the printed <code>raise to</code> value as its target. A side goal flagged <code>never-met</code> has its target lowered (never below the raise-to floor) or its ring's play made reachable by prices.</li>
+          <li>A side goal that no tuning meets in any gated <code>hand</code> play with its target at or above its floor is not offered: remove its entry from <code>SIDE_TUNING</code> (game-core then leaves it out of <code>SIDE_GOALS</code>), then tune every remaining goal again. On <code>2026-11-14-09ca30c8</code>, <code>funded-homes</code> and <code>affordable-homes</code> are not offered by this rule. Every ring from 0 to the last keeps at least one offered goal; if the rule would empty a ring, stop and report BLOCKED.</li>
+          <li>Side-goal order, rings, <code>SIDE_SHOWN</code>, the <code>planEffect</code> baseline, the engine, finance and the script's report shape do not change.</li>
           <li>Rewards and the lump are whole numbers above 0.</li>
           <li>Never change <code>SHARE</code>, <code>CLOCK</code>, <code>TARGETS</code>, a node, a side goal's definition, or any file but <code>tuning.ts</code>.</li>
         </ul>
       </li>
+      <li id="t4-s3b"><input type="checkbox"> Update <code>tuning.spec.ts</code> to §sec-tests-tuning: <code>SIDE_GOALS</code> has as many goals as <code>SIDE_TUNING</code> has entries; its ids are those of game-core's eleven that have an entry, in game-core's order; each ring from 0 to the last holds at least one; each target and reward is a whole number above 0. Write the test so it holds for any entered subset (it names no left-out id).</li>
       <li id="t4-s4"><input type="checkbox"> Stop when the full run exits 0. If no set of numbers you can find passes, stop and report BLOCKED with the last full report and the checks that fail (the unit hands it to the owner).</li>
-      <li id="t4-s5"><input type="checkbox"> Verify: the full run on <code>2026-11-14-09ca30c8</code> exits 0 (keep its text output for the report), <code>npm run test:unit</code> passes (<code>tuning.spec.ts</code> included), <code>npm run check</code> and <code>npm run lint</code> are clean, <code>npx chreode timing-check --head HEAD</code> is clean after the commit.</li>
+      <li id="t4-s5"><input type="checkbox"> Verify: the full run on <code>2026-11-14-09ca30c8</code> exits 0 (keep its text output for the report); the report names each goal left out with the highest value any gated <code>hand</code> play reached for it, its floor and the deadline it was read at, and restates the money-measure finding and the non-zero <code>completedNetNew</code> effect on current law as findings for the owner; <code>npx vitest run --project server src/lib/game scripts</code> passes (<code>tuning.spec.ts</code> included), <code>npm run check</code> and <code>npm run lint</code> are clean, <code>npx chreode timing-check --head HEAD</code> is clean after the commit.</li>
       <li id="t4-s6"><input type="checkbox"> Commit
         <pre><code data-lang="sh">git add src/lib/game/catalogue/tuning.ts
 git commit -m "chore(catalogue): tune prices, the lump and side goals on dataset 2026-11-14-09ca30c8"</code></pre>
