@@ -582,6 +582,7 @@ export interface Marker {
   completed: Day;
   homes: number;
   existing: number;
+  policy: boolean;
 }
 
 export interface Drop {
@@ -590,6 +591,7 @@ export interface Drop {
   lat: number;
   day: Day;
   worth: Units;
+  policy: boolean;
 }
 
 export function planDrops(markers: Iterable&lt;Marker&gt;, asOf: Day, to: Day): Drop[];
@@ -628,6 +630,7 @@ export function onPrefs(fn: () =&gt; void): () =&gt; void;</code></pre>
       <dl>
         <dt><code>completed</code></dt><dd>The marker's completed day; <code>NaN</code> when it has none.</dd>
         <dt><code>worth</code></dt><dd><code>{ home: homes - existing }</code>.</dd>
+        <dt><code>policy</code></dt><dd>The project carries the map's policy mark, the diamond: its <code>CityDelta.flags</code> are not 0. A drop takes its marker's value.</dd>
         <dt><code>project</code></dt><dd>The point's position in CSS pixels from the map box's top left, or null when it is off the map.</dd>
         <dt><code>ontake</code></dt><dd>The run's totals so far, sent whenever they change and once when <code>running</code> turns false.</dd>
       </dl>
@@ -635,6 +638,7 @@ export function onPrefs(fn: () =&gt; void): () =&gt; void;</code></pre>
         <li><code>planDrops</code> returns one drop for each marker completed after <code>asOf</code> and at or before <code>to</code> whose worth is above 0, ascending by day, then by row.</li>
         <li><code>feed.drops</code> may be replaced during a run, as the forecast fills. Drops are matched by <code>row</code>: one already shown stays as it is, and none is counted twice.</li>
         <li>A drop appears when <code>feed.day</code> reaches its day and is counted in <code>dropped</code> then.</li>
+        <li>A drop whose <code>policy</code> is true pops in the policy's colour, the colour of the map's diamond (<code>tl-halo-policy</code>); every other drop pops in the accent. Its worth and how it is collected do not change.</li>
         <li>A drop is collected when its projected point is within <code>hands.radiusPx</code> of the ring's centre. It is counted in <code>collected</code> once.</li>
         <li>A drop not collected is gone <code>hands.lingerMs</code> of wall time after it appeared.</li>
         <li>With <code>collectForMe</code> or <code>hands.auto</code>, every drop is collected as it appears.</li>
@@ -1290,6 +1294,7 @@ export interface Marker {
   completed: Day;
   homes: number;
   existing: number;
+  policy: boolean;
 }
 
 export interface Drop {
@@ -1298,6 +1303,7 @@ export interface Drop {
   lat: number;
   day: Day;
   worth: Units;
+  policy: boolean;
 }
 
 export function planDrops(_markers: Iterable&lt;Marker&gt;, _asOf: Day, _to: Day): Drop[] {

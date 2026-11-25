@@ -280,6 +280,8 @@ export interface CityMarkerRow {
   homes: number;
   /** The homes it replaces after the dataset date (CityDelta.existing). */
   existing: number;
+  /** SLOT_FLAG bits (CityDelta.flags): not 0 when the project carries the policy mark. */
+  flags: number;
 }
 
 export class ActivityIndex {
@@ -294,6 +296,7 @@ export class ActivityIndex {
         <li>It lists every row below the store's <code>length</code> whose <code>has</code> is set, in ascending row order, completed or not.</li>
         <li><code>completed</code> is <code>days[3 × row + CITY_DAY.completed]</code>, NaN as stored.</li>
         <li><code>lngLat</code> is a new two-element array per item.</li>
+        <li><code>flags</code> is the store's <code>flags[row]</code>, as the feed sent it. The store keeps it today; no new array is added.</li>
         <li>It reflects every update applied so far, including a <code>from</code> that forgot rows.</li>
         <li>It does not change <code>sorts</code> and does not mark the order stale.</li>
         <li>Its cost is one pass over the store's rows: about 30,000 objects on the live city. A caller reads it once per run, not per frame.</li>
@@ -306,7 +309,8 @@ export class ActivityIndex {
   lat: m.lngLat[1],
   completed: m.completed,
   homes: m.homes,
-  existing: m.existing
+  existing: m.existing,
+  policy: m.flags !== 0
 });</code></pre>
     </section>
 
@@ -328,7 +332,7 @@ export class ActivityIndex {
       <p>The validation bullet becomes:</p>
       <pre><code data-lang="md">- `validateCityDelta` (`src/lib/map/city-delta.ts`) throws `RangeError` on a missing `existing`, a wrong length, a row not ascending or at or past `rows`, a bad `rows`, a `from` that is not an integer in [0, `rows`], or a flag above 3.</code></pre>
       <p>In the Consumers paragraph, "That is a second copy of the markers, 27 bytes a row." becomes:</p>
-      <pre><code data-lang="md">That is a second copy of the markers, 29 bytes a row. Besides `recent`, `ActivityIndex.markers()` lists every marker held, ascending by row, with its label point, completed day, `homes` and `existing`: the game's run reads it to place drops.</code></pre>
+      <pre><code data-lang="md">That is a second copy of the markers, 29 bytes a row. Besides `recent`, `ActivityIndex.markers()` lists every marker held, ascending by row, with its label point, completed day, `homes`, `existing` and `flags`: the game's run reads it to place drops and to colour a drop from a project the policy marks.</code></pre>
     </section>
   </section>
 
@@ -409,7 +413,7 @@ export class ActivityIndex {
     <section id="sec-tests-index">
       <h3><code>src/lib/timeline/activity.spec.ts</code></h3>
       <ul>
-        <li><code>markers()</code> lists every held row in ascending row order, with its <code>lngLat</code>, <code>completed</code> (NaN when not complete), <code>homes</code> and <code>existing</code>.</li>
+        <li><code>markers()</code> lists every held row in ascending row order, with its <code>lngLat</code>, <code>completed</code> (NaN when not complete), <code>homes</code>, <code>existing</code> and <code>flags</code>.</li>
         <li>After a delta with <code>from</code>, <code>markers()</code> omits the forgotten rows; after a revision 0 without <code>city</code>, it is empty.</li>
         <li>Calling <code>markers()</code> leaves <code>sorts</code> unchanged, and a <code>recent</code> read after it sorts no more than it would without it.</li>
         <li>Two calls return different arrays with equal contents.</li>
