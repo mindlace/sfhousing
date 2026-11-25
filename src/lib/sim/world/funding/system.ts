@@ -10,13 +10,65 @@ import {
   type World,
   type WorldOptions
 } from '../types';
+import { lotRow } from '../columns';
 import { applyLots, leaveLine, planLotMonth } from './apply';
 import { closedTimeline, reopenArrivals } from './closing';
-import { fundOf, initFunding, type FundPools } from './columns';
+import { fundOf, initFunding, type FundLine, type FundPools } from './columns';
+import { lineIndex, rowOfSeq } from './line-index';
 import { policyChanged } from './policy';
 import { moneyIn, moneyOnEvent } from './pools';
 import { serveLine } from './serve';
 import { stepShadows } from './shadow';
+import * as typesModule from '../types';
+
+// Imports are bound once, here: under Vite's module runner every use of an imported name is a
+// getter call (docs/dev/world-core.md, Cost).
+const { LOT_FREE } = typesModule;
+const lotRowOf = lotRow;
+const lineIndexOf = lineIndex;
+const rowOfSeqIn = rowOfSeq;
+
+/** Homes in the applications waiting in the line now. 0 for a world without funding columns. */
+export function waitingHomes(world: World): number {
+  if (!('gone' in world.line)) return 0;
+  const line = world.line as FundLine;
+  const lots = world.lots;
+  let sum = 0;
+  for (const [lot, members] of lineIndexOf(line).byLot) {
+    // Rule 8's lazy guard, the same test as serveRow's: a lot no longer free waits for nothing.
+    const li = lotRowOf(lots, lot);
+    if (li >= 0 && lots.state[li] !== LOT_FREE) continue;
+    // A lot with two applications counts once, by the larger.
+    let most = 0;
+    for (const m of members) {
+      const i = rowOfSeqIn(line, m.seq);
+      if (i < 0 || line.gone[i] === 1) continue;
+      if (line.units[i] > most) most = line.units[i];
+    }
+    sum += most;
+  }
+  return sum;
+}
+
+/**
+ * Records `waitingHomes(world)` as model month `month`'s. Called once per funded step, last. Months
+ * between the last one recorded and `month` took no hook, so they keep the last value.
+ */
+export function recordWaiting(world: World, month: number): void {
+  if (!('gone' in world.line)) return;
+  const line = world.line as FundLine;
+  const t = line.waitThrough;
+  if (month <= t) throw new Error(`recordWaiting: month ${month} is not after month ${t}`);
+  if (line.waitHomes.length <= month) {
+    const next = new Int32Array(Math.max(month + 1, 2 * line.waitHomes.length, 8));
+    next.set(line.waitHomes);
+    line.waitHomes = next;
+  }
+  const last = line.waitHomes[t];
+  for (let m = t + 1; m < month; m++) line.waitHomes[m] = last;
+  line.waitHomes[month] = waitingHomes(world);
+  line.waitThrough = month;
+}
 
 /**
  * Gives the world its funding columns when a timeline first offers money after month 1. The core
@@ -95,6 +147,7 @@ export function createFundingSystem(opts: WorldOptions = {}): FundingSystem {
     shadow(ctx) {
       ensure(ctx);
       stepShadows(ctx);
+      recordWaiting(ctx.world, ctx.month);
     },
     planLot(ctx, lot) {
       return planLotMonth(ctx, lot);
