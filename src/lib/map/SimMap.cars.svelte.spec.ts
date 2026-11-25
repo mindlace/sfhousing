@@ -62,16 +62,18 @@ const vis = (map: MapLibreMap, id: string) => map.getLayoutProperty(id, 'visibil
 // A fetchCarZones that records each call's promise, so a test waits on the fetch itself (not on a
 // raised poll timeout) and then only polls the map's own, fast, reaction to it.
 function tracked(first?: () => Promise<never>) {
+  const waiters: ((p: Promise<unknown>) => void)[] = [];
   const calls: Promise<unknown>[] = [];
   const fn = vi.fn<typeof loadCarZones>((...a) => {
     const p = calls.length === 0 && first ? first() : loadCarZones(...a);
-    calls.push(p.catch(() => undefined));
+    const settled = p.catch(() => undefined);
+    calls.push(settled);
+    waiters[calls.length - 1]?.(settled);
     return p;
   });
-  const settled = async (n: number) => {
-    await expect.poll(() => calls.length, { timeout: 5000 }).toBeGreaterThanOrEqual(n);
-    await calls[n - 1];
-  };
+  // Resolves once call `n` (1-based) has been made and its promise settled.
+  const settled = (n: number): Promise<unknown> =>
+    calls[n - 1] ?? new Promise<Promise<unknown>>((r) => (waiters[n - 1] = r)).then((p) => p);
   return { fn, settled };
 }
 
