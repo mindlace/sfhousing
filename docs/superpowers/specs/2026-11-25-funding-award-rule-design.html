@@ -1,0 +1,328 @@
+<article>
+  <header>
+    <h1>Funding award rule: more money never builds fewer homes</h1>
+    <p>Award what the pools can pay now, and give a fully funded bundle the ordinary start odds, so that buying any funding preset never lowers net, funded or affordable homes.</p>
+  </header>
+
+  <section id="sec-status">
+    <h2>Status</h2>
+    <p>Draft for discussion, 2026-11-25. Branch <code>design/funding-award-rule</code>, cut from <code>main</code> at e87615f8. The owner confirmed the problem exists on <code>main</code>. The measurements were run on the integration branch <code>superconductor/incremental-loop</code> (878f15f9), because that is where the game's money purchases live. The engine code involved is the same on both branches; the integration branch only adds the <code>waitingMoney</code> series. Dataset: 2026-11-14-09ca30c8. Nothing is implemented. The candidate rules were tried through Node loader hooks that swap single strings in the compiled source, in scratch.</p>
+    <p>The probes and their raw output are kept, untracked, at <code>.superpowers/funding-award-rule/</code> in the main checkout:</p>
+    <ul>
+      <li><code>candidates/</code>: the rule swaps (<code>hooks-rules.mjs</code>, switched by <code>RULE_FLAGS</code>), the sweep <code>mono.mts</code>, and <code>R0.jsonl</code> to <code>R5.jsonl</code>.</li>
+      <li><code>monotonicity/</code>, <code>shut/</code>, <code>loan-trace/</code>, <code>calib/</code> and <code>award-rule/</code>: the traces cited below.</li>
+    </ul>
+  </section>
+
+  <section id="sec-problem">
+    <h2>Problem</h2>
+    <p>Buying more City money for affordable homes makes the forecast build fewer homes. On today's rule, 13 of the 29 tested pairs (a set S, then S plus one more measure) lose net, funded or affordable homes at some deadline. For example, adding <code>general-revenue</code> to the bond loses 7,234 net homes at Dec 2060, and adding <code>public-bank</code> to bond + revolving fund loses 11,104. All of these drops are reachable on <code>/sim</code> as well as in the game: the game and <code>/sim</code> send identical money documents for every set measured.</p>
+    <p>The game's money tree depends on this. Its prices were tuned on today's behaviour, and the funded-homes and affordable-homes side goals were dropped because no tuning could meet them.</p>
+  </section>
+
+  <section id="sec-mechanism">
+    <h2>The mechanism, as found in the code</h2>
+    <p>The trace's lead holds in outline. Two of its causes are corrected below, and two more causes were found.</p>
+
+    <section id="sec-m1">
+      <h3>M1. An award needs the whole bundle's level</h3>
+      <ul>
+        <li><code>awardSet</code> (<code>src/lib/sim/scenario/funding.ts:390-404</code>) first drops every programme of every short pool, in rounds (<code>leaveOut</code>, <code>:361-385</code>). It then awards only if what is left is non-empty and its level is not below the whole bundle's (<code>:402</code>). The grouped path in <code>awardPasses</code> (around <code>:487-489</code>) applies the same test, and <code>serve.ts:230</code> throws if the two paths ever disagree.</li>
+        <li>A bundle is every programme offered for the kind whose <code>minHomes</code> the project's size meets (<code>frame-money.ts:21-22, 102</code>). Baseline and preset programmes therefore sit in one bundle, and the presets only add to it (<code>baselineScale: []</code>, <code>funding-presets.ts:221</code>).</li>
+        <li>The consequence: any added programme raises the whole bundle's level, so it becomes a <strong>requirement</strong>. When its pool is short, applications wait (and take nothing) even where the baseline's money alone would have funded them at the baseline's level. That money sits idle. The design wrote this down as a choice (<a href="../design/2026-11-09-1911-sim-financing.md">financing design</a> OD-F10, line 170, "a pool that is on but short keeps them waiting") and as a known limit (<code>docs/dev/finance-engine.md:244-253</code>).</li>
+      </ul>
+    </section>
+
+    <section id="sec-m2">
+      <h3>M2. A certain bundle applies at once</h3>
+      <ul>
+        <li>Coverage is the share of the uncovered cost that grant-equivalents cover (<code>instruments.ts:236-301</code>). An overflowing tier scales its grants down so that grant coverage never exceeds 1. A level of 1 or more is "certain" (<code>instruments.ts:13-17</code>; the cap is in <code>funding.ts:192-194</code>).</li>
+        <li>Below level 1, the monthly start hazard is <code>logistic(x0 + oddsShift(G))</code>. At level 1 the rate is −∞ (<code>clocks.ts:200</code>), which gives p = 1: every eligible lot applies in its first lot-month, on the first day (<code>clocks.ts:307-310</code>).</li>
+        <li>The baseline shares sum to 0.968895, so with nothing bought no bundle is ever certain.</li>
+        <li><strong>Correction to the trace:</strong> the bond alone already makes the bundle certain. The bond is harmless because it is one payment: it is spent, its pool closes, and waiting rows are re-made at 0.969. <code>general-revenue</code> is harmful because its yearly inflows run to 2055-07, so its pool cannot close before 2056. For about 30 years every certain application waits on $36.7M a year (about 230 homes a year at its share), with about 550,000 homes in line. Over the run, federal tax-credit spending falls from $6.32B to $3.10B.</li>
+      </ul>
+    </section>
+
+    <section id="sec-m3">
+      <h3>M3. A loan worth little asks for a lot (new)</h3>
+      <ul>
+        <li><code>public-bank</code> lends 10% of cost at 6.13%. That loan is worth $2,384 a home as a grant-equivalent (<code>instruments.ts:136-150</code>), but it asks the pool for the full principal, $95,413 a home (<code>instruments.ts:270-271</code>; <code>funding.ts:347-350</code>).</li>
+        <li>It lifts coverage from 0.968895 to 0.971662, which is not certain, so M2 does not apply. But once the bank is short, dropping it leaves a set priced below the whole bundle, so M1 makes the application wait.</li>
+        <li>All affordable starts are then throttled through about $46.9M of lending capacity, roughly 491 homes in progress at a time. That costs 11,802 net homes with the bank alone.</li>
+        <li>The bank pool shows $0 "spent" because <code>spent</code> counts grants only (<code>finance-score.md:131</code>). It lent about $138M over the run.</li>
+        <li>Any loan or guarantee programme with a small pool on the affordable reach would do the same.</li>
+      </ul>
+    </section>
+
+    <section id="sec-m4">
+      <h3>M4. A pool closes on the first application too big for it (new)</h3>
+      <ul>
+        <li>This is the bond's <code>shut</code>. The game moves the bond's arrival to 2026-11-11, so the pool is not shut before it arrives; the probe printed calendar months.</li>
+        <li><code>askedPast</code> (<code>closing.ts:84-109</code>) closes a pool when <strong>any</strong> waiting row asks more than the pool holds. A single 3,592-home application asking $564M closed the bond on 2027-01-10 with $220M still in it, and money in a closed pool is never awarded. The same thing closes <code>city-debt</code> with $22.6M left. The code follows its spec (<code>2026-11-22-pool-closing-design.html:206</code>); the condition is what is wrong.</li>
+        <li>It is secondary to M1. Fixing it alone recovers 1,580 of the 7,110 homes lost by bond + general revenue.</li>
+      </ul>
+    </section>
+
+    <section id="sec-m5">
+      <h3>M5. "Funded homes" counts relabelled market starts (new; score definition, not the rule)</h3>
+      <p><code>revolving-fund</code> lends only to market-rate lots. Their funded clock is <code>min(ord, x)</code> (<code>clocks.ts:202</code>), so they start at about their ordinary time, but they now carry <code>funding</code> and count as funded (<code>finance-score.md:156-158</code>). As a result, funded homes rise by about 3,100 while net homes rise by 7 and affordable homes not at all. Any side goal on funded homes is therefore inflated by this measure.</p>
+    </section>
+
+    <figure id="fig-mechanism">
+      <svg class="diagram" viewBox="0 0 720 200" role="img" aria-labelledby="fig-mechanism-t">
+        <title id="fig-mechanism-t">How an added pool turns into idle baseline money</title>
+        <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 10 5 0 10z"/></marker></defs>
+        <g class="node external" id="n-preset"><rect x="10" y="20" width="150" height="44"/><text x="85" y="42">preset adds a pool</text></g>
+        <g class="node" id="n-level"><rect x="200" y="20" width="160" height="44"/><text x="280" y="42">whole bundle's level rises</text></g>
+        <g class="node" id="n-flood"><rect x="200" y="120" width="160" height="44"/><text x="280" y="142">level 1: all lots apply (M2)</text></g>
+        <g class="node" id="n-short"><rect x="400" y="20" width="140" height="44"/><text x="470" y="42">new pool short</text></g>
+        <g class="node" id="n-wait"><rect x="400" y="120" width="140" height="44"/><text x="470" y="142">award refused (M1)</text></g>
+        <g class="node result" id="n-idle"><rect x="580" y="70" width="130" height="44"/><text x="645" y="92">baseline money idle</text></g>
+        <g class="edge" data-from="n-preset" data-to="n-level"><path d="M160 42H198"/></g>
+        <g class="edge" data-from="n-level" data-to="n-flood"><path d="M280 64V118"/></g>
+        <g class="edge" data-from="n-level" data-to="n-short"><path d="M360 42H398"/></g>
+        <g class="edge" data-from="n-flood" data-to="n-short"><path d="M360 135L400 60"/></g>
+        <g class="edge" data-from="n-short" data-to="n-wait"><path d="M470 64V118"/></g>
+        <g class="edge" data-from="n-wait" data-to="n-idle"><path d="M540 142L580 104"/></g>
+      </svg>
+      <figcaption>Figure 1. M1 turns any added programme into a requirement. M2 multiplies the queue when the level reaches 1. M3 does the same through a loan that lifts the level a little and asks a lot.</figcaption>
+    </figure>
+  </section>
+
+  <section id="sec-why">
+    <h2>What the rule was modelling, and what it got wrong</h2>
+    <p>OD-F10 says a project's capital stack closes whole: "a project never starts on less than it applied for." That is true of real deals: a tax-credit project does not close while a committed source is missing.</p>
+    <p>What the model gets wrong is how an application is formed. It applies for <em>every programme on offer</em>, whether or not that programme has money. A real sponsor applies to the sources that are awarding, and restructures when one is oversubscribed. A notice of funding availability that is oversubscribed turns applicants away; it does not freeze the applications that other sources were already funding. Extra City money only enlarges the pot, so in the real world it cannot make fewer deals close.</p>
+    <p>The rule below keeps "never starts on less than it applied for" by reading the application as formed at award time, from the pools that can pay. It drops the second half of OD-F10, "a pool that is on but short keeps them waiting". That half is the known limit, and the doc already says "a later change to this behaviour is deliberate".</p>
+    <p>The hazard of 1 at full coverage is the owner's ruling R2 ("any 100% grant shifts the odds to 100%"), which has no records behind it. R6 is different: once awarded, a fully funded project never exits and takes its route from <code>affordableRoutes</code>. R6 rests on records (2 exits in 92 passages) and is kept.</p>
+  </section>
+
+  <section id="sec-options">
+    <h2>Options</h2>
+    <p>Measured options are named R0 to R5 after the sweep's files. Cells are net / funded / affordable homes (very low + low + moderate) at Dec 2060.</p>
+    <table id="tbl-options">
+      <caption>The options and what each does</caption>
+      <thead>
+        <tr><th scope="col">Option</th><th scope="col">Verdict</th><th scope="col">Measured</th><th scope="col">Real-world claim</th><th scope="col">Touches</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <th scope="row">R1 Fallback award: award the set left after short pools are dropped whenever its level is above 0 (your option 1, and option 5 at award time)</th>
+          <td>Sound and necessary. Not sufficient alone: the M2 flood stays. All lots apply at once and are then awarded at the partial level, which pulls starts forward at odds the project never had.</td>
+          <td>Drops left: federal-support alone on <code>/sim</code> −2,379 at 2060, and public-bank on B+GR+FS+SD −465 at 2045. B+GR reaches 87,780 net, inflated by the flood. About 500k homes still wait until 2055.</td>
+          <td>"The stack is formed from sources that are awarding." Replaces the second half of OD-F10.</td>
+          <td><code>awardSet</code>, <code>awardPasses</code>, the <code>serve.ts:230</code> agreement, the known-limit test.</td>
+        </tr>
+        <tr>
+          <th scope="row">R2 Continuous hazard: a certain bundle uses the finite logistic rate (your option 3)</th>
+          <td>Sound. Not sufficient alone: M1 still freezes the line.</td>
+          <td>B+GR is still −5,772 at 2060, and PB is unchanged.</td>
+          <td>"Money shifts the odds", the first half of R2. Overturns "100% grant gives 100% odds".</td>
+          <td><code>clocks.ts:200, :307-310</code>; the old engine's <code>funded.ts:475, :630-631, :687-688</code>.</td>
+        </tr>
+        <tr>
+          <th scope="row"><strong>R3 = R1 + R2 (recommended)</strong></th>
+          <td>Monotone except one dip: public-bank on B+GR+FS (and its RF and SD variants) is −212 at 2045 and 2055, then +456 at 2060. No engine assertion fired, and the homes waiting for money fall to about 0.</td>
+          <td>none 72,431 / 16,611 / 19,616; B+GR 75,417 / 19,628 / 22,641; all six 76,926 / 24,728 / 24,490.</td>
+          <td>Both of the above. R6 is kept.</td>
+          <td>Both rows above, plus the goldens (see <a href="#sec-invariants">invariants</a>).</td>
+        </tr>
+        <tr>
+          <th scope="row">R4 = R3 + the closing fix (M4: close only when no waiting ask fits)</th>
+          <td>Sound and independent. Numbers identical to R3, because once R1 is in, a short pool no longer stops awards. Still worth doing so the ledger stops stranding money ($220M of the bond). It is a separate small fix.</td>
+          <td>Identical to R3.</td>
+          <td>"A pool is spent when it cannot pay anyone waiting." The spec's own stated aim.</td>
+          <td><code>closing.ts:84-109</code>, the closing spec's condition 4, <code>closing.spec.ts</code>.</td>
+        </tr>
+        <tr>
+          <th scope="row">R1 + thinning: keep R2's hazard of 1, but a lot drawn at level 1 that can only be awarded a partial set starts with probability p(partial), and otherwise returns to its spell</th>
+          <td>Sound, and keeps R2 literally. Not measured. Needs a new draw purpose and more code in serving. This is the alternative if R2 must stand.</td>
+          <td>Not measured. Expected near R3.</td>
+          <td>"A fully funded project starts at once, if its money is there."</td>
+          <td>As R1, plus a draw purpose and its golden.</td>
+        </tr>
+        <tr>
+          <th scope="row">Coverage above need is not a stricter bundle (your option 2)</th>
+          <td>Moot under R1. Coverage is already capped at 1, and with R1 the bar disappears. Without R1 it cannot help, because a certain bundle needs exactly 1.</td>
+          <td>Not measured.</td>
+          <td>None.</td>
+          <td>None.</td>
+        </tr>
+        <tr>
+          <th scope="row">Scarce City money last / gap pricing (your option 4)</th>
+          <td>Not a monotonicity fix: with R1 off, the line still waits on the last pool. It is a separate model change: today the City's sources share in proportion (ruling R13), so general revenue pays $103k–157k a home, where a gap lender would pay about $27k. It would stretch City money about five times further. Its own spec, if wanted.</td>
+          <td>Not measured.</td>
+          <td>MOHCD as gap lender. Evidence tier to establish.</td>
+          <td><code>src/lib/sim/finance</code>: <strong>hashed</strong>, so a new dataset.</td>
+        </tr>
+        <tr>
+          <th scope="row">Release on full allocation: re-make the waiting rows without a pool as soon as it is fully allocated (your option 5)</th>
+          <td>Works, but R1 does the same at award time without the lapse churn: each release lapses rows and restarts their spells. M4's fix is the narrow version for dead pools.</td>
+          <td>Not measured.</td>
+          <td>"Turned away this round."</td>
+          <td>Lapse paths.</td>
+        </tr>
+      </tbody>
+    </table>
+    <aside data-kind="decision"><strong>Recommendation</strong> R3 (fallback award + continuous hazard), with three riders:
+      <ul>
+        <li>Keep R6's award-side behaviour: never exits, route from <code>affordableRoutes</code>, no size revisions, the card's "fully funded".</li>
+        <li>Clamp <code>oddsShift</code> at coverage 1, so loan coverage above 1 stops raising the odds (finance-model spec <code>:287</code>).</li>
+        <li>Drop the first-day application rule at <code>clocks.ts:310</code>.</li>
+      </ul>
+      Ship M4's closing fix in the same branch as a separate commit. Trace and remove the −212 public-bank dip before merge (see <a href="#sec-open">open questions</a>).</aside>
+    <section id="sec-calls">
+      <h3>Calls made in this draft (check these)</h3>
+      <ul>
+        <li><strong>Odds at application stay those of the whole bundle.</strong> Under R3, an application draws its start from the whole bundle's level and may then be awarded a smaller set. This leftover is accepted: with a continuous hazard, the gap between a level of 0.969 and 1 is a small odds shift, and R3's measured numbers already include it. If the dip trace shows that this is what causes the −212, the exact fix is thinning at award time (the R1 + thinning row), not pricing the application from the pools that can pay.</li>
+        <li><strong>The riders.</strong> The measured R2 swap deleted only <code>clocks.ts:200</code>. Through <code>:307</code> that also turned off the first-day rule, so that rider is already in R3's numbers. The <code>oddsShift</code> clamp was not measured; it only bites where loan coverage exceeds 1. The plan's first step re-runs the sweep with the clamp, before anything is tuned.</li>
+        <li><strong>Homes waiting for money.</strong> <code>waitingMoney</code> exists only on the integration branch. On <code>main</code>, the check reads net, funded and affordable homes only. When the game branch merges, the check also fails if homes waiting for money, at any month, exceed current law's peak by more than 10,000. Today's R0 flood is about 550,000; R3 is about 100.</li>
+        <li><strong>Where the dataset check runs.</strong> <code>money-monotone</code> needs a real dataset. Main's signoff steps are all local, and <code>reach-measure</code> is not on <code>main</code>. So the dataset run is a required manual step, beside <code>level2-check</code>: before every upload, and for any change on the funding paths listed below (written into <code>docs/dev/pipeline.md</code> and <code>finance-engine.md</code>). Signoff gets the dataset-free property test. Fetching the published dataset during signoff is left out, to keep a network dependency out of the gate.</li>
+      </ul>
+    </section>
+  </section>
+
+  <section id="sec-numbers">
+    <h2>Measured numbers</h2>
+    <table id="tbl-r0-r3">
+      <caption>Net / funded / affordable homes at Dec 2060, today (R0) and recommended (R3)</caption>
+      <thead><tr><th scope="col">Set</th><th scope="col">R0</th><th scope="col">R3</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">none (current law)</th><td>68,761 / 12,808 / 15,695</td><td>72,431 / 16,611 / 19,616</td></tr>
+        <tr><th scope="row">bond</th><td>68,885 / 12,966 / 15,849</td><td>73,287 / 17,500 / 20,497</td></tr>
+        <tr><th scope="row">bond + general revenue</th><td>61,651 / 6,116 / 8,718</td><td>75,417 / 19,628 / 22,641</td></tr>
+        <tr><th scope="row">bond + revolving + bank</th><td>57,788 / 5,265 / 4,760</td><td>73,294 / 20,799 / 20,497</td></tr>
+        <tr><th scope="row">all six</th><td>66,982 / 14,641 / 14,264</td><td>76,926 / 24,728 / 24,490</td></tr>
+      </tbody>
+    </table>
+    <table id="tbl-spend">
+      <caption>Spend to Dec 2060, $M</caption>
+      <thead><tr><th scope="col">Rule and set</th><th scope="col">Federal</th><th scope="col">State</th><th scope="col">City</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">R0 none</th><td>6,320</td><td>1,689</td><td>1,996</td></tr>
+        <tr><th scope="row">R0 bond + GR</th><td>3,100</td><td>828</td><td>1,990</td></tr>
+        <tr><th scope="row">R3 none</th><td>9,227</td><td>2,465</td><td>2,438</td></tr>
+        <tr><th scope="row">R3 bond + GR</th><td>10,640</td><td>2,843</td><td>4,098</td></tr>
+      </tbody>
+    </table>
+    <p><strong>Current law moves.</strong> R3 changes the run with nothing bought: +3,670 net and +3,921 affordable homes at 2060, and affordable homes at 2035 go from 2,212 to 3,045. R1 alone does this, because baseline pools are short too and the bar was idling them. No calibration fits this throughput:</p>
+    <ul>
+      <li>The only record check is static. The money implies 780 homes a year, against 980 a year in the 2024–25 CDLAC/CTCAC new-construction awards (<code>finance-data.md:310-330</code>).</li>
+      <li>Today's rule completes about 560 a year over 2031–2040.</li>
+    </ul>
+    <p>So R3 moves the model <em>toward</em> the record, not past it. That is inferred, because completions lag starts by about 4 years.</p>
+    <p><strong>Noise floor.</strong> <code>state-double</code> alone equals "none" exactly. Adding <code>revolving-fund</code> costs exactly −1 net at 2045 in every rule and every set it joins, which is a reshuffle of draws. No other drop smaller than 50 homes was seen, so the −212 dip is a mechanism, not noise.</p>
+  </section>
+
+  <section id="sec-invariants">
+    <h2>Invariants and tests touched</h2>
+    <ul>
+      <li><strong>Ledger identities E1–E5 and E7</strong> (<code>finance-engine.md:366-372</code>; I1–I5 in <code>finance-score.md:144-149</code>; checked by <code>world/funding/test/identities.ts</code> in <code>referee-ledger.spec.ts</code> and <code>funded.spec.ts</code>). Unchanged in form: the asks are still computed from the awarded set. They must pass on the new goldens.</li>
+      <li><strong>Tolerance referee</strong> (<code>tolerance.referee.spec.ts</code>, behind <code>SFH_WORLD_FUNDING_REFEREE=1</code>). The old scenario engine keeps its own copy of the certain rule (<code>scenario/funded.ts:475, :630-631, :687-688</code>). Both engines change together, or the referee fails.</li>
+      <li><strong>Re-pricing and lapse.</strong> The lapse rule is unchanged: a re-make whose level falls still lapses. But fewer rows wait. These tests change meaning:
+        <ul>
+          <li><code>engine-finance-repricing.spec.ts</code> "the known limit: an application waits on a spent pool" (<code>:278</code>, <code>:292</code>). It is rewritten: the second application is now awarded on the federal and state shares.</li>
+          <li><code>:249</code> (bond off while it shares the City tier) still holds.</li>
+          <li><code>funding.spec.ts:526, :539</code>, <code>engine-finance-stack.spec.ts</code> "a short pool is made up by another only as far as its share allows", and <code>line.spec.ts:332</code> are re-read against R1.</li>
+        </ul>
+      </li>
+      <li><strong>Closing</strong> (M4): the closing spec's condition 4 and <code>:385</code>, <code>closing.spec.ts:530, :637, :672</code>, and <code>world-funding.md:165-172</code>.</li>
+      <li><strong>Shadows</strong> (<code>shadow.spec.ts:184-237</code>, rule 20): re-run, no expected change.</li>
+      <li><strong>Goldens that move once</strong>:
+        <ul>
+          <li><code>world/funding/fixtures/funded-events-mini-seed1.json</code>.</li>
+          <li><code>scenario/fixtures/golden-finance-seed1.json</code>. Its <code>simulate.finance.golden.shared.ts:33</code> requires a certain affordable start; that stays true, since an award at level 1 is still certain.</li>
+          <li><code>golden-seed1.json</code> and <code>model-golden.json</code> carry no finance and do not move.</li>
+        </ul>
+      </li>
+      <li><strong>Docs</strong>: <code>finance-engine.md</code> (the award rule, its known limit removed, the certain hazard, the first-day rule), <code>world-funding.md</code> (rule 16, closing), <code>finance-model.md</code>, and the financing design (an amendment noting that OD-F10's second half and R2's start-at-once are superseded).</li>
+    </ul>
+  </section>
+
+  <section id="sec-check">
+    <h2>The monotonicity check</h2>
+    <section id="sec-check-script">
+      <h3>Script: <code>scripts/money-monotone.ts</code></h3>
+      <ul>
+        <li><strong>Input:</strong> <code>--version &lt;v&gt;</code>, or a built dataset directory, the same way <code>level2-check.ts</code> takes one.</li>
+        <li><strong>Sets:</strong> every subset of the offered presets (<code>available</code> in <code>funding-presets.ts</code>; six today, so 64 subsets), each added to current law with <code>addPolicy</code> from month 1, as the game and <code>/sim</code> do. Today's prerequisites are ignored, since <code>/sim</code> allows any set.</li>
+        <li><strong>Edges:</strong> every pair (S, S plus one preset): 192.</li>
+        <li><strong>Readings:</strong> net (<code>completedNet</code>), funded, and affordable (very low + low + moderate tiers) at Dec 2035, 2040, 2045, 2055 and 2060. Those are the game's deadlines plus 2035.</li>
+        <li><strong>Fails</strong> (exit 1) when any reading on any edge drops by more than the tolerance. It prints each offending edge, reading, deadline and size.</li>
+        <li><strong>Tolerance:</strong> 5 homes absolute, a named constant. The measured noise floor is 1 home.</li>
+        <li><strong>Cost:</strong> 64 views at 0.4–3.8 s each, about 2–3 minutes.</li>
+      </ul>
+    </section>
+    <section id="sec-check-when">
+      <h3>When it runs</h3>
+      <ul>
+        <li>Beside <code>level2-check</code> before every dataset upload (<code>docs/dev/pipeline.md</code>, finishing a branch).</li>
+        <li>As a required manual step (see <a href="#sec-calls">calls</a>) for changes under these paths:
+          <ul>
+            <li><code>src/lib/sim/finance/**</code></li>
+            <li><code>src/lib/sim/scenario/funding*.ts</code> and <code>funded.ts</code></li>
+            <li><code>src/lib/sim/world/funding/**</code></li>
+            <li><code>src/lib/sim-page/funding-presets.ts</code></li>
+            <li><code>pipeline/**/funding.json</code></li>
+          </ul></li>
+      </ul>
+    </section>
+    <section id="sec-check-unit">
+      <h3>A unit property beside it</h3>
+      <p>A Vitest property test on a small synthetic <code>FinanceIndex</code>. For random bundles, pools and balances: if <code>awardSet</code> awards without an added programme, it still awards with that programme added and its pool at any balance, and the awarded level is not lower. This pins M1 without a dataset. It runs in the server project on every signoff. It is the gate signoff enforces.</p>
+    </section>
+  </section>
+
+  <section id="sec-scope">
+    <h2>Scope and cost</h2>
+    <aside data-kind="note"><strong>Correction to the premise</strong> The award rule and the clock are <strong>not</strong> hashed into the dataset version. Only <code>src/lib/sim/finance</code>, the pipeline and a few <code>src/lib</code> paths are (<code>pipeline/lib/version.ts:41-50</code>; <code>pipeline/test/version.test.ts:107-118</code> asserts that other sim code is left out). R3 and M4 change <code>scenario/funding.ts</code>, <code>scenario/funded.ts</code>, <code>world/funding/clocks.ts</code> and <code>closing.ts</code>, none of which is hashed. So <strong>no new dataset and no upload</strong>. Ruling tree-catalogue-measure-2 says otherwise; it holds only for <code>src/lib/sim/finance</code>.</aside>
+    <p>No new version also means nothing forces a recheck. So:</p>
+    <ol>
+      <li>Land the fix on <code>main</code>.</li>
+      <li>Run <code>level2-check</code> by hand on the live dataset. Current law only gains homes, so it should pass.</li>
+      <li>Run <code>money-monotone</code>, and regenerate the two finance goldens.</li>
+      <li>Run signoff.</li>
+    </ol>
+    <p>The game is not on <code>main</code>, so no banked game run is affected. If the game ships before this fix, its banked results would carry an unchanged dataset version over a changed engine, and its bars would not be marked stale. That is a reason to land this first.</p>
+    <section id="sec-game">
+      <h3>What the game re-measures when it merges main</h3>
+      <ul>
+        <li><code>LADDER_YEARS</code>: <code>npx tsx scripts/reach-measure.ts --version &lt;v&gt; --write</code>. Current law and the full tree both gain homes, so the rung years move earlier.</li>
+        <li><code>PRICES</code> (especially the money nodes), <code>RUNG_LUMP</code> and <code>SIDE_TUNING</code>: <code>npx tsx scripts/tree-balance.ts --version &lt;v&gt;</code>, iterated by hand until it exits 0, at about 16 s an order. The money-first play should stop sticking at rung 1.</li>
+        <li><code>level2-check</code> (or <code>reach-check</code> once renamed) on the live dataset.</li>
+        <li>This stacks with the <code>side-goal-effect</code> unit's retune (the side-goal reader bug, ruling conductor-11). Do one retune after both are in, not two.</li>
+      </ul>
+    </section>
+    <section id="sec-side-goals">
+      <h3>Can the two side goals come back?</h3>
+      <ul>
+        <li><strong>affordable-homes: yes.</strong> Under R3, money raises affordable homes at every deadline: current law is 15,128 at 2055, bond + GR 17,843, all six 19,032. Its target must be re-measured above the new current law, and <code>tree-balance</code> decides whether some gated play meets it in time.</li>
+        <li><strong>funded-homes: yes, but redefine it first.</strong> M5 lets <code>revolving-fund</code> add about 3,000 "funded" homes that are relabelled market starts. Count funded homes on affordable tiers only, or count homes whose start the money moved. Otherwise the goal rewards the cheapest relabelling rather than homes. That is a game-side change to <code>side-goals.ts</code>; the score's <code>fundedHomes</code> stays as it is.</li>
+      </ul>
+    </section>
+    <section id="sec-size">
+      <h3>Size</h3>
+      <p>A small engine change (two conditions and the old engine's copy), one closing condition, a new script and a property test, two goldens and four docs. Roughly one implementer day, plus the trace of the public-bank dip. The game retune happens on the integration branch afterwards.</p>
+    </section>
+  </section>
+
+  <section id="sec-goals">
+    <h2>Goals, non-goals, anti-goals</h2>
+    <ul>
+      <li><strong>Goal:</strong> adding any offered preset to any set never lowers net, funded or affordable homes at a game deadline, beyond a 5-home tolerance, and a check fails if it does.</li>
+      <li><strong>Goal:</strong> money that a pool holds and a waiting application could use is not left idle because a different pool is short.</li>
+      <li><strong>Non-goal:</strong> gap pricing among City sources (option 4), the market's start odds, and yearly lumps (accepted as they are).</li>
+      <li><strong>Anti-goal:</strong> a fix that is monotone because it inflates. R1 alone is the example: it gives 87,780 homes for B+GR by starting every lot at once. On the game branch, the check also reads homes waiting for money (see <a href="#sec-calls">calls</a>).</li>
+      <li><strong>Constraints kept:</strong> one future, no random bands; funding lumps stay yearly; evidence is ranked per-record &gt; official aggregate &gt; inference &gt; literature &gt; invented.</li>
+    </ul>
+  </section>
+
+  <section id="sec-open">
+    <h2>Open questions for the owner</h2>
+    <ol>
+      <li><strong>Ruling R2.</strong> R3 replaces "any 100% grant shifts the odds to 100%" with the ordinary odds at full coverage, and keeps R6. The alternative that keeps R2 literally is R1 + thinning: unmeasured, more code, expected near R3. My pick is R3.</li>
+      <li><strong>Current law moves</strong> by +3,670 net and +3,921 affordable homes at 2060, toward the award record. My call: accept it, record the new throughput against the 980-a-year record in <code>finance-data.md</code>, and do not refit.</li>
+      <li><strong>The −212 public-bank dip</strong> at 2045 and 2055, on sets holding B+GR+FS. It reverses to +456 by 2060, which points to timing: low-value loans are now awarded early and draw on shared money. My call: trace it in the implementation and make the check pass at 5 homes. If the only fix is a model change (for example, a loan's ask counted at its grant-equivalent), bring it back here instead of widening the tolerance.</li>
+    </ol>
+  </section>
+</article>
