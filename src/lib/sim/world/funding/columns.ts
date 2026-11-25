@@ -57,6 +57,10 @@ export interface FundLine extends LineColumns {
    * -1 = evaluated and never passed so far.
    */
   shadowMonth: Int32Array;
+  /** `[m]`: homes waiting at the end of model month m (`recordWaiting`); `[0]` is 0. */
+  waitHomes: Int32Array;
+  /** The last model month recorded in `waitHomes`; 0 before any. */
+  waitThrough: number;
 }
 
 export interface FundPools extends PoolColumns {
@@ -173,7 +177,9 @@ function emptyLine(): FundLine {
     shadowK: new Int32Array(0),
     shadowR: new Int32Array(0),
     shadowExisting: new Int32Array(0),
-    shadowMonth: new Int32Array(0)
+    shadowMonth: new Int32Array(0),
+    waitHomes: new Int32Array(1),
+    waitThrough: 0
   };
 }
 
@@ -221,6 +227,18 @@ export function fundOf(world: World): { line: FundLine; pools: FundPools } {
   if (!('gone' in world.line) || !('mRow' in world.pools))
     throw new Error('fundOf: the world has no funding columns (initFunding was not called)');
   return { line: world.line as FundLine, pools: world.pools as FundPools };
+}
+
+/**
+ * Homes waiting at the end of model month `m`, for 0 <= m <= world.month. 0 for a world without
+ * funding columns. A month after the last one recorded had no hook, so the last value holds.
+ */
+export function waitingAt(world: World, m: number): number {
+  if (!Number.isInteger(m) || m < 0 || m > world.month)
+    throw new RangeError(`waitingAt: month ${m} is not a whole month from 0 to ${world.month}`);
+  if (!('gone' in world.line)) return 0;
+  const line = world.line as FundLine;
+  return line.waitHomes[Math.min(m, line.waitThrough)];
 }
 
 /** The row of pool `id`; an unknown id appends a zeroed row. */

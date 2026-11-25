@@ -14,7 +14,7 @@
       <li><strong>D8, D14</strong>: saved games stay separate, up to 12, with switch, rename, delete and new unchanged.</li>
       <li><strong>Call 9</strong>: the open game is built here from the catalogue: the last rung met, every node bought, no units.</li>
     </ul>
-    <p>This unit is the first part of one lane, built in this order and merged once: <code>game-save</code>, part B of <code>tally-tree</code>, <code>game-sim</code>, <code>game-shell</code> (design, <code>sec-write-sets</code>). It deletes <code>levels.ts</code>, <code>progress.ts</code>, <code>standing.ts</code>, <code>allowed.ts</code>, <code>copy.ts</code> and <code>navigate.ts</code>, and removes store members that pages read. The application does not build or type-check after this unit alone. <a href="#sec-design-lane">The lane</a> names every importer left broken and the unit that mends it.</p>
+    <p>This unit is the first part of one lane: one unit, merged once. Its parts, in dependency order, are <code>game-save</code>, part B of <code>tally-tree</code>, <code>game-sim</code> and <code>game-shell</code>; the unit's plan orders its tasks across the parts as its tests need, inside the lane's write set, and each file ends as the spec that owns it says (design, <code>sec-write-sets</code>). It deletes <code>levels.ts</code>, <code>progress.ts</code>, <code>standing.ts</code>, <code>allowed.ts</code>, <code>copy.ts</code> and <code>navigate.ts</code>, and removes store members that pages read. The application does not build or type-check after this unit alone. <a href="#sec-design-lane">The lane</a> names every importer left broken and the unit that mends it.</p>
   </section>
 
   <section id="sec-interfaces">

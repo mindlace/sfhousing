@@ -6,15 +6,17 @@ Money, tiers and limit statements are built; the funded card fields are not yet.
 
 ## Files
 
-| Where                                | What                                                                                        |
-| ------------------------------------ | ------------------------------------------------------------------------------------------- |
-| `src/lib/sim/world/score/types.ts`   | `WorldSeries`, `WorldSeriesData`, `SeriesChunk`, `ScoreStatics`, `TimelineView`, `CardDeps` |
-| `src/lib/sim/world/score/series.ts`  | `createWorldSeries(statics, from?)`                                                         |
-| `src/lib/sim/world/score/statics.ts` | `scoreStaticsOf`, `horizonOf`, `finalTable`, `planFinanceOf`                                |
-| `src/lib/sim/world/score/chunk.ts`   | `chunkOf(plan, twin, money, from, through)`                                                 |
-| `src/lib/sim/world/score/view.ts`    | `viewOf`, `chunksBefore`                                                                    |
-| `src/lib/sim/world/score/card.ts`    | `cardAt(world, statics, frame, deps, parcelId, day, projectId?)`                            |
-| `src/lib/sim/world/score/test/`      | `feed.ts`: `feedWorld`, `feedFunded`, `testStatics`, `timelineStatics` for the specs        |
+| Where                                  | What                                                                                        |
+| -------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `src/lib/sim/world/score/types.ts`     | `WorldSeries`, `WorldSeriesData`, `SeriesChunk`, `ScoreStatics`, `TimelineView`, `CardDeps` |
+| `src/lib/sim/world/score/series.ts`    | `createWorldSeries(statics, from?)`                                                         |
+| `src/lib/sim/world/score/statics.ts`   | `scoreStaticsOf`, `horizonOf`, `finalTable`, `planFinanceOf`                                |
+| `src/lib/sim/world/score/chunk.ts`     | `chunkOf(plan, twin, money, from, through)`                                                 |
+| `src/lib/sim/world/score/view.ts`      | `viewOf`, `chunksBefore`                                                                    |
+| `src/lib/sim/world/score/card.ts`      | `cardAt(world, statics, frame, deps, parcelId, day, projectId?)`                            |
+| `src/lib/sim/world/score/test/`        | `feed.ts`: `feedWorld`, `feedFunded`, `testStatics`, `timelineStatics` for the specs        |
+| `src/lib/sim/world/funding/system.ts`  | `waitingHomes`, `recordWaiting`: the count and its record at the end of system 7            |
+| `src/lib/sim/world/funding/columns.ts` | `waitingAt`: the recorded count at a model month, read by `Extras.waiting`                  |
 
 ## Feeding a series
 
@@ -47,6 +49,7 @@ The final-month guard: an event that would change a final month throws, naming t
 - `rows`: the plan world's own `MonthRow`s, `inProgress` stages included.
 - `planEffect`: the plan's `entitledNew` and `completedNetNew` minus the twin's, month by month.
 - `money`, `tiers`: the plan world's, with a `money` feed (rule 9); null without one.
+- `waiting`: the homes waiting for money at each calendar month's end, read from the plan world with a `money` feed (the feed's `world`); null without one. See Homes waiting for money.
 
 It throws for a month not final.
 
@@ -74,11 +77,21 @@ The shown `displacedHomes` series and the ratio's displaced term differ in timin
 
 `viewOf` and `chunksBefore` read only the chunks and the plain fields of `ScoreStatics`, never the tier `WeakMap`. They therefore run on a copy (a `structuredClone` posted to the page), and give the same view as on the original.
 
+## Homes waiting for money
+
+The count is the homes in the applications waiting in the funding line (`waitingHomes`, `funding/system.ts`). A row marked `gone` is not counted, nor is a row whose lot is no longer free (`LOT_DONE`, `LOT_LIVE`, `LOT_HELD`; the same lazy guard as the serve step's). A lot with two applications counts once, by the larger. A row whose lot has no lot row is counted. A world without funding columns counts 0.
+
+The funding system's `shadow` hook (system 7) calls `recordWaiting` after `stepShadows`, once per funded step, so the count is the one the month ends with: nothing in the step changes the line after it. It is kept in the world's line (`waitHomes` by model month, `waitThrough` the last month recorded), not in the series: the series reads events, and a waiting application is not a row and sends none. A month with no funded step (the core calls no hook in a month whose frame has no `finance`) keeps the last value, and `waitingAt(world, m)` (`funding/columns.ts`, reads only the columns) gives `waitHomes[min(m, waitThrough)]`; it throws `RangeError` for a month that is not whole or past `world.month`, and is 0 for a world without funding columns.
+
+`Extras.waiting(world, from, through)` (`series.ts`) gives, for final calendar months `from..through`, entry k = `waitingAt(world, finalTable[from + k])`: the count at the end of the model month that holds the calendar month's last day. A model month is 30.44 days, so that model month ends up to 30 days after the calendar month's last day (a month's count is read at the end of the model month, not on the day). It needs no statics: it reads the series' own table. Every calendar month in a chunk is final, so `finalTable[i] <= stepped <= world.month` and the read never throws in the runner. The twin does not move it: it reads the plan's world only.
+
 ## The view
 
 `viewOf(chunks, statics)` joins contiguous chunks into a `TimelineView` (it throws on a gap, an overlap or a late first chunk). `rows` and `planEffect` are the chunks' rows joined. `targets` from `targetsOf` over `rows`. Every series has `filledThrough + 1` entries.
 
-`chunksBefore(chunks, k)` keeps the months before `k`: whole chunks kept, the one straddling `k` trimmed, none from `k` on. A refill (the plan changed from month k) keeps `chunksBefore(chunks, k)` and computes new chunks from `k`.
+`waitingMoney` joins the chunks' `waiting`. It is null whenever the view's `money` is null, and also when any chunk lacks `waiting` (absent or null); otherwise it has `filledThrough + 1` entries.
+
+`chunksBefore(chunks, k)` keeps the months before `k`: whole chunks kept, the one straddling `k` trimmed (its `waiting` with the rest), none from `k` on. A refill (the plan changed from month k) keeps `chunksBefore(chunks, k)` and computes new chunks from `k`.
 
 ## `cardAt`
 

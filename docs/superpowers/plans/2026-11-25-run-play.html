@@ -1,0 +1,739 @@
+<article>
+  <header>
+    <h1>Run play implementation plan</h1>
+    <p>Drops, the collecting ring and sound: build unit <code>run-play</code> of the incremental-loop design.</p>
+    <aside data-kind="note"><strong>For agentic workers</strong> REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps are checklist items; progress is kept in the workspace ledger, not in the plan.</aside>
+  </header>
+
+  <section id="sec-overview">
+    <h2>Overview</h2>
+    <dl>
+      <dt>Goal</dt>
+      <dd>Everything the player sees, hears and does inside a run: <code>planDrops</code>, a pure run model with the ring, a 2D canvas drawing, <code>RunLayer.svelte</code>, four Web Audio sounds and two stored preferences, all under <code>src/lib/game/run/</code>.</dd>
+      <dt>Architecture</dt>
+      <dd>A DOM-free state machine (<code>run-model.ts</code>) is stepped once per frame with every varying input as an argument; <code>draw.ts</code> paints it on a 2D context; <code>RunLayer.svelte</code> owns the canvas, the window listeners, the frame loop and the live region, and takes its clock from <code>clock.ts</code>, which component specs mock. Sound and preferences are standalone modules with injected dependencies.</dd>
+      <dt>Tech Stack</dt>
+      <dd>TypeScript, Svelte 5 runes, Canvas 2D, Web Audio, Vitest (server, client and client-perf projects), <code>vitest-browser-svelte</code>, <code>axe-core</code>.</dd>
+      <dt>Spec</dt>
+      <dd><code>docs/superpowers/specs/2026-11-24-run-play-design.html</code> (sections <code>sec-d-modules</code> through <code>sec-tests</code>); design <code>docs/superpowers/design/2026-11-24-2120-incremental-loop.html</code>; build graph row <code>run-play</code> in <code>docs/superpowers/design/2026-11-24-2120-incremental-loop-build-graph.md</code>. Read from the package worktree when this branch's copy is older.</dd>
+    </dl>
+  </section>
+
+  <section id="sec-global-constraints">
+    <h2>Global Constraints</h2>
+    <p>Every task's requirements include this section. G2, G4 and the design's constraints below are copied verbatim from the design doc; R1 is copied verbatim from the <code>run-play</code> spec's <code>sec-if-r1</code>.</p>
+
+    <section id="sec-gc-precondition">
+      <h3>The game-core dependency</h3>
+      <p>The <code>contracts</code> stubs are on this branch: <code>src/lib/game/run/{drops,sound,prefs}.ts</code> and their specs, <code>state.ts</code> (<code>Units</code> at <code>:7</code>), <code>run-result.ts</code> (<code>RunTake</code> at <code>:9</code>), <code>limits.ts</code> (<code>Hands</code> at <code>:7</code>, and <code>BASE_HANDS</code> already its real value at <code>:25</code>) and <code>units.ts</code>.</p>
+      <aside data-kind="warning"><strong>Needs game-core</strong> <code>credit</code> and <code>total</code> still throw <code>'not implemented'</code> (<code>src/lib/game/units.ts:4</code>, <code>:20</code>). Tasks 4, 6, 7, 8 and 10 call them (directly, or through <code>step</code> and <code>runOverText</code>), so their tests pass only once <code>game-core</code> is merged into this branch. Tasks 1, 2, 3 and 5 do not depend on it.</aside>
+    </section>
+
+    <section id="sec-gc-project">
+      <h3>Project rules for every task</h3>
+      <ul>
+        <li>Vitest runs with <code>expect.requireAssertions</code>: every test calls <code>expect</code>. Tests are colocated.</li>
+        <li>No <code>setTimeout</code> or <code>setInterval</code> in any spec or test helper (signoff rejects timing crutches). Time moves only through the mocked <code>./clock</code> or explicit <code>now</code> arguments; waiting on the browser uses <code>expect.poll</code> or <code>expect.element</code>.</li>
+        <li>After each task's last commit, <code>npx chreode timing-check --head HEAD</code> is clean.</li>
+        <li>Conventional Commits. No Claude attribution anywhere: no trailers, footers or notes.</li>
+        <li>2-space indent, single quotes, no trailing commas, 100 columns.</li>
+        <li><code>npm run test:perf</code> is not a gate. <code>run.perf.svelte.spec.ts</code> must exist and run; its wall-clock result is not judged on a busy machine.</li>
+        <li>Write only under <code>src/lib/game/run/</code>. Nothing here imports <code>$lib/sim</code>, <code>$lib/sim-page</code>, <code>$lib/timeline</code> or <code>../store.svelte</code>; only <code>draw.ts</code> imports <code>$lib/map/palette</code>, and only <code>TOKENS</code> (spec <code>sec-d-modules</code>).</li>
+        <li>Port 4173 belongs to whichever session started the preview; never kill it.</li>
+      </ul>
+    </section>
+
+    <section id="sec-gc-rows">
+      <h3>Interface rows</h3>
+      <table id="tbl-gc-rows">
+        <caption>Interface table</caption>
+        <thead>
+          <tr><th scope="col">Row</th><th scope="col">Owner</th><th scope="col">Layer</th><th scope="col">Summary</th><th scope="col">Contract</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">G2</th><td><code>game-core</code></td><td>Model commitment</td><td>Units by kind: balances, prices, spending</td><td><a href="#sec-gc-if-g2">G2</a></td></tr>
+          <tr><th scope="row">G4</th><td><code>game-core</code></td><td>Model commitment</td><td>Limits from what is bought; whether a policy runs</td><td><a href="#sec-gc-if-g4">G4</a></td></tr>
+          <tr><th scope="row">R1</th><td><code>run-play</code></td><td>Model commitment</td><td>Drops, collecting, sound</td><td><a href="#sec-gc-if-r1">R1</a></td></tr>
+        </tbody>
+      </table>
+
+      <section id="sec-gc-if-g2">
+        <h4>G2 Units</h4>
+        <pre><code data-lang="ts">// src/lib/game/units.ts
+import type { Units } from './state';
+
+export function credit(a: Units, b: Units): Units;
+export function affords(have: Units, price: Units): boolean;
+export function spend(have: Units, price: Units): Units;
+export function shortBy(have: Units, price: Units): Units;
+export function total(u: Units): number;</code></pre>
+        <ul>
+          <li>A missing kind is 0.</li>
+          <li><code>spend</code> throws <code>RangeError</code> when <code>affords</code> is false.</li>
+          <li><code>shortBy</code> holds only the kinds the balance is short of.</li>
+          <li>No function changes its arguments.</li>
+        </ul>
+      </section>
+
+      <section id="sec-gc-if-g4">
+        <h4>G4 Limits</h4>
+        <pre><code data-lang="ts">// src/lib/game/limits.ts
+import type { StopType } from '$lib/sim/levers/brushes';
+import type { Policy, PolicyKind, SimPolicy4 } from '$lib/timeline/policy4';
+import type { GameState } from './state';
+import type { TreeNode } from './tree';
+
+export interface Hands {
+  radiusPx: number;
+  lingerMs: number;
+  auto: boolean;
+}
+
+export interface Limits {
+  open: boolean;
+  presets: ReadonlySet&lt;string&gt;;
+  measures: ReadonlySet&lt;string&gt;;
+  stops: ReadonlySet&lt;StopType&gt;;
+  bands: number;
+  stories: number;
+  reachM: number;
+  custom: boolean;
+  hands: Hands;
+}
+
+export const OPEN_LIMITS: Limits;
+export const BASE_HANDS: Hands;
+export const START_BANDS = 1;
+export const START_STORIES = 4;
+export const START_REACH_M = 402;
+export const FREE_MEASURES: readonly string[];
+
+export function limitsOf(s: GameState, nodes?: readonly TreeNode[]): Limits;
+export function within(kind: PolicyKind, p: Policy, l: Limits): boolean;
+export function runnable(doc: SimPolicy4, l: Limits): SimPolicy4;
+export function isGiven(p: Policy): boolean;</code></pre>
+        <dl>
+          <dt><code>open</code></dt><dd>The open game: every control, no limit (call 9).</dd>
+          <dt><code>presets</code>, <code>measures</code></dt><dd>The permitting preset ids and funding preset ids that run.</dd>
+          <dt><code>bands</code>, <code>stories</code>, <code>reachM</code></dt><dd>The most bands a transit rule may have, its tallest band and its furthest band. All 0 before the first stop type is bought.</dd>
+          <dt><code>custom</code></dt><dd>Custom timing and custom route shares may be set.</dd>
+          <dt><code>FREE_MEASURES</code></dt><dd><code>state-off</code> and <code>federal-credits-off</code>.</dd>
+        </dl>
+        <ul>
+          <li><code>limitsOf</code> folds the grants of every level bought. The largest <code>stories</code>, <code>reach</code>, <code>bands</code>, <code>radius</code> and <code>linger</code> win.</li>
+          <li>Once a stop type is bought, <code>bands</code>, <code>stories</code> and <code>reachM</code> are at least <code>START_BANDS</code>, <code>START_STORIES</code> and <code>START_REACH_M</code>.</li>
+          <li><code>BASE_HANDS</code> is a radius of 48 px, a linger of 4,000 ms and no auto. Every Hands step in the catalogue is above it.</li>
+          <li>Once the last rung is met, <code>stories</code> is 80, <code>bands</code> 3, <code>reachM</code> 3219, every stop type is in, <code>custom</code> is true, and <code>presets</code> also holds <code>observed</code>, the preset a custom timing policy carries.</li>
+          <li><code>within</code> does not read a policy's <code>on</code>.</li>
+          <li>A permitting policy is within the limits when its preset is in <code>presets</code>, and, unless <code>custom</code>, it has no custom edit and no custom route shares.</li>
+          <li>A transit rule is within the limits when its stop types are in <code>stops</code>, it has at most <code>bands</code> bands, no band is taller than <code>stories</code> and none is further than <code>reachM</code>.</li>
+          <li>A protection is within the limits once <code>stops</code> is not empty.</li>
+          <li>A painted area is within the limits only when <code>open</code> (P11).</li>
+          <li>A money policy is within the limits when it is given and its preset is in <code>measures</code>, or its preset is in <code>FREE_MEASURES</code> and <code>measures</code> is not empty. Any other money policy only when <code>open</code> (D4).</li>
+          <li><code>runnable</code> keeps the policies within the limits and returns the same document when it drops none.</li>
+          <li>With <code>OPEN_LIMITS</code>, <code>within</code> is always true.</li>
+        </ul>
+        <p><strong>Unchanged:</strong> <code>isGiven</code>. <strong>Removed:</strong> <code>Allowed</code>, <code>ALL_ALLOWED</code>, <code>allowedAt</code>, <code>unlocksAt</code>, <code>runs</code>, <code>playable</code>, <code>levelNeeded</code>, <code>simLocked</code>, <code>needsHigher</code>.</p>
+      </section>
+
+      <section id="sec-gc-if-r1">
+        <h4>R1 Drops, collecting and sound</h4>
+        <pre><code data-lang="ts">// src/lib/game/run/drops.ts
+import type { Day } from '$lib/timelapse/time';
+import type { Hands } from '../limits';
+import type { RunTake } from '../run-result';
+import type { Units } from '../state';
+
+export interface Marker {
+  row: number;
+  lng: number;
+  lat: number;
+  completed: Day;
+  homes: number;
+  existing: number;
+  policy: boolean;
+}
+
+export interface Drop {
+  row: number;
+  lng: number;
+  lat: number;
+  day: Day;
+  worth: Units;
+  policy: boolean;
+}
+
+export function planDrops(markers: Iterable&lt;Marker&gt;, asOf: Day, to: Day): Drop[];
+
+export interface RunFeed {
+  drops: readonly Drop[];
+  day: Day;
+  running: boolean;
+  project(lng: number, lat: number): { x: number; y: number } | null;
+}
+
+// src/lib/game/run/RunLayer.svelte
+interface RunLayerProps {
+  feed: RunFeed;
+  hands: Hands;
+  collectForMe: boolean;
+  sound: Sound;
+  ontake(t: RunTake): void;
+}
+
+// src/lib/game/run/sound.ts
+export interface Sound {
+  pop(): void;
+  collect(): void;
+  goal(): void;
+  buy(): void;
+}
+export function createSound(muted: () =&gt; boolean): Sound;
+
+// src/lib/game/run/prefs.ts
+export function readCollectForMe(storage: Storage | null): boolean;
+export function writeCollectForMe(storage: Storage | null, on: boolean): void;
+export function readMuted(storage: Storage | null): boolean;
+export function writeMuted(storage: Storage | null, muted: boolean): void;
+export function onPrefs(fn: () =&gt; void): () =&gt; void;</code></pre>
+        <dl>
+          <dt><code>completed</code></dt><dd>The marker's completed day; <code>NaN</code> when it has none.</dd>
+          <dt><code>worth</code></dt><dd><code>{ home: homes - existing }</code>.</dd>
+          <dt><code>policy</code></dt><dd>The project carries the map's policy mark, the diamond: its <code>CityDelta.flags</code> are not 0. A drop takes its marker's value.</dd>
+          <dt><code>project</code></dt><dd>The point's position in CSS pixels from the map box's top left, or null when it is off the map.</dd>
+          <dt><code>ontake</code></dt><dd>The run's totals so far, sent whenever they change and once when <code>running</code> turns false.</dd>
+        </dl>
+        <ul>
+          <li><code>planDrops</code> returns one drop for each marker completed after <code>asOf</code> and at or before <code>to</code> whose worth is above 0, ascending by day, then by row.</li>
+          <li><code>feed.drops</code> may be replaced during a run, as the forecast fills. Drops are matched by <code>row</code>: one already shown stays as it is, and none is counted twice.</li>
+          <li>A drop appears when <code>feed.day</code> reaches its day and is counted in <code>dropped</code> then.</li>
+          <li>A drop whose <code>policy</code> is true pops as a diamond, the shape of the map's policy mark, in that mark's colour (<code>tl-halo-policy</code>); every other drop pops as a circle in the accent. The shape tells the two apart in every theme. Its worth and how it is collected do not change.</li>
+          <li>A drop is collected when its projected point is within <code>hands.radiusPx</code> of the ring's centre. It is counted in <code>collected</code> once.</li>
+          <li>A drop not collected is gone the larger of <code>hands.lingerMs</code> and 400 ms of wall time after it appeared. When the run ends before that, it is gone 400 ms after the end, or at the end under reduced motion.</li>
+          <li>With <code>collectForMe</code> or <code>hands.auto</code>, every drop is collected as it appears.</li>
+          <li>The ring's centre is the last pointer position over the map. Arrow keys move it by a fixed step; holding Shift moves it further.</li>
+          <li>The layer is a canvas over the map with <code>pointer-events: none</code>. It listens on the window.</li>
+          <li>Nothing the layer does reaches the worker or the policy document (P9).</li>
+          <li>With reduced motion, drops and counts appear and disappear without movement.</li>
+          <li>Nothing flashes more than three times a second.</li>
+          <li>A screen reader is told the run's totals at its end, never each drop.</li>
+          <li>The layer's root carries <code>data-dropped</code> and <code>data-collected</code>, the totals in homes.</li>
+          <li><code>onPrefs</code> calls <code>fn</code> after either preference is written in this page, and returns its own removal. A change applies to a run in progress.</li>
+          <li>The layer's words are in <code>src/lib/game/run/words.ts</code>.</li>
+          <li><code>createSound</code> makes its sounds with the Web Audio API and loads no file. It makes no sound while <code>muted()</code> is true or before a user gesture.</li>
+        </ul>
+        <p>Per <code>contracts</code> (its rule on stub imports), <code>drops.ts</code> does not import <code>Hands</code> or <code>RunTake</code>; <code>RunLayer.svelte</code> does.</p>
+      </section>
+    </section>
+
+    <section id="sec-gc-design">
+      <h3>The design's global constraints</h3>
+      <ul>
+        <li>One future: the same policy document always gives the same forecast. No game state reaches the worker except through the policy document.</li>
+        <li>No file the dataset version hashes is changed: <code>pipeline</code>, <code>src/lib/config.ts</code>, <code>src/lib/{data,generator,timelapse}</code>, <code>src/lib/plan/{geometry,types}.ts</code>, <code>src/lib/sim/finance</code> (<code>pipeline/lib/version.ts:41</code>). The dataset version stays as it is.</li>
+        <li>A policy node acts on a lever the code already has, at a value the code already sources. No node invents a value.</li>
+        <li>The painted area, own pools, the City funding scale and market terms are never offered in a game.</li>
+        <li>Published plans and policies open and play in full, as today.</li>
+        <li>WCAG 2.2 AA: everything works from the keyboard; targets are at least 24 px; motion follows the reduced-motion setting; nothing flashes more than three times a second.</li>
+        <li>Page text is short. A node is a name, a line and a price.</li>
+        <li>The CSP is not widened. Sound is made in the browser; no audio file, font or script is added.</li>
+        <li>A runtime dependency is not added without a credit in <code>src/lib/attribution.ts</code>. None is expected.</li>
+        <li>Code style: 2-space indent, single quotes, no trailing commas, 100 columns.</li>
+        <li>Vitest runs with <code>expect.requireAssertions</code>. Tests are colocated.</li>
+        <li>A schema change goes through <code>npm run db:generate</code>. Migrations are never edited by hand.</li>
+        <li>Signoff fails on server stderr, on timing crutches and on retried flakes. Timing is measured only on a quiet machine.</li>
+        <li>Port 4173 belongs to whichever session started the preview. Never kill it; wait.</li>
+        <li>Commits use Conventional Commits and carry no Claude attribution.</li>
+        <li>Work happens in git worktrees under <code>.claude/worktrees/</code>.</li>
+      </ul>
+    </section>
+  </section>
+
+  <section id="sec-review-focus">
+    <h2>Review Focus</h2>
+    <p>Inputs the spec implies but its test list does not exercise, most likely to bite first. Each has its test in the owning task.</p>
+    <ol>
+      <li><strong>Unmount mid-run.</strong> The page leaves while a run plays: no further <code>ontake</code>, the pending frame is cancelled, and a later arrow key on the window is not prevented. Test in Task 9 (<code>t9-s1</code>).</li>
+      <li><strong>A <code>NaN</code> feed day while running</strong> (the forecast not filled yet): nothing appears, <code>highDay</code> keeps its value, and the next real day drops what is due. Test in Task 6 (<code>t6-s1</code>).</li>
+      <li><strong>A muted call between two plays</strong>: it does not move the last-played time, so an unmuted <code>pop</code> 0.08 s after the last played one still plays. Test in Task 3 (<code>t3-s1</code>).</li>
+      <li><strong>Arrow keys inside a widget</strong>: a key whose target sits inside <code>role="slider"</code> or a <code>contenteditable</code> element is not prevented and does not move the ring. Test in Task 9 (<code>t9-s1</code>).</li>
+      <li><strong>A stop on a model that never started</strong>, and a second stop: <code>ended</code> is false, the take is unchanged, nothing is counted. Test in Task 6 (<code>t6-s1</code>).</li>
+    </ol>
+  </section>
+
+  <section id="sec-file-structure">
+    <h2>File Structure</h2>
+    <table id="tbl-files">
+      <caption>Files this plan writes, all under src/lib/game/run</caption>
+      <thead>
+        <tr><th scope="col">File</th><th scope="col">Responsibility</th><th scope="col">Task</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row"><code>drops.ts</code>, <code>drops.spec.ts</code></th><td>R1 types, <code>planDrops</code> (replaces the stub and its spec)</td><td>1</td></tr>
+        <tr><th scope="row"><code>prefs.ts</code>, <code>prefs.spec.ts</code></th><td>The two stored preferences and <code>onPrefs</code> (replaces the stub and its spec)</td><td>2</td></tr>
+        <tr><th scope="row"><code>sound.ts</code>, <code>sound.spec.ts</code></th><td><code>makeSound</code>, <code>createSound</code>, <code>SOUNDS</code> (replaces the stub and its spec)</td><td>3</td></tr>
+        <tr><th scope="row"><code>words.ts</code>, <code>words.spec.ts</code></th><td>The layer's two phrases</td><td>4</td></tr>
+        <tr><th scope="row"><code>run-model.ts</code>, <code>run-model.spec.ts</code></th><td>Types, constants and the ring (Task 5); <code>step</code>, <code>reproject</code>, <code>idle</code> (Task 6)</td><td>5, 6</td></tr>
+        <tr><th scope="row"><code>draw.ts</code>, <code>draw.spec.ts</code></th><td><code>DRAW</code>, <code>Look</code>, <code>dropRadius</code>, <code>drawRun</code>, <code>policyColour</code></td><td>7</td></tr>
+        <tr><th scope="row"><code>clock.ts</code></th><td>Wall clock, frame loop, live reduced-motion query</td><td>8</td></tr>
+        <tr><th scope="row"><code>test/fake-feed.svelte.ts</code></th><td>Reactive fake <code>RunFeed</code> for these specs and <code>game-sim</code>'s</td><td>8</td></tr>
+        <tr><th scope="row"><code>RunLayer.svelte</code>, <code>RunLayer.svelte.spec.ts</code></th><td>Canvas, frame loop, <code>ontake</code>, live region (Task 8); pointer and key input (Task 9)</td><td>8, 9</td></tr>
+        <tr><th scope="row"><code>run.perf.svelte.spec.ts</code></th><td><code>RUN_FRAME_P95_MS</code> and the frame-budget case</td><td>10</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="sec-lanes">
+    <h2>Task order and lanes</h2>
+    <ul>
+      <li>R1's pieces land first: Tasks 1, 2 and 3 have no dependency inside this unit. R1 is complete at Task 8 (the layer's props).</li>
+      <li>Dependency edges: 4 → 7; 5 → 6 → 7 → 8 → 9 → 10; 1, 3 and 4 → 8. Task 5 needs only the <code>Drop</code> type, which the <code>contracts</code> stub already declares (<code>src/lib/game/run/drops.ts:15-22</code>), so it does not wait on Task 1.</li>
+      <li>External edge: <code>game-core</code> → Tasks 4, 6, 7, 8, 10 (<a href="#sec-gc-precondition">The game-core dependency</a>). Tasks 1, 2, 3 and 5 can run now.</li>
+      <li><strong>Independent groups</strong> (no shared file, no dependency edge): Task 2 alone touches nothing anyone else imports. Tasks 1, 3 and 4 share no file with each other or with 5 to 7. So the unit can run as two lanes: lane A = Tasks 1, 2, 3, 4; lane B = Tasks 5, 6, 7; both merge before Task 8, then 8, 9, 10 are serial. Run as one serial lane in the order 1 to 10, nothing needs re-ordering.</li>
+    </ul>
+  </section>
+
+  <section id="sec-task-1">
+    <h2>Task 1: planDrops</h2>
+    <p>Delivers row R1 (<code>Marker</code>, <code>Drop</code>, <code>planDrops</code>, <code>RunFeed</code>).</p>
+    <ul>
+      <li>Modify: <code>src/lib/game/run/drops.ts:24-26</code> (the stub body of <code>planDrops</code>; the types at <code>:5-33</code> already match R1 and stay)</li>
+      <li>Test: <code>src/lib/game/run/drops.spec.ts</code> (written over the stub spec's <code>toThrow</code> test, <code>:5-7</code>)</li>
+    </ul>
+    <ul>
+      <li>Consumes: <code>Day</code> (<code>src/lib/timelapse/time.ts:7</code>), <code>Units</code> (<code>src/lib/game/state.ts:7</code>, G1).</li>
+      <li>Produces: the R1 types exactly as in <a href="#sec-gc-if-r1">R1</a>, and <code>planDrops(markers: Iterable&lt;Marker&gt;, asOf: Day, to: Day): Drop[]</code>.</li>
+    </ul>
+    <ol>
+      <li id="t1-s1"><input type="checkbox"> Write the failing tests (server project). Helper <code>m(o: Partial&lt;Marker&gt;): Marker</code> defaulting to <code>{ row: 1, lng: -122.4, lat: 37.7, completed: 150, homes: 5, existing: 1, policy: false }</code>.
+        <pre><code data-lang="ts">it('keeps a marker completed after asOf and at or before to')
+  // [m({ completed: 101 }), m({ row: 2, completed: 200 })], asOf 100, to 200 -> rows [1, 2]
+it('leaves out a marker on asOf, after to and with NaN')
+  // completed 100, 201, NaN with asOf 100, to 200 -> []
+it('worth is homes - existing; leaves out a worth of 0 or below')
+  // homes 5 existing 1 -> worth { home: 4 }; homes 3 existing 3 and homes 2 existing 4 -> none
+it('takes policy from its marker')       // policy true -> drop.policy true; false -> false
+it('orders by day, then by row')         // rows 3@150, 1@150, 2@120 -> [2, 1, 3]
+it('keeps the later of two markers with one row') // row 1 homes 5 then row 1 homes 9 -> one drop, worth 8
+it('changes no marker and returns new objects')
+  // Object.freeze each marker; toEqual its structuredClone after; drop !== marker</code></pre>
+      </li>
+      <li id="t1-s2"><input type="checkbox"> Run and see them fail with "not implemented".
+        <pre><code data-lang="sh">npx vitest run --project server src/lib/game/run/drops.spec.ts</code></pre>
+      </li>
+      <li id="t1-s3"><input type="checkbox"> Implement <code>planDrops</code>: the spec gives the body verbatim in <code>sec-d-plan</code>; use it. Keep the stub's imports (no <code>Hands</code>, no <code>RunTake</code>).</li>
+      <li id="t1-s4"><input type="checkbox"> Run the tests and see them pass; then lint.
+        <pre><code data-lang="sh">npx vitest run --project server src/lib/game/run/drops.spec.ts
+npx eslint src/lib/game/run
+npx prettier --check src/lib/game/run</code></pre>
+      </li>
+      <li id="t1-s5"><input type="checkbox"> Commit, then check timing.
+        <pre><code data-lang="sh">git add src/lib/game/run/drops.ts src/lib/game/run/drops.spec.ts
+git commit -m "feat(run): plan drops from city markers"
+npx chreode timing-check --head HEAD</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-2">
+    <h2>Task 2: Stored preferences</h2>
+    <p>Delivers row R1 (<code>readCollectForMe</code>, <code>writeCollectForMe</code>, <code>readMuted</code>, <code>writeMuted</code>, <code>onPrefs</code>).</p>
+    <ul>
+      <li>Modify: <code>src/lib/game/run/prefs.ts</code></li>
+      <li>Test: <code>src/lib/game/run/prefs.spec.ts</code> (written over the stub spec)</li>
+    </ul>
+    <ul>
+      <li>Consumes: nothing.</li>
+      <li>Produces: the five R1 functions, plus <code>COLLECT_KEY = 'sfhousing:run:collect'</code>, <code>MUTED_KEY = 'sfhousing:run:muted'</code>, <code>DEFAULT_COLLECT = false</code>, <code>DEFAULT_MUTED = false</code>.</li>
+    </ul>
+    <ol>
+      <li id="t2-s1"><input type="checkbox"> Write the failing tests (server project). Use a small in-memory <code>Storage</code> and one whose <code>getItem</code>/<code>setItem</code> throw. Remove every listener a test adds (the set is module-level).
+        <pre><code data-lang="ts">it('reads the defaults: null storage, missing key, bad value, throwing storage')
+  // readCollectForMe -> false, readMuted -> false in all four; bad value e.g. 'true'
+it("round-trips '1' and '0' for both keys")  // getItem(COLLECT_KEY) === '1' after write true
+it('swallows a throwing write')              // expect(() => writeMuted(throwing, true)).not.toThrow()
+it('calls every listener once per write, in order added')  // order array ['a', 'b']
+it('notifies with null storage and with a throwing storage')
+it('a throwing listener does not stop the next')
+it('the returned function removes the listener')</code></pre>
+      </li>
+      <li id="t2-s2"><input type="checkbox"> Run and see them fail.
+        <pre><code data-lang="sh">npx vitest run --project server src/lib/game/run/prefs.spec.ts</code></pre>
+      </li>
+      <li id="t2-s3"><input type="checkbox"> Implement per spec <code>sec-d-prefs</code>: <code>'1'</code> true, <code>'0'</code> false, default otherwise; every read and write in <code>try</code>/<code>catch</code> as <code>src/lib/view/prefs.ts:38-50</code>; writes notify after the attempt in a <code>finally</code>-equivalent, each listener in its own <code>try</code>/<code>catch</code>. <code>onPrefs</code> is the spec's body verbatim.</li>
+      <li id="t2-s4"><input type="checkbox"> Run, see them pass, lint (commands as <code>t1-s4</code> with this spec).</li>
+      <li id="t2-s5"><input type="checkbox"> Commit, then check timing.
+        <pre><code data-lang="sh">git add src/lib/game/run/prefs.ts src/lib/game/run/prefs.spec.ts
+git commit -m "feat(run): store collect-for-me and mute preferences"
+npx chreode timing-check --head HEAD</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-3">
+    <h2>Task 3: Sound</h2>
+    <p>Delivers row R1 (<code>Sound</code>, <code>createSound</code>).</p>
+    <ul>
+      <li>Modify: <code>src/lib/game/run/sound.ts</code></li>
+      <li>Test: <code>src/lib/game/run/sound.spec.ts</code> (written over the stub spec)</li>
+    </ul>
+    <ul>
+      <li>Consumes: nothing.</li>
+      <li>Produces: <code>Sound</code>, <code>SoundName</code>, <code>Voice</code>, <code>AudioLike</code>, <code>SoundDeps</code>, <code>SOUNDS</code>, <code>MIN_GAP_S</code>, <code>MASTER_GAIN = 1</code>, <code>SILENT = 0.0001</code>, <code>makeSound(muted: () =&gt; boolean, deps: SoundDeps): Sound</code>, <code>createSound(muted: () =&gt; boolean): Sound</code>, all as spec <code>sec-d-sound</code> declares them. <code>SOUNDS</code> holds the rows of the spec's table <code>tbl-sounds</code>, in table order per sound.</li>
+    </ul>
+    <ol>
+      <li id="t3-s1"><input type="checkbox"> Write the failing tests (server project). A <code>FakeAudio</code> in the spec implements <code>AudioLike</code> with a settable <code>currentTime</code> and <code>state</code>, a <code>resume</code> spy, and oscillators and gains that record <code>type</code>, every <code>AudioParam</code> call as <code>[method, value, time]</code>, <code>connect</code> targets, <code>start</code> and <code>stop</code>. <code>deps.onGesture</code> stores its callback so the test fires the gesture.
+        <pre><code data-lang="ts">it('SOUNDS holds the table')                // toEqual the literal of tbl-sounds, 9 voices in all
+it('plays nothing before the first gesture') // makeContext not called; pop() creates no oscillator
+it('makes the context at the first gesture even while muted')
+it('plays nothing while muted')
+it("schedules each sound's voices with the table's numbers")
+  // currentTime 2, pop(): frequency [['setValueAtTime', 880, 2],
+  //   ['exponentialRampToValueAtTime', 1174.66, 2.03]];
+  // gain [['setValueAtTime', SILENT, 2], ['linearRampToValueAtTime', 0.05, 2.005],
+  //   ['exponentialRampToValueAtTime', SILENT, 2.075]]; start(2); stop(2.095);
+  // goal: 4 oscillators starting at 2, 2.11, 2.22, 2.33; a voice with from === to has no ramp
+it('connects oscillator -> gain -> master, master at MASTER_GAIN -> destination, once')
+it('drops a second pop 0.05 s after the first and plays one 0.08 s after')
+it('a muted call does not move the last-played time')
+  // pop at 1 plays; muted pop at 1.05; unmuted pop at 1.08 plays (Review Focus 3)
+it('resumes a suspended context and schedules the sound anyway')
+it('createSound without AudioContext returns a sound whose calls do nothing')
+  // node has no window: expect(() => s.pop()).not.toThrow(), same for collect, goal, buy</code></pre>
+      </li>
+      <li id="t3-s2"><input type="checkbox"> Run and see them fail.
+        <pre><code data-lang="sh">npx vitest run --project server src/lib/game/run/sound.spec.ts</code></pre>
+      </li>
+      <li id="t3-s3"><input type="checkbox"> Implement per <code>sec-d-sound</code>. <code>makeSound</code> registers <code>deps.onGesture</code> at construction; the callback makes the context, its master gain, and resumes when suspended. Per-sound last-played times live in a <code>Record&lt;SoundName, number&gt;</code> starting at <code>-Infinity</code>. The browser deps: <code>onGesture</code> adds <code>pointerdown</code> and <code>keydown</code> on <code>window</code> with <code>{ capture: true }</code>, removing both on the first; <code>makeContext</code> is <code>new AudioContext()</code>. <code>createSound</code> returns four no-ops when <code>typeof window === 'undefined'</code> or <code>typeof AudioContext === 'undefined'</code>.</li>
+      <li id="t3-s4"><input type="checkbox"> Run, see them pass, lint (as <code>t1-s4</code>).</li>
+      <li id="t3-s5"><input type="checkbox"> Commit, then check timing.
+        <pre><code data-lang="sh">git add src/lib/game/run/sound.ts src/lib/game/run/sound.spec.ts
+git commit -m "feat(run): four Web Audio sounds with per-sound gaps"
+npx chreode timing-check --head HEAD</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-4">
+    <h2>Task 4: The layer's words</h2>
+    <ul>
+      <li>Create: <code>src/lib/game/run/words.ts</code>, <code>src/lib/game/run/words.spec.ts</code></li>
+    </ul>
+    <ul>
+      <li>Consumes: <code>total</code> (G2), <code>RunTake</code> (<code>src/lib/game/run-result.ts</code>, G6).</li>
+      <li>Produces: <code>runOverText(take: RunTake): string</code>, <code>dropCountText(homes: number): string</code>. The spec's block in <code>sec-d-a11y</code> is the exact copy; use it verbatim.</li>
+    </ul>
+    <ol>
+      <li id="t4-s1"><input type="checkbox"> Write the failing tests (server project).
+        <pre><code data-lang="ts">it('runOverText gives the totals')
+  // { dropped: { home: 5678 }, collected: { home: 1234 } }
+  //   -> 'Run over. 1,234 of 5,678 homes collected.'
+it('dropCountText formats with a plus')  // 12 -> '+12'; 1200 -> '+1,200'</code></pre>
+      </li>
+      <li id="t4-s2"><input type="checkbox"> Run and see them fail (module missing).
+        <pre><code data-lang="sh">npx vitest run --project server src/lib/game/run/words.spec.ts</code></pre>
+      </li>
+      <li id="t4-s3"><input type="checkbox"> Write <code>words.ts</code> from the spec block.</li>
+      <li id="t4-s4"><input type="checkbox"> Run, see them pass, lint (as <code>t1-s4</code>).</li>
+      <li id="t4-s5"><input type="checkbox"> Commit, then check timing.
+        <pre><code data-lang="sh">git add src/lib/game/run/words.ts src/lib/game/run/words.spec.ts
+git commit -m "feat(run): run-over and drop-count words"
+npx chreode timing-check --head HEAD</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-5">
+    <h2>Task 5: Run model types and the ring</h2>
+    <ul>
+      <li>Create: <code>src/lib/game/run/run-model.ts</code>, <code>src/lib/game/run/run-model.spec.ts</code></li>
+    </ul>
+    <ul>
+      <li>Consumes: <code>Drop</code> (<code>src/lib/game/run/drops.ts:15-22</code>, already declared by the stub), <code>Hands</code> (<code>src/lib/game/limits.ts:7</code>, G4), <code>RunTake</code> (<code>src/lib/game/run-result.ts:9</code>, G6), <code>Day</code>.</li>
+      <li>Produces, exactly as spec <code>sec-d-model</code> and <code>sec-d-ring</code> declare: <code>Pt</code>, <code>LiveDrop</code>, <code>FloatCount</code>, <code>RunModel</code>, <code>StepInput</code>, <code>StepResult</code>, <code>RUN_TIMES</code>, <code>RUN_CAPS</code>, <code>RING_KEYS</code>, <code>RING_KEY_DIR</code>, and
+        <code>createRun(): RunModel</code>, <code>setBox(m: RunModel, w: number, h: number): void</code>, <code>pointRing(m: RunModel, p: Pt, fresh: boolean): void</code>, <code>nudgeRing(m: RunModel, dx: number, dy: number): void</code>, <code>sweepHits(sweep: readonly (Pt | null)[], ring: Pt, p: Pt, r: number): boolean</code>. <code>RunModel</code> has exactly the spec's fields; the empty-box rule below reads the old <code>box</code>, not a flag. Task 6 adds <code>step</code>, <code>reproject</code>, <code>idle</code> to this file.</li>
+    </ul>
+    <ol>
+      <li id="t5-s1"><input type="checkbox"> Write the failing tests (server project).
+        <pre><code data-lang="ts">it('createRun: not running, empty lists, zero take, 0 by 0 box, ring at (0, 0)')
+  // take toEqual { dropped: {}, collected: {} }; highDay -Infinity; cursor 0; ringMoved false
+it('pointRing clamps to the box')        // box 800x600: (-5, 700) -> (0, 600); (900, -1) -> (800, 0)
+it('setBox re-clamps the ring')          // ring (700, 500), setBox 400x300 -> (400, 300)
+it('setBox from an empty box to one with both sides above 0 centres the ring')
+  // createRun; setBox 800x600 -> ring (400, 300); also from 0x600 and from 800x0
+it('setBox to a box still empty on one side does not centre')
+  // createRun; setBox 800x0 -> ring (0, 0)
+it('setBox between two non-empty boxes only re-clamps')
+  // setBox 800x600, pointRing (100, 100); setBox 1000x700 -> ring (100, 100)
+it('pointRing appends the old centre, or null when fresh, and sets ringMoved')
+it('sweep holds at most RUN_CAPS.maxSweep (32) entries, oldest dropped first')
+it('nudgeRing by 16 and by 64 sweeps the ground it crosses')
+  // RING_KEYS.stepPx === 16, shiftStepPx === 64; nudge appends the old centre
+it('sweepHits: within r of a segment; just outside is not')
+  // sweep [(0,0)], ring (100,0), r 10: (50, 9) true, (50, 11) false
+it('sweepHits: a null breaks the path; a lone point still counts')
+  // sweep [(0,0), null], ring (100,0), r 10: (50, 0) false, (0, 5) true, (100, 5) true</code></pre>
+      </li>
+      <li id="t5-s2"><input type="checkbox"> Run and see them fail.
+        <pre><code data-lang="sh">npx vitest run --project server src/lib/game/run/run-model.spec.ts</code></pre>
+      </li>
+      <li id="t5-s3"><input type="checkbox"> Implement. <code>sweepHits</code> walks the path <code>[...sweep, ring]</code> without allocating: for each adjacent pair with no <code>null</code> between, point-to-segment squared distance against <code>r * r</code>; each non-null point stands alone too. <code>pointRing</code> shifts the oldest sweep entry when the length would exceed <code>maxSweep</code>. <code>setBox</code>: when the old box had a side of 0 and the new one has both sides above 0, the ring goes to <code>(w / 2, h / 2)</code>, whether or not a run is in progress; otherwise the ring is clamped to the new box.</li>
+      <li id="t5-s4"><input type="checkbox"> Run, see them pass, lint (as <code>t1-s4</code>).</li>
+      <li id="t5-s5"><input type="checkbox"> Commit, then check timing.
+        <pre><code data-lang="sh">git add src/lib/game/run/run-model.ts src/lib/game/run/run-model.spec.ts
+git commit -m "feat(run): run model types and the collecting ring"
+npx chreode timing-check --head HEAD</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-6">
+    <h2>Task 6: Stepping the run</h2>
+    <ul>
+      <li>Modify: <code>src/lib/game/run/run-model.ts</code>, <code>src/lib/game/run/run-model.spec.ts</code></li>
+    </ul>
+    <ul>
+      <li>Consumes: Task 5's types and <code>setBox</code>; <code>credit</code>, <code>total</code> (G2, real only once <code>game-core</code> is merged); <code>BASE_HANDS</code> (<code>src/lib/game/limits.ts:25</code>) in the spec only.</li>
+      <li>Produces: <code>step(m: RunModel, i: StepInput): StepResult</code>, <code>reproject(m: RunModel, project: StepInput['project']): void</code>, <code>idle(m: RunModel): boolean</code>.</li>
+    </ul>
+    <ol>
+      <li id="t6-s1"><input type="checkbox"> Write the failing tests. Helpers: <code>drop(row, day, homes = 1, x = 400, y = 300, policy = false): Drop</code> with <code>lng = x, lat = y</code>; <code>input(o: Partial&lt;StepInput&gt;): StepInput</code> defaulting to <code>{ now: 0, running: true, day: 0, drops: [], hands: BASE_HANDS, auto: false, reduced: true, project: (x, y) =&gt; ({ x, y }) }</code>; box 800 by 600.
+        <pre><code data-lang="ts">// Start (sec-d-model-start)
+it('a running step starts the run: zero take, ring centred, every drop at or before day appears')
+it('a run started on an empty box gets its ring at the centre when the first size arrives')
+  // createRun; step running true (box 0x0, ring (0, 0)); setBox 800x600 -> ring (400, 300)
+// Appearing (sec-d-model-appear)
+it('a drop appears in the step whose day reaches its day, not before, counted once')
+it('endMs is now + max(lingerMs, 400)')
+  // now 1000: lingerMs 4000 -> 5000; lingerMs 100 -> 1400
+it('a drop with no point is counted and collected only by auto')
+// Collecting (sec-d-model-collect)
+it('collects a drop within radiusPx of the ring once; one just outside is not')
+it('collects a drop the swept path crossed between two steps')
+it('a path broken by fresh does not join its two sides')
+it('a drop appearing under a still ring is collected in that step')
+it('collecting sets takenMs = now, endMs = now + 400, and adds a FloatCount at its point')
+it('auto collects every drop as it appears, off-map ones included')
+it('turning auto on collects every live drop')
+it('a fading drop can be collected until its endMs')
+it('empties sweep and clears ringMoved after the collect pass')
+// Fading (sec-d-model-end)
+it('an uncollected drop leaves at endMs; a collected one 400 ms after; a count after 800 ms')
+it('counts never exceed 40')
+it('a burst of 500 drops in one step counts 500 and auto collects all 500')
+// Ending
+it('the ending step counts the drops due through its day, collects under the ring or auto, reports ended')
+  // previous step day 90; ending step day 100 with drops at 95 and 100 -> both in dropped
+it('ending sets each uncollected endMs to min(its own, now + 400), or now under reduced')
+  // appeared at 0 with lingerMs 4000 (endMs 4000), ended at 1000 -> 1400; reduced -> 1000;
+  // appeared at 0 with lingerMs 100 (endMs 400), ended at 300 -> stays 400
+it('ending leaves a collected drop its endMs; a later step drops and collects nothing')
+it('a stop on a never-started model, and a second stop, report ended false and change no take') // RF5
+// Going back and new arrays
+it('a feed day going back drops nothing again and lowers no count')
+it('a NaN day keeps highDay and drops nothing; the next real day drops what is due') // RF2
+it('a new drops array counts no row twice and drops new rows past highDay when reached')
+it('a shown drop keeps its state and times in a new array')
+it('a shown drop whose row is gone stays until its endMs; the take does not go down')
+it('a row not yet shown appears at its new day; one now missing never appears')
+it('a step while not running only removes what has ended')
+// Dirty and idle (sec-d-model-dirty)
+it('dirty is false for a running step with nothing new under reduced motion')
+it('dirty is true while a drop animates with motion')   // reduced false, now &lt; bornMs + 160
+it('idle is true only once not running with nothing left')
+it('reproject sets each live point from project again')</code></pre>
+      </li>
+      <li id="t6-s2"><input type="checkbox"> Run and see them fail.
+        <pre><code data-lang="sh">npx vitest run --project server src/lib/game/run/run-model.spec.ts</code></pre>
+      </li>
+      <li id="t6-s3"><input type="checkbox"> Implement <code>step</code> as the order the spec sets: start if needed; take a new <code>drops</code> array and binary-search <code>cursor</code> to the first day after <code>highDay</code>; raise <code>highDay</code> (ignore <code>NaN</code>); pass drops, each with <code>endMs = now + Math.max(hands.lingerMs, RUN_TIMES.minShownMs)</code>; collect (running or ending step only); then on an ending step set <code>ended</code>, <code>running = false</code>, set each uncollected <code>endMs</code> to <code>Math.min(endMs, now + RUN_TIMES.fadeMs)</code> (or <code>now</code> under <code>reduced</code>) and empty <code>sweep</code>; then remove ended drops and counts in place (no new arrays per frame); finally compute <code>dirty</code>. The take is credited with <code>credit</code> and live worth is <code>total(drop.worth)</code>.</li>
+      <li id="t6-s4"><input type="checkbox"> Run, see them pass, lint (as <code>t1-s4</code>).</li>
+      <li id="t6-s5"><input type="checkbox"> Commit, then check timing.
+        <pre><code data-lang="sh">git add src/lib/game/run/run-model.ts src/lib/game/run/run-model.spec.ts
+git commit -m "feat(run): step the run model: appear, collect, fade, end"
+npx chreode timing-check --head HEAD</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-7">
+    <h2>Task 7: Drawing</h2>
+    <ul>
+      <li>Create: <code>src/lib/game/run/draw.ts</code>, <code>src/lib/game/run/draw.spec.ts</code></li>
+    </ul>
+    <ul>
+      <li>Consumes: <code>RunModel</code>, <code>RUN_TIMES</code>, <code>RUN_CAPS</code> (Tasks 5, 6); <code>dropCountText</code> (Task 4); <code>TOKENS</code> from <code>$lib/map/palette</code> (<code>src/lib/map/palette.ts:45</code>, <code>'tl-halo-policy'</code> at <code>:91</code> light and <code>:138</code> dark).</li>
+      <li>Produces: <code>Look</code>, <code>DRAW</code> (with <code>diamondScale: 1.25</code> between <code>dropMaxPx</code> and <code>outlinePx</code>), <code>dropRadius(worth: number): number</code> and <code>drawRun(ctx, m, o)</code>, all exactly as spec <code>sec-d-draw</code>; and <code>policyColour(dark: boolean): string</code>, which returns <code>TOKENS[dark ? 'dark' : 'light']['tl-halo-policy']</code>. Builder's call: the spec has the layer choose the token with the other colours, but only <code>draw.ts</code> may import the palette (<code>sec-d-modules</code>), so the choice lives here; a boolean keeps <code>Theme</code> (from <code>$lib/map/types</code>) out of the import list.</li>
+    </ul>
+    <p>The shapes. A drop's size <code>s</code> is <code>dropRadius(worth)</code> for a circle and <code>DRAW.diamondScale * dropRadius(worth)</code> for a diamond, its half-diagonal. A diamond at <code>(x, y)</code> of size <code>s</code> is the closed path through <code>(x, y - s)</code>, <code>(x + s, y)</code>, <code>(x, y + s)</code>, <code>(x - s, y)</code>: a square turned 45°. Every growth, fade, reduced-motion and count-position rule of <code>sec-d-draw</code> applies to <code>s</code> whatever the shape; a count's baseline is <code>countGapPx</code> above <code>y - s</code>.</p>
+    <table id="tbl-t7-shapes">
+      <caption>What drawRun draws for one drop</caption>
+      <thead>
+        <tr><th scope="col">Drop</th><th scope="col">Live</th><th scope="col">Collected</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row"><code>drop.policy</code> true</th><td>Diamond, half-diagonal <code>1.25 * dropRadius(worth)</code>, filled <code>look.policy</code>, <code>outlinePx</code> stroke of <code>look.surface</code></td><td>Diamond outline only, <code>takenLinePx</code> wide, in <code>look.policy</code></td></tr>
+        <tr><th scope="row"><code>drop.policy</code> false</th><td>Circle, radius <code>dropRadius(worth)</code>, filled <code>look.accent</code>, <code>outlinePx</code> stroke of <code>look.surface</code></td><td>Circle outline only, <code>takenLinePx</code> wide, in <code>look.accent</code></td></tr>
+      </tbody>
+    </table>
+    <ol>
+      <li id="t7-s1"><input type="checkbox"> Write the failing tests (server project). A recording context in the spec: a plain object with the methods <code>drawRun</code> uses (<code>clearRect</code>, <code>beginPath</code>, <code>arc</code>, <code>moveTo</code>, <code>lineTo</code>, <code>closePath</code>, <code>fill</code>, <code>stroke</code>, <code>fillText</code>, <code>strokeText</code>, <code>save</code>, <code>restore</code>) pushing <code>{ op, args, fillStyle, strokeStyle, globalAlpha, lineWidth }</code>, cast to <code>CanvasRenderingContext2D</code>. A helper groups the record into shapes: each <code>beginPath</code> up to its <code>fill</code> or <code>stroke</code>, as a circle (one <code>arc</code>: centre and radius) or a diamond (one <code>moveTo</code>, three <code>lineTo</code>, <code>closePath</code>: its four vertices). Models are built with Task 6's <code>step</code>, with <code>look = { accent: '#a3472c', policy: '#00ff00', ink: '#111827', surface: '#ffffff', font: 'sans-serif' }</code> so the policy colour is told apart in the record.
+        <pre><code data-lang="ts">it('DRAW.diamondScale is 1.25')
+it('dropRadius: 4.5 at 1, 6 at 4, 9 at 16 and at 1,000')
+it('policyColour is TOKENS[theme][tl-halo-policy] for each theme')
+  // policyColour(false) === TOKENS.light['tl-halo-policy']; policyColour(true) === TOKENS.dark[...]
+it('a live policy drop is a filled diamond in look.policy with half-diagonal 1.25 * dropRadius')
+  // worth 4 at (100, 100), reduced: vertices (100, 92.5), (107.5, 100), (100, 107.5), (92.5, 100);
+  // fill with fillStyle look.policy, then stroke lineWidth 1.5 strokeStyle look.surface; no arc
+it('a collected policy drop is a stroked diamond outline in look.policy, takenLinePx wide, no fill')
+it('any other drop is a circle in the accent, filled live and stroked when collected')
+  // worth 4: arc radius 6, fillStyle look.accent; collected: stroke only, lineWidth 2, look.accent
+it('draws at most 240 drops and 40 counts with 1,000 live, and draws the newest')
+  // half of them policy: circles + diamonds filled === 240; rows drawn are the last 240 with a point
+it('draws no ring when showRing is false; one ring of radiusPx when true')
+it('with reduced motion draws every shape at full size and alpha 1')
+  // circle radius dropRadius(w); diamond half-diagonal 1.25 * dropRadius(w); globalAlpha 1
+it('clears the whole box first, then drops, counts, ring')</code></pre>
+      </li>
+      <li id="t7-s2"><input type="checkbox"> Run and see them fail.
+        <pre><code data-lang="sh">npx vitest run --project server src/lib/game/run/draw.spec.ts</code></pre>
+      </li>
+      <li id="t7-s3"><input type="checkbox"> Implement per <code>sec-d-draw</code> and the table above: <code>clearRect(0, 0, m.box.w, m.box.h)</code> (the context is already scaled to CSS pixels); drops by walking <code>live</code> backwards to find the newest 240 with a point, then drawing those oldest first; one private path helper per shape (<code>arc</code> for a circle, the four-vertex path for a diamond), chosen by <code>drop.policy</code>; with motion, the live size grows over <code>appearMs</code> eased <code>1 - (1 - t)^3</code> and alpha fades over the last <code>fadeMs</code>; a collected shape's size goes from <code>s</code> to <code>s * (1 + takenGrow)</code> and alpha from <code>takenAlpha</code> to 0 over <code>takenMs</code>; counts rise <code>countRisePx</code> and hold for <code>countHoldShare</code>; the ring as <code>sec-d-ring</code>'s last bullet. No allocation per drop.</li>
+      <li id="t7-s4"><input type="checkbox"> Run, see them pass, lint (as <code>t1-s4</code>).</li>
+      <li id="t7-s5"><input type="checkbox"> Commit, then check timing.
+        <pre><code data-lang="sh">git add src/lib/game/run/draw.ts src/lib/game/run/draw.spec.ts
+git commit -m "feat(run): draw circle and policy-diamond drops, counts and the ring"
+npx chreode timing-check --head HEAD</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-8">
+    <h2>Task 8: RunLayer, the loop and the totals</h2>
+    <p>Delivers row R1 (<code>RunLayer.svelte</code> with <code>RunLayerProps</code>; R1 is complete with this task).</p>
+    <ul>
+      <li>Create: <code>src/lib/game/run/clock.ts</code>, <code>src/lib/game/run/test/fake-feed.svelte.ts</code>, <code>src/lib/game/run/RunLayer.svelte</code>, <code>src/lib/game/run/RunLayer.svelte.spec.ts</code></li>
+    </ul>
+    <ul>
+      <li>Consumes: <code>RunFeed</code>, <code>Drop</code> (Task 1); <code>Sound</code> (Task 3); <code>runOverText</code> (Task 4); the run model (Tasks 5, 6); <code>drawRun</code>, <code>policyColour</code>, <code>DRAW</code> (Task 7); <code>total</code> (G2); <code>Hands</code> (G4); <code>RunTake</code> (G6).</li>
+      <li>Produces:
+        <ul>
+          <li><code>clock.ts</code>: <code>now(): number</code>, <code>raf(cb: FrameRequestCallback): number</code>, <code>cancelRaf(h: number): void</code>, <code>reducedMotion(): boolean</code> (one lazily made <code>MediaQueryList</code>, false where <code>matchMedia</code> is missing).</li>
+          <li><code>test/fake-feed.svelte.ts</code>: <code>class FakeFeed implements RunFeed</code> with <code>$state</code> fields <code>drops: readonly Drop[]</code>, <code>day: Day</code>, <code>running: boolean</code>; <code>constructor(size: { w: number; h: number }, bounds = { west: -122.52, east: -122.35, south: 37.70, north: 37.82 })</code>; <code>project(lng, lat)</code> maps linearly with north at y 0, null outside the bounds; <code>dropAt(row: number, x: number, y: number, day: Day, homes = 1, policy = false): Drop</code>, whose <code>lng</code>/<code>lat</code> project back to (x, y). Builder's call: the spec fixes only the fields and the linear projection; <code>dropAt</code> saves every spec here and in <code>game-sim</code> from inverting it.</li>
+          <li><code>RunLayer.svelte</code>: props <code>RunLayerProps</code> as R1; markup as spec <code>sec-d-layer</code> (<code>data-testid="run-layer"</code>, <code>data-state</code>, <code>data-dropped</code>, <code>data-collected</code>, the <code>aria-hidden</code> canvas, the <code>run-live</code> paragraph). The interface stays unexported; consumers use <code>ComponentProps&lt;typeof RunLayer&gt;</code>.</li>
+        </ul>
+      </li>
+    </ul>
+    <ol>
+      <li id="t8-s1"><input type="checkbox"> Write the failing tests (client project). Builder's call on the clock mock: <code>vi.mock('./clock', async (orig) =&gt; ({ ...(await orig()), now: () =&gt; clock.t, raf: (cb) =&gt; push(cb), cancelRaf: (h) =&gt; drop(h) }))</code>, keeping the real <code>reducedMotion</code> so CDP emulation (as <code>SimPage.svelte.spec.ts:1309-1312</code>) flips it; a <code>frame()</code> helper runs the pending callbacks. Mount into an 800 by 600 <code>position: relative</code> container passed to <code>render</code>, with a sibling div standing for the map. A recording <code>Sound</code> counts calls. Draws are observed with <code>vi.spyOn(CanvasRenderingContext2D.prototype, 'clearRect')</code>. Accessibility with <code>axe-core</code> and the tags of <code>AccountOffer.svelte.spec.ts:32</code>.
+        <pre><code data-lang="ts">it('running and day past drops call ontake with the dropped totals and set data-dropped')
+it('with collectForMe every drop is collected as it appears and no ring is drawn')
+it('collectForMe set true mid-run collects every live drop on the next frame; false shows the ring')
+it('replacing feed.drops mid-run counts no row twice and lowers neither data attribute')
+it('running false calls ontake once and sets run-live to runOverText; the next start empties it')
+it('calls sound.collect once for a frame that collects, else sound.pop once if any appeared')
+it('the element under the map box centre is not the canvas')   // document.elementFromPoint
+it('once idle the loop asks for no further frame and the canvas is hidden')
+it('a resize sets the backing store to the box times the pixel ratio, capped at 2')
+  // devicePixelRatio defined as 3 before mount -> canvas 1600 x 1200; resize -> follows (expect.poll)
+it('no events reach the feed: its fields are unchanged by the layer')
+it('axe finds no WCAG 2.2 AA violation during and after a run; canvas aria-hidden; live region polite')
+it('with reduce, a frame with nothing new draws nothing; with no-preference a new drop draws over frames')</code></pre>
+      </li>
+      <li id="t8-s2"><input type="checkbox"> Run and see them fail.
+        <pre><code data-lang="sh">npx vitest run --project client src/lib/game/run/RunLayer.svelte.spec.ts</code></pre>
+      </li>
+      <li id="t8-s3"><input type="checkbox"> Write <code>clock.ts</code> and <code>test/fake-feed.svelte.ts</code>.</li>
+      <li id="t8-s4"><input type="checkbox"> Write <code>RunLayer.svelte</code> per <code>sec-d-layer</code>, <code>sec-d-draw-canvas</code>, <code>sec-d-burst</code> and <code>sec-d-a11y</code>:
+        <ul>
+          <li>An <code>$effect</code> reading <code>feed.running</code> starts the loop (shows the canvas, re-reads the box's top left) when it turns true; the loop reads every feed field and <code>collectForMe</code> each frame; it stops when not running and <code>idle</code>, clearing once and setting <code>visibility: hidden</code>.</li>
+          <li>After each step: sounds, then <code>ontake</code> with a copy when something appeared, was collected or the run ended, then <code>drawRun</code> with <code>showRing = running &amp;&amp; !auto</code> when dirty. <code>data-dropped</code>/<code>data-collected</code> are <code>total</code> of the last take sent.</li>
+          <li><code>ResizeObserver</code> and the <code>(resolution: Ndppx)</code> query resize the backing store (<code>Math.min(devicePixelRatio || 1, DRAW.maxDpr)</code>), <code>setTransform</code>, <code>setBox</code>, <code>reproject</code>, re-read the top left and draw one frame; a capture-passive window <code>scroll</code> re-reads the top left.</li>
+          <li>Colours read from <code>getComputedStyle(document.documentElement)</code> at mount and on a <code>(prefers-color-scheme: dark)</code> change; <code>policy</code> from <code>policyColour(dark)</code>; font from the canvas's computed <code>font-family</code>.</li>
+          <li>Unmount removes every listener and observer and cancels the frame; it calls nothing. Nothing runs on the server.</li>
+        </ul>
+      </li>
+      <li id="t8-s5"><input type="checkbox"> Run, see them pass; then the full checks.
+        <pre><code data-lang="sh">npx vitest run --project client src/lib/game/run/RunLayer.svelte.spec.ts
+npm run check
+npx eslint src/lib/game/run
+npx prettier --check src/lib/game/run</code></pre>
+      </li>
+      <li id="t8-s6"><input type="checkbox"> Commit, then check timing.
+        <pre><code data-lang="sh">git add src/lib/game/run/clock.ts src/lib/game/run/test/fake-feed.svelte.ts src/lib/game/run/RunLayer.svelte src/lib/game/run/RunLayer.svelte.spec.ts
+git commit -m "feat(run): RunLayer canvas, frame loop and run totals"
+npx chreode timing-check --head HEAD</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-9">
+    <h2>Task 9: Pointer and key input</h2>
+    <ul>
+      <li>Modify: <code>src/lib/game/run/RunLayer.svelte</code>, <code>src/lib/game/run/RunLayer.svelte.spec.ts</code></li>
+    </ul>
+    <ul>
+      <li>Consumes: <code>pointRing</code>, <code>nudgeRing</code>, <code>RING_KEYS</code>, <code>RING_KEY_DIR</code> (Task 5); Task 8's layer and spec helpers.</li>
+      <li>Produces: no new interface.</li>
+    </ul>
+    <ol>
+      <li id="t9-s1"><input type="checkbox"> Write the failing tests. Pointer events are <code>new PointerEvent(type, { clientX, clientY, pointerType, bubbles: true })</code> dispatched on the map sibling.
+        <pre><code data-lang="ts">it('a mouse pointermove over a drop collects it; data-collected and ontake follow')
+it('a touch pointerdown then pointermove collects a drop under the drag')
+it('a touch elsewhere does not sweep the ground between')
+it('a pen pointermove moves the ring as a mouse does')
+it('the first move back inside after leaving the box starts a fresh path')
+it('pointer events while not running move nothing')
+it('ArrowRight moves the ring 16 px and Shift+ArrowRight 64 px, each prevented')
+it('an arrow key in an input, a contenteditable, or inside role=slider is left alone')  // RF4
+it('arrow keys are left alone under auto, with Alt/Control/Meta, or when already prevented')
+it('unmounting mid-run: no further ontake, the frame is cancelled, a later arrow key is not prevented') // RF1</code></pre>
+      </li>
+      <li id="t9-s2"><input type="checkbox"> Run and see the new ones fail.
+        <pre><code data-lang="sh">npx vitest run --project client src/lib/game/run/RunLayer.svelte.spec.ts</code></pre>
+      </li>
+      <li id="t9-s3"><input type="checkbox"> Implement per <code>sec-d-ring</code>: passive window <code>pointermove</code> and <code>pointerdown</code> for every pointer type, counted only while running, the point taken from the cached top left; an <code>out</code> flag making the next inside move fresh; <code>pointerdown</code> inside always fresh. Window <code>keydown</code> with the spec's ignore list (the role check walks <code>target.closest('[role=slider],[role=menu],...')</code>; editable is <code>isContentEditable</code>). Pointer and key events never start the loop.</li>
+      <li id="t9-s4"><input type="checkbox"> Run, see them pass; checks as <code>t8-s5</code>.</li>
+      <li id="t9-s5"><input type="checkbox"> Commit, then check timing.
+        <pre><code data-lang="sh">git add src/lib/game/run/RunLayer.svelte src/lib/game/run/RunLayer.svelte.spec.ts
+git commit -m "feat(run): move the ring by pointer, touch, pen and arrow keys"
+npx chreode timing-check --head HEAD</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-10">
+    <h2>Task 10: The frame budget</h2>
+    <ul>
+      <li>Create: <code>src/lib/game/run/run.perf.svelte.spec.ts</code></li>
+    </ul>
+    <ul>
+      <li>Consumes: <code>createRun</code>, <code>setBox</code>, <code>pointRing</code>, <code>step</code> (Tasks 5, 6; <code>step</code> calls <code>credit</code> and <code>total</code>, real once <code>game-core</code> is merged); <code>drawRun</code> (Task 7); <code>BASE_HANDS</code> (<code>src/lib/game/limits.ts:25</code>, already its real value).</li>
+      <li>Produces: <code>export const RUN_FRAME_P95_MS = 2;</code></li>
+    </ul>
+    <ol>
+      <li id="t10-s1"><input type="checkbox"> Write the spec (client-perf project) per <code>sec-d-budget</code>: a real canvas with backing store 2560 by 1440 and <code>setTransform(2, 0, 0, 2, 0, 0)</code> for a 1280 by 720 box; 3,000 drops over 600 frames of 16.7 ms on a fake clock, 500 of them on frame 100; <code>BASE_HANDS</code>; <code>reduced: false</code>; the ring swept by 8 <code>pointRing</code> calls a frame round a circle of radius 200 px at the box centre. Time <code>step</code> plus <code>drawRun</code> per frame with <code>performance.now()</code>, skip 60 warm-up frames, and assert the p95 is at most <code>RUN_FRAME_P95_MS</code>. Also assert the run dropped 3,000.</li>
+      <li id="t10-s2"><input type="checkbox"> Run it once to see it executes; record the p95 for the PR. Not a gate on a busy machine.
+        <pre><code data-lang="sh">npx vitest run --project client-perf src/lib/game/run/run.perf.svelte.spec.ts</code></pre>
+      </li>
+      <li id="t10-s3"><input type="checkbox"> Run the unit suites for the whole directory and the lint.
+        <pre><code data-lang="sh">npx vitest run --project server src/lib/game/run
+npx vitest run --project client src/lib/game/run
+npx eslint src/lib/game/run
+npx prettier --check src/lib/game/run</code></pre>
+      </li>
+      <li id="t10-s4"><input type="checkbox"> Commit, then check timing.
+        <pre><code data-lang="sh">git add src/lib/game/run/run.perf.svelte.spec.ts
+git commit -m "test(run): frame budget for step plus draw"
+npx chreode timing-check --head HEAD</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-open-questions">
+    <h2>Open questions</h2>
+    <aside data-kind="question"><strong>Question 1</strong> Centring on the first size and the sweep. <code>sec-d-ring</code> says <code>setBox</code> from an empty box puts the ring at the new centre, but not whether that move appends to <code>sweep</code> or sets <code>ringMoved</code>, as <code>pointRing</code> does. If it appends the old centre (0, 0), the next collect pass sweeps a segment from the corner to the centre. The plan's tests (<code>t5-s1</code>, <code>t6-s1</code>) assert only the ring's position; the conductor decides the rest.</aside>
+    <aside data-kind="question"><strong>Question 2</strong> Policy drops in the perf case. <code>sec-d-budget</code>'s case gives 3,000 drops but no share of policy drops, and a diamond is a different path from a circle. The plan's Task 10 leaves <code>policy</code> as the case states it (unstated); the conductor decides whether the case mixes diamonds in.</aside>
+    <aside data-kind="note">The clock mock and the reduced-motion emulation. Spec <code>sec-tests-component</code> mocks <code>./clock</code> "so the spec moves time and runs frames by hand" and also emulates <code>prefers-reduced-motion</code> both ways. A partial mock that replaces <code>now</code>, <code>raf</code> and <code>cancelRaf</code> and keeps the real <code>reducedMotion</code> (<code>t8-s1</code>) satisfies both lines.</aside>
+  </section>
+</article>

@@ -3606,6 +3606,7 @@ describe("Activity's latest stage changes", () => {
       lngLat: new Float32Array(2 * k),
       days: new Float32Array(3 * k),
       homes: Uint16Array.from(ms.map(() => 12)),
+      existing: new Uint16Array(k),
       flags: Uint8Array.from(ms.map((m) => m.flags ?? 0))
     };
     ms.forEach((m, i) => {
