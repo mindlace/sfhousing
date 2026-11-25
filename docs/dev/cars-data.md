@@ -264,7 +264,7 @@ Then, keyless (checked 2026-11-25):
   Wayback Machine (for example
   `http://web.archive.org/web/20160405095504id_/http://www.gtfs-data-exchange.com/agency/san-francisco-municipal-transportation-agency/?page=1`)
   and link each copy as `http://gtfs.s3.amazonaws.com/<agency>_<YYYYMMDD>_<HHMM>.zip`; a plain
-  `GET` of those returns the zip (bucket listing is denied, so the names come from the pages and
+  `GET` of those returns the zip, over `https://` too, which the pipeline uses (bucket listing is denied, so the names come from the pages and
   the Wayback CDX index, `http://web.archive.org/cdx/search/cdx?url=gtfs.s3.amazonaws.com/<agency>_&matchType=prefix`).
   Muni from 2009-02, Caltrain from 2008-10, BART (`bay-area-rapid-transit_`) only from 2014-12.
 - **OpenMobilityData (TransitFeeds) versions** are at

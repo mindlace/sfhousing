@@ -310,7 +310,7 @@ export const GTFS_ARCHIVE_HOSTS: Record<
   'gtfs-data-exchange': {
     label: 'GTFS Data Exchange',
     homepage: 'https://github.com/jehiah/gtfs-data-exchange',
-    url: (key) => `http://gtfs.s3.amazonaws.com/${key}.zip`
+    url: (key) => `https://gtfs.s3.amazonaws.com/${key}.zip`
   },
   // OpenMobilityData / TransitFeeds (2015-2023): versions by fetch date, in its S3 bucket.
   openmobilitydata: {

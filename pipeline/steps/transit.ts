@@ -59,6 +59,8 @@ export function transitTargetDate(lock: Lock): string {
 export interface FeedInput {
   spec: GtfsFeedSpec;
   files: GtfsFiles;
+  /** This feed's own target date (an archived feed's 1 April); default `ReduceOpts.targetDate`. */
+  targetDate?: string;
 }
 export interface ReduceOpts {
   targetDate: string;
@@ -90,13 +92,13 @@ const hhmm = (s: string) => {
 };
 
 function reduceFeed(
-  { spec, files: g }: FeedInput,
+  { spec, files: g, targetDate: target }: FeedInput,
   opts: ReduceOpts,
   warn: (m: string) => void,
   counts: Record<string, number>
 ): { serviceDate: string; stops: Map<string, RawStop>; patterns: RawPattern[] } {
   const op = spec.operator;
-  const { date, warning } = pickServiceDate(g, opts.targetDate);
+  const { date, warning } = pickServiceDate(g, target ?? opts.targetDate);
   if (warning) warn(`${spec.lockId}: ${warning}`);
   const services = activeServices(g, date.replaceAll('-', ''));
 
@@ -407,6 +409,8 @@ export interface YearNetwork {
   /** The latest of `sources`: how far forward any part of the network is held. */
   sourceYear: number;
   sources: Partial<Record<OperatorId, number>>;
+  /** `reduceTransit`'s warnings for this network (none for today's network itself). */
+  warnings: string[];
 }
 
 /** Transit by year for the back-cast (`accessByYear` reads it). */
@@ -415,9 +419,12 @@ export interface TransitYears {
 }
 
 export interface TransitByYearInput {
-  /** Today's network as built (transit.json), its year, and each operator's feed in it. */
+  /**
+   * Today's network as built (transit.json), the transit target date it was built for, and each
+   * operator's feed in it.
+   */
   today: {
-    year: number;
+    targetDate: string;
     network: TransitNetwork;
     operators: OperatorId[];
     feed: (op: OperatorId) => GtfsFiles;
@@ -430,39 +437,45 @@ export interface TransitByYearInput {
 /**
  * Per operator, the feed for a year is the archive of that year, else the earliest later archive,
  * else today's. Before the earliest archive, access holds at it; `sourceYear` reports that. The
- * operators' feeds are merged as today's build merges them (`reduceTransit`, service day from 1
- * April of the year). A year served by today's feeds alone gets today's network itself.
+ * operators' feeds are merged as today's build merges them (`reduceTransit`); each feed's service
+ * day comes from its own date (an archive's 1 April, today's target date for today's feeds), so
+ * the network depends only on which feeds are used, never on the year asked or the call order. A
+ * year served by today's feeds alone gets today's network itself.
  */
 export function transitByYear(a: TransitByYearInput): TransitYears {
-  const cache = new Map<string, TransitNetwork>();
+  const todayYear = Number(a.today.targetDate.slice(0, 4));
+  const cache = new Map<string, { network: TransitNetwork; warnings: string[] }>();
   const specOf = (op: OperatorId) => GTFS_FEEDS[`gtfs-${op}` as GtfsLockId];
   return {
     networkFor(year) {
       const picks = a.today.operators.map((op) => {
         const later = a.archives
-          .filter((x) => x.operator === op && x.year >= year && x.year < a.today.year)
+          .filter((x) => x.operator === op && x.year >= year && x.year < todayYear)
           .sort((x, y) => x.year - y.year);
         return { op, archive: later[0] ?? null };
       });
       const sources: Partial<Record<OperatorId, number>> = {};
-      for (const p of picks) sources[p.op] = p.archive?.year ?? a.today.year;
+      for (const p of picks) sources[p.op] = p.archive?.year ?? todayYear;
       const sourceYear = Math.max(...Object.values(sources));
-      if (picks.every((p) => !p.archive)) return { network: a.today.network, sourceYear, sources };
-      const key = picks.map((p) => `${p.op}:${sources[p.op]}`).join(',');
-      let network = cache.get(key);
-      if (!network) {
+      if (picks.every((p) => !p.archive))
+        return { network: a.today.network, sourceYear, sources, warnings: [] };
+      const key = picks.map((p) => `${p.op}:${p.archive ? p.archive.year : 'today'}`).join(',');
+      let built = cache.get(key);
+      if (!built) {
         const feeds: FeedInput[] = picks.map((p) => ({
           spec: specOf(p.op),
-          files: p.archive ? p.archive.feed() : a.today.feed(p.op)
+          files: p.archive ? p.archive.feed() : a.today.feed(p.op),
+          targetDate: p.archive ? `${p.archive.year}-04-01` : a.today.targetDate
         }));
-        network = reduceTransit(feeds, {
-          targetDate: `${year}-04-01`,
+        const r = reduceTransit(feeds, {
+          targetDate: a.today.targetDate,
           keep: a.keep,
           strict: false
-        }).network;
-        cache.set(key, network);
+        });
+        built = { network: r.network, warnings: r.warnings };
+        cache.set(key, built);
       }
-      return { network, sourceYear, sources };
+      return { ...built, sourceYear, sources };
     }
   };
 }
@@ -491,7 +504,7 @@ export function lockTransitYears(a: {
   const nb = JSON.parse(readFileSync(join(a.outDir, 'neighborhoods.geojson'), 'utf8'));
   return transitByYear({
     today: {
-      year: Number(a.targetDate.slice(0, 4)),
+      targetDate: a.targetDate,
       network: a.network,
       operators: Object.values(GTFS_FEEDS).map((f) => f.operator),
       feed: (op) => read(`gtfs-${op}`)

@@ -142,7 +142,7 @@ describe('fetchGtfsArchive', () => {
   it('rejects a body that is not a GTFS zip', async () => {
     const { http } = fake(strToU8('<html>Temporarily Offline</html>'));
     const raw = mkdtempSync(join(tmpdir(), 'sfh-gtfs-archive-'));
-    await expect(fetchGtfsArchive(spec, raw, http)).rejects.toThrow();
+    await expect(fetchGtfsArchive(spec, raw, http)).rejects.toThrow(/not a zip/);
   });
 });
 
@@ -195,7 +195,12 @@ describe('transitByYear', () => {
   ];
   const years = () =>
     transitByYear({
-      today: { year: 2026, network: today, feed: todayFeed, operators: ['muni', 'bart'] },
+      today: {
+        targetDate: '2026-10-01',
+        network: today,
+        feed: todayFeed,
+        operators: ['muni', 'bart']
+      },
       archives,
       keep
     });
@@ -222,6 +227,43 @@ describe('transitByYear', () => {
     expect(t.networkFor(2014)).toMatchObject({ sourceYear: 2016, sources: { muni: 2016 } });
   });
 
+  it('gives the same network for a year whatever order the years are asked in', () => {
+    const order = [2013, 2014, 2015, 2016, 2009, 2012];
+    const fwd = years();
+    const back = years();
+    const a = order.map((y) => fwd.networkFor(y));
+    const b = [...order].reverse().map((y) => back.networkFor(y));
+    b.reverse();
+    for (let k = 0; k < order.length; k++) expect(a[k]).toEqual(b[k]);
+    // A held year (2014 on the 2016 feeds) is the 2016 feeds' 1 April network, service day and
+    // all, not the feeds' first Tuesday.
+    expect(fwd.networkFor(2014).network).toEqual(fwd.networkFor(2016).network);
+    expect(fwd.networkFor(2014).network.operators.map((o) => o.serviceDate)).toEqual([
+      '2016-04-05',
+      '2016-04-05'
+    ]);
+  });
+
+  it('surfaces the reduce warnings', () => {
+    // A feed whose calendar ended before its 1 April falls back to its last Tuesday, with a warning.
+    const t = transitByYear({
+      today: { targetDate: '2026-10-01', network: today, feed: todayFeed, operators: ['muni'] },
+      archives: [
+        {
+          operator: 'muni',
+          year: 2016,
+          feed: () => {
+            const g = muni(2016, 20);
+            g.set('calendar.txt', cal('20160101', '20160301'));
+            return g;
+          }
+        }
+      ],
+      keep
+    });
+    expect(t.networkFor(2016).warnings.join('\n')).toMatch(/calendar ends 20160301/);
+  });
+
   it("a year after every archive is today's network itself", () => {
     const y = years().networkFor(2020);
     expect(y.network).toBe(today);
@@ -242,7 +284,12 @@ describe('accessByYear', () => {
 
   it('a year before the earliest feed takes the earliest feed’s access and reports it', () => {
     const db = transitByYear({
-      today: { year: 2026, network: today, feed: () => muni(2026, 5), operators: ['muni'] },
+      today: {
+        targetDate: '2026-10-01',
+        network: today,
+        feed: () => muni(2026, 5),
+        operators: ['muni']
+      },
       archives: [{ operator: 'muni', year: 2016, feed: () => muni(2016, 20) }],
       keep
     });
@@ -281,9 +328,73 @@ describe('accessByYear', () => {
     }
   });
 
+  it("reads the lock's archive entries for their years", async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'sfh-gtfs-years-'));
+    // One neighbourhood around the Mission and Mission Bay stops.
+    const ring = [
+      [-122.43, 37.74],
+      [-122.38, 37.74],
+      [-122.38, 37.79],
+      [-122.43, 37.79],
+      [-122.43, 37.74]
+    ];
+    writeFileSync(
+      join(dir, 'neighborhoods.geojson'),
+      JSON.stringify({
+        type: 'FeatureCollection',
+        features: [{ type: 'Feature', geometry: { type: 'Polygon', coordinates: [ring] } }]
+      })
+    );
+    const caltrain = feed(
+      'route_id,route_short_name,route_long_name,route_type\nL1,Local Weekday,Local,2\n',
+      'L1',
+      [
+        ['70011', 37.7764, -122.3943],
+        ['70021', 37.7574, -122.3924]
+      ],
+      30,
+      2016
+    );
+    const bodies = { muni: muni(2016, 20), bart: bart(2016), caltrain };
+    const sources = [];
+    for (const op of ['muni', 'bart', 'caltrain'] as const) {
+      const http = {
+        get: async () => ({ status: 200, headers: new Headers(), body: zipOf(bodies[op]) })
+      };
+      const spec = GTFS_ARCHIVES.find((x) => x.lockId === `gtfs-archive-${op}-2016`)!;
+      sources.push(await fetchGtfsArchive(spec, dir, http));
+    }
+    const db = lockTransitYears({
+      lock: { sources },
+      rawDir: dir,
+      byName: false,
+      outDir: dir,
+      targetDate: '2026-10-16',
+      network: today
+    });
+    const y = db.networkFor(2014);
+    expect(y).toMatchObject({
+      sourceYear: 2016,
+      sources: { muni: 2016, bart: 2016, caltrain: 2016 }
+    });
+    expect(y.network.operators.map((o) => [o.id, o.serviceDate])).toEqual([
+      ['muni', '2016-04-05'],
+      ['bart', '2016-04-05'],
+      ['caltrain', '2016-04-05']
+    ]);
+    expect(new Set(y.network.patterns.map((p) => p.operatorId))).toEqual(
+      new Set(['muni', 'bart', 'caltrain'])
+    );
+  });
+
   it("with no archives (the mini fixture) every year is today's access", () => {
     const db = transitByYear({
-      today: { year: 2026, network: today, feed: () => muni(2026, 5), operators: ['muni'] },
+      today: {
+        targetDate: '2026-10-01',
+        network: today,
+        feed: () => muni(2026, 5),
+        operators: ['muni']
+      },
       archives: [],
       keep
     });

@@ -1665,14 +1665,14 @@
           "bytes": 69317,
           "name": "gtfs-archive-caltrain-2009.zip",
           "sha256": "71fee7aea528fa229a5414189687332a3db4a853b4bf8da42096f15a2823bcb3",
-          "url": "http://gtfs.s3.amazonaws.com/caltrain_20090308_1937.zip"
+          "url": "https://gtfs.s3.amazonaws.com/caltrain_20090308_1937.zip"
         }
       ],
       "homepage": "https://github.com/jehiah/gtfs-data-exchange",
       "id": "gtfs-archive-caltrain-2009",
       "label": "Caltrain GTFS, 2009 (archived: GTFS Data Exchange)",
       "license": "Caltrain (PCJPB) Developer License Agreement (archived copy of the agency's feed: GTFS Data Exchange)",
-      "retrievedAt": "2026-11-25T12:47:50.825Z",
+      "retrievedAt": "2026-11-25T12:58:57.675Z",
       "rowCount": 31,
       "upstreamVersion": "20090101..20190302"
     },
@@ -1683,14 +1683,14 @@
           "bytes": 68168,
           "name": "gtfs-archive-caltrain-2010.zip",
           "sha256": "6b7be4dcbd71f697b274345057a7bc8e669916ca31ae77820bcc3193cadfdde1",
-          "url": "http://gtfs.s3.amazonaws.com/caltrain_20090724_0212.zip"
+          "url": "https://gtfs.s3.amazonaws.com/caltrain_20090724_0212.zip"
         }
       ],
       "homepage": "https://github.com/jehiah/gtfs-data-exchange",
       "id": "gtfs-archive-caltrain-2010",
       "label": "Caltrain GTFS, 2010 (archived: GTFS Data Exchange)",
       "license": "Caltrain (PCJPB) Developer License Agreement (archived copy of the agency's feed: GTFS Data Exchange)",
-      "retrievedAt": "2026-11-25T12:47:51.170Z",
+      "retrievedAt": "2026-11-25T12:58:57.777Z",
       "rowCount": 31,
       "upstreamVersion": "20090302..20190831"
     },
@@ -1701,14 +1701,14 @@
           "bytes": 54141,
           "name": "gtfs-archive-caltrain-2011.zip",
           "sha256": "a53f4abe333b2f056478181243aa09db47788a74c810cf3fc8adac2ac66cae92",
-          "url": "http://gtfs.s3.amazonaws.com/caltrain_20110217_0333.zip"
+          "url": "https://gtfs.s3.amazonaws.com/caltrain_20110217_0333.zip"
         }
       ],
       "homepage": "https://github.com/jehiah/gtfs-data-exchange",
       "id": "gtfs-archive-caltrain-2011",
       "label": "Caltrain GTFS, 2011 (archived: GTFS Data Exchange)",
       "license": "Caltrain (PCJPB) Developer License Agreement (archived copy of the agency's feed: GTFS Data Exchange)",
-      "retrievedAt": "2026-11-25T12:47:51.510Z",
+      "retrievedAt": "2026-11-25T12:58:57.940Z",
       "rowCount": 31,
       "upstreamVersion": "20110101..20160101"
     },
@@ -1719,14 +1719,14 @@
           "bytes": 55330,
           "name": "gtfs-archive-caltrain-2012.zip",
           "sha256": "23d43662a6ae8664695db6ea74587f3b221b80473644adeca7e3d8343391ad9a",
-          "url": "http://gtfs.s3.amazonaws.com/caltrain_20120113_0421.zip"
+          "url": "https://gtfs.s3.amazonaws.com/caltrain_20120113_0421.zip"
         }
       ],
       "homepage": "https://github.com/jehiah/gtfs-data-exchange",
       "id": "gtfs-archive-caltrain-2012",
       "label": "Caltrain GTFS, 2012 (archived: GTFS Data Exchange)",
       "license": "Caltrain (PCJPB) Developer License Agreement (archived copy of the agency's feed: GTFS Data Exchange)",
-      "retrievedAt": "2026-11-25T12:47:51.696Z",
+      "retrievedAt": "2026-11-25T12:58:58.055Z",
       "rowCount": 31,
       "upstreamVersion": "20110701..20160701"
     },
@@ -1737,14 +1737,14 @@
           "bytes": 71105,
           "name": "gtfs-archive-caltrain-2013.zip",
           "sha256": "5043d5fd7def2210d14b1936203d6f0ddb7f57898567ebfafe5ed427819938ba",
-          "url": "http://gtfs.s3.amazonaws.com/caltrain_20120824_0333.zip"
+          "url": "https://gtfs.s3.amazonaws.com/caltrain_20120824_0333.zip"
         }
       ],
       "homepage": "https://github.com/jehiah/gtfs-data-exchange",
       "id": "gtfs-archive-caltrain-2013",
       "label": "Caltrain GTFS, 2013 (archived: GTFS Data Exchange)",
       "license": "Caltrain (PCJPB) Developer License Agreement (archived copy of the agency's feed: GTFS Data Exchange)",
-      "retrievedAt": "2026-11-25T12:47:51.843Z",
+      "retrievedAt": "2026-11-25T12:58:58.162Z",
       "rowCount": 31,
       "upstreamVersion": "20120701..20131001"
     },
@@ -1935,14 +1935,14 @@
           "bytes": 7651156,
           "name": "gtfs-archive-muni-2009.zip",
           "sha256": "1b72621533a9f61a761da5cd01a3c83e37aa6a9118d5ab39786be00ae2e87211",
-          "url": "http://gtfs.s3.amazonaws.com/san-francisco-municipal-transportation-agency_20090401_0353.zip"
+          "url": "https://gtfs.s3.amazonaws.com/san-francisco-municipal-transportation-agency_20090401_0353.zip"
         }
       ],
       "homepage": "https://github.com/jehiah/gtfs-data-exchange",
       "id": "gtfs-archive-muni-2009",
       "label": "SFMTA Muni GTFS, 2009 (archived: GTFS Data Exchange)",
       "license": "SFMTA Transit Data License Agreement (archived copy of the agency's feed: GTFS Data Exchange)",
-      "retrievedAt": "2026-11-25T12:47:36.613Z",
+      "retrievedAt": "2026-11-25T12:58:53.617Z",
       "rowCount": 4389,
       "upstreamVersion": "20090221..20090626"
     },
@@ -1953,14 +1953,14 @@
           "bytes": 10340791,
           "name": "gtfs-archive-muni-2010.zip",
           "sha256": "51627302291060b1be35c8bb7f1d8b1947c5d29ba1bb8928386f58e0d64beb91",
-          "url": "http://gtfs.s3.amazonaws.com/san-francisco-municipal-transportation-agency_20100204_0313.zip"
+          "url": "https://gtfs.s3.amazonaws.com/san-francisco-municipal-transportation-agency_20100204_0313.zip"
         }
       ],
       "homepage": "https://github.com/jehiah/gtfs-data-exchange",
       "id": "gtfs-archive-muni-2010",
       "label": "SFMTA Muni GTFS, 2010 (archived: GTFS Data Exchange)",
       "license": "SFMTA Transit Data License Agreement (archived copy of the agency's feed: GTFS Data Exchange)",
-      "retrievedAt": "2026-11-25T12:47:37.664Z",
+      "retrievedAt": "2026-11-25T12:58:54.729Z",
       "rowCount": 4424,
       "upstreamVersion": "20091205..20100430"
     },
@@ -1971,14 +1971,14 @@
           "bytes": 8729211,
           "name": "gtfs-archive-muni-2011.zip",
           "sha256": "d1328c5a918e455980c18036cd8692f85838ed6a178a2acb1b9856e9dab4bb52",
-          "url": "http://gtfs.s3.amazonaws.com/san-francisco-municipal-transportation-agency_20110420_0243.zip"
+          "url": "https://gtfs.s3.amazonaws.com/san-francisco-municipal-transportation-agency_20110420_0243.zip"
         }
       ],
       "homepage": "https://github.com/jehiah/gtfs-data-exchange",
       "id": "gtfs-archive-muni-2011",
       "label": "SFMTA Muni GTFS, 2011 (archived: GTFS Data Exchange)",
       "license": "SFMTA Transit Data License Agreement (archived copy of the agency's feed: GTFS Data Exchange)",
-      "retrievedAt": "2026-11-25T12:47:38.864Z",
+      "retrievedAt": "2026-11-25T12:58:55.928Z",
       "rowCount": 4452,
       "upstreamVersion": "20110122..20110610"
     },
@@ -1989,14 +1989,14 @@
           "bytes": 8341122,
           "name": "gtfs-archive-muni-2012.zip",
           "sha256": "b4a3b27a65684120b42a3c570ccbe7047a4f845efee82722d1592ec9e0aaa238",
-          "url": "http://gtfs.s3.amazonaws.com/san-francisco-municipal-transportation-agency_20120319_0412.zip"
+          "url": "https://gtfs.s3.amazonaws.com/san-francisco-municipal-transportation-agency_20120319_0412.zip"
         }
       ],
       "homepage": "https://github.com/jehiah/gtfs-data-exchange",
       "id": "gtfs-archive-muni-2012",
       "label": "SFMTA Muni GTFS, 2012 (archived: GTFS Data Exchange)",
       "license": "SFMTA Transit Data License Agreement (archived copy of the agency's feed: GTFS Data Exchange)",
-      "retrievedAt": "2026-11-25T12:47:39.323Z",
+      "retrievedAt": "2026-11-25T12:58:56.365Z",
       "rowCount": 3637,
       "upstreamVersion": "20120303..20120608"
     },
@@ -2007,14 +2007,14 @@
           "bytes": 20599202,
           "name": "gtfs-archive-muni-2013.zip",
           "sha256": "ef30eb17ede141d45e0c7eeaa81015ec2d02279536f38070873bd0f1263f255f",
-          "url": "http://gtfs.s3.amazonaws.com/san-francisco-municipal-transportation-agency_20130324_0307.zip"
+          "url": "https://gtfs.s3.amazonaws.com/san-francisco-municipal-transportation-agency_20130324_0307.zip"
         }
       ],
       "homepage": "https://github.com/jehiah/gtfs-data-exchange",
       "id": "gtfs-archive-muni-2013",
       "label": "SFMTA Muni GTFS, 2013 (archived: GTFS Data Exchange)",
       "license": "SFMTA Transit Data License Agreement (archived copy of the agency's feed: GTFS Data Exchange)",
-      "retrievedAt": "2026-11-25T12:47:39.783Z",
+      "retrievedAt": "2026-11-25T12:58:56.831Z",
       "rowCount": 3631,
       "upstreamVersion": "20130323..20130614"
     },

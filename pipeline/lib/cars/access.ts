@@ -42,6 +42,8 @@ export interface YearAccess {
   /** The year of the feeds used (a year without one holds at the earliest later year). */
   sourceYear: number;
   sources: Partial<Record<OperatorId, number>>;
+  /** The network's reduce warnings (`YearNetwork.warnings`). */
+  warnings: string[];
 }
 
 /**
@@ -58,12 +60,12 @@ export function accessByYear(
 ): YearAccess[] {
   const done = new Map<TransitNetwork, Float64Array>();
   return years.map((year) => {
-    const { network, sourceYear, sources } = db.networkFor(year);
+    const { network, sourceYear, sources, warnings } = db.networkFor(year);
     let access = done.get(network);
     if (!access) {
       access = zoneAccess(buildAccessGrid(network), lotZone, homes, lngLat, zones);
       done.set(network, access);
     }
-    return { year, access: Float64Array.from(access), sourceYear, sources };
+    return { year, access: Float64Array.from(access), sourceYear, sources, warnings };
   });
 }
