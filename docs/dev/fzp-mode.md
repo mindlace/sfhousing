@@ -2,7 +2,7 @@
 
 Developer notes for `src/lib/fzp/`, the shared kernel of the simulation and `/s/<id>`, both `TimelineMode` ([timeline-ui.md](timeline-ui.md)). `/fzp` and `/lesscars` answer 404. The original design is `docs/superpowers/specs/2026-10-16-fzp-mode-design.md`.
 
-**Routing.** The simulation is the game at `/` once its phase is `'runs'`; `/sim` is a 308 to `/` ([game.md](game.md)). It ignores `?seed=` and drops it from the address ([timeline-ui.md](timeline-ui.md)).
+**Routing.** The simulation is the game at `/` once its phase is `'runs'`; `/sim` is a 308 to `/` ([game.md](game.md)). The simulation ignores `?seed=` and drops it from the address ([timeline-ui.md](timeline-ui.md)).
 
 ## What is here
 

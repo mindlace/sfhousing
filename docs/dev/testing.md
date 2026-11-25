@@ -64,7 +64,7 @@ plan }` whose `plan` is the schema-2 default policy). They are committed verbati
 `.prettierignore`, so their bytes stay as stored: never reformat or regenerate them. `sim-doc.spec.ts`
 loads each in `'reconcile'` as schema 3 with default funding; the autosave, storage, shared-page and
 `SimPage` specs and `e2e/sim-share.spec.ts` use them for the upgrade paths ([plan-sharing.md](plan-sharing.md),
-"Policies (`/sim`)").
+"Policies (the simulation)").
 
 ## FakeR2Bucket
 
