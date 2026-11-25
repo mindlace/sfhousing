@@ -1,12 +1,12 @@
 <article>
   <header>
     <h1>Game core: units, limits, the ladder, side goals and the saved game</h1>
-    <p>The pure rules of the incremental loop: the game's state and its parser, units by kind, limits from what is bought, the ladder of deadlines, a run's result and settling, side goals, and every word the game shows.</p>
+    <p>The pure rules of the incremental loop: the game's state and its parser, units by kind, limits from what is bought, the ladder of deadlines, a run's result and settling, side goals, and the words the store and the sync use.</p>
   </header>
 
   <section id="sec-purpose">
     <h2>Purpose</h2>
-    <p>This subsystem holds the rules of the game as plain functions. It has no Svelte, no storage and no worker. Every other unit of the loop reads these rules: the store saves the state they define, the page asks them what runs and what a run paid, and the screens show their words.</p>
+    <p>This subsystem holds the rules of the game as plain functions. It has no Svelte, no storage and no worker. Every other unit of the loop reads these rules: the store saves the state they define, the page asks them what runs and what a run paid, and the screens show what they compute.</p>
     <ul>
       <li><strong>P9</strong> every completed home counts to the goal; only collected homes become units. <code>readRun</code> reads homes from the forecast; <code>settle</code> credits only <code>collected</code>.</li>
       <li><strong>P10</strong> units are amounts by kind, with one kind, <code>home</code>. Every function on units iterates <code>UNIT_KINDS</code>, so a second kind is a change to that list.</li>
@@ -15,13 +15,13 @@
       <li><strong>P15</strong> only <code>v: 2</code> saves are read.</li>
       <li><strong>D4</strong> own pools, the City funding scale and market terms run only in the open game.</li>
       <li><strong>R5</strong> taking the next rung is the player's choice: <code>takeNext</code> is a separate step from <code>settle</code>.</li>
-      <li>Composer calls 2, 4, 5, 8, 9, 10, 11, 16 and 17 are carried by <code>limitsOf</code>, <code>within</code>, <code>ladder</code>, <code>settle</code> and <code>SIDE_GOALS</code>.</li>
+      <li>Composer calls 2, 4, 5, 8, 9, 10, 11, 16, 17, 22 and 25 are carried by <code>limitsOf</code>, <code>within</code>, <code>ladder</code>, <code>settle</code> and <code>SIDE_GOALS</code>.</li>
     </ul>
   </section>
 
   <section id="sec-interfaces">
     <h2>Interfaces</h2>
-    <p>Produced here: G1, G2, G4, G6. Needed: G3 (<code>TreeNode</code>, <code>Grant</code>, <code>NODES</code>) and E2 (<code>TimelineView.waitingMoney</code>). Copied from the design with no change.</p>
+    <p>Produced here: G1, G2, G4, G6. Needed: G3 (<code>TreeNode</code>, <code>Grant</code>, <code>NODES</code>) and E2 (<code>TimelineView.waitingMoney</code>). G6's <code>catalogue/ladder-years.ts</code> and <code>catalogue/tuning.ts</code> are <code>tree-catalogue</code>'s files; this unit imports them. Copied from the design with no change.</p>
     <table id="tbl-interfaces">
       <caption>Interface table</caption>
       <thead>
@@ -100,7 +100,8 @@ export function parseGameSave(json: unknown): GameSave | null;</code></pre>
         <li><code>NEW_GAME</code> is the opening with nothing bought, no units, rung 0 and no runs.</li>
         <li><code>parseGameSave</code> returns null unless <code>v</code> is 2 at both levels (P15).</li>
         <li>The result is rebuilt from the known fields. An unknown field is dropped.</li>
-        <li>A <code>bought</code> entry for a node the catalogue does not have is dropped. A level above the node's last is lowered to it.</li>
+        <li><code>parseGameSave</code> checks the shape only. It keeps a node, a level, a side goal or a rung the catalogue does not have; <code>fitGame</code> (G6) drops those in the browser.</li>
+        <li>The server stores what <code>parseGameSave</code> returns.</li>
         <li>Unit amounts and <code>runs</code> are whole numbers of 0 or more.</li>
         <li><code>plan</code> and <code>policy</code> stay opaque text, as they are today.</li>
       </ul>
@@ -222,6 +223,9 @@ export interface Limits {
 
 export const OPEN_LIMITS: Limits;
 export const BASE_HANDS: Hands;
+export const START_BANDS = 1;
+export const START_STORIES = 4;
+export const START_REACH_M = 402;
 export const FREE_MEASURES: readonly string[];
 
 export function limitsOf(s: GameState, nodes?: readonly TreeNode[]): Limits;
@@ -237,7 +241,10 @@ export function isGiven(p: Policy): boolean;</code></pre>
       </dl>
       <ul>
         <li><code>limitsOf</code> folds the grants of every level bought. The largest <code>stories</code>, <code>reach</code>, <code>bands</code>, <code>radius</code> and <code>linger</code> win.</li>
-        <li>Once the last rung is met, <code>stories</code> is 80, <code>bands</code> 3, <code>reachM</code> 3219, every stop type is in, and <code>custom</code> is true.</li>
+        <li>Once a stop type is bought, <code>bands</code>, <code>stories</code> and <code>reachM</code> are at least <code>START_BANDS</code>, <code>START_STORIES</code> and <code>START_REACH_M</code>.</li>
+        <li><code>BASE_HANDS</code> is a radius of 48 px, a linger of 4,000 ms and no auto. Every Hands step in the catalogue is above it.</li>
+        <li>Once the last rung is met, <code>stories</code> is 80, <code>bands</code> 3, <code>reachM</code> 3219, every stop type is in, <code>custom</code> is true, and <code>presets</code> also holds <code>observed</code>, the preset a custom timing policy carries.</li>
+        <li><code>within</code> does not read a policy's <code>on</code>.</li>
         <li>A permitting policy is within the limits when its preset is in <code>presets</code>, and, unless <code>custom</code>, it has no custom edit and no custom route shares.</li>
         <li>A transit rule is within the limits when its stop types are in <code>stops</code>, it has at most <code>bands</code> bands, no band is taller than <code>stories</code> and none is further than <code>reachM</code>.</li>
         <li>A protection is within the limits once <code>stops</code> is not empty.</li>
@@ -254,10 +261,17 @@ export function isGiven(p: Policy): boolean;</code></pre>
       <pre><code data-lang="ts">// src/lib/game/catalogue/ladder-years.ts
 export const LADDER_YEARS: readonly number[];
 
+// src/lib/game/catalogue/tuning.ts
+import type { Units } from '../state';
+export const RUNG_LUMP: Units;
+export const SIDE_TUNING: Record&lt;string, { target: number; reward: Units }&gt;;
+
 // src/lib/game/ladder.ts
 import type { Goal } from '$lib/goal/goal';
 import type { Day } from '$lib/timelapse/time';
+import type { SideGoal } from './side-goals';
 import type { GameState, Units } from './state';
+import type { TreeNode } from './tree';
 
 export interface Rung {
   deadline: Day;
@@ -265,12 +279,16 @@ export interface Rung {
 }
 
 export const RUNGS: number;
-export const RUNG_LUMP: Units;
 
 export function ladder(asOf: Day): Rung[];
 export function goalAt(asOf: Day, rung: number, amount?: number): Goal;
 export function finished(s: GameState): boolean;
 export function takeNext(s: GameState): GameState;
+export function fitGame(
+  s: GameState,
+  nodes?: readonly TreeNode[],
+  goals?: readonly SideGoal[]
+): GameState;
 
 // src/lib/game/run-result.ts
 import type { TimelineView } from '$lib/sim/world/score/types';
@@ -326,7 +344,8 @@ export const SIDE_GOALS: readonly SideGoal[];
 export const SIDE_SHOWN = 3;
 export function sideShown(s: GameState, goals?: readonly SideGoal[]): SideGoal[];</code></pre>
       <dl>
-        <dt><code>LADDER_YEARS</code></dt><dd>The deadline years after the window's end, latest first. The measurement in <code>tree-catalogue</code> sets them.</dd>
+        <dt><code>LADDER_YEARS</code></dt><dd>The deadline years after the window's end, latest first, at most four. The measurement in <code>tree-catalogue</code> sets them.</dd>
+        <dt><code>RUNG_LUMP</code>, <code>SIDE_TUNING</code></dt><dd>The numbers the balance script tunes: the lump for a rung first met, and each side goal's target and reward by its id.</dd>
         <dt><code>RUNGS</code></dt><dd><code>LADDER_YEARS.length + 1</code>.</dd>
         <dt><code>homes</code></dt><dd>The goal's measure at the deadline's month.</dd>
         <dt><code>reachedOn</code></dt><dd>The day the amount was first met at or before the deadline, or null.</dd>
@@ -337,13 +356,22 @@ export function sideShown(s: GameState, goals?: readonly SideGoal[]): SideGoal[]
       </dl>
       <ul>
         <li>Rung 0's deadline is <code>defaultGoal(asOf).deadline</code>. Rung <em>k</em> is the last day of December of <code>LADDER_YEARS[k - 1]</code>.</li>
+        <li>A rung's deadline is never after the rung before it and never before the dataset date's month.</li>
+        <li>The first ladder year is the largest multiple of five that is at least five years before the window's end year. The last is the first multiple of five at or after the measured year. When more than four five-year steps fit, the first and last are kept with two evenly between.</li>
+        <li>The cheapest node shown at rung 0 costs no more than <code>RUNG_LUMP</code>.</li>
+        <li>A side goal's <code>reward</code> and target are read from <code>SIDE_TUNING</code> by its id.</li>
         <li><code>goalAt</code> is <code>defaultGoal(asOf)</code> with the rung's deadline, and with <code>amount</code> when given.</li>
         <li><code>readRun</code> returns null while the view does not cover the deadline's month.</li>
         <li><code>resultOf</code> lists a side goal when it is shown, not yet met, and its <code>value</code> is at least its <code>target</code>.</li>
         <li><code>settle</code> credits <code>collected</code>, <code>lump</code> and each side reward; records the rung in <code>met</code> when <code>reachedOn</code> is set and the rung is not there; records each side goal; adds 1 to <code>runs</code>; sets <code>last</code>.</li>
         <li><code>settle</code> never removes a met rung (call 8).</li>
+        <li><code>settle</code> pays a lump or a side reward only when it also records it, so a result settled twice pays once.</li>
         <li><code>takeNext</code> moves to the next rung when the rung in play is met and a next one exists. Otherwise it returns the same state.</li>
         <li><code>finished</code> is true once the last rung is in <code>met</code>.</li>
+        <li><code>fitGame</code> drops a <code>bought</code> entry for a node the catalogue does not have and lowers a level above the node's last to it.</li>
+        <li><code>fitGame</code> drops a <code>side</code> entry for an id <code>SIDE_GOALS</code> does not have.</li>
+        <li><code>fitGame</code> lowers a rung at <code>RUNGS</code> or above to <code>RUNGS - 1</code> and drops met rungs at <code>RUNGS</code> or above.</li>
+        <li><code>fitGame</code> returns the same object when nothing is dropped or lowered.</li>
         <li><code>sideShown</code> returns the first <code>SIDE_SHOWN</code> goals whose ring is open and which are not met.</li>
         <li>A side goal's <code>read</code> returns null when the view lacks what it reads.</li>
       </ul>
@@ -358,22 +386,26 @@ export interface SeriesChunk {
   planEffect: PlanRow[];
   money: MoneyRow[] | null;
   tiers: TierUnits[] | null;
-  waiting: number[] | null;
+  waiting?: number[] | null;
 }
 
 export interface TimelineView {
   // every field it has today, and:
-  waitingMoney: number[] | null;
+  waitingMoney?: number[] | null;
 }</code></pre>
       <dl>
-        <dt><code>waiting</code></dt><dd>Per calendar month of the chunk: homes in applications waiting in the plan's funding line at the month's end.</dd>
+        <dt><code>waiting</code></dt><dd>Per calendar month of the chunk: homes in applications waiting in the plan's funding line at the end of the model month that holds the calendar month's last day.</dd>
       </dl>
       <ul>
-        <li>Null exactly when <code>money</code> is null.</li>
-        <li>A row marked gone is not counted.</li>
+        <li>Both fields stay optional. An absent field reads as null.</li>
+        <li>Null or absent exactly when <code>money</code> is null.</li>
+        <li>Homes are an application's gross units.</li>
+        <li>A row marked gone is not counted. A lot that is no longer free is not counted.</li>
         <li>A lot with two applications counts once, by the larger.</li>
+        <li>Two calendar months that end in one model month share a value.</li>
         <li>The value is of the plan's world, never the comparison's.</li>
-        <li>No file under <code>src/lib/sim/scenario</code>, <code>levers</code> or <code>finance</code> changes.</li>
+        <li><code>waitingMoney</code> is null when any chunk of the view lacks <code>waiting</code>.</li>
+        <li>No file under <code>src/lib/sim/finance</code> changes.</li>
       </ul>
     </section>
   </section>
@@ -382,7 +414,7 @@ export interface TimelineView {
     <h2>Global constraints</h2>
     <ul>
       <li>One future: the same policy document always gives the same forecast. No game state reaches the worker except through the policy document.</li>
-      <li>No file the dataset version hashes is changed: <code>pipeline</code>, <code>src/lib/{data,generator,timelapse,scoreboard}</code>, <code>src/lib/plan/{geometry,types}.ts</code>, <code>src/lib/sim/{scenario,levers,finance}</code>. The dataset version stays as it is.</li>
+      <li>No file the dataset version hashes is changed: <code>pipeline</code>, <code>src/lib/config.ts</code>, <code>src/lib/{data,generator,timelapse}</code>, <code>src/lib/plan/{geometry,types}.ts</code>, <code>src/lib/sim/finance</code> (<code>pipeline/lib/version.ts:41</code>). The dataset version stays as it is.</li>
       <li>A policy node acts on a lever the code already has, at a value the code already sources. No node invents a value.</li>
       <li>The painted area, own pools, the City funding scale and market terms are never offered in a game.</li>
       <li>Published plans and policies open and play in full, as today.</li>
@@ -411,12 +443,13 @@ export interface TimelineView {
         <li>It checks <code>id</code> with <code>isValidId</code>, a trimmed name of 1 to <code>SAVE_NAME_MAX</code> code points, a boolean <code>nameIsDefault</code>, a parseable <code>savedAt</code>, and <code>plan</code> and <code>policy</code> as null or text (<code>src/lib/game/saves.ts:96-103</code>).</li>
         <li>It rebuilds the result from the known fields, so unknown fields are dropped (<code>src/lib/game/saves.ts:106</code>).</li>
         <li><code>SAVE_NAME_MAX</code> is 60 and <code>MAX_SAVES</code> is 12 (<code>src/lib/game/saves.ts:28-29</code>).</li>
+        <li><code>saves.ts</code> imports by relative path only (<code>src/lib/game/saves.ts:1-3</code>), and the e2e helper loads it and <code>src/lib/ids/base58.ts</code> by relative path (<code>e2e/helpers/game.ts:3</code>, <code>:6</code>). <code>base58.ts</code> imports only the packages <code>bs58</code> and <code>uuid</code> (<code>src/lib/ids/base58.ts:1-8</code>).</li>
+        <li><code>defaultSaveName</code> names a new game "Game, 4 Mar", a remix "Remix of …" and a conflict "… (this device)", adding " (2)" and on until the name is free (<code>src/lib/game/saves.ts:109-134</code>).</li>
         <li><code>isTime</code> is a string that <code>Date.parse</code> reads as finite (<code>src/lib/game/saves.ts:55-57</code>).</li>
         <li>The open game's progress is level 5 with nothing banked (<code>src/lib/game/store.svelte.ts:211</code>).</li>
         <li><code>isGiven</code> is a string <code>preset</code> on a <code>fund</code>, <code>baseline</code> or <code>terms</code> selector (<code>src/lib/game/allowed.ts:38-43</code>).</li>
         <li><code>playable</code> filters each kind and returns the same document when it drops nothing (<code>src/lib/game/allowed.ts:51-63</code>).</li>
         <li>The game's words live in <code>copy.ts</code>: the sync line, the played time, the full and storage messages (<code>src/lib/game/copy.ts:58-89</code>).</li>
-        <li><code>LevelPanel</code> writes "Saved games", "New game", "Playing", "Rename", "Delete", "Cancel" and "Delete {name}?" inline (<code>src/lib/game/LevelPanel.svelte:210-290</code>).</li>
       </ul>
     </section>
     <section id="sec-found-policy">
@@ -452,9 +485,7 @@ export interface TimelineView {
         <li><code>view.money</code> carries <code>fundedHomes</code> by month and per-pool <code>spent</code>, and is null on a run with no pool (<code>src/lib/sim/scenario/types.ts:349-367</code>, <code>src/lib/sim/world/score/view.ts:68</code>).</li>
         <li><code>spent</code> is cumulative grants paid (<code>docs/dev/finance-score.md:131</code>).</li>
         <li><code>view.tiers</code> is cumulative net new homes by income tier, or null (<code>src/lib/sim/scenario/types.ts:343-347</code>).</li>
-        <li><code>TimelineView</code> has no <code>waitingMoney</code> yet (<code>src/lib/sim/world/score/types.ts:171-186</code>); <code>contracts</code> adds it as optional and <code>money-wait</code> makes it required.</li>
-        <li>The map key groups the six in-progress stages into "Planning review", "Approved", "Permit issued" and "Building" (<code>src/lib/map/key/rows.ts:28-52</code>).</li>
-        <li><code>formatCount</code> groups digits and writes U+2212 for a negative (<code>src/lib/scoreboard/format.ts:13-15</code>); <code>formatShortMonthYear</code> writes "Mar 2031" (<code>src/lib/fzp/format.ts:40-42</code>); <code>formatDollars</code> rounds to thousands (<code>src/lib/fzp/format.ts:73</code>).</li>
+        <li><code>TimelineView</code> has no <code>waitingMoney</code> yet (<code>src/lib/sim/world/score/types.ts:171-186</code>); <code>contracts</code> adds it as optional, and it stays optional.</li>
       </ul>
     </section>
   </section>
@@ -543,17 +574,14 @@ export function total(u: Units): number {
 
     <section id="sec-d-save">
       <h3>The saved game (<code>save-shape.ts</code>)</h3>
-      <p>The parser is written out in full: the checks run in this order, and the first that fails returns null. Two helpers are exported beyond G1, for the store and for tests: <code>parseGameState</code>, which takes the catalogue and the side goals as parameters, and <code>parseRunResult</code>.</p>
+      <p><code>save-shape.ts</code> imports <code>$lib</code> modules as types only, so the e2e helper can load it by relative path. Its value imports are relative and reach no <code>$lib</code> alias: <code>../ids/base58</code>, <code>./saves</code> and <code>./state</code>. As G1 states, <code>parseGameSave</code> checks the shape only; <code>fitGame</code> of G6 (<a href="#sec-d-fit">Fitting a game to the catalogue</a>) drops what the current build no longer has.</p>
+      <p>The parser is written out in full: the checks run in this order, and the first that fails returns null. Two helpers are exported beyond G1: <code>parseGameState</code> and <code>parseRunResult</code>.</p>
       <pre><code data-lang="ts">// src/lib/game/save-shape.ts (beside the G1 types)
-import { isValidId } from '$lib/ids/base58';
 import type { Stage } from '$lib/timelapse/types';
-import { NODES } from './catalogue/nodes';
-import { RUNGS } from './ladder';
+import { isValidId } from '../ids/base58';
 import type { RunResult } from './run-result';
 import { SAVE_NAME_MAX } from './saves';
-import { SIDE_GOALS, type SideGoal } from './side-goals';
-import { UNIT_KINDS, type GameState, type MetRung, type NodeId, type Units } from './state';
-import type { TreeNode } from './tree';
+import { UNIT_KINDS, type GameState, type MetRung, type Units } from './state';
 
 type Plain = Record&lt;string, unknown&gt;;
 const isPlain = (x: unknown): x is Plain =&gt;
@@ -628,11 +656,7 @@ export function parseRunResult(x: unknown): RunResult | null {
   };
 }
 
-export function parseGameState(
-  x: unknown,
-  nodes: readonly TreeNode[] = NODES,
-  goals: readonly SideGoal[] = SIDE_GOALS
-): GameState | null {
+export function parseGameState(x: unknown): GameState | null {
   // 1. A plain object at version 2 (P15).
   if (!isPlain(x) || x.v !== 2) return null;
   const { phase, firstWinAt, rung, runs } = x;
@@ -672,29 +696,16 @@ export function parseGameState(
   if (phase === 'opening' &amp;&amp; (runs !== 0 || rung !== 0 || met.length &gt; 0 || last !== null)) {
     return null;
   }
-  // 12. Catalogue drift: drop unknown nodes, lower levels to the node's last.
-  const byId = new Map(nodes.map((n) =&gt; [n.id, n]));
-  const bought: Record&lt;NodeId, number&gt; = {};
-  for (const [id, level] of Object.entries(x.bought as Record&lt;string, number&gt;)) {
-    const node = byId.get(id);
-    if (node &amp;&amp; node.levels.length &gt; 0) bought[id] = Math.min(level, node.levels.length);
-  }
-  // 13. Side goal drift: drop ids SIDE_GOALS does not have.
-  const known = new Set(goals.map((g) =&gt; g.id));
-  const side: Record&lt;string, string&gt; = {};
-  for (const [id, at] of Object.entries(x.side as Record&lt;string, string&gt;)) {
-    if (known.has(id)) side[id] = at;
-  }
-  // 14. Ladder drift: lower the rung to the last; drop met rungs past it.
+  // 12. Rebuilt from the known fields.
   return {
     v: 2,
     phase,
     firstWinAt,
-    bought,
+    bought: { ...(x.bought as Record&lt;string, number&gt;) },
     units,
-    rung: Math.min(rung, RUNGS - 1),
-    met: met.filter((m) =&gt; m.rung &lt; RUNGS),
-    side,
+    rung,
+    met,
+    side: { ...(x.side as Record&lt;string, string&gt;) },
     runs,
     last
   };
@@ -717,12 +728,12 @@ export function parseGameSave(json: unknown): GameSave | null {
 }</code></pre>
       <ul>
         <li>A field that is missing fails its check: <code>undefined</code> is neither null nor the type asked for.</li>
-        <li>Malformed data returns null for the whole save, as today. Only drift is repaired: a node, a side goal or a rung the current build no longer has (steps 12 to 14).</li>
+        <li>Malformed data returns null for the whole save, as today. Drift (a node, a side goal or a rung the current build no longer has) is not malformed: <code>parseGameSave</code> keeps it and <code>fitGame</code> drops it.</li>
         <li>The result is rebuilt from the known fields, so an unknown field at any level is dropped.</li>
         <li><code>units</code> keeps a kind present with 0. A key that is not a kind must still be a whole number, and is then dropped.</li>
-        <li><code>side</code> entries of a <code>RunResult</code> keep their ids even when <code>SIDE_GOALS</code> no longer has them: the result is a record of what was paid.</li>
+        <li>The <code>side</code> entries of a <code>RunResult</code> keep their ids even when <code>SIDE_GOALS</code> no longer has them: the result is a record of what was paid.</li>
         <li><code>plan</code> and <code>policy</code> are checked as null or text only.</li>
-        <li><code>save-shape.ts</code> imports <code>SAVE_NAME_MAX</code> from <code>saves.ts</code>, which <code>game-save</code> keeps.</li>
+        <li><code>saves.ts</code> (<code>game-save</code>) keeps <code>SAVE_NAME_MAX</code>, imports by relative path only, and takes no value import from <code>save-shape.ts</code> or <code>words.ts</code>, so no module cycle forms.</li>
       </ul>
     </section>
 
@@ -731,9 +742,8 @@ export function parseGameSave(json: unknown): GameSave | null {
       <pre><code data-lang="ts">// src/lib/game/limits.ts (beside the G4 types)
 import { STORIES_MAX } from '$lib/plan/constants';
 import { STOP_TYPES, type StopType } from '$lib/sim/levers/brushes';
-import { DEFAULT_BANDS } from '$lib/sim-page/policy';
 import { PRESETS } from '$lib/sim-page/timing';
-import { BAND_MAX_M, MAX_BANDS, NEW_BAND_STEP_M } from '$lib/sim-page/transit-edit';
+import { BAND_MAX_M, MAX_BANDS } from '$lib/sim-page/transit-edit';
 import type { Policy, PolicyKind, SimPolicy4 } from '$lib/timeline/policy4';
 import { NODES } from './catalogue/nodes';
 import { finished } from './ladder';
@@ -744,12 +754,12 @@ export const BASE_HANDS: Hands = Object.freeze({ radiusPx: 48, lingerMs: 4000, a
 
 export const FREE_MEASURES: readonly string[] = Object.freeze(['state-off', 'federal-credits-off']);
 
-/** Limits once the first stop type is bought: the editor's own defaults. */
+/** The floor once a stop type is bought: the editor's own defaults. */
 export const START_BANDS = 1;
-/** 4: the lowest band of DEFAULT_BANDS (src/lib/sim-page/policy.ts:75-78). */
-export const START_STORIES = Math.min(...DEFAULT_BANDS.map((b) =&gt; b.stories));
-/** 402: NEW_BAND_STEP_M, also DEFAULT_BANDS' inner distance (transit-edit.ts:23). */
-export const START_REACH_M = NEW_BAND_STEP_M;
+/** The lowest band of DEFAULT_BANDS (src/lib/sim-page/policy.ts:75-78). */
+export const START_STORIES = 4;
+/** NEW_BAND_STEP_M and DEFAULT_BANDS' inner distance (src/lib/sim-page/transit-edit.ts:23). */
+export const START_REACH_M = 402;
 
 /** The funding preset ids fundingPresets() writes (funding-presets.ts:289-487). */
 export const FUNDING_PRESET_IDS: readonly string[] = Object.freeze([
@@ -898,7 +908,7 @@ export function isGiven(p: Policy): boolean {
   );
 }</code></pre>
       <dl>
-        <dt><code>START_BANDS</code>, <code>START_STORIES</code>, <code>START_REACH_M</code></dt><dd>One band, 4 stories, 402 m: the limits from the first stop type until a <code>bands</code>, <code>stories</code> or <code>reach</code> grant raises them. 4 is the lowest band of the editor's default rule and 402 m the editor's band step and the default rule's inner distance. G5's first rule is one band at these.</dd>
+        <dt><code>START_BANDS</code>, <code>START_STORIES</code>, <code>START_REACH_M</code></dt><dd>One band, 4 stories, 402 m: the limits from the first stop type until a <code>bands</code>, <code>stories</code> or <code>reach</code> grant raises them. 4 is the lowest band of the editor's default rule and 402 m the editor's band step and the default rule's inner distance. They are literals, as G4 writes them; a test holds them equal to <code>DEFAULT_BANDS</code>' lowest stories and <code>NEW_BAND_STEP_M</code>. <code>tree-catalogue</code> imports them.</dd>
         <dt><code>FUNDING_PRESET_IDS</code></dt><dd>Every funding preset id the code writes, available or not. It fills <code>OPEN_LIMITS.measures</code>.</dd>
       </dl>
       <ul>
@@ -927,11 +937,12 @@ import { dayFromUtc, utcParts } from '$lib/fzp/time';
 import { defaultGoal, type Goal } from '$lib/goal/goal';
 import type { Day } from '$lib/timelapse/time';
 import { LADDER_YEARS } from './catalogue/ladder-years';
-import type { GameState, Units } from './state';
+import { NODES } from './catalogue/nodes';
+import { SIDE_GOALS, type SideGoal } from './side-goals';
+import type { GameState, NodeId } from './state';
+import type { TreeNode } from './tree';
 
 export const RUNGS: number = LADDER_YEARS.length + 1;
-/** A starting value; tree-catalogue's balance script reports against it (see Decisions). */
-export const RUNG_LUMP: Units = Object.freeze({ home: 2000 });
 
 /** The last day of the UTC calendar month holding `day`. */
 function endOfMonth(day: Day): Day {
@@ -966,6 +977,32 @@ export function finished(s: GameState): boolean {
 export function takeNext(s: GameState): GameState {
   const met = s.met.some((m) =&gt; m.rung === s.rung);
   return met &amp;&amp; s.rung + 1 &lt; RUNGS ? { ...s, rung: s.rung + 1 } : s;
+}
+
+/** The state with what this build no longer has dropped; the same object when nothing is. */
+export function fitGame(
+  s: GameState,
+  nodes: readonly TreeNode[] = NODES,
+  goals: readonly SideGoal[] = SIDE_GOALS
+): GameState {
+  const byId = new Map(nodes.map((n) =&gt; [n.id, n]));
+  const bought: Record&lt;NodeId, number&gt; = {};
+  for (const [id, level] of Object.entries(s.bought)) {
+    const node = byId.get(id);
+    if (node &amp;&amp; node.levels.length &gt; 0) bought[id] = Math.min(level, node.levels.length);
+  }
+  const known = new Set(goals.map((g) =&gt; g.id));
+  const side: Record&lt;string, string&gt; = {};
+  for (const [id, at] of Object.entries(s.side)) if (known.has(id)) side[id] = at;
+  const rung = Math.min(s.rung, RUNGS - 1);
+  const met = s.met.filter((m) =&gt; m.rung &lt; RUNGS);
+  const same =
+    rung === s.rung &amp;&amp;
+    met.length === s.met.length &amp;&amp;
+    Object.keys(bought).length === Object.keys(s.bought).length &amp;&amp;
+    Object.entries(bought).every(([id, level]) =&gt; s.bought[id] === level) &amp;&amp;
+    Object.keys(side).length === Object.keys(s.side).length;
+  return same ? s : { ...s, bought, side, rung, met };
 }</code></pre>
       <ul>
         <li>Rung 0's deadline is <code>defaultGoal(asOf).deadline</code>, the last day of the window's last whole calendar month.</li>
@@ -976,7 +1013,20 @@ export function takeNext(s: GameState): GameState {
         <li>A rung's <code>label</code> is <code>formatShortMonthYear(deadline)</code>, such as "Dec 2061" or "Sep 2066".</li>
         <li><code>goalAt</code> throws <code>RangeError</code> for a rung outside 0 to <code>RUNGS - 1</code>.</li>
         <li><code>takeNext</code> and <code>finished</code> read <code>met</code> only; neither looks at the forecast.</li>
+        <li><code>LADDER_YEARS</code> (at most four years) and the rule that picks them are <code>tree-catalogue</code>'s; <code>ladder</code> reads whatever the file holds.</li>
       </ul>
+      <section id="sec-d-fit">
+        <h4>Fitting a game to the catalogue</h4>
+        <p><code>fitGame</code> is G6's: its body is in the <code>ladder.ts</code> block above, with <code>nodes</code> defaulting to <code>NODES</code> and <code>goals</code> to <code>SIDE_GOALS</code>. It applies G6's four rules:</p>
+        <ul>
+          <li>A <code>bought</code> entry for a node the catalogue does not have is dropped. A level above the node's last is lowered to it.</li>
+          <li>A <code>side</code> entry for an id <code>SIDE_GOALS</code> does not have is dropped.</li>
+          <li>A rung at <code>RUNGS</code> or above is lowered to <code>RUNGS - 1</code>; met rungs at <code>RUNGS</code> or above are dropped.</li>
+          <li>Nothing dropped or lowered: the same object is returned.</li>
+          <li><code>units</code>, <code>runs</code>, <code>last</code>, <code>phase</code> and <code>firstWinAt</code> are kept as they are.</li>
+          <li>The browser store (<code>game-save</code>) passes every state it reads through <code>parseGameSave</code> and then <code>fitGame</code>. The server stores what <code>parseGameSave</code> returns.</li>
+        </ul>
+      </section>
     </section>
 
     <section id="sec-d-run">
@@ -986,7 +1036,7 @@ import { utcParts } from '$lib/fzp/time';
 import { readGoal, type Goal } from '$lib/goal/goal';
 import type { TimelineView } from '$lib/sim/world/score/types';
 import type { Day } from '$lib/timelapse/time';
-import { RUNG_LUMP } from './ladder';
+import { RUNG_LUMP } from './catalogue/tuning';
 import { sideShown, type SideInput } from './side-goals';
 import type { GameState } from './state';
 import { credit } from './units';
@@ -1078,39 +1128,60 @@ export function settle(s: GameState, r: RunResult): GameState {
 
     <section id="sec-d-side">
       <h3>Side goals (<code>side-goals.ts</code>)</h3>
-      <p>Eleven goals, in the order <code>sideShown</code> walks them. Each reads one field the page already receives at the deadline's month, or the run's own counts (call 11). A goal reached with nothing in force reads the policy's effect as 0, because the view's twin is then the old zoning, not current law.</p>
+      <p>Eleven goals, in the order <code>sideShown</code> walks them. Each reads one field the page already receives at the deadline's month, or the run's own counts (call 11). A goal's target and reward come from <code>SIDE_TUNING</code> in <code>catalogue/tuning.ts</code> by its id (call 25); its id, label, ring and <code>read</code> are here. A policy goal reads the policy's effect as 0 with nothing in force, because the view's twin is then the old zoning, not current law.</p>
       <table id="tbl-side-goals">
         <caption>The side goals</caption>
         <thead>
-          <tr><th scope="col">Id</th><th scope="col">Label</th><th scope="col">Ring</th><th scope="col">Reads</th><th scope="col">Target</th><th scope="col">Reward</th><th scope="col">Null when</th></tr>
+          <tr><th scope="col">Id</th><th scope="col">Label, for target n</th><th scope="col">Ring</th><th scope="col">Reads</th><th scope="col">Null when</th></tr>
         </thead>
         <tbody>
-          <tr><th scope="row"><code>policy-1000</code></th><td>1,000 homes from your policy</td><td>0</td><td>Policy effect, completed</td><td>1,000</td><td>500</td><td>Month not in view</td></tr>
-          <tr><th scope="row"><code>collect-half</code></th><td>Collect half the homes in a run</td><td>0</td><td>Percent collected</td><td>50</td><td>300</td><td>Nothing dropped</td></tr>
-          <tr><th scope="row"><code>approved-2000</code></th><td>2,000 more homes approved</td><td>0</td><td>Policy effect, approved</td><td>2,000</td><td>400</td><td>Month not in view</td></tr>
-          <tr><th scope="row"><code>collect-10000</code></th><td>Collect 10,000 homes in a run</td><td>0</td><td>Homes collected</td><td>10,000</td><td>500</td><td>Never</td></tr>
-          <tr><th scope="row"><code>policy-10000</code></th><td>10,000 homes from your policy</td><td>1</td><td>Policy effect, completed</td><td>10,000</td><td>1,000</td><td>Month not in view</td></tr>
-          <tr><th scope="row"><code>new-money-100</code></th><td>$100 million of new money granted</td><td>1</td><td>Added pools' grants, in millions</td><td>100</td><td>800</td><td>No money, or month not in view</td></tr>
-          <tr><th scope="row"><code>funded-15000</code></th><td>15,000 homes built with public money</td><td>1</td><td>Funded homes</td><td>15,000 (to measure)</td><td>800</td><td>No money, or month not in view</td></tr>
-          <tr><th scope="row"><code>collect-most</code></th><td>Collect 90% of the homes in a run</td><td>1</td><td>Percent collected</td><td>90</td><td>600</td><td>Nothing dropped</td></tr>
-          <tr><th scope="row"><code>building-10000</code></th><td>10,000 homes being built at once</td><td>1</td><td>Homes in construction</td><td>10,000 (to measure)</td><td>800</td><td>Month not in view</td></tr>
-          <tr><th scope="row"><code>affordable-20000</code></th><td>20,000 affordable homes built</td><td>2</td><td>Affordable tiers</td><td>20,000 (to measure)</td><td>1,200</td><td>No tiers, or month not in view</td></tr>
-          <tr><th scope="row"><code>policy-25000</code></th><td>25,000 homes from your policy</td><td>2</td><td>Policy effect, completed</td><td>25,000</td><td>1,500</td><td>Month not in view</td></tr>
+          <tr><th scope="row"><code>policy-homes-1</code></th><td>n homes from your policy</td><td>0</td><td>Policy effect, completed</td><td>Month not in view</td></tr>
+          <tr><th scope="row"><code>collect-share-1</code></th><td>Collect n% of the homes in a run</td><td>0</td><td>Percent collected</td><td>Nothing dropped</td></tr>
+          <tr><th scope="row"><code>approved-homes</code></th><td>n more homes approved</td><td>0</td><td>Policy effect, approved</td><td>Month not in view</td></tr>
+          <tr><th scope="row"><code>collect-run</code></th><td>Collect n homes in a run</td><td>0</td><td>Homes collected</td><td>Never</td></tr>
+          <tr><th scope="row"><code>policy-homes-2</code></th><td>n homes from your policy</td><td>1</td><td>Policy effect, completed</td><td>Month not in view</td></tr>
+          <tr><th scope="row"><code>new-money</code></th><td>$n million of new money granted</td><td>1</td><td>Added pools' grants, in millions</td><td>No money, or month not in view</td></tr>
+          <tr><th scope="row"><code>funded-homes</code></th><td>n homes built with public money</td><td>1</td><td>Funded homes</td><td>No money, or month not in view</td></tr>
+          <tr><th scope="row"><code>collect-share-2</code></th><td>Collect n% of the homes in a run</td><td>1</td><td>Percent collected</td><td>Nothing dropped</td></tr>
+          <tr><th scope="row"><code>building-homes</code></th><td>n homes being built at once</td><td>1</td><td>Homes in construction</td><td>Month not in view</td></tr>
+          <tr><th scope="row"><code>affordable-homes</code></th><td>n affordable homes built</td><td>2</td><td>Affordable tiers</td><td>No tiers, or month not in view</td></tr>
+          <tr><th scope="row"><code>policy-homes-3</code></th><td>n homes from your policy</td><td>2</td><td>Policy effect, completed</td><td>Month not in view</td></tr>
         </tbody>
       </table>
+      <p>The starting content of <code>SIDE_TUNING</code> and <code>RUNG_LUMP</code>, for <code>tree-catalogue</code> to hold in <code>src/lib/game/catalogue/tuning.ts</code> and its balance script to tune:</p>
+      <pre><code data-lang="ts">// src/lib/game/catalogue/tuning.ts (tree-catalogue's file; starting values)
+export const RUNG_LUMP: Units = { home: 2000 };
+
+export const SIDE_TUNING: Record&lt;string, { target: number; reward: Units }&gt; = {
+  'policy-homes-1': { target: 1000, reward: { home: 500 } },
+  'collect-share-1': { target: 50, reward: { home: 300 } },
+  'approved-homes': { target: 2000, reward: { home: 400 } },
+  'collect-run': { target: 10000, reward: { home: 500 } },
+  'policy-homes-2': { target: 10000, reward: { home: 1000 } },
+  'new-money': { target: 100, reward: { home: 800 } },
+  'funded-homes': { target: 15000, reward: { home: 800 } },
+  'collect-share-2': { target: 90, reward: { home: 600 } },
+  'building-homes': { target: 10000, reward: { home: 800 } },
+  'affordable-homes': { target: 20000, reward: { home: 1200 } },
+  'policy-homes-3': { target: 25000, reward: { home: 1500 } }
+};</code></pre>
       <pre><code data-lang="ts">// src/lib/game/side-goals.ts (beside the G6 types)
+import { formatCount } from '$lib/scoreboard/format';
 import type { TimelineView } from '$lib/sim/world/score/types';
-import type { GameState } from './state';
+import { SIDE_TUNING } from './catalogue/tuning';
+import type { GameState, Units } from './state';
 import { total } from './units';
 
 type Read = SideGoal['read'];
+type Tuning = Readonly&lt;Record&lt;string, { target: number; reward: Units }&gt;&gt;;
 
 const inView = (v: TimelineView, i: number): boolean =&gt;
   Number.isInteger(i) &amp;&amp; i &gt;= 0 &amp;&amp; i &lt;= v.filledThrough;
 
 /** The plan less current law, 0 with nothing in force (compare 'preFzp'). */
 const effect =
-  (field: 'completedNetNew' | 'entitledNew', target: number): Read =&gt;
+  (field: 'completedNetNew' | 'entitledNew') =&gt;
+  (target: number): Read =&gt;
   ({ view, index }) =&gt; {
     if (!inView(view, index)) return null;
     const row = view.planEffect[index];
@@ -1133,12 +1204,12 @@ const collected =
 
 /** Grants paid from pools the player added (ids begin 'u-'), whole millions. */
 const newMoney =
-  (millions: number): Read =&gt;
+  (target: number): Read =&gt;
   ({ view, index }) =&gt; {
     if (view.money === null || !inView(view, index)) return null;
     let spent = 0;
     for (const p of view.money.pools) if (p.id.startsWith('u-')) spent += p.spent[index] ?? 0;
-    return { value: Math.floor(spent / 1_000_000), target: millions };
+    return { value: Math.floor(spent / 1_000_000), target };
   };
 
 const funded =
@@ -1167,238 +1238,76 @@ const affordable =
     return { value: t.veryLow + t.low + t.moderate + t.unrecorded, target };
   };
 
-const goal = (
-  id: string,
-  label: string,
-  ring: number,
-  home: number,
-  read: Read
-): SideGoal =&gt; Object.freeze({ id, label, ring, reward: Object.freeze({ home }), read });
+interface Def {
+  id: string;
+  ring: number;
+  label(n: string): string;
+  read(target: number): Read;
+}
 
-export const SIDE_GOALS: readonly SideGoal[] = Object.freeze([
-  goal('policy-1000', '1,000 homes from your policy', 0, 500, effect('completedNetNew', 1000)),
-  goal('collect-half', 'Collect half the homes in a run', 0, 300, share(50)),
-  goal('approved-2000', '2,000 more homes approved', 0, 400, effect('entitledNew', 2000)),
-  goal('collect-10000', 'Collect 10,000 homes in a run', 0, 500, collected(10_000)),
-  goal('policy-10000', '10,000 homes from your policy', 1, 1000, effect('completedNetNew', 10_000)),
-  goal('new-money-100', '$100 million of new money granted', 1, 800, newMoney(100)),
-  goal('funded-15000', '15,000 homes built with public money', 1, 800, funded(15_000)),
-  goal('collect-most', 'Collect 90% of the homes in a run', 1, 600, share(90)),
-  goal('building-10000', '10,000 homes being built at once', 1, 800, building(10_000)),
-  goal('affordable-20000', '20,000 affordable homes built', 2, 1200, affordable(20_000)),
-  goal('policy-25000', '25,000 homes from your policy', 2, 1500, effect('completedNetNew', 25_000))
-]);
+const homes = (n: string) =&gt; `${n} homes from your policy`;
+const pct = (n: string) =&gt; `Collect ${n}% of the homes in a run`;
+
+const DEFS: readonly Def[] = [
+  { id: 'policy-homes-1', ring: 0, label: homes, read: effect('completedNetNew') },
+  { id: 'collect-share-1', ring: 0, label: pct, read: share },
+  { id: 'approved-homes', ring: 0, label: (n) =&gt; `${n} more homes approved`, read: effect('entitledNew') },
+  { id: 'collect-run', ring: 0, label: (n) =&gt; `Collect ${n} homes in a run`, read: collected },
+  { id: 'policy-homes-2', ring: 1, label: homes, read: effect('completedNetNew') },
+  { id: 'new-money', ring: 1, label: (n) =&gt; `$${n} million of new money granted`, read: newMoney },
+  { id: 'funded-homes', ring: 1, label: (n) =&gt; `${n} homes built with public money`, read: funded },
+  { id: 'collect-share-2', ring: 1, label: pct, read: share },
+  { id: 'building-homes', ring: 1, label: (n) =&gt; `${n} homes being built at once`, read: building },
+  { id: 'affordable-homes', ring: 2, label: (n) =&gt; `${n} affordable homes built`, read: affordable },
+  { id: 'policy-homes-3', ring: 2, label: homes, read: effect('completedNetNew') }
+];
+
+/** The goals DEFS defines, each with its tuning; a goal with no tuning entry is left out. */
+export function sideGoals(tuning: Tuning): SideGoal[] {
+  return DEFS.flatMap((d) =&gt; {
+    const t = tuning[d.id];
+    if (t === undefined) return [];
+    return [
+      Object.freeze({
+        id: d.id,
+        label: d.label(formatCount(t.target)),
+        ring: d.ring,
+        reward: Object.freeze({ ...t.reward }),
+        read: d.read(t.target)
+      })
+    ];
+  });
+}
+
+export const SIDE_GOALS: readonly SideGoal[] = Object.freeze(sideGoals(SIDE_TUNING));
 
 export const SIDE_SHOWN = 3;
 
 export function sideShown(s: GameState, goals: readonly SideGoal[] = SIDE_GOALS): SideGoal[] {
   return goals.filter((g) =&gt; g.ring &lt;= s.rung &amp;&amp; !Object.hasOwn(s.side, g.id)).slice(0, SIDE_SHOWN);
 }</code></pre>
+      <dl>
+        <dt><code>sideGoals</code></dt><dd>Exported beyond G6, so tests build the goals from a tuning table of their own.</dd>
+      </dl>
       <ul>
         <li>A goal is met when its <code>value</code> is at least its <code>target</code>. A goal whose read is null is not met that run.</li>
-        <li>Ids are unique and stable: a saved game keys <code>side</code> by them.</li>
+        <li>A label carries its target, written by <code>formatCount</code>, so a tuned target never disagrees with its label.</li>
+        <li>Ids carry no number and do not change when a target is tuned: a saved game keys <code>side</code> by them.</li>
+        <li>A goal with no entry in <code>SIDE_TUNING</code> is not offered. A tuning entry with no goal is ignored.</li>
         <li>A ring at or past <code>RUNGS</code> is never open; such a goal is never shown.</li>
-        <li>Three targets are marked "to measure": funded homes, homes in construction and affordable homes have a value under current law that the code does not record. The measurement is the balance script of <code>tree-catalogue</code>, which plays current law: it reports each side goal's <code>read</code> under current law at each rung's deadline on the production dataset. A target at or below current law's value at the deadline of the goal's ring is raised to 1.25 times that value, rounded up to the next 1,000. Until the report, the values above stand.</li>
-        <li>The rewards are starting values on the same scale as <code>RUNG_LUMP</code>. The same report shows units per run; the pacing targets of the source model set them.</li>
+        <li>Funded homes, homes in construction and affordable homes are above 0 under current law, and the code records no baseline for them. The balance script of <code>tree-catalogue</code>, which plays current law, sets those three targets above current law's value at the deadline of the goal's ring.</li>
         <li>Public money per added home is not a side goal: lower is better there, and a side goal is met by reaching a target from below.</li>
       </ul>
     </section>
 
     <section id="sec-d-words">
-      <h3>The game's words (<code>words.ts</code>)</h3>
-      <p>Every string the game shows that is not a node's own text (<code>label</code>, <code>line</code>, <code>step</code>, <code>source</code>) or a side goal's label. It replaces <code>copy.ts</code>, which <code>game-save</code> deletes; the sync line, the played time and the two save messages move here unchanged. The screens of <code>tally-tree</code>, the run layer of <code>run-play</code> and the page of <code>game-sim</code> import from here and write no game words of their own.</p>
+      <h3>The store's and the sync's words (<code>words.ts</code>)</h3>
+      <p><code>words.ts</code> holds the words the store and the sync use, under the names they have today: <code>syncText</code>, <code>playedText</code>, <code>FULL_TEXT</code>, <code>STORAGE_TEXT</code> and <code>defaultSaveName</code>. It replaces those parts of <code>copy.ts</code> and <code>saves.ts</code>, which <code>game-save</code> deletes or rewrites. Every other word of the game is in its own unit's file (<code>src/lib/game/ui/words.ts</code>, <code>src/lib/game/run/words.ts</code>).</p>
       <pre><code data-lang="ts">// src/lib/game/words.ts
-import { formatDollars, formatShortMonthYear } from '$lib/fzp/format';
-import { STAGE_KEY } from '$lib/map/key/rows';
-import { formatCount } from '$lib/scoreboard/format';
-import type { Day } from '$lib/timelapse/time';
-import { NODES } from './catalogue/nodes';
-import { ladder, RUNGS, type Rung } from './ladder';
-import type { RunResult, RunTake } from './run-result';
 import type { SyncState } from './save-sync.svelte';
-import type { SaveEntry } from './save-shape';
-import { MAX_SAVES, SHORT_MONTHS } from './saves';
-import type { GameState, Units } from './state';
-import type { TreeNode } from './tree';
-import { total } from './units';
+import { MAX_SAVES, SAVE_NAME_MAX, SHORT_MONTHS } from './saves';
 
-const plural = (n: number, one: string, many: string): string =&gt;
-  `${formatCount(n)} ${n === 1 ? one : many}`;
-
-// ---- Units: the header's count, prices ----
-
-/** '12,340 units' | '1 unit'. */
-export function unitsText(u: Units | number): string {
-  return plural(typeof u === 'number' ? u : total(u), 'unit', 'units');
-}
-
-/** '300 more units' | '1 more unit'. */
-export function shortText(short: Units): string {
-  return plural(total(short), 'more unit', 'more units');
-}
-
-// ---- The goal headline (header, pinned) ----
-
-/** '61,400 of 82,069 homes by Dec 2061'; homes null: '82,069 homes by Dec 2061'. */
-export function goalLine(homes: number | null, amount: number, deadline: string): string {
-  const goal = `${formatCount(amount)} homes by ${deadline}`;
-  return homes === null ? goal : `${formatCount(homes)} of ${goal}`;
-}
-
-/** 'Unlocks: Dec 2056 deadline, 3 new levers' | 'Unlocks: Dec 2056 deadline'; null at the last rung. */
-export function unlockLine(
-  s: GameState,
-  asOf: Day,
-  nodes: readonly TreeNode[] = NODES
-): string | null {
-  if (s.rung + 1 &gt;= RUNGS) return null;
-  const next = ladder(asOf)[s.rung + 1];
-  const n = nodes.filter((node) =&gt; node.ring === s.rung + 1).length;
-  const levers = n === 0 ? '' : `, ${plural(n, 'new lever', 'new levers')}`;
-  return `Unlocks: ${next.label} deadline${levers}`;
-}
-
-/** The opening's unlock line. */
-export const ROOM_UNLOCK = 'Unlocks: the first run';
-export const GOAL_MET = 'Goal met';
-
-// ---- Side goals (behind the headline) ----
-
-export const SIDE_TITLE = 'Side goals';
-export const SIDE_MET = 'Met';
-
-/** '430 of 1,000'; the value shown is held between 0 and the target. */
-export function sideProgress(value: number, target: number): string {
-  return `${formatCount(Math.max(0, Math.min(value, target)))} of ${formatCount(target)}`;
-}
-
-/** '+500 units'. */
-export const sideReward = (reward: Units): string =&gt; `+${unitsText(reward)}`;
-
-// ---- The opening card ----
-
-/** 'Room for 82,069 homes'. */
-export const openingTitle = (amount: number): string =&gt; `Room for ${formatCount(amount)} homes`;
-export const OPENING_LINE = 'Now run the forecast and collect homes as they are built.';
-export const START = 'Start';
-
-// ---- The run ----
-
-export const RUN = 'Run';
-/** Run while the forecast for it is not ready (U1 `busy`). */
-export const RUN_BUSY = 'Getting ready';
-
-// ---- The tally ----
-
-/** 'Run 4'. */
-export const tallyTitle = (runs: number): string =&gt; `Run ${formatCount(runs)}`;
-/** 'Homes by Dec 2061'. */
-export const homesLabel = (deadline: string): string =&gt; `Homes by ${deadline}`;
-/** '71,203 of 82,069'. */
-export const homesValue = (r: RunResult): string =&gt;
-  `${formatCount(r.homes)} of ${formatCount(r.amount)}`;
-
-/**
- * '+3,100 since the last run' | '−200 since the last run' | 'Same as the last run'; null when
- * there is no earlier result for the same rung and amount.
- */
-export function changeText(r: RunResult, before: RunResult | null): string | null {
-  if (before === null || before.rung !== r.rung || before.amount !== r.amount) return null;
-  const d = r.homes - before.homes;
-  if (d === 0) return 'Same as the last run';
-  return `${d &gt; 0 ? '+' : ''}${formatCount(d)} since the last run`;
-}
-
-/** 'Goal met in Mar 2058' | '1,200 homes short'. */
-export function reachedText(r: RunResult): string {
-  return r.reachedOn !== null
-    ? `Goal met in ${formatShortMonthYear(r.reachedOn)}`
-    : `${formatCount(Math.max(0, r.amount - r.homes))} homes short`;
-}
-
-export const COLLECTED_LABEL = 'Collected';
-/** '12,340 of 60,112 homes'. */
-export const collectedValue = (t: RunTake): string =&gt;
-  `${formatCount(total(t.collected))} of ${formatCount(total(t.dropped))} homes`;
-/** '+2,000 units for the goal'. */
-export const lumpText = (lump: Units): string =&gt; `+${unitsText(lump)} for the goal`;
-/** '+500 units: Collect half the homes in a run'. */
-export const sideRewardText = (label: string, reward: Units): string =&gt;
-  `+${unitsText(reward)}: ${label}`;
-
-export const STAGES_TITLE = 'Not built yet';
-/** The map key's four in-progress groups, in its order, with their homes. */
-export function stageRows(stages: RunResult['stages']): { label: string; homes: number }[] {
-  return STAGE_KEY.filter((row) =&gt; row.stages.length &gt; 0).map((row) =&gt; ({
-    label: row.label,
-    homes: row.stages.reduce((sum, s) =&gt; sum + stages[s], 0)
-  }));
-}
-export const WAITING_MONEY = 'Waiting for money';
-export const CONTINUE = 'Continue';
-
-// ---- The tree ----
-
-export const TREE_TITLE = 'Levers';
-export const BUY = 'Buy';
-export const EDIT = 'Edit';
-export const BOUGHT = 'Bought';
-export const SOURCE = 'Source';
-/** '2 of 3'; null for a node of one level. */
-export const levelText = (level: number, levels: number): string | null =&gt;
-  levels &lt;= 1 ? null : `${level} of ${levels}`;
-/** 'Take the next goal: Dec 2056'. */
-export const nextGoalText = (next: Rung): string =&gt; `Take the next goal: ${next.label}`;
-/** The switch on a bought node and its state. */
-export const onText = (on: boolean): string =&gt; (on ? 'On' : 'Off');
-
-// ---- The ending ----
-
-/** '82,069 homes by Dec 2046'. */
-export const endingTitle = (amount: number, deadline: string): string =&gt;
-  `${formatCount(amount)} homes by ${deadline}`;
-/** '12 levers bought' | '1 lever bought'. */
-export const endingLevers = (n: number): string =&gt; plural(n, 'lever bought', 'levers bought');
-/** '$412,000 of public money per added home'; null when none are added. */
-export const endingMoney = (perHome: number | null): string | null =&gt;
-  perHome === null ? null : `${formatDollars(perHome)} of public money per added home`;
-export const ENDING_LIMITS = 'Every limit is lifted.';
-
-// ---- The editors under limits ----
-
-export const LOCKED = 'Buy it in the tree';
-/** 'Up to 8 stories'. */
-export const storiesCap = (n: number): string =&gt; `Up to ${plural(n, 'story', 'stories')}`;
-/** 'Up to 805 m'. */
-export const reachCap = (m: number): string =&gt; `Up to ${formatCount(m)} m`;
-/** 'One band' | 'Up to 2 bands'. */
-export const bandsCap = (n: number): string =&gt; (n === 1 ? 'One band' : `Up to ${n} bands`);
-
-// ---- The game panel ----
-
-export const GAME_TITLE = 'Game';
-export const SAVED_GAMES = 'Saved games';
-export const NEW_GAME_LABEL = 'New game';
-export const PLAYING = 'Playing';
-export const RENAME = 'Rename';
-export const DELETE = 'Delete';
-export const CANCEL = 'Cancel';
-export const NAME = 'Name';
-export const SOUND = 'Sound';
-export const COLLECT_FOR_ME = 'Collect for me';
-/** 'Delete Game, 4 Mar?'. */
-export const deleteAsk = (name: string): string =&gt; `Delete ${name}?`;
-/** Accessible names of a row's buttons. */
-export const renameLabel = (name: string): string =&gt; `Rename ${name}`;
-export const deleteLabel = (name: string): string =&gt; `Delete ${name}`;
-
-/** 'Opening · Today' | 'Goal 2 of 5 · Playing' | 'Goal 3 of 5 · 4 Mar'. */
-export function entryText(entry: SaveEntry, current: boolean, now: Date): string {
-  const where = entry.phase === 'opening' ? 'Opening' : `Goal ${entry.rung + 1} of ${RUNGS}`;
-  return `${where} · ${current ? PLAYING : playedText(entry.savedAt, now)}`;
-}
-
-/** The save sync's state in words; null when saved. Unchanged from copy.ts. */
+/** The save sync's state in words; null when saved. */
 export function syncText(state: SyncState): string | null {
   switch (state) {
     case 'local':
@@ -1416,7 +1325,7 @@ export function syncText(state: SyncState): string | null {
   }
 }
 
-/** 'Today', 'Yesterday', '4 Mar' or '4 Mar 2025', by local calendar date. Unchanged. */
+/** 'Today', 'Yesterday', '4 Mar' or '4 Mar 2025', by local calendar date. */
 export function playedText(savedAt: string, now: Date): string {
   const d = new Date(savedAt);
   const same = (a: Date, b: Date) =&gt;
@@ -1432,32 +1341,32 @@ export function playedText(savedAt: string, now: Date): string {
 export const FULL_TEXT = `${MAX_SAVES} saved games. Delete one first.`;
 export const STORAGE_TEXT = 'This browser refused to save.';
 
-// ---- Status announcements (one polite live region) ----
+export type DefaultFrom = { kind: 'new'; at: Date } | { kind: 'conflict'; name: string };
 
-/** 'Run to Dec 2061.' */
-export const runStartSay = (deadline: string): string =&gt; `Run to ${deadline}.`;
-/** 'Run over. 12,340 of 60,112 homes collected.' R1's one message at a run's end. */
-export const runEndSay = (t: RunTake): string =&gt; `Run over. ${collectedValue(t)} collected.`;
-/** 'Goal met by Dec 2061.' */
-export const goalMetSay = (deadline: string): string =&gt; `Goal met by ${deadline}.`;
-/** 'Side goal met: Collect half the homes in a run.' */
-export const sideMetSay = (label: string): string =&gt; `Side goal met: ${label}.`;
-/** 'Bought Second band: 2 bands.' */
-export const boughtSay = (label: string, step: string): string =&gt; `Bought ${label}: ${step}.`;
-/** 'Not enough units. 300 more units needed.' */
-export const shortSay = (short: Units): string =&gt; `Not enough units. ${shortText(short)} needed.`;
-/** '3 new levers.' after the next goal is taken; none when 0. */
-export const newLeversSay = (n: number): string | null =&gt;
-  n === 0 ? null : `${plural(n, 'new lever', 'new levers')}.`;
-/** 'Second band on.' | 'Second band off.' */
-export const switchedSay = (label: string, on: boolean): string =&gt;
-  `${label} ${on ? 'on' : 'off'}.`;</code></pre>
+function base(from: DefaultFrom): string {
+  if (from.kind === 'new') return `Game, ${from.at.getDate()} ${SHORT_MONTHS[from.at.getMonth()]}`;
+  return `${from.name} (this device)`;
+}
+
+/** At most `max` code points, trailing white space removed after a cut. */
+function fit(s: string, max: number): string {
+  const cps = Array.from(s);
+  return cps.length &lt;= max ? s : cps.slice(0, max).join('').trimEnd();
+}
+
+/** 'Game, 4 Mar' | 'Game, 4 Mar (2)' | 'Home (this device)': the first name not in `taken`. */
+export function defaultSaveName(from: DefaultFrom, taken: readonly string[]): string {
+  const b = base(from);
+  for (let n = 1; ; n++) {
+    const suffix = n === 1 ? '' : ` (${n})`;
+    const candidate = fit(b, SAVE_NAME_MAX - suffix.length) + suffix;
+    if (!taken.includes(candidate)) return candidate;
+  }
+}</code></pre>
       <ul>
-        <li>Numbers go through <code>formatCount</code>, dates through <code>formatShortMonthYear</code>, dollars through <code>formatDollars</code>, as the rest of the site writes them.</li>
-        <li>A deadline reaches these functions as the rung's <code>label</code>, so every screen names it the same way.</li>
-        <li>No string carries a disclaimer or a second sentence it does not need.</li>
-        <li><code>runEndSay</code> is the only announcement during a run. Nothing announces a single drop.</li>
-        <li><code>stageRows</code> uses the map key's groups and labels, so the tally and the key name stages the same way: "Planning review", "Approved", "Permit issued", "Building".</li>
+        <li>Each text is today's, word for word (<code>src/lib/game/copy.ts:58-89</code>, <code>src/lib/game/saves.ts:109-134</code>).</li>
+        <li><code>DefaultFrom</code> has no remix kind: Remix is gone (P13).</li>
+        <li><code>saves.ts</code> keeps <code>MAX_SAVES</code>, <code>SAVE_NAME_MAX</code> and <code>SHORT_MONTHS</code> and takes no value import from <code>words.ts</code>, so no module cycle forms.</li>
       </ul>
     </section>
   </section>
@@ -1473,24 +1382,24 @@ export const switchedSay = (label: string, on: boolean): string =&gt;
         <tr><th scope="row"><code>src/lib/game/state.ts</code></th><td>Fill <code>NEW_GAME</code></td></tr>
         <tr><th scope="row"><code>src/lib/game/save-shape.ts</code></th><td>Fill <code>parseGameSave</code>; add <code>parseGameState</code>, <code>parseRunResult</code></td></tr>
         <tr><th scope="row"><code>src/lib/game/units.ts</code></th><td>Fill the five functions</td></tr>
-        <tr><th scope="row"><code>src/lib/game/limits.ts</code></th><td>Fill; add <code>START_*</code> and <code>FUNDING_PRESET_IDS</code></td></tr>
-        <tr><th scope="row"><code>src/lib/game/ladder.ts</code></th><td>Fill</td></tr>
+        <tr><th scope="row"><code>src/lib/game/limits.ts</code></th><td>Fill; add <code>FUNDING_PRESET_IDS</code></td></tr>
+        <tr><th scope="row"><code>src/lib/game/ladder.ts</code></th><td>Fill; add <code>fitGame</code></td></tr>
         <tr><th scope="row"><code>src/lib/game/run-result.ts</code></th><td>Fill; add <code>deadlineIndex</code></td></tr>
-        <tr><th scope="row"><code>src/lib/game/side-goals.ts</code></th><td>Fill <code>SIDE_GOALS</code> and <code>sideShown</code></td></tr>
+        <tr><th scope="row"><code>src/lib/game/side-goals.ts</code></th><td>Fill <code>SIDE_GOALS</code> and <code>sideShown</code>; add <code>sideGoals</code></td></tr>
         <tr><th scope="row"><code>src/lib/game/words.ts</code></th><td>Create</td></tr>
-        <tr><th scope="row"><code>src/lib/game/{state,save-shape,units,limits,ladder,run-result,side-goals}.spec.ts</code></th><td>Create</td></tr>
-        <tr><th scope="row"><code>src/lib/game/words.spec.ts</code></th><td>Create (see Decisions)</td></tr>
+        <tr><th scope="row"><code>src/lib/game/{state,save-shape,units,limits,ladder,run-result,side-goals,words}.spec.ts</code></th><td>Fill the stub specs <code>contracts</code> made; create <code>words.spec.ts</code></td></tr>
       </tbody>
     </table>
     <ul>
-      <li>Nothing is deleted. <code>allowed.ts</code>, <code>copy.ts</code>, <code>progress.ts</code> and the other five-level files stay until <code>game-save</code> deletes them; this unit imports none of them except <code>saves.ts</code> (<code>SAVE_NAME_MAX</code>, <code>MAX_SAVES</code>, <code>SHORT_MONTHS</code>) and the type <code>SyncState</code>.</li>
-      <li>The application builds and its tests pass after this unit lands: nothing outside the new files calls them yet.</li>
+      <li>Nothing is deleted. <code>allowed.ts</code>, <code>copy.ts</code> and the other five-level files stay until <code>game-save</code> deletes them; this unit imports none of them except <code>saves.ts</code> (<code>SAVE_NAME_MAX</code>, <code>MAX_SAVES</code>, <code>SHORT_MONTHS</code>) and the type <code>SyncState</code>.</li>
+      <li><code>catalogue/tuning.ts</code>, <code>catalogue/ladder-years.ts</code> and <code>catalogue/nodes.ts</code> are read, never written: they are <code>tree-catalogue</code>'s.</li>
+      <li>The application builds and its tests pass after this unit lands: nothing outside these files calls them yet.</li>
     </ul>
   </section>
 
   <section id="sec-tests">
     <h2>Tests</h2>
-    <p>Every test is a Vitest unit test in the server project, colocated, with no DOM. Each calls <code>expect</code>. A test that needs nodes passes its own fake <code>TreeNode</code> list; a test that needs a view builds a <code>TimelineView</code> literal in the spec file with only the fields read.</p>
+    <p>Every test is a Vitest unit test in the server project, colocated, with no DOM. Each calls <code>expect</code>. A test that needs nodes passes its own fake <code>TreeNode</code> list; a test that needs side goals builds them with <code>sideGoals</code> from the starting tuning table in <a href="#sec-d-side">Side goals</a>, written into the spec; a test that needs a view builds a <code>TimelineView</code> literal with only the fields read. No test depends on what <code>catalogue/</code> holds when it runs.</p>
     <section id="sec-t-units">
       <h3><code>units.spec.ts</code></h3>
       <ul>
@@ -1507,6 +1416,7 @@ export const switchedSay = (label: string, on: boolean): string =&gt;
       <ul>
         <li><code>NEW_GAME</code> equals the value in <a href="#sec-d-state">The new game</a>.</li>
         <li><code>NEW_GAME</code> and its four nested objects are frozen.</li>
+        <li><code>state.ts</code> and <code>save-shape.ts</code> have no value import from a <code>$lib</code> path (a test reads the two files' text).</li>
       </ul>
     </section>
     <section id="sec-t-save">
@@ -1516,9 +1426,7 @@ export const switchedSay = (label: string, on: boolean): string =&gt;
         <li>A save at <code>v: 1</code>, or with <code>state.v</code> other than 2, is null.</li>
         <li>Each check of <code>parseGameSave</code> and of steps 1 to 11 of <code>parseGameState</code> fails alone with a minimal change to a valid save: one case per check.</li>
         <li>A missing field is null; an unknown field is dropped at the top, in the state and in <code>last</code>.</li>
-        <li>A <code>bought</code> id the nodes lack is dropped; a level above the node's last is lowered to it.</li>
-        <li>A <code>side</code> id that <code>SIDE_GOALS</code> lacks is dropped.</li>
-        <li>A rung at <code>RUNGS</code> or above is lowered to <code>RUNGS - 1</code>, and met rungs at <code>RUNGS</code> or above are dropped.</li>
+        <li>An unknown node id, an unknown side goal id and a rung of 99 are kept.</li>
         <li>Units: a negative, fractional or non-number amount is null; a key that is not a kind is dropped; 0 is kept.</li>
         <li><code>met</code> out of order or with a repeated rung is null.</li>
         <li><code>phase: 'runs'</code> with <code>firstWinAt: null</code> is null; <code>phase: 'opening'</code> with runs, a rung, a met rung or a last result is null.</li>
@@ -1529,16 +1437,17 @@ export const switchedSay = (label: string, on: boolean): string =&gt;
       <h3><code>limits.spec.ts</code></h3>
       <ul>
         <li><code>limitsOf(NEW_GAME, nodes)</code> has empty sets, 0 bands, 0 stories, 0 m, <code>custom</code> false, <code>hands</code> equal to <code>BASE_HANDS</code>, <code>open</code> false.</li>
-        <li>One stop type bought gives 1 band, 4 stories, 402 m; <code>START_STORIES</code> is 4 and <code>START_REACH_M</code> 402.</li>
+        <li><code>BASE_HANDS</code> is 48 px, 4,000 ms, no auto.</li>
+        <li>One stop type bought gives 1 band, 4 stories, 402 m. <code>START_STORIES</code> equals the lowest stories of <code>DEFAULT_BANDS</code> and <code>START_REACH_M</code> equals <code>NEW_BAND_STEP_M</code>.</li>
         <li>A stories, reach or bands grant bought before any stop type leaves all three at 0.</li>
         <li>Two levels of one node fold both grants; the largest stories, reach, bands, radius and linger win; an <code>auto</code> grant sets <code>auto</code>.</li>
         <li>A grant above the editor's bounds is held at 80 stories, 3219 m, 3 bands.</li>
         <li>A level bought above a node's last counts as the last; an unknown node id counts as nothing.</li>
-        <li>With the last rung in <code>met</code>: 80, 3, 3219, all four stop types, <code>custom</code> true, <code>observed</code> in <code>presets</code>, and the bought presets and measures unchanged.</li>
+        <li>With the last rung in <code>met</code>: 80, 3, 3219, all four stop types, <code>custom</code> true, <code>observed</code> in <code>presets</code>, and the bought presets and measures otherwise unchanged.</li>
         <li><code>within</code>, one case per row: a painted area is false; a protection is false with no stop type and true with one; a transit rule fails on a stop type not bought, one band too many, one story too tall and one metre too far, and passes at each limit exactly; a transit rule is false with no stop type bought even with an empty list.</li>
         <li><code>within</code> for permitting: false for a preset not bought; true for a bought preset; false with a custom edit or custom shares in any span unless <code>custom</code>; "Custom timing" (preset <code>observed</code>) true only once finished.</li>
         <li><code>within</code> for money: a bought given measure is true; <code>state-off</code> is false with no measure bought and true with one; a fund with a null preset, the City funding scale and market terms are false.</li>
-        <li><code>within</code> is false for a selector that does not belong to the kind; with <code>OPEN_LIMITS</code> it is true for every case above.</li>
+        <li><code>within</code> gives the same answer for a policy on and off; it is false for a selector that does not belong to the kind; with <code>OPEN_LIMITS</code> it is true for every case above.</li>
         <li><code>runnable</code> returns the same object when nothing is dropped, and keeps order when it drops.</li>
         <li><code>isGiven</code> matches today's <code>allowed.ts</code> on the same inputs.</li>
       </ul>
@@ -1546,11 +1455,12 @@ export const switchedSay = (label: string, on: boolean): string =&gt;
     <section id="sec-t-ladder">
       <h3><code>ladder.spec.ts</code></h3>
       <ul>
-        <li><code>ladder(asOf)</code> has <code>RUNGS</code> rungs; rung 0 is <code>defaultGoal(asOf).deadline</code>; rung k is <code>dayFromUtc(LADDER_YEARS[k - 1], 12, 31)</code>; labels are "Dec 2060" style.</li>
-        <li>A ladder year whose 31 December is after the window's end takes the rung before's deadline; a year before the dataset date takes the last day of the dataset date's month. (Tested on <code>asOf</code> values that make each happen with <code>LADDER_YEARS</code> as it is.)</li>
+        <li><code>ladder(asOf)</code> has <code>RUNGS</code> rungs; rung 0 is <code>defaultGoal(asOf).deadline</code>; rung k is <code>dayFromUtc(LADDER_YEARS[k - 1], 12, 31)</code>; labels read like "Dec 2060".</li>
+        <li>A ladder year whose 31 December is after the window's end takes the rung before's deadline; a year before the dataset date takes the last day of the dataset date's month. (Tested on <code>asOf</code> values computed from <code>LADDER_YEARS[0]</code> that make each happen.)</li>
         <li><code>goalAt</code> keeps <code>GOAL_BASE</code>'s fields, takes the rung's deadline, takes <code>amount</code> when given, and throws <code>RangeError</code> for -1, <code>RUNGS</code> and 0.5.</li>
         <li><code>finished</code> is false until the last rung is met.</li>
         <li><code>takeNext</code> moves up one only when the rung in play is met and a next exists, and returns the same object otherwise.</li>
+        <li><code>fitGame</code> drops an unknown node, lowers a level above a node's last, drops an unknown side goal id, lowers a rung at <code>RUNGS</code>, drops met rungs at <code>RUNGS</code> and above, and returns the same object when nothing drifts.</li>
       </ul>
     </section>
     <section id="sec-t-run">
@@ -1568,21 +1478,19 @@ export const switchedSay = (label: string, on: boolean): string =&gt;
     <section id="sec-t-side">
       <h3><code>side-goals.spec.ts</code></h3>
       <ul>
-        <li>There are at least eight goals; ids are unique; each reward is a whole number of homes above 0.</li>
-        <li>Each goal reads the value in <a href="#tbl-side-goals">the side goals table</a> from a built view and take, and returns null in each case the table names.</li>
+        <li><code>sideGoals</code> of the starting table gives eleven goals with unique ids, in the table's order, each label carrying its formatted target ("1,000 homes from your policy", "Collect 50% of the homes in a run", "$100 million of new money granted").</li>
+        <li><code>sideGoals</code> leaves out a goal with no tuning entry, ignores an entry with no goal, and takes the reward and target from the table.</li>
+        <li>Each goal reads the value its row of <a href="#tbl-side-goals">the side goals table</a> names from a built view and take, and returns null in each case the row names.</li>
         <li>The policy goals read 0 when <code>compare</code> is <code>'preFzp'</code>.</li>
-        <li><code>new-money-100</code> counts only pools whose id begins <code>u-</code>.</li>
-        <li><code>sideShown</code> returns at most three, in catalogue order, skipping goals met and goals whose ring is above the rung.</li>
+        <li><code>new-money</code> counts only pools whose id begins <code>u-</code>.</li>
+        <li><code>sideShown</code> returns at most three, in order, skipping goals met and goals whose ring is above the rung.</li>
       </ul>
     </section>
     <section id="sec-t-words">
       <h3><code>words.spec.ts</code></h3>
       <ul>
-        <li>Each function returns the exact string in its comment for the example given there, including the singular forms and U+2212 for a fall.</li>
-        <li><code>unlockLine</code> is null at the last rung and counts only nodes of the next ring.</li>
-        <li><code>changeText</code> is null for another rung or amount.</li>
-        <li><code>stageRows</code> sums the stages into the map key's four groups.</li>
-        <li><code>syncText</code>, <code>playedText</code>, <code>FULL_TEXT</code> and <code>STORAGE_TEXT</code> give what <code>copy.ts</code> gives today.</li>
+        <li><code>syncText</code>, <code>playedText</code>, <code>FULL_TEXT</code> and <code>STORAGE_TEXT</code> give what <code>copy.ts</code> gives today, case for case.</li>
+        <li><code>defaultSaveName</code> gives "Game, 4 Mar", then "Game, 4 Mar (2)" when that is taken, "Home (this device)" for a conflict, and cuts a long name so name and suffix fit in 60 code points.</li>
       </ul>
     </section>
   </section>
@@ -1591,37 +1499,29 @@ export const switchedSay = (label: string, on: boolean): string =&gt;
     <h2>Decisions</h2>
     <ul>
       <li><strong><code>NEW_GAME</code> is frozen.</strong> It is shared by every new game; a nested write would leak into the next one.</li>
-      <li><strong>Malformed saves are refused whole; only drift is repaired.</strong> Today's parser refuses whole; drift (nodes, side goals, rungs removed by a catalogue or ladder change) comes from our own data changes and must not cost a player their game.</li>
-      <li><strong>A rung past the ladder is lowered to the last.</strong> <code>LADDER_YEARS</code> is set by a measurement after games exist on staging.</li>
+      <li><strong>Malformed saves are refused whole.</strong> Today's parser refuses whole, and every save comes from our own store.</li>
       <li><strong>The phase must agree with the rest.</strong> <code>'runs'</code> needs a first win (the server makes the account from it, D7) and <code>'opening'</code> has no runs; a save breaking either cannot come from the store.</li>
-      <li><strong>Starting limits are 1 band, 4 stories, 402 m.</strong> 4 is the lowest band of the editor's default rule and 402 m its step and inner distance, as the brief asks.</li>
       <li><strong>Grants are held to the editor's bounds</strong> (3 bands, 80 stories, 3219 m), so no limit allows what the editor cannot make.</li>
-      <li><strong>The ending adds <code>observed</code> to the presets.</strong> G4's permitting rule needs the preset bought, and "Custom timing" is a policy with preset <code>observed</code>; without this, call 4's custom timing could never run.</li>
-      <li><strong><code>within</code> ignores <code>on</code></strong>, as <code>playable</code> does today: the switch is the document's (P12).</li>
       <li><strong>A transit rule needs a stop type bought</strong> even with an empty stop list, so nothing zoning runs before the zoning branch opens.</li>
       <li><strong>A wrong selector for the kind is outside the limits.</strong> The parser forbids it; refusing it costs nothing and keeps <code>within</code> total.</li>
       <li><strong><code>OPEN_LIMITS</code> lists every id</strong> (<code>FUNDING_PRESET_IDS</code>), so a consumer that forgets to test <code>open</code> still shows every measure.</li>
-      <li><strong>Deadlines are clamped into the window.</strong> A rung is never later than the rung before and never before the dataset date's month, so <code>ladder</code> always has <code>RUNGS</code> rungs and <code>readRun</code> always reads a month inside the view.</li>
       <li><strong><code>deadlineIndex</code> is exported</strong> so the page gives side goals the month <code>readRun</code> reads.</li>
-      <li><strong><code>settle</code> pays the lump and a side reward only with the record it makes.</strong> A result settled twice, by a double click or a replayed write, cannot pay twice.</li>
-      <li><strong><code>RUNG_LUMP</code> is <code>{ home: 2000 }</code> and the side rewards run from 300 to 1,500.</strong> Starting values; the balance script of <code>tree-catalogue</code> reports pacing against them.</li>
-      <li><strong>Side goals with no current-law baseline in the code get a measured target.</strong> Funded, building and affordable homes are non-zero under current law; the balance script measures them and the rule in <a href="#sec-d-side">Side goals</a> raises a target that current law already meets.</li>
+      <li><strong>Side goal ids carry no number and labels are built from the target.</strong> The targets are tuned in another file; the label must follow and the saved id must not.</li>
+      <li><strong>A goal with no tuning entry is left out.</strong> The stub tuning is empty until <code>tree-catalogue</code> fills it; leaving the goal out keeps the application building.</li>
       <li><strong>Policy goals read 0 with nothing in force,</strong> because the view's comparison is then the old zoning and its effect is not the player's.</li>
       <li><strong>Public money per added home is not a side goal.</strong> Lower is better, and <code>SideGoal.read</code> is met from below.</li>
-      <li><strong>The tally's stage rows use the map key's four groups and labels,</strong> so the player meets one set of stage names.</li>
-      <li><strong>The currency is called "units"</strong>, as the design names it, with "unit" for one.</li>
-      <li><strong><code>words.spec.ts</code> is written here.</strong> The write set names <code>words.ts</code> without a spec; the words need their exact strings tested.</li>
+      <li><strong>The starting tuning values</strong> are <code>RUNG_LUMP</code> 2,000 and side rewards from 300 to 1,500, on one scale; <code>tree-catalogue</code>'s balance script tunes them.</li>
     </ul>
   </section>
 
   <section id="sec-out-of-scope">
     <h2>Out of scope</h2>
     <ul>
-      <li><code>TreeNode</code>, <code>treeView</code>, <code>buy</code>, <code>NODES</code>, <code>LADDER_YEARS</code>, applying a grant, the balance script and the reach measurement: <code>tree-catalogue</code>.</li>
-      <li>The browser store, the open game's state (last rung met, every node bought), sync, the <code>game_save</code> table, <code>/api/game</code>, and deleting the five-level files: <code>game-save</code>.</li>
+      <li><code>TreeNode</code>, <code>treeView</code>, <code>buy</code>, <code>NODES</code>, <code>LADDER_YEARS</code>, <code>catalogue/tuning.ts</code> and its values, applying a grant, the balance script and the reach measurement: <code>tree-catalogue</code>.</li>
+      <li>The browser store, the open game's state, calling <code>fitGame</code> after <code>parseGameSave</code>, sync, the <code>game_save</code> table, <code>/api/game</code>, and deleting the five-level files: <code>game-save</code>.</li>
       <li>Using <code>runnable</code> for the worker and Publish, hiding what is not within the limits in the editors, building <code>SideInput</code>, calling <code>readRun</code>, <code>resultOf</code> and <code>settle</code> at a run's end: <code>game-sim</code>.</li>
-      <li>The tally, the tree, the headline, the opening card, the game cell and panel: <code>tally-tree</code>.</li>
-      <li>Drops, the ring, <code>RunTake</code>'s counts and sound: <code>run-play</code>.</li>
+      <li>The tally, the tree, the headline, the opening card, the game cell and panel, and their words: <code>tally-tree</code>.</li>
+      <li>Drops, the ring, <code>RunTake</code>'s counts, sound, and the run's words: <code>run-play</code>.</li>
       <li>The <code>waitingMoney</code> series: <code>money-wait</code>.</li>
       <li>The header, the name and the opening on <code>/</code>: <code>game-shell</code>.</li>
       <li>The journey end to end and <code>docs/dev/game.md</code>: <code>closing</code>.</li>

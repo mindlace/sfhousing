@@ -42,9 +42,10 @@ export interface CityDelta {
   flags: Uint8Array;
 }</code></pre>
       <dl>
-        <dt><code>existing</code></dt><dd>Per changed row: the homes on the lot that the project replaces, capped at 65,535.</dd>
+        <dt><code>existing</code></dt><dd>Per changed row: the homes the project takes off the goal's count, capped at 65,535. That is the homes on its lot once it has entered construction after the dataset date, and 0 otherwise.</dd>
       </dl>
       <ul>
+        <li><code>homes - existing</code> of a completed row is that row's effect on the series' <code>completedNet</code>.</li>
         <li>A row whose marker has not begun carries 0, as <code>homes</code> does.</li>
         <li>A marker that differs only in <code>existing</code> is a changed marker and is sent.</li>
         <li><code>validateCityDelta</code> checks the new array's length.</li>
@@ -58,7 +59,7 @@ export interface CityDelta {
     <h2>Global constraints</h2>
     <ul>
       <li>One future: the same policy document always gives the same forecast. No game state reaches the worker except through the policy document.</li>
-      <li>No file the dataset version hashes is changed: <code>pipeline</code>, <code>src/lib/{data,generator,timelapse,scoreboard}</code>, <code>src/lib/plan/{geometry,types}.ts</code>, <code>src/lib/sim/{scenario,levers,finance}</code>. The dataset version stays as it is.</li>
+      <li>No file the dataset version hashes is changed: <code>pipeline</code>, <code>src/lib/config.ts</code>, <code>src/lib/{data,generator,timelapse}</code>, <code>src/lib/plan/{geometry,types}.ts</code>, <code>src/lib/sim/finance</code> (<code>pipeline/lib/version.ts:41</code>). The dataset version stays as it is.</li>
       <li>A policy node acts on a lever the code already has, at a value the code already sources. No node invents a value.</li>
       <li>The painted area, own pools, the City funding scale and market terms are never offered in a game.</li>
       <li>Published plans and policies open and play in full, as today.</li>
@@ -154,12 +155,12 @@ export interface CityDelta {
           <tr><th scope="row"><code>src/lib/map/timelapse/city.spec.ts</code></th><td><code>delta</code>, <code>:26-35</code></td><td>Yes</td></tr>
           <tr><th scope="row"><code>src/lib/timeline/activity.spec.ts</code></th><td><code>delta</code>, <code>:17-26</code></td><td>Yes</td></tr>
           <tr><th scope="row"><code>src/lib/sim/world/city-feed.spec.ts</code></th><td><code>rowsOf</code>, <code>:113-125</code>, reads only</td><td>Yes</td></tr>
-          <tr><th scope="row"><code>src/lib/timeline/TimelineMode.svelte.spec.ts</code></th><td><code>:3598-3616</code></td><td>No: <code>game-sim</code></td></tr>
-          <tr><th scope="row"><code>src/lib/map/SimMap.timeline.svelte.spec.ts</code></th><td><code>:343-357</code></td><td>No: <code>map-run</code></td></tr>
-          <tr><th scope="row"><code>src/lib/map/timeline-controller.spec.ts</code></th><td><code>cityDelta</code>, <code>:1055-1065</code></td><td>No: no owner</td></tr>
-          <tr><th scope="row"><code>src/lib/map/test/synthetic-timeline.ts</code></th><td><code>markers</code> <code>:76-83</code>, <code>mark</code> <code>:114-129</code></td><td>No: no owner</td></tr>
-          <tr><th scope="row"><code>src/lib/sim/world/test/map-stream-run.ts</code></th><td><code>CityMarker</code> and <code>markersOf</code>, <code>:123-150</code>, reads only</td><td>No: no owner</td></tr>
-          <tr><th scope="row"><code>src/lib/sim/world/host.spec.ts</code></th><td>the transfer check, <code>:580</code>, reads only</td><td>No: no owner</td></tr>
+          <tr><th scope="row"><code>src/lib/timeline/TimelineMode.svelte.spec.ts</code></th><td><code>:3598-3616</code></td><td>Yes</td></tr>
+          <tr><th scope="row"><code>src/lib/map/SimMap.timeline.svelte.spec.ts</code></th><td><code>:343-357</code></td><td>Yes</td></tr>
+          <tr><th scope="row"><code>src/lib/map/timeline-controller.spec.ts</code></th><td><code>cityDelta</code>, <code>:1055-1065</code></td><td>Yes</td></tr>
+          <tr><th scope="row"><code>src/lib/map/test/synthetic-timeline.ts</code></th><td><code>markers</code> <code>:76-83</code>, <code>mark</code> <code>:114-129</code></td><td>Yes</td></tr>
+          <tr><th scope="row"><code>src/lib/sim/world/test/map-stream-run.ts</code></th><td><code>CityMarker</code> and <code>markersOf</code>, <code>:123-150</code>, reads only</td><td>Yes</td></tr>
+          <tr><th scope="row"><code>src/lib/sim/world/host.spec.ts</code></th><td>the transfer check, <code>:580</code>, reads only</td><td>Yes</td></tr>
         </tbody>
       </table>
     </section>
@@ -347,24 +348,21 @@ export class ActivityIndex {
         <li><code>src/lib/timeline/activity.spec.ts</code>: <code>M</code> gains <code>existing?: number</code> (default 0) and <code>delta</code> fills it; the new tests.</li>
         <li><code>docs/dev/map-interfaces.md</code>: the feed's section only, as in <a href="#sec-design-doc">The document</a>.</li>
       </ul>
-      <p>Created: none. Deleted: none.</p>
     </section>
 
-    <section id="sec-files-outside">
-      <h3>Needed outside the write set (reported, not taken)</h3>
-      <p>Once <code>existing</code> is required, these build a <code>CityDelta</code> without it and fail the type check, and <code>validateCityDelta</code> throws on them. Each needs one line. This unit does not take them; the change for each is stated so whoever is given it makes the same one.</p>
+    <section id="sec-files-fixtures">
+      <h3>Fixtures and specs that build or read a <code>CityDelta</code></h3>
+      <p>Once <code>existing</code> is required, a delta built without it fails the type check and <code>validateCityDelta</code>. Each change below is one line or one field.</p>
       <ul>
-        <li><code>src/lib/timeline/TimelineMode.svelte.spec.ts:3608</code> (<code>game-sim</code>): add <code>existing: new Uint16Array(k),</code> after <code>homes</code>.</li>
-        <li><code>src/lib/map/SimMap.timeline.svelte.spec.ts:355</code> (<code>map-run</code>): add <code>existing: Uint16Array.from([0, 0]),</code> after <code>homes</code>.</li>
-        <li><code>src/lib/map/timeline-controller.spec.ts:1062</code> (no owner): add <code>existing: new Uint16Array(ms.length),</code> after <code>homes</code>.</li>
-        <li><code>src/lib/map/test/synthetic-timeline.ts:81</code> (no owner): add <code>existing: new Uint16Array(nProjects),</code> after <code>homes</code>. Every synthetic marker carries 0: the synthetic city has no dataset date to test construction against.</li>
-      </ul>
-      <p>Wanted, not needed to build:</p>
-      <ul>
-        <li><code>src/lib/sim/world/test/map-stream-run.ts:123-150</code>: <code>CityMarker</code> and <code>markersOf</code> gain <code>existing</code>, so the rewind specs that compare the page's markers with a snapshot (<code>src/lib/sim/world/map-stream.rewind.spec.ts:448</code>, <code>:467</code>, <code>src/lib/sim/world/city-feed.spec.ts:331</code>, <code>:357</code>) cover the field.</li>
-        <li><code>src/lib/sim/world/host.spec.ts:580</code>: the transfer check lists <code>city.existing</code> too.</li>
+        <li><code>src/lib/timeline/TimelineMode.svelte.spec.ts:3608</code>: add <code>existing: new Uint16Array(k),</code> after <code>homes</code>. No other line of the file.</li>
+        <li><code>src/lib/map/SimMap.timeline.svelte.spec.ts:355</code>: add <code>existing: Uint16Array.from([0, 0]),</code> after <code>homes</code>.</li>
+        <li><code>src/lib/map/timeline-controller.spec.ts:1062</code>: add <code>existing: new Uint16Array(ms.length),</code> after <code>homes</code>.</li>
+        <li><code>src/lib/map/test/synthetic-timeline.ts:81</code>: add <code>existing: new Uint16Array(nProjects),</code> after <code>homes</code>. Every synthetic marker carries 0.</li>
+        <li><code>src/lib/sim/world/test/map-stream-run.ts:123-150</code>: <code>CityMarker</code> gains <code>existing: number</code> and <code>markersOf</code> fills it from <code>d.existing[i]</code>, so the rewind specs that compare the page's markers with a snapshot (<code>src/lib/sim/world/map-stream.rewind.spec.ts:448</code>, <code>:467</code>, <code>src/lib/sim/world/city-feed.spec.ts:331</code>, <code>:357</code>) cover the field.</li>
+        <li><code>src/lib/sim/world/host.spec.ts:580</code>: the transfer check lists <code>city.existing</code> beside the other five arrays.</li>
         <li><code>docs/dev/map-stream.md:33</code>: "(a day, the homes or the flags)" becomes "(a day, the homes, the existing homes or the flags)".</li>
       </ul>
+      <p>Created: none. Deleted: none.</p>
     </section>
   </section>
 
@@ -421,7 +419,6 @@ export class ActivityIndex {
   <section id="sec-decisions">
     <h2>Decisions</h2>
     <ul>
-      <li><strong>The value follows the series, not the lot.</strong> <code>existing</code> is the row's existing homes only once it enters construction after the dataset date, because that is exactly what <code>completedNet</code> takes off; then <code>homes - existing</code> is the row's effect on the goal, as call 2 asks.</li>
       <li><strong>Read through <code>scheduleAt</code>.</strong> <code>Schedule.existingUnits</code> is the column the series reads, and reading it from the schedule keeps the marker on the one read the cells are packed from.</li>
       <li><strong>Layout: <code>EXISTING</code> at 6, <code>FLAGS</code> moves to 7.</strong> The values stay in the wire's field order.</li>
       <li><strong>Cap and clamp as <code>homes</code>.</strong> Same type, same rule, so the two subtract cleanly.</li>

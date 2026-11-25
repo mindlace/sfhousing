@@ -10,6 +10,7 @@
     <ul>
       <li>It produces row E2. It needs no row.</li>
       <li>It carries call 12: the tally's "waiting for money" row is its own build unit. The tally ships without it and gains it when this unit lands.</li>
+      <li>It carries call 23: the count is read at the end of the model month that holds the calendar month's last day, because the line is served once a model month.</li>
       <li>It carries the source model's rule that the tally shows only what the engine measures: the count is read from the line the engine serves, and nothing is estimated.</li>
       <li>It carries the global constraint of one future: the count is read from the world and never feeds back into it, so the forecast is unchanged.</li>
     </ul>
@@ -37,22 +38,26 @@ export interface SeriesChunk {
   planEffect: PlanRow[];
   money: MoneyRow[] | null;
   tiers: TierUnits[] | null;
-  waiting: number[] | null;
+  waiting?: number[] | null;
 }
 
 export interface TimelineView {
   // every field it has today, and:
-  waitingMoney: number[] | null;
+  waitingMoney?: number[] | null;
 }</code></pre>
       <dl>
-        <dt><code>waiting</code></dt><dd>Per calendar month of the chunk: homes in applications waiting in the plan's funding line at the month's end.</dd>
+        <dt><code>waiting</code></dt><dd>Per calendar month of the chunk: homes in applications waiting in the plan's funding line at the end of the model month that holds the calendar month's last day.</dd>
       </dl>
       <ul>
-        <li>Null exactly when <code>money</code> is null.</li>
-        <li>A row marked gone is not counted.</li>
+        <li>Both fields stay optional. An absent field reads as null.</li>
+        <li>Null or absent exactly when <code>money</code> is null.</li>
+        <li>Homes are an application's gross units.</li>
+        <li>A row marked gone is not counted. A lot that is no longer free is not counted.</li>
         <li>A lot with two applications counts once, by the larger.</li>
+        <li>Two calendar months that end in one model month share a value.</li>
         <li>The value is of the plan's world, never the comparison's.</li>
-        <li>No file under <code>src/lib/sim/scenario</code>, <code>levers</code> or <code>finance</code> changes.</li>
+        <li><code>waitingMoney</code> is null when any chunk of the view lacks <code>waiting</code>.</li>
+        <li>No file under <code>src/lib/sim/finance</code> changes.</li>
       </ul>
     </section>
   </section>
@@ -61,7 +66,7 @@ export interface TimelineView {
     <h2>Global constraints</h2>
     <ul>
       <li>One future: the same policy document always gives the same forecast. No game state reaches the worker except through the policy document.</li>
-      <li>No file the dataset version hashes is changed: <code>pipeline</code>, <code>src/lib/{data,generator,timelapse,scoreboard}</code>, <code>src/lib/plan/{geometry,types}.ts</code>, <code>src/lib/sim/{scenario,levers,finance}</code>. The dataset version stays as it is.</li>
+      <li>No file the dataset version hashes is changed: <code>pipeline</code>, <code>src/lib/config.ts</code>, <code>src/lib/{data,generator,timelapse}</code>, <code>src/lib/plan/{geometry,types}.ts</code>, <code>src/lib/sim/finance</code> (<code>pipeline/lib/version.ts:41</code>). The dataset version stays as it is.</li>
       <li>A policy node acts on a lever the code already has, at a value the code already sources. No node invents a value.</li>
       <li>The painted area, own pools, the City funding scale and market terms are never offered in a game.</li>
       <li>Published plans and policies open and play in full, as today.</li>
@@ -159,7 +164,8 @@ export interface TimelineView {
       <ul>
         <li>The funding line gains two fields: <code>waitHomes</code>, the count by model month, and <code>waitThrough</code>, the last model month recorded.</li>
         <li>The funding system's <code>shadow</code> hook (system 7) records the count after <code>stepShadows</code>. Nothing in the step changes the line after it.</li>
-        <li>A new file, <code>src/lib/sim/world/funding/waiting.ts</code>, holds the count, the record and the reader.</li>
+        <li><code>src/lib/sim/world/funding/system.ts</code> holds the count (<code>waitingHomes</code>) and the record (<code>recordWaiting</code>). They need the line index, which imports <code>columns.ts</code>, so they cannot live in <code>columns.ts</code>.</li>
+        <li><code>src/lib/sim/world/funding/columns.ts</code> holds the reader (<code>waitingAt</code>), which reads only the columns. <code>score/series.ts</code> imports it from there, as <code>score/money.ts</code> imports <code>fundOf</code>.</li>
         <li>The series' extras gain <code>waiting(world, from, through)</code>, which maps calendar months to model months with the series' own <code>finalTable</code>.</li>
         <li><code>chunkOf</code> fills <code>waiting</code> from the money feed's world, which is the plan's.</li>
       </ul>
@@ -183,7 +189,7 @@ export interface TimelineView {
 
     <section id="sec-design-count">
       <h3>The counting rule</h3>
-      <pre><code data-lang="ts">// src/lib/sim/world/funding/waiting.ts
+      <pre><code data-lang="ts">// src/lib/sim/world/funding/system.ts
 import type { World } from '../types';
 
 /** Homes in the applications waiting in the line now. 0 for a world without funding columns. */
@@ -192,6 +198,7 @@ export function waitingHomes(world: World): number;
 /** Records `waitingHomes(world)` as model month `month`'s. Called once per funded step, last. */
 export function recordWaiting(world: World, month: number): void;
 
+// src/lib/sim/world/funding/columns.ts
 /** Homes waiting at the end of model month `m`, for 0 &lt;= m &lt;= world.month. */
 export function waitingAt(world: World, m: number): number;</code></pre>
       <p>The count, in code:</p>
@@ -224,7 +231,7 @@ export function waitingAt(world: World, m: number): number;</code></pre>
         <li>A row waiting on a closed pool, or one that will later lapse, is counted while it waits.</li>
         <li>The sum is of whole numbers, so the order of <code>byLot</code> does not change it.</li>
         <li>Imported names used per call (<code>LOT_FREE</code>, <code>lotRow</code>, <code>lineIndex</code>, <code>rowOfSeq</code>) are bound once at module top, as <code>series.ts:18-22</code> does.</li>
-        <li>The file uses no <code>Math</code> function the determinism rule forbids and no <code>**</code>.</li>
+        <li>The code uses no <code>Math</code> function the determinism rule forbids and no <code>**</code>.</li>
       </ul>
     </section>
 
@@ -265,7 +272,7 @@ shadow(ctx) {
     <section id="sec-design-month">
       <h3>Model months and calendar months</h3>
       <p>The value for calendar month i is the line at the end of model month <code>finalTable(statics)[i]</code>: the model month that holds calendar month i's last day, the one whose step makes month i final.</p>
-      <aside data-kind="warning"><strong>Nearest correct quantity</strong> The line is served once a model month, and inside a step joins and awards are not ordered by day. So the line at a calendar month's last day is not observable. The value is the line at the end of the model month holding that day. It differs from the line at the calendar month's end by what happens in the rest of that model month, at most 30 days: applications that join after the last day are counted, and applications awarded after it are not. Two calendar months whose last days fall in one model month (a February between two model month ends) carry the same value.</aside>
+      <aside data-kind="note"><strong>Note</strong> The line is served once a model month, and inside a step joins and awards are not ordered by day (call 23). The value therefore includes what happens in the rest of that model month after the calendar month's last day, up to about 30 days: applications that join after that day are counted, and applications awarded after it are not. Two calendar months whose last days fall in one model month (a February between two model month ends) share a value.</aside>
       <ul>
         <li>Calendar month i with <code>finalTable[i] = 0</code> (a dataset date on its month's last day) reads model month 0, which is 0: nothing waits at the dataset date.</li>
         <li>Every calendar month a chunk carries is final, so <code>finalTable[i] &lt;= stepped &lt;= world.month</code>, and <code>waitingAt</code> never throws for it in the runner.</li>
@@ -290,7 +297,7 @@ return { from, rows, planEffect, money: moneyRows, tiers, waiting };</code></pre
       <ul>
         <li><code>waiting</code> checks its range as <code>rows</code> does (<code>checkRange('waiting', from, through)</code>).</li>
         <li>It reads the series' own <code>table</code> from <code>tablesOf</code>, so it needs no <code>ScoreStatics</code> argument.</li>
-        <li><code>chunkOf</code>'s <code>waiting</code> is null exactly when its <code>money</code> is null: both follow the feed.</li>
+        <li><code>chunkOf</code> always sets the key. Its <code>waiting</code> is null exactly when its <code>money</code> is null: both follow the feed.</li>
         <li><code>chunkOf</code> reads the count from <code>money.world</code> only. The runner's money feed is the plan's world, so the comparison's line is never read.</li>
         <li><code>waiting</code> has <code>through - from + 1</code> entries.</li>
       </ul>
@@ -298,22 +305,14 @@ return { from, rows, planEffect, money: moneyRows, tiers, waiting };</code></pre
 
     <section id="sec-design-view">
       <h3>The view</h3>
-      <pre><code data-lang="ts">// src/lib/sim/world/score/types.ts (required, replacing the optional fields contracts adds)
-export interface SeriesChunk {
-  // as today, and:
-  waiting: number[] | null;
-}
-export interface TimelineView {
-  // as today, and:
-  /** Homes waiting for money at the end of each calendar month; null as below. */
-  waitingMoney: number[] | null;
-}</code></pre>
+      <p>The two fields keep the optional types <code>contracts</code> gives them (E2). This unit gives them values.</p>
       <ul>
-        <li><code>viewOf</code> joins every chunk's <code>waiting</code> in order, as it joins <code>tiers</code>.</li>
+        <li><code>viewOf</code> joins every chunk's <code>waiting</code> in order, as it joins <code>tiers</code>, reading an absent one as null.</li>
+        <li><code>viewOf</code> always sets <code>waitingMoney</code>.</li>
         <li><code>waitingMoney</code> is null when the view's <code>money</code> is null.</li>
-        <li><code>waitingMoney</code> is also null when some chunk's <code>waiting</code> is null or missing. Such a chunk was not made by <code>chunkOf</code> with a feed.</li>
+        <li><code>waitingMoney</code> is also null when any chunk's <code>waiting</code> is null or absent.</li>
         <li>Otherwise <code>waitingMoney</code> has <code>filledThrough + 1</code> entries.</li>
-        <li><code>chunksBefore</code> trims <code>waiting</code> as it trims <code>money</code>: <code>waiting: c.waiting &amp;&amp; c.waiting.slice(0, n)</code>.</li>
+        <li><code>chunksBefore</code> trims <code>waiting</code> as it trims <code>money</code>: <code>waiting: c.waiting ? c.waiting.slice(0, n) : null</code>.</li>
         <li><code>viewOf</code> and <code>chunksBefore</code> still read only the chunks and the plain fields of <code>ScoreStatics</code>, so they run on a posted copy.</li>
       </ul>
     </section>
@@ -348,7 +347,8 @@ export interface TimelineView {
         <li><code>docs/dev/world-score.md</code>, section "Chunks": a bullet for <code>waiting</code>, the plan world's homes waiting at each calendar month's end, read from its world with a money feed, null without one.</li>
         <li>A new section "Homes waiting for money" after "Money": the counting rule, the record at the end of system 7, the model month of a calendar month and the difference that names, and why the count is kept in the world and not the series.</li>
         <li>Section "The view": <code>waitingMoney</code> and its null rule; <code>chunksBefore</code> trims it.</li>
-        <li>Section "Files": <code>src/lib/sim/world/funding/waiting.ts</code> with its three functions.</li>
+        <li>Section "Files": <code>waitingHomes</code> and <code>recordWaiting</code> in <code>funding/system.ts</code>, <code>waitingAt</code> in <code>funding/columns.ts</code>.</li>
+        <li><code>docs/dev/world-funding.md</code>: its list of line columns gains <code>waitHomes</code> and <code>waitThrough</code>, and its account of system 7 says the count is recorded after the compaction.</li>
       </ul>
     </section>
   </section>
@@ -361,11 +361,10 @@ export interface TimelineView {
         <tr><th scope="col">File</th><th scope="col">Change</th></tr>
       </thead>
       <tbody>
-        <tr><th scope="row"><code>src/lib/sim/world/funding/waiting.ts</code></th><td>Create: <code>waitingHomes</code>, <code>recordWaiting</code>, <code>waitingAt</code></td></tr>
-        <tr><th scope="row"><code>src/lib/sim/world/funding/waiting.spec.ts</code></th><td>Create</td></tr>
-        <tr><th scope="row"><code>src/lib/sim/world/funding/columns.ts</code></th><td><code>waitHomes</code> and <code>waitThrough</code> on <code>FundLine</code> and in <code>emptyLine</code></td></tr>
-        <tr><th scope="row"><code>src/lib/sim/world/funding/system.ts</code></th><td>The <code>shadow</code> hook calls <code>recordWaiting</code> after <code>stepShadows</code></td></tr>
-        <tr><th scope="row"><code>src/lib/sim/world/score/types.ts</code></th><td><code>SeriesChunk.waiting</code> and <code>TimelineView.waitingMoney</code> made required</td></tr>
+        <tr><th scope="row"><code>src/lib/sim/world/funding/columns.ts</code></th><td><code>waitHomes</code> and <code>waitThrough</code> on <code>FundLine</code> and in <code>emptyLine</code>; <code>waitingAt</code></td></tr>
+        <tr><th scope="row"><code>src/lib/sim/world/funding/columns.spec.ts</code></th><td>Cases for the two fields and <code>waitingAt</code></td></tr>
+        <tr><th scope="row"><code>src/lib/sim/world/funding/system.ts</code></th><td><code>waitingHomes</code>, <code>recordWaiting</code>; the <code>shadow</code> hook calls <code>recordWaiting</code> after <code>stepShadows</code></td></tr>
+        <tr><th scope="row"><code>src/lib/sim/world/funding/system.spec.ts</code></th><td>Create: cases for the count and the record</td></tr>
         <tr><th scope="row"><code>src/lib/sim/world/score/series.ts</code></th><td><code>Extras.waiting</code></td></tr>
         <tr><th scope="row"><code>src/lib/sim/world/score/chunk.ts</code></th><td><code>waiting</code> in the chunk</td></tr>
         <tr><th scope="row"><code>src/lib/sim/world/score/view.ts</code></th><td><code>waitingMoney</code> in <code>viewOf</code>; <code>chunksBefore</code> trims <code>waiting</code></td></tr>
@@ -373,18 +372,15 @@ export interface TimelineView {
         <tr><th scope="row"><code>src/lib/sim/world/score/view.spec.ts</code></th><td><code>moneyChunk</code> carries <code>waiting</code>; new cases</td></tr>
         <tr><th scope="row"><code>src/lib/sim/world/score/money.spec.ts</code></th><td>New cases on a funded feed</td></tr>
         <tr><th scope="row"><code>docs/dev/world-score.md</code></th><td>As <a href="#sec-design-docs">The developer document</a> says</td></tr>
+        <tr><th scope="row"><code>src/lib/sim/world/host.edit.spec.ts</code></th><td>Its <code>before</code> also copies <code>waiting</code>, trimmed like <code>money</code></td></tr>
+        <tr><th scope="row"><code>src/lib/sim/timeline-client.host.spec.ts</code></th><td>Its <code>before</code> also copies <code>waiting</code>, trimmed like <code>money</code></td></tr>
+        <tr><th scope="row"><code>docs/dev/world-funding.md</code></th><td>As <a href="#sec-design-docs">The developer document</a> says</td></tr>
       </tbody>
     </table>
-    <p>No file is deleted. Nothing under <code>src/lib/sim/scenario</code>, <code>levers</code> or <code>finance</code> changes.</p>
-    <aside data-kind="warning"><strong>Needed outside the write set, not taken</strong> The design's write set names "the reader of the funding line under <code>funding/</code>". The count also needs a writer in the step: <code>columns.ts</code> (two fields) and <code>system.ts</code> (one call), both under <code>funding/</code>. They are listed above and reported to the conductor. Making the two fields required, and keeping the edit tests true, needs one line in each of these files, which this unit does not own:
-      <ul>
-        <li><code>src/lib/sim/world/host.edit.spec.ts</code>: its <code>before</code> adds <code>waiting: c.waiting ? c.waiting.slice(0, k) : null</code>. Without it every view after an edit with money has <code>waitingMoney</code> null and fails <code>toEqual</code> against a fresh open.</li>
-        <li><code>src/lib/sim/timeline-client.host.spec.ts</code>: the same line in its <code>before</code>.</li>
-        <li><code>src/lib/timeline/test/fixtures.ts</code> (<code>game-sim</code>'s): <code>chunk()</code> adds <code>waiting: pools ? ks.map(() =&gt; 0) : null</code>.</li>
-        <li><code>src/lib/timeline/SimDetails.svelte.spec.ts</code> (<code>game-sim</code>'s): <code>viewOfScore</code> adds <code>waitingMoney: null</code>.</li>
-        <li><code>docs/dev/world-funding.md</code>: its list of line columns gains <code>waitHomes</code> and <code>waitThrough</code>.</li>
-      </ul>
-    </aside>
+    <p>No file is created outside <code>funding/system.spec.ts</code> and none is deleted. Nothing under <code>src/lib/sim/finance</code> changes. <code>score/types.ts</code> is not changed: the two fields keep the optional types <code>contracts</code> wrote.</p>
+    <aside data-kind="decision"><strong>Decision</strong> The <code>before</code> helpers of <code>host.edit.spec.ts</code> and <code>timeline-client.host.spec.ts</code> trim chunks at a refill. Each also copies <code>waiting</code>, trimmed like <code>money</code>, so a view after an edit with money equals a fresh open's. Nothing else in those files changes.</aside>
+    <pre><code data-lang="ts">// in before(c, n) of both files, after the tiers line:
+waiting: c.waiting ? c.waiting.slice(0, k) : null</code></pre>
   </section>
 
   <section id="sec-tests">
@@ -392,7 +388,7 @@ export interface TimelineView {
     <p>All unit tests in the <code>server</code> project, colocated. Each calls <code>expect</code>.</p>
 
     <section id="sec-tests-waiting">
-      <h3><code>funding/waiting.spec.ts</code></h3>
+      <h3><code>funding/system.spec.ts</code> and <code>funding/columns.spec.ts</code></h3>
       <ul>
         <li>An empty line counts 0, and a world without funding columns counts 0.</li>
         <li>A row marked <code>gone</code> is not counted, including one marked after the index was built.</li>
@@ -424,9 +420,9 @@ export interface TimelineView {
       <h3>Existing tests that then cover it</h3>
       <ul>
         <li><code>host.spec.ts</code> "the posted series equal a plain loop of the same world": chunks read month by month across the fill equal one chunk read at the end, so the record is permanent and read at the right months.</li>
-        <li><code>host.edit.spec.ts</code>, once its <code>before</code> carries <code>waiting</code>: a view after restores and refills equals a fresh open's, with money.</li>
+        <li><code>host.edit.spec.ts</code>, with <code>before</code> copying <code>waiting</code>: a view after restores and refills equals a fresh open's, with money, <code>waitingMoney</code> included.</li>
         <li>The world-equality tests that compare a clone or a restored world with a reference (<code>runner/ensemble.spec.ts:214</code>, <code>funding/closing.spec.ts:690</code>, <code>:911-924</code>) cover the record's determinism.</li>
-        <li><code>determinism.lint.spec.ts</code> and <code>npm run lint</code> cover the determinism rule for the new file.</li>
+        <li><code>determinism.lint.spec.ts</code> and <code>npm run lint</code> cover the determinism rule for the changed files.</li>
       </ul>
     </section>
   </section>
@@ -436,13 +432,12 @@ export interface TimelineView {
     <ul>
       <li><strong>The count is kept in the world, not as a series field.</strong> The series is fed after the world may have stepped on, so only the step sees the line at its month.</li>
       <li><strong>It is recorded at the end of system 7.</strong> System 7 runs last in every funded month and compacts the line, so the record is the line as the month ends.</li>
-      <li><strong>Calendar month i reads model month <code>finalTable[i]</code>.</strong> It is the model month holding the month's last day and the one that makes month i final; the line within a model month is not observable.</li>
-      <li><strong>Homes are the application's gross <code>units</code>.</strong> The stage counts the tally shows beside it (<code>inProgress</code>) are gross too, and <code>units</code> is the size an award would build.</li>
-      <li><strong>Rows of a lot no longer free are left out by the lazy guard's own test.</strong> The engine already treats them as not waiting; the same test keeps the count and the award rule in step.</li>
+      <li><strong>"No longer free" is the lazy guard's own test.</strong> The same test keeps the count and the award rule in step.</li>
+      <li><strong>The count and the record live in <code>system.ts</code>, the reader in <code>columns.ts</code>.</strong> The count needs the line index, which imports <code>columns.ts</code>; the reader needs only the columns.</li>
       <li><strong>The count walks the line index's <code>byLot</code>.</strong> It groups a lot's rows for free and is current after compaction, so no map is built per step.</li>
       <li><strong>Months with no hook carry the last value.</strong> No hook means the line did not change.</li>
       <li><strong><code>waitingAt</code> on a world without funding columns is 0, not an error.</strong> Its line is empty, and <code>moneyRowsOf</code> treats such a world the same way.</li>
-      <li><strong><code>waitingMoney</code> is null when any chunk lacks <code>waiting</code>.</strong> It mirrors <code>tiers</code>, and a chunk made by hand without it cannot fill a partial series.</li>
+      <li><strong><code>chunkOf</code> and <code>viewOf</code> always set the optional keys.</strong> A result then has one shape, null where there is no value.</li>
       <li><strong>The comparison's world records too.</strong> One funding system steps both worlds and cannot tell them apart; the cost is one walk of a line per month, and the record is never read.</li>
     </ul>
   </section>

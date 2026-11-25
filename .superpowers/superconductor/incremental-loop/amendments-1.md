@@ -54,6 +54,13 @@ re-syncs to it and applies the items under its own name below.
   `syncText`, `playedText`, `FULL_TEXT`, `STORAGE_TEXT` and the default save names, under those
   names. Every other word is in its unit's own file.
 
+- **G1, G6, G7 (after the re-sync round)**: `parseGameSave` checks the shape only and keeps a
+  node, level, side goal or rung the catalogue lacks; `fitGame(s, nodes?, goals?)` in
+  `ladder.ts` (G6, game-core) drops or lowers them; the browser store passes every save it reads
+  through the parser and then `fitGame`; the server stores what the parser returns.
+- **Write sets (after the re-sync round)**: money-wait also owns the `before` helper of
+  `src/lib/sim/world/host.edit.spec.ts` and of `src/lib/sim/timeline-client.host.spec.ts`.
+
 ## By spec
 
 - **contracts**: add `catalogue/tuning.ts` (`RUNG_LUMP = { home: 2000 }`, `SIDE_TUNING = {}`) and

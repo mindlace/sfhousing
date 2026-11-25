@@ -19,7 +19,7 @@
 
   <section id="sec-interfaces">
     <h2>Interfaces</h2>
-    <p>These rows and their sections are copied from the design with no change. This unit produces U1 and needs G1, G2, G3, G4, G6 and G7. The additions U1 needs are in <a href="#sec-design-u1-add">U1 additions</a>; they are proposals, not part of the copied row.</p>
+    <p>These rows and their sections are copied from the design with no change. This unit produces U1 and needs G1, G2, G3, G4, G6 and G7.</p>
     <table id="tbl-interfaces">
       <caption>Interface table</caption>
       <thead>
@@ -98,7 +98,8 @@ export function parseGameSave(json: unknown): GameSave | null;</code></pre>
         <li><code>NEW_GAME</code> is the opening with nothing bought, no units, rung 0 and no runs.</li>
         <li><code>parseGameSave</code> returns null unless <code>v</code> is 2 at both levels (P15).</li>
         <li>The result is rebuilt from the known fields. An unknown field is dropped.</li>
-        <li>A <code>bought</code> entry for a node the catalogue does not have is dropped. A level above the node's last is lowered to it.</li>
+        <li><code>parseGameSave</code> checks the shape only. It keeps a node, a level, a side goal or a rung the catalogue does not have; <code>fitGame</code> (G6) drops those in the browser.</li>
+        <li>The server stores what <code>parseGameSave</code> returns.</li>
         <li>Unit amounts and <code>runs</code> are whole numbers of 0 or more.</li>
         <li><code>plan</code> and <code>policy</code> stay opaque text, as they are today.</li>
       </ul>
@@ -217,6 +218,9 @@ export interface Limits {
 
 export const OPEN_LIMITS: Limits;
 export const BASE_HANDS: Hands;
+export const START_BANDS = 1;
+export const START_STORIES = 4;
+export const START_REACH_M = 402;
 export const FREE_MEASURES: readonly string[];
 
 export function limitsOf(s: GameState, nodes?: readonly TreeNode[]): Limits;
@@ -232,7 +236,10 @@ export function isGiven(p: Policy): boolean;</code></pre>
       </dl>
       <ul>
         <li><code>limitsOf</code> folds the grants of every level bought. The largest <code>stories</code>, <code>reach</code>, <code>bands</code>, <code>radius</code> and <code>linger</code> win.</li>
-        <li>Once the last rung is met, <code>stories</code> is 80, <code>bands</code> 3, <code>reachM</code> 3219, every stop type is in, and <code>custom</code> is true.</li>
+        <li>Once a stop type is bought, <code>bands</code>, <code>stories</code> and <code>reachM</code> are at least <code>START_BANDS</code>, <code>START_STORIES</code> and <code>START_REACH_M</code>.</li>
+        <li><code>BASE_HANDS</code> is a radius of 48 px, a linger of 4,000 ms and no auto. Every Hands step in the catalogue is above it.</li>
+        <li>Once the last rung is met, <code>stories</code> is 80, <code>bands</code> 3, <code>reachM</code> 3219, every stop type is in, <code>custom</code> is true, and <code>presets</code> also holds <code>observed</code>, the preset a custom timing policy carries.</li>
+        <li><code>within</code> does not read a policy's <code>on</code>.</li>
         <li>A permitting policy is within the limits when its preset is in <code>presets</code>, and, unless <code>custom</code>, it has no custom edit and no custom route shares.</li>
         <li>A transit rule is within the limits when its stop types are in <code>stops</code>, it has at most <code>bands</code> bands, no band is taller than <code>stories</code> and none is further than <code>reachM</code>.</li>
         <li>A protection is within the limits once <code>stops</code> is not empty.</li>
@@ -248,10 +255,17 @@ export function isGiven(p: Policy): boolean;</code></pre>
       <pre><code data-lang="ts">// src/lib/game/catalogue/ladder-years.ts
 export const LADDER_YEARS: readonly number[];
 
+// src/lib/game/catalogue/tuning.ts
+import type { Units } from '../state';
+export const RUNG_LUMP: Units;
+export const SIDE_TUNING: Record&lt;string, { target: number; reward: Units }&gt;;
+
 // src/lib/game/ladder.ts
 import type { Goal } from '$lib/goal/goal';
 import type { Day } from '$lib/timelapse/time';
+import type { SideGoal } from './side-goals';
 import type { GameState, Units } from './state';
+import type { TreeNode } from './tree';
 
 export interface Rung {
   deadline: Day;
@@ -259,12 +273,16 @@ export interface Rung {
 }
 
 export const RUNGS: number;
-export const RUNG_LUMP: Units;
 
 export function ladder(asOf: Day): Rung[];
 export function goalAt(asOf: Day, rung: number, amount?: number): Goal;
 export function finished(s: GameState): boolean;
 export function takeNext(s: GameState): GameState;
+export function fitGame(
+  s: GameState,
+  nodes?: readonly TreeNode[],
+  goals?: readonly SideGoal[]
+): GameState;
 
 // src/lib/game/run-result.ts
 import type { TimelineView } from '$lib/sim/world/score/types';
@@ -320,7 +338,8 @@ export const SIDE_GOALS: readonly SideGoal[];
 export const SIDE_SHOWN = 3;
 export function sideShown(s: GameState, goals?: readonly SideGoal[]): SideGoal[];</code></pre>
       <dl>
-        <dt><code>LADDER_YEARS</code></dt><dd>The deadline years after the window's end, latest first. The measurement in <code>tree-catalogue</code> sets them.</dd>
+        <dt><code>LADDER_YEARS</code></dt><dd>The deadline years after the window's end, latest first, at most four. The measurement in <code>tree-catalogue</code> sets them.</dd>
+        <dt><code>RUNG_LUMP</code>, <code>SIDE_TUNING</code></dt><dd>The numbers the balance script tunes: the lump for a rung first met, and each side goal's target and reward by its id.</dd>
         <dt><code>RUNGS</code></dt><dd><code>LADDER_YEARS.length + 1</code>.</dd>
         <dt><code>homes</code></dt><dd>The goal's measure at the deadline's month.</dd>
         <dt><code>reachedOn</code></dt><dd>The day the amount was first met at or before the deadline, or null.</dd>
@@ -331,13 +350,22 @@ export function sideShown(s: GameState, goals?: readonly SideGoal[]): SideGoal[]
       </dl>
       <ul>
         <li>Rung 0's deadline is <code>defaultGoal(asOf).deadline</code>. Rung <em>k</em> is the last day of December of <code>LADDER_YEARS[k - 1]</code>.</li>
+        <li>A rung's deadline is never after the rung before it and never before the dataset date's month.</li>
+        <li>The first ladder year is the largest multiple of five that is at least five years before the window's end year. The last is the first multiple of five at or after the measured year. When more than four five-year steps fit, the first and last are kept with two evenly between.</li>
+        <li>The cheapest node shown at rung 0 costs no more than <code>RUNG_LUMP</code>.</li>
+        <li>A side goal's <code>reward</code> and target are read from <code>SIDE_TUNING</code> by its id.</li>
         <li><code>goalAt</code> is <code>defaultGoal(asOf)</code> with the rung's deadline, and with <code>amount</code> when given.</li>
         <li><code>readRun</code> returns null while the view does not cover the deadline's month.</li>
         <li><code>resultOf</code> lists a side goal when it is shown, not yet met, and its <code>value</code> is at least its <code>target</code>.</li>
         <li><code>settle</code> credits <code>collected</code>, <code>lump</code> and each side reward; records the rung in <code>met</code> when <code>reachedOn</code> is set and the rung is not there; records each side goal; adds 1 to <code>runs</code>; sets <code>last</code>.</li>
         <li><code>settle</code> never removes a met rung (call 8).</li>
+        <li><code>settle</code> pays a lump or a side reward only when it also records it, so a result settled twice pays once.</li>
         <li><code>takeNext</code> moves to the next rung when the rung in play is met and a next one exists. Otherwise it returns the same state.</li>
         <li><code>finished</code> is true once the last rung is in <code>met</code>.</li>
+        <li><code>fitGame</code> drops a <code>bought</code> entry for a node the catalogue does not have and lowers a level above the node's last to it.</li>
+        <li><code>fitGame</code> drops a <code>side</code> entry for an id <code>SIDE_GOALS</code> does not have.</li>
+        <li><code>fitGame</code> lowers a rung at <code>RUNGS</code> or above to <code>RUNGS - 1</code> and drops met rungs at <code>RUNGS</code> or above.</li>
+        <li><code>fitGame</code> returns the same object when nothing is dropped or lowered.</li>
         <li><code>sideShown</code> returns the first <code>SIDE_SHOWN</code> goals whose ring is open and which are not met.</li>
         <li>A side goal's <code>read</code> returns null when the view lacks what it reads.</li>
       </ul>
@@ -376,12 +404,14 @@ export function provideGame(store: GameStore): void;
 export function useGame(): GameStore;</code></pre>
       <ul>
         <li><code>state</code> and <code>limits</code> are reactive. <code>limits</code> is <code>OPEN_LIMITS</code> for the open game, else <code>limitsOf(state)</code>.</li>
+        <li>Every save the store reads, from storage or from the server, passes through <code>parseGameSave</code> and then its state through <code>fitGame</code> (G6).</li>
         <li><code>won</code> sets <code>firstWinAt</code> once and writes.</li>
         <li><code>startRuns</code> sets <code>phase</code> to <code>'runs'</code>. It does nothing while <code>firstWinAt</code> is null.</li>
         <li><code>buy</code> writes the new state when the purchase is good and returns what <code>buy</code> of G3 returns. A refused write returns <code>{ ok: false, reason: 'short' }</code> and changes nothing.</li>
         <li>The store does not hold the policy document. The page applies the grant (G5).</li>
         <li>Each write calls <code>sync.changed(id)</code>, as today.</li>
-        <li>The open game has the last rung met, every node bought and no units; its methods that write do nothing.</li>
+        <li>The open game is in phase <code>'runs'</code> with the last rung met, every node bought and no units; its methods that write do nothing.</li>
+        <li><code>settle</code> does nothing for a result already settled.</li>
       </ul>
       <p><strong>Unchanged:</strong> the saved-games methods, <code>touched</code>, <code>beforeLeave</code>, the storage keys, <code>SaveSync</code>. <strong>Removed:</strong> <code>progress</code>, <code>allowed</code>, <code>offer</code>, <code>setOffer</code>, <code>levelUp</code>, <code>remix</code>, <code>Offer</code>.</p>
     </section>
@@ -390,6 +420,7 @@ export function useGame(): GameStore;</code></pre>
       <pre><code data-lang="ts">// src/lib/game/ui/Tally.svelte
 interface TallyProps {
   result: RunResult;
+  before: number | null;
   deadline: string;
   oncontinue(): void;
 }
@@ -397,14 +428,17 @@ interface TallyProps {
 // src/lib/game/ui/Tree.svelte
 interface TreeProps {
   nodes: NodeView[];
+  on: Record&lt;NodeId, boolean&gt;;
   units: Units;
   busy: boolean;
   next: Rung | null;
-  finished: boolean;
+  ending: { reachedOn: Day; perAddedHome: number | null } | null;
   onbuy(id: NodeId): void;
   onedit(id: NodeId): void;
+  ontoggle(id: NodeId, on: boolean): void;
   onrun(): void;
   onnext(): void;
+  onpublish(): void;
 }
 
 // src/lib/game/ui/GoalHeadline.svelte
@@ -428,6 +462,9 @@ interface GameCellProps {
   inMenu: boolean;
 }</code></pre>
       <dl>
+        <dt><code>before</code></dt><dd>Homes by the deadline in the run before this one on the same rung, or null.</dd>
+        <dt><code>on</code></dt><dd>For each bought node whose grant made a policy: whether that policy is switched on. A node with no entry shows no switch.</dd>
+        <dt><code>ending</code></dt><dd>Set once the last rung is met: the day the goal was reached and public money per added home.</dd>
         <dt><code>busy</code></dt><dd>The forecast for the next run is not ready. Run says so and waits.</dd>
         <dt><code>next</code></dt><dd>The rung on offer, when the rung in play is met.</dd>
         <dt><code>homes</code></dt><dd>Null before the first run of a rung: the headline then shows the goal alone.</dd>
@@ -438,6 +475,11 @@ interface GameCellProps {
         <li><code>Tally</code> holds the account offer that the win card holds today.</li>
         <li><code>Tree</code> shows each node with its label, its step, its price or how far short the balance is, and Edit when bought. One node at a time is open with its line, its source and Buy.</li>
         <li><code>Tree</code> holds Run, and "Take the next goal" while <code>next</code> is set.</li>
+        <li><code>Tree</code> fills the page below the header, as in the wireframe.</li>
+        <li>A bought node with an entry in <code>on</code> carries a switch, which calls <code>ontoggle</code>.</li>
+        <li>With <code>ending</code> set, <code>Tree</code> shows the ending's summary and Publish, which calls <code>onpublish</code>.</li>
+        <li><code>GamePanel</code> loads <code>/</code> afresh after a switch of game, a new game, or the deletion of the game in play.</li>
+        <li>These parts' words are in <code>src/lib/game/ui/words.ts</code>.</li>
         <li><code>GoalHeadline</code> is the header's pinned item: line 1 the homes of the amount by the deadline, line 2 a bar and what it unlocks. Pressing it opens the side goals.</li>
         <li><code>GameCell</code> shows the unit count and opens <code>GamePanel</code>: saved games, New game, the sync line, the sound switch and "Collect for me".</li>
         <li>Every control is reachable by keyboard, has a visible focus ring and a target of at least 24 px.</li>
@@ -451,7 +493,7 @@ interface GameCellProps {
     <h2>Global constraints</h2>
     <ul>
       <li>One future: the same policy document always gives the same forecast. No game state reaches the worker except through the policy document.</li>
-      <li>No file the dataset version hashes is changed: <code>pipeline</code>, <code>src/lib/{data,generator,timelapse,scoreboard}</code>, <code>src/lib/plan/{geometry,types}.ts</code>, <code>src/lib/sim/{scenario,levers,finance}</code>. The dataset version stays as it is.</li>
+      <li>No file the dataset version hashes is changed: <code>pipeline</code>, <code>src/lib/config.ts</code>, <code>src/lib/{data,generator,timelapse}</code>, <code>src/lib/plan/{geometry,types}.ts</code>, <code>src/lib/sim/finance</code> (<code>pipeline/lib/version.ts:41</code>). The dataset version stays as it is.</li>
       <li>A policy node acts on a lever the code already has, at a value the code already sources. No node invents a value.</li>
       <li>The painted area, own pools, the City funding scale and market terms are never offered in a game.</li>
       <li>Published plans and policies open and play in full, as today.</li>
@@ -549,59 +591,10 @@ interface GameCellProps {
 
     <section id="sec-design-delivery">
       <h3>Two parts</h3>
-      <p>The <code>contracts</code> unit stubs G1 to G6 but not the store of G7. The parts that read the store's new fields can only build once <code>game-save</code> has written it.</p>
+      <p>The design's write-set rules place <code>GameCell</code> and <code>GamePanel</code> in the store's lane. The unit is built in two parts.</p>
       <ul>
-        <li><strong>Part A</strong>: <code>Tally</code>, <code>Tree</code>, <code>GoalHeadline</code>, <code>OpeningCard</code>, <code>layout.ts</code>, <code>motion.ts</code>, their hosts and specs. They read the store only through <code>AccountOffer</code> (<code>open</code>, <code>sync</code>), which both the store of today and G7 have. Part A merges on its own after <code>contracts</code> and <code>game-core</code>.</li>
-        <li><strong>Part B</strong>: <code>GameCell</code>, <code>GamePanel</code>, <code>prefs-event.ts</code>, <code>reload.ts</code>, their hosts and specs. They read <code>state</code>, <code>limits</code> and <code>saves</code> of G7. Part B is built on the branch that holds <code>game-save</code>'s store and merges with the <code>game-save</code>, <code>game-sim</code>, <code>game-shell</code> lane.</li>
-        <li>Part B also needs <code>run-play</code>'s <code>src/lib/game/run/prefs.ts</code>.</li>
-      </ul>
-    </section>
-
-    <section id="sec-design-u1-add">
-      <h3>U1 additions</h3>
-      <p>U1 as written lacks four things this unit needs. They are written here as this unit builds them and are reported for the design.</p>
-      <pre><code data-lang="ts">// src/lib/game/ui/Tree.svelte: TreeProps gains
-import type { Snippet } from 'svelte';
-import type { Day } from '$lib/timelapse/time';
-
-interface TreeProps {
-  // the fields of U1, and:
-  /** A bought node's lever: true on, false off. No entry: the node has no switch. */
-  on: Readonly&lt;Record&lt;NodeId, boolean&gt;&gt;;
-  ontoggle(id: NodeId, on: boolean): void;
-  /** Set exactly when `finished`: what the ending names. */
-  ending: { reachedOn: Day; perHome: number | null } | null;
-  /** The ending's Publish control; null shows none. */
-  publish: Snippet | null;
-}
-
-// src/lib/game/ui/Tally.svelte: TallyProps gains
-interface TallyProps {
-  // the fields of U1, and:
-  /** Homes by the same deadline in the run before this one, or null for none. */
-  before: number | null;
-}
-
-// src/lib/game/ui/GamePanel.svelte: no props.
-
-// src/lib/game/ui/prefs-event.ts
-export const GAME_PREFS_EVENT = 'sfh-game-prefs';
-export interface GamePrefs {
-  collectForMe: boolean;
-  muted: boolean;
-}
-export function announcePrefs(p: GamePrefs): void;</code></pre>
-      <dl>
-        <dt><code>on</code></dt><dd><code>game-sim</code> fills it from the policy document. Which nodes carry a switch is its choice: an entry means the node's lever is one policy the document can switch.</dd>
-        <dt><code>ontoggle</code></dt><dd>The switch was pressed; <code>on</code> is the value asked for. <code>game-sim</code> calls <code>setOn</code> on the document.</dd>
-        <dt><code>ending.reachedOn</code></dt><dd>The day the last rung was reached (its <code>MetRung.reachedOn</code>).</dd>
-        <dt><code>ending.perHome</code></dt><dd>Public money per added home in dollars at the last deadline; null when the forecast has no money.</dd>
-        <dt><code>before</code></dt><dd>Null on the first run of a rung, and whenever the run before had another rung or another amount.</dd>
-        <dt><code>announcePrefs</code></dt><dd>Dispatches a window <code>CustomEvent</code> named <code>GAME_PREFS_EVENT</code> with the prefs as <code>detail</code>.</dd>
-      </dl>
-      <ul>
-        <li><code>GamePanel</code> calls <code>announcePrefs</code> after each write to the prefs, so a run in progress follows "Collect for me" at once. <code>game-sim</code> listens for it.</li>
-        <li>A part reads the prefs only through R1's functions; the event carries the values just written.</li>
+        <li><strong>Part A</strong>: <code>Tally</code>, <code>Tree</code>, <code>GoalHeadline</code>, <code>OpeningCard</code>, <code>words.ts</code>, <code>layout.ts</code>, <code>motion.ts</code>, their hosts and specs. They read the store only through <code>AccountOffer</code> (<code>open</code>, <code>sync</code>), which both the store of today and G7 have. Part A merges on its own after <code>contracts</code>.</li>
+        <li><strong>Part B</strong>: <code>GameCell</code>, <code>GamePanel</code>, <code>reload.ts</code>, their hosts and specs. They read <code>state</code>, <code>limits</code> and <code>saves</code> of G7, <code>src/lib/game/words.ts</code> of <code>game-core</code>, and <code>src/lib/game/run/prefs.ts</code> of <code>run-play</code>. Part B is built after <code>game-save</code>, in the <code>game-save</code>, <code>game-sim</code>, <code>game-shell</code> lane.</li>
       </ul>
     </section>
 
@@ -609,8 +602,8 @@ export function announcePrefs(p: GamePrefs): void;</code></pre>
       <h3>Rules every part follows</h3>
       <ul>
         <li>No file under <code>src/lib/game/ui/</code> imports from <code>$lib/sim</code>, <code>$lib/map</code>, <code>$lib/timeline</code> or <code>$lib/sim-page</code>. A spec file may import <code>$lib/map/key/rows</code> to check labels.</li>
-        <li>Every word on screen comes from <code>src/lib/game/words.ts</code> (<a href="#sec-design-words">Words</a>), except the names the props carry (node labels, side goal labels, save names, <code>deadline</code>, <code>unlocks</code>).</li>
-        <li>Counts are written with <code>formatCount</code> (<code>$lib/scoreboard/format</code>) inside the words functions. A month is <code>formatShortMonthYear</code> ("Mar 2049", <code>$lib/fzp/format</code>). Money per home is <code>formatDollarsExact</code>.</li>
+        <li>Every word on screen comes from <code>src/lib/game/ui/words.ts</code> (<a href="#sec-design-words">Words</a>), except the names the props carry (node labels, side goal labels, save names, <code>deadline</code>, <code>unlocks</code>) and the four store and sync words <code>GamePanel</code> imports from <code>src/lib/game/words.ts</code>: <code>syncText</code>, <code>playedText</code>, <code>FULL_TEXT</code>, <code>STORAGE_TEXT</code>.</li>
+        <li>Counts are written with <code>formatCount</code> (<code>$lib/scoreboard/format</code>) inside the words functions. A month is <code>formatShortMonthYear</code> ("Mar 2049", <code>$lib/fzp/format</code>). Money per added home is <code>formatDollarsExact</code>.</li>
         <li>A unit amount shown is <code>total(units)</code> (G2). The mark <code>◆</code> is drawn in an <code>aria-hidden</code> span; the accessible text says "units".</li>
         <li>Buttons are <code>BUTTON</code>, <code>BUTTON_PRIMARY</code> or <code>BUTTON_QUIET</code>. A control that is none of them writes <code>min-h-6 min-w-6</code> and the focus ring classes <code>focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent dark:focus-visible:outline-accent-dark</code> beside its look.</li>
         <li>Cards and pop-overs are <code>SURFACE_POP</code> with position and size beside it.</li>
@@ -623,13 +616,12 @@ export function announcePrefs(p: GamePrefs): void;</code></pre>
 
     <section id="sec-design-words">
       <h3>Words</h3>
-      <p>The keys this unit reads from <code>game-core</code>'s <code>src/lib/game/words.ts</code>, with their exact text. The four marked "moved" are today's functions in <code>copy.ts</code>, unchanged.</p>
-      <pre><code data-lang="ts">// src/lib/game/words.ts (the keys tally-tree reads)
-import type { Day } from '$lib/timelapse/time';
-import type { Branch } from './tree';
-import type { GameState } from './state';
-import type { SyncState } from './save-sync.svelte';
+      <p>Every key of <code>src/lib/game/ui/words.ts</code>, with its exact text.</p>
+      <pre><code data-lang="ts">// src/lib/game/ui/words.ts
 import type { Stage } from '$lib/timelapse/types';
+import type { Day } from '$lib/timelapse/time';
+import type { GameState } from '../state';
+import type { Branch } from '../tree';
 
 // Units
 export const UNIT_MARK = '◆';
@@ -640,7 +632,7 @@ export function shortText(n: number): string; // '298 short'
 // The goal headline
 export function goalLine(homes: number | null, amount: number, deadline: string): string;
 // '61,400 of 82,069 homes by 2055'; homes null: '82,069 homes by 2055'
-export const HOMES_WORD = ' homes'; // the part goalLine hides below sm, leading space included
+export const HOMES_WORD = ' homes'; // the part line 1 hides below sm, leading space included
 export function unlocksText(unlocks: string): string; // 'Unlocks: Height near transit'
 export const GOAL_MET = 'Goal met';
 export const LAST_GOAL = 'Last goal';
@@ -660,7 +652,7 @@ export function homesOfText(homes: number, amount: number): string; // '61,400 o
 export function changeText(d: number): string; // '+3,150' | '−3,150' (U+2212) | 'No change'
 export function collectedText(collected: number, dropped: number): string;
 // '7,300 of 9,100 collected'
-export function lumpText(n: number): string; // '+5,000 for the goal'
+export function lumpText(n: number): string; // '+2,000 for the goal'
 export function sideRewardText(n: number, label: string): string; // '+500 for 1,000 homes added'
 export const SIDE_GOAL_FALLBACK = 'a side goal';
 export function notBuiltTitle(deadline: string): string; // 'Not yet built by 2055'
@@ -700,8 +692,10 @@ export function takeNextText(label: string): string; // 'Take the next goal: 205
 export const ENDING_TITLE = 'Every goal met';
 export function endingReached(reachedOn: Day): string; // 'Reached in Mar 2041'
 export const ENDING_LEVERS = 'Levers bought';
-export function perHomeText(dollars: number): string; // 'Public money per added home: $123,456'
+export function perAddedHomeText(dollars: number): string;
+// 'Public money per added home: $123,456'
 export const ENDING_LIFTED = 'Every limit is lifted.';
+export const PUBLISH = 'Publish';
 
 // The opening card
 export function roomMet(amount: number): string; // 'Room for 82,069 homes'
@@ -712,7 +706,7 @@ export const START = 'Start';
 
 // The game panel
 export function entryStage(phase: GameState['phase'], rung: number): string;
-// 'opening': 'Painting'; 'runs': 'Goal 2 of 4' (rung + 1 of RUNGS)
+// 'opening': 'Painting'; 'runs': 'Goal 2 of 5' (rung + 1 of RUNGS)
 export const PLAYING = 'Playing';
 export const SAVED_GAMES = 'Saved games';
 export const NEW_GAME_LABEL = 'New game';
@@ -725,13 +719,10 @@ export function deleteName(name: string): string; // 'Delete Game, 4 Mar'
 export function deleteAsk(name: string): string; // 'Delete Game, 4 Mar?'
 export const SOUND = 'Sound';
 export const COLLECT_FOR_ME = 'Collect for me';
-export const COLLECT_BOUGHT = 'Always on: bought';
-export function syncText(state: SyncState): string | null; // moved
-export function playedText(savedAt: string, now: Date): string; // moved
-export const FULL_TEXT: string; // moved: '12 saved games. Delete one first.'
-export const STORAGE_TEXT: string; // moved: 'This browser refused to save.'</code></pre>
+export const COLLECT_BOUGHT = 'Always on: bought';</code></pre>
       <ul>
-        <li><code>STAGE_ROWS</code> holds the first four rows of <code>STAGE_KEY</code> with the same ids, labels and stages. A spec in this unit checks that they agree.</li>
+        <li><code>entryStage</code> reads <code>RUNGS</code> from <code>../ladder</code>. The file's other imports are types only.</li>
+        <li><code>STAGE_ROWS</code> holds the first four rows of <code>STAGE_KEY</code> with the same ids, labels and stages. <code>words.spec.ts</code> checks that they agree.</li>
         <li>No text above has 12 words or more.</li>
       </ul>
     </section>
@@ -793,7 +784,7 @@ export const STORAGE_TEXT: string; // moved: 'This browser refused to save.'</co
 
     <section id="sec-design-tree">
       <h3>Tree</h3>
-      <p>The screen between runs. It fills the box <code>game-sim</code> gives it: a column of a scrolling body and a footer that stays at the bottom.</p>
+      <p>The screen between runs. It fills the page below the header (<code>h-full</code> of the box <code>game-sim</code> gives it there): a column of a scrolling body and a footer that stays at the bottom.</p>
       <pre><code data-lang="svelte">&lt;section aria-labelledby={titleId} data-testid="tree"
   class="flex h-full min-h-0 flex-col bg-surface text-ink dark:bg-surface-dark dark:text-ink-dark"
   onkeydown={onKeydown}&gt;
@@ -929,8 +920,9 @@ export function branchRows(nodes: readonly NodeView[]): BranchRows[];</code></pr
       <section id="sec-design-tree-ending">
         <h4>The ending</h4>
         <ul>
-          <li>While <code>finished</code> and <code>ending</code> is set, a <code>section data-testid="tree-ending"</code> opens the body, before "Current law".</li>
-          <li>It holds an <code>h3</code> <code>ENDING_TITLE</code>; a <code>p</code> <code>endingReached(ending.reachedOn)</code>; an <code>h4</code> <code>ENDING_LEVERS</code> over a <code>ul</code> of the labels of every node with a level above 0, in catalogue order; a <code>p</code> <code>perHomeText(ending.perHome)</code> when it is not null; a <code>p</code> <code>ENDING_LIFTED</code>; then <code>publish</code>, when given.</li>
+          <li>While <code>ending</code> is not null, a <code>section data-testid="tree-ending"</code> opens the body, before "Current law".</li>
+          <li>It holds an <code>h3</code> <code>ENDING_TITLE</code>; a <code>p</code> <code>endingReached(ending.reachedOn)</code>; an <code>h4</code> <code>ENDING_LEVERS</code> over a <code>ul</code> of the labels of every node with a level above 0, in catalogue order; a <code>p</code> <code>perAddedHomeText(ending.perAddedHome)</code> when it is not null; a <code>p</code> <code>ENDING_LIFTED</code>; then Publish.</li>
+          <li>Publish is a <code>BUTTON_PRIMARY</code> with the text <code>PUBLISH</code> and <code>data-testid="tree-publish"</code>. A press calls <code>onpublish()</code>; <code>game-sim</code> opens the publish dialog.</li>
           <li>Run stays. The player may keep running.</li>
         </ul>
       </section>
@@ -1062,7 +1054,7 @@ export function branchRows(nodes: readonly NodeView[]): BranchRows[];</code></pr
           <li>The saved games list, its box, its rows (<code>data-testid="save-row"</code>, <code>aria-current</code>), switching by the name, Rename with its field (Enter, Escape, blur), Delete with its question, Cancel, focus after each, <code>keepFocus</code> and rename-first.</li>
           <li>New game, <code>aria-disabled</code> at <code>MAX_SAVES</code> with <code>FULL_TEXT</code> under it.</li>
           <li>The alert: <code>FULL_TEXT</code> for <code>full</code>, <code>STORAGE_TEXT</code> for <code>storage</code> and <code>changed</code>.</li>
-          <li>The words are the same, now from <code>words.ts</code>: <code>RENAME</code>, <code>DELETE</code>, <code>CANCEL</code>, <code>NAME_LABEL</code>, <code>PLAYING</code>, <code>renameName</code>, <code>deleteName</code>, <code>deleteAsk</code>, <code>NEW_GAME_LABEL</code>, <code>SAVED_GAMES</code>.</li>
+          <li>The words are the same, now from <code>ui/words.ts</code>:<code>RENAME</code>, <code>DELETE</code>, <code>CANCEL</code>, <code>NAME_LABEL</code>, <code>PLAYING</code>, <code>renameName</code>, <code>deleteName</code>, <code>deleteAsk</code>, <code>NEW_GAME_LABEL</code>, <code>SAVED_GAMES</code>.</li>
         </ul>
       </section>
       <section id="sec-design-panel-new">
@@ -1072,8 +1064,8 @@ export function branchRows(nodes: readonly NodeView[]): BranchRows[];</code></pr
           <li>Under it, <code>data-testid="game-stage"</code>: <code>entryStage(state.phase, state.rung)</code> · <code>unitsName(total(state.units))</code>.</li>
           <li>A row's line reads <code>entryStage(entry.phase, entry.rung)</code> · <code>PLAYING</code> for the current game, else · <code>playedText(entry.savedAt, now)</code>. "Painting" stands where the level stood for a game in its opening; "Goal 2 of 4" for one in its runs.</li>
           <li>Switching, New game, and deleting the current game call <code>reloadGame()</code> on success: <code>window.location.assign('/')</code>, a full load of the one address (call 6).</li>
-          <li>The sound switch: <code>SOUND</code>, <code>data-testid="game-sound"</code>, <code>aria-checked</code> is <code>!readMuted(storage)</code> as read at mount. A press writes <code>writeMuted(storage, !muted)</code>, updates the switch, then calls <code>announcePrefs</code>.</li>
-          <li>"Collect for me": <code>COLLECT_FOR_ME</code>, <code>data-testid="game-collect"</code>, <code>aria-checked</code> is <code>readCollectForMe(storage)</code> as read at mount. A press writes <code>writeCollectForMe(storage, !on)</code>, updates the switch, then calls <code>announcePrefs</code>.</li>
+          <li>The sound switch: <code>SOUND</code>, <code>data-testid="game-sound"</code>, <code>aria-checked</code> is <code>!readMuted(storage)</code> as read at mount. A press writes <code>writeMuted(storage, !muted)</code> and updates the switch; R1's <code>onPrefs</code> tells the page.</li>
+          <li>"Collect for me": <code>COLLECT_FOR_ME</code>, <code>data-testid="game-collect"</code>, <code>aria-checked</code> is <code>readCollectForMe(storage)</code> as read at mount. A press writes <code>writeCollectForMe(storage, !on)</code> and updates the switch; R1's <code>onPrefs</code> tells the page, so a run in progress follows at once.</li>
           <li>While <code>game.limits.hands.auto</code> is true, the collect switch reads checked, is <code>aria-disabled</code>, is described by a <code>p</code> <code>COLLECT_BOUGHT</code>, and a press does nothing.</li>
           <li><code>storage</code> is <code>getStorage()</code>. With null storage the switches show the defaults R1 reads (sound on, collect off), still switch on screen, and write nothing.</li>
           <li>It renders nothing while <code>game.open</code>.</li>
@@ -1120,7 +1112,7 @@ export const REVEAL_MS = 300;</code></pre>
         </thead>
         <tbody>
           <tr><th scope="row"><code>Tally</code></th><td><code>tally</code>, <code>tally-homes</code>, <code>tally-change</code>, <code>tally-bar</code>, <code>tally-units</code>, <code>tally-lump</code>, <code>tally-side</code>, <code>tally-stage</code>, <code>tally-money</code>, <code>tally-continue</code></td></tr>
-          <tr><th scope="row"><code>Tree</code></th><td><code>tree</code>, <code>tree-root</code>, <code>tree-branch</code>, <code>tree-node</code>, <code>tree-node-open</code>, <code>tree-node-edit</code>, <code>tree-node-on</code>, <code>tree-detail</code>, <code>tree-source</code>, <code>tree-buy</code>, <code>tree-run</code>, <code>tree-busy</code>, <code>tree-next</code>, <code>tree-ending</code>, <code>tree-live</code></td></tr>
+          <tr><th scope="row"><code>Tree</code></th><td><code>tree</code>, <code>tree-root</code>, <code>tree-branch</code>, <code>tree-node</code>, <code>tree-node-open</code>, <code>tree-node-edit</code>, <code>tree-node-on</code>, <code>tree-detail</code>, <code>tree-source</code>, <code>tree-buy</code>, <code>tree-run</code>, <code>tree-busy</code>, <code>tree-next</code>, <code>tree-ending</code>, <code>tree-publish</code>, <code>tree-live</code></td></tr>
           <tr><th scope="row"><code>GoalHeadline</code></th><td><code>goal-headline</code>, <code>goal-box</code>, <code>goal-headline-button</code>, <code>goal-bar</code>, <code>goal-line2</code>, <code>goal-side-mark</code>, <code>side-goals</code>, <code>side-goal</code>, <code>goal-live</code></td></tr>
           <tr><th scope="row"><code>OpeningCard</code></th><td><code>opening-card</code>, <code>opening-start</code></td></tr>
           <tr><th scope="row"><code>GameCell</code></th><td><code>header-units</code>, <code>header-game-panel</code></td></tr>
@@ -1143,13 +1135,14 @@ export function reloadGame(): void;</code></pre>
 
   <section id="sec-files">
     <h2>Files</h2>
-    <p>All under <code>src/lib/game/ui/</code>, the unit's write set. Nothing is deleted here.</p>
+    <p>All under <code>src/lib/game/ui/</code>, the unit's write set. Nothing is deleted here. No file outside the write set is needed.</p>
     <table id="tbl-files">
       <caption>Files this unit creates</caption>
       <thead>
         <tr><th scope="col">File</th><th scope="col">Part</th><th scope="col">What</th></tr>
       </thead>
       <tbody>
+        <tr><th scope="row"><code>words.ts</code>, <code>words.spec.ts</code></th><td>A</td><td>Every word the parts show</td></tr>
         <tr><th scope="row"><code>Tally.svelte</code>, <code>Tally.svelte.spec.ts</code></th><td>A</td><td>The tally card</td></tr>
         <tr><th scope="row"><code>Tree.svelte</code>, <code>Tree.svelte.spec.ts</code></th><td>A</td><td>The tree screen</td></tr>
         <tr><th scope="row"><code>GoalHeadline.svelte</code>, <code>GoalHeadline.svelte.spec.ts</code></th><td>A</td><td>The pinned goal and side goals</td></tr>
@@ -1160,16 +1153,10 @@ export function reloadGame(): void;</code></pre>
         <tr><th scope="row"><code>test/TallyHost.svelte</code>, <code>test/TreeHost.svelte</code>, <code>test/HeadlineHost.svelte</code>, <code>test/OpeningHost.svelte</code></th><td>A</td><td>Hosts: <code>provideGame</code>, the part, an Escape recorder, a positioned <code>&lt;header&gt;</code> for the headline, an outside area</td></tr>
         <tr><th scope="row"><code>GameCell.svelte</code>, <code>GameCell.svelte.spec.ts</code></th><td>B</td><td>The unit count</td></tr>
         <tr><th scope="row"><code>GamePanel.svelte</code>, <code>GamePanel.svelte.spec.ts</code></th><td>B</td><td>The game panel</td></tr>
-        <tr><th scope="row"><code>prefs-event.ts</code></th><td>B</td><td>The prefs event</td></tr>
         <tr><th scope="row"><code>reload.ts</code></th><td>B</td><td>The full load of <code>/</code></td></tr>
         <tr><th scope="row"><code>test/fake-game.svelte.ts</code>, <code>test/CellHost.svelte</code>, <code>test/PanelHost.svelte</code></th><td>B</td><td>A fake of the G7 members the two parts read, and hosts</td></tr>
       </tbody>
     </table>
-    <p>Needed outside the write set, not taken:</p>
-    <ul>
-      <li><code>src/lib/game/words.ts</code> (<code>game-core</code>): the keys in <a href="#sec-design-words">Words</a>.</li>
-      <li><code>src/lib/shell/accent.spec.ts</code> (<code>game-shell</code>): the six components join <code>THEMED_FILES</code>.</li>
-    </ul>
   </section>
 
   <section id="sec-tests">
@@ -1179,6 +1166,7 @@ export function reloadGame(): void;</code></pre>
       <h3>Unit</h3>
       <ul>
         <li><code>branchRows</code>: branch order; a branch with no node is left out; a child nests under the first earlier node of its branch named in <code>after</code>; an <code>after</code> in another branch makes a root; an <code>after</code> naming a later node makes a root; siblings keep catalogue order; every node once.</li>
+        <li><code>words.ts</code>: each function's text for the examples in <a href="#sec-design-words">Words</a>, the singular and plural forms, the minus sign, 0 as "Free"; <code>STAGE_ROWS</code> equals the first four rows of <code>STAGE_KEY</code> in ids, labels and stages; no string has 12 words or more.</li>
       </ul>
     </section>
     <section id="sec-tests-tally">
@@ -1187,7 +1175,7 @@ export function reloadGame(): void;</code></pre>
         <li>The title for a run that met the goal and for one that did not.</li>
         <li>The homes line; the change for a rise, a fall and none; no change line with <code>before</code> null.</li>
         <li>The collected line; the lump line only with a lump; one side line per reward with the label from <code>SIDE_GOALS</code>, and the fallback for an unknown id.</li>
-        <li>Four stage rows with the labels of <code>STAGE_KEY</code> and counts summed from a fixture with six distinct stage values; <code>STAGE_ROWS</code> agrees with <code>STAGE_KEY</code>'s first four rows.</li>
+        <li>Four stage rows with the labels of <code>STAGE_ROWS</code> and counts summed from a fixture with six distinct stage values.</li>
         <li>The money row only when <code>waitingMoney</code> is not null; the bars' shared scale (<code>data-fill</code>).</li>
         <li>Continue has focus at mount; Continue and Escape each call <code>oncontinue</code> once; Escape does not reach the window.</li>
         <li><code>AccountOffer</code> is inside the card.</li>
@@ -1204,10 +1192,11 @@ export function reloadGame(): void;</code></pre>
         <li>Escape closes the detail and focuses the node's button; Escape with nothing open reaches the window.</li>
         <li>Buy on a ready node calls <code>onbuy(id)</code>; on a short node it is <code>aria-disabled</code>, says how far short, and calls nothing; a done node shows "Bought".</li>
         <li>After the host raises the node's level, the live region says "Bought: …" and focus follows the rule.</li>
-        <li>Edit calls <code>onedit(id)</code>. The switch shows only with an entry in <code>on</code>, reads <code>aria-checked</code>, and calls <code>ontoggle(id, !on)</code>.</li>
+        <li>Edit calls <code>onedit(id)</code>. The switch shows only with an entry in <code>on</code>, reads <code>aria-checked</code>, and calls <code>ontoggle(id, !on[id])</code>.</li>
         <li>Run has focus at mount and calls <code>onrun</code>; while busy it says <code>RUN_BUSY</code>, carries <code>aria-busy</code>, and still calls <code>onrun</code>.</li>
         <li>"Take the next goal" shows only with <code>next</code>, calls <code>onnext</code>, and focus moves to Run when it leaves.</li>
-        <li>The ending: the month reached, the bought labels, money per home only when not null, the publish snippet.</li>
+        <li>With <code>ending</code> null there is no ending; with it set: the month reached, the bought labels, money per added home only when not null, and Publish calling <code>onpublish</code>.</li>
+        <li>The tree fills its host's box at full height, with the footer at the bottom.</li>
         <li>At 1280 px the detail is in the fifth column; at 375 px it is inside the node's row and the page has no horizontal scroll.</li>
         <li>A node added after mount fades in; with reduced motion it appears at once.</li>
         <li>Every control is at least 24 by 24 px; axe in light and dark with a node open.</li>
@@ -1236,13 +1225,13 @@ export function reloadGame(): void;</code></pre>
       <h3>GameCell and GamePanel (component, part B)</h3>
       <ul>
         <li>The cell's count and name; the count rolls to a new total, and with reduced motion jumps.</li>
-        <li>From lg the panel is a pop-over at the cell's left edge inside the viewport; in the Menu it opens in place; Escape, a press outside, a link click and another overlay close it; the root keeps the Menu open.</li>
+        <li>From lg the panel is a pop-over at the cell's left edge inside the viewport; in the Menu it opens in place; Escape, a press outside, a link click and another overlay close it; the root carries <code>data-header-keep-open</code>.</li>
         <li>Nothing renders for the open game.</li>
         <li>The panel's heading and stage line; a row's line for a game in its opening and one in its runs.</li>
-        <li>Switching, New game and deleting the current game call <code>reloadGame</code>; the full and storage refusals show their words.</li>
+        <li>Switching, New game and deleting the game in play call <code>reloadGame</code>; deleting another game does not; the full and storage refusals show their words.</li>
         <li>The rename and delete behaviours of the level panel's spec, carried over.</li>
         <li>Each sync state's words and the sign-in link.</li>
-        <li>The sound and collect switches read the stored prefs, write them, and dispatch <code>GAME_PREFS_EVENT</code> with both values; with <code>hands.auto</code> the collect switch is checked, off and explained.</li>
+        <li>The sound and collect switches read the stored prefs and write them with R1's <code>write*</code> functions, and a listener given to <code>onPrefs</code> runs after each press; with <code>hands.auto</code> the collect switch is checked, off and explained.</li>
         <li>One test each against the real G7 store, the rest against <code>FakeGame</code>; axe in light and dark.</li>
       </ul>
     </section>
@@ -1251,21 +1240,19 @@ export function reloadGame(): void;</code></pre>
   <section id="sec-decisions">
     <h2>Decisions</h2>
     <ul>
-      <li><strong>Two parts.</strong> G7 has no stub in <code>contracts</code>, so the cell and the panel wait for <code>game-save</code>'s store and join its lane.</li>
-      <li><strong>Four U1 additions</strong> (<code>on</code> and <code>ontoggle</code>, <code>ending</code> and <code>publish</code>, <code>before</code>, the prefs event): each is data the parts must show or a signal they must send, and U1 has no field for it.</li>
       <li><strong>The tree is branch columns of nested lists.</strong> Adjacency is the first earlier <code>after</code> in the same branch; it needs no graph library, keeps a reading order, and stacks on a phone.</li>
       <li><strong>No fogged "?" nodes.</strong> <code>treeView</code> returns shown nodes only and the tree reads nothing else.</li>
       <li><strong>The detail is a side column from 1024 px and inline below.</strong> It matches the wireframe on a laptop and keeps the detail by its node on a phone.</li>
-      <li><strong>Run is always pressable.</strong> The busy text says why it waits; <code>game-sim</code> owns the wait, as the design's "Run says so and waits".</li>
+      <li><strong>Run is always pressable.</strong> The busy text says why it waits; <code>game-sim</code> owns the wait.</li>
       <li><strong>Focus at mount goes to the one forward action:</strong> Continue, Run, Start.</li>
       <li><strong>The opening card takes no Escape.</strong> Its one action is Start.</li>
-      <li><strong>The tally's title</strong> is the month met, or "By &lt;deadline&gt;" when missed; the wireframe's "2055 reached" read as the goal met.</li>
-      <li><strong>Stage labels are <code>STAGE_KEY</code>'s,</strong> copied into <code>words.ts</code> and checked by a spec, so the tally names stages as the map's key does without importing the map.</li>
+      <li><strong>The tally's title</strong> is the month met, or "By &lt;deadline&gt;" when missed, so the title never reads as a goal met when it was not.</li>
+      <li><strong>Stage labels are <code>STAGE_KEY</code>'s,</strong> held in <code>ui/words.ts</code> and checked by its spec, so the tally names stages as the map's key does without importing the map.</li>
       <li><strong>The stage and money bars share one scale,</strong> the largest row, so the bottleneck is the longest bar.</li>
       <li><strong>Line 2 of the headline</strong> says "Goal met" while met, "Last goal" at the last rung, and "Unlocks: …" otherwise.</li>
       <li><strong>Below sm the headline drops the word "homes" and line 2</strong> and keeps the bar, to fit 375 px beside the status and the Menu.</li>
       <li><strong>The panel's heading is the game's name;</strong> a row reads "Painting" or "Goal N of M", since a save entry has no deadline year.</li>
-      <li><strong>Prefs are read at mount</strong> and written on each press; the panel announces them by a window event.</li>
+      <li><strong>Prefs are read at mount</strong> and written on each press.</li>
       <li><strong>Durations:</strong> 400 ms for a roll, 800 ms for the tally, 1,200 ms for the goal met pulse, 300 ms for a reveal. They are starting values; <code>closing</code>'s playtest may change them in <code>motion.ts</code>.</li>
       <li><strong>The mark ◆</strong> from the approved wireframe stands for units, hidden from screen readers, which hear "units".</li>
     </ul>
@@ -1274,15 +1261,14 @@ export function reloadGame(): void;</code></pre>
   <section id="sec-out-of-scope">
     <h2>Out of scope</h2>
     <ul>
-      <li>Placing the tally, the tree and the opening card on the page, the page's states, buying into the document, the switch's effect, sound calls, the run's clock and when <code>busy</code> is set: <code>game-sim</code> (the opening card: <code>game-shell</code>).</li>
-      <li>Mounting <code>GoalHeadline</code> as the pinned item and <code>GameCell</code> in the header, removing the steps, the level dot and the Menu's "level up ready" name, and deleting <code>LevelCell</code> and <code>LevelPanel</code>: <code>game-shell</code>.</li>
+      <li>Placing the tally and the tree on the page, the page's states, buying into the document, the <code>on</code> map and the switch's effect, the publish dialog, sound calls, the run's clock and when <code>busy</code> is set: <code>game-sim</code>.</li>
+      <li>Placing the opening card, mounting <code>GoalHeadline</code> as the pinned item and <code>GameCell</code> in the header, removing the steps, the level dot and the Menu's "level up ready" name, adding the six components to <code>THEMED_FILES</code>, and deleting <code>LevelCell</code> and <code>LevelPanel</code>: <code>game-shell</code>.</li>
       <li>The headline during the opening (Paint's "Room for N homes"): <code>game-shell</code>.</li>
       <li>Deleting <code>WinCard</code>: <code>game-sim</code>.</li>
-      <li>The words file, the ladder, side goals and their reads, <code>settle</code>, <code>RUNGS</code>: <code>game-core</code>.</li>
-      <li>Node data, labels, lines, sources and prices: <code>tree-catalogue</code>.</li>
-      <li>The store, its saved games and the sync: <code>game-save</code>.</li>
-      <li>The prefs' storage keys and defaults, sound, drops and the ring: <code>run-play</code>.</li>
-      <li><code>AccountOffer</code> itself: it stays as it is.</li>
+      <li><code>src/lib/game/words.ts</code>, the ladder, side goals and their reads, <code>settle</code>, <code>RUNGS</code>: <code>game-core</code>.</li>
+      <li>Node data, labels, lines, sources, prices and <code>tuning.ts</code>: <code>tree-catalogue</code>.</li>
+      <li>The store, its saved games, the sync and <code>AccountOffer</code>'s one import line: <code>game-save</code>.</li>
+      <li>The prefs' storage keys, defaults and <code>onPrefs</code>, sound, drops and the ring: <code>run-play</code>.</li>
       <li>Page e2e, the targets sweep and the rest-text checks on <code>/</code>: <code>closing</code>.</li>
     </ul>
   </section>

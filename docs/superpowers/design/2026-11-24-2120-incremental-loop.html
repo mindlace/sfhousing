@@ -311,7 +311,8 @@ export function parseGameSave(json: unknown): GameSave | null;</code></pre>
         <li><code>NEW_GAME</code> is the opening with nothing bought, no units, rung 0 and no runs.</li>
         <li><code>parseGameSave</code> returns null unless <code>v</code> is 2 at both levels (P15).</li>
         <li>The result is rebuilt from the known fields. An unknown field is dropped.</li>
-        <li>A <code>bought</code> entry for a node the catalogue does not have is dropped. A level above the node's last is lowered to it.</li>
+        <li><code>parseGameSave</code> checks the shape only. It keeps a node, a level, a side goal or a rung the catalogue does not have; <code>fitGame</code> (G6) drops those in the browser.</li>
+        <li>The server stores what <code>parseGameSave</code> returns.</li>
         <li>Unit amounts and <code>runs</code> are whole numbers of 0 or more.</li>
         <li><code>plan</code> and <code>policy</code> stay opaque text, as they are today.</li>
       </ul>
@@ -513,7 +514,9 @@ export const SIDE_TUNING: Record&lt;string, { target: number; reward: Units }&gt
 // src/lib/game/ladder.ts
 import type { Goal } from '$lib/goal/goal';
 import type { Day } from '$lib/timelapse/time';
+import type { SideGoal } from './side-goals';
 import type { GameState, Units } from './state';
+import type { TreeNode } from './tree';
 
 export interface Rung {
   deadline: Day;
@@ -526,6 +529,11 @@ export function ladder(asOf: Day): Rung[];
 export function goalAt(asOf: Day, rung: number, amount?: number): Goal;
 export function finished(s: GameState): boolean;
 export function takeNext(s: GameState): GameState;
+export function fitGame(
+  s: GameState,
+  nodes?: readonly TreeNode[],
+  goals?: readonly SideGoal[]
+): GameState;
 
 // src/lib/game/run-result.ts
 import type { TimelineView } from '$lib/sim/world/score/types';
@@ -605,6 +613,10 @@ export function sideShown(s: GameState, goals?: readonly SideGoal[]): SideGoal[]
         <li><code>settle</code> pays a lump or a side reward only when it also records it, so a result settled twice pays once.</li>
         <li><code>takeNext</code> moves to the next rung when the rung in play is met and a next one exists. Otherwise it returns the same state.</li>
         <li><code>finished</code> is true once the last rung is in <code>met</code>.</li>
+        <li><code>fitGame</code> drops a <code>bought</code> entry for a node the catalogue does not have and lowers a level above the node's last to it.</li>
+        <li><code>fitGame</code> drops a <code>side</code> entry for an id <code>SIDE_GOALS</code> does not have.</li>
+        <li><code>fitGame</code> lowers a rung at <code>RUNGS</code> or above to <code>RUNGS - 1</code> and drops met rungs at <code>RUNGS</code> or above.</li>
+        <li><code>fitGame</code> returns the same object when nothing is dropped or lowered.</li>
         <li><code>sideShown</code> returns the first <code>SIDE_SHOWN</code> goals whose ring is open and which are not met.</li>
         <li>A side goal's <code>read</code> returns null when the view lacks what it reads.</li>
       </ul>
@@ -644,6 +656,7 @@ export function provideGame(store: GameStore): void;
 export function useGame(): GameStore;</code></pre>
       <ul>
         <li><code>state</code> and <code>limits</code> are reactive. <code>limits</code> is <code>OPEN_LIMITS</code> for the open game, else <code>limitsOf(state)</code>.</li>
+        <li>Every save the store reads, from storage or from the server, passes through <code>parseGameSave</code> and then its state through <code>fitGame</code> (G6).</li>
         <li><code>won</code> sets <code>firstWinAt</code> once and writes.</li>
         <li><code>startRuns</code> sets <code>phase</code> to <code>'runs'</code>. It does nothing while <code>firstWinAt</code> is null.</li>
         <li><code>buy</code> writes the new state when the purchase is good and returns what <code>buy</code> of G3 returns. A refused write returns <code>{ ok: false, reason: 'short' }</code> and changes nothing.</li>
@@ -944,7 +957,7 @@ interface GameCellProps {
         <tr><th scope="row"><code>game-core</code></th><td><code>src/lib/game/{state,save-shape,units,limits,ladder,run-result,side-goals,words}.ts</code> and their specs</td></tr>
         <tr><th scope="row"><code>tree-catalogue</code></th><td><code>src/lib/game/{tree,grant}.ts</code>, <code>src/lib/game/catalogue/**</code>, <code>scripts/tree-balance.ts</code>, <code>scripts/reach-measure.ts</code>, their specs</td></tr>
         <tr><th scope="row"><code>city-net</code></th><td><code>src/lib/sim/world/city-feed.ts</code>, <code>src/lib/map/{types,city-delta}.ts</code> (the feed's lines), <code>src/lib/map/timelapse/city.ts</code>, the page's city index under <code>src/lib/timeline/activity*.ts</code>, their specs; the fixtures and specs that build a <code>CityDelta</code> by hand: <code>src/lib/map/test/synthetic-timeline.ts</code>, <code>src/lib/map/timeline-controller.spec.ts</code>, <code>src/lib/map/SimMap.timeline.svelte.spec.ts</code>, <code>src/lib/timeline/TimelineMode.svelte.spec.ts</code> (one fixture line), <code>src/lib/sim/world/test/map-stream-run.ts</code>, <code>src/lib/sim/world/host.spec.ts</code>; <code>docs/dev/map-interfaces.md</code> (the feed), <code>docs/dev/map-stream.md</code></td></tr>
-        <tr><th scope="row"><code>money-wait</code></th><td><code>src/lib/sim/world/score/**</code>, <code>src/lib/sim/world/funding/{columns,system}.ts</code>, their specs, <code>docs/dev/world-score.md</code>, <code>docs/dev/world-funding.md</code></td></tr>
+        <tr><th scope="row"><code>money-wait</code></th><td><code>src/lib/sim/world/score/**</code>, <code>src/lib/sim/world/funding/{columns,system}.ts</code>, their specs, the <code>before</code> helper of <code>src/lib/sim/world/host.edit.spec.ts</code> and of <code>src/lib/sim/timeline-client.host.spec.ts</code>, <code>docs/dev/world-score.md</code>, <code>docs/dev/world-funding.md</code></td></tr>
         <tr><th scope="row"><code>map-run</code></th><td><code>src/lib/map/SimMap.svelte</code>, <code>src/lib/map/camera.ts</code>, <code>src/lib/map/types.ts</code> (the handle's lines), their specs, the two hand-written handles <code>src/lib/fzp/test/sim-map-stub.ts</code> and <code>src/lib/brush/test/sim-map-stub.ts</code>, <code>docs/dev/map-interfaces.md</code> (the camera)</td></tr>
         <tr><th scope="row"><code>run-play</code></th><td><code>src/lib/game/run/**</code></td></tr>
         <tr><th scope="row"><code>tally-tree</code></th><td><code>src/lib/game/ui/**</code></td></tr>

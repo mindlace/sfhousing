@@ -79,6 +79,9 @@ export interface Limits {
 
 export const OPEN_LIMITS: Limits;
 export const BASE_HANDS: Hands;
+export const START_BANDS = 1;
+export const START_STORIES = 4;
+export const START_REACH_M = 402;
 export const FREE_MEASURES: readonly string[];
 
 export function limitsOf(s: GameState, nodes?: readonly TreeNode[]): Limits;
@@ -94,7 +97,10 @@ export function isGiven(p: Policy): boolean;</code></pre>
       </dl>
       <ul>
         <li><code>limitsOf</code> folds the grants of every level bought. The largest <code>stories</code>, <code>reach</code>, <code>bands</code>, <code>radius</code> and <code>linger</code> win.</li>
-        <li>Once the last rung is met, <code>stories</code> is 80, <code>bands</code> 3, <code>reachM</code> 3219, every stop type is in, and <code>custom</code> is true.</li>
+        <li>Once a stop type is bought, <code>bands</code>, <code>stories</code> and <code>reachM</code> are at least <code>START_BANDS</code>, <code>START_STORIES</code> and <code>START_REACH_M</code>.</li>
+        <li><code>BASE_HANDS</code> is a radius of 48 px, a linger of 4,000 ms and no auto. Every Hands step in the catalogue is above it.</li>
+        <li>Once the last rung is met, <code>stories</code> is 80, <code>bands</code> 3, <code>reachM</code> 3219, every stop type is in, <code>custom</code> is true, and <code>presets</code> also holds <code>observed</code>, the preset a custom timing policy carries.</li>
+        <li><code>within</code> does not read a policy's <code>on</code>.</li>
         <li>A permitting policy is within the limits when its preset is in <code>presets</code>, and, unless <code>custom</code>, it has no custom edit and no custom route shares.</li>
         <li>A transit rule is within the limits when its stop types are in <code>stops</code>, it has at most <code>bands</code> bands, no band is taller than <code>stories</code> and none is further than <code>reachM</code>.</li>
         <li>A protection is within the limits once <code>stops</code> is not empty.</li>
@@ -110,10 +116,17 @@ export function isGiven(p: Policy): boolean;</code></pre>
       <pre><code data-lang="ts">// src/lib/game/catalogue/ladder-years.ts
 export const LADDER_YEARS: readonly number[];
 
+// src/lib/game/catalogue/tuning.ts
+import type { Units } from '../state';
+export const RUNG_LUMP: Units;
+export const SIDE_TUNING: Record&lt;string, { target: number; reward: Units }&gt;;
+
 // src/lib/game/ladder.ts
 import type { Goal } from '$lib/goal/goal';
 import type { Day } from '$lib/timelapse/time';
+import type { SideGoal } from './side-goals';
 import type { GameState, Units } from './state';
+import type { TreeNode } from './tree';
 
 export interface Rung {
   deadline: Day;
@@ -121,12 +134,16 @@ export interface Rung {
 }
 
 export const RUNGS: number;
-export const RUNG_LUMP: Units;
 
 export function ladder(asOf: Day): Rung[];
 export function goalAt(asOf: Day, rung: number, amount?: number): Goal;
 export function finished(s: GameState): boolean;
 export function takeNext(s: GameState): GameState;
+export function fitGame(
+  s: GameState,
+  nodes?: readonly TreeNode[],
+  goals?: readonly SideGoal[]
+): GameState;
 
 // src/lib/game/run-result.ts
 import type { TimelineView } from '$lib/sim/world/score/types';
@@ -182,7 +199,8 @@ export const SIDE_GOALS: readonly SideGoal[];
 export const SIDE_SHOWN = 3;
 export function sideShown(s: GameState, goals?: readonly SideGoal[]): SideGoal[];</code></pre>
       <dl>
-        <dt><code>LADDER_YEARS</code></dt><dd>The deadline years after the window's end, latest first. The measurement in <code>tree-catalogue</code> sets them.</dd>
+        <dt><code>LADDER_YEARS</code></dt><dd>The deadline years after the window's end, latest first, at most four. The measurement in <code>tree-catalogue</code> sets them.</dd>
+        <dt><code>RUNG_LUMP</code>, <code>SIDE_TUNING</code></dt><dd>The numbers the balance script tunes: the lump for a rung first met, and each side goal's target and reward by its id.</dd>
         <dt><code>RUNGS</code></dt><dd><code>LADDER_YEARS.length + 1</code>.</dd>
         <dt><code>homes</code></dt><dd>The goal's measure at the deadline's month.</dd>
         <dt><code>reachedOn</code></dt><dd>The day the amount was first met at or before the deadline, or null.</dd>
@@ -193,13 +211,22 @@ export function sideShown(s: GameState, goals?: readonly SideGoal[]): SideGoal[]
       </dl>
       <ul>
         <li>Rung 0's deadline is <code>defaultGoal(asOf).deadline</code>. Rung <em>k</em> is the last day of December of <code>LADDER_YEARS[k - 1]</code>.</li>
+        <li>A rung's deadline is never after the rung before it and never before the dataset date's month.</li>
+        <li>The first ladder year is the largest multiple of five that is at least five years before the window's end year. The last is the first multiple of five at or after the measured year. When more than four five-year steps fit, the first and last are kept with two evenly between.</li>
+        <li>The cheapest node shown at rung 0 costs no more than <code>RUNG_LUMP</code>.</li>
+        <li>A side goal's <code>reward</code> and target are read from <code>SIDE_TUNING</code> by its id.</li>
         <li><code>goalAt</code> is <code>defaultGoal(asOf)</code> with the rung's deadline, and with <code>amount</code> when given.</li>
         <li><code>readRun</code> returns null while the view does not cover the deadline's month.</li>
         <li><code>resultOf</code> lists a side goal when it is shown, not yet met, and its <code>value</code> is at least its <code>target</code>.</li>
         <li><code>settle</code> credits <code>collected</code>, <code>lump</code> and each side reward; records the rung in <code>met</code> when <code>reachedOn</code> is set and the rung is not there; records each side goal; adds 1 to <code>runs</code>; sets <code>last</code>.</li>
         <li><code>settle</code> never removes a met rung (call 8).</li>
+        <li><code>settle</code> pays a lump or a side reward only when it also records it, so a result settled twice pays once.</li>
         <li><code>takeNext</code> moves to the next rung when the rung in play is met and a next one exists. Otherwise it returns the same state.</li>
         <li><code>finished</code> is true once the last rung is in <code>met</code>.</li>
+        <li><code>fitGame</code> drops a <code>bought</code> entry for a node the catalogue does not have and lowers a level above the node's last to it.</li>
+        <li><code>fitGame</code> drops a <code>side</code> entry for an id <code>SIDE_GOALS</code> does not have.</li>
+        <li><code>fitGame</code> lowers a rung at <code>RUNGS</code> or above to <code>RUNGS - 1</code> and drops met rungs at <code>RUNGS</code> or above.</li>
+        <li><code>fitGame</code> returns the same object when nothing is dropped or lowered.</li>
         <li><code>sideShown</code> returns the first <code>SIDE_SHOWN</code> goals whose ring is open and which are not met.</li>
         <li>A side goal's <code>read</code> returns null when the view lacks what it reads.</li>
       </ul>
@@ -218,9 +245,10 @@ export interface CityDelta {
   flags: Uint8Array;
 }</code></pre>
       <dl>
-        <dt><code>existing</code></dt><dd>Per changed row: the homes on the lot that the project replaces, capped at 65,535.</dd>
+        <dt><code>existing</code></dt><dd>Per changed row: the homes the project takes off the goal's count, capped at 65,535. That is the homes on its lot once it has entered construction after the dataset date, and 0 otherwise.</dd>
       </dl>
       <ul>
+        <li><code>homes - existing</code> of a completed row is that row's effect on the series' <code>completedNet</code>.</li>
         <li>A row whose marker has not begun carries 0, as <code>homes</code> does.</li>
         <li>A marker that differs only in <code>existing</code> is a changed marker and is sent.</li>
         <li><code>validateCityDelta</code> checks the new array's length.</li>
@@ -284,7 +312,8 @@ export function createSound(muted: () =&gt; boolean): Sound;
 export function readCollectForMe(storage: Storage | null): boolean;
 export function writeCollectForMe(storage: Storage | null, on: boolean): void;
 export function readMuted(storage: Storage | null): boolean;
-export function writeMuted(storage: Storage | null, muted: boolean): void;</code></pre>
+export function writeMuted(storage: Storage | null, muted: boolean): void;
+export function onPrefs(fn: () =&gt; void): () =&gt; void;</code></pre>
       <dl>
         <dt><code>completed</code></dt><dd>The marker's completed day; <code>NaN</code> when it has none.</dd>
         <dt><code>worth</code></dt><dd><code>{ home: homes - existing }</code>.</dd>
@@ -293,6 +322,7 @@ export function writeMuted(storage: Storage | null, muted: boolean): void;</code
       </dl>
       <ul>
         <li><code>planDrops</code> returns one drop for each marker completed after <code>asOf</code> and at or before <code>to</code> whose worth is above 0, ascending by day, then by row.</li>
+        <li><code>feed.drops</code> may be replaced during a run, as the forecast fills. Drops are matched by <code>row</code>: one already shown stays as it is, and none is counted twice.</li>
         <li>A drop appears when <code>feed.day</code> reaches its day and is counted in <code>dropped</code> then.</li>
         <li>A drop is collected when its projected point is within <code>hands.radiusPx</code> of the ring's centre. It is counted in <code>collected</code> once.</li>
         <li>A drop not collected is gone <code>hands.lingerMs</code> of wall time after it appeared.</li>
@@ -303,6 +333,9 @@ export function writeMuted(storage: Storage | null, muted: boolean): void;</code
         <li>With reduced motion, drops and counts appear and disappear without movement.</li>
         <li>Nothing flashes more than three times a second.</li>
         <li>A screen reader is told the run's totals at its end, never each drop.</li>
+        <li>The layer's root carries <code>data-dropped</code> and <code>data-collected</code>, the totals in homes.</li>
+        <li><code>onPrefs</code> calls <code>fn</code> after either preference is written in this page, and returns its own removal. A change applies to a run in progress.</li>
+        <li>The layer's words are in <code>src/lib/game/run/words.ts</code>.</li>
         <li><code>createSound</code> makes its sounds with the Web Audio API and loads no file. It makes no sound while <code>muted()</code> is true or before a user gesture.</li>
       </ul>
     </section>
@@ -312,7 +345,7 @@ export function writeMuted(storage: Storage | null, muted: boolean): void;</code
     <h2>Global constraints</h2>
     <ul>
       <li>One future: the same policy document always gives the same forecast. No game state reaches the worker except through the policy document.</li>
-      <li>No file the dataset version hashes is changed: <code>pipeline</code>, <code>src/lib/{data,generator,timelapse,scoreboard}</code>, <code>src/lib/plan/{geometry,types}.ts</code>, <code>src/lib/sim/{scenario,levers,finance}</code>. The dataset version stays as it is.</li>
+      <li>No file the dataset version hashes is changed: <code>pipeline</code>, <code>src/lib/config.ts</code>, <code>src/lib/{data,generator,timelapse}</code>, <code>src/lib/plan/{geometry,types}.ts</code>, <code>src/lib/sim/finance</code> (<code>pipeline/lib/version.ts:41</code>). The dataset version stays as it is.</li>
       <li>A policy node acts on a lever the code already has, at a value the code already sources. No node invents a value.</li>
       <li>The painted area, own pools, the City funding scale and market terms are never offered in a game.</li>
       <li>Published plans and policies open and play in full, as today.</li>
@@ -334,7 +367,7 @@ export function writeMuted(storage: Storage | null, muted: boolean): void;</code
     <h2>What the code is today</h2>
     <ul>
       <li><code>src/lib/game/run/</code> does not exist on this branch. The <code>contracts</code> unit creates <code>drops.ts</code>, <code>sound.ts</code> and <code>prefs.ts</code> as stubs that throw (design, Contracts).</li>
-      <li><code>src/lib/game/words.ts</code> does not exist; <code>game-core</code> writes it. Today's game words are in <code>src/lib/game/copy.ts</code> (for example <code>barText</code> at <code>copy.ts:10</code>).</li>
+      <li><code>src/lib/game/run/words.ts</code> does not exist. Today's game words are in <code>src/lib/game/copy.ts</code>, one exported function per phrase (for example <code>barText</code> at <code>copy.ts:10</code>).</li>
       <li><code>Day</code> is a plain <code>number</code> (<code>src/lib/timelapse/time.ts:7</code>), and <code>MONTH_DAYS</code> is 30.436875 (<code>time.ts:10</code>).</li>
       <li><code>CityDelta</code> carries <code>lngLat</code>, three days per row with <code>NaN</code> for "not yet", and <code>homes</code>, and has no <code>existing</code> yet (<code>src/lib/map/types.ts:70-83</code>). The completed day is index 2 of <code>CITY_DAY</code> (<code>types.ts:64</code>).</li>
       <li>No 2D canvas is drawn over the map anywhere in <code>src/lib/map</code> or <code>src/lib/view</code>; consumers mount positioned siblings after <code>SimMap</code>, whose own overlays use <code>z-10</code> to <code>z-30</code> (survey <code>map.md</code> section e).</li>
@@ -368,13 +401,14 @@ export function writeMuted(storage: Storage | null, muted: boolean): void;</code
           <tr><th scope="row"><code>clock.ts</code></th><td>The wall clock, the frame loop and the reduced-motion test, mocked in component specs</td></tr>
           <tr><th scope="row"><code>RunLayer.svelte</code></th><td>The canvas, the listeners, the frame loop and the live region</td></tr>
           <tr><th scope="row"><code>sound.ts</code></th><td><code>createSound</code>, <code>makeSound</code> and the sounds' parameters</td></tr>
-          <tr><th scope="row"><code>prefs.ts</code></th><td>The two stored preferences</td></tr>
+          <tr><th scope="row"><code>prefs.ts</code></th><td>The two stored preferences and <code>onPrefs</code></td></tr>
+          <tr><th scope="row"><code>words.ts</code></th><td>The layer's words</td></tr>
           <tr><th scope="row"><code>test/fake-feed.svelte.ts</code></th><td>A reactive fake <code>RunFeed</code> for specs here and in <code>game-sim</code></td></tr>
         </tbody>
       </table>
       <ul>
         <li>No file here imports from <code>$lib/map</code>, <code>$lib/sim</code>, <code>$lib/sim-page</code>, <code>$lib/timeline</code> or <code>../store.svelte</code>.</li>
-        <li>The files import only <code>$lib/timelapse/time</code> (the <code>Day</code> type), <code>../limits</code> (<code>Hands</code>), <code>../run-result</code> (<code>RunTake</code>), <code>../state</code> (<code>Units</code>), <code>../units</code> (<code>credit</code>, <code>total</code>) and <code>../words</code>.</li>
+        <li>The files import only <code>$lib/timelapse/time</code> (the <code>Day</code> type), <code>../limits</code> (<code>Hands</code>), <code>../run-result</code> (<code>RunTake</code>), <code>../state</code> (<code>Units</code>), <code>../units</code> (<code>credit</code>, <code>total</code>) and <code>./words</code>.</li>
       </ul>
     </section>
 
@@ -553,7 +587,10 @@ export function sweepHits(sweep: readonly (Pt | null)[], ring: Pt, p: Pt, r: num
           <li>Ending sets each uncollected drop's <code>endMs</code> to the smaller of its own and <code>now + RUN_TIMES.fadeMs</code>, or to <code>now</code> under <code>reduced</code>. It empties <code>sweep</code>.</li>
           <li>A run stopped before its deadline ends the same way. Drops whose day it never reached are never counted.</li>
           <li>A feed day earlier than <code>highDay</code> changes nothing: no drop appears again, no count goes down, and live drops keep their times.</li>
-          <li>A new <code>drops</code> array in mid-run never counts a row twice, because of <code>seen</code>.</li>
+          <li>A new <code>drops</code> array in mid-run is matched to what is shown by <code>row</code>. A row in <code>seen</code> is never counted again, whatever its day or worth in the new array.</li>
+          <li>A drop already shown, live or collected, stays as it is: same point, worth, times and state, and its counts stay in the take.</li>
+          <li>A shown drop whose row is missing from the new array also stays as it is, collectable until its <code>endMs</code>. Nothing is taken out of the take.</li>
+          <li>A row not yet shown takes its day and worth from the new array. A row not yet shown that the new array lacks never appears.</li>
           <li>A step while not running only removes what has ended.</li>
         </ul>
       </section>
@@ -653,7 +690,7 @@ export function drawRun(
         <li>With motion, a live drop grows from radius 0 to full over <code>appearMs</code>, eased out as <code>1 - (1 - t)^3</code>, and its alpha falls linearly from 1 to 0 over the last <code>fadeMs</code> before its <code>endMs</code>.</li>
         <li>A collected drop is a circle stroke only, <code>takenLinePx</code> wide, in the accent.</li>
         <li>With motion, a collected drop's radius goes from <code>r</code> to <code>r * (1 + takenGrow)</code> and its alpha from <code>takenAlpha</code> to 0, linearly over <code>takenMs</code>.</li>
-        <li>A count is the text <code>dropCountText(worth)</code> from <code>words.ts</code>, centred, in <code>countWeight</code> <code>countFontPx</code> px of the page font, with a <code>countHaloPx</code> stroke of the surface colour under a fill of the ink colour.</li>
+        <li>A count is the text <code>dropCountText(worth)</code> from <code>run/words.ts</code>, centred, in <code>countWeight</code> <code>countFontPx</code> px of the page font, with a <code>countHaloPx</code> stroke of the surface colour under a fill of the ink colour.</li>
         <li>A count's baseline starts <code>countGapPx</code> above the drop's top edge. With motion it rises <code>countRisePx</code> linearly over <code>countMs</code>, holds full alpha for the first <code>countHoldShare</code> of it, then falls linearly to 0.</li>
         <li>Under reduced motion every shape and count is drawn at full size and full alpha in its place, and vanishes at its end time.</li>
         <li>The layer reads the colours at mount from the root's computed style: <code>--color-accent</code>, <code>--color-ink</code> and <code>--color-surface</code>, or <code>--color-accent-dark</code>, <code>--color-ink-dark</code> and <code>--color-surface-dark</code> while <code>(prefers-color-scheme: dark)</code> matches. It reads them again when that query changes.</li>
@@ -697,15 +734,28 @@ export function drawRun(
         <li>The drawn drops cover at most 240 circles of radius 10.5 px with their outline, about 83,000 square CSS pixels, below the WCAG general-flash area of 341 by 256 px.</li>
         <li>The canvas has <code>aria-hidden="true"</code>. No drop, count or sound is announced.</li>
         <li>The layer holds one visually hidden paragraph with <code>aria-live="polite"</code> and test id <code>run-live</code>.</li>
-        <li>It is empty while a run is running. When the run ends it is set to <code>runOverText(take)</code> from <code>words.ts</code>. It is emptied when the next run starts.</li>
+        <li>It is empty while a run is running. When the run ends it is set to <code>runOverText(take)</code> from <code>run/words.ts</code>. It is emptied when the next run starts.</li>
       </ul>
-      <pre><code data-lang="ts">// src/lib/game/words.ts (game-core writes it; run-play needs these two)
-export function runOverText(take: RunTake): string;
-export function dropCountText(homes: number): string;</code></pre>
+      <pre><code data-lang="ts">// src/lib/game/run/words.ts
+import type { RunTake } from '../run-result';
+import { total } from '../units';
+
+const fmt = (n: number): string =&gt; n.toLocaleString('en-US');
+
+export function runOverText(take: RunTake): string {
+  return `Run over. ${fmt(total(take.collected))} of ${fmt(total(take.dropped))} homes collected.`;
+}
+
+export function dropCountText(homes: number): string {
+  return `+${fmt(homes)}`;
+}</code></pre>
       <dl>
-        <dt><code>runOverText</code></dt><dd>The words I ask <code>game-core</code> to hold: "Run over. 1,234 of 5,678 homes collected.", with <code>total(take.collected)</code> and <code>total(take.dropped)</code> formatted with <code>toLocaleString('en-US')</code>.</dd>
-        <dt><code>dropCountText</code></dt><dd>The words I ask <code>game-core</code> to hold: "+12", the number formatted the same way.</dd>
+        <dt><code>runOverText</code></dt><dd>"Run over. 1,234 of 5,678 homes collected."</dd>
+        <dt><code>dropCountText</code></dt><dd>"+12".</dd>
       </dl>
+      <ul>
+        <li>These are the layer's only words. No other unit imports them.</li>
+      </ul>
     </section>
 
     <section id="sec-d-sound">
@@ -782,7 +832,7 @@ export function createSound(muted: () =&gt; boolean): Sound;</code></pre>
         <li>The browser's <code>onGesture</code> listens once for <code>pointerdown</code> and <code>keydown</code> on the window, in the capture phase. The first of either makes the context with <code>new AudioContext()</code>, resumes it when suspended, and removes both listeners.</li>
         <li>The context is made at the first gesture even while muted, so unmuting plays at once.</li>
         <li><code>RunLayer</code> calls only <code>pop</code> and <code>collect</code>. <code>goal</code> and <code>buy</code> are for <code>game-sim</code>.</li>
-        <li>Mute is the caller's <code>muted</code> function, read on each call. <code>game-sim</code> passes one that reads the stored preference the game panel writes.</li>
+        <li>Mute is the caller's <code>muted</code> function, read on each call. <code>game-sim</code> passes one that returns the value it last read through <code>onPrefs</code>.</li>
       </ul>
     </section>
 
@@ -793,8 +843,19 @@ export const COLLECT_KEY = 'sfhousing:run:collect';
 export const MUTED_KEY = 'sfhousing:run:muted';
 export const DEFAULT_COLLECT = false;
 export const DEFAULT_MUTED = false;</code></pre>
+      <pre><code data-lang="ts">// src/lib/game/run/prefs.ts
+const listeners = new Set&lt;() =&gt; void&gt;();
+
+export function onPrefs(fn: () =&gt; void): () =&gt; void {
+  listeners.add(fn);
+  return () =&gt; listeners.delete(fn);
+}</code></pre>
       <ul>
         <li>A value is stored as the string <code>'1'</code> for true and <code>'0'</code> for false.</li>
+        <li><code>writeCollectForMe</code> and <code>writeMuted</code> call every listener once after the write, in the order added, also when the storage is null or the write throws. A listener that throws does not stop the others.</li>
+        <li>Only writes in this page notify. A write in another tab is not listened for.</li>
+        <li><code>game-sim</code> listens with <code>onPrefs</code>, reads both values again and passes the new <code>collectForMe</code> to the layer; its <code>muted</code> function returns the value it last read.</li>
+        <li>A change applies to a run in progress: the layer reads <code>collectForMe</code> on every frame, so turning it on collects every live drop on the next frame and turning it off brings the ring back; <code>muted()</code> is read on every sound call, so muting silences the next call.</li>
         <li>A read returns true for <code>'1'</code>, false for <code>'0'</code>, and the default for anything else, a missing key, a null storage or a throw.</li>
         <li>So "Collect for me" starts off and sound starts on.</li>
         <li>A write with null storage does nothing. A write that throws is swallowed.</li>
@@ -845,7 +906,7 @@ export const RUN_FRAME_P95_MS = 2;</code></pre>
         <li>The map's bar is p95 at most 16.7 ms with the layer drawing. The layer's own share is set at <code>RUN_FRAME_P95_MS</code>: the p95 of one <code>step</code> plus one <code>drawRun</code>.</li>
         <li>2 ms is the starting value. The bench case for a run with drops, which <code>closing</code> writes and runs with <code>npm run bench:map</code> on a quiet machine, decides it: if the map's p95 there is above 16.7 ms, <code>maxDrawn</code> is halved until it passes and this budget is lowered to match.</li>
         <li>The layer's cost is measured without a GPU in <code>run.perf.svelte.spec.ts</code>, in the <code>client-perf</code> project: a real 2D canvas in headless Chromium, which draws in software.</li>
-        <li>The case: a 1280 by 720 CSS px canvas at pixel ratio 2; 3,000 drops over 600 frames of 16.7 ms on a fake clock, with 500 of them on frame 100; <code>radiusPx</code> 40, <code>lingerMs</code> 2,000; motion on; the ring swept in a circle of radius 200 px with 8 points a frame.</li>
+        <li>The case: a 1280 by 720 CSS px canvas at pixel ratio 2; 3,000 drops over 600 frames of 16.7 ms on a fake clock, with 500 of them on frame 100; <code>BASE_HANDS</code> (48 px, 4,000 ms); motion on; the ring swept in a circle of radius 200 px with 8 points a frame.</li>
         <li>It times <code>step</code> plus <code>drawRun</code> per frame with <code>performance.now()</code>, after 60 warm-up frames, and asserts the p95 is at most <code>RUN_FRAME_P95_MS</code>.</li>
         <li>It runs with <code>npm run test:perf</code> on a quiet machine, not in signoff. The <code>run-play</code> implementer runs it before merge and records the p95 in the PR.</li>
         <li>The bounded work is also checked without a clock: the unit spec of <code>drawRun</code> counts calls on a recording context.</li>
@@ -865,9 +926,10 @@ export const RUN_FRAME_P95_MS = 2;</code></pre>
       <li><code>src/lib/game/run/run.perf.svelte.spec.ts</code></li>
       <li><code>src/lib/game/run/sound.ts</code> (replaces the stub) and <code>sound.spec.ts</code></li>
       <li><code>src/lib/game/run/prefs.ts</code> (replaces the stub) and <code>prefs.spec.ts</code></li>
+      <li><code>src/lib/game/run/words.ts</code> and <code>words.spec.ts</code></li>
       <li><code>src/lib/game/run/test/fake-feed.svelte.ts</code></li>
     </ul>
-    <p>No file is deleted. <code>src/lib/game/words.ts</code> is read, not written: its two keys are asked of <code>game-core</code>.</p>
+    <p>No file is deleted. No file outside <code>src/lib/game/run/</code> is written.</p>
   </section>
 
   <section id="sec-tests">
@@ -885,6 +947,7 @@ export const RUN_FRAME_P95_MS = 2;</code></pre>
         <li>Fading: an uncollected drop leaves <code>live</code> at its <code>endMs</code> and can be collected until then; a collected drop leaves after 400 ms; a count after 800 ms; counts never exceed 40.</li>
         <li>Ending: the step that ends the run reports <code>ended</code>, neither drops nor collects, and cuts live drops to 400 ms, or 0 under reduced motion.</li>
         <li>A day going back drops nothing again and lowers no count. A new <code>drops</code> array mid-run counts no row twice and drops the new rows past <code>highDay</code> when reached.</li>
+        <li>A new <code>drops</code> array mid-run: a shown drop keeps its state and times; a shown drop whose row is gone stays until its <code>endMs</code> and the take does not go down; a row not yet shown appears at its new day; a row not yet shown and now missing never appears.</li>
         <li>A burst of 500 drops in one step counts 500 and collects every one under auto.</li>
         <li><code>dirty</code>: false for a running step with nothing new under reduced motion; true while a drop animates with motion. <code>idle</code> is true only once not running with nothing left.</li>
         <li>The ring: clamped to the box; a key step of 16 px and a Shift step of 64 px; <code>setBox</code> re-clamps; <code>sweep</code> holds at most 32 entries.</li>
@@ -892,6 +955,8 @@ export const RUN_FRAME_P95_MS = 2;</code></pre>
         <li><code>drawRun</code> on a recording context: draws at most 240 drops and 40 counts with 1,000 live; draws the newest; draws no ring when <code>showRing</code> is false; with reduced motion draws every shape at full radius and alpha 1.</li>
         <li><code>makeSound</code> with a fake context: nothing before the gesture; nothing while muted; each sound's voices scheduled with the table's numbers; a second <code>pop</code> 0.05 s after the first is dropped and one 0.08 s after plays; a suspended context is resumed.</li>
         <li><code>createSound</code> without <code>AudioContext</code> returns a sound whose calls do nothing and do not throw.</li>
+        <li><code>onPrefs</code>: each write calls every listener once, also with null or throwing storage; a throwing listener does not stop the next; the returned function removes the listener.</li>
+        <li>Words: <code>runOverText</code> gives "Run over. 1,234 of 5,678 homes collected." for those totals; <code>dropCountText(12)</code> gives "+12" and <code>dropCountText(1200)</code> "+1,200".</li>
         <li>Prefs: defaults with null storage, a missing key, a bad value and a throwing storage; <code>'1'</code> and <code>'0'</code> round-trip for both keys; a throwing write is swallowed.</li>
       </ul>
     </section>
@@ -905,7 +970,8 @@ export const RUN_FRAME_P95_MS = 2;</code></pre>
         <li>A touch <code>pointerdown</code> then <code>pointermove</code> collects a drop under the drag; a touch on another spot does not sweep the ground between.</li>
         <li>A pen <code>pointermove</code> moves the ring as a mouse does.</li>
         <li>ArrowRight moves the ring 16 px and Shift+ArrowRight 64 px, each with <code>preventDefault</code>; an arrow key in an <code>input</code> is left alone.</li>
-        <li>With <code>collectForMe</code>, every drop is collected as it appears and no ring is drawn.</li>
+        <li>With <code>collectForMe</code>, every drop is collected as it appears and no ring is drawn. Setting the prop to true in mid-run collects every live drop on the next frame; setting it back shows the ring.</li>
+        <li>Replacing <code>feed.drops</code> in mid-run with an array that drops a shown row and changes another's day counts no row twice and lowers neither <code>data-dropped</code> nor <code>data-collected</code>.</li>
         <li>Setting <code>running</code> false calls <code>ontake</code> once and sets <code>run-live</code> to <code>runOverText</code> of the take; the next start empties it.</li>
         <li>The element under the map box's centre, by <code>document.elementFromPoint</code>, is not the layer's canvas.</li>
         <li>Once idle the loop asks for no further frame, and the canvas is hidden.</li>
@@ -938,7 +1004,9 @@ export const RUN_FRAME_P95_MS = 2;</code></pre>
       <li>A new touch, or re-entry after the pointer left the map, breaks the path. Reason: lifting a finger is not a sweep.</li>
       <li>An uncollected drop lasts at least 400 ms, and a collected one 400 ms more. Reason: the flash limit needs every shape to stay a while.</li>
       <li>A run's end cuts live drops to a 400 ms fade and stops collecting. Reason: <code>ontake</code> at the end must carry final totals.</li>
-      <li>A feed day going back changes nothing; <code>seen</code> keeps each row counted once. Reason: counts that go down would undo what the player saw.</li>
+      <li>A feed day going back changes nothing. Reason: counts that go down would undo what the player saw.</li>
+      <li>A shown drop whose row leaves a new <code>drops</code> array stays until its own end. Reason: taking away a drop the player saw, or units they collected, would read as a fault.</li>
+      <li><code>onPrefs</code> notifies after every write, failed ones included, and only in this page. Reason: the switch the player pressed must take effect even when storage is full.</li>
       <li>Only the newest 240 drops are drawn; older live drops beyond the cap still count and can be collected. Reason: the draw stays inside the frame budget and the flash area, and no drop is lost.</li>
       <li>Drop radius grows with the square root of worth, 4.5 to 9 px. Reason: area tracks homes while a large project does not hide its neighbours.</li>
       <li>At most one sound per frame, collect before pop, with gaps of 50 and 70 ms. Reason: a burst must not become a roar.</li>
@@ -947,7 +1015,6 @@ export const RUN_FRAME_P95_MS = 2;</code></pre>
       <li>The colours are the page's accent, ink and surface tokens. Reason: no new colour is added and dark mode follows.</li>
       <li>The canvas is hidden when idle. Reason: a hidden canvas is not composited over the map.</li>
       <li>The clock is a mocked module, not a prop. Reason: the R1 props stay as the design gives them.</li>
-      <li><code>data-dropped</code> and <code>data-collected</code> on the layer. Reason: <code>closing</code>'s journey needs to read the totals without the store.</li>
       <li>Preferences are stored as <code>'1'</code> and <code>'0'</code>. Reason: the shortest value that a stray string cannot be read as.</li>
       <li>The layer's frame budget is 2 ms p95, to be confirmed by <code>closing</code>'s bench case. Reason: the map's p95 is about 9 to 10 ms today, so 2 ms keeps it well under 16.7 ms.</li>
     </ul>
@@ -959,8 +1026,8 @@ export const RUN_FRAME_P95_MS = 2;</code></pre>
       <li>Mounting the layer, building <code>RunFeed</code> from the page's city index, calling <code>planDrops</code>, the run's clock and its speed, settling the take, and calling <code>sound.goal()</code> and <code>sound.buy()</code>: <code>game-sim</code>.</li>
       <li>The run view, the camera lock, <code>touch-action: none</code> and turning off the map's own hover, taps and tooltips during a run: <code>map-run</code> (M1).</li>
       <li><code>existing</code> in the city feed and the page's index: <code>city-net</code> (E1).</li>
-      <li>The "Collect for me" and sound switches and the writes of the two preferences: <code>tally-tree</code> (<code>GamePanel</code>).</li>
-      <li>The words <code>runOverText</code> and <code>dropCountText</code>, <code>BASE_HANDS</code>, <code>credit</code> and <code>total</code>: <code>game-core</code>.</li>
+      <li>The "Collect for me" and sound switches, which call the <code>write*</code> functions: <code>tally-tree</code> (<code>GamePanel</code>). Listening with <code>onPrefs</code> and passing the values on: <code>game-sim</code>.</li>
+      <li><code>BASE_HANDS</code>, <code>credit</code> and <code>total</code>: <code>game-core</code>.</li>
       <li>The Hands nodes and their values: <code>tree-catalogue</code>.</li>
       <li>The arrow keys in About's list of shortcuts: <code>game-shell</code>.</li>
       <li>The bench case for a run with drops and the end-to-end journey: <code>closing</code>.</li>
