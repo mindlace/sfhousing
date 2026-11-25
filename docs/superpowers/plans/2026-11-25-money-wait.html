@@ -1,0 +1,239 @@
+<article>
+  <header>
+    <h1>Homes waiting for money: implementation plan</h1>
+    <p>Implements the <code>money-wait</code> unit: a per-month count of homes waiting in the plan's funding line, recorded in the world and carried by <code>SeriesChunk.waiting</code> to <code>TimelineView.waitingMoney</code>.</p>
+    <aside data-kind="note"><strong>For agentic workers</strong> REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps are checklist items; progress is kept in the workspace ledger, not in the plan.</aside>
+  </header>
+
+  <section id="sec-overview">
+    <h2>Overview</h2>
+    <dl>
+      <dt>Goal</dt>
+      <dd>Record, at the end of every funded step, the homes waiting in the funding line, and carry that count per calendar month through the chunk to the view.</dd>
+      <dt>Architecture</dt>
+      <dd>The count (<code>waitingHomes</code>) and the record (<code>recordWaiting</code>) live in <code>funding/system.ts</code> and run last in the <code>shadow</code> hook (system 7), writing two new <code>FundLine</code> fields (<code>waitHomes</code>, <code>waitThrough</code>). <code>funding/columns.ts</code> gains the reader <code>waitingAt</code>. The series' <code>Extras</code> gains <code>waiting(world, from, through)</code>, mapping calendar months to model months with the series' own <code>finalTable</code>; <code>chunkOf</code> fills <code>waiting</code> from the money feed's world; <code>viewOf</code> joins it into <code>waitingMoney</code> and <code>chunksBefore</code> trims it. The series data layout is unchanged.</dd>
+      <dt>Tech stack</dt>
+      <dd>TypeScript, Vitest (server project), typed-array world columns.</dd>
+      <dt>Spec</dt>
+      <dd><code>docs/superpowers/specs/2026-11-24-money-wait-design.html</code> (read it from the package worktree <code>/Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-feel/.claude/worktrees/incremental-loop</code>). Sections implemented: <code>#sec-design-where</code>, <code>#sec-design-count</code>, <code>#sec-design-record</code>, <code>#sec-design-month</code>, <code>#sec-design-chunk</code>, <code>#sec-design-view</code>, <code>#sec-design-restore</code>, <code>#sec-design-cost</code>, <code>#sec-design-docs</code>; tests per <code>#sec-tests</code>.</dd>
+    </dl>
+    <aside data-kind="warning"><strong>Prerequisite</strong> The optional fields <code>SeriesChunk.waiting?: number[] | null</code> and <code>TimelineView.waitingMoney?: number[] | null</code> are added to <code>src/lib/sim/world/score/types.ts</code> by the <code>contracts</code> unit (row E2 shape). This plan starts only after that row is merged into this branch. This unit never edits <code>score/types.ts</code>.</aside>
+  </section>
+
+  <section id="sec-global-constraints">
+    <h2>Global constraints</h2>
+    <section id="sec-gc-interfaces">
+      <h3>Interface rows (copied verbatim from the spec)</h3>
+      <table id="tbl-interfaces">
+        <caption>Interface table</caption>
+        <thead>
+          <tr><th scope="col">Row</th><th scope="col">Owner</th><th scope="col">Layer</th><th scope="col">Summary</th><th scope="col">Contract</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">E2</th><td><code>money-wait</code></td><td>Decomposition choice</td><td>Homes waiting for money, by month</td><td>E2</td></tr>
+        </tbody>
+      </table>
+      <section id="sec-gc-e2">
+        <h4>E2 Homes waiting for money</h4>
+        <pre><code data-lang="ts">// src/lib/sim/world/score/types.ts
+export interface SeriesChunk {
+  from: number;
+  rows: MonthRow[];
+  planEffect: PlanRow[];
+  money: MoneyRow[] | null;
+  tiers: TierUnits[] | null;
+  waiting?: number[] | null;
+}
+
+export interface TimelineView {
+  // every field it has today, and:
+  waitingMoney?: number[] | null;
+}</code></pre>
+        <dl>
+          <dt><code>waiting</code></dt><dd>Per calendar month of the chunk: homes in applications waiting in the plan's funding line at the end of the model month that holds the calendar month's last day.</dd>
+        </dl>
+        <ul>
+          <li>Both fields stay optional. An absent field reads as null.</li>
+          <li>Null or absent exactly when <code>money</code> is null.</li>
+          <li>Homes are an application's gross units.</li>
+          <li>A row marked gone is not counted. A lot that is no longer free is not counted.</li>
+          <li>A lot with two applications counts once, by the larger.</li>
+          <li>Two calendar months that end in one model month share a value.</li>
+          <li>The value is of the plan's world, never the comparison's.</li>
+          <li><code>waitingMoney</code> is null when any chunk of the view lacks <code>waiting</code>.</li>
+          <li>No file under <code>src/lib/sim/finance</code> changes.</li>
+        </ul>
+      </section>
+    </section>
+    <section id="sec-gc-design">
+      <h3>Design global constraints (copied verbatim)</h3>
+      <ul>
+        <li>One future: the same policy document always gives the same forecast. No game state reaches the worker except through the policy document.</li>
+        <li>No file the dataset version hashes is changed: <code>pipeline</code>, <code>src/lib/config.ts</code>, <code>src/lib/{data,generator,timelapse}</code>, <code>src/lib/plan/{geometry,types}.ts</code>, <code>src/lib/sim/finance</code> (<code>pipeline/lib/version.ts:41</code>). The dataset version stays as it is.</li>
+        <li>A policy node acts on a lever the code already has, at a value the code already sources. No node invents a value.</li>
+        <li>The painted area, own pools, the City funding scale and market terms are never offered in a game.</li>
+        <li>Published plans and policies open and play in full, as today.</li>
+        <li>WCAG 2.2 AA: everything works from the keyboard; targets are at least 24 px; motion follows the reduced-motion setting; nothing flashes more than three times a second.</li>
+        <li>Page text is short. A node is a name, a line and a price.</li>
+        <li>The CSP is not widened. Sound is made in the browser; no audio file, font or script is added.</li>
+        <li>A runtime dependency is not added without a credit in <code>src/lib/attribution.ts</code>. None is expected.</li>
+        <li>Code style: 2-space indent, single quotes, no trailing commas, 100 columns.</li>
+        <li>Vitest runs with <code>expect.requireAssertions</code>. Tests are colocated.</li>
+        <li>A schema change goes through <code>npm run db:generate</code>. Migrations are never edited by hand.</li>
+        <li>Signoff fails on server stderr, on timing crutches and on retried flakes. Timing is measured only on a quiet machine.</li>
+        <li>Port 4173 belongs to whichever session started the preview. Never kill it; wait.</li>
+        <li>Commits use Conventional Commits and carry no Claude attribution.</li>
+        <li>Work happens in git worktrees under <code>.claude/worktrees/</code>.</li>
+      </ul>
+    </section>
+    <section id="sec-gc-unit">
+      <h3>Unit rules</h3>
+      <ul>
+        <li>Files this unit may write: <code>src/lib/sim/world/funding/{columns,system}.ts</code>, <code>funding/columns.spec.ts</code>, <code>funding/system.spec.ts</code> (new); <code>src/lib/sim/world/score/{series,chunk,view}.ts</code>, <code>score/chunk.spec.ts</code>, <code>score/view.spec.ts</code>, <code>score/money.spec.ts</code>; the <code>before</code> helper of <code>src/lib/sim/world/host.edit.spec.ts</code> and of <code>src/lib/sim/timeline-client.host.spec.ts</code>; <code>docs/dev/world-score.md</code>, <code>docs/dev/world-funding.md</code>. Nothing else.</li>
+        <li><code>score/types.ts</code> is not changed. The series' <code>WorldSeriesData</code>, its <code>version: 5</code> and its 18 fields are not changed.</li>
+        <li>The determinism rule for <code>src/lib/sim/world/**</code> holds: no <code>Math.exp</code>, <code>Math.log</code>, <code>Math.pow</code> or other inexact <code>Math</code> function, and no <code>**</code>.</li>
+        <li>No <code>setTimeout</code>/<code>setInterval</code> in any spec or helper; <code>npx chreode timing-check --head HEAD</code> is clean after each task's last commit.</li>
+        <li>Shell rule for implementers: read files with Read, Grep and Glob; every Bash call is one command starting with <code>npm</code>, <code>npx</code>, <code>lsof</code> or an allowed <code>git</code>/read-only command; no <code>cd</code>, no <code>VAR=</code> prefix, no <code>;</code>/<code>&amp;&amp;</code>/pipes, no <code>$(...)</code>, no redirects.</li>
+      </ul>
+    </section>
+  </section>
+
+  <section id="sec-review-focus">
+    <h2>Review focus</h2>
+    <ul>
+      <li><strong>Funding columns made after month 1.</strong> A timeline whose money starts later gets its columns from the first hook (<code>ensure</code>); its first <code>recordWaiting</code> fills months 1..m-1 from <code>waitHomes[0] = 0</code>. Test: Task 1, "a record after a gap fills the gap with the last value" and "a fresh line's first record at month 5 reads 0 for months 0..4".</li>
+      <li><strong>Months with no funding hook after the last record.</strong> A frame with <code>finance</code> null skips every hook, so <code>world.month</code> moves past <code>waitThrough</code>; <code>waitingAt</code> must return the last value, not throw or read 0. Test: Task 1, "waitingAt for a month after waitThrough and not after world.month gives the last recorded value".</li>
+      <li><strong>Restore from a copy, then re-step.</strong> A restored world re-records each quiet step after the copy's <code>waitThrough</code>; the order check must not fire and values before the edit must match. Test: Task 1, "a structuredClone stepped on alike records the same values" (covers the clone path); existing <code>host.edit.spec.ts</code> with the updated <code>before</code> covers the runner path in Task 2.</li>
+      <li><strong>Two calendar months ending in one model month.</strong> A February between two model month ends shares a value with January. Test: Task 2, "every entry equals waitingAt at finalTable" checks all 480 months on the funded mini, which includes such Februaries; the test asserts at least one pair <code>finalTable[i] === finalTable[i + 1]</code> exists so it is not vacuous.</li>
+      <li><strong>A view mixing a chunk without <code>waiting</code>.</strong> A chunk posted by an older worker, or a fixture literal, lacks the key; with money present, <code>waitingMoney</code> must be null rather than shorter than <code>filledThrough + 1</code>. Test: Task 2, "waitingMoney is null when a chunk with money lacks waiting (absent or null)".</li>
+    </ul>
+  </section>
+
+  <section id="sec-task-1">
+    <h2>Task 1: The count and its record in the world</h2>
+    <p>Spec sections: <code>#sec-design-where</code>, <code>#sec-design-count</code>, <code>#sec-design-record</code>, <code>#sec-design-restore</code>, and the <code>world-funding.md</code> part of <code>#sec-design-docs</code>. The counting code in <code>#sec-design-count</code> is the algorithm; use it as written.</p>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/lib/sim/world/funding/columns.ts</code> (<code>FundLine</code> at <code>:13-60</code>, <code>emptyLine</code> at <code>:145-178</code>; add <code>waitingAt</code>)</li>
+      <li>Modify: <code>src/lib/sim/world/funding/system.ts</code> (add <code>waitingHomes</code>, <code>recordWaiting</code>; <code>shadow</code> hook at <code>:95-98</code>)</li>
+      <li>Create: <code>src/lib/sim/world/funding/system.spec.ts</code></li>
+      <li>Modify: <code>src/lib/sim/world/funding/columns.spec.ts</code></li>
+      <li>Modify: <code>docs/dev/world-funding.md</code></li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>lineIndex(line).byLot</code> and <code>rowOfSeq(line, seq)</code> from <code>funding/line-index.ts</code>; <code>lotRow(lots, lot)</code> and <code>LOT_FREE</code> (find their current module with Grep; <code>serve.ts:202-206</code> uses them); <code>stepShadows</code>.</li>
+      <li>Produces (Task 2 relies on): <code>export function waitingAt(world: World, m: number): number</code> in <code>funding/columns.ts</code>; <code>FundLine.waitHomes: Int32Array</code>, <code>FundLine.waitThrough: number</code>; <code>export function waitingHomes(world: World): number</code> and <code>export function recordWaiting(world: World, month: number): void</code> in <code>funding/system.ts</code>.</li>
+    </ul>
+    <ol>
+      <li id="t1-s1"><input type="checkbox"> Write the failing tests in <code>funding/system.spec.ts</code> (new, server project), building hand-made lines with <code>initFunding</code> + <code>addLineRow</code> on a small world, and a funded world from <code>fundedMini()</code> stepped as <code>score/money.spec.ts:277</code> does (<code>cityOf(fundedMini(), 480)</code> or its underlying world loop):
+        <ul>
+          <li><code>waitingHomes counts 0 on an empty line and on a world without funding columns</code></li>
+          <li><code>a row marked gone is not counted, including one marked after the index was built</code> (build the index with <code>lineIndex(line)</code>, then set <code>line.gone[i] = 1</code> without bumping <code>version</code>; expect the count to drop)</li>
+          <li><code>a lot with a market application of 10 and an affordable one of 30 counts 30, whichever comes first</code> (both orders)</li>
+          <li><code>a row whose lot row is LOT_DONE, LOT_LIVE or LOT_HELD is not counted; a lot with no lot row is counted</code></li>
+          <li><code>on the funded mini, after every one of 480 steps waitingAt(w, w.month) equals a reference scan</code>: the reference is written in the test, a plain loop over rows <code>0..line.n-1</code> skipping <code>gone</code>, building a <code>Map&lt;lot, largest units&gt;</code> with the same lot-state test, summed. Also <code>expect(max).toBeGreaterThan(0)</code>.</li>
+          <li><code>stepping a world never changes an earlier month's value</code> (snapshot <code>waitingAt(w, k)</code> for all k after each step, compare with the previous snapshot's prefix)</li>
+          <li><code>a structuredClone reads the same values, and a clone stepped on alike with its original records the same values</code></li>
+          <li><code>recordWaiting throws for a month not after waitThrough</code>: message <code>recordWaiting: month 3 is not after month 3</code> (same month) and for an earlier month</li>
+          <li><code>a record after a gap fills the gap with the last value</code>: record month 2 with count A, change the line, record month 6 with count B; <code>waitingAt</code> for 3..5 is A, 6 is B</li>
+          <li><code>a fresh line's first record at month 5 reads 0 for months 0..4</code></li>
+        </ul>
+      </li>
+      <li id="t1-s2"><input type="checkbox"> Write the failing tests in <code>funding/columns.spec.ts</code>:
+        <ul>
+          <li><code>emptyLine gives waitHomes of length 1 holding 0 and waitThrough 0</code> (through <code>initFunding</code>)</li>
+          <li><code>waitingAt(w, 0) is 0</code></li>
+          <li><code>waitingAt throws RangeError for a month after world.month, below 0 or not whole</code> (<code>w.month + 1</code>, <code>-1</code>, <code>0.5</code>)</li>
+          <li><code>waitingAt on a world without funding columns returns 0</code></li>
+          <li><code>waitingAt for a month after waitThrough and not after world.month gives the last recorded value</code></li>
+        </ul>
+      </li>
+      <li id="t1-s3"><input type="checkbox"> Run them and see them fail
+        <pre><code data-lang="sh">npx vitest run --project server src/lib/sim/world/funding/system.spec.ts src/lib/sim/world/funding/columns.spec.ts</code></pre>
+      </li>
+      <li id="t1-s4"><input type="checkbox"> In <code>funding/columns.ts</code>: add <code>waitHomes: Int32Array</code> and <code>waitThrough: number</code> to <code>FundLine</code> with the doc comments from <code>#sec-design-record</code>; <code>emptyLine()</code> sets <code>waitHomes: new Int32Array(1)</code>, <code>waitThrough: 0</code>. Do not add them to <code>LINE_ROWS</code> (they are not per-row columns, so <code>compactLine</code> and <code>grow</code> never touch them). Add <code>waitingAt(world, m)</code>: <code>RangeError</code> unless <code>Number.isInteger(m) &amp;&amp; 0 &lt;= m &amp;&amp; m &lt;= world.month</code>; 0 when <code>!('gone' in world.line)</code>; else <code>waitHomes[Math.min(m, waitThrough)]</code>.</li>
+      <li id="t1-s5"><input type="checkbox"> In <code>funding/system.ts</code>: add <code>waitingHomes</code> exactly as the spec's code block, binding the imported names once at module top; add <code>recordWaiting(world, month)</code>: throws <code>Error(`recordWaiting: month ${month} is not after month ${t}`)</code> when <code>month &lt;= t</code>; grows <code>waitHomes</code> to hold index <code>month</code> (new length <code>Math.max(month + 1, 2 * length, 8)</code>, copying with <code>set</code>); fills <code>t + 1..month - 1</code> with <code>waitHomes[t]</code>; writes the count at <code>month</code>; sets <code>waitThrough = month</code>. A world without funding columns: return without recording (the hook always runs <code>ensure</code> first, so this only matters for direct calls). The <code>shadow</code> hook becomes <code>ensure(ctx); stepShadows(ctx); recordWaiting(ctx.world, ctx.month);</code>.</li>
+      <li id="t1-s6"><input type="checkbox"> Run the new tests and see them pass, then the whole funding and world suites to confirm the world-equality tests (<code>runner/ensemble.spec.ts</code>, <code>funding/closing.spec.ts</code>, the golden tests) still pass with the new fields
+        <pre><code data-lang="sh">npx vitest run --project server src/lib/sim/world</code></pre>
+        <p>Expected: all pass. If a golden or snapshot test fails only because a world now carries <code>waitHomes</code>/<code>waitThrough</code>, stop and report it (do not edit a file outside this unit's list).</p>
+      </li>
+      <li id="t1-s7"><input type="checkbox"> Update <code>docs/dev/world-funding.md</code>: its list of line columns gains <code>waitHomes</code> and <code>waitThrough</code>; its account of system 7 says the count of homes waiting is recorded after the compaction (<code>recordWaiting</code>, last in the step).</li>
+      <li id="t1-s8"><input type="checkbox"> Lint, type-check and the timing check
+        <pre><code data-lang="sh">npx eslint src/lib/sim/world/funding</code></pre>
+        <pre><code data-lang="sh">npx prettier --check src/lib/sim/world/funding docs/dev/world-funding.md</code></pre>
+        <pre><code data-lang="sh">npm run check</code></pre>
+        <pre><code data-lang="sh">npx vitest run --project server src/lib/sim/world/determinism.lint.spec.ts</code></pre>
+      </li>
+      <li id="t1-s9"><input type="checkbox"> Commit, then run <code>npx chreode timing-check --head HEAD</code> and see it clean
+        <pre><code data-lang="sh">git commit -m "feat(world-funding): record homes waiting for money each funded month"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-2">
+    <h2>Task 2: The chunk and the view carry the count</h2>
+    <p>Delivers row E2.</p>
+    <p>Spec sections: <code>#sec-design-month</code>, <code>#sec-design-chunk</code>, <code>#sec-design-view</code>, <code>#sec-design-restore</code>, <code>#sec-design-cost</code>, the <code>world-score.md</code> part of <code>#sec-design-docs</code>, and the <code>before</code> decision in <code>#sec-files</code>.</p>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/lib/sim/world/score/series.ts</code> (<code>Extras</code> at <code>:159-175</code>; the <code>EXTRAS.set</code> object at <code>:633-666</code>)</li>
+      <li>Modify: <code>src/lib/sim/world/score/chunk.ts</code></li>
+      <li>Modify: <code>src/lib/sim/world/score/view.ts</code> (<code>viewOf</code> at <code>:97-135</code>, <code>chunksBefore</code> at <code>:138-156</code>)</li>
+      <li>Modify: <code>src/lib/sim/world/score/chunk.spec.ts</code> (keys test at <code>:56-65</code>), <code>score/view.spec.ts</code> (<code>moneyChunk</code> at <code>:101-104</code>), <code>score/money.spec.ts</code> (funded mini describe at <code>:268</code>)</li>
+      <li>Modify: the <code>before</code> helper only of <code>src/lib/sim/world/host.edit.spec.ts:213-223</code> and <code>src/lib/sim/timeline-client.host.spec.ts:188-198</code></li>
+      <li>Modify: <code>docs/dev/world-score.md</code></li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>waitingAt(world: World, m: number): number</code> from <code>funding/columns.ts</code> (Task 1); the optional <code>SeriesChunk.waiting</code> and <code>TimelineView.waitingMoney</code> from <code>score/types.ts</code> (contracts).</li>
+      <li>Produces (row E2): <code>Extras.waiting(world: World, from: number, through: number): number[]</code>; every <code>chunkOf</code> result has key <code>waiting</code> (<code>number[] | null</code>); every <code>viewOf</code> result has key <code>waitingMoney</code> (<code>number[] | null</code>); <code>chunksBefore</code> trims <code>waiting</code>.</li>
+    </ul>
+    <ol>
+      <li id="t2-s1"><input type="checkbox"> Write the failing tests.
+        <ul>
+          <li><code>chunk.spec.ts</code>: rename and update the keys test to <code>'a chunk holds rows, the effect, money, tiers and waiting only'</code>, expecting <code>['from', 'money', 'planEffect', 'rows', 'tiers', 'waiting']</code>; extend <code>'money and tiers are null without a feed'</code> (or add a case) so <code>c.waiting</code> is <code>null</code>.</li>
+          <li><code>money.spec.ts</code>, in <code>describe('plan world money, funded mini')</code>:
+            <ul>
+              <li><code>waiting: every entry equals waitingAt at finalTable</code>: for one chunk <code>0..finalThrough</code> of the plan series with its feed, <code>waiting.length === through - from + 1</code> and <code>waiting[k] === waitingAt(feed.world, finalTable(score)[from + k])</code> for every k; also some entry &gt; 0, and some i with <code>finalTable[i] === finalTable[i + 1]</code> (so shared values are exercised).</li>
+              <li><code>waiting: two adjacent chunks equal one chunk over both</code></li>
+              <li><code>waiting: the twin does not move it</code>, mirroring the money case at <code>:335-348</code>: <code>chunkOf(a, b, a.feed, …).waiting</code> equals <code>chunkOf(a, d, a.feed, …).waiting</code>.</li>
+            </ul>
+          </li>
+          <li><code>view.spec.ts</code>: <code>moneyChunk</code> also sets <code>waiting</code> (an array of the same length as <code>money</code>, e.g. <code>money.map((_, i) =&gt; 10 * i)</code>), plus new cases:
+            <ul>
+              <li><code>viewOf joins waiting into waitingMoney with filledThrough + 1 entries</code> (two chunks)</li>
+              <li><code>waitingMoney is null when the view's money is null</code> (chunks without money)</li>
+              <li><code>waitingMoney is null when a chunk with money lacks waiting (absent or null)</code>: one case with the key deleted, one with <code>waiting: null</code></li>
+              <li><code>chunksBefore trims waiting, and a refill gives the same view as a fresh fill, waitingMoney included</code>: <code>viewOf([...chunksBefore(all, k), ...rest])</code> <code>toEqual</code> <code>viewOf(all)</code> where <code>rest</code> are chunks from k on.</li>
+            </ul>
+          </li>
+        </ul>
+      </li>
+      <li id="t2-s2"><input type="checkbox"> Run them and see them fail
+        <pre><code data-lang="sh">npx vitest run --project server src/lib/sim/world/score/chunk.spec.ts src/lib/sim/world/score/view.spec.ts src/lib/sim/world/score/money.spec.ts</code></pre>
+      </li>
+      <li id="t2-s3"><input type="checkbox"> In <code>score/series.ts</code>: add <code>waiting(world: World, from: number, through: number): number[]</code> to <code>Extras</code> with the doc comment from <code>#sec-design-chunk</code>. In the <code>EXTRAS.set</code> object: <code>checkRange('waiting', from, through)</code>, then entry k is <code>waitingAt(world, table[from + k])</code>, where <code>table</code> is the series' own <code>tablesOf(s).table</code> (already in scope in <code>createWorldSeries</code> at <code>:239</code>). Import <code>waitingAt</code> from <code>../funding/columns</code> and bind it once at module top as <code>:18-22</code> does.</li>
+      <li id="t2-s4"><input type="checkbox"> In <code>score/chunk.ts</code>, after <code>tiers</code>: <code>const waiting = extras === null ? null : extras.waiting(money!.world, from, through);</code> and return <code>{ from, rows, planEffect, money: moneyRows, tiers, waiting }</code>. Update the rule-9 comment to name waiting.</li>
+      <li id="t2-s5"><input type="checkbox"> In <code>score/view.ts</code>: <code>viewOf</code> collects every chunk's <code>waiting</code> as it does <code>tiers</code> (<code>hasWaiting</code> false when any chunk's is null or absent); sets <code>waitingMoney: hasMoney &amp;&amp; money.length &gt; 0 &amp;&amp; hasWaiting ? waiting : null</code>, i.e. null whenever the view's <code>money</code> is null. <code>chunksBefore</code>'s trimmed chunk adds <code>waiting: c.waiting ? c.waiting.slice(0, n) : null</code>.</li>
+      <li id="t2-s6"><input type="checkbox"> In both <code>before</code> helpers (<code>host.edit.spec.ts</code>, <code>timeline-client.host.spec.ts</code>), after the tiers line, add <code>waiting: c.waiting ? c.waiting.slice(0, k) : null</code>. Change nothing else in those files.</li>
+      <li id="t2-s7"><input type="checkbox"> Run the score suite, the host suites and the client's chunk consumers, and see them pass
+        <pre><code data-lang="sh">npx vitest run --project server src/lib/sim</code></pre>
+        <pre><code data-lang="sh">npx vitest run src/lib/timeline</code></pre>
+        <p>Expected: all pass, including <code>host.spec.ts</code> "the posted series equal a plain loop of the same world" and every <code>host.edit.spec.ts</code> case comparing a view after restores and refills with a fresh open's. A fixture or literal test outside this unit's files that fails on the new key is reported, not edited.</p>
+      </li>
+      <li id="t2-s8"><input type="checkbox"> Update <code>docs/dev/world-score.md</code> per <code>#sec-design-docs</code>: a <code>waiting</code> bullet in "Chunks"; a new section "Homes waiting for money" after "Money" (the counting rule, the record at the end of system 7, the model month of a calendar month and the up-to-30-day difference that names, why the count is kept in the world and not the series); <code>waitingMoney</code> and its null rule in "The view", with <code>chunksBefore</code> trimming it; <code>waitingHomes</code>, <code>recordWaiting</code> (<code>funding/system.ts</code>) and <code>waitingAt</code> (<code>funding/columns.ts</code>) in "Files".</li>
+      <li id="t2-s9"><input type="checkbox"> Lint, type-check, determinism
+        <pre><code data-lang="sh">npm run lint</code></pre>
+        <pre><code data-lang="sh">npm run check</code></pre>
+      </li>
+      <li id="t2-s10"><input type="checkbox"> Commit, then run <code>npx chreode timing-check --head HEAD</code> and see it clean
+        <pre><code data-lang="sh">git commit -m "feat(world-score): carry homes waiting for money in chunks and the view"</code></pre>
+      </li>
+      <li id="t2-s11"><input type="checkbox"> Cost bars (<code>#sec-design-cost</code>), only on a quiet machine: check <code>uptime</code>; if the load is high, skip and say so in the report (the operator runs it later). Otherwise run
+        <pre><code data-lang="sh">npx vitest --run --project perf --no-file-parallelism --maxWorkers=1 src/lib/sim/world/funding/funded-month.perf.spec.ts src/lib/sim/world/score/chunk.perf.spec.ts src/lib/sim/world/host.perf.spec.ts</code></pre>
+        <p>Bars: one funded world-month at most 90 µs mean; no slice over 50 ms, first cells and first filled within 3 s, the whole window within 480 × 9 ms; one month's scoring for a pair within 1 ms at the median. If a bar fails, stop and report the numbers; do not change the counting rule to meet it.</p>
+      </li>
+    </ol>
+  </section>
+</article>

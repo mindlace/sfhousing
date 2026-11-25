@@ -1060,6 +1060,7 @@ describe('TimelineController city', () => {
       lngLat: Float32Array.from(ms.flatMap((m) => m.lngLat)),
       days: Float32Array.from(ms.flatMap((m) => m.days)),
       homes: Uint16Array.from(ms.map((m) => m.homes)),
+      existing: new Uint16Array(ms.length),
       flags: Uint8Array.from(ms.map((m) => m.flags ?? 0))
     };
   }
