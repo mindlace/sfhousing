@@ -644,7 +644,7 @@ it('a locked SimMap unmounted, then a new one mounted: no error, and it starts u
 
   <section id="sec-open-questions">
     <h2>Open questions</h2>
-    <aside data-kind="question"><strong>Question map-lane-1</strong> (filed, blocks no task) While locked, the bottom-left control container is <code>display: none</code>, and <code>src/lib/timeline/TimelineMode.svelte:987</code> and <code>:1021</code> measure it to place cards. Locked, it reads zero. No card shows while locked, but this is a consumer outside the write set that neither spec models.</aside>
+    <aside data-kind="note"><strong>Note</strong> While locked, the bottom-left control container is <code>display: none</code> (map-run §sec-design-controls). No consumer needs its size while locked, and no unit changes anything for it.</aside>
   </section>
 
   <section id="sec-self-review">
