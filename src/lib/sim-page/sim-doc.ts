@@ -1,6 +1,7 @@
 /**
- * The /sim policy document: what is autosaved, published and remixed. A `SimPolicy` plus the
- * dataset it was made against and an optional title, in a canonical text form with size limits.
+ * The simulation's schema 3 policy document, which stored rows and old autosaves still hold. A
+ * `SimPolicy` plus the dataset it was made against and an optional title, in a canonical text form
+ * with size limits.
  * Pure TS (the server validates published documents with it): no Svelte, no DOM.
  */
 import { DATASET_VERSION_RE } from '$lib/data/dataset-version';
