@@ -452,7 +452,7 @@ interface TreeProps {
   units: Units;
   busy: boolean;
   next: Rung | null;
-  ending: { reachedOn: Day; perAddedHome: number | null } | null;
+  ending: { reachedOn: Day; stateBy: Day; perAddedHome: number | null } | null;
   onbuy(id: NodeId): void;
   onedit(id: NodeId): void;
   ontoggle(id: NodeId, on: boolean): void;
@@ -484,7 +484,7 @@ interface GameCellProps {
       <dl>
         <dt><code>before</code></dt><dd>Homes by the deadline in the run before this one on the same rung, or null.</dd>
         <dt><code>on</code></dt><dd>For each bought node whose grant made a policy: whether that policy is switched on. A node with no entry shows no switch.</dd>
-        <dt><code>ending</code></dt><dd>Set once the last rung is met: the day the goal was reached and public money per added home.</dd>
+        <dt><code>ending</code></dt><dd>Set once the last rung is met: the day the goal was reached, the day the state asks for the goal's homes by (<code>stateBy</code>, RHNA's deadline), and public money per added home.</dd>
         <dt><code>busy</code></dt><dd>The forecast for the next run is not ready. Run says so and waits.</dd>
         <dt><code>next</code></dt><dd>The rung on offer, when the rung in play is met.</dd>
         <dt><code>homes</code></dt><dd>Null before the first run of a rung: the headline then shows the goal alone.</dd>
@@ -712,6 +712,7 @@ export function balanceName(n: number): string; // '1,652 units to spend'
 export function takeNextText(label: string): string; // 'Take the next goal: Dec 2050'
 export const ENDING_TITLE = 'Every goal met';
 export function endingReached(reachedOn: Day): string; // 'Reached in Mar 2041'
+export function endingState(stateBy: Day): string; // 'The state asks by Jan 2031'
 export const ENDING_LEVERS = 'Levers bought';
 export function perAddedHomeText(dollars: number): string;
 // 'Public money per added home: $123,456'
@@ -942,7 +943,7 @@ export function branchRows(nodes: readonly NodeView[]): BranchRows[];</code></pr
         <h4>The ending</h4>
         <ul>
           <li>While <code>ending</code> is not null, a <code>section data-testid="tree-ending"</code> opens the body, before "Current law".</li>
-          <li>It holds an <code>h3</code> <code>ENDING_TITLE</code>; a <code>p</code> <code>endingReached(ending.reachedOn)</code>; an <code>h4</code> <code>ENDING_LEVERS</code> over a <code>ul</code> of the labels of every node with a level above 0, in catalogue order; a <code>p</code> <code>perAddedHomeText(ending.perAddedHome)</code> when it is not null; a <code>p</code> <code>ENDING_LIFTED</code>; then Publish.</li>
+          <li>It holds an <code>h3</code> <code>ENDING_TITLE</code>; a <code>p</code> <code>endingReached(ending.reachedOn)</code>; a <code>p</code> <code>endingState(ending.stateBy)</code>, so the year reached reads beside the state's own; an <code>h4</code> <code>ENDING_LEVERS</code> over a <code>ul</code> of the labels of every node with a level above 0, in catalogue order; a <code>p</code> <code>perAddedHomeText(ending.perAddedHome)</code> when it is not null; a <code>p</code> <code>ENDING_LIFTED</code>; then Publish.</li>
           <li>Publish is a <code>BUTTON_PRIMARY</code> with the text <code>PUBLISH</code> and <code>data-testid="tree-publish"</code>. A press calls <code>onpublish()</code>; <code>game-sim</code> opens the publish dialog.</li>
           <li>Run stays. The player may keep running.</li>
         </ul>
@@ -1217,7 +1218,7 @@ export function reloadGame(): void;</code></pre>
         <li>Edit calls <code>onedit(id)</code>. The switch shows only with an entry in <code>on</code>, reads <code>aria-checked</code>, and calls <code>ontoggle(id, !on[id])</code>.</li>
         <li>Run has focus at mount and calls <code>onrun</code>; while busy it says <code>RUN_BUSY</code>, carries <code>aria-busy</code>, and still calls <code>onrun</code>.</li>
         <li>"Take the next goal" shows only with <code>next</code>, calls <code>onnext</code>, and focus moves to Run when it leaves.</li>
-        <li>With <code>ending</code> null there is no ending; with it set: the month reached, the bought labels, money per added home only when not null, and Publish calling <code>onpublish</code>.</li>
+        <li>With <code>ending</code> null there is no ending; with it set: the month reached, the state's month from <code>stateBy</code>, the bought labels, money per added home only when not null, and Publish calling <code>onpublish</code>.</li>
         <li>The tree fills its host's box at full height, with the footer at the bottom.</li>
         <li>At 1280 px the detail is in the fifth column; at 375 px it is inside the node's row and the page has no horizontal scroll.</li>
         <li>A node added after mount fades in; with reduced motion it appears at once.</li>
