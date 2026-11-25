@@ -4,7 +4,7 @@
 // with the real game switched on by e2e/helpers/game.ts before the first navigation.
 import { expect, test } from '@playwright/test';
 import { seedGoalAmount } from './helpers/game';
-import { waitPhase } from './helpers/play';
+import { untilPhase } from './helpers/play';
 import {
   gotoEditor,
   gotoHydrated,
@@ -30,7 +30,7 @@ test('a new visitor paints once, presses Start, and the first run starts at /', 
   const start = page.getByTestId('opening-start');
   await expect(start).toBeVisible();
   await start.click();
-  await waitPhase(page, 'run');
+  await untilPhase(page, 'run');
 
   await expect(page).toHaveURL(/\/$/);
   expect(new URL(page.url()).pathname).toBe('/');

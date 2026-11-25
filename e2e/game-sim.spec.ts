@@ -15,7 +15,7 @@ import {
 import type { SfhFzpDebug } from '../src/lib/fzp/debug';
 import type { Policy } from '../src/lib/timeline/policy4';
 import { PRICES } from '../src/lib/game/catalogue/tuning';
-import { buyNode, savedGame, seedRuns, waitPhase, waitSaved } from './helpers/play';
+import { buyNode, savedGame, seedRuns, untilPhase, waitPhase, waitSaved } from './helpers/play';
 import { addPolicy, holdPolicy, installPolicyHold, openKind, releasePolicy } from './helpers/run';
 import {
   clientNavigate,
@@ -98,15 +98,15 @@ test('a run goes tree, run, tally, tree', async ({ page }) => {
   await gotoHydrated(page, '/');
   await waitPhase(page, 'tree');
   await run(page).click();
-  await waitPhase(page, 'run');
+  await untilPhase(page, 'run');
   await expect(page.getByTestId('run-clock')).toBeVisible();
   await expect(page.getByRole('slider', { name: 'Date in the simulation' })).toHaveCount(0);
-  await waitPhase(page, 'tally');
+  await untilPhase(page, 'tally');
   const next = page.getByTestId('tally-continue');
   await expect(next).toBeFocused();
   await next.click();
   await waitPhase(page, 'tree');
-  expect((await savedGame(page)).state.runs).toBe(2);
+  await waitSaved(page, (s) => s.state.runs === 2);
 });
 
 // ---- buying and the switch ----------------------------------------------------------------------
@@ -166,7 +166,7 @@ test('Run while the forecast is held waits, then runs', async ({ page }) => {
   await expect(page.getByTestId('tl-mode')).toHaveAttribute('data-phase', 'starting');
 
   await releasePolicy(page);
-  await waitPhase(page, 'run');
+  await untilPhase(page, 'run');
   await expect(page.getByTestId('run-waiting')).toHaveCount(0);
 });
 
@@ -207,13 +207,13 @@ test('a reload lands where the game is', async ({ page }) => {
   await seedRuns(page, { phase: 'runs' });
   await gotoHydrated(page, '/');
   // A new game's first run starts at load.
-  await waitPhase(page, 'run');
+  await untilPhase(page, 'run');
   await page.reload();
-  await waitPhase(page, 'run');
+  await untilPhase(page, 'run');
   expect((await phaseLog(page)).log[0]).toBe('starting');
 
   // After the run settles, before Continue: the reload lands on the tree, the balance kept.
-  await waitPhase(page, 'tally');
+  await untilPhase(page, 'tally');
   const settled = await waitSaved(page, (s) => s.state.runs === 1);
   await page.reload();
   await waitPhase(page, 'tree');
@@ -242,8 +242,8 @@ test('a first run that fails starts again', async ({ page }) => {
   await expect(retry).toBeVisible();
   await waitPhase(page, 'starting');
   await retry.click();
-  await waitPhase(page, 'run');
-  await waitPhase(page, 'tally');
+  await untilPhase(page, 'run');
+  await untilPhase(page, 'tally');
 
   const { log, pane } = await phaseLog(page);
   // The failed load, then Retry's (the timeline worker fetches the file too).
@@ -269,7 +269,7 @@ test('a double press of Run makes one run', async ({ page }) => {
   await gotoHydrated(page, '/');
   await waitPhase(page, 'tree');
   await run(page).dblclick();
-  await waitPhase(page, 'tally');
+  await untilPhase(page, 'tally');
   await waitSaved(page, (s) => s.state.runs === 2);
   await page.getByTestId('tally-continue').click();
   await waitPhase(page, 'tree');

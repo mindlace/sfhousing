@@ -200,7 +200,7 @@ and Publish sends the runnable one.
 
 ## The ladder
 
-`LADDER_YEARS` (`catalogue/ladder-years.ts`) are the deadline years after the window's end, latest
+`LADDER_YEARS` (`catalogue/ladder-years.ts`) are the earlier deadline years, the rungs after rung 0 (the window's end), latest
 first, at most four. `npx tsx scripts/reach-measure.ts <datasetDir> --write` sets them: it runs the
 full tree, reads the month the goal is reached, and writes the years from the largest multiple of
 five at least five years before the window's end year down to the first multiple of five at or
@@ -360,7 +360,8 @@ throws, and answers `{ ok: false, reason: 'storage' }`; `full` and `changed` are
 refusals. Each accepted write calls `sync.changed(id)`, or `sync.removed(id)` for a removed game;
 `newGame` calls `changed` for the game left and the game made, `switchTo` for the game left.
 `rekey` and `adopt` call neither. In memory mode `won`, `startRuns`, `buy`, `settle`, `takeNext`, `touched` and
-`rename` change memory and call the sync, writing nothing; the others answer `storage`.
+`rename` change memory and call the sync, writing nothing; `switchTo` of the current id answers `ok`;
+the others answer `storage`.
 
 Every save the store reads, from storage or from the account, goes through `parseGameSave` and
 then `fitGame` on its state.

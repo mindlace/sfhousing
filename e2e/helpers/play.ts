@@ -220,9 +220,11 @@ export async function buyNode(page: Page, id: string, by: 'pointer' | 'keys'): P
     await buy.click();
   } else {
     await tabTo(page, open);
+    await expect(open.and(page.locator(':focus-visible'))).toHaveCount(1);
     await page.keyboard.press('Enter');
     await expect(open).toHaveAttribute('aria-expanded', 'true');
     await tabTo(page, buy);
+    await expect(buy.and(page.locator(':focus-visible'))).toHaveCount(1);
     await page.keyboard.press('Enter');
   }
   return waitSaved(page, (s) => (s.state.bought[id] ?? 0) === before + 1);
