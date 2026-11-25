@@ -180,9 +180,9 @@ export function onPrefs(fn: () =&gt; void): () =&gt; void;</code></pre>
         <li><code>planDrops</code> returns one drop for each marker completed after <code>asOf</code> and at or before <code>to</code> whose worth is above 0, ascending by day, then by row.</li>
         <li><code>feed.drops</code> may be replaced during a run, as the forecast fills. Drops are matched by <code>row</code>: one already shown stays as it is, and none is counted twice.</li>
         <li>A drop appears when <code>feed.day</code> reaches its day and is counted in <code>dropped</code> then.</li>
-        <li>A drop whose <code>policy</code> is true pops in the policy's colour, the colour of the map's diamond (<code>tl-halo-policy</code>); every other drop pops in the accent. Its worth and how it is collected do not change.</li>
+        <li>A drop whose <code>policy</code> is true pops as a diamond, the shape of the map's policy mark, in that mark's colour (<code>tl-halo-policy</code>); every other drop pops as a circle in the accent. The shape tells the two apart in every theme. Its worth and how it is collected do not change.</li>
         <li>A drop is collected when its projected point is within <code>hands.radiusPx</code> of the ring's centre. It is counted in <code>collected</code> once.</li>
-        <li>A drop not collected is gone <code>hands.lingerMs</code> of wall time after it appeared.</li>
+        <li>A drop not collected is gone the larger of <code>hands.lingerMs</code> and 400 ms of wall time after it appeared. When the run ends before that, it is gone 400 ms after the end, or at the end under reduced motion.</li>
         <li>With <code>collectForMe</code> or <code>hands.auto</code>, every drop is collected as it appears.</li>
         <li>The ring's centre is the last pointer position over the map. Arrow keys move it by a fixed step; holding Shift moves it further.</li>
         <li>The layer is a canvas over the map with <code>pointer-events: none</code>. It listens on the window.</li>
@@ -488,6 +488,8 @@ export const RING_KEY_DIR: Record&lt;string, [number, number]&gt; = {
       <ul>
         <li>The ring's centre starts each run at the centre of the canvas box.</li>
         <li>The ring's centre is clamped to the box: <code>x</code> to [0, <code>w</code>] and <code>y</code> to [0, <code>h</code>]. <code>setBox</code> clamps it again when the box changes.</li>
+        <li><code>setBox</code> from an empty box (a width or height of 0) to one with both sides above 0 puts the ring at the new box's centre, whether or not a run is in progress. So a run that starts before the canvas has a size gets its ring at the centre once the first size arrives. While the box is empty no pointer point is inside it and every key step clamps to (0, 0), so nothing the player did is lost.</li>
+        <li><code>setBox</code> is not a ring move. When it centres or clamps the ring it empties <code>sweep</code> and leaves <code>ringMoved</code> as it is, so no path joins the ring's place before the box changed to its place after.</li>
         <li><code>pointRing(m, p, fresh)</code> moves the ring to <code>p</code>, clamped. When <code>fresh</code> is false it first appends the old centre to <code>sweep</code>; when true it appends <code>null</code>. It sets <code>ringMoved</code>.</li>
         <li>When <code>sweep</code> would hold more than <code>RUN_CAPS.maxSweep</code> entries, its oldest entry is removed first.</li>
         <li><code>nudgeRing(m, dx, dy)</code> is <code>pointRing(m, { x: ring.x + dx, y: ring.y + dy }, false)</code>, so a key step sweeps the ground it crosses.</li>
@@ -523,6 +525,7 @@ export const DRAW = {
   dropMinPx: 3,
   dropPerSqrtPx: 1.5,
   dropMaxPx: 9,
+  diamondScale: 1.25,
   outlinePx: 1.5,
   takenLinePx: 2,
   takenGrow: 0.8,
@@ -553,15 +556,15 @@ export function drawRun(
       <ul>
         <li><code>drawRun</code> clears the whole canvas, then draws drops, then counts, then the ring.</li>
         <li>It draws the newest <code>RUN_CAPS.maxDrawn</code> entries of <code>live</code> that have a point, oldest of those first, so newer drops sit on top.</li>
-        <li>A live drop is a filled circle with a <code>outlinePx</code> stroke of the surface colour, at radius <code>dropRadius(worth)</code>. Its fill is <code>look.policy</code> when <code>drop.policy</code> is true, else the accent.</li>
-        <li>With motion, a live drop grows from radius 0 to full over <code>appearMs</code>, eased out as <code>1 - (1 - t)^3</code>, and its alpha falls linearly from 1 to 0 over the last <code>fadeMs</code> before its <code>endMs</code>.</li>
-        <li>A collected drop is a circle stroke only, <code>takenLinePx</code> wide, in its fill colour: <code>look.policy</code> for a policy drop, else the accent.</li>
-        <li>With motion, a collected drop's radius goes from <code>r</code> to <code>r * (1 + takenGrow)</code> and its alpha from <code>takenAlpha</code> to 0, linearly over <code>takenMs</code>.</li>
+        <li>A live drop is a filled shape with a <code>outlinePx</code> stroke of the surface colour. A drop whose <code>drop.policy</code> is true is a diamond, a square turned 45°, whose half-diagonal is <code>diamondScale * dropRadius(worth)</code>, filled with <code>look.policy</code>. Every other drop is a circle of radius <code>dropRadius(worth)</code>, filled with the accent. The scale gives the diamond about the circle's area.</li>
+        <li>With motion, a live drop grows from size 0 to full over <code>appearMs</code>, eased out as <code>1 - (1 - t)^3</code>, and its alpha falls linearly from 1 to 0 over the last <code>fadeMs</code> before its <code>endMs</code>.</li>
+        <li>A collected drop is its shape's outline only, <code>takenLinePx</code> wide, in its fill colour: a diamond in <code>look.policy</code> for a policy drop, else a circle in the accent.</li>
+        <li>With motion, a collected drop's size goes from its full size <code>s</code> to <code>s * (1 + takenGrow)</code> and its alpha from <code>takenAlpha</code> to 0, linearly over <code>takenMs</code>.</li>
         <li>A count is the text <code>dropCountText(worth)</code> from <code>run/words.ts</code>, centred, in <code>countWeight</code> <code>countFontPx</code> px of the page font, with a <code>countHaloPx</code> stroke of the surface colour under a fill of the ink colour.</li>
         <li>A count's baseline starts <code>countGapPx</code> above the drop's top edge. With motion it rises <code>countRisePx</code> linearly over <code>countMs</code>, holds full alpha for the first <code>countHoldShare</code> of it, then falls linearly to 0.</li>
         <li>Under reduced motion every shape and count is drawn at full size and full alpha in its place, and vanishes at its end time.</li>
         <li>The layer reads the colours at mount from the root's computed style: <code>--color-accent</code>, <code>--color-ink</code> and <code>--color-surface</code>, or <code>--color-accent-dark</code>, <code>--color-ink-dark</code> and <code>--color-surface-dark</code> while <code>(prefers-color-scheme: dark)</code> matches. It reads them again when that query changes.</li>
-          <li><code>look.policy</code> is <code>TOKENS.light['tl-halo-policy']</code>, or <code>TOKENS.dark['tl-halo-policy']</code> while <code>(prefers-color-scheme: dark)</code> matches, chosen with the other colours. It is the colour the map draws its policy diamond in, so a drop from a project the policy marks pops in the policy's colour. The token is read from <code>$lib/map/palette</code> because the map sets its <code>--map-*</code> properties on its own root, which the layer, a sibling, does not inherit.</li>
+          <li><code>look.policy</code> is <code>TOKENS.light['tl-halo-policy']</code>, or <code>TOKENS.dark['tl-halo-policy']</code> while <code>(prefers-color-scheme: dark)</code> matches, chosen with the other colours. It is the colour the map draws its policy diamond in, so a policy drop matches the map's diamond in shape and colour. The token is read from <code>$lib/map/palette</code> because the map sets its <code>--map-*</code> properties on its own root, which the layer, a sibling, does not inherit.</li>
         <li>The font is the canvas element's computed <code>font-family</code>.</li>
       </ul>
 
@@ -588,7 +591,7 @@ export function drawRun(
         <li>At most <code>RUN_CAPS.maxCounts</code> (40) counts exist; a new one pushes out the oldest.</li>
         <li>A step calls <code>sound.collect()</code> once if it collected any drop, and otherwise <code>sound.pop()</code> once if any drop appeared. The sounds' own gaps then thin a stream of frames.</li>
         <li><code>ontake</code> is called at most once per step.</li>
-        <li>A frame's work is bounded: one pass over the drops passed, one hit test per live drop against at most <code>maxSweep</code> segments, and at most 240 circles, 40 texts and one ring drawn.</li>
+        <li>A frame's work is bounded: one pass over the drops passed, one hit test per live drop against at most <code>maxSweep</code> segments, and at most 240 drops, 40 texts and one ring drawn.</li>
       </ul>
     </section>
 
@@ -599,7 +602,7 @@ export function drawRun(
         <li>Under reduced motion drops and counts appear and disappear without growing, rising or fading (R1).</li>
         <li>Every drawn shape stays at least <code>RUN_TIMES.minShownMs</code> (400 ms) from appearing to vanishing: an uncollected drop by its linger floor, and a collected drop by <code>takenMs</code> after collection. So no one spot changes more than about 2.5 times a second.</li>
         <li>Nothing blinks or pulses, the canvas never fills or clears its whole area in a colour, and the ring never flashes.</li>
-        <li>The drawn drops cover at most 240 circles of radius 10.5 px with their outline, about 83,000 square CSS pixels, below the WCAG general-flash area of 341 by 256 px.</li>
+        <li>The drawn drops cover at most 240 shapes with their outline: a circle of radius 10.5 px is about 346 square CSS pixels and a diamond of half-diagonal 12.75 px about 325, so at most about 83,000 square CSS pixels, below the WCAG general-flash area of 341 by 256 px.</li>
         <li>The canvas has <code>aria-hidden="true"</code>. No drop, count or sound is announced.</li>
         <li>The layer holds one visually hidden paragraph with <code>aria-live="polite"</code> and test id <code>run-live</code>.</li>
         <li>It is empty while a run is running. When the run ends it is set to <code>runOverText(take)</code> from <code>run/words.ts</code>. It is emptied when the next run starts.</li>
@@ -774,7 +777,7 @@ export const RUN_FRAME_P95_MS = 2;</code></pre>
         <li>The map's bar is p95 at most 16.7 ms with the layer drawing. The layer's own share is set at <code>RUN_FRAME_P95_MS</code>: the p95 of one <code>step</code> plus one <code>drawRun</code>.</li>
         <li>2 ms is the starting value. The bench case for a run with drops, which <code>closing</code> writes and runs with <code>npm run bench:map</code> on a quiet machine, decides it: if the map's p95 there is above 16.7 ms, <code>maxDrawn</code> is halved until it passes and this budget is lowered to match.</li>
         <li>The layer's cost is measured without a GPU in <code>run.perf.svelte.spec.ts</code>, in the <code>client-perf</code> project: a real 2D canvas in headless Chromium, which draws in software.</li>
-        <li>The case: a 1280 by 720 CSS px canvas at pixel ratio 2; 3,000 drops over 600 frames of 16.7 ms on a fake clock, with 500 of them on frame 100; <code>BASE_HANDS</code> (48 px, 4,000 ms); motion on; the ring swept in a circle of radius 200 px with 8 points a frame.</li>
+        <li>The case: a 1280 by 720 CSS px canvas at pixel ratio 2; 3,000 drops over 600 frames of 16.7 ms on a fake clock, with 500 of them on frame 100; every fifth drop in day order a policy drop (a diamond), the rest circles; <code>BASE_HANDS</code> (48 px, 4,000 ms); motion on; the ring swept in a circle of radius 200 px with 8 points a frame.</li>
         <li>It times <code>step</code> plus <code>drawRun</code> per frame with <code>performance.now()</code>, after 60 warm-up frames, and asserts the p95 is at most <code>RUN_FRAME_P95_MS</code>.</li>
         <li>It runs with <code>npm run test:perf</code> on a quiet machine, not in signoff. The <code>run-play</code> implementer runs it before merge and records the p95 in the PR.</li>
         <li>The bounded work is also checked without a clock: the unit spec of <code>drawRun</code> counts calls on a recording context.</li>
@@ -818,10 +821,10 @@ export const RUN_FRAME_P95_MS = 2;</code></pre>
         <li>A new <code>drops</code> array mid-run: a shown drop keeps its state and times; a shown drop whose row is gone stays until its <code>endMs</code> and the take does not go down; a row not yet shown appears at its new day; a row not yet shown and now missing never appears.</li>
         <li>A burst of 500 drops in one step counts 500 and collects every one under auto.</li>
         <li><code>dirty</code>: false for a running step with nothing new under reduced motion; true while a drop animates with motion. <code>idle</code> is true only once not running with nothing left.</li>
-        <li>The ring: clamped to the box; a key step of 16 px and a Shift step of 64 px; <code>setBox</code> re-clamps; <code>sweep</code> holds at most 32 entries.</li>
+        <li>The ring: clamped to the box; a key step of 16 px and a Shift step of 64 px; <code>setBox</code> re-clamps; the first non-empty box after an empty one centres the ring, also in a run that started on an empty box; a centring or clamp by <code>setBox</code> leaves <code>sweep</code> empty and <code>ringMoved</code> unchanged, so the next step collects nothing along the corner-to-centre line; <code>sweep</code> holds at most 32 entries.</li>
         <li><code>dropRadius</code>: 4.5 at 1, 6 at 4, 9 at 16 and at 1,000.</li>
-        <li><code>drawRun</code> on a recording context: a live policy drop is filled, and a collected one stroked, in <code>look.policy</code>, any other drop in the accent; <code>look.policy</code> equals <code>TOKENS[theme]['tl-halo-policy']</code> for each theme.</li>
-        <li><code>drawRun</code> on a recording context: draws at most 240 drops and 40 counts with 1,000 live; draws the newest; draws no ring when <code>showRing</code> is false; with reduced motion draws every shape at full radius and alpha 1.</li>
+        <li><code>drawRun</code> on a recording context: a live policy drop is a filled diamond, and a collected one a stroked diamond, in <code>look.policy</code>, with a half-diagonal of 1.25 times <code>dropRadius(worth)</code>; any other drop is a circle in the accent; <code>look.policy</code> equals <code>TOKENS[theme]['tl-halo-policy']</code> for each theme.</li>
+        <li><code>drawRun</code> on a recording context: draws at most 240 drops and 40 counts with 1,000 live; draws the newest; draws no ring when <code>showRing</code> is false; with reduced motion draws every shape at full size and alpha 1.</li>
         <li><code>makeSound</code> with a fake context: nothing before the gesture; nothing while muted; each sound's voices scheduled with the table's numbers; a second <code>pop</code> 0.05 s after the first is dropped and one 0.08 s after plays; a suspended context is resumed.</li>
         <li><code>createSound</code> without <code>AudioContext</code> returns a sound whose calls do nothing and do not throw.</li>
         <li><code>onPrefs</code>: each write calls every listener once, also with null or throwing storage; a throwing listener does not stop the next; the returned function removes the listener.</li>
@@ -883,6 +886,7 @@ export const RUN_FRAME_P95_MS = 2;</code></pre>
       <li>The audio context is made at the first gesture even when muted. Reason: unmuting then plays at once.</li>
       <li>The ring is hidden and the arrow keys are left alone under auto. Reason: the ring does nothing then.</li>
       <li>The colours are the page's accent, ink and surface tokens, and the map's policy-mark token for a policy drop. Reason: no new colour is added, dark mode follows, and a drop from a project the policy marks pops in the same colour as the map's diamond, as the source model asks.</li>
+      <li>A policy drop is a diamond and every other drop a circle. Reason: the map's policy-mark token and the accent are one colour in both themes (<code>src/lib/map/palette.ts:91</code>, <code>:138</code>; <code>src/routes/layout.css:4</code>, <code>:8</code>), so colour alone cannot tell them apart; the diamond is the map's own policy mark, and a shape carries the difference for every reader, colour vision or not.</li>
       <li>The canvas is hidden when idle. Reason: a hidden canvas is not composited over the map.</li>
       <li>The clock is a mocked module, not a prop. Reason: the R1 props stay as the design gives them.</li>
       <li>Preferences are stored as <code>'1'</code> and <code>'0'</code>. Reason: the shortest value that a stray string cannot be read as.</li>
