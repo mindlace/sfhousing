@@ -12,7 +12,16 @@ import AboutData from './AboutData.svelte';
 import AboutMeanings from './AboutMeanings.svelte';
 import AboutUsing from './AboutUsing.svelte';
 import { MAX_SAVES } from '$lib/game/saves';
-import { ABOUT_ID, MEANINGS, PART_HEADING, SAVED_GAMES, YOUR_PLANS } from './copy';
+import {
+  ABOUT_ID,
+  GAME_NOTES,
+  GAME_STEPS,
+  MEANINGS,
+  PART_HEADING,
+  RUN_SHORTCUTS,
+  SAVED_GAMES,
+  YOUR_PLANS
+} from './copy';
 
 const text = () => (document.body.textContent ?? '').replace(/\s+/g, ' ');
 
@@ -83,7 +92,7 @@ async function expectNotices() {
 }
 
 describe('AboutMeanings', () => {
-  it('meanings: every term in order; the goal reads "82,069 homes by the end of the 40-year window" and "June 2022" from GOAL_BASE', async () => {
+  it('meanings: every term in order; the goal reads "82,069 homes by the deadline" and "June 2022" from GOAL_BASE; the deadline and units, word for word', async () => {
     render(AboutMeanings, { level: 2 });
     const terms = [...document.querySelectorAll('dt')].map((d) => d.textContent?.trim());
     expect(terms).toEqual([
@@ -93,7 +102,8 @@ describe('AboutMeanings', () => {
       'Current law',
       'The goal',
       'The goal + 15%',
-      'To beat'
+      'The deadline',
+      'Units'
     ]);
     expect(MEANINGS.map((m) => m.term)).toEqual(terms);
     const t = text();
@@ -102,13 +112,19 @@ describe('AboutMeanings', () => {
       'Every eligible lot you painted, rebuilt to its height at once. Homes in replaced buildings are subtracted.'
     );
     expect(t).toContain(
-      '82,069 homes by the end of the 40-year window, counted from June 2022, so homes built since ' +
-        "then count. It is San Francisco's share of RHNA 2023–2031, the state's Regional Housing " +
-        'Needs Allocation, which asks for them by January 2031.'
+      '82,069 homes by the deadline, counted from June 2022, so homes built since then count. ' +
+        "It is San Francisco's share of RHNA 2023–2031, the state's Regional Housing Needs " +
+        'Allocation, which asks for them by January 2031.'
     );
     expect(t).toContain(
-      'The month you reached the goal when you last levelled up. Reach the goal in an earlier month to win the level.'
+      'When the goal must be met. The first is the end of the 40-year window; each later one is ' +
+        'five or more years earlier. Taking the next one is your choice.'
     );
+    expect(t).toContain(
+      'Homes you collected during a run. Every completed home counts toward the goal; only ' +
+        'collected homes become units to spend in the tree.'
+    );
+    expect(t).not.toContain('To beat');
   });
 
   it('meanings: the goal links "SF Planning, RHNA Primer" to M1_TARGETS[0].source.url', async () => {
@@ -252,50 +268,73 @@ describe('AboutUsing', () => {
       [...tr.querySelectorAll('td')].map((td) => td.textContent?.trim())
     );
     expect(rows).toEqual(TIMELINE_SHORTCUTS.map((s) => [s.keys, s.action]));
-    // After the Painting table, in the Keyboard shortcuts section.
-    const tables = [...document.querySelectorAll('#about-shortcuts table caption')].map((c) =>
-      c.textContent?.trim()
-    );
-    expect(tables).toEqual(['Painting', 'Timeline']);
   });
 
-  it('using: Levels, an ordered list, then its three notes, word for word', async () => {
+  it('using: the tables are Painting, Timeline and Run; Run holds its two rows', async () => {
+    render(AboutUsing, { level: 2 });
+    const captions = [...document.querySelectorAll('#about-shortcuts table caption')].map((c) =>
+      c.textContent?.trim()
+    );
+    expect(captions).toEqual(['Painting', 'Timeline', 'Run']);
+    const run = [...document.querySelectorAll('#about-shortcuts table')][2];
+    const rows = [...run.querySelectorAll('tbody tr')].map((r) =>
+      [...r.querySelectorAll('td')].map((d) => d.textContent?.trim())
+    );
+    expect(rows).toEqual([
+      ['← ↑ → ↓', 'Move the collecting ring (during a run)'],
+      ['Shift + ← ↑ → ↓', 'Move the collecting ring further']
+    ]);
+    expect(RUN_SHORTCUTS.map((s) => [s.keys, s.action])).toEqual(rows);
+  });
+
+  it('using: The game, an ordered list of its five steps, then its four notes, word for word', async () => {
     render(AboutUsing, { level: 2 });
     const s = document.getElementById('about-levels')!;
     expect(s.tagName).toBe('SECTION');
-    expect(s.querySelector('h3')?.textContent?.trim()).toBe('Levels');
-    expect([...s.querySelectorAll('ol > li')].map((li) => li.textContent?.trim())).toEqual([
-      'Level 1: paint room for the goal. Winning opens the simulation.',
-      'Level 2: play current law to the goal.',
-      'Level 3: change permitting, and beat the month you reached at level 2.',
-      'Level 4: change zoning too, and beat your month to beat.',
-      'Level 5: add the public money on offer, and beat your month to beat.'
+    expect(s.querySelector('h3')?.textContent?.trim()).toBe('The game');
+    expect([...s.querySelectorAll('ol > li')].map((l) => l.textContent?.trim())).toEqual([
+      ...GAME_STEPS
     ]);
-    expect([...s.querySelectorAll('p')].map((p) => p.textContent?.trim())).toEqual([
-      'Levelling up is your choice. Your policies stay, and the clock goes back to today.',
-      'A month to beat keeps the data it was earned on. After a data update your policy may reach the goal in another month; the month to beat stays.',
-      'A published policy plays in full for everyone, whatever their level.'
+    expect([...s.querySelectorAll(':scope > p')].map((p) => p.textContent?.trim())).toEqual([
+      ...GAME_NOTES
+    ]);
+    expect(GAME_STEPS).toEqual([
+      'Paint room for the goal. Meeting it starts your first run.',
+      'A run plays the forecast from today to the deadline. Sweep the pointer over finished projects to collect their homes before they fade.',
+      'After a run, the tally shows homes by the deadline, the units you collected and where the other homes stand.',
+      'Between runs, spend units in the tree. What you buy is in force from today, and you can switch it off and on.',
+      'Meet the goal to be offered an earlier deadline. Taking it is your choice.'
+    ]);
+    expect(GAME_NOTES).toEqual([
+      'Painting happens once, at the start, to show how much has to be built. The simulation runs your policy.',
+      'Collect for me, behind the unit count, collects every drop as it appears.',
+      'A deadline once met stays met after a data update.',
+      'A published policy plays in full for everyone.'
     ]);
   });
 
-  it('using: Saved games, word for word, the 12 from MAX_SAVES', async () => {
+  it('using: Saved games, its three lines word for word, the 12 from MAX_SAVES', async () => {
     render(AboutUsing, { level: 2 });
     const s = document.getElementById('about-saved-games')!;
     expect(s.querySelector('h3')?.textContent?.trim()).toBe('Saved games');
     expect([...s.querySelectorAll('p')].map((p) => p.textContent?.trim())).toEqual([
-      `Each saved game has its own level, months to beat, plan and policy. You can keep ${MAX_SAVES}.`,
-      'Remix makes a new saved game from a published plan or policy, at your current level.',
+      ...SAVED_GAMES
+    ]);
+    expect(SAVED_GAMES).toEqual([
+      `Each saved game has its own plan, policy, units, purchases and deadlines met. You can keep ${MAX_SAVES}.`,
+      'The unit count in the header opens your saved games.',
       'Games are saved in this browser, and to your account from your first win.'
     ]);
+    expect(MAX_SAVES).toBe(12);
     expect(SAVED_GAMES[0]).toContain('You can keep 12.');
   });
 
-  it('using: the order is Keyboard shortcuts, Levels, Saved games, Your plans', async () => {
+  it('using: the order is Keyboard shortcuts, The game, Saved games, Your plans', async () => {
     render(AboutUsing, { level: 2 });
     const subs = [...document.querySelectorAll('#about-using h3')].map((h) =>
       h.textContent?.trim()
     );
-    expect(subs).toEqual(['Keyboard shortcuts', 'Levels', 'Saved games', 'Your plans']);
+    expect(subs).toEqual(['Keyboard shortcuts', 'The game', 'Saved games', 'Your plans']);
   });
 });
 
