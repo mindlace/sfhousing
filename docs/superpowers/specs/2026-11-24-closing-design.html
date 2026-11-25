@@ -752,7 +752,7 @@ npx tsx scripts/tree-balance.ts &lt;datasetDir&gt;</code></pre>
       <ul>
         <li>T1 is the state of two files after the measurement: <code>src/lib/game/catalogue/ladder-years.ts</code> and <code>src/lib/game/catalogue/tuning.ts</code>. It adds no type and no export to G3 or G6.</li>
         <li><code>LADDER_YEARS</code> holds the years <code>reach-measure</code> wrote from the production dataset, by G6's rule.</li>
-        <li><code>tuning.ts</code> holds prices, the rung lump and side-goal numbers under which <code>tree-balance</code> passes every check it reports on the production dataset.</li>
+        <li><code>tuning.ts</code> holds prices, the rung lump and side-goal numbers under which <code>tree-balance</code> exits 0 on the production dataset.</li>
         <li>Before T1, both files hold starting values. Code and tests outside <code>tree-catalogue</code> and <code>closing</code> never assert a price, a ladder year or the number of rungs from these files; they pass their own.</li>
         <li>When no set of numbers passes, the unit stops and hands the report to the owner with the checks that fail.</li>
       </ul>
