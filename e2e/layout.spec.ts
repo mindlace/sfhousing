@@ -11,7 +11,12 @@ import { E2E_GAME_KEY } from '../src/lib/game/e2e';
 import { COPY } from '../src/lib/sharing/copy';
 import { expectNoA11yViolations } from './helpers/a11y';
 import { loginAs } from './helpers/auth';
-import { expectAboutReachable, expectNoFooter, expectPhoneHeaderFits } from './helpers/chrome';
+import {
+  expectAboutReachable,
+  expectHeaderRowFits,
+  expectNoFooter,
+  expectPhoneHeaderFits
+} from './helpers/chrome';
 import {
   FRAME,
   FROM,
@@ -1070,37 +1075,6 @@ test.describe('account entry', () => {
 });
 
 // ---- the game's header -----------------------------------------------------------------------
-
-/**
- * The header from md (Menu layout below lg, the full row from lg): 48 px tall, nothing overflows
- * the bar or the page, and no two visible items overlap.
- */
-async function expectHeaderRowFits(page: Page): Promise<void> {
-  const banner = page.getByRole('banner');
-  expect((await box(banner)).height).toBe(48);
-  const fit = await banner.evaluate((b) => ({
-    bar: b.scrollWidth - b.clientWidth,
-    page: document.scrollingElement!.scrollWidth - window.innerWidth
-  }));
-  expect(fit, 'the header overflows').toEqual({ bar: 0, page: 0 });
-  const row = await banner.evaluate((b) => {
-    const items = [
-      ...b.querySelectorAll<HTMLElement>('a, button, [data-header-status] > *')
-    ].filter((el) => el.checkVisibility() && el.getBoundingClientRect().width > 0);
-    return items
-      .filter((el) => !items.some((o) => o !== el && o.contains(el)))
-      .map((el) => {
-        const r = el.getBoundingClientRect();
-        return { name: (el.textContent ?? '').trim(), left: r.left, right: r.right };
-      })
-      .sort((a, c) => a.left - c.left);
-  });
-  expect(row.length).toBeGreaterThan(1);
-  for (let i = 1; i < row.length; i++)
-    expect(row[i].left, `"${row[i].name}" overlaps "${row[i - 1].name}"`).toBeGreaterThanOrEqual(
-      row[i - 1].right - 0.5
-    );
-}
 
 test.describe("the game's header on the tree", () => {
   for (const width of [375, 768, 1024, 1280]) {

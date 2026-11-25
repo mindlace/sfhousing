@@ -308,7 +308,7 @@ test.describe('targets at 375 px', () => {
     await expect(strip).toBeVisible();
     await expect(strip.getByRole('button', { name: 'Redo', exact: true })).toBeVisible();
     await expect(strip.getByRole('button', { name: 'Done', exact: true })).toBeVisible();
-    await expectTargets(page, '/ palette strip at 320', 8);
+    await expectTargets(page, 'Paint palette strip at 320', 8);
   });
 
   test('the simulation: the timeline rows with a policy per kind, names on their own lines, and a kind sheet', async ({

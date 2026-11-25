@@ -42,12 +42,22 @@ async function focusBody(page: Page): Promise<void> {
  */
 async function checkState(page: Page, ...own: Locator[]): Promise<void> {
   await expectNoA11yViolations(page);
+  await checkStructure(page);
+  await checkReach(page, ...own);
+}
+
+/** No horizontal scroll, one main, one h1, and the first Tab from body on the skip link. */
+async function checkStructure(page: Page): Promise<void> {
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await expect(page.locator('main')).toHaveCount(1);
   await expect(page.locator('h1')).toHaveCount(1);
   await focusBody(page);
   await page.keyboard.press('Tab');
   await expect(page.getByRole('link', { name: 'Skip to content' })).toBeFocused();
+}
+
+/** The header's About entry reachable, and each of `own` reached by Tab with a visible ring. */
+async function checkReach(page: Page, ...own: Locator[]): Promise<void> {
   await expectAboutReachable(page);
   for (const control of own) {
     if (!(await control.isVisible())) await openHeaderMenu(page);
@@ -102,9 +112,20 @@ test('a run, with reduced motion', async ({ page }) => {
   await page.getByTestId('tree-run').click();
   await untilPhase(page, 'run');
   await expect(runLayer(page)).toHaveAttribute('data-state', 'running');
-  await checkState(page);
-  // The whole checklist ran inside the run: the layer is still running.
+
+  // The structure checks and the axe scan run inside the run: the layer is running before them
+  // and still running after them. The About check comes last: in this state it can take longer
+  // than what is left of the run, and nothing in it depends on the run still going.
+  await test.step('structure and axe, inside the 8,000 ms run', async () => {
+    await checkStructure(page);
+    // Focus back on body: the focused skip link would lie over the header for the scan.
+    await focusBody(page);
+    await expectNoA11yViolations(page);
+  });
+
   await expect(runLayer(page)).toHaveAttribute('data-state', 'running');
+
+  await test.step('About', () => checkReach(page));
 });
 
 test('the tally', async ({ page }) => {
