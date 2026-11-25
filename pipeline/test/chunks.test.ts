@@ -23,7 +23,7 @@ describe('writeChunks / writeNeighborhoods on the mini fixture', () => {
     await runSql(db);
     dirA = tmp();
     report = new Report();
-    outs = await writeChunks(db, dirA, V, report);
+    outs = await writeChunks(db, dirA, V, report, new Set());
   });
 
   it('puts every parcel in exactly one decodable chunk', async () => {
@@ -78,7 +78,7 @@ describe('writeChunks / writeNeighborhoods on the mini fixture', () => {
 
   it('is byte-deterministic across output dirs', async () => {
     const dirB = tmp();
-    await writeChunks(db, dirB, V, new Report());
+    await writeChunks(db, dirB, V, new Report(), new Set());
     const list = fs.readdirSync(path.join(dirA, 'parcels')).sort();
     expect(fs.readdirSync(path.join(dirB, 'parcels')).sort()).toEqual(list);
     for (const f of list) {
@@ -168,7 +168,8 @@ describe('writeChunks edge cases (stub db)', () => {
       ]),
       dir,
       V,
-      rep
+      rep,
+      new Set()
     );
     expect(outs.map((o) => o.cellId)).toEqual(['-1_-1', '0_1', '1_1']);
     const recs = decodeParcelChunk(fs.readFileSync(path.join(dir, 'parcels/1_1.json'), 'utf8'));
@@ -179,13 +180,40 @@ describe('writeChunks edge cases (stub db)', () => {
   it('counts but still emits parcels whose rings all collapse', async () => {
     const dir = tmp();
     const rep = new Report();
-    const outs = await writeChunks(stub([row({ id: 'A', geojson7131: collapsed })]), dir, V, rep);
+    const outs = await writeChunks(
+      stub([row({ id: 'A', geojson7131: collapsed })]),
+      dir,
+      V,
+      rep,
+      new Set()
+    );
     expect(rep.counts['chunks.empty_polygon']).toBe(1);
     expect(rep.counts['chunks.label_outside_local']).toBe(1);
     expect(outs[0].parcelCount).toBe(1);
     const recs = decodeParcelChunk(fs.readFileSync(path.join(dir, outs[0].path), 'utf8'));
     expect(recs[0].polygon).toEqual([]);
     expect(recs[0].areaM2).toBe(0);
+  });
+
+  it('catalog lots are written ineligible', async () => {
+    const dir = tmp();
+    const outs = await writeChunks(
+      stub([row({ id: 'A', units: 3 }), row({ id: 'B', units: 3 })]),
+      dir,
+      V,
+      new Report(),
+      new Set(['A'])
+    );
+    const recs = decodeParcelChunk(fs.readFileSync(path.join(dir, outs[0].path), 'utf8'));
+    const a = recs.find((r) => r.id === 'A')!;
+    const b = recs.find((r) => r.id === 'B')!;
+    expect(a.eligible).toBe(false);
+    expect(b.eligible).toBe(true);
+    expect(a.existingUnits).toBe(3);
+    expect(a.polygon).toEqual(b.polygon);
+    expect(a.polygon.length).toBeGreaterThan(0);
+    expect(a.roadLike).toBeUndefined();
+    expect(a.underwater).toBeUndefined();
   });
 
   it('counts a label that is not strictly inside after quantisation', async () => {
@@ -203,7 +231,7 @@ describe('writeChunks edge cases (stub db)', () => {
         ]
       ]
     });
-    await writeChunks(stub([row({ geojson7131: g })]), tmp(), V, rep);
+    await writeChunks(stub([row({ geojson7131: g })]), tmp(), V, rep, new Set());
     expect(rep.counts['chunks.empty_polygon']).toBe(0);
     expect(rep.counts['chunks.label_outside_local']).toBe(1);
   });
