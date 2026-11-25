@@ -49,6 +49,7 @@ import { FakeTimelineWorker, cellsMsg, compiledMsg, filledMsg } from './test/fak
 import { chunk, statics as baseStatics } from './test/fixtures';
 import { GAME_ID, gameWith } from './test/game';
 import { runLayer } from './test/run-layer-stub';
+import type { Sound } from '$lib/game/run/sound';
 import { tallyRec } from './test/TallyStub.svelte';
 import { isValidId } from '$lib/ids/base58';
 import { settle } from '$lib/game/run-result';
@@ -141,6 +142,7 @@ type Over = Partial<{
   inspectorOpen: boolean;
   runMs: number;
   collectForMe: boolean;
+  sound: Sound;
 }>;
 
 let workers: FakeTimelineWorker[];
@@ -183,6 +185,7 @@ function setup(over: Over = {}) {
       onphaseevent: (e: PhaseEvent) => void phaseEvents.push(e),
       ...(over.runMs !== undefined ? { runMs: over.runMs } : {}),
       ...(over.collectForMe !== undefined ? { collectForMe: over.collectForMe } : {}),
+      ...(over.sound ? { sound: over.sound } : {}),
       ...(over.game ? { game: over.game } : {}),
       ...(over.goalAmount !== undefined ? { goalAmount: over.goalAmount } : {}),
       ...(over.initialRun ? { initialRun: over.initialRun } : {}),
@@ -564,6 +567,7 @@ describe('TimelineMode in a game: the phases and what each mounts (#tbl-phase-mo
     emit(filledMsg(1, 0, LONG.lastIndex + 1));
     await phaseIs('tally');
     const atTally = w().all('prefetch').length;
+    expect(atTally).toBe(before); // nothing asked through the run either
     stub.map.fire('moveend');
     expect(w().all('prefetch').length).toBe(atTally);
     // The control: out of RUN_VIEW the same moveend asks.
@@ -1140,6 +1144,7 @@ describe('TimelineMode in a game: the run on frames the test drives', () => {
 
 // ---- settling and the tally (game-sim #sec-design-settle) ----
 
+const ISO_AT = '2026-11-25T00:00:00.000Z';
 /** The rung-0 goal: the goal in play in these games. */
 const goal = () => goalAt(asOf, 0);
 /** The props of the last Tally mounted (the recording stub). */
@@ -1152,9 +1157,9 @@ const headerUnits = () =>
   page.getByTestId('header-units').element().querySelector('.sr-only')!.textContent;
 
 /** Opens the page in starting and fills the whole window: the run plays to its stop. */
-async function runToEnd(o: { game: GameStore; runMs: number; statics?: ScoreStatics }) {
-  const st = o.statics ?? LONG;
-  const s = setup({ game: o.game, phased: true, runMs: o.runMs });
+async function runToEnd(o: { game: GameStore; runMs: number; statics?: ScoreStatics } & Over) {
+  const { statics: st = LONG, ...over } = o;
+  const s = setup({ ...over, phased: true });
   await opening();
   emit(compiledMsg(1, st));
   emit(filledMsg(1, 0, st.lastIndex + 1));
@@ -1247,6 +1252,42 @@ describe('TimelineMode in a game: settling and the tally', () => {
     expect(tallyRec.mounts[1].result).not.toBe(tallyRec.mounts[0].result);
     expect(tallyRec.mounts[1].result).toEqual(game.state.last);
     expect(tallyRec.live).toBe(1);
+  });
+
+  /** A recording sound: counts each call by name. */
+  function recordingSound() {
+    const calls = { pop: 0, collect: 0, goal: 0, buy: 0 };
+    const sound: Sound = {
+      pop: () => void calls.pop++,
+      collect: () => void calls.collect++,
+      goal: () => void calls.goal++,
+      buy: () => void calls.buy++
+    };
+    return { sound, calls };
+  }
+
+  it('a settle that pays the lump plays goal once', async () => {
+    const { sound, calls } = recordingSound();
+    const game = gameWith({ phase: 'runs', runs: 0 });
+    // A goal of one home: reached, on a rung not met, so the result pays the lump.
+    await runToEnd({ game, runMs: 200, sound, goalAmount: 1 });
+    await expect.poll(() => modePhase()).toBe('tally');
+    expect(tallyProps().result.lump).not.toBeNull();
+    expect(calls.goal).toBe(1);
+  });
+
+  it('a settle without a lump plays no goal', async () => {
+    const { sound, calls } = recordingSound();
+    const met = [{ rung: 0, reachedOn: asOf + 40, datasetVersion: 'fixture-0', at: ISO_AT }];
+    // The rung already met: the goal is reached again, but no lump is paid.
+    const game = gameWith({ phase: 'runs', runs: 1, met });
+    await runToEnd({ game, runMs: 200, sound, goalAmount: 1 });
+    await expect.poll(() => modePhase()).toBe('tree');
+    await page.getByTestId('host-run').click();
+    await expect.poll(() => modePhase()).toBe('tally');
+    expect(tallyProps().result.reachedOn).not.toBeNull();
+    expect(tallyProps().result.lump).toBeNull();
+    expect(calls.goal).toBe(0);
   });
 
   it('a crash in tally keeps the tally', async () => {
