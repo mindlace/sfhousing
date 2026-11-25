@@ -95,7 +95,9 @@
   aria-hidden="true"
 >
   <div class="font-medium tabular-nums">{formatShortMonthYear(day)}</div>
-  <div class="mt-1 h-1 w-24 overflow-hidden rounded-full bg-neutral-200">
-    <div class="h-full bg-neutral-800" style:width="{fill * 100}%"></div>
+  <div
+    class="mt-1 h-1 w-24 overflow-hidden rounded-full bg-surface-raised dark:bg-surface-dark-raised"
+  >
+    <div class="h-full bg-ink dark:bg-ink-dark" style:width="{fill * 100}%"></div>
   </div>
 </div>

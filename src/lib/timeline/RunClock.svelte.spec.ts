@@ -40,8 +40,11 @@ function mount(props: { end: Day; rate: number; onday?: (d: Day) => void }) {
   queue = new Map();
   ts = 0;
   const ctl: RunClockCtl = {};
-  render(RunClockHost, { props: { asOf: A, stop: STOP, ctl, raf, cancelRaf, ...props } });
+  const view = render(RunClockHost, {
+    props: { asOf: A, stop: STOP, ctl, raf, cancelRaf, ...props }
+  });
   return {
+    unmount: async () => (await view).unmount(),
     day: () => ctl.day!(),
     running: () => ctl.running!(),
     setEnd: (d: Day) => {
@@ -77,6 +80,15 @@ it('calls onday once per change', () => {
   expect(days.length).toBeGreaterThan(0);
   expect(days.every((d, i) => i === 0 || d > days[i - 1])).toBe(true);
   expect(days.at(-1)).toBe(STOP);
+});
+
+it('cancels its pending frame when unmounted', async () => {
+  const h = mount({ end: STOP, rate: runRate(A, STOP) });
+  frames(64);
+  expect(queue.size).toBe(1);
+  await h.unmount();
+  flushSync();
+  expect(queue.size).toBe(0);
 });
 
 it('draws the month, hidden from assistive tech', () => {

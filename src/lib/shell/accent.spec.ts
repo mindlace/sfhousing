@@ -23,6 +23,7 @@ const CHROME_FILES = [
 const SCANNED = [...CHROME_FILES, 'src/lib/brush/RadiusPopover.svelte'];
 /** Files that follow the light and dark surface tokens (later plans append theirs). */
 const THEMED_FILES = [
+  'src/lib/timeline/RunClock.svelte',
   'src/lib/shell/NoticePills.svelte',
   'src/lib/sim-page/SimNotices.svelte',
   'src/lib/timeline/SimDetails.svelte',
