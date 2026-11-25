@@ -203,9 +203,15 @@
     window.addEventListener('scroll', onScroll, { capture: true, passive: true });
     window.addEventListener('pointermove', onPointer, { passive: true });
     window.addEventListener('pointerdown', onPointer, { passive: true });
+    // The mouse leaving the window: its return elsewhere starts a fresh path, not a sweep.
+    const onOut = (e: PointerEvent) => {
+      if (e.relatedTarget === null) out = true;
+    };
+    window.addEventListener('pointerout', onOut, { passive: true });
     window.addEventListener('keydown', onKey);
 
     return () => {
+      window.removeEventListener('pointerout', onOut);
       window.removeEventListener('pointermove', onPointer);
       window.removeEventListener('pointerdown', onPointer);
       window.removeEventListener('keydown', onKey);

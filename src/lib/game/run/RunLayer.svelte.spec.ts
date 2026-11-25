@@ -476,6 +476,22 @@ describe('RunLayer', () => {
       expect(root.dataset.collected).toBe('2');
     });
 
+    it('the mouse leaving the window and coming back elsewhere starts a fresh path', async () => {
+      const { box, map, feed, root } = await mount();
+      feed.drops = [feed.dropAt(1, 400, 100, 10, 2)];
+      start(feed);
+      feed.day = 15;
+      frame();
+      point(box, map, 'pointermove', 100, 100);
+      map.dispatchEvent(new PointerEvent('pointerout', { relatedTarget: null, bubbles: true }));
+      point(box, map, 'pointermove', 700, 100);
+      frame();
+      expect(root.dataset.collected).toBe('0');
+      point(box, map, 'pointermove', 100, 100);
+      frame();
+      expect(root.dataset.collected).toBe('2');
+    });
+
     it("with a mouse resting over the map, a run's first pointermove sweeps nothing from the centre", async () => {
       const ring = ringSpy();
       const { box, map, feed, root } = await mount();

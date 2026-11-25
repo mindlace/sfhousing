@@ -143,14 +143,19 @@ export function makeSound(muted: () => boolean, deps: SoundDeps): Sound {
     buy: -Infinity
   };
 
-  deps.onGesture(() => {
-    const made = deps.makeContext();
-    if (!made) return;
-    ctx = made;
-    master = made.createGain();
-    master.gain.value = MASTER_GAIN;
-    master.connect(made.destination);
-    if (made.state === 'suspended') void made.resume();
+  // Every gesture makes the context when there is none and resumes it unless it runs; the
+  // listeners stay until it runs, since some browsers start audio only on a release or a click.
+  const off = deps.onGesture(() => {
+    if (!ctx) {
+      const made = deps.makeContext();
+      if (!made) return;
+      ctx = made;
+      master = made.createGain();
+      master.gain.value = MASTER_GAIN;
+      master.connect(made.destination);
+    }
+    if (ctx.state !== 'running') void ctx.resume();
+    if (ctx.state === 'running') off();
   });
 
   function play(name: SoundName): void {
@@ -193,15 +198,11 @@ export function createSound(muted: () => boolean): Sound {
   return makeSound(muted, {
     makeContext: () => new AudioContext(),
     onGesture(fn) {
-      const events = ['pointerdown', 'keydown'] as const;
+      const events = ['pointerdown', 'pointerup', 'click', 'keydown'] as const;
       const off = () => {
-        for (const e of events) window.removeEventListener(e, handler, { capture: true });
+        for (const e of events) window.removeEventListener(e, fn, { capture: true });
       };
-      const handler = () => {
-        off();
-        fn();
-      };
-      for (const e of events) window.addEventListener(e, handler, { capture: true });
+      for (const e of events) window.addEventListener(e, fn, { capture: true, passive: true });
       return off;
     }
   });

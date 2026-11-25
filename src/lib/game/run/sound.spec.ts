@@ -234,6 +234,33 @@ describe('sound', () => {
     expect(audio.oscs).toHaveLength(1);
   });
 
+  it('a context still suspended after a pointerdown is resumed on a later pointerup', () => {
+    const audio = new FakeAudio();
+    audio.state = 'suspended';
+    const off = vi.fn();
+    let gesture: () => void = () => {};
+    const makeContext = vi.fn(() => audio as unknown as AudioLike);
+    makeSound(() => false, {
+      makeContext,
+      onGesture(fn) {
+        gesture = fn;
+        return off;
+      }
+    });
+    gesture();
+    expect(audio.resume).toHaveBeenCalledTimes(1);
+    expect(off).not.toHaveBeenCalled();
+    gesture();
+    expect(audio.resume).toHaveBeenCalledTimes(2);
+    expect(makeContext).toHaveBeenCalledTimes(1);
+    expect(audio.gains).toHaveLength(1);
+    expect(off).not.toHaveBeenCalled();
+    audio.state = 'running';
+    gesture();
+    expect(audio.resume).toHaveBeenCalledTimes(2);
+    expect(off).toHaveBeenCalledTimes(1);
+  });
+
   it('createSound without AudioContext returns a sound whose calls do nothing', () => {
     const s = createSound(() => false);
     expect(() => {
