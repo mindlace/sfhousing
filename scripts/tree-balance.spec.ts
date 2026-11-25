@@ -1,20 +1,26 @@
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { NODES } from '../src/lib/game/catalogue/nodes';
-import type { SideGoal } from '../src/lib/game/side-goals';
+import { RUNGS } from '../src/lib/game/ladder';
+import { SIDE_GOALS, type SideGoal } from '../src/lib/game/side-goals';
 import { NEW_GAME, type GameState } from '../src/lib/game/state';
 import type { Branch, NodeLevel, TreeNode } from '../src/lib/game/tree';
+import { openEngine, type Engine } from './reach-measure';
 import {
   CLOCK,
   checksOf,
   clockOf,
+  currentLaw,
+  eventsOf,
   leftToBuy,
   nextBuy,
   ORDERS,
+  play,
   raiseTo,
   sequenceOf,
   shareOf,
   sideReport,
-  type PlayEvent
+  type PlayEvent,
+  type PlayReport
 } from './tree-balance';
 
 const state = (over: Partial<GameState> = {}): GameState => ({ ...NEW_GAME, ...over });
@@ -265,5 +271,116 @@ describe('side report', () => {
     const r = sideReport([goal('collect-run', 0)], at(null), new Set(['collect-run']));
     expect(r[0]?.value).toBeNull();
     expect(r[0]?.flags).toEqual([]);
+  });
+});
+
+const FIXTURE = 'e2e/fixtures/data/fixture-0';
+/** Enough for the fixture's fills of every play below; a hook argument, not a wait. */
+const FILL_HOOK_MS = 600_000;
+const FAR = 10_000_000;
+
+const priced = (home: number): TreeNode[] =>
+  NODES.map((n) => ({ ...n, levels: n.levels.map((l) => ({ ...l, price: { home } })) }));
+const ONE = priced(1);
+const DEAR = priced(FAR);
+
+const boughtOf = (r: PlayReport) => r.runs.flatMap((x) => x.bought);
+const pairs = (nodes: readonly TreeNode[]) =>
+  nodes.flatMap((n) => n.levels.map((_, k) => `${n.id} ${k + 1}`)).sort();
+
+describe('play on the fixture', () => {
+  let engine: Engine;
+  let finishing: PlayReport;
+  let forMe: PlayReport;
+  let stuck: PlayReport;
+  let tooLong: PlayReport;
+
+  beforeAll(async () => {
+    engine = await openEngine({ dir: FIXTURE });
+    finishing = await play(engine, 'catalogue', 'hand', { amount: 1, nodes: ONE });
+    forMe = await play(engine, 'catalogue', 'collect-for-me', { amount: 1, nodes: ONE });
+    stuck = await play(engine, 'catalogue', 'hand', { amount: FAR, nodes: ONE });
+    tooLong = await play(engine, 'catalogue', 'hand', { amount: FAR, nodes: DEAR });
+  }, FILL_HOOK_MS);
+
+  afterAll(() => {
+    engine?.close();
+  });
+
+  it('a play on the fixture with 1-unit prices and a small amount finishes and buys every level', () => {
+    expect(finishing.end).toBe('finished');
+    expect(finishing.order).toBe('catalogue');
+    expect(finishing.mode).toBe('hand');
+    const got = boughtOf(finishing)
+      .map((b) => `${b.id} ${b.level}`)
+      .sort();
+    expect(got).toEqual(pairs(ONE));
+    expect(boughtOf(finishing).every((b) => b.price === 1)).toBe(true);
+    expect(finishing.runs.at(-1)?.rung).toBe(RUNGS - 1);
+  });
+
+  it('a play whose goal no document reaches ends stuck at rung 0 with everything bought', () => {
+    expect(stuck.end).toBe('stuck');
+    expect(stuck.runs.at(-1)?.rung).toBe(0);
+    const shown = ONE.filter((n) => n.ring === 0);
+    const got = boughtOf(stuck)
+      .map((b) => `${b.id} ${b.level}`)
+      .sort();
+    expect(got).toEqual(pairs(shown));
+    expect(stuck.runs.slice(-3).every((r) => r.bought.length === 0)).toBe(true);
+    expect(stuck.runs.every((r) => r.reachedOn === null && r.lump === 0)).toBe(true);
+  });
+
+  it('a play that cannot afford its next level ends too-long at 300 runs', () => {
+    expect(tooLong.end).toBe('too-long');
+    expect(tooLong.runs).toHaveLength(300);
+    expect(boughtOf(tooLong)).toEqual([]);
+    expect(tooLong.runs.map((r) => r.n)).toEqual(Array.from({ length: 300 }, (_, i) => i + 1));
+  });
+
+  it('collected is floor(share × dropped) and the clock counts every run and purchase', () => {
+    const first = finishing.runs[0]!;
+    expect(first.dropped).toBeGreaterThan(0);
+    expect(first.collected).toBe(Math.floor(0.25 * first.dropped));
+    const mine = forMe.runs[0]!;
+    expect(mine.collected).toBe(mine.dropped);
+    for (const r of [finishing, forMe, stuck, tooLong]) {
+      const buys = boughtOf(r).length;
+      expect(r.clockS).toBe(clockOf(eventsOf(r)));
+      expect(r.clockS).toBe(60 + 28 * r.runs.length + 4 * buys);
+      expect(r.checks).toEqual(checksOf(eventsOf(r)));
+    }
+  });
+
+  it('a run reports its lump apart from collected units', () => {
+    const first = finishing.runs[0]!;
+    expect(first.reachedOn).not.toBeNull();
+    expect(first.lump).toBe(2000);
+    expect(first.balance).toBe(first.collected + first.lump + first.sideRewards);
+  });
+
+  it('a hands purchase does not change the map', () => {
+    const events = eventsOf(finishing);
+    const buys = events.filter((e) => e.type === 'buy');
+    const entries = boughtOf(finishing);
+    expect(buys).toHaveLength(entries.length);
+    const at = (id: string) => entries.findIndex((b) => b.id === id && b.level === 1);
+    expect(buys[at('hands-radius')]).toEqual({ type: 'buy', mapChange: false });
+    expect(buys[at('stop-rail')]).toEqual({ type: 'buy', mapChange: true });
+    expect(events.filter((e) => e.type === 'met')).toHaveLength(RUNGS);
+  });
+
+  it('current law reads each side goal at its rung deadline, and null past the last rung', async () => {
+    const atLaw = await currentLaw(engine);
+    const rung0 = atLaw(0);
+    expect(rung0).not.toBeNull();
+    for (const g of SIDE_GOALS) {
+      const v = rung0!(g);
+      expect(v === null || typeof v === 'number').toBe(true);
+    }
+    expect(rung0!(SIDE_GOALS.find((g) => g.id === 'collect-run')!)).toEqual(expect.any(Number));
+    expect(atLaw(RUNGS)).toBeNull();
+    expect(atLaw(RUNGS + 3)).toBeNull();
+    expect(atLaw(RUNGS - 1)).not.toBeNull();
   });
 });

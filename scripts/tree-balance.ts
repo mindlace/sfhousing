@@ -1,12 +1,21 @@
 // Plays the purchase tree against the engine to check pacing (spec: sec-design-balance).
-// This part is the pure pieces: shares, orders, next-buy selection, pacing checks, side report.
+// The pure pieces (shares, orders, next-buy selection, pacing checks, side report), then a play
+// against the engine and current law at each deadline.
 import { NODES } from '../src/lib/game/catalogue/nodes';
+import { buyAndApply, type Played } from '../src/lib/game/catalogue/play';
 import { SIDE_TUNING } from '../src/lib/game/catalogue/tuning';
+import { finished, goalAt, RUNGS, takeNext } from '../src/lib/game/ladder';
+import { limitsOf, runnable } from '../src/lib/game/limits';
+import { deadlineIndex, readRun, resultOf, settle, type RunTake } from '../src/lib/game/run-result';
 import type { SideGoal } from '../src/lib/game/side-goals';
-import type { GameState, NodeId } from '../src/lib/game/state';
+import { NEW_GAME, type GameState, type NodeId } from '../src/lib/game/state';
 import { treeView, type NodeView, type TreeNode } from '../src/lib/game/tree';
 import { total } from '../src/lib/game/units';
+import type { TimelineView } from '../src/lib/sim/world/score/types';
+import { canonicalJson } from '../src/lib/sim-page/policy';
 import type { Day } from '../src/lib/timelapse/time';
+import { DEFAULT_POLICY4 } from '../src/lib/timeline/policy4';
+import type { Engine } from './reach-measure';
 
 export const SHARE = { base: 0.25, perRadius: 0.1, perLinger: 0.05 } as const;
 
@@ -41,7 +50,8 @@ export interface PlayReport {
     dropped: number;
     collected: number;
     balance: number;
-    bought: { id: NodeId; level: number; price: number }[];
+    /** `mapChange`: the purchase changed the document (its grant is not `hands`). */
+    bought: { id: NodeId; level: number; price: number; mapChange: boolean }[];
     lump: number;
     sideRewards: number;
     sideMet: string[];
@@ -245,4 +255,152 @@ export function sideReport(
       raiseTo: atOrBelow ? raiseTo(value) : null
     };
   });
+}
+
+export type PlayEngine = Pick<Engine, 'datasetVersion' | 'asOf' | 'cal' | 'view'>;
+
+export const MAX_RUNS = 300;
+/** Runs in a row with nothing left to buy and the rung not met before a play is stuck. */
+export const STUCK_RUNS = 3;
+
+const DAY_MS = 86_400_000;
+
+/** A day as the ISO timestamp the game state keeps (`firstWinAt`, a run's `at`). */
+const isoOf = (day: Day): string => new Date(day * DAY_MS).toISOString();
+
+/** The grant of `id`'s `level` (1-based) among `nodes`, or undefined when there is none. */
+const grantOf = (id: NodeId, level: number, nodes: readonly TreeNode[]) =>
+  nodes.find((n) => n.id === id)?.levels[level - 1]?.grant;
+
+/**
+ * The events a play's report implies: each run, `met` after the run that first meets its rung,
+ * then that run's purchases in order. A purchase changes the map when its grant is not `hands`
+ * and the play recorded that it changed the document.
+ */
+export function eventsOf(report: PlayReport, nodes: readonly TreeNode[] = NODES): PlayEvent[] {
+  const events: PlayEvent[] = [];
+  const met = new Set<number>();
+  for (const run of report.runs) {
+    events.push({ type: 'run' });
+    if (run.reachedOn !== null && !met.has(run.rung)) {
+      met.add(run.rung);
+      events.push({ type: 'met' });
+    }
+    for (const b of run.bought) {
+      const grant = grantOf(b.id, b.level, nodes);
+      events.push({ type: 'buy', mapChange: b.mapChange && grant?.tag !== 'hands' });
+    }
+  }
+  return events;
+}
+
+/** The deadline month of `rung`'s goal in `view`, its dropped units and the take at `share`. */
+function takeAt(view: TimelineView, deadline: Day, share: number) {
+  const index = deadlineIndex(deadline, view);
+  const dropped = Math.max(0, view.rows[index]?.completedNet ?? 0);
+  const take: RunTake = {
+    dropped: { home: dropped },
+    collected: { home: Math.floor(share * dropped) }
+  };
+  return { index, dropped, take };
+}
+
+/** One play, first run to finished, stuck or too-long. nodes defaults to NODES. */
+export async function play(
+  engine: PlayEngine,
+  order: OrderName,
+  mode: 'hand' | 'collect-for-me',
+  opts: { amount?: number; nodes?: readonly TreeNode[] } = {}
+): Promise<PlayReport> {
+  const nodes = opts.nodes ?? NODES;
+  const at = isoOf(engine.asOf);
+  let p: Played = {
+    state: { ...NEW_GAME, phase: 'runs', firstWinAt: at },
+    doc: DEFAULT_POLICY4
+  };
+  let pending: NodeId[] = order === 'cheapest' ? [] : sequenceOf(order, nodes);
+  const runs: PlayReport['runs'] = [];
+  let end: PlayReport['end'] = 'too-long';
+  let idleMisses = 0;
+  while (runs.length < MAX_RUNS) {
+    const before = p.state;
+    const idle = !leftToBuy(order, before, pending, nodes);
+    const view = await engine.view(runnable(p.doc, limitsOf(before, nodes)));
+    const goal = goalAt(engine.asOf, before.rung, opts.amount);
+    const reading = readRun(view, goal);
+    if (reading === null) throw new Error('the window is not filled');
+    const { index, dropped, take } = takeAt(view, goal.deadline, shareOf(before, mode));
+    const result = resultOf(
+      before,
+      reading,
+      take,
+      { view, index, take },
+      {
+        amount: goal.amount,
+        datasetVersion: engine.datasetVersion,
+        at
+      }
+    );
+    const settled = settle(before, result);
+    const run: PlayReport['runs'][number] = {
+      n: runs.length + 1,
+      rung: before.rung,
+      homes: reading.homes,
+      reachedOn: reading.reachedOn,
+      dropped,
+      collected: total(take.collected),
+      balance: total(settled.units),
+      bought: [],
+      lump: result.lump === null ? 0 : total(result.lump),
+      sideRewards: result.side.reduce((n, e) => n + total(e.reward), 0),
+      sideMet: result.side.map((e) => e.id)
+    };
+    runs.push(run);
+    if (finished(settled)) {
+      end = 'finished';
+      break;
+    }
+    p = { state: takeNext(settled), doc: p.doc };
+    let next = nextBuy(order, p.state, pending, nodes);
+    while (next !== null) {
+      const { id } = next;
+      const level = (p.state.bought[id] ?? 0) + 1;
+      const node = nodes.find((n) => n.id === id);
+      const after = buyAndApply(p, id, engine.cal, nodes);
+      if (node === undefined || after === null)
+        throw new Error(`the purchase of ${id} was refused`);
+      const { price, grant } = node.levels[level - 1]!;
+      run.bought.push({
+        id,
+        level,
+        price: total(price),
+        mapChange: grant.tag !== 'hands' && canonicalJson(after.doc) !== canonicalJson(p.doc)
+      });
+      p = after;
+      pending = next.pending;
+      next = nextBuy(order, p.state, pending, nodes);
+    }
+    idleMisses = reading.reachedOn === null && idle ? idleMisses + 1 : 0;
+    if (idleMisses >= STUCK_RUNS) {
+      end = 'stuck';
+      break;
+    }
+  }
+  const events = eventsOf({ order, mode, runs, end, clockS: 0, checks: [] }, nodes);
+  return { order, mode, runs, end, clockS: clockOf(events), checks: checksOf(events) };
+}
+
+/** Current law (the empty document's view) at each rung's deadline, as sideReport's atLaw. */
+export async function currentLaw(
+  engine: PlayEngine,
+  amount?: number
+): Promise<(rung: number) => ((g: SideGoal) => number | null) | null> {
+  const view = await engine.view(DEFAULT_POLICY4);
+  const readers: ((g: SideGoal) => number | null)[] = [];
+  for (let rung = 0; rung < RUNGS; rung++) {
+    const goal = goalAt(engine.asOf, rung, amount);
+    const { index, take } = takeAt(view, goal.deadline, SHARE.base);
+    readers.push((g) => g.read({ view, index, take })?.value ?? null);
+  }
+  return (rung) => readers[rung] ?? null;
 }
