@@ -67,7 +67,7 @@ export async function expectPhoneHeaderFits(page: Page): Promise<void> {
       row[i - 1].right - 0.5
     );
   await openHeaderMenu(page);
-  await expect(banner.getByRole('link', { name: 'SF Housing Simulator' })).toBeVisible();
+  await expect(banner.getByRole('link', { name: 'SF Housing', exact: true })).toBeVisible();
   const menu = banner.getByRole('button', { name: 'Menu', exact: true });
   await menu.click();
   await expect(menu).toHaveAttribute('aria-expanded', 'false');

@@ -1,112 +1,101 @@
-// The game shell end to end (game-shell, sec-tests-e2e): Paint's win and its Level up onto /sim,
-// the header's locked Simulate step and level cell, and Remix from /s/<id> and /p/<id> into a
-// saved game. Runs against the VITE_E2E build on fixture-0, with the real game switched on by
-// e2e/helpers/game.ts before the first navigation.
-import { readFileSync } from 'node:fs';
-import { expect, test, type Locator, type Page } from '@playwright/test';
-import { newVisitor, seedGame, seedGoalAmount } from './helpers/game';
-import { addPolicy, openKind, waitFilled } from './helpers/run';
+// The game shell end to end (game-shell): the opening on `/` and the first run's start at the same
+// address, `/sim` as a redirect to `/`, the header with no steps, the first load's brush, the
+// simulation with no game, and `/p/<id>` in full. Runs against the VITE_E2E build on fixture-0,
+// with the real game switched on by e2e/helpers/game.ts before the first navigation.
+import { expect, test } from '@playwright/test';
+import { seedGoalAmount } from './helpers/game';
+import { waitPhase } from './helpers/play';
 import {
-  SIM_KEY,
   gotoEditor,
   gotoHydrated,
   openHeaderMenu,
   ops,
   paintOnce,
-  seedPlanRow,
-  smallText,
-  waitForMap
+  smallText
 } from './helpers/sharing';
 
-const PRESET = "Permits at San Diego's pace";
-
-/** A whole stored schema-2 policy document: a 'sim' row that needs no /sim to capture. */
-const SCHEMA2_TEXT = readFileSync(
-  new URL('../src/lib/sim-page/fixtures/schema2/painted.json', import.meta.url),
-  'utf8'
-);
-
-/** The Steps nav on show: from lg the header's, below lg the open Menu's. */
-const steps = (page: Page): Locator => page.getByRole('navigation', { name: 'Steps' });
-
-/** The policy the app autosaves on /sim after adding the San Diego permitting preset. */
-async function capturePresetDoc(page: Page): Promise<{ datasetVersion: string }> {
-  await page.emulateMedia({ reducedMotion: 'reduce' });
-  await gotoHydrated(page, '/sim');
-  await waitFilled(page);
-  await addPolicy(page, 'Permitting', PRESET);
-  const stored = () =>
-    page.evaluate((k) => {
-      const raw = localStorage.getItem(k);
-      return raw === null ? null : JSON.parse((JSON.parse(raw) as { plan: string }).plan);
-    }, SIM_KEY);
-  await expect
-    .poll(async () => (await stored())?.policy.kinds.permitting[0]?.preset)
-    .toBe('benchmarkPermits');
-  return await stored();
-}
-
-test("a new visitor's first load has no hydration warning and locks Simulate after hydration", async ({
-  page
-}) => {
-  const messages: string[] = [];
-  page.on('console', (m) => messages.push(m.text()));
-  await newVisitor(page);
-  await gotoHydrated(page, '/about');
-  await openHeaderMenu(page);
-  await expect(steps(page).locator('[data-step-locked]')).toBeVisible();
-  await expect(steps(page).getByRole('link', { name: 'Simulate' })).toHaveCount(0);
-  expect(messages.filter((m) => /hydrat/i.test(m))).toEqual([]);
-});
-
-test('a new visitor paints past the goal, levels up and lands on /sim at level 2', async ({
+test('a new visitor paints once, presses Start, and the first run starts at /', async ({
   page,
   isMobile
 }) => {
-  await newVisitor(page);
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const paths: string[] = [];
+  page.on('framenavigated', (f) => {
+    if (f === page.mainFrame()) paths.push(new URL(f.url()).pathname);
+  });
   await seedGoalAmount(page, 1);
   await gotoEditor(page);
   await paintOnce(page, isMobile);
 
-  const card = page.getByTestId('paint-win');
-  await expect(card.getByRole('heading', { name: 'Room for 1 homes' })).toBeVisible();
-  await expect(card).toContainText('Unlocks: The simulation');
-  await card.getByRole('button', { name: 'Level up' }).click();
+  const start = page.getByTestId('opening-start');
+  await expect(start).toBeVisible();
+  await start.click();
+  await waitPhase(page, 'run');
 
-  await expect(page).toHaveURL(/\/sim$/);
-  await openHeaderMenu(page);
-  await expect(page.getByTestId('header-level')).toHaveText('Level 2');
-  await expect(steps(page).getByRole('link', { name: 'Simulate', exact: true })).toHaveAttribute(
-    'href',
-    '/sim'
-  );
-  await expect(page.locator('[data-step-locked]')).toHaveCount(0);
+  await expect(page).toHaveURL(/\/$/);
+  expect(new URL(page.url()).pathname).toBe('/');
+  expect(paths.length).toBeGreaterThan(0);
+  expect(new Set(paths)).toEqual(new Set(['/']));
+  // The map box takes focus (tl-map-box, tabindex -1 while starting and running).
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => !!document.activeElement?.contains(document.querySelector('[data-testid="map-root"]'))
+      )
+    )
+    .toBe(true);
 });
 
-test("at level 1 the Simulate step is no link, and /s/<id>'s Remix asks to unlock", async ({
-  page
-}) => {
-  await seedGame(page, 1);
-  const id = await seedPlanRow(page.request, {
-    body: SCHEMA2_TEXT,
-    datasetVersion: 'fixture-0',
-    kind: 'sim'
-  });
-  await gotoHydrated(page, `/s/${id}`);
-  const banner = page.getByRole('region', { name: 'Shared policy' });
-  await expect(
-    banner.getByRole('button', { name: 'Unlock the simulation to remix' })
-  ).toHaveAttribute('aria-disabled', 'true');
-  await openHeaderMenu(page);
-  await expect(steps(page).locator('[data-step-locked]')).toBeVisible();
-  await expect(steps(page).getByRole('link', { name: 'Simulate' })).toHaveCount(0);
+test('the opening card is one element inside its box', async ({ page, isMobile }) => {
+  await seedGoalAmount(page, 1);
+  await gotoEditor(page);
+  await paintOnce(page, isMobile);
+  const box = page.getByTestId('opening-card-box');
+  await expect(box).toBeVisible();
+  await expect(box.getByTestId('opening-card')).toHaveCount(1);
+  await expect(page.getByTestId('opening-card')).toHaveCount(1);
 });
 
-test("at level 1 /p/<id>'s Remix opens Paint on the published plan, listed in the level panel", async ({
-  page,
-  request
-}) => {
-  await seedGame(page, 1);
+test('/sim is a 308 to /', async ({ page }) => {
+  const res = await page.request.get('/sim?seed=1', { maxRedirects: 0 });
+  expect(res.status()).toBe(308);
+  expect(res.headers()['location']).toBe('/');
+
+  await page.goto('/sim');
+  expect(new URL(page.url()).pathname).toBe('/');
+});
+
+test('the header has no steps and reads SF Housing', async ({ page }) => {
+  for (const width of [375, 1280]) {
+    await page.setViewportSize({ width, height: 800 });
+    await gotoEditor(page);
+    await expect(page.getByRole('navigation', { name: 'Steps' })).toHaveCount(0);
+    // Below lg the site name is in the open Menu; from lg it is in the bar.
+    await openHeaderMenu(page);
+    const name = page.getByRole('banner').getByRole('link', { name: 'SF Housing', exact: true });
+    await expect(name).toBeVisible();
+    await expect(name).toHaveAttribute('href', '/');
+    await expect(page.getByRole('navigation', { name: 'Steps' })).toHaveCount(0);
+  }
+});
+
+test("a new visitor's first load shows the brush at Room for 0 homes", async ({ page }) => {
+  const messages: string[] = [];
+  page.on('console', (m) => messages.push(m.text()));
+  await gotoEditor(page);
+  await expect(page.getByRole('banner').getByTestId('score-bar')).toContainText('Room for 0 homes');
+  expect(await ops(page)).toBe(0);
+  expect(messages.filter((m) => /hydrat/i.test(m))).toEqual([]);
+});
+
+test('with no game, / shows the simulation and no unit count', async ({ page }) => {
+  await gotoHydrated(page, '/');
+  await expect(page.getByTestId('tl-mode')).toBeVisible();
+  await expect(page.getByTestId('header-units')).toHaveCount(0);
+  expect(await ops(page)).toBeNull();
+});
+
+test('/p/<id> opens in full with no Remix and links Your game to /', async ({ page, request }) => {
   const res = await request.post('/api/plans', {
     data: smallText,
     headers: { 'content-type': 'application/json' }
@@ -114,52 +103,10 @@ test("at level 1 /p/<id>'s Remix opens Paint on the published plan, listed in th
   expect(res.ok()).toBe(true);
   const { id } = (await res.json()) as { id: string };
 
-  await page.goto(`/p/${id}`);
-  await waitForMap(page);
-  await expect(page.locator('html')).toHaveAttribute('data-hydrated', '');
-  await page
-    .getByRole('region', { name: 'Shared plan' })
-    .getByRole('button', { name: 'Remix' })
-    .click();
-  await expect(page).toHaveURL(/\/$/);
-  // toHaveURL passes when the new document commits; wait for Paint to mount and set its hook.
-  await waitForMap(page);
-  // small.json holds 3 ops: Paint opens the published plan.
-  await expect.poll(() => ops(page)).toBe(3);
-
-  await openHeaderMenu(page);
-  await page.getByTestId('header-level').click();
-  await expect(
-    page
-      .getByTestId('header-level-panel')
-      .getByTestId('save-row')
-      .filter({ hasText: 'Remix of Untitled plan' })
-  ).toHaveCount(1);
-});
-
-test("at level 3 /s/<id>'s Remix of one permitting policy opens /sim with its row", async ({
-  page
-}) => {
-  await seedGame(page, 3);
-  const doc = await capturePresetDoc(page);
-  const id = await seedPlanRow(page.request, {
-    body: JSON.stringify(doc),
-    datasetVersion: doc.datasetVersion,
-    kind: 'sim'
-  });
-  // Clear the current game's policy, so the row /sim shows can only be the remixed one.
-  await page.evaluate((k) => localStorage.removeItem(k), SIM_KEY);
-
-  await gotoHydrated(page, `/s/${id}`);
-  await page
-    .getByRole('region', { name: 'Shared policy' })
-    .getByRole('button', { name: 'Remix' })
-    .click();
-  await expect(page).toHaveURL(/\/sim$/);
-  await expect(page.locator('html')).toHaveAttribute('data-hydrated', '');
-  await waitFilled(page);
-  await openKind(page, 'Permitting');
-  await expect(
-    page.getByRole('button', { name: new RegExp(`, ${PRESET}, `) }).last()
-  ).toBeVisible();
+  await gotoHydrated(page, `/p/${id}`);
+  const banner = page.getByRole('region', { name: 'Shared plan' });
+  await expect(banner).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Remix' })).toHaveCount(0);
+  await expect(page.getByText('Open with current data')).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Your game' })).toHaveAttribute('href', '/');
 });

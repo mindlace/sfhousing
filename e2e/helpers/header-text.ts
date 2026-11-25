@@ -1,6 +1,24 @@
-// The widest header strings /sim can show, written into the page for the header fit tests
-// (sim.spec.ts, layout.spec.ts).
+// The widest header strings the game's pages can show, written into the page for the header fit
+// tests (layout.spec.ts and the specs of the game's screens).
 import type { Page } from '@playwright/test';
+
+/**
+ * Writes the game header's widest strings: "9,999,999" into the unit count's drawn number and
+ * "82,069 of 82,069 homes by Sep 2066" into the goal headline's drawn line 1. Text only, so a
+ * second call leaves the page as the first did.
+ */
+export async function widestGameHeader(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const count = document.querySelectorAll(
+      '[data-testid="header-units"] > span[aria-hidden="true"]'
+    )[1];
+    if (count) count.textContent = '9,999,999';
+    const line = document.querySelector(
+      '[data-testid="goal-headline-button"] > span[aria-hidden="true"]'
+    );
+    if (line) line.textContent = '82,069 of 82,069 homes by Sep 2066';
+  });
+}
 
 /**
  * The widest header strings the page can show. The save state's sizer (it reserves the width of
