@@ -57,6 +57,7 @@ import {
 import { chunk, statics as baseStatics } from './test/fixtures';
 import type { Pool } from '$lib/timelapse/types';
 import type { AddChoice } from './add';
+import { openGame, type GameStore } from '$lib/game/store.svelte';
 import TimelineModeHost from './test/TimelineModeHost.svelte';
 import { pointerBetween } from './test/pointer';
 
@@ -179,6 +180,8 @@ type Over = Partial<{
   onactivity: () => void;
   fetchPlaces: (url: string) => Promise<NeighborhoodShapes | null>;
   spacePlays: boolean;
+  /** The game (none by default). */
+  game: GameStore;
 }>;
 
 let workers: FakeTimelineWorker[];
@@ -230,6 +233,7 @@ function setup(over: Over = {}) {
       ...(over.ondetails ? { ondetails: over.ondetails } : {}),
       ...(over.onactivity ? { onactivity: over.onactivity } : {}),
       ...(over.spacePlays !== undefined ? { spacePlays: over.spacePlays } : {}),
+      ...(over.game ? { game: over.game } : {}),
       fetchPlaces: over.fetchPlaces ?? (async () => FIXTURE_PLACES)
     }
   });
@@ -3108,6 +3112,23 @@ describe('the goal notice', () => {
     await expect
       .element(notice())
       .toHaveTextContent('Goal missed by 63 homes. Add a policy and play again.');
+  });
+
+  it("with no game and with the open game: the header score is pinned and the notice is today's", async () => {
+    for (const game of [undefined, openGame()]) {
+      const s = await opened(LAST, { goal: metAt8, ...(game ? { game } : {}) });
+      await expect.element(page.getByRole('banner').getByTestId('score-bar')).toBeVisible();
+      expect(document.querySelector('[data-testid=goal-headline]')).toBeNull();
+      expect(document.querySelector('[data-testid=tl-locked-lane]')).toBeNull();
+      await keysTo(8);
+      await expect
+        .element(notice())
+        .toHaveTextContent(
+          `Goal reached in ${formatShortMonthYear(MONTHS[8])}, by the ${formatShortMonthYear(MONTHS[DEADLINE])} deadline.`
+        );
+      (await s.r).unmount();
+      workers = [];
+    }
   });
 
   it('it stays as the playhead goes back, and does not come back once dismissed', async () => {

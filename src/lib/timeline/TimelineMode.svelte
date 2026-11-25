@@ -165,14 +165,13 @@
   import MapKeyControl from '$lib/map/key/MapKeyControl.svelte';
   import { keyTally } from './key';
   import SimKey from './SimKey.svelte';
-  import { ALL_ALLOWED } from '$lib/game/allowed';
-  import { unlockText } from '$lib/game/copy';
-  import type { Level } from '$lib/game/levels';
-  import { barOf, roundComplete } from '$lib/game/progress';
-  import { standing, type Standing } from '$lib/game/standing';
+  import { NODES } from '$lib/game/catalogue/nodes';
+  import { RUNGS, goalAt, ladder } from '$lib/game/ladder';
+  import { OPEN_LIMITS } from '$lib/game/limits';
+  import { sideShown, type SideGoal } from '$lib/game/side-goals';
   import type { GameStore } from '$lib/game/store.svelte';
-  import WinCard from '$lib/game/WinCard.svelte';
-  import { missed, missedBar, shortOfBar, winTitle } from './game-copy';
+  import GoalHeadline from '$lib/game/ui/GoalHeadline.svelte';
+  import { goalUnlocks } from './game-copy';
 
   interface Props {
     manifest: Manifest | null;
@@ -215,8 +214,9 @@
      */
     run?: SimPolicy4;
     /**
-     * The game: the seen result, the standing, the offer, the win card, the bar and the locks. The
-     * open game (`game.open`) is no game: today's page. Default null.
+     * The game: the goal in play (its rung's), the header's goal headline in place of the score,
+     * no goal notice, and the limits the timeline holds to. The open game (`game.open`) is no
+     * game: today's page. Default null.
      */
     game?: GameStore | null;
     /** The goal's amount, over the default goal (the `goal` seam wins). Default null: the default's. */
@@ -399,20 +399,21 @@
 
   const asOf = $derived(calibration?.asOf ?? 0);
   const windowEnd = $derived(monthLastDay(asOf, WINDOW_MONTHS));
-  /**
-   * The page's goal: the seam, else the default goal built from the dataset's date, with
-   * `goalAmount` as its amount when given.
-   */
-  const goal = $derived(
-    goalSeam ??
-      (goalAmount !== null ? { ...defaultGoal(asOf), amount: goalAmount } : defaultGoal(asOf))
-  );
   /** The game in play; the open game is no game (G2). */
   const g = $derived(game && !game.open ? game : null);
+  /**
+   * The page's goal. In a game, the rung in play's (`goalAmount` its amount when given; the seam
+   * is not read). Without one, the seam, else the default goal built from the dataset's date,
+   * with `goalAmount` as its amount when given.
+   */
+  const goal = $derived(
+    g
+      ? goalAt(asOf, g.state.rung, goalAmount ?? undefined)
+      : (goalSeam ??
+          (goalAmount !== null ? { ...defaultGoal(asOf), amount: goalAmount } : defaultGoal(asOf)))
+  );
   /** The document the worker runs: `run`, else the one on show. */
   const runDoc = $derived(run ?? policy);
-  /** What the game allows (G3); every control without one. */
-  const allowed = $derived(g?.allowed ?? ALL_ALLOWED);
   const current = $derived(session?.view ?? null);
   const statics = $derived(session?.statics ?? null);
   const months = $derived(statics?.months ?? current?.months ?? null);
@@ -594,13 +595,11 @@
     }))
   );
   /**
-   * At today with nothing in force in the edited run document and the page editable: the starters
-   * the game allows.
+   * At today with nothing in force in the edited run document and the page editable: the starters.
+   * The page offers none in a game (no `onstarter`).
    */
   const starters = $derived(
-    onstarter && calibration && nothingInForce(runDoc)
-      ? startersFor(calibration, runDoc, allowed)
-      : []
+    onstarter && calibration && nothingInForce(runDoc) ? startersFor(calibration, runDoc) : []
   );
   /** The map key control's box: the card's area ends at its left edge. */
   let keyEl = $state<HTMLElement>();
@@ -632,22 +631,12 @@
    * wait, so the notice's wording and numbers are always one document's.
    */
   let outcomeInForce = $state(false);
-  /**
-   * The seen result (spec `seen`): the outcome under the run document, set only when the outcome
-   * is read with the numbers current, no search under way, the open not provisional and the view
-   * covering the months read. Every edit clears it at once, so an older document's outcome is
-   * never seen.
-   */
-  let seenResult = $state.raw<GoalOutcome | null>(null);
   $effect(() => {
     const view = shown.view;
     const m = reachedMonth;
     const gl = goal;
     const f = inForce;
     const wait = stale || searching;
-    const provisional = session?.provisional ?? false;
-    // Failed lots: the numbers on show are the last sent document's, not the one on screen (G4).
-    const failed = lotsFailed && lots === null;
     untrack(() => {
       if (wait) return;
       // The window's last month stands for the window's last day, which is where a goal due at
@@ -666,31 +655,20 @@
         (next !== null && outcome !== null && outcomeKey(next) === outcomeKey(outcome));
       if (!same) outcome = next;
       outcomeInForce = f;
-      // Keyed as `outcome`: an unchanged result keeps its object.
-      if (!provisional && !failed) seenResult = outcome;
     });
   });
   /** Outcomes dismissed this visit, by key. */
   const dismissed = new SvelteSet<string>();
 
-  // ---- the game (spec #sec-design-seen, -messages, -card, -levelup) ----
-
-  /** The result to beat at the game's level; null without one, and at levels 1 and 2. */
-  const bar = $derived(g ? barOf(g.progress) : null);
-  const stand = $derived<Standing>(
-    g ? standing(g.progress.level, bar, seenResult) : { kind: 'playing' }
-  );
-  /** The outcome the goal notice speaks of: a short standing's in a game, else today's. */
-  const noticeOutcome = $derived(g ? (stand.kind === 'short' ? stand.seen : null) : outcome);
   /**
    * Dismissing removes the focused button: focus goes to the next notice's button in the stack,
    * else to the ruler, so it never drops to the page.
    */
   async function dismissGoal(e: MouseEvent) {
-    if (!noticeOutcome) return;
+    if (!outcome) return;
     const buttons = [...(pillsEl?.querySelectorAll('button') ?? [])];
     const next = buttons[buttons.indexOf(e.currentTarget as HTMLButtonElement) + 1];
-    dismissed.add(outcomeKey(noticeOutcome));
+    dismissed.add(outcomeKey(outcome));
     await tick();
     const target = next?.isConnected ? next : rulerEl();
     target?.focus();
@@ -698,89 +676,52 @@
   function rulerEl(): HTMLElement | null {
     return (modeEl ?? document).querySelector<HTMLElement>('[data-testid=tl-ruler]');
   }
-  /** In a game, the standing's words (a short standing only); without one, today's. */
+  /** Today's goal notice; none in a game (game-sim #sec-design-goal). */
   const goalNotice = $derived.by(() => {
-    const o = noticeOutcome;
-    if (!o || dismissed.has(outcomeKey(o))) return null;
-    if (!g) return outcomeText(o, goal, outcomeInForce);
-    const barOn = stand.kind === 'short' ? (stand.bar?.on ?? null) : null;
-    if (o.kind === 'reached') return barOn === null ? null : shortOfBar(o.on, barOn);
-    const unit = goal.measure.unit;
-    return barOn === null ? missed(o.short, unit) : missedBar(o.short, unit, barOn);
+    const o = outcome;
+    if (g || !o || dismissed.has(outcomeKey(o))) return null;
+    return outcomeText(o, goal, outcomeInForce);
   });
 
-  /** The month the open win card names; null while it is closed. */
-  let cardOn = $state<Day | null>(null);
-  /** The month whose card was kept ("Keep playing", Escape) at this level in this visit. */
-  let kept = $state<Day | null>(null);
-  let winEl = $state<HTMLElement>();
-  /** The level and completion the level-up reaction last saw. */
-  let lastLevel: Level | null = untrack(() => g?.progress.level ?? null);
-  let lastComplete = untrack(() => (g ? roundComplete(g.progress) : false));
-  // The level rose, or the round completed (whoever pressed): the clock returns to today and
-  // what was seen at the old level goes. A `levelUp()` that changes no progress (the round
-  // complete) changes neither input, so nothing happens. A pre-effect: it runs before the card and
-  // offer effects, so a level up clears the seen result first, and before the DOM updates, so
-  // focus is read in the card before the completing level up takes the card's "Level up" away.
-  $effect.pre(() => {
-    const level = g?.progress.level ?? null;
-    const complete = g ? roundComplete(g.progress) : false;
-    untrack(() => {
-      const rose = level !== null && lastLevel !== null && level > lastLevel;
-      const completed = complete && !lastComplete;
-      lastLevel = level;
-      lastComplete = complete;
-      if (!rose && !completed) return;
-      playing = false;
-      day = asOf;
-      handleDay(asOf);
-      reveal = revealOpen(asOf);
-      seenResult = null;
-      outcome = null;
-      dismissed.clear();
-      kept = null;
-      const inCard = !!winEl?.contains(document.activeElement);
-      cardOn = null;
-      if (inCard) void tick().then(() => rulerEl()?.focus());
-    });
-  });
-  // The card opens when the standing becomes won with a month not kept; it closes when the
-  // standing stops being won, keeping nothing. Focus in the card (an edit by Ctrl+Z from its
-  // button) goes to the ruler, so it never drops to the page.
-  $effect(() => {
-    const s = stand;
-    untrack(() => {
-      if (s.kind !== 'won') {
-        const inCard = cardOn !== null && !!winEl?.contains(document.activeElement);
-        cardOn = null;
-        if (inCard) void tick().then(() => rulerEl()?.focus());
-        return;
+  // ---- the game's goal headline (game-sim #sec-design-goal, #tbl-goal-props) ----
+
+  type SideEntry = { goal: SideGoal; value: number; target: number; met: boolean };
+  /**
+   * GoalHeadline's props in a game, from the state (the tally, tree and workshop column); null
+   * without a game. The side goals are read on the view on show at the deadline's month, with the
+   * last run's take when it was on the rung in play; none with no view or that month not filled.
+   */
+  const goalProps = $derived.by(() => {
+    if (!g) return null;
+    const s = g.state;
+    const rung = s.rung;
+    const last = s.last !== null && s.last.rung === rung ? s.last : null;
+    const take = last
+      ? { dropped: last.dropped, collected: last.collected }
+      : { dropped: {}, collected: {} };
+    const view = shownView;
+    const side: SideEntry[] = [];
+    if (view) {
+      const i = indexOfDay(view.months, goal.deadline);
+      if (i <= view.filledThrough) {
+        for (const sg of sideShown(s)) {
+          const r = sg.read({ view, index: i, take });
+          if (r !== null) side.push({ goal: sg, ...r, met: r.value >= r.target });
+        }
       }
-      if (s.on === kept || cardOn === s.on) return;
-      cardOn = s.on;
-      playing = false;
-      g?.won();
-    });
+    }
+    return {
+      homes: last ? last.homes : null,
+      amount: goal.amount,
+      deadline: ladder(asOf)[rung].label,
+      unlocks:
+        rung + 1 < RUNGS
+          ? goalUnlocks(NODES.filter((n) => n.ring === rung + 1).length, true)
+          : null,
+      met: s.met.some((e) => e.rung === rung),
+      side
+    };
   });
-  /** The store the offer was last set on, cleared at unmount. */
-  let offerStore: GameStore | null = null;
-  // The offer follows the standing: the win while it is won, null as soon as it is not.
-  $effect(() => {
-    const s = stand;
-    const store = g;
-    const version = datasetVersion;
-    untrack(() => {
-      offerStore = store;
-      store?.setOffer(s.kind === 'won' ? { on: s.on, datasetVersion: version } : null);
-    });
-  });
-  /** "Keep playing" and Escape: the month is kept, the card closes, focus goes to the ruler. */
-  async function keep(): Promise<void> {
-    kept = cardOn;
-    cardOn = null;
-    await tick();
-    rulerEl()?.focus();
-  }
   // The held document goes once the numbers on show are current again.
   $effect(() => {
     if (!stale) untrack(() => (heldDoc = null));
@@ -1322,7 +1263,7 @@
 
   // An edit (a new run document): the edit is marked at once and playback pauses (rule 25). The
   // reveal starts looking for the first month it changed, against the numbers on show now (a
-  // search already under way keeps what was seen first). In a game the seen result goes at once.
+  // search already under way keeps what was seen first).
   $effect(() => {
     const p = runDoc;
     untrack(() => {
@@ -1333,7 +1274,6 @@
       session.edited();
       reveal = editedReveal(reveal, seen);
       playing = false;
-      seenResult = null;
     });
   });
 
@@ -1529,7 +1469,6 @@
 
     return () => {
       dead = true;
-      offerStore?.setOffer(null);
       if (client) onclient?.(null);
       uninstall();
       playing = false;
@@ -1593,8 +1532,12 @@
   </span>
 {/snippet}
 
+<!-- In a game the pinned item is GoalHeadline, its two root nodes straight in the header's pinned
+     box (no wrapper), in every phase once the calibration is known. -->
 {#snippet scoreBar()}
-  {#if session && calibration}
+  {#if goalProps && calibration}
+    <GoalHeadline {...goalProps} />
+  {:else if !g && session && calibration}
     <TimelineHeaderScore
       text={headText}
       busy={stale}
@@ -1631,7 +1574,6 @@
       {inForce}
       {goal}
       {onactivity}
-      bar={bar?.on ?? null}
       bind:lens
     />
   </div>
@@ -1677,7 +1619,6 @@
     reached={reveal.reached}
     playFrom={playFromDay}
     {goalDeadline}
-    barDay={bar?.on ?? null}
     onday={handleDay}
   />
 {/snippet}
@@ -1749,19 +1690,6 @@
               <Message text={goalNotice} ondismiss={dismissGoal} testid="tl-goal-notice" />
             {/if}
           </div>
-          {#if g && cardOn !== null}
-            <!-- The win card (G5): a dialog, not modal, where the notices are. -->
-            <div bind:this={winEl} data-testid="tl-win" class="pointer-events-auto max-w-full">
-              <WinCard
-                title={winTitle(cardOn)}
-                unlocks={roundComplete(g.progress)
-                  ? null
-                  : unlockText((g.progress.level + 1) as Level | 6)}
-                onlevelup={() => g.levelUp()}
-                onkeep={keep}
-              />
-            </div>
-          {/if}
         {/if}
         {#if phase === 'loading' && !halted}
           <div role="status" class="contents">
@@ -1935,8 +1863,7 @@
           {stale}
           bind:pinHeight
           {pinned}
-          {allowed}
-          level={g?.progress.level ?? null}
+          limits={g?.limits ?? OPEN_LIMITS}
         />
       </div>
 
