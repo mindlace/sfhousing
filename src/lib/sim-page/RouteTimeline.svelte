@@ -29,8 +29,10 @@
     pathway: Pathway;
     /** Speaks a change (WCAG 4.1.3). */
     announce(msg: string): void;
+    /** False under limits that have not bought custom timings: no handles, no months editor. */
+    custom?: boolean;
   }
-  let { store, calibration, pathway, announce }: Props = $props();
+  let { store, calibration, pathway, announce, custom = true }: Props = $props();
 
   const uid = $props.id();
   const ROUTE_NAMES: Record<Pathway, string> = {
@@ -338,7 +340,7 @@
     {/each}
   </div>
 
-  {#if fine.current}
+  {#if fine.current && custom}
     <!-- Handles sit under the bar, centred on each editable segment's right boundary, so they
          never cover a segment; boundaries are at least 24 px apart, so handles never overlap. -->
     <div class="flex h-6 w-full gap-px border-x border-transparent" aria-hidden="true">
@@ -389,7 +391,7 @@
         {v.label}
         <span class="font-normal text-ink-muted dark:text-ink-dark-muted">· {routeName}</span>
       </h5>
-      {#if v.editable && v.bounds}
+      {#if custom && v.editable && v.bounds}
         {@const inputId = `${detailsId(v.stage)}-months`}
         <div class="flex flex-wrap items-center gap-1">
           <label for={inputId} class="font-semibold">Typical months</label>

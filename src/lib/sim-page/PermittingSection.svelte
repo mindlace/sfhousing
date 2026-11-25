@@ -37,8 +37,20 @@
     announce(msg: string): void;
     /** Why the preset cannot change here (a preset is a whole policy's), or null. */
     presetLocked?: string | null;
+    /** The presets bought (null: every available one); the policy's own is always listed. */
+    presets?: ReadonlySet<string> | null;
+    /** False under limits that have not bought custom timings: shares as text, no editing. */
+    custom?: boolean;
   }
-  let { store, calibration, snapshot = true, announce, presetLocked = null }: Props = $props();
+  let {
+    store,
+    calibration,
+    snapshot = true,
+    announce,
+    presetLocked = null,
+    presets = null,
+    custom = true
+  }: Props = $props();
 
   const uid = $props.id();
   const PATHWAY_NAMES: Record<Pathway, string> = {
@@ -47,9 +59,13 @@
     permitOnly: 'Permit only'
   };
 
-  const available = PRESETS.filter((p) => p.available);
   const timing = $derived(store.policy.timing);
   const current = $derived(timing.current);
+  const available = $derived(
+    PRESETS.filter(
+      (p) => p.available && (presets === null || presets.has(p.id) || p.id === current.preset)
+    )
+  );
   const label = $derived(timingLabel(current));
   const preset = $derived(PRESETS.find((p) => p.id === current.preset)!);
   /** The weakest evidence among the preset's values (a higher tier is weaker). */
@@ -142,19 +158,21 @@
 
   <p class="font-semibold" data-testid="timing-label">{label}</p>
   <div class="flex flex-wrap gap-2">
-    {#if snapshot}
+    {#if snapshot && custom}
       <button type="button" class={btn} disabled={!canSave} onclick={save}>Save timelines</button>
     {/if}
-    <button
-      type="button"
-      class={btn}
-      disabled={target === null}
-      aria-describedby={snapshot && timing.saved ? `${uid}-revert-desc` : undefined}
-      onclick={revert}
-    >
-      {snapshot && timing.saved ? 'Revert to saved' : `Revert to ${preset.name}`}
-    </button>
-    {#if snapshot && timing.saved}
+    {#if custom}
+      <button
+        type="button"
+        class={btn}
+        disabled={target === null}
+        aria-describedby={snapshot && timing.saved ? `${uid}-revert-desc` : undefined}
+        onclick={revert}
+      >
+        {snapshot && timing.saved ? 'Revert to saved' : `Revert to ${preset.name}`}
+      </button>
+    {/if}
+    {#if custom && snapshot && timing.saved}
       <span id="{uid}-revert-desc" class="sr-only"
         >Restores the saved timelines: {timing.saved.label}</span
       >
@@ -165,20 +183,24 @@
     <div class="flex flex-col gap-1">
       <div class="flex items-center justify-between gap-2">
         <h4 class="font-semibold">{PATHWAY_NAMES[p]}</h4>
-        <label class="flex items-center gap-1">
-          {PATHWAY_NAMES[p]} share, %
-          <input
-            type="number"
-            min="0"
-            max="100"
-            step="1"
-            class="min-h-6 w-16 rounded-md border border-control-line bg-surface px-1 text-ink dark:border-control-line-dark dark:bg-surface-dark dark:text-ink-dark"
-            value={shares[p]}
-            onchange={(e) => commitShare(p, e.currentTarget)}
-          />
-        </label>
+        {#if custom}
+          <label class="flex items-center gap-1">
+            {PATHWAY_NAMES[p]} share, %
+            <input
+              type="number"
+              min="0"
+              max="100"
+              step="1"
+              class="min-h-6 w-16 rounded-md border border-control-line bg-surface px-1 text-ink dark:border-control-line-dark dark:bg-surface-dark dark:text-ink-dark"
+              value={shares[p]}
+              onchange={(e) => commitShare(p, e.currentTarget)}
+            />
+          </label>
+        {:else}
+          <span>{PATHWAY_NAMES[p]} share: {shares[p]} %</span>
+        {/if}
       </div>
-      <RouteTimeline {store} {calibration} pathway={p} {announce} />
+      <RouteTimeline {store} {calibration} pathway={p} {announce} {custom} />
     </div>
   {/each}
 
