@@ -1,6 +1,7 @@
 import type { Day } from '$lib/timelapse/time';
 import type { Hands } from '../limits';
 import type { RunTake } from '../run-result';
+import { credit, total } from '../units';
 import type { Drop } from './drops';
 
 export interface Pt {
@@ -157,4 +158,148 @@ export function sweepHits(sweep: readonly (Pt | null)[], ring: Pt, p: Pt, r: num
     prev = cur;
   }
   return false;
+}
+
+/** The first index in `drops` (sorted by day) whose day is after `day`. */
+function firstAfter(drops: readonly Drop[], day: Day): number {
+  let lo = 0;
+  let hi = drops.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    if (drops[mid].day <= day) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
+function start(m: RunModel, drops: readonly Drop[]): void {
+  m.running = true;
+  m.take = { dropped: {}, collected: {} };
+  m.seen.clear();
+  m.live.length = 0;
+  m.counts.length = 0;
+  m.sweep.length = 0;
+  m.cursor = 0;
+  m.highDay = -Infinity;
+  m.drops = drops;
+  m.ring = { x: m.box.w / 2, y: m.box.h / 2 };
+}
+
+function appear(m: RunModel, i: StepInput): number {
+  if (i.drops !== m.drops) {
+    m.drops = i.drops;
+    m.cursor = firstAfter(i.drops, m.highDay);
+  }
+  if (i.day > m.highDay) m.highDay = i.day;
+  const linger = Math.max(i.hands.lingerMs, RUN_TIMES.minShownMs);
+  let appeared = 0;
+  const drops = m.drops;
+  while (m.cursor < drops.length && drops[m.cursor].day <= m.highDay) {
+    const d = drops[m.cursor++];
+    if (m.seen.has(d.row)) continue;
+    m.seen.add(d.row);
+    m.take.dropped = credit(m.take.dropped, d.worth);
+    m.live.push({
+      drop: d,
+      worth: total(d.worth),
+      at: i.project(d.lng, d.lat),
+      bornMs: i.now,
+      endMs: i.now + linger,
+      takenMs: null
+    });
+    appeared++;
+  }
+  return appeared;
+}
+
+function collect(m: RunModel, i: StepInput): number {
+  let collected = 0;
+  for (const l of m.live) {
+    if (l.takenMs !== null || i.now >= l.endMs) continue;
+    if (!i.auto && (l.at === null || !sweepHits(m.sweep, m.ring, l.at, i.hands.radiusPx))) {
+      continue;
+    }
+    l.takenMs = i.now;
+    l.endMs = i.now + RUN_TIMES.takenMs;
+    m.take.collected = credit(m.take.collected, l.drop.worth);
+    if (l.at !== null) {
+      m.counts.push({ x: l.at.x, y: l.at.y, worth: l.worth, bornMs: i.now });
+      if (m.counts.length > RUN_CAPS.maxCounts) m.counts.shift();
+    }
+    collected++;
+  }
+  m.sweep.length = 0;
+  m.ringMoved = false;
+  return collected;
+}
+
+function end(m: RunModel, i: StepInput): void {
+  m.running = false;
+  const fadeEnd = i.reduced ? i.now : i.now + RUN_TIMES.fadeMs;
+  for (const l of m.live) {
+    if (l.takenMs === null && fadeEnd < l.endMs) l.endMs = fadeEnd;
+  }
+  m.sweep.length = 0;
+}
+
+/** Removes ended drops and counts in place; returns how many went. */
+function removeEnded(m: RunModel, now: number): number {
+  let w = 0;
+  for (let r = 0; r < m.live.length; r++) {
+    const l = m.live[r];
+    if (now < l.endMs) m.live[w++] = l;
+  }
+  let removed = m.live.length - w;
+  m.live.length = w;
+  w = 0;
+  for (let r = 0; r < m.counts.length; r++) {
+    const c = m.counts[r];
+    if (now < c.bornMs + RUN_TIMES.countMs) m.counts[w++] = c;
+  }
+  removed += m.counts.length - w;
+  m.counts.length = w;
+  return removed;
+}
+
+function animating(m: RunModel, now: number): boolean {
+  if (m.counts.length > 0) return true;
+  for (const l of m.live) {
+    if (l.takenMs !== null) return true;
+    if (now < l.bornMs + RUN_TIMES.appearMs) return true;
+    if (now >= l.endMs - RUN_TIMES.fadeMs) return true;
+  }
+  return false;
+}
+
+export function step(m: RunModel, i: StepInput): StepResult {
+  const started = i.running && !m.running;
+  const ended = !i.running && m.running;
+  const moved = m.ringMoved;
+  m.ringMoved = false;
+  if (started) start(m, i.drops);
+  let appeared = 0;
+  let collected = 0;
+  if (m.running) {
+    appeared = appear(m, i);
+    collected = collect(m, i);
+  }
+  if (ended) end(m, i);
+  const removed = removeEnded(m, i.now);
+  const dirty =
+    started ||
+    ended ||
+    appeared > 0 ||
+    collected > 0 ||
+    removed > 0 ||
+    moved ||
+    (!i.reduced && animating(m, i.now));
+  return { started, ended, appeared, collected, removed, dirty };
+}
+
+export function reproject(m: RunModel, project: StepInput['project']): void {
+  for (const l of m.live) l.at = project(l.drop.lng, l.drop.lat);
+}
+
+export function idle(m: RunModel): boolean {
+  return !m.running && m.live.length === 0 && m.counts.length === 0;
 }
