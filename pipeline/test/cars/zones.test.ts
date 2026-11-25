@@ -124,9 +124,10 @@ describe('carsStep with census tables', () => {
         'EPSG:7131', always_xy := true) AS geom, 1000.0 AS aland`);
     await db.run(`CREATE TABLE src_tract_puma AS SELECT 2020 AS vintage,
       '06075010200' AS tract, '07507' AS puma`);
+    // One household of each car level, all of one type (the fit drops what cannot vary).
     await db.run(`CREATE TABLE src_pums_hh AS SELECT 2024 AS release, '07507' AS puma,
-      'S1' AS serialno, 10 AS wgtp, 1 AS veh, 2 AS np, 1 AS workers, 90000.0 AS hincp_adj,
-      3 AS ten, 2020 AS puma_vintage`);
+      'S' || veh AS serialno, 10 AS wgtp, veh, 2 AS np, 1 AS workers, 90000.0 AS hincp_adj,
+      3 AS ten, 2020 AS puma_vintage FROM range(4) t(veh)`);
     await db.run(`CREATE TABLE src_acs_bg AS SELECT * FROM (VALUES
       (2024, '060750102001', 'B25002_001', 10.0),
       (2024, '060750102001', 'B25002_002', ${o.occupied}::DOUBLE)
@@ -160,6 +161,13 @@ describe('carsStep with census tables', () => {
     const r = await carsStep(db, { outDir, lock, transit: null, parcels });
     expect(r.counts['cars.households']).toBe(9);
     expect(existsSync(join(outDir, 'scenarios/fzp/cars.bin'))).toBe(true);
+    // The choice is fitted (constants only on this data) and the report has its section.
+    expect(r.model).toBeNull();
+    expect(r.choice?.choice.asc).toHaveLength(3);
+    expect(r.choice?.parking).toBeNull();
+    expect(r.data?.constant).toHaveLength(3);
+    expect(r.report).toContain('### Choice model');
+    expect(r.report.join('\n')).toContain('DMV: no registrations in the lock');
     db.close();
   });
 });

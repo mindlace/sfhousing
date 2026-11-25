@@ -82,12 +82,14 @@ export interface ReportInput {
   market: MarketReport;
   /** publicly funded housing: routes, stages, baseline funding and site choice (finance-data) */
   affordable: AffordableReport;
+  /** Section 14's body (the car step's lines); empty means no car data and no section 14. */
+  cars?: string[];
   warnings: string[];
 }
 
 /**
- * The thirteen section headings, in order (spec §4.10; market-baseline spec §4.7; finance-data
- * spec 4.7, 4.8).
+ * The section headings, in order (spec §4.10; market-baseline spec §4.7; finance-data spec 4.7,
+ * 4.8; car-ownership spec "Fit"). Section 14 is present only with car data.
  */
 export const REPORT_SECTIONS = [
   '# Calibration report',
@@ -102,7 +104,8 @@ export const REPORT_SECTIONS = [
   '## 10. Data-quality rules (sc.*) and method counts',
   "## 11. Today's market",
   '## 12. Publicly funded housing: routes, stages and baseline funding',
-  '## 13. Where publicly funded housing starts'
+  '## 13. Where publicly funded housing starts',
+  '## 14. Car ownership'
 ] as const;
 
 /** A number for the report: integers as is, others to 6 significant digits, non-finite "none". */
@@ -1037,7 +1040,8 @@ export function calibrationReport(x: ReportInput): string {
     rulesSection(x),
     marketSection(requireMarket(x.calibration), x.market),
     fundedSection(x),
-    siteChoiceSection(x)
+    siteChoiceSection(x),
+    ...(x.cars && x.cars.length > 0 ? [[REPORT_SECTIONS[13], '', ...x.cars]] : [])
   ];
   return sections.map((s) => s.join('\n')).join('\n\n') + '\n';
 }

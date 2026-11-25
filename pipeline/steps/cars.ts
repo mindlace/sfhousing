@@ -1,8 +1,10 @@
 // The car-ownership step (spec "Households"): car zones (block groups of the latest ACS vintage),
 // each lot's zone, the start household population by zone, type and car level, and today's zone
-// transit access. Writes scenarios/fzp/cars.bin and scenarios/fzp/car-zones.json. Without the
-// Census lock entries it writes nothing and returns nulls (the mini fixture until it gains them).
-import { mkdirSync, writeFileSync } from 'node:fs';
+// transit access, and the fitted ownership choice (pipeline/lib/cars/fit.ts: the model's choice,
+// the zone constants in cars.bin, report section 14). Writes scenarios/fzp/cars.bin and
+// scenarios/fzp/car-zones.json. Without the Census lock entries it writes nothing and returns
+// nulls (the mini fixture until it gains them).
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { deflateRawSync } from 'node:zlib';
 import { encodeCarData, type CarData } from '../../src/lib/data/cars-codec';
@@ -10,9 +12,11 @@ import type { ScenarioParcels } from '../../src/lib/data/scenario-codec';
 import type { TransitNetwork } from '../../src/lib/data/transit';
 import { CAR_LEVELS, typeCount, type CarModel } from '../../src/lib/sim/cars';
 import { buildAccessGrid } from '../../src/lib/transit/grid';
-import { acsBgVintage, censusTableOf, type CensusTable } from '../census-config';
+import { DMV_ID, acsBgVintage, censusTableOf, type CensusTable } from '../census-config';
+import { parseParkingFile } from '../enrichment/parking-schema';
 import { zoneAccess } from '../lib/cars/access';
 import { IPF, IPF_REPORT_ERR, MARGINS, WORKERS_TOTAL, typeBandsOf } from '../lib/cars/config';
+import { fitChoice, observedLevels, threePlusMeanOf, type CarChoiceModel } from '../lib/cars/fit';
 import {
   acsMargins,
   occupiedShares,
@@ -22,6 +26,7 @@ import {
   type AcsRow,
   type PumsRow
 } from '../lib/cars/population';
+import { carsReportLines } from '../lib/cars/report';
 import { assignZones, zoneFeatures } from '../lib/cars/zones';
 import type { Duck } from '../lib/duck';
 import type { Lock } from '../lib/lock';
@@ -29,7 +34,10 @@ import { CARS_BIN, CAR_ZONES_JSON } from '../lib/scenario-files';
 
 export interface CarsStepOut {
   data: CarData | null;
+  /** The complete model, once moves, new-home mixes and parking join the choice (Task 6). */
   model: CarModel | null;
+  /** The fitted choice with its bands and the 3+ mean: the model's part fitted so far. */
+  choice: CarChoiceModel | null;
   /** Calibration-report lines (section 14 takes them). */
   report: string[];
   counts: Record<string, number>;
@@ -58,6 +66,7 @@ const REQUIRED: readonly CensusTable[] = [
 const none = (warnings: string[] = []): CarsStepOut => ({
   data: null,
   model: null,
+  choice: null,
   report: [],
   counts: {},
   warnings
@@ -158,6 +167,39 @@ export async function carsStep(db: Duck, o: CarsStepOpts): Promise<CarsStepOut> 
     types,
     households: pop.households
   };
+
+  // The ownership choice: household terms from PUMS, location terms and zone constants from the
+  // block groups' B25044 shares.
+  const observed = observedLevels(acs, zones);
+  const fit = fitChoice(
+    { rows: pums, bands, window: [`${pumsRelease - 4}-01-01`, `${pumsRelease}-12-31`] },
+    observed,
+    data
+  );
+  data.constant = fit.constant;
+  const parking =
+    o.parkingPath && existsSync(o.parkingPath)
+      ? {
+          supplyOverUse: parseParkingFile(JSON.parse(readFileSync(o.parkingPath, 'utf8')))
+            .supplyOverUse.value
+        }
+      : null;
+  const choice: CarChoiceModel = {
+    schema: 1,
+    bands,
+    choice: fit.choice,
+    threePlusMean: threePlusMeanOf(pums),
+    parking
+  };
+  let dmv: { year: number; lightDuty: number } | null = null;
+  if (o.lock.sources.some((s) => s.id === DMV_ID)) {
+    const [r] = await db.all<{ year: number | null; lightDuty: number | null }>(
+      `SELECT max(year) AS year, sum(light_duty)::DOUBLE AS lightDuty FROM src_dmv_zip
+        WHERE year = (SELECT max(year) FROM src_dmv_zip)`
+    );
+    if (r.year !== null && r.lightDuty !== null) dmv = { year: r.year, lightDuty: r.lightDuty };
+  }
+
   const file = join(o.outDir, CARS_BIN);
   mkdirSync(dirname(file), { recursive: true });
   const body = deflateRawSync(encodeCarData(data), { level: 9 });
@@ -204,6 +246,10 @@ export async function carsStep(db: Duck, o: CarsStepOpts): Promise<CarsStepOut> 
     'cars.zones.ipfUnmet': unmet,
     'cars.workers': Math.round(sum(pop.workers)),
     'cars.acs.workers': Math.round(acsSum((v) => v === WORKERS_TOTAL)),
+    'cars.fit.records': fit.stats.stage1.records,
+    'cars.fit.constants': fit.stats.constants.fitted,
+    'cars.fit.noObservation': fit.stats.constants.noObservation,
+    'cars.fit.floored': fit.stats.constants.floored,
     'cars.bytes': body.length,
     'cars.zonesJson.bytes': zonesJson.length
   };
@@ -230,5 +276,6 @@ export async function carsStep(db: Duck, o: CarsStepOpts): Promise<CarsStepOut> 
     `IPF: ${unmet} block groups miss a margin by more than ${pct(IPF_REPORT_ERR)}; ` +
       `${pop.seedOnly} take the PUMA mix unadjusted; ${fallback} take the citywide occupied share.`
   ];
-  return { data, model: null, report, counts, warnings };
+  report.push(...carsReportLines(choice, data, fit, dmv));
+  return { data, model: null, choice, report, counts, warnings };
 }

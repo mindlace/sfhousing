@@ -358,7 +358,9 @@ export async function build(
         fundingPath,
         lock,
         rawDir: opts.rawDir,
-        byName
+        byName,
+        cars: cars.model,
+        carsReport: cars.report
       })
     );
     report.warnings.push(...calibration.warnings);
