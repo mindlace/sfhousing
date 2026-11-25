@@ -1,6 +1,6 @@
 # Scores from the step engine
 
-The score numbers for `/sim`, read from the step engine's world events: a per-world series by calendar month, chunks for the plan's world against its twin, the page's `TimelineView`, and the project card. Design: `docs/superpowers/specs/` (world-score; rule numbers are its rules). Pure TypeScript, worker-safe. Policy frames come from [policy-timeline.md](policy-timeline.md).
+The score numbers for the simulation, read from the step engine's world events: a per-world series by calendar month, chunks for the plan's world against its twin, the page's `TimelineView`, and the project card. Design: `docs/superpowers/specs/` (world-score; rule numbers are its rules). Pure TypeScript, worker-safe. Policy frames come from [policy-timeline.md](policy-timeline.md).
 
 Money, tiers and limit statements are built; the funded card fields are not yet. See Tiers, Money, Funded worlds and Known gaps.
 

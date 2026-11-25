@@ -342,7 +342,7 @@ below unchanged.
 2026-11-13, quiet (lock held), one process per row, Node v24 on an Apple M5 Pro; "bundle" is an
 esbuild bundle without `keepNames` (as a Vite build); "vitest" the perf project. The change month
 is month 120 after a market step (+0.25 from month 120: every free lot replanned). The
-96-world and 48-world rows were taken with 48 + 48 worlds on 2026-11-13; `/sim` now runs one world per side.
+96-world and 48-world rows were taken with 48 + 48 worlds on 2026-11-13; the simulation now runs one world per side.
 
 | Measurement                                            | bundle before | bundle after | vitest before | vitest after |
 | ------------------------------------------------------ | ------------- | ------------ | ------------- | ------------ |
