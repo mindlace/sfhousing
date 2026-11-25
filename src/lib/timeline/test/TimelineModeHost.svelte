@@ -13,7 +13,8 @@
   With `phased` (and a game in its runs) the host holds the phase as SimPage does: it starts at
   `landing(game.state)` and moves only by `nextPhase` on TimelineMode's and the stub tree's events
   (`ctl.setPhase` sets it outright, a test seam). The stub tree shows its `busy` and `ending` as
-  `data-busy` and `data-ending` (JSON) and has Run (`host-run`), which sends `run`.
+  `data-busy` and `data-ending` (JSON) and has Run (`host-run`), which sends `run` and, as Tree's
+  Run does, takes focus when the tree mounts.
 -->
 <script lang="ts">
   import { untrack, type ComponentProps, type Snippet } from 'svelte';
@@ -123,7 +124,13 @@
 
 {#snippet tree({ busy, ending }: TreeArgs)}
   <div data-testid="host-tree" data-busy={String(busy)} data-ending={JSON.stringify(ending)}>
-    <button type="button" data-testid="host-run" onclick={() => onphase('run')}>Run</button>
+    <!-- Focused on mount, as Tree focuses its Run (U1). -->
+    <button
+      type="button"
+      data-testid="host-run"
+      onclick={() => onphase('run')}
+      {@attach (el) => el.focus()}>Run</button
+    >
   </div>
 {/snippet}
 

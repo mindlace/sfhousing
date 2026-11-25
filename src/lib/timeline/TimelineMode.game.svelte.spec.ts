@@ -388,6 +388,27 @@ describe('TimelineMode in a game: the phases and what each mounts (#tbl-phase-mo
     expect(stub.props.tapCards).toBe(false);
     const box = mapBox().getBoundingClientRect();
     expect(box.bottom).toBe(mode().getBoundingClientRect().bottom);
+    // Below md too: the map's container loses its 40% share.
+    expect(mapBox().parentElement!.classList.contains('max-md:h-[40%]')).toBe(false);
+    await page.viewport(390, 844);
+    await expect
+      .poll(() => mapBox().getBoundingClientRect().bottom)
+      .toBe(mode().getBoundingClientRect().bottom);
+  });
+
+  it('workshop keeps the map container its 40% share below md', async () => {
+    const s = await opened({ game: gameWith({ phase: 'runs', runs: 1 }), phased: true }, LONG);
+    s.setPhase('workshop');
+    await phaseIs('workshop');
+    expect(mapBox().parentElement!.classList.contains('max-md:h-[40%]')).toBe(true);
+  });
+
+  it('the waiting region is a real box, in the accessibility tree', async () => {
+    await opened({ game: gameWith({ phase: 'runs', runs: 0 }), phased: true }, LONG);
+    const live = page.getByTestId('run-waiting-live').element();
+    expect(live.getAttribute('role')).toBe('status');
+    expect(getComputedStyle(live).display).not.toBe('contents');
+    await expect.element(page.getByRole('status').filter({ hasText: RUN_BUSY })).toBeVisible();
   });
 
   it("workshop: today's layout, the dock, key and card mounted, the map not inert", async () => {
@@ -548,10 +569,37 @@ describe('TimelineMode in a game: the phases and what each mounts (#tbl-phase-mo
     await expect.poll(() => document.activeElement).toBe(toggle);
   });
 
-  it('focus: tree moves none (the Run stays focused)', async () => {
+  it('focus: from the keyboard the map box in starting shows a focus ring', async () => {
     await opened({ game: gameWith({ phase: 'runs', runs: 1 }), phased: true }, LONG);
-    const run = page.getByTestId('host-run').element() as HTMLElement;
-    run.focus();
+    (page.getByTestId('host-run').element() as HTMLElement).focus();
+    await userEvent.keyboard('{Enter}');
+    await phaseIs('starting');
+    await expect.poll(() => document.activeElement).toBe(mapBox());
+    expect(mapBox().matches(':focus-visible')).toBe(true);
+    const style = getComputedStyle(mapBox());
+    expect(style.outlineStyle).toBe('solid');
+    expect(style.outlineWidth).toBe('2px');
+  });
+
+  it('focus: a page landing in starting does not take focus at load', async () => {
+    await opened({ game: gameWith({ phase: 'runs', runs: 0 }), phased: true }, LONG);
+    expect(mode().getAttribute('data-phase')).toBe('starting');
+    await tick();
+    await tick();
+    expect(document.activeElement).not.toBe(mapBox());
+    expect(mapBox().contains(document.activeElement)).toBe(false);
+  });
+
+  it('focus: a change to tree moves none (the tree keeps the Run it focused)', async () => {
+    // Land in starting, then change to tree: the stub tree focuses its Run on mount, as Tree does.
+    const s = await opened({ game: gameWith({ phase: 'runs', runs: 0 }), phased: true }, LONG);
+    s.setPhase('run');
+    await phaseIs('run');
+    await expect.poll(() => document.activeElement).toBe(mapBox());
+    s.setPhase('tree');
+    await phaseIs('tree');
+    const run = page.getByTestId('host-run').element();
+    await expect.poll(() => document.activeElement).toBe(run);
     await tick();
     await tick();
     expect(document.activeElement).toBe(run);

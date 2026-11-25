@@ -844,11 +844,15 @@
     });
   });
 
-  // Focus on each change of phase, once the DOM has updated: the map box in starting and run (so
-  // the arrow keys reach the window), Tally's first button, nothing in tree (Tree focuses its
-  // Run), and in workshop the inspector's heading with a policy selected, else Zoning's toggle.
+  // Focus on each change of phase (not the phase the page lands in), once the DOM has updated: the
+  // map box in starting and run (so the arrow keys reach the window), Tally's first button,
+  // nothing in tree (Tree focuses its Run), and in workshop the inspector's heading with a policy
+  // selected, else Zoning's toggle.
+  let focusedPhase: GamePhase | null = untrack(() => gp);
   $effect(() => {
     const p = gp;
+    if (p === focusedPhase) return;
+    focusedPhase = p;
     if (p === null) return;
     void tick().then(() => {
       if (dead || p !== gp) return;
@@ -1887,8 +1891,14 @@
       {/if}
       {#if gp !== null && !noScenario}
         <!-- Starting's waiting notice, with any error notice and its Retry; its polite region is
-             mounted with the phase so the notice is announced. -->
-        <div role="status" class="contents" data-testid="run-waiting-live">
+             mounted with the phase so the notice is announced. A real box (not `contents`), so it
+             stays in the accessibility tree; while empty it is taken out of the flow, so it adds
+             no gap to the stack. -->
+        <div
+          role="status"
+          class="flex max-w-full flex-col items-center empty:absolute"
+          data-testid="run-waiting-live"
+        >
           {#if gp === 'starting'}
             <Message text={RUN_BUSY} testid="run-waiting" />
           {/if}
@@ -1904,7 +1914,7 @@
       <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
       <div
         bind:this={mapBox}
-        class="relative min-h-0 min-w-0 flex-1 focus:outline-none"
+        class="relative min-h-0 min-w-0 flex-1 focus:outline-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent focus-visible:outline-solid dark:focus-visible:outline-accent-dark"
         data-testid="tl-map-box"
         inert={gp === 'tree'}
         aria-hidden={gp === 'tree' ? 'true' : undefined}
