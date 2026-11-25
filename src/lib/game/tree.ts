@@ -1,7 +1,9 @@
-// G3 (contracts stub): the tree. tree-catalogue makes it real.
+// G3: the tree.
 import type { PresetId } from '$lib/sim-page/timing';
 import type { StopType } from '$lib/sim/levers/brushes';
+import { NODES } from './catalogue/nodes';
 import type { GameState, NodeId, Units } from './state';
+import { affords, shortBy, spend } from './units';
 
 export type Branch = 'permitting' | 'zoning' | 'money' | 'hands';
 
@@ -43,10 +45,41 @@ export type Bought =
   | { ok: true; state: GameState; grant: Grant }
   | { ok: false; reason: 'unknown' | 'hidden' | 'done' | 'short' };
 
-export function treeView(_s: GameState, _nodes?: readonly TreeNode[]): NodeView[] {
-  throw new Error('not implemented');
+/** The level bought of `node`, 0 for none, never above its last. */
+export function levelOf(s: GameState, node: TreeNode): number {
+  return Math.min(s.bought[node.id] ?? 0, node.levels.length);
 }
 
-export function buy(_s: GameState, _id: NodeId, _nodes?: readonly TreeNode[]): Bought {
-  throw new Error('not implemented');
+/** Its ring is open and it comes after nothing, or after a node that is bought. */
+export function isShown(s: GameState, node: TreeNode): boolean {
+  if (s.rung < node.ring) return false;
+  return node.after.length === 0 || node.after.some((id) => (s.bought[id] ?? 0) >= 1);
+}
+
+export function treeView(s: GameState, nodes: readonly TreeNode[] = NODES): NodeView[] {
+  return nodes
+    .filter((node) => isShown(s, node))
+    .map((node): NodeView => {
+      const level = levelOf(s, node);
+      const next = node.levels[level];
+      if (next === undefined) return { node, level, state: 'done', short: null };
+      return affords(s.units, next.price)
+        ? { node, level, state: 'ready', short: null }
+        : { node, level, state: 'short', short: shortBy(s.units, next.price) };
+    });
+}
+
+export function buy(s: GameState, id: NodeId, nodes: readonly TreeNode[] = NODES): Bought {
+  const node = nodes.find((n) => n.id === id);
+  if (node === undefined) return { ok: false, reason: 'unknown' };
+  if (!isShown(s, node)) return { ok: false, reason: 'hidden' };
+  const level = levelOf(s, node);
+  const next = node.levels[level];
+  if (next === undefined) return { ok: false, reason: 'done' };
+  if (!affords(s.units, next.price)) return { ok: false, reason: 'short' };
+  return {
+    ok: true,
+    state: { ...s, units: spend(s.units, next.price), bought: { ...s.bought, [id]: level + 1 } },
+    grant: next.grant
+  };
 }
