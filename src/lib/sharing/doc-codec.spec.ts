@@ -48,9 +48,6 @@ describe('copyFor', () => {
     expect(c.dialogHeading).toBe('Publish this policy');
     expect(c.disabledHint).toBe('Change the policy first.');
     expect(c.tooLarge(300_000)).toContain('Try fewer or shorter strokes, or fewer brushes.');
-    expect(c.remixConfirm(3)).toBe(
-      'Replace your current policy with a copy of this one? Your current policy will be lost unless you publish it first.'
-    );
   });
 });
 

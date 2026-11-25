@@ -484,7 +484,7 @@
   });
 
   let wasReadOnly = untrack(() => readOnly);
-  /** Editor.load (plan-sharing's restore, /p/:id, Remix) must reach the worker and the tools. */
+  /** Editor.load (plan-sharing's restore, /p/:id) must reach the worker and the tools. */
   const offLoad = editor.onLoad((loaded) => {
     controller?.cancelStroke();
     // The new plan's count comes with its load diff, never the previous plan's.

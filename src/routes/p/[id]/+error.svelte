@@ -1,6 +1,7 @@
 <script lang="ts">
   import { page } from '$app/state';
   import { COPY } from '$lib/sharing/copy';
+  import { SITE_NAME } from '$lib/shell/name';
 
   const notFound = $derived(page.status === 404);
   // Only the load's own unparsable error gets that copy; anything else is a generic failure.
@@ -12,10 +13,10 @@
 
 <svelte:head>
   {#if notFound}
-    <title>Plan not found · SF Housing Simulator</title>
+    <title>{COPY.notFoundHeading} · {SITE_NAME}</title>
     <meta name="robots" content="noindex" />
   {:else}
-    <title>{heading} · SF Housing Simulator</title>
+    <title>{heading} · {SITE_NAME}</title>
   {/if}
 </svelte:head>
 

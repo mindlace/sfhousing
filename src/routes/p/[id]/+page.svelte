@@ -5,23 +5,18 @@
 </script>
 
 <script lang="ts">
-  import { onDestroy, onMount } from 'svelte';
+  import { onDestroy } from 'svelte';
   import { MediaQuery } from 'svelte/reactivity';
   import BrushEditor from '$lib/brush/BrushEditor.svelte';
   import type { Manifest } from '$lib/data/manifest';
   import { DockState } from '$lib/dock/dock-state.svelte';
-  import { STORAGE_TEXT } from '$lib/game/copy';
-  import { gamePath, loadPage, remixPath } from '$lib/game/navigate';
-  import { MAX_SAVES } from '$lib/game/saves';
-  import { useGame } from '$lib/game/store.svelte';
   import { paintHeadline } from '$lib/paint/headline';
   import PaintDetails from '$lib/paint/PaintDetails.svelte';
   import { frameLatest, viewState, type Score, type ScoreStatus } from '$lib/scoreboard';
-  import { copyFor, ogDescription } from '$lib/sharing/copy';
-  import { PLAN_CODEC } from '$lib/sharing/doc-codec';
-  import SharedBanner, { type RemixState } from '$lib/sharing/SharedBanner.svelte';
-  import type { LocalPlanRecord } from '$lib/sharing/storage';
+  import { ogDescription } from '$lib/sharing/copy';
+  import SharedBanner from '$lib/sharing/SharedBanner.svelte';
   import { useHeaderActions } from '$lib/shell/header-actions.svelte';
+  import { SITE_NAME } from '$lib/shell/name';
   import { loadManifest } from '$lib/sim/manifest';
   import { headlineSpoken } from '$lib/timeline/results';
   import TimelineHeaderScore from '$lib/timeline/TimelineHeaderScore.svelte';
@@ -31,52 +26,13 @@
   import type { PageProps } from './$types';
 
   // Read-only view (spec §4.7): no oneditor, no autosave; no header actions, with the header score
-  // pinned as on `/`. Remix makes a saved game holding the published plan and loads `/`
-  // (game-shell, sec-design-remix).
+  // pinned as on `/`.
   let { data }: PageProps = $props();
 
-  const pageTitle = $derived(`${data.plan.title ?? 'Shared plan'} · SF Housing Simulator`);
+  const pageTitle = $derived(`${data.plan.title ?? 'Shared plan'} · ${SITE_NAME}`);
 
   async function reloadManifest() {
     return (await loadManifest(data.plan.datasetVersion, data.currentDatasetVersion)).manifest;
-  }
-
-  const game = useGame();
-  let mounted = $state(false);
-  onMount(() => {
-    mounted = true;
-  });
-  /** Why the last Remix failed; null when it did not. */
-  let error = $state<string | null>(null);
-  /** Set once a Remix succeeded: the page is loading `/`, so a second press does nothing. */
-  let leaving = false;
-
-  // Remix is offered at every level: no locked state and no note.
-  const remixState: RemixState = $derived.by(() => {
-    if (!mounted) return { kind: 'ready', note: null };
-    if (game.open) return null;
-    if (game.saves.length >= MAX_SAVES) return { kind: 'full' };
-    return { kind: 'ready', note: null };
-  });
-  const gameHref = $derived(mounted ? gamePath(game.progress.level) : '/');
-
-  function remix(): void {
-    if (leaving || remixState?.kind !== 'ready') return;
-    const record = JSON.stringify({
-      v: 1,
-      savedAt: new Date().toISOString(),
-      plan: PLAN_CODEC.serialize(PLAN_CODEC.rebase(data.plan, data.currentDatasetVersion))
-    } satisfies LocalPlanRecord);
-    const r = game.remix({
-      kind: 'plan',
-      record,
-      title: data.plan.title ?? copyFor('plan').untitled
-    });
-    if (r.ok) {
-      leaving = true;
-      error = null;
-      loadPage(remixPath('plan'));
-    } else error = r.reason === 'storage' ? STORAGE_TEXT : null;
   }
 
   // Map layer toggles (transit spec §6.3): the viewer's own prefs, shared with `/`, in the map
@@ -169,10 +125,6 @@
     planVersion={data.plan.datasetVersion}
     currentVersion={data.currentDatasetVersion}
     kind="plan"
-    remix={remixState}
-    {error}
-    {gameHref}
-    onremix={remix}
   />
   <div id="map-region" class="relative min-h-0 flex-1">
     <!-- {#key} remounts on client navigation between shared plans: BrushEditor seeds once. -->
