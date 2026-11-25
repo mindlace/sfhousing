@@ -85,19 +85,23 @@ export async function tabTo(page: Page, target: Locator): Promise<void> {
 const MAX_KEYS = 3000;
 
 /**
- * Sweeps the ring over the whole run layer with Shift+Arrow keys, row after row, until a drop is
- * collected or the run ends; returns `data-collected`. The ring starts at the box's centre: it
- * goes to the top left first, then crosses the box row by row (Shift+ArrowRight or ArrowLeft to
- * the edge, one Shift+ArrowDown, and back), turning up again at the bottom. A Shift step is 64 px
- * and the ring's radius at least 48 px, so rows 64 px apart cover the box.
+ * Sweeps the ring over the run layer with Shift+Arrow keys until a drop is collected or the run
+ * ends; returns `data-collected`. It waits for the layer to be running first (the phase can show
+ * `run` a frame before the layer does). The ring starts at the box's centre, and the run view
+ * frames the city, so drops near the middle are found first: a square spiral out from the centre
+ * (legs of 1, 1, 2, 2, 3, 3 ... steps, turning clockwise) until it spans the box, then back to the
+ * centre (to the top left corner, where the ring stops, and halfway back) and again. A Shift step
+ * is 64 px and the ring's radius at least 48 px, so legs 64 px apart cover the box.
  */
 export async function sweepRing(page: Page): Promise<number> {
   const layer = runLayer(page);
+  await expect(layer).toHaveAttribute('data-state', 'running');
   const box = await layer.boundingBox();
   if (!box) throw new Error('sweepRing: the run layer has no box');
   const step = RING_KEYS.shiftStepPx;
   const cols = Math.ceil(box.width / step);
   const rows = Math.ceil(box.height / step);
+  const reach = Math.max(cols, rows);
   let keys = 0;
   const press = async (key: string, times: number): Promise<void> => {
     for (let i = 0; i < times && keys < MAX_KEYS; i++) {
@@ -110,21 +114,17 @@ export async function sweepRing(page: Page): Promise<number> {
     return (await layer.getAttribute('data-state')) === 'idle';
   };
 
-  await press('ArrowLeft', Math.ceil(cols / 2));
-  await press('ArrowUp', Math.ceil(rows / 2));
-  let across = 'ArrowRight';
-  let down = 'ArrowDown';
-  let row = 0;
+  const turns = ['ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp'];
   while (keys < MAX_KEYS) {
-    await press(across, cols);
-    across = across === 'ArrowRight' ? 'ArrowLeft' : 'ArrowRight';
-    if (await done()) break;
-    await press(down, 1);
-    row++;
-    if (row >= rows) {
-      row = 0;
-      down = down === 'ArrowDown' ? 'ArrowUp' : 'ArrowDown';
+    for (let leg = 0; leg < 2 * reach && keys < MAX_KEYS; leg++) {
+      await press(turns[leg % 4], Math.floor(leg / 2) + 1);
+      if (await done()) return (await runTotals(page)).collected;
     }
+    await press('ArrowLeft', cols);
+    await press('ArrowUp', rows);
+    await press('ArrowRight', Math.floor(cols / 2));
+    await press('ArrowDown', Math.floor(rows / 2));
+    if (await done()) break;
   }
   return (await runTotals(page)).collected;
 }
