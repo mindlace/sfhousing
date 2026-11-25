@@ -97,6 +97,19 @@
     <p>The hazard of 1 at full coverage is the owner's ruling R2 ("any 100% grant shifts the odds to 100%"), which has no records behind it. R6 is different: once awarded, a fully funded project never exits and takes its route from <code>affordableRoutes</code>. R6 rests on records (2 exits in 92 passages) and is kept.</p>
   </section>
 
+  <section id="sec-reality">
+    <h2>How real programmes avoid this</h2>
+    <p>Checked 2026-11-25 against official sources. Tier 0 is per-record, tier 1 is official, tier 3 is literature. No case was found where added local money lowered production. The model's result is an artifact of four divergences:</p>
+    <ol>
+      <li><strong>City money is the last-in gap filler, not a fixed share.</strong> MOHCD sizes its loan to the gap left after debt, tax-credit equity and state awards (<a href="https://www.sf.gov/sites/default/files/2022-11/MOHCD%20UGs%20Final%20November%204%202022.pdf">Underwriting Guidelines 2022</a>, tier 1). The per-home ceiling is set per solicitation (772 Pacific memo, 2024, tier 0). New City money enlarges one pot and never adds a co-requirement. The model's proportional sharing (R13) is what turns a new pool into one.</li>
+      <li><strong>The City commits first, and the state and federal sources compete later.</strong> A preliminary gap loan supports the state applications, and the final loan comes at closing (160 Freelon, 2023–2025, tier 0). The model applies to every source at once and waits for all of them.</li>
+      <li><strong>Awards expire, and losers re-apply in rounds.</strong> HCD withdraws an award if all permanent financing is not secured within 24 months (<a href="https://www.hcd.ca.gov/docs/grants-and-funding/Disencumberance-Policy-Final.pdf">Disencumbrance Policy</a>, tier 1). CDLAC rescinds a bond allocation if construction has not started 180, 201 or 222 days after it (<a href="https://www.treasurer.ca.gov/sites/default/files/2026-03/approved.pdf">2026 regulations §5105(h)</a>, tier 1). The model's applications wait with no expiry.</li>
+      <li><strong>The scarce source is state and federal.</strong> Tax-exempt bonds and 4% credits have been competitive since 2020 (BLA audit 2023, tier 1). City-funded projects stall waiting for them (4840 Mission: 104 weeks; the 2026 MHP Gap NOFA). The model's federal pool has no ceiling (R18). So the model overstates what extra City money buys, which is the opposite error to the one this spec fixes.</li>
+    </ol>
+    <p>One real cost of more sources is missing from the model: each added public source adds about 3.9 months and $20,460 a home (Terner Center 2025, tier 3, already in the evidence digest §7). It slows deals; it does not cut the total.</p>
+    <p>R3 is the minimal fix to this rule. Matching reality more closely would need gap-last City sizing, award expiry, and a federal bond and credit ceiling. These are model changes for a follow-up spec; gap-last sizing touches <code>src/lib/sim/finance</code>, which is hashed, so it means a new dataset.</p>
+  </section>
+
   <section id="sec-options">
     <h2>Options</h2>
     <p>Measured options are named R0 to R5 after the sweep's files. Cells are net / funded / affordable homes (very low + low + moderate) at Dec 2060.</p>
@@ -320,8 +333,8 @@
   <section id="sec-open">
     <h2>Open questions for the owner</h2>
     <ol>
-      <li><strong>Ruling R2.</strong> R3 replaces "any 100% grant shifts the odds to 100%" with the ordinary odds at full coverage, and keeps R6. The alternative that keeps R2 literally is R1 + thinning: unmeasured, more code, expected near R3. My pick is R3.</li>
-      <li><strong>Current law moves</strong> by +3,670 net and +3,921 affordable homes at 2060, toward the award record. My call: accept it, record the new throughput against the 980-a-year record in <code>finance-data.md</code>, and do not refit.</li>
+      <li><strong>Ruling R2: decided 2026-11-25, R3.</strong> The ordinary odds at full coverage replace "any 100% grant shifts the odds to 100%". R6 is kept.</li>
+      <li><strong>Current law moves: decided 2026-11-25, accepted.</strong> The new throughput is recorded against the 980-a-year record in <code>finance-data.md</code>, with no refit.</li>
       <li><strong>The −212 public-bank dip</strong> at 2045 and 2055, on sets holding B+GR+FS. It reverses to +456 by 2060, which points to timing: low-value loans are now awarded early and draw on shared money. My call: trace it in the implementation and make the check pass at 5 homes. If the only fix is a model change (for example, a loan's ask counted at its grant-equivalent), bring it back here instead of widening the tolerance.</li>
     </ol>
   </section>
