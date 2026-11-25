@@ -1002,7 +1002,7 @@ function projectPoint(lng: number, lat: number): { x: number; y: number } | null
 }</code></pre>
       <ul>
         <li>The tally shows <code>r</code> even when <code>game.settle</code> refuses the write; the balance in the header is the store's.</li>
-        <li><code>Tally</code> gets <code>result</code> = <code>r</code>, <code>before</code> as <code>settleRun</code> took it, <code>deadline</code> = <code>ladder(asOf)[r.rung].label</code>, and <code>oncontinue</code> sending <code>continue</code>. It sits where the win card sat, in <code>&lt;div data-testid="tl-tally" class="pointer-events-auto max-w-full"&gt;</code>.</li>
+        <li><code>Tally</code> gets <code>result</code> = <code>r</code>, <code>before</code> as <code>settleRun</code> took it, <code>deadline</code> = <code>ladder(asOf)[r.rung].label</code>, and <code>oncontinue</code> sending <code>continue</code>. It sits where the win card sat, in <code>&lt;div data-testid="tl-tally" class="pointer-events-auto max-w-full"&gt;</code>, inside <code>{#key tally.result}</code>, so each result mounts a fresh <code>Tally</code>: its counts roll once, from mount.</li>
         <li>Homes waiting for money reach the tally through <code>RunResult.waitingMoney</code>, which <code>readRun</code> fills from E2 when the view has it. This unit reads no E2 field itself.</li>
       </ul>
     </section>

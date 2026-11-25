@@ -537,6 +537,7 @@ function start(): void {
         <li><code>GameCell</code> shows only after mount and never for the open game. Before mount, the header holds the name, the account entry from <code>user</code> and About.</li>
         <li>The status cell is the page's: the plan's save state in the opening, the simulation's after it. It keeps its place and padding.</li>
         <li>The pinned item is the page's: "Room for N homes" in the opening, <code>GoalHeadline</code> (<code>game-sim</code>'s registration) after it.</li>
+        <li>The <code>&lt;header&gt;</code> stays <code>relative</code> and the pinned slot's box is not positioned, so <code>GoalHeadline</code>'s side-goals pop-over places itself against the header. The slot renders whatever the snippet renders, including <code>GoalHeadline</code>'s two root nodes (the headline and its live region).</li>
         <li>The actions are the page's: Publish for the plan in the opening, Publish for the policy after it.</li>
         <li>In the opening the header shows: the name, <code>GameCell</code>, the plan's save state, "Room for N homes" with "N% of the goal", Publish for the plan, the account entry and About.</li>
         <li>For the open game the header shows: the name, the simulation's status, pinned item and actions, the account entry and About. It has no <code>GameCell</code>.</li>
