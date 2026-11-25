@@ -1,11 +1,13 @@
 import { getContext, setContext } from 'svelte';
 import { isValidId, newId } from '$lib/ids/base58';
 import { NODES } from './catalogue/nodes';
-import { RUNGS, fitGame } from './ladder';
+import { RUNGS, fitGame, takeNext as nextRung } from './ladder';
 import { OPEN_LIMITS, limitsOf, type Limits } from './limits';
+import { settle as settleRun, type RunResult } from './run-result';
 import { parseGameSave, type GameSave, type SaveEntry } from './save-shape';
 import { MAX_SAVES, SAVES_KEY, SAVE_NAME_MAX, saveKey } from './saves';
-import { NEW_GAME, type GameState } from './state';
+import { NEW_GAME, type GameState, type NodeId } from './state';
+import { buy as buyNode, type Bought } from './tree';
 import { defaultSaveName } from './words';
 import type { SaveSync } from './save-sync.svelte';
 
@@ -618,6 +620,7 @@ export class GameStore {
    * write leaves `firstWinAt` null, so the next call tries again.
    */
   won(): void {
+    if (this.#open) return;
     const cur = this.#current();
     if (cur.state.firstWinAt !== null) return;
     const at = this.#now().toISOString();
@@ -625,8 +628,41 @@ export class GameStore {
   }
   /** The page's autosave wrote the current game's plan or policy record. */
   touched(): void {
-    if (this.#left) return;
+    if (this.#open || this.#left) return;
     this.#write({ ...this.#current(), savedAt: this.#now().toISOString() });
+  }
+  /** Writes `state` as the current game's; false (memory as it was) when the write is refused. */
+  #put(state: GameState): boolean {
+    return this.#write({ ...this.#current(), state, savedAt: this.#now().toISOString() });
+  }
+  /** Leaves the opening for the runs; storage while no win is held, or a write is refused. */
+  startRuns(): StoreChange {
+    if (this.#open) return OK;
+    const state = this.#state;
+    if (state.firstWinAt === null) return REFUSED;
+    if (state.phase === 'runs') return OK;
+    return this.#put({ ...state, phase: 'runs' }) ? OK : REFUSED;
+  }
+  /** Buys a node (G3); a refusal passes through unwritten, a refused write answers short. */
+  buy(id: NodeId): Bought {
+    const bought = buyNode(this.#state, id);
+    if (this.#open) return bought.ok ? { ok: false, reason: 'done' } : bought;
+    if (!bought.ok) return bought;
+    return this.#put(bought.state) ? bought : { ok: false, reason: 'short' };
+  }
+  /** Settles a finished run once; the same run again writes nothing. */
+  settle(r: RunResult): StoreChange {
+    if (this.#open) return OK;
+    const last = this.#state.last;
+    if (last !== null && last.at === r.at && last.rung === r.rung) return OK;
+    return this.#put(settleRun(this.#state, r)) ? OK : REFUSED;
+  }
+  /** Takes the next rung when one is due; writes nothing when it does not move. */
+  takeNext(): StoreChange {
+    if (this.#open) return OK;
+    const next = nextRung(this.#state);
+    if (next === this.#state) return OK;
+    return this.#put(next) ? OK : REFUSED;
   }
   /** Registers a function the store calls before another game becomes current; returns its remover. */
   beforeLeave(fn: () => void): () => void {
@@ -657,6 +693,7 @@ export class GameStore {
     return this.#makeCurrent(other, false, 'copy', [['changed', this.#currentId]]);
   }
   rename(id: string, name: string): void {
+    if (this.#open) return;
     const save = this.#games.get(id);
     if (!save) return;
     const cut = cutName(name);

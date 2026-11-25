@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import { newId } from '$lib/ids/base58';
 import { PLAN_KEY } from '$lib/sharing/storage';
@@ -6,9 +6,11 @@ import { MemoryStorage } from '$lib/sharing/fixtures/memory-storage';
 import { SIM_KEY } from '$lib/sim-page/sim-doc';
 import { SIM_KEY4 } from '$lib/timeline/sim-doc4';
 import { NODES } from './catalogue/nodes';
-import { RUNGS, fitGame } from './ladder';
+import { RUNGS, fitGame, takeNext as nextRung } from './ladder';
 import { OPEN_LIMITS, limitsOf } from './limits';
+import { settle as settleRun, type RunResult } from './run-result';
 import type { GameSave, SaveEntry } from './save-shape';
+import { buy as buyNode, treeView } from './tree';
 import { MAX_SAVES, SAVES_KEY, saveKey } from './saves';
 import { NEW_GAME, type GameState } from './state';
 import { GameStore, openGame } from './store.svelte';
@@ -754,6 +756,10 @@ describe('what the store shows', () => {
     for (const name of ['progress', 'allowed', 'offer', 'setOffer', 'levelUp', 'remix']) {
       expect(members[name]).toBeUndefined();
     }
+    // @ts-expect-error removed (G7)
+    expect(store.progress).toBeUndefined();
+    // @ts-expect-error removed (G7)
+    expect(store.levelUp).toBeUndefined();
   });
 });
 
@@ -862,10 +868,17 @@ describe('GameStore.won and touched', () => {
   it('a refused write leaves firstWinAt null and calls nothing', () => {
     const g = withState({ phase: 'opening', firstWinAt: null });
     const { s, store, sync } = over([g]);
+    const before = [...s.map.entries()];
     s.failAt = 1;
     store.won();
     expect(store.state.firstWinAt).toBeNull();
     expect(sync.calls).toEqual([]);
+    expect([...s.map.entries()]).toEqual(before);
+    s.failAt = null;
+    s.reset();
+    store.won();
+    expect(store.state.firstWinAt).toBe(NOW);
+    expect(sync.calls).toEqual([{ kind: 'changed', id: g.id }]);
   });
 
   it('touched writes and calls every time', () => {
@@ -1722,5 +1735,216 @@ describe('memory mode and the open game', () => {
     expect(store.remove(id)).toEqual(refused);
     expect(store.adopt([save()])).toEqual(refused);
     expect(store.limits).toBe(OPEN_LIMITS);
+  });
+});
+
+const RESULT: RunResult = {
+  rung: 0,
+  amount: 1000,
+  datasetVersion: 'fixture-0',
+  at: NOW,
+  lump: null,
+  side: [],
+  homes: 1200,
+  reachedOn: 20000,
+  waitingMoney: null,
+  stages: {
+    preApplication: 0,
+    filed: 0,
+    entitled: 0,
+    permitFiled: 0,
+    permitIssued: 0,
+    construction: 0
+  },
+  dropped: { home: 5 },
+  collected: { home: 5 }
+};
+const RICH = { home: 1_000_000_000 };
+
+describe('GameStore.startRuns', () => {
+  it('answers storage and writes nothing while firstWinAt is null', () => {
+    const g = withState({ phase: 'opening', firstWinAt: null });
+    const { s, store, sync } = over([g]);
+    expect(store.startRuns()).toEqual({ ok: false, reason: 'storage' });
+    expect(s.writes).toEqual([]);
+    expect(sync.calls).toEqual([]);
+  });
+
+  it('after a win sets phase runs, writes the save and index, and calls changed', () => {
+    const g = withState({ phase: 'opening', firstWinAt: WON_AT });
+    const { s, store, sync } = over([g]);
+    expect(store.startRuns()).toEqual({ ok: true });
+    expect(store.state.phase).toBe('runs');
+    expect(stored(s, saveKey(g.id)).state.phase).toBe('runs');
+    expect(stored(s, SAVES_KEY).saves[0].phase).toBe('runs');
+    expect(sync.calls).toEqual([{ kind: 'changed', id: g.id }]);
+  });
+
+  it('already in runs: ok with no write', () => {
+    const g = withState({ phase: 'runs', firstWinAt: WON_AT });
+    const { s, store, sync } = over([g]);
+    expect(store.startRuns()).toEqual({ ok: true });
+    expect(s.writes).toEqual([]);
+    expect(sync.calls).toEqual([]);
+  });
+
+  it('a refused write answers storage with memory unchanged', () => {
+    const g = withState({ phase: 'opening', firstWinAt: WON_AT });
+    const { s, store, sync } = over([g]);
+    s.failAt = 1;
+    expect(store.startRuns()).toEqual({ ok: false, reason: 'storage' });
+    expect(store.state.phase).toBe('opening');
+    expect(sync.calls).toEqual([]);
+  });
+});
+
+describe('GameStore.buy', () => {
+  it('passes G3 refusals through with no write', () => {
+    const g = withState({ units: {} });
+    const { s, store, sync } = over([g]);
+    expect(store.buy('no-such-node')).toEqual({ ok: false, reason: 'unknown' });
+    const short = treeView(store.state).find((v) => v.state === 'short')!;
+    expect(store.buy(short.node.id)).toEqual({ ok: false, reason: 'short' });
+    expect(s.writes).toEqual([]);
+    expect(sync.calls).toEqual([]);
+  });
+
+  it('an accepted purchase writes bought and units, calls changed, leaves the records', () => {
+    const g = withState({ units: RICH });
+    const { s, store, sync } = over([g]);
+    const v = treeView(g.state).find((x) => x.state === 'ready')!;
+    const want = buyNode(g.state, v.node.id);
+    expect(store.buy(v.node.id)).toEqual(want);
+    if (!want.ok) throw new Error('fixture: node not buyable');
+    expect(store.state).toEqual(want.state);
+    expect(stored(s, saveKey(g.id)).state).toMatchObject({
+      bought: want.state.bought,
+      units: want.state.units
+    });
+    expect(s.writes.filter((w) => w.endsWith(PLAN_RECORD) || w.endsWith(POLICY_RECORD))).toEqual(
+      []
+    );
+    expect(s.getItem(PLAN_RECORD)).toBe(PLAN);
+    expect(s.getItem(POLICY_RECORD)).toBe(POLICY);
+    expect(sync.calls).toEqual([{ kind: 'changed', id: g.id }]);
+  });
+
+  it('a refused write answers short with memory unchanged', () => {
+    const g = withState({ units: RICH });
+    const { s, store, sync } = over([g]);
+    const readyId = treeView(g.state).find((x) => x.state === 'ready')!.node.id;
+    s.failAt = 1;
+    expect(store.buy(readyId)).toEqual({ ok: false, reason: 'short' });
+    expect(store.state).toEqual(g.state);
+    expect(sync.calls).toEqual([]);
+  });
+
+  it('a refused index write puts the save key back', () => {
+    const g = withState({ units: RICH });
+    const { s, store } = over([g]);
+    const readyId = treeView(g.state).find((x) => x.state === 'ready')!.node.id;
+    const before = s.getItem(saveKey(g.id));
+    s.failAt = 2;
+    expect(store.buy(readyId)).toEqual({ ok: false, reason: 'short' });
+    expect(s.getItem(saveKey(g.id))).toBe(before);
+    expect(store.state).toEqual(g.state);
+  });
+});
+
+describe('GameStore.settle', () => {
+  it('writes settle(state, r) and calls changed', () => {
+    const g = withState({});
+    const { store, sync } = over([g]);
+    expect(store.settle(RESULT)).toEqual({ ok: true });
+    expect(store.state).toEqual(settleRun(g.state, RESULT));
+    expect(sync.calls).toEqual([{ kind: 'changed', id: g.id }]);
+  });
+
+  it('the same r again writes nothing and answers ok', () => {
+    const g = withState({});
+    const { s, store, sync } = over([g]);
+    store.settle(RESULT);
+    s.reset();
+    expect(store.settle(RESULT)).toEqual({ ok: true });
+    expect(s.writes).toEqual([]);
+    expect(sync.calls).toHaveLength(1);
+  });
+
+  it('a refused write answers storage; the same r later settles once', () => {
+    const g = withState({});
+    const { s, store } = over([g]);
+    s.failAt = 1;
+    expect(store.settle(RESULT)).toEqual({ ok: false, reason: 'storage' });
+    expect(store.state).toEqual(g.state);
+    s.failAt = null;
+    s.reset();
+    expect(store.settle(RESULT)).toEqual({ ok: true });
+    expect(store.settle(RESULT)).toEqual({ ok: true });
+    expect(store.state).toEqual(settleRun(g.state, RESULT));
+    expect(store.state.runs).toBe(g.state.runs + 1);
+  });
+});
+
+describe('GameStore.takeNext', () => {
+  it('writes when the rung moves', () => {
+    expect(RUNGS).toBeGreaterThan(1);
+    const g = withState({
+      rung: 0,
+      met: [{ rung: 0, reachedOn: 20000, datasetVersion: 'fixture-0', at: WON_AT }]
+    });
+    const { store, sync } = over([g]);
+    expect(store.takeNext()).toEqual({ ok: true });
+    expect(store.state).toEqual(nextRung(g.state));
+    expect(store.state.rung).toBe(1);
+    expect(sync.calls).toEqual([{ kind: 'changed', id: g.id }]);
+  });
+
+  it('writes nothing when the rung does not move', () => {
+    const g = withState({ rung: 0, met: [] });
+    const { s, store, sync } = over([g]);
+    expect(store.takeNext()).toEqual({ ok: true });
+    expect(s.writes).toEqual([]);
+    expect(sync.calls).toEqual([]);
+  });
+
+  it('a refused write answers storage with memory unchanged', () => {
+    const g = withState({
+      rung: 0,
+      met: [{ rung: 0, reachedOn: 20000, datasetVersion: 'fixture-0', at: WON_AT }]
+    });
+    const { s, store, sync } = over([g]);
+    s.failAt = 1;
+    expect(store.takeNext()).toEqual({ ok: false, reason: 'storage' });
+    expect(store.state).toEqual(g.state);
+    expect(sync.calls).toEqual([]);
+  });
+});
+
+describe('the open game writes nothing', () => {
+  it('its writing methods change nothing and call no sync method', () => {
+    const store = openGame();
+    const before = store.state;
+    const changed = vi.spyOn(store.sync, 'changed');
+    store.won();
+    store.touched();
+    store.rename(store.currentId, 'Mine');
+    expect(store.startRuns()).toEqual({ ok: true });
+    expect(store.settle(RESULT)).toEqual({ ok: true });
+    expect(store.takeNext()).toEqual({ ok: true });
+    expect(store.buy(NODES[0].id)).toEqual({ ok: false, reason: 'done' });
+    expect(store.buy('no-such-node')).toEqual({ ok: false, reason: 'unknown' });
+    expect(store.state).toBe(before);
+    expect(store.state.firstWinAt).toBeNull();
+    expect(store.saves[0].name).toBe('Game');
+    expect(changed).not.toHaveBeenCalled();
+    const refused = { ok: false, reason: 'storage' };
+    for (const r of [
+      store.newGame(),
+      store.remove(store.currentId),
+      store.adopt([save()]),
+      store.rekey(store.currentId, newId())
+    ]) {
+      expect(r).toEqual(refused);
+    }
   });
 });
