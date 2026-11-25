@@ -13,7 +13,7 @@ import type { LedgerEvent } from '$lib/sim/scenario/money';
 import type { SimInput } from '$lib/sim/scenario/types';
 import { planDueWith } from '../due';
 import { createFundingSystem } from '../funding/system';
-import { fundedMini, oneMoneyTimeline } from '../funding/test/fixtures';
+import { benchMoney, fundedMini, oneMoneyTimeline } from '../funding/test/fixtures';
 import type { PolicyTimeline } from '../policy/frame';
 import { frameIdOf } from '../policy/intern';
 import { initDraw, ordinaryStart, skipBound, skipMemoSize } from '../rates';
@@ -279,6 +279,79 @@ describe('retained parking state is per zone (bench city, 40 refreshes)', () => 
     expect(t.changes().length).toBeGreaterThan(R);
     expect(skipMemoSize(t, c.statics)).toBeLessThanOrEqual(2);
   }, 300_000);
+});
+
+describe('parking-only changes replan only their zones’ lots (funded bench city)', () => {
+  // The whole-city replan at every parking change (no `parkingOnly`, as before the shortcut)
+  // against the shortcut: every event and every ledger entry of a 480-month funded run, link on.
+  const input = benchMoney(benchInput());
+  const statics = staticsOf(input);
+  const timeline = oneMoneyTimeline(input, input.finance!);
+  const { data, model } = carsOf(input, { zones: 60, perMonth: 0.008 }, COSTS);
+
+  /** The car system's view without `parkingOnly`: every parking change is a whole-city one. */
+  const wholeCity = (inner: CarSystem): CarSystem => ({
+    ...inner,
+    timelineOf(w, s, t) {
+      const v = inner.timelineOf(w, s, t);
+      if (v === t) return v;
+      return {
+        frameAt: (k) => v.frameAt(k),
+        changes: () => v.changes(),
+        touched: (k) => v.touched(k),
+        readyThrough: () => v.readyThrough()
+      };
+    }
+  });
+
+  function run(cars: CarSystem, seed: number, every = 0) {
+    const events: (WorldEvent & { month: number })[] = [];
+    const ledger: LedgerEvent[] = [];
+    let month = 0;
+    const out: StepSink = {
+      event: (e) => events.push({ ...e, month }),
+      ledger: (e) => ledger.push(e)
+    };
+    const api = withFunding(createFundingSystem(), cars);
+    const w = api.createWorld(statics, timeline, seed, out);
+    let due = api.planDue(w, statics, timeline, seed, MONTHS);
+    for (let m = 1; m <= MONTHS; m++) {
+      if (every > 0 && m > 1 && (m - 1) % every === 0)
+        due = api.planDue(w, statics, timeline, seed, MONTHS);
+      month = m;
+      api.step(w, due, statics, timeline, seed, out);
+    }
+    return { w, events, ledger };
+  }
+
+  const offset = (z: number) => (z % 3 === 0 ? 0.4 : z % 3 === 1 ? -0.3 : 0.1);
+  const linked = () => offsetSystem(createCarSystem(data, model), offset);
+
+  it('gives every event and ledger entry of the whole-city replan, 480 months', () => {
+    for (const seed of [1, 2]) {
+      const sys = linked();
+      const fast = run(sys, seed);
+      const slow = run(wholeCity(linked()), seed);
+      expect(fast.w.cars!.shiftN).toBeGreaterThan(0);
+      // The shortcut was taken: parking-only months, all of them funded.
+      const v = sys.timelineOf(fast.w, statics, timeline);
+      const only = v.changes().filter((c) => c <= MONTHS && v.parkingOnly?.(c) === true);
+      expect(only.length).toBeGreaterThan(10);
+      expect(only.every((c) => v.frameAt(c).finance !== null)).toBe(true);
+      expect(fast.events.some((e) => e.kind === 'award')).toBe(true);
+      expectEqual(fast.events, slow.events, `seed ${seed}`);
+      expectEqual(fast.ledger, slow.ledger, `seed ${seed}`);
+      expectEqual(fast.w, slow.w, `seed ${seed}`);
+    }
+  }, 600_000);
+
+  it('a plan rebuilt every 12 months gives the carried run (rule 20)', () => {
+    const a = run(linked(), 3);
+    const b = run(linked(), 3, 12);
+    expect(a.w.cars!.shiftN).toBeGreaterThan(0);
+    expectEqual(b.events, a.events);
+    expectEqual(b.ledger, a.ledger);
+  }, 600_000);
 });
 
 describe('Review Focus 4: funded mini, parking frames with a zero shift', () => {

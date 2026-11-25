@@ -205,8 +205,11 @@ export function ordinaryStart(
     if (c > month) break;
     const f = timeline.frameAt(c);
     const rate = rateOf(f.view, f.market, f.parking, lot);
-    const bound = lastInitiationMonth(r, monthFirstDay(asOf, c) - 1);
     const last = rates.length - 1;
+    // The same rate changes nothing in either branch below (neighbouring rates always differ, so
+    // the empty-segment branch would only write it back): no bound is needed.
+    if (rate === rates[last]) continue;
+    const bound = lastInitiationMonth(r, monthFirstDay(asOf, c) - 1);
     // An empty segment: the new rate replaces the one that never ran.
     if (bounds.length > 0 && bound <= bounds[bounds.length - 1]) {
       rates[last] = rate;

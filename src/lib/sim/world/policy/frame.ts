@@ -76,4 +76,10 @@ export interface PolicyTimeline {
   /** For a month in `changes()`, the lot rows whose zoning view row differs from the month before (empty when zoning did not change; null when every lot may differ). */
   touched(month: number): Int32Array | null;
   readyThrough(): number;
+  /**
+   * For a month in `changes()`: true when its frame differs from the month before's only in
+   * `parking` (the zones' lots are `touched(month)`). Absent, or false, when anything else may
+   * differ.
+   */
+  parkingOnly?(month: number): boolean;
 }

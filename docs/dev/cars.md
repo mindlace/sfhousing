@@ -116,23 +116,32 @@ Dataset `2026-11-25-76c90397`, current law, goal 82,069 homes by Oct 2066:
 
 | Run                       | Goal reached | Fill (s) |
 | ------------------------- | ------------ | -------- |
-| Cars on (parking link on) | Jun 2065     | 8.7      |
-| Cars on, parking link off | Jul 2065     | 3.4-3.7  |
+| Cars on (parking link on) | Jun 2065     | 3.9-4.0  |
+| Cars on, parking link off | Jul 2065     | 3.5      |
 | `--cars off`              | Jul 2065     | 2.3      |
 
 Cars move the goal one month earlier, all of it through the parking link.
 
 ## Measured cost
 
-2026-11-25, load average 1.5-3 on 15 cores (fairly quiet), live build `2026-11-25-76c90397`,
-`level2-check`'s fill line (two worlds, 480 months, baseline money), three runs each:
+2026-11-25, live build `2026-11-25-76c90397`, `level2-check`'s fill line (two worlds, 480 months,
+baseline money), three runs each at load average 3.7-4.0 on 15 cores:
 
-- Cars off 2.3 s; cars on with the link off 3.4-3.7 s; cars on 8.6-8.8 s.
+- Cars off 2.3 s; cars on with the link off 3.5 s; cars on 3.9-4.0 s. The parking link adds about
+  0.4 s and the car step about 1.2 s. Before the incremental parking change (below) cars on took
+  8.6-8.8 s at load 1.5-3.
 - `cars.perf.spec.ts` (`SFH_WORLD_LIVE`): car step per world-month median 0.715 ms, p90 1.111 ms;
   480 months 655 ms with cars against 7 ms without.
-- A CPU profile of the cars-on fill puts the link's extra time in start-rate rebuilds at parking
-  frame changes in funded months (`startRates`, `skipBounds`, `skipBound`, `eachFreeLot`,
-  `segOn`): about 5 s over the two worlds.
+- **Incremental parking changes.** A parking change used to replan every free lot in a funded
+  month, with a whole-city `skipBound` and the funded clocks of every lot: about 5 s over the two
+  worlds. A month whose frame differs from the month before only in `parking`
+  (`PolicyTimeline.parkingOnly`, given by the parking view and kept by funding's closing view when
+  no pool opens or closes then) now replans only `touched` (the changed zones' lots), funded month
+  or not: every other lot's ordinary and funded clocks are unchanged (its new segment has the old
+  rate and the same money). `ordinaryStart` skips the bound of a change that leaves a lot's rate
+  alone, and the parking view caches each month's frame. Every event and ledger entry equals the
+  whole-city replan (`parking.property.spec.ts`, funded bench city, 480 months).
+- What is left of the car system's cost is mostly the car step (`stepZone`: one move draw per
+  zone and household type a month). Cutting it would change the draws, so it is left as is.
 
-The spec's bar (the car system must not add noticeably to the whole-window fill) is not met with the
-link on. The cost of a restore or rewind with cars is not printed by any spec.
+The cost of a restore or rewind with cars is not printed by any spec.

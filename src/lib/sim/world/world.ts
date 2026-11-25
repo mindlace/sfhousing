@@ -513,7 +513,8 @@ function stepCtx(
  * through this month's frame (none when null); every free lot is when `touched` is null, when the
  * market moved, or when a funding system is plugged in and this month's frame or the month
  * before's has `finance` (in a funded month, at the earlier of that start and the month `planLot`
- * gives). `take(month)` has not run yet, so every entity still on the due list is due in this
+ * gives), unless the timeline says the change is in `parking` alone (`parkingOnly`, and the world
+ * last stepped the month before's frame): then only `touched`. `take(month)` has not run yet, so every entity still on the due list is due in this
  * month or later: the lots due in a month before this one were taken and started in that month's
  * step (or are no longer free). Rule 6 keeps every lot-month that began before this month on the
  * frame it ran on, so a lot's new ordinary start can never fall before this month; one that did
@@ -546,7 +547,13 @@ function policyChanged(ctx: Step): void {
     if (m > 0) due.put(lot, m);
   };
   const touched = timeline.touched(month);
-  const money = hook !== null && (frame.finance !== null || before.finance !== null);
+  // A change of parking alone (`world/cars/parking.ts`) moves only the rates of `touched`'s lots:
+  // every other lot keeps its ordinary and funded clocks (their new segment has the old rate and
+  // the same money), so they keep their months, funded month or not.
+  const parkingOnly =
+    touched !== null && before.id === world.frame && timeline.parkingOnly?.(month) === true;
+  const money =
+    hook !== null && !parkingOnly && (frame.finance !== null || before.finance !== null);
   if (touched === null || money || frame.market !== before.market) {
     if (due instanceof DueList) bound = skipBound(statics, timeline, month, due.through);
     // With money in force now or last month every free lot is visited, zero-rate lots included:

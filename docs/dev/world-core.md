@@ -194,12 +194,19 @@ prototypes table per slope): O(zones × refreshes) per world, asserted in `parki
 Rates of a zone with a shift are memoised per (`view.pre`, market, zone key) over the zone's lots,
 shared across worlds, and cleared when the memo holds 8 times the city's lots. `skipBound` keeps
 only its two latest bounds per (timeline, statics): a funded world asks for one at every frame
-change, parking changes included. Funding's eligibility (`fundableAny` and the rowless memo's key,
+change (a parking-only change is no longer one: below). Funding's eligibility (`fundableAny` and the rowless memo's key,
 `funding/apply.ts` `fundingChanges`) skips changes that move neither the view nor the money, so a
 parking-only change does not refill the rowless memo. Live city (155k lots, 580 zones, baseline
 money, link on, 480 entries), one world at month 480: +14.7 MB with the link on against +19.0 MB
 off, 2.2 s against 0.7 s for plan and 480 steps (busy machine); before these bounds the link on
 held +64.1 MB and took 12 to 25 s.
+
+Speed: a month whose frame differs from the month before only in `parking`
+(`PolicyTimeline.parkingOnly`; funding's closing view keeps it when no pool opens or closes that
+month) replans only `touched(month)`, the changed zones' lots, even in a funded month, and calls no
+whole-city `skipBound`. Every other lot's clocks are unchanged. On the live build, `level2-check`'s
+fill (two funded worlds) takes 3.9-4.0 s with cars on, 3.5 s with the link off and 2.3 s without
+cars (`docs/dev/cars.md`, Measured cost); it was 8.7 s with cars on before.
 
 ## Tests
 

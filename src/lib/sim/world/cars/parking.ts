@@ -347,10 +347,25 @@ function buildView(
     return out;
   };
 
+  // Month k's frame with the base frame it came from, while the states are those it was made
+  // under (a new state can change any month from its own on, so a new state empties the cache).
+  // O(months) per world: one slot per month read.
+  let cacheStates = -1;
+  let cacheBase: (PolicyFrame | undefined)[] = [];
+  let cacheOut: PolicyFrame[] = [];
   const frameAt = (k: number): PolicyFrame => {
     const frame = base.frameAt(k);
+    sync();
+    if (cacheStates !== states.length) {
+      cacheStates = states.length;
+      cacheBase = [];
+      cacheOut = [];
+    } else if (cacheBase[k] === frame) return cacheOut[k];
     const si = stateAt(k);
-    return si < 0 ? frame : derive(frame, si);
+    const out = si < 0 ? frame : derive(frame, si);
+    cacheBase[k] = frame;
+    cacheOut[k] = out;
+    return out;
   };
 
   let seenBase: number[] = [];
@@ -415,6 +430,12 @@ function buildView(
     frameAt,
     changes,
     touched,
+    parkingOnly(k) {
+      changes();
+      if (baseSet.has(k)) return false;
+      const si = stateAt(k);
+      return si >= 0 && states[si].month === k;
+    },
     readyThrough: () => base.readyThrough()
   };
   retained.set(view, () => {
