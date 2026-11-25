@@ -45,7 +45,10 @@
   let handle: number | null = null;
   /** The canvas box's top left in client pixels; pointer input reads it. */
   let origin: Pt = { x: 0, y: 0 };
-  /** Whether the last pointer point was outside the box: the next inside move is fresh. */
+  /**
+   * Whether the last pointer point was outside the box, or a run has started since the last
+   * one: the next inside move is fresh.
+   */
   let out = false;
   /** Whether the last drawn frame showed the ring. */
   let drewRing = false;
@@ -83,6 +86,8 @@
       reduced,
       project
     });
+    // The ring starts at the centre: the run's first pointer move inside jumps, sweeping nothing.
+    if (r.started) out = true;
     if (r.collected > 0) sound.collect();
     else if (r.appeared > 0) sound.pop();
     // A start zeroes the take: that is a change only when the last take sent was not zero.

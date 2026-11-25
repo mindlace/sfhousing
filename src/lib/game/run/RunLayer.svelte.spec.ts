@@ -476,6 +476,26 @@ describe('RunLayer', () => {
       expect(root.dataset.collected).toBe('2');
     });
 
+    it("with a mouse resting over the map, a run's first pointermove sweeps nothing from the centre", async () => {
+      const ring = ringSpy();
+      const { box, map, feed, root } = await mount();
+      point(box, map, 'pointermove', 700, 100);
+      // On the line from the centre (400, 300) to (700, 100), 180 px from either end.
+      feed.drops = [feed.dropAt(1, 550, 200, 10, 2)];
+      start(feed);
+      feed.day = 15;
+      frame();
+      expect(root.dataset.dropped).toBe('2');
+      point(box, map, 'pointermove', 700, 100);
+      frame();
+      expect(ring()).toEqual([700, 100]);
+      expect(root.dataset.collected).toBe('0');
+      // A later move sweeps.
+      point(box, map, 'pointermove', 400, 300);
+      frame();
+      expect(root.dataset.collected).toBe('2');
+    });
+
     it('pointer events while not running move nothing', async () => {
       await motion('reduce');
       const ring = ringSpy();
