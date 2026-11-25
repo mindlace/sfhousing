@@ -961,7 +961,7 @@ export const PRICES: Readonly&lt;Record&lt;NodeId, readonly number[]&gt;&gt; = {
   'hands-auto': [75_000]
 };</code></pre>
       <ul>
-        <li><code>SIDE_TUNING</code> has one entry for each of the eleven ids <code>game-core</code> defines, and no other. The goals themselves (ids, labels, rings, <code>read</code>) are <code>game-core</code>'s; a goal with no entry is not offered.</li>
+        <li><code>SIDE_TUNING</code> holds at most one entry for each of the eleven ids <code>game-core</code> defines, and no other id. The goals themselves (ids, labels, rings, <code>read</code>) are <code>game-core</code>'s; a goal with no entry is not offered. The starting values give all eleven an entry; the measurement leaves a goal out only by the rule in <a href="#sec-design-balance-side">The lump and the side goals</a>.</li>
         <li>The targets of <code>collect-share-1</code> and <code>collect-share-2</code> are percents of the run's dropped units; the target of <code>new-money</code> is millions of dollars; every other target is homes.</li>
         <li><code>PRICES</code> has one entry for each node, with one whole number above 0 per level.</li>
         <li>The cheapest level shown at rung 0, <code>hands-radius</code> level 1 at 2,000, costs no more than <code>RUNG_LUMP</code> (G6).</li>
@@ -1547,6 +1547,10 @@ export const TARGETS = {
           <li>Before the plays, the script reads current law (the empty document's view) at each rung's deadline. For each side goal it reports the goal's <code>read</code> at that deadline, with the run's take set to current law's dropped units at the 0.25 share.</li>
           <li>A side goal whose target is at or below current law's value at the deadline of its ring's rung is flagged <code>at-or-below-current-law</code>, with the value to raise it to: 1.25 times current law's value, rounded up to the next 1,000. This is this spec's rule; the implementer of the measurement sets the target to that value.</li>
           <li>A side goal never met in any <code>hand</code> play is flagged <code>never-met</code>.</li>
+          <li>The raise rule stands for every goal that is offered: no target sits at or below current law's value. A goal that no tuning meets in any gated <code>hand</code> play with its target at or above that floor is not offered: the implementer removes its entry from <code>SIDE_TUNING</code>, so <code>SIDE_GOALS</code> leaves it out, it never holds a place among the three shown, and the script neither reads nor flags it. Every remaining goal is then tuned again, because the goals after it in its ring come into view sooner.</li>
+          <li>On the production dataset <code>2026-11-14-09ca30c8</code>, <code>funded-homes</code> and <code>affordable-homes</code> are not offered by this rule. The bought sets seen reach about 12,460 funded and 16,230 affordable homes by the deadline at which the plays first show them, below their floors of about 15,000 and 17,000, and buying the City money measures lowers both. Those are model findings for the owner; tuning does not hide them.</li>
+          <li>Leaving a goal out never empties a ring: every ring from 0 to the last keeps at least one offered side goal. When the rule would empty one, the unit stops and hands the report to the owner.</li>
+          <li>The hand-back names each goal left out, with the highest value any gated <code>hand</code> play reached for it, its floor, and the deadline it was read at.</li>
         </ul>
       </section>
 
@@ -1620,7 +1624,7 @@ export interface SideReport {
           <li>The implementer of the measurement part runs the script on the dataset in production before that part is finished, after <code>reach-measure --write</code>.</li>
           <li><code>RUNG_LUMP</code> and <code>SIDE_TUNING</code> start at the <code>game-core</code> spec's values.</li>
           <li>Prices, the lump and the side goals' targets and rewards change only by editing <code>tuning.ts</code> after reading a report. The script never writes them.</li>
-          <li>The implementer edits <code>tuning.ts</code> until the script exits 0: every gated play finishes and passes and no side goal is flagged, keeping the cheapest level shown at rung 0 at or under <code>RUNG_LUMP</code>. If no set of numbers passes, the unit hands the report to the owner with the checks that fail.</li>
+          <li>The implementer edits <code>tuning.ts</code> until the script exits 0: every gated play finishes and passes and no side goal is flagged, keeping the cheapest level shown at rung 0 at or under <code>RUNG_LUMP</code>. A side goal no tuning can meet above its floor is left out of <code>SIDE_TUNING</code> by the rule in <a href="#sec-design-balance-side">The lump and the side goals</a>. If no set of numbers passes otherwise, the unit hands the report to the owner with the checks that fail.</li>
           <li>The script is run again whenever a node, <code>tuning.ts</code>, <code>SHARE</code>, a side goal or the dataset version changes.</li>
         </ul>
       </section>
@@ -1639,7 +1643,7 @@ export interface SideReport {
         <tr><th scope="row"><code>src/lib/game/grant.ts</code></th><td>The code</td><td>Write: <code>applyGrant</code> and <code>GAME_TRANSIT_LABEL</code>.</td></tr>
         <tr><th scope="row"><code>src/lib/game/catalogue/nodes.ts</code></th><td>The code</td><td>Write: <code>CATALOGUE</code>, <code>NODES</code>, <code>STAGES</code>, <code>ringOf</code>.</td></tr>
         <tr><th scope="row"><code>src/lib/game/catalogue/tuning.ts</code></th><td>The code, then the measurement</td><td>Write: <code>RUNG_LUMP</code>, <code>SIDE_TUNING</code>, <code>PRICES</code> over the <code>contracts</code> stub, with starting values (the code), then tuned values (the measurement).</td></tr>
-        <tr><th scope="row"><code>src/lib/game/catalogue/tuning.spec.ts</code></th><td>The code</td><td>Write over the <code>contracts</code> stub's spec.</td></tr>
+        <tr><th scope="row"><code>src/lib/game/catalogue/tuning.spec.ts</code></th><td>The code, then the measurement</td><td>Write over the <code>contracts</code> stub's spec (the code); hold the side-goal ids to the rule of <a href="#sec-tests-tuning">its tests</a> when a goal is left out (the measurement).</td></tr>
         <tr><th scope="row"><code>src/lib/game/catalogue/ladder-years.ts</code></th><td>The code, then the measurement</td><td>Write: the provisional value (the code), then the measured one (the measurement).</td></tr>
         <tr><th scope="row"><code>src/lib/game/catalogue/ladder-years.spec.ts</code></th><td>The code</td><td>Write over the <code>contracts</code> stub's spec: the rule, not the years.</td></tr>
         <tr><th scope="row"><code>src/lib/game/catalogue/play.ts</code></th><td>The code</td><td>Create: <code>buyAndApply</code>, <code>fullTree</code>.</td></tr>
@@ -1698,7 +1702,7 @@ export interface SideReport {
       <h3><code>src/lib/game/catalogue/tuning.spec.ts</code> (the code)</h3>
       <ul>
         <li><code>RUNG_LUMP</code> is a whole number above 0 of <code>home</code>.</li>
-        <li><code>SIDE_GOALS</code> has as many goals as <code>SIDE_TUNING</code> has entries, and holds each of the eleven ids above, so no entry names an id <code>game-core</code> does not define; each target and reward is a whole number above 0.</li>
+        <li><code>SIDE_GOALS</code> has as many goals as <code>SIDE_TUNING</code> has entries, and its ids are those of the eleven above that have an entry, in the same order, so no entry names an id <code>game-core</code> does not define; each ring from 0 to the last holds at least one of them; each target and reward is a whole number above 0.</li>
         <li><code>PRICES</code> has exactly one entry for each node in <code>CATALOGUE</code>, one whole number above 0 per level, rising within a node.</li>
         <li>The cheapest next level in <code>treeView(NEW_GAME)</code> costs no more than <code>RUNG_LUMP</code>.</li>
       </ul>
