@@ -20,7 +20,7 @@
       <li><strong>Call 9</strong> the open game is the whole tool, and <strong>call 21</strong>: at <code>/</code> it shows the simulation; a test that needs the opening seeds a new visitor.</li>
       <li><strong>Call 15</strong> the name changes in the user-facing places, <code>SES_FROM</code> and the tests; <code>rpID</code> and the infrastructure names stay.</li>
     </ul>
-    <p>This is the last part of one lane, built in this order and merged once: <code>game-save</code>, part B of <code>tally-tree</code>, <code>game-sim</code>, <code>game-shell</code>. When it lands, the application builds again.</p>
+    <p>This is the last part of one lane: one unit, merged once. Its parts, in dependency order, are <code>game-save</code>, part B of <code>tally-tree</code>, <code>game-sim</code> and <code>game-shell</code>; the unit's plan orders its tasks across the parts as its tests need, inside the lane's write set, and each file ends as the spec that owns it says. When the lane lands, the application builds again.</p>
   </section>
 
   <section id="sec-interfaces">
