@@ -854,7 +854,7 @@ export const RUN_VIEW: ReadonlySet&lt;GamePhase&gt;; // starting, run, tally</co
         <li><code>TimelineMode</code> receives the phase as a prop and reports its events through <code>onphase</code>.</li>
         <li>In starting, run, tally and tree the map box takes the whole mode box at every width: no bottom pane is mounted, and the map box loses its <code>max-md:h-[40%]</code>.</li>
         <li>In starting, run and tally <code>MapKeyControl</code>, the project card and the tooltip are not mounted, an open card is closed, and <code>SimMap</code> gets <code>tapCards={false}</code>.</li>
-        <li>In tree no bottom pane is mounted. The page's <code>Tree</code> is rendered in a box with <code>data-testid="game-tree-pane"</code>, absolutely positioned at <code>inset-0</code> over the box that holds the map, at <code>z-20</code>, on the opaque surface colour, with <code>overflow-y-auto</code>. It fills the page below the header at every width; the notice stack stays above it from md and in flow above it below md.</li>
+        <li>In tree no bottom pane is mounted. The page's <code>Tree</code> is rendered in a box with <code>data-testid="game-tree-pane"</code>, absolutely positioned at <code>inset-0</code> over the box that holds the map, at <code>z-20</code>, on the opaque surface colour, with <code>overflow-y-auto</code>. It fills the page below the header at every width; the notice stack stays above it from md and in flow above it below md. About this model's dialog is a top-layer modal mounted outside the map's box, so it opens above the tree pane.</li>
         <li>In tree the map stays mounted under the tree pane, at its normal camera, with <code>inert</code> and <code>aria-hidden="true"</code> on the map box. <code>MapKeyControl</code>, the card and the tooltip are not mounted, and an open card is closed.</li>
         <li>In workshop the page is today's layout.</li>
         <li>Undo and Redo do nothing in starting, run and tally: <code>SimPage</code>'s <code>undo</code>, <code>redo</code> and Ctrl+Z handler return at once, and <code>HistoryButtons</code> is not mounted.</li>
@@ -1086,7 +1086,7 @@ function buy(id: NodeId): void {
       </table>
       <ul>
         <li><code>ending</code> is null until <code>finished(game.state)</code>. Then it is <code>{ reachedOn, stateBy, perAddedHome }</code>: <code>reachedOn</code> from the <code>met</code> entry of the last rung; <code>stateBy</code> is <code>RHNA_DEADLINE</code> from <code>$lib/sim/scenario/score</code>, the day RHNA asks for the goal's homes by; <code>perAddedHome</code> is <code>moneyFigureAt(view.money, i).perAddedHome.all</code> at <code>i = indexOfDay(view.months, goal.deadline)</code> on the view on show, and null with no view, no <code>money</code> or <code>i &gt; view.filledThrough</code>.</li>
-        <li><code>openPublish</code> clicks the header's Publish button (<code>[data-testid="publish-open"]</code>), which opens its dialog on <code>publishDoc</code>.</li>
+        <li><code>openPublish</code> clicks the header's Publish button (<code>[data-testid="publish-open"]</code>), which opens its dialog on <code>publishDoc</code>. Below lg that button sits in the header's Menu: when it has no box and the Menu is closed, <code>openPublish</code> first opens the Menu (<code>[data-header-menu]</code>), waits a tick, then clicks it.</li>
       </ul>
     </section>
 
@@ -1257,7 +1257,7 @@ function switchNode(id: NodeId, on: boolean): void {
       <ul>
         <li><code>publishDoc</code> is <code>doc</code> with <code>policy: run</code> when <code>run</code> differs from <code>store.policy</code>, as today, with <code>run = runnable(store.policy, limits)</code>.</li>
         <li>Each policy's <code>on</code> is sent as it stands (P14).</li>
-        <li>Publish is in the header in every phase.</li>
+        <li>Publish is in the header in every phase. The tree's Publish at the ending reaches the same button, opening the Menu first below lg (<code>openPublish</code>).</li>
         <li>Autosave keeps the whole document.</li>
       </ul>
     </section>
