@@ -20,8 +20,13 @@ const PUMS = 'https://www2.census.gov/programs-surveys/acs/data/pums';
  */
 export const ACS_TABLES = ['B25044', 'B25046', 'B25009', 'B19001', 'B25002', 'B08301'] as const;
 
-/** ACS 5-year releases pulled, by end year. 2021 on come as table-based summary files. */
-export const ACS_END_YEARS = [2009, 2013, 2019, 2020, 2021, 2022, 2023, 2024] as const;
+/**
+ * ACS 5-year releases pulled, by end year: every release from 2005-2009 (the back-cast compares
+ * each). 2021 on come as table-based summary files.
+ */
+export const ACS_END_YEARS = [
+  2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024
+] as const;
 /** The latest release that exists (2020-2024; the 2021-2025 one is not out). */
 export const ACS_LATEST = 2024;
 
@@ -128,8 +133,8 @@ const acs = (endYear: number): AcsSpec => ({
   lookupUrl:
     endYear >= 2021
       ? undefined
-      : endYear === 2009
-        ? `${SF}/2009/documentation/5_year/user_tools/Sequence_Number_and_Table_Number_Lookup.txt`
+      : endYear <= 2012
+        ? `${SF}/${endYear}/documentation/5_year/user_tools/Sequence_Number_and_Table_Number_Lookup.txt`
         : `${SF}/${endYear}/documentation/user_tools/ACS_5yr_Seq_Table_Number_Lookup.txt`,
   label: `ACS ${endYear - 4}-${endYear} 5-year block-group tables (${ACS_TABLES.join(', ')})`,
   homepage: HOME.acs,

@@ -13,6 +13,13 @@ import {
   type Mix
 } from '../../../src/lib/sim/cars';
 import { num } from '../fzp-cal/report';
+import {
+  BACKCAST_START,
+  PUBLISHED_NO_CAR,
+  type BackcastResult,
+  type FlowStats,
+  type YearRow
+} from './backcast';
 import type { BgFit, CarChoiceModel, FitStats, FitTerm } from './fit';
 import { PRIORS, PRIOR_PROVENANCE } from './priors';
 import {
@@ -479,6 +486,184 @@ export function carsModelReportLines(
       `gives ${usd(lo * gsf)} to ${usd(hi * gsf)} per below-grade space in ` +
       `${COST_CROSS_CHECK.year} dollars (docs/dev/cars-data.md)` +
       (below ? `, beside the cited figure's ${usd(below.escalated)}.` : '.')
+  );
+  return lines;
+}
+
+/** What the back-cast's report says beside its result (the step's inputs). */
+export interface BackcastInfo {
+  start: { households: number; bgs: number };
+  nested: { bgs: number; zones: number; totalZones: number };
+  flows: FlowStats;
+  access: { year: number; sourceYear: number; sources: Partial<Record<string, number>> }[];
+  heldOut: { pumsRecords: number; pumsHouseholds: number; acs: number };
+}
+
+/** Tracts listed by their error in the latest release. */
+export const WORST_TRACTS = 5;
+
+const releaseName = (y: number) => `${y - 4}-${y}`;
+const errPts = (r: YearRow) => pts(r.predicted - r.observed);
+
+/** Households-weighted mean absolute error, root mean square error and correlation. */
+function tractStats(t: BackcastResult['tracts']): { mae: number; rmse: number; r: number } {
+  let w = 0;
+  let mae = 0;
+  let se = 0;
+  let mo = 0;
+  let mp = 0;
+  for (const x of t) {
+    w += x.households;
+    mae += x.households * Math.abs(x.predicted - x.observed);
+    const d = x.predicted - x.observed;
+    se += x.households * d * d;
+    mo += x.households * x.observed;
+    mp += x.households * x.predicted;
+  }
+  mo /= w;
+  mp /= w;
+  let cov = 0;
+  let vo = 0;
+  let vp = 0;
+  for (const x of t) {
+    cov += x.households * (x.observed - mo) * (x.predicted - mp);
+    vo += x.households * (x.observed - mo) * (x.observed - mo);
+    vp += x.households * (x.predicted - mp) * (x.predicted - mp);
+  }
+  return { mae: mae / w, rmse: Math.sqrt(se / w), r: cov / Math.sqrt(vo * vp) };
+}
+
+/** Calibration report section 15: the back-cast table, held-out check, tracts and crosswalk. */
+export function backcastReportLines(r: BackcastResult, info: BackcastInfo): string[] {
+  const latest = r.years[r.years.length - 1];
+  const f = info.flows;
+  const lines: string[] = [
+    '',
+    'The car model stepped monthly over observed history: from the 2000 Census households to ' +
+      'December of the latest ACS release, with the homes completed and lost each month from ' +
+      "the project records, each year's transit access, and the choice table refreshed each " +
+      'April, as the sim steps it (one seed). Each ACS 5-year release compares its share of ' +
+      "households with no car to the model's, households-weighted over the release's five " +
+      'years. Reported only: whether it becomes a build gate (like V28) is for the owner to ' +
+      'decide once these numbers are in.',
+    '',
+    `Start: 2000 Census SF3 H044 (tenure by vehicles available) at ${info.start.bgs} block ` +
+      `groups, ${Math.round(info.start.households)} households, placed on today's block groups ` +
+      'by land area (Census 2000 → 2010 → 2020 relationship files). Each zone takes its PUMA ' +
+      "records of the model's PUMS release raked to its 2000 tenure by cars (no 2000 size or " +
+      'income table is used: the household types are the PUMS mix under that margin).',
+    `Flows: ${f.completions} completions (${f.homes} homes, ${f.affordableHomes} of them ` +
+      "affordable by Planning's proposed count) and " +
+      `${f.lost} existing homes lost at construction starts, from April ${BACKCAST_START.year}; ` +
+      `${f.unplacedHomes} homes completed and ${f.unplacedLost} lost are on parcels in no zone ` +
+      "today and are left out. Fills and losses take each zone's occupied share (B25002, " +
+      'latest release).'
+  ];
+  if (info.access.length > 0) {
+    const held = info.access.filter((a) => a.sourceYear !== a.year);
+    lines.push(
+      'Access: each year from the Muni, BART and Caltrain feeds in force on 1 April ' +
+        "(docs/dev/cars-data.md, Archived GTFS), homes-weighted with today's homes. " +
+        (held.length > 0
+          ? "A year without an operator's own feed takes its next year's (before the first " +
+            "archive, the earliest; after the last, today's). Those years, with the latest " +
+            `feed year used: ${held.map((a) => `${a.year} (${a.sourceYear})`).join(', ')}. `
+          : '') +
+        '2020 and 2021 are the COVID-reduced networks as they ran on those dates.'
+    );
+  } else lines.push("Access: today's network every year (no transit by year).");
+
+  const heldBy = new Map(r.heldOutYears.map((y) => [y.year, y]));
+  lines.push(
+    '',
+    '| Release | ACS no car | Published | Model | Error (pts) | Held-out model | Held-out error |',
+    '|---|---|---|---|---|---|---|',
+    ...r.years.map((y, i) => {
+      const h = heldBy.get(y.year);
+      const pub = PUBLISHED_NO_CAR[y.year];
+      return (
+        `| ${i === 0 ? `${y.year} (SF3)` : releaseName(y.year)} | ${pct(y.observed)} | ` +
+        `${pub === undefined ? '' : pct(pub)} | ${pct(y.predicted)} | ${errPts(y)} | ` +
+        `${h ? pct(h.predicted) : ''} | ${h ? errPts(h) : ''} |`
+      );
+    }),
+    '',
+    'Published: Streetsblog SF readings (28.6% in 2000, 29.8% in 2009, about 30.3% in 2010, ' +
+      '31.4% in 2012), a check on the pulled tables (SF3, and the 5-year releases citywide from ' +
+      'their own block groups): pulled minus published ' +
+      r.years
+        .filter((y) => PUBLISHED_NO_CAR[y.year] !== undefined)
+        .map((y) => `${y.year} ${pts(y.observed - PUBLISHED_NO_CAR[y.year])}`)
+        .join(', ') +
+      ' pts. The readings after 2000 are for single years and may be 1-year estimates, which ' +
+      'are not pulled; a 5-year release averages its five years.'
+  );
+  const hy = r.heldOut;
+  const ha = releaseName(info.heldOut.acs);
+  lines.push(
+    '',
+    `Held out: the model fitted as today's is, but on ACS ${ha} (on today's block groups) and ` +
+      `the ${ha} PUMS records on 2010 PUMAs (${info.heldOut.pumsRecords} records, ` +
+      `${info.heldOut.pumsHouseholds} households: 2012 and 2013; the 2009-2011 records sit on ` +
+      `2000 PUMAs), with ${info.heldOut.acs} access, predicts ${pct(hy.predicted)} with no car ` +
+      `for ${releaseName(hy.year)} against ${pct(hy.observed)} observed ` +
+      `(${pts(hy.predicted - hy.observed)} pts); the full model gives ${pct(latest.predicted)}. ` +
+      `The full model's zone constants are fitted to ${releaseName(latest.year)}, so its last ` +
+      'rows are not a test; the held-out row is.'
+  );
+
+  if (r.tracts.length > 0) {
+    const s = tractStats(r.tracts);
+    const worst = [...r.tracts]
+      .sort(
+        (a, b) =>
+          Math.abs(b.predicted - b.observed) - Math.abs(a.predicted - a.observed) ||
+          (a.tract < b.tract ? -1 : 1)
+      )
+      .slice(0, WORST_TRACTS);
+    lines.push(
+      '',
+      `By tract, ${releaseName(latest.year)} (${r.tracts.length} tracts, households-weighted): ` +
+        `mean absolute error ${pts(s.mae)} pts, root mean square ${pts(s.rmse)} pts, ` +
+        `correlation ${Number.isFinite(s.r) ? s.r.toFixed(3) : 'none'}. Largest misses:`,
+      '',
+      '| Tract | Households | ACS no car | Model | Error (pts) |',
+      '|---|---|---|---|---|',
+      ...worst.map(
+        (x) =>
+          `| ${x.tract} | ${Math.round(x.households)} | ${pct(x.observed)} | ` +
+          `${pct(x.predicted)} | ${pts(x.predicted - x.observed)} |`
+      )
+    );
+  }
+
+  const nested = r.subsets.find((s) => s.name === 'nested');
+  lines.push(
+    '',
+    `Crosswalk: ${info.nested.bgs} of ${info.start.bgs} 2000 block groups have at least 99% of ` +
+      `their land in one of today's; ${info.nested.zones} of ${info.nested.totalZones} zones ` +
+      'take at least 99% of their 2000 households from those. The back-cast over those zones ' +
+      'against all:'
+  );
+  if (nested) {
+    const all = new Map(r.years.map((y) => [y.year, y]));
+    lines.push(
+      '',
+      '| Release | Nested: ACS | Nested: model | Nested: error (pts) | All: error (pts) |',
+      '|---|---|---|---|---|',
+      ...nested.years.map((y) => {
+        const a = all.get(y.year);
+        return (
+          `| ${releaseName(y.year)} | ${pct(y.observed)} | ${pct(y.predicted)} | ` +
+          `${errPts(y)} | ${a ? errPts(a) : ''} |`
+        );
+      })
+    );
+  }
+  lines.push(
+    '',
+    "Stayers keep their cars (no life-event rate). Households of homes lost beyond a zone's " +
+      `households: ${r.unmatched}.`
   );
   return lines;
 }

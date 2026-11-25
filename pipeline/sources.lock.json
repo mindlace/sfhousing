@@ -71,6 +71,60 @@
     {
       "files": [
         {
+          "archiveKey": "sources/63967b3bf6e933405ea26bec2175771115adbb0777289d7f38fac27ab8e44ca1.csv",
+          "bytes": 1183623,
+          "name": "census-acs5-bg-2010.csv",
+          "sha256": "63967b3bf6e933405ea26bec2175771115adbb0777289d7f38fac27ab8e44ca1",
+          "url": "https://www2.census.gov/programs-surveys/acs/summary_file/2010/data/5_year_seq_by_state/California/Tracts_Block_Groups_Only/g20105ca.txt"
+        }
+      ],
+      "homepage": "https://www.census.gov/programs-surveys/acs/data/summary-file.html",
+      "id": "census-acs5-bg-2010",
+      "label": "ACS 2006-2010 5-year block-group tables (B25044, B25046, B25009, B19001, B25002, B08301)",
+      "license": "Public domain (U.S. Census Bureau)",
+      "retrievedAt": "2026-11-25T13:10:54.870Z",
+      "rowCount": 43954,
+      "upstreamVersion": "ACS 2006-2010 5-year, seq-based summary files, 2010 block groups"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/364cc5b09e2f414fd2c5ba1c68e8d9a7a7a4258ca790775b24244810af322ef1.csv",
+          "bytes": 1184072,
+          "name": "census-acs5-bg-2011.csv",
+          "sha256": "364cc5b09e2f414fd2c5ba1c68e8d9a7a7a4258ca790775b24244810af322ef1",
+          "url": "https://www2.census.gov/programs-surveys/acs/summary_file/2011/data/5_year_seq_by_state/California/Tracts_Block_Groups_Only/g20115ca.txt"
+        }
+      ],
+      "homepage": "https://www.census.gov/programs-surveys/acs/data/summary-file.html",
+      "id": "census-acs5-bg-2011",
+      "label": "ACS 2007-2011 5-year block-group tables (B25044, B25046, B25009, B19001, B25002, B08301)",
+      "license": "Public domain (U.S. Census Bureau)",
+      "retrievedAt": "2026-11-25T13:10:56.962Z",
+      "rowCount": 43969,
+      "upstreamVersion": "ACS 2007-2011 5-year, seq-based summary files, 2010 block groups"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/77359044e4a07e0fcc0b823d47953a912b59b3a194e99dfc376c659a017bfce0.csv",
+          "bytes": 1185202,
+          "name": "census-acs5-bg-2012.csv",
+          "sha256": "77359044e4a07e0fcc0b823d47953a912b59b3a194e99dfc376c659a017bfce0",
+          "url": "https://www2.census.gov/programs-surveys/acs/summary_file/2012/data/5_year_seq_by_state/California/Tracts_Block_Groups_Only/g20125ca.txt"
+        }
+      ],
+      "homepage": "https://www.census.gov/programs-surveys/acs/data/summary-file.html",
+      "id": "census-acs5-bg-2012",
+      "label": "ACS 2008-2012 5-year block-group tables (B25044, B25046, B25009, B19001, B25002, B08301)",
+      "license": "Public domain (U.S. Census Bureau)",
+      "retrievedAt": "2026-11-25T13:10:59.353Z",
+      "rowCount": 44005,
+      "upstreamVersion": "ACS 2008-2012 5-year, seq-based summary files, 2010 block groups"
+    },
+    {
+      "files": [
+        {
           "archiveKey": "sources/439b6835e43774e8bf373d968c145b7562164fb1e842703059340e85952b0a1a.csv",
           "bytes": 1185376,
           "name": "census-acs5-bg-2013.csv",
@@ -85,6 +139,96 @@
       "retrievedAt": "2026-11-25T06:20:24.284Z",
       "rowCount": 44005,
       "upstreamVersion": "ACS 2009-2013 5-year, seq-based summary files, 2010 block groups"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/d56f4175ed7f568f398239be798d98dd6f969615d4c4131ca85300fc96b3b445.csv",
+          "bytes": 1186367,
+          "name": "census-acs5-bg-2014.csv",
+          "sha256": "d56f4175ed7f568f398239be798d98dd6f969615d4c4131ca85300fc96b3b445",
+          "url": "https://www2.census.gov/programs-surveys/acs/summary_file/2014/data/5_year_seq_by_state/California/Tracts_Block_Groups_Only/g20145ca.txt"
+        }
+      ],
+      "homepage": "https://www.census.gov/programs-surveys/acs/data/summary-file.html",
+      "id": "census-acs5-bg-2014",
+      "label": "ACS 2010-2014 5-year block-group tables (B25044, B25046, B25009, B19001, B25002, B08301)",
+      "license": "Public domain (U.S. Census Bureau)",
+      "retrievedAt": "2026-11-25T13:07:48.879Z",
+      "rowCount": 44032,
+      "upstreamVersion": "ACS 2010-2014 5-year, seq-based summary files, 2010 block groups"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/bc5789560f46569b28b61bb52851a24cc93a418c03271b9b3ccd568c5d088520.csv",
+          "bytes": 1184787,
+          "name": "census-acs5-bg-2015.csv",
+          "sha256": "bc5789560f46569b28b61bb52851a24cc93a418c03271b9b3ccd568c5d088520",
+          "url": "https://www2.census.gov/programs-surveys/acs/summary_file/2015/data/5_year_seq_by_state/California/Tracts_Block_Groups_Only/g20155ca.txt"
+        }
+      ],
+      "homepage": "https://www.census.gov/programs-surveys/acs/data/summary-file.html",
+      "id": "census-acs5-bg-2015",
+      "label": "ACS 2011-2015 5-year block-group tables (B25044, B25046, B25009, B19001, B25002, B08301)",
+      "license": "Public domain (U.S. Census Bureau)",
+      "retrievedAt": "2026-11-25T13:07:51.422Z",
+      "rowCount": 43969,
+      "upstreamVersion": "ACS 2011-2015 5-year, seq-based summary files, 2010 block groups"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/f5738fc43ed39bdfcfa7719263aaede4c4fff1242f127300af1129f54ab18b4a.csv",
+          "bytes": 1184832,
+          "name": "census-acs5-bg-2016.csv",
+          "sha256": "f5738fc43ed39bdfcfa7719263aaede4c4fff1242f127300af1129f54ab18b4a",
+          "url": "https://www2.census.gov/programs-surveys/acs/summary_file/2016/data/5_year_seq_by_state/California/Tracts_Block_Groups_Only/g20165ca.txt"
+        }
+      ],
+      "homepage": "https://www.census.gov/programs-surveys/acs/data/summary-file.html",
+      "id": "census-acs5-bg-2016",
+      "label": "ACS 2012-2016 5-year block-group tables (B25044, B25046, B25009, B19001, B25002, B08301)",
+      "license": "Public domain (U.S. Census Bureau)",
+      "retrievedAt": "2026-11-25T13:07:53.734Z",
+      "rowCount": 43962,
+      "upstreamVersion": "ACS 2012-2016 5-year, seq-based summary files, 2010 block groups"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/cef26eb431f6e600b774ee777399e2fe95c9fcfbc9a1423727444d8dbd6459e8.csv",
+          "bytes": 1185266,
+          "name": "census-acs5-bg-2017.csv",
+          "sha256": "cef26eb431f6e600b774ee777399e2fe95c9fcfbc9a1423727444d8dbd6459e8",
+          "url": "https://www2.census.gov/programs-surveys/acs/summary_file/2017/data/5_year_seq_by_state/California/Tracts_Block_Groups_Only/g20175ca.txt"
+        }
+      ],
+      "homepage": "https://www.census.gov/programs-surveys/acs/data/summary-file.html",
+      "id": "census-acs5-bg-2017",
+      "label": "ACS 2013-2017 5-year block-group tables (B25044, B25046, B25009, B19001, B25002, B08301)",
+      "license": "Public domain (U.S. Census Bureau)",
+      "retrievedAt": "2026-11-25T13:07:55.673Z",
+      "rowCount": 43973,
+      "upstreamVersion": "ACS 2013-2017 5-year, seq-based summary files, 2010 block groups"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/c5cdb28b38a97dbe3908b42b6168eb65ef0af25cdd43c2f4a9e71be96c45d01b.csv",
+          "bytes": 1185829,
+          "name": "census-acs5-bg-2018.csv",
+          "sha256": "c5cdb28b38a97dbe3908b42b6168eb65ef0af25cdd43c2f4a9e71be96c45d01b",
+          "url": "https://www2.census.gov/programs-surveys/acs/summary_file/2018/data/5_year_seq_by_state/California/Tracts_Block_Groups_Only/g20185ca.txt"
+        }
+      ],
+      "homepage": "https://www.census.gov/programs-surveys/acs/data/summary-file.html",
+      "id": "census-acs5-bg-2018",
+      "label": "ACS 2014-2018 5-year block-group tables (B25044, B25046, B25009, B19001, B25002, B08301)",
+      "license": "Public domain (U.S. Census Bureau)",
+      "retrievedAt": "2026-11-25T13:07:57.603Z",
+      "rowCount": 43993,
+      "upstreamVersion": "ACS 2014-2018 5-year, seq-based summary files, 2010 block groups"
     },
     {
       "files": [

@@ -15,12 +15,28 @@ import type { TransitNetwork } from '../../src/lib/data/transit';
 import { CAR_LEVELS, typeCount, type CarModel } from '../../src/lib/sim/cars';
 import { buildAccessGrid } from '../../src/lib/transit/grid';
 import { parseProjectsFile } from '../../src/lib/timelapse/projects';
+import type { ProjectHistory } from '../../src/lib/timelapse/types';
 import { DMV_ID, acsBgVintage, censusTableOf, type CensusTable } from '../census-config';
-import { AMI_JSON, parseAmiFile } from '../enrichment/ami-schema';
+import { AMI_JSON, parseAmiFile, type AmiFile } from '../enrichment/ami-schema';
 import { CPI_JSON, parseCpiFile } from '../enrichment/cpi-schema';
 import { parseMarketFile } from '../enrichment/market-schema';
 import { PARKING_JSON, parseParkingFile, type ParkingFile } from '../enrichment/parking-schema';
-import { zoneAccess } from '../lib/cars/access';
+import { accessByYear, zoneAccess } from '../lib/cars/access';
+import {
+  BACKCAST_SEED,
+  BACKCAST_START,
+  chainXwalk,
+  crosswalkRows,
+  h044AsB25044,
+  historyFlows,
+  NO_CAR,
+  noCarShare,
+  runBackcast,
+  xwalkOf,
+  type AcsRelease,
+  type BackcastModel,
+  type PumsRelease
+} from '../lib/cars/backcast';
 import { IPF, IPF_REPORT_ERR, MARGINS, WORKERS_TOTAL, typeBandsOf } from '../lib/cars/config';
 import {
   effectiveSizes,
@@ -37,7 +53,8 @@ import {
   pumsSeed,
   startPopulation,
   zoneHomes,
-  type AcsRow
+  type AcsRow,
+  type Seed
 } from '../lib/cars/population';
 import {
   REFRESH_MONTHS,
@@ -46,13 +63,14 @@ import {
   parkingOf,
   type MoverRow
 } from '../lib/cars/rates';
-import { carsModelReportLines, carsReportLines } from '../lib/cars/report';
+import { backcastReportLines, carsModelReportLines, carsReportLines } from '../lib/cars/report';
 import { assignZones, zoneFeatures } from '../lib/cars/zones';
 import type { Duck } from '../lib/duck';
 import type { Lock } from '../lib/lock';
 import { CARS_BIN, CAR_ZONES_JSON } from '../lib/scenario-files';
 import { MARKET_JSON } from './calibration';
 import { PROJECTS_JSON } from './projects';
+import type { TransitYears } from './transit';
 
 /** The decoded cars.bin the golden compares (deflate bytes may differ across zlib builds). */
 export const CARS_DUMP = 'scenarios/fzp/cars.decoded.json';
@@ -107,6 +125,8 @@ export interface CarsStepOut {
   choice: CarChoiceModel | null;
   /** Calibration-report lines (section 14 takes them). */
   report: string[];
+  /** The back-cast's lines (section 15); empty without its inputs (the mini fixture). */
+  backcast: string[];
   counts: Record<string, number>;
   warnings: string[];
 }
@@ -131,6 +151,13 @@ export interface CarsStepOpts {
   marketPath?: string;
   /** The dataset's projects.json, for the affordable completions by tier (default the outDir's). */
   projectsPath?: string;
+  /**
+   * The project records (homes completed and lost by month) and transit by year, for the
+   * back-cast (report section 15); it runs only with these and the lock's SF3, crosswalk, 2010
+   * PUMA and 2009-2013 PUMS entries.
+   */
+  histories?: readonly ProjectHistory[];
+  transitYears?: TransitYears | null;
 }
 
 /** The Census tables the start population needs. */
@@ -146,6 +173,7 @@ const none = (warnings: string[] = []): CarsStepOut => ({
   model: null,
   choice: null,
   report: [],
+  backcast: [],
   counts: {},
   warnings
 });
@@ -418,5 +446,310 @@ export async function carsStep(db: Duck, o: CarsStepOpts): Promise<CarsStepOut> 
       pumas
     })
   );
-  return { data, model, choice, report, counts, warnings };
+  const bc = await carsBackcast(db, o, {
+    data,
+    model,
+    latest: { release: pumsRelease, rows: pums },
+    ami,
+    byTier
+  });
+  warnings.push(...bc.warnings);
+  Object.assign(counts, bc.counts);
+  return { data, model, choice, report, backcast: bc.report, counts, warnings };
+}
+
+/** Lock entries the back-cast needs beyond the start population's. */
+const BACKCAST_IDS = [
+  'census-sf3-2000-bg',
+  'census-xwalk-2000-2010',
+  'census-xwalk-2010-2020',
+  'census-puma-2010',
+  'census-pums5-2013'
+] as const;
+
+/** A crosswalked share at or above this puts a 2000 block group inside one of today's. */
+const NESTED = 0.99;
+
+/** The ACS cells the back-cast moves onto the zones (the held-out fit's margins and occupancy). */
+const BACKCAST_TABLES = ['B25044', 'B25009', 'B19001', 'B25002'];
+
+/**
+ * The back-cast (report section 15, `runBackcast`): the 2000 households on today's block groups,
+ * every ACS release on them, the project records' homes by month and access by year; the full
+ * model and one fitted on the releases and PUMS through 2009-2013. Nothing without its inputs.
+ */
+async function carsBackcast(
+  db: Duck,
+  o: CarsStepOpts,
+  x: {
+    data: CarData;
+    model: CarModel;
+    latest: PumsRelease;
+    ami: AmiFile;
+    byTier: { veryLow: number; low: number; moderate: number };
+  }
+): Promise<{ report: string[]; counts: Record<string, number>; warnings: string[] }> {
+  const ids = new Set(o.lock.sources.map((e) => e.id));
+  const missing = BACKCAST_IDS.filter((id) => !ids.has(id));
+  if (!o.histories || missing.length === BACKCAST_IDS.length)
+    return { report: [], counts: {}, warnings: [] };
+  if (missing.length > 0)
+    return {
+      report: [],
+      counts: {},
+      warnings: [`cars: no back-cast, the lock lacks ${missing.join(', ')}`]
+    };
+  const { data, model } = x;
+  const zones = data.zones;
+  const Z = zones.length;
+  const p = o.parcels;
+  const warnings: string[] = [];
+  const zix = new Map(zones.map((g, i) => [g, i]));
+  const ipf = { maxIter: IPF.maxIter, tol: IPF.tol };
+
+  // Crosswalks: 2010 → 2020 as published, 2000 → 2020 through 2010 (land-area weights).
+  const xw = await db.all<{ v: number; from: string; to: string; weight: number }>(
+    `SELECT from_vintage AS v, from_geoid AS "from", to_geoid AS "to", weight FROM src_bg_xwalk
+      ORDER BY from_vintage, from_geoid, to_geoid`
+  );
+  const x1020 = xwalkOf(xw.filter((r) => r.v === 2010));
+  const x0020 = chainXwalk(xwalkOf(xw.filter((r) => r.v === 2000)), x1020);
+  const onZones = (rows: AcsRow[], v: number): AcsRow[] =>
+    v === 2020 ? rows : crosswalkRows(rows, v === 2000 ? x0020 : x1020);
+
+  // Every ACS release, on the zones; citywide from its own block groups.
+  const years = (
+    await db.all<{ release: number }>('SELECT DISTINCT release FROM src_acs_bg ORDER BY release')
+  ).map((r) => r.release);
+  const tables = BACKCAST_TABLES.map((t) => `variable LIKE '${t}_%'`).join(' OR ');
+  const releases: AcsRelease[] = [];
+  for (const year of years) {
+    const rows = await db.all<AcsRow>(`SELECT geoid, variable, estimate FROM src_acs_bg
+      WHERE release = ${year} AND (${tables}) ORDER BY geoid, variable`);
+    releases.push({
+      year,
+      rows: onZones(rows, acsBgVintage(year)),
+      city: noCarShare(rows, [...new Set(rows.map((r) => r.geoid))])
+    });
+  }
+  const endYear = years[years.length - 1];
+
+  // The start: SF3 H044 on the zones; its households and tenure by cars are the start's margins.
+  const sf3 = h044AsB25044(
+    await db.all<{ geoid: string; variable: string; value: number }>(
+      'SELECT geoid, variable, value FROM src_sf3_bg ORDER BY geoid, variable'
+    )
+  );
+  const sf3City = noCarShare(sf3, [...new Set(sf3.map((r) => r.geoid))]);
+  const sf3Zones = crosswalkRows(sf3, x0020);
+  const margins2000 = acsMargins(sf3Zones, zones);
+  const hh2000 = new Int32Array(Z);
+  for (const r of sf3Zones) {
+    const z = zix.get(r.geoid);
+    if (r.variable === NO_CAR.total && z !== undefined) hh2000[z] = Math.round(r.estimate);
+  }
+  const ones = new Float64Array(Z).fill(1);
+  const start2000 = (bands: CarModel['bands'], seed: Seed, zonePuma: Int32Array) =>
+    startPopulation({
+      types: typeCount(bands),
+      zonePuma,
+      homes: hh2000,
+      occupied: ones,
+      seed,
+      margins: margins2000,
+      ipf
+    }).households;
+
+  // Nested: 2000 block groups with >= 99% of their land in one of today's, and the zones whose
+  // 2000 households come >= 99% from them (the crosswalk's sensitivity).
+  const nested2000 = new Set(
+    [...x0020].filter(([, parts]) => parts.some((q) => q.weight >= NESTED)).map(([g]) => g)
+  );
+  const zoneAll = new Float64Array(Z);
+  const zoneNested = new Float64Array(Z);
+  for (const r of sf3) {
+    if (r.variable !== NO_CAR.total) continue;
+    for (const q of x0020.get(r.geoid) ?? []) {
+      const z = zix.get(q.to);
+      if (z === undefined) continue;
+      zoneAll[z] += r.estimate * q.weight;
+      if (nested2000.has(r.geoid)) zoneNested[z] += r.estimate * q.weight;
+    }
+  }
+  const nestedZones = Uint8Array.from(zoneAll, (a, z) =>
+    a > 0 && zoneNested[z] >= NESTED * a ? 1 : 0
+  );
+  const sf3Bgs = new Set(sf3.map((r) => r.geoid)).size;
+
+  // Access by calendar year, homes-weighted with today's homes.
+  const calendar = Array.from(
+    { length: endYear - BACKCAST_START.year + 1 },
+    (_, i) => BACKCAST_START.year + i
+  );
+  const byYear = o.transitYears
+    ? accessByYear(
+        o.transitYears,
+        calendar,
+        data.lotZone,
+        Int32Array.from(p.existingUnits),
+        p.labelPoint,
+        Z
+      )
+    : [];
+  if (!o.transitYears) warnings.push("cars: back-cast without transit by year (today's access)");
+  // Archived feeds reduce non-strictly (mostly lines with no vehicle assignment): one line, with
+  // the first, rather than one per line and year.
+  const reduceWarnings = byYear.flatMap((y) => y.warnings.map((w) => `${y.year}: ${w}`));
+  if (reduceWarnings.length > 0)
+    warnings.push(
+      `cars: back-cast transit by year: ${reduceWarnings.length} reduce warnings over ` +
+        `${byYear.filter((y) => y.warnings.length > 0).length} years (first, ${reduceWarnings[0]})`
+    );
+  const accessAt = (year: number) => byYear.find((y) => y.year === year)?.access ?? data.access;
+
+  // Homes completed and lost, by month and zone.
+  const { flows, stats: flowStats } = historyFlows(
+    o.histories,
+    p.index,
+    data.lotZone,
+    BACKCAST_START,
+    endYear,
+    model.newHomes.affordableTiers
+  );
+
+  // PUMS 2009-2013 on 2010 PUMAs: its 2012-2013 records (2009-2011's sit on 2000 PUMAs).
+  const pums13 = await db.all<MoverRow>(`SELECT puma, wgtp, veh, np, workers, hincp_adj, ten, mv,
+    ybl, ybl_src FROM src_pums_hh WHERE release = 2013 AND puma_vintage = 2010
+    ORDER BY puma, serialno`);
+  const pums: PumsRelease[] = [{ release: 2013, rows: pums13 }, x.latest];
+
+  // Today's zones on 2010 PUMAs: each zone's 2010 block group of largest share, its tract's PUMA.
+  const tract10 = new Map(
+    (
+      await db.all<{ tract: string; puma: string }>(
+        'SELECT tract, puma FROM src_tract_puma WHERE vintage = 2010 ORDER BY tract'
+      )
+    ).map((r) => [r.tract, r.puma])
+  );
+  const pumas10 = [...new Set(tract10.values())].sort();
+  const from10 = new Map<string, { from: string; weight: number }>();
+  for (const [from, parts] of x1020)
+    for (const q of parts) {
+      const best = from10.get(q.to);
+      if (!best || q.weight > best.weight) from10.set(q.to, { from, weight: q.weight });
+    }
+  const zonePuma10 = Int32Array.from(zones, (g) => {
+    const b = from10.get(g);
+    return b ? pumas10.indexOf(tract10.get(b.from.slice(0, 11)) ?? '') : -1;
+  });
+  // A zone with no 2010 tract on a PUMA (a water tract) takes the 2010 PUMA most zones of its
+  // 2020 PUMA take.
+  const votes = data.pumas.map(() => new Int32Array(pumas10.length));
+  zonePuma10.forEach((ix, z) => {
+    if (ix >= 0) votes[data.zonePuma[z]][ix]++;
+  });
+  let pumaFallback = 0;
+  zonePuma10.forEach((ix, z) => {
+    if (ix >= 0) return;
+    const v = votes[data.zonePuma[z]];
+    zonePuma10[z] = v.indexOf(Math.max(...v));
+    pumaFallback++;
+  });
+
+  const held = { records: 0, households: 0, release: 0 };
+  const fit = (f: { acs: readonly AcsRelease[]; pums: readonly PumsRelease[] }): BackcastModel => {
+    const last = f.pums[f.pums.length - 1];
+    if (last.release === x.latest.release) {
+      const seed = pumsSeed(x.latest.rows, model.bands, data.pumas);
+      return { model, data: { ...data, households: start2000(model.bands, seed, data.zonePuma) } };
+    }
+    // Held out: fitted as carsStep fits today's, on the latest release and PUMS it is given.
+    const a = f.acs[f.acs.length - 1];
+    const rows = last.rows;
+    const window: [string, string] = [`${last.release - 4}-01-01`, `${last.release}-12-31`];
+    const bands = typeBandsOf(rows);
+    const types = typeCount(bands);
+    const seed = pumsSeed(rows, bands, pumas10);
+    const hh = new Int32Array(Z);
+    for (const r of a.rows) {
+      const z = zix.get(r.geoid);
+      if (r.variable === NO_CAR.total && z !== undefined) hh[z] = Math.round(r.estimate);
+    }
+    const popIn = {
+      types,
+      zonePuma: zonePuma10,
+      homes: hh,
+      occupied: ones,
+      seed,
+      margins: acsMargins(a.rows, zones),
+      ipf
+    };
+    const d: CarData = {
+      zones,
+      pumas: pumas10,
+      zonePuma: zonePuma10,
+      lotZone: data.lotZone,
+      areaM2: data.areaM2,
+      occupied: occupiedShares(a.rows, zones).occupied,
+      access: accessAt(a.year),
+      constant: new Float64Array(Z * 3),
+      types,
+      households: startPopulation(popIn).households
+    };
+    const observed = observedLevels(a.rows, zones);
+    const first = fitChoice({ rows, bands, window }, observed, d);
+    d.households = startPopulation({
+      ...popIn,
+      levels: first.fit.map((g) => (g.observedTotal > 0 ? Float64Array.from(g.target) : null))
+    }).households;
+    d.constant = refitConstants(first.choice, d, observed, first).constant;
+    const mv = moveRates(rows, bands, pumas10, window);
+    const nh = newHomeMixes(rows, bands, x.ami, x.byTier, { release: last.release, window });
+    held.records = rows.length;
+    held.households = rows.reduce((t, r) => t + r.wgtp, 0);
+    held.release = a.year;
+    const heldModel: CarModel = {
+      schema: 1,
+      bands,
+      choice: first.choice,
+      threePlusMean: threePlusMeanOf(rows),
+      moves: mv.moves,
+      newHomes: nh.newHomes,
+      parking: model.parking,
+      refreshMonths: model.refreshMonths
+    };
+    return { model: heldModel, data: { ...d, households: start2000(bands, seed, zonePuma10) } };
+  };
+
+  const result = runBackcast({
+    seed: BACKCAST_SEED,
+    start: BACKCAST_START,
+    endYear,
+    zones,
+    startObserved: sf3City.carless / sf3City.households,
+    releases,
+    pums,
+    fit,
+    flows,
+    access: byYear.map((y) => ({ year: y.year, access: y.access })),
+    subsets: [{ name: 'nested', zones: nestedZones }]
+  });
+  let nestedCount = 0;
+  for (const v of nestedZones) nestedCount += v;
+  const report = backcastReportLines(result, {
+    start: { households: sf3City.households, bgs: sf3Bgs },
+    nested: { bgs: nested2000.size, zones: nestedCount, totalZones: Z },
+    flows: flowStats,
+    access: byYear.map((y) => ({ year: y.year, sourceYear: y.sourceYear, sources: y.sources })),
+    heldOut: { pumsRecords: held.records, pumsHouseholds: held.households, acs: held.release }
+  });
+  const counts: Record<string, number> = {
+    'cars.backcast.releases': releases.length,
+    'cars.backcast.flows': flows.length,
+    'cars.backcast.unplacedHomes': flowStats.unplacedHomes,
+    'cars.backcast.unmatched': result.unmatched,
+    'cars.backcast.nestedZones': nestedCount,
+    'cars.backcast.puma2010Fallback': pumaFallback
+  };
+  return { report, counts, warnings };
 }

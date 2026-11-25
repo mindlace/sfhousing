@@ -179,11 +179,13 @@ async function acsSequenceBased(spec: AcsSpec, http: Http): Promise<string[]> {
   const dir = acsSeqDir(spec.endYear);
   const tables = new Map<string, { seq: string; start: number; cells: number }>();
   textLines(await get(http, spec.lookupUrl!), (line) => {
-    const f = csvLine(line);
+    // 2011's lookup quotes every field and writes a blank as "."; the fields read come before the
+    // title, the only one that can hold a comma.
+    const f = csvLine(line).map((v) => v.replace(/^"(.*)"$/, '$1').trim());
     if (!(ACS_TABLES as readonly string[]).includes(f[1]) || tables.has(f[1])) return;
     const start = num(f[4]);
     const cells = parseInt(f[5] ?? '', 10);
-    if (f[3]?.trim() === '' && start !== undefined && cells > 0) {
+    if ((f[3] === '' || f[3] === '.') && start !== undefined && cells > 0) {
       tables.set(f[1], { seq: f[2].trim().padStart(4, '0'), start, cells });
     }
   });

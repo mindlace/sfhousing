@@ -63,7 +63,11 @@ Tried:
   logical records from `.../data/5_year_seq_by_state/California/Tracts_Block_Groups_Only/g<year>5ca.txt`
   (`15000US06075...`), the values from `.../Tracts_Block_Groups_Only/<year>5ca<seq>000.zip`. For
   example 2009: B25044 is sequence 98, start 111; first SF block group `15000US060750101001`,
-  B25044 total 458.
+  B25044 total 458. The lookup is under `documentation/5_year/user_tools/` with the name
+  `Sequence_Number_and_Table_Number_Lookup.txt` for 2009-2012 (each year its own), and under
+  `documentation/user_tools/ACS_5yr_Seq_Table_Number_Lookup.txt` from 2013; 2011's quotes every
+  field and writes a blank as `.`. The lock holds every release 2009-2024 (the back-cast compares
+  each).
 - `https://www2.census.gov/programs-surveys/acs/summary_file/2025/table-based-SF/data/` lists only
   `1YRData/`: the 2021-2025 5-year release is not out (the 2025 5-year directory answers 401).
 
@@ -162,6 +166,13 @@ geographic advantage. SF3 is a single date (April 2000), a one-in-six sample wit
 than a five-year ACS average, and H044 is there at every block group. The binding limit on the
 back-cast is transit, not geography: no archived GTFS exists for 2000 (below), so transit access
 holds at the earliest feed until one exists.
+
+**Taken (Task 14).** The project records cover 2000-2006 completions (project-histories.json of
+2026-11-14: 131, 65, 129, 135, 109, 70 and 79 completed histories, 1,796, 824, 2,678, 1,969,
+1,518, 1,279 and 919 homes), so the back-cast starts at SF3. The start is placed by land area
+(the relationship files have no housing counts); chained through 2010 block groups, 417 of 575
+2000 block groups have at least 99% of their land in one 2020 block group (418 through blocks,
+above). Calibration report section 15 gives the result over all zones and over the nested ones.
 
 ## PUMAs by vintage and nesting
 

@@ -241,6 +241,36 @@ describe('fetchCensus: ACS sequence-based releases', () => {
     ]);
     db.close();
   });
+
+  it("reads 2011's quoted lookup (blanks as '.') from its own year's 5_year folder", async () => {
+    const S11 = SEQ.replaceAll('2013', '2011');
+    const q = (fields: string[]) => fields.map((f) => `"${f}"`).join(',') + '\r\n';
+    const lookup11 =
+      q(['ACSSF', 'B25044', '0113', '.', '7', '3 CELLS', '.', 'TENURE BY VEHICLES', 'Housing']) +
+      q(['ACSSF', 'B25044', '0113', '.', '.', '', '.', 'Universe:  Occupied units', '']) +
+      q(['ACSSF', 'B25044', '0113', '1', '.', '', '.', 'Total:', '']) +
+      ['B25046', 'B25009', 'B19001', 'B25002', 'B08301']
+        .map((t, i) => q(['ACSSF', t, `${200 + i}`, '.', '7', '2 CELLS', '.', 'TITLE', 'Housing']))
+        .join('');
+    const routes: Record<string, Body> = {
+      'https://www2.census.gov/programs-surveys/acs/summary_file/2011/documentation/5_year/user_tools/Sequence_Number_and_Table_Number_Lookup.txt':
+        lookup11,
+      [`${S11}/g20115ca.txt`]: 'ACSSF CA150000000001                      15000US060750101001\n',
+      [`${S11}/20115ca0113000.zip`]: zip(
+        'e20115ca0113000.txt',
+        row('0113', '0000001', ['458', '183', '275'])
+      )
+    };
+    for (let i = 0; i < 5; i++) {
+      routes[`${S11}/20115ca0${200 + i}000.zip`] = zip(
+        `e20115ca0${200 + i}000.txt`,
+        row(`0${200 + i}`, '0000001', ['11', '12'])
+      );
+    }
+    const e = await fetchCensus('census-acs5-bg-2011', tmp(), fakeHttp(routes), NOW);
+    expect(e.upstreamVersion).toContain('2007-2011');
+    expect(e.rowCount).toBe(3 + 5 * 2);
+  });
 });
 
 describe('fetchCensus: PUMS', () => {

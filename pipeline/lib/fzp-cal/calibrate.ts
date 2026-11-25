@@ -70,7 +70,7 @@ export interface CalInput {
    * The car step's output: the model (written as `cars`, after `baselineFunding`) and the report
    * lines of section 14. Absent, or no lines, means no car data: no `cars` and no section 14.
    */
-  cars?: { model: CarModel | null; report: string[] };
+  cars?: { model: CarModel | null; report: string[]; backcast?: string[] };
 }
 
 export interface CalOutput {
@@ -289,6 +289,7 @@ export async function calibrate(input: CalInput, cal: CalProfile): Promise<CalOu
       siteChoice: sites
     },
     cars: input.cars?.report ?? [],
+    carsBackcast: input.cars?.backcast ?? [],
     warnings
   });
 

@@ -156,6 +156,8 @@ export async function writeCalibration(o: {
   cars?: CarModel | null;
   /** The car step's report lines: section 14 (none, no section) */
   carsReport?: string[];
+  /** The car back-cast's report lines: section 15 (none, no section) */
+  carsBackcast?: string[];
 }): Promise<{ warnings: string[]; checks: InvariantResult[] }> {
   const marketPath = o.marketPath ?? MARKET_JSON;
   const market = {
@@ -193,7 +195,7 @@ export async function writeCalibration(o: {
     market,
     funding,
     mohcd,
-    cars: { model: o.cars ?? null, report: o.carsReport ?? [] }
+    cars: { model: o.cars ?? null, report: o.carsReport ?? [], backcast: o.carsBackcast ?? [] }
   };
   const a = await calibrate(input, o.cal);
   const b = await calibrate(input, o.cal);

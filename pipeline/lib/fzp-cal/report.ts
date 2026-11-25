@@ -84,12 +84,15 @@ export interface ReportInput {
   affordable: AffordableReport;
   /** Section 14's body (the car step's lines); empty means no car data and no section 14. */
   cars?: string[];
+  /** Section 15's body (the car back-cast's lines); empty without its inputs, no section 15. */
+  carsBackcast?: string[];
   warnings: string[];
 }
 
 /**
  * The section headings, in order (spec §4.10; market-baseline spec §4.7; finance-data spec 4.7,
- * 4.8; car-ownership spec "Fit"). Section 14 is present only with car data.
+ * 4.8; car-ownership spec "Fit", "Back-cast"). Section 14 is present only with car data, 15 only
+ * with the back-cast's inputs.
  */
 export const REPORT_SECTIONS = [
   '# Calibration report',
@@ -105,7 +108,8 @@ export const REPORT_SECTIONS = [
   "## 11. Today's market",
   '## 12. Publicly funded housing: routes, stages and baseline funding',
   '## 13. Where publicly funded housing starts',
-  '## 14. Car ownership'
+  '## 14. Car ownership',
+  '## 15. Car back-cast'
 ] as const;
 
 /** A number for the report: integers as is, others to 6 significant digits, non-finite "none". */
@@ -1041,7 +1045,10 @@ export function calibrationReport(x: ReportInput): string {
     marketSection(requireMarket(x.calibration), x.market),
     fundedSection(x),
     siteChoiceSection(x),
-    ...(x.cars && x.cars.length > 0 ? [[REPORT_SECTIONS[13], '', ...x.cars]] : [])
+    ...(x.cars && x.cars.length > 0 ? [[REPORT_SECTIONS[13], '', ...x.cars]] : []),
+    ...(x.carsBackcast && x.carsBackcast.length > 0
+      ? [[REPORT_SECTIONS[14], '', ...x.carsBackcast]]
+      : [])
   ];
   return sections.map((s) => s.join('\n')).join('\n\n') + '\n';
 }

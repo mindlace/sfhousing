@@ -274,13 +274,14 @@ describe('calibrate', () => {
   });
 
   it('writes the thirteen report sections in order, with the window and method counts', () => {
-    expect(REPORT_SECTIONS).toHaveLength(14);
-    expect(REPORT_SECTIONS.slice(-3)).toEqual([
+    expect(REPORT_SECTIONS).toHaveLength(15);
+    expect(REPORT_SECTIONS.slice(-4)).toEqual([
       '## 12. Publicly funded housing: routes, stages and baseline funding',
       '## 13. Where publicly funded housing starts',
-      '## 14. Car ownership'
+      '## 14. Car ownership',
+      '## 15. Car back-cast'
     ]);
-    // Without car data there is no section 14.
+    // Without car data there is no section 14, and without the back-cast's inputs no 15.
     const sections = REPORT_SECTIONS.slice(0, 13);
     const lines = a.reportMd.split('\n');
     expect(lines[0]).toBe('# Calibration report: test-0');
@@ -289,6 +290,7 @@ describe('calibrate', () => {
     expect([...at].sort((x, y) => x - y)).toEqual(at);
     expect(lines.filter((l) => /^#{1,2} /.test(l))).toHaveLength(sections.length);
     expect(a.reportMd).not.toContain('## 14. Car ownership');
+    expect(a.reportMd).not.toContain('## 15. Car back-cast');
     expect(a.calibration.cars).toBeUndefined();
     expect(a.reportMd).toContain('calibration.window.preRoll');
     expect(a.reportMd).toContain('calibration.method.permitOnlyPre2015');
@@ -333,6 +335,18 @@ describe('calibrate', () => {
     const at = lines.indexOf('## 14. Car ownership');
     expect(at).toBeGreaterThan(lines.indexOf('## 13. Where publicly funded housing starts'));
     expect(lines.slice(at + 1)).toEqual(['', 'Zones: 2.']);
+    expect(out.json).toBe(a.json);
+  });
+
+  it('with back-cast lines, ends with section 15 after 14', async () => {
+    const out = await calibrate(
+      { ...input, cars: { model: null, report: ['Zones: 2.'], backcast: ['| 2009 |'] } },
+      FIXTURE_CAL
+    );
+    const lines = out.reportMd.trimEnd().split('\n');
+    const at = lines.indexOf('## 15. Car back-cast');
+    expect(at).toBeGreaterThan(lines.indexOf('## 14. Car ownership'));
+    expect(lines.slice(at + 1)).toEqual(['', '| 2009 |']);
     expect(out.json).toBe(a.json);
   });
 

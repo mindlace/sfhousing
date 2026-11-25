@@ -51,7 +51,7 @@ import { writeProjectRecords } from './projects';
 import { writeRenderBoxes } from './render-boxes';
 import { writeScenario } from './scenario';
 import { installFonts, writeBasemap, writeBuildingsTiles } from './tiles';
-import { transitTargetDate, writeTransit } from './transit';
+import { lockTransitYears, transitTargetDate, writeTransit } from './transit';
 
 export interface BuildOpts {
   lockPath: string;
@@ -343,7 +343,17 @@ export async function build(
         parcels: readParcelsBin(join(outDir, PARCELS_BIN)),
         parkingPath: fixtureMode ? PARKING.fixture : PARKING.live,
         parseParking: fixtureMode ? parseFixtureParkingFile : parseParkingFile,
-        amiPath: fixtureMode ? AMI.fixture : AMI.live
+        amiPath: fixtureMode ? AMI.fixture : AMI.live,
+        // The back-cast (section 15): homes by month from the records, access by year.
+        histories: projects.histories,
+        transitYears: lockTransitYears({
+          lock,
+          rawDir: opts.rawDir,
+          byName,
+          outDir,
+          targetDate: transitDate,
+          network: transit.network
+        })
       })
     );
     report.warnings.push(...cars.warnings);
@@ -365,7 +375,8 @@ export async function build(
         rawDir: opts.rawDir,
         byName,
         cars: cars.model,
-        carsReport: cars.report
+        carsReport: cars.report,
+        carsBackcast: cars.backcast
       })
     );
     report.warnings.push(...calibration.warnings);
