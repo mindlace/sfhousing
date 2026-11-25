@@ -108,6 +108,31 @@ it('the game panel', () => {
   expect(w.COLLECT_FOR_ME).toBe('Collect for me');
   expect(w.COLLECT_BOUGHT).toBe('Always on: bought');
 });
+it('the …Name words say units and hold no mark', () => {
+  expect(w.priceName(900)).toBe('900 units');
+  expect(w.priceName(1)).toBe('1 unit');
+  expect(w.priceName(0)).toBe('Free');
+  expect(w.collectedName(7300, 9100)).toBe('7,300 of 9,100 units collected');
+  expect(w.lumpName(2000)).toBe('+2,000 units for the goal');
+  expect(w.sideRewardName(500, '1,000 homes added')).toBe('+500 units for 1,000 homes added');
+  expect(w.buyName(900)).toBe('Buy for 900 units');
+  expect(w.buyName(1)).toBe('Buy for 1 unit');
+  expect(w.buyName(0)).toBe('Buy for free');
+  expect(w.nextPriceName(420)).toBe('next 420 units');
+  expect(w.nextPriceName(0)).toBe('next free');
+  const named = [
+    w.priceName(900),
+    w.collectedName(7300, 9100),
+    w.lumpName(2000),
+    w.sideRewardName(500, '1,000 homes added'),
+    w.buyName(900),
+    w.nextPriceName(420)
+  ];
+  for (const t of named) {
+    expect(t).toMatch(/units?/);
+    expect(t).not.toContain(w.UNIT_MARK);
+  }
+});
 it('the durations', () => {
   expect([m.ROLL_MS, m.TALLY_ROLL_MS, m.MET_MS, m.REVEAL_MS]).toEqual([400, 800, 1200, 300]);
 });
@@ -121,6 +146,13 @@ describe('wording', () => {
       w.unitsName(1240),
       w.priceText(900),
       w.shortText(298),
+      w.priceName(900),
+      w.collectedName(7300, 9100),
+      w.lumpName(2000),
+      w.sideRewardName(500, '1,000 homes added'),
+      w.buyName(900),
+      w.buyName(0),
+      w.nextPriceName(420),
       w.goalLine(61400, 82069, 'Dec 2055'),
       w.goalLine(null, 82069, 'Dec 2055'),
       w.unlocksText('Height near transit'),

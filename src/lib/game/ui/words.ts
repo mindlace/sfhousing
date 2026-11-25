@@ -14,6 +14,9 @@ export function unitsName(n: number): string {
 export function priceText(n: number): string {
   return n === 0 ? 'Free' : `${UNIT_MARK} ${formatCount(n)}`;
 }
+export function priceName(n: number): string {
+  return n === 0 ? 'Free' : unitsName(n);
+}
 export function shortText(n: number): string {
   return `${formatCount(n)} short`;
 }
@@ -61,6 +64,15 @@ export function changeText(d: number): string {
 export function collectedText(collected: number, dropped: number): string {
   return `${formatCount(collected)} of ${formatCount(dropped)} collected`;
 }
+export function collectedName(collected: number, dropped: number): string {
+  return `${formatCount(collected)} of ${unitsName(dropped)} collected`;
+}
+export function lumpName(n: number): string {
+  return `+${unitsName(n)} for the goal`;
+}
+export function sideRewardName(n: number, label: string): string {
+  return `+${unitsName(n)} for ${label}`;
+}
 export function lumpText(n: number): string {
   return `+${formatCount(n)} for the goal`;
 }
@@ -96,6 +108,9 @@ export const BRANCH_NAMES: Readonly<Record<Branch, string>> = {
 export function buyText(price: number): string {
   return `Buy · ${priceText(price)}`;
 }
+export function buyName(price: number): string {
+  return price === 0 ? 'Buy for free' : `Buy for ${unitsName(price)}`;
+}
 export const BOUGHT = 'Bought';
 export const EDIT = 'Edit';
 export function editName(label: string): string {
@@ -111,6 +126,9 @@ export function nextStepText(step: string): string {
 }
 export function nextPriceText(price: number): string {
   return `next ${UNIT_MARK} ${formatCount(price)}`;
+}
+export function nextPriceName(price: number): string {
+  return price === 0 ? 'next free' : `next ${unitsName(price)}`;
 }
 export const SOURCE = 'Source';
 export function boughtLive(label: string, step: string): string {
