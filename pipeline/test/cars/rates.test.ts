@@ -326,6 +326,32 @@ describe('parkingOf', () => {
     );
   });
 
+  it("carries an invented fixture cost's tier 4 into its provenance (ruling P3)", () => {
+    const r = parkingOf(
+      file({
+        surface: null,
+        podium: cost(28_700, 2012),
+        belowGrade: {
+          value: 70_000,
+          dollarsYear: 2016,
+          tier: 4,
+          invented: true,
+          method: 'Invented test data.'
+        }
+      }),
+      index,
+      cpi,
+      P
+    );
+    expect(r.parking.costPerSpace?.belowGrade).toBe(toP(70_000, 2016, 100));
+    const [podium, below] = r.parking.provenance.slice(1);
+    expect(podium.tier).toBe(2);
+    expect(below.tier).toBe(4);
+    expect(below.method).toMatch(/^Invented test data\./);
+    expect(below.sources.map((x) => x.label)).toEqual(['Controller', 'BLS']);
+    expect(r.stats.costs?.find((c) => c.type === 'belowGrade')?.sources).toEqual(['invented']);
+  });
+
   it('prices only the types with a cost, and warns that the others get none', () => {
     const r = parkingOf(
       file({ surface: null, podium: cost(28_700, 2012), belowGrade: cost(80_000, 2016) }),

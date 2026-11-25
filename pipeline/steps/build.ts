@@ -38,6 +38,7 @@ import { loadNormalised, normaliseAll } from '../sources/normalise';
 import { overtureReleaseProblem } from '../sources/overture';
 import { SB79_EXEMPTIONS_CSV } from '../sources/sfbos';
 import { FIXTURE_CAL, LIVE_CAL } from '../lib/fzp-cal/config';
+import { parseFixtureParkingFile, parseParkingFile } from '../enrichment/parking-schema';
 import { freewayLandSet, readFreewayLand } from '../lib/freeway-land';
 import { readFundingFile, writeCalibration } from './calibration';
 import { carsStep } from './cars';
@@ -86,7 +87,10 @@ const FUNDING = {
   live: join(REPO_ROOT, 'pipeline/enrichment/funding.json'),
   fixture: join(REPO_ROOT, 'pipeline/test/fixtures/mini/enrichment/funding.json')
 };
-/** Parking facts for the car model (cars-data.md): live, and the mini fixture's (Task 7 adds it). */
+/**
+ * Parking facts for the car model (cars-data.md): live, and the mini fixture's (an invented tier-4
+ * cost, read only by `parseFixtureParkingFile`; ruling P3).
+ */
 const PARKING = {
   live: join(REPO_ROOT, 'pipeline/enrichment/parking.json'),
   fixture: join(REPO_ROOT, 'pipeline/test/fixtures/mini/enrichment/parking.json')
@@ -338,6 +342,7 @@ export async function build(
         transit: transit.network,
         parcels: readParcelsBin(join(outDir, PARCELS_BIN)),
         parkingPath: fixtureMode ? PARKING.fixture : PARKING.live,
+        parseParking: fixtureMode ? parseFixtureParkingFile : parseParkingFile,
         amiPath: fixtureMode ? AMI.fixture : AMI.live
       })
     );

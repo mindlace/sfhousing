@@ -302,3 +302,16 @@ NC-1 and C-3-O on 3, 4 and 13; (b)(3) comes before the R-4 and historic tests, s
 `unitsFor(100, 903, 0.5, 'round')` = 11 and takes §207.11. Lot 18's RM-1 cap of 4 is below 6
 (`unitsFor(80, 300)`, half the adjacent 160 du/ac), so it `applies` (not `meets-minimum`, as it would under the
 literal 30 du/ac reading) with cap 6 and takes §207.11. Lot 6 applies but yields 0 either way, so it keeps FZP.
+
+## Households and cars
+
+`census-raw.ts` writes the mini city's Census population (make-fixture.ts locks it): ACS 2020-2024
+block-group tables and B25044 margins, 160 PUMS 2024 households in one PUMA (`07507`), the
+tract-to-PUMA row and a TIGER 2020 shapefile zip of three block groups in the made-up tract
+`06075990100`: `…1` lots 1 to 6 and the lots west and north of them, `…2` lots 7 to 12, `…3` lots 13,
+14 and 18 and the shoreline lots. All of it is invented test data. Each group's B25044 puts a sixth
+or more of its households at 3+ cars, so each zone's few start households hold every car level (a
+zone missing one sends the zone fit to infinity). The build reads `enrichment/parking.json` (an
+invented, tier-4 cost per space, parsed by `parseFixtureParkingFile` only) and `enrichment/ami.json`
+(SF AMI 2024), so fixture-0 carries `cars.bin`, `car-zones.json` and calibration `cars` with the
+parking link on.

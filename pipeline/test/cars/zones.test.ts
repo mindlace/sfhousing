@@ -129,12 +129,18 @@ describe('carsStep with census tables', () => {
         'EPSG:7131', always_xy := true) AS geom, 1000.0 AS aland`);
     await db.run(`CREATE TABLE src_tract_puma AS SELECT 2020 AS vintage,
       '06075010200' AS tract, '07507' AS puma`);
-    // One household of each car level, all of one type (the fit drops what cannot vary), at an
-    // income under half the AMI; two moved in within the year, all into a home built in 2015.
+    // One renter household of each car level, all of one type, at an income under half the AMI;
+    // two moved in within the year, all into a home built in 2015. Owners at four other incomes
+    // (one of each car level, none moved in within the year, in homes built in 1950) spread the
+    // weighted quartiles, so the income band edges differ, and share the renters' top band, so
+    // the renter term is not one band's.
     await db.run(`CREATE TABLE src_pums_hh AS SELECT 2024 AS release, '07507' AS puma,
       'S' || veh AS serialno, 10 AS wgtp, veh, 2 AS np, 1 AS workers, 50000.0 AS hincp_adj,
       3 AS ten, 2020 AS puma_vintage, CASE WHEN veh < 2 THEN 1 ELSE 4 END AS mv, 2015 AS ybl,
-      'YRBLT' AS ybl_src FROM range(4) t(veh)`);
+      'YRBLT' AS ybl_src FROM range(4) t(veh)
+      UNION ALL SELECT 2024, '07507', 'O' || inc || veh, w, veh, 2, 1, inc::DOUBLE, 1, 2020, 4,
+      1950, 'YRBLT' FROM range(4) t(veh),
+        (VALUES (5000, 5), (20000, 10), (45000, 10), (90000, 10)) i(inc, w)`);
     await db.run(`CREATE TABLE src_acs_bg AS SELECT * FROM (VALUES
       (2024, '060750102001', 'B25002_001', 10.0),
       (2024, '060750102001', 'B25002_002', ${o.occupied}::DOUBLE)
@@ -247,8 +253,16 @@ describe('carsStep with census tables', () => {
   it('writes the files when the census places households', async () => {
     const db = await censusDb({ bgVintage: 2020, occupied: 9 });
     const outDir = mkdtempSync(join(tmpdir(), 'sfh-cars-'));
-    const r = await carsStep(db, { outDir, lock, transit: null, parcels, projectsPath: PROJECTS });
-    expect(r.counts['cars.households']).toBe(9);
+    // 100 homes: enough households that every car level holds some (the zone fit needs each).
+    const hundred = { ...parcels, existingUnits: Uint16Array.from([100]) } as ScenarioParcels;
+    const r = await carsStep(db, {
+      outDir,
+      lock,
+      transit: null,
+      parcels: hundred,
+      projectsPath: PROJECTS
+    });
+    expect(r.counts['cars.households']).toBe(90);
     expect(existsSync(join(outDir, 'scenarios/fzp/cars.bin'))).toBe(true);
     // The choice is fitted (constants only on this data), the model is complete and the report
     // has its sections.
@@ -274,13 +288,10 @@ describe('carsStep with census tables', () => {
     expect(r.report).toContain('### Choice model');
     expect(r.report).toContain('### Moves');
     expect(r.report).toContain('### Parking in new buildings');
-    // calibration.json's validator takes it as `cars`. One income here ties the quartile edges,
-    // which the validator rejects (strictly ascending); the check spreads them.
+    // calibration.json's validator takes the step's model as `cars`, its income edges as fitted.
+    expect(m.bands.income).toEqual([0, 20000, 45000, 50000]);
     const cal = JSON.parse(readFileSync(join(dirname(PROJECTS), 'calibration.json'), 'utf8'));
-    const spread = { ...m, bands: { ...m.bands, income: [0, 1, 2, 3] } };
-    expect(parseCalibration(JSON.parse(JSON.stringify({ ...cal, cars: spread }))).cars).toEqual(
-      spread
-    );
+    expect(parseCalibration(JSON.parse(JSON.stringify({ ...cal, cars: m }))).cars).toEqual(m);
     expect(r.report.join('\n')).toContain('DMV: no registrations in the lock');
     db.close();
   });

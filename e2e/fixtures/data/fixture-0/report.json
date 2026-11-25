@@ -48,7 +48,7 @@
     "buildings.underground_dropped": 1,
     "calibration.affordable.fallback": 1,
     "calibration.affordable.histories": 0,
-    "calibration.bytes": 59823,
+    "calibration.bytes": 76093,
     "calibration.funding.impliedHomesPerYear": 20,
     "calibration.funding.mohcdRows": 2,
     "calibration.funding.observedHomesPerYear": 25,
@@ -101,6 +101,34 @@
     "calibration.spells.streamlined.permitFiled": 0,
     "calibration.spells.streamlined.permitIssued": 0,
     "calibration.window.preRoll": 1,
+    "cars.acs.households": 1510,
+    "cars.acs.noCar": 390,
+    "cars.acs.workers": 1920,
+    "cars.acsRelease": 2024,
+    "cars.bytes": 555,
+    "cars.fit.constants": 3,
+    "cars.fit.noObservation": 0,
+    "cars.fit.observedZero": 0,
+    "cars.fit.records": 160,
+    "cars.homes": 74,
+    "cars.homesNoZone": 0,
+    "cars.households": 69,
+    "cars.households.noCar": 20,
+    "cars.lotsNoZone": 0,
+    "cars.moves.pumaFallback": 0,
+    "cars.moves.typeFallback": 96,
+    "cars.newHomes.records": 5,
+    "cars.parking.linkOn": 1,
+    "cars.pumas": 1,
+    "cars.pums.households": 3935,
+    "cars.pumsRelease": 2024,
+    "cars.types": 96,
+    "cars.workers": 66,
+    "cars.zones": 3,
+    "cars.zones.ipfUnmet": 0,
+    "cars.zones.occupiedFallback": 0,
+    "cars.zones.seedOnly": 0,
+    "cars.zonesJson.bytes": 667,
     "chunks.count": 2,
     "chunks.empty_polygon": 0,
     "chunks.label_outside_local": 0,
@@ -169,7 +197,7 @@
     "link.ppaOnly": 1,
     "link.satellites": 0,
     "link.splitComponents": 1,
-    "manifest.bytes": 6803,
+    "manifest.bytes": 8227,
     "multiphase.descendants.2007.0001PRX": 1,
     "multiphase.descendants.2010.0002PRX": 1,
     "multiphase.descendants.2012-000020PRX": 1,
@@ -678,7 +706,7 @@
       "ok": true
     },
     {
-      "detail": "manifest 6803/64000 B; neighborhoods 709/150000 B",
+      "detail": "manifest 8227/64000 B; neighborhoods 709/150000 B",
       "id": "V11",
       "ok": true
     },
@@ -748,7 +776,7 @@
       "ok": true
     },
     {
-      "detail": "parses, fill levels equal FILL_LEVELS, asOf matches projects.json (T4d asOf checked by the calibration step), 59823 B; baselineFunding 9 pools, 7 programmes; shares 947762 millionths; no programme for city-housing-stability-fund, city-redevelopment; affordableRoutes tier 4",
+      "detail": "parses, fill levels equal FILL_LEVELS, asOf matches projects.json (T4d asOf checked by the calibration step), 76093 B; baselineFunding 9 pools, 7 programmes; shares 947762 millionths; no programme for city-housing-stability-fund, city-redevelopment; affordableRoutes tier 4",
       "id": "V25",
       "ok": true
     },
@@ -803,12 +831,12 @@
       "ok": true
     },
     {
-      "detail": "no car data",
+      "detail": "3 zones, 69 households, 0 lots in no zone",
       "id": "V38",
       "ok": true
     },
     {
-      "detail": "no car data",
+      "detail": "3 features",
       "id": "V39",
       "ok": true
     }
@@ -822,7 +850,7 @@
     "derivedData": "ODbL-1.0",
     "notice": "Derived data files under /data/ that incorporate OpenStreetMap or Overture data are made available under the ODbL 1.0."
   },
-  "lockSha256": "f7dfb1b7f62884f06100742bd25c9334db53f3efd6e46c98ce1a954dbcdf719d",
+  "lockSha256": "4c4cbc9e3974462f30a0d4b9b236f290bfd24106dbff9587d4dc376c46f41bb4",
   "tilesSkipped": false,
   "toolVersions": {
     "duckdb": "1.5.6",
@@ -847,6 +875,8 @@
     "construction-verified.json: BP:209901010099 names no open history; not applied",
     "2012-000020PRX: no free DA parcel; score-only",
     "rhna.xdhtLagDays 633 > 120: xdht-4php completions look stale",
+    "cars: the dataset's affordable completions by tier (rhnaCompletedNet.byTier very low, low, moderate) sum to 0; the tier shares are the PUMS new-home movers at or below the moderate AMI limit, split by the AMI table",
+    "cars: no SF cost per space for surface parking; projects built with surface parking get no parking cost (zero shift)",
     "rung 3 (literature synthetic): discretionary preApplication",
     "rung 3 (literature synthetic): streamlined preApplication",
     "rung 3 (literature synthetic): permitOnly preApplication",

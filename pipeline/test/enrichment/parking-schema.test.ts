@@ -1,9 +1,16 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { AMI_JSON, parseAmiFile } from '../../enrichment/ami-schema';
-import { PARKING_JSON, parseParkingFile } from '../../enrichment/parking-schema';
+import {
+  PARKING_JSON,
+  parseFixtureParkingFile,
+  parseParkingFile
+} from '../../enrichment/parking-schema';
 
 const readJson = (p: string): unknown => JSON.parse(readFileSync(p, 'utf8'));
+/** The mini fixture's parking facts: an invented, tier-4 cost (ruling P3). */
+const FIXTURE_PARKING = new URL('../fixtures/mini/enrichment/parking.json', import.meta.url)
+  .pathname;
 
 const cite = {
   label: 'Strategic Economics, Hub memo, 2017-01-18',
@@ -94,5 +101,41 @@ describe('parseParkingFile', () => {
   it('parses the committed parking.json and ami.json', () => {
     expect(parseParkingFile(readJson(PARKING_JSON)).searched.length).toBeGreaterThan(0);
     expect(parseAmiFile(readJson(AMI_JSON)).years[0].bySize).toHaveLength(8);
+  });
+});
+
+describe('parseFixtureParkingFile (ruling P3)', () => {
+  const invented = (over: Record<string, unknown> = {}) => ({
+    ...withCost({}),
+    costPerSpace: {
+      surface: null,
+      podium: null,
+      belowGrade: {
+        value: 70000,
+        dollarsYear: 2016,
+        tier: 4,
+        invented: true,
+        method: 'Invented test data',
+        ...over
+      }
+    }
+  });
+
+  it("reads the mini fixture's invented tier-4 cost", () => {
+    const f = parseFixtureParkingFile(readJson(FIXTURE_PARKING));
+    expect(f.costPerSpace?.belowGrade).toMatchObject({ tier: 4, invented: true });
+    expect(parseFixtureParkingFile(invented()).costPerSpace?.belowGrade?.value).toBe(70000);
+  });
+
+  it("the live parser rejects the mini fixture's file and any invented cost", () => {
+    expect(() => parseParkingFile(readJson(FIXTURE_PARKING))).toThrow(/parking: /);
+    expect(() => parseParkingFile(invented())).toThrow();
+  });
+
+  it('still takes cited SF costs, and rejects an invented cost not marked tier 4 and invented', () => {
+    expect(parseFixtureParkingFile(withCost({})).costPerSpace?.belowGrade?.value).toBe(80000);
+    expect(() => parseFixtureParkingFile(invented({ tier: 2 }))).toThrow();
+    expect(() => parseFixtureParkingFile(invented({ invented: false }))).toThrow();
+    expect(() => parseFixtureParkingFile(invented({ method: 'A cost' }))).toThrow();
   });
 });

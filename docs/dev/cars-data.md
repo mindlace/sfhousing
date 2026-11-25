@@ -8,7 +8,11 @@ reading those files.
 
 Two committed files carry the facts code reads: `pipeline/enrichment/parking.json`
 (`parseParkingFile`, `pipeline/enrichment/parking-schema.ts`) and `pipeline/enrichment/ami.json`
-(`parseAmiFile`, `pipeline/enrichment/ami-schema.ts`).
+(`parseAmiFile`, `pipeline/enrichment/ami-schema.ts`). The mini fixture reads its own
+`pipeline/test/fixtures/mini/enrichment/parking.json` and `ami.json` (2024 only). Its parking costs
+are invented, marked `tier: 4` and `invented: true`, so fixture-0 has the parking link on and e2e
+covers it; only `parseFixtureParkingFile` accepts such a cost, and the build uses it on fixture
+builds only, so `parseParkingFile` keeps the live file to cited SF sources (ruling P3).
 
 ## For the owner
 

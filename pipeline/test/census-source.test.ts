@@ -588,9 +588,18 @@ describe('fetchDmv', () => {
   });
 });
 
+/** The mini fixture's lock without its Census entries (it has them since car-ownership Task 7). */
+function miniLockWithoutCensus(): Lock {
+  const lock = readLock(join(MINI, 'sources.lock.json'));
+  return { sources: lock.sources.filter((s) => !censusTableOf(s.id)) };
+}
+
 describe('normaliseAll without census entries', () => {
-  it('normalises without census entries (the fixture lock)', async () => {
-    const lockWithoutCensus = readLock(join(MINI, 'sources.lock.json'));
+  it('normalises without census entries (the fixture lock less its census)', async () => {
+    expect(
+      readLock(join(MINI, 'sources.lock.json')).sources.some((s) => s.id.startsWith('census-'))
+    ).toBe(true);
+    const lockWithoutCensus = miniLockWithoutCensus();
     expect(lockWithoutCensus.sources.some((s) => s.id.startsWith('census-'))).toBe(false);
     const db = await openDuck();
     const norm = tmp();
@@ -628,7 +637,7 @@ describe('normaliseAll without census entries', () => {
       ),
       NOW
     );
-    const lock = readLock(join(MINI, 'sources.lock.json'));
+    const lock = miniLockWithoutCensus();
     lock.sources.push(e);
     // The mini raw files are read by name; the census raw file is by sha, so copy it in by name.
     const raw = tmp();

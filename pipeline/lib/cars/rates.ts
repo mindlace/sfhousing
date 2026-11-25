@@ -495,6 +495,8 @@ export function parkingOf(
     const cpiFactor = cpiP / cpiY;
     const escalated = Math.round(c.value * factor * cpiFactor);
     cost[type] = escalated;
+    // A fixture's invented cost (ruling P3; the live parser rejects one) has no source: tier 4.
+    const cited = 'sources' in c ? c.sources : [];
     lines.push({
       type,
       value: c.value,
@@ -502,13 +504,13 @@ export function parkingOf(
       factor,
       cpiFactor,
       escalated,
-      sources: c.sources.map((x) => x.label)
+      sources: 'sources' in c ? c.sources.map((x) => x.label) : ['invented']
     });
     provenance.push({
-      tier: 2,
+      tier: 'tier' in c ? c.tier : 2,
       label: `Cost per ${type} parking space, ${P} dollars`,
       sources: [
-        ...c.sources.map((x) => ({ label: x.label, url: x.url })),
+        ...cited.map((x) => ({ label: x.label, url: x.url })),
         { label: index.source.label, url: index.source.url },
         ...cpiSource
       ],
@@ -518,7 +520,7 @@ export function parkingOf(
         `${last} after it), then prices by BLS CPI-U San Francisco-Oakland-Hayward ` +
         `(${cpi.seriesId}, annual average${stand}): ` +
         `${c.value} x ${at(P)} / ${at(c.dollarsYear)} x ${cpiP} / ${cpiY} = ${escalated}.`,
-      n: c.sources.length,
+      n: cited.length,
       window: [`${c.dollarsYear}-01-01`, `${P}-12-31`]
     });
   }

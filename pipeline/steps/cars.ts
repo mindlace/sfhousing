@@ -5,11 +5,11 @@
 // mixes and the parking facts (pipeline/lib/cars/rates.ts), completing the CarModel that
 // calibration.json carries as `cars`. Writes scenarios/fzp/cars.bin and
 // scenarios/fzp/car-zones.json. Without the Census lock entries it writes nothing and returns
-// nulls (the mini fixture until it gains them).
+// nulls.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { deflateRawSync } from 'node:zlib';
-import { encodeCarData, type CarData } from '../../src/lib/data/cars-codec';
+import { deflateRawSync, inflateRawSync } from 'node:zlib';
+import { decodeCarData, encodeCarData, type CarData } from '../../src/lib/data/cars-codec';
 import type { ScenarioParcels } from '../../src/lib/data/scenario-codec';
 import type { TransitNetwork } from '../../src/lib/data/transit';
 import { CAR_LEVELS, typeCount, type CarModel } from '../../src/lib/sim/cars';
@@ -19,7 +19,7 @@ import { DMV_ID, acsBgVintage, censusTableOf, type CensusTable } from '../census
 import { AMI_JSON, parseAmiFile } from '../enrichment/ami-schema';
 import { CPI_JSON, parseCpiFile } from '../enrichment/cpi-schema';
 import { parseMarketFile } from '../enrichment/market-schema';
-import { PARKING_JSON, parseParkingFile } from '../enrichment/parking-schema';
+import { PARKING_JSON, parseParkingFile, type ParkingFile } from '../enrichment/parking-schema';
 import { zoneAccess } from '../lib/cars/access';
 import { IPF, IPF_REPORT_ERR, MARGINS, WORKERS_TOTAL, typeBandsOf } from '../lib/cars/config';
 import {
@@ -54,6 +54,51 @@ import { CARS_BIN, CAR_ZONES_JSON } from '../lib/scenario-files';
 import { MARKET_JSON } from './calibration';
 import { PROJECTS_JSON } from './projects';
 
+/** The decoded cars.bin the golden compares (deflate bytes may differ across zlib builds). */
+export const CARS_DUMP = 'scenarios/fzp/cars.decoded.json';
+
+/** Inflate and decode a written cars.bin against parcels.bin's row count; throws naming the file. */
+export function readCarsBin(file: string, parcelCount: number): CarData {
+  try {
+    return decodeCarData(new Uint8Array(inflateRawSync(readFileSync(file))), parcelCount);
+  } catch (e) {
+    throw new Error(`cars: ${file} does not decode: ${(e as Error).message}`, { cause: e });
+  }
+}
+
+/**
+ * The decoded cars.bin as JSON: every column, one line each; households one line per zone and
+ * type (its CAR_LEVELS counts).
+ */
+export function formatCarsDump(d: CarData): string {
+  const j = (v: ArrayLike<number> | string[]) => JSON.stringify(Array.from(v as ArrayLike<number>));
+  const cells = d.types * CAR_LEVELS;
+  const rows: string[] = [];
+  for (let z = 0; z < d.zones.length; z++)
+    for (let t = 0; t < d.types; t++) {
+      const at = z * cells + t * CAR_LEVELS;
+      rows.push(`    ${j(d.households.subarray(at, at + CAR_LEVELS))}`);
+    }
+  return (
+    [
+      '{',
+      `  "zones": ${JSON.stringify(d.zones)},`,
+      `  "pumas": ${JSON.stringify(d.pumas)},`,
+      `  "zonePuma": ${j(d.zonePuma)},`,
+      `  "areaM2": ${j(d.areaM2)},`,
+      `  "occupied": ${j(d.occupied)},`,
+      `  "access": ${j(d.access)},`,
+      `  "constant": ${j(d.constant)},`,
+      `  "lotZone": ${j(d.lotZone)},`,
+      `  "types": ${d.types},`,
+      '  "households": [',
+      rows.join(',\n'),
+      '  ]',
+      '}'
+    ].join('\n') + '\n'
+  );
+}
+
 export interface CarsStepOut {
   data: CarData | null;
   /** The complete model (choice, moves, new-home mixes, parking): calibration.json `cars`. */
@@ -73,6 +118,11 @@ export interface CarsStepOpts {
   parcels: ScenarioParcels;
   /** Parking facts (default pipeline/enrichment/parking.json; the fixture's on a fixture build). */
   parkingPath?: string;
+  /**
+   * The parking file's parser (default `parseParkingFile`, the live rules); a fixture build passes
+   * `parseFixtureParkingFile`, which also takes an invented tier-4 cost (ruling P3).
+   */
+  parseParking?: (v: unknown) => ParkingFile;
   /** SF AMI by year and household size (default pipeline/enrichment/ami.json). */
   amiPath?: string;
   /** BLS CPI-U SF annual averages for the cost per space (default pipeline/enrichment/cpi.json). */
@@ -242,7 +292,9 @@ export async function carsStep(db: Duck, o: CarsStepOpts): Promise<CarsStepOut> 
     if (!existsSync(path)) throw new Error(`cars: no ${what} at ${path}`);
     return JSON.parse(readFileSync(path, 'utf8'));
   };
-  const parkingFile = parseParkingFile(readJson(o.parkingPath ?? PARKING_JSON, 'parking facts'));
+  const parkingFile = (o.parseParking ?? parseParkingFile)(
+    readJson(o.parkingPath ?? PARKING_JSON, 'parking facts')
+  );
   const ami = parseAmiFile(readJson(o.amiPath ?? AMI_JSON, 'SF AMI table'));
   const marketPath = o.marketPath ?? MARKET_JSON;
   const market = parseMarketFile(readJson(marketPath, 'market file'), marketPath);

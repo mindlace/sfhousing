@@ -425,7 +425,9 @@ describe('calibration invariants on fixture-0', () => {
           path: MARKET_JSON
         },
         funding: parseFundingFile(JSON.parse(readFileSync(FUNDING_JSON, 'utf8')), FUNDING_JSON),
-        mohcd: MOHCD_RAW
+        mohcd: MOHCD_RAW,
+        // The car step's model as the build wrote it (the mini city has a Census population).
+        cars: { model: (JSON.parse(json) as Calibration).cars ?? null, report: [] }
       };
       const a = await calibrate(input, FIXTURE_CAL);
       const b = await calibrate(input, FIXTURE_CAL);

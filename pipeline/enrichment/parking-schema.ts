@@ -5,8 +5,9 @@
  * docs/dev/cars-data.md. Pipeline only (zod).
  *
  * The live file never carries an invented cost: every cost source is an SF source (`sf: true`) and
- * a cost has no tier field. A fixture parser for an invented cost can reuse `parkingFileSchema`
- * with its own cost schema (spec ruling P3).
+ * a cost has no tier field. Only the mini fixture's file (its enrichment/parking.json) is read by
+ * `parseFixtureParkingFile`, which also takes an invented cost marked tier 4 (spec ruling P3), so
+ * e2e covers the parking link; `parseParkingFile` rejects such a cost.
  */
 import path from 'node:path';
 import { z } from 'zod';
@@ -32,9 +33,28 @@ export interface SfCost {
   method: string;
 }
 
+/**
+ * A test-data cost (the mini fixture only, ruling P3): invented, no source, provenance tier 4.
+ * `parseParkingFile` never returns one.
+ */
+export interface InventedCost {
+  value: number;
+  dollarsYear: number;
+  tier: 4;
+  invented: true;
+  /** Says it is invented and why. */
+  method: string;
+}
+
+export type ParkingCost = SfCost | InventedCost;
+
 export interface ParkingFile {
   /** null: no SF source found; the parking-to-odds link is off. */
-  costPerSpace: { surface: SfCost | null; podium: SfCost | null; belowGrade: SfCost | null } | null;
+  costPerSpace: {
+    surface: ParkingCost | null;
+    podium: ParkingCost | null;
+    belowGrade: ParkingCost | null;
+  } | null;
   /** Spaces built per space used; tier 0-2 from SF per-project counts, 3 from literature. */
   supplyOverUse: { value: number; tier: 0 | 1 | 2 | 3; sources: Cite[]; method: string };
   /** What was searched, always; must be non-empty when costPerSpace is null. */
@@ -69,6 +89,14 @@ const sfCost = z.strictObject({
   dollarsYear: z.number().int().min(1990).max(2100),
   sources: z.array(sfCite).min(1, 'sources: a cost needs at least one SF source'),
   method: text
+});
+
+const inventedCost = z.strictObject({
+  value: z.number().positive(),
+  dollarsYear: z.number().int().min(1990).max(2100),
+  tier: z.literal(4, { error: 'tier: an invented cost is tier 4' }),
+  invented: z.literal(true),
+  method: text.refine((m) => /invented/i.test(m), 'method: must say the cost is invented')
 });
 
 /** The file's shape around a cost schema: the live file passes `sfCost`. */
@@ -110,10 +138,23 @@ export function parkingFileSchema(cost: z.ZodType) {
 }
 
 const PARKING_FILE = parkingFileSchema(sfCost);
+const FIXTURE_PARKING_FILE = parkingFileSchema(z.union([sfCost, inventedCost]));
 
 /** Strict objects (no extra keys). Throws BuildError(`parking: $.path: message; ...`). */
 export function parseParkingFile(v: unknown): ParkingFile {
-  const r = PARKING_FILE.safeParse(v);
+  return parseWith(PARKING_FILE, v);
+}
+
+/**
+ * The mini fixture's parser (ruling P3): as `parseParkingFile`, and a cost may instead be invented
+ * (`InventedCost`). Fixture builds only; never for pipeline/enrichment/parking.json.
+ */
+export function parseFixtureParkingFile(v: unknown): ParkingFile {
+  return parseWith(FIXTURE_PARKING_FILE, v);
+}
+
+function parseWith(schema: z.ZodType, v: unknown): ParkingFile {
+  const r = schema.safeParse(v);
   if (!r.success) {
     const issues = r.error.issues.map((i) => {
       const at = i.path.map((p) => (typeof p === 'number' ? `[${p}]` : `.${String(p)}`)).join('');
