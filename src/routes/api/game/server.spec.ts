@@ -3,7 +3,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { freshDb, makePlatform, seedUser } from '$lib/server/test/auth-db';
 import { putGame, removeGame } from '$lib/server/game/store';
 import type { ListGames } from '$lib/game/save-api';
-import type { GameSave } from '$lib/game/saves';
+import type { GameSave } from '$lib/game/save-shape';
+import { NEW_GAME } from '$lib/game/state';
 import { newId } from '$lib/ids/base58';
 
 const { holder } = vi.hoisted(() => ({ holder: { db: undefined as unknown } }));
@@ -18,11 +19,11 @@ afterEach(() => {
 
 function makeSave(id: string, name: string): GameSave {
   return {
-    v: 1,
+    v: 2,
     id,
     name,
     nameIsDefault: false,
-    progress: { v: 1, level: 1, banked: {}, firstWinAt: null },
+    state: { ...structuredClone(NEW_GAME), firstWinAt: null },
     plan: null,
     policy: null,
     savedAt: new Date().toISOString()
@@ -62,7 +63,13 @@ describe('GET /api/game', () => {
     expect(body.handle).toBe('ana');
     expect(body.handleClaimed).toBe(false);
     expect(body.saves).toHaveLength(1);
-    expect(body.saves[0]).toMatchObject({ id: live, name: 'Live', rev: 1, level: 1 });
+    expect(body.saves[0]).toMatchObject({
+      id: live,
+      name: 'Live',
+      rev: 1,
+      phase: 'opening',
+      rung: 0
+    });
     expect(body.removed).toEqual([gone]);
   });
 });
