@@ -293,15 +293,15 @@ export function applyGrant(doc: SimPolicy4, grant: Grant, ctx: GrantCtx): SimPol
       </dl>
       <ul>
         <li>Every policy the function adds is on, with one span from month 1 and no end.</li>
-        <li><code>preset</code> and <code>measure</code>: when no policy has that preset, one is added as "+" adds it today. When one exists it is switched on.</li>
-        <li><code>stop</code>: the game's rule gains the stop type. When there is no such rule, one is added with that stop type and one band at <code>limits.reachM</code> and <code>limits.stories</code>.</li>
+        <li><code>preset</code> and <code>measure</code>: a policy of that kind that names the preset and is within <code>ctx.limits</code> is switched on when it is off. When there is none, one is added as "+" adds it today. A policy that names the preset and is outside <code>ctx.limits</code> is left as it is.</li>
+        <li><code>stop</code>: the game's rule gains the stop type. When there is no such rule, one is added with every stop type in <code>limits.stops</code> and one band at <code>limits.reachM</code> and <code>limits.stories</code>.</li>
         <li><code>stories</code>: the innermost band of the game's rule takes the new cap, and so does every band that was as tall as it.</li>
         <li><code>reach</code>: the outermost band of the game's rule takes the new distance.</li>
         <li><code>bands</code>: the game's rule gains a band. Where there is room inside <code>limits.reachM</code> it goes beyond the outermost, as the editor adds one today. Where there is none the outermost band is split in two.</li>
         <li>A grant whose policy the player removed or changed past recognition adds it again and leaves the player's own policies alone.</li>
         <li><code>hands</code>: the document is returned unchanged.</li>
         <li>The result is within <code>ctx.limits</code> and passes <code>parsePolicy4</code>.</li>
-        <li>The function never removes a policy and never changes one it did not make.</li>
+        <li>The function never removes a policy and changes no policy other than the one it adds, the game's rule, or a policy within <code>ctx.limits</code> that names the bought preset or measure.</li>
       </ul>
     </section>
 
@@ -1065,6 +1065,7 @@ import { monthFirstDay } from '$lib/sim/world/months';
 import { AddLimitError, addPolicy, type AddChoice } from '$lib/timeline/add';
 import type { Policy, SimPolicy4 } from '$lib/timeline/policy4';
 import { setOn } from '$lib/timeline/spans';
+import { within } from './limits';
 
 /** The label of the transit rule the game makes, as the "+" menu labels one. */
 export const GAME_TRANSIT_LABEL = 'Transit rule';
@@ -1102,7 +1103,10 @@ function givePreset(
   preset: string,
   ctx: GrantCtx
 ): SimPolicy4 {
-  const named = doc.kinds[kind].filter((p) =&gt; p.preset === preset);
+  // A policy of this preset that the limits would not run (custom timings, say) is left alone.
+  const named = doc.kinds[kind].filter(
+    (p) =&gt; p.preset === preset &amp;&amp; within(kind, p, ctx.limits)
+  );
   if (named.some((p) =&gt; p.on)) return doc;
   if (named.length &gt; 0) return setOn(doc, kind, named[0].id, true);
   if (!offered(kind, preset, ctx)) return doc;
@@ -1230,9 +1234,10 @@ function oneMoreBand(r: ZoningRule, most: number, maxM: number): ZoningRule | nu
       <section id="sec-design-grant-rules">
         <h4>Rules for each grant</h4>
         <ul>
-          <li><code>preset</code> and <code>measure</code>: when a policy of that kind already names the preset and is on, the document is returned unchanged.</li>
-          <li><code>preset</code> and <code>measure</code>: when policies name it and all are off, the first in list order is switched on with <code>setOn</code>. Its spans stay as the player left them.</li>
-          <li><code>preset</code> and <code>measure</code>: when none names it, one is added with <code>addPolicy</code> at month 1, as "+" adds it.</li>
+          <li><code>preset</code> and <code>measure</code>: only a policy of that kind that names the preset and is within <code>ctx.limits</code> counts. One that names it and is outside them, such as a permitting policy with custom timings while <code>custom</code> is false, is left as it is; <code>runnable</code> keeps it out of the forecast.</li>
+          <li><code>preset</code> and <code>measure</code>: when a counted policy is on, the document is returned unchanged.</li>
+          <li><code>preset</code> and <code>measure</code>: when counted policies exist and all are off, the first in list order is switched on with <code>setOn</code>. Its spans stay as the player left them.</li>
+          <li><code>preset</code> and <code>measure</code>: when none is counted, one is added with <code>addPolicy</code> at month 1, as "+" adds it.</li>
           <li>A preset or measure the calibration does not offer leaves the document unchanged. The node stays bought.</li>
           <li>A measure past the document's pool, programme or scale-entry limit (<code>AddLimitError</code>) leaves the document unchanged.</li>
           <li><code>stop</code>, <code>stories</code>, <code>reach</code> and <code>bands</code> with no game rule: the rule <code>game-transit</code> is added at the end of the zoning list, on, labelled "Transit rule", with every stop type in <code>limits.stops</code> and one band at <code>limits.reachM</code> and <code>limits.stories</code>, its one span from month 1 with no end. On the first stop purchase that is the one stop type bought.</li>
@@ -1244,7 +1249,7 @@ function oneMoreBand(r: ZoningRule, most: number, maxM: number): ZoningRule | nu
           <li><code>stories</code>, <code>reach</code> and <code>bands</code> switch the game rule on when they change it.</li>
           <li><code>hands</code>: the document is returned unchanged.</li>
           <li>Every edit returns the same document object when nothing changes.</li>
-          <li>The function never removes a policy, never lowers a value, and never touches a policy other than the one it adds, the game rule, or a policy that names the bought preset.</li>
+          <li>The function never removes a policy, never lowers a value, and never touches a policy other than the one it adds, the game rule, or a policy within <code>ctx.limits</code> that names the bought preset.</li>
         </ul>
       </section>
       <section id="sec-design-grant-edits">
@@ -1258,6 +1263,7 @@ function oneMoreBand(r: ZoningRule, most: number, maxM: number): ZoningRule | nu
             <tr><th scope="row">Removed a preset's or measure's policy</th><td>Adds a new one from month 1.</td></tr>
             <tr><th scope="row">Switched it off</th><td>Switches it on, keeping its dates.</td></tr>
             <tr><th scope="row">Moved its dates</th><td>Leaves its dates; switches it on if it is off.</td></tr>
+            <tr><th scope="row">Given a permitting policy custom timings or shares before <code>custom</code> is open</th><td>Leaves it as it is, outside the limits, and adds a new one from month 1 when no other policy of that preset is within them.</td></tr>
             <tr><th scope="row">Edited what a measure pays</th><td>The editor has set its <code>preset</code> to null, so a new measure is added beside it.</td></tr>
             <tr><th scope="row">Removed the game rule</th><td>The next zoning grant makes it again, with every stop type bought and one band at the limits.</td></tr>
             <tr><th scope="row">Switched the game rule off</th><td>Switches it on when the grant changes it.</td></tr>
@@ -1703,6 +1709,8 @@ export interface SideReport {
         <li>A measure grant on an empty document adds what <code>addPolicy</code> adds at month 1, and the measure's first payment falls on <code>monthFirstDay(asOf, 1)</code>.</li>
         <li>A preset or measure grant with a policy already on returns the same document object; with one off it switches the first on and keeps its spans.</li>
         <li>A measure whose policy was edited to <code>preset: null</code> gets a new policy beside it.</li>
+        <li>A preset grant on a document whose only policy of that preset has a custom edit, under limits with <code>custom</code> false, leaves that policy as it is and adds a new one; the result is unchanged by <code>runnable</code> apart from dropping the custom one.</li>
+        <li>A first stop grant after the player removed the game rule makes it with every stop type in <code>limits.stops</code>.</li>
         <li>A measure grant on a calibration without money returns the same document object.</li>
         <li>The first stop grant adds <code>game-transit</code> at the end of the zoning list with that stop type and one band at the limits' distance and stories.</li>
         <li>A second stop grant adds its stop type in <code>STOP_TYPES</code> order and switches an off rule on.</li>

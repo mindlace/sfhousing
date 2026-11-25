@@ -1,0 +1,752 @@
+<article>
+  <header>
+    <h1>Contracts implementation plan</h1>
+    <p>The incremental loop's shapes as code: game stubs, run stubs and four optional type additions.</p>
+    <aside data-kind="note"><strong>For agentic workers</strong> REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps are checklist items; progress is kept in the workspace ledger, not in the plan.</aside>
+  </header>
+
+  <section id="sec-overview">
+    <h2>Overview</h2>
+    <p><strong>Goal:</strong> Land every contract row's shape (G1–G6, E1, E2, M1, R1) as code that type-checks against the real modules and changes no behaviour.</p>
+    <p><strong>Architecture:</strong> Fifteen new stub files under <code>src/lib/game/</code> (real types, constants with starting values, function bodies that throw), each with a colocated spec; three optional additions to existing types in <code>src/lib/map/types.ts</code> and <code>src/lib/sim/world/score/types.ts</code>; an empty <code>setRunView</code> in <code>SimMap.svelte</code>. The spec gives every new file's text in full; the implementer writes it as given.</p>
+    <p><strong>Tech Stack:</strong> TypeScript, SvelteKit 2 / Svelte 5, Vitest (server project), ESLint + Prettier.</p>
+    <p><strong>Spec:</strong> <code>docs/superpowers/specs/2026-11-24-contracts-design.html</code> (read it in the package worktree <code>/Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-feel/.claude/worktrees/incremental-loop</code>). Sections implemented: §sec-design-rules, §sec-design-corrections, §sec-design-constants, §sec-design-open-limits, §sec-design-files (§sec-stub-state to §sec-stub-prefs), §sec-design-map, §sec-design-absent, §sec-design-score, §sec-design-verify; tests per §sec-tests.</p>
+  </section>
+
+  <section id="sec-global-constraints">
+    <h2>Global Constraints</h2>
+    <section id="sec-gc-design">
+      <h3>The design's global constraints (verbatim)</h3>
+      <ul>
+        <li>One future: the same policy document always gives the same forecast. No game state reaches the worker except through the policy document.</li>
+        <li>No file the dataset version hashes is changed: <code>pipeline</code>, <code>src/lib/config.ts</code>, <code>src/lib/{data,generator,timelapse}</code>, <code>src/lib/plan/{geometry,types}.ts</code>, <code>src/lib/sim/finance</code> (<code>pipeline/lib/version.ts:41</code>). The dataset version stays as it is.</li>
+        <li>A policy node acts on a lever the code already has, at a value the code already sources. No node invents a value.</li>
+        <li>The painted area, own pools, the City funding scale and market terms are never offered in a game.</li>
+        <li>Published plans and policies open and play in full, as today.</li>
+        <li>WCAG 2.2 AA: everything works from the keyboard; targets are at least 24 px; motion follows the reduced-motion setting; nothing flashes more than three times a second.</li>
+        <li>Page text is short. A node is a name, a line and a price.</li>
+        <li>The CSP is not widened. Sound is made in the browser; no audio file, font or script is added.</li>
+        <li>A runtime dependency is not added without a credit in <code>src/lib/attribution.ts</code>. None is expected.</li>
+        <li>Code style: 2-space indent, single quotes, no trailing commas, 100 columns.</li>
+        <li>Vitest runs with <code>expect.requireAssertions</code>. Tests are colocated.</li>
+        <li>A schema change goes through <code>npm run db:generate</code>. Migrations are never edited by hand.</li>
+        <li>Signoff fails on server stderr, on timing crutches and on retried flakes. Timing is measured only on a quiet machine.</li>
+        <li>Port 4173 belongs to whichever session started the preview. Never kill it; wait.</li>
+        <li>Commits use Conventional Commits and carry no Claude attribution.</li>
+        <li>Work happens in git worktrees under <code>.claude/worktrees/</code>.</li>
+      </ul>
+    </section>
+
+    <section id="sec-gc-rows">
+      <h3>The unit's interface rows (verbatim)</h3>
+      <table id="tbl-gc-rows">
+        <caption>Interface rows this unit produces the shape of</caption>
+        <thead>
+          <tr><th scope="col">Row</th><th scope="col">Owner</th><th scope="col">Layer</th><th scope="col">Summary</th><th scope="col">Contract</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">G1</th><td><code>game-core</code></td><td>Model commitment</td><td>The game's state and the saved game</td><td><a href="#sec-if-g1">G1</a></td></tr>
+          <tr><th scope="row">G2</th><td><code>game-core</code></td><td>Model commitment</td><td>Units by kind: balances, prices, spending</td><td><a href="#sec-if-g2">G2</a></td></tr>
+          <tr><th scope="row">G3</th><td><code>tree-catalogue</code></td><td>Model commitment</td><td>The tree: nodes, what is shown, buying</td><td><a href="#sec-if-g3">G3</a></td></tr>
+          <tr><th scope="row">G4</th><td><code>game-core</code></td><td>Model commitment</td><td>Limits from what is bought; whether a policy runs</td><td><a href="#sec-if-g4">G4</a></td></tr>
+          <tr><th scope="row">G5</th><td><code>tree-catalogue</code></td><td>Decomposition choice</td><td>Applying a grant to the policy document</td><td><a href="#sec-if-g5">G5</a></td></tr>
+          <tr><th scope="row">G6</th><td><code>game-core</code></td><td>Model commitment</td><td>The ladder, side goals, a run's result, settling</td><td><a href="#sec-if-g6">G6</a></td></tr>
+          <tr><th scope="row">E1</th><td><code>city-net</code></td><td>Decomposition choice</td><td>The homes a project replaces, in the city feed</td><td><a href="#sec-if-e1">E1</a></td></tr>
+          <tr><th scope="row">E2</th><td><code>money-wait</code></td><td>Decomposition choice</td><td>Homes waiting for money, by month</td><td><a href="#sec-if-e2">E2</a></td></tr>
+          <tr><th scope="row">M1</th><td><code>map-run</code></td><td>Decomposition choice</td><td>The map's run view</td><td><a href="#sec-if-m1">M1</a></td></tr>
+          <tr><th scope="row">R1</th><td><code>run-play</code></td><td>Model commitment</td><td>Drops, collecting, sound</td><td><a href="#sec-if-r1">R1</a></td></tr>
+        </tbody>
+      </table>
+
+      <section id="sec-if-g1">
+        <h4>G1 The game's state and the saved game</h4>
+        <pre><code data-lang="ts">// src/lib/game/state.ts
+import type { Day } from '$lib/timelapse/time';
+import type { RunResult } from './run-result';
+
+export type UnitKind = 'home';
+export const UNIT_KINDS: readonly UnitKind[] = ['home'];
+export type Units = Partial&lt;Record&lt;UnitKind, number&gt;&gt;;
+export type NodeId = string;
+
+export interface MetRung {
+  rung: number;
+  reachedOn: Day;
+  datasetVersion: string;
+  at: string;
+}
+
+export interface GameState {
+  v: 2;
+  phase: 'opening' | 'runs';
+  firstWinAt: string | null;
+  bought: Record&lt;NodeId, number&gt;;
+  units: Units;
+  rung: number;
+  met: MetRung[];
+  side: Record&lt;string, string&gt;;
+  runs: number;
+  last: RunResult | null;
+}
+
+export const NEW_GAME: GameState;
+
+// src/lib/game/save-shape.ts
+export interface GameSave {
+  v: 2;
+  id: string;
+  name: string;
+  nameIsDefault: boolean;
+  state: GameState;
+  plan: string | null;
+  policy: string | null;
+  savedAt: string;
+}
+
+export type SaveEntry = Pick&lt;GameSave, 'id' | 'name' | 'nameIsDefault' | 'savedAt'&gt; &amp;
+  Pick&lt;GameState, 'phase' | 'rung'&gt;;
+
+export function parseGameSave(json: unknown): GameSave | null;</code></pre>
+        <dl>
+          <dt><code>phase</code></dt><dd><code>'opening'</code> until the first run starts.</dd>
+          <dt><code>firstWinAt</code></dt><dd>ISO time the room goal was first met. The server makes the account on the first save that has it (D7).</dd>
+          <dt><code>bought</code></dt><dd>The level bought of each node, 1 or more. A node not bought has no entry.</dd>
+          <dt><code>units</code></dt><dd>The balance to spend.</dd>
+          <dt><code>rung</code></dt><dd>The index in the ladder of the deadline in play.</dd>
+          <dt><code>met</code></dt><dd>One entry per rung met, ascending by rung, each recorded once.</dd>
+          <dt><code>side</code></dt><dd>Side goal id to the ISO time it was first met.</dd>
+          <dt><code>last</code></dt><dd>The latest run's result, which the header shows between runs.</dd>
+        </dl>
+        <ul>
+          <li><code>NEW_GAME</code> is the opening with nothing bought, no units, rung 0 and no runs.</li>
+          <li><code>parseGameSave</code> returns null unless <code>v</code> is 2 at both levels (P15).</li>
+          <li>The result is rebuilt from the known fields. An unknown field is dropped.</li>
+          <li><code>parseGameSave</code> checks the shape only. It keeps a node, a level, a side goal or a rung the catalogue does not have; <code>fitGame</code> (G6) drops those in the browser.</li>
+          <li>The server stores what <code>parseGameSave</code> returns.</li>
+          <li>Unit amounts and <code>runs</code> are whole numbers of 0 or more.</li>
+          <li><code>plan</code> and <code>policy</code> stay opaque text, as they are today.</li>
+        </ul>
+        <p><strong>Removed:</strong> <code>Level</code>, <code>Progress</code>, <code>Banked</code>, <code>Bar</code>, <code>barOf</code>, <code>roundComplete</code>, <code>levelUp</code>, <code>standing</code>, <code>beats</code>.</p>
+      </section>
+
+      <section id="sec-if-g2">
+        <h4>G2 Units</h4>
+        <pre><code data-lang="ts">// src/lib/game/units.ts
+import type { Units } from './state';
+
+export function credit(a: Units, b: Units): Units;
+export function affords(have: Units, price: Units): boolean;
+export function spend(have: Units, price: Units): Units;
+export function shortBy(have: Units, price: Units): Units;
+export function total(u: Units): number;</code></pre>
+        <ul>
+          <li>A missing kind is 0.</li>
+          <li><code>spend</code> throws <code>RangeError</code> when <code>affords</code> is false.</li>
+          <li><code>shortBy</code> holds only the kinds the balance is short of.</li>
+          <li>No function changes its arguments.</li>
+        </ul>
+      </section>
+
+      <section id="sec-if-g3">
+        <h4>G3 The tree</h4>
+        <pre><code data-lang="ts">// src/lib/game/tree.ts
+import type { PresetId } from '$lib/sim-page/timing';
+import type { StopType } from '$lib/sim/levers/brushes';
+import type { GameState, NodeId, Units } from './state';
+
+export type Branch = 'permitting' | 'zoning' | 'money' | 'hands';
+
+export type Grant =
+  | { tag: 'preset'; preset: PresetId }
+  | { tag: 'measure'; preset: string }
+  | { tag: 'stop'; stop: StopType }
+  | { tag: 'bands'; max: 2 | 3 }
+  | { tag: 'stories'; max: number }
+  | { tag: 'reach'; maxM: number }
+  | { tag: 'hands'; what: 'radius' | 'linger'; value: number }
+  | { tag: 'hands'; what: 'auto' };
+
+export interface NodeLevel {
+  price: Units;
+  grant: Grant;
+  step: string;
+}
+
+export interface TreeNode {
+  id: NodeId;
+  branch: Branch;
+  label: string;
+  line: string;
+  after: NodeId[];
+  ring: number;
+  levels: NodeLevel[];
+  source: { text: string; href: string | null } | null;
+}
+
+export interface NodeView {
+  node: TreeNode;
+  level: number;
+  state: 'ready' | 'short' | 'done';
+  short: Units | null;
+}
+
+export type Bought =
+  | { ok: true; state: GameState; grant: Grant }
+  | { ok: false; reason: 'unknown' | 'hidden' | 'done' | 'short' };
+
+export function treeView(s: GameState, nodes?: readonly TreeNode[]): NodeView[];
+export function buy(s: GameState, id: NodeId, nodes?: readonly TreeNode[]): Bought;
+
+// src/lib/game/catalogue/nodes.ts
+export const NODES: readonly TreeNode[];</code></pre>
+        <dl>
+          <dt><code>after</code></dt><dd>The node is shown once any of these is bought. Empty: shown from the start.</dd>
+          <dt><code>ring</code></dt><dd>The node is shown once <code>GameState.rung</code> is at least this.</dd>
+          <dt><code>step</code></dt><dd>The words for the level, such as "8 stories".</dd>
+          <dt><code>line</code></dt><dd>One line saying what the node does.</dd>
+          <dt><code>source</code></dt><dd>Where the value comes from. Null for a step in what the player may choose.</dd>
+        </dl>
+        <ul>
+          <li><code>treeView</code> returns the shown nodes only, in catalogue order.</li>
+          <li><code>level</code> is the level bought, 0 for none. <code>state</code> speaks of the next level: <code>'ready'</code> when affordable, <code>'short'</code> when not, <code>'done'</code> when there is none.</li>
+          <li><code>buy</code> buys the next level: it spends its price and records the level. It changes nothing else.</li>
+          <li><code>nodes</code> defaults to <code>NODES</code>.</li>
+          <li>Every preset and measure node has a <code>source</code>. No grant multiplies homes.</li>
+          <li>Levels of one node are bought in order.</li>
+        </ul>
+      </section>
+
+      <section id="sec-if-g4">
+        <h4>G4 Limits</h4>
+        <pre><code data-lang="ts">// src/lib/game/limits.ts
+import type { StopType } from '$lib/sim/levers/brushes';
+import type { Policy, PolicyKind, SimPolicy4 } from '$lib/timeline/policy4';
+import type { GameState } from './state';
+import type { TreeNode } from './tree';
+
+export interface Hands {
+  radiusPx: number;
+  lingerMs: number;
+  auto: boolean;
+}
+
+export interface Limits {
+  open: boolean;
+  presets: ReadonlySet&lt;string&gt;;
+  measures: ReadonlySet&lt;string&gt;;
+  stops: ReadonlySet&lt;StopType&gt;;
+  bands: number;
+  stories: number;
+  reachM: number;
+  custom: boolean;
+  hands: Hands;
+}
+
+export const OPEN_LIMITS: Limits;
+export const BASE_HANDS: Hands;
+export const START_BANDS = 1;
+export const START_STORIES = 4;
+export const START_REACH_M = 402;
+export const FREE_MEASURES: readonly string[];
+
+export function limitsOf(s: GameState, nodes?: readonly TreeNode[]): Limits;
+export function within(kind: PolicyKind, p: Policy, l: Limits): boolean;
+export function runnable(doc: SimPolicy4, l: Limits): SimPolicy4;
+export function isGiven(p: Policy): boolean;</code></pre>
+        <dl>
+          <dt><code>open</code></dt><dd>The open game: every control, no limit (call 9).</dd>
+          <dt><code>presets</code>, <code>measures</code></dt><dd>The permitting preset ids and funding preset ids that run.</dd>
+          <dt><code>bands</code>, <code>stories</code>, <code>reachM</code></dt><dd>The most bands a transit rule may have, its tallest band and its furthest band. All 0 before the first stop type is bought.</dd>
+          <dt><code>custom</code></dt><dd>Custom timing and custom route shares may be set.</dd>
+          <dt><code>FREE_MEASURES</code></dt><dd><code>state-off</code> and <code>federal-credits-off</code>.</dd>
+        </dl>
+        <ul>
+          <li><code>limitsOf</code> folds the grants of every level bought. The largest <code>stories</code>, <code>reach</code>, <code>bands</code>, <code>radius</code> and <code>linger</code> win.</li>
+          <li>Once a stop type is bought, <code>bands</code>, <code>stories</code> and <code>reachM</code> are at least <code>START_BANDS</code>, <code>START_STORIES</code> and <code>START_REACH_M</code>.</li>
+          <li><code>BASE_HANDS</code> is a radius of 48 px, a linger of 4,000 ms and no auto. Every Hands step in the catalogue is above it.</li>
+          <li>Once the last rung is met, <code>stories</code> is 80, <code>bands</code> 3, <code>reachM</code> 3219, every stop type is in, <code>custom</code> is true, and <code>presets</code> also holds <code>observed</code>, the preset a custom timing policy carries.</li>
+          <li><code>within</code> does not read a policy's <code>on</code>.</li>
+          <li>A permitting policy is within the limits when its preset is in <code>presets</code>, and, unless <code>custom</code>, it has no custom edit and no custom route shares.</li>
+          <li>A transit rule is within the limits when its stop types are in <code>stops</code>, it has at most <code>bands</code> bands, no band is taller than <code>stories</code> and none is further than <code>reachM</code>.</li>
+          <li>A protection is within the limits once <code>stops</code> is not empty.</li>
+          <li>A painted area is within the limits only when <code>open</code> (P11).</li>
+          <li>A money policy is within the limits when it is given and its preset is in <code>measures</code>, or its preset is in <code>FREE_MEASURES</code> and <code>measures</code> is not empty. Any other money policy only when <code>open</code> (D4).</li>
+          <li><code>runnable</code> keeps the policies within the limits and returns the same document when it drops none.</li>
+          <li>With <code>OPEN_LIMITS</code>, <code>within</code> is always true.</li>
+        </ul>
+        <p><strong>Unchanged:</strong> <code>isGiven</code>. <strong>Removed:</strong> <code>Allowed</code>, <code>ALL_ALLOWED</code>, <code>allowedAt</code>, <code>unlocksAt</code>, <code>runs</code>, <code>playable</code>, <code>levelNeeded</code>, <code>simLocked</code>, <code>needsHigher</code>.</p>
+      </section>
+
+      <section id="sec-if-g5">
+        <h4>G5 Applying a grant</h4>
+        <pre><code data-lang="ts">// src/lib/game/grant.ts
+import type { addChoices } from '$lib/timeline/add';
+import type { SimPolicy4 } from '$lib/timeline/policy4';
+import type { Limits } from './limits';
+import type { Grant } from './tree';
+
+export const GAME_TRANSIT_ID = 'game-transit';
+
+export interface GrantCtx {
+  cal: Parameters&lt;typeof addChoices&gt;[1];
+  limits: Limits;
+}
+
+export function applyGrant(doc: SimPolicy4, grant: Grant, ctx: GrantCtx): SimPolicy4;</code></pre>
+        <dl>
+          <dt><code>limits</code></dt><dd>The limits after the purchase.</dd>
+          <dt><code>GAME_TRANSIT_ID</code></dt><dd>The id of the one transit rule the game makes.</dd>
+        </dl>
+        <ul>
+          <li>Every policy the function adds is on, with one span from month 1 and no end.</li>
+          <li><code>preset</code> and <code>measure</code>: when no policy has that preset, one is added as "+" adds it today. When one exists it is switched on.</li>
+          <li><code>stop</code>: the game's rule gains the stop type. When there is no such rule, one is added with that stop type and one band at <code>limits.reachM</code> and <code>limits.stories</code>.</li>
+          <li><code>stories</code>: the innermost band of the game's rule takes the new cap, and so does every band that was as tall as it.</li>
+          <li><code>reach</code>: the outermost band of the game's rule takes the new distance.</li>
+          <li><code>bands</code>: the game's rule gains a band. Where there is room inside <code>limits.reachM</code> it goes beyond the outermost, as the editor adds one today. Where there is none the outermost band is split in two.</li>
+          <li>A grant whose policy the player removed or changed past recognition adds it again and leaves the player's own policies alone.</li>
+          <li><code>hands</code>: the document is returned unchanged.</li>
+          <li>The result is within <code>ctx.limits</code> and passes <code>parsePolicy4</code>.</li>
+          <li>The function never removes a policy and never changes one it did not make.</li>
+        </ul>
+      </section>
+
+      <section id="sec-if-g6">
+        <h4>G6 The ladder, side goals and a run's result</h4>
+        <pre><code data-lang="ts">// src/lib/game/catalogue/ladder-years.ts
+export const LADDER_YEARS: readonly number[];
+
+// src/lib/game/catalogue/tuning.ts
+import type { Units } from '../state';
+export const RUNG_LUMP: Units;
+export const SIDE_TUNING: Record&lt;string, { target: number; reward: Units }&gt;;
+
+// src/lib/game/ladder.ts
+import type { Goal } from '$lib/goal/goal';
+import type { Day } from '$lib/timelapse/time';
+import type { SideGoal } from './side-goals';
+import type { GameState, Units } from './state';
+import type { TreeNode } from './tree';
+
+export interface Rung {
+  deadline: Day;
+  label: string;
+}
+
+export const RUNGS: number;
+
+export function ladder(asOf: Day): Rung[];
+export function goalAt(asOf: Day, rung: number, amount?: number): Goal;
+export function finished(s: GameState): boolean;
+export function takeNext(s: GameState): GameState;
+export function fitGame(
+  s: GameState,
+  nodes?: readonly TreeNode[],
+  goals?: readonly SideGoal[]
+): GameState;
+
+// src/lib/game/run-result.ts
+import type { TimelineView } from '$lib/sim/world/score/types';
+import type { Stage } from '$lib/timelapse/types';
+
+export interface RunTake {
+  dropped: Units;
+  collected: Units;
+}
+
+export interface RunReading {
+  homes: number;
+  reachedOn: Day | null;
+  stages: Record&lt;Exclude&lt;Stage, 'complete'&gt;, number&gt;;
+  waitingMoney: number | null;
+}
+
+export interface RunResult extends RunTake, RunReading {
+  rung: number;
+  amount: number;
+  datasetVersion: string;
+  at: string;
+  lump: Units | null;
+  side: { id: string; reward: Units }[];
+}
+
+export function readRun(view: TimelineView, goal: Goal): RunReading | null;
+export function resultOf(
+  s: GameState,
+  reading: RunReading,
+  take: RunTake,
+  input: SideInput,
+  meta: { amount: number; datasetVersion: string; at: string }
+): RunResult;
+export function settle(s: GameState, r: RunResult): GameState;
+
+// src/lib/game/side-goals.ts
+export interface SideInput {
+  view: TimelineView;
+  index: number;
+  take: RunTake;
+}
+
+export interface SideGoal {
+  id: string;
+  label: string;
+  ring: number;
+  reward: Units;
+  read(i: SideInput): { value: number; target: number } | null;
+}
+
+export const SIDE_GOALS: readonly SideGoal[];
+export const SIDE_SHOWN = 3;
+export function sideShown(s: GameState, goals?: readonly SideGoal[]): SideGoal[];</code></pre>
+        <dl>
+          <dt><code>LADDER_YEARS</code></dt><dd>The deadline years after the window's end, latest first, at most four. The measurement in <code>tree-catalogue</code> sets them.</dd>
+          <dt><code>RUNG_LUMP</code>, <code>SIDE_TUNING</code></dt><dd>The numbers the balance script tunes: the lump for a rung first met, and each side goal's target and reward by its id.</dd>
+          <dt><code>RUNGS</code></dt><dd><code>LADDER_YEARS.length + 1</code>.</dd>
+          <dt><code>homes</code></dt><dd>The goal's measure at the deadline's month.</dd>
+          <dt><code>reachedOn</code></dt><dd>The day the amount was first met at or before the deadline, or null.</dd>
+          <dt><code>stages</code></dt><dd>Homes in each stage short of complete at the deadline's month.</dd>
+          <dt><code>waitingMoney</code></dt><dd>Homes waiting for money at the deadline's month; null when the view has no such series.</dd>
+          <dt><code>lump</code></dt><dd><code>RUNG_LUMP</code> when this run is the first to meet its rung, else null.</dd>
+          <dt><code>index</code></dt><dd>The deadline's month in the view.</dd>
+        </dl>
+        <ul>
+          <li>Rung 0's deadline is <code>defaultGoal(asOf).deadline</code>. Rung <em>k</em> is the last day of December of <code>LADDER_YEARS[k - 1]</code>.</li>
+          <li>A rung's deadline is never after the rung before it and never before the dataset date's month.</li>
+          <li>The first ladder year is the largest multiple of five that is at least five years before the window's end year. The last is the first multiple of five at or after the measured year. When more than four five-year steps fit, the first and last are kept with two evenly between.</li>
+          <li>The cheapest node shown at rung 0 costs no more than <code>RUNG_LUMP</code>.</li>
+          <li>A side goal's <code>reward</code> and target are read from <code>SIDE_TUNING</code> by its id.</li>
+          <li><code>goalAt</code> is <code>defaultGoal(asOf)</code> with the rung's deadline, and with <code>amount</code> when given.</li>
+          <li><code>readRun</code> returns null while the view does not cover the deadline's month.</li>
+          <li><code>resultOf</code> lists a side goal when it is shown, not yet met, and its <code>value</code> is at least its <code>target</code>.</li>
+          <li><code>settle</code> credits <code>collected</code>, <code>lump</code> and each side reward; records the rung in <code>met</code> when <code>reachedOn</code> is set and the rung is not there; records each side goal; adds 1 to <code>runs</code>; sets <code>last</code>.</li>
+          <li><code>settle</code> never removes a met rung (call 8).</li>
+          <li><code>settle</code> pays a lump or a side reward only when it also records it, so a result settled twice pays its lump and its side rewards once. The store refuses a second settle of one result (G7).</li>
+          <li><code>takeNext</code> moves to the next rung when the rung in play is met and a next one exists. Otherwise it returns the same state.</li>
+          <li><code>finished</code> is true once the last rung is in <code>met</code>.</li>
+          <li><code>fitGame</code> drops a <code>bought</code> entry for a node the catalogue does not have and lowers a level above the node's last to it.</li>
+          <li><code>fitGame</code> drops a <code>side</code> entry for an id <code>SIDE_GOALS</code> does not have.</li>
+          <li><code>fitGame</code> lowers a rung at <code>RUNGS</code> or above to <code>RUNGS - 1</code> and drops met rungs at <code>RUNGS</code> or above.</li>
+          <li><code>fitGame</code> returns the same object when nothing is dropped or lowered.</li>
+          <li><code>sideShown</code> returns the first <code>SIDE_SHOWN</code> goals whose ring is open and which are not met.</li>
+          <li>A side goal's <code>read</code> returns null when the view lacks what it reads.</li>
+        </ul>
+      </section>
+
+      <section id="sec-if-e1">
+        <h4>E1 Existing homes in the city feed</h4>
+        <pre><code data-lang="ts">// src/lib/map/types.ts
+export interface CityDelta {
+  rows: number;
+  from?: number;
+  row: Int32Array;
+  lngLat: Float32Array;
+  days: Float32Array;
+  homes: Uint16Array;
+  existing: Uint16Array;
+  flags: Uint8Array;
+}</code></pre>
+        <dl>
+          <dt><code>existing</code></dt><dd>Per changed row: the homes the project takes off the goal's count, capped at 65,535. That is the homes on its lot once it has entered construction after the dataset date, and 0 otherwise.</dd>
+        </dl>
+        <ul>
+          <li><code>homes - existing</code> of a completed row is that row's effect on the series' <code>completedNet</code>.</li>
+          <li>A row whose marker has not begun carries 0, as <code>homes</code> does.</li>
+          <li>A marker that differs only in <code>existing</code> is a changed marker and is sent.</li>
+          <li><code>validateCityDelta</code> checks the new array's length.</li>
+          <li>The map's store and the page's index keep it per row.</li>
+        </ul>
+        <p><strong>Unchanged:</strong> every other field and rule of the feed.</p>
+      </section>
+
+      <section id="sec-if-e2">
+        <h4>E2 Homes waiting for money</h4>
+        <pre><code data-lang="ts">// src/lib/sim/world/score/types.ts
+export interface SeriesChunk {
+  from: number;
+  rows: MonthRow[];
+  planEffect: PlanRow[];
+  money: MoneyRow[] | null;
+  tiers: TierUnits[] | null;
+  waiting?: number[] | null;
+}
+
+export interface TimelineView {
+  // every field it has today, and:
+  waitingMoney?: number[] | null;
+}</code></pre>
+        <dl>
+          <dt><code>waiting</code></dt><dd>Per calendar month of the chunk: homes in applications waiting in the plan's funding line at the end of the model month that holds the calendar month's last day.</dd>
+        </dl>
+        <ul>
+          <li>Both fields stay optional. An absent field reads as null.</li>
+          <li>Null or absent exactly when <code>money</code> is null.</li>
+          <li>Homes are an application's gross units.</li>
+          <li>A row marked gone is not counted. A lot that is no longer free is not counted.</li>
+          <li>A lot with two applications counts once, by the larger.</li>
+          <li>Two calendar months that end in one model month share a value.</li>
+          <li>The value is of the plan's world, never the comparison's.</li>
+          <li><code>waitingMoney</code> is null when any chunk of the view lacks <code>waiting</code>.</li>
+          <li>No file under <code>src/lib/sim/finance</code> changes.</li>
+        </ul>
+      </section>
+
+      <section id="sec-if-m1">
+        <h4>M1 The map's run view</h4>
+        <pre><code data-lang="ts">// src/lib/map/types.ts
+export interface SimMapHandle {
+  // every method it has today, and:
+  setRunView(on: boolean): void;
+}</code></pre>
+        <ul>
+          <li><code>true</code>: the map remembers its camera, jumps to the whole city, flat and north up, and locks.</li>
+          <li>Locked: no drag, wheel, pinch, double click, key or control moves the camera, and the canvas container has <code>touch-action: none</code>.</li>
+          <li>Locked: hover picks, taps and clicks are not made or delivered, and no tooltip or card shows.</li>
+          <li>Locked: the map's bounds and zoom floor are lifted so the city fits a small box. They return at unlock.</li>
+          <li>Locked: a resize or a change of the bottom inset fits again.</li>
+          <li><code>false</code>: the map unlocks and jumps back to the remembered camera.</li>
+          <li>The jump is not animated.</li>
+          <li>A call with the value already in force does nothing.</li>
+          <li>The state survives a remount of the map, as the pan state does.</li>
+          <li>The fit keeps the city inside the map box less the bottom inset.</li>
+        </ul>
+      </section>
+
+      <section id="sec-if-r1">
+        <h4>R1 Drops, collecting and sound</h4>
+        <pre><code data-lang="ts">// src/lib/game/run/drops.ts
+import type { Day } from '$lib/timelapse/time';
+import type { Hands } from '../limits';
+import type { RunTake } from '../run-result';
+import type { Units } from '../state';
+
+export interface Marker {
+  row: number;
+  lng: number;
+  lat: number;
+  completed: Day;
+  homes: number;
+  existing: number;
+  policy: boolean;
+}
+
+export interface Drop {
+  row: number;
+  lng: number;
+  lat: number;
+  day: Day;
+  worth: Units;
+  policy: boolean;
+}
+
+export function planDrops(markers: Iterable&lt;Marker&gt;, asOf: Day, to: Day): Drop[];
+
+export interface RunFeed {
+  drops: readonly Drop[];
+  day: Day;
+  running: boolean;
+  project(lng: number, lat: number): { x: number; y: number } | null;
+}
+
+// src/lib/game/run/RunLayer.svelte
+interface RunLayerProps {
+  feed: RunFeed;
+  hands: Hands;
+  collectForMe: boolean;
+  sound: Sound;
+  ontake(t: RunTake): void;
+}
+
+// src/lib/game/run/sound.ts
+export interface Sound {
+  pop(): void;
+  collect(): void;
+  goal(): void;
+  buy(): void;
+}
+export function createSound(muted: () =&gt; boolean): Sound;
+
+// src/lib/game/run/prefs.ts
+export function readCollectForMe(storage: Storage | null): boolean;
+export function writeCollectForMe(storage: Storage | null, on: boolean): void;
+export function readMuted(storage: Storage | null): boolean;
+export function writeMuted(storage: Storage | null, muted: boolean): void;
+export function onPrefs(fn: () =&gt; void): () =&gt; void;</code></pre>
+        <dl>
+          <dt><code>completed</code></dt><dd>The marker's completed day; <code>NaN</code> when it has none.</dd>
+          <dt><code>worth</code></dt><dd><code>{ home: homes - existing }</code>.</dd>
+          <dt><code>policy</code></dt><dd>The project carries the map's policy mark, the diamond: its <code>CityDelta.flags</code> are not 0. A drop takes its marker's value.</dd>
+          <dt><code>project</code></dt><dd>The point's position in CSS pixels from the map box's top left, or null when it is off the map.</dd>
+          <dt><code>ontake</code></dt><dd>The run's totals so far, sent whenever they change and once when <code>running</code> turns false.</dd>
+        </dl>
+        <ul>
+          <li><code>planDrops</code> returns one drop for each marker completed after <code>asOf</code> and at or before <code>to</code> whose worth is above 0, ascending by day, then by row.</li>
+          <li><code>feed.drops</code> may be replaced during a run, as the forecast fills. Drops are matched by <code>row</code>: one already shown stays as it is, and none is counted twice.</li>
+          <li>A drop appears when <code>feed.day</code> reaches its day and is counted in <code>dropped</code> then.</li>
+          <li>A drop whose <code>policy</code> is true pops in the policy's colour, the colour of the map's diamond (<code>tl-halo-policy</code>); every other drop pops in the accent. Its worth and how it is collected do not change.</li>
+          <li>A drop is collected when its projected point is within <code>hands.radiusPx</code> of the ring's centre. It is counted in <code>collected</code> once.</li>
+          <li>A drop not collected is gone <code>hands.lingerMs</code> of wall time after it appeared.</li>
+          <li>With <code>collectForMe</code> or <code>hands.auto</code>, every drop is collected as it appears.</li>
+          <li>The ring's centre is the last pointer position over the map. Arrow keys move it by a fixed step; holding Shift moves it further.</li>
+          <li>The layer is a canvas over the map with <code>pointer-events: none</code>. It listens on the window.</li>
+          <li>Nothing the layer does reaches the worker or the policy document (P9).</li>
+          <li>With reduced motion, drops and counts appear and disappear without movement.</li>
+          <li>Nothing flashes more than three times a second.</li>
+          <li>A screen reader is told the run's totals at its end, never each drop.</li>
+          <li>The layer's root carries <code>data-dropped</code> and <code>data-collected</code>, the totals in homes.</li>
+          <li><code>onPrefs</code> calls <code>fn</code> after either preference is written in this page, and returns its own removal. A change applies to a run in progress.</li>
+          <li>The layer's words are in <code>src/lib/game/run/words.ts</code>.</li>
+          <li><code>createSound</code> makes its sounds with the Web Audio API and loads no file. It makes no sound while <code>muted()</code> is true or before a user gesture.</li>
+        </ul>
+      </section>
+    </section>
+
+    <section id="sec-gc-unit">
+      <h3>Rules of this unit (from the spec)</h3>
+      <ul>
+        <li>Every stub file's text is given in full in the spec, §sec-design-files; write it as given, letter for letter. §sec-design-corrections lists the only differences from the design's blocks.</li>
+        <li>Every function body is <code>throw new Error('not implemented');</code>; parameters carry a leading <code>_</code>; optional parameters with a design default are written optional with no default.</li>
+        <li>No stub imports a five-level file (<code>levels</code>, <code>progress</code>, <code>standing</code>, <code>allowed</code>, <code>copy</code>, <code>navigate</code>, <code>saves</code>, <code>store.svelte</code>, …). No five-level file is touched. No file is deleted. No existing test is edited.</li>
+        <li>No constant is frozen.</li>
+        <li>Done when <code>npm run check</code>, <code>npm run lint</code> and <code>npm run test:unit</code> pass with no new warning.</li>
+      </ul>
+    </section>
+  </section>
+
+  <section id="sec-review-focus">
+    <h2>Review Focus</h2>
+    <ul>
+      <li>A stub file that drifts from the spec's text (a renamed field, a widened type, an extra import): a consumer unit builds against the spec, not the file. The reviewer diffs each file against its §sec-stub-* block.</li>
+      <li><code>state.ts</code> or <code>save-shape.ts</code> gaining a run-time <code>$lib</code> import: the e2e helper loads them by relative path and would fail to resolve. Every <code>$lib</code> import there is <code>import type</code>.</li>
+      <li>An optional addition that breaks an existing literal of <code>CityDelta</code>, <code>SimMapHandle</code>, <code>SeriesChunk</code> or <code>TimelineView</code> (written as required by mistake): <code>npm run check</code> catches it, so it is run in Task 3.</li>
+      <li>The empty <code>setRunView</code> in <code>SimMap.svelte</code> changing behaviour or SSR: it must be an empty body, after <code>setBarMode</code>, and the last entry of <code>handle</code>; the existing <code>SimMap</code> suites stay green.</li>
+      <li>A literal in <code>OPEN_LIMITS</code> drifting from the constant it copies: the Task 1 spec ties each to <code>PRESETS</code>, <code>STOP_TYPES</code>, <code>MAX_BANDS</code>, <code>BAND_MAX_M</code> and <code>STORIES_MAX</code> by import.</li>
+    </ul>
+  </section>
+
+  <section id="sec-task-1">
+    <h2>Task 1: Game stubs G1–G6</h2>
+    <p>Delivers row G1. Delivers row G2. Delivers row G3. Delivers row G4. Delivers row G5. Delivers row G6.</p>
+    <p>The game files import each other's types in a cycle (<code>state</code> → <code>run-result</code> → <code>side-goals</code> → <code>state</code>, and <code>ladder</code>, <code>tree</code>), so they land together.</p>
+    <h3>Files</h3>
+    <ul>
+      <li>Create, with the text of the named spec section: <code>src/lib/game/state.ts</code> (§sec-stub-state), <code>save-shape.ts</code> (§sec-stub-save-shape), <code>units.ts</code> (§sec-stub-units), <code>tree.ts</code> (§sec-stub-tree), <code>catalogue/nodes.ts</code> (§sec-stub-nodes), <code>limits.ts</code> (§sec-stub-limits), <code>grant.ts</code> (§sec-stub-grant), <code>catalogue/ladder-years.ts</code> (§sec-stub-ladder-years), <code>catalogue/tuning.ts</code> (§sec-stub-tuning), <code>ladder.ts</code> (§sec-stub-ladder), <code>run-result.ts</code> (§sec-stub-run-result), <code>side-goals.ts</code> (§sec-stub-side-goals).</li>
+      <li>Create the colocated specs: <code>state.spec.ts</code>, <code>save-shape.spec.ts</code>, <code>units.spec.ts</code>, <code>tree.spec.ts</code>, <code>limits.spec.ts</code>, <code>grant.spec.ts</code>, <code>ladder.spec.ts</code>, <code>run-result.spec.ts</code>, <code>side-goals.spec.ts</code>, <code>catalogue/nodes.spec.ts</code>, <code>catalogue/ladder-years.spec.ts</code>, <code>catalogue/tuning.spec.ts</code> (all under <code>src/lib/game/</code>).</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>Day</code> (<code>$lib/timelapse/time</code>), <code>Stage</code> (<code>$lib/timelapse/types</code>), <code>PresetId</code> (<code>$lib/sim-page/timing</code>), <code>StopType</code> (<code>$lib/sim/levers/brushes</code>), <code>Policy</code>, <code>PolicyKind</code>, <code>SimPolicy4</code> (<code>$lib/timeline/policy4</code>), <code>Goal</code> (<code>$lib/goal/goal</code>), <code>TimelineView</code> (<code>$lib/sim/world/score/types</code>), <code>addChoices</code> (<code>$lib/timeline/add</code>), all as types.</li>
+      <li>Produces: every name of rows G1–G6 above, at the paths above. Task 2 imports <code>Units</code> from <code>src/lib/game/state.ts</code>.</li>
+    </ul>
+    <ol>
+      <li id="t1-s1"><input type="checkbox"> Write the twelve specs per spec §sec-tests-throws and §sec-tests-constants. Each stub function gets one test asserting <code>toThrow('not implemented')</code>, passing <code>{} as never</code> where a real value needs a fixture. The constant tests, exactly:
+        <pre><code data-lang="ts">// state.spec.ts
+expect(UNIT_KINDS).toEqual(['home']);
+expect(NEW_GAME).toEqual({
+  v: 2, phase: 'opening', firstWinAt: null, bought: {}, units: {},
+  rung: 0, met: [], side: {}, runs: 0, last: null
+});
+// limits.spec.ts
+expect(BASE_HANDS).toEqual({ radiusPx: 48, lingerMs: 4000, auto: false });
+expect([START_BANDS, START_STORIES, START_REACH_M]).toEqual([1, 4, 402]);
+expect(FREE_MEASURES).toEqual(['state-off', 'federal-credits-off']);
+expect(OPEN_LIMITS.open).toBe(true);
+expect(OPEN_LIMITS.custom).toBe(true);
+expect(OPEN_LIMITS.measures.size).toBe(0);
+expect(OPEN_LIMITS.hands).toBe(BASE_HANDS);
+expect([...OPEN_LIMITS.presets].sort()).toEqual(PRESETS.map((p) =&gt; p.id).sort());
+expect([...OPEN_LIMITS.stops].sort()).toEqual([...STOP_TYPES].sort());
+expect(OPEN_LIMITS.bands).toBe(MAX_BANDS);
+expect(OPEN_LIMITS.reachM).toBe(BAND_MAX_M);
+expect(OPEN_LIMITS.stories).toBe(STORIES_MAX);
+// imports: PRESETS from '$lib/sim-page/timing', STOP_TYPES from '$lib/sim/levers/brushes',
+// MAX_BANDS and BAND_MAX_M from '$lib/sim-page/transit-edit', STORIES_MAX from '$lib/plan/constants'
+// grant.spec.ts
+expect(GAME_TRANSIT_ID).toBe('game-transit');
+// catalogue/nodes.spec.ts
+expect(NODES).toEqual([]);
+// catalogue/ladder-years.spec.ts
+expect(LADDER_YEARS).toEqual([2060]);
+// ladder.spec.ts
+expect(RUNGS).toBe(LADDER_YEARS.length + 1);
+// catalogue/tuning.spec.ts
+expect(RUNG_LUMP).toEqual({ home: 2000 });
+expect(SIDE_TUNING).toEqual({});
+// side-goals.spec.ts
+expect(SIDE_GOALS).toEqual([]);
+expect(SIDE_SHOWN).toBe(3);</code></pre>
+      </li>
+      <li id="t1-s2"><input type="checkbox"> Run them and see them fail (modules not found)
+        <pre><code data-lang="sh">npx vitest run --project server src/lib/game</code></pre>
+      </li>
+      <li id="t1-s3"><input type="checkbox"> Write the twelve source files with the spec's text, letter for letter (§sec-stub-state to §sec-stub-side-goals). Follow §sec-design-rules and §sec-design-corrections; add nothing.</li>
+      <li id="t1-s4"><input type="checkbox"> Run the specs and see them pass; then <code>npm run check</code> and <code>npm run lint</code> pass with no new warning
+        <pre><code data-lang="sh">npx vitest run --project server src/lib/game
+npm run check
+npm run lint</code></pre>
+      </li>
+      <li id="t1-s5"><input type="checkbox"> Commit
+        <pre><code data-lang="sh">git add src/lib/game
+git commit -m "feat(game): contract stubs for G1-G6"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-2">
+    <h2>Task 2: Run stubs R1</h2>
+    <p>Delivers row R1.</p>
+    <h3>Files</h3>
+    <ul>
+      <li>Create, with the text of the named spec section: <code>src/lib/game/run/drops.ts</code> (§sec-stub-drops), <code>run/sound.ts</code> (§sec-stub-sound), <code>run/prefs.ts</code> (§sec-stub-prefs).</li>
+      <li>Create the specs: <code>src/lib/game/run/drops.spec.ts</code>, <code>run/sound.spec.ts</code>, <code>run/prefs.spec.ts</code>.</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>Units</code> from <code>src/lib/game/state.ts</code> (Task 1); <code>Day</code> from <code>$lib/timelapse/time</code>; both as types.</li>
+      <li>Produces: <code>Marker</code>, <code>Drop</code>, <code>planDrops</code>, <code>RunFeed</code>, <code>Sound</code>, <code>createSound</code>, <code>readCollectForMe</code>, <code>writeCollectForMe</code>, <code>readMuted</code>, <code>writeMuted</code>, <code>onPrefs</code> as in row R1. <code>RunLayerProps</code> is not written (it belongs to <code>RunLayer.svelte</code>, which <code>run-play</code> writes).</li>
+    </ul>
+    <ol>
+      <li id="t2-s1"><input type="checkbox"> Write the three specs: one <code>toThrow('not implemented')</code> test per function: <code>planDrops</code>; <code>createSound</code>; <code>readCollectForMe</code>, <code>writeCollectForMe</code>, <code>readMuted</code>, <code>writeMuted</code>, <code>onPrefs</code>. Pass <code>null</code> for a storage and <code>{} as never</code> where a value needs a fixture.</li>
+      <li id="t2-s2"><input type="checkbox"> Run them and see them fail
+        <pre><code data-lang="sh">npx vitest run --project server src/lib/game/run</code></pre>
+      </li>
+      <li id="t2-s3"><input type="checkbox"> Write the three source files with the spec's text. <code>drops.ts</code> imports neither <code>Hands</code> nor <code>RunTake</code> (§sec-design-corrections).</li>
+      <li id="t2-s4"><input type="checkbox"> Run the specs, <code>npm run check</code> and <code>npm run lint</code>; all pass
+        <pre><code data-lang="sh">npx vitest run --project server src/lib/game/run
+npm run check
+npm run lint</code></pre>
+      </li>
+      <li id="t2-s5"><input type="checkbox"> Commit
+        <pre><code data-lang="sh">git add src/lib/game/run
+git commit -m "feat(game): contract stubs for R1"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-3">
+    <h2>Task 3: Optional type additions E1, E2, M1 and the empty <code>setRunView</code></h2>
+    <p>Delivers row E1. Delivers row E2. Delivers row M1.</p>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify <code>src/lib/map/types.ts</code>: <code>CityDelta</code> gains <code>existing?: Uint16Array</code> between <code>homes</code> (:81) and <code>flags</code> (:82); <code>SimMapHandle</code> gains <code>setRunView?(on: boolean): void</code> after <code>collapseCredit</code> (:145). Text and doc comments as in spec §sec-design-map.</li>
+      <li>Modify <code>src/lib/map/SimMap.svelte</code>: <code>export function setRunView(_on: boolean): void {}</code> with its doc comment right after <code>setBarMode</code> (ends near :452), and <code>setRunView</code> as the last entry of <code>handle</code> (after <code>collapseCredit</code>, :467).</li>
+      <li>Modify <code>src/lib/sim/world/score/types.ts</code>: <code>SeriesChunk</code> gains <code>waiting?: number[] | null</code> after <code>tiers</code>; <code>TimelineView</code> gains <code>waitingMoney?: number[] | null</code> after <code>compare</code>. Text and comments as in spec §sec-design-score.</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: nothing from Tasks 1–2.</li>
+      <li>Produces: the four optional members above. Per §sec-design-absent, no other file of <code>src/lib/map</code> or <code>src/lib/sim/world</code> changes: not <code>validateCityDelta</code>, <code>cityTransferables</code>, <code>CityStore</code>, <code>ActivityIndex</code>, <code>chunkOf</code> or <code>viewOf</code>, and not the two handle stubs.</li>
+    </ul>
+    <ol>
+      <li id="t3-s1"><input type="checkbox"> Make the three edits as the spec gives them. No new test (spec §sec-tests-build: nothing to test in an empty method or an optional field; the existing map, feed and score suites prove no behaviour changed).</li>
+      <li id="t3-s2"><input type="checkbox"> Verify the unit's done-when, all with no new warning
+        <pre><code data-lang="sh">npm run check
+npm run lint
+npm run test:unit</code></pre>
+      </li>
+      <li id="t3-s3"><input type="checkbox"> Commit
+        <pre><code data-lang="sh">git add src/lib/map/types.ts src/lib/map/SimMap.svelte src/lib/sim/world/score/types.ts
+git commit -m "feat(contracts): optional E1, E2 and M1 members and an empty setRunView"</code></pre>
+      </li>
+    </ol>
+  </section>
+</article>

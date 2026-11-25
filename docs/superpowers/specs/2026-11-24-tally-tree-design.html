@@ -418,9 +418,9 @@ export function onPrefs(fn: () =&gt; void): () =&gt; void;</code></pre>
         <li><code>planDrops</code> returns one drop for each marker completed after <code>asOf</code> and at or before <code>to</code> whose worth is above 0, ascending by day, then by row.</li>
         <li><code>feed.drops</code> may be replaced during a run, as the forecast fills. Drops are matched by <code>row</code>: one already shown stays as it is, and none is counted twice.</li>
         <li>A drop appears when <code>feed.day</code> reaches its day and is counted in <code>dropped</code> then.</li>
-        <li>A drop whose <code>policy</code> is true pops in the policy's colour, the colour of the map's diamond (<code>tl-halo-policy</code>); every other drop pops in the accent. Its worth and how it is collected do not change.</li>
+        <li>A drop whose <code>policy</code> is true pops as a diamond, the shape of the map's policy mark, in that mark's colour (<code>tl-halo-policy</code>); every other drop pops as a circle in the accent. The shape tells the two apart in every theme. Its worth and how it is collected do not change.</li>
         <li>A drop is collected when its projected point is within <code>hands.radiusPx</code> of the ring's centre. It is counted in <code>collected</code> once.</li>
-        <li>A drop not collected is gone <code>hands.lingerMs</code> of wall time after it appeared.</li>
+        <li>A drop not collected is gone the larger of <code>hands.lingerMs</code> and 400 ms of wall time after it appeared. When the run ends before that, it is gone 400 ms after the end, or at the end under reduced motion.</li>
         <li>With <code>collectForMe</code> or <code>hands.auto</code>, every drop is collected as it appears.</li>
         <li>The ring's centre is the last pointer position over the map. Arrow keys move it by a fixed step; holding Shift moves it further.</li>
         <li>The layer is a canvas over the map with <code>pointer-events: none</code>. It listens on the window.</li>
@@ -708,7 +708,7 @@ export function boughtLive(label: string, step: string): string; // 'Bought: Nea
 export const RUN = 'Run';
 export const RUN_BUSY = 'Getting the forecast ready';
 export function balanceText(n: number): string; // '◆ 1,652 to spend'
-export function balanceName(n: number): string; // '1,652 units to spend'
+export function balanceName(n: number): string; // '1 unit to spend' | '1,652 units to spend'
 export function takeNextText(label: string): string; // 'Take the next goal: Dec 2050'
 export const ENDING_TITLE = 'Every goal met';
 export function endingReached(reachedOn: Day): string; // 'Reached in Mar 2041'
@@ -776,7 +776,7 @@ export const COLLECT_BOUGHT = 'Always on: bought';</code></pre>
           <li>The title is <code>tallyTitle(result.reachedOn, deadline)</code>: "Goal met in Mar 2049" when the run met the goal, else "By Dec 2055".</li>
           <li>The homes line is <code>homesOfText(result.homes, result.amount)</code> with the first number in <code>strong</code>.</li>
           <li>The change follows the homes line in a <code>span data-testid="tally-change"</code>: <code>changeText(result.homes - before)</code>. It is absent when <code>before</code> is null.</li>
-          <li>The homes bar's fill is <code>min(1, homes / amount)</code> of the track, in <code>bg-accent dark:bg-accent-dark</code>, with <code>data-testid="tally-bar"</code> and the fill's width as <code>data-fill</code> (a whole percent).</li>
+          <li>The homes bar's fill is <code>max(0, min(1, homes / amount))</code> of the track, in <code>bg-accent dark:bg-accent-dark</code>, with <code>data-testid="tally-bar"</code> and the fill's width as <code>data-fill</code>, <code>Math.floor(fill * 100)</code>, so a bar reads 100 only once the goal is met.</li>
           <li>The units line is the mark then <code>collectedText(total(result.collected), total(result.dropped))</code>.</li>
           <li>A lump line <code>lumpText(total(result.lump))</code>, <code>data-testid="tally-lump"</code>, shows when <code>result.lump</code> is not null.</li>
           <li>One side line per entry of <code>result.side</code>, in its order, <code>data-testid="tally-side"</code>: <code>sideRewardText(total(reward), label)</code>. The label is that of the entry of <code>SIDE_GOALS</code> with the same id, or <code>SIDE_GOAL_FALLBACK</code>.</li>
@@ -953,7 +953,7 @@ export function branchRows(nodes: readonly NodeView[]): BranchRows[];</code></pr
         <h4>Focus and keys</h4>
         <ul>
           <li>On mount Run takes focus.</li>
-          <li>Escape while a detail is open, and not already handled, closes it and focuses that node's open button.</li>
+          <li>Escape while a detail is open, and not already handled, closes it, focuses that node's open button and calls <code>preventDefault</code>. It does not stop propagation: the header's overlays ignore an Escape already handled.</li>
           <li>Escape with no detail open is left alone.</li>
           <li>Opening a detail does not move focus.</li>
         </ul>
@@ -990,7 +990,7 @@ export function branchRows(nodes: readonly NodeView[]): BranchRows[];</code></pr
         <ul>
           <li>Line 1 is <code>goalLine(shownHomes, amount, deadline)</code>, where <code>shownHomes</code> is the rolling count (<a href="#sec-design-motion">Motion</a>). The part <code>HOMES_WORD</code> sits in a <code>max-sm:sr-only</code> span, so below sm line 1 reads "61,400 of 82,069 by Dec 2055" and its name stays whole.</li>
           <li>With <code>homes</code> null line 1 shows the goal alone ("82,069 homes by Dec 2055") and the bar is empty.</li>
-          <li>The bar sits under line 1 at every width: a track <code>block h-1 w-full</code>, its fill <code>min(1, shownHomes / amount)</code>, in <code>bg-accent dark:bg-accent-dark</code>. <code>data-fill</code> is the fill as a whole percent.</li>
+          <li>The bar sits under line 1 at every width: a track <code>block h-1 w-full</code>, its fill <code>max(0, min(1, shownHomes / amount))</code>, in <code>bg-accent dark:bg-accent-dark</code>. <code>data-fill</code> is <code>Math.floor(fill * 100)</code>, as for every bar in these parts.</li>
           <li>Line 2 is, joined by " · ": <code>GOAL_MET</code> when <code>met</code>; else <code>unlocksText(unlocks)</code> when <code>unlocks</code> is not null; else <code>LAST_GOAL</code>. Then <code>sideMetText(n)</code> when <code>n</code>, the count of <code>side</code> entries with <code>met</code> true, is above 0.</li>
           <li>Line 2 shows from sm and truncates with an ellipsis in the 20rem box; its <code>sr-only</code> copy is whole at every width.</li>
           <li>The mark when a side goal is met is the dot at the box's top right, at every width, while <code>n</code> is above 0.</li>
@@ -1004,7 +1004,7 @@ export function branchRows(nodes: readonly NodeView[]): BranchRows[];</code></pr
           <li>The pop-over is <code>SURFACE_POP absolute top-full z-50 mt-1 w-72 max-w-[calc(100vw-2rem)]</code>, positioned against the <code>&lt;header&gt;</code> (the nearest positioned ancestor; the headline's wrapper is not positioned).</li>
           <li>Its left edge is measured at open: the box's centre less half the pop-over's width, clamped to between 16 px and the header's width less the pop-over's width less 16 px. The pop-over's width is the smaller of 288 px and the header's width less 32 px.</li>
           <li>It holds an <code>h2</code> <code>SIDE_GOALS_TITLE</code> (<code>text-base font-semibold</code>) and a <code>ul</code>. With <code>side</code> empty the list is replaced by a <code>p</code> <code>NO_SIDE_GOALS</code>.</li>
-          <li>Each entry is an <code>li data-testid="side-goal" data-goal={goal.id} data-met={met || undefined}</code> with: the label (<code>font-semibold</code>); a bar of <code>min(1, value / target)</code> and <code>progressText(value, target)</code>; <code>priceText(total(goal.reward))</code> with the mark hidden and <code>unitsName(…)</code> as its <code>sr-only</code> text; and <code>MET</code> when <code>met</code>.</li>
+          <li>Each entry is an <code>li data-testid="side-goal" data-goal={goal.id} data-met={met || undefined}</code> with: the label (<code>font-semibold</code>); a bar of <code>max(0, min(1, value / target))</code> and <code>progressText(value, target)</code>. A target is always a whole number above 0 (<code>SIDE_TUNING</code>, held by tree-catalogue's <code>tuning.spec.ts</code>), so the bar needs no other guard; <code>priceText(total(goal.reward))</code> with the mark hidden and <code>unitsName(…)</code> as its <code>sr-only</code> text; and <code>MET</code> when <code>met</code>.</li>
           <li>Closing: the button again; Escape (not already handled, no modal dialog open), which also refocuses the button; a press outside the headline and the pop-over; another header overlay opening.</li>
           <li>The pop-over holds no control. Focus stays on the button while it is open.</li>
         </ul>
@@ -1141,7 +1141,7 @@ export const REVEAL_MS = 300;</code></pre>
           <tr><th scope="row"><code>GamePanel</code></th><td><code>game-panel</code>, <code>game-stage</code>, <code>game-sync</code>, <code>game-sound</code>, <code>game-collect</code>, <code>save-row</code>, <code>game-error</code></td></tr>
         </tbody>
       </table>
-      <p>Data attributes: <code>data-stage</code> on a stage row; <code>data-branch</code> on a branch; <code>data-node</code>, <code>data-state</code>, <code>data-level</code> and <code>data-on</code> on a node; <code>data-fill</code> on a bar; <code>data-met</code> and <code>data-flash</code> on the goal box; <code>data-goal</code> and <code>data-met</code> on a side goal.</p>
+      <p>Data attributes: <code>data-stage</code> on a stage row; <code>data-branch</code> on a branch; <code>data-node</code>, <code>data-state</code>, <code>data-level</code> and <code>data-on</code> on a node; <code>data-fill</code> on a bar, <code>Math.floor(fill * 100)</code> of its fill; <code>data-met</code> and <code>data-flash</code> on the goal box; <code>data-goal</code> and <code>data-met</code> on a side goal.</p>
     </section>
 
     <section id="sec-design-files-helpers">
