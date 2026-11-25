@@ -54,8 +54,8 @@ function view(o: ViewOpts = {}): TimelineView {
 
 const take = (dropped: Units, collected: Units): RunTake => ({ dropped, collected });
 const none = take({}, {});
-const read = (id: string, v: TimelineView, t: RunTake = none, index = 2) =>
-  byId(id).read({ view: v, index, take: t });
+const read = (id: string, v: TimelineView, t: RunTake = none, index = 2, inForce = true) =>
+  byId(id).read({ view: v, index, take: t, inForce });
 
 const state = (rung: number, side: string[] = []): GameState => ({
   ...NEW_GAME,
@@ -106,7 +106,9 @@ describe('side goals', () => {
     expect(g.map((x) => x.id)).toEqual(['collect-run']);
     expect(g[0].reward).toEqual({ home: 9 });
     expect(g[0].label).toBe('Collect 7 homes in a run');
-    expect(g[0].read({ view: view(), index: 2, take: take({}, { home: 7 }) })).toEqual({
+    expect(
+      g[0].read({ view: view(), index: 2, take: take({}, { home: 7 }), inForce: true })
+    ).toEqual({
       value: 7,
       target: 7
     });
@@ -119,10 +121,40 @@ describe('side goals', () => {
     });
     expect(read('policy-homes-1', view({ completed: 1200 }), none, 3)).toBeNull();
     expect(read('policy-homes-1', view({ completed: 1200 }), none, -1)).toBeNull();
-    expect(read('policy-homes-1', view({ completed: 1200, compare: 'preFzp' }))).toEqual({
-      value: 0,
-      target: 1000
-    });
+  });
+
+  it('policy goals read planEffect in force, whatever compare holds', () => {
+    for (const [id, o] of [
+      ['policy-homes-1', { completed: 1200 }],
+      ['approved-homes', { entitled: 2500 }]
+    ] as const) {
+      const want = 'completed' in o ? o.completed : o.entitled;
+      expect(read(id, view(o))?.value).toBe(want);
+      expect(read(id, view({ ...o, compare: 'preFzp' }))?.value).toBe(want);
+      expect(read(id, view({ ...o, compare: 'plan' }))?.value).toBe(want);
+    }
+  });
+
+  it('policy goals read 0 with nothing in force, whatever planEffect or compare holds', () => {
+    for (const compare of ['current', 'plan', 'preFzp']) {
+      for (const [id, o, target] of [
+        ['policy-homes-1', { completed: 99_000 }, 1000],
+        ['policy-homes-2', { completed: 99_000 }, 10000],
+        ['policy-homes-3', { completed: 99_000 }, 25000],
+        ['approved-homes', { entitled: 99_000 }, 2000]
+      ] as const) {
+        expect(read(id, view({ ...o, compare }), none, 2, false)).toEqual({ value: 0, target });
+      }
+    }
+    expect(read('policy-homes-1', view({ completed: 99_000 }), none, 3, false)).toBeNull();
+  });
+
+  it('goals that do not read planEffect ignore inForce', () => {
+    const v = view({ construction: 12000, pools: [{ id: 'u-x', spent: [0, 0, 150_500_000] }] });
+    const t = take({ home: 20000 }, { home: 10000 });
+    for (const id of ['building-homes', 'new-money', 'collect-run']) {
+      expect(read(id, v, t, 2, false)).toEqual(read(id, v, t, 2, true));
+    }
   });
 
   it('approved-homes reads entitled new', () => {
@@ -132,7 +164,6 @@ describe('side goals', () => {
     });
     expect(read('approved-homes', view({ entitled: 2500 }), none, 3)).toBeNull();
     expect(read('approved-homes', view({ entitled: 2500 }), none, -1)).toBeNull();
-    expect(read('approved-homes', view({ entitled: 2500, compare: 'preFzp' }))?.value).toBe(0);
   });
 
   it('collect-share-1 reads the percent collected', () => {
