@@ -81,9 +81,12 @@ const THEMED_FILES = [
   'src/lib/shell/Message.svelte',
   'src/lib/sharing/NoticeStack.svelte',
   'src/lib/sim-page/SimNotices.svelte',
-  'src/lib/game/WinCard.svelte',
-  'src/lib/game/LevelPanel.svelte',
-  'src/lib/shell/LevelCell.svelte'
+  'src/lib/game/ui/Tally.svelte',
+  'src/lib/game/ui/Tree.svelte',
+  'src/lib/game/ui/GoalHeadline.svelte',
+  'src/lib/game/ui/OpeningCard.svelte',
+  'src/lib/game/ui/GameCell.svelte',
+  'src/lib/game/ui/GamePanel.svelte'
 ];
 /** Themed files whose colours come from tokens and custom properties only: no hex at all. */
 const NO_HEX_FILES = [

@@ -1,6 +1,6 @@
 <script lang="ts">
-  // Test host: SimRowHeader (/sim's widest row) with a game provided, so the level cell and
-  // "Level up" sit in the row.
+  // Test host: SimRowHeader (/sim's widest row) with a game provided, so GameCell (the unit
+  // count) sits in the row.
   import { provideGame, type GameStore } from '$lib/game/store.svelte';
   import SimRowHeader from './SimRowHeader.svelte';
 
