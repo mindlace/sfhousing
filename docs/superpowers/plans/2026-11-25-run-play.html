@@ -21,11 +21,12 @@
 
   <section id="sec-global-constraints">
     <h2>Global Constraints</h2>
-    <p>Every task's requirements include this section. The rows and the design's constraints below are copied verbatim from the design doc.</p>
+    <p>Every task's requirements include this section. G2, G4 and the design's constraints below are copied verbatim from the design doc; R1 is copied verbatim from the <code>run-play</code> spec's <code>sec-if-r1</code>.</p>
 
     <section id="sec-gc-precondition">
-      <h3>Before Task 1</h3>
-      <aside data-kind="warning"><strong>Precondition</strong> This branch has neither the <code>contracts</code> stubs nor <code>game-core</code> (no <code>src/lib/game/run/</code>, <code>units.ts</code>, <code>limits.ts</code>, <code>state.ts</code> or <code>run-result.ts</code> exists here). The build graph makes <code>run-play</code> need G2 and G4 from <code>game-core</code>. Merge <code>game-core</code> (which carries <code>contracts</code>) into this branch before Task 1: Tasks 4, 6, 7, 8 and 10 call <code>credit</code> and <code>total</code>, which throw in the <code>contracts</code> stubs, and Task 10 imports <code>BASE_HANDS</code>.</aside>
+      <h3>The game-core dependency</h3>
+      <p>The <code>contracts</code> stubs are on this branch: <code>src/lib/game/run/{drops,sound,prefs}.ts</code> and their specs, <code>state.ts</code> (<code>Units</code> at <code>:7</code>), <code>run-result.ts</code> (<code>RunTake</code> at <code>:9</code>), <code>limits.ts</code> (<code>Hands</code> at <code>:7</code>, and <code>BASE_HANDS</code> already its real value at <code>:25</code>) and <code>units.ts</code>.</p>
+      <aside data-kind="warning"><strong>Needs game-core</strong> <code>credit</code> and <code>total</code> still throw <code>'not implemented'</code> (<code>src/lib/game/units.ts:4</code>, <code>:20</code>). Tasks 4, 6, 7, 8 and 10 call them (directly, or through <code>step</code> and <code>runOverText</code>), so their tests pass only once <code>game-core</code> is merged into this branch. Tasks 1, 2, 3 and 5 do not depend on it.</aside>
     </section>
 
     <section id="sec-gc-project">
@@ -206,9 +207,9 @@ export function onPrefs(fn: () =&gt; void): () =&gt; void;</code></pre>
           <li><code>planDrops</code> returns one drop for each marker completed after <code>asOf</code> and at or before <code>to</code> whose worth is above 0, ascending by day, then by row.</li>
           <li><code>feed.drops</code> may be replaced during a run, as the forecast fills. Drops are matched by <code>row</code>: one already shown stays as it is, and none is counted twice.</li>
           <li>A drop appears when <code>feed.day</code> reaches its day and is counted in <code>dropped</code> then.</li>
-          <li>A drop whose <code>policy</code> is true pops in the policy's colour, the colour of the map's diamond (<code>tl-halo-policy</code>); every other drop pops in the accent. Its worth and how it is collected do not change.</li>
+          <li>A drop whose <code>policy</code> is true pops as a diamond, the shape of the map's policy mark, in that mark's colour (<code>tl-halo-policy</code>); every other drop pops as a circle in the accent. The shape tells the two apart in every theme. Its worth and how it is collected do not change.</li>
           <li>A drop is collected when its projected point is within <code>hands.radiusPx</code> of the ring's centre. It is counted in <code>collected</code> once.</li>
-          <li>A drop not collected is gone <code>hands.lingerMs</code> of wall time after it appeared.</li>
+          <li>A drop not collected is gone the larger of <code>hands.lingerMs</code> and 400 ms of wall time after it appeared. When the run ends before that, it is gone 400 ms after the end, or at the end under reduced motion.</li>
           <li>With <code>collectForMe</code> or <code>hands.auto</code>, every drop is collected as it appears.</li>
           <li>The ring's centre is the last pointer position over the map. Arrow keys move it by a fixed step; holding Shift moves it further.</li>
           <li>The layer is a canvas over the map with <code>pointer-events: none</code>. It listens on the window.</li>
@@ -286,8 +287,9 @@ export function onPrefs(fn: () =&gt; void): () =&gt; void;</code></pre>
     <h2>Task order and lanes</h2>
     <ul>
       <li>R1's pieces land first: Tasks 1, 2 and 3 have no dependency inside this unit. R1 is complete at Task 8 (the layer's props).</li>
-      <li>Dependency edges: 4 → 7; 5 → 6 → 7 → 8 → 9 → 10; 1, 3 and 4 → 8; 1 → 5 (the <code>Drop</code> type).</li>
-      <li><strong>Independent groups</strong> (no shared file, no dependency edge): Task 2 alone touches nothing anyone else imports. Tasks 3 and 4 share no file with each other or with 5 to 7. So the unit can run as two lanes: lane A = Tasks 1, 2, 3, 4; lane B = Tasks 5, 6, 7 (after Task 1 for the <code>Drop</code> type); both merge before Task 8, then 8, 9, 10 are serial. Run as one serial lane in the order 1 to 10, nothing needs re-ordering.</li>
+      <li>Dependency edges: 4 → 7; 5 → 6 → 7 → 8 → 9 → 10; 1, 3 and 4 → 8. Task 5 needs only the <code>Drop</code> type, which the <code>contracts</code> stub already declares (<code>src/lib/game/run/drops.ts:15-22</code>), so it does not wait on Task 1.</li>
+      <li>External edge: <code>game-core</code> → Tasks 4, 6, 7, 8, 10 (<a href="#sec-gc-precondition">The game-core dependency</a>). Tasks 1, 2, 3 and 5 can run now.</li>
+      <li><strong>Independent groups</strong> (no shared file, no dependency edge): Task 2 alone touches nothing anyone else imports. Tasks 1, 3 and 4 share no file with each other or with 5 to 7. So the unit can run as two lanes: lane A = Tasks 1, 2, 3, 4; lane B = Tasks 5, 6, 7; both merge before Task 8, then 8, 9, 10 are serial. Run as one serial lane in the order 1 to 10, nothing needs re-ordering.</li>
     </ul>
   </section>
 
@@ -295,11 +297,11 @@ export function onPrefs(fn: () =&gt; void): () =&gt; void;</code></pre>
     <h2>Task 1: planDrops</h2>
     <p>Delivers row R1 (<code>Marker</code>, <code>Drop</code>, <code>planDrops</code>, <code>RunFeed</code>).</p>
     <ul>
-      <li>Modify: <code>src/lib/game/run/drops.ts</code> (replace the stub body)</li>
-      <li>Test: <code>src/lib/game/run/drops.spec.ts</code> (written over the stub spec)</li>
+      <li>Modify: <code>src/lib/game/run/drops.ts:24-26</code> (the stub body of <code>planDrops</code>; the types at <code>:5-33</code> already match R1 and stay)</li>
+      <li>Test: <code>src/lib/game/run/drops.spec.ts</code> (written over the stub spec's <code>toThrow</code> test, <code>:5-7</code>)</li>
     </ul>
     <ul>
-      <li>Consumes: <code>Day</code> (<code>src/lib/timelapse/time.ts:7</code>), <code>Units</code> (<code>src/lib/game/state.ts</code>, G1).</li>
+      <li>Consumes: <code>Day</code> (<code>src/lib/timelapse/time.ts:7</code>), <code>Units</code> (<code>src/lib/game/state.ts:7</code>, G1).</li>
       <li>Produces: the R1 types exactly as in <a href="#sec-gc-if-r1">R1</a>, and <code>planDrops(markers: Iterable&lt;Marker&gt;, asOf: Day, to: Day): Drop[]</code>.</li>
     </ul>
     <ol>
@@ -447,9 +449,9 @@ npx chreode timing-check --head HEAD</code></pre>
       <li>Create: <code>src/lib/game/run/run-model.ts</code>, <code>src/lib/game/run/run-model.spec.ts</code></li>
     </ul>
     <ul>
-      <li>Consumes: <code>Drop</code> (Task 1), <code>Hands</code> (G4), <code>RunTake</code> (G6), <code>Day</code>.</li>
+      <li>Consumes: <code>Drop</code> (<code>src/lib/game/run/drops.ts:15-22</code>, already declared by the stub), <code>Hands</code> (<code>src/lib/game/limits.ts:7</code>, G4), <code>RunTake</code> (<code>src/lib/game/run-result.ts:9</code>, G6), <code>Day</code>.</li>
       <li>Produces, exactly as spec <code>sec-d-model</code> and <code>sec-d-ring</code> declare: <code>Pt</code>, <code>LiveDrop</code>, <code>FloatCount</code>, <code>RunModel</code>, <code>StepInput</code>, <code>StepResult</code>, <code>RUN_TIMES</code>, <code>RUN_CAPS</code>, <code>RING_KEYS</code>, <code>RING_KEY_DIR</code>, and
-        <code>createRun(): RunModel</code>, <code>setBox(m: RunModel, w: number, h: number): void</code>, <code>pointRing(m: RunModel, p: Pt, fresh: boolean): void</code>, <code>nudgeRing(m: RunModel, dx: number, dy: number): void</code>, <code>sweepHits(sweep: readonly (Pt | null)[], ring: Pt, p: Pt, r: number): boolean</code>. Task 6 adds <code>step</code>, <code>reproject</code>, <code>idle</code> to this file.</li>
+        <code>createRun(): RunModel</code>, <code>setBox(m: RunModel, w: number, h: number): void</code>, <code>pointRing(m: RunModel, p: Pt, fresh: boolean): void</code>, <code>nudgeRing(m: RunModel, dx: number, dy: number): void</code>, <code>sweepHits(sweep: readonly (Pt | null)[], ring: Pt, p: Pt, r: number): boolean</code>. <code>RunModel</code> has exactly the spec's fields; the empty-box rule below reads the old <code>box</code>, not a flag. Task 6 adds <code>step</code>, <code>reproject</code>, <code>idle</code> to this file.</li>
     </ul>
     <ol>
       <li id="t5-s1"><input type="checkbox"> Write the failing tests (server project).
@@ -457,6 +459,12 @@ npx chreode timing-check --head HEAD</code></pre>
   // take toEqual { dropped: {}, collected: {} }; highDay -Infinity; cursor 0; ringMoved false
 it('pointRing clamps to the box')        // box 800x600: (-5, 700) -> (0, 600); (900, -1) -> (800, 0)
 it('setBox re-clamps the ring')          // ring (700, 500), setBox 400x300 -> (400, 300)
+it('setBox from an empty box to one with both sides above 0 centres the ring')
+  // createRun; setBox 800x600 -> ring (400, 300); also from 0x600 and from 800x0
+it('setBox to a box still empty on one side does not centre')
+  // createRun; setBox 800x0 -> ring (0, 0)
+it('setBox between two non-empty boxes only re-clamps')
+  // setBox 800x600, pointRing (100, 100); setBox 1000x700 -> ring (100, 100)
 it('pointRing appends the old centre, or null when fresh, and sets ringMoved')
 it('sweep holds at most RUN_CAPS.maxSweep (32) entries, oldest dropped first')
 it('nudgeRing by 16 and by 64 sweeps the ground it crosses')
@@ -469,7 +477,7 @@ it('sweepHits: a null breaks the path; a lone point still counts')
       <li id="t5-s2"><input type="checkbox"> Run and see them fail.
         <pre><code data-lang="sh">npx vitest run --project server src/lib/game/run/run-model.spec.ts</code></pre>
       </li>
-      <li id="t5-s3"><input type="checkbox"> Implement. <code>sweepHits</code> walks the path <code>[...sweep, ring]</code> without allocating: for each adjacent pair with no <code>null</code> between, point-to-segment squared distance against <code>r * r</code>; each non-null point stands alone too. <code>pointRing</code> shifts the oldest sweep entry when the length would exceed <code>maxSweep</code>.</li>
+      <li id="t5-s3"><input type="checkbox"> Implement. <code>sweepHits</code> walks the path <code>[...sweep, ring]</code> without allocating: for each adjacent pair with no <code>null</code> between, point-to-segment squared distance against <code>r * r</code>; each non-null point stands alone too. <code>pointRing</code> shifts the oldest sweep entry when the length would exceed <code>maxSweep</code>. <code>setBox</code>: when the old box had a side of 0 and the new one has both sides above 0, the ring goes to <code>(w / 2, h / 2)</code>, whether or not a run is in progress; otherwise the ring is clamped to the new box.</li>
       <li id="t5-s4"><input type="checkbox"> Run, see them pass, lint (as <code>t1-s4</code>).</li>
       <li id="t5-s5"><input type="checkbox"> Commit, then check timing.
         <pre><code data-lang="sh">git add src/lib/game/run/run-model.ts src/lib/game/run/run-model.spec.ts
@@ -485,16 +493,19 @@ npx chreode timing-check --head HEAD</code></pre>
       <li>Modify: <code>src/lib/game/run/run-model.ts</code>, <code>src/lib/game/run/run-model.spec.ts</code></li>
     </ul>
     <ul>
-      <li>Consumes: Task 5's types; <code>credit</code>, <code>total</code> (G2); <code>BASE_HANDS</code> (G4) in the spec only.</li>
+      <li>Consumes: Task 5's types and <code>setBox</code>; <code>credit</code>, <code>total</code> (G2, real only once <code>game-core</code> is merged); <code>BASE_HANDS</code> (<code>src/lib/game/limits.ts:25</code>) in the spec only.</li>
       <li>Produces: <code>step(m: RunModel, i: StepInput): StepResult</code>, <code>reproject(m: RunModel, project: StepInput['project']): void</code>, <code>idle(m: RunModel): boolean</code>.</li>
     </ul>
     <ol>
       <li id="t6-s1"><input type="checkbox"> Write the failing tests. Helpers: <code>drop(row, day, homes = 1, x = 400, y = 300, policy = false): Drop</code> with <code>lng = x, lat = y</code>; <code>input(o: Partial&lt;StepInput&gt;): StepInput</code> defaulting to <code>{ now: 0, running: true, day: 0, drops: [], hands: BASE_HANDS, auto: false, reduced: true, project: (x, y) =&gt; ({ x, y }) }</code>; box 800 by 600.
         <pre><code data-lang="ts">// Start (sec-d-model-start)
 it('a running step starts the run: zero take, ring centred, every drop at or before day appears')
+it('a run started on an empty box gets its ring at the centre when the first size arrives')
+  // createRun; step running true (box 0x0, ring (0, 0)); setBox 800x600 -> ring (400, 300)
 // Appearing (sec-d-model-appear)
 it('a drop appears in the step whose day reaches its day, not before, counted once')
-it('endMs is now + lingerMs, or now + 400 when lingerMs is smaller')
+it('endMs is now + max(lingerMs, 400)')
+  // now 1000: lingerMs 4000 -> 5000; lingerMs 100 -> 1400
 it('a drop with no point is counted and collected only by auto')
 // Collecting (sec-d-model-collect)
 it('collects a drop within radiusPx of the ring once; one just outside is not')
@@ -513,7 +524,10 @@ it('a burst of 500 drops in one step counts 500 and auto collects all 500')
 // Ending
 it('the ending step counts the drops due through its day, collects under the ring or auto, reports ended')
   // previous step day 90; ending step day 100 with drops at 95 and 100 -> both in dropped
-it('ending cuts live drops to now + 400, or now under reduced; a later step drops and collects nothing')
+it('ending sets each uncollected endMs to min(its own, now + 400), or now under reduced')
+  // appeared at 0 with lingerMs 4000 (endMs 4000), ended at 1000 -> 1400; reduced -> 1000;
+  // appeared at 0 with lingerMs 100 (endMs 400), ended at 300 -> stays 400
+it('ending leaves a collected drop its endMs; a later step drops and collects nothing')
 it('a stop on a never-started model, and a second stop, report ended false and change no take') // RF5
 // Going back and new arrays
 it('a feed day going back drops nothing again and lowers no count')
@@ -532,7 +546,7 @@ it('reproject sets each live point from project again')</code></pre>
       <li id="t6-s2"><input type="checkbox"> Run and see them fail.
         <pre><code data-lang="sh">npx vitest run --project server src/lib/game/run/run-model.spec.ts</code></pre>
       </li>
-      <li id="t6-s3"><input type="checkbox"> Implement <code>step</code> as the order the spec sets: start if needed; take a new <code>drops</code> array and binary-search <code>cursor</code> to the first day after <code>highDay</code>; raise <code>highDay</code> (ignore <code>NaN</code>); pass drops; collect (running or ending step only); then on an ending step set <code>ended</code>, <code>running = false</code>, cut uncollected <code>endMs</code> and empty <code>sweep</code>; then remove ended drops and counts in place (no new arrays per frame); finally compute <code>dirty</code>. The take is credited with <code>credit</code> and live worth is <code>total(drop.worth)</code>.</li>
+      <li id="t6-s3"><input type="checkbox"> Implement <code>step</code> as the order the spec sets: start if needed; take a new <code>drops</code> array and binary-search <code>cursor</code> to the first day after <code>highDay</code>; raise <code>highDay</code> (ignore <code>NaN</code>); pass drops, each with <code>endMs = now + Math.max(hands.lingerMs, RUN_TIMES.minShownMs)</code>; collect (running or ending step only); then on an ending step set <code>ended</code>, <code>running = false</code>, set each uncollected <code>endMs</code> to <code>Math.min(endMs, now + RUN_TIMES.fadeMs)</code> (or <code>now</code> under <code>reduced</code>) and empty <code>sweep</code>; then remove ended drops and counts in place (no new arrays per frame); finally compute <code>dirty</code>. The take is credited with <code>credit</code> and live worth is <code>total(drop.worth)</code>.</li>
       <li id="t6-s4"><input type="checkbox"> Run, see them pass, lint (as <code>t1-s4</code>).</li>
       <li id="t6-s5"><input type="checkbox"> Commit, then check timing.
         <pre><code data-lang="sh">git add src/lib/game/run/run-model.ts src/lib/game/run/run-model.spec.ts
@@ -549,27 +563,46 @@ npx chreode timing-check --head HEAD</code></pre>
     </ul>
     <ul>
       <li>Consumes: <code>RunModel</code>, <code>RUN_TIMES</code>, <code>RUN_CAPS</code> (Tasks 5, 6); <code>dropCountText</code> (Task 4); <code>TOKENS</code> from <code>$lib/map/palette</code> (<code>src/lib/map/palette.ts:45</code>, <code>'tl-halo-policy'</code> at <code>:91</code> light and <code>:138</code> dark).</li>
-      <li>Produces: <code>Look</code>, <code>DRAW</code>, <code>dropRadius(worth: number): number</code>, <code>drawRun(ctx, m, o)</code> exactly as spec <code>sec-d-draw</code>, and <code>policyColour(dark: boolean): string</code>, which returns <code>TOKENS[dark ? 'dark' : 'light']['tl-halo-policy']</code>. Builder's call: the spec has the layer pick the token but only <code>draw.ts</code> may import the palette, so the pick lives here; a boolean keeps <code>Theme</code> (from <code>$lib/map/types</code>) out of the import list.</li>
+      <li>Produces: <code>Look</code>, <code>DRAW</code> (with <code>diamondScale: 1.25</code> between <code>dropMaxPx</code> and <code>outlinePx</code>), <code>dropRadius(worth: number): number</code> and <code>drawRun(ctx, m, o)</code>, all exactly as spec <code>sec-d-draw</code>; and <code>policyColour(dark: boolean): string</code>, which returns <code>TOKENS[dark ? 'dark' : 'light']['tl-halo-policy']</code>. Builder's call: the spec has the layer choose the token with the other colours, but only <code>draw.ts</code> may import the palette (<code>sec-d-modules</code>), so the choice lives here; a boolean keeps <code>Theme</code> (from <code>$lib/map/types</code>) out of the import list.</li>
     </ul>
+    <p>The shapes. A drop's size <code>s</code> is <code>dropRadius(worth)</code> for a circle and <code>DRAW.diamondScale * dropRadius(worth)</code> for a diamond, its half-diagonal. A diamond at <code>(x, y)</code> of size <code>s</code> is the closed path through <code>(x, y - s)</code>, <code>(x + s, y)</code>, <code>(x, y + s)</code>, <code>(x - s, y)</code>: a square turned 45°. Every growth, fade, reduced-motion and count-position rule of <code>sec-d-draw</code> applies to <code>s</code> whatever the shape; a count's baseline is <code>countGapPx</code> above <code>y - s</code>.</p>
+    <table id="tbl-t7-shapes">
+      <caption>What drawRun draws for one drop</caption>
+      <thead>
+        <tr><th scope="col">Drop</th><th scope="col">Live</th><th scope="col">Collected</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row"><code>drop.policy</code> true</th><td>Diamond, half-diagonal <code>1.25 * dropRadius(worth)</code>, filled <code>look.policy</code>, <code>outlinePx</code> stroke of <code>look.surface</code></td><td>Diamond outline only, <code>takenLinePx</code> wide, in <code>look.policy</code></td></tr>
+        <tr><th scope="row"><code>drop.policy</code> false</th><td>Circle, radius <code>dropRadius(worth)</code>, filled <code>look.accent</code>, <code>outlinePx</code> stroke of <code>look.surface</code></td><td>Circle outline only, <code>takenLinePx</code> wide, in <code>look.accent</code></td></tr>
+      </tbody>
+    </table>
     <ol>
-      <li id="t7-s1"><input type="checkbox"> Write the failing tests (server project). A recording context in the spec: a plain object with the methods <code>drawRun</code> uses (<code>clearRect</code>, <code>beginPath</code>, <code>arc</code>, <code>fill</code>, <code>stroke</code>, <code>fillText</code>, <code>strokeText</code>, <code>save</code>, <code>restore</code>) pushing <code>{ op, args, fillStyle, strokeStyle, globalAlpha, lineWidth }</code>, cast to <code>CanvasRenderingContext2D</code>. Models are built with Task 6's <code>step</code>.
-        <pre><code data-lang="ts">it('dropRadius: 4.5 at 1, 6 at 4, 9 at 16 and at 1,000')
+      <li id="t7-s1"><input type="checkbox"> Write the failing tests (server project). A recording context in the spec: a plain object with the methods <code>drawRun</code> uses (<code>clearRect</code>, <code>beginPath</code>, <code>arc</code>, <code>moveTo</code>, <code>lineTo</code>, <code>closePath</code>, <code>fill</code>, <code>stroke</code>, <code>fillText</code>, <code>strokeText</code>, <code>save</code>, <code>restore</code>) pushing <code>{ op, args, fillStyle, strokeStyle, globalAlpha, lineWidth }</code>, cast to <code>CanvasRenderingContext2D</code>. A helper groups the record into shapes: each <code>beginPath</code> up to its <code>fill</code> or <code>stroke</code>, as a circle (one <code>arc</code>: centre and radius) or a diamond (one <code>moveTo</code>, three <code>lineTo</code>, <code>closePath</code>: its four vertices). Models are built with Task 6's <code>step</code>, with <code>look = { accent: '#a3472c', policy: '#00ff00', ink: '#111827', surface: '#ffffff', font: 'sans-serif' }</code> so the policy colour is told apart in the record.
+        <pre><code data-lang="ts">it('DRAW.diamondScale is 1.25')
+it('dropRadius: 4.5 at 1, 6 at 4, 9 at 16 and at 1,000')
 it('policyColour is TOKENS[theme][tl-halo-policy] for each theme')
-it('a live policy drop is filled, and a collected one stroked, in look.policy; others in the accent')
+  // policyColour(false) === TOKENS.light['tl-halo-policy']; policyColour(true) === TOKENS.dark[...]
+it('a live policy drop is a filled diamond in look.policy with half-diagonal 1.25 * dropRadius')
+  // worth 4 at (100, 100), reduced: vertices (100, 92.5), (107.5, 100), (100, 107.5), (92.5, 100);
+  // fill with fillStyle look.policy, then stroke lineWidth 1.5 strokeStyle look.surface; no arc
+it('a collected policy drop is a stroked diamond outline in look.policy, takenLinePx wide, no fill')
+it('any other drop is a circle in the accent, filled live and stroked when collected')
+  // worth 4: arc radius 6, fillStyle look.accent; collected: stroke only, lineWidth 2, look.accent
 it('draws at most 240 drops and 40 counts with 1,000 live, and draws the newest')
-  // arc count with fill === 240; the rows drawn are the last 240 with a point
+  // half of them policy: circles + diamonds filled === 240; rows drawn are the last 240 with a point
 it('draws no ring when showRing is false; one ring of radiusPx when true')
-it('with reduced motion draws every shape at full radius and alpha 1')
+it('with reduced motion draws every shape at full size and alpha 1')
+  // circle radius dropRadius(w); diamond half-diagonal 1.25 * dropRadius(w); globalAlpha 1
 it('clears the whole box first, then drops, counts, ring')</code></pre>
       </li>
       <li id="t7-s2"><input type="checkbox"> Run and see them fail.
         <pre><code data-lang="sh">npx vitest run --project server src/lib/game/run/draw.spec.ts</code></pre>
       </li>
-      <li id="t7-s3"><input type="checkbox"> Implement per <code>sec-d-draw</code>: <code>clearRect(0, 0, m.box.w, m.box.h)</code> (the context is already scaled to CSS pixels); drops by walking <code>live</code> backwards to find the newest 240 with a point, then drawing those oldest first; ease-out <code>1 - (1 - t)^3</code> over <code>appearMs</code>; fade over the last <code>fadeMs</code>; collected rings grow by <code>takenGrow</code> and fade from <code>takenAlpha</code>; counts rise <code>countRisePx</code> and hold for <code>countHoldShare</code>; the ring as <code>sec-d-ring</code>'s last bullet. No allocation per drop.</li>
+      <li id="t7-s3"><input type="checkbox"> Implement per <code>sec-d-draw</code> and the table above: <code>clearRect(0, 0, m.box.w, m.box.h)</code> (the context is already scaled to CSS pixels); drops by walking <code>live</code> backwards to find the newest 240 with a point, then drawing those oldest first; one private path helper per shape (<code>arc</code> for a circle, the four-vertex path for a diamond), chosen by <code>drop.policy</code>; with motion, the live size grows over <code>appearMs</code> eased <code>1 - (1 - t)^3</code> and alpha fades over the last <code>fadeMs</code>; a collected shape's size goes from <code>s</code> to <code>s * (1 + takenGrow)</code> and alpha from <code>takenAlpha</code> to 0 over <code>takenMs</code>; counts rise <code>countRisePx</code> and hold for <code>countHoldShare</code>; the ring as <code>sec-d-ring</code>'s last bullet. No allocation per drop.</li>
       <li id="t7-s4"><input type="checkbox"> Run, see them pass, lint (as <code>t1-s4</code>).</li>
       <li id="t7-s5"><input type="checkbox"> Commit, then check timing.
         <pre><code data-lang="sh">git add src/lib/game/run/draw.ts src/lib/game/run/draw.spec.ts
-git commit -m "feat(run): draw drops, counts and the ring on a 2D canvas"
+git commit -m "feat(run): draw circle and policy-diamond drops, counts and the ring"
 npx chreode timing-check --head HEAD</code></pre>
       </li>
     </ol>
@@ -675,7 +708,7 @@ npx chreode timing-check --head HEAD</code></pre>
       <li>Create: <code>src/lib/game/run/run.perf.svelte.spec.ts</code></li>
     </ul>
     <ul>
-      <li>Consumes: <code>createRun</code>, <code>setBox</code>, <code>pointRing</code>, <code>step</code> (Tasks 5, 6); <code>drawRun</code> (Task 7); <code>BASE_HANDS</code> (G4).</li>
+      <li>Consumes: <code>createRun</code>, <code>setBox</code>, <code>pointRing</code>, <code>step</code> (Tasks 5, 6; <code>step</code> calls <code>credit</code> and <code>total</code>, real once <code>game-core</code> is merged); <code>drawRun</code> (Task 7); <code>BASE_HANDS</code> (<code>src/lib/game/limits.ts:25</code>, already its real value).</li>
       <li>Produces: <code>export const RUN_FRAME_P95_MS = 2;</code></li>
     </ul>
     <ol>
@@ -699,8 +732,8 @@ npx chreode timing-check --head HEAD</code></pre>
 
   <section id="sec-open-questions">
     <h2>Open questions</h2>
-    <aside data-kind="question"><strong>Question 1</strong> The policy colour is the accent. <code>TOKENS.light['tl-halo-policy']</code> is <code>#A3472C</code> (<code>src/lib/map/palette.ts:91</code>) and <code>--color-accent</code> is <code>#a3472c</code> (<code>src/routes/layout.css:4</code>); dark is <code>#E0955A</code> (<code>palette.ts:138</code>) against <code>--color-accent-dark: #e0955a</code> (<code>layout.css:8</code>). Policy drops look exactly like the rest, which defeats R1's "pops in the policy's colour". Fixing it means touching <code>palette.ts</code> or <code>layout.css</code>, both outside this unit. Recommendation: the plan builds as specced (the test pins the token, which holds); the conductor decides whether another unit changes a colour.</aside>
-    <aside data-kind="question"><strong>Question 2</strong> A run started before the canvas has a size. <code>setBox</code> only re-clamps (spec <code>sec-d-ring</code>), so a run started while the box is 0 by 0 leaves the ring at the top-left corner once the box arrives, not at the centre. Recommendation: on the first <code>setBox</code> from 0 by 0 during a run, centre the ring; needs a spec line.</aside>
+    <aside data-kind="question"><strong>Question 1</strong> Centring on the first size and the sweep. <code>sec-d-ring</code> says <code>setBox</code> from an empty box puts the ring at the new centre, but not whether that move appends to <code>sweep</code> or sets <code>ringMoved</code>, as <code>pointRing</code> does. If it appends the old centre (0, 0), the next collect pass sweeps a segment from the corner to the centre. The plan's tests (<code>t5-s1</code>, <code>t6-s1</code>) assert only the ring's position; the conductor decides the rest.</aside>
+    <aside data-kind="question"><strong>Question 2</strong> Policy drops in the perf case. <code>sec-d-budget</code>'s case gives 3,000 drops but no share of policy drops, and a diamond is a different path from a circle. The plan's Task 10 leaves <code>policy</code> as the case states it (unstated); the conductor decides whether the case mixes diamonds in.</aside>
     <aside data-kind="note">The clock mock and the reduced-motion emulation. Spec <code>sec-tests-component</code> mocks <code>./clock</code> "so the spec moves time and runs frames by hand" and also emulates <code>prefers-reduced-motion</code> both ways. A partial mock that replaces <code>now</code>, <code>raf</code> and <code>cancelRaf</code> and keeps the real <code>reducedMotion</code> (<code>t8-s1</code>) satisfies both lines.</aside>
   </section>
 </article>
