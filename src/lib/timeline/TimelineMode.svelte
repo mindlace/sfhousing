@@ -190,7 +190,15 @@
   import { cancelRaf, raf } from '$lib/game/run/clock';
   import { planDrops, type Drop, type Marker, type RunFeed } from '$lib/game/run/drops';
   import RunLayer from '$lib/game/run/RunLayer.svelte';
-  import type { RunTake } from '$lib/game/run-result';
+  import {
+    readRun,
+    resultOf,
+    type RunReading,
+    type RunResult,
+    type RunTake
+  } from '$lib/game/run-result';
+  import Tally from '$lib/game/ui/Tally.svelte';
+  import type { TimelineView } from '$lib/sim/world/score/types';
   import RunClock from './RunClock.svelte';
   import { RUN_BUSY } from '$lib/game/ui/words';
   import { moneyFigureAt } from '$lib/fzp/money-view';
@@ -562,11 +570,11 @@
   );
   const headText = $derived(headline ? headlineText(headline, goal) : null);
   /**
-   * The map key's tally: the homes in each stage at the playhead's month, under the headline's
-   * rules. It reads `index` and `atToday`, never `day`, so it reads one row at most once per month
-   * the playhead crosses.
+   * The map key's counts (its `tally`): the homes in each stage at the playhead's month, under the
+   * headline's rules. It reads `index` and `atToday`, never `day`, so it reads one row at most once
+   * per month the playhead crosses.
    */
-  const tally = $derived(
+  const keyCounts = $derived(
     keyTally(
       shown.view,
       { index, atToday },
@@ -981,6 +989,7 @@
     handleDay(asOf);
     reveal = revealOpen(asOf);
     take = { dropped: {}, collected: {} };
+    runSettled = false;
     planRun();
     // The count restarts before `running` turns true, so an abort in this same flush (before the
     // effect on feed.running reruns) is held too.
@@ -999,6 +1008,58 @@
       const rising = s && !wasStartable;
       wasStartable = s;
       if (rising) startRun();
+    });
+  });
+
+  // ---- settling (game-sim #sec-design-settle) ----
+
+  /** The tally on show: the result settled last and the homes before it; null before a settle. */
+  let tally = $state.raw<{ result: RunResult; before: number | null } | null>(null);
+  /** The run in progress has settled: a run settles once (reset as each run starts). */
+  let runSettled = false;
+
+  /**
+   * Settles the run: the result goes to the store, and the tally shows it even when the store
+   * refuses the write (the header's balance stays the store's).
+   */
+  function settleRun(view: TimelineView, reading: RunReading): void {
+    const game = g;
+    if (!game) return;
+    const s = game.state;
+    const before = s.last !== null && s.last.rung === s.rung ? s.last.homes : null;
+    const index = indexOfDay(view.months, goal.deadline);
+    const r = resultOf(
+      s,
+      reading,
+      take,
+      { view, index, take },
+      {
+        amount: goal.amount,
+        datasetVersion,
+        at: new Date().toISOString()
+      }
+    );
+    game.settle(r);
+    if (r.lump !== null) (sound ?? SILENT).goal();
+    tally = { result: r, before };
+    onphase?.('settled');
+  }
+
+  // Settling is tried whenever the phase is run and the clock has stopped at the stop day. It goes
+  // ahead only with the numbers current (not stale, not provisional), a view whose months reach
+  // the deadline's month (G6: no reading while the view does not cover it) and a reading there;
+  // otherwise it waits, with the clock at the stop day, and is tried again as the view changes.
+  $effect(() => {
+    if (gp !== 'run' || running || day !== stop) return;
+    const view = shown.view;
+    if (!view || stale || !session || session.provisional) return;
+    if (filledEndDay(view.months, view.months.length - 1, asOf) < goal.deadline) return;
+    const reading = readRun(view, goal);
+    if (!reading) return;
+    untrack(() => {
+      if (runSettled) return;
+      runSettled = true;
+      settleRun(view, reading);
     });
   });
 
@@ -2059,6 +2120,20 @@
               <Message text={goalNotice} ondismiss={dismissGoal} testid="tl-goal-notice" />
             {/if}
           </div>
+          {#if gamePhase === 'tally' && tally}
+            <!-- The tally, where the win card sat: each result mounts a fresh Tally, whose counts
+                 roll once, from mount. -->
+            <div data-testid="tl-tally" class="pointer-events-auto max-w-full">
+              {#key tally.result}
+                <Tally
+                  result={tally.result}
+                  before={tally.before}
+                  deadline={ladder(asOf)[tally.result.rung].label}
+                  oncontinue={() => onphase?.('continue')}
+                />
+              {/key}
+            </div>
+          {/if}
         {/if}
         {#if phase === 'loading' && !halted}
           <div role="status" class="contents">
@@ -2175,7 +2250,7 @@
             bind:el={keyEl}
           >
             {#snippet key()}
-              <SimKey {tally} inForce={keyMarks} />
+              <SimKey tally={keyCounts} inForce={keyMarks} />
             {/snippet}
           </MapKeyControl>
         {/if}

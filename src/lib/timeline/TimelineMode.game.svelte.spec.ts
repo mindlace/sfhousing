@@ -49,11 +49,18 @@ import { FakeTimelineWorker, cellsMsg, compiledMsg, filledMsg } from './test/fak
 import { chunk, statics as baseStatics } from './test/fixtures';
 import { GAME_ID, gameWith } from './test/game';
 import { runLayer } from './test/run-layer-stub';
+import { tallyRec } from './test/TallyStub.svelte';
 import { isValidId } from '$lib/ids/base58';
+import { settle } from '$lib/game/run-result';
+import { total } from '$lib/game/units';
+import { unitsName } from '$lib/game/ui/words';
+import { MemoryStorage } from '$lib/sharing/fixtures/memory-storage';
+import { filledEndDay } from './playhead';
 import TimelineModeHost from './test/TimelineModeHost.svelte';
 
 vi.mock('$lib/map/SimMap.svelte', () => import('$lib/fzp/test/FzpSimMapStub.svelte'));
 vi.mock('$lib/game/run/RunLayer.svelte', () => import('./test/RunLayerStub.svelte'));
+vi.mock('$lib/game/ui/Tally.svelte', () => import('./test/TallyStub.svelte'));
 
 /**
  * The frame seam (R1's clock module, which TimelineMode passes to RunClock too). While `manual` is
@@ -246,6 +253,7 @@ beforeEach(async () => {
   phaseEvents = [];
   stub.reset();
   runLayer.reset();
+  tallyRec.reset();
   vi.stubEnv('VITE_E2E', '1');
   await page.viewport(1280, 900);
 });
@@ -508,18 +516,24 @@ describe('TimelineMode in a game: the phases and what each mounts (#tbl-phase-mo
 
   it('setRunView: true in starting, false in tree; never without a game', async () => {
     // Not filled: starting waits there.
-    const s = await waiting({ game: gameWith({ phase: 'runs', runs: 1 }), phased: true });
+    const s = await waiting({
+      game: gameWith({ phase: 'runs', runs: 1 }),
+      phased: true,
+      runMs: 200
+    });
     await expect.poll(() => callsOf('setRunView').at(-1)).toEqual([false]);
     // Tree's Run sends `run`: tree to starting.
     await page.getByTestId('host-run').click();
     await phaseIs('starting');
     await expect.poll(() => callsOf('setRunView').at(-1)).toEqual([true]);
-    // No run settles here (no event reaches tally): the seam sets it.
-    s.setPhase('tally');
+    const atStarting = callsOf('setRunView').length;
+    // The forecast fills: the run plays to its stop and settles into tally.
+    emit(filledMsg(1, 0, LONG.lastIndex + 1));
     await phaseIs('tally');
-    await expect.poll(() => callsOf('setRunView').length).toBe(3);
-    expect(callsOf('setRunView').at(-1)).toEqual([true]);
-    s.send('continue');
+    // Starting, run and tally: true at each change.
+    await expect.poll(() => callsOf('setRunView').length).toBe(atStarting + 2);
+    expect(callsOf('setRunView').slice(atStarting - 1)).toEqual([[true], [true], [true]]);
+    await page.getByTestId('tally-continue').click();
     await phaseIs('tree');
     s.send('edit');
     await phaseIs('workshop');
@@ -542,36 +556,41 @@ describe('TimelineMode in a game: the phases and what each mounts (#tbl-phase-mo
   });
 
   it('prefetchViewport asks nothing while in RUN_VIEW, and asks in tree', async () => {
-    const s = await waiting({ game: gameWith({ phase: 'runs', runs: 0 }), phased: true });
+    await waiting({ game: gameWith({ phase: 'runs', runs: 0 }), phased: true, runMs: 200 });
     const before = w().all('prefetch').length;
     stub.map.fire('moveend');
     expect(w().all('prefetch').length).toBe(before);
-    // No run settles here (no event reaches tally): the seam sets it.
-    s.setPhase('tally');
+    // The forecast fills: the run plays to its stop and settles into tally.
+    emit(filledMsg(1, 0, LONG.lastIndex + 1));
     await phaseIs('tally');
+    const atTally = w().all('prefetch').length;
     stub.map.fire('moveend');
-    expect(w().all('prefetch').length).toBe(before);
+    expect(w().all('prefetch').length).toBe(atTally);
     // The control: out of RUN_VIEW the same moveend asks.
-    s.send('continue');
+    await page.getByTestId('tally-continue').click();
     await phaseIs('tree');
     stub.map.fire('moveend');
-    expect(w().all('prefetch').length).toBe(before + 1);
+    expect(w().all('prefetch').length).toBe(atTally + 1);
   });
 
   it('Space in starting and tally does nothing and is prevented', async () => {
-    const s = await waiting({ game: gameWith({ phase: 'runs', runs: 0 }), phased: true });
+    const s = await waiting({
+      game: gameWith({ phase: 'runs', runs: 0 }),
+      phased: true,
+      runMs: 200
+    });
     expect(mode().getAttribute('data-phase')).toBe('starting');
     const e = space();
     expect(e.defaultPrevented).toBe(true);
     expect(debug().playing).toBe(false);
-    // No run settles here (no event reaches tally): the seam sets it.
-    s.setPhase('tally');
+    // The forecast fills: the run plays to its stop and settles into tally.
+    emit(filledMsg(1, 0, LONG.lastIndex + 1));
     await phaseIs('tally');
     const t = space();
     expect(t.defaultPrevented).toBe(true);
     expect(debug().playing).toBe(false);
     // The control: in workshop Space plays.
-    s.send('continue');
+    await page.getByTestId('tally-continue').click();
     await phaseIs('tree');
     s.send('edit');
     await phaseIs('workshop');
@@ -1115,6 +1134,212 @@ describe('TimelineMode in a game: the run on frames the test drives', () => {
       expect(modePhase()).toBe('run');
       expect(seen[0]).toBe(false); // RunLayer reads false in a frame before the new run
       expect(onphaseCalls('ready')).toHaveLength(2);
+    });
+  });
+});
+
+// ---- settling and the tally (game-sim #sec-design-settle) ----
+
+/** The rung-0 goal: the goal in play in these games. */
+const goal = () => goalAt(asOf, 0);
+/** The props of the last Tally mounted (the recording stub). */
+const tallyProps = () => tallyRec.mounts.at(-1)!;
+/** A window of LAST + 1 months, which ends before the rung-0 deadline. */
+const STATICS: ScoreStatics = { ...baseStatics({ lastIndex: LAST }), asOf, months: MONTHS };
+const lastDayOf = (s: ScoreStatics): Day => filledEndDay(s.months, s.lastIndex, asOf);
+/** What the header's unit count says to a screen reader. */
+const headerUnits = () =>
+  page.getByTestId('header-units').element().querySelector('.sr-only')!.textContent;
+
+/** Opens the page in starting and fills the whole window: the run plays to its stop. */
+async function runToEnd(o: { game: GameStore; runMs: number; statics?: ScoreStatics }) {
+  const st = o.statics ?? LONG;
+  const s = setup({ game: o.game, phased: true, runMs: o.runMs });
+  await opening();
+  emit(compiledMsg(1, st));
+  emit(filledMsg(1, 0, st.lastIndex + 1));
+  return s;
+}
+
+describe('TimelineMode in a game: settling and the tally', () => {
+  it("the run reaches the deadline with runMs 200 and settles with resultOf's result", async () => {
+    const game = gameWith({ phase: 'runs', runs: 0 });
+    await runToEnd({ game, runMs: 200 }); // starting, fill LONG, run
+    await expect.poll(() => game.state.runs).toBe(1);
+    expect(game.state.last).toMatchObject({
+      rung: 0,
+      amount: goal().amount,
+      datasetVersion: 'fixture-0'
+    });
+    expect(modePhase()).toBe('tally');
+    expect(onphaseCalls('settled')).toHaveLength(1);
+    await expect.element(page.getByTestId('tl-tally')).toBeVisible();
+    // Where the win card sat: in the notice stack.
+    expect(page.getByTestId('tl-tally').element().classList.contains('pointer-events-auto')).toBe(
+      true
+    );
+    expect(tallyProps().result).toBe(game.state.last);
+    expect(tallyProps().deadline).toBe(ladder(asOf)[0].label);
+    expect(tallyProps().before).toBeNull();
+    await expect
+      .poll(() => document.activeElement)
+      .toBe(page.getByTestId('tl-tally').getByRole('button').first().element());
+  });
+
+  it("before is the last run's homes on the same rung, null on a new rung; Continue gives tree", async () => {
+    const game = gameWith({ phase: 'runs', runs: 1, last: runResult({ rung: 0, homes: 900 }) });
+    // A mount with a run settled lands in tree: Run starts the next.
+    const s = await runToEnd({ game, runMs: 200 });
+    await expect.poll(() => modePhase()).toBe('tree');
+    await page.getByTestId('host-run').click();
+    await expect.poll(() => modePhase()).toBe('tally');
+    expect(tallyProps().before).toBe(900);
+    await page.getByTestId('tally-continue').click();
+    await expect.poll(() => modePhase()).toBe('tree');
+    expect(callsOf('setRunView').at(-1)).toEqual([false]);
+    await unmount(s);
+    tallyRec.reset();
+
+    // The last run on another rung: null.
+    const other = gameWith({ phase: 'runs', runs: 1, rung: 1, last: runResult({ rung: 0 }) });
+    await runToEnd({ game: other, runMs: 200 });
+    await expect.poll(() => modePhase()).toBe('tree');
+    await page.getByTestId('host-run').click();
+    await expect.poll(() => modePhase()).toBe('tally');
+    expect(tallyProps().before).toBeNull();
+    expect(tallyProps().deadline).toBe(ladder(asOf)[1].label);
+  });
+
+  it('Tally is mounted only in the tally phase', async () => {
+    const game = gameWith({ phase: 'runs', runs: 0 });
+    setup({ game, phased: true, runMs: 200 });
+    await expect.element(page.getByTestId('run-waiting')).toBeVisible(); // starting
+    expect(document.querySelector('[data-testid=tl-tally]')).toBeNull();
+    await opening();
+    emit(compiledMsg(1, LONG));
+    emit(filledMsg(1, 0, LONG.lastIndex + 1));
+    await expect.poll(() => modePhase()).toBe('run');
+    expect(document.querySelector('[data-testid=tl-tally]')).toBeNull();
+    expect(tallyRec.mounts).toHaveLength(0);
+    await expect.poll(() => modePhase()).toBe('tally');
+    await expect.element(page.getByTestId('tl-tally').getByTestId('tally-stub')).toBeVisible();
+    expect(tallyRec.live).toBe(1);
+    await page.getByTestId('tally-continue').click();
+    await expect.poll(() => modePhase()).toBe('tree');
+    expect(document.querySelector('[data-testid=tl-tally]')).toBeNull();
+    expect(tallyRec.live).toBe(0);
+  });
+
+  it('each settled result mounts its own Tally', async () => {
+    const game = gameWith({ phase: 'runs', runs: 0 });
+    await runToEnd({ game, runMs: 200 });
+    await expect.poll(() => modePhase()).toBe('tally');
+    const first = game.state.last;
+    expect(tallyRec.mounts).toHaveLength(1);
+    expect(tallyRec.mounts[0].result).toEqual(first);
+    await page.getByTestId('tally-continue').click();
+    await expect.poll(() => modePhase()).toBe('tree');
+    // The same forecast: the tree's Run reaches tally again with no new message.
+    await page.getByTestId('host-tree').getByRole('button', { name: 'Run' }).click();
+    await expect.poll(() => game.state.runs).toBe(2);
+    await expect.poll(() => modePhase()).toBe('tally');
+    expect(tallyRec.mounts).toHaveLength(2);
+    expect(tallyRec.mounts[1].result).not.toBe(tallyRec.mounts[0].result);
+    expect(tallyRec.mounts[1].result).toEqual(game.state.last);
+    expect(tallyRec.live).toBe(1);
+  });
+
+  it('a crash in tally keeps the tally', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {}); // the client logs each crash
+    const game = gameWith({ phase: 'runs', runs: 0 });
+    await runToEnd({ game, runMs: 200 });
+    await expect.poll(() => modePhase()).toBe('tally');
+    w().crash();
+    await expect.element(page.getByRole('button', { name: 'Retry' })).toBeVisible(); // the crash notice is up
+    expect(modePhase()).toBe('tally');
+    expect(game.state.runs).toBe(1);
+    expect(onphaseCalls('abort')).toHaveLength(0);
+    await expect.element(page.getByTestId('tl-tally')).toBeVisible();
+    expect(tallyRec.live).toBe(1);
+  });
+
+  it('a deadline past the months held: the run holds at the stop without settling', async () => {
+    const game = gameWith({ phase: 'runs', runs: 0 });
+    expect(goal().deadline).toBeGreaterThan(lastDayOf(STATICS));
+    await runToEnd({ game, runMs: 200, statics: STATICS });
+    await expect.poll(() => debug().day).toBe(lastDayOf(STATICS));
+    await expect.poll(() => runLayerProps().feed.running).toBe(false);
+    await tick();
+    expect(modePhase()).toBe('run');
+    expect(game.state.runs).toBe(0);
+    expect(onphaseCalls('settled')).toHaveLength(0);
+    expect(tallyRec.mounts).toHaveLength(0);
+  });
+
+  it("RunLayer's feed is the same object at the start of a run, mid-run and at settling", async () => {
+    const game = gameWith({ phase: 'runs', runs: 0 });
+    setup({ game, phased: true, runMs: 200 });
+    await expect.poll(() => runLayer.props).not.toBeNull();
+    const f = runLayerProps().feed;
+    await opening();
+    emit(compiledMsg(1, LONG));
+    emit(filledMsg(1, 0, 6));
+    await expect.poll(() => modePhase()).toBe('run');
+    expect(runLayerProps().feed).toBe(f); // start
+    await expect.poll(() => f.day).toBeGreaterThan(asOf);
+    expect(f.running).toBe(true);
+    expect(runLayerProps().feed).toBe(f); // mid-run
+    // The rest of the window: the clock plays on to the stop.
+    emit(filledMsg(1, 6, LONG.lastIndex + 1 - 6));
+    await expect.poll(() => modePhase()).toBe('tally');
+    expect(f.running).toBe(false);
+    expect(f.day).toBe(STOP);
+    expect(runLayerProps().feed).toBe(f); // settling
+    expect(runLayer.feeds.size).toBe(1);
+  });
+
+  describe('on frames the test drives', () => {
+    beforeEach(() => {
+      frames.manual = true;
+    });
+
+    /** Frames until the phase leaves run (at most `n`). */
+    function playOut(n = 200): void {
+      for (let i = 0; i < n && modePhase() === 'run'; i++) frame();
+    }
+
+    it("a refused settle write still shows the tally; the header balance is the store's; the result settles once later", async () => {
+      const storage = new MemoryStorage();
+      const game = gameWith({ phase: 'runs', runs: 0 }, { storage });
+      const before = game.state;
+      const setItem = vi.spyOn(storage, 'setItem').mockImplementation(() => {
+        throw new DOMException('full', 'QuotaExceededError');
+      });
+      await runToEnd({ game, runMs: 200 });
+      await expect.poll(() => modePhase()).toBe('run');
+      // A take, so the result pays: 5 homes collected.
+      runLayerProps().ontake({ dropped: { home: 8 }, collected: { home: 5 } });
+      playOut();
+      expect(modePhase()).toBe('tally');
+      await expect.element(page.getByTestId('tl-tally')).toBeVisible();
+      expect(game.state.runs).toBe(0);
+      expect(game.state).toBe(before);
+      const r = tallyProps().result;
+      expect(r.collected).toEqual({ home: 5 });
+      // The header's balance is the store's, not what the result would have paid.
+      const paid = total(settle(before, r).units);
+      expect(paid).toBeGreaterThan(total(before.units));
+      await expect.poll(headerUnits).toBe(unitsName(total(game.state.units)));
+      expect(headerUnits()).not.toBe(unitsName(paid));
+      // Storage back: the same result settles, and pays, once.
+      setItem.mockRestore();
+      expect(game.settle(r)).toEqual({ ok: true });
+      expect(game.state.runs).toBe(1);
+      expect(total(game.state.units)).toBe(paid);
+      expect(game.settle(r)).toEqual({ ok: true });
+      expect(game.state.runs).toBe(1);
+      expect(total(game.state.units)).toBe(paid);
+      await expect.poll(headerUnits).toBe(unitsName(paid));
     });
   });
 });
