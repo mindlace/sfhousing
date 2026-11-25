@@ -33,7 +33,7 @@
 
   <section id="sec-interfaces">
     <h2>Interfaces</h2>
-    <p>This unit produces no row and needs every row: the journeys and the bench cross every unit, and the reach check plays the tree. The whole interface table and every row's contract are copied below from the design with no change; a change to any row is a change to the design.</p>
+    <p>This unit produces no row and needs every row: the journeys and the bench cross every unit, the reach check plays the tree, and both run on T1's measured ladder and tuned numbers. The whole interface table and every row's contract are copied below from the design with no change; a change to any row is a change to the design.</p>
 
     <table id="tbl-interfaces">
       <caption>Interface table</caption>
@@ -54,6 +54,7 @@
         <tr><th scope="row">M1</th><td><code>map-run</code></td><td>Decomposition choice</td><td>The map's run view</td><td><a href="#sec-if-m1">M1</a></td></tr>
         <tr><th scope="row">R1</th><td><code>run-play</code></td><td>Model commitment</td><td>Drops, collecting, sound</td><td><a href="#sec-if-r1">R1</a></td></tr>
         <tr><th scope="row">U1</th><td><code>tally-tree</code></td><td>Decomposition choice</td><td>The game's cards, the tree screen, the header parts</td><td><a href="#sec-if-u1">U1</a></td></tr>
+        <tr><th scope="row">T1</th><td><code>tree-catalogue</code></td><td>Decomposition choice</td><td>The measured ladder years and the tuned numbers</td><td><a href="#sec-if-t1">T1</a></td></tr>
       </tbody>
     </table>
 
@@ -419,7 +420,7 @@ export function sideShown(s: GameState, goals?: readonly SideGoal[]): SideGoal[]
         <li><code>resultOf</code> lists a side goal when it is shown, not yet met, and its <code>value</code> is at least its <code>target</code>.</li>
         <li><code>settle</code> credits <code>collected</code>, <code>lump</code> and each side reward; records the rung in <code>met</code> when <code>reachedOn</code> is set and the rung is not there; records each side goal; adds 1 to <code>runs</code>; sets <code>last</code>.</li>
         <li><code>settle</code> never removes a met rung (call 8).</li>
-        <li><code>settle</code> pays a lump or a side reward only when it also records it, so a result settled twice pays once.</li>
+        <li><code>settle</code> pays a lump or a side reward only when it also records it, so a result settled twice pays its lump and its side rewards once. The store refuses a second settle of one result (G7).</li>
         <li><code>takeNext</code> moves to the next rung when the rung in play is met and a next one exists. Otherwise it returns the same state.</li>
         <li><code>finished</code> is true once the last rung is in <code>met</code>.</li>
         <li><code>fitGame</code> drops a <code>bought</code> entry for a node the catalogue does not have and lowers a level above the node's last to it.</li>
@@ -738,6 +739,19 @@ interface GameCellProps {
       </ul>
       <p><strong>Removed:</strong> <code>WinCard</code>, <code>LevelPanel</code>, <code>LevelCell</code>.</p>
     </section>
+
+    <section id="sec-if-t1">
+      <h3>T1 The measured ladder years and the tuned numbers</h3>
+      <pre><code data-lang="sh">npx tsx scripts/reach-measure.ts &lt;datasetDir&gt; --write
+npx tsx scripts/tree-balance.ts &lt;datasetDir&gt;</code></pre>
+      <ul>
+        <li>T1 is the state of two files after the measurement: <code>src/lib/game/catalogue/ladder-years.ts</code> and <code>src/lib/game/catalogue/tuning.ts</code>. It adds no type and no export to G3 or G6.</li>
+        <li><code>LADDER_YEARS</code> holds the years <code>reach-measure</code> wrote from the production dataset, by G6's rule.</li>
+        <li><code>tuning.ts</code> holds prices, the rung lump and side-goal numbers under which <code>tree-balance</code> passes every check it reports on the production dataset.</li>
+        <li>Before T1, both files hold starting values. Code and tests outside <code>tree-catalogue</code> and <code>closing</code> never assert a price, a ladder year or the number of rungs from these files; they pass their own.</li>
+        <li>When no set of numbers passes, the unit stops and hands the report to the owner with the checks that fail.</li>
+      </ul>
+    </section>
   </section>
 
   <section id="sec-global-constraints">
@@ -853,7 +867,8 @@ interface GameCellProps {
     <section id="sec-design-order">
       <h3>When it runs</h3>
       <ul>
-        <li>The implementer's worktree is branched from the integration branch after every other unit has merged into it.</li>
+        <li>The implementer's worktree is branched from the integration branch after every other unit has merged into it, the measurement part of <code>tree-catalogue</code> (T1) included: the journeys and the reach check run on the measured <code>LADDER_YEARS</code> and the tuned <code>tuning.ts</code>.</li>
+        <li>No spec of this unit writes a price, a ladder year, the lump or the number of rungs as a literal. It reads <code>PRICES</code> and <code>RUNG_LUMP</code> from <code>src/lib/game/catalogue/tuning.ts</code> and <code>LADDER_YEARS</code> from <code>src/lib/game/catalogue/ladder-years.ts</code>, so the tuned numbers need no edit here.</li>
         <li>The selectors, words, keys and helpers below are those the other eleven specs of this package fix (<code>docs/superpowers/specs/2026-11-24-*-design.html</code>). The implementer checks each against the merged code; where they differ, the code wins and the difference goes in the hand-back.</li>
         <li>A step of a journey or a test that the merged code cannot pass is a defect of the unit that owns the behaviour. The implementer reports it with the step, the file and the owner, and edits only files in this unit's write set.</li>
         <li>Nothing in this unit changes a file the dataset version hashes, so the dataset version stays as it is and nothing is uploaded.</li>
@@ -878,7 +893,7 @@ interface GameCellProps {
           <tr><th scope="row">The run view</th><td><code>map-run</code></td><td><code>data-run-view="on"</code> on the map's root</td></tr>
           <tr><th scope="row">The screens' test ids and words</th><td><code>tally-tree</code></td><td><code>src/lib/game/ui/words.ts</code> and the ids below</td></tr>
           <tr><th scope="row">The ending</th><td><code>game-save</code>, <code>tree-catalogue</code></td><td>A seeded <code>rung</code> and <code>met</code>; no ladder seam</td></tr>
-          <tr><th scope="row">A first purchase</th><td><code>tree-catalogue</code></td><td><code>hands-radius</code> level 1 at 2,000, equal to <code>RUNG_LUMP</code></td></tr>
+          <tr><th scope="row">A first purchase</th><td><code>tree-catalogue</code> (T1)</td><td>The cheapest node shown at rung 0 costs no more than <code>RUNG_LUMP</code> (G6)</td></tr>
         </tbody>
       </table>
 
@@ -903,7 +918,7 @@ export async function seedRunMs(page: Page, ms: number): Promise&lt;void&gt;;</c
         <ul>
           <li>Every journey seeds amount 1 with <code>seedGoalAmount(page, 1)</code> before the first load.</li>
           <li>At amount 1 one stroke or one stamp meets the room goal, and current law meets every rung in its first month on fixture-0 (<code>scripts/level2-check.spec.ts:82-89</code>), so every run meets the rung in play and pays <code>RUNG_LUMP</code> the first time.</li>
-          <li>The first run therefore pays at least 2,000 units, which buys <code>hands-radius</code> level 1 (2,000, the cheapest node shown at rung 0).</li>
+          <li>The first run therefore pays at least <code>RUNG_LUMP</code>, which buys the cheapest node shown at rung 0 (G6): at least one <code>tree-node</code> is <code>data-state="ready"</code> on the tree after it.</li>
         </ul>
       </section>
 
@@ -916,17 +931,17 @@ export async function seedRunMs(page: Page, ms: number): Promise&lt;void&gt;;</c
           </thead>
           <tbody>
             <tr><th scope="row">The phase</th><td><code>[data-testid="tl-mode"][data-phase="…"]</code>: <code>starting</code>, <code>run</code>, <code>tally</code>, <code>tree</code>, <code>workshop</code></td><td><code>game-sim</code></td></tr>
-            <tr><th scope="row">The run layer</th><td><code>[data-testid="run-layer"][data-dropped]</code>, with <code>data-state</code> <code>running</code> or <code>idle</code></td><td><code>run-play</code></td></tr>
+            <tr><th scope="row">The run layer</th><td><code>run-layer</code> (one element, <code>RunLayer</code>'s root), with <code>data-dropped</code>, <code>data-collected</code> and <code>data-state</code> <code>running</code> or <code>idle</code>; <code>game-sim</code>'s box around it is <code>run-layer-box</code></td><td><code>run-play</code></td></tr>
             <tr><th scope="row">The run clock</th><td><code>run-clock</code></td><td><code>game-sim</code></td></tr>
             <tr><th scope="row">The run view</th><td><code>[data-run-view="on"]</code></td><td><code>map-run</code></td></tr>
-            <tr><th scope="row">Start</th><td><code>opening-start</code> ("Start")</td><td><code>tally-tree</code></td></tr>
+            <tr><th scope="row">The opening card</th><td><code>opening-card</code> (<code>OpeningCard</code>'s root); <code>opening-start</code> ("Start"); <code>game-shell</code>'s box around it is <code>opening-card-box</code></td><td><code>tally-tree</code></td></tr>
             <tr><th scope="row">The tally</th><td><code>tally</code>; <code>tally-continue</code> ("Continue"); <code>tally-units</code>; <code>tally-lump</code></td><td><code>tally-tree</code></td></tr>
             <tr><th scope="row">The tree</th><td><code>game-tree-pane</code>; <code>tree</code>; <code>tree-run</code> ("Run"); <code>tree-next</code>; <code>tree-busy</code></td><td><code>game-sim</code>, <code>tally-tree</code></td></tr>
             <tr><th scope="row">A node</th><td><code>[data-testid="tree-node"][data-node="&lt;id&gt;"]</code>; inside it <code>tree-node-open</code>, <code>tree-node-edit</code>, <code>tree-node-on</code></td><td><code>tally-tree</code></td></tr>
             <tr><th scope="row">The open node</th><td><code>tree-detail</code>; <code>tree-buy</code></td><td><code>tally-tree</code></td></tr>
             <tr><th scope="row">The ending</th><td><code>tree-ending</code> (heading "Every goal met", "Reached in Mon YYYY"); <code>tree-publish</code> ("Publish")</td><td><code>tally-tree</code></td></tr>
             <tr><th scope="row">Back to the tree</th><td><code>game-back</code>, a header action ("Back to the tree")</td><td><code>game-sim</code></td></tr>
-            <tr><th scope="row">The run waiting</th><td><code>run-waiting</code> ("Getting the forecast ready…")</td><td><code>game-sim</code></td></tr>
+            <tr><th scope="row">The run waiting</th><td><code>run-waiting</code> (<code>RUN_BUSY</code>, "Getting the forecast ready")</td><td><code>game-sim</code>, <code>tally-tree</code></td></tr>
             <tr><th scope="row">The goal headline</th><td><code>goal-headline-button</code>; <code>side-goals</code></td><td><code>tally-tree</code></td></tr>
             <tr><th scope="row">The unit count and panel</th><td><code>header-units</code>; <code>game-panel</code>; <code>game-collect</code> ("Collect for me"); <code>game-sound</code></td><td><code>tally-tree</code></td></tr>
             <tr><th scope="row">The opening's score</th><td><code>score-bar</code> ("Room for N homes"), unchanged</td><td><code>game-shell</code></td></tr>
@@ -934,7 +949,6 @@ export async function seedRunMs(page: Page, ms: number): Promise&lt;void&gt;;</c
           </tbody>
         </table>
         <ul>
-          <li>The run layer and the opening card each carry their test id twice: <code>game-sim</code> wraps <code>RunLayer</code> in a <code>div data-testid="run-layer"</code> and <code>game-shell</code> wraps <code>OpeningCard</code> in a <code>div data-testid="opening-card"</code>, and each component's root carries the same id. The specs therefore select the run layer by <code>[data-testid="run-layer"][data-dropped]</code> and the card by its button <code>opening-start</code>.</li>
           <li>Below lg the unit count, the header actions and "Back to the tree" are in the Menu (game-shell's header table): the specs open it with <code>openHeaderMenu</code> first.</li>
           <li>A game's state is read from storage, never from the screen's words.</li>
           <li>The specs never import <code>src/lib/game/catalogue/nodes.ts</code> or <code>tree.ts</code>, whose <code>$lib</code> imports do not resolve under Playwright. They import node ids as literals, and <code>LADDER_YEARS</code> from <code>src/lib/game/catalogue/ladder-years.ts</code>, which imports nothing.</li>
@@ -955,7 +969,7 @@ export async function savedGame(page: Page): Promise&lt;GameSave&gt;;
 export async function waitSaved(page: Page, ok: (s: GameSave) =&gt; boolean): Promise&lt;GameSave&gt;;
 /** Waits until tl-mode's data-phase is `p`. */
 export async function waitPhase(page: Page, p: GamePhase): Promise&lt;void&gt;;
-/** The run layer: [data-testid="run-layer"][data-dropped]. */
+/** The run layer: getByTestId('run-layer'). */
 export function runLayer(page: Page): Locator;
 /** The run layer's data-dropped and data-collected. */
 export async function runTotals(page: Page): Promise&lt;{ dropped: number; collected: number }&gt;;
@@ -966,6 +980,8 @@ export async function tabTo(page: Page, target: Locator): Promise&lt;void&gt;;
 export async function sweepRing(page: Page): Promise&lt;number&gt;;
 /** Opens node `id` and presses its Buy, by pointer or by keys; waits for the save. */
 export async function buyNode(page: Page, id: string, by: 'pointer' | 'keys'): Promise&lt;GameSave&gt;;
+/** The data-node of the first tree-node whose data-state is 'ready'; throws when none is. */
+export async function firstReady(page: Page): Promise&lt;string&gt;;
 /** Opens the game panel from the unit count (the Menu first below lg). */
 export async function openGamePanel(page: Page): Promise&lt;Locator&gt;;</code></pre>
       <ul>
@@ -982,7 +998,7 @@ export async function openGamePanel(page: Page): Promise&lt;Locator&gt;;</code><
         <li><code>gotoEditor(page)</code> in <code>e2e/helpers/sharing.ts</code> calls <code>newVisitor(page)</code> the first time it is called for a page (a module <code>WeakSet</code>), then goes to <code>/</code> as today.</li>
         <li>A spec that seeds its own game and wants <code>/</code> calls <code>gotoHydrated(page, '/')</code>, never <code>gotoEditor</code>.</li>
         <li><code>expectPhoneHeaderFits</code> in <code>e2e/helpers/chrome.ts</code> expects the link named exactly "SF Housing" in the Menu.</li>
-        <li><code>e2e/helpers/header-text.ts</code> gains <code>widestGameHeader(page)</code>: it writes "9,999,999" into <code>header-units</code>'s visible count and "82,069 of 82,069 homes by 2066" into <code>goal-headline-button</code>.</li>
+        <li><code>e2e/helpers/header-text.ts</code> gains <code>widestGameHeader(page)</code>: it writes "9,999,999" into <code>header-units</code>'s visible count and "82,069 of 82,069 homes by Sep 2066" into <code>goal-headline-button</code>.</li>
         <li>Comments in <code>e2e/helpers/*.ts</code> that name <code>/sim</code> as the page, a level or "level up ready" are rewritten to the page as it is.</li>
       </ul>
     </section>
@@ -996,11 +1012,11 @@ export async function openGamePanel(page: Page): Promise&lt;Locator&gt;;</code><
         <li><code>paintOnce(page, isMobile)</code>. <code>opening-start</code> is visible and has focus. <code>savedGame</code> has <code>firstWinAt</code> set.</li>
         <li><code>[data-header-account]</code> reads <code>/^@\S+$/</code> (after <code>openHeaderMenu</code> below lg): the account the first win made.</li>
         <li><code>openGamePanel(page)</code>; press <code>game-collect</code>; it reads <code>aria-checked="true"</code>; press Escape.</li>
-        <li>Press <code>opening-start</code>. The pathname stays <code>/</code>. <code>waitPhase</code> <code>run</code>; the map's root has <code>data-run-view="on"</code>. <code>waitPhase</code> <code>tally</code>.</li>
-        <li><code>waitSaved</code> until <code>runs</code> is 1. Then <code>phase</code> is <code>'runs'</code>; <code>last.dropped.home</code> is above 0 and equals <code>last.collected.home</code>; <code>met</code> holds rung 0; <code>last.lump</code> is <code>{ home: 2000 }</code>; <code>units.home</code> equals <code>last.collected.home</code> plus 2,000 plus the sum of <code>last.side</code> rewards.</li>
+        <li>Press <code>opening-start</code>. The pathname stays <code>/</code>. Focus is inside the map box (<code>document.activeElement</code> contains <code>[data-testid="map-root"]</code>). <code>waitPhase</code> <code>run</code>; the map's root has <code>data-run-view="on"</code>. <code>waitPhase</code> <code>tally</code>.</li>
+        <li><code>waitSaved</code> until <code>runs</code> is 1. Then <code>phase</code> is <code>'runs'</code>; <code>last.dropped.home</code> is above 0 and equals <code>last.collected.home</code>; <code>met</code> holds rung 0; <code>last.lump</code> equals <code>RUNG_LUMP</code>; <code>units.home</code> equals <code>last.collected.home</code> plus <code>RUNG_LUMP.home</code> plus the sum of <code>last.side</code> rewards.</li>
         <li><code>runTotals</code> equals <code>last.dropped.home</code> and <code>last.collected.home</code>, and <code>tally-lump</code> is visible.</li>
         <li>Press <code>tally-continue</code>. <code>waitPhase</code> <code>tree</code>; <code>tree-run</code> and <code>tree-next</code> are visible; the map's root has no <code>data-run-view</code>.</li>
-        <li><code>buyNode(page, 'hands-radius', 'pointer')</code>. <code>bought['hands-radius']</code> is 1 and <code>units.home</code> fell by 2,000.</li>
+        <li><code>id = await firstReady(page)</code>; <code>buyNode(page, id, 'pointer')</code>. <code>bought[id]</code> is 1 and <code>units.home</code> fell by <code>PRICES[id][0]</code>.</li>
         <li>Press that node's <code>tree-node-edit</code>. <code>waitPhase</code> <code>workshop</code>; <code>waitFilled(page)</code> passes. Press "Back to the tree" (<code>headerAction(page, 'Back to the tree')</code>); <code>waitPhase</code> <code>tree</code>.</li>
         <li>Press <code>tree-run</code>; <code>waitPhase</code> <code>tally</code>; <code>waitSaved</code> until <code>runs</code> is 2; press <code>tally-continue</code>.</li>
         <li>Read <code>goal-headline-button</code>'s text. Press <code>tree-next</code>. <code>savedGame.state.rung</code> is 1, and the button's text differs from the one read.</li>
@@ -1018,11 +1034,11 @@ export async function openGamePanel(page: Page): Promise&lt;Locator&gt;;</code><
       <ol>
         <li><code>seedGoalAmount(page, 1)</code>, <code>seedRunMs(page, 8000)</code>, <code>gotoEditor(page)</code>, <code>jumpAndIdle(page, FRAME)</code>.</li>
         <li>Focus <code>body</code>; <code>tabTo</code> the map canvas; press Enter. The editor holds one op.</li>
-        <li><code>opening-start</code> has focus; press Enter. <code>waitPhase</code> <code>run</code>.</li>
+        <li><code>opening-start</code> has focus; press Enter. Focus is inside the map box. <code>waitPhase</code> <code>run</code>.</li>
         <li><code>sweepRing(page)</code> returns at least 1.</li>
         <li><code>waitPhase</code> <code>tally</code>. <code>savedGame.state.last.collected.home</code> is at least 1; "Collect for me" was never set, so it is the ring's.</li>
         <li><code>tally-continue</code> has focus; press Enter. <code>waitPhase</code> <code>tree</code>; <code>tree-run</code> has focus.</li>
-        <li><code>buyNode(page, 'hands-radius', 'keys')</code>.</li>
+        <li><code>id = await firstReady(page)</code>; <code>buyNode(page, id, 'keys')</code>.</li>
         <li><code>tabTo</code> that node's <code>tree-node-edit</code>; Enter; <code>waitPhase</code> <code>workshop</code>. <code>tabTo</code> <code>game-back</code>; Enter; <code>waitPhase</code> <code>tree</code>.</li>
         <li><code>tabTo</code> <code>tree-next</code>; Enter. <code>savedGame.state.rung</code> is 1.</li>
       </ol>
@@ -1037,7 +1053,14 @@ export async function openGamePanel(page: Page): Promise&lt;Locator&gt;;</code><
       <h3>Journey 3: the ending</h3>
       <p>Same file, test "meeting the last deadline is the ending", on both projects.</p>
       <ol>
-        <li><code>RUNGS</code> is <code>LADDER_YEARS.length + 1</code>. <code>seedGame(page, { phase: 'runs', runs: 1, rung: RUNGS - 1, met })</code>, where <code>met</code> holds <code>{ rung: k, reachedOn: ASOF, datasetVersion: 'fixture-0', at: &lt;ISO now&gt; }</code> for each <code>k</code> below <code>RUNGS - 1</code>, and <code>ASOF</code> is the fixture's <code>asOf</code> read from <code>e2e/fixtures/data/fixture-0/scenarios/fzp/calibration.json</code>.</li>
+        <li><code>RUNGS</code> is <code>LADDER_YEARS.length + 1</code>. <code>seedGame(page, { phase: 'runs', runs: 1, rung: RUNGS - 1, met })</code>, with <code>met</code> as below, and <code>ASOF</code> is the fixture's <code>asOf</code> read from <code>e2e/fixtures/data/fixture-0/scenarios/fzp/calibration.json</code>.
+          <pre><code data-lang="ts">const met: MetRung[] = Array.from({ length: RUNGS - 1 }, (_, k) =&gt; ({
+  rung: k,
+  reachedOn: ASOF,
+  datasetVersion: 'fixture-0',
+  at: new Date().toISOString()
+}));</code></pre>
+        </li>
         <li><code>seedGoalAmount(page, 1)</code>; <code>seedRunMs(page, 2000)</code>; <code>gotoHydrated(page, '/')</code>; <code>waitPhase</code> <code>tree</code>. <code>tree-next</code> and <code>tree-ending</code> are absent.</li>
         <li>Press <code>tree-run</code>; <code>waitPhase</code> <code>tally</code>; press <code>tally-continue</code>; <code>waitPhase</code> <code>tree</code>.</li>
         <li><code>savedGame.state.met</code> holds rung <code>RUNGS - 1</code>.</li>
@@ -1114,7 +1137,8 @@ export async function openGamePanel(page: Page): Promise&lt;Locator&gt;;</code><
       <p><code>e2e/game-save.spec.ts</code>: the three tests stay. <code>firstSave</code> seeds <code>{ phase: 'runs' }</code>; the <code>Listed</code> type's entries gain <code>phase</code> and <code>rung</code>.</p>
       <p><code>e2e/game-shell.spec.ts</code> holds game-shell's end-to-end list:</p>
       <ul>
-        <li>A new visitor at amount 1 paints once, sees <code>opening-start</code>, presses it, and the first run starts at <code>/</code> (<code>waitPhase</code> <code>run</code>); the pathname never changes; focus is on <code>main</code> or inside the map box after Start.</li>
+        <li>A new visitor at amount 1 paints once, sees <code>opening-start</code>, presses it, and the first run starts at <code>/</code> (<code>waitPhase</code> <code>run</code>); the pathname never changes; after Start focus is inside the map box (<code>document.activeElement</code> contains <code>[data-testid="map-root"]</code>).</li>
+        <li>The opening card is one element: <code>getByTestId('opening-card')</code> inside <code>opening-card-box</code>.</li>
         <li><code>page.request.get('/sim?seed=1', { maxRedirects: 0 })</code> answers 308 with <code>location</code> <code>/</code>; <code>page.goto('/sim')</code> ends on pathname <code>/</code>.</li>
         <li>The header has no navigation "Steps", and its site-name link reads exactly "SF Housing", at 375 px (in the Menu) and at 1280 px.</li>
         <li>A new visitor's first load of <code>/</code> has no hydration warning and shows the brush with <code>score-bar</code> reading "Room for 0 homes".</li>
@@ -1125,12 +1149,14 @@ export async function openGamePanel(page: Page): Promise&lt;Locator&gt;;</code><
       <ul>
         <li>The page lands in <code>tree</code>; <code>tree-run</code> has focus; the map box is <code>inert</code> under <code>game-tree-pane</code>.</li>
         <li>A run: <code>tree-run</code>, then <code>run</code> with <code>run-clock</code> visible and no slider "Date in the simulation", then <code>tally</code> with <code>tally-continue</code> focused, then <code>tree</code>.</li>
-        <li>With <code>units: { home: 10000 }</code>, <code>buyNode(page, 'stop-rail', 'pointer')</code> leaves 4,000 units and puts a zoning policy with id <code>game-transit</code> in <code>__sfhFzp.policy</code>, on, with one span from month 1 (G5).</li>
+        <li>With <code>units: { home: PRICES['stop-rail'][0] }</code>, <code>buyNode(page, 'stop-rail', 'pointer')</code> leaves 0 units and puts a zoning policy with id <code>game-transit</code> in <code>__sfhFzp.policy</code>, on, with one span from month 1 (G5).</li>
         <li>The node's <code>tree-node-on</code> switch turns that policy off and on: <code>aria-checked</code> and the policy's <code>on</code> follow, and <code>units</code> does not change.</li>
-        <li>Run pressed while the forecast for the bought policy is held (<code>installPolicyHold</code>, <code>holdPolicy</code> before the buy) goes to <code>starting</code> and shows <code>run-waiting</code>; <code>releasePolicy</code> lets it reach <code>run</code>.</li>
+        <li>Run pressed while the forecast for the bought policy is held (<code>installPolicyHold</code>, <code>holdPolicy</code> before the buy) goes to <code>starting</code> and shows <code>run-waiting</code> with <code>RUN_BUSY</code>; <code>releasePolicy</code> lets it reach <code>run</code>.</li>
         <li>In the workshop the Public money lane, with nothing bought there, reads "Opens in the tree" and offers no "+".</li>
         <li><code>game-back</code> returns to <code>tree</code>.</li>
         <li>A reload during the first run of a new game (<code>runs</code> 0) lands in <code>starting</code> again; a reload after a run lands in <code>tree</code>.</li>
+        <li>A first run that fails starts again (call 27): from <code>seedGame(page, { phase: 'runs' })</code> with <code>**/scenarios/fzp/calibration.json</code> answered 500 once by <code>page.route</code>, the page shows the failure and its Retry; after Retry it reaches <code>run</code> and then <code>tally</code>, and <code>game-tree-pane</code> is never attached before <code>tally</code>.</li>
+        <li>A bought node changes nothing on the map before the next run (call 26): the tree covers the map, which stays <code>inert</code>.</li>
         <li>The published view is outside the game, and a published policy runs in full in it: today's two tests at <code>/s/&lt;id&gt;</code>, with no Remix.</li>
       </ul>
     </section>
@@ -1232,8 +1258,8 @@ Full tree by &lt;Mon YYYY&gt;: missed, &lt;homes&gt; homes, &lt;short&gt; short<
           <tr><th scope="row">Opening, room goal met</th><td>Amount 1, <code>paintOnce</code>; <code>opening-start</code> shows</td></tr>
           <tr><th scope="row">Run</th><td><code>seedGame</code> with <code>runs: 1</code>, run time 8,000 ms, <code>tree-run</code>, <code>waitPhase</code> <code>run</code></td></tr>
           <tr><th scope="row">Tally</th><td>The same, then <code>waitPhase</code> <code>tally</code></td></tr>
-          <tr><th scope="row">Tree, a node open</th><td><code>tally-continue</code>, then <code>tree-node-open</code> of <code>hands-radius</code></td></tr>
-          <tr><th scope="row">Workshop</th><td><code>buyNode</code> of <code>hands-radius</code>, then its <code>tree-node-edit</code></td></tr>
+          <tr><th scope="row">Tree, a node open</th><td><code>tally-continue</code>, then <code>tree-node-open</code> of <code>firstReady</code>'s node</td></tr>
+          <tr><th scope="row">Workshop</th><td><code>buyNode</code> of <code>firstReady</code>'s node, then its <code>tree-node-edit</code></td></tr>
           <tr><th scope="row">Game panel open</th><td><code>openGamePanel</code> on the tree</td></tr>
           <tr><th scope="row">Side goals open</th><td><code>goal-headline-button</code> on the tree</td></tr>
           <tr><th scope="row">Ending</th><td>As journey 3</td></tr>
@@ -1264,12 +1290,12 @@ Full tree by &lt;Mon YYYY&gt;: missed, &lt;homes&gt; homes, &lt;short&gt; short<
         <li><strong>The game's state.</strong> <code>GameState</code> field by field; <code>NEW_GAME</code>; <code>firstWinAt</code> and the account made at the first win (D7); nothing is reset in place (D14).</li>
         <li><strong>Units.</strong> <code>Units</code> by kind, one kind <code>home</code>; <code>credit</code>, <code>affords</code>, <code>spend</code>, <code>shortBy</code>, <code>total</code>; how a second kind or a worth table is added later (P10).</li>
         <li><strong>The tree.</strong> <code>TreeNode</code>, levels, <code>after</code> and <code>ring</code>; <code>treeView</code> and <code>NodeView</code>'s states; <code>buy</code>; the catalogue, every value sourced; how a new branch is added (P3).</li>
-        <li><strong>Tuning.</strong> <code>catalogue/tuning.ts</code> holds <code>RUNG_LUMP</code>, <code>SIDE_TUNING</code> and <code>PRICES</code>, the only numbers the balance script tunes (call 25); <code>scripts/tree-balance.ts</code> and what it reports; only people edit the file.</li>
+        <li><strong>Tuning.</strong> <code>catalogue/tuning.ts</code> holds <code>RUNG_LUMP</code>, <code>SIDE_TUNING</code> and <code>PRICES</code>, the only numbers the balance script tunes (call 25); <code>scripts/tree-balance.ts</code> and what it reports; T1: the file and <code>ladder-years.ts</code> hold measured and tuned values, and code and tests elsewhere pass their own; only people edit <code>tuning.ts</code>.</li>
         <li><strong>Grants and the policy document.</strong> <code>applyGrant</code> and <code>GAME_TRANSIT_ID</code>; every added policy on from month 1; the switch on a bought node and in the Inspector, with no refund (P12); the page applies the grant, the store does not; <code>buyAndApply</code> and <code>fullTree</code> in <code>catalogue/play.ts</code>.</li>
         <li><strong>Limits.</strong> <code>Limits</code>, <code>limitsOf</code>, <code>within</code>, <code>runnable</code>, <code>isGiven</code>, <code>FREE_MEASURES</code>, <code>START_BANDS</code>, <code>START_STORIES</code>, <code>START_REACH_M</code>, <code>BASE_HANDS</code>; what the last rung lifts; what never runs in a game (P11, D4).</li>
         <li><strong>The ladder.</strong> <code>LADDER_YEARS</code>, at most four, and how <code>scripts/reach-measure.ts --write</code> sets them; <code>ladder</code>, <code>goalAt</code>, <code>RUNGS</code>, <code>takeNext</code>, <code>finished</code>, <code>fitGame</code>; a met deadline stays met after a data update (call 8).</li>
         <li><strong>Side goals.</strong> <code>SIDE_GOALS</code>, <code>SIDE_SHOWN</code>, <code>sideShown</code>, targets and rewards from <code>SIDE_TUNING</code>, and that each reads what the page already has (call 11).</li>
-        <li><strong>A run.</strong> The run is not the playhead (call 1); <code>RUN_MS</code> and <code>runRate</code>; the drops' feed from the city markers; settling with <code>readRun</code>, <code>resultOf</code> and <code>settle</code>; what a run pays; a result settled twice pays once.</li>
+        <li><strong>A run.</strong> The run is not the playhead (call 1); <code>RUN_MS</code> and <code>runRate</code>; the drops' feed from the city markers; settling with <code>readRun</code>, <code>resultOf</code> and <code>settle</code>; what a run pays; a result settled twice pays its lump and side rewards once, and the store refuses a second settle; a first run that fails starts again (call 27); a bought node shows in the next run, not on the map before it (call 26).</li>
         <li><strong>Drops, the ring and sound.</strong> <code>planDrops</code> and a drop's worth (call 2); <code>RunLayer</code> and its canvas (call 13); the ring by pointer and keys (<code>RING_KEYS</code>); "Collect for me" (call 17) and <code>onPrefs</code>; reduced motion, the flash limit and what a screen reader hears; <code>createSound</code> and the switch (call 18); the words in <code>run/words.ts</code>.</li>
         <li><strong>The screens and header parts.</strong> <code>Tally</code> (with the account offer), <code>Tree</code> (filling the page below the header, call 20), <code>GoalHeadline</code>, <code>OpeningCard</code>, <code>GameCell</code> and <code>GamePanel</code>; their test ids; the words in <code>ui/words.ts</code>.</li>
         <li><strong>The store.</strong> <code>GameStore</code>'s getters and methods (G7); <code>parseGameSave</code> then <code>fitGame</code> on every save read; each write calls <code>sync.changed</code>; <code>beforeLeave</code>; two tabs, last write wins.</li>
@@ -1331,7 +1357,7 @@ Full tree by &lt;Mon YYYY&gt;: missed, &lt;homes&gt; homes, &lt;short&gt; short<
         <li>Changes: <code>README.md:1</code>, <code>CLAUDE.md:7</code>, and <code>docs/dev/deploy.md:177</code>, whose app name becomes <code>SF Housing</code>.</li>
         <li>Unchanged, as history: every file under <code>docs/superpowers/</code> (dated designs, specs and plans), every file under <code>.superpowers/</code> (run ledgers and surveys), <code>CHANGELOG.md</code>, and <code>docs/lesscars/plan-v1.md:2059</code> (a dated source record that names the dataset as it was then).</li>
         <li>Unchanged, by the global constraint on hashed files: <code>pipeline/lidar-raster/sfh_lidar/__init__.py:1</code>.</li>
-        <li><code>docs/dev/sim-page.md:81</code> ("drops Simulator") is <code>game-sim</code>'s file; a hit left there is reported to that unit.</li>
+        <li><code>docs/dev/sim-page.md:81</code> ("drops Simulator") is <code>game-sim</code>'s, in its docs edits. The titles of <code>src/routes/s/[id]/+page.svelte</code> and <code>+error.svelte</code> are <code>game-shell</code>'s.</li>
         <li>The Google Auth Platform's app name is a setting in Google's console: changing it to "SF Housing" is an owner action, named in the hand-back.</li>
       </ul>
     </section>
@@ -1412,7 +1438,7 @@ npx tsx scripts/reach-check.ts --version &lt;v&gt;</code></pre>
     <h2>Tests</h2>
     <p>e2e, both projects unless marked:</p>
     <ul>
-      <li>A new visitor paints to the room goal at amount 1, starts, runs with "Collect for me", collects every drop, gets the lump, buys <code>hands-radius</code>, opens the workshop and comes back, runs again and takes the next goal; the account holds the game at <code>phase</code> <code>'runs'</code>, <code>rung</code> 1.</li>
+      <li>A new visitor paints to the room goal at amount 1, starts, runs with "Collect for me", collects every drop, gets the lump, buys the first ready node, opens the workshop and comes back, runs again and takes the next goal; the account holds the game at <code>phase</code> <code>'runs'</code>, <code>rung</code> 1.</li>
       <li>By keyboard only (chromium): one stamp, Start, at least one drop collected by sweeping the ring with the arrow keys, Continue, a purchase, the workshop and back, the next goal; every target shows its focus ring.</li>
       <li>A game at the last rung meets it in one run, and the tree shows the ending with its year and a Publish that opens the publish dialog, and no next goal.</li>
       <li>The game's page passes the accessibility checklist in each of the nine states of <a href="#tbl-a11y-states">the states table</a>.</li>
@@ -1436,10 +1462,9 @@ npx tsx scripts/reach-check.ts --version &lt;v&gt;</code></pre>
     <h2>Decisions</h2>
     <ul>
       <li><strong>One goal amount, 1, for every journey.</strong> One stamp meets the room goal and every run meets its rung on fixture-0, so each run's outcome and the first lump are certain.</li>
-      <li><strong>The journeys buy <code>hands-radius</code>.</strong> It is the one node shown at rung 0 that the first run's lump alone pays for.</li>
+      <li><strong>The journeys buy the first ready node.</strong> G6 guarantees one after the first run's lump, and choosing on the screen keeps the journeys true whatever T1 tunes.</li>
       <li><strong>The keyboard journey sweeps the ring row by row.</strong> The ring and drops are on a canvas with no page hook; Shift steps of 64 px with a 48 px radius cover the box, and a pass is shorter than a drop's 4,000 ms linger.</li>
       <li><strong>State is read from storage, not the screen.</strong> The saved game is G1's contract, while the screens' words are another unit's to choose.</li>
-      <li><strong>The run layer and the opening card are selected past their doubled test ids.</strong> Two units put the same id on a wrapper and a root; <code>[data-dropped]</code> and <code>opening-start</code> name one element each.</li>
       <li><strong>The keyboard journey runs on chromium only.</strong> A keyboard on the phone layout is not a case the checklist asks for, and the pointer journey covers the phone.</li>
       <li><strong>The step clicks become the site-name link.</strong> Those tests are about a client navigation into the simulation, which the site name still gives.</li>
       <li><strong>The reach check is renamed <code>reach-check</code>.</strong> Level 2 no longer exists, and the check now asks about the first and last deadlines.</li>

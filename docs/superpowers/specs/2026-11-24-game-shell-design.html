@@ -356,7 +356,7 @@ export const load: PageLoad = async ({ fetch, parent }): Promise&lt;HomeData&gt;
 
       <pre><code data-lang="svelte">&lt;!-- src/routes/+page.svelte --&gt;
 &lt;script lang="ts"&gt;
-  import { onMount, tick } from 'svelte';
+  import { onMount } from 'svelte';
   import { useGame, type StoreChange } from '$lib/game/store.svelte';
   import type { CameraFrame } from '$lib/map/types';
   import { SITE_NAME } from '$lib/shell/name';
@@ -379,14 +379,6 @@ export const load: PageLoad = async ({ fetch, parent }): Promise&lt;HomeData&gt;
     return game.startRuns();
   }
 
-  let before = 'pending';
-  $effect(() =&gt; {
-    const now = body;
-    if (before === 'opening' &amp;&amp; now === 'sim') {
-      void tick().then(() =&gt; document.getElementById('main')?.focus());
-    }
-    before = now;
-  });
 &lt;/script&gt;
 
 &lt;svelte:head&gt;&lt;title&gt;{SITE_NAME}&lt;/title&gt;&lt;/svelte:head&gt;
@@ -415,7 +407,7 @@ export const load: PageLoad = async ({ fetch, parent }): Promise&lt;HomeData&gt;
         <li>The body is chosen only after mount, because the server and the browser hold different games; choosing earlier would mismatch at hydration.</li>
         <li>The open game is in phase <code>'runs'</code> (G7), so it gets the simulation (call 21). <code>game.open</code> is also tested on its own, so the rule does not rest on the open game's phase alone.</li>
         <li>The body follows <code>game.state.phase</code> reactively. The opening ends when <code>startRuns()</code> sets <code>phase</code> to <code>'runs'</code>; the page then unmounts <code>PaintOpening</code> (its autosave flushes on detach) and mounts <code>SimRoute</code>. This is the one remount of the map (call 6).</li>
-        <li>After that change within one mount, focus moves to <code>&lt;main id="main"&gt;</code>, since the focused control was removed.</li>
+        <li>After that change, focus is <code>game-sim</code>'s: it moves into the map box when the simulation is starting its first run. This page moves no focus.</li>
         <li>The page does not remount on a change of <code>game.currentId</code>: a rekey of the current game by the save sync keeps the same game. A switch, New game or the deletion of the game in play is followed by a full load of <code>/</code> by <code>GamePanel</code> (U1).</li>
         <li>The page title is the site's name in every state. The heading is the site's name, <code>sr-only</code>.</li>
       </ul>
@@ -466,7 +458,7 @@ export const load: PageLoad = () =&gt; {
           <li>The <code>gotoSim</code> helpers and <code>page.goto('/sim')</code> keep working through the redirect. Assertions on <code>/\/sim$/</code> become <code>/\/$/</code>.</li>
           <li>Clicks on the "Paint" and "Simulate" steps, <code>headerLink(page, 'Simulate')</code> and every assertion on the steps go.</li>
           <li>Path lists <code>['/', '/sim']</code> become <code>['/']</code>, plus a <code>newVisitor</code> case where the spec checks the opening.</li>
-          <li><code>paint-win</code> expectations move to the wrapper <code>data-testid="opening-card"</code> and to <code>OpeningCard</code>'s own controls.</li>
+          <li><code>paint-win</code> expectations move to <code>data-testid="opening-card"</code>, <code>OpeningCard</code>'s own root (U1), and to its controls. The wrapper is <code>opening-card-box</code>.</li>
         </ul>
       </section>
     </section>
@@ -498,7 +490,7 @@ export function camera(): CameraFrame | null;</code></pre>
         <li><code>cardOpen</code> resets to false whenever <code>won</code> changes, as today. <code>kept</code> and <code>keep()</code> go: <code>OpeningCard</code> has no "Keep playing".</li>
         <li><code>maybeOpen()</code> opens the card when <code>won</code>, the card is closed and no pointer is held, and calls <code>game.won()</code>. It runs after each complete score and on pointer release.</li>
         <li>The card stays while the goal is met. A stroke that takes the plan below the goal closes it; crossing again reopens it on release.</li>
-        <li>The card is <code>&lt;OpeningCard amount={goal.amount} onstart={start} /&gt;</code> inside <code>&lt;div data-testid="opening-card" class="pointer-events-auto"&gt;</code>, in the notice stack where <code>WinCard</code> was.</li>
+        <li>The card is <code>&lt;OpeningCard amount={goal.amount} onstart={start} /&gt;</code> inside <code>&lt;div data-testid="opening-card-box" class="pointer-events-auto"&gt;</code>, in the notice stack where <code>WinCard</code> was.</li>
         <li>The offer effect, <code>setOffer</code>, the <code>goto('/sim')</code> effect, <code>WinCard</code> and <code>unlockText</code> go.</li>
         <li>The page's comment about a complete score is corrected: complete means the cells are loaded; the held pointer is what defers the card during a stroke.</li>
       </ul>
@@ -602,7 +594,7 @@ export const FUTURE_SCHEMA_MESSAGE =
           <tr><th scope="row"><code>src/routes/p/[id]/+error.svelte:15</code></th><td><code>Plan not found · SF Housing</code></td><td><code>game-shell</code></td></tr>
           <tr><th scope="row"><code>src/routes/p/[id]/+error.svelte:18</code></th><td><code>{heading} · SF Housing</code></td><td><code>game-shell</code></td></tr>
           <tr><th scope="row"><code>src/routes/s/[id]/+page.svelte:26</code></th><td><code>{heading} · SF Housing</code>, from <code>SITE_NAME</code></td><td><code>game-shell</code>, after <code>game-sim</code></td></tr>
-          <tr><th scope="row"><code>src/routes/s/[id]/+error.svelte:16</code></th><td><code>{heading} · SF Housing</code>, from <code>SITE_NAME</code></td><td><code>game-sim</code></td></tr>
+          <tr><th scope="row"><code>src/routes/s/[id]/+error.svelte:16</code></th><td><code>{heading} · SF Housing</code>, from <code>SITE_NAME</code></td><td><code>game-shell</code>, after <code>game-sim</code></td></tr>
           <tr><th scope="row"><code>src/lib/config.ts:2</code> (<code>APP_NAME</code>)</th><td>Left as it is and unused; the About title reads <code>SITE_NAME</code></td><td><code>game-shell</code> (<code>src/routes/about/+page.svelte</code>)</td></tr>
           <tr><th scope="row"><code>src/lib/server/auth/brand.ts:2</code></th><td><code>PRODUCT_NAME = SITE_NAME</code></td><td><code>game-shell</code></td></tr>
           <tr><th scope="row"><code>src/lib/plan/schema.ts:33</code></th><td>"…a newer version of SF Housing…"</td><td><code>game-shell</code></td></tr>
@@ -753,7 +745,7 @@ const tables = [
     <section id="sec-design-testids">
       <h3>Test hooks</h3>
       <ul>
-        <li>Added: <code>data-testid="home-frame"</code> on <code>/</code>'s empty frame before mount; <code>data-testid="opening-card"</code> on the opening card's wrapper.</li>
+        <li>Added: <code>data-testid="home-frame"</code> on <code>/</code>'s empty frame before mount; <code>data-testid="opening-card-box"</code> on the opening card's wrapper. <code>opening-card</code> is <code>OpeningCard</code>'s own root (U1).</li>
         <li>Removed: <code>data-testid="paint-win"</code>, <code>data-level-dot</code>, <code>data-step-locked</code>, <code>data-step-number</code>, the "Steps" navigation, <code>header-level</code>, <code>header-level-up</code>, <code>header-level-panel</code>.</li>
         <li>Unchanged: <code>data-header-menu</code>, <code>data-header-status</code>, <code>data-header-account</code>, <code>data-header-about</code>, <code>data-header-keep-open</code>, <code>score-bar</code>, <code>save-state</code>.</li>
       </ul>
@@ -769,7 +761,7 @@ const tables = [
         <li><code>src/routes/+page.ts</code>: <code>HomeData</code>.</li>
         <li>The specs and hosts of <code>/</code>: <code>src/routes/page.spec.ts</code> (with <code>/sim</code>'s redirect), <code>page.svelte.spec.ts</code>, <code>page.game.svelte.spec.ts</code>, <code>page.header.svelte.spec.ts</code>, <code>page.rest-text.svelte.spec.ts</code>, <code>page.undo.svelte.spec.ts</code>, <code>page.view.svelte.spec.ts</code>, <code>src/routes/test/PageHost.svelte</code> (a <code>game</code> prop, default a new game in the opening), <code>PaintHeaderHost.svelte</code>, <code>page-worker.ts</code>.</li>
         <li><code>src/routes/sim/+page.ts</code> and <code>+page.svelte</code>: the redirect.</li>
-        <li><code>src/routes/s/[id]/+page.svelte</code>: the title's name only, after <code>game-sim</code>.</li>
+        <li><code>src/routes/s/[id]/+page.svelte</code> and <code>+error.svelte</code>: the titles' name only, from <code>SITE_NAME</code>, after <code>game-sim</code>.</li>
         <li><code>src/routes/about/+page.svelte</code>: the title imports <code>SITE_NAME</code>.</li>
         <li><code>src/lib/shell/SiteHeader.svelte</code>, <code>layout.ts</code>, <code>layout.spec.ts</code>, <code>SiteHeader.svelte.spec.ts</code>, <code>SiteHeader.ssr.spec.ts</code>, <code>accent.spec.ts</code>.</li>
         <li><code>src/lib/shell/test/seeded-game.ts</code>: <code>seededGame({ state?: Partial&lt;GameState&gt;; saves?; plan?; policy?; sync? })</code>, the first game current with <code>{ ...NEW_GAME, ...state }</code>, the others <code>NEW_GAME</code>, each written as a G1 <code>GameSave</code> with its <code>SaveEntry</code> in the index <code>saves.ts</code> reads. <code>seeded-game.svelte.spec.ts</code> follows.</li>
@@ -797,7 +789,7 @@ const tables = [
         <li><code>src/lib/sharing/remix.ts</code>, <code>remix.spec.ts</code>.</li>
       </ul>
     </section>
-    <p><code>src/routes/+layout.svelte</code> and <code>src/lib/config.ts</code> are not written. <code>src/routes/s/[id]/+error.svelte</code>'s title and the <code>SharedBanner</code> call on <code>/s/[id]</code> are <code>game-sim</code>'s.</p>
+    <p><code>src/routes/+layout.svelte</code> and <code>src/lib/config.ts</code> are not written. The <code>SharedBanner</code> call on <code>/s/[id]</code> is <code>game-sim</code>'s.</p>
   </section>
 
   <section id="sec-tests">
@@ -824,8 +816,8 @@ const tables = [
         <li><code>/</code> with the open game: <code>SimRoute</code> mounts in edit mode (a stub for <code>$lib/sim-page/SimRoute.svelte</code> records its props); no <code>BrushEditor</code>.</li>
         <li><code>/</code> with a game in <code>'runs'</code>: <code>SimRoute</code> mounts with <code>initialFrame</code> undefined.</li>
         <li><code>/</code> with a new game: the brush editor, the pinned "Room for 0 homes", Publish for the plan and the save state.</li>
-        <li>The opening: a complete score at the goal opens <code>opening-card</code> and calls <code>won()</code> once; an incomplete score opens nothing; a win while a pointer is held opens on release; a complete score below the goal closes it.</li>
-        <li>Start: <code>startRuns()</code> is called, the phase becomes <code>'runs'</code>, <code>SimRoute</code> mounts, <code>BrushEditor</code> is gone and focus is on <code>&lt;main&gt;</code>. With a stub opening that calls <code>onstart(FRAME)</code>, <code>SimRoute</code> receives <code>initialFrame</code> equal to <code>FRAME</code>.</li>
+        <li>The opening: a complete score at the goal opens <code>opening-card-box</code> holding <code>opening-card</code> and calls <code>won()</code> once; an incomplete score opens nothing; a win while a pointer is held opens on release; a complete score below the goal closes it.</li>
+        <li>Start: <code>startRuns()</code> is called, the phase becomes <code>'runs'</code>, <code>SimRoute</code> mounts, and <code>BrushEditor</code> is gone. With a stub opening that calls <code>onstart(FRAME)</code>, <code>SimRoute</code> receives <code>initialFrame</code> equal to <code>FRAME</code>.</li>
         <li>A refused start leaves the opening and shows "This browser refused to save."</li>
         <li>The opening keeps today's autosave tests: restore, N1 to N3, <code>touched()</code> after a write, one <code>beforeLeave</code> registered and removed on unmount.</li>
         <li><code>/p/[id]</code>: no Remix button and no "Open with current data"; "Your game" links <code>/</code>; the title is "&lt;title&gt; · SF Housing"; the 404 title is "Plan not found · SF Housing".</li>
@@ -856,7 +848,6 @@ const tables = [
       <li><strong>The card stays while the goal is met.</strong> <code>OpeningCard</code> has no dismiss, and the map stays usable under the non-modal card.</li>
       <li><strong>No remount on a change of the current id.</strong> The sync's rekey keeps the same game; a real switch loads the page.</li>
       <li><strong>No dot on the Menu button.</strong> Nothing in the Menu acts on an offered rung or an affordable node.</li>
-      <li><strong>Focus goes to <code>&lt;main&gt;</code> after Start.</strong> The pressed control is removed with the opening.</li>
       <li><strong>The Remix-free N5:</strong> "Made with map data X, older than the current data (Y)." It states the fact the old line hung Remix on.</li>
       <li><strong>The About section keeps its id <code>about-levels</code>.</strong> Ids are link targets, and two specs name it.</li>
       <li><strong>The run's keys are a third table, "Run".</strong> The two existing tables list Paint's and the timeline's keys; a run is neither.</li>
@@ -869,7 +860,7 @@ const tables = [
   <section id="sec-out-of-scope">
     <h2>Out of scope</h2>
     <ul>
-      <li>The simulation's states, the run, the tally, the tree, the workshop, Publish of the policy, <code>GoalHeadline</code>'s registration, the removal of the locked page in <code>SimRoute</code>, the tests and hosts under <code>src/routes/sim</code>, <code>initialFrame</code> through <code>SimRoute</code>, <code>SimPage</code> and <code>TimelineMode</code>, and <code>/s/[id]</code> other than its title: <code>game-sim</code>.</li>
+      <li>The simulation's states, the run, the tally, the tree, the workshop, Publish of the policy, <code>GoalHeadline</code>'s registration, the removal of the locked page in <code>SimRoute</code>, the tests and hosts under <code>src/routes/sim</code>, <code>initialFrame</code> through <code>SimRoute</code>, <code>SimPage</code> and <code>TimelineMode</code>, <code>/s/[id]</code> other than the titles of <code>+page.svelte</code> and <code>+error.svelte</code>, and focus after Start (into the map box): <code>game-sim</code>.</li>
       <li><code>GameCell</code>, <code>GamePanel</code>, <code>OpeningCard</code> and their words, focus and Escape handling: <code>tally-tree</code>.</li>
       <li><code>won()</code>, <code>startRuns()</code>, the open game's state, the save sync, <code>e2eGoalAmount</code>, <code>MAX_SAVES</code>, <code>e2e/helpers/game.ts</code>: <code>game-save</code>.</li>
       <li>The run view and its camera memory: <code>map-run</code>.</li>

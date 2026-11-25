@@ -32,7 +32,11 @@
 
   <section id="sec-interfaces">
     <h2>Interfaces</h2>
-    <p>This subsystem produces G3 and G5. It needs G1, G2, G4 and G6. The rows and their sections are copied from the design without change.</p>
+    <p>This subsystem is two parts, built and merged in order. The rows and their sections are copied from the design without change.</p>
+    <ul>
+      <li><strong>The code</strong> needs G1, G2, G4 and G6, and produces G3 and G5.</li>
+      <li><strong>The measurement</strong> needs G1 to G6, and produces T1. Only <code>closing</code> waits on it.</li>
+    </ul>
     <table id="tbl-interfaces">
       <caption>Interface table</caption>
       <thead>
@@ -45,6 +49,7 @@
         <tr><th scope="row">G4</th><td><code>game-core</code></td><td>Model commitment</td><td>Limits from what is bought; whether a policy runs</td><td><a href="#sec-if-g4">G4</a></td></tr>
         <tr><th scope="row">G5</th><td><code>tree-catalogue</code></td><td>Decomposition choice</td><td>Applying a grant to the policy document</td><td><a href="#sec-if-g5">G5</a></td></tr>
         <tr><th scope="row">G6</th><td><code>game-core</code></td><td>Model commitment</td><td>The ladder, side goals, a run's result, settling</td><td><a href="#sec-if-g6">G6</a></td></tr>
+        <tr><th scope="row">T1</th><td><code>tree-catalogue</code></td><td>Decomposition choice</td><td>The measured ladder years and the tuned numbers</td><td><a href="#sec-if-t1">T1</a></td></tr>
       </tbody>
     </table>
     <section id="sec-if-g1">
@@ -409,7 +414,7 @@ export function sideShown(s: GameState, goals?: readonly SideGoal[]): SideGoal[]
         <li><code>resultOf</code> lists a side goal when it is shown, not yet met, and its <code>value</code> is at least its <code>target</code>.</li>
         <li><code>settle</code> credits <code>collected</code>, <code>lump</code> and each side reward; records the rung in <code>met</code> when <code>reachedOn</code> is set and the rung is not there; records each side goal; adds 1 to <code>runs</code>; sets <code>last</code>.</li>
         <li><code>settle</code> never removes a met rung (call 8).</li>
-        <li><code>settle</code> pays a lump or a side reward only when it also records it, so a result settled twice pays once.</li>
+        <li><code>settle</code> pays a lump or a side reward only when it also records it, so a result settled twice pays its lump and its side rewards once. The store refuses a second settle of one result (G7).</li>
         <li><code>takeNext</code> moves to the next rung when the rung in play is met and a next one exists. Otherwise it returns the same state.</li>
         <li><code>finished</code> is true once the last rung is in <code>met</code>.</li>
         <li><code>fitGame</code> drops a <code>bought</code> entry for a node the catalogue does not have and lowers a level above the node's last to it.</li>
@@ -418,6 +423,19 @@ export function sideShown(s: GameState, goals?: readonly SideGoal[]): SideGoal[]
         <li><code>fitGame</code> returns the same object when nothing is dropped or lowered.</li>
         <li><code>sideShown</code> returns the first <code>SIDE_SHOWN</code> goals whose ring is open and which are not met.</li>
         <li>A side goal's <code>read</code> returns null when the view lacks what it reads.</li>
+      </ul>
+    </section>
+
+    <section id="sec-if-t1">
+      <h3>T1 The measured ladder years and the tuned numbers</h3>
+      <pre><code data-lang="sh">npx tsx scripts/reach-measure.ts &lt;datasetDir&gt; --write
+npx tsx scripts/tree-balance.ts &lt;datasetDir&gt;</code></pre>
+      <ul>
+        <li>T1 is the state of two files after the measurement: <code>src/lib/game/catalogue/ladder-years.ts</code> and <code>src/lib/game/catalogue/tuning.ts</code>. It adds no type and no export to G3 or G6.</li>
+        <li><code>LADDER_YEARS</code> holds the years <code>reach-measure</code> wrote from the production dataset, by G6's rule.</li>
+        <li><code>tuning.ts</code> holds prices, the rung lump and side-goal numbers under which <code>tree-balance</code> passes every check it reports on the production dataset.</li>
+        <li>Before T1, both files hold starting values. Code and tests outside <code>tree-catalogue</code> and <code>closing</code> never assert a price, a ladder year or the number of rungs from these files; they pass their own.</li>
+        <li>When no set of numbers passes, the unit stops and hands the report to the owner with the checks that fail.</li>
       </ul>
     </section>
   </section>
@@ -505,6 +523,16 @@ export function sideShown(s: GameState, goals?: readonly SideGoal[]): SideGoal[]
 
   <section id="sec-design">
     <h2>Design</h2>
+
+    <section id="sec-design-parts">
+      <h3>The two parts</h3>
+      <ul>
+        <li><strong>The code</strong>: <code>tree.ts</code>, <code>grant.ts</code>, <code>catalogue/nodes.ts</code>, <code>catalogue/play.ts</code>, <code>catalogue/ladder-years.ts</code> and <code>catalogue/tuning.ts</code> with their starting values, and their specs. It produces G3 and G5 and merges first.</li>
+        <li><strong>The measurement</strong>: <code>scripts/reach-measure.ts</code> with the engine runner, <code>scripts/tree-balance.ts</code>, their specs, the tuning loop, the measured <code>ladder-years.ts</code> and the tuned <code>tuning.ts</code>. It produces T1 and merges after the code.</li>
+        <li>Nothing in the code part imports a script or needs a dataset. Its tests build calibrations in memory.</li>
+        <li>The measurement part imports the code part (<code>fullTree</code>, <code>buyAndApply</code>, <code>treeView</code>, <code>NODES</code>) and <code>game-core</code>'s G6 functions.</li>
+      </ul>
+    </section>
 
     <section id="sec-design-catalogue">
       <h3>The catalogue</h3>
@@ -893,17 +921,17 @@ export const RUNG_LUMP: Units = Object.freeze({ home: 2000 });
 
 /** Each side goal's target and reward, by its id (G6). */
 export const SIDE_TUNING: Record&lt;string, { target: number; reward: Units }&gt; = {
-  'policy-1000': { target: 1_000, reward: { home: 500 } },
-  'collect-half': { target: 50, reward: { home: 300 } },
-  'approved-2000': { target: 2_000, reward: { home: 400 } },
-  'collect-10000': { target: 10_000, reward: { home: 500 } },
-  'policy-10000': { target: 10_000, reward: { home: 1000 } },
-  'new-money-100': { target: 100, reward: { home: 800 } },
-  'funded-15000': { target: 15_000, reward: { home: 800 } },
-  'collect-most': { target: 90, reward: { home: 600 } },
-  'building-10000': { target: 10_000, reward: { home: 800 } },
-  'affordable-20000': { target: 20_000, reward: { home: 1200 } },
-  'policy-25000': { target: 25_000, reward: { home: 1500 } }
+  'policy-homes-1': { target: 1_000, reward: { home: 500 } },
+  'collect-share-1': { target: 50, reward: { home: 300 } },
+  'approved-homes': { target: 2_000, reward: { home: 400 } },
+  'collect-run': { target: 10_000, reward: { home: 500 } },
+  'policy-homes-2': { target: 10_000, reward: { home: 1000 } },
+  'new-money': { target: 100, reward: { home: 800 } },
+  'funded-homes': { target: 15_000, reward: { home: 800 } },
+  'collect-share-2': { target: 90, reward: { home: 600 } },
+  'building-homes': { target: 10_000, reward: { home: 800 } },
+  'affordable-homes': { target: 20_000, reward: { home: 1200 } },
+  'policy-homes-3': { target: 25_000, reward: { home: 1500 } }
 };
 
 /** Each node's price in homes, one per level in order. */
@@ -933,8 +961,8 @@ export const PRICES: Readonly&lt;Record&lt;NodeId, readonly number[]&gt;&gt; = {
   'hands-auto': [75_000]
 };</code></pre>
       <ul>
-        <li><code>SIDE_TUNING</code> has one entry for each id in <code>SIDE_GOALS</code> and no other. The goals themselves (ids, labels, rings, <code>read</code>) are <code>game-core</code>'s.</li>
-        <li>The targets of <code>collect-half</code> and <code>collect-most</code> are percents of the run's dropped units; the target of <code>new-money-100</code> is millions of dollars; every other target is homes.</li>
+        <li><code>SIDE_TUNING</code> has one entry for each of the eleven ids <code>game-core</code> defines, and no other. The goals themselves (ids, labels, rings, <code>read</code>) are <code>game-core</code>'s; a goal with no entry is not offered.</li>
+        <li>The targets of <code>collect-share-1</code> and <code>collect-share-2</code> are percents of the run's dropped units; the target of <code>new-money</code> is millions of dollars; every other target is homes.</li>
         <li><code>PRICES</code> has one entry for each node, with one whole number above 0 per level.</li>
         <li>The cheapest level shown at rung 0, <code>hands-radius</code> level 1 at 2,000, costs no more than <code>RUNG_LUMP</code> (G6).</li>
         <li>Only people edit this file, after reading a balance report. No script writes it.</li>
@@ -1404,7 +1432,7 @@ LADDER_YEARS = [2060, 2055, 2050, 2045]</code></pre>
 // The deadline years after the window's end, latest first (G6). Provisional: not measured.
 // `npx tsx scripts/reach-measure.ts --write` replaces this file.
 export const LADDER_YEARS: readonly number[] = [2060, 2055, 2050, 2045];</code></pre>
-      <aside data-kind="note"><strong>Who runs it</strong> The <code>tree-catalogue</code> implementer runs it with <code>--write</code> on the dataset version in production, before the unit is finished, and commits the file. It is run again whenever the dataset version changes or a policy node is added. The dataset must be on disk (a built <code>pipeline/out/&lt;version&gt;</code>) or fetched with <code>--version</code>: <code>npm run data:local</code> loads local R2 and keeps no directory.</aside>
+      <aside data-kind="note"><strong>Who runs it</strong> The implementer of the measurement part runs it with <code>--write</code> on the dataset version in production, before that part is finished, and commits the file. It is run again whenever the dataset version changes or a policy node is added. The dataset must be on disk (a built <code>pipeline/out/&lt;version&gt;</code>) or fetched with <code>--version</code>: <code>npm run data:local</code> loads local R2 and keeps no directory.</aside>
     </section>
 
     <section id="sec-design-balance">
@@ -1454,7 +1482,7 @@ npx tsx scripts/tree-balance.ts --version &lt;datasetVersion&gt; [--from &lt;ori
         <h4>Share of drops collected</h4>
 <pre><code data-lang="ts">export const SHARE = { base: 0.25, perRadius: 0.1, perLinger: 0.05 } as const;
 
-/** The share of dropped units a player collects: a starting assumption until playtests. */
+/** The share of dropped units a player collects: an assumption, not a measurement. */
 export function shareOf(s: GameState, mode: 'hand' | 'collect-for-me'): number {
   if (mode === 'collect-for-me' || (s.bought['hands-auto'] ?? 0) &gt;= 1) return 1;
   const r = s.bought['hands-radius'] ?? 0;
@@ -1464,7 +1492,7 @@ export function shareOf(s: GameState, mode: 'hand' | 'collect-for-me'): number {
         <ul>
           <li>Each order is played twice: <code>hand</code>, with the share above, and <code>collect-for-me</code>, with every drop collected (call 17).</li>
           <li>The hand shares run from 0.25 with no Hands node to 0.80 with every radius and linger level.</li>
-          <li>The shares are a starting assumption. Playtests replace them: a playtest records collected and dropped units from each tally, by the Hands levels bought, and the owner of a later change edits <code>SHARE</code> to match.</li>
+          <li><code>SHARE</code> and <code>CLOCK</code> are assumptions, not measurements. This unit ships them as given, and no unit of this build measures them. The owner changes them after playing the built game.</li>
         </ul>
       </section>
 
@@ -1509,7 +1537,7 @@ export const TARGETS = {
         <ul>
           <li>Each play reports the units each run earned from <code>RUNG_LUMP</code> and from side rewards, apart from collected units, and the run on which each side goal was first met.</li>
           <li>Before the plays, the script reads current law (the empty document's view) at each rung's deadline. For each side goal it reports the goal's <code>read</code> at that deadline, with the run's take set to current law's dropped units at the 0.25 share.</li>
-          <li>A side goal whose target is at or below current law's value at the deadline of its ring's rung is flagged <code>at-or-below-current-law</code>, with the value to raise it to: 1.25 times current law's value, rounded up to the next 1,000 (the <code>game-core</code> rule).</li>
+          <li>A side goal whose target is at or below current law's value at the deadline of its ring's rung is flagged <code>at-or-below-current-law</code>, with the value to raise it to: 1.25 times current law's value, rounded up to the next 1,000. This is this spec's rule; the implementer of the measurement sets the target to that value.</li>
           <li>A side goal never met in any <code>hand</code> play is flagged <code>never-met</code>.</li>
         </ul>
       </section>
@@ -1530,8 +1558,8 @@ Play catalogue, hand
   Fewest purchases between deadlines 4 (target 3)  pass
   Lump 8,000 in 4 runs; side rewards 6,400 from 9 goals
 Current law at each deadline
-  funded-15000  rung 1 Dec 2060  value 12,400  target 15,000
-  building-10000  rung 1 Dec 2060  value 11,200  target 10,000  at-or-below-current-law: raise to 14,000</code></pre>
+  funded-homes  rung 1 Dec 2060  value 12,400  target 15,000
+  building-homes  rung 1 Dec 2060  value 11,200  target 10,000  at-or-below-current-law: raise to 14,000</code></pre>
 <pre><code data-lang="ts">export interface PlayReport {
   order: string;
   mode: 'hand' | 'collect-for-me';
@@ -1579,7 +1607,7 @@ export interface SideReport {
         <ul>
           <li>The prices in <code>PRICES</code> (shown in <a href="#tbl-nodes">the catalogue table</a>) are starting values. They are set from an estimate: current law completes about 66,000 net homes from today to the window's end, so a first run collects about 16,500 units at the 0.25 share.</li>
           <li>A node's first level costs 2,000 to 10,000 in stage 0, 6,000 to 18,000 in stage 1, 24,000 to 32,000 in stage 2, 40,000 to 45,000 in stage 3 and 60,000 to 75,000 in stage 4. Each later level of a node costs more than the one before.</li>
-          <li>The <code>tree-catalogue</code> implementer runs the script on the dataset in production before the unit is finished, after <code>reach-measure --write</code>.</li>
+          <li>The implementer of the measurement part runs the script on the dataset in production before that part is finished, after <code>reach-measure --write</code>.</li>
           <li><code>RUNG_LUMP</code> and <code>SIDE_TUNING</code> start at the <code>game-core</code> spec's values.</li>
           <li>Prices, the lump and the side goals' targets and rewards change only by editing <code>tuning.ts</code> after reading a report. The script never writes them.</li>
           <li>The implementer edits <code>tuning.ts</code> until every <code>hand</code> play finishes and passes and no side goal is flagged, keeping the cheapest level shown at rung 0 at or under <code>RUNG_LUMP</code>. If no set of prices passes, the unit hands the report to the owner with the checks that fail.</li>
@@ -1594,24 +1622,24 @@ export interface SideReport {
     <table id="tbl-files">
       <caption>Files this subsystem writes</caption>
       <thead>
-        <tr><th scope="col">File</th><th scope="col">Change</th></tr>
+        <tr><th scope="col">File</th><th scope="col">Part</th><th scope="col">Change</th></tr>
       </thead>
       <tbody>
-        <tr><th scope="row"><code>src/lib/game/tree.ts</code></th><td>Write: <code>treeView</code>, <code>buy</code>, <code>levelOf</code>, <code>isShown</code> over the <code>contracts</code> stub.</td></tr>
-        <tr><th scope="row"><code>src/lib/game/grant.ts</code></th><td>Write: <code>applyGrant</code> and <code>GAME_TRANSIT_LABEL</code>.</td></tr>
-        <tr><th scope="row"><code>src/lib/game/catalogue/nodes.ts</code></th><td>Write: <code>CATALOGUE</code>, <code>NODES</code>, <code>STAGES</code>, <code>ringOf</code>.</td></tr>
-        <tr><th scope="row"><code>src/lib/game/catalogue/tuning.ts</code></th><td>Write: <code>RUNG_LUMP</code>, <code>SIDE_TUNING</code>, <code>PRICES</code> over the <code>contracts</code> stub.</td></tr>
-        <tr><th scope="row"><code>src/lib/game/catalogue/tuning.spec.ts</code></th><td>Write over the <code>contracts</code> stub's spec.</td></tr>
-        <tr><th scope="row"><code>src/lib/game/catalogue/ladder-years.ts</code></th><td>Write: the provisional value, then the measured one.</td></tr>
-        <tr><th scope="row"><code>src/lib/game/catalogue/play.ts</code></th><td>Create: <code>buyAndApply</code>, <code>fullTree</code>.</td></tr>
-        <tr><th scope="row"><code>src/lib/game/tree.spec.ts</code></th><td>Create.</td></tr>
-        <tr><th scope="row"><code>src/lib/game/grant.spec.ts</code></th><td>Create.</td></tr>
-        <tr><th scope="row"><code>src/lib/game/catalogue/nodes.spec.ts</code></th><td>Create.</td></tr>
-        <tr><th scope="row"><code>src/lib/game/catalogue/play.spec.ts</code></th><td>Create.</td></tr>
-        <tr><th scope="row"><code>scripts/reach-measure.ts</code></th><td>Create.</td></tr>
-        <tr><th scope="row"><code>scripts/reach-measure.spec.ts</code></th><td>Create.</td></tr>
-        <tr><th scope="row"><code>scripts/tree-balance.ts</code></th><td>Create.</td></tr>
-        <tr><th scope="row"><code>scripts/tree-balance.spec.ts</code></th><td>Create.</td></tr>
+        <tr><th scope="row"><code>src/lib/game/tree.ts</code></th><td>The code</td><td>Write: <code>treeView</code>, <code>buy</code>, <code>levelOf</code>, <code>isShown</code> over the <code>contracts</code> stub.</td></tr>
+        <tr><th scope="row"><code>src/lib/game/grant.ts</code></th><td>The code</td><td>Write: <code>applyGrant</code> and <code>GAME_TRANSIT_LABEL</code>.</td></tr>
+        <tr><th scope="row"><code>src/lib/game/catalogue/nodes.ts</code></th><td>The code</td><td>Write: <code>CATALOGUE</code>, <code>NODES</code>, <code>STAGES</code>, <code>ringOf</code>.</td></tr>
+        <tr><th scope="row"><code>src/lib/game/catalogue/tuning.ts</code></th><td>The code, then the measurement</td><td>Write: <code>RUNG_LUMP</code>, <code>SIDE_TUNING</code>, <code>PRICES</code> over the <code>contracts</code> stub, with starting values (the code), then tuned values (the measurement).</td></tr>
+        <tr><th scope="row"><code>src/lib/game/catalogue/tuning.spec.ts</code></th><td>The code</td><td>Write over the <code>contracts</code> stub's spec.</td></tr>
+        <tr><th scope="row"><code>src/lib/game/catalogue/ladder-years.ts</code></th><td>The code, then the measurement</td><td>Write: the provisional value (the code), then the measured one (the measurement).</td></tr>
+        <tr><th scope="row"><code>src/lib/game/catalogue/play.ts</code></th><td>The code</td><td>Create: <code>buyAndApply</code>, <code>fullTree</code>.</td></tr>
+        <tr><th scope="row"><code>src/lib/game/tree.spec.ts</code></th><td>The code</td><td>Create.</td></tr>
+        <tr><th scope="row"><code>src/lib/game/grant.spec.ts</code></th><td>The code</td><td>Create.</td></tr>
+        <tr><th scope="row"><code>src/lib/game/catalogue/nodes.spec.ts</code></th><td>The code</td><td>Create.</td></tr>
+        <tr><th scope="row"><code>src/lib/game/catalogue/play.spec.ts</code></th><td>The code</td><td>Create.</td></tr>
+        <tr><th scope="row"><code>scripts/reach-measure.ts</code></th><td>The measurement</td><td>Create.</td></tr>
+        <tr><th scope="row"><code>scripts/reach-measure.spec.ts</code></th><td>The measurement</td><td>Create.</td></tr>
+        <tr><th scope="row"><code>scripts/tree-balance.ts</code></th><td>The measurement</td><td>Create.</td></tr>
+        <tr><th scope="row"><code>scripts/tree-balance.spec.ts</code></th><td>The measurement</td><td>Create.</td></tr>
       </tbody>
     </table>
     <p>No file is deleted. No file outside the design's write set for <code>tree-catalogue</code> is needed.</p>
@@ -1619,9 +1647,9 @@ export interface SideReport {
 
   <section id="sec-tests">
     <h2>Tests</h2>
-    <p>Every test is a unit test in the server Vitest project; nothing here renders. Tests that run the engine use the fixture dataset <code>e2e/fixtures/data/fixture-0</code> with a small <code>--amount</code>, and a hook timeout as <code>scripts/level2-check.spec.ts</code> has.</p>
+    <p>Every test is a unit test in the server Vitest project; nothing here renders. The code part's tests need no dataset. The measurement part's tests that run the engine use the fixture dataset <code>e2e/fixtures/data/fixture-0</code> with a small <code>--amount</code>, and a hook timeout as <code>scripts/level2-check.spec.ts</code> has.</p>
     <section id="sec-tests-tree">
-      <h3><code>src/lib/game/tree.spec.ts</code></h3>
+      <h3><code>src/lib/game/tree.spec.ts</code> (the code)</h3>
       <ul>
         <li><code>treeView(NEW_GAME)</code> shows exactly <code>sb423-clock</code>, <code>stop-rail</code>, <code>housing-bond</code> and <code>hands-radius</code>, in catalogue order, each at level 0.</li>
         <li>Buying <code>stop-rail</code> shows <code>stop-metro</code> and <code>taller-1</code> at rung 0, and <code>reach-1</code> only once the rung reaches its ring.</li>
@@ -1634,7 +1662,7 @@ export interface SideReport {
       </ul>
     </section>
     <section id="sec-tests-nodes">
-      <h3><code>src/lib/game/catalogue/nodes.spec.ts</code></h3>
+      <h3><code>src/lib/game/catalogue/nodes.spec.ts</code> (the code)</h3>
       <ul>
         <li>Node ids are unique, and every <code>after</code> id names a node listed earlier.</li>
         <li>Every stage from 0 to 4 holds a node, and <code>ringOf</code> gives the stage on five rungs, 0 for every stage on one rung, rounds on two to four rungs, and gives stage 4 the last rung on every ladder.</li>
@@ -1650,16 +1678,16 @@ export interface SideReport {
       </ul>
     </section>
     <section id="sec-tests-tuning">
-      <h3><code>src/lib/game/catalogue/tuning.spec.ts</code></h3>
+      <h3><code>src/lib/game/catalogue/tuning.spec.ts</code> (the code)</h3>
       <ul>
         <li><code>RUNG_LUMP</code> is a whole number above 0 of <code>home</code>.</li>
-        <li><code>SIDE_TUNING</code> has exactly one entry for each id in <code>SIDE_GOALS</code>; each target and reward is a whole number above 0.</li>
+        <li><code>SIDE_GOALS</code> has as many goals as <code>SIDE_TUNING</code> has entries, and holds each of the eleven ids above, so no entry names an id <code>game-core</code> does not define; each target and reward is a whole number above 0.</li>
         <li><code>PRICES</code> has exactly one entry for each node in <code>CATALOGUE</code>, one whole number above 0 per level, rising within a node.</li>
         <li>The cheapest next level in <code>treeView(NEW_GAME)</code> costs no more than <code>RUNG_LUMP</code>.</li>
       </ul>
     </section>
     <section id="sec-tests-grant">
-      <h3><code>src/lib/game/grant.spec.ts</code></h3>
+      <h3><code>src/lib/game/grant.spec.ts</code> (the code)</h3>
       <p>The calibration is built as in <code>src/lib/timeline/add.spec.ts</code>, with money and without.</p>
       <ul>
         <li>A preset grant on an empty document adds one permitting policy naming that preset, on, one span from month 1 with no end.</li>
@@ -1680,7 +1708,7 @@ export interface SideReport {
       </ul>
     </section>
     <section id="sec-tests-play">
-      <h3><code>src/lib/game/catalogue/play.spec.ts</code></h3>
+      <h3><code>src/lib/game/catalogue/play.spec.ts</code> (the code)</h3>
       <ul>
         <li><code>buyAndApply</code> returns null when <code>buy</code> refuses, and otherwise the bought state and the granted document.</li>
         <li><code>fullTree</code> on the test calibration holds the three presets, the six measures and one transit rule with all four stop types, three bands, 80 stories and an outermost band at 3,219 m.</li>
@@ -1688,7 +1716,7 @@ export interface SideReport {
       </ul>
     </section>
     <section id="sec-tests-scripts">
-      <h3><code>scripts/reach-measure.spec.ts</code> and <code>scripts/tree-balance.spec.ts</code></h3>
+      <h3><code>scripts/reach-measure.spec.ts</code> and <code>scripts/tree-balance.spec.ts</code> (the measurement)</h3>
       <ul>
         <li><code>ladderYears(2066, 2043)</code> is <code>[2060, 2055, 2050, 2045]</code>; <code>ladderYears(2066, 2031)</code> is <code>[2060, 2050, 2045, 2035]</code>; <code>ladderYears(2065, 2050)</code> is <code>[2060, 2055, 2050]</code>; a measured year after the first step gives <code>[]</code>.</li>
         <li><code>ladderFile</code> gives text that names the dataset, the reached month and the window's end, and exports the years.</li>
@@ -1723,6 +1751,7 @@ export interface SideReport {
       <li><strong>The scripts read a directory or fetch a version.</strong> <code>npm run data:local</code> leaves no directory.</li>
       <li><strong>The engine runner lives in <code>scripts/reach-measure.ts</code></strong> and <code>fullTree</code> in <code>catalogue/play.ts</code>, so <code>closing</code>'s reach check can import both.</li>
       <li><strong>"Two evenly between" takes the entries at a third and two thirds of the full list, rounded.</strong> It keeps every year a multiple of five.</li>
+      <li><strong>A side-goal target at or below current law is raised to 1.25 times current law's value, rounded up to the next 1,000.</strong> It keeps the goal a step beyond what the player gets for nothing.</li>
       <li><strong>The balance script assumes the player takes the next rung at once</strong> and estimates drops from <code>completedNet</code>. Both keep it a pure function of the engine's series.</li>
     </ul>
   </section>
@@ -1737,7 +1766,7 @@ export interface SideReport {
       <li>The tree screen, its words around a node and Buy: <code>tally-tree</code> (U1).</li>
       <li>The store's <code>buy</code>: <code>game-save</code> (G7).</li>
       <li>The reach check's new question in <code>scripts/reach-check.ts</code>: <code>closing</code>, which may import <code>fullTree</code> and <code>openEngine</code>.</li>
-      <li>How drops are collected and the real share a player gets: <code>run-play</code> (R1), then playtests.</li>
+      <li>How drops are collected: <code>run-play</code> (R1). The real share a player gets and the time a player spends are the owner's to judge after playing the built game.</li>
       <li>New levers, <code>htf-2026</code> once certified, and affordable units in prices (P10): later rounds.</li>
     </ul>
   </section>

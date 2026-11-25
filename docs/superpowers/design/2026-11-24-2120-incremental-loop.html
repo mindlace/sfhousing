@@ -99,7 +99,10 @@
         <li id="c23"><strong>Homes waiting for money is read at the end of the model month</strong> that holds the deadline, up to about 30 days off. The funding line is served once a model month.</li>
         <li id="c24"><strong>A five-level saved game found in a browser is deleted at load,</strong> and the <code>game_save</code> table is dropped and made again by generated migrations (P15).</li>
         <li id="c25"><strong>Every number the balance script tunes is in one file,</strong> <code>src/lib/game/catalogue/tuning.ts</code>.</li>
+        <li id="c26"><strong>A bought node is not shown on the map before the next run.</strong> The tree covers the map (call 20). The purchase shows on the node, and in the next run and its tally, which names the change from the run before. The source model said the area the node affects would light on the map.</li>
+        <li id="c27"><strong>A first run that fails starts again.</strong> The tree is never shown before a run has been settled.</li>
       </ol>
+      <p>You approved the design with calls 1 to 18 on 2026-11-24. Calls 19 to 27 came from writing the specs and were told to you as they were made.</p>
     </section>
   </section>
 
@@ -176,13 +179,14 @@
 
   <section id="sec-subsystems">
     <h2>Subsystems</h2>
+    <p>A subsystem needs a row when its code or its tests call what the row's owner builds. A row it uses only as a type or as a constant comes from <code>contracts</code> and is not listed.</p>
     <dl>
       <dt><code>contracts</code></dt>
       <dd>The interface table as types and stubs that throw "not implemented", in new files. It lands first. Produces every row's shape.</dd>
       <dt><code>game-core</code></dt>
-      <dd>The pure rules: units, the game's state, buying, limits from what is bought, whether a policy is within them, the ladder, side goals, settling a run, the saved game's parser, the game's words. Needs the shapes of G1 to G6. Produces G1, G2, G4, G6.</dd>
+      <dd>The pure rules: units, the game's state, buying, limits from what is bought, whether a policy is within them, the ladder, side goals, settling a run, the saved game's parser, the game's words. Needs no row. Produces G1, G2, G4, G6.</dd>
       <dt><code>tree-catalogue</code></dt>
-      <dd>The node data with prices and sources, applying a grant to the policy document, the script that plays the tree against the engine and reports pacing, and the measurement of the earliest year that fixes the ladder. Needs G1, G2, G4, G6. Produces G3, G5.</dd>
+      <dd>Two parts, built in order. <strong>The code:</strong> the node data with starting prices and sources, buying and showing nodes, applying a grant to the policy document, and playing a purchase order. Needs G1, G2, G4, G6. Produces G3, G5. <strong>The measurement:</strong> the script that plays the tree against the engine and reports pacing, the measurement of the earliest year that fixes the ladder, and the tuned numbers they leave in the catalogue. Needs G1 to G6. Produces T1. Only <code>closing</code> waits on it.</dd>
       <dt><code>city-net</code></dt>
       <dd>The city feed carries the homes each project replaces, through the worker, the map's validation and store, and the page's index. Produces E1.</dd>
       <dt><code>money-wait</code></dt>
@@ -190,9 +194,9 @@
       <dt><code>map-run</code></dt>
       <dd>The map's run view: fitted to the city, flat, locked, and restored afterwards. Produces M1.</dd>
       <dt><code>run-play</code></dt>
-      <dd>Drops from the city markers, the collecting ring by pointer and keyboard, "Collect for me", pops and sound, on a canvas over the map. Built against a fake feed. Needs G2, G4, E1. Produces R1.</dd>
+      <dd>Drops from the city markers, the collecting ring by pointer and keyboard, "Collect for me", pops and sound, on a canvas over the map. Built against a fake feed. Needs G2, G4. Produces R1.</dd>
       <dt><code>tally-tree</code></dt>
-      <dd>The tally card, the tree screen, the goal headline with side goals, the opening card, the header's unit count and the game panel. Built against fakes. Needs G1 to G4, G6. Produces U1.</dd>
+      <dd>Two parts. <strong>Part A:</strong> the tally card, the tree screen, the goal headline with side goals and the opening card, built against fakes. Needs G1, G2, G4, G6. <strong>Part B:</strong> the header's unit count and the game panel, which read the store and the run's preferences. Needs G7 and R1 as well. Both produce U1.</dd>
       <dt><code>game-save</code></dt>
       <dd>The browser store and sync for the new state, the server store, the <code>game_save</code> table and <code>/api/game</code>. Remix removed. Needs G1, G2, G3, G4, G6. Produces G7, G8.</dd>
       <dt><code>game-sim</code></dt>
@@ -245,6 +249,7 @@
         <tr><th scope="row">M1</th><td><code>map-run</code></td><td>Decomposition choice</td><td>The map's run view</td><td><a href="#sec-if-m1">M1</a></td></tr>
         <tr><th scope="row">R1</th><td><code>run-play</code></td><td>Model commitment</td><td>Drops, collecting, sound</td><td><a href="#sec-if-r1">R1</a></td></tr>
         <tr><th scope="row">U1</th><td><code>tally-tree</code></td><td>Decomposition choice</td><td>The game's cards, the tree screen, the header parts</td><td><a href="#sec-if-u1">U1</a></td></tr>
+        <tr><th scope="row">T1</th><td><code>tree-catalogue</code></td><td>Decomposition choice</td><td>The measured ladder years and the tuned numbers</td><td><a href="#sec-if-t1">T1</a></td></tr>
       </tbody>
     </table>
 
@@ -610,7 +615,7 @@ export function sideShown(s: GameState, goals?: readonly SideGoal[]): SideGoal[]
         <li><code>resultOf</code> lists a side goal when it is shown, not yet met, and its <code>value</code> is at least its <code>target</code>.</li>
         <li><code>settle</code> credits <code>collected</code>, <code>lump</code> and each side reward; records the rung in <code>met</code> when <code>reachedOn</code> is set and the rung is not there; records each side goal; adds 1 to <code>runs</code>; sets <code>last</code>.</li>
         <li><code>settle</code> never removes a met rung (call 8).</li>
-        <li><code>settle</code> pays a lump or a side reward only when it also records it, so a result settled twice pays once.</li>
+        <li><code>settle</code> pays a lump or a side reward only when it also records it, so a result settled twice pays its lump and its side rewards once. The store refuses a second settle of one result (G7).</li>
         <li><code>takeNext</code> moves to the next rung when the rung in play is met and a next one exists. Otherwise it returns the same state.</li>
         <li><code>finished</code> is true once the last rung is in <code>met</code>.</li>
         <li><code>fitGame</code> drops a <code>bought</code> entry for a node the catalogue does not have and lowers a level above the node's last to it.</li>
@@ -929,6 +934,19 @@ interface GameCellProps {
       </ul>
       <p><strong>Removed:</strong> <code>WinCard</code>, <code>LevelPanel</code>, <code>LevelCell</code>.</p>
     </section>
+
+    <section id="sec-if-t1">
+      <h3>T1 The measured ladder years and the tuned numbers</h3>
+      <pre><code data-lang="sh">npx tsx scripts/reach-measure.ts &lt;datasetDir&gt; --write
+npx tsx scripts/tree-balance.ts &lt;datasetDir&gt;</code></pre>
+      <ul>
+        <li>T1 is the state of two files after the measurement: <code>src/lib/game/catalogue/ladder-years.ts</code> and <code>src/lib/game/catalogue/tuning.ts</code>. It adds no type and no export to G3 or G6.</li>
+        <li><code>LADDER_YEARS</code> holds the years <code>reach-measure</code> wrote from the production dataset, by G6's rule.</li>
+        <li><code>tuning.ts</code> holds prices, the rung lump and side-goal numbers under which <code>tree-balance</code> passes every check it reports on the production dataset.</li>
+        <li>Before T1, both files hold starting values. Code and tests outside <code>tree-catalogue</code> and <code>closing</code> never assert a price, a ladder year or the number of rungs from these files; they pass their own.</li>
+        <li>When no set of numbers passes, the unit stops and hands the report to the owner with the checks that fail.</li>
+      </ul>
+    </section>
   </section>
 
   <section id="sec-contracts">
@@ -937,7 +955,8 @@ interface GameCellProps {
     <ul>
       <li>New files under <code>src/lib/game/</code>: <code>state.ts</code>, <code>save-shape.ts</code>, <code>units.ts</code>, <code>tree.ts</code>, <code>limits.ts</code>, <code>grant.ts</code>, <code>ladder.ts</code>, <code>run-result.ts</code>, <code>side-goals.ts</code>, <code>catalogue/nodes.ts</code>, <code>catalogue/ladder-years.ts</code>, <code>catalogue/tuning.ts</code>, <code>run/drops.ts</code>, <code>run/sound.ts</code>, <code>run/prefs.ts</code>.</li>
       <li>Every function in them throws <code>Error('not implemented')</code>. Every constant has a value of the right type: <code>NODES</code> is empty, <code>LADDER_YEARS</code> is <code>[2060]</code>, <code>SIDE_GOALS</code> is empty, <code>RUNG_LUMP</code> is <code>{ home: 2000 }</code>, <code>SIDE_TUNING</code> is empty.</li>
-      <li><code>state.ts</code> and <code>save-shape.ts</code> import other modules as types only, so the e2e helper can load them by relative path.</li>
+      <li><code>state.ts</code> and <code>save-shape.ts</code> import nothing through <code>$lib</code> at run time: a <code>$lib</code> import is a type import, and a value import is relative. The e2e helper can then load them by relative path.</li>
+      <li>T1 adds no shape, so it has no stub.</li>
       <li><code>CityDelta.existing</code> is added as optional, and <code>SimMapHandle.setRunView</code> as an optional method that <code>SimMap</code> gives an empty body. <code>city-net</code> and <code>map-run</code> make them real and required.</li>
       <li><code>SeriesChunk.waiting</code> and <code>TimelineView.waitingMoney</code> are added as optional and stay optional.</li>
       <li>The five-level files stay as they are, so the application builds and its tests pass after <code>contracts</code> lands.</li>
@@ -963,15 +982,16 @@ interface GameCellProps {
         <tr><th scope="row"><code>tally-tree</code></th><td><code>src/lib/game/ui/**</code></td></tr>
         <tr><th scope="row"><code>game-save</code></th><td><code>src/lib/game/{store.svelte,save-sync.svelte,save-api,saves,e2e}.ts</code>, <code>src/lib/game/AccountOffer.svelte</code> (one import), <code>src/lib/game/test/StoreHost.svelte</code>, <code>src/lib/server/game/**</code>, <code>src/lib/server/db/schema/gameSave.ts</code>, <code>migrations/**</code>, <code>src/routes/api/game/**</code>, the two server specs that build a saved game (<code>src/lib/server/auth/better-auth.spec.ts</code>, <code>src/lib/server/user-store/deletion.spec.ts</code>), <code>e2e/helpers/game.ts</code>, <code>docs/dev/game-save.md</code>; deletes <code>src/lib/game/{levels,progress,standing,allowed,copy,navigate}.ts</code></td></tr>
         <tr><th scope="row"><code>game-sim</code></th><td><code>src/lib/sim-page/**</code>, <code>src/lib/timeline/**</code> other than the city index, <code>src/lib/fzp/playback.ts</code>, the tests and hosts under <code>src/routes/sim</code> (moved under <code>src/lib/sim-page</code>), <code>src/routes/s/**</code>, <code>docs/dev/{sim-page,timeline-ui}.md</code>; deletes <code>src/lib/game/WinCard.svelte</code> and its spec</td></tr>
-        <tr><th scope="row"><code>game-shell</code></th><td><code>src/lib/shell/**</code>, <code>src/routes/+page.svelte</code>, <code>+page.ts</code>, the specs and hosts of <code>/</code> (<code>src/routes/page*.spec.ts</code>, <code>src/routes/test/**</code>), <code>src/routes/sim/+page.svelte</code> and <code>+page.ts</code> (the redirect), <code>src/routes/s/[id]/+page.svelte</code> (the name, after <code>game-sim</code>), <code>src/routes/about/+page.svelte</code>, <code>src/routes/p/**</code>, <code>src/lib/sharing/**</code>, <code>src/lib/about/**</code>, <code>src/lib/brush/BrushEditor.svelte</code> (one export), <code>src/lib/server/auth/brand.ts</code>, <code>src/lib/plan/schema.ts</code> and its spec (one message), <code>wrangler.jsonc</code> (<code>SES_FROM</code>); deletes <code>src/lib/game/LevelPanel.svelte</code> and <code>src/lib/shell/LevelCell.svelte</code>, whose successors <code>tally-tree</code> builds. <code>src/lib/game/AccountOffer.svelte</code> stays as it is and <code>Tally</code> mounts it</td></tr>
+        <tr><th scope="row"><code>game-shell</code></th><td><code>src/lib/shell/**</code>, <code>src/routes/+page.svelte</code>, <code>+page.ts</code>, the specs and hosts of <code>/</code> (<code>src/routes/page*.spec.ts</code>, <code>src/routes/test/**</code>), <code>src/routes/sim/+page.svelte</code> and <code>+page.ts</code> (the redirect), <code>src/routes/s/[id]/+page.svelte</code> and <code>+error.svelte</code> (the name in the title, after <code>game-sim</code>), <code>src/routes/about/+page.svelte</code>, <code>src/routes/p/**</code>, <code>src/lib/sharing/**</code>, <code>src/lib/about/**</code>, <code>src/lib/brush/BrushEditor.svelte</code> (one export), <code>src/lib/server/auth/brand.ts</code>, <code>src/lib/plan/schema.ts</code> and its spec (one message), <code>wrangler.jsonc</code> (<code>SES_FROM</code>); deletes <code>src/lib/game/LevelPanel.svelte</code> and <code>src/lib/shell/LevelCell.svelte</code>, whose successors <code>tally-tree</code> builds. <code>src/lib/game/AccountOffer.svelte</code> stays as it is and <code>Tally</code> mounts it</td></tr>
         <tr><th scope="row"><code>closing</code></th><td><code>e2e/**</code> other than <code>e2e/helpers/game.ts</code>, <code>scripts/level2-check.ts</code> renamed <code>scripts/reach-check.ts</code> with its spec, <code>docs/dev/game.md</code>, <code>docs/dev/pipeline.md</code>, every other <code>docs/dev</code> file no subsystem above writes, <code>CLAUDE.md</code>, <code>README.md</code></td></tr>
       </tbody>
     </table>
     <ul>
-      <li><code>src/lib/map/types.ts</code> is written by <code>contracts</code>, then by <code>city-net</code> (the feed) and <code>map-run</code> (the handle). Those two do not run together.</li>
-      <li><code>docs/dev/map-interfaces.md</code> has the same two writers and the same rule.</li>
-      <li><code>game-save</code>, <code>game-sim</code> and <code>game-shell</code> change one running surface: the store, the pages that read it and the header. They are one lane, in that order, and merge together. The application builds after the lane, not after each part.</li>
-      <li><code>GameCell</code> and <code>GamePanel</code> of <code>tally-tree</code> read the store of G7, so they are built in that lane, after <code>game-save</code>. The rest of <code>tally-tree</code> merges alone.</li>
+      <li><code>src/lib/map/types.ts</code> and <code>docs/dev/map-interfaces.md</code> are written by <code>contracts</code>, then by <code>city-net</code> (the feed) and <code>map-run</code> (the handle and the camera). Those two are one lane: <code>city-net</code>, then <code>map-run</code>.</li>
+      <li><code>game-save</code>, <code>game-sim</code> and <code>game-shell</code> change one running surface: the store, the pages that read it and the header. With part B of <code>tally-tree</code> they are one lane, built in this order and merged once: <code>game-save</code>, <code>tally-tree</code> part B, <code>game-sim</code>, <code>game-shell</code>. The application builds after the lane, not after each part.</li>
+      <li>The lane is not split so that <code>game-sim</code> and <code>game-shell</code> run side by side. Reason: neither could check its own work, because the application builds only once both are in.</li>
+      <li>Part A of <code>tally-tree</code> merges alone, before the lane.</li>
+      <li>The two parts of <code>tree-catalogue</code> merge apart: the code first, then the measurement, which needs G3 and G5. Nothing but <code>closing</code> waits on the measurement.</li>
       <li><code>src/lib/config.ts</code> is written by no subsystem: it is an input of the dataset version. The name lives in <code>src/lib/shell/name.ts</code>.</li>
       <li>Each unit that shows words keeps them in its own file: <code>src/lib/game/ui/words.ts</code>, <code>src/lib/game/run/words.ts</code>. <code>src/lib/game/words.ts</code> holds the words the store and the sync use: <code>syncText</code>, <code>playedText</code>, <code>FULL_TEXT</code>, <code>STORAGE_TEXT</code> and the default names, under those names.</li>
       <li>Every other subsystem writes new files or its own corner, and leaves the application building at each merge.</li>
@@ -1039,6 +1059,8 @@ interface GameCellProps {
         <tr><th scope="row">The reach check asks whether the full tree meets the last deadline and current law the first</th><td>Source model, What changes; D1</td><td><code>closing</code> (<code>scripts/level2-check.ts</code>)</td></tr>
         <tr><th scope="row">The account is made at the first win</th><td>D7</td><td>G1 (<code>firstWinAt</code>), G7 (<code>won</code>), G8 (<code>no_win</code>)</td></tr>
         <tr><th scope="row">Saved games: up to 12, switch, rename, delete, new</th><td>D8, D14</td><td>G7 (unchanged methods), U1 (<code>GamePanel</code>)</td></tr>
+        <tr><th scope="row">The measured ladder and the tuned prices exist before the journey and the reach check run</th><td>Source model, Pacing; call 10</td><td>T1</td></tr>
+        <tr><th scope="row">"A bought node is seen on the map before the next run"</th><td>Source model, Feedback</td><td>Dropped: call 26</td></tr>
         <tr><th scope="row">A measure "starts on its own lawful date"</th><td>Source model, The tree</td><td>Dropped: call 5</td></tr>
         <tr><th scope="row">"Custom timing for each route" as nodes</th><td>Source model, Branches table</td><td>Narrowed: opens at the ending, call 4</td></tr>
         <tr><th scope="row">"A drop carries its project's homes by income tier"</th><td>Source model, Room for affordable units</td><td>Deferred to P10's round: call 3</td></tr>
@@ -1051,8 +1073,8 @@ interface GameCellProps {
     <h2>Commitment layering</h2>
     <ul>
       <li><strong>Model commitments</strong> come from your request and rulings. Changing one needs you: G1 (units by kind, what a game holds), G2, G3 (what a node is and how it is shown and bought), G4 (what runs), G6 (the ladder, side goals, what a run pays), R1 (what a drop is worth and how it is collected), and rulings P1 to P15.</li>
-      <li><strong>Decomposition choices</strong> are mine. A composer fork may change one alone: G5, G7, G8, E1, E2, M1, U1, the file names, the canvas for drops, the cut into subsystems.</li>
-      <li>The composer calls 1 to 18 are decomposition choices unless they restate a ruling. Calls 2, 4, 8, 10 and 16 touch what the player earns or may do; a change to one of them is told to you after the fact in <code>rulings/</code>.</li>
+      <li><strong>Decomposition choices</strong> are mine. A composer fork may change one alone: G5, G7, G8, E1, E2, M1, U1, T1, the file names, the canvas for drops, the cut into subsystems.</li>
+      <li>The composer calls 1 to 27 are decomposition choices unless they restate a ruling. Calls 2, 3, 4, 5, 8, 10, 16 and 26 touch what the player earns, sees or may do, or narrow the source model; a change to one of them is told to you after the fact in <code>rulings/</code>.</li>
     </ul>
   </section>
 
