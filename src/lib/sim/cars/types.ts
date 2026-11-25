@@ -13,8 +13,18 @@ export type Mix = (typeof MIXES)[number];
 /** Draw index of the PUMA in-mover mix, the one after the four `MIXES`. */
 export const IN_MIX_DRAW = MIXES.length;
 
-/** Draw purposes of the car system; never reuse P's 1-12 or the retired 17-23. */
-export const CAR_P = { OUT: 24, OUT_CARS: 25, IN_TYPES: 26, CHOOSE: 27, EMPTY: 28 } as const;
+/**
+ * Draw purposes of the car system; never reuse P's 1-12 or the retired 17-23. `OCCUPY` rounds the
+ * homes completed (index the mix) and lost (index `MIXES.length`) in a zone-month to households.
+ */
+export const CAR_P = {
+  OUT: 24,
+  OUT_CARS: 25,
+  IN_TYPES: 26,
+  CHOOSE: 27,
+  EMPTY: 28,
+  OCCUPY: 29
+} as const;
 
 /** Lower edges of each band. */
 export interface TypeBands {

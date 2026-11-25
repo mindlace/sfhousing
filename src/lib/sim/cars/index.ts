@@ -4,3 +4,13 @@ export type { CarModel, Mix, TypeBands } from './types';
 export { carShares, densityOf, meanCars } from './choice';
 export type { ZoneTerms } from './choice';
 export { roundSystematic, splitSystematic } from './split';
+export {
+  affordableSpaces,
+  predictedSpaces,
+  refreshTable,
+  spacesOfMix,
+  stepZone,
+  totals,
+  zoneCarsPerHousehold
+} from './dynamics';
+export type { CarDraw, CarState, CarTotals } from './dynamics';

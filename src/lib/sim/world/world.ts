@@ -1,7 +1,8 @@
 // The world at the dataset date, the month step and the funding hook (spec S2, S12, rules 14-19).
 // Without a funding system in force the step runs systems 1 (policy, when the frame changes: rules
 // 7 and 12), 3 (stages due), 4 (lots whose ordinary start falls this month are set aside) and 6
-// (they start). `withFunding(f)` adds the calls into `f` in the months whose frame has `finance`.
+// (they start). `withFunding(f)` adds the calls into `f` in the months whose frame has `finance`;
+// `withFunding(f, cars)` also runs the car system every month (it only observes housing).
 import * as scenarioCodecModule from '$lib/data/scenario-codec';
 import * as engineModule from '$lib/sim/scenario/engine';
 import * as inputModule from '$lib/sim/scenario/input';
@@ -23,6 +24,7 @@ import type { OrdinaryStart } from './rates';
 import type { Statics } from './statics';
 import * as typesModule from './types';
 import type {
+  CarSystem,
   Due,
   FundedStart,
   FundingSystem,
@@ -60,7 +62,7 @@ export function createWorld(
   seed: number,
   out: StepSink
 ): World {
-  return createWorldWith(null, statics, timeline, seed, out);
+  return createWorldWith(null, null, statics, timeline, seed, out);
 }
 
 /** Advances `world` in place by one model month (S2). */
@@ -72,7 +74,7 @@ export function step(
   seed: number,
   out: StepSink
 ): void {
-  stepWith(null, world, due, statics, timeline, seed, out);
+  stepWith(null, null, world, due, statics, timeline, seed, out);
 }
 
 /**
@@ -97,38 +99,59 @@ export function step(
  * first month in which the lot can still apply (this month before system 4, the next one after) is
  * not counted. A frame change in a month whose frame, or the month before's, has `finance` plans
  * every free lot again.
+ *
+ * With the car system `cars` (null: none, and the world is the one without cars):
+ * - `createWorld` ends with `cars.create(world, statics)`, after `f.create`; the events it sends
+ *   are not passed to `cars`.
+ * - `step` sends every event of systems 1 to 7 through a sink that passes it to `cars.onEvent`
+ *   after it is sent, and runs `cars.step` between systems 3 and 4 every month.
+ * - Both `step` and `planDue` lay the views over the base timeline in the same order: first
+ *   `cars.timelineOf`, then funding's (`f.beforeStep` in `step`, `f.timelineOf` in `planDue`)
+ *   over that, so a rebuilt plan reads the timeline the world steps under (rule 20).
  */
-export function withFunding(f: FundingSystem | null): {
+export function withFunding(
+  f: FundingSystem | null,
+  cars: CarSystem | null = null
+): {
   createWorld: typeof createWorld;
   step: typeof step;
   planDue: typeof planDue;
 } {
+  const carsOf = (world: World, statics: Statics, timeline: PolicyTimeline): PolicyTimeline =>
+    cars === null ? timeline : cars.timelineOf(world, statics, timeline);
   return {
-    createWorld: (statics, timeline, seed, out) => createWorldWith(f, statics, timeline, seed, out),
-    step: (world, due, statics, timeline, seed, out) =>
+    createWorld: (statics, timeline, seed, out) =>
+      createWorldWith(f, cars, statics, timeline, seed, out),
+    step: (world, due, statics, timeline, seed, out) => {
+      const t = carsOf(world, statics, timeline);
       stepWith(
         f,
+        cars,
         world,
         due,
         statics,
-        f?.beforeStep ? f.beforeStep(world, statics, timeline) : timeline,
+        f?.beforeStep ? f.beforeStep(world, statics, t) : t,
         seed,
         out
-      ),
-    planDue: (world, statics, timeline, seed, through) =>
-      planDueWith(
+      );
+    },
+    planDue: (world, statics, timeline, seed, through) => {
+      const t = carsOf(world, statics, timeline);
+      return planDueWith(
         world,
         statics,
-        f?.timelineOf ? f.timelineOf(world, statics, timeline) : timeline,
+        f?.timelineOf ? f.timelineOf(world, statics, t) : t,
         seed,
         through,
         { skip: true, funding: f }
-      )
+      );
+    }
   };
 }
 
 function createWorldWith(
   f: FundingSystem | null,
+  cars: CarSystem | null,
   statics: Statics,
   timeline: PolicyTimeline,
   seed: number,
@@ -150,6 +173,7 @@ function createWorldWith(
   createProjects(x);
   if (x.freed.length > 0) throw new Error('createWorld: a lot was freed at the dataset date');
   if (f !== null && frame.finance !== null) f.create(w, statics, frame);
+  cars?.create(w, statics);
   return w;
 }
 
@@ -547,6 +571,21 @@ function policyChanged(ctx: Step): void {
   }
 }
 
+/**
+ * A sink that sends each event to `out`, then passes it to the car system; `ledger` is `out`'s
+ * own (callers take it unbound).
+ */
+function carTee(out: StepSink, cars: CarSystem, world: World, statics: Statics): StepSink {
+  const sink: StepSink = {
+    event(e: WorldEvent) {
+      out.event(e);
+      cars.onEvent(world, statics, e);
+    }
+  };
+  if (out.ledger) sink.ledger = out.ledger;
+  return sink;
+}
+
 /** A sink that sends each event to `out`, then passes it to `onProjectEvent`. */
 function tee(out: StepSink, fund: FundingSystem, ctx: StepCtx): StepSink {
   return {
@@ -559,6 +598,7 @@ function tee(out: StepSink, fund: FundingSystem, ctx: StepCtx): StepSink {
 
 function stepWith(
   hook: FundingSystem | null,
+  cars: CarSystem | null,
   world: World,
   due: Due,
   statics: Statics,
@@ -570,6 +610,8 @@ function stepWith(
   const ready = timeline.readyThrough();
   if (ready < month) throw new RangeError(`step: month ${month} is past readyThrough ${ready}`);
   const frame = timeline.frameAt(month);
+  // Every event of the step, whichever system or hook sends it, reaches the car system.
+  if (cars !== null) out = carTee(out, cars, world, statics);
   const ctx = stepCtx(hook, world, due, statics, timeline, seed, out, month, frame);
   const { x, put, fund, pub } = ctx;
   // System 1: policy (rules 7 and 12), then the funding system's.
@@ -589,6 +631,8 @@ function stepWith(
   for (let i = lotsFrom - 1; i >= 0; i--) followProject(x, -1 - entities[i], ctx.lastDay, put);
   ctx.following = false;
   x.out = out;
+  // The car system's month: after the stages due, before the lots due.
+  cars?.step(pub);
   // System 4: the lots due this month and those system 3 freed, in rank order (rule 2). A lot met
   // twice means the due list is out of step.
   const lots: number[] = [];

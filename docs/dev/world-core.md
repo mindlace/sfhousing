@@ -159,6 +159,16 @@ throws (ids are stored joined with `','`). `StepCtx.displace(row, lot, day, unit
 `take`, nor `put` into a month already taken. A `certain` funded start advances through every
 stage on `sampleAdvance` lengths with no revisions (rule 15).
 
+## The car hook
+
+`withFunding(f, cars)` also plugs in a `CarSystem` (`types.ts`; `world/cars/`, built by
+`createCarSystem(data, model)`). `createWorld` ends with `cars.create` (after `f.create`); `step`
+wraps `out` once at its top, so every event of systems 1 to 7 reaches `cars.onEvent` just after it
+is sent, and runs `cars.step` between systems 3 and 4 every month, funded or not. Both `step` and
+`planDue` lay `cars.timelineOf` over the base timeline first and funding's view over that, so a
+rebuilt plan reads what the world steps under (rule 20). The car system only observes: with it
+every event equals the run without it (`world/cars/cars.property.spec.ts`).
+
 ## Tests
 
 All colocated in `src/lib/sim/world/`. Server project (signoff) unless noted.

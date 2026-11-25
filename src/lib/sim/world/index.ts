@@ -7,7 +7,9 @@ export { DueList } from './due';
 export { withFunding };
 export { masterAt, scheduleAt } from './read';
 export { rowStaticsOf, type RowStatic, type RowStatics, type PhaseStatic } from './pipeline';
+export { createCarSystem, carSnapshotOf, type CarColumns, type CarSnapshot } from './cars';
 export type {
+  CarSystem,
   Due,
   FundedStart,
   FundingSystem,

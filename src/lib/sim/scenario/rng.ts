@@ -14,7 +14,7 @@ export function fmix32(h: number): number {
 /**
  * Draw purposes (spec 4.4.1). A stage step draws its kind on `STAGE` and its time on `STAGE_TIME`
  * (paired-draw fix). 17-23 are the retired in-flight stage redraws and are never reused; 7 and 10
- * are the affordable latent's (`INIT_AFFORDABLE`, `INIT_DAY_AFFORDABLE`). 24-28 belong to the car
+ * are the affordable latent's (`INIT_AFFORDABLE`, `INIT_DAY_AFFORDABLE`). 24-29 belong to the car
  * system (`CAR_P`, `src/lib/sim/cars/types.ts`).
  */
 export const P = {
@@ -40,6 +40,11 @@ export function simEntity(parcelId: ParcelId): number {
 /** Entity id of a job-keyed draw stream. */
 export function jobEntity(projectId: string): number {
   return fnv1a32('j:' + projectId);
+}
+
+/** Entity id of a car zone's draw stream (a block-group GEOID). */
+export function zoneEntity(geoid: string): number {
+  return fnv1a32('z:' + geoid);
 }
 
 /** The first mix of `draw`, which depends on the seed only (the engine computes it once a run). */
