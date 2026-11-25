@@ -598,6 +598,7 @@ export function onPrefs(fn: () =&gt; void): () =&gt; void;</code></pre>
       <ul>
         <li><code>planDrops</code> returns one drop for each marker completed after <code>asOf</code> and at or before <code>to</code> whose worth is above 0, ascending by day, then by row.</li>
         <li><code>feed.drops</code> may be replaced during a run, as the forecast fills. Drops are matched by <code>row</code>: one already shown stays as it is, and none is counted twice.</li>
+        <li><code>feed.running</code> holds each value for at least one animation frame: it turns true no earlier than the frame after it last turned false, and false no earlier than the frame after it turned true. The feed's owner guarantees this. The layer reads <code>running</code> once a frame, so a run starts and ends in the frames in which it reads a change.</li>
         <li>A drop appears when <code>feed.day</code> reaches its day and is counted in <code>dropped</code> then.</li>
         <li>A drop whose <code>policy</code> is true pops as a diamond, the shape of the map's policy mark, in that mark's colour (<code>tl-halo-policy</code>); every other drop pops as a circle in the accent. The shape tells the two apart in every theme. Its worth and how it is collected do not change.</li>
         <li>A drop is collected when its projected point is within <code>hands.radiusPx</code> of the ring's centre. It is counted in <code>collected</code> once.</li>
@@ -913,6 +914,7 @@ interface RunClockProps {
         <li>Starting shows a <code>Message</code> in the notice stack, inside a <code>role="status"</code> region, with the text <code>RUN_BUSY</code>, imported from <code>src/lib/game/ui/words.ts</code>, and <code>testid="run-waiting"</code>.</li>
         <li>The forecast is ready when all of these hold: the session exists and its phase is <code>'ready'</code>; it is not provisional; the numbers on show are not stale; the newest view exists with <code>filledThrough &gt;= 0</code>; the map handle exists; lots have not failed; and no error or crash notice is up.</li>
         <li>On the first moment starting and ready hold together, <code>TimelineMode</code> starts the run and sends <code>ready</code>. Starting a run: close the card and the tooltip; <code>day = asOf</code> and <code>handleDay(asOf)</code>; <code>reveal = revealOpen(asOf)</code>; the take is zero; the drops are planned (<a href="#sec-design-feed">The drops' feed</a>); <code>running</code> becomes true.</li>
+        <li>The run starts no earlier than the animation frame after the one in which the feed's <code>running</code> last turned false, so a run that ended or was aborted is seen to end before the next one starts (R1). An abort that arrives in the frame a run started stops the clock in the next frame.</li>
       </ol>
       <ul>
         <li>The stop day is the goal in play's deadline, <code>goalAt(asOf, state.rung, goalAmount)</code>, clamped to <code>lastDay</code>.</li>
