@@ -1,8 +1,9 @@
-// The game on /sim end to end (game-sim, Task 9): the locked page at level 1, a level played to a
-// win and levelled up, a tie that does not beat the bar, a second win in another month, zoning
-// opening at level 4, given measures only at level 5, and the published view outside the game.
-// Runs against the VITE_E2E build on fixture-0, with the real game switched on by
-// e2e/helpers/game.ts before the first navigation; every wait is on `window.__sfhFzp` or the page.
+// The game on the simulation (game-sim): where a page lands, a run from the tree to the tally and
+// back, buying a node and its policy, the node's switch, Run while the forecast is held, the
+// workshop and Back, a reload, a first run that fails, a double press of Run, and the published
+// view outside the game. Runs against the VITE_E2E build on fixture-0 with the goal amount 1 and
+// a 2,000 ms run; every wait is on the page's phase (`data-phase` on `tl-mode`), the saved game
+// or `window.__sfhFzp`.
 import {
   expect,
   test,
@@ -12,133 +13,295 @@ import {
   type TestInfo
 } from '@playwright/test';
 import type { SfhFzpDebug } from '../src/lib/fzp/debug';
-import { PLUS_NAME } from '../src/lib/timeline/test/plus';
-import { seedGame, seedGoalAmount } from './helpers/game';
-import { addPolicy, openKind, slider, waitFilled } from './helpers/run';
+import type { Policy } from '../src/lib/timeline/policy4';
+import { PRICES } from '../src/lib/game/catalogue/tuning';
+import { buyNode, savedGame, seedRuns, waitPhase, waitSaved } from './helpers/play';
+import { addPolicy, holdPolicy, installPolicyHold, openKind, releasePolicy } from './helpers/run';
 import {
-  FROM,
-  TO,
-  chooseTool,
-  jumpAndIdle,
-  mouseDrag,
+  clientNavigate,
+  gotoHydrated,
+  headerAction,
   openPublish,
   type Win
 } from './helpers/sharing';
 
 type FzpWin = Win & { __sfhFzp?: SfhFzpDebug };
+type LogWin = Window & { __phaseLog?: string[]; __treePaneSeen?: boolean };
 
-/**
- * A goal amount current law meets inside the window on fixture-0. Read once from the fixture's
- * /sim with the default goal (82,069) and nothing in force: Details' goal row reads "82,065 to go"
- * at today (4 homes) and "81,408 to go, Held at Sep 2066" at the window's end (661 homes). Current
- * law passes 400 in about its 60th month.
- */
-const WIN = 400;
-/**
- * A goal amount "SB 423 approval clock" (added at today) meets in another month than current law
- * on fixture-0. Read once from the fixture's /sim: the goal's count by month (4 plus
- * `__sfhFzp.completedNet()`) with the empty policy and with the clock; 642 is first met in month
- * 183 with the clock and month 199 without it.
- */
-const WIN_APART = 642;
-
-const SB423 = 'SB 423 approval clock';
+/** The id of the one transit rule the game makes (`GAME_TRANSIT_ID`, src/lib/game/grant.ts). */
+const GAME_TRANSIT = 'game-transit';
 const BOND = 'A housing bond';
-const MONTH = /Goal reached in ([A-Z][a-z]{2} \d{4})/;
 
-// ---- helpers ------------------------------------------------------------------------------------
+const run = (page: Page): Locator => page.getByTestId('tree-run');
+const node = (page: Page, id: string): Locator =>
+  page.locator(`[data-testid="tree-node"][data-node="${id}"]`);
 
-const fzp = <K extends keyof SfhFzpDebug>(page: Page, key: K): Promise<SfhFzpDebug[K]> =>
-  page.evaluate((k) => (window as FzpWin).__sfhFzp![k], key) as Promise<SfhFzpDebug[K]>;
+/** The game's transit rule in the page's document, or null. */
+const gameRule = (page: Page): Promise<Policy | null> =>
+  page.evaluate(
+    (id) => (window as FzpWin).__sfhFzp?.policy.kinds.zoning.find((p) => p.id === id) ?? null,
+    GAME_TRANSIT
+  );
+
+/** Buys stop-rail from the tree (the seed holds its price) and waits for its rule in the page. */
+async function buyRail(page: Page): Promise<void> {
+  await expect(node(page, 'stop-rail')).toHaveAttribute('data-state', 'ready');
+  const s = await buyNode(page, 'stop-rail', 'pointer');
+  expect(s.state.units.home ?? 0).toBe(0);
+  await expect.poll(async () => (await gameRule(page))?.on ?? null).toBe(true);
+}
+
+/**
+ * Before the page loads: a log of each `data-phase` the page shows (`__phaseLog`, in order, no
+ * repeats) and whether `game-tree-pane` was ever attached (`__treePaneSeen`), from a mutation
+ * observer; a phase holds across many frames, so none is missed.
+ */
+async function logPhases(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const w = window as LogWin;
+    w.__phaseLog = [];
+    w.__treePaneSeen = false;
+    const look = () => {
+      const p = document.querySelector('[data-testid="tl-mode"]')?.getAttribute('data-phase');
+      const log = w.__phaseLog!;
+      if (p && log[log.length - 1] !== p) log.push(p);
+      if (document.querySelector('[data-testid="game-tree-pane"]')) w.__treePaneSeen = true;
+    };
+    new MutationObserver(look).observe(document, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      attributeFilter: ['data-phase', 'data-testid']
+    });
+  });
+}
+
+const phaseLog = (page: Page): Promise<{ log: string[]; pane: boolean }> =>
+  page.evaluate(() => {
+    const w = window as LogWin;
+    return { log: w.__phaseLog ?? [], pane: w.__treePaneSeen ?? false };
+  });
+
+// ---- the phases ---------------------------------------------------------------------------------
+
+test('lands on the tree with Run focused over an inert map', async ({ page }) => {
+  await seedRuns(page);
+  await gotoHydrated(page, '/');
+  await waitPhase(page, 'tree');
+  await expect(page.getByTestId('game-tree-pane')).toBeVisible();
+  await expect(run(page)).toBeFocused();
+  await expect(page.getByTestId('tl-map-box')).toHaveAttribute('inert', '');
+});
+
+test('a run goes tree, run, tally, tree', async ({ page }) => {
+  await seedRuns(page);
+  await gotoHydrated(page, '/');
+  await waitPhase(page, 'tree');
+  await run(page).click();
+  await waitPhase(page, 'run');
+  await expect(page.getByTestId('run-clock')).toBeVisible();
+  await expect(page.getByRole('slider', { name: 'Date in the simulation' })).toHaveCount(0);
+  await waitPhase(page, 'tally');
+  const next = page.getByTestId('tally-continue');
+  await expect(next).toBeFocused();
+  await next.click();
+  await waitPhase(page, 'tree');
+  expect((await savedGame(page)).state.runs).toBe(2);
+});
+
+// ---- buying and the switch ----------------------------------------------------------------------
+
+test('buying stop-rail adds the game transit rule', async ({ page }) => {
+  await seedRuns(page, { phase: 'runs', runs: 1, units: { home: PRICES['stop-rail'][0] } });
+  await gotoHydrated(page, '/');
+  await waitPhase(page, 'tree');
+  await buyRail(page);
+  const rule = (await gameRule(page))!;
+  const asOf = await page.evaluate(() => (window as FzpWin).__sfhFzp!.asOf);
+  expect(rule.on).toBe(true);
+  expect(rule.where.tag).toBe('transit');
+  expect(rule.spans).toHaveLength(1);
+  // Model month 1's first day (`monthFirstDay(asOf, 1)`), with no end.
+  expect(rule.spans[0].from).toBe(asOf + 1);
+  expect(rule.spans[0].to).toBeNull();
+});
+
+test('the node switch turns its policy off and on, units unchanged', async ({ page }) => {
+  await seedRuns(page, { phase: 'runs', runs: 1, units: { home: PRICES['stop-rail'][0] } });
+  await gotoHydrated(page, '/');
+  await waitPhase(page, 'tree');
+  await buyRail(page);
+  const before = (await savedGame(page)).state;
+  const sw = node(page, 'stop-rail').getByTestId('tree-node-on');
+  await expect(sw).toHaveAttribute('aria-checked', 'true');
+
+  await sw.click();
+  await expect(sw).toHaveAttribute('aria-checked', 'false');
+  await expect.poll(async () => (await gameRule(page))?.on).toBe(false);
+
+  await sw.click();
+  await expect(sw).toHaveAttribute('aria-checked', 'true');
+  await expect.poll(async () => (await gameRule(page))?.on).toBe(true);
+
+  const after = (await savedGame(page)).state;
+  expect(after.units).toEqual(before.units);
+  expect(after.bought).toEqual(before.bought);
+});
+
+test('Run while the forecast is held waits, then runs', async ({ page }) => {
+  await installPolicyHold(page);
+  await seedRuns(page, { phase: 'runs', runs: 1, units: { home: PRICES['stop-rail'][0] } });
+  await gotoHydrated(page, '/');
+  await waitPhase(page, 'tree');
+  await expect(run(page)).not.toHaveAttribute('aria-busy', 'true');
+  await holdPolicy(page);
+  await buyRail(page);
+  await expect(run(page)).toHaveAttribute('aria-busy', 'true');
+
+  await run(page).click();
+  await waitPhase(page, 'starting');
+  await expect(page.getByTestId('run-waiting')).toHaveText('Getting the forecast ready');
+  // Held: the numbers are still from before the buy, so the run cannot start.
+  expect(await page.evaluate(() => (window as FzpWin).__sfhFzp!.stale)).toBe(true);
+  await expect(page.getByTestId('tl-mode')).toHaveAttribute('data-phase', 'starting');
+
+  await releasePolicy(page);
+  await waitPhase(page, 'run');
+  await expect(page.getByTestId('run-waiting')).toHaveCount(0);
+});
+
+// ---- the workshop -------------------------------------------------------------------------------
+
+test('the workshop offers no Public money until bought', async ({ page }) => {
+  await seedRuns(page, { phase: 'runs', runs: 1, units: { home: PRICES['stop-rail'][0] } });
+  await gotoHydrated(page, '/');
+  await waitPhase(page, 'tree');
+  await buyRail(page);
+  // Edit on a bought node is the only way into the workshop with nothing in the money branch.
+  await node(page, 'stop-rail').getByTestId('tree-node-edit').click();
+  await waitPhase(page, 'workshop');
+  const money = page.getByTestId('tl-kind-money');
+  await expect(money.getByTestId('tl-locked-lane')).toHaveText('Opens in the tree');
+  await expect(money.locator('button.plus')).toHaveCount(0);
+});
+
+test('Back to the tree returns to the tree', async ({ page }) => {
+  await seedRuns(page, { phase: 'runs', runs: 1, units: { home: PRICES['stop-rail'][0] } });
+  await gotoHydrated(page, '/');
+  await waitPhase(page, 'tree');
+  await buyRail(page);
+  await node(page, 'stop-rail').getByTestId('tree-node-edit').click();
+  await waitPhase(page, 'workshop');
+  await expect(page.getByTestId('game-tree-pane')).toHaveCount(0);
+
+  await (await headerAction(page, 'Back to the tree')).click();
+  await waitPhase(page, 'tree');
+  await expect(page.getByTestId('game-tree-pane')).toBeVisible();
+  await expect(page.getByTestId('game-back')).toHaveCount(0);
+});
+
+// ---- reloads and failures -----------------------------------------------------------------------
+
+test('a reload lands where the game is', async ({ page }) => {
+  await logPhases(page);
+  await seedRuns(page, { phase: 'runs' });
+  await gotoHydrated(page, '/');
+  // A new game's first run starts at load.
+  await waitPhase(page, 'run');
+  await page.reload();
+  await waitPhase(page, 'run');
+  expect((await phaseLog(page)).log[0]).toBe('starting');
+
+  // After the run settles, before Continue: the reload lands on the tree, the balance kept.
+  await waitPhase(page, 'tally');
+  const settled = await waitSaved(page, (s) => s.state.runs === 1);
+  await page.reload();
+  await waitPhase(page, 'tree');
+  expect((await phaseLog(page)).log[0]).toBe('tree');
+  const after = await savedGame(page);
+  expect(after.state.runs).toBe(1);
+  expect(after.state.units.home).toBe(settled.state.units.home);
+});
+
+test('a first run that fails starts again', async ({ page }) => {
+  await logPhases(page);
+  await seedRuns(page, { phase: 'runs' });
+  let failures = 0;
+  await page.route('**/scenarios/fzp/calibration.json', async (route) => {
+    if (failures++ === 0) await route.fulfill({ status: 500 });
+    else await route.continue();
+  });
+  // The calibration is part of `/`'s load: from another page the load runs in the browser, where
+  // the route answers it (a full load of `/` fetches it on the server).
+  await gotoHydrated(page, '/about');
+  await clientNavigate(page, '/');
+  await expect(page).toHaveURL(/\/$/);
+
+  await expect(page.getByTestId('fzp-status')).toHaveText("The simulation couldn't load.");
+  const retry = page.getByRole('button', { name: 'Retry', exact: true });
+  await expect(retry).toBeVisible();
+  await waitPhase(page, 'starting');
+  await retry.click();
+  await waitPhase(page, 'run');
+  await waitPhase(page, 'tally');
+
+  const { log, pane } = await phaseLog(page);
+  // The failed load, then Retry's (the timeline worker fetches the file too).
+  expect(failures).toBeGreaterThanOrEqual(2);
+  expect(log).not.toContain('tree');
+  expect(pane).toBe(false);
+});
+
+test('a bought node changes nothing on the map before the next run', async ({ page }) => {
+  await seedRuns(page, { phase: 'runs', runs: 1, units: { home: PRICES['stop-rail'][0] } });
+  await gotoHydrated(page, '/');
+  await waitPhase(page, 'tree');
+  await buyRail(page);
+  await waitPhase(page, 'tree');
+  await expect(page.getByTestId('game-tree-pane')).toBeVisible();
+  const box = page.getByTestId('tl-map-box');
+  await expect(box).toHaveAttribute('inert', '');
+  await expect(box).toHaveAttribute('aria-hidden', 'true');
+});
+
+test('a double press of Run makes one run', async ({ page }) => {
+  await seedRuns(page);
+  await gotoHydrated(page, '/');
+  await waitPhase(page, 'tree');
+  await run(page).dblclick();
+  await waitPhase(page, 'tally');
+  await waitSaved(page, (s) => s.state.runs === 2);
+  await page.getByTestId('tally-continue').click();
+  await waitPhase(page, 'tree');
+  expect((await savedGame(page)).state.runs).toBe(2);
+});
+
+// ---- the published view -------------------------------------------------------------------------
 
 /** `path` loaded and hydrated, the session ready and the forecast filled. */
-async function gotoSim(page: Page, path = '/sim'): Promise<void> {
+async function gotoSim(page: Page, path: string): Promise<void> {
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  await page.goto(path);
-  await expect(page.locator('html')).toHaveAttribute('data-hydrated', '');
+  await gotoHydrated(page, path);
   await page.waitForFunction(() => (window as FzpWin).__sfhFzp?.phase === 'ready');
-  await waitFilled(page);
-}
-
-/** The number of refills the page has seen. */
-const refillCount = (page: Page): Promise<number> =>
-  page.evaluate(() => (window as FzpWin).__sfhFzp!.refills.length);
-
-/** Waits for a refill after the `before`-th, and the forecast filled again. */
-async function waitRefilled(page: Page, before: number): Promise<void> {
-  await page.waitForFunction((n) => {
-    const f = (window as FzpWin).__sfhFzp!;
-    return f.refills.length > n && !f.stale && f.filledThrough === f.lastIndex;
-  }, before);
-}
-
-/** The playhead to the window's end (the forecast filled first, so End is the last month). */
-async function playToEnd(page: Page): Promise<void> {
-  await waitFilled(page);
-  await slider(page).focus();
-  await page.keyboard.press('End');
-}
-
-const win = (page: Page): Locator => page.getByTestId('tl-win');
-const editor = (page: Page): Locator => page.getByTestId('inspector');
-const timeline = (page: Page): Locator => page.getByTestId('tl-timeline');
-
-/** The win card's month ("Mar 2049"), once it shows. */
-async function wonMonth(page: Page): Promise<string> {
-  await expect(win(page)).toContainText('Goal reached in');
-  const m = MONTH.exec((await win(page).textContent()) ?? '');
-  expect(m, 'the win card names a month').not.toBeNull();
-  return m![1];
-}
-
-/** Presses the card's "Level up" and waits for the clock back at today. */
-async function levelUp(page: Page): Promise<void> {
-  await win(page).getByRole('button', { name: 'Level up' }).click();
-  await expect(win(page)).toHaveCount(0);
-  await expect.poll(async () => (await fzp(page, 'day')) === (await fzp(page, 'asOf'))).toBe(true);
+  await page.waitForFunction(() => {
+    const f = (window as FzpWin).__sfhFzp;
+    return !!f && f.lastIndex >= 0 && f.filledThrough === f.lastIndex && !f.stale;
+  });
 }
 
 /** Closes the editor if it shows. */
 async function closeEditor(page: Page): Promise<void> {
-  const close = editor(page).getByRole('button', { name: 'Close editor' });
+  const editor = page.getByTestId('inspector');
+  const close = editor.getByRole('button', { name: 'Close editor' });
   if (await close.isVisible()) await close.click();
-  await expect(editor(page)).toHaveCount(0);
+  await expect(editor).toHaveCount(0);
 }
 
 /** A policy's rows (`tl-policy`) by its label. */
 const policyRows = (page: Page, label: string): Locator =>
   page.getByTestId('tl-policy').filter({ hasText: label });
-/** A policy's row; below md the open kind's sheet holds the last. */
-const policyRow = (page: Page, label: string): Locator => policyRows(page, label).last();
 
-/**
- * Shows Details. From md the header score has no aria-expanded and shows Details in the detail
- * column; below md it opens the sheet.
- */
-async function openDetails(page: Page): Promise<Locator> {
-  const score = page.getByTestId('score-bar');
-  const details = page.getByTestId('tl-details');
-  const expanded = await score.getAttribute('aria-expanded');
-  if (expanded === null) {
-    if (!(await details.isVisible())) await score.click();
-  } else {
-    if (expanded !== 'true') await score.click();
-    await expect(score).toHaveAttribute('aria-expanded', 'true');
-  }
-  await expect(details).toBeVisible();
-  return details;
-}
-
-/** The zoning policies' painted areas in the document, counted. */
-const paintedAreas = (page: Page): Promise<number> =>
-  page.evaluate(() =>
-    (window as FzpWin)
-      .__sfhFzp!.policy.kinds.zoning.filter((p) => p.where.tag === 'painted')
-      .flatMap((p) => p.spans)
-      .reduce((n, s) => n + (s.what.tag === 'brushes' ? s.what.brushes.length : 0), 0)
-  );
-
-/** A second context on this project's device, with its own storage. */
+/** A second context on this project's device, with its own storage and no game: the open game. */
 async function otherPage(browser: Browser, testInfo: TestInfo): Promise<Page> {
   const { viewport, isMobile, hasTouch, userAgent, deviceScaleFactor } = testInfo.project.use;
   const ctx = await browser.newContext({
@@ -167,188 +330,58 @@ async function publish(page: Page): Promise<string> {
   return path;
 }
 
-// ---- levels -------------------------------------------------------------------------------------
-
-test('level 1: /sim is locked', async ({ page }) => {
-  await seedGame(page, 1);
-  await page.goto('/sim');
-  await expect(page.locator('html')).toHaveAttribute('data-hydrated', '');
-  const locked = page.getByTestId('sim-locked');
-  await expect(locked).toBeVisible();
-  await locked.getByRole('link', { name: 'Go to Paint' }).click();
-  await expect(page).toHaveURL(/\/$/);
-});
-
-test('level 2: nothing to add, play to a win, level up', async ({ page, isMobile }) => {
-  test.skip(isMobile, 'the kinds a level up adds open in place from md');
-  await seedGame(page, 2);
-  await seedGoalAmount(page, WIN);
-  await gotoSim(page);
-
-  for (const kind of ['Zoning', 'Permitting', 'Public money'] as const) {
-    await expect(timeline(page).getByRole('button', { name: PLUS_NAME[kind] })).toHaveCount(0);
-  }
-  await expect(page.getByTestId('tl-kind-zoning').getByTestId('tl-locked-lane')).toHaveText(
-    'Unlocks at level 4'
-  );
-  await expect(page.getByTestId('tl-kind-permitting').getByTestId('tl-locked-lane')).toHaveText(
-    'Unlocks when you level up'
-  );
-  await expect(page.getByTestId('tl-kind-money').getByTestId('tl-locked-lane')).toHaveText(
-    'Unlocks at level 5'
-  );
-
-  await playToEnd(page);
-  const month = await wonMonth(page);
-  await levelUp(page);
-
-  const permitting = page.getByTestId('tl-kind-permitting');
-  await expect(permitting.getByRole('button', { name: 'Permitting', exact: true })).toHaveAttribute(
-    'aria-expanded',
-    'true'
-  );
-  await expect(permitting.getByRole('button', { name: PLUS_NAME.Permitting })).toBeVisible();
-  await expect(page.getByTestId('tl-bar-flag')).toBeVisible();
-  await expect(page.getByTestId('tl-bar-flag')).toHaveText(/To beat/);
-  const details = await openDetails(page);
-  await expect(details.getByTestId('tl-to-beat')).toHaveText(`To beat: ${month}`);
-});
-
-test('level 2 to 3 without a change is a tie', async ({ page }) => {
-  await seedGame(page, 2);
-  await seedGoalAmount(page, WIN);
-  await gotoSim(page);
-  await playToEnd(page);
-  await wonMonth(page);
-  await levelUp(page);
-
-  await playToEnd(page);
-  await expect(page.getByTestId('tl-goal-notice')).toHaveText(/Beat .* to level up\./);
-  await expect(win(page)).toHaveCount(0);
-});
-
-test('level 3: win, keep playing, win again elsewhere', async ({ page }) => {
-  await seedGame(page, 3);
-  await seedGoalAmount(page, WIN_APART);
-  await gotoSim(page);
-
-  let before = await refillCount(page);
-  await addPolicy(page, 'Permitting', SB423);
-  await closeEditor(page);
-  await waitRefilled(page, before);
-  await playToEnd(page);
-  const first = await wonMonth(page);
-  await win(page).getByRole('button', { name: 'Keep playing' }).click();
-  await expect(win(page)).toHaveCount(0);
-
-  // Remove the policy: an edit, so the seen result goes and the empty policy's comes.
-  await openKind(page, 'Permitting');
-  await policyRow(page, SB423).getByTestId('tl-bar').first().click();
-  await expect(editor(page).getByRole('heading', { name: SB423 })).toBeVisible();
-  before = await refillCount(page);
-  await editor(page).getByRole('button', { name: 'Remove policy' }).click();
-  await expect.poll(async () => (await fzp(page, 'policy')).kinds.permitting.length).toBe(0);
-  await waitRefilled(page, before);
-  await playToEnd(page);
-  const second = await wonMonth(page);
-  expect(second).not.toBe(first);
-  await levelUp(page);
-});
-
-test('level 4: zoning opens, money stays locked', async ({ page, isMobile }) => {
-  test.skip(isMobile, 'a mouse stroke with the editor beside the map is md+');
-  // The zoning height limits are the costliest overlay and this test never looks at them.
-  await page.addInitScript(() =>
-    localStorage.setItem('sfhousing:view', JSON.stringify({ heightLimits: false }))
-  );
-  await seedGame(page, 4);
-  await gotoSim(page);
-  await page.waitForFunction(() => !!(window as FzpWin).__sfhMap?.map);
-
-  await addPolicy(page, 'Zoning', 'Painted area');
-  await chooseTool(page, 'Paint');
-  await jumpAndIdle(page);
-  await mouseDrag(page, FROM, TO);
-  await expect.poll(() => paintedAreas(page)).toBe(1);
-  expect((await fzp(page, 'policy')).kinds.zoning).toHaveLength(1);
-  await expect(page.getByTestId('tl-kind-money').getByTestId('tl-locked-lane')).toHaveText(
-    'Unlocks when you level up'
-  );
-});
-
-test('level 5: given measures only', async ({ page }) => {
-  await seedGame(page, 5);
-  await gotoSim(page);
-  await openKind(page, 'Public money');
-  await timeline(page).getByRole('button', { name: PLUS_NAME['Public money'] }).last().click();
-  const menu = page.getByRole('group', { name: 'Add to Public money' });
-  await expect(menu.getByRole('button', { name: BOND, exact: true })).toBeVisible();
-  for (const name of ['Your own pool', 'City funding scale', 'Market terms']) {
-    await expect(menu.getByRole('button', { name, exact: true })).toHaveCount(0);
-  }
-  await menu.getByRole('button', { name: BOND, exact: true }).click();
-  await expect.poll(async () => (await fzp(page, 'policy')).kinds.money.length).toBe(1);
-  await expect(editor(page)).toBeVisible();
-  await expect(editor(page).locator('[data-funding-editor]')).toHaveCount(0);
-
-  // The bar's box: its wrapper's left, a share of the window.
-  const left = () =>
-    policyRow(page, BOND)
-      .getByTestId('tl-bar')
-      .first()
-      .locator('xpath=..')
-      .evaluate((el) => parseFloat((el as HTMLElement).style.left));
-  const from = async () => (await fzp(page, 'policy')).kinds.money[0].spans[0].from;
-  const wasLeft = await left();
-  const wasFrom = await from();
-  const year = editor(page).getByRole('combobox', { name: 'From year' });
-  await year.selectOption(String(Number(await year.inputValue()) + 1));
-  await expect.poll(from).toBeGreaterThan(wasFrom);
-  await expect.poll(left).toBeGreaterThan(wasLeft);
-});
-
-// ---- the published view -------------------------------------------------------------------------
-
-test('the published view is outside the game', async ({ page, browser }, testInfo) => {
+/** Publishes `choice` of `kind` from the open game's `/` in another context; returns the path. */
+async function publishFromOpenGame(
+  browser: Browser,
+  testInfo: TestInfo,
+  kind: string,
+  choice: string
+): Promise<string> {
   const author = await otherPage(browser, testInfo);
-  let path: string;
   try {
-    await gotoSim(author);
-    await addPolicy(author, 'Zoning', 'Transit rule');
+    await gotoSim(author, '/');
+    await addPolicy(author, kind, choice);
     await closeEditor(author);
-    path = await publish(author);
+    return await publish(author);
   } finally {
     await author.context().close();
   }
+}
 
-  await seedGame(page, 2);
+/** The view outside the game: no phase, no tree, no lock and no Remix. */
+async function expectOutsideGame(page: Page): Promise<void> {
+  await expect(page.getByTestId('tl-mode')).toHaveAttribute('data-phase', 'none');
+  await expect(page.getByTestId('game-tree-pane')).toHaveCount(0);
+  await expect(page.getByTestId('tl-locked-lane')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /Remix/ })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: /Remix/ })).toHaveCount(0);
+}
+
+test('a published policy runs in full outside the game', async ({ page, browser }, testInfo) => {
+  const path = await publishFromOpenGame(browser, testInfo, 'Zoning', 'Transit rule');
+
+  await seedRuns(page);
   await gotoSim(page, path);
+  await expectOutsideGame(page);
   await openKind(page, 'Zoning');
   await expect(policyRows(page, 'Transit rule')).not.toHaveCount(0);
   for (const row of await policyRows(page, 'Transit rule').all())
     await expect(row).not.toHaveAttribute('data-locked');
-  await expect(page.getByTestId('tl-locked-lane')).toHaveCount(0);
-  await expect(page.getByTestId('tl-bar-flag')).toHaveCount(0);
 });
 
-test('a given measure publishes and runs in the view', async ({ page, browser }, testInfo) => {
-  const author = await otherPage(browser, testInfo);
-  let path: string;
-  try {
-    await seedGame(author, 5);
-    await gotoSim(author);
-    await addPolicy(author, 'Public money', BOND);
-    await closeEditor(author);
-    path = await publish(author);
-  } finally {
-    await author.context().close();
-  }
+test('a published given measure runs in full outside the game', async ({
+  page,
+  browser
+}, testInfo) => {
+  const path = await publishFromOpenGame(browser, testInfo, 'Public money', BOND);
 
-  await seedGame(page, 3);
+  await seedRuns(page);
   await gotoSim(page, path);
+  await expectOutsideGame(page);
   await openKind(page, 'Public money');
   await expect(policyRows(page, BOND)).not.toHaveCount(0);
   for (const row of await policyRows(page, BOND).all())
     await expect(row).not.toHaveAttribute('data-locked');
-  expect((await fzp(page, 'policy')).kinds.money[0].preset).toBe('housing-bond');
+  const money = await page.evaluate(() => (window as FzpWin).__sfhFzp!.policy.kinds.money);
+  expect(money[0].preset).toBe('housing-bond');
 });

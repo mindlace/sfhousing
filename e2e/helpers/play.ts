@@ -6,7 +6,22 @@ import type { GameSave } from '../../src/lib/game/save-shape';
 import { SAVES_KEY, saveKey } from '../../src/lib/game/saves';
 import { RING_KEYS } from '../../src/lib/game/run/run-model';
 import type { GamePhase } from '../../src/lib/sim-page/game-phase';
+import type { GameState } from '../../src/lib/game/state';
+import { seedGame, seedGoalAmount, seedRunMs } from './game';
 import { openHeaderMenu } from './sharing';
+
+/**
+ * Before the first load: the goal amount 1, a run of 2,000 ms and a game seeded with `state`
+ * (default: in the runs with one run settled, so the page lands on the tree).
+ */
+export async function seedRuns(
+  page: Page,
+  state: Partial<GameState> = { phase: 'runs', runs: 1 }
+): Promise<void> {
+  await seedGoalAmount(page, 1);
+  await seedRunMs(page, 2000);
+  await seedGame(page, state);
+}
 
 /** The current game as storage holds it; throws when there is none. */
 export async function savedGame(page: Page): Promise<GameSave> {
