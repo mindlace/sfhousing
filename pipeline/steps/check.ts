@@ -869,7 +869,8 @@ export async function checkDataset(
  * car-zones.json and their manifest keys both pass as `no car data`. V38: the manifest names
  * cars.bin (under the version) whenever the file exists and vice versa; it inflates and decodes
  * against parcels.bin's row count (so `lotZone` aligns); every zone holds round(occupied x homes)
- * households, homes the existingUnits of its lots. V39: the manifest names car-zones.json; it is
+ * households, homes the existingUnits of its lots; a file with no zones, or with no households
+ * while its zones hold homes, fails. V39: the manifest names car-zones.json; it is
  * a FeatureCollection with one feature per cars.bin zone, feature z having property `z` = z.
  * Never throws.
  */
@@ -932,6 +933,10 @@ export function checkCars(
       }
     }
     if (bad > 0) p38.push(`${bad} zone(s) off round(occupied x homes): ${first}`);
+    if (Z === 0) p38.push(`${CARS_BIN} has no zones`);
+    let homesTotal = 0;
+    for (let z = 0; z < Z; z++) homesTotal += homes[z];
+    if (homesTotal > 0 && total === 0) p38.push(`0 households on ${homesTotal} homes`);
     let noZone = 0;
     for (const z of d.lotZone) if (z < 0) noZone++;
     ok38 = `${Z} zones, ${total} households, ${noZone} lots in no zone`;

@@ -96,6 +96,32 @@ describe('V38 and V39', () => {
     });
   });
 
+  it('V38 fails on a file with no zones, and on no households while the zones hold homes', () => {
+    const empty: CarData = {
+      ...data(),
+      zones: [],
+      zonePuma: new Int32Array(0),
+      lotZone: Int32Array.from([-1, -1, -1]),
+      areaM2: new Float64Array(0),
+      occupied: new Float64Array(0),
+      access: new Float64Array(0),
+      constant: new Float64Array(0),
+      households: new Int32Array(0)
+    };
+    expect(checkCars(outDir(empty), manifest(true), parcels)[0]).toMatchObject({
+      ok: false,
+      detail: expect.stringMatching(/has no zones/)
+    });
+    // Occupied 0 everywhere: each zone's total (0) is met, but 21 homes hold no household.
+    const vacant = data();
+    vacant.occupied.fill(0);
+    vacant.households.fill(0);
+    expect(checkCars(outDir(vacant), manifest(true), parcels)[0]).toMatchObject({
+      ok: false,
+      detail: '0 households on 21 homes'
+    });
+  });
+
   it('V39 fails when the feature count is not the zone count', () => {
     expect(checkCars(outDir(data(), 1), manifest(true), parcels)[1]).toMatchObject({
       ok: false,

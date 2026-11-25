@@ -99,6 +99,12 @@ export async function carsStep(db: Duck, o: CarsStepOpts): Promise<CarsStepOut> 
   const za = await assignZones(db, { vintage, lngLat: p.labelPoint });
   const { zones, lotZone, areaM2 } = za;
   const Z = zones.length;
+  // Census tables without the block groups of the latest release's vintage would give an empty
+  // cars.bin that V38 could not tell from a real one: fail instead.
+  if (Z === 0)
+    throw new Error(
+      `cars: no ${vintage} block groups in src_bg_geom for ACS ${release} (lock a census-tiger-bg-${vintage} entry)`
+    );
   const pumaIx = new Map(pumas.map((x, i) => [x, i]));
   const zonePuma = Int32Array.from(zones, (g) => {
     const ix = pumaIx.get(tractPuma.get(g.slice(0, 11)) ?? '');
@@ -124,6 +130,14 @@ export async function carsStep(db: Duck, o: CarsStepOpts): Promise<CarsStepOut> 
     margins,
     ipf: { maxIter: IPF.maxIter, tol: IPF.tol }
   });
+  let startHomes = 0;
+  let startHouseholds = 0;
+  for (let z = 0; z < Z; z++) startHomes += homes[z];
+  for (const h of pop.households) startHouseholds += h;
+  if (startHomes > 0 && startHouseholds === 0)
+    throw new Error(
+      `cars: 0 households on ${startHomes} homes in ${Z} zones (ACS ${release} occupancy gives none)`
+    );
 
   // Today's transit access, homes-weighted per zone.
   const lotHomes = Int32Array.from(p.existingUnits);

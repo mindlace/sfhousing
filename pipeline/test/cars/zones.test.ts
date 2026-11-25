@@ -8,6 +8,7 @@ import { zoneAccess } from '../../lib/cars/access';
 import { assignZones, zoneFeatures } from '../../lib/cars/zones';
 import { openDuck, type Duck } from '../../lib/duck';
 import type { ScenarioParcels } from '../../../src/lib/data/scenario-codec';
+import type { Lock } from '../../lib/lock';
 import { carsStep } from '../../steps/cars';
 
 /** A lng/lat box as WKT. */
@@ -95,6 +96,70 @@ describe('carsStep without census', () => {
     expect(r.warnings).toEqual([]);
     expect(readdirSync(outDir)).toEqual([]);
     expect(existsSync(join(outDir, 'scenarios/fzp/cars.bin'))).toBe(false);
+    db.close();
+  });
+});
+
+describe('carsStep with census tables', () => {
+  const lock = {
+    sources: [
+      'census-acs5-bg-2024',
+      'census-pums5-2024',
+      'census-tiger-bg-2020',
+      'census-puma-2020'
+    ].map((id) => ({ id, files: [] }))
+  } as unknown as Lock;
+  // One lot with 10 homes inside the 2020 block group 060750102001.
+  const parcels = {
+    count: 1,
+    labelPoint: Float64Array.from([-122.425, 37.775]),
+    existingUnits: Uint16Array.from([10])
+  } as unknown as ScenarioParcels;
+
+  async function censusDb(o: { bgVintage: number; occupied: number }): Promise<Duck> {
+    const db = await openDuck();
+    await db.run(`CREATE TABLE src_bg_geom AS SELECT ${o.bgVintage} AS vintage,
+      '060750102001' AS geoid,
+      ST_Transform(ST_GeomFromText(${box(-122.43, 37.77, -122.42, 37.78)}), 'EPSG:4326',
+        'EPSG:7131', always_xy := true) AS geom, 1000.0 AS aland`);
+    await db.run(`CREATE TABLE src_tract_puma AS SELECT 2020 AS vintage,
+      '06075010200' AS tract, '07507' AS puma`);
+    await db.run(`CREATE TABLE src_pums_hh AS SELECT 2024 AS release, '07507' AS puma,
+      'S1' AS serialno, 10 AS wgtp, 1 AS veh, 2 AS np, 1 AS workers, 90000.0 AS hincp_adj,
+      3 AS ten, 2020 AS puma_vintage`);
+    await db.run(`CREATE TABLE src_acs_bg AS SELECT * FROM (VALUES
+      (2024, '060750102001', 'B25002_001', 10.0),
+      (2024, '060750102001', 'B25002_002', ${o.occupied}::DOUBLE)
+    ) t(release, geoid, variable, estimate)`);
+    return db;
+  }
+
+  it('fails when src_bg_geom lacks the latest release vintage, and writes nothing', async () => {
+    const db = await censusDb({ bgVintage: 2010, occupied: 9 });
+    const outDir = mkdtempSync(join(tmpdir(), 'sfh-cars-'));
+    await expect(carsStep(db, { outDir, lock, transit: null, parcels })).rejects.toThrow(
+      /no 2020 block groups in src_bg_geom for ACS 2024/
+    );
+    expect(readdirSync(outDir)).toEqual([]);
+    db.close();
+  });
+
+  it('fails on 0 households while the zones hold homes', async () => {
+    const db = await censusDb({ bgVintage: 2020, occupied: 0 });
+    const outDir = mkdtempSync(join(tmpdir(), 'sfh-cars-'));
+    await expect(carsStep(db, { outDir, lock, transit: null, parcels })).rejects.toThrow(
+      /0 households on 10 homes in 1 zones/
+    );
+    expect(readdirSync(outDir)).toEqual([]);
+    db.close();
+  });
+
+  it('writes the files when the census places households', async () => {
+    const db = await censusDb({ bgVintage: 2020, occupied: 9 });
+    const outDir = mkdtempSync(join(tmpdir(), 'sfh-cars-'));
+    const r = await carsStep(db, { outDir, lock, transit: null, parcels });
+    expect(r.counts['cars.households']).toBe(9);
+    expect(existsSync(join(outDir, 'scenarios/fzp/cars.bin'))).toBe(true);
     db.close();
   });
 });
