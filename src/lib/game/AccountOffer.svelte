@@ -7,7 +7,7 @@
   import { page } from '$app/state';
   import { currentUser } from '$lib/account/current-user.svelte';
   import { BUTTON, BUTTON_QUIET } from '$lib/shell/ui';
-  import { syncText } from './copy';
+  import { syncText } from './words';
   import { useGame } from './store.svelte';
 
   const game = useGame();

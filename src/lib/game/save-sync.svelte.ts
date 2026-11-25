@@ -2,7 +2,8 @@ import { untrack } from 'svelte';
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 import { newId } from '$lib/ids/base58';
 import type { AccountLine } from './save-api';
-import { defaultSaveName, parseGameSave, type GameSave } from './saves';
+import { parseGameSave, type GameSave } from './save-shape';
+import { defaultSaveName } from './words';
 import type { GameStore } from './store.svelte';
 
 export type SyncState = 'local' | 'saving' | 'saved' | 'offline' | 'sign-in' | 'full';
@@ -262,7 +263,7 @@ class BrowserSync implements SaveSync {
     if (!this.#hasSession()) {
       for (const entry of store.saves) {
         const save = store.read(entry.id);
-        if (save === null || save.progress.firstWinAt === null) continue;
+        if (save === null || save.state.firstWinAt === null) continue;
         if (this.#record.seen[save.id]?.savedAt === save.savedAt) continue;
         this.#mark(save.id);
       }
@@ -305,7 +306,7 @@ class BrowserSync implements SaveSync {
     }
     if (!this.#hasSession() && !this.#signIn) {
       const save = store.read(id);
-      if (save === null || save.progress.firstWinAt === null) return;
+      if (save === null || save.state.firstWinAt === null) return;
     }
     const retry = this.#offline;
     this.#mark(id);
@@ -650,7 +651,7 @@ class BrowserSync implements SaveSync {
     }
     const session = this.#hasSession();
     if (!session) {
-      if (save.progress.firstWinAt === null) {
+      if (save.state.firstWinAt === null) {
         this.#waiting.delete(id);
         return;
       }
@@ -722,10 +723,10 @@ class BrowserSync implements SaveSync {
     }
     if (mine === null) return;
     const b = newId();
-    const name = defaultSaveName(
-      { kind: 'conflict', name: mine.name },
-      store.saves.map((s) => s.name)
-    );
+    const name = defaultSaveName({ kind: 'conflict', name: mine.name }, [
+      ...store.saves.map((s) => s.name),
+      theirs.name
+    ]);
     if (!this.#quiet((s) => s.rekey(a, b)).ok) {
       this.#offline = true;
       this.#waiting.add(a);

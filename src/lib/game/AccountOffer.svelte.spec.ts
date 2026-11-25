@@ -5,7 +5,7 @@ import { cdp, page, userEvent } from 'vitest/browser';
 import axe from 'axe-core';
 import '../../routes/layout.css';
 import { currentUser } from '$lib/account/current-user.svelte';
-import { syncText } from './copy';
+import { syncText } from './words';
 import AccountOffer from './AccountOffer.svelte';
 import { FakeSync } from './test/fake-sync.svelte';
 
