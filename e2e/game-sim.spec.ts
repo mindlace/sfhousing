@@ -29,18 +29,17 @@ type FzpWin = Win & { __sfhFzp?: SfhFzpDebug };
 
 /**
  * A goal amount current law meets inside the window on fixture-0. Read once from the fixture's
- * /sim with the default goal (82,069) and nothing in force: Details' goal row reads "82,065 to go"
- * at today (4 homes) and "81,408 to go, Held at Sep 2066" at the window's end (661 homes). Current
- * law passes 400 in about its 60th month.
+ * /sim with nothing in force: the goal's count (4 plus `__sfhFzp.completedNet()`) is 4 at today
+ * and 468 at the window's end. Current law passes 400 in its 76th month.
  */
 const WIN = 400;
 /**
  * A goal amount "SB 423 approval clock" (added at today) meets in another month than current law
  * on fixture-0. Read once from the fixture's /sim: the goal's count by month (4 plus
- * `__sfhFzp.completedNet()`) with the empty policy and with the clock; 642 is first met in month
- * 183 with the clock and month 199 without it.
+ * `__sfhFzp.completedNet()`) with the empty policy and with the clock; 464 is first met in month
+ * 317 with the clock and month 340 without it (any of 462 to 468 is).
  */
-const WIN_APART = 642;
+const WIN_APART = 464;
 
 const SB423 = 'SB 423 approval clock';
 const BOND = 'A housing bond';

@@ -1,7 +1,7 @@
 /**
  * Permit-side pathway levels (stage-calibration spec §4.5 "Permit-side stages"): a stratified
  * proportional-hazards scaling of the pooled Aalen–Johansen table. The pooled cell (every
- * qualifying spell since 2007-01-01, any pathway) gives the shape; one ratio per outcome,
+ * qualifying spell since 2015-01-01, any pathway) gives the shape; one ratio per outcome,
  * θ_j = (O_j + κ) / (E_j + κ), fitted on the pathway's spells since 2015-01-01, gives the level.
  */
 import { MONTH_DAYS } from '../../../src/lib/timelapse/time';
