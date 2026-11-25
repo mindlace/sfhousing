@@ -2,7 +2,7 @@
 
 Source model document: docs/superpowers/specs/2026-11-24-incremental-feel-design.html (approved by the partner 2026-11-24, ruling P12)
 Package worktree: /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-feel/.claude/worktrees/incremental-loop
-Build graph: docs/superpowers/design/2026-11-24-2120-incremental-loop-build-graph.md @ a6731240
+Build graph: docs/superpowers/design/2026-11-24-2120-incremental-loop-build-graph.md @ 8c82f05d
 
 ## Checkpoints
 
