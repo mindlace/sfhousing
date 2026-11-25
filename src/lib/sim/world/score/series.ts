@@ -21,7 +21,7 @@ const NO_DAY = core.NO_DAY;
 const ORIGIN_MASTER = core.ORIGIN_MASTER;
 const ORIGIN_SIM = core.ORIGIN_SIM;
 const TIER_KEYS = TIER_FIELDS;
-const waiting = waitingAt;
+const waitingOf = waitingAt;
 
 /** The stages a project can be in progress at, in `STAGE_ORDER` (score.ts `LIVE`). */
 const LIVE = STAGE_ORDER.filter((s): s is Live => s !== 'complete');
@@ -672,7 +672,7 @@ export function createWorldSeries(s: ScoreStatics, from?: WorldSeriesData): Worl
     waiting(world: World, from: number, through: number) {
       checkRange('waiting', from, through);
       const out: number[] = [];
-      for (let i = from; i <= through; i++) out.push(waiting(world, table[i]));
+      for (let i = from; i <= through; i++) out.push(waitingOf(world, table[i]));
       return out;
     },
     unawarded: () => d.unawarded
