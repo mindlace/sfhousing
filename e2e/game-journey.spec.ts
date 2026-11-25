@@ -59,6 +59,23 @@ const focusHoldsMap = (page: Page): Promise<boolean> =>
 const focusVisible = (target: Locator): Promise<boolean> =>
   target.evaluate((el) => el.matches(':focus-visible'));
 
+/** expect.poll without the back-off: a state is seen within 50 ms of being reached. */
+const FAST = { intervals: [50] };
+
+/**
+ * `waitPhase`, for a phase after a press of Start, Run or a run's end: getting the forecast ready
+ * (starting) and the run itself can together outlast an `expect`'s window, so the wait is bounded
+ * by the test's (a page function, checked each frame), then `waitPhase` confirms it.
+ */
+async function untilPhase(page: Page, p: 'run' | 'tally'): Promise<void> {
+  await page.waitForFunction(
+    (want) =>
+      document.querySelector('[data-testid="tl-mode"]')?.getAttribute('data-phase') === want,
+    p
+  );
+  await waitPhase(page, p);
+}
+
 /** Below lg, closes the header's Menu if it is open (Escape, as a player would); else nothing. */
 async function closeHeaderMenu(page: Page): Promise<void> {
   const menu = page.getByRole('banner').locator('[data-header-menu]');
@@ -115,10 +132,10 @@ test.describe('by pointer', () => {
     // 6. Start: the first run, at the same address, the map box focused and in its run view.
     await start.click();
     expect(new URL(page.url()).pathname).toBe('/');
-    await expect.poll(() => focusHoldsMap(page)).toBe(true);
-    await waitPhase(page, 'run');
+    await expect.poll(() => focusHoldsMap(page), FAST).toBe(true);
+    await untilPhase(page, 'run');
     await expect(page.getByTestId('map-root')).toHaveAttribute('data-run-view', 'on');
-    await waitPhase(page, 'tally');
+    await untilPhase(page, 'tally');
     expect(new URL(page.url()).pathname).toBe('/');
 
     // 7. The settled run: everything dropped was collected, rung 0 met with its lump.
@@ -165,7 +182,7 @@ test.describe('by pointer', () => {
 
     // 12. A second run.
     await page.getByTestId('tree-run').click();
-    await waitPhase(page, 'tally');
+    await untilPhase(page, 'tally');
     const second = await waitSaved(page, (g) => g.state.runs === 2);
     expect(second.state.runs).toBe(2);
     await page.getByTestId('tally-continue').click();
@@ -177,7 +194,7 @@ test.describe('by pointer', () => {
     await page.getByTestId('tree-next').click();
     const next = await waitSaved(page, (g) => g.state.rung === 1);
     expect(next.state.rung).toBe(1);
-    await expect.poll(async () => (await headline.textContent()) ?? '').not.toBe(was);
+    await expect.poll(async () => (await headline.textContent()) ?? '', FAST).not.toBe(was);
 
     // 14. The account holds the one game, at rung 1.
     await expect
@@ -189,7 +206,7 @@ test.describe('by pointer', () => {
           status: 200,
           saves: body.saves.map((e) => ({ phase: e.phase, rung: e.rung }))
         };
-      })
+      }, FAST)
       .toEqual({ status: 200, saves: [{ phase: 'runs', rung: 1 }] });
   });
 });
@@ -212,25 +229,21 @@ test('a player plays the loop by keyboard only, collecting with the ring', async
   await tabTo(page, canvas);
   expect(await focusVisible(canvas)).toBe(true);
   await page.keyboard.press('Enter');
-  await expect.poll(() => ops(page)).toBe(1);
+  await expect.poll(() => ops(page), FAST).toBe(1);
 
   // 3. Start by Enter: the map box takes focus and the run starts.
   const start = page.getByTestId('opening-start');
   await expect(start).toBeFocused();
   await page.keyboard.press('Enter');
-  await expect.poll(() => focusHoldsMap(page)).toBe(true);
-  await waitPhase(page, 'run');
+  await expect.poll(() => focusHoldsMap(page), FAST).toBe(true);
+  await untilPhase(page, 'run');
 
   // 4. The ring, swept by the arrow keys, collects.
   expect(await sweepRing(page)).toBeGreaterThanOrEqual(1);
 
   // 5. The tally: "Collect for me" was never set, so what was collected is the ring's. The run
-  // goes on for the rest of its 8 s after the first catch, longer than an `expect`'s wait: this
-  // one is bounded by the test's.
-  await page.waitForFunction(
-    () => document.querySelector('[data-testid="tl-mode"]')?.getAttribute('data-phase') === 'tally'
-  );
-  await waitPhase(page, 'tally');
+  // goes on for the rest of its 8 s after the first catch.
+  await untilPhase(page, 'tally');
   const s = await waitSaved(page, (g) => g.state.runs === 1);
   expect(s.state.last!.collected.home).toBeGreaterThanOrEqual(1);
 
@@ -281,58 +294,59 @@ const ASOF = (
   ) as { asOf: number }
 ).asOf;
 
-/**
- * Steps 1 to 5 of the ending: every rung but the last met (each on the fixture's today), nothing
- * bought, one run, and the ending in the tree. Returns the ending.
- */
-async function reachTheEnding(page: Page): Promise<Locator> {
-  // 1. Every rung but the last met.
+test('meeting the last deadline is the ending', async ({ page }) => {
+  // 1. Every rung but the last met, and the price of stop-rail in hand.
   const met: MetRung[] = Array.from({ length: RUNGS - 1 }, (_, k) => ({
     rung: k,
     reachedOn: ASOF,
     datasetVersion: 'fixture-0',
     at: new Date().toISOString()
   }));
+  await seedGame(page, {
+    phase: 'runs',
+    runs: 1,
+    rung: RUNGS - 1,
+    met,
+    units: { home: PRICES['stop-rail'][0] }
+  });
 
-  // 2. The tree at the last rung: no next goal, no ending yet.
-  await seedGame(page, { phase: 'runs', runs: 1, rung: RUNGS - 1, met });
+  // 2. The tree at the last rung: no next goal, no ending yet. Buy stop-rail; read its label.
   await seedGoalAmount(page, 1);
   await seedRunMs(page, 2000);
   await gotoHydrated(page, '/');
   await waitPhase(page, 'tree');
   await expect(page.getByTestId('tree-next')).toHaveCount(0);
   await expect(page.getByTestId('tree-ending')).toHaveCount(0);
+  await expect(node(page, 'stop-rail')).toHaveAttribute('data-state', 'ready');
+  const bought = await buyNode(page, 'stop-rail', 'pointer');
+  expect(bought.state.bought['stop-rail']).toBe(1);
+  const label = (
+    (await node(page, 'stop-rail')
+      .getByTestId('tree-node-open')
+      .first()
+      .locator('span')
+      .first()
+      .textContent()) ?? ''
+  ).trim();
+  expect(label).not.toBe('');
 
-  // 3. A run.
+  // 3. A run (it waits for the forecast with the bought rule first).
   await page.getByTestId('tree-run').click();
-  await waitPhase(page, 'tally');
+  await untilPhase(page, 'tally');
   await page.getByTestId('tally-continue').click();
   await waitPhase(page, 'tree');
 
   // 4. The last rung met.
   expect((await savedGame(page)).state.met.map((m) => m.rung)).toContain(RUNGS - 1);
 
-  // 5. The ending: its months, no node listed (nothing is bought), no next goal.
+  // 5. The ending: its months, the one node bought, no next goal.
   const ending = page.getByTestId('tree-ending');
   await expect(ending).toContainText('Every goal met');
   await expect(ending).toContainText(/Reached in [A-Z][a-z]{2} \d{4}/);
   await expect(ending).toContainText(/The state asks by [A-Z][a-z]{2} \d{4}/);
-  await expect(ending.locator('li')).toHaveCount(0);
+  await expect(ending.locator('li')).toHaveText([label]);
   await expect(page.getByTestId('tree-next')).toHaveCount(0);
-  return ending;
-}
 
-test('meeting the last deadline is the ending', async ({ page }) => {
-  const ending = await reachTheEnding(page);
-  await expect(ending.getByTestId('tree-publish')).toBeVisible();
-});
-
-test("the ending's Publish opens the publish dialog", async ({ page }) => {
-  // Known gap: with nothing bought the policy is empty, the header's Publish is aria-disabled
-  // ("Change the policy first.", PublishButton.svelte:44,60), and the tree's Publish only presses
-  // it (SimPage.svelte:689-698), so no dialog opens. Remove this line once that is fixed.
-  test.fail(true, 'the tree Publish presses the disabled header Publish when nothing is bought');
-  await reachTheEnding(page);
   // 6. Its Publish opens the publish dialog.
   await page.getByTestId('tree-publish').click();
   await expect(policyPublishDialog(page)).toBeVisible();

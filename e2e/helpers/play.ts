@@ -34,18 +34,21 @@ export async function savedGame(page: Page): Promise<GameSave> {
   return JSON.parse(text) as GameSave;
 }
 
-/** Polls `savedGame` until `ok` holds; returns that save. */
+/** Polls `savedGame` every 50 ms (no back-off) until `ok` holds; returns that save. */
 export async function waitSaved(page: Page, ok: (s: GameSave) => boolean): Promise<GameSave> {
   let last: GameSave | null = null;
   await expect
-    .poll(async () => {
-      try {
-        last = await savedGame(page);
-      } catch {
-        return false;
-      }
-      return ok(last);
-    })
+    .poll(
+      async () => {
+        try {
+          last = await savedGame(page);
+        } catch {
+          return false;
+        }
+        return ok(last);
+      },
+      { intervals: [50] }
+    )
     .toBe(true);
   return last!;
 }
