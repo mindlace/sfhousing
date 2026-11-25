@@ -1382,11 +1382,11 @@ npx tsx scripts/reach-measure.ts --version &lt;datasetVersion&gt; [--from &lt;or
       <ul>
         <li>It builds <code>fullTree(engine.cal).doc</code>, runs it through <code>engine.view</code>, and reads <code>readGoal(goal, view, view.lastIndex)</code> with <code>goal = defaultGoal(asOf)</code>, its amount replaced by <code>--amount</code> when given.</li>
         <li>The measured year is the UTC year of <code>reachedOn</code>. The window's end year is the UTC year of <code>defaultGoal(asOf).deadline</code>.</li>
-        <li><code>LADDER_YEARS</code> is <code>ladderYears(endYear, reachedYear)</code>, below: at most four years, so the ladder has at most five rungs.</li>
+        <li><code>LADDER_YEARS</code> is <code>ladderYears(endYear, reachedYear)</code>, below: at most four years, so the ladder has at most five rungs. An empty list is never written (below), so a written ladder has one to four years and at least two rungs.</li>
         <li>"Evenly between" takes the entries at <code>round(n / 3)</code> and <code>round(2n / 3)</code> of the full list, where <code>n</code> is its last index.</li>
         <li><code>--write</code> rewrites <code>src/lib/game/catalogue/ladder-years.ts</code> with <code>ladderFile</code>, below, and prints <code>Wrote src/lib/game/catalogue/ladder-years.ts</code>.</li>
         <li><code>--write</code> with <code>--amount</code> is refused, so a fixture or test amount never sets the ladder.</li>
-        <li>Exit 0 when the full tree reaches the goal in the window, 1 when it does not (nothing is written), 2 when it could not run, with one stderr line <code>reach-measure: &lt;reason&gt;</code> and nothing on stdout.</li>
+        <li>Exit 0 when the full tree reaches the goal in the window and <code>ladderYears</code> holds at least one year. Exit 1, with nothing written, when the full tree does not reach the goal in the window, or reaches it only after the first ladder year so that <code>ladderYears</code> is empty. Exit 2 when it could not run, with one stderr line <code>reach-measure: &lt;reason&gt;</code> and nothing on stdout.</li>
       </ul>
 <pre><code data-lang="ts">/**
  * The ladder's years (G6): from the largest multiple of five at least five years before the
@@ -1425,7 +1425,8 @@ Window ends Sep 2066
 Goal: 82,069 homes, reached Mar 2043
 LADDER_YEARS = [2060, 2055, 2050, 2045]</code></pre>
       <ul>
-        <li>The figures above show the format only. A miss prints <code>Goal: 82,069 homes, missed: &lt;homes&gt; homes by &lt;Mon YYYY&gt;</code> and no <code>LADDER_YEARS</code> line.</li>
+        <li>The figures above show the format only. A miss prints <code>Goal: 82,069 homes, missed: &lt;homes&gt; homes by &lt;Mon YYYY&gt;</code> and no <code>LADDER_YEARS</code> line. A reach after the first ladder year prints the goal line as reached, then <code>No earlier deadline: the full tree reaches the goal after Dec &lt;first ladder year&gt;</code>, and no <code>LADDER_YEARS</code> line.</li>
+        <li>An exit 1 stops the measurement part: <code>ladder-years.ts</code> keeps what it holds, and the unit hands the printed lines to the owner, whose remedy it is (more levers, or a later dataset).</li>
         <li>Until the script has run, <code>ladder-years.ts</code> holds the provisional value below, so the catalogue has five rungs and each stage is its own ring.</li>
       </ul>
 <pre><code data-lang="ts">// src/lib/game/catalogue/ladder-years.ts, until the reach is measured
@@ -1492,7 +1493,8 @@ export function shareOf(s: GameState, mode: 'hand' | 'collect-for-me'): number {
         <ul>
           <li>Each order is played twice: <code>hand</code>, with the share above, and <code>collect-for-me</code>, with every drop collected (call 17).</li>
           <li>The hand shares run from 0.25 with no Hands node to 0.80 with every radius and linger level.</li>
-          <li><code>SHARE</code> and <code>CLOCK</code> are assumptions, not measurements. This unit ships them as given, and no unit of this build measures them. The owner changes them after playing the built game.</li>
+          <li><code>SHARE</code> and <code>CLOCK</code> are assumptions, not measurements. This unit ships them as given, and the owner changes them after playing the built game.</li>
+          <li><code>CLOCK</code> counts no wait for the forecast after a purchase. The forecast for the next run starts at the purchase and fills while the player is still in the tree, so the wait is spent inside <code>buyS</code>. <code>closing</code>'s bench case "purchase to ready" measures that wait on a laptop and reports it beside <code>buyS</code>; when it is longer, the owner raises <code>buyS</code>. No unit measures it on a phone.</li>
         </ul>
       </section>
 
@@ -1726,6 +1728,7 @@ export interface SideReport {
       <h3><code>scripts/reach-measure.spec.ts</code> and <code>scripts/tree-balance.spec.ts</code> (the measurement)</h3>
       <ul>
         <li><code>ladderYears(2066, 2043)</code> is <code>[2060, 2055, 2050, 2045]</code>; <code>ladderYears(2066, 2031)</code> is <code>[2060, 2050, 2045, 2035]</code>; <code>ladderYears(2065, 2050)</code> is <code>[2060, 2055, 2050]</code>; a measured year after the first step gives <code>[]</code>.</li>
+        <li>When <code>ladderYears</code> is empty, the reach measure prints the "No earlier deadline" line, writes nothing even with <code>--write</code>, and exits 1 (tested against a stub <code>Engine</code> whose view reaches the goal in the window's end year).</li>
         <li><code>ladderFile</code> gives text that names the dataset, the reached month and the window's end, and exports the years.</li>
         <li>The argument parser refuses an unknown flag, a second directory, <code>--version</code> beside a directory, a bad <code>--amount</code>, and <code>--write</code> with <code>--amount</code>.</li>
         <li><code>openEngine</code> on the fixture directory gives a view of the empty document, and a view of <code>fullTree</code>'s document whose homes at the window's end are at least the empty document's.</li>
@@ -1758,6 +1761,7 @@ export interface SideReport {
       <li><strong>The scripts read a directory or fetch a version.</strong> <code>npm run data:local</code> leaves no directory.</li>
       <li><strong>The engine runner lives in <code>scripts/reach-measure.ts</code></strong> and <code>fullTree</code> in <code>catalogue/play.ts</code>, so <code>closing</code>'s reach check can import both.</li>
       <li><strong>"Two evenly between" takes the entries at a third and two thirds of the full list, rounded.</strong> It keeps every year a multiple of five.</li>
+      <li><strong>An empty ladder is refused, not written.</strong> With no year five years before the window's end the game has one rung: no deadline moves in, no ring opens and the loop cannot be played as designed (closing's journeys take the next goal). So <code>LADDER_YEARS</code> always holds one to four years, and a full tree that cannot beat the window's end by a five-year step is a finding for the owner, as a missed reach is.</li>
       <li><strong>A side-goal target at or below current law is raised to 1.25 times current law's value, rounded up to the next 1,000.</strong> It keeps the goal a step beyond what the player gets for nothing.</li>
       <li><strong>The balance script assumes the player takes the next rung at once</strong> and estimates drops from <code>completedNet</code>. Both keep it a pure function of the engine's series.</li>
     </ul>
