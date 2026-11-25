@@ -625,7 +625,7 @@ interface GameCellProps {
         <li>Every word on screen comes from <code>src/lib/game/ui/words.ts</code> (<a href="#sec-design-words">Words</a>), except the names the props carry (node labels, side goal labels, save names, <code>deadline</code>, <code>unlocks</code>) and the four store and sync words <code>GamePanel</code> imports from <code>src/lib/game/words.ts</code>: <code>syncText</code>, <code>playedText</code>, <code>FULL_TEXT</code>, <code>STORAGE_TEXT</code>.</li>
         <li>Counts are written with <code>formatCount</code> (<code>$lib/scoreboard/format</code>) inside the words functions. A month is <code>formatShortMonthYear</code> ("Mar 2049", <code>$lib/fzp/format</code>). Money per added home is <code>formatDollarsExact</code>.</li>
         <li>A deadline shown (<code>deadline</code>, <code>next.label</code>) is a rung's label, <code>formatShortMonthYear</code> of its deadline: "Dec 2055", "Sep 2066". The parts print it as given.</li>
-        <li>A unit amount shown is <code>total(units)</code> (G2). The mark <code>◆</code> is drawn in an <code>aria-hidden</code> span; the accessible text says "units".</li>
+        <li>A unit amount shown is <code>total(units)</code> (G2). Every text that shows the mark <code>◆</code> is drawn in an <code>aria-hidden</code> span, and an <code>sr-only</code> span beside it holds the same words with the amount followed by "units", from the paired <code>…Name</code> word of <a href="#sec-design-words">Words</a>: <code>priceText</code> and <code>priceName</code>, <code>nextPriceText</code> and <code>nextPriceName</code>, <code>buyText</code> and <code>buyName</code>, <code>balanceText</code> and <code>balanceName</code>; the mark with <code>collectedText</code> and <code>collectedName</code>, with <code>lumpText</code> and <code>lumpName</code>, with <code>sideRewardText</code> and <code>sideRewardName</code>; and a bare count with <code>unitsName</code>. A screen reader hears the <code>…Name</code> words and never the mark.</li>
         <li>Buttons are <code>BUTTON</code>, <code>BUTTON_PRIMARY</code> or <code>BUTTON_QUIET</code>. A control that is none of them writes <code>min-h-6 min-w-6</code> and the focus ring classes <code>focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent dark:focus-visible:outline-accent-dark</code> beside its look.</li>
         <li>Cards and pop-overs are <code>SURFACE_POP</code> with position and size beside it.</li>
         <li>A switch is a <code>BUTTON</code> with <code>role="switch"</code>, <code>aria-checked</code>, and <code>aria-checked:bg-accent-tint dark:aria-checked:bg-accent-dark/30</code> beside it, as the Inspector draws it.</li>
@@ -648,6 +648,7 @@ import type { Branch } from '../tree';
 export const UNIT_MARK = '◆';
 export function unitsName(n: number): string; // '1 unit' | '1,240 units'
 export function priceText(n: number): string; // '◆ 900'; n 0: 'Free'
+export function priceName(n: number): string; // '900 units' | '1 unit'; n 0: 'Free'
 export function shortText(n: number): string; // '298 short'
 
 // The goal headline
@@ -673,8 +674,13 @@ export function homesOfText(homes: number, amount: number): string; // '61,400 o
 export function changeText(d: number): string; // '+3,150' | '−3,150' (U+2212) | 'No change'
 export function collectedText(collected: number, dropped: number): string;
 // '7,300 of 9,100 collected'
+export function collectedName(collected: number, dropped: number): string;
+// '7,300 of 9,100 units collected'
 export function lumpText(n: number): string; // '+2,000 for the goal'
+export function lumpName(n: number): string; // '+2,000 units for the goal'
 export function sideRewardText(n: number, label: string): string; // '+500 for 1,000 homes added'
+export function sideRewardName(n: number, label: string): string;
+// '+500 units for 1,000 homes added'
 export const SIDE_GOAL_FALLBACK = 'a side goal';
 export function notBuiltTitle(deadline: string): string; // 'Not yet built by Dec 2055'
 export const STAGE_ROWS: readonly {
@@ -695,6 +701,7 @@ export const CURRENT_LAW = 'Current law';
 export const BRANCH_NAMES: Readonly&lt;Record&lt;Branch, string&gt;&gt;;
 // { permitting: 'Permitting', zoning: 'Zoning', money: 'Public money', hands: 'Hands' }
 export function buyText(price: number): string; // 'Buy · ◆ 900'; price 0: 'Buy · Free'
+export function buyName(price: number): string; // 'Buy for 900 units'; price 0: 'Buy for free'
 export const BOUGHT = 'Bought';
 export const EDIT = 'Edit';
 export function editName(label: string): string; // 'Edit SB 423 clock'
@@ -703,6 +710,7 @@ export function switchName(label: string): string; // 'SB 423 clock on'
 export const OFF = 'off';
 export function nextStepText(step: string): string; // 'Next: 8 stories'
 export function nextPriceText(price: number): string; // 'next ◆ 420'
+export function nextPriceName(price: number): string; // 'next 420 units'; price 0: 'next free'
 export const SOURCE = 'Source';
 export function boughtLive(label: string, step: string): string; // 'Bought: Near BART, 8 stories'
 export const RUN = 'Run';
@@ -780,7 +788,7 @@ export const COLLECT_BOUGHT = 'Always on: bought';</code></pre>
           <li>The units line is the mark then <code>collectedText(total(result.collected), total(result.dropped))</code>.</li>
           <li>A lump line <code>lumpText(total(result.lump))</code>, <code>data-testid="tally-lump"</code>, shows when <code>result.lump</code> is not null.</li>
           <li>One side line per entry of <code>result.side</code>, in its order, <code>data-testid="tally-side"</code>: <code>sideRewardText(total(reward), label)</code>. The label is that of the entry of <code>SIDE_GOALS</code> with the same id, or <code>SIDE_GOAL_FALLBACK</code>.</li>
-          <li>Each lump and side line starts with the mark.</li>
+          <li>Each lump and side line starts with the mark. The units line, the lump line and each side line draw the mark and their words in one <code>aria-hidden</code> span, followed by an <code>sr-only</code> span holding <code>collectedName</code>, <code>lumpName</code> or <code>sideRewardName</code> with the same arguments.</li>
         </ul>
       </section>
       <section id="sec-design-tally-stages">
@@ -898,7 +906,7 @@ export function branchRows(nodes: readonly NodeView[]): BranchRows[];</code></pr
           <li>Level 0, <code>ready</code>: <code>priceText(p)</code>, where <code>p</code> is <code>total</code> of the next level's price.</li>
           <li>Level 0, <code>short</code>: <code>priceText(p)</code>, then <code>shortText(total(view.short))</code>. This is how far short the balance is.</li>
           <li>Bought: the bought level's <code>step</code>; then <code>OFF</code> when <code>on[id]</code> is false; then, while a level is left, <code>nextPriceText(p)</code>, and <code>shortText(…)</code> when that level is <code>short</code>.</li>
-          <li>The open button is the card's name: <code>node.label</code>, with the second line as its <code>aria-describedby</code> text (an <code>sr-only</code> copy, so the name stays the label).</li>
+          <li>The open button is the card's name: <code>node.label</code>, with the second line as its <code>aria-describedby</code> text (an <code>sr-only</code> copy, so the name stays the label). In that copy each price is its <code>…Name</code> word: <code>priceName(p)</code> for <code>priceText(p)</code> and <code>nextPriceName(p)</code> for <code>nextPriceText(p)</code>; the visible line is <code>aria-hidden</code>.</li>
           <li>Pressing the open button opens the node's detail and closes any other; pressing it again closes it. One node is open at a time.</li>
           <li>Edit is a <code>BUTTON</code> with the text <code>EDIT</code>, the name <code>editName(label)</code> and <code>data-testid="tree-node-edit"</code>. It calls <code>onedit(id)</code>.</li>
           <li>The switch shows when the node is bought and <code>on</code> has an entry for it: a switch button with the text <code>ON</code>, the name <code>switchName(label)</code>, <code>aria-checked={on[id]}</code> and <code>data-testid="tree-node-on"</code>. A press calls <code>ontoggle(id, !on[id])</code>. The card's look and line follow <code>on</code> when the prop changes, never before.</li>
@@ -918,7 +926,7 @@ export function branchRows(nodes: readonly NodeView[]): BranchRows[];</code></pr
         <ul>
           <li><code>nextStep</code> is the next level's <code>step</code>, shown when the node has more than one level and a level is left.</li>
           <li>The source with an <code>href</code> is a <code>BUTTON_QUIET</code> link, text <code>source.text</code>, <code>target="_blank"</code>, <code>rel="noopener noreferrer"</code>, <code>data-testid="tree-source"</code>. Without an <code>href</code> it is a <code>p</code>: <code>SOURCE</code>, ": ", then the text. A node with <code>source</code> null shows neither.</li>
-          <li>While a level is left, Buy is a <code>BUTTON_PRIMARY</code> with <code>buyText(p)</code> and <code>data-testid="tree-buy"</code>.</li>
+          <li>While a level is left, Buy is a <code>BUTTON_PRIMARY</code> with <code>buyText(p)</code> in an <code>aria-hidden</code> span, <code>buyName(p)</code> in an <code>sr-only</code> span as its name, and <code>data-testid="tree-buy"</code>.</li>
           <li>For <code>ready</code>, a press calls <code>onbuy(id)</code>.</li>
           <li>For <code>short</code>, Buy is <code>aria-disabled="true"</code>, described by a <code>p</code> holding <code>shortText(…)</code>, and a press does nothing.</li>
           <li>For <code>done</code>, the detail shows <code>BOUGHT</code> in place of Buy.</li>
@@ -1189,7 +1197,7 @@ export function reloadGame(): void;</code></pre>
       <h3>Unit</h3>
       <ul>
         <li><code>branchRows</code>: branch order; a branch with no node is left out; a child nests under the first earlier node of its branch named in <code>after</code>; an <code>after</code> in another branch makes a root; an <code>after</code> naming a later node makes a root; siblings keep catalogue order; every node once.</li>
-        <li><code>words.ts</code>: each function's text for the examples in <a href="#sec-design-words">Words</a>, the singular and plural forms, the minus sign, 0 as "Free"; <code>STAGE_ROWS</code> equals the first four rows of <code>STAGE_KEY</code> in ids, labels and stages; no string has 12 words or more.</li>
+        <li><code>words.ts</code>: each function's text for the examples in <a href="#sec-design-words">Words</a>, the singular and plural forms, the minus sign, 0 as "Free"; each <code>…Name</code> word says "units" (or "unit" for 1) and holds no mark; <code>STAGE_ROWS</code> equals the first four rows of <code>STAGE_KEY</code> in ids, labels and stages; no string has 12 words or more.</li>
       </ul>
     </section>
     <section id="sec-tests-tally">
@@ -1197,7 +1205,7 @@ export function reloadGame(): void;</code></pre>
       <ul>
         <li>The title for a run that met the goal and for one that did not.</li>
         <li>The homes line; the change for a rise, a fall and none; no change line with <code>before</code> null.</li>
-        <li>The collected line; the lump line only with a lump; one side line per reward with the label from <code>SIDE_GOALS</code>, and the fallback for an unknown id.</li>
+        <li>The collected line; the lump line only with a lump; one side line per reward with the label from <code>SIDE_GOALS</code>, and the fallback for an unknown id; each of these lines' accessible text is its <code>…Name</code> word and contains no "◆".</li>
         <li>Four stage rows with the labels of <code>STAGE_ROWS</code> and counts summed from a fixture with six distinct stage values.</li>
         <li>The money row only when <code>waitingMoney</code> is not null; the bars' shared scale (<code>data-fill</code>).</li>
         <li>Continue has focus at mount; Continue and Escape each call <code>oncontinue</code> once; Escape does not reach the window.</li>
@@ -1213,7 +1221,7 @@ export function reloadGame(): void;</code></pre>
         <li>A card's <code>data-state</code>, look and second line for ready, short, bought, bought and off, and bought with a level left.</li>
         <li>Opening a node shows its line, next step, source link (<code>href</code>, new tab) or source text, and Buy; one node open at a time; a second press closes it.</li>
         <li>Escape closes the detail and focuses the node's button; Escape with nothing open reaches the window.</li>
-        <li>Buy on a ready node calls <code>onbuy(id)</code>; on a short node it is <code>aria-disabled</code>, says how far short, and calls nothing; a done node shows "Bought".</li>
+        <li>Buy on a ready node calls <code>onbuy(id)</code>; on a short node it is <code>aria-disabled</code>, says how far short, and calls nothing; a done node shows "Bought"; Buy's accessible name is <code>buyName(p)</code>, and a card's description uses <code>priceName</code> or <code>nextPriceName</code>.</li>
         <li>After the host raises the node's level, the live region says "Bought: …" and focus follows the rule.</li>
         <li>Edit calls <code>onedit(id)</code>. The switch shows only with an entry in <code>on</code>, reads <code>aria-checked</code>, and calls <code>ontoggle(id, !on[id])</code>.</li>
         <li>Run has focus at mount and calls <code>onrun</code>; while busy it says <code>RUN_BUSY</code>, carries <code>aria-busy</code>, and still calls <code>onrun</code>.</li>
