@@ -1,11 +1,12 @@
 <!--
   Details on /sim (was Results): the numbers behind the headline at the playhead's month. It draws
   no chart of its own: its Chart switch (`lens`, bound) picks what the one timeline chart plots.
-  Order: the heading (with Activity in its row), the switch, the goal rows, what the policy added (the protection line kept),
-  the homes by source, the stopped line, public money, who the homes are for, the year table
-  (stopping at the playhead's month), then one link, "How this is worked out", into About's
-  assumptions (on /sim it opens About over the map; docs/dev/about.md). Unmounting puts the chart
-  back on Homes: the chart at rest always means one thing. Every id is per instance.
+  Order: the heading (with Activity in its row), the switch, the goal rows, what the policy added
+  (the protection line kept), the homes by source, the Cars row (only with car data), the stopped
+  line, public money, who the homes are for, the year table (stopping at the playhead's month),
+  then one link, "How this is worked out", into About's assumptions (on /sim it opens About over
+  the map; docs/dev/about.md). Unmounting puts the chart back on Homes: the chart at rest always
+  means one thing. Every id is per instance.
 -->
 <script lang="ts">
   import { onDestroy } from 'svelte';
@@ -26,7 +27,8 @@
   import { CALCULATING, builtTowardGoalText } from '$lib/fzp/score-view';
   import type { ScoreAt } from '$lib/fzp/types';
   import type { ChartLens } from './chart-lens';
-  import { LENS_NAME, TWIN_NOTE, capacityNote } from './copy';
+  import { CARS_TERM, LENS_NAME, TWIN_NOTE, capacityNote, carsChange, carsValue } from './copy';
+  import { carsRow } from './cars-row';
   import { YEAR_COLUMNS, yearRows } from './details';
   import Explain from './Explain.svelte';
   import { toBeatLine } from './game-copy';
@@ -129,6 +131,9 @@
   /** The year table: nothing at today (no month has ended), else up to the playhead's month. */
   const years = $derived(view && !playhead.atToday ? yearRows(view, playhead.index, inForce) : []);
   const columns = $derived(inForce ? YEAR_COLUMNS : YEAR_COLUMNS.slice(0, -1));
+  /** Cars today and at the playhead's month; null without car data (older datasets). */
+  const cars = $derived(view ? carsRow(view, playhead.atToday ? 0 : playhead.index) : null);
+  const carsPer = $derived(cars && !playhead.atToday ? carsChange(cars) : null);
   const signed = (n: number) => `${n < 0 ? '' : '+'}${formatCount(n)}`;
   const CHOICE_LABEL = 'inline-flex min-h-6 min-w-6 cursor-pointer items-center gap-2 pr-2 text-sm';
 </script>
@@ -223,6 +228,20 @@
         <dd class="tabular-nums">{formatCount(at.fresh)}</dd>
       </div>
     </dl>
+
+    {#if cars}
+      <dl class="mt-3 text-sm" data-testid="tl-cars">
+        <div class="flex justify-between gap-3">
+          <dt>{CARS_TERM}</dt>
+          <dd class="text-right tabular-nums">
+            {carsValue(cars, playhead.atToday)}
+            {#if carsPer}
+              <span class="block text-ink-muted dark:text-ink-dark-muted">{carsPer}</span>
+            {/if}
+          </dd>
+        </div>
+      </dl>
+    {/if}
 
     <p class="mt-3 text-sm">
       Proposed homes in projects that stopped since {formatMonthYear(asOf)}:

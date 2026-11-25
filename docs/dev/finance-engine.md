@@ -81,8 +81,9 @@ and segment, the offered programmes.
 **Rates per segment.** `z` is the lot's log-odds in the segment's view (`Precompute.logit`) and `m`
 the market step's:
 
-- Market kind: `z + m`, plus `oddsShift` of the bundle when the bundle is not empty. The rate used
-  is `min(ordinary rate, shifted rate)` (the min-rate rule, below).
+- Market kind: `z + m` (plus the frame's parking shift, `frame.parking`, in the world engine;
+  `world-core.md`, The car hook), plus `oddsShift` of the bundle when the bundle is not empty. The
+  rate used is `min(ordinary rate, shifted rate)` (the min-rate rule, below).
 - Affordable kind: `z + m − slope × (uncoveredPerHome('affordable') − uncoveredPerHome('market')) ÷
 costPerHome('affordable')`, plus `oddsShift` of the bundle when the bundle is not empty.
 - A certain bundle gives rate `−Infinity` (hazard 1). A segment where the view has no size, or the

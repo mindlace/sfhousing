@@ -1,3 +1,4 @@
+import type { FeatureCollection } from 'geojson';
 import type { Layer } from '@deck.gl/core';
 import type { Map as MapLibreMap } from 'maplibre-gl';
 import type { ParcelId } from '$lib/data/parcel';
@@ -184,6 +185,14 @@ export interface SimMapProps {
   view?: ViewPrefs;
   /** Loads `manifest.transit`; tests inject. Default: fetch + decode. */
   fetchTransit?: (url: string) => Promise<TransitNetwork>;
+  /**
+   * Cars per household by zone at the playhead's month (`TimelineView.cars.zones[i]`, NaN for a
+   * zone with no households); null for none. The cars layer draws it while `view.carsPerHousehold`.
+   * Undefined (Paint, which shares the prefs record) keeps the layer off and fetches nothing.
+   */
+  carZones?: Float32Array | null;
+  /** Loads `manifest.scenarios.fzp.carZones`; tests inject. Default: fetch + parse. */
+  fetchCarZones?: (url: string) => Promise<FeatureCollection>;
   /**
    * T7: timeline part pick callback. When set, SimMap's built-in tooltip is suppressed over
    * timeline parts (implemented by timelapse-render step 1).

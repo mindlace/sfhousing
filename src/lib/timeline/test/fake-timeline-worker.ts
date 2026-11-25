@@ -68,7 +68,7 @@ export const filledMsg = (
   rev: number,
   from: number,
   n: number,
-  opts: { base?: number } = {}
+  opts: { base?: number; cars?: boolean } = {}
 ): Of<'filled'> => ({
   type: 'filled',
   rev,

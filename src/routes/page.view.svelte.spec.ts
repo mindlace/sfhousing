@@ -75,7 +75,8 @@ describe('/ map layers', () => {
     expect(stubProps.view).toEqual({
       transitStops: false,
       transitAccess: false,
-      heightLimits: true
+      heightLimits: true,
+      carsPerHousehold: false
     });
     await first.unmount();
 
@@ -97,7 +98,8 @@ describe('/ map layers', () => {
     expect(stubProps.view).toEqual({
       transitStops: false,
       transitAccess: true,
-      heightLimits: false
+      heightLimits: false,
+      carsPerHousehold: false
     });
     await layersToggle().click();
     await expect.element(layersPanel()).toBeVisible();
@@ -108,8 +110,18 @@ describe('/ map layers', () => {
     await page.getByRole('checkbox', { name: /Transit capacity/ }).click();
     await expect
       .poll(() => stubProps.view)
-      .toEqual({ transitStops: false, transitAccess: false, heightLimits: false });
-    expect(stored()).toEqual({ transitStops: false, transitAccess: false, heightLimits: false });
+      .toEqual({
+        transitStops: false,
+        transitAccess: false,
+        heightLimits: false,
+        carsPerHousehold: false
+      });
+    expect(stored()).toEqual({
+      transitStops: false,
+      transitAccess: false,
+      heightLimits: false,
+      carsPerHousehold: false
+    });
 
     // A fresh page load reads the persisted value back.
     await first.unmount();
@@ -117,7 +129,8 @@ describe('/ map layers', () => {
     expect(stubProps.view).toEqual({
       transitStops: false,
       transitAccess: false,
-      heightLimits: false
+      heightLimits: false,
+      carsPerHousehold: false
     });
   });
 

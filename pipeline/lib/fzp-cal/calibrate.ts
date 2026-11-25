@@ -6,6 +6,7 @@
  * The publicly funded housing (finance-data spec 4.4, 4.6-4.8) follows today's market.
  */
 import type { ScenarioParcels } from '../../../src/lib/data/scenario-codec';
+import type { CarModel } from '../../../src/lib/sim/cars';
 import { featureValue } from '../../../src/lib/data/scenario-codec';
 import { CalibrationFormatError, parseCalibration } from '../../../src/lib/timelapse/model';
 import type { InFlightProject } from '../../../src/lib/timelapse/projects';
@@ -65,6 +66,11 @@ export interface CalInput {
   funding: FundingFile;
   /** the locked `datasf-mohcd-pipeline` rows, as read (finance-data spec 4.1 "Reading") */
   mohcd: RawRow[];
+  /**
+   * The car step's output: the model (written as `cars`, after `baselineFunding`) and the report
+   * lines of section 14. Absent, or no lines, means no car data: no `cars` and no section 14.
+   */
+  cars?: { model: CarModel | null; report: string[]; backcast?: string[] };
 }
 
 export interface CalOutput {
@@ -186,7 +192,8 @@ export async function calibrate(input: CalInput, cal: CalProfile): Promise<CalOu
     phaseGap: gaps.phaseGap,
     market: mk.market,
     affordableRoutes: ar.routes,
-    baselineFunding: bf.baselineFunding
+    baselineFunding: bf.baselineFunding,
+    ...(input.cars?.model ? { cars: input.cars.model } : {})
   };
   const json = JSON.stringify(calibration);
   try {
@@ -281,6 +288,8 @@ export async function calibrate(input: CalInput, cal: CalProfile): Promise<CalOu
       funding: bf.report,
       siteChoice: sites
     },
+    cars: input.cars?.report ?? [],
+    carsBackcast: input.cars?.backcast ?? [],
     warnings
   });
 

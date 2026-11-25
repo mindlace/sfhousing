@@ -1236,7 +1236,7 @@ for (const scheme of ['light', 'dark'] as const) {
   });
 }
 
-test('without transit: no transit.json request, no transit layers, Layers has only the height limits', async ({
+test('without transit: no transit.json request, no transit layers, Layers has cars and the height limits', async ({
   page
 }) => {
   const transitAsked: string[] = [];
@@ -1274,7 +1274,9 @@ test('without transit: no transit.json request, no transit layers, Layers has on
   expect(transitAsked).toEqual([]);
   await openLayers(page);
   const group = layersGroup(page);
-  await expect(group.getByRole('checkbox')).toHaveCount(1);
+  // fixture-0 has car data: its row stays.
+  await expect(group.getByRole('checkbox')).toHaveCount(2);
+  await expect(group.getByRole('checkbox', { name: 'Cars per household' })).toBeVisible();
   await expect(group.getByRole('checkbox', { name: 'Zoning height limits' })).toBeChecked();
 });
 

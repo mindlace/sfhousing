@@ -218,7 +218,8 @@ function before(c: SeriesChunk, n: number): SeriesChunk | null {
     rows: c.rows.slice(0, k),
     planEffect: c.planEffect.slice(0, k),
     money: c.money ? c.money.slice(0, k) : null,
-    tiers: c.tiers ? c.tiers.slice(0, k) : null
+    tiers: c.tiers ? c.tiers.slice(0, k) : null,
+    cars: c.cars ? c.cars.slice(0, k) : null
   };
 }
 

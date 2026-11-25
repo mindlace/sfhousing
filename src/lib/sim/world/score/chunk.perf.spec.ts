@@ -198,3 +198,32 @@ describe('scoring timing, funded bench city (no bar)', () => {
     expect(late.length).toBeGreaterThan(0);
   }, 600_000);
 });
+
+describe('scoring timing, with cars (sanity only, no bar)', () => {
+  it('files a snapshot each month and reads the chunks', () => {
+    const score = testStatics(benchInput(), WINDOW);
+    const plan = createWorldSeries(score);
+    const zones = new Float32Array(2000).fill(0.5);
+    const times: number[] = [];
+    let final = plan.finalThrough();
+    for (let m = 1; m <= 150; m++) {
+      const t = performance.now();
+      plan.stepped(m, { households: 1e6 + m, cars: 5e5, carless: 1e5, spacesPerHome: 1, zones });
+      const now = plan.finalThrough();
+      if (now > final) {
+        chunkOf(plan, plan, null, final + 1, now);
+        final = now;
+      }
+      times.push(performance.now() - t);
+    }
+    const { median, p90, worst } = stats(times);
+    console.log(
+      `[perf] cars, 2000 zones, months 1-150: median ${ms(median)} ms, p90 ${ms(p90)} ms, ` +
+        `worst ${ms(worst)} ms per month, ${QUIET}`
+    );
+    for (const x of [median, p90, worst]) {
+      expect(Number.isFinite(x)).toBe(true);
+      expect(x).toBeGreaterThanOrEqual(0);
+    }
+  }, 600_000);
+});

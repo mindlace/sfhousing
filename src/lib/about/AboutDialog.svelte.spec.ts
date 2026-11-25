@@ -26,7 +26,7 @@ import {
 import { resolveTerms } from '$lib/sim/finance';
 import { PIPELINE_FUNDED } from '$lib/sim/scenario/funding';
 import manifestJson from '../../../e2e/fixtures/data/fixture-0/manifest.json';
-import { ABOUT_ID, ABOUT_TITLE, PART_HEADING } from './copy';
+import { ABOUT_ID, ABOUT_TITLE, CARS_HEADING, PART_HEADING } from './copy';
 import AboutDialogHarness from './test/AboutDialogHarness.svelte';
 
 // The sub-sections of Using it: not parts.
@@ -209,7 +209,8 @@ describe('opening', () => {
     const h4 = [...byId(ABOUT_ID.assumptions).querySelectorAll('h4')].map((h) =>
       h.textContent?.trim()
     );
-    expect(h4).toEqual([...expected, QUALITY_HEADING]);
+    // The Cars section first: the fixture calibration carries the car model.
+    expect(h4).toEqual([CARS_HEADING, ...expected, QUALITY_HEADING]);
     expect(byId('src-actual')).not.toBeNull();
     // No disclosure: the dialog is already the place asked for.
     expect(byId(ABOUT_ID.assumptions).querySelector('details')).toBeNull();

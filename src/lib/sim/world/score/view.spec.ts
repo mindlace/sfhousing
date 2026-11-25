@@ -20,6 +20,7 @@ function stub(rows: MonthRow[]): WorldSeries {
   };
   return {
     add: nope,
+    created: nope,
     stepped: nope,
     data: nope,
     finalThrough: () => rows.length - 1,

@@ -1321,12 +1321,14 @@ describe('parseCalibration', () => {
     expect(parseCalibration(c)).toBe(c);
   });
 
-  it('AC-7: model.ts imports only ./types, ./time, ./math and ../sim/finance/{instruments,debt}, and no zod', () => {
+  it('AC-7: model.ts imports only ./types, ./time, ./math and ../sim/finance/{instruments,debt}, ../sim/cars/types and no zod', () => {
     const src = readFileSync(new URL('./model.ts', import.meta.url), 'utf8');
     const specifiers = [...src.matchAll(/from\s+'([^']+)'/g)].map((m) => m[1]);
     expect(specifiers.length).toBeGreaterThan(0);
     for (const sp of specifiers)
-      expect(sp).toMatch(/^(\.\/(types|time|math)|\.\.\/sim\/finance\/(instruments|debt))$/);
+      expect(sp).toMatch(
+        /^(\.\/(types|time|math)|\.\.\/sim\/finance\/(instruments|debt)|\.\.\/sim\/cars\/types)$/
+      );
     expect(src).not.toContain('zod');
   });
 });
@@ -1646,5 +1648,99 @@ describe('affordableRoutes and baselineFunding', () => {
         'q.minHomes: expected a whole number from 0 to 10000, got 10001'
       );
     });
+  });
+});
+
+describe('cars', () => {
+  const prov = {
+    tier: 4,
+    label: 'x',
+    sources: [{ label: 's', url: 'https://x.org' }],
+    method: 'm'
+  };
+  const T = 4; // size 1 x workers 1 x income 2, own and rent
+  const share = [0.25, 0.25, 0.25, 0.25];
+  function cars(): any {
+    return {
+      schema: 1,
+      bands: { size: [1], workers: [0], income: [0, 100000] },
+      choice: {
+        asc: [0, 0, 0],
+        household: new Array(T * 3).fill(0),
+        location: { density: [0, 0, 0], access: [0, 0, 0] },
+        terms: [{ name: 'asc', coef: [0, 0, 0] }],
+        provenance: prov
+      },
+      threePlusMean: 3.2,
+      moves: { perMonth: new Array(T).fill(0.01), provenance: prov },
+      newHomes: {
+        mix: { market: share, veryLow: share, low: share, moderate: share },
+        affordableTiers: { veryLow: 0.3, low: 0.3, moderate: 0.4 },
+        provenance: prov
+      },
+      parking: {
+        supplyOverUse: 1.1,
+        costPerSpace: { surface: 5000, podium: null, belowGrade: 50000 },
+        dollarsYear: 2024,
+        provenance: [prov]
+      },
+      refreshMonths: 12
+    };
+  }
+  const withCars = (c: any): unknown => ({ ...structuredClone(cal), cars: c });
+
+  it('parseCalibration accepts a calibration without cars', () => {
+    expect(parseCalibration(structuredClone(cal)).cars).toBeUndefined();
+  });
+
+  it('accepts a valid cars section, with per-type or null parking cost', () => {
+    expect(parseCalibration(withCars(cars())).cars?.refreshMonths).toBe(12);
+    const off = cars();
+    off.parking.costPerSpace = null;
+    off.parking.dollarsYear = null;
+    expect(parseCalibration(withCars(off)).cars?.parking.costPerSpace).toBeNull();
+  });
+
+  const bad: [string, (c: any) => void, string][] = [
+    [
+      'more than 255 types',
+      (c) => (c.bands.size = Array.from({ length: 64 }, (_, i) => i)),
+      'cars.bands'
+    ],
+    [
+      'mix not summing to 1',
+      (c) => (c.newHomes.mix.low = [0.5, 0.5, 0.5, 0.5]),
+      'cars.newHomes.mix.low'
+    ],
+    ['mix wrong length', (c) => (c.newHomes.mix.low = [1]), 'cars.newHomes.mix.low'],
+    [
+      'tiers not summing to 1',
+      (c) => (c.newHomes.affordableTiers.low = 0.5),
+      'cars.newHomes.affordableTiers'
+    ],
+    ['negative move rate', (c) => (c.moves.perMonth[1] = -0.1), 'cars.moves.perMonth[1]'],
+    ['move rate above 1', (c) => (c.moves.perMonth[0] = 1.5), 'cars.moves.perMonth[0]'],
+    ['retired inMix key', (c) => (c.moves.inMix = [[1, 0, 0, 0]]), 'cars.moves.inMix'],
+    ['household length', (c) => (c.choice.household = [0]), 'cars.choice.household'],
+    ['asc length', (c) => (c.choice.asc = [0, 0]), 'cars.choice.asc'],
+    ['unexpected key', (c) => (c.extra = 1), 'cars.extra'],
+    ['missing refreshMonths', (c) => delete c.refreshMonths, 'cars.refreshMonths'],
+    ['zero refreshMonths', (c) => (c.refreshMonths = 0), 'cars.refreshMonths'],
+    ['non-ascending edges', (c) => (c.bands.income = [5, 1]), 'cars.bands.income'],
+    [
+      'negative parking cost',
+      (c) => (c.parking.costPerSpace.surface = -1),
+      'cars.parking.costPerSpace.surface'
+    ],
+    [
+      'bad provenance',
+      (c) => (c.moves.provenance = { ...prov, tier: 9 }),
+      'cars.moves.provenance.tier'
+    ]
+  ];
+  it.each(bad)('rejects %s', (_name, mutate, path) => {
+    const c = cars();
+    mutate(c);
+    expect(() => parseCalibration(withCars(c))).toThrow(path);
   });
 });

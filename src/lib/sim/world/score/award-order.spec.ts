@@ -195,6 +195,7 @@ describe('award after completion in the same step', () => {
         }
       },
       stepped: (m) => into.stepped(m),
+      created: (c) => into.created(c),
       finalThrough: () => into.finalThrough(),
       rows: (a, b) => into.rows(a, b),
       data: () => into.data()

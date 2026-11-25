@@ -8,6 +8,8 @@
 // - loadDataset: scenario-host.ts:630-664 (loadScenario with `{ policy: true }`), 681-687 (the
 //   MassingCtx), 702-704 (LayerCtx, GrossCache, table); the memo itself is the caller's
 //   (scenario-host.ts:474-483, 530-534: cleared on another datasetVersion).
+// - the world core (car-ownership Task 11): `withFunding(createFundingSystem(), cars)`, built once
+//   per load because the car system is the dataset's (`carSystemOf`, world/cars/dataset.ts).
 // - yieldSourceOf: scenario-host.ts:935-947, 955 (table or chunk recompute, want its cells),
 //   603 (failed cells).
 // Worker-bundle module: zod-free, DOM-free, $app-free.
@@ -34,8 +36,13 @@ import {
   type ScenarioUrls
 } from '$lib/sim/scenario/load';
 import type { MassingCtx } from '$lib/sim/scenario/massing';
+import { carSystemOf } from '../cars/dataset';
+import { createFundingSystem } from '../funding';
 import type { CompileCtx, YieldSource } from '../policy/compile';
 import { staticsOf, type Statics } from '../statics';
+import type { CarSystem } from '../types';
+import { withFunding } from '../world';
+import type { WorldCore } from './ensemble';
 
 export interface DatasetDeps {
   fetch: FetchLike;
@@ -56,8 +63,10 @@ export interface DatasetDeps {
   decodeParcels?(bytes: Uint8Array): Promise<ScenarioParcels>;
   decodePolicy?(bytes: Uint8Array, parcels: ScenarioParcels): Promise<PolicyParcels>;
   decodeGross?(bytes: Uint8Array): Promise<GrossTable>;
-  /** Seam: the load itself (the bench city); default `loadScenario(…, { policy: true })`. */
+  /** Seam: the load itself (the bench city); default `loadScenario(…, { policy, cars })`. */
   load?(urls: ScenarioUrls): Promise<Loaded | LoadFailure>;
+  /** True: no car system, even with cars.bin (`level2-check --cars off`). */
+  carsOff?: boolean;
 }
 
 /** A session's chunks: its loader and every ready record. */
@@ -92,6 +101,10 @@ export interface Dataset {
   /** `{ parcels: loaded.fzp.parcels, policy: loaded.policy }`. */
   layers: LayerCtx;
   statics: Statics;
+  /** The dataset's car system (`carSystemOf`); null without car data or with `carsOff`. */
+  cars: CarSystem | null;
+  /** `withFunding(createFundingSystem(), cars)`: both ensembles' worlds step with it. */
+  core: WorldCore;
   chunks: ChunkSet;
   memo: Lru<string, GeneratedBuilding | null>;
   /** On `loaded.fzp`, the chunk records and the memo: `MapStreamDeps.massing`. */
@@ -193,7 +206,7 @@ export async function loadDataset(
         },
         u,
         deps.stopped,
-        { policy: true }
+        { policy: true, cars: deps.carsOff !== true }
       ));
   const loaded = await load(urls);
   if ('code' in loaded) return loaded;
@@ -214,12 +227,15 @@ export async function loadDataset(
     genForUnits: gen.genForUnits,
     logOnce: (projectId, msg) => gen.logOnce(`massing:${projectId}`, msg)
   };
+  const cars = carSystemOf(loaded, { off: deps.carsOff });
   return {
     manifest,
     urls,
     loaded,
     layers,
     statics: staticsOf(loaded.fzp),
+    cars,
+    core: withFunding(createFundingSystem(), cars),
     chunks,
     memo,
     massing,

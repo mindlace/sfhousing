@@ -88,3 +88,23 @@ export const byWhen = (at: Day | null): string =>
 /** '12,345 homes by Apr 2040'; at === null: '0 homes by today'. Negative counts use U+2212. */
 export const homesBy = (n: number, at: Day | null): string =>
   `${formatCount(n)} homes by ${byWhen(at)}`;
+
+/** Details' Cars row (car-ownership Task 12): its term. */
+export const CARS_TERM = 'Cars';
+
+/** The Cars row's value: today's cars alone at today, else '312,000 → 318,000'. */
+export const carsValue = (r: { today: number; atPlayhead: number }, atToday: boolean): string =>
+  atToday ? formatCount(r.today) : `${formatCount(r.today)} → ${formatCount(r.atPlayhead)}`;
+
+/**
+ * The change in cars per household to two places, signed ('+0.02', U+2212 for a fall), then
+ * ' per household'; null when either is unknown.
+ */
+export function carsChange(r: {
+  perHouseholdToday: number | null;
+  perHouseholdAt: number | null;
+}): string | null {
+  if (r.perHouseholdToday === null || r.perHouseholdAt === null) return null;
+  const d = Math.round((r.perHouseholdAt - r.perHouseholdToday) * 100) / 100;
+  return `${d < 0 ? '−' : '+'}${Math.abs(d).toFixed(2)} per household`;
+}

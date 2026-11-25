@@ -28,6 +28,26 @@ describe('column file', () => {
     expect(Array.from(f.read('d', 'i32', 2))).toEqual([-2147483648, 7]);
     for (const c of f.header.columns as { offset: number }[]) expect(c.offset % 8).toBe(0);
   });
+  it('round-trips f64 columns exactly and rejects a non-finite value', () => {
+    const vals = [0.1, -1e-300, 123456.789, Number.MAX_VALUE];
+    const b = encodeColumnFile(
+      'TEST',
+      1,
+      {},
+      [
+        { name: 'a', type: 'u8', values: [1] },
+        { name: 'f', type: 'f64', values: vals }
+      ],
+      fail
+    );
+    const f = openColumnFile(b, 'TEST', 1, ['a', 'f'], fail);
+    const got = f.read('f', 'f64', 4);
+    expect(got).toBeInstanceOf(Float64Array);
+    expect(Array.from(got)).toEqual(vals);
+    expect(() =>
+      encodeColumnFile('TEST', 1, {}, [{ name: 'f', type: 'f64', values: [NaN] }], fail)
+    ).toThrow(/does not fit f64/);
+  });
   it('rejects an out-of-range value, a wrong magic, a missing column and a wrong length', () => {
     expect(() =>
       encodeColumnFile('TEST', 1, {}, [{ name: 'a', type: 'u8', values: [256] }], fail)

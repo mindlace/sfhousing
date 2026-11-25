@@ -7,6 +7,7 @@
  */
 import { exp, log } from './math';
 import { MONTH_DAYS, monthDay, stageDay } from './time';
+import { MAX_TYPES, MIXES } from '../sim/cars/types';
 import { validateDebt } from '../sim/finance/debt';
 import { validateInstrument } from '../sim/finance/instruments';
 import {
@@ -1125,10 +1126,124 @@ export function parseCalibration(json: unknown): Calibration {
   if (c.market !== undefined) checkMarket(c.market);
   if (c.affordableRoutes !== undefined)
     checkPathwayMap(c.affordableRoutes, 'affordableRoutes', true);
+  if (c.cars !== undefined) checkCars(c.cars);
   if (c.baselineFunding === undefined) return json as Calibration;
   const migrated = dropLegacyUncapped(c);
   checkBaselineFunding(migrated.baselineFunding);
   return migrated as unknown as Calibration;
+}
+
+/** Edges of one band: at least one, finite, strictly ascending. */
+function checkEdges(v: unknown, path: string): number[] {
+  const xs = numbers(v, path);
+  if (xs.length === 0) fail(path, 'expected at least one edge');
+  xs.forEach((x, i) => {
+    if (i > 0 && !(x > xs[i - 1])) fail(path, 'expected strictly ascending edges');
+  });
+  return xs;
+}
+
+/** Exactly `len` finite numbers. */
+function sized(v: unknown, path: string, len: number): number[] {
+  const xs = numbers(v, path);
+  if (xs.length !== len) fail(path, `expected length ${len}, got ${xs.length}`);
+  return xs;
+}
+
+/** `len` shares in [0, 1] summing to 1. */
+function shares(v: unknown, path: string, len: number): number[] {
+  const xs = sized(v, path, len);
+  xs.forEach((x, i) => unit(x, `${path}[${i}]`));
+  checkSumsToOne(xs, path);
+  return xs;
+}
+
+/** The car model (`cars`): types, choice, moves, new-home mixes, parking. */
+function checkCars(v: unknown): void {
+  const c = record(v, 'cars');
+  exactKeys(c, 'cars', [
+    'schema',
+    'bands',
+    'choice',
+    'threePlusMean',
+    'moves',
+    'newHomes',
+    'parking',
+    'refreshMonths'
+  ]);
+  if (c.schema !== 1) fail('cars.schema', `expected 1, got ${String(c.schema)}`);
+
+  const b = record(c.bands, 'cars.bands');
+  exactKeys(b, 'cars.bands', ['size', 'workers', 'income']);
+  const size = checkEdges(b.size, 'cars.bands.size');
+  const workers = checkEdges(b.workers, 'cars.bands.workers');
+  const income = checkEdges(b.income, 'cars.bands.income');
+  const T = size.length * workers.length * income.length * 2;
+  if (T > MAX_TYPES) fail('cars.bands', `expected at most ${MAX_TYPES} types, got ${T}`);
+
+  const ch = record(c.choice, 'cars.choice');
+  exactKeys(ch, 'cars.choice', ['asc', 'household', 'location', 'terms', 'provenance']);
+  sized(ch.asc, 'cars.choice.asc', 3);
+  sized(ch.household, 'cars.choice.household', T * 3);
+  const loc = record(ch.location, 'cars.choice.location');
+  exactKeys(loc, 'cars.choice.location', ['density', 'access']);
+  sized(loc.density, 'cars.choice.location.density', 3);
+  sized(loc.access, 'cars.choice.location.access', 3);
+  array(ch.terms, 'cars.choice.terms').forEach((t, i) => {
+    const tp = `cars.choice.terms[${i}]`;
+    const r = record(t, tp);
+    exactKeys(r, tp, ['name', 'coef']);
+    text(r.name, `${tp}.name`);
+    numbers(r.coef, `${tp}.coef`);
+  });
+  checkProvenance(ch.provenance, 'cars.choice.provenance');
+
+  if (finite(c.threePlusMean, 'cars.threePlusMean') < 3) {
+    fail('cars.threePlusMean', 'expected at least 3');
+  }
+
+  const mv = record(c.moves, 'cars.moves');
+  exactKeys(mv, 'cars.moves', ['perMonth', 'provenance']);
+  sized(mv.perMonth, 'cars.moves.perMonth', T).forEach((x, i) =>
+    unit(x, `cars.moves.perMonth[${i}]`)
+  );
+  checkProvenance(mv.provenance, 'cars.moves.provenance');
+
+  const nh = record(c.newHomes, 'cars.newHomes');
+  exactKeys(nh, 'cars.newHomes', ['mix', 'affordableTiers', 'provenance']);
+  const mix = record(nh.mix, 'cars.newHomes.mix');
+  exactKeys(mix, 'cars.newHomes.mix', MIXES);
+  for (const m of MIXES) shares(mix[m], `cars.newHomes.mix.${m}`, T);
+  const tiers = record(nh.affordableTiers, 'cars.newHomes.affordableTiers');
+  exactKeys(tiers, 'cars.newHomes.affordableTiers', ['veryLow', 'low', 'moderate']);
+  const tierShares = ['veryLow', 'low', 'moderate'].map((k) =>
+    unit(tiers[k], `cars.newHomes.affordableTiers.${k}`)
+  );
+  checkSumsToOne(tierShares, 'cars.newHomes.affordableTiers');
+  checkProvenance(nh.provenance, 'cars.newHomes.provenance');
+
+  const pk = record(c.parking, 'cars.parking');
+  exactKeys(pk, 'cars.parking', ['supplyOverUse', 'costPerSpace', 'dollarsYear', 'provenance']);
+  positive(pk.supplyOverUse, 'cars.parking.supplyOverUse');
+  if (pk.costPerSpace === null) {
+    if (pk.dollarsYear !== null) fail('cars.parking.dollarsYear', 'expected null with no cost');
+  } else {
+    const cp = record(pk.costPerSpace, 'cars.parking.costPerSpace');
+    exactKeys(cp, 'cars.parking.costPerSpace', ['surface', 'podium', 'belowGrade']);
+    for (const k of ['surface', 'podium', 'belowGrade']) {
+      if (cp[k] !== null && finite(cp[k], `cars.parking.costPerSpace.${k}`) < 0) {
+        fail(`cars.parking.costPerSpace.${k}`, 'expected a non-negative number or null');
+      }
+    }
+    integer(pk.dollarsYear, 'cars.parking.dollarsYear');
+  }
+  array(pk.provenance, 'cars.parking.provenance').forEach((p, i) =>
+    checkProvenance(p, `cars.parking.provenance[${i}]`)
+  );
+
+  if (integer(c.refreshMonths, 'cars.refreshMonths') < 1) {
+    fail('cars.refreshMonths', 'expected at least 1');
+  }
 }
 
 /**

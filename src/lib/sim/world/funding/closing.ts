@@ -278,6 +278,9 @@ function buildView(base: PolicyTimeline, rows: Shut[], asOf: Day): PolicyTimelin
       changes();
       return baseSet.has(k) ? base.touched(k) : new Int32Array(0);
     },
+    // A parking-only month of the base stays one when no pool opens or closes in it.
+    parkingOnly: (k) =>
+      k >= 2 && base.parkingOnly?.(k) === true && presentKey(k) === presentKey(k - 1),
     readyThrough: () => base.readyThrough()
   };
 }

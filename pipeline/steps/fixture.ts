@@ -16,7 +16,9 @@ import { DATASET_VERSION_RE } from '../../src/lib/data/dataset-version';
 import { FIXTURE_PROFILE } from '../config';
 import { readLock } from '../lib/lock';
 import { build, printResults } from './build';
+import { CAR_ZONES_JSON, CARS_BIN } from '../lib/scenario-files';
 import { CALIBRATION_JSON, CALIBRATION_REPORT_MD } from './calibration';
+import { CARS_DUMP, formatCarsDump, readCarsBin } from './cars';
 import { HISTORIES_JSON, PERMITS_PARQUET, PROJECTS_JSON, dumpPermits } from './projects';
 import { GROSS_BIN, GROSS_DUMP, formatGrossDump, readGrossBin } from './gross';
 import { POLICY_BIN, POLICY_DUMP, formatPolicyDump, readPolicyBin } from './policy';
@@ -28,8 +30,8 @@ const E2E = join(REPO_ROOT, 'e2e/fixtures/data/fixture-0');
 const GOLDEN = join(MINI, 'golden');
 /**
  * Deterministic outputs pinned by golden.test.ts (tile bytes and fonts are not compared). The T11
- * file, policy.bin and gross.bin are pinned by their decoded dumps, SCENARIO_DUMP, POLICY_DUMP and
- * GROSS_DUMP, not by their deflate bytes (spec §4.8).
+ * file, policy.bin, gross.bin and cars.bin are pinned by their decoded dumps, SCENARIO_DUMP,
+ * POLICY_DUMP, GROSS_DUMP and CARS_DUMP, not by their deflate bytes (spec §4.8).
  */
 const GOLDEN_FILES = [
   'parcels',
@@ -38,7 +40,8 @@ const GOLDEN_FILES = [
   'report.json',
   'transit.json',
   PROJECTS_JSON,
-  CALIBRATION_JSON
+  CALIBRATION_JSON,
+  CAR_ZONES_JSON
 ];
 /**
  * Derived-cache outputs pinned by golden.test.ts (project-records spec §4.9), under
@@ -171,6 +174,10 @@ export async function fixture(opts: FixtureOpts = {}): Promise<number> {
       writeFileSync(
         join(GOLDEN, POLICY_DUMP),
         formatPolicyDump(readPolicyBin(join(outDir, POLICY_BIN), parcels))
+      );
+      writeFileSync(
+        join(GOLDEN, CARS_DUMP),
+        formatCarsDump(readCarsBin(join(outDir, CARS_BIN), parcels.count))
       );
       const derived = join(derivedRoot, version);
       mkdirSync(join(GOLDEN, 'derived'), { recursive: true });

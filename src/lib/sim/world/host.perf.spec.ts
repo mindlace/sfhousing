@@ -139,8 +139,8 @@ vi.mock('./world', async (orig) => {
   const m = await orig<typeof import('./world')>();
   return {
     ...m,
-    withFunding(f: Parameters<typeof m.withFunding>[0]) {
-      const core = m.withFunding(f);
+    withFunding(...args: Parameters<typeof m.withFunding>) {
+      const core = m.withFunding(...args);
       return {
         ...core,
         planDue: rec.wrap('planDue', core.planDue),
@@ -362,7 +362,7 @@ function benchCity(): City {
     manifest: city.manifest,
     fetch: f.fetch,
     fetchBytes: f.fetchBytes,
-    load: async () => ({ fzp: input, twin: input, projects, policy, gross: null }),
+    load: async () => ({ fzp: input, twin: input, projects, policy, gross: null, cars: null }),
     calibration,
     asOf: input.asOf,
     centre: [-122.435, 37.76]
