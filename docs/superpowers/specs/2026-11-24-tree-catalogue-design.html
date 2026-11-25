@@ -293,15 +293,15 @@ export function applyGrant(doc: SimPolicy4, grant: Grant, ctx: GrantCtx): SimPol
       </dl>
       <ul>
         <li>Every policy the function adds is on, with one span from month 1 and no end.</li>
-        <li><code>preset</code> and <code>measure</code>: when no policy has that preset, one is added as "+" adds it today. When one exists it is switched on.</li>
-        <li><code>stop</code>: the game's rule gains the stop type. When there is no such rule, one is added with that stop type and one band at <code>limits.reachM</code> and <code>limits.stories</code>.</li>
+        <li><code>preset</code> and <code>measure</code>: a policy of that kind that names the preset and is within <code>ctx.limits</code> is switched on when it is off. When there is none, one is added as "+" adds it today. A policy that names the preset and is outside <code>ctx.limits</code> is left as it is.</li>
+        <li><code>stop</code>: the game's rule gains the stop type. When there is no such rule, one is added with every stop type in <code>limits.stops</code> and one band at <code>limits.reachM</code> and <code>limits.stories</code>.</li>
         <li><code>stories</code>: the innermost band of the game's rule takes the new cap, and so does every band that was as tall as it.</li>
         <li><code>reach</code>: the outermost band of the game's rule takes the new distance.</li>
         <li><code>bands</code>: the game's rule gains a band. Where there is room inside <code>limits.reachM</code> it goes beyond the outermost, as the editor adds one today. Where there is none the outermost band is split in two.</li>
         <li>A grant whose policy the player removed or changed past recognition adds it again and leaves the player's own policies alone.</li>
         <li><code>hands</code>: the document is returned unchanged.</li>
         <li>The result is within <code>ctx.limits</code> and passes <code>parsePolicy4</code>.</li>
-        <li>The function never removes a policy and never changes one it did not make.</li>
+        <li>The function never removes a policy and changes no policy other than the one it adds, the game's rule, or a policy within <code>ctx.limits</code> that names the bought preset or measure.</li>
       </ul>
     </section>
 
@@ -1065,6 +1065,7 @@ import { monthFirstDay } from '$lib/sim/world/months';
 import { AddLimitError, addPolicy, type AddChoice } from '$lib/timeline/add';
 import type { Policy, SimPolicy4 } from '$lib/timeline/policy4';
 import { setOn } from '$lib/timeline/spans';
+import { within } from './limits';
 
 /** The label of the transit rule the game makes, as the "+" menu labels one. */
 export const GAME_TRANSIT_LABEL = 'Transit rule';
@@ -1102,7 +1103,10 @@ function givePreset(
   preset: string,
   ctx: GrantCtx
 ): SimPolicy4 {
-  const named = doc.kinds[kind].filter((p) =&gt; p.preset === preset);
+  // A policy of this preset that the limits would not run (custom timings, say) is left alone.
+  const named = doc.kinds[kind].filter(
+    (p) =&gt; p.preset === preset &amp;&amp; within(kind, p, ctx.limits)
+  );
   if (named.some((p) =&gt; p.on)) return doc;
   if (named.length &gt; 0) return setOn(doc, kind, named[0].id, true);
   if (!offered(kind, preset, ctx)) return doc;
@@ -1230,9 +1234,10 @@ function oneMoreBand(r: ZoningRule, most: number, maxM: number): ZoningRule | nu
       <section id="sec-design-grant-rules">
         <h4>Rules for each grant</h4>
         <ul>
-          <li><code>preset</code> and <code>measure</code>: when a policy of that kind already names the preset and is on, the document is returned unchanged.</li>
-          <li><code>preset</code> and <code>measure</code>: when policies name it and all are off, the first in list order is switched on with <code>setOn</code>. Its spans stay as the player left them.</li>
-          <li><code>preset</code> and <code>measure</code>: when none names it, one is added with <code>addPolicy</code> at month 1, as "+" adds it.</li>
+          <li><code>preset</code> and <code>measure</code>: only a policy of that kind that names the preset and is within <code>ctx.limits</code> counts. One that names it and is outside them, such as a permitting policy with custom timings while <code>custom</code> is false, is left as it is; <code>runnable</code> keeps it out of the forecast.</li>
+          <li><code>preset</code> and <code>measure</code>: when a counted policy is on, the document is returned unchanged.</li>
+          <li><code>preset</code> and <code>measure</code>: when counted policies exist and all are off, the first in list order is switched on with <code>setOn</code>. Its spans stay as the player left them.</li>
+          <li><code>preset</code> and <code>measure</code>: when none is counted, one is added with <code>addPolicy</code> at month 1, as "+" adds it.</li>
           <li>A preset or measure the calibration does not offer leaves the document unchanged. The node stays bought.</li>
           <li>A measure past the document's pool, programme or scale-entry limit (<code>AddLimitError</code>) leaves the document unchanged.</li>
           <li><code>stop</code>, <code>stories</code>, <code>reach</code> and <code>bands</code> with no game rule: the rule <code>game-transit</code> is added at the end of the zoning list, on, labelled "Transit rule", with every stop type in <code>limits.stops</code> and one band at <code>limits.reachM</code> and <code>limits.stories</code>, its one span from month 1 with no end. On the first stop purchase that is the one stop type bought.</li>
@@ -1244,7 +1249,7 @@ function oneMoreBand(r: ZoningRule, most: number, maxM: number): ZoningRule | nu
           <li><code>stories</code>, <code>reach</code> and <code>bands</code> switch the game rule on when they change it.</li>
           <li><code>hands</code>: the document is returned unchanged.</li>
           <li>Every edit returns the same document object when nothing changes.</li>
-          <li>The function never removes a policy, never lowers a value, and never touches a policy other than the one it adds, the game rule, or a policy that names the bought preset.</li>
+          <li>The function never removes a policy, never lowers a value, and never touches a policy other than the one it adds, the game rule, or a policy within <code>ctx.limits</code> that names the bought preset.</li>
         </ul>
       </section>
       <section id="sec-design-grant-edits">
@@ -1258,6 +1263,7 @@ function oneMoreBand(r: ZoningRule, most: number, maxM: number): ZoningRule | nu
             <tr><th scope="row">Removed a preset's or measure's policy</th><td>Adds a new one from month 1.</td></tr>
             <tr><th scope="row">Switched it off</th><td>Switches it on, keeping its dates.</td></tr>
             <tr><th scope="row">Moved its dates</th><td>Leaves its dates; switches it on if it is off.</td></tr>
+            <tr><th scope="row">Given a permitting policy custom timings or shares before <code>custom</code> is open</th><td>Leaves it as it is, outside the limits, and adds a new one from month 1 when no other policy of that preset is within them.</td></tr>
             <tr><th scope="row">Edited what a measure pays</th><td>The editor has set its <code>preset</code> to null, so a new measure is added beside it.</td></tr>
             <tr><th scope="row">Removed the game rule</th><td>The next zoning grant makes it again, with every stop type bought and one band at the limits.</td></tr>
             <tr><th scope="row">Switched the game rule off</th><td>Switches it on when the grant changes it.</td></tr>
@@ -1382,11 +1388,11 @@ npx tsx scripts/reach-measure.ts --version &lt;datasetVersion&gt; [--from &lt;or
       <ul>
         <li>It builds <code>fullTree(engine.cal).doc</code>, runs it through <code>engine.view</code>, and reads <code>readGoal(goal, view, view.lastIndex)</code> with <code>goal = defaultGoal(asOf)</code>, its amount replaced by <code>--amount</code> when given.</li>
         <li>The measured year is the UTC year of <code>reachedOn</code>. The window's end year is the UTC year of <code>defaultGoal(asOf).deadline</code>.</li>
-        <li><code>LADDER_YEARS</code> is <code>ladderYears(endYear, reachedYear)</code>, below: at most four years, so the ladder has at most five rungs.</li>
+        <li><code>LADDER_YEARS</code> is <code>ladderYears(endYear, reachedYear)</code>, below: at most four years, so the ladder has at most five rungs. An empty list is never written (below), so a written ladder has one to four years and at least two rungs.</li>
         <li>"Evenly between" takes the entries at <code>round(n / 3)</code> and <code>round(2n / 3)</code> of the full list, where <code>n</code> is its last index.</li>
         <li><code>--write</code> rewrites <code>src/lib/game/catalogue/ladder-years.ts</code> with <code>ladderFile</code>, below, and prints <code>Wrote src/lib/game/catalogue/ladder-years.ts</code>.</li>
         <li><code>--write</code> with <code>--amount</code> is refused, so a fixture or test amount never sets the ladder.</li>
-        <li>Exit 0 when the full tree reaches the goal in the window, 1 when it does not (nothing is written), 2 when it could not run, with one stderr line <code>reach-measure: &lt;reason&gt;</code> and nothing on stdout.</li>
+        <li>Exit 0 when the full tree reaches the goal in the window and <code>ladderYears</code> holds at least one year. Exit 1, with nothing written, when the full tree does not reach the goal in the window, or reaches it only after the first ladder year so that <code>ladderYears</code> is empty. Exit 2 when it could not run, with one stderr line <code>reach-measure: &lt;reason&gt;</code> and nothing on stdout.</li>
       </ul>
 <pre><code data-lang="ts">/**
  * The ladder's years (G6): from the largest multiple of five at least five years before the
@@ -1425,7 +1431,8 @@ Window ends Sep 2066
 Goal: 82,069 homes, reached Mar 2043
 LADDER_YEARS = [2060, 2055, 2050, 2045]</code></pre>
       <ul>
-        <li>The figures above show the format only. A miss prints <code>Goal: 82,069 homes, missed: &lt;homes&gt; homes by &lt;Mon YYYY&gt;</code> and no <code>LADDER_YEARS</code> line.</li>
+        <li>The figures above show the format only. A miss prints <code>Goal: 82,069 homes, missed: &lt;homes&gt; homes by &lt;Mon YYYY&gt;</code> and no <code>LADDER_YEARS</code> line. A reach after the first ladder year prints the goal line as reached, then <code>No earlier deadline: the full tree reaches the goal after Dec &lt;first ladder year&gt;</code>, and no <code>LADDER_YEARS</code> line.</li>
+        <li>An exit 1 stops the measurement part: <code>ladder-years.ts</code> keeps what it holds, and the unit hands the printed lines to the owner, whose remedy it is (more levers, or a later dataset).</li>
         <li>Until the script has run, <code>ladder-years.ts</code> holds the provisional value below, so the catalogue has five rungs and each stage is its own ring.</li>
       </ul>
 <pre><code data-lang="ts">// src/lib/game/catalogue/ladder-years.ts, until the reach is measured
@@ -1492,7 +1499,8 @@ export function shareOf(s: GameState, mode: 'hand' | 'collect-for-me'): number {
         <ul>
           <li>Each order is played twice: <code>hand</code>, with the share above, and <code>collect-for-me</code>, with every drop collected (call 17).</li>
           <li>The hand shares run from 0.25 with no Hands node to 0.80 with every radius and linger level.</li>
-          <li><code>SHARE</code> and <code>CLOCK</code> are assumptions, not measurements. This unit ships them as given, and no unit of this build measures them. The owner changes them after playing the built game.</li>
+          <li><code>SHARE</code> and <code>CLOCK</code> are assumptions, not measurements. This unit ships them as given, and the owner changes them after playing the built game.</li>
+          <li><code>CLOCK</code> counts no wait for the forecast after a purchase. The forecast for the next run starts at the purchase and fills while the player is still in the tree, so the wait is spent inside <code>buyS</code>. <code>closing</code>'s bench case "purchase to ready" measures that wait on a laptop and reports it beside <code>buyS</code>; when it is longer, the owner raises <code>buyS</code>. No unit measures it on a phone.</li>
         </ul>
       </section>
 
@@ -1701,6 +1709,8 @@ export interface SideReport {
         <li>A measure grant on an empty document adds what <code>addPolicy</code> adds at month 1, and the measure's first payment falls on <code>monthFirstDay(asOf, 1)</code>.</li>
         <li>A preset or measure grant with a policy already on returns the same document object; with one off it switches the first on and keeps its spans.</li>
         <li>A measure whose policy was edited to <code>preset: null</code> gets a new policy beside it.</li>
+        <li>A preset grant on a document whose only policy of that preset has a custom edit, under limits with <code>custom</code> false, leaves that policy as it is and adds a new one; the result is unchanged by <code>runnable</code> apart from dropping the custom one.</li>
+        <li>A first stop grant after the player removed the game rule makes it with every stop type in <code>limits.stops</code>.</li>
         <li>A measure grant on a calibration without money returns the same document object.</li>
         <li>The first stop grant adds <code>game-transit</code> at the end of the zoning list with that stop type and one band at the limits' distance and stories.</li>
         <li>A second stop grant adds its stop type in <code>STOP_TYPES</code> order and switches an off rule on.</li>
@@ -1726,6 +1736,7 @@ export interface SideReport {
       <h3><code>scripts/reach-measure.spec.ts</code> and <code>scripts/tree-balance.spec.ts</code> (the measurement)</h3>
       <ul>
         <li><code>ladderYears(2066, 2043)</code> is <code>[2060, 2055, 2050, 2045]</code>; <code>ladderYears(2066, 2031)</code> is <code>[2060, 2050, 2045, 2035]</code>; <code>ladderYears(2065, 2050)</code> is <code>[2060, 2055, 2050]</code>; a measured year after the first step gives <code>[]</code>.</li>
+        <li>When <code>ladderYears</code> is empty, the reach measure prints the "No earlier deadline" line, writes nothing even with <code>--write</code>, and exits 1 (tested against a stub <code>Engine</code> whose view reaches the goal in the window's end year).</li>
         <li><code>ladderFile</code> gives text that names the dataset, the reached month and the window's end, and exports the years.</li>
         <li>The argument parser refuses an unknown flag, a second directory, <code>--version</code> beside a directory, a bad <code>--amount</code>, and <code>--write</code> with <code>--amount</code>.</li>
         <li><code>openEngine</code> on the fixture directory gives a view of the empty document, and a view of <code>fullTree</code>'s document whose homes at the window's end are at least the empty document's.</li>
@@ -1758,6 +1769,7 @@ export interface SideReport {
       <li><strong>The scripts read a directory or fetch a version.</strong> <code>npm run data:local</code> leaves no directory.</li>
       <li><strong>The engine runner lives in <code>scripts/reach-measure.ts</code></strong> and <code>fullTree</code> in <code>catalogue/play.ts</code>, so <code>closing</code>'s reach check can import both.</li>
       <li><strong>"Two evenly between" takes the entries at a third and two thirds of the full list, rounded.</strong> It keeps every year a multiple of five.</li>
+      <li><strong>An empty ladder is refused, not written.</strong> With no year five years before the window's end the game has one rung: no deadline moves in, no ring opens and the loop cannot be played as designed (closing's journeys take the next goal). So <code>LADDER_YEARS</code> always holds one to four years, and a full tree that cannot beat the window's end by a five-year step is a finding for the owner, as a missed reach is.</li>
       <li><strong>A side-goal target at or below current law is raised to 1.25 times current law's value, rounded up to the next 1,000.</strong> It keeps the goal a step beyond what the player gets for nothing.</li>
       <li><strong>The balance script assumes the player takes the next rung at once</strong> and estimates drops from <code>completedNet</code>. Both keep it a pure function of the engine's series.</li>
     </ul>
