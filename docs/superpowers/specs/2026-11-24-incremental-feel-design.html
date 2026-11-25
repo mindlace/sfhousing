@@ -6,7 +6,7 @@
 
   <section id="sec-status">
     <h2>Status</h2>
-    <aside data-kind="note"><strong>Note</strong> A design under discussion. Nothing is built. Approach B is chosen (see <a href="#sec-approaches">Approaches</a>). The calls I made from your rulings are listed in <a href="#sec-questions">Calls to check</a>. Numbers marked "estimate" or "to measure" are not measured yet.</aside>
+    <aside data-kind="note"><strong>Note</strong> Approved on 2026-11-24 (P12). Nothing is built. Approach B is chosen (see <a href="#sec-approaches">Approaches</a>). The calls I made from your rulings are listed in <a href="#sec-questions">Calls to check</a>. Numbers marked "estimate" or "to measure" are not measured yet.</aside>
   </section>
 
   <section id="sec-intent">
@@ -21,6 +21,7 @@
     <aside data-kind="decision" id="p9"><strong>Partner: P9, units are collected</strong> "There are plenty of games that give you 'points' that you can only spend if you collect them. The housing should be like that - all housing units count to the sim outcome, but you only get units to spend in the tree from whatever you collected. i.e. the units you get &amp; the spend of those units is disjoint from the sim, but derived from it."</aside>
     <aside data-kind="decision" id="p10"><strong>Partner: P10, affordable units come next</strong> "As soon as we're done with this first round I'm going to want to make affordable housing unit 'coins' either worth more than base coins or a secondary currency that gates higher unlocks."</aside>
     <aside data-kind="decision" id="p11"><strong>Partner: P11, paint is the opening only</strong> "I don't want paint to recur. It exists at the beginning to give you a sense of what has to get built in getting to the goal. There's no way to allow painting in later stages without fundamentally disrupting the idea this is a simulator that has some fidelity to the original." Then: "some fidelity to reality, that is."</aside>
+    <aside data-kind="decision" id="p12"><strong>Partner: P12, a purchase can be switched off; approval</strong> "Purchase takes effect at once but should be disable-able if the user wants. Go ahead."</aside>
     <p>So the game layer has two jobs: give the player a reason to go one step further, and hand over the tool one lever at a time. It never changes what the simulation forecasts, and it never takes the forecasting tool away.</p>
     <ul>
       <li><strong>Goals:</strong> the next goal, how far off it is and what it unlocks are always on screen.</li>
@@ -239,6 +240,7 @@
     <section id="sec-tree">
       <h3>The tree</h3>
       <p>The tree is the map of the tool. A node is one of two kinds. A <strong>preset or measure</strong> is a sourced rule the app offers today, such as the SB 423 approval clock or the housing bond; buying it turns it on. A <strong>step</strong> widens what the player may set, such as a stop type, a second distance band or a higher height cap; buying it opens the step and sets the lever to it. Either way the purchase shows in the next run and the lever appears in the editors, where the player can change it within what they have bought (P1). The editors show only what is bought, so the forms grow one lever at a time.</p>
+      <p>The player can switch any bought lever off, and on again, from its node or its editor (P12). Switching off refunds nothing and the node stays bought.</p>
       <p>Heights and dates are the player's choices, so steps in them need no source. Clocks keep their sourced floors. A measure starts on its own lawful date, shown on the node, and not always today.</p>
       <p>A lever that only takes homes away (the three protections, the state and federal off switches) costs nothing and appears in the editors when its branch opens.</p>
       <p>The tree is the screen between runs and nowhere else: it has no button in the header or the Menu (P7). It holds Run. A bought node opens its lever's editor.</p>
@@ -381,7 +383,7 @@
 
   <section id="sec-questions">
     <h2>Calls to check</h2>
-    <p>No decision is open. P1 to P11 settle the questions raised along the way.</p>
+    <p>No decision is open. P1 to P12 settle the questions raised along the way.</p>
     <p>These are my calls, not things you said. Correct any that are wrong.</p>
     <ul>
       <li><strong>Hands never change what gets built.</strong> From P1. Approach C is dropped, and the run is not built to take live input.</li>
@@ -390,7 +392,7 @@
       <li><strong>The view is fixed during a run.</strong></li>
       <li><strong>A setting collects everything for a player who cannot sweep,</strong> at no penalty. Anyone can turn it on.</li>
       <li><strong>Goals and side goals pay a lump of units</strong> on top of what is collected.</li>
-      <li><strong>A purchase takes effect at once.</strong> The alternative is that it only opens the lever for the player to set.</li>
+      <li><strong>Switching a bought lever off refunds nothing,</strong> and it can be switched back on at no cost.</li>
       <li><strong>Levers that only take homes away are free.</strong></li>
       <li><strong>Steps in heights and bands need no source;</strong> clocks keep their sourced floors.</li>
       <li><strong>The painted area leaves the game entirely,</strong> the ending included. From P11. A published policy that already uses one still opens and plays.</li>
