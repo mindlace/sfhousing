@@ -599,9 +599,9 @@ export function onPrefs(fn: () =&gt; void): () =&gt; void;</code></pre>
         <li><code>planDrops</code> returns one drop for each marker completed after <code>asOf</code> and at or before <code>to</code> whose worth is above 0, ascending by day, then by row.</li>
         <li><code>feed.drops</code> may be replaced during a run, as the forecast fills. Drops are matched by <code>row</code>: one already shown stays as it is, and none is counted twice.</li>
         <li>A drop appears when <code>feed.day</code> reaches its day and is counted in <code>dropped</code> then.</li>
-        <li>A drop whose <code>policy</code> is true pops in the policy's colour, the colour of the map's diamond (<code>tl-halo-policy</code>); every other drop pops in the accent. Its worth and how it is collected do not change.</li>
+        <li>A drop whose <code>policy</code> is true pops as a diamond, the shape of the map's policy mark, in that mark's colour (<code>tl-halo-policy</code>); every other drop pops as a circle in the accent. The shape tells the two apart in every theme. Its worth and how it is collected do not change.</li>
         <li>A drop is collected when its projected point is within <code>hands.radiusPx</code> of the ring's centre. It is counted in <code>collected</code> once.</li>
-        <li>A drop not collected is gone <code>hands.lingerMs</code> of wall time after it appeared.</li>
+        <li>A drop not collected is gone the larger of <code>hands.lingerMs</code> and 400 ms of wall time after it appeared. When the run ends before that, it is gone 400 ms after the end, or at the end under reduced motion.</li>
         <li>With <code>collectForMe</code> or <code>hands.auto</code>, every drop is collected as it appears.</li>
         <li>The ring's centre is the last pointer position over the map. Arrow keys move it by a fixed step; holding Shift moves it further.</li>
         <li>The layer is a canvas over the map with <code>pointer-events: none</code>. It listens on the window.</li>
@@ -1255,7 +1255,7 @@ function switchNode(id: NodeId, on: boolean): void {
         <li><code>/s/[id]/+page.svelte</code> no longer reads the game: no <code>useGame</code>, Remix state, <code>remix()</code>, <code>error</code>, <code>leaving</code> or <code>gameHref</code>, and no import from <code>$lib/game</code>.</li>
         <li>It passes <code>SharedBanner</code> the props <code>game-shell</code>'s spec gives it: <code>title</code>, <code>id</code>, <code>createdAt</code>, <code>datasetNotice</code>, <code>planVersion</code>, <code>currentVersion</code> and <code>kind="sim"</code>.</li>
         <li>What remains of the banner is <code>game-shell</code>'s: the title line with the published date, a "Your game" link to <code>/</code>, and the N5 or N6 line with no button.</li>
-        <li>The page title's name is <code>game-shell</code>'s edit, made after this unit's.</li>
+        <li>The page title's name is <code>game-shell</code>'s edit, in the same lane.</li>
         <li><code>SimRoute</code> is mounted with <code>mode="view"</code> and <code>persist="off"</code> as today, so the published policy plays in full (D5).</li>
       </ul>
     </section>
@@ -1498,7 +1498,7 @@ export function restoredLabel(node: TreeNode): string;</code></pre>
       <li>The rules of <code>limitsOf</code>, <code>within</code>, <code>runnable</code>, <code>readRun</code>, <code>resultOf</code>, <code>settle</code>, the ladder and side goals: <code>game-core</code>.</li>
       <li>The nodes, <code>applyGrant</code> and <code>LADDER_YEARS</code>: <code>tree-catalogue</code>.</li>
       <li>The game store, its persistence and <code>e2e/helpers/game.ts</code>: <code>game-save</code>.</li>
-      <li>The name in the titles of <code>src/routes/s/[id]/+page.svelte</code> and <code>+error.svelte</code>, written after this unit: <code>game-shell</code>.</li>
+      <li>The name in the titles of <code>src/routes/s/[id]/+page.svelte</code> and <code>+error.svelte</code>: <code>game-shell</code>, in the same lane.</li>
       <li>The header, the name elsewhere, <code>/</code> and how it mounts <code>SimRoute</code>, the opening, <code>SharedBanner</code>, <code>/p/[id]</code>: <code>game-shell</code>.</li>
       <li>The series field of homes waiting for money: <code>money-wait</code>.</li>
       <li>Every e2e spec, the reach check and <code>docs/dev/game.md</code>: <code>closing</code>.</li>

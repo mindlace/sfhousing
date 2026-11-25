@@ -79,6 +79,7 @@ export function makeSyntheticTimeline(
     lngLat: new Float32Array(2 * nProjects),
     days: new Float32Array(3 * nProjects),
     homes: new Uint16Array(nProjects),
+    existing: new Uint16Array(nProjects),
     flags: new Uint8Array(nProjects)
   };
   let made = 0;

@@ -28,7 +28,8 @@ const HANDLE_FNS = [
   'setBottomInset',
   'getMap',
   'setOverlayLayers',
-  'onResyncNeeded'
+  'onResyncNeeded',
+  'setRunView'
 ] as const;
 
 const CREDIT = '© OpenStreetMap · About this model';

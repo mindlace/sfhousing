@@ -11,12 +11,13 @@ function deltaOf(rows: number, changed: number[]): CityDelta {
     lngLat: new Float32Array(2 * k).fill(-122.4),
     days: new Float32Array(3 * k).fill(NaN),
     homes: new Uint16Array(k).fill(12),
+    existing: new Uint16Array(k),
     flags: new Uint8Array(k).fill(3)
   };
 }
 
 describe('city-delta', () => {
-  it('names the three days and 27 bytes a row', () => {
+  it('names the three days and 29 bytes a row', () => {
     expect(CITY_DAY).toEqual({ approved: 0, started: 1, completed: 2 });
     const d = deltaOf(1, [0]);
     const bytes =
@@ -24,8 +25,10 @@ describe('city-delta', () => {
       d.lngLat.byteLength +
       d.days.byteLength +
       d.homes.byteLength +
+      d.existing.byteLength +
       d.flags.byteLength;
     expect(bytes).toBe(CITY_DELTA_BYTES_PER_ROW);
+    expect(CITY_DELTA_BYTES_PER_ROW).toBe(29);
   });
 
   it('validateCityDelta accepts a well-formed delta and an empty one (rows 0, no rows)', () => {
@@ -38,11 +41,19 @@ describe('city-delta', () => {
     ['lngLat', (d: CityDelta) => (d.lngLat = new Float32Array(3))],
     ['days', (d: CityDelta) => (d.days = new Float32Array(5))],
     ['homes', (d: CityDelta) => (d.homes = new Uint16Array(1))],
+    ['existing', (d: CityDelta) => (d.existing = new Uint16Array(3))],
     ['flags', (d: CityDelta) => (d.flags = new Uint8Array(3))]
   ] as const)('rejects %s of the wrong length', (_name, spoil) => {
     const d = deltaOf(4, [1, 2]);
     spoil(d);
     expect(() => validateCityDelta(d)).toThrow(RangeError);
+  });
+
+  it('rejects a delta with no existing', () => {
+    const d: Partial<CityDelta> = deltaOf(4, [1]);
+    delete d.existing;
+    expect(() => validateCityDelta(d as CityDelta)).toThrow(RangeError);
+    expect(() => validateCityDelta(d as CityDelta)).toThrow('CityDelta: existing is missing');
   });
 
   it('rejects rows not ascending, a row at or past rows, a negative rows, a flag above 3', () => {
@@ -71,13 +82,20 @@ describe('city-delta', () => {
     expect(() => validateCityDelta(d)).toThrow(RangeError);
   });
 
-  it('cityTransferables lists the five buffers, each once', () => {
+  it('cityTransferables lists the six buffers, each once', () => {
     const d = deltaOf(4, [0, 1]);
     const t = cityTransferables(d);
-    expect(t).toHaveLength(5);
-    expect(new Set(t).size).toBe(5);
+    expect(t).toHaveLength(6);
+    expect(new Set(t).size).toBe(6);
     expect(new Set(t)).toEqual(
-      new Set([d.row.buffer, d.lngLat.buffer, d.days.buffer, d.homes.buffer, d.flags.buffer])
+      new Set([
+        d.row.buffer,
+        d.lngLat.buffer,
+        d.days.buffer,
+        d.homes.buffer,
+        d.existing.buffer,
+        d.flags.buffer
+      ])
     );
   });
 
@@ -89,10 +107,11 @@ describe('city-delta', () => {
       lngLat: new Float32Array(4),
       days: new Float32Array(6),
       homes: new Uint16Array(2),
+      existing: new Uint16Array(2),
       flags: new Uint8Array(buf, 8, 2)
     };
     const t = cityTransferables(d);
-    expect(t).toHaveLength(4);
-    expect(new Set(t).size).toBe(4);
+    expect(t).toHaveLength(5);
+    expect(new Set(t).size).toBe(5);
   });
 });

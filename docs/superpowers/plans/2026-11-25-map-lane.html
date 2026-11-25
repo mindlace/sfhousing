@@ -1,0 +1,658 @@
+<article>
+  <header>
+    <h1>Map lane implementation plan</h1>
+    <p>Builds <code>city-net</code> (row E1, the homes a project replaces in the city feed), then <code>map-run</code> (row M1, the map's run view), on one branch.</p>
+    <aside data-kind="note"><strong>For agentic workers</strong> REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps are checklist items; progress is kept in the workspace ledger, not in the plan.</aside>
+  </header>
+
+  <section id="sec-overview">
+    <h2>Overview</h2>
+    <dl>
+      <dt>Goal</dt>
+      <dd>The city feed carries each project's replaced homes (<code>existing</code>) from the worker to <code>ActivityIndex.markers()</code>, and <code>SimMapHandle.setRunView(on)</code> fits the whole city flat and north up, locks the map, and puts the camera back.</dd>
+      <dt>Architecture</dt>
+      <dd><code>city-feed.ts</code> reads <code>existing</code> from <code>scheduleAt</code> into a widened marker; the wire, the type, <code>CityStore</code> and <code>ActivityIndex</code> carry it per row. The run view is a pure <code>runFrame</code> in <code>camera.ts</code> plus handle state in <code>SimMap.svelte</code> that outlives a remount; one <code>applyInteraction</code> sets every MapLibre handler from the pan and run switches.</dd>
+      <dt>Tech Stack</dt>
+      <dd>TypeScript, Svelte 5 (runes), MapLibre GL 6.13, deck.gl (<code>MapLibreOverlay</code>), Vitest (projects <code>server</code> and <code>client</code>, the latter real Chromium through Playwright).</dd>
+      <dt>Spec</dt>
+      <dd><code>docs/superpowers/specs/2026-11-24-city-net-design.html</code> (tasks 1 and 2) and <code>docs/superpowers/specs/2026-11-24-map-run-design.html</code> (tasks 3 to 5), read from the package worktree <code>.claude/worktrees/incremental-feel/.claude/worktrees/incremental-loop/</code>. Context: <code>docs/superpowers/design/2026-11-24-2120-incremental-loop.html</code> and <code>docs/superpowers/specs/2026-11-24-contracts-design.html</code> (the optional stubs this plan makes required).</dd>
+    </dl>
+    <aside data-kind="warning"><strong>Precondition</strong> The <code>contracts</code> unit must be merged into this branch first: <code>CityDelta.existing?: Uint16Array</code>, <code>SimMapHandle.setRunView?(on: boolean): void</code>, and SimMap's empty <code>export function setRunView(_on: boolean): void {}</code> as the last entry of <code>handle</code> (contracts spec, <code>sec-design-map</code>). They are not on this branch at <code>a458b998</code> (<code>src/lib/map/types.ts:70-83</code>, <code>:118-146</code>). Line numbers below for <code>SimMap.svelte</code> are pre-contracts; past <code>:452</code> they shift by about four lines.</aside>
+  </section>
+
+  <section id="sec-global-constraints">
+    <h2>Global Constraints</h2>
+    <p>Every task's requirements include this section.</p>
+
+    <section id="sec-gc-e1">
+      <h3>Row E1 (city-net, copied verbatim)</h3>
+      <table id="tbl-if-e1">
+        <caption>Interface table</caption>
+        <thead>
+          <tr><th scope="col">Row</th><th scope="col">Owner</th><th scope="col">Layer</th><th scope="col">Summary</th><th scope="col">Contract</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">E1</th><td><code>city-net</code></td><td>Decomposition choice</td><td>The homes a project replaces, in the city feed</td><td><a href="#sec-if-e1">E1</a></td></tr>
+        </tbody>
+      </table>
+      <section id="sec-if-e1">
+        <h4>E1 Existing homes in the city feed</h4>
+        <pre><code data-lang="ts">// src/lib/map/types.ts
+export interface CityDelta {
+  rows: number;
+  from?: number;
+  row: Int32Array;
+  lngLat: Float32Array;
+  days: Float32Array;
+  homes: Uint16Array;
+  existing: Uint16Array;
+  flags: Uint8Array;
+}</code></pre>
+        <dl>
+          <dt><code>existing</code></dt><dd>Per changed row: the homes the project takes off the goal's count, capped at 65,535. That is the homes on its lot once it has entered construction after the dataset date, and 0 otherwise.</dd>
+        </dl>
+        <ul>
+          <li><code>homes - existing</code> of a completed row is that row's effect on the series' <code>completedNet</code>.</li>
+          <li>A row whose marker has not begun carries 0, as <code>homes</code> does.</li>
+          <li>A marker that differs only in <code>existing</code> is a changed marker and is sent.</li>
+          <li><code>validateCityDelta</code> checks the new array's length.</li>
+          <li>The map's store and the page's index keep it per row.</li>
+        </ul>
+        <p><strong>Unchanged:</strong> every other field and rule of the feed.</p>
+      </section>
+    </section>
+
+    <section id="sec-gc-m1">
+      <h3>Row M1 (map-run, copied verbatim)</h3>
+      <table id="tbl-if-m1">
+        <caption>Interface table</caption>
+        <thead>
+          <tr><th scope="col">Row</th><th scope="col">Owner</th><th scope="col">Layer</th><th scope="col">Summary</th><th scope="col">Contract</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">M1</th><td><code>map-run</code></td><td>Decomposition choice</td><td>The map's run view</td><td><a href="#sec-if-m1">M1</a></td></tr>
+        </tbody>
+      </table>
+      <section id="sec-if-m1">
+        <h4>M1 The map's run view</h4>
+        <pre><code data-lang="ts">// src/lib/map/types.ts
+export interface SimMapHandle {
+  // every method it has today, and:
+  setRunView(on: boolean): void;
+}</code></pre>
+        <ul>
+          <li><code>true</code>: the map remembers its camera, jumps to the whole city, flat and north up, and locks.</li>
+          <li>Locked: no drag, wheel, pinch, double click, key or control moves the camera, and the canvas container has <code>touch-action: none</code>.</li>
+          <li>Locked: hover picks, taps and clicks are not made or delivered, and no tooltip or card shows.</li>
+          <li>Locked: the map's bounds and zoom floor are lifted so the city fits a small box. They return at unlock.</li>
+          <li>Locked: a resize or a change of the bottom inset fits again.</li>
+          <li><code>false</code>: the map unlocks and jumps back to the remembered camera.</li>
+          <li>The jump is not animated.</li>
+          <li>A call with the value already in force does nothing.</li>
+          <li>The state survives a remount of the map, as the pan state does.</li>
+          <li>The fit keeps the city inside the map box less the bottom inset.</li>
+        </ul>
+      </section>
+    </section>
+
+    <section id="sec-gc-design">
+      <h3>The design's global constraints (verbatim)</h3>
+      <ul>
+        <li>One future: the same policy document always gives the same forecast. No game state reaches the worker except through the policy document.</li>
+        <li>No file the dataset version hashes is changed: <code>pipeline</code>, <code>src/lib/config.ts</code>, <code>src/lib/{data,generator,timelapse}</code>, <code>src/lib/plan/{geometry,types}.ts</code>, <code>src/lib/sim/finance</code> (<code>pipeline/lib/version.ts:41</code>). The dataset version stays as it is.</li>
+        <li>A policy node acts on a lever the code already has, at a value the code already sources. No node invents a value.</li>
+        <li>The painted area, own pools, the City funding scale and market terms are never offered in a game.</li>
+        <li>Published plans and policies open and play in full, as today.</li>
+        <li>WCAG 2.2 AA: everything works from the keyboard; targets are at least 24 px; motion follows the reduced-motion setting; nothing flashes more than three times a second.</li>
+        <li>Page text is short. A node is a name, a line and a price.</li>
+        <li>The CSP is not widened. Sound is made in the browser; no audio file, font or script is added.</li>
+        <li>A runtime dependency is not added without a credit in <code>src/lib/attribution.ts</code>. None is expected.</li>
+        <li>Code style: 2-space indent, single quotes, no trailing commas, 100 columns.</li>
+        <li>Vitest runs with <code>expect.requireAssertions</code>. Tests are colocated.</li>
+        <li>A schema change goes through <code>npm run db:generate</code>. Migrations are never edited by hand.</li>
+        <li>Signoff fails on server stderr, on timing crutches and on retried flakes. Timing is measured only on a quiet machine.</li>
+        <li>Port 4173 belongs to whichever session started the preview. Never kill it; wait.</li>
+        <li>Commits use Conventional Commits and carry no Claude attribution.</li>
+        <li>Work happens in git worktrees under <code>.claude/worktrees/</code>.</li>
+      </ul>
+    </section>
+
+    <section id="sec-gc-project">
+      <h3>Project notes for implementers</h3>
+      <ul>
+        <li>(0) Read files with Read/Grep/Glob, not Bash; every Bash call is one command starting with an allowed command (git add/commit/rev-parse/log/diff/status/show, npm, npx, lsof, ls, cat, grep, head, tail, wc, pwd, mkdir): no <code>VAR=</code> prefix, no <code>cd</code>, no <code>;</code>/<code>&amp;&amp;</code>/pipes, no <code>$(...)</code>, no loops, no redirects.</li>
+        <li>(1) Port 4173 is shared: before preview/Playwright run <code>lsof -nP -iTCP:4173 -sTCP:LISTEN</code>; never kill what you did not start; wait; leave nothing listening.</li>
+        <li>(2) No <code>setTimeout</code>/<code>setInterval</code> in any spec or test helper, even zero-length; no fixed waits or raised timeouts in e2e (wait on a readiness signal); changed e2e specs pass with <code>--repeat-each=5 --retries=0</code>; <code>npx chreode timing-check --head HEAD</code> clean after the last commit of every task; no new preview-server stderr.</li>
+        <li>(3) No <code>npm run signoff</code>, <code>git push</code>, dataset upload or deploy.</li>
+        <li>(4) No wall-clock measurements on a busy machine; <code>npm run test:perf</code> is not a gate; <code>npm run bench:map</code> only if the machine is quiet (<code>uptime</code> load low), else defer and say so.</li>
+        <li>(5) Conventional Commits; no Claude attribution anywhere.</li>
+        <li>(6) Worktree setup before tests: <code>npm install</code>, <code>.dev.vars</code> with <code>PUBLIC_DATASET_VERSION=fixture-0</code>, <code>npm run data:fixture</code>, <code>npm run db:migrate</code>.</li>
+      </ul>
+    </section>
+
+    <section id="sec-gc-plan">
+      <h3>Plan-wide rules</h3>
+      <ul>
+        <li>Write set (no other file is touched): city-net: <code>src/lib/sim/world/city-feed.ts</code>, <code>src/lib/map/city-delta.ts</code>, <code>src/lib/map/timelapse/city.ts</code>, <code>src/lib/timeline/activity.ts</code> and their four <code>.spec.ts</code>; <code>src/lib/map/test/synthetic-timeline.ts</code>, <code>src/lib/map/timeline-controller.spec.ts</code>, <code>src/lib/map/SimMap.timeline.svelte.spec.ts</code>, <code>src/lib/timeline/TimelineMode.svelte.spec.ts</code> (one fixture line), <code>src/lib/sim/world/test/map-stream-run.ts</code>, <code>src/lib/sim/world/host.spec.ts</code>, <code>docs/dev/map-stream.md</code>. map-run: <code>src/lib/map/SimMap.svelte</code>, <code>src/lib/map/camera.ts</code>, <code>src/lib/map/camera.spec.ts</code>, <code>src/lib/map/SimMap.run-view.svelte.spec.ts</code> (new), <code>src/lib/map/SimMap.svelte.spec.ts</code>, <code>src/lib/map/SimMap.ssr.spec.ts</code>, <code>src/lib/fzp/test/sim-map-stub.ts</code>, <code>src/lib/brush/test/sim-map-stub.ts</code>. Both, city-net first: <code>src/lib/map/types.ts</code>, <code>docs/dev/map-interfaces.md</code>.</li>
+        <li>Every task ends with <code>npm run check</code> clean and its listed vitest files green. Server specs: <code>npx vitest --run --project server &lt;paths&gt;</code>. Browser specs (<code>*.svelte.spec.ts</code>): <code>npx vitest --run --project client &lt;paths&gt;</code>; they run on Vitest's own dev server and need no preview on 4173.</li>
+        <li>New browser specs wait on promises and events (<code>onready</code>, <code>map.once('idle' | 'moveend')</code>, <code>expect.poll</code> at its default timeout), never on <code>setTimeout</code>. The sibling SimMap specs' <code>sleep</code> helper is not copied. A real MapLibre map is slow to load: the new spec may carry a describe-level <code>{ timeout: … }</code> and <code>expect.poll</code> timeouts like its siblings (<code>SimMap.timeline.svelte.spec.ts:82</code>, <code>:87</code>); the ban on raised timeouts is for e2e. <code>npx chreode timing-check --head HEAD</code> must still pass; if it flags them, stop and report.</li>
+        <li>Lint per task: <code>npx prettier --check &lt;changed files&gt;</code> and <code>npx eslint &lt;changed files&gt;</code>.</li>
+      </ul>
+    </section>
+  </section>
+
+  <section id="sec-review-focus">
+    <h2>Review Focus</h2>
+    <p>Five inputs the specs imply but no spec test exercises, most likely first. Each has its test in the owning task.</p>
+    <ol>
+      <li><strong>Lock, unlock, move, lock again.</strong> The second lock must take a fresh remembered camera (unlock cleared it); unlock then returns to the camera before the second lock, not the first. Test in Task 4 (<code>t4-s1</code>).</li>
+      <li><strong>Resize while locked, then unlock.</strong> The spec says the remembered centre and zoom are kept (no camera computed from the old box), but lists no test. Unlock on the grown box lands on the remembered camera. Test in Task 5 (<code>t5-s1</code>).</li>
+      <li><strong>Calls before the map exists that cancel out.</strong> <code>setRunView(true)</code> then <code>setRunView(false)</code> before the first map: the map starts unlocked at its initial camera, no class, no <code>data-run-view</code>, deck pickable. Test in Task 5.</li>
+      <li><strong>A locked SimMap unmounted, a new one mounted.</strong> No error, and the new component starts unlocked with all handlers on (spec: "A new SimMap component starts unlocked"). Test in Task 5.</li>
+      <li><strong>The index after a delta with a smaller <code>rows</code>.</strong> <code>markers()</code> must drop rows at or past the new <code>rows</code> even with no <code>from</code>. Test in Task 2 (<code>t2-s1</code>).</li>
+    </ol>
+  </section>
+
+  <section id="sec-file-structure">
+    <h2>File Structure</h2>
+    <table id="tbl-files">
+      <caption>Files and what each owns</caption>
+      <thead>
+        <tr><th scope="col">File</th><th scope="col">Responsibility</th><th scope="col">Task</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row"><code>src/lib/sim/world/city-feed.ts</code></th><td>Marker layout (<code>WIDTH = 8</code>), <code>existing</code> in <code>markerOf</code> and <code>deltaOf</code></td><td>1</td></tr>
+        <tr><th scope="row"><code>src/lib/map/types.ts</code></th><td><code>CityDelta.existing</code> required (Task 1); <code>SimMapHandle.setRunView</code> required (Task 4)</td><td>1, 4</td></tr>
+        <tr><th scope="row"><code>src/lib/map/city-delta.ts</code></th><td>29 bytes a row, the missing and length checks, six transferables</td><td>1</td></tr>
+        <tr><th scope="row">Hand-built deltas (§sec-files-fixtures)</th><td>One line or field each, so <code>npm run check</code> stays green</td><td>1</td></tr>
+        <tr><th scope="row"><code>src/lib/map/timelapse/city.ts</code></th><td><code>CityStore.existing</code></td><td>2</td></tr>
+        <tr><th scope="row"><code>src/lib/timeline/activity.ts</code></th><td><code>CityMarkerRow</code>, <code>ActivityIndex.markers()</code></td><td>2</td></tr>
+        <tr><th scope="row"><code>src/lib/map/camera.ts</code></th><td><code>RUN_BOUNDS</code>, <code>RUN_PAD_PX</code>, <code>RUN_MIN_ZOOM</code>, <code>runFrame</code></td><td>3</td></tr>
+        <tr><th scope="row"><code>src/lib/map/SimMap.svelte</code></th><td>Run-view state, <code>setRunView</code>, <code>applyInteraction</code>, CSS (Task 4); picking guards, refit, remount (Task 5)</td><td>4, 5</td></tr>
+        <tr><th scope="row"><code>src/lib/map/SimMap.run-view.svelte.spec.ts</code></th><td>Created in Task 4; the component tests of the run view</td><td>4, 5</td></tr>
+        <tr><th scope="row"><code>docs/dev/map-stream.md</code>, <code>docs/dev/map-interfaces.md</code></th><td>The rewind wording (1); the feed section (2); "The run view" (5)</td><td>1, 2, 5</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="sec-task-1">
+    <h2>Task 1: The feed sends <code>existing</code>, and the wire requires it</h2>
+    <p>Spec: city-net §sec-design-value, §sec-design-layout, §sec-design-type, §sec-design-wire, §sec-files-fixtures, tests §sec-tests-feed and §sec-tests-wire. The type change and every hand-built delta land together, because a required field breaks <code>npm run check</code> on each.</p>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/lib/sim/world/city-feed.ts:1-22</code> (head comment), <code>:59-65</code> (layout), <code>:86-112</code> (<code>markerOf</code>), <code>:114-139</code> (<code>deltaOf</code>)</li>
+      <li>Modify: <code>src/lib/map/types.ts</code>, the contracts unit's <code>existing?</code> line in <code>CityDelta</code> (after <code>homes</code>, <code>:81</code>)</li>
+      <li>Modify: <code>src/lib/map/city-delta.ts:5-6</code>, <code>:11-34</code>, <code>:46-51</code></li>
+      <li>Test: <code>src/lib/sim/world/city-feed.spec.ts</code> (<code>rowsOf</code> <code>:113-125</code>, the expectation <code>:225-235</code>, the horizon test <code>:431-469</code>, new tests)</li>
+      <li>Test: <code>src/lib/map/city-delta.spec.ts</code> (<code>:6-15</code>, <code>:19-29</code>, <code>:37-42</code>, <code>:74-97</code>, new tests)</li>
+      <li>Fixtures: <code>src/lib/map/timelapse/city.spec.ts:18-35</code> and <code>src/lib/timeline/activity.spec.ts:8-26</code> (helpers only: <code>M</code> gains <code>existing?: number</code>, default 0, and <code>delta</code> fills <code>existing: Uint16Array.from(ms.map((m) =&gt; m.existing ?? 0))</code> after <code>homes</code>); <code>src/lib/timeline/TimelineMode.svelte.spec.ts:3608</code>; <code>src/lib/map/SimMap.timeline.svelte.spec.ts:355</code>; <code>src/lib/map/timeline-controller.spec.ts:1062</code>; <code>src/lib/map/test/synthetic-timeline.ts:81</code>; <code>src/lib/sim/world/test/map-stream-run.ts:123-150</code>; <code>src/lib/sim/world/host.spec.ts:580</code></li>
+      <li>Doc: <code>docs/dev/map-stream.md:34</code> (the spec cites <code>:33</code>; the sentence is on 34 here)</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>scheduleAt(world, statics, row, day): Schedule | null</code> (<code>src/lib/sim/world/read.ts:96</code>), whose <code>existingUnits</code> is <code>p.existing[row]</code> (<code>:76</code>, <code>:113</code>) and whose <code>entered.construction</code> is present only when on or before <code>day</code> (<code>:25-33</code>); <code>Statics.asOf</code> (<code>src/lib/sim/world/statics.ts:10</code>); the contracts stub <code>CityDelta.existing?: Uint16Array</code>.</li>
+      <li>Produces: <code>CityDelta.existing: Uint16Array</code> (required); <code>CITY_DELTA_BYTES_PER_ROW = 29</code>; <code>validateCityDelta</code> throwing <code>RangeError('CityDelta: existing is missing')</code>; <code>cityTransferables(d: CityDelta): ArrayBuffer[]</code> over six arrays; <code>CityMarker.existing: number</code> in <code>src/lib/sim/world/test/map-stream-run.ts</code>, filled by <code>markersOf</code>.</li>
+    </ul>
+    <ol>
+      <li id="t1-s1"><input type="checkbox"> Write the failing feed tests in <code>city-feed.spec.ts</code>. First add <code>existing: d.existing[i]</code> to <code>rowsOf</code> and <code>existing: 0</code> to the row-5 expectation (<code>:225-235</code>). Then, on <code>little()</code> (row 0 enters construction 20,200; row 4 is a pipeline row, construction 20,300, exited; <code>ASOF = 20_000</code>):
+        <pre><code data-lang="ts">it('existing: a row that entered construction after asOf carries its column; read before its construction, 0', () =&gt; {
+  // world.projects.existing[0] = 9
+  // snapshot at LATE: rowsOf(d)[0].existing === 9; snapshot at 20_150: 0
+});
+it('existing: construction on asOf, or before it, carries 0 with a non-zero column', () =&gt; {
+  // enter(w, 0, 'construction', ASOF); existing[0] = 9 -&gt; r0.existing 0
+  // enter(w, 4, 'construction', ASOF - 500); existing[4] = 6 -&gt; r4.existing 0
+});
+it('existing: a row not begun carries 0, beside homes 0', () =&gt; {
+  // existing[0] = 9; snapshot at 20_000: r0.homes 0, r0.existing 0
+});
+it('existing: above 65535 is sent as 65535; a negative column as 0', () =&gt; {
+  // existing[0] = 70_000 -&gt; 65_535; existing[4] = -3 -&gt; 0
+});
+it('existing: an exited row that entered construction after asOf keeps it', () =&gt; {
+  // existing[4] = 11; snapshot at LATE: r4.existing 11 (r4.completed NaN)
+});
+it('take sends a row whose only change is existing', () =&gt; {
+  // snapshot; existing[0] = 4; touch(0); take: rows [0], existing [4]
+});
+it('a rewind to a world where only existing differs touches that row', () =&gt; {
+  // snapshot; restored = structuredClone(world); restored existing[4] = 2; rewind(restored)
+  // take(restored): rowsOf(d).map((r) =&gt; [r.row, r.existing]) toEqual [[4, 2]]
+});</code></pre>
+        In the horizon test (<code>:431</code>), for each marker with <code>s = scheduleAt(world, statics, m.row, day)</code>:
+        <pre><code data-lang="ts">const c = s?.entered.construction;
+expect(m.existing).toBe(
+  s !== null &amp;&amp; c !== undefined &amp;&amp; c &gt; statics.asOf
+    ? Math.min(65_535, Math.max(0, s.existingUnits))
+    : 0
+);</code></pre>
+        And the series test:
+        <pre><code data-lang="ts">it('the series agrees: completed homes less every existing equals completedNet', async () =&gt; {
+  const input = await fixtureInput();
+  const statics = staticsOf(input);
+  const W = horizonMonth(input.asOf);
+  const s = testStatics(input, W); // ./score/test/feed
+  const series = createWorldSeries(s); // ./score/series
+  const world = feedWorld(statics, oneFrame(frameOf(input)), 1, W, series, 'live');
+  const P = input.parcels;
+  // every non-master row gets a T11 lot: its cellAnchorParcel, else P.id[0]
+  const feed = createCityFeed({ parcels: P, anchorOf: /* null for ORIGIN_MASTER */, flagsOf: () =&gt; 0 });
+  const i = s.lastIndex - 1;
+  const day = s.months[i + 1] - 1;
+  const d = feed.snapshot(world, statics, day);
+  // sum(homes where completed is not NaN) - sum(existing over all rows)
+  expect(net).toBe(series.rows(0, s.lastIndex)[i].completedNet);
+  expect(d.existing.some((e) =&gt; e &gt; 0)).toBe(true);
+  expect(d.existing.some((e) =&gt; e === 65_535)).toBe(false);
+});</code></pre>
+      </li>
+      <li id="t1-s2"><input type="checkbox"> Write the failing wire tests in <code>city-delta.spec.ts</code>: <code>deltaOf</code> gains <code>existing: new Uint16Array(k)</code> after <code>homes</code>; the byte test is renamed "29 bytes a row", sums six <code>byteLength</code>s and also asserts <code>expect(CITY_DELTA_BYTES_PER_ROW).toBe(29)</code>; the malformed table gains <code>['existing', (d: CityDelta) =&gt; (d.existing = new Uint16Array(3))]</code>; the transfer test is renamed "the six buffers", expects length 6 and adds <code>d.existing.buffer</code> to the set; the shared-buffer delta gains <code>existing: new Uint16Array(2)</code> and expects 5 (not 4). New:
+        <pre><code data-lang="ts">it('rejects a delta with no existing', () =&gt; {
+  const d: Partial&lt;CityDelta&gt; = deltaOf(4, [1]);
+  delete d.existing;
+  expect(() =&gt; validateCityDelta(d as CityDelta)).toThrow(RangeError);
+  expect(() =&gt; validateCityDelta(d as CityDelta)).toThrow('CityDelta: existing is missing');
+});</code></pre>
+      </li>
+      <li id="t1-s3"><input type="checkbox"> Run them and see them fail (type errors on the required field count as failure here).
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/sim/world/city-feed.spec.ts src/lib/map/city-delta.spec.ts</code></pre>
+      </li>
+      <li id="t1-s4"><input type="checkbox"> In <code>city-feed.ts</code>, replace the layout constants verbatim:
+        <pre><code data-lang="ts">/** Values of one marker in a row of `Marker`'s layout (float32 as sent). */
+const WIDTH = 8;
+const LNG = 0;
+const LAT = 1;
+const DAYS = 2; // approved, started, completed: DAYS + CITY_DAY.*
+const HOMES = 5;
+const EXISTING = 6;
+const FLAGS = 7;</code></pre>
+        In <code>markerOf</code>, after <code>m[HOMES]</code>, verbatim:
+        <pre><code data-lang="ts">const built = s.entered.construction;
+if (built !== undefined &amp;&amp; built &gt; statics.asOf) {
+  m[EXISTING] = Math.min(MAX_HOMES, Math.max(0, s.existingUnits));
+}</code></pre>
+        <code>deltaOf</code> makes <code>existing: new Uint16Array(k)</code> between <code>homes</code> and <code>flags</code> and writes <code>d.existing[i] = m[EXISTING]</code>. The head comment's marker bullet names the field: "the homes the project replaces after the dataset date (0 until its construction starts after it; capped at 65,535)". <code>sameMarker</code>, <code>take</code>, <code>rewind</code> and <code>snapshot</code> are unchanged.</li>
+      <li id="t1-s5"><input type="checkbox"> In <code>types.ts</code>, the contracts line becomes, verbatim:
+        <pre><code data-lang="ts">  homes: Uint16Array; // per changed row: the final revision's units, capped at 65535
+  /** Per changed row: the homes the project replaces after the dataset date, capped at 65535. 0 until it enters construction, and when it entered on or before the dataset date. */
+  existing: Uint16Array;
+  flags: Uint8Array; // per changed row: SLOT_FLAG bits</code></pre>
+        No other line of <code>types.ts</code>. The doc comment above <code>CityDelta</code> is unchanged.</li>
+      <li id="t1-s6"><input type="checkbox"> In <code>city-delta.ts</code>, verbatim from the spec: <code>/** Bytes a changed row costs: row 4, lngLat 8, days 12, homes 2, existing 2, flags 1. */ export const CITY_DELTA_BYTES_PER_ROW = 29;</code>; before the widths, <code>if (d.existing === undefined) throw new RangeError('CityDelta: existing is missing');</code>; the widths in the order <code>lngLat 2, days 3, homes 1, existing 1, flags 1</code>; <code>cityTransferables</code> iterates <code>[d.row, d.lngLat, d.days, d.homes, d.existing, d.flags]</code> with the comment <code>/** The six buffers, each once. */</code>. The validation's doc comment adds "<code>existing</code> absent" to what throws. No value of <code>existing</code> is checked.</li>
+      <li id="t1-s7"><input type="checkbox"> Apply every fixture line of §sec-files-fixtures, each one line or one field:
+        <ul>
+          <li><code>TimelineMode.svelte.spec.ts:3608</code>: add <code>existing: new Uint16Array(k),</code> after <code>homes</code>. No other line of the file.</li>
+          <li><code>SimMap.timeline.svelte.spec.ts:355</code>: add <code>existing: Uint16Array.from([0, 0]),</code> after <code>homes</code>.</li>
+          <li><code>timeline-controller.spec.ts:1062</code>: add <code>existing: new Uint16Array(ms.length),</code> after <code>homes</code>.</li>
+          <li><code>synthetic-timeline.ts:81</code>: add <code>existing: new Uint16Array(nProjects),</code> after <code>homes</code>. <code>mark</code> writes nothing to it: every synthetic marker carries 0.</li>
+          <li><code>map-stream-run.ts</code>: <code>CityMarker</code> gains <code>existing: number</code> after <code>homes</code>; <code>markersOf</code> fills <code>existing: d.existing[i]</code>.</li>
+          <li><code>host.spec.ts:580</code>: the array list becomes <code>[city.row, city.lngLat, city.days, city.homes, city.existing, city.flags]</code>.</li>
+          <li><code>city.spec.ts</code> and <code>activity.spec.ts</code>: the helper change named under Files.</li>
+          <li><code>docs/dev/map-stream.md:34</code>: "(a day, the homes or the flags)" becomes "(a day, the homes, the existing homes or the flags)".</li>
+        </ul>
+      </li>
+      <li id="t1-s8"><input type="checkbox"> Run the feed, wire and every spec that builds or reads a delta; all pass.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/sim/world/city-feed.spec.ts src/lib/map/city-delta.spec.ts src/lib/map/timelapse/city.spec.ts src/lib/timeline/activity.spec.ts src/lib/map/timeline-controller.spec.ts src/lib/map/test/synthetic-timeline.spec.ts src/lib/sim/world/host.spec.ts src/lib/sim/world/map-stream</code></pre>
+        <pre><code data-lang="sh">npx vitest --run --project client src/lib/map/SimMap.timeline.svelte.spec.ts src/lib/timeline/TimelineMode.svelte.spec.ts</code></pre>
+        <pre><code data-lang="sh">npm run check</code></pre>
+        Expected: every file green, <code>svelte-check</code> 0 errors. If the series test's identity fails, stop and report the two numbers; do not adjust the assertion.</li>
+      <li id="t1-s9"><input type="checkbox"> Lint the changed files with <code>npx prettier --check</code> and <code>npx eslint</code>, then commit.
+        <pre><code data-lang="sh">git add src/lib/sim/world/city-feed.ts src/lib/sim/world/city-feed.spec.ts src/lib/map/types.ts src/lib/map/city-delta.ts src/lib/map/city-delta.spec.ts src/lib/map/timelapse/city.spec.ts src/lib/timeline/activity.spec.ts src/lib/timeline/TimelineMode.svelte.spec.ts src/lib/map/SimMap.timeline.svelte.spec.ts src/lib/map/timeline-controller.spec.ts src/lib/map/test/synthetic-timeline.ts src/lib/sim/world/test/map-stream-run.ts src/lib/sim/world/host.spec.ts docs/dev/map-stream.md</code></pre>
+        <pre><code data-lang="sh">git commit -m "feat(city-net): send the homes a project replaces in the city feed"</code></pre>
+        <pre><code data-lang="sh">npx chreode timing-check --head HEAD</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-2">
+    <h2>Task 2: The store and the index keep <code>existing</code>; <code>markers()</code></h2>
+    <p>Spec: city-net §sec-design-store, §sec-design-index, §sec-design-debug, §sec-design-doc, tests §sec-tests-store and §sec-tests-index. Delivers row E1: with this task the feed value, the required type, the wire, the store and the index's <code>markers()</code> all hold <code>existing</code> per row.</p>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/lib/map/timelapse/city.ts:7-17</code> (field), <code>:30-45</code> (getter), <code>:52-76</code> (<code>apply</code>), <code>:96-109</code> (<code>#reserve</code>)</li>
+      <li>Modify: <code>src/lib/timeline/activity.ts</code> (new interface after <code>ActivityEvent</code>, <code>:16-24</code>; new method in <code>ActivityIndex</code>, <code>:36-142</code>)</li>
+      <li>Test: <code>src/lib/map/timelapse/city.spec.ts</code>, <code>src/lib/timeline/activity.spec.ts</code></li>
+      <li>Doc: <code>docs/dev/map-interfaces.md:142</code>, <code>:143</code>, <code>:146</code>, <code>:150</code> ("The citywide feed" only)</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: Task 1's required <code>CityDelta.existing</code>; <code>CITY_DAY</code> (<code>src/lib/map/types.ts:64</code>).</li>
+      <li>Produces, for <code>game-sim</code>:
+        <pre><code data-lang="ts">// src/lib/map/timelapse/city.ts
+/** Per row: the homes the project replaces (CityDelta.existing). A view, valid until the next `apply` or `clear`. */
+get existing(): Uint16Array;
+
+// src/lib/timeline/activity.ts
+/** One marker the index holds, for a reader that wants every project. */
+export interface CityMarkerRow {
+  row: number;
+  lngLat: [number, number];
+  /** The completed day; NaN when the project has none (yet). */
+  completed: Day;
+  /** The final revision's units, capped at 65,535. */
+  homes: number;
+  /** The homes it replaces after the dataset date (CityDelta.existing). */
+  existing: number;
+  /** SLOT_FLAG bits (CityDelta.flags): not 0 when the project carries the policy mark. */
+  flags: number;
+}
+// in class ActivityIndex:
+/** Every marker held, ascending by row. A new array on each call. Never sorts. */
+markers(): CityMarkerRow[];</code></pre>
+      </li>
+    </ul>
+    <ol>
+      <li id="t2-s1"><input type="checkbox"> Write the failing tests. In <code>city.spec.ts</code> (<code>describe('CityStore')</code>):
+        <pre><code data-lang="ts">it('CityStore keeps each row\'s existing at its row on replace', () =&gt; {
+  // store(6, [{ row: 1, existing: 7 }, { row: 4, existing: 0 }, { row: 5, existing: 65_535 }])
+  // existing[1] 7, existing[4] 0, existing[5] 65_535
+});
+it('a later apply overwrites a row\'s existing and leaves the other rows\' as they were', () =&gt; {
+  // then apply(delta(6, [{ row: 4, existing: 3 }]), false): existing[1] 7, [4] 3, [5] 65_535
+});
+it('growing the store past its capacity keeps the existing already held', () =&gt; {
+  // store(2, [{ row: 1, existing: 5 }]); apply(delta(50, [{ row: 40, existing: 3 }]), false)
+  // existing[1] 5, existing[40] 3
+});
+it('a malformed delta (existing of the wrong length) throws and leaves existing as it was', () =&gt; {
+  // store(3, [{ row: 1, existing: 5 }]); bad = delta(3, [{ row: 2, existing: 9 }]); bad.existing = new Uint16Array(2)
+  // apply(bad, false) throws RangeError; existing[1] 5, existing[2] 0, has[2] 0
+});</code></pre>
+        In <code>activity.spec.ts</code> (<code>describe('ActivityIndex')</code>), with <code>const f32 = Math.fround</code>:
+        <pre><code data-lang="ts">it('markers lists every held row ascending with lngLat, completed, homes, existing and flags', () =&gt; {
+  // apply(update(0, delta(6, [
+  //   { row: 1, days: [AS_OF + 1, AS_OF + 2, AS_OF + 3], homes: 20, existing: 5, flags: SLOT_FLAG.money, at: [-122.41, 37.75] },
+  //   { row: 3, days: [AS_OF + 4, N, N], homes: 8 }
+  // ])))
+  expect(ix.markers()).toEqual([
+    { row: 1, lngLat: [f32(-122.41), f32(37.75)], completed: AS_OF + 3, homes: 20, existing: 5, flags: 2 },
+    { row: 3, lngLat: [f32(-122.42), f32(37.76)], completed: NaN, homes: 8, existing: 0, flags: 0 }
+  ]);
+});
+it('markers omits rows forgotten by from; it is empty after a revision 0 without city', () =&gt; {});
+it('markers drops rows at or past a later, smaller rows', () =&gt; {
+  // revision 0 with rows 0, 2, 4 of 5; then update(1, delta(3, [])): markers() rows [0, 2]
+});
+it('markers leaves sorts unchanged, and a recent read after it sorts no more than without it', () =&gt; {
+  // sorts before === sorts after markers(); recent(AS_OF, AS_OF + 100) then sorts === 1
+});
+it('two markers calls return different arrays with equal contents', () =&gt; {
+  // a !== b; expect(a).toEqual(b); a[0].lngLat !== b[0].lngLat
+});</code></pre>
+        The third test is Review Focus 5.</li>
+      <li id="t2-s2"><input type="checkbox"> Run them and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/map/timelapse/city.spec.ts src/lib/timeline/activity.spec.ts</code></pre>
+      </li>
+      <li id="t2-s3"><input type="checkbox"> Implement <code>#existing = new Uint16Array(0)</code> and <code>get existing(): Uint16Array</code> in <code>CityStore</code>; <code>apply</code> writes <code>this.#existing[r] = d.existing[i]</code> beside <code>homes</code>; <code>#reserve</code> grows <code>#existing</code> with width 1 beside <code>#homes</code>. <code>clear</code> and <code>#forget</code> are unchanged.</li>
+      <li id="t2-s4"><input type="checkbox"> Implement <code>CityMarkerRow</code> and <code>ActivityIndex.markers()</code>: one pass over <code>r &lt; store.length</code> where <code>has[r]</code> is set; <code>completed = days[3 * r + CITY_DAY.completed]</code>; a new <code>lngLat</code> pair per item; <code>flags = store.flags[r]</code>. It touches neither <code>#dirty</code> nor <code>#sorts</code>. <code>ActivityEvent</code>, <code>recent</code> and <code>apply</code> are unchanged. The controller and its debug snapshot are unchanged.</li>
+      <li id="t2-s5"><input type="checkbox"> Run the store and index tests; they pass.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/map/timelapse/city.spec.ts src/lib/timeline/activity.spec.ts src/lib/map/timeline-controller.spec.ts</code></pre>
+      </li>
+      <li id="t2-s6"><input type="checkbox"> In <code>docs/dev/map-interfaces.md</code> "The citywide feed", replace the third bullet (<code>:142</code>), the bytes bullet (<code>:143</code>), the validation bullet (<code>:146</code>) and the Consumers sentence "That is a second copy of the markers, 27 bytes a row." (<code>:150</code>) with the four texts of city-net §sec-design-doc, verbatim (the third-bullet replacement is two bullets). No other section.</li>
+      <li id="t2-s7"><input type="checkbox"> <code>npm run check</code> clean; lint the changed files; commit.
+        <pre><code data-lang="sh">npm run check</code></pre>
+        <pre><code data-lang="sh">git add src/lib/map/timelapse/city.ts src/lib/map/timelapse/city.spec.ts src/lib/timeline/activity.ts src/lib/timeline/activity.spec.ts docs/dev/map-interfaces.md</code></pre>
+        <pre><code data-lang="sh">git commit -m "feat(city-net): keep existing per row in the store and list markers from the index"</code></pre>
+        <pre><code data-lang="sh">npx chreode timing-check --head HEAD</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-3">
+    <h2>Task 3: <code>runFrame</code>, the run view's fitted camera</h2>
+    <p>Spec: map-run §sec-design-camera, §sec-design-constraints (the constants), tests §sec-tests-unit.</p>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/lib/map/camera.ts</code> (append after <code>defaultFrame</code>, <code>:16-20</code>)</li>
+      <li>Test: <code>src/lib/map/camera.spec.ts</code></li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>SF_GRID_BBOX: BBox = [-122.5155, 37.708, -122.3549, 37.8324]</code> (<code>src/lib/transit/grid.ts:42</code>); <code>CameraFrame</code> (<code>src/lib/map/types.ts:14-19</code>).</li>
+      <li>Produces, verbatim from the spec:
+        <pre><code data-lang="ts">// src/lib/map/camera.ts (added)
+import { SF_GRID_BBOX } from '$lib/transit/grid';
+
+/** The run view fits this: mainland San Francisco, the transit grid's extent. */
+export const RUN_BOUNDS: BBox = SF_GRID_BBOX;
+/** CSS px kept clear between the city and each side of the box less the bottom inset. */
+export const RUN_PAD_PX = 24;
+/** The lowest zoom the run view jumps to. */
+export const RUN_MIN_ZOOM = 8;
+
+/** The run view's frame for a map box of this size and bottom inset, in CSS px. */
+export function runFrame(widthPx: number, heightPx: number, bottomInset: number): CameraFrame;</code></pre>
+      </li>
+    </ul>
+    <ol>
+      <li id="t3-s1"><input type="checkbox"> Write the failing tests in <code>camera.spec.ts</code>:
+        <pre><code data-lang="ts">it('runFrame(1280, 744, 0) fits by height: zoom 11.603, the bounds\' Mercator centre, flat and north up', () =&gt; {
+  const f = runFrame(1280, 744, 0);
+  expect(f.zoom).toBeCloseTo(11.603, 3);
+  expect(f.center[0]).toBeCloseTo(-122.4352, 4);
+  expect(f.center[1]).toBeCloseTo(37.77023, 4);
+  expect([f.pitch, f.bearing]).toEqual([0, 0]);
+});
+it('runFrame(375, 600, 0): a portrait box is fitted by width', () =&gt; {
+  expect(runFrame(375, 600, 0).zoom).toBeCloseTo(10.483, 3);
+});
+it('runFrame(1280, 744, 300): the inset is taken from the height', () =&gt; {
+  expect(runFrame(1280, 744, 300).zoom).toBeCloseTo(10.789, 3);
+});
+it('a box too small for the city gets RUN_MIN_ZOOM', () =&gt; {
+  expect(runFrame(100, 100, 0).zoom).toBe(RUN_MIN_ZOOM);
+  expect(runFrame(40, 40, 0).zoom).toBe(RUN_MIN_ZOOM);
+  expect(RUN_MIN_ZOOM).toBe(8);
+});
+it('RUN_BOUNDS is SF_GRID_BBOX', () =&gt; {
+  expect(RUN_BOUNDS).toEqual(SF_GRID_BBOX);
+  expect(RUN_PAD_PX).toBe(24);
+});</code></pre>
+      </li>
+      <li id="t3-s2"><input type="checkbox"> Run and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/map/camera.spec.ts</code></pre>
+      </li>
+      <li id="t3-s3"><input type="checkbox"> Implement <code>runFrame</code>. Free width <code>widthPx - 2 * RUN_PAD_PX</code>; free height <code>heightPx - bottomInset - 2 * RUN_PAD_PX</code>; either at or below 0 gives <code>RUN_MIN_ZOOM</code>. The bounds' zoom-0 size is their Web Mercator span (MapLibre's <code>x = (lng + 180) / 360</code>, <code>y = (180 - (180 / π) · ln(tan(π/4 + lat · π/360))) / 360</code>) times 512. Zoom = <code>max(RUN_MIN_ZOOM, log2(min(freeW / w0, freeH / h0)))</code>. Centre = the unprojected midpoint of the Mercator span. Pitch 0, bearing 0. The bottom inset is not in the frame: the map's own padding places the centre.</li>
+      <li id="t3-s4"><input type="checkbox"> Run and see them pass; <code>npm run check</code> clean.
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/map/camera.spec.ts</code></pre>
+        <pre><code data-lang="sh">npm run check</code></pre>
+      </li>
+      <li id="t3-s5"><input type="checkbox"> Lint, commit, timing check.
+        <pre><code data-lang="sh">git add src/lib/map/camera.ts src/lib/map/camera.spec.ts</code></pre>
+        <pre><code data-lang="sh">git commit -m "feat(map-run): runFrame fits the city flat and north up"</code></pre>
+        <pre><code data-lang="sh">npx chreode timing-check --head HEAD</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-4">
+    <h2>Task 4: <code>setRunView</code> locks and unlocks a live map</h2>
+    <p>Spec: map-run §sec-design-constraints, §sec-design-state, §sec-design-on, §sec-design-off, §sec-design-handlers, §sec-design-controls; the matching component tests of §sec-tests-component; §sec-tests-ssr. The handle type, both stubs and <code>HANDLE_FNS</code> change with it.</p>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/lib/map/SimMap.svelte</code>: imports (<code>:56</code>); handle state (<code>:233-250</code>); <code>setPanEnabled</code> (<code>:287-291</code>); the contracts' empty <code>setRunView</code> (after <code>setBarMode</code>, <code>:447-452</code>); <code>start</code> (<code>:620</code>); the overlay (<code>:818-834</code>); <code>applyPan</code> (<code>:1107-1119</code>); <code>resetView</code> (<code>:1271-1274</code>); the root (<code>:1511-1521</code>); Reset view (<code>:1602</code>); <code>&lt;style&gt;</code> (<code>:1680-1807</code>)</li>
+      <li>Modify: <code>src/lib/map/types.ts</code>, the contracts' <code>setRunView?</code> line in <code>SimMapHandle</code> (after <code>collapseCredit</code>, <code>:145</code>)</li>
+      <li>Modify: <code>src/lib/fzp/test/sim-map-stub.ts:155-169</code>: <code>setRunView: record('setRunView')</code></li>
+      <li>Modify: <code>src/lib/brush/test/sim-map-stub.ts:23-37</code>: <code>setRunView: () =&gt; {}</code></li>
+      <li>Test: <code>src/lib/map/SimMap.run-view.svelte.spec.ts</code> (create); <code>src/lib/map/SimMap.svelte.spec.ts:24-32</code> (<code>HANDLE_FNS</code> gains <code>'setRunView'</code>); <code>src/lib/map/SimMap.ssr.spec.ts</code></li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: Task 3's <code>RUN_MIN_ZOOM</code>, <code>runFrame</code>, <code>RUN_BOUNDS</code>; <code>CONSTRAINTS</code> (<code>camera.ts:5-13</code>); deck's <code>_pickable</code> prop (<code>@deck.gl/core</code> <code>deck.d.ts:145</code>, <code>deck-picker.js:121</code>, verified in the main checkout's <code>node_modules</code>; this worktree has none until <code>npm install</code>).</li>
+      <li>Produces: <code>SimMapHandle.setRunView(on: boolean): void</code> (required); <code>export function setRunView(on: boolean): void</code> on SimMap; private <code>applyInteraction(): void</code> (replaces <code>applyPan</code>); private <code>lockCamera(l: Live): void</code>, steps 6 to 10 of §sec-design-on, which Task 5's <code>start</code> reuses (builder's call on the name; Task 5 refers to it by this name); the root's <code>data-run-view="on"</code>; the class <code>sim-map-run-locked</code> on the canvas container.</li>
+    </ul>
+    <ol>
+      <li id="t4-s1"><input type="checkbox"> Create <code>SimMap.run-view.svelte.spec.ts</code>. Its helpers follow <code>SimMap.svelte.spec.ts:16-76</code> (fixture manifest rewritten to <code>/e2e/fixtures/data/fixture-0/</code>, a <code>host(width, height)</code>, <code>mount</code> resolving on <code>onready</code>, error and rejection listeners), without <code>sleep</code> or timeout options. A <code>camera(map)</code> helper returns <code>{ center: [lng, lat], zoom, pitch, bearing }</code>; <code>sameCamera(a, b)</code> asserts each to 6 decimals. Tests (600 by 400 unless named):
+        <pre><code data-lang="ts">it('locked on 600 by 400: the runFrame zoom, flat, north up, every RUN_BOUNDS corner 23 px inside', async () =&gt; {
+  // h.setRunView(true)
+  // zoom toBeCloseTo(runFrame(600, 400, 0).zoom, 3); pitch 0; bearing 0
+  // for each [lng, lat] corner of RUN_BOUNDS: p = map.project(corner); 23 &lt;= p.x &lt;= 600 - 23, 23 &lt;= p.y &lt;= 400 - 23
+});
+it('locked on 375 by 400: zoom below 11 and the four corners inside the box', async () =&gt; {});
+it('locked: the eight handlers are off, no maxBounds, minZoom 8', async () =&gt; {
+  // dragPan dragRotate scrollZoom boxZoom doubleClickZoom keyboard touchZoomRotate touchPitch: isEnabled() false
+  // map.getMaxBounds() null; map.getMinZoom() 8
+});
+it('locked: touch-action none, the bottom-left controls hidden, data-run-view on', async () =&gt; {
+  // getComputedStyle(map.getCanvasContainer()).touchAction 'none'
+  // getComputedStyle(target.querySelector('.maplibregl-ctrl-bottom-left')!).display 'none'
+  // root.dataset.runView 'on'
+});
+it('unlocked after a lock: the camera before it, the five zoom handlers on, minZoom 11, maxBounds back, no data-run-view', async () =&gt; {
+  // before = camera(map); lock; unlock; sameCamera(camera(map), before)
+  // scrollZoom boxZoom doubleClickZoom keyboard touchZoomRotate touchPitch enabled
+  // getMinZoom() 11; getMaxBounds()!.toArray() toEqual CONSTRAINTS.maxBounds (to 6 decimals)
+  // root.hasAttribute('data-run-view') false
+});
+it('setPanEnabled(false), lock, unlock: dragPan off, scrollZoom on', async () =&gt; {});
+it('lock, setPanEnabled(true): dragPan stays off; unlock: dragPan on', async () =&gt; {});
+it('a second setRunView(true) after a jumpTo leaves the camera; unlock returns to the camera before the first; a second false changes nothing', async () =&gt; {});
+it('lock, unlock, move, lock, unlock: the second unlock returns to the camera before the second lock', async () =&gt; {
+  // Review Focus 1: map.jumpTo({ center: [-122.45, 37.76], zoom: 14, pitch: 30, bearing: 10 }) between the two locks
+});
+it('a coarse pointer: Reset view is absent while locked and present after unlock', async () =&gt; {
+  // vi.spyOn(window, 'matchMedia') returning matches for '(pointer: coarse)', before render
+  // page.getByRole('button', { name: 'Reset view' }) absent while locked, present after
+});
+it('lock and unlock raise no console error and no unhandled rejection', async () =&gt; {
+  // vi.spyOn(console, 'error'); errors from the window listeners: both empty
+});</code></pre>
+        In <code>SimMap.ssr.spec.ts</code>: <code>it('the server render has no data-run-view', …)</code> asserts <code>expect(body).not.toContain('data-run-view')</code>. In <code>SimMap.svelte.spec.ts</code>, add <code>'setRunView'</code> to <code>HANDLE_FNS</code>.</li>
+      <li id="t4-s2"><input type="checkbox"> Run them and see them fail (the contracts' <code>setRunView</code> does nothing).
+        <pre><code data-lang="sh">npx vitest --run --project client src/lib/map/SimMap.run-view.svelte.spec.ts</code></pre>
+      </li>
+      <li id="t4-s3"><input type="checkbox"> In <code>SimMap.svelte</code>, beside <code>panEnabled</code>, verbatim: <code>let runView = $state(false);</code> and <code>let remembered: CameraFrame | null = null;</code>. Replace <code>applyPan</code> with <code>applyInteraction</code>, verbatim from the spec:
+        <pre><code data-lang="ts">function applyInteraction(): void {
+  const m = live?.map;
+  if (!m) return;
+  if (runView) {
+    m.dragPan.disable();
+    m.dragRotate.disable();
+    m.scrollZoom.disable();
+    m.boxZoom.disable();
+    m.doubleClickZoom.disable();
+    m.keyboard.disable();
+    m.touchZoomRotate.disable();
+    m.touchPitch.disable();
+    return;
+  }
+  m.scrollZoom.enable();
+  m.boxZoom.enable();
+  m.doubleClickZoom.enable();
+  m.keyboard.enable();
+  m.touchZoomRotate.enable();
+  m.touchPitch.enable();
+  if (panEnabled) {
+    m.dragPan.enable();
+    m.dragRotate.enable();
+    m.touchZoomRotate.enableRotation();
+  } else {
+    m.dragPan.disable();
+    m.dragRotate.disable();
+    m.touchZoomRotate.disableRotation();
+  }
+}</code></pre>
+        <code>setPanEnabled</code> and <code>start</code> call it where they call <code>applyPan</code> today; nothing else touches a handler.</li>
+      <li id="t4-s4"><input type="checkbox"> Implement <code>setRunView(on)</code> in place of the contracts' empty one, in the order of §sec-design-on (steps 1 to 11) and §sec-design-off (steps 1 to 9). <code>lockCamera(l)</code> holds on-steps 6 to 10 plus 11: take <code>remembered</code> from <code>getCenter</code>/<code>getZoom</code>/<code>getPitch</code>/<code>getBearing</code> if null; <code>applyInteraction()</code>; <code>setMaxBounds(null)</code> then <code>setMinZoom(RUN_MIN_ZOOM)</code>; <code>jumpTo(runFrame(container.clientWidth, container.clientHeight, bottomInset))</code>; add <code>sim-map-run-locked</code> to <code>getCanvasContainer()</code>; <code>overlay?.setProps({ _pickable: false })</code>. Off: remove the class, <code>_pickable: true</code>, <code>applyInteraction()</code>, <code>jumpTo(remembered)</code>, then <code>setMinZoom(CONSTRAINTS.minZoom)</code> and <code>setMaxBounds(CONSTRAINTS.maxBounds)</code>, then <code>remembered = null</code>. No map: on stores the value and returns after step 4; off sets <code>remembered = null</code>. Never throws, in any <code>mapState</code>. The overlay is created with <code>_pickable: !runView</code> (a lock that met a map before its <code>load</code> made the overlay).</li>
+      <li id="t4-s5"><input type="checkbox"> Markup and style: the root gets <code>data-run-view={runView ? 'on' : undefined}</code>; Reset view's condition becomes <code>coarse &amp;&amp; mapState === 'ready' &amp;&amp; !runView</code>; <code>resetView</code> returns at once while <code>runView</code>. Add verbatim to <code>&lt;style&gt;</code>:
+        <pre><code data-lang="css">  .sim-map[data-run-view='on'] :global(.maplibregl-ctrl-bottom-left) {
+    display: none;
+  }
+  .sim-map :global(.maplibregl-canvas-container.sim-map-run-locked) {
+    touch-action: none;
+    cursor: default;
+  }</code></pre>
+      </li>
+      <li id="t4-s6"><input type="checkbox"> Make the type required and fill both stubs. <code>types.ts</code>: the contracts' <code>setRunView?(on: boolean): void;</code> becomes <code>setRunView(on: boolean): void;</code> with the doc comment <code>/** M1: the run view (map-interfaces.md, "The run view"). true fits the whole city flat and north up and locks the camera; false unlocks and returns to the camera before. */</code> (builder's call: the spec asks for a doc comment and gives no text). No other line. <code>fzp</code> stub: <code>setRunView: record('setRunView')</code> after <code>collapseCredit</code>. <code>brush</code> stub: <code>setRunView: () =&gt; {}</code> after <code>collapseCredit</code>.</li>
+      <li id="t4-s7"><input type="checkbox"> Run the new and touched specs; all pass. <code>npm run check</code> clean.
+        <pre><code data-lang="sh">npx vitest --run --project client src/lib/map/SimMap.run-view.svelte.spec.ts src/lib/map/SimMap.svelte.spec.ts</code></pre>
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/map/SimMap.ssr.spec.ts src/lib/map/camera.spec.ts</code></pre>
+        <pre><code data-lang="sh">npm run check</code></pre>
+      </li>
+      <li id="t4-s8"><input type="checkbox"> Lint, commit, timing check.
+        <pre><code data-lang="sh">git add src/lib/map/SimMap.svelte src/lib/map/types.ts src/lib/fzp/test/sim-map-stub.ts src/lib/brush/test/sim-map-stub.ts src/lib/map/SimMap.run-view.svelte.spec.ts src/lib/map/SimMap.svelte.spec.ts src/lib/map/SimMap.ssr.spec.ts</code></pre>
+        <pre><code data-lang="sh">git commit -m "feat(map-run): setRunView locks the map on the whole city and restores the camera"</code></pre>
+        <pre><code data-lang="sh">npx chreode timing-check --head HEAD</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-5">
+    <h2>Task 5: Nothing picked while locked; refit; remount; the document</h2>
+    <p>Spec: map-run §sec-design-picking, §sec-design-refit, §sec-design-remount, §sec-design-events, §sec-design-visible, §sec-design-docs; the remaining component tests of §sec-tests-component; §sec-tests-bench. Delivers row M1: after this task every bullet of the M1 contract holds, including no picks while locked, the refit on resize or inset, and survival across a remount.</p>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>src/lib/map/SimMap.svelte</code>: <code>setBottomInset</code> (<code>:293-300</code>); <code>start</code> (<code>:618-641</code>: after <code>applyInteraction()</code>, and a <code>resize</code> listener); <code>onPointerMove</code> (<code>:1413-1428</code>); <code>hoverSoon</code> (<code>:1431-1439</code>); <code>onPointerDown</code> (<code>:1452-1469</code>); <code>onPointerUp</code> (<code>:1471-1493</code>)</li>
+      <li>Test: <code>src/lib/map/SimMap.run-view.svelte.spec.ts</code></li>
+      <li>Doc: <code>docs/dev/map-interfaces.md</code>, a new section "The run view" after "The dock's width and the bottom-left control" (<code>:44-48</code>)</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: Task 4's <code>runView</code>, <code>remembered</code>, <code>lockCamera(l)</code>, <code>applyInteraction()</code>; <code>clearShown</code> (<code>:1402</code>), <code>unreportHover</code> (<code>:1354</code>).</li>
+      <li>Produces: nothing new in a type. The handle's behaviour is M1 in full.</li>
+    </ul>
+    <ol>
+      <li id="t5-s1"><input type="checkbox"> Add the failing tests to <code>SimMap.run-view.svelte.spec.ts</code>. The picking tests build a timeline the way <code>SimMap.timeline.svelte.spec.ts:432-500</code> does (<code>timelineSmall</code> and <code>DAYS</code> from <code>./fixtures/timeline-small</code>, <code>timelineLookups</code>, a <code>fire(type, pointerType, p)</code> on the canvas, re-sent moves under <code>expect.poll</code>), with no timeout options.
+        <pre><code data-lang="ts">it('with a tooltip shown, the lock closes it; timelinePick gets one hover miss after a hit', async () =&gt; {
+  // hover an existing building: [role="tooltip"] present; lock: absent
+  // hover a part: last call is a hit; lock: exactly one more call, { projectId: null, kind: 'hover' }
+});
+it('locked: a touch tap and a mouse click on the canvas deliver nothing and show no card', async () =&gt; {
+  // timelinePick not called after the lock's miss; document.querySelector('.sim-map-card') null
+});
+it('after unlock, hover picks start at the next pointer move, not at the unlock\'s moveend', async () =&gt; {});
+it('setRunView(true) before onready: once ready the camera is the fit and deck does not pick; unlock goes to defaultFrame(600)', async () =&gt; {
+  // (screen.component as SimMapHandle).setRunView(true) right after render
+  // after ready: zoom toBeCloseTo(runFrame(600, 400, 0).zoom, 3); deck props._pickable false
+  // unlock: sameCamera(camera(map), defaultFrame(600))
+});
+it('true then false before the map exists: the map starts unlocked at its initial camera', async () =&gt; {
+  // Review Focus 3: no data-run-view, no sim-map-run-locked, dragPan on, minZoom 11, deck pickable
+});
+it('a remount by a new manifest while locked: the new map is locked and fitted; unlock goes to the camera before the lock', async () =&gt; {
+  // screen.rerender({ manifest: structuredClone(manifest) }); poll h.getMap() !== first until the new map has loaded
+});
+it('locked, the host resized to 800 by 500: the zoom becomes runFrame(800, 500, 0).zoom', async () =&gt; {
+  // target.style.cssText = 'width:800px;height:500px'; expect.poll(() =&gt; map.getZoom()).toBeCloseTo(.., 3)
+});
+it('resized while locked, then unlocked: the camera before the lock', async () =&gt; {
+  // Review Focus 2
+});
+it('locked, setBottomInset(120): the zoom becomes runFrame(600, 400, 120).zoom', async () =&gt; {});
+it('a locked SimMap unmounted, then a new one mounted: no error, and it starts unlocked', async () =&gt; {
+  // Review Focus 4: eight handlers per panEnabled default, no data-run-view, errors []
+});</code></pre>
+      </li>
+      <li id="t5-s2"><input type="checkbox"> Run them and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project client src/lib/map/SimMap.run-view.svelte.spec.ts</code></pre>
+      </li>
+      <li id="t5-s3"><input type="checkbox"> Picking guards, per §sec-design-picking: <code>onPointerMove</code>, after its touch return, sets <code>l.pointer = null</code>, closes a tooltip, calls <code>unreportHover()</code> and returns while <code>runView</code>; <code>hoverSoon</code>'s frame callback returns before picking while <code>runView</code>; <code>onPointerDown</code> still counts touches but records no <code>tap</code> and no <code>click</code> while <code>runView</code>; <code>onPointerUp</code> delivers nothing while <code>runView</code>. <code>pickAt</code> is unchanged.</li>
+      <li id="t5-s4"><input type="checkbox"> Refit and remount, per §sec-design-refit and §sec-design-remount: in <code>start</code>, after <code>applyInteraction()</code>, <code>if (runView) lockCamera(l)</code> (so <code>remembered</code> is the initial camera when null, and a remount keeps it); <code>map.on('resize', …)</code> jumps to <code>runFrame</code> for the new box while <code>runView</code>; <code>setBottomInset</code> sets the padding as today, then jumps to <code>runFrame</code> with the new inset while <code>runView</code> and a map exists. Neither changes <code>remembered</code>.</li>
+      <li id="t5-s5"><input type="checkbox"> Run the run-view spec and every SimMap browser spec; all pass. <code>npm run check</code> clean.
+        <pre><code data-lang="sh">npx vitest --run --project client src/lib/map/SimMap</code></pre>
+        <pre><code data-lang="sh">npm run check</code></pre>
+      </li>
+      <li id="t5-s6"><input type="checkbox"> Write <code>docs/dev/map-interfaces.md</code> "The run view" after "The dock's width and the bottom-left control", holding the six items of §sec-design-docs: what <code>setRunView(on)</code> does, the fitted camera, <code>RUN_BOUNDS</code>, <code>RUN_PAD_PX</code>, <code>RUN_MIN_ZOOM</code> and the lifted <code>maxBounds</code>; the eight handlers, the hidden bottom-left controls and Reset view, <code>touch-action: none</code>, <code>setPanEnabled</code> taking effect at unlock; nothing picked, delivered or shown while locked; the remembered camera, the refit on resize or inset, survival across a remount; the table of §sec-design-visible (copied as a Markdown table); the root's <code>data-run-view="on"</code>. Short sentences, the project's doc style.</li>
+      <li id="t5-s7"><input type="checkbox"> Lint, commit, timing check.
+        <pre><code data-lang="sh">git add src/lib/map/SimMap.svelte src/lib/map/SimMap.run-view.svelte.spec.ts docs/dev/map-interfaces.md</code></pre>
+        <pre><code data-lang="sh">git commit -m "feat(map-run): no picks while locked, refit on resize and inset, survive a remount"</code></pre>
+        <pre><code data-lang="sh">npx chreode timing-check --head HEAD</code></pre>
+      </li>
+      <li id="t5-s8"><input type="checkbox"> Bench, per §sec-tests-bench and project note (4): run <code>uptime</code>; only if the load is low, check port 4173 with <code>lsof -nP -iTCP:4173 -sTCP:LISTEN</code> and run <code>npm run bench:map</code>; every case keeps p95 at or under 16.7 ms. Otherwise defer and say so in the hand-back. No commit.</li>
+    </ol>
+  </section>
+
+  <section id="sec-open-questions">
+    <h2>Open questions</h2>
+    <aside data-kind="note"><strong>Note</strong> While locked, the bottom-left control container is <code>display: none</code> (map-run §sec-design-controls). No consumer needs its size while locked, and no unit changes anything for it.</aside>
+  </section>
+
+  <section id="sec-self-review">
+    <h2>Self-review</h2>
+    <ul>
+      <li>Spec coverage: city-net §sec-design-value, -layout, -type, -wire and §sec-files-fixtures in Task 1; -store, -index, -debug (no change, nothing to build), -doc in Task 2. map-run §sec-design-camera in Task 3; -constraints, -state, -on, -off, -handlers, -controls in Task 4; -picking, -refit, -remount, -events (follows from the jumps; no code), -visible (doc only), -docs in Task 5. Every test bullet of both §sec-tests is in a step.</li>
+      <li>Types: <code>CityMarkerRow</code>, <code>markers()</code>, <code>runFrame</code>, <code>RUN_MIN_ZOOM</code>, <code>lockCamera(l: Live)</code>, <code>applyInteraction()</code> are named the same in every task that uses them.</li>
+      <li>Ordering: Task 1 edits <code>types.ts</code> (<code>existing</code>) and Task 2 the feed section of <code>map-interfaces.md</code> before Task 4 edits <code>types.ts</code> (<code>setRunView</code>) and Task 5 adds "The run view".</li>
+    </ul>
+  </section>
+</article>
