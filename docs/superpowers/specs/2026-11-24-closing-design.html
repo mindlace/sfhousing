@@ -1062,7 +1062,7 @@ export async function openGamePanel(page: Page): Promise&lt;Locator&gt;;</code><
       <h3>Journey 3: the ending</h3>
       <p>Same file, test "meeting the last deadline is the ending", on both projects.</p>
       <ol>
-        <li><code>RUNGS</code> is <code>LADDER_YEARS.length + 1</code>. <code>seedGame(page, { phase: 'runs', runs: 1, rung: RUNGS - 1, met })</code>, with <code>met</code> as below, and <code>ASOF</code> is the fixture's <code>asOf</code> read from <code>e2e/fixtures/data/fixture-0/scenarios/fzp/calibration.json</code>.
+        <li><code>RUNGS</code> is <code>LADDER_YEARS.length + 1</code>. <code>seedGame(page, { phase: 'runs', runs: 1, rung: RUNGS - 1, met, units: { home: PRICES['stop-rail'][0] } })</code>, with <code>met</code> as below, <code>PRICES</code> read from <code>src/lib/game/catalogue/tuning.ts</code>, and <code>ASOF</code> is the fixture's <code>asOf</code> read from <code>e2e/fixtures/data/fixture-0/scenarios/fzp/calibration.json</code>.
           <pre><code data-lang="ts">const met: MetRung[] = Array.from({ length: RUNGS - 1 }, (_, k) =&gt; ({
   rung: k,
   reachedOn: ASOF,
@@ -1070,11 +1070,11 @@ export async function openGamePanel(page: Page): Promise&lt;Locator&gt;;</code><
   at: new Date().toISOString()
 }));</code></pre>
         </li>
-        <li><code>seedGoalAmount(page, 1)</code>; <code>seedRunMs(page, 2000)</code>; <code>gotoHydrated(page, '/')</code>; <code>waitPhase</code> <code>tree</code>. <code>tree-next</code> and <code>tree-ending</code> are absent.</li>
+        <li><code>seedGoalAmount(page, 1)</code>; <code>seedRunMs(page, 2000)</code>; <code>gotoHydrated(page, '/')</code>; <code>waitPhase</code> <code>tree</code>. <code>tree-next</code> and <code>tree-ending</code> are absent. <code>buyNode(page, 'stop-rail', 'pointer')</code>; read the label of that node's card (its <code>tree-node-open</code>'s first line).</li>
         <li>Press <code>tree-run</code>; <code>waitPhase</code> <code>tally</code>; press <code>tally-continue</code>; <code>waitPhase</code> <code>tree</code>.</li>
         <li><code>savedGame.state.met</code> holds rung <code>RUNGS - 1</code>.</li>
-        <li><code>tree-ending</code> contains "Every goal met" and matches <code>/Reached in [A-Z][a-z]{2} \d{4}/</code> and <code>/The state asks by [A-Z][a-z]{2} \d{4}/</code>, and lists the label of no node (nothing is bought). <code>tree-next</code> is absent.</li>
-        <li>Press <code>tree-publish</code>: the publish dialog opens (<code>publishDialog(page)</code> visible).</li>
+        <li><code>tree-ending</code> contains "Every goal met" and matches <code>/Reached in [A-Z][a-z]{2} \d{4}/</code> and <code>/The state asks by [A-Z][a-z]{2} \d{4}/</code>, and lists exactly one node label, the one read in step 2. <code>tree-next</code> is absent.</li>
+        <li>Press <code>tree-publish</code>: the publish dialog opens (<code>publishDialog(page)</code> visible). The ending's Publish is the header's Publish, which opens nothing while the document is empty; the purchase in step 2 is what gives the ending a policy to publish, as every real ending has, since the last deadline is one only purchases reach.</li>
       </ol>
     </section>
 
@@ -1466,7 +1466,7 @@ npx tsx scripts/reach-check.ts --version &lt;v&gt;</code></pre>
     <ul>
       <li>A new visitor paints to the room goal at amount 1, starts, runs with "Collect for me", collects every drop, gets the lump, buys the first ready node, opens the workshop and comes back, runs again and takes the next goal; the account holds the game at <code>phase</code> <code>'runs'</code>, <code>rung</code> 1.</li>
       <li>By keyboard only (chromium): one stamp, Start, at least one drop collected by sweeping the ring with the arrow keys, Continue, a purchase, the workshop and back, the next goal; every target shows its focus ring.</li>
-      <li>A game at the last rung meets it in one run, and the tree shows the ending with its year beside the state's and a Publish that opens the publish dialog, and no next goal.</li>
+      <li>A game at the last rung buys one node, meets the rung in one run, and the tree shows the ending with its year beside the state's, the bought node's label, a Publish that opens the publish dialog, and no next goal.</li>
       <li>The game's page passes the accessibility checklist in each of the nine states of <a href="#tbl-a11y-states">the states table</a>.</li>
       <li>The target sweep passes on the tree and the tally at 375 px; the header fits with the game's widest strings at four widths.</li>
       <li>The game specs of <a href="#sec-design-game-specs">The game specs</a>.</li>
