@@ -101,8 +101,9 @@
         <li id="c25"><strong>Every number the balance script tunes is in one file,</strong> <code>src/lib/game/catalogue/tuning.ts</code>.</li>
         <li id="c26"><strong>A bought node is not shown on the map before the next run.</strong> The tree covers the map (call 20). The purchase shows on the node, and in the next run and its tally, which names the change from the run before. The source model said the area the node affects would light on the map.</li>
         <li id="c27"><strong>A first run that fails starts again.</strong> The tree is never shown before a run has been settled.</li>
+        <li id="c28"><strong>A collected drop does not fly to the unit count.</strong> It rings out where it lay and its homes rise there as "+N"; the unit count in the header rolls to the new balance when the run is settled. The run's canvas covers only the map's box, the count sits in the Menu below lg, and a flight for each of hundreds of drops would break the flash limit and the layer's frame budget. The source model said a collected drop flies to the unit count.</li>
       </ol>
-      <p>You approved the design with calls 1 to 18 on 2026-11-24. Calls 19 to 27 came from writing the specs and were told to you as they were made.</p>
+      <p>You approved the design with calls 1 to 18 on 2026-11-24. Calls 19 to 28 came from writing the specs and were told to you as they were made.</p>
     </section>
   </section>
 
@@ -164,7 +165,7 @@
         <li>The ladder is a list of deadlines. Rung 0 is the window's end. Each later rung is five years earlier.</li>
         <li>Meeting a rung offers the next one. Taking it is the player's choice (R5).</li>
         <li>Up to three side goals are shown at a time, each with a reward in units.</li>
-        <li>Meeting the last rung is the ending: the year reached, the levers bought, public money per added home, and Publish.</li>
+        <li>Meeting the last rung is the ending: the year reached beside the state's own deadline for the goal, the levers bought, public money per added home, and Publish.</li>
       </ul>
     </section>
 
@@ -204,7 +205,7 @@
       <dt><code>game-shell</code></dt>
       <dd>The header without steps, the name, one address with <code>/sim</code> redirecting, the opening on <code>/</code>, Remix removed from the shared pages, About's text. Needs G7, U1.</dd>
       <dt><code>closing</code></dt>
-      <dd>The journey end to end, the reach check's new question, a bench case for a run with drops, and the developer documents. Needs every row.</dd>
+      <dd>The journey end to end, the reach check's new question, a bench case for a run with drops, a measured wait from a purchase to the next run's forecast, and the developer documents. Needs every row.</dd>
     </dl>
 
     <table id="tbl-coverage">
@@ -494,15 +495,15 @@ export function applyGrant(doc: SimPolicy4, grant: Grant, ctx: GrantCtx): SimPol
       </dl>
       <ul>
         <li>Every policy the function adds is on, with one span from month 1 and no end.</li>
-        <li><code>preset</code> and <code>measure</code>: when no policy has that preset, one is added as "+" adds it today. When one exists it is switched on.</li>
-        <li><code>stop</code>: the game's rule gains the stop type. When there is no such rule, one is added with that stop type and one band at <code>limits.reachM</code> and <code>limits.stories</code>.</li>
+        <li><code>preset</code> and <code>measure</code>: a policy of that kind that names the preset and is within <code>ctx.limits</code> is switched on when it is off. When there is none, one is added as "+" adds it today. A policy that names the preset and is outside <code>ctx.limits</code> is left as it is.</li>
+        <li><code>stop</code>: the game's rule gains the stop type. When there is no such rule, one is added with every stop type in <code>limits.stops</code> and one band at <code>limits.reachM</code> and <code>limits.stories</code>.</li>
         <li><code>stories</code>: the innermost band of the game's rule takes the new cap, and so does every band that was as tall as it.</li>
         <li><code>reach</code>: the outermost band of the game's rule takes the new distance.</li>
         <li><code>bands</code>: the game's rule gains a band. Where there is room inside <code>limits.reachM</code> it goes beyond the outermost, as the editor adds one today. Where there is none the outermost band is split in two.</li>
         <li>A grant whose policy the player removed or changed past recognition adds it again and leaves the player's own policies alone.</li>
         <li><code>hands</code>: the document is returned unchanged.</li>
         <li>The result is within <code>ctx.limits</code> and passes <code>parsePolicy4</code>.</li>
-        <li>The function never removes a policy and never changes one it did not make.</li>
+        <li>The function never removes a policy and changes no policy other than the one it adds, the game's rule, or a policy within <code>ctx.limits</code> that names the bought preset or measure.</li>
       </ul>
     </section>
 
@@ -883,7 +884,7 @@ interface TreeProps {
   units: Units;
   busy: boolean;
   next: Rung | null;
-  ending: { reachedOn: Day; perAddedHome: number | null } | null;
+  ending: { reachedOn: Day; stateBy: Day; perAddedHome: number | null } | null;
   onbuy(id: NodeId): void;
   onedit(id: NodeId): void;
   ontoggle(id: NodeId, on: boolean): void;
@@ -915,7 +916,7 @@ interface GameCellProps {
       <dl>
         <dt><code>before</code></dt><dd>Homes by the deadline in the run before this one on the same rung, or null.</dd>
         <dt><code>on</code></dt><dd>For each bought node whose grant made a policy: whether that policy is switched on. A node with no entry shows no switch.</dd>
-        <dt><code>ending</code></dt><dd>Set once the last rung is met: the day the goal was reached and public money per added home.</dd>
+        <dt><code>ending</code></dt><dd>Set once the last rung is met: the day the goal was reached, the day the state asks for the goal's homes by (<code>stateBy</code>, RHNA's deadline), and public money per added home.</dd>
         <dt><code>busy</code></dt><dd>The forecast for the next run is not ready. Run says so and waits.</dd>
         <dt><code>next</code></dt><dd>The rung on offer, when the rung in play is met.</dd>
         <dt><code>homes</code></dt><dd>Null before the first run of a rung: the headline then shows the goal alone.</dd>
@@ -1055,7 +1056,7 @@ npx tsx scripts/tree-balance.ts &lt;datasetDir&gt;</code></pre>
         <tr><th scope="row">Costs come from the engine: a script plays the tree</th><td>Source model, The tree</td><td><code>tree-catalogue</code> (<code>scripts/tree-balance.ts</code>)</td></tr>
         <tr><th scope="row">The deadline tightens; taking the next one is the player's choice; a ring opens</th><td>Source model, Goals; R5</td><td>G6 (<code>ladder</code>, <code>takeNext</code>), G3 (<code>ring</code>)</td></tr>
         <tr><th scope="row">The last deadline is the earliest year the full tree reaches</th><td>Source model, Goals</td><td><code>tree-catalogue</code> (<code>scripts/reach-measure.ts</code>, <code>LADDER_YEARS</code>)</td></tr>
-        <tr><th scope="row">The ending names the year, the levers and public money per home, and lifts the last limits</th><td>Source model, Goals</td><td>G6 (<code>finished</code>), G4 (limits once the last rung is met), <code>tally-tree</code>, call 4</td></tr>
+        <tr><th scope="row">The ending names the year beside the state's own, the levers and public money per home, and lifts the last limits</th><td>Source model, Goals</td><td>G6 (<code>finished</code>), G4 (limits once the last rung is met), <code>tally-tree</code>, call 4</td></tr>
         <tr><th scope="row">Feedback: pops, sound, the bar filling, a moment at a goal met; no "Updating" seen</th><td>Source model, Feedback</td><td>R1, U1, <code>game-sim</code> (the forecast starts at purchase; <code>busy</code>)</td></tr>
         <tr><th scope="row">Pacing targets</th><td>Source model, Pacing</td><td><code>tree-catalogue</code> (the balance script reports against them)</td></tr>
         <tr><th scope="row">Accessibility: keyboard ring, collect for me, reduced motion, flash limit, mute</th><td>Source model, Rules this keeps</td><td>R1, U1 (<code>GamePanel</code>), Global constraints</td></tr>
@@ -1065,6 +1066,7 @@ npx tsx scripts/tree-balance.ts &lt;datasetDir&gt;</code></pre>
         <tr><th scope="row">Saved games: up to 12, switch, rename, delete, new</th><td>D8, D14</td><td>G7 (unchanged methods), U1 (<code>GamePanel</code>)</td></tr>
         <tr><th scope="row">The measured ladder and the tuned prices exist before the journey and the reach check run</th><td>Source model, Pacing; call 10</td><td>T1</td></tr>
         <tr><th scope="row">"A bought node is seen on the map before the next run"</th><td>Source model, Feedback</td><td>Dropped: call 26</td></tr>
+        <tr><th scope="row">"A collected drop flies to the unit count"</th><td>Source model, Feedback</td><td>Dropped: call 28</td></tr>
         <tr><th scope="row">A measure "starts on its own lawful date"</th><td>Source model, The tree</td><td>Dropped: call 5</td></tr>
         <tr><th scope="row">"Custom timing for each route" as nodes</th><td>Source model, Branches table</td><td>Narrowed: opens at the ending, call 4</td></tr>
         <tr><th scope="row">"A drop carries its project's homes by income tier"</th><td>Source model, Room for affordable units</td><td>Deferred to P10's round: call 3</td></tr>
@@ -1078,7 +1080,7 @@ npx tsx scripts/tree-balance.ts &lt;datasetDir&gt;</code></pre>
     <ul>
       <li><strong>Model commitments</strong> come from your request and rulings. Changing one needs you: G1 (units by kind, what a game holds), G2, G3 (what a node is and how it is shown and bought), G4 (what runs), G6 (the ladder, side goals, what a run pays), R1 (what a drop is worth and how it is collected), and rulings P1 to P15.</li>
       <li><strong>Decomposition choices</strong> are mine. A composer fork may change one alone: G5, G7, G8, E1, E2, M1, U1, T1, the file names, the canvas for drops, the cut into subsystems.</li>
-      <li>The composer calls 1 to 27 are decomposition choices unless they restate a ruling. Calls 2, 3, 4, 5, 8, 10, 16 and 26 touch what the player earns, sees or may do, or narrow the source model; a change to one of them is told to you after the fact in <code>rulings/</code>.</li>
+      <li>The composer calls 1 to 28 are decomposition choices unless they restate a ruling. Calls 2, 3, 4, 5, 8, 10, 16, 26 and 28 touch what the player earns, sees or may do, or narrow the source model; a change to one of them is told to you after the fact in <code>rulings/</code>.</li>
     </ul>
   </section>
 

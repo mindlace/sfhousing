@@ -1399,7 +1399,7 @@ export function defaultSaveName(from: DefaultFrom, taken: readonly string[]): st
 
   <section id="sec-tests">
     <h2>Tests</h2>
-    <p>Every test is a Vitest unit test in the server project, colocated, with no DOM. Each calls <code>expect</code>. A test that needs nodes passes its own fake <code>TreeNode</code> list; a test that needs side goals builds them with <code>sideGoals</code> from the starting tuning table in <a href="#sec-d-side">Side goals</a>, written into the spec; a test that needs a view builds a <code>TimelineView</code> literal with only the fields read. No test depends on what <code>catalogue/</code> holds when it runs.</p>
+    <p>Every test is a Vitest unit test in the server project, colocated, with no DOM. Each calls <code>expect</code>. A test that needs nodes passes its own fake <code>TreeNode</code> list; a test that needs side goals builds them with <code>sideGoals</code> from the starting tuning table in <a href="#sec-d-side">Side goals</a>, written into the spec; a test that needs a view builds a <code>TimelineView</code> literal with only the fields read. No test depends on what <code>catalogue/</code> holds when it runs: <code>resultOf</code> reads <code>RUNG_LUMP</code> and the default <code>SIDE_GOALS</code>, so <code>run-result.spec.ts</code> mocks <code>./catalogue/tuning</code> with the starting <code>RUNG_LUMP</code> and <code>SIDE_TUNING</code> of <a href="#sec-d-side">Side goals</a>.</p>
     <section id="sec-t-units">
       <h3><code>units.spec.ts</code></h3>
       <ul>

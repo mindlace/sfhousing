@@ -276,15 +276,15 @@ export function applyGrant(doc: SimPolicy4, grant: Grant, ctx: GrantCtx): SimPol
       </dl>
       <ul>
         <li>Every policy the function adds is on, with one span from month 1 and no end.</li>
-        <li><code>preset</code> and <code>measure</code>: when no policy has that preset, one is added as "+" adds it today. When one exists it is switched on.</li>
-        <li><code>stop</code>: the game's rule gains the stop type. When there is no such rule, one is added with that stop type and one band at <code>limits.reachM</code> and <code>limits.stories</code>.</li>
+        <li><code>preset</code> and <code>measure</code>: a policy of that kind that names the preset and is within <code>ctx.limits</code> is switched on when it is off. When there is none, one is added as "+" adds it today. A policy that names the preset and is outside <code>ctx.limits</code> is left as it is.</li>
+        <li><code>stop</code>: the game's rule gains the stop type. When there is no such rule, one is added with every stop type in <code>limits.stops</code> and one band at <code>limits.reachM</code> and <code>limits.stories</code>.</li>
         <li><code>stories</code>: the innermost band of the game's rule takes the new cap, and so does every band that was as tall as it.</li>
         <li><code>reach</code>: the outermost band of the game's rule takes the new distance.</li>
         <li><code>bands</code>: the game's rule gains a band. Where there is room inside <code>limits.reachM</code> it goes beyond the outermost, as the editor adds one today. Where there is none the outermost band is split in two.</li>
         <li>A grant whose policy the player removed or changed past recognition adds it again and leaves the player's own policies alone.</li>
         <li><code>hands</code>: the document is returned unchanged.</li>
         <li>The result is within <code>ctx.limits</code> and passes <code>parsePolicy4</code>.</li>
-        <li>The function never removes a policy and never changes one it did not make.</li>
+        <li>The function never removes a policy and changes no policy other than the one it adds, the game's rule, or a policy within <code>ctx.limits</code> that names the bought preset or measure.</li>
       </ul>
     </section>
     <section id="sec-if-g6">
@@ -632,7 +632,7 @@ interface TreeProps {
   units: Units;
   busy: boolean;
   next: Rung | null;
-  ending: { reachedOn: Day; perAddedHome: number | null } | null;
+  ending: { reachedOn: Day; stateBy: Day; perAddedHome: number | null } | null;
   onbuy(id: NodeId): void;
   onedit(id: NodeId): void;
   ontoggle(id: NodeId, on: boolean): void;
@@ -664,7 +664,7 @@ interface GameCellProps {
       <dl>
         <dt><code>before</code></dt><dd>Homes by the deadline in the run before this one on the same rung, or null.</dd>
         <dt><code>on</code></dt><dd>For each bought node whose grant made a policy: whether that policy is switched on. A node with no entry shows no switch.</dd>
-        <dt><code>ending</code></dt><dd>Set once the last rung is met: the day the goal was reached and public money per added home.</dd>
+        <dt><code>ending</code></dt><dd>Set once the last rung is met: the day the goal was reached, the day the state asks for the goal's homes by (<code>stateBy</code>, RHNA's deadline), and public money per added home.</dd>
         <dt><code>busy</code></dt><dd>The forecast for the next run is not ready. Run says so and waits.</dd>
         <dt><code>next</code></dt><dd>The rung on offer, when the rung in play is met.</dd>
         <dt><code>homes</code></dt><dd>Null before the first run of a rung: the headline then shows the goal alone.</dd>
@@ -966,6 +966,7 @@ function projectPoint(lng: number, lat: number): { x: number; y: number } | null
         <li><code>RunLayer</code> gets <code>hands = game.limits.hands</code>, the <code>collectForMe</code> prop as it stands (so a change in the game panel applies to the run in progress), <code>sound</code>, and <code>ontake</code>, which keeps the latest take while the phase is run and ignores it otherwise.</li>
         <li><code>RunLayer</code> is mounted in starting, run and tally as the last child of the map box, wrapped in <code>&lt;div class="pointer-events-none absolute inset-0 z-20" data-testid="run-layer-box"&gt;</code> (<code>run-layer</code> is <code>RunLayer</code>'s own root, which carries <code>data-dropped</code> and <code>data-collected</code>): over the map's canvas and its own controls, under the notice stack (<code>md:z-30</code>).</li>
         <li><code>RunClock</code> is mounted in starting and run only, after the run layer's box.</li>
+        <li>The frame in which the clock reaches the stop day carries <code>day</code> equal to the stop day and <code>running</code> false. <code>RunLayer</code>'s ending step counts and collects the drops due through that day (R1, <code>run-play</code>), so no drop planned through the deadline is lost; this unit holds <code>running</code> true for no extra frame.</li>
       </ul>
     </section>
 
@@ -1071,7 +1072,7 @@ function buy(id: NodeId): void {
         </tbody>
       </table>
       <ul>
-        <li><code>ending</code> is null until <code>finished(game.state)</code>. Then it is <code>{ reachedOn, perAddedHome }</code>: <code>reachedOn</code> from the <code>met</code> entry of the last rung; <code>perAddedHome</code> is <code>moneyFigureAt(view.money, i).perAddedHome.all</code> at <code>i = indexOfDay(view.months, goal.deadline)</code> on the view on show, and null with no view, no <code>money</code> or <code>i &gt; view.filledThrough</code>.</li>
+        <li><code>ending</code> is null until <code>finished(game.state)</code>. Then it is <code>{ reachedOn, stateBy, perAddedHome }</code>: <code>reachedOn</code> from the <code>met</code> entry of the last rung; <code>stateBy</code> is <code>RHNA_DEADLINE</code> from <code>$lib/sim/scenario/score</code>, the day RHNA asks for the goal's homes by; <code>perAddedHome</code> is <code>moneyFigureAt(view.money, i).perAddedHome.all</code> at <code>i = indexOfDay(view.months, goal.deadline)</code> on the view on show, and null with no view, no <code>money</code> or <code>i &gt; view.filledThrough</code>.</li>
         <li><code>openPublish</code> clicks the header's Publish button (<code>[data-testid="publish-open"]</code>), which opens its dialog on <code>publishDoc</code>.</li>
       </ul>
     </section>
@@ -1307,7 +1308,7 @@ interface TimelineModeAdds {
 
 interface TreeArgs {
   busy: boolean;
-  ending: { reachedOn: Day; perAddedHome: number | null } | null;
+  ending: { reachedOn: Day; stateBy: Day; perAddedHome: number | null } | null;
 }
 
 // Timeline: `allowed` and `level` removed, and
