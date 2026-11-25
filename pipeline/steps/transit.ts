@@ -17,6 +17,7 @@ import { rawPath, type Lock } from '../lib/lock';
 import {
   ASSIGNMENTS,
   CLIP_BUFFER_M,
+  GTFS_ARCHIVES,
   GTFS_FEEDS,
   GTFS_IDS,
   PEAK,
@@ -28,7 +29,8 @@ import {
   routeMode,
   routeName,
   type GtfsFeedSpec,
-  type GtfsLockId
+  type GtfsLockId,
+  type OperatorId
 } from '../transit-config';
 
 export class TransitBuildError extends Error {}
@@ -397,6 +399,110 @@ export function reduceTransit(feeds: FeedInput[], opts: ReduceOpts): ReduceResul
   counts['transit.stops'] = network.stops.length;
   counts['transit.patterns'] = network.patterns.length;
   return { network, warnings, counts };
+}
+
+/** The network that stands for one year, and the year each operator's feed in it is from. */
+export interface YearNetwork {
+  network: TransitNetwork;
+  /** The latest of `sources`: how far forward any part of the network is held. */
+  sourceYear: number;
+  sources: Partial<Record<OperatorId, number>>;
+}
+
+/** Transit by year for the back-cast (`accessByYear` reads it). */
+export interface TransitYears {
+  networkFor(year: number): YearNetwork;
+}
+
+export interface TransitByYearInput {
+  /** Today's network as built (transit.json), its year, and each operator's feed in it. */
+  today: {
+    year: number;
+    network: TransitNetwork;
+    operators: OperatorId[];
+    feed: (op: OperatorId) => GtfsFiles;
+  };
+  /** Archived feeds, read only when a year needs them. */
+  archives: { operator: OperatorId; year: number; feed: () => GtfsFiles }[];
+  keep: (lngLat: [number, number]) => boolean;
+}
+
+/**
+ * Per operator, the feed for a year is the archive of that year, else the earliest later archive,
+ * else today's. Before the earliest archive, access holds at it; `sourceYear` reports that. The
+ * operators' feeds are merged as today's build merges them (`reduceTransit`, service day from 1
+ * April of the year). A year served by today's feeds alone gets today's network itself.
+ */
+export function transitByYear(a: TransitByYearInput): TransitYears {
+  const cache = new Map<string, TransitNetwork>();
+  const specOf = (op: OperatorId) => GTFS_FEEDS[`gtfs-${op}` as GtfsLockId];
+  return {
+    networkFor(year) {
+      const picks = a.today.operators.map((op) => {
+        const later = a.archives
+          .filter((x) => x.operator === op && x.year >= year && x.year < a.today.year)
+          .sort((x, y) => x.year - y.year);
+        return { op, archive: later[0] ?? null };
+      });
+      const sources: Partial<Record<OperatorId, number>> = {};
+      for (const p of picks) sources[p.op] = p.archive?.year ?? a.today.year;
+      const sourceYear = Math.max(...Object.values(sources));
+      if (picks.every((p) => !p.archive)) return { network: a.today.network, sourceYear, sources };
+      const key = picks.map((p) => `${p.op}:${sources[p.op]}`).join(',');
+      let network = cache.get(key);
+      if (!network) {
+        const feeds: FeedInput[] = picks.map((p) => ({
+          spec: specOf(p.op),
+          files: p.archive ? p.archive.feed() : a.today.feed(p.op)
+        }));
+        network = reduceTransit(feeds, {
+          targetDate: `${year}-04-01`,
+          keep: a.keep,
+          strict: false
+        }).network;
+        cache.set(key, network);
+      }
+      return { network, sourceYear, sources };
+    }
+  };
+}
+
+/**
+ * `transitByYear` over the lock: today's feeds (GTFS_FEEDS) and whichever GTFS_ARCHIVES entries
+ * the lock holds. A lock without archives (the mini fixture) gives today's network every year.
+ * Needs `<outDir>/neighborhoods.geojson` for the clip, like `writeTransit`.
+ */
+export function lockTransitYears(a: {
+  lock: Lock;
+  rawDir: string;
+  byName: boolean;
+  outDir: string;
+  targetDate: string;
+  network: TransitNetwork;
+}): TransitYears {
+  const read = (id: string) => {
+    const entry = a.lock.sources.find((s) => s.id === id);
+    if (!entry) throw new TransitBuildError(`lock has no ${id} entry`);
+    return readGtfs(
+      entry.files.map((f) => ({ name: f.name, path: rawPath(a.rawDir, f, a.byName) }))
+    );
+  };
+  const have = new Set(a.lock.sources.map((s) => s.id));
+  const nb = JSON.parse(readFileSync(join(a.outDir, 'neighborhoods.geojson'), 'utf8'));
+  return transitByYear({
+    today: {
+      year: Number(a.targetDate.slice(0, 4)),
+      network: a.network,
+      operators: Object.values(GTFS_FEEDS).map((f) => f.operator),
+      feed: (op) => read(`gtfs-${op}`)
+    },
+    archives: GTFS_ARCHIVES.filter((x) => have.has(x.lockId)).map((x) => ({
+      operator: x.operator,
+      year: x.year,
+      feed: () => read(x.lockId)
+    })),
+    keep: clipFilter(nb, CLIP_BUFFER_M)
+  });
 }
 
 /**

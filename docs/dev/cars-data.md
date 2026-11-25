@@ -31,8 +31,12 @@ builds only, so `parseParkingFile` keeps the live file to cited SF sources (ruli
   redirected to `missing_key.html`. Metadata calls still work. All the checks below used the
   Census summary files on `www2.census.gov` instead, which need no key. The pipeline can do the
   same, or you can request a key (it is tied to an email address).
-- **Archived GTFS needs you.** Transitland's API needs a key (401 without one); GTFS Data Exchange
-  (2008-2016) is by request to its maintainer.
+- **Archived GTFS: found without you for 2008-2024, with gaps.** Keyless copies of the agencies'
+  own feeds (GTFS Data Exchange's S3 bucket, OpenMobilityData's S3 bucket, the Wayback Machine)
+  give the earliest year obtained per agency: **Muni 2009, BART 2008, Caltrain 2009**. Nothing
+  keyless exists before 2008. Gaps (Muni 2014, 2023, 2024; BART 2009, 2014, 2024; Caltrain 2014)
+  take the next year's feed. A Transitland key would fill 2023-2024; nothing known fills
+  2000-2007. See [Archived Muni, BART, Caltrain GTFS](#archived-muni-bart-caltrain-gtfs).
 
 ## ACS 5-year block-group tables
 
@@ -254,11 +258,80 @@ Tried:
   "will remain available for research via S3 accessor pays policy. Please contact me if you'd like
   access." `archive.gtfs.org` lists the 2008-2016 archive (93 GB) as available on request.
 
-**BLOCKED** (owner action): request a Transitland API key, and write to the GTFS Data Exchange
-maintainer. Until then the per-agency earliest year is unverified; the best published figure is
-Transitland from 2015. If neither arrives in time, the back-cast holds transit access at the
-earliest year obtained (2015 or later) for every earlier year, and the report says so. Today's
-feeds come from the agencies (`npm run data:transit`).
+Then, keyless (checked 2026-11-25):
+
+- **GTFS Data Exchange's own S3 bucket answers without a key.** The agency pages are in the
+  Wayback Machine (for example
+  `http://web.archive.org/web/20160405095504id_/http://www.gtfs-data-exchange.com/agency/san-francisco-municipal-transportation-agency/?page=1`)
+  and link each copy as `http://gtfs.s3.amazonaws.com/<agency>_<YYYYMMDD>_<HHMM>.zip`; a plain
+  `GET` of those returns the zip (bucket listing is denied, so the names come from the pages and
+  the Wayback CDX index, `http://web.archive.org/cdx/search/cdx?url=gtfs.s3.amazonaws.com/<agency>_&matchType=prefix`).
+  Muni from 2009-02, Caltrain from 2008-10, BART (`bay-area-rapid-transit_`) only from 2014-12.
+- **OpenMobilityData (TransitFeeds) versions** are at
+  `https://openmobilitydata-data.s3-us-west-1.amazonaws.com/public/feeds/<feed>/<YYYYMMDD>/gtfs.zip`
+  (`sfmta/60`, `bart/58`, `caltrain/122`), keyless; versions found by `HEAD` on each date (listing
+  is denied; transitfeeds.com itself answers 403). They run 2015-01 to 2023-12.
+- **Wayback Machine snapshots of the agencies' own URLs** (CDX
+  `http://web.archive.org/cdx/search/cdx?url=<url>&filter=statuscode:200&collapse=digest`): BART
+  `bart.gov/dev/schedules/google_transit.zip` 2010-05, 2010-12, 2012-05, 2012-10 and
+  `bart.gov/dev/schedules/20080627/google_transit.zip` (2008-09); Muni
+  `www.sfmta.com/transitdata/google_transit.zip` 2011-08 and `gtfs.sfmta.com/transitdata/google_transit.zip`
+  2015-2023 (sparse); Caltrain `caltrain.com/Assets/GTFS/caltrain/*.zip` 2011-2022 (sparse).
+  `archives.sfmta.com` has only a redirect.
+
+**FOUND**, in `GTFS_ARCHIVES` (`pipeline/transit-config.ts`) and the lock as
+`gtfs-archive-<operator>-<year>`. Each is the version in force on 1 April of the year: the latest
+published before it whose calendar covers it, else the first after it that does. Each was checked
+before it entered the lock (`checkArchive`: parses, has a route of the operator's route types and a
+stop in San Francisco, and has service on the first Tuesday from 1 April). The licence recorded is
+the agency's (the copies are the agency's feeds), with the archive named.
+
+| Year | Muni              | BART                        | Caltrain          |
+| ---- | ----------------- | --------------------------- | ----------------- |
+| 2008 | (2009)            | Wayback 20080917 (0627 zip) | (2009)            |
+| 2009 | GDE 20090401_0353 | (2010)                      | GDE 20090308_1937 |
+| 2010 | GDE 20100204_0313 | Wayback 20100528            | GDE 20090724_0212 |
+| 2011 | GDE 20110420_0243 | Wayback 20101213            | GDE 20110217_0333 |
+| 2012 | GDE 20120319_0412 | Wayback 20120531            | GDE 20120113_0421 |
+| 2013 | GDE 20130324_0307 | Wayback 20121028            | GDE 20120824_0333 |
+| 2014 | (2015)            | (2015)                      | (2015)            |
+| 2015 | OMD 20150225      | OMD 20150120                | OMD 20150127      |
+| 2016 | OMD 20160307      | OMD 20160310                | OMD 20160401      |
+| 2017 | OMD 20170221      | OMD 20170330                | OMD 20170324      |
+| 2018 | OMD 20180527      | OMD 20180222                | OMD 20180329      |
+| 2019 | OMD 20190401      | OMD 20190123                | OMD 20190131      |
+| 2020 | OMD 20200328      | OMD 20200401                | OMD 20200110      |
+| 2021 | OMD 20210317      | OMD 20210315                | OMD 20210322      |
+| 2022 | OMD 20220305      | OMD 20220212                | OMD 20220316      |
+| 2023 | (today's feed)    | OMD 20230401                | OMD 20230325      |
+| 2024 | (today's feed)    | (today's feed)              | OMD 20231221      |
+
+(Year) = no feed found; the back-cast uses that year's feed (`transitByYear`: the earliest later
+archive, else today's). **Earliest year obtained: Muni 2009, BART 2008, Caltrain 2009.** Before
+those, access holds at the earliest feed and `accessByYear` reports it as `sourceYear` (the latest
+of the three operators' feed years; `sources` gives each).
+
+Skipped, with the reason:
+
+- Muni GDE 20110212_0341: calendar ends 2011-04-01, no Tuesday with service from then.
+- Muni GDE 20130302_0432 (ends 2013-03-22), 20140201_0107 (ends 2014-03-21), 20140416_0134
+  (starts 2014-04-12): none covers 1 April; no GDE copy between them, so Muni 2014 has none.
+- Muni OMD 20171026 (ends 2018-02-09), 20200331 (starts 2020-04-04), 20220330 (starts
+  2022-04-02), 20220926 and Wayback 20221226 (end 2023-01-06), 20231222 (ends 2024-02-02).
+- BART OMD 20231228: calendar 2024-01-01..2024-01-14 only.
+- Caltrain GDE 20120824_0333 for 2014 (ends 2013-10-01), 20140826_0542 (starts 2014-08-10); OMD
+  20170328/20170329 (start 2017-04-09).
+- Caltrain OMD 20200224: SamTrans's feed filed under Caltrain (no route_type 2 route); 20200110
+  used instead.
+
+Notes for the back-cast: 2020 (Muni's 2020-03-28 version) and 2021 are the COVID-reduced networks
+(mean grid access about two-thirds of 2019's), as they ran on those dates. Old Muni and Caltrain
+calendars sometimes run years past the feed's real life (Caltrain 2009: to 2019); the 1 April rule
+picks by publication, not by those end dates.
+
+**Remaining owner actions** (only to fill the gaps): a Transitland API key would give Muni 2023-24,
+BART 2024 and maybe 2014; nothing found fills 2000-2007 (GTFS Data Exchange, the oldest archive,
+starts in 2008). Today's feeds come from the agencies (`npm run data:transit`).
 
 ## SF per-project off-street parking counts
 
