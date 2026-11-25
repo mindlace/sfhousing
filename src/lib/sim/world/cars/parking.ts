@@ -68,7 +68,9 @@ export function topPrototype(view: ZoningView, lot: number): Prototype | null {
   return i < 0 ? null : PROTOTYPES[i];
 }
 
-/** The shift of `deltaSpaces` more spaces per home on prototype `p`; 0 when its type has no cost. */
+/**
+ * The shift of `deltaSpaces` more spaces per home on prototype `p`; 0 when its type has no cost.
+ */
 function shiftOf(p: Prototype, deltaSpaces: number, cost: ParkingCosts, slope: number): number {
   const c = cost[parkingTypeOf(p)];
   if (c === null) return 0;
@@ -200,7 +202,10 @@ const EMPTY = new Int32Array(0);
 const views = new WeakMap<PolicyTimeline, WeakMap<CarColumns, PolicyTimeline>>();
 const retained = new WeakMap<PolicyTimeline, () => ParkingRetained>();
 
-/** The states a parking view holds and the numbers in their typed arrays; null for another timeline. */
+/**
+ * The states a parking view holds and the numbers in their typed arrays; null for another
+ * timeline.
+ */
 export function parkingRetained(t: PolicyTimeline): ParkingRetained | null {
   return retained.get(t)?.() ?? null;
 }

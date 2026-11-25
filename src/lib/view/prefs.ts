@@ -1,8 +1,8 @@
-// Per-viewer map layer toggles (transit spec T6, §6.3; the height limits, height-lids plan Task 12).
-// One record shared by / and /sim, so a viewer's transit choice follows them between modes; / never
-// shows or uses `heightLimits` or `carsPerHousehold` and writes back the value it read. A record from the height fog's
-// time stored `heightFog`: it is still read as `heightLimits`. Best-effort persistence. Capacity
-// and stops start off; a stored choice wins.
+// Per-viewer map layer toggles (transit spec T6, §6.3; the height limits, height-lids plan
+// Task 12). One record shared by / and /sim, so a viewer's transit choice follows them between
+// modes; / never shows or uses `heightLimits` or `carsPerHousehold` and writes back the value it
+// read. A record from the height fog's time stored `heightFog`: it is still read as
+// `heightLimits`. Best-effort persistence. Capacity and stops start off; a stored choice wins.
 
 export interface ViewPrefs {
   transitStops: boolean;

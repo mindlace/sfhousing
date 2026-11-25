@@ -3,9 +3,10 @@
   no chart of its own: its Chart switch (`lens`, bound) picks what the one timeline chart plots.
   Order: the heading (with Activity in its row), the switch, the goal rows, what the policy added
   (the protection line kept), the homes by source, the Cars row (only with car data), the stopped
-  line, public money, who the homes are for, the year table (stopping at the playhead's month), then one link, "How this is worked out", into About's
-  assumptions (on /sim it opens About over the map; docs/dev/about.md). Unmounting puts the chart
-  back on Homes: the chart at rest always means one thing. Every id is per instance.
+  line, public money, who the homes are for, the year table (stopping at the playhead's month),
+  then one link, "How this is worked out", into About's assumptions (on /sim it opens About over
+  the map; docs/dev/about.md). Unmounting puts the chart back on Homes: the chart at rest always
+  means one thing. Every id is per instance.
 -->
 <script lang="ts">
   import { onDestroy } from 'svelte';

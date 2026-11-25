@@ -194,8 +194,8 @@ prototypes table per slope): O(zones × refreshes) per world, asserted in `parki
 Rates of a zone with a shift are memoised per (`view.pre`, market, zone key) over the zone's lots,
 shared across worlds, and cleared when the memo holds 8 times the city's lots. `skipBound` keeps
 only its two latest bounds per (timeline, statics): a funded world asks for one at every frame
-change (a parking-only change is no longer one: below). Funding's eligibility (`fundableAny` and the rowless memo's key,
-`funding/apply.ts` `fundingChanges`) skips changes that move neither the view nor the money, so a
+change (a parking-only change no longer triggers a whole-city replan: below). Funding's
+eligibility (`fundableAny` and the rowless memo's key, `funding/apply.ts` `fundingChanges`) skips changes that move neither the view nor the money, so a
 parking-only change does not refill the rowless memo. Live city (155k lots, 580 zones, baseline
 money, link on, 480 entries), one world at month 480: +14.7 MB with the link on against +19.0 MB
 off, 2.2 s against 0.7 s for plan and 480 steps (busy machine); before these bounds the link on

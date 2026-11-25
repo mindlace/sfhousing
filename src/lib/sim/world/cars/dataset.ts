@@ -1,7 +1,7 @@
 // The car system of a loaded dataset: built once per dataset load (the timeline host's
 // `loadDataset`) and shared by both /sim worlds, as the world core it plugs into
-// (`withFunding(funding, cars)`). Null for a dataset without cars.bin or without `calibration.cars`,
-// and when switched off (`level2-check --cars off`): the worlds then run as before the car model.
+// (`withFunding(funding, cars)`). Null for a dataset without cars.bin or without
+// `calibration.cars`, and when switched off (`level2-check --cars off`): the worlds then run as before the car model.
 import type { Loaded } from '$lib/sim/scenario/load';
 import type { CarSystem } from '../types';
 import { createCarSystem } from './system';

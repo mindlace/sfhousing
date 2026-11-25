@@ -253,8 +253,9 @@ const CANCELLED: LoadFailure = { code: 'internal', message: 'cancelled' };
 class Stopped {}
 
 /**
- * §4.2 steps 4-7. Fetches the files concurrently (up to five: parcels, projects, calibration, policy, gross; each with `fetchWithRetry`; the first
- * permanent failure ends the load and stops the others), then, once every byte has arrived,
+ * §4.2 steps 4-7. Fetches the files concurrently (up to six: parcels, projects, calibration,
+ * policy, gross, cars; each with `fetchWithRetry`; the first permanent failure ends the load and
+ * stops the others), then, once every byte has arrived,
  * decodes and validates them (never retried), builds the FZP input and its `baseZoning` twin,
  * and precomputes both with `deps.warn`. `projects.asOf ≥ horizon` is the caller's check.
  *

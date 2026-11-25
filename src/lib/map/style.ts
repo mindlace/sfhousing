@@ -373,8 +373,8 @@ const emptyCollection = (): GeoJSONSourceSpecification => ({
  * Stack: terrain and water, transit-access, cars per household, transit stops, roads,
  * existing-buildings, chunk layers, labels, overlay-anchor. The transit sources and layers exist
  * only when the manifest names a transit network; the car zones' only when it names
- * `scenarios.fzp.carZones`. The deck layers go beneath the labels at runtime: SimMap gives them `beforeId` =
- * `firstSymbolLayerId(style)` (§4.4). No sprite is ever set: pois and icon layers are dropped.
+ * `scenarios.fzp.carZones`. The deck layers go beneath the labels at runtime: SimMap gives them
+ * `beforeId` = `firstSymbolLayerId(style)` (§4.4). No sprite is ever set: pois and icon layers are dropped.
  */
 export function buildStyle(manifest: Manifest, theme: Theme): StyleSpecification {
   const { base, labels } = protomapsLayers(theme, manifest.splitRoads === true);
