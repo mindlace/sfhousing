@@ -283,15 +283,15 @@ export function applyGrant(doc: SimPolicy4, grant: Grant, ctx: GrantCtx): SimPol
       </dl>
       <ul>
         <li>Every policy the function adds is on, with one span from month 1 and no end.</li>
-        <li><code>preset</code> and <code>measure</code>: when no policy has that preset, one is added as "+" adds it today. When one exists it is switched on.</li>
-        <li><code>stop</code>: the game's rule gains the stop type. When there is no such rule, one is added with that stop type and one band at <code>limits.reachM</code> and <code>limits.stories</code>.</li>
+        <li><code>preset</code> and <code>measure</code>: a policy of that kind that names the preset and is within <code>ctx.limits</code> is switched on when it is off. When there is none, one is added as "+" adds it today. A policy that names the preset and is outside <code>ctx.limits</code> is left as it is.</li>
+        <li><code>stop</code>: the game's rule gains the stop type. When there is no such rule, one is added with every stop type in <code>limits.stops</code> and one band at <code>limits.reachM</code> and <code>limits.stories</code>.</li>
         <li><code>stories</code>: the innermost band of the game's rule takes the new cap, and so does every band that was as tall as it.</li>
         <li><code>reach</code>: the outermost band of the game's rule takes the new distance.</li>
         <li><code>bands</code>: the game's rule gains a band. Where there is room inside <code>limits.reachM</code> it goes beyond the outermost, as the editor adds one today. Where there is none the outermost band is split in two.</li>
         <li>A grant whose policy the player removed or changed past recognition adds it again and leaves the player's own policies alone.</li>
         <li><code>hands</code>: the document is returned unchanged.</li>
         <li>The result is within <code>ctx.limits</code> and passes <code>parsePolicy4</code>.</li>
-        <li>The function never removes a policy and never changes one it did not make.</li>
+        <li>The function never removes a policy and changes no policy other than the one it adds, the game's rule, or a policy within <code>ctx.limits</code> that names the bought preset or measure.</li>
       </ul>
     </section>
 
@@ -639,7 +639,7 @@ npx chreode timing-check --head HEAD</code></pre></li>
       <li>Test: <code>src/lib/game/grant.spec.ts</code> (written over the stub's spec, whole)</li>
     </ul>
     <ul>
-      <li><strong>Consumes:</strong> G3 <code>Grant</code> (type); G4 <code>Limits</code> (type), <code>OPEN_LIMITS</code> (tests); <code>addPolicy</code>, <code>AddLimitError</code>, <code>AddChoice</code> (<code>src/lib/timeline/add.ts:230-259</code>, <code>:49-53</code>, <code>:26-37</code>); <code>setOn</code> (<code>src/lib/timeline/spans.ts:212-216</code>, returns the same document when the policy is missing or already in that state); <code>Policy</code>, <code>SimPolicy4</code>, <code>DEFAULT_POLICY4</code> (<code>src/lib/timeline/policy4.ts:41</code>, <code>:50-53</code>, <code>:58-61</code>); <code>fundingPresets</code> (<code>src/lib/sim-page/funding-presets.ts:130</code>); <code>bandsInnermostFirst</code>, <code>ZoningRule</code> (<code>src/lib/sim-page/policy.ts:81-82</code>, <code>:43-48</code>); <code>PRESETS</code>, <code>PresetId</code> (<code>src/lib/sim-page/timing.ts</code>); <code>addBand</code>, <code>setBandDistance</code>, <code>setBandStories</code>, <code>toggleStop</code> (<code>src/lib/sim-page/transit-edit.ts:98-104</code>, <code>:93</code>, <code>:89</code>, <code>:114-119</code>); <code>STOP_TYPES</code>, <code>StopType</code>; <code>WINDOW_MONTHS</code> (<code>src/lib/sim/timeline-client.ts:29</code>); <code>monthFirstDay</code> (<code>src/lib/sim/world/months.ts:10-12</code>).</li>
+      <li><strong>Consumes:</strong> G3 <code>Grant</code> (type); G4 <code>Limits</code> (type), <code>within(kind, p, limits)</code> (a value import from <code>./limits</code>, used by <code>givePreset</code>; game-core's body, so this task runs after game-core merges), <code>runnable</code> and <code>OPEN_LIMITS</code> (tests); <code>addPolicy</code>, <code>AddLimitError</code>, <code>AddChoice</code> (<code>src/lib/timeline/add.ts:230-259</code>, <code>:49-53</code>, <code>:26-37</code>); <code>setOn</code> (<code>src/lib/timeline/spans.ts:212-216</code>, returns the same document when the policy is missing or already in that state); <code>Policy</code>, <code>SimPolicy4</code>, <code>DEFAULT_POLICY4</code> (<code>src/lib/timeline/policy4.ts:41</code>, <code>:50-53</code>, <code>:58-61</code>); <code>fundingPresets</code> (<code>src/lib/sim-page/funding-presets.ts:130</code>); <code>bandsInnermostFirst</code>, <code>ZoningRule</code> (<code>src/lib/sim-page/policy.ts:81-82</code>, <code>:43-48</code>); <code>PRESETS</code>, <code>PresetId</code> (<code>src/lib/sim-page/timing.ts</code>); <code>addBand</code>, <code>setBandDistance</code>, <code>setBandStories</code>, <code>toggleStop</code> (<code>src/lib/sim-page/transit-edit.ts:98-104</code>, <code>:93</code>, <code>:89</code>, <code>:114-119</code>); <code>STOP_TYPES</code>, <code>StopType</code>; <code>WINDOW_MONTHS</code> (<code>src/lib/sim/timeline-client.ts:29</code>); <code>monthFirstDay</code> (<code>src/lib/sim/world/months.ts:10-12</code>).</li>
       <li><strong>Produces:</strong> <code>applyGrant(doc: SimPolicy4, grant: Grant, ctx: GrantCtx): SimPolicy4</code>; <code>GAME_TRANSIT_LABEL = 'Transit rule'</code>. Everything else in the file is private.</li>
     </ul>
     <ol>
@@ -657,6 +657,15 @@ it('with every policy naming it off, the first is switched on and keeps its span
   // the second still off
 it('a measure edited to preset null gets a new policy beside it', ...);
   // money length 2; the edited one toBe the original object
+it('a preset grant leaves a policy with a custom edit outside the limits and adds a new one', ...);
+  // the only permitting policy names sb423Clock, is off, and has a custom timer edit in its span
+  // (custom as game-core's within reads it); lim({ presets: { sb423Clock }, custom: false }):
+  // permitting length 2; the first toBe the original object (still off); the second is new,
+  // on, from month 1; runnable(result, limits) keeps exactly the new one
+it('a first stop grant after the game rule was removed makes it with every stop bought', ...);
+  // no game-transit in the doc; lim({ stops: { regionalRail, metro }, bands: 1, stories: 4,
+  //   reachM: 402 }), grant stop metro -&gt; one game-transit, stopTypes ['regionalRail', 'metro'],
+  //   bands [402:4], on
 it('a measure on a calibration without money returns the same document', ...);  // toBe
 it('a measure past the pool limit returns the same document', ...);  // Review Focus 3
   // doc built by addPolicy of FINANCE_LIMITS.pools own pools (as add.spec.ts:34-35 fundChoice)
@@ -688,7 +697,7 @@ it('a hands grant returns the same document', ...);  // radius, linger and auto:
       <li id="t3-s2"><input type="checkbox"> Run it and see it fail.
         <pre><code data-lang="sh">npx vitest run --project server src/lib/game/grant.spec.ts</code></pre>
         Expected: FAIL with <code>not implemented</code>.</li>
-      <li id="t3-s3"><input type="checkbox"> Implement <code>grant.ts</code> as the spec's §sec-design-grant block: <code>GAME_TRANSIT_LABEL</code>, <code>applyGrant</code>'s switch, and the private <code>offered</code>, <code>givePreset</code>, <code>isGameRule</code>, <code>allPolicies</code>, <code>putGameRule</code>, <code>withGameRule</code>, <code>giveStop</code>, <code>editGameRule</code>, <code>raiseInnermost</code>, <code>reachOut</code>, <code>oneMoreBand</code> (exact bodies given there). The G5 imports of <code>Limits</code> and <code>Grant</code> stay type imports. <code>addPolicy</code>'s window is <code>{ asOf: ctx.cal.asOf, months: WINDOW_MONTHS }</code> at month 1; only <code>AddLimitError</code> is swallowed, any other error is rethrown.</li>
+      <li id="t3-s3"><input type="checkbox"> Implement <code>grant.ts</code> as the spec's §sec-design-grant block: <code>GAME_TRANSIT_LABEL</code>, <code>applyGrant</code>'s switch, and the private <code>offered</code>, <code>givePreset</code>, <code>isGameRule</code>, <code>allPolicies</code>, <code>putGameRule</code>, <code>withGameRule</code>, <code>giveStop</code>, <code>editGameRule</code>, <code>raiseInnermost</code>, <code>reachOut</code>, <code>oneMoreBand</code> (exact bodies given there). <code>givePreset</code> counts only the policies of its kind that name the preset and are <code>within(kind, p, ctx.limits)</code>: a counted one on returns the document; counted and all off switches the first on with <code>setOn</code>; none counted adds one at month 1; a policy naming the preset outside the limits is left as it is (spec §sec-design-grant-rules). The G5 imports of <code>Limits</code> and <code>Grant</code> stay type imports. <code>addPolicy</code>'s window is <code>{ asOf: ctx.cal.asOf, months: WINDOW_MONTHS }</code> at month 1; only <code>AddLimitError</code> is swallowed, any other error is rethrown.</li>
       <li id="t3-s4"><input type="checkbox"> Run the spec again and see it pass.
         <pre><code data-lang="sh">npx vitest run --project server src/lib/game/grant.spec.ts</code></pre>
         Expected: PASS.</li>
@@ -732,7 +741,7 @@ it('fullTree throws naming the node it cannot buy', ...);
   it('every result parses, reconciles to itself and runs under the limits after the purchase', ...);
     // per step: expect(() =&gt; parsePolicy4(JSON.parse(JSON.stringify(doc)), { asOf })).not.toThrow();
     // reconcilePolicy4(doc, cal, asOf).doc toEqual doc; runnable(doc, limitsOf(state)) toBe doc
-  it('no grant removes a policy or touches one it did not make', ...);
+  it('no grant removes a policy or touches one other than its own, the game rule or a counted one', ...);
     // start doc holds a painted area, a protection and an own fund (added with addPolicy);
     // after each step every one of them is still present and toEqual its start value,
     // and no kind's list is shorter than before
@@ -761,7 +770,6 @@ npx chreode timing-check --head HEAD</code></pre></li>
 
   <section id="sec-open-questions">
     <h2>Open questions</h2>
-    <aside data-kind="question"><strong>Question (conductor-5)</strong> <code>ladderYears</code> can give an empty list (a measured year after the first step), but <code>ladder-years.spec.ts</code> refuses an empty <code>LADDER_YEARS</code>. This plan follows the spec as it reads now: Task 2's test requires one to four years. If the ruling allows an empty ladder, only Task 2's <code>ladder-years.spec.ts</code> case changes (to zero to four years); <code>ringOf</code> already gives ring 0 on one rung.</aside>
-    <aside data-kind="note"><strong>Where the spec refines G5</strong> The plan follows the spec. G5 says a remade rule has "that stop type"; the spec gives it every stop type in <code>limits.stops</code> (the same on a first purchase). G5 says the function "never changes one it did not make"; the spec switches on the player's own off policy that names the bought preset. In that case, a permitting policy the player gave custom edits is switched on but stays outside the limits until <code>custom</code>, so G5's "the result is within <code>ctx.limits</code>" holds for the game's own policies, not that one; <code>runnable</code> drops it at run time.</aside>
+    <p>None open. An empty <code>LADDER_YEARS</code> is never written (spec §sec-design-reach), so Task 2's test requiring one to four years stands. Row G5 and the spec's grant rules agree (spec §sec-if-g5, §sec-design-grant-rules); Task 3 follows them.</p>
   </section>
 </article>
