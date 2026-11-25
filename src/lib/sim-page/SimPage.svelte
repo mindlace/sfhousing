@@ -32,9 +32,15 @@
   import { BrushState } from '$lib/brush/state.svelte';
   import type { Manifest } from '$lib/data/manifest';
   import type { ParcelId } from '$lib/data/parcel';
+  import { NODES } from '$lib/game/catalogue/nodes';
   import { e2eGoalAmount } from '$lib/game/e2e';
+  import { applyGrant } from '$lib/game/grant';
+  import { ladder, RUNGS, type Rung } from '$lib/game/ladder';
   import { OPEN_LIMITS, runnable, within, type Limits } from '$lib/game/limits';
+  import type { NodeId } from '$lib/game/state';
   import type { GameStore } from '$lib/game/store.svelte';
+  import { treeView } from '$lib/game/tree';
+  import Tree from '$lib/game/ui/Tree.svelte';
   import { packedCellLayer, type SolidPolygonLayerCtor } from '$lib/map/generated-controller';
   import { LID_MAX_SPAN_M } from '$lib/map/height/lids';
   import { LIDS_FADE, type LimitsView } from '$lib/map/height/limits-style';
@@ -52,7 +58,7 @@
   import { copyFor } from '$lib/sharing/copy';
   import PublishButton from '$lib/sharing/PublishButton.svelte';
   import SaveIndicator from '$lib/sharing/SaveIndicator.svelte';
-  import { BUTTON } from '$lib/shell/ui';
+  import { BUTTON, BUTTON_PRIMARY } from '$lib/shell/ui';
   import { getStorage } from '$lib/sharing/storage';
   import type { BrushCatalog } from '$lib/sim/levers/brushes';
   import { PREVIEW_MAX_LOTS } from '$lib/sim/scenario/preview';
@@ -67,6 +73,7 @@
     redateMoved,
     type AddChoice
   } from '$lib/timeline/add';
+  import { BACK_TO_TREE, boughtLabel, restoredLabel } from '$lib/timeline/game-copy';
   import Inspector from '$lib/timeline/Inspector.svelte';
   import { project, spanLens, writeBack, type StrokeStore } from '$lib/timeline/lens';
   import { fundingName4, ownerName4 } from '$lib/timeline/owner';
@@ -85,7 +92,8 @@
   import { policyOf, type SpanRef } from '$lib/timeline/spans';
   import TimelineMode, {
     type MapLike,
-    type TimelineClientApi
+    type TimelineClientApi,
+    type TreeArgs
   } from '$lib/timeline/TimelineMode.svelte';
   import { readViewPrefs, writeViewPrefs, type ViewPrefs } from '$lib/view/prefs';
   import LayerSwitches, { type ViewRow } from '$lib/view/LayerSwitches.svelte';
@@ -93,8 +101,10 @@
   import { simPaintRows } from './brush-summary';
   import { installSimDebug } from './debug';
   import { PaintFeedback, lotsInView } from './feedback';
-  import { fundingNotices, limitAlert } from './funding-copy';
+  import { DRAFT_DISCARDED, fundingNotices, limitAlert } from './funding-copy';
   import { FundingDrafts } from './funding-drafts.svelte';
+  import { nodeRefs, nodeSwitches, restoreNode, switchNodeDoc } from './game-levers';
+  import { landing, nextPhase, type GamePhase, type PhaseEvent } from './game-phase';
   import { LidRequest, clampBbox } from './lid-request';
   import { OutlineRequest } from './outline-request';
   import { customQuery, paintedLots, queryKey, type Lots } from './policy';
@@ -389,6 +399,21 @@
   const uid = $props.id();
   const inspectorId = `${uid}-inspector`;
 
+  // ---- the game's phase (game-sim #sec-design-states) ----
+
+  /**
+   * The game's phase on the page: where a mount lands, then only through `nextPhase`. Null with no
+   * game (the published view, the open game) and for a game still in its opening.
+   */
+  let phase = $state<GamePhase | null>(
+    untrack(() => (game && !game.open && game.state.phase === 'runs' ? landing(game.state) : null))
+  );
+
+  function toPhase(e: PhaseEvent): void {
+    if (phase === null || !game) return;
+    phase = nextPhase(phase, e, game.state.runs);
+  }
+
   const inspectorOpen = $derived(
     panel !== null || selected !== null || adding !== null || drafts.isOpen
   );
@@ -556,6 +581,85 @@
         `[data-testid="tl-kind-${kind}"] button.toggle[aria-expanded="false"]`
       )
       ?.click();
+  }
+
+  // ---- the tree: buying, Edit, switching, Back (game-sim #sec-design-buy, -workshop, -switch) ----
+
+  /** Tree's "Take the next goal": the next rung once the rung in play is met; else null. */
+  const nextRung = $derived.by<Rung | null>(() => {
+    if (!game || !cal) return null;
+    const s = game.state;
+    const met = s.met.some((m) => m.rung === s.rung);
+    return met && s.rung + 1 < RUNGS ? ladder(cal.asOf)[s.rung + 1] : null;
+  });
+
+  /**
+   * Buys a node: the game's write first, then its grant to the document as one undo step named by
+   * `boughtLabel`, written at once. A refused write changes nothing.
+   */
+  function buy(id: NodeId): void {
+    if (phase !== 'tree' || !game || !cal) return;
+    const r = game.buy(id);
+    if (!r.ok) return;
+    const node = NODES.find((n) => n.id === id)!;
+    const label = boughtLabel(node, r.state.bought[id]);
+    // `game.limits` is read after the buy, so it holds the purchase.
+    const ctx = { cal, limits: game.limits };
+    store.apply((d) => applyGrant(d, r.grant, ctx), label);
+    leave(); // the autosave writes the document now
+    brush.announce(label, ANNOUNCE_MS);
+  }
+
+  /**
+   * Edit: the node's policy added back when the document has none (one undo step named by
+   * `restoredLabel`), the workshop, and its first policy selected with its kind open. A Hands node
+   * enters the workshop with nothing selected.
+   */
+  function editNode(id: NodeId): void {
+    if (phase !== 'tree' || !game || !cal) return;
+    const node = NODES.find((n) => n.id === id);
+    const level = game.state.bought[id] ?? 0;
+    if (!node || level === 0) return;
+    const next = restoreNode(store.policy, node, level, { cal, limits: game.limits });
+    if (next !== store.policy) store.apply(() => next, restoredLabel(node));
+    toPhase('edit');
+    const ref = nodeRefs(store.policy, node.levels[0].grant)[0] ?? null;
+    if (ref) {
+      select(ref);
+      // The kind's row mounts with the workshop's bottom pane, after this update.
+      void tick().then(() => {
+        if (!dead) openKind(ref.kind);
+      });
+    }
+  }
+
+  /** The tree's switch: every policy of the node on or off, as one undo step. */
+  function switchNode(id: NodeId, on: boolean): void {
+    if (phase !== 'tree' || !game) return;
+    const node = NODES.find((n) => n.id === id);
+    if (!node) return;
+    const label = `${on ? 'Switched on' : 'Switched off'}: ${node.label}`;
+    const before = store.policy;
+    store.apply((d) => switchNodeDoc(d, node, on), label);
+    if (store.policy !== before) brush.announce(label, ANNOUNCE_MS);
+  }
+
+  /** "Back to the tree": an open draft discarded (and said), the column cleared, then `back`. */
+  function backToTree(): void {
+    if (phase !== 'workshop') return;
+    if (drafts.isOpen) {
+      drafts.discard();
+      brush.announce(DRAFT_DISCARDED, ANNOUNCE_MS);
+    }
+    selected = null;
+    adding = null;
+    panel = null;
+    toPhase('back');
+  }
+
+  /** The tree's Publish: the header's Publish button, which opens its dialog on `publishDoc`. */
+  function openPublish(): void {
+    document.querySelector<HTMLElement>('[data-testid="publish-open"]')?.click();
   }
 
   // ---- strokes on the map ----
@@ -1135,6 +1239,11 @@
 {/snippet}
 
 {#snippet actions()}
+  {#if phase === 'workshop'}
+    <button type="button" class={BUTTON_PRIMARY} data-testid="game-back" onclick={backToTree}
+      >{BACK_TO_TREE}</button
+    >
+  {/if}
   {#if toolOff}
     <button type="button" class={BUTTON} onclick={() => setTool('move')}
       >{tools.tool === 'erase' ? 'Stop erasing' : 'Stop painting'}</button
@@ -1221,6 +1330,25 @@
   {/if}
 {/snippet}
 
+{#snippet treePart({ busy, ending }: TreeArgs)}
+  {#if game}
+    <Tree
+      nodes={treeView(game.state)}
+      on={nodeSwitches(store.policy, game.state)}
+      units={game.state.units}
+      {busy}
+      next={nextRung}
+      {ending}
+      onbuy={buy}
+      onedit={editNode}
+      ontoggle={switchNode}
+      onrun={() => toPhase('run')}
+      onnext={() => game?.takeNext()}
+      onpublish={openPublish}
+    />
+  {/if}
+{/snippet}
+
 <svelte:window onkeydown={onWindowKey} />
 
 <TimelineMode
@@ -1245,6 +1373,9 @@
   policy={store.policy}
   {run}
   {game}
+  phase={phase ?? undefined}
+  onphase={phase === null ? undefined : toPhase}
+  tree={phase === null ? undefined : treePart}
   {goalAmount}
   lots={sync.lots}
   lotsFailed={sync.lots === null && !sync.pending && sync.failed.length > 0}

@@ -1,6 +1,7 @@
 <script lang="ts">
   // Test host: SimRoute's edit page under a provided game, with the root layout's header slots
-  // rendered beside it. The game and the page's autosave share one storage.
+  // rendered beside it, in a box of fixed height. The game and the page's autosave share one
+  // storage.
   import type { ComponentProps } from 'svelte';
   import { provideGame, type GameStore } from '$lib/game/store.svelte';
   import { provideHeaderActions } from '$lib/shell/header-actions.svelte';
@@ -22,4 +23,7 @@
   <div data-testid="header-pinned">{@render slot.pinned?.()}</div>
   <div data-testid="header-actions">{@render slot.current?.()}</div>
 </div>
-<SimRoute {data} mode="edit" persist="restore" storage={() => storage} />
+<!-- A fixed height, as the root layout's main gives: the tree's pane fills the box over the map. -->
+<div style="height: 600px">
+  <SimRoute {data} mode="edit" persist="restore" storage={() => storage} />
+</div>
