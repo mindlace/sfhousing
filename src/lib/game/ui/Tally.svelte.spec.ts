@@ -17,14 +17,18 @@ import { runResult } from './test/fixtures';
 import {
   SIDE_GOAL_FALLBACK,
   STAGE_ROWS,
+  UNIT_MARK,
   WAITING_MONEY,
+  collectedName,
   homesOfText,
+  lumpName,
+  sideRewardName,
   sideRewardText
 } from './words';
 
 // The catalogue ships no side tuning yet; give SIDE_GOALS one goal of the test's own.
-vi.mock('../catalogue/tuning', () => ({
-  RUNG_LUMP: { home: 2000 },
+vi.mock('../catalogue/tuning', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../catalogue/tuning')>()),
   SIDE_TUNING: { 'policy-homes-1': { target: 1000, reward: { home: 500 } } }
 }));
 
@@ -75,6 +79,12 @@ const el = (testid: string) =>
   document.querySelector<HTMLElement>(`[data-testid="${testid}"]`) as HTMLElement;
 const strong = () => el('tally-homes').querySelector('strong')?.textContent?.trim();
 const fill = (e: Element) => e.querySelector('[data-fill]')?.getAttribute('data-fill');
+/** The text a screen reader gets: everything outside aria-hidden, whitespace collapsed. */
+function spoken(e: Element): string {
+  const copy = e.cloneNode(true) as Element;
+  copy.querySelectorAll('[aria-hidden="true"]').forEach((n) => n.remove());
+  return (copy.textContent ?? '').replace(/\s+/g, ' ').trim();
+}
 
 describe('Tally', () => {
   it('the title for a run that met the goal and one that did not', async () => {
@@ -82,7 +92,7 @@ describe('Tally', () => {
     await expect
       .element(page.getByRole('heading', { name: 'Goal met in Mar 2049', exact: true }))
       .toBeVisible();
-    met.unmount();
+    await met.unmount();
     await mount();
     await expect
       .element(page.getByRole('heading', { name: 'By Dec 2055', exact: true }))
@@ -103,14 +113,14 @@ describe('Tally', () => {
       const change = page.getByTestId('tally-change');
       if (text === null) await expect.element(change).not.toBeInTheDocument();
       else await expect.element(change).toHaveTextContent(text);
-      r.unmount();
+      await r.unmount();
     }
   });
 
   it('the bar fills to the share of the goal', async () => {
     const half = await mount();
     await expect.element(page.getByTestId('tally-bar')).toHaveAttribute('data-fill', '50');
-    half.unmount();
+    await half.unmount();
     await mount({ result: { homes: 90_000 } });
     await expect.element(page.getByTestId('tally-bar')).toHaveAttribute('data-fill', '100');
   });
@@ -126,7 +136,7 @@ describe('Tally', () => {
       .element(page.getByTestId('tally-units'))
       .toHaveTextContent('7,300 of 9,100 collected');
     await expect.element(page.getByTestId('tally-lump')).not.toBeInTheDocument();
-    plain.unmount();
+    await plain.unmount();
     await mount({
       result: {
         lump: { home: 2000 },
@@ -141,6 +151,31 @@ describe('Tally', () => {
     await expect.poll(() => side.all().length).toBe(2);
     await expect.element(side.nth(0)).toHaveTextContent(sideRewardText(500, SIDE_GOALS[0].label));
     await expect.element(side.nth(1)).toHaveTextContent(sideRewardText(50, SIDE_GOAL_FALLBACK));
+  });
+
+  it('the units, lump and side lines are read as their Name words, never the mark', async () => {
+    await mount({
+      result: {
+        lump: { home: 2000 },
+        side: [
+          { id: SIDE_GOALS[0].id, reward: { home: 500 } },
+          { id: 'gone', reward: { home: 50 } }
+        ]
+      }
+    });
+    const side = page.getByTestId('tally-side');
+    await expect.poll(() => side.all().length).toBe(2);
+    const lines: [Element, string][] = [
+      [el('tally-units').querySelector('p') as Element, collectedName(7300, 9100)],
+      [el('tally-lump'), lumpName(2000)],
+      [side.elements()[0], sideRewardName(500, SIDE_GOALS[0].label)],
+      [side.elements()[1], sideRewardName(50, SIDE_GOAL_FALLBACK)]
+    ];
+    for (const [line, name] of lines) {
+      expect(spoken(line)).toBe(name);
+      expect(spoken(line)).not.toContain(UNIT_MARK);
+      expect(line.querySelector('.sr-only')?.textContent?.trim()).toBe(name);
+    }
   });
 
   it('four stage rows summed from six stages', async () => {
@@ -184,7 +219,7 @@ describe('Tally', () => {
     await expect.poll(() => page.getByTestId('tally-stage').all().length).toBe(4);
     await expect.element(page.getByTestId('tally-money')).not.toBeInTheDocument();
     expect(page.getByTestId('tally-stage').elements().map(fill)).toEqual(['42', '100', '71', '85']);
-    none.unmount();
+    await none.unmount();
     await mount({ result: { stages, waitingMoney: 14 } });
     const money = page.getByTestId('tally-money');
     await expect.element(money).toHaveTextContent(WAITING_MONEY);
@@ -211,7 +246,7 @@ describe('Tally', () => {
     expect(document.activeElement).toBe(cont().element());
     await cont().click();
     expect(pressed).toHaveBeenCalledTimes(1);
-    pressedR.unmount();
+    await pressedR.unmount();
     const escaped = vi.fn();
     await mount({ oncontinue: escaped });
     await expect.element(cont()).toBeVisible();
@@ -259,13 +294,14 @@ describe('Tally', () => {
   async function rolling() {
     await emulate('light', 'no-preference');
     vi.useFakeTimers({ toFake: ['requestAnimationFrame', 'cancelAnimationFrame', 'performance'] });
-    mount({ before: 36_850 });
+    // Not awaited: its trace mark would wait on the faked clock.
+    void mount({ before: 36_850 });
     flushSync();
   }
 
   it('without reduced motion the numbers roll for TALLY_ROLL_MS', async () => {
     await rolling();
-    expect(strong()).not.toBe('40,000');
+    expect(strong()).toBe('36,850');
     await vi.advanceTimersByTimeAsync(TALLY_ROLL_MS + 50);
     flushSync();
     expect(strong()).toBe('40,000');
@@ -276,10 +312,11 @@ describe('Tally', () => {
 
   it('the screen reader gets the final numbers during a roll', async () => {
     await rolling();
-    expect(strong()).not.toBe('40,000');
+    expect(strong()).toBe('36,850');
     expect(el('tally-homes').querySelector('.sr-only')?.textContent?.trim()).toBe(
       homesOfText(40_000, 80_000)
     );
+    expect(spoken(el('tally-units'))).toBe(collectedName(7300, 9100));
   });
 
   it('Continue is at least 24 px', async () => {

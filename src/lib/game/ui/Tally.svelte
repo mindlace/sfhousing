@@ -17,10 +17,13 @@
     UNIT_MARK,
     WAITING_MONEY,
     changeText,
+    collectedName,
     collectedText,
     homesOfText,
+    lumpName,
     lumpText,
     notBuiltTitle,
+    sideRewardName,
     sideRewardText,
     tallyTitle
   } from './words';
@@ -69,14 +72,13 @@
   const homesFill = $derived(result.amount > 0 ? clamp(homes.current / result.amount) : 0);
 
   const sideLines = $derived(
-    result.side.map((e) => ({
-      key: e.id,
-      text: sideRewardText(
-        total(e.reward),
-        SIDE_GOALS.find((g) => g.id === e.id)?.label ?? SIDE_GOAL_FALLBACK
-      )
-    }))
+    result.side.map((e) => {
+      const n = total(e.reward);
+      const label = SIDE_GOALS.find((g) => g.id === e.id)?.label ?? SIDE_GOAL_FALLBACK;
+      return { key: e.id, text: sideRewardText(n, label), name: sideRewardName(n, label) };
+    })
   );
+  const lump = $derived(result.lump === null ? null : total(result.lump));
 
   const stageRows = $derived(
     STAGE_ROWS.map((r) => ({
@@ -151,20 +153,22 @@
       <p>
         <span aria-hidden="true"
           >{UNIT_MARK} {collectedText(Math.round(units.current), dropped)}</span
-        ><span class="sr-only">{collectedText(collected, dropped)}</span>
+        ><span class="sr-only">{collectedName(collected, dropped)}</span>
       </p>
-      {#if result.lump !== null || sideLines.length > 0}
+      {#if lump !== null || sideLines.length > 0}
         <ul class="flex flex-col gap-1">
-          {#if result.lump !== null}
+          {#if lump !== null}
             <li data-testid="tally-lump">
-              <span aria-hidden="true">{UNIT_MARK}</span>
-              {lumpText(total(result.lump))}
+              <span aria-hidden="true">{UNIT_MARK} {lumpText(lump)}</span><span class="sr-only"
+                >{lumpName(lump)}</span
+              >
             </li>
           {/if}
           {#each sideLines as line, i (`${line.key}-${i}`)}
             <li data-testid="tally-side">
-              <span aria-hidden="true">{UNIT_MARK}</span>
-              {line.text}
+              <span aria-hidden="true">{UNIT_MARK} {line.text}</span><span class="sr-only"
+                >{line.name}</span
+              >
             </li>
           {/each}
         </ul>
