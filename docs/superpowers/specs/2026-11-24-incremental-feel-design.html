@@ -19,6 +19,7 @@
     <aside data-kind="decision" id="p7"><strong>Partner: P7, the tree is between runs</strong> "The tree only appears between runs, like in an incremental game, doesn't need to be in the menu."</aside>
     <aside data-kind="decision" id="p8"><strong>Partner: P8, the name</strong> "We should change the name to 'SF Housing'."</aside>
     <aside data-kind="decision" id="p9"><strong>Partner: P9, units are collected</strong> "There are plenty of games that give you 'points' that you can only spend if you collect them. The housing should be like that - all housing units count to the sim outcome, but you only get units to spend in the tree from whatever you collected. i.e. the units you get &amp; the spend of those units is disjoint from the sim, but derived from it."</aside>
+    <aside data-kind="decision" id="p10"><strong>Partner: P10, affordable units come next</strong> "As soon as we're done with this first round I'm going to want to make affordable housing unit 'coins' either worth more than base coins or a secondary currency that gates higher unlocks."</aside>
     <p>So the game layer has two jobs: give the player a reason to go one step further, and hand over the tool one lever at a time. It never changes what the simulation forecasts, and it never takes the forecasting tool away.</p>
     <ul>
       <li><strong>Goals:</strong> the next goal, how far off it is and what it unlocks are always on screen.</li>
@@ -223,6 +224,16 @@
         <li>Each goal met and each side goal met pays a lump of units.</li>
         <li>Units are separate from public money. Dollars stay inside the simulation with their sources and limits.</li>
       </ul>
+      <section id="sec-affordable-room">
+        <h4>Room for affordable units (P10)</h4>
+        <p>The first round has one currency and every home is worth one unit. It is built so that either of the two later forms is a change of numbers and data, with no change to saved games or to the rules:</p>
+        <ul>
+          <li>A drop carries its project's homes by income tier. The engine already splits a completing project's homes by tier (<code>tiersOf</code>).</li>
+          <li>The player's ledger keeps what was collected by tier, even while the header shows one total.</li>
+          <li>A node's price is a list of amounts by kind of unit. In the first round every price names one kind.</li>
+          <li>What a tier's unit is worth is one table. "Worth more" is a change to that table; "a second currency" is a second kind in a price and a second count in the header.</li>
+        </ul>
+      </section>
     </section>
 
     <section id="sec-tree">
@@ -401,6 +412,7 @@
       <li>New model features: funding rules, market rules, affordability targets.</li>
       <li>The cursor acting inside the simulation (approach C).</li>
       <li>Any budget of brush area.</li>
+      <li>Affordable units worth more, or as a second currency (P10). The first round leaves room for both and builds neither.</li>
       <li>Widening "+N from your policy" to count projects already in the pipeline. The check found it counts new projects only; with P9 the game no longer depends on it.</li>
       <li>The car-ownership simulation itself. It joins as a branch when it lands.</li>
       <li>Randomness of any kind.</li>
