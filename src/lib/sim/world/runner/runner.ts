@@ -727,6 +727,7 @@ export function createRunner(deps: RunnerDeps): Runner {
 
   function ensembleOf(s: Side, t: PolicyTimeline): Ensemble {
     return createEnsemble({
+      core: ds.core,
       statics: ds.statics,
       timeline: t,
       months,

@@ -11,8 +11,10 @@ import { scenarioUrls } from '../src/lib/sim/scenario/load';
 import { WINDOW_MONTHS } from '../src/lib/sim/timeline-client';
 import type { Day } from '../src/lib/timelapse/time';
 import {
+  fillLine,
   level2Exit,
   level2Lines,
+  parseArgs,
   readLevel2,
   runEmptyDocument,
   type EmptyRun
@@ -31,9 +33,11 @@ const ym = (day: Day) => {
 const temps: string[] = [];
 
 let run: EmptyRun;
+let carsOff: EmptyRun;
 
 beforeAll(async () => {
   run = await runEmptyDocument(FIXTURE);
+  carsOff = await runEmptyDocument(FIXTURE, { cars: 'off' });
 }, FILL_HOOK_MS);
 
 afterAll(() => {
@@ -45,6 +49,32 @@ describe('runEmptyDocument on the fixture', () => {
     expect(run.datasetVersion).toBe('fixture-0');
     expect(run.view.filledThrough).toBe(run.view.lastIndex);
     expect(run.view.lastIndex + 1).toBe(WINDOW_MONTHS);
+  });
+
+  it('runs the car system by default and times the fill', () => {
+    expect(run.view.cars).not.toBeNull();
+    expect(run.fillMs).toBeGreaterThan(0);
+  });
+
+  it("cars: 'off' runs without the car system", () => {
+    expect(carsOff.view.filledThrough).toBe(carsOff.view.lastIndex);
+    expect(carsOff.view.cars).toBeNull();
+    expect(fillLine({ ...carsOff, fillMs: 12_340 }, 'off')).toBe('Filled in 12.3 s (cars off)');
+  });
+});
+
+describe('parseArgs', () => {
+  it('--cars on or off, default on', () => {
+    expect(parseArgs(['d'])).toEqual({ dir: 'd', cars: 'on' });
+    expect(parseArgs(['d', '--cars', 'off'])).toEqual({ dir: 'd', cars: 'off' });
+    expect(parseArgs(['--cars', 'on', 'd', '--amount', '5'])).toEqual({
+      dir: 'd',
+      amount: 5,
+      cars: 'on'
+    });
+    expect(parseArgs(['d', '--cars', 'maybe'])).toEqual({
+      error: '--cars must be on or off, got maybe'
+    });
   });
 });
 

@@ -162,7 +162,8 @@ stage on `sampleAdvance` lengths with no revisions (rule 15).
 ## The car hook
 
 `withFunding(f, cars)` also plugs in a `CarSystem` (`types.ts`; `world/cars/`, built by
-`createCarSystem(data, model)`). `createWorld` ends with `cars.create` (after `f.create`); `step`
+`createCarSystem(data, model)`; for a loaded dataset by `carSystemOf(loaded, { off })` in
+`world/cars/dataset.ts`, which the timeline host's `loadDataset` calls once per load). `createWorld` ends with `cars.create` (after `f.create`); `step`
 wraps `out` once at its top, so every event of systems 1 to 7 reaches `cars.onEvent` just after it
 is sent, and runs `cars.step` between systems 3 and 4 every month, funded or not. Both `step` and
 `planDue` lay `cars.timelineOf` over the base timeline first and funding's view over that, so a

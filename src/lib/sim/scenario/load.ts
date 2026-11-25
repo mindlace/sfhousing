@@ -1,6 +1,8 @@
 // Scenario loading (spec §4.2 steps 1, 2, 4-7; the loading rows of §4.10): request checks,
 // manifest URLs, the concurrent fetches with retries, decode and validation, and the two
 // SimInputs with their precompute. Worker-bundle module: zod-free, DOM-free, $app-free.
+import { decodeCarData, type CarData } from '$lib/data/cars-codec';
+import { inflateRawBody } from '$lib/data/column-file';
 import { grossTableProblem, readGrossTable, type GrossTable } from '$lib/data/gross-table';
 import type { Manifest } from '$lib/data/manifest';
 import { readPolicyParcels, type PolicyParcels } from '$lib/data/policy-codec';
@@ -26,7 +28,9 @@ export type InitRequest = Extract<ScenarioRequest, { type: 'initScenario' }>;
  * `policy` is null when the manifest has no usable `scenarios.fzp.policy` (only /sim needs it);
  * `gross` likewise for `scenarios.fzp.gross` (optional even for /sim: without it lever revisions
  * fall back to the chunk recompute). Older datasets also name `scenarios.fzp.frontage`; nothing
- * reads it.
+ * reads it. `cars` (cars.bin, the car model's zones and start households) and `carZones` (their
+ * outlines, fetched by the page, never the worker) are null when absent: datasets built before the
+ * car model run without it.
  */
 export type ScenarioUrls = {
   parcels: string;
@@ -34,6 +38,8 @@ export type ScenarioUrls = {
   calibration: string;
   policy: string | null;
   gross: string | null;
+  cars: string | null;
+  carZones: string | null;
 };
 
 export interface Loaded {
@@ -43,6 +49,8 @@ export interface Loaded {
   policy: PolicyParcels | null; // bound to the decoded parcels; null without `opts.policy`
   /** Bound to the decoded parcels; null without `opts.policy` or without `urls.gross`. */
   gross: GrossTable | null;
+  /** cars.bin, bound to the decoded parcels; null without `opts.cars` or without `urls.cars`. */
+  cars: CarData | null;
 }
 export interface LoadFailure {
   code: ScenarioErrorCode;
@@ -124,7 +132,9 @@ export function scenarioUrls(m: Manifest): ScenarioUrls | null {
   return {
     ...(urls as Pick<ScenarioUrls, 'parcels' | 'projects' | 'calibration'>),
     policy: datasetUrl(m, f.policy),
-    gross: datasetUrl(m, f.gross)
+    gross: datasetUrl(m, f.gross),
+    cars: datasetUrl(m, f.cars),
+    carZones: datasetUrl(m, f.carZones)
   };
 }
 
@@ -253,7 +263,10 @@ class Stopped {}
  * decode error gives `scenario-invalid`. Without it the policy URL is never requested. With
  * `opts.policy` and `urls.gross`, `gross.bin` is a fifth concurrent fetch, decoded after
  * parcels.bin and checked against it (`grossTableProblem`): a decode error or a mismatch gives
- * `scenario-invalid`. Without `opts.policy` the gross URL is never requested.
+ * `scenario-invalid`. Without `opts.policy` the gross URL is never requested. With `opts.cars`
+ * (the /sim timeline host) and `urls.cars`, `cars.bin` is a sixth, inflated and decoded against
+ * parcels.bin's row count (`decodeCarData`): a decode error gives `scenario-invalid`. Otherwise it
+ * is never requested, and `cars` is null.
  *
  * Once `cancelled()` is true the result is meaningless (a `LoadFailure` the caller ignores), and
  * a load cancelled while waiting on a retry timer the caller cleared never settles. An
@@ -263,9 +276,10 @@ export async function loadScenario(
   deps: LoadDeps,
   urls: ScenarioUrls,
   cancelled: () => boolean,
-  opts?: { policy: boolean }
+  opts?: { policy: boolean; cars?: boolean }
 ): Promise<Loaded | LoadFailure> {
   const wantPolicy = opts?.policy === true;
+  const wantCars = opts?.cars === true;
   if (wantPolicy && urls.policy === null) {
     return {
       code: 'scenario-missing',
@@ -308,13 +322,15 @@ export async function loadScenario(
   let calibrationJson: unknown;
   let policyBin: ArrayBuffer | null;
   let grossBin: ArrayBuffer | null;
+  let carsBin: ArrayBuffer | null;
   try {
-    [bin, projectsJson, calibrationJson, policyBin, grossBin] = await Promise.all([
+    [bin, projectsJson, calibrationJson, policyBin, grossBin, carsBin] = await Promise.all([
       bytes(urls.parcels),
       json(urls.projects),
       json(urls.calibration),
       wantPolicy ? bytes(urls.policy!) : null,
-      wantPolicy && urls.gross !== null ? bytes(urls.gross) : null
+      wantPolicy && urls.gross !== null ? bytes(urls.gross) : null,
+      wantCars && urls.cars !== null ? bytes(urls.cars) : null
     ]);
   } catch (e) {
     failed = true; // the other files stop at their next step
@@ -356,6 +372,16 @@ export async function loadScenario(
     if (cancelled()) return CANCELLED;
     const problem = grossTableProblem(gross, parcels);
     if (problem !== null) return invalid('gross.bin', problem);
+  }
+
+  let cars: CarData | null = null;
+  if (carsBin !== null) {
+    try {
+      cars = decodeCarData(await inflateRawBody(new Uint8Array(carsBin)), parcels.count);
+    } catch (e) {
+      return invalid('cars.bin', messageOf(e));
+    }
+    if (cancelled()) return CANCELLED;
   }
 
   let calibration: Calibration;
@@ -417,5 +443,5 @@ export async function loadScenario(
   };
   precomputeOf(fzp, warnOnce);
   precomputeOf(twin, warnOnce);
-  return { fzp, twin, projects, policy, gross };
+  return { fzp, twin, projects, policy, gross, cars };
 }
