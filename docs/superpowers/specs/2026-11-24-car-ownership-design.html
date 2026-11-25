@@ -129,7 +129,7 @@
         <li><strong>No per-building cap (my call).</strong> Households choose cars from the zone pattern; a building's spaces do not cap them. State is counts by zone, with no building identity, and PUMS carries no parking price or availability, so a cap's cost term would have no SF source. Supply above use (about 1.4 to 1.0) means a cap rarely binds.</li>
       </ul>
       <aside data-kind="decision"><strong>Decision</strong> Odds only. The parking saving does not lower <code>costPerHome</code> in the finance engine (subsidy need, awards, re-pricing); funded starts stay priced as today. That link comes with the later fewer-cars levers.</aside>
-      <aside data-kind="decision"><strong>Decision</strong> Saved games and published policies take the new results on the new dataset; no switch holds them on the old behaviour. Expected effect is small (density and household mix move slowly with transit fixed). If the back-cast or <code>level2-check</code> shows a goal month moving by more than a few months, the builder stops and reports.</aside>
+      <aside data-kind="decision"><strong>Decision</strong> Saved games and published policies take the new results on the new dataset; no switch holds them on the old behaviour. Expected effect is small (density and household mix move slowly with transit fixed). The goal-month effect (cars on against cars off) is recorded and reported to the owner; no threshold.</aside>
       <aside data-kind="warning"><strong>Warning</strong> The parking feedback is a loop: fewer cars → fewer spaces → more starts → more car-light households. The builder checks it converges and that <code>scripts/level2-check.ts</code> still exits 0.</aside>
     </section>
 

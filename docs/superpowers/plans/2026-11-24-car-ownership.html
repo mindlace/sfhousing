@@ -29,7 +29,7 @@
       <li>Census data from Census directly (public domain), never NHGIS extracts. Census sources do not join <code>AS_OF_SOURCE_IDS</code>. Every source records a licence in <code>sources.lock.json</code>.</li>
       <li>Odds only: the parking saving never changes <code>costPerHome</code>, subsidy need, awards or re-pricing in the finance engine.</li>
       <li>Current law's results do not move at month one (per-lot baseline = the model's prediction at the start of the window).</li>
-      <li>Stop condition: if the back-cast or <code>level2-check</code> shows the goal month moving by more than 3 months against cars off, stop and report to the owner; do not tune to hide it.</li>
+      <li>Goal-month effect: record the month current law reaches the goal with cars on and with cars off, and report both and the difference to the owner. No threshold; do not tune to hide it. The project rule still holds: upload only when <code>level2-check</code> exits 0 with cars on.</li>
       <li><code>scripts/level2-check.ts</code> must exit 0 on the built dataset before it is uploaded; the dataset is uploaded before signoff (<code>docs/dev/pipeline.md</code>, "Finishing a branch that changes the dataset").</li>
       <li>Speed is per world (<code>/sim</code> steps one world per side): the car system's time per world-month and the whole-window fill (about 4 s today) are printed, never gated in signoff; chunk stays within 1 ms per month. Time only on a quiet machine; otherwise record ballpark numbers and carry on.</li>
       <li><code>src/lib/sim/cars/</code> uses relative imports only (the pipeline imports it, like <code>src/lib/sim/finance/</code>). Every <code>src/lib</code> path the pipeline reaches joins <code>PATHS</code> in <code>pipeline/lib/version.ts</code> (<code>pipeline/test/version-paths.test.ts</code> enforces it).</li>
@@ -672,7 +672,7 @@ npm run pipeline -- build</code></pre>
       <li id="t15-s2"><input type="checkbox"> Run the level check with cars on and off; record both reached months.
         <pre><code data-lang="sh">npx tsx scripts/level2-check.ts pipeline/out/&lt;v&gt;
 npx tsx scripts/level2-check.ts pipeline/out/&lt;v&gt; --cars off</code></pre>
-        Expected: exit 0 with cars on. If the reached month differs by more than 3 months, or the back-cast in section 15 shows the same, stop: report the numbers to the owner and upload nothing.
+        Expected: exit 0 with cars on (otherwise upload nothing and report). Record both reached months and the difference in <code>docs/dev/cars.md</code> and in the final report to the owner.
       </li>
       <li id="t15-s3"><input type="checkbox"> Write <code>docs/dev/cars.md</code> (sources and their ranks, the population, the choice, moves, fills, the hook and its order, parking frames and the off path, the series field, the map layer, the back-cast, measured timings) and the doc updates above; add the CLAUDE.md line.</li>
       <li id="t15-s4"><input type="checkbox"> Upload and verify.
@@ -683,10 +683,11 @@ npm run pipeline -- verify &lt;v&gt; --origin https://&lt;staging-origin&gt;</co
     </ol>
   </section>
 
-  <section id="sec-open-questions">
-    <h2>Open questions</h2>
-    <aside data-kind="question"><strong>Q1. Where the parking shift lives.</strong> The spec says the shift is applied per lot in <code>startRates</code> with the memo keys grown, and expects it to move as density and household mix move. But start odds today are a pure function of policy frames (<code>rates.ts:22-44</code>; world-core rule 6, nothing accumulated; rule 20, a rebuilt plan equals a carried one), and population state is not a frame. The plan keeps those rules by carrying the shift as derived frames from world state (the pool-closing precedent, <code>funding/closing.ts:171</code>), refreshed yearly and quantised to 0.01 spaces per home, so a change is a rule-7 replan of that zone's lots. Recommendation: accept this. The alternative, a shift fixed for the window, makes the link inert under current law until transit levers exist.</aside>
-    <aside data-kind="question"><strong>Q2. Funded and affordable starts.</strong> The funded clocks compute the market odds directly (<code>funding/clocks.ts:180-202</code>, <code>z + market</code>), not through <code>startRates</code>. The plan adds the shift to the funded market clock as well, so a lot's market odds agree on both paths, and leaves affordable odds unchanged. Recommendation: market only for now, since the baseline argument (post-2018 starts built to demand) is about market buildings.</aside>
-    <aside data-kind="question"><strong>Q3. "A few months".</strong> The plan stops at a move of more than 3 months in the goal month. Recommendation: 3.</aside>
+  <section id="sec-owner-rulings">
+    <h2>Owner rulings</h2>
+    <aside data-kind="decision"><strong>R1. Parking shift as derived frames.</strong> The shift is carried as frames derived from world state (pool-closing precedent, <code>funding/closing.ts:171</code>), refreshed yearly, quantised to 0.01 spaces per home; a change replans that zone's lots.</aside>
+    <aside data-kind="decision"><strong>R2. Market only.</strong> The shift applies to market odds on both paths (<code>startRates</code> and the funded market clock); affordable odds are unchanged.</aside>
+    <aside data-kind="decision"><strong>R3. No stop threshold.</strong> The goal-month effect is recorded and reported (cars on, cars off, difference), not gated.</aside>
+    <aside data-kind="decision"><strong>R4. Builder's calls accepted.</strong> 96 household types, a project's zone is its first lot's, prototype-to-parking-type mapping, 3+ counted at the PUMS mean.</aside>
   </section>
 </article>
