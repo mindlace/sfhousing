@@ -1,11 +1,11 @@
 import type { ParcelId } from '$lib/data/parcel';
 import type { limitStatements } from '$lib/sim/finance';
-import type { CarSnapshot } from '../cars/columns';
 import type { LedgerEvent } from '$lib/sim/scenario/money';
 import type { Massing, Schedule, TargetProgressAt, TimelineScore } from '$lib/sim/scenario/types';
 import type { ProjectsFile, QualityRuleRef } from '$lib/timelapse/projects';
 import type { Day } from '$lib/timelapse/time';
 import type { PoolKind, TierUnits } from '$lib/timelapse/types';
+import type { CarSnapshot } from '../cars/columns';
 import type { FinanceFrame } from '../policy/frame';
 import type { Statics } from '../statics';
 import type { World, WorldEvent } from '../types';
@@ -95,8 +95,8 @@ export interface CarRow {
   carless: number;
   /** Null when no project started in that model month. */
   spacesPerHome: number | null;
-  /** Cars per household by zone; NaN for a zone with no households. */
-  zones: Float32Array;
+  /** Cars per household by zone (NaN for a zone with no households); null before the first filled month. */
+  zones: Float32Array | null;
 }
 
 /** The plan world's cars as the page reads them, one entry per filled calendar month. */
@@ -104,10 +104,10 @@ export interface CarsView {
   households: number[];
   cars: number[];
   carless: number[];
-  /** `cars / households`, NaN at 0 households. */
-  perHousehold: number[];
+  /** `cars / households`; null at 0 households. */
+  perHousehold: (number | null)[];
   spacesPerHome: (number | null)[];
-  zones: Float32Array[];
+  zones: (Float32Array | null)[];
 }
 
 /**

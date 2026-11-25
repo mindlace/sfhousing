@@ -106,7 +106,7 @@ function carsViewOf(rows: CarRow[]): CarsView {
     households: rows.map((r) => r.households),
     cars: rows.map((r) => r.cars),
     carless: rows.map((r) => r.carless),
-    perHousehold: rows.map((r) => r.cars / r.households),
+    perHousehold: rows.map((r) => (r.households === 0 ? null : r.cars / r.households)),
     spacesPerHome: rows.map((r) => r.spacesPerHome),
     zones: rows.map((r) => r.zones)
   };

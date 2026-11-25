@@ -81,6 +81,8 @@ describe('cars in the series', () => {
     expect(c[a].spacesPerHome).toBeNull();
     expect(c[b].spacesPerHome).toBe(1.5);
     expect(c[0].households).toBe(0);
+    expect(c[0].zones).toBeNull();
+    expect(c[0].spacesPerHome).toBeNull();
   });
 
   it('a series fed no snapshots gives null cars', () => {
@@ -103,6 +105,17 @@ describe('cars in the series', () => {
     expect(b.cars).toEqual(a.cars);
   });
 
+  it('rejects saved cars whose lengths do not match the statics', () => {
+    const d = fed(7, (m) => snap(m * 10)).data();
+    expect(() => createWorldSeries(statics, { ...d, carRows: d.carRows.slice(4) })).toThrow(
+      'saved series cars do not match'
+    );
+    expect(() => createWorldSeries(statics, { ...d, carZones: d.carZones.slice(2) })).toThrow(
+      'saved series cars do not match'
+    );
+    expect(createWorldSeries(statics, d).data()).toEqual(d);
+  });
+
   it('rejects saved version 5 data', () => {
     const d = { ...createWorldSeries(statics).data(), version: 5 } as unknown as WorldSeriesData;
     expect(() => createWorldSeries(statics, d)).toThrow('world-score: saved series version 5');
@@ -110,6 +123,22 @@ describe('cars in the series', () => {
 });
 
 describe('cars in the view', () => {
+  it('shows null, never NaN, at 0 households and before the first filled month', () => {
+    const z = fed(14, (m) => (m === 4 ? snap(0) : m > 4 ? snap(m * 10) : null));
+    const through = z.finalThrough();
+    const v = viewOf([chunkOf(z, z, null, 0, through)], statics).cars!;
+    const first = calendarOf(4);
+    expect(first).toBeGreaterThan(0);
+    for (let i = 0; i < first; i++) {
+      expect(v.zones[i]).toBeNull();
+      expect(v.perHousehold[i]).toBeNull();
+    }
+    expect(v.households[first]).toBe(0);
+    expect(v.perHousehold[first]).toBeNull();
+    expect(v.zones[first]).toBeInstanceOf(Float32Array);
+    for (const x of v.perHousehold) expect(x === null || Number.isFinite(x)).toBe(true);
+  });
+
   const s = fed(14, (m) => snap(m * 10, m === 6 ? null : 1.5));
   const through = s.finalThrough();
   const cs = (from: number, to: number): SeriesChunk => chunkOf(s, s, null, from, to);
@@ -120,6 +149,7 @@ describe('cars in the view', () => {
     for (let i = 0; i <= through; i++) {
       expect(cars.perHousehold[i]).toBe(cars.cars[i] / cars.households[i]);
     }
+    expect(cars.perHousehold[0]).toBe(0.5);
     expect(cars.zones[through]).toBeInstanceOf(Float32Array);
     expect(cars.spacesPerHome.some((x) => x === null)).toBe(true);
   });

@@ -5,14 +5,13 @@
 import { TIER_FIELDS, tiersOf, type TierCtx } from '$lib/sim/scenario/finance-score';
 import type { Day } from '$lib/timelapse/time';
 import { STAGE_ORDER, type Stage, type TierUnits } from '$lib/timelapse/types';
-import { monthOfDay } from '../months';
+import { monthLastDay, monthOfDay } from '../months';
 import { scheduleAt } from '../read';
 import type { Statics } from '../statics';
 import * as core from '../types';
 import type { World, WorldEvent } from '../types';
 import { finalTable, horizonOf, tierTableFor } from './statics';
 import type { CarSnapshot } from '../cars/columns';
-import { monthLastDay } from '../months';
 import type { CarRow, MonthRow, ScoreStatics, WorldSeries, WorldSeriesData } from './types';
 
 type Live = Exclude<Stage, 'complete'>;
@@ -239,6 +238,15 @@ function restored(s: ScoreStatics, from: WorldSeriesData): WorldSeriesData {
     throw new Error(`world-score: saved series version ${from.version}`);
   if (from.delta.length !== SERIES_FIELDS * (s.lastIndex + 1)) {
     throw new Error('world-score: saved series does not match these statics');
+  }
+  const cz = from.carZoneCount;
+  const rowsOk =
+    from.carRows.length === 0 ? cz === 0 : from.carRows.length === 4 * (s.lastIndex + 1);
+  if (
+    !rowsOk ||
+    from.carZones.length !== (from.carRows.length === 0 ? 0 : cz * (s.lastIndex + 1))
+  ) {
+    throw new Error('world-score: saved series cars do not match these statics');
   }
   return copyData(from);
 }
@@ -714,7 +722,7 @@ export function createWorldSeries(s: ScoreStatics, from?: WorldSeriesData): Worl
             cars: 0,
             carless: 0,
             spacesPerHome: null,
-            zones: new Float32Array(Z).fill(NaN)
+            zones: null
           });
           continue;
         }
