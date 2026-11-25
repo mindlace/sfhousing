@@ -1,0 +1,210 @@
+<article>
+  <header>
+    <h1>Car ownership in the simulation</h1>
+    <p>Simulate the cars SF households keep, household by household type, alongside the homes the sim already builds; let fewer cars mean less parking and cheaper buildings.</p>
+  </header>
+
+  <section id="sec-intent">
+    <h2>Intent</h2>
+    <p>The owner wants later levels to set goals with more than one target ("+X homes and −Y cars") and to unlock fewer-cars policies: transit that pulls people out of cars, and penalties (lanes turned into bus lanes, curb parking removed) that push them out. None of that can be built until the sim knows where the cars are and how ownership changes. This project builds that knowledge as <strong>simulation only</strong>: no new player levers, no new goal.</p>
+    <p>The owner's second reason: parking costs housing. Since SF ended parking minimums (2018-12-11) the law no longer forces parking; buildings carry the parking their residents will pay for. So lower car demand means fewer spaces, cheaper buildings, and more starts. That link is in scope.</p>
+    <p>The owner asked that the work rest on existing data, models and forecasting practice, and that it be checkable against history the way the housing model is (the 2007–2025 back-cast). Fidelity is worth compute: the sim renders 40 years in about 90 ms.</p>
+  </section>
+
+  <section id="sec-goals">
+    <h2>Goals, non-goals, anti-goals</h2>
+    <section id="sec-goals-in">
+      <h3>Goals</h3>
+      <ul>
+        <li>A synthetic SF household population on today's housing stock, with cars, matching Census counts by neighbourhood.</li>
+        <li>A household car-ownership choice (0, 1, 2, 3+ cars) in the structure the Bay Area's regional models use, refitted to SF data.</li>
+        <li>Ownership changes when households move and when new homes fill, at rates measured from Census records.</li>
+        <li>Each new building gets parking in line with the predicted cars of its residents; the cost difference from the historical parking level shifts its start odds.</li>
+        <li>A back-cast that runs the car model over observed history and reports how close it lands to the Census series.</li>
+        <li>A citywide car series in the results and a cars layer on the map.</li>
+      </ul>
+    </section>
+    <section id="sec-goals-out">
+      <h3>Non-goals</h3>
+      <ul>
+        <li>Player levers: transit edits, bus lanes, parking removal or pricing (later projects 2 and 3).</li>
+        <li>Goals with more than one target (later, once cars can be moved by the player).</li>
+        <li>Driving, trips, traffic, mode choice, emissions.</li>
+        <li>Garage-to-ADU conversions (considered; deferred by the owner).</li>
+        <li>Population change beyond homes filling and emptying: no migration model, no household formation model.</li>
+      </ul>
+    </section>
+    <section id="sec-goals-anti">
+      <h3>Anti-goals</h3>
+      <ul>
+        <li>Invented parameters where SF data exists. Follow the evidence ranking: per-record data, then official aggregates, then inferences, then literature, then invented (owner's standing rule).</li>
+        <li>Counting parking's cost twice. The start-odds model was fitted on years when buildings already carried parking; only the difference from that level may move odds.</li>
+        <li>Breaking the level rule that current law reaches the homes goal (D1, <code>scripts/level2-check.ts</code>).</li>
+        <li>Random bands. The sim shows one future (owner's standing rule); household draws are deterministic per seed like every other draw.</li>
+      </ul>
+    </section>
+  </section>
+
+  <section id="sec-approaches">
+    <h2>Approaches</h2>
+    <table id="tbl-approaches">
+      <caption>Ways to model ownership</caption>
+      <thead>
+        <tr><th scope="col">Approach</th><th scope="col">Trade-off</th><th scope="col">Outcome</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">A. Fitted per block group, slow drift to equilibrium</th><td>Simple and cheap; but cannot tell movers from stayers, so "natural attrition" is a tuned rate, not a mechanism.</td><td>Owner's first pick; superseded by C once compute was ruled out as a cost.</td></tr>
+        <tr><th scope="row">B. Published elasticities only</th><td>Quickest; ignores SF's strong neighbourhood pattern; ranks low on evidence.</td><td>Dropped.</td></tr>
+        <tr><th scope="row">C. Household-level choice, changed at moves</th><td>The structure MTC Travel Model Two and ActivitySim use (a household logit over 0–4+ cars); the transaction literature finds holdings change mostly at moves and life events. Needs a synthetic population and calibration work.</td><td><strong>Chosen.</strong> Best fidelity, follows practice, carries attrition as a mechanism, and gives later goals a population to count.</td></tr>
+      </tbody>
+    </table>
+    <p>Parking links considered: parking in new buildings (chosen), garage conversions to ADUs (deferred), both (deferred with conversions).</p>
+  </section>
+
+  <section id="sec-design">
+    <h2>Design</h2>
+    <figure id="fig-flow">
+      <svg class="diagram" viewBox="0 0 760 250" role="img" aria-labelledby="fig-flow-t">
+        <title id="fig-flow-t">Data and model flow for car ownership</title>
+        <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 10 5 0 10z"/></marker></defs>
+        <g class="node external" id="n-census"><rect x="10" y="20" width="170" height="44"/><text x="95" y="42">Census: PUMS, ACS, 2000</text></g>
+        <g class="node external" id="n-gtfs"><rect x="10" y="100" width="170" height="44"/><text x="95" y="122">GTFS (today, archived)</text></g>
+        <g class="node missing" id="n-calib"><rect x="230" y="20" width="160" height="44"/><text x="310" y="42">pipeline: cars calibration</text></g>
+        <g class="node" id="n-grid"><rect x="230" y="100" width="160" height="44"/><text x="310" y="122">transit access grid</text></g>
+        <g class="node missing" id="n-cars"><rect x="440" y="60" width="140" height="44"/><text x="510" y="82">car system</text></g>
+        <g class="node" id="n-world"><rect x="440" y="170" width="140" height="44"/><text x="510" y="192">world step</text></g>
+        <g class="node result" id="n-out"><rect x="620" y="60" width="130" height="44"/><text x="685" y="82">series, map</text></g>
+        <g class="edge" data-from="n-census" data-to="n-calib"><path d="M180 42H228"/></g>
+        <g class="edge" data-from="n-gtfs" data-to="n-grid"><path d="M180 122H228"/></g>
+        <g class="edge" data-from="n-grid" data-to="n-calib"><path d="M310 100V66"/></g>
+        <g class="edge" data-from="n-calib" data-to="n-cars"><path d="M390 42L440 70"/></g>
+        <g class="edge" data-from="n-grid" data-to="n-cars"><path d="M390 122L440 96"/></g>
+        <g class="edge" data-from="n-world" data-to="n-cars"><path d="M490 170V106"/><text x="455" y="140">completions</text></g>
+        <g class="edge" data-from="n-cars" data-to="n-world"><path d="M530 106V168"/><text x="590" y="140">parking Δ odds</text></g>
+        <g class="edge" data-from="n-cars" data-to="n-out"><path d="M580 82H618"/></g>
+      </svg>
+      <figcaption>Figure 1. The pipeline fits the model from Census data and transit access; the car system runs inside the world step, fed by completions, and shifts start odds through parking.</figcaption>
+    </figure>
+
+    <section id="sec-population">
+      <h3>Households</h3>
+      <ul>
+        <li><strong>Types.</strong> A household type is a small cross of the variables the ownership model needs: size, workers, income band, owner or renter. The builder picks the bands; each must be fittable from PUMS and must not split SF's households so finely that block-group control fails.</li>
+        <li><strong>Representation (my call).</strong> State is counts, not individual records: households per (zone × type × cars). With a logit over discrete covariates this has the same fidelity as one record per household, and a fixed state that <code>structuredClone</code> copies cheaply. Zones are Census block groups (about 580 in SF).</li>
+        <li><strong>Start.</strong> Built by the pipeline: PUMS households for SF's PUMAs, reweighted to block-group margins (ACS 5-year: tenure by vehicles B25044, household size, income), the method PopulationSim uses. Households in a block group sum to its occupied homes; the assessor's <code>existingUnits</code> per parcel places homes in block groups.</li>
+        <li><strong>New homes.</strong> When a project completes (<code>end</code> event, <code>complete</code>), its homes fill with households whose type mix is drawn from PUMS households in recently built homes that moved in recently, split by market or affordable (affordable homes take the income bands of their tier). They choose cars on arrival.</li>
+        <li><strong>Lost homes.</strong> Demolished homes (lots redeveloped) remove their households in proportion across types in that zone.</li>
+        <li><strong>Vacancy.</strong> Occupied share per zone from ACS, held constant.</li>
+      </ul>
+    </section>
+
+    <section id="sec-choice">
+      <h3>Choosing cars</h3>
+      <ul>
+        <li><strong>Structure.</strong> A multinomial logit over 0, 1, 2, 3+ cars per household, with the terms MTC Travel Model Two and ActivitySim's <code>auto_ownership</code> use that SF data can support: household size or drivers, workers, income (piecewise), density, and transit accessibility. Their published coefficients are the starting point and the cross-check, not the answer.</li>
+        <li><strong>Transit accessibility.</strong> Read from the existing 100 m access grid (<code>src/lib/transit/grid.ts</code>), averaged over each zone's homes. The builder may switch to a jobs-reachable measure if the fit is clearly better; the grid is the default because it already exists and can be rebuilt for past years from archived GTFS.</li>
+        <li><strong>Fit.</strong> Household terms from PUMS (per-record, PUMA geography). Location terms (density, transit access, zone constants where needed) from block-group B25044 counts, by matching predicted to observed shares. Report fit by block group and citywide in the calibration report.</li>
+      </ul>
+    </section>
+
+    <section id="sec-dynamics">
+      <h3>When cars change</h3>
+      <ul>
+        <li><strong>Moves.</strong> Each month a share of households in each zone and type moves; movers re-choose cars at their new home. Move rates by tenure (and type where the data supports it) come from PUMS "when moved in" (<code>MV</code>).</li>
+        <li><strong>Where movers go.</strong> Out-movers' homes refill with new households drawn from the zone's recent-mover type mix (PUMS), which re-choose. The sim has no migration model: a moving household leaves the model and a new one takes the home.</li>
+        <li><strong>Stayers</strong> keep their cars. The builder may add a small life-event rate if the back-cast shows it is needed, with the rate taken from the transaction literature and reported as such.</li>
+        <li><strong>Draws.</strong> Counter-based draws from <code>src/lib/sim/scenario/rng.ts</code> with new purpose numbers in <code>P</code> and a zone-keyed entity namespace; integer flows split by a deterministic rounding rule so one seed gives one future regardless of order (world-core rule 20).</li>
+        <li><strong>Transit forward.</strong> Today's network, held fixed over the window. Nothing in this project edits transit.</li>
+      </ul>
+    </section>
+
+    <section id="sec-parking">
+      <h3>Parking in new buildings</h3>
+      <ul>
+        <li><strong>Spaces.</strong> At a project's start, spaces per home = the predicted cars per household of its likely residents (the new-home type mix and the choice model at that zone), times a supply-over-use ratio. The ratio comes from SF data if a per-project parking count can be found (Planning's pipeline or permits; the builder searches); otherwise from King County's Right Size Parking (about 1.4 built per 1.0 used), marked as literature in the report.</li>
+        <li><strong>Baseline (my call).</strong> Per lot, at the same grain the shift is applied: each lot's baseline is the spaces per home the model predicts for it at the start of the window (today's population, today's transit). So current law's results do not move at month one; only change from today moves odds. Today's starts are post-2018, built to demand, which is why predicted demand (not the old minimums, and not the parking the Controller prototypes assume) is the reference. The report states this assumption.</li>
+        <li><strong>Cost to odds.</strong> Δcost per home = Δspaces per home × cost per space (by prototype: surface, podium, below grade; source to be found, SF or Controller data before literature). Δlog-odds via the conversion <code>oddsShift</code> (<code>src/lib/sim/finance/instruments.ts</code>) uses, with the live <code>perCostShare</code> slope. The shift has either sign: more parking than the baseline lowers odds (<code>oddsShift</code> today rejects a negative amount; the car path needs a signed version). Applied per lot in <code>startRates</code>; the memo keys grow to include it.</li>
+        <li><strong>Floor area: deferred.</strong> The massing generator reserves no floor area for parking, so there is nothing to free. The floor-area link is a follow-up; changing <code>src/lib/generator/</code> changes every yield and the dataset.</li>
+        <li><strong>No per-building cap (my call).</strong> Households choose cars from the zone pattern; a building's spaces do not cap them. State is counts by zone, with no building identity, and PUMS carries no parking price or availability, so a cap's cost term would have no SF source. Supply above use (about 1.4 to 1.0) means a cap rarely binds.</li>
+      </ul>
+      <aside data-kind="decision"><strong>Decision</strong> Odds only. The parking saving does not lower <code>costPerHome</code> in the finance engine (subsidy need, awards, re-pricing); funded starts stay priced as today. That link comes with the later fewer-cars levers.</aside>
+      <aside data-kind="decision"><strong>Decision</strong> Saved games and published policies take the new results on the new dataset; no switch holds them on the old behaviour. Expected effect is small (density and household mix move slowly with transit fixed). If the back-cast or <code>level2-check</code> shows a goal month moving by more than a few months, the builder stops and reports.</aside>
+      <aside data-kind="warning"><strong>Warning</strong> The parking feedback is a loop: fewer cars → fewer spaces → more starts → more car-light households. The builder checks it converges and that <code>scripts/level2-check.ts</code> still exits 0.</aside>
+    </section>
+
+    <section id="sec-engine">
+      <h3>In the engine</h3>
+      <ul>
+        <li>A car system attached the way funding is (<code>withFunding</code> in <code>src/lib/sim/world/</code>): created with the world, fed project events, run once per month after stages and before starts, with its state as typed-array columns so <code>structuredClone</code> still copies the world.</li>
+        <li>Speed is measured per world: <code>/sim</code> steps one world per side (policy and comparison), so the bench's 48-world set (<code>world.bench.spec.ts</code>) is a benchmark, not the budget. The car system gets its own printed timing per world-month on the live city and must not add noticeably to the whole-window fill (about 4 s today); chunk stays within 1 ms per month.</li>
+        <li>Off by a switch for the referee and for runs without the car data, the way finance has <code>off</code>.</li>
+      </ul>
+    </section>
+
+    <section id="sec-results">
+      <h3>Results and map</h3>
+      <ul>
+        <li>Series per month: households, cars, households with no car; cars per household is computed in the view. Added to the series chunk as an optional field the way <code>money</code> and <code>tiers</code> are, with the series version bumped.</li>
+        <li>Shown on <code>/sim</code> as one row in Details (cars today and at the playhead, change in cars per household). Not in the header and not in the goal. Short copy, details on demand (owner's standing rules).</li>
+        <li>A map layer of cars per household by zone at the playhead, switched in the Layers panel beside transit.</li>
+        <li>About this model gains a short section on the car model and its sources; the data credits gain the Census sources.</li>
+      </ul>
+    </section>
+
+    <section id="sec-data">
+      <h3>Data</h3>
+      <table id="tbl-sources">
+        <caption>Sources</caption>
+        <thead>
+          <tr><th scope="col">Source</th><th scope="col">Use</th><th scope="col">Rank</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">ACS PUMS, SF PUMAs (2005 onward; 2020-based PUMAs from 2022)</th><td>Household types, choice-model household terms, move rates (<code>MV</code>), new-home occupants</td><td>Per-record</td></tr>
+          <tr><th scope="row">ACS 5-year, block group: B25044, B25046, size and income tables</th><td>Start population margins, location terms, back-cast targets by release</td><td>Official aggregate</td></tr>
+          <tr><th scope="row">Census 2000 SF3, block group (H044 tenure by vehicles)</th><td>Back-cast start point</td><td>Official aggregate</td></tr>
+          <tr><th scope="row">CA DMV light-duty registrations by ZIP (2019 onward)</th><td>Cross-check of totals only</td><td>Official aggregate</td></tr>
+          <tr><th scope="row">Muni, BART, Caltrain GTFS archives (Transitland; GTFS Data Exchange 2008–2016 on request)</th><td>Transit access for past years in the back-cast</td><td>Per-record</td></tr>
+          <tr><th scope="row">MTC Travel Model Two, ActivitySim <code>auto_ownership</code></th><td>Model structure, prior coefficients, cross-check</td><td>Estimated model</td></tr>
+          <tr><th scope="row">King County Right Size Parking</th><td>Supply-over-use ratio, if no SF per-project parking is found</td><td>Literature</td></tr>
+        </tbody>
+      </table>
+      <ul>
+        <li>Census data comes from Census directly (public domain), not NHGIS extracts, whose terms restrict redistribution.</li>
+        <li>Census sources do not join <code>AS_OF_SOURCE_IDS</code>; they do not move the dataset's as-of date.</li>
+        <li>Fitted outputs go to <code>calibration.json</code> under a new cars section, with a calibration-report section, the way market has one. Any new <code>src/lib</code> path the pipeline imports joins <code>PATHS</code> in <code>pipeline/lib/version.ts</code>.</li>
+        <li>The fixture city gains a tiny synthetic population and calibration so e2e and golden checks cover the path.</li>
+      </ul>
+    </section>
+
+    <section id="sec-backcast">
+      <h3>Back-cast</h3>
+      <ul>
+        <li>Start from the 2000 block-group population (or the 2005–2009 ACS release if 2000 cannot be placed on today's block groups cleanly; builder's call, reported). Feed observed completions and demolitions from the project records and transit access from archived GTFS by year, and step to each later ACS release.</li>
+        <li>Compare citywide: share of households with no car against the ACS series (published readings: 28.6% in 2000, 29.8% in 2009, about 30.3% in 2010, 31.4% in 2012; the builder pulls the Census tables themselves for every year through the latest release). Compare by tract for the latest release.</li>
+        <li>A held-out check: fit through the 2009–2013 release, predict the latest.</li>
+        <li>Reported in the calibration report. Whether it becomes a build gate (like V28) is decided once the first numbers are in.</li>
+      </ul>
+    </section>
+  </section>
+
+  <section id="sec-constraints">
+    <h2>Constraints</h2>
+    <ul>
+      <li>Determinism rules: fdlibm <code>exp</code>/<code>log</code> from <code>src/lib/timelapse/math.ts</code>, counter-based draws, one future per seed.</li>
+      <li>Speed as in the engine section: per world, whole-window fill must not grow noticeably (today about 4 s).</li>
+      <li>The dataset changes, so the branch uploads its dataset before signoff, after <code>level2-check</code> exits 0 (<code>docs/dev/pipeline.md</code>).</li>
+      <li>Every source records a licence in <code>sources.lock.json</code>.</li>
+    </ul>
+  </section>
+
+  <section id="sec-builder">
+    <h2>Left to the builder</h2>
+    <ul>
+      <li>Household type bands, within what PUMS can fit and block-group margins can control.</li>
+      <li>The exact accessibility measure, if the grid fits poorly.</li>
+      <li>Finding SF per-project parking counts and a cost per space source; reporting what was found.</li>
+      <li>The deterministic rounding rule for integer flows.</li>
+      <li>Wording of the Details row and the About section, within the terse-copy rule.</li>
+    </ul>
+  </section>
+</article>
