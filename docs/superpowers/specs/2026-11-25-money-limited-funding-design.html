@@ -1,0 +1,288 @@
+<article>
+  <header>
+    <h1>Money-limited affordable production</h1>
+    <p>Make funded affordable homes limited by money, as real ones are. City money fills the gap last, from one pot. Federal credits are capped at the record's average year and lapse when unused. Grants are required and loans are optional. Waiting applications expire after 24 months.</p>
+  </header>
+
+  <section id="sec-status">
+    <h2>Status</h2>
+    <p>Draft for discussion, 2026-11-25. Branch <code>design/funding-award-rule</code>.</p>
+    <p>This spec follows <a href="2026-11-25-funding-award-rule-design.html">the funding award rule spec</a> (R3) and is implemented after it. It supersedes R3's fallback for grants, while keeping the fallback for loans and guarantees, and it keeps R3's finite start odds.</p>
+    <p>The measurements use loader-hook prototypes on the integration branch's code with dataset 2026-11-14-09ca30c8; nothing is implemented. The prototypes and their raw output are in the session scratchpad (<code>gaplast/</code>, <code>money/</code>, <code>fed-ceiling/</code>). They are copied to <code>.superpowers/funding-award-rule/</code> in the main checkout.</p>
+  </section>
+
+  <section id="sec-why">
+    <h2>Why</h2>
+    <p>In the real world, funded affordable output is limited by money:</p>
+    <ul>
+      <li>MOHCD sizes its loan to the gap that is left after every other source (Underwriting Guidelines 2022, tier 1).</li>
+      <li>City-funded projects stall waiting for scarce state bond and credit allocations (BLA 2023, tier 1; the 2026 MHP Gap NOFA).</li>
+      <li>Awards expire: HCD after 24 months, and CDLAC if construction has not started 180 to 222 days after allocation (tier 1).</li>
+    </ul>
+    <p>The model differs, and the R3 fix does not change the difference:</p>
+    <ul>
+      <li><strong>Under R3, money hardly ever binds.</strong> Affordable output is set by start odds, which depend on how much of the gap the bundle covers, not by how much is in the pools. A gap-last prototype on top of R3 shows it:
+        <ul>
+          <li>With a $280k City cap, none, bond and bond + general revenue come out identical at every deadline, while City spending rises by $1.38B.</li>
+          <li>The homes waiting for money never exceed 104.</li>
+        </ul>
+        So under R3 a $410M bond and a $36.7M-a-year stream act through the same coverage step, not through their size.</li>
+      <li><strong>City money is a fixed proportional share (ruling R13), not the last-in filler.</strong> This is the root of the problem in the first spec: a new City pool becomes a co-requirement of every project.</li>
+      <li><strong>The federal ceiling never binds.</strong> It is set at the best award year, $564.5M a year (1,274 homes), where the 2018–2025 per-record mean is 737 homes. Unspent credits carry forward forever (<code>finance-data.md:201-212</code>).</li>
+    </ul>
+    <p>A money-limited model has an evidence advantage: output follows dollars from the records, not a fitted start rate. Each purchase's effect also becomes proportional to its dollars, which is what a player would expect.</p>
+  </section>
+
+  <section id="sec-finding">
+    <h2>The finding that sets the scope: current law without new bonds</h2>
+    <p>The variant measured here is MONEY: gap-last share-fill, grants required, loans optional, finite start odds. Under it, current law falls to 64,286 net and 11,587 affordable homes at Dec 2060. It <strong>misses the citywide goal</strong> (78,212 of 82,069 homes at Oct 2066), where R0 reaches it in Apr 2065 and R3 in Sep 2061. Affordable completions over 2030–2045 run at 394 a year, against 737 a year in the record.</p>
+    <p>That is not a calibration error. It is what <code>funding.json</code> says current law is:</p>
+    <ul>
+      <li>The City spent $234M in FY2024-25 (BLA 2026, Exhibit E, tier 1). At the $300,027 gap that is about 780 homes a year.</li>
+      <li>But <code>city-debt</code> ($80.5M a year) is bounded by the $260.3M of bond authorisation left unissued. The capital plan's next housing bond, November 2034 at $200M, "needs voters and is not current law".</li>
+      <li>What recurs is about $105M a year: OCOH $48.6M, General Fund $21.8M and impact fees $34.8M, with fee revenue now far below that. At $300k a home, that is about 350 homes a year.</li>
+      <li>The record's 737 a year was built with the 2015, 2019 and 2024 housing bonds.</li>
+    </ul>
+    <p>So a money-limited model says plainly that without new voter-approved bonds, San Francisco funds about half its recent affordable output. Whether the game's current law should include the City's habit of passing housing bonds is the first decision (see <a href="#sec-open">open questions</a>).</p>
+  </section>
+
+  <section id="sec-design">
+    <h2>Design</h2>
+
+    <section id="sec-p1">
+      <h3>P1. City money fills the gap last, from one pot (share-fill)</h3>
+      <ul>
+        <li>In <code>fundBundle</code>'s second pass (<code>src/lib/sim/finance/instruments.ts:278-299</code>), the City tier's grants are scaled by a single factor so that together they pay exactly the residual gap. The gap is <code>G = max(0, U − federal − state − City loan value)</code>, capped by the per-home ceiling (P6). Today's rule only ever scales down; under share-fill, a City tier short of the gap scales up.</li>
+        <li>Each City pool's share becomes a weight for splitting G. Dropping a short City pool scales the others up, so <code>leaveOut</code> settles on any City subset that can pay the whole gap. That makes the City's pools one pot in effect, and an added City pool can never be a co-requirement.</li>
+        <li>The bundle stays pure and memoisable: the price depends on the set, not on balances.</li>
+        <li>This supersedes R13, which applied proportional sharing to an overflowing tier only.</li>
+        <li>The two alternatives were rejected:
+          <ul>
+            <li>Splitting in proportion to the money available now puts balances into pricing, the memo and the old engine.</li>
+            <li>A fixed order needs a rank, and R13 rejected fixed orders.</li>
+          </ul>
+        </li>
+      </ul>
+    </section>
+
+    <section id="sec-p2">
+      <h3>P2. Grants are required, loans and guarantees are optional</h3>
+      <ul>
+        <li>The award test changes. A short pool holding any grant programme keeps the "not below the whole bundle" test, so the application waits. A short pool whose programmes are all loans or guarantees may be dropped, and the award goes ahead at the lower level, as R1 allows.</li>
+        <li>This is safe for monotonicity because of P1. Every City grant pool is fungible within the City tier, so the whole bundle's level depends on the City's combined money, not on any one pool.</li>
+        <li>Federal and state grants stay required, as a rule of their own. A short federal or state grant pool is never dropped: the application waits, and the City does not stand in for credits. A real 4% deal cannot close without its credits.
+          <ul>
+            <li>The share-fill gap G is computed with federal and state at their full shares, whether or not their pools are short.</li>
+            <li><strong>Not what was measured.</strong> The MONEY runs had no City cap and let the City fill a gap left by a dropped federal pool. So the measured FED numbers understate the ceiling's effect. Re-measuring with this rule is the plan's first step.</li>
+          </ul>
+        </li>
+        <li>R3's finite start odds at full coverage stay. Without them every lot applies at once.</li>
+        <li><code>awardSet</code> and <code>awardPasses</code> must agree; <code>serve.ts:230</code> enforces that. Both engines change (<code>scenario/funding.ts</code>, <code>scenario/funded.ts</code>), or the tolerance referee fails.</li>
+        <li>Measured: no disagreement error in 105 runs.</li>
+      </ul>
+    </section>
+
+    <section id="sec-p3">
+      <h3>P3. The federal ceiling at the record's mean, lapsing yearly</h3>
+      <ul>
+        <li><strong>Level:</strong> the per-record mean of San Francisco's new-construction tax-credit awards, 2018–2025.
+          <ul>
+            <li>Source: the CTCAC "List of Projects" workbook, sheet San Francisco, tier 0, n = 46 awards.</li>
+            <li>Mean 737 homes a year (median 685; range 284–1,274), so 737 × $443,108 = $326.6M a year.</li>
+            <li>There is no trend, so the mean is used.</li>
+            <li>The workbook becomes a fetched pipeline source, replacing the hand-typed 2024–2025 <code>awards.rows</code>.</li>
+            <li>The schema check at <code>pipeline/enrichment/funding-schema.ts:302-308</code> changes from the best year to the mean.</li>
+            <li><code>observedHomesPerYear</code> becomes the 2018–2025 mean.</li>
+          </ul>
+        </li>
+        <li><strong>Lapse:</strong> a new pool property, <code>lapse: 'yearly'</code>. Money unspent and uncommitted at an inflow's anniversary is lost, not banked. Real unused credits and bond cap go to other regions and the state-wide pools. Only the baseline federal pool lapses; the state pool does not (open question 4).</li>
+        <li>The <code>federal-support</code> preset is a separate federal grant pool, not credits, and stays outside the ceiling and without lapse.</li>
+        <li>Measured, on top of P1 and P2:
+          <ul>
+            <li>Current law's federal use (about $130M a year) stays under the ceiling, so current law does not change.</li>
+            <li>The ceiling binds once City measures or federal support are bought: bond + GR + FS goes from 73,884 to 70,999 net at 2060.</li>
+            <li>The lapse removes the remaining federal-support + public-bank drops.</li>
+          </ul>
+        </li>
+      </ul>
+    </section>
+
+    <section id="sec-p4">
+      <h3>P4. A waiting application expires after 24 months</h3>
+      <ul>
+        <li>A row that has waited 24 months lapses, and its spell restarts on the same draws, joining the line behind earlier applications (<code>finance-engine.md:290-295</code>).</li>
+        <li>Source: HCD's Disencumbrance Policy (Administrative Notice 2022-02, tier 1), which gives 24 months to secure all permanent financing. The 6-month extension is discretionary and left out. Terner Center's average 17-month wait after a failed first credit application corroborates the figure (tier 3).</li>
+        <li>This is a new lapse reason checked once a month beside the re-pricing lapses (<code>apply.ts:427-442</code>, <code>policy.ts:54-76</code>). It goes into both engines.</li>
+        <li>No money is committed while a row waits, so the ledger identities are untouched.</li>
+        <li>It needs new tests: the mini golden has no restarted spells.</li>
+        <li>Under P1 and P2 waiting is real (a peak of 23,532 homes under current law), so this matters here. Under R3 it would do almost nothing.</li>
+        <li>Not measured. The check in <a href="#sec-check">the checks section</a> covers it.</li>
+      </ul>
+    </section>
+
+    <section id="sec-p5">
+      <h3>P5. Not in scope</h3>
+      <ul>
+        <li><strong>Rounds.</strong> Serving state and federal awards only at CDLAC's three round dates a year is left out. The yearly lumps already batch money (owner ruling), and rounds shift results by about 2 months on average.</li>
+        <li><strong>The two-stage award.</strong> The real order is City first, with state and federal money at permit and a 180–222-day start deadline. It is recorded as the realistic target but deferred:
+          <ul>
+            <li>It needs a held stage in <code>src/lib/timelapse</code>.</li>
+            <li>It conflicts with R6.</li>
+            <li>It opens a real channel where more City money pulls lots into funded starts that then die waiting for capped credits, which would lower net homes.</li>
+          </ul>
+        </li>
+        <li><strong>Layering cost.</strong> Each added public source adds about 3.9 months and $20k a home (Terner 2025, tier 3). Left out because it is small and literature-tier.</li>
+      </ul>
+    </section>
+
+    <section id="sec-p6">
+      <h3>P6. The City's per-home ceiling</h3>
+      <ul>
+        <li>At baseline, the model's G already equals the tier-1 average City gap: $300,027 (BLA 2026, Exhibit F).</li>
+        <li>A ceiling binds only when federal or state money shrinks (<code>federal-credits-off</code>, <code>state-off</code>), and there the City would otherwise fill up to $861k a home.</li>
+        <li>The evidence for a ceiling is thin:
+          <ul>
+            <li>The Multisite RFQ maximum is $280k (two project memos, tier 0, one solicitation).</li>
+            <li>MOHCD's tier estimates are $405k–$490k (BLA Exhibit O, tier 1).</li>
+          </ul>
+        </li>
+        <li>Proposal: a ceiling of $490k, the top of Exhibit O. It never binds at baseline, and it stops the City buying whole projects when credits are switched off.</li>
+        <li>It is kept in <code>src/lib/sim/finance</code> with its provenance, so it is hashed.</li>
+      </ul>
+    </section>
+  </section>
+
+  <section id="sec-calls">
+    <h2>Calls made in this draft (check these)</h2>
+    <ul>
+      <li><strong>Lapsed money is booked, not hidden.</strong> A lapse is a ledger event with its own <code>lapsed</code> series in the money results. Identity E4 gains a <code>− lapsed</code> term. Both engines record it, and the money view shows it. The prototype only capped the available money, which is not acceptable for the ledger.</li>
+      <li><strong>The federal level is re-derived before it is used.</strong> The 737 figure is provisional: the prototype's script did not filter on award stage. The definition:
+        <ul>
+          <li>rows at the awarded stage only;</li>
+          <li>new construction;</li>
+          <li>4% and 9% credits;</li>
+          <li>low-income units, not total units;</li>
+          <li>award years 2018–2025.</li>
+        </ul>
+        The workbook is a pinned source under <code>sources.lock.json</code>, like every other source, so a refresh is a deliberate lock change.</li>
+      <li><strong>The expiry clock.</strong> It starts on the row's applied day. A re-make that keeps the row's place does not reset it. A row that expires and applies again gets a fresh 24 months. A lot may cycle through expiries; that is what the real rule does too.</li>
+      <li><strong>Share-fill applies wherever City grants sit in a bundle.</strong> Today that is affordable bundles only, as in the prototype.</li>
+      <li><strong>The record check's band.</strong> It covers the first 10 simulated years, and warns outside ±30% of the rate the current-law money supports.</li>
+      <li><strong>Re-measure first.</strong> The plan's first task re-runs the sweep with P2's required rule, the P6 ceiling and the re-derived federal level, before any engine work is finalised. The tables below are from the prototype, without those three.</li>
+    </ul>
+  </section>
+
+  <section id="sec-numbers">
+    <h2>Measured numbers</h2>
+    <table id="tbl-money">
+      <caption>Net / funded / affordable homes at Dec 2060 (MONEY = P1 + P2 + finite odds; FED adds P3's level; LAPSE adds P3's lapse)</caption>
+      <thead><tr><th scope="col">Set</th><th scope="col">R0 today</th><th scope="col">R3</th><th scope="col">MONEY</th><th scope="col">MONEY+FED+LAPSE</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">none</th><td>68,761 / 12,808 / 15,695</td><td>72,431 / 16,611 / 19,616</td><td>64,286 / 8,756 / 11,587</td><td>64,286 / 8,756 / 11,587</td></tr>
+        <tr><th scope="row">bond</th><td>68,885 / 12,966 / 15,849</td><td>73,287 / 17,500 / 20,497</td><td>66,102 / 10,570 / 13,454</td><td>65,349 / 9,815 / 12,643</td></tr>
+        <tr><th scope="row">bond + GR</th><td>61,651 / 6,116 / 8,718</td><td>75,417 / 19,628 / 22,641</td><td>68,672 / 13,139 / 16,089</td><td>67,698 / 12,166 / 15,005</td></tr>
+        <tr><th scope="row">bond + GR + FS</th><td>66,956 / 11,422 / 14,246</td><td>—</td><td>73,884 / 18,393 / 21,391</td><td>70,764 / 15,233 / 18,189</td></tr>
+      </tbody>
+    </table>
+    <table id="tbl-money-rates">
+      <caption>Current law: what the money does</caption>
+      <thead><tr><th scope="col">Rule</th><th scope="col">Peak homes waiting</th><th scope="col">City $ per affordable home</th><th scope="col">Affordable completions a year, 2030–45</th><th scope="col">Goal reached</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">R0</th><td>1,146</td><td>$127k</td><td>471</td><td>Apr 2065</td></tr>
+        <tr><th scope="row">R3</th><td>0</td><td>$124k</td><td>647</td><td>Sep 2061</td></tr>
+        <tr><th scope="row">MONEY (+FED, +LAPSE)</th><td>23,532</td><td>$259k</td><td>394</td><td>missed by 3,857 homes</td></tr>
+        <tr><th scope="row">Record</th><td>—</td><td>$300k (BLA Exhibit F)</td><td>737 (CTCAC, 2018–25)</td><td>—</td></tr>
+      </tbody>
+    </table>
+    <p><strong>Monotonicity.</strong> MONEY+FED+LAPSE leaves 7 readings with drops above 5 homes, all from <code>public-bank</code>: −102 net at 2045 on bond + GR (with or without RF), and −23 affordable at 2055 for the bank alone. These are timing effects of an optional loan that recover by 2060. The implementation traces them and must pass <code>money-monotone</code>, as for R3's −212.</p>
+    <p><strong>Proportional effects.</strong> Under MONEY, each purchase adds homes roughly in proportion to its dollars:</p>
+    <ul>
+      <li>The bond adds 1,867 affordable homes.</li>
+      <li>General revenue adds 2,635.</li>
+      <li>Federal support adds 5,302.</li>
+    </ul>
+    <p>Under R3 they are smaller (+881 for the bond, +2,144 for general revenue) and come from the step to full coverage, not from the dollars.</p>
+  </section>
+
+  <section id="sec-check">
+    <h2>Checks</h2>
+    <ul>
+      <li><strong><code>money-monotone</code></strong> (from the first spec) must pass, with the same tolerance of 5 homes.</li>
+      <li><strong><code>level2-check</code></strong> (or <code>reach-check</code>) must exit 0, which depends on open question 1.</li>
+      <li><strong>A record check.</strong> It replaces the static 50% warning in <code>pipeline/lib/fzp-cal/funding.ts:391-396</code>, which compares dollars only.
+        <ul>
+          <li>It compares simulated current-law affordable starts a year over the first years against what the current-law money supports.</li>
+          <li>The money-supported rate is recurring City dollars ÷ G, plus the remaining bond authorisation spread over its issuance.</li>
+          <li>It warns when the record's 737 a year, which includes bonds, sits outside the band that the current-law assumption implies. This is so the gap between the two stays visible.</li>
+          <li>It is a script beside <code>level2-check</code>, not a pipeline invariant, because it needs a simulation.</li>
+        </ul>
+      </li>
+      <li><strong>Unit tests:</strong>
+        <ul>
+          <li>share-fill pricing: a City tier short of the gap is scaled up to exactly G;</li>
+          <li>the P2 award split: a short loan pool is dropped, a short grant pool means the application waits;</li>
+          <li>the P3 lapse at the anniversary;</li>
+          <li>the P4 expiry at 24 months;</li>
+          <li>the first spec's property test, extended: an added City grant pool never turns an award into a wait.</li>
+        </ul>
+      </li>
+    </ul>
+  </section>
+
+  <section id="sec-scope">
+    <h2>Scope and cost</h2>
+    <ul>
+      <li><strong>A new dataset.</strong> These are hashed: <code>src/lib/sim/finance</code> (share-fill and the ceiling), <code>pipeline/enrichment/funding.json</code> (the federal level and awards) and the pipeline (the CTCAC source and the schema check). The <code>lapse</code> pool property, if it is carried in the calibration types under <code>src/lib/sim/finance</code>, is hashed too.</li>
+      <li><strong>The release chain</strong> (<code>docs/dev/pipeline.md:39-53</code>):
+        <ol>
+          <li>Run <code>pipeline -- build</code>.</li>
+          <li><code>level2-check</code> must exit 0.</li>
+          <li><code>money-monotone</code> must pass.</li>
+          <li>Run the record check.</li>
+          <li>Run <code>upload</code>, then <code>verify</code>.</li>
+          <li>Run signoff.</li>
+        </ol>
+      </li>
+      <li><strong>Engine:</strong> <code>scenario/funding.ts</code> (P2), <code>scenario/funded.ts</code> (the old engine's copies), <code>world/funding/pools.ts</code> (lapse), the lapse paths (expiry), <code>closing.ts</code> (a lapsing pool's closing reads its yearly balance).</li>
+      <li><strong>Display and copy:</strong>
+        <ul>
+          <li><code>funding-view.ts</code> and <code>finance-score.ts:187</code>.</li>
+          <li>The preset descriptions in <code>funding-presets.ts:291, :303</code>. The share is now a weight, and "one preset covers the whole City gap" stops being true.</li>
+          <li><code>finance-data.md:229-233</code>, where "every grant pays its full share" stops being true.</li>
+        </ul>
+      </li>
+      <li><strong>Goldens:</strong> <code>golden-finance-seed1.json</code> and <code>funded-events-mini-seed1.json</code>, regenerated once.</li>
+      <li><strong>Docs:</strong> <code>finance-model.md</code>, <code>finance-data.md</code>, <code>finance-engine.md</code> (the award rule, expiry, lapse), <code>world-funding.md</code>, and a financing-design amendment superseding R13 and recording P2's split.</li>
+      <li><strong>Game:</strong> the full retune after both specs land: <code>reach-measure --write</code> for <code>LADDER_YEARS</code>, and <code>tree-balance</code> for prices, the lump and side goals. Money nodes now buy homes in proportion to their dollars, so their prices will move most. Both dropped side goals can return: affordable homes rise with every purchase. Funded homes still need M5's redefinition from the first spec.</li>
+      <li><strong>Size:</strong> a project. P1 and P2 are small. P3 adds a pipeline source and a pool property. P4 adds a lapse reason in two engines. Most of the cost is the data work, the new dataset and the retune.</li>
+    </ul>
+  </section>
+
+  <section id="sec-goals">
+    <h2>Goals, non-goals, anti-goals</h2>
+    <ul>
+      <li><strong>Goal:</strong> funded affordable output is limited by money, so a purchase's effect follows its dollars.</li>
+      <li><strong>Goal:</strong> every parameter has a source at the best available tier: the federal level from per-record awards, expiry from HCD's rule, City dollars from BLA Exhibit E.</li>
+      <li><strong>Goal:</strong> more money still never builds fewer homes. <code>money-monotone</code> passes.</li>
+      <li><strong>Non-goal:</strong> rounds, the two-stage award, layering cost, and new per-record City data (none exists in open data).</li>
+      <li><strong>Anti-goal:</strong> tuning parameters so that current law hits a target. If current law misses the goal, that is a finding for the owner, not something to tune away.</li>
+      <li><strong>Constraints kept:</strong> one future, no random bands, and yearly lumps.</li>
+    </ul>
+  </section>
+
+  <section id="sec-open">
+    <h2>Open questions for the owner</h2>
+    <ol>
+      <li><strong>Does current law include future housing bonds?</strong> Without them, current law misses the goal by 3,857 homes, and level 2's premise (current law reaches the goal inside the window) breaks. Options:
+        <ul>
+          <li><strong>(a)</strong> Count the capital plan's scheduled housing bond (November 2034, $200M; tier 1 plan) as current law.</li>
+          <li><strong>(b)</strong> Count the record's habit of a bond every 4–5 years (2015 $310M, 2019 $600M, 2024 $300M; tier 0) as a recurring inflow. That is an inference.</li>
+          <li><strong>(c)</strong> Keep current law strict, and let level 2's goal or window move with it.</li>
+        </ul>
+        My pick is (b), labelled as an inference. It is what the record shows, it keeps "current law" meaning "what the City reliably does", and the bond preset then reads as "more than the usual". Measure it before ruling.</li>
+      <li><strong>Grants required.</strong> P2 makes federal and state grants required, so a project waits for credits as real 4% deals do, and the City does not stand in. The alternative, the one measured, lets the City fill a gap left by short credits up to the P6 ceiling. I pick required, because it is what makes the federal ceiling mean something. It is unmeasured, and it lowers output in sets that buy City money (see <a href="#sec-calls">calls</a>).</li>
+      <li><strong>The City's per-home ceiling of $490k</strong> (P6). The alternative is no ceiling.</li>
+      <li><strong>State lapse.</strong> State money (HCD programmes) also leaves San Francisco when unused, but there is no per-record split. My call: no lapse for state in this spec.</li>
+    </ol>
+  </section>
+</article>
