@@ -1631,10 +1631,11 @@ export interface SideReport {
         <tr><th scope="row"><code>src/lib/game/catalogue/tuning.ts</code></th><td>The code, then the measurement</td><td>Write: <code>RUNG_LUMP</code>, <code>SIDE_TUNING</code>, <code>PRICES</code> over the <code>contracts</code> stub, with starting values (the code), then tuned values (the measurement).</td></tr>
         <tr><th scope="row"><code>src/lib/game/catalogue/tuning.spec.ts</code></th><td>The code</td><td>Write over the <code>contracts</code> stub's spec.</td></tr>
         <tr><th scope="row"><code>src/lib/game/catalogue/ladder-years.ts</code></th><td>The code, then the measurement</td><td>Write: the provisional value (the code), then the measured one (the measurement).</td></tr>
+        <tr><th scope="row"><code>src/lib/game/catalogue/ladder-years.spec.ts</code></th><td>The code</td><td>Write over the <code>contracts</code> stub's spec: the rule, not the years.</td></tr>
         <tr><th scope="row"><code>src/lib/game/catalogue/play.ts</code></th><td>The code</td><td>Create: <code>buyAndApply</code>, <code>fullTree</code>.</td></tr>
-        <tr><th scope="row"><code>src/lib/game/tree.spec.ts</code></th><td>The code</td><td>Create.</td></tr>
-        <tr><th scope="row"><code>src/lib/game/grant.spec.ts</code></th><td>The code</td><td>Create.</td></tr>
-        <tr><th scope="row"><code>src/lib/game/catalogue/nodes.spec.ts</code></th><td>The code</td><td>Create.</td></tr>
+        <tr><th scope="row"><code>src/lib/game/tree.spec.ts</code></th><td>The code</td><td>Write over the <code>contracts</code> stub's spec.</td></tr>
+        <tr><th scope="row"><code>src/lib/game/grant.spec.ts</code></th><td>The code</td><td>Write over the <code>contracts</code> stub's spec.</td></tr>
+        <tr><th scope="row"><code>src/lib/game/catalogue/nodes.spec.ts</code></th><td>The code</td><td>Write over the <code>contracts</code> stub's spec.</td></tr>
         <tr><th scope="row"><code>src/lib/game/catalogue/play.spec.ts</code></th><td>The code</td><td>Create.</td></tr>
         <tr><th scope="row"><code>scripts/reach-measure.ts</code></th><td>The measurement</td><td>Create.</td></tr>
         <tr><th scope="row"><code>scripts/reach-measure.spec.ts</code></th><td>The measurement</td><td>Create.</td></tr>
@@ -1674,7 +1675,13 @@ export interface SideReport {
         <li>Each stop type has one node.</li>
         <li>Radius steps rise and are all above <code>BASE_HANDS.radiusPx</code>; linger steps rise and are all above <code>BASE_HANDS.lingerMs</code>; <code>hands-auto</code> is the last hands node.</li>
         <li>With unlimited units at the last rung, buying every shown ready level until none is left buys every level of every node.</li>
-        <li><code>LADDER_YEARS</code> holds at most four years, descending, each a multiple of 5.</li>
+      </ul>
+    </section>
+    <section id="sec-tests-ladder-years">
+      <h3><code>src/lib/game/catalogue/ladder-years.spec.ts</code> (the code)</h3>
+      <ul>
+        <li><code>LADDER_YEARS</code> holds one to four years, descending, each a multiple of 5.</li>
+        <li>The test names no year, so it holds for the provisional value and for the measured one.</li>
       </ul>
     </section>
     <section id="sec-tests-tuning">
