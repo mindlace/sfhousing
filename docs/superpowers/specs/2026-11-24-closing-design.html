@@ -1145,7 +1145,7 @@ export async function openGamePanel(page: Page): Promise&lt;Locator&gt;;</code><
         <li>With no game, <code>/</code> shows the simulation, no <code>header-units</code> and no brush.</li>
         <li><code>/p/&lt;id&gt;</code> opens a published plan in full with no "Remix" and no "Open with current data"; "Your game" links <code>/</code>.</li>
       </ul>
-      <p><code>e2e/game-sim.spec.ts</code>, each from <code>seedGame(page, { phase: 'runs', runs: 1, units })</code> with amount 1 and run time 2,000 ms, on both projects:</p>
+      <p><code>e2e/game-sim.spec.ts</code>, on both projects. Every case calls <code>seedGoalAmount(page, 1)</code> and <code>seedRunMs(page, 2000)</code>. A case starts from <code>seedGame(page, { phase: 'runs', runs: 1, units })</code> unless it names its own seed:</p>
       <ul>
         <li>The page lands in <code>tree</code>; <code>tree-run</code> has focus; the map box is <code>inert</code> under <code>game-tree-pane</code>.</li>
         <li>A run: <code>tree-run</code>, then <code>run</code> with <code>run-clock</code> visible and no slider "Date in the simulation", then <code>tally</code> with <code>tally-continue</code> focused, then <code>tree</code>.</li>

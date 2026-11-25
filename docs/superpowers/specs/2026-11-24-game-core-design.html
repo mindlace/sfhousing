@@ -21,7 +21,7 @@
 
   <section id="sec-interfaces">
     <h2>Interfaces</h2>
-    <p>Produced here: G1, G2, G4, G6. Needed: G3 (<code>TreeNode</code>, <code>Grant</code>, <code>NODES</code>) and E2 (<code>TimelineView.waitingMoney</code>). G6's <code>catalogue/ladder-years.ts</code> and <code>catalogue/tuning.ts</code> are <code>tree-catalogue</code>'s files; this unit imports them. Copied from the design with no change.</p>
+    <p>Produced here: G1, G2, G4, G6. This unit needs no row: it waits on <code>contracts</code> alone. G3 (<code>TreeNode</code>, <code>Grant</code>, <code>NODES</code>) and E2 (<code>TimelineView.waitingMoney</code>) are copied for their shapes, which <code>contracts</code> supplies; this unit's tests pass their own nodes and views. G6's <code>catalogue/ladder-years.ts</code> and <code>catalogue/tuning.ts</code> are <code>tree-catalogue</code>'s files; this unit imports them. Copied from the design with no change.</p>
     <table id="tbl-interfaces">
       <caption>Interface table</caption>
       <thead>

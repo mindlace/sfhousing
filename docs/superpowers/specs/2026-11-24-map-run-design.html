@@ -12,6 +12,7 @@
       <li>It carries composer call 19 on the map's side: during a run the map is the flat basemap and the drops; at the fitted zoom existing buildings do not draw and bars are faint or absent (<a href="#sec-design-visible">What shows at the fitted zoom</a>).</li>
       <li>It carries composer call 13 on the map's side: the map gains only a run view. Drops are drawn by <code>run-play</code> on its own canvas.</li>
       <li>It produces row M1. It needs no row.</li>
+      <li>It is the second part of one lane with <code>city-net</code>, which writes other lines of <code>src/lib/map/types.ts</code> and <code>docs/dev/map-interfaces.md</code>: <code>city-net</code>, then <code>map-run</code> (design, <code>sec-write-sets</code>).</li>
       <li>Its only consumer is <code>game-sim</code>, which calls <code>setRunView(true)</code> as a run starts and <code>setRunView(false)</code> when it ends.</li>
     </ul>
   </section>
