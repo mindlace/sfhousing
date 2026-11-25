@@ -497,7 +497,7 @@ export const RING_KEY_DIR: Record&lt;string, [number, number]&gt; = {
         <li>The layer listens for <code>pointermove</code> and <code>pointerdown</code> on the window, passive, for every pointer type: mouse, pen and touch.</li>
         <li>A pointer event counts only while the run is running. Its point is its client position less the canvas box's cached top left.</li>
         <li>A point inside the box (both coordinates within [0, size]) moves the ring. A point outside leaves the ring where it is and marks the pointer as out.</li>
-        <li>A <code>pointerdown</code> inside the box moves the ring with <code>fresh</code> true. So does the first <code>pointermove</code> inside after the pointer was out. Lifting a finger and touching elsewhere does not sweep the ground between.</li>
+        <li>A <code>pointerdown</code> inside the box moves the ring with <code>fresh</code> true. So does the first <code>pointermove</code> inside after the pointer was out, and the first <code>pointermove</code> inside after a run starts: the ring's jump from the box's centre to the pointer sweeps nothing. Lifting a finger and touching elsewhere does not sweep the ground between.</li>
         <li>Every other <code>pointermove</code> inside moves it with <code>fresh</code> false, whatever buttons are down.</li>
         <li>A touch drag reaches the window only because the map's run view sets <code>touch-action: none</code> (M1).</li>
         <li>The layer listens for <code>keydown</code> on the window. An arrow key moves the ring one <code>stepPx</code> in its direction; with Shift, one <code>shiftStepPx</code>. A held key moves it once per key repeat.</li>
@@ -841,6 +841,7 @@ export const RUN_FRAME_P95_MS = 2;</code></pre>
         <li>Setting <code>running</code> and moving <code>day</code> past drops calls <code>ontake</code> with the dropped totals and sets <code>data-dropped</code>.</li>
         <li>A mouse <code>pointermove</code> on the map box over a drop collects it; <code>data-collected</code> and <code>ontake</code> follow; <code>sound.collect</code> is called once for the frame.</li>
         <li>A touch <code>pointerdown</code> then <code>pointermove</code> collects a drop under the drag; a touch on another spot does not sweep the ground between.</li>
+        <li>With a mouse resting over the map before a run, the run's first <code>pointermove</code> moves the ring to the pointer and collects no drop on the line from the box's centre to it.</li>
         <li>A pen <code>pointermove</code> moves the ring as a mouse does.</li>
         <li>ArrowRight moves the ring 16 px and Shift+ArrowRight 64 px, each with <code>preventDefault</code>; an arrow key in an <code>input</code> is left alone.</li>
         <li>With <code>collectForMe</code>, every drop is collected as it appears and no ring is drawn. Setting the prop to true in mid-run collects every live drop on the next frame; setting it back shows the ring.</li>
