@@ -4,8 +4,8 @@
  * fallback ladder that passes.
  * - preApplication: pooled AJ over 2015+ (tier 2) for all three pathways, else rung 3;
  * - filed, entitled: pathway AJ over 2015+ (tier 0), else pooled AJ (tier 2), else rung 3;
- * - permitFiled, permitIssued, construction: the pooled table over [2007-01-01, asOf] scaled to
- *   the pathway's 2015+ level (`phScale`, tier 2), else rung 3. permitIssued and construction
+ * - permitFiled, permitIssued, construction: the pooled table over [2015-01-01, asOf] scaled to
+ *   the pathway's level over the same window (`phScale`, tier 2), else rung 3. permitIssued and construction
  *   cells are fitted on spells weighted for their no-FCD completions (`weightAdvances`, ruling R13
  *   and its guard).
  * A rung passes with spells >= `nSpellsMin` and observed events >= `nEventsMin` (unweighted,
@@ -428,7 +428,7 @@ export function fitTransitions(
       continue;
     }
 
-    // Permit side: pooled shape over [Wₛ, asOf], pathway level from 2015+ (phScale), rung 3.
+    // Permit side: pooled shape over [Wₛ, asOf], pathway level over the same window (phScale), rung 3.
     const nfStage = stage === 'permitIssued' || stage === 'construction' ? stage : null;
     const pooledW = nfStage ? weightAdvances(pooled, unobserved, nfStage, from, asOf, cal) : null;
     // Ruling R24: with X = 0 the weighting is a no-op, so only a flagged pooled cell with X > 0
@@ -483,7 +483,7 @@ export function fitTransitions(
         .map((j) => `${j} θ=${fmt(ph.theta[j])}`)
         .join(', ');
       const parts = [
-        `Pooled Aalen–Johansen over all spells since ${fromIso}, the first assessor roll (existing homes at filing are known only from then; pooled across pathways before 2015; pathway unknowable); cause-specific hazards scaled by θ = (O+${cal.phPrior})/(E+${cal.phPrior}) from ${p} spells since ${v2015Iso} (proportional hazards): ${thetaText}`,
+        `Pooled Aalen–Johansen over all spells since ${fromIso}, any pathway including pathway unknown (earlier permit spells ran much faster); cause-specific hazards scaled by θ = (O+${cal.phPrior})/(E+${cal.phPrior}) from ${p} spells since ${v2015Iso} (proportional hazards): ${thetaText}`,
         `pooled spells n = ${pooled.length}, events = ${pooledEvents}; ${p} spells since ${v2015Iso}: n = ${own.length}`
       ];
       if (ph.thin) {
@@ -504,7 +504,7 @@ export function fitTransitions(
       parts.push(...imputeSentence(g), ...purgeSentence(k), ...partialNotes);
       const provenance: Provenance = {
         tier: 2,
-        label: `SF permit records ${fromIso.slice(0, 4)}–${asOfYear}, pooled across pathways before 2015, scaled to ${p} ${v2015Iso.slice(0, 4)}–${asOfYear} (tier 2)`,
+        label: `SF permit records ${fromIso.slice(0, 4)}–${asOfYear}, pooled across pathways, scaled to ${p} (tier 2)`,
         sources: permitSources(stage),
         method: parts.join('; '),
         n: pooled.length,

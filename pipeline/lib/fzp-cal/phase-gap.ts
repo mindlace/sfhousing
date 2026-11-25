@@ -13,7 +13,7 @@ import { PHASE_GAP_START } from './window';
 const LAST_RESORT_DAYS = 730;
 
 const WINDOW_SENTENCE =
-  'window 1989-01-01 on, decoupled from the transition windows (2007-01-01 on, set by the first assessor roll): phase gaps use permit filing days only, not existing units';
+  'window 1989-01-01 on, decoupled from the transition windows (2015-01-01 on): phase gaps use permit filing days only, not existing units';
 
 /** The gaps of one group's filing days: distinct days (same-day = one phase), ascending. */
 function gapsOf(days: Day[]): number[] {
