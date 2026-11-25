@@ -23,6 +23,7 @@ export interface FloatCount {
   y: number;
   worth: number;
   bornMs: number;
+  policy: boolean;
 }
 
 export interface RunModel {
@@ -229,7 +230,13 @@ function collect(m: RunModel, i: StepInput): number {
     l.endMs = i.now + RUN_TIMES.takenMs;
     m.take.collected = credit(m.take.collected, l.drop.worth);
     if (l.at !== null) {
-      m.counts.push({ x: l.at.x, y: l.at.y, worth: l.worth, bornMs: i.now });
+      m.counts.push({
+        x: l.at.x,
+        y: l.at.y,
+        worth: l.worth,
+        bornMs: i.now,
+        policy: l.drop.policy
+      });
       if (m.counts.length > RUN_CAPS.maxCounts) m.counts.shift();
     }
     collected++;

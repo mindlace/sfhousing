@@ -115,7 +115,8 @@ function drawCount(
     rise = DRAW.countRisePx * p;
     if (p > DRAW.countHoldShare) alpha = 1 - (p - DRAW.countHoldShare) / (1 - DRAW.countHoldShare);
   }
-  const y = c.y - dropRadius(c.worth) - DRAW.countGapPx - rise;
+  const top = dropRadius(c.worth) * (c.policy ? DRAW.diamondScale : 1);
+  const y = c.y - top - DRAW.countGapPx - rise;
   const text = dropCountText(c.worth);
   ctx.globalAlpha = alpha;
   ctx.lineWidth = DRAW.countHaloPx;

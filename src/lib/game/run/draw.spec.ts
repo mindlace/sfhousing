@@ -292,6 +292,17 @@ describe('draw', () => {
     expect(ops[1].args).toEqual(['+4', 100, 100 - 6 - 4]);
   });
 
+  it('a count sits countGapPx above the circle top, or above the diamond top for a policy drop', () => {
+    const rec = draw(
+      built([drop(1, 4, 100, 100, false), drop(2, 4, 200, 100, true)], { auto: true })
+    );
+    const texts = rec.filter((r) => r.op === 'fillText');
+    expect(texts.map((r) => r.args)).toEqual([
+      ['+4', 100, 100 - 6 - 4],
+      ['+4', 200, 100 - 1.25 * 6 - 4]
+    ]);
+  });
+
   it('clears the whole box first, then drops, counts, ring', () => {
     const rec = draw(built([drop(1, 4)], { auto: true }), { showRing: true });
     const first = rec.find((r) => r.op !== 'save');

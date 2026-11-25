@@ -311,7 +311,13 @@ describe('run model collecting', () => {
     const m = boxed();
     step(m, input({ now: 2000, drops: [drop(1, 0, 2, 410, 300)] }));
     expect(m.live[0]).toMatchObject({ takenMs: 2000, endMs: 2400 });
-    expect(m.counts).toEqual([{ x: 410, y: 300, worth: 2, bornMs: 2000 }]);
+    expect(m.counts).toEqual([{ x: 410, y: 300, worth: 2, bornMs: 2000, policy: false }]);
+  });
+
+  it('a count carries the collected drop policy flag', () => {
+    const m = boxed();
+    step(m, input({ now: 0, drops: [drop(1, 0, 2, 410, 300, true), drop(2, 0, 3, 410, 300)] }));
+    expect(m.counts.map((c) => c.policy)).toEqual([true, false]);
   });
 
   it('auto collects every drop as it appears, off-map ones included', () => {
