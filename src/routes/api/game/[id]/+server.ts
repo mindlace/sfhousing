@@ -1,7 +1,7 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { MAX_SAVE_BYTES } from '$lib/game/save-api';
-import { parseGameSave } from '$lib/game/saves';
+import { parseGameSave } from '$lib/game/save-shape';
 import { getDb } from '$lib/server/db';
 import { accountLine, putGame, readGame, removeGame } from '$lib/server/game/store';
 import { isKnownDevice } from '$lib/server/onboarding/known-device';
@@ -51,7 +51,7 @@ export const PUT: RequestHandler = async (event) => {
   let user = locals.user;
   if (!user) {
     if (isKnownDevice(cookies)) return json({ error: 'sign_in' }, { status: 401 });
-    if (save.progress.firstWinAt === null) return json({ error: 'no_win' }, { status: 422 });
+    if (save.state.firstWinAt === null) return json({ error: 'no_win' }, { status: 422 });
     const minted = await mintPseudonymousSession(event);
     if (!minted.ok) {
       if (minted.status === 429) return empty(429);

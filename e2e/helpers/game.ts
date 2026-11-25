@@ -1,50 +1,46 @@
 import type { Page } from '@playwright/test';
-import { readFileSync } from 'node:fs';
 import { newId } from '../../src/lib/ids/base58';
-import { MONTH_DAYS } from '../../src/lib/timelapse/time';
 import { E2E_GAME_KEY, E2E_GOAL_KEY } from '../../src/lib/game/e2e';
-import { SAVES_KEY, saveKey, type GameSave } from '../../src/lib/game/saves';
-import type { Banked } from '../../src/lib/game/progress';
-
-/** The fixture's window: WINDOW_MONTHS in src/lib/sim/timeline-client.ts. */
-const WINDOW_MONTHS = 480;
-const asOf: number = JSON.parse(
-  readFileSync(
-    new URL('../fixtures/data/fixture-0/scenarios/fzp/calibration.json', import.meta.url),
-    'utf8'
-  )
-).asOf;
-const end = new Date((asOf + Math.floor(WINDOW_MONTHS * MONTH_DAYS)) * 86_400_000);
-/** The first day of the calendar month that holds the window's last day: 35337 on the fixture. */
-export const SEED_BAR_DAY = Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), 1) / 86_400_000;
+import { E2E_RUN_MS_KEY } from '../../src/lib/sim-page/e2e-run';
+import { SAVES_KEY, saveKey } from '../../src/lib/game/saves';
+import { NEW_GAME, type GameState } from '../../src/lib/game/state';
+import type { GameSave } from '../../src/lib/game/save-shape';
 
 const seeded = new WeakSet<Page>();
 
-/** Before the page loads, switch the real game on and store a game at `level` with bars that any result beats. */
-export async function seedGame(page: Page, level: 1 | 2 | 3 | 4 | 5): Promise<void> {
+/** Before the page loads, switch the real game on and store a v2 game: the new game with `state` over it. */
+export async function seedGame(page: Page, state?: Partial<GameState>): Promise<void> {
   if (seeded.has(page)) throw new Error('seedGame: this page already has a game');
-  if (![1, 2, 3, 4, 5].includes(level)) throw new Error('seedGame: level must be 1 to 5');
   seeded.add(page);
 
   const id = newId();
   const at = new Date().toISOString();
-  const banked: Record<number, Banked> = {};
-  for (let n = 2; n < level; n++) banked[n] = { on: SEED_BAR_DAY, datasetVersion: 'fixture-0', at };
+  const merged: GameState = { ...NEW_GAME, ...state, v: 2 };
+  if (state?.firstWinAt === undefined && merged.phase === 'runs') merged.firstWinAt = at;
 
   const save: GameSave = {
-    v: 1,
+    v: 2,
     id,
     name: 'Seeded game',
     nameIsDefault: false,
-    progress: { v: 1, level, banked, firstWinAt: level > 1 ? at : null },
+    state: merged,
     plan: null,
     policy: null,
     savedAt: at
   };
   const index = {
-    v: 1,
+    v: 2,
     current: id,
-    saves: [{ id, name: 'Seeded game', nameIsDefault: false, savedAt: at, level }]
+    saves: [
+      {
+        id,
+        name: 'Seeded game',
+        nameIsDefault: false,
+        savedAt: at,
+        phase: merged.phase,
+        rung: merged.rung
+      }
+    ]
   };
 
   await page.addInitScript(
@@ -95,5 +91,21 @@ export async function seedGoalAmount(page: Page, amount: number): Promise<void> 
       }
     },
     { key: E2E_GOAL_KEY, value: String(amount) }
+  );
+}
+
+/** Before the page loads, set the wall time of a run (100 to 20,000 ms) for this page. */
+export async function seedRunMs(page: Page, ms: number): Promise<void> {
+  if (!Number.isSafeInteger(ms) || ms < 100 || ms > 20000)
+    throw new Error('seedRunMs: ms must be a whole number from 100 to 20000');
+  await page.addInitScript(
+    (a) => {
+      try {
+        localStorage.setItem(a.key, a.value);
+      } catch {
+        // storage refused: the page still loads
+      }
+    },
+    { key: E2E_RUN_MS_KEY, value: String(ms) }
   );
 }

@@ -17,7 +17,6 @@
     reached?: Day;
     playFrom?: Day | null;
     goalDeadline?: Day | null;
-    barDay?: Day | null;
     startDay?: Day;
     startPlaying?: boolean;
     startSpeed?: Speed;

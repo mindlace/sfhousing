@@ -3,7 +3,8 @@ import { eq } from 'drizzle-orm';
 import { freshDb, seedIdentity, seedUser } from '$lib/server/test/auth-db';
 import type { Database } from '$lib/server/db';
 import { putGame, removeGame } from '$lib/server/game/store';
-import { parseGameSave, type GameSave } from '$lib/game/saves';
+import { parseGameSave, type GameSave } from '$lib/game/save-shape';
+import { NEW_GAME } from '$lib/game/state';
 import { newId } from '$lib/ids/base58';
 import { deleteAccount } from './deletion';
 import {
@@ -33,11 +34,16 @@ const NOW = new Date('2026-06-15T00:00:00Z');
 
 function gameOf(): GameSave {
   const s: GameSave = {
-    v: 1,
+    v: 2,
     id: newId(),
     name: 'Game, 22 Nov',
     nameIsDefault: true,
-    progress: { v: 1, level: 2, banked: {}, firstWinAt: '2026-11-22T10:00:00.000Z' },
+    state: {
+      ...structuredClone(NEW_GAME),
+      phase: 'runs',
+      rung: 1,
+      firstWinAt: '2026-11-22T10:00:00.000Z'
+    },
     plan: null,
     policy: null,
     savedAt: '2026-11-22T12:00:00.000Z'

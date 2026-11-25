@@ -4,21 +4,17 @@
   // 25, OD-4): after a navigation a `?seed=` left from an older link is dropped from the address
   // with replaceState, other parameters and the history state kept; it remounts nothing.
   //
-  // The game (spec #sec-design-game, -locked-page): in edit mode the current game goes to SimPage;
-  // view mode and the open game pass none. Edit mode decides nothing until mounted, then shows the
-  // locked page while the game locks the simulation.
+  // The game (game-sim #sec-design-route): in edit mode the current game goes to SimPage; view
+  // mode and the open game pass none. Edit mode decides nothing until mounted (the game store is
+  // browser state), then renders nothing while the game is in its opening.
   import { onMount } from 'svelte';
   import { afterNavigate, replaceState } from '$app/navigation';
   import { page } from '$app/state';
   import { reloadScenario } from '$lib/fzp/load';
-  import { simLocked } from '$lib/game/allowed';
-  import { e2eGoalAmount } from '$lib/game/e2e';
   import { useGame } from '$lib/game/store.svelte';
-  import { GOAL_BASE } from '$lib/goal/goal';
+  import type { CameraFrame } from '$lib/map/types';
   import { getStorage } from '$lib/sharing/storage';
-  import { BUTTON } from '$lib/shell/ui';
   import { addressHref, withoutSeed } from '$lib/timeline/address';
-  import { GO_TO_PAINT, lockedSim } from '$lib/timeline/game-copy';
   import type { SimNotice4 } from '$lib/timeline/session4';
   import type { SimDoc4 } from '$lib/timeline/sim-doc4';
   import type { SimPageData } from './load';
@@ -39,6 +35,8 @@
     upgradedFrom?: number;
     /** Tests: the page's storage, shared with the game in a test (default `localStorage`). */
     storage?: () => Storage | null;
+    /** The map's opening camera, passed unchanged to the page and TimelineMode. */
+    initialFrame?: CameraFrame;
   }
 
   let {
@@ -48,17 +46,15 @@
     initialText = undefined,
     opened = undefined,
     upgradedFrom = undefined,
-    storage = getStorage
+    storage = getStorage,
+    initialFrame = undefined
   }: Props = $props();
 
   const store = useGame();
   /** The game SimPage plays; null in view mode and for the open game. */
   const game = $derived(mode === 'edit' && !store.open ? store : null);
   let mounted = $state(false);
-  /** The locked page's goal amount, read on mount (X1's seam). */
-  let amount = $state(GOAL_BASE.amount);
   onMount(() => {
-    amount = e2eGoalAmount(storage()) ?? GOAL_BASE.amount;
     mounted = true;
   });
 
@@ -91,6 +87,7 @@
       {upgradedFrom}
       {storage}
       game={g}
+      {initialFrame}
       reload={() => reloadScenario(data.datasetVersion)}
     />
   {/key}
@@ -99,17 +96,7 @@
 <div id="map-region" class="relative h-full">
   {#if mode === 'view'}
     {@render simPage(null)}
-  {:else if mounted}
-    {#if game && simLocked(game.progress)}
-      <div
-        data-testid="sim-locked"
-        class="flex h-full flex-col items-center justify-center gap-3 p-4"
-      >
-        <p>{lockedSim(amount, GOAL_BASE.measure.unit)}</p>
-        <a href="/" class={BUTTON}>{GO_TO_PAINT}</a>
-      </div>
-    {:else}
-      {@render simPage(game)}
-    {/if}
+  {:else if mounted && game?.state.phase !== 'opening'}
+    {@render simPage(game)}
   {/if}
 </div>

@@ -9,7 +9,8 @@ import {
   type SaveSync,
   type SyncRecord
 } from './save-sync.svelte';
-import type { GameSave, SaveEntry } from './saves';
+import type { GameSave, SaveEntry } from './save-shape';
+import { NEW_GAME } from './state';
 import type { GameStore, StoreChange } from './store.svelte';
 
 const WON = '2026-11-01T10:00:00.000Z';
@@ -17,11 +18,15 @@ const T0 = Date.parse('2026-11-22T12:00:00.000Z');
 
 function mk(name: string, won: boolean, savedAt = '2026-11-20T10:00:00.000Z'): GameSave {
   return {
-    v: 1,
+    v: 2,
     id: newId(),
     name,
     nameIsDefault: false,
-    progress: { v: 1, level: 1, banked: {}, firstWinAt: won ? WON : null },
+    state: {
+      ...structuredClone(NEW_GAME),
+      phase: won ? 'runs' : 'opening',
+      firstWinAt: won ? WON : null
+    },
     plan: null,
     policy: null,
     savedAt
@@ -62,7 +67,8 @@ class FakeStore {
         name: g.name,
         nameIsDefault: g.nameIsDefault,
         savedAt: g.savedAt,
-        level: g.progress.level
+        phase: g.state.phase,
+        rung: g.state.rung
       }));
   }
 
@@ -373,6 +379,27 @@ describe('sending', () => {
     );
   });
 
+  it('a held send of a save whose firstWinAt is null is dropped with no PUT', async () => {
+    const a = mk('A', true, '2026-11-20T10:00:00.000Z');
+    const b = mk('B', true, '2026-11-20T09:00:00.000Z');
+    const first = held();
+    const h = harness({ saves: [a, b], attach: false });
+    h.answer(() => first.promise);
+    h.sync.attach(h.store as unknown as GameStore);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(h.puts()).toHaveLength(1);
+    // The save held behind the PUT in flight no longer has a win when its turn comes.
+    const sentId = h.puts()[0].url.slice('/api/game/'.length);
+    const heldId = sentId === a.id ? b.id : a.id;
+    const heldSave = h.store.read(heldId) as GameSave;
+    h.store.games.set(heldId, { ...heldSave, state: { ...heldSave.state, firstWinAt: null } });
+    // No session is made: the 422 answers without one, so the next held save is tried.
+    first.resolve(json(422, { error: 'no_win' }));
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(h.puts()).toHaveLength(1);
+    expect(h.puts().map((r) => r.url)).toEqual([`/api/game/${sentId}`]);
+  });
+
   it('one request per save: a change during a PUT sends again 2 s after it ends', async () => {
     const a = mk('A', true);
     const h = harness({ saves: [a], signedIn: true });
@@ -584,6 +611,40 @@ describe('keep both', () => {
     expect(names).toEqual(['Away', 'Away (this device)', 'Current']);
   });
 
+  it("a 409 on a 60-code-point name names the copy with a suffix, not the account copy's name", async () => {
+    const long = 'x'.repeat(60);
+    const a = mk(long, true);
+    const h = harness({ saves: [a], signedIn: true });
+    const theirs: GameSave = { ...a, plan: 'their plan', savedAt: WON };
+    h.answer((r) =>
+      r.url.endsWith(a.id) ? json(409, { rev: 2, save: theirs }) : json(200, line(1))
+    );
+    h.store.edit(a.id, { plan: 'my plan' });
+    await vi.advanceTimersByTimeAsync(2000);
+    const copyId = h.store.currentId;
+    expect(copyId).not.toBe(a.id);
+    expect(h.store.read(copyId)).toMatchObject({ name: 'x'.repeat(56) + ' (2)', plan: 'my plan' });
+    expect(h.store.read(a.id)?.name).toBe(long);
+  });
+
+  it('a 409 whose account copy was renamed elsewhere to the suffixed name takes the next suffix', async () => {
+    const long = 'x'.repeat(60);
+    const a = mk(long, true);
+    const h = harness({ saves: [a], signedIn: true });
+    // Renamed on another device to the name the browser's copy would otherwise take.
+    const theirs: GameSave = { ...a, name: 'x'.repeat(56) + ' (2)', savedAt: WON };
+    h.answer((r) =>
+      r.url.endsWith(a.id) ? json(409, { rev: 2, save: theirs }) : json(200, line(1))
+    );
+    h.store.edit(a.id, { plan: 'my plan' });
+    await vi.advanceTimersByTimeAsync(2000);
+    const copyId = h.store.currentId;
+    expect(h.store.read(copyId)?.name).toBe('x'.repeat(56) + ' (3)');
+    expect(h.store.read(a.id)?.name).toBe('x'.repeat(56) + ' (2)');
+    const names = h.store.saves.map((s) => s.name);
+    expect(new Set(names).size).toBe(names.length);
+  });
+
   it('a store refusing the rekey sets offline and leaves the save waiting', async () => {
     const a = mk('A', true);
     const h = harness({ saves: [a], signedIn: true });
@@ -727,7 +788,8 @@ function listBody(listed: readonly Listed[], removed: readonly string[]) {
       name: save.name,
       nameIsDefault: save.nameIsDefault,
       savedAt: save.savedAt,
-      level: save.progress.level,
+      phase: save.state.phase,
+      rung: save.state.rung,
       rev
     })),
     removed

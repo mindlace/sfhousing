@@ -7,17 +7,20 @@ import '../../routes/layout.css';
 import { focusHeaderMenu } from './header-actions.svelte';
 import SiteHeader from './SiteHeader.svelte';
 import HeaderScoreHeader from './test/HeaderScoreHeader.svelte';
-import LevelCellHost from './test/LevelCellHost.svelte';
 import { quietSync, seededGame } from './test/seeded-game';
+import GameHeaderHost from './test/GameHeaderHost.svelte';
+import GoalPinnedHeader from './test/GoalPinnedHeader.svelte';
 import SimRowGameHeader from './test/SimRowGameHeader.svelte';
 import SimRowHeader from './test/SimRowHeader.svelte';
+
+const WON = '2026-11-22T12:00:00.000Z';
 
 describe('SiteHeader', () => {
   it('renders a banner with a home link', async () => {
     render(SiteHeader);
     const banner = page.getByRole('banner');
     await expect.element(banner).toBeVisible();
-    const link = banner.getByRole('link', { name: 'SF Housing Simulator' });
+    const link = banner.getByRole('link', { name: 'SF Housing', exact: true });
     await expect.element(link).toHaveAttribute('href', '/');
   });
 
@@ -141,193 +144,6 @@ describe('SiteHeader', () => {
     });
   });
 
-  describe('steps', () => {
-    const numbers = () => Array.from(document.querySelectorAll<HTMLElement>('[data-step-number]'));
-    const shown = (el: HTMLElement) => el.checkVisibility({ checkVisibilityCSS: true });
-
-    it('at 1280px the Steps nav is an ordered list of Paint then Simulate, with visible numbers', async () => {
-      await page.viewport(1280, 800);
-      render(SiteHeader, { routeId: '/' });
-      const nav = page.getByRole('navigation', { name: 'Steps' });
-      await expect.element(nav.getByRole('link', { name: 'Paint', exact: true })).toBeVisible();
-      const el = nav.element();
-      expect(el.querySelectorAll('ol > li')).toHaveLength(2);
-      const links = nav.getByRole('link').elements() as HTMLElement[];
-      expect(links.map((a) => a.textContent?.replace(/^\d/, ''))).toEqual(['Paint', 'Simulate']);
-      const nums = Array.from(el.querySelectorAll<HTMLElement>('[data-step-number]'));
-      expect(nums.map((n) => n.textContent)).toEqual(['1', '2']);
-      expect(nums.every(shown)).toBe(true);
-      expect(nums.every((n) => n.getAttribute('aria-hidden') === 'true')).toBe(true);
-      await expect
-        .element(nav.getByRole('link', { name: 'Paint' }))
-        .toHaveAttribute('aria-current', 'page');
-      await expect
-        .element(nav.getByRole('link', { name: 'Simulate' }))
-        .not.toHaveAttribute('aria-current');
-    });
-
-    it('at 1024px the Steps nav shows the numbers 1 and 2', async () => {
-      await page.viewport(1024, 768);
-      render(SiteHeader, { routeId: '/' });
-      const nav = page.getByRole('navigation', { name: 'Steps' });
-      await expect.element(nav.getByRole('link', { name: 'Paint' })).toBeVisible();
-      const nums = Array.from(nav.element().querySelectorAll<HTMLElement>('[data-step-number]'));
-      expect(nums.map((n) => n.textContent)).toEqual(['1', '2']);
-      expect(nums.every(shown)).toBe(true);
-      // The same steps as from xl: no tighter padding or gap between lg and xl.
-      const links = nav.getByRole('link').elements() as HTMLElement[];
-      for (const a of links) expect(getComputedStyle(a).paddingLeft).toBe('8px');
-    });
-
-    it('at 375px the Menu holds the two steps with their numbers', async () => {
-      await page.viewport(375, 812);
-      render(SiteHeader, { routeId: '/' });
-      await page.getByRole('button', { name: 'Menu' }).click();
-      const nav = page.getByRole('navigation', { name: 'Steps' });
-      await expect.element(nav.getByRole('link', { name: 'Paint' })).toBeVisible();
-      const nums = Array.from(nav.element().querySelectorAll<HTMLElement>('[data-step-number]'));
-      expect(nums.map((n) => n.textContent)).toEqual(['1', '2']);
-      expect(nums.every(shown)).toBe(true);
-      expect(document.querySelector('a[href="/lesscars"]')).toBeNull();
-    });
-
-    it('marks Simulate on /sim, and neither on /p/[id] or /lesscars', async () => {
-      await page.viewport(1280, 800);
-      const { rerender } = await render(SiteHeader, { routeId: '/sim' });
-      const nav = page.getByRole('navigation', { name: 'Steps' });
-      const paint = nav.getByRole('link', { name: 'Paint' });
-      const simulate = nav.getByRole('link', { name: 'Simulate' });
-      await expect.element(paint).not.toHaveAttribute('aria-current');
-      await expect.element(simulate).toHaveAttribute('aria-current', 'page');
-      for (const routeId of ['/p/[id]', '/lesscars']) {
-        await rerender({ routeId });
-        await expect.element(paint).toBeVisible();
-        await expect.element(paint).not.toHaveAttribute('aria-current');
-        await expect.element(simulate).not.toHaveAttribute('aria-current');
-      }
-    });
-
-    it('at 375px Paint is absent until the Menu opens, and Simulate is current inside it', async () => {
-      await page.viewport(375, 812);
-      render(SiteHeader, { routeId: '/sim' });
-      expect(page.getByRole('link', { name: 'Paint' }).elements()).toEqual([]);
-      await page.getByRole('button', { name: 'Menu' }).click();
-      const nav = page.getByRole('navigation', { name: 'Steps' });
-      await expect.element(nav.getByRole('link', { name: 'Paint' })).toBeVisible();
-      await expect
-        .element(nav.getByRole('link', { name: 'Simulate' }))
-        .toHaveAttribute('aria-current', 'page');
-    });
-
-    for (const routeId of ['/s/[id]', '/about'])
-      it(`shows both steps with neither current on ${routeId}`, async () => {
-        await page.viewport(1280, 800);
-        render(SiteHeader, { routeId });
-        const nav = page.getByRole('navigation', { name: 'Steps' });
-        await expect.element(nav.getByRole('link', { name: 'Paint' })).toBeVisible();
-        await expect
-          .element(nav.getByRole('link', { name: 'Paint' }))
-          .not.toHaveAttribute('aria-current');
-        await expect
-          .element(nav.getByRole('link', { name: 'Simulate' }))
-          .not.toHaveAttribute('aria-current');
-      });
-
-    it('the numbers are not part of the names', async () => {
-      await page.viewport(1280, 800);
-      render(SiteHeader, { routeId: '/' });
-      await expect
-        .element(page.getByRole('link', { name: 'Paint', exact: true }))
-        .toHaveAttribute('href', '/');
-      await expect
-        .element(page.getByRole('link', { name: 'Simulate', exact: true }))
-        .toHaveAttribute('href', '/sim');
-      // Two navs (the bar's and the Menu's), two numbers each, all hidden from speech.
-      expect(numbers()).toHaveLength(4);
-      expect(numbers().every((n) => n.getAttribute('aria-hidden') === 'true')).toBe(true);
-    });
-
-    for (const width of [1024, 1280])
-      it(`at ${width}px the Steps nav holds Paint and Simulate only`, async () => {
-        await page.viewport(width, 768);
-        render(SiteHeader, { routeId: '/' });
-        const nav = page.getByRole('navigation', { name: 'Steps' });
-        await expect.element(nav.getByRole('link', { name: 'Paint' })).toBeVisible();
-        const names = nav
-          .getByRole('link')
-          .elements()
-          .map((a) => (a as HTMLElement).innerText);
-        expect(names.map((n) => n.replace(/^\d\s*/, ''))).toEqual(['Paint', 'Simulate']);
-        expect(document.querySelector('a[href="/lesscars"]')).toBeNull();
-      });
-
-    const tabs = async (width: number) => {
-      await page.viewport(width, 812);
-      render(SiteHeader, { routeId: '/' });
-      if (width < 1024) await page.getByRole('button', { name: 'Menu' }).click();
-      const nav = page.getByRole('navigation', { name: 'Steps' });
-      const current = nav.getByRole('link', { name: 'Paint' });
-      const other = nav.getByRole('link', { name: 'Simulate' });
-      await expect.element(current).toBeVisible();
-      return {
-        current: getComputedStyle(current.element()),
-        other: getComputedStyle(other.element())
-      };
-    };
-
-    for (const width of [1024, 375]) {
-      it(`at ${width}px the current step is filled, not underlined`, async () => {
-        const { current } = await tabs(width);
-        expect(current.backgroundColor).toBe('rgb(163, 71, 44)');
-        expect(current.textDecorationLine).toBe('none');
-      });
-
-      it(`at ${width}px the other step is unfilled, not underlined and looks pressable`, async () => {
-        const { other } = await tabs(width);
-        expect(other.backgroundColor).toBe('rgba(0, 0, 0, 0)');
-        expect(other.textDecorationLine).toBe('none');
-        expect(other.borderTopWidth).toBe('1px');
-        expect(other.borderTopStyle).toBe('solid');
-        expect(other.borderTopColor).not.toBe('rgba(0, 0, 0, 0)');
-      });
-    }
-  });
-
-  describe('brand', () => {
-    const suffixOf = () => {
-      const link = page.getByRole('banner').getByRole('link', { name: 'SF Housing Simulator' });
-      return link.element().querySelector('span') as HTMLElement;
-    };
-
-    it('shows "SF Housing" at 375px and keeps the full accessible name', async () => {
-      await page.viewport(375, 812);
-      render(SiteHeader);
-      const link = page.getByRole('banner').getByRole('link', { name: 'SF Housing Simulator' });
-      await expect.element(link).toBeVisible();
-      expect(link.element().textContent).toBe('SF Housing Simulator');
-      // sr-only: " Simulator" is clipped to a 1px box, not rendered
-      expect(suffixOf().getBoundingClientRect().width).toBeLessThanOrEqual(1);
-    });
-
-    it('shows "SF Housing" only at 1024px and keeps the full accessible name', async () => {
-      await page.viewport(1024, 768);
-      render(SiteHeader);
-      const link = page.getByRole('banner').getByRole('link', { name: 'SF Housing Simulator' });
-      await expect.element(link).toBeVisible();
-      expect(link.element().textContent).toBe('SF Housing Simulator');
-      expect(suffixOf().getBoundingClientRect().width).toBeLessThanOrEqual(1);
-    });
-
-    it('shows "SF Housing Simulator" at 1280px', async () => {
-      await page.viewport(1280, 800);
-      render(SiteHeader);
-      await expect
-        .element(page.getByRole('banner').getByRole('link', { name: 'SF Housing Simulator' }))
-        .toBeVisible();
-      expect(suffixOf().getBoundingClientRect().width).toBeGreaterThan(20);
-    });
-  });
-
   describe('signed in with a long handle', () => {
     const handle = 'a-very-long-handle-that-will-not-fit-in-the-header';
     const actions = createRawSnippet(() => ({
@@ -396,17 +212,15 @@ describe('SiteHeader', () => {
       await expect.element(banner.getByRole('button', { name: '1,234 homes added' })).toBeVisible();
       await expect.element(menu()).toHaveAttribute('aria-expanded', 'false');
       await expect.element(page.getByText('Example')).not.toBeVisible();
-      // Two copies of the links (header row from lg, menu below lg): neither shows.
-      expect(page.getByRole('link', { name: 'Paint' }).elements()).toEqual([]);
-      expect(page.getByText('Paint').elements()).toHaveLength(2);
+      // The About link waits in the Menu below lg.
+      expect(page.getByRole('link', { name: 'About', exact: true }).elements()).toEqual([]);
 
       await menu().click();
       await expect.element(menu()).toHaveAttribute('aria-expanded', 'true');
       const panel = document.getElementById(menu().element().getAttribute('aria-controls')!);
       expect(panel).not.toBeNull();
       await expect.element(page.getByRole('button', { name: 'Example' })).toBeVisible();
-      await expect.element(page.getByRole('link', { name: 'Paint' })).toBeVisible();
-      await expect.element(page.getByRole('link', { name: 'Simulate' })).toBeVisible();
+      await expect.element(page.getByRole('link', { name: 'About', exact: true })).toBeVisible();
       await expect.element(banner.getByRole('button', { name: '1,234 homes added' })).toBeVisible();
       const el = banner.element() as HTMLElement;
       expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(375);
@@ -428,17 +242,17 @@ describe('SiteHeader', () => {
     it('at 375px with a pinned item the site name waits in the Menu', async () => {
       await page.viewport(375, 812);
       render(SiteHeader, { routeId: '/sim', actions, pinned });
-      const name = () => page.getByRole('link', { name: 'SF Housing Simulator' });
+      const name = () => page.getByRole('link', { name: 'SF Housing', exact: true });
       await expect.element(menu()).toBeVisible();
       expect(name().elements()).toEqual([]);
       await menu().click();
       await expect.element(name()).toBeVisible();
       const panel = document.getElementById(menu().element().getAttribute('aria-controls')!)!;
       expect(panel.contains(name().element())).toBe(true);
-      // Before the steps.
-      const paint = page.getByRole('link', { name: 'Paint' }).element();
+      // Before the actions.
+      const about = page.getByRole('link', { name: 'About', exact: true }).element();
       expect(
-        name().element().compareDocumentPosition(paint) & Node.DOCUMENT_POSITION_FOLLOWING
+        name().element().compareDocumentPosition(about) & Node.DOCUMENT_POSITION_FOLLOWING
       ).toBeTruthy();
       expect(name().element()).toHaveAttribute('href', '/');
     });
@@ -447,18 +261,20 @@ describe('SiteHeader', () => {
       it(`at ${width}px with a pinned item the site name stays in the bar`, async () => {
         await page.viewport(width, 800);
         render(SiteHeader, { routeId: '/sim', actions, pinned });
-        const name = page.getByRole('link', { name: 'SF Housing Simulator' });
+        const name = page.getByRole('link', { name: 'SF Housing', exact: true });
         await expect.element(name).toBeVisible();
         const button = document.querySelector('[data-header-menu]')!;
         const panel = document.getElementById(button.getAttribute('aria-controls')!)!;
         expect(panel.contains(name.element())).toBe(false);
         if (width < 1024) {
           await menu().click();
-          await expect.element(page.getByRole('link', { name: 'Paint' })).toBeVisible();
+          await expect
+            .element(page.getByRole('link', { name: 'About', exact: true }))
+            .toBeVisible();
           // Still one: the panel's copy stays hidden from sm.
-          expect(page.getByRole('link', { name: 'SF Housing Simulator' }).elements()).toHaveLength(
-            1
-          );
+          expect(
+            page.getByRole('link', { name: 'SF Housing', exact: true }).elements()
+          ).toHaveLength(1);
         }
       });
     }
@@ -501,7 +317,7 @@ describe('SiteHeader', () => {
       await page.viewport(375, 812);
       render(SiteHeader, { routeId: '/sim', actions, pinned });
       await menu().click();
-      (page.getByRole('link', { name: 'Paint' }).element() as HTMLElement).focus();
+      (page.getByRole('link', { name: 'About', exact: true }).element() as HTMLElement).focus();
       await userEvent.keyboard('{Escape}');
       await expect.element(menu()).toHaveAttribute('aria-expanded', 'false');
       await expect.element(menu()).toHaveFocus();
@@ -584,19 +400,16 @@ describe('SiteHeader', () => {
           '12,345 homes <span class="max-lg:sr-only">added</span></button>'
       }));
 
-      it('from lg it sits right after the last step link, left of the actions', async () => {
+      it('from lg it sits right after the name link, left of the actions', async () => {
         await page.viewport(1024, 768);
         render(SiteHeader, { routeId: '/sim', actions, pinned, status });
         const slot = page.getByTestId('status-slot').element();
-        const nav = page.getByRole('navigation', { name: 'Steps' });
-        const lastLink = nav.getByRole('link', { name: 'Simulate' }).element();
+        const name = page.getByRole('link', { name: 'SF Housing', exact: true }).element();
         const score = page.getByRole('button', { name: '1,234 homes added' }).element();
-        expect(
-          lastLink.compareDocumentPosition(slot) & Node.DOCUMENT_POSITION_FOLLOWING
-        ).toBeTruthy();
+        expect(name.compareDocumentPosition(slot) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
         const s = slot.getBoundingClientRect();
-        expect(s.left).toBeGreaterThanOrEqual(lastLink.getBoundingClientRect().right);
-        expect(s.left - lastLink.getBoundingClientRect().right).toBeLessThanOrEqual(24);
+        expect(s.left).toBeGreaterThanOrEqual(name.getBoundingClientRect().right);
+        expect(s.left - name.getBoundingClientRect().right).toBeLessThanOrEqual(24);
         expect(s.right).toBeLessThanOrEqual(score.getBoundingClientRect().left);
       });
 
@@ -629,8 +442,7 @@ describe('SiteHeader', () => {
             expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(width);
             const box = (el: Element) => el.getBoundingClientRect();
             const row = [
-              page.getByRole('link', { name: /SF Housing/ }).element(),
-              page.getByRole('navigation', { name: 'Steps' }).element(),
+              page.getByRole('link', { name: 'SF Housing', exact: true }).element(),
               chip.element(),
               page.getByRole('button', { name: '12,345 homes added' }).element(),
               page.getByRole('button', { name: 'Policy' }).element(),
@@ -693,7 +505,9 @@ describe('SiteHeader', () => {
         try {
           const chip = page.getByRole('button', { name: 'Autosave off' });
           await expect.element(chip).toBeVisible();
-          expect(page.getByRole('link', { name: /SF Housing/ }).elements()).toEqual([]);
+          expect(page.getByRole('link', { name: 'SF Housing', exact: true }).elements()).toEqual(
+            []
+          );
           const c = chip.element().getBoundingClientRect();
           const bar = page.getByRole('banner').element().getBoundingClientRect();
           expect(c.left).toBeGreaterThanOrEqual(bar.left);
@@ -764,8 +578,7 @@ describe('SiteHeader', () => {
     const row = () => {
       const handle = 'a-very-long-handle-x';
       return [
-        page.getByRole('link', { name: /SF Housing/ }).element(),
-        page.getByRole('navigation', { name: 'Steps' }).element(),
+        page.getByRole('link', { name: 'SF Housing', exact: true }).element(),
         page.getByRole('button', { name: 'Autosave off' }).element(),
         page.getByText('Updating', { exact: true }).element(),
         page.getByTestId('score-bar').element().parentElement!,
@@ -791,7 +604,7 @@ describe('SiteHeader', () => {
       expect(banner.getBoundingClientRect().height).toBe(48);
       expect(banner.scrollWidth).toBeLessThanOrEqual(banner.clientWidth);
       expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(width);
-      const score = box(items[4]);
+      const score = box(items[3]);
       const b = box(banner);
       return Math.abs((score.left + score.right) / 2 - (b.left + b.right) / 2);
     };
@@ -838,25 +651,21 @@ describe('SiteHeader', () => {
       expect(await expectRowFits(1280)).toBeLessThan(1);
     });
 
-    // The same row with the game's level cell (level 3), with and without an offer ("Level up").
-    for (const [touch, offered] of [
-      [false, true],
-      [true, true],
-      [false, false]
-    ])
-      it(`at 1024px with the level cell${offered ? ' and Level up' : ''}${touch ? ' on a touch laptop' : ''} the row fits`, async () => {
+    // The same row with the game's unit count.
+    for (const touch of [false, true])
+      it(`at 1024px with the unit count${touch ? ' on a touch laptop' : ''} the row fits`, async () => {
         await page.viewport(1024, 800);
-        const { game } = seededGame({ level: 3 });
-        if (offered) game.setOffer({ on: 20000, datasetVersion: 'fixture-0' });
+        const { game } = seededGame({
+          state: { phase: 'runs', firstWinAt: WON, units: { home: 12345 } }
+        });
         render(SimRowGameHeader, {
           props: { game, user: { handle: 'a-very-long-handle-x' }, touch }
         });
-        await expect.element(page.getByTestId('header-level')).toBeVisible();
-        if (offered) await expect.element(page.getByTestId('header-level-up')).toBeVisible();
+        await expect.element(page.getByTestId('header-units')).toBeVisible();
         const banner = page.getByRole('banner').element() as HTMLElement;
         const box = (el: Element) => el.getBoundingClientRect();
         const items = [
-          page.getByTestId('header-level').element(),
+          page.getByTestId('header-units').element(),
           page.getByTestId('score-bar').element().parentElement!,
           page.getByRole('button', { name: 'Publish' }).element(),
           page.getByRole('link', { name: '@a-very-long-handle-x' }).element(),
@@ -877,51 +686,135 @@ describe('SiteHeader', () => {
   });
 
   describe('the game', () => {
-    for (const width of [1280, 375])
-      it(`at ${width}px, level 1: Simulate is no link, in the bar and in the Menu`, async () => {
+    for (const width of [375, 800, 1024, 1280])
+      it(`at ${width}px there is no Steps navigation, no link to /sim, and the name reads SF Housing`, async () => {
         await page.viewport(width, 800);
-        render(LevelCellHost, { game: seededGame({ level: 1 }).game, routeId: '/' });
+        render(GameHeaderHost, { game: seededGame().game, routeId: '/' });
+        const name = page
+          .getByRole('banner')
+          .getByRole('link', { name: 'SF Housing', exact: true });
+        await expect.element(name).toBeVisible();
+        expect(name.element().textContent?.trim()).toBe('SF Housing');
         if (width < 1024) await page.getByRole('button', { name: 'Menu' }).click();
-        const nav = page.getByRole('navigation', { name: 'Steps' });
-        await expect.element(nav.getByRole('link', { name: 'Paint' })).toBeVisible();
-        expect(nav.getByRole('link', { name: 'Simulate' }).elements()).toHaveLength(0);
-        const locked = [...document.querySelectorAll<HTMLElement>('[data-step-locked]')];
-        expect(locked).toHaveLength(2);
+        expect(page.getByRole('navigation', { name: 'Steps' }).elements()).toEqual([]);
         expect(document.querySelector('a[href="/sim"]')).toBeNull();
-        for (const el of locked) {
-          expect(el.tabIndex).toBe(-1);
-          expect(el.querySelector('.sr-only')?.textContent).toBe(
-            'Simulate. Unlocks when you level up'
-          );
-          expect(getComputedStyle(el).borderTopStyle).toBe('dashed');
-        }
+        expect(document.querySelector('[data-step-number], [data-step-locked]')).toBeNull();
       });
 
-    it('at level 2 both steps are links', async () => {
-      await page.viewport(1280, 800);
-      render(LevelCellHost, { game: seededGame({ level: 2 }).game, routeId: '/' });
-      const nav = page.getByRole('navigation', { name: 'Steps' });
-      await expect.element(nav.getByRole('link', { name: 'Paint' })).toBeVisible();
-      await expect.element(nav.getByRole('link', { name: 'Simulate' })).toBeVisible();
-      expect(document.querySelector('[data-step-locked]')).toBeNull();
+    it('at 375px with a pinned item the Menu names the site SF Housing', async () => {
+      await page.viewport(375, 812);
+      render(HeaderScoreHeader, { props: { total: 1234 } });
+      const menu = page.getByRole('button', { name: 'Menu', exact: true });
+      await expect.element(menu).toBeVisible();
+      expect(page.getByRole('link', { name: 'SF Housing', exact: true }).elements()).toEqual([]);
+      await menu.click();
+      const name = page.getByRole('link', { name: 'SF Housing', exact: true });
+      await expect.element(name).toBeVisible();
+      const panel = document.getElementById(menu.element().getAttribute('aria-controls')!)!;
+      expect(panel.contains(name.element())).toBe(true);
     });
 
-    it("with no game provided the steps are today's and there is no level cell", async () => {
+    it('at 1024px the unit count sits in the bar after the name, before the status', async () => {
+      await page.viewport(1024, 800);
+      render(GameHeaderHost, { game: seededGame().game, routeId: '/' });
+      const units = page.getByTestId('header-units');
+      await expect.element(units).toBeVisible();
+      const name = page.getByRole('link', { name: 'SF Housing', exact: true }).element();
+      const status = document.querySelector('[data-header-status]')!;
+      expect(units.element().getBoundingClientRect().left).toBeGreaterThanOrEqual(
+        name.getBoundingClientRect().right
+      );
+      expect(units.element().getBoundingClientRect().right).toBeLessThanOrEqual(
+        status.getBoundingClientRect().left + 0.5
+      );
+    });
+
+    it('at 800px the unit count waits in the Menu and shows when it opens', async () => {
+      await page.viewport(800, 800);
+      render(GameHeaderHost, { game: seededGame().game, routeId: '/' });
+      const menu = page.getByRole('button', { name: 'Menu', exact: true });
+      await expect.element(menu).toBeVisible();
+      await expect.element(page.getByTestId('header-units')).not.toBeVisible();
+      await menu.click();
+      await expect.element(page.getByTestId('header-units')).toBeVisible();
+      const panel = document.getElementById(menu.element().getAttribute('aria-controls')!)!;
+      expect(panel.contains(page.getByTestId('header-units').element())).toBe(true);
+    });
+
+    it('the open game has no unit count', async () => {
       await page.viewport(1280, 800);
       render(SiteHeader, { routeId: '/' });
-      const nav = page.getByRole('navigation', { name: 'Steps' });
-      await expect
-        .element(nav.getByRole('link', { name: 'Simulate' }))
-        .toHaveAttribute('href', '/sim');
-      expect(document.querySelector('[data-step-locked]')).toBeNull();
-      expect(document.querySelector('[data-testid="header-level"]')).toBeNull();
+      await expect.element(page.getByRole('link', { name: 'About', exact: true })).toBeVisible();
+      expect(page.getByTestId('header-units').elements()).toEqual([]);
     });
+
+    it('the Menu button is named Menu and has no dot, whatever the game holds', async () => {
+      await page.viewport(800, 800);
+      const { game } = seededGame({
+        state: { phase: 'runs', firstWinAt: WON, units: { home: 500 } }
+      });
+      render(GameHeaderHost, { game, routeId: '/' });
+      await expect.element(page.getByRole('button', { name: 'Menu', exact: true })).toBeVisible();
+      expect(document.querySelector('[data-level-dot]')).toBeNull();
+    });
+
+    it('a button inside data-header-keep-open leaves the Menu open; a link closes it', async () => {
+      await page.viewport(800, 800);
+      render(GameHeaderHost, { game: seededGame().game, routeId: '/' });
+      const menu = page.getByRole('button', { name: 'Menu', exact: true });
+      await menu.click();
+      await page.getByTestId('header-units').click();
+      const gamePanel = page.getByTestId('header-game-panel');
+      await expect.element(gamePanel).toBeVisible();
+      // A switch has no aria-expanded, so only the keep-open rule holds the Menu open.
+      const sound = gamePanel.getByTestId('game-sound');
+      expect(sound.element().hasAttribute('aria-expanded')).toBe(false);
+      const before = sound.element().getAttribute('aria-checked');
+      await sound.click();
+      await expect.element(sound).not.toHaveAttribute('aria-checked', before!);
+      await expect.element(menu).toHaveAttribute('aria-expanded', 'true');
+      const about = page.getByRole('link', { name: 'About', exact: true }).element();
+      about.addEventListener('click', (e) => e.preventDefault(), { once: true });
+      (about as HTMLElement).click();
+      await expect.element(menu).toHaveAttribute('aria-expanded', 'false');
+    });
+
+    const HEADLINE = {
+      homes: 61400,
+      amount: 82069,
+      deadline: 'Dec 2055',
+      unlocks: null,
+      met: false,
+      side: []
+    };
+    for (const width of [375, 1280])
+      it(`at ${width}px the header is positioned, the pinned box is not, and both GoalHeadline root nodes sit in it`, async () => {
+        await page.viewport(width, 800);
+        render(GoalPinnedHeader, { game: seededGame().game, headline: HEADLINE });
+        const headline = page.getByTestId('goal-headline');
+        await expect.element(headline).toBeVisible();
+        const banner = page.getByRole('banner').element() as HTMLElement;
+        const slot = headline.element().parentElement!;
+        expect(slot.parentElement).toBe(banner);
+        expect(page.getByTestId('goal-live').element().parentElement).toBe(slot);
+        expect(getComputedStyle(banner).position).toBe('relative');
+        expect(getComputedStyle(slot).position).toBe('static');
+        await page.getByTestId('goal-headline-button').click();
+        const pop = page.getByTestId('side-goals');
+        await expect.element(pop).toBeVisible();
+        expect((pop.element() as HTMLElement).offsetParent).toBe(banner);
+        const p = pop.element().getBoundingClientRect();
+        const b = banner.getBoundingClientRect();
+        expect(p.top).toBeGreaterThanOrEqual(b.bottom);
+        expect(p.left).toBeGreaterThanOrEqual(b.left + 16 - 0.5);
+        expect(p.right).toBeLessThanOrEqual(b.right - 16 + 0.5);
+      });
 
     it("the account entry reads @handle from the layout's user first", async () => {
       await page.viewport(1280, 800);
       const sync = quietSync({ handle: 'bob', handleClaimed: true });
-      render(LevelCellHost, {
-        game: seededGame({ level: 1, sync }).game,
+      render(GameHeaderHost, {
+        game: seededGame({ sync }).game,
         routeId: '/',
         user: { handle: 'ada' }
       });
@@ -933,8 +826,8 @@ describe('SiteHeader', () => {
     it("with no user, the account entry reads the sync's account, whatever signInAvailable says", async () => {
       await page.viewport(1280, 800);
       const sync = quietSync({ handle: 'bob', handleClaimed: true });
-      render(LevelCellHost, {
-        game: seededGame({ level: 1, sync }).game,
+      render(GameHeaderHost, {
+        game: seededGame({ sync }).game,
         routeId: '/',
         signInAvailable: false
       });
@@ -945,7 +838,7 @@ describe('SiteHeader', () => {
 
     it('with neither, Sign in links /signin while a method is in effect', async () => {
       await page.viewport(1280, 800);
-      render(LevelCellHost, { game: seededGame({ level: 1 }).game, routeId: '/' });
+      render(GameHeaderHost, { game: seededGame().game, routeId: '/' });
       await expect
         .element(page.getByRole('link', { name: 'Sign in' }))
         .toHaveAttribute('href', '/signin');
@@ -953,8 +846,8 @@ describe('SiteHeader', () => {
 
     it('with neither and no sign-in method, there is no account entry', async () => {
       await page.viewport(1280, 800);
-      render(LevelCellHost, {
-        game: seededGame({ level: 1 }).game,
+      render(GameHeaderHost, {
+        game: seededGame().game,
         routeId: '/',
         signInAvailable: false
       });

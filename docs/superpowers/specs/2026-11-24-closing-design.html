@@ -385,6 +385,7 @@ export interface SideInput {
   view: TimelineView;
   index: number;
   take: RunTake;
+  inForce: boolean;
 }
 
 export interface SideGoal {
@@ -408,6 +409,7 @@ export function sideShown(s: GameState, goals?: readonly SideGoal[]): SideGoal[]
         <dt><code>waitingMoney</code></dt><dd>Homes waiting for money at the deadline's month; null when the view has no such series.</dd>
         <dt><code>lump</code></dt><dd><code>RUNG_LUMP</code> when this run is the first to meet its rung, else null.</dd>
         <dt><code>index</code></dt><dd>The deadline's month in the view.</dd>
+        <dt><code>inForce</code></dt><dd>A policy of the document the view was forecast from is on with a span in force: <code>!nothingInForce(doc)</code> of the runnable document.</dd>
       </dl>
       <ul>
         <li>Rung 0's deadline is <code>defaultGoal(asOf).deadline</code>. Rung <em>k</em> is the last day of December of <code>LADDER_YEARS[k - 1]</code>.</li>
@@ -416,7 +418,7 @@ export function sideShown(s: GameState, goals?: readonly SideGoal[]): SideGoal[]
         <li>The cheapest node shown at rung 0 costs no more than <code>RUNG_LUMP</code>.</li>
         <li>A side goal's <code>reward</code> and target are read from <code>SIDE_TUNING</code> by its id.</li>
         <li><code>goalAt</code> is <code>defaultGoal(asOf)</code> with the rung's deadline, and with <code>amount</code> when given.</li>
-        <li><code>readRun</code> returns null while the view does not cover the deadline's month.</li>
+        <li><code>readRun</code> returns null until the view is filled through the deadline's month. That month is read clamped to the view's months, and every rung's deadline lies inside them: rung 0's is the view's last calendar month, and no rung's is later or before the dataset date's month.</li>
         <li><code>resultOf</code> lists a side goal when it is shown, not yet met, and its <code>value</code> is at least its <code>target</code>.</li>
         <li><code>settle</code> credits <code>collected</code>, <code>lump</code> and each side reward; records the rung in <code>met</code> when <code>reachedOn</code> is set and the rung is not there; records each side goal; adds 1 to <code>runs</code>; sets <code>last</code>.</li>
         <li><code>settle</code> never removes a met rung (call 8).</li>
@@ -429,6 +431,7 @@ export function sideShown(s: GameState, goals?: readonly SideGoal[]): SideGoal[]
         <li><code>fitGame</code> returns the same object when nothing is dropped or lowered.</li>
         <li><code>sideShown</code> returns the first <code>SIDE_SHOWN</code> goals whose ring is open and which are not met.</li>
         <li>A side goal's <code>read</code> returns null when the view lacks what it reads.</li>
+        <li>A goal that reads the policy's effect (<code>planEffect</code>) reads 0 while <code>inForce</code> is false: the view's twin is then the old zoning, not current law.</li>
       </ul>
     </section>
 
@@ -653,6 +656,7 @@ export function onPrefs(fn: () =&gt; void): () =&gt; void;</code></pre>
       <ul>
         <li><code>planDrops</code> returns one drop for each marker completed after <code>asOf</code> and at or before <code>to</code> whose worth is above 0, ascending by day, then by row.</li>
         <li><code>feed.drops</code> may be replaced during a run, as the forecast fills. Drops are matched by <code>row</code>: one already shown stays as it is, and none is counted twice.</li>
+        <li><code>feed.running</code> holds each value for at least one animation frame: it turns true no earlier than the frame after it last turned false, and false no earlier than the frame after it turned true. The feed's owner guarantees this. The layer reads <code>running</code> once a frame, so a run starts and ends in the frames in which it reads a change.</li>
         <li>A drop appears when <code>feed.day</code> reaches its day and is counted in <code>dropped</code> then.</li>
         <li>A drop whose <code>policy</code> is true pops as a diamond, the shape of the map's policy mark, in that mark's colour (<code>tl-halo-policy</code>); every other drop pops as a circle in the accent. The shape tells the two apart in every theme. Its worth and how it is collected do not change.</li>
         <li>A drop is collected when its projected point is within <code>hands.radiusPx</code> of the ring's centre. It is counted in <code>collected</code> once.</li>
@@ -751,7 +755,7 @@ npx tsx scripts/tree-balance.ts &lt;datasetDir&gt;</code></pre>
       <ul>
         <li>T1 is the state of two files after the measurement: <code>src/lib/game/catalogue/ladder-years.ts</code> and <code>src/lib/game/catalogue/tuning.ts</code>. It adds no type and no export to G3 or G6.</li>
         <li><code>LADDER_YEARS</code> holds the years <code>reach-measure</code> wrote from the production dataset, by G6's rule.</li>
-        <li><code>tuning.ts</code> holds prices, the rung lump and side-goal numbers under which <code>tree-balance</code> passes every check it reports on the production dataset.</li>
+        <li><code>tuning.ts</code> holds prices, the rung lump and side-goal numbers under which <code>tree-balance</code> exits 0 on the production dataset.</li>
         <li>Before T1, both files hold starting values. Code and tests outside <code>tree-catalogue</code> and <code>closing</code> never assert a price, a ladder year or the number of rungs from these files; they pass their own.</li>
         <li>When no set of numbers passes, the unit stops and hands the report to the owner with the checks that fail.</li>
       </ul>
@@ -872,6 +876,7 @@ npx tsx scripts/tree-balance.ts &lt;datasetDir&gt;</code></pre>
       <h3>When it runs</h3>
       <ul>
         <li>The implementer's worktree is branched from the integration branch after every other unit has merged into it, the measurement part of <code>tree-catalogue</code> (T1) included: the journeys and the reach check run on the measured <code>LADDER_YEARS</code> and the tuned <code>tuning.ts</code>.</li>
+        <li>On the tree this unit starts from, <code>npm run check</code> reports errors only in <code>e2e/**</code> files other than <code>e2e/helpers/game.ts</code> (the specs that still call <code>seedGame(page, level)</code> or import <code>SEED_BAR_DAY</code>), and <code>npm run test:e2e</code> fails on the specs that <a href="#sec-design-e2e">The existing specs</a> rewrites. This unit's rewrite makes both whole: its final checks end with <code>npm run check</code> at 0 errors and <code>npm run test:e2e</code> passing.</li>
         <li>No spec of this unit writes a price, a ladder year, the lump or the number of rungs as a literal. It reads <code>PRICES</code> and <code>RUNG_LUMP</code> from <code>src/lib/game/catalogue/tuning.ts</code> and <code>LADDER_YEARS</code> from <code>src/lib/game/catalogue/ladder-years.ts</code>, so the tuned numbers need no edit here.</li>
         <li>The selectors, words, keys and helpers below are those the other eleven specs of this package fix (<code>docs/superpowers/specs/2026-11-24-*-design.html</code>). The implementer checks each against the merged code; where they differ, the code wins and the difference goes in the hand-back.</li>
         <li>A step of a journey or a test that the merged code cannot pass is a defect of the unit that owns the behaviour. The implementer reports it with the step, the file and the owner, and edits only files in this unit's write set.</li>
@@ -1394,6 +1399,7 @@ Full tree by &lt;Mon YYYY&gt;: missed, &lt;homes&gt; homes, &lt;short&gt; short<
         <li><code>docs/dev/developing.md</code>: Remix and the levels go; <code>/sim</code> as a page becomes <code>/</code>; its section on levels while developing becomes the game's seams while developing: with <code>VITE_E2E=1</code> and no game key the open game shows the simulation; <code>sfhousing:e2e:game</code> plays the real game; <code>sfhousing:e2e:goal</code> sets the amount; <code>sfhousing:e2e:run-ms</code> shortens a run.</li>
         <li><code>docs/dev/plan-sharing.md</code>, <code>docs/dev/ui-parts.md</code>, <code>docs/dev/sim-funding.md</code>: their Remix statements go.</li>
         <li><code>docs/dev/about.md</code>, <code>fzp-mode.md</code>, <code>ensemble-runner.md</code>, <code>sim-timers.md</code>, <code>sim-levers.md</code>, <code>policy-timeline.md</code>, <code>finance-*.md</code>, <code>market.md</code>, <code>road-lots.md</code>, <code>world-core.md</code>: "<code>/sim</code>" as the name of the page becomes "the simulation".</li>
+        <li><code>docs/dev/about.md</code>: its account of Using it names the section "The game" (<code>GAME_STEPS</code> then <code>GAME_NOTES</code>, id <code>about-levels</code>) and the Run shortcut table, and Part 1's terms as <code>MEANINGS</code> holds them (The deadline and Units, no "To beat"), as <code>src/lib/about/</code> does on the merged tree. <code>docs/dev/plan-sharing.md</code> names no <code>game.remix</code>.</li>
         <li>Any other statement in these files about levels, bars, Remix, the header's steps or the old name is made true the same way.</li>
       </ul>
     </section>

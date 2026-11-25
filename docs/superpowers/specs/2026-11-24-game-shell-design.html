@@ -20,7 +20,7 @@
       <li><strong>Call 9</strong> the open game is the whole tool, and <strong>call 21</strong>: at <code>/</code> it shows the simulation; a test that needs the opening seeds a new visitor.</li>
       <li><strong>Call 15</strong> the name changes in the user-facing places, <code>SES_FROM</code> and the tests; <code>rpID</code> and the infrastructure names stay.</li>
     </ul>
-    <p>This is the last part of one lane, built in this order and merged once: <code>game-save</code>, part B of <code>tally-tree</code>, <code>game-sim</code>, <code>game-shell</code>. When it lands, the application builds again.</p>
+    <p>This is the last part of one lane: one unit, merged once. Its parts, in dependency order, are <code>game-save</code>, part B of <code>tally-tree</code>, <code>game-sim</code> and <code>game-shell</code>; the unit's plan orders its tasks across the parts as its tests need, inside the lane's write set, and each file ends as the spec that owns it says. When the lane lands, the application builds again and type-checks outside <code>e2e/**</code>; the e2e specs that still use the earlier helper API, and the e2e run, are whole again when <code>closing</code> lands (design, <code>sec-write-sets</code>).</p>
   </section>
 
   <section id="sec-interfaces">
@@ -537,6 +537,7 @@ function start(): void {
         <li><code>GameCell</code> shows only after mount and never for the open game. Before mount, the header holds the name, the account entry from <code>user</code> and About.</li>
         <li>The status cell is the page's: the plan's save state in the opening, the simulation's after it. It keeps its place and padding.</li>
         <li>The pinned item is the page's: "Room for N homes" in the opening, <code>GoalHeadline</code> (<code>game-sim</code>'s registration) after it.</li>
+        <li>The <code>&lt;header&gt;</code> stays <code>relative</code> and the pinned slot's box is not positioned, so <code>GoalHeadline</code>'s side-goals pop-over places itself against the header. The slot renders whatever the snippet renders, including <code>GoalHeadline</code>'s two root nodes (the headline and its live region).</li>
         <li>The actions are the page's: Publish for the plan in the opening, Publish for the policy after it.</li>
         <li>In the opening the header shows: the name, <code>GameCell</code>, the plan's save state, "Room for N homes" with "N% of the goal", Publish for the plan, the account entry and About.</li>
         <li>For the open game the header shows: the name, the simulation's status, pinned item and actions, the account entry and About. It has no <code>GameCell</code>.</li>
@@ -574,10 +575,10 @@ export const PRODUCT_NAME = SITE_NAME;
 /** Relying-party display name shown by the passkey prompt. */
 export const PASSKEY_RP_NAME = PRODUCT_NAME;
 
-// src/lib/plan/schema.ts
-import { SITE_NAME } from '../shell/name';
+// src/lib/plan/schema.ts: the name as a literal, since plan/ imports only its siblings
+// and a named list (src/lib/plan/purity.spec.ts); schema.spec.ts pins the sentence
 export const FUTURE_SCHEMA_MESSAGE =
-  `This plan was made with a newer version of ${SITE_NAME}. Reload the page to get the latest version.`;</code></pre>
+  'This plan was made with a newer version of SF Housing. Reload the page to get the latest version.';</code></pre>
       <pre><code data-lang="json">// wrangler.jsonc, production (line 40) and staging (line 95)
 "SES_FROM": "SF Housing &lt;noreply@sfhousing.mindlace.net&gt;",</code></pre>
       <table id="tbl-name">
@@ -641,6 +642,7 @@ let {
         <li>What remains: the banner, the read-only <code>BrushEditor</code> keyed on <code>data.id</code>, the dock and Details, the layer switches, the pinned "Room for N homes" headline with no actions or status, and the head tags.</li>
         <li><code>pageTitle</code> is <code>`${data.plan.title ?? 'Shared plan'} · ${SITE_NAME}`</code>. The error page's two titles use <code>SITE_NAME</code>.</li>
         <li><code>src/routes/p/[id]/test/PageHost.svelte</code> loses its <code>game</code> prop.</li>
+        <li>The read-only editor's line, <code>MSG.readOnly</code> in <code>src/lib/brush/messages.ts</code>, is <code>'Read-only.'</code>; its spec asserts those words. <code>BrushEditor.svelte</code>'s comments name no Remix.</li>
       </ul>
       <p>In <code>src/lib/sharing/copy.ts</code>:</p>
       <pre><code data-lang="ts">dialogBody:
@@ -766,7 +768,8 @@ const tables = [
         <li><code>src/lib/shell/SiteHeader.svelte</code>, <code>layout.ts</code>, <code>layout.spec.ts</code>, <code>SiteHeader.svelte.spec.ts</code>, <code>SiteHeader.ssr.spec.ts</code>, <code>accent.spec.ts</code>.</li>
         <li><code>src/lib/shell/test/seeded-game.ts</code>: <code>seededGame({ state?: Partial&lt;GameState&gt;; saves?; plan?; policy?; sync? })</code>, the first game current with <code>{ ...NEW_GAME, ...state }</code>, the others <code>NEW_GAME</code>, each written as a G1 <code>GameSave</code> with its <code>SaveEntry</code> in the index <code>saves.ts</code> reads. <code>seeded-game.svelte.spec.ts</code> follows.</li>
         <li><code>src/lib/shell/test/SimRowGameHeader.svelte</code> (comment: <code>GameCell</code> sits in the row), <code>HeaderScoreHeader.svelte</code> (<code>routeId="/"</code>).</li>
-        <li><code>src/lib/brush/BrushEditor.svelte</code>: the <code>camera()</code> export.</li>
+        <li><code>src/lib/brush/BrushEditor.svelte</code>: the <code>camera()</code> export, and its comments without Remix.</li>
+        <li><code>src/lib/brush/messages.ts</code> and <code>messages.spec.ts</code>: <code>MSG.readOnly</code> is <code>'Read-only.'</code>.</li>
         <li><code>src/routes/p/[id]/+page.svelte</code>, <code>+error.svelte</code>, <code>page.view.svelte.spec.ts</code>, <code>test/PageHost.svelte</code>.</li>
         <li><code>src/lib/sharing/SharedBanner.svelte</code>, <code>SharedBanner.svelte.spec.ts</code>, <code>copy.ts</code>, <code>copy.spec.ts</code>.</li>
         <li><code>src/lib/about/copy.ts</code>, <code>AboutUsing.svelte</code>, <code>AboutParts.svelte.spec.ts</code>.</li>
@@ -820,7 +823,7 @@ const tables = [
         <li>Start: <code>startRuns()</code> is called, the phase becomes <code>'runs'</code>, <code>SimRoute</code> mounts, and <code>BrushEditor</code> is gone. With a stub opening that calls <code>onstart(FRAME)</code>, <code>SimRoute</code> receives <code>initialFrame</code> equal to <code>FRAME</code>.</li>
         <li>A refused start leaves the opening and shows "This browser refused to save."</li>
         <li>The opening keeps today's autosave tests: restore, N1 to N3, <code>touched()</code> after a write, one <code>beforeLeave</code> registered and removed on unmount.</li>
-        <li><code>/p/[id]</code>: no Remix button and no "Open with current data"; "Your game" links <code>/</code>; the title is "&lt;title&gt; · SF Housing"; the 404 title is "Plan not found · SF Housing".</li>
+        <li><code>/p/[id]</code>: no Remix button and no "Open with current data"; the read-only line reads "Read-only."; "Your game" links <code>/</code>; the title is "&lt;title&gt; · SF Housing"; the 404 title is "Plan not found · SF Housing".</li>
         <li><code>SharedBanner</code>: the title line, "Your game" to <code>/</code>, and the N5 or N6 line with no button, for both kinds.</li>
         <li>About: the terms in the new order with their bodies word for word; "The game" with its five steps and four notes; "Saved games" with its three lines and the 12 from <code>MAX_SAVES</code>; the order Keyboard shortcuts, The game, Saved games, Your plans; the shortcut tables captioned Painting, Timeline and Run, the Run table with its two rows.</li>
         <li>The theme check covers the six <code>src/lib/game/ui</code> components.</li>
@@ -841,6 +844,7 @@ const tables = [
     <h2>Decisions</h2>
     <ul>
       <li><strong>The name lives in <code>src/lib/shell/name.ts</code>.</strong> <code>config.ts</code> is an input of the dataset version (<code>pipeline/lib/version.ts:41-50</code>), so it is left alone and <code>APP_NAME</code> stays unused.</li>
+      <li><strong><code>schema.ts</code> writes the name as a literal.</strong> <code>src/lib/plan/purity.spec.ts</code> lets <code>plan/</code> code import only its siblings and a named list, which keeps the plan model free of app modules; <code>schema.spec.ts</code> pins the whole sentence, so the literal cannot drift from <code>SITE_NAME</code> unseen.</li>
       <li><strong>Both data loads in <code>+page.ts</code>.</strong> The server cannot know the phase, and the simulation is every visit after the first win.</li>
       <li><strong>The body is chosen after mount.</strong> The server holds the open game; any earlier choice mismatches at hydration.</li>
       <li><strong><code>/sim</code> is a 308 from a universal load, the query dropped.</strong> The only query it read is retired; 308 matches <code>/attribution</code>; the universal load keeps the redirect inside the two files this subsystem holds.</li>

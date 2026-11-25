@@ -40,7 +40,10 @@ affordable), `month` (model month applied, rule 9's first key), `applied` (day),
 (Int32, capped at `NEVER_KEY_DAY`), `key` (`lineKey`), `bundle`, `f`, `units`, `stories`,
 `level`, `viewMonth` (whose view gave the size), `gone` (1 = left the line), `seq` (ascending along
 the line, kept by compaction). Line scalars: `n`, `nextSeq`, `version`, `appliedThrough` (the last
-month whose `apply` ran). Side tables on the line: spells (`spellLot`, `spellKind`, `spellK`,
+month whose `apply` ran). Line record of the count of homes waiting (not per-row, so `grow` and
+`compactLine` never touch it): `waitHomes` (Int32, `[m]` = homes waiting at the end of model
+month m, `[0]` = 0) and `waitThrough` (the last month recorded). `waitingAt(world, m)` in
+`columns.ts` reads it. Side tables on the line: spells (`spellLot`, `spellKind`, `spellK`,
 `spellR`, sorted by lot then kind: a respelled kind's attempt and the day before its new spell)
 and shadows (`shadowLot`, `shadowRow`, `shadowK`, `shadowR`, `shadowExisting`, `shadowMonth`).
 
@@ -129,7 +132,7 @@ writing**, or the index goes stale silently (a write without a bump is not detec
 | 3, 5, 6  | `onProjectEvent` | `'start'` of an ordinary lot start: its rows leave the line. Else money events.                               |
 | 4        | `apply`          | The due lots' applications, joined in key order; `appliedThrough`.                                            |
 | 5        | `serve`          | Grouped scan, awards (`startProject` with a `FundedStart`), `'award'`, then the closing check (`closeSpent`). |
-| 7        | `shadow`         | Shadow starts and `'displaced'`, then the amortized compaction.                                               |
+| 7        | `shadow`         | Shadow starts and `'displaced'`, the amortized compaction, then `recordWaiting`.                              |
 | any      | `planLot`        | The first month the lot applies, or 0. Pure (it may build caches).                                            |
 | planning | `timelineOf`     | The timeline `planDue` plans under (`closedTimeline`); changes nothing.                                       |
 
@@ -137,6 +140,13 @@ writing**, or the index goes stale silently (a write without a bump is not detec
 compacted only once an eighth of it is `gone`; a shorter one whenever it holds a `gone` row. So
 `gone` rows may survive a step on a long line; every reader skips them. The count comes from the
 index (rebuilt from columns when stale), so a clone compacts in the same months.
+
+**Homes waiting** (`system.ts` `waitingHomes`, `recordWaiting`): last in the step, after the
+compaction, `recordWaiting(world, month)` stores the count in `line.waitHomes[month]`. The count
+walks the index's `byLot`: a lot counts once, by its larger `units`; a row marked `gone` and a row
+whose lot has a lot row not `LOT_FREE` (the lazy guard's test) are skipped. Months with no hook
+between two records take the last value; a month not after `waitThrough` throws. Both fields are
+plain, so a clone and a restore carry the record.
 
 ## Pool closing
 

@@ -33,7 +33,7 @@
   import { createOverlayMux } from '$lib/map/overlay-mux';
   import SimMap from '$lib/map/SimMap.svelte';
   import { useSystemTheme } from '$lib/map/system-theme.svelte';
-  import type { ChunkStatus, GeneratedUpdate, SimMapHandle } from '$lib/map/types';
+  import type { CameraFrame, ChunkStatus, GeneratedUpdate, SimMapHandle } from '$lib/map/types';
   import HistoryButtons from '$lib/paint/HistoryButtons.svelte';
   import { paintedOutlineLayers } from '$lib/paint/outline-layers';
   import PaintKey from '$lib/paint/PaintKey.svelte';
@@ -189,6 +189,19 @@
    */
   export function retryChunks(): void {
     client?.retryChunks();
+  }
+
+  /** The map's camera now: centre, zoom, pitch, bearing; null before the map exists. */
+  export function camera(): CameraFrame | null {
+    const map = handle?.getMap();
+    if (!map) return null;
+    const c = map.getCenter();
+    return {
+      center: [c.lng, c.lat],
+      zoom: map.getZoom(),
+      pitch: map.getPitch(),
+      bearing: map.getBearing()
+    };
   }
 
   let client: SimClient | null = null;
@@ -484,7 +497,7 @@
   });
 
   let wasReadOnly = untrack(() => readOnly);
-  /** Editor.load (plan-sharing's restore, /p/:id, Remix) must reach the worker and the tools. */
+  /** Editor.load (plan-sharing's restore, /p/:id) must reach the worker and the tools. */
   const offLoad = editor.onLoad((loaded) => {
     controller?.cancelStroke();
     // The new plan's count comes with its load diff, never the previous plan's.

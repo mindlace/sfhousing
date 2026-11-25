@@ -7,7 +7,7 @@ export const MSG = {
   loadingParcels: 'Loading parcels…',
   zoomIn: 'Zoom in to see the brush',
   tooLarge: 'Plan too large to save. Undo some strokes.',
-  readOnly: 'Read-only. Remix to edit.',
+  readOnly: 'Read-only.',
   start: 'Pick a height, then paint the map.',
   eraseHint: 'Erase removes painted height',
   mapLabel:

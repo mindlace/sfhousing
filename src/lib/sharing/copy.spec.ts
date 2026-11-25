@@ -10,16 +10,12 @@ import {
   n5,
   n6,
   ogDescription,
-  REMIX_LATER,
-  REMIX_LOCKED,
   YOUR_GAME,
-  remixConfirm,
-  remixNeeds,
-  remixedToast,
   serverMessage,
   sizeLine,
   tooLarge
 } from './copy';
+import * as copy from './copy';
 
 describe('copy', () => {
   it('sizes', () => {
@@ -38,15 +34,9 @@ describe('copy', () => {
     expect(n3('fixture-0', 'fixture-1')).toBe(
       "Your plan was made with an older map dataset (fixture-0). It's now shown on the current data (fixture-1), so some numbers may differ."
     );
-    expect(n5('a', 'b')).toBe(
-      'Made with map data a. Remixing moves it to the current data (b); numbers may change.'
-    );
+    expect(n5('a', 'b')).toBe('Made with map data a, older than the current data (b).');
     expect(n6('a', 'b')).toBe(
       'Made with map data a, which is no longer available. Shown on the current data (b); numbers may differ from when it was published.'
-    );
-    expect(remixedToast('T')).toBe("Remixed from T. You're editing your own copy.");
-    expect(remixConfirm(3)).toBe(
-      'Replace your current plan (3 strokes) with a copy of this one? Your current plan will be lost unless you publish it first.'
     );
     expect(ogDescription(7)).toBe(
       'A plan for San Francisco housing with 7 brush strokes. Open it to see the buildings and net new units.'
@@ -59,12 +49,21 @@ describe('copy', () => {
     expect(COPY.rateLimited).toBe(
       'Too many plans published from your network. Try again in a minute.'
     );
-  });
-  it('remix words for the game', () => {
-    expect(REMIX_LOCKED).toBe('Unlock the simulation to remix');
-    expect(remixNeeds(4)).toBe('Level 4 runs all of it');
-    expect(REMIX_LATER).toBe('Parts unlock in a later round');
     expect(YOUR_GAME).toBe('Your game');
+  });
+  it('the dialog, N5 and the start link say no Remix, for both kinds', () => {
+    expect(COPY.dialogBody).toBe(
+      'Published plans are public and permanent. Anyone with the link can view it. You can keep editing your own copy afterward.'
+    );
+    expect(copyFor('sim').dialogBody).toBe(
+      'Published policies are public and permanent. Anyone with the link can view it. You can keep editing your own copy afterward.'
+    );
+    expect(copyFor('sim').n5('a', 'b')).toBe(n5('a', 'b'));
+    expect(copyFor('plan').startHref).toBe('/');
+    expect(copyFor('sim').startHref).toBe('/');
+    expect(Object.keys(copy).filter((k) => /remix/i.test(k))).toEqual([]);
+    for (const kind of ['plan', 'sim'] as const)
+      expect(Object.keys(copyFor(kind)).filter((k) => /remix/i.test(k))).toEqual([]);
   });
   it('serverMessage', () => {
     expect(serverMessage('invalid_plan')).toBe(cannotRead('invalid_plan'));

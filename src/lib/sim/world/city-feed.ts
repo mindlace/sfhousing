@@ -4,11 +4,12 @@
 //
 // - A row's marker: its anchor lot's label point, the approved day (the first of entitled and
 //   permitIssued entered), the started day (construction), the completed day (a complete end), the
-//   final revision's homes (capped at 65,535; below 0 sent as 0) and the `SLOT_FLAG` bits. Days,
-//   homes and flags come from `scheduleAt(world, statics, row, day)`, the read the cells are
-//   packed from, so a marker's days are its slot's whenever both exist. While `scheduleAt` is null
-//   (the row has not begun) the days are NaN and homes and flags 0. A row with no anchor (a master,
-//   or no T11 parcel) has no marker.
+//   final revision's homes (capped at 65,535; below 0 sent as 0), the homes the project replaces
+//   after the dataset date (0 until its construction starts after it; capped at 65,535) and the
+//   `SLOT_FLAG` bits. Days, homes, existing and flags come from `scheduleAt(world, statics, row,
+//   day)`, the read the cells are packed from, so a marker's days are its slot's whenever both
+//   exist. While `scheduleAt` is null (the row has not begun) the days are NaN and homes,
+//   existing and flags 0. A row with no anchor (a master, or no T11 parcel) has no marker.
 // - Nothing runs per world step but `touch`, a set insert. `take` reads the touched rows at flush
 //   and sends those whose marker differs from the one sent, ascending; at rest it sends nothing.
 // - `rewind` drops the rows at or past the restored world's `n` and touches every row whose marker
@@ -57,12 +58,13 @@ export interface CityFeed {
 }
 
 /** Values of one marker in a row of `Marker`'s layout (float32 as sent). */
-const WIDTH = 7;
+const WIDTH = 8;
 const LNG = 0;
 const LAT = 1;
 const DAYS = 2; // approved, started, completed: DAYS + CITY_DAY.*
 const HOMES = 5;
-const FLAGS = 6;
+const EXISTING = 6;
+const FLAGS = 7;
 
 type Marker = Float64Array;
 
@@ -107,6 +109,10 @@ export function createCityFeed(deps: CityFeedDeps): CityFeed {
     if (s.end.kind === 'complete') m[DAYS + CITY_DAY.completed] = Math.fround(s.end.day);
     const units = s.revisions.length === 0 ? 0 : s.revisions[s.revisions.length - 1].units;
     m[HOMES] = Math.min(MAX_HOMES, Math.max(0, units));
+    const built = s.entered.construction;
+    if (built !== undefined && built > statics.asOf) {
+      m[EXISTING] = Math.min(MAX_HOMES, Math.max(0, s.existingUnits));
+    }
     m[FLAGS] = deps.flagsOf(world, statics, row);
     return m;
   }
@@ -124,6 +130,7 @@ export function createCityFeed(deps: CityFeedDeps): CityFeed {
       lngLat: new Float32Array(2 * k),
       days: new Float32Array(3 * k),
       homes: new Uint16Array(k),
+      existing: new Uint16Array(k),
       flags: new Uint8Array(k)
     };
     for (let i = 0; i < k; i++) {
@@ -132,6 +139,7 @@ export function createCityFeed(deps: CityFeedDeps): CityFeed {
       d.lngLat[2 * i + 1] = m[LAT];
       for (let j = 0; j < 3; j++) d.days[3 * i + j] = m[DAYS + j];
       d.homes[i] = m[HOMES];
+      d.existing[i] = m[EXISTING];
       d.flags[i] = m[FLAGS];
     }
     if (from !== null) d.from = from;

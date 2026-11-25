@@ -14,7 +14,7 @@
       <li><strong>D8, D14</strong>: saved games stay separate, up to 12, with switch, rename, delete and new unchanged.</li>
       <li><strong>Call 9</strong>: the open game is built here from the catalogue: the last rung met, every node bought, no units.</li>
     </ul>
-    <p>This unit is the first part of one lane, built in this order and merged once: <code>game-save</code>, part B of <code>tally-tree</code>, <code>game-sim</code>, <code>game-shell</code> (design, <code>sec-write-sets</code>). It deletes <code>levels.ts</code>, <code>progress.ts</code>, <code>standing.ts</code>, <code>allowed.ts</code>, <code>copy.ts</code> and <code>navigate.ts</code>, and removes store members that pages read. The application does not build or type-check after this unit alone. <a href="#sec-design-lane">The lane</a> names every importer left broken and the unit that mends it.</p>
+    <p>This unit is the first part of one lane: one unit, merged once. Its parts, in dependency order, are <code>game-save</code>, part B of <code>tally-tree</code>, <code>game-sim</code> and <code>game-shell</code>; the unit's plan orders its tasks across the parts as its tests need, inside the lane's write set, and each file ends as the spec that owns it says (design, <code>sec-write-sets</code>). It deletes <code>levels.ts</code>, <code>progress.ts</code>, <code>standing.ts</code>, <code>allowed.ts</code>, <code>copy.ts</code> and <code>navigate.ts</code>, and removes store members that pages read. The application does not build or type-check after this unit alone. <a href="#sec-design-lane">The lane</a> names every importer left broken and the unit that mends it.</p>
   </section>
 
   <section id="sec-interfaces">
@@ -329,6 +329,7 @@ export interface SideInput {
   view: TimelineView;
   index: number;
   take: RunTake;
+  inForce: boolean;
 }
 
 export interface SideGoal {
@@ -352,6 +353,7 @@ export function sideShown(s: GameState, goals?: readonly SideGoal[]): SideGoal[]
         <dt><code>waitingMoney</code></dt><dd>Homes waiting for money at the deadline's month; null when the view has no such series.</dd>
         <dt><code>lump</code></dt><dd><code>RUNG_LUMP</code> when this run is the first to meet its rung, else null.</dd>
         <dt><code>index</code></dt><dd>The deadline's month in the view.</dd>
+        <dt><code>inForce</code></dt><dd>A policy of the document the view was forecast from is on with a span in force: <code>!nothingInForce(doc)</code> of the runnable document.</dd>
       </dl>
       <ul>
         <li>Rung 0's deadline is <code>defaultGoal(asOf).deadline</code>. Rung <em>k</em> is the last day of December of <code>LADDER_YEARS[k - 1]</code>.</li>
@@ -360,7 +362,7 @@ export function sideShown(s: GameState, goals?: readonly SideGoal[]): SideGoal[]
         <li>The cheapest node shown at rung 0 costs no more than <code>RUNG_LUMP</code>.</li>
         <li>A side goal's <code>reward</code> and target are read from <code>SIDE_TUNING</code> by its id.</li>
         <li><code>goalAt</code> is <code>defaultGoal(asOf)</code> with the rung's deadline, and with <code>amount</code> when given.</li>
-        <li><code>readRun</code> returns null while the view does not cover the deadline's month.</li>
+        <li><code>readRun</code> returns null until the view is filled through the deadline's month. That month is read clamped to the view's months, and every rung's deadline lies inside them: rung 0's is the view's last calendar month, and no rung's is later or before the dataset date's month.</li>
         <li><code>resultOf</code> lists a side goal when it is shown, not yet met, and its <code>value</code> is at least its <code>target</code>.</li>
         <li><code>settle</code> credits <code>collected</code>, <code>lump</code> and each side reward; records the rung in <code>met</code> when <code>reachedOn</code> is set and the rung is not there; records each side goal; adds 1 to <code>runs</code>; sets <code>last</code>.</li>
         <li><code>settle</code> never removes a met rung (call 8).</li>
@@ -373,6 +375,7 @@ export function sideShown(s: GameState, goals?: readonly SideGoal[]): SideGoal[]
         <li><code>fitGame</code> returns the same object when nothing is dropped or lowered.</li>
         <li><code>sideShown</code> returns the first <code>SIDE_SHOWN</code> goals whose ring is open and which are not met.</li>
         <li>A side goal's <code>read</code> returns null when the view lacks what it reads.</li>
+        <li>A goal that reads the policy's effect (<code>planEffect</code>) reads 0 while <code>inForce</code> is false: the view's twin is then the old zoning, not current law.</li>
       </ul>
     </section>
 
@@ -789,7 +792,8 @@ function openState(): GameState {
       <ul>
         <li>The three reads of <code>save.progress.firstWinAt</code> (attach, <code>changed</code>, <code>#put</code>) read <code>save.state.firstWinAt</code>.</li>
         <li><code>GameSave</code> and <code>parseGameSave</code> come from <code>./save-shape</code>; <code>defaultSaveName</code> comes from <code>./words</code>.</li>
-        <li><code>#keepBoth</code> and <code>#keepRemoved</code> are unchanged. Their comments that say the offer is kept go, since there is no offer.</li>
+        <li><code>#keepBoth</code> and <code>#keepRemoved</code> keep their behaviour. Their comments that say the offer is kept go, since there is no offer.</li>
+        <li><code>#keepBoth</code> names the browser's copy with <code>defaultSaveName({ kind: 'conflict', name: mine.name }, taken)</code>, where <code>taken</code> is every name in <code>store.saves</code> and the account copy's name. A name near 60 code points loses " (this device)" to the cut, and <code>taken</code> then gives it a " (2)" suffix, so the two copies never share a name.</li>
         <li><code>SyncRecord</code>, <code>SAVE_REVS_KEY</code>, <code>SyncState</code>, <code>syncReload</code> and <code>createSaveSync</code> are unchanged.</li>
         <li>A purchase or a settled run is one <code>changed(id)</code>, debounced 2 seconds like any edit.</li>
       </ul>
@@ -1084,6 +1088,7 @@ export async function seedRunMs(page: Page, ms: number): Promise&lt;void&gt;;</c
         <li>The store has no member <code>progress</code>, <code>allowed</code>, <code>offer</code>, <code>setOffer</code>, <code>levelUp</code> or <code>remix</code> (a type-level check with <code>@ts-expect-error</code>).</li>
         <li><code>AccountOffer.svelte.spec.ts</code> passes unchanged apart from its import of <code>syncText</code>.</li>
         <li>The sync: with no session, a save whose <code>state.firstWinAt</code> is null is not sent by <code>changed</code>, at attach or by a held send; with it set it is sent and the 200 makes the session. Every other sync test passes with v2 saves.</li>
+        <li>A 409 on a save whose name is 60 code points keeps both copies under different names: the browser's copy is named with " (2)", and its name differs from the account copy's name also when that copy was renamed on another device.</li>
       </ul>
     </section>
 

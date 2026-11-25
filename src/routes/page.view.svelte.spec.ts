@@ -6,14 +6,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import { page, userEvent } from 'vitest/browser';
 import type { Manifest } from '$lib/data/manifest';
-import { emptyPlan } from '$lib/plan';
 import { stubProps } from '$lib/brush/test/sim-map-stub';
 import { VIEW_KEY } from '$lib/view/prefs';
 import manifestJson from '../../e2e/fixtures/data/fixture-0/manifest.json';
+import { homeData } from './test/home-data';
 import PageHost from './test/PageHost.svelte';
 import { PageWorker, pageWorkers, scoreDiff, scoreOf } from './test/page-worker';
 
 vi.mock('$lib/map/SimMap.svelte', async () => import('$lib/brush/test/SimMapStub.svelte'));
+vi.mock('$lib/sim-page/SimRoute.svelte', () => import('./test/SimRouteStub.svelte'));
 // Retry after a failed manifest load reloads it through here.
 vi.mock('$lib/sim/manifest', async () => ({
   loadManifest: async () => ({
@@ -24,18 +25,8 @@ vi.mock('$lib/sim/manifest', async () => ({
 
 const manifest = manifestJson as unknown as Manifest;
 
-function data(m: Manifest | null = manifest) {
-  return {
-    plan: emptyPlan('fixture-0'),
-    manifest: m,
-    fellBack: false,
-    manifestError: m === null,
-    datasetVersion: 'fixture-0',
-    appRelease: 'dev',
-    user: null,
-    signInAvailable: true
-  };
-}
+const data = (m: Manifest | null = manifest) =>
+  homeData({ manifest: m, manifestError: m === null });
 
 const layersToggle = () => page.getByRole('button', { name: 'Map layers' });
 const layersPanel = () => page.getByRole('group', { name: 'Map layers' });

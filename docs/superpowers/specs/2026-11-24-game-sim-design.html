@@ -361,6 +361,7 @@ export interface SideInput {
   view: TimelineView;
   index: number;
   take: RunTake;
+  inForce: boolean;
 }
 
 export interface SideGoal {
@@ -384,6 +385,7 @@ export function sideShown(s: GameState, goals?: readonly SideGoal[]): SideGoal[]
         <dt><code>waitingMoney</code></dt><dd>Homes waiting for money at the deadline's month; null when the view has no such series.</dd>
         <dt><code>lump</code></dt><dd><code>RUNG_LUMP</code> when this run is the first to meet its rung, else null.</dd>
         <dt><code>index</code></dt><dd>The deadline's month in the view.</dd>
+        <dt><code>inForce</code></dt><dd>A policy of the document the view was forecast from is on with a span in force: <code>!nothingInForce(doc)</code> of the runnable document.</dd>
       </dl>
       <ul>
         <li>Rung 0's deadline is <code>defaultGoal(asOf).deadline</code>. Rung <em>k</em> is the last day of December of <code>LADDER_YEARS[k - 1]</code>.</li>
@@ -392,7 +394,7 @@ export function sideShown(s: GameState, goals?: readonly SideGoal[]): SideGoal[]
         <li>The cheapest node shown at rung 0 costs no more than <code>RUNG_LUMP</code>.</li>
         <li>A side goal's <code>reward</code> and target are read from <code>SIDE_TUNING</code> by its id.</li>
         <li><code>goalAt</code> is <code>defaultGoal(asOf)</code> with the rung's deadline, and with <code>amount</code> when given.</li>
-        <li><code>readRun</code> returns null while the view does not cover the deadline's month.</li>
+        <li><code>readRun</code> returns null until the view is filled through the deadline's month. That month is read clamped to the view's months, and every rung's deadline lies inside them: rung 0's is the view's last calendar month, and no rung's is later or before the dataset date's month.</li>
         <li><code>resultOf</code> lists a side goal when it is shown, not yet met, and its <code>value</code> is at least its <code>target</code>.</li>
         <li><code>settle</code> credits <code>collected</code>, <code>lump</code> and each side reward; records the rung in <code>met</code> when <code>reachedOn</code> is set and the rung is not there; records each side goal; adds 1 to <code>runs</code>; sets <code>last</code>.</li>
         <li><code>settle</code> never removes a met rung (call 8).</li>
@@ -405,6 +407,7 @@ export function sideShown(s: GameState, goals?: readonly SideGoal[]): SideGoal[]
         <li><code>fitGame</code> returns the same object when nothing is dropped or lowered.</li>
         <li><code>sideShown</code> returns the first <code>SIDE_SHOWN</code> goals whose ring is open and which are not met.</li>
         <li>A side goal's <code>read</code> returns null when the view lacks what it reads.</li>
+        <li>A goal that reads the policy's effect (<code>planEffect</code>) reads 0 while <code>inForce</code> is false: the view's twin is then the old zoning, not current law.</li>
       </ul>
     </section>
     <section id="sec-if-g7">
@@ -598,6 +601,7 @@ export function onPrefs(fn: () =&gt; void): () =&gt; void;</code></pre>
       <ul>
         <li><code>planDrops</code> returns one drop for each marker completed after <code>asOf</code> and at or before <code>to</code> whose worth is above 0, ascending by day, then by row.</li>
         <li><code>feed.drops</code> may be replaced during a run, as the forecast fills. Drops are matched by <code>row</code>: one already shown stays as it is, and none is counted twice.</li>
+        <li><code>feed.running</code> holds each value for at least one animation frame: it turns true no earlier than the frame after it last turned false, and false no earlier than the frame after it turned true. The feed's owner guarantees this. The layer reads <code>running</code> once a frame, so a run starts and ends in the frames in which it reads a change.</li>
         <li>A drop appears when <code>feed.day</code> reaches its day and is counted in <code>dropped</code> then.</li>
         <li>A drop whose <code>policy</code> is true pops as a diamond, the shape of the map's policy mark, in that mark's colour (<code>tl-halo-policy</code>); every other drop pops as a circle in the accent. The shape tells the two apart in every theme. Its worth and how it is collected do not change.</li>
         <li>A drop is collected when its projected point is within <code>hands.radiusPx</code> of the ring's centre. It is counted in <code>collected</code> once.</li>
@@ -850,7 +854,7 @@ export const RUN_VIEW: ReadonlySet&lt;GamePhase&gt;; // starting, run, tally</co
         <li><code>TimelineMode</code> receives the phase as a prop and reports its events through <code>onphase</code>.</li>
         <li>In starting, run, tally and tree the map box takes the whole mode box at every width: no bottom pane is mounted, and the map box loses its <code>max-md:h-[40%]</code>.</li>
         <li>In starting, run and tally <code>MapKeyControl</code>, the project card and the tooltip are not mounted, an open card is closed, and <code>SimMap</code> gets <code>tapCards={false}</code>.</li>
-        <li>In tree no bottom pane is mounted. The page's <code>Tree</code> is rendered in a box with <code>data-testid="game-tree-pane"</code>, absolutely positioned at <code>inset-0</code> over the box that holds the map, at <code>z-20</code>, on the opaque surface colour, with <code>overflow-y-auto</code>. It fills the page below the header at every width; the notice stack stays above it from md and in flow above it below md.</li>
+        <li>In tree no bottom pane is mounted. The page's <code>Tree</code> is rendered in a box with <code>data-testid="game-tree-pane"</code>, absolutely positioned at <code>inset-0</code> over the box that holds the map, at <code>z-20</code>, on the opaque surface colour, with <code>overflow-y-auto</code>. It fills the page below the header at every width; the notice stack stays above it from md and in flow above it below md. About this model's dialog is a top-layer modal mounted outside the map's box, so it opens above the tree pane.</li>
         <li>In tree the map stays mounted under the tree pane, at its normal camera, with <code>inert</code> and <code>aria-hidden="true"</code> on the map box. <code>MapKeyControl</code>, the card and the tooltip are not mounted, and an open card is closed.</li>
         <li>In workshop the page is today's layout.</li>
         <li>Undo and Redo do nothing in starting, run and tally: <code>SimPage</code>'s <code>undo</code>, <code>redo</code> and Ctrl+Z handler return at once, and <code>HistoryButtons</code> is not mounted.</li>
@@ -913,6 +917,7 @@ interface RunClockProps {
         <li>Starting shows a <code>Message</code> in the notice stack, inside a <code>role="status"</code> region, with the text <code>RUN_BUSY</code>, imported from <code>src/lib/game/ui/words.ts</code>, and <code>testid="run-waiting"</code>.</li>
         <li>The forecast is ready when all of these hold: the session exists and its phase is <code>'ready'</code>; it is not provisional; the numbers on show are not stale; the newest view exists with <code>filledThrough &gt;= 0</code>; the map handle exists; lots have not failed; and no error or crash notice is up.</li>
         <li>On the first moment starting and ready hold together, <code>TimelineMode</code> starts the run and sends <code>ready</code>. Starting a run: close the card and the tooltip; <code>day = asOf</code> and <code>handleDay(asOf)</code>; <code>reveal = revealOpen(asOf)</code>; the take is zero; the drops are planned (<a href="#sec-design-feed">The drops' feed</a>); <code>running</code> becomes true.</li>
+        <li>The run starts no earlier than the animation frame after the one in which the feed's <code>running</code> last turned false, so a run that ended or was aborted is seen to end before the next one starts (R1). An abort that arrives in the frame a run started stops the clock within two frames, so the layer reads <code>running</code> true in at least one frame before it turns false. <code>TimelineMode</code> counts these frames with the <code>raf</code> of <code>src/lib/game/run/clock.ts</code>: a run starts once <code>running</code> has been false for two of its ticks, and an abort in a run's first frame is held and applied on the second tick, whatever order the browser runs the page's and the layer's frame callbacks in.</li>
       </ol>
       <ul>
         <li>The stop day is the goal in play's deadline, <code>goalAt(asOf, state.rung, goalAmount)</code>, clamped to <code>lastDay</code>.</li>
@@ -937,7 +942,7 @@ interface RunClockProps {
         <li>Markers come from the page's city index: <code>activityIndex.markers()</code>, which <code>city-net</code> adds to <code>src/lib/timeline/activity.ts</code> and which returns <code>CityMarkerRow[]</code> (<code>{ row, lngLat, completed, homes, existing, flags }</code>). Each item maps to R1's <code>Marker</code> with the function below, in <code>TimelineMode</code>.</li>
         <li>At the run's start the drops are <code>planDrops(activityIndex.markers().map(marker), asOf, stop)</code>.</li>
         <li>While the phase is run, each change of <code>cityVersion</code> plans the drops again with the same arguments and replaces <code>feed.drops</code> (R1 matches drops by <code>row</code>). A completed day appears in the feed only once the world has stepped its month, and no rewind can happen in a run, so a new array keeps every earlier drop with its row and day.</li>
-        <li>The feed is a new object on each change of its fields:</li>
+        <li>The feed is one object for the life of <code>TimelineMode</code>. Its fields are getters over the page's state, so <code>RunLayer</code> reads each change through the same object and its <code>feed</code> prop never changes identity. <code>RunLayer</code> starts its frame loop from an effect on <code>feed.running</code>, and a new <code>feed</code> object reruns that effect, which reads the canvas's layout again; with one object that happens only when <code>running</code> changes.</li>
       </ul>
       <pre><code data-lang="ts">const marker = (m: CityMarkerRow): Marker =&gt; ({
   row: m.row,
@@ -949,12 +954,18 @@ interface RunClockProps {
   policy: m.flags !== 0
 });
 
-const feed: RunFeed = $derived({
-  drops: runDrops,
-  day,
-  running: phase === 'run' &amp;&amp; running,
+const feed: RunFeed = {
+  get drops() {
+    return runDrops;
+  },
+  get day() {
+    return day;
+  },
+  get running() {
+    return phase === 'run' &amp;&amp; running;
+  },
   project: projectPoint
-});
+};
 
 function projectPoint(lng: number, lat: number): { x: number; y: number } | null {
   if (!map) return null;
@@ -975,6 +986,7 @@ function projectPoint(lng: number, lat: number): { x: number; y: number } | null
       <ul>
         <li>Settling is tried whenever the phase is run, <code>running</code> is false and <code>day</code> equals the stop day.</li>
         <li>It goes ahead only with the numbers current (not stale, not provisional) and <code>readRun(shown.view, goal)</code> not null. Otherwise it waits, with the clock at the stop day, and is tried again as the view changes.</li>
+        <li>The page adds no test of its own on the view's months: whether the view covers the deadline is <code>readRun</code>'s rule (G6).</li>
         <li>The clock reaches the stop day only through the computed edge, so the view covers the deadline's month at that moment; the wait is for a provisional open or a restart only.</li>
         <li>Settling, in <code>TimelineMode</code>:</li>
       </ul>
@@ -982,7 +994,7 @@ function projectPoint(lng: number, lat: number): { x: number; y: number } | null
   const s = game.state;
   const before = s.last !== null &amp;&amp; s.last.rung === s.rung ? s.last.homes : null;
   const index = indexOfDay(view.months, goal.deadline);
-  const r = resultOf(s, reading, take, { view, index, take }, {
+  const r = resultOf(s, reading, take, { view, index, take, inForce }, {
     amount: goal.amount,
     datasetVersion,
     at: new Date().toISOString()
@@ -994,7 +1006,7 @@ function projectPoint(lng: number, lat: number): { x: number; y: number } | null
 }</code></pre>
       <ul>
         <li>The tally shows <code>r</code> even when <code>game.settle</code> refuses the write; the balance in the header is the store's.</li>
-        <li><code>Tally</code> gets <code>result</code> = <code>r</code>, <code>before</code> as <code>settleRun</code> took it, <code>deadline</code> = <code>ladder(asOf)[r.rung].label</code>, and <code>oncontinue</code> sending <code>continue</code>. It sits where the win card sat, in <code>&lt;div data-testid="tl-tally" class="pointer-events-auto max-w-full"&gt;</code>.</li>
+        <li><code>Tally</code> gets <code>result</code> = <code>r</code>, <code>before</code> as <code>settleRun</code> took it, <code>deadline</code> = <code>ladder(asOf)[r.rung].label</code>, and <code>oncontinue</code> sending <code>continue</code>. It sits where the win card sat, in <code>&lt;div data-testid="tl-tally" class="pointer-events-auto max-w-full"&gt;</code>, inside <code>{#key tally.result}</code>, so each result mounts a fresh <code>Tally</code>: its counts roll once, from mount.</li>
         <li>Homes waiting for money reach the tally through <code>RunResult.waitingMoney</code>, which <code>readRun</code> fills from E2 when the view has it. This unit reads no E2 field itself.</li>
       </ul>
     </section>
@@ -1021,7 +1033,8 @@ function projectPoint(lng: number, lat: number): { x: number; y: number } | null
         </tbody>
       </table>
       <ul>
-        <li><code>side</code> is built from <code>sideShown(state)</code>, each read with <code>{ view: shown.view, index, take }</code>, where <code>index = indexOfDay(view.months, goal.deadline)</code>.</li>
+        <li><code>side</code> is built from <code>sideShown(state)</code>, each read with <code>{ view: shown.view, index, take, inForce }</code>, where <code>index = indexOfDay(view.months, goal.deadline)</code>.</li>
+        <li><code>inForce</code>, in <code>settleRun</code> and in <code>side</code>, is the page's own <code>!nothingInForce(resultsDoc)</code>: whether the document the shown view was forecast from has a policy in force. A policy side goal reads 0 without one (G6).</li>
         <li>The take is the live take in run; <code>state.last</code>'s <code>dropped</code> and <code>collected</code> when its rung is the one in play; else zero units of both.</li>
         <li>A goal whose <code>read</code> returns null is left out. Each other is <code>{ goal, value, target, met: value &gt;= target }</code>.</li>
         <li><code>side</code> is empty with no view or while <code>index &gt; view.filledThrough</code>.</li>
@@ -1073,7 +1086,7 @@ function buy(id: NodeId): void {
       </table>
       <ul>
         <li><code>ending</code> is null until <code>finished(game.state)</code>. Then it is <code>{ reachedOn, stateBy, perAddedHome }</code>: <code>reachedOn</code> from the <code>met</code> entry of the last rung; <code>stateBy</code> is <code>RHNA_DEADLINE</code> from <code>$lib/sim/scenario/score</code>, the day RHNA asks for the goal's homes by; <code>perAddedHome</code> is <code>moneyFigureAt(view.money, i).perAddedHome.all</code> at <code>i = indexOfDay(view.months, goal.deadline)</code> on the view on show, and null with no view, no <code>money</code> or <code>i &gt; view.filledThrough</code>.</li>
-        <li><code>openPublish</code> clicks the header's Publish button (<code>[data-testid="publish-open"]</code>), which opens its dialog on <code>publishDoc</code>.</li>
+        <li><code>openPublish</code> clicks the header's Publish button (<code>[data-testid="publish-open"]</code>), which opens its dialog on <code>publishDoc</code>. Below lg that button sits in the header's Menu: when it has no box and the Menu is closed, <code>openPublish</code> first opens the Menu (<code>[data-header-menu]</code>), waits a tick, then clicks it.</li>
       </ul>
     </section>
 
@@ -1244,7 +1257,7 @@ function switchNode(id: NodeId, on: boolean): void {
       <ul>
         <li><code>publishDoc</code> is <code>doc</code> with <code>policy: run</code> when <code>run</code> differs from <code>store.policy</code>, as today, with <code>run = runnable(store.policy, limits)</code>.</li>
         <li>Each policy's <code>on</code> is sent as it stands (P14).</li>
-        <li>Publish is in the header in every phase.</li>
+        <li>Publish is in the header in every phase. The tree's Publish at the ending reaches the same button, opening the Menu first below lg (<code>openPublish</code>).</li>
         <li>Autosave keeps the whole document.</li>
       </ul>
     </section>
@@ -1255,7 +1268,7 @@ function switchNode(id: NodeId, on: boolean): void {
         <li><code>/s/[id]/+page.svelte</code> no longer reads the game: no <code>useGame</code>, Remix state, <code>remix()</code>, <code>error</code>, <code>leaving</code> or <code>gameHref</code>, and no import from <code>$lib/game</code>.</li>
         <li>It passes <code>SharedBanner</code> the props <code>game-shell</code>'s spec gives it: <code>title</code>, <code>id</code>, <code>createdAt</code>, <code>datasetNotice</code>, <code>planVersion</code>, <code>currentVersion</code> and <code>kind="sim"</code>.</li>
         <li>What remains of the banner is <code>game-shell</code>'s: the title line with the published date, a "Your game" link to <code>/</code>, and the N5 or N6 line with no button.</li>
-        <li>The page title's name is <code>game-shell</code>'s edit, made after this unit's.</li>
+        <li>The page title's name is <code>game-shell</code>'s edit, in the same lane.</li>
         <li><code>SimRoute</code> is mounted with <code>mode="view"</code> and <code>persist="off"</code> as today, so the published policy plays in full (D5).</li>
       </ul>
     </section>
@@ -1447,7 +1460,7 @@ export function restoredLabel(node: TreeNode): string;</code></pre>
       <ul>
         <li><code>RunClock.svelte.spec.ts</code>: reaches the stop day after 20 s of fake frames and turns <code>running</code> false; waits at an <code>end</code> before the stop with <code>running</code> true and goes on when it grows; <code>onday</code> once per change.</li>
         <li><code>Playhead.svelte.spec.ts</code> and <code>test/PlayheadHost.svelte</code>: the <code>barDay</code> and <code>tl-bar-flag</code> cases go.</li>
-        <li><code>TimelineMode.game.svelte.spec.ts</code>, rewritten whole with <code>test/game.ts</code> making a v2 store: starting shows <code>run-waiting</code> and enters run when the fake worker's first fill arrives; <code>setRunView(true)</code> on starting and false on leaving tally; the run reaches the deadline with <code>runMs</code> 200 and settles with <code>resultOf</code>'s result; the tally shows with <code>before</code> the previous run's homes on the same rung (null on a new rung), Continue gives tree; the tree pane covers the map box and the map box is inert; <code>prefetchViewport</code> asks nothing while in <code>RUN_VIEW</code>; a change of <code>collectForMe</code> mid-run reaches <code>RunLayer</code>; <code>initialFrame</code> reaches <code>SimMap</code>; a crash in a run with <code>runs</code> above 0 lands in tree and settles nothing; a crash in starting or in run with <code>runs</code> 0 returns to starting, never shows the tree, and the run starts again once Retry brings the forecast back; Space in a run does not toggle and is prevented; <code>RunLayer</code>'s feed carries <code>planDrops</code> of the index's markers to the deadline; <code>GoalHeadline</code> is the pinned item with <code>homes</code> null before the rung's first run; the old <code>tl-win</code>, <code>tl-bar-flag</code> and <code>levelUp</code> cases go.</li>
+        <li><code>TimelineMode.game.svelte.spec.ts</code>, rewritten whole with <code>test/game.ts</code> making a v2 store: starting shows <code>run-waiting</code> and enters run when the fake worker's first fill arrives; <code>setRunView(true)</code> on starting and false on leaving tally; the run reaches the deadline with <code>runMs</code> 200 and settles with <code>resultOf</code>'s result; the tally shows with <code>before</code> the previous run's homes on the same rung (null on a new rung), Continue gives tree; the tree pane covers the map box and the map box is inert; <code>prefetchViewport</code> asks nothing while in <code>RUN_VIEW</code>; a change of <code>collectForMe</code> mid-run reaches <code>RunLayer</code>; <code>initialFrame</code> reaches <code>SimMap</code>; a crash in a run with <code>runs</code> above 0 lands in tree and settles nothing; a crash in starting or in run with <code>runs</code> 0 returns to starting, never shows the tree, and the run starts again once Retry brings the forecast back; Space in a run does not toggle and is prevented; <code>RunLayer</code>'s <code>feed</code> prop is one object from mount through a whole run, start, mid-run and settling, and carries <code>planDrops</code> of the index's markers to the deadline; <code>GoalHeadline</code> is the pinned item with <code>homes</code> null before the rung's first run; the old <code>tl-win</code>, <code>tl-bar-flag</code> and <code>levelUp</code> cases go.</li>
         <li><code>TimelineMode.svelte.spec.ts</code>: with no game there is no <code>data-phase</code> other than <code>none</code>, the pinned item is <code>TimelineHeaderScore</code>, and <code>setRunView</code> is never called.</li>
         <li><code>Timeline.svelte.spec.ts</code>: <code>LOCKED_LANE</code> and no "+" on a kind not open; <code>NOT_BOUGHT</code> on a policy not within; the <code>allowed</code>, <code>lockedLane</code> and <code>LATER_ROUND</code> cases are rewritten.</li>
         <li><code>Inspector.svelte.spec.ts</code> and <code>test/InspectorHost.svelte</code>: "+" offers per limits; a given measure's What is the summary under limits that are not open; the On switch still works on a bought policy.</li>
@@ -1498,7 +1511,7 @@ export function restoredLabel(node: TreeNode): string;</code></pre>
       <li>The rules of <code>limitsOf</code>, <code>within</code>, <code>runnable</code>, <code>readRun</code>, <code>resultOf</code>, <code>settle</code>, the ladder and side goals: <code>game-core</code>.</li>
       <li>The nodes, <code>applyGrant</code> and <code>LADDER_YEARS</code>: <code>tree-catalogue</code>.</li>
       <li>The game store, its persistence and <code>e2e/helpers/game.ts</code>: <code>game-save</code>.</li>
-      <li>The name in the titles of <code>src/routes/s/[id]/+page.svelte</code> and <code>+error.svelte</code>, written after this unit: <code>game-shell</code>.</li>
+      <li>The name in the titles of <code>src/routes/s/[id]/+page.svelte</code> and <code>+error.svelte</code>: <code>game-shell</code>, in the same lane.</li>
       <li>The header, the name elsewhere, <code>/</code> and how it mounts <code>SimRoute</code>, the opening, <code>SharedBanner</code>, <code>/p/[id]</code>: <code>game-shell</code>.</li>
       <li>The series field of homes waiting for money: <code>money-wait</code>.</li>
       <li>Every e2e spec, the reach check and <code>docs/dev/game.md</code>: <code>closing</code>.</li>

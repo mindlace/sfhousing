@@ -1,11 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import type { Database } from '$lib/server/db';
 import { gameSave } from '$lib/server/db/schema';
 import { freshDb, seedUser } from '$lib/server/test/auth-db';
 import { updateProfile } from '$lib/server/user-store/profile';
 import { newId } from '$lib/ids/base58';
-import { parseGameSave, type GameSave } from '$lib/game/saves';
+import { parseGameSave, type GameSave } from '$lib/game/save-shape';
+import { NEW_GAME } from '$lib/game/state';
 import {
   REMOVED_LIST_DAYS,
   accountLine,
@@ -21,11 +22,16 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 function save(id: string = newId(), over: Partial<GameSave> = {}): GameSave {
   const s: GameSave = {
-    v: 1,
+    v: 2,
     id,
     name: 'Game, 22 Nov',
     nameIsDefault: true,
-    progress: { v: 1, level: 2, banked: {}, firstWinAt: '2026-11-22T10:00:00.000Z' },
+    state: {
+      ...structuredClone(NEW_GAME),
+      phase: 'runs',
+      rung: 1,
+      firstWinAt: '2026-11-22T10:00:00.000Z'
+    },
     plan: null,
     policy: null,
     savedAt: '2026-11-22T12:00:00.000Z',
@@ -54,7 +60,50 @@ async function rows(db: Database, identityId: string) {
   return db.select().from(gameSave).where(eq(gameSave.identityId, identityId));
 }
 
+describe('the game_save table', () => {
+  it('has the v2 columns and no level', async () => {
+    const db = await setup();
+    const cols = await db.all<{ name: string }>(sql`PRAGMA table_info(game_save)`);
+    expect(cols.map((c) => c.name)).toEqual([
+      'identity_id',
+      'id',
+      'rev',
+      'name',
+      'phase',
+      'rung',
+      'body',
+      'saved_at',
+      'removed_at'
+    ]);
+  });
+});
+
 describe('putGame', () => {
+  it('stores phase and rung from save.state on insert and on update', async () => {
+    const db = await setup();
+    const a = save(undefined, { state: { ...save().state, phase: 'opening', rung: 0 } });
+    await putGame(db, 'u1', a, null);
+    expect(await row(db, 'u1', a.id)).toMatchObject({ phase: 'opening', rung: 0, rev: 1 });
+    await putGame(db, 'u1', { ...a, state: { ...a.state, phase: 'runs', rung: 2 } }, 1);
+    expect(await row(db, 'u1', a.id)).toMatchObject({ phase: 'runs', rung: 2, rev: 2 });
+  });
+
+  it('keeps a bought entry for a node the catalogue lacks', async () => {
+    const db = await setup();
+    const a = save(undefined, { state: { ...save().state, bought: { 'no-such-node': 3 } } });
+    await putGame(db, 'u1', a, null);
+    expect(await readGame(db, 'u1', a.id)).toEqual({ kind: 'live', rev: 1, save: a });
+  });
+
+  it('a conflict carries the v2 save stored', async () => {
+    const db = await setup();
+    const a = save();
+    await putGame(db, 'u1', a, null);
+    const answer = await putGame(db, 'u1', save(a.id, { name: 'Lost' }), null);
+    expect(answer).toEqual({ kind: 'conflict', rev: 1, save: a });
+    expect(answer.kind === 'conflict' && answer.save.v).toBe(2);
+  });
+
   it('stores a new id at rev 1 with baseRev null, and with a rev too', async () => {
     const db = await setup();
     const a = save();
@@ -64,7 +113,8 @@ describe('putGame', () => {
     const r = await row(db, 'u1', a.id);
     expect(r.rev).toBe(1);
     expect(r.name).toBe(a.name);
-    expect(r.level).toBe(2);
+    expect(r.phase).toBe('runs');
+    expect(r.rung).toBe(1);
     expect(r.savedAt.toISOString()).toBe(a.savedAt);
     expect(r.removedAt).toBeNull();
     expect(JSON.parse(r.body)).toEqual(a);
@@ -183,7 +233,7 @@ describe('listGames', () => {
       name: 'Named',
       nameIsDefault: false,
       savedAt: '2026-11-21T12:00:00.000Z',
-      progress: { v: 1, level: 1, banked: {}, firstWinAt: '2026-11-21T10:00:00.000Z' }
+      state: { ...save().state, phase: 'opening', rung: 0, firstWinAt: null }
     });
     const recent = save(newId(), { savedAt: '2026-11-22T12:00:00.000Z' });
     await putGame(db, 'u1', mid, null);
@@ -200,7 +250,8 @@ describe('listGames', () => {
       name: recent.name,
       nameIsDefault: true,
       savedAt: '2026-11-22T12:30:00.000Z',
-      level: 2,
+      phase: 'runs',
+      rung: 1,
       rev: 2
     });
     expect(saves[0].nameIsDefault).toBe(true);
@@ -210,7 +261,8 @@ describe('listGames', () => {
       name: 'Named',
       nameIsDefault: false,
       savedAt: mid.savedAt,
-      level: 1,
+      phase: 'opening',
+      rung: 0,
       rev: 1
     });
   });

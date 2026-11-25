@@ -4,11 +4,10 @@ import { render } from 'vitest-browser-svelte';
 import { cdp, page, userEvent } from 'vitest/browser';
 import axe from 'axe-core';
 import '../../routes/layout.css';
-import { allowedAt, isGiven, type Allowed } from '$lib/game/allowed';
-import { lockedLane } from '$lib/game/copy';
-import type { Level } from '$lib/game/levels';
+import { isGiven, OPEN_LIMITS, within, type Limits } from '$lib/game/limits';
 import { fundingPresets } from '$lib/sim-page/funding-presets';
-import { LATER_ROUND } from './game-copy';
+import { LOCKED_LANE, NOT_BOUGHT } from './game-copy';
+import { limitsWith } from './test/limits';
 import { dayPct, fixedRef, formatEdge } from './rows';
 import { baselineFixture } from '$lib/sim/levers/fixtures/finance';
 import miniCalibrationJson from '$lib/sim/scenario/fixtures/mini-calibration.json';
@@ -110,8 +109,7 @@ interface Over {
   levels?: LevelSet | null;
   reached?: number;
   stale?: boolean;
-  allowed?: Allowed;
-  level?: Level | null;
+  limits?: Limits;
 }
 
 async function setup(over: Over = {}) {
@@ -1072,9 +1070,12 @@ describe('locked kinds', () => {
     });
   });
 
-  it("at level 2 no kind has '+'", async () => {
-    await setup({ allowed: allowedAt(2), level: 2 });
+  it('a kind not open shows LOCKED_LANE and no +', async () => {
+    await setup({ limits: limitsWith({}) });
     await expect.element(page.getByTestId('tl-kind-money')).toBeInTheDocument();
+    const lanes = page.getByTestId('tl-locked-lane').elements();
+    expect(lanes.map((e) => e.textContent)).toEqual(KINDS.map(() => LOCKED_LANE));
+    expect(document.querySelectorAll('button.plus')).toHaveLength(0);
     expect(page.getByRole('button', { name: /^Add .* policy$/ }).all()).toHaveLength(0);
     expect(all('[data-testid=tl-empty-lane]')).toHaveLength(0);
     for (const name of Object.values(PLUS_NAME)) {
@@ -1082,27 +1083,33 @@ describe('locked kinds', () => {
     }
   });
 
-  it('each locked lane reads lockedLane(kind, 2)', async () => {
-    await setup({ allowed: allowedAt(2), level: 2 });
+  it('only a kind with nothing to buy is locked: bought stops open Zoning alone', async () => {
+    await setup({ limits: limitsWith({ stops: new Set(['metro'] as const) }) });
+    await expect.element(page.getByTestId('tl-kind-money')).toBeInTheDocument();
+    expect(lane('zoning')).toBeNull();
+    expect(lane('permitting')?.textContent).toBe(LOCKED_LANE);
+    expect(lane('money')?.textContent).toBe(LOCKED_LANE);
+  });
+
+  it('each locked lane keeps its words when the kind is opened', async () => {
+    await setup({ limits: limitsWith({}) });
     for (const kind of KINDS) {
-      await expect.poll(() => lane(kind)?.textContent).toBe(lockedLane(kind, 2));
+      await expect.poll(() => lane(kind)?.textContent).toBe(LOCKED_LANE);
     }
     for (const kind of KINDS) await kindButton(NAME[kind]).click();
     for (const kind of KINDS) {
       await expect.element(kindButton(NAME[kind])).toHaveAttribute('aria-expanded', 'true');
-      expect(lane(kind)?.textContent).toBe(lockedLane(kind, 2));
+      expect(lane(kind)?.textContent).toBe(LOCKED_LANE);
     }
   });
 
   it('the toggle is described by the count and the lane', async () => {
-    await setup({ allowed: allowedAt(2), level: 2 });
-    await expect
-      .element(kindButton('Permitting'))
-      .toHaveAccessibleDescription(`2 ${lockedLane('permitting', 2)}`);
+    await setup({ limits: limitsWith({}) });
+    await expect.element(kindButton('Permitting')).toHaveAccessibleDescription(`2 ${LOCKED_LANE}`);
   });
 
   it("a locked kind's toggle still opens it", async () => {
-    const { onselect } = await setup({ allowed: allowedAt(2), level: 2 });
+    const { onselect } = await setup({ limits: limitsWith({}) });
     await kindButton('Permitting').click();
     await expect.element(kindButton('Permitting')).toHaveAttribute('aria-expanded', 'true');
     const fixed = page.getByTestId('tl-kind-permitting').getByTestId('tl-fixed');
@@ -1113,7 +1120,7 @@ describe('locked kinds', () => {
   });
 
   it('a closed locked kind shows its count and no miniature', async () => {
-    await setup({ allowed: allowedAt(2), level: 2 });
+    await setup({ limits: limitsWith({}) });
     const zoningRow = page.getByTestId('tl-kind-zoning');
     await expect.element(zoningRow.getByTestId('tl-count')).toHaveTextContent('1');
     expect(all('[data-testid=tl-kind-zoning] [data-testid=tl-mini]')).toHaveLength(0);
@@ -1122,8 +1129,7 @@ describe('locked kinds', () => {
 
   it('a locked policy’s bar is not a button and is not in the tab order', async () => {
     const { onselect, onedit } = await setup({
-      allowed: allowedAt(2),
-      level: 2,
+      limits: limitsWith({}),
       policy: { schema: 4, kinds: { zoning: [zoning], permitting: [], money: [] } }
     });
     await kindButton('Zoning').click();
@@ -1142,7 +1148,41 @@ describe('locked kinds', () => {
     expect(onedit).not.toHaveBeenCalled();
   });
 
-  it("at level 5 a money policy that is not given says 'Unlocks in a later round'", async () => {
+  it('a policy not within is NOT_BOUGHT and cannot be selected', async () => {
+    const painted: Policy = {
+      ...zoning,
+      id: 'z2',
+      label: 'Painted rule',
+      where: { tag: 'painted' }
+    };
+    expect(within('zoning', painted, limitsWith({ stops: new Set(['metro'] as const) }))).toBe(
+      false
+    );
+    const { onselect } = await setup({
+      limits: limitsWith({
+        stops: new Set(['metro'] as const),
+        bands: 1,
+        stories: 8,
+        reachM: 400
+      }),
+      policy: { schema: 4, kinds: { zoning: [painted, zoning], permitting: [], money: [] } }
+    });
+    await kindButton('Zoning').click();
+    const rows = page.getByTestId('tl-kind-zoning').getByTestId('tl-policy');
+    await expect.element(rows.nth(1)).toBeInTheDocument();
+    const [stray, bought] = rows.all().map((r) => r.element() as HTMLElement);
+    expect(stray.hasAttribute('data-locked')).toBe(true);
+    expect(stray.querySelector('[data-testid=tl-policy-note]')?.textContent).toBe(NOT_BOUGHT);
+    const bar = stray.querySelector<HTMLElement>('[data-testid=tl-bar]')!;
+    expect(bar.tagName).not.toBe('BUTTON');
+    bar.click();
+    expect(onselect).not.toHaveBeenCalled();
+    expect(bought.hasAttribute('data-locked')).toBe(false);
+    expect(bought.textContent).not.toContain(NOT_BOUGHT);
+    expect(lane('zoning')).toBeNull();
+  });
+
+  it('a money policy not given says NOT_BOUGHT; a bought measure does not', async () => {
     const presetId = fundingPresets(cal)[0].id;
     const strayPreset: Policy = {
       ...money,
@@ -1156,8 +1196,7 @@ describe('locked kinds', () => {
     expect(isGiven(strayPreset)).toBe(false);
     expect(isGiven(given)).toBe(true);
     await setup({
-      allowed: allowedAt(5),
-      level: 5,
+      limits: limitsWith({ measures: new Set([presetId]) }),
       policy: {
         schema: 4,
         kinds: { zoning: [], permitting: [], money: [money, strayPreset, given] }
@@ -1169,13 +1208,19 @@ describe('locked kinds', () => {
     const [own, stray, measure] = rows.all().map((r) => r.element() as HTMLElement);
     for (const r of [own, stray]) {
       expect(r.hasAttribute('data-locked')).toBe(true);
-      expect(r.querySelector('[data-testid=tl-policy-note]')?.textContent).toBe(LATER_ROUND);
+      expect(r.querySelector('[data-testid=tl-policy-note]')?.textContent).toBe(NOT_BOUGHT);
       expect(r.querySelector('[data-testid=tl-bar]')?.tagName).not.toBe('BUTTON');
     }
     expect(measure.hasAttribute('data-locked')).toBe(false);
-    expect(measure.textContent).not.toContain(LATER_ROUND);
+    expect(measure.textContent).not.toContain(NOT_BOUGHT);
     expect(measure.querySelector('[data-testid=tl-bar]')?.tagName).toBe('BUTTON');
     expect(lane('money')).toBeNull();
+  });
+
+  it('OPEN_LIMITS locks nothing', async () => {
+    await setup({ limits: OPEN_LIMITS });
+    await expect.element(page.getByTestId('tl-kind-money')).toBeInTheDocument();
+    expect(document.querySelector('[data-testid=tl-locked-lane]')).toBeNull();
   });
 
   it('without a game nothing is locked', async () => {
@@ -1196,7 +1241,7 @@ describe('locked kinds', () => {
       await cdp().send('Emulation.setEmulatedMedia', {
         features: [{ name: 'prefers-color-scheme', value: mode }]
       });
-      const { view } = await setup({ allowed: allowedAt(3), level: 3 });
+      const { view } = await setup({ limits: limitsWith({}) });
       // The page gives the timeline its ground; the test host has none.
       view.container.style.background = `var(--color-surface${mode === 'dark' ? '-dark' : ''})`;
       for (const name of ['Zoning', 'Public money']) await kindButton(name).click();

@@ -21,7 +21,9 @@
     setBandDistance,
     setBandStories,
     storiesRange,
-    toggleStop
+    toggleStop,
+    OPEN_CAP,
+    type TransitCap
   } from './transit-edit';
 
   interface Props {
@@ -42,6 +44,8 @@
      * the lots, the bands and Remove layer, both always open and with no select button.
      */
     part?: 'all' | 'stops' | 'bands';
+    /** What the bought limits allow: the chips offered, the bands, stories and reach. Default open. */
+    cap?: TransitCap;
   }
 
   let {
@@ -53,7 +57,8 @@
     onedit,
     onremove,
     onretry,
-    part = 'all'
+    part = 'all',
+    cap = OPEN_CAP
   }: Props = $props();
 
   const uid = $props.id();
@@ -64,7 +69,10 @@
   const top = $derived(layerTop(rule));
   const lots = $derived(lotsText(status));
   const label = $derived(`${name} · ${count(top, 'story', 'stories')} · ${lots}`);
-  const canAddBand = $derived(addBand(rule) !== null);
+  const canAddBand = $derived(addBand(rule, cap) !== null);
+  const chipTypes = $derived(
+    STOP_TYPES.filter((t) => cap.stops.has(t) || rule.stopTypes.includes(t))
+  );
 
   /** The same rule, bands compared innermost first (a saved rule may list them otherwise). */
   function same(a: ZoningRule, b: ZoningRule): boolean {
@@ -89,16 +97,16 @@
   }
 
   function stories(i: number, delta: 1 | -1): void {
-    const { min, max } = storiesRange(bands, i);
+    const { min, max } = storiesRange(bands, i, cap);
     const n = bands[i].stories + delta;
     if (n < min || n > max) return;
-    edit(setBandStories(rule, i, n), `rule:${rule.id}:stories:${i}`);
+    edit(setBandStories(rule, i, n, cap), `rule:${rule.id}:stories:${i}`);
   }
 
   /** Commits a typed distance: clamped between its neighbours; a non-number reverts. */
   function commitDistance(input: HTMLInputElement, i: number): void {
     const typed = input.value.trim() === '' ? NaN : Number(input.value);
-    const next = setBandDistance(rule, i, typed);
+    const next = setBandDistance(rule, i, typed, cap);
     // Show what was kept (the clamp, or the old value for a non-number), changed or not.
     input.value = String(bandsInnermostFirst(next.bands)[i].maxM);
     edit(next, `rule:${rule.id}:distance:${i}`);
@@ -165,7 +173,7 @@
     <div class="flex flex-col gap-3 px-1 pt-1 pb-2">
       {#if part !== 'bands'}
         <div role="group" aria-label="Stop types" class="flex flex-wrap gap-1">
-          {#each STOP_TYPES as t (t)}
+          {#each chipTypes as t (t)}
             {@const on = rule.stopTypes.includes(t)}
             {@const locked = on && lastStop(t)}
             <!-- The last stop type on stays pressed: aria-disabled (not disabled), so it keeps
@@ -177,7 +185,7 @@
               aria-describedby={locked ? `${uid}-last-stop` : undefined}
               class="min-h-6 min-w-6 rounded-full border border-control-line bg-surface px-3 text-left text-ink hover:bg-surface-raised aria-pressed:border-accent aria-pressed:bg-accent-tint aria-pressed:font-semibold aria-pressed:text-ink dark:border-control-line-dark dark:bg-surface-dark dark:text-ink-dark dark:hover:bg-surface-dark-raised dark:aria-pressed:border-accent-dark dark:aria-pressed:bg-accent-dark/30 dark:aria-pressed:text-ink-dark"
               onclick={() => {
-                if (!locked) edit(toggleStop(rule, t));
+                if (!locked) edit(toggleStop(rule, t, cap));
               }}>{chipText(t)}</button
             >
           {/each}
@@ -189,8 +197,8 @@
 
       {#if part !== 'stops'}
         {#each bands as b, i (i)}
-          {@const dist = distanceRange(bands, i)}
-          {@const st = storiesRange(bands, i)}
+          {@const dist = distanceRange(bands, i, cap)}
+          {@const st = storiesRange(bands, i, cap)}
           <div
             role="group"
             aria-label="Band {i + 1}"
@@ -252,7 +260,7 @@
             type="button"
             aria-disabled={canAddBand ? undefined : 'true'}
             class={link}
-            onclick={() => edit(addBand(rule))}
+            onclick={() => edit(addBand(rule, cap))}
             ><span class="sr-only">Add</span> <span aria-hidden="true">+</span> Band</button
           >
           <button type="button" class={link} onclick={() => onremove()}>Remove layer</button>

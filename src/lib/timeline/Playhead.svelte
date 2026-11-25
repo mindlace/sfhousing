@@ -12,13 +12,12 @@
 <script lang="ts">
   import { untrack } from 'svelte';
   import { formatMonthYear } from '$lib/fzp/format';
-  import { advance, DEFAULT_SPEED } from '$lib/fzp/playback';
-  import { monthStart, utcParts } from '$lib/fzp/time';
+  import { advance, DEFAULT_SPEED, SPEED_DAYS } from '$lib/fzp/playback';
+  import { monthStart } from '$lib/fzp/time';
   import type { Speed } from '$lib/fzp/types';
   import type { Day } from '$lib/timelapse/time';
   import { yearMarks } from './axis';
   import { GOAL_FLAG, rulerDescription, speedName } from './copy';
-  import { GOAL_AND_BAR_FLAG, TO_BEAT_FLAG, toBeatDescription } from './game-copy';
   import { clampDay, dateFlag, keyTarget, playLabel } from './playhead';
 
   interface Props {
@@ -42,8 +41,6 @@
     playFrom?: Day | null;
     /** The goal flag's day; null hides the flag and the description's deadline sentence. */
     goalDeadline?: Day | null;
-    /** The date to beat: a "To beat" flag there and a sentence in the description; null for none. */
-    barDay?: Day | null;
     /** Called exactly once per day change. */
     onday?: (day: Day) => void;
     /** Test seams. */
@@ -62,7 +59,6 @@
     reached,
     playFrom = null,
     goalDeadline = null,
-    barDay = null,
     onday,
     raf = (cb) => requestAnimationFrame(cb),
     cancelRaf = (h) => cancelAnimationFrame(h)
@@ -104,23 +100,7 @@
   const label = $derived(playLabel({ playing, playFrom, atLast }));
   /** "Seen up to …" only while the furthest month reached is after the playhead's month. */
   const seenAhead = $derived(monthStart(reached) > monthStart(day));
-  /** The bar shares the Goal flag when it is fewer than 30 calendar months before the deadline. */
-  const merged = $derived.by(() => {
-    if (barDay === null || goalDeadline === null) return false;
-    const m = (d: Day) => {
-      const p = utcParts(d);
-      return p.y * 12 + p.m;
-    };
-    return m(goalDeadline) - m(barDay) < 30;
-  });
-  const description = $derived(
-    [
-      rulerDescription(seenAhead ? reached : null, goalDeadline),
-      barDay === null ? '' : toBeatDescription(barDay)
-    ]
-      .filter((s) => s !== '')
-      .join(' ')
-  );
+  const description = $derived(rulerDescription(seenAhead ? reached : null, goalDeadline));
   const descId = $props.id();
 
   function setDay(next: Day) {
@@ -152,7 +132,7 @@
         handle = raf(frame);
         return;
       }
-      const r = advance(clock, dt, speed, end);
+      const r = advance(clock, dt, SPEED_DAYS[speed], end);
       clock = r.t;
       if (r.day !== day) {
         emitted = r.day;
@@ -311,16 +291,7 @@
         aria-hidden="true"
         style:--at="{at(day)}%">{flag}</span
       >
-      {#if barDay !== null}
-        <span
-          class="goal text-ink-muted dark:text-ink-dark-muted"
-          data-testid="tl-bar-flag"
-          aria-hidden="true"
-          style:left="{at(merged && goalDeadline !== null ? goalDeadline : barDay)}%"
-          >{merged ? GOAL_AND_BAR_FLAG : TO_BEAT_FLAG}</span
-        >
-      {/if}
-      {#if goalDeadline !== null && !merged}
+      {#if goalDeadline !== null}
         <span
           class="goal text-ink-muted dark:text-ink-dark-muted"
           data-testid="tl-goal-flag"

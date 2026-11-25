@@ -10,7 +10,8 @@ export const gameSave = sqliteTable(
     id: text('id').notNull(),
     rev: integer('rev').notNull(),
     name: text('name').notNull(),
-    level: integer('level').notNull(),
+    phase: text('phase').notNull(),
+    rung: integer('rung').notNull(),
     /** The GameSave as JSON; empty once removed. */
     body: text('body').notNull(),
     savedAt: integer('saved_at', { mode: 'timestamp_ms' }).notNull(),

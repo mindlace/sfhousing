@@ -179,6 +179,7 @@ export function onPrefs(fn: () =&gt; void): () =&gt; void;</code></pre>
       <ul>
         <li><code>planDrops</code> returns one drop for each marker completed after <code>asOf</code> and at or before <code>to</code> whose worth is above 0, ascending by day, then by row.</li>
         <li><code>feed.drops</code> may be replaced during a run, as the forecast fills. Drops are matched by <code>row</code>: one already shown stays as it is, and none is counted twice.</li>
+        <li><code>feed.running</code> holds each value for at least one animation frame: it turns true no earlier than the frame after it last turned false, and false no earlier than the frame after it turned true. The feed's owner guarantees this. The layer reads <code>running</code> once a frame, so a run starts and ends in the frames in which it reads a change.</li>
         <li>A drop appears when <code>feed.day</code> reaches its day and is counted in <code>dropped</code> then.</li>
         <li>A drop whose <code>policy</code> is true pops as a diamond, the shape of the map's policy mark, in that mark's colour (<code>tl-halo-policy</code>); every other drop pops as a circle in the accent. The shape tells the two apart in every theme. Its worth and how it is collected do not change.</li>
         <li>A drop is collected when its projected point is within <code>hands.radiusPx</code> of the ring's centre. It is counted in <code>collected</code> once.</li>
@@ -328,6 +329,7 @@ export interface FloatCount {
   x: number;
   y: number;
   worth: number;
+  policy: boolean;
   bornMs: number;
 }
 
@@ -393,7 +395,7 @@ export function sweepHits(sweep: readonly (Pt | null)[], ring: Pt, p: Pt, r: num
         <dt><code>LiveDrop.at</code></dt><dd>The drop's point in CSS pixels from the canvas's top left, from <code>project</code> when it appeared or at the last <code>reproject</code>; null when off the map.</dd>
         <dt><code>LiveDrop.endMs</code></dt><dd>The wall time at which the drop leaves <code>live</code>.</dd>
         <dt><code>LiveDrop.takenMs</code></dt><dd>The wall time it was collected; null while it can still be collected.</dd>
-        <dt><code>FloatCount</code></dt><dd>The count that floats up from a collected drop, at the drop's point.</dd>
+        <dt><code>FloatCount</code></dt><dd>The count that floats up from a collected drop, at the drop's point. <code>policy</code> is the collected drop's <code>drop.policy</code>, so the count sits above a diamond or a circle as the drop was drawn.</dd>
         <dt><code>cursor</code></dt><dd>The index in <code>drops</code> of the first drop whose day the run has not reached.</dd>
         <dt><code>highDay</code></dt><dd>The latest feed day this run has reached. It never moves back.</dd>
         <dt><code>seen</code></dt><dd>The rows dropped in this run.</dd>
@@ -418,7 +420,7 @@ export function sweepHits(sweep: readonly (Pt | null)[], ring: Pt, p: Pt, r: num
       <section id="sec-d-model-appear">
         <h4>Appearing</h4>
         <ul>
-          <li>When the input's <code>drops</code> is not the array the model holds, the model takes it and sets <code>cursor</code> to the first index whose day is after <code>highDay</code>, by binary search.</li>
+          <li>When the input's <code>drops</code> is not the array the model holds, the model takes it and sets <code>cursor</code> to the first index whose day is after <code>highDay</code>, by binary search. In the same step, each drop before <code>cursor</code> whose row is not in <code>seen</code> is passed, in array order: its day was reached before its row arrived, so it appears now.</li>
           <li><code>highDay</code> becomes the larger of itself and the input's <code>day</code>. A <code>NaN</code> day leaves it as it is.</li>
           <li>Each drop from <code>cursor</code> on whose day is at or before <code>highDay</code> is passed, and <code>cursor</code> moves past it.</li>
           <li>A passed drop whose row is in <code>seen</code> is skipped. Otherwise its row is added to <code>seen</code>, its worth is credited to <code>take.dropped</code>, and it is appended to <code>live</code>.</li>
@@ -436,7 +438,7 @@ export function sweepHits(sweep: readonly (Pt | null)[], ring: Pt, p: Pt, r: num
           <li><code>sweepHits</code> is true when <code>p</code> is within <code>r</code> of the path made by the points of <code>sweep</code> followed by <code>ring</code>: of any segment between two points with no <code>null</code> between them, or of any single point.</li>
           <li>A drop that appears under a still ring is collected in the step it appears in.</li>
           <li>Collecting sets <code>takenMs = now</code> and <code>endMs = now + RUN_TIMES.takenMs</code>, and credits the worth to <code>take.collected</code>. A drop is collected once.</li>
-          <li>Collecting a drop whose <code>at</code> is set appends a <code>FloatCount</code> at <code>at</code>. When <code>counts</code> then holds more than <code>RUN_CAPS.maxCounts</code>, the oldest is removed.</li>
+          <li>Collecting a drop whose <code>at</code> is set appends a <code>FloatCount</code> at <code>at</code>, with the drop's worth and its <code>drop.policy</code>. When <code>counts</code> then holds more than <code>RUN_CAPS.maxCounts</code>, the oldest is removed.</li>
           <li>After the collect pass, <code>sweep</code> is emptied and <code>ringMoved</code> set false.</li>
           <li>A drop that is fading can still be collected until its <code>endMs</code>.</li>
         </ul>
@@ -455,7 +457,7 @@ export function sweepHits(sweep: readonly (Pt | null)[], ring: Pt, p: Pt, r: num
           <li>A new <code>drops</code> array in mid-run is matched to what is shown by <code>row</code>. A row in <code>seen</code> is never counted again, whatever its day or worth in the new array.</li>
           <li>A drop already shown, live or collected, stays as it is: same point, worth, times and state, and its counts stay in the take.</li>
           <li>A shown drop whose row is missing from the new array also stays as it is, collectable until its <code>endMs</code>. Nothing is taken out of the take.</li>
-          <li>A row not yet shown takes its day and worth from the new array. A row not yet shown that the new array lacks never appears.</li>
+          <li>A row not yet shown takes its day and worth from the new array. A row not yet shown that the new array lacks never appears. A row not yet shown whose day is at or before <code>highDay</code> appears in the step that takes the new array and is counted in <code>dropped</code> then: the city feed can trail the run's clock, and every completion the run passes is dropped.</li>
           <li>A step while not running only removes what has ended.</li>
         </ul>
       </section>
@@ -489,13 +491,14 @@ export const RING_KEY_DIR: Record&lt;string, [number, number]&gt; = {
         <li>The ring's centre starts each run at the centre of the canvas box.</li>
         <li>The ring's centre is clamped to the box: <code>x</code> to [0, <code>w</code>] and <code>y</code> to [0, <code>h</code>]. <code>setBox</code> clamps it again when the box changes.</li>
         <li><code>setBox</code> from an empty box (a width or height of 0) to one with both sides above 0 puts the ring at the new box's centre, whether or not a run is in progress. So a run that starts before the canvas has a size gets its ring at the centre once the first size arrives. While the box is empty no pointer point is inside it and every key step clamps to (0, 0), so nothing the player did is lost.</li>
+        <li><code>setBox</code> is not a ring move. When it centres or clamps the ring it empties <code>sweep</code> and leaves <code>ringMoved</code> as it is, so no path joins the ring's place before the box changed to its place after.</li>
         <li><code>pointRing(m, p, fresh)</code> moves the ring to <code>p</code>, clamped. When <code>fresh</code> is false it first appends the old centre to <code>sweep</code>; when true it appends <code>null</code>. It sets <code>ringMoved</code>.</li>
         <li>When <code>sweep</code> would hold more than <code>RUN_CAPS.maxSweep</code> entries, its oldest entry is removed first.</li>
         <li><code>nudgeRing(m, dx, dy)</code> is <code>pointRing(m, { x: ring.x + dx, y: ring.y + dy }, false)</code>, so a key step sweeps the ground it crosses.</li>
         <li>The layer listens for <code>pointermove</code> and <code>pointerdown</code> on the window, passive, for every pointer type: mouse, pen and touch.</li>
         <li>A pointer event counts only while the run is running. Its point is its client position less the canvas box's cached top left.</li>
         <li>A point inside the box (both coordinates within [0, size]) moves the ring. A point outside leaves the ring where it is and marks the pointer as out.</li>
-        <li>A <code>pointerdown</code> inside the box moves the ring with <code>fresh</code> true. So does the first <code>pointermove</code> inside after the pointer was out. Lifting a finger and touching elsewhere does not sweep the ground between.</li>
+        <li>A <code>pointerdown</code> inside the box moves the ring with <code>fresh</code> true. So does the first <code>pointermove</code> inside after the pointer was out, and the first <code>pointermove</code> inside after a run starts: the ring's jump from the box's centre to the pointer sweeps nothing. Lifting a finger and touching elsewhere does not sweep the ground between.</li>
         <li>Every other <code>pointermove</code> inside moves it with <code>fresh</code> false, whatever buttons are down.</li>
         <li>A touch drag reaches the window only because the map's run view sets <code>touch-action: none</code> (M1).</li>
         <li>The layer listens for <code>keydown</code> on the window. An arrow key moves the ring one <code>stepPx</code> in its direction; with Shift, one <code>shiftStepPx</code>. A held key moves it once per key repeat.</li>
@@ -560,7 +563,7 @@ export function drawRun(
         <li>A collected drop is its shape's outline only, <code>takenLinePx</code> wide, in its fill colour: a diamond in <code>look.policy</code> for a policy drop, else a circle in the accent.</li>
         <li>With motion, a collected drop's size goes from its full size <code>s</code> to <code>s * (1 + takenGrow)</code> and its alpha from <code>takenAlpha</code> to 0, linearly over <code>takenMs</code>.</li>
         <li>A count is the text <code>dropCountText(worth)</code> from <code>run/words.ts</code>, centred, in <code>countWeight</code> <code>countFontPx</code> px of the page font, with a <code>countHaloPx</code> stroke of the surface colour under a fill of the ink colour.</li>
-        <li>A count's baseline starts <code>countGapPx</code> above the drop's top edge. With motion it rises <code>countRisePx</code> linearly over <code>countMs</code>, holds full alpha for the first <code>countHoldShare</code> of it, then falls linearly to 0.</li>
+        <li>A count's baseline starts <code>countGapPx</code> above the drop's top edge: <code>y - diamondScale * dropRadius(worth)</code> when the count's <code>policy</code> is true, else <code>y - dropRadius(worth)</code>. With motion it rises <code>countRisePx</code> linearly over <code>countMs</code>, holds full alpha for the first <code>countHoldShare</code> of it, then falls linearly to 0.</li>
         <li>Under reduced motion every shape and count is drawn at full size and full alpha in its place, and vanishes at its end time.</li>
         <li>The layer reads the colours at mount from the root's computed style: <code>--color-accent</code>, <code>--color-ink</code> and <code>--color-surface</code>, or <code>--color-accent-dark</code>, <code>--color-ink-dark</code> and <code>--color-surface-dark</code> while <code>(prefers-color-scheme: dark)</code> matches. It reads them again when that query changes.</li>
           <li><code>look.policy</code> is <code>TOKENS.light['tl-halo-policy']</code>, or <code>TOKENS.dark['tl-halo-policy']</code> while <code>(prefers-color-scheme: dark)</code> matches, chosen with the other colours. It is the colour the map draws its policy diamond in, so a policy drop matches the map's diamond in shape and colour. The token is read from <code>$lib/map/palette</code> because the map sets its <code>--map-*</code> properties on its own root, which the layer, a sibling, does not inherit.</li>
@@ -699,8 +702,9 @@ export function createSound(muted: () =&gt; boolean): Sound;</code></pre>
         <li>A call less than <code>MIN_GAP_S[name]</code> after the last played call of the same sound, by <code>ctx.currentTime</code>, is dropped, never queued. A dropped or muted call does not move the last-played time.</li>
         <li>A call while the context's state is <code>suspended</code> calls <code>resume()</code> and schedules the sound anyway.</li>
         <li><code>createSound</code> is <code>makeSound</code> with the browser's deps. Where <code>window</code> or <code>AudioContext</code> is missing it returns a sound whose four methods do nothing.</li>
-        <li>The browser's <code>onGesture</code> listens once for <code>pointerdown</code> and <code>keydown</code> on the window, in the capture phase. The first of either makes the context with <code>new AudioContext()</code>, resumes it when suspended, and removes both listeners.</li>
-        <li>The context is made at the first gesture even while muted, so unmuting plays at once.</li>
+        <li>The browser's <code>onGesture(fn)</code> listens on the window for <code>pointerdown</code>, <code>pointerup</code>, <code>click</code> and <code>keydown</code>, in the capture phase and passive, and calls <code>fn</code> on each of them until the function it returns is called, which removes all four.</li>
+        <li>On each gesture <code>makeSound</code> makes the context with <code>deps.makeContext()</code> when it has none, and calls <code>resume()</code> when its <code>state</code> is not <code>'running'</code>. Once the context's <code>state</code> is <code>'running'</code> after a gesture, it removes the listeners. So a browser that starts audio only on a release or a click (WebKit on iOS and iPadOS ignores a touch <code>pointerdown</code>) unlocks at the next gesture that can.</li>
+        <li>The context is made at the first gesture even while muted, and unlocked the same way, so unmuting plays at once.</li>
         <li><code>RunLayer</code> calls only <code>pop</code> and <code>collect</code>. <code>goal</code> and <code>buy</code> are for <code>game-sim</code>.</li>
         <li>Mute is the caller's <code>muted</code> function, read on each call. <code>game-sim</code> passes one that returns the value it last read through <code>onPrefs</code>.</li>
       </ul>
@@ -776,7 +780,7 @@ export const RUN_FRAME_P95_MS = 2;</code></pre>
         <li>The map's bar is p95 at most 16.7 ms with the layer drawing. The layer's own share is set at <code>RUN_FRAME_P95_MS</code>: the p95 of one <code>step</code> plus one <code>drawRun</code>.</li>
         <li>2 ms is the starting value. The bench case for a run with drops, which <code>closing</code> writes and runs with <code>npm run bench:map</code> on a quiet machine, decides it: if the map's p95 there is above 16.7 ms, <code>maxDrawn</code> is halved until it passes and this budget is lowered to match.</li>
         <li>The layer's cost is measured without a GPU in <code>run.perf.svelte.spec.ts</code>, in the <code>client-perf</code> project: a real 2D canvas in headless Chromium, which draws in software.</li>
-        <li>The case: a 1280 by 720 CSS px canvas at pixel ratio 2; 3,000 drops over 600 frames of 16.7 ms on a fake clock, with 500 of them on frame 100; <code>BASE_HANDS</code> (48 px, 4,000 ms); motion on; the ring swept in a circle of radius 200 px with 8 points a frame.</li>
+        <li>The case: a 1280 by 720 CSS px canvas at pixel ratio 2; 3,000 drops over 600 frames of 16.7 ms on a fake clock, with 500 of them on frame 100; every fifth drop in day order a policy drop (a diamond), the rest circles; <code>BASE_HANDS</code> (48 px, 4,000 ms); motion on; the ring swept in a circle of radius 200 px with 8 points a frame.</li>
         <li>It times <code>step</code> plus <code>drawRun</code> per frame with <code>performance.now()</code>, after 60 warm-up frames, and asserts the p95 is at most <code>RUN_FRAME_P95_MS</code>.</li>
         <li>It runs with <code>npm run test:perf</code> on a quiet machine, not in signoff. The <code>run-play</code> implementer runs it before merge and records the p95 in the PR.</li>
         <li>The bounded work is also checked without a clock: the unit spec of <code>drawRun</code> counts calls on a recording context.</li>
@@ -816,15 +820,15 @@ export const RUN_FRAME_P95_MS = 2;</code></pre>
         <li>Auto: every drop is collected in the step it appears in, off-map drops included; turning auto on collects every live drop.</li>
         <li>Fading: an uncollected drop leaves <code>live</code> at its <code>endMs</code> and can be collected until then; a collected drop leaves after 400 ms; a count after 800 ms; counts never exceed 40.</li>
         <li>Ending: the step that ends the run with its day at the deadline counts every drop due between the previous step's day and the deadline, collects those under the ring or under auto, reports <code>ended</code>, and cuts live drops to 400 ms, or 0 under reduced motion; a later step drops and collects nothing.</li>
-        <li>A day going back drops nothing again and lowers no count. A new <code>drops</code> array mid-run counts no row twice and drops the new rows past <code>highDay</code> when reached.</li>
+        <li>A day going back drops nothing again and lowers no count. A new <code>drops</code> array mid-run counts no row twice and drops the new rows past <code>highDay</code> when reached; a new row not yet shown whose day is at or before <code>highDay</code> appears in the step that takes the new array, is counted in <code>dropped</code> once, and appears again in no later step.</li>
         <li>A new <code>drops</code> array mid-run: a shown drop keeps its state and times; a shown drop whose row is gone stays until its <code>endMs</code> and the take does not go down; a row not yet shown appears at its new day; a row not yet shown and now missing never appears.</li>
         <li>A burst of 500 drops in one step counts 500 and collects every one under auto.</li>
         <li><code>dirty</code>: false for a running step with nothing new under reduced motion; true while a drop animates with motion. <code>idle</code> is true only once not running with nothing left.</li>
-        <li>The ring: clamped to the box; a key step of 16 px and a Shift step of 64 px; <code>setBox</code> re-clamps; the first non-empty box after an empty one centres the ring, also in a run that started on an empty box; <code>sweep</code> holds at most 32 entries.</li>
+        <li>The ring: clamped to the box; a key step of 16 px and a Shift step of 64 px; <code>setBox</code> re-clamps; the first non-empty box after an empty one centres the ring, also in a run that started on an empty box; a centring or clamp by <code>setBox</code> leaves <code>sweep</code> empty and <code>ringMoved</code> unchanged, so the next step collects nothing along the corner-to-centre line; <code>sweep</code> holds at most 32 entries.</li>
         <li><code>dropRadius</code>: 4.5 at 1, 6 at 4, 9 at 16 and at 1,000.</li>
-        <li><code>drawRun</code> on a recording context: a live policy drop is a filled diamond, and a collected one a stroked diamond, in <code>look.policy</code>, with a half-diagonal of 1.25 times <code>dropRadius(worth)</code>; any other drop is a circle in the accent; <code>look.policy</code> equals <code>TOKENS[theme]['tl-halo-policy']</code> for each theme.</li>
+        <li><code>drawRun</code> on a recording context: a live policy drop is a filled diamond, and a collected one a stroked diamond, in <code>look.policy</code>, with a half-diagonal of 1.25 times <code>dropRadius(worth)</code>; any other drop is a circle in the accent; <code>look.policy</code> equals <code>TOKENS[theme]['tl-halo-policy']</code> for each theme; a count from a policy drop starts <code>countGapPx</code> above the diamond's top tip, and any other count <code>countGapPx</code> above the circle's top.</li>
         <li><code>drawRun</code> on a recording context: draws at most 240 drops and 40 counts with 1,000 live; draws the newest; draws no ring when <code>showRing</code> is false; with reduced motion draws every shape at full size and alpha 1.</li>
-        <li><code>makeSound</code> with a fake context: nothing before the gesture; nothing while muted; each sound's voices scheduled with the table's numbers; a second <code>pop</code> 0.05 s after the first is dropped and one 0.08 s after plays; a suspended context is resumed.</li>
+        <li><code>makeSound</code> with a fake context: nothing before the gesture; nothing while muted; each sound's voices scheduled with the table's numbers; a second <code>pop</code> 0.05 s after the first is dropped and one 0.08 s after plays; a suspended context is resumed; with a context that stays suspended after a <code>pointerdown</code>, a later <code>pointerup</code> resumes it again, and the listeners are removed only once the context's state is <code>'running'</code>.</li>
         <li><code>createSound</code> without <code>AudioContext</code> returns a sound whose calls do nothing and do not throw.</li>
         <li><code>onPrefs</code>: each write calls every listener once, also with null or throwing storage; a throwing listener does not stop the next; the returned function removes the listener.</li>
         <li>Words: <code>runOverText</code> gives "Run over. 1,234 of 5,678 homes collected." for those totals; <code>dropCountText(12)</code> gives "+12" and <code>dropCountText(1200)</code> "+1,200".</li>
@@ -839,6 +843,7 @@ export const RUN_FRAME_P95_MS = 2;</code></pre>
         <li>Setting <code>running</code> and moving <code>day</code> past drops calls <code>ontake</code> with the dropped totals and sets <code>data-dropped</code>.</li>
         <li>A mouse <code>pointermove</code> on the map box over a drop collects it; <code>data-collected</code> and <code>ontake</code> follow; <code>sound.collect</code> is called once for the frame.</li>
         <li>A touch <code>pointerdown</code> then <code>pointermove</code> collects a drop under the drag; a touch on another spot does not sweep the ground between.</li>
+        <li>With a mouse resting over the map before a run, the run's first <code>pointermove</code> moves the ring to the pointer and collects no drop on the line from the box's centre to it.</li>
         <li>A pen <code>pointermove</code> moves the ring as a mouse does.</li>
         <li>ArrowRight moves the ring 16 px and Shift+ArrowRight 64 px, each with <code>preventDefault</code>; an arrow key in an <code>input</code> is left alone.</li>
         <li>With <code>collectForMe</code>, every drop is collected as it appears and no ring is drawn. Setting the prop to true in mid-run collects every live drop on the next frame; setting it back shows the ring.</li>
@@ -876,6 +881,7 @@ export const RUN_FRAME_P95_MS = 2;</code></pre>
       <li>An uncollected drop lasts at least 400 ms, and a collected one 400 ms more. Reason: the flash limit needs every shape to stay a while.</li>
       <li>The step that ends a run first passes and collects the drops due through its day, then cuts live drops to a 400 ms fade and stops collecting. Reason: the clock turns <code>running</code> false in the frame it reaches the deadline, so the last frame's drops are counted there, and <code>ontake</code> at the end must carry final totals.</li>
       <li>A feed day going back changes nothing. Reason: counts that go down would undo what the player saw.</li>
+      <li>A row that arrives in a new <code>drops</code> array after the run's day has passed its day appears at once. Reason: the city feed may trail the clock by a flush or more, and R1 drops every completion the run reaches.</li>
       <li>A shown drop whose row leaves a new <code>drops</code> array stays until its own end. Reason: taking away a drop the player saw, or units they collected, would read as a fault.</li>
       <li><code>onPrefs</code> notifies after every write, failed ones included, and only in this page. Reason: the switch the player pressed must take effect even when storage is full.</li>
       <li>Only the newest 240 drops are drawn; older live drops beyond the cap still count and can be collected. Reason: the draw stays inside the frame budget and the flash area, and no drop is lost.</li>
@@ -883,6 +889,7 @@ export const RUN_FRAME_P95_MS = 2;</code></pre>
       <li>Drop radius grows with the square root of worth, 4.5 to 9 px. Reason: area tracks homes while a large project does not hide its neighbours.</li>
       <li>At most one sound per frame, collect before pop, with gaps of 50 and 70 ms. Reason: a burst must not become a roar.</li>
       <li>The audio context is made at the first gesture even when muted. Reason: unmuting then plays at once.</li>
+      <li>The gesture listeners stay until the context runs, and include <code>pointerup</code> and <code>click</code>. Reason: WebKit lets only a release or a click start audio, so a touch <code>pointerdown</code> alone leaves the context suspended.</li>
       <li>The ring is hidden and the arrow keys are left alone under auto. Reason: the ring does nothing then.</li>
       <li>The colours are the page's accent, ink and surface tokens, and the map's policy-mark token for a policy drop. Reason: no new colour is added, dark mode follows, and a drop from a project the policy marks pops in the same colour as the map's diamond, as the source model asks.</li>
       <li>A policy drop is a diamond and every other drop a circle. Reason: the map's policy-mark token and the accent are one colour in both themes (<code>src/lib/map/palette.ts:91</code>, <code>:138</code>; <code>src/routes/layout.css:4</code>, <code>:8</code>), so colour alone cannot tell them apart; the diamond is the map's own policy mark, and a shape carries the difference for every reader, colour vision or not.</li>

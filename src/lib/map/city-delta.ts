@@ -2,8 +2,8 @@
 // `CityDelta`. Pure and worker-safe.
 import type { CityDelta } from './types';
 
-/** Bytes a changed row costs: row 4, lngLat 8, days 12, homes 2, flags 1. */
-export const CITY_DELTA_BYTES_PER_ROW = 27;
+/** Bytes a changed row costs: row 4, lngLat 8, days 12, homes 2, existing 2, flags 1. */
+export const CITY_DELTA_BYTES_PER_ROW = 29;
 
 /** The highest `SLOT_FLAG` bits value (zoning | money). */
 const MAX_FLAGS = 3;
@@ -11,7 +11,7 @@ const MAX_FLAGS = 3;
 /**
  * Throws RangeError: a length that is not row.length × its width, a row not ascending or
  * >= rows, rows not a non-negative integer, `from` present and not an integer in [0, rows], a
- * flag above 3. Rows on both sides of `from` may appear.
+ * flag above 3, `existing` absent. Rows on both sides of `from` may appear.
  */
 export function validateCityDelta(d: CityDelta): void {
   if (!Number.isInteger(d.rows) || d.rows < 0) {
@@ -20,11 +20,13 @@ export function validateCityDelta(d: CityDelta): void {
   if (d.from !== undefined && (!Number.isInteger(d.from) || d.from < 0 || d.from > d.rows)) {
     throw new RangeError(`CityDelta: from ${d.from} is not an integer in [0, ${d.rows}]`);
   }
+  if (d.existing === undefined) throw new RangeError('CityDelta: existing is missing');
   const k = d.row.length;
   const widths: [string, ArrayLike<number>, number][] = [
     ['lngLat', d.lngLat, 2],
     ['days', d.days, 3],
     ['homes', d.homes, 1],
+    ['existing', d.existing, 1],
     ['flags', d.flags, 1]
   ];
   for (const [name, a, w] of widths) {
@@ -43,9 +45,10 @@ export function validateCityDelta(d: CityDelta): void {
   }
 }
 
-/** The five buffers, each once. */
+/** The six buffers, each once. */
 export function cityTransferables(d: CityDelta): ArrayBuffer[] {
   const out = new Set<ArrayBuffer>();
-  for (const a of [d.row, d.lngLat, d.days, d.homes, d.flags]) out.add(a.buffer as ArrayBuffer);
+  for (const a of [d.row, d.lngLat, d.days, d.homes, d.existing, d.flags])
+    out.add(a.buffer as ArrayBuffer);
   return [...out];
 }

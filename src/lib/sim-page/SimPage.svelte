@@ -32,18 +32,25 @@
   import { BrushState } from '$lib/brush/state.svelte';
   import type { Manifest } from '$lib/data/manifest';
   import type { ParcelId } from '$lib/data/parcel';
-  import { ALL_ALLOWED, playable, runs, type Allowed } from '$lib/game/allowed';
-  import { unlockText } from '$lib/game/copy';
+  import { RUN_MS } from '$lib/fzp/playback';
+  import { NODES } from '$lib/game/catalogue/nodes';
   import { e2eGoalAmount } from '$lib/game/e2e';
-  import { roundComplete } from '$lib/game/progress';
+  import { onPrefs, readCollectForMe, readMuted } from '$lib/game/run/prefs';
+  import { createSound } from '$lib/game/run/sound';
+  import { applyGrant } from '$lib/game/grant';
+  import { ladder, RUNGS, type Rung } from '$lib/game/ladder';
+  import { OPEN_LIMITS, runnable, within, type Limits } from '$lib/game/limits';
+  import type { NodeId } from '$lib/game/state';
   import type { GameStore } from '$lib/game/store.svelte';
+  import { treeView } from '$lib/game/tree';
+  import Tree from '$lib/game/ui/Tree.svelte';
   import { packedCellLayer, type SolidPolygonLayerCtor } from '$lib/map/generated-controller';
   import { LID_MAX_SPAN_M } from '$lib/map/height/lids';
   import { LIDS_FADE, type LimitsView } from '$lib/map/height/limits-style';
   import type { HeightCity, HeightLids } from '$lib/map/height/types';
   import { createOverlayMux } from '$lib/map/overlay-mux';
   import { useSystemTheme } from '$lib/map/system-theme.svelte';
-  import type { SimMapHandle } from '$lib/map/types';
+  import type { CameraFrame, SimMapHandle } from '$lib/map/types';
   import HistoryButtons from '$lib/paint/HistoryButtons.svelte';
   import { paintedOutlineLayers } from '$lib/paint/outline-layers';
   import PaintTab from '$lib/paint/PaintTab.svelte';
@@ -54,7 +61,7 @@
   import { copyFor } from '$lib/sharing/copy';
   import PublishButton from '$lib/sharing/PublishButton.svelte';
   import SaveIndicator from '$lib/sharing/SaveIndicator.svelte';
-  import { BUTTON } from '$lib/shell/ui';
+  import { BUTTON, BUTTON_PRIMARY } from '$lib/shell/ui';
   import { getStorage } from '$lib/sharing/storage';
   import type { BrushCatalog } from '$lib/sim/levers/brushes';
   import { PREVIEW_MAX_LOTS } from '$lib/sim/scenario/preview';
@@ -62,8 +69,14 @@
   import { WINDOW_MONTHS } from '$lib/sim/timeline-client';
   import type { Day } from '$lib/timelapse/time';
   import type { Calibration } from '$lib/timelapse/types';
-  import { AddLimitError, addPolicy, redateMoved, type AddChoice } from '$lib/timeline/add';
-  import { levelledUp } from '$lib/timeline/game-copy';
+  import {
+    AddLimitError,
+    addPolicy,
+    kindOpen,
+    redateMoved,
+    type AddChoice
+  } from '$lib/timeline/add';
+  import { BACK_TO_TREE, boughtLabel, restoredLabel } from '$lib/timeline/game-copy';
   import Inspector from '$lib/timeline/Inspector.svelte';
   import { project, spanLens, writeBack, type StrokeStore } from '$lib/timeline/lens';
   import { fundingName4, ownerName4 } from '$lib/timeline/owner';
@@ -82,16 +95,20 @@
   import { policyOf, type SpanRef } from '$lib/timeline/spans';
   import TimelineMode, {
     type MapLike,
-    type TimelineClientApi
+    type TimelineClientApi,
+    type TreeArgs
   } from '$lib/timeline/TimelineMode.svelte';
   import { readViewPrefs, writeViewPrefs, type ViewPrefs } from '$lib/view/prefs';
   import LayerSwitches, { type ViewRow } from '$lib/view/LayerSwitches.svelte';
   import { ERASE_HINT, SimBrushTools, brushToolOf, type SimTool } from './brush-tools.svelte';
   import { simPaintRows } from './brush-summary';
   import { installSimDebug } from './debug';
+  import { e2eRunMs } from './e2e-run';
   import { PaintFeedback, lotsInView } from './feedback';
-  import { fundingNotices, limitAlert } from './funding-copy';
+  import { DRAFT_DISCARDED, fundingNotices, limitAlert } from './funding-copy';
   import { FundingDrafts } from './funding-drafts.svelte';
+  import { nodeRefs, nodeSwitches, restoreNode, switchNodeDoc } from './game-levers';
+  import { RUN_VIEW, landing, nextPhase, type GamePhase, type PhaseEvent } from './game-phase';
   import { LidRequest, clampBbox } from './lid-request';
   import { OutlineRequest } from './outline-request';
   import { customQuery, paintedLots, queryKey, type Lots } from './policy';
@@ -132,6 +149,8 @@
     timers?: { setTimeout: typeof setTimeout; clearTimeout: typeof clearTimeout };
     /** The current game; null: no game parts (the published view, the open game, tests). */
     game?: GameStore | null;
+    /** The map's opening camera, passed unchanged to TimelineMode. */
+    initialFrame?: CameraFrame;
   }
 
   let {
@@ -151,7 +170,8 @@
     storage = getStorage,
     fetchFn = undefined,
     timers = undefined,
-    game = null
+    game = null,
+    initialFrame = undefined
   }: Props = $props();
 
   const SIM = copyFor('sim');
@@ -201,22 +221,37 @@
 
   const store = new PolicyStore<SimPolicy4>(DEFAULT_POLICY4, (next, prev) => normalize(next, prev));
 
-  // ---- the game (spec #sec-design-playable, -locks, -levelup) ----
+  // ---- the game (game-sim #sec-design-limits, #tbl-replacements, #sec-design-publish) ----
 
-  /** What the game lets run and be edited; every control without one. */
-  const allowed = $derived<Allowed>(game?.allowed ?? ALL_ALLOWED);
-  /** Each playable document that differs from its whole one, to the whole one it came from. */
+  /** What the game lets run and be edited; with no game, `OPEN_LIMITS`: today's page. */
+  const limits = $derived<Limits>(game ? game.limits : OPEN_LIMITS);
+  /** Each runnable document that differs from its whole one, to the whole one it came from. */
   const wholeOf = new WeakMap<SimPolicy4, SimPolicy4>();
-  /** The playable document: what the worker runs and Publish sends. Autosave keeps the whole one. */
+  /** The runnable document: what the worker runs and Publish sends. Autosave keeps the whole one. */
   const run = $derived.by(() => {
     const whole = store.policy;
-    const r = playable(whole, allowed);
+    const r = runnable(whole, limits);
     if (r !== whole) wholeOf.set(r, whole);
     return r;
   });
-  const zoningLocked = $derived(!allowed.kinds.has('zoning'));
   /** The goal's amount over the default (X1's seam), read once. */
   const goalAmount = untrack(() => e2eGoalAmount(storage()));
+  /** The run's wall time: the e2e seam's, else `RUN_MS`; read once. */
+  const runMs = untrack(() => e2eRunMs(storage()) ?? RUN_MS);
+
+  // ---- the run's prefs and sound (game-sim #sec-design-props) ----
+
+  /** Muted, as the prefs last said: read on mount and on each `onPrefs`, never per sound. */
+  let muted = untrack(() => readMuted(storage()));
+  /** "Collect for me", as the prefs last said: read on mount and on each `onPrefs`. */
+  let collectForMe = $state(untrack(() => readCollectForMe(storage())));
+  const sound = createSound(() => muted);
+
+  function readPrefs(): void {
+    const s = storage();
+    muted = readMuted(s);
+    collectForMe = readCollectForMe(s);
+  }
 
   /** The scenario client's requests; null before the session opens, after a crash and unmount. */
   let api: TimelineClientApi | null = null;
@@ -237,7 +272,7 @@
       ? { schema: 4, kind: 'sim', datasetVersion, policy: store.policy }
       : { schema: 4, kind: 'sim', datasetVersion, title, policy: store.policy }
   );
-  /** What Publish sends: the playable document. One object per change, as PublishButton keys on it. */
+  /** What Publish sends: the runnable document. One object per change, as PublishButton keys on it. */
   const publishDoc = $derived<SimDoc4>(run === store.policy ? doc : { ...doc, policy: run });
   let autosave = $state.raw<Autosave<SimDoc4> | null>(null);
   /** Autosave writes once this is set: after the restore. */
@@ -251,7 +286,7 @@
 
   function load(p: SimPolicy4): void {
     store.reset(p);
-    // The playable document of `p`, as `run` holds it, so the sync effect sees no change.
+    // The runnable document of `p`, as `run` holds it, so the sync effect sees no change.
     const r = run;
     synced = r;
     // A load, not a change: no debounce (`PolicySync.open`).
@@ -305,7 +340,7 @@
   // mounts, so the session's first `policy` is the opened one.
   if (typeof window !== 'undefined') untrack(openDoc);
 
-  // Every change of the playable document after the open goes to PolicySync (debounced, rule 16).
+  // Every change of the runnable document after the open goes to PolicySync (debounced, rule 16).
   $effect(() => {
     const p = run;
     untrack(() => {
@@ -387,6 +422,21 @@
   const uid = $props.id();
   const inspectorId = `${uid}-inspector`;
 
+  // ---- the game's phase (game-sim #sec-design-states) ----
+
+  /**
+   * The game's phase on the page: where a mount lands, then only through `nextPhase`. Null with no
+   * game (the published view, the open game) and for a game still in its opening.
+   */
+  let phase = $state<GamePhase | null>(
+    untrack(() => (game && !game.open && game.state.phase === 'runs' ? landing(game.state) : null))
+  );
+
+  function toPhase(e: PhaseEvent): void {
+    if (phase === null || !game) return;
+    phase = nextPhase(phase, e, game.state.runs);
+  }
+
   const inspectorOpen = $derived(
     panel !== null || selected !== null || adding !== null || drafts.isOpen
   );
@@ -397,15 +447,15 @@
       : `${adding ?? ''}:${selected ? `${selected.kind}:${selected.id}:${selected.span}` : ''}`
   );
 
-  /** `ref` names a policy the game does not run (a locked policy); fixed rows never are. */
-  function locked(ref: SpanRef, doc: SimPolicy4, a: Allowed): boolean {
+  /** `ref` names a policy not within the limits (a locked policy); fixed rows never are. */
+  function locked(ref: SpanRef, doc: SimPolicy4, l: Limits): boolean {
     if (isFixedRef(ref)) return false;
     const p = policyOf(doc, ref.kind, ref.id);
-    return p !== undefined && !runs(ref.kind, p, a);
+    return p !== undefined && !within(ref.kind, p, l);
   }
 
   function select(ref: SpanRef | null): void {
-    if (ref !== null && locked(ref, store.policy, allowed)) return;
+    if (ref !== null && locked(ref, store.policy, limits)) return;
     selected = ref;
     if (ref === null) return;
     panel = null;
@@ -417,7 +467,7 @@
   }
 
   function startAdd(kind: PolicyKind): void {
-    if (!allowed.kinds.has(kind)) return;
+    if (!kindOpen(kind, limits)) return;
     panel = null;
     focusKind = kind;
     adding = kind;
@@ -473,7 +523,8 @@
       r = addPolicy(store.policy, choice, {
         w: { asOf: c.asOf, months: WINDOW_MONTHS },
         month: viewMonthOf(c.asOf, day),
-        cal: c
+        cal: c,
+        limits
       });
     } catch (e) {
       // A funding limit (only off policies count: starters show with nothing in force). The "+"
@@ -503,48 +554,20 @@
     untrack(() => (selected = null));
   });
 
-  // A selection that stops running, or an open "+" of a kind that locks, closes as Close does.
+  // A selection that stops being within the limits, or an open "+" on a kind that stops being
+  // open, closes as Close does.
   $effect(() => {
     const s = selected;
     const k = adding;
-    const a = allowed;
+    const l = limits;
     const p = store.policy;
     untrack(() => {
-      const dropSelection = s !== null && locked(s, p, a);
-      const dropAdding = k !== null && !a.kinds.has(k);
+      const dropSelection = s !== null && locked(s, p, l);
+      const dropAdding = k !== null && !kindOpen(k, l);
       if (!dropSelection && !dropAdding) return;
       closeEditor();
       if (dropSelection) selected = null;
       if (dropAdding) adding = null;
-    });
-  });
-
-  /** The level, completion and allowed kinds the level-up reaction last saw. */
-  let levelBefore = untrack(() => game?.progress.level ?? null);
-  let completeBefore = untrack(() => (game ? roundComplete(game.progress) : false));
-  let allowedBefore = untrack(() => allowed);
-  // The level rose, or the round completed, whoever pressed: from md the kinds it unlocks open, and
-  // the polite status says so. A level up once the round is complete changes neither input.
-  $effect(() => {
-    const g = game;
-    const level = g?.progress.level ?? null;
-    const complete = g ? roundComplete(g.progress) : false;
-    const now = allowed;
-    untrack(() => {
-      const rose = level !== null && levelBefore !== null && level > levelBefore;
-      const completed = complete && !completeBefore;
-      const was = allowedBefore;
-      levelBefore = level;
-      completeBefore = complete;
-      allowedBefore = now;
-      if (level === null || (!rose && !completed)) return;
-      const unlocked = [...now.kinds].filter((k) => !was.kinds.has(k));
-      if (unlocked.length > 0) {
-        void tick().then(() => {
-          if (!dead) unlocked.forEach(openKind);
-        });
-      }
-      brush.announce(levelledUp(level, complete ? null : unlockText(level)), ANNOUNCE_MS);
     });
   });
 
@@ -583,6 +606,97 @@
       ?.click();
   }
 
+  // ---- the tree: buying, Edit, switching, Back (game-sim #sec-design-buy, -workshop, -switch) ----
+
+  /** Tree's "Take the next goal": the next rung once the rung in play is met; else null. */
+  const nextRung = $derived.by<Rung | null>(() => {
+    if (!game || !cal) return null;
+    const s = game.state;
+    const met = s.met.some((m) => m.rung === s.rung);
+    return met && s.rung + 1 < RUNGS ? ladder(cal.asOf)[s.rung + 1] : null;
+  });
+
+  /**
+   * Buys a node: the game's write first, then its grant to the document as one undo step named by
+   * `boughtLabel`, written at once. A refused write changes nothing.
+   */
+  function buy(id: NodeId): void {
+    if (phase !== 'tree' || !game || !cal) return;
+    const r = game.buy(id);
+    if (!r.ok) return;
+    const node = NODES.find((n) => n.id === id)!;
+    const label = boughtLabel(node, r.state.bought[id]);
+    // `game.limits` is read after the buy, so it holds the purchase.
+    const ctx = { cal, limits: game.limits };
+    store.apply((d) => applyGrant(d, r.grant, ctx), label);
+    leave(); // the autosave writes the document now
+    sound.buy();
+    brush.announce(label, ANNOUNCE_MS);
+  }
+
+  /**
+   * Edit: the node's policy added back when the document has none (one undo step named by
+   * `restoredLabel`), the workshop, and its first policy selected with its kind open. A Hands node
+   * enters the workshop with nothing selected.
+   */
+  function editNode(id: NodeId): void {
+    if (phase !== 'tree' || !game || !cal) return;
+    const node = NODES.find((n) => n.id === id);
+    const level = game.state.bought[id] ?? 0;
+    if (!node || level === 0) return;
+    const next = restoreNode(store.policy, node, level, { cal, limits: game.limits });
+    if (next !== store.policy) store.apply(() => next, restoredLabel(node));
+    toPhase('edit');
+    const ref = nodeRefs(store.policy, node.levels[0].grant)[0] ?? null;
+    if (ref) {
+      select(ref);
+      // The kind's row mounts with the workshop's bottom pane, after this update.
+      void tick().then(() => {
+        if (!dead) openKind(ref.kind);
+      });
+    }
+  }
+
+  /** The tree's switch: every policy of the node on or off, as one undo step. */
+  function switchNode(id: NodeId, on: boolean): void {
+    if (phase !== 'tree' || !game) return;
+    const node = NODES.find((n) => n.id === id);
+    if (!node) return;
+    const label = `${on ? 'Switched on' : 'Switched off'}: ${node.label}`;
+    const before = store.policy;
+    store.apply((d) => switchNodeDoc(d, node, on), label);
+    if (store.policy !== before) brush.announce(label, ANNOUNCE_MS);
+  }
+
+  /** "Back to the tree": an open draft discarded (and said), the column cleared, then `back`. */
+  function backToTree(): void {
+    if (phase !== 'workshop') return;
+    if (drafts.isOpen) {
+      drafts.discard();
+      brush.announce(DRAFT_DISCARDED, ANNOUNCE_MS);
+    }
+    selected = null;
+    adding = null;
+    panel = null;
+    toPhase('back');
+  }
+
+  /**
+   * The tree's Publish: the header's Publish button, which opens its dialog on `publishDoc`.
+   * Below lg the button sits in the closed Menu, where its dialog would not render: the Menu
+   * opens first.
+   */
+  async function openPublish(): Promise<void> {
+    const button = document.querySelector<HTMLElement>('[data-testid="publish-open"]');
+    if (!button) return;
+    const menu = document.querySelector<HTMLElement>('[data-header-menu][aria-expanded="false"]');
+    if (button.getClientRects().length === 0 && menu) {
+      menu.click();
+      await tick();
+    }
+    button.click();
+  }
+
   // ---- strokes on the map ----
 
   /** /sim keeps no brush settings: `/`'s saved stories and radius stay untouched. */
@@ -618,7 +732,12 @@
           const r = addPolicy(
             d,
             { kind: 'zoning', what: 'paint' },
-            { w: { asOf: c.asOf, months: WINDOW_MONTHS }, month: viewMonthOf(c.asOf, day), cal: c }
+            {
+              w: { asOf: c.asOf, months: WINDOW_MONTHS },
+              month: viewMonthOf(c.asOf, day),
+              cal: c,
+              limits
+            }
           );
           added.ref = r.ref;
           return writeBack(r.doc, r.ref, change(project(r.doc, r.ref)));
@@ -675,8 +794,8 @@
       overlayHandle = h;
       overlay = createOverlayMux((l) => h.setOverlayLayers(l));
     }
-    // While zoning is locked there is no brush: the tool stays Move (spec #sec-design-locks).
-    if (readonly || zoningLocked || controller) return;
+    // In a game there is never a brush: the tool stays Move (game-sim #tbl-replacements).
+    if (readonly || !limits.open || controller) return;
     const map = h.getMap();
     if (!map || !overlay) return;
     controllerMap = map;
@@ -695,11 +814,6 @@
     });
     controller.attach();
   }
-
-  // Zoning unlocked (a level up): the controller attaches as it does on load.
-  $effect(() => {
-    if (!zoningLocked) untrack(attachController);
-  });
 
   function onMapReady(h: SimMapHandle, m: MapLike): void {
     const map = m as unknown as ControllerMap & ClickMap;
@@ -743,11 +857,16 @@
     });
   });
 
+  /** Starting, run or tally: the map is in its run view, and Undo and Redo do nothing. */
+  const inRunView = $derived(phase !== null && RUN_VIEW.has(phase));
+
   function undo(): void {
+    if (inRunView) return;
     if (controller) controller.undo();
     else adapter.editor.undo();
   }
   function redo(): void {
+    if (inRunView) return;
     if (controller) controller.redo();
     else adapter.editor.redo();
   }
@@ -756,10 +875,10 @@
    * Ctrl+Z and Ctrl+Shift+Z before the brush controller attaches (the map is loading, or never
    * comes without WebGL): the page undoes and redoes itself. Once attached, the controller's own
    * window listener takes the keys and this one does nothing. Typing in a field and a modal
-   * dialog keep their keys (`actionForKey`).
+   * dialog keep their keys (`actionForKey`). In starting, run and tally it does nothing.
    */
   function onWindowKey(e: KeyboardEvent): void {
-    if (controller || readonly || e.defaultPrevented) return;
+    if (inRunView || controller || readonly || e.defaultPrevented) return;
     const a = actionForKey(
       {
         key: e.key,
@@ -832,9 +951,13 @@
   } | null>(null);
   let viewMap: ControllerMap | null = null;
 
+  /**
+   * In the run view the view stays as it was before the run (the lock's `moveend` reports the
+   * whole city); the unlock's `moveend`, after the phase leaves it, is read as usual.
+   */
   function readView(): void {
     const m = viewMap;
-    if (!m) return;
+    if (!m || inRunView) return;
     const b = m.getBounds();
     const c = m.getCenter();
     mapView = {
@@ -884,8 +1007,9 @@
     const M = limitsModule;
     if (!o) return;
     const c = city;
+    // No limits in the run view (call 19).
     const layers =
-      M && c && limitsOn
+      M && c && limitsOn && !inRunView
         ? [M.heightLimitsLayer({ city: c, lids, mode: limitsMode, theme: systemTheme.current })]
         : [];
     untrack(() => o.slot('limits')(layers));
@@ -1121,6 +1245,9 @@
     if (autosave) detach = autosave.attach();
     // Before the game changes, the document still waiting is written to its record (G2).
     const offLeave = game?.beforeLeave(leave) ?? null;
+    // The run's prefs: read now and again on each change (the game panel's, R1).
+    readPrefs();
+    const offPrefs = onPrefs(readPrefs);
     import('@deck.gl/layers').then(
       (mod) => {
         if (dead) return;
@@ -1141,6 +1268,7 @@
       dead = true;
       uninstall();
       offLeave?.();
+      offPrefs();
       detach?.();
       strokePreview.reset();
       viewMap?.off('moveend', readView);
@@ -1160,13 +1288,18 @@
 {/snippet}
 
 {#snippet actions()}
+  {#if phase === 'workshop'}
+    <button type="button" class={BUTTON_PRIMARY} data-testid="game-back" onclick={backToTree}
+      >{BACK_TO_TREE}</button
+    >
+  {/if}
   {#if toolOff}
     <button type="button" class={BUTTON} onclick={() => setTool('move')}
       >{tools.tool === 'erase' ? 'Stop erasing' : 'Stop painting'}</button
     >
   {/if}
   {#if !readonly}
-    {#if pointer.touch}
+    {#if pointer.touch && !inRunView}
       <HistoryButtons
         canUndo={store.canUndo}
         canRedo={store.canRedo}
@@ -1237,11 +1370,30 @@
       playheadDay={at}
       asOf={cal.asOf}
       {readonly}
-      {allowed}
+      {limits}
       announce={(m) => brush.announce(m, ANNOUNCE_MS)}
       onclose={closeEditor}
       paint={paintPart}
       bind:adding
+    />
+  {/if}
+{/snippet}
+
+{#snippet treePart({ busy, ending }: TreeArgs)}
+  {#if game}
+    <Tree
+      nodes={treeView(game.state)}
+      on={nodeSwitches(store.policy, game.state)}
+      units={game.state.units}
+      {busy}
+      next={nextRung}
+      {ending}
+      onbuy={buy}
+      onedit={editNode}
+      ontoggle={switchNode}
+      onrun={() => toPhase('run')}
+      onnext={() => game?.takeNext()}
+      onpublish={openPublish}
     />
   {/if}
 {/snippet}
@@ -1259,7 +1411,7 @@
   {reload}
   view={viewPrefs}
   cards={readonly || tools.tool === 'move'}
-  spacePlays={!canPaint(brush, readonly || zoningLocked)}
+  spacePlays={!canPaint(brush, readonly || !limits.open)}
   ownerName={(o) => ownerName4(o, store.policy)}
   fundingName={(c) => fundingName4(store.policy, cal?.baselineFunding)(c)}
   {actions}
@@ -1270,6 +1422,13 @@
   policy={store.policy}
   {run}
   {game}
+  {initialFrame}
+  phase={phase ?? undefined}
+  onphase={phase === null ? undefined : toPhase}
+  tree={phase === null ? undefined : treePart}
+  {sound}
+  {collectForMe}
+  {runMs}
   {goalAmount}
   lots={sync.lots}
   lotsFailed={sync.lots === null && !sync.pending && sync.failed.length > 0}
@@ -1298,7 +1457,7 @@
   }}
   onmiss={onMiss}
   onscore={pressScore}
-  onstarter={readonly ? undefined : addStarter}
+  onstarter={readonly || game ? undefined : addStarter}
   {refusal}
   ondismissrefusal={() => (refusal = null)}
   ondetails={showDetails}
@@ -1306,7 +1465,7 @@
   scoreExpanded={panel !== null && inspectorOpen}
   scoreControls={inspectorId}
 />
-{#if !readonly && !zoningLocked && !wide.current && tools.tool !== 'move'}
+{#if !readonly && limits.open && !wide.current && tools.tool !== 'move'}
   <PaletteStrip
     bind:this={paletteStrip}
     {brush}
