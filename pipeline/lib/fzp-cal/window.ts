@@ -7,9 +7,13 @@ import { isoToDay } from '../../project-records/multiphase';
 import type { Day } from '../../../src/lib/timelapse/types';
 import { CalibrationError, type CalStage, type CoverageRow, type Spell } from './types';
 
-/** Planning-side window start, and every stage's pathway-level start (ruling). */
+/**
+ * Every stage's window start, pooled and pathway level (ruling). Permit-side pooled baselines
+ * start here too: θ is fitted on 2015+ and earlier permit spells ran much faster, so shape and
+ * level share one window.
+ */
 export const PLANNING_START = '2015-01-01';
-/** Permit-side pooled window start: the first assessor roll's lien day (DQ-1). */
+/** The first assessor roll's lien day (DQ-1): the pre-roll count's cut, no longer a fit window. */
 export const PERMIT_POOLED_START = '2007-01-01';
 /** `phaseGap` keeps its own window: it reads permit filing days only (spec §4.7a). */
 export const PHASE_GAP_START = '1989-01-01';
@@ -22,7 +26,7 @@ export const PANEL_LAST_MONTH = '2025-12';
 export const LOCAL_PROGRAM_START = '2026-01-12';
 
 const PERMIT_EVIDENCE = (field: string, dense: string) =>
-  `first assessor roll's lien day (DQ-1); \`${field}\` dense from ${dense}`;
+  `same window as the pathway θ (pre-2015 permit spells ran much faster); \`${field}\` dense from ${dense}`;
 
 /** The six rows of the §4.4 window table; the report reprints it. */
 export const COVERAGE: readonly CoverageRow[] = [
@@ -52,21 +56,21 @@ export const COVERAGE: readonly CoverageRow[] = [
   {
     stage: 'permitFiled',
     side: 'permit',
-    pooledStart: PERMIT_POOLED_START,
+    pooledStart: PLANNING_START,
     pathwayStart: PLANNING_START,
     evidence: PERMIT_EVIDENCE('filed_date', '1981')
   },
   {
     stage: 'permitIssued',
     side: 'permit',
-    pooledStart: PERMIT_POOLED_START,
+    pooledStart: PLANNING_START,
     pathwayStart: PLANNING_START,
     evidence: PERMIT_EVIDENCE('issued_date', '1981')
   },
   {
     stage: 'construction',
     side: 'permit',
-    pooledStart: PERMIT_POOLED_START,
+    pooledStart: PLANNING_START,
     pathwayStart: PLANNING_START,
     evidence: PERMIT_EVIDENCE('first_construction_document_date', '2000')
   }

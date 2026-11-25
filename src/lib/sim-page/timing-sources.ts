@@ -53,7 +53,7 @@ const BENCHMARK_CAVEATS =
   'Exhibit 2) gives 0.76; SF 114 days (housing permits filed and issued 2024-01-01 to ' +
   '2025-08-12, Exhibit 2) gives 1.18, that is San Diego slower. 280 is used because both 280 and ' +
   "134 measure permits issued in a window, whatever their filing date, and the model's " +
-  'permitFiled stage (typical 10 to 13 months, pooled 2007-01-01 to 2026-10-19) has the same ' +
+  'permitFiled stage (typical 10 to 13 months, pooled 2015-01-01 to 2026-11-10) has the same ' +
   'pre-2024 composition, when SF permits were often filed concurrently with entitlements.';
 
 /**

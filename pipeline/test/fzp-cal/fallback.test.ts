@@ -3,6 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import { LIVE_CAL, FIXTURE_CAL } from '../../lib/fzp-cal/config';
 import { LITERATURE, rung3 } from '../../lib/fzp-cal/fallback';
+import { buildSpells, normalise } from '../../lib/fzp-cal/spells';
 import { fitTransitions, type FitContext } from '../../lib/fzp-cal/transitions';
 import { windowStart } from '../../lib/fzp-cal/window';
 import {
@@ -25,6 +26,7 @@ import {
   pathwayStages,
   type Calibration,
   type Pathway,
+  type ProjectHistory,
   type Transition
 } from '../../../src/lib/timelapse/types';
 
@@ -308,7 +310,7 @@ describe('fitTransitions: rung selection', () => {
     expect(r.spellsCount['calibration.spells.discretionary.preApplication']).toBeUndefined();
   });
 
-  it('permit side: θ-scaled pooled table with the DQ-1 label and method', () => {
+  it('permit side: θ-scaled pooled table over 2015+ with its label and method', () => {
     const pooled = [
       ...cell(null, 'permitFiled', 'N', 40, 30),
       ...cell('discretionary', 'permitFiled', 'D', 35, 25, 'expired')
@@ -322,10 +324,10 @@ describe('fitTransitions: rung selection', () => {
     expect(c.theta?.advance).toBeGreaterThan(0);
     const t = r.transitions.discretionary.permitFiled!;
     expect(t.provenance.label).toBe(
-      'SF permit records 2007–2026, pooled across pathways before 2015, scaled to discretionary 2015–2026 (tier 2)'
+      'SF permit records 2015–2026, pooled across pathways, scaled to discretionary (tier 2)'
     );
-    expect(t.provenance.window).toEqual(['2007-01-01', '2026-06-30']);
-    expect(t.provenance.method).toContain('since 2007-01-01, the first assessor roll');
+    expect(t.provenance.window).toEqual(['2015-01-01', '2026-06-30']);
+    expect(t.provenance.method).toContain('all spells since 2015-01-01, any pathway');
     expect(t.provenance.method).toContain('θ=');
     expect(t.provenance.method).toContain(
       'permit-only histories before 2015 count as pathway unknown: n = 3 of 10'
@@ -391,7 +393,7 @@ describe('fitTransitions: rung selection', () => {
     expect(c.noFcd?.pooled).toMatchObject({ X: 1, A: 8, flagged: true });
     // Observed exit shares make E tier 2; D (tier 1) and A (tier 2) keep the cell at tier 2.
     const t = r.transitions.streamlined.permitIssued!;
-    expect(t.provenance).toMatchObject({ tier: 2, n: 10, window: ['2007-01-01', '2026-06-30'] });
+    expect(t.provenance).toMatchObject({ tier: 2, n: 10, window: ['2015-01-01', '2026-06-30'] });
     expect(Object.keys(t.exit)).toEqual(['expired']);
     // Flagged with X = 1 > 0: escalated.
     expect(r.noFcdFlaggedPooled).toBe(1);
@@ -488,7 +490,9 @@ describe('fitTransitions: rung selection', () => {
     expect(Object.keys(r.coverage.preApplication!).map(Number)).toEqual([
       2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023
     ]);
-    expect(Object.keys(r.coverage.permitFiled!).length).toBe(20);
+    expect(Object.keys(r.coverage.permitFiled!).map(Number)).toEqual([
+      2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
+    ]);
     const gap = spells.filter(
       (s) =>
         !(s.stage === 'entitled' && s.e < isoToDay('2018-01-01') && s.e >= isoToDay('2017-01-01'))
@@ -581,5 +585,53 @@ describe('fitTransitions: every cell', () => {
     const a = fitTransitions(spells, unobserved, AS_OF, LIVE, NO_CTX);
     const b = fitTransitions(spells, unobserved, AS_OF, LIVE, NO_CTX);
     expect(JSON.stringify(a)).toBe(JSON.stringify(b));
+  });
+});
+
+describe('fitTransitions: the permit-side baseline follows the 2015+ window', () => {
+  /**
+   * permitIssued spells entered 2008–2013 advance after 1 month, those entered 2016–2023 after 7.5.
+   * Pathway unknown throughout, so every pathway's θ is 1 and its table is the pooled baseline:
+   * the baseline must be the 2015+ one (nothing advances by month 3), not the 2007+ mix.
+   */
+  function era(id: string, issued: string, months: number): ProjectHistory {
+    const day = isoToDay(issued);
+    return {
+      id,
+      pathway: null,
+      parcelIds: [],
+      entered: {
+        permitFiled: day - 60,
+        permitIssued: day,
+        construction: day + Math.round(months * M)
+      },
+      end: { kind: 'open', lastObserved: isoToDay('2026-01-01') },
+      unitsAt: { permitFiled: 10 },
+      existingUnits: 0,
+      storiesProposed: null,
+      baseStoriesAtFiling: null,
+      sources: [],
+      quality: []
+    };
+  }
+
+  it('fits pooled permitIssued from 2015-01-01 even when earlier spells are faster', () => {
+    const hs: ProjectHistory[] = [];
+    for (let i = 0; i < 120; i++) {
+      const pad = String(i).padStart(3, '0');
+      hs.push(era(`pre${pad}`, `${2008 + (i % 6)}-0${1 + (i % 9)}-15`, 1));
+      hs.push(era(`post${pad}`, `${2016 + (i % 8)}-0${1 + (i % 9)}-15`, 7.5));
+    }
+    hs.sort((a, b) => (a.id < b.id ? -1 : 1));
+    const { spells, unobserved } = buildSpells(normalise(hs, AS_OF).norm, AS_OF);
+    const issued = spells.filter((s) => s.stage === 'permitIssued');
+    expect(issued.every((s) => s.e + s.x >= isoToDay('2015-01-01'))).toBe(true);
+    const fit = fitTransitions(spells, unobserved, AS_OF, LIVE, NO_CTX);
+    for (const p of PATHWAYS) {
+      const t = fit.transitions[p].permitIssued!;
+      expect(t.months).toBeGreaterThanOrEqual(3);
+      expect(t.advance[2]).toBe(0);
+      expect(t.provenance.window?.[0]).toBe('2015-01-01');
+    }
   });
 });

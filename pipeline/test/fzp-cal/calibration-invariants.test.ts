@@ -102,12 +102,15 @@ describe('calibration invariants on fixture-0', () => {
       // and 35); open, so last-stage and purge-censor unchanged.
       // Then M41 (Ruling C3c): a filed history (6 units) exited withdrawn by its curated verdict,
       // so +1 (37 and 36) and last-stage 10, purge-censor 9.
-      'sc.stages.gap-impute': [0, 36],
-      'sc.stages.no-fcd-duration': [0, 36],
+      // Then the permit-side windows moved to 2015 (pooled baseline and θ share one window):
+      // three histories with permit spells ending before 2015 leave the windowed denominators
+      // (33), one of them an exit (purge-censor 8).
+      'sc.stages.gap-impute': [0, 33],
+      'sc.stages.no-fcd-duration': [0, 33],
       // Spec §4.4a "Fixture cases": these two must not fire on fixture-0 (of > 0).
       'sc.stages.running-max': [0, 37],
       'sc.exit.last-stage': [0, 10],
-      'sc.exit.purge-censor': [0, 9],
+      'sc.exit.purge-censor': [0, 8],
       // Ruling R26: of = 0 because the mini histories have no revised pair to clamp.
       'sc.revision.ratio-clamp': [0, 0],
       // Partner ruling (2026-10-18): 8 windowed permitFiled pairs, none carried. The mini

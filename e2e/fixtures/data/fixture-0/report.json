@@ -48,7 +48,7 @@
     "buildings.underground_dropped": 1,
     "calibration.affordable.fallback": 1,
     "calibration.affordable.histories": 0,
-    "calibration.bytes": 59823,
+    "calibration.bytes": 58384,
     "calibration.funding.impliedHomesPerYear": 20,
     "calibration.funding.mohcdRows": 2,
     "calibration.funding.observedHomesPerYear": 25,
@@ -89,11 +89,11 @@
     "calibration.spells.permitOnly.construction": 1,
     "calibration.spells.permitOnly.permitFiled": 8,
     "calibration.spells.permitOnly.permitIssued": 4,
-    "calibration.spells.pooled.construction": 7,
+    "calibration.spells.pooled.construction": 5,
     "calibration.spells.pooled.entitled": 13,
     "calibration.spells.pooled.filed": 20,
-    "calibration.spells.pooled.permitFiled": 20,
-    "calibration.spells.pooled.permitIssued": 13,
+    "calibration.spells.pooled.permitFiled": 16,
+    "calibration.spells.pooled.permitIssued": 11,
     "calibration.spells.pooled.preApplication": 2,
     "calibration.spells.streamlined.construction": 0,
     "calibration.spells.streamlined.entitled": 3,
@@ -376,7 +376,7 @@
     "quality.sc.exit.last-stage.fired": 0,
     "quality.sc.exit.last-stage.of": 10,
     "quality.sc.exit.purge-censor.fired": 0,
-    "quality.sc.exit.purge-censor.of": 9,
+    "quality.sc.exit.purge-censor.of": 8,
     "quality.sc.funding.ami-undeclared.fired": 1,
     "quality.sc.funding.ami-undeclared.of": 8,
     "quality.sc.revision.carried-excluded.fired": 0,
@@ -384,9 +384,9 @@
     "quality.sc.revision.ratio-clamp.fired": 0,
     "quality.sc.revision.ratio-clamp.of": 0,
     "quality.sc.stages.gap-impute.fired": 0,
-    "quality.sc.stages.gap-impute.of": 36,
+    "quality.sc.stages.gap-impute.of": 33,
     "quality.sc.stages.no-fcd-duration.fired": 0,
-    "quality.sc.stages.no-fcd-duration.of": 36,
+    "quality.sc.stages.no-fcd-duration.of": 33,
     "quality.sc.stages.running-max.fired": 0,
     "quality.sc.stages.running-max.of": 37,
     "quality.sd.attrs.active-unknown.fired": 0,
@@ -748,7 +748,7 @@
       "ok": true
     },
     {
-      "detail": "parses, fill levels equal FILL_LEVELS, asOf matches projects.json (T4d asOf checked by the calibration step), 59823 B; baselineFunding 9 pools, 7 programmes; shares 947762 millionths; no programme for city-housing-stability-fund, city-redevelopment; affordableRoutes tier 4",
+      "detail": "parses, fill levels equal FILL_LEVELS, asOf matches projects.json (T4d asOf checked by the calibration step), 58384 B; baselineFunding 9 pools, 7 programmes; shares 947762 millionths; no programme for city-housing-stability-fund, city-redevelopment; affordableRoutes tier 4",
       "id": "V25",
       "ok": true
     },
@@ -840,9 +840,8 @@
     "rung 3 (literature synthetic): discretionary preApplication",
     "rung 3 (literature synthetic): streamlined preApplication",
     "rung 3 (literature synthetic): permitOnly preApplication",
-    "θ diagnostic: discretionary permitFiled max |scaled − own 2015+ AJ| = 0.2335 > 0.05",
-    "θ diagnostic: permitOnly permitFiled max |scaled − own 2015+ AJ| = 0.2152 > 0.05",
-    "θ diagnostic: discretionary permitIssued max |scaled − own 2015+ AJ| = 0.08443 > 0.05",
-    "θ diagnostic: permitOnly permitIssued max |scaled − own 2015+ AJ| = 0.2288 > 0.05"
+    "θ diagnostic: discretionary permitFiled max |scaled − own 2015+ AJ| = 0.2263 > 0.05",
+    "θ diagnostic: permitOnly permitFiled max |scaled − own 2015+ AJ| = 0.1537 > 0.05",
+    "θ diagnostic: permitOnly permitIssued max |scaled − own 2015+ AJ| = 0.2313 > 0.05"
   ]
 }

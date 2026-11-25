@@ -40,8 +40,8 @@ describe('window constants', () => {
   });
 
   it('windowStart per stage and level', () => {
-    expect(windowStart('permitIssued', 'pooled')).toBe(isoToDay('2007-01-01'));
-    expect(windowStart('permitFiled', 'pooled')).toBe(isoToDay('2007-01-01'));
+    expect(windowStart('permitIssued', 'pooled')).toBe(isoToDay('2015-01-01'));
+    expect(windowStart('permitFiled', 'pooled')).toBe(isoToDay('2015-01-01'));
     expect(windowStart('construction', 'pathway')).toBe(isoToDay('2015-01-01'));
     expect(windowStart('filed', 'pooled')).toBe(isoToDay('2015-01-01'));
     expect(windowStart('preApplication', 'pooled')).toBe(isoToDay('2015-01-01'));
@@ -58,7 +58,7 @@ describe('window constants', () => {
     ]);
     const permit = COVERAGE.filter((r) => r.side === 'permit');
     expect(permit).toHaveLength(3);
-    expect(permit.every((r) => r.pooledStart === '2007-01-01')).toBe(true);
+    expect(COVERAGE.every((r) => r.pooledStart === '2015-01-01')).toBe(true);
     expect(COVERAGE.every((r) => r.pathwayStart === '2015-01-01')).toBe(true);
     expect(COVERAGE[0].entryEnd).toBe('2023-07-07');
     expect(COVERAGE.every((r) => r.evidence.length > 0)).toBe(true);
@@ -200,7 +200,7 @@ function hist(
 const open = (iso: string): ProjectHistory['end'] => ({ kind: 'open', lastObserved: d(iso) });
 
 describe('cutSpells and preRollCount', () => {
-  it('cuts Planning-side spells at 2015 and keeps permit-side ones at 2007', () => {
+  it('cuts permit-side spells at 2015 too, left-truncating those still open then', () => {
     const h = hist(
       'p1',
       'discretionary',
@@ -214,9 +214,9 @@ describe('cutSpells and preRollCount', () => {
       open('2020-01-01')
     );
     const s = buildSpells(normalise([h], AS_OF).norm, AS_OF).spells;
-    expect(s.map((x) => x.stage)).toEqual(['permitFiled', 'permitIssued', 'construction']);
-    const cut = cutSpells(s, d('2015-01-01'));
-    expect(cut.map((x) => x.stage)).toEqual(['permitIssued', 'construction']);
+    expect(s.map((x) => x.stage)).toEqual(['permitIssued', 'construction']);
+    expect(s[0].a).toBe(d('2015-01-01') - d('2014-01-01'));
+    expect(cutSpells(s, d('2015-01-01'))).toEqual(s);
   });
 
   it('keeps a Planning-side spell entering before 2015 by left truncation at 2015', () => {
@@ -234,14 +234,14 @@ describe('cutSpells and preRollCount', () => {
       open('2020-01-01')
     );
     const s = buildSpells(normalise([h], AS_OF).norm, AS_OF).spells;
-    expect(s[0].a).toBe(d('2007-01-01') - d('2004-03-01'));
-    const cut = cutSpells(s, d('2015-01-01'));
-    expect(cut[0].a).toBe(d('2015-01-01') - d('2004-03-01'));
+    expect(s[0].a).toBe(d('2015-01-01') - d('2004-03-01'));
+    const cut = cutSpells(s, d('2018-01-01'));
+    expect(cut[0].a).toBe(d('2018-01-01') - d('2004-03-01'));
     expect(cut[0].x).toBe(s[0].x);
     expect(cutSpells(s, d('2021-01-01'))).toEqual([]);
   });
 
-  it('counts a history whose spells all end before 2007 once, and not one reaching 2007-01-01', () => {
+  it('counts a history whose spells all end before 2007 once; spells start at 2015', () => {
     const pre = hist(
       'p1',
       'permitOnly',
@@ -254,9 +254,10 @@ describe('cutSpells and preRollCount', () => {
       { permitFiled: '2003-01-01', permitIssued: '2004-01-01' },
       { kind: 'exit', stage: 'permitIssued', reason: 'expired', day: d('2007-01-01') }
     );
-    const later = hist('p3', 'permitOnly', { permitFiled: '2003-01-01' }, open('2012-01-01'));
+    const later = hist('p3', 'permitOnly', { permitFiled: '2003-01-01' }, open('2016-01-01'));
     const n = normalise([pre, edge, later], AS_OF).norm;
     expect(preRollCount(n)).toBe(1);
-    expect(buildSpells(n, AS_OF).spells.map((s) => s.projectId)).toEqual(['p3', 'p2']);
+    // p2 reaches the roll but not the 2015 window: counted by neither
+    expect(buildSpells(n, AS_OF).spells.map((s) => s.projectId)).toEqual(['p3']);
   });
 });

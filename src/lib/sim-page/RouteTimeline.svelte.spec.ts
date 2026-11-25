@@ -87,9 +87,9 @@ describe.each([768, 375])('RouteTimeline at %i px', (width) => {
       'Pre-application, 6 months, 86% move on',
       'Filed to entitled, 9 months, 97% move on',
       'Entitled to permit filed, 4 months, 90% move on, locked',
-      'Permit review, 7 months, 94% move on',
-      'Permit issued to construction start, 3 months, 70% move on',
-      'Construction, 30 months, 96% move on, locked'
+      'Permit review, 9 months, 100% move on',
+      'Permit issued to construction start, 3 months, 72% move on',
+      'Construction, 30 months, 91% move on, locked'
     ]);
   });
 
@@ -129,13 +129,13 @@ describe.each([768, 375])('RouteTimeline at %i px', (width) => {
     await expect.element(segment(/^Permit review/)).toHaveAttribute('aria-expanded', 'true');
     const details = document.getElementById(all[3].getAttribute('aria-controls')!);
     expect(details).not.toBeNull();
-    await expect.element(months()).toHaveValue(7);
+    await expect.element(months()).toHaveValue(9);
     const plus = page.getByRole('button', { name: 'Lengthen by 0.5 month' });
     await plus.click();
-    await expect.element(months()).toHaveValue(7.5);
+    await expect.element(months()).toHaveValue(9.5);
     expect(store.policy.timing.current.edits).toHaveLength(1);
-    expect(store.undoLabel).toBe('Permit review, discretionary to 7.5 months');
-    for (let i = 0; i < 9; i++) await plus.click();
+    expect(store.undoLabel).toBe('Permit review, discretionary to 9.5 months');
+    for (let i = 0; i < 5; i++) await plus.click();
     await expect.element(months()).toHaveValue(12);
     expect(store.undoLabel).toBe('Permit review, discretionary to 12 months');
     store.undo();
@@ -161,7 +161,7 @@ describe.each([768, 375])('RouteTimeline at %i px', (width) => {
     const b = stageBounds(calibration, store.policy.timing.current, 'discretionary', 'permitFiled');
     const edits = store.policy.timing.current.edits;
     expect(edits).toHaveLength(1);
-    const typical0 = 7;
+    const typical0 = 9;
     expect(edits[0].scale * typical0).toBeCloseTo(b.min, 6);
     await expect
       .element(segment(/^Permit review/))
@@ -187,7 +187,7 @@ describe.each([768, 375])('RouteTimeline at %i px', (width) => {
     await expect.element(page.getByTestId('bound-permitFiled')).not.toBeInTheDocument();
     await expect
       .element(segment(/^Permit review/))
-      .toHaveAttribute('aria-label', 'Permit review, 7 months, 94% move on');
+      .toHaveAttribute('aria-label', 'Permit review, 9 months, 100% move on');
     // A later pointer-up (the drag is over) commits nothing either.
     pointer(h, 'pointerup', x - 2000, y);
     expect(store.canUndo).toBe(false);
@@ -207,7 +207,7 @@ describe.each([768, 375])('RouteTimeline at %i px', (width) => {
       .element()
       .dispatchEvent(new Event('change', { bubbles: true }));
     await expect.element(months()).toHaveValue(b.max);
-    expect(store.policy.timing.current.edits[0].scale * 7).toBeCloseTo(b.max, 6);
+    expect(store.policy.timing.current.edits[0].scale * 9).toBeCloseTo(b.max, 6);
     expect(announce).toHaveBeenCalledWith(`Reached the maximum for Permit review: ${b.max} months`);
     await expect
       .element(page.getByRole('button', { name: 'Lengthen by 0.5 month' }))
@@ -222,7 +222,7 @@ describe.each([768, 375])('RouteTimeline at %i px', (width) => {
     months()
       .element()
       .dispatchEvent(new Event('change', { bubbles: true }));
-    await expect.element(months()).toHaveValue(7);
+    await expect.element(months()).toHaveValue(9);
     expect(store.canUndo).toBe(false);
   });
 
@@ -254,13 +254,11 @@ describe.each([768, 375])('RouteTimeline at %i px', (width) => {
     await page.viewport(width, 900);
     const { store, calibration } = setup();
     await segment(/^Permit review/).click();
-    await expect.element(page.getByText('≈ 213 days')).toBeVisible();
+    await expect.element(page.getByText('≈ 274 days')).toBeVisible();
     await expect
       .element(page.getByText(/^Minimum: 1 month \(Minimum permit review: .*, tier \d\)$/))
       .toBeVisible();
-    await expect
-      .element(page.getByText('Of projects in this stage, 94% move on; 6% withdrawn'))
-      .toBeVisible();
+    await expect.element(page.getByText(/^Of projects in this stage, 100% move on/)).toBeVisible();
     await expect.element(page.getByText(/^Applies to/)).not.toBeInTheDocument();
     // An edit reaches every project.
     await page.getByRole('button', { name: 'Shorten by 0.5 month' }).click();
@@ -301,7 +299,7 @@ describe('RouteTimeline sources and notes (final review I1, I2)', () => {
     await segment(/^Permit review/).click();
     await page.getByRole('button', { name: 'Shorten by 0.5 month' }).click();
     await expect
-      .element(page.getByText('Your value: 6.5 months (custom, not sourced). Observed: 7 months.'))
+      .element(page.getByText('Your value: 8.5 months (custom, not sourced). Observed: 9 months.'))
       .toBeVisible();
     const prov = calibration.transitions.discretionary.permitFiled!.provenance;
     await expect.element(page.getByText('Observed source:')).toBeVisible();

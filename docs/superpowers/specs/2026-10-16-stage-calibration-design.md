@@ -266,11 +266,13 @@ Tables are **project-weighted**. Unit-weighted shares appear only in the report.
 | preApplication | Planning | 2015-01-01 | 2015-01-01 | PPA records `y673-d69b`, 2011-02-11 to **2023-07-07** (`entryEnd`); Planning span from 2015 (ruling) |
 | filed | Planning | 2015-01-01 | 2015-01-01 | PRJs with net units ≥ 1: 71 (2013), 158 (2014), 398 (2015) |
 | entitled | Planning | 2015-01-01 | 2015-01-01 | approvals `d4jk-jw33`: 182 (2014), 1,328 (2015) |
-| permitFiled | permit | **2007-01-01** | 2015-01-01 | first assessor roll's lien day (DQ-1); `filed_date` dense from 1981 |
-| permitIssued | permit | **2007-01-01** | 2015-01-01 | first assessor roll's lien day (DQ-1); `issued_date` dense from 1981 |
-| construction | permit | **2007-01-01** | 2015-01-01 | first assessor roll's lien day (DQ-1); `first_construction_document_date` dense from 2000 |
+| permitFiled | permit | **2015-01-01** | 2015-01-01 | same window as the pathway θ (amendment 2026-11-24); `filed_date` dense from 1981 |
+| permitIssued | permit | **2015-01-01** | 2015-01-01 | same window as the pathway θ (amendment 2026-11-24); `issued_date` dense from 1981 |
+| construction | permit | **2015-01-01** | 2015-01-01 | same window as the pathway θ (amendment 2026-11-24); `first_construction_document_date` dense from 2000 |
 
-**Why 2007 for every permit-side stage (partner ruling DQ-1).** The permit dates themselves reach back much further. The window is set instead by the qualifying predicate, which needs existing units at filing:
+**Amendment (owner, 2026-11-24): permit-side pooled windows start at 2015-01-01.** The pooled shape and θ now share one window. Permit spells entered before 2015 ran much faster (permitIssued advanced by month 9: about 0.8 for 2011–2016 entries, 0.3–0.55 for 2018–2024), so a 2007+ shape scaled to 2015+ levels missed the replay (`pipeline/test/simulate-replay.test.ts`). DQ-1 below still sets the 2007 roll clamp and `calibration.window.preRoll`.
+
+**Why 2007 for every permit-side stage (partner ruling DQ-1, superseded for the fit windows).** The permit dates themselves reach back much further. The window is set instead by the qualifying predicate, which needs existing units at filing:
 - **Existing units come from the assessor roll** at the year of the project's first record, clamped to the first roll year, 2007 (T4d `existingUnits`). A project filed before 2007 therefore reads the 2007 roll, which often already shows the finished building. Example: BP:7910790S was filed in 1984 and finished in 1987 with 590 units, and the 2007 roll shows 1,587 units on its parcels, so it nets below 1 and leaves the population.
 - **That loss is a bias, not just a loss.** Live, 4,901 pre-2007 histories fall out (histories drop from 10,212 to 4,716; project-records COMPLETION.md item 5). The pre-2007 spells that survive are the slow ones, still running in 2007, so a window that reached back to 1989 or 2000 would bias the pooled permit-side tables toward long durations.
 - **From 2007-01-01 the measurement is sound.** A spell that started earlier but is still running then enters by left truncation at 2007-01-01, as every pooled spell already does at its window start. Its existing units come from the 2007 roll, which shows the building before demolition whenever construction starts on or after 2007-01-01.
@@ -373,15 +375,15 @@ A rung passes when the cell has spells ≥ `N_SPELLS_MIN` and events ≥ `N_EVEN
   - Every *p* event is also a pooled event, so E is defined at every *p* event time.
 - **Pathway table.** The AJ recursion re-run on the pooled event grid with h_j(d) = θ_{p,j}·ĥ_j(d). If Σ_j h_j(d) > 1, all of them are scaled down so the sum is 1, and the count goes in the report. The tail is λ_{p,j} = θ_{p,j}·λ_j through the §4.4 tail formula. `months` is the pooled table's.
 - **Why this rule.**
-  - Durations in permit review and construction are set mostly by administrative queues and building physics. They are estimated far more precisely from about 19 years of records (2007 on) than from about 11 (2015 on).
+  - The pooled shape and θ share the 2015+ window (amendment 2026-11-24): earlier permit spells ran much faster.
   - Pathways differ mainly in level, for example in how often a streamlined permit is abandoned. One constant ratio per outcome is the smallest model that keeps each pathway's own 2015+ level, and κ keeps thin pathways near the pooled table instead of at 0 or ∞.
   - Unlike multiplying the cumulative incidence by a constant, this keeps advance + Σ exit ≤ 1, monotonicity and competing-risk consistency by construction.
   - **Diagnostic.** The report prints, for each pathway and stage, the maximum absolute difference between the scaled table and *p*'s own 2015+ AJ. The build warns if it exceeds 0.05.
 - **Thin pathways.** If *p* has fewer than `N_SPELLS_MIN` spells in 2015+, θ = 1 (pure pooled), and the method says so.
 - **Provenance.**
   - Tier 2.
-  - `label`: "SF permit records 2007–<asOf year>, pooled across pathways before 2015, scaled to <pathway> 2015–<asOf year> (tier 2)".
-  - `method`: "Pooled Aalen–Johansen over all spells since 2007-01-01, the first assessor roll (existing homes at filing are known only from then; pooled across pathways before 2015; pathway unknowable); cause-specific hazards scaled by θ = (O+5)/(E+5) from <pathway> spells since 2015-01-01 (proportional hazards): advance θ=…, <reason> θ=…".
+  - `label`: "SF permit records 2015–<asOf year>, pooled across pathways, scaled to <pathway> (tier 2)".
+  - `method`: "Pooled Aalen–Johansen over all spells since 2015-01-01, any pathway including pathway unknown (earlier permit spells ran much faster); cause-specific hazards scaled by θ = (O+5)/(E+5) from <pathway> spells since 2015-01-01 (proportional hazards): advance θ=…, <reason> θ=…".
   - `n`: pooled spells. `method` also gives the pathway's 2015+ spells.
   - For `permitIssued` and `construction` the `method` also states "k completions without a construction start (no FCD) kept in incidence, durations from histories with an FCD (rule sc.stages.no-fcd-duration)", with the cell's X, A and w (ruling R13 and its guard, §4.4 step 1).
   - `window`: [Wₛ, asOf].
@@ -535,7 +537,7 @@ The **DA key** is `coalesce(prx_case_no, dva_record_id, da)`. Permits with a non
 1. **DA groups.** Every DA group with ≥ 2 phases contributes its gaps. The rung passes with ≥ `PHASE_MIN_GAPS` = 10 gaps in total (tier 4 threshold).
    - Tier 2.
    - `label`: "Gaps between phase permit filings in past SF Development Agreement projects (tier 2)".
-   - `method`: the group count, the gap count, the median and the IQR, and the sentence "window 1989-01-01 on, decoupled from the transition windows (2007-01-01 on, set by the first assessor roll): phase gaps use permit filing days only, not existing units".
+   - `method`: the group count, the gap count, the median and the IQR, and the sentence "window 1989-01-01 on, decoupled from the transition windows (2015-01-01 on): phase gaps use permit filing days only, not existing units".
    - `n`: the gap count; `window`: [1989-01-01, asOf].
 2. **Fallback, tier 2.** Group all rows by `project_id`, and keep projects with ≥ 2 qualifying permits (≥ 10 units, not superseded). These are large multi-building projects, DA or not. The same gap rule applies. `method` says "not DA-specific". The "≥ 2 qualifying permits per project" condition exists only on this rung.
 3. **Last resort.** `days = [730]`, **tier 4**, "made up: no multi-phase history found". This is expected only in fixture builds.
@@ -771,7 +773,7 @@ There are no DOM, e2e or axe tests, because this subsystem has no page and the r
 
 - **AC-1 ("if 10% die at stage z, ours do too").** For every Transition in the live and fixture calibrations, a seeded simulation of 100,000 entrants through `sampleTransition` recovers the table's cumulative incidence of advance and of each exit reason at every month, and the eventual shares, within 0.005 (V27). `calibration-small.json`'s `permitFiled` gives expired = 0.10 ± 0.005 by month 12.
 - **AC-2.** Censored, left-truncated synthetic histories recover a known truth within 0.02.
-- **AC-3 (DQ-1).** The report and provenance state the windows: Planning-side 2015-01-01; permit-side pooled from **2007-01-01** for `permitFiled`, `permitIssued` and `construction` alike, with pathway level from 2015. Permit-side provenance has `window` [2007-01-01, asOf], says "pooled across pathways before 2015", and names the first assessor roll as the reason for 2007. `report.json` has `calibration.window.preRoll`, and the report prints it. No Transition window starts before 2007-01-01.
+- **AC-3 (DQ-1, amended 2026-11-24).** The report and provenance state the windows: 2015-01-01 for every stage, pooled and pathway level. Permit-side provenance has `window` [2015-01-01, asOf]. `report.json` has `calibration.window.preRoll`, and the report prints it. No Transition window starts before 2015-01-01.
 - **AC-4.** Every parameter has a tier, label, method and source, plus n and window for tiers 0–2. The report indexes them all.
 - **AC-5.** The initiation back-cast total is within 2%. The report shows per-year values, the hold-out, the extrapolation share and the FZP expected filings.
 - **AC-6.** `calibration.json` is ≤ 256 KB and byte-identical across in-run repeats and fixture regenerations.
@@ -780,7 +782,7 @@ There are no DOM, e2e or axe tests, because this subsystem has no page and the r
 - **AC-9.** Every pathway × stage pair a project can occupy is present (V26). A live build warns for each rung-3 cell.
 - **AC-10 (IA-13).** The worker, renderer, card and pipeline V-check all import T12's functions, and fzp-mode takes every cumulative share it shows from `cumulativeIncidence`. A repo search finds no second implementation of the sampling, chance or cumulative-incidence logic. (The fzp-mode half is verified when fzp-mode lands; this subsystem's half is that V27 reads the table through `cumulativeIncidence`.)
 - **AC-12 (round 3, as amended by DQ-1 and IA-11).**
-  - Permit-side Transitions are θ-scaled pooled tables over [2007-01-01, asOf], and their provenance says "pooled across pathways before 2015".
+  - Permit-side Transitions are θ-scaled pooled tables over [2015-01-01, asOf] (amendment 2026-11-24).
   - Initiation is fitted over 2007–2025 with the detection basis stated as tier 2. A basis-"permit" event is dated by the raw first `filed_day` in `permits.parquet`, never by the clamped `entered.permitFiled`.
   - `phaseGap` has ≥ 10 DA gaps (tier 2) in a live build, or is labelled with its fallback tier. Its window is [1989-01-01, asOf], and its `method` says it is decoupled from the transition windows.
 - **AC-11 (deterministic math).**
