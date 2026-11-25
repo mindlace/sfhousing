@@ -11,7 +11,7 @@
       <li>The journeys: a new visitor paints to the room goal, starts, runs with "Collect for me", reads the tally, buys a node, runs again and takes the next goal; a keyboard-only player does the same with the ring; a player at the last rung reaches the ending.</li>
       <li>Every existing e2e spec made true to one address, no header steps, no levels, no Remix and the name "SF Housing".</li>
       <li>The reach check asks two questions on a built dataset: current law meets rung 0, and the full tree's document meets the last rung.</li>
-      <li>One bench case: a run on the citywide view with drops and a moving pointer, held to the map's pass bar.</li>
+      <li>Two bench cases: a run on the citywide view with drops and a moving pointer, held to the map's pass bar; and the wait from a purchase to the next run's forecast being ready, measured on a laptop.</li>
       <li>The game's developer document rewritten, and <code>CLAUDE.md</code>, <code>README.md</code> and the other current documents that carry the old name made true.</li>
       <li>The accessibility checklist run for the game's page in each of its states.</li>
     </ul>
@@ -688,7 +688,7 @@ interface TreeProps {
   units: Units;
   busy: boolean;
   next: Rung | null;
-  ending: { reachedOn: Day; perAddedHome: number | null } | null;
+  ending: { reachedOn: Day; stateBy: Day; perAddedHome: number | null } | null;
   onbuy(id: NodeId): void;
   onedit(id: NodeId): void;
   ontoggle(id: NodeId, on: boolean): void;
@@ -720,7 +720,7 @@ interface GameCellProps {
       <dl>
         <dt><code>before</code></dt><dd>Homes by the deadline in the run before this one on the same rung, or null.</dd>
         <dt><code>on</code></dt><dd>For each bought node whose grant made a policy: whether that policy is switched on. A node with no entry shows no switch.</dd>
-        <dt><code>ending</code></dt><dd>Set once the last rung is met: the day the goal was reached and public money per added home.</dd>
+        <dt><code>ending</code></dt><dd>Set once the last rung is met: the day the goal was reached, the day the state asks for the goal's homes by (<code>stateBy</code>, RHNA's deadline), and public money per added home.</dd>
         <dt><code>busy</code></dt><dd>The forecast for the next run is not ready. Run says so and waits.</dd>
         <dt><code>next</code></dt><dd>The rung on offer, when the rung in play is met.</dd>
         <dt><code>homes</code></dt><dd>Null before the first run of a rung: the headline then shows the goal alone.</dd>
@@ -943,7 +943,7 @@ export async function seedRunMs(page: Page, ms: number): Promise&lt;void&gt;;</c
             <tr><th scope="row">The tree</th><td><code>game-tree-pane</code>; <code>tree</code>; <code>tree-run</code> ("Run"); <code>tree-next</code>; <code>tree-busy</code></td><td><code>game-sim</code>, <code>tally-tree</code></td></tr>
             <tr><th scope="row">A node</th><td><code>[data-testid="tree-node"][data-node="&lt;id&gt;"]</code>; inside it <code>tree-node-open</code>, <code>tree-node-edit</code>, <code>tree-node-on</code></td><td><code>tally-tree</code></td></tr>
             <tr><th scope="row">The open node</th><td><code>tree-detail</code>; <code>tree-buy</code></td><td><code>tally-tree</code></td></tr>
-            <tr><th scope="row">The ending</th><td><code>tree-ending</code> (heading "Every goal met", "Reached in Mon YYYY"); <code>tree-publish</code> ("Publish")</td><td><code>tally-tree</code></td></tr>
+            <tr><th scope="row">The ending</th><td><code>tree-ending</code> (heading "Every goal met", "Reached in Mon YYYY", "The state asks by Mon YYYY"); <code>tree-publish</code> ("Publish")</td><td><code>tally-tree</code></td></tr>
             <tr><th scope="row">Back to the tree</th><td><code>game-back</code>, a header action ("Back to the tree")</td><td><code>game-sim</code></td></tr>
             <tr><th scope="row">The run waiting</th><td><code>run-waiting</code> (<code>RUN_BUSY</code>, "Getting the forecast ready")</td><td><code>game-sim</code>, <code>tally-tree</code></td></tr>
             <tr><th scope="row">The goal headline</th><td><code>goal-headline-button</code>; <code>side-goals</code></td><td><code>tally-tree</code></td></tr>
@@ -1068,7 +1068,7 @@ export async function openGamePanel(page: Page): Promise&lt;Locator&gt;;</code><
         <li><code>seedGoalAmount(page, 1)</code>; <code>seedRunMs(page, 2000)</code>; <code>gotoHydrated(page, '/')</code>; <code>waitPhase</code> <code>tree</code>. <code>tree-next</code> and <code>tree-ending</code> are absent.</li>
         <li>Press <code>tree-run</code>; <code>waitPhase</code> <code>tally</code>; press <code>tally-continue</code>; <code>waitPhase</code> <code>tree</code>.</li>
         <li><code>savedGame.state.met</code> holds rung <code>RUNGS - 1</code>.</li>
-        <li><code>tree-ending</code> contains "Every goal met" and matches <code>/Reached in [A-Z][a-z]{2} \d{4}/</code>, and lists the label of no node (nothing is bought). <code>tree-next</code> is absent.</li>
+        <li><code>tree-ending</code> contains "Every goal met" and matches <code>/Reached in [A-Z][a-z]{2} \d{4}/</code> and <code>/The state asks by [A-Z][a-z]{2} \d{4}/</code>, and lists the label of no node (nothing is bought). <code>tree-next</code> is absent.</li>
         <li>Press <code>tree-publish</code>: the publish dialog opens (<code>publishDialog(page)</code> visible).</li>
       </ol>
     </section>
@@ -1247,6 +1247,22 @@ Full tree by &lt;Mon YYYY&gt;: missed, &lt;homes&gt; homes, &lt;short&gt; short<
         <li>Before running, <code>lsof -nP -iTCP:4173 -sTCP:LISTEN</code>: a listener belongs to another session, so the agent waits and checks again, and never stops it.</li>
         <li>The result line goes under "Results" in <code>docs/dev/map-perf.md</code>, in a section of its own, and in the hand-back.</li>
       </ul>
+      <p>A second case in the same file, test "bench:map: purchase to ready", measures how long the next run's forecast takes after a purchase. The source model asks for this wait before pacing numbers are fixed, and the pacing clock of tree-catalogue's balance script counts none of it (<code>CLOCK.buyS</code>).</p>
+      <ol>
+        <li><code>seedGame(page, { phase: 'runs', runs: 1, units: { home: PRICES['stop-rail'][0] } })</code>, with <code>PRICES</code> read from <code>src/lib/game/catalogue/tuning.ts</code>; no goal amount and no run time are seeded.</li>
+        <li><code>page.goto('/')</code>; the map is ready; <code>waitFilled(page)</code>; <code>waitPhase</code> <code>tree</code>.</li>
+        <li>Open <code>stop-rail</code> with its <code>tree-node-open</code>. Take <code>t0</code> with <code>performance.now()</code> in the page and press <code>tree-buy</code>.</li>
+        <li>Wait until <code>tree-run</code> carries <code>aria-busy="true"</code>, then until it no longer does; take <code>t1</code> in the page at that moment, by a <code>MutationObserver</code> on <code>tree-run</code>'s attributes installed before the press.</li>
+        <li>The sample is <code>t1 - t0</code> in milliseconds. The case takes three samples, each from a fresh browser context, and reports their median.</li>
+      </ol>
+      <ul>
+        <li><code>stop-rail</code> is the node measured: it is shown at rung 0, and a zoning purchase is the slowest kind, since it builds a zoning view before the window is stepped again.</li>
+        <li>It prints one line: <code>bench:map case=buy-to-ready dataset=&lt;v&gt; node=stop-rail samples=&lt;ms&gt;,&lt;ms&gt;,&lt;ms&gt; median=&lt;ms&gt; buyS=&lt;CLOCK.buyS × 1000&gt;ms</code>, and pushes it as a <code>bench:map</code> annotation.</li>
+        <li>It has no pass bar and never fails on its number. When the median is above <code>CLOCK.buyS</code> seconds, the hand-back says so beside the line: the balance script's clock then understates the time a player spends between runs, and the owner decides whether to raise <code>CLOCK.buyS</code>.</li>
+        <li>It runs headed at 1280 by 800 on the laptop the agent runs on, under the same rules as the run case: the live dataset, a quiet machine, port 4173 left to its owner, deferred and said so in the hand-back otherwise. <code>SFH_BENCH_DATASET=&lt;v&gt; npm run bench:map -- -g "purchase to ready"</code>.</li>
+        <li>No phone is measured in this build. The phone's wait is the owner's to judge after playing the built game, as with <code>CLOCK</code> and <code>SHARE</code>.</li>
+        <li>The result line goes under "Results" in <code>docs/dev/map-perf.md</code>, in the run case's section, and in the hand-back.</li>
+      </ul>
     </section>
 
     <section id="sec-design-a11y">
@@ -1332,12 +1348,12 @@ Full tree by &lt;Mon YYYY&gt;: missed, &lt;homes&gt; homes, &lt;short&gt; short<
         <li>The timeline, simulation page, permitting timers and public money entries: "on <code>/sim</code>" becomes "on the simulation", and the sim-page entry names the game's phases, the run and the workshop as <code>docs/dev/sim-page.md</code> on the merged tree covers them.</li>
         <li><strong>The game (the page and its phases, the game's state, units, the tree, tuning, grants, limits and the runnable document, the ladder and side goals, a run, drops, the ring and sound, the screens and header parts, the store, saved games and storage, the open game, publishing, the e2e seams and journeys, the reach check)</strong> — <code>[docs/dev/game.md](docs/dev/game.md)</code>.</li>
         <li><strong>Testing (Vitest projects, <code>FakeR2Bucket</code>, Playwright, the game in tests, the reach check, fixture dataset)</strong>.</li>
-        <li><strong>Map performance (<code>npm run bench:map</code>: pan, timeline, simulation and run cases, pass bar, results, CI note)</strong>.</li>
+        <li><strong>Map performance (<code>npm run bench:map</code>: pan, timeline, simulation and run cases, the purchase-to-ready wait, pass bar, results, CI note)</strong>.</li>
         <li>The map-view interfaces, map stream, world score and world funding entries name what <code>city-net</code>, <code>map-run</code> and <code>money-wait</code> documented in those files.</li>
       </ul>
       <p>The commands table:</p>
       <ul>
-        <li><code>npm run bench:map</code>: "Headed GPU map benchmark: pan, timeline and run cases (p50/p95 frame time); see docs/dev/map-perf.md".</li>
+        <li><code>npm run bench:map</code>: "Headed GPU map benchmark: pan, timeline and run cases (p50/p95 frame time) and the purchase-to-ready wait; see docs/dev/map-perf.md".</li>
         <li>The row <code>npx tsx scripts/level2-check.ts &lt;datasetDir&gt;</code> becomes <code>npx tsx scripts/reach-check.ts &lt;datasetDir&gt;</code>: "Run current law to the first deadline and the full tree to the last on a built dataset (or <code>--version &lt;v&gt;</code> for a published one); exit 1 when either misses. Run before every dataset upload."</li>
         <li>A new row <code>npx tsx scripts/reach-measure.ts &lt;datasetDir&gt; [--write]</code>: "Measure the earliest year the full tree reaches the goal; <code>--write</code> sets <code>LADDER_YEARS</code>."</li>
         <li>A new row <code>npx tsx scripts/tree-balance.ts</code> with the usage line of the script's first comment: "Play the tree against the engine and report pacing against <code>catalogue/tuning.ts</code>."</li>
@@ -1405,7 +1421,7 @@ git grep -n -F '\/sim$' -- e2e</code></pre>
 npm run lint
 npm run test:unit
 npm run test:e2e
-npm run bench:map -- -g "run with drops"
+npm run bench:map -- -g "run with drops|purchase to ready"
 npx tsx scripts/reach-check.ts --version &lt;v&gt;</code></pre>
       <ul>
         <li>All run on the merged tree, in this order, in the foreground.</li>
@@ -1413,7 +1429,7 @@ npx tsx scripts/reach-check.ts --version &lt;v&gt;</code></pre>
         <li>A test that passes only on retry counts as a failure.</li>
         <li>The bench runs on a quiet machine, by the agent (<a href="#sec-design-bench">The run bench</a>), on the live dataset.</li>
         <li><code>scripts/docs-index.spec.ts</code> passes within <code>test:unit</code>.</li>
-        <li>Signoff is the conductor's, after the hand-back. The hand-back holds the reach check's lines, the bench line, the sweep's hits in other units' files, every selector or rule of another unit that the merged code did not meet, and the owner action for Google's app name.</li>
+        <li>Signoff is the conductor's, after the hand-back. The hand-back holds the reach check's lines, the two bench lines, the sweep's hits in other units' files, every selector or rule of another unit that the merged code did not meet, and the owner action for Google's app name.</li>
       </ul>
     </section>
   </section>
@@ -1444,7 +1460,7 @@ npx tsx scripts/reach-check.ts --version &lt;v&gt;</code></pre>
     <ul>
       <li>A new visitor paints to the room goal at amount 1, starts, runs with "Collect for me", collects every drop, gets the lump, buys the first ready node, opens the workshop and comes back, runs again and takes the next goal; the account holds the game at <code>phase</code> <code>'runs'</code>, <code>rung</code> 1.</li>
       <li>By keyboard only (chromium): one stamp, Start, at least one drop collected by sweeping the ring with the arrow keys, Continue, a purchase, the workshop and back, the next goal; every target shows its focus ring.</li>
-      <li>A game at the last rung meets it in one run, and the tree shows the ending with its year and a Publish that opens the publish dialog, and no next goal.</li>
+      <li>A game at the last rung meets it in one run, and the tree shows the ending with its year beside the state's and a Publish that opens the publish dialog, and no next goal.</li>
       <li>The game's page passes the accessibility checklist in each of the nine states of <a href="#tbl-a11y-states">the states table</a>.</li>
       <li>The target sweep passes on the tree and the tally at 375 px; the header fits with the game's widest strings at four widths.</li>
       <li>The game specs of <a href="#sec-design-game-specs">The game specs</a>.</li>
@@ -1459,7 +1475,7 @@ npx tsx scripts/reach-check.ts --version &lt;v&gt;</code></pre>
       <li><code>reachLines</code> gives four lines, the first two as specified.</li>
       <li>The argument refusals give exit 2 with the usage or the reason, and a directory with no manifest is refused.</li>
     </ul>
-    <p>Bench: the run case, by the agent on a quiet machine, p95 at most 16.7 ms on the live dataset.</p>
+    <p>Bench: the run case, by the agent on a quiet machine, p95 at most 16.7 ms on the live dataset; the purchase-to-ready case on the same machine and dataset, reported with no bar.</p>
   </section>
 
   <section id="sec-decisions">
@@ -1476,6 +1492,7 @@ npx tsx scripts/reach-check.ts --version &lt;v&gt;</code></pre>
       <li><strong>It takes a published version as well as a directory.</strong> <code>openEngine</code> already reads one, so this package's run needs no local build.</li>
       <li><strong>Exit 1 when either question misses.</strong> Either miss means the game cannot be finished on that dataset, which must block an upload as D1 does.</li>
       <li><strong>The bench case seeds no run time and no amount.</strong> It measures the run a player gets; the record is on the live dataset, because fixture-0 has too few drops to load a frame.</li>
+      <li><strong>The purchase-to-ready wait is measured on a laptop and reported, not barred.</strong> The source model asks for it before pacing numbers are fixed; a number with no target cannot fail a build, and the owner sets <code>CLOCK.buyS</code> from it. No phone is available to the agent.</li>
       <li><strong>The pointer path is a figure from the test, one move after another.</strong> Real input reaches the map and the run layer alike, and no timer paces it.</li>
       <li><strong>The reach check's documentation lives in <code>game.md</code>.</strong> The pipeline and deploy docs point there, so one place holds its lines and exits.</li>
       <li><strong><code>docs/lesscars/plan-v1.md</code> keeps the old name.</strong> Its line is a dated source record.</li>

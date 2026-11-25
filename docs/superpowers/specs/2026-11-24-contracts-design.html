@@ -672,7 +672,7 @@ interface TreeProps {
   units: Units;
   busy: boolean;
   next: Rung | null;
-  ending: { reachedOn: Day; perAddedHome: number | null } | null;
+  ending: { reachedOn: Day; stateBy: Day; perAddedHome: number | null } | null;
   onbuy(id: NodeId): void;
   onedit(id: NodeId): void;
   ontoggle(id: NodeId, on: boolean): void;
@@ -704,7 +704,7 @@ interface GameCellProps {
       <dl>
         <dt><code>before</code></dt><dd>Homes by the deadline in the run before this one on the same rung, or null.</dd>
         <dt><code>on</code></dt><dd>For each bought node whose grant made a policy: whether that policy is switched on. A node with no entry shows no switch.</dd>
-        <dt><code>ending</code></dt><dd>Set once the last rung is met: the day the goal was reached and public money per added home.</dd>
+        <dt><code>ending</code></dt><dd>Set once the last rung is met: the day the goal was reached, the day the state asks for the goal's homes by (<code>stateBy</code>, RHNA's deadline), and public money per added home.</dd>
         <dt><code>busy</code></dt><dd>The forecast for the next run is not ready. Run says so and waits.</dd>
         <dt><code>next</code></dt><dd>The rung on offer, when the rung in play is met.</dd>
         <dt><code>homes</code></dt><dd>Null before the first run of a rung: the headline then shows the goal alone.</dd>
@@ -792,7 +792,7 @@ interface GameCellProps {
         <li>The stop types are <code>regionalRail</code>, <code>metro</code>, <code>rapidBus</code> and <code>frequentBus</code> (<code>STOP_TYPES</code>, <code>src/lib/sim/levers/brushes.ts:13</code>).</li>
         <li>A transit rule has at most 3 bands (<code>MAX_BANDS</code>, <code>src/lib/sim-page/transit-edit.ts:19</code>), reaching at most 3,219 m (<code>BAND_MAX_M</code>, <code>:21</code>).</li>
         <li>The tallest band is 80 stories (<code>STORIES_MAX</code>, <code>src/lib/plan/constants.ts:4</code>).</li>
-        <li>The funding presets <code>state-off</code> and <code>federal-credits-off</code> exist (<code>src/lib/sim-page/funding-presets.ts:417</code>, <code>:478</code>). Every funding preset is made from the calibration by <code>fundingPresets(cal)</code> (<code>:130</code>); there is no static list of their ids.</li>
+        <li>The funding presets <code>state-off</code> and <code>federal-credits-off</code> exist (<code>src/lib/sim-page/funding-presets.ts:417</code>, <code>:478</code>). Every funding preset is made from the calibration by <code>fundingPresets(cal)</code> (<code>:130</code>); the eleven preset ids are written there as string literals (<code>:289-487</code>), and no exported constant lists them.</li>
         <li><code>defaultGoal(asOf)</code> is at <code>src/lib/goal/goal.ts:63</code>.</li>
       </ul>
     </section>
@@ -841,7 +841,7 @@ interface GameCellProps {
         <li><code>state.ts</code> and <code>save-shape.ts</code> import nothing through <code>$lib</code> at run time: a <code>$lib</code> import is a type import, and a value import is relative. The e2e helper can then load them by relative path.</li>
         <li>Every type that the props of <code>RunLayer</code>, <code>Tally</code>, <code>Tree</code> and <code>GoalHeadline</code> name exists in a stub: <code>RunFeed</code>, <code>Hands</code>, <code>Sound</code>, <code>RunTake</code>, <code>RunResult</code>, <code>NodeView</code>, <code>NodeId</code>, <code>Units</code>, <code>Rung</code> and <code>SideGoal</code>. <code>Day</code> is the existing one.</li>
         <li>No stub imports a five-level file, so <code>game-save</code> can delete those files without touching a stub.</li>
-        <li>No constant is frozen. Nothing may change a constant's contents.</li>
+        <li>No stub constant is frozen. Nothing may change a constant's contents. game-core freezes the constants it makes real (<code>NEW_GAME</code>, <code>BASE_HANDS</code>, <code>FREE_MEASURES</code>, <code>OPEN_LIMITS</code>, <code>SIDE_GOALS</code>) when it writes their bodies.</li>
         <li>Each file opens with one comment line naming its row and the unit that makes it real.</li>
       </ul>
     </section>
@@ -891,7 +891,7 @@ interface GameCellProps {
         <p><code>OPEN_LIMITS</code> is the open game's limits (call 9). <code>open</code> is true, and G4 makes <code>within</code> true for every policy when <code>open</code> is true, so the other fields describe the widest game rather than gate anything.</p>
         <ul>
           <li><code>presets</code>: the five permitting preset ids of <code>PRESETS</code>, written as literals.</li>
-          <li><code>measures</code>: empty. Funding preset ids exist only once a calibration is loaded, so no static list can hold them.</li>
+          <li><code>measures</code>: empty in the stub. game-core fills it with every funding preset id, from its own list <code>FUNDING_PRESET_IDS</code> in <code>limits.ts</code>.</li>
           <li><code>stops</code>: the four stop types of <code>STOP_TYPES</code>, written as literals.</li>
           <li><code>bands</code> 3, <code>stories</code> 80, <code>reachM</code> 3219: the values of <code>MAX_BANDS</code>, <code>STORIES_MAX</code> and <code>BAND_MAX_M</code>, written as literals.</li>
           <li><code>custom</code>: true.</li>
@@ -1093,8 +1093,8 @@ export const FREE_MEASURES: readonly string[] = ['state-off', 'federal-credits-o
 
 // presets: every PRESETS id (sim-page/timing.ts); stops: STOP_TYPES (sim/levers/brushes.ts);
 // bands: MAX_BANDS, reachM: BAND_MAX_M (sim-page/transit-edit.ts); stories: STORIES_MAX
-// (plan/constants.ts). Funding preset ids are made from the calibration, so `measures` is
-// empty: `open` lets every money policy through.
+// (plan/constants.ts). `measures` is empty in the stub; game-core fills it with every funding
+// preset id. `open` lets every money policy through either way.
 export const OPEN_LIMITS: Limits = {
   open: true,
   presets: new Set&lt;string&gt;([
@@ -1542,10 +1542,10 @@ npm run test:unit</code></pre>
       <li><strong>Stub parameters carry <code>_</code>.</strong> ESLint refuses unused parameters otherwise, and a parameter's name is not part of the type.</li>
       <li><strong><code>isGiven</code> throws.</strong> The design says every function throws, and the stub must not import <code>allowed.ts</code>, which <code>game-save</code> deletes.</li>
       <li><strong><code>OPEN_LIMITS</code> uses literals tied by a test.</strong> It keeps <code>limits.ts</code> free of value imports from the editors, while a drift in any source fails a test.</li>
-      <li><strong><code>OPEN_LIMITS.measures</code> is empty.</strong> Funding preset ids exist only with a calibration, and <code>open</code> already lets every money policy through.</li>
+      <li><strong><code>OPEN_LIMITS.measures</code> is empty in the stub.</strong> <code>open</code> already lets every money policy through, so the stub needs no list; game-core's body fills it with every funding preset id, so a consumer that forgets to test <code>open</code> still shows every measure.</li>
       <li><strong><code>OPEN_LIMITS.hands</code> is <code>BASE_HANDS</code>.</strong> The open game has no runs, so the base values are as good as any and invent nothing.</li>
       <li><strong><code>NEW_GAME.units</code> is <code>{}</code>.</strong> G2 reads a missing kind as 0, so an empty balance needs no entry.</li>
-      <li><strong>No constant is frozen.</strong> Freezing would change how a mistaken write fails, which is the owner's call; the contract's types are kept as written.</li>
+      <li><strong>No stub constant is frozen.</strong> Freezing changes how a mistaken write fails, which is the owner's call; game-core, the owner, freezes the constants it makes real. The contract's types are kept as written.</li>
       <li><strong>An absent <code>existing</code> reads as 0.</strong> It matches "a row whose marker has not begun carries 0" (E1).</li>
       <li><strong>Stubs leave out imports their bodies do not use.</strong> <code>Hands</code> and <code>RunTake</code> in <code>drops.ts</code>, <code>Units</code> and <code>RUNG_LUMP</code> in <code>ladder.ts</code>, and <code>SIDE_TUNING</code> in <code>side-goals.ts</code> would fail ESLint as unused.</li>
     </ul>
