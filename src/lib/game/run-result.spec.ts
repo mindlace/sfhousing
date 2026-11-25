@@ -8,10 +8,12 @@ import {
   resultOf,
   settle,
   type RunReading,
-  type RunResult
+  type RunResult,
+  type RunTake
 } from './run-result';
-import type { RunTake } from './run-result';
+import { parseGameSave, type GameSave } from './save-shape';
 import { NEW_GAME, type GameState, type MetRung } from './state';
+import { newId } from '$lib/ids/base58';
 
 const TUNING = vi.hoisted(() => ({
   'policy-homes-1': { target: 1000, reward: { home: 500 } },
@@ -226,6 +228,33 @@ describe('settle', () => {
     const out = settle(state({ rung: 1 }), result());
     expect(out.met.map((m) => m.rung)).toEqual([0]);
     expect(out.rung).toBe(1);
+  });
+
+  it('survives a save round trip', () => {
+    const at = '2026-06-01T00:00:00.000Z';
+    const stages = {
+      preApplication: 1,
+      filed: 2,
+      entitled: 3,
+      permitFiled: 4,
+      permitIssued: 5,
+      construction: 6
+    };
+    const r = result({ at, stages });
+    const s = state({ phase: 'runs', firstWinAt: at, bought: { n: 1 }, units: { home: 100 } });
+    const save: GameSave = {
+      v: 2,
+      id: newId(),
+      name: 'Game',
+      nameIsDefault: true,
+      state: settle(s, r),
+      plan: null,
+      policy: null,
+      savedAt: at
+    };
+    const parsed = parseGameSave(JSON.parse(JSON.stringify(save)));
+    expect(parsed).not.toBeNull();
+    expect(parsed).toEqual(save);
   });
 
   it('does not throw on frozen inputs', () => {

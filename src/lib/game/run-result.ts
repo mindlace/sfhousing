@@ -1,4 +1,4 @@
-// G6 (contracts stub): a run's reading, take and result, and settling. game-core makes it real.
+// G6: a run's reading, take and result, and settling a result into the game state.
 import { utcParts } from '$lib/fzp/time';
 import { readGoal, type Goal } from '$lib/goal/goal';
 import type { TimelineView } from '$lib/sim/world/score/types';
