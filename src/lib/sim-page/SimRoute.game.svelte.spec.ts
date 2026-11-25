@@ -6,15 +6,24 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { tick } from 'svelte';
 import { render } from 'vitest-browser-svelte';
-import { page, userEvent } from 'vitest/browser';
+import { cdp, page, userEvent } from 'vitest/browser';
 import type { AfterNavigate } from '@sveltejs/kit';
+import axe from 'axe-core';
 import '../../routes/layout.css';
 import { parseManifest } from '$lib/data/manifest';
+import { RUN_MS, runRate } from '$lib/fzp/playback';
 import { fixtureCalibration } from '$lib/fzp/fixtures/calibration';
-import { stub } from '$lib/fzp/test/sim-map-stub';
+import { callsOf, stub } from '$lib/fzp/test/sim-map-stub';
 import { dayFromUtc, utcParts } from '$lib/fzp/time';
 import { NODES } from '$lib/game/catalogue/nodes';
-import { RUNGS } from '$lib/game/ladder';
+import { RUNGS, goalAt } from '$lib/game/ladder';
+import { MUTED_KEY, writeCollectForMe, writeMuted } from '$lib/game/run/prefs';
+import { LIMITS_LAYER_ID } from '$lib/map/height/limits-layer';
+import { LID_MAX_SPAN_M } from '$lib/map/height/lids';
+import { tinyLimits } from '$lib/map/height/test/fixtures';
+import { E2E_RUN_MS_KEY } from '$lib/sim-page/e2e-run';
+import { clampBbox } from '$lib/sim-page/lid-request';
+import { runLayer } from '$lib/timeline/test/run-layer-stub';
 import type { MetRung } from '$lib/game/state';
 import { openGame, type GameStore } from '$lib/game/store.svelte';
 import type { TreeNode } from '$lib/game/tree';
@@ -64,6 +73,41 @@ vi.mock('$lib/sim-page/funding-drafts.svelte', async (orig) => {
   return { ...mod, FundingDrafts: Recorded };
 });
 
+/** Each sound the page made, with the `muted` it was given; every sound a recorder. */
+const sounds = vi.hoisted(
+  () =>
+    [] as {
+      muted: () => boolean;
+      sound: Record<'pop' | 'collect' | 'goal' | 'buy', ReturnType<typeof vi.fn>>;
+    }[]
+);
+vi.mock('$lib/game/run/sound', async (orig) => ({
+  ...(await orig<typeof import('$lib/game/run/sound')>()),
+  createSound: (muted: () => boolean) => {
+    const sound = { pop: vi.fn(), collect: vi.fn(), goal: vi.fn(), buy: vi.fn() };
+    sounds.push({ muted, sound });
+    return sound;
+  }
+}));
+/** Each remover `onPrefs` handed out, as a spy over the real one. */
+const prefOffs = vi.hoisted(() => [] as ReturnType<typeof vi.fn>[]);
+vi.mock('$lib/game/run/prefs', async (orig) => {
+  const mod = await orig<typeof import('$lib/game/run/prefs')>();
+  return {
+    ...mod,
+    onPrefs: (fn: () => void) => {
+      const off = vi.fn(mod.onPrefs(fn));
+      prefOffs.push(off);
+      return off;
+    }
+  };
+});
+// A passthrough spy: the run's rate as TimelineMode computes it for RunClock.
+vi.mock('$lib/fzp/playback', async (orig) => {
+  const mod = await orig<typeof import('$lib/fzp/playback')>();
+  return { ...mod, runRate: vi.fn(mod.runRate) };
+});
+vi.mock('$lib/game/run/RunLayer.svelte', () => import('$lib/timeline/test/RunLayerStub.svelte'));
 vi.mock('$lib/map/SimMap.svelte', () => import('$lib/fzp/test/FzpSimMapStub.svelte'));
 vi.mock('$lib/sim/client', async (orig) => {
   const { FakeTimelineWorker } = await import('$lib/timeline/test/fake-timeline-worker');
@@ -196,6 +240,9 @@ async function addClock() {
 beforeEach(async () => {
   workers.length = 0;
   madeDrafts.length = 0;
+  sounds.length = 0;
+  prefOffs.length = 0;
+  runLayer.reset();
   stub.reset();
   vi.stubEnv('VITE_E2E', '1');
   await page.viewport(1280, 900);
@@ -517,23 +564,55 @@ describe('SimRoute in a game: the tree', () => {
     await expect.element(undoButton()).toBeDisabled();
   });
 
-  it('a refused buy changes neither', async () => {
+  it('a buy plays the buy sound once, after the document is written', async () => {
     const mem = new MemoryStorage();
-    const game = gameWith({ phase: 'runs', runs: 1, units: { home: 0 } }, { storage: mem });
+    const game = rich(mem);
     await opened(game, mem);
     await expect.element(saveState()).toHaveAttribute('data-save-status', 'saved');
-    const node = await firstNode('short');
+    const node = await firstNode('ready');
+    expect(sounds).toHaveLength(1);
+    const { sound } = sounds[0];
+    let storedAtSound: SimPolicy4 | null = null;
+    sound.buy.mockImplementation(() => (storedAtSound = storedPolicy(mem)));
+    await pressBuy(node);
+    await expect.poll(presets).toEqual([presetOf(node)]);
+    expect(sound.buy).toHaveBeenCalledTimes(1);
+    // The sound comes after leave(): the record already holds the purchase.
+    expect(storedAtSound).not.toBeNull();
+    expect(storedAtSound!.kinds.permitting.map((p) => p.preset)).toEqual([presetOf(node)]);
+    for (const other of ['pop', 'collect', 'goal'] as const) expect(sound[other]).not.toBeCalled();
+  });
+
+  it('a buy the store refuses changes nothing and plays no sound', async () => {
+    stubTouchLaptop();
+    const mem = new MemoryStorage();
+    const game = rich(mem);
+    await opened(game, mem);
+    await expect.element(saveState()).toHaveAttribute('data-save-status', 'saved');
+    // A ready node, so Tree calls the page's buy; the store refuses it.
+    const node = await firstNode('ready');
+    const refuse = vi.spyOn(game, 'buy').mockReturnValue({ ok: false, reason: 'short' });
     const policy = debug().policy;
     const record = mem.getItem(SIM_KEY4);
+    await expect.element(undoButton()).toBeDisabled();
     await pressBuy(node);
     await tick();
+    expect(refuse).toHaveBeenCalledTimes(1);
+    expect(refuse).toHaveBeenCalledWith(node.id);
     expect(game.state.bought).toEqual({});
-    expect(game.state.units).toEqual({ home: 0 });
     expect(debug().policy).toBe(policy);
     expect(mem.getItem(SIM_KEY4)).toBe(record);
     expect(saveState().element().getAttribute('data-save-status')).toBe('saved');
+    // No undo step.
+    await expect.element(undoButton()).toBeDisabled();
+    await expect
+      .element(undoButton())
+      .not.toHaveAccessibleName(historyName('undo', boughtLabel(node, 1)));
+    // Nothing said, in the page's status or the tree's.
     expect(page.getByText(boughtLabel(node, 1), { exact: true }).elements()).toHaveLength(0);
     expect(page.getByTestId('tree-live').element().textContent).toBe('');
+    expect(sounds).toHaveLength(1);
+    expect(sounds[0].sound.buy).not.toBeCalled();
   });
 
   it('Undo after a buy removes the policy and leaves the node bought', async () => {
@@ -571,6 +650,14 @@ describe('SimRoute in a game: the tree', () => {
       .element(undoButton())
       .toHaveAccessibleName(historyName('undo', restoredLabel(node)));
     expect(game.state.bought[node.id]).toBe(1);
+    // At 1280 px the selected policy's kind ends open (its row mounts a tick after Edit).
+    await expect
+      .poll(() =>
+        document
+          .querySelector('[data-testid="tl-kind-permitting"] button.toggle')
+          ?.getAttribute('aria-expanded')
+      )
+      .toBe('true');
   });
 
   it('the tree\'s switch switches its policy as one undo step "Switched off: {label}"; the Inspector\'s switch still works', async () => {
@@ -699,5 +786,199 @@ describe('SimRoute in a game: the tree', () => {
     await toWorkshop();
     expect(page.getByTestId('inspector').elements()).toHaveLength(0);
     expect(presets()).toEqual([presetOf(node)]);
+  });
+});
+
+// ---- around a run: prefs, sound, the run seam, the guards (game-sim #sec-design-props,
+// #sec-design-seam, #sec-design-run, #sec-design-states) ----
+
+/** A game with no run settled: the page lands in starting. */
+const first = (mem: Storage) => gameWith({ phase: 'runs', runs: 0 }, { storage: mem });
+/** The page has had its map: TimelineMode's onMapReady (which ends in the page's) has run. */
+const mapReady = () => expect.poll(() => callsOf('setBarMode').length).toBeGreaterThan(0);
+const overlayIds = () =>
+  ((callsOf('setOverlayLayers').at(-1)?.[0] ?? []) as { id: string }[]).map((l) => l.id);
+/** The map moved to `zoom` (the stub's bounds) and its `moveend` fired. */
+function moveTo(zoom: number): void {
+  stub.map.zoom = zoom;
+  stub.map.fire('moveend');
+}
+async function scheme(value: 'light' | 'dark'): Promise<void> {
+  await cdp().send('Emulation.setEmulatedMedia', {
+    features: [{ name: 'prefers-color-scheme', value }]
+  });
+}
+const violations = async (el: Element) => (await axe.run(el)).violations;
+
+describe('SimRoute in a game: around a run', () => {
+  it('the view follower keeps the pre-run view during a run and reads the view after it', async () => {
+    const mem = new MemoryStorage();
+    mem.setItem(E2E_RUN_MS_KEY, '1000');
+    mount(first(mem), mem);
+    await expect.poll(() => w()?.lastOf('openTimeline')).toBeTruthy();
+    await mapReady();
+    expect(phaseNow()).toBe('starting');
+    w().emit(compiledMsg(1, LONG));
+    const { city } = tinyLimits();
+    w().emit({ type: 'heights', rev: 1, city: { ...city, rev: 1 } });
+    // A move in starting: the view stays as it was (none before the run), so no lids are asked.
+    moveTo(15);
+    await tick();
+    await tick();
+    expect(w().all('heightLids')).toHaveLength(0);
+
+    w().emit(filledMsg(1, 0, LONG.lastIndex + 1));
+    await expect.poll(phaseNow).toBe('run');
+    moveTo(15.2);
+    await tick();
+    expect(w().all('heightLids')).toHaveLength(0);
+    expect(overlayIds()).not.toContain(LIMITS_LAYER_ID);
+
+    await expect.poll(phaseNow).toBe('tally');
+    moveTo(15.4);
+    await tick();
+    expect(w().all('heightLids')).toHaveLength(0);
+    // The limits slot holds no layers in the run view.
+    expect(overlayIds()).not.toContain(LIMITS_LAYER_ID);
+
+    await page.getByTestId('tally-continue').click();
+    await expect.poll(phaseNow).toBe('tree');
+    // The unlock's moveend (the remembered camera) is read as usual.
+    stub.map.bounds = [-122.44, 37.75, -122.43, 37.76];
+    moveTo(15);
+    await expect.poll(() => w().all('heightLids').length).toBe(1);
+    const c = stub.map.getCenter();
+    expect(w().lastOf('heightLids')!.bbox).toEqual(
+      clampBbox(stub.map.bounds, LID_MAX_SPAN_M, [c.lng, c.lat])
+    );
+    await expect.poll(overlayIds).toContain(LIMITS_LAYER_ID);
+  });
+
+  it('Undo and Redo do nothing in a run; no HistoryButtons', async () => {
+    stubTouchLaptop();
+    const mem = new MemoryStorage();
+    const game = rich(mem);
+    const a = await bought(mem, game);
+    // A switch off, then Undo: both an undo (the buy) and a redo (the switch) are there to take.
+    const on = () => debug().policy.kinds.permitting[0].on;
+    await page.getByRole('switch', { name: switchName(a.label), exact: true }).click();
+    await expect.poll(on).toBe(false);
+    await undoButton().click();
+    await expect.poll(on).toBe(true);
+    const redoButton = () =>
+      page.getByTestId('header-actions').getByRole('button', { name: /^Redo/ });
+    await expect.element(undoButton()).toBeEnabled();
+    await expect.element(redoButton()).toBeEnabled();
+
+    await page.getByTestId('tree-run').click();
+    await expect.poll(phaseNow).toBe('starting');
+    const history = () =>
+      page
+        .getByTestId('header-actions')
+        .getByRole('button', { name: /^(Undo|Redo)/ })
+        .elements();
+    expect(history()).toHaveLength(0);
+    await expect.element(publish()).toBeVisible();
+    const policy = debug().policy;
+    (document.activeElement as HTMLElement | null)?.blur();
+    await userEvent.keyboard('{Control>}z{/Control}');
+    await tick();
+    expect(debug().policy).toBe(policy);
+    await userEvent.keyboard('{Control>}{Shift>}z{/Shift}{/Control}');
+    await tick();
+    expect(debug().policy).toBe(policy);
+    expect(presets()).toEqual([presetOf(a)]);
+    expect(on()).toBe(true);
+    expect(phaseNow()).toBe('starting');
+    expect(history()).toHaveLength(0);
+  });
+
+  it('collectForMe follows a write in this page', async () => {
+    const mem = new MemoryStorage();
+    // Read on mount.
+    writeCollectForMe(mem, true);
+    const r = await mount(first(mem), mem);
+    await expect.poll(() => runLayer.props?.collectForMe).toBe(true);
+    // Read again on each write.
+    writeCollectForMe(mem, false);
+    await expect.poll(() => runLayer.props!.collectForMe).toBe(false);
+    writeCollectForMe(mem, true);
+    await expect.poll(() => runLayer.props!.collectForMe).toBe(true);
+    // One subscription, removed on unmount.
+    expect(prefOffs).toHaveLength(1);
+    expect(prefOffs[0]).not.toBeCalled();
+    r.unmount();
+    expect(prefOffs[0]).toHaveBeenCalledTimes(1);
+  });
+
+  it('the page makes one sound, muted as the stored pref says, and hands it to the run', async () => {
+    const mem = new MemoryStorage();
+    writeMuted(mem, true);
+    mount(first(mem), mem);
+    await expect.poll(() => runLayer.props?.sound).toBeDefined();
+    expect(sounds).toHaveLength(1);
+    expect(runLayer.props!.sound).toBe(sounds[0].sound);
+    expect(sounds[0].muted()).toBe(true);
+    writeMuted(mem, false);
+    expect(sounds[0].muted()).toBe(false);
+    // `muted` reads the page's variable, never storage: a write that tells no one is not seen.
+    mem.setItem(MUTED_KEY, '1');
+    expect(sounds[0].muted()).toBe(false);
+    expect(sounds).toHaveLength(1);
+  });
+
+  it('runMs comes from the e2e seam', async () => {
+    const rate = vi.mocked(runRate);
+    const stop = goalAt(asOf, 0).deadline;
+    const mem = new MemoryStorage();
+    mem.setItem(E2E_RUN_MS_KEY, '300');
+    rate.mockClear();
+    const r = await mount(first(mem), mem);
+    await expect.poll(() => w()?.lastOf('openTimeline')).toBeTruthy();
+    // Filled: the run starts and RunClock reads its rate.
+    w().emit(compiledMsg(1, LONG));
+    w().emit(filledMsg(1, 0, LONG.lastIndex + 1));
+    await expect.poll(phaseNow).not.toBe('starting');
+    await expect.poll(() => rate.mock.calls.at(-1)).toEqual([asOf, stop, 300]);
+    expect(rate.mock.results.at(-1)!.value).toBe(runRate(asOf, stop, 300));
+    r.unmount();
+
+    // Not an e2e build: the stored value is ignored.
+    vi.stubEnv('VITE_E2E', '0');
+    const mem2 = new MemoryStorage();
+    mem2.setItem(E2E_RUN_MS_KEY, '300');
+    const before = workers.length;
+    rate.mockClear();
+    const r2 = await mount(first(mem2), mem2);
+    await expect.poll(() => workers.length).toBeGreaterThan(before);
+    await expect.poll(() => w().lastOf('openTimeline')).toBeTruthy();
+    const rev = w().lastOf('openTimeline')!.rev;
+    w().emit(compiledMsg(rev, LONG));
+    w().emit(filledMsg(rev, 0, LONG.lastIndex + 1));
+    await expect.poll(phaseNow).toBe('run');
+    await expect.poll(() => rate.mock.calls.at(-1)).toEqual([asOf, stop, RUN_MS]);
+    r2.unmount();
+  });
+
+  it('new controls pass axe in light and dark', async () => {
+    const mem = new MemoryStorage();
+    const game = rich(mem, { [HANDS.id]: 1 });
+    await opened(game, mem);
+    await expect.element(page.getByTestId('tree')).toBeVisible();
+    try {
+      for (const s of ['light', 'dark'] as const) {
+        await scheme(s);
+        expect(await violations(page.getByTestId('game-tree-pane').element())).toEqual([]);
+        expect(await violations(page.getByTestId('header-actions').element())).toEqual([]);
+      }
+      await toWorkshop();
+      await expect.element(page.getByTestId('game-back')).toBeVisible();
+      for (const s of ['light', 'dark'] as const) {
+        await scheme(s);
+        expect(await violations(page.getByTestId('header-actions').element())).toEqual([]);
+      }
+    } finally {
+      await scheme('light');
+    }
   });
 });

@@ -32,8 +32,11 @@
   import { BrushState } from '$lib/brush/state.svelte';
   import type { Manifest } from '$lib/data/manifest';
   import type { ParcelId } from '$lib/data/parcel';
+  import { RUN_MS } from '$lib/fzp/playback';
   import { NODES } from '$lib/game/catalogue/nodes';
   import { e2eGoalAmount } from '$lib/game/e2e';
+  import { onPrefs, readCollectForMe, readMuted } from '$lib/game/run/prefs';
+  import { createSound } from '$lib/game/run/sound';
   import { applyGrant } from '$lib/game/grant';
   import { ladder, RUNGS, type Rung } from '$lib/game/ladder';
   import { OPEN_LIMITS, runnable, within, type Limits } from '$lib/game/limits';
@@ -100,11 +103,12 @@
   import { ERASE_HINT, SimBrushTools, brushToolOf, type SimTool } from './brush-tools.svelte';
   import { simPaintRows } from './brush-summary';
   import { installSimDebug } from './debug';
+  import { e2eRunMs } from './e2e-run';
   import { PaintFeedback, lotsInView } from './feedback';
   import { DRAFT_DISCARDED, fundingNotices, limitAlert } from './funding-copy';
   import { FundingDrafts } from './funding-drafts.svelte';
   import { nodeRefs, nodeSwitches, restoreNode, switchNodeDoc } from './game-levers';
-  import { landing, nextPhase, type GamePhase, type PhaseEvent } from './game-phase';
+  import { RUN_VIEW, landing, nextPhase, type GamePhase, type PhaseEvent } from './game-phase';
   import { LidRequest, clampBbox } from './lid-request';
   import { OutlineRequest } from './outline-request';
   import { customQuery, paintedLots, queryKey, type Lots } from './policy';
@@ -229,6 +233,22 @@
   });
   /** The goal's amount over the default (X1's seam), read once. */
   const goalAmount = untrack(() => e2eGoalAmount(storage()));
+  /** The run's wall time: the e2e seam's, else `RUN_MS`; read once. */
+  const runMs = untrack(() => e2eRunMs(storage()) ?? RUN_MS);
+
+  // ---- the run's prefs and sound (game-sim #sec-design-props) ----
+
+  /** Muted, as the prefs last said: read on mount and on each `onPrefs`, never per sound. */
+  let muted = untrack(() => readMuted(storage()));
+  /** "Collect for me", as the prefs last said: read on mount and on each `onPrefs`. */
+  let collectForMe = $state(untrack(() => readCollectForMe(storage())));
+  const sound = createSound(() => muted);
+
+  function readPrefs(): void {
+    const s = storage();
+    muted = readMuted(s);
+    collectForMe = readCollectForMe(s);
+  }
 
   /** The scenario client's requests; null before the session opens, after a crash and unmount. */
   let api: TimelineClientApi | null = null;
@@ -607,6 +627,7 @@
     const ctx = { cal, limits: game.limits };
     store.apply((d) => applyGrant(d, r.grant, ctx), label);
     leave(); // the autosave writes the document now
+    sound.buy();
     brush.announce(label, ANNOUNCE_MS);
   }
 
@@ -822,11 +843,16 @@
     });
   });
 
+  /** Starting, run or tally: the map is in its run view, and Undo and Redo do nothing. */
+  const inRunView = $derived(phase !== null && RUN_VIEW.has(phase));
+
   function undo(): void {
+    if (inRunView) return;
     if (controller) controller.undo();
     else adapter.editor.undo();
   }
   function redo(): void {
+    if (inRunView) return;
     if (controller) controller.redo();
     else adapter.editor.redo();
   }
@@ -835,10 +861,10 @@
    * Ctrl+Z and Ctrl+Shift+Z before the brush controller attaches (the map is loading, or never
    * comes without WebGL): the page undoes and redoes itself. Once attached, the controller's own
    * window listener takes the keys and this one does nothing. Typing in a field and a modal
-   * dialog keep their keys (`actionForKey`).
+   * dialog keep their keys (`actionForKey`). In starting, run and tally it does nothing.
    */
   function onWindowKey(e: KeyboardEvent): void {
-    if (controller || readonly || e.defaultPrevented) return;
+    if (inRunView || controller || readonly || e.defaultPrevented) return;
     const a = actionForKey(
       {
         key: e.key,
@@ -911,9 +937,13 @@
   } | null>(null);
   let viewMap: ControllerMap | null = null;
 
+  /**
+   * In the run view the view stays as it was before the run (the lock's `moveend` reports the
+   * whole city); the unlock's `moveend`, after the phase leaves it, is read as usual.
+   */
   function readView(): void {
     const m = viewMap;
-    if (!m) return;
+    if (!m || inRunView) return;
     const b = m.getBounds();
     const c = m.getCenter();
     mapView = {
@@ -963,8 +993,9 @@
     const M = limitsModule;
     if (!o) return;
     const c = city;
+    // No limits in the run view (call 19).
     const layers =
-      M && c && limitsOn
+      M && c && limitsOn && !inRunView
         ? [M.heightLimitsLayer({ city: c, lids, mode: limitsMode, theme: systemTheme.current })]
         : [];
     untrack(() => o.slot('limits')(layers));
@@ -1200,6 +1231,9 @@
     if (autosave) detach = autosave.attach();
     // Before the game changes, the document still waiting is written to its record (G2).
     const offLeave = game?.beforeLeave(leave) ?? null;
+    // The run's prefs: read now and again on each change (the game panel's, R1).
+    readPrefs();
+    const offPrefs = onPrefs(readPrefs);
     import('@deck.gl/layers').then(
       (mod) => {
         if (dead) return;
@@ -1220,6 +1254,7 @@
       dead = true;
       uninstall();
       offLeave?.();
+      offPrefs();
       detach?.();
       strokePreview.reset();
       viewMap?.off('moveend', readView);
@@ -1250,7 +1285,7 @@
     >
   {/if}
   {#if !readonly}
-    {#if pointer.touch}
+    {#if pointer.touch && !inRunView}
       <HistoryButtons
         canUndo={store.canUndo}
         canRedo={store.canRedo}
@@ -1376,6 +1411,9 @@
   phase={phase ?? undefined}
   onphase={phase === null ? undefined : toPhase}
   tree={phase === null ? undefined : treePart}
+  {sound}
+  {collectForMe}
+  {runMs}
   {goalAmount}
   lots={sync.lots}
   lotsFailed={sync.lots === null && !sync.pending && sync.failed.length > 0}
