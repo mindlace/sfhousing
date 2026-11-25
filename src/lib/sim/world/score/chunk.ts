@@ -18,8 +18,8 @@ export function chunkOf(
       throw new Error(`world-score: month ${through} is not final (${s.finalThrough()})`);
     }
   }
-  // The plan world's money, tiers and waiting (rule 9); read first, so a series without extras throws
-  // before any work.
+  // The plan world's money, tiers and waiting (rule 9); read first, so a series without extras
+  // throws before any work.
   const extras = money === null ? null : extrasOf(plan);
   const moneyRows = extras === null ? null : moneyRowsOf(money!, extras, from, through);
   const tiers = extras === null ? null : extras.tiers(from, through);
