@@ -47,6 +47,40 @@ MapLibre's `AttributionControl` with `compact: true` at every width and `customA
 
 The same host rule moves MapLibre's bottom-left container (`.maplibregl-ctrl-bottom-left`: zoom and compass, fine pointers only) to `left: var(--dock-w)`, so the dock never covers it (WCAG 2.2 2.4.11). Below 768 px the phone sheet's height is added to the map's bottom inset (`setBottomInset`, through TimelineMode's `bottomExtra`; on `/` and `/p/:id`, BrushEditor's inset is the sheet's height alone: nothing sits under the sheet there, since the score is in the header, so `--fzp-scrubber-h` is unset and reads as 0), so both bottom containers, and `--map-controls-br-block-size`, sit above the sheet's handle. While the phone palette strip shows, `PaletteStrip` lifts the bottom-left controls (the navigation control on fine pointers, SimMap's Reset view button on coarse ones) 4rem above the inset, clear of the strip.
 
+## The run view
+
+`SimMapHandle.setRunView(on)` shows the whole city, flat and north up, and locks the camera there. A page calls it to play a run over the map; `setRunView(false)` hands the map back.
+
+- **The fit.** `true` remembers the camera and jumps, with no animation, to `runFrame(width, height, bottomInset)` (`src/lib/map/camera.ts`): pitch 0, bearing 0, `RUN_BOUNDS` (mainland San Francisco, `SF_GRID_BBOX`) kept `RUN_PAD_PX` (24 px) inside each side of the box less the bottom inset. The zoom is never below `RUN_MIN_ZOOM` (8). About 11.6 at 1280 by 744, about 10.5 at 375 px wide.
+- **Lifted limits.** While locked, `maxBounds` is null and the minimum zoom is `RUN_MIN_ZOOM`, so the city fits a small box. Unlock restores `CONSTRAINTS` after its jump.
+- **No camera moves.** The eight handlers are off (`dragPan`, `dragRotate`, `scrollZoom`, `boxZoom`, `doubleClickZoom`, `keyboard`, `touchZoomRotate`, `touchPitch`), whatever `setPanEnabled` says. The bottom-left controls are hidden and Reset view is not rendered. The canvas container has the class `sim-map-run-locked`: `touch-action: none` and `cursor: default`. `setPanEnabled` while locked stores its value; it takes effect at unlock. The credit stays and works.
+- **Nothing picked.** No hover pick, tap or click is made or delivered, and no tooltip or card shows. The lock closes an open one and, after a hover hit, sends `timelinePick` one hover miss; then nothing until unlock. deck.gl does not pick (`_pickable: false`). A press that began while locked is never delivered. After unlock, hover picks start at the next pointer move.
+- **Unlock.** `false` jumps back to the remembered camera, then restores the limits, which clamp it as any camera. A resize or new inset while locked keeps the remembered centre and zoom.
+- **Refit.** Locked, a map `resize` or `setBottomInset` jumps to the fit for the new box. Neither changes the remembered camera.
+- **Remount.** The value survives a remount, as the pan state does. A map made while locked starts locked and fitted; unlock goes to the camera from before the lock, or to the map's initial camera when no map was there at the lock. `true` then `false` before any map leaves nothing. A new `SimMap` starts unlocked.
+- **Calls.** A call with the value in force does nothing. A call before the map exists stores the value and never throws, in any state.
+- **Events.** Each jump fires `movestart`, `move` and `moveend` once, with no `originalEvent` (so the credit does not collapse). A `moveend` reader sees the city at the lock and the remembered view at the unlock. `map.project` gives positions in the fitted camera.
+- **The root.** `[data-testid=map-root]` carries `data-run-view="on"` while locked, from mount, with or without a map; no attribute otherwise.
+
+What shows at the fitted zoom (the run view changes no layer):
+
+| Thing                                                 | Desktop, zoom about 11.6                                   | Phone, zoom about 10.5   |
+| ----------------------------------------------------- | ---------------------------------------------------------- | ------------------------ |
+| Basemap: land, water, parks, main roads, place labels | Yes                                                        | Yes, fewer labels        |
+| Existing buildings                                    | No: the layer starts at zoom 12                            | No                       |
+| Timeline ghosts and solids                            | Yes, seen from above; a lot is about 1 px                  | Yes; a lot is under 1 px |
+| Bars, far mode                                        | At most 20% alpha at zoom 11.6, only bars whose gate is 12 | No                       |
+| Bars, street mode                                     | No                                                         | No                       |
+| Policy marks                                          | Yes, one per 800 m square, about 40 px apart               | Yes, about 19 px apart   |
+| Transit access shading, when on                       | Yes                                                        | Yes                      |
+| Regional stops, when on                               | Yes                                                        | Yes                      |
+| Rail and bus stops                                    | No                                                         | No                       |
+| Height-limit contours and labels, when on             | Yes, no lids                                               | Yes, no lids             |
+| Tooltips and cards                                    | No: locked                                                 | No: locked               |
+| The credit                                            | Yes                                                        | Yes                      |
+
+Which timeline cells the map holds at a citywide view is the page's stream's choice. A label point outside `RUN_BOUNDS` still lands on the map within the 24 px margin: about 480 m at zoom 11.6, 1 km at 10.5.
+
 ## The notice pills and the failure chips
 
 From 768 px the page's notice stack (`NoticePills`, `src/lib/shell/NoticePills.svelte`, on `/sim`, `/s/<id>`, `/` and `/p/:id`) overlays the map's top centre, where `SimMap`'s failure messages ("Some parcels didn't load", "Existing buildings couldn't load") sit too. So `NoticePills` publishes the stack's bottom edge, in px from its host's top (the host is its parent element: TimelineMode's root or BrushEditor's, whose top is the map's), as `--notice-pills-bottom` on that host. It is `0px` while the stack is empty and below 768 px, where the stack is in flow above the map; it is removed when the stack unmounts, so readers use a `0px` fallback. Its optional `onbottom(px)` reports the same value on change.

@@ -304,7 +304,10 @@
 
   export function setBottomInset(px: number): void {
     bottomInset = px;
-    live?.map?.setPadding({ top: 0, left: 0, right: 0, bottom: px });
+    const map = live?.map;
+    map?.setPadding({ top: 0, left: 0, right: 0, bottom: px });
+    // Locked, the city fits the box less the new inset (`remembered` is kept).
+    if (map && runView) fitRun(map);
     // The inset lifts the control container. Apply it to the root now (the style attribute
     // follows on the next update) and measure in this task, so no frame sees the old footprint.
     root?.style.setProperty('--map-bottom-inset', `${px}px`);
@@ -517,10 +520,15 @@
     applyInteraction();
     map.setMaxBounds(null);
     map.setMinZoom(RUN_MIN_ZOOM);
-    const box = map.getContainer(); // `container`
-    map.jumpTo(runFrame(box.clientWidth, box.clientHeight, bottomInset));
+    fitRun(map);
     map.getCanvasContainer().classList.add('sim-map-run-locked');
     l.overlay?.setProps({ _pickable: false });
+  }
+
+  /** Jumps `map` to the city fit for its box and the bottom inset (the lock, a resize, an inset). */
+  function fitRun(map: MapLibreMap): void {
+    const box = map.getContainer(); // `container`
+    map.jumpTo(runFrame(box.clientWidth, box.clientHeight, bottomInset));
   }
 
   const handle: SimMapHandle = {
@@ -691,8 +699,15 @@
     l.map = map;
     if (bottomInset > 0) map.setPadding({ top: 0, left: 0, right: 0, bottom: bottomInset });
     applyInteraction();
+    // A lock that met no map (before this one, or across a remount): `remembered` is this map's
+    // initial camera when no earlier map took one.
+    if (runView) lockCamera(l);
 
     map.on('error', (e) => onMapError(l, e));
+    // Locked, a new box fits the city again (`remembered` is kept).
+    map.on('resize', () => {
+      if (runView && !l.dead) fitRun(map);
+    });
     map.on('dataloading', () => onDataLoading(l));
     map.on('idle', () => {
       clearLoading(l);
@@ -1508,6 +1523,13 @@
     const l = live;
     const map = l?.map;
     if (!l || !map || e.pointerType === 'touch') return;
+    // Locked in the run view: nothing is picked or shown, and no point is kept for moveend.
+    if (runView) {
+      l.pointer = null;
+      if (shown?.surface === 'tooltip') clearShown();
+      unreportHover();
+      return;
+    }
     // `e.buttons` is live per event, so it covers a brush stroke (pan disabled + pointer down)
     // without trusting a down-counter that a release outside the map would leave stale.
     const off = e.target !== map.getCanvas() || e.buttons !== 0;
@@ -1527,7 +1549,8 @@
     l.pickRaf = requestAnimationFrame(() => {
       l.pickRaf = null;
       const p = l.pointer;
-      if (l.dead || l.moving || !p) return;
+      // runView: the lock's own moveend picks nothing.
+      if (l.dead || l.moving || !p || runView) return;
       deliver('hover', p.x, p.y, pickAt(l, p.x, p.y));
     });
   }
@@ -1549,15 +1572,17 @@
     if (!l || !map) return;
     l.pointer = null; // a press (a drag, a stroke, a touch) is no resting mouse
     if (e.pointerType !== 'touch') {
-      // Mouse/pen clicks pick only for timelinePick (§4.8); the editor ignores them.
-      if (!timelinePick || e.button !== 0 || e.target !== map.getCanvas()) l.click = null;
-      else l.click = { id: e.pointerId, ...canvasPoint(map, e), t: performance.now() };
+      // Mouse/pen clicks pick only for timelinePick (§4.8); the editor ignores them. Locked, a
+      // press is never a click, even if it ends after unlock.
+      if (runView || !timelinePick || e.button !== 0 || e.target !== map.getCanvas()) {
+        l.click = null;
+      } else l.click = { id: e.pointerId, ...canvasPoint(map, e), t: performance.now() };
       return;
     }
-    l.touches++;
+    l.touches++; // counted while locked too, so a tap after unlock sees the right count
     const p = canvasPoint(map, e);
     l.tap =
-      l.touches === 1 && e.target === map.getCanvas()
+      !runView && l.touches === 1 && e.target === map.getCanvas()
         ? { id: e.pointerId, x: p.x, y: p.y, t: performance.now() }
         : null;
   }
@@ -1567,6 +1592,11 @@
     const map = l?.map;
     if (!l || !map) return;
     if (e.pointerType !== 'touch') {
+      // Locked: nothing is delivered, and no resting point is kept for the unlock's moveend.
+      if (runView) {
+        l.click = null;
+        return;
+      }
       // Released on the canvas, the mouse rests there: a drag-pan's moveend picks under it.
       if (e.target === map.getCanvas() && e.buttons === 0) l.pointer = canvasPoint(map, e);
       const click = l.click;
@@ -1580,7 +1610,7 @@
     const tap = l.tap;
     if (!tap || tap.id !== e.pointerId) return;
     l.tap = null;
-    if (!panEnabled) return;
+    if (!panEnabled || runView) return;
     const p = canvasPoint(map, e);
     if (!isTap(tap, p)) return;
     deliver('tap', p.x, p.y, pickAt(l, p.x, p.y));

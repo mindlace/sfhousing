@@ -1,13 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import { page } from 'vitest/browser';
+import type { Deck } from '@deck.gl/core';
+import { MapLibreOverlay } from '@deck.gl/maplibre';
 import type { Map as MapLibreMap } from 'maplibre-gl';
 import type { Manifest } from '$lib/data/manifest';
 import '../../routes/layout.css';
 import manifestJson from '../../../e2e/fixtures/data/fixture-0/manifest.json';
 import SimMap from './SimMap.svelte';
-import { CONSTRAINTS, RUN_BOUNDS, runFrame } from './camera';
-import type { SimMapHandle, SimMapProps } from './types';
+import { CONSTRAINTS, RUN_BOUNDS, defaultFrame, runFrame } from './camera';
+import { timelineLookups } from './fixtures/timeline-lookups';
+import { packTimedCell } from './pack-timed';
+import type { SimMapHandle, SimMapProps, TimelinePick, TimelineUpdate } from './types';
 
 // The committed fixture dataset, served by Vitest's dev server (see SimMap.svelte.spec.ts).
 const FIXTURE = '/e2e/fixtures/data/fixture-0/';
@@ -109,6 +113,107 @@ const ZOOM_HANDLERS = [
   'touchZoomRotate',
   'touchPitch'
 ] as const;
+
+const nextFrame = () => new Promise<void>((r) => requestAnimationFrame(() => r()));
+/** Waits frame by frame until `cond` holds (bounded by the test's own timeout). */
+async function until(cond: () => boolean): Promise<void> {
+  while (!cond()) await nextFrame();
+}
+/** A few frames: room for a pick frame that should not report. */
+async function settle(): Promise<void> {
+  for (let i = 0; i < 3; i++) await nextFrame();
+}
+
+function overlayOf(map: MapLibreMap): MapLibreOverlay | undefined {
+  const controls = (map as unknown as { _controls: unknown[] })._controls;
+  return controls.find((c) => c instanceof MapLibreOverlay) as MapLibreOverlay | undefined;
+}
+const deckOf = (map: MapLibreMap) =>
+  (overlayOf(map) as unknown as { _deck?: Deck } | undefined)?._deck;
+
+// A footprint-only project about 44 m east of fixture parcel 3512014's existing building (as in
+// SimMap.timeline.svelte.spec.ts): one view holds a timeline part and an existing building.
+const AT: [number, number] = [-122.4179679, 37.7601348];
+const FP: [number, number] = [AT[0] + 0.0005, AT[1]];
+const FP_DAY = 21000;
+const pickTimeline: TimelineUpdate = {
+  revision: 0,
+  cells: [
+    packTimedCell('tl-P', [
+      {
+        schedule: {
+          projectId: 'fx-p',
+          origin: 'pipeline',
+          parcelIds: ['9100001'],
+          pathway: 'discretionary',
+          entered: { filed: 20800 },
+          end: { kind: 'open' },
+          revisions: [{ day: 20800, units: 10, stories: null }],
+          existingUnits: 0,
+          multiPhase: false,
+          phase: null
+        },
+        massings: [
+          {
+            footprint: [
+              [FP[0] - 0.0001, FP[1] - 0.00008],
+              [FP[0] + 0.0001, FP[1] - 0.00008],
+              [FP[0] + 0.0001, FP[1] + 0.00008],
+              [FP[0] - 0.0001, FP[1] + 0.00008]
+            ]
+          }
+        ],
+        pickParcelId: '9100001'
+      }
+    ])
+  ],
+  removedCells: [],
+  demolish: []
+};
+const HOVER_MISS = { projectId: null, kind: 'hover' } as const;
+const tooltip = () => document.querySelector('[role="tooltip"]');
+const card = () => document.querySelector('.sim-map-card');
+
+/** A ready map over the pick fixture at zoom 18, flat, with `fire` for canvas pointer events. */
+async function readyOverPart() {
+  const timelinePick = vi.fn<(p: TimelinePick) => void>();
+  const m = await mount({ timelinePick });
+  const h = await m.ready;
+  const map = h.getMap()!;
+  // deck follows map moves only once its device is up (see SimMap.timeline.svelte.spec.ts).
+  await until(() => deckOf(map)?.isInitialized === true);
+  h.setTimelineLookups(timelineLookups);
+  h.applyTimeline(pickTimeline);
+  h.setTime(FP_DAY);
+  map.jumpTo({ center: AT, zoom: 18, pitch: 0, bearing: 0 });
+  await new Promise<void>((r) => {
+    map.once('idle', () => r());
+    map.triggerRepaint();
+  });
+  const fire = (type: string, pointerType: string, p: { x: number; y: number }) => {
+    const r = map.getCanvas().getBoundingClientRect();
+    map.getCanvas().dispatchEvent(
+      new PointerEvent(type, {
+        bubbles: true,
+        clientX: r.left + p.x,
+        clientY: r.top + p.y,
+        pointerType,
+        pointerId: 7,
+        isPrimary: true
+      })
+    );
+  };
+  const calls = () => timelinePick.mock.calls.length;
+  /** Moves the mouse to `p`, re-sent each frame (a move during a map move is dropped), until
+   *  `done` holds. */
+  const moveUntil = async (p: { x: number; y: number }, done: () => boolean) => {
+    while (!done()) {
+      fire('pointermove', 'mouse', p);
+      await nextFrame();
+    }
+  };
+  return { ...m, h, map, timelinePick, fire, calls, moveUntil };
+}
 
 describe('SimMap run view', () => {
   it('locked on 600 by 400: the runFrame zoom, flat, north up, every RUN_BOUNDS corner 23 px inside', async () => {
@@ -253,5 +358,150 @@ describe('SimMap run view', () => {
     await new Promise<void>((r) => map.once('idle', () => r()));
     expect(error).not.toHaveBeenCalled();
     expect(errors).toEqual([]);
+  });
+
+  it('setRunView(true) before onready: once ready the camera is the fit and deck does not pick; unlock goes to defaultFrame(600)', async () => {
+    const { screen, ready } = await mount();
+    (screen.component as unknown as SimMapHandle).setRunView(true);
+    const h = await ready;
+    const map = h.getMap()!;
+    expect(map.getZoom()).toBeCloseTo(runFrame(600, 400, 0).zoom, 3);
+    expect(map.getPitch()).toBe(0);
+    expect(map.getBearing()).toBe(0);
+    for (const k of HANDLERS) expect(map[k].isEnabled(), k).toBe(false);
+    expect(map.getCanvasContainer().classList.contains('sim-map-run-locked')).toBe(true);
+    await until(() => deckOf(map) !== undefined);
+    expect(deckOf(map)!.props._pickable).toBe(false);
+    h.setRunView(false);
+    const d = defaultFrame(600);
+    sameCamera(camera(map), {
+      center: d.center as [number, number],
+      zoom: d.zoom,
+      pitch: d.pitch ?? 0,
+      bearing: d.bearing ?? 0
+    });
+  });
+
+  it('true then false before the map exists: the map starts unlocked at its initial camera', async () => {
+    const { screen, ready, root } = await mount();
+    const handle = screen.component as unknown as SimMapHandle;
+    handle.setRunView(true);
+    handle.setRunView(false);
+    const h = await ready;
+    const map = h.getMap()!;
+    await expect.element(root).not.toHaveAttribute('data-run-view');
+    expect(map.getCanvasContainer().classList.contains('sim-map-run-locked')).toBe(false);
+    expect(map.dragPan.isEnabled()).toBe(true);
+    expect(map.getMinZoom()).toBe(11);
+    expect(map.getZoom()).toBeCloseTo(defaultFrame(600).zoom, 6);
+    await until(() => deckOf(map) !== undefined);
+    expect(deckOf(map)!.props._pickable).toBe(true);
+  });
+
+  it('a remount by a new manifest while locked: the new map is locked and fitted; unlock goes to the camera before the lock', async () => {
+    const { h, map, screen, root } = await mountReady();
+    map.jumpTo({ center: [-122.45, 37.76], zoom: 14, pitch: 30, bearing: 10 });
+    const before = camera(map);
+    h.setRunView(true);
+    await screen.rerender({ manifest: structuredClone(manifest) });
+    await until(() => h.getMap() !== map && root.dataset.state === 'ready');
+    const second = h.getMap()!;
+    expect(second.getZoom()).toBeCloseTo(runFrame(600, 400, 0).zoom, 3);
+    expect(second.getPitch()).toBe(0);
+    for (const k of HANDLERS) expect(second[k].isEnabled(), k).toBe(false);
+    expect(second.getCanvasContainer().classList.contains('sim-map-run-locked')).toBe(true);
+    h.setRunView(false);
+    sameCamera(camera(second), before);
+  });
+
+  it('locked, the host resized to 800 by 500: the zoom becomes runFrame(800, 500, 0).zoom', async () => {
+    const { h, map, target } = await mountReady();
+    h.setRunView(true);
+    target.style.cssText = 'width:800px;height:500px';
+    await expect.poll(() => map.getZoom()).toBeCloseTo(runFrame(800, 500, 0).zoom, 3);
+    expect(map.getPitch()).toBe(0);
+  });
+
+  it('resized while locked, then unlocked: the camera before the lock', async () => {
+    const { h, map, target } = await mountReady();
+    const before = camera(map);
+    h.setRunView(true);
+    target.style.cssText = 'width:800px;height:500px';
+    await expect.poll(() => map.getZoom()).toBeCloseTo(runFrame(800, 500, 0).zoom, 3);
+    h.setRunView(false);
+    sameCamera(camera(map), before);
+  });
+
+  it('locked, setBottomInset(120): the zoom becomes runFrame(600, 400, 120).zoom', async () => {
+    const { h, map } = await mountReady();
+    h.setRunView(true);
+    h.setBottomInset(120);
+    expect(map.getZoom()).toBeCloseTo(runFrame(600, 400, 120).zoom, 3);
+  });
+
+  it('a locked SimMap unmounted, then a new one mounted: no error, and it starts unlocked', async () => {
+    const first = await mountReady();
+    first.h.setRunView(true);
+    first.screen.unmount();
+    const { map, root } = await mountReady();
+    for (const k of HANDLERS) expect(map[k].isEnabled(), k).toBe(true);
+    expect(root.hasAttribute('data-run-view')).toBe(false);
+    expect(map.getMinZoom()).toBe(11);
+    expect(errors).toEqual([]);
+  });
+});
+
+describe('SimMap run view picking', () => {
+  it('with a tooltip shown, the lock closes it; timelinePick gets one hover miss after a hit', async () => {
+    const { h, map, timelinePick, calls, moveUntil } = await readyOverPart();
+    const building = map.project(AT);
+    const part = map.project(FP);
+
+    await moveUntil(building, () => tooltip() !== null);
+    h.setRunView(true);
+    await expect.poll(tooltip).toBeNull();
+    h.setRunView(false);
+
+    await moveUntil(part, () => timelinePick.mock.calls.at(-1)?.[0].projectId === 'fx-p');
+    const n = calls();
+    h.setRunView(true);
+    expect(calls()).toBe(n + 1);
+    expect(timelinePick).toHaveBeenLastCalledWith(HOVER_MISS);
+  });
+
+  it('locked: a touch tap and a mouse click on the canvas deliver nothing and show no card', async () => {
+    const { h, map, timelinePick, fire } = await readyOverPart();
+    h.setRunView(true);
+    expect(timelinePick).not.toHaveBeenCalled();
+    const p = map.project(FP);
+    fire('pointerdown', 'touch', p);
+    fire('pointerup', 'touch', p);
+    fire('pointerdown', 'mouse', p);
+    fire('pointerup', 'mouse', p);
+    fire('pointermove', 'mouse', p);
+    await settle();
+    expect(timelinePick).not.toHaveBeenCalled();
+    expect(card()).toBeNull();
+    expect(tooltip()).toBeNull();
+  });
+
+  it("after unlock, hover picks start at the next pointer move, not at the unlock's moveend", async () => {
+    const { h, map, timelinePick, calls, fire, moveUntil } = await readyOverPart();
+    const part = map.project(FP);
+    // The part is pickable here: a hover hit, then leave it.
+    await moveUntil(part, () => timelinePick.mock.calls.at(-1)?.[0].projectId === 'fx-p');
+    fire('pointerleave', 'mouse', part);
+    const n = calls();
+    h.setRunView(true);
+    // Resting where the part will be after unlock.
+    fire('pointermove', 'mouse', part);
+    await settle();
+    h.setRunView(false);
+    await settle();
+    expect(calls()).toBe(n);
+    await moveUntil(part, () => calls() > n);
+    expect(timelinePick).toHaveBeenLastCalledWith(
+      expect.objectContaining({ projectId: 'fx-p', kind: 'hover' })
+    );
   });
 });
