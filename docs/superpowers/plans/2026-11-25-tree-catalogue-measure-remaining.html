@@ -1,0 +1,257 @@
+<article>
+  <header>
+    <h1>Tree catalogue: the measurement, remaining work</h1>
+    <p>The tree-balance play loop and CLI, then the measured ladder years and the tuned numbers (T1).</p>
+    <aside data-kind="note"><strong>For agentic workers</strong> REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps are checklist items; progress is kept in the workspace ledger, not in the plan.</aside>
+  </header>
+
+  <section id="sec-overview">
+    <h2>Overview</h2>
+    <dl>
+      <dt>Goal</dt>
+      <dd>Finish <code>scripts/tree-balance.ts</code> (the play loop against the engine, the CLI, its output and exit codes), then measure <code>LADDER_YEARS</code> on the production dataset and tune <code>tuning.ts</code> until <code>tree-balance</code> exits 0 there.</dd>
+      <dt>Architecture</dt>
+      <dd>The engine runner (<code>openEngine</code>), <code>reach-measure</code> in full, and the pure parts of <code>tree-balance</code> (<code>SHARE</code>, <code>shareOf</code>, <code>CLOCK</code>, <code>TARGETS</code>, <code>ORDERS</code>, <code>sequenceOf</code>, <code>nextBuy</code>, <code>leftToBuy</code>, <code>PlayEvent</code>, <code>clockOf</code>, <code>checksOf</code>, <code>raiseTo</code>, <code>sideReport</code>, the report types) already exist and are not redone. This plan adds a <code>play</code> function that drives game-core and the catalogue against an <code>Engine</code>, a current-law reader for the side report, and a <code>runBalance</code> CLI shaped like <code>runReach</code>. Then two measurement tasks run the scripts on the production dataset and commit the two data files.</dd>
+      <dt>Tech stack</dt>
+      <dd>TypeScript scripts run with <code>npx tsx</code>; Vitest server project (script specs run there, <code>vite.config.ts:59</code>).</dd>
+      <dt>Spec</dt>
+      <dd><code>docs/superpowers/specs/2026-11-24-tree-catalogue-design.html</code>, read from the package worktree <code>/Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-feel/.claude/worktrees/incremental-loop</code>: <a href="#sec-design-balance">§sec-design-balance</a> and its subsections, §sec-design-reach, §sec-if-t1, §sec-tests-scripts.</dd>
+    </dl>
+  </section>
+
+  <section id="sec-global-constraints">
+    <h2>Global constraints</h2>
+    <h3>Interface row T1 (copied from the spec)</h3>
+    <p>T1 | <code>tree-catalogue</code> | Decomposition choice | The measured ladder years and the tuned numbers</p>
+    <pre><code data-lang="sh">npx tsx scripts/reach-measure.ts &lt;datasetDir&gt; --write
+npx tsx scripts/tree-balance.ts &lt;datasetDir&gt;</code></pre>
+    <ul>
+      <li>T1 is the state of two files after the measurement: <code>src/lib/game/catalogue/ladder-years.ts</code> and <code>src/lib/game/catalogue/tuning.ts</code>. It adds no type and no export to G3 or G6.</li>
+      <li><code>LADDER_YEARS</code> holds the years <code>reach-measure</code> wrote from the production dataset, by G6's rule.</li>
+      <li><code>tuning.ts</code> holds prices, the rung lump and side-goal numbers under which <code>tree-balance</code> exits 0 on the production dataset.</li>
+      <li>Before T1, both files hold starting values. Code and tests outside <code>tree-catalogue</code> and <code>closing</code> never assert a price, a ladder year or the number of rungs from these files; they pass their own.</li>
+      <li>When no set of numbers passes, the unit stops and hands the report to the owner with the checks that fail.</li>
+    </ul>
+    <h3>The design's global constraints (copied from the spec)</h3>
+    <ul>
+      <li>One future: the same policy document always gives the same forecast. No game state reaches the worker except through the policy document.</li>
+      <li>No file the dataset version hashes is changed: <code>pipeline</code>, <code>src/lib/config.ts</code>, <code>src/lib/{data,generator,timelapse}</code>, <code>src/lib/plan/{geometry,types}.ts</code>, <code>src/lib/sim/finance</code> (<code>pipeline/lib/version.ts:41</code>). The dataset version stays as it is.</li>
+      <li>A policy node acts on a lever the code already has, at a value the code already sources. No node invents a value.</li>
+      <li>The painted area, own pools, the City funding scale and market terms are never offered in a game.</li>
+      <li>Published plans and policies open and play in full, as today.</li>
+      <li>WCAG 2.2 AA: everything works from the keyboard; targets are at least 24 px; motion follows the reduced-motion setting; nothing flashes more than three times a second.</li>
+      <li>Page text is short. A node is a name, a line and a price.</li>
+      <li>The CSP is not widened. Sound is made in the browser; no audio file, font or script is added.</li>
+      <li>A runtime dependency is not added without a credit in <code>src/lib/attribution.ts</code>. None is expected.</li>
+      <li>Code style: 2-space indent, single quotes, no trailing commas, 100 columns.</li>
+      <li>Vitest runs with <code>expect.requireAssertions</code>. Tests are colocated.</li>
+      <li>A schema change goes through <code>npm run db:generate</code>. Migrations are never edited by hand.</li>
+      <li>Signoff fails on server stderr, on timing crutches and on retried flakes. Timing is measured only on a quiet machine.</li>
+      <li>Port 4173 belongs to whichever session started the preview. Never kill it; wait.</li>
+      <li>Commits use Conventional Commits and carry no Claude attribution.</li>
+      <li>Work happens in git worktrees under <code>.claude/worktrees/</code>.</li>
+    </ul>
+    <h3>Spec rules this plan carries everywhere</h3>
+    <ul>
+      <li>The production dataset version is <code>2026-11-14-09ca30c8</code> (printed by <code>npx tsx scripts/dataset-version.ts</code> on this branch); the scripts reach it with <code>--version 2026-11-14-09ca30c8</code> from <code>DEFAULT_ORIGIN</code>.</li>
+      <li><code>SHARE</code> and <code>CLOCK</code> are assumptions shipped as given; this unit never changes them.</li>
+      <li>Prices, the lump and the side goals' targets and rewards change only by editing <code>tuning.ts</code> after reading a report. The script never writes them.</li>
+    </ul>
+  </section>
+
+  <section id="sec-review-focus">
+    <h2>Review focus</h2>
+    <ol>
+      <li>A purchase that lowers homes at a deadline: the play ends <code>stuck</code> and the text names the rung it stuck at and every node level bought by then (Task 1 and Task 2 tests).</li>
+      <li>A dataset that cannot be fetched or opened: exit 2 with exactly one stderr line <code>tree-balance: &lt;reason&gt;</code> and nothing on stdout (Task 2 test).</li>
+      <li>A ladder shorter than three rungs: a side goal whose ring is past the last rung reads <code>null</code> for current law and does not throw (Task 1 test).</li>
+      <li><code>--json</code> prints the one JSON object and nothing else, not even the <code>Dataset</code> line (Task 2 test).</li>
+      <li>Prices bought that never become affordable: the play ends <code>too-long</code> at 300 runs rather than looping forever or reporting <code>stuck</code> (Task 1 test).</li>
+    </ol>
+  </section>
+
+  <section id="sec-task-1">
+    <h2>Task 1: The play loop and current law</h2>
+    <p>Implements §sec-design-balance-play, the "buys and repeats" rule of §sec-design-balance-orders, "changes the document" of §sec-design-balance-clock, and the per-run lump, side rewards and current-law reading of §sec-design-balance-side.</p>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>scripts/tree-balance.ts</code> (append; the existing pure functions stay as they are)</li>
+      <li>Modify: <code>scripts/tree-balance.spec.ts</code></li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes (existing): <code>Engine</code>, <code>openEngine</code> from <code>scripts/reach-measure.ts</code>; <code>shareOf</code>, <code>nextBuy</code>, <code>leftToBuy</code>, <code>clockOf</code>, <code>checksOf</code>, <code>PlayEvent</code>, <code>PlayReport</code>, <code>OrderName</code> from <code>scripts/tree-balance.ts</code>; <code>NEW_GAME</code> (<code>src/lib/game/state.ts</code>; its <code>phase</code> is <code>'opening'</code>, so a play overrides <code>phase: 'runs'</code> and sets <code>firstWinAt</code>); <code>goalAt</code>, <code>finished</code>, <code>takeNext</code>, <code>RUNGS</code> (<code>src/lib/game/ladder.ts</code>); <code>readRun</code>, <code>resultOf</code>, <code>settle</code>, <code>deadlineIndex</code> (<code>src/lib/game/run-result.ts</code>); <code>limitsOf</code>, <code>runnable</code> (<code>src/lib/game/limits.ts</code>); <code>buyAndApply</code> (<code>src/lib/game/catalogue/play.ts</code>); <code>SIDE_GOALS</code>, <code>SideInput</code> (<code>src/lib/game/side-goals.ts</code>); <code>NODES</code>, the node type (<code>src/lib/game/catalogue/nodes.ts</code>).</li>
+      <li>Produces:
+        <pre><code data-lang="ts">export type PlayEngine = Pick&lt;Engine, 'datasetVersion' | 'asOf' | 'cal' | 'view'&gt;;
+
+/** One play, first run to finished, stuck or too-long. nodes defaults to NODES. */
+export function play(
+  engine: PlayEngine,
+  order: OrderName,
+  mode: 'hand' | 'collect-for-me',
+  opts?: { amount?: number; nodes?: readonly CatalogueNode[] }
+): Promise&lt;PlayReport&gt;;
+
+/** Current law (the empty document's view) at each rung's deadline, as sideReport's atLaw. */
+export function currentLaw(
+  engine: PlayEngine,
+  amount?: number
+): Promise&lt;(rung: number) =&gt; ((g: SideGoal) =&gt; number | null) | null&gt;;</code></pre>
+        <code>CatalogueNode</code> and <code>SideGoal</code> stand for whatever the node and side-goal types are named in <code>nodes.ts</code> and <code>side-goals.ts</code>; use those names.</li>
+    </ul>
+    <ol>
+      <li id="t1-s1"><input type="checkbox"> Write the failing tests in <code>scripts/tree-balance.spec.ts</code>, against <code>openEngine({ dir: 'e2e/fixtures/data/fixture-0' })</code> opened once in a <code>beforeAll</code> with a hook timeout as <code>scripts/level2-check.spec.ts</code> has, and closed in <code>afterAll</code>:
+        <ul>
+          <li><code>a play on the fixture with 1-unit prices and a small amount finishes and buys every level</code>: nodes are <code>NODES</code> with every level's price replaced by 1 unit of <code>home</code>; <code>play(engine, 'catalogue', 'hand', { amount: 1, nodes })</code> has <code>end === 'finished'</code>, and the bought entries across all runs hold every (node, level) pair of those nodes exactly once.</li>
+          <li><code>a play whose goal no document reaches ends stuck at rung 0 with everything bought</code>: same 1-unit nodes, <code>amount</code> far above anything reached (10,000,000); <code>end === 'stuck'</code>, the last run's <code>rung</code> is 0, every level was bought, and the last three runs bought nothing.</li>
+          <li><code>a play that cannot afford its next level ends too-long at 300 runs</code>: every price 10,000,000 units, amount 10,000,000; <code>end === 'too-long'</code>, <code>runs.length === 300</code>, nothing bought.</li>
+          <li><code>collected is floor(share × dropped) and the clock counts every run and purchase</code>: on the first finishing play's run 1, <code>collected === Math.floor(0.25 * dropped)</code>; a <code>collect-for-me</code> play's run 1 has <code>collected === dropped</code>; <code>clockS</code> equals <code>clockOf</code> of the events the runs imply (60 + 28 per run + 4 per purchase).</li>
+          <li><code>a hands purchase does not change the map</code>: a hand-made check through the exported event builder or through the report: in the 1-unit play, buying <code>hands-radius</code> alone produces a <code>buy</code> event with <code>mapChange: false</code>, and buying <code>stop-rail</code> one with <code>mapChange: true</code>. If the events are not exported, export <code>eventsOf(report: PlayReport, nodes?): PlayEvent[]</code> and test that.</li>
+          <li><code>current law reads each side goal at its rung's deadline, and null past the last rung</code>: <code>currentLaw(engine)</code> returns a function giving a number or null for every <code>SIDE_GOALS</code> goal at rung 0, and <code>null</code> (the rung reader itself) for a rung at or past <code>RUNGS</code>.</li>
+        </ul>
+      </li>
+      <li id="t1-s2"><input type="checkbox"> Run them and see them fail
+        <pre><code data-lang="sh">npx vitest run --project server scripts/tree-balance.spec.ts</code></pre>
+      </li>
+      <li id="t1-s3"><input type="checkbox"> Implement <code>play</code> in <code>scripts/tree-balance.ts</code>, following §sec-design-balance-play step by step:
+        <ul>
+          <li>Start state: <code>{ ...NEW_GAME, phase: 'runs', firstWinAt: &lt;asOf as the timestamp form G1 uses&gt; }</code>; document <code>DEFAULT_POLICY4</code>.</li>
+          <li>A run views <code>runnable(doc, limitsOf(state, nodes))</code>, reads <code>readRun(view, goalAt(asOf, state.rung, amount))</code>; dropped is <code>max(0, view.rows[d].completedNet)</code> at the deadline's month <code>d</code>; collected is <code>floor(shareOf(state, mode) × dropped)</code>; settle with <code>resultOf</code> (side input from the same view, take = collected) and <code>settle</code>. Record the run's lump and side rewards from the result, apart from collected units, and the side ids it met.</li>
+          <li>When the rung is met and a next exists, <code>takeNext</code>. Then buy by <code>nextBuy</code> repeatedly (it returns one step and the new pending list) until it returns null, applying each with <code>buyAndApply</code>; record id, level and price.</li>
+          <li>A purchase changes the document when the node's grant is not <code>hands</code> and <code>canonicalJson</code> of the document differs before and after.</li>
+          <li>End: <code>finished(state)</code> → <code>'finished'</code>; <code>!leftToBuy(...)</code> and the rung not met in 3 runs in a row → <code>'stuck'</code>; 300 runs → <code>'too-long'</code>.</li>
+          <li><code>checks = checksOf(events)</code>, <code>clockS = clockOf(events)</code>.</li>
+        </ul>
+        Implement <code>currentLaw</code>: view the empty document once (<code>engine.view(DEFAULT_POLICY4)</code>, the kept rev 1 view), and for each rung below <code>RUNGS</code> read each goal's <code>read</code> at <code>deadlineIndex</code> of <code>goalAt(asOf, rung, amount)</code>, with the take set to <code>floor(0.25 × max(0, completedNet))</code> at that month.
+      </li>
+      <li id="t1-s4"><input type="checkbox"> Run the tests and see them pass; run the whole server project for regressions
+        <pre><code data-lang="sh">npx vitest run --project server scripts</code></pre>
+      </li>
+      <li id="t1-s5"><input type="checkbox"> Lint, type-check, timing check
+        <pre><code data-lang="sh">npm run check
+npx eslint scripts/tree-balance.ts scripts/tree-balance.spec.ts
+npx prettier --check scripts/tree-balance.ts scripts/tree-balance.spec.ts
+npx chreode timing-check --head HEAD</code></pre>
+      </li>
+      <li id="t1-s6"><input type="checkbox"> Commit
+        <pre><code data-lang="sh">git commit -m "feat(tree-balance): play the game against the engine and read current law"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-2">
+    <h2>Task 2: The tree-balance command</h2>
+    <p>Implements the CLI of §sec-design-balance: <code>--order</code>, <code>--amount</code>, <code>--json</code>, the text output of §sec-design-balance-output, the gated plays and exit codes 0/1/2.</p>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>scripts/tree-balance.ts</code></li>
+      <li>Modify: <code>scripts/tree-balance.spec.ts</code></li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>play</code>, <code>currentLaw</code>, <code>PlayEngine</code> (Task 1); <code>sideReport</code>, <code>ORDERS</code>, <code>PlayReport</code>, <code>SideReport</code>, <code>TARGETS</code>; <code>parseSourceArgs</code>, <code>parseAmount</code>, <code>DataSource</code>, <code>openEngine</code> and the shape of <code>runReach</code>'s <code>io</code> from <code>scripts/reach-measure.ts</code>.</li>
+      <li>Produces:
+        <pre><code data-lang="ts">export interface BalanceArgs { src: DataSource; order?: OrderName; amount?: number; json: boolean }
+export function parseBalanceArgs(argv: string[]): BalanceArgs | { error: string };
+export function playLines(p: PlayReport): string[];
+export function sideLines(side: SideReport[], asOf: Day, amount?: number): string[];
+export const GATED: readonly OrderName[]; // catalogue, permitting-first, zoning-first, hands-first, cheapest
+export function balanceExit(plays: PlayReport[], side: SideReport[]): 0 | 1;
+export function runBalance(
+  args: BalanceArgs,
+  io: { open: (src: DataSource) =&gt; Promise&lt;Engine&gt;; out: (line: string) =&gt; void; err: (line: string) =&gt; void }
+): Promise&lt;0 | 1 | 2&gt;;</code></pre>
+        A private <code>main</code> runs when the file is executed, as <code>reach-measure.ts</code> does.</li>
+    </ul>
+    <ol>
+      <li id="t2-s1"><input type="checkbox"> Write the failing tests (no engine except the last, which uses a stub <code>open</code>):
+        <ul>
+          <li><code>parseBalanceArgs</code> accepts a directory or <code>--version</code> [<code>--from</code>], <code>--order</code> with each of the six names, <code>--amount</code>, <code>--json</code>; refuses an unknown flag, an unknown order name, a bad amount, a second directory and <code>--version</code> beside a directory.</li>
+          <li><code>playLines</code> on a hand-made finished report gives <code>Play catalogue, hand</code>, one run line in the spec's column order (<code>Run 1   rung 0  Sep 2066  homes 84,120  reached Jul 2065  dropped 66,310  collected 16,577  balance 16,577</code>), a <code>bought</code> line naming <code>&lt;id&gt; &lt;level&gt;</code> entries comma-separated when the run bought anything, <code>Finished: 41 runs, 47 purchases, clock 38:20</code>, the five check lines (<code>First purchase 1:32 (target 2:00)  pass</code>, <code>Early runs per purchase max 1 (target 1)  pass</code>, <code>Runs per purchase max 2 (target 3)  pass</code>, <code>Longest gap between map changes 4:10 (target 5:00)  pass</code>, <code>Fewest purchases between deadlines 4 (target 3)  pass</code>, <code>fail</code> when it fails) and <code>Lump 8,000 in 4 runs; side rewards 6,400 from 9 goals</code>. A run with no reach prints <code>reached never</code>.</li>
+          <li><code>playLines</code> on a stuck report prints <code>Stuck at rung &lt;r&gt; after &lt;n&gt; runs</code> and a line <code>Bought by then: &lt;id&gt; &lt;level&gt;, ...</code> listing every level bought; on a too-long report, <code>Too long: 300 runs, at rung &lt;r&gt;</code>.</li>
+          <li><code>sideLines</code> prints <code>Current law at each deadline</code> then one line per goal as in the spec (<code>building-homes  rung 1 Dec 2060  value 11,200  target 10,000  at-or-below-current-law: raise to 14,000</code>; <code>never-met</code> flags printed the same way; <code>value none</code> for null).</li>
+          <li><code>balanceExit</code>: 0 when every gated <code>hand</code> play is finished with every check passing and no side report has a flag; 1 when a gated play is stuck, too-long or fails a check, or a side goal is flagged; a failing <code>money-first</code> play or <code>collect-for-me</code> play alone still gives 0.</li>
+          <li><code>runBalance</code> with an <code>open</code> that rejects gives 2, exactly one <code>err</code> line starting <code>tree-balance: </code>, and no <code>out</code> line.</li>
+          <li><code>runBalance</code> on the fixture engine with nodes priced 1 cannot be injected through args, so test <code>--json</code> with <code>--order catalogue --amount 1</code> on the fixture: <code>out</code> is called once, its text parses as <code>{ datasetVersion, plays, side }</code> with two plays (hand and collect-for-me of <code>catalogue</code>), and nothing else is printed.</li>
+        </ul>
+      </li>
+      <li id="t2-s2"><input type="checkbox"> Run them and see them fail
+        <pre><code data-lang="sh">npx vitest run --project server scripts/tree-balance.spec.ts</code></pre>
+      </li>
+      <li id="t2-s3"><input type="checkbox"> Implement. Plays run in <code>ORDERS</code> order, <code>hand</code> then <code>collect-for-me</code> per order, one order when <code>--order</code> is given. Side reports: <code>sideReport(SIDE_GOALS, await currentLaw(engine, amount), metInHand)</code>, where <code>metInHand</code> is every side id met in any <code>hand</code> play played. Text mode prints <code>Dataset &lt;v&gt;</code> once, then each play's block, then the side block. Times print as <code>m:ss</code>; numbers with <code>,</code> thousands; months as <code>formatShortMonthYear</code>. The engine is closed in a <code>finally</code>. Any throw before output gives exit 2 with one <code>tree-balance: &lt;message&gt;</code> line.</li>
+      <li id="t2-s4"><input type="checkbox"> Run the tests and see them pass; then run the command once on the fixture to see the output by eye
+        <pre><code data-lang="sh">npx vitest run --project server scripts
+npx tsx scripts/tree-balance.ts e2e/fixtures/data/fixture-0 --order cheapest --amount 1</code></pre>
+      </li>
+      <li id="t2-s5"><input type="checkbox"> Lint, type-check, timing check (as Task 1, step 5)</li>
+      <li id="t2-s6"><input type="checkbox"> Commit
+        <pre><code data-lang="sh">git commit -m "feat(tree-balance): the command, its report and exit codes"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-3">
+    <h2>Task 3: Measure the ladder years on the production dataset</h2>
+    <p>Implements the "Who runs it" note of §sec-design-reach. Half of row T1.</p>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify (by the script only): <code>src/lib/game/catalogue/ladder-years.ts</code></li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>scripts/reach-measure.ts</code> as it is.</li>
+      <li>Produces: <code>LADDER_YEARS</code> measured, one to four years, which sets <code>RUNGS</code> for Task 4.</li>
+    </ul>
+    <ol>
+      <li id="t3-s1"><input type="checkbox"> Confirm the version: <code>npx tsx scripts/dataset-version.ts</code> prints <code>2026-11-14-09ca30c8</code>. If it prints something else, stop and report BLOCKED with both values.</li>
+      <li id="t3-s2"><input type="checkbox"> Run the measure with <code>--write</code> (it may take several minutes; run it in the background and wait on its exit)
+        <pre><code data-lang="sh">npx tsx scripts/reach-measure.ts --version 2026-11-14-09ca30c8 --write</code></pre>
+        Exit 0 with five lines and <code>Wrote src/lib/game/catalogue/ladder-years.ts</code>: go on. Exit 1 (a miss, or "No earlier deadline"): the file is unchanged; stop and report BLOCKED with the printed lines verbatim, which the owner acts on. Exit 2: report BLOCKED with the stderr line.</li>
+      <li id="t3-s3"><input type="checkbox"> Check the written file names the dataset, the reached month and the window's end; then run the unit suites, which must not depend on the years
+        <pre><code data-lang="sh">npm run test:unit</code></pre>
+        A failure outside <code>src/lib/game/catalogue</code> that asserts a ladder year or a rung count breaks T1's rule: report it, do not edit that test.</li>
+      <li id="t3-s4"><input type="checkbox"> Save the printed lines in the report and commit
+        <pre><code data-lang="sh">git add src/lib/game/catalogue/ladder-years.ts
+git commit -m "chore(catalogue): measure the ladder years on dataset 2026-11-14-09ca30c8"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-4">
+    <h2>Task 4: Tune the catalogue until tree-balance passes</h2>
+    <p>Implements §sec-design-balance-prices. Delivers row T1.</p>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify (by hand): <code>src/lib/game/catalogue/tuning.ts</code></li>
+      <li>Modify: <code>src/lib/game/catalogue/tuning.spec.ts</code> (the side-goal ids rule of §sec-tests-tuning)</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>scripts/tree-balance.ts</code> (Tasks 1-2); <code>LADDER_YEARS</code> (Task 3).</li>
+      <li>Produces: <code>RUNG_LUMP</code>, <code>SIDE_TUNING</code>, <code>PRICES</code> under which <code>tree-balance</code> exits 0 on <code>2026-11-14-09ca30c8</code>. No export is added or renamed.</li>
+    </ul>
+    <ol>
+      <li id="t4-s1"><input type="checkbox"> Time one play first, in the background: <code>npx tsx scripts/tree-balance.ts --version 2026-11-14-09ca30c8 --order catalogue --json</code>. If one order takes so long that a full run (six orders, both modes, views shared) would not fit in about 90 minutes, report BLOCKED with the measured time instead of going on.</li>
+      <li id="t4-s2"><input type="checkbox"> Run the whole report: <code>npx tsx scripts/tree-balance.ts --version 2026-11-14-09ca30c8</code>. Read the failing checks, stuck plays and side flags.</li>
+      <li id="t4-s3"><input type="checkbox"> Edit <code>tuning.ts</code> by hand and rerun (one <code>--order</code> at a time while iterating, the full run to confirm). The rules:
+        <ul>
+          <li>Any whole price above 0; each later level of a node costs more than the one before.</li>
+          <li>The cheapest level shown at rung 0 stays at or under <code>RUNG_LUMP</code>.</li>
+          <li>A side goal flagged <code>at-or-below-current-law</code> gets the printed <code>raise to</code> value as its target. A side goal flagged <code>never-met</code> has its target lowered (never below the raise-to floor) or its ring's play made reachable by prices.</li>
+          <li>A side goal that no tuning meets in any gated <code>hand</code> play with its target at or above its floor is not offered: remove its entry from <code>SIDE_TUNING</code> (game-core then leaves it out of <code>SIDE_GOALS</code>), then tune every remaining goal again. On <code>2026-11-14-09ca30c8</code>, <code>funded-homes</code> and <code>affordable-homes</code> are not offered by this rule. Every ring from 0 to the last keeps at least one offered goal; if the rule would empty a ring, stop and report BLOCKED.</li>
+          <li>Side-goal order, rings, <code>SIDE_SHOWN</code>, the <code>planEffect</code> baseline, the engine, finance and the script's report shape do not change.</li>
+          <li>Rewards and the lump are whole numbers above 0.</li>
+          <li>Never change <code>SHARE</code>, <code>CLOCK</code>, <code>TARGETS</code>, a node, a side goal's definition, or any file but <code>tuning.ts</code>.</li>
+        </ul>
+      </li>
+      <li id="t4-s3b"><input type="checkbox"> Update <code>tuning.spec.ts</code> to §sec-tests-tuning: <code>SIDE_GOALS</code> has as many goals as <code>SIDE_TUNING</code> has entries; its ids are those of game-core's eleven that have an entry, in game-core's order; each ring from 0 to the last holds at least one; each target and reward is a whole number above 0. Write the test so it holds for any entered subset (it names no left-out id).</li>
+      <li id="t4-s4"><input type="checkbox"> Stop when the full run exits 0. If no set of numbers you can find passes, stop and report BLOCKED with the last full report and the checks that fail (the unit hands it to the owner).</li>
+      <li id="t4-s5"><input type="checkbox"> Verify: the full run on <code>2026-11-14-09ca30c8</code> exits 0 (keep its text output for the report); the report names each goal left out with the highest value any gated <code>hand</code> play reached for it, its floor and the deadline it was read at, and restates the money-measure finding and the non-zero <code>completedNetNew</code> effect on current law as findings for the owner; <code>npx vitest run --project server src/lib/game scripts</code> passes (<code>tuning.spec.ts</code> included), <code>npm run check</code> and <code>npm run lint</code> are clean, <code>npx chreode timing-check --head HEAD</code> is clean after the commit.</li>
+      <li id="t4-s6"><input type="checkbox"> Commit
+        <pre><code data-lang="sh">git add src/lib/game/catalogue/tuning.ts
+git commit -m "chore(catalogue): tune prices, the lump and side goals on dataset 2026-11-14-09ca30c8"</code></pre>
+        <p>Delivers row T1.</p>
+      </li>
+    </ol>
+  </section>
+</article>
