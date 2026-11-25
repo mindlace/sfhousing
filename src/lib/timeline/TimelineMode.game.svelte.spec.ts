@@ -4,7 +4,7 @@
 // recording SimMap stub, the real SiteHeader and a real GameStore.
 /// <reference types="@vitest/browser-playwright" />
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { tick } from 'svelte';
+import { flushSync, tick } from 'svelte';
 import { render } from 'vitest-browser-svelte';
 import { page, userEvent } from 'vitest/browser';
 import '../../routes/layout.css';
@@ -12,12 +12,13 @@ import { parseManifest, type Manifest } from '$lib/data/manifest';
 import { fixtureCalibration } from '$lib/fzp/fixtures/calibration';
 import { formatShortMonthYear } from '$lib/fzp/format';
 import { callsOf, stub } from '$lib/fzp/test/sim-map-stub';
-import type { CameraFrame } from '$lib/map/types';
-import type { GamePhase } from '$lib/sim-page/game-phase';
+import type { CameraFrame, CityDelta, TimelineUpdate } from '$lib/map/types';
+import type { GamePhase, PhaseEvent } from '$lib/sim-page/game-phase';
+import { planDrops, type Marker } from '$lib/game/run/drops';
 import { RHNA_DEADLINE } from '$lib/sim/scenario/score';
 import { dayFromUtc, utcParts } from '$lib/fzp/time';
 import { NODES } from '$lib/game/catalogue/nodes';
-import { RUNGS, ladder } from '$lib/game/ladder';
+import { RUNGS, goalAt, ladder } from '$lib/game/ladder';
 import { SIDE_GOALS } from '$lib/game/side-goals';
 import type { GameStore } from '$lib/game/store.svelte';
 import { runResult } from '$lib/game/ui/test/fixtures';
@@ -31,24 +32,64 @@ import {
   sideMetText,
   unlocksText
 } from '$lib/game/ui/words';
-import { defaultGoal } from '$lib/goal/goal';
+import { TODAY, defaultGoal } from '$lib/goal/goal';
 import { WINDOW_MONTHS } from '$lib/sim/timeline-client';
 import type { TimelineHostResponse } from '$lib/sim/timeline-protocol';
 import { monthFirstDay } from '$lib/sim/world/months';
-import type { ScoreStatics } from '$lib/sim/world/score/types';
+import type { ScoreStatics, TimelineView } from '$lib/sim/world/score/types';
 import type { Day } from '$lib/timelapse/time';
 import manifestJson from '../../../e2e/fixtures/data/fixture-0/manifest.json';
 import type { AddChoice } from './add';
+import { UPDATING } from './copy';
 import { LOCKED_LANE, goalUnlocks } from './game-copy';
 import { DEFAULT_POLICY4, type Policy, type SimPolicy4 } from './policy4';
 import type { Lots } from './session.svelte';
-import { FakeTimelineWorker, compiledMsg, filledMsg } from './test/fake-timeline-worker';
+import { playheadAt } from './results';
+import { FakeTimelineWorker, cellsMsg, compiledMsg, filledMsg } from './test/fake-timeline-worker';
 import { chunk, statics as baseStatics } from './test/fixtures';
 import { GAME_ID, gameWith } from './test/game';
+import { runLayer } from './test/run-layer-stub';
 import { isValidId } from '$lib/ids/base58';
 import TimelineModeHost from './test/TimelineModeHost.svelte';
 
 vi.mock('$lib/map/SimMap.svelte', () => import('$lib/fzp/test/FzpSimMapStub.svelte'));
+vi.mock('$lib/game/run/RunLayer.svelte', () => import('./test/RunLayerStub.svelte'));
+
+/**
+ * The frame seam (R1's clock module, which TimelineMode passes to RunClock too). While `manual` is
+ * false it forwards to the browser's frames; while true `raf` queues and `frame()` runs one.
+ */
+const frames = vi.hoisted(() => ({
+  manual: false,
+  t: 1000,
+  next: 1_000_000,
+  pending: new Map<number, FrameRequestCallback>()
+}));
+
+vi.mock('$lib/game/run/clock', async (orig) => ({
+  ...(await orig<typeof import('$lib/game/run/clock')>()),
+  now: () => (frames.manual ? frames.t : performance.now()),
+  raf: (cb: FrameRequestCallback) => {
+    if (!frames.manual) return requestAnimationFrame(cb);
+    const h = frames.next++;
+    frames.pending.set(h, cb);
+    return h;
+  },
+  cancelRaf: (h: number) => {
+    if (!frames.manual) return cancelAnimationFrame(h);
+    frames.pending.delete(h);
+  }
+}));
+
+/** One queued frame: the clock 16 ms on, every callback queued before it run with that time. */
+function frame(): void {
+  flushSync();
+  frames.t += 16;
+  const cbs = [...frames.pending.values()];
+  frames.pending.clear();
+  for (const cb of cbs) cb(frames.t);
+  flushSync();
+}
 
 const manifest: Manifest = parseManifest(manifestJson);
 const cal = fixtureCalibration();
@@ -91,11 +132,17 @@ type Over = Partial<{
   onstarter: (choice: AddChoice, label: string) => void;
   withInspector: boolean;
   inspectorOpen: boolean;
+  runMs: number;
+  collectForMe: boolean;
 }>;
 
 let workers: FakeTimelineWorker[];
 const w = () => workers[workers.length - 1];
 const emit = (r: TimelineHostResponse) => w().emit(r);
+/** Every phase event TimelineMode (or the stub tree) sent, in order. */
+let phaseEvents: PhaseEvent[];
+const onphaseCalls = (e: PhaseEvent) => phaseEvents.filter((x) => x === e);
+const runLayerProps = () => runLayer.props!;
 
 function setup(over: Over = {}) {
   const ctl: {
@@ -104,6 +151,7 @@ function setup(over: Over = {}) {
     setLots?: (l: Lots | null) => void;
     setPhase?: (p: GamePhase) => void;
     setLotsFailed?: (f: boolean) => void;
+    send?: (e: PhaseEvent) => void;
   } = {};
   const createWorker = vi.fn(() => {
     const f = new FakeTimelineWorker();
@@ -125,6 +173,9 @@ function setup(over: Over = {}) {
       ctl,
       statusMs: 0,
       fetchPlaces: async () => null,
+      onphaseevent: (e: PhaseEvent) => void phaseEvents.push(e),
+      ...(over.runMs !== undefined ? { runMs: over.runMs } : {}),
+      ...(over.collectForMe !== undefined ? { collectForMe: over.collectForMe } : {}),
       ...(over.game ? { game: over.game } : {}),
       ...(over.goalAmount !== undefined ? { goalAmount: over.goalAmount } : {}),
       ...(over.initialRun ? { initialRun: over.initialRun } : {}),
@@ -140,8 +191,24 @@ function setup(over: Over = {}) {
     setRun: (p: SimPolicy4) => ctl.setRun!(p),
     setLots: (l: Lots | null) => ctl.setLots!(l),
     setPhase: (p: GamePhase) => ctl.setPhase!(p),
-    setLotsFailed: (f: boolean) => ctl.setLotsFailed!(f)
+    setLotsFailed: (f: boolean) => ctl.setLotsFailed!(f),
+    send: (e: PhaseEvent) => ctl.send!(e)
   };
+}
+
+/** The worker exists and was asked to open. */
+async function opening() {
+  await expect.poll(() => workers.length).toBeGreaterThan(0);
+  await expect.poll(() => w().lastOf('openTimeline')).toBeTruthy();
+}
+
+/** Opened and compiled at rev 1, nothing filled: a page in starting waits there. */
+async function waiting(over: Over = {}) {
+  const s = setup(over);
+  await opening();
+  emit(compiledMsg(1, LONG));
+  await expect.poll(() => debug().lastIndex).toBe(LONG.lastIndex);
+  return s;
 }
 
 /** Opened and compiled at rev 1, filled through `through` (default the statics' last month). */
@@ -176,12 +243,16 @@ async function toEnd() {
 
 beforeEach(async () => {
   workers = [];
+  phaseEvents = [];
   stub.reset();
+  runLayer.reset();
   vi.stubEnv('VITE_E2E', '1');
   await page.viewport(1280, 900);
 });
 
 afterEach(() => {
+  frames.manual = false;
+  frames.pending.clear();
   vi.unstubAllEnvs();
   vi.restoreAllMocks();
 });
@@ -377,7 +448,7 @@ describe('TimelineMode in a game: the phases and what each mounts (#tbl-phase-mo
   });
 
   it('starting: the map takes the whole mode box; no dock, key or card; taps open no card', async () => {
-    await opened({ game: gameWith({ phase: 'runs', runs: 0 }), phased: true }, LONG);
+    await waiting({ game: gameWith({ phase: 'runs', runs: 0 }), phased: true });
     expect(mode().getAttribute('data-phase')).toBe('starting');
     expect(none('tl-dock')).toBeNull();
     expect(none('map-key-control')).toBeNull();
@@ -398,23 +469,32 @@ describe('TimelineMode in a game: the phases and what each mounts (#tbl-phase-mo
 
   it('workshop keeps the map container its 40% share below md', async () => {
     const s = await opened({ game: gameWith({ phase: 'runs', runs: 1 }), phased: true }, LONG);
-    s.setPhase('workshop');
+    s.send('edit');
     await phaseIs('workshop');
     expect(mapBox().parentElement!.classList.contains('max-md:h-[40%]')).toBe(true);
   });
 
   it('the waiting region is a real box, in the accessibility tree', async () => {
-    await opened({ game: gameWith({ phase: 'runs', runs: 0 }), phased: true }, LONG);
+    await waiting({ game: gameWith({ phase: 'runs', runs: 0 }), phased: true });
     const live = page.getByTestId('run-waiting-live').element();
     expect(live.getAttribute('role')).toBe('status');
     expect(getComputedStyle(live).display).not.toBe('contents');
+    expect(getComputedStyle(live).position).not.toBe('absolute'); // in the flow while it shows
     await expect.element(page.getByRole('status').filter({ hasText: RUN_BUSY })).toBeVisible();
+  });
+
+  it('the waiting region, empty out of starting, matches :empty and leaves the flow', async () => {
+    await opened({ game: gameWith({ phase: 'runs', runs: 1 }), phased: true }, LONG);
+    await phaseIs('tree');
+    const live = page.getByTestId('run-waiting-live').element();
+    expect(live.matches(':empty')).toBe(true);
+    expect(getComputedStyle(live).position).toBe('absolute');
   });
 
   it("workshop: today's layout, the dock, key and card mounted, the map not inert", async () => {
     const s = await opened({ game: gameWith({ phase: 'runs', runs: 1 }), phased: true }, LONG);
     await phaseIs('tree');
-    s.setPhase('workshop');
+    s.send('edit');
     await phaseIs('workshop');
     await expect.element(page.getByTestId('tl-dock')).toBeInTheDocument();
     expect(none('map-key-control')).not.toBeNull();
@@ -427,17 +507,21 @@ describe('TimelineMode in a game: the phases and what each mounts (#tbl-phase-mo
   });
 
   it('setRunView: true in starting, false in tree; never without a game', async () => {
-    const s = await opened({ game: gameWith({ phase: 'runs', runs: 1 }), phased: true }, LONG);
+    // Not filled: starting waits there.
+    const s = await waiting({ game: gameWith({ phase: 'runs', runs: 1 }), phased: true });
     await expect.poll(() => callsOf('setRunView').at(-1)).toEqual([false]);
     // Tree's Run sends `run`: tree to starting.
     await page.getByTestId('host-run').click();
     await phaseIs('starting');
     await expect.poll(() => callsOf('setRunView').at(-1)).toEqual([true]);
+    // No run settles here (no event reaches tally): the seam sets it.
     s.setPhase('tally');
     await phaseIs('tally');
     await expect.poll(() => callsOf('setRunView').length).toBe(3);
     expect(callsOf('setRunView').at(-1)).toEqual([true]);
-    s.setPhase('workshop');
+    s.send('continue');
+    await phaseIs('tree');
+    s.send('edit');
     await phaseIs('workshop');
     await expect.poll(() => callsOf('setRunView').at(-1)).toEqual([false]);
     await unmount(s);
@@ -451,41 +535,45 @@ describe('TimelineMode in a game: the phases and what each mounts (#tbl-phase-mo
 
   it('setRunView is called once in onMapReady with the phase', async () => {
     stub.autoReady = false;
-    await opened({ game: gameWith({ phase: 'runs', runs: 0 }), phased: true }, LONG);
+    await waiting({ game: gameWith({ phase: 'runs', runs: 0 }), phased: true });
     expect(callsOf('setRunView')).toEqual([]);
     stub.fireReady();
     await expect.poll(() => callsOf('setRunView')).toEqual([[true]]);
   });
 
   it('prefetchViewport asks nothing while in RUN_VIEW, and asks in tree', async () => {
-    const s = await opened({ game: gameWith({ phase: 'runs', runs: 0 }), phased: true }, LONG);
+    const s = await waiting({ game: gameWith({ phase: 'runs', runs: 0 }), phased: true });
     const before = w().all('prefetch').length;
     stub.map.fire('moveend');
     expect(w().all('prefetch').length).toBe(before);
+    // No run settles here (no event reaches tally): the seam sets it.
     s.setPhase('tally');
     await phaseIs('tally');
     stub.map.fire('moveend');
     expect(w().all('prefetch').length).toBe(before);
     // The control: out of RUN_VIEW the same moveend asks.
-    s.setPhase('tree');
+    s.send('continue');
     await phaseIs('tree');
     stub.map.fire('moveend');
     expect(w().all('prefetch').length).toBe(before + 1);
   });
 
   it('Space in starting and tally does nothing and is prevented', async () => {
-    const s = await opened({ game: gameWith({ phase: 'runs', runs: 0 }), phased: true }, LONG);
+    const s = await waiting({ game: gameWith({ phase: 'runs', runs: 0 }), phased: true });
     expect(mode().getAttribute('data-phase')).toBe('starting');
     const e = space();
     expect(e.defaultPrevented).toBe(true);
     expect(debug().playing).toBe(false);
+    // No run settles here (no event reaches tally): the seam sets it.
     s.setPhase('tally');
     await phaseIs('tally');
     const t = space();
     expect(t.defaultPrevented).toBe(true);
     expect(debug().playing).toBe(false);
     // The control: in workshop Space plays.
-    s.setPhase('workshop');
+    s.send('continue');
+    await phaseIs('tree');
+    s.send('edit');
     await phaseIs('workshop');
     await expect.element(page.getByTestId('tl-play')).toBeInTheDocument();
     space();
@@ -549,28 +637,33 @@ describe('TimelineMode in a game: the phases and what each mounts (#tbl-phase-mo
   });
 
   it("starting shows the waiting notice in a status region; tree doesn't", async () => {
-    const s = await opened({ game: gameWith({ phase: 'runs', runs: 0 }), phased: true }, LONG);
-    const waiting = page.getByTestId('run-waiting');
-    await expect.element(waiting).toHaveTextContent(RUN_BUSY);
-    expect(waiting.element().closest('[role=status]')).not.toBeNull();
-    s.setPhase('tree');
+    const s = await waiting({ game: gameWith({ phase: 'runs', runs: 1 }), phased: true });
+    await page.getByTestId('host-run').click();
+    await phaseIs('starting');
+    const notice = page.getByTestId('run-waiting');
+    await expect.element(notice).toHaveTextContent(RUN_BUSY);
+    expect(notice.element().closest('[role=status]')).not.toBeNull();
+    // A new run document in starting aborts: back to the tree.
+    s.setRun(mk(protect(5)));
     await phaseIs('tree');
     expect(none('run-waiting')).toBeNull();
   });
 
   it('focus: the map box in starting; the Zoning toggle in workshop with nothing selected', async () => {
-    const s = await opened({ game: gameWith({ phase: 'runs', runs: 1 }), phased: true }, LONG);
+    const s = await waiting({ game: gameWith({ phase: 'runs', runs: 1 }), phased: true });
     await page.getByTestId('host-run').click();
     await phaseIs('starting');
     await expect.poll(() => document.activeElement).toBe(mapBox());
-    s.setPhase('workshop');
+    s.send('abort');
+    await phaseIs('tree');
+    s.send('edit');
     await phaseIs('workshop');
     const toggle = page.getByRole('button', { name: 'Zoning', exact: true }).element();
     await expect.poll(() => document.activeElement).toBe(toggle);
   });
 
   it('focus: from the keyboard the map box in starting shows a focus ring', async () => {
-    await opened({ game: gameWith({ phase: 'runs', runs: 1 }), phased: true }, LONG);
+    await waiting({ game: gameWith({ phase: 'runs', runs: 1 }), phased: true });
     (page.getByTestId('host-run').element() as HTMLElement).focus();
     await userEvent.keyboard('{Enter}');
     await phaseIs('starting');
@@ -582,7 +675,7 @@ describe('TimelineMode in a game: the phases and what each mounts (#tbl-phase-mo
   });
 
   it('focus: a page landing in starting does not take focus at load', async () => {
-    await opened({ game: gameWith({ phase: 'runs', runs: 0 }), phased: true }, LONG);
+    await waiting({ game: gameWith({ phase: 'runs', runs: 0 }), phased: true });
     expect(mode().getAttribute('data-phase')).toBe('starting');
     await tick();
     await tick();
@@ -591,11 +684,12 @@ describe('TimelineMode in a game: the phases and what each mounts (#tbl-phase-mo
   });
 
   it('focus: a change to tree moves none (the tree keeps the Run it focused)', async () => {
-    // Land in starting, then change to tree: the stub tree focuses its Run on mount, as Tree does.
+    // Land in starting, the forecast ready: the run starts (focus to the map box). Then change to
+    // tree: the stub tree focuses its Run on mount, as Tree does.
     const s = await opened({ game: gameWith({ phase: 'runs', runs: 0 }), phased: true }, LONG);
-    s.setPhase('run');
     await phaseIs('run');
     await expect.poll(() => document.activeElement).toBe(mapBox());
+    // With no run settled an abort returns to starting: no event reaches tree, so the seam.
     s.setPhase('tree');
     await phaseIs('tree');
     const run = page.getByTestId('host-run').element();
@@ -616,6 +710,341 @@ describe('TimelineMode in a game: the phases and what each mounts (#tbl-phase-mo
     const frame = { center: [-122.42, 37.77], zoom: 15, bearing: 0, pitch: 0 } as CameraFrame;
     await opened({ initialFrame: frame }, LONG);
     expect(stub.props.initialFrame).toEqual(frame);
+  });
+});
+
+// ---- the run (game-sim #sec-design-run, #sec-design-feed, #sec-if-r1) ----
+
+/** The rung-0 deadline, inside LONG's window: the run's stop day. */
+const STOP = goalAt(asOf, 0).deadline;
+const AT_A: [number, number] = [-122.42, 37.77];
+const AT_B: [number, number] = [-122.41, 37.76];
+const FLAGGED = 2;
+type MarkerIn = {
+  row: number;
+  completed: number;
+  flags?: number;
+  homes?: number;
+  at?: [number, number];
+};
+/** The index's markers: inside the deadline, past it, flagged inside it, not completed. */
+const MARKERS: MarkerIn[] = [
+  { row: 0, completed: asOf + 40, at: AT_A },
+  { row: 1, completed: STOP + 40, at: AT_B },
+  { row: FLAGGED, completed: asOf + 70, flags: 1, homes: 30, at: AT_B },
+  { row: 3, completed: NaN, at: AT_A }
+];
+/** One more marker, completed before the deadline. */
+const MORE: MarkerIn = { row: 4, completed: asOf + 100, homes: 7, at: AT_A };
+
+function city(rows: number, ms: MarkerIn[]): CityDelta {
+  const k = ms.length;
+  const d: CityDelta = {
+    rows,
+    row: Int32Array.from(ms.map((m) => m.row)),
+    lngLat: new Float32Array(2 * k),
+    days: new Float32Array(3 * k),
+    homes: Uint16Array.from(ms.map((m) => m.homes ?? 12)),
+    existing: new Uint16Array(k),
+    flags: Uint8Array.from(ms.map((m) => m.flags ?? 0))
+  };
+  ms.forEach((m, i) => {
+    d.lngLat.set(m.at ?? AT_A, 2 * i);
+    d.days.set([NaN, NaN, m.completed], 3 * i);
+  });
+  return d;
+}
+const update = (revision: number, c: CityDelta): TimelineUpdate => ({
+  revision,
+  cells: [],
+  removedCells: [],
+  demolish: [],
+  city: c
+});
+/** The marker R1 is given for one of these, as the index stores it (float32 places and days). */
+const toMarker = (m: MarkerIn): Marker => ({
+  row: m.row,
+  lng: Math.fround((m.at ?? AT_A)[0]),
+  lat: Math.fround((m.at ?? AT_A)[1]),
+  completed: Math.fround(m.completed),
+  homes: m.homes ?? 12,
+  existing: 0,
+  policy: (m.flags ?? 0) !== 0
+});
+
+const modePhase = () => page.getByTestId('tl-mode').element().getAttribute('data-phase');
+const runPhase = { phase: 'runs' as const, runs: 0 };
+
+/** Lands in starting (runs 0) and fills six months: the run starts. */
+async function toRun(over: Over = {}) {
+  const s = setup({ game: gameWith(runPhase), phased: true, runMs: 200, ...over });
+  await opening();
+  emit(compiledMsg(1, LONG));
+  emit(filledMsg(1, 0, 6));
+  await expect.poll(() => modePhase()).toBe('run');
+  return s;
+}
+
+describe('TimelineMode in a game: the run', () => {
+  it('starting shows run-waiting and enters run at the first fill', async () => {
+    setup({ game: gameWith(runPhase), phased: true, runMs: 200 });
+    await expect.element(page.getByTestId('run-waiting')).toHaveTextContent(RUN_BUSY);
+    await opening();
+    expect(none('run-clock')).not.toBeNull(); // at today, in starting
+    emit(compiledMsg(1, LONG));
+    emit(filledMsg(1, 0, 6));
+    await expect.poll(() => modePhase()).toBe('run');
+    await expect.element(page.getByTestId('run-clock')).toBeInTheDocument();
+    expect(none('run-waiting')).toBeNull();
+    expect(onphaseCalls('ready')).toHaveLength(1);
+    // The run layer's box is the map box's last child but the clock, over the map.
+    const box = page.getByTestId('run-layer-box').element();
+    expect(box.parentElement).toBe(page.getByTestId('tl-map-box').element());
+    expect(box.contains(page.getByTestId('run-layer').element())).toBe(true);
+    expect(box.nextElementSibling).toBe(page.getByTestId('run-clock').element());
+    expect([...box.classList]).toEqual(
+      expect.arrayContaining(['pointer-events-none', 'absolute', 'inset-0', 'z-20'])
+    );
+  });
+
+  it("the feed carries planDrops of the index's markers to the deadline", async () => {
+    setup({ game: gameWith(runPhase), phased: true, runMs: 200 });
+    await opening();
+    emit(compiledMsg(1, LONG));
+    emit(cellsMsg(update(0, city(4, MARKERS))));
+    emit(filledMsg(1, 0, 6));
+    await expect.poll(() => modePhase()).toBe('run');
+    const want = planDrops(MARKERS.map(toMarker), asOf, STOP);
+    // The one past the deadline and the one not completed are left out.
+    expect(want.map((d) => d.row)).toEqual([0, FLAGGED]);
+    await expect.poll(() => runLayerProps().feed.drops).toEqual(want);
+    expect(runLayerProps().feed.drops.find((d) => d.row === FLAGGED)!.policy).toBe(true);
+    expect(runLayerProps().feed.drops.find((d) => d.row === 0)!.policy).toBe(false);
+  });
+
+  it("RunLayer gets the game's hands, a silent sound for none, and the take while in run", async () => {
+    const game = gameWith(runPhase);
+    await toRun({ game });
+    const p = runLayerProps();
+    expect(p.hands).toEqual(game.limits.hands);
+    for (const k of ['pop', 'collect', 'goal', 'buy'] as const) {
+      expect(() => p.sound[k]()).not.toThrow();
+    }
+    expect(p.collectForMe).toBe(false);
+  });
+
+  it('a change of collectForMe mid-run reaches RunLayer', async () => {
+    const s = await toRun({ collectForMe: false });
+    expect(runLayerProps().collectForMe).toBe(false);
+    await (await s.r).rerender({ collectForMe: true });
+    await expect.poll(() => runLayerProps().collectForMe).toBe(true);
+    expect(modePhase()).toBe('run');
+    expect(runLayer.feeds.size).toBe(1);
+  });
+
+  it('a second run press in starting starts nothing more', async () => {
+    // Tree, the forecast not yet filled: Run goes to starting, which waits.
+    const s = await waiting({ game: gameWith({ phase: 'runs', runs: 1 }), phased: true });
+    await page.getByTestId('host-run').click();
+    await expect.poll(() => modePhase()).toBe('starting');
+    s.send('run'); // the second press, in starting
+    flushSync();
+    expect(modePhase()).toBe('starting');
+    emit(filledMsg(1, 0, 6));
+    await expect.poll(() => modePhase()).toBe('run');
+    s.send('run'); // and one in run
+    flushSync();
+    expect(modePhase()).toBe('run');
+    expect(onphaseCalls('run')).toHaveLength(3);
+    expect(onphaseCalls('ready')).toHaveLength(1);
+  });
+
+  it('a crash in run with a run settled lands in tree and settles nothing', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {}); // the client logs each crash
+    const game = gameWith({ phase: 'runs', runs: 1 });
+    await opened({ game, phased: true }, LONG);
+    await page.getByTestId('host-run').click();
+    await expect.poll(() => modePhase()).toBe('run');
+    w().crash();
+    await expect.poll(() => modePhase()).toBe('tree');
+    expect(game.state.runs).toBe(1);
+    expect(onphaseCalls('abort')).toHaveLength(1);
+    expect(onphaseCalls('settled')).toHaveLength(0);
+    expect(runLayerProps().feed.running).toBe(false);
+  });
+
+  it('a crash in starting or run with no run settled returns to starting, never shows the tree, and runs again after Retry', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {}); // the client logs each crash
+    setup({ game: gameWith(runPhase), phased: true, runMs: 200 });
+    await opening();
+    // In starting, before any fill.
+    w().crash();
+    await expect.poll(() => onphaseCalls('abort').length).toBe(1);
+    expect(modePhase()).toBe('starting');
+    expect(none('host-tree')).toBeNull();
+    await page.getByRole('button', { name: 'Retry' }).click();
+    await expect.poll(() => workers.length).toBe(2);
+    await opening();
+    let rev = w().lastOf('openTimeline')!.rev;
+    emit(compiledMsg(rev, LONG));
+    emit(filledMsg(rev, 0, 6));
+    await expect.poll(() => modePhase()).toBe('run');
+    // In run.
+    w().crash();
+    await expect.poll(() => modePhase()).toBe('starting');
+    expect(onphaseCalls('abort')).toHaveLength(2);
+    expect(none('host-tree')).toBeNull();
+    expect(none('game-tree-pane')).toBeNull();
+    await page.getByRole('button', { name: 'Retry' }).click();
+    await expect.poll(() => workers.length).toBe(3);
+    await opening();
+    rev = w().lastOf('openTimeline')!.rev;
+    emit(compiledMsg(rev, LONG));
+    emit(filledMsg(rev, 0, 6));
+    await expect.poll(() => modePhase()).toBe('run');
+    expect(onphaseCalls('ready')).toHaveLength(2);
+  });
+
+  it('a new run document in run stops the clock and aborts', async () => {
+    const game = gameWith({ phase: 'runs', runs: 1 });
+    // A long run, so the clock still runs when the document changes.
+    const s = await opened({ game, phased: true, runMs: 20_000 }, LONG);
+    await page.getByTestId('host-run').click();
+    await expect.poll(() => modePhase()).toBe('run');
+    await expect.poll(() => runLayerProps().feed.running).toBe(true);
+    s.setRun(mk(protect(5)));
+    await expect.poll(() => modePhase()).toBe('tree');
+    expect(runLayerProps().feed.running).toBe(false);
+    expect(none('run-clock')).toBeNull();
+    expect(onphaseCalls('abort')).toHaveLength(1);
+  });
+
+  it('Space in a run does not toggle and is prevented', async () => {
+    await toRun();
+    const e = new KeyboardEvent('keydown', { key: ' ', code: 'Space', cancelable: true });
+    window.dispatchEvent(e);
+    expect(e.defaultPrevented).toBe(true);
+    expect(debug().playing).toBe(false);
+  });
+
+  it('the status reads waiting while the run waits at the computed edge', async () => {
+    // Six months filled: a 200 ms run catches the edge and waits there, running.
+    await toRun();
+    await expect
+      .poll(() => page.getByTestId('tl-status-shown').element().textContent)
+      .toContain(UPDATING);
+    expect(runLayerProps().feed.running).toBe(true);
+  });
+});
+
+describe('TimelineMode in a game: the run on frames the test drives', () => {
+  beforeEach(() => {
+    frames.manual = true;
+  });
+
+  it("the headline reads the playhead's month in a run", async () => {
+    await toRun();
+    for (let i = 0; i < 30 && debug().day < MONTHS[3]; i++) frame();
+    const d = debug().day;
+    expect(d).toBeGreaterThanOrEqual(MONTHS[3]);
+    const { index, atToday } = playheadAt(LONG.months, asOf, d);
+    // The view the page holds: LONG's baseline under six filled months of `chunk`.
+    const view = {
+      baseline: { completedNet: LONG.baseline.units },
+      rows: chunk(0, 6).rows
+    } as unknown as TimelineView;
+    const homes = goalAt(asOf, 0).measure.valueAt(view, atToday ? TODAY : index);
+    expect(homes).toBeGreaterThan(LONG.baseline.units);
+    await expect
+      .element(page.getByTestId('goal-headline-button'))
+      .toHaveTextContent(goalLine(homes, AMOUNT, ladder(asOf)[0].label));
+  });
+
+  it("RunLayer's feed is one object at the start of a run and mid-run, its getters reading the page", async () => {
+    setup({ game: gameWith(runPhase), phased: true, runMs: 200 });
+    await expect.poll(() => runLayer.props).not.toBeNull();
+    const f = runLayerProps().feed; // mounted in starting
+    expect(f.running).toBe(false);
+    await opening();
+    emit(compiledMsg(1, LONG));
+    emit(filledMsg(1, 0, 6));
+    await expect.poll(() => modePhase()).toBe('run');
+    expect(runLayerProps().feed).toBe(f);
+    expect(f.running).toBe(true);
+    expect(f.day).toBe(asOf);
+    const first = f.drops;
+    // cityVersion changes mid-run: the drops are planned again.
+    emit(cellsMsg(update(0, city(5, [MORE]))));
+    await expect.poll(() => f.drops).not.toBe(first);
+    expect(f.drops).toEqual(planDrops([toMarker(MORE)], asOf, STOP));
+    expect(runLayerProps().feed).toBe(f);
+    frame();
+    frame();
+    expect(f.day).toBeGreaterThan(asOf);
+    expect(f.day).toBe(debug().day);
+    const ll = stub.map.unproject([10, 10]);
+    const p = f.project(ll.lng, ll.lat)!; // projectPoint over the stub's project
+    expect(p.x).toBeCloseTo(10, 6);
+    expect(p.y).toBeCloseTo(10, 6);
+    expect(f.project(ll.lng - 10, ll.lat)).toBeNull(); // off the map box
+    expect(runLayer.feeds.size).toBe(1);
+  });
+
+  describe('the frame rule', () => {
+    it('an abort in the frame a run started holds running true one frame, then stops the clock', async () => {
+      const s = setup({ game: gameWith(runPhase), phased: true, runMs: 200 });
+      await expect.poll(() => runLayer.props).not.toBeNull();
+      const f = runLayerProps().feed;
+      await opening();
+      emit(compiledMsg(1, LONG));
+      emit(filledMsg(1, 0, 6));
+      await expect.poll(() => modePhase()).toBe('run'); // no frame has run yet
+      expect(f.running).toBe(true);
+      s.setRun(mk(protect(5))); // a new run document: abort, before any frame
+      flushSync();
+      expect(modePhase()).toBe('run');
+      expect(f.running).toBe(true);
+      frame(); // the frame in which RunLayer reads the start
+      expect(f.running).toBe(true);
+      expect(modePhase()).toBe('run');
+      frame(); // the next frame: the clock stops and abort is sent
+      expect(f.running).toBe(false);
+      expect(modePhase()).toBe('starting');
+      expect(onphaseCalls('abort')).toHaveLength(1);
+    });
+
+    it('a run starts no earlier than the frame after the one in which running turned false', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => {}); // the client logs each crash
+      setup({ game: gameWith(runPhase), phased: true, runMs: 200 });
+      await expect.poll(() => runLayer.props).not.toBeNull();
+      const f = runLayerProps().feed;
+      await opening();
+      emit(compiledMsg(1, LONG));
+      emit(filledMsg(1, 0, 6));
+      await expect.poll(() => modePhase()).toBe('run');
+      frame();
+      frame(); // past the start's hold
+      w().crash(); // abort with runs 0: back to starting, running false
+      await expect.poll(() => modePhase()).toBe('starting');
+      expect(f.running).toBe(false);
+      await page.getByRole('button', { name: 'Retry' }).click();
+      await expect.poll(() => workers.length).toBe(2);
+      await opening();
+      const rev = w().lastOf('openTimeline')!.rev;
+      emit(compiledMsg(rev, LONG));
+      emit(filledMsg(rev, 0, 6)); // ready holds again, with no frame since running turned false
+      await expect.poll(() => debug().filledThrough).toBe(5);
+      flushSync();
+      expect(modePhase()).toBe('starting');
+      const seen: boolean[] = [];
+      for (let i = 0; i < 4 && modePhase() !== 'run'; i++) {
+        frame();
+        seen.push(f.running);
+      }
+      expect(modePhase()).toBe('run');
+      expect(seen[0]).toBe(false); // RunLayer reads false in a frame before the new run
+      expect(onphaseCalls('ready')).toHaveLength(2);
+    });
   });
 });
 

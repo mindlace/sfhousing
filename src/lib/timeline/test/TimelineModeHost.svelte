@@ -12,7 +12,8 @@
   `policy`; without it no `run` is passed.
   With `phased` (and a game in its runs) the host holds the phase as SimPage does: it starts at
   `landing(game.state)` and moves only by `nextPhase` on TimelineMode's and the stub tree's events
-  (`ctl.setPhase` sets it outright, a test seam). The stub tree shows its `busy` and `ending` as
+  (`ctl.setPhase` sets it outright, a test seam; `ctl.send` sends an event as a control would, and
+  `onphaseevent` sees each event first). The stub tree shows its `busy` and `ending` as
   `data-busy` and `data-ending` (JSON) and has Run (`host-run`), which sends `run` and, as Tree's
   Run does, takes focus when the tree mounts.
 -->
@@ -48,6 +49,8 @@
   interface Props extends Rest {
     /** Hold the phase as SimPage does (only with a game in its runs). */
     phased?: boolean;
+    /** Every phase event the host receives, before it applies it. */
+    onphaseevent?: (e: PhaseEvent) => void;
     onundoto?: (p: SimPolicy4) => void;
     withInspector?: boolean;
     face?: 'details' | 'activity';
@@ -67,6 +70,8 @@
       setLots?: (l: Lots | null) => void;
       setLotsFailed?: (f: boolean) => void;
       setPhase?: (p: GamePhase) => void;
+      /** A phase event as the page's controls send it (a second press of Run). */
+      send?: (e: PhaseEvent) => void;
       showDetails?: () => Promise<void>;
       showActivity?: () => Promise<void>;
     };
@@ -85,6 +90,7 @@
     saveStatus: initialSave = undefined,
     saveOff = undefined,
     phased = false,
+    onphaseevent = undefined,
     ...rest
   }: Props = $props();
   // Never `landing` for the open game or one in its opening: those have no phase.
@@ -96,6 +102,7 @@
     )
   );
   function onphase(e: PhaseEvent): void {
+    onphaseevent?.(e);
     if (phase !== null && rest.game) phase = nextPhase(phase, e, rest.game.state.runs);
   }
   const slot = provideHeaderActions();
@@ -119,6 +126,7 @@
     ctl.setLots = (l) => (lots = l);
     ctl.setLotsFailed = (f) => (lotsFailed = f);
     ctl.setPhase = (p) => (phase = p);
+    ctl.send = (e) => onphase(e);
   });
 </script>
 
