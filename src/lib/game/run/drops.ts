@@ -1,4 +1,4 @@
-// R1 (contracts stub): drops from the city markers. run-play makes it real.
+// Plans the run's drops from the city markers, and the feed the run layer reads.
 import type { Day } from '$lib/timelapse/time';
 import type { Units } from '../state';
 

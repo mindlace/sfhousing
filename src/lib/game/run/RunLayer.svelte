@@ -6,7 +6,18 @@
   import { cancelRaf, now, raf, reducedMotion } from './clock';
   import { DRAW, drawRun, policyColour, type Look } from './draw';
   import type { RunFeed } from './drops';
-  import { createRun, idle, reproject, setBox, step, type Pt } from './run-model';
+  import {
+    createRun,
+    idle,
+    nudgeRing,
+    pointRing,
+    reproject,
+    RING_KEY_DIR,
+    RING_KEYS,
+    setBox,
+    step,
+    type Pt
+  } from './run-model';
   import type { Sound } from './sound';
   import { runOverText } from './words';
 
@@ -32,9 +43,13 @@
   let ctx: CanvasRenderingContext2D | null = null;
   let look: Look = { accent: '', policy: '', ink: '', surface: '', font: 'sans-serif' };
   let handle: number | null = null;
-  /** The canvas box's top left in client pixels; the pointer input (Task 9) reads it. */
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  /** The canvas box's top left in client pixels; pointer input reads it. */
   let origin: Pt = { x: 0, y: 0 };
+  /**
+   * Whether the last pointer point was outside the box, or a run has started since the last
+   * one: the next inside move is fresh.
+   */
+  let out = false;
   /** Whether the last drawn frame showed the ring. */
   let drewRing = false;
 
@@ -71,6 +86,8 @@
       reduced,
       project
     });
+    // The ring starts at the centre: the run's first pointer move inside jumps, sweeping nothing.
+    if (r.started) out = true;
     if (r.collected > 0) sound.collect();
     else if (r.appeared > 0) sound.pop();
     // A start zeroes the take: that is a change only when the last take sent was not zero.
@@ -105,6 +122,44 @@
     reproject(m, project);
     origin = { x: r.left, y: r.top };
     paint(now(), reducedMotion(), collectForMe || hands.auto);
+  }
+
+  /** Moves the ring to a pointer point while running; never starts the loop. */
+  function onPointer(e: PointerEvent): void {
+    if (!m.running) return;
+    const x = e.clientX - origin.x;
+    const y = e.clientY - origin.y;
+    const { w, h } = m.box;
+    if (w <= 0 || h <= 0 || x < 0 || x > w || y < 0 || y > h) {
+      out = true;
+      return;
+    }
+    pointRing(m, { x, y }, e.type === 'pointerdown' || out);
+    out = false;
+  }
+
+  const KEY_WIDGETS =
+    '[role=slider],[role=menu],[role=menubar],[role=listbox],[role=radiogroup],' +
+    '[role=tablist],[role=tree],[role=grid]';
+
+  function keyIgnored(e: KeyboardEvent): boolean {
+    if (!m.running || collectForMe || hands.auto || e.defaultPrevented) return true;
+    if (e.altKey || e.ctrlKey || e.metaKey) return true;
+    const t = e.target;
+    if (!(t instanceof Element)) return false;
+    if (t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement) return true;
+    if (t instanceof HTMLSelectElement) return true;
+    if (t instanceof HTMLElement && t.isContentEditable) return true;
+    return t.closest(KEY_WIDGETS) !== null;
+  }
+
+  /** Steps the ring by an arrow key while running; never starts the loop. */
+  function onKey(e: KeyboardEvent): void {
+    const dir = RING_KEY_DIR[e.key];
+    if (!dir || keyIgnored(e)) return;
+    const px = e.shiftKey ? RING_KEYS.shiftStepPx : RING_KEYS.stepPx;
+    nudgeRing(m, dir[0] * px, dir[1] * px);
+    e.preventDefault();
   }
 
   function readLook(dark: boolean): void {
@@ -146,8 +201,20 @@
 
     const onScroll = () => readOrigin();
     window.addEventListener('scroll', onScroll, { capture: true, passive: true });
+    window.addEventListener('pointermove', onPointer, { passive: true });
+    window.addEventListener('pointerdown', onPointer, { passive: true });
+    // The mouse leaving the window: its return elsewhere starts a fresh path, not a sweep.
+    const onOut = (e: PointerEvent) => {
+      if (e.relatedTarget === null) out = true;
+    };
+    window.addEventListener('pointerout', onOut, { passive: true });
+    window.addEventListener('keydown', onKey);
 
     return () => {
+      window.removeEventListener('pointerout', onOut);
+      window.removeEventListener('pointermove', onPointer);
+      window.removeEventListener('pointerdown', onPointer);
+      window.removeEventListener('keydown', onKey);
       if (handle !== null) cancelRaf(handle);
       handle = null;
       observer.disconnect();

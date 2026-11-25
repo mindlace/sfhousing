@@ -1,4 +1,3 @@
-// src/lib/game/run/words.ts
 import type { RunTake } from '../run-result';
 import { total } from '../units';
 
