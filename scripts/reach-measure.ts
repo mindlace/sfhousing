@@ -1,11 +1,23 @@
-// The engine runner (tree-catalogue spec §sec-design-engine): one timeline host over a dataset
-// directory or a published dataset version, filling the whole window for each policy document it
-// is given, one document at a time. `scripts/tree-balance.ts` imports it.
-import { readFileSync } from 'node:fs';
+// `npx tsx scripts/reach-measure.ts <datasetDir> [--write] [--amount <homes>]`, or
+// `--version <datasetVersion> [--from <origin>]` in place of the directory (tree-catalogue spec
+// §sec-design-reach): runs the full tree through the timeline engine, reads when it reaches the
+// goal and derives the ladder's years; `--write` rewrites src/lib/game/catalogue/ladder-years.ts.
+// Exits 0 reached with a ladder, 1 missed or no earlier deadline, 2 when it could not run (one
+// stderr line, `reach-measure: <reason>`, nothing on stdout).
+//
+// The engine runner (§sec-design-engine): one timeline host over a dataset directory or a
+// published dataset version, filling the whole window for each policy document it is given, one
+// document at a time. `scripts/tree-balance.ts` imports it.
+import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { performance } from 'node:perf_hooks';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parseManifest, type Manifest } from '../src/lib/data/manifest';
 import type { ParcelId } from '../src/lib/data/parcel';
+import { formatShortMonthYear } from '../src/lib/fzp/format';
+import { utcParts } from '../src/lib/fzp/time';
+import { fullTree } from '../src/lib/game/catalogue/play';
+import { defaultGoal, readGoal, TODAY, type Goal } from '../src/lib/goal/goal';
 import type { FetchLike } from '../src/lib/sim/chunks';
 import { canonicalJson } from '../src/lib/sim-page/policy';
 import { loadScenario, scenarioUrls, type FetchBytesLike } from '../src/lib/sim/scenario/load';
@@ -410,4 +422,275 @@ export async function openEngine(
   };
 
   return { datasetVersion: manifest.datasetVersion, asOf, cal, view, close };
+}
+
+/**
+ * The ladder's years (G6): from the largest multiple of five at least five years before the
+ * window's end year down to the first multiple of five at or after the measured year; when more
+ * than four fit, the first, the last and two evenly between.
+ */
+export function ladderYears(endYear: number, reachedYear: number): number[] {
+  const first = 5 * Math.floor((endYear - 5) / 5);
+  const last = 5 * Math.ceil(reachedYear / 5);
+  const all: number[] = [];
+  for (let y = first; y >= last; y -= 5) all.push(y);
+  if (all.length <= 4) return all;
+  const n = all.length - 1;
+  return [0, Math.round(n / 3), Math.round((2 * n) / 3), n].map((i) => all[i]);
+}
+
+/** The text of ladder-years.ts. */
+export function ladderFile(r: {
+  datasetVersion: string;
+  reachedOn: Day;
+  deadline: Day;
+  years: readonly number[];
+}): string {
+  return (
+    "// The deadline years after the window's end, latest first (G6). Written by\n" +
+    '// `npx tsx scripts/reach-measure.ts --write` on dataset ' +
+    r.datasetVersion +
+    ':\n' +
+    '// the full tree reaches the goal in ' +
+    formatShortMonthYear(r.reachedOn) +
+    '; the window ends ' +
+    formatShortMonthYear(r.deadline) +
+    '.\n' +
+    'export const LADDER_YEARS: readonly number[] = [' +
+    r.years.join(', ') +
+    '];\n'
+  );
+}
+
+/** The ladder file of the repository this script is in, whatever the working directory. */
+export const LADDER_FILE = fileURLToPath(
+  new URL('../src/lib/game/catalogue/ladder-years.ts', import.meta.url)
+);
+const LADDER_FILE_SHOWN = 'src/lib/game/catalogue/ladder-years.ts';
+
+/**
+ * One dataset directory, or `--version <v>` with an optional `--from <origin>`, and the flags
+ * named in `flags` (keys without their `--`: `{ write: 'bool', amount: 'value' }` takes `--write`
+ * and `--amount <v>`); the flags given are returned under the same keys, a bool one as `true`.
+ */
+export function parseSourceArgs(
+  argv: string[],
+  flags: Record<string, 'bool' | 'value'>
+): { src: DataSource; flags: Record<string, string | true> } | { error: string } {
+  const kinds: Record<string, 'bool' | 'value'> = { ...flags, version: 'value', from: 'value' };
+  const given: Record<string, string | true> = {};
+  let dir: string | null = null;
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (!a.startsWith('-')) {
+      if (dir !== null) return { error: `unexpected argument ${a}` };
+      dir = a;
+      continue;
+    }
+    const name = a.startsWith('--') ? a.slice(2) : '';
+    const kind = Object.hasOwn(kinds, name) ? kinds[name] : undefined;
+    if (kind === undefined) return { error: `unknown flag ${a}` };
+    if (Object.hasOwn(given, name)) return { error: `${a} given twice` };
+    if (kind === 'bool') {
+      given[name] = true;
+      continue;
+    }
+    const v = argv[i + 1];
+    if (v === undefined || v.startsWith('--')) return { error: `${a} needs a value` };
+    given[name] = v;
+    i += 1;
+  }
+  const { version, from, ...rest } = given;
+  if (from !== undefined && version === undefined) return { error: '--from needs --version' };
+  if (version !== undefined && dir !== null) {
+    return { error: `--version and a dataset directory (${dir}) are both given` };
+  }
+  if (typeof version === 'string') {
+    return {
+      src: { version, origin: typeof from === 'string' ? from : DEFAULT_ORIGIN },
+      flags: rest
+    };
+  }
+  if (dir === null) return { error: 'give a dataset directory or --version <datasetVersion>' };
+  return { src: { dir }, flags: rest };
+}
+
+/** `--amount`'s value: a positive whole number, or undefined when not given. */
+export function parseAmount(v: string | true | undefined): number | undefined | { error: string } {
+  if (v === undefined) return undefined;
+  if (v === true || !/^\d+$/.test(v) || Number(v) <= 0) {
+    return { error: `--amount must be a positive integer, got ${v === true ? 'nothing' : v}` };
+  }
+  return Number(v);
+}
+
+/** The command's arguments, or the reason they are refused. */
+export function parseReachArgs(
+  argv: string[]
+): { src: DataSource; write: boolean; amount?: number } | { error: string } {
+  const parsed = parseSourceArgs(argv, { write: 'bool', amount: 'value' });
+  if ('error' in parsed) return parsed;
+  const amount = parseAmount(parsed.flags.amount);
+  if (typeof amount === 'object') return amount;
+  const write = parsed.flags.write === true;
+  if (write && amount !== undefined) {
+    return { error: '--write with --amount is refused: a test amount never sets the ladder' };
+  }
+  return amount === undefined ? { src: parsed.src, write } : { src: parsed.src, write, amount };
+}
+
+export interface Reach {
+  datasetVersion: string;
+  /** The reconciled full-tree document's policies, by kind. */
+  policies: { total: number; zoning: number; permitting: number; money: number };
+  /** The goal's deadline: the window's last whole calendar month. */
+  deadline: Day;
+  amount: number;
+  /** Homes counted by the goal's measure at the deadline month. */
+  homesAtDeadline: number;
+  /** The first month the amount is met; null when it is not met by the deadline. */
+  reachedOn: Day | null;
+  /** `ladderYears` of the deadline's and the reach's years; null on a miss. */
+  years: number[] | null;
+}
+
+/** Calendar months from `a`'s month to `b`'s. */
+function monthsBetween(a: Day, b: Day): number {
+  const ay = utcParts(a);
+  const by = utcParts(b);
+  return (by.y - ay.y) * 12 + (by.m - ay.m);
+}
+
+/** The full tree's reach of the goal; `amount` defaults to the goal's own. */
+export async function measureReach(engine: Engine, amount?: number): Promise<Reach> {
+  const tree = fullTree(engine.cal).doc;
+  const { kinds } = reconcilePolicy4(tree, engine.cal, engine.asOf).doc;
+  const view = await engine.view(tree);
+  const base = defaultGoal(engine.asOf);
+  const goal: Goal = amount === undefined ? base : { ...base, amount };
+  const reading = readGoal(goal, view, view.lastIndex);
+  if (reading === null) throw new Error('the window is not filled');
+  const offset = monthsBetween(view.months[0], goal.deadline);
+  const d = offset < 0 ? TODAY : Math.min(offset, view.lastIndex);
+  const { reachedOn } = reading;
+  return {
+    datasetVersion: engine.datasetVersion,
+    policies: {
+      total: kinds.zoning.length + kinds.permitting.length + kinds.money.length,
+      zoning: kinds.zoning.length,
+      permitting: kinds.permitting.length,
+      money: kinds.money.length
+    },
+    deadline: goal.deadline,
+    amount: goal.amount,
+    homesAtDeadline: goal.measure.valueAt(view, d),
+    reachedOn,
+    years: reachedOn === null ? null : ladderYears(utcParts(goal.deadline).y, utcParts(reachedOn).y)
+  };
+}
+
+const count = (n: number) => n.toLocaleString('en-US');
+
+/** The lines the command prints. */
+export function reachLines(r: Reach): string[] {
+  const p = r.policies;
+  const lines = [
+    `Dataset ${r.datasetVersion}`,
+    `Full tree: ${count(p.total)} ${p.total === 1 ? 'policy' : 'policies'} ` +
+      `(${p.zoning} zoning, ${p.permitting} permitting, ${p.money} money)`,
+    `Window ends ${formatShortMonthYear(r.deadline)}`
+  ];
+  if (r.reachedOn === null) {
+    lines.push(
+      `Goal: ${count(r.amount)} homes, missed: ${count(r.homesAtDeadline)} homes by ` +
+        formatShortMonthYear(r.deadline)
+    );
+    return lines;
+  }
+  lines.push(`Goal: ${count(r.amount)} homes, reached ${formatShortMonthYear(r.reachedOn)}`);
+  if (r.years !== null && r.years.length > 0) {
+    lines.push(`LADDER_YEARS = [${r.years.join(', ')}]`);
+  } else {
+    // ladderYears' first year, which the reach comes after
+    const first = 5 * Math.floor((utcParts(r.deadline).y - 5) / 5);
+    lines.push(`No earlier deadline: the full tree reaches the goal after Dec ${first}`);
+  }
+  return lines;
+}
+
+/** 0 when the goal is reached and the ladder holds a year, else 1. */
+export function reachExit(r: Reach): 0 | 1 {
+  return r.reachedOn !== null && r.years !== null && r.years.length > 0 ? 0 : 1;
+}
+
+/** The command after its arguments are parsed. */
+export async function runReach(
+  args: { src: DataSource; write: boolean; amount?: number },
+  io: {
+    open: typeof openEngine;
+    out: (line: string) => void;
+    err: (line: string) => void;
+    writeFile: (path: string, text: string) => void;
+  }
+): Promise<0 | 1 | 2> {
+  let r: Reach;
+  try {
+    const engine = await io.open(args.src, { warn: (msg) => io.err(msg) });
+    try {
+      r = await measureReach(engine, args.amount);
+    } finally {
+      engine.close();
+    }
+  } catch (e) {
+    io.err(`reach-measure: ${messageOf(e)}`);
+    return 2;
+  }
+  const code = reachExit(r);
+  const lines = reachLines(r);
+  if (args.write && code === 0) {
+    // Written before anything is printed, so a failed write prints nothing on stdout.
+    try {
+      io.writeFile(
+        LADDER_FILE,
+        ladderFile({
+          datasetVersion: r.datasetVersion,
+          reachedOn: r.reachedOn!,
+          deadline: r.deadline,
+          years: r.years!
+        })
+      );
+    } catch (e) {
+      io.err(`reach-measure: ${messageOf(e)}`);
+      return 2;
+    }
+    lines.push(`Wrote ${LADDER_FILE_SHOWN}`);
+  }
+  for (const line of lines) io.out(line);
+  return code;
+}
+
+async function main(argv: string[]): Promise<number> {
+  const args = parseReachArgs(argv);
+  if ('error' in args) {
+    console.error(`reach-measure: ${args.error}`);
+    return 2;
+  }
+  return runReach(args, {
+    open: openEngine,
+    out: (line) => console.log(line),
+    err: (line) => console.error(line),
+    writeFile: (path, text) => writeFileSync(path, text)
+  });
+}
+
+if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main(process.argv.slice(2)).then(
+    (code) => {
+      process.exitCode = code;
+    },
+    (e: unknown) => {
+      console.error(`reach-measure: ${messageOf(e)}`);
+      process.exitCode = 2;
+    }
+  );
 }

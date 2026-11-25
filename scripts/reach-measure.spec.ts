@@ -2,18 +2,31 @@
 // views kept by document, the queue, the guard and the two sources.
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { formatShortMonthYear } from '../src/lib/fzp/format';
 import { utcParts } from '../src/lib/fzp/time';
 import { fullTree } from '../src/lib/game/catalogue/play';
-import { defaultGoal } from '../src/lib/goal/goal';
+import { defaultGoal, readGoal, TODAY } from '../src/lib/goal/goal';
 import { WINDOW_MONTHS } from '../src/lib/sim/timeline-client';
 import type { TimelineHostRequest, TimelineHostResponse } from '../src/lib/sim/timeline-protocol';
 import { createTimelineHost, type TimelineHostDeps } from '../src/lib/sim/world/host';
 import type { ScoreStatics, SeriesChunk } from '../src/lib/sim/world/score/types';
 import type { Day } from '../src/lib/timelapse/time';
 import { DEFAULT_POLICY4, type SimPolicy4 } from '../src/lib/timeline/policy4';
-import { openEngine, versionFetch, type Engine } from './reach-measure';
+import {
+  DEFAULT_ORIGIN,
+  LADDER_FILE,
+  ladderFile,
+  ladderYears,
+  measureReach,
+  openEngine,
+  parseReachArgs,
+  runReach,
+  versionFetch,
+  type Engine
+} from './reach-measure';
 
 const FIXTURE = 'e2e/fixtures/data/fixture-0';
 /** Enough for one fill of the fixture's window and the full tree's; a hook argument, not a wait. */
@@ -284,5 +297,213 @@ describe('sources', () => {
     );
     expect(err).toBeInstanceOf(Error);
     expect((err as Error).message).toContain('no dataset at');
+  });
+});
+
+describe('the ladder', () => {
+  it('ladderYears', () => {
+    expect(ladderYears(2066, 2043)).toEqual([2060, 2055, 2050, 2045]);
+    expect(ladderYears(2066, 2031)).toEqual([2060, 2050, 2045, 2035]);
+    expect(ladderYears(2065, 2050)).toEqual([2060, 2055, 2050]);
+    expect(ladderYears(2066, 2061)).toEqual([]);
+  });
+
+  it('ladderFile names the dataset, both months, and exports the years', () => {
+    const reachedOn = Date.UTC(2043, 2, 1) / 86_400_000;
+    const deadline = Date.UTC(2066, 8, 30) / 86_400_000;
+    const t = ladderFile({ datasetVersion: 'd-1', reachedOn, deadline, years: [2060, 2055] });
+    expect(t).toContain('d-1');
+    expect(t).toContain(formatShortMonthYear(reachedOn));
+    expect(t).toContain(formatShortMonthYear(deadline));
+    expect(t).toContain('export const LADDER_YEARS: readonly number[] = [2060, 2055];');
+  });
+});
+
+describe('parseReachArgs', () => {
+  it('refusals', () => {
+    for (const argv of [
+      ['--bogus', 'd'],
+      ['a', 'b'],
+      ['d', '--version', 'v'],
+      ['d', '--amount', '0'],
+      ['d', '--amount', 'x'],
+      ['d', '--write', '--amount', '5'],
+      [],
+      ['--from', 'https://o'],
+      ['d', '--amount']
+    ]) {
+      expect(parseReachArgs(argv), argv.join(' ')).toHaveProperty('error');
+    }
+  });
+
+  it('sources and flags', () => {
+    expect(parseReachArgs(['--version', 'v'])).toEqual({
+      src: { version: 'v', origin: DEFAULT_ORIGIN },
+      write: false
+    });
+    expect(parseReachArgs(['--version', 'v', '--from', 'https://o'])).toEqual({
+      src: { version: 'v', origin: 'https://o' },
+      write: false
+    });
+    expect(parseReachArgs(['d', '--write'])).toEqual({ src: { dir: 'd' }, write: true });
+    expect(parseReachArgs(['--amount', '5', 'd'])).toEqual({
+      src: { dir: 'd' },
+      write: false,
+      amount: 5
+    });
+  });
+});
+
+/** An `open` that answers with `e`, its `close` a no-op so the shared engine stays open. */
+const openWith =
+  (e: Pick<Engine, 'datasetVersion' | 'asOf' | 'cal' | 'view'>): typeof openEngine =>
+  async () => ({ ...e, close: () => {} });
+
+/** The command's io, recording what it prints and writes. */
+function recordingIo(open: typeof openEngine) {
+  const out: string[] = [];
+  const err: string[] = [];
+  const writes: { path: string; text: string }[] = [];
+  return {
+    out,
+    err,
+    writes,
+    io: {
+      open,
+      out: (l: string) => out.push(l),
+      err: (l: string) => err.push(l),
+      writeFile: (path: string, text: string) => writes.push({ path, text })
+    }
+  };
+}
+
+describe('runReach', () => {
+  const SRC = { dir: FIXTURE };
+
+  it('No earlier deadline', async () => {
+    const fixtureEmpty = await engine.view(DEFAULT_POLICY4);
+    const goal = defaultGoal(engine.asOf);
+    const offset = monthsBetween(fixtureEmpty.months[0], goal.deadline);
+    const d = offset < 0 ? TODAY : Math.min(offset, fixtureEmpty.lastIndex);
+    // The fixture's empty view levels off years before the deadline; one more home from the
+    // deadline's month on makes the deadline's value first reached in that month.
+    const empty = {
+      ...fixtureEmpty,
+      rows: fixtureEmpty.rows.map((r, i) =>
+        i >= d ? { ...r, completedNet: r.completedNet + 1 } : r
+      )
+    };
+    const amount = goal.measure.valueAt(empty, d);
+    const endYear = utcParts(goal.deadline).y;
+    // precondition: at that amount the goal is reached in the window's end year
+    const reading = readGoal({ ...goal, amount }, empty, empty.lastIndex);
+    expect(reading?.reachedOn).not.toBeNull();
+    expect(utcParts(reading!.reachedOn!).y).toBe(endYear);
+
+    const rec = recordingIo(
+      openWith({
+        datasetVersion: engine.datasetVersion,
+        asOf: engine.asOf,
+        cal: engine.cal,
+        view: async () => empty
+      })
+    );
+    const code = await runReach({ src: SRC, write: true, amount }, rec.io);
+    expect(code).toBe(1);
+    expect(rec.writes).toEqual([]);
+    expect(
+      rec.out.filter((l) =>
+        l.startsWith('No earlier deadline: the full tree reaches the goal after Dec ')
+      )
+    ).toHaveLength(1);
+    expect(rec.out.some((l) => l.startsWith('LADDER_YEARS'))).toBe(false);
+  });
+
+  it('fixture amount 1', async () => {
+    const rec = recordingIo(openWith(engine));
+    const code = await runReach({ src: SRC, write: false, amount: 1 }, rec.io);
+    expect(code).toBe(0);
+    expect(rec.out).toHaveLength(5);
+    const [dataset, tree, ends, goalLine, ladder] = rec.out;
+    expect(dataset).toBe('Dataset fixture-0');
+    expect(tree.startsWith('Full tree: ')).toBe(true);
+    expect(tree.endsWith('money)')).toBe(true);
+    expect(ends).toMatch(/^Window ends [A-Z][a-z]{2} \d{4}$/);
+    expect(goalLine.startsWith('Goal: 1 homes, reached ')).toBe(true);
+    expect(ladder.startsWith('LADDER_YEARS = [')).toBe(true);
+    expect(rec.writes).toEqual([]);
+    expect(rec.err).toEqual([]);
+  });
+
+  it('fixture unreachable amount', async () => {
+    const rec = recordingIo(openWith(engine));
+    const code = await runReach(
+      { src: SRC, write: false, amount: Number.MAX_SAFE_INTEGER },
+      rec.io
+    );
+    expect(code).toBe(1);
+    expect(rec.out.some((l) => l.startsWith('Goal: ') && l.includes('missed: '))).toBe(true);
+    expect(rec.out.some((l) => l.startsWith('LADDER_YEARS'))).toBe(false);
+    expect(rec.writes).toEqual([]);
+  });
+
+  it("write path is the script's repository", async () => {
+    expect(isAbsolute(LADDER_FILE)).toBe(true);
+    expect(LADDER_FILE.endsWith(join('src', 'lib', 'game', 'catalogue', 'ladder-years.ts'))).toBe(
+      true
+    );
+    const here = dirname(fileURLToPath(import.meta.url));
+    expect(LADDER_FILE).toBe(resolve(here, '../src/lib/game/catalogue/ladder-years.ts'));
+
+    const empty = await engine.view(DEFAULT_POLICY4);
+    const stub = {
+      datasetVersion: engine.datasetVersion,
+      asOf: engine.asOf,
+      cal: engine.cal,
+      view: async () => empty
+    };
+    const r = await measureReach({ ...stub, close: () => {} }, 1);
+    expect(r.years?.length).toBeGreaterThan(0);
+    const rec = recordingIo(openWith(stub));
+    const code = await runReach({ src: SRC, write: true, amount: 1 }, rec.io);
+    expect(code).toBe(0);
+    expect(rec.writes).toEqual([
+      {
+        path: LADDER_FILE,
+        text: ladderFile({
+          datasetVersion: r.datasetVersion,
+          reachedOn: r.reachedOn!,
+          deadline: r.deadline,
+          years: r.years!
+        })
+      }
+    ]);
+    expect(rec.out.at(-1)).toBe('Wrote src/lib/game/catalogue/ladder-years.ts');
+  });
+
+  it('exit 2 on a source that cannot open', async () => {
+    const rec = recordingIo(async () => {
+      throw new Error('no dataset at x');
+    });
+    const code = await runReach({ src: { dir: 'x' }, write: false }, rec.io);
+    expect(code).toBe(2);
+    expect(rec.err).toEqual(['reach-measure: no dataset at x']);
+    expect(rec.out).toEqual([]);
+  });
+
+  it('closes the engine', async () => {
+    let closed = 0;
+    const empty = await engine.view(DEFAULT_POLICY4);
+    const open: typeof openEngine = async () => ({
+      datasetVersion: engine.datasetVersion,
+      asOf: engine.asOf,
+      cal: engine.cal,
+      view: async () => empty,
+      close: () => {
+        closed += 1;
+      }
+    });
+    await runReach({ src: SRC, write: false, amount: 1 }, recordingIo(open).io);
+    expect(closed).toBe(1);
   });
 });
