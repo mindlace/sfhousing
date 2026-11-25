@@ -249,7 +249,7 @@ export async function carsStep(db: Duck, o: CarsStepOpts): Promise<CarsStepOut> 
     'cars.fit.records': fit.stats.stage1.records,
     'cars.fit.constants': fit.stats.constants.fitted,
     'cars.fit.noObservation': fit.stats.constants.noObservation,
-    'cars.fit.floored': fit.stats.constants.floored,
+    'cars.fit.observedZero': fit.stats.constants.observedZero,
     'cars.bytes': body.length,
     'cars.zonesJson.bytes': zonesJson.length
   };

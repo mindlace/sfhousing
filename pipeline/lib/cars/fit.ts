@@ -2,8 +2,9 @@
 // 1, 2 and 3+ cars. Stage 1 fits the household terms on PUMS records (weights WGTP) with the
 // PUMA's mean density and transit access as location covariates. Stage 2 holds the household
 // terms fixed and fits the constants, density and access across block groups on the start
-// population (whose zone shares are B25044's). Zone constants then make each block group's
-// predicted shares equal its observed B25044 shares. Pure: the step reads the tables.
+// population (whose zone shares are B25044's). Each block group's B25044 shares are then shrunk
+// toward the model's by empirical Bayes (`shrinkShares`), and zone constants make its predicted
+// shares equal the shrunk ones. Pure: the step reads the tables.
 import type { CarData } from '../../../src/lib/data/cars-codec';
 import {
   CAR_LEVELS,
@@ -28,7 +29,9 @@ export interface BgFit {
   observedTotal: number;
   /** Predicted shares from the across-zone terms alone (constants zero). */
   before: number[];
-  /** Predicted shares with the zone constants. */
+  /** The shares the constants are fitted to: B25044's, shrunk toward `before` (`shrinkShares`). */
+  target: number[];
+  /** Predicted shares with the zone constants (equal to `target`). */
   after: number[];
 }
 
@@ -57,9 +60,15 @@ export interface FitStats {
     noObservation: number;
     /** Fitted zones with no start household: the citywide type mix stands in. */
     cityMix: number;
-    /** (zone, level) cells with an observed zero, held at OBS_FLOOR. */
-    floored: number;
-    /** Largest |predicted - observed| share after the constants. */
+    /** (zone, level) cells with an observed zero. */
+    observedZero: number;
+    /** The shrinkage's prior weight in households; null when B25044 shows no overdispersion. */
+    n0: number | null;
+    /** Smallest and largest constant fitted to the shrunk shares. */
+    range: [number, number];
+    /** The same fitted to the raw B25044 shares (an observed zero held at OBS_FLOOR). */
+    rawRange: [number, number];
+    /** Largest |predicted - target| share after the constants. */
     maxErr: number;
   };
 }
@@ -71,7 +80,10 @@ export type CarChoiceModel = Pick<CarModel, 'schema' | 'bands' | 'choice' | 'thr
 
 /** PUMAs (stage 1) or peopled zones (stage 2) a location term needs. */
 export const MIN_LOCATIONS = 3;
-/** An observed zero share is held at this, so its zone constant stays finite. */
+/**
+ * An observed zero share is held at this when fitting the unshrunk constants (reported only), so
+ * they stay finite.
+ */
 export const OBS_FLOOR = 1e-9;
 /** Zone-constant iterations at most, and the share tolerance they stop at. */
 export const CONSTANTS = { maxIter: 20_000, tol: 1e-10 } as const;
@@ -88,6 +100,50 @@ export function observedLevels(rows: readonly AcsRow[], zones: readonly string[]
     out[z * CAR_LEVELS + (c % CAR_LEVELS)] += Math.max(0, r.estimate);
   }
   return out;
+}
+
+/**
+ * Empirical Bayes shrinkage of each zone's observed shares toward the model's (no constant):
+ * share* = (n obs + n0 pred) / (n + n0), n the zone's B25044 households. n0 is the
+ * Dirichlet-multinomial prior weight, by the method of moments: with rho = 1 / (1 + n0),
+ * E[n (o - p)^2] = p (1 - p) (1 + (n - 1) rho), pooled over zones and levels, so rho is the
+ * dispersion beyond binomial variance. No overdispersion (rho <= 0) gives n0 null and share* =
+ * pred; a zone with no households takes pred.
+ */
+export function shrinkShares(
+  observed: Float64Array,
+  predicted: Float64Array
+): { shares: Float64Array; n0: number | null; rho: number } {
+  const Z = observed.length / CAR_LEVELS;
+  const total = (z: number) => {
+    let n = 0;
+    for (let k = 0; k < CAR_LEVELS; k++) n += observed[z * CAR_LEVELS + k];
+    return n;
+  };
+  let num = 0;
+  let den = 0;
+  for (let z = 0; z < Z; z++) {
+    const n = total(z);
+    if (!(n > 1)) continue;
+    for (let k = 0; k < CAR_LEVELS; k++) {
+      const p = predicted[z * CAR_LEVELS + k];
+      const d = observed[z * CAR_LEVELS + k] / n - p;
+      num += n * d * d - p * (1 - p);
+      den += (n - 1) * p * (1 - p);
+    }
+  }
+  const rho = den > 0 ? num / den : 0;
+  const n0 = rho > 0 ? (rho < 1 ? 1 / rho - 1 : 0) : null;
+  const shares = new Float64Array(observed.length);
+  for (let z = 0; z < Z; z++) {
+    const n = total(z);
+    for (let k = 0; k < CAR_LEVELS; k++) {
+      const i = z * CAR_LEVELS + k;
+      shares[i] =
+        n > 0 && n0 !== null ? (observed[i] + n0 * predicted[i]) / (n + n0) : predicted[i];
+    }
+  }
+  return { shares, n0, rho };
 }
 
 /** Cars per 3+ household: the WGTP-weighted mean of VEH (6 = 6 or more) over VEH >= 3. */
@@ -317,7 +373,8 @@ export function fitChoice(
         'income band, tenure) on PUMS records weighted by WGTP, with PUMA-mean density and ' +
         'transit access. Stage 2: household terms fixed; constants, density (households per ' +
         'hectare) and access (transit grid, homes-weighted per block group) on the start ' +
-        'population by block group. Zone constants (cars.bin) match each block group to B25044.',
+        'population by block group. Zone constants (cars.bin) match each block group to its ' +
+        'B25044 shares shrunk toward the model by empirical Bayes (n0 by the method of moments).',
       n: recs.length,
       window: pums.window
     }
@@ -337,7 +394,10 @@ export function fitChoice(
     fitted: 0,
     noObservation: 0,
     cityMix: 0,
-    floored: 0,
+    observedZero: 0,
+    n0: null,
+    range: [0, 0],
+    rawRange: [0, 0],
     maxErr: 0
   };
   const mix = new Float64Array(T);
@@ -355,9 +415,8 @@ export function fitChoice(
       for (let k = 0; k < CAR_LEVELS; k++) out[k] += (mix[t] / m) * shares[k];
     }
   };
-  for (let z = 0; z < Z; z++) {
-    const obs = Array.from(observed.subarray(z * CAR_LEVELS, (z + 1) * CAR_LEVELS));
-    const obsTotal = obs.reduce((a, b) => a + b, 0);
+  /** The zone's type mix into `mix` (the citywide mix with no start household); its households. */
+  const setMix = (z: number) => {
     let own = 0;
     for (let t = 0; t < T; t++) {
       let s = 0;
@@ -366,40 +425,70 @@ export function fitChoice(
       own += s;
     }
     if (own === 0) mix.set(cityMix);
+    return own;
+  };
+  // Pass 1: the model's shares without constants, then the shrunk targets.
+  const predicted = new Float64Array(Z * CAR_LEVELS);
+  for (let z = 0; z < Z; z++) {
+    const own = setMix(z);
     const before = [0, 0, 0, 0];
     predict(z, before);
-    const row: BgFit = {
+    predicted.set(before, z * CAR_LEVELS);
+    const obs = Array.from(observed.subarray(z * CAR_LEVELS, (z + 1) * CAR_LEVELS));
+    const obsTotal = obs.reduce((a, b) => a + b, 0);
+    fit.push({
       geoid: data.zones[z],
       households: own,
       observed: obs,
       observedTotal: obsTotal,
       before,
+      target: before,
       after: before
-    };
-    fit.push(row);
-    if (!(obsTotal > 0)) {
+    });
+  }
+  const shrunk = shrinkShares(observed, predicted);
+  stats.n0 = shrunk.n0;
+  // Pass 2: constants fitted to the shrunk shares (and, for the report, to the raw shares).
+  const raw = new Float64Array(Z * 3);
+  const range = (a: Float64Array): [number, number] => {
+    let lo = 0;
+    let hi = 0;
+    for (let z = 0; z < Z; z++)
+      if (fit[z].observedTotal > 0)
+        for (let k = 0; k < 3; k++) {
+          lo = Math.min(lo, a[z * 3 + k]);
+          hi = Math.max(hi, a[z * 3 + k]);
+        }
+    return [lo, hi];
+  };
+  for (let z = 0; z < Z; z++) {
+    const row = fit[z];
+    if (!(row.observedTotal > 0)) {
       stats.noObservation++;
       continue;
     }
     stats.fitted++;
-    if (own === 0) stats.cityMix++;
+    if (setMix(z) === 0) stats.cityMix++;
     let tsum = 0;
     for (let k = 0; k < CAR_LEVELS; k++) {
-      target[k] = obs[k] / obsTotal;
-      if (target[k] < OBS_FLOOR) {
-        target[k] = OBS_FLOOR;
-        stats.floored++;
-      }
+      target[k] = row.observed[k] / row.observedTotal;
+      if (row.observed[k] === 0) stats.observedZero++;
+      if (target[k] < OBS_FLOOR) target[k] = OBS_FLOOR;
       tsum += target[k];
     }
     for (let k = 0; k < CAR_LEVELS; k++) target[k] /= tsum;
+    fitConstants(z, T, mix, choice, density[z], data.access[z], target, base, raw, pred);
+    for (let k = 0; k < CAR_LEVELS; k++) target[k] = shrunk.shares[z * CAR_LEVELS + k];
+    row.target = Array.from(target);
     fitConstants(z, T, mix, choice, density[z], data.access[z], target, base, constant, pred);
     const after = [0, 0, 0, 0];
     predict(z, after);
     row.after = after;
     for (let k = 0; k < CAR_LEVELS; k++)
-      stats.maxErr = Math.max(stats.maxErr, Math.abs(after[k] - obs[k] / obsTotal));
+      stats.maxErr = Math.max(stats.maxErr, Math.abs(after[k] - target[k]));
   }
+  stats.range = range(constant);
+  stats.rawRange = range(raw);
 
   return {
     choice,

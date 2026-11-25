@@ -8,7 +8,7 @@ import {
   type TypeBands
 } from '../../../src/lib/sim/cars';
 import { exp } from '../../../src/lib/timelapse/math';
-import { fitChoice, observedLevels, threePlusMeanOf } from '../../lib/cars/fit';
+import { fitChoice, observedLevels, shrinkShares, threePlusMeanOf } from '../../lib/cars/fit';
 import type { PumsRow } from '../../lib/cars/population';
 import { carsReportLines } from '../../lib/cars/report';
 
@@ -215,7 +215,7 @@ describe('fitChoice on a synthetic city', () => {
     expect(r.stats.stage2.logLik).toBeGreaterThan(r.stats.stage2.logLikNoAccess);
   });
 
-  it("matches every zone's observed 0/1/2/3+ shares within 1e-6 after the zone constants", () => {
+  it("matches every zone's shrunk 0/1/2/3+ shares within 1e-6 after the zone constants", () => {
     const { data, observed } = c;
     const model = { choice: r.choice } as Parameters<typeof carShares>[0];
     const zt = { access: data.access, constant: r.constant };
@@ -239,10 +239,7 @@ describe('fitChoice on a synthetic city', () => {
         for (let k = 0; k < CAR_LEVELS; k++) pred[k] += (nt / n) * out[k];
       }
       for (let k = 0; k < CAR_LEVELS; k++)
-        expect(
-          Math.abs(pred[k] - observed[z * CAR_LEVELS + k] / obsTotal),
-          `z${z} k${k}`
-        ).toBeLessThan(1e-6);
+        expect(Math.abs(pred[k] - r.fit[z].target[k]), `z${z} k${k}`).toBeLessThan(1e-6);
     }
     expect(Array.from(r.constant).every(Number.isFinite)).toBe(true);
   });
@@ -258,8 +255,96 @@ describe('fitChoice on a synthetic city', () => {
     const gap = (a: number[], b: number[]) => Math.max(...a.map((x, k) => Math.abs(x - b[k])));
     const obs = (g: (typeof r.fit)[number]) => g.observed.map((x) => x / g.observedTotal);
     expect(gap(f.before, obs(f))).toBeGreaterThan(1e-3);
-    expect(gap(f.after, obs(f))).toBeLessThan(1e-6);
+    expect(gap(f.after, f.target)).toBeLessThan(1e-6);
+    // The shrunk target lies between the observed and the predicted shares.
+    f.target.forEach((x, k) =>
+      expect(
+        Math.min(f.before[k], obs(f)[k]) - 1e-12 <= x &&
+          x <= Math.max(f.before[k], obs(f)[k]) + 1e-12
+      ).toBe(true)
+    );
+    expect(r.stats.constants.n0).toBeGreaterThan(0);
     expect(r.fit[9].observedTotal).toBe(0);
+  });
+});
+
+describe('empirical Bayes shrinkage of the observed shares', () => {
+  /** Gamma(shape >= 1) by Marsaglia-Tsang, normals by Box-Muller. */
+  function gamma(r: () => number, shape: number): number {
+    const d = shape - 1 / 3;
+    const c = 1 / Math.sqrt(9 * d);
+    for (;;) {
+      const x = Math.sqrt(-2 * Math.log(1 - r())) * Math.cos(2 * Math.PI * r());
+      const v = (1 + c * x) ** 3;
+      if (v <= 0) continue;
+      if (Math.log(1 - r()) < 0.5 * x * x + d - d * v + d * Math.log(v)) return d * v;
+    }
+  }
+
+  /** Zones whose true shares are Dirichlet(n0 x predicted), observed by multinomial counts. */
+  function draws(n0: number, seed: number) {
+    const r = rng(seed);
+    const Z = 800;
+    const predicted = new Float64Array(Z * 4);
+    const observed = new Float64Array(Z * 4);
+    for (let z = 0; z < Z; z++) {
+      const p = [0.05 + 0.5 * r(), 0.05 + 0.5 * r(), 0.05 + 0.3 * r(), 0.05 + 0.1 * r()];
+      const ps = p.reduce((a, b) => a + b, 0);
+      const q = p.map((x) => gamma(r, (n0 * x) / ps));
+      const qs = q.reduce((a, b) => a + b, 0);
+      const n = 200 + Math.floor(r() * 800);
+      for (let i = 0; i < n; i++) {
+        let u = r() * qs;
+        let k = 0;
+        while (k < 3 && u >= q[k]) u -= q[k++];
+        observed[z * 4 + k]++;
+      }
+      for (let k = 0; k < 4; k++) predicted[z * 4 + k] = p[k] / ps;
+    }
+    return { predicted, observed };
+  }
+
+  it('recovers n0 from data generated with known overdispersion', () => {
+    for (const n0 of [30, 150]) {
+      const d = draws(n0, n0);
+      const s = shrinkShares(d.observed, d.predicted);
+      expect(s.n0, `n0 ${n0}`).toBeGreaterThan(n0 * 0.75);
+      expect(s.n0, `n0 ${n0}`).toBeLessThan(n0 * 1.33);
+    }
+  });
+
+  it('gives share* = (n obs + n0 pred) / (n + n0), the predicted shares with no observation', () => {
+    const d = draws(50, 3);
+    d.observed.fill(0, 0, 4);
+    const s = shrinkShares(d.observed, d.predicted);
+    for (let k = 0; k < 4; k++) expect(s.shares[k]).toBe(d.predicted[k]);
+    const n0 = s.n0 ?? NaN;
+    expect(n0).toBeGreaterThan(0);
+    const z = 7;
+    const n = d.observed.subarray(z * 4, z * 4 + 4).reduce((a, b) => a + b, 0);
+    for (let k = 0; k < 4; k++)
+      expect(s.shares[z * 4 + k]).toBeCloseTo(
+        (d.observed[z * 4 + k] + n0 * d.predicted[z * 4 + k]) / (n + n0),
+        12
+      );
+  });
+
+  it('a zone with an observed zero level gets a finite constant and a nonzero share', () => {
+    const c = city();
+    // Zone 5 reports no 3+ household, from a block-group-sized count (400 households).
+    const observed = Float64Array.from(c.observed);
+    const n5 = observed.subarray(20, 24).reduce((a, b) => a + b, 0);
+    for (let k = 0; k < 4; k++) observed[20 + k] = Math.round((observed[20 + k] * 400) / n5);
+    const r = fitChoice(
+      { rows: c.rows, bands: BANDS, window: ['2020-01-01', '2024-12-31'] },
+      observed,
+      c.data
+    );
+    expect(observed[5 * 4 + 3]).toBe(0);
+    expect(r.fit[5].target[3]).toBeGreaterThan(1e-3);
+    expect(r.fit[5].after[3]).toBeGreaterThan(1e-3);
+    expect(Math.abs(r.constant[5 * 3 + 2])).toBeLessThan(5);
+    expect(r.stats.constants.observedZero).toBe(1);
   });
 });
 
@@ -282,10 +367,8 @@ describe('fitChoice on thin data', () => {
     expect(dropped(r.stats.stage2.terms)).toEqual(['density', 'access']);
     expect(r.choice.location).toEqual({ density: [0, 0, 0], access: [0, 0, 0] });
     expect(r.choice.household.every(Number.isFinite)).toBe(true);
-    // Zone 0 still matches its observed shares.
-    const obs0 = Array.from(c.observed.subarray(0, 4));
-    const tot = obs0.reduce((a, b) => a + b, 0);
-    r.fit[0].after.forEach((p, k) => expect(Math.abs(p - obs0[k] / tot)).toBeLessThan(1e-6));
+    // Zone 0 still matches its target shares.
+    r.fit[0].after.forEach((p, k) => expect(Math.abs(p - r.fit[0].target[k])).toBeLessThan(1e-6));
   });
 
   it('throws when no PUMS household has some number of cars', () => {
@@ -354,6 +437,9 @@ describe('carsReportLines', () => {
   it('gives the fit by block group, citywide, the DMV check and spaces per new home', () => {
     expect(md).toMatch(/median [0-9.]+ points/);
     expect(md).toMatch(/90th percentile [0-9.]+ points/);
+    expect(md).toMatch(/n0 = [0-9.]+ households/);
+    expect(md).toMatch(/would range -?[0-9.]+ to -?[0-9.]+/);
+    expect(md).toContain('Largest zero-car errors after the constants');
     expect(md).toContain('Citywide');
     expect(md).toContain('DMV');
     expect(md).toContain('410813');

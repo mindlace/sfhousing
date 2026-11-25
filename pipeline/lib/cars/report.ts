@@ -109,28 +109,52 @@ export function carsReportLines(
         `largest error at any level median ${pts(quantile(errMax, 0.5))} points, 90th ` +
         `percentile ${pts(quantile(errMax, 0.9))} points.`
     );
-  lines.push(
-    `After the constants every block group's 0/1/2/3+ shares equal B25044's (largest ` +
-      `difference ${s.constants.maxErr.toExponential(1)}). Constants: ${s.constants.fitted} ` +
-      `block groups fitted, ${s.constants.noObservation} with no B25044 households (constants ` +
-      `0), ${s.constants.cityMix} with no start household (the citywide type mix stands in), ` +
-      `${s.constants.floored} observed-zero shares held at 1e-9.`
+  const c = s.constants;
+  const afterErr0 = seen.map((f) => Math.abs(f.after[0] - obsShare(f, 0)));
+  const afterMax = seen.map((f) =>
+    Math.max(...f.after.map((p, k) => Math.abs(p - obsShare(f, k))))
   );
+  const afterMae0 = afterErr0.reduce((a, b) => a + b, 0) / Math.max(1, afterErr0.length);
+  const rng = (r: [number, number]) => `${f4(r[0])} to ${f4(r[1])}`;
+  lines.push(
+    c.n0 === null
+      ? 'Shrinkage: B25044 shows no dispersion beyond binomial around the model, so each block ' +
+          "group's target is the model's shares (constants 0)."
+      : `Shrinkage: each block group's B25044 shares are pulled toward the model's (empirical ` +
+          `Bayes, share* = (n obs + n0 pred) / (n + n0), n its B25044 households) with n0 = ` +
+          `${f4(c.n0)} households, by the method of moments on the dispersion of observed ` +
+          'against predicted shares beyond binomial variance. An observed zero level keeps a ' +
+          'nonzero share.',
+    `Constants: ${c.fitted} block groups fitted to the shrunk shares (largest difference ` +
+      `${c.maxErr.toExponential(1)}), range ${rng(c.range)}; fitted to the raw B25044 shares ` +
+      `instead (an observed zero held at 1e-9) they would range ${rng(c.rawRange)}. ` +
+      `${c.noObservation} block groups have no B25044 households (constants 0), ${c.cityMix} ` +
+      `no start household (the citywide type mix stands in); ${c.observedZero} observed-zero ` +
+      'shares.'
+  );
+  if (seen.length > 0)
+    lines.push(
+      `After the constants, against the raw B25044 shares: zero-car share error median ` +
+        `${pts(quantile(afterErr0, 0.5))} points, 90th percentile ` +
+        `${pts(quantile(afterErr0, 0.9))} points, mean ${pts(afterMae0)} points; largest error ` +
+        `at any level median ${pts(quantile(afterMax, 0.5))} points, 90th percentile ` +
+        `${pts(quantile(afterMax, 0.9))} points.`
+    );
   const worst = seen
-    .map((f, i) => ({ f, e: err0[i] }))
+    .map((f, i) => ({ f, e: afterErr0[i] }))
     .sort((a, b) => b.e - a.e || (a.f.geoid < b.f.geoid ? -1 : 1))
     .slice(0, WORST_ZONES);
   if (worst.length > 0)
     lines.push(
       '',
-      `Largest zero-car errors before the constants (${worst.length}):`,
+      `Largest zero-car errors after the constants (${worst.length}):`,
       '',
-      '| Block group | Start households | B25044 households | B25044 no car | Predicted before |',
-      '|---|---|---|---|---|',
+      '| Block group | Start households | B25044 households | B25044 no car | Before | After |',
+      '|---|---|---|---|---|---|',
       ...worst.map(
         ({ f }) =>
           `| ${f.geoid} | ${f.households} | ${Math.round(f.observedTotal)} | ` +
-          `${pct(obsShare(f, 0))} | ${pct(f.before[0])} |`
+          `${pct(obsShare(f, 0))} | ${pct(f.before[0])} | ${pct(f.after[0])} |`
       )
     );
 
@@ -182,9 +206,10 @@ export function carsReportLines(
     ),
     '',
     `Households: ${simHh} start households (assessor homes times the occupied share) against ` +
-      `${Math.round(acsHh)} in B25044; shares are compared, not totals. With each block group's ` +
-      'shares matched, a citywide difference comes only from where the start households sit ' +
-      'against where B25044 counts them.'
+      `${Math.round(acsHh)} in B25044; shares are compared, not totals. The first two columns ` +
+      'are the same model and constants: they differ only in where the assessor homes (times ' +
+      'the occupied share) sit against where ACS counts households. The second and third ' +
+      'differ by the shrinkage.'
   );
 
   // Cross-checks.
