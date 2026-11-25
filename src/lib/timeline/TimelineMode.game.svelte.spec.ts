@@ -19,6 +19,8 @@ import { RHNA_DEADLINE } from '$lib/sim/scenario/score';
 import { dayFromUtc, utcParts } from '$lib/fzp/time';
 import { NODES } from '$lib/game/catalogue/nodes';
 import { RUNGS, goalAt, ladder } from '$lib/game/ladder';
+import { formatCount } from '$lib/scoreboard/format';
+import { SIDE_TUNING } from '$lib/game/catalogue/tuning';
 import { SIDE_GOALS } from '$lib/game/side-goals';
 import type { GameStore } from '$lib/game/store.svelte';
 import { runResult } from '$lib/game/ui/test/fixtures';
@@ -117,7 +119,8 @@ const fmt = formatShortMonthYear;
 const SHARE_TARGET = SIDE_GOALS.find((g) => g.id === 'collect-share-1')!.read({
   view: null as never, // the share reads the take only
   index: 0,
-  take: { dropped: { home: 1 }, collected: {} }
+  take: { dropped: { home: 1 }, collected: {} },
+  inForce: false
 })!.target;
 /** The default amount: the goal in play's amount without `goalAmount`. */
 const AMOUNT = defaultGoal(asOf).amount;
@@ -381,6 +384,71 @@ describe('TimelineMode in a game: the goal and the header', () => {
     await expect.element(headline()).toBeVisible();
     await page.getByTestId('goal-headline-button').click();
     await expect.element(page.getByTestId('side-goals')).toHaveTextContent(NO_SIDE_GOALS);
+  });
+
+  describe('a side goal that reads the policy effect (ruling conductor-11)', () => {
+    const EFFECT_ID = 'policy-homes-1';
+    const effectGoal = SIDE_GOALS.find((g) => g.id === EFFECT_ID)!;
+    /** Every month's plan effect is at least the goal's target, so only inForce decides. */
+    const BASE = SIDE_TUNING[EFFECT_ID].target + 1;
+    const row = () =>
+      page.getByTestId('side-goals').getByTestId('side-goal').filter({ hasText: effectGoal.label });
+
+    /** Opened and filled through the window with the effect at or above the target. */
+    async function openedWithEffect(over: Over) {
+      const s = setup(over);
+      await opening();
+      emit(compiledMsg(1, LONG));
+      emit(filledMsg(1, 0, LONG.lastIndex + 1, { base: BASE }));
+      await expect.poll(() => debug().filledThrough).toBe(LONG.lastIndex);
+      return s;
+    }
+
+    it('with no policy in force the headline reads 0 for it', async () => {
+      const game = gameWith({ phase: 'runs', runs: 1, last: runResult({ rung: 0 }) });
+      await openedWithEffect({ game });
+      await page.getByTestId('goal-headline-button').click();
+      await expect.element(row()).toHaveTextContent(progressText(0, SIDE_TUNING[EFFECT_ID].target));
+      expect(row().element().hasAttribute('data-met')).toBe(false);
+    });
+
+    it('with a policy in force the headline reads the plan effect', async () => {
+      const game = gameWith({ phase: 'runs', runs: 1, last: runResult({ rung: 0 }) });
+      await openedWithEffect({ game, initialPolicy: mk(protect(5)), initialRun: mk(protect(5)) });
+      await page.getByTestId('goal-headline-button').click();
+      await expect.element(row()).toHaveAttribute('data-met', 'true');
+      expect(row().element().textContent).toMatch(
+        new RegExp(`(^|\\s)(\\d[\\d,]*) of ${formatCount(SIDE_TUNING[EFFECT_ID].target)}`)
+      );
+      expect(row().element().textContent).not.toMatch(/(^|\s)0 of /);
+    });
+
+    it('a run settles with no reward for it while no policy is in force', async () => {
+      const game = gameWith({ phase: 'runs', runs: 0 });
+      const s = setup({ game, runMs: 200, phased: true });
+      await opening();
+      emit(compiledMsg(1, LONG));
+      emit(filledMsg(1, 0, LONG.lastIndex + 1, { base: BASE }));
+      await expect.poll(() => game.state.runs).toBe(1);
+      expect(game.state.last!.side.map((e) => e.id)).not.toContain(EFFECT_ID);
+      expect(Object.hasOwn(game.state.side, EFFECT_ID)).toBe(false);
+      await unmount(s);
+    });
+
+    it('a run settles with its reward while a policy is in force', async () => {
+      const game = gameWith({ phase: 'runs', runs: 0 });
+      const policy = mk(protect(5));
+      setup({ game, runMs: 200, phased: true, initialPolicy: policy, initialRun: policy });
+      await opening();
+      emit(compiledMsg(1, LONG));
+      emit(filledMsg(1, 0, LONG.lastIndex + 1, { base: BASE }));
+      await expect.poll(() => game.state.runs).toBe(1);
+      expect(game.state.last!.side).toContainEqual({
+        id: EFFECT_ID,
+        reward: effectGoal.reward
+      });
+      expect(Object.hasOwn(game.state.side, EFFECT_ID)).toBe(true);
+    });
   });
 
   it('there is no goal notice in a game, where the page without one has one', async () => {

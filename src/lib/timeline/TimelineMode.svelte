@@ -799,7 +799,7 @@
       const i = indexOfDay(view.months, goal.deadline);
       if (i <= view.filledThrough) {
         for (const sg of sideShown(s)) {
-          const r = sg.read({ view, index: i, take: sideTake });
+          const r = sg.read({ view, index: i, take: sideTake, inForce });
           if (r !== null) side.push({ goal: sg, ...r, met: r.value >= r.target });
         }
       }
@@ -1032,7 +1032,7 @@
       s,
       reading,
       take,
-      { view, index, take },
+      { view, index, take, inForce: !nothingInForce(resultsDoc) },
       {
         amount: goal.amount,
         datasetVersion,
