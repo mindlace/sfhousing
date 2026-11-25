@@ -11,10 +11,8 @@ export const SIDE_TUNING: Record<string, { target: number; reward: Units }> = {
   'collect-run': { target: 24_000, reward: { home: 500 } },
   'policy-homes-2': { target: 10_000, reward: { home: 1000 } },
   'new-money': { target: 100, reward: { home: 800 } },
-  'funded-homes': { target: 15_000, reward: { home: 800 } },
   'collect-share-2': { target: 60, reward: { home: 600 } },
   'building-homes': { target: 3_000, reward: { home: 800 } },
-  'affordable-homes': { target: 20_000, reward: { home: 1200 } },
   'policy-homes-3': { target: 7_000, reward: { home: 1500 } }
 };
 
