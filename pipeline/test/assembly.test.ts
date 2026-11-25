@@ -28,7 +28,7 @@ describe('assembleSite on real pipeline-quantised chunks', () => {
     const db = await miniDuck();
     await runSql(db);
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sfh-assembly-'));
-    const outs = await writeChunks(db, dir, 'fixture-1', new Report());
+    const outs = await writeChunks(db, dir, 'fixture-1', new Report(), new Set());
     const byId = new Map<string, ParcelRecord>();
     for (const o of outs) {
       for (const r of decodeParcelChunk(fs.readFileSync(path.join(dir, o.path), 'utf8'))) {

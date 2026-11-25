@@ -78,8 +78,10 @@ async function readParcelRows(db: Duck): Promise<ParcelRow[]> {
 }
 
 /**
- * Every parcel_out row as the exact `ParcelRecord` `writeChunks` encodes, with its cell, sorted
- * by id. The scenario step reads parcels through this so both see one record per parcel.
+ * Every parcel_out row as the `ParcelRecord` `writeChunks` encodes, with its cell, sorted by id.
+ * The scenario step reads parcels through this so both see one record per parcel. The one
+ * difference: `writeChunks` writes freeway-land catalog lots with `eligible` false, while these
+ * records keep `parcel_out.eligible`, so the calibration panel does not move.
  */
 export async function readParcelRecords(
   db: Duck
@@ -113,16 +115,21 @@ export async function readClippedOriginals(
   );
 }
 
+/** Chunks: every parcel as one record, catalog (freeway-land) lots written with `eligible` false. */
 export async function writeChunks(
   db: Duck,
   outDir: string,
   datasetVersion: string,
-  report: Report
+  report: Report,
+  freewayLand: ReadonlySet<ParcelId>
 ): Promise<ChunkOut[]> {
   const cells = new Map<string, Cell>();
   let empty = 0;
   let outside = 0;
   for (const { rec, cellId, bbox } of await readParcelRows(db)) {
+    // Catalog lots are unbuildable while their freeway stands: the editor reads this flag, so
+    // Paint cannot build on them. Only the encoding changes; `parcel_out.eligible` does not.
+    if (freewayLand.has(rec.id)) rec.eligible = false;
     if (rec.polygon.length === 0) empty++;
     if (!pointStrictlyInside([0, 0], rec.polygon)) outside++;
     let c = cells.get(cellId);
