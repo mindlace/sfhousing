@@ -83,6 +83,8 @@ export interface SeriesChunk {
   planEffect: PlanRow[];
   money: MoneyRow[] | null;
   tiers: TierUnits[] | null;
+  /** E2: homes waiting in the plan's funding line. Optional for good; absent reads as null. */
+  waiting?: number[] | null;
 }
 
 /**
@@ -183,6 +185,8 @@ export interface TimelineView {
   phasing: TimelineScore['phasing'];
   references: TimelineScore['references'];
   compare: 'plan' | 'preFzp';
+  /** E2: homes waiting for money by month. Optional for good; absent reads as null. */
+  waitingMoney?: number[] | null;
 }
 
 /** What `cardAt` needs beyond the world. */

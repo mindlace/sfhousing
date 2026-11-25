@@ -451,6 +451,9 @@
     live?.timeline?.setBarMode(mode);
   }
 
+  /** M1: the run view. Does nothing until map-run builds it. */
+  export function setRunView(_on: boolean): void {}
+
   const handle: SimMapHandle = {
     applyGenerated,
     setChunkStatus,
@@ -464,7 +467,8 @@
     setTimelineLookups,
     setHalos,
     setBarMode,
-    collapseCredit
+    collapseCredit,
+    setRunView
   };
 
   // ---- effects ----------------------------------------------------------------------------------
