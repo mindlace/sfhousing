@@ -688,7 +688,7 @@ interface TreeProps {
   units: Units;
   busy: boolean;
   next: Rung | null;
-  ending: { reachedOn: Day; perAddedHome: number | null } | null;
+  ending: { reachedOn: Day; stateBy: Day; perAddedHome: number | null } | null;
   onbuy(id: NodeId): void;
   onedit(id: NodeId): void;
   ontoggle(id: NodeId, on: boolean): void;
@@ -720,7 +720,7 @@ interface GameCellProps {
       <dl>
         <dt><code>before</code></dt><dd>Homes by the deadline in the run before this one on the same rung, or null.</dd>
         <dt><code>on</code></dt><dd>For each bought node whose grant made a policy: whether that policy is switched on. A node with no entry shows no switch.</dd>
-        <dt><code>ending</code></dt><dd>Set once the last rung is met: the day the goal was reached and public money per added home.</dd>
+        <dt><code>ending</code></dt><dd>Set once the last rung is met: the day the goal was reached, the day the state asks for the goal's homes by (<code>stateBy</code>, RHNA's deadline), and public money per added home.</dd>
         <dt><code>busy</code></dt><dd>The forecast for the next run is not ready. Run says so and waits.</dd>
         <dt><code>next</code></dt><dd>The rung on offer, when the rung in play is met.</dd>
         <dt><code>homes</code></dt><dd>Null before the first run of a rung: the headline then shows the goal alone.</dd>
@@ -943,7 +943,7 @@ export async function seedRunMs(page: Page, ms: number): Promise&lt;void&gt;;</c
             <tr><th scope="row">The tree</th><td><code>game-tree-pane</code>; <code>tree</code>; <code>tree-run</code> ("Run"); <code>tree-next</code>; <code>tree-busy</code></td><td><code>game-sim</code>, <code>tally-tree</code></td></tr>
             <tr><th scope="row">A node</th><td><code>[data-testid="tree-node"][data-node="&lt;id&gt;"]</code>; inside it <code>tree-node-open</code>, <code>tree-node-edit</code>, <code>tree-node-on</code></td><td><code>tally-tree</code></td></tr>
             <tr><th scope="row">The open node</th><td><code>tree-detail</code>; <code>tree-buy</code></td><td><code>tally-tree</code></td></tr>
-            <tr><th scope="row">The ending</th><td><code>tree-ending</code> (heading "Every goal met", "Reached in Mon YYYY"); <code>tree-publish</code> ("Publish")</td><td><code>tally-tree</code></td></tr>
+            <tr><th scope="row">The ending</th><td><code>tree-ending</code> (heading "Every goal met", "Reached in Mon YYYY", "The state asks by Mon YYYY"); <code>tree-publish</code> ("Publish")</td><td><code>tally-tree</code></td></tr>
             <tr><th scope="row">Back to the tree</th><td><code>game-back</code>, a header action ("Back to the tree")</td><td><code>game-sim</code></td></tr>
             <tr><th scope="row">The run waiting</th><td><code>run-waiting</code> (<code>RUN_BUSY</code>, "Getting the forecast ready")</td><td><code>game-sim</code>, <code>tally-tree</code></td></tr>
             <tr><th scope="row">The goal headline</th><td><code>goal-headline-button</code>; <code>side-goals</code></td><td><code>tally-tree</code></td></tr>
@@ -1068,7 +1068,7 @@ export async function openGamePanel(page: Page): Promise&lt;Locator&gt;;</code><
         <li><code>seedGoalAmount(page, 1)</code>; <code>seedRunMs(page, 2000)</code>; <code>gotoHydrated(page, '/')</code>; <code>waitPhase</code> <code>tree</code>. <code>tree-next</code> and <code>tree-ending</code> are absent.</li>
         <li>Press <code>tree-run</code>; <code>waitPhase</code> <code>tally</code>; press <code>tally-continue</code>; <code>waitPhase</code> <code>tree</code>.</li>
         <li><code>savedGame.state.met</code> holds rung <code>RUNGS - 1</code>.</li>
-        <li><code>tree-ending</code> contains "Every goal met" and matches <code>/Reached in [A-Z][a-z]{2} \d{4}/</code>, and lists the label of no node (nothing is bought). <code>tree-next</code> is absent.</li>
+        <li><code>tree-ending</code> contains "Every goal met" and matches <code>/Reached in [A-Z][a-z]{2} \d{4}/</code> and <code>/The state asks by [A-Z][a-z]{2} \d{4}/</code>, and lists the label of no node (nothing is bought). <code>tree-next</code> is absent.</li>
         <li>Press <code>tree-publish</code>: the publish dialog opens (<code>publishDialog(page)</code> visible).</li>
       </ol>
     </section>
@@ -1444,7 +1444,7 @@ npx tsx scripts/reach-check.ts --version &lt;v&gt;</code></pre>
     <ul>
       <li>A new visitor paints to the room goal at amount 1, starts, runs with "Collect for me", collects every drop, gets the lump, buys the first ready node, opens the workshop and comes back, runs again and takes the next goal; the account holds the game at <code>phase</code> <code>'runs'</code>, <code>rung</code> 1.</li>
       <li>By keyboard only (chromium): one stamp, Start, at least one drop collected by sweeping the ring with the arrow keys, Continue, a purchase, the workshop and back, the next goal; every target shows its focus ring.</li>
-      <li>A game at the last rung meets it in one run, and the tree shows the ending with its year and a Publish that opens the publish dialog, and no next goal.</li>
+      <li>A game at the last rung meets it in one run, and the tree shows the ending with its year beside the state's and a Publish that opens the publish dialog, and no next goal.</li>
       <li>The game's page passes the accessibility checklist in each of the nine states of <a href="#tbl-a11y-states">the states table</a>.</li>
       <li>The target sweep passes on the tree and the tally at 375 px; the header fits with the game's widest strings at four widths.</li>
       <li>The game specs of <a href="#sec-design-game-specs">The game specs</a>.</li>

@@ -632,7 +632,7 @@ interface TreeProps {
   units: Units;
   busy: boolean;
   next: Rung | null;
-  ending: { reachedOn: Day; perAddedHome: number | null } | null;
+  ending: { reachedOn: Day; stateBy: Day; perAddedHome: number | null } | null;
   onbuy(id: NodeId): void;
   onedit(id: NodeId): void;
   ontoggle(id: NodeId, on: boolean): void;
@@ -664,7 +664,7 @@ interface GameCellProps {
       <dl>
         <dt><code>before</code></dt><dd>Homes by the deadline in the run before this one on the same rung, or null.</dd>
         <dt><code>on</code></dt><dd>For each bought node whose grant made a policy: whether that policy is switched on. A node with no entry shows no switch.</dd>
-        <dt><code>ending</code></dt><dd>Set once the last rung is met: the day the goal was reached and public money per added home.</dd>
+        <dt><code>ending</code></dt><dd>Set once the last rung is met: the day the goal was reached, the day the state asks for the goal's homes by (<code>stateBy</code>, RHNA's deadline), and public money per added home.</dd>
         <dt><code>busy</code></dt><dd>The forecast for the next run is not ready. Run says so and waits.</dd>
         <dt><code>next</code></dt><dd>The rung on offer, when the rung in play is met.</dd>
         <dt><code>homes</code></dt><dd>Null before the first run of a rung: the headline then shows the goal alone.</dd>
@@ -1072,7 +1072,7 @@ function buy(id: NodeId): void {
         </tbody>
       </table>
       <ul>
-        <li><code>ending</code> is null until <code>finished(game.state)</code>. Then it is <code>{ reachedOn, perAddedHome }</code>: <code>reachedOn</code> from the <code>met</code> entry of the last rung; <code>perAddedHome</code> is <code>moneyFigureAt(view.money, i).perAddedHome.all</code> at <code>i = indexOfDay(view.months, goal.deadline)</code> on the view on show, and null with no view, no <code>money</code> or <code>i &gt; view.filledThrough</code>.</li>
+        <li><code>ending</code> is null until <code>finished(game.state)</code>. Then it is <code>{ reachedOn, stateBy, perAddedHome }</code>: <code>reachedOn</code> from the <code>met</code> entry of the last rung; <code>stateBy</code> is <code>RHNA_DEADLINE</code> from <code>$lib/sim/scenario/score</code>, the day RHNA asks for the goal's homes by; <code>perAddedHome</code> is <code>moneyFigureAt(view.money, i).perAddedHome.all</code> at <code>i = indexOfDay(view.months, goal.deadline)</code> on the view on show, and null with no view, no <code>money</code> or <code>i &gt; view.filledThrough</code>.</li>
         <li><code>openPublish</code> clicks the header's Publish button (<code>[data-testid="publish-open"]</code>), which opens its dialog on <code>publishDoc</code>.</li>
       </ul>
     </section>
@@ -1308,7 +1308,7 @@ interface TimelineModeAdds {
 
 interface TreeArgs {
   busy: boolean;
-  ending: { reachedOn: Day; perAddedHome: number | null } | null;
+  ending: { reachedOn: Day; stateBy: Day; perAddedHome: number | null } | null;
 }
 
 // Timeline: `allowed` and `level` removed, and
