@@ -48,7 +48,7 @@
     "buildings.underground_dropped": 1,
     "calibration.affordable.fallback": 1,
     "calibration.affordable.histories": 0,
-    "calibration.bytes": 76221,
+    "calibration.bytes": 75610,
     "calibration.funding.impliedHomesPerYear": 20,
     "calibration.funding.mohcdRows": 2,
     "calibration.funding.observedHomesPerYear": 25,
@@ -115,7 +115,6 @@
     "cars.households": 69,
     "cars.households.noCar": 20,
     "cars.lotsNoZone": 0,
-    "cars.moves.pumaFallback": 0,
     "cars.moves.typeFallback": 96,
     "cars.newHomes.records": 5,
     "cars.parking.linkOn": 1,
@@ -776,7 +775,7 @@
       "ok": true
     },
     {
-      "detail": "parses, fill levels equal FILL_LEVELS, asOf matches projects.json (T4d asOf checked by the calibration step), 76221 B; baselineFunding 9 pools, 7 programmes; shares 947762 millionths; no programme for city-housing-stability-fund, city-redevelopment; affordableRoutes tier 4",
+      "detail": "parses, fill levels equal FILL_LEVELS, asOf matches projects.json (T4d asOf checked by the calibration step), 75610 B; baselineFunding 9 pools, 7 programmes; shares 947762 millionths; no programme for city-housing-stability-fund, city-redevelopment; affordableRoutes tier 4",
       "id": "V25",
       "ok": true
     },

@@ -15,7 +15,6 @@ import {
 
 const BANDS: TypeBands = { size: [1, 2], workers: [0], income: [0, 100_000] };
 const T = typeCount(BANDS);
-const PUMAS = ['07507', '07508'];
 
 function row(p: Partial<MoverRow>): MoverRow {
   return {
@@ -49,7 +48,7 @@ describe('moveRates', () => {
     ...many(25, { ten: 3, mv: 3 }),
     ...many(10, { ten: 3, mv: 2, np: 2 })
   ];
-  const r = moveRates(rows, BANDS, PUMAS, ['2020-01-01', '2024-12-31']);
+  const r = moveRates(rows, BANDS, ['2020-01-01', '2024-12-31']);
 
   it('turns the weighted share moved in within 12 months into a monthly rate', () => {
     expect(r.moves.perMonth).toHaveLength(T);
@@ -68,33 +67,10 @@ describe('moveRates', () => {
     expect(r.moves.perMonth[ownB]).toBeCloseTo(monthly(0.5), 12);
   });
 
-  it('gives each PUMA its movers ratio: mover share over household share by type', () => {
-    expect(r.moves.inRatio).toHaveLength(PUMAS.length);
-    for (const m of r.moves.inRatio) expect(m).toHaveLength(T);
-    // 07507: households ownA 30 + 30, rentA 25, rentB 10 (weight 95); movers only ownA (30).
-    expect(r.moves.inRatio[0][ownA]).toBeCloseTo(1 / (60 / 95), 12);
-    expect(r.moves.inRatio[0][rentA]).toBe(0);
-    // 07508: all 25 households and movers are rentA: ratio 1; types it lacks get 0.
-    expect(r.moves.inRatio[1][rentA]).toBeCloseTo(1, 12);
-    expect(r.moves.inRatio[1][ownA]).toBe(0);
-    // Weighted by the households, the ratios average 1 (the movers' shares sum to 1).
-    const hh07507 = [ownA, rentA, typeIndex(BANDS, 2, 0, 50_000, false)];
-    const shareOf = { [ownA]: 60 / 95, [rentA]: 25 / 95, [hh07507[2]]: 10 / 95 };
-    expect(hh07507.reduce((a, t) => a + shareOf[t] * r.moves.inRatio[0][t], 0)).toBeCloseTo(1, 12);
+  it('carries only the rates: the refill replaces departures type for type', () => {
+    expect(Object.keys(r.moves)).toEqual(['perMonth', 'provenance']);
     expect(r.moves.provenance.n).toBe(rows.length);
     expect(r.warnings).toEqual([]);
-  });
-
-  it('gives a PUMA with no mover the citywide ratio, with a warning', () => {
-    const x = moveRates(
-      rows.filter((q) => q.puma === '07507'),
-      BANDS,
-      PUMAS,
-      ['2020-01-01', '2024-12-31']
-    );
-    expect(x.moves.inRatio[1]).toEqual(x.moves.inRatio[0]);
-    expect(x.stats.pumaFallback).toEqual(['07508']);
-    expect(x.warnings.join(' ')).toMatch(/07508/);
   });
 });
 

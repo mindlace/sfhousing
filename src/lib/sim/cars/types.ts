@@ -4,9 +4,8 @@ import type { Provenance } from '../../timelapse/types';
 export const CAR_LEVELS = 4; // households with 0, 1, 2, 3+ cars
 
 /**
- * The four mixes a new home's household type is drawn from. The movers' refill (the zone's own
- * type mix times its PUMA's `moves.inRatio`) takes the draw index right after them:
- * `MIXES.length`.
+ * The four mixes a new home's household type is drawn from. The movers' refill (the zone's
+ * departures by type) takes the draw index right after them: `MIXES.length`.
  */
 export const MIXES = ['market', 'veryLow', 'low', 'moderate'] as const;
 export type Mix = (typeof MIXES)[number];
@@ -45,17 +44,12 @@ export interface CarModel {
     provenance: Provenance;
   };
   threePlusMean: number; // cars per 3+ household, PUMS
-  moves: {
-    perMonth: number[]; // T
-    /**
-     * PUMAs x T: a type's share of the PUMA's recent movers over its share of all the PUMA's
-     * households (0 where it has none). A zone's movers are replaced by its own current type mix
-     * times this, renormalised, so the zone keeps its composition while carrying PUMS's
-     * mover-versus-stayer difference.
-     */
-    inRatio: number[][];
-    provenance: Provenance;
-  };
+  /**
+   * T: each type's monthly move rate. Movers are replaced type for type in proportion to their
+   * departures (rate times households), so a zone keeps its composition.
+   */
+  moves: { perMonth: number[]; provenance: Provenance };
+
   newHomes: {
     mix: Record<Mix, number[]>; // T shares each, sum 1
     affordableTiers: { veryLow: number; low: number; moderate: number }; // sum 1

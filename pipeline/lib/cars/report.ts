@@ -372,13 +372,9 @@ export function carsModelReportLines(
       `Monthly = 1 - (1 - annual)^(1/12). ${T - m.fallback} of ${T} types have their own rate ` +
       `(at least ${MIN_CELL_RECORDS} records); ${m.fallback} take their tenure's. Monthly ` +
       `rates range ${pctMonth(m.perMonthRange[0])} to ${pctMonth(m.perMonthRange[1])}.`,
-    "Refill: an out-mover's home takes a household drawn from its PUMA's movers mix (type " +
-      'shares of households with MV 1). Mover records by PUMA: ' +
-      s.pumas.map((p, i) => `${p} ${m.moversByPuma[i]}`).join(', ') +
-      '.' +
-      (m.pumaFallback.length > 0
-        ? ` ${m.pumaFallback.join(', ')} had none and take the citywide movers' mix.`
-        : '')
+    "Refill: out-movers' homes take households of the same types in proportion to the " +
+      "zone's departures (each type's rate times its households), so with no homes built or " +
+      'lost a zone keeps its type mix (stationary by construction).'
   ];
 
   // New homes.
@@ -660,10 +656,22 @@ export function backcastReportLines(r: BackcastResult, info: BackcastInfo): stri
       })
     );
   }
+  const span = (rows: YearRow[]) => {
+    const e = rows.map((y) => y.predicted - y.observed);
+    return `${pts(Math.min(...e))} to ${pts(Math.max(...e))} pts`;
+  };
+  const releases = r.years.slice(1);
   lines.push(
     '',
-    "Stayers keep their cars (no life-event rate). Households of homes lost beyond a zone's " +
-      `households: ${r.unmatched}.`
+    "Movers are replaced type for type in proportion to each zone's departures, so with no " +
+      'homes built or lost a zone keeps its type mix. Stayers keep their cars (no life-event ' +
+      "rate). Households of homes lost beyond a zone's households: " +
+      `${r.unmatched}.`,
+    '',
+    `Open for the owner: against the releases the model runs ${span(releases)} citywide` +
+      (nested ? ` and ${span(nested.years)} over the nested zones` : '') +
+      '; held out, ' +
+      `${span(r.heldOutYears)}.`
   );
   return lines;
 }

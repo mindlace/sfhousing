@@ -627,7 +627,6 @@ describe('carsModelReportLines', () => {
     threePlusMean: 3.3,
     moves: {
       perMonth: uniform.map(() => 0.01),
-      inRatio: PUMAS.map(() => uniform.map(() => 1)),
       provenance: prov
     },
     newHomes: {
@@ -646,9 +645,7 @@ describe('carsModelReportLines', () => {
       noMv: 0,
       tenure: { owner: tenure, renter: { ...tenure, annual: 0.25, perMonth: 0.0237 } },
       fallback: 40,
-      perMonthRange: [0.005, 0.03] as [number, number],
-      moversByPuma: [10, 20, 30, 40],
-      pumaFallback: []
+      perMonthRange: [0.005, 0.03] as [number, number]
     },
     newHomes: {
       release: 2024,
@@ -703,7 +700,7 @@ describe('carsModelReportLines', () => {
     const md = carsModelReportLines(model, data, stats).join('\n');
     expect(md).toContain('owners 12.0% a year (1.060% a month');
     expect(md).toContain('40 take their tenure');
-    expect(md).toContain('07507 10');
+    expect(md).toContain("in proportion to the zone's departures");
     expect(md).toMatch(/\| Market \| 300 \| 9000 \| [0-9.]+% \| [0-9.]+ \|/);
     expect(md).toContain('very low 50.0%, low 30.0%, moderate 20.0%');
     expect(md).toContain('2203, 1352, 559');

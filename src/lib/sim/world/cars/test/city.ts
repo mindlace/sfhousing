@@ -56,7 +56,6 @@ export function carModelOf(o: CarCityOpts = {}): CarModel {
     threePlusMean: 3.2,
     moves: {
       perMonth: Array.from({ length: T }, (_, t) => (t % 2 === 0 ? owner : 3 * owner)),
-      inRatio: [mix(3).map((x) => x * T), mix(7).map((x) => x * T)],
       provenance: prov
     },
     newHomes: {

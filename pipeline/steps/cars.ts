@@ -331,7 +331,7 @@ export async function carsStep(db: Duck, o: CarsStepOpts): Promise<CarsStepOut> 
   );
   const byTier = projects.rhnaCompletedNet.byTier;
   if (!byTier) throw new Error('cars: projects.json has no rhnaCompletedNet.byTier');
-  const mv = moveRates(pums, bands, pumas, window);
+  const mv = moveRates(pums, bands, window);
   const nh = newHomeMixes(pums, bands, ami, byTier, {
     release: pumsRelease,
     window
@@ -406,7 +406,6 @@ export async function carsStep(db: Duck, o: CarsStepOpts): Promise<CarsStepOut> 
     'cars.fit.noObservation': fit.stats.constants.noObservation,
     'cars.fit.observedZero': fit.stats.constants.observedZero,
     'cars.moves.typeFallback': mv.stats.fallback,
-    'cars.moves.pumaFallback': mv.stats.pumaFallback.length,
     'cars.newHomes.records': nh.stats.records.market,
     'cars.parking.linkOn': pk.parking.costPerSpace === null ? 0 : 1,
     'cars.bytes': body.length,
@@ -703,7 +702,7 @@ async function carsBackcast(
       levels: first.fit.map((g) => (g.observedTotal > 0 ? Float64Array.from(g.target) : null))
     }).households;
     d.constant = refitConstants(first.choice, d, observed, first).constant;
-    const mv = moveRates(rows, bands, pumas10, window);
+    const mv = moveRates(rows, bands, window);
     const nh = newHomeMixes(rows, bands, x.ami, x.byTier, { release: last.release, window });
     held.records = rows.length;
     held.households = rows.reduce((t, r) => t + r.wgtp, 0);

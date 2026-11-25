@@ -63,7 +63,6 @@ let cells = new Int32Array(0);
 let arrivals = new Int32Array(0);
 let byType = new Int32Array(0);
 let refill = new Float64Array(0);
-let before = new Float64Array(0);
 const levels = new Int32Array(L);
 
 /**
@@ -91,7 +90,6 @@ function scratch(T: number): void {
   arrivals = new Int32Array(T);
   byType = new Int32Array(T);
   refill = new Float64Array(T);
-  before = new Float64Array(T);
 }
 
 /**
@@ -99,8 +97,8 @@ function scratch(T: number): void {
  * level (`EMPTY`, index 0); each type's out-movers, `roundSystematic(households x perMonth)`
  * (`OUT`, index the type), leave in proportion across its car levels (`OUT_CARS`); then arrivals
  * choose cars: `fills[k]` households of mix `MIXES[k]` and as many households as moved out, from
- * the zone's own type mix (before the moves) times its PUMA's `inRatio`, are split into types (`IN_TYPES`, index the mix, `IN_MIX_DRAW` for
- * the movers) and each type's arrivals over the car levels by the table (`CHOOSE`, index the type).
+ * the zone's departures by type (each type's households before the moves times its rate), are
+ * split into types (`IN_TYPES`, index the mix, `IN_MIX_DRAW` for the movers) and each type's arrivals over the car levels by the table (`CHOOSE`, index the type).
  * Returns the households of `lost` the zone did not have.
  */
 export function stepZone(
@@ -131,18 +129,15 @@ export function stepZone(
     }
   }
   const perMonth = m.moves.perMonth;
-  const ratio = m.moves.inRatio[d.zonePuma[zone]];
   let moved = 0;
-  let refillTotal = 0;
   for (let t = 0; t < T; t++) {
     const at = base + t * L;
     const n0 = hh[at] + hh[at + 1] + hh[at + 2] + hh[at + 3];
-    // The refill's weights: the zone's mix before the month's moves times the PUMA's ratio.
-    before[t] = n0;
-    refill[t] = n0 * ratio[t];
-    refillTotal += refill[t];
-    if (n0 === 0) continue;
+    // The refill's weights: the zone's expected departures by type (rate times households), so
+    // arrivals replace departures type for type and the zone keeps its composition.
     const r = perMonth[t];
+    refill[t] = n0 * (r > 0 ? r : 0);
+    if (n0 === 0) continue;
     if (!(r > 0)) continue;
     const n = Math.min(n0, roundSystematic(n0 * r, draw(zone, P_OUT, t)));
     if (n <= 0) continue;
@@ -163,9 +158,8 @@ export function stepZone(
     for (let t = 0; t < T; t++) arrivals[t] += out[t];
   }
   if (moved > 0) {
-    // Every type the zone holds has ratio 0 (none in its PUMA's sample): the zone's own mix.
-    const w = refillTotal > 0 ? refill : before;
-    splitSystematic(moved, w.subarray(0, T), draw(zone, P_IN_TYPES, IN_MIX_DRAW), out);
+    // moved > 0 means some type with households has a positive rate: the weights sum above 0.
+    splitSystematic(moved, refill.subarray(0, T), draw(zone, P_IN_TYPES, IN_MIX_DRAW), out);
     for (let t = 0; t < T; t++) arrivals[t] += out[t];
   }
   const table = s.table;

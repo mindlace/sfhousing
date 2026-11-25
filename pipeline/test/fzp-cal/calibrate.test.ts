@@ -371,7 +371,7 @@ describe('calibrate', () => {
         provenance: prov
       },
       threePlusMean: 3.2,
-      moves: { perMonth: [0.01, 0.01, 0.01, 0.01], inRatio: [[1, 1, 1, 1]], provenance: prov },
+      moves: { perMonth: [0.01, 0.01, 0.01, 0.01], provenance: prov },
       newHomes: {
         mix: { market: share, veryLow: share, low: share, moderate: share },
         affordableTiers: { veryLow: 0.3, low: 0.3, moderate: 0.4 },

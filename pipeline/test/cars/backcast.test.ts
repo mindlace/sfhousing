@@ -46,7 +46,6 @@ function model(perMonth = [0.015, 0.015]): CarModel {
     threePlusMean: 3.2,
     moves: {
       perMonth,
-      inRatio: [[1, 1]],
       provenance: PROV
     },
     newHomes: {

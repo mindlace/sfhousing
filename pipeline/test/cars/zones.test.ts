@@ -276,9 +276,7 @@ describe('carsStep with census tables', () => {
     const t = m.newHomes.mix.market.indexOf(1);
     expect(t % 2).toBe(1);
     expect(m.moves.perMonth[t]).toBeCloseTo(1 - Math.exp(Math.log(0.5) / 12), 12);
-    // All the PUMA's movers are of type t, a part of its households: its ratio is above 1.
-    expect(m.moves.inRatio).toHaveLength(1);
-    expect(m.moves.inRatio[0][t]).toBeGreaterThan(1);
+    expect(Object.keys(m.moves)).toEqual(['perMonth', 'provenance']);
     expect(m.newHomes.mix.veryLow[t]).toBe(1);
     // The mini projects.json has no affordable completion by tier: the PUMS fallback, warned.
     expect(m.newHomes.affordableTiers).toEqual({ veryLow: 1, low: 0, moderate: 0 });
