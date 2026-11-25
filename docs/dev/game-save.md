@@ -310,14 +310,16 @@ The games are in `localStorage` first in every state; no state blocks play or bu
   a v2 game in the runs phase, with `firstWinAt` set and never sent, so the sync sends it at attach
   on the first load and the `PUT` mints the account. Rate limits always allow under
   `ENVIRONMENT=development`.
-- `seedRunMs(page, ms)` sets the length of a run for the page before it loads.
+- `seedRunMs(page, ms)` writes `ms` (a whole number from 100 to 20000, else it throws) under
+  `E2E_RUN_MS_KEY` before the page loads, so an e2e build's run lasts `ms` of wall time. It does
+  not count as a seeded game: it may follow `seedGame` or `newVisitor`.
 - A spec changes a stored game by writing its `saveKey(id)` value and its `SAVES_KEY` entry with
   `page.evaluate` (a new `name` and `savedAt`), then reloading: the sync finds it changed here.
 - A second device: the first context adds an email on `/account` through the `dev-link`; a second
   context calls `newVisitor`, then `loginAs` with that email.
 - Specs read what a browser holds from `SAVES_KEY`, and wait on `page.waitForResponse` for the
   `/api/game` requests, set up before the action that causes them; never on time.
-- Any spec that seeds a game past the opening now sends it 2 seconds after load and makes an
+- Any spec that seeds a game past the opening sends it 2 seconds after load and makes an
   account, unless the test ends first.
 
 ## Five-level records
