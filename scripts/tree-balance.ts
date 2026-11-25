@@ -1,13 +1,15 @@
 // Plays the purchase tree against the engine to check pacing (spec: sec-design-balance).
 // The pure pieces (shares, orders, next-buy selection, pacing checks, side report), then a play
 // against the engine and current law at each deadline.
+import { pathToFileURL } from 'node:url';
+import { formatShortMonthYear } from '../src/lib/fzp/format';
 import { NODES } from '../src/lib/game/catalogue/nodes';
 import { buyAndApply, type Played } from '../src/lib/game/catalogue/play';
 import { SIDE_TUNING } from '../src/lib/game/catalogue/tuning';
 import { finished, goalAt, RUNGS, takeNext } from '../src/lib/game/ladder';
 import { limitsOf, runnable } from '../src/lib/game/limits';
 import { deadlineIndex, readRun, resultOf, settle, type RunTake } from '../src/lib/game/run-result';
-import type { SideGoal } from '../src/lib/game/side-goals';
+import { SIDE_GOALS, type SideGoal } from '../src/lib/game/side-goals';
 import { NEW_GAME, type GameState, type NodeId } from '../src/lib/game/state';
 import { treeView, type NodeView, type TreeNode } from '../src/lib/game/tree';
 import { total } from '../src/lib/game/units';
@@ -15,7 +17,13 @@ import type { TimelineView } from '../src/lib/sim/world/score/types';
 import { canonicalJson } from '../src/lib/sim-page/policy';
 import type { Day } from '../src/lib/timelapse/time';
 import { DEFAULT_POLICY4 } from '../src/lib/timeline/policy4';
-import type { Engine } from './reach-measure';
+import {
+  openEngine,
+  parseAmount,
+  parseSourceArgs,
+  type DataSource,
+  type Engine
+} from './reach-measure';
 
 export const SHARE = { base: 0.25, perRadius: 0.1, perLinger: 0.05 } as const;
 
@@ -394,4 +402,193 @@ export async function currentLaw(
     readers.push((g) => g.read({ view, index, take })?.value ?? null);
   }
   return (rung) => readers[rung] ?? null;
+}
+
+export interface BalanceArgs {
+  src: DataSource;
+  order?: OrderName;
+  amount?: number;
+  json: boolean;
+}
+
+/** The command's arguments, or the reason they are refused. */
+export function parseBalanceArgs(argv: string[]): BalanceArgs | { error: string } {
+  const parsed = parseSourceArgs(argv, { order: 'value', amount: 'value', json: 'bool' });
+  if ('error' in parsed) return parsed;
+  const amount = parseAmount(parsed.flags.amount);
+  if (typeof amount === 'object') return amount;
+  const args: BalanceArgs = { src: parsed.src, json: parsed.flags.json === true };
+  const order = parsed.flags.order;
+  if (order !== undefined) {
+    const found = ORDERS.find((o) => o === order);
+    if (found === undefined) {
+      return { error: `unknown order ${String(order)} (one of ${ORDERS.join(', ')})` };
+    }
+    args.order = found;
+  }
+  if (amount !== undefined) args.amount = amount;
+  return args;
+}
+
+/** The plays whose `hand` result gates the exit code. */
+export const GATED: readonly OrderName[] = [
+  'catalogue',
+  'permitting-first',
+  'zoning-first',
+  'hands-first',
+  'cheapest'
+];
+
+const count = (n: number) => n.toLocaleString('en-US');
+const mmss = (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`;
+
+const CHECK_LINES: Record<CheckId, { label: string; show: (n: number) => string }> = {
+  'first-purchase': { label: 'First purchase', show: mmss },
+  'early-runs-per-purchase': { label: 'Early runs per purchase max', show: String },
+  'runs-per-purchase': { label: 'Runs per purchase max', show: String },
+  'map-gap': { label: 'Longest gap between map changes', show: mmss },
+  'purchases-per-deadline': { label: 'Fewest purchases between deadlines', show: String }
+};
+
+/**
+ * One play's block. With `asOf` each run line shows its rung's deadline after the rung; the
+ * report keeps no dates of its own for it.
+ */
+export function playLines(p: PlayReport, asOf?: Day): string[] {
+  const lines = [`Play ${p.order}, ${p.mode}`];
+  const bought = p.runs.flatMap((r) => r.bought);
+  for (const r of p.runs) {
+    const deadline =
+      asOf === undefined ? '' : `  ${formatShortMonthYear(goalAt(asOf, r.rung).deadline)}`;
+    const reached = r.reachedOn === null ? 'never' : formatShortMonthYear(r.reachedOn);
+    lines.push(
+      `  ${`Run ${r.n}`.padEnd(8)}rung ${r.rung}${deadline}  homes ${count(r.homes)}  ` +
+        `reached ${reached}  dropped ${count(r.dropped)}  collected ${count(r.collected)}  ` +
+        `balance ${count(r.balance)}`
+    );
+    if (r.bought.length > 0) {
+      lines.push(`          bought ${r.bought.map((b) => `${b.id} ${b.level}`).join(', ')}`);
+    }
+  }
+  const rung = p.runs.at(-1)?.rung ?? 0;
+  if (p.end === 'finished') {
+    lines.push(
+      `  Finished: ${p.runs.length} runs, ${bought.length} purchases, clock ${mmss(p.clockS)}`
+    );
+  } else if (p.end === 'stuck') {
+    lines.push(`  Stuck at rung ${rung} after ${p.runs.length} runs`);
+    lines.push(`  Bought by then: ${bought.map((b) => `${b.id} ${b.level}`).join(', ')}`);
+  } else {
+    lines.push(`  Too long: ${p.runs.length} runs, at rung ${rung}`);
+  }
+  for (const c of p.checks) {
+    const { label, show } = CHECK_LINES[c.id];
+    lines.push(
+      `  ${label} ${show(c.value)} (target ${show(c.target)})  ${c.pass ? 'pass' : 'fail'}`
+    );
+  }
+  const lumps = p.runs.filter((r) => r.lump > 0).length;
+  const lump = p.runs.reduce((n, r) => n + r.lump, 0);
+  const rewards = p.runs.reduce((n, r) => n + r.sideRewards, 0);
+  const goals = p.runs.reduce((n, r) => n + r.sideMet.length, 0);
+  lines.push(
+    `  Lump ${count(lump)} in ${lumps} runs; side rewards ${count(rewards)} from ${goals} goals`
+  );
+  return lines;
+}
+
+/** The current-law block: each side goal's reading at its rung's deadline, with its flags. */
+export function sideLines(side: SideReport[], asOf: Day, amount?: number): string[] {
+  const lines = ['Current law at each deadline'];
+  for (const s of side) {
+    const month = formatShortMonthYear(goalAt(asOf, s.rung, amount).deadline);
+    let line =
+      `  ${s.id}  rung ${s.rung} ${month}  value ${s.value === null ? 'none' : count(s.value)}` +
+      `  target ${count(s.target)}`;
+    for (const f of s.flags) {
+      line +=
+        f === 'at-or-below-current-law' && s.raiseTo !== null
+          ? `  ${f}: raise to ${count(s.raiseTo)}`
+          : `  ${f}`;
+    }
+    lines.push(line);
+  }
+  return lines;
+}
+
+/** 0 when every gated hand play finished and passed every check and no side goal is flagged. */
+export function balanceExit(plays: PlayReport[], side: SideReport[]): 0 | 1 {
+  const gated = plays.filter((p) => p.mode === 'hand' && GATED.includes(p.order as OrderName));
+  const bad = gated.some((p) => p.end !== 'finished' || p.checks.some((c) => !c.pass));
+  return bad || side.some((s) => s.flags.length > 0) ? 1 : 0;
+}
+
+const messageOf = (e: unknown): string => (e instanceof Error ? e.message : String(e));
+
+/** The command after its arguments are parsed. */
+export async function runBalance(
+  args: BalanceArgs,
+  io: {
+    open: typeof openEngine;
+    out: (line: string) => void;
+    err: (line: string) => void;
+  }
+): Promise<0 | 1 | 2> {
+  let lines: string[];
+  let code: 0 | 1;
+  try {
+    const engine = await io.open(args.src, { warn: (msg) => io.err(msg) });
+    try {
+      const plays: PlayReport[] = [];
+      for (const order of args.order === undefined ? ORDERS : [args.order]) {
+        for (const mode of ['hand', 'collect-for-me'] as const) {
+          plays.push(await play(engine, order, mode, { amount: args.amount }));
+        }
+      }
+      const metInHand = new Set(
+        plays.filter((p) => p.mode === 'hand').flatMap((p) => p.runs.flatMap((r) => r.sideMet))
+      );
+      const side = sideReport(SIDE_GOALS, await currentLaw(engine, args.amount), metInHand);
+      code = balanceExit(plays, side);
+      lines = args.json
+        ? [JSON.stringify({ datasetVersion: engine.datasetVersion, plays, side })]
+        : [
+            `Dataset ${engine.datasetVersion}`,
+            ...plays.flatMap((p) => playLines(p, engine.asOf)),
+            ...sideLines(side, engine.asOf, args.amount)
+          ];
+    } finally {
+      engine.close();
+    }
+  } catch (e) {
+    io.err(`tree-balance: ${messageOf(e)}`);
+    return 2;
+  }
+  for (const line of lines) io.out(line);
+  return code;
+}
+
+async function main(argv: string[]): Promise<number> {
+  const args = parseBalanceArgs(argv);
+  if ('error' in args) {
+    console.error(`tree-balance: ${args.error}`);
+    return 2;
+  }
+  return runBalance(args, {
+    open: openEngine,
+    out: (line) => console.log(line),
+    err: (line) => console.error(line)
+  });
+}
+
+if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main(process.argv.slice(2)).then(
+    (code) => {
+      process.exitCode = code;
+    },
+    (e: unknown) => {
+      console.error(`tree-balance: ${messageOf(e)}`);
+      process.exitCode = 2;
+    }
+  );
 }

@@ -1,14 +1,22 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { formatShortMonthYear } from '../src/lib/fzp/format';
 import { NODES } from '../src/lib/game/catalogue/nodes';
-import { RUNGS } from '../src/lib/game/ladder';
+import { goalAt, RUNGS } from '../src/lib/game/ladder';
 import { SIDE_GOALS, type SideGoal } from '../src/lib/game/side-goals';
 import { NEW_GAME, type GameState } from '../src/lib/game/state';
 import type { Branch, NodeLevel, TreeNode } from '../src/lib/game/tree';
 import { openEngine, type Engine } from './reach-measure';
 import {
   CLOCK,
+  balanceExit,
   checksOf,
   clockOf,
+  GATED,
+  parseBalanceArgs,
+  playLines,
+  runBalance,
+  sideLines,
+  type SideReport,
   currentLaw,
   leftToBuy,
   nextBuy,
@@ -274,6 +282,238 @@ describe('side report', () => {
   });
 });
 
+describe('parseBalanceArgs', () => {
+  it('takes a directory with the flags', () => {
+    expect(parseBalanceArgs(['dir'])).toEqual({ src: { dir: 'dir' }, json: false });
+    expect(parseBalanceArgs(['dir', '--order', 'cheapest', '--amount', '5', '--json'])).toEqual({
+      src: { dir: 'dir' },
+      order: 'cheapest',
+      amount: 5,
+      json: true
+    });
+  });
+  it('takes --version with --from', () => {
+    const r = parseBalanceArgs(['--version', 'v1', '--from', 'https://x.test']);
+    expect(r).toEqual({ src: { version: 'v1', origin: 'https://x.test' }, json: false });
+  });
+  it('takes each of the six orders', () => {
+    for (const order of ORDERS) {
+      expect(parseBalanceArgs(['d', '--order', order])).toMatchObject({ order });
+    }
+  });
+  it('refuses what it cannot read', () => {
+    for (const argv of [
+      ['d', '--nope'],
+      ['d', '--order', 'sideways'],
+      ['d', '--amount', '0'],
+      ['d', '--amount', 'x'],
+      ['d', 'e'],
+      ['d', '--version', 'v1']
+    ]) {
+      expect(parseBalanceArgs(argv)).toHaveProperty('error');
+    }
+  });
+});
+
+const ASOF = 20_400;
+const aRun = (over: Partial<PlayReport['runs'][number]> = {}): PlayReport['runs'][number] => ({
+  n: 1,
+  rung: 0,
+  homes: 84_120,
+  reachedOn: ASOF,
+  dropped: 66_310,
+  collected: 16_577,
+  balance: 16_577,
+  bought: [],
+  lump: 0,
+  sideRewards: 0,
+  sideMet: [],
+  ...over
+});
+const checks = (fail?: number): PlayReport['checks'] =>
+  [
+    ['first-purchase', 92, 120],
+    ['early-runs-per-purchase', 1, 1],
+    ['runs-per-purchase', 2, 3],
+    ['map-gap', 250, 300],
+    ['purchases-per-deadline', 4, 3]
+  ].map(([id, value, target], i) => ({
+    id: id as PlayReport['checks'][number]['id'],
+    value: value as number,
+    target: target as number,
+    pass: i !== fail
+  }));
+const report = (over: Partial<PlayReport> = {}): PlayReport => ({
+  order: 'catalogue',
+  mode: 'hand',
+  runs: [aRun()],
+  end: 'finished',
+  clockS: 2300,
+  checks: checks(),
+  ...over
+});
+
+describe('playLines', () => {
+  it('prints a finished play in the spec layout', () => {
+    const p = report({
+      runs: [
+        aRun({
+          bought: [
+            { id: 'hands-radius', level: 1, price: 2000 },
+            { id: 'stop-rail', level: 1, price: 3000 }
+          ],
+          lump: 2000,
+          sideRewards: 3200,
+          sideMet: ['a', 'b']
+        }),
+        aRun({ n: 2, reachedOn: null, lump: 6000, sideRewards: 3200, sideMet: ['c'] })
+      ]
+    });
+    const lines = playLines(p);
+    expect(lines).toEqual([
+      'Play catalogue, hand',
+      '  Run 1   rung 0  homes 84,120  reached ' +
+        formatShortMonthYear(ASOF) +
+        '  dropped 66,310  collected 16,577  balance 16,577',
+      '          bought hands-radius 1, stop-rail 1',
+      '  Run 2   rung 0  homes 84,120  reached never  dropped 66,310  collected 16,577  balance 16,577',
+      '  Finished: 2 runs, 2 purchases, clock 38:20',
+      '  First purchase 1:32 (target 2:00)  pass',
+      '  Early runs per purchase max 1 (target 1)  pass',
+      '  Runs per purchase max 2 (target 3)  pass',
+      '  Longest gap between map changes 4:10 (target 5:00)  pass',
+      '  Fewest purchases between deadlines 4 (target 3)  pass',
+      '  Lump 8,000 in 2 runs; side rewards 6,400 from 3 goals'
+    ]);
+  });
+  it('puts the rung deadline after the rung when given the as-of day', () => {
+    const deadline = formatShortMonthYear(goalAt(ASOF, 0).deadline);
+    expect(playLines(report(), ASOF)[1]).toContain(`rung 0  ${deadline}  homes 84,120`);
+  });
+  it('marks a failed check', () => {
+    expect(playLines(report({ checks: checks(3) }))).toContain(
+      '  Longest gap between map changes 4:10 (target 5:00)  fail'
+    );
+  });
+  it('prints a stuck play with everything it bought', () => {
+    const p = report({
+      end: 'stuck',
+      runs: [
+        aRun({ bought: [{ id: 'a', level: 1, price: 1 }] }),
+        aRun({ n: 2, rung: 1, bought: [{ id: 'a', level: 2, price: 1 }] })
+      ]
+    });
+    const lines = playLines(p);
+    expect(lines).toContain('  Stuck at rung 1 after 2 runs');
+    expect(lines).toContain('  Bought by then: a 1, a 2');
+  });
+  it('prints a too-long play', () => {
+    const p = report({
+      end: 'too-long',
+      runs: Array.from({ length: 300 }, (_, i) => aRun({ n: i + 1, rung: i < 299 ? 1 : 2 }))
+    });
+    expect(playLines(p)).toContain('  Too long: 300 runs, at rung 2');
+  });
+});
+
+describe('sideLines', () => {
+  const side = (over: Partial<SideReport>): SideReport => ({
+    id: 'building-homes',
+    rung: 1,
+    value: 11_200,
+    target: 10_000,
+    flags: [],
+    raiseTo: null,
+    ...over
+  });
+  it('prints each goal at its rung with its flags', () => {
+    const month = formatShortMonthYear(goalAt(ASOF, 1).deadline);
+    const lines = sideLines(
+      [
+        side({ flags: ['at-or-below-current-law'], raiseTo: 14_000 }),
+        side({ id: 'funded-homes', value: null, flags: ['never-met'] }),
+        side({ id: 'plain', value: 5 })
+      ],
+      ASOF
+    );
+    expect(lines).toEqual([
+      'Current law at each deadline',
+      `  building-homes  rung 1 ${month}  value 11,200  target 10,000  at-or-below-current-law: raise to 14,000`,
+      `  funded-homes  rung 1 ${month}  value none  target 10,000  never-met`,
+      `  plain  rung 1 ${month}  value 5  target 10,000`
+    ]);
+  });
+});
+
+describe('balanceExit', () => {
+  const none: SideReport[] = [];
+  const ok = (order: string, mode: PlayReport['mode'] = 'hand') => report({ order, mode });
+  it('gates the five orders', () => {
+    expect([...GATED]).toEqual([
+      'catalogue',
+      'permitting-first',
+      'zoning-first',
+      'hands-first',
+      'cheapest'
+    ]);
+  });
+  it('is 0 when every gated hand play passes and nothing is flagged', () => {
+    expect(
+      balanceExit(
+        GATED.map((o) => ok(o)),
+        none
+      )
+    ).toBe(0);
+  });
+  it('is 1 for a stuck, too-long or failing gated play', () => {
+    expect(balanceExit([report({ end: 'stuck' })], none)).toBe(1);
+    expect(balanceExit([report({ end: 'too-long' })], none)).toBe(1);
+    expect(balanceExit([report({ checks: checks(0) })], none)).toBe(1);
+  });
+  it('is 1 when a side goal is flagged', () => {
+    const flagged: SideReport = {
+      id: 'x',
+      rung: 0,
+      value: 1,
+      target: 1,
+      flags: ['never-met'],
+      raiseTo: null
+    };
+    expect(balanceExit([ok('catalogue')], [flagged])).toBe(1);
+  });
+  it('ignores money-first and collect-for-me plays', () => {
+    const bad = { end: 'stuck' as const };
+    expect(
+      balanceExit(
+        [
+          ok('catalogue'),
+          report({ order: 'money-first', ...bad }),
+          report({ mode: 'collect-for-me', ...bad })
+        ],
+        none
+      )
+    ).toBe(0);
+  });
+});
+
+describe('runBalance', () => {
+  it('gives 2 with one tree-balance line and no output when the engine does not open', async () => {
+    const out: string[] = [];
+    const err: string[] = [];
+    const code = await runBalance(
+      { src: { dir: 'nowhere' }, json: false },
+      {
+        open: () => Promise.reject(new Error('no such dataset')),
+        out: (l) => out.push(l),
+        err: (l) => err.push(l)
+      }
+    );
+    expect(code).toBe(2);
+    expect(err).toEqual(['tree-balance: no such dataset']);
+    expect(out).toEqual([]);
+  });
+});
+
 const FIXTURE = 'e2e/fixtures/data/fixture-0';
 /** Enough for the fixture's fills of every play below; a hook argument, not a wait. */
 const FILL_HOOK_MS = 600_000;
@@ -407,5 +647,36 @@ describe('play on the fixture', () => {
     expect(atLaw(RUNGS)).toBeNull();
     expect(atLaw(RUNGS + 3)).toBeNull();
     expect(atLaw(RUNGS - 1)).not.toBeNull();
+  });
+});
+
+describe('runBalance on the fixture', () => {
+  const out: string[] = [];
+  const err: string[] = [];
+  let code: 0 | 1 | 2;
+
+  beforeAll(async () => {
+    code = await runBalance(
+      { src: { dir: FIXTURE }, order: 'catalogue', amount: 1, json: true },
+      { open: openEngine, out: (l) => out.push(l), err: (l) => err.push(l) }
+    );
+  }, FILL_HOOK_MS);
+
+  it('prints one JSON object with the two plays of the order and the side report', () => {
+    expect(code === 0 || code === 1).toBe(true);
+    expect(err).toEqual([]);
+    expect(out).toHaveLength(1);
+    const got = JSON.parse(out[0]!) as {
+      datasetVersion: string;
+      plays: PlayReport[];
+      side: SideReport[];
+    };
+    expect(Object.keys(got).sort()).toEqual(['datasetVersion', 'plays', 'side']);
+    expect(got.datasetVersion).toEqual(expect.any(String));
+    expect(got.plays.map((p) => `${p.order} ${p.mode}`)).toEqual([
+      'catalogue hand',
+      'catalogue collect-for-me'
+    ]);
+    expect(got.side.map((s) => s.id)).toEqual(SIDE_GOALS.map((g) => g.id));
   });
 });
