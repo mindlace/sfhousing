@@ -299,15 +299,15 @@ export function applyGrant(doc: SimPolicy4, grant: Grant, ctx: GrantCtx): SimPol
       </dl>
       <ul>
         <li>Every policy the function adds is on, with one span from month 1 and no end.</li>
-        <li><code>preset</code> and <code>measure</code>: when no policy has that preset, one is added as "+" adds it today. When one exists it is switched on.</li>
-        <li><code>stop</code>: the game's rule gains the stop type. When there is no such rule, one is added with that stop type and one band at <code>limits.reachM</code> and <code>limits.stories</code>.</li>
+        <li><code>preset</code> and <code>measure</code>: a policy of that kind that names the preset and is within <code>ctx.limits</code> is switched on when it is off. When there is none, one is added as "+" adds it today. A policy that names the preset and is outside <code>ctx.limits</code> is left as it is.</li>
+        <li><code>stop</code>: the game's rule gains the stop type. When there is no such rule, one is added with every stop type in <code>limits.stops</code> and one band at <code>limits.reachM</code> and <code>limits.stories</code>.</li>
         <li><code>stories</code>: the innermost band of the game's rule takes the new cap, and so does every band that was as tall as it.</li>
         <li><code>reach</code>: the outermost band of the game's rule takes the new distance.</li>
         <li><code>bands</code>: the game's rule gains a band. Where there is room inside <code>limits.reachM</code> it goes beyond the outermost, as the editor adds one today. Where there is none the outermost band is split in two.</li>
         <li>A grant whose policy the player removed or changed past recognition adds it again and leaves the player's own policies alone.</li>
         <li><code>hands</code>: the document is returned unchanged.</li>
         <li>The result is within <code>ctx.limits</code> and passes <code>parsePolicy4</code>.</li>
-        <li>The function never removes a policy and never changes one it did not make.</li>
+        <li>The function never removes a policy and changes no policy other than the one it adds, the game's rule, or a policy within <code>ctx.limits</code> that names the bought preset or measure.</li>
       </ul>
     </section>
 
@@ -654,9 +654,9 @@ export function onPrefs(fn: () =&gt; void): () =&gt; void;</code></pre>
         <li><code>planDrops</code> returns one drop for each marker completed after <code>asOf</code> and at or before <code>to</code> whose worth is above 0, ascending by day, then by row.</li>
         <li><code>feed.drops</code> may be replaced during a run, as the forecast fills. Drops are matched by <code>row</code>: one already shown stays as it is, and none is counted twice.</li>
         <li>A drop appears when <code>feed.day</code> reaches its day and is counted in <code>dropped</code> then.</li>
-        <li>A drop whose <code>policy</code> is true pops in the policy's colour, the colour of the map's diamond (<code>tl-halo-policy</code>); every other drop pops in the accent. Its worth and how it is collected do not change.</li>
+        <li>A drop whose <code>policy</code> is true pops as a diamond, the shape of the map's policy mark, in that mark's colour (<code>tl-halo-policy</code>); every other drop pops as a circle in the accent. The shape tells the two apart in every theme. Its worth and how it is collected do not change.</li>
         <li>A drop is collected when its projected point is within <code>hands.radiusPx</code> of the ring's centre. It is counted in <code>collected</code> once.</li>
-        <li>A drop not collected is gone <code>hands.lingerMs</code> of wall time after it appeared.</li>
+        <li>A drop not collected is gone the larger of <code>hands.lingerMs</code> and 400 ms of wall time after it appeared. When the run ends before that, it is gone 400 ms after the end, or at the end under reduced motion.</li>
         <li>With <code>collectForMe</code> or <code>hands.auto</code>, every drop is collected as it appears.</li>
         <li>The ring's centre is the last pointer position over the map. Arrow keys move it by a fixed step; holding Shift moves it further.</li>
         <li>The layer is a canvas over the map with <code>pointer-events: none</code>. It listens on the window.</li>
