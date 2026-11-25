@@ -476,20 +476,20 @@ intercept moves by +0.0249 (about 2.5% on the hazard) and `fzpRatio` by +0.0014.
 
 ## Live check
 
-The pages checked were `/sim` and Paint (`/`), on 2026-11-08 in local R2: a `VITE_E2E=1` build served by `wrangler dev`
+The pages checked were the simulation and Paint (`/`), on 2026-11-08 in local R2: a `VITE_E2E=1` build served by `wrangler dev`
 with `PUBLIC_DATASET_VERSION` passed as `--var` (and `--var ENVIRONMENT:development`, without which the override is ignored), in headless Chromium at 1280 px, reading `window.__sfhFzp`, `window.__sfhBrush` and the
 rendered map features, and looking at the screenshots. Before is `2026-11-02-0d40e1e2`, after is
 `2026-11-08-7d2097ac`, both served by the same build of this branch. The page figures were measured on
 `7d2097ac`. The released `2026-11-08-3b7fa918` has identical scenario counts and calibration
 (see "Live build"), so they carry over. The before dataset was
 loaded from its local build output with `scripts/r2-load-local.ts`, because `npm run data:local`
-fetches only the manifest, chunks, tiles, neighbourhoods and transit, not `scenarios/`, so `/sim`
+fetches only the manifest, chunks, tiles, neighbourhoods and transit, not `scenarios/`, so the simulation
 fails on a missing `calibration.json`.
 
-`/sim`, which opened on the FZP comparison. Each figure gave
+The simulation opened on the FZP comparison. Each figure gave
 the same number on a second load:
 
-| `/sim` headline                          | `0d40e1e2` | `7d2097ac` | Change |
+| The simulation's headline                | `0d40e1e2` | `7d2097ac` | Change |
 | ---------------------------------------- | ---------: | ---------: | -----: |
 | At its default (Setup, October 2026)     |      9,101 |      8,709 |   −392 |
 | Run, at the RHNA deadline (January 2031) |     18,148 |     16,915 | −1,233 |

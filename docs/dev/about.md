@@ -2,20 +2,20 @@
 
 "About this model" is the one place for background: what the numbers mean, the assumptions, the
 data and licences with every credit, and how to use the app. It is the page `/about`; its parts
-live in `src/lib/about/` so that `/sim` can show the same content in a dialog.
+live in `src/lib/about/` so that the simulation can show the same content in a dialog.
 
 ## The parts and their ids
 
 Four parts, in this order. Each part's root is a `<section>` with its id; links name them as
 `/about#<id>` (`ABOUT_ID`, `src/lib/about/copy.ts`). The ids carry an `about-` prefix so that the
-dialog on `/sim` never duplicates an id the page already holds.
+dialog on the simulation never duplicates an id the page already holds.
 
-| Part                  | Id                  | Component                                                                                                                              |
-| --------------------- | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| What the numbers mean | `about-meanings`    | `AboutMeanings.svelte`: the terms of `MEANINGS`                                                                                        |
-| Assumptions           | `about-assumptions` | `AboutAssumptions.svelte`: `ProvenanceBody`, live in the dialog, loaded on demand on the page                                          |
-| Data and licences     | `about-data`        | `AboutData.svelte`: version, sources, notices, Software, the code line                                                                 |
-| Using it              | `about-using`       | `AboutUsing.svelte`: Keyboard shortcuts (`about-shortcuts`), Levels (`about-levels`), Saved games (`about-saved-games`) and Your plans |
+| Part                  | Id                  | Component                                                                                                                                |
+| --------------------- | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| What the numbers mean | `about-meanings`    | `AboutMeanings.svelte`: the terms of `MEANINGS`                                                                                          |
+| Assumptions           | `about-assumptions` | `AboutAssumptions.svelte`: `ProvenanceBody`, live in the dialog, loaded on demand on the page                                            |
+| Data and licences     | `about-data`        | `AboutData.svelte`: version, sources, notices, Software, the code line                                                                   |
+| Using it              | `about-using`       | `AboutUsing.svelte`: Keyboard shortcuts (`about-shortcuts`), The game (`about-levels`), Saved games (`about-saved-games`) and Your plans |
 
 Every part takes `level` (`2 | 3`): its heading's level, 2 on the page and 3 in a dialog; its
 sub-headings are one deeper. `AboutData` also takes `datasetVersion` and `manifest`
@@ -30,11 +30,12 @@ source link are read from `GOAL_BASE`, `bufferAmount` (`src/lib/goal/goal.ts`) a
 never copied; "Room for N homes" reads `ROOM_MEANS` (`src/lib/paint/details.ts`). The Painting
 shortcuts table is `SHORTCUTS` (`src/lib/brush/shortcuts.ts`), the list Paint's Shortcuts button
 shows; the Timeline table after it is `TIMELINE_SHORTCUTS` (`src/lib/timeline/shortcuts.ts`).
-Keyboard shortcuts live here only on `/sim`: its header has no Shortcuts button.
+Keyboard shortcuts live here only on the simulation: its header has no Shortcuts button. The
+tables are Painting, Timeline and Run (`RUN_SHORTCUTS`, the keys that move the collecting ring).
 
-Part 1 ends with the "To beat" term (the month to beat, `MEANINGS`). Using it's Levels section is
-`LEVELS` (an ordered list of the five levels) then `LEVEL_NOTES` (three paragraphs); Saved games is
-`SAVED_GAMES` (three paragraphs). The 12 in `SAVED_GAMES[0]` is read from `MAX_SAVES`
+Part 1 ends with the terms "The deadline" and "Units" (`MEANINGS`). Using it's The game section
+(id `about-levels`) is `GAME_STEPS` (an ordered list) then `GAME_NOTES` (paragraphs); Saved games
+is `SAVED_GAMES` (three paragraphs). The 12 in `SAVED_GAMES[0]` is read from `MAX_SAVES`
 (`src/lib/game/saves.ts`), never typed. The game's rules are in [game.md](game.md).
 
 ## The Overture notice
@@ -50,7 +51,7 @@ the slice 9 plan's licence section (`docs/superpowers/plans/2026-11-23-about-thi
 ## The page
 
 `src/routes/about/+page.svelte`: the heading "About this model", the line under it, then the four
-parts at level 2. `+page.server.ts` reads `manifest.json` for the dataset version from R2 and
+parts at heading level 2. `+page.server.ts` reads `manifest.json` for the dataset version from R2 and
 passes `datasetVersion` and `manifest` (null when the manifest is missing, invalid or unreadable).
 The page fetches nothing in the browser until the reader opens the assumptions: several e2e specs
 use `/about` as a neutral page to navigate from. The deploy smoke checks read the dataset version
@@ -59,17 +60,17 @@ from `/about`.
 ## The assumptions
 
 `AboutAssumptions.svelte` (`{ level; live?; datasetVersion?; manifest?; fetchFn? }`) renders
-`ProvenanceBody` ([fzp-mode.md](fzp-mode.md)), the sections and strings `/sim` has always shown,
+`ProvenanceBody` ([fzp-mode.md](fzp-mode.md)), the sections and strings the simulation has always shown,
 unchanged, one heading level under the part.
 
-- `live` (`{ sections, projectsUrl }`, the dialog on `/sim`): the run's sections at once, no
+- `live` (`{ sections, projectsUrl }`, the dialog on the simulation): the run's sections at once, no
   disclosure, no fetch of the calibration. The part exports `loadChecks()`, which passes through
   to the body's: the dialog calls it on every open (it loads once, and retries after a failure).
 - On the page: a `<details>` "Show the assumptions" (`ASSUMPTIONS_SHOW`). Its first open fetches
   `manifest.scenarios.fzp.calibration` (`fetchCalibration`) and shows `modelSections`; then the
   data checks load `manifest.scenarios.fzp.projects`. Closing and opening again fetches nothing,
   except that a failed data-checks load tries again on the next open (`loadChecks()`).
-  These are the same-origin, immutable `/data/<version>/…` files `/sim` loads.
+  These are the same-origin, immutable `/data/<version>/…` files the simulation loads.
 - The state shows as a `Message`: "Loading…", then nothing, or `ASSUMPTIONS_FAILED` with Retry
   (`BUTTON_QUIET`), which loads again. One `role="status"` region, a plain `sr-only` block mounted
   with the disclosure, carries the same words alone (never Retry), so each change is announced once
@@ -103,7 +104,7 @@ A permanent redirect: `redirect(308, '/about#about-data')`, so old links (and th
 
 ## The colours
 
-The page is light at every setting; the dialog on `/sim` follows the theme. So the parts' own
+The page is light at every setting; the dialog on the simulation follows the theme. So the parts' own
 markup carries no `dark:` utilities and no gray, white, black or ink utilities: text colour is
 inherited, and they read two custom properties the container sets. Two things inside part 2 follow
 the theme on their own: `ProvenanceBody`'s tier badges and tables' head rules
@@ -119,13 +120,13 @@ review). The properties:
 muted text is 4.5:1 or better on its surface in both themes (`accent.spec.ts`). `AboutParts.svelte.spec.ts` checks the
 rendered classes; `AboutDialog.svelte.spec.ts` the computed colours in light and dark.
 
-## The dialog on `/sim`
+## The dialog on the simulation
 
-On `/sim` and `/s/<id>` leaving the page would drop the playhead, the furthest date reached and
+On the simulation (`/` once the game has runs) and `/s/<id>` leaving the page would drop the playhead, the furthest date reached and
 the live assumptions, so About opens over the map instead. `src/lib/about/AboutDialog.svelte`
 (props `{ manifest; datasetVersion; sections; projectsUrl; fetchFn?; onopen? }`) is a native modal
 `<dialog>` on the shared surface (`SURFACE_DIALOG_FLUSH`) headed "About this model" (h2), with
-Close (`BUTTON_QUIET`), then the four parts at level 3, part 2 live (`sections` is the run's
+Close (`BUTTON_QUIET`), then the four parts at heading level 3, part 2 live (`sections` is the run's
 `provenanceSections(calibration, score, terms)`). `TimelineMode` mounts it while it has a
 calibration and a scenario.
 
@@ -154,7 +155,7 @@ Every way into About is a link to `/about#…`, and every one says the same thin
 | Way in                                                         | Where it lands                                                            |
 | -------------------------------------------------------------- | ------------------------------------------------------------------------- |
 | The header's About (in the Menu below lg)                      | `/about`                                                                  |
-| `/sim`'s Details, its last line (`WORKED_OUT`)                 | `/about#about-assumptions`                                                |
+| The simulation's Details, its last line (`WORKED_OUT`)         | `/about#about-assumptions`                                                |
 | Paint's Details (`/`, `/p/<id>`), its last line (`WORKED_OUT`) | `/about#about-meanings`, where the goal links the SF Planning RHNA Primer |
 | A project card's sources                                       | the entry (`src-…`, through `open(id)`)                                   |
 | The map's credit, "About this model"                           | `/about#about-data`                                                       |
@@ -180,7 +181,7 @@ About links navigate.
 ## The map's credit
 
 The map carries only "© OpenStreetMap" (linked to the OSM copyright page, as the OSMF guidelines
-ask, in a new tab on every map page, so it never ends a run on `/sim`) and "About this model"
+ask, in a new tab on every map page, so it never ends a run) and "About this model"
 (`/about#about-data`), behind a collapsed (i) that shows open for five seconds on load
 (`creditHtml`, `src/lib/map/attribution.ts`). Every other credit is in Data and
 licences, one tap away. The control's rules are in [map-interfaces.md](map-interfaces.md), "The

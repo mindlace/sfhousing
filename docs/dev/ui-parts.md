@@ -22,7 +22,7 @@ geometry only, with a comment saying so.
 | Kind             | Use                                                                   | Look                                                                                         |
 | ---------------- | --------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
 | `BUTTON`         | Any other action (Cancel, Copy link, the shared banner's "Your game") | control-line border, surface, ink, text-sm semibold, rounded-md, px-2; hover one step raised |
-| `BUTTON_PRIMARY` | The page's main action (Publish, Done, Remix)                         | accent fill, on-accent text; otherwise as `BUTTON`                                           |
+| `BUTTON_PRIMARY` | The page's main action (Publish, Done)                                | accent fill, on-accent text; otherwise as `BUTTON`                                           |
 | `BUTTON_QUIET`   | An action inside a message (Retry, Details, a link), a dialog's Close | no border, underlined, semibold                                                              |
 | `BUTTON_DISMISS` | A message's dismiss (`Message` draws it, the drawn ×)                 | as `BUTTON_QUIET` without the underline, icon centred, hover one step raised                 |
 | `ON_MAP`         | Added to a button over the map                                        | a small shadow, so it reads on any map                                                       |
@@ -66,7 +66,7 @@ A box that scrolls and should say more is below takes `class="more-below"` and
 scrolled to within 1 px of its end). The look is `.more-below` in `src/routes/layout.css`: a 24 px
 fade to `surface` (`surface-dark` in dark) sticks to the foot, takes no press, and focus scrolls
 clear of it; under forced colours it is a 2 px `CanvasText` line. The fade ends in `surface`, so use
-it only on a `surface` box. Used by the `/sim` detail column (and the phone sheet, the same box) and
+it only on a `surface` box. Used by the simulation's detail column (and the phone sheet, the same box) and
 the map toolbar's Key and Layers panels.
 
 ## Messages: chips and cards
@@ -98,9 +98,9 @@ second row).
 It has no role of its own: the page keeps its `role="status"` / `role="alert"` containers
 (usually `display: contents` wrappers mounted empty), so what is announced and when does not
 change. `textRole` and `textTestid` put a role and test id on the words alone, for a page whose
-live region is the words without the actions (`/sim`'s load failure alert).
+live region is the words without the actions (the simulation's load failure alert).
 
-Every notice on the four map pages is a `Message`: the notice stack (`NoticePills`) on `/sim`
+Every notice on the four map pages is a `Message`: the notice stack (`NoticePills`) in the simulation
 (TimelineMode's notices, `SimNotices`) and on `/` and `/p/:id` (the brush status, `NoticeStack`),
 the stroke chip (always `shape="chip"` and `still`, whatever its words: a stroke can start under
 it), and Activity's refused starter (a card). Map-view's failure messages keep the map palette

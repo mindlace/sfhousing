@@ -1,6 +1,6 @@
 # Policies with dates
 
-Schema 4 of the `/sim` policy: every policy has spans of days in which it is in force. A schema 4 document compiles to one `PolicyFrame` per model month for the step. Design: `docs/superpowers/specs/2026-11-13-policy-timeline-design.md` (rule numbers below are its rules). The levers each month's policies combine into are those of [sim-levers.md](sim-levers.md).
+Schema 4 of the simulation's policy: every policy has spans of days in which it is in force. A schema 4 document compiles to one `PolicyFrame` per model month for the step. Design: `docs/superpowers/specs/2026-11-13-policy-timeline-design.md` (rule numbers below are its rules). The levers each month's policies combine into are those of [sim-levers.md](sim-levers.md).
 
 Release A builds all of this and switches none of it on: `/api/policies`, `/s/[id]`, `SIM_CODEC`, the page and the autosave key `sfhousing:sim:v1` still use schema 3.
 
@@ -133,7 +133,7 @@ Slicing: a unit (a recompute step, `applyLevers`, `precomputeOf`) runs whole, so
 
 ## Saving and sharing
 
-`SimDoc4 = { schema: 4, kind: 'sim', datasetVersion, title?, policy }` (`sim-doc4.ts`). `parseSimDoc4` (strict) takes schema 4 only: 2 and 3 are `unknown-schema`, newer is `future-schema`. `openSimDoc4(text, { asOf, calibration })` opens 2, 3 or 4 as a reconciled schema 4 document, with `upgradedFrom` and the `Policy4Report`. `createSimCodec4` is the `DocCodec`; `SIM_KEY4` is `sfhousing:sim:v2`, and `migrateSimAutosave` copies a v1 autosave to v2 as an upgraded document, leaving v1 alone and never touching an existing v2. The D1 table does not change. Their callers (the server codec, `/sim`) come with timeline-ui.
+`SimDoc4 = { schema: 4, kind: 'sim', datasetVersion, title?, policy }` (`sim-doc4.ts`). `parseSimDoc4` (strict) takes schema 4 only: 2 and 3 are `unknown-schema`, newer is `future-schema`. `openSimDoc4(text, { asOf, calibration })` opens 2, 3 or 4 as a reconciled schema 4 document, with `upgradedFrom` and the `Policy4Report`. `createSimCodec4` is the `DocCodec`; `SIM_KEY4` is `sfhousing:sim:v2`, and `migrateSimAutosave` copies a v1 autosave to v2 as an upgraded document, leaving v1 alone and never touching an existing v2. The D1 table does not change. Their callers (the server codec, the simulation) come with timeline-ui.
 
 `loadSimDoc4(text)` is the lenient, dataset-free load of a stored schema 4 body (envelope, title, policy unaligned and without the term check, stroke and size limits; nothing upgraded or reconciled; 2 and 3 are `unknown-schema`): use it where there is no dataset, such as the server's `/api/policies` row load, and `openSimDoc4` where there is one.
 

@@ -280,11 +280,11 @@ statements carry their own provenance.
 
 ## Which runs carry what
 
-| Run                           | `tiers`        | `money`                   | Computed by                                       |
-| ----------------------------- | -------------- | ------------------------- | ------------------------------------------------- |
-| Shown run (`/sim`, `/s/<id>`) | yes, every run | when `finance` has a pool | `shownRun`, once per run, from `simulateDetailed` |
-| Twin                          | no             | no                        | `simulateNet`, unchanged                          |
-| Band runs                     | no             | no                        | `simulateNet`, unchanged                          |
+| Run                                   | `tiers`        | `money`                   | Computed by                                       |
+| ------------------------------------- | -------------- | ------------------------- | ------------------------------------------------- |
+| Shown run (the simulation, `/s/<id>`) | yes, every run | when `finance` has a pool | `shownRun`, once per run, from `simulateDetailed` |
+| Twin                                  | no             | no                        | `simulateNet`, unchanged                          |
+| Band runs                             | no             | no                        | `simulateNet`, unchanged                          |
 
 **`simulateDetailed` is the one ledger collector**: it passes a `ledger` sink that pushes each event
 in arrival order, and only when the input has `finance` (otherwise `ledger` is `[]` and no sink
