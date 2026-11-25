@@ -76,7 +76,7 @@ export const HOW_TO_READ_SENTENCE =
   'Every number the simulation uses comes from the best evidence available, and says which kind it is.';
 
 export const PERMIT_WINDOW_SENTENCE =
-  "Building-permit stages use records from 2007 on, the first year the assessor's roll can say how many homes a site had before the project.";
+  'Building-permit stages use records from 2015 on; earlier permits moved much faster.';
 
 export const PHASE_GAP_SENTENCE =
   "This gap is measured on building permits alone, so its records start earlier than the stage tables'.";

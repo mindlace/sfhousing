@@ -39,7 +39,7 @@ function da(key: string, dates: string[], over: Partial<PermitRow> = {}): Permit
 }
 
 const WINDOW_SENTENCE =
-  'window 1989-01-01 on, decoupled from the transition windows (2007-01-01 on, set by the first assessor roll): phase gaps use permit filing days only, not existing units';
+  'window 1989-01-01 on, decoupled from the transition windows (2015-01-01 on): phase gaps use permit filing days only, not existing units';
 
 describe('phaseGap rung 1 (DA groups)', () => {
   it('forms one group from a DA spread over two project_ids', () => {

@@ -102,8 +102,8 @@ describe('PolicySummary', () => {
 
     const disclosure = page.getByRole('button', { name: 'Shares and changed stages' });
     await expect.element(disclosure).toHaveAttribute('aria-expanded', 'false');
-    // The brief's example reads "(observed 12)"; fixture-0's observed permit review is 7 months.
-    const line = 'Permit review, discretionary: 6 months (observed 7)';
+    // The brief's example reads "(observed 12)"; fixture-0's observed permit review is 9 months.
+    const line = 'Permit review, discretionary: 6 months (observed 9)';
     const region = document.getElementById(disclosure.element().getAttribute('aria-controls')!)!;
     expect(region.textContent).toContain(line);
     await expect.element(page.getByText(line)).not.toBeVisible();

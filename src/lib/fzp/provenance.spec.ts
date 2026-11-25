@@ -190,12 +190,12 @@ describe('provenanceSections', () => {
     expect(entryOf('src-local-program').shares).toEqual([]);
   });
 
-  it('every permit-side transition window starts 2007-01-01', () => {
+  it('every permit-side transition window starts 2015-01-01', () => {
     const permitSide: Stage[] = ['permitFiled', 'permitIssued', 'construction'];
     for (const [p, s] of transitions) {
       const entry = entryOf(transitionSectionId(p, s));
       if (permitSide.includes(s)) {
-        expect(entry.prov.window?.[0]).toBe('2007-01-01');
+        expect(entry.prov.window?.[0]).toBe('2015-01-01');
         expect(entry.lines).toContain(PERMIT_WINDOW_SENTENCE);
       } else {
         expect(entry.lines).not.toContain(PERMIT_WINDOW_SENTENCE);

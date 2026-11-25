@@ -9,8 +9,11 @@
  * Cohorts follow each stage's fit: `filed` and `entitled` per (pathway, stage), spells entered on
  * or after 2015-01-01; `preApplication` pooled across pathways over the same window, as
  * stage-calibration fits it (see `cohortsOf`); permit-side stages pooled across pathways from
- * 2007-01-01, left-truncated there (DQ-1). In a pooled cohort each twin runs its history's own
- * pathway, the unclassifiable ones mixed in the cohort's own proportions.
+ * 2015-01-01, left-truncated there: the window of both their pooled shape and each pathway's θ.
+ * Permit spells entered before 2015 ran much faster (permitIssued advanced by month 9: about 0.8
+ * for 2011–2016 entries, 0.3–0.55 for 2018–2024), and the sim has no era. In a pooled cohort each
+ * twin runs its history's own pathway, the unclassifiable ones mixed in the cohort's own
+ * proportions.
  * Only cohorts with n ≥ 50 are checked. Pass bar at every month of the observed table, for every
  * outcome:
  * |Δ| ≤ max(0.03, 2.5·SE), SE combining a bootstrap of the observed cohort with the spread of
@@ -429,7 +432,7 @@ function walk(
  * pathway's group is exactly N_SYNTH of the pooled preApplication cohort); and from the
  * pathway's first core stage (`filed`, or `permitFiled` for permitOnly), entered 2001-01-01
  * onwards, so Planning-side spells before the 2015 window are left out, permit-side spells
- * straddle the 2007-01-01 window start and enter by left truncation, and 5% of the group is
+ * straddle the 2015-01-01 cohort start and enter by left truncation, and 5% of the group is
  * recorded with a null pathway. Starting at the pathway's first stages leaves no gap for
  * normalisation to impute.
  */
@@ -499,9 +502,11 @@ describe('simulate-replay: synthetic histories from the mini calibration', () =>
     expect(ppa.obs).toHaveLength(PATHWAYS.length * N_SYNTH);
     expect(ppa.twinPathway).toEqual(ppa.obs.map((s) => s.projectId.split(':')[1]));
     expect(new Set(ppa.twinPathway)).toEqual(new Set(PATHWAYS));
-    // permit side: some spells enter by left truncation at 2007-01-01, and pooled cohorts mix
-    // every pathway, unclassifiable histories included
+    // permit side: cut at 2015-01-01, some spells entering by left truncation there, and pooled
+    // cohorts mix every pathway, unclassifiable histories included
     for (const c of permit) {
+      const from = isoToDay('2015-01-01');
+      expect(c.obs.every((s) => s.e + s.x >= from && s.a === Math.max(0, from - s.e))).toBe(true);
       expect(c.obs.some((s) => s.a > 0)).toBe(true);
       expect(c.obs.some((s) => s.pathway === null)).toBe(true);
       expect(new Set(c.twinPathway)).toEqual(new Set(PATHWAYS));

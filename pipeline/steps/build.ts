@@ -254,10 +254,16 @@ export async function build(
       writeRenderBoxes({ db, files: boxesFilesOf(lock, opts.rawDir, byName), derivedDir })
     );
     const chunks = await report.time('chunks', () =>
-      writeChunks(db, outDir, datasetVersion, report)
+      writeChunks(db, outDir, datasetVersion, report, freewayLandSet(freewayLand))
     );
     const reencodeIdentical = await report.time('reencode', async () => {
-      await writeChunks(db, join(work, 'reencode'), datasetVersion, new Report());
+      await writeChunks(
+        db,
+        join(work, 'reencode'),
+        datasetVersion,
+        new Report(),
+        freewayLandSet(freewayLand)
+      );
       return sameFiles(join(outDir, 'parcels'), join(work, 'reencode', 'parcels'));
     });
     // Two dates, each from its own named sources (docs/dev/pipeline.md, Lock and datasetVersion);
@@ -272,7 +278,8 @@ export async function build(
     // into this object, and `writeQualityReport` and V30 read it. The project-records step writes
     // all its counts into it; the other counts join it below.
     const counts: Record<string, number> = {};
-    // The scenario and policy steps share the chunk records (same rows, same order).
+    // The scenario and policy steps share the chunk records (same rows, same order), except that
+    // the chunks write freeway-land catalog lots with `eligible` false and these keep parcel_out's.
     const records = await readParcelRecords(db);
     const scenario = await report.time('scenario', async () =>
       writeScenario({
