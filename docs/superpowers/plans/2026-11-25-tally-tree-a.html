@@ -1,0 +1,912 @@
+<article>
+  <header>
+    <h1>Tally and tree, part A implementation plan</h1>
+    <p>Builds the words, layout and motion modules and the four game parts of row U1: <code>OpeningCard</code>, <code>Tally</code>, <code>GoalHeadline</code> and <code>Tree</code>.</p>
+    <aside data-kind="note"><strong>For agentic workers</strong> REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps are checklist items; progress is kept in the workspace ledger, not in the plan.</aside>
+  </header>
+
+  <section id="sec-overview">
+    <h2>Overview</h2>
+    <dl>
+      <dt>Goal</dt>
+      <dd>Deliver part A of the <code>tally-tree</code> spec: every word of <code>src/lib/game/ui/words.ts</code>, the branch layout, the durations, and the parts <code>Tally</code>, <code>Tree</code>, <code>GoalHeadline</code> and <code>OpeningCard</code> with their hosts and specs (row U1 less <code>GameCell</code>).</dd>
+      <dt>Architecture</dt>
+      <dd>Three pure modules (<code>words.ts</code>, <code>layout.ts</code>, <code>motion.ts</code>) tested in the server project, then four Svelte 5 components that take everything they show as props (and <code>useGame().open</code>), each with a test host under <code>src/lib/game/ui/test/</code> and a browser spec in the client project. No part reads the simulation or the map.</dd>
+      <dt>Tech Stack</dt>
+      <dd>Svelte 5 runes, <code>Tween</code> and <code>prefersReducedMotion</code> from <code>svelte/motion</code>, <code>MediaQuery</code> from <code>svelte/reactivity</code>, <code>fade</code> from <code>svelte/transition</code>, Tailwind 4 through the shared parts of <code>src/lib/shell/ui.ts</code>, Vitest (server project for <code>*.spec.ts</code>, client project for <code>*.svelte.spec.ts</code>), <code>vitest-browser-svelte</code>, <code>axe-core</code>.</dd>
+      <dt>Spec</dt>
+      <dd><code>docs/superpowers/specs/2026-11-24-tally-tree-design.html</code> in the package worktree <code>.claude/worktrees/incremental-feel/.claude/worktrees/incremental-loop</code>, sections <code>sec-design-delivery</code> (part A), <code>sec-design-common</code>, <code>sec-design-words</code>, <code>sec-design-tally</code>, <code>sec-design-tree</code>, <code>sec-design-headline</code>, <code>sec-design-opening</code>, <code>sec-design-motion</code>, <code>sec-design-testids</code> (these four parts' ids) and the tests <code>sec-tests-unit</code>, <code>-tally</code>, <code>-tree</code>, <code>-headline</code>, <code>-opening</code>. Global constraints from <code>docs/superpowers/design/2026-11-24-2120-incremental-loop.html</code>. Markup, classes and test ids in the spec's blocks are binding; the tasks below cite them rather than repeat them.</dd>
+      <dt>Precondition</dt>
+      <dd>The <code>contracts</code> and <code>game-core</code> units have merged into this branch: <code>src/lib/game/{state,units,tree,ladder,run-result,side-goals}.ts</code> exist, <code>total</code> (G2) has a body and <code>SIDE_GOALS</code> (G6) is not empty. Check with <code>ls src/lib/game</code> before Task 1; stop and report if they are missing. <code>src/lib/game/ui/</code> does not exist yet.</dd>
+    </dl>
+  </section>
+
+  <section id="sec-global-constraints">
+    <h2>Global Constraints</h2>
+    <p>Every task's requirements include this section. The interface rows are copied verbatim from the spec's Interfaces section; the design's and the spec's global constraints verbatim from their sections.</p>
+
+    <table id="tbl-interfaces">
+      <caption>Interface table</caption>
+      <thead>
+        <tr><th scope="col">Row</th><th scope="col">Owner</th><th scope="col">Layer</th><th scope="col">Summary</th><th scope="col">Contract</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">G1</th><td><code>game-core</code></td><td>Model commitment</td><td>The game's state and the saved game</td><td><a href="#sec-if-g1">G1</a></td></tr>
+        <tr><th scope="row">G2</th><td><code>game-core</code></td><td>Model commitment</td><td>Units by kind: balances, prices, spending</td><td><a href="#sec-if-g2">G2</a></td></tr>
+        <tr><th scope="row">G4</th><td><code>game-core</code></td><td>Model commitment</td><td>Limits from what is bought; whether a policy runs</td><td><a href="#sec-if-g4">G4</a></td></tr>
+        <tr><th scope="row">G6</th><td><code>game-core</code></td><td>Model commitment</td><td>The ladder, side goals, a run's result, settling</td><td><a href="#sec-if-g6">G6</a></td></tr>
+        <tr><th scope="row">U1</th><td><code>tally-tree</code></td><td>Decomposition choice</td><td>The game's cards, the tree screen, the header parts</td><td><a href="#sec-if-u1">U1</a></td></tr>
+      </tbody>
+    </table>
+
+    <section id="sec-if-g1">
+      <h3>G1 The game's state and the saved game</h3>
+      <pre><code data-lang="ts">// src/lib/game/state.ts
+import type { Day } from '$lib/timelapse/time';
+import type { RunResult } from './run-result';
+
+export type UnitKind = 'home';
+export const UNIT_KINDS: readonly UnitKind[] = ['home'];
+export type Units = Partial&lt;Record&lt;UnitKind, number&gt;&gt;;
+export type NodeId = string;
+
+export interface MetRung {
+  rung: number;
+  reachedOn: Day;
+  datasetVersion: string;
+  at: string;
+}
+
+export interface GameState {
+  v: 2;
+  phase: 'opening' | 'runs';
+  firstWinAt: string | null;
+  bought: Record&lt;NodeId, number&gt;;
+  units: Units;
+  rung: number;
+  met: MetRung[];
+  side: Record&lt;string, string&gt;;
+  runs: number;
+  last: RunResult | null;
+}
+
+export const NEW_GAME: GameState;
+
+// src/lib/game/save-shape.ts
+export interface GameSave {
+  v: 2;
+  id: string;
+  name: string;
+  nameIsDefault: boolean;
+  state: GameState;
+  plan: string | null;
+  policy: string | null;
+  savedAt: string;
+}
+
+export type SaveEntry = Pick&lt;GameSave, 'id' | 'name' | 'nameIsDefault' | 'savedAt'&gt; &amp;
+  Pick&lt;GameState, 'phase' | 'rung'&gt;;
+
+export function parseGameSave(json: unknown): GameSave | null;</code></pre>
+      <dl>
+        <dt><code>phase</code></dt><dd><code>'opening'</code> until the first run starts.</dd>
+        <dt><code>firstWinAt</code></dt><dd>ISO time the room goal was first met. The server makes the account on the first save that has it (D7).</dd>
+        <dt><code>bought</code></dt><dd>The level bought of each node, 1 or more. A node not bought has no entry.</dd>
+        <dt><code>units</code></dt><dd>The balance to spend.</dd>
+        <dt><code>rung</code></dt><dd>The index in the ladder of the deadline in play.</dd>
+        <dt><code>met</code></dt><dd>One entry per rung met, ascending by rung, each recorded once.</dd>
+        <dt><code>side</code></dt><dd>Side goal id to the ISO time it was first met.</dd>
+        <dt><code>last</code></dt><dd>The latest run's result, which the header shows between runs.</dd>
+      </dl>
+      <ul>
+        <li><code>NEW_GAME</code> is the opening with nothing bought, no units, rung 0 and no runs.</li>
+        <li><code>parseGameSave</code> returns null unless <code>v</code> is 2 at both levels (P15).</li>
+        <li>The result is rebuilt from the known fields. An unknown field is dropped.</li>
+        <li><code>parseGameSave</code> checks the shape only. It keeps a node, a level, a side goal or a rung the catalogue does not have; <code>fitGame</code> (G6) drops those in the browser.</li>
+        <li>The server stores what <code>parseGameSave</code> returns.</li>
+        <li>Unit amounts and <code>runs</code> are whole numbers of 0 or more.</li>
+        <li><code>plan</code> and <code>policy</code> stay opaque text, as they are today.</li>
+      </ul>
+      <p><strong>Removed:</strong> <code>Level</code>, <code>Progress</code>, <code>Banked</code>, <code>Bar</code>, <code>barOf</code>, <code>roundComplete</code>, <code>levelUp</code>, <code>standing</code>, <code>beats</code>.</p>
+    </section>
+    <section id="sec-if-g2">
+      <h3>G2 Units</h3>
+      <pre><code data-lang="ts">// src/lib/game/units.ts
+import type { Units } from './state';
+
+export function credit(a: Units, b: Units): Units;
+export function affords(have: Units, price: Units): boolean;
+export function spend(have: Units, price: Units): Units;
+export function shortBy(have: Units, price: Units): Units;
+export function total(u: Units): number;</code></pre>
+      <ul>
+        <li>A missing kind is 0.</li>
+        <li><code>spend</code> throws <code>RangeError</code> when <code>affords</code> is false.</li>
+        <li><code>shortBy</code> holds only the kinds the balance is short of.</li>
+        <li>No function changes its arguments.</li>
+      </ul>
+    </section>
+    <section id="sec-if-g4">
+      <h3>G4 Limits</h3>
+      <pre><code data-lang="ts">// src/lib/game/limits.ts
+import type { StopType } from '$lib/sim/levers/brushes';
+import type { Policy, PolicyKind, SimPolicy4 } from '$lib/timeline/policy4';
+import type { GameState } from './state';
+import type { TreeNode } from './tree';
+
+export interface Hands {
+  radiusPx: number;
+  lingerMs: number;
+  auto: boolean;
+}
+
+export interface Limits {
+  open: boolean;
+  presets: ReadonlySet&lt;string&gt;;
+  measures: ReadonlySet&lt;string&gt;;
+  stops: ReadonlySet&lt;StopType&gt;;
+  bands: number;
+  stories: number;
+  reachM: number;
+  custom: boolean;
+  hands: Hands;
+}
+
+export const OPEN_LIMITS: Limits;
+export const BASE_HANDS: Hands;
+export const START_BANDS = 1;
+export const START_STORIES = 4;
+export const START_REACH_M = 402;
+export const FREE_MEASURES: readonly string[];
+
+export function limitsOf(s: GameState, nodes?: readonly TreeNode[]): Limits;
+export function within(kind: PolicyKind, p: Policy, l: Limits): boolean;
+export function runnable(doc: SimPolicy4, l: Limits): SimPolicy4;
+export function isGiven(p: Policy): boolean;</code></pre>
+      <dl>
+        <dt><code>open</code></dt><dd>The open game: every control, no limit (call 9).</dd>
+        <dt><code>presets</code>, <code>measures</code></dt><dd>The permitting preset ids and funding preset ids that run.</dd>
+        <dt><code>bands</code>, <code>stories</code>, <code>reachM</code></dt><dd>The most bands a transit rule may have, its tallest band and its furthest band. All 0 before the first stop type is bought.</dd>
+        <dt><code>custom</code></dt><dd>Custom timing and custom route shares may be set.</dd>
+        <dt><code>FREE_MEASURES</code></dt><dd><code>state-off</code> and <code>federal-credits-off</code>.</dd>
+      </dl>
+      <ul>
+        <li><code>limitsOf</code> folds the grants of every level bought. The largest <code>stories</code>, <code>reach</code>, <code>bands</code>, <code>radius</code> and <code>linger</code> win.</li>
+        <li>Once a stop type is bought, <code>bands</code>, <code>stories</code> and <code>reachM</code> are at least <code>START_BANDS</code>, <code>START_STORIES</code> and <code>START_REACH_M</code>.</li>
+        <li><code>BASE_HANDS</code> is a radius of 48 px, a linger of 4,000 ms and no auto. Every Hands step in the catalogue is above it.</li>
+        <li>Once the last rung is met, <code>stories</code> is 80, <code>bands</code> 3, <code>reachM</code> 3219, every stop type is in, <code>custom</code> is true, and <code>presets</code> also holds <code>observed</code>, the preset a custom timing policy carries.</li>
+        <li><code>within</code> does not read a policy's <code>on</code>.</li>
+        <li>A permitting policy is within the limits when its preset is in <code>presets</code>, and, unless <code>custom</code>, it has no custom edit and no custom route shares.</li>
+        <li>A transit rule is within the limits when its stop types are in <code>stops</code>, it has at most <code>bands</code> bands, no band is taller than <code>stories</code> and none is further than <code>reachM</code>.</li>
+        <li>A protection is within the limits once <code>stops</code> is not empty.</li>
+        <li>A painted area is within the limits only when <code>open</code> (P11).</li>
+        <li>A money policy is within the limits when it is given and its preset is in <code>measures</code>, or its preset is in <code>FREE_MEASURES</code> and <code>measures</code> is not empty. Any other money policy only when <code>open</code> (D4).</li>
+        <li><code>runnable</code> keeps the policies within the limits and returns the same document when it drops none.</li>
+        <li>With <code>OPEN_LIMITS</code>, <code>within</code> is always true.</li>
+      </ul>
+      <p><strong>Unchanged:</strong> <code>isGiven</code>. <strong>Removed:</strong> <code>Allowed</code>, <code>ALL_ALLOWED</code>, <code>allowedAt</code>, <code>unlocksAt</code>, <code>runs</code>, <code>playable</code>, <code>levelNeeded</code>, <code>simLocked</code>, <code>needsHigher</code>.</p>
+    </section>
+    <section id="sec-if-g6">
+      <h3>G6 The ladder, side goals and a run's result</h3>
+      <pre><code data-lang="ts">// src/lib/game/catalogue/ladder-years.ts
+export const LADDER_YEARS: readonly number[];
+
+// src/lib/game/catalogue/tuning.ts
+import type { Units } from '../state';
+export const RUNG_LUMP: Units;
+export const SIDE_TUNING: Record&lt;string, { target: number; reward: Units }&gt;;
+
+// src/lib/game/ladder.ts
+import type { Goal } from '$lib/goal/goal';
+import type { Day } from '$lib/timelapse/time';
+import type { SideGoal } from './side-goals';
+import type { GameState, Units } from './state';
+import type { TreeNode } from './tree';
+
+export interface Rung {
+  deadline: Day;
+  label: string;
+}
+
+export const RUNGS: number;
+
+export function ladder(asOf: Day): Rung[];
+export function goalAt(asOf: Day, rung: number, amount?: number): Goal;
+export function finished(s: GameState): boolean;
+export function takeNext(s: GameState): GameState;
+export function fitGame(
+  s: GameState,
+  nodes?: readonly TreeNode[],
+  goals?: readonly SideGoal[]
+): GameState;
+
+// src/lib/game/run-result.ts
+import type { TimelineView } from '$lib/sim/world/score/types';
+import type { Stage } from '$lib/timelapse/types';
+
+export interface RunTake {
+  dropped: Units;
+  collected: Units;
+}
+
+export interface RunReading {
+  homes: number;
+  reachedOn: Day | null;
+  stages: Record&lt;Exclude&lt;Stage, 'complete'&gt;, number&gt;;
+  waitingMoney: number | null;
+}
+
+export interface RunResult extends RunTake, RunReading {
+  rung: number;
+  amount: number;
+  datasetVersion: string;
+  at: string;
+  lump: Units | null;
+  side: { id: string; reward: Units }[];
+}
+
+export function readRun(view: TimelineView, goal: Goal): RunReading | null;
+export function resultOf(
+  s: GameState,
+  reading: RunReading,
+  take: RunTake,
+  input: SideInput,
+  meta: { amount: number; datasetVersion: string; at: string }
+): RunResult;
+export function settle(s: GameState, r: RunResult): GameState;
+
+// src/lib/game/side-goals.ts
+export interface SideInput {
+  view: TimelineView;
+  index: number;
+  take: RunTake;
+}
+
+export interface SideGoal {
+  id: string;
+  label: string;
+  ring: number;
+  reward: Units;
+  read(i: SideInput): { value: number; target: number } | null;
+}
+
+export const SIDE_GOALS: readonly SideGoal[];
+export const SIDE_SHOWN = 3;
+export function sideShown(s: GameState, goals?: readonly SideGoal[]): SideGoal[];</code></pre>
+      <dl>
+        <dt><code>LADDER_YEARS</code></dt><dd>The deadline years after the window's end, latest first, at most four. The measurement in <code>tree-catalogue</code> sets them.</dd>
+        <dt><code>RUNG_LUMP</code>, <code>SIDE_TUNING</code></dt><dd>The numbers the balance script tunes: the lump for a rung first met, and each side goal's target and reward by its id.</dd>
+        <dt><code>RUNGS</code></dt><dd><code>LADDER_YEARS.length + 1</code>.</dd>
+        <dt><code>homes</code></dt><dd>The goal's measure at the deadline's month.</dd>
+        <dt><code>reachedOn</code></dt><dd>The day the amount was first met at or before the deadline, or null.</dd>
+        <dt><code>stages</code></dt><dd>Homes in each stage short of complete at the deadline's month.</dd>
+        <dt><code>waitingMoney</code></dt><dd>Homes waiting for money at the deadline's month; null when the view has no such series.</dd>
+        <dt><code>lump</code></dt><dd><code>RUNG_LUMP</code> when this run is the first to meet its rung, else null.</dd>
+        <dt><code>index</code></dt><dd>The deadline's month in the view.</dd>
+      </dl>
+      <ul>
+        <li>Rung 0's deadline is <code>defaultGoal(asOf).deadline</code>. Rung <em>k</em> is the last day of December of <code>LADDER_YEARS[k - 1]</code>.</li>
+        <li>A rung's deadline is never after the rung before it and never before the dataset date's month.</li>
+        <li>The first ladder year is the largest multiple of five that is at least five years before the window's end year. The last is the first multiple of five at or after the measured year. When more than four five-year steps fit, the first and last are kept with two evenly between.</li>
+        <li>The cheapest node shown at rung 0 costs no more than <code>RUNG_LUMP</code>.</li>
+        <li>A side goal's <code>reward</code> and target are read from <code>SIDE_TUNING</code> by its id.</li>
+        <li><code>goalAt</code> is <code>defaultGoal(asOf)</code> with the rung's deadline, and with <code>amount</code> when given.</li>
+        <li><code>readRun</code> returns null while the view does not cover the deadline's month.</li>
+        <li><code>resultOf</code> lists a side goal when it is shown, not yet met, and its <code>value</code> is at least its <code>target</code>.</li>
+        <li><code>settle</code> credits <code>collected</code>, <code>lump</code> and each side reward; records the rung in <code>met</code> when <code>reachedOn</code> is set and the rung is not there; records each side goal; adds 1 to <code>runs</code>; sets <code>last</code>.</li>
+        <li><code>settle</code> never removes a met rung (call 8).</li>
+        <li><code>settle</code> pays a lump or a side reward only when it also records it, so a result settled twice pays its lump and its side rewards once. The store refuses a second settle of one result (G7).</li>
+        <li><code>takeNext</code> moves to the next rung when the rung in play is met and a next one exists. Otherwise it returns the same state.</li>
+        <li><code>finished</code> is true once the last rung is in <code>met</code>.</li>
+        <li><code>fitGame</code> drops a <code>bought</code> entry for a node the catalogue does not have and lowers a level above the node's last to it.</li>
+        <li><code>fitGame</code> drops a <code>side</code> entry for an id <code>SIDE_GOALS</code> does not have.</li>
+        <li><code>fitGame</code> lowers a rung at <code>RUNGS</code> or above to <code>RUNGS - 1</code> and drops met rungs at <code>RUNGS</code> or above.</li>
+        <li><code>fitGame</code> returns the same object when nothing is dropped or lowered.</li>
+        <li><code>sideShown</code> returns the first <code>SIDE_SHOWN</code> goals whose ring is open and which are not met.</li>
+        <li>A side goal's <code>read</code> returns null when the view lacks what it reads.</li>
+      </ul>
+    </section>
+    <section id="sec-if-u1">
+      <h3>U1 The game's screens and header parts</h3>
+      <pre><code data-lang="ts">// src/lib/game/ui/Tally.svelte
+interface TallyProps {
+  result: RunResult;
+  before: number | null;
+  deadline: string;
+  oncontinue(): void;
+}
+
+// src/lib/game/ui/Tree.svelte
+interface TreeProps {
+  nodes: NodeView[];
+  on: Record&lt;NodeId, boolean&gt;;
+  units: Units;
+  busy: boolean;
+  next: Rung | null;
+  ending: { reachedOn: Day; stateBy: Day; perAddedHome: number | null } | null;
+  onbuy(id: NodeId): void;
+  onedit(id: NodeId): void;
+  ontoggle(id: NodeId, on: boolean): void;
+  onrun(): void;
+  onnext(): void;
+  onpublish(): void;
+}
+
+// src/lib/game/ui/GoalHeadline.svelte
+interface GoalHeadlineProps {
+  homes: number | null;
+  amount: number;
+  deadline: string;
+  unlocks: string | null;
+  met: boolean;
+  side: { goal: SideGoal; value: number; target: number; met: boolean }[];
+}
+
+// src/lib/game/ui/OpeningCard.svelte
+interface OpeningCardProps {
+  amount: number;
+  onstart(): void;
+}
+
+// src/lib/game/ui/GameCell.svelte
+interface GameCellProps {
+  inMenu: boolean;
+}</code></pre>
+      <dl>
+        <dt><code>before</code></dt><dd>Homes by the deadline in the run before this one on the same rung, or null.</dd>
+        <dt><code>on</code></dt><dd>For each bought node whose grant made a policy: whether that policy is switched on. A node with no entry shows no switch.</dd>
+        <dt><code>ending</code></dt><dd>Set once the last rung is met: the day the goal was reached, the day the state asks for the goal's homes by (<code>stateBy</code>, RHNA's deadline), and public money per added home.</dd>
+        <dt><code>busy</code></dt><dd>The forecast for the next run is not ready. Run says so and waits.</dd>
+        <dt><code>next</code></dt><dd>The rung on offer, when the rung in play is met.</dd>
+        <dt><code>homes</code></dt><dd>Null before the first run of a rung: the headline then shows the goal alone.</dd>
+        <dt><code>unlocks</code></dt><dd>What meeting the goal opens; null at the last rung.</dd>
+      </dl>
+      <ul>
+        <li><code>Tally</code> shows homes by the deadline with the change from the last run, units collected out of units dropped, the lump and side rewards, homes in each stage, and homes waiting for money when that is not null.</li>
+        <li><code>Tally</code> holds the account offer that the win card holds today.</li>
+        <li><code>Tree</code> shows each node with its label, its step, its price or how far short the balance is, and Edit when bought. One node at a time is open with its line, its source and Buy.</li>
+        <li><code>Tree</code> holds Run, and "Take the next goal" while <code>next</code> is set.</li>
+        <li><code>Tree</code> fills the page below the header, as in the wireframe.</li>
+        <li>A bought node with an entry in <code>on</code> carries a switch, which calls <code>ontoggle</code>.</li>
+        <li>With <code>ending</code> set, <code>Tree</code> shows the ending's summary and Publish, which calls <code>onpublish</code>.</li>
+        <li><code>GamePanel</code> loads <code>/</code> afresh after a switch of game, a new game, or the deletion of the game in play.</li>
+        <li>These parts' words are in <code>src/lib/game/ui/words.ts</code>.</li>
+        <li><code>GoalHeadline</code> is the header's pinned item: line 1 the homes of the amount by the deadline, line 2 a bar and what it unlocks. Pressing it opens the side goals.</li>
+        <li><code>GameCell</code> shows the unit count and opens <code>GamePanel</code>: saved games, New game, the sync line, the sound switch and "Collect for me".</li>
+        <li>Every control is reachable by keyboard, has a visible focus ring and a target of at least 24 px.</li>
+        <li>No part reads the simulation or the map. Each takes what it shows as props or from <code>useGame()</code>.</li>
+      </ul>
+      <p><strong>Removed:</strong> <code>WinCard</code>, <code>LevelPanel</code>, <code>LevelCell</code>.</p>
+    </section>
+
+    <section id="sec-gc-design">
+      <h3>The design's global constraints</h3>
+      <ul>
+        <li>One future: the same policy document always gives the same forecast. No game state reaches the worker except through the policy document.</li>
+        <li>No file the dataset version hashes is changed: <code>pipeline</code>, <code>src/lib/config.ts</code>, <code>src/lib/{data,generator,timelapse}</code>, <code>src/lib/plan/{geometry,types}.ts</code>, <code>src/lib/sim/finance</code> (<code>pipeline/lib/version.ts:41</code>). The dataset version stays as it is.</li>
+        <li>A policy node acts on a lever the code already has, at a value the code already sources. No node invents a value.</li>
+        <li>The painted area, own pools, the City funding scale and market terms are never offered in a game.</li>
+        <li>Published plans and policies open and play in full, as today.</li>
+        <li>WCAG 2.2 AA: everything works from the keyboard; targets are at least 24 px; motion follows the reduced-motion setting; nothing flashes more than three times a second.</li>
+        <li>Page text is short. A node is a name, a line and a price.</li>
+        <li>The CSP is not widened. Sound is made in the browser; no audio file, font or script is added.</li>
+        <li>A runtime dependency is not added without a credit in <code>src/lib/attribution.ts</code>. None is expected.</li>
+        <li>Code style: 2-space indent, single quotes, no trailing commas, 100 columns.</li>
+        <li>Vitest runs with <code>expect.requireAssertions</code>. Tests are colocated.</li>
+        <li>A schema change goes through <code>npm run db:generate</code>. Migrations are never edited by hand.</li>
+        <li>Signoff fails on server stderr, on timing crutches and on retried flakes. Timing is measured only on a quiet machine.</li>
+        <li>Port 4173 belongs to whichever session started the preview. Never kill it; wait.</li>
+        <li>Commits use Conventional Commits and carry no Claude attribution.</li>
+        <li>Work happens in git worktrees under <code>.claude/worktrees/</code>.</li>
+      </ul>
+    </section>
+
+    <section id="sec-gc-spec">
+      <h3>The spec's global constraints</h3>
+      <ul>
+        <li>One future: the same policy document always gives the same forecast. No game state reaches the worker except through the policy document.</li>
+        <li>No file the dataset version hashes is changed: <code>pipeline</code>, <code>src/lib/config.ts</code>, <code>src/lib/{data,generator,timelapse}</code>, <code>src/lib/plan/{geometry,types}.ts</code>, <code>src/lib/sim/finance</code> (<code>pipeline/lib/version.ts:41</code>). The dataset version stays as it is.</li>
+        <li>A policy node acts on a lever the code already has, at a value the code already sources. No node invents a value.</li>
+        <li>The painted area, own pools, the City funding scale and market terms are never offered in a game.</li>
+        <li>Published plans and policies open and play in full, as today.</li>
+        <li>WCAG 2.2 AA: everything works from the keyboard; targets are at least 24 px; motion follows the reduced-motion setting; nothing flashes more than three times a second.</li>
+        <li>Page text is short. A node is a name, a line and a price.</li>
+        <li>The CSP is not widened. Sound is made in the browser; no audio file, font or script is added.</li>
+        <li>A runtime dependency is not added without a credit in <code>src/lib/attribution.ts</code>. None is expected.</li>
+        <li>Code style: 2-space indent, single quotes, no trailing commas, 100 columns.</li>
+        <li>Vitest runs with <code>expect.requireAssertions</code>. Tests are colocated.</li>
+        <li>A schema change goes through <code>npm run db:generate</code>. Migrations are never edited by hand.</li>
+        <li>Signoff fails on server stderr, on timing crutches and on retried flakes. Timing is measured only on a quiet machine.</li>
+        <li>Port 4173 belongs to whichever session started the preview. Never kill it; wait.</li>
+        <li>Commits use Conventional Commits and carry no Claude attribution.</li>
+        <li>Work happens in git worktrees under <code>.claude/worktrees/</code>.</li>
+      </ul>
+    </section>
+
+    <section id="sec-gc-project">
+      <h3>Project rules for this build</h3>
+      <ul>
+        <li>The write set is exactly: <code>src/lib/game/ui/{words,layout,motion}.ts</code>, <code>words.spec.ts</code>, <code>layout.spec.ts</code>; <code>src/lib/game/ui/{Tally,Tree,GoalHeadline,OpeningCard}.svelte</code> and their <code>.svelte.spec.ts</code>; <code>src/lib/game/ui/test/{fixtures.ts,TallyHost.svelte,TreeHost.svelte,HeadlineHost.svelte,OpeningHost.svelte}</code>. No other file is created, changed or deleted. <code>THEMED_FILES</code> in <code>src/lib/shell/accent.spec.ts</code> is <code>game-shell</code>'s, not this build's.</li>
+        <li>No <code>setTimeout</code> or <code>setInterval</code> in any spec or test helper (hosts and fixtures included). Wait on a readiness signal (<code>expect.element</code>, <code>expect.poll</code>) or on fake timers (<code>vi.useFakeTimers</code> with <code>vi.advanceTimersByTimeAsync</code>). Never raise a test timeout, never add retries, never skip.</li>
+        <li><code>npx chreode timing-check --head HEAD</code> is clean after every task's commit.</li>
+        <li>Conventional Commits (<code>feat(game-ui): …</code>, <code>test(game-ui): …</code>). No <code>Co-Authored-By</code> or other Claude attribution.</li>
+        <li>Vitest <code>expect.requireAssertions</code>: every test calls <code>expect</code>.</li>
+        <li>2-space indent, single quotes, no trailing commas, 100 columns; <code>npm run lint</code> clean.</li>
+        <li>WCAG 2.2 AA in every part: keyboard reach, a visible focus ring, targets of at least 24 by 24 px, motion that follows reduced motion, nothing flashing more than three times a second. Component specs run <code>axe.run(element)</code> in light and dark, switching the scheme with <code>cdp().send('Emulation.setEmulatedMedia', …)</code> as <code>src/lib/game/WinCard.svelte.spec.ts:12-17</code> does.</li>
+        <li>The client project's browser context starts with <code>reducedMotion: 'reduce'</code> (<code>vite.config.client-test.ts:56</code>). A test of motion sets <code>prefers-reduced-motion: no-preference</code> through <code>cdp()</code> and an <code>afterEach</code> puts <code>reduce</code> back, as <code>src/lib/sim-page/SimPage.svelte.spec.ts:1309-1316</code> does.</li>
+        <li>A spec that fakes timers makes no <code>expect.element</code> assertion while they are faked (its retries wait on timers); it reads the DOM synchronously after <code>flushSync()</code>, as <code>src/lib/sharing/NoticeStack.svelte.spec.ts:105-122</code> does, and calls <code>vi.useRealTimers()</code> in <code>afterEach</code>.</li>
+        <li>No file under <code>src/lib/game/ui/</code> other than a spec imports <code>$lib/sim</code>, <code>$lib/map</code>, <code>$lib/timeline</code> or <code>$lib/sim-page</code>; a spec may import <code>$lib/map/key/rows</code>.</li>
+        <li>Tests pass their own nodes, prices, rungs and deadline labels and never assert a price, a ladder year or the number of rungs from the catalogue. <code>RUNGS</code> and <code>SIDE_GOALS</code> are read as imported, never as literals.</li>
+        <li>Verification: <code>npx vitest run --project server &lt;path&gt;</code> for <code>*.spec.ts</code>, <code>npx vitest run --project client &lt;path&gt;</code> for <code>*.svelte.spec.ts</code> (<code>docs/dev/testing.md:26</code>), then <code>npm run check</code> and <code>npm run lint</code>.</li>
+      </ul>
+    </section>
+  </section>
+
+  <section id="sec-review-focus">
+    <h2>Review Focus</h2>
+    <p>Inputs the spec implies but its test lists do not exercise. Each line's test is added to the owning task.</p>
+    <ol>
+      <li><strong>The open game.</strong> <code>Tally</code> and <code>GoalHeadline</code> render nothing while <code>useGame().open</code> is true (<code>sec-design-common</code>); a page with no provider gets the open game. Tests in Task 4 and Task 5.</li>
+      <li><strong>A result past the goal.</strong> Homes above the amount fill the tally's and the headline's bars to 100, never past (<code>min(1, …)</code>). Tests in Task 4 and Task 5.</li>
+      <li><strong>An empty stage breakdown.</strong> Every stage at 0 and <code>waitingMoney</code> 0: every row shows with count 0 and <code>data-fill</code> 0, no <code>NaN</code>. Test in Task 4.</li>
+      <li><strong>An <code>on</code> entry for a node not bought.</strong> No switch shows and <code>ontoggle</code> cannot be called. Test in Task 6.</li>
+      <li><strong>An import that reaches the simulation or the map.</strong> A source file under <code>src/lib/game/ui/</code> importing <code>$lib/sim</code>, <code>$lib/map</code>, <code>$lib/timeline</code> or <code>$lib/sim-page</code> fails a test. Test in Task 2, which covers every later file as it lands.</li>
+    </ol>
+  </section>
+
+  <section id="sec-file-structure">
+    <h2>File Structure</h2>
+    <table id="tbl-files">
+      <caption>Files this plan creates, all under src/lib/game/ui/</caption>
+      <thead>
+        <tr><th scope="col">File</th><th scope="col">Responsibility</th><th scope="col">Task</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row"><code>words.ts</code>, <code>words.spec.ts</code></th><td>Every word the parts show (part B's words included, as the spec lists them)</td><td>1</td></tr>
+        <tr><th scope="row"><code>motion.ts</code></th><td>The four durations</td><td>1</td></tr>
+        <tr><th scope="row"><code>layout.ts</code>, <code>layout.spec.ts</code></th><td><code>branchRows</code>; the import-boundary guard</td><td>2</td></tr>
+        <tr><th scope="row"><code>test/fixtures.ts</code></th><td>Builders for <code>TreeNode</code>, <code>NodeView</code>, <code>RunResult</code> and side entries</td><td>2</td></tr>
+        <tr><th scope="row"><code>OpeningCard.svelte</code>, spec, <code>test/OpeningHost.svelte</code></th><td>The opening's last card</td><td>3</td></tr>
+        <tr><th scope="row"><code>Tally.svelte</code>, spec, <code>test/TallyHost.svelte</code></th><td>The tally card</td><td>4</td></tr>
+        <tr><th scope="row"><code>GoalHeadline.svelte</code>, spec, <code>test/HeadlineHost.svelte</code></th><td>The pinned goal and the side goals</td><td>5</td></tr>
+        <tr><th scope="row"><code>Tree.svelte</code>, spec, <code>test/TreeHost.svelte</code></th><td>The tree screen: body in Task 6, footer and ending in Task 7</td><td>6, 7</td></tr>
+      </tbody>
+    </table>
+    <aside data-kind="note"><strong>Order</strong> Tasks 1 and 2 share no file and no edge. Tasks 3 to 6 each need Task 1 (and 4 to 6 need Task 2's fixtures) but share no file with one another. Task 7 follows Task 6 (same component).</aside>
+  </section>
+
+  <section id="sec-task-1">
+    <h2>Task 1: Words and durations</h2>
+    <ul>
+      <li>Create: <code>src/lib/game/ui/words.ts</code>, <code>src/lib/game/ui/motion.ts</code></li>
+      <li>Test: <code>src/lib/game/ui/words.spec.ts</code> (server project)</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>RUNGS</code> from <code>../ladder</code> (G6, value import); types <code>Stage</code> (<code>$lib/timelapse/types</code>), <code>Day</code> (<code>$lib/timelapse/time</code>), <code>GameState</code> (<code>../state</code>), <code>Branch</code> (<code>../tree</code>); <code>formatCount</code> (<code>src/lib/scoreboard/format.ts:13</code>), <code>formatShortMonthYear</code> (<code>src/lib/fzp/format.ts:40</code>), <code>formatDollarsExact</code> (<code>src/lib/fzp/format.ts:90</code>).</li>
+      <li>Produces: every export of the spec's <code>sec-design-words</code> block, with those exact names and signatures; <code>ROLL_MS = 400</code>, <code>TALLY_ROLL_MS = 800</code>, <code>MET_MS = 1200</code>, <code>REVEAL_MS = 300</code> from <code>motion.ts</code>.</li>
+    </ul>
+    <ol>
+      <li id="t1-s1"><input type="checkbox"> Write <code>words.spec.ts</code>. One test per group; the expected strings are the spec's examples. Days are built with <code>dayFromUtc</code> (<code>src/lib/fzp/time.ts:10</code>).
+        <pre><code data-lang="ts">import { describe, expect, it } from 'vitest';
+import { STAGE_KEY } from '$lib/map/key/rows';
+import { dayFromUtc } from '$lib/fzp/time';
+import { RUNGS } from '../ladder';
+import * as w from './words';
+
+it('units', () =&gt; {
+  expect(w.unitsName(1)).toBe('1 unit');
+  expect(w.unitsName(1240)).toBe('1,240 units');
+  expect(w.priceText(900)).toBe('◆ 900');
+  expect(w.priceText(0)).toBe('Free');
+  expect(w.shortText(298)).toBe('298 short');
+});
+it('the goal headline', () =&gt; {
+  expect(w.goalLine(61400, 82069, 'Dec 2055')).toBe('61,400 of 82,069 homes by Dec 2055');
+  expect(w.goalLine(null, 82069, 'Dec 2055')).toBe('82,069 homes by Dec 2055');
+  expect(w.HOMES_WORD).toBe(' homes');
+  expect(w.unlocksText('Height near transit')).toBe('Unlocks: Height near transit');
+  expect(w.sideMetText(1)).toBe('1 side goal met');
+  expect(w.sideMetText(2)).toBe('2 side goals met');
+  expect(w.progressText(600, 1000)).toBe('600 of 1,000');
+  expect(w.goalMetLive(82069, 'Dec 2055')).toBe('Goal met: 82,069 homes by Dec 2055');
+  expect(w.sideMetLive('1,000 homes added')).toBe('Side goal met: 1,000 homes added');
+  // and GOAL_MET, LAST_GOAL, SIDE_GOALS_TITLE, NO_SIDE_GOALS, MET as the spec gives them
+});
+it('the tally', () =&gt; {
+  expect(w.tallyTitle(dayFromUtc(2049, 3, 15), 'Dec 2055')).toBe('Goal met in Mar 2049');
+  expect(w.tallyTitle(null, 'Dec 2055')).toBe('By Dec 2055');
+  expect(w.homesOfText(61400, 82069)).toBe('61,400 of 82,069 homes');
+  expect(w.changeText(3150)).toBe('+3,150');
+  expect(w.changeText(-3150)).toBe('−3,150');
+  expect(w.changeText(0)).toBe('No change');
+  expect(w.collectedText(7300, 9100)).toBe('7,300 of 9,100 collected');
+  expect(w.lumpText(2000)).toBe('+2,000 for the goal');
+  expect(w.sideRewardText(500, '1,000 homes added')).toBe('+500 for 1,000 homes added');
+  expect(w.notBuiltTitle('Dec 2055')).toBe('Not yet built by Dec 2055');
+  // and SIDE_GOAL_FALLBACK, WAITING_MONEY, CONTINUE
+});
+it('STAGE_ROWS are the first four rows of STAGE_KEY', () =&gt; {
+  expect(w.STAGE_ROWS).toEqual(
+    STAGE_KEY.slice(0, 4).map(({ id, label, stages }) =&gt; ({ id, label, stages }))
+  );
+});
+it('the tree', () =&gt; {
+  expect(w.BRANCH_NAMES).toEqual({
+    permitting: 'Permitting', zoning: 'Zoning', money: 'Public money', hands: 'Hands'
+  });
+  expect(w.buyText(900)).toBe('Buy · ◆ 900');
+  expect(w.buyText(0)).toBe('Buy · Free');
+  expect(w.editName('SB 423 clock')).toBe('Edit SB 423 clock');
+  expect(w.switchName('SB 423 clock')).toBe('SB 423 clock on');
+  expect(w.nextStepText('8 stories')).toBe('Next: 8 stories');
+  expect(w.nextPriceText(420)).toBe('next ◆ 420');
+  expect(w.boughtLive('Near BART', '8 stories')).toBe('Bought: Near BART, 8 stories');
+  expect(w.balanceText(1652)).toBe('◆ 1,652 to spend');
+  expect(w.balanceName(1652)).toBe('1,652 units to spend');
+  expect(w.takeNextText('Dec 2050')).toBe('Take the next goal: Dec 2050');
+  expect(w.endingReached(dayFromUtc(2041, 3, 1))).toBe('Reached in Mar 2041');
+  expect(w.endingState(dayFromUtc(2031, 1, 31))).toBe('The state asks by Jan 2031');
+  expect(w.perAddedHomeText(123456)).toBe('Public money per added home: $123,456');
+  // and TREE_TITLE, CURRENT_LAW, BOUGHT, EDIT, ON, OFF, SOURCE, RUN, RUN_BUSY,
+  // ENDING_TITLE, ENDING_LEVERS, ENDING_LIFTED, PUBLISH as the spec gives them
+});
+it('the opening card', () =&gt; {
+  expect(w.roomMet(82069)).toBe('Room for 82,069 homes');
+  expect(w.OPENING_LINES).toEqual([
+    'Next, the forecast plays today’s law to the deadline.',
+    'Sweep over homes as they finish to collect them.'
+  ]);
+  expect(w.START).toBe('Start');
+});
+it('the game panel', () =&gt; {
+  expect(w.entryStage('opening', 0)).toBe('Painting');
+  expect(w.entryStage('runs', 1)).toBe(`Goal 2 of ${RUNGS}`);
+  expect(w.renameName('Game, 4 Mar')).toBe('Rename Game, 4 Mar');
+  expect(w.deleteName('Game, 4 Mar')).toBe('Delete Game, 4 Mar');
+  expect(w.deleteAsk('Game, 4 Mar')).toBe('Delete Game, 4 Mar?');
+  // and PLAYING, SAVED_GAMES, NEW_GAME_LABEL, NAME_LABEL, RENAME, DELETE, CANCEL, SOUND,
+  // COLLECT_FOR_ME, COLLECT_BOUGHT as the spec gives them
+});
+it('no text has 12 words or more', () =&gt; {
+  // every string export, every OPENING_LINES entry, every STAGE_ROWS label, every
+  // BRANCH_NAMES value, and every function's output for the examples above
+  for (const t of allTexts) expect(t.split(/\s+/).filter(Boolean).length).toBeLessThan(12);
+});</code></pre>
+      </li>
+      <li id="t1-s2"><input type="checkbox"> Run it and see it fail (module not found).
+        <pre><code data-lang="sh">npx vitest run --project server src/lib/game/ui/words.spec.ts</code></pre>
+      </li>
+      <li id="t1-s3"><input type="checkbox"> Write <code>words.ts</code> with the spec's block verbatim as the export list; each function body is one template on <code>formatCount</code>, <code>formatShortMonthYear</code> or <code>formatDollarsExact</code>. <code>UNIT_MARK</code> is the mark in <code>priceText</code>, <code>nextPriceText</code>, <code>buyText</code> and <code>balanceText</code>. <code>changeText</code> writes the sign itself (<code>+</code> or U+2212) before <code>formatCount(Math.abs(d))</code>. <code>balanceName(n)</code> is <code>`${unitsName(n)} to spend`</code> (builder's call: the one singular rule <code>unitsName</code> already has; see Open questions). <code>entryStage</code> reads <code>RUNGS</code>; every other import is <code>import type</code>.</li>
+      <li id="t1-s4"><input type="checkbox"> Write <code>motion.ts</code> with the four constants of <code>sec-design-motion</code>.</li>
+      <li id="t1-s5"><input type="checkbox"> Run the spec, then the checks; all pass.
+        <pre><code data-lang="sh">npx vitest run --project server src/lib/game/ui/words.spec.ts
+npm run check
+npm run lint</code></pre>
+      </li>
+      <li id="t1-s6"><input type="checkbox"> Commit, then run the timing check (clean).
+        <pre><code data-lang="sh">git add src/lib/game/ui/words.ts src/lib/game/ui/words.spec.ts src/lib/game/ui/motion.ts
+git commit -m "feat(game-ui): words and durations for the game's parts"
+npx chreode timing-check --head HEAD</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-2">
+    <h2>Task 2: Branch layout and test fixtures</h2>
+    <ul>
+      <li>Create: <code>src/lib/game/ui/layout.ts</code>, <code>src/lib/game/ui/test/fixtures.ts</code></li>
+      <li>Test: <code>src/lib/game/ui/layout.spec.ts</code> (server project)</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: types <code>Branch</code>, <code>NodeView</code>, <code>TreeNode</code>, <code>NodeLevel</code>, <code>Grant</code> (<code>../tree</code>, G3 from <code>contracts</code>); <code>NodeId</code>, <code>Units</code> (G1); <code>RunResult</code> (G6); <code>SideGoal</code> (G6).</li>
+      <li>Produces (<code>layout.ts</code>): <code>BRANCH_ORDER</code>, <code>TreeRow</code>, <code>BranchRows</code>, <code>branchRows(nodes: readonly NodeView[]): BranchRows[]</code>, exactly as <code>sec-design-tree-layout</code>.</li>
+      <li>Produces (<code>test/fixtures.ts</code>, type imports and <code>dayFromUtc</code> only, so both projects can load it):
+        <pre><code data-lang="ts">export function nodeLevel(price: number, step: string, grant?: Grant): NodeLevel;
+// price { home: price }; grant defaults to { tag: 'stories', max: 8 }
+export function treeNode(over: Partial&lt;TreeNode&gt; &amp; { id: NodeId }): TreeNode;
+// defaults: branch 'permitting', label `Node ${id}`, line 'Does one thing.', after [],
+// ring 0, levels [nodeLevel(100, 'Step 1')], source null
+export function nodeView(node: TreeNode, over?: Partial&lt;Omit&lt;NodeView, 'node'&gt;&gt;): NodeView;
+// defaults: level 0, state 'ready', short null
+export function runResult(over?: Partial&lt;RunResult&gt;): RunResult;
+// defaults: homes 40_000, amount 80_000, reachedOn null, every stage 0, waitingMoney null,
+// dropped { home: 9100 }, collected { home: 7300 }, rung 0, datasetVersion 'test',
+// at '2026-11-25T00:00:00.000Z', lump null, side []
+export function sideGoal(id: string, label: string, reward: number, ring?: number): SideGoal;
+// read() returns null
+export function sideEntry(
+  goal: SideGoal, value: number, target: number, met?: boolean
+): { goal: SideGoal; value: number; target: number; met: boolean };</code></pre>
+      </li>
+    </ul>
+    <ol>
+      <li id="t2-s1"><input type="checkbox"> Write <code>layout.spec.ts</code> with the cases of <code>sec-tests-unit</code>, built from <code>treeNode</code> and <code>nodeView</code>:
+        <ul>
+          <li><code>'branches come in BRANCH_ORDER'</code>: nodes given hands, zoning, permitting; <code>branchRows(...).map(b =&gt; b.branch)</code> equals <code>['permitting', 'zoning', 'hands']</code> (money has no node, so it is left out).</li>
+          <li><code>'a child nests under the first earlier node of its branch named in after'</code>: <code>a</code>, <code>b</code> (after <code>[]</code>), <code>c</code> after <code>['x', 'b', 'a']</code> where <code>x</code> is unknown: <code>c</code> is a child of <code>b</code>.</li>
+          <li><code>'an after in another branch makes a root'</code>; <code>'an after naming a later node makes a root'</code>.</li>
+          <li><code>'siblings keep catalogue order'</code>: roots and children in the order of <code>nodes</code>.</li>
+          <li><code>'every node appears exactly once'</code>: the ids collected by walking every <code>TreeRow</code> equal the input ids, sorted.</li>
+        </ul>
+      </li>
+      <li id="t2-s2"><input type="checkbox"> Add to <code>layout.spec.ts</code> the import-boundary guard (Review Focus 5): <code>import.meta.glob('./**/*.{ts,svelte}', { query: '?raw', import: 'default', eager: true })</code>, keep the paths not ending in <code>.spec.ts</code>, and for each assert that no line matches <code>/from '\$lib\/(sim|map|timeline|sim-page)(\/|')/</code>. Assert also that the glob found <code>./layout.ts</code>, so the guard cannot pass empty. Builder's call: a source scan is the cheapest check that every later file obeys <code>sec-design-common</code>'s first rule.</li>
+      <li id="t2-s3"><input type="checkbox"> Run it and see it fail.
+        <pre><code data-lang="sh">npx vitest run --project server src/lib/game/ui/layout.spec.ts</code></pre>
+      </li>
+      <li id="t2-s4"><input type="checkbox"> Write <code>branchRows</code> in <code>layout.ts</code>: one pass over <code>nodes</code> with a map of id to <code>{ row, branch, index }</code>; a node's parent is the first id in its <code>after</code> whose entry is already in the map and has the same branch; push to the parent's <code>children</code> or to its branch's roots; emit branches in <code>BRANCH_ORDER</code> that have a root. Write <code>test/fixtures.ts</code> with the signatures above.</li>
+      <li id="t2-s5"><input type="checkbox"> Run the spec, then the checks; all pass.
+        <pre><code data-lang="sh">npx vitest run --project server src/lib/game/ui/layout.spec.ts
+npm run check
+npm run lint</code></pre>
+      </li>
+      <li id="t2-s6"><input type="checkbox"> Commit, then run the timing check (clean).
+        <pre><code data-lang="sh">git add src/lib/game/ui/layout.ts src/lib/game/ui/layout.spec.ts src/lib/game/ui/test/fixtures.ts
+git commit -m "feat(game-ui): branch layout for the tree and test fixtures"
+npx chreode timing-check --head HEAD</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-3">
+    <h2>Task 3: OpeningCard</h2>
+    <ul>
+      <li>Create: <code>src/lib/game/ui/OpeningCard.svelte</code>, <code>src/lib/game/ui/test/OpeningHost.svelte</code></li>
+      <li>Test: <code>src/lib/game/ui/OpeningCard.svelte.spec.ts</code> (client project)</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>roomMet</code>, <code>OPENING_LINES</code>, <code>START</code> (Task 1); <code>BUTTON_PRIMARY</code>, <code>SURFACE_POP</code> (<code>src/lib/shell/ui.ts:34</code>, <code>:55</code>); <code>AccountOffer</code> (<code>src/lib/game/AccountOffer.svelte</code>, no props); <code>provideGame</code>, <code>GameStore</code> (<code>src/lib/game/store.svelte.ts:246</code>, <code>:801</code>).</li>
+      <li>Produces: <code>OpeningCard.svelte</code> with <code>OpeningCardProps</code> of U1; test ids <code>opening-card</code>, <code>opening-start</code>.</li>
+      <li>Host: <code>OpeningHost.svelte</code> props <code>{ store?: GameStore; card: ComponentProps&lt;typeof OpeningCard&gt;; onescape?: () =&gt; void }</code>; it calls <code>provideGame(store)</code> at init when given, renders the card, and records each window Escape through <code>&lt;svelte:window onkeydown&gt;</code>, as <code>src/lib/game/test/StoreHost.svelte:21-32</code> does.</li>
+    </ul>
+    <ol>
+      <li id="t3-s1"><input type="checkbox"> Write the spec. The store is <code>new GameStore({ storage: new MemoryStorage(), sync: new FakeSync(), now: () =&gt; new Date(2026, 10, 25) })</code>, as <code>WinCard.svelte.spec.ts:26-31</code>. Tests:
+        <ul>
+          <li><code>'shows the title and the two lines'</code>: heading <code>roomMet(82069)</code>; both <code>OPENING_LINES</code> visible.</li>
+          <li><code>'a non-modal dialog named by its title'</code>: <code>getByRole('dialog', { name: roomMet(82069) })</code>, <code>aria-modal</code> <code>'false'</code>.</li>
+          <li><code>'Start has focus at mount and each press calls onstart'</code>: <code>document.activeElement</code> is <code>opening-start</code>; two clicks give <code>onstart</code> two calls.</li>
+          <li><code>'takes no Escape'</code>: Escape with focus on Start reaches the host's <code>onescape</code> once and does not call <code>onstart</code>.</li>
+          <li><code>'the account offer is inside the card'</code>: <code>opening-card</code> contains <code>account-offer</code>.</li>
+          <li><code>'Start is at least 24 px'</code>; <code>'axe finds no violation in light and dark'</code> on <code>opening-card</code>.</li>
+        </ul>
+      </li>
+      <li id="t3-s2"><input type="checkbox"> Run it and see it fail.
+        <pre><code data-lang="sh">npx vitest run --project client src/lib/game/ui/OpeningCard.svelte.spec.ts</code></pre>
+      </li>
+      <li id="t3-s3"><input type="checkbox"> Write <code>OpeningCard.svelte</code> from the spec's <code>sec-design-opening</code> block: <code>titleId = $props.id()</code>, Start focused in <code>onMount</code>, Start's <code>onclick</code> calls <code>onstart()</code>, no key handler, <code>&lt;AccountOffer /&gt;</code> after Start. It does not read <code>useGame().open</code> (<code>sec-design-common</code>: it is mounted only in a saved game). Write <code>OpeningHost.svelte</code>.</li>
+      <li id="t3-s4"><input type="checkbox"> Run the spec, then the checks; all pass.
+        <pre><code data-lang="sh">npx vitest run --project client src/lib/game/ui/OpeningCard.svelte.spec.ts
+npm run check
+npm run lint</code></pre>
+      </li>
+      <li id="t3-s5"><input type="checkbox"> Commit, then run the timing check (clean).
+        <pre><code data-lang="sh">git add src/lib/game/ui/OpeningCard.svelte src/lib/game/ui/OpeningCard.svelte.spec.ts src/lib/game/ui/test/OpeningHost.svelte
+git commit -m "feat(game-ui): the opening card"
+npx chreode timing-check --head HEAD</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-4">
+    <h2>Task 4: Tally</h2>
+    <ul>
+      <li>Create: <code>src/lib/game/ui/Tally.svelte</code>, <code>src/lib/game/ui/test/TallyHost.svelte</code></li>
+      <li>Test: <code>src/lib/game/ui/Tally.svelte.spec.ts</code> (client project)</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: Task 1's <code>tallyTitle</code>, <code>homesOfText</code>, <code>changeText</code>, <code>collectedText</code>, <code>lumpText</code>, <code>sideRewardText</code>, <code>SIDE_GOAL_FALLBACK</code>, <code>notBuiltTitle</code>, <code>STAGE_ROWS</code>, <code>WAITING_MONEY</code>, <code>CONTINUE</code>, <code>UNIT_MARK</code>, <code>TALLY_ROLL_MS</code>; Task 2's <code>runResult</code>, <code>sideGoal</code>; <code>total</code> (G2); <code>SIDE_GOALS</code> (G6); <code>formatCount</code>; <code>useGame</code>; <code>AccountOffer</code>; <code>BUTTON_PRIMARY</code>, <code>SURFACE_POP</code>.</li>
+      <li>Produces: <code>Tally.svelte</code> with <code>TallyProps</code> of U1; the Tally test ids and data attributes of <code>tbl-testids</code>.</li>
+      <li>Host: <code>TallyHost.svelte</code> props <code>{ store?: GameStore; tally: ComponentProps&lt;typeof Tally&gt;; onescape?: () =&gt; void }</code>, as <code>OpeningHost</code>.</li>
+    </ul>
+    <ol>
+      <li id="t4-s1"><input type="checkbox"> Write the spec with the cases of <code>sec-tests-tally</code>, the deadline label <code>'Dec 2055'</code> and a real store as Task 3:
+        <ul>
+          <li><code>'the title for a run that met the goal and one that did not'</code>: <code>reachedOn: dayFromUtc(2049, 3, 15)</code> gives heading <code>'Goal met in Mar 2049'</code>; null gives <code>'By Dec 2055'</code>.</li>
+          <li><code>'the homes line and the change'</code>: homes 40,000 of 80,000 with <code>before</code> 36,850 shows <code>'+3,150'</code> in <code>tally-change</code>; <code>before</code> 43,150 shows <code>'−3,150'</code>; <code>before</code> 40,000 shows <code>'No change'</code>; <code>before</code> null: no <code>tally-change</code>. The first number is in a <code>strong</code>.</li>
+          <li><code>'the bar fills to the share of the goal'</code>: <code>tally-bar</code> <code>data-fill</code> <code>'50'</code>; homes 90,000 of 80,000 gives <code>'100'</code> (Review Focus 2).</li>
+          <li><code>'collected, the lump and side rewards'</code>: <code>tally-units</code> holds <code>'7,300 of 9,100 collected'</code>; no <code>tally-lump</code> with <code>lump</code> null; <code>lump: { home: 2000 }</code> shows <code>'+2,000 for the goal'</code>; <code>side: [{ id: SIDE_GOALS[0].id, reward: { home: 500 } }, { id: 'gone', reward: { home: 50 } }]</code> gives two <code>tally-side</code> lines, <code>sideRewardText(500, SIDE_GOALS[0].label)</code> then <code>sideRewardText(50, SIDE_GOAL_FALLBACK)</code>.</li>
+          <li><code>'four stage rows summed from six stages'</code>: stages <code>{ preApplication: 1, filed: 2, entitled: 3, permitFiled: 4, permitIssued: 5, construction: 6 }</code>; the <code>tally-stage</code> rows have <code>data-stage</code> <code>planning</code>, <code>approved</code>, <code>issued</code>, <code>building</code>, labels from <code>STAGE_ROWS</code>, counts 3, 7, 5, 6.</li>
+          <li><code>'the money row and the shared scale'</code>: <code>waitingMoney</code> null: no <code>tally-money</code>, fills <code>43</code>, <code>100</code>, <code>71</code>, <code>86</code>; <code>waitingMoney</code> 14: <code>tally-money</code> shows <code>WAITING_MONEY</code> and 14, fills <code>21</code>, <code>50</code>, <code>36</code>, <code>43</code>, <code>100</code>.</li>
+          <li><code>'every row shows at 0 with an empty bar'</code> (Review Focus 3): every stage 0 and <code>waitingMoney</code> 0: five rows, each count <code>'0'</code>, each <code>data-fill</code> <code>'0'</code>.</li>
+          <li><code>'Continue has focus at mount; Continue and Escape each call oncontinue once'</code>; <code>'Escape does not reach the window'</code> (host <code>onescape</code> not called).</li>
+          <li><code>'the account offer is inside the card'</code>.</li>
+          <li><code>'renders nothing for the open game'</code> (Review Focus 1): host with <code>store: openGame()</code>; no <code>tally</code>.</li>
+          <li><code>'with reduced motion the final numbers show at once'</code>: default context; strong reads <code>'40,000'</code>, <code>tally-units</code> <code>'7,300 of 9,100 collected'</code> at once.</li>
+          <li><code>'without reduced motion the numbers roll for TALLY_ROLL_MS'</code>: emulate <code>no-preference</code>; <code>vi.useFakeTimers({ toFake: ['requestAnimationFrame', 'cancelAnimationFrame', 'performance'] })</code> before render; mount with <code>before</code> 36,850; after <code>flushSync()</code> the strong is not <code>'40,000'</code>; <code>await vi.advanceTimersByTimeAsync(TALLY_ROLL_MS + 50)</code>, <code>flushSync()</code>; the strong reads <code>'40,000'</code> and the units line the final text. Builder's call: faking the animation clock is the only way to see a roll end without a wait or a raised timeout.</li>
+          <li><code>'the screen reader gets the final numbers during a roll'</code>: in the same set-up, before advancing, the <code>sr-only</code> copy of the homes line reads <code>homesOfText(40000, 80000)</code>.</li>
+          <li><code>'Continue is at least 24 px'</code>; <code>'axe finds no violation in light and dark'</code>.</li>
+        </ul>
+      </li>
+      <li id="t4-s2"><input type="checkbox"> Run it and see it fail.
+        <pre><code data-lang="sh">npx vitest run --project client src/lib/game/ui/Tally.svelte.spec.ts</code></pre>
+      </li>
+      <li id="t4-s3"><input type="checkbox"> Write <code>Tally.svelte</code> from <code>sec-design-tally</code> (the block, Lines, Stage and money rows, Focus, keys and buttons). Decisions the spec leaves to the build:
+        <ul>
+          <li>Two <code>Tween</code>s (<code>svelte/motion</code>, <code>cubicOut</code>): homes from <code>before ?? result.homes</code> to <code>result.homes</code>, units from 0 to <code>total(result.collected)</code> (units roll whatever <code>before</code> is), each with duration <code>prefersReducedMotion.current ? 0 : TALLY_ROLL_MS</code>, set in <code>onMount</code>.</li>
+          <li>The rolling homes line and units line are <code>aria-hidden</code>, each followed by an <code>sr-only</code> copy with the true numbers (builder's call: <code>sec-design-motion</code>'s last rule).</li>
+          <li><code>data-fill</code> is <code>Math.round(fill * 100)</code> (builder's call: "a whole percent"; see Open questions); the homes bar follows the tweened homes, the stage bars do not roll.</li>
+          <li>The whole card is inside <code>{#if !game.open}</code>.</li>
+          <li>Escape: <code>preventDefault()</code>, <code>stopPropagation()</code>, <code>oncontinue()</code>, as <code>src/lib/game/WinCard.svelte:27-32</code>, with the same <code>svelte-ignore a11y_interactive_supports_focus</code> (<code>:37</code>).</li>
+        </ul>
+        Write <code>TallyHost.svelte</code>.</li>
+      <li id="t4-s4"><input type="checkbox"> Run the spec, then the checks; all pass.
+        <pre><code data-lang="sh">npx vitest run --project client src/lib/game/ui/Tally.svelte.spec.ts
+npx vitest run --project server src/lib/game/ui/layout.spec.ts
+npm run check
+npm run lint</code></pre>
+      </li>
+      <li id="t4-s5"><input type="checkbox"> Commit, then run the timing check (clean).
+        <pre><code data-lang="sh">git add src/lib/game/ui/Tally.svelte src/lib/game/ui/Tally.svelte.spec.ts src/lib/game/ui/test/TallyHost.svelte
+git commit -m "feat(game-ui): the tally card"
+npx chreode timing-check --head HEAD</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-5">
+    <h2>Task 5: GoalHeadline</h2>
+    <ul>
+      <li>Create: <code>src/lib/game/ui/GoalHeadline.svelte</code>, <code>src/lib/game/ui/test/HeadlineHost.svelte</code></li>
+      <li>Test: <code>src/lib/game/ui/GoalHeadline.svelte.spec.ts</code> (client project)</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: Task 1's <code>goalLine</code>, <code>HOMES_WORD</code>, <code>unlocksText</code>, <code>GOAL_MET</code>, <code>LAST_GOAL</code>, <code>sideMetText</code>, <code>SIDE_GOALS_TITLE</code>, <code>NO_SIDE_GOALS</code>, <code>progressText</code>, <code>priceText</code>, <code>unitsName</code>, <code>MET</code>, <code>goalMetLive</code>, <code>sideMetLive</code>, <code>ROLL_MS</code>, <code>MET_MS</code>; Task 2's <code>sideGoal</code>, <code>sideEntry</code>; <code>total</code> (G2); <code>useGame</code>; <code>headerOverlay</code> (<code>src/lib/shell/header-actions.svelte.ts:77</code>); <code>SURFACE_POP</code>.</li>
+      <li>Produces: <code>GoalHeadline.svelte</code> with <code>GoalHeadlineProps</code> of U1; the GoalHeadline test ids and data attributes of <code>tbl-testids</code>; the overlay id <code>'goal-side'</code>.</li>
+      <li>Host: <code>HeadlineHost.svelte</code> props <code>{ store?: GameStore; headline: ComponentProps&lt;typeof GoalHeadline&gt;; onescape?: () =&gt; void }</code>. It renders a positioned <code>&lt;header class="relative flex h-12 w-full items-center justify-center"&gt;</code> holding the headline, then an outside area <code>&lt;div data-testid="outside" class="h-40"&gt;</code>, and records window Escapes.</li>
+    </ul>
+    <ol>
+      <li id="t5-s1"><input type="checkbox"> Write the spec with the cases of <code>sec-tests-headline</code>, at <code>page.viewport(1280, 800)</code> unless a case says otherwise, amount 80,000, deadline <code>'Dec 2055'</code>:
+        <ul>
+          <li><code>'line 1 with homes and with null'</code>: the button's name is <code>goalLine(40000, 80000, 'Dec 2055')</code>; with <code>homes</code> null, <code>goalLine(null, …)</code> and <code>goal-bar</code> <code>data-fill</code> <code>'0'</code>.</li>
+          <li><code>'below sm the word homes is hidden and the name is unchanged'</code>: at 375 px the button's visible text has no <code>'homes'</code> and its accessible name is still <code>goalLine(40000, 80000, 'Dec 2055')</code>.</li>
+          <li><code>'line 2 for unlocks, met and the last goal, with the side count'</code>: <code>goal-line2</code> reads <code>unlocksText('Height near transit')</code>; <code>met</code> true: <code>GOAL_MET</code>; <code>unlocks</code> null: <code>LAST_GOAL</code>; one met side entry appends <code>' · ' + sideMetText(1)</code>. The button's description equals line 2 in each case.</li>
+          <li><code>'line 2 is hidden below sm, its description whole'</code>: at 375 px <code>goal-line2</code> is not visible, the description unchanged.</li>
+          <li><code>'the bar and the side mark'</code>: <code>data-fill</code> <code>'50'</code>; homes 90,000 gives <code>'100'</code> (Review Focus 2); <code>goal-side-mark</code> only while an entry has <code>met</code> true.</li>
+          <li><code>'the pop-over opens and closes'</code>: the button opens <code>side-goals</code> (<code>aria-expanded</code> true, focus stays on the button) and closes it; Escape closes it, refocuses the button and does not close it when <code>event.defaultPrevented</code>; a click on <code>outside</code> closes it; <code>window.dispatchEvent(new CustomEvent('sfh-header-overlay-open', { detail: 'other' }))</code> closes it, as <code>src/lib/shell/LevelCell.svelte.spec.ts:172</code>.</li>
+          <li><code>'the pop-over lies inside the viewport'</code>: at 375 by 812 and 1280 by 800, its rect's left is at least 0 and its right at most <code>innerWidth</code>.</li>
+          <li><code>'each side entry'</code>: an entry of 600 of 1,000 with reward 500 shows its label, <code>progressText(600, 1000)</code>, <code>priceText(500)</code> with <code>unitsName(500)</code> as its <code>sr-only</code> text; a met entry carries <code>data-met</code> and <code>MET</code>; <code>side</code> empty shows <code>NO_SIDE_GOALS</code>.</li>
+          <li><code>'the live region speaks a goal met and a side goal met after mount, and nothing at mount'</code>: mounted with <code>met</code> true and a met entry, <code>goal-live</code> is empty; rerendered from false to true it reads <code>goalMetLive(80000, 'Dec 2055')</code>; two entries turning met at once read both <code>sideMetLive</code> texts joined by <code>' · '</code>.</li>
+          <li><code>'data-flash lasts MET_MS'</code>: fake <code>setTimeout</code>/<code>clearTimeout</code> before render, rerender <code>met</code> true, <code>flushSync()</code>; <code>data-flash</code> set; after <code>advanceTimersByTimeAsync(MET_MS - 1)</code> still set; after 1 more, gone. No <code>expect.element</code> while faked.</li>
+          <li><code>'with reduced motion the flash does not animate'</code>: default context, <code>met</code> false to true: <code>getComputedStyle(goal-box).animationName</code> is <code>'none'</code> while <code>data-flash</code> is set; with <code>no-preference</code> it contains <code>'goal-met'</code>.</li>
+          <li><code>'the count rolls, and jumps with reduced motion'</code>: <code>no-preference</code> and faked <code>requestAnimationFrame</code>/<code>performance</code> as Task 4: homes 40,000 to 44,000 is not at 44,000 at once and is after <code>ROLL_MS</code>; the name reads 44,000 at once. Homes from null to 40,000 is at 40,000 at once.</li>
+          <li><code>'renders nothing for the open game'</code> (Review Focus 1): <code>store: openGame()</code>; no <code>goal-box</code>.</li>
+          <li><code>'the box is at most 44 px tall at 1280 px'</code>; <code>'the button is at least 24 px'</code>; <code>'axe finds no violation in light and dark, with the pop-over open'</code> on the header.</li>
+        </ul>
+      </li>
+      <li id="t5-s2"><input type="checkbox"> Run it and see it fail.
+        <pre><code data-lang="sh">npx vitest run --project client src/lib/game/ui/GoalHeadline.svelte.spec.ts</code></pre>
+      </li>
+      <li id="t5-s3"><input type="checkbox"> Write <code>GoalHeadline.svelte</code> from <code>sec-design-headline</code> (block, Lines and bar, pop-over, live). Decisions the spec leaves to the build:
+        <ul>
+          <li>Line 1 shown: <code>goalLine(shownHomes, amount, deadline)</code> split at the first <code>HOMES_WORD</code>, the word in a <code>max-sm:sr-only</code> span, all of it <code>aria-hidden</code>, followed inside the button by an <code>sr-only</code> <code>goalLine(homes, amount, deadline)</code>, so the name is the true count (builder's call: <code>sec-design-motion</code>'s last rule).</li>
+          <li><code>shownHomes</code> is <code>Math.round(tween.current)</code> of a <code>Tween</code> (<code>cubicOut</code>); on each <code>homes</code> change after mount, <code>tween.set(homes, { duration: prefersReducedMotion.current ? 0 : ROLL_MS })</code>, and <code>duration: 0</code> when it comes from null.</li>
+          <li>The flash: a <code>$effect</code> that sees <code>met</code> go false to true after mount sets <code>flash</code> and clears it with a <code>setTimeout</code> of <code>MET_MS</code> (cleared on teardown). A <code>&lt;style&gt;</code> block gives <code>[data-flash]</code> a 2 px accent outline and, inside <code>@media (prefers-reduced-motion: no-preference)</code>, <code>animation: goal-met</code> over <code>MET_MS</code> once; <code>@keyframes goal-met</code> fades the outline colour from opaque to transparent.</li>
+          <li>The pop-over's left: measured at open from the box's and the header's rects (<code>sec-design-headline-pop</code>'s formula), set with <code>style:left</code>.</li>
+          <li>Escape and the outside press are window listeners, as <code>src/lib/shell/LevelCell.svelte:56-72</code>, with the press tested against the wrapper <code>span</code>.</li>
+          <li><code>data-fill</code> is <code>Math.round(fill * 100)</code>, as Task 4. A side entry's bar fill is <code>min(1, value / target)</code>, and 0 when <code>target</code> is 0 or less (builder's call, guarding <code>NaN</code>; see Open questions).</li>
+        </ul>
+        Write <code>HeadlineHost.svelte</code>.</li>
+      <li id="t5-s4"><input type="checkbox"> Run the spec, then the checks; all pass.
+        <pre><code data-lang="sh">npx vitest run --project client src/lib/game/ui/GoalHeadline.svelte.spec.ts
+npx vitest run --project server src/lib/game/ui/layout.spec.ts
+npm run check
+npm run lint</code></pre>
+      </li>
+      <li id="t5-s5"><input type="checkbox"> Commit, then run the timing check (clean).
+        <pre><code data-lang="sh">git add src/lib/game/ui/GoalHeadline.svelte src/lib/game/ui/GoalHeadline.svelte.spec.ts src/lib/game/ui/test/HeadlineHost.svelte
+git commit -m "feat(game-ui): the goal headline and side goals"
+npx chreode timing-check --head HEAD</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-6">
+    <h2>Task 6: Tree, the branches, nodes and detail</h2>
+    <ul>
+      <li>Create: <code>src/lib/game/ui/Tree.svelte</code>, <code>src/lib/game/ui/test/TreeHost.svelte</code></li>
+      <li>Test: <code>src/lib/game/ui/Tree.svelte.spec.ts</code> (client project)</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>branchRows</code>, <code>BranchRows</code>, <code>TreeRow</code> (Task 2); Task 1's <code>TREE_TITLE</code>, <code>CURRENT_LAW</code>, <code>BRANCH_NAMES</code>, <code>priceText</code>, <code>shortText</code>, <code>nextPriceText</code>, <code>OFF</code>, <code>EDIT</code>, <code>editName</code>, <code>ON</code>, <code>switchName</code>, <code>nextStepText</code>, <code>SOURCE</code>, <code>buyText</code>, <code>BOUGHT</code>, <code>boughtLive</code>, <code>REVEAL_MS</code>; Task 2's <code>treeNode</code>, <code>nodeLevel</code>, <code>nodeView</code>; <code>total</code> (G2); <code>BUTTON</code>, <code>BUTTON_PRIMARY</code>, <code>BUTTON_QUIET</code>, <code>SURFACE_POP</code>; <code>MediaQuery</code> (<code>svelte/reactivity</code>); <code>fade</code> (<code>svelte/transition</code>).</li>
+      <li>Produces: <code>Tree.svelte</code> with every prop of <code>TreeProps</code> declared (the footer's and the ending's are read in Task 7); test ids <code>tree</code>, <code>tree-root</code>, <code>tree-branch</code>, <code>tree-node</code>, <code>tree-node-open</code>, <code>tree-node-edit</code>, <code>tree-node-on</code>, <code>tree-detail</code>, <code>tree-source</code>, <code>tree-buy</code>, <code>tree-live</code>; the footer <code>div</code> present and empty.</li>
+      <li>Host: <code>TreeHost.svelte</code> props <code>{ tree: ComponentProps&lt;typeof Tree&gt;; onescape?: () =&gt; void }</code>; renders <code>&lt;div data-testid="tree-host" class="h-[600px] w-full"&gt;</code> holding the tree, and records window Escapes. No store: <code>Tree</code> does not read <code>useGame()</code> (builder's call: <code>sec-design-common</code>, it is mounted only in a saved game).</li>
+    </ul>
+    <ol>
+      <li id="t6-s1"><input type="checkbox"> Write the spec. A helper <code>props(over)</code> gives every <code>TreeProps</code> entry with <code>vi.fn()</code> callbacks, <code>on: {}</code>, <code>units: { home: 500 }</code>, <code>busy: false</code>, <code>next: null</code>, <code>ending: null</code>. Tests change props with <code>screen.rerender({ tree: … })</code>. Cases from <code>sec-tests-tree</code>:
+        <ul>
+          <li><code>'branches and nesting as branchRows gives them; Current law first'</code>: <code>tree-root</code> precedes every <code>tree-branch</code>; the branches' <code>data-branch</code> and each nested <code>tree-node</code>'s parent <code>li</code> match <code>branchRows(nodes)</code>.</li>
+          <li><code>'a card by state'</code>: ready (level 0, price 300): <code>data-state</code> <code>ready</code>, class has <code>border-accent</code>, sub <code>'◆ 300'</code>; short (<code>short: { home: 298 }</code>): <code>'◆ 300 · 298 short'</code>, <code>text-ink-muted</code>; bought (one level, <code>done</code>): sub <code>'Step 1'</code>, <code>border-ink</code>; bought and off (<code>on: { id: false }</code>): <code>'Step 1 · off'</code>, <code>border-dashed</code>; bought with a level left (two levels, level 1, ready, next price 420): <code>'Step 1 · next ◆ 420'</code>. Each open button's accessible name is the label alone and its description the sub.</li>
+          <li><code>'opening a node shows its detail'</code>: line, <code>nextStepText</code> of the next step for a two-level node, a <code>tree-source</code> link with the <code>href</code>, <code>target="_blank"</code> and <code>rel="noopener noreferrer"</code>, or <code>SOURCE + ': ' + text</code> without an <code>href</code>, neither with <code>source</code> null, and <code>tree-buy</code>. Opening does not move focus.</li>
+          <li><code>'one node open at a time; a second press closes it'</code> (<code>aria-expanded</code> follows).</li>
+          <li><code>'Escape closes the detail and focuses its button'</code>; <code>'Escape with nothing open reaches the window'</code> (host <code>onescape</code> called once).</li>
+          <li><code>'Buy'</code>: ready calls <code>onbuy(id)</code>; short is <code>aria-disabled="true"</code>, described by <code>shortText(298)</code>, calls nothing; done shows <code>BOUGHT</code> and no <code>tree-buy</code>.</li>
+          <li><code>'after a purchase the live region speaks and focus follows'</code>: press Buy on a one-level node, rerender it at level 1 <code>done</code>: <code>tree-live</code> reads <code>boughtLive(label, 'Step 1')</code> and focus is on the detail's <code>h4</code>; on a two-level node rerendered at level 1: focus stays on <code>tree-buy</code>. A press with no rerender changes nothing (the live region stays empty).</li>
+          <li><code>'Edit and the switch'</code>: Edit (name <code>editName(label)</code>) calls <code>onedit(id)</code>; the switch shows only for a bought node with an <code>on</code> entry, has <code>role="switch"</code>, <code>aria-checked</code> from <code>on</code>, name <code>switchName(label)</code>, and calls <code>ontoggle(id, false)</code> when on; the card's look changes only after the rerender.</li>
+          <li><code>'no switch for a node not bought'</code> (Review Focus 4): level 0 with <code>on: { id: true }</code> shows no <code>tree-node-on</code>.</li>
+          <li><code>'a node added after mount fades in'</code>: <code>no-preference</code>, rerender with one more node: its <code>li</code> has an animation whose <code>effect.getTiming().duration</code> is <code>REVEAL_MS</code>; with reduced motion its computed opacity is <code>'1'</code> at once. Nodes present at mount have no animation.</li>
+          <li><code>'every control is at least 24 px'</code> (open, Edit, switch, Buy, source link); <code>'axe finds no violation in light and dark with a node open'</code>.</li>
+        </ul>
+      </li>
+      <li id="t6-s2"><input type="checkbox"> Run it and see it fail.
+        <pre><code data-lang="sh">npx vitest run --project client src/lib/game/ui/Tree.svelte.spec.ts</code></pre>
+      </li>
+      <li id="t6-s3"><input type="checkbox"> Write <code>Tree.svelte</code> from <code>sec-design-tree</code>'s block, <code>sec-design-tree-layout</code>, <code>sec-design-tree-node</code> (with <code>tbl-node-look</code>), <code>sec-design-tree-detail</code> and the Escape rules of <code>sec-design-tree-keys</code>. Decisions the spec leaves to the build:
+        <ul>
+          <li>A row is a recursive <code>{#snippet}</code>; every <code>{#each}</code> is keyed by node id so a card and its Buy keep their elements across prop changes.</li>
+          <li><code>openId: NodeId | null</code> state; <code>wide = new MediaQuery('(min-width: 1024px)')</code>.</li>
+          <li>The open button's visible second line is <code>aria-hidden</code>; its <code>sr-only</code> copy, outside the button, is the <code>aria-describedby</code> target.</li>
+          <li>The purchase: Buy records <code>pending = id</code>; an <code>$effect</code> on <code>nodes</code> that sees that node's level above the level at the press sets the live text to <code>boughtLive(label, levels[level - 1].step)</code>, clears <code>pending</code>, and after <code>tick()</code> focuses the detail's <code>h4</code> when the node is <code>done</code>.</li>
+          <li>Escape: on the root's <code>onkeydown</code>, when a detail is open and <code>!e.defaultPrevented</code>, <code>preventDefault()</code>, close, focus that node's open button. No <code>stopPropagation</code> (see Open questions).</li>
+          <li>The reveal: <code>in:fade={{ duration: prefersReducedMotion.current ? 0 : REVEAL_MS }}</code> on the node <code>li</code> (local, so nodes present at mount do not play it).</li>
+        </ul>
+        Write <code>TreeHost.svelte</code>.</li>
+      <li id="t6-s4"><input type="checkbox"> Run the spec, then the checks; all pass.
+        <pre><code data-lang="sh">npx vitest run --project client src/lib/game/ui/Tree.svelte.spec.ts
+npx vitest run --project server src/lib/game/ui/layout.spec.ts
+npm run check
+npm run lint</code></pre>
+      </li>
+      <li id="t6-s5"><input type="checkbox"> Commit, then run the timing check (clean).
+        <pre><code data-lang="sh">git add src/lib/game/ui/Tree.svelte src/lib/game/ui/Tree.svelte.spec.ts src/lib/game/ui/test/TreeHost.svelte
+git commit -m "feat(game-ui): the tree's branches, nodes and detail"
+npx chreode timing-check --head HEAD</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-7">
+    <h2>Task 7: Tree, Run, the next goal and the ending</h2>
+    <p>Delivers row U1. After this task all four U1 parts of part A exist (OpeningCard from Task 3, Tally from Task 4, GoalHeadline from Task 5, Tree from Tasks 6 and 7).</p>
+    <ul>
+      <li>Modify: <code>src/lib/game/ui/Tree.svelte</code></li>
+      <li>Test: <code>src/lib/game/ui/Tree.svelte.spec.ts</code></li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: Task 6's <code>Tree.svelte</code> and <code>TreeHost.svelte</code>; Task 1's <code>RUN</code>, <code>RUN_BUSY</code>, <code>balanceText</code>, <code>balanceName</code>, <code>takeNextText</code>, <code>ENDING_TITLE</code>, <code>endingReached</code>, <code>endingState</code>, <code>ENDING_LEVERS</code>, <code>perAddedHomeText</code>, <code>ENDING_LIFTED</code>, <code>PUBLISH</code>; <code>total</code> (G2); <code>Rung</code> (G6).</li>
+      <li>Produces: the full <code>Tree</code> of U1; test ids <code>tree-run</code>, <code>tree-busy</code>, <code>tree-next</code>, <code>tree-ending</code>, <code>tree-publish</code>.</li>
+    </ul>
+    <ol>
+      <li id="t7-s1"><input type="checkbox"> Add to the spec, from <code>sec-tests-tree</code>:
+        <ul>
+          <li><code>'the balance'</code>: <code>units: { home: 1652 }</code> shows <code>balanceText(1652)</code>, the mark hidden, <code>balanceName(1652)</code> as its text.</li>
+          <li><code>'Run has focus at mount and calls onrun'</code>.</li>
+          <li><code>'while busy Run says so and still calls onrun'</code>: <code>tree-busy</code> reads <code>RUN_BUSY</code> with <code>role="status"</code>; Run has <code>aria-busy="true"</code> and is described by it; a press calls <code>onrun</code>. Not busy: <code>tree-busy</code> is empty and Run has no <code>aria-busy</code>.</li>
+          <li><code>'Take the next goal'</code>: absent with <code>next</code> null; with <code>next: { deadline: dayFromUtc(2050, 12, 31), label: 'Dec 2050' }</code> shows <code>takeNextText('Dec 2050')</code> before Run and calls <code>onnext</code>; pressed, then rerendered with <code>next</code> null, focus is on Run.</li>
+          <li><code>'the ending'</code>: <code>ending</code> null: no <code>tree-ending</code>; with <code>{ reachedOn: dayFromUtc(2041, 3, 1), stateBy: dayFromUtc(2031, 1, 31), perAddedHome: 123456 }</code>: <code>tree-ending</code> comes before <code>tree-root</code> and holds <code>ENDING_TITLE</code>, <code>'Reached in Mar 2041'</code>, <code>'The state asks by Jan 2031'</code>, <code>ENDING_LEVERS</code> over the labels of the nodes with a level above 0 in the order of <code>nodes</code>, <code>perAddedHomeText(123456)</code>, <code>ENDING_LIFTED</code>, and Publish calling <code>onpublish</code>; with <code>perAddedHome</code> null no money line. Run stays.</li>
+          <li><code>'the tree fills its host and the footer sits at the bottom'</code>: <code>tree</code>'s rect height equals <code>tree-host</code>'s 600 px; the footer's bottom equals the tree's bottom, with more nodes than fit (the body scrolls).</li>
+          <li><code>'at 1280 px the detail is in the fifth column'</code>: its left is right of every <code>tree-branch</code>'s right; <code>'at 375 px it is inside the node's row and nothing scrolls sideways'</code>: the node's <code>li</code> contains <code>tree-detail</code>, and <code>document.documentElement.scrollWidth</code> is at most <code>innerWidth</code>.</li>
+          <li>Extend the 24 px and axe cases with Run, Take the next goal and Publish showing.</li>
+        </ul>
+      </li>
+      <li id="t7-s2"><input type="checkbox"> Run it and see the new cases fail.
+        <pre><code data-lang="sh">npx vitest run --project client src/lib/game/ui/Tree.svelte.spec.ts</code></pre>
+      </li>
+      <li id="t7-s3"><input type="checkbox"> Fill the footer from <code>sec-design-tree-footer</code> and the ending from <code>sec-design-tree-ending</code>; Run is focused in <code>onMount</code> (<code>sec-design-tree-keys</code>). Builder's call: a press on Take the next goal records it, and an <code>$effect</code> that sees <code>next</code> turn null after that press focuses Run, so a prop change with no press leaves focus alone.</li>
+      <li id="t7-s4"><input type="checkbox"> Run the spec, the other part A specs, then the checks; all pass.
+        <pre><code data-lang="sh">npx vitest run --project client src/lib/game/ui/Tree.svelte.spec.ts src/lib/game/ui/Tally.svelte.spec.ts src/lib/game/ui/GoalHeadline.svelte.spec.ts src/lib/game/ui/OpeningCard.svelte.spec.ts
+npx vitest run --project server src/lib/game/ui/words.spec.ts src/lib/game/ui/layout.spec.ts
+npm run check
+npm run lint</code></pre>
+      </li>
+      <li id="t7-s5"><input type="checkbox"> Commit, then run the timing check (clean).
+        <pre><code data-lang="sh">git add src/lib/game/ui/Tree.svelte src/lib/game/ui/Tree.svelte.spec.ts
+git commit -m "feat(game-ui): the tree's footer and the ending"
+npx chreode timing-check --head HEAD</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-open-questions">
+    <h2>Open questions</h2>
+    <aside data-kind="question"><strong>Escape in the tree</strong> <code>sec-design-tree-keys</code> says Escape with a detail open closes it, but not whether the key stops there (Tally's and the win card's do). The plan marks it handled (<code>preventDefault</code>) without stopping propagation, as the level cell does, and tests only the close and the focus. Recommendation: keep it so; a header overlay already ignores a handled Escape.</aside>
+    <aside data-kind="question"><strong>Whole percent</strong> <code>data-fill</code> is "a whole percent" (<code>sec-design-tally-lines</code>, <code>sec-design-headline-lines</code>) without saying round or floor. The plan rounds. Recommendation: round; tests use values where the two agree except the stage-scale case, which follows rounding.</aside>
+    <aside data-kind="question"><strong><code>balanceName(1)</code></strong> The spec gives only the plural example. The plan writes <code>'1 unit to spend'</code> through <code>unitsName</code> and does not test the singular. Recommendation: confirm.</aside>
+    <aside data-kind="question"><strong>A side goal with target 0</strong> The pop-over's bar is <code>min(1, value / target)</code>; a target of 0 gives <code>NaN</code> or infinity. The plan fills 0 for a target of 0 or less. Recommendation: confirm, or have <code>game-core</code> guarantee targets above 0.</aside>
+  </section>
+</article>
