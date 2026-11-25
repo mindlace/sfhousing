@@ -150,3 +150,44 @@ describe('buy', () => {
     expect(buy(s, id)).toEqual(buy(s, id, NODES));
   });
 });
+
+describe('the catalogue', () => {
+  const rich = { home: 1_000_000 };
+
+  it('a new game shows one node per branch at level 0', () => {
+    const views = treeView(NEW_GAME);
+    expect(ids(views)).toEqual(['sb423-clock', 'stop-rail', 'housing-bond', 'hands-radius']);
+    expect(views.map((v) => v.level)).toEqual([0, 0, 0, 0]);
+  });
+
+  it('buying stop-rail shows stop-metro and taller-1, and reach-1 once its ring is open', () => {
+    const ring = NODES.find((n) => n.id === 'reach-1')!.ring;
+    const bought = buy(game({ units: rich, rung: Math.max(ring - 1, 0) }), 'stop-rail');
+    if (!bought.ok) throw new Error('stop-rail refused');
+    const shownAt = (rung: number) => ids(treeView({ ...bought.state, rung }));
+    const before = shownAt(Math.max(ring - 1, 0));
+    expect(before).toContain('stop-metro');
+    expect(before).toContain('taller-1');
+    if (ring > 0) expect(before).not.toContain('reach-1');
+    expect(shownAt(ring)).toContain('reach-1');
+  });
+
+  it('public-bank shows after either general-revenue or revolving-fund', () => {
+    const top = Math.max(...NODES.map((n) => n.ring));
+    for (const id of ['general-revenue', 'revolving-fund']) {
+      expect(ids(treeView(game({ rung: top, bought: { [id]: 1 } })))).toContain('public-bank');
+    }
+    expect(ids(treeView(game({ rung: top, bought: { 'housing-bond': 1 } })))).not.toContain(
+      'public-bank'
+    );
+  });
+
+  it('buying taller-1 twice grants 6 then 8 stories', () => {
+    const base = game({ units: rich, bought: { 'stop-rail': 1 } });
+    const first = buy(base, 'taller-1');
+    expect(first.ok && first.grant).toEqual({ tag: 'stories', max: 6 });
+    if (!first.ok) return;
+    const second = buy(first.state, 'taller-1');
+    expect(second.ok && second.grant).toEqual({ tag: 'stories', max: 8 });
+  });
+});
