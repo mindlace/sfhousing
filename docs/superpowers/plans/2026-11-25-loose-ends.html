@@ -1,0 +1,146 @@
+<article>
+  <header>
+    <h1>Loose ends implementation plan</h1>
+    <p>Implements the loose-ends spec: the no-scenario message loses its dead link, the focused skip link goes in flow, Remix leaves the fixture words and one comment, and six developer documents name the simulation as it now is.</p>
+    <aside data-kind="note"><strong>For agentic workers</strong> REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps are checklist items; progress is kept in the workspace ledger, not in the plan.</aside>
+  </header>
+
+  <section id="sec-overview">
+    <h2>Overview</h2>
+    <ul>
+      <li><strong>Goal:</strong> clear the last untrue lines after <code>closing</code>: one link, one class list, one comment, test fixture words and six documents.</li>
+      <li><strong>Architecture:</strong> no new code paths. Four independent edits, each with the test that pins it: a Svelte snippet removed, a Tailwind class list shortened, fixture strings renamed, Markdown reworded.</li>
+      <li><strong>Tech Stack:</strong> SvelteKit 2, Svelte 5 runes, Tailwind 4, Vitest (client project), Playwright (projects <code>chromium</code> at 1280×720 and <code>mobile</code> at 375×812), axe via <code>e2e/helpers/a11y.ts</code>.</li>
+      <li><strong>Spec:</strong> <code>docs/superpowers/specs/2026-11-25-loose-ends-design.html</code> (sections <code>sec-design</code>, <code>sec-files</code>, <code>sec-tests</code>).</li>
+    </ul>
+  </section>
+
+  <section id="sec-global-constraints">
+    <h2>Global Constraints</h2>
+    <p>Interface rows: produced none, needed none. The design's global constraints, verbatim:</p>
+    <ul>
+      <li>One future: the same policy document always gives the same forecast. No game state reaches the worker except through the policy document.</li>
+      <li>No file the dataset version hashes is changed: <code>pipeline</code>, <code>src/lib/config.ts</code>, <code>src/lib/{data,generator,timelapse}</code>, <code>src/lib/plan/{geometry,types}.ts</code>, <code>src/lib/sim/finance</code> (<code>pipeline/lib/version.ts:41</code>). The dataset version stays as it is.</li>
+      <li>A policy node acts on a lever the code already has, at a value the code already sources. No node invents a value.</li>
+      <li>The painted area, own pools, the City funding scale and market terms are never offered in a game.</li>
+      <li>Published plans and policies open and play in full, as today.</li>
+      <li>WCAG 2.2 AA: everything works from the keyboard; targets are at least 24 px; motion follows the reduced-motion setting; nothing flashes more than three times a second.</li>
+      <li>Page text is short. A node is a name, a line and a price.</li>
+      <li>The CSP is not widened. Sound is made in the browser; no audio file, font or script is added.</li>
+      <li>A runtime dependency is not added without a credit in <code>src/lib/attribution.ts</code>. None is expected.</li>
+      <li>Code style: 2-space indent, single quotes, no trailing commas, 100 columns.</li>
+      <li>Vitest runs with <code>expect.requireAssertions</code>. Tests are colocated.</li>
+      <li>A schema change goes through <code>npm run db:generate</code>. Migrations are never edited by hand.</li>
+      <li>Signoff fails on server stderr, on timing crutches and on retried flakes. Timing is measured only on a quiet machine.</li>
+      <li>Port 4173 belongs to whichever session started the preview. Never kill it; wait.</li>
+      <li>Commits use Conventional Commits and carry no Claude attribution.</li>
+      <li>Work happens in git worktrees under <code>.claude/worktrees/</code>.</li>
+    </ul>
+    <p>Unit rules for every task: no <code>setTimeout</code>/<code>setInterval</code>, fixed waits or raised timeouts in any spec or helper; <code>npx chreode timing-check --head HEAD</code> clean after each task's last commit; each changed e2e spec passes with <code>--repeat-each=5 --retries=0</code>; no new preview-server stderr. Before Playwright, <code>lsof -nP -iTCP:4173 -sTCP:LISTEN</code>; if another session holds the port, wait, never kill.</p>
+  </section>
+
+  <section id="sec-review-focus">
+    <h2>Review Focus</h2>
+    <ul>
+      <li>The no-scenario message with no action must still render as a card (<code>Message</code> picks the shape from the words; an action-less card must not lose its padding or radius 8). Pinned in Task 1's <code>sim-activity.spec.ts</code> assertions.</li>
+      <li>The focused skip link in flow on the full-height map pages: the layout is <code>h-dvh</code> with <code>overflow-hidden</code>, so the extra height must not create a horizontal scroll or hide the header's targets. Pinned in Task 2 (axe plus the no-horizontal-scroll check with the link focused).</li>
+      <li>The skip link still the first Tab stop and still reaching <code>#main</code> once the absolute classes go. Already pinned by <code>checkStructure</code>; Task 2 keeps it.</li>
+      <li>An unused import (<code>BUTTON_QUIET</code>) left in <code>TimelineMode.svelte</code> after the snippet goes. Caught by <code>npm run lint</code> and <code>npm run check</code> in Task 1.</li>
+      <li>A document sentence reworded to name "the simulation" that is false of today's code (for example a <code>/sim</code> URL claim that is really a redirect). Task 4's review checks each changed sentence against the code.</li>
+    </ul>
+  </section>
+
+  <section id="sec-task-1">
+    <h2>Task 1: The no-scenario message carries no action</h2>
+    <ul>
+      <li>Modify: <code>src/lib/timeline/TimelineMode.svelte:2089-2099</code></li>
+      <li>Test: <code>e2e/fzp.spec.ts:574-580</code>, <code>e2e/sim-activity.spec.ts:255-265</code></li>
+    </ul>
+    <ul>
+      <li>Consumes: <code>Message</code> (<code>src/lib/shell/Message.svelte</code>), whose <code>actions</code> prop is optional.</li>
+      <li>Produces: nothing other tasks use.</li>
+    </ul>
+    <ol>
+      <li id="t1-s1"><input type="checkbox"> Change the tests. In <code>e2e/fzp.spec.ts</code> replace the "Go to the editor" assertion with <code>await expect(status.getByRole('link')).toHaveCount(0);</code>. In <code>e2e/sim-activity.spec.ts</code> keep the words, <code>data-shape</code> <code>card</code> and radius 8 assertions, delete the "link sits under the words" block, and add <code>await expect(status.getByRole('link')).toHaveCount(0);</code>. Update the test's title or comments if they mention the link.</li>
+      <li id="t1-s2"><input type="checkbox"> Run them and see them fail on the link count
+        <pre><code data-lang="sh">npx playwright test e2e/fzp.spec.ts e2e/sim-activity.spec.ts -g "available"</code></pre>
+        (use the actual test titles if <code>-g</code> matches nothing).</li>
+      <li id="t1-s3"><input type="checkbox"> In <code>TimelineMode.svelte</code> delete the <code>editorLink</code> snippet and the <code>actions={editorLink}</code> prop. The text, the <code>role="status"</code> wrapper and <code>testid="fzp-status"</code> stay. If the shape is no longer <code>card</code>, pass <code>shape="card"</code>. Remove <code>BUTTON_QUIET</code> from the imports only if nothing else in the file uses it.</li>
+      <li id="t1-s4"><input type="checkbox"> Run the two specs (both projects) and see them pass, then <code>--repeat-each=5 --retries=0</code> on them; run <code>npm run check</code> and <code>npm run lint</code>.</li>
+      <li id="t1-s5"><input type="checkbox"> Commit
+        <pre><code data-lang="sh">git commit -m "fix(sim): no-scenario message carries no editor link"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-2">
+    <h2>Task 2: The focused skip link sits in flow</h2>
+    <ul>
+      <li>Modify: <code>src/routes/+layout.svelte:43-47</code></li>
+      <li>Test: <code>e2e/game-a11y.spec.ts</code></li>
+    </ul>
+    <ul>
+      <li>Consumes: helpers already imported in the spec (<code>gotoEditor</code>, <code>treeAfterRun</code>, <code>focusBody</code>, <code>checkStructure</code>, <code>expectNoA11yViolations</code>).</li>
+      <li>Produces: nothing other tasks use.</li>
+    </ul>
+    <ol>
+      <li id="t2-s1"><input type="checkbox"> Add one test, <code>test('the skip link focused, on the tree and in the opening', …)</code>, run by both projects (1280 and 375 px): in the opening (<code>gotoEditor</code>), then on the tree (<code>treeAfterRun</code>), each time <code>focusBody</code>, press Tab, assert the "Skip to content" link is focused, assert no horizontal scroll (<code>scrollWidth &lt;= innerWidth</code>), then <code>await expectNoA11yViolations(page)</code> with the link still focused, and assert it is still focused after the scan.</li>
+      <li id="t2-s2"><input type="checkbox"> Run it and see it fail (axe <code>target-size</code> on the covered header targets)
+        <pre><code data-lang="sh">npx playwright test e2e/game-a11y.spec.ts -g "skip link focused"</code></pre>
+      </li>
+      <li id="t2-s3"><input type="checkbox"> In <code>+layout.svelte</code> the class becomes exactly <code>sr-only focus:not-sr-only focus:bg-white focus:px-3 focus:py-2</code> (drop <code>focus:absolute focus:top-2 focus:left-2 focus:z-50</code>). Words, <code>href="#main"</code> and its place before the header stay.</li>
+      <li id="t2-s4"><input type="checkbox"> In the test "a run, with reduced motion", delete the comment "Focus back on body: the focused skip link would lie over the header for the scan." and the <code>focusBody</code> call under it: the link no longer lies over anything.</li>
+      <li id="t2-s5"><input type="checkbox"> Run the whole <code>e2e/game-a11y.spec.ts</code> on both projects and see it pass, then <code>--repeat-each=5 --retries=0</code>; <code>npm run lint</code>.</li>
+      <li id="t2-s6"><input type="checkbox"> Commit
+        <pre><code data-lang="sh">git commit -m "fix(a11y): focused skip link sits in flow over no target"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-3">
+    <h2>Task 3: Words that name Remix</h2>
+    <ul>
+      <li>Modify: <code>src/lib/sim-page/sim-doc.ts:2</code> (comment only), <code>src/lib/paint/PaintTab.svelte.spec.ts:263,268</code>, <code>src/lib/sharing/NoticeStack.svelte.spec.ts:72-141</code>, <code>src/lib/sharing/autosave.svelte.spec.ts:260-262</code></li>
+    </ul>
+    <ul>
+      <li>Consumes: <code>MSG.readOnly</code> (find its module with Grep; its value is "Read-only.").</li>
+      <li>Produces: nothing other tasks use.</li>
+    </ul>
+    <ol>
+      <li id="t3-s1"><input type="checkbox"> <code>sim-doc.ts</code> line 2: the comment says the file holds the simulation's schema 3 policy document, which stored rows and old autosaves still hold. It names neither <code>/sim</code> nor Remix. No code changes.</li>
+      <li id="t3-s2"><input type="checkbox"> <code>PaintTab.svelte.spec.ts</code>: the intro "Read-only. Remix to edit." becomes <code>MSG.readOnly</code> (imported), in the fixture and in its assertion.</li>
+      <li id="t3-s3"><input type="checkbox"> <code>NoticeStack.svelte.spec.ts</code>: notice id <code>remix</code> becomes <code>saved</code>; "Remixed" becomes "Saved"; "Remixed toast" becomes "Saved toast". <code>autosave.svelte.spec.ts</code>: the title "Remixed" becomes "Handed off". Each test checks the same behaviour as before.</li>
+      <li id="t3-s4"><input type="checkbox"> Leave alone: <code>src/lib/config.ts</code>, the <code>DatasetNotice</code> value <code>'remix'</code> and its users and tests, and tests that assert Remix is gone.</li>
+      <li id="t3-s5"><input type="checkbox"> Run the three spec files and see them pass
+        <pre><code data-lang="sh">npx vitest run --project client src/lib/paint/PaintTab.svelte.spec.ts src/lib/sharing/NoticeStack.svelte.spec.ts src/lib/sharing/autosave.svelte.spec.ts</code></pre>
+        (use the client project's actual name from <code>vite.config.ts</code>); <code>npm run lint</code>.</li>
+      <li id="t3-s6"><input type="checkbox"> Commit
+        <pre><code data-lang="sh">git commit -m "test: fixture words no longer name Remix"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-4">
+    <h2>Task 4: The documents name the simulation</h2>
+    <ul>
+      <li>Modify: <code>docs/dev/{sim-page,timeline-ui,map-interfaces,map-stream,world-score,world-funding}.md</code></li>
+    </ul>
+    <ol>
+      <li id="t4-s1"><input type="checkbox"> List every <code>/sim</code> in the six files (about 62 today)
+        <pre><code data-lang="sh">grep -n "/sim\b" docs/dev/sim-page.md docs/dev/timeline-ui.md docs/dev/map-interfaces.md docs/dev/map-stream.md docs/dev/world-score.md docs/dev/world-funding.md</code></pre>
+      </li>
+      <li id="t4-s2"><input type="checkbox"> Titles: <code>sim-page.md</code> becomes "# The simulation page"; <code>timeline-ui.md</code> becomes "# The simulation's timeline".</li>
+      <li id="t4-s3"><input type="checkbox"> Each <code>/sim</code> naming the page becomes "the simulation"; each <code>/sim</code> as an address becomes <code>/</code>. Keep <code>/sim</code> only where a sentence says it redirects to <code>/</code>, in a test name or file path (<code>src/lib/sim-page</code>, <code>sim-*.ts</code> and the like are paths, not the page), and in a dated measurement row. Make each changed sentence true of the code as it is (check against <code>src/routes/+page.svelte</code>, <code>src/routes/sim/</code> and CLAUDE.md's Architecture).</li>
+      <li id="t4-s4"><input type="checkbox"> <code>sim-page.md</code> (about line 86): the quoted heading of <code>plan-sharing.md</code> becomes "Policies (the simulation)", and its anchor link, if any, matches that heading.</li>
+      <li id="t4-s5"><input type="checkbox"> Re-run the grep: every <code>/sim</code> left is one of the kept kinds. <code>npx prettier --check docs/dev</code> passes.</li>
+      <li id="t4-s6"><input type="checkbox"> Commit
+        <pre><code data-lang="sh">git commit -m "docs(dev): name the simulation, not /sim"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-done">
+    <h2>Done check (the operator runs it after Task 4)</h2>
+    <p><code>npm run check</code>, <code>npm run lint</code>, <code>npm run test:unit</code> and <code>npm run test:e2e</code> pass (port 4173 rule), no test passing only on retry; <code>npx chreode timing-check --head HEAD</code> clean.</p>
+  </section>
+</article>

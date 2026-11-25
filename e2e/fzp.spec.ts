@@ -573,7 +573,7 @@ test('a dataset without scenarios shows the message and starts no worker', async
 
   const status = page.getByTestId('fzp-status');
   await expect(status).toContainText("isn't available for dataset fixture-0");
-  await expect(status.getByRole('link', { name: 'Go to the editor' })).toBeVisible();
+  await expect(status.getByRole('link')).toHaveCount(0);
   // The page has mounted (a session would have started by now): no worker.
   await waitForMapOnly(page);
   expect(workers).toEqual([]);
