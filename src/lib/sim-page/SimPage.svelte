@@ -50,7 +50,7 @@
   import type { HeightCity, HeightLids } from '$lib/map/height/types';
   import { createOverlayMux } from '$lib/map/overlay-mux';
   import { useSystemTheme } from '$lib/map/system-theme.svelte';
-  import type { SimMapHandle } from '$lib/map/types';
+  import type { CameraFrame, SimMapHandle } from '$lib/map/types';
   import HistoryButtons from '$lib/paint/HistoryButtons.svelte';
   import { paintedOutlineLayers } from '$lib/paint/outline-layers';
   import PaintTab from '$lib/paint/PaintTab.svelte';
@@ -149,6 +149,8 @@
     timers?: { setTimeout: typeof setTimeout; clearTimeout: typeof clearTimeout };
     /** The current game; null: no game parts (the published view, the open game, tests). */
     game?: GameStore | null;
+    /** The map's opening camera, passed unchanged to TimelineMode. */
+    initialFrame?: CameraFrame;
   }
 
   let {
@@ -168,7 +170,8 @@
     storage = getStorage,
     fetchFn = undefined,
     timers = undefined,
-    game = null
+    game = null,
+    initialFrame = undefined
   }: Props = $props();
 
   const SIM = copyFor('sim');
@@ -1408,6 +1411,7 @@
   policy={store.policy}
   {run}
   {game}
+  {initialFrame}
   phase={phase ?? undefined}
   onphase={phase === null ? undefined : toPhase}
   tree={phase === null ? undefined : treePart}

@@ -12,6 +12,7 @@
   import { page } from '$app/state';
   import { reloadScenario } from '$lib/fzp/load';
   import { useGame } from '$lib/game/store.svelte';
+  import type { CameraFrame } from '$lib/map/types';
   import { getStorage } from '$lib/sharing/storage';
   import { addressHref, withoutSeed } from '$lib/timeline/address';
   import type { SimNotice4 } from '$lib/timeline/session4';
@@ -34,6 +35,8 @@
     upgradedFrom?: number;
     /** Tests: the page's storage, shared with the game in a test (default `localStorage`). */
     storage?: () => Storage | null;
+    /** The map's opening camera, passed unchanged to the page and TimelineMode. */
+    initialFrame?: CameraFrame;
   }
 
   let {
@@ -43,7 +46,8 @@
     initialText = undefined,
     opened = undefined,
     upgradedFrom = undefined,
-    storage = getStorage
+    storage = getStorage,
+    initialFrame = undefined
   }: Props = $props();
 
   const store = useGame();
@@ -83,6 +87,7 @@
       {upgradedFrom}
       {storage}
       game={g}
+      {initialFrame}
       reload={() => reloadScenario(data.datasetVersion)}
     />
   {/key}

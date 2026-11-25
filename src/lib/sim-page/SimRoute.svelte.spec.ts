@@ -1,18 +1,21 @@
-// /sim page (timeline-ui Task 15): a new load result remounts SimPage, the same one keeps it; the
-// URL names no future (rule 25, OD-4), so `?seed=` is dropped from the address with replaceState,
-// other parameters kept, and changes nothing. The real SimPage and TimelineMode run over a fake
-// timeline worker; SimMap is a stub.
+/// <reference types="@vitest/browser-playwright" />
+// SimRoute (timeline-ui Task 15, game-sim #sec-design-route): a new load result remounts SimPage,
+// the same one keeps it; the URL names no future (rule 25, OD-4), so `?seed=` is dropped from the
+// address with replaceState, other parameters kept, and changes nothing; the opening's camera
+// reaches the map. The real SimPage and TimelineMode run over a fake timeline worker; SimMap is a
+// stub.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import type { AfterNavigate } from '@sveltejs/kit';
 import { parseManifest } from '$lib/data/manifest';
 import { fixtureCalibration } from '$lib/fzp/fixtures/calibration';
 import { stub } from '$lib/fzp/test/sim-map-stub';
+import type { CameraFrame } from '$lib/map/types';
 import { DEFAULT_POLICY4 } from '$lib/timeline/policy4';
 import { SIM_KEY4 } from '$lib/timeline/sim-doc4';
 import type { FakeTimelineWorker } from '$lib/timeline/test/fake-timeline-worker';
 import manifestJson from '../../../e2e/fixtures/data/fixture-0/manifest.json';
-import Page from './+page.svelte';
+import SimRouteHost from './test/SimRouteHost.svelte';
 
 const nav = vi.hoisted(() => ({
   after: [] as ((n: AfterNavigate) => void)[],
@@ -64,7 +67,9 @@ function data() {
   };
 }
 
-describe('/sim page', () => {
+const FRAME = { center: [-122.42, 37.77], zoom: 15, bearing: 0, pitch: 0 } as CameraFrame;
+
+describe('SimRoute', () => {
   beforeEach(() => {
     stub.reset();
     workers.length = 0;
@@ -82,22 +87,22 @@ describe('/sim page', () => {
 
   it('remounts SimPage on a new load result and keeps it for the same one', async () => {
     const first = data();
-    const r = await render(Page, { props: { data: first, params: {} } });
+    const r = await render(SimRouteHost, { props: { data: first } });
     await expect.poll(() => workers.length).toBe(1);
     expect(workers[0].lastOf('openTimeline')!.policy).toEqual(DEFAULT_POLICY4);
 
-    await r.rerender({ data: first, params: {} });
+    await r.rerender({ data: first });
     await expect.poll(() => workers.length).toBe(1);
     expect(workers).toHaveLength(1);
 
-    await r.rerender({ data: data(), params: {} });
+    await r.rerender({ data: data() });
     await expect.poll(() => workers.length).toBe(2);
     expect(workers[0].terminated).toBe(true);
     expect(workers[1].terminated).toBe(false);
   });
 
   it('?seed= is removed from the URL and changes nothing', async () => {
-    await render(Page, { props: { data: data(), params: {} } });
+    await render(SimRouteHost, { props: { data: data() } });
     await expect.poll(() => workers.length).toBe(1);
     const sent = workers[0].posts.length;
 
@@ -117,9 +122,8 @@ describe('/sim page', () => {
     expect(nav.replaced.map((r) => r.url)).toEqual(['/sim?x=1&x=2#map', '/sim', '/sim?y=1']);
   });
 
-  it('is titled for the policy simulation', async () => {
-    await render(Page, { props: { data: data(), params: {} } });
-    await expect.poll(() => document.title).toBe('Policy simulation · SF Housing Simulator');
-    expect(document.querySelector('h1')?.textContent).toBe('Housing policy simulation');
+  it('initialFrame reaches SimMap', async () => {
+    render(SimRouteHost, { props: { data: data(), initialFrame: FRAME } });
+    await expect.poll(() => stub.props.initialFrame).toEqual(FRAME);
   });
 });

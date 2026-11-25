@@ -1,26 +1,21 @@
-// The /sim universal load (spec §4.1): manifest, calibration, scenario presence,
-// never the URL (`?seed=` and `start` are retired). Every failure is a flag, never a thrown 500.
+// The /sim scenario load (spec §4.1): manifest, calibration, scenario presence, never the URL
+// (`?seed=` and `start` are retired). Every failure is a flag, never a thrown 500.
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { manifestUrl, parseManifest } from '$lib/data/manifest';
 import { parseCalibration } from '$lib/timelapse/model';
 import manifestJson from '../../../e2e/fixtures/data/fixture-0/manifest.json';
 import calibrationJson from '../../../e2e/fixtures/data/fixture-0/scenarios/fzp/calibration.json';
-import { load as rawLoad, type SimPageData } from './+page';
+import { loadSimScenario } from './load';
 
-const load = async (e: LoadEvent) => (await rawLoad(e)) as SimPageData;
-
-type LoadEvent = Parameters<typeof rawLoad>[0];
 type FetchFn = (url: string) => Promise<Response>;
 
 const CAL_URL = manifestJson.scenarios.fzp.calibration;
 
-function event(fetchFn: FetchFn, search = ''): LoadEvent {
-  return {
-    fetch: fetchFn,
-    url: new URL(`http://localhost/sim${search}`),
-    parent: async () => ({ datasetVersion: 'fixture-0', appRelease: 'dev' })
-  } as unknown as LoadEvent;
-}
+/** The load's data without `fellBack`, which these cases do not compare. */
+const load = async (fetchFn: FetchFn) => {
+  const { fellBack: _fellBack, ...data } = await loadSimScenario('fixture-0', 'fixture-0', fetchFn);
+  return data;
+};
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
@@ -38,14 +33,14 @@ function files(over: Record<string, () => Response> = {}): ReturnType<typeof vi.
   });
 }
 
-describe('/sim load', () => {
+describe('loadSimScenario', () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
   it('returns the manifest and the parsed calibration when the manifest has scenarios.fzp', async () => {
     const fetchFn = files();
-    const result = await load(event(fetchFn));
+    const result = await load(fetchFn);
     expect(result).toEqual({
       manifest: parseManifest(manifestJson),
       manifestError: false,
@@ -59,7 +54,7 @@ describe('/sim load', () => {
   it('reports noScenario without fetching a calibration when the manifest has no scenarios', async () => {
     const { scenarios: _omit, ...plain } = manifestJson;
     const fetchFn = files({ [manifestUrl('fixture-0')]: () => json(plain) });
-    const result = await load(event(fetchFn));
+    const result = await load(fetchFn);
     expect(result).toMatchObject({
       manifestError: false,
       calibration: null,
@@ -73,7 +68,7 @@ describe('/sim load', () => {
   it('reports a manifest 404 as manifestError without throwing', async () => {
     const err = vi.spyOn(console, 'error').mockImplementation(() => {});
     const fetchFn = files({ [manifestUrl('fixture-0')]: () => json({}, 404) });
-    const result = await load(event(fetchFn));
+    const result = await load(fetchFn);
     expect(result).toEqual({
       manifest: null,
       manifestError: true,
@@ -86,7 +81,7 @@ describe('/sim load', () => {
 
   it('reports a calibration 404 as calibrationError', async () => {
     const err = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const result = await load(event(files({ [CAL_URL]: () => json({}, 404) })));
+    const result = await load(files({ [CAL_URL]: () => json({}, 404) }));
     expect(result).toMatchObject({
       manifestError: false,
       calibration: null,
@@ -100,9 +95,9 @@ describe('/sim load', () => {
   it('reports calibration JSON that is not valid as calibrationError', async () => {
     const err = vi.spyOn(console, 'error').mockImplementation(() => {});
     const bad = () => new Response('{not json', { status: 200 });
-    const result = await load(event(files({ [CAL_URL]: bad })));
+    const result = await load(files({ [CAL_URL]: bad }));
     expect(result).toMatchObject({ calibration: null, calibrationError: true });
-    const invalid = await load(event(files({ [CAL_URL]: () => json({ schema: 99 }) })));
+    const invalid = await load(files({ [CAL_URL]: () => json({ schema: 99 }) }));
     expect(invalid).toMatchObject({ calibration: null, calibrationError: true });
     expect(err).toHaveBeenCalledTimes(2);
   });
@@ -112,22 +107,21 @@ describe('/sim load', () => {
     const down = vi.fn<FetchFn>(async () => {
       throw new TypeError('Failed to fetch');
     });
-    await expect(load(event(down))).resolves.toMatchObject({ manifestError: true });
+    await expect(load(down)).resolves.toMatchObject({ manifestError: true });
     const calDown = files({
       [CAL_URL]: () => {
         throw new TypeError('Failed to fetch');
       }
     });
-    await expect(load(event(calDown))).resolves.toMatchObject({
+    await expect(load(calDown)).resolves.toMatchObject({
       manifestError: false,
       calibration: null,
       calibrationError: true
     });
   });
 
-  it('?seed= and the retired start parameter are not read', async () => {
-    const data = await load(event(files(), '?start=fzp&seed=5&x=1'));
-    expect(data).toEqual(await load(event(files())));
+  it('the load takes no URL: the result has no seed or start', async () => {
+    const data = await load(files());
     expect('seed' in data).toBe(false);
     expect('start' in data).toBe(false);
   });
