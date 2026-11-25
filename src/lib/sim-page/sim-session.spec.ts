@@ -84,14 +84,10 @@ describe('restoreSimDoc', () => {
     expect(restoreSimDoc({ plan: r.doc, notice: null }, cal).notices).toEqual([]);
   });
 
-  it('remixFrom adds the toast after the other notices', () => {
-    const r = restoreSimDoc({ plan: doc(), notice: { kind: 'corrupt' } }, cal, 'SD permits');
-    expect(r.notices.map((n) => n.id)).toEqual(['corrupt', 'remix']);
-    expect(r.notices[1]).toEqual({
-      id: 'remix',
-      text: "Remixed from SD permits. You're editing your own copy.",
-      tone: 'toast'
-    });
+  it('restoreSimDoc takes no Remix label', () => {
+    expect(restoreSimDoc.length).toBe(2);
+    const r = restoreSimDoc({ plan: doc(), notice: { kind: 'corrupt' } }, cal);
+    expect(r.notices.map((n) => n.id)).toEqual(['corrupt']);
   });
 
   it('a null calibration skips the reconcile and keeps the notices', () => {
@@ -138,7 +134,7 @@ describe('restoreSimDoc funding report', () => {
     expect(restoreSimDoc({ plan: same, notice: null }, cal).doc).toBe(same);
   });
 
-  it('funding notices sit between the autosave notice and timing, before remix', () => {
+  it('funding notices sit between the autosave notice and timing', () => {
     const d = sdDoc();
     const tampered: SimDoc = {
       ...d,
@@ -162,16 +158,14 @@ describe('restoreSimDoc funding report', () => {
         notice: { kind: 'rebased', from: 'fixture-old', to: 'fixture-0' },
         upgradedFrom: 2
       },
-      bare as Calibration,
-      'abc'
+      bare as Calibration
     );
     expect(r.notices.map((n) => n.id)).toEqual([
       'rebased',
       'funding-added',
       'funding-dropped',
       'funding-off',
-      'timing',
-      'remix'
+      'timing'
     ]);
   });
 });

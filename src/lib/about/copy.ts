@@ -59,10 +59,10 @@ export const MEANINGS: readonly {
   {
     term: 'The goal',
     body:
-      `${formatCount(GOAL_BASE.amount)} ${GOAL_BASE.measure.unit} by the end of the ` +
-      `${WINDOW_MONTHS / 12}-year window, counted from ${formatMonthYear(GOAL_BASE.countsFrom)}, so ` +
-      "homes built since then count. It is San Francisco's share of RHNA 2023–2031, the state's " +
-      `Regional Housing Needs Allocation, which asks for them by ${formatMonthYear(RHNA_DEADLINE)}.`,
+      `${formatCount(GOAL_BASE.amount)} ${GOAL_BASE.measure.unit} by the deadline, ` +
+      `counted from ${formatMonthYear(GOAL_BASE.countsFrom)}, so homes built since then count. ` +
+      "It is San Francisco's share of RHNA 2023–2031, the state's Regional Housing Needs " +
+      `Allocation, which asks for them by ${formatMonthYear(RHNA_DEADLINE)}.`,
     source: { label: goalSource.label, url: goalSource.url }
   },
   {
@@ -70,8 +70,16 @@ export const MEANINGS: readonly {
     body: `The state asks for room for at least ${bufferPercent}% more: ${formatCount(bufferAmount(GOAL_BASE))} ${GOAL_BASE.measure.unit}.`
   },
   {
-    term: 'To beat',
-    body: 'The month you reached the goal when you last levelled up. Reach the goal in an earlier month to win the level.'
+    term: 'The deadline',
+    body:
+      `When the goal must be met. The first is the end of the ${WINDOW_MONTHS / 12}-year ` +
+      'window; each later one is five or more years earlier. Taking the next one is your choice.'
+  },
+  {
+    term: 'Units',
+    body:
+      'Homes you collected during a run. Every completed home counts toward the goal; only ' +
+      'collected homes become units to spend in the tree.'
   }
 ];
 
@@ -80,25 +88,32 @@ export const YOUR_PLANS: readonly [string, string] = [
   'Reopening a saved plan uses the current data, so its totals can change.'
 ];
 
-/** Using it: the five levels, in order. */
-export const LEVELS: readonly string[] = [
-  'Level 1: paint room for the goal. Winning opens the simulation.',
-  'Level 2: play current law to the goal.',
-  'Level 3: change permitting, and beat the month you reached at level 2.',
-  'Level 4: change zoning too, and beat your month to beat.',
-  'Level 5: add the public money on offer, and beat your month to beat.'
+/** Using it: the game, in order. */
+export const GAME_STEPS: readonly string[] = [
+  'Paint room for the goal. Meeting it starts your first run.',
+  'A run plays the forecast from today to the deadline. Sweep the pointer over finished projects to collect their homes before they fade.',
+  'After a run, the tally shows homes by the deadline, the units you collected and where the other homes stand.',
+  'Between runs, spend units in the tree. What you buy is in force from today, and you can switch it off and on.',
+  'Meet the goal to be offered an earlier deadline. Taking it is your choice.'
 ];
 
-export const LEVEL_NOTES: readonly string[] = [
-  'Levelling up is your choice. Your policies stay, and the clock goes back to today.',
-  'A month to beat keeps the data it was earned on. After a data update your policy may reach the goal in another month; the month to beat stays.',
-  'A published policy plays in full for everyone, whatever their level.'
+export const GAME_NOTES: readonly string[] = [
+  'Painting happens once, at the start, to show how much has to be built. The simulation runs your policy.',
+  'Collect for me, behind the unit count, collects every drop as it appears.',
+  'A deadline once met stays met after a data update.',
+  'A published policy plays in full for everyone.'
 ];
 
 export const SAVED_GAMES: readonly string[] = [
-  `Each saved game has its own level, months to beat, plan and policy. You can keep ${MAX_SAVES}.`,
-  'Remix makes a new saved game from a published plan or policy, at your current level.',
+  `Each saved game has its own plan, policy, units, purchases and deadlines met. You can keep ${MAX_SAVES}.`,
+  'The unit count in the header opens your saved games.',
   'Games are saved in this browser, and to your account from your first win.'
+];
+
+/** About's Run table: the keys of a run (R1). */
+export const RUN_SHORTCUTS: readonly { keys: string; action: string }[] = [
+  { keys: '← ↑ → ↓', action: 'Move the collecting ring (during a run)' },
+  { keys: 'Shift + ← ↑ → ↓', action: 'Move the collecting ring further' }
 ];
 
 export const WORKED_OUT = 'How this is worked out';

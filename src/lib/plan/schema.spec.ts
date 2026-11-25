@@ -210,7 +210,7 @@ describe('parsePlan', () => {
         { path: '/schema', code: 'future-schema', message: FUTURE_SCHEMA_MESSAGE }
       ]);
     expect(FUTURE_SCHEMA_MESSAGE).toBe(
-      'This plan was made with a newer version of SF Housing Simulator. Reload the page to get the latest version.'
+      'This plan was made with a newer version of SF Housing. Reload the page to get the latest version.'
     );
   });
 

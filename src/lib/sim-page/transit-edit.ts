@@ -5,6 +5,7 @@
  * whatever order a saved rule had. Band indexes count innermost first. Pure TS.
  */
 import { newOpId } from '$lib/brush/ids';
+import type { Limits } from '$lib/game/limits';
 import { STORIES_MAX, STORIES_MIN } from '$lib/plan/constants';
 import { STOP_TYPES, type StopType } from '$lib/sim/levers/brushes';
 import { ruleTarget } from './brush-summary';
@@ -50,24 +51,56 @@ export function layerTop(r: ZoningRule): number {
 /** A range whose floor wins if a saved rule left it upside down. */
 const range = (min: number, max: number) => ({ min, max: Math.max(min, max) });
 
+/** What the bought limits let the editor offer (game-sim: limits). */
+export interface TransitCap {
+  stops: ReadonlySet<StopType>;
+  bands: number;
+  stories: number;
+  reachM: number;
+}
+
+/** No limits: every stop type, the editor's own tops. */
+export const OPEN_CAP: TransitCap = Object.freeze({
+  stops: new Set<StopType>(STOP_TYPES),
+  bands: MAX_BANDS,
+  stories: STORIES_MAX,
+  reachM: BAND_MAX_M
+});
+
+/** The cap a Limits sets: open limits give OPEN_CAP, else each count is held to the editor's top. */
+export function capOf(l: Limits): TransitCap {
+  if (l.open) return OPEN_CAP;
+  return {
+    stops: l.stops,
+    bands: Math.min(l.bands, MAX_BANDS),
+    stories: Math.min(l.stories, STORIES_MAX),
+    reachM: Math.min(l.reachM, BAND_MAX_M)
+  };
+}
+
 /** Bounds for band i (innermost first): stories between the outer band's and the inner band's. */
 export function storiesRange(
   bands: readonly TransitBand[],
-  i: number
+  i: number,
+  cap: TransitCap = OPEN_CAP
 ): { min: number; max: number } {
   const s = bandsInnermostFirst(bands);
-  return range(s[i + 1]?.stories ?? STORIES_MIN, s[i - 1]?.stories ?? STORIES_MAX);
+  return range(
+    s[i + 1]?.stories ?? STORIES_MIN,
+    Math.min(s[i - 1]?.stories ?? STORIES_MAX, cap.stories)
+  );
 }
 
-/** Bounds for band i's distance: strictly between its neighbours, 1 m to BAND_MAX_M. */
+/** Bounds for band i's distance: strictly between its neighbours, 1 m to the cap's reach. */
 export function distanceRange(
   bands: readonly TransitBand[],
-  i: number
+  i: number,
+  cap: TransitCap = OPEN_CAP
 ): { min: number; max: number } {
   const s = bandsInnermostFirst(bands);
   const inner = s[i - 1];
   const outer = s[i + 1];
-  return range(inner ? inner.maxM + 1 : 1, outer ? outer.maxM - 1 : BAND_MAX_M);
+  return range(inner ? inner.maxM + 1 : 1, outer ? outer.maxM - 1 : cap.reachM);
 }
 
 const clamp = (n: number, { min, max }: { min: number; max: number }) =>
@@ -78,28 +111,43 @@ function setBand(
   i: number,
   field: 'stories' | 'maxM',
   n: number,
-  bounds: (bands: readonly TransitBand[], i: number) => { min: number; max: number }
+  bounds: (
+    bands: readonly TransitBand[],
+    i: number,
+    cap: TransitCap
+  ) => { min: number; max: number },
+  cap: TransitCap
 ): ZoningRule {
   const bands = bandsInnermostFirst(r.bands);
   if (!bands[i] || Number.isNaN(n)) return { ...r, bands };
-  const value = clamp(n, bounds(bands, i));
+  const value = clamp(n, bounds(bands, i, cap));
   return { ...r, bands: bands.map((b, k) => (k === i ? { ...b, [field]: value } : b)) };
 }
 
-export function setBandStories(r: ZoningRule, i: number, n: number): ZoningRule {
-  return setBand(r, i, 'stories', n, storiesRange);
+export function setBandStories(
+  r: ZoningRule,
+  i: number,
+  n: number,
+  cap: TransitCap = OPEN_CAP
+): ZoningRule {
+  return setBand(r, i, 'stories', n, storiesRange, cap);
 }
 
-export function setBandDistance(r: ZoningRule, i: number, m: number): ZoningRule {
-  return setBand(r, i, 'maxM', m, distanceRange);
+export function setBandDistance(
+  r: ZoningRule,
+  i: number,
+  m: number,
+  cap: TransitCap = OPEN_CAP
+): ZoningRule {
+  return setBand(r, i, 'maxM', m, distanceRange, cap);
 }
 
-/** null when MAX_BANDS exist or the outermost is at BAND_MAX_M. New band: step out, same stories. */
-export function addBand(r: ZoningRule): ZoningRule | null {
+/** null at cap.bands bands or with the outermost at cap.reachM. New band: step out, same stories. */
+export function addBand(r: ZoningRule, cap: TransitCap = OPEN_CAP): ZoningRule | null {
   const bands = bandsInnermostFirst(r.bands);
   const outer = bands.at(-1);
-  if (!outer || bands.length >= MAX_BANDS || outer.maxM >= BAND_MAX_M) return null;
-  const maxM = Math.min(outer.maxM + NEW_BAND_STEP_M, BAND_MAX_M);
+  if (!outer || bands.length >= cap.bands || outer.maxM >= cap.reachM) return null;
+  const maxM = Math.min(outer.maxM + NEW_BAND_STEP_M, cap.reachM);
   return { ...r, bands: [...bands, { maxM, stories: outer.stories }] };
 }
 
@@ -110,9 +158,17 @@ export function removeBand(r: ZoningRule, i: number): ZoningRule | null {
   return { ...r, bands: bands.filter((_, k) => k !== i) };
 }
 
-/** null when it would turn off the last stop type; stop types kept in STOP_TYPES order. */
-export function toggleStop(r: ZoningRule, t: StopType): ZoningRule | null {
+/**
+ * null when it would turn off the last stop type, or turn on one outside the cap; stop types kept
+ * in STOP_TYPES order.
+ */
+export function toggleStop(
+  r: ZoningRule,
+  t: StopType,
+  cap: TransitCap = OPEN_CAP
+): ZoningRule | null {
   const on = r.stopTypes.includes(t);
+  if (!on && !cap.stops.has(t)) return null;
   const stopTypes = STOP_TYPES.filter((s) => (s === t ? !on : r.stopTypes.includes(s)));
   if (stopTypes.length === 0) return null;
   return { ...r, stopTypes, bands: bandsInnermostFirst(r.bands) };

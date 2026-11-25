@@ -1,14 +1,2 @@
-<script lang="ts">
-  // /sim (spec §4.1, §4.2, §4.7; plan 3): the policy simulation (which opens on the
-  // Family Zoning Plan comparison). The body (the URL seed, the remounts) is SimRoute, shared with
-  // /s/<id>.
-  import SimRoute from '$lib/sim-page/SimRoute.svelte';
-  import type { PageProps } from './$types';
-
-  let { data }: PageProps = $props();
-</script>
-
-<svelte:head><title>Policy simulation · SF Housing Simulator</title></svelte:head>
-
-<h1 class="sr-only">Housing policy simulation</h1>
-<SimRoute {data} mode="edit" persist="restore" />
+<!-- Never rendered: its load always redirects. -->
+<!-- /sim redirects to / (one address); see +page.ts. -->

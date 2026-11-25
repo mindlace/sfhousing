@@ -74,7 +74,7 @@ describe('constants', () => {
     expect(MSG.cityFailed).toBe("Couldn't load city data.");
     expect(MSG.loadingParcels).toBe('Loading parcels…');
     expect(MSG.zoomIn).toBe('Zoom in to see the brush');
-    expect(MSG.readOnly).toBe('Read-only. Remix to edit.');
+    expect(MSG.readOnly).toBe('Read-only.');
     expect(MSG.start).toBe('Pick a height, then paint the map.');
     expect(MSG.eraseHint).toBe('Erase removes painted height');
     expect(MSG.tooLarge).toBe('Plan too large to save. Undo some strokes.');

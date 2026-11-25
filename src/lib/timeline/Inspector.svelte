@@ -8,8 +8,9 @@
   - a policy: its switch, Move up / Move down and Remove (rule 13), When (WhenEditor) and What
     (WhatEditor, today's editors on the selected span through `spanLens`). A refused edit's
     reason shows in the alert line.
-  `allowed` (the game's level, G3): "+" offers only what it allows, and while `money` is 'given' a
-  given measure's What is `PolicySummary`; its switch, order, Remove and When edit as today.
+  `limits` (what is bought): "+" offers only what they allow, adds fitted to them, and under closed
+  limits a given measure's What is `PolicySummary`; its switch, order, Remove and When edit as
+  today.
   Read-only (rule 17): When as text, What as `PolicySummary`; nothing edits. Selecting another
   policy, opening "+" or closing discards an unfinished funding draft and says so (rule 15). Close
   and Escape call `onclose` (the page focuses the selected bar) and then clear the selection.
@@ -17,7 +18,7 @@
 -->
 <script lang="ts">
   import { tick, untrack, type Snippet } from 'svelte';
-  import { ALL_ALLOWED, isGiven, type Allowed } from '$lib/game/allowed';
+  import { isGiven, OPEN_LIMITS, type Limits } from '$lib/game/limits';
   import type { BrushCatalog } from '$lib/sim/levers/brushes';
   import { FINANCE_LIMITS } from '$lib/sim/levers/finance';
   import { marketLevel } from '$lib/sim/scenario/market';
@@ -75,8 +76,8 @@
     paint: Snippet;
     /** The kind whose "+" menu is open (the timeline's "+" sets it), or null. */
     adding?: PolicyKind | null;
-    /** What the level allows: "+" offers only that, and a given measure's What is read-only. */
-    allowed?: Allowed;
+    /** What is bought: "+" offers only that, and a given measure's What is read-only. */
+    limits?: Limits;
   }
 
   let {
@@ -94,7 +95,7 @@
     onclose,
     paint,
     adding = $bindable(null),
-    allowed = ALL_ALLOWED
+    limits = OPEN_LIMITS
   }: Props = $props();
 
   const uid = $props.id();
@@ -285,7 +286,12 @@
   function add(choice: AddChoice, label: string): boolean {
     let r: ReturnType<typeof addPolicy>;
     try {
-      r = addPolicy(store.policy, choice, { w, month: playheadMonth, cal: calibration });
+      r = addPolicy(store.policy, choice, {
+        w,
+        month: playheadMonth,
+        cal: calibration,
+        limits
+      });
     } catch (e) {
       if (e instanceof AddLimitError) {
         addAlert = limitAlert(e.limit);
@@ -390,7 +396,7 @@
     </div>
 
     {#if menu !== null}
-      <AddMenu kind={menu} {calibration} doc={store.policy} {allowed} onpick={pick} />
+      <AddMenu kind={menu} {calibration} doc={store.policy} {limits} onpick={pick} />
       <p role="alert" class={alertClass(addAlert)}>{addAlert}</p>
     {:else if poolDraft !== null}
       <ul class="flex flex-col">
@@ -453,6 +459,7 @@
           {drafts}
           {playheadDay}
           {readonly}
+          {limits}
           {announce}
           onremove={removeThis}
           {paint}
@@ -481,7 +488,8 @@
           {catalog}
           {drafts}
           {playheadDay}
-          readonly={readonly || (allowed.money === 'given' && isGiven(policy))}
+          readonly={readonly || (!limits.open && isGiven(policy))}
+          {limits}
           {announce}
           onremove={removeThis}
           {paint}

@@ -434,54 +434,13 @@ describe('Playhead', () => {
     expect(document.querySelector('[data-testid=tl-goal-flag]')).toBeNull();
   });
 
-  describe('the bar flag', () => {
-    const deadline = dayFromUtc(2066, 10, 31);
-    const flags = () => document.querySelectorAll('[data-testid=tl-bar-flag]');
-    const describedBy = () =>
+  it('draws no To beat flag and says no To beat sentence', async () => {
+    await setup({ goalDeadline: dayFromUtc(2030, 11, 31) });
+    expect(document.querySelector('[data-testid=tl-bar-flag]')).toBeNull();
+    const description =
       document.getElementById(byId('tl-ruler').getAttribute('aria-describedby') ?? '')
         ?.textContent ?? '';
-
-    it('sits at its date beside the Goal flag, and the ruler names it', async () => {
-      const bar = dayFromUtc(2057, 6, 1);
-      await setup({ goalDeadline: deadline, barDay: bar, last: WINDOW_END, end: WINDOW_END });
-      expect(flags()).toHaveLength(1);
-      const el = byId('tl-bar-flag');
-      expect(el.textContent).toBe('To beat');
-      expect(el.getAttribute('aria-hidden')).toBe('true');
-      const t = rect(byId('tl-track'));
-      const want = ((bar - ASOF) / (WINDOW_END - ASOF)) * 100;
-      near(parseFloat(el.style.left), want, 'left percent', 0.01);
-      near(centre(rect(el)), t.left + (want / 100) * t.width, 'bar flag place');
-      await expect.element(page.getByTestId('tl-goal-flag')).toBeInTheDocument();
-      expect(describedBy().endsWith('To beat June 2057.')).toBe(true);
-    });
-
-    it('a bar within 30 months of the deadline merges with the Goal flag', async () => {
-      const goalDeadline = dayFromUtc(2031, 1, 31);
-      const { view } = await setup({ goalDeadline, barDay: dayFromUtc(2028, 8, 1) });
-      expect(flags()).toHaveLength(1);
-      expect(byId('tl-bar-flag').textContent).toBe('Goal · To beat');
-      near(centre(rect(byId('tl-bar-flag'))), xOf(goalDeadline), 'merged place');
-      expect(document.querySelector('[data-testid=tl-goal-flag]')).toBeNull();
-      // Exactly 30 months: two flags.
-      await view.rerender({ barDay: dayFromUtc(2028, 7, 1) });
-      expect(flags()).toHaveLength(1);
-      expect(byId('tl-bar-flag').textContent).toBe('To beat');
-      expect(document.querySelector('[data-testid=tl-goal-flag]')).not.toBeNull();
-    });
-
-    it('the bar alone', async () => {
-      await setup({ goalDeadline: null, barDay: dayFromUtc(2040, 3, 1) });
-      expect(flags()).toHaveLength(1);
-      expect(byId('tl-bar-flag').textContent).toBe('To beat');
-      expect(document.querySelector('[data-testid=tl-goal-flag]')).toBeNull();
-    });
-
-    it("no barDay, no flag, and the description is today's", async () => {
-      await setup({ goalDeadline: deadline });
-      expect(flags()).toHaveLength(0);
-      expect(describedBy()).not.toContain('To beat');
-    });
+    expect(description).not.toContain('To beat');
   });
 
   it('every target is at least 24 px, the same on every pointer', async () => {

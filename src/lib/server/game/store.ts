@@ -6,8 +6,9 @@ import type { BatchItem } from 'drizzle-orm/batch';
 import type { Database } from '$lib/server/db';
 import { gameSave, handleTombstone } from '$lib/server/db/schema';
 import type { AccountLine } from '$lib/game/save-api';
-import { MAX_SAVES, parseGameSave, type GameSave, type SaveEntry } from '$lib/game/saves';
-import type { Level } from '$lib/game/levels';
+import { MAX_SAVES } from '$lib/game/saves';
+import { parseGameSave, type GameSave, type SaveEntry } from '$lib/game/save-shape';
+import type { GameState } from '$lib/game/state';
 import { newId } from '$lib/ids/base58';
 
 export const REMOVED_LIST_DAYS = 90;
@@ -54,7 +55,8 @@ export async function listGames(
       name: gameSave.name,
       nameIsDefault: sql<number>`json_extract(${gameSave.body}, '$.nameIsDefault')`,
       savedAt: gameSave.savedAt,
-      level: gameSave.level,
+      phase: gameSave.phase,
+      rung: gameSave.rung,
       rev: gameSave.rev
     })
     .from(gameSave)
@@ -77,7 +79,8 @@ export async function listGames(
       name: r.name,
       nameIsDefault: Boolean(r.nameIsDefault),
       savedAt: r.savedAt.toISOString(),
-      level: r.level as Level,
+      phase: r.phase as GameState['phase'],
+      rung: r.rung,
       rev: r.rev
     })),
     removed: removed.map((r) => r.id)
@@ -120,8 +123,8 @@ export async function putGame(
   if (!row) {
     // The guards live in the write: no row under this id, and fewer than MAX_SAVES live rows.
     const inserted = await db.all<{ rev: number }>(sql`
-      INSERT INTO game_save (identity_id, id, rev, name, level, body, saved_at, removed_at)
-      SELECT ${identityId}, ${save.id}, 1, ${save.name}, ${save.progress.level}, ${body},
+      INSERT INTO game_save (identity_id, id, rev, name, phase, rung, body, saved_at, removed_at)
+      SELECT ${identityId}, ${save.id}, 1, ${save.name}, ${save.state.phase}, ${save.state.rung}, ${body},
         ${savedAt.getTime()}, NULL
       WHERE NOT EXISTS (
           SELECT 1 FROM game_save WHERE identity_id = ${identityId} AND id = ${save.id}
@@ -143,7 +146,8 @@ export async function putGame(
       rev: sql`${gameSave.rev} + 1`,
       body,
       name: save.name,
-      level: save.progress.level,
+      phase: save.state.phase,
+      rung: save.state.rung,
       savedAt
     })
     .where(and(rowKey(identityId, save.id), eq(gameSave.rev, baseRev), isNull(gameSave.removedAt)))

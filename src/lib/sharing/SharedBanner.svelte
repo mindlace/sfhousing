@@ -1,12 +1,6 @@
-<script module lang="ts">
-  export type RemixState =
-    { kind: 'ready'; note: string | null } | { kind: 'locked' } | { kind: 'full' } | null;
-</script>
-
 <script lang="ts">
-  import { FULL_TEXT } from '$lib/game/copy';
-  import { BUTTON, BUTTON_PRIMARY } from '$lib/shell/ui';
-  import { REMIX_LOCKED, YOUR_GAME, copyFor, formatPublished } from './copy';
+  import { BUTTON } from '$lib/shell/ui';
+  import { YOUR_GAME, copyFor, formatPublished } from './copy';
   import type { DocKind } from './doc-codec';
 
   // Mirrors DatasetNotice in $lib/server/sharing/shared-page (kept local: client code).
@@ -19,11 +13,7 @@
     datasetNotice,
     planVersion,
     currentVersion,
-    kind,
-    remix,
-    error = null,
-    gameHref,
-    onremix
+    kind
   }: {
     title?: string;
     id: string;
@@ -32,11 +22,6 @@
     planVersion: string;
     currentVersion: string;
     kind: DocKind;
-    remix: RemixState;
-    error?: string | null;
-    /** The current game's page. */
-    gameHref: string;
-    onremix: () => void;
   } = $props();
 
   const copy = $derived(copyFor(kind));
@@ -48,12 +33,6 @@
         ? copy.n6(planVersion, currentVersion)
         : undefined
   );
-
-  const disabled = $derived(remix?.kind === 'locked' || remix?.kind === 'full');
-
-  function press() {
-    if (remix?.kind === 'ready') onremix();
-  }
 </script>
 
 <!-- Sticky at the top of the /p/:id and /s/:id page column; every row wraps at 375 px. -->
@@ -67,30 +46,10 @@
       {formatPublished(createdAt)}
     </p>
     <div class="flex flex-wrap gap-2">
-      {#if remix}
-        <button type="button" class={BUTTON_PRIMARY} aria-disabled={disabled} onclick={press}>
-          {remix.kind === 'locked' ? REMIX_LOCKED : 'Remix'}
-        </button>
-      {/if}
-      <a href={gameHref} class={BUTTON}>{YOUR_GAME}</a>
+      <a href="/" class={BUTTON}>{YOUR_GAME}</a>
     </div>
   </div>
-  {#if remix?.kind === 'ready' && remix.note}
-    <p class="mt-2">{remix.note}</p>
-  {:else if remix?.kind === 'full'}
-    <p class="mt-2">{FULL_TEXT}</p>
-  {/if}
-  {#if error}
-    <p role="alert" class="mt-2">{error}</p>
-  {/if}
   {#if notice}
-    <div class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2">
-      <p class="min-w-0 flex-1 basis-64">{notice}</p>
-      {#if remix}
-        <button type="button" class={BUTTON} aria-disabled={disabled} onclick={press}>
-          Open with current data
-        </button>
-      {/if}
-    </div>
+    <p class="mt-2">{notice}</p>
   {/if}
 </section>

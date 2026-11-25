@@ -11,11 +11,16 @@ import {
   type ZoningRule
 } from './policy';
 import { ruleTarget } from './brush-summary';
+import { OPEN_LIMITS } from '$lib/game/limits';
+import { limitsWith } from '$lib/timeline/test/limits';
 import {
   BAND_MAX_M,
   MAX_BANDS,
   NEW_BAND_STEP_M,
+  OPEN_CAP,
+  type TransitCap,
   addBand,
+  capOf,
   distanceRange,
   layerName,
   layerTop,
@@ -33,6 +38,57 @@ const rule = (bands: TransitBand[], stopTypes: StopType[] = ['metro']): ZoningRu
   kind: 'transit',
   stopTypes,
   bands
+});
+
+const cap: TransitCap = { stops: new Set(['metro']), bands: 2, stories: 8, reachM: 805 };
+
+describe('transit-edit caps', () => {
+  it('OPEN_CAP and capOf', () => {
+    expect(OPEN_CAP).toEqual({
+      stops: new Set(STOP_TYPES),
+      bands: 3,
+      stories: STORIES_MAX,
+      reachM: 3219
+    });
+    expect(capOf(OPEN_LIMITS)).toBe(OPEN_CAP);
+    expect(
+      capOf(limitsWith({ stops: new Set(['metro']), bands: 5, stories: 8, reachM: 5000 }))
+    ).toEqual({ stops: new Set(['metro']), bands: 3, stories: 8, reachM: 3219 });
+  });
+
+  it('stories stop at the cap', () => {
+    const r = rule([{ maxM: 402, stories: 6 }], ['metro']);
+    expect(storiesRange(r.bands, 0, cap).max).toBe(8);
+    expect(setBandStories(r, 0, 12, cap).bands[0].stories).toBe(8);
+  });
+
+  it('the outermost distance stops at the cap', () => {
+    const r = rule([{ maxM: 402, stories: 6 }], ['metro']);
+    expect(distanceRange(r.bands, 0, cap).max).toBe(805);
+    expect(setBandDistance(r, 0, 2000, cap).bands[0].maxM).toBe(805);
+  });
+
+  it('+ Band stops at the cap', () => {
+    expect(addBand(rule([{ maxM: 402, stories: 6 }]), cap)!.bands[1].maxM).toBe(804);
+    expect(addBand(rule([{ maxM: 805, stories: 6 }]), cap)).toBeNull();
+    expect(
+      addBand(
+        rule([
+          { maxM: 100, stories: 6 },
+          { maxM: 300, stories: 4 }
+        ]),
+        cap
+      )
+    ).toBeNull();
+  });
+
+  it('a stop type outside the cap can be turned off, never on', () => {
+    expect(toggleStop(rule([{ maxM: 402, stories: 6 }]), 'rapidBus', cap)).toBeNull();
+    expect(
+      toggleStop(rule([{ maxM: 402, stories: 6 }], ['regionalRail', 'metro']), 'regionalRail', cap)!
+        .stopTypes
+    ).toEqual(['metro']);
+  });
 });
 
 describe('transit-edit', () => {

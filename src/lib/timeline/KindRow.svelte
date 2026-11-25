@@ -4,12 +4,12 @@
   full row per policy; no miniature. Renders cells for the Timeline's two-column grid.
   Locked (`locked`, the lane's words): no "+" and no miniature; the lane shows the words, open or
   closed, and every policy row is locked. Unlocked, a policy `isLocked` picks is locked and says
-  LATER_ROUND under its name.
+  NOT_BOUGHT under its name.
 -->
 <script lang="ts">
   import type { Day } from '$lib/timelapse/time';
   import FixedRow from './FixedRow.svelte';
-  import { LATER_ROUND } from './game-copy';
+  import { NOT_BOUGHT } from './game-copy';
   import Lane from './Lane.svelte';
   import PolicyRow from './PolicyRow.svelte';
   import type { LevelSet } from './pool-level';
@@ -177,7 +177,7 @@
       {@const pLocked = locked !== null || isLocked(p)}
       <PolicyRow
         locked={pLocked}
-        note={locked === null && pLocked ? LATER_ROUND : null}
+        note={locked === null && pLocked ? NOT_BOUGHT : null}
         levels={kindLevels}
         {day}
         {reached}

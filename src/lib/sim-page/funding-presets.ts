@@ -23,7 +23,7 @@ import type {
   Programme,
   Provenance
 } from '$lib/timelapse/types';
-import { isGiven } from '$lib/game/allowed';
+import { isGiven } from '$lib/game/limits';
 import type { Effect, Policy } from '$lib/timeline/policy4';
 import { canonicalJson } from './policy';
 import {

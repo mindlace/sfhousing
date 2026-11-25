@@ -9,7 +9,7 @@ export const COPY = {
   disabledHint: 'Paint something first.',
   dialogHeading: 'Publish this plan',
   dialogBody:
-    'Published plans are public and permanent. Anyone with the link can view and remix it. You can keep editing your own copy afterward.',
+    'Published plans are public and permanent. Anyone with the link can view it. You can keep editing your own copy afterward.',
   successHeading: 'Published',
   tooManyOps: 'This plan has more than 5,000 strokes, the most a shared plan can hold.',
   unknownDataset:
@@ -34,17 +34,9 @@ export const cannotRead = (code: string): string =>
 export const n3 = (oldV: string, newV: string): string =>
   `Your plan was made with an older map dataset (${oldV}). It's now shown on the current data (${newV}), so some numbers may differ.`;
 export const n5 = (planV: string, current: string): string =>
-  `Made with map data ${planV}. Remixing moves it to the current data (${current}); numbers may change.`;
+  `Made with map data ${planV}, older than the current data (${current}).`;
 export const n6 = (planV: string, current: string): string =>
   `Made with map data ${planV}, which is no longer available. Shown on the current data (${current}); numbers may differ from when it was published.`;
-export const remixedToast = (label: string): string =>
-  `Remixed from ${label}. You're editing your own copy.`;
-export const remixConfirm = (n: number): string =>
-  `Replace your current plan (${n} strokes) with a copy of this one? Your current plan will be lost unless you publish it first.`;
-export const REMIX_LOCKED = 'Unlock the simulation to remix';
-/** 'Level 4 runs all of it' */
-export const remixNeeds = (level: number): string => `Level ${level} runs all of it`;
-export const REMIX_LATER = 'Parts unlock in a later round';
 export const YOUR_GAME = 'Your game';
 export const ogDescription = (n: number): string =>
   `A plan for San Francisco housing with ${n} brush strokes. Open it to see the buildings and net new units.`;
@@ -90,12 +82,10 @@ export type ShareCopy = { -readonly [K in keyof typeof COPY]: string } & {
   n3: (oldV: string, newV: string) => string;
   n5: (docV: string, current: string) => string;
   n6: (docV: string, current: string) => string;
-  remixedToast: (label: string) => string;
-  remixConfirm: (n: number) => string;
   /** The shared banner's fallback title and its label ("Shared plan"). */
   untitled: string;
   shared: string;
-  /** Where the shared banner's "Start your own" goes: the kind's own editor. */
+  /** Where the shared banner's "Start your own" goes: the game at /, for both kinds. */
   startHref: string;
 };
 
@@ -114,8 +104,6 @@ const PLAN_COPY: ShareCopy = {
   n3,
   n5,
   n6,
-  remixedToast,
-  remixConfirm,
   untitled: 'Untitled plan',
   shared: 'Shared plan',
   startHref: '/'
@@ -131,12 +119,9 @@ const SIM_COPY: ShareCopy = {
   n3: (oldV, newV) => toPolicy(n3(oldV, newV)),
   n5: (docV, current) => toPolicy(n5(docV, current)),
   n6: (docV, current) => toPolicy(n6(docV, current)),
-  remixedToast,
-  remixConfirm: () =>
-    'Replace your current policy with a copy of this one? Your current policy will be lost unless you publish it first.',
   untitled: 'Untitled policy',
   shared: 'Shared policy',
-  startHref: '/sim'
+  startHref: '/'
 };
 
 /** The share-flow strings for a document kind. `copyFor('plan')` is today's plan copy. */

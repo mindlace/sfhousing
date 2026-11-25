@@ -6,9 +6,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import { page, userEvent } from 'vitest/browser';
 import '../../routes/layout.css';
-import type { BrushCatalog } from '$lib/sim/levers/brushes';
+import type { BrushCatalog, StopType } from '$lib/sim/levers/brushes';
 import type { LotStatus } from '$lib/paint/rows';
+import { STOP_LABELS } from './brush-summary';
 import { bandProblem, type ZoningRule } from './policy';
+import type { TransitCap } from './transit-edit';
 import { testCatalog } from './test/catalog';
 import TransitLayerRowHost from './test/TransitLayerRowHost.svelte';
 
@@ -339,5 +341,66 @@ describe('TransitLayerRow', () => {
     await fewer(1).click({ force: true });
     expect(onedit.mock.calls.length).toBeGreaterThan(10);
     expectValid(onedit.mock.calls);
+  });
+
+  describe('under a cap', () => {
+    const rule: ZoningRule = {
+      id: 'r1',
+      kind: 'transit',
+      stopTypes: ['regionalRail'],
+      bands: [{ maxM: 402, stories: 6 }]
+    };
+    const cap: TransitCap = {
+      stops: new Set<StopType>(['metro']),
+      bands: 1,
+      stories: 6,
+      reachM: 402
+    };
+
+    it('chips only for the cap and the rule', async () => {
+      render(TransitLayerRowHost, { props: { rule, cap, part: 'stops' } });
+      const group = page.getByRole('group', { name: 'Stop types' });
+      expect(
+        group
+          .getByRole('button')
+          .elements()
+          .map((b) => b.textContent?.trim())
+      ).toEqual([STOP_LABELS.regionalRail, STOP_LABELS.metro]);
+    });
+
+    it('+ Band and more stories are aria-disabled at the cap, and press nothing', async () => {
+      const onedit = vi.fn();
+      render(TransitLayerRowHost, { props: { rule, cap, part: 'bands', onedit } });
+      const add = page.getByRole('button', { name: /Band$/ });
+      const moreStories = page.getByRole('button', { name: 'More stories, band 1' });
+      await expect.element(add).toHaveAttribute('aria-disabled', 'true');
+      await expect.element(moreStories).toHaveAttribute('aria-disabled', 'true');
+      await add.click({ force: true });
+      await moreStories.click({ force: true });
+      expect(onedit).not.toHaveBeenCalled();
+    });
+
+    it('a stop type outside the cap that is off cannot be pressed on', async () => {
+      const onedit = vi.fn();
+      render(TransitLayerRowHost, {
+        props: {
+          rule: { ...rule, stopTypes: ['regionalRail', 'metro'] },
+          cap,
+          part: 'stops',
+          onedit
+        }
+      });
+      await chip(new RegExp(`^${STOP_LABELS.metro}`)).click();
+      expect(onedit.mock.calls.at(-1)![0].stopTypes).toEqual(['regionalRail']);
+      await chip(new RegExp(`^${STOP_LABELS.metro}`)).click();
+      expect(onedit.mock.calls.at(-1)![0].stopTypes).toEqual(['regionalRail', 'metro']);
+    });
+
+    it('without a cap, every stop type', async () => {
+      render(TransitLayerRowHost, { props: { rule, part: 'stops' } });
+      expect(
+        page.getByRole('group', { name: 'Stop types' }).getByRole('button').elements()
+      ).toHaveLength(4);
+    });
   });
 });

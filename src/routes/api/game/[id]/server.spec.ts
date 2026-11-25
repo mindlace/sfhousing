@@ -5,7 +5,9 @@ import { gameSave } from '$lib/server/db/schema';
 import { freshDb, makePlatform, seedUser } from '$lib/server/test/auth-db';
 import { FakeRateLimiter } from '$lib/server/test/fake-rate-limiter';
 import { MAX_SAVE_BYTES } from '$lib/game/save-api';
-import { MAX_SAVES, type GameSave } from '$lib/game/saves';
+import type { GameSave } from '$lib/game/save-shape';
+import { MAX_SAVES } from '$lib/game/saves';
+import { NEW_GAME } from '$lib/game/state';
 import { newId } from '$lib/ids/base58';
 
 const { holder, mint } = vi.hoisted(() => ({
@@ -27,11 +29,11 @@ const WON = '2026-01-02T00:00:00.000Z';
 
 function makeSave(id: string, over: Partial<GameSave> = {}, firstWinAt: string | null = WON) {
   return {
-    v: 1,
+    v: 2,
     id,
     name: 'Game',
     nameIsDefault: true,
-    progress: { v: 1, level: 1, banked: {}, firstWinAt },
+    state: { ...structuredClone(NEW_GAME), firstWinAt },
     plan: null,
     policy: null,
     savedAt: '2026-01-03T00:00:00.000Z',
@@ -187,6 +189,39 @@ describe('PUT /api/game/[id] refusals before any account', () => {
     expect(await res.json()).toEqual({ error: 'invalid' });
   });
 
+  it('422 invalid for a v1 save', async () => {
+    const c = await setup();
+    const id = newId();
+    const res = await put(c, id, {
+      baseRev: null,
+      save: {
+        v: 1,
+        id,
+        name: 'Game',
+        nameIsDefault: true,
+        progress: { v: 1, level: 1, banked: {}, firstWinAt: WON },
+        plan: null,
+        policy: null,
+        savedAt: '2026-01-03T00:00:00.000Z'
+      }
+    });
+    expect(res.status).toBe(422);
+    expect(await res.json()).toEqual({ error: 'invalid' });
+    expect(await rows(c)).toHaveLength(0);
+  });
+
+  it('422 invalid for a phase parseGameSave refuses', async () => {
+    const c = await setup();
+    const id = newId();
+    const s = makeSave(id);
+    const res = await put(c, id, {
+      baseRev: null,
+      save: { ...s, state: { ...s.state, phase: 'won' } }
+    });
+    expect(res.status).toBe(422);
+    expect(await rows(c)).toHaveLength(0);
+  });
+
   it('422 invalid for an id that differs from the path', async () => {
     const c = await setup();
     const res = await put(c, newId(), { baseRev: null, save: makeSave(newId()) });
@@ -290,6 +325,15 @@ describe('PUT /api/game/[id] signed in', () => {
     expect(second.status).toBe(200);
     expect(await second.json()).toEqual({ handle: 'ana', handleClaimed: false, rev: 2 });
     expect(mint).not.toHaveBeenCalled();
+  });
+
+  it('stores a save whose bought names a node the catalogue lacks, and GET reads it back', async () => {
+    const c = await setup();
+    const id = newId();
+    const s = makeSave(id, { state: { ...makeSave(id).state, bought: { 'no-such-node': 1 } } });
+    expect((await put(c, id, { baseRev: null, save: s })).status).toBe(200);
+    const res = await GET(event(c, id, { user: ANA }));
+    expect(await res.json()).toEqual({ rev: 1, save: s });
   });
 
   it('a signed-in save with no win is stored', async () => {

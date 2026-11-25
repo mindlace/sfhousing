@@ -27,6 +27,6 @@
 <a href="/about">About</a>
 <a href="/about#about-data">Data link</a>
 <a href="/about#src-transition-discretionary-entitled">Entitled link</a>
-<a href="/sim">Other page</a>
+<a href="/">Other page</a>
 <a href="/about" target="_blank">New tab</a>
 <AboutDialog bind:this={dialog} {...props} />

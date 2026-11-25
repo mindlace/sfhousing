@@ -1,27 +1,42 @@
 import { describe, expect, it } from 'vitest';
-import { roundComplete } from '$lib/game/progress';
-import { parseGameSave, saveKey } from '$lib/game/saves';
+import { parseGameSave } from '$lib/game/save-shape';
+import { SAVES_KEY, saveKey } from '$lib/game/saves';
+import { NEW_GAME } from '$lib/game/state';
 import { quietSync, seededGame } from './seeded-game';
 
+const WON = '2026-11-22T12:00:00.000Z';
+
 describe('seededGame', () => {
-  it('builds a stored game at the level asked, current and parseable', () => {
-    const { game, storage } = seededGame({ level: 3 });
+  it('builds a new game in the opening, current, stored as a v2 save and indexed', () => {
+    const { game, storage } = seededGame();
     expect(game.open).toBe(false);
-    expect(game.progress.level).toBe(3);
+    expect(game.state).toEqual(NEW_GAME);
     expect(game.saves).toHaveLength(1);
     expect(parseGameSave(JSON.parse(storage.getItem(saveKey(game.currentId))!))).not.toBeNull();
+    const index = JSON.parse(storage.getItem(SAVES_KEY)!);
+    expect(index).toMatchObject({ v: 2, current: game.currentId });
+    expect(index.saves[0]).toMatchObject({ phase: 'opening', rung: 0 });
   });
 
-  it('holds 12 games when asked', () => {
-    expect(seededGame({ level: 1, saves: 12 }).game.saves).toHaveLength(12);
+  it('overlays the state asked on NEW_GAME', () => {
+    const { game } = seededGame({ state: { phase: 'runs', firstWinAt: WON, units: { home: 40 } } });
+    expect(game.state).toEqual({
+      ...NEW_GAME,
+      phase: 'runs',
+      firstWinAt: WON,
+      units: { home: 40 }
+    });
+    expect(game.saves[0]).toMatchObject({ phase: 'runs' });
   });
 
-  it('completes the round when asked', () => {
-    expect(roundComplete(seededGame({ level: 5, roundComplete: true }).game.progress)).toBe(true);
+  it('holds 12 games when asked, the others new', () => {
+    const { game } = seededGame({ state: { phase: 'runs', firstWinAt: WON }, saves: 12 });
+    expect(game.saves).toHaveLength(12);
+    expect(game.saves.filter((s) => s.phase === 'opening')).toHaveLength(11);
   });
 
   it("keeps the record keys as the current game's plan and policy", () => {
-    const { game } = seededGame({ level: 1, plan: 'P', policy: 'Q' });
+    const { game } = seededGame({ plan: 'P', policy: 'Q' });
     expect(game.read(game.currentId)).toMatchObject({ plan: 'P', policy: 'Q' });
   });
 
