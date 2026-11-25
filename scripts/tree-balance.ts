@@ -50,8 +50,7 @@ export interface PlayReport {
     dropped: number;
     collected: number;
     balance: number;
-    /** `mapChange`: the purchase changed the document (its grant is not `hands`). */
-    bought: { id: NodeId; level: number; price: number; mapChange: boolean }[];
+    bought: { id: NodeId; level: number; price: number }[];
     lump: number;
     sideRewards: number;
     sideMet: string[];
@@ -268,33 +267,7 @@ const DAY_MS = 86_400_000;
 /** A day as the ISO timestamp the game state keeps (`firstWinAt`, a run's `at`). */
 const isoOf = (day: Day): string => new Date(day * DAY_MS).toISOString();
 
-/** The grant of `id`'s `level` (1-based) among `nodes`, or undefined when there is none. */
-const grantOf = (id: NodeId, level: number, nodes: readonly TreeNode[]) =>
-  nodes.find((n) => n.id === id)?.levels[level - 1]?.grant;
-
-/**
- * The events a play's report implies: each run, `met` after the run that first meets its rung,
- * then that run's purchases in order. A purchase changes the map when its grant is not `hands`
- * and the play recorded that it changed the document.
- */
-export function eventsOf(report: PlayReport, nodes: readonly TreeNode[] = NODES): PlayEvent[] {
-  const events: PlayEvent[] = [];
-  const met = new Set<number>();
-  for (const run of report.runs) {
-    events.push({ type: 'run' });
-    if (run.reachedOn !== null && !met.has(run.rung)) {
-      met.add(run.rung);
-      events.push({ type: 'met' });
-    }
-    for (const b of run.bought) {
-      const grant = grantOf(b.id, b.level, nodes);
-      events.push({ type: 'buy', mapChange: b.mapChange && grant?.tag !== 'hands' });
-    }
-  }
-  return events;
-}
-
-/** The deadline month of `rung`'s goal in `view`, its dropped units and the take at `share`. */
+/** The month of `deadline` in `view`, the dropped units there and the take at `share`. */
 function takeAt(view: TimelineView, deadline: Day, share: number) {
   const index = deadlineIndex(deadline, view);
   const dropped = Math.max(0, view.rows[index]?.completedNet ?? 0);
@@ -305,14 +278,31 @@ function takeAt(view: TimelineView, deadline: Day, share: number) {
   return { index, dropped, take };
 }
 
+type PlayOpts = { amount?: number; nodes?: readonly TreeNode[] };
+
 /** One play, first run to finished, stuck or too-long. nodes defaults to NODES. */
 export async function play(
   engine: PlayEngine,
   order: OrderName,
   mode: 'hand' | 'collect-for-me',
-  opts: { amount?: number; nodes?: readonly TreeNode[] } = {}
+  opts: PlayOpts = {}
 ): Promise<PlayReport> {
+  return (await playWithEvents(engine, order, mode, opts)).report;
+}
+
+/**
+ * A play and its events: each run, `met` after the run that first meets its rung, then that
+ * run's purchases in order, a purchase changing the map when its grant is not `hands` and the
+ * document differs after it. The report's checks and clock come from these events.
+ */
+export async function playWithEvents(
+  engine: PlayEngine,
+  order: OrderName,
+  mode: 'hand' | 'collect-for-me',
+  opts: PlayOpts = {}
+): Promise<{ report: PlayReport; events: PlayEvent[] }> {
   const nodes = opts.nodes ?? NODES;
+  const events: PlayEvent[] = [];
   const at = isoOf(engine.asOf);
   let p: Played = {
     state: { ...NEW_GAME, phase: 'runs', firstWinAt: at },
@@ -356,6 +346,8 @@ export async function play(
       sideMet: result.side.map((e) => e.id)
     };
     runs.push(run);
+    events.push({ type: 'run' });
+    if (settled.met.length > before.met.length) events.push({ type: 'met' });
     if (finished(settled)) {
       end = 'finished';
       break;
@@ -366,14 +358,13 @@ export async function play(
       const { id } = next;
       const level = (p.state.bought[id] ?? 0) + 1;
       const node = nodes.find((n) => n.id === id);
+      if (node === undefined) throw new Error(`no node ${id}`);
       const after = buyAndApply(p, id, engine.cal, nodes);
-      if (node === undefined || after === null)
-        throw new Error(`the purchase of ${id} was refused`);
+      if (after === null) throw new Error(`the purchase of ${id} was refused`);
       const { price, grant } = node.levels[level - 1]!;
-      run.bought.push({
-        id,
-        level,
-        price: total(price),
+      run.bought.push({ id, level, price: total(price) });
+      events.push({
+        type: 'buy',
         mapChange: grant.tag !== 'hands' && canonicalJson(after.doc) !== canonicalJson(p.doc)
       });
       p = after;
@@ -386,8 +377,8 @@ export async function play(
       break;
     }
   }
-  const events = eventsOf({ order, mode, runs, end, clockS: 0, checks: [] }, nodes);
-  return { order, mode, runs, end, clockS: clockOf(events), checks: checksOf(events) };
+  const report = { order, mode, runs, end, clockS: clockOf(events), checks: checksOf(events) };
+  return { report, events };
 }
 
 /** Current law (the empty document's view) at each rung's deadline, as sideReport's atLaw. */

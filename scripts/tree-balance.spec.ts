@@ -10,11 +10,11 @@ import {
   checksOf,
   clockOf,
   currentLaw,
-  eventsOf,
   leftToBuy,
   nextBuy,
   ORDERS,
   play,
+  playWithEvents,
   raiseTo,
   sequenceOf,
   shareOf,
@@ -291,16 +291,27 @@ const pairs = (nodes: readonly TreeNode[]) =>
 describe('play on the fixture', () => {
   let engine: Engine;
   let finishing: PlayReport;
+  let finishingEvents: PlayEvent[];
   let forMe: PlayReport;
   let stuck: PlayReport;
   let tooLong: PlayReport;
+  const eventsBy = new Map<PlayReport, PlayEvent[]>();
 
   beforeAll(async () => {
     engine = await openEngine({ dir: FIXTURE });
-    finishing = await play(engine, 'catalogue', 'hand', { amount: 1, nodes: ONE });
-    forMe = await play(engine, 'catalogue', 'collect-for-me', { amount: 1, nodes: ONE });
-    stuck = await play(engine, 'catalogue', 'hand', { amount: FAR, nodes: ONE });
-    tooLong = await play(engine, 'catalogue', 'hand', { amount: FAR, nodes: DEAR });
+    const played = async (amount: number, nodes: TreeNode[], mode: 'hand' | 'collect-for-me') => {
+      const { report, events } = await playWithEvents(engine, 'catalogue', mode, {
+        amount,
+        nodes
+      });
+      eventsBy.set(report, events);
+      return report;
+    };
+    finishing = await played(1, ONE, 'hand');
+    finishingEvents = eventsBy.get(finishing)!;
+    forMe = await played(1, ONE, 'collect-for-me');
+    stuck = await played(FAR, ONE, 'hand');
+    tooLong = await played(FAR, DEAR, 'hand');
   }, FILL_HOOK_MS);
 
   afterAll(() => {
@@ -346,9 +357,23 @@ describe('play on the fixture', () => {
     expect(mine.collected).toBe(mine.dropped);
     for (const r of [finishing, forMe, stuck, tooLong]) {
       const buys = boughtOf(r).length;
-      expect(r.clockS).toBe(clockOf(eventsOf(r)));
+      const events = eventsBy.get(r)!;
+      expect(events.filter((e) => e.type === 'run')).toHaveLength(r.runs.length);
+      expect(events.filter((e) => e.type === 'buy')).toHaveLength(buys);
+      expect(r.clockS).toBe(clockOf(events));
       expect(r.clockS).toBe(60 + 28 * r.runs.length + 4 * buys);
-      expect(r.checks).toEqual(checksOf(eventsOf(r)));
+      expect(r.checks).toEqual(checksOf(events));
+    }
+  });
+
+  it('play returns the report playWithEvents gives', async () => {
+    const r = await play(engine, 'catalogue', 'hand', { amount: FAR, nodes: DEAR });
+    expect(r).toEqual(tooLong);
+  });
+
+  it('a bought entry has the spec shape', () => {
+    for (const b of boughtOf(finishing)) {
+      expect(Object.keys(b).sort()).toEqual(['id', 'level', 'price']);
     }
   });
 
@@ -360,7 +385,7 @@ describe('play on the fixture', () => {
   });
 
   it('a hands purchase does not change the map', () => {
-    const events = eventsOf(finishing);
+    const events = finishingEvents;
     const buys = events.filter((e) => e.type === 'buy');
     const entries = boughtOf(finishing);
     expect(buys).toHaveLength(entries.length);
@@ -370,7 +395,7 @@ describe('play on the fixture', () => {
     expect(events.filter((e) => e.type === 'met')).toHaveLength(RUNGS);
   });
 
-  it('current law reads each side goal at its rung deadline, and null past the last rung', async () => {
+  it("current law reads each side goal at its rung's deadline, and null past the last rung", async () => {
     const atLaw = await currentLaw(engine);
     const rung0 = atLaw(0);
     expect(rung0).not.toBeNull();
