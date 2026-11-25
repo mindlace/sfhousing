@@ -214,13 +214,17 @@ const storedDoc = (mem: Storage): SimDoc4 =>
   JSON.parse(JSON.parse(mem.getItem(SIM_KEY4)!).plan) as SimDoc4;
 const storedPolicy = (mem: Storage): SimPolicy4 => storedDoc(mem).policy;
 
-function mount(game: GameStore, storage: Storage, calibration = cal) {
-  return render(GameSimHost, { props: { data: data(calibration), game, storage } });
+function mount(game: GameStore, storage: Storage, calibration = cal, siteHeader = false) {
+  return render(GameSimHost, { props: { data: data(calibration), game, storage, siteHeader } });
 }
 
 /** Mounted, opened, compiled and filled through month LAST at rev 1. */
-async function opened(game: GameStore, storage: Storage, opts: { calibration?: Calibration } = {}) {
-  const r = mount(game, storage, opts.calibration);
+async function opened(
+  game: GameStore,
+  storage: Storage,
+  opts: { calibration?: Calibration; siteHeader?: boolean } = {}
+) {
+  const r = mount(game, storage, opts.calibration, opts.siteHeader);
   await expect.poll(() => w()?.lastOf('openTimeline')).toBeTruthy();
   w().emit(compiledMsg(1, LONG));
   w().emit(filledMsg(1, 0, LAST + 1, {}));
@@ -754,6 +758,44 @@ describe('SimRoute in a game: the tree', () => {
     await page.getByTestId('tree-publish').click();
     await expect.element(page.getByRole('dialog')).toBeVisible();
     await expect.element(page.getByRole('dialog').getByLabelText('Title')).toBeInTheDocument();
+  });
+
+  it("below lg the tree's Publish opens the header's dialog, visible and usable", async () => {
+    await page.viewport(375, 700);
+    const mem = new MemoryStorage();
+    store(mem, { schema: 4, kinds: { zoning: [historic], permitting: [], money: [] } });
+    const allMet = Array.from({ length: RUNGS }, (_, r): MetRung => ({
+      rung: r,
+      reachedOn: asOf + 30 * (r + 1),
+      datasetVersion: 'fixture-0',
+      at: '2026-11-25T00:00:00.000Z'
+    }));
+    await opened(
+      gameWith({ phase: 'runs', runs: RUNGS, rung: RUNGS - 1, met: allMet }, { storage: mem }),
+      mem,
+      { siteHeader: true }
+    );
+    await expect.element(page.getByTestId('tree-ending')).toBeVisible();
+    await expect.element(publish()).toHaveAttribute('data-hashed', 'true');
+    await page.getByTestId('tree-publish').click();
+    const dialog = page.getByRole('dialog');
+    await expect.element(dialog).toBeVisible();
+    const title = dialog.getByLabelText('Title');
+    await expect.element(title).toBeVisible();
+    await title.fill('Mine');
+    await expect.element(title).toHaveValue('Mine');
+  });
+
+  it('About from the header in the tree opens a dialog that can be used', async () => {
+    const mem = new MemoryStorage();
+    await opened(inRuns(mem), mem, { siteHeader: true });
+    await expect.element(page.getByTestId('tree')).toBeVisible();
+    await page.getByRole('link', { name: 'About', exact: true }).click();
+    const dialog = page.getByRole('dialog');
+    await expect.element(dialog).toBeVisible();
+    const el = dialog.element();
+    expect(el.closest('[aria-hidden="true"], [inert]')).toBeNull();
+    await expect.poll(() => el.contains(document.activeElement)).toBe(true);
   });
 
   it('Back to the tree discards a draft, clears the selection and returns', async () => {

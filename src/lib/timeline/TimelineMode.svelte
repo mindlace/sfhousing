@@ -2274,17 +2274,6 @@
           <ProjectTooltip state={tipState} {day} x={tipAt.x} y={tipAt.y} />
         {/if}
 
-        {#if calibration && !noScenario}
-          <AboutDialog
-            bind:this={about}
-            {manifest}
-            {datasetVersion}
-            sections={aboutSections}
-            projectsUrl={manifest?.scenarios?.fzp.projects ?? null}
-            onopen={() => (playing = false)}
-          />
-        {/if}
-
         {#if runView && g}
           <!-- The run's layer over the map's canvas and its own controls, under the notice stack
                (md:z-30); one feed object for the component's life. -->
@@ -2312,6 +2301,17 @@
           />
         {/if}
       </div>
+      {#if calibration && !noScenario}
+        <!-- A top-layer modal, so outside the map's box: in tree that box is inert and hidden. -->
+        <AboutDialog
+          bind:this={about}
+          {manifest}
+          {datasetVersion}
+          sections={aboutSections}
+          projectsUrl={manifest?.scenarios?.fzp.projects ?? null}
+          onopen={() => (playing = false)}
+        />
+      {/if}
       {#if gp === 'tree' && tree}
         <!-- The page's tree over the box that holds the map, on the opaque surface, filling the
              page below the header (the notice stack stays above it). -->

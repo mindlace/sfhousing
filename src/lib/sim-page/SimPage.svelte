@@ -681,9 +681,20 @@
     toPhase('back');
   }
 
-  /** The tree's Publish: the header's Publish button, which opens its dialog on `publishDoc`. */
-  function openPublish(): void {
-    document.querySelector<HTMLElement>('[data-testid="publish-open"]')?.click();
+  /**
+   * The tree's Publish: the header's Publish button, which opens its dialog on `publishDoc`.
+   * Below lg the button sits in the closed Menu, where its dialog would not render: the Menu
+   * opens first.
+   */
+  async function openPublish(): Promise<void> {
+    const button = document.querySelector<HTMLElement>('[data-testid="publish-open"]');
+    if (!button) return;
+    const menu = document.querySelector<HTMLElement>('[data-header-menu][aria-expanded="false"]');
+    if (button.getClientRects().length === 0 && menu) {
+      menu.click();
+      await tick();
+    }
+    button.click();
   }
 
   // ---- strokes on the map ----
