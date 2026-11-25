@@ -3,20 +3,20 @@
 // account's copy; the same loop by keyboard only, collecting with the ring; and the last deadline
 // met, which is the ending. Runs against the VITE_E2E build on fixture-0 with the real game
 // switched on by e2e/helpers/game.ts; every wait is a state in the page or in storage.
-import { readFileSync } from 'node:fs';
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { LADDER_YEARS } from '../src/lib/game/catalogue/ladder-years';
 import { PRICES, RUNG_LUMP } from '../src/lib/game/catalogue/tuning';
-import type { MetRung } from '../src/lib/game/state';
-import { seedGame, seedGoalAmount, seedRunMs } from './helpers/game';
+import { seedGoalAmount, seedRunMs } from './helpers/game';
 import {
+  RUNGS,
   buyNode,
   firstReady,
   openGamePanel,
+  playToEnding,
   runTotals,
   savedGame,
   sweepRing,
   tabTo,
+  untilPhase,
   waitPhase,
   waitSaved
 } from './helpers/play';
@@ -24,7 +24,6 @@ import { waitFilled } from './helpers/run';
 import {
   FRAME,
   gotoEditor,
-  gotoHydrated,
   headerAction,
   jumpAndIdle,
   openHeaderMenu,
@@ -61,20 +60,6 @@ const focusVisible = (target: Locator): Promise<boolean> =>
 
 /** expect.poll without the back-off: a state is seen within 50 ms of being reached. */
 const FAST = { intervals: [50] };
-
-/**
- * `waitPhase`, for a phase after a press of Start, Run or a run's end: getting the forecast ready
- * (starting) and the run itself can together outlast an `expect`'s window, so the wait is bounded
- * by the test's (a page function, checked each frame), then `waitPhase` confirms it.
- */
-async function untilPhase(page: Page, p: 'run' | 'tally'): Promise<void> {
-  await page.waitForFunction(
-    (want) =>
-      document.querySelector('[data-testid="tl-mode"]')?.getAttribute('data-phase') === want,
-    p
-  );
-  await waitPhase(page, p);
-}
 
 /** Below lg, closes the header's Menu if it is open (Escape, as a player would); else nothing. */
 async function closeHeaderMenu(page: Page): Promise<void> {
@@ -281,60 +266,10 @@ test('a player plays the loop by keyboard only, collecting with the ring', async
   expect(taken.state.rung).toBe(1);
 });
 
-/** The number of rungs: one per deadline year, and the window's end. */
-const RUNGS = LADDER_YEARS.length + 1;
-
-/** fixture-0's today (`asOf` in its calibration). */
-const ASOF = (
-  JSON.parse(
-    readFileSync(
-      new URL('./fixtures/data/fixture-0/scenarios/fzp/calibration.json', import.meta.url),
-      'utf8'
-    )
-  ) as { asOf: number }
-).asOf;
-
 test('meeting the last deadline is the ending', async ({ page }) => {
-  // 1. Every rung but the last met, and the price of stop-rail in hand.
-  const met: MetRung[] = Array.from({ length: RUNGS - 1 }, (_, k) => ({
-    rung: k,
-    reachedOn: ASOF,
-    datasetVersion: 'fixture-0',
-    at: new Date().toISOString()
-  }));
-  await seedGame(page, {
-    phase: 'runs',
-    runs: 1,
-    rung: RUNGS - 1,
-    met,
-    units: { home: PRICES['stop-rail'][0] }
-  });
-
-  // 2. The tree at the last rung: no next goal, no ending yet. Buy stop-rail; read its label.
-  await seedGoalAmount(page, 1);
-  await seedRunMs(page, 2000);
-  await gotoHydrated(page, '/');
-  await waitPhase(page, 'tree');
-  await expect(page.getByTestId('tree-next')).toHaveCount(0);
-  await expect(page.getByTestId('tree-ending')).toHaveCount(0);
-  await expect(node(page, 'stop-rail')).toHaveAttribute('data-state', 'ready');
-  const bought = await buyNode(page, 'stop-rail', 'pointer');
-  expect(bought.state.bought['stop-rail']).toBe(1);
-  const label = (
-    (await node(page, 'stop-rail')
-      .getByTestId('tree-node-open')
-      .first()
-      .locator('span')
-      .first()
-      .textContent()) ?? ''
-  ).trim();
-  expect(label).not.toBe('');
-
-  // 3. A run (it waits for the forecast with the bought rule first).
-  await page.getByTestId('tree-run').click();
-  await untilPhase(page, 'tally');
-  await page.getByTestId('tally-continue').click();
-  await waitPhase(page, 'tree');
+  // 1-3. Every rung but the last met and stop-rail's price in hand; the tree at the last rung with
+  // no next goal and no ending yet; stop-rail bought (its label read); a run; Continue.
+  const label = await playToEnding(page);
 
   // 4. The last rung met.
   expect((await savedGame(page)).state.met.map((m) => m.rung)).toContain(RUNGS - 1);

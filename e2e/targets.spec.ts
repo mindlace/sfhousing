@@ -1,11 +1,13 @@
 // Target size (WCAG 2.2 AA, 2.5.8; docs/dev/accessibility.md): at 375 px on the mobile project
-// (touch, coarse pointer), every visible interactive element on `/`, `/sim` and
-// `/about` is at least 24 by 24 CSS px, at rest and with the page's sheets, menus, panels and
-// dialogs open (About over `/sim`, the assumptions open on `/about`). One size for
-// every pointer: nothing here needs 44 px. The exemptions are listed below with their reasons.
+// (touch, coarse pointer), every visible interactive element on `/` (Paint, as a new visitor; the
+// simulation, as the open game; the game's tally and tree) and `/about` is at least 24 by 24 CSS
+// px, at rest and with the page's sheets, menus, panels and dialogs open (About over the
+// simulation, the assumptions open on `/about`). One size for every pointer: nothing here needs
+// 44 px. The exemptions are listed below with their reasons.
 import { expect, test, type Page } from '@playwright/test';
+import { firstReady, seedRuns, untilPhase, waitPhase } from './helpers/play';
 import { addPolicy, waitFilled } from './helpers/run';
-import { gotoEditor, openHeaderMenu } from './helpers/sharing';
+import { gotoEditor, gotoHydrated, openHeaderMenu } from './helpers/sharing';
 
 type W = Window & { __sfhFzp?: { phase?: string } };
 
@@ -32,7 +34,7 @@ const INTERACTIVE = [
  * Exempt, with the reason (2.5.8's exceptions):
  * - Inline: a link in a sentence, sized by the line it sits in: the map credit's two links, and
  *   any link whose parent holds text of its own beside it (`inlineLink` below). A link that is its
- *   list item's or paragraph's whole content (a step in the Menu, a source in a list) is a
+ *   list item's or paragraph's whole content (an entry in the Menu, a source in a list) is a
  *   standalone target and is measured.
  * - Equivalent: MapLibre's canvas (the map is panned by touch; the page's own controls do what it
  *   does).
@@ -236,9 +238,9 @@ async function openCredit(page: Page): Promise<void> {
   await expect(toggle).toHaveAttribute('aria-expanded', 'true');
 }
 
-/** /sim with its map ready and the forecast filled. */
+/** `/` with no game (the open game: the simulation), its map ready and the forecast filled. */
 async function gotoSimReady(page: Page): Promise<void> {
-  await page.goto('/sim');
+  await page.goto('/');
   await page.waitForFunction(() => (window as W).__sfhFzp?.phase === 'ready');
   await page.waitForFunction(
     () => document.querySelector('[data-testid="map-root"]')?.getAttribute('data-state') === 'ready'
@@ -254,26 +256,49 @@ test.describe('targets at 375 px', () => {
     await page.emulateMedia({ reducedMotion: 'reduce' });
   });
 
-  test('/: at rest, the Menu, the Paint sheet, the palette strip', async ({ page }) => {
+  test('Paint: at rest, the Menu, the Paint sheet, the palette strip', async ({ page }) => {
     await gotoEditor(page);
-    const rest = await expectTargets(page, '/ at rest', 5);
+    const rest = await expectTargets(page, 'Paint at rest', 5);
     await openCredit(page);
-    await expectTargets(page, '/ credit open', 5);
+    await expectTargets(page, 'Paint credit open', 5);
     await page.keyboard.press('Escape');
     await openHeaderMenu(page);
-    // The Menu adds the site name, the two steps, Publish, Sign in and About.
-    expect(await expectTargets(page, '/ Menu open', 10)).toBeGreaterThan(rest);
+    // The Menu adds the site name, Publish, Sign in and About.
+    expect(await expectTargets(page, 'Paint Menu open', 10)).toBeGreaterThan(rest);
     await page.keyboard.press('Escape');
     const handle = page.getByTestId('dock-handle');
     await handle.click();
     await expect(handle).toHaveAttribute('aria-expanded', 'true');
-    await expectTargets(page, '/ Paint sheet', 15);
+    await expectTargets(page, 'Paint sheet', 15);
     await page.getByRole('radio', { name: 'Paint', exact: true }).click();
     await expect(page.getByTestId('palette-strip')).toBeVisible();
-    await expectTargets(page, '/ palette strip', 8);
+    await expectTargets(page, 'Paint palette strip', 8);
   });
 
-  test('/: the palette strip at 320 px, Undo, Redo and Done as its check', async ({ page }) => {
+  test('the game: the tally, and the tree with a node open', async ({ page }) => {
+    await seedRuns(page);
+    await gotoHydrated(page, '/');
+    await waitPhase(page, 'tree');
+    await page.getByTestId('tree-run').click();
+    await untilPhase(page, 'tally');
+    await expect(page.getByTestId('tally-continue')).toBeVisible();
+    await expectTargets(page, 'the tally', 4);
+    await page.getByTestId('tally-continue').click();
+    await waitPhase(page, 'tree');
+    await expect(
+      page.locator('[data-testid="tree-node"][data-state="ready"]').first()
+    ).toBeVisible();
+    const id = await firstReady(page);
+    await page
+      .locator(`[data-testid="tree-node"][data-node="${id}"]`)
+      .getByTestId('tree-node-open')
+      .first()
+      .click();
+    await expect(page.getByTestId('tree-detail')).toBeVisible();
+    await expectTargets(page, 'the tree with a node open', 6);
+  });
+
+  test('Paint: the palette strip at 320 px, Undo, Redo and Done as its check', async ({ page }) => {
     await page.setViewportSize({ width: 320, height: 812 });
     await gotoEditor(page);
     const handle = page.getByTestId('dock-handle');
@@ -286,7 +311,7 @@ test.describe('targets at 375 px', () => {
     await expectTargets(page, '/ palette strip at 320', 8);
   });
 
-  test('/sim: the timeline rows with a policy per kind, names on their own lines, and a kind sheet', async ({
+  test('the simulation: the timeline rows with a policy per kind, names on their own lines, and a kind sheet', async ({
     page
   }) => {
     await gotoSimReady(page);
@@ -308,43 +333,43 @@ test.describe('targets at 375 px', () => {
     await expect(
       page.getByTestId('tl-kind-zoning').getByRole('button', { name: 'Zoning', exact: true })
     ).toBeInViewport();
-    await expectTargets(page, '/sim timeline rows', 10);
+    await expectTargets(page, 'the simulation timeline rows', 10);
     await page
       .getByTestId('tl-rows')
       .getByRole('button', { name: 'Public money', exact: true })
       .click();
     await expect(page.getByRole('dialog', { name: 'Public money' })).toBeVisible();
-    await expectTargets(page, '/sim Public money sheet', 4);
+    await expectTargets(page, 'the simulation Public money sheet', 4);
   });
 
-  test('/sim: at rest, the Menu, the key, the Layers panel, a Zoning editor, Details', async ({
+  test('the simulation: at rest, the Menu, the key, the Layers panel, a Zoning editor, Details', async ({
     page
   }) => {
     await gotoSimReady(page);
-    const rest = await expectTargets(page, '/sim at rest', 15);
+    const rest = await expectTargets(page, 'the simulation at rest', 15);
     await openCredit(page);
-    await expectTargets(page, '/sim credit open', 15);
+    await expectTargets(page, 'the simulation credit open', 15);
     await page.keyboard.press('Escape');
     await openHeaderMenu(page);
-    // The Menu adds the site name, the steps, Undo, Redo, Publish, Sign in and About.
-    expect(await expectTargets(page, '/sim Menu open', 20)).toBeGreaterThan(rest);
+    // The Menu adds the site name, Undo, Redo, Publish, Sign in and About.
+    expect(await expectTargets(page, 'the simulation Menu open', 20)).toBeGreaterThan(rest);
     await page.keyboard.press('Escape');
     const key = page.getByTestId('map-key-toggle');
     await key.click();
     await expect(page.getByRole('group', { name: 'Map key' })).toBeVisible();
-    await expectTargets(page, '/sim key open', 15);
+    await expectTargets(page, 'the simulation key open', 15);
     await key.click();
     const layers = page.getByRole('button', { name: 'Map layers' });
     await layers.click();
     const layersPanel = page.getByRole('group', { name: 'Map layers' });
     await expect(layersPanel).toBeVisible();
-    await expectTargets(page, '/sim Layers panel', 15);
+    await expectTargets(page, 'the simulation Layers panel', 15);
     // The panel scrolls inside the room above its toolbar: its last row, scrolled to, is
     // measured too, clear of the attribution under the toolbar.
     const last = layersPanel.getByRole('checkbox').last();
     await last.scrollIntoViewIfNeeded();
     await expect(last).toBeInViewport();
-    await expectTargets(page, '/sim Layers panel scrolled', 15);
+    await expectTargets(page, 'the simulation Layers panel scrolled', 15);
     expect(
       await last.evaluate((el) => {
         const r = (el as HTMLInputElement).labels![0].getBoundingClientRect();
@@ -356,10 +381,10 @@ test.describe('targets at 375 px', () => {
     await layers.click();
     await addPolicy(page, 'Zoning', 'Transit rule');
     await expect(page.getByTestId('inspector')).toBeVisible();
-    await expectTargets(page, '/sim Zoning editor', 25);
+    await expectTargets(page, 'the simulation Zoning editor', 25);
     await page.getByTestId('score-bar').click();
     await expect(page.getByTestId('tl-details')).toBeVisible();
-    await expectTargets(page, '/sim Details', 10);
+    await expectTargets(page, 'the simulation Details', 10);
   });
 
   test('a fixed target under a short scroller is measured, never noted as scrolled out of it', async ({
@@ -445,7 +470,7 @@ test.describe('targets at 375 px', () => {
     expect(skipped).toContain('button "inner" by span');
   });
 
-  test('/sim: a layer inside the detail column over its own control fails the sweep', async ({
+  test('the simulation: a layer inside the detail column over its own control fails the sweep', async ({
     page
   }) => {
     await gotoSimReady(page);
@@ -472,10 +497,10 @@ test.describe('targets at 375 px', () => {
     ['Permitting', "Permits at San Diego's pace"],
     ['Public money', 'A housing bond']
   ])
-    test(`/sim: the ${kind} editor`, async ({ page }) => {
+    test(`the simulation: the ${kind} editor`, async ({ page }) => {
       await gotoSimReady(page);
       await addPolicy(page, kind, choice);
-      await expectTargets(page, `/sim ${kind} editor`, 25);
+      await expectTargets(page, `the simulation ${kind} editor`, 25);
     });
 
   test('/about: at rest and with the assumptions open', async ({ page }) => {
@@ -492,7 +517,7 @@ test.describe('targets at 375 px', () => {
     await expectTargets(page, '/about assumptions open', 40);
   });
 
-  test('/sim: About open from the Menu', async ({ page }) => {
+  test('the simulation: About open from the Menu', async ({ page }) => {
     await gotoSimReady(page);
     await openHeaderMenu(page);
     await page.getByRole('link', { name: 'About', exact: true }).click();
@@ -500,6 +525,6 @@ test.describe('targets at 375 px', () => {
     await expect(dialog).toBeVisible();
     // The data checks have loaded: the whole body is there.
     await expect(dialog.locator('[id="src-quality"] tbody tr').first()).toBeVisible();
-    await expectTargets(page, '/sim About open', 20);
+    await expectTargets(page, 'the simulation About open', 20);
   });
 });

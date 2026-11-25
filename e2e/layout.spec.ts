@@ -7,6 +7,7 @@
 // From 768 px the dock is a panel on the left of the map.
 import { expect, test, type APIRequestContext, type Locator, type Page } from '@playwright/test';
 import { MSG } from '../src/lib/brush/messages';
+import { E2E_GAME_KEY } from '../src/lib/game/e2e';
 import { COPY } from '../src/lib/sharing/copy';
 import { expectNoA11yViolations } from './helpers/a11y';
 import { loginAs } from './helpers/auth';
@@ -32,7 +33,9 @@ import {
   waitForMap,
   type Win
 } from './helpers/sharing';
-import { widestHeaderText } from './helpers/header-text';
+import { newVisitor } from './helpers/game';
+import { widestGameHeader, widestHeaderText } from './helpers/header-text';
+import { seedRuns, waitPhase } from './helpers/play';
 import { touchLaptop } from './helpers/pointer';
 import { addPolicy, holdPolicy, installPolicyHold, releasePolicy, waitFilled } from './helpers/run';
 
@@ -101,7 +104,7 @@ const attribution = (page: Page): Locator => page.locator('.maplibregl-ctrl-attr
 const creditToggle = (page: Page): Locator =>
   page.getByTestId('map-root').getByLabel('Map credits');
 
-/** The map root reports ready (no brush wait: /sim has none). */
+/** The map root reports ready (no brush wait: the simulation has none). */
 async function waitMapReady(page: Page): Promise<void> {
   await page.waitForFunction(
     () => document.querySelector('[data-testid=map-root]')?.getAttribute('data-state') === 'ready'
@@ -355,6 +358,7 @@ test.describe('mobile', () => {
   test('/: the failed phase shows its Retry pill, unobscured', async ({ page }) => {
     // The sim worker never loads: the client reports a crash and the brush enters `failed`.
     await page.route('**/workers/worker-*.js', (r) => r.fulfill({ status: 404, body: '' }));
+    await newVisitor(page);
     await page.goto('/');
     await expect(page.getByTestId('map-root')).toHaveAttribute('data-state', 'ready', {
       timeout: 20_000
@@ -492,15 +496,15 @@ test.describe('mobile', () => {
   });
 
   // One page load per test (issue #144): the four loads in one test outran the 30 s budget on a
-  // loaded machine.
-  for (const path of ['/', '/sim']) {
+  // loaded machine. `opening` is Paint as a new visitor; `/` is the open game (the simulation).
+  for (const path of ['opening', '/']) {
     for (const width of [375, 320]) {
       test(`${width} px on ${path}: Reset view and the expanded credit do not overlap`, async ({
         page
       }) => {
         const reset = page.getByRole('button', { name: 'Reset view' });
         await page.setViewportSize({ width, height: 812 });
-        if (path === '/') await gotoEditor(page);
+        if (path === 'opening') await gotoEditor(page);
         else {
           await page.goto(path);
           await waitMapReady(page);
@@ -723,8 +727,11 @@ test.describe('medium width', () => {
 
   // From md to lg the dock is the desktop panel, but the header is the Menu layout: the Paint
   // button that folds the dock waits in the Menu with the other actions.
-  const open: Record<'/' | '/p/:id', (page: Page, request: APIRequestContext) => Promise<void>> = {
-    '/': (page) => gotoEditor(page),
+  const open: Record<
+    'opening' | '/p/:id',
+    (page: Page, request: APIRequestContext) => Promise<void>
+  > = {
+    opening: (page) => gotoEditor(page),
     '/p/:id': async (page, request) => {
       const res = await request.post('/api/plans', {
         data: smallText,
@@ -736,7 +743,7 @@ test.describe('medium width', () => {
       await waitForMap(page);
     }
   };
-  for (const path of ['/', '/p/:id'] as const) {
+  for (const path of ['opening', '/p/:id'] as const) {
     test(`768 px on ${path}: the header is the Menu layout; the dock folds by its own button`, async ({
       page,
       request
@@ -754,10 +761,8 @@ test.describe('medium width', () => {
       expect(fit, 'the header overflows').toBe(true);
       await expect(page.locator('.sfh-dock-panel')).toBeVisible();
 
-      // The Menu holds the two step links and no Paint button.
+      // The Menu holds no Paint button.
       await openHeaderMenu(page);
-      for (const name of ['Paint', 'Simulate'])
-        await expect(banner.getByRole('link', { name, exact: true })).toBeVisible();
       await expect(paint).toHaveCount(0);
       await expect(banner.getByRole('link', { name: 'Fewer cars' })).toHaveCount(0);
       await page.keyboard.press('Escape');
@@ -895,11 +900,12 @@ test.describe('account entry', () => {
     test.skip(({ isMobile }) => isMobile, 'chromium project only');
     test.use({ viewport: { width: 1024, height: 768 } });
 
-    for (const path of ['/', '/sim']) {
+    for (const path of ['opening', '/']) {
       test(`${path} at 1024×768: visible, clear of the header score and the actions, axe clean`, async ({
         page
       }) => {
-        await page.goto(path);
+        if (path === 'opening') await gotoEditor(page);
+        else await page.goto(path);
         await expect(headerScore(page)).toBeVisible();
         await expect(account(page)).toBeVisible();
         await expect(account(page)).toHaveAttribute('href', '/signin');
@@ -920,18 +926,17 @@ test.describe('account entry', () => {
       });
     }
 
-    test('/sim at 1024×768 signed in: the handle, the score and every action are visible and clear of each other, axe clean', async ({
+    test('/ at 1024×768 signed in: the handle, the score and every action are visible and clear of each other, axe clean', async ({
       page
     }) => {
       // A fresh 20-character handle (the plan's worst case): parallel runs never mint one user.
       const handle = `h${crypto.randomUUID().replace(/-/g, '')}`.slice(0, 20);
       await loginAs(page, `${handle}@example.test`);
-      await page.goto('/sim');
+      await page.goto('/');
       await waitFilled(page);
       const banner = page.getByRole('banner');
       const items = [
         banner.getByRole('link', { name: /^SF Housing/ }),
-        banner.getByRole('navigation', { name: 'Steps' }),
         headerScore(page),
         banner.getByRole('button', { name: /^(Publish|Share link)/ }),
         banner.getByRole('link', { name: `@${handle}` }),
@@ -953,7 +958,7 @@ test.describe('account entry', () => {
       await expectNoA11yViolations(page);
     });
 
-    // The widest /sim row: a 20-character handle, the widest headline, "Autosave off" (storage
+    // The widest row on the simulation: a 20-character handle, the widest headline, "Autosave off" (storage
     // refused) and "Updating" (a held edit) side by side. A touch laptop adds Undo and Redo. No
     // Shortcuts on either: the keys are listed in About.
     for (const [width, touch] of [
@@ -962,7 +967,7 @@ test.describe('account entry', () => {
       [1024, true],
       [1280, true]
     ] as const) {
-      test(`/sim at ${width} signed in${touch ? ', a touch laptop' : ''}: Autosave off and Updating together, the widest row, nothing overlaps or clips`, async ({
+      test(`/ at ${width} signed in${touch ? ', a touch laptop' : ''}: Autosave off and Updating together, the widest row, nothing overlaps or clips`, async ({
         page
       }) => {
         await page.setViewportSize({ width, height: 800 });
@@ -975,7 +980,7 @@ test.describe('account entry', () => {
         await installPolicyHold(page);
         const handle = `h${crypto.randomUUID().replace(/-/g, '')}`.slice(0, 20);
         await loginAs(page, `${handle}@example.test`);
-        await page.goto('/sim');
+        await page.goto('/');
         await expect(page.locator('html')).toHaveAttribute('data-hydrated', '');
         await waitFilled(page);
         await holdPolicy(page);
@@ -998,7 +1003,6 @@ test.describe('account entry', () => {
         ).toHaveCount(0);
         const items: [string, Locator][] = [
           ['name', banner.getByRole('link', { name: /^SF Housing/ })],
-          ['steps', banner.getByRole('navigation', { name: 'Steps' })],
           ['chip', chip],
           ['Updating', updating],
           ['score', banner.getByTestId('score-box')],
@@ -1018,7 +1022,7 @@ test.describe('account entry', () => {
           );
         // Nothing clipped: each item's content fits its box (the handle truncates by design).
         for (const [name, item] of items) {
-          if (name === 'handle' || name === 'steps') continue;
+          if (name === 'handle') continue;
           const fit = await item.evaluate((el) => ({ s: el.scrollWidth, c: el.clientWidth }));
           expect(fit.s, `${name} clips`).toBeLessThanOrEqual(fit.c + 0.5);
         }
@@ -1028,7 +1032,7 @@ test.describe('account entry', () => {
         }));
         expect(fit.scroll).toBeLessThanOrEqual(fit.client);
         expect((await box(banner)).height).toBe(48);
-        const score = boxes[4];
+        const score = boxes[3];
         const off = score.x + score.width / 2 - width / 2;
         test.info().annotations.push({
           type: 'score off centre',
@@ -1043,9 +1047,10 @@ test.describe('account entry', () => {
     // eslint-disable-next-line playwright/no-skipped-test
     test.skip(({ isMobile }) => !isMobile, 'mobile project only');
 
-    for (const path of ['/', '/sim']) {
+    for (const path of ['opening', '/'] as const) {
       test(`${path}: waits in the Menu and is reachable from it, axe clean`, async ({ page }) => {
-        await page.goto(path);
+        if (path === 'opening') await newVisitor(page);
+        await page.goto('/');
         // the Menu toggle does nothing before hydration, so a loaded machine flaked here
         await expect(page.locator('html')).toHaveAttribute('data-hydrated', '');
         await expect(page.getByRole('banner')).toBeVisible();
@@ -1062,6 +1067,63 @@ test.describe('account entry', () => {
       });
     }
   });
+});
+
+// ---- the game's header -----------------------------------------------------------------------
+
+/**
+ * The header from md (Menu layout below lg, the full row from lg): 48 px tall, nothing overflows
+ * the bar or the page, and no two visible items overlap.
+ */
+async function expectHeaderRowFits(page: Page): Promise<void> {
+  const banner = page.getByRole('banner');
+  expect((await box(banner)).height).toBe(48);
+  const fit = await banner.evaluate((b) => ({
+    bar: b.scrollWidth - b.clientWidth,
+    page: document.scrollingElement!.scrollWidth - window.innerWidth
+  }));
+  expect(fit, 'the header overflows').toEqual({ bar: 0, page: 0 });
+  const row = await banner.evaluate((b) => {
+    const items = [
+      ...b.querySelectorAll<HTMLElement>('a, button, [data-header-status] > *')
+    ].filter((el) => el.checkVisibility() && el.getBoundingClientRect().width > 0);
+    return items
+      .filter((el) => !items.some((o) => o !== el && o.contains(el)))
+      .map((el) => {
+        const r = el.getBoundingClientRect();
+        return { name: (el.textContent ?? '').trim(), left: r.left, right: r.right };
+      })
+      .sort((a, c) => a.left - c.left);
+  });
+  expect(row.length).toBeGreaterThan(1);
+  for (let i = 1; i < row.length; i++)
+    expect(row[i].left, `"${row[i].name}" overlaps "${row[i - 1].name}"`).toBeGreaterThanOrEqual(
+      row[i - 1].right - 0.5
+    );
+}
+
+test.describe("the game's header on the tree", () => {
+  for (const width of [375, 768, 1024, 1280]) {
+    test(`${width} px with the widest unit count and goal: nothing overflows or overlaps`, async ({
+      page,
+      isMobile
+    }) => {
+      // eslint-disable-next-line playwright/no-skipped-test
+      test.skip(isMobile !== (width === 375), 'the mobile project is 375 px wide');
+      await page.setViewportSize({ width, height: 800 });
+      await seedRuns(page);
+      await page.goto('/');
+      await expect(page.locator('html')).toHaveAttribute('data-hydrated', '');
+      await waitPhase(page, 'tree');
+      const headline = page.getByTestId('goal-headline-button');
+      await expect(headline).toBeVisible();
+      await expect(page.getByTestId('header-units')).toBeAttached();
+      await widestGameHeader(page);
+      await expect(headline).toContainText('82,069 of 82,069 homes by Sep 2066');
+      if (width === 375) await expectPhoneHeaderFits(page);
+      else await expectHeaderRowFits(page);
+    });
+  }
 });
 
 // ---- several messages over the map at once (Review Focus 3) -----------------------------------
@@ -1137,11 +1199,15 @@ test.describe('messages over the map', () => {
   test('375: the stroke chip never covers the Autosave off popover', async ({ page, isMobile }) => {
     // eslint-disable-next-line playwright/no-skipped-test
     test.skip(!isMobile, 'mobile only');
-    await page.addInitScript(() => {
-      Storage.prototype.setItem = () => {
+    // Storage refuses every write but the e2e switch that makes this page a new visitor's game
+    // (gotoEditor's), so the page is Paint with autosave off.
+    await page.addInitScript((gameKey) => {
+      const set = Storage.prototype.setItem;
+      Storage.prototype.setItem = function (key: string, value: string) {
+        if (key === gameKey) return set.call(this, key, value);
         throw new DOMException('refused', 'QuotaExceededError');
       };
-    });
+    }, E2E_GAME_KEY);
     await gotoEditor(page);
     await jumpAndIdle(page);
     await chooseTool(page, 'Paint');

@@ -1,14 +1,17 @@
 // Playing the game from a spec: the saved game, the phase, the run layer and its ring, the tree.
 // Every wait is a state in the page or in storage (`data-phase`, `data-state`, the saved game);
 // none is a fixed time.
+import { readFileSync } from 'node:fs';
 import { expect, type Locator, type Page } from '@playwright/test';
 import type { GameSave } from '../../src/lib/game/save-shape';
 import { SAVES_KEY, saveKey } from '../../src/lib/game/saves';
 import { RING_KEYS } from '../../src/lib/game/run/run-model';
+import { LADDER_YEARS } from '../../src/lib/game/catalogue/ladder-years';
+import { PRICES } from '../../src/lib/game/catalogue/tuning';
 import type { GamePhase } from '../../src/lib/sim-page/game-phase';
-import type { GameState } from '../../src/lib/game/state';
+import type { GameState, MetRung } from '../../src/lib/game/state';
 import { seedGame, seedGoalAmount, seedRunMs } from './game';
-import { openHeaderMenu } from './sharing';
+import { gotoHydrated, openHeaderMenu } from './sharing';
 
 /**
  * Before the first load: the goal amount 1, a run of 2,000 ms and a game seeded with `state`
@@ -56,6 +59,75 @@ export async function waitSaved(page: Page, ok: (s: GameSave) => boolean): Promi
 /** Waits until the timeline's `data-phase` is `p`. */
 export async function waitPhase(page: Page, p: GamePhase): Promise<void> {
   await expect(page.getByTestId('tl-mode')).toHaveAttribute('data-phase', p);
+}
+
+/**
+ * `waitPhase`, for a phase after a press of Start, Run or a run's end: getting the forecast ready
+ * (starting) and the run itself can together outlast an `expect`'s window, so the wait is bounded
+ * by the test's (a page function, checked each frame), then `waitPhase` confirms it.
+ */
+export async function untilPhase(page: Page, p: 'run' | 'tally'): Promise<void> {
+  await page.waitForFunction(
+    (want) =>
+      document.querySelector('[data-testid="tl-mode"]')?.getAttribute('data-phase') === want,
+    p
+  );
+  await waitPhase(page, p);
+}
+
+/** The number of rungs: one per deadline year, and the window's end. */
+export const RUNGS = LADDER_YEARS.length + 1;
+
+/** fixture-0's today (`asOf` in its calibration). */
+const ASOF = (
+  JSON.parse(
+    readFileSync(
+      new URL('../fixtures/data/fixture-0/scenarios/fzp/calibration.json', import.meta.url),
+      'utf8'
+    )
+  ) as { asOf: number }
+).asOf;
+
+/**
+ * The ending, as journey 3 reaches it (closing spec, sec-design-ending steps 1 to 3): every rung
+ * but the last met and stop-rail's price in hand, the tree at the last rung (no next goal, no
+ * ending yet), stop-rail bought by pointer, one run, Continue. Leaves the page on the tree showing
+ * the ending; returns the label of stop-rail's card (its `tree-node-open`'s first line).
+ */
+export async function playToEnding(page: Page): Promise<string> {
+  const met: MetRung[] = Array.from({ length: RUNGS - 1 }, (_, k) => ({
+    rung: k,
+    reachedOn: ASOF,
+    datasetVersion: 'fixture-0',
+    at: new Date().toISOString()
+  }));
+  await seedGame(page, {
+    phase: 'runs',
+    runs: 1,
+    rung: RUNGS - 1,
+    met,
+    units: { home: PRICES['stop-rail'][0] }
+  });
+  await seedGoalAmount(page, 1);
+  await seedRunMs(page, 2000);
+  await gotoHydrated(page, '/');
+  await waitPhase(page, 'tree');
+  await expect(page.getByTestId('tree-next')).toHaveCount(0);
+  await expect(page.getByTestId('tree-ending')).toHaveCount(0);
+  const rail = page.locator('[data-testid="tree-node"][data-node="stop-rail"]');
+  await expect(rail).toHaveAttribute('data-state', 'ready');
+  const bought = await buyNode(page, 'stop-rail', 'pointer');
+  expect(bought.state.bought['stop-rail']).toBe(1);
+  const label = (
+    (await rail.getByTestId('tree-node-open').first().locator('span').first().textContent()) ?? ''
+  ).trim();
+  expect(label).not.toBe('');
+  // A run (it waits for the forecast with the bought rule first), then Continue.
+  await page.getByTestId('tree-run').click();
+  await untilPhase(page, 'tally');
+  await page.getByTestId('tally-continue').click();
+  await waitPhase(page, 'tree');
+  return label;
 }
 
 /** The run layer. */

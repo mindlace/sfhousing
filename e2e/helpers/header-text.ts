@@ -16,7 +16,14 @@ export async function widestGameHeader(page: Page): Promise<void> {
     const line = document.querySelector(
       '[data-testid="goal-headline-button"] > span[aria-hidden="true"]'
     );
-    if (line) line.textContent = '82,069 of 82,069 homes by Sep 2066';
+    if (line) {
+      // As GoalHeadline draws it: the word "homes" in its own span, which is sr-only below sm.
+      const word = line.querySelector('span');
+      if (word) {
+        word.textContent = 'homes';
+        line.replaceChildren('82,069 of 82,069 ', word, ' by Sep 2066');
+      } else line.textContent = '82,069 of 82,069 homes by Sep 2066';
+    }
   });
 }
 
