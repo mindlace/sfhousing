@@ -430,7 +430,7 @@ export function sweepHits(sweep: readonly (Pt | null)[], ring: Pt, p: Pt, r: num
       <section id="sec-d-model-collect">
         <h4>Collecting</h4>
         <ul>
-          <li>Only a running step collects.</li>
+          <li>A running step collects, and so does the step that ends a run (<a href="#sec-d-model-end">Fading, ending and going back</a>).</li>
           <li>With <code>auto</code>, every live drop whose <code>takenMs</code> is null is collected in the step, the ones that appeared in it included.</li>
           <li>Without <code>auto</code>, a live drop whose <code>takenMs</code> is null and whose <code>at</code> is set is collected when <code>sweepHits(m.sweep, m.ring, at, hands.radiusPx)</code> is true.</li>
           <li><code>sweepHits</code> is true when <code>p</code> is within <code>r</code> of the path made by the points of <code>sweep</code> followed by <code>ring</code>: of any segment between two points with no <code>null</code> between them, or of any single point.</li>
@@ -446,8 +446,9 @@ export function sweepHits(sweep: readonly (Pt | null)[], ring: Pt, p: Pt, r: num
         <h4>Fading, ending and going back</h4>
         <ul>
           <li>Each step removes from <code>live</code> every drop with <code>now &gt;= endMs</code>, and from <code>counts</code> every count with <code>now &gt;= bornMs + RUN_TIMES.countMs</code>. The number removed is <code>removed</code>.</li>
-          <li>A step whose <code>running</code> is false while the model's is true ends the run. It reports <code>ended: true</code>, and the model's <code>running</code> becomes false.</li>
-          <li>Ending neither drops nor collects anything. The take is final at that step.</li>
+          <li>A step whose <code>running</code> is false while the model's is true ends the run. It first appears and collects exactly as a running step does, at the input's <code>day</code>: every drop whose day is at or before that day is counted in <code>dropped</code>, and one that the ring touches, or every one under <code>auto</code>, is collected. Then it reports <code>ended: true</code>, and the model's <code>running</code> becomes false.</li>
+          <li>The clock reaches the deadline and turns <code>running</code> false in one frame (<code>game-sim</code>'s <code>RunClock</code>), so this step is the one that counts the drops due in the run's last frame. Every drop <code>planDrops</code> plans through the deadline is therefore counted in a run that reaches it.</li>
+          <li>After the ending step nothing is dropped or collected. The take is final at that step.</li>
           <li>Ending sets each uncollected drop's <code>endMs</code> to the smaller of its own and <code>now + RUN_TIMES.fadeMs</code>, or to <code>now</code> under <code>reduced</code>. It empties <code>sweep</code>.</li>
           <li>A run stopped before its deadline ends the same way. Drops whose day it never reached are never counted.</li>
           <li>A feed day earlier than <code>highDay</code> changes nothing: no drop appears again, no count goes down, and live drops keep their times.</li>
@@ -812,7 +813,7 @@ export const RUN_FRAME_P95_MS = 2;</code></pre>
         <li>Collecting: a drop within <code>radiusPx</code> of the ring is collected and counted once; one just outside is not; a drop crossed by the swept path between two steps is collected; a path broken by <code>fresh</code> does not join its two sides; a drop with no point is never collected by the ring.</li>
         <li>Auto: every drop is collected in the step it appears in, off-map drops included; turning auto on collects every live drop.</li>
         <li>Fading: an uncollected drop leaves <code>live</code> at its <code>endMs</code> and can be collected until then; a collected drop leaves after 400 ms; a count after 800 ms; counts never exceed 40.</li>
-        <li>Ending: the step that ends the run reports <code>ended</code>, neither drops nor collects, and cuts live drops to 400 ms, or 0 under reduced motion.</li>
+        <li>Ending: the step that ends the run with its day at the deadline counts every drop due between the previous step's day and the deadline, collects those under the ring or under auto, reports <code>ended</code>, and cuts live drops to 400 ms, or 0 under reduced motion; a later step drops and collects nothing.</li>
         <li>A day going back drops nothing again and lowers no count. A new <code>drops</code> array mid-run counts no row twice and drops the new rows past <code>highDay</code> when reached.</li>
         <li>A new <code>drops</code> array mid-run: a shown drop keeps its state and times; a shown drop whose row is gone stays until its <code>endMs</code> and the take does not go down; a row not yet shown appears at its new day; a row not yet shown and now missing never appears.</li>
         <li>A burst of 500 drops in one step counts 500 and collects every one under auto.</li>
@@ -871,7 +872,7 @@ export const RUN_FRAME_P95_MS = 2;</code></pre>
       <li>The ring collects along its path since the last frame, not only at its centre. Reason: a fast sweep crosses a drop between two frames.</li>
       <li>A new touch, or re-entry after the pointer left the map, breaks the path. Reason: lifting a finger is not a sweep.</li>
       <li>An uncollected drop lasts at least 400 ms, and a collected one 400 ms more. Reason: the flash limit needs every shape to stay a while.</li>
-      <li>A run's end cuts live drops to a 400 ms fade and stops collecting. Reason: <code>ontake</code> at the end must carry final totals.</li>
+      <li>The step that ends a run first passes and collects the drops due through its day, then cuts live drops to a 400 ms fade and stops collecting. Reason: the clock turns <code>running</code> false in the frame it reaches the deadline, so the last frame's drops are counted there, and <code>ontake</code> at the end must carry final totals.</li>
       <li>A feed day going back changes nothing. Reason: counts that go down would undo what the player saw.</li>
       <li>A shown drop whose row leaves a new <code>drops</code> array stays until its own end. Reason: taking away a drop the player saw, or units they collected, would read as a fault.</li>
       <li><code>onPrefs</code> notifies after every write, failed ones included, and only in this page. Reason: the switch the player pressed must take effect even when storage is full.</li>

@@ -966,6 +966,7 @@ function projectPoint(lng: number, lat: number): { x: number; y: number } | null
         <li><code>RunLayer</code> gets <code>hands = game.limits.hands</code>, the <code>collectForMe</code> prop as it stands (so a change in the game panel applies to the run in progress), <code>sound</code>, and <code>ontake</code>, which keeps the latest take while the phase is run and ignores it otherwise.</li>
         <li><code>RunLayer</code> is mounted in starting, run and tally as the last child of the map box, wrapped in <code>&lt;div class="pointer-events-none absolute inset-0 z-20" data-testid="run-layer-box"&gt;</code> (<code>run-layer</code> is <code>RunLayer</code>'s own root, which carries <code>data-dropped</code> and <code>data-collected</code>): over the map's canvas and its own controls, under the notice stack (<code>md:z-30</code>).</li>
         <li><code>RunClock</code> is mounted in starting and run only, after the run layer's box.</li>
+        <li>The frame in which the clock reaches the stop day carries <code>day</code> equal to the stop day and <code>running</code> false. <code>RunLayer</code>'s ending step counts and collects the drops due through that day (R1, <code>run-play</code>), so no drop planned through the deadline is lost; this unit holds <code>running</code> true for no extra frame.</li>
       </ul>
     </section>
 
