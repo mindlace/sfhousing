@@ -5,17 +5,17 @@ export const RUNG_LUMP: Units = Object.freeze({ home: 2000 });
 
 /** Each side goal's target and reward, by its id (G6). */
 export const SIDE_TUNING: Record<string, { target: number; reward: Units }> = {
-  'policy-homes-1': { target: 1_000, reward: { home: 500 } },
-  'collect-share-1': { target: 50, reward: { home: 300 } },
-  'approved-homes': { target: 2_000, reward: { home: 400 } },
-  'collect-run': { target: 10_000, reward: { home: 500 } },
+  'policy-homes-1': { target: 10_000, reward: { home: 500 } },
+  'collect-share-1': { target: 30, reward: { home: 300 } },
+  'approved-homes': { target: 15_000, reward: { home: 400 } },
+  'collect-run': { target: 24_000, reward: { home: 500 } },
   'policy-homes-2': { target: 10_000, reward: { home: 1000 } },
   'new-money': { target: 100, reward: { home: 800 } },
   'funded-homes': { target: 15_000, reward: { home: 800 } },
-  'collect-share-2': { target: 90, reward: { home: 600 } },
-  'building-homes': { target: 10_000, reward: { home: 800 } },
+  'collect-share-2': { target: 60, reward: { home: 600 } },
+  'building-homes': { target: 3_000, reward: { home: 800 } },
   'affordable-homes': { target: 20_000, reward: { home: 1200 } },
-  'policy-homes-3': { target: 25_000, reward: { home: 1500 } }
+  'policy-homes-3': { target: 7_000, reward: { home: 1500 } }
 };
 
 /** Each node's price in homes, one per level in order. */
@@ -32,8 +32,8 @@ export const PRICES: Readonly<Record<NodeId, readonly number[]>> = {
   'taller-2': [26_000, 36_000],
   'stop-frequent': [45_000],
   'reach-2': [42_000],
-  'taller-3': [60_000, 80_000],
-  'reach-3': [70_000],
+  'taller-3': [16_000, 30_000],
+  'reach-3': [20_000],
   'housing-bond': [7_000],
   'general-revenue': [16_000],
   'revolving-fund': [12_000],
@@ -42,5 +42,5 @@ export const PRICES: Readonly<Record<NodeId, readonly number[]>> = {
   'state-double': [40_000],
   'hands-radius': [2_000, 9_000, 20_000, 40_000],
   'hands-linger': [8_000, 18_000, 35_000],
-  'hands-auto': [75_000]
+  'hands-auto': [22_000]
 };
