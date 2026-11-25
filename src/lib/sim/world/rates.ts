@@ -52,9 +52,18 @@ export function startRates(
     byMarket.set(market, out);
   }
   if (!parking) return out;
+  // Zone by zone: each shifted zone's rates once, scattered to its lots.
   const parked = out.slice();
+  const seen = new Set<number>();
   for (let lot = 0; lot < parked.length; lot++) {
-    if (parking.zoneOf(lot) >= 0) parked[lot] = rateOf(view, market, parking, lot);
+    const zone = parking.zoneOf(lot);
+    if (zone < 0 || seen.has(zone)) continue;
+    seen.add(zone);
+    const key = parking.zoneKey(zone);
+    if (key === null) continue;
+    const rates = zoneRates(view, market, parking, zone, key);
+    const lots = parking.zoneLots(zone);
+    for (let i = 0; i < lots.length; i++) parked[lots[i]] = rates[i];
   }
   return parked;
 }
@@ -86,10 +95,33 @@ export function rateOf(
   const zone = parking.zoneOf(lot);
   const key = zone < 0 ? null : parking.zoneKey(zone);
   if (key === null) return startRates(view, market)[lot];
-  let byMarket = zoneMemo.get(view.pre);
-  if (!byMarket) zoneMemo.set(view.pre, (byMarket = new Map()));
-  let memo = byMarket.get(market);
-  if (!memo) byMarket.set(market, (memo = { byKey: new Map(), lots: 0 }));
+  return zoneRates(view, market, parking, zone, key)[parking.indexInZone(lot)];
+}
+
+let lastPre: Precompute | null = null;
+let lastMarket = NaN;
+let lastMemo: ZoneRates | null = null;
+
+/** The rates of `zone`'s lots under `parking` (its `zoneKey` is `key`), memoised. */
+function zoneRates(
+  view: ZoningView,
+  market: number,
+  parking: ParkingShift,
+  zone: number,
+  key: string
+): Float64Array {
+  let memo: ZoneRates;
+  if (lastMemo !== null && lastPre === view.pre && lastMarket === market) memo = lastMemo;
+  else {
+    let byMarket = zoneMemo.get(view.pre);
+    if (!byMarket) zoneMemo.set(view.pre, (byMarket = new Map()));
+    let m = byMarket.get(market);
+    if (!m) byMarket.set(market, (m = { byKey: new Map(), lots: 0 }));
+    memo = m;
+    lastPre = view.pre;
+    lastMarket = market;
+    lastMemo = m;
+  }
   let rates = memo.byKey.get(key);
   if (!rates) {
     const logit = view.pre.logit;
@@ -107,7 +139,7 @@ export function rateOf(
     memo.byKey.set(key, rates);
     memo.lots += lots.length;
   }
-  return rates[parking.indexInZone(lot)];
+  return rates;
 }
 
 interface EntityMemo {
@@ -197,6 +229,13 @@ export function ordinaryStart(
 }
 
 const skipMemo = new WeakMap<PolicyTimeline, WeakMap<Statics, Map<string, Float64Array>>>();
+/** Bounds kept per (timeline, statics): the latest keys only (a funded world asks at each change). */
+const SKIP_KEPT = 2;
+
+/** How many bounds `skipBound` keeps for (`timeline`, `statics`) (tests: memory stays bounded). */
+export function skipMemoSize(timeline: PolicyTimeline, statics: Statics): number {
+  return skipMemo.get(timeline)?.get(statics)?.size ?? 0;
+}
 const allLots = new WeakMap<Statics, Int32Array>();
 
 /**
@@ -207,8 +246,8 @@ const allLots = new WeakMap<Statics, Int32Array>();
  * `ordinaryStart` walks), with `Tmax = lastInitiationMonth(asOf, monthLastDay(through))`: a draw
  * above it passes its threshold after lot-month `Tmax`, which begins after `through` ends.
  * Infinity where nothing is skipped. Memoised per (timeline, statics, last change `<= month`,
- * `through`, the ids of the frames read, which hold the parking state); reads frames up to `month`
- * only.
+ * `through`, the ids of the frames read, which hold the parking state), keeping the `SKIP_KEPT`
+ * latest keys per (timeline, statics); reads frames up to `month` only.
  */
 export function skipBound(
   statics: Statics,
@@ -239,7 +278,12 @@ export function skipBound(
   for (const c of changes) ids += `,${timeline.frameAt(c).id}`;
   const key = `${changes.length > 0 ? changes[changes.length - 1] : 1}:${through}:${ids}`;
   let out = memo.get(key);
-  if (out) return out;
+  if (out) {
+    // Most recent last: a hit moves to the end.
+    memo.delete(key);
+    memo.set(key, out);
+    return out;
+  }
   const f1 = timeline.frameAt(1);
   const views: Float64Array[] = [startRates(f1.view, f1.market, f1.parking)];
   const bounds: number[] = [];
@@ -256,6 +300,7 @@ export function skipBound(
   const Tmax = lastInitiationMonth(asOf, monthLastDay(asOf, through));
   out = skipBounds(views, lots, Tmax, bounds);
   memo.set(key, out);
+  while (memo.size > SKIP_KEPT) memo.delete(memo.keys().next().value!);
   return out;
 }
 

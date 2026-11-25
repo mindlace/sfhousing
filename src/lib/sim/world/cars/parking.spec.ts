@@ -157,6 +157,30 @@ describe('parkingTimeline', () => {
     expect([...t.touched(15)!]).toEqual([]);
   });
 
+  it('refuses a second batch for a month already read; a later month is read as usual', () => {
+    const cols = colsWith([[0, 14, -3]]);
+    const t = parkingTimeline(oneFrame(f1), cols, data, model, statics);
+    const first = t.frameAt(14);
+    const more = (zone: number, month: number, steps: number) => {
+      const n = cols.shiftN;
+      const grow = <T extends Int32Array | Float64Array>(a: T, v: number): T => {
+        const b = new (a.constructor as new (n: number) => T)(n + 1);
+        b.set(a.subarray(0, n));
+        b[n] = v;
+        return b;
+      };
+      cols.shiftZone = grow(cols.shiftZone, zone);
+      cols.shiftMonth = grow(cols.shiftMonth, month);
+      cols.shiftSpaces = grow(cols.shiftSpaces, steps * SPACES_STEP);
+      cols.shiftN = n + 1;
+    };
+    more(1, 26, 2);
+    expect(t.frameAt(26).id).not.toBe(first.id);
+    expect(t.frameAt(14)).toBe(first);
+    more(2, 26, 4);
+    expect(() => t.frameAt(30)).toThrow('a month already read');
+  });
+
   it('a base change with touched null stays null, with or without a parking change', () => {
     const cols = colsWith([
       [0, 14, -3],

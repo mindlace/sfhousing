@@ -16,7 +16,7 @@ import { createFundingSystem } from '../funding/system';
 import { fundedMini, oneMoneyTimeline } from '../funding/test/fixtures';
 import type { PolicyTimeline } from '../policy/frame';
 import { frameIdOf } from '../policy/intern';
-import { initDraw, ordinaryStart, skipBound } from '../rates';
+import { initDraw, ordinaryStart, skipBound, skipMemoSize } from '../rates';
 import { staticsOf, type Statics } from '../statics';
 import { benchInput, liveInput } from '../test/cities.node';
 import { miniInput } from '../test/mini';
@@ -127,19 +127,26 @@ describe.each([
     expect(starts(on.events)).not.toBe(starts(without.events));
   }, 300_000);
 
-  it('off path: costPerSpace null gives every event of the run without cars, 480 months', () => {
+  it('off path: costPerSpace null, or link false with costs, gives the run without cars', () => {
     for (const seed of SEEDS) {
-      const { data, model } = carsOf(c.input, c.opts, null);
-      const sys = createCarSystem(data, model);
-      const off = runWith(
-        c,
-        seed,
-        offsetSystem(sys, () => 0.4)
-      );
-      expect(off.w.cars!.shiftN).toBe(0);
-      expect(off.w.cars!.spaces.some((v) => v > 0)).toBe(true);
-      expect(sys.timelineOf(off.w, c.statics, c.timeline)).toBe(c.timeline);
-      expectEqual(off.events, runWith(c, seed, null).events, `seed ${seed}`);
+      const without = runWith(c, seed, null).events;
+      for (const [costs, link] of [
+        [null, undefined],
+        [COSTS, false]
+      ] as const) {
+        const { data, model } = carsOf(c.input, c.opts, costs);
+        const sys = createCarSystem(data, model, link === undefined ? {} : { link });
+        const off = runWith(
+          c,
+          seed,
+          offsetSystem(sys, () => 0.4)
+        );
+        const what = `seed ${seed}, costs ${costs === null ? 'null' : 'set'}, link ${link}`;
+        expect(off.w.cars!.shiftN, what).toBe(0);
+        expect(off.w.cars!.spaces.some((v) => v > 0)).toBe(true);
+        expect(sys.timelineOf(off.w, c.statics, c.timeline)).toBe(c.timeline);
+        expectEqual(off.events, without, what);
+      }
     }
   }, 300_000);
 
@@ -267,6 +274,10 @@ describe('retained parking state is per zone (bench city, 40 refreshes)', () => 
     for (let k = 14; k <= MONTHS; k += 12) {
       for (const v of Object.values(t.frameAt(k).parking!)) expect(typeof v).toBe('function');
     }
+    // A funded world asks `skipBound` at every change: it keeps the latest bounds only.
+    for (const m of t.changes()) if (m <= MONTHS) skipBound(c.statics, t, m, MONTHS);
+    expect(t.changes().length).toBeGreaterThan(R);
+    expect(skipMemoSize(t, c.statics)).toBeLessThanOrEqual(2);
   }, 300_000);
 });
 

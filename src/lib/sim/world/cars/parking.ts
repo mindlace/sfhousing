@@ -260,29 +260,28 @@ function buildView(
       if (prev !== null && month < prev.month) {
         throw new Error(`parking: entry ${read} for month ${month} after month ${prev.month}`);
       }
-      let s = prev;
+      // A state, once read, is fixed: its frames may already be in use. One refresh pushes all its
+      // entries at once, so a second batch for a month already read means the columns are wrong.
+      if (prev !== null && month === prev.month) {
+        throw new Error(`parking: entry ${read} for month ${month}, a month already read`);
+      }
+      const s: State = {
+        month,
+        steps: prev === null ? new Int32Array(Z) : prev.steps.slice(),
+        changed: EMPTY,
+        key: null,
+        frames: new Map(),
+        tables: new Map()
+      };
       const zones: number[] = [];
-      if (prev === null || prev.month !== month) {
-        s = {
-          month,
-          steps: prev === null ? new Int32Array(Z) : prev.steps.slice(),
-          changed: EMPTY,
-          key: null,
-          frames: new Map(),
-          tables: new Map()
-        };
-        states.push(s);
-      } else for (const z of prev.changed) zones.push(z);
       while (read < cols.shiftN && cols.shiftMonth[read] === month) {
         const z = cols.shiftZone[read];
-        s!.steps[z] = Math.round(cols.shiftSpaces[read] / SPACES_STEP);
+        s.steps[z] = Math.round(cols.shiftSpaces[read] / SPACES_STEP);
         zones.push(z);
         read++;
       }
-      s!.changed = Int32Array.from(new Set(zones)).sort();
-      s!.key = null;
-      s!.frames.clear();
-      s!.tables.clear();
+      s.changed = Int32Array.from(new Set(zones)).sort();
+      states.push(s);
     }
   };
 
@@ -325,6 +324,7 @@ function buildView(
     const table = tableOf(s, slope);
     const proto = protoIndexOf(frame.view);
     const steps = s.steps;
+    const keys: (string | null | undefined)[] = new Array(Z);
     const parking: ParkingShift = {
       shift(lot) {
         const z = zoneOf(lot);
@@ -334,7 +334,13 @@ function buildView(
       zoneOf,
       indexInZone,
       zoneLots,
-      zoneKey: (z) => (steps[z] === 0 ? null : `${sysKey}|${z}|${steps[z]}|${slope}`)
+      // One key string per zone, made once: `rateOf` looks it up per lot.
+      zoneKey: (z) => {
+        let k = keys[z];
+        if (k === undefined)
+          keys[z] = k = steps[z] === 0 ? null : `${sysKey}|${z}|${steps[z]}|${slope}`;
+        return k;
+      }
     };
     out = { ...frame, id: frameIdOf(`parking|${sysKey}|${frame.id}|${s.key}`), parking };
     s.frames.set(frame, out);
