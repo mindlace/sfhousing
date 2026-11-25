@@ -16,7 +16,7 @@ import { total } from '../src/lib/game/units';
 import type { TimelineView } from '../src/lib/sim/world/score/types';
 import { canonicalJson } from '../src/lib/sim-page/policy';
 import type { Day } from '../src/lib/timelapse/time';
-import { DEFAULT_POLICY4 } from '../src/lib/timeline/policy4';
+import { DEFAULT_POLICY4, nothingInForce } from '../src/lib/timeline/policy4';
 import {
   openEngine,
   parseAmount,
@@ -323,7 +323,8 @@ export async function playWithEvents(
   while (runs.length < MAX_RUNS) {
     const before = p.state;
     const idle = !leftToBuy(order, before, pending, nodes);
-    const view = await engine.view(runnable(p.doc, limitsOf(before, nodes)));
+    const doc = runnable(p.doc, limitsOf(before, nodes));
+    const view = await engine.view(doc);
     const goal = goalAt(engine.asOf, before.rung, opts.amount);
     const reading = readRun(view, goal);
     if (reading === null) throw new Error('the window is not filled');
@@ -332,7 +333,7 @@ export async function playWithEvents(
       before,
       reading,
       take,
-      { view, index, take },
+      { view, index, take, inForce: !nothingInForce(doc) },
       {
         amount: goal.amount,
         datasetVersion: engine.datasetVersion,
@@ -399,7 +400,7 @@ export async function currentLaw(
   for (let rung = 0; rung < RUNGS; rung++) {
     const goal = goalAt(engine.asOf, rung, amount);
     const { index, take } = takeAt(view, goal.deadline, SHARE.base);
-    readers.push((g) => g.read({ view, index, take })?.value ?? null);
+    readers.push((g) => g.read({ view, index, take, inForce: false })?.value ?? null);
   }
   return (rung) => readers[rung] ?? null;
 }

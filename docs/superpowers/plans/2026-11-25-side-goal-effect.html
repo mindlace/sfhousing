@@ -1,0 +1,174 @@
+<article>
+  <header>
+    <h1>Side-goal effect fix round plan</h1>
+    <p>Policy side goals read <code>planEffect</code> only while <code>SideInput.inForce</code> is true; the balance script passes it; <code>tuning.ts</code> is tuned again.</p>
+    <aside data-kind="note"><strong>For agentic workers</strong> REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps are checklist items; progress is kept in the workspace ledger, not in the plan.</aside>
+  </header>
+
+  <section id="sec-overview">
+    <h2>Overview</h2>
+    <dl>
+      <dt>Goal</dt>
+      <dd>A policy goal (<code>policy-homes-1</code> to <code>-3</code>, <code>approved-homes</code>) reads <code>planEffect</code> while <code>SideInput.inForce</code> is true and 0 while it is false, whatever <code>view.compare</code> holds; <code>tree-balance</code> passes <code>inForce</code>; <code>tuning.ts</code> is tuned until <code>tree-balance</code> exits 0 on the production dataset.</dd>
+      <dt>Architecture</dt>
+      <dd>One field added to <code>SideInput</code> and read by the <code>effect</code> reader in <code>src/lib/game/side-goals.ts</code>. <code>scripts/tree-balance.ts</code> passes <code>inForce: false</code> when reading current law and <code>!nothingInForce(runnableDoc)</code> for each run of a play. Then a measurement loop edits <code>tuning.ts</code> by hand.</dd>
+      <dt>Tech Stack</dt>
+      <dd>TypeScript, Vitest (server project), <code>tsx</code> scripts.</dd>
+      <dt>Spec</dt>
+      <dd>Package worktree <code>/Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-feel/.claude/worktrees/incremental-loop</code>: <code>docs/superpowers/specs/2026-11-24-game-core-design.html</code> (<code>#sec-if-g6</code> lines 329-379, the side-goals code at 1171-1193, <code>#sec-decisions</code> "Policy goals read 0 with nothing in force") and <code>docs/superpowers/specs/2026-11-24-tree-catalogue-design.html</code> (<code>#sec-design-balance-side</code>, <code>#sec-design-balance-output</code>, <code>#sec-design-balance-prices</code>, <code>#sec-design-tuning</code>, <code>#sec-if-t1</code>, <code>#sec-tests-scripts</code>, <code>#sec-tests-tuning</code>). Read them there, never from this branch's copy.</dd>
+    </dl>
+  </section>
+
+  <section id="sec-global-constraints">
+    <h2>Global Constraints</h2>
+    <h3>Interface rows</h3>
+    <ul>
+      <li><strong>G6</strong> (game-core, produced): <code>export interface SideInput { view: TimelineView; index: number; take: RunTake; inForce: boolean; }</code>. <code>inForce</code>: a policy of the document the view was forecast from is on with a span in force: <code>!nothingInForce(doc)</code> of the runnable document. A side goal's <code>read</code> returns null when the view lacks what it reads. A goal that reads the policy's effect (<code>planEffect</code>) reads 0 while <code>inForce</code> is false: the view's twin is then the old zoning, not current law.</li>
+      <li><strong>T1</strong> (tree-catalogue, produced): T1 is the state of <code>src/lib/game/catalogue/ladder-years.ts</code> and <code>src/lib/game/catalogue/tuning.ts</code> after the measurement. It adds no type and no export to G3 or G6. <code>tuning.ts</code> holds prices, the rung lump and side-goal numbers under which <code>tree-balance</code> exits 0 on the production dataset. When no set of numbers passes, the unit stops and hands the report to the owner with the checks that fail.</li>
+      <li><strong>G3, G5</strong> (consumed, merged at <code>ebea2e8f</code>): unchanged by this unit.</li>
+    </ul>
+    <h3>Design constraints (verbatim)</h3>
+    <ul>
+      <li>One future: the same policy document always gives the same forecast. No game state reaches the worker except through the policy document.</li>
+      <li>No file the dataset version hashes is changed: <code>pipeline</code>, <code>src/lib/config.ts</code>, <code>src/lib/{data,generator,timelapse}</code>, <code>src/lib/plan/{geometry,types}.ts</code>, <code>src/lib/sim/finance</code>. The dataset version stays as it is.</li>
+      <li>Code style: 2-space indent, single quotes, no trailing commas, 100 columns.</li>
+      <li>Vitest runs with <code>expect.requireAssertions</code>. Tests are colocated.</li>
+      <li>Signoff fails on server stderr, on timing crutches and on retried flakes. Timing is measured only on a quiet machine.</li>
+      <li>Port 4173 belongs to whichever session started the preview. Never kill it; wait.</li>
+      <li>Commits use Conventional Commits and carry no Claude attribution.</li>
+      <li>Prices, the lump and the side goals' targets and rewards change only by editing <code>tuning.ts</code> after reading a report. The script never writes them.</li>
+    </ul>
+    <h3>Write set</h3>
+    <p><code>src/lib/game/side-goals.ts</code>, <code>src/lib/game/side-goals.spec.ts</code>, <code>scripts/tree-balance.ts</code>, <code>scripts/tree-balance.spec.ts</code>, <code>src/lib/game/catalogue/tuning.ts</code>, <code>src/lib/game/catalogue/tuning.spec.ts</code>. <code>src/lib/game/run-result.spec.ts</code>, limited to its <code>SideInput</code> literals: the shared <code>input</code> helper and the literal passed to <code>resultOf</code> both carry <code>inForce: true</code>; no assertion of that spec changes; <code>SideInput.inForce</code> stays required.</p>
+  </section>
+
+  <section id="sec-review-focus">
+    <h2>Review Focus</h2>
+    <ul>
+      <li><code>inForce</code> true with <code>view.compare === 'preFzp'</code>: the reader returns <code>planEffect</code>, not 0 (the old key must be gone). Tested in Task 1.</li>
+      <li><code>inForce</code> false with a large <code>planEffect</code>: 0, and still null outside the filled months. Tested in Task 1.</li>
+      <li>Goals that do not read <code>planEffect</code> (<code>collect-run</code>, <code>building-homes</code>, <code>new-money</code>) give the same value whatever <code>inForce</code> holds. Tested in Task 1.</li>
+      <li>Current law in <code>tree-balance</code>: every policy goal reads 0, so its side report carries no <code>at-or-below-current-law</code> flag for a target above 0. Tested in Task 2.</li>
+      <li>A play's first run forecasts the empty document, so no policy goal is met on it. Tested in Task 2.</li>
+    </ul>
+  </section>
+
+  <section id="sec-task-1">
+    <h2>Task 1: The effect reader keys on <code>SideInput.inForce</code></h2>
+    <p>Delivers row G6.</p>
+    <ul>
+      <li>Modify: <code>src/lib/game/side-goals.ts</code> (<code>SideInput</code> at :9-13, <code>effect</code> at :29-38)</li>
+      <li>Test: <code>src/lib/game/side-goals.spec.ts</code></li>
+      <li>Modify: <code>src/lib/game/run-result.spec.ts</code> :126 and :269 (the <code>SideInput</code> literals only)</li>
+    </ul>
+    <ul>
+      <li>Consumes: nothing new.</li>
+      <li>Produces: <code>SideInput.inForce: boolean</code> (required). Task 2 passes it.</li>
+    </ul>
+    <ol>
+      <li id="t1-s1"><input type="checkbox"> In <code>side-goals.spec.ts</code>, give the <code>read</code> helper an <code>inForce</code> parameter defaulting to <code>true</code> and pass it in every <code>read(...)</code> literal (line 109 too). Replace the two <code>compare: 'preFzp'</code> assertions with these tests:
+        <pre><code data-lang="ts">it('policy goals read planEffect in force, whatever compare holds', () => {
+  for (const [id, o] of [['policy-homes-1', { completed: 1200 }], ['approved-homes', { entitled: 2500 }]] as const) {
+    const want = 'completed' in o ? o.completed : o.entitled;
+    expect(read(id, view(o))?.value).toBe(want);
+    expect(read(id, view({ ...o, compare: 'preFzp' }))?.value).toBe(want);
+    expect(read(id, view({ ...o, compare: 'plan' }))?.value).toBe(want);
+  }
+});
+
+it('policy goals read 0 with nothing in force, whatever planEffect or compare holds', () => {
+  for (const compare of ['current', 'plan', 'preFzp']) {
+    expect(read('policy-homes-1', view({ completed: 99_000, compare }), none, 2, false)).toEqual({ value: 0, target: 1000 });
+    expect(read('approved-homes', view({ entitled: 99_000, compare }), none, 2, false)).toEqual({ value: 0, target: 2000 });
+  }
+  expect(read('policy-homes-1', view({ completed: 99_000 }), none, 3, false)).toBeNull();
+});
+
+it('goals that do not read planEffect ignore inForce', () => {
+  const v = view({ construction: 12000, pools: [{ id: 'u-x', spent: [0, 0, 150_500_000] }] });
+  const t = take({ home: 20000 }, { home: 10000 });
+  for (const id of ['building-homes', 'new-money', 'collect-run']) {
+    expect(read(id, v, t, 2, false)).toEqual(read(id, v, t, 2, true));
+  }
+});</code></pre>
+        Also cover <code>policy-homes-2</code> and <code>policy-homes-3</code> in the "read 0" test. Prettier formats the lines.</li>
+      <li id="t1-s2"><input type="checkbox"> Run and see the new tests fail (type error or wrong value):
+        <pre><code data-lang="sh">npx vitest run --project server src/lib/game/side-goals.spec.ts</code></pre></li>
+      <li id="t1-s3"><input type="checkbox"> Add <code>inForce: boolean</code> to <code>SideInput</code> and make <code>effect</code> return <code>{ value: inForce ? row[field] : 0, target }</code>, as the game-core spec's code at lines 1184-1193 reads (its doc comment included). <code>view.compare</code> is no longer read in this file.</li>
+      <li id="t1-s4"><input type="checkbox"> In <code>run-result.spec.ts</code>, add <code>inForce: true</code> to the shared <code>input</code> helper at :126 and to the literal passed to <code>resultOf</code> at :269. Change no assertion there.</li>
+      <li id="t1-s5"><input type="checkbox"> Run and see them pass, with the type check:
+        <pre><code data-lang="sh">npx vitest run --project server src/lib/game
+npm run check</code></pre>
+        Expected: all pass; <code>npm run check</code> reports 0 errors. <code>scripts/tree-balance.ts</code> type errors (missing <code>inForce</code>) are expected here only if <code>npm run check</code> covers <code>scripts/</code>; if so, fold Task 2's two one-line call fixes (<code>inForce: false</code> in <code>currentLaw</code>; the play's value per Task 2) into this commit and say so in the report.</li>
+      <li id="t1-s6"><input type="checkbox"> Commit, then <code>npx chreode timing-check --head HEAD</code> is clean:
+        <pre><code data-lang="sh">git add src/lib/game/side-goals.ts src/lib/game/side-goals.spec.ts src/lib/game/run-result.spec.ts
+git commit -m "fix(game): policy side goals read the effect only while a policy is in force"</code></pre></li>
+    </ol>
+  </section>
+
+  <section id="sec-task-2">
+    <h2>Task 2: <code>tree-balance</code> passes <code>inForce</code></h2>
+    <ul>
+      <li>Modify: <code>scripts/tree-balance.ts</code> (<code>playWithEvents</code> :326-341, <code>currentLaw</code> :393-405)</li>
+      <li>Test: <code>scripts/tree-balance.spec.ts</code></li>
+    </ul>
+    <ul>
+      <li>Consumes: <code>SideInput.inForce</code> (Task 1); <code>nothingInForce(doc: SimPolicy4): boolean</code> from <code>src/lib/timeline/policy4.ts:94</code>; <code>runnable</code>, <code>limitsOf</code> from <code>src/lib/game/limits</code>.</li>
+      <li>Produces: no new export.</li>
+    </ul>
+    <ol>
+      <li id="t2-s1"><input type="checkbox"> In <code>tree-balance.spec.ts</code>, extend the "current law reads each side goal" block and the fixture play block:
+        <pre><code data-lang="ts">it('current law reads every policy goal as 0 at every rung', async () => {
+  const atLaw = await currentLaw(engine);
+  const policy = ['policy-homes-1', 'policy-homes-2', 'policy-homes-3', 'approved-homes'];
+  for (let rung = 0; rung &lt; RUNGS; rung++) {
+    for (const g of SIDE_GOALS.filter((x) =&gt; policy.includes(x.id))) {
+      expect(atLaw(rung)!(g)).toBe(0);
+    }
+  }
+});
+
+it('no policy goal is met on a run that forecast a document with nothing in force', () =&gt; {
+  // run 1 of every play forecasts DEFAULT_POLICY4
+  for (const r of [finishing, forMe, stuck, tooLong]) {
+    expect(r.runs[0]!.sideMet.filter((id) =&gt; policy.includes(id))).toEqual([]);
+  }
+});</code></pre>
+        Use the file's existing <code>engine</code>, <code>finishing</code>, <code>forMe</code>, <code>stuck</code>, <code>tooLong</code> and hoist <code>policy</code> to the describe. Also add a pure <code>sideReport</code> case: an <code>atLaw</code> returning 0 for a goal with target 1,000 yields no <code>at-or-below-current-law</code> flag and <code>raiseTo</code> null.</li>
+      <li id="t2-s2"><input type="checkbox"> Run and see the current-law test fail (policy goals read the effect over the old zoning):
+        <pre><code data-lang="sh">npx vitest run --project server scripts/tree-balance.spec.ts</code></pre></li>
+      <li id="t2-s3"><input type="checkbox"> In <code>playWithEvents</code>, compute <code>const doc = runnable(p.doc, limitsOf(before, nodes))</code> once, forecast <code>engine.view(doc)</code>, and pass <code>{ view, index, take, inForce: !nothingInForce(doc) }</code> to <code>resultOf</code>. In <code>currentLaw</code>, pass <code>inForce: false</code> to <code>g.read</code>.</li>
+      <li id="t2-s4"><input type="checkbox"> Run and see them pass; <code>npm run check</code> 0 errors.</li>
+      <li id="t2-s5"><input type="checkbox"> Commit; timing-check clean:
+        <pre><code data-lang="sh">git add scripts/tree-balance.ts scripts/tree-balance.spec.ts
+git commit -m "fix(tree-balance): read side goals with inForce"</code></pre></li>
+    </ol>
+  </section>
+
+  <section id="sec-task-3">
+    <h2>Task 3: Tune <code>tuning.ts</code> again on the production dataset</h2>
+    <p>Delivers row T1.</p>
+    <ul>
+      <li>Modify: <code>src/lib/game/catalogue/tuning.ts</code></li>
+      <li>Modify if needed: <code>src/lib/game/catalogue/tuning.spec.ts</code></li>
+    </ul>
+    <ul>
+      <li>Consumes: Tasks 1 and 2.</li>
+      <li>Produces: <code>tuning.ts</code> under which <code>tree-balance</code> exits 0 on <code>2026-11-14-09ca30c8</code>.</li>
+    </ul>
+    <ol>
+      <li id="t3-s1"><input type="checkbox"> Run the report on the production dataset and save the text under the SDD dir (write it with Write; no shell redirect):
+        <pre><code data-lang="sh">npx tsx scripts/tree-balance.ts --version 2026-11-14-09ca30c8</code></pre>
+        The policy goals now read 0 under current law, so their floor is 0 and <code>at-or-below-current-law</code> can no longer fire for them; the targets set earlier against the old reading may now be higher than play needs or never met.</li>
+      <li id="t3-s2"><input type="checkbox"> Edit <code>tuning.ts</code> by hand and rerun until exit 0, by <code>#sec-design-balance-side</code> and <code>#sec-design-balance-prices</code>: every gated <code>hand</code> play finishes and passes; no side goal is flagged; a flagged <code>at-or-below-current-law</code> target is set to its <code>raiseTo</code>; prices whole and above 0, rising within a node; the cheapest level shown at rung 0 at or under <code>RUNG_LUMP</code>. A goal no tuning meets above its floor in any gated <code>hand</code> play is left out of <code>SIDE_TUNING</code> (then retune the rest). <code>funded-homes</code> and <code>affordable-homes</code> stay left out unless a gated <code>hand</code> play now meets them above their floors. Keep every report run in the SDD dir.</li>
+      <li id="t3-s3"><input type="checkbox"> Stop and report BLOCKED (the operator files a question for the owner) when leaving a goal out would empty a ring, or when no set of numbers passes; include the hand-back the spec names: each goal left out, the highest value any gated <code>hand</code> play reached for it, its floor, and the deadline it was read at.</li>
+      <li id="t3-s4"><input type="checkbox"> Run the tuning and game tests; <code>tuning.spec.ts</code> already holds <code>#sec-tests-tuning</code> for left-out goals: change it only if it no longer matches that section.
+        <pre><code data-lang="sh">npx vitest run --project server src/lib/game scripts/tree-balance.spec.ts
+npm run check
+npm run lint</code></pre></li>
+      <li id="t3-s5"><input type="checkbox"> Commit, with the final report's exit line and the goals left out in the body; timing-check clean:
+        <pre><code data-lang="sh">git add src/lib/game/catalogue/tuning.ts
+git commit -m "chore(tuning): retune with policy goals read on inForce"</code></pre></li>
+    </ol>
+  </section>
+</article>

@@ -123,7 +123,7 @@ describe('readRun', () => {
 
 describe('resultOf', () => {
   const index = 7;
-  const input = (t: RunTake, v = view()) => ({ view: v, index, take: t });
+  const input = (t: RunTake, v = view()) => ({ view: v, index, take: t, inForce: true });
 
   it('gives the lump on the first run to meet the rung, else null', () => {
     const t = take();
@@ -266,7 +266,7 @@ describe('settle', () => {
     const s = Object.freeze({ ...NEW_GAME });
     let r!: RunResult;
     expect(() => {
-      r = resultOf(s, rd, t, { view: view(), index: 7, take: t }, META);
+      r = resultOf(s, rd, t, { view: view(), index: 7, take: t, inForce: true }, META);
     }).not.toThrow();
     expect(() => settle(s, Object.freeze(r))).not.toThrow();
   });

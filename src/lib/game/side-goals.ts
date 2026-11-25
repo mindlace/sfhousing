@@ -10,6 +10,8 @@ export interface SideInput {
   view: TimelineView;
   index: number;
   take: RunTake;
+  /** Whether any policy is in force in the plan; with none, the effect reads 0. */
+  inForce: boolean;
 }
 
 export interface SideGoal {
@@ -26,15 +28,15 @@ type Tuning = Readonly<Record<string, { target: number; reward: Units }>>;
 const inView = (v: TimelineView, i: number): boolean =>
   Number.isInteger(i) && i >= 0 && i <= v.filledThrough;
 
-/** The plan less current law, 0 with nothing in force (compare 'preFzp'). */
+/** The plan less current law, 0 with nothing in force (whatever compare holds). */
 const effect =
   (field: 'completedNetNew' | 'entitledNew') =>
   (target: number): Read =>
-  ({ view, index }) => {
+  ({ view, index, inForce }) => {
     if (!inView(view, index)) return null;
     const row = view.planEffect[index];
     if (row === undefined) return null;
-    return { value: view.compare === 'preFzp' ? 0 : row[field], target };
+    return { value: inForce ? row[field] : 0, target };
   };
 
 /** floor(100 × collected / dropped). */

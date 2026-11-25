@@ -330,6 +330,7 @@ export interface SideInput {
   view: TimelineView;
   index: number;
   take: RunTake;
+  inForce: boolean;
 }
 
 export interface SideGoal {
@@ -353,6 +354,7 @@ export function sideShown(s: GameState, goals?: readonly SideGoal[]): SideGoal[]
         <dt><code>waitingMoney</code></dt><dd>Homes waiting for money at the deadline's month; null when the view has no such series.</dd>
         <dt><code>lump</code></dt><dd><code>RUNG_LUMP</code> when this run is the first to meet its rung, else null.</dd>
         <dt><code>index</code></dt><dd>The deadline's month in the view.</dd>
+        <dt><code>inForce</code></dt><dd>A policy of the document the view was forecast from is on with a span in force: <code>!nothingInForce(doc)</code> of the runnable document.</dd>
       </dl>
       <ul>
         <li>Rung 0's deadline is <code>defaultGoal(asOf).deadline</code>. Rung <em>k</em> is the last day of December of <code>LADDER_YEARS[k - 1]</code>.</li>
@@ -374,6 +376,7 @@ export function sideShown(s: GameState, goals?: readonly SideGoal[]): SideGoal[]
         <li><code>fitGame</code> returns the same object when nothing is dropped or lowered.</li>
         <li><code>sideShown</code> returns the first <code>SIDE_SHOWN</code> goals whose ring is open and which are not met.</li>
         <li>A side goal's <code>read</code> returns null when the view lacks what it reads.</li>
+        <li>A goal that reads the policy's effect (<code>planEffect</code>) reads 0 while <code>inForce</code> is false: the view's twin is then the old zoning, not current law.</li>
       </ul>
     </section>
 
@@ -481,7 +484,7 @@ export interface TimelineView {
         <li><code>view.months[i]</code> is the first day of calendar month i from the dataset date's month (<code>src/lib/sim/world/score/types.ts:156-157</code>).</li>
         <li><code>view.rows[i]</code> holds <code>completedNet</code>, <code>entitledNew</code> and <code>inProgress</code> by stage (<code>src/lib/sim/scenario/types.ts:313-320</code>).</li>
         <li><code>view.planEffect[i]</code> is the plan less its twin for <code>entitledNew</code> and <code>completedNetNew</code> (<code>src/lib/sim/world/score/types.ts:15-18</code>).</li>
-        <li><code>view.compare</code> is <code>'preFzp'</code> exactly when nothing is in force; the twin is then the old zoning, not current law (<code>src/lib/sim/world/policy/compare.ts:43-45</code>).</li>
+        <li>The twin is the old zoning when nothing is in force and current law otherwise (<code>comparisonOf</code>, <code>src/lib/sim/world/policy/compare.ts:43-45</code>). <code>view.compare</code> is <code>'plan'</code> for every document: the view carries the plan's own statics (<code>src/lib/sim/world/runner/runner.ts:521</code>, <code>:776-779</code>), so it does not say which twin ran.</li>
         <li><code>view.money</code> carries <code>fundedHomes</code> by month and per-pool <code>spent</code>, and is null on a run with no pool (<code>src/lib/sim/scenario/types.ts:349-367</code>, <code>src/lib/sim/world/score/view.ts:68</code>).</li>
         <li><code>spent</code> is cumulative grants paid (<code>docs/dev/finance-score.md:131</code>).</li>
         <li><code>view.tiers</code> is cumulative net new homes by income tier, or null (<code>src/lib/sim/scenario/types.ts:343-347</code>).</li>
@@ -1128,7 +1131,7 @@ export function settle(s: GameState, r: RunResult): GameState {
 
     <section id="sec-d-side">
       <h3>Side goals (<code>side-goals.ts</code>)</h3>
-      <p>Eleven goals, in the order <code>sideShown</code> walks them. Each reads one field the page already receives at the deadline's month, or the run's own counts (call 11). A goal's target and reward come from <code>SIDE_TUNING</code> in <code>catalogue/tuning.ts</code> by its id (call 25); its id, label, ring and <code>read</code> are here. A policy goal reads the policy's effect as 0 with nothing in force, because the view's twin is then the old zoning, not current law.</p>
+      <p>Eleven goals, in the order <code>sideShown</code> walks them. Each reads one field the page already receives at the deadline's month, or the run's own counts (call 11). A goal's target and reward come from <code>SIDE_TUNING</code> in <code>catalogue/tuning.ts</code> by its id (call 25); its id, label, ring and <code>read</code> are here. A policy goal reads the policy's effect as 0 while <code>SideInput.inForce</code> is false, because the view's twin is then the old zoning, not current law.</p>
       <table id="tbl-side-goals">
         <caption>The side goals</caption>
         <thead>
@@ -1178,15 +1181,15 @@ type Tuning = Readonly&lt;Record&lt;string, { target: number; reward: Units }&gt
 const inView = (v: TimelineView, i: number): boolean =&gt;
   Number.isInteger(i) &amp;&amp; i &gt;= 0 &amp;&amp; i &lt;= v.filledThrough;
 
-/** The plan less current law, 0 with nothing in force (compare 'preFzp'). */
+/** The plan less current law; 0 with nothing in force, when the twin is the old zoning. */
 const effect =
   (field: 'completedNetNew' | 'entitledNew') =&gt;
   (target: number): Read =&gt;
-  ({ view, index }) =&gt; {
+  ({ view, index, inForce }) =&gt; {
     if (!inView(view, index)) return null;
     const row = view.planEffect[index];
     if (row === undefined) return null;
-    return { value: view.compare === 'preFzp' ? 0 : row[field], target };
+    return { value: inForce ? row[field] : 0, target };
   };
 
 /** floor(100 × collected / dropped). */
@@ -1481,7 +1484,7 @@ export function defaultSaveName(from: DefaultFrom, taken: readonly string[]): st
         <li><code>sideGoals</code> of the starting table gives eleven goals with unique ids, in the table's order, each label carrying its formatted target ("1,000 homes from your policy", "Collect 50% of the homes in a run", "$100 million of new money granted").</li>
         <li><code>sideGoals</code> leaves out a goal with no tuning entry, ignores an entry with no goal, and takes the reward and target from the table.</li>
         <li>Each goal reads the value its row of <a href="#tbl-side-goals">the side goals table</a> names from a built view and take, and returns null in each case the row names.</li>
-        <li>The policy goals read 0 when <code>compare</code> is <code>'preFzp'</code>.</li>
+        <li>The policy goals read 0 when <code>inForce</code> is false, whatever <code>planEffect</code> holds, and read <code>planEffect</code> when it is true.</li>
         <li><code>new-money</code> counts only pools whose id begins <code>u-</code>.</li>
         <li><code>sideShown</code> returns at most three, in order, skipping goals met and goals whose ring is above the rung.</li>
       </ul>
@@ -1508,7 +1511,7 @@ export function defaultSaveName(from: DefaultFrom, taken: readonly string[]): st
       <li><strong><code>deadlineIndex</code> is exported</strong> so the page gives side goals the month <code>readRun</code> reads.</li>
       <li><strong>Side goal ids carry no number and labels are built from the target.</strong> The targets are tuned in another file; the label must follow and the saved id must not.</li>
       <li><strong>A goal with no tuning entry is left out.</strong> The stub tuning is empty until <code>tree-catalogue</code> fills it; leaving the goal out keeps the application building.</li>
-      <li><strong>Policy goals read 0 with nothing in force,</strong> because the view's comparison is then the old zoning and its effect is not the player's.</li>
+      <li><strong>Policy goals read 0 with nothing in force,</strong> because the view's comparison is then the old zoning and its effect is not the player's. The caller says whether anything is in force (<code>SideInput.inForce</code>), as the page already decides for its own "From your policy" line, since the view does not record which twin ran.</li>
       <li><strong>Public money per added home is not a side goal.</strong> Lower is better, and <code>SideGoal.read</code> is met from below.</li>
       <li><strong>The starting tuning values</strong> are <code>RUNG_LUMP</code> 2,000 and side rewards from 300 to 1,500, on one scale; <code>tree-catalogue</code>'s balance script tunes them.</li>
     </ul>
