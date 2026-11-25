@@ -11,7 +11,10 @@ import '../../routes/layout.css';
 import { parseManifest, type Manifest } from '$lib/data/manifest';
 import { fixtureCalibration } from '$lib/fzp/fixtures/calibration';
 import { formatShortMonthYear } from '$lib/fzp/format';
-import { stub } from '$lib/fzp/test/sim-map-stub';
+import { callsOf, stub } from '$lib/fzp/test/sim-map-stub';
+import type { CameraFrame } from '$lib/map/types';
+import type { GamePhase } from '$lib/sim-page/game-phase';
+import { RHNA_DEADLINE } from '$lib/sim/scenario/score';
 import { dayFromUtc, utcParts } from '$lib/fzp/time';
 import { NODES } from '$lib/game/catalogue/nodes';
 import { RUNGS, ladder } from '$lib/game/ladder';
@@ -22,6 +25,7 @@ import {
   GOAL_MET,
   LAST_GOAL,
   NO_SIDE_GOALS,
+  RUN_BUSY,
   goalLine,
   progressText,
   sideMetText,
@@ -34,12 +38,14 @@ import { monthFirstDay } from '$lib/sim/world/months';
 import type { ScoreStatics } from '$lib/sim/world/score/types';
 import type { Day } from '$lib/timelapse/time';
 import manifestJson from '../../../e2e/fixtures/data/fixture-0/manifest.json';
+import type { AddChoice } from './add';
 import { LOCKED_LANE, goalUnlocks } from './game-copy';
 import { DEFAULT_POLICY4, type Policy, type SimPolicy4 } from './policy4';
 import type { Lots } from './session.svelte';
 import { FakeTimelineWorker, compiledMsg, filledMsg } from './test/fake-timeline-worker';
-import { statics as baseStatics } from './test/fixtures';
-import { gameWith } from './test/game';
+import { chunk, statics as baseStatics } from './test/fixtures';
+import { GAME_ID, gameWith } from './test/game';
+import { isValidId } from '$lib/ids/base58';
 import TimelineModeHost from './test/TimelineModeHost.svelte';
 
 vi.mock('$lib/map/SimMap.svelte', () => import('$lib/fzp/test/FzpSimMapStub.svelte'));
@@ -80,6 +86,11 @@ type Over = Partial<{
   goalAmount: number;
   initialPolicy: SimPolicy4;
   initialRun: SimPolicy4;
+  phased: boolean;
+  initialFrame: CameraFrame;
+  onstarter: (choice: AddChoice, label: string) => void;
+  withInspector: boolean;
+  inspectorOpen: boolean;
 }>;
 
 let workers: FakeTimelineWorker[];
@@ -91,6 +102,8 @@ function setup(over: Over = {}) {
     setPolicy?: (p: SimPolicy4) => void;
     setRun?: (p: SimPolicy4) => void;
     setLots?: (l: Lots | null) => void;
+    setPhase?: (p: GamePhase) => void;
+    setLotsFailed?: (f: boolean) => void;
   } = {};
   const createWorker = vi.fn(() => {
     const f = new FakeTimelineWorker();
@@ -114,13 +127,20 @@ function setup(over: Over = {}) {
       fetchPlaces: async () => null,
       ...(over.game ? { game: over.game } : {}),
       ...(over.goalAmount !== undefined ? { goalAmount: over.goalAmount } : {}),
-      ...(over.initialRun ? { initialRun: over.initialRun } : {})
+      ...(over.initialRun ? { initialRun: over.initialRun } : {}),
+      ...(over.phased ? { phased: true } : {}),
+      ...(over.initialFrame ? { initialFrame: over.initialFrame } : {}),
+      ...(over.onstarter ? { onstarter: over.onstarter } : {}),
+      ...(over.withInspector !== undefined ? { withInspector: over.withInspector } : {}),
+      ...(over.inspectorOpen !== undefined ? { inspectorOpen: over.inspectorOpen } : {})
     }
   });
   return {
     r,
     setRun: (p: SimPolicy4) => ctl.setRun!(p),
-    setLots: (l: Lots | null) => ctl.setLots!(l)
+    setLots: (l: Lots | null) => ctl.setLots!(l),
+    setPhase: (p: GamePhase) => ctl.setPhase!(p),
+    setLotsFailed: (f: boolean) => ctl.setLotsFailed!(f)
   };
 }
 
@@ -289,12 +309,265 @@ describe('TimelineMode in a game: the goal and the header', () => {
     expect(none('tl-goal')).not.toBeNull();
   });
 
+  it('Activity offers no starters in a game, even given onstarter; without one it does', async () => {
+    const onstarter = vi.fn();
+    const plain = await opened({ withInspector: true, inspectorOpen: false, onstarter }, LONG);
+    const activity = page.getByTestId('tl-activity');
+    await expect.element(activity.getByText('Try one:')).toBeVisible();
+    await unmount(plain);
+
+    await opened(
+      {
+        game: gameWith({ phase: 'runs', runs: 1 }),
+        withInspector: true,
+        inspectorOpen: false,
+        onstarter
+      },
+      LONG
+    );
+    await expect.element(page.getByTestId('tl-activity')).toBeVisible();
+    expect(page.getByTestId('tl-activity').getByText('Try one:').elements()).toHaveLength(0);
+  });
+
   it("the timeline holds to the game's limits: nothing bought, the lanes are locked", async () => {
     await opened({ game: gameWith({ phase: 'runs', runs: 1 }) }, LONG);
     await expect.poll(() => page.getByTestId('tl-locked-lane').elements().length).toBe(3);
     for (const el of page.getByTestId('tl-locked-lane').elements()) {
       expect(el.textContent).toBe(LOCKED_LANE);
     }
+  });
+});
+
+describe('TimelineMode in a game: the phases and what each mounts (#tbl-phase-mounts)', () => {
+  const mode = () => page.getByTestId('tl-mode').element();
+  const mapBox = () => page.getByTestId('tl-map-box').element();
+  const hostTree = () => page.getByTestId('host-tree').element();
+  const phaseIs = (p: string) => expect.poll(() => mode().getAttribute('data-phase')).toBe(p);
+  it("gameWith's id is fixed and valid", () => {
+    expect(isValidId(GAME_ID)).toBe(true);
+    expect(gameWith().currentId).toBe(GAME_ID);
+  });
+
+  const space = () => {
+    const e = new KeyboardEvent('keydown', { key: ' ', code: 'Space', cancelable: true });
+    window.dispatchEvent(e);
+    return e;
+  };
+
+  it('tree: the pane covers the map box, which is inert; no dock, key or card', async () => {
+    await opened({ game: gameWith({ phase: 'runs', runs: 1 }), phased: true }, LONG);
+    expect(mode().getAttribute('data-phase')).toBe('tree');
+    const pane = page.getByTestId('game-tree-pane').element().getBoundingClientRect();
+    const box = mapBox().getBoundingClientRect();
+    expect([pane.top, pane.left, pane.width, pane.height]).toEqual([
+      box.top,
+      box.left,
+      box.width,
+      box.height
+    ]);
+    expect(page.getByTestId('game-tree-pane').element().contains(hostTree())).toBe(true);
+    expect(mapBox().contains(hostTree())).toBe(false);
+    expect(mapBox().hasAttribute('inert')).toBe(true);
+    expect(mapBox().getAttribute('aria-hidden')).toBe('true');
+    // The map stays mounted under the tree.
+    expect(none('fzp-sim-map-stub')).not.toBeNull();
+    expect(none('tl-dock')).toBeNull();
+    expect(none('map-key-control')).toBeNull();
+    expect(none('tl-card')).toBeNull();
+  });
+
+  it('starting: the map takes the whole mode box; no dock, key or card; taps open no card', async () => {
+    await opened({ game: gameWith({ phase: 'runs', runs: 0 }), phased: true }, LONG);
+    expect(mode().getAttribute('data-phase')).toBe('starting');
+    expect(none('tl-dock')).toBeNull();
+    expect(none('map-key-control')).toBeNull();
+    expect(none('tl-card')).toBeNull();
+    expect(none('game-tree-pane')).toBeNull();
+    expect(mapBox().hasAttribute('inert')).toBe(false);
+    expect(mapBox().getAttribute('tabindex')).toBe('-1');
+    expect(stub.props.tapCards).toBe(false);
+    const box = mapBox().getBoundingClientRect();
+    expect(box.bottom).toBe(mode().getBoundingClientRect().bottom);
+  });
+
+  it("workshop: today's layout, the dock, key and card mounted, the map not inert", async () => {
+    const s = await opened({ game: gameWith({ phase: 'runs', runs: 1 }), phased: true }, LONG);
+    await phaseIs('tree');
+    s.setPhase('workshop');
+    await phaseIs('workshop');
+    await expect.element(page.getByTestId('tl-dock')).toBeInTheDocument();
+    expect(none('map-key-control')).not.toBeNull();
+    expect(none('tl-card')).not.toBeNull();
+    expect(none('game-tree-pane')).toBeNull();
+    expect(mapBox().hasAttribute('inert')).toBe(false);
+    expect(mapBox().hasAttribute('aria-hidden')).toBe(false);
+    expect(mapBox().hasAttribute('tabindex')).toBe(false);
+    expect(stub.props.tapCards).toBe(true);
+  });
+
+  it('setRunView: true in starting, false in tree; never without a game', async () => {
+    const s = await opened({ game: gameWith({ phase: 'runs', runs: 1 }), phased: true }, LONG);
+    await expect.poll(() => callsOf('setRunView').at(-1)).toEqual([false]);
+    // Tree's Run sends `run`: tree to starting.
+    await page.getByTestId('host-run').click();
+    await phaseIs('starting');
+    await expect.poll(() => callsOf('setRunView').at(-1)).toEqual([true]);
+    s.setPhase('tally');
+    await phaseIs('tally');
+    await expect.poll(() => callsOf('setRunView').length).toBe(3);
+    expect(callsOf('setRunView').at(-1)).toEqual([true]);
+    s.setPhase('workshop');
+    await phaseIs('workshop');
+    await expect.poll(() => callsOf('setRunView').at(-1)).toEqual([false]);
+    await unmount(s);
+    stub.reset();
+
+    await opened({}, LONG);
+    expect(mode().getAttribute('data-phase')).toBe('none');
+    expect(callsOf('getMap').length).toBeGreaterThan(0); // the map was ready
+    expect(callsOf('setRunView')).toEqual([]);
+  });
+
+  it('setRunView is called once in onMapReady with the phase', async () => {
+    stub.autoReady = false;
+    await opened({ game: gameWith({ phase: 'runs', runs: 0 }), phased: true }, LONG);
+    expect(callsOf('setRunView')).toEqual([]);
+    stub.fireReady();
+    await expect.poll(() => callsOf('setRunView')).toEqual([[true]]);
+  });
+
+  it('prefetchViewport asks nothing while in RUN_VIEW, and asks in tree', async () => {
+    const s = await opened({ game: gameWith({ phase: 'runs', runs: 0 }), phased: true }, LONG);
+    const before = w().all('prefetch').length;
+    stub.map.fire('moveend');
+    expect(w().all('prefetch').length).toBe(before);
+    s.setPhase('tally');
+    await phaseIs('tally');
+    stub.map.fire('moveend');
+    expect(w().all('prefetch').length).toBe(before);
+    // The control: out of RUN_VIEW the same moveend asks.
+    s.setPhase('tree');
+    await phaseIs('tree');
+    stub.map.fire('moveend');
+    expect(w().all('prefetch').length).toBe(before + 1);
+  });
+
+  it('Space in starting and tally does nothing and is prevented', async () => {
+    const s = await opened({ game: gameWith({ phase: 'runs', runs: 0 }), phased: true }, LONG);
+    expect(mode().getAttribute('data-phase')).toBe('starting');
+    const e = space();
+    expect(e.defaultPrevented).toBe(true);
+    expect(debug().playing).toBe(false);
+    s.setPhase('tally');
+    await phaseIs('tally');
+    const t = space();
+    expect(t.defaultPrevented).toBe(true);
+    expect(debug().playing).toBe(false);
+    // The control: in workshop Space plays.
+    s.setPhase('workshop');
+    await phaseIs('workshop');
+    await expect.element(page.getByTestId('tl-play')).toBeInTheDocument();
+    space();
+    await expect.poll(() => debug().playing).toBe(true);
+  });
+
+  it('busy while the forecast is not ready, false once it is; ending null before the last rung is met', async () => {
+    setup({ game: gameWith({ phase: 'runs', runs: 1 }), phased: true });
+    await expect.poll(() => workers.length).toBe(1);
+    await expect.poll(() => w().lastOf('openTimeline')).toBeTruthy();
+    await expect.element(page.getByTestId('host-tree')).toHaveAttribute('data-busy', 'true');
+    emit(compiledMsg(1, LONG));
+    emit(filledMsg(1, 0, LONG.lastIndex + 1));
+    await expect.element(page.getByTestId('host-tree')).toHaveAttribute('data-busy', 'false');
+    expect(hostTree().getAttribute('data-ending')).toBe('null');
+  });
+
+  it('busy again while lots have failed', async () => {
+    const s = await opened({ game: gameWith({ phase: 'runs', runs: 1 }), phased: true }, LONG);
+    await expect.element(page.getByTestId('host-tree')).toHaveAttribute('data-busy', 'false');
+    s.setLotsFailed(true);
+    s.setLots(null);
+    await expect.element(page.getByTestId('host-tree')).toHaveAttribute('data-busy', 'true');
+  });
+
+  it('ending once finished: reachedOn of the last met rung, stateBy RHNA_DEADLINE', async () => {
+    const met = Array.from({ length: RUNGS }, (_, rung) => ({
+      rung,
+      reachedOn: asOf + 400 + rung,
+      datasetVersion: 'fixture-0',
+      at: '2026-11-25T00:00:00.000Z'
+    }));
+    const game = gameWith({ phase: 'runs', runs: RUNGS, rung: RUNGS - 1, met });
+    await opened({ game, phased: true }, LONG);
+    await expect
+      .poll(() => JSON.parse(hostTree().getAttribute('data-ending')!))
+      .toEqual({ reachedOn: asOf + 400 + RUNGS - 1, stateBy: RHNA_DEADLINE, perAddedHome: null });
+  });
+
+  it("ending's perAddedHome is the view's at the deadline's month when it has money", async () => {
+    const met = Array.from({ length: RUNGS }, (_, rung) => ({
+      rung,
+      reachedOn: asOf + 400,
+      datasetVersion: 'fixture-0',
+      at: '2026-11-25T00:00:00.000Z'
+    }));
+    const game = gameWith({ phase: 'runs', runs: RUNGS, rung: RUNGS - 1, met });
+    const finance: ScoreStatics = { ...LONG, limits: [], debts: [] };
+    setup({ game, phased: true });
+    await expect.poll(() => w()?.lastOf('openTimeline')).toBeTruthy();
+    emit(compiledMsg(1, finance));
+    emit({
+      type: 'filled',
+      rev: 1,
+      through: finance.lastIndex,
+      series: chunk(0, finance.lastIndex + 1, { pools: ['p'] })
+    });
+    await expect
+      .poll(() => JSON.parse(hostTree().getAttribute('data-ending')!)?.perAddedHome)
+      .toEqual(expect.any(Number));
+  });
+
+  it("starting shows the waiting notice in a status region; tree doesn't", async () => {
+    const s = await opened({ game: gameWith({ phase: 'runs', runs: 0 }), phased: true }, LONG);
+    const waiting = page.getByTestId('run-waiting');
+    await expect.element(waiting).toHaveTextContent(RUN_BUSY);
+    expect(waiting.element().closest('[role=status]')).not.toBeNull();
+    s.setPhase('tree');
+    await phaseIs('tree');
+    expect(none('run-waiting')).toBeNull();
+  });
+
+  it('focus: the map box in starting; the Zoning toggle in workshop with nothing selected', async () => {
+    const s = await opened({ game: gameWith({ phase: 'runs', runs: 1 }), phased: true }, LONG);
+    await page.getByTestId('host-run').click();
+    await phaseIs('starting');
+    await expect.poll(() => document.activeElement).toBe(mapBox());
+    s.setPhase('workshop');
+    await phaseIs('workshop');
+    const toggle = page.getByRole('button', { name: 'Zoning', exact: true }).element();
+    await expect.poll(() => document.activeElement).toBe(toggle);
+  });
+
+  it('focus: tree moves none (the Run stays focused)', async () => {
+    await opened({ game: gameWith({ phase: 'runs', runs: 1 }), phased: true }, LONG);
+    const run = page.getByTestId('host-run').element() as HTMLElement;
+    run.focus();
+    await tick();
+    await tick();
+    expect(document.activeElement).toBe(run);
+  });
+
+  it('no phase without phased: data-phase none and the dock mounts', async () => {
+    await opened({ game: gameWith({ phase: 'runs', runs: 1 }) }, LONG);
+    expect(mode().getAttribute('data-phase')).toBe('none');
+    await expect.element(page.getByTestId('tl-dock')).toBeInTheDocument();
+    expect(callsOf('setRunView')).toEqual([]);
+  });
+
+  it('initialFrame reaches SimMap', async () => {
+    const frame = { center: [-122.42, 37.77], zoom: 15, bearing: 0, pitch: 0 } as CameraFrame;
+    await opened({ initialFrame: frame }, LONG);
+    expect(stub.props.initialFrame).toEqual(frame);
   });
 });
 

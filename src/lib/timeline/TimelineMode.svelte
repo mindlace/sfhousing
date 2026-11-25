@@ -25,8 +25,17 @@
   import { lotsText } from '$lib/paint/rows';
   import { scoreCopy, type ScoreCopy } from '$lib/sim-page/policy';
   import type { SimLevers } from '$lib/sim/levers/types';
+  import type { Day as TreeDay } from '$lib/timelapse/time';
 
   export type MapLike = NonNullable<ReturnType<SimMapHandle['getMap']>>;
+
+  /** What the page's tree is given (game-sim #sec-design-props, #tbl-tree-props). */
+  export interface TreeArgs {
+    /** The forecast is not ready to run (game-sim #sec-design-run's conditions). */
+    busy: boolean;
+    /** Null until the last rung is met (`finished`). */
+    ending: { reachedOn: TreeDay; stateBy: TreeDay; perAddedHome: number | null } | null;
+  }
 
   /** What /sim's page needs from the timeline client (brush pickers, outlines, the map tap). */
   export interface TimelineClientApi {
@@ -166,12 +175,18 @@
   import { keyTally } from './key';
   import SimKey from './SimKey.svelte';
   import { NODES } from '$lib/game/catalogue/nodes';
-  import { RUNGS, goalAt, ladder } from '$lib/game/ladder';
+  import { RUNGS, finished, goalAt, ladder } from '$lib/game/ladder';
   import { OPEN_LIMITS } from '$lib/game/limits';
   import { sideShown, type SideGoal } from '$lib/game/side-goals';
   import type { GameStore } from '$lib/game/store.svelte';
   import GoalHeadline from '$lib/game/ui/GoalHeadline.svelte';
   import { goalUnlocks } from './game-copy';
+  import type { Sound } from '$lib/game/run/sound';
+  import { RUN_BUSY } from '$lib/game/ui/words';
+  import { moneyFigureAt } from '$lib/fzp/money-view';
+  import type { CameraFrame } from '$lib/map/types';
+  import { RUN_VIEW, type GamePhase, type PhaseEvent } from '$lib/sim-page/game-phase';
+  import { RHNA_DEADLINE } from '$lib/sim/scenario/score';
 
   interface Props {
     manifest: Manifest | null;
@@ -219,8 +234,29 @@
      * game: today's page. Default null.
      */
     game?: GameStore | null;
-    /** The goal's amount, over the default goal (the `goal` seam wins). Default null: the default's. */
+    /**
+     * The goal's amount. In a game, over `goalAt` of the rung in play (the `goal` seam is not
+     * read); without one, over the default goal (the `goal` seam wins). Default null: the
+     * default's.
+     */
     goalAmount?: number | null;
+    /**
+     * The game's phase on the page (game-sim #sec-design-states); null with no game, the open
+     * game or one in its opening (today's layout). Default null.
+     */
+    phase?: GamePhase | null;
+    /** The phase events this component sends (the page applies `nextPhase`). */
+    onphase?(e: PhaseEvent): void;
+    /** The tree screen, given Tree's busy and ending; rendered in the tree phase only. */
+    tree?: Snippet<[TreeArgs]>;
+    /** The run's sounds; null for none. */
+    sound?: Sound | null;
+    /** "Collect for me" as it stands. */
+    collectForMe?: boolean;
+    /** A run's wall time in ms (default `RUN_MS`). */
+    runMs?: number;
+    /** Edit mode: the camera the map opens on; undefined gives today's camera. */
+    initialFrame?: CameraFrame;
     /** The lots of `policy`'s brush queries; null while one is unresolved (PolicySync). */
     lots: Lots | null;
     /**
@@ -292,7 +328,10 @@
     bottomExtra?: number;
     /** Test seam: the status slot's least gap between updates (rule 32). */
     statusMs?: number;
-    /** Test seam: the goal every goal read goes through. Default `defaultGoal(asOf)`. */
+    /**
+     * Test seam: the goal every goal read goes through without a game (in a game it is not read:
+     * the goal is the rung in play's). Default `defaultGoal(asOf)`.
+     */
     goal?: Goal;
     /** Test seam: fetches the neighbourhoods Activity's list names; null on any failure. */
     fetchPlaces?(url: string): Promise<NeighborhoodShapes | null>;
@@ -303,6 +342,9 @@
     spacePlays?: boolean;
   }
 
+  // The run's props (`onphase`, `sound`, `collectForMe`, `runMs`) are part of the interface before
+  // the run reads them.
+  // eslint-disable-next-line svelte/no-unused-props
   let {
     manifest: initialManifest,
     manifestError,
@@ -325,6 +367,10 @@
     run = undefined,
     game = null,
     goalAmount = null,
+    // `phase` is the local FzpPhase below.
+    phase: gamePhase = null,
+    tree = undefined,
+    initialFrame = undefined,
     lots,
     lotsFailed = false,
     onlotsretry = undefined,
@@ -378,6 +424,8 @@
   let client: TimelineClient | null = null;
   let clientApi: TimelineClientApi | null = null;
   let handle: SimMapHandle | null = null;
+  /** `handle` exists (it is not reactive): the forecast's ready condition reads this. */
+  let mapReady = $state(false);
   let map: MapLike | null = null;
   let dead = false;
 
@@ -401,6 +449,12 @@
   const windowEnd = $derived(monthLastDay(asOf, WINDOW_MONTHS));
   /** The game in play; the open game is no game (G2). */
   const g = $derived(game && !game.open ? game : null);
+  /** The game's phase on the page (game-sim #sec-design-states); null: today's layout. */
+  const gp = $derived<GamePhase | null>(g ? gamePhase : null);
+  /** Starting, run and tally: the map in its run view. */
+  const runView = $derived(gp !== null && RUN_VIEW.has(gp));
+  /** Every phase but workshop: the map takes the mode box, and no bottom pane is mounted. */
+  const mapOnly = $derived(gp !== null && gp !== 'workshop');
   /**
    * The page's goal. In a game, the rung in play's (`goalAmount` its amount when given; the seam
    * is not read). Without one, the seam, else the default goal built from the dataset's date,
@@ -596,10 +650,10 @@
   );
   /**
    * At today with nothing in force in the edited run document and the page editable: the starters.
-   * The page offers none in a game (no `onstarter`).
+   * None in a game, even given `onstarter` (game-sim #tbl-replacements).
    */
   const starters = $derived(
-    onstarter && calibration && nothingInForce(runDoc) ? startersFor(calibration, runDoc) : []
+    !g && onstarter && calibration && nothingInForce(runDoc) ? startersFor(calibration, runDoc) : []
   );
   /** The map key control's box: the card's area ends at its left edge. */
   let keyEl = $state<HTMLElement>();
@@ -735,6 +789,81 @@
     session?.notices.some((n) => n.id === 'error' || n.id === 'crash') ?? false
   );
 
+  // ---- the game's phases (game-sim #sec-design-states, #sec-design-run, #sec-design-buy) ----
+
+  /**
+   * The forecast is ready to run: the session is ready and not provisional, the numbers on show
+   * are current, the newest view has a filled month, the map handle exists, the lots have not
+   * failed, and no error or crash notice is up.
+   */
+  const ready = $derived(
+    !!session &&
+      session.phase === 'ready' &&
+      !session.provisional &&
+      !stale &&
+      !!current &&
+      current.filledThrough >= 0 &&
+      mapReady &&
+      !(lotsFailed && lots === null) &&
+      !halted
+  );
+  /**
+   * Tree's ending: null until the last rung is met; then that rung's day, the day RHNA asks for
+   * the goal's homes by, and the view on show's public dollars per added home at the deadline's
+   * month (null with no view, no money or that month not filled).
+   */
+  const ending = $derived.by<TreeArgs['ending']>(() => {
+    if (!g || !finished(g.state)) return null;
+    const last = g.state.met.find((m) => m.rung === RUNGS - 1)!;
+    const view = shownView;
+    let perAddedHome: number | null = null;
+    if (view?.money) {
+      const i = indexOfDay(view.months, goal.deadline);
+      if (i <= view.filledThrough) perAddedHome = moneyFigureAt(view.money, i).perAddedHome.all;
+    }
+    return { reachedOn: last.reachedOn, stateBy: RHNA_DEADLINE, perAddedHome };
+  });
+
+  // The map's run view follows the phase (M1); with no phase it is never called.
+  let viewPhase: GamePhase | null = untrack(() => gp);
+  $effect(() => {
+    const p = gp;
+    untrack(() => {
+      if (p === viewPhase) return;
+      viewPhase = p;
+      if (p !== null) handle?.setRunView(RUN_VIEW.has(p));
+    });
+  });
+
+  // Out of today's layout the card and the tooltip are not mounted: an open card closes.
+  $effect(() => {
+    if (!mapOnly) return;
+    untrack(() => {
+      closeCard();
+      hideTooltip();
+    });
+  });
+
+  // Focus on each change of phase, once the DOM has updated: the map box in starting and run (so
+  // the arrow keys reach the window), Tally's first button, nothing in tree (Tree focuses its
+  // Run), and in workshop the inspector's heading with a policy selected, else Zoning's toggle.
+  $effect(() => {
+    const p = gp;
+    if (p === null) return;
+    void tick().then(() => {
+      if (dead || p !== gp) return;
+      if (p === 'starting' || p === 'run') mapBox?.focus({ preventScroll: true });
+      else if (p === 'tally') {
+        modeEl?.querySelector<HTMLElement>('[data-testid=tl-tally] button')?.focus();
+      } else if (p === 'workshop') {
+        const sel = untrack(() => selected)
+          ? '[data-testid=tl-inspector] [data-testid=inspector] h2'
+          : '[data-testid=tl-kind-zoning] button.toggle';
+        modeEl?.querySelector<HTMLElement>(sel)?.focus();
+      }
+    });
+  });
+
   // ---- the status slot (rules 31, 32) ----
 
   /**
@@ -857,6 +986,8 @@
 
   function onWindowKey(e: KeyboardEvent): void {
     if (spaceTook && e.key === ' ' && e.repeat) return e.preventDefault();
+    // In starting, run and tally Space is taken and does nothing.
+    if (runView && isPlayKey(e, overlayOpen())) return e.preventDefault();
     if (!spacePlays || !playhead) return;
     if (!isPlayKey(e, overlayOpen())) return;
     e.preventDefault();
@@ -1079,8 +1210,12 @@
     statusCells.clear();
   }
 
+  /**
+   * Asks for the viewport's chunks. Not in the run view: the lock's `moveend` reports the whole
+   * city, whose chunks are not wanted.
+   */
   function prefetchViewport(): void {
-    if (!client || client.crashed || !map || !statics) return;
+    if (runView || !client || client.crashed || !map || !statics) return;
     const b = map.getBounds();
     client.prefetch([b.getWest(), b.getSouth(), b.getEast(), b.getNorth()]);
   }
@@ -1113,6 +1248,11 @@
   function onMapReady(h: SimMapHandle): void {
     if (dead) return;
     handle = h;
+    mapReady = true;
+    // The run view as the phase has it (M1); with no phase it is never called.
+    const p = untrack(() => gp);
+    viewPhase = p;
+    if (p !== null) h.setRunView(RUN_VIEW.has(p));
     pushLookups();
     const queued = pendingUpdates;
     pendingUpdates = [];
@@ -1647,6 +1787,7 @@
   class="sfh-fzp sfh-tl relative flex h-full flex-col max-md:overflow-y-auto"
   bind:clientHeight={modeClientH}
   data-testid="tl-mode"
+  data-phase={gp ?? 'none'}
 >
   {#if !noScenario}
     <!-- The status's one live region, at every width (polite, at most one change a second). -->
@@ -1744,11 +1885,31 @@
           </div>
         {/if}
       {/if}
+      {#if gp !== null && !noScenario}
+        <!-- Starting's waiting notice, with any error notice and its Retry; its polite region is
+             mounted with the phase so the notice is announced. -->
+        <div role="status" class="contents" data-testid="run-waiting-live">
+          {#if gp === 'starting'}
+            <Message text={RUN_BUSY} testid="run-waiting" />
+          {/if}
+        </div>
+      {/if}
     </NoticePills>
 
-    <div class="relative flex min-h-0 flex-1 max-md:h-[40%] max-md:flex-none">
-      <!-- The map and everything positioned over it. -->
-      <div bind:this={mapBox} class="relative min-h-0 min-w-0 flex-1">
+    <!-- Out of workshop the map takes the whole mode box at every width: no bottom pane. -->
+    <div class={['relative flex min-h-0 flex-1', !mapOnly && 'max-md:h-[40%] max-md:flex-none']}>
+      <!-- The map and everything positioned over it. In tree it stays mounted under the tree's
+           pane, inert; in starting and run it takes focus (the arrow keys reach the window). The
+           tabindex is only ever -1 (focusable by script, never a Tab stop). -->
+      <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+      <div
+        bind:this={mapBox}
+        class="relative min-h-0 min-w-0 flex-1 focus:outline-none"
+        data-testid="tl-map-box"
+        inert={gp === 'tree'}
+        aria-hidden={gp === 'tree' ? 'true' : undefined}
+        tabindex={gp === 'starting' || gp === 'run' ? -1 : undefined}
+      >
         <div class="tl-map h-full" data-testid="tl-map" data-stale={stale ? 'true' : undefined}>
           {#if manifest}
             <SimMap
@@ -1758,14 +1919,15 @@
               onready={onMapReady}
               {view}
               timelinePick={onPick}
-              tapCards={cards}
+              tapCards={cards && !runView}
+              {initialFrame}
             />
           {:else}
             <div class="h-full" data-testid="fzp-frame"></div>
           {/if}
         </div>
 
-        {#if manifest && session}
+        {#if manifest && session && !mapOnly}
           <!-- The map key and the page's Layers: after the map's own controls in Tab order, before
                the card. The key is open at rest from md; below md the control hides while the
                card's sheet covers its corner. -->
@@ -1782,7 +1944,7 @@
           </MapKeyControl>
         {/if}
 
-        {#if session && calibration && cardChance}
+        {#if session && calibration && cardChance && !mapOnly}
           <div class="tl-dim" data-stale={stale ? 'true' : undefined} data-testid="tl-card">
             <ProjectCardPanel
               state={cardState}
@@ -1813,10 +1975,20 @@
           />
         {/if}
       </div>
+      {#if gp === 'tree' && tree}
+        <!-- The page's tree over the box that holds the map, on the opaque surface, filling the
+             page below the header (the notice stack stays above it). -->
+        <div
+          class="absolute inset-0 z-20 overflow-y-auto bg-surface text-ink dark:bg-surface-dark dark:text-ink-dark"
+          data-testid="game-tree-pane"
+        >
+          {@render tree({ busy: !ready, ending })}
+        </div>
+      {/if}
     </div>
   </div>
 
-  {#if mounted && session && calibration}
+  {#if mounted && session && calibration && !mapOnly}
     <!-- From md the bottom pane: a fixed 40% of the mode box, the timeline beside the detail
          column (rule 1). Below md the timeline is in flow and the column a sheet; while pinned
          the pane is the mode box's height, so the mode box scrolls the map away first, then the

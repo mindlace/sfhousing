@@ -1,5 +1,4 @@
 // A game store in a given state for the timeline's tests, read from one v2 save in storage.
-import { newId } from '$lib/ids/base58';
 import type { GameSave, SaveEntry } from '$lib/game/save-shape';
 import { SAVES_KEY, saveKey } from '$lib/game/saves';
 import { NEW_GAME, type GameState } from '$lib/game/state';
@@ -7,8 +6,11 @@ import { GameStore } from '$lib/game/store.svelte';
 import { FakeSync } from '$lib/game/test/fake-sync.svelte';
 import { MemoryStorage } from '$lib/sharing/fixtures/memory-storage';
 
-/** The id of the one save `gameWith` writes (a valid id: the store refuses any other). */
-export const GAME_ID = newId();
+/**
+ * The id of the one save `gameWith` writes: fixed, so a failure reproduces, and valid (a UUIDv7 in
+ * Base58, `isValidId`), since the store refuses any other.
+ */
+export const GAME_ID = 'CHi3m3BMkMrVUcmbmLPVS';
 
 const AT = '2026-11-25T00:00:00.000Z';
 

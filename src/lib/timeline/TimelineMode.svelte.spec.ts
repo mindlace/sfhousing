@@ -3611,6 +3611,21 @@ describe('halos on the map', () => {
   });
 });
 
+describe('no game: no phase', () => {
+  it('data-phase is none, setRunView is never called, and the dock mounts', async () => {
+    await opened();
+    expect(page.getByTestId('tl-mode').element().getAttribute('data-phase')).toBe('none');
+    await expect.element(page.getByTestId('tl-dock')).toBeInTheDocument();
+    expect(callsOf('getMap').length).toBeGreaterThan(0); // the map was ready
+    expect(callsOf('setRunView')).toEqual([]);
+    const box = page.getByTestId('tl-map-box').element();
+    expect(box.hasAttribute('inert')).toBe(false);
+    expect(box.hasAttribute('tabindex')).toBe(false);
+    expect(document.querySelector('[data-testid=game-tree-pane]')).toBeNull();
+    expect(document.querySelector('[data-testid=run-waiting]')).toBeNull();
+  });
+});
+
 describe("Activity's latest stage changes", () => {
   const MISSION: [number, number] = [-122.4194, 37.76];
   const ELSEWHERE: [number, number] = [-122.5, 37.7];
