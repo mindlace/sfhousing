@@ -237,4 +237,4 @@ prototypes for the slope. Any change there is a dataset change, made at a releas
 ## The page
 
 See [fzp-mode.md](fzp-mode.md) ("Today's market in About"): About's `src-market` section (on
-`/sim` in the dialog over the map). Details carries no market paragraph since slice 9.
+the simulation in the dialog over the map). Details carries no market paragraph since slice 9.

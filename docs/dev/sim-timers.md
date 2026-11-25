@@ -1,11 +1,11 @@
-# Permitting timers on /sim
+# Permitting timers in the simulation
 
 Plan: `docs/superpowers/plans/` (plan 4 of 5, permitting timers). The sourced constants live in
 `src/lib/sim-page/timing-sources.ts`; each carries a `Provenance` (tier, label, sources, method)
 that the stage details show. A value that could not be sourced is `{ value: null, reason }`, and
 the preset or floor that needs it is unavailable (plan Calls 7 and 8). The UI is
 `PermittingSection.svelte` and `RouteTimeline.svelte` in `src/lib/sim-page/`; the rules are in
-`timing.ts`. On `/sim` the section is hosted in the inspector for a selected permitting policy ([timeline-ui.md](timeline-ui.md)); its "preset", "timer" and "share" below are one span's set, and the dates are the span's. See also [sim-page.md](sim-page.md) and [sim-levers.md](sim-levers.md).
+`timing.ts`. In the simulation the section is hosted in the inspector for a selected permitting policy ([timeline-ui.md](timeline-ui.md)); its "preset", "timer" and "share" below are one span's set, and the dates are the span's. See also [sim-page.md](sim-page.md) and [sim-levers.md](sim-levers.md).
 
 ## The timing model
 

@@ -1,224 +1,288 @@
-// The game's journey across units (closing spec, sec-design-journey and sec-design-measure): a new
-// visitor wins Paint, levels up onto /sim, wins level 2, levels up to 3 and finds the game on the
-// account; and a given measure added at a later month has its money dated from that month. Runs
-// against the VITE_E2E build on fixture-0, with the real game switched on by e2e/helpers/game.ts
-// before the first navigation; every wait is on the page or `window.__sfhFzp`, never on time.
+// The game's three journeys across units (closing spec, sec-design-journey, sec-design-keyboard,
+// sec-design-ending): a new visitor by pointer from Paint's room goal to the next goal and the
+// account's copy; the same loop by keyboard only, collecting with the ring; and the last deadline
+// met, which is the ending. Runs against the VITE_E2E build on fixture-0 with the real game
+// switched on by e2e/helpers/game.ts; every wait is a state in the page or in storage.
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import type { SfhFzpDebug } from '../src/lib/fzp/debug';
-import { E2E_GOAL_KEY } from '../src/lib/game/e2e';
-import type { Day } from '../src/lib/timelapse/time';
-import type { Inflow } from '../src/lib/timelapse/types';
-import type { Effect } from '../src/lib/timeline/policy4';
-import { PLUS_NAME } from '../src/lib/timeline/test/plus';
-import { expectNoA11yViolations } from './helpers/a11y';
-import { newVisitor, seedGame, seedGoalAmount } from './helpers/game';
-import { addPolicy, openKind, slider, waitFilled } from './helpers/run';
-import { gotoEditor, gotoHydrated, openHeaderMenu, paintOnce } from './helpers/sharing';
+import { PRICES, RUNG_LUMP } from '../src/lib/game/catalogue/tuning';
+import { seedGoalAmount, seedRunMs } from './helpers/game';
+import {
+  RUNGS,
+  buyNode,
+  firstReady,
+  openGamePanel,
+  playToEnding,
+  runTotals,
+  savedGame,
+  sweepRing,
+  tabTo,
+  untilPhase,
+  waitPhase,
+  waitSaved
+} from './helpers/play';
+import { waitFilled } from './helpers/run';
+import {
+  FRAME,
+  gotoEditor,
+  headerAction,
+  jumpAndIdle,
+  openHeaderMenu,
+  ops,
+  paintOnce
+} from './helpers/sharing';
 
-// Any stroke that adds a home wins Paint.
-const PAINT_AMOUNT = 1;
-// Homes current law reaches on fixture-0 at month 60: goal.measure.valueAt(run.view, 60)
-// on runEmptyDocument('e2e/fixtures/data/fixture-0'), goal = defaultGoal(run.asOf).
-const SIM_AMOUNT = 415;
+/** The tree's nodes that can be bought now. */
+const readyNodes = (page: Page): Locator =>
+  page.locator('[data-testid="tree-node"][data-state="ready"]');
 
-const BOND = 'A housing bond';
-const MONTH = /Goal reached in ([A-Z][a-z]{2} \d{4})/;
-const KINDS = ['Zoning', 'Permitting', 'Public money'] as const;
+const node = (page: Page, id: string): Locator =>
+  page.locator(`[data-testid="tree-node"][data-node="${id}"]`);
 
-type JourneyWin = Window & { __sfhFzp?: SfhFzpDebug; __journey?: true };
+/**
+ * The publish dialog on the simulation. `publishDialog` (helpers/sharing.ts) names Paint's
+ * ("Publish this plan"); the tree's Publish opens the policy's (`dialogHeading` for a policy).
+ */
+const policyPublishDialog = (page: Page): Locator =>
+  page.getByRole('dialog', { name: /Publish this policy|Published/ });
 
-const fzp = <K extends keyof SfhFzpDebug>(page: Page, key: K): Promise<SfhFzpDebug[K]> =>
-  page.evaluate((k) => (window as JourneyWin).__sfhFzp![k], key) as Promise<SfhFzpDebug[K]>;
-
-const timeline = (page: Page): Locator => page.getByTestId('tl-timeline');
-const simWin = (page: Page): Locator => page.getByTestId('tl-win');
-const levelCell = (page: Page): Locator => page.getByTestId('header-level');
-const lockedLane = (page: Page, kind: string): Locator =>
-  page.getByTestId(`tl-kind-${kind}`).getByTestId('tl-locked-lane').first();
-
-/** /sim's session ready and its forecast filled to the window's end. */
-async function simReady(page: Page): Promise<void> {
-  await page.waitForFunction(() => (window as JourneyWin).__sfhFzp?.phase === 'ready');
-  await waitFilled(page);
-}
-
-/** "10 Dec 2030": a span edge as the bar's name writes it (rows.ts `formatEdge`). */
-function edgeText(day: Day): string {
-  const p = Object.fromEntries(
-    new Intl.DateTimeFormat('en-US', {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric',
-      timeZone: 'UTC'
-    })
-      .formatToParts(new Date(day * 86_400_000))
-      .map((x) => [x.type, x.value])
-  );
-  return `${p.day} ${p.month} ${p.year}`;
-}
-
-/** The day an inflow's money first arrives. */
-const inflowDay = (i: Inflow): Day => (i.kind === 'once' ? i.day : i.from);
-
-const escape = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
-test('a new visitor wins Paint and level 2, levels up to 3, and the account holds the game', async ({
-  page,
-  context,
-  isMobile
-}) => {
-  // 1. A new visitor whose goal any stroke reaches, on Paint.
-  await page.emulateMedia({ reducedMotion: 'reduce' });
-  await newVisitor(page);
-  await seedGoalAmount(page, PAINT_AMOUNT);
-  await gotoEditor(page);
-  await expect(page.locator('html')).toHaveAttribute('data-hydrated', '');
-
-  // 2. Level 1, and Simulate is no link.
-  await expect(levelCell(page)).toHaveText('Level 1');
-  await expect(page.locator('[data-step-locked]').first()).toBeAttached();
-  await expect(page.getByRole('link', { name: 'Simulate' })).toHaveCount(0);
-
-  // 3. One stroke wins Paint: the header says so and the card offers the simulation.
-  await paintOnce(page, isMobile);
-  // The header's second line, which also describes the score (shown from sm, sr-only always).
-  await expect(page.getByRole('banner').getByTestId('score-bar')).toHaveAccessibleDescription(
-    /Goal reached/
-  );
-  const paintCard = page.getByTestId('paint-win');
-  await expect(paintCard).toContainText('Unlocks: The simulation');
-  await expect(paintCard.getByRole('button', { name: 'Level up' })).toBeVisible();
-  await expect(paintCard.getByRole('button', { name: 'Keep playing' })).toBeVisible();
-
-  // 4. /sim's goal, then Level up: a client navigation (the mark survives) to /sim at level 2.
-  await page.evaluate((a) => localStorage.setItem(a.key, a.value), {
-    key: E2E_GOAL_KEY,
-    value: String(SIM_AMOUNT)
+/** Focus is on an element that holds the map (the map box, focused in starting and run). */
+const focusHoldsMap = (page: Page): Promise<boolean> =>
+  page.evaluate(() => {
+    const a = document.activeElement;
+    const root = document.querySelector('[data-testid="map-root"]');
+    return (
+      !!a && !!root && a !== document.body && a !== document.documentElement && a.contains(root)
+    );
   });
-  await page.evaluate(() => ((window as JourneyWin).__journey = true));
-  await paintCard.getByRole('button', { name: 'Level up' }).click();
-  await expect(page).toHaveURL(/\/sim$/);
-  expect(await page.evaluate(() => (window as JourneyWin).__journey)).toBe(true);
-  await expect(levelCell(page)).toHaveText('Level 2');
-  await simReady(page);
-  for (const kind of KINDS) {
-    await expect(timeline(page).getByRole('button', { name: PLUS_NAME[kind] })).toHaveCount(0);
-  }
 
-  // 5. Play to the goal: the card names the month and Permitting.
-  await slider(page).focus();
-  await page.keyboard.press('End');
-  await expect(simWin(page)).toContainText('Goal reached in');
-  const month = MONTH.exec((await simWin(page).textContent()) ?? '')?.[1];
-  expect(month, 'the win card names a month').toBeDefined();
-  await expect(simWin(page)).toContainText('Unlocks: Permitting');
+const focusVisible = (target: Locator): Promise<boolean> =>
+  target.evaluate((el) => el.matches(':focus-visible'));
 
-  // 6. Level up: level 3, the clock at today, Permitting open to edit, the rest locked.
-  await simWin(page).getByRole('button', { name: 'Level up' }).click();
-  await expect(simWin(page)).toHaveCount(0);
-  await expect(levelCell(page)).toHaveText('Level 3');
-  await expect.poll(async () => (await fzp(page, 'day')) === (await fzp(page, 'asOf'))).toBe(true);
-  await expect(
-    timeline(page).getByRole('button', { name: PLUS_NAME.Permitting }).last()
-  ).toBeVisible();
-  await expect(lockedLane(page, 'zoning')).toHaveText('Unlocks when you level up');
-  await expect(lockedLane(page, 'money')).toHaveText('Unlocks at level 5');
+/** expect.poll without the back-off: a state is seen within 50 ms of being reached. */
+const FAST = { intervals: [50] };
 
-  // 7. The bar: the level panel's aim and the ruler's flag.
-  await openHeaderMenu(page);
-  await levelCell(page).click();
-  await expect(page.getByTestId('header-level-panel').getByTestId('level-aim')).toHaveText(
-    `Beat ${month}`
-  );
-  await levelCell(page).click();
-  await expect(page.getByTestId('header-level-panel')).toHaveCount(0);
-  await expect(page.getByTestId('tl-bar-flag')).toHaveText(/To beat/);
+/** Below lg, closes the header's Menu if it is open (Escape, as a player would); else nothing. */
+async function closeHeaderMenu(page: Page): Promise<void> {
+  const menu = page.getByRole('banner').locator('[data-header-menu]');
+  if (!(await menu.isVisible())) return;
+  if ((await menu.getAttribute('aria-expanded')) !== 'true') return;
+  await page.keyboard.press('Escape');
+  await expect(menu).toHaveAttribute('aria-expanded', 'false');
+}
 
-  // 8. The account the first win's save made shows as @handle, with no reload and the playhead kept.
-  const day = await fzp(page, 'day');
-  await expect(page.locator('[data-header-account]')).toHaveText(/^@\S+$/);
-  expect(await page.evaluate(() => (window as JourneyWin).__journey)).toBe(true);
-  expect(await fzp(page, 'day')).toBe(day);
+test.describe('by pointer', () => {
+  test.use({ reducedMotion: 'reduce' });
 
-  // 9. The account holds one game, at level 3 once the level up's save lands.
-  await expect
-    .poll(async () => {
-      const res = await page.request.get('/api/game');
-      if (res.status() !== 200) return { status: res.status() };
-      const body = (await res.json()) as { saves: { level: number }[] };
-      return { status: 200, levels: body.saves.map((s) => s.level) };
-    })
-    .toEqual({ status: 200, levels: [3] });
+  test('a new visitor paints to the room goal, runs, buys and takes the next goal', async ({
+    page,
+    isMobile
+  }) => {
+    // 1. A goal any stroke reaches, a short run, Paint as a new visitor.
+    await seedGoalAmount(page, 1);
+    await seedRunMs(page, 2000);
+    await gotoEditor(page);
 
-  // 10. "Reload /sim", read as a fresh load of /sim in the same context: the page's init script
-  // from step 1 would write Paint's goal amount again on a reload, and a fresh page has none. The
-  // context's storage and cookies are the game's and the account's, as on a reload.
-  await page.close();
-  const again = await context.newPage();
-  await again.emulateMedia({ reducedMotion: 'reduce' });
-  await gotoHydrated(again, '/sim');
-  expect(await again.evaluate((k) => localStorage.getItem(k), E2E_GOAL_KEY)).toBe(
-    String(SIM_AMOUNT)
-  );
-  await simReady(again);
-  await expect(levelCell(again)).toHaveText('Level 3');
-  await expect(again.getByTestId('tl-bar-flag')).toHaveText(/To beat/);
+    // 2. The banner names the site and has no steps; the game is new.
+    await expect(page.getByRole('navigation', { name: 'Steps' })).toHaveCount(0);
+    await openHeaderMenu(page);
+    await expect(
+      page.getByRole('banner').getByRole('link', { name: 'SF Housing', exact: true })
+    ).toBeVisible();
+    await closeHeaderMenu(page);
+    const fresh = await waitSaved(page, (s) => s.state.phase === 'opening');
+    expect(fresh.state.rung).toBe(0);
+    expect(fresh.state.runs).toBe(0);
 
-  // 11. No axe violations at level 3 with the card closed.
-  await expect(simWin(again)).toHaveCount(0);
-  await expectNoA11yViolations(again);
+    // 3. One stroke meets the room goal: the opening's Start has focus, the first win is dated.
+    await paintOnce(page, isMobile);
+    const start = page.getByTestId('opening-start');
+    await expect(start).toBeVisible();
+    await expect(start).toBeFocused();
+    const won = await waitSaved(page, (s) => s.state.firstWinAt !== null);
+    expect(won.state.firstWinAt).not.toBeNull();
+
+    // 4. The first win made an account.
+    await openHeaderMenu(page);
+    await expect(page.locator('[data-header-account]')).toHaveText(/^@\S+$/);
+
+    // 5. "Collect for me" on, from the game panel.
+    const panel = await openGamePanel(page);
+    const collect = panel.getByTestId('game-collect');
+    await collect.click();
+    await expect(collect).toHaveAttribute('aria-checked', 'true');
+    await page.keyboard.press('Escape');
+    await expect(panel).toHaveCount(0);
+    await closeHeaderMenu(page);
+
+    // 6. Start: the first run, at the same address, the map box focused and in its run view.
+    await start.click();
+    expect(new URL(page.url()).pathname).toBe('/');
+    await expect.poll(() => focusHoldsMap(page), FAST).toBe(true);
+    await untilPhase(page, 'run');
+    await expect(page.getByTestId('map-root')).toHaveAttribute('data-run-view', 'on');
+    await untilPhase(page, 'tally');
+    expect(new URL(page.url()).pathname).toBe('/');
+
+    // 7. The settled run: everything dropped was collected, rung 0 met with its lump.
+    const s = await waitSaved(page, (g) => g.state.runs === 1);
+    expect(s.state.phase).toBe('runs');
+    expect(s.state.last!.dropped.home).toBeGreaterThan(0);
+    expect(s.state.last!.collected.home).toBe(s.state.last!.dropped.home);
+    expect(s.state.met.map((m) => m.rung)).toContain(0);
+    expect(s.state.last!.lump).toEqual(RUNG_LUMP);
+    expect(s.state.units.home).toBe(
+      s.state.last!.collected.home! +
+        RUNG_LUMP.home! +
+        s.state.last!.side.reduce((n, x) => n + (x.reward.home ?? 0), 0)
+    );
+
+    // 8. The run layer's totals are the saved ones; the tally shows the lump.
+    expect(await runTotals(page)).toEqual({
+      dropped: s.state.last!.dropped.home,
+      collected: s.state.last!.collected.home
+    });
+    await expect(page.getByTestId('tally-lump')).toBeVisible();
+
+    // 9. Continue: the tree, with Run and the next goal; the map out of its run view.
+    await page.getByTestId('tally-continue').click();
+    await waitPhase(page, 'tree');
+    await expect(page.getByTestId('tree-run')).toBeVisible();
+    await expect(page.getByTestId('tree-next')).toBeVisible();
+    await expect(page.getByTestId('map-root')).not.toHaveAttribute('data-run-view');
+
+    // 10. Buy the first node the balance covers.
+    await expect(readyNodes(page).first()).toBeVisible();
+    const id = await firstReady(page);
+    const before = await savedGame(page);
+    const after = await buyNode(page, id, 'pointer');
+    expect(after.state.bought[id]).toBe(1);
+    expect(after.state.units.home).toBe(before.state.units.home! - PRICES[id][0]);
+
+    // 11. Its Edit opens the workshop; Back to the tree returns.
+    await node(page, id).getByTestId('tree-node-edit').click();
+    await waitPhase(page, 'workshop');
+    await waitFilled(page);
+    await (await headerAction(page, 'Back to the tree')).click();
+    await waitPhase(page, 'tree');
+
+    // 12. A second run.
+    await page.getByTestId('tree-run').click();
+    await untilPhase(page, 'tally');
+    const second = await waitSaved(page, (g) => g.state.runs === 2);
+    expect(second.state.runs).toBe(2);
+    await page.getByTestId('tally-continue').click();
+    await waitPhase(page, 'tree');
+
+    // 13. Take the next goal: rung 1, and the header's goal changes.
+    const headline = page.getByTestId('goal-headline-button');
+    const was = (await headline.textContent()) ?? '';
+    await page.getByTestId('tree-next').click();
+    const next = await waitSaved(page, (g) => g.state.rung === 1);
+    expect(next.state.rung).toBe(1);
+    await expect.poll(async () => (await headline.textContent()) ?? '', FAST).not.toBe(was);
+
+    // 14. The account holds the one game, at rung 1.
+    await expect
+      .poll(async () => {
+        const res = await page.request.get('/api/game');
+        if (res.status() !== 200) return { status: res.status() };
+        const body = (await res.json()) as { saves: { phase: string; rung: number }[] };
+        return {
+          status: 200,
+          saves: body.saves.map((e) => ({ phase: e.phase, rung: e.rung }))
+        };
+      }, FAST)
+      .toEqual({ status: 200, saves: [{ phase: 'runs', rung: 1 }] });
+  });
 });
 
-test('a given measure added at a later month has its money dated from that month', async ({
-  page
+test('a player plays the loop by keyboard only, collecting with the ring', async ({
+  page,
+  isMobile
 }) => {
-  // 1. Level 5, /sim filled.
-  await page.emulateMedia({ reducedMotion: 'reduce' });
-  await seedGame(page, 5);
-  await gotoHydrated(page, '/sim');
-  await simReady(page);
-  const asOf = await fzp(page, 'asOf');
+  test.skip(isMobile, 'the keyboard journey runs on the desktop project');
 
-  // 2. Three years on, a year per key (PageUp moves the playhead forward a year).
-  await page.getByTestId('tl-ruler').focus();
-  for (let i = 0; i < 3; i++) {
-    const before = await fzp(page, 'day');
-    await page.keyboard.press('PageUp');
-    await expect.poll(() => fzp(page, 'day')).toBeGreaterThan(before);
-  }
-  const day = await fzp(page, 'day');
+  // 1. A goal any stamp reaches, a run long enough to sweep, Paint at the fixture's frame.
+  await seedGoalAmount(page, 1);
+  await seedRunMs(page, 8000);
+  await gotoEditor(page);
+  await jumpAndIdle(page, FRAME);
 
-  // 3. Public money's "+", A housing bond.
-  await openKind(page, 'Public money');
-  await addPolicy(page, 'Public money', BOND);
+  // 2. Tab to the map and stamp with Enter. (No click, tap, mouse or touchscreen from here on.)
+  await page.locator('body').focus();
+  const canvas = page.locator('.maplibregl-canvas');
+  await tabTo(page, canvas);
+  expect(await focusVisible(canvas)).toBe(true);
+  await page.keyboard.press('Enter');
+  await expect.poll(() => ops(page), FAST).toBe(1);
 
-  // 4. The document once the numbers are current.
-  await page.waitForFunction(() => (window as JourneyWin).__sfhFzp?.stale === false);
-  const policy = await fzp(page, 'policy');
-  const bond = policy.kinds.money.find((p) => p.preset === 'housing-bond');
-  expect(bond, 'the document holds the housing bond').toBeDefined();
+  // 3. Start by Enter: the map box takes focus and the run starts.
+  const start = page.getByTestId('opening-start');
+  await expect(start).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect.poll(() => focusHoldsMap(page), FAST).toBe(true);
+  await untilPhase(page, 'run');
 
-  // Its first span starts in the playhead's model month, more than two years after today.
-  const start = bond!.spans[0].from;
-  expect(start).toBeLessThanOrEqual(day);
-  expect(day - start).toBeLessThanOrEqual(31);
-  expect(start - asOf).toBeGreaterThan(2 * 365);
+  // 4. The ring, swept by the arrow keys, collects.
+  expect(await sweepRing(page)).toBeGreaterThanOrEqual(1);
 
-  // Its pool's first money-in falls on that start.
-  const what = bond!.spans[0].what;
-  expect(what.tag).toBe('fund');
-  const pool = (what as Extract<Effect, { tag: 'fund' }>).pool;
-  expect(pool, 'the bond has a pool').not.toBeNull();
-  expect(Math.min(...pool!.inflows.map(inflowDay))).toBe(start);
+  // 5. The tally: "Collect for me" was never set, so what was collected is the ring's. The run
+  // goes on for the rest of its 8 s after the first catch.
+  await untilPhase(page, 'tally');
+  const s = await waitSaved(page, (g) => g.state.runs === 1);
+  expect(s.state.last!.collected.home).toBeGreaterThanOrEqual(1);
 
-  // Its label and preset.
-  expect(bond!.label).toBe(BOND);
-  expect(bond!.preset).toBe('housing-bond');
+  // 6. Continue by Enter: the tree, with Run focused.
+  const cont = page.getByTestId('tally-continue');
+  await expect(cont).toBeFocused();
+  await page.keyboard.press('Enter');
+  await waitPhase(page, 'tree');
+  await expect(page.getByTestId('tree-run')).toBeFocused();
 
-  // The bar on the Public money row is named with the label and the start date.
-  await expect(
-    page.getByTestId('tl-kind-money').getByRole('button', {
-      name: new RegExp(`, ${escape(BOND)}, ${escape(edgeText(start))} to `)
-    })
-  ).not.toHaveCount(0);
+  // 7. Buy the first node the balance covers, by keys.
+  await expect(readyNodes(page).first()).toBeVisible();
+  const id = await firstReady(page);
+  const bought = await buyNode(page, id, 'keys');
+  expect(bought.state.bought[id]).toBe(1);
+
+  // 8. Its Edit into the workshop, Back to the tree out.
+  const edit = node(page, id).getByTestId('tree-node-edit');
+  await tabTo(page, edit);
+  expect(await focusVisible(edit)).toBe(true);
+  await page.keyboard.press('Enter');
+  await waitPhase(page, 'workshop');
+  const back = page.getByTestId('game-back');
+  await tabTo(page, back);
+  expect(await focusVisible(back)).toBe(true);
+  await page.keyboard.press('Enter');
+  await waitPhase(page, 'tree');
+
+  // 9. Take the next goal.
+  const next = page.getByTestId('tree-next');
+  await tabTo(page, next);
+  expect(await focusVisible(next)).toBe(true);
+  await page.keyboard.press('Enter');
+  const taken = await waitSaved(page, (g) => g.state.rung === 1);
+  expect(taken.state.rung).toBe(1);
+});
+
+test('meeting the last deadline is the ending', async ({ page }) => {
+  // 1-3. Every rung but the last met and stop-rail's price in hand; the tree at the last rung with
+  // no next goal and no ending yet; stop-rail bought (its label read); a run; Continue.
+  const label = await playToEnding(page);
+
+  // 4. The last rung met.
+  expect((await savedGame(page)).state.met.map((m) => m.rung)).toContain(RUNGS - 1);
+
+  // 5. The ending: its months, the one node bought, no next goal.
+  const ending = page.getByTestId('tree-ending');
+  await expect(ending).toContainText('Every goal met');
+  await expect(ending).toContainText(/Reached in [A-Z][a-z]{2} \d{4}/);
+  await expect(ending).toContainText(/The state asks by [A-Z][a-z]{2} \d{4}/);
+  await expect(ending.locator('li')).toHaveText([label]);
+  await expect(page.getByTestId('tree-next')).toHaveCount(0);
+
+  // 6. Its Publish opens the publish dialog.
+  await page.getByTestId('tree-publish').click();
+  await expect(policyPublishDialog(page)).toBeVisible();
 });

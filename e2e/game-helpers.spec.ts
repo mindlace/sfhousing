@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
-import { SEED_BAR_DAY, newVisitor, seedGame, seedGoalAmount } from './helpers/game';
+import { newVisitor, seedGame, seedGoalAmount, seedRunMs } from './helpers/game';
 import { E2E_GAME_KEY, E2E_GOAL_KEY } from '../src/lib/game/e2e';
+import { E2E_RUN_MS_KEY } from '../src/lib/sim-page/e2e-run';
 import { SAVES_KEY, saveKey } from '../src/lib/game/saves';
 
 type Probe = Record<string, string>;
@@ -14,7 +15,13 @@ async function probe(page: Page): Promise<void> {
         for (let i = 0; i < localStorage.length; i++) {
           const key = localStorage.key(i);
           if (key === null) continue;
-          if (key === k.game || key === k.goal || key === k.saves || key.startsWith(k.prefix))
+          if (
+            key === k.game ||
+            key === k.goal ||
+            key === k.runMs ||
+            key === k.saves ||
+            key.startsWith(k.prefix)
+          )
             out[key] = localStorage.getItem(key) ?? '';
         }
       } catch {
@@ -22,7 +29,13 @@ async function probe(page: Page): Promise<void> {
       }
       (window as unknown as { __gameProbe: Record<string, string> }).__gameProbe = out;
     },
-    { game: E2E_GAME_KEY, goal: E2E_GOAL_KEY, saves: SAVES_KEY, prefix: saveKey('') }
+    {
+      game: E2E_GAME_KEY,
+      goal: E2E_GOAL_KEY,
+      runMs: E2E_RUN_MS_KEY,
+      saves: SAVES_KEY,
+      prefix: saveKey('')
+    }
   );
 }
 
@@ -39,11 +52,13 @@ async function load(page: Page): Promise<Probe> {
 }
 
 type Saved = {
-  progress: { level: number; banked: Record<string, { on: number }>; firstWinAt: string | null };
+  v: number;
+  id: string;
+  state: { phase: string; rung: number; firstWinAt: string | null; units: { home?: number } };
 };
 
 function seededParts(p: Probe): {
-  index: { current: string; saves: { id: string }[] };
+  index: { v: number; current: string; saves: { id: string; phase: string; rung: number }[] };
   save: Saved;
 } {
   const index = JSON.parse(p[SAVES_KEY]);
@@ -58,60 +73,41 @@ test('with no helper, nothing is stored', async ({ page }) => {
   expect(Object.keys(p).filter((k) => k.startsWith(saveKey('')))).toEqual([]);
 });
 
-test('seedGame(page, 5) seeds a level 5 game with three bars', async ({ page }) => {
-  await seedGame(page, 5);
+test('seedGame(page) stores one v2 save in the opening', async ({ page }) => {
+  await seedGame(page);
   const p = await load(page);
   expect(p[E2E_GAME_KEY]).toBe('1');
   const { index, save } = seededParts(p);
+  expect(index.v).toBe(2);
   expect(index.saves).toHaveLength(1);
   expect(index.saves[0].id).toBe(index.current);
-  expect(save.progress.level).toBe(5);
-  expect(Object.keys(save.progress.banked).sort()).toEqual(['2', '3', '4']);
-  for (const bar of Object.values(save.progress.banked)) expect(bar.on).toBe(SEED_BAR_DAY);
-  expect(typeof save.progress.firstWinAt).toBe('string');
+  expect(index.saves[0].phase).toBe('opening');
+  expect(save.v).toBe(2);
+  expect(save.id).toBe(index.current);
+  expect(save.state.phase).toBe('opening');
+  expect(save.state.rung).toBe(0);
+  expect(save.state.firstWinAt).toBeNull();
 });
 
-test('a seeded game is what the page keeps', async ({ page }) => {
-  await seedGame(page, 5);
+test('seedGame with a state in the runs loads as current', async ({ page }) => {
+  await seedGame(page, { phase: 'runs', units: { home: 500 } });
+  const { index, save } = seededParts(await load(page));
+  expect(index.saves).toHaveLength(1);
+  expect(index.current).toBe(save.id);
+  expect(index.saves[0].phase).toBe('runs');
+  expect(save.state.phase).toBe('runs');
+  expect(save.state.units.home).toBe(500);
+  expect(typeof save.state.firstWinAt).toBe('string');
   await page.goto('/about');
-  await expect(page.locator('html[data-hydrated]')).toHaveCount(1);
+  await expect(page.locator('html')).toHaveAttribute('data-hydrated', '');
   const kept = await page.evaluate(
     (k) => {
-      const index = JSON.parse(localStorage.getItem(k.saves) ?? 'null');
-      const save = JSON.parse(localStorage.getItem(k.prefix + index.current) ?? 'null');
-      return { current: index.current, id: save.id, level: save.progress.level };
+      const stored = JSON.parse(localStorage.getItem(k.saves) ?? 'null');
+      return { v: stored.v, current: stored.current };
     },
-    { saves: SAVES_KEY, prefix: saveKey('') }
+    { saves: SAVES_KEY }
   );
-  expect(kept.level).toBe(5);
-  expect(kept.id).toBe(kept.current);
-});
-
-test('SEED_BAR_DAY is the first of October 2066', () => {
-  expect(new Date(SEED_BAR_DAY * 86_400_000).toISOString().slice(0, 10)).toBe('2066-10-01');
-});
-
-test('seedGame at level 3', async ({ page }) => {
-  await seedGame(page, 3);
-  const { save } = seededParts(await load(page));
-  expect(save.progress.level).toBe(3);
-  expect(Object.keys(save.progress.banked)).toEqual(['2']);
-});
-
-test('seedGame at level 2', async ({ page }) => {
-  await seedGame(page, 2);
-  const { save } = seededParts(await load(page));
-  expect(save.progress.level).toBe(2);
-  expect(save.progress.banked).toEqual({});
-  expect(typeof save.progress.firstWinAt).toBe('string');
-});
-
-test('seedGame at level 1', async ({ page }) => {
-  await seedGame(page, 1);
-  const { save } = seededParts(await load(page));
-  expect(save.progress.level).toBe(1);
-  expect(save.progress.banked).toEqual({});
-  expect(save.progress.firstWinAt).toBeNull();
+  expect(kept).toEqual({ v: 2, current: save.id });
 });
 
 test('newVisitor switches the game on and stores nothing', async ({ page }) => {
@@ -124,8 +120,7 @@ test('newVisitor switches the game on and stores nothing', async ({ page }) => {
 
 /**
  * A same-origin document the app never runs on: a dataset file. Storage edited here has no game
- * store or save sync beside it (an /about page would, and its sync sends a won game after 2 s),
- * so only the next page load reads the edit.
+ * store or save sync beside it, so only the next page load reads the edit.
  */
 const OFF_APP = '/data/fixture-0/manifest.json';
 
@@ -135,8 +130,8 @@ async function leaveApp(page: Page): Promise<void> {
   expect(response?.ok()).toBe(true);
 }
 
-test('the seed is written once', async ({ page }) => {
-  await seedGame(page, 3);
+test('a reload keeps what the page stored since', async ({ page }) => {
+  await seedGame(page, { phase: 'runs' });
   const first = seededParts(await load(page));
   const id = first.index.current;
   await leaveApp(page);
@@ -158,7 +153,7 @@ test('the seed is written once', async ({ page }) => {
 });
 
 test('a stored index is never overwritten', async ({ page }) => {
-  await seedGame(page, 3);
+  await seedGame(page);
   const id = seededParts(await load(page)).index.current;
   await leaveApp(page);
   await page.evaluate(
@@ -183,18 +178,32 @@ test('seedGoalAmount sets the goal and leaves the game open', async ({ page }) =
   expect(p[E2E_GAME_KEY]).toBeUndefined();
 });
 
-test('the helpers refuse bad calls', async ({ page, browser }) => {
+test('seedRunMs stores the wall time of a run', async ({ page }) => {
+  await seedRunMs(page, 500);
+  const p = await load(page);
+  expect(p[E2E_RUN_MS_KEY]).toBe('500');
+  expect(p[E2E_GAME_KEY]).toBeUndefined();
+});
+
+test('seedRunMs refuses a time outside 100 to 20000 or not whole', async ({ page }) => {
+  const message = 'seedRunMs: ms must be a whole number from 100 to 20000';
+  await expect(seedRunMs(page, 99)).rejects.toThrow(message);
+  await expect(seedRunMs(page, 1.5)).rejects.toThrow(message);
+});
+
+test('the helpers refuse a second game on one page', async ({ page, browser }) => {
   await newVisitor(page);
-  await expect(seedGame(page, 3)).rejects.toThrow('seedGame: this page already has a game');
+  await expect(seedGame(page)).rejects.toThrow('seedGame: this page already has a game');
+  await expect(newVisitor(page)).rejects.toThrow('newVisitor: this page already has a game');
 
   const fresh = await browser.newPage();
   try {
-    await expect(seedGame(fresh, 6 as never)).rejects.toThrow('seedGame: level must be 1 to 5');
-    await seedGame(fresh, 3);
+    await seedGame(fresh);
+    await expect(seedGame(fresh)).rejects.toThrow('seedGame: this page already has a game');
+    await expect(newVisitor(fresh)).rejects.toThrow('newVisitor: this page already has a game');
     await expect(seedGoalAmount(fresh, 0)).rejects.toThrow(
       'seedGoalAmount: amount must be a whole number of at least 1'
     );
-    await expect(newVisitor(fresh)).rejects.toThrow('newVisitor: this page already has a game');
   } finally {
     await fresh.close();
   }
@@ -206,7 +215,7 @@ test('storage that refuses writes still loads', async ({ page }) => {
       throw new DOMException('denied', 'QuotaExceededError');
     };
   });
-  await seedGame(page, 3);
+  await seedGame(page);
   const response = await page.goto('/about');
   expect(response?.ok()).toBe(true);
   await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
@@ -220,7 +229,7 @@ test('storage that throws on access still loads', async ({ page }) => {
       }
     });
   });
-  await seedGame(page, 3);
+  await seedGame(page);
   const response = await page.goto('/about');
   expect(response?.ok()).toBe(true);
   await expect(page.getByRole('heading', { level: 1 })).toBeVisible();

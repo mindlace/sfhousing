@@ -1,4 +1,4 @@
-// /sim's Details (timeline-ui, "Details"): the headline opens it, focused; its Chart switch redraws
+// The simulation's Details (the open game at `/`; timeline-ui, "Details"): the headline opens it, focused; its Chart switch redraws
 // the one timeline chart and closing Details puts Homes back; the goal rows hold at the deadline;
 // axe in light and dark at both widths. fixture-0, the VITE_E2E build's debug hooks, never pixels.
 import { expect, test, type Locator, type Page } from '@playwright/test';
@@ -11,7 +11,7 @@ type FzpWin = Win & { __sfhFzp?: SfhFzpDebug };
 
 async function gotoSim(page: Page, colorScheme: 'light' | 'dark' = 'light'): Promise<void> {
   await page.emulateMedia({ reducedMotion: 'reduce', colorScheme });
-  await page.goto('/sim');
+  await page.goto('/');
   await page.waitForFunction(() => (window as FzpWin).__sfhFzp?.phase === 'ready');
   await waitFilled(page);
 }

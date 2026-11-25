@@ -8,6 +8,7 @@ import type { SfhBrushDebug } from '../src/lib/brush/debug';
 import type { Plan } from '../src/lib/plan';
 import type { SfhMapDebug } from '../src/lib/map/debug';
 import { expectNoA11yViolations } from './helpers/a11y';
+import { newVisitor } from './helpers/game';
 import {
   PLAN_KEY,
   chooseTool,
@@ -27,7 +28,14 @@ type LngLat = [number, number];
 const FRAME = { center: [-122.4187, 37.76014] as LngLat, zoom: 18.5, pitch: 0, bearing: 0 };
 const CHUNK = '**/data/fixture-0/parcels/50_25.json';
 
+const visitors = new WeakSet<Page>();
+
+/** `/` with the brush ready; a page's first call makes it a new visitor, so `/` is Paint. */
 async function gotoEditor(page: Page): Promise<void> {
+  if (!visitors.has(page)) {
+    visitors.add(page);
+    await newVisitor(page);
+  }
   await page.goto('/');
   await expect(page.getByTestId('map-root')).toHaveAttribute('data-state', 'ready', {
     timeout: 20_000

@@ -1,5 +1,5 @@
-// The timelapse e2e (fzp-mode spec §6), on /sim's timeline: these tests open the timelapse
-// there. Runs against the VITE_E2E build, which exposes window.__sfhFzp (src/lib/fzp/debug.ts)
+// The timelapse e2e (fzp-mode spec §6), on the simulation's timeline (the open game at `/`, no
+// game seeded): these tests open the timelapse there. Runs against the VITE_E2E build, which exposes window.__sfhFzp (src/lib/fzp/debug.ts)
 // and window.__sfhMap. Fixture-0 files are read from disk; counts, ids and labels are derived
 // from them, never hard-coded. Nothing plays on open; the playhead reaches as far as the forecast
 // is filled, so a test that scrubs or plays waits for the fill first (`waitFilled`). With Move
@@ -98,12 +98,12 @@ async function openScore(page: Page): Promise<Locator> {
   await expect(results(page)).toBeVisible();
   return results(page);
 }
-/** About this model, over the map: what Details' last link opens on /sim. */
+/** About this model, over the map: what Details' last link opens on the simulation. */
 const aboutDialog = (page: Page): Locator => page.getByRole('dialog', { name: 'About this model' });
-/** A header step link, made visible first (below 1024 px the links wait in the header Menu). */
-async function headerLink(page: Page, name: string): Promise<Locator> {
+/** The header's site-name link, made visible first (below sm it can wait in the header Menu). */
+async function siteName(page: Page): Promise<Locator> {
   await openHeaderMenu(page);
-  return page.getByRole('banner').getByRole('link', { name, exact: true });
+  return page.getByRole('banner').getByRole('link', { name: 'SF Housing', exact: true });
 }
 const card = (page: Page, name: string): Locator => page.getByRole('region', { name, exact: true });
 /** The notice stack's status pills (a crash, failed cells). */
@@ -126,10 +126,10 @@ async function waitForMapOnly(page: Page): Promise<void> {
   await page.waitForFunction(() => !!(window as Win).__sfhMap?.map);
 }
 
-/** Where the timelapse is: /sim. */
-const FZP_PATH = '/sim';
+/** Where the timelapse is: the simulation at `/` (the open game: no game seeded). */
+const FZP_PATH = '/';
 
-/** The timelapse on /sim, ready, the forecast filled to the window's end. */
+/** The timelapse on the simulation, ready, the forecast filled to the window's end. */
 async function gotoFzp(page: Page): Promise<void> {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto(FZP_PATH);
@@ -197,7 +197,7 @@ async function openSources(page: Page): Promise<Locator> {
   await (await openScore(page)).getByRole('link', { name: 'How this is worked out' }).click();
   const dialog = aboutDialog(page);
   await expect(dialog).toBeVisible();
-  await expect(page).toHaveURL(/\/sim$/);
+  await expect(page).toHaveURL(/\/$/);
   return dialog;
 }
 
@@ -558,8 +558,9 @@ test('a dataset without scenarios shows the message and starts no worker', async
     if (!/maplibre/i.test(w.url())) workers.push(w.url());
   });
   // The manifest is stripped on the way in. SSR and hydration read the server's copy, and the
-  // editor's load keeps the response SvelteKit replays, so reach /sim by a client navigation from
-  // a page that loads no manifest: its load then fetches the manifest from the browser.
+  // editor's load keeps the response SvelteKit replays, so reach the simulation by a client
+  // navigation from a page that loads no manifest: its load then fetches the manifest from the
+  // browser.
   await page.route('**/manifest.json', async (route) => {
     const response = await route.fetch();
     const manifest = (await response.json()) as Record<string, unknown>;
@@ -567,8 +568,8 @@ test('a dataset without scenarios shows the message and starts no worker', async
     await route.fulfill({ response, json: manifest });
   });
   await gotoHydrated(page, '/about');
-  await (await headerLink(page, 'Simulate')).click();
-  await expect(page).toHaveURL(/\/sim$/);
+  await (await siteName(page)).click();
+  await expect(page).toHaveURL(/\/$/);
 
   const status = page.getByTestId('fzp-status');
   await expect(status).toContainText("isn't available for dataset fixture-0");
@@ -585,8 +586,8 @@ test('a calibration that fails to load shows the failure with Retry, and passes 
   // As above: a client navigation, so the browser fetches the calibration and the route can fail it.
   await page.route('**/scenarios/fzp/calibration.json', (route) => route.fulfill({ status: 500 }));
   await gotoHydrated(page, '/about');
-  await (await headerLink(page, 'Simulate')).click();
-  await expect(page).toHaveURL(/\/sim$/);
+  await (await siteName(page)).click();
+  await expect(page).toHaveURL(/\/$/);
   await expect(page.getByTestId('fzp-status')).toHaveText("The simulation couldn't load.");
   await expect(page.getByRole('button', { name: 'Retry', exact: true })).toBeVisible();
   expect(await fzp(page, 'phase')).toBe('failed');
@@ -595,14 +596,19 @@ test('a calibration that fails to load shows the failure with Retry, and passes 
 
 // ---- header and attribution ---------------------------------------------------------------------
 
-test('the header links move between the editor and the simulation', async ({ page }) => {
-  await page.goto('/');
-  await (await headerLink(page, 'Simulate')).click();
-  await expect(page).toHaveURL(/\/sim$/);
-  await expect(page).toHaveTitle('Policy simulation · SF Housing Simulator');
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Housing policy simulation');
-  await (await headerLink(page, 'Paint')).click();
+test('the site name reaches the simulation by a client navigation', async ({ page }) => {
+  await gotoHydrated(page, '/about');
+  // A full page load would drop this mark; a client navigation keeps the window.
+  await page.evaluate(() => {
+    (window as Window & { __sfhMark?: string }).__sfhMark = 'kept';
+  });
+  await (await siteName(page)).click();
   await expect(page).toHaveURL(/\/$/);
+  expect(await page.evaluate(() => (window as Window & { __sfhMark?: string }).__sfhMark)).toBe(
+    'kept'
+  );
+  await expect(page).toHaveTitle('SF Housing');
+  await expect(page.locator('h1')).toHaveCount(1);
 });
 
 test('/about carries the scenario notice', async ({ page }) => {

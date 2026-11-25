@@ -1,21 +1,18 @@
 // Plan sharing e2e (spec §6, acceptance 1/2/6): paint → publish → open the link in a fresh
-// context → same score → Remix → editing a copy. Runs against the VITE_E2E development preview.
+// context → same score. Runs against the VITE_E2E development preview.
 import { expect, test } from '@playwright/test';
-import { seedGame } from './helpers/game';
 import {
   PLAN_KEY,
   committedNet,
   finalNet,
   gotoEditor,
-  ops,
   paintOnce,
   publishDialog,
   openPublish,
-  publishOpen,
-  waitForMap
+  publishOpen
 } from './helpers/sharing';
 
-test('share roundtrip: publish, open in a fresh browser, same score, Remix', async ({
+test('share roundtrip: publish, open in a fresh browser, same score', async ({
   page,
   browser,
   isMobile
@@ -56,7 +53,6 @@ test('share roundtrip: publish, open in a fresh browser, same score, Remix', asy
   });
   try {
     const visitor = await ctx.newPage();
-    await seedGame(visitor, 3);
     const res = await visitor.goto(link);
     expect(res?.status()).toBe(200);
     const banner = visitor.getByRole('region', { name: 'Shared plan' });
@@ -65,19 +61,10 @@ test('share roundtrip: publish, open in a fresh browser, same score, Remix', asy
     expect(await visitor.evaluate((k) => localStorage.getItem(k), PLAN_KEY)).toBeNull();
 
     // The score needs only the worker, not the map: under a loaded parallel run each map load
-    // takes 5 to 10 s, and three of them (author, visitor, Remix) overran the 30 s timeout (#69).
+    // takes 5 to 10 s, and loading more than one overran the 30 s timeout (#69).
     expect(await finalNet(visitor)).toBe(authorNet);
     // Acceptance 6: viewing a shared plan never writes the visitor's autosave.
     expect(await visitor.evaluate((k) => localStorage.getItem(k), PLAN_KEY)).toBeNull();
-
-    // Remix makes a saved game holding the plan and loads `/` on it.
-    // Until the page mounts, the banner shows Remix as ready whatever the game holds.
-    await expect(visitor.locator('html')).toHaveAttribute('data-hydrated', '');
-    await banner.getByRole('button', { name: 'Remix' }).click();
-    await expect(visitor).toHaveURL(new URL('/', link).toString());
-    // toHaveURL passes when the new document commits; wait for Paint to mount and set its hook.
-    await waitForMap(visitor);
-    await expect.poll(() => ops(visitor)).toBe(1);
   } finally {
     await ctx.close();
   }

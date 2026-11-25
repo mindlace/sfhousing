@@ -4,17 +4,7 @@
 // 768 px it is in flow under the header. Either way a notice never covers the dock, map-view's
 // failure chips, its attribution or its navigation control, at every width from 375 to 1440 px.
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { seedGame } from './helpers/game';
-import {
-  FRAME,
-  PLAN_KEY,
-  gotoEditor,
-  jumpAndIdle,
-  oldVersionText,
-  ops,
-  smallText,
-  waitForMap
-} from './helpers/sharing';
+import { FRAME, PLAN_KEY, gotoEditor, jumpAndIdle, oldVersionText } from './helpers/sharing';
 
 const CHUNK = '**/data/fixture-0/parcels/50_25.json';
 const BUILDINGS = '**/data/fixture-0/buildings.pmtiles';
@@ -210,35 +200,6 @@ test.describe('desktop', () => {
     await expectNoticesClear(page, [...BASE, 'dock rail']);
     await expectCentredRightOfDock(page, rail);
     await expectChipsRightOfDock(page, rail);
-  });
-
-  test('1024×768: after Remix, Paint opens the published plan with the parcels chip', async ({
-    page,
-    request
-  }) => {
-    await page.setViewportSize({ width: 1024, height: 768 });
-    const res = await request.post('/api/plans', {
-      data: smallText,
-      headers: { 'content-type': 'application/json' }
-    });
-    expect(res.ok()).toBe(true);
-    const { id } = (await res.json()) as { id: string };
-    await seedGame(page, 3);
-    await page.goto(`/p/${id}`);
-    await waitForMap(page);
-    // Only the parcels chip, on the page Remix loads.
-    await page.route(CHUNK, (r) => r.abort());
-    await page
-      .getByRole('region', { name: 'Shared plan' })
-      .getByRole('button', { name: 'Remix' })
-      .click();
-    await expect(page).toHaveURL(/\/$/);
-    await waitForMap(page);
-    await expect.poll(() => ops(page)).toBe(3);
-    await jumpAndIdle(page, FRAME);
-    await expect(chunkChip(page)).toBeVisible({ timeout: 10_000 });
-    // The loaded page shows no Remix toast.
-    await expect(notice(page)).toHaveCount(0);
   });
 });
 

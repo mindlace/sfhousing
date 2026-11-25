@@ -19,7 +19,7 @@ In the client project, `$app/state` and `$app/navigation` are aliased to small s
 
 The timeline debug snapshot (`window.__sfhMap.timelineSnapshot()`, `TimelineSnapshot` in `src/lib/map/timelapse/types.ts`) reports the mark layer: `marks` (records) and `marksShown` (marks `evalHalo` shows on the clock's day at the map's zoom, behind the zoom-14 gate; below it, one per square), both 0 until a page calls `setHalos`; `flagged` (installed slots with a flag), `projects` (installed slots with parts) and the feed's `cityMarkers` and `cityFlagged` ([map-interfaces.md](map-interfaces.md), "The citywide feed"). It also reports the bars' `barMode` (`'street'` until `setBarMode`) and `barsShown` (bars `evalBar` shows on the clock's day at the zoom at each anchor, in the map's view; [map-interfaces.md](map-interfaces.md), "Bar modes"). The shown counts read the camera through `TimelineDeps.debugView`, so they follow a `jumpTo` once the map is idle. In server specs, `makeFakeTimelineDeps()` records every `HaloLayer` construction (a `clone` included) in `haloLayers`, so a test counts rebuilds structurally; set `deps.view` (a `DebugView` with `zoom`, `centre` and a `clip` function) to give the snapshot a camera, and `viewReads` counts its reads. `src/lib/map/timelapse/halo-layer.gpu.svelte.spec.ts` renders the layer in a standalone `Deck` and checks marks against `evalHalo`.
 
-Tapping a project on `/sim` in e2e: use `tapProject` (or `waitProjectAt` for several candidate lots) from `e2e/helpers/sharing.ts`. It waits until `window.__sfhMap.timelinePartAt(x, y)` (SimMap's own pick at a canvas point) answers the project, or one of its phases (`<id>:phase:<n>`), with the canvas topmost there, then taps once. Never retry a tap on a miss: a miss selects the lot's plan (on a phone its sheet covers the map) and a stray pick can open a neighbour's card over the next point, so a retried tap can never land. After moving the playhead, also wait for `timelineSnapshot().day` to equal `__sfhFzp.day` before probing.
+Tapping a project on the simulation in e2e: use `tapProject` (or `waitProjectAt` for several candidate lots) from `e2e/helpers/sharing.ts`. It waits until `window.__sfhMap.timelinePartAt(x, y)` (SimMap's own pick at a canvas point) answers the project, or one of its phases (`<id>:phase:<n>`), with the canvas topmost there, then taps once. Never retry a tap on a miss: a miss selects the lot's plan (on a phone its sheet covers the map) and a stray pick can open a neighbour's card over the next point, so a retried tap can never land. After moving the playhead, also wait for `timelineSnapshot().day` to equal `__sfhFzp.day` before probing.
 
 GPU specs for deck layers (`*.gpu.svelte.spec.ts`, client project, real WebGL in Playwright Chromium): `src/lib/map/height/limits-layer.gpu.svelte.spec.ts` renders `HeightLimitsLayer` in a standalone `Deck` over a small canvas, and `limits-maplibre.gpu.svelte.spec.ts` renders it in an interleaved `MapLibreOverlay` before the first symbol layer, as `SimMap` does, over real MapLibre fill-extrusions. The interleaved pattern: build a tiny scene (`tinyLimits()` in `src/lib/map/height/test/fixtures.ts`), render it pitched with the layer and again without it, and compare chosen pixels (a box face tinted below the lid and untouched above it; open ground and ground hidden behind a tall box tinted), because a depth mistake against MapLibre's buildings only shows in a combined frame. Pixel assertions use the dark theme, where the light glaze shows most. The shared lot and scene builders for the height specs and the benches are in `src/lib/map/height/test/fixtures.ts`.
 
@@ -56,7 +56,7 @@ src/lib/sim/scenario/fixtures/build-finance-golden.ts`), never from CI: a change
 
 ## Stored schema-2 policies
 
-`src/lib/sim-page/fixtures/schema2/` holds byte copies of stored schema-2 `/sim` documents taken from
+`src/lib/sim-page/fixtures/schema2/` holds byte copies of stored schema-2 simulation documents taken from
 the code as it was before the schema-3 change: `painted.json` (the text of `paintedText()` in
 `src/lib/server/test/sim-docs.ts`), `profile.json` (the old `scripts/profile-sim-load.policy.json`),
 `tampered.json` (`tamperedText()`) and `default-record.json` (a localStorage record `{ v: 1, savedAt,
@@ -64,7 +64,7 @@ plan }` whose `plan` is the schema-2 default policy). They are committed verbati
 `.prettierignore`, so their bytes stay as stored: never reformat or regenerate them. `sim-doc.spec.ts`
 loads each in `'reconcile'` as schema 3 with default funding; the autosave, storage, shared-page and
 `SimPage` specs and `e2e/sim-share.spec.ts` use them for the upgrade paths ([plan-sharing.md](plan-sharing.md),
-"Policies (`/sim`)").
+"Policies (the simulation)").
 
 ## FakeR2Bucket
 
@@ -85,7 +85,7 @@ On `/` the brush tools sit in the dock's Paint tab: from md it is open on the le
 
 Auth specs (see [auth.md](auth.md)) use the e2e-only seams, which exist only in the `VITE_E2E=1` build running with `ENVIRONMENT=development`: `POST /api/e2e/login` signs a context in as an email, `GET /api/e2e/mail` returns the link of the latest mail of a kind (`password-reset`, `change-email-approve`, `change-email-verify`), and the `sfh_e2e_auth_methods` cookie switches sign-in methods on for one browser context. Specs use them through `loginAs`, `readMail` and `enableAuthMethods` in `e2e/helpers/auth.ts`; a spec that reads its session uses `Session` and `sessionOf` there. Server specs that need D1 use `src/lib/server/test/auth-db.ts`: `freshDb` (an in-memory D1 with the migrations applied), `makePlatform`, `seedUser` and `seedIdentity`.
 
-`e2e/game-journey.spec.ts` is the one spec that plays the game across pages, from a new visitor's first win to a saved game at level 3.
+`e2e/game-journey.spec.ts` is the one spec that plays the game across pages, in three journeys: a new visitor by pointer, by keyboard only, and the ending. `e2e/game-a11y.spec.ts` scans each state of the game ([accessibility.md](accessibility.md)).
 
 Signoff's `test:e2e` step runs `npm run test:e2e`, every project; no workflow runs Playwright. Single spec: `npx playwright test e2e/data-route.spec.ts --project=chromium`.
 
@@ -93,13 +93,15 @@ Signoff's `test:e2e` step runs `npm run test:e2e`, every project; no workflow ru
 
 The game's rules are in [game.md](game.md), saved games in [game-save.md](game-save.md).
 
-- With `VITE_E2E=1` a page with no `sfhousing:e2e:game` key (`E2E_GAME_KEY`, `src/lib/game/e2e.ts`) gets the open game: level 5, every control, nothing stored. A spec that calls neither helper below sees every control.
-- `e2e/helpers/game.ts`, each called before the page loads: `seedGame(page, level)` switches the real game on and stores a game at that level with bars any result beats (`SEED_BAR_DAY`); `newVisitor(page)` switches the real game on with nothing stored; `seedGoalAmount(page, amount)` sets the goal's amount (`sfhousing:e2e:goal`). A spec that plays a level to a win calls `seedGoalAmount`: the fixture cannot reach 82,069 homes.
-- A component test with no provider gets a level 5 store from `useGame()` (`openGame()`, `src/lib/game/store.svelte.ts`).
+- With `VITE_E2E=1` a page with no `sfhousing:e2e:game` key (`E2E_GAME_KEY`, `src/lib/game/e2e.ts`) gets the open game: the simulation at `/`, every control, no runs, tally or tree, nothing stored. A spec that calls neither helper below sees it.
+- `e2e/helpers/game.ts`, each called before the page loads: `seedGame(page, state?)` switches the real game on and stores a game; `newVisitor(page)` switches the real game on with nothing stored, the opening; `seedGoalAmount(page, amount)` sets the goal's amount (`sfhousing:e2e:goal`); `seedRunMs(page, ms)` shortens a run (`sfhousing:e2e:run-ms`). A spec that plays the game calls `seedGoalAmount`: the fixture cannot reach 82,069 homes.
+- `e2e/helpers/play.ts` plays the game with every wait a state in the page or in storage (`seedRuns`, `waitPhase`, `untilPhase`, `buyNode`, `sweepRing`, `playToEnding`); the table is in [game.md](game.md), "The e2e seams".
+- The page marks its state for specs: `data-phase` on `tl-mode`, `data-dropped` and `data-collected` on `run-layer`.
+- A component test with no provider gets the open game from `useGame()` (`openGame()`, `src/lib/game/store.svelte.ts`).
 
-## The level 2 check
+## The reach check
 
-`npx tsx scripts/level2-check.ts <datasetDir> [--amount <homes>]` runs the empty policy document (current law) through the timeline host on a built dataset directory, over the whole window, and reads the goal. It prints three lines: `Dataset <v>`, `Goal: <amount> homes by <month>` (82,069 unless `--amount` gives another), then `Reached: <month>, N months before the window's end` or `Missed: N homes by <month>, M short`. Exit 0 when current law reaches the goal, 1 when it misses, 2 when the check could not run (one stderr line, `level2-check: {reason}`, nothing on stdout). Every dataset upload is preceded by it ([pipeline.md](pipeline.md), "Finishing a branch that changes the dataset"). Its test, `scripts/level2-check.spec.ts`, runs it on `fixture-0` and reads the result at several amounts (`readLevel2(run, amount)`).
+`npx tsx scripts/reach-check.ts <datasetDir>` (or `--version <v>`) asks whether current law meets the first deadline and the full tree the last, on a built dataset. Exit 0 when both do, 1 when either misses, 2 when it could not run. Every dataset upload is preceded by it ([pipeline.md](pipeline.md), "Finishing a branch that changes the dataset"). Its output, exit codes and test are in [game.md](game.md), "The reach check".
 
 ## Fixture dataset
 

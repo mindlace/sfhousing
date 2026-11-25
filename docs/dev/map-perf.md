@@ -7,9 +7,10 @@ Spec: `docs/superpowers/specs/2026-10-10-map-view-design.md` §4.12.
 `npm run bench:map` runs `e2e/bench/map-pan.bench.ts` (and the timeline cases below) with `playwright.bench.config.ts`:
 
 1. Starts the same VITE_E2E preview server as `npm run test:e2e` (fixture-0 data on :4173), or
-   reuses one that is already running. Kill a stale non-VITE_E2E server first
-   (`lsof -ti :4173 | xargs kill`): the bench needs the `window.__sfhMap` debug hook.
-2. Opens `/` in **headed** Chromium on the real GPU, at 1280×800 CSS px with
+   reuses one that is already running: the bench needs the `window.__sfhMap` debug hook, which
+   only a VITE_E2E build has. Port 4173 belongs to whichever session started its server. Check it
+   with `lsof -nP -iTCP:4173 -sTCP:LISTEN` and wait while it is taken; never stop it.
+2. Opens `/` as a new visitor (`newVisitor`: the game on, nothing stored, so the page is Paint) in **headed** Chromium on the real GPU, at 1280×800 CSS px with
    `deviceScaleFactor: 2` (the 2022 MacBook Air in the pass bar is a DPR 2 display, so the
    canvas is 2560×1600 device px). The config adds no SwiftShader or `--use-gl`
    flags. It prints the WebGL renderer string so you can confirm the GPU in use.
@@ -33,8 +34,11 @@ The debug hook (`loadSyntheticCity`, `applyGenerated`) is compiled only into VIT
 
 ## Running it
 
+Port 4173 belongs to whichever session started its server. Check it with
+`lsof -nP -iTCP:4173 -sTCP:LISTEN` and wait while it is taken; never stop it.
+
 ```sh
-lsof -ti :4173 | xargs kill   # if a non-VITE_E2E preview is running
+lsof -nP -iTCP:4173 -sTCP:LISTEN   # nothing listening, or wait
 npm run bench:map
 BENCH_CHANNEL=chrome npm run bench:map   # use installed Google Chrome instead of Playwright's Chromium
 ```
@@ -93,7 +97,7 @@ Each prints `p50`, `p95`, frames, parts, `pumpMaxOps` (the demolish pump's large
 
 **Marks case.** **playback + halos** is `playback` with the mark layer on (`map-interfaces.md`, "Policy marks"): once the timeline cells are in, it calls `window.__sfhMap.setHalos({ from: 20742 })`, so every tenth project (`makeSyntheticTimeline` flags one in ten) carries a mark. The line adds `marks=` (the debug snapshot's record count), and the case asserts it is above 0. It loads the synthetic timeline without its city feed (`loadSyntheticTimeline(1, 30000, false)`). Result, 2026-11-20 (M5 Pro, after map-on-screen #132), measured with rings, which the layer no longer draws: p95 10.3 ms, `halos=72532 marks=3000`. Not re-run since.
 
-**Citywide case.** **citywide playback** is `playback + halos` at the default desktop camera (`defaultFrame(1280)`: `[-122.4194, 37.7749]`, zoom 13, pitch 55, bearing -20) with the synthetic city feed on: `loadSyntheticTimeline(1, 30000)` adds a `city` delta with one marker per project at its site, and the marks thin below zoom 14 (one per square). It also calls `setBarMode('far')`, as `/sim` does, so the bars draw at the default camera (from zoom 12, 32 by 6 px, read at each anchor's zoom; `map-interfaces.md`, "Bar modes"). It plays at 3× (1,095.7 days/s) and pans as the other cases do. The line adds `markers=` (`cityMarkers`), and the case asserts `cityMarkers > 0` and `barMode === 'far'` after the pan (the other cases, `'street'`). It runs on `/`, whose map box (about 960 by 752 beside the Paint panel) is not `/sim`'s (1280 by 451): the taller canvas sees further toward the horizon, so it is the default camera on a different box, not `/sim`'s default view. Not yet run. The "playback + halos + city" case, which drew the city layer's glows zoomed in, went with that layer.
+**Citywide case.** **citywide playback** is `playback + halos` at the default desktop camera (`defaultFrame(1280)`: `[-122.4194, 37.7749]`, zoom 13, pitch 55, bearing -20) with the synthetic city feed on: `loadSyntheticTimeline(1, 30000)` adds a `city` delta with one marker per project at its site, and the marks thin below zoom 14 (one per square). It also calls `setBarMode('far')`, as the simulation does, so the bars draw at the default camera (from zoom 12, 32 by 6 px, read at each anchor's zoom; `map-interfaces.md`, "Bar modes"). It plays at 3× (1,095.7 days/s) and pans as the other cases do. The line adds `markers=` (`cityMarkers`), and the case asserts `cityMarkers > 0` and `barMode === 'far'` after the pan (the other cases, `'street'`). It runs on `/`, whose map box (about 960 by 752 beside the Paint panel) is not `/sim`'s (1280 by 451): the taller canvas sees further toward the horizon, so it is the default camera on a different box, not `/sim`'s default view. Not yet run. The "playback + halos + city" case, which drew the city layer's glows zoomed in, went with that layer.
 
 The synthetic parcel ids match no buildings-tile features. The pump's `setFeatureState` call count is real, but MapLibre's render-time cost on live tiles is not measured here.
 
@@ -110,13 +114,13 @@ The first two rows were measured on open packed rings; the "closed rings (after 
 
 ## Run slider switch (removed)
 
-`e2e/bench/run-slider.bench.ts` is deleted with the run slider (timeline-ui): `/sim` has no run to switch, and `window.__sfhFzp.selectRank` and `switchTrace` are gone. The swap reroll it measured (`SWAP_CELLS_PER_SLICE`) is not driven by `/sim` any more. Its deferred result rows are dropped with it.
+`e2e/bench/run-slider.bench.ts` is deleted with the run slider (timeline-ui): the simulation has no run to switch, and `window.__sfhFzp.selectRank` and `switchTrace` are gone. The swap reroll it measured (`SWAP_CELLS_PER_SLICE`) is not driven by the simulation any more. Its deferred result rows are dropped with it.
 
-## `/sim` with the timeline docked
+## The simulation at `/` with the timeline docked
 
-`e2e/bench/sim-timeline.bench.ts` (four tests, lines start `bench:map`) and `src/lib/timeline/apply-cost.perf.svelte.spec.ts` (project `client-perf`) measure the page that replaced the run slider. Numbers are reported; no new bar beyond the pan's p95.
+`e2e/bench/sim-timeline.bench.ts` (four tests, lines start `bench:map`) and `src/lib/timeline/apply-cost.perf.svelte.spec.ts` (project `client-perf`) measure the page that replaced the run slider. That page was `/sim`; the simulation is now at `/` (`/sim` redirects there), and the bench opens `/`. The test names keep `/sim`. Numbers are reported; no new bar beyond the pan's p95.
 
-- **Pan.** `/sim` with the timeline docked: wait for the filled forecast and cells on the map, press Play (`tl-play`), pan for 10 s as `map-pan` does. Prints p50, p95, cells, parts, DPR and renderer; asserts p95 at most 16.7 ms.
+- **Pan.** The simulation with the timeline docked: wait for the filled forecast and cells on the map, press Play (`tl-play`), pan for 10 s as `map-pan` does. Prints p50, p95, cells, parts, DPR and renderer; asserts p95 at most 16.7 ms.
 - **`fill-install`** (skipped unless `SFH_BENCH_DATASET` is set). A rAF probe samples the map's `timelineSnapshot()` (`installs`, `pending`, `cells`) every frame from navigation until the window is whole and `pending` stays 0 for 10 frames. It prints `installs`, `busy_ms`, `frame_ms_per_cell` and its per-span p50/p95 (frame-granular, vsync over cells per slice: not the install cost), `longtask_ms` (long tasks need 50 ms or more, so shorter slices are invisible there), `first_results_ms` and `whole_ms`.
 - **`open-painted` and `open-empty`.** Three fresh contexts each (cold cache), the autosave `sfhousing:sim:v2` seeded with a schema 4 document (one painted policy, a 12-point stroke from the Mission to downtown, 300 m radius, from asOf + 365 days) or removed. Prints `first_any_ms` (the stripped open's first results count), `first_full_ms` (not stale) and `whole_ms`; this is the cost of the provisional open's extra refill ([timeline-ui.md](timeline-ui.md)). If first results on the live painted open exceed 3000 ms, the operator messages main (OQ-3).
 - **`apply-cost`.** The real `SimMap` on the fixture manifest with playback running; one `TimelineUpdate` of K = 22 and K = 121 cells (500 projects a cell, `demolish` empty or the generator's list), median of 5, until `debugSnapshot().pending === 0`. Prints `[apply-cost] ...` lines.
@@ -139,6 +143,31 @@ Filter with `'sim-timeline\.bench'`, not a bare path: Playwright matches the fil
 | Apple M5 Pro, 2026-11-14, quiet (lock held) |      | live SF `2026-11-10-6ee5a23d` and fixture-0 | pan, timeline docked                   | live 8.3 / 10.3 ms (71 cells, 3,613 parts); fixture-0 8.3 / 10.0 ms                                                                                                                                  | PASS, DPR 2, Metal                                                                      |
 | same                                        |      | live SF                                     | fill-install; open-painted; open-empty | fill: first results 1,882 ms, whole 3,257 ms, 378 installs, 3.02 frame-ms per cell, longtask_ms 0; painted open: first any 1,961 ms, first full 3,664 ms; empty open: first 1,831 ms, whole 3,207 ms | cold cache, median of 3                                                                 |
 | same                                        |      | fixture-0                                   | apply-cost, K = 22 and 121             | K = 22: 155 ms install only, 161 ms with demolish; K = 121: 889 ms, 1,002 ms                                                                                                                         | headless SwiftShader, synthetic cells (500 projects a cell): relative, not a GPU figure |
+
+## The game's runs
+
+Spec: `docs/superpowers/specs/2026-11-24-closing-design.html`, "The run bench". `e2e/bench/game-run.bench.ts` holds two tests; each prints one line starting `bench:map` and pushes it as a `bench:map` annotation.
+
+- **Run with drops** (test "bench:map: run with drops, citywide, moving pointer"). It decides run-play's frame budget: run-play halves `maxDrawn` while this case's p95 is above 16.7 ms. A game seeded in the runs with one run settled (no goal amount, no run time: the run as a player has it), `/` with the forecast filled and the tree up; it presses Run and waits for the run layer's `data-state="running"`. From then until the layer's `data-state="idle"`, a page-side `requestAnimationFrame` loop records every frame delta, while the test moves the mouse with one awaited `page.mouse.move` after another along a figure over the layer's box: `x = left + width × (0.5 + 0.4 sin(2πt / 3.1 s))`, `y = top + height × (0.5 + 0.4 sin(2πt / 2.3 s))`. "Collect for me" stays off and sound on, as a new player has them, so the ring's test, the drawing and the sounds run each frame. The view is the run view: the whole city, flat and north up, with the drops. Line: `bench:map case=run dataset=<v> frames=<n> dropped=<homes> collected=<homes> p50=<ms> p95=<ms> bar=16.7ms PASS|FAIL dpr=<dpr> renderer="<renderer>"`. It passes when p95 is at most 16.7 ms. On fixture-0 it runs and reports, with few drops.
+- **Purchase to ready** (test "bench:map: purchase to ready"). How long the next run's forecast takes after a purchase; the balance script's pacing clock (`CLOCK.buyS` in `scripts/tree-balance.ts`) counts none of it. Three samples, each from a fresh browser context: a game in the runs holding stop-rail's rung-0 price (`PRICES` in `src/lib/game/catalogue/tuning.ts`), `/` with the forecast filled and the tree up; it opens stop-rail (shown at rung 0; a zoning purchase is the slowest kind), installs a `MutationObserver` on `tree-run`'s `aria-busy`, takes `t0` in the page and presses Buy. The sample ends when `aria-busy` leaves `"true"` after having been `"true"` (the observer walks each record's old value, so a short busy is not missed); the case fails if Run never turns busy. Line: `bench:map case=buy-to-ready dataset=<v> node=stop-rail samples=<ms>,<ms>,<ms> median=<ms> buyS=<CLOCK.buyS × 1000>ms`. No pass bar: when the median is above `buyS`, the clock understates the time between runs, and the owner decides whether to raise `CLOCK.buyS`. `buyS` is read from the script's text, since importing it would load the node catalogue.
+
+Run both on the live dataset, on a quiet machine only: the one-minute load average from `uptime` below 2 and no other session's Playwright, Vite or wrangler process. Otherwise defer the run and say so. Port 4173 belongs to whichever session started its server; check it with `lsof -nP -iTCP:4173 -sTCP:LISTEN` and wait while it is taken; never stop it.
+
+```sh
+uptime
+lsof -nP -iTCP:4173 -sTCP:LISTEN
+npm run data:local -- <v>
+SFH_BENCH_DATASET=<v> npm run bench:map -- -g "run with drops"
+SFH_BENCH_DATASET=<v> npm run bench:map -- -g "purchase to ready"
+npm run bench:map -- -g "run with drops|purchase to ready"   # fixture-0: a smoke run, not of record
+```
+
+### Results
+
+| Machine | Date | Dataset | Case              | Line                                                       | Label |
+| ------- | ---- | ------- | ----------------- | ---------------------------------------------------------- | ----- |
+| —       | —    | live    | run with drops    | pending: the conductor's run of record on the live dataset | —     |
+| —       | —    | live    | purchase to ready | pending: the conductor's run of record on the live dataset | —     |
 
 ## CI
 

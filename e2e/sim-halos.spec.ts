@@ -1,4 +1,4 @@
-// Policy marks on /sim: marks appear only under a policy of the person's, one per flagged project
+// Policy marks on the simulation (the open game at `/`): marks appear only under a policy of the person's, one per flagged project
 // on the map, and only then does the key name the mark. Reads the map's debug
 // snapshot (window.__sfhMap.timelineSnapshot) and the playhead (window.__sfhFzp), never pixels.
 // Runs against the VITE_E2E build on fixture-0.
@@ -32,7 +32,7 @@ async function waitMap(page: Page): Promise<TimelineSnapshot> {
 
 async function gotoSim(page: Page): Promise<void> {
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  await page.goto('/sim');
+  await page.goto('/');
   await page.waitForFunction(() => (window as Win).__sfhFzp?.phase === 'ready');
   await page.waitForFunction(
     () => document.querySelector('[data-testid="map-root"]')?.getAttribute('data-state') === 'ready'
@@ -110,7 +110,7 @@ test('a transit rule from today: the key names the mark; marks equal the flagged
   await expect(markButton(page)).toHaveCount(0);
 });
 
-test('/sim with marks: axe clean with the key open, light and dark', async ({ page }) => {
+test('the simulation with marks: axe clean with the key open, light and dark', async ({ page }) => {
   for (const colorScheme of ['light', 'dark'] as const) {
     await page.emulateMedia({ colorScheme });
     await gotoSim(page);

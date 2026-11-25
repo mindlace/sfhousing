@@ -1,4 +1,4 @@
-// /sim's timeline end to end (timeline-ui): the headline settles once the forecast fills, a transit
+// The simulation's timeline end to end (the open game at `/`; timeline-ui): the headline settles once the forecast fills, a transit
 // rule from the model month starting in January 2031 refills the forecast from 2031 and leaves the
 // months before it alone (the
 // real worker's compiled -> refill -> filled order), a published policy opens on /s with the same
@@ -68,7 +68,8 @@ async function waitSession(page: Page): Promise<void> {
   await waitFilled(page);
 }
 
-async function gotoSim(page: Page, path = '/sim'): Promise<void> {
+/** The simulation at `/` (the open game: no game seeded), or `path`, the session ready. */
+async function gotoSim(page: Page, path = '/'): Promise<void> {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto(path);
   await expect(page.locator('html')).toHaveAttribute('data-hydrated', '');
@@ -140,7 +141,7 @@ function pageErrors(page: Page): string[] {
 
 // ---- the headline -------------------------------------------------------------------------------
 
-test('open /sim and see the headline settle', async ({ page }) => {
+test('open the simulation and see the headline settle', async ({ page }) => {
   await gotoSim(page);
   expect(await fzp(page, 'filledThrough')).toBe(await fzp(page, 'lastIndex'));
   await expect(scoreBar(page)).toHaveText(/^0 homes by today$/);

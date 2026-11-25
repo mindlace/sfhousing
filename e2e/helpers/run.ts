@@ -1,4 +1,4 @@
-// /sim's timeline (timeline-ui rules 5 to 12, 42) for e2e: the playhead slider, waits on the
+// The simulation's timeline (timeline-ui rules 5 to 12, 42) for e2e: the playhead slider, waits on the
 // forecast's fill through `window.__sfhFzp` (src/lib/fzp/debug.ts), a kind's rows opened, and a
 // policy added through the kind's "+". No raised timeouts: each wait is bounded by the test's.
 import { expect, type Locator, type Page } from '@playwright/test';
