@@ -26,6 +26,11 @@ export interface PolicyFrame {
   /** The shift in the log-odds of starting. */
   market: number;
   finance: FinanceFrame | null;
+  /**
+   * Per lot row, a log-odds shift added to `z + market` for market starts (the parking a start no
+   * longer builds, `world/cars/parking.ts`); absent or null for none. Affordable odds ignore it.
+   */
+  parking?: Float64Array | null;
 }
 
 /** The money side of one month's frame. */

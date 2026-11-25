@@ -31,6 +31,7 @@ export {
   missingTerms,
   oddsShift,
   projectDollars,
+  signedOddsShift,
   termsNeeded,
   tierOf,
   validateInstrument

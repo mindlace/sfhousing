@@ -190,6 +190,24 @@ export function oddsShift(g: Dollars, kind: ProjectKind, p: Prototype, slope: nu
   return (slope * g) / costPerHome(kind, p);
 }
 
+/**
+ * `slope * amount / costPerHome`, any finite sign: a saving (positive) raises the odds as
+ * `oddsShift` does, a cost (negative) lowers them. Throws for a non-finite amount or slope.
+ */
+export function signedOddsShift(
+  amount: Dollars,
+  kind: ProjectKind,
+  p: Prototype,
+  slope: number
+): number {
+  if (!Number.isFinite(amount) || !Number.isFinite(slope)) {
+    throw new RangeError(
+      `signedOddsShift needs a finite amount and slope; got ${amount}, ${slope}`
+    );
+  }
+  return (slope * amount) / costPerHome(kind, p);
+}
+
 export interface ItemFunding {
   /** exact dollars per home this item is worth to the project */
   grantEquivalent: number;

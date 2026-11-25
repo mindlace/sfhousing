@@ -236,7 +236,7 @@ export function eachFreeLot(
 ): void {
   const rates = [timeline.frameAt(1)];
   for (const c of timeline.changes()) if (c > 1 && c <= month) rates.push(timeline.frameAt(c));
-  const rateRows = rates.map((f) => startRates(f.view, f.market));
+  const rateRows = rates.map((f) => startRates(f.view, f.market, f.parking));
   const l = world.lots;
   const rowOf = l.rowOf;
   for (let lot = 0; lot < statics.parcelId.length; lot++) {

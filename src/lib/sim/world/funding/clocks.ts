@@ -177,7 +177,7 @@ function segOn(
 ): Seg {
   const market = kind === 'market';
   const lot = spell.lot;
-  const ord = market ? startRates(g.view, g.market)[lot] : 0;
+  const ord = market ? startRates(g.view, g.market, g.parking)[lot] : 0;
   const z = g.view.pre.logit[lot];
   const size = sizeIn(statics, g.view, g.calibration, lot, spell.existing, uS);
   // A frame with no money is a frame where nothing is offered and nothing shifts.
@@ -186,8 +186,11 @@ function segOn(
   const fm = frameMoney(timeline, g);
   const slope = g.finance.slope;
   const p = PROTOTYPE.get(size.protoId)!;
+  // The parking shift moves market odds only (ruling R2), as in `startRates`.
   const x0 = market
-    ? z + g.market
+    ? g.parking
+      ? z + g.market + g.parking[lot]
+      : z + g.market
     : z +
       g.market -
       (slope * (uncoveredPerHome('affordable', p) - uncoveredPerHome('market', p))) /

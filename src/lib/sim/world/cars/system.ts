@@ -2,7 +2,9 @@
 // homes the world builds and loses. It buffers what the step's events do to housing (homes
 // completed by mix, homes lost at construction starts, projects started) and, between systems 3
 // and 4, steps every zone: the pending homes become households (`occupied` share, rounded on
-// `OCCUPY`), then `stepZone`. It only observes: no start, event or due-list entry depends on it.
+// `OCCUPY`), then `stepZone`. With the link on and parking costs set, each refresh records the
+// zones whose parking demand moved (`pushShifts`) and `timelineOf` lays them over the policy as
+// start-odds shifts (`parkingTimeline`); otherwise it only observes.
 import type { CarData } from '$lib/data/cars-codec';
 import * as carsModule from '$lib/sim/cars';
 import type { CarDraw, CarModel } from '$lib/sim/cars';
@@ -13,6 +15,7 @@ import * as typesModule from '../types';
 import type { CarSystem, World } from '../types';
 import * as columnsModule from './columns';
 import type { CarColumns } from './columns';
+import * as parkingModule from './parking';
 
 // Bound once (docs/dev/world-core.md, Cost).
 const {
@@ -29,6 +32,7 @@ const { inclusionaryUnits } = tiersModule;
 const { drawOn, seedHash, streamOf, zoneEntity } = rngModule;
 const { ORIGIN_MASTER, ORIGIN_PHASE, ORIGIN_SIM } = typesModule;
 const { carColumnsOf } = columnsModule;
+const { parkingTimeline, pushShifts } = parkingModule;
 
 const NM = MIXES.length;
 const MARKET = MIXES.indexOf('market');
@@ -43,7 +47,10 @@ interface RowZones {
 }
 
 export interface CarSystemOptions {
-  /** Default true: parking demand reaches start odds (Task 9). False leaves the timeline alone. */
+  /**
+   * Default true: parking demand reaches start odds (`parkingTimeline`). False, or a model whose
+   * `parking.costPerSpace` is null, leaves the timeline alone and records no shift entries.
+   */
   link?: boolean;
 }
 
@@ -53,7 +60,7 @@ export function createCarSystem(
   model: CarModel,
   opts: CarSystemOptions = {}
 ): CarSystem {
-  const link = opts.link ?? true;
+  const link = (opts.link ?? true) && model.parking.costPerSpace !== null;
   const Z = data.zones.length;
   const entity = new Float64Array(Z);
   for (let z = 0; z < Z; z++) entity[z] = zoneEntity(data.zones[z]);
@@ -151,6 +158,8 @@ export function createCarSystem(
     const p = world.projects;
     if (p.origin[row] === ORIGIN_MASTER) return;
     const month = world.month + 1;
+    // A start in system 3 of a refresh month reads the month's new table, as later starts do.
+    tableFor(c, month);
     if (c.startMonth !== month) {
       c.startMonth = month;
       c.startHomes = 0;
@@ -168,6 +177,18 @@ export function createCarSystem(
     refreshTable(c, model, data);
     c.tableMonth = month;
     for (let z = 0; z < Z; z++) c.spaces[z] = predictedSpaces(c, model, data, z);
+    if (month > 0 && link) pushShifts(c, month);
+  };
+
+  /**
+   * Refreshes the table once in a refresh month, at the first thing that reads it: a start's
+   * spaces or the car step. Nothing moves households before the car step, so the table is the one
+   * the step would make.
+   */
+  const tableFor = (c: CarColumns, month: number): void => {
+    if (month > 1 && (month - 1) % model.refreshMonths === 0 && c.tableMonth !== month) {
+      refresh(c, month);
+    }
   };
 
   return {
@@ -192,7 +213,7 @@ export function createCarSystem(
       const c = ctx.world.cars;
       if (!c) throw new Error('cars: step before create');
       const month = ctx.month;
-      if (month > 1 && (month - 1) % model.refreshMonths === 0) refresh(c, month);
+      tableFor(c, month);
       const sh = seedHash(ctx.seed);
       let curZone = -1;
       let cur = 0;
@@ -220,9 +241,9 @@ export function createCarSystem(
     },
 
     timelineOf(world, statics, timeline) {
-      // Task 9 lays the parking frames over `timeline` when `link` is on.
-      void link;
-      return timeline;
+      const c = world.cars;
+      if (!link || c === undefined || c.shiftN === 0) return timeline;
+      return parkingTimeline(timeline, c, data, model, statics);
     }
   };
 }

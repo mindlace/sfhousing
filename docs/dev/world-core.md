@@ -166,8 +166,24 @@ stage on `sampleAdvance` lengths with no revisions (rule 15).
 wraps `out` once at its top, so every event of systems 1 to 7 reaches `cars.onEvent` just after it
 is sent, and runs `cars.step` between systems 3 and 4 every month, funded or not. Both `step` and
 `planDue` lay `cars.timelineOf` over the base timeline first and funding's view over that, so a
-rebuilt plan reads what the world steps under (rule 20). The car system only observes: with it
-every event equals the run without it (`world/cars/cars.property.spec.ts`).
+rebuilt plan reads what the world steps under (rule 20).
+
+**Parking into start odds** (`world/cars/parking.ts`, owner rulings R1 and R2). The spaces table
+is refreshed once in a refresh month (month 13, 25, …), at the first thing that reads it: a start
+in system 3 or the car step, so every start of the month reads one table. Each refresh compares a
+zone's predicted spaces per new market home with month 0's in whole steps of `SPACES_STEP` (0.01)
+and, where the step count moved, records an entry `(zone, month + 1, delta)` in `CarColumns.shift*`.
+`timelineOf` is then `parkingTimeline(base, …)`: from an entry's month on, the frame is the base
+frame with `parking` (per lot, `lotShift`: `signedOddsShift(-delta × cost per space)` of the
+parking type of the prototype at the lot's top qualifying fill level, on the frame's slope:
+`finance.slope`, else `calibration.market.slope.perCostShare`) and an id of its own. Entry months
+are frame changes: system 1 replans the changed zones' lots (`touched`; the union with the base's
+when both change in one month), and a funded month replans every lot as before. `startRates`
+(third argument), `skipBound`, `eachFreeLot` and the funded market clock (`ord` and `x0`) add the
+shift; affordable odds and every price are unchanged. With `costPerSpace` null or `{ link: false }`
+there are no entries and `timelineOf` returns its argument: every event equals the run without
+cars (`cars.property.spec.ts`, `parking.property.spec.ts`). Memory: each parking state holds a
+`parking` array and its start rates, a Float64Array per lot each, per world.
 
 ## Tests
 

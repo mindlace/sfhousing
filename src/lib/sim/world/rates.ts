@@ -17,27 +17,51 @@ const { exp, log } = mathModule;
 const { MONTH_DAYS } = timeModule;
 const { monthFirstDay, monthLastDay, monthOfDay } = monthsModule;
 
-const rateMemo = new WeakMap<Precompute, Map<number, Float64Array>>();
+type RateMemo = WeakMap<Precompute, Map<number, Float64Array>>;
+
+const rateMemo: RateMemo = new WeakMap();
+/** Rates under a parking shift, by the frame's `parking` array. */
+const parkedMemo = new WeakMap<Float64Array, RateMemo>();
 
 /**
  * Per lot row, the log-survival rate of starting, `log(1 - h)` with
- * `h = 1 / (1 + exp(-(z + market)))` from `view.pre.logit` (0 where the logit is -Infinity): the
- * expression `precomputeOf` uses. Memoised per (`view.pre`, `market`); never reads `pre.log1mh`.
+ * `h = 1 / (1 + exp(-(z + market + parking[i])))` from `view.pre.logit` (0 where the logit is
+ * -Infinity): the expression `precomputeOf` uses, with the frame's parking shift (`frame.parking`,
+ * none when absent or null). Memoised per (`parking`, `view.pre`, `market`); never reads
+ * `pre.log1mh`.
  */
-export function startRates(view: ZoningView, market: number): Float64Array {
-  let byMarket = rateMemo.get(view.pre);
+export function startRates(
+  view: ZoningView,
+  market: number,
+  parking?: Float64Array | null
+): Float64Array {
+  let memo = rateMemo;
+  if (parking) {
+    let m = parkedMemo.get(parking);
+    if (!m) parkedMemo.set(parking, (m = new WeakMap()));
+    memo = m;
+  }
+  let byMarket = memo.get(view.pre);
   if (!byMarket) {
     byMarket = new Map();
-    rateMemo.set(view.pre, byMarket);
+    memo.set(view.pre, byMarket);
   }
   let out = byMarket.get(market);
   if (!out) {
     const logit = view.pre.logit;
     out = new Float64Array(logit.length);
-    for (let i = 0; i < logit.length; i++) {
-      const z = logit[i];
-      if (z === -Infinity) continue;
-      out[i] = log(1 - 1 / (1 + exp(-(z + market))));
+    if (parking) {
+      for (let i = 0; i < logit.length; i++) {
+        const z = logit[i];
+        if (z === -Infinity) continue;
+        out[i] = log(1 - 1 / (1 + exp(-(z + market + parking[i]))));
+      }
+    } else {
+      for (let i = 0; i < logit.length; i++) {
+        const z = logit[i];
+        if (z === -Infinity) continue;
+        out[i] = log(1 - 1 / (1 + exp(-(z + market))));
+      }
     }
     byMarket.set(market, out);
   }
@@ -101,12 +125,12 @@ export function ordinaryStart(
   const first = Math.min(monthOfDay(asOf, r + 1), month);
   const f0 = timeline.frameAt(first);
   const bounds: number[] = [];
-  const rates: number[] = [startRates(f0.view, f0.market)[lot]];
+  const rates: number[] = [startRates(f0.view, f0.market, f0.parking)[lot]];
   for (const c of timeline.changes()) {
     if (c <= first) continue;
     if (c > month) break;
     const f = timeline.frameAt(c);
-    const rate = startRates(f.view, f.market)[lot];
+    const rate = startRates(f.view, f.market, f.parking)[lot];
     const bound = lastInitiationMonth(r, monthFirstDay(asOf, c) - 1);
     const last = rates.length - 1;
     // An empty segment: the new rate replaces the one that never ran.
@@ -141,7 +165,8 @@ const allLots = new WeakMap<Statics, Int32Array>();
  * `ordinaryStart` walks), with `Tmax = lastInitiationMonth(asOf, monthLastDay(through))`: a draw
  * above it passes its threshold after lot-month `Tmax`, which begins after `through` ends.
  * Infinity where nothing is skipped. Memoised per (timeline, statics, last change `<= month`,
- * `through`); reads frames up to `month` only.
+ * `through`, the ids of the frames read, which hold the parking state); reads frames up to `month`
+ * only.
  */
 export function skipBound(
   statics: Statics,
@@ -167,16 +192,19 @@ export function skipBound(
     changes.push(c);
   }
   // The bound reads only the changes up to `month`: every month from the last of them on shares it.
-  const key = `${changes.length > 0 ? changes[changes.length - 1] : 1}:${through}`;
+  // The frame ids read hold the parking state (a parking frame's id is its own).
+  let ids = String(timeline.frameAt(1).id);
+  for (const c of changes) ids += `,${timeline.frameAt(c).id}`;
+  const key = `${changes.length > 0 ? changes[changes.length - 1] : 1}:${through}:${ids}`;
   let out = memo.get(key);
   if (out) return out;
   const f1 = timeline.frameAt(1);
-  const views: Float64Array[] = [startRates(f1.view, f1.market)];
+  const views: Float64Array[] = [startRates(f1.view, f1.market, f1.parking)];
   const bounds: number[] = [];
   for (const c of changes) {
     const f = timeline.frameAt(c);
     bounds.push(lastInitiationMonth(asOf, monthFirstDay(asOf, c) - 1));
-    views.push(startRates(f.view, f.market));
+    views.push(startRates(f.view, f.market, f.parking));
   }
   let lots = allLots.get(statics);
   if (!lots) {
