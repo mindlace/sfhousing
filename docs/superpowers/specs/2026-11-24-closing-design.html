@@ -416,7 +416,7 @@ export function sideShown(s: GameState, goals?: readonly SideGoal[]): SideGoal[]
         <li>The cheapest node shown at rung 0 costs no more than <code>RUNG_LUMP</code>.</li>
         <li>A side goal's <code>reward</code> and target are read from <code>SIDE_TUNING</code> by its id.</li>
         <li><code>goalAt</code> is <code>defaultGoal(asOf)</code> with the rung's deadline, and with <code>amount</code> when given.</li>
-        <li><code>readRun</code> returns null while the view does not cover the deadline's month.</li>
+        <li><code>readRun</code> returns null until the view is filled through the deadline's month. That month is read clamped to the view's months, and every rung's deadline lies inside them: rung 0's is the view's last calendar month, and no rung's is later or before the dataset date's month.</li>
         <li><code>resultOf</code> lists a side goal when it is shown, not yet met, and its <code>value</code> is at least its <code>target</code>.</li>
         <li><code>settle</code> credits <code>collected</code>, <code>lump</code> and each side reward; records the rung in <code>met</code> when <code>reachedOn</code> is set and the rung is not there; records each side goal; adds 1 to <code>runs</code>; sets <code>last</code>.</li>
         <li><code>settle</code> never removes a met rung (call 8).</li>
