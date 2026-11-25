@@ -575,10 +575,10 @@ export const PRODUCT_NAME = SITE_NAME;
 /** Relying-party display name shown by the passkey prompt. */
 export const PASSKEY_RP_NAME = PRODUCT_NAME;
 
-// src/lib/plan/schema.ts
-import { SITE_NAME } from '../shell/name';
+// src/lib/plan/schema.ts: the name as a literal, since plan/ imports only its siblings
+// and a named list (src/lib/plan/purity.spec.ts); schema.spec.ts pins the sentence
 export const FUTURE_SCHEMA_MESSAGE =
-  `This plan was made with a newer version of ${SITE_NAME}. Reload the page to get the latest version.`;</code></pre>
+  'This plan was made with a newer version of SF Housing. Reload the page to get the latest version.';</code></pre>
       <pre><code data-lang="json">// wrangler.jsonc, production (line 40) and staging (line 95)
 "SES_FROM": "SF Housing &lt;noreply@sfhousing.mindlace.net&gt;",</code></pre>
       <table id="tbl-name">
@@ -844,6 +844,7 @@ const tables = [
     <h2>Decisions</h2>
     <ul>
       <li><strong>The name lives in <code>src/lib/shell/name.ts</code>.</strong> <code>config.ts</code> is an input of the dataset version (<code>pipeline/lib/version.ts:41-50</code>), so it is left alone and <code>APP_NAME</code> stays unused.</li>
+      <li><strong><code>schema.ts</code> writes the name as a literal.</strong> <code>src/lib/plan/purity.spec.ts</code> lets <code>plan/</code> code import only its siblings and a named list, which keeps the plan model free of app modules; <code>schema.spec.ts</code> pins the whole sentence, so the literal cannot drift from <code>SITE_NAME</code> unseen.</li>
       <li><strong>Both data loads in <code>+page.ts</code>.</strong> The server cannot know the phase, and the simulation is every visit after the first win.</li>
       <li><strong>The body is chosen after mount.</strong> The server holds the open game; any earlier choice mismatches at hydration.</li>
       <li><strong><code>/sim</code> is a 308 from a universal load, the query dropped.</strong> The only query it read is retired; 308 matches <code>/attribution</code>; the universal load keeps the redirect inside the two files this subsystem holds.</li>
