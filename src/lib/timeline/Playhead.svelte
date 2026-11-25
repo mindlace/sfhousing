@@ -12,7 +12,7 @@
 <script lang="ts">
   import { untrack } from 'svelte';
   import { formatMonthYear } from '$lib/fzp/format';
-  import { advance, DEFAULT_SPEED } from '$lib/fzp/playback';
+  import { advance, DEFAULT_SPEED, SPEED_DAYS } from '$lib/fzp/playback';
   import { monthStart, utcParts } from '$lib/fzp/time';
   import type { Speed } from '$lib/fzp/types';
   import type { Day } from '$lib/timelapse/time';
@@ -152,7 +152,7 @@
         handle = raf(frame);
         return;
       }
-      const r = advance(clock, dt, speed, end);
+      const r = advance(clock, dt, SPEED_DAYS[speed], end);
       clock = r.t;
       if (r.day !== day) {
         emitted = r.day;
