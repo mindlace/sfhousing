@@ -447,7 +447,7 @@ interface GameCellProps {
     <p>Inputs the spec implies but its test lists do not exercise. Each line's test is added to the owning task.</p>
     <ol>
       <li><strong>The open game.</strong> <code>Tally</code> and <code>GoalHeadline</code> render nothing while <code>useGame().open</code> is true (<code>sec-design-common</code>); a page with no provider gets the open game. Tests in Task 4 and Task 5.</li>
-      <li><strong>A result past the goal.</strong> Homes above the amount fill the tally's and the headline's bars to 100, never past (<code>min(1, …)</code>). Tests in Task 4 and Task 5.</li>
+      <li><strong>A result past the goal.</strong> Homes above the amount fill the tally's and the headline's bars to 100, never past (<code>max(0, min(1, …))</code>). Tests in Task 4 and Task 5.</li>
       <li><strong>An empty stage breakdown.</strong> Every stage at 0 and <code>waitingMoney</code> 0: every row shows with count 0 and <code>data-fill</code> 0, no <code>NaN</code>. Test in Task 4.</li>
       <li><strong>An <code>on</code> entry for a node not bought.</strong> No switch shows and <code>ontoggle</code> cannot be called. Test in Task 6.</li>
       <li><strong>An import that reaches the simulation or the map.</strong> A source file under <code>src/lib/game/ui/</code> importing <code>$lib/sim</code>, <code>$lib/map</code>, <code>$lib/timeline</code> or <code>$lib/sim-page</code> fails a test. Test in Task 2, which covers every later file as it lands.</li>
@@ -543,6 +543,7 @@ it('the tree', () =&gt; {
   expect(w.nextPriceText(420)).toBe('next ◆ 420');
   expect(w.boughtLive('Near BART', '8 stories')).toBe('Bought: Near BART, 8 stories');
   expect(w.balanceText(1652)).toBe('◆ 1,652 to spend');
+  expect(w.balanceName(1)).toBe('1 unit to spend');
   expect(w.balanceName(1652)).toBe('1,652 units to spend');
   expect(w.takeNextText('Dec 2050')).toBe('Take the next goal: Dec 2050');
   expect(w.endingReached(dayFromUtc(2041, 3, 1))).toBe('Reached in Mar 2041');
@@ -577,7 +578,7 @@ it('no text has 12 words or more', () =&gt; {
       <li id="t1-s2"><input type="checkbox"> Run it and see it fail (module not found).
         <pre><code data-lang="sh">npx vitest run --project server src/lib/game/ui/words.spec.ts</code></pre>
       </li>
-      <li id="t1-s3"><input type="checkbox"> Write <code>words.ts</code> with the spec's block verbatim as the export list; each function body is one template on <code>formatCount</code>, <code>formatShortMonthYear</code> or <code>formatDollarsExact</code>. <code>UNIT_MARK</code> is the mark in <code>priceText</code>, <code>nextPriceText</code>, <code>buyText</code> and <code>balanceText</code>. <code>changeText</code> writes the sign itself (<code>+</code> or U+2212) before <code>formatCount(Math.abs(d))</code>. <code>balanceName(n)</code> is <code>`${unitsName(n)} to spend`</code> (builder's call: the one singular rule <code>unitsName</code> already has; see Open questions). <code>entryStage</code> reads <code>RUNGS</code>; every other import is <code>import type</code>.</li>
+      <li id="t1-s3"><input type="checkbox"> Write <code>words.ts</code> with the spec's block verbatim as the export list; each function body is one template on <code>formatCount</code>, <code>formatShortMonthYear</code> or <code>formatDollarsExact</code>. <code>UNIT_MARK</code> is the mark in <code>priceText</code>, <code>nextPriceText</code>, <code>buyText</code> and <code>balanceText</code>. <code>changeText</code> writes the sign itself (<code>+</code> or U+2212) before <code>formatCount(Math.abs(d))</code>. <code>balanceName(n)</code> is <code>`${unitsName(n)} to spend`</code> (<code>sec-design-words</code>: <code>'1 unit to spend'</code> | <code>'1,652 units to spend'</code>). <code>entryStage</code> reads <code>RUNGS</code>; every other import is <code>import type</code>.</li>
       <li id="t1-s4"><input type="checkbox"> Write <code>motion.ts</code> with the four constants of <code>sec-design-motion</code>.</li>
       <li id="t1-s5"><input type="checkbox"> Run the spec, then the checks; all pass.
         <pre><code data-lang="sh">npx vitest run --project server src/lib/game/ui/words.spec.ts
@@ -709,7 +710,8 @@ npx chreode timing-check --head HEAD</code></pre>
           <li><code>'the bar fills to the share of the goal'</code>: <code>tally-bar</code> <code>data-fill</code> <code>'50'</code>; homes 90,000 of 80,000 gives <code>'100'</code> (Review Focus 2).</li>
           <li><code>'collected, the lump and side rewards'</code>: <code>tally-units</code> holds <code>'7,300 of 9,100 collected'</code>; no <code>tally-lump</code> with <code>lump</code> null; <code>lump: { home: 2000 }</code> shows <code>'+2,000 for the goal'</code>; <code>side: [{ id: SIDE_GOALS[0].id, reward: { home: 500 } }, { id: 'gone', reward: { home: 50 } }]</code> gives two <code>tally-side</code> lines, <code>sideRewardText(500, SIDE_GOALS[0].label)</code> then <code>sideRewardText(50, SIDE_GOAL_FALLBACK)</code>.</li>
           <li><code>'four stage rows summed from six stages'</code>: stages <code>{ preApplication: 1, filed: 2, entitled: 3, permitFiled: 4, permitIssued: 5, construction: 6 }</code>; the <code>tally-stage</code> rows have <code>data-stage</code> <code>planning</code>, <code>approved</code>, <code>issued</code>, <code>building</code>, labels from <code>STAGE_ROWS</code>, counts 3, 7, 5, 6.</li>
-          <li><code>'the money row and the shared scale'</code>: <code>waitingMoney</code> null: no <code>tally-money</code>, fills <code>43</code>, <code>100</code>, <code>71</code>, <code>86</code>; <code>waitingMoney</code> 14: <code>tally-money</code> shows <code>WAITING_MONEY</code> and 14, fills <code>21</code>, <code>50</code>, <code>36</code>, <code>43</code>, <code>100</code>.</li>
+          <li><code>'the money row and the shared scale'</code>: <code>waitingMoney</code> null: no <code>tally-money</code>, fills <code>42</code>, <code>100</code>, <code>71</code>, <code>85</code>; <code>waitingMoney</code> 14: <code>tally-money</code> shows <code>WAITING_MONEY</code> and 14, fills <code>21</code>, <code>50</code>, <code>35</code>, <code>42</code>, <code>100</code> (floored).</li>
+          <li><code>'a bar reads 100 only at the goal'</code>: homes 79,999 of 80,000 gives <code>tally-bar</code> <code>data-fill</code> <code>'99'</code>.</li>
           <li><code>'every row shows at 0 with an empty bar'</code> (Review Focus 3): every stage 0 and <code>waitingMoney</code> 0: five rows, each count <code>'0'</code>, each <code>data-fill</code> <code>'0'</code>.</li>
           <li><code>'Continue has focus at mount; Continue and Escape each call oncontinue once'</code>; <code>'Escape does not reach the window'</code> (host <code>onescape</code> not called).</li>
           <li><code>'the account offer is inside the card'</code>.</li>
@@ -727,7 +729,7 @@ npx chreode timing-check --head HEAD</code></pre>
         <ul>
           <li>Two <code>Tween</code>s (<code>svelte/motion</code>, <code>cubicOut</code>): homes from <code>before ?? result.homes</code> to <code>result.homes</code>, units from 0 to <code>total(result.collected)</code> (units roll whatever <code>before</code> is), each with duration <code>prefersReducedMotion.current ? 0 : TALLY_ROLL_MS</code>, set in <code>onMount</code>.</li>
           <li>The rolling homes line and units line are <code>aria-hidden</code>, each followed by an <code>sr-only</code> copy with the true numbers (builder's call: <code>sec-design-motion</code>'s last rule).</li>
-          <li><code>data-fill</code> is <code>Math.round(fill * 100)</code> (builder's call: "a whole percent"; see Open questions); the homes bar follows the tweened homes, the stage bars do not roll.</li>
+          <li>Every bar's fill is clamped to <code>max(0, min(1, …))</code> and its <code>data-fill</code> is <code>Math.floor(fill * 100)</code> (<code>sec-design-tally-lines</code>, <code>sec-design-testids</code>); the homes bar follows the tweened homes, the stage bars do not roll.</li>
           <li>The whole card is inside <code>{#if !game.open}</code>.</li>
           <li>Escape: <code>preventDefault()</code>, <code>stopPropagation()</code>, <code>oncontinue()</code>, as <code>src/lib/game/WinCard.svelte:27-32</code>, with the same <code>svelte-ignore a11y_interactive_supports_focus</code> (<code>:37</code>).</li>
         </ul>
@@ -787,7 +789,7 @@ npx chreode timing-check --head HEAD</code></pre>
           <li>The flash: a <code>$effect</code> that sees <code>met</code> go false to true after mount sets <code>flash</code> and clears it with a <code>setTimeout</code> of <code>MET_MS</code> (cleared on teardown). A <code>&lt;style&gt;</code> block gives <code>[data-flash]</code> a 2 px accent outline and, inside <code>@media (prefers-reduced-motion: no-preference)</code>, <code>animation: goal-met</code> over <code>MET_MS</code> once; <code>@keyframes goal-met</code> fades the outline colour from opaque to transparent.</li>
           <li>The pop-over's left: measured at open from the box's and the header's rects (<code>sec-design-headline-pop</code>'s formula), set with <code>style:left</code>.</li>
           <li>Escape and the outside press are window listeners, as <code>src/lib/shell/LevelCell.svelte:56-72</code>, with the press tested against the wrapper <code>span</code>.</li>
-          <li><code>data-fill</code> is <code>Math.round(fill * 100)</code>, as Task 4. A side entry's bar fill is <code>min(1, value / target)</code>, and 0 when <code>target</code> is 0 or less (builder's call, guarding <code>NaN</code>; see Open questions).</li>
+          <li>Bars as Task 4: fill <code>max(0, min(1, shownHomes / amount))</code>, <code>data-fill</code> <code>Math.floor(fill * 100)</code>. A side entry's bar fill is <code>max(0, min(1, value / target))</code>; a target is always a whole number above 0 (<code>sec-design-headline-pop</code>), so no other guard.</li>
         </ul>
         Write <code>HeadlineHost.svelte</code>.</li>
       <li id="t5-s4"><input type="checkbox"> Run the spec, then the checks; all pass.
@@ -841,7 +843,7 @@ npx chreode timing-check --head HEAD</code></pre>
           <li><code>openId: NodeId | null</code> state; <code>wide = new MediaQuery('(min-width: 1024px)')</code>.</li>
           <li>The open button's visible second line is <code>aria-hidden</code>; its <code>sr-only</code> copy, outside the button, is the <code>aria-describedby</code> target.</li>
           <li>The purchase: Buy records <code>pending = id</code>; an <code>$effect</code> on <code>nodes</code> that sees that node's level above the level at the press sets the live text to <code>boughtLive(label, levels[level - 1].step)</code>, clears <code>pending</code>, and after <code>tick()</code> focuses the detail's <code>h4</code> when the node is <code>done</code>.</li>
-          <li>Escape: on the root's <code>onkeydown</code>, when a detail is open and <code>!e.defaultPrevented</code>, <code>preventDefault()</code>, close, focus that node's open button. No <code>stopPropagation</code> (see Open questions).</li>
+          <li>Escape: on the root's <code>onkeydown</code>, when a detail is open and <code>!e.defaultPrevented</code>, <code>preventDefault()</code>, close, focus that node's open button. No <code>stopPropagation</code> (<code>sec-design-tree-keys</code>).</li>
           <li>The reveal: <code>in:fade={{ duration: prefersReducedMotion.current ? 0 : REVEAL_MS }}</code> on the node <code>li</code> (local, so nodes present at mount do not play it).</li>
         </ul>
         Write <code>TreeHost.svelte</code>.</li>
@@ -902,11 +904,4 @@ npx chreode timing-check --head HEAD</code></pre>
     </ol>
   </section>
 
-  <section id="sec-open-questions">
-    <h2>Open questions</h2>
-    <aside data-kind="question"><strong>Escape in the tree</strong> <code>sec-design-tree-keys</code> says Escape with a detail open closes it, but not whether the key stops there (Tally's and the win card's do). The plan marks it handled (<code>preventDefault</code>) without stopping propagation, as the level cell does, and tests only the close and the focus. Recommendation: keep it so; a header overlay already ignores a handled Escape.</aside>
-    <aside data-kind="question"><strong>Whole percent</strong> <code>data-fill</code> is "a whole percent" (<code>sec-design-tally-lines</code>, <code>sec-design-headline-lines</code>) without saying round or floor. The plan rounds. Recommendation: round; tests use values where the two agree except the stage-scale case, which follows rounding.</aside>
-    <aside data-kind="question"><strong><code>balanceName(1)</code></strong> The spec gives only the plural example. The plan writes <code>'1 unit to spend'</code> through <code>unitsName</code> and does not test the singular. Recommendation: confirm.</aside>
-    <aside data-kind="question"><strong>A side goal with target 0</strong> The pop-over's bar is <code>min(1, value / target)</code>; a target of 0 gives <code>NaN</code> or infinity. The plan fills 0 for a target of 0 or less. Recommendation: confirm, or have <code>game-core</code> guarantee targets above 0.</aside>
-  </section>
 </article>
