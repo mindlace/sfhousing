@@ -4,12 +4,13 @@ Saved games leave the browser for the player's account through `/api/game` (type
 `src/lib/game/save-api.ts`), stored in the `game_save` table, one row per saved game with a rev
 that every write checks. The browser side is the save sync (`src/lib/game/save-sync.svelte.ts`),
 which the root layout makes once and the store calls after each change, and which keeps both
-versions when two devices changed the same game. The account offer on the win card is
+versions when two devices changed the same game. The account offer on the tally is
 `src/lib/game/AccountOffer.svelte`.
 
-The saved game itself (`GameSave`, `SAVES_KEY`, `saveKey(id)`, `parseGameSave`,
-`defaultSaveName`, `MAX_SAVES` of 12) and the store (`GameStore`) belong to `src/lib/game/saves.ts`
-and `store.svelte.ts`. This page covers what leaves the browser.
+The saved game itself (`GameSave`, `parseGameSave`) belongs to `src/lib/game/save-shape.ts`, the
+keys and the cap (`SAVES_KEY`, `saveKey(id)`, `MAX_SAVES` of 12) to `saves.ts`, `defaultSaveName` to
+`words.ts` and the store (`GameStore`) to `store.svelte.ts`. This page covers what leaves the
+browser.
 
 ## The table
 
@@ -21,11 +22,13 @@ and `store.svelte.ts`. This page covers what leaves the browser.
 | `id`          | The saved game's id (`newId()` of `$lib/ids/base58`)                    |
 | `rev`         | 1 on the first store, one more on every stored change                   |
 | `name`        | A copy of `save.name`                                                   |
-| `level`       | A copy of `save.progress.level`                                         |
+| `phase`       | A copy of `save.state.phase`                                            |
+| `rung`        | A copy of `save.state.rung`                                             |
 | `body`        | The `GameSave` as JSON; `''` once removed                               |
 | `saved_at`    | The save's own `savedAt`                                                |
 | `removed_at`  | Set when removed; null while live                                       |
 
+- Two generated migrations define `phase` and `rung`.
 - A removal clears `body`, sets `removed_at` and keeps the rev. The row stays so other devices
   learn of the removal; removed rows are deleted only with their account.
 - The server never reads inside `plan` or `policy`.
@@ -40,7 +43,7 @@ deletion) call it; nothing else touches `game_save`. It parses a stored body onl
   `handle_tombstone` row has `released_by` equal to the identity: the handle was changed at least
   once.
 - `listGames(db, identityId, now)`: the live rows, newest `saved_at` first, as
-  `{ id, name, nameIsDefault, savedAt, level, rev }` (`nameIsDefault` read with `json_extract`);
+  `{ id, name, nameIsDefault, savedAt, phase, rung, rev }` (`nameIsDefault` read with `json_extract`);
   `removed` is the ids removed within `REMOVED_LIST_DAYS` (90) of `now`.
 - `readGame(db, identityId, id)`: `live` with rev and save, `removed`, or null.
 - `putGame(db, identityId, save, baseRev)`:
@@ -83,7 +86,7 @@ never sent the save.
    that `parseGameSave` refuses, or a `save.id` other than the path's id: 422
    `{ error: 'invalid' }`.
 5. No `locals.user` and the `sfh_known` cookie: 401 `{ error: 'sign_in' }`.
-6. No `locals.user` and `save.progress.firstWinAt` null: 422 `{ error: 'no_win' }`.
+6. No `locals.user` and `save.state.firstWinAt` null: 422 `{ error: 'no_win' }`.
 7. No `locals.user`: `mintPseudonymousSession(event)` makes the anonymous account and sets its
    session cookie on this response. Refused at 429: 429, empty body; at 500: 500
    `{ error: message }`.
@@ -157,7 +160,7 @@ ends the session.
 ### Attach
 
 - `changed` and `removed` calls made before `attach` are kept and acted on at attach.
-- With no session, every saved game with `progress.firstWinAt` set and no `seen` entry, or a
+- With no session, every saved game with `state.firstWinAt` set and no `seen` entry, or a
   `savedAt` other than `seen`'s, is marked waiting: a first win whose send never went still makes
   the account.
 - With `signedIn()` true, it pulls.
@@ -204,7 +207,7 @@ A 409 to the send of save `A` carries the account's version, `theirs`. In order:
 1. `B = newId()`, and `name = defaultSaveName({ kind: 'conflict', name }, names)`:
    "{name} (this device)".
 2. `store.rekey(A, B)`: the browser's version keeps everything under `B`. When `A` was current,
-   `B` is current, the offer is kept and no page loads. A `storage` answer sets `offline` and
+   `B` is current and no page loads. A `storage` answer sets `offline` and
    stops, with `A` waiting.
 3. `store.rename(B, name)`.
 4. `store.adopt([theirs])` under `A`; `seen[A]` takes the answered rev and `theirs.savedAt`. A
@@ -217,8 +220,8 @@ the other device's version.
 ### Removal
 
 - A 410 keeps the save, current or not: the sync only sends a save that changed here (D8).
-  `store.rekey(id, newId())` keeps it with its name (and, for the current game, its offer and no
-  page load); `seen[id]` is dropped and it is sent under the new id with `baseRev: null`.
+  `store.rekey(id, newId())` keeps it with its name (and, for the current game, no page
+  load); `seen[id]` is dropped and it is sent under the new id with `baseRev: null`.
 - `removed(id)` of a save in `seen` adds the id to `deleting` and, with a session, sends
   `DELETE /api/game/<id>`. A 204 drops it from `deleting` and `seen`. A 401 sets `sign-in`. Any
   other answer, or none, sets `offline` and leaves it in `deleting`, sent again with the waiting
@@ -272,7 +275,7 @@ The first rule that holds:
 5. `saved`: the browser has a session.
 6. `local`: otherwise.
 
-The games are in `localStorage` first in every state; no state blocks play or levelling up.
+The games are in `localStorage` first in every state; no state blocks play or buying.
 
 ## The account offer
 
@@ -297,20 +300,28 @@ The games are in `localStorage` first in every state; no state blocks play or le
 - 400 or 429: the body's `error`, under the input, associated with it and focused. 401: "Sign in
   first." Any other status: "Couldn't save. Try again." A thrown fetch: "Couldn't reach the server.
   Check your connection."
-- Nothing in the offer blocks levelling up or closes the card.
+- Nothing in the offer blocks buying or closes the tally.
 
 ## e2e seams
 
 `e2e/game-save.spec.ts` runs the real path, with no seam of its own:
 
-- `seedGame(page, 2)` (`e2e/helpers/game.ts`) switches the real game on and stores a won game that
-  was never sent, so the sync sends it at attach on the first load and the `PUT` mints the account.
-  Rate limits always allow under `ENVIRONMENT=development`.
+- `seedGame(page, { phase: 'runs' })` (`e2e/helpers/game.ts`) switches the real game on and stores
+  a v2 game in the runs phase, with `firstWinAt` set and never sent, so the sync sends it at attach
+  on the first load and the `PUT` mints the account. Rate limits always allow under
+  `ENVIRONMENT=development`.
+- `seedRunMs(page, ms)` sets the length of a run for the page before it loads.
 - A spec changes a stored game by writing its `saveKey(id)` value and its `SAVES_KEY` entry with
   `page.evaluate` (a new `name` and `savedAt`), then reloading: the sync finds it changed here.
 - A second device: the first context adds an email on `/account` through the `dev-link`; a second
   context calls `newVisitor`, then `loginAs` with that email.
 - Specs read what a browser holds from `SAVES_KEY`, and wait on `page.waitForResponse` for the
   `/api/game` requests, set up before the action that causes them; never on time.
-- Any spec that seeds a won game (`seedGame` at level 2 or above) now sends it 2 seconds after
-  load and makes an account, unless the test ends first.
+- Any spec that seeds a game past the opening now sends it 2 seconds after load and makes an
+  account, unless the test ends first.
+
+## Five-level records
+
+A v1 save or index in a browser (the five-level game's) is removed at load, unread (P15). Any other
+text that is not a save is moved aside under `sfhousing:save:corrupt:<time>`. The server refuses a v1
+body: `parseGameSave` answers null and the `PUT` answers 422 `invalid`.
