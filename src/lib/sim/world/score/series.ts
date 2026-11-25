@@ -5,6 +5,7 @@
 import { TIER_FIELDS, tiersOf, type TierCtx } from '$lib/sim/scenario/finance-score';
 import type { Day } from '$lib/timelapse/time';
 import { STAGE_ORDER, type Stage, type TierUnits } from '$lib/timelapse/types';
+import { waitingAt } from '../funding/columns';
 import { monthOfDay } from '../months';
 import { scheduleAt } from '../read';
 import type { Statics } from '../statics';
@@ -20,6 +21,7 @@ const NO_DAY = core.NO_DAY;
 const ORIGIN_MASTER = core.ORIGIN_MASTER;
 const ORIGIN_SIM = core.ORIGIN_SIM;
 const TIER_KEYS = TIER_FIELDS;
+const waitingOf = waitingAt;
 
 /** The stages a project can be in progress at, in `STAGE_ORDER` (score.ts `LIVE`). */
 const LIVE = STAGE_ORDER.filter((s): s is Live => s !== 'complete');
@@ -167,6 +169,11 @@ export interface Extras {
   ): { funded: number; displaced: number; displacedCompleted: number }[];
   /** Cumulative homes by income tier, final months `from..through`; throws without finance. */
   tiers(from: number, through: number): TierUnits[];
+  /**
+   * Homes waiting for money at the end of final calendar months `from..through`: entry k is
+   * `waitingAt(world, finalTable[from + k])`.
+   */
+  waiting(world: World, from: number, through: number): number[];
   /**
    * Funded rows that completed and whose step was stepped without their `'award'` (a feed bug):
    * their tiers stay filed by their completion month's programme definitions.
@@ -660,6 +667,12 @@ export function createWorldSeries(s: ScoreStatics, from?: WorldSeriesData): Worl
           unrecorded: d.sum[at + 4]
         });
       }
+      return out;
+    },
+    waiting(world: World, from: number, through: number) {
+      checkRange('waiting', from, through);
+      const out: number[] = [];
+      for (let i = from; i <= through; i++) out.push(waitingOf(world, table[i]));
       return out;
     },
     unawarded: () => d.unawarded

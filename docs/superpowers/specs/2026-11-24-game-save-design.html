@@ -14,7 +14,7 @@
       <li><strong>D8, D14</strong>: saved games stay separate, up to 12, with switch, rename, delete and new unchanged.</li>
       <li><strong>Call 9</strong>: the open game is built here from the catalogue: the last rung met, every node bought, no units.</li>
     </ul>
-    <p>This unit is the first part of one lane, built in this order and merged once: <code>game-save</code>, part B of <code>tally-tree</code>, <code>game-sim</code>, <code>game-shell</code> (design, <code>sec-write-sets</code>). It deletes <code>levels.ts</code>, <code>progress.ts</code>, <code>standing.ts</code>, <code>allowed.ts</code>, <code>copy.ts</code> and <code>navigate.ts</code>, and removes store members that pages read. The application does not build or type-check after this unit alone. <a href="#sec-design-lane">The lane</a> names every importer left broken and the unit that mends it.</p>
+    <p>This unit is the first part of one lane: one unit, merged once. Its parts, in dependency order, are <code>game-save</code>, part B of <code>tally-tree</code>, <code>game-sim</code> and <code>game-shell</code>; the unit's plan orders its tasks across the parts as its tests need, inside the lane's write set, and each file ends as the spec that owns it says (design, <code>sec-write-sets</code>). It deletes <code>levels.ts</code>, <code>progress.ts</code>, <code>standing.ts</code>, <code>allowed.ts</code>, <code>copy.ts</code> and <code>navigate.ts</code>, and removes store members that pages read. The application does not build or type-check after this unit alone. <a href="#sec-design-lane">The lane</a> names every importer left broken and the unit that mends it.</p>
   </section>
 
   <section id="sec-interfaces">
@@ -789,7 +789,8 @@ function openState(): GameState {
       <ul>
         <li>The three reads of <code>save.progress.firstWinAt</code> (attach, <code>changed</code>, <code>#put</code>) read <code>save.state.firstWinAt</code>.</li>
         <li><code>GameSave</code> and <code>parseGameSave</code> come from <code>./save-shape</code>; <code>defaultSaveName</code> comes from <code>./words</code>.</li>
-        <li><code>#keepBoth</code> and <code>#keepRemoved</code> are unchanged. Their comments that say the offer is kept go, since there is no offer.</li>
+        <li><code>#keepBoth</code> and <code>#keepRemoved</code> keep their behaviour. Their comments that say the offer is kept go, since there is no offer.</li>
+        <li><code>#keepBoth</code> names the browser's copy with <code>defaultSaveName({ kind: 'conflict', name: mine.name }, taken)</code>, where <code>taken</code> is every name in <code>store.saves</code> and the account copy's name. A name near 60 code points loses " (this device)" to the cut, and <code>taken</code> then gives it a " (2)" suffix, so the two copies never share a name.</li>
         <li><code>SyncRecord</code>, <code>SAVE_REVS_KEY</code>, <code>SyncState</code>, <code>syncReload</code> and <code>createSaveSync</code> are unchanged.</li>
         <li>A purchase or a settled run is one <code>changed(id)</code>, debounced 2 seconds like any edit.</li>
       </ul>
@@ -1084,6 +1085,7 @@ export async function seedRunMs(page: Page, ms: number): Promise&lt;void&gt;;</c
         <li>The store has no member <code>progress</code>, <code>allowed</code>, <code>offer</code>, <code>setOffer</code>, <code>levelUp</code> or <code>remix</code> (a type-level check with <code>@ts-expect-error</code>).</li>
         <li><code>AccountOffer.svelte.spec.ts</code> passes unchanged apart from its import of <code>syncText</code>.</li>
         <li>The sync: with no session, a save whose <code>state.firstWinAt</code> is null is not sent by <code>changed</code>, at attach or by a held send; with it set it is sent and the 200 makes the session. Every other sync test passes with v2 saves.</li>
+        <li>A 409 on a save whose name is 60 code points keeps both copies under different names: the browser's copy is named with " (2)", and its name differs from the account copy's name also when that copy was renamed on another device.</li>
       </ul>
     </section>
 
