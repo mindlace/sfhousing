@@ -670,7 +670,7 @@ export async function checkDataset(
   // yield[F−1] > 0 ⇒ hostable, since capped > 0 implies uncapped > 0) and the step's counts of
   // flags that disagree with its own uncapped yields. Eligibility is flags bit 5, which must equal
   // the chunk record's `eligible` or sd.landuse.none-with-units on the row's latest-roll units,
-  // and is 0 on freeway land (`extras.freewayLand`).
+  // and is 0 on freeway land (`extras.freewayLand`), whose chunk records are never eligible.
   {
     const clamped = c['scenario.yield.clamped'];
     const nonlp = c['scenario.yield.nonlp_base_mismatch'];
@@ -708,6 +708,13 @@ export async function checkDataset(
         if (p.hostableBase[i] ? !canB : mustB) badB++;
         hostable += p.hostable[i];
       }
+      const chunkEligible = [...(extras.freewayLand ?? [])].filter(
+        (id) => recById.get(id)?.eligible === true
+      );
+      if (chunkEligible.length > 0)
+        problems.push(
+          `freeway-land lot(s) ${chunkEligible.slice(0, 5).join(', ')}${chunkEligible.length > 5 ? ', …' : ''} are eligible in the chunks`
+        );
       if (badH) problems.push(`${badH} hostable flag(s) disagree with eligibility and yield`);
       if (badB) problems.push(`${badB} hostableBase flag(s) disagree with eligibility and yield`);
       if (badE)

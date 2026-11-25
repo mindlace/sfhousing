@@ -231,10 +231,16 @@ export async function build(
       writeRenderBoxes({ db, files: boxesFilesOf(lock, opts.rawDir, byName), derivedDir })
     );
     const chunks = await report.time('chunks', () =>
-      writeChunks(db, outDir, datasetVersion, report)
+      writeChunks(db, outDir, datasetVersion, report, freewayLandSet(freewayLand))
     );
     const reencodeIdentical = await report.time('reencode', async () => {
-      await writeChunks(db, join(work, 'reencode'), datasetVersion, new Report());
+      await writeChunks(
+        db,
+        join(work, 'reencode'),
+        datasetVersion,
+        new Report(),
+        freewayLandSet(freewayLand)
+      );
       return sameFiles(join(outDir, 'parcels'), join(work, 'reencode', 'parcels'));
     });
     // Two dates, each from its own named sources (docs/dev/pipeline.md, Lock and datasetVersion);

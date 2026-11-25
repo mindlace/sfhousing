@@ -1,9 +1,10 @@
 // Freeway land: the catalog format and parser, the mini build's lot 19 made unbuildable while its
 // freeway stands, the homes check and V17 with and without the catalog.
-import { mkdtempSync, readFileSync } from 'node:fs';
+import { cpSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, relative, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { decodeParcelChunk, encodeParcelChunk } from '../../src/lib/data/parcel-chunk';
 import { FIXTURE_PROFILE, FREEWAY_LAND_JSON } from '../config';
 import {
   freewayLandSet,
@@ -76,6 +77,23 @@ async function v17(dir: string, extras: Pick<CheckExtras, 'freewayLand'>) {
     ...extras
   });
   return r.find((x) => x.id === 'V17')!;
+}
+
+/**
+ * A copy of fixture-0 whose chunk record of every id in `ids` has `eligible` set to `eligible`
+ * (fixture-0 predates the chunk rule, so its catalog lot is still chunk-eligible).
+ */
+function fixtureWithChunkEligible(ids: string[], eligible: boolean): string {
+  const dir = join(mkdtempSync(join(tmpdir(), 'sfh-v17-')), 'fixture-0');
+  cpSync(FIXTURE_0, dir, { recursive: true });
+  for (const f of readdirSync(join(dir, 'parcels'))) {
+    const file = join(dir, 'parcels', f);
+    const recs = decodeParcelChunk(readFileSync(file, 'utf8'));
+    if (!recs.some((r) => ids.includes(r.id))) continue;
+    for (const r of recs) if (ids.includes(r.id)) r.eligible = eligible;
+    writeFileSync(file, encodeParcelChunk('fixture-0', f.replace(/\.json$/, ''), recs));
+  }
+  return dir;
 }
 
 const REPO_ROOT = resolve(import.meta.dirname, '../..');
@@ -158,7 +176,24 @@ describe('freeway land in the mini build', () => {
   });
 
   it('V17 accepts a catalog row the rule made ineligible and fails it without the catalog', async () => {
-    expect((await v17(FIXTURE_0, { freewayLand: new Set(['3512019']) })).ok).toBe(true);
-    expect((await v17(FIXTURE_0, { freewayLand: new Set() })).detail).toMatch(/1 eligible flag/);
+    const eligibleChunk = fixtureWithChunkEligible(['3512019'], true);
+    expect((await v17(eligibleChunk, { freewayLand: new Set() })).detail).toMatch(
+      /1 eligible flag/
+    );
+    const dir = fixtureWithChunkEligible(['3512019'], false);
+    expect((await v17(dir, { freewayLand: new Set(['3512019']) })).ok).toBe(true);
+  });
+
+  it('V17 fails when a catalog lot is chunk-eligible', async () => {
+    const bad = await v17(fixtureWithChunkEligible(['3512019'], true), {
+      freewayLand: new Set(['3512019'])
+    });
+    expect(bad.ok).toBe(false);
+    expect(bad.detail).toMatch(/3512019/);
+    expect(bad.detail).toMatch(/chunk/);
+    const good = await v17(fixtureWithChunkEligible(['3512019'], false), {
+      freewayLand: new Set(['3512019'])
+    });
+    expect(good.ok).toBe(true);
   });
 });
