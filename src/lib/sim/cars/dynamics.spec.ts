@@ -30,7 +30,11 @@ function modelOf(perMonth = 0.05): CarModel {
       provenance: prov
     },
     threePlusMean: 3.25,
-    moves: { perMonth: new Array(T).fill(perMonth), inMix: [uniform], provenance: prov },
+    moves: {
+      perMonth: new Array(T).fill(perMonth),
+      inRatio: [new Array(T).fill(1)],
+      provenance: prov
+    },
     newHomes: {
       mix: { market: uniform, veryLow: uniform, low: uniform, moderate: uniform },
       affordableTiers: { veryLow: 0.3, low: 0.3, moderate: 0.4 },
@@ -149,6 +153,65 @@ describe('stepZone', () => {
     expect(IN_MIX_DRAW).toBe(MIXES.length);
     expect(inTypes).toEqual([1, IN_MIX_DRAW]);
     expect(log.every(([z]) => z === 1)).toBe(true);
+  });
+
+  /** A zone's households by type, as shares. */
+  const typeMix = (s: CarState, z: number): number[] => {
+    const n = new Array(T).fill(0);
+    for (let t = 0; t < T; t++) for (let k = 0; k < L; k++) n[t] += s.hh[(z * T + t) * L + k];
+    const total = n.reduce((a, b) => a + b, 0);
+    return n.map((x) => x / total);
+  };
+  /** A zone of 4,000 households with an uneven type mix, nothing else in the city. */
+  const skewed = (): { d: CarData; start: number[] } => {
+    const d = dataOf();
+    d.households.fill(0);
+    const counts = Array.from({ length: T }, (_, t) => 200 + 100 * t);
+    const total = counts.reduce((a, b) => a + b, 0);
+    counts.forEach((c, t) => (d.households[(0 * T + t) * L] = c));
+    return { d, start: counts.map((c) => c / total) };
+  };
+  const run = (m: CarModel, d: CarData, months: number): CarState => {
+    const s = stateOf(d, m);
+    for (let month = 1; month <= months; month++)
+      stepZone(s, m, d, 0, new Int32Array(MIXES.length), 0, drawOf(month));
+    return s;
+  };
+
+  it('keeps a zone’s type mix through many refills when movers look like all households', () => {
+    const m = modelOf(0.05);
+    const { d, start } = skewed();
+    const s = run(m, d, 240);
+    typeMix(s, 0).forEach((x, t) => expect(x).toBeCloseTo(start[t], 2));
+  });
+
+  it('moves a zone toward its own mix times the mover ratio, not the PUMA’s mover mix', () => {
+    const m = modelOf(0.05);
+    // Movers are twice as likely to be of type 0 as all households: ratio 2 for type 0.
+    const ratio = Array.from({ length: T }, (_, t) => (t === 0 ? 2 : 1));
+    m.moves.inRatio = [ratio];
+    const { d, start } = skewed();
+    const s = run(m, d, 12);
+    const got = typeMix(s, 0);
+    // The refill is start x ratio, renormalised: type 0 grows from its start share toward it.
+    const w = start.map((x, t) => x * ratio[t]);
+    const adjusted = w.map((x) => x / w.reduce((a, b) => a + b, 0));
+    expect(got[0]).toBeGreaterThan(start[0] + 0.01);
+    expect(got[0]).toBeLessThan(adjusted[0] + 0.01);
+    // The other types keep their proportions to one another; the PUMA's mover mix (uniform here,
+    // the old refill) would have pulled them together.
+    for (let t = 2; t < T; t++) expect(got[t] / got[1]).toBeCloseTo(start[t] / start[1], 1);
+  });
+
+  it('keeps the mix when the ratio matches unequal move rates (movers out = movers in)', () => {
+    const m = modelOf(0.02);
+    m.moves.perMonth[0] = 0.08;
+    const { d, start } = skewed();
+    // PUMS's ratio for such a zone: r_t over the households-weighted mean rate.
+    const mean = start.reduce((a, x, t) => a + x * m.moves.perMonth[t], 0);
+    m.moves.inRatio = [m.moves.perMonth.map((r) => r / mean)];
+    const s = run(m, d, 240);
+    typeMix(s, 0).forEach((x, t) => expect(x).toBeCloseTo(start[t], 2));
   });
 
   it('fills an empty zone: arrivals choose cars by the zone’s table', () => {

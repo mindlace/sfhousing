@@ -625,7 +625,11 @@ describe('carsModelReportLines', () => {
     bands: BANDS,
     choice: r.choice,
     threePlusMean: 3.3,
-    moves: { perMonth: uniform.map(() => 0.01), inMix: PUMAS.map(() => uniform), provenance: prov },
+    moves: {
+      perMonth: uniform.map(() => 0.01),
+      inRatio: PUMAS.map(() => uniform.map(() => 1)),
+      provenance: prov
+    },
     newHomes: {
       mix: { market: uniform, veryLow: small, low: small, moderate: uniform },
       affordableTiers: { veryLow: 0.5, low: 0.3, moderate: 0.2 },

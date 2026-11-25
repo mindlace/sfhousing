@@ -1672,7 +1672,7 @@ describe('cars', () => {
         provenance: prov
       },
       threePlusMean: 3.2,
-      moves: { perMonth: new Array(T).fill(0.01), inMix: [share], provenance: prov },
+      moves: { perMonth: new Array(T).fill(0.01), inRatio: [share.map(() => 1)], provenance: prov },
       newHomes: {
         mix: { market: share, veryLow: share, low: share, moderate: share },
         affordableTiers: { veryLow: 0.3, low: 0.3, moderate: 0.4 },
@@ -1720,7 +1720,8 @@ describe('cars', () => {
     ],
     ['negative move rate', (c) => (c.moves.perMonth[1] = -0.1), 'cars.moves.perMonth[1]'],
     ['move rate above 1', (c) => (c.moves.perMonth[0] = 1.5), 'cars.moves.perMonth[0]'],
-    ['inMix row not summing to 1', (c) => (c.moves.inMix[0] = [1, 1, 0, 0]), 'cars.moves.inMix[0]'],
+    ['inRatio row of zeros', (c) => (c.moves.inRatio[0] = [0, 0, 0, 0]), 'cars.moves.inRatio[0]'],
+    ['negative inRatio', (c) => (c.moves.inRatio[0] = [1, -1, 1, 1]), 'cars.moves.inRatio[0][1]'],
     ['household length', (c) => (c.choice.household = [0]), 'cars.choice.household'],
     ['asc length', (c) => (c.choice.asc = [0, 0]), 'cars.choice.asc'],
     ['unexpected key', (c) => (c.extra = 1), 'cars.extra'],

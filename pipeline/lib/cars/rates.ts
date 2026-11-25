@@ -83,10 +83,13 @@ export interface MoveStats {
 }
 
 /**
- * Move rates by type (`perMonth`, T) and the movers' type mix per PUMA (`inMix`, PUMAs x T, the
- * refill draw `IN_MIX_DRAW`). A type's annual rate is its WGTP-weighted share of households with
- * MV 1; a type with fewer than MIN_CELL_RECORDS records takes its tenure's share (a tenure with no
- * record, the citywide share). A PUMA with no mover takes the citywide movers' mix.
+ * Move rates by type (`perMonth`, T) and the movers' refill ratio per PUMA (`inRatio`, PUMAs x T,
+ * the refill draw `IN_MIX_DRAW`): a type's share of the PUMA's movers over its share of all the
+ * PUMA's households, 0 where the PUMA has none of the type. The refill is the zone's own type mix
+ * times the ratio, so a zone keeps its composition. A type's annual rate is its WGTP-weighted
+ * share of households with MV 1; a type with fewer than MIN_CELL_RECORDS records takes its
+ * tenure's share (a tenure with no record, the citywide share). A PUMA with no mover takes the
+ * citywide ratio.
  */
 export function moveRates(
   rows: readonly MoverRow[],
@@ -101,7 +104,9 @@ export function moveRates(
   const ten = { owner: [0, 0, 0], renter: [0, 0, 0] }; // records, weight, mover weight
   const pumaIx = new Map(pumas.map((p, i) => [p, i]));
   const mix = pumas.map(() => new Float64Array(T));
+  const all = pumas.map(() => new Float64Array(T));
   const city = new Float64Array(T);
+  const cityAllMix = new Float64Array(T);
   const moversByPuma = pumas.map(() => 0);
   let used = 0;
   let noMv = 0;
@@ -119,12 +124,14 @@ export function moveRates(
     w[t] += r.wgtp;
     c[0]++;
     c[1] += r.wgtp;
+    const p = pumaIx.get(r.puma);
+    if (p === undefined) throw new Error(`cars: PUMS record in unknown PUMA ${r.puma}`);
+    all[p][t] += r.wgtp;
+    cityAllMix[t] += r.wgtp;
     if (!moved) continue;
     wm[t] += r.wgtp;
     c[2] += r.wgtp;
     city[t] += r.wgtp;
-    const p = pumaIx.get(r.puma);
-    if (p === undefined) throw new Error(`cars: PUMS record in unknown PUMA ${r.puma}`);
     mix[p][t] += r.wgtp;
     moversByPuma[p]++;
   }
@@ -147,16 +154,20 @@ export function moveRates(
   if (!(cityTotal > 0)) throw new Error('cars: no PUMS household moved in within 12 months (MV 1)');
   const warnings: string[] = [];
   const pumaFallback: string[] = [];
-  const inMix = mix.map((m, i) => {
-    const total = m.reduce((a, b) => a + b, 0);
-    if (total > 0) return Array.from(m, (x) => x / total);
+  const ratioOf = (movers: Float64Array, households: Float64Array): number[] => {
+    const m = movers.reduce((a, b) => a + b, 0);
+    const h = households.reduce((a, b) => a + b, 0);
+    return Array.from(movers, (x, t) => (households[t] > 0 ? x / m / (households[t] / h) : 0));
+  };
+  const inRatio = mix.map((m, i) => {
+    if (m.reduce((a, b) => a + b, 0) > 0) return ratioOf(m, all[i]);
     pumaFallback.push(pumas[i]);
-    return Array.from(city, (x) => x / cityTotal);
+    return ratioOf(city, cityAllMix);
   });
   if (pumaFallback.length > 0)
     warnings.push(
-      `cars: no PUMS mover in PUMA(s) ${pumaFallback.join(', ')}; they refill from the citywide ` +
-        "movers' mix"
+      `cars: no PUMS mover in PUMA(s) ${pumaFallback.join(', ')}; they take the citywide ` +
+        'mover ratio'
     );
   const provenance: Provenance = {
     tier: 1,
@@ -165,13 +176,15 @@ export function moveRates(
     method:
       "A type's annual move rate is the WGTP-weighted share of its households that moved in " +
       'within 12 months (MV 1); monthly = 1 - (1 - annual)^(1/12). A type with fewer than ' +
-      `${MIN_CELL_RECORDS} records takes its tenure's rate. The refill mix of a PUMA is the ` +
-      'type shares of its households with MV 1 (a PUMA with none: the citywide movers).',
+      `${MIN_CELL_RECORDS} records takes its tenure's rate. A PUMA's refill ratio for a type ` +
+      'is its share of the PUMA households with MV 1 over its share of all the PUMA households ' +
+      "(0 where it has none; a PUMA with no mover: the citywide ratio); a zone's movers are " +
+      'replaced by its own type mix times the ratio, renormalised.',
     n: used,
     window
   };
   return {
-    moves: { perMonth, inMix, provenance },
+    moves: { perMonth, inRatio, provenance },
     stats: {
       records: used,
       noMv,

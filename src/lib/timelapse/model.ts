@@ -1203,13 +1203,20 @@ function checkCars(v: unknown): void {
   }
 
   const mv = record(c.moves, 'cars.moves');
-  exactKeys(mv, 'cars.moves', ['perMonth', 'inMix', 'provenance']);
+  exactKeys(mv, 'cars.moves', ['perMonth', 'inRatio', 'provenance']);
   sized(mv.perMonth, 'cars.moves.perMonth', T).forEach((x, i) =>
     unit(x, `cars.moves.perMonth[${i}]`)
   );
-  const inMix = array(mv.inMix, 'cars.moves.inMix');
-  if (inMix.length === 0) fail('cars.moves.inMix', 'expected at least one PUMA');
-  inMix.forEach((row, i) => shares(row, `cars.moves.inMix[${i}]`, T));
+  const inRatio = array(mv.inRatio, 'cars.moves.inRatio');
+  if (inRatio.length === 0) fail('cars.moves.inRatio', 'expected at least one PUMA');
+  inRatio.forEach((row, i) => {
+    const p = `cars.moves.inRatio[${i}]`;
+    const xs = sized(row, p, T);
+    xs.forEach((x, t) => {
+      if (x < 0) fail(`${p}[${t}]`, 'expected a non-negative number');
+    });
+    if (!xs.some((x) => x > 0)) fail(p, 'expected a positive ratio');
+  });
   checkProvenance(mv.provenance, 'cars.moves.provenance');
 
   const nh = record(c.newHomes, 'cars.newHomes');

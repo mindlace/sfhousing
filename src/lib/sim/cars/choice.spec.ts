@@ -27,7 +27,7 @@ const model: CarModel = {
     provenance: prov
   },
   threePlusMean: 3.2,
-  moves: { perMonth: new Array(T).fill(0.01), inMix: [new Array(T).fill(1 / T)], provenance: prov },
+  moves: { perMonth: new Array(T).fill(0.01), inRatio: [new Array(T).fill(1)], provenance: prov },
   newHomes: {
     mix: {
       market: new Array(T).fill(1 / T),
