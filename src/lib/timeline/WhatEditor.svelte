@@ -14,7 +14,9 @@
 
 <script lang="ts">
   import type { Snippet } from 'svelte';
+  import { OPEN_LIMITS, type Limits } from '$lib/game/limits';
   import type { BrushCatalog } from '$lib/sim/levers/brushes';
+  import { capOf } from '$lib/sim-page/transit-edit';
   import {
     customLotStatus,
     ruleChangeLabel,
@@ -54,6 +56,8 @@
     /** Removes the policy (a transit layer's Remove). */
     onremove(): void;
     paint: Snippet;
+    /** What is bought: caps the transit rows and narrows the permitting presets. */
+    limits?: Limits;
   }
 
   let {
@@ -69,8 +73,11 @@
     readonly,
     announce,
     onremove,
-    paint
+    paint,
+    limits = OPEN_LIMITS
   }: Props = $props();
+
+  const cap = $derived(capOf(limits));
 
   const span = $derived(policy.spans[at.span]);
   const where = $derived(policy.where);
@@ -128,6 +135,7 @@
     <TransitLayerRow
       part="stops"
       {rule}
+      {cap}
       status={ruleLotStatus(rule, result)}
       {catalog}
       selected={true}
@@ -141,6 +149,7 @@
   <TransitLayerRow
     part="bands"
     {rule}
+    {cap}
     status={ruleLotStatus(rule, result)}
     {catalog}
     selected={true}
@@ -160,6 +169,8 @@
     snapshot={false}
     {announce}
     presetLocked={policy.spans.length > 1 ? PRESET_PER_POLICY : null}
+    presets={limits.open ? null : limits.presets}
+    custom={limits.open || limits.custom}
   />
 {:else if fundOnly !== null && hasMoney(calibration)}
   <FundingTab
