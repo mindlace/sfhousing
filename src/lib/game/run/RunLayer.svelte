@@ -73,7 +73,9 @@
     });
     if (r.collected > 0) sound.collect();
     else if (r.appeared > 0) sound.pop();
-    if (r.appeared > 0 || r.collected > 0 || r.ended) send();
+    // A start zeroes the take: that is a change only when the last take sent was not zero.
+    const zeroed = r.started && (dropped !== 0 || collected !== 0);
+    if (r.appeared > 0 || r.collected > 0 || r.ended || zeroed) send();
     if (r.ended) said = runOverText(m.take);
     running = m.running;
     if (r.dirty || drewRing !== (m.running && !auto)) paint(t, reduced, auto);

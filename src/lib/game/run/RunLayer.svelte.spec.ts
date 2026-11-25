@@ -215,6 +215,30 @@ describe('RunLayer', () => {
     expect(live.textContent).toBe('');
   });
 
+  it('a new run sends the zero take once when the last take sent was not zero', async () => {
+    const { feed, ontake, root } = await mount();
+    start(feed);
+    frame();
+    expect(ontake).not.toHaveBeenCalled();
+    feed.drops = [feed.dropAt(1, 100, 100, 10, 2), feed.dropAt(2, 400, 300, 20, 5)];
+    feed.day = 25;
+    frame();
+    feed.running = false;
+    frame();
+    expect(root.dataset.dropped).toBe('7');
+    expect(root.dataset.collected).toBe('5');
+    const before = ontake.mock.calls.length;
+    feed.day = 0;
+    start(feed);
+    expect(ontake.mock.calls.length).toBe(before + 1);
+    expect(lastTake(ontake)).toEqual({ dropped: {}, collected: {} });
+    expect(root.dataset.dropped).toBe('0');
+    expect(root.dataset.collected).toBe('0');
+    frame();
+    frame();
+    expect(ontake.mock.calls.length).toBe(before + 1);
+  });
+
   it('calls sound.collect once for a frame that collects, else sound.pop once if any appeared', async () => {
     const { feed, sound } = await mount();
     feed.drops = [
