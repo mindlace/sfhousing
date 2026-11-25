@@ -36,7 +36,7 @@ export function restoreNode(
   ctx: GrantCtx
 ): SimPolicy4 {
   const first = node.levels[0]?.grant;
-  if (first === undefined || first.tag === 'hands') return doc;
+  if (first === undefined || first.tag === 'hands' || level < 1) return doc;
   if (nodeRefs(doc, first).length > 0) return doc;
   let out = doc;
   if (first.tag !== 'preset' && first.tag !== 'measure') {

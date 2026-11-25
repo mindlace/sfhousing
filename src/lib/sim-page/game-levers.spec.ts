@@ -27,7 +27,6 @@ const cal: Calibration = {
 const ctx = {
   cal,
   limits: limitsWith({
-    presets: new Set(['sb423Clock']),
     stops: new Set(['regionalRail', 'metro']),
     bands: 1,
     stories: 8,
@@ -58,6 +57,10 @@ const stopNode = node('t-stop', [{ tag: 'stop', stop: 'metro' }]);
 const storiesNode = node('t-stories', [
   { tag: 'stories', max: 6 },
   { tag: 'stories', max: 8 }
+]);
+const bandsNode = node('t-bands', [
+  { tag: 'bands', max: 2 },
+  { tag: 'bands', max: 3 }
 ]);
 const handsNode = node('t-hands', [{ tag: 'hands', what: 'radius', value: 64 }]);
 
@@ -128,6 +131,17 @@ describe('game-levers', () => {
     expect(restoreNode(DEFAULT_POLICY4, handsNode, 1, ctx)).toBe(DEFAULT_POLICY4);
   });
 
+  it('restoreNode applies the levels bought, no more', () => {
+    const more = { ...ctx, limits: { ...ctx.limits, bands: 3 } };
+    const bandCount = (level: number) =>
+      policyOf(restoreNode(DEFAULT_POLICY4, bandsNode, level, more), 'zoning', GAME_TRANSIT_ID)!
+        .spans[0].what;
+    const count = (w: ReturnType<typeof bandCount>) => (w.tag === 'bands' ? w.bands.length : -1);
+    expect(count(bandCount(1))).toBe(2);
+    expect(count(bandCount(2))).toBe(3);
+    expect(restoreNode(DEFAULT_POLICY4, bandsNode, 0, more)).toBe(DEFAULT_POLICY4);
+  });
+
   it('nodeSwitches lists bought nodes whose policy is there', () => {
     const s = {
       ...NEW_GAME,
@@ -135,6 +149,7 @@ describe('game-levers', () => {
     };
     const nodes = [presetNode, handsNode, measureNode];
     expect(nodeSwitches(withPreset, s, nodes)).toEqual({ [presetNode.id]: true });
+    expect(nodeSwitches(withPreset, { ...s, bought: {} }, nodes)).toEqual({});
     expect(nodeSwitches(setOn(withPreset, 'permitting', 'p1', false), s, nodes)).toEqual({
       [presetNode.id]: false
     });
