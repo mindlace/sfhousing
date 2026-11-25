@@ -81,7 +81,6 @@ type Overrides = Partial<{
   inForce: boolean;
   lens: ChartLens;
   onactivity: () => void;
-  bar: number | null;
 }>;
 
 const props = (over: Overrides = {}) => {
@@ -345,23 +344,6 @@ describe('what the plan added', () => {
     await expect.element(page.getByTestId('fzp-city')).not.toBeInTheDocument();
     await expect.element(page.getByText(/8 in 10/)).not.toBeInTheDocument();
     await expect.element(page.getByTestId('fzp-scope')).not.toBeInTheDocument();
-  });
-});
-
-describe('the bar', () => {
-  it('shows "To beat" after the last goal row, and nothing without a bar', async () => {
-    await page.viewport(1024, 768);
-    const first = await renderAtRest({ ...props(), bar: dayFromUtc(2057, 6, 1) });
-    const line = page.getByTestId('tl-to-beat');
-    await expect.element(line).toHaveTextContent('To beat: Jun 2057');
-    const rows = page.getByRole('meter').elements();
-    const last = rows[rows.length - 1];
-    expect(
-      last.compareDocumentPosition(line.element()) & Node.DOCUMENT_POSITION_FOLLOWING
-    ).toBeTruthy();
-    await first.unmount();
-    await renderAtRest({ ...props(), bar: null });
-    expect(document.querySelector('[data-testid=tl-to-beat]')).toBeNull();
   });
 });
 

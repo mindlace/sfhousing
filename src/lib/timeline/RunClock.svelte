@@ -89,7 +89,7 @@
 </script>
 
 <div
-  class="pointer-events-none absolute top-2 left-2 z-20 rounded-md bg-white/90 px-2 py-1 text-sm shadow-sm"
+  class="pointer-events-none absolute top-2 left-2 z-20 rounded-md border border-line bg-surface px-2 py-1 text-sm text-ink shadow-sm dark:border-line-dark dark:bg-surface-dark dark:text-ink-dark"
   data-testid="run-clock"
   data-day={day}
   aria-hidden="true"

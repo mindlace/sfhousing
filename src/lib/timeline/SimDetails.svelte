@@ -29,7 +29,6 @@
   import { LENS_NAME, TWIN_NOTE, capacityNote } from './copy';
   import { YEAR_COLUMNS, yearRows } from './details';
   import Explain from './Explain.svelte';
-  import { toBeatLine } from './game-copy';
   import { BUTTON, TARGET } from '$lib/shell/ui';
   import { ABOUT_ID, WORKED_OUT } from '$lib/about/copy';
   import type { PlayheadAt } from './results';
@@ -65,8 +64,6 @@
     lens?: ChartLens;
     /** The page's goal (TimelineMode's `goal`), which the rows read. */
     goal: Goal;
-    /** The date to beat: a "To beat" line under the goal rows; null for none. */
-    bar?: Day | null;
     /** Shows Activity in the column: the heading row's button (none without it). */
     onactivity?: () => void;
   }
@@ -85,7 +82,6 @@
     inForce = false,
     lens = $bindable<ChartLens>('homes'),
     goal,
-    bar = null,
     onactivity = undefined
   }: Props = $props();
 
@@ -177,9 +173,6 @@
       {#each rows as row, k (row.id)}
         <GoalRow {row} {max} primary={k === 0} />
       {/each}
-      {#if bar !== null}
-        <p class="mt-1 text-sm" data-testid="tl-to-beat">{toBeatLine(bar)}</p>
-      {/if}
     </div>
 
     <section class="mt-4" aria-busy={planPending ? 'true' : undefined}>
