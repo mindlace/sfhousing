@@ -53,9 +53,10 @@ describe('chunkOf', () => {
     }
   });
 
-  it('a chunk holds rows, the effect, money and tiers only', () => {
+  it('a chunk holds rows, the effect, money, tiers and cars only', () => {
     const plan = world([1]);
     expect(Object.keys(chunkOf(plan, plan, null, 0, 0)).sort()).toEqual([
+      'cars',
       'from',
       'money',
       'planEffect',

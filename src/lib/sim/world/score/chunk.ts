@@ -1,5 +1,5 @@
 import { moneyRowsOf } from './money';
-import { extrasOf } from './series';
+import { carRowsOf, extrasOf } from './series';
 import type { MoneyFeed, PlanRow, SeriesChunk, WorldSeries } from './types';
 
 /**
@@ -24,11 +24,13 @@ export function chunkOf(
   const moneyRows = extras === null ? null : moneyRowsOf(money!, extras, from, through);
   const tiers = extras === null ? null : extras.tiers(from, through);
 
+  const cars = carRowsOf(plan, from, through);
+
   const rows = plan.rows(from, through);
   const twinRows = twin.rows(from, through);
   const planEffect: PlanRow[] = rows.map((r, i) => ({
     entitledNew: r.entitledNew - twinRows[i].entitledNew,
     completedNetNew: r.completedNetNew - twinRows[i].completedNetNew
   }));
-  return { from, rows, planEffect, money: moneyRows, tiers };
+  return { from, rows, planEffect, money: moneyRows, tiers, cars };
 }

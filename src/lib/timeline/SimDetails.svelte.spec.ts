@@ -124,6 +124,7 @@ function viewOfScore(sc: TimelineScore): TimelineView {
     tierTargets: null,
     money: null,
     tiers: null,
+    cars: null,
     baseline: sc.baseline,
     phasing: sc.phasing,
     references: sc.references,

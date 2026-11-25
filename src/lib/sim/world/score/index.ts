@@ -5,6 +5,8 @@ export { scoreStaticsOf } from './statics';
 export { chunksBefore, viewOf } from './view';
 export type {
   CardDeps,
+  CarRow,
+  CarsView,
   MoneyFeed,
   MoneyRow,
   MoneyView,
