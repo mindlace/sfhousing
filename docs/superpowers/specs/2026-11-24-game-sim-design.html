@@ -939,7 +939,7 @@ interface RunClockProps {
         <li>Markers come from the page's city index: <code>activityIndex.markers()</code>, which <code>city-net</code> adds to <code>src/lib/timeline/activity.ts</code> and which returns <code>CityMarkerRow[]</code> (<code>{ row, lngLat, completed, homes, existing, flags }</code>). Each item maps to R1's <code>Marker</code> with the function below, in <code>TimelineMode</code>.</li>
         <li>At the run's start the drops are <code>planDrops(activityIndex.markers().map(marker), asOf, stop)</code>.</li>
         <li>While the phase is run, each change of <code>cityVersion</code> plans the drops again with the same arguments and replaces <code>feed.drops</code> (R1 matches drops by <code>row</code>). A completed day appears in the feed only once the world has stepped its month, and no rewind can happen in a run, so a new array keeps every earlier drop with its row and day.</li>
-        <li>The feed is a new object on each change of its fields:</li>
+        <li>The feed is one object for the life of <code>TimelineMode</code>. Its fields are getters over the page's state, so <code>RunLayer</code> reads each change through the same object and its <code>feed</code> prop never changes identity. <code>RunLayer</code> starts its frame loop from an effect on <code>feed.running</code>, and a new <code>feed</code> object reruns that effect, which reads the canvas's layout again; with one object that happens only when <code>running</code> changes.</li>
       </ul>
       <pre><code data-lang="ts">const marker = (m: CityMarkerRow): Marker =&gt; ({
   row: m.row,
@@ -951,12 +951,18 @@ interface RunClockProps {
   policy: m.flags !== 0
 });
 
-const feed: RunFeed = $derived({
-  drops: runDrops,
-  day,
-  running: phase === 'run' &amp;&amp; running,
+const feed: RunFeed = {
+  get drops() {
+    return runDrops;
+  },
+  get day() {
+    return day;
+  },
+  get running() {
+    return phase === 'run' &amp;&amp; running;
+  },
   project: projectPoint
-});
+};
 
 function projectPoint(lng: number, lat: number): { x: number; y: number } | null {
   if (!map) return null;
@@ -1449,7 +1455,7 @@ export function restoredLabel(node: TreeNode): string;</code></pre>
       <ul>
         <li><code>RunClock.svelte.spec.ts</code>: reaches the stop day after 20 s of fake frames and turns <code>running</code> false; waits at an <code>end</code> before the stop with <code>running</code> true and goes on when it grows; <code>onday</code> once per change.</li>
         <li><code>Playhead.svelte.spec.ts</code> and <code>test/PlayheadHost.svelte</code>: the <code>barDay</code> and <code>tl-bar-flag</code> cases go.</li>
-        <li><code>TimelineMode.game.svelte.spec.ts</code>, rewritten whole with <code>test/game.ts</code> making a v2 store: starting shows <code>run-waiting</code> and enters run when the fake worker's first fill arrives; <code>setRunView(true)</code> on starting and false on leaving tally; the run reaches the deadline with <code>runMs</code> 200 and settles with <code>resultOf</code>'s result; the tally shows with <code>before</code> the previous run's homes on the same rung (null on a new rung), Continue gives tree; the tree pane covers the map box and the map box is inert; <code>prefetchViewport</code> asks nothing while in <code>RUN_VIEW</code>; a change of <code>collectForMe</code> mid-run reaches <code>RunLayer</code>; <code>initialFrame</code> reaches <code>SimMap</code>; a crash in a run with <code>runs</code> above 0 lands in tree and settles nothing; a crash in starting or in run with <code>runs</code> 0 returns to starting, never shows the tree, and the run starts again once Retry brings the forecast back; Space in a run does not toggle and is prevented; <code>RunLayer</code>'s feed carries <code>planDrops</code> of the index's markers to the deadline; <code>GoalHeadline</code> is the pinned item with <code>homes</code> null before the rung's first run; the old <code>tl-win</code>, <code>tl-bar-flag</code> and <code>levelUp</code> cases go.</li>
+        <li><code>TimelineMode.game.svelte.spec.ts</code>, rewritten whole with <code>test/game.ts</code> making a v2 store: starting shows <code>run-waiting</code> and enters run when the fake worker's first fill arrives; <code>setRunView(true)</code> on starting and false on leaving tally; the run reaches the deadline with <code>runMs</code> 200 and settles with <code>resultOf</code>'s result; the tally shows with <code>before</code> the previous run's homes on the same rung (null on a new rung), Continue gives tree; the tree pane covers the map box and the map box is inert; <code>prefetchViewport</code> asks nothing while in <code>RUN_VIEW</code>; a change of <code>collectForMe</code> mid-run reaches <code>RunLayer</code>; <code>initialFrame</code> reaches <code>SimMap</code>; a crash in a run with <code>runs</code> above 0 lands in tree and settles nothing; a crash in starting or in run with <code>runs</code> 0 returns to starting, never shows the tree, and the run starts again once Retry brings the forecast back; Space in a run does not toggle and is prevented; <code>RunLayer</code>'s <code>feed</code> prop is one object from mount through a whole run, start, mid-run and settling, and carries <code>planDrops</code> of the index's markers to the deadline; <code>GoalHeadline</code> is the pinned item with <code>homes</code> null before the rung's first run; the old <code>tl-win</code>, <code>tl-bar-flag</code> and <code>levelUp</code> cases go.</li>
         <li><code>TimelineMode.svelte.spec.ts</code>: with no game there is no <code>data-phase</code> other than <code>none</code>, the pinned item is <code>TimelineHeaderScore</code>, and <code>setRunView</code> is never called.</li>
         <li><code>Timeline.svelte.spec.ts</code>: <code>LOCKED_LANE</code> and no "+" on a kind not open; <code>NOT_BOUGHT</code> on a policy not within; the <code>allowed</code>, <code>lockedLane</code> and <code>LATER_ROUND</code> cases are rewritten.</li>
         <li><code>Inspector.svelte.spec.ts</code> and <code>test/InspectorHost.svelte</code>: "+" offers per limits; a given measure's What is the summary under limits that are not open; the On switch still works on a bought policy.</li>
