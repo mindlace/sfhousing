@@ -39,9 +39,17 @@ test('a new visitor paints once, presses Start, and the first run starts at /', 
   // The map box takes focus (tl-map-box, tabindex -1 while starting and running).
   await expect
     .poll(() =>
-      page.evaluate(
-        () => !!document.activeElement?.contains(document.querySelector('[data-testid="map-root"]'))
-      )
+      page.evaluate(() => {
+        const a = document.activeElement;
+        const root = document.querySelector('[data-testid="map-root"]');
+        return (
+          !!a &&
+          a !== document.body &&
+          a !== document.documentElement &&
+          a.contains(root) &&
+          a.closest('[data-testid="tl-map-box"]') !== null
+        );
+      })
     )
     .toBe(true);
 });
