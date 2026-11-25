@@ -3,7 +3,7 @@
   import { copyFor } from '$lib/sharing/copy';
   import { SITE_NAME } from '$lib/shell/name';
 
-  // As /p/[id]'s error page, in the policy wording; "Start your own" goes to /sim.
+  // As /p/[id]'s error page, in the policy wording; "Start your own" goes to /.
   const SIM = copyFor('sim');
   const notFound = $derived(page.status === 404);
   // Only the load's own unparsable error gets that copy; anything else is a generic failure.

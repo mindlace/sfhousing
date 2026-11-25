@@ -85,7 +85,7 @@ export type ShareCopy = { -readonly [K in keyof typeof COPY]: string } & {
   /** The shared banner's fallback title and its label ("Shared plan"). */
   untitled: string;
   shared: string;
-  /** Where the shared banner's "Start your own" goes: the kind's own editor. */
+  /** Where the shared banner's "Start your own" goes: the game at /, for both kinds. */
   startHref: string;
 };
 

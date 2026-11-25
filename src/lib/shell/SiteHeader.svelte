@@ -1,8 +1,8 @@
 <!--
   The site header. There are no steps: the name is the way home. From lg: the name, the game's
-  unit count (GameCell, after mount, never for the open game), the page's status, the pinned item centred in the
-  bar (when both sides fit; a side that does not pushes it off centre, never clips), and the
-  actions on the right. Below lg: the name, the status, the pinned item and a hamburger Menu
+  unit count (GameCell, after mount, never for the open game), the page's status, the pinned item
+  centred in the bar (when both sides fit; a side that does not pushes it off centre, never
+  clips), and the actions on the right. Below lg: the name, the status, the pinned item and a hamburger Menu
   button (named "Menu", never a dot) whose panel (under the header) holds the unit count and the
   actions.
   Below sm, on a page that pins an item (Paint, /sim, /p/:id), the site name moves into
@@ -12,7 +12,8 @@
   page's one status cell, left-aligned at every width and never in the Menu: on Paint and /sim
   the save state (nothing when saved), and on /sim "Updating" takes its place while the numbers
   are stale or Play waits, beside it when autosave is off, with its explanation button. The status
-  and the actions render once at every width: from lg the panel is `display: contents`, so the actions sit in the header row.
+  and the actions render once at every width: from lg the panel is `display: contents`, so the
+  actions sit in the header row.
   Placement: the `<header>` is `relative`, and the pinned slot's box is a direct child of it with
   no position class (never `relative`, `absolute`, `fixed` or `sticky`) and no wrapper of its own
   around the snippet, so a pinned item's pop-over (GoalHeadline's side goals) places itself against
