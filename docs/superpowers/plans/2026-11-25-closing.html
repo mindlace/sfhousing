@@ -17,7 +17,6 @@
       <dt>Spec</dt>
       <dd><code>docs/superpowers/specs/2026-11-24-closing-design.html</code> (the closing spec) and <code>docs/superpowers/design/2026-11-24-2120-incremental-loop.html</code> (the design), both package-relative.</dd>
     </dl>
-    <aside data-kind="question"><strong>Question</strong> The closing spec fixes <code>CLAUDE.md</code>'s new "What This Is" text with "meeting the goal offers a deadline five years earlier" (§sec-design-claude), while G6 lets ladder steps be wider than five years ("When more than four five-year steps fit, the first and last are kept with two evenly between"). If the merged <code>LADDER_YEARS</code> are not all five years apart, should the sentence say "an earlier deadline"? Recommendation: copy the spec's text when the merged steps are all five years; otherwise write "an earlier deadline" and name the change in the hand-back. Task 11 follows this recommendation unless the operator rules otherwise.</aside>
   </section>
 
   <section id="sec-global-constraints">
@@ -1325,7 +1324,7 @@ git commit -m "docs(game): the incremental loop"</code></pre>
       <li>Produces: nothing other tasks use.</li>
     </ul>
     <ol>
-      <li id="t11-s1"><input type="checkbox"> Replace <code>CLAUDE.md</code>'s "What This Is" and the "Shell:" paragraph with the two blockquotes of §sec-design-claude, verbatim (subject to the overview's question on "five years earlier"). Rewrite the scoped docs list entries it names, the commands table (the bench row; <code>npx tsx scripts/reach-check.ts &lt;datasetDir&gt;</code> with its description; new rows for <code>scripts/reach-measure.ts &lt;datasetDir&gt; [--write]</code> and <code>scripts/tree-balance.ts</code>), and the Conventions upload item, all to the spec's words.</li>
+      <li id="t11-s1"><input type="checkbox"> Replace <code>CLAUDE.md</code>'s "What This Is" and the "Shell:" paragraph with the two blockquotes of §sec-design-claude, verbatim; the text holds for any measured <code>LADDER_YEARS</code>, so this step does not wait on T1. Rewrite the scoped docs list entries it names, the commands table (the bench row; <code>npx tsx scripts/reach-check.ts &lt;datasetDir&gt;</code> with its description; new rows for <code>scripts/reach-measure.ts &lt;datasetDir&gt; [--write]</code> and <code>scripts/tree-balance.ts</code>), and the Conventions upload item, all to the spec's words.</li>
       <li id="t11-s2"><input type="checkbox"> <code>README.md</code>: title "# SF Housing"; the first paragraph to §sec-design-readme's text; every other paragraph unchanged.</li>
       <li id="t11-s3"><input type="checkbox"> <code>deploy.md:39</code> and <code>pipeline.md:48</code> to §sec-design-docs's text; <code>deploy.md:177</code>'s app name to <code>SF Housing</code>; <code>testing.md</code>'s "The game in tests" names the helpers of <code>e2e/helpers/game.ts</code> and <code>play.ts</code>, the open game at <code>/</code>, the new visitor, and the hooks <code>data-phase</code>, <code>data-dropped</code>, <code>data-collected</code>; its journey line names the three journeys; "The level 2 check" becomes "The reach check", one paragraph pointing at <code>game.md</code>; <code>accessibility.md</code> and <code>developing.md</code> per §sec-design-docs.</li>
       <li id="t11-s4"><input type="checkbox"> Check, then make the checks pass.
