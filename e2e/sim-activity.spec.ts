@@ -256,12 +256,7 @@ test('the no-scenario message is a card; a load failure is a chip with Retry', a
   await expect(status).toContainText("isn't available for dataset fixture-0");
   await expect(status).toHaveAttribute('data-shape', 'card');
   expect(await radius(status)).toBe(8);
-  // The link sits under the words.
-  const link = status.getByRole('link', { name: 'Go to the editor' });
-  const words = status.getByText(/isn't available/);
-  expect((await link.boundingBox())!.y).toBeGreaterThanOrEqual(
-    (await words.boundingBox())!.y + (await words.boundingBox())!.height
-  );
+  await expect(status.getByRole('link')).toHaveCount(0);
 
   await page.unroute('**/manifest.json');
   await page.route('**/scenarios/fzp/calibration.json', (route) => route.fulfill({ status: 500 }));

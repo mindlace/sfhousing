@@ -2087,13 +2087,9 @@
     <!-- Every notice is a chip or a card (Message) in this one stack. -->
     <NoticePills bind:el={pillsEl}>
       {#if noScenario}
-        {#snippet editorLink()}
-          <a href="/" class="{BUTTON_QUIET} inline-flex items-center">Go to the editor</a>
-        {/snippet}
         <div role="status" class="contents">
           <Message
             text="The simulation isn't available for dataset {datasetVersion}. It needs data this dataset doesn't have."
-            actions={editorLink}
             testid="fzp-status"
           />
         </div>
