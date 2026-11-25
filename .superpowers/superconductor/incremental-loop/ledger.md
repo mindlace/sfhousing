@@ -1,6 +1,7 @@
 # Superconductor ledger — design: docs/superpowers/design/2026-11-24-2120-incremental-loop.html
 
 Source model document: docs/superpowers/specs/2026-11-24-incremental-feel-design.html (approved by the partner 2026-11-24, ruling P12)
+Package worktree: /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-feel/.claude/worktrees/incremental-loop
 
 ## Checkpoints
 
