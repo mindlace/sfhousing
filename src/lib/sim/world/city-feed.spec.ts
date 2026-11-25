@@ -12,6 +12,8 @@ import { fixtureInput } from './test/cities.node';
 import { FakeController, markersOf, rowParcelIds } from './test/map-stream-run';
 import { horizonMonth, runWorld } from './test/run';
 import { frameOf, oneFrame } from './test/timeline';
+import { createWorldSeries } from './score/series';
+import { feedWorld, testStatics } from './score/test/feed';
 import {
   END_COMPLETE,
   END_EXIT,
@@ -120,6 +122,7 @@ function rowsOf(d: CityDelta) {
     started: d.days[3 * i + CITY_DAY.started],
     completed: d.days[3 * i + CITY_DAY.completed],
     homes: d.homes[i],
+    existing: d.existing[i],
     flags: d.flags[i]
   }));
 }
@@ -231,6 +234,7 @@ describe('city-feed', () => {
         started: NaN,
         completed: NaN,
         homes: 8,
+        existing: 0,
         flags: 0
       }
     ]);
@@ -464,7 +468,107 @@ describe('city-feed', () => {
       ]);
       const units = s === null ? 0 : (s.revisions.at(-1)?.units ?? 0);
       expect(m.homes).toBe(Math.min(65_535, Math.max(0, units)));
+      const c = s?.entered.construction;
+      expect(m.existing).toBe(
+        s !== null && c !== undefined && c > statics.asOf
+          ? Math.min(65_535, Math.max(0, s.existingUnits))
+          : 0
+      );
     }
     expect(completed).toBeGreaterThan(0);
+  });
+
+  it('existing: a row that entered construction after asOf carries its column; read before its construction, 0', () => {
+    const { world, anchors, flags } = little();
+    world.projects.existing[0] = 9;
+    const feed = feedOf(anchors, flags);
+    expect(rowsOf(feed.snapshot(world, STATICS, LATE))[0].existing).toBe(9);
+    expect(rowsOf(feed.snapshot(world, STATICS, 20_150))[0].existing).toBe(0);
+  });
+
+  it('existing: construction on asOf, or before it, carries 0 with a non-zero column', () => {
+    const { world, anchors, flags } = little();
+    enter(world, 0, 'construction', ASOF);
+    world.projects.existing[0] = 9;
+    enter(world, 4, 'construction', ASOF - 500);
+    world.projects.existing[4] = 6;
+    const [r0, , r4] = rowsOf(feedOf(anchors, flags).snapshot(world, STATICS, LATE));
+    expect(r0.existing).toBe(0);
+    expect(r4.existing).toBe(0);
+  });
+
+  it('existing: a row not begun carries 0, beside homes 0', () => {
+    const { world, anchors, flags } = little();
+    world.projects.existing[0] = 9;
+    const [r0] = rowsOf(feedOf(anchors, flags).snapshot(world, STATICS, 20_000));
+    expect([r0.homes, r0.existing]).toEqual([0, 0]);
+  });
+
+  it('existing: above 65535 is sent as 65535; a negative column as 0', () => {
+    const { world, anchors, flags } = little();
+    world.projects.existing[0] = 70_000;
+    world.projects.existing[4] = -3;
+    const [r0, , r4] = rowsOf(feedOf(anchors, flags).snapshot(world, STATICS, LATE));
+    expect(r0.existing).toBe(65_535);
+    expect(r4.existing).toBe(0);
+  });
+
+  it('existing: an exited row that entered construction after asOf keeps it', () => {
+    const { world, anchors, flags } = little();
+    world.projects.existing[4] = 11;
+    const [, , r4] = rowsOf(feedOf(anchors, flags).snapshot(world, STATICS, LATE));
+    expect(r4.existing).toBe(11);
+    expect(r4.completed).toBeNaN();
+  });
+
+  it('take sends a row whose only change is existing', () => {
+    const { world, anchors, flags } = little();
+    const feed = feedOf(anchors, flags);
+    feed.snapshot(world, STATICS, LATE);
+    world.projects.existing[0] = 4;
+    feed.touch(0);
+    const d = feed.take(world, STATICS, LATE)!;
+    expect(Array.from(d.row)).toEqual([0]);
+    expect(Array.from(d.existing)).toEqual([4]);
+  });
+
+  it('a rewind to a world where only existing differs touches that row', () => {
+    const { world, anchors, flags } = little();
+    const feed = feedOf(anchors, flags);
+    feed.snapshot(world, STATICS, LATE);
+    const restored = structuredClone(world);
+    restored.projects.existing[4] = 2;
+    feed.rewind(restored, STATICS, LATE);
+    const d = feed.take(restored, STATICS, LATE)!;
+    expect(rowsOf(d).map((r) => [r.row, r.existing])).toEqual([[4, 2]]);
+  });
+
+  it('the series agrees: completed homes less every existing equals completedNet', async () => {
+    const input = await fixtureInput();
+    const statics = staticsOf(input);
+    const W = horizonMonth(input.asOf);
+    const s = testStatics(input, W);
+    const series = createWorldSeries(s);
+    const world = feedWorld(statics, oneFrame(frameOf(input)), 1, W, series, 'live');
+    const P = input.parcels;
+    const feed = createCityFeed({
+      parcels: P,
+      anchorOf: (w, st, row) =>
+        w.projects.origin[row] === ORIGIN_MASTER
+          ? null
+          : (cellAnchorParcel(rowParcelIds(w, st, row), P) ?? P.id[0]),
+      flagsOf: () => 0
+    });
+    const i = s.lastIndex - 1;
+    const day = s.months[i + 1] - 1;
+    const d = feed.snapshot(world, statics, day);
+    let net = 0;
+    for (let k = 0; k < d.row.length; k++) {
+      if (!Number.isNaN(d.days[3 * k + CITY_DAY.completed])) net += d.homes[k];
+      net -= d.existing[k];
+    }
+    expect(net).toBe(series.rows(0, s.lastIndex)[i].completedNet);
+    expect(d.existing.some((e) => e > 0)).toBe(true);
+    expect(d.existing.some((e) => e === 65_535)).toBe(false);
   });
 });

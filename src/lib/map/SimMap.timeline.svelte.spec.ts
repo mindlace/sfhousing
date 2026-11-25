@@ -353,6 +353,7 @@ describe('SimMap timeline mode', { timeout: 60_000 }, () => {
         NaN
       ]),
       homes: Uint16Array.from([40, 12]),
+      existing: Uint16Array.from([0, 0]),
       flags: Uint8Array.from([0, 0])
     };
     const { handle, ready } = await mount();

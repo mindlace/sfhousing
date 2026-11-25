@@ -9,6 +9,7 @@ interface M {
   row: number;
   days: [number, number, number];
   homes?: number;
+  existing?: number;
   flags?: number;
   at?: [number, number];
 }
@@ -22,6 +23,7 @@ function delta(rows: number, ms: M[], from?: number): CityDelta {
     lngLat: new Float32Array(2 * k),
     days: new Float32Array(3 * k),
     homes: Uint16Array.from(ms.map((m) => m.homes ?? 10)),
+    existing: Uint16Array.from(ms.map((m) => m.existing ?? 0)),
     flags: Uint8Array.from(ms.map((m) => m.flags ?? 0))
   };
   ms.forEach((m, i) => {

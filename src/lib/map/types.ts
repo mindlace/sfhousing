@@ -79,12 +79,8 @@ export interface CityDelta {
   lngLat: Float32Array; // 2 per changed row: the anchor lot's label point
   days: Float32Array; // 3 per changed row (CITY_DAY): NaN = not (yet)
   homes: Uint16Array; // per changed row: the final revision's units, capped at 65535
-  /**
-   * E1, optional until city-net makes it required: per changed row, the homes the project takes
-   * off the goal's count (its lot's homes once it entered construction after the dataset date,
-   * else 0), capped at 65535. Absent: not sent yet, and read as 0.
-   */
-  existing?: Uint16Array;
+  /** Per changed row: the homes the project replaces after the dataset date, capped at 65535. 0 until it enters construction, and when it entered on or before the dataset date. */
+  existing: Uint16Array;
   flags: Uint8Array; // per changed row: SLOT_FLAG bits
 }
 
