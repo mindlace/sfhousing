@@ -20,6 +20,7 @@
     <aside data-kind="decision" id="p8"><strong>Partner: P8, the name</strong> "We should change the name to 'SF Housing'."</aside>
     <aside data-kind="decision" id="p9"><strong>Partner: P9, units are collected</strong> "There are plenty of games that give you 'points' that you can only spend if you collect them. The housing should be like that - all housing units count to the sim outcome, but you only get units to spend in the tree from whatever you collected. i.e. the units you get &amp; the spend of those units is disjoint from the sim, but derived from it."</aside>
     <aside data-kind="decision" id="p10"><strong>Partner: P10, affordable units come next</strong> "As soon as we're done with this first round I'm going to want to make affordable housing unit 'coins' either worth more than base coins or a secondary currency that gates higher unlocks."</aside>
+    <aside data-kind="decision" id="p11"><strong>Partner: P11, paint is the opening only</strong> "I don't want paint to recur. It exists at the beginning to give you a sense of what has to get built in getting to the goal. There's no way to allow painting in later stages without fundamentally disrupting the idea this is a simulator that has some fidelity to the original."</aside>
     <p>So the game layer has two jobs: give the player a reason to go one step further, and hand over the tool one lever at a time. It never changes what the simulation forecasts, and it never takes the forecasting tool away.</p>
     <ul>
       <li><strong>Goals:</strong> the next goal, how far off it is and what it unlocks are always on screen.</li>
@@ -169,11 +170,10 @@
       <ul>
         <li>There is one page and one map (P5). The header's two steps, "1 Paint" and "2 Simulate", go. The old addresses keep working.</li>
         <li>The page has two states. In a <strong>run</strong> it shows the map, the goal and the clock. <strong>Between runs</strong> it shows the tally, then the tree (P7).</li>
-        <li>The brush is the first tool. A new game opens with it, and the first goal is room for 82,069 homes, as level 1 is today. Meeting it starts the first run.</li>
-        <li>After that the brush is the zoning branch's way of acting on the map, used between runs.</li>
+        <li>A new game opens with the brush. The first goal is room for 82,069 homes, as level 1 is today. It shows the player how much has to be built to reach the goal (P11). Meeting it starts the first run.</li>
+        <li>The brush does not come back (P11). What was painted never enters the simulation, as ruled before, and no later stage offers painting.</li>
         <li>The editors and the timeline open from the tree: a bought node opens its lever's editor, and the forecast can be scrubbed from there (P1).</li>
       </ul>
-      <p>Whether what is painted in the opening stays in force in the runs is the <a href="#sec-questions">open question</a>.</p>
     </section>
 
     <section id="sec-run">
@@ -251,7 +251,7 @@
         </thead>
         <tbody>
           <tr><th scope="row">Permitting</th><td>The three presets on offer (SB 423 approval clock, no discretionary review, San Diego's pace), which multiply when stacked; custom timing for each route, down to the sourced floors.</td><td>The permitting presets, floors and evidence. The CEQA infill exemption is not available in the code today.</td></tr>
-          <tr><th scope="row">Zoning</th><td>The transit rule a piece at a time: each of the four stop types, a second and a third distance band, the height cap in steps; painting on the map.</td><td>The transit rule and the painted area.</td></tr>
+          <tr><th scope="row">Zoning</th><td>The transit rule a piece at a time: each of the four stop types, a second and a third distance band, the height cap in steps.</td><td>The transit rule. The painted area is not offered (P11).</td></tr>
           <tr><th scope="row">Public money</th><td>The measures that add money, about seven of the eleven presets.</td><td>The funding presets level 5 offers.</td></tr>
           <tr><th scope="row">Hands</th><td>Collect reach; drops that last longer; collecting on its own near the cursor, then everywhere.</td><td>New. Game only: these act on what is collected, never on homes.</td></tr>
           <tr><th scope="row">Free</th><td>The three protections; the state and federal off switches.</td><td>Exist today. They only take homes away, so they are not purchases.</td></tr>
@@ -265,29 +265,29 @@
           <g class="node" id="n-permit"><rect x="150" y="60" width="130" height="40"/><text x="215" y="80">Permitting</text></g>
           <g class="node" id="n-zoning"><rect x="150" y="190" width="130" height="40"/><text x="215" y="210">Zoning</text></g>
           <g class="node" id="n-money"><rect x="480" y="60" width="130" height="40"/><text x="545" y="80">Public money</text></g>
-          <g class="node" id="n-paint"><rect x="480" y="190" width="130" height="40"/><text x="545" y="210">Paint on the map</text></g>
+          <g class="node" id="n-hands"><rect x="480" y="190" width="130" height="40"/><text x="545" y="210">Hands</text></g>
           <g class="node muted" id="n-clock"><rect x="10" y="30" width="120" height="36"/><text x="70" y="48">Review clock</text></g>
           <g class="node muted" id="n-byright"><rect x="10" y="90" width="120" height="36"/><text x="70" y="108">By-right approval</text></g>
           <g class="node muted" id="n-height"><rect x="10" y="164" width="120" height="36"/><text x="70" y="182">Height near BART</text></g>
           <g class="node muted" id="n-band"><rect x="10" y="224" width="120" height="36"/><text x="70" y="242">Second band</text></g>
           <g class="node muted" id="n-bond"><rect x="630" y="30" width="120" height="36"/><text x="690" y="48">Housing bond</text></g>
           <g class="node muted" id="n-fund"><rect x="630" y="90" width="120" height="36"/><text x="690" y="108">Revolving fund</text></g>
-          <g class="node muted" id="n-cap8"><rect x="630" y="164" width="120" height="36"/><text x="690" y="182">Up to 8 stories</text></g>
-          <g class="node muted" id="n-cap12"><rect x="630" y="224" width="120" height="36"/><text x="690" y="242">Up to 12 stories</text></g>
+          <g class="node muted" id="n-reach"><rect x="630" y="164" width="120" height="36"/><text x="690" y="182">Collect reach</text></g>
+          <g class="node muted" id="n-linger"><rect x="630" y="224" width="120" height="36"/><text x="690" y="242">Longer drops</text></g>
           <g class="node missing" id="n-market"><rect x="320" y="20" width="120" height="36"/><text x="380" y="38">Market rules</text></g>
           <g class="node missing" id="n-cars"><rect x="320" y="240" width="120" height="36"/><text x="380" y="258">Car ownership</text></g>
           <g class="edge" data-from="n-law" data-to="n-permit"><path d="M320 135L282 96"/></g>
           <g class="edge" data-from="n-law" data-to="n-zoning"><path d="M320 155L282 194"/></g>
           <g class="edge" data-from="n-law" data-to="n-money"><path d="M440 135L478 96"/></g>
-          <g class="edge" data-from="n-law" data-to="n-paint"><path d="M440 155L478 194"/></g>
+          <g class="edge" data-from="n-law" data-to="n-hands"><path d="M440 155L478 194"/></g>
           <g class="edge" data-from="n-permit" data-to="n-clock"><path d="M150 72L132 54"/></g>
           <g class="edge" data-from="n-permit" data-to="n-byright"><path d="M150 88L132 102"/></g>
           <g class="edge" data-from="n-zoning" data-to="n-height"><path d="M150 202L132 188"/></g>
           <g class="edge" data-from="n-zoning" data-to="n-band"><path d="M150 218L132 236"/></g>
           <g class="edge" data-from="n-money" data-to="n-bond"><path d="M610 72L628 54"/></g>
           <g class="edge" data-from="n-money" data-to="n-fund"><path d="M610 88L628 102"/></g>
-          <g class="edge" data-from="n-paint" data-to="n-cap8"><path d="M610 202L628 188"/></g>
-          <g class="edge" data-from="n-paint" data-to="n-cap12"><path d="M610 218L628 236"/></g>
+          <g class="edge" data-from="n-hands" data-to="n-reach"><path d="M610 202L628 188"/></g>
+          <g class="edge" data-from="n-hands" data-to="n-linger"><path d="M610 218L628 236"/></g>
           <g class="edge" data-from="n-law" data-to="n-market"><path d="M380 123V58"/></g>
           <g class="edge" data-from="n-law" data-to="n-cars"><path d="M380 167V238"/></g>
         </svg>
@@ -344,7 +344,7 @@
       <h3>What changes in the app</h3>
       <ul>
         <li><strong>The name</strong> becomes "SF Housing" wherever the site names itself: the header, page titles, About, the documents (P8).</li>
-        <li><strong>Paint and Simulate</strong> become one page (P5). The header's two steps go.</li>
+        <li><strong>Paint and Simulate</strong> become one page (P5). The header's two steps go. Paint is the opening of a new game and nothing else (P11).</li>
         <li><strong>Levels 3 to 5</strong> and their "beat your previous month" bars go. The level cell in the header becomes the unit count. Saved games move out of the level panel; where to is left to the shell's design.</li>
         <li><strong>The timeline and the editors</strong> stay (P1). The editors list only the levers bought, and open from the tree.</li>
         <li><strong>The headline</strong> in the header becomes the goal, with its bar and what it unlocks (P2, P6).</li>
@@ -380,8 +380,8 @@
   </section>
 
   <section id="sec-questions">
-    <h2>Open decisions and calls to check</h2>
-    <aside data-kind="question"><strong>Question</strong> Does what the player paints in the opening stay in force in the runs? The earlier design ruled that it never enters the simulation. In one game I recommend that it does: the opening brush has a low height cap, the painted zoning is the player's first policy, and higher caps are steps in the tree. This needs the painted plan and the simulation's painted area to be one thing, which is to confirm in the code.</aside>
+    <h2>Calls to check</h2>
+    <p>No decision is open. P1 to P11 settle the questions raised along the way.</p>
     <p>These are my calls, not things you said. Correct any that are wrong.</p>
     <ul>
       <li><strong>Hands never change what gets built.</strong> From P1. Approach C is dropped, and the run is not built to take live input.</li>
@@ -393,7 +393,7 @@
       <li><strong>A purchase takes effect at once.</strong> The alternative is that it only opens the lever for the player to set.</li>
       <li><strong>Levers that only take homes away are free.</strong></li>
       <li><strong>Steps in heights and bands need no source;</strong> clocks keep their sourced floors.</li>
-      <li><strong>Painting has no area budget.</strong></li>
+      <li><strong>The painted area leaves the game entirely,</strong> the ending included. From P11. A published policy that already uses one still opens and plays.</li>
       <li><strong>The editors and the timeline open from the tree,</strong> since the tree is the screen between runs.</li>
       <li><strong>The name changes on the site and in its documents only.</strong> The repository, the worker and the bucket keep theirs.</li>
       <li><strong>The tally shows only what the engine measures:</strong> stages and money, not room or market.</li>
@@ -411,7 +411,7 @@
     <ul>
       <li>New model features: funding rules, market rules, affordability targets.</li>
       <li>The cursor acting inside the simulation (approach C).</li>
-      <li>Any budget of brush area.</li>
+      <li>Painting after the opening (P11).</li>
       <li>Affordable units worth more, or as a second currency (P10). The first round leaves room for both and builds neither.</li>
       <li>Widening "+N from your policy" to count projects already in the pipeline. The check found it counts new projects only; with P9 the game no longer depends on it.</li>
       <li>The car-ownership simulation itself. It joins as a branch when it lands.</li>
