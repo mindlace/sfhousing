@@ -598,6 +598,7 @@ export function onPrefs(fn: () =&gt; void): () =&gt; void;</code></pre>
       <ul>
         <li><code>planDrops</code> returns one drop for each marker completed after <code>asOf</code> and at or before <code>to</code> whose worth is above 0, ascending by day, then by row.</li>
         <li><code>feed.drops</code> may be replaced during a run, as the forecast fills. Drops are matched by <code>row</code>: one already shown stays as it is, and none is counted twice.</li>
+        <li><code>feed.running</code> holds each value for at least one animation frame: it turns true no earlier than the frame after it last turned false, and false no earlier than the frame after it turned true. The feed's owner guarantees this. The layer reads <code>running</code> once a frame, so a run starts and ends in the frames in which it reads a change.</li>
         <li>A drop appears when <code>feed.day</code> reaches its day and is counted in <code>dropped</code> then.</li>
         <li>A drop whose <code>policy</code> is true pops as a diamond, the shape of the map's policy mark, in that mark's colour (<code>tl-halo-policy</code>); every other drop pops as a circle in the accent. The shape tells the two apart in every theme. Its worth and how it is collected do not change.</li>
         <li>A drop is collected when its projected point is within <code>hands.radiusPx</code> of the ring's centre. It is counted in <code>collected</code> once.</li>
@@ -913,6 +914,7 @@ interface RunClockProps {
         <li>Starting shows a <code>Message</code> in the notice stack, inside a <code>role="status"</code> region, with the text <code>RUN_BUSY</code>, imported from <code>src/lib/game/ui/words.ts</code>, and <code>testid="run-waiting"</code>.</li>
         <li>The forecast is ready when all of these hold: the session exists and its phase is <code>'ready'</code>; it is not provisional; the numbers on show are not stale; the newest view exists with <code>filledThrough &gt;= 0</code>; the map handle exists; lots have not failed; and no error or crash notice is up.</li>
         <li>On the first moment starting and ready hold together, <code>TimelineMode</code> starts the run and sends <code>ready</code>. Starting a run: close the card and the tooltip; <code>day = asOf</code> and <code>handleDay(asOf)</code>; <code>reveal = revealOpen(asOf)</code>; the take is zero; the drops are planned (<a href="#sec-design-feed">The drops' feed</a>); <code>running</code> becomes true.</li>
+        <li>The run starts no earlier than the animation frame after the one in which the feed's <code>running</code> last turned false, so a run that ended or was aborted is seen to end before the next one starts (R1). An abort that arrives in the frame a run started stops the clock in the next frame.</li>
       </ol>
       <ul>
         <li>The stop day is the goal in play's deadline, <code>goalAt(asOf, state.rung, goalAmount)</code>, clamped to <code>lastDay</code>.</li>
@@ -937,7 +939,7 @@ interface RunClockProps {
         <li>Markers come from the page's city index: <code>activityIndex.markers()</code>, which <code>city-net</code> adds to <code>src/lib/timeline/activity.ts</code> and which returns <code>CityMarkerRow[]</code> (<code>{ row, lngLat, completed, homes, existing, flags }</code>). Each item maps to R1's <code>Marker</code> with the function below, in <code>TimelineMode</code>.</li>
         <li>At the run's start the drops are <code>planDrops(activityIndex.markers().map(marker), asOf, stop)</code>.</li>
         <li>While the phase is run, each change of <code>cityVersion</code> plans the drops again with the same arguments and replaces <code>feed.drops</code> (R1 matches drops by <code>row</code>). A completed day appears in the feed only once the world has stepped its month, and no rewind can happen in a run, so a new array keeps every earlier drop with its row and day.</li>
-        <li>The feed is a new object on each change of its fields:</li>
+        <li>The feed is one object for the life of <code>TimelineMode</code>. Its fields are getters over the page's state, so <code>RunLayer</code> reads each change through the same object and its <code>feed</code> prop never changes identity. <code>RunLayer</code> starts its frame loop from an effect on <code>feed.running</code>, and a new <code>feed</code> object reruns that effect, which reads the canvas's layout again; with one object that happens only when <code>running</code> changes.</li>
       </ul>
       <pre><code data-lang="ts">const marker = (m: CityMarkerRow): Marker =&gt; ({
   row: m.row,
@@ -949,12 +951,18 @@ interface RunClockProps {
   policy: m.flags !== 0
 });
 
-const feed: RunFeed = $derived({
-  drops: runDrops,
-  day,
-  running: phase === 'run' &amp;&amp; running,
+const feed: RunFeed = {
+  get drops() {
+    return runDrops;
+  },
+  get day() {
+    return day;
+  },
+  get running() {
+    return phase === 'run' &amp;&amp; running;
+  },
   project: projectPoint
-});
+};
 
 function projectPoint(lng: number, lat: number): { x: number; y: number } | null {
   if (!map) return null;
@@ -1447,7 +1455,7 @@ export function restoredLabel(node: TreeNode): string;</code></pre>
       <ul>
         <li><code>RunClock.svelte.spec.ts</code>: reaches the stop day after 20 s of fake frames and turns <code>running</code> false; waits at an <code>end</code> before the stop with <code>running</code> true and goes on when it grows; <code>onday</code> once per change.</li>
         <li><code>Playhead.svelte.spec.ts</code> and <code>test/PlayheadHost.svelte</code>: the <code>barDay</code> and <code>tl-bar-flag</code> cases go.</li>
-        <li><code>TimelineMode.game.svelte.spec.ts</code>, rewritten whole with <code>test/game.ts</code> making a v2 store: starting shows <code>run-waiting</code> and enters run when the fake worker's first fill arrives; <code>setRunView(true)</code> on starting and false on leaving tally; the run reaches the deadline with <code>runMs</code> 200 and settles with <code>resultOf</code>'s result; the tally shows with <code>before</code> the previous run's homes on the same rung (null on a new rung), Continue gives tree; the tree pane covers the map box and the map box is inert; <code>prefetchViewport</code> asks nothing while in <code>RUN_VIEW</code>; a change of <code>collectForMe</code> mid-run reaches <code>RunLayer</code>; <code>initialFrame</code> reaches <code>SimMap</code>; a crash in a run with <code>runs</code> above 0 lands in tree and settles nothing; a crash in starting or in run with <code>runs</code> 0 returns to starting, never shows the tree, and the run starts again once Retry brings the forecast back; Space in a run does not toggle and is prevented; <code>RunLayer</code>'s feed carries <code>planDrops</code> of the index's markers to the deadline; <code>GoalHeadline</code> is the pinned item with <code>homes</code> null before the rung's first run; the old <code>tl-win</code>, <code>tl-bar-flag</code> and <code>levelUp</code> cases go.</li>
+        <li><code>TimelineMode.game.svelte.spec.ts</code>, rewritten whole with <code>test/game.ts</code> making a v2 store: starting shows <code>run-waiting</code> and enters run when the fake worker's first fill arrives; <code>setRunView(true)</code> on starting and false on leaving tally; the run reaches the deadline with <code>runMs</code> 200 and settles with <code>resultOf</code>'s result; the tally shows with <code>before</code> the previous run's homes on the same rung (null on a new rung), Continue gives tree; the tree pane covers the map box and the map box is inert; <code>prefetchViewport</code> asks nothing while in <code>RUN_VIEW</code>; a change of <code>collectForMe</code> mid-run reaches <code>RunLayer</code>; <code>initialFrame</code> reaches <code>SimMap</code>; a crash in a run with <code>runs</code> above 0 lands in tree and settles nothing; a crash in starting or in run with <code>runs</code> 0 returns to starting, never shows the tree, and the run starts again once Retry brings the forecast back; Space in a run does not toggle and is prevented; <code>RunLayer</code>'s <code>feed</code> prop is one object from mount through a whole run, start, mid-run and settling, and carries <code>planDrops</code> of the index's markers to the deadline; <code>GoalHeadline</code> is the pinned item with <code>homes</code> null before the rung's first run; the old <code>tl-win</code>, <code>tl-bar-flag</code> and <code>levelUp</code> cases go.</li>
         <li><code>TimelineMode.svelte.spec.ts</code>: with no game there is no <code>data-phase</code> other than <code>none</code>, the pinned item is <code>TimelineHeaderScore</code>, and <code>setRunView</code> is never called.</li>
         <li><code>Timeline.svelte.spec.ts</code>: <code>LOCKED_LANE</code> and no "+" on a kind not open; <code>NOT_BOUGHT</code> on a policy not within; the <code>allowed</code>, <code>lockedLane</code> and <code>LATER_ROUND</code> cases are rewritten.</li>
         <li><code>Inspector.svelte.spec.ts</code> and <code>test/InspectorHost.svelte</code>: "+" offers per limits; a given measure's What is the summary under limits that are not open; the On switch still works on a bought policy.</li>
