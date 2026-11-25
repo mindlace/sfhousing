@@ -13,7 +13,7 @@ import { FINANCE_LIMITS } from '$lib/sim/levers/finance';
 import type { FundingDrafts } from '$lib/sim-page/funding-drafts.svelte';
 import type { PolicyStore } from '$lib/sim-page/policy-store.svelte';
 import { BOND_POLICY, fundingCalibration, policyWith } from '$lib/sim-page/test/funding';
-import { OBSERVED_TIMING } from '$lib/sim-page/timing';
+import { OBSERVED_TIMING, PRESETS } from '$lib/sim-page/timing';
 import { WINDOW_MONTHS } from '$lib/sim/timeline-client';
 import { monthFirstDay, monthLastDay, monthOfDay } from '$lib/sim/world/months';
 import { addPolicy } from './add';
@@ -545,6 +545,24 @@ describe('Inspector under limits', () => {
     });
     await page.getByRole('switch', { name: 'On' }).click();
     expect(policyOf(store.policy, 'zoning', 'z1')!.on).toBe(false);
+  });
+
+  it('a routes policy offers the bought presets and no custom controls', async () => {
+    const bought = limitsWith({ presets: new Set(['noDiscretionary']), custom: false });
+    setup({ initial: { kind: 'permitting', id: 'p1', span: 0 }, limits: bought });
+    const box = editor()!;
+    await expect
+      .poll(() =>
+        [...box.querySelectorAll('select[aria-labelledby$="-preset-label"] option')].map((o) =>
+          o.textContent?.trim()
+        )
+      )
+      .toEqual(['observed', 'noDiscretionary'].map((id) => PRESETS.find((p) => p.id === id)!.name));
+    expect(box.querySelectorAll('input[type="number"]')).toHaveLength(0);
+    expect(
+      [...box.querySelectorAll('button')].some((b) => /^Revert/.test(b.textContent?.trim() ?? ''))
+    ).toBe(false);
+    expect(box.textContent).toContain('Discretionary share:');
   });
 
   it('a transit layer holds to the bought bands', async () => {
