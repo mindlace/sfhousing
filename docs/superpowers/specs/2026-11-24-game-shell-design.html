@@ -641,6 +641,7 @@ let {
         <li>What remains: the banner, the read-only <code>BrushEditor</code> keyed on <code>data.id</code>, the dock and Details, the layer switches, the pinned "Room for N homes" headline with no actions or status, and the head tags.</li>
         <li><code>pageTitle</code> is <code>`${data.plan.title ?? 'Shared plan'} · ${SITE_NAME}`</code>. The error page's two titles use <code>SITE_NAME</code>.</li>
         <li><code>src/routes/p/[id]/test/PageHost.svelte</code> loses its <code>game</code> prop.</li>
+        <li>The read-only editor's line, <code>MSG.readOnly</code> in <code>src/lib/brush/messages.ts</code>, is <code>'Read-only.'</code>; its spec asserts those words. <code>BrushEditor.svelte</code>'s comments name no Remix.</li>
       </ul>
       <p>In <code>src/lib/sharing/copy.ts</code>:</p>
       <pre><code data-lang="ts">dialogBody:
@@ -766,7 +767,8 @@ const tables = [
         <li><code>src/lib/shell/SiteHeader.svelte</code>, <code>layout.ts</code>, <code>layout.spec.ts</code>, <code>SiteHeader.svelte.spec.ts</code>, <code>SiteHeader.ssr.spec.ts</code>, <code>accent.spec.ts</code>.</li>
         <li><code>src/lib/shell/test/seeded-game.ts</code>: <code>seededGame({ state?: Partial&lt;GameState&gt;; saves?; plan?; policy?; sync? })</code>, the first game current with <code>{ ...NEW_GAME, ...state }</code>, the others <code>NEW_GAME</code>, each written as a G1 <code>GameSave</code> with its <code>SaveEntry</code> in the index <code>saves.ts</code> reads. <code>seeded-game.svelte.spec.ts</code> follows.</li>
         <li><code>src/lib/shell/test/SimRowGameHeader.svelte</code> (comment: <code>GameCell</code> sits in the row), <code>HeaderScoreHeader.svelte</code> (<code>routeId="/"</code>).</li>
-        <li><code>src/lib/brush/BrushEditor.svelte</code>: the <code>camera()</code> export.</li>
+        <li><code>src/lib/brush/BrushEditor.svelte</code>: the <code>camera()</code> export, and its comments without Remix.</li>
+        <li><code>src/lib/brush/messages.ts</code> and <code>messages.spec.ts</code>: <code>MSG.readOnly</code> is <code>'Read-only.'</code>.</li>
         <li><code>src/routes/p/[id]/+page.svelte</code>, <code>+error.svelte</code>, <code>page.view.svelte.spec.ts</code>, <code>test/PageHost.svelte</code>.</li>
         <li><code>src/lib/sharing/SharedBanner.svelte</code>, <code>SharedBanner.svelte.spec.ts</code>, <code>copy.ts</code>, <code>copy.spec.ts</code>.</li>
         <li><code>src/lib/about/copy.ts</code>, <code>AboutUsing.svelte</code>, <code>AboutParts.svelte.spec.ts</code>.</li>
@@ -820,7 +822,7 @@ const tables = [
         <li>Start: <code>startRuns()</code> is called, the phase becomes <code>'runs'</code>, <code>SimRoute</code> mounts, and <code>BrushEditor</code> is gone. With a stub opening that calls <code>onstart(FRAME)</code>, <code>SimRoute</code> receives <code>initialFrame</code> equal to <code>FRAME</code>.</li>
         <li>A refused start leaves the opening and shows "This browser refused to save."</li>
         <li>The opening keeps today's autosave tests: restore, N1 to N3, <code>touched()</code> after a write, one <code>beforeLeave</code> registered and removed on unmount.</li>
-        <li><code>/p/[id]</code>: no Remix button and no "Open with current data"; "Your game" links <code>/</code>; the title is "&lt;title&gt; · SF Housing"; the 404 title is "Plan not found · SF Housing".</li>
+        <li><code>/p/[id]</code>: no Remix button and no "Open with current data"; the read-only line reads "Read-only."; "Your game" links <code>/</code>; the title is "&lt;title&gt; · SF Housing"; the 404 title is "Plan not found · SF Housing".</li>
         <li><code>SharedBanner</code>: the title line, "Your game" to <code>/</code>, and the N5 or N6 line with no button, for both kinds.</li>
         <li>About: the terms in the new order with their bodies word for word; "The game" with its five steps and four notes; "Saved games" with its three lines and the 12 from <code>MAX_SAVES</code>; the order Keyboard shortcuts, The game, Saved games, Your plans; the shortcut tables captioned Painting, Timeline and Run, the Run table with its two rows.</li>
         <li>The theme check covers the six <code>src/lib/game/ui</code> components.</li>
