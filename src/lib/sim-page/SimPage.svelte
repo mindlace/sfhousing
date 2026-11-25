@@ -32,10 +32,8 @@
   import { BrushState } from '$lib/brush/state.svelte';
   import type { Manifest } from '$lib/data/manifest';
   import type { ParcelId } from '$lib/data/parcel';
-  import { ALL_ALLOWED, playable, runs, type Allowed } from '$lib/game/allowed';
-  import { unlockText } from '$lib/game/copy';
   import { e2eGoalAmount } from '$lib/game/e2e';
-  import { roundComplete } from '$lib/game/progress';
+  import { OPEN_LIMITS, runnable, within, type Limits } from '$lib/game/limits';
   import type { GameStore } from '$lib/game/store.svelte';
   import { packedCellLayer, type SolidPolygonLayerCtor } from '$lib/map/generated-controller';
   import { LID_MAX_SPAN_M } from '$lib/map/height/lids';
@@ -62,8 +60,13 @@
   import { WINDOW_MONTHS } from '$lib/sim/timeline-client';
   import type { Day } from '$lib/timelapse/time';
   import type { Calibration } from '$lib/timelapse/types';
-  import { AddLimitError, addPolicy, redateMoved, type AddChoice } from '$lib/timeline/add';
-  import { levelledUp } from '$lib/timeline/game-copy';
+  import {
+    AddLimitError,
+    addPolicy,
+    kindOpen,
+    redateMoved,
+    type AddChoice
+  } from '$lib/timeline/add';
   import Inspector from '$lib/timeline/Inspector.svelte';
   import { project, spanLens, writeBack, type StrokeStore } from '$lib/timeline/lens';
   import { fundingName4, ownerName4 } from '$lib/timeline/owner';
@@ -201,20 +204,19 @@
 
   const store = new PolicyStore<SimPolicy4>(DEFAULT_POLICY4, (next, prev) => normalize(next, prev));
 
-  // ---- the game (spec #sec-design-playable, -locks, -levelup) ----
+  // ---- the game (game-sim #sec-design-limits, #tbl-replacements, #sec-design-publish) ----
 
-  /** What the game lets run and be edited; every control without one. */
-  const allowed = $derived<Allowed>(game?.allowed ?? ALL_ALLOWED);
-  /** Each playable document that differs from its whole one, to the whole one it came from. */
+  /** What the game lets run and be edited; with no game, `OPEN_LIMITS`: today's page. */
+  const limits = $derived<Limits>(game ? game.limits : OPEN_LIMITS);
+  /** Each runnable document that differs from its whole one, to the whole one it came from. */
   const wholeOf = new WeakMap<SimPolicy4, SimPolicy4>();
-  /** The playable document: what the worker runs and Publish sends. Autosave keeps the whole one. */
+  /** The runnable document: what the worker runs and Publish sends. Autosave keeps the whole one. */
   const run = $derived.by(() => {
     const whole = store.policy;
-    const r = playable(whole, allowed);
+    const r = runnable(whole, limits);
     if (r !== whole) wholeOf.set(r, whole);
     return r;
   });
-  const zoningLocked = $derived(!allowed.kinds.has('zoning'));
   /** The goal's amount over the default (X1's seam), read once. */
   const goalAmount = untrack(() => e2eGoalAmount(storage()));
 
@@ -237,7 +239,7 @@
       ? { schema: 4, kind: 'sim', datasetVersion, policy: store.policy }
       : { schema: 4, kind: 'sim', datasetVersion, title, policy: store.policy }
   );
-  /** What Publish sends: the playable document. One object per change, as PublishButton keys on it. */
+  /** What Publish sends: the runnable document. One object per change, as PublishButton keys on it. */
   const publishDoc = $derived<SimDoc4>(run === store.policy ? doc : { ...doc, policy: run });
   let autosave = $state.raw<Autosave<SimDoc4> | null>(null);
   /** Autosave writes once this is set: after the restore. */
@@ -251,7 +253,7 @@
 
   function load(p: SimPolicy4): void {
     store.reset(p);
-    // The playable document of `p`, as `run` holds it, so the sync effect sees no change.
+    // The runnable document of `p`, as `run` holds it, so the sync effect sees no change.
     const r = run;
     synced = r;
     // A load, not a change: no debounce (`PolicySync.open`).
@@ -305,7 +307,7 @@
   // mounts, so the session's first `policy` is the opened one.
   if (typeof window !== 'undefined') untrack(openDoc);
 
-  // Every change of the playable document after the open goes to PolicySync (debounced, rule 16).
+  // Every change of the runnable document after the open goes to PolicySync (debounced, rule 16).
   $effect(() => {
     const p = run;
     untrack(() => {
@@ -397,15 +399,15 @@
       : `${adding ?? ''}:${selected ? `${selected.kind}:${selected.id}:${selected.span}` : ''}`
   );
 
-  /** `ref` names a policy the game does not run (a locked policy); fixed rows never are. */
-  function locked(ref: SpanRef, doc: SimPolicy4, a: Allowed): boolean {
+  /** `ref` names a policy not within the limits (a locked policy); fixed rows never are. */
+  function locked(ref: SpanRef, doc: SimPolicy4, l: Limits): boolean {
     if (isFixedRef(ref)) return false;
     const p = policyOf(doc, ref.kind, ref.id);
-    return p !== undefined && !runs(ref.kind, p, a);
+    return p !== undefined && !within(ref.kind, p, l);
   }
 
   function select(ref: SpanRef | null): void {
-    if (ref !== null && locked(ref, store.policy, allowed)) return;
+    if (ref !== null && locked(ref, store.policy, limits)) return;
     selected = ref;
     if (ref === null) return;
     panel = null;
@@ -417,7 +419,7 @@
   }
 
   function startAdd(kind: PolicyKind): void {
-    if (!allowed.kinds.has(kind)) return;
+    if (!kindOpen(kind, limits)) return;
     panel = null;
     focusKind = kind;
     adding = kind;
@@ -473,7 +475,8 @@
       r = addPolicy(store.policy, choice, {
         w: { asOf: c.asOf, months: WINDOW_MONTHS },
         month: viewMonthOf(c.asOf, day),
-        cal: c
+        cal: c,
+        limits
       });
     } catch (e) {
       // A funding limit (only off policies count: starters show with nothing in force). The "+"
@@ -503,48 +506,20 @@
     untrack(() => (selected = null));
   });
 
-  // A selection that stops running, or an open "+" of a kind that locks, closes as Close does.
+  // A selection that stops being within the limits, or an open "+" on a kind that stops being
+  // open, closes as Close does.
   $effect(() => {
     const s = selected;
     const k = adding;
-    const a = allowed;
+    const l = limits;
     const p = store.policy;
     untrack(() => {
-      const dropSelection = s !== null && locked(s, p, a);
-      const dropAdding = k !== null && !a.kinds.has(k);
+      const dropSelection = s !== null && locked(s, p, l);
+      const dropAdding = k !== null && !kindOpen(k, l);
       if (!dropSelection && !dropAdding) return;
       closeEditor();
       if (dropSelection) selected = null;
       if (dropAdding) adding = null;
-    });
-  });
-
-  /** The level, completion and allowed kinds the level-up reaction last saw. */
-  let levelBefore = untrack(() => game?.progress.level ?? null);
-  let completeBefore = untrack(() => (game ? roundComplete(game.progress) : false));
-  let allowedBefore = untrack(() => allowed);
-  // The level rose, or the round completed, whoever pressed: from md the kinds it unlocks open, and
-  // the polite status says so. A level up once the round is complete changes neither input.
-  $effect(() => {
-    const g = game;
-    const level = g?.progress.level ?? null;
-    const complete = g ? roundComplete(g.progress) : false;
-    const now = allowed;
-    untrack(() => {
-      const rose = level !== null && levelBefore !== null && level > levelBefore;
-      const completed = complete && !completeBefore;
-      const was = allowedBefore;
-      levelBefore = level;
-      completeBefore = complete;
-      allowedBefore = now;
-      if (level === null || (!rose && !completed)) return;
-      const unlocked = [...now.kinds].filter((k) => !was.kinds.has(k));
-      if (unlocked.length > 0) {
-        void tick().then(() => {
-          if (!dead) unlocked.forEach(openKind);
-        });
-      }
-      brush.announce(levelledUp(level, complete ? null : unlockText(level)), ANNOUNCE_MS);
     });
   });
 
@@ -618,7 +593,12 @@
           const r = addPolicy(
             d,
             { kind: 'zoning', what: 'paint' },
-            { w: { asOf: c.asOf, months: WINDOW_MONTHS }, month: viewMonthOf(c.asOf, day), cal: c }
+            {
+              w: { asOf: c.asOf, months: WINDOW_MONTHS },
+              month: viewMonthOf(c.asOf, day),
+              cal: c,
+              limits
+            }
           );
           added.ref = r.ref;
           return writeBack(r.doc, r.ref, change(project(r.doc, r.ref)));
@@ -675,8 +655,8 @@
       overlayHandle = h;
       overlay = createOverlayMux((l) => h.setOverlayLayers(l));
     }
-    // While zoning is locked there is no brush: the tool stays Move (spec #sec-design-locks).
-    if (readonly || zoningLocked || controller) return;
+    // In a game there is never a brush: the tool stays Move (game-sim #tbl-replacements).
+    if (readonly || !limits.open || controller) return;
     const map = h.getMap();
     if (!map || !overlay) return;
     controllerMap = map;
@@ -695,11 +675,6 @@
     });
     controller.attach();
   }
-
-  // Zoning unlocked (a level up): the controller attaches as it does on load.
-  $effect(() => {
-    if (!zoningLocked) untrack(attachController);
-  });
 
   function onMapReady(h: SimMapHandle, m: MapLike): void {
     const map = m as unknown as ControllerMap & ClickMap;
@@ -1237,7 +1212,7 @@
       playheadDay={at}
       asOf={cal.asOf}
       {readonly}
-      {allowed}
+      {limits}
       announce={(m) => brush.announce(m, ANNOUNCE_MS)}
       onclose={closeEditor}
       paint={paintPart}
@@ -1259,7 +1234,7 @@
   {reload}
   view={viewPrefs}
   cards={readonly || tools.tool === 'move'}
-  spacePlays={!canPaint(brush, readonly || zoningLocked)}
+  spacePlays={!canPaint(brush, readonly || !limits.open)}
   ownerName={(o) => ownerName4(o, store.policy)}
   fundingName={(c) => fundingName4(store.policy, cal?.baselineFunding)(c)}
   {actions}
@@ -1298,7 +1273,7 @@
   }}
   onmiss={onMiss}
   onscore={pressScore}
-  onstarter={readonly ? undefined : addStarter}
+  onstarter={readonly || game ? undefined : addStarter}
   {refusal}
   ondismissrefusal={() => (refusal = null)}
   ondetails={showDetails}
@@ -1306,7 +1281,7 @@
   scoreExpanded={panel !== null && inspectorOpen}
   scoreControls={inspectorId}
 />
-{#if !readonly && !zoningLocked && !wide.current && tools.tool !== 'move'}
+{#if !readonly && limits.open && !wide.current && tools.tool !== 'move'}
   <PaletteStrip
     bind:this={paletteStrip}
     {brush}

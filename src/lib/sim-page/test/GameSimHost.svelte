@@ -1,5 +1,5 @@
 <script lang="ts">
-  // Test host: the /sim page's body under a provided game, with the root layout's header slots
+  // Test host: SimRoute's edit page under a provided game, with the root layout's header slots
   // rendered beside it. The game and the page's autosave share one storage.
   import type { ComponentProps } from 'svelte';
   import { provideGame, type GameStore } from '$lib/game/store.svelte';
