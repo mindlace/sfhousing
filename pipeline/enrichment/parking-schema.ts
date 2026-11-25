@@ -22,7 +22,10 @@ export interface Cite {
 export interface SfCost {
   /** dollars per space */
   value: number;
-  /** the dollars' year, as the source states it; never escalated in this file */
+  /**
+   * the dollars' year, as the source states it; never converted in this file (the build converts:
+   * pipeline/lib/cars/rates.ts parkingOf)
+   */
   dollarsYear: number;
   /** at least one */
   sources: (Cite & { sf: true })[];

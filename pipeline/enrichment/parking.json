@@ -13,7 +13,7 @@
           "sf": true
         }
       ],
-      "method": "Hard construction cost per space, 2012 dollars. Figure 3 is a bar chart of cost per unit at 0.75 and 1.0 spaces per unit; the bar tops were measured from the embedded chart image against its $10,000 gridlines (pixel scale 272.4 px per $10,000): podium $21,531 per unit at 0.75 and $28,689 at 1.0, so $28,708 and $28,689 per space; rounded to $28,700 (about +/- $200 from the measurement). Not escalated: dollarsYear 2012 is before 2024 and is flagged for the owner in docs/dev/cars-data.md."
+      "method": "Hard construction cost per space, 2012 dollars. Figure 3 is a bar chart of cost per unit at 0.75 and 1.0 spaces per unit; the bar tops were measured from the embedded chart image against its $10,000 gridlines (pixel scale 272.4 px per $10,000): podium $21,531 per unit at 0.75 and $28,689 at 1.0, so $28,708 and $28,689 per space; rounded to $28,700 (about +/- $200 from the measurement). Kept in 2012 dollars here; the build brings it to the finance prototypes' 2026 dollars (Controller cost index, then SF CPI-U; docs/dev/cars-data.md, Dollars-year rule)."
     },
     "belowGrade": {
       "value": 80000,
@@ -27,7 +27,7 @@
           "sf": true
         }
       ],
-      "method": "Hard construction cost per space as stated, 2016 dollars (Figure 16's source line). The memo models a subterranean garage, conventional or with stackers, from interviews with four SF developers and an automated-parking vendor. Not escalated: dollarsYear 2016 is before 2024 and is flagged for the owner in docs/dev/cars-data.md."
+      "method": "Hard construction cost per space as stated, 2016 dollars (Figure 16's source line). The memo models a subterranean garage, conventional or with stackers, from interviews with four SF developers and an automated-parking vendor. Kept in 2016 dollars here; the build brings it to the finance prototypes' 2026 dollars (Controller cost index, then SF CPI-U; docs/dev/cars-data.md, Dollars-year rule)."
     }
   },
   "supplyOverUse": {

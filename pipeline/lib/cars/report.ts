@@ -442,20 +442,30 @@ export function carsModelReportLines(
   }
   const [lo, hi] = COST_CROSS_CHECK.perGsf;
   const gsf = COST_CROSS_CHECK.gsfPerSpace;
+  const below = pk.costs.find((c) => c.type === 'belowGrade');
   lines.push(
     '',
-    `Cost per space (hard cost, cited SF figures), brought to ${pk.commonYear} dollars by the ` +
-      "Controller's Blended Construction Cost Index (market.json, inflation-adjusted): cost x " +
-      `I(${pk.commonYear}) / I(dollars year).`,
+    `Cost per space (hard cost, cited SF figures), in ${pk.commonYear} dollars, the finance ` +
+      "prototypes' (Controller 2026), since the odds shift divides it by their cost per home: " +
+      `cost x I(${pk.commonYear}) / I(y) x CPI(${pk.commonYear}) / CPI(y), y the source's ` +
+      "dollars year. I is the Controller's Blended Construction Cost Index (market.json, " +
+      `inflation-adjusted, held at ${pk.indexLast} after its last year): the real change in ` +
+      `construction cost. CPI is BLS CPI-U San Francisco-Oakland-Hayward, all items, annual ` +
+      `average (${pk.cpiSeries}, cpi.json): the price level.` +
+      (pk.cpiYear !== null && pk.cpiYear < (pk.commonYear ?? 0)
+        ? ` The ${pk.commonYear} annual average is not yet published, so ${pk.cpiYear}'s stands ` +
+          `in for CPI(${pk.commonYear}).`
+        : ''),
     '',
-    `| Type | Cited | Dollars year | Index ratio | ${pk.commonYear} dollars | Source |`,
-    '|---|---|---|---|---|---|',
+    `| Type | Cited | Dollars year | Cost index ratio | CPI ratio | ${pk.commonYear} dollars | ` +
+      'Source |',
+    '|---|---|---|---|---|---|---|',
     ...pk.costs.map(
       (c) =>
         `| ${c.type} | ${usd(c.value)} | ${c.dollarsYear} | ${c.factor.toFixed(4)} | ` +
-        `${usd(c.escalated)} | ${c.sources.join('; ')} |`
+        `${c.cpiFactor.toFixed(4)} | ${usd(c.escalated)} | ${c.sources.join('; ')} |`
     ),
-    ...pk.unpriced.map((t) => `| ${t} | none | none | none | none | no SF source found |`),
+    ...pk.unpriced.map((t) => `| ${t} | none | none | none | none | none | no SF source found |`),
     ''
   );
   if (pk.unpriced.length > 0)
@@ -467,7 +477,8 @@ export function carsModelReportLines(
     `Cross-check, not used: the Controller's ${COST_CROSS_CHECK.year} parking hard cost of ` +
       `${usd(lo)} to ${usd(hi)} per gross square foot times about ${gsf} square feet per space ` +
       `gives ${usd(lo * gsf)} to ${usd(hi * gsf)} per below-grade space in ` +
-      `${COST_CROSS_CHECK.year} dollars (docs/dev/cars-data.md).`
+      `${COST_CROSS_CHECK.year} dollars (docs/dev/cars-data.md)` +
+      (below ? `, beside the cited figure's ${usd(below.escalated)}.` : '.')
   );
   return lines;
 }

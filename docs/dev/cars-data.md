@@ -15,8 +15,11 @@ Two committed files carry the facts code reads: `pipeline/enrichment/parking.jso
 - **A real SF cost per space was found, but both figures are older than 2024.** `belowGrade`
   $80,000 per space in 2016 dollars (Strategic Economics for SF Planning, 2017); `podium` $28,700
   per space in 2012 dollars (Seifel for MOH, 2012; measured from a bar chart). `surface` is null:
-  no SF source gives one. Nothing is escalated. See [Cost per space](#cost-per-space).
-- **The dollars-year rule** (ruling P9) needs your call: the proposal is below, not applied.
+  no SF source gives one. `parking.json` keeps each figure in its source's dollars; the build
+  brings both to the finance prototypes' 2026 dollars (below grade $120,083, podium $48,756). See
+  [Cost per space](#cost-per-space).
+- **The dollars-year rule** is decided and applied (controller ruling; see
+  [Dollars-year rule](#cost-per-space) below).
 - **A current figure can be derived** from two SF sources (Controller 2026 $/GSF × Planning's
   per-project parking area per space): about $114,000 to $145,000 per below-grade space in 2026
   dollars. It is an inference (tier 2), so it is not in `parking.json`; it is there if you want it.
@@ -328,7 +331,7 @@ Searched in the order the brief gives (every search is in `parking.json` `search
 
 **In `parking.json`:** `belowGrade` = $80,000 (2016 dollars; Hub memo, the newest per-space SF
 figure); `podium` = $28,700 (2012 dollars; Seifel Figure 3); `surface` = null. Both are hard
-cost only. **Both dollars-years are before 2024: flagged for the owner.** The Seifel underground
+cost only, kept in their sources' dollars (the build converts them; rule below). The Seifel underground
 figure ($41,800 in 2012) is far below the Hub figure ($80,000 in 2016), while the Controller's
 real cost index (`market.json`) moved only from 98.2 to 100 over those years: the two sources
 disagree about what a below-grade space costs, beyond inflation.
@@ -345,13 +348,30 @@ agrees):
 These are in the Controller's 2026 cost base, the same base as `PROTOTYPES`, which the found
 figures are not.
 
-**Dollars-year rule (ruling P9), proposed, not applied:** every `costPerSpace` entry keeps the
-dollars-year its source states. Before use, each is brought to the model's dollars-year with one
-index only: the Controller's Blended Construction Cost Index in `market.json` (`costIndex`,
-2016 = 100, 2005-2023; held at 2023 after). Caveat: that index is inflation-adjusted (real), so
-it moves a cost in real terms; a nominal 2026 figure would also need a price index, which is a
-second index. Owner to choose: this rule, the derived 2026 figure above, or the found figures
-unescalated.
+**Dollars-year rule (controller ruling, applied by `parkingOf` in `pipeline/lib/cars/rates.ts`):**
+every `costPerSpace` entry in `parking.json` keeps the dollars-year y its source states. The build
+brings each to the finance prototypes' nominal dollars, P = 2026 (the Controller's 2026
+Triennial, the base of `PROTOTYPES.costPerHome`, which the odds shift divides by):
+
+cost_P = cost_y × I(min(P, 2023)) / I(y) × CPI(P) / CPI(y)
+
+I is the Controller's Blended Construction Cost Index in `market.json` (`costIndex`, 2016 = 100,
+2005-2023, inflation-adjusted, held flat after 2023): the real change in construction cost. CPI
+is BLS CPI-U San Francisco-Oakland-Hayward, all items, annual average, series `CUURS49BSA0`
+(`https://data.bls.gov/timeseries/CUURS49BSA0`; values 2005-2025 in
+`pipeline/enrichment/cpi.json`, `parseCpiFile`, read from the BLS flat file
+`https://download.bls.gov/pub/time.series/cu/cu.data.2.Summaries` on 2026-11-25): the price
+level. The 2026 annual average is not yet published, so 2025's (356.005) stands in for CPI(2026).
+
+| Type        | Cited, dollars year | I ratio    | CPI ratio       | 2026 dollars |
+| ----------- | ------------------- | ---------- | --------------- | ------------ |
+| Below grade | $80,000, 2016       | 112.3/100  | 356.005/266.344 | $120,083     |
+| Podium      | $28,700, 2012       | 112.3/98.2 | 356.005/239.65  | $48,756      |
+| Surface     | none                |            |                 | none         |
+
+The below-grade figure, $120,083, falls inside the derived cross-check above ($98,000-$144,000 at
+$245-$360/GSF × 400 GSF; $114,000-$145,000 at the below-grade $/GSF). The derived figure stays a
+cross-check and is never used.
 
 ## SF AMI by year and household size
 

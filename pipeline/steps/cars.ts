@@ -17,6 +17,7 @@ import { buildAccessGrid } from '../../src/lib/transit/grid';
 import { parseProjectsFile } from '../../src/lib/timelapse/projects';
 import { DMV_ID, acsBgVintage, censusTableOf, type CensusTable } from '../census-config';
 import { AMI_JSON, parseAmiFile } from '../enrichment/ami-schema';
+import { CPI_JSON, parseCpiFile } from '../enrichment/cpi-schema';
 import { parseMarketFile } from '../enrichment/market-schema';
 import { PARKING_JSON, parseParkingFile } from '../enrichment/parking-schema';
 import { zoneAccess } from '../lib/cars/access';
@@ -74,6 +75,8 @@ export interface CarsStepOpts {
   parkingPath?: string;
   /** SF AMI by year and household size (default pipeline/enrichment/ami.json). */
   amiPath?: string;
+  /** BLS CPI-U SF annual averages for the cost per space (default pipeline/enrichment/cpi.json). */
+  cpiPath?: string;
   /** The Controller's cost index for the cost per space (default market.json). */
   marketPath?: string;
   /** The dataset's projects.json, for the affordable completions by tier (default the outDir's). */
@@ -253,7 +256,8 @@ export async function carsStep(db: Duck, o: CarsStepOpts): Promise<CarsStepOut> 
     release: pumsRelease,
     window
   });
-  const pk = parkingOf(parkingFile, market);
+  const cpi = parseCpiFile(readJson(o.cpiPath ?? CPI_JSON, 'CPI table'));
+  const pk = parkingOf(parkingFile, market, cpi);
   warnings.push(...mv.warnings, ...nh.warnings, ...pk.warnings);
   const model: CarModel = {
     ...choice,

@@ -16,6 +16,7 @@ import { AMI_TIER_BOUNDS } from '../../../src/lib/sim/finance/tiers';
 import { exp, log } from '../../../src/lib/timelapse/math';
 import type { Provenance } from '../../../src/lib/timelapse/types';
 import type { AmiFile } from '../../enrichment/ami-schema';
+import type { CpiFile } from '../../enrichment/cpi-schema';
 import type { MarketFile } from '../../enrichment/market-schema';
 import type { ParkingFile } from '../../enrichment/parking-schema';
 import { isOwner } from './config';
@@ -374,8 +375,10 @@ export interface CostLine {
   type: ParkingType;
   value: number;
   dollarsYear: number;
-  /** I(common year) / I(dollarsYear) */
+  /** Real cost index I(min(P, last)) / I(dollarsYear): construction cost in real terms. */
   factor: number;
+  /** CPI(cpiYear) / CPI(dollarsYear): the general price level, to nominal P dollars. */
+  cpiFactor: number;
   escalated: number;
   sources: string[];
 }
@@ -383,27 +386,48 @@ export interface CostLine {
 export type ParkingType = 'surface' | 'podium' | 'belowGrade';
 const PARKING_TYPES: readonly ParkingType[] = ['surface', 'podium', 'belowGrade'];
 
+/**
+ * The dollars of the finance prototypes (`PROTOTYPES.costPerHome`, src/lib/sim/finance/
+ * prototypes.ts): the Controller's Triennial Review of Economic Feasibility 2026. The odds shift
+ * divides a parking cost by it, so cost per space is stated in these dollars.
+ */
+export const PROTOTYPE_DOLLARS_YEAR = 2026;
+
 export interface ParkingStats {
   supply: { value: number; tier: number; sources: string[] };
   /** null: the link is off. */
   costs: CostLine[] | null;
   /** Types with no cost while others have one: projects of that type get no parking cost. */
   unpriced: ParkingType[];
+  /** The dollars year of every cost (the prototypes'); null with the link off. */
   commonYear: number | null;
+  /** The cost index's last year (held flat after it). */
+  indexLast: number | null;
+  /** The CPI year standing for commonYear: the latest published annual average at or before it. */
+  cpiYear: number | null;
+  cpiSeries: string;
   searched: string[];
 }
 
 /**
- * The model's parking facts from parking.json. Each cited SF cost per space is brought to one
- * dollars year, the cost index's last year, by the Controller's Blended Construction Cost Index
- * (market.json `costIndex`, inflation-adjusted, 2016 = 100): cost x I(last) / I(dollarsYear),
- * whole dollars. A cost dated after the index's last year is held (the index is held at its last
- * year after it); one dated before its first year stops the build. A type with no cost stays null
+ * The model's parking facts from parking.json. Each cited SF cost per space, in its source's
+ * nominal dollars of year y, is brought to the prototypes' nominal dollars of year P:
+ *
+ *   cost_P = cost_y x I(min(P, last)) / I(y) x CPI(P) / CPI(y)
+ *
+ * I is the Controller's Blended Construction Cost Index (market.json `costIndex`, inflation-
+ * adjusted, 2016 = 100), held flat after its last year: it moves the cost in real terms. CPI is
+ * BLS CPI-U San Francisco-Oakland-Hayward, all items, annual average (cpi.json): it moves the real
+ * figure to nominal dollars. When P's annual average is not yet published, CPI(P) is the latest
+ * published year's (stats.cpiYear, stated in the report). Whole dollars. A cost dated before the
+ * index's first year, or in a year with no CPI, stops the build. A type with no cost stays null
  * (projects of that type get no parking cost; warned); no cost at all is the link off.
  */
 export function parkingOf(
   file: ParkingFile,
-  index: CostIndex
+  index: CostIndex,
+  cpi: CpiFile,
+  P: number = PROTOTYPE_DOLLARS_YEAR
 ): { parking: CarModel['parking']; stats: ParkingStats; warnings: string[] } {
   const s = file.supplyOverUse;
   const supplyProvenance: Provenance = {
@@ -417,6 +441,9 @@ export function parkingOf(
     costs: null,
     unpriced: [],
     commonYear: null,
+    indexLast: null,
+    cpiYear: null,
+    cpiSeries: cpi.seriesId,
     searched: [...file.searched]
   };
   if (file.costPerSpace === null)
@@ -434,12 +461,20 @@ export function parkingOf(
   const first = Math.min(...years);
   const last = Math.max(...years);
   const at = (y: number) => index.costIndex.values[String(Math.min(y, last))];
+  const cpiYears = Object.keys(cpi.annual)
+    .map(Number)
+    .filter((y) => y <= P);
+  if (cpiYears.length === 0) throw new Error(`cars: no CPI annual average at or before ${P}`);
+  const cpiYear = Math.max(...cpiYears);
+  const cpiP = cpi.annual[String(cpiYear)];
+  const stand = cpiYear < P ? `; ${P} not yet published, ${cpiYear} stands in` : '';
   const cost = { surface: null, podium: null, belowGrade: null } as Record<
     ParkingType,
     number | null
   >;
   const provenance: Provenance[] = [supplyProvenance];
   const lines: CostLine[] = [];
+  const cpiSource = cpi.sources.map((x) => ({ label: x.label, url: x.url }));
   for (const type of PARKING_TYPES) {
     const c = file.costPerSpace[type];
     if (c === null) {
@@ -451,41 +486,53 @@ export function parkingOf(
         `cars: ${type} cost per space is in ${c.dollarsYear} dollars, outside the cost index ` +
           `(${first}-${last}, market.json)`
       );
-    const factor = at(last) / at(c.dollarsYear);
-    const escalated = Math.round(c.value * factor);
+    const cpiY = cpi.annual[String(c.dollarsYear)];
+    if (cpiY === undefined)
+      throw new Error(
+        `cars: no CPI annual average for ${c.dollarsYear} (${type} cost per space; cpi.json)`
+      );
+    const factor = at(P) / at(c.dollarsYear);
+    const cpiFactor = cpiP / cpiY;
+    const escalated = Math.round(c.value * factor * cpiFactor);
     cost[type] = escalated;
     lines.push({
       type,
       value: c.value,
       dollarsYear: c.dollarsYear,
       factor,
+      cpiFactor,
       escalated,
       sources: c.sources.map((x) => x.label)
     });
     provenance.push({
       tier: 2,
-      label: `Cost per ${type} parking space, ${last} dollars`,
+      label: `Cost per ${type} parking space, ${P} dollars`,
       sources: [
         ...c.sources.map((x) => ({ label: x.label, url: x.url })),
-        { label: index.source.label, url: index.source.url }
+        { label: index.source.label, url: index.source.url },
+        ...cpiSource
       ],
       method:
-        `${c.method} Brought from ${c.dollarsYear} to ${last} dollars by the Controller's ` +
-        `Blended Construction Cost Index (${index.costIndex.locator}): ${c.value} x ` +
-        `${at(last)} / ${at(c.dollarsYear)} = ${escalated}.`,
+        `${c.method} Brought from ${c.dollarsYear} to ${P} dollars: real construction cost by ` +
+        `the Controller's Blended Construction Cost Index (${index.costIndex.locator}; held at ` +
+        `${last} after it), then prices by BLS CPI-U San Francisco-Oakland-Hayward ` +
+        `(${cpi.seriesId}, annual average${stand}): ` +
+        `${c.value} x ${at(P)} / ${at(c.dollarsYear)} x ${cpiP} / ${cpiY} = ${escalated}.`,
       n: c.sources.length,
-      window: [`${c.dollarsYear}-01-01`, `${last}-12-31`]
+      window: [`${c.dollarsYear}-01-01`, `${P}-12-31`]
     });
   }
   stats.costs = lines;
-  stats.commonYear = last;
+  stats.commonYear = P;
+  stats.indexLast = last;
+  stats.cpiYear = cpiYear;
   const warnings = stats.unpriced.map(
     (t) =>
       `cars: no SF cost per space for ${t} parking; projects built with ${t} parking get no ` +
       'parking cost (zero shift)'
   );
   return {
-    parking: { supplyOverUse: s.value, costPerSpace: cost, dollarsYear: last, provenance },
+    parking: { supplyOverUse: s.value, costPerSpace: cost, dollarsYear: P, provenance },
     stats,
     warnings
   };

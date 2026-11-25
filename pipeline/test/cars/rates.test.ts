@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { typeCount, typeIndex, type TypeBands } from '../../../src/lib/sim/cars';
 import type { AmiFile } from '../../enrichment/ami-schema';
+import type { CpiFile } from '../../enrichment/cpi-schema';
 import type { ParkingFile, SfCost } from '../../enrichment/parking-schema';
 import {
   MIN_CELL_RECORDS,
@@ -252,6 +253,23 @@ describe('parkingOf', () => {
     },
     costIndex: { locator: 'slide 16', values: { '2012': 98.2, '2016': 100, '2023': 112.3 } }
   };
+  // CPI-U annual averages; 2026 not yet published, so the prototypes' year takes 2025's.
+  const cpi: CpiFile = {
+    seriesId: 'CUURS49BSA0',
+    annual: { '2012': 240, '2016': 266, '2023': 339, '2025': 356 },
+    sources: [
+      {
+        label: 'BLS',
+        url: 'https://data.bls.gov/timeseries/CUURS49BSA0',
+        page: 'M13',
+        accessed: '2026-11-25'
+      }
+    ],
+    method: 'annual averages'
+  };
+  const P = 2026;
+  const toP = (v: number, y: number, i: number) =>
+    Math.round(((v * 112.3) / i) * (356 / cpi.annual[String(y)]));
   const file = (c: ParkingFile['costPerSpace']): ParkingFile => ({
     costPerSpace: c,
     supplyOverUse,
@@ -259,7 +277,7 @@ describe('parkingOf', () => {
   });
 
   it('keeps the link off when the file has no cost', () => {
-    const r = parkingOf(file(null), index);
+    const r = parkingOf(file(null), index, cpi, P);
     expect(r.parking.costPerSpace).toBeNull();
     expect(r.parking.dollarsYear).toBeNull();
     expect(r.parking.supplyOverUse).toBe(1.4);
@@ -267,38 +285,76 @@ describe('parkingOf', () => {
     expect(r.warnings).toEqual([]);
   });
 
-  it("escalates every cost to the index's last year", () => {
+  it("brings every cost to the prototypes' nominal dollars: real cost index, then CPI", () => {
     const r = parkingOf(
       file({
         surface: cost(10_000, 2023),
         podium: cost(28_700, 2012),
         belowGrade: cost(80_000, 2016)
       }),
-      index
+      index,
+      cpi,
+      P
     );
-    expect(r.parking.dollarsYear).toBe(2023);
+    expect(r.parking.dollarsYear).toBe(P);
     expect(r.parking.costPerSpace).toEqual({
-      surface: 10_000,
-      podium: Math.round((28_700 * 112.3) / 98.2),
-      belowGrade: Math.round((80_000 * 112.3) / 100)
+      surface: toP(10_000, 2023, 112.3),
+      podium: toP(28_700, 2012, 98.2),
+      belowGrade: toP(80_000, 2016, 100)
     });
+    // The real index is held flat after 2023; CPI(2026) is not out, so 2025 stands in, stated.
+    expect(r.stats.cpiYear).toBe(2025);
+    expect(r.stats.costs?.find((c) => c.type === 'belowGrade')?.cpiFactor).toBeCloseTo(
+      356 / 266,
+      12
+    );
     expect(r.parking.provenance).toHaveLength(4);
+    expect(r.parking.provenance[2].method).toMatch(/CUURS49BSA0/);
     expect(r.warnings).toEqual([]);
+  });
+
+  it('uses P itself when its CPI annual average is published', () => {
+    const r = parkingOf(
+      file({ surface: null, podium: null, belowGrade: cost(80_000, 2016) }),
+      index,
+      { ...cpi, annual: { ...cpi.annual, '2026': 370 } },
+      P
+    );
+    expect(r.stats.cpiYear).toBe(2026);
+    expect(r.parking.costPerSpace?.belowGrade).toBe(
+      Math.round(((80_000 * 112.3) / 100) * (370 / 266))
+    );
   });
 
   it('prices only the types with a cost, and warns that the others get none', () => {
     const r = parkingOf(
       file({ surface: null, podium: cost(28_700, 2012), belowGrade: cost(80_000, 2016) }),
-      index
+      index,
+      cpi,
+      P
     );
     expect(r.parking.costPerSpace?.surface).toBeNull();
-    expect(r.parking.costPerSpace?.belowGrade).toBe(89_840);
+    expect(r.parking.costPerSpace?.belowGrade).toBe(toP(80_000, 2016, 100));
     expect(r.warnings.join(' ')).toMatch(/surface/);
   });
 
-  it('refuses a cost dated before the index', () => {
+  it('refuses a cost dated before the index or without a CPI year', () => {
     expect(() =>
-      parkingOf(file({ surface: null, podium: cost(28_700, 2001), belowGrade: null }), index)
+      parkingOf(
+        file({ surface: null, podium: cost(28_700, 2001), belowGrade: null }),
+        index,
+        cpi,
+        P
+      )
     ).toThrow(/2001/);
+    const noCpi = { ...cpi, annual: { '2016': 266, '2025': 356 } };
+    expect(() =>
+      parkingOf(
+        file({ surface: null, podium: cost(28_700, 2012), belowGrade: null }),
+        index,
+        noCpi,
+        P
+      )
+    ).toThrow(/CPI/);
   });
 });

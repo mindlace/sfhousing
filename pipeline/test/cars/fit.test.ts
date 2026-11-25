@@ -619,7 +619,7 @@ describe('carsModelReportLines', () => {
   const uniform = Array.from({ length: T }, () => 1 / T);
   // Only one-person owner households: fewer cars than the uniform mix.
   const small = Array.from({ length: T }, (_, t) => (t < 12 && t % 2 === 0 ? 1 / 6 : 0));
-  const cost = { surface: null, podium: 32_821, belowGrade: 89_840 };
+  const cost = { surface: null, podium: 48_756, belowGrade: 120_083 };
   const model: CarModel = {
     schema: 1,
     bands: BANDS,
@@ -631,7 +631,7 @@ describe('carsModelReportLines', () => {
       affordableTiers: { veryLow: 0.5, low: 0.3, moderate: 0.2 },
       provenance: prov
     },
-    parking: { supplyOverUse: 1.4, costPerSpace: cost, dollarsYear: 2023, provenance: [prov] },
+    parking: { supplyOverUse: 1.4, costPerSpace: cost, dollarsYear: 2026, provenance: [prov] },
     refreshMonths: 12
   };
   const tenure = { records: 100, households: 2000, annual: 0.12, perMonth: 0.0106 };
@@ -664,12 +664,25 @@ describe('carsModelReportLines', () => {
           value: 28_700,
           dollarsYear: 2012,
           factor: 112.3 / 98.2,
-          escalated: 32_821,
+          cpiFactor: 356.005 / 239.65,
+          escalated: 48_756,
           sources: ['Seifel 2012']
+        },
+        {
+          type: 'belowGrade' as const,
+          value: 80_000,
+          dollarsYear: 2016,
+          factor: 1.123,
+          cpiFactor: 356.005 / 266.344,
+          escalated: 120_083,
+          sources: ['Hub memo']
         }
       ],
       unpriced: ['surface' as const],
-      commonYear: 2023,
+      commonYear: 2026,
+      indexLast: 2023,
+      cpiYear: 2025,
+      cpiSeries: 'CUURS49BSA0',
       searched: ['Controller 2026']
     }
   };
@@ -691,9 +704,14 @@ describe('carsModelReportLines', () => {
     expect(md).toContain('very low 50.0%, low 30.0%, moderate 20.0%');
     expect(md).toContain('2203, 1352, 559');
     expect(md).toContain('built to demand');
-    expect(md).toContain('| podium | $28,700 | 2012 | 1.1436 | $32,821 | Seifel 2012 |');
+    expect(md).toContain('| podium | $28,700 | 2012 | 1.1436 | 1.4855 | $48,756 | Seifel 2012 |');
+    expect(md).toContain("The 2026 annual average is not yet published, so 2025's stands in");
+    expect(md).toContain('CUURS49BSA0');
     expect(md).toContain('projects built with that parking get no parking cost');
-    expect(md).toContain('$98,000 to $144,000 per below-grade space');
+    expect(md).toContain(
+      '$98,000 to $144,000 per below-grade space in 2026 dollars ' +
+        "(docs/dev/cars-data.md), beside the cited figure's $120,083."
+    );
     expect(md).not.toMatch(/NaN|Infinity|undefined|\bnull\b/);
   });
 
@@ -701,7 +719,14 @@ describe('carsModelReportLines', () => {
     const off = { ...model, parking: { ...model.parking, costPerSpace: null, dollarsYear: null } };
     const md = carsModelReportLines(off, data, {
       ...stats,
-      parking: { ...stats.parking, costs: null, unpriced: [], commonYear: null }
+      parking: {
+        ...stats.parking,
+        costs: null,
+        unpriced: [],
+        commonYear: null,
+        indexLast: null,
+        cpiYear: null
+      }
     }).join('\n');
     expect(md).toContain('The parking link is off');
     expect(md).toContain('- Controller 2026');

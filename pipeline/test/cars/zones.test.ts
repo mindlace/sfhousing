@@ -267,9 +267,10 @@ describe('carsStep with census tables', () => {
     // The mini projects.json has no affordable completion by tier: the PUMS fallback, warned.
     expect(m.newHomes.affordableTiers).toEqual({ veryLow: 1, low: 0, moderate: 0 });
     expect(r.warnings.join(' ')).toMatch(/sum to 0/);
-    // The live parking.json: below grade and podium priced in the index's last year, no surface.
-    expect(m.parking.dollarsYear).toBe(2023);
-    expect(m.parking.costPerSpace).toEqual({ surface: null, podium: 32_821, belowGrade: 89_840 });
+    // The live parking.json in the prototypes' 2026 dollars (cost index, then SF CPI-U with 2025
+    // standing in for 2026): below grade and podium priced, no surface.
+    expect(m.parking.dollarsYear).toBe(2026);
+    expect(m.parking.costPerSpace).toEqual({ surface: null, podium: 48_756, belowGrade: 120_083 });
     expect(r.report).toContain('### Choice model');
     expect(r.report).toContain('### Moves');
     expect(r.report).toContain('### Parking in new buildings');
