@@ -113,10 +113,12 @@ type Post = (msg: TimelineHostResponse) => void;
 
 /**
  * A host that fills the open and answers every brush at once; `onSetPolicy` gets the nth
- * `setPolicy` (from 1), its rev, the post and a `fill` of that rev at once.
+ * `setPolicy` (from 1), its rev, the post and a `fill` of that rev at once; `onBrush`, when
+ * given, sees each `resolveBrush` with the count of `setPolicy`s so far before it is answered.
  */
 function stubHost(
-  onSetPolicy: (n: number, rev: number, post: Post, fill: (rev: number) => void) => void
+  onSetPolicy: (n: number, rev: number, post: Post, fill: (rev: number) => void) => void,
+  onBrush?: (setPolicies: number, post: Post) => void
 ): typeof createTimelineHost {
   return (deps: TimelineHostDeps) => {
     const post = (msg: TimelineHostResponse) => deps.post(msg, []);
@@ -136,6 +138,7 @@ function stubHost(
       handle(req: TimelineHostRequest) {
         if (req.type === 'openTimeline') fill(req.rev);
         else if (req.type === 'resolveBrush') {
+          onBrush?.(n, post);
           post({
             type: 'brushLots',
             reqId: req.reqId,
@@ -183,6 +186,43 @@ describe('the queue and its guard', () => {
       const view = await second;
       expect(view.filledThrough).toBe(view.lastIndex);
       expect(setPolicies).toBe(2);
+    } finally {
+      stub.close();
+    }
+  });
+
+  it("a timed-out call's late error does not reject the next call", async () => {
+    let brushes = 0;
+    const stub = await openEngine(
+      { dir: FIXTURE },
+      {
+        timeoutMs: 50,
+        createHost: stubHost(
+          (n, rev, _post, fill) => {
+            if (n > 1) fill(rev);
+          },
+          (setPolicies, post) => {
+            if (setPolicies !== 1) return;
+            brushes += 1;
+            // rev 2 is the first call's, abandoned by its guard; it errors late
+            post({ type: 'error', rev: 2, code: 'timeline', message: 'late' });
+          }
+        )
+      }
+    );
+    try {
+      const [full, noZoning] = twoDocs(stub);
+      // the first call has no lots to resolve; the second resolves its zoning's lots
+      const first = stub.view(noZoning).then(
+        () => null,
+        (e: unknown) => e
+      );
+      const second = stub.view(full);
+      const err = await first;
+      expect((err as Error).message.startsWith('window not filled in')).toBe(true);
+      const view = await second;
+      expect(view.filledThrough).toBe(view.lastIndex);
+      expect(brushes).toBeGreaterThan(0);
     } finally {
       stub.close();
     }

@@ -267,10 +267,11 @@ export async function openEngine(
     switch (msg.type) {
       case 'error': {
         // An error at a rev older than the pending call's is an abandoned call's (a timed-out
-        // edit the pending one replaces): passed to `warn`, as is one with no call pending.
+        // edit the pending one replaces): passed to `warn`, as is one with no call pending. While
+        // the pending call resolves its lots it has no rev yet: every rev sent so far is older.
         const text = `host error: ${msg.code}: ${msg.message}`;
         const p = pending;
-        if (p === null || (p.rev !== null && msg.rev < p.rev)) return warn(text);
+        if (p === null || msg.rev < (p.rev ?? rev + 1)) return warn(text);
         return fail(p, text);
       }
       case 'compiled':
