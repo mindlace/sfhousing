@@ -164,10 +164,10 @@ npm run bench:map -- -g "run with drops|purchase to ready"   # fixture-0: a smok
 
 ### Results
 
-| Machine | Date | Dataset | Case              | Line                                                     | Label |
-| ------- | ---- | ------- | ----------------- | -------------------------------------------------------- | ----- |
-| —       | —    | —       | run with drops    | not yet recorded (the run of record, on a quiet machine) | —     |
-| —       | —    | —       | purchase to ready | not yet recorded (the run of record, on a quiet machine) | —     |
+| Machine | Date | Dataset | Case              | Line                                                       | Label |
+| ------- | ---- | ------- | ----------------- | ---------------------------------------------------------- | ----- |
+| —       | —    | live    | run with drops    | pending: the conductor's run of record on the live dataset | —     |
+| —       | —    | live    | purchase to ready | pending: the conductor's run of record on the live dataset | —     |
 
 ## CI
 
