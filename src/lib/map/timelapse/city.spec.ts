@@ -20,6 +20,7 @@ interface M {
   at: [number, number];
   days: [number, number, number];
   homes?: number;
+  existing?: number;
   flags?: number;
 }
 /** A delta of markers `ms` (ascending rows) with `rows` rows. */
@@ -31,6 +32,7 @@ function delta(rows: number, ms: M[], from?: number): CityDelta {
     lngLat: new Float32Array(2 * k),
     days: new Float32Array(3 * k),
     homes: Uint16Array.from(ms.map((m) => m.homes ?? 10)),
+    existing: Uint16Array.from(ms.map((m) => m.existing ?? 0)),
     flags: Uint8Array.from(ms.map((m) => m.flags ?? 0))
   };
   ms.forEach((m, i) => {
@@ -125,5 +127,38 @@ describe('CityStore', () => {
     expect(() => s.apply(delta(2, [{ row: 2, at: C, days: [F, N, N] }]), true)).toThrow(RangeError);
     expect([s.size, s.flagged]).toEqual([1, 0]);
     expect(s.days[3 * 1]).toBe(F + 1);
+  });
+
+  it("CityStore keeps each row's existing at its row on replace", () => {
+    const s = store(6, [
+      { row: 1, at: C, days: [F, N, N], existing: 7 },
+      { row: 4, at: C, days: [F, N, N], existing: 0 },
+      { row: 5, at: C, days: [F, N, N], existing: 65_535 }
+    ]);
+    expect([s.existing[1], s.existing[4], s.existing[5]]).toEqual([7, 0, 65_535]);
+  });
+
+  it("a later apply overwrites a row's existing and leaves the other rows' as they were", () => {
+    const s = store(6, [
+      { row: 1, at: C, days: [F, N, N], existing: 7 },
+      { row: 4, at: C, days: [F, N, N], existing: 0 },
+      { row: 5, at: C, days: [F, N, N], existing: 65_535 }
+    ]);
+    s.apply(delta(6, [{ row: 4, at: C, days: [F, N, N], existing: 3 }]), false);
+    expect([s.existing[1], s.existing[4], s.existing[5]]).toEqual([7, 3, 65_535]);
+  });
+
+  it('growing the store past its capacity keeps the existing already held', () => {
+    const s = store(2, [{ row: 1, at: C, days: [F, N, N], existing: 5 }]);
+    s.apply(delta(50, [{ row: 40, at: C, days: [F, N, N], existing: 3 }]), false);
+    expect([s.existing[1], s.existing[40]]).toEqual([5, 3]);
+  });
+
+  it('a malformed delta (existing of the wrong length) throws and leaves existing as it was', () => {
+    const s = store(3, [{ row: 1, at: C, days: [F, N, N], existing: 5 }]);
+    const bad = delta(3, [{ row: 2, at: C, days: [F, N, N], existing: 9 }]);
+    bad.existing = new Uint16Array(2);
+    expect(() => s.apply(bad, false)).toThrow(RangeError);
+    expect([s.existing[1], s.existing[2], s.has[2]]).toEqual([5, 0, 0]);
   });
 });

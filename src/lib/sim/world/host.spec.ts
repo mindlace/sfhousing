@@ -577,7 +577,9 @@ describe('a full fill of the default document', () => {
       expect(new Set(transfer).size).toBe(transfer.length);
       if (!city) continue;
       deltas++;
-      const bufs = [city.row, city.lngLat, city.days, city.homes, city.flags].map((a) => a.buffer);
+      const bufs = [city.row, city.lngLat, city.days, city.homes, city.existing, city.flags].map(
+        (a) => a.buffer
+      );
       expect(bufs.filter((b) => !transfer.includes(b as ArrayBuffer))).toEqual([]);
     }
     expect(deltas).toBeGreaterThan(1);

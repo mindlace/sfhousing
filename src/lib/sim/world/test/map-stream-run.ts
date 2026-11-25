@@ -128,6 +128,7 @@ export interface CityMarker {
   started: number;
   completed: number;
   homes: number;
+  existing: number;
   flags: number;
 }
 
@@ -143,6 +144,7 @@ export function markersOf(d: CityDelta): Map<number, CityMarker> {
       started: d.days[3 * i + CITY_DAY.started],
       completed: d.days[3 * i + CITY_DAY.completed],
       homes: d.homes[i],
+      existing: d.existing[i],
       flags: d.flags[i]
     })
   );

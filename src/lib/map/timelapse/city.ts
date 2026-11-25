@@ -12,6 +12,7 @@ export class CityStore {
   #lngLat = new Float32Array(0);
   #days = new Float32Array(0);
   #homes = new Uint16Array(0);
+  #existing = new Uint16Array(0);
   #flags = new Uint8Array(0);
   #has = new Uint8Array(0);
 
@@ -36,6 +37,10 @@ export class CityStore {
   }
   get homes(): Uint16Array {
     return this.#homes;
+  }
+  /** Per row: the homes the project replaces (CityDelta.existing). A view, valid until the next `apply` or `clear`. */
+  get existing(): Uint16Array {
+    return this.#existing;
   }
   get flags(): Uint8Array {
     return this.#flags;
@@ -70,6 +75,7 @@ export class CityStore {
       this.#days[3 * r + 1] = d.days[3 * i + 1];
       this.#days[3 * r + 2] = d.days[3 * i + 2];
       this.#homes[r] = d.homes[i];
+      this.#existing[r] = d.existing[i];
       this.#flags[r] = d.flags[i];
       if (d.flags[i]) this.#flagged++;
     }
@@ -103,6 +109,7 @@ export class CityStore {
     this.#lngLat = grow(this.#lngLat, 2, new Float32Array(2 * cap));
     this.#days = grow(this.#days, 3, new Float32Array(3 * cap));
     this.#homes = grow(this.#homes, 1, new Uint16Array(cap));
+    this.#existing = grow(this.#existing, 1, new Uint16Array(cap));
     this.#flags = grow(this.#flags, 1, new Uint8Array(cap));
     this.#has = grow(this.#has, 1, new Uint8Array(cap));
     this.#cap = cap;
