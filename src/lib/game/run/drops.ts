@@ -21,8 +21,24 @@ export interface Drop {
   policy: boolean;
 }
 
-export function planDrops(_markers: Iterable<Marker>, _asOf: Day, _to: Day): Drop[] {
-  throw new Error('not implemented');
+export function planDrops(markers: Iterable<Marker>, asOf: Day, to: Day): Drop[] {
+  const byRow = new Map<number, Marker>();
+  for (const m of markers) byRow.set(m.row, m);
+  const out: Drop[] = [];
+  for (const m of byRow.values()) {
+    if (!(m.completed > asOf && m.completed <= to)) continue;
+    const net = m.homes - m.existing;
+    if (!(net > 0)) continue;
+    out.push({
+      row: m.row,
+      lng: m.lng,
+      lat: m.lat,
+      day: m.completed,
+      worth: { home: net },
+      policy: m.policy
+    });
+  }
+  return out.sort((a, b) => a.day - b.day || a.row - b.row);
 }
 
 export interface RunFeed {

@@ -1,6 +1,6 @@
 // The funding system world-core's hook calls (spec S12): `create`, `planLot`, `policyChanged`,
 // `apply`, `moneyIn`, `onProjectEvent` (ordinary starts and money events), `serve`, and `shadow`
-// (shadow starts, then the line's compaction).
+// (shadow starts, then the line's compaction, then `recordWaiting` records the homes waiting).
 import type { PolicyTimeline } from '../policy/frame';
 import type { Statics } from '../statics';
 import {
