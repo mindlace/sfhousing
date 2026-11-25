@@ -23,6 +23,20 @@ export interface ActivityEvent {
   policy: boolean;
 }
 
+/** One marker the index holds, for a reader that wants every project. */
+export interface CityMarkerRow {
+  row: number;
+  lngLat: [number, number];
+  /** The completed day; NaN when the project has none (yet). */
+  completed: Day;
+  /** The final revision's units, capped at 65,535. */
+  homes: number;
+  /** The homes it replaces after the dataset date (CityDelta.existing). */
+  existing: number;
+  /** SLOT_FLAG bits (CityDelta.flags): not 0 when the project carries the policy mark. */
+  flags: number;
+}
+
 export const ACTIVITY_LIMIT = 6;
 
 /** By `CITY_DAY` index (approved 0, started 1, completed 2). */
@@ -87,6 +101,24 @@ export class ActivityIndex {
         if (days[e] <= after) break;
         out.push(this.#event(e));
       }
+    }
+    return out;
+  }
+
+  /** Every marker held, ascending by row. A new array on each call. Never sorts. */
+  markers(): CityMarkerRow[] {
+    const s = this.#store;
+    const out: CityMarkerRow[] = [];
+    for (let r = 0; r < s.length; r++) {
+      if (!s.has[r]) continue;
+      out.push({
+        row: r,
+        lngLat: [s.lngLat[2 * r], s.lngLat[2 * r + 1]],
+        completed: s.days[3 * r + CITY_DAY.completed],
+        homes: s.homes[r],
+        existing: s.existing[r],
+        flags: s.flags[r]
+      });
     }
     return out;
   }

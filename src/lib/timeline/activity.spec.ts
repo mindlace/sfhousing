@@ -222,4 +222,100 @@ describe('ActivityIndex', () => {
     expect(brief(es)).toEqual(want);
     expect(big.sorts).toBe(1);
   });
+
+  describe('markers', () => {
+    const f32 = Math.fround;
+
+    it('lists every held row ascending with lngLat, completed, homes, existing and flags', () => {
+      const ix = new ActivityIndex();
+      ix.apply(
+        update(
+          0,
+          delta(6, [
+            {
+              row: 1,
+              days: [AS_OF + 1, AS_OF + 2, AS_OF + 3],
+              homes: 20,
+              existing: 5,
+              flags: SLOT_FLAG.money,
+              at: [-122.41, 37.75]
+            },
+            { row: 3, days: [AS_OF + 4, N, N], homes: 8 }
+          ])
+        )
+      );
+      expect(ix.markers()).toEqual([
+        {
+          row: 1,
+          lngLat: [f32(-122.41), f32(37.75)],
+          completed: AS_OF + 3,
+          homes: 20,
+          existing: 5,
+          flags: 2
+        },
+        {
+          row: 3,
+          lngLat: [f32(-122.42), f32(37.76)],
+          completed: NaN,
+          homes: 8,
+          existing: 0,
+          flags: 0
+        }
+      ]);
+    });
+
+    it('omits rows forgotten by from; it is empty after a revision 0 without city', () => {
+      const ix = new ActivityIndex();
+      ix.apply(
+        update(
+          0,
+          delta(5, [
+            { row: 0, days: [AS_OF + 1, N, N] },
+            { row: 2, days: [AS_OF + 1, N, N] },
+            { row: 4, days: [AS_OF + 1, N, N] }
+          ])
+        )
+      );
+      ix.apply(update(1, delta(5, [], 2)));
+      expect(ix.markers().map((m) => m.row)).toEqual([0]);
+      ix.apply(update(0));
+      expect(ix.markers()).toEqual([]);
+    });
+
+    it('drops rows at or past a later, smaller rows', () => {
+      const ix = new ActivityIndex();
+      ix.apply(
+        update(
+          0,
+          delta(5, [
+            { row: 0, days: [AS_OF + 1, N, N] },
+            { row: 2, days: [AS_OF + 1, N, N] },
+            { row: 4, days: [AS_OF + 1, N, N] }
+          ])
+        )
+      );
+      ix.apply(update(1, delta(3, [])));
+      expect(ix.markers().map((m) => m.row)).toEqual([0, 2]);
+    });
+
+    it('leaves sorts unchanged, and a recent read after it sorts no more than without it', () => {
+      const ix = new ActivityIndex();
+      ix.apply(update(0, delta(2, [{ row: 1, days: [AS_OF + 1, N, N] }])));
+      const before = ix.sorts;
+      ix.markers();
+      expect(ix.sorts).toBe(before);
+      ix.recent(AS_OF, AS_OF + 100);
+      expect(ix.sorts).toBe(1);
+    });
+
+    it('two calls return different arrays with equal contents', () => {
+      const ix = new ActivityIndex();
+      ix.apply(update(0, delta(2, [{ row: 1, days: [AS_OF + 1, N, N] }])));
+      const a = ix.markers();
+      const b = ix.markers();
+      expect(a).not.toBe(b);
+      expect(a).toEqual(b);
+      expect(a[0].lngLat).not.toBe(b[0].lngLat);
+    });
+  });
 });
