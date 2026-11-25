@@ -145,8 +145,8 @@ export interface SimMapHandle {
    * appearing); a no-op before the map.
    */
   collapseCredit(): void;
-  /** M1, optional until map-run makes it required: the run view. SimMap's does nothing yet. */
-  setRunView?(on: boolean): void;
+  /** M1: the run view (map-interfaces.md, "The run view"). true fits the whole city flat and north up and locks the camera; false unlocks and returns to the camera before. */
+  setRunView(on: boolean): void;
 }
 
 /** How the progress bars draw (docs/dev/map-interfaces.md "Bar modes"). */
