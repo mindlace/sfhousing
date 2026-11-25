@@ -1,23 +1,34 @@
 /// <reference types="@vitest/browser-playwright" />
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import { cdp, page, userEvent } from 'vitest/browser';
 import { tick } from 'svelte';
 import axe from 'axe-core';
 import '../../../routes/layout.css';
 import { page as appPage } from '$app/state';
+import { getStorage } from '$lib/sharing/storage';
+import { BASE_HANDS, limitsOf } from '../limits';
 import { RUNGS } from '../ladder';
+import { onPrefs, readCollectForMe, readMuted, writeCollectForMe, writeMuted } from '../run/prefs';
+import { NEW_GAME } from '../state';
 import { MAX_SAVES } from '../saves';
 import type { SyncState } from '../save-sync.svelte';
 import { GameStore, openGame } from '../store.svelte';
 import { FakeSync } from '../test/fake-sync.svelte';
 import { FULL_TEXT, STORAGE_TEXT, syncText } from '../words';
+import { COLLECT_BOUGHT } from './words';
 import { MemoryStorage } from '$lib/sharing/fixtures/memory-storage';
 import { FakeGame, entry, type FakeGameInit } from './test/fake-game.svelte';
 import PanelHost from './test/PanelHost.svelte';
 import { reloadGame } from './reload';
 
 vi.mock('./reload', () => ({ reloadGame: vi.fn() }));
+vi.mock('$lib/sharing/storage', async (orig) => ({
+  ...(await orig<typeof import('$lib/sharing/storage')>()),
+  getStorage: vi.fn(() => localStorage)
+}));
+
+beforeEach(() => localStorage.clear());
 
 const TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22a', 'wcag22aa'];
 
@@ -25,13 +36,21 @@ async function scheme(value: 'light' | 'dark') {
   await cdp().send('Emulation.setEmulatedMedia', {
     features: [{ name: 'prefers-color-scheme', value }]
   });
+  // The panel sits on the header's surface and ink in the app; a checked switch's translucent
+  // tint needs that surface under it for axe to read the real colour.
+  const sfx = value === 'dark' ? '-dark' : '';
+  document.body.style.background = `var(--color-surface${sfx})`;
+  document.body.style.color = `var(--color-ink${sfx})`;
 }
 
 afterEach(async () => {
   await scheme('light');
+  document.body.style.background = '';
+  document.body.style.color = '';
   // The stub's url is a plain URL; the real `page.url` type narrows the pathname to routes.
   appPage.url = new URL('http://localhost/') as never;
   vi.mocked(reloadGame).mockClear();
+  vi.mocked(getStorage).mockImplementation(() => localStorage);
 });
 
 /** A local-calendar time `daysAgo` days before today, at noon. */
@@ -46,6 +65,11 @@ const rowOf = (name: string) => rows().filter({ hasText: name });
 const field = () => page.getByRole('textbox', { name: 'Name' });
 const newGameButton = () => page.getByRole('button', { name: 'New game' });
 const errorLine = () => page.getByTestId('game-error');
+const sound = () => page.getByRole('switch', { name: 'Sound' });
+const collect = () => page.getByRole('switch', { name: 'Collect for me' });
+const autoLimits = () => ({
+  limits: { ...limitsOf(NEW_GAME), hands: { ...BASE_HANDS, auto: true } }
+});
 
 // Mission is current, in its opening; Sunset and Richmond are in their runs.
 const THREE = () => [
@@ -288,6 +312,66 @@ describe('GamePanel', () => {
     expect(onescape).toHaveBeenCalledTimes(1);
   });
 
+  it('the sound switch reads the muted pref and writes it on each press', async () => {
+    writeMuted(localStorage, true);
+    await mount();
+    await expect.element(sound()).toHaveAttribute('aria-checked', 'false');
+    await expect.element(page.getByTestId('game-sound')).toBeVisible();
+    const heard = vi.fn();
+    const off = onPrefs(heard);
+    await sound().click();
+    await expect.element(sound()).toHaveAttribute('aria-checked', 'true');
+    expect(readMuted(localStorage)).toBe(false);
+    expect(heard).toHaveBeenCalledTimes(1);
+    await sound().click();
+    expect(readMuted(localStorage)).toBe(true);
+    expect(heard).toHaveBeenCalledTimes(2);
+    off();
+  });
+
+  it('Collect for me reads its pref and writes it on each press', async () => {
+    writeCollectForMe(localStorage, true);
+    await mount();
+    await expect.element(collect()).toHaveAttribute('aria-checked', 'true');
+    await expect.element(page.getByTestId('game-collect')).toBeVisible();
+    const heard = vi.fn();
+    const off = onPrefs(heard);
+    await collect().click();
+    await expect.element(collect()).toHaveAttribute('aria-checked', 'false');
+    expect(readCollectForMe(localStorage)).toBe(false);
+    expect(heard).toHaveBeenCalledTimes(1);
+    off();
+  });
+
+  it('with hands.auto the collect switch is checked, off and explained', async () => {
+    await mount({ saves: THREE(), ...autoLimits() });
+    const heard = vi.fn();
+    const off = onPrefs(heard);
+    await expect.element(collect()).toHaveAttribute('aria-checked', 'true');
+    await expect.element(collect()).toHaveAttribute('aria-disabled', 'true');
+    const describedBy = collect().element().getAttribute('aria-describedby');
+    expect(describedBy).toBeTruthy();
+    expect(document.getElementById(describedBy!)?.textContent).toBe(COLLECT_BOUGHT);
+    await collect().click({ force: true });
+    await expect.element(collect()).toHaveAttribute('aria-checked', 'true');
+    expect(readCollectForMe(localStorage)).toBe(false);
+    expect(localStorage.length).toBe(0);
+    expect(heard).not.toHaveBeenCalled();
+    off();
+  });
+
+  it('with no storage the switches show the defaults, switch on screen and write nothing', async () => {
+    vi.mocked(getStorage).mockReturnValue(null);
+    await mount();
+    await expect.element(sound()).toHaveAttribute('aria-checked', 'true');
+    await expect.element(collect()).toHaveAttribute('aria-checked', 'false');
+    await sound().click();
+    await collect().click();
+    await expect.element(sound()).toHaveAttribute('aria-checked', 'false');
+    await expect.element(collect()).toHaveAttribute('aria-checked', 'true');
+    expect(localStorage.length).toBe(0);
+  });
+
   it('every control is at least 24 px', async () => {
     await mount();
     await page.getByRole('button', { name: 'Rename Sunset' }).click();
@@ -336,5 +420,15 @@ describe('GamePanel', () => {
     await page.getByRole('button', { name: 'Delete Richmond' }).click();
     await expect.element(page.getByText('Delete Richmond?')).toBeVisible();
     await check();
+  });
+
+  it('axe finds no violation with the collect switch bought', async () => {
+    await mount({ saves: THREE(), ...autoLimits() });
+    await expect.element(collect()).toBeVisible();
+    for (const s of ['light', 'dark'] as const) {
+      await scheme(s);
+      const res = await axe.run(panel().element(), { runOnly: TAGS });
+      expect(res.violations.map((v) => v.id)).toEqual([]);
+    }
   });
 });
