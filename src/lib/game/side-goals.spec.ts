@@ -204,4 +204,8 @@ describe('side goals', () => {
     expect(SIDE_SHOWN).toBe(3);
     expect(SIDE_GOALS.map((g) => g.id)).toEqual(sideGoals(SIDE_TUNING).map((g) => g.id));
   });
+
+  it('SIDE_GOALS is frozen', () => {
+    expect(Object.isFrozen(SIDE_GOALS)).toBe(true);
+  });
 });
