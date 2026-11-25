@@ -253,6 +253,10 @@ second application in line is never awarded, never lapses and stays to the horiz
 City programme later lapses it on `to + 1` and redraws it as a new spell on the federal and state
 shares. A later change to this behaviour is deliberate.
 
+### Monotonicity check
+
+More public money must never build fewer homes. `scripts/money-monotone.ts` runs every subset of the offered funding presets on a dataset and fails when adding a preset costs a set more than 5 homes on net, funded or affordable homes at a deadline year. A change under the funding paths runs it by hand before signoff and records its last line in the PR (rule and paths in [pipeline.md](pipeline.md), "Changes on the funding paths"; the check in [testing.md](testing.md), "The money monotonicity check").
+
 ### Known limit: a partly covered application keeps its month's first-day bundle (ruling R24)
 
 The bundle of an application is the one active on the first day of its latent month. A switched-off
