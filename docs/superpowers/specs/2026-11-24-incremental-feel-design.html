@@ -18,6 +18,7 @@
     <aside data-kind="decision" id="p6"><strong>Partner: P6, the goal is in the header</strong> "A." (of the two placements in the mockups)</aside>
     <aside data-kind="decision" id="p7"><strong>Partner: P7, the tree is between runs</strong> "The tree only appears between runs, like in an incremental game, doesn't need to be in the menu."</aside>
     <aside data-kind="decision" id="p8"><strong>Partner: P8, the name</strong> "We should change the name to 'SF Housing'."</aside>
+    <aside data-kind="decision" id="p9"><strong>Partner: P9, units are collected</strong> "There are plenty of games that give you 'points' that you can only spend if you collect them. The housing should be like that - all housing units count to the sim outcome, but you only get units to spend in the tree from whatever you collected. i.e. the units you get &amp; the spend of those units is disjoint from the sim, but derived from it."</aside>
     <p>So the game layer has two jobs: give the player a reason to go one step further, and hand over the tool one lever at a time. It never changes what the simulation forecasts, and it never takes the forecasting tool away.</p>
     <ul>
       <li><strong>Goals:</strong> the next goal, how far off it is and what it unlocks are always on screen.</li>
@@ -132,7 +133,7 @@
       <p><strong>Trade-off:</strong> the cheapest of the three. It fixes the silence and the all-at-once editors. It adds no economy, no choice and nothing for the hands, so it reproduces the Black Hole game's main complaint (a "next upgrade" button) without that game's play.</p>
     </section>
     <section id="sec-approach-b">
-      <h3>B. Runs, support and a tree (recommended)</h3>
+      <h3>B. Runs, units and a tree (chosen)</h3>
       <p>Replace levels 2 to 5 with a loop: a run of about 20 seconds, a tally, a tree. Runs pay a currency. The tree's nodes are small pieces of real policy. During a run the player sweeps the map to collect from projects their policy produced. The simulation is unchanged: the hands affect what the player earns, never what gets built.</p>
       <p><strong>Trade-off:</strong> it has all five things the reference games are built from, and it keeps the claim "this policy gives this result" exact. The cursor collects; it does not cause. That is thinner than the reference games, where the cursor does the damage.</p>
     </section>
@@ -154,13 +155,13 @@
         <g class="node" id="n-tree"><rect x="390" y="30" width="150" height="44"/><text x="465" y="52">Tree: buy pieces</text></g>
         <g class="node result" id="n-deadline"><rect x="580" y="30" width="170" height="44"/><text x="665" y="52">The deadline moves in</text></g>
         <g class="edge" data-from="n-run" data-to="n-tally"><path d="M160 52H198"/></g>
-        <g class="edge" data-from="n-tally" data-to="n-tree"><path d="M350 52H388"/><text x="369" y="44">support</text></g>
+        <g class="edge" data-from="n-tally" data-to="n-tree"><path d="M350 52H388"/><text x="369" y="44">units</text></g>
         <g class="edge" data-from="n-tree" data-to="n-run"><path d="M465 74V108H85V76"/><text x="275" y="124">every run pays</text></g>
         <g class="edge" data-from="n-tally" data-to="n-deadline"><path d="M275 30V10H665V28"/><text x="470" y="22">goal met</text></g>
       </svg>
       <figcaption>Figure 2. The proposed loop. A turn takes under a minute and always ends in a purchase or progress toward one.</figcaption>
     </figure>
-    <aside data-kind="note"><strong>Note</strong> B as first written had the cursor collect support from marked projects. A check against the code found that the diamond marks only new projects on rezoned lots or with added money: a permitting change marks nothing, and nothing in the engine says which projects finished sooner. Paying drops would need that. The sections below pay from the forecast instead and keep the map's pops as feedback. This is <a href="#sec-questions">question 1</a>.</aside>
+    <aside data-kind="note"><strong>Note</strong> B as first written paid only for projects the player's policy caused. The engine cannot say which those are: the diamond marks only new projects on rezoned lots or with added money, and a permitting change marks nothing. P9 removes the need. Every completing home can be collected, whatever caused it, so the game layer reads completions from the forecast and asks the engine for nothing new.</aside>
 
     <section id="sec-one-game">
       <h3>One game on one page</h3>
@@ -171,7 +172,7 @@
         <li>After that the brush is the zoning branch's way of acting on the map, used between runs.</li>
         <li>The editors and the timeline open from the tree: a bought node opens its lever's editor, and the forecast can be scrubbed from there (P1).</li>
       </ul>
-      <p>Whether what is painted in the opening stays in force in the runs is <a href="#sec-questions">question 3</a>.</p>
+      <p>Whether what is painted in the opening stays in force in the runs is the <a href="#sec-questions">open question</a>.</p>
     </section>
 
     <section id="sec-run">
@@ -180,10 +181,11 @@
         <li>A run is Play from today to the current deadline under the player's policy. It takes about 20 seconds whatever the deadline.</li>
         <li>The timeline stays. Before and after a run the player can drag the ruler through the forecast as they do today. Only a played run pays.</li>
         <li>The whole city is in view. Projects appear, move through their stages and complete, as the map shows today.</li>
-        <li>A completing project pops: the building rises and its homes float up. Projects that carry the diamond pop in the policy's colour.</li>
-        <li>The cursor gathers the floating counts as it passes over them; the rest fly to the goal on their own. This is play only and earns nothing.</li>
-        <li>The goal's bar fills as homes complete.</li>
-        <li>The run ends at the deadline. Nothing the player does in a run changes what gets built or what the run pays.</li>
+        <li>A completing project pops: the building rises and it leaves a drop worth its homes. Projects that carry the diamond pop in the policy's colour.</li>
+        <li>Every completed home counts toward the goal, collected or not. The goal's bar fills as homes complete.</li>
+        <li>The player sweeps the cursor over a drop to collect it. A drop that is not collected fades after a few seconds, as coins do in games that spit them out. Only collected homes become units to spend (P9).</li>
+        <li>The view is fixed on the whole city during a run, so on touch a drag sweeps instead of panning.</li>
+        <li>The run ends at the deadline. Nothing the player does in a run changes what gets built.</li>
       </ul>
     </section>
 
@@ -192,7 +194,7 @@
       <p>The reference games keep the next milestone and its reward in front of the player all the time. The game does the same in four places (P2):</p>
       <ul>
         <li><strong>The goal, in the header (P6).</strong> The pinned headline becomes the goal: line 1 "61,400 of 82,069 homes by 2055", line 2 a bar and what meeting it unlocks. It is there in both states of the page, and the bar fills through a run.</li>
-        <li><strong>Side goals.</strong> Three or so smaller goals at a time, each a real quantity from the simulation with a support reward: "1,000 homes added", "A project approved inside a year", "500 affordable homes funded". Each one points at something the player has not tried, so they carry the learning curve. They sit behind a tap on the goal, with a mark on it when one is met.</li>
+        <li><strong>Side goals.</strong> Three or so smaller goals at a time, each a real quantity from the simulation with a reward in units: "1,000 homes added", "A project approved inside a year", "500 affordable homes funded". Each one points at something the player has not tried, so they carry the learning curve. They sit behind a tap on the goal, with a mark on it when one is met.</li>
         <li><strong>The next purchase.</strong> In the tree, a node the player can afford stands out, and one they cannot yet afford shows how far off it is.</li>
         <li><strong>The tally.</strong> It restates the distance to the goal and the change since the last run.</li>
       </ul>
@@ -204,7 +206,7 @@
       <p>A card after every run, with three things:</p>
       <ul>
         <li><strong>Homes by the deadline</strong> against the goal, as a bar, with the change from the last run.</li>
-        <li><strong>Support earned</strong> this run.</li>
+        <li><strong>Units collected</strong> this run, out of the homes completed.</li>
         <li><strong>Where homes stand at the deadline:</strong> homes in each permitting stage and homes waiting for money. This tells the player what to buy next, and it is the lesson: the bottleneck moves.</li>
       </ul>
       <p>The tally shows only what the engine measures. Homes in each stage are in the series today. Homes waiting for money are in the funding line and have to be added to the series. The engine has no count of homes waiting on room or on the market (new projects start from per-lot odds), so the tally has no such rows.</p>
@@ -212,14 +214,14 @@
     </section>
 
     <section id="sec-support">
-      <h3>Support</h3>
+      <h3>Units</h3>
       <ul>
-        <li>One currency, called support (working name). It buys policy.</li>
-        <li>A run pays for homes ahead of current law at the deadline: every home completed by then under the player's policy, less every home completed by then under current law, never below zero. The payout is worked out from the forecast, the same for every run of the same policy.</li>
-        <li>This is wider than the "+N from your policy" the page shows today, which counts new projects only: a permitting change that finishes projects already in the pipeline sooner adds nothing to it. See <a href="#sec-questions">question 2</a>.</li>
-        <li>How far the number grows across the deadlines is to measure.</li>
-        <li>Each goal met pays a lump. The first run, under current law, meets the first goal and pays for the first purchases.</li>
-        <li>Support is separate from public money. Dollars stay inside the simulation with their sources and limits.</li>
+        <li>One currency: housing units the player has collected (P9). It buys nodes in the tree.</li>
+        <li>The two ledgers are separate. The simulation's outcome counts every home. The player's balance counts only what they collected, and spending it changes nothing in the simulation except through the lever bought.</li>
+        <li>Every run pays, the first one under current law included, because every completing home can be collected whatever caused it.</li>
+        <li>Growth comes from two sides: policy puts more homes on the map by the deadline, and the Hands nodes let the player collect more of them. Early on the cursor reaches a small share of the drops.</li>
+        <li>Each goal met and each side goal met pays a lump of units.</li>
+        <li>Units are separate from public money. Dollars stay inside the simulation with their sources and limits.</li>
       </ul>
     </section>
 
@@ -240,6 +242,7 @@
           <tr><th scope="row">Permitting</th><td>The three presets on offer (SB 423 approval clock, no discretionary review, San Diego's pace), which multiply when stacked; custom timing for each route, down to the sourced floors.</td><td>The permitting presets, floors and evidence. The CEQA infill exemption is not available in the code today.</td></tr>
           <tr><th scope="row">Zoning</th><td>The transit rule a piece at a time: each of the four stop types, a second and a third distance band, the height cap in steps; painting on the map.</td><td>The transit rule and the painted area.</td></tr>
           <tr><th scope="row">Public money</th><td>The measures that add money, about seven of the eleven presets.</td><td>The funding presets level 5 offers.</td></tr>
+          <tr><th scope="row">Hands</th><td>Collect reach; drops that last longer; collecting on its own near the cursor, then everywhere.</td><td>New. Game only: these act on what is collected, never on homes.</td></tr>
           <tr><th scope="row">Free</th><td>The three protections; the state and federal off switches.</td><td>Exist today. They only take homes away, so they are not purchases.</td></tr>
           <tr><th scope="row">Later</th><td>Funding rules, market rules, affordability targets, car ownership.</td><td>Designed as levels 6 to 9, or in progress elsewhere; not built.</td></tr>
         </tbody>
@@ -282,7 +285,7 @@
       <ul>
         <li><strong>Size:</strong> about 15 to 20 presets and measures, plus the steps; my first estimate of 50 to 80 was too high. The catalogue spec counts it. It grows as levers are added (P3).</li>
         <li><strong>Choice comes from the model.</strong> Zoning bought while permits are the bottleneck adds little. The tally shows the bottleneck, so the order of purchase is the player's to work out. This is the guard against the forced-order complaint.</li>
-        <li><strong>Costs come from the engine.</strong> Because there is one future, a script can play the tree in many orders against the real simulation and report how long each purchase takes to afford. Costs are set from that report to meet the pacing targets below.</li>
+        <li><strong>Costs come from the engine.</strong> Because there is one future, a script can play the tree in many orders against the real simulation and report how long each purchase takes to afford. It has to assume what share of drops a player collects at each step of reach; that share comes from playtests. Costs are set from the report to meet the pacing targets below.</li>
       </ul>
     </section>
 
@@ -300,7 +303,7 @@
     <section id="sec-feedback">
       <h3>Feedback</h3>
       <ul>
-        <li>A completing project pops: the building rises, a count floats up, a short sound plays. Support counts up on the tally.</li>
+        <li>A completing project pops: the building rises, its drop appears, a short sound plays. A collected drop flies to the unit count.</li>
         <li>The headline count rolls instead of jumping. The goal bar fills through the run.</li>
         <li>A bought node is seen on the map before the next run: the area it affects lights, or its projects' bars shorten.</li>
         <li>Meeting a goal gets a real moment: the map holds, the bar completes, the next ring of the tree is revealed.</li>
@@ -331,12 +334,12 @@
       <ul>
         <li><strong>The name</strong> becomes "SF Housing" wherever the site names itself: the header, page titles, About, the documents (P8).</li>
         <li><strong>Paint and Simulate</strong> become one page (P5). The header's two steps go.</li>
-        <li><strong>Levels 3 to 5</strong> and their "beat your previous month" bars go. The level cell in the header becomes the support count. Saved games move out of the level panel; where to is left to the shell's design.</li>
+        <li><strong>Levels 3 to 5</strong> and their "beat your previous month" bars go. The level cell in the header becomes the unit count. Saved games move out of the level panel; where to is left to the shell's design.</li>
         <li><strong>The timeline and the editors</strong> stay (P1). The editors list only the levers bought, and open from the tree.</li>
         <li><strong>The headline</strong> in the header becomes the goal, with its bar and what it unlocks (P2, P6).</li>
         <li><strong>Locks</strong> move from level to node: a lever is editable when its node is bought, within the steps bought.</li>
         <li><strong>Publishing</strong> stays. The player's policy is a policy document as it is today, so Publish works at any point.</li>
-        <li><strong>Saved games</strong> hold the support balance, the nodes bought and the deadlines met. What happens to games saved under the five levels is left to the design that follows.</li>
+        <li><strong>Saved games</strong> hold the unit balance, the nodes bought and the deadlines met. What happens to games saved under the five levels is left to the design that follows.</li>
         <li><strong>The reach check</strong> changes its question: the full tree must meet the last deadline, and current law must meet the first.</li>
       </ul>
     </section>
@@ -345,11 +348,11 @@
   <section id="sec-rules">
     <h2>Rules this keeps</h2>
     <ul>
-      <li><strong>One future.</strong> The same purchases always give the same homes. The hands change support only.</li>
-      <li><strong>Evidence.</strong> A policy node sets a real lever to a sourced value. No node multiplies homes. Game-only nodes act on support and reach.</li>
+      <li><strong>One future.</strong> The same policy always gives the same homes. The hands change the player's units only (P9).</li>
+      <li><strong>Evidence.</strong> A policy node acts on a real lever. No node multiplies homes. Game-only nodes act on collecting.</li>
       <li><strong>Funding arrives yearly.</strong> Unchanged.</li>
       <li><strong>Choices carry forward</strong> and moving on is the player's choice, as ruled for the levels.</li>
-      <li><strong>Accessibility.</strong> Everything works from the keyboard, and nothing is earned with the pointer. Motion follows the reduced-motion setting, nothing flashes more than three times a second, and sound has a mute in the header.</li>
+      <li><strong>Accessibility.</strong> Everything works from the keyboard: the arrow keys move the collecting ring. A setting collects every drop in view for a player who cannot sweep, at no penalty. Motion follows the reduced-motion setting, nothing flashes more than three times a second, and sound has a mute in the header.</li>
       <li><strong>Short text.</strong> A node is a name, a line and a cost.</li>
       <li><strong>Paint never builds on road land.</strong> Unchanged.</li>
     </ul>
@@ -359,23 +362,23 @@
     <h2>To measure before numbers are fixed</h2>
     <ol>
       <li>The earliest year the goal is reached with every existing lever at its strongest. This sets the last deadline and the number of deadlines.</li>
-      <li>Homes added over current law at each candidate deadline, across purchase orders. This sets the cost curve.</li>
+      <li>Homes completed by each candidate deadline, across purchase orders, and the share of them a player collects at each step of reach. Together these set the cost curve.</li>
       <li>How long the forecast for one run takes after a purchase, on a phone and a laptop.</li>
-      <li>How many projects complete per second of a run, and the map's frame time with pops on it.</li>
-      <li>Whether homes completed under current law by each deadline, pipeline included, come straight from the current-law forecast the reach check runs.</li>
+      <li>How many projects complete per second of a run, and the map's frame time with drops on it.</li>
     </ol>
   </section>
 
   <section id="sec-questions">
     <h2>Open decisions and calls to check</h2>
-    <aside data-kind="question"><strong>Question 1</strong> Does collecting pay? Paying drops need the engine to say which projects exist or finish sooner because of the policy, and it cannot say that for permitting. I recommend the payout comes from the forecast and the cursor only gathers the pops, as written above. The other way is new engine work to compare each project with its current-law twin, which may not be well defined.</aside>
-    <aside data-kind="question"><strong>Question 2</strong> Should "+N from your policy" count projects already in the pipeline? Today it counts new projects only, so a permitting change that finishes pipeline homes sooner shows no effect. I recommend widening it, so the chart, Details and the payout are one number. It changes a number the tool shows today.</aside>
-    <aside data-kind="question"><strong>Question 3</strong> Does what the player paints in the opening stay in force in the runs? The earlier design ruled that it never enters the simulation. In one game I recommend that it does: the opening brush has a low height cap, the painted zoning is the player's first policy, and higher caps are steps in the tree. This needs the painted plan and the simulation's painted area to be one thing, which is to confirm in the code.</aside>
+    <aside data-kind="question"><strong>Question</strong> Does what the player paints in the opening stay in force in the runs? The earlier design ruled that it never enters the simulation. In one game I recommend that it does: the opening brush has a low height cap, the painted zoning is the player's first policy, and higher caps are steps in the tree. This needs the painted plan and the simulation's painted area to be one thing, which is to confirm in the code.</aside>
     <p>These are my calls, not things you said. Correct any that are wrong.</p>
     <ul>
       <li><strong>Hands never change what gets built.</strong> From P1. Approach C is dropped, and the run is not built to take live input.</li>
       <li><strong>The timeline and editors stay,</strong> showing only what is bought. From P1. The first draft removed them until the ending.</li>
-      <li><strong>Support is paid for homes ahead of current law,</strong> not for every home. It rewards the player's own effect.</li>
+      <li><strong>One drop per completing project,</strong> worth its homes, fading after a few seconds.</li>
+      <li><strong>The view is fixed during a run.</strong></li>
+      <li><strong>A setting collects everything for a player who cannot sweep,</strong> at no penalty. Anyone can turn it on.</li>
+      <li><strong>Goals and side goals pay a lump of units</strong> on top of what is collected.</li>
       <li><strong>A purchase takes effect at once.</strong> The alternative is that it only opens the lever for the player to set.</li>
       <li><strong>Levers that only take homes away are free.</strong></li>
       <li><strong>Steps in heights and bands need no source;</strong> clocks keep their sourced floors.</li>
@@ -398,6 +401,7 @@
       <li>New model features: funding rules, market rules, affordability targets.</li>
       <li>The cursor acting inside the simulation (approach C).</li>
       <li>Any budget of brush area.</li>
+      <li>Widening "+N from your policy" to count projects already in the pipeline. The check found it counts new projects only; with P9 the game no longer depends on it.</li>
       <li>The car-ownership simulation itself. It joins as a branch when it lands.</li>
       <li>Randomness of any kind.</li>
       <li>Idle or offline earning.</li>
