@@ -110,7 +110,7 @@ const ZOOM_HANDLERS = [
   'touchPitch'
 ] as const;
 
-describe('SimMap run view', { timeout: 30_000 }, () => {
+describe('SimMap run view', () => {
   it('locked on 600 by 400: the runFrame zoom, flat, north up, every RUN_BOUNDS corner 23 px inside', async () => {
     const { h, map } = await mountReady();
     h.setRunView(true);
