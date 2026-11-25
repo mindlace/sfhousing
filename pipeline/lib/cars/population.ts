@@ -158,6 +158,12 @@ export interface PopulationIn {
   seed: Seed;
   /** Per zone, per margin: class targets (any scale) or null. */
   margins: (Float64Array | null)[][];
+  /**
+   * Per zone, car-level targets (0, 1, 2, 3+; any scale) that replace B25044's tenure-by-vehicles
+   * margin (MARGINS[0]): the choice's shrunk shares, so the start agrees with the model. Null (or
+   * absent) keeps B25044. Tenure stays controlled by B25009.
+   */
+  levels?: (Float64Array | null)[];
   ipf: { maxIter: number; tol: number };
 }
 
@@ -205,7 +211,14 @@ export function startPopulation(o: PopulationIn): PopulationOut {
     const seed = Float64Array.from(recs, (i) => o.seed.weight[i]);
     const rows: Int32Array[] = [];
     const targets: Float64Array[] = [];
+    const levels = o.levels?.[z] ?? null;
     o.margins[z].forEach((t, k) => {
+      if (k === 0 && levels) {
+        const sum = levels.reduce((a, b) => a + b, 0);
+        rows.push(Int32Array.from(recs, (i) => o.seed.level[i]));
+        targets.push(Float64Array.from(levels, (v) => (v / sum) * n));
+        return;
+      }
       if (!t) return;
       const sum = t.reduce((a, b) => a + b, 0);
       rows.push(Int32Array.from(recs, (i) => o.seed.classes[k][i]));

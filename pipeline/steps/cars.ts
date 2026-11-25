@@ -20,6 +20,7 @@ import {
   effectiveSizes,
   fitChoice,
   observedLevels,
+  refitConstants,
   threePlusMeanOf,
   type CarChoiceModel,
   type MoeRow
@@ -137,7 +138,7 @@ export async function carsStep(db: Duck, o: CarsStepOpts): Promise<CarsStepOut> 
   const bands = typeBandsOf(pums);
   const types = typeCount(bands);
   const seed = pumsSeed(pums, bands, pumas);
-  const pop = startPopulation({
+  const popIn = {
     types,
     zonePuma,
     homes,
@@ -145,7 +146,9 @@ export async function carsStep(db: Duck, o: CarsStepOpts): Promise<CarsStepOut> 
     seed,
     margins,
     ipf: { maxIter: IPF.maxIter, tol: IPF.tol }
-  });
+  };
+  // First raked to B25044 as published; re-raked below to the choice's shrunk shares.
+  let pop = startPopulation(popIn);
   let startHomes = 0;
   let startHouseholds = 0;
   for (let z = 0; z < Z; z++) startHomes += homes[z];
@@ -189,12 +192,22 @@ export async function carsStep(db: Duck, o: CarsStepOpts): Promise<CarsStepOut> 
       `cars: no B25044 margins of error for ACS ${release} (census-acs5-bg-moe-${release}); ` +
         'the zone shrinkage uses estimated households'
     );
-  const fit = fitChoice(
+  const first = fitChoice(
     { rows: pums, bands, window: [`${pumsRelease - 4}-01-01`, `${pumsRelease}-12-31`] },
     observed,
     data,
     sizes ? { nEff: sizes.nEff, moeMissing: sizes.missing } : {}
   );
+  // The start's vehicle margin is the shrunk shares (share*), not B25044's sampling noise, so the
+  // start agrees with the model and zones do not drift as households turn over. The other margins
+  // stay; the coefficients stay; the constants are refitted over the re-raked type mix.
+  pop = startPopulation({
+    ...popIn,
+    levels: first.fit.map((f) => (f.observedTotal > 0 ? Float64Array.from(f.target) : null))
+  });
+  data.households = pop.households;
+  const refit = refitConstants(first.choice, data, observed, first);
+  const fit = { ...first, ...refit };
   data.constant = fit.constant;
   const parking =
     o.parkingPath && existsSync(o.parkingPath)
@@ -293,7 +306,9 @@ export async function carsStep(db: Duck, o: CarsStepOpts): Promise<CarsStepOut> 
     `Workers: ${Math.round(sum(pop.workers))} (ACS B08301 workers 16+ ` +
       `${Math.round(acsSum((v) => v === WORKERS_TOTAL))}, a person count incl. group quarters).`,
     `IPF: ${unmet} block groups miss a margin by more than ${pct(IPF_REPORT_ERR)}; ` +
-      `${pop.seedOnly} take the PUMA mix unadjusted; ${fallback} take the citywide occupied share.`
+      `${pop.seedOnly} take the PUMA mix unadjusted; ${fallback} take the citywide occupied share. ` +
+      "The vehicle margin is the choice's shrunk shares (share*, below), not B25044 as published; " +
+      'tenure comes from B25009.'
   ];
   report.push(...carsReportLines(choice, data, fit, dmv));
   return { data, model: null, choice, report, counts, warnings };

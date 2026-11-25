@@ -178,6 +178,29 @@ describe('startPopulation', () => {
     expect(again.households).toEqual(out.households);
   });
 
+  it('takes car-level targets in place of the B25044 tenure-by-vehicles margin', () => {
+    // Zone 1 (PUMA 1: records at 1 and 3+ cars, weights 30 and 11) asked for 1 and 3+ in 1 : 3.
+    const levels = [null, Float64Array.from([0, 1, 0, 3]), null, null];
+    const r = startPopulation({
+      types: T,
+      zonePuma,
+      homes,
+      occupied,
+      seed,
+      margins: margins.map((m, z) =>
+        z === 1 ? [Float64Array.from([0, 0, 0, 9, 0, 9, 0, 0]), null, null] : m
+      ),
+      levels,
+      ipf: { maxIter: 200, tol: 1e-9 }
+    });
+    const lv = [0, 0, 0, 0];
+    const base = T * CAR_LEVELS;
+    for (let i = 0; i < T * CAR_LEVELS; i++) lv[i % CAR_LEVELS] += r.households[base + i];
+    expect(lv).toEqual([0, 9, 0, 25]); // 34 households in 1 : 3, B25044's 1 : 1 replaced
+    // The other zones are as without levels.
+    expect(r.households.subarray(0, base)).toEqual(out.households.subarray(0, base));
+  });
+
   it('reports the fit of each zone with margins', () => {
     expect(out.maxRelErr[0]).toBeLessThan(1e-6);
     expect(out.maxRelErr[1]).toBe(0);

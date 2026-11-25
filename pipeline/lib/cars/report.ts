@@ -165,6 +165,42 @@ export function carsReportLines(
       )
     );
 
+  // The start population against the model at month 0: its zone shares by level.
+  {
+    const Zs = data.zones.length;
+    const cellsS = data.types * CAR_LEVELS;
+    const gap0: number[] = [];
+    let weighted = 0;
+    let weight = 0;
+    let worst = { gap: 0, n: 0 };
+    for (let z = 0; z < Zs; z++) {
+      const f = fit.fit[z];
+      const lv = [0, 0, 0, 0];
+      for (let i = 0; i < cellsS; i++) lv[i % CAR_LEVELS] += data.households[z * cellsS + i];
+      const n = lv.reduce((a, b) => a + b, 0);
+      if (!f || !(f.observedTotal > 0) || n === 0) continue;
+      const g = Math.abs(lv[0] / n - f.after[0]);
+      gap0.push(g);
+      weighted += n * g;
+      weight += n;
+      for (let k = 0; k < CAR_LEVELS; k++) {
+        const gk = Math.abs(lv[k] / n - f.after[k]);
+        if (gk > worst.gap) worst = { gap: gk, n };
+      }
+    }
+    if (gap0.length > 0)
+      lines.push(
+        '',
+        "Start population: each block group's households are raked to share* as the vehicle " +
+          'margin (B25009 tenure by size and B19001 income as before), so at month 0 they hold ' +
+          "the model's shares up to rounding: zero-car gap median " +
+          `${pts(quantile(gap0, 0.5))} points, 90th percentile ${pts(quantile(gap0, 0.9))} ` +
+          `points, households-weighted mean ${pts(weighted / weight)} points; the largest gap ` +
+          `at any level, ${pts(worst.gap)} points, is in a block group of ${worst.n} ` +
+          `household${worst.n === 1 ? '' : 's'} (one household moves a share by 1/n).`
+      );
+  }
+
   // Citywide shares and cars, from the model with the constants.
   const Z = data.zones.length;
   const T = data.types;
@@ -173,6 +209,7 @@ export function carsReportLines(
   const simLevels = new Float64Array(CAR_LEVELS);
   const acsWeighted = new Float64Array(CAR_LEVELS);
   const acsLevels = new Float64Array(CAR_LEVELS);
+  const startLevels = new Float64Array(CAR_LEVELS);
   let simHh = 0;
   let acsHh = 0;
   let cars = 0;
@@ -186,7 +223,10 @@ export function carsReportLines(
       for (let k = 0; k < CAR_LEVELS; k++) nt += data.households[z * cells + t * CAR_LEVELS + k];
       if (nt === 0) continue;
       carShares(m, data, z, t, density, out);
-      for (let k = 0; k < CAR_LEVELS; k++) simLevels[k] += nt * out[k];
+      for (let k = 0; k < CAR_LEVELS; k++) {
+        simLevels[k] += nt * out[k];
+        startLevels[k] += data.households[z * cells + t * CAR_LEVELS + k];
+      }
       cars += nt * meanCars(out, model.threePlusMean);
     }
     simHh += n;
@@ -204,19 +244,21 @@ export function carsReportLines(
     '',
     '### Citywide',
     '',
-    '| Cars | Model, start households | Model, B25044 households | ACS B25044 |',
-    '|---|---|---|---|',
+    '| Cars | Start households | Model, start households | Model, B25044 households | ACS B25044 |',
+    '|---|---|---|---|---|',
     ...label.map(
       (l, k) =>
-        `| ${l} | ${pct(simLevels[k] / simHh)} | ${pct(acsWeighted[k] / acsHh)} | ` +
+        `| ${l} | ${pct(startLevels[k] / simHh)} | ${pct(simLevels[k] / simHh)} | ` +
+        `${pct(acsWeighted[k] / acsHh)} | ` +
         `${pct(acsLevels[k] / acsHh)} |`
     ),
     '',
     `Households: ${simHh} start households (assessor homes times the occupied share) against ` +
-      `${Math.round(acsHh)} in B25044; shares are compared, not totals. The first two columns ` +
-      'are the same model and constants: they differ only in where the assessor homes (times ' +
-      'the occupied share) sit against where ACS counts households. The second and third ' +
-      'differ by the shrinkage.'
+      `${Math.round(acsHh)} in B25044; shares are compared, not totals. The start households ` +
+      "hold the model's shares (first two columns, up to rounding). The model columns are the " +
+      'same model and constants: they differ only in where the assessor homes (times the ' +
+      'occupied share) sit against where ACS counts households. The last two differ by the ' +
+      'shrinkage.'
   );
 
   // Cross-checks.

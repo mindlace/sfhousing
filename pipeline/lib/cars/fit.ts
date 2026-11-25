@@ -459,135 +459,9 @@ export function fitChoice(
     }
   };
 
-  // Zone constants. City type mix for zones with an observation and no start household.
-  const cityMix = new Float64Array(T);
-  for (let z = 0; z < Z; z++)
-    for (let t = 0; t < T; t++)
-      for (let k = 0; k < CAR_LEVELS; k++)
-        cityMix[t] += data.households[z * cells + t * CAR_LEVELS + k];
-  const constant = new Float64Array(Z * 3);
-  const model = { choice } as CarModel;
-  const zt = { access: data.access, constant };
-  const fit: BgFit[] = [];
-  const stats: FitStats['constants'] = {
-    fitted: 0,
-    noObservation: 0,
-    cityMix: 0,
-    observedZero: 0,
-    n0: null,
-    sizes: {
-      fromMoe: opts.nEff !== undefined,
-      missing: opts.moeMissing ?? 0,
-      median: 0,
-      householdsMedian: 0
-    },
-    range: [0, 0],
-    rawRange: [0, 0],
-    maxErr: 0
-  };
-  const mix = new Float64Array(T);
-  const base = new Float64Array(T * 3);
-  const shares = new Float64Array(CAR_LEVELS);
-  const target = new Float64Array(CAR_LEVELS);
-  const pred = new Float64Array(CAR_LEVELS);
-  const predict = (z: number, out: number[] | Float64Array) => {
-    let m = 0;
-    for (let t = 0; t < T; t++) m += mix[t];
-    for (let k = 0; k < CAR_LEVELS; k++) out[k] = 0;
-    for (let t = 0; t < T; t++) {
-      if (mix[t] === 0) continue;
-      carShares(model, zt, z, t, density[z], shares);
-      for (let k = 0; k < CAR_LEVELS; k++) out[k] += (mix[t] / m) * shares[k];
-    }
-  };
-  /** The zone's type mix into `mix` (the citywide mix with no start household); its households. */
-  const setMix = (z: number) => {
-    let own = 0;
-    for (let t = 0; t < T; t++) {
-      let s = 0;
-      for (let k = 0; k < CAR_LEVELS; k++) s += data.households[z * cells + t * CAR_LEVELS + k];
-      mix[t] = s;
-      own += s;
-    }
-    if (own === 0) mix.set(cityMix);
-    return own;
-  };
-  // Pass 1: the model's shares without constants, then the shrunk targets.
-  const predicted = new Float64Array(Z * CAR_LEVELS);
-  for (let z = 0; z < Z; z++) {
-    const own = setMix(z);
-    const before = [0, 0, 0, 0];
-    predict(z, before);
-    predicted.set(before, z * CAR_LEVELS);
-    const obs = Array.from(observed.subarray(z * CAR_LEVELS, (z + 1) * CAR_LEVELS));
-    const obsTotal = obs.reduce((a, b) => a + b, 0);
-    fit.push({
-      geoid: data.zones[z],
-      households: own,
-      observed: obs,
-      observedTotal: obsTotal,
-      before,
-      target: before,
-      after: before
-    });
-  }
-  const shrunk = shrinkShares(observed, predicted, opts.nEff);
-  stats.n0 = shrunk.n0;
-  {
-    const med = (xs: number[]) => {
-      const a = [...xs].sort((x, y) => x - y);
-      return a.length ? a[a.length >> 1] : 0;
-    };
-    const obsZ = fit.flatMap((f, z) => (f.observedTotal > 0 ? [z] : []));
-    stats.sizes.householdsMedian = med(obsZ.map((z) => fit[z].observedTotal));
-    stats.sizes.median = med(obsZ.map((z) => (opts.nEff ? opts.nEff[z] : fit[z].observedTotal)));
-  }
-  // Pass 2: constants fitted to the shrunk shares (and, for the report, to the raw shares).
-  const raw = new Float64Array(Z * 3);
-  const range = (a: Float64Array): [number, number] => {
-    let lo = 0;
-    let hi = 0;
-    for (let z = 0; z < Z; z++)
-      if (fit[z].observedTotal > 0)
-        for (let k = 0; k < 3; k++) {
-          lo = Math.min(lo, a[z * 3 + k]);
-          hi = Math.max(hi, a[z * 3 + k]);
-        }
-    return [lo, hi];
-  };
-  for (let z = 0; z < Z; z++) {
-    const row = fit[z];
-    if (!(row.observedTotal > 0)) {
-      stats.noObservation++;
-      continue;
-    }
-    stats.fitted++;
-    if (setMix(z) === 0) stats.cityMix++;
-    let tsum = 0;
-    for (let k = 0; k < CAR_LEVELS; k++) {
-      target[k] = row.observed[k] / row.observedTotal;
-      if (row.observed[k] === 0) stats.observedZero++;
-      if (target[k] < OBS_FLOOR) target[k] = OBS_FLOOR;
-      tsum += target[k];
-    }
-    for (let k = 0; k < CAR_LEVELS; k++) target[k] /= tsum;
-    fitConstants(z, T, mix, choice, density[z], data.access[z], target, base, raw, pred);
-    tsum = 0;
-    for (let k = 0; k < CAR_LEVELS; k++) {
-      target[k] = Math.max(OBS_FLOOR, shrunk.shares[z * CAR_LEVELS + k]);
-      tsum += target[k];
-    }
-    for (let k = 0; k < CAR_LEVELS; k++) target[k] /= tsum;
-    row.target = Array.from(target);
-    fitConstants(z, T, mix, choice, density[z], data.access[z], target, base, constant, pred);
-    const after = [0, 0, 0, 0];
-    predict(z, after);
-    row.after = after;
-    for (let k = 0; k < CAR_LEVELS; k++)
-      stats.maxErr = Math.max(stats.maxErr, Math.abs(after[k] - target[k]));
-  }
-  stats.range = range(constant);
-  stats.rawRange = range(raw);
+  const zc = zoneConstants(choice, data, observed, opts);
+  const { constant, fit } = zc;
+  const stats = zc.stats;
 
   return {
     choice,
@@ -667,4 +541,183 @@ function fitConstants(
     }
   }
   for (let k = 0; k < 3; k++) constant[z * 3 + k] = c[k];
+}
+
+/**
+ * Pass 1 and 2 of the zone constants: each zone's model shares without a constant, the shrunk
+ * targets (or `opts.fixed`'s, unchanged, when the population is re-raked to them), and the
+ * constants that make the predicted shares equal them over the zone's start type mix.
+ */
+function zoneConstants(
+  choice: CarModel['choice'],
+  data: CarData,
+  observed: Float64Array,
+  opts: {
+    nEff?: Float64Array;
+    moeMissing?: number;
+    fixed?: { fit: BgFit[]; stats: FitStats['constants'] };
+  }
+): { constant: Float64Array; fit: BgFit[]; stats: FitStats['constants'] } {
+  const T = data.types;
+  const Z = data.zones.length;
+  const cells = T * CAR_LEVELS;
+  const density = new Float64Array(Z);
+  for (let z = 0; z < Z; z++) {
+    let h = 0;
+    for (let i = 0; i < cells; i++) h += data.households[z * cells + i];
+    density[z] = densityOf(h, data.areaM2[z]);
+  }
+  // Zone constants. City type mix for zones with an observation and no start household.
+  const cityMix = new Float64Array(T);
+  for (let z = 0; z < Z; z++)
+    for (let t = 0; t < T; t++)
+      for (let k = 0; k < CAR_LEVELS; k++)
+        cityMix[t] += data.households[z * cells + t * CAR_LEVELS + k];
+  const constant = new Float64Array(Z * 3);
+  const model = { choice } as CarModel;
+  const zt = { access: data.access, constant };
+  const fit: BgFit[] = [];
+  const stats: FitStats['constants'] = {
+    fitted: 0,
+    noObservation: 0,
+    cityMix: 0,
+    observedZero: 0,
+    n0: null,
+    sizes: {
+      fromMoe: opts.nEff !== undefined,
+      missing: opts.moeMissing ?? 0,
+      median: 0,
+      householdsMedian: 0
+    },
+    range: [0, 0],
+    rawRange: [0, 0],
+    maxErr: 0
+  };
+  const mix = new Float64Array(T);
+  const base = new Float64Array(T * 3);
+  const shares = new Float64Array(CAR_LEVELS);
+  const target = new Float64Array(CAR_LEVELS);
+  const pred = new Float64Array(CAR_LEVELS);
+  const predict = (z: number, out: number[] | Float64Array) => {
+    let m = 0;
+    for (let t = 0; t < T; t++) m += mix[t];
+    for (let k = 0; k < CAR_LEVELS; k++) out[k] = 0;
+    for (let t = 0; t < T; t++) {
+      if (mix[t] === 0) continue;
+      carShares(model, zt, z, t, density[z], shares);
+      for (let k = 0; k < CAR_LEVELS; k++) out[k] += (mix[t] / m) * shares[k];
+    }
+  };
+  /** The zone's type mix into `mix` (the citywide mix with no start household); its households. */
+  const setMix = (z: number) => {
+    let own = 0;
+    for (let t = 0; t < T; t++) {
+      let s = 0;
+      for (let k = 0; k < CAR_LEVELS; k++) s += data.households[z * cells + t * CAR_LEVELS + k];
+      mix[t] = s;
+      own += s;
+    }
+    if (own === 0) mix.set(cityMix);
+    return own;
+  };
+  // Pass 1: the model's shares without constants, then the shrunk targets.
+  const predicted = new Float64Array(Z * CAR_LEVELS);
+  for (let z = 0; z < Z; z++) {
+    const own = setMix(z);
+    const before = [0, 0, 0, 0];
+    predict(z, before);
+    predicted.set(before, z * CAR_LEVELS);
+    const obs = Array.from(observed.subarray(z * CAR_LEVELS, (z + 1) * CAR_LEVELS));
+    const obsTotal = obs.reduce((a, b) => a + b, 0);
+    fit.push({
+      geoid: data.zones[z],
+      households: own,
+      observed: obs,
+      observedTotal: obsTotal,
+      before,
+      target: before,
+      after: before
+    });
+  }
+  const shrunk = opts.fixed
+    ? {
+        shares: Float64Array.from(opts.fixed.fit.flatMap((f) => f.target)),
+        n0: opts.fixed.stats.n0
+      }
+    : shrinkShares(observed, predicted, opts.nEff);
+  stats.n0 = shrunk.n0;
+  if (opts.fixed) stats.sizes = { ...opts.fixed.stats.sizes };
+  else {
+    const med = (xs: number[]) => {
+      const a = [...xs].sort((x, y) => x - y);
+      return a.length ? a[a.length >> 1] : 0;
+    };
+    const obsZ = fit.flatMap((f, z) => (f.observedTotal > 0 ? [z] : []));
+    stats.sizes.householdsMedian = med(obsZ.map((z) => fit[z].observedTotal));
+    stats.sizes.median = med(obsZ.map((z) => (opts.nEff ? opts.nEff[z] : fit[z].observedTotal)));
+  }
+  // Pass 2: constants fitted to the shrunk shares (and, for the report, to the raw shares).
+  const raw = new Float64Array(Z * 3);
+  const range = (a: Float64Array): [number, number] => {
+    let lo = 0;
+    let hi = 0;
+    for (let z = 0; z < Z; z++)
+      if (fit[z].observedTotal > 0)
+        for (let k = 0; k < 3; k++) {
+          lo = Math.min(lo, a[z * 3 + k]);
+          hi = Math.max(hi, a[z * 3 + k]);
+        }
+    return [lo, hi];
+  };
+  for (let z = 0; z < Z; z++) {
+    const row = fit[z];
+    if (!(row.observedTotal > 0)) {
+      stats.noObservation++;
+      continue;
+    }
+    stats.fitted++;
+    if (setMix(z) === 0) stats.cityMix++;
+    let tsum = 0;
+    for (let k = 0; k < CAR_LEVELS; k++) {
+      target[k] = row.observed[k] / row.observedTotal;
+      if (row.observed[k] === 0) stats.observedZero++;
+      if (target[k] < OBS_FLOOR) target[k] = OBS_FLOOR;
+      tsum += target[k];
+    }
+    for (let k = 0; k < CAR_LEVELS; k++) target[k] /= tsum;
+    fitConstants(z, T, mix, choice, density[z], data.access[z], target, base, raw, pred);
+    tsum = 0;
+    for (let k = 0; k < CAR_LEVELS; k++) {
+      target[k] = Math.max(OBS_FLOOR, shrunk.shares[z * CAR_LEVELS + k]);
+      tsum += target[k];
+    }
+    for (let k = 0; k < CAR_LEVELS; k++) target[k] /= tsum;
+    row.target = Array.from(target);
+    fitConstants(z, T, mix, choice, density[z], data.access[z], target, base, constant, pred);
+    const after = [0, 0, 0, 0];
+    predict(z, after);
+    row.after = after;
+    for (let k = 0; k < CAR_LEVELS; k++)
+      stats.maxErr = Math.max(stats.maxErr, Math.abs(after[k] - target[k]));
+  }
+  stats.range = range(constant);
+  stats.rawRange = range(raw);
+  return { constant, fit, stats };
+}
+
+/**
+ * The constants again over a re-raked start population (`data.households` changed), to the same
+ * targets as `prev` (its shrunk shares, n0 and sizes kept): the predicted shares equal the targets
+ * over the new type mix.
+ */
+export function refitConstants(
+  choice: CarModel['choice'],
+  data: CarData,
+  observed: Float64Array,
+  prev: { fit: BgFit[]; stats: FitStats }
+): { constant: Float64Array; fit: BgFit[]; stats: FitStats } {
+  const zc = zoneConstants(choice, data, observed, {
+    fixed: { fit: prev.fit, stats: prev.stats.constants }
+  });
+  return { constant: zc.constant, fit: zc.fit, stats: { ...prev.stats, constants: zc.stats } };
 }
