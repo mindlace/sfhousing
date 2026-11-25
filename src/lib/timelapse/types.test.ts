@@ -10,6 +10,7 @@ import {
   sampleTransition,
   typicalMonths
 } from './model';
+import type { CarModel } from '../sim/cars/types';
 import type { Day } from './time';
 import {
   EXIT_ORDER,
@@ -92,6 +93,7 @@ interface RowCalibration {
       provenance: RowProvenance;
     };
   };
+  cars?: CarModel;
 }
 
 // T4a

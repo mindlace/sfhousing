@@ -51,6 +51,7 @@ interface CalibrationFixture {
     today: { observed: { all: number; private: number }; implied: number };
   };
   baselineFunding?: unknown;
+  cars?: { parking: { provenance: unknown[] } };
 }
 
 const projectsFile = readJson<ProjectsFixture>('scenarios/fzp/projects.json');
@@ -516,9 +517,11 @@ test("About's assumptions list every parameter and every data check", async ({ p
 
   // One entry per calibration parameter: each present transition, the Local Program proxy, and the
   // six single-parameter models, today's market level (fixture-0 carries calibration.market) and,
-  // when the market level is 'private' (market and baseline funding both present), the market slope.
-  // The baseline, target and reference entries and the public-money entries (finance constants and
-  // baseline funding provenance) are not calibration parameters.
+  // when the market level is 'private' (market and baseline funding both present), the market slope;
+  // and, when calibration.cars is present, the car model's choice, moves and new homes, then one
+  // entry per source in cars.parking.provenance. The baseline, target and reference entries and the
+  // public-money entries (finance constants and baseline funding provenance) are not calibration
+  // parameters.
   const expected = [
     ...Object.entries(calibration.transitions).flatMap(([pathway, stages]) =>
       Object.keys(stages)
@@ -533,7 +536,15 @@ test("About's assumptions list every parameter and every data check", async ({ p
     'src-ppa-share',
     'src-phase-gap',
     'src-market-today',
-    ...(calibration.market && calibration.baselineFunding ? ['src-market-slope'] : [])
+    ...(calibration.market && calibration.baselineFunding ? ['src-market-slope'] : []),
+    ...(calibration.cars
+      ? [
+          'src-cars-choice',
+          'src-cars-moves',
+          'src-cars-new-homes',
+          ...calibration.cars.parking.provenance.map((_, k) => `src-cars-parking-${k}`)
+        ]
+      : [])
   ].sort();
   const ids = await dialog.locator('article[id]').evaluateAll((els) => els.map((el) => el.id));
   const parameters = ids

@@ -1,5 +1,6 @@
-import type { ParcelId } from '$lib/data/parcel';
-import { fnv1a32 } from '$lib/generator';
+// Relative imports only: the pipeline's car back-cast imports this module (PATHS).
+import type { ParcelId } from '../../data/parcel';
+import { fnv1a32 } from '../../generator/seed';
 
 /** MurmurHash3 32-bit finalizer. Returns a uint32. */
 export function fmix32(h: number): number {
@@ -14,7 +15,8 @@ export function fmix32(h: number): number {
 /**
  * Draw purposes (spec 4.4.1). A stage step draws its kind on `STAGE` and its time on `STAGE_TIME`
  * (paired-draw fix). 17-23 are the retired in-flight stage redraws and are never reused; 7 and 10
- * are the affordable latent's (`INIT_AFFORDABLE`, `INIT_DAY_AFFORDABLE`).
+ * are the affordable latent's (`INIT_AFFORDABLE`, `INIT_DAY_AFFORDABLE`). 24-29 belong to the car
+ * system (`CAR_P`, `src/lib/sim/cars/types.ts`).
  */
 export const P = {
   INIT: 1,
@@ -39,6 +41,11 @@ export function simEntity(parcelId: ParcelId): number {
 /** Entity id of a job-keyed draw stream. */
 export function jobEntity(projectId: string): number {
   return fnv1a32('j:' + projectId);
+}
+
+/** Entity id of a car zone's draw stream (a block-group GEOID). */
+export function zoneEntity(geoid: string): number {
+  return fnv1a32('z:' + geoid);
 }
 
 /** The first mix of `draw`, which depends on the seed only (the engine computes it once a run). */

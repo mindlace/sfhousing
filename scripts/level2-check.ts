@@ -1,7 +1,10 @@
-// `npx tsx scripts/level2-check.ts <datasetDir> [--amount <homes>]`: the level 2 check (G4's build
-// check). Runs the empty policy document through the timeline host on a built dataset directory and
-// reports whether current law reaches the goal inside the window. Exits 0 reached, 1 missed, 2 when
-// the check could not run (one stderr line, `level2-check: {reason}`, nothing on stdout).
+// `npx tsx scripts/level2-check.ts <datasetDir> [--amount <homes>] [--cars on|off]`: the level 2
+// check (G4's build check). Runs the empty policy document through the timeline host on a built
+// dataset directory and reports whether current law reaches the goal inside the window, and how
+// long the fill took. `--cars off` runs both worlds without the car system (default on: the
+// dataset's car system, whose parking link moves start odds when the model prices parking). Exits
+// 0 reached, 1 missed, 2 when the check could not run (one stderr line, `level2-check: {reason}`,
+// nothing on stdout).
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { performance } from 'node:perf_hooks';
@@ -25,7 +28,12 @@ export interface EmptyRun {
   datasetVersion: string;
   asOf: Day;
   view: TimelineView;
+  /** Wall-clock milliseconds from `openTimeline` to the last month filled. */
+  fillMs: number;
 }
+
+/** 'on' (default): the dataset's car system, when it has one; 'off': none. */
+export type CarsSwitch = 'on' | 'off';
 
 export interface Level2Result {
   datasetVersion: string;
@@ -130,7 +138,7 @@ function allBbox(m: Manifest): [number, number, number, number] {
 /** Load the dataset from disk and fill the whole window for the empty document. */
 export async function runEmptyDocument(
   dir: string,
-  opts: { warn?: (msg: string) => void; timeoutMs?: number } = {}
+  opts: { warn?: (msg: string) => void; timeoutMs?: number; cars?: CarsSwitch } = {}
 ): Promise<EmptyRun> {
   const warn = opts.warn ?? (() => {});
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
@@ -156,6 +164,7 @@ export async function runEmptyDocument(
     if (!('fzp' in loaded)) throw new Error(`host error: ${loaded.code}: ${loaded.message}`);
     const { calibration, asOf } = loaded.fzp;
     const policy = reconcilePolicy4(DEFAULT_POLICY4, calibration, asOf).doc;
+    const start = performance.now();
 
     const view = await new Promise<TimelineView>((resolve, reject) => {
       let statics: ScoreStatics | null = null;
@@ -195,7 +204,8 @@ export async function runEmptyDocument(
         clearTimeout: timers.clearTimeout,
         now: () => performance.now(),
         retryDelaysMs: [],
-        warn
+        warn,
+        cars: opts.cars ?? 'on'
       });
       try {
         host.handle({
@@ -211,7 +221,8 @@ export async function runEmptyDocument(
         fail(`host error: handle: ${messageOf(e)}`);
       }
     });
-    return { datasetVersion: manifest.datasetVersion, asOf, view };
+    const fillMs = performance.now() - start;
+    return { datasetVersion: manifest.datasetVersion, asOf, view, fillMs };
   } finally {
     (host as ReturnType<typeof createTimelineHost> | null)?.dispose();
     timers.close();
@@ -265,13 +276,34 @@ export function level2Exit(r: Level2Result): 0 | 1 {
   return r.reachedOn === null ? 1 : 0;
 }
 
+/** The line reporting the fill's wall-clock time. */
+export function fillLine(run: EmptyRun, cars: CarsSwitch): string {
+  return `Filled in ${(run.fillMs / 1000).toFixed(1)} s (cars ${cars})`;
+}
+
+interface Args {
+  dir: string;
+  amount?: number;
+  cars: CarsSwitch;
+}
+
+const USAGE =
+  'usage: npx tsx scripts/level2-check.ts <datasetDir> [--amount <homes>] [--cars on|off]';
+
 /** The command's arguments, or the reason they are refused. */
-function parseArgs(argv: string[]): { dir: string; amount?: number } | { error: string } {
+export function parseArgs(argv: string[]): Args | { error: string } {
   let dir: string | null = null;
   let amount: number | undefined;
+  let cars: CarsSwitch = 'on';
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a === '--amount') {
+    if (a === '--cars') {
+      const v = argv[++i];
+      if (v !== 'on' && v !== 'off') {
+        return { error: `--cars must be on or off, got ${v ?? 'nothing'}` };
+      }
+      cars = v;
+    } else if (a === '--amount') {
       const v = argv[++i];
       if (v === undefined || !/^\d+$/.test(v) || Number(v) <= 0) {
         return { error: `--amount must be a positive integer, got ${v ?? 'nothing'}` };
@@ -283,10 +315,8 @@ function parseArgs(argv: string[]): { dir: string; amount?: number } | { error: 
       return { error: `unexpected argument ${a}` };
     } else dir = a;
   }
-  if (dir === null) {
-    return { error: 'usage: npx tsx scripts/level2-check.ts <datasetDir> [--amount <homes>]' };
-  }
-  return amount === undefined ? { dir } : { dir, amount };
+  if (dir === null) return { error: USAGE };
+  return amount === undefined ? { dir, cars } : { dir, amount, cars };
 }
 
 async function main(argv: string[]): Promise<number> {
@@ -297,13 +327,17 @@ async function main(argv: string[]): Promise<number> {
   }
   let run: EmptyRun;
   try {
-    run = await runEmptyDocument(args.dir, { warn: (msg) => console.error(msg) });
+    run = await runEmptyDocument(args.dir, {
+      warn: (msg) => console.error(msg),
+      cars: args.cars
+    });
   } catch (e) {
     console.error(`level2-check: ${messageOf(e)}`);
     return 2;
   }
   const r = readLevel2(run, args.amount);
   for (const line of level2Lines(r)) console.log(line);
+  console.log(fillLine(run, args.cars));
   return level2Exit(r);
 }
 

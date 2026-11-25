@@ -4,6 +4,7 @@
  */
 import type { ParcelId } from '../data/parcel';
 import type { Day } from './time';
+import type { CarModel } from '../sim/cars/types';
 
 export type { Day } from './time';
 
@@ -102,6 +103,8 @@ export interface Calibration {
       provenance: Provenance;
     };
   };
+  /** The car-ownership model (`src/lib/sim/cars`); absent means no car model. */
+  cars?: CarModel;
 }
 
 // T4a: initiation.

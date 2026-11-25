@@ -11,6 +11,8 @@ import { CALIBRATION_JSON } from '../steps/calibration';
 import { HISTORIES_JSON, PERMITS_PARQUET, PROJECTS_JSON, dumpPermits } from '../steps/projects';
 import { POLICY_BIN, POLICY_DUMP, formatPolicyDump, readPolicyBin } from '../steps/policy';
 import { GROSS_BIN, GROSS_DUMP, formatGrossDump, readGrossBin } from '../steps/gross';
+import { CARS_DUMP, formatCarsDump, readCarsBin } from '../steps/cars';
+import { CARS_BIN, CAR_ZONES_JSON } from '../lib/scenario-files';
 import { PARCELS_BIN, SCENARIO_DUMP, formatScenarioDump, readParcelsBin } from '../steps/scenario';
 import { which } from '../lib/exec';
 import { QUALITY_RULES } from '../lib/quality';
@@ -36,13 +38,16 @@ const COMPARED = (f: string) =>
   f === 'manifest.json' ||
   f === 'report.json' ||
   f === PROJECTS_JSON ||
-  f === CALIBRATION_JSON;
+  f === CALIBRATION_JSON ||
+  f === CAR_ZONES_JSON;
 const stripBuiltAt = (s: string) => s.replace(/"builtAt":"[^"]*"/, '"builtAt":""');
 const decodeBin = (dir: string) => readParcelsBin(join(dir, PARCELS_BIN));
 const dumpOf = (dir: string) => formatScenarioDump(decodeBin(dir));
 const policyDumpOf = (dir: string) =>
   formatPolicyDump(readPolicyBin(join(dir, POLICY_BIN), decodeBin(dir)));
 const grossDumpOf = (dir: string) => formatGrossDump(readGrossBin(join(dir, GROSS_BIN)));
+const carsDumpOf = (dir: string) =>
+  formatCarsDump(readCarsBin(join(dir, CARS_BIN), decodeBin(dir).count));
 
 describe('pipeline fixture', () => {
   const a = mkdtempSync(join(tmpdir(), 'sfh-fx-a-'));
@@ -77,6 +82,9 @@ describe('pipeline fixture', () => {
     // gross.bin: the decoded payload too.
     expect(grossDumpOf(a)).toBe(readFileSync(join(golden, GROSS_DUMP), 'utf8'));
     expect(grossDumpOf(b)).toBe(readFileSync(join(golden, GROSS_DUMP), 'utf8'));
+    // cars.bin: the decoded payload too.
+    expect(carsDumpOf(a)).toBe(readFileSync(join(golden, CARS_DUMP), 'utf8'));
+    expect(carsDumpOf(b)).toBe(readFileSync(join(golden, CARS_DUMP), 'utf8'));
     // Project-records spec §4.9: the histories byte for byte, permits.parquet by row values.
     const histories = (root: string) =>
       readFileSync(join(root, 'fixture-0', HISTORIES_JSON), 'utf8');
@@ -197,6 +205,7 @@ describe('pipeline fixture', () => {
     }
     expect(dumpOf(e2e)).toBe(readFileSync(join(golden, SCENARIO_DUMP), 'utf8'));
     expect(grossDumpOf(e2e)).toBe(readFileSync(join(golden, GROSS_DUMP), 'utf8'));
+    expect(carsDumpOf(e2e)).toBe(readFileSync(join(golden, CARS_DUMP), 'utf8'));
   });
 });
 
@@ -635,7 +644,7 @@ describe('fixture-0 project records report (project-records spec §4.9)', () => 
     );
   });
 
-  it('names the three scenario files, policy.bin and gross.bin in the manifest', () => {
+  it('names the three scenario files, policy.bin, gross.bin and the car files in the manifest', () => {
     const raw = JSON.parse(readFileSync(join(e2e, 'manifest.json'), 'utf8')) as {
       scenarios?: unknown;
     };
@@ -644,7 +653,9 @@ describe('fixture-0 project records report (project-records spec §4.9)', () => 
       'projects.json',
       'calibration.json',
       'policy.bin',
-      'gross.bin'
+      'gross.bin',
+      'cars.bin',
+      'car-zones.json'
     ]) {
       expect(existsSync(join(e2e, 'scenarios/fzp', f)), f).toBe(true);
     }
@@ -655,7 +666,9 @@ describe('fixture-0 project records report (project-records spec §4.9)', () => 
         projects: '/data/fixture-0/scenarios/fzp/projects.json',
         calibration: '/data/fixture-0/scenarios/fzp/calibration.json',
         policy: '/data/fixture-0/scenarios/fzp/policy.bin',
-        gross: '/data/fixture-0/scenarios/fzp/gross.bin'
+        gross: '/data/fixture-0/scenarios/fzp/gross.bin',
+        cars: '/data/fixture-0/scenarios/fzp/cars.bin',
+        carZones: '/data/fixture-0/scenarios/fzp/car-zones.json'
       }
     });
     expect(raw.scenarios).not.toHaveProperty('lesscars');

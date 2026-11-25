@@ -1,0 +1,206 @@
+{
+  "years": [
+    {
+      "year": 2007,
+      "bySize": [60550, 69200, 77850, 86500, 93400, 100350, 107250, 114200]
+    },
+    {
+      "year": 2008,
+      "bySize": [66000, 75450, 84850, 94300, 101850, 109400, 116950, 124500]
+    },
+    {
+      "year": 2009,
+      "bySize": [67750, 77450, 87100, 96800, 104550, 112300, 120050, 127800]
+    },
+    {
+      "year": 2010,
+      "bySize": [69600, 79500, 89450, 99400, 107350, 115300, 123250, 131200]
+    },
+    {
+      "year": 2011,
+      "bySize": [71100, 81300, 91450, 101600, 109750, 117850, 126000, 134100]
+    },
+    {
+      "year": 2012,
+      "bySize": [72100, 82400, 92700, 103000, 111250, 119500, 127700, 135950]
+    },
+    {
+      "year": 2013,
+      "bySize": [70850, 80950, 91100, 101200, 109300, 117400, 125500, 133600]
+    },
+    {
+      "year": 2014,
+      "bySize": [67950, 77700, 87400, 97100, 104850, 112650, 120400, 128150]
+    },
+    {
+      "year": 2015,
+      "bySize": [71350, 81500, 91700, 101900, 110050, 118200, 126350, 134500]
+    },
+    {
+      "year": 2016,
+      "bySize": [75400, 86150, 96950, 107700, 116300, 124950, 133550, 142150]
+    },
+    {
+      "year": 2017,
+      "bySize": [80700, 92250, 103750, 115300, 124500, 133750, 142950, 152200]
+    },
+    {
+      "year": 2018,
+      "bySize": [82900, 94700, 106550, 118400, 127850, 137350, 146800, 156300]
+    },
+    {
+      "year": 2019,
+      "bySize": [86200, 98500, 110850, 123150, 133000, 142850, 152700, 162550]
+    },
+    {
+      "year": 2020,
+      "bySize": [89650, 102500, 115300, 128100, 138350, 148600, 158850, 169100]
+    },
+    {
+      "year": 2021,
+      "bySize": [93250, 106550, 119900, 133200, 143850, 154500, 165150, 175800]
+    },
+    {
+      "year": 2022,
+      "bySize": [97000, 110850, 124700, 138550, 149650, 160700, 171800, 182900]
+    },
+    {
+      "year": 2023,
+      "bySize": [100850, 115300, 129700, 144100, 155650, 167150, 178700, 190200]
+    },
+    {
+      "year": 2024,
+      "bySize": [104900, 119900, 134850, 149850, 161850, 173850, 185800, 197800]
+    },
+    {
+      "year": 2025,
+      "bySize": [109100, 124700, 140250, 155850, 168300, 180800, 193250, 205700]
+    },
+    {
+      "year": 2026,
+      "bySize": [113450, 129700, 145900, 162100, 175050, 188050, 201000, 213950]
+    }
+  ],
+  "sources": [
+    {
+      "label": "MOHCD, 2007 Maximum Income by Household Size derived from the Unadjusted AMI for the HUD Metro FMR Area that contains San Francisco, effective 6/15/2007",
+      "url": "https://sfmohcd.org/Modules/ShowDocument.aspx?documentid=4299",
+      "page": "p. 1, row \"100% of Median\", columns 1 to 8 persons",
+      "accessed": "2026-11-24"
+    },
+    {
+      "label": "MOHCD, 2008 Maximum Income by Household Size derived from the Unadjusted AMI for the HUD Metro FMR Area that contains San Francisco, effective 4/11/2008",
+      "url": "https://sfmohcd.org/Modules/ShowDocument.aspx?documentid=4319",
+      "page": "p. 1, row \"100% of Median\", columns 1 to 8 persons",
+      "accessed": "2026-11-24"
+    },
+    {
+      "label": "MOHCD, 2009 Maximum Income by Household Size derived from the Unadjusted AMI for the HUD Metro FMR Area that contains San Francisco, effective 3/31/2009",
+      "url": "https://sfmohcd.org/Modules/ShowDocument.aspx?documentid=4341",
+      "page": "p. 1, row \"100% of Median\", columns 1 to 8 persons",
+      "accessed": "2026-11-24"
+    },
+    {
+      "label": "MOHCD, 2010 Maximum Income by Household Size derived from the Unadjusted AMI for the HUD Metro FMR Area that contains San Francisco, effective 5/25/2010",
+      "url": "https://sfmohcd.org/Modules/ShowDocument.aspx?documentid=4614",
+      "page": "p. 1, row \"100% of Median\", columns 1 to 8 persons",
+      "accessed": "2026-11-24"
+    },
+    {
+      "label": "MOHCD, 2011 Maximum Income by Household Size derived from the Unadjusted AMI for the HUD Metro FMR Area that contains San Francisco, effective 6/6/2011",
+      "url": "https://sfmohcd.org/Modules/ShowDocument.aspx?documentid=5247",
+      "page": "p. 1, row \"100% of Median\", columns 1 to 8 persons",
+      "accessed": "2026-11-24"
+    },
+    {
+      "label": "MOHCD, 2012 Maximum Income by Household Size derived from the Unadjusted AMI for the HUD Metro FMR Area that contains San Francisco, effective 1/1/2012",
+      "url": "https://sfmohcd.org/modules/showdocument.aspx?documentid=5603",
+      "page": "p. 1, row \"100% of Median\", columns 1 to 8 persons",
+      "accessed": "2026-11-24"
+    },
+    {
+      "label": "MOHCD, 2013 Maximum Income by Household Size derived from the Unadjusted AMI for the HUD Metro FMR Area that contains San Francisco, effective 1/1/2013",
+      "url": "https://api.sf.gov/documents/48912/2013_HUD_Unadjusted_Area_Median_Income_AMI.pdf",
+      "page": "p. 1, row \"100% of Median\", columns 1 to 8 persons",
+      "accessed": "2026-11-24"
+    },
+    {
+      "label": "MOHCD, 2014 Maximum Income by Household Size derived from the Unadjusted AMI for the HUD Metro FMR Area that contains San Francisco, effective 1/1/2014",
+      "url": "https://sfmohcd.org/modules/showdocument.aspx?documentid=7566",
+      "page": "p. 1, row \"100% of Median\", columns 1 to 8 persons",
+      "accessed": "2026-11-24"
+    },
+    {
+      "label": "MOHCD, 2015 Maximum Income by Household Size derived from the Unadjusted AMI for the HUD Metro FMR Area that contains San Francisco, effective 3/6/2015",
+      "url": "https://sfmohcd.org/modules/showdocument.aspx?documentid=8829",
+      "page": "p. 1, row \"100% of Median\", columns 1 to 8 persons",
+      "accessed": "2026-11-24"
+    },
+    {
+      "label": "MOHCD, 2016 Maximum Income by Household Size derived from the Unadjusted AMI for the HUD Metro FMR Area that contains San Francisco, effective 3/28/2016",
+      "url": "https://sfmohcd.org/sites/default/files/Documents/MOH/2016_AMI_IncomeLimits-SanFranHMFA.pdf",
+      "page": "p. 1, row \"100% of Median\", columns 1 to 8 persons",
+      "accessed": "2026-11-24"
+    },
+    {
+      "label": "MOHCD, 2017 Maximum Income by Household Size derived from the Unadjusted AMI for the HUD Metro FMR Area that contains San Francisco, effective 04/14/2017",
+      "url": "https://sfmohcd.org/sites/default/files/FileCenter/Documents/2017%20AMI-IncomeLimits-HMFA.pdf",
+      "page": "p. 1, row \"100% of Median\", columns 1 to 8 persons",
+      "accessed": "2026-11-24"
+    },
+    {
+      "label": "MOHCD, 2018 Maximum Income by Household Size derived from the Unadjusted AMI for the HUD Metro FMR Area that contains San Francisco, effective 04/01/2018",
+      "url": "https://api.sf.gov/documents/49195/2018_AMI-IncomeLimits-HMFA_04-06-18.pdf",
+      "page": "p. 1, row \"100% of Median\", columns 1 to 8 persons",
+      "accessed": "2026-11-24"
+    },
+    {
+      "label": "MOHCD, 2019 Maximum Income by Household Size derived from the Unadjusted AMI for the HUD Metro FMR Area that contains San Francisco, effective 05/03/2019",
+      "url": "https://api.sf.gov/documents/49199/2019_AMI_IncomeLimits-HMFA.pdf",
+      "page": "p. 1, row \"100% of Median\", columns 1 to 8 persons",
+      "accessed": "2026-11-24"
+    },
+    {
+      "label": "MOHCD, 2020 Maximum Income by Household Size derived from the Unadjusted AMI for the HUD Metro FMR Area that contains San Francisco, effective 05/04/2020",
+      "url": "https://api.sf.gov/documents/49203/2020_AMI-IncomeLimits-HMFA_05-01-20.pdf",
+      "page": "p. 1, row \"100% of Median\", columns 1 to 8 persons",
+      "accessed": "2026-11-24"
+    },
+    {
+      "label": "MOHCD, 2021 Maximum Income by Household Size derived from the Unadjusted AMI for the HUD Metro FMR Area that contains San Francisco, effective 05/12/2021",
+      "url": "https://api.sf.gov/documents/49206/2021_AMI-IncomeLimits-HMFA_2.pdf",
+      "page": "p. 1, row \"100% of Median\", columns 1 to 8 persons",
+      "accessed": "2026-11-24"
+    },
+    {
+      "label": "MOHCD, 2022 Maximum Income by Household Size derived from the Unadjusted AMI for the HUD Metro FMR Area that contains San Francisco, effective 05/11/2022",
+      "url": "https://api.sf.gov/documents/48907/2022_AMI-IncomeLimits.pdf",
+      "page": "p. 1, row \"100% of Median\", columns 1 to 8 persons",
+      "accessed": "2026-11-24"
+    },
+    {
+      "label": "MOHCD, 2023 Maximum Income by Household Size derived from the Unadjusted AMI for the HUD Metro FMR Area that contains San Francisco, effective 05/31/2023",
+      "url": "https://sf.gov/sites/default/files/2023-05/2023%20AMI-IncomeLimits-HMFA.pdf",
+      "page": "p. 1, row \"100% of Median\", columns 1 to 8 persons",
+      "accessed": "2026-11-24"
+    },
+    {
+      "label": "MOHCD, 2024 Maximum Income by Household Size derived from the Unadjusted AMI for the HUD Metro FMR Area that contains San Francisco, effective 04/30/2024",
+      "url": "https://www.sf.gov/sites/default/files/2024-05/2024%20AMI-IncomeLimits-HMFA.pdf",
+      "page": "p. 1, row \"100% of Median\", columns 1 to 8 persons",
+      "accessed": "2026-11-24"
+    },
+    {
+      "label": "MOHCD, 2025 Maximum Income by Household Size derived from the Unadjusted AMI for the HUD Metro FMR Area that contains San Francisco, effective 05/02/2025",
+      "url": "https://media.api.sf.gov/documents/2025_AMI-IncomeLimits-HMFA_08Rw8dU.pdf",
+      "page": "p. 1, row \"100% of Median\", columns 1 to 8 persons",
+      "accessed": "2026-11-24"
+    },
+    {
+      "label": "MOHCD, 2026 Maximum Income by Household Size derived from the Unadjusted AMI for the HUD Metro FMR Area that contains San Francisco, effective 06/01/2026",
+      "url": "https://media.api.sf.gov/documents/2026_AMI-IncomeLimits-HMFA.pdf",
+      "page": "p. 1, row \"100% of Median\", columns 1 to 8 persons",
+      "accessed": "2026-11-24"
+    }
+  ]
+}

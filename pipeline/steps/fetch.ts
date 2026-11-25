@@ -7,11 +7,14 @@ import { wranglerTarget, type R2Target } from '../lib/r2';
 import { DATASF, fetchDatasf, type DatasfId } from '../sources/datasf';
 import { fetchOverture, fetchOvertureParts, latestOvertureRelease } from '../sources/overture';
 import { fetchGtfs } from '../sources/gtfs';
+import { archiveSpec, fetchGtfsArchive } from '../sources/gtfs-archive';
+import { fetchCensus, fetchDmv } from '../sources/census';
+import { CENSUS_IDS, DMV_ID } from '../census-config';
 import { LIDAR_ID, LIDAR_LOCK, fetchLidar, writeLidarLock, type LidarOpts } from '../sources/lidar';
 import { run as realRun } from '../lib/exec';
 import { fetchBasemap, fetchFonts } from '../sources/protomaps';
 import { SFBOS_EXEMPTIONS_ID, fetchSfbosExemptions } from '../sources/sfbos';
-import { GTFS_IDS, type GtfsLockId } from '../transit-config';
+import { GTFS_ARCHIVE_IDS, GTFS_IDS, type GtfsLockId } from '../transit-config';
 
 const ROOT = resolve(import.meta.dirname, '../..');
 export const LOCK_PATH = join(ROOT, 'pipeline/sources.lock.json');
@@ -29,15 +32,23 @@ export const FETCH_IDS = [
   'protomaps-fonts',
   ...GTFS_IDS,
   SFBOS_EXEMPTIONS_ID,
-  LIDAR_ID
+  ...CENSUS_IDS,
+  DMV_ID,
+  LIDAR_ID,
+  ...GTFS_ARCHIVE_IDS
 ] as const;
+
+/** `--only gtfs-archive` fetches every archived feed (GTFS_ARCHIVES). */
+export const GTFS_ARCHIVE_GROUP = 'gtfs-archive';
 
 /**
  * What a plain `fetch` refreshes. The LiDAR is a slow, explicit fetch (`--only usgs-lidar-sf`);
- * the parts come with `overture-buildings` (same release), so they are not listed twice.
+ * the parts come with `overture-buildings` (same release), so they are not listed twice. The
+ * archived GTFS feeds are fixed past versions, fetched only when asked for
+ * (`--only gtfs-archive`).
  */
 export const DEFAULT_FETCH_IDS: readonly string[] = FETCH_IDS.filter(
-  (i) => i !== LIDAR_ID && i !== PARTS_ID
+  (i) => i !== LIDAR_ID && i !== PARTS_ID && !GTFS_ARCHIVE_IDS.includes(i)
 );
 
 export interface FetchOpts {
@@ -118,7 +129,9 @@ export async function fetchAll(opts: FetchOpts = {}): Promise<number> {
     console.log(`restore: ${restored} downloaded, ${present} already present`);
     return 0;
   }
-  const ids: readonly string[] = opts.only ? opts.only.split(',') : DEFAULT_FETCH_IDS;
+  const ids: readonly string[] = opts.only
+    ? opts.only.split(',').flatMap((i) => (i === GTFS_ARCHIVE_GROUP ? GTFS_ARCHIVE_IDS : [i]))
+    : DEFAULT_FETCH_IDS;
   const unknown = ids.filter((i) => !(FETCH_IDS as readonly string[]).includes(i));
   if (unknown.length > 0) {
     console.error(`unknown source(s): ${unknown.join(', ')} (known: ${FETCH_IDS.join(', ')})`);
@@ -178,8 +191,14 @@ export async function fetchAll(opts: FetchOpts = {}): Promise<number> {
       entry = await fetchBasemap(opts.basemapDate, rawDir, new Date());
     } else if ((GTFS_IDS as readonly string[]).includes(id)) {
       entry = await fetchGtfs(id as GtfsLockId, rawDir, http);
+    } else if (GTFS_ARCHIVE_IDS.includes(id)) {
+      entry = await fetchGtfsArchive(archiveSpec(id)!, rawDir, http);
     } else if (id === SFBOS_EXEMPTIONS_ID) {
       entry = await fetchSfbosExemptions(rawDir, http);
+    } else if (CENSUS_IDS.includes(id)) {
+      entry = await fetchCensus(id, rawDir, http);
+    } else if (id === DMV_ID) {
+      entry = await fetchDmv(rawDir, http);
     } else entry = await fetchFonts(rawDir, http);
     console.log(
       `  ${id}: ${entry.files.length} file(s), ${entry.rowCount} rows, ${entry.upstreamVersion} (${((Date.now() - t0) / 1000).toFixed(1)}s)`

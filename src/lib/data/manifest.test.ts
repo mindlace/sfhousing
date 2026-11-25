@@ -236,6 +236,36 @@ describe('scenarios.fzp.gross', () => {
   });
 });
 
+describe('scenarios.fzp.cars and carZones', () => {
+  const v = '2026-10-10-3fa9c2d1';
+  const u = (p: string) => `/data/${v}/${p}`;
+  const fzp = (extra: Record<string, string>) => ({
+    parcels: u('scenarios/fzp/parcels.bin'),
+    projects: u('scenarios/fzp/projects.json'),
+    calibration: u('scenarios/fzp/calibration.json'),
+    ...extra
+  });
+
+  it('accepts both, lists them in manifestFiles, and rejects one outside the version', () => {
+    const m = parseManifest({
+      ...g(),
+      scenarios: {
+        fzp: fzp({ cars: u('scenarios/fzp/cars.bin'), carZones: u('scenarios/fzp/car-zones.json') })
+      }
+    });
+    expect(m.scenarios?.fzp.cars).toBe(u('scenarios/fzp/cars.bin'));
+    expect(manifestFiles(m).filter((f) => f.key.startsWith('scenarios.fzp.car'))).toEqual([
+      { key: 'scenarios.fzp.cars', url: u('scenarios/fzp/cars.bin'), optional: false },
+      { key: 'scenarios.fzp.carZones', url: u('scenarios/fzp/car-zones.json'), optional: false }
+    ]);
+    const r = issuePaths({
+      ...g(),
+      scenarios: { fzp: fzp({ carZones: '/data/other/scenarios/fzp/car-zones.json' }) }
+    });
+    expect(r).toEqual([['scenarios', 'fzp', 'carZones']]);
+  });
+});
+
 describe('manifestFiles', () => {
   const v = '2026-10-10-3fa9c2d1';
   const u = (p: string) => `/data/${v}/${p}`;
@@ -251,6 +281,8 @@ describe('manifestFiles', () => {
           calibration: u('scenarios/fzp/calibration.json'),
           policy: u('scenarios/fzp/policy.bin'),
           gross: u('scenarios/fzp/gross.bin'),
+          cars: u('scenarios/fzp/cars.bin'),
+          carZones: u('scenarios/fzp/car-zones.json'),
           frontage: u('scenarios/fzp/frontage.bin')
         }
       }

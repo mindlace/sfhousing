@@ -1,0 +1,693 @@
+<article>
+  <header>
+    <h1>Car ownership implementation plan</h1>
+    <p>Builds a synthetic SF household population with cars, a car-ownership choice changed at moves, a car system in the world step, parking that shifts start odds, the results row and map layer, and a back-cast.</p>
+    <aside data-kind="note"><strong>For agentic workers</strong> REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps are checklist items; progress is kept in the workspace ledger, not in the plan.</aside>
+  </header>
+
+  <section id="sec-overview">
+    <h2>Overview</h2>
+    <dl>
+      <dt>Goal</dt>
+      <dd>The sim knows how many cars SF households keep, zone by zone and household type by household type, changes them when households move and when new homes fill, sizes new buildings' parking to that demand, and lets the parking cost difference from today move start odds (only with a cited SF cost per space).</dd>
+      <dt>Architecture</dt>
+      <dd>The pipeline fetches Census sources, builds the start population per block group (PUMS reweighted to ACS margins, homes placed by <code>existingUnits</code>), fits a 0/1/2/3+ multinomial logit, and ships <code>scenarios/fzp/cars.bin</code>, <code>scenarios/fzp/car-zones.json</code> and a <code>cars</code> section in <code>calibration.json</code>. Pure model code lives in <code>src/lib/sim/cars/</code> (relative imports only; the pipeline and the engine both use it). The engine gets a <code>CarSystem</code> hook beside <code>FundingSystem</code>: state as typed columns on the world, run between systems 3 and 4. Parking reaches start odds through a derived timeline (the <code>closedTimeline</code> precedent, <code>src/lib/sim/world/funding/closing.ts:171</code>): a zone's parking shift change is a frame change whose <code>touched</code> lots are that zone's, so rules 6, 7 and 20 hold unchanged. The series gains an optional <code>cars</code> field (version 6); <code>/sim</code> shows one Details row and a map layer.</dd>
+      <dt>Tech stack</dt>
+      <dd>TypeScript, SvelteKit 2 / Svelte 5 runes, MapLibre, DuckDB (pipeline), Vitest (server, client, pipeline, perf projects), Playwright.</dd>
+      <dt>Spec</dt>
+      <dd><a href="../specs/2026-11-24-car-ownership-design.html">docs/superpowers/specs/2026-11-24-car-ownership-design.html</a> (approved; binding). Read it before your task.</dd>
+    </dl>
+  </section>
+
+  <section id="sec-global-constraints">
+    <h2>Global Constraints</h2>
+    <ul>
+      <li>Evidence ranking for every parameter: per-record data, then official aggregates, then inferences, then literature, then invented. Every parameter records its source and tier (a <code>Provenance</code>, <code>src/lib/timelapse/types.ts</code>).</li>
+      <li>Cost per space: a real, cited SF source (Controller feasibility studies, Planning or SFMTA cost work, published SF project pro formas) or no link. No national rule of thumb, no invented figure. Without one the parking-to-odds link ships switched off; the car model still runs and reports spaces per home; the searches are reported.</li>
+      <li>One future, no random bands. Every draw is counter-based (<code>src/lib/sim/scenario/rng.ts</code>); one seed gives one future regardless of event order (world-core rule 20).</li>
+      <li>Determinism: <code>exp</code>/<code>log</code> from <code>src/lib/timelapse/math.ts</code> (fdlibm) on every engine and pipeline-fit path; never <code>Math.exp</code>, <code>Math.log</code> or <code>**</code>.</li>
+      <li>Census data from Census directly (public domain), never NHGIS extracts. Census sources do not join <code>AS_OF_SOURCE_IDS</code>. Every source records a licence in <code>sources.lock.json</code>.</li>
+      <li>Odds only: the parking saving never changes <code>costPerHome</code>, subsidy need, awards or re-pricing in the finance engine.</li>
+      <li>Current law's results do not move at month one (per-lot baseline = the model's prediction at the start of the window).</li>
+      <li>Goal-month effect: record the month current law reaches the goal with cars on and with cars off, and report both and the difference to the owner. No threshold; do not tune to hide it. The project rule still holds: upload only when <code>level2-check</code> exits 0 with cars on.</li>
+      <li><code>scripts/level2-check.ts</code> must exit 0 on the built dataset before it is uploaded; the dataset is uploaded before signoff (<code>docs/dev/pipeline.md</code>, "Finishing a branch that changes the dataset").</li>
+      <li>Speed is per world (<code>/sim</code> steps one world per side): the car system's time per world-month and the whole-window fill (about 4 s today) are printed, never gated in signoff; chunk stays within 1 ms per month. Time only on a quiet machine; otherwise record ballpark numbers and carry on.</li>
+      <li><code>src/lib/sim/cars/</code> uses relative imports only (the pipeline imports it, like <code>src/lib/sim/finance/</code>). Every <code>src/lib</code> path the pipeline reaches joins <code>PATHS</code> in <code>pipeline/lib/version.ts</code> (<code>pipeline/test/version-paths.test.ts</code> enforces it).</li>
+      <li>Hot world modules bind imported names once at the top through namespace imports (<code>docs/dev/world-core.md</code>, Cost); keep that pattern in <code>src/lib/sim/world/cars/</code>.</li>
+      <li>Code style: 2-space indent, single quotes, no trailing commas, 100 columns. Vitest runs with <code>expect.requireAssertions</code>: every test calls <code>expect</code>.</li>
+      <li>Terse UI copy, details on demand. Cars are not in the header and not in the goal.</li>
+      <li>Conventional Commits. No Claude attribution anywhere: no <code>Co-Authored-By</code> trailer, no generated-with footer, no "written by" note.</li>
+      <li>Never <code>cd … &amp;&amp; cmd</code>; issue <code>cd</code> on its own. Work only in the worktree <code>/Users/mindlace/Projects/sfhousing/.claude/worktrees/fewer-cars</code>.</li>
+      <li>Port 4173 (preview) is shared between sessions: never kill a server on it; wait for it.</li>
+      <li>chreode signoff fails on server stderr, on timing crutches (<code>sleep</code>, <code>waitForTimeout</code>, polling with fixed delays) and on retried flakes: write tests that wait on conditions and print nothing to stderr.</li>
+      <li>A runtime dependency that ships in the bundle gets a <code>SOFTWARE</code> credit in <code>src/lib/attribution.ts</code>; data sources are credited on <code>/about</code> through their lock entries.</li>
+    </ul>
+  </section>
+
+  <section id="sec-review-focus">
+    <h2>Review Focus</h2>
+    <ol>
+      <li><strong>Homes the population cannot place or remove.</strong> A completion on a lot with no zone (<code>lotZone</code> -1), a score-only master with no parcels, or a construction start that removes more homes than the zone has households must not throw: unplaced homes are counted in <code>CarColumns.unplaced</code>, removals clamp at zero and count the shortfall. Test in Task 8 (<code>t8-s1</code>).</li>
+      <li><strong>Empty zones.</strong> A zone whose households reach 0 gives NaN cars per household, never a division error or 0; the map draws it as no data and the Details row ignores it. Tests in Task 8 (<code>zoneCarsPerHousehold</code>) and Task 12 (<code>cars-layer.spec.ts</code>).</li>
+      <li><strong>Restore and refill mid-window.</strong> A world cloned at any month, with its due list rebuilt by <code>planDue</code>, gives the same car counts, the same parking frames and the same events as one that never stopped. Test in Task 9 (<code>t9-s1</code>, "rebuilt plan").</li>
+      <li><strong>Funded months and parking frames.</strong> A frame change that changes only <code>parking</code> runs funding's <code>policyChanged</code>; with every shift quantised to 0 the ledger and events must equal the run without cars. Test in Task 9 (<code>t9-s1</code>, "funded, zero shift").</li>
+      <li><strong>Datasets without car data.</strong> Older dataset versions (saved games, published policies) and the fixture before Task 7 have no <code>cars.bin</code>: the series' <code>cars</code> is null, the Details row and the layer switch are absent, nothing logs an error. Tests in Task 11 (<code>t11-s1</code>) and Task 12 (<code>t12-s1</code>).</li>
+    </ol>
+  </section>
+
+  <section id="sec-file-structure">
+    <h2>File structure</h2>
+    <table id="tbl-files">
+      <caption>New and changed files by responsibility</caption>
+      <thead>
+        <tr><th scope="col">Path</th><th scope="col">Responsibility</th><th scope="col">Task</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row"><code>docs/dev/cars-data.md</code></th><td>Verified data facts: endpoints, vintages, crosswalks, archives, parking and cost sources, what was searched</td><td>1</td></tr>
+        <tr><th scope="row"><code>pipeline/enrichment/parking.json</code>, <code>parking-schema.ts</code>, <code>ami.json</code></th><td>Cost per space (or null), supply over use, SF AMI table, all cited</td><td>1</td></tr>
+        <tr><th scope="row"><code>pipeline/census-config.ts</code>, <code>pipeline/sources/census.ts</code></th><td>Census and DMV source declarations, fetch, normalise</td><td>2</td></tr>
+        <tr><th scope="row"><code>src/lib/sim/cars/</code></th><td>Pure model: types, choice shares, systematic split, dynamics</td><td>3, 8</td></tr>
+        <tr><th scope="row"><code>src/lib/data/cars-codec.ts</code></th><td><code>sfh-cars/1</code> codec for <code>cars.bin</code></td><td>4</td></tr>
+        <tr><th scope="row"><code>pipeline/lib/cars/</code></th><td>Zones, IPF, population, MNL fit, rates and mixes, access by year, back-cast</td><td>4, 5, 6, 13, 14</td></tr>
+        <tr><th scope="row"><code>pipeline/steps/cars.ts</code></th><td>The build step: writes <code>cars.bin</code>, <code>car-zones.json</code>, the <code>cars</code> model and report sections</td><td>4 to 6, 14</td></tr>
+        <tr><th scope="row"><code>src/lib/sim/world/cars/</code></th><td>The car system hook, its columns, the parking timeline</td><td>8, 9</td></tr>
+        <tr><th scope="row"><code>src/lib/sim/world/score/</code></th><td>Series <code>cars</code> field, chunk, view</td><td>10</td></tr>
+        <tr><th scope="row"><code>src/lib/sim/scenario/load.ts</code>, <code>runner/</code>, <code>host.ts</code></th><td>Load car data, plug the system into both worlds, feed snapshots</td><td>11</td></tr>
+        <tr><th scope="row"><code>src/lib/timeline/cars-row.ts</code>, <code>src/lib/map/cars-layer.ts</code>, About copy</th><td>Details row, map layer, About section</td><td>12</td></tr>
+        <tr><th scope="row"><code>docs/dev/cars.md</code></th><td>The subsystem doc, linked from <code>CLAUDE.md</code></td><td>15</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="sec-task-1">
+    <h2>Task 1: Data verification and the parking enrichment</h2>
+    <p>Settles every unverified data fact before code depends on it, and gates the parking link on a real SF cost per space.</p>
+    <ul>
+      <li>Create: <code>docs/dev/cars-data.md</code>, <code>pipeline/enrichment/parking.json</code>, <code>pipeline/enrichment/parking-schema.ts</code>, <code>pipeline/enrichment/ami.json</code>, <code>pipeline/enrichment/ami-schema.ts</code></li>
+      <li>Test: <code>pipeline/test/enrichment/parking-schema.test.ts</code>, <code>pipeline/test/enrichment/ami-schema.test.ts</code></li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: nothing.</li>
+      <li>Produces: <code>parseParkingFile(v: unknown): ParkingFile</code>, <code>PARKING_JSON</code> (path), <code>parseAmiFile(v: unknown): AmiFile</code>, <code>AMI_JSON</code>; and the findings in <code>docs/dev/cars-data.md</code> that Tasks 2, 6, 13 and 14 read.</li>
+    </ul>
+    <pre><code data-lang="ts">export interface Cite { label: string; url: string; page: string; accessed: string }
+export interface SfCost {
+  value: number; // dollars per space
+  dollarsYear: number;
+  sources: (Cite &amp; { sf: true })[]; // at least one
+  method: string;
+}
+export interface ParkingFile {
+  /** null: no SF source found; the parking-to-odds link is off. */
+  costPerSpace: { surface: SfCost | null; podium: SfCost | null; belowGrade: SfCost | null } | null;
+  /** Spaces built per space used; tier 0-2 from SF per-project counts, 3 from literature. */
+  supplyOverUse: { value: number; tier: 0 | 1 | 2 | 3; sources: Cite[]; method: string };
+  /** What was searched, always; must be non-empty when costPerSpace is null. */
+  searched: string[];
+}
+export interface AmiFile {
+  /** SF AMI dollars by year and household size 1..8 (100% AMI). */
+  years: { year: number; bySize: number[] }[];
+  sources: Cite[];
+}</code></pre>
+    <ol>
+      <li id="t1-s1"><input type="checkbox"> Research, then write <code>docs/dev/cars-data.md</code> with one section per question, each answer with the URL tried, the date, and what came back (a sample request and its first rows). Questions:
+        <ul>
+          <li>ACS 5-year block-group availability on <code>api.census.gov</code> of B25044, B25046, B25009 (tenure by size), B19001 (income), B25002 (occupancy), and a workers table (B08202 or the nearest at block group), for every release from 2005-2009 to the latest; the BG vintage each release uses (2000, 2010, 2020).</li>
+          <li>2000 SF3 block-group H044 from Census directly (<code>api.census.gov/data/2000/dec/sf3</code> or the Census FTP summary files); never NHGIS.</li>
+          <li>A Census-published crosswalk from 2000 block groups (or blocks) to 2010 and 2010 to 2020 (Census relationship files), and whether 2000 can be placed on today's BGs cleanly; recommend the back-cast start (2000 or 2005-2009) with the reason.</li>
+          <li>SF PUMA codes by vintage (2000-based, 2010-based, 2020-based from the 2022 PUMS) and PUMA-to-BG nesting.</li>
+          <li>PUMS household variables on the API or the CSV files: <code>VEH</code>, <code>MV</code>, <code>NP</code>, workers (<code>WIF</code> or a person-level count), <code>HINCP</code> with <code>ADJINC</code>, <code>TEN</code>, <code>YBL</code>, <code>WGTP</code>; the latest 5-year file and one ending 2013 (held-out).</li>
+          <li>TIGER/Line BG polygons for the vintages used.</li>
+          <li>CA DMV light-duty registrations by ZIP (2019 on): URL and licence.</li>
+          <li>Archived Muni, BART, Caltrain GTFS by year: Transitland feed versions; GTFS Data Exchange 2008-2016 (request it; if not obtainable promptly, record the earliest year available and that the back-cast uses it).</li>
+          <li>SF per-project off-street parking counts (Planning pipeline, permits): found or not; the supply-over-use ratio and its tier.</li>
+          <li>Cost per space by type (surface, podium, below grade) from a real SF source: look first in the Controller's 2026 Triennial feasibility report and its pro formas (the source behind <code>PROTOTYPES</code>, <code>src/lib/sim/finance/prototypes.ts:33</code>), then Planning and SFMTA cost studies, then published SF pro formas. Record every search.</li>
+          <li>SF AMI by year and household size (MOHCD or HUD income limits), for the affordable tiers' income bands (<code>AMI_TIER_BOUNDS</code>, <code>src/lib/sim/finance/tiers.ts</code>).</li>
+        </ul>
+      </li>
+      <li id="t1-s2"><input type="checkbox"> Write the failing schema tests.
+        <pre><code data-lang="ts">it('rejects a cost whose sources hold no SF source', () =&gt; {
+  expect(() =&gt; parseParkingFile(withCost({ sources: [{ ...cite, sf: false }] }))).toThrow(/sf/);
+});
+it('rejects a cost without a url or page', () =&gt; {
+  expect(() =&gt; parseParkingFile(withCost({ sources: [{ ...cite, url: '' , sf: true }] }))).toThrow();
+});
+it('accepts costPerSpace null with what was searched', () =&gt; {
+  expect(parseParkingFile(nullCost(['Controller 2026 pro formas'])).costPerSpace).toBeNull();
+});
+it('rejects costPerSpace null with nothing searched', () =&gt; {
+  expect(() =&gt; parseParkingFile(nullCost([]))).toThrow(/searched/);
+});
+it('rejects supplyOverUse below 1', () =&gt; {
+  expect(() =&gt; parseParkingFile(withRatio(0.9))).toThrow();
+});
+it('parses the committed parking.json and ami.json', () =&gt; {
+  expect(parseParkingFile(readJson(PARKING_JSON)).searched.length).toBeGreaterThan(0);
+  expect(parseAmiFile(readJson(AMI_JSON)).years[0].bySize).toHaveLength(8);
+});</code></pre>
+      </li>
+      <li id="t1-s3"><input type="checkbox"> Run them and see them fail.
+        <pre><code data-lang="sh">npx vitest run --project pipeline pipeline/test/enrichment/parking-schema.test.ts pipeline/test/enrichment/ami-schema.test.ts</code></pre>
+      </li>
+      <li id="t1-s4"><input type="checkbox"> Implement <code>parseParkingFile</code> and <code>parseAmiFile</code> with zod, following <code>pipeline/enrichment/market-schema.ts</code>; write <code>parking.json</code> and <code>ami.json</code> from the findings. <code>costPerSpace</code> is null unless a cited SF figure was found; a found figure whose <code>dollarsYear</code> is before 2024 is recorded as found and flagged in the findings doc for the owner (no escalation index is invented).</li>
+      <li id="t1-s5"><input type="checkbox"> Run the tests and see them pass (same command).</li>
+      <li id="t1-s6"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add docs/dev/cars-data.md pipeline/enrichment pipeline/test/enrichment
+git commit -m "docs: verify car ownership data sources and parking cost"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-2">
+    <h2>Task 2: Census and DMV sources</h2>
+    <ul>
+      <li>Create: <code>pipeline/census-config.ts</code>, <code>pipeline/sources/census.ts</code></li>
+      <li>Modify: <code>pipeline/steps/fetch.ts:24-41</code> (<code>FETCH_IDS</code>, <code>DEFAULT_FETCH_IDS</code>), <code>pipeline/sources/normalise.ts</code> (optional tables), <code>pipeline/sources.lock.json</code> (by running fetch)</li>
+      <li>Test: <code>pipeline/test/census-source.test.ts</code></li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: the endpoints and vintages in <code>docs/dev/cars-data.md</code> (Task 1).</li>
+      <li>Produces: <code>CENSUS_IDS: readonly string[]</code>, <code>CENSUS_SOURCES: Record&lt;CensusId, CensusSpec&gt;</code>, <code>fetchCensus(id, rawDir, http, now?): Promise&lt;LockEntry&gt;</code>; normalised DuckDB tables <code>src_acs_bg</code> (release, geoid, variable, estimate), <code>src_pums_hh</code> (release, puma, serialno, wgtp, veh, mv, np, workers, hincp_adj, ten, ybl), <code>src_sf3_bg</code> (geoid, variable, value), <code>src_bg_geom</code> (vintage, geoid, geometry EPSG:7131), <code>src_bg_xwalk</code> (from_vintage, from_geoid, to_vintage, to_geoid, weight), <code>src_dmv_zip</code> (year, zip, light_duty). Each table exists only when its lock entries do.</li>
+    </ul>
+    <ol>
+      <li id="t2-s1"><input type="checkbox"> Write the failing tests: <code>fetchCensus</code> with a fake <code>Http</code> (pattern of <code>pipeline/test/fetch.test.ts</code>) returns a lock entry whose <code>license</code> is <code>'Public domain (U.S. Census Bureau)'</code>, with <code>upstreamVersion</code> naming the release and <code>rowCount</code> the API rows; a non-200 throws naming the URL; normalising a two-BG API body gives <code>src_acs_bg</code> rows with 12-digit geoids; and
+        <pre><code data-lang="ts">it('keeps every Census and DMV source out of the as-of sources', () =&gt; {
+  for (const id of [...CENSUS_IDS, DMV_ID]) expect(AS_OF_SOURCE_IDS).not.toContain(id);
+});
+it('normalises without census entries (the fixture lock)', async () =&gt; {
+  await normaliseAll(db, lockWithoutCensus, rawDir, normDir);
+  expect(await tableExists(db, 'src_acs_bg')).toBe(false);
+});</code></pre>
+      </li>
+      <li id="t2-s2"><input type="checkbox"> Run and see them fail: <code>npx vitest run --project pipeline pipeline/test/census-source.test.ts</code></li>
+      <li id="t2-s3"><input type="checkbox"> Implement the config (one lock id per release and table group, ids <code>census-acs5-bg-&lt;endYear&gt;</code>, <code>census-pums5-&lt;endYear&gt;</code>, <code>census-sf3-2000-bg</code>, <code>census-tiger-bg-&lt;vintage&gt;</code>, <code>census-xwalk-&lt;from&gt;-&lt;to&gt;</code>, <code>ca-dmv-vehicles-zip</code>), <code>fetchCensus</code> (one raw file per lock entry via <code>storeBytes</code>, as <code>pipeline/sources/gtfs.ts</code> does), the fetch wiring and the normalisers. No API key in the lock or the URLs. The Census entries are optional in <code>normaliseAll</code>.</li>
+      <li id="t2-s4"><input type="checkbox"> Run the tests and see them pass; then <code>npm run test:pipeline</code> passes.</li>
+      <li id="t2-s5"><input type="checkbox"> Fetch the real sources and check the lock gained one entry per id with a licence.
+        <pre><code data-lang="sh">npm run pipeline -- fetch --only census-acs5-bg-2023,census-pums5-2023</code></pre>
+        (List every id from <code>CENSUS_IDS</code> and <code>ca-dmv-vehicles-zip</code> in <code>--only</code>.)
+      </li>
+      <li id="t2-s6"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add pipeline/census-config.ts pipeline/sources pipeline/steps/fetch.ts pipeline/sources.lock.json pipeline/test/census-source.test.ts
+git commit -m "feat(pipeline): census and DMV sources for car ownership"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-3">
+    <h2>Task 3: The car model module and the calibration section type</h2>
+    <ul>
+      <li>Create: <code>src/lib/sim/cars/types.ts</code>, <code>src/lib/sim/cars/choice.ts</code>, <code>src/lib/sim/cars/split.ts</code>, <code>src/lib/sim/cars/index.ts</code></li>
+      <li>Modify: <code>src/lib/timelapse/types.ts:72-107</code> (<code>Calibration.cars?</code>, after <code>baselineFunding</code>), <code>src/lib/timelapse/model.ts</code> (validate <code>cars</code> in <code>parseCalibration</code>), <code>eslint.config.js:70-75</code> (add <code>src/lib/sim/cars/**</code> and <code>pipeline/lib/cars/**</code>), <code>src/lib/sim/scenario/rng.ts:14-32</code> (doc comment: 24-28 belong to <code>CAR_P</code>)</li>
+      <li>Test: <code>src/lib/sim/cars/choice.spec.ts</code>, <code>src/lib/sim/cars/split.spec.ts</code>, <code>src/lib/timelapse/model.test.ts</code> (cars cases), <code>src/lib/sim/cars/purposes.spec.ts</code></li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>exp</code> from <code>src/lib/timelapse/math.ts</code> (relative import); <code>Provenance</code>.</li>
+      <li>Produces (every later task uses these names):</li>
+    </ul>
+    <pre><code data-lang="ts">// src/lib/sim/cars/types.ts
+export const CAR_LEVELS = 4; // households with 0, 1, 2, 3+ cars
+export const MIXES = ['market', 'veryLow', 'low', 'moderate'] as const;
+export type Mix = (typeof MIXES)[number];
+/** Draw purposes of the car system; never reuse P's 1-12 or the retired 17-23. */
+export const CAR_P = { OUT: 24, OUT_CARS: 25, IN_TYPES: 26, CHOOSE: 27, EMPTY: 28 } as const;
+export interface TypeBands { size: number[]; workers: number[]; income: number[] } // lower edges
+export interface CarModel {
+  schema: 1;
+  bands: TypeBands; // types T = |size| x |workers| x |income| x 2 (own, rent), at most 255
+  choice: {
+    asc: number[]; // 3: levels 1, 2, 3+ against 0
+    household: number[]; // T x 3: each type's household utility per level
+    location: { density: number[]; access: number[] }; // 3 each
+    terms: { name: string; coef: number[] }[]; // the fitted coefficients, for the report
+    provenance: Provenance;
+  };
+  threePlusMean: number; // cars per 3+ household, PUMS
+  moves: { perMonth: number[]; inMix: number[][]; provenance: Provenance }; // T; PUMAs x T
+  newHomes: {
+    mix: Record&lt;Mix, number[]&gt;; // T shares each, sum 1
+    affordableTiers: { veryLow: number; low: number; moderate: number }; // sum 1
+    provenance: Provenance;
+  };
+  parking: {
+    supplyOverUse: number;
+    costPerSpace: { surface: number; podium: number; belowGrade: number } | null; // null = link off
+    dollarsYear: number | null;
+    provenance: Provenance[];
+  };
+  refreshMonths: number; // 12
+}
+export function typeCount(b: TypeBands): number;
+export function typeIndex(b: TypeBands, size: number, workers: number, income: number, owner: boolean): number;
+
+// src/lib/sim/cars/choice.ts
+/** Zone covariates the choice reads; CarData satisfies it. */
+export interface ZoneTerms { access: Float64Array; constant: Float64Array /* zones x 3 */ }
+export function carShares(m: CarModel, z: ZoneTerms, zone: number, type: number, density: number, out: Float64Array): void;
+export function meanCars(shares: ArrayLike&lt;number&gt;, threePlusMean: number): number;
+export function densityOf(households: number, areaM2: number): number; // households per hectare
+
+// src/lib/sim/cars/split.ts
+/** floor(x + u), u in (0, 1). */
+export function roundSystematic(x: number, u: number): number;
+/** Systematic split: out[i] = floor(n*C_i + u) - floor(n*C_(i-1) + u), C the cumulative weight share. */
+export function splitSystematic(n: number, weights: ArrayLike&lt;number&gt;, u: number, out: Int32Array): void;</code></pre>
+    <ol>
+      <li id="t3-s1"><input type="checkbox"> Write the failing tests.
+        <pre><code data-lang="ts">it('carShares is the softmax of asc + household + location + zone constant', () =&gt; {
+  const out = new Float64Array(4);
+  carShares(model2, zones1, 0, 1, 10, out);
+  expect(out[0] + out[1] + out[2] + out[3]).toBeCloseTo(1, 12);
+  expect(out[1] / out[0]).toBeCloseTo(exp(asc[0] + hh[1 * 3] + den[0] * 10 + acc[0] * a0 + c0), 12);
+});
+it('splitSystematic sums to n and stays within floor and ceil of each share', () =&gt; {
+  for (const u of [0.01, 0.5, 0.99]) {
+    const out = new Int32Array(4);
+    splitSystematic(17, [0.1, 0.2, 0.3, 0.4], u, out);
+    expect(out.reduce((a, b) =&gt; a + b, 0)).toBe(17);
+    out.forEach((v, i) =&gt; expect(Math.abs(v - 17 * [0.1, 0.2, 0.3, 0.4][i])).toBeLessThan(1));
+  }
+});
+it('splitSystematic with zero weights and n &gt; 0 throws', () =&gt; {
+  expect(() =&gt; splitSystematic(3, [0, 0], 0.5, new Int32Array(2))).toThrow(RangeError);
+});
+it('car purposes clash with no P purpose and no retired one', () =&gt; {
+  for (const v of Object.values(CAR_P)) {
+    expect(Object.values(P)).not.toContain(v);
+    expect(v &lt; 17 || v &gt; 23).toBe(true);
+  }
+});
+// model.test.ts
+it('parseCalibration accepts a calibration without cars', ...);
+it('rejects cars with more than 255 types, mixes not summing to 1, negative move rates', ...);</code></pre>
+      </li>
+      <li id="t3-s2"><input type="checkbox"> Run and see them fail: <code>npx vitest run --project server src/lib/sim/cars src/lib/timelapse/model.test.ts</code></li>
+      <li id="t3-s3"><input type="checkbox"> Implement the module and the validator (<code>exactKeys</code> pattern of <code>validateMarket</code>, <code>src/lib/timelapse/model.ts:845</code>). Shares sum to 1 within 1e-9. <code>densityOf</code> of zero area returns 0.</li>
+      <li id="t3-s4"><input type="checkbox"> Run the tests and see them pass; <code>npm run lint</code> passes (the determinism rule now covers the new folders).</li>
+      <li id="t3-s5"><input type="checkbox"> Commit: <code>git commit -m "feat(sim): car ownership model types, choice and systematic split"</code></li>
+    </ol>
+  </section>
+
+  <section id="sec-task-4">
+    <h2>Task 4: Zones and the start population</h2>
+    <ul>
+      <li>Create: <code>src/lib/data/cars-codec.ts</code>, <code>pipeline/lib/cars/config.ts</code> (<code>TYPE_BANDS</code>), <code>pipeline/lib/cars/zones.ts</code>, <code>pipeline/lib/cars/access.ts</code>, <code>pipeline/lib/cars/ipf.ts</code>, <code>pipeline/lib/cars/population.ts</code>, <code>pipeline/steps/cars.ts</code></li>
+      <li>Modify: <code>pipeline/steps/build.ts</code> (run the cars step after transit, before calibration's write), <code>src/lib/data/manifest.ts:62,176</code> (optional <code>scenarios.fzp.cars</code> and <code>scenarios.fzp.carZones</code>), <code>pipeline/steps/manifest.ts</code>, <code>pipeline/lib/dataset-check.ts</code> (V38, V39), <code>pipeline/lib/version.ts:41-50</code> (<code>PATHS</code>: <code>src/lib/sim/cars</code>, <code>src/lib/transit</code>, and whatever else the walk reaches)</li>
+      <li>Test: <code>src/lib/data/cars-codec.test.ts</code>, <code>pipeline/test/cars/ipf.test.ts</code>, <code>pipeline/test/cars/population.test.ts</code>, <code>pipeline/test/cars/zones.test.ts</code>, <code>pipeline/test/version-paths.test.ts</code> (existing)</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: Task 2's tables; <code>buildAccessGrid</code>, <code>accessAt</code> (<code>src/lib/transit/grid.ts:49,124</code>); <code>typeIndex</code> (Task 3).</li>
+      <li>Produces:</li>
+    </ul>
+    <pre><code data-lang="ts">// src/lib/data/cars-codec.ts
+export const CARS_CODEC = 'sfh-cars/1';
+export interface CarData extends ZoneTerms {
+  zones: string[]; // block-group GEOIDs, latest vintage
+  pumas: string[];
+  zonePuma: Int32Array; // zones
+  lotZone: Int32Array; // per parcels.bin row; -1 none
+  areaM2: Float64Array; // zones: land area
+  occupied: Float64Array; // zones: occupied share of homes (ACS), held constant
+  types: number;
+  households: Int32Array; // zones x types x CAR_LEVELS, the start counts
+}
+export function encodeCarData(d: CarData): Uint8Array;
+export function decodeCarData(bytes: Uint8Array, parcelCount: number): CarData;
+
+// pipeline/lib/cars/access.ts
+export function zoneAccess(grid: AccessGrid, lotZone: Int32Array, homes: Int32Array, lngLat: Float64Array, zones: number): Float64Array; // homes-weighted mean
+// pipeline/lib/cars/ipf.ts
+export function balance(seed: Float64Array, rows: Int32Array[], targets: Float64Array[], opts: { maxIter: number; tol: number }): { weights: Float64Array; maxRelErr: number; iterations: number };
+// pipeline/steps/cars.ts
+export interface CarsStepOut { data: CarData | null; model: CarModel | null; report: string[]; counts: Record&lt;string, number&gt;; warnings: string[] }
+export async function carsStep(db: Duck, o: { outDir: string; lock: Lock; transit: TransitNetwork | null; parcels: ScenarioParcels }): Promise&lt;CarsStepOut&gt;;</code></pre>
+    <ol>
+      <li id="t4-s1"><input type="checkbox"> Write the failing tests:
+        <ul>
+          <li>codec: <code>decodeCarData(encodeCarData(d), n)</code> equals <code>d</code>; a wrong codec tag or a <code>lotZone</code> length other than <code>n</code> throws.</li>
+          <li>IPF: on a 3-household-class seed with two margins, every margin is met within <code>tol</code> 1e-6 and <code>maxRelErr</code> is reported.</li>
+          <li>Population: for each zone, the sum of households equals <code>round(occupied[z] * homes[z])</code>, with <code>homes[z]</code> the sum of <code>existingUnits</code> of its lots; every count is a non-negative integer; integerisation keeps each zone's total exactly.</li>
+          <li>Zones: a lot whose centroid falls in no BG gets -1 and is counted in <code>counts['cars.lotsNoZone']</code>.</li>
+          <li><code>carsStep</code> on a lock without the census entries returns <code>{ data: null, model: null }</code> and writes no file.</li>
+        </ul>
+      </li>
+      <li id="t4-s2"><input type="checkbox"> Run and see them fail: <code>npx vitest run --project pipeline pipeline/test/cars</code> and <code>npx vitest run --project server src/lib/data/cars-codec.test.ts</code></li>
+      <li id="t4-s3"><input type="checkbox"> Implement. Type bands (builder's call, starting point; coarsen if a BG margin cannot be met): size 1, 2, 3, 4+; workers 0, 1, 2+; income four bands at the PUMS quartiles of the latest release; tenure own or rent (96 types). Reweight PUMS households of the zone's PUMA to the BG margins B25044 (tenure by vehicles), B25009 (tenure by size), B19001 (income) and the workers table from Task 1's findings; place homes by <code>existingUnits</code> per lot (parcel centroid in the BG polygon, DuckDB spatial); integerise per zone with <code>splitSystematic</code> and a fixed u of 0.5 (the pipeline has no seed). Zone access is the homes-weighted mean of today's access grid. <code>constant</code> is zeros here (Task 5 fills it). Write <code>scenarios/fzp/cars.bin</code> and <code>scenarios/fzp/car-zones.json</code> (GeoJSON, BG polygons simplified to 5 m, property <code>z</code> the zone index). V38: <code>cars.bin</code> decodes, <code>lotZone</code> aligns with <code>parcels.bin</code>, per-zone totals as above. V39: <code>car-zones.json</code> holds one feature per zone.</li>
+      <li id="t4-s4"><input type="checkbox"> Run the tests and see them pass; <code>npx vitest run --project pipeline pipeline/test/version-paths.test.ts</code> passes; <code>npm run pipeline -- fixture</code> still matches the golden (no census in the mini lock).</li>
+      <li id="t4-s5"><input type="checkbox"> Commit: <code>git commit -m "feat(pipeline): block-group zones and the start household population"</code></li>
+    </ol>
+  </section>
+
+  <section id="sec-task-5">
+    <h2>Task 5: Fit the ownership choice</h2>
+    <ul>
+      <li>Create: <code>pipeline/lib/cars/mnl.ts</code>, <code>pipeline/lib/cars/fit.ts</code>, <code>pipeline/lib/cars/report.ts</code></li>
+      <li>Modify: <code>pipeline/steps/cars.ts</code>, <code>pipeline/steps/calibration.ts:137-188</code> (<code>writeCalibration</code> takes <code>cars: CarModel | null</code> and the report lines), <code>pipeline/lib/fzp-cal/report.ts:92-106</code> (<code>REPORT_SECTIONS</code> gains <code>'## 14. Car ownership'</code>, present only with car data)</li>
+      <li>Test: <code>pipeline/test/cars/mnl.test.ts</code>, <code>pipeline/test/cars/fit.test.ts</code></li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>CarModel</code>, <code>carShares</code> (Task 3); <code>CarData</code>, <code>carsStep</code> (Task 4).</li>
+      <li>Produces: <code>fitMnl(x: Float64Array, nFeat: number, choice: Uint8Array, weight: Float64Array, levels: number, opts): { coef: Float64Array; se: Float64Array; logLik: number; iterations: number }</code>; <code>fitChoice(pums, bgShares, data): { choice: CarModel['choice']; constant: Float64Array; fit: BgFit[] }</code>; <code>carsReportLines(model, data, fit, dmv): string[]</code>.</li>
+    </ul>
+    <ol>
+      <li id="t5-s1"><input type="checkbox"> Write the failing tests: <code>fitMnl</code> on 20,000 draws simulated from known coefficients recovers each within 0.05; it uses <code>exp</code>/<code>log</code> from math.ts (the lint passes on the file); <code>fitChoice</code> on a synthetic city matches every zone's observed 0/1/2/3+ shares within 1e-6 after the zone constants (the constants close the gap; density and access coefficients come from the across-zone fit); the report section lists the coefficients with standard errors, the MTC Travel Model Two and ActivitySim <code>auto_ownership</code> priors beside them (cited, tier "estimated model"), fit by BG (median and 90th percentile absolute share error before constants) and citywide, the DMV total against the model's cars (cross-check only), and today's predicted spaces per new home citywide.</li>
+      <li id="t5-s2"><input type="checkbox"> Run and see them fail: <code>npx vitest run --project pipeline pipeline/test/cars/mnl.test.ts pipeline/test/cars/fit.test.ts</code></li>
+      <li id="t5-s3"><input type="checkbox"> Implement. Household terms from PUMS (per record, weights <code>WGTP</code>), with PUMA-mean density and access as location covariates in stage 1; stage 2 fixes the household terms and fits density and access across BGs to B25044 shares, then zone constants per BG so predicted shares equal observed (the "matching predicted to observed shares" of the spec). Collapse the household terms to <code>choice.household</code> per type. If the grid access fits clearly worse than a jobs-reachable measure, the spec lets you switch; record the comparison in the report either way.</li>
+      <li id="t5-s4"><input type="checkbox"> Run the tests and see them pass; <code>npm run test:pipeline</code> passes.</li>
+      <li id="t5-s5"><input type="checkbox"> Commit: <code>git commit -m "feat(pipeline): fit the household car ownership choice"</code></li>
+    </ol>
+  </section>
+
+  <section id="sec-task-6">
+    <h2>Task 6: Move rates, new-home mixes and parking demand</h2>
+    <ul>
+      <li>Create: <code>pipeline/lib/cars/rates.ts</code></li>
+      <li>Modify: <code>pipeline/steps/cars.ts</code>, <code>pipeline/lib/cars/report.ts</code></li>
+      <li>Test: <code>pipeline/test/cars/rates.test.ts</code></li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>src_pums_hh</code>; <code>parseParkingFile</code>, <code>parseAmiFile</code> (Task 1); <code>AMI_TIER_BOUNDS</code>; <code>CarModel</code>.</li>
+      <li>Produces: <code>moveRates(pums, bands): CarModel['moves']</code>, <code>newHomeMixes(pums, bands, ami, affordableByTier): CarModel['newHomes']</code>, <code>parkingOf(file: ParkingFile): CarModel['parking']</code>, <code>threePlusMeanOf(pums): number</code>; <code>carsStep</code> now returns a complete <code>model</code>.</li>
+    </ul>
+    <ol>
+      <li id="t6-s1"><input type="checkbox"> Write the failing tests:
+        <ul>
+          <li>A type whose weighted share moved in within 12 months (<code>MV</code> = 1) is p gets <code>perMonth</code> = <code>1 - exp(log(1 - p) / 12)</code>; rates by tenure where a type's cell has fewer than 30 records fall back to its tenure's rate (reported).</li>
+          <li><code>inMix</code> per PUMA: type shares of households with <code>MV</code> = 1; each row sums to 1.</li>
+          <li><code>newHomes.mix.market</code>: type shares of households with <code>MV</code> = 1 in homes built in the last decade the <code>YBL</code> codes allow; tier mixes restrict to incomes at or below the tier's AMI bound for the household's size (<code>AMI_TIER_BOUNDS</code>, Task 1's AMI table); <code>affordableTiers</code> are the dataset's affordable completions by tier (<code>projects.json</code> <code>rhnaCompletedNet.byTier</code>, VL, L, M renormalised).</li>
+          <li><code>parkingOf</code> with <code>costPerSpace</code> null gives <code>costPerSpace: null</code>; with all three costs gives them and their <code>dollarsYear</code>; a partial set (one type null) gives null and a warning (the link needs every type it prices).</li>
+        </ul>
+      </li>
+      <li id="t6-s2"><input type="checkbox"> Run and see them fail: <code>npx vitest run --project pipeline pipeline/test/cars/rates.test.ts</code></li>
+      <li id="t6-s3"><input type="checkbox"> Implement; the report section 14 gains the move rates, mixes, supply over use and cost per space with their tiers, and states the baseline assumption (today's post-2018 starts are built to demand; predicted demand is the reference). With <code>costPerSpace</code> null the section says the parking link is off and lists <code>searched</code>.</li>
+      <li id="t6-s4"><input type="checkbox"> Run the tests and see them pass.</li>
+      <li id="t6-s5"><input type="checkbox"> Commit: <code>git commit -m "feat(pipeline): car move rates, new-home mixes and parking demand"</code></li>
+    </ol>
+  </section>
+
+  <section id="sec-task-7">
+    <h2>Task 7: The fixture city's households</h2>
+    <ul>
+      <li>Create: mini Census raw files under <code>pipeline/test/fixtures/mini/raw/</code> (hand-made, a few BGs over the mini parcels, one PUMA, a small PUMS sample)</li>
+      <li>Modify: <code>pipeline/test/fixtures/mini/sources.lock.json</code>, <code>pipeline/test/fixtures/mini/make-fixture.ts</code> if it writes raw files, <code>pipeline/test/fixtures/mini/golden/</code> (regenerated), <code>e2e/fixtures/data/fixture-0/</code> (regenerated)</li>
+      <li>Test: <code>pipeline/test/fixture-out.test.ts</code>, <code>pipeline/test/golden.test.ts</code> (existing)</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: Tasks 2 to 6.</li>
+      <li>Produces: <code>fixture-0</code> with <code>scenarios/fzp/cars.bin</code>, <code>scenarios/fzp/car-zones.json</code> and <code>calibration.json</code> <code>cars</code> (link on, with a fixture-only <code>costPerSpace</code> clearly marked invented in its provenance, so e2e covers the link; the live enrichment is untouched).</li>
+    </ul>
+    <ol>
+      <li id="t7-s1"><input type="checkbox"> Write the failing assertions in <code>fixture-out.test.ts</code>: <code>fixture-0</code>'s manifest names <code>scenarios.fzp.cars</code> and <code>carZones</code>; <code>decodeCarData</code> succeeds; <code>calibration.json</code> parses with <code>cars</code>; V38 and V39 pass.</li>
+      <li id="t7-s2"><input type="checkbox"> Run and see them fail: <code>npx vitest run --project pipeline pipeline/test/fixture-out.test.ts</code></li>
+      <li id="t7-s3"><input type="checkbox"> Add the mini sources and lock entries; let the fixture build read a fixture parking file (<code>pipeline/test/fixtures/mini/enrichment/parking.json</code>, following how the fixture already overrides enrichment paths); regenerate.
+        <pre><code data-lang="sh">npm run pipeline -- fixture --update-golden</code></pre>
+        Review the golden diff: only the car files, the manifest, <code>calibration.json</code> <code>cars</code> and report section 14 change.
+      </li>
+      <li id="t7-s4"><input type="checkbox"> Run <code>npm run test:pipeline</code> and see it pass.</li>
+      <li id="t7-s5"><input type="checkbox"> Commit: <code>git commit -m "test(pipeline): fixture city households and car calibration"</code></li>
+    </ol>
+  </section>
+
+  <section id="sec-task-8">
+    <h2>Task 8: The car system in the world step</h2>
+    <ul>
+      <li>Create: <code>src/lib/sim/cars/dynamics.ts</code>, <code>src/lib/sim/world/cars/columns.ts</code>, <code>src/lib/sim/world/cars/system.ts</code>, <code>src/lib/sim/world/cars/index.ts</code>, <code>src/lib/sim/world/cars/test/city.ts</code> (hand-built <code>CarData</code>/<code>CarModel</code> on the mini and bench cities)</li>
+      <li>Modify: <code>src/lib/sim/world/types.ts:142-149, 236-264</code> (<code>World.cars?</code>, <code>CarSystem</code>), <code>src/lib/sim/world/world.ts:101-127, 560-675</code> (<code>withFunding(f, cars)</code>, the out wrapper, the car step between systems 3 and 4), <code>src/lib/sim/world/index.ts</code>, <code>src/lib/sim/scenario/rng.ts</code> (<code>zoneEntity</code>)</li>
+      <li>Test: <code>src/lib/sim/cars/dynamics.spec.ts</code>, <code>src/lib/sim/world/cars/system.spec.ts</code>, <code>src/lib/sim/world/cars/cars.property.spec.ts</code>, <code>src/lib/sim/world/cars/cars.perf.spec.ts</code> (perf project, prints only)</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>CarModel</code>, <code>CAR_P</code>, <code>carShares</code>, <code>splitSystematic</code>, <code>roundSystematic</code>, <code>densityOf</code> (Task 3); <code>CarData</code> (Task 4); <code>streamOf</code>, <code>drawOn</code>, <code>seedHash</code>; <code>inclusionaryUnits</code> (<code>src/lib/sim/scenario/finance-score.ts</code>); <code>rowStaticsOf</code> for a pipeline row's lots.</li>
+      <li>Produces:</li>
+    </ul>
+    <pre><code data-lang="ts">// src/lib/sim/cars/dynamics.ts (pure; relative imports only)
+export type CarDraw = (zone: number, purpose: number, index: number) =&gt; number;
+export interface CarState { zones: number; types: number; hh: Int32Array; table: Float64Array }
+export interface CarTotals { households: number; cars: number; carless: number }
+export function refreshTable(s: CarState, m: CarModel, d: CarData): void;
+/** One zone's month: empty `lost` homes, out-movers, arrivals (fills by mix + movers' homes) choose cars. Returns households not found to remove. */
+export function stepZone(s: CarState, m: CarModel, d: CarData, zone: number, fills: Int32Array, lost: number, draw: CarDraw): number;
+export function totals(s: CarState, m: CarModel): CarTotals; // cars counts 3+ as threePlusMean
+export function zoneCarsPerHousehold(s: CarState, m: CarModel, out: Float32Array): void; // NaN for an empty zone
+export function predictedSpaces(s: CarState, m: CarModel, d: CarData, zone: number): number; // per new market home
+
+// src/lib/sim/world/types.ts
+export interface CarSystem {
+  create(world: World, statics: Statics): void;
+  /** Every event the step sends, from every system; buffers only. */
+  onEvent(world: World, statics: Statics, e: WorldEvent): void;
+  /** Between systems 3 and 4, every month. */
+  step(ctx: StepCtx): void;
+  /** The timeline the world steps and plans under (Task 9); `timeline` itself in Task 8. */
+  timelineOf(world: World, statics: Statics, timeline: PolicyTimeline): PolicyTimeline;
+}
+// World gains: cars?: CarColumns
+// withFunding(f: FundingSystem | null, cars: CarSystem | null = null)
+
+// src/lib/sim/world/cars/columns.ts
+export interface CarColumns extends CarState {
+  tableMonth: number;
+  pendFill: Int32Array; // zones x MIXES.length: homes completed, not yet filled
+  pendLost: Int32Array; // zones: homes lost at construction starts, not yet emptied
+  unplaced: number; // homes with no zone, cumulative
+  unmatched: number; // removals beyond a zone's households, cumulative
+  spaces: Float64Array; // zones: predictedSpaces at the last refresh
+  base: Float64Array; // zones: predictedSpaces at month 0
+  shiftN: number; shiftZone: Int32Array; shiftMonth: Int32Array; shiftSpaces: Float64Array; // Task 9
+}
+export interface CarSnapshot extends CarTotals { spacesPerHome: number; zones: Float32Array }
+export function carSnapshotOf(world: World): CarSnapshot | null;
+
+// src/lib/sim/world/cars/system.ts
+export function createCarSystem(data: CarData, model: CarModel, opts?: { link?: boolean }): CarSystem;
+
+// src/lib/sim/scenario/rng.ts
+export function zoneEntity(geoid: string): number; // fnv1a32('z:' + geoid)</code></pre>
+    <ol>
+      <li id="t8-s1"><input type="checkbox"> Write the failing tests:
+        <ul>
+          <li><code>stepZone</code>: households in the zone after a month = before + fills - lost (clamped at 0); <code>lost</code> beyond the zone's households returns the shortfall; with move rate 0 and no fills nothing changes.</li>
+          <li>Determinism: one seed twice gives equal <code>world.cars</code>; feeding a month's events in a shuffled order gives equal counts (pending flows are aggregated per zone and mix before any draw); a <code>structuredClone</code> of the world at month 60 stepped to 120 equals the original stepped to 120.</li>
+          <li>Accounting: a completion of a market sim row of <code>u</code> homes adds <code>u - onSite</code> homes to <code>market</code> and the <code>inclusionaryUnits(u)</code> tiers to theirs in its lot's zone; an affordable row (kind 1) splits by <code>affordableTiers</code>; a construction entry removes <code>existing[row]</code> homes (the series' <code>-existing</code> rule, <code>score/series.ts:505-508</code>); revisions use the row's final units at completion.</li>
+          <li>Review Focus 1: a completion on a lot with <code>lotZone</code> -1 and a master with no parcels add to <code>unplaced</code> and do not throw; removing 10 homes from a zone with 4 households leaves 0 and adds 6 to <code>unmatched</code>.</li>
+          <li>Review Focus 2: <code>zoneCarsPerHousehold</code> gives NaN for a zone with 0 households.</li>
+          <li>Off switch: with <code>cars</code> null, <code>world.golden.test.ts</code> is unchanged; with a car system and <code>link: false</code>, every world event over 480 months on the mini and bench cities, seeds 1 to 5, equals the run without cars (the car system only observes).</li>
+          <li>The choice table and <code>base</code> are computed in <code>create</code> (month 0) and refreshed in months 13, 25, ... (<code>month % refreshMonths === 1</code>, month above 1), each reading the zones' density at that moment.</li>
+        </ul>
+      </li>
+      <li id="t8-s2"><input type="checkbox"> Run and see them fail: <code>npx vitest run --project server src/lib/sim/cars src/lib/sim/world/cars</code></li>
+      <li id="t8-s3"><input type="checkbox"> Implement. Draws: stream <code>streamOf(sh, zoneEntity(zones[z]), month)</code>, purposes from <code>CAR_P</code>, index the type (or the mix for <code>IN_TYPES</code>, 0 for <code>EMPTY</code>). Integer flows: <code>roundSystematic</code> for out-mover counts per (zone, type), <code>splitSystematic</code> for every split (builder's call: one uniform per split keeps the result independent of order and exactly sums). With a car system, <code>stepWith</code> wraps <code>out</code> once at its top so every event of systems 1 to 7 (hook-started chains included) reaches <code>onEvent</code>; the car step runs after system 3 and before system 4 every month, whether or not the frame has <code>finance</code>. A pipeline row's zone is its first lot's (builder's call: projects rarely straddle block groups). Events sent inside <code>createWorld</code> are not fed (the start population already reflects the dataset date).</li>
+      <li id="t8-s4"><input type="checkbox"> Run the tests and see them pass; then <code>npx vitest run --project server src/lib/sim/world</code> passes whole (referees, goldens, properties).</li>
+      <li id="t8-s5"><input type="checkbox"> Add <code>cars.perf.spec.ts</code> (perf project): on the live city (<code>SFH_WORLD_LIVE</code>, skip without), one world, print the car step's median and p90 per world-month over months 1 to 480 and the whole-window <code>step</code> time with cars on and off. No bar. Run it on a quiet machine only (<code>npx vitest --run --project perf src/lib/sim/world/cars/cars.perf.spec.ts</code>), else record that it was not timed.</li>
+      <li id="t8-s6"><input type="checkbox"> Commit: <code>git commit -m "feat(world): car system hook with moves, fills and losses"</code></li>
+    </ol>
+  </section>
+
+  <section id="sec-task-9">
+    <h2>Task 9: Parking shifts start odds</h2>
+    <ul>
+      <li>Create: <code>src/lib/sim/world/cars/parking.ts</code></li>
+      <li>Modify: <code>src/lib/sim/finance/instruments.ts:187-191</code> (<code>signedOddsShift</code>), <code>src/lib/sim/world/policy/frame.ts:14-30</code> (<code>PolicyFrame.parking</code>), <code>src/lib/sim/world/rates.ts:22-44, 82-120, 132-185</code> (<code>startRates</code> third argument, callers), <code>src/lib/sim/world/funding/clocks.ts:180-202</code> (<code>ord</code> and the market <code>x0</code>), <code>src/lib/sim/world/cars/system.ts</code> (refresh pushes shift entries; <code>timelineOf</code>)</li>
+      <li>Test: <code>src/lib/sim/finance/instruments.spec.ts</code>, <code>src/lib/sim/world/cars/parking.spec.ts</code>, <code>src/lib/sim/world/cars/parking.property.spec.ts</code></li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>CarColumns</code>, <code>predictedSpaces</code>, <code>createCarSystem</code> (Task 8); <code>frameIdOf</code> (<code>src/lib/sim/world/policy/intern.ts:127</code>); <code>prototypeFor</code>, <code>costPerHome</code>; the frame's <code>finance.slope</code> when present, else <code>calibration.market.slope.perCostShare</code>.</li>
+      <li>Produces:</li>
+    </ul>
+    <pre><code data-lang="ts">// instruments.ts
+/** slope * amount / costPerHome, any finite sign: a negative amount (a cost) lowers odds. */
+export function signedOddsShift(amount: Dollars, kind: ProjectKind, p: Prototype, slope: number): number;
+// frame.ts: PolicyFrame gains
+parking?: Float64Array | null; // per lot row, log-odds shift added to z for market starts; absent or null = none
+// rates.ts
+export function startRates(view: ZoningView, market: number, parking?: Float64Array | null): Float64Array;
+// parking.ts
+export const SPACES_STEP = 0.01; // spaces per home: a zone's shift changes only by whole steps
+export function parkingTypeOf(p: Prototype): 'surface' | 'podium' | 'belowGrade';
+export function lotShift(view: ZoningView, lot: number, deltaSpaces: number, cost: NonNullable&lt;CarModel['parking']['costPerSpace']&gt;, slope: number): number;
+export function parkingTimeline(base: PolicyTimeline, cols: CarColumns, data: CarData, model: CarModel, statics: Statics): PolicyTimeline;</code></pre>
+    <ol>
+      <li id="t9-s1"><input type="checkbox"> Write the failing tests:
+        <ul>
+          <li><code>signedOddsShift(-1000, 'market', A, s)</code> is <code>-signedOddsShift(1000, 'market', A, s)</code>; NaN or Infinity throws; <code>oddsShift</code> is unchanged (still rejects negatives).</li>
+          <li>Month one: with the link on, the world's events through month 13 (before the first refresh's entries take effect, month 14) equal the run without cars, mini and bench, seeds 1 to 5.</li>
+          <li>Off path (owner's ruling): with <code>model.parking.costPerSpace</code> null, <code>timelineOf</code> returns the very timeline it was given, <code>shiftN</code> stays 0, <code>spaces</code> is still filled, and every event over 480 months equals the run without cars. Same with <code>opts.link</code> false.</li>
+          <li>Sign: a zone whose predicted spaces fall below <code>base</code> gets a positive shift on its lots; above, negative.</li>
+          <li><code>parkingTimeline</code>: <code>changes()</code> is the base's changes plus each entry's month; <code>touched(c)</code> for a parking-only change is exactly the changed zones' lots, ascending; a base change with <code>touched</code> null stays null; <code>frameAt</code> gives the same object for the same month and state; frame ids differ from the base frame's when <code>parking</code> is non-null.</li>
+          <li>Review Focus 3, rebuilt plan: clone the world at month 200, rebuild its due list with <code>planDue</code> under <code>timelineOf</code>, step to 480; events equal the carried run.</li>
+          <li>Skip shortcut: on the bench city with shifts forced large and positive, the whole-city replan with the skip bound gives the same events as with <code>planDueWith(…, { skip: false })</code>.</li>
+          <li>Review Focus 4, funded, zero shift: on <code>fundedMini()</code> with a model whose costs make every quantised shift 0, events and ledger equal the run without cars.</li>
+        </ul>
+      </li>
+      <li id="t9-s2"><input type="checkbox"> Run and see them fail: <code>npx vitest run --project server src/lib/sim/finance/instruments.spec.ts src/lib/sim/world/cars</code></li>
+      <li id="t9-s3"><input type="checkbox"> Implement. At each refresh after month 0 the car step computes <code>spaces[z] = supplyOverUse * meanCars</code> over the market new-home mix; <code>delta = round((spaces - base) / SPACES_STEP) * SPACES_STEP</code>; when it differs from the zone's last entry (0 before any) it pushes <code>(zone, month + 1, delta)</code>. The derived timeline treats an entry's month as a frame change (rule 7 replans its touched lots in system 1; funded months replan every lot as today). A lot's shift: <code>signedOddsShift(-delta * costPerSpace[parkingTypeOf(p)], 'market', p, slope)</code>, with <code>p</code> the prototype of the lot's top qualifying fill level in the frame's view (builder's call: start odds are drawn before size, and the top level sets the building type), 0 where no level qualifies. <code>parkingTypeOf</code>: E surface, A podium, B to D below grade, unless the Task 1 source maps prototypes itself. The shift enters <code>startRates</code> (memo keyed by the <code>parking</code> array) and the funded market clock's <code>x0</code> and <code>ord</code>; affordable clocks are unchanged (see Open questions). The <code>skipBound</code> memo key gains the parking state.</li>
+      <li id="t9-s4"><input type="checkbox"> Run the tests and see them pass; <code>npx vitest run --project server src/lib/sim/world</code> passes whole.</li>
+      <li id="t9-s5"><input type="checkbox"> Convergence: add a live-city block (skips without <code>SFH_WORLD_LIVE</code>) that prints, per refresh, the number of zones that changed, the citywide mean and max |shift| and the starts so far, link on against off. Run it; if the shift grows without settling, stop and report (spec warning, the loop).</li>
+      <li id="t9-s6"><input type="checkbox"> Commit: <code>git commit -m "feat(world): parking demand shifts start odds through a derived timeline"</code></li>
+    </ol>
+  </section>
+
+  <section id="sec-task-10">
+    <h2>Task 10: Cars in the series, chunks and view</h2>
+    <ul>
+      <li>Modify: <code>src/lib/sim/world/score/types.ts:78-186</code> (<code>SeriesChunk.cars</code>, <code>WorldSeriesData</code> version 6, <code>TimelineView.cars</code>), <code>src/lib/sim/world/score/series.ts:52-78, 220-230</code> (<code>stepped(month, cars?)</code>, data, restore), <code>src/lib/sim/world/score/chunk.ts</code>, <code>src/lib/sim/world/score/view.ts</code></li>
+      <li>Test: <code>src/lib/sim/world/score/cars.spec.ts</code>, <code>src/lib/sim/world/score/chunk.perf.spec.ts</code> (extend: print with cars)</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>CarSnapshot</code>, <code>carSnapshotOf</code> (Task 8).</li>
+      <li>Produces:</li>
+    </ul>
+    <pre><code data-lang="ts">// WorldSeries
+stepped(month: number, cars?: CarSnapshot | null): void;
+// types.ts
+export interface CarRow { households: number; cars: number; carless: number; spacesPerHome: number; zones: Float32Array }
+export interface SeriesChunk { /* … */ cars: CarRow[] | null }
+export interface WorldSeriesData { version: 6; /* … */ }
+export interface CarsView {
+  households: number[]; cars: number[]; carless: number[];
+  perHousehold: number[]; // cars / households, NaN at 0 households
+  spacesPerHome: number[];
+  zones: Float32Array[]; // per calendar month, cars per household by zone
+}
+export interface TimelineView { /* … */ cars: CarsView | null }</code></pre>
+    <ol>
+      <li id="t10-s1"><input type="checkbox"> Write the failing tests: a snapshot passed with <code>stepped(m)</code> is filed in the calendar month holding model month m's last day, a later model month in the same calendar month overwrites it, and a calendar month with no model month ending in it carries the previous one; a series fed no snapshots gives <code>cars: null</code> chunks; <code>data()</code> then <code>createWorldSeries(statics, data)</code> gives the same chunks; version 5 data throws <code>world-score: saved series version 5</code>; <code>viewOf</code> joins <code>cars</code> across chunks, <code>chunksBefore</code> trims them, <code>perHousehold[i] === cars[i] / households[i]</code>; a chunk mixing null and non-null cars throws.</li>
+      <li id="t10-s2"><input type="checkbox"> Run and see them fail: <code>npx vitest run --project server src/lib/sim/world/score</code></li>
+      <li id="t10-s3"><input type="checkbox"> Implement following the <code>money</code>/<code>tiers</code> pattern (plan world only; null without a feed).</li>
+      <li id="t10-s4"><input type="checkbox"> Run the tests and see them pass; run the chunk perf spec on a quiet machine and record the median with cars (bar 1 ms per month).</li>
+      <li id="t10-s5"><input type="checkbox"> Commit: <code>git commit -m "feat(score): car series in chunks and the timeline view"</code></li>
+    </ol>
+  </section>
+
+  <section id="sec-task-11">
+    <h2>Task 11: Load car data and run it in both worlds</h2>
+    <ul>
+      <li>Modify: <code>src/lib/sim/scenario/load.ts:31-46, 118-130, 262+</code> (<code>ScenarioUrls.cars</code>, <code>carZones</code>; <code>Loaded.cars: CarData | null</code>), <code>src/lib/sim/world/runner/dataset.ts</code>, <code>src/lib/sim/world/runner/ensemble.ts</code> (world creation with <code>withFunding(funding, cars)</code>; feed log records <code>carSnapshotOf(world)</code> with each <code>stepped</code> mark; copies keep it), <code>src/lib/sim/world/runner/runner.ts</code>, <code>scripts/level2-check.ts</code> (<code>--cars off</code>; print elapsed fill time)</li>
+      <li>Test: <code>src/lib/sim/scenario/load.spec.ts</code> (or the existing load test), <code>src/lib/sim/world/host.cars.spec.ts</code>, <code>scripts/level2-check.test.ts</code> if present (else add a case where the script's tests live)</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: Tasks 4, 8, 9, 10.</li>
+      <li>Produces: <code>Loaded.cars: CarData | null</code>; <code>carSystemOf(loaded: Loaded, opts?: { off?: boolean }): CarSystem | null</code> (null without <code>cars.bin</code> or without <code>calibration.cars</code>); chunks posted in <code>filled</code> carry <code>cars</code>; <code>runLevel2(dir, { amount?, cars?: 'on' | 'off' })</code>.</li>
+    </ul>
+    <ol>
+      <li id="t11-s1"><input type="checkbox"> Write the failing tests: on <code>fixture-0</code> the host's <code>filled</code> chunks carry <code>cars</code> with households &gt; 0; on a manifest without <code>scenarios.fzp.cars</code> (Review Focus 5) the chunks carry <code>cars: null</code>, the session opens and nothing goes to stderr; both the plan and comparison worlds get a car system (their twin pairing stays seed 1); a restore after an edit gives the same <code>cars</code> rows as a fresh run; <code>runLevel2(dir, { cars: 'off' })</code> runs without the car system.</li>
+      <li id="t11-s2"><input type="checkbox"> Run and see them fail: <code>npx vitest run --project server src/lib/sim/world/host.cars.spec.ts src/lib/sim/scenario</code></li>
+      <li id="t11-s3"><input type="checkbox"> Implement. Fetch <code>cars.bin</code> only when the manifest names it (bytes via <code>fetchBytes</code>, decode against the parcel count); <code>car-zones.json</code> is fetched by the page, not the worker.</li>
+      <li id="t11-s4"><input type="checkbox"> Run the tests and see them pass; <code>npm run test:unit</code> passes.</li>
+      <li id="t11-s5"><input type="checkbox"> Commit: <code>git commit -m "feat(sim): load car data and run the car system on /sim"</code></li>
+    </ol>
+  </section>
+
+  <section id="sec-task-12">
+    <h2>Task 12: Details row, map layer and About</h2>
+    <ul>
+      <li>Create: <code>src/lib/timeline/cars-row.ts</code>, <code>src/lib/map/cars-layer.ts</code>, <code>e2e/sim-cars.spec.ts</code></li>
+      <li>Modify: <code>src/lib/timeline/SimDetails.svelte</code> (one row after the homes rows), <code>src/lib/timeline/copy.ts</code>, <code>src/lib/map/style.ts:276,376</code> (<code>carsLayer(theme)</code>), <code>src/lib/map/SimMap.svelte</code> (the zones source and values at the playhead), <code>src/lib/view/prefs.ts</code> (<code>carsPerHousehold</code>), <code>src/lib/view/LayerSwitches.svelte:3,28,65</code> (row <code>'carsPerHousehold'</code>), <code>src/lib/sim-page/SimPage.svelte:813</code> (the row only on <code>/sim</code> with <code>carZones</code> in the manifest), <code>src/lib/about/copy.ts</code> and <code>AboutAssumptions.svelte</code> (a short Cars section with its sources), <code>docs/dev/about.md</code></li>
+      <li>Test: <code>src/lib/timeline/cars-row.spec.ts</code>, <code>src/lib/map/cars-layer.spec.ts</code>, <code>src/lib/timeline/SimDetails.svelte.spec.ts</code>, <code>src/lib/view/LayerSwitches.svelte.spec.ts</code>, <code>e2e/sim-cars.spec.ts</code></li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>TimelineView.cars</code> (Task 10); <code>car-zones.json</code> (Task 4).</li>
+      <li>Produces: <code>carsRow(view: TimelineView, i: number): { today: number; atPlayhead: number; perHouseholdToday: number; perHouseholdAt: number } | null</code>; <code>zonesCollection(geo: FeatureCollection, values: Float32Array): FeatureCollection</code> (property <code>v</code>, null where NaN); <code>CARS_LEGEND</code>; <code>carsLayer(theme: Theme): LayerSpecification</code>.</li>
+    </ul>
+    <ol>
+      <li id="t12-s1"><input type="checkbox"> Write the failing tests: <code>carsRow</code> is null when <code>view.cars</code> is null or <code>filledThrough</code> &lt; 0, and reads index 0 and the playhead's index otherwise; <code>zonesCollection</code> gives <code>v: null</code> for NaN (Review Focus 2) and the layer paints null as no data; SimDetails shows one Cars row only with car data (Review Focus 5); LayerSwitches lists the cars row when asked and toggles <code>carsPerHousehold</code>; the e2e on <code>fixture-0</code> opens <code>/sim</code>, moves the playhead, sees the Cars row in Details, turns the layer on in the Layers panel and passes <code>expectNoA11yViolations</code>, waiting on conditions only.</li>
+      <li id="t12-s2"><input type="checkbox"> Run and see them fail: <code>npx vitest run --project client src/lib/timeline/SimDetails.svelte.spec.ts src/lib/view/LayerSwitches.svelte.spec.ts</code> and <code>npx vitest run --project server src/lib/timeline/cars-row.spec.ts src/lib/map/cars-layer.spec.ts</code></li>
+      <li id="t12-s3"><input type="checkbox"> Implement. Copy (builder's wording, terse): the row's term "Cars", value today then at the playhead, and cars per household's change; no explanation on the row, the About section carries it. The layer rebuilds the source's <code>v</code> on a playhead month change; switched in the Layers panel beside transit. The About section names the Census sources and the model in two or three sentences, with "details" linking the calibration figures through the existing provenance body. Data credits: check that the Census and DMV lock entries appear in About's source list (they come from the manifest); add a <code>SOFTWARE</code> entry only if a new runtime dependency ships.</li>
+      <li id="t12-s4"><input type="checkbox"> Run the tests and see them pass; then <code>npx playwright test e2e/sim-cars.spec.ts</code> (it starts or waits for the preview on 4173; never kill a server there).</li>
+      <li id="t12-s5"><input type="checkbox"> Commit: <code>git commit -m "feat(sim): cars row in Details, cars layer and About section"</code></li>
+    </ol>
+  </section>
+
+  <section id="sec-task-13">
+    <h2>Task 13: Archived GTFS and transit access by year</h2>
+    <ul>
+      <li>Create: <code>pipeline/sources/gtfs-archive.ts</code></li>
+      <li>Modify: <code>pipeline/transit-config.ts</code> (<code>GTFS_ARCHIVES</code>: per operator and year, the feed version chosen), <code>pipeline/steps/fetch.ts</code>, <code>pipeline/lib/cars/access.ts</code> (<code>accessByYear</code>), <code>pipeline/sources.lock.json</code> (by fetching)</li>
+      <li>Test: <code>pipeline/test/cars/gtfs-archive.test.ts</code></li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: Task 1's archive findings; <code>gtfsFromZip</code>, <code>feedVersion</code> (<code>pipeline/lib/gtfs.ts</code>); <code>buildAccessGrid</code>; <code>zoneAccess</code> (Task 4).</li>
+      <li>Produces: <code>GTFS_ARCHIVE_IDS</code>; <code>accessByYear(db, years: number[], lotZone, homes, lngLat, zones): { year: number; access: Float64Array; sourceYear: number }[]</code> (a year without a feed uses the earliest later year available, recorded as <code>sourceYear</code>).</li>
+    </ul>
+    <ol>
+      <li id="t13-s1"><input type="checkbox"> Write the failing tests: an archived feed fetch through a fake <code>Http</code> gives a lock entry with the archive's licence and the feed's date as <code>upstreamVersion</code>; <code>accessByYear</code> for a year before the earliest feed uses the earliest and reports <code>sourceYear</code>; two operators' feeds of one year are merged as today's build merges them.</li>
+      <li id="t13-s2"><input type="checkbox"> Run and see them fail: <code>npx vitest run --project pipeline pipeline/test/cars/gtfs-archive.test.ts</code></li>
+      <li id="t13-s3"><input type="checkbox"> Implement; fetch the archives (one feed per operator per year, the version in force on 1 April of that year); commit the lock entries.</li>
+      <li id="t13-s4"><input type="checkbox"> Run the tests and see them pass.</li>
+      <li id="t13-s5"><input type="checkbox"> Commit: <code>git commit -m "feat(pipeline): archived GTFS and transit access by year"</code></li>
+    </ol>
+  </section>
+
+  <section id="sec-task-14">
+    <h2>Task 14: The back-cast</h2>
+    <ul>
+      <li>Create: <code>pipeline/lib/cars/backcast.ts</code></li>
+      <li>Modify: <code>pipeline/steps/cars.ts</code>, <code>pipeline/lib/cars/report.ts</code>, <code>pipeline/lib/fzp-cal/report.ts</code> (<code>'## 15. Car back-cast'</code>), <code>src/lib/sim/scenario/rng.ts</code> (relative import of <code>fnv1a32</code> if the pipeline cannot resolve <code>$lib/generator</code>; then <code>src/lib/sim/scenario/rng.ts</code> joins <code>PATHS</code>)</li>
+      <li>Test: <code>pipeline/test/cars/backcast.test.ts</code></li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>stepZone</code>, <code>refreshTable</code>, <code>totals</code> (Task 8); <code>fitChoice</code> (Task 5); <code>moveRates</code> (Task 6); <code>accessByYear</code> (Task 13); the derived <code>project-histories.json</code> (completions and construction starts with existing homes); Task 2's ACS, SF3 and crosswalk tables.</li>
+      <li>Produces: <code>runBackcast(o: BackcastInput): BackcastResult</code> with <code>{ start: 2000 | 2009; years: { year: number; observed: number; predicted: number }[]; tracts: { tract: string; observed: number; predicted: number }[]; heldOut: { fitThrough: 2013; year: number; observed: number; predicted: number } }</code> (shares of households with no car).</li>
+    </ul>
+    <ol>
+      <li id="t14-s1"><input type="checkbox"> Write the failing tests: on a synthetic two-zone city with no completions and constant access, the predicted carless share stays at the model's equilibrium; one completion of 100 homes in zone 1 in year 2 adds 100 households in year 2's step; the held-out run's model reads no ACS release after 2009-2013 and no PUMS after 2013 (inputs asserted); the same seed gives the same result twice.</li>
+      <li id="t14-s2"><input type="checkbox"> Run and see them fail: <code>npx vitest run --project pipeline pipeline/test/cars/backcast.test.ts</code></li>
+      <li id="t14-s3"><input type="checkbox"> Implement. Start from 2000 placed on today's BGs through the crosswalk, or from 2005-2009 if Task 1 found that placement unclean (builder's call, reported). Step monthly with observed completions and construction starts placed by parcel, access from <code>accessByYear</code>, a refresh each year; compare citywide with every ACS release through the latest (the 28.6%, 29.8%, 30.3%, 31.4% published readings appear beside the pulled tables as a check), by tract for the latest release; the held-out fit through 2009-2013 predicts the latest. A stayer life-event rate is added only if the back-cast misses clearly, with the rate from the transaction literature, marked literature in the report. Section 15 prints the table and states that gating on it (like V28) is for the owner to decide once numbers are in.</li>
+      <li id="t14-s4"><input type="checkbox"> Run the tests and see them pass; <code>npm run test:pipeline</code> passes.</li>
+      <li id="t14-s5"><input type="checkbox"> Commit: <code>git commit -m "feat(pipeline): car ownership back-cast and held-out check"</code></li>
+    </ol>
+  </section>
+
+  <section id="sec-task-15">
+    <h2>Task 15: Live build, the level check and the docs</h2>
+    <ul>
+      <li>Create: <code>docs/dev/cars.md</code></li>
+      <li>Modify: <code>CLAUDE.md</code> (scoped docs list: one line for cars), <code>docs/dev/pipeline.md</code> (Where things land: <code>cars.bin</code>, <code>car-zones.json</code>, section 14 and 15; the Census sources), <code>docs/dev/world-core.md</code> (the car hook, the step order), <code>docs/dev/world-score.md</code> (<code>cars</code>), <code>docs/dev/data-serving.md</code> if it lists dataset files</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: everything above.</li>
+      <li>Produces: an uploaded dataset whose <code>level2-check</code> exits 0, and the docs.</li>
+    </ul>
+    <ol>
+      <li id="t15-s1"><input type="checkbox"> Merge <code>origin/main</code>, then build (restore the cache first in a fresh worktree).
+        <pre><code data-lang="sh">git merge origin/main
+npm run pipeline -- fetch --restore
+npm run pipeline -- build</code></pre>
+        Expected: every invariant passes, V38 and V39 included.
+      </li>
+      <li id="t15-s2"><input type="checkbox"> Run the level check with cars on and off; record both reached months.
+        <pre><code data-lang="sh">npx tsx scripts/level2-check.ts pipeline/out/&lt;v&gt;
+npx tsx scripts/level2-check.ts pipeline/out/&lt;v&gt; --cars off</code></pre>
+        Expected: exit 0 with cars on (otherwise upload nothing and report). Record both reached months and the difference in <code>docs/dev/cars.md</code> and in the final report to the owner.
+      </li>
+      <li id="t15-s3"><input type="checkbox"> Write <code>docs/dev/cars.md</code> (sources and their ranks, the population, the choice, moves, fills, the hook and its order, parking frames and the off path, the series field, the map layer, the back-cast, measured timings) and the doc updates above; add the CLAUDE.md line.</li>
+      <li id="t15-s4"><input type="checkbox"> Upload and verify.
+        <pre><code data-lang="sh">npm run pipeline -- upload &lt;v&gt;
+npm run pipeline -- verify &lt;v&gt; --origin https://&lt;staging-origin&gt;</code></pre>
+      </li>
+      <li id="t15-s5"><input type="checkbox"> Commit: <code>git commit -m "docs: car ownership subsystem"</code>. Signoff, the PR and the merge follow the owner's finish flow, not this plan.</li>
+    </ol>
+  </section>
+
+  <section id="sec-owner-rulings">
+    <h2>Owner rulings</h2>
+    <aside data-kind="decision"><strong>R1. Parking shift as derived frames.</strong> The shift is carried as frames derived from world state (pool-closing precedent, <code>funding/closing.ts:171</code>), refreshed yearly, quantised to 0.01 spaces per home; a change replans that zone's lots.</aside>
+    <aside data-kind="decision"><strong>R2. Market only.</strong> The shift applies to market odds on both paths (<code>startRates</code> and the funded market clock); affordable odds are unchanged.</aside>
+    <aside data-kind="decision"><strong>R3. No stop threshold.</strong> The goal-month effect is recorded and reported (cars on, cars off, difference), not gated.</aside>
+    <aside data-kind="decision"><strong>R4. Builder's calls accepted.</strong> 96 household types, a project's zone is its first lot's, prototype-to-parking-type mapping, 3+ counted at the PUMS mean.</aside>
+  </section>
+</article>

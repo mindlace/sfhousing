@@ -287,3 +287,142 @@ export function placeTokens(name: string): Set<string> {
       .filter((t) => t.length > 1 && !STOPWORDS.has(t))
   );
 }
+
+/**
+ * Archived copies of the three agencies' own GTFS feeds, for transit access in past years (the car
+ * back-cast; docs/dev/cars-data.md, Archived Muni, BART, Caltrain GTFS). Keyless hosts only; each
+ * copy is the agency's official feed, so its licence is the agency's. The ids are not in GTFS_IDS:
+ * today's network and the transit target date never read them (ruling P10).
+ */
+export type GtfsArchiveHost = 'gtfs-data-exchange' | 'openmobilitydata' | 'wayback';
+
+const OMD_FEED: Record<OperatorId, string> = {
+  muni: 'sfmta/60',
+  bart: 'bart/58',
+  caltrain: 'caltrain/122'
+};
+
+export const GTFS_ARCHIVE_HOSTS: Record<
+  GtfsArchiveHost,
+  { label: string; homepage: string; url: (key: string, op: OperatorId) => string }
+> = {
+  // GTFS Data Exchange (2008-2016): the copies it took of each agency feed, in its S3 bucket.
+  'gtfs-data-exchange': {
+    label: 'GTFS Data Exchange',
+    homepage: 'https://github.com/jehiah/gtfs-data-exchange',
+    url: (key) => `https://gtfs.s3.amazonaws.com/${key}.zip`
+  },
+  // OpenMobilityData / TransitFeeds (2015-2023): versions by fetch date, in its S3 bucket.
+  openmobilitydata: {
+    label: 'OpenMobilityData (TransitFeeds)',
+    homepage: 'https://transitfeeds.com',
+    url: (key, op) =>
+      `https://openmobilitydata-data.s3-us-west-1.amazonaws.com/public/feeds/${OMD_FEED[op]}/${key}/gtfs.zip`
+  },
+  // Internet Archive Wayback Machine: the raw snapshot (`id_`) of the agency's own zip URL; the
+  // key is `<timestamp>/<original url>`.
+  wayback: {
+    label: 'Internet Archive Wayback Machine',
+    homepage: 'https://web.archive.org',
+    url: (key) => {
+      const slash = key.indexOf('/');
+      return `https://web.archive.org/web/${key.slice(0, slash)}id_/${key.slice(slash + 1)}`;
+    }
+  }
+};
+
+export interface GtfsArchiveSpec {
+  /** `gtfs-archive-<operator>-<year>`. */
+  lockId: string;
+  operator: OperatorId;
+  /** The back-cast year this feed stands for: the version in force on 1 April of it. */
+  year: number;
+  host: GtfsArchiveHost;
+  /** The host's name for the copy (file stem, version date, or `<timestamp>/<url>`). */
+  key: string;
+  url: string;
+  label: string;
+  homepage: string;
+  license: string;
+}
+
+export function gtfsArchive(
+  operator: OperatorId,
+  year: number,
+  host: GtfsArchiveHost,
+  key: string
+): GtfsArchiveSpec {
+  const live = GTFS_FEEDS[`gtfs-${operator}`];
+  const h = GTFS_ARCHIVE_HOSTS[host];
+  return {
+    lockId: `gtfs-archive-${operator}-${year}`,
+    operator,
+    year,
+    host,
+    key,
+    url: h.url(key, operator),
+    label: `${live.label}, ${year} (archived: ${h.label})`,
+    homepage: h.homepage,
+    license: `${live.license} (archived copy of the agency's feed: ${h.label})`
+  };
+}
+
+const gde = (op: OperatorId, year: number, file: string) =>
+  gtfsArchive(op, year, 'gtfs-data-exchange', file);
+const omd = (op: OperatorId, year: number, version: string) =>
+  gtfsArchive(op, year, 'openmobilitydata', version);
+const wb = (op: OperatorId, year: number, snapshot: string) =>
+  gtfsArchive(op, year, 'wayback', snapshot);
+const GDE_MUNI = 'san-francisco-municipal-transportation-agency';
+
+/**
+ * Per operator and year, the archived feed chosen: the version in force on 1 April of the year
+ * (the latest one published before it whose calendar covers it, else the first after it whose
+ * calendar does). Years with none found (Muni 2014, 2023-24; BART 2009, 2014, 2024; Caltrain
+ * 2014) take the next year's feed (docs/dev/cars-data.md).
+ */
+export const GTFS_ARCHIVES: GtfsArchiveSpec[] = [
+  gde('muni', 2009, `${GDE_MUNI}_20090401_0353`),
+  gde('muni', 2010, `${GDE_MUNI}_20100204_0313`),
+  gde('muni', 2011, `${GDE_MUNI}_20110420_0243`),
+  gde('muni', 2012, `${GDE_MUNI}_20120319_0412`),
+  gde('muni', 2013, `${GDE_MUNI}_20130324_0307`),
+  omd('muni', 2015, '20150225'),
+  omd('muni', 2016, '20160307'),
+  omd('muni', 2017, '20170221'),
+  omd('muni', 2018, '20180527'),
+  omd('muni', 2019, '20190401'),
+  omd('muni', 2020, '20200328'),
+  omd('muni', 2021, '20210317'),
+  omd('muni', 2022, '20220305'),
+  wb('bart', 2008, '20080917141240/http://www.bart.gov/dev/schedules/20080627/google_transit.zip'),
+  wb('bart', 2010, '20100528002023/http://www.bart.gov/dev/schedules/google_transit.zip'),
+  wb('bart', 2011, '20101213073722/http://bart.gov/dev/schedules/google_transit.zip'),
+  wb('bart', 2012, '20120531023532/http://bart.gov/dev/schedules/google_transit.zip'),
+  wb('bart', 2013, '20121028141534/http://bart.gov/dev/schedules/google_transit.zip'),
+  omd('bart', 2015, '20150120'),
+  omd('bart', 2016, '20160310'),
+  omd('bart', 2017, '20170330'),
+  omd('bart', 2018, '20180222'),
+  omd('bart', 2019, '20190123'),
+  omd('bart', 2020, '20200401'),
+  omd('bart', 2021, '20210315'),
+  omd('bart', 2022, '20220212'),
+  omd('bart', 2023, '20230401'),
+  gde('caltrain', 2009, 'caltrain_20090308_1937'),
+  gde('caltrain', 2010, 'caltrain_20090724_0212'),
+  gde('caltrain', 2011, 'caltrain_20110217_0333'),
+  gde('caltrain', 2012, 'caltrain_20120113_0421'),
+  gde('caltrain', 2013, 'caltrain_20120824_0333'),
+  omd('caltrain', 2015, '20150127'),
+  omd('caltrain', 2016, '20160401'),
+  omd('caltrain', 2017, '20170324'),
+  omd('caltrain', 2018, '20180329'),
+  omd('caltrain', 2019, '20190131'),
+  omd('caltrain', 2020, '20200110'),
+  omd('caltrain', 2021, '20210322'),
+  omd('caltrain', 2022, '20220316'),
+  omd('caltrain', 2023, '20230325'),
+  omd('caltrain', 2024, '20231221')
+];
+export const GTFS_ARCHIVE_IDS: readonly string[] = GTFS_ARCHIVES.map((a) => a.lockId);

@@ -5,6 +5,7 @@ import type { Massing, Schedule, TargetProgressAt, TimelineScore } from '$lib/si
 import type { ProjectsFile, QualityRuleRef } from '$lib/timelapse/projects';
 import type { Day } from '$lib/timelapse/time';
 import type { PoolKind, TierUnits } from '$lib/timelapse/types';
+import type { CarSnapshot } from '../cars/columns';
 import type { FinanceFrame } from '../policy/frame';
 import type { Statics } from '../statics';
 import type { World, WorldEvent } from '../types';
@@ -83,6 +84,30 @@ export interface SeriesChunk {
   planEffect: PlanRow[];
   money: MoneyRow[] | null;
   tiers: TierUnits[] | null;
+  /** The plan world's cars; null for a world without a car system. */
+  cars: CarRow[] | null;
+}
+
+/** One calendar month's cars: the last model month ending in it, or the one before it. */
+export interface CarRow {
+  households: number;
+  cars: number;
+  carless: number;
+  /** Null when no project started in that model month. */
+  spacesPerHome: number | null;
+  /** Cars per household by zone (NaN for a zone with no households); null before the first filled month. */
+  zones: Float32Array | null;
+}
+
+/** The plan world's cars as the page reads them, one entry per filled calendar month. */
+export interface CarsView {
+  households: number[];
+  cars: number[];
+  carless: number[];
+  /** `cars / households`; null at 0 households. */
+  perHousehold: (number | null)[];
+  spacesPerHome: (number | null)[];
+  zones: (Float32Array | null)[];
 }
 
 /**
@@ -94,7 +119,7 @@ export interface SeriesChunk {
  * carries the plan world's.
  */
 export interface WorldSeriesData {
-  version: 5;
+  version: 6;
   /** The last model month passed to `stepped`; 0 before any. */
   stepped: number;
   /** `finalThrough()`. */
@@ -130,13 +155,29 @@ export interface WorldSeriesData {
   delta: Int32Array;
   /** Per-month prefix sums through `summed`. */
   sum: Int32Array;
+  /**
+   * Cars by calendar month, 4 entries each (households, cars, carless, spaces per home; NaN
+   * households: no model month filed there yet, NaN spaces: none started). Length 0 until the
+   * first snapshot.
+   */
+  carRows: Float64Array;
+  /** Cars per household by zone, `carZoneCount` entries per calendar month; empty as `carRows`. */
+  carZones: Float32Array;
+  /** The zones per month in `carZones`; 0 until the first snapshot. */
+  carZoneCount: number;
 }
 
 /** One world's series by calendar month, fed by the runner. */
 export interface WorldSeries {
   add(e: WorldEvent, world: World, statics: Statics): void;
+  /**
+   * The world's car state at creation (model month 0, the dataset date), before any `stepped`:
+   * filed in the calendar month holding the dataset date, so that month has today's households
+   * rather than zeros. Null (no car system) files nothing.
+   */
+  created(cars: CarSnapshot | null): void;
   /** Called after each step with the model month just stepped. */
-  stepped(month: number): void;
+  stepped(month: number, cars?: CarSnapshot | null): void;
   finalThrough(): number;
   rows(from: number, through: number): MonthRow[];
   data(): WorldSeriesData;
@@ -179,6 +220,7 @@ export interface TimelineView {
   tierTargets: TargetProgressAt[] | null;
   money: MoneyView | null;
   tiers: TierUnits[] | null;
+  cars: CarsView | null;
   baseline: TimelineScore['baseline'];
   phasing: TimelineScore['phasing'];
   references: TimelineScore['references'];

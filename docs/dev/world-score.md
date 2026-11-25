@@ -47,6 +47,7 @@ The final-month guard: an event that would change a final month throws, naming t
 - `rows`: the plan world's own `MonthRow`s, `inProgress` stages included.
 - `planEffect`: the plan's `entitledNew` and `completedNetNew` minus the twin's, month by month.
 - `money`, `tiers`: the plan world's, with a `money` feed (rule 9); null without one.
+- `cars`: the plan world's cars by calendar month (`CarRow`: households, cars, carless, `spacesPerHome` (null when no project started), cars per household by zone); null when the series was never given a snapshot. `stepped(month, cars?)` files a `CarSnapshot` in the calendar month holding model month `month`'s last day (a later model month in the same calendar month overwrites it); a calendar month no model month ends in carries the previous one (zeros before the first). `created(cars)`, before any `stepped`, files the world's car state at creation (model month 0) in the calendar month holding the dataset date, so today's month has today's households; the timeline host feeds it for the plan world only. `TimelineView.cars` (`CarsView`) joins the chunks with `perHousehold = cars / households`; chunks that mix null and non-null `cars` throw. `WorldSeriesData` is version 6 (`carRows`, `carZones`, `carZoneCount`); version 5 data is rejected.
 
 It throws for a month not final.
 

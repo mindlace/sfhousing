@@ -57,6 +57,8 @@ Fetch the file when working in the relevant area:
 - **Homes by income tier and public money in the results (`TimelineScore.tiers` and `money`, `tiersOf`, the ledger series and their identities, per added home, limit statements)** — [docs/dev/finance-score.md](docs/dev/finance-score.md)
 - **World core (the world, the step and its systems, the due list, the readers, the funding hook)** — [docs/dev/world-core.md](docs/dev/world-core.md)
 - **Scores from the step engine (WorldSeries, chunks, TimelineView, cardAt)** — [docs/dev/world-score.md](docs/dev/world-score.md)
+- **Car ownership (zones and households, the choice, moves and fills, the car hook, parking into start odds, the back-cast, level 2 with and without cars, measured cost)** — [docs/dev/cars.md](docs/dev/cars.md)
+- **Car ownership data sources (ACS, PUMS, SF3 2000, crosswalks, DMV, archived GTFS, parking counts and cost per space, AMI), each verified** — [docs/dev/cars-data.md](docs/dev/cars-data.md)
 - **Public money in the step engine (world-funding: the line by month, funded clocks over frames, money events at stage events, shadows, the tolerance referee)** — [docs/dev/world-funding.md](docs/dev/world-funding.md)
 - **Ensemble runner (the /sim timeline worker host: openTimeline, setPolicy, filling, copies and refill, lookups)** — [docs/dev/ensemble-runner.md](docs/dev/ensemble-runner.md)
 - **The game (levels, bars, what each level allows, the playable document, saved games and the store's keys, the win card, the level panel, the e2e seam and its helpers)** — [docs/dev/game.md](docs/dev/game.md)

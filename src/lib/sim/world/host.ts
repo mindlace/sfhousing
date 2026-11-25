@@ -75,8 +75,13 @@ export interface TimelineHostDeps {
   decodeParcels?(bytes: Uint8Array): Promise<ScenarioParcels>;
   decodePolicy?(bytes: Uint8Array, parcels: ScenarioParcels): Promise<PolicyParcels>;
   decodeGross?(bytes: Uint8Array): Promise<GrossTable>;
-  /** Seam: the load itself (default `loadScenario(…, { policy: true })`). */
+  /** Seam: the load itself (default `loadScenario(…, { policy: true, cars: true })`). */
   load?(urls: ScenarioUrls): Promise<Loaded | LoadFailure>;
+  /**
+   * Default 'on': both worlds run the dataset's car system when it ships cars.bin and
+   * `calibration.cars`. 'off': no car system at all (`level2-check --cars off`).
+   */
+  cars?: 'on' | 'off';
 }
 
 export interface TimelineHost {
@@ -230,7 +235,8 @@ export function createTimelineHost(deps: TimelineHostDeps): TimelineHost {
       decodeParcels: deps.decodeParcels,
       decodePolicy: deps.decodePolicy,
       decodeGross: deps.decodeGross,
-      load: deps.load
+      load: deps.load,
+      carsOff: deps.cars === 'off'
     };
     st.chunks = createChunkSet(manifest, dsDeps);
     s = st;

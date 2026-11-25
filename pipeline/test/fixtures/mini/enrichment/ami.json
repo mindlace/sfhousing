@@ -1,0 +1,16 @@
+{
+  "years": [
+    {
+      "year": 2024,
+      "bySize": [104900, 119900, 134850, 149850, 161850, 173850, 185800, 197800]
+    }
+  ],
+  "sources": [
+    {
+      "label": "MOHCD, 2024 Maximum Income by Household Size derived from the Unadjusted AMI for the HUD Metro FMR Area that contains San Francisco, effective 04/30/2024",
+      "url": "https://www.sf.gov/sites/default/files/2024-05/2024%20AMI-IncomeLimits-HMFA.pdf",
+      "page": "p. 1, row \"100% of Median\", columns 1 to 8 persons",
+      "accessed": "2026-11-24"
+    }
+  ]
+}
