@@ -1,0 +1,1289 @@
+<article>
+  <header>
+    <h1>Tally and tree</h1>
+    <p>The game's screens and header parts: the tally card, the tree, the goal headline with side goals, the opening card, the header's unit count and the game panel.</p>
+  </header>
+
+  <section id="sec-purpose">
+    <h2>Purpose</h2>
+    <p>This unit draws what the player sees of the game between and around runs. It owns row U1 of the <a href="../design/2026-11-24-2120-incremental-loop.html">incremental loop design</a>. It decides no rule of the game: every number it shows comes in as a prop or from <code>useGame()</code>.</p>
+    <ul>
+      <li><code>Tally</code> is the card after a run: homes by the deadline, units collected, the lump and side rewards, where unbuilt homes stand, Continue.</li>
+      <li><code>Tree</code> is the screen between runs (P7): the nodes by branch, one open node with Buy, Edit and the switch on a bought node, Run, "Take the next goal", and the ending.</li>
+      <li><code>GoalHeadline</code> is the header's pinned item (P2, P6): the goal, its bar, what it unlocks, and the side goals behind a press.</li>
+      <li><code>OpeningCard</code> closes the opening: the room goal met, what comes next, Start, the account offer (D7).</li>
+      <li><code>GameCell</code> is the header's unit count (call 7). It opens <code>GamePanel</code>: saved games (D8, D14), New game, the sync line, the sound switch (call 18) and "Collect for me" (call 17).</li>
+    </ul>
+    <p>Rulings carried: P2, P6, P7 and P9 (units are what was collected), P12 (the switch on a bought node), P15 (no five-level words), D7, D8, D14, calls 7, 9, 17 and 18. The global constraints on keyboard, targets, reduced motion and flashing bind every part.</p>
+  </section>
+
+  <section id="sec-interfaces">
+    <h2>Interfaces</h2>
+    <p>These rows and their sections are copied from the design with no change. This unit produces U1 and needs G1, G2, G3, G4, G6 and G7. The additions U1 needs are in <a href="#sec-design-u1-add">U1 additions</a>; they are proposals, not part of the copied row.</p>
+    <table id="tbl-interfaces">
+      <caption>Interface table</caption>
+      <thead>
+        <tr><th scope="col">Row</th><th scope="col">Owner</th><th scope="col">Layer</th><th scope="col">Summary</th><th scope="col">Contract</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">G1</th><td><code>game-core</code></td><td>Model commitment</td><td>The game's state and the saved game</td><td><a href="#sec-if-g1">G1</a></td></tr>
+        <tr><th scope="row">G2</th><td><code>game-core</code></td><td>Model commitment</td><td>Units by kind: balances, prices, spending</td><td><a href="#sec-if-g2">G2</a></td></tr>
+        <tr><th scope="row">G3</th><td><code>tree-catalogue</code></td><td>Model commitment</td><td>The tree: nodes, what is shown, buying</td><td><a href="#sec-if-g3">G3</a></td></tr>
+        <tr><th scope="row">G4</th><td><code>game-core</code></td><td>Model commitment</td><td>Limits from what is bought; whether a policy runs</td><td><a href="#sec-if-g4">G4</a></td></tr>
+        <tr><th scope="row">G6</th><td><code>game-core</code></td><td>Model commitment</td><td>The ladder, side goals, a run's result, settling</td><td><a href="#sec-if-g6">G6</a></td></tr>
+        <tr><th scope="row">G7</th><td><code>game-save</code></td><td>Decomposition choice</td><td>The browser's game store</td><td><a href="#sec-if-g7">G7</a></td></tr>
+        <tr><th scope="row">U1</th><td><code>tally-tree</code></td><td>Decomposition choice</td><td>The game's cards, the tree screen, the header parts</td><td><a href="#sec-if-u1">U1</a></td></tr>
+      </tbody>
+    </table>
+    <section id="sec-if-g1">
+      <h3>G1 The game's state and the saved game</h3>
+      <pre><code data-lang="ts">// src/lib/game/state.ts
+import type { Day } from '$lib/timelapse/time';
+import type { RunResult } from './run-result';
+
+export type UnitKind = 'home';
+export const UNIT_KINDS: readonly UnitKind[] = ['home'];
+export type Units = Partial&lt;Record&lt;UnitKind, number&gt;&gt;;
+export type NodeId = string;
+
+export interface MetRung {
+  rung: number;
+  reachedOn: Day;
+  datasetVersion: string;
+  at: string;
+}
+
+export interface GameState {
+  v: 2;
+  phase: 'opening' | 'runs';
+  firstWinAt: string | null;
+  bought: Record&lt;NodeId, number&gt;;
+  units: Units;
+  rung: number;
+  met: MetRung[];
+  side: Record&lt;string, string&gt;;
+  runs: number;
+  last: RunResult | null;
+}
+
+export const NEW_GAME: GameState;
+
+// src/lib/game/save-shape.ts
+export interface GameSave {
+  v: 2;
+  id: string;
+  name: string;
+  nameIsDefault: boolean;
+  state: GameState;
+  plan: string | null;
+  policy: string | null;
+  savedAt: string;
+}
+
+export type SaveEntry = Pick&lt;GameSave, 'id' | 'name' | 'nameIsDefault' | 'savedAt'&gt; &amp;
+  Pick&lt;GameState, 'phase' | 'rung'&gt;;
+
+export function parseGameSave(json: unknown): GameSave | null;</code></pre>
+      <dl>
+        <dt><code>phase</code></dt><dd><code>'opening'</code> until the first run starts.</dd>
+        <dt><code>firstWinAt</code></dt><dd>ISO time the room goal was first met. The server makes the account on the first save that has it (D7).</dd>
+        <dt><code>bought</code></dt><dd>The level bought of each node, 1 or more. A node not bought has no entry.</dd>
+        <dt><code>units</code></dt><dd>The balance to spend.</dd>
+        <dt><code>rung</code></dt><dd>The index in the ladder of the deadline in play.</dd>
+        <dt><code>met</code></dt><dd>One entry per rung met, ascending by rung, each recorded once.</dd>
+        <dt><code>side</code></dt><dd>Side goal id to the ISO time it was first met.</dd>
+        <dt><code>last</code></dt><dd>The latest run's result, which the header shows between runs.</dd>
+      </dl>
+      <ul>
+        <li><code>NEW_GAME</code> is the opening with nothing bought, no units, rung 0 and no runs.</li>
+        <li><code>parseGameSave</code> returns null unless <code>v</code> is 2 at both levels (P15).</li>
+        <li>The result is rebuilt from the known fields. An unknown field is dropped.</li>
+        <li>A <code>bought</code> entry for a node the catalogue does not have is dropped. A level above the node's last is lowered to it.</li>
+        <li>Unit amounts and <code>runs</code> are whole numbers of 0 or more.</li>
+        <li><code>plan</code> and <code>policy</code> stay opaque text, as they are today.</li>
+      </ul>
+      <p><strong>Removed:</strong> <code>Level</code>, <code>Progress</code>, <code>Banked</code>, <code>Bar</code>, <code>barOf</code>, <code>roundComplete</code>, <code>levelUp</code>, <code>standing</code>, <code>beats</code>.</p>
+    </section>
+    <section id="sec-if-g2">
+      <h3>G2 Units</h3>
+      <pre><code data-lang="ts">// src/lib/game/units.ts
+import type { Units } from './state';
+
+export function credit(a: Units, b: Units): Units;
+export function affords(have: Units, price: Units): boolean;
+export function spend(have: Units, price: Units): Units;
+export function shortBy(have: Units, price: Units): Units;
+export function total(u: Units): number;</code></pre>
+      <ul>
+        <li>A missing kind is 0.</li>
+        <li><code>spend</code> throws <code>RangeError</code> when <code>affords</code> is false.</li>
+        <li><code>shortBy</code> holds only the kinds the balance is short of.</li>
+        <li>No function changes its arguments.</li>
+      </ul>
+    </section>
+    <section id="sec-if-g3">
+      <h3>G3 The tree</h3>
+      <pre><code data-lang="ts">// src/lib/game/tree.ts
+import type { PresetId } from '$lib/sim-page/timing';
+import type { StopType } from '$lib/sim/levers/brushes';
+import type { GameState, NodeId, Units } from './state';
+
+export type Branch = 'permitting' | 'zoning' | 'money' | 'hands';
+
+export type Grant =
+  | { tag: 'preset'; preset: PresetId }
+  | { tag: 'measure'; preset: string }
+  | { tag: 'stop'; stop: StopType }
+  | { tag: 'bands'; max: 2 | 3 }
+  | { tag: 'stories'; max: number }
+  | { tag: 'reach'; maxM: number }
+  | { tag: 'hands'; what: 'radius' | 'linger'; value: number }
+  | { tag: 'hands'; what: 'auto' };
+
+export interface NodeLevel {
+  price: Units;
+  grant: Grant;
+  step: string;
+}
+
+export interface TreeNode {
+  id: NodeId;
+  branch: Branch;
+  label: string;
+  line: string;
+  after: NodeId[];
+  ring: number;
+  levels: NodeLevel[];
+  source: { text: string; href: string | null } | null;
+}
+
+export interface NodeView {
+  node: TreeNode;
+  level: number;
+  state: 'ready' | 'short' | 'done';
+  short: Units | null;
+}
+
+export type Bought =
+  | { ok: true; state: GameState; grant: Grant }
+  | { ok: false; reason: 'unknown' | 'hidden' | 'done' | 'short' };
+
+export function treeView(s: GameState, nodes?: readonly TreeNode[]): NodeView[];
+export function buy(s: GameState, id: NodeId, nodes?: readonly TreeNode[]): Bought;
+
+// src/lib/game/catalogue/nodes.ts
+export const NODES: readonly TreeNode[];</code></pre>
+      <dl>
+        <dt><code>after</code></dt><dd>The node is shown once any of these is bought. Empty: shown from the start.</dd>
+        <dt><code>ring</code></dt><dd>The node is shown once <code>GameState.rung</code> is at least this.</dd>
+        <dt><code>step</code></dt><dd>The words for the level, such as "8 stories".</dd>
+        <dt><code>line</code></dt><dd>One line saying what the node does.</dd>
+        <dt><code>source</code></dt><dd>Where the value comes from. Null for a step in what the player may choose.</dd>
+      </dl>
+      <ul>
+        <li><code>treeView</code> returns the shown nodes only, in catalogue order.</li>
+        <li><code>level</code> is the level bought, 0 for none. <code>state</code> speaks of the next level: <code>'ready'</code> when affordable, <code>'short'</code> when not, <code>'done'</code> when there is none.</li>
+        <li><code>buy</code> buys the next level: it spends its price and records the level. It changes nothing else.</li>
+        <li><code>nodes</code> defaults to <code>NODES</code>.</li>
+        <li>Every preset and measure node has a <code>source</code>. No grant multiplies homes.</li>
+        <li>Levels of one node are bought in order.</li>
+      </ul>
+    </section>
+    <section id="sec-if-g4">
+      <h3>G4 Limits</h3>
+      <pre><code data-lang="ts">// src/lib/game/limits.ts
+import type { StopType } from '$lib/sim/levers/brushes';
+import type { Policy, PolicyKind, SimPolicy4 } from '$lib/timeline/policy4';
+import type { GameState } from './state';
+import type { TreeNode } from './tree';
+
+export interface Hands {
+  radiusPx: number;
+  lingerMs: number;
+  auto: boolean;
+}
+
+export interface Limits {
+  open: boolean;
+  presets: ReadonlySet&lt;string&gt;;
+  measures: ReadonlySet&lt;string&gt;;
+  stops: ReadonlySet&lt;StopType&gt;;
+  bands: number;
+  stories: number;
+  reachM: number;
+  custom: boolean;
+  hands: Hands;
+}
+
+export const OPEN_LIMITS: Limits;
+export const BASE_HANDS: Hands;
+export const FREE_MEASURES: readonly string[];
+
+export function limitsOf(s: GameState, nodes?: readonly TreeNode[]): Limits;
+export function within(kind: PolicyKind, p: Policy, l: Limits): boolean;
+export function runnable(doc: SimPolicy4, l: Limits): SimPolicy4;
+export function isGiven(p: Policy): boolean;</code></pre>
+      <dl>
+        <dt><code>open</code></dt><dd>The open game: every control, no limit (call 9).</dd>
+        <dt><code>presets</code>, <code>measures</code></dt><dd>The permitting preset ids and funding preset ids that run.</dd>
+        <dt><code>bands</code>, <code>stories</code>, <code>reachM</code></dt><dd>The most bands a transit rule may have, its tallest band and its furthest band. All 0 before the first stop type is bought.</dd>
+        <dt><code>custom</code></dt><dd>Custom timing and custom route shares may be set.</dd>
+        <dt><code>FREE_MEASURES</code></dt><dd><code>state-off</code> and <code>federal-credits-off</code>.</dd>
+      </dl>
+      <ul>
+        <li><code>limitsOf</code> folds the grants of every level bought. The largest <code>stories</code>, <code>reach</code>, <code>bands</code>, <code>radius</code> and <code>linger</code> win.</li>
+        <li>Once the last rung is met, <code>stories</code> is 80, <code>bands</code> 3, <code>reachM</code> 3219, every stop type is in, and <code>custom</code> is true.</li>
+        <li>A permitting policy is within the limits when its preset is in <code>presets</code>, and, unless <code>custom</code>, it has no custom edit and no custom route shares.</li>
+        <li>A transit rule is within the limits when its stop types are in <code>stops</code>, it has at most <code>bands</code> bands, no band is taller than <code>stories</code> and none is further than <code>reachM</code>.</li>
+        <li>A protection is within the limits once <code>stops</code> is not empty.</li>
+        <li>A painted area is within the limits only when <code>open</code> (P11).</li>
+        <li>A money policy is within the limits when it is given and its preset is in <code>measures</code>, or its preset is in <code>FREE_MEASURES</code> and <code>measures</code> is not empty. Any other money policy only when <code>open</code> (D4).</li>
+        <li><code>runnable</code> keeps the policies within the limits and returns the same document when it drops none.</li>
+        <li>With <code>OPEN_LIMITS</code>, <code>within</code> is always true.</li>
+      </ul>
+      <p><strong>Unchanged:</strong> <code>isGiven</code>. <strong>Removed:</strong> <code>Allowed</code>, <code>ALL_ALLOWED</code>, <code>allowedAt</code>, <code>unlocksAt</code>, <code>runs</code>, <code>playable</code>, <code>levelNeeded</code>, <code>simLocked</code>, <code>needsHigher</code>.</p>
+    </section>
+    <section id="sec-if-g6">
+      <h3>G6 The ladder, side goals and a run's result</h3>
+      <pre><code data-lang="ts">// src/lib/game/catalogue/ladder-years.ts
+export const LADDER_YEARS: readonly number[];
+
+// src/lib/game/ladder.ts
+import type { Goal } from '$lib/goal/goal';
+import type { Day } from '$lib/timelapse/time';
+import type { GameState, Units } from './state';
+
+export interface Rung {
+  deadline: Day;
+  label: string;
+}
+
+export const RUNGS: number;
+export const RUNG_LUMP: Units;
+
+export function ladder(asOf: Day): Rung[];
+export function goalAt(asOf: Day, rung: number, amount?: number): Goal;
+export function finished(s: GameState): boolean;
+export function takeNext(s: GameState): GameState;
+
+// src/lib/game/run-result.ts
+import type { TimelineView } from '$lib/sim/world/score/types';
+import type { Stage } from '$lib/timelapse/types';
+
+export interface RunTake {
+  dropped: Units;
+  collected: Units;
+}
+
+export interface RunReading {
+  homes: number;
+  reachedOn: Day | null;
+  stages: Record&lt;Exclude&lt;Stage, 'complete'&gt;, number&gt;;
+  waitingMoney: number | null;
+}
+
+export interface RunResult extends RunTake, RunReading {
+  rung: number;
+  amount: number;
+  datasetVersion: string;
+  at: string;
+  lump: Units | null;
+  side: { id: string; reward: Units }[];
+}
+
+export function readRun(view: TimelineView, goal: Goal): RunReading | null;
+export function resultOf(
+  s: GameState,
+  reading: RunReading,
+  take: RunTake,
+  input: SideInput,
+  meta: { amount: number; datasetVersion: string; at: string }
+): RunResult;
+export function settle(s: GameState, r: RunResult): GameState;
+
+// src/lib/game/side-goals.ts
+export interface SideInput {
+  view: TimelineView;
+  index: number;
+  take: RunTake;
+}
+
+export interface SideGoal {
+  id: string;
+  label: string;
+  ring: number;
+  reward: Units;
+  read(i: SideInput): { value: number; target: number } | null;
+}
+
+export const SIDE_GOALS: readonly SideGoal[];
+export const SIDE_SHOWN = 3;
+export function sideShown(s: GameState, goals?: readonly SideGoal[]): SideGoal[];</code></pre>
+      <dl>
+        <dt><code>LADDER_YEARS</code></dt><dd>The deadline years after the window's end, latest first. The measurement in <code>tree-catalogue</code> sets them.</dd>
+        <dt><code>RUNGS</code></dt><dd><code>LADDER_YEARS.length + 1</code>.</dd>
+        <dt><code>homes</code></dt><dd>The goal's measure at the deadline's month.</dd>
+        <dt><code>reachedOn</code></dt><dd>The day the amount was first met at or before the deadline, or null.</dd>
+        <dt><code>stages</code></dt><dd>Homes in each stage short of complete at the deadline's month.</dd>
+        <dt><code>waitingMoney</code></dt><dd>Homes waiting for money at the deadline's month; null when the view has no such series.</dd>
+        <dt><code>lump</code></dt><dd><code>RUNG_LUMP</code> when this run is the first to meet its rung, else null.</dd>
+        <dt><code>index</code></dt><dd>The deadline's month in the view.</dd>
+      </dl>
+      <ul>
+        <li>Rung 0's deadline is <code>defaultGoal(asOf).deadline</code>. Rung <em>k</em> is the last day of December of <code>LADDER_YEARS[k - 1]</code>.</li>
+        <li><code>goalAt</code> is <code>defaultGoal(asOf)</code> with the rung's deadline, and with <code>amount</code> when given.</li>
+        <li><code>readRun</code> returns null while the view does not cover the deadline's month.</li>
+        <li><code>resultOf</code> lists a side goal when it is shown, not yet met, and its <code>value</code> is at least its <code>target</code>.</li>
+        <li><code>settle</code> credits <code>collected</code>, <code>lump</code> and each side reward; records the rung in <code>met</code> when <code>reachedOn</code> is set and the rung is not there; records each side goal; adds 1 to <code>runs</code>; sets <code>last</code>.</li>
+        <li><code>settle</code> never removes a met rung (call 8).</li>
+        <li><code>takeNext</code> moves to the next rung when the rung in play is met and a next one exists. Otherwise it returns the same state.</li>
+        <li><code>finished</code> is true once the last rung is in <code>met</code>.</li>
+        <li><code>sideShown</code> returns the first <code>SIDE_SHOWN</code> goals whose ring is open and which are not met.</li>
+        <li>A side goal's <code>read</code> returns null when the view lacks what it reads.</li>
+      </ul>
+    </section>
+    <section id="sec-if-g7">
+      <h3>G7 The browser's game store</h3>
+      <pre><code data-lang="ts">// src/lib/game/store.svelte.ts
+export type StoreChange = { ok: true } | { ok: false; reason: 'full' | 'storage' | 'changed' };
+
+export class GameStore {
+  constructor(opts: { storage: Storage | null; sync: SaveSync; now?: () =&gt; Date });
+  get state(): GameState;
+  get limits(): Limits;
+  get open(): boolean;
+  get saves(): readonly SaveEntry[];
+  get currentId(): string;
+  get sync(): SaveSync;
+  won(): void;
+  startRuns(): StoreChange;
+  buy(id: NodeId): Bought;
+  settle(r: RunResult): StoreChange;
+  takeNext(): StoreChange;
+  touched(): void;
+  beforeLeave(fn: () =&gt; void): () =&gt; void;
+  newGame(): StoreChange;
+  switchTo(id: string): StoreChange;
+  rename(id: string, name: string): void;
+  remove(id: string): StoreChange;
+  read(id: string): GameSave | null;
+  adopt(saves: readonly GameSave[]): StoreChange;
+  rekey(id: string, newId: string): StoreChange;
+}
+
+export function openGame(): GameStore;
+export function provideGame(store: GameStore): void;
+export function useGame(): GameStore;</code></pre>
+      <ul>
+        <li><code>state</code> and <code>limits</code> are reactive. <code>limits</code> is <code>OPEN_LIMITS</code> for the open game, else <code>limitsOf(state)</code>.</li>
+        <li><code>won</code> sets <code>firstWinAt</code> once and writes.</li>
+        <li><code>startRuns</code> sets <code>phase</code> to <code>'runs'</code>. It does nothing while <code>firstWinAt</code> is null.</li>
+        <li><code>buy</code> writes the new state when the purchase is good and returns what <code>buy</code> of G3 returns. A refused write returns <code>{ ok: false, reason: 'short' }</code> and changes nothing.</li>
+        <li>The store does not hold the policy document. The page applies the grant (G5).</li>
+        <li>Each write calls <code>sync.changed(id)</code>, as today.</li>
+        <li>The open game has the last rung met, every node bought and no units; its methods that write do nothing.</li>
+      </ul>
+      <p><strong>Unchanged:</strong> the saved-games methods, <code>touched</code>, <code>beforeLeave</code>, the storage keys, <code>SaveSync</code>. <strong>Removed:</strong> <code>progress</code>, <code>allowed</code>, <code>offer</code>, <code>setOffer</code>, <code>levelUp</code>, <code>remix</code>, <code>Offer</code>.</p>
+    </section>
+    <section id="sec-if-u1">
+      <h3>U1 The game's screens and header parts</h3>
+      <pre><code data-lang="ts">// src/lib/game/ui/Tally.svelte
+interface TallyProps {
+  result: RunResult;
+  deadline: string;
+  oncontinue(): void;
+}
+
+// src/lib/game/ui/Tree.svelte
+interface TreeProps {
+  nodes: NodeView[];
+  units: Units;
+  busy: boolean;
+  next: Rung | null;
+  finished: boolean;
+  onbuy(id: NodeId): void;
+  onedit(id: NodeId): void;
+  onrun(): void;
+  onnext(): void;
+}
+
+// src/lib/game/ui/GoalHeadline.svelte
+interface GoalHeadlineProps {
+  homes: number | null;
+  amount: number;
+  deadline: string;
+  unlocks: string | null;
+  met: boolean;
+  side: { goal: SideGoal; value: number; target: number; met: boolean }[];
+}
+
+// src/lib/game/ui/OpeningCard.svelte
+interface OpeningCardProps {
+  amount: number;
+  onstart(): void;
+}
+
+// src/lib/game/ui/GameCell.svelte
+interface GameCellProps {
+  inMenu: boolean;
+}</code></pre>
+      <dl>
+        <dt><code>busy</code></dt><dd>The forecast for the next run is not ready. Run says so and waits.</dd>
+        <dt><code>next</code></dt><dd>The rung on offer, when the rung in play is met.</dd>
+        <dt><code>homes</code></dt><dd>Null before the first run of a rung: the headline then shows the goal alone.</dd>
+        <dt><code>unlocks</code></dt><dd>What meeting the goal opens; null at the last rung.</dd>
+      </dl>
+      <ul>
+        <li><code>Tally</code> shows homes by the deadline with the change from the last run, units collected out of units dropped, the lump and side rewards, homes in each stage, and homes waiting for money when that is not null.</li>
+        <li><code>Tally</code> holds the account offer that the win card holds today.</li>
+        <li><code>Tree</code> shows each node with its label, its step, its price or how far short the balance is, and Edit when bought. One node at a time is open with its line, its source and Buy.</li>
+        <li><code>Tree</code> holds Run, and "Take the next goal" while <code>next</code> is set.</li>
+        <li><code>GoalHeadline</code> is the header's pinned item: line 1 the homes of the amount by the deadline, line 2 a bar and what it unlocks. Pressing it opens the side goals.</li>
+        <li><code>GameCell</code> shows the unit count and opens <code>GamePanel</code>: saved games, New game, the sync line, the sound switch and "Collect for me".</li>
+        <li>Every control is reachable by keyboard, has a visible focus ring and a target of at least 24 px.</li>
+        <li>No part reads the simulation or the map. Each takes what it shows as props or from <code>useGame()</code>.</li>
+      </ul>
+      <p><strong>Removed:</strong> <code>WinCard</code>, <code>LevelPanel</code>, <code>LevelCell</code>.</p>
+    </section>
+  </section>
+
+  <section id="sec-global-constraints">
+    <h2>Global constraints</h2>
+    <ul>
+      <li>One future: the same policy document always gives the same forecast. No game state reaches the worker except through the policy document.</li>
+      <li>No file the dataset version hashes is changed: <code>pipeline</code>, <code>src/lib/{data,generator,timelapse,scoreboard}</code>, <code>src/lib/plan/{geometry,types}.ts</code>, <code>src/lib/sim/{scenario,levers,finance}</code>. The dataset version stays as it is.</li>
+      <li>A policy node acts on a lever the code already has, at a value the code already sources. No node invents a value.</li>
+      <li>The painted area, own pools, the City funding scale and market terms are never offered in a game.</li>
+      <li>Published plans and policies open and play in full, as today.</li>
+      <li>WCAG 2.2 AA: everything works from the keyboard; targets are at least 24 px; motion follows the reduced-motion setting; nothing flashes more than three times a second.</li>
+      <li>Page text is short. A node is a name, a line and a price.</li>
+      <li>The CSP is not widened. Sound is made in the browser; no audio file, font or script is added.</li>
+      <li>A runtime dependency is not added without a credit in <code>src/lib/attribution.ts</code>. None is expected.</li>
+      <li>Code style: 2-space indent, single quotes, no trailing commas, 100 columns.</li>
+      <li>Vitest runs with <code>expect.requireAssertions</code>. Tests are colocated.</li>
+      <li>A schema change goes through <code>npm run db:generate</code>. Migrations are never edited by hand.</li>
+      <li>Signoff fails on server stderr, on timing crutches and on retried flakes. Timing is measured only on a quiet machine.</li>
+      <li>Port 4173 belongs to whichever session started the preview. Never kill it; wait.</li>
+      <li>Commits use Conventional Commits and carry no Claude attribution.</li>
+      <li>Work happens in git worktrees under <code>.claude/worktrees/</code>.</li>
+    </ul>
+  </section>
+
+  <section id="sec-found">
+    <h2>What the code is today</h2>
+    <p>Read on commit <code>4d22bf96</code>. Nothing exists under <code>src/lib/game/ui/</code>.</p>
+    <section id="sec-found-parts">
+      <h3>Shared parts</h3>
+      <ul>
+        <li><code>TARGET</code> is <code>min-h-6 min-w-6</code> (<code>src/lib/shell/ui.ts:21</code>).</li>
+        <li><code>BUTTON</code> and <code>BUTTON_PRIMARY</code> carry the target, the accent focus ring and the off look for <code>aria-disabled</code> (<code>src/lib/shell/ui.ts:28</code>, <code>:34</code>).</li>
+        <li><code>BUTTON_QUIET</code> is the underlined action inside a message or a list row (<code>src/lib/shell/ui.ts:40</code>).</li>
+        <li><code>SURFACE_POP</code> is the look of menus, panels and pop-overs (<code>src/lib/shell/ui.ts:55</code>).</li>
+        <li>A part is used as it is, with only position and size beside it; a file that adopts the parts joins <code>THEMED_FILES</code> in <code>src/lib/shell/accent.spec.ts</code> (<code>docs/dev/ui-parts.md:7</code>, <code>:9</code>).</li>
+        <li>The colour tokens are <code>accent</code>, <code>accent-tint</code>, <code>on-accent</code>, <code>surface</code>, <code>surface-raised</code>, <code>line</code>, <code>control-line</code>, <code>ink</code>, <code>ink-muted</code> and their <code>-dark</code> partners (<code>src/routes/layout.css:4-24</code>).</li>
+        <li>The one switch drawn in the app is a <code>BUTTON</code> with <code>role="switch"</code>, <code>aria-checked</code>, the visible word "On" and an <code>accent-tint</code> fill while checked (<code>src/lib/timeline/Inspector.svelte:423-428</code>).</li>
+        <li><code>getStorage()</code> returns <code>localStorage</code>, or null when access throws or during the server render (<code>src/lib/sharing/storage.ts:15</code>).</li>
+      </ul>
+    </section>
+    <section id="sec-found-win">
+      <h3>The win card and the account offer</h3>
+      <ul>
+        <li><code>WinCard</code> is a non-modal <code>role="dialog"</code> labelled by its <code>h2</code>, <code>SURFACE_POP</code> at <code>w-72</code>, with test id <code>win-card</code> (<code>src/lib/game/WinCard.svelte:38-45</code>).</li>
+        <li>It focuses its first button on mount (<code>src/lib/game/WinCard.svelte:23-25</code>).</li>
+        <li>Escape inside it is taken (default prevented, propagation stopped) and calls <code>onkeep</code> (<code>src/lib/game/WinCard.svelte:27-32</code>).</li>
+        <li>It mounts <code>AccountOffer</code> after its buttons (<code>src/lib/game/WinCard.svelte:62</code>) and renders nothing for the open game (<code>:35</code>).</li>
+        <li><code>AccountOffer</code> has no props, reads <code>useGame()</code> and <code>page.data.user</code>, and renders nothing for the open game (<code>src/lib/game/AccountOffer.svelte:13</code>, <code>:26</code>, <code>:79</code>).</li>
+        <li><code>AccountOffer</code> imports <code>syncText</code> from <code>./copy</code> (<code>src/lib/game/AccountOffer.svelte:10</code>).</li>
+      </ul>
+    </section>
+    <section id="sec-found-level">
+      <h3>The level cell and panel</h3>
+      <ul>
+        <li><code>LevelCell</code> takes <code>{ inMenu }</code> only and reads <code>useGame()</code> (<code>src/lib/shell/LevelCell.svelte:16-18</code>).</li>
+        <li>Its button is a <code>BUTTON</code> with test id <code>header-level</code>, <code>aria-expanded</code> and <code>aria-controls</code> (<code>src/lib/shell/LevelCell.svelte:92-100</code>).</li>
+        <li>Out of the Menu the panel is a pop-over under the header: <code>SURFACE_POP absolute top-full z-50 mt-1 max-h-[calc(100vh-4rem)] w-80 max-w-[calc(100vw-2rem)] overflow-y-auto</code>, its left edge measured from the button to the <code>&lt;header&gt;</code> at open (<code>src/lib/shell/LevelCell.svelte:40-44</code>, <code>:114-117</code>).</li>
+        <li>Opening the pop-over announces it through <code>headerOverlay</code>, so the Menu and any other header overlay close; in the Menu it opens in place and announces nothing (<code>src/lib/shell/LevelCell.svelte:33</code>, <code>:46-47</code>).</li>
+        <li>Escape closes it and refocuses the button, unless a modal dialog is open or the key was already handled (<code>src/lib/shell/LevelCell.svelte:56-66</code>).</li>
+        <li>A press outside its root closes it (<code>src/lib/shell/LevelCell.svelte:68-72</code>); a click on a link inside closes it (<code>:78-80</code>).</li>
+        <li>Its root carries <code>data-header-keep-open</code>, which keeps the Menu open for a button press inside (<code>src/lib/shell/LevelCell.svelte:88</code>, <code>src/lib/shell/SiteHeader.svelte:127</code>).</li>
+        <li><code>headerOverlay(id, close)</code> dispatches the window event <code>sfh-header-overlay-open</code>; every other overlay's <code>close</code> runs (<code>src/lib/shell/header-actions.svelte.ts:77-86</code>).</li>
+        <li><code>LevelPanel</code> renders nothing for the open game (<code>src/lib/game/LevelPanel.svelte:184</code>).</li>
+        <li>The panel's sync line is <code>syncText(state)</code>, a <code>BUTTON_QUIET</code> link to <code>/signin?returnTo=…</code> when the state is <code>sign-in</code> (<code>src/lib/game/LevelPanel.svelte:201-209</code>).</li>
+        <li>The saved games list is a <code>more-below</code> box of <code>max-h-64</code> with rows <code>data-testid="save-row"</code> and <code>aria-current</code> on the current one (<code>src/lib/game/LevelPanel.svelte:211-221</code>).</li>
+        <li>A row shows the name (a <code>BUTTON_QUIET</code> that switches, or plain text for the current game), then <code>Level N · Playing</code> or <code>Level N · &lt;played&gt;</code> (<code>src/lib/game/LevelPanel.svelte:234-247</code>).</li>
+        <li>Rename opens a field (Enter renames, Escape cancels, blur renames); Delete asks "Delete &lt;name&gt;?" with Delete and Cancel (<code>src/lib/game/LevelPanel.svelte:97-180</code>, <code>:248-284</code>).</li>
+        <li>While a field is open a press on a panel button keeps focus in the field, and every other action renames first (<code>src/lib/game/LevelPanel.svelte:59-69</code>, <code>:141-145</code>).</li>
+        <li>New game is <code>aria-disabled</code> at 12 saved games, with <code>FULL_TEXT</code> under it; refusals show in <code>role="alert"</code> (<code>src/lib/game/LevelPanel.svelte:289-294</code>).</li>
+        <li>Switching, New game and deleting the current game call <code>loadPage(gamePath(level))</code>, a full page load (<code>src/lib/game/LevelPanel.svelte:53-56</code>, <code>:172</code>; <code>src/lib/game/navigate.ts:14-16</code>), which the spec mocks (<code>src/lib/game/LevelPanel.svelte.spec.ts:21</code>).</li>
+      </ul>
+    </section>
+    <section id="sec-found-header">
+      <h3>The header and its pinned slot</h3>
+      <ul>
+        <li>The header is <code>h-12</code> (48 px), a flex row; with a pinned item it is a three-track grid from lg that centres the pinned item (<code>src/lib/shell/SiteHeader.svelte:175-184</code>).</li>
+        <li>Below sm, on a page that pins an item, the site name moves into the Menu (<code>src/lib/shell/SiteHeader.svelte:187</code>); the bar then holds the status, the pinned item and the 32 px Menu button (<code>:207-213</code>).</li>
+        <li>The pinned box today (<code>TimelineHeaderScore</code>) is a bordered box whose button holds line 1 and is the whole box's target; line 2 is <code>text-xs</code>, <code>aria-hidden</code>, hidden below sm, with an <code>sr-only</code> copy as the button's description (<code>src/lib/timeline/TimelineHeaderScore.svelte:61-92</code>).</li>
+        <li>Its live region speaks a new text 1,000 ms after it settles and never the text present at mount (<code>src/lib/timeline/TimelineHeaderScore.svelte:43-54</code>).</li>
+      </ul>
+    </section>
+    <section id="sec-found-stages">
+      <h3>Stage labels</h3>
+      <ul>
+        <li><code>STAGE_KEY</code> groups the in-progress stages into four rows: Planning review (<code>preApplication</code>, <code>filed</code>), Approved (<code>entitled</code>, <code>permitFiled</code>), Permit issued (<code>permitIssued</code>), Building (<code>construction</code>) (<code>src/lib/map/key/rows.ts:28-52</code>).</li>
+        <li><code>Stage</code> has six in-progress values and <code>complete</code> (<code>src/lib/timelapse/types.ts:12-19</code>).</li>
+      </ul>
+    </section>
+    <section id="sec-found-tests">
+      <h3>How these parts are tested</h3>
+      <ul>
+        <li>Component specs render through <code>vitest-browser-svelte</code> and check accessibility with <code>axe.run(element)</code> from <code>axe-core</code> in light and dark, switching the scheme by <code>cdp().send('Emulation.setEmulatedMedia', …)</code> (<code>src/lib/game/WinCard.svelte.spec.ts:5-17</code>, <code>src/lib/shell/LevelCell.svelte.spec.ts:256-268</code>).</li>
+        <li><code>expectNoA11yViolations(page, opts)</code> is the Playwright helper for pages (<code>e2e/helpers/a11y.ts:48</code>, <code>docs/dev/accessibility.md:7</code>).</li>
+        <li>A test host provides a store with <code>provideGame</code> and renders the part (<code>src/lib/game/test/StoreHost.svelte:22-34</code>); <code>FakeSync</code> stands in for the sync (<code>src/lib/game/test/fake-sync.svelte.ts:12</code>).</li>
+        <li>No visible text of 12 words or more at rest outside a notice or a dialog, on <code>/</code> and <code>/sim</code> (<code>docs/dev/accessibility.md:18</code>).</li>
+      </ul>
+    </section>
+  </section>
+
+  <section id="sec-design">
+    <h2>Design</h2>
+
+    <section id="sec-design-delivery">
+      <h3>Two parts</h3>
+      <p>The <code>contracts</code> unit stubs G1 to G6 but not the store of G7. The parts that read the store's new fields can only build once <code>game-save</code> has written it.</p>
+      <ul>
+        <li><strong>Part A</strong>: <code>Tally</code>, <code>Tree</code>, <code>GoalHeadline</code>, <code>OpeningCard</code>, <code>layout.ts</code>, <code>motion.ts</code>, their hosts and specs. They read the store only through <code>AccountOffer</code> (<code>open</code>, <code>sync</code>), which both the store of today and G7 have. Part A merges on its own after <code>contracts</code> and <code>game-core</code>.</li>
+        <li><strong>Part B</strong>: <code>GameCell</code>, <code>GamePanel</code>, <code>prefs-event.ts</code>, <code>reload.ts</code>, their hosts and specs. They read <code>state</code>, <code>limits</code> and <code>saves</code> of G7. Part B is built on the branch that holds <code>game-save</code>'s store and merges with the <code>game-save</code>, <code>game-sim</code>, <code>game-shell</code> lane.</li>
+        <li>Part B also needs <code>run-play</code>'s <code>src/lib/game/run/prefs.ts</code>.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-u1-add">
+      <h3>U1 additions</h3>
+      <p>U1 as written lacks four things this unit needs. They are written here as this unit builds them and are reported for the design.</p>
+      <pre><code data-lang="ts">// src/lib/game/ui/Tree.svelte: TreeProps gains
+import type { Snippet } from 'svelte';
+import type { Day } from '$lib/timelapse/time';
+
+interface TreeProps {
+  // the fields of U1, and:
+  /** A bought node's lever: true on, false off. No entry: the node has no switch. */
+  on: Readonly&lt;Record&lt;NodeId, boolean&gt;&gt;;
+  ontoggle(id: NodeId, on: boolean): void;
+  /** Set exactly when `finished`: what the ending names. */
+  ending: { reachedOn: Day; perHome: number | null } | null;
+  /** The ending's Publish control; null shows none. */
+  publish: Snippet | null;
+}
+
+// src/lib/game/ui/Tally.svelte: TallyProps gains
+interface TallyProps {
+  // the fields of U1, and:
+  /** Homes by the same deadline in the run before this one, or null for none. */
+  before: number | null;
+}
+
+// src/lib/game/ui/GamePanel.svelte: no props.
+
+// src/lib/game/ui/prefs-event.ts
+export const GAME_PREFS_EVENT = 'sfh-game-prefs';
+export interface GamePrefs {
+  collectForMe: boolean;
+  muted: boolean;
+}
+export function announcePrefs(p: GamePrefs): void;</code></pre>
+      <dl>
+        <dt><code>on</code></dt><dd><code>game-sim</code> fills it from the policy document. Which nodes carry a switch is its choice: an entry means the node's lever is one policy the document can switch.</dd>
+        <dt><code>ontoggle</code></dt><dd>The switch was pressed; <code>on</code> is the value asked for. <code>game-sim</code> calls <code>setOn</code> on the document.</dd>
+        <dt><code>ending.reachedOn</code></dt><dd>The day the last rung was reached (its <code>MetRung.reachedOn</code>).</dd>
+        <dt><code>ending.perHome</code></dt><dd>Public money per added home in dollars at the last deadline; null when the forecast has no money.</dd>
+        <dt><code>before</code></dt><dd>Null on the first run of a rung, and whenever the run before had another rung or another amount.</dd>
+        <dt><code>announcePrefs</code></dt><dd>Dispatches a window <code>CustomEvent</code> named <code>GAME_PREFS_EVENT</code> with the prefs as <code>detail</code>.</dd>
+      </dl>
+      <ul>
+        <li><code>GamePanel</code> calls <code>announcePrefs</code> after each write to the prefs, so a run in progress follows "Collect for me" at once. <code>game-sim</code> listens for it.</li>
+        <li>A part reads the prefs only through R1's functions; the event carries the values just written.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-common">
+      <h3>Rules every part follows</h3>
+      <ul>
+        <li>No file under <code>src/lib/game/ui/</code> imports from <code>$lib/sim</code>, <code>$lib/map</code>, <code>$lib/timeline</code> or <code>$lib/sim-page</code>. A spec file may import <code>$lib/map/key/rows</code> to check labels.</li>
+        <li>Every word on screen comes from <code>src/lib/game/words.ts</code> (<a href="#sec-design-words">Words</a>), except the names the props carry (node labels, side goal labels, save names, <code>deadline</code>, <code>unlocks</code>).</li>
+        <li>Counts are written with <code>formatCount</code> (<code>$lib/scoreboard/format</code>) inside the words functions. A month is <code>formatShortMonthYear</code> ("Mar 2049", <code>$lib/fzp/format</code>). Money per home is <code>formatDollarsExact</code>.</li>
+        <li>A unit amount shown is <code>total(units)</code> (G2). The mark <code>◆</code> is drawn in an <code>aria-hidden</code> span; the accessible text says "units".</li>
+        <li>Buttons are <code>BUTTON</code>, <code>BUTTON_PRIMARY</code> or <code>BUTTON_QUIET</code>. A control that is none of them writes <code>min-h-6 min-w-6</code> and the focus ring classes <code>focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent dark:focus-visible:outline-accent-dark</code> beside its look.</li>
+        <li>Cards and pop-overs are <code>SURFACE_POP</code> with position and size beside it.</li>
+        <li>A switch is a <code>BUTTON</code> with <code>role="switch"</code>, <code>aria-checked</code>, and <code>aria-checked:bg-accent-tint dark:aria-checked:bg-accent-dark/30</code> beside it, as the Inspector draws it.</li>
+        <li>An off button is <code>aria-disabled="true"</code>, never <code>disabled</code>, and its handler returns early.</li>
+        <li>Bars are drawn as a track <code>h-1 rounded-full bg-line dark:bg-line-dark</code> holding a fill whose width is a percentage. Bars are <code>aria-hidden</code>; the numbers beside them are the text.</li>
+        <li>Every part except <code>Tree</code> and <code>OpeningCard</code> renders nothing while <code>useGame().open</code> is true. <code>Tree</code> and <code>OpeningCard</code> are mounted only in a saved game.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-words">
+      <h3>Words</h3>
+      <p>The keys this unit reads from <code>game-core</code>'s <code>src/lib/game/words.ts</code>, with their exact text. The four marked "moved" are today's functions in <code>copy.ts</code>, unchanged.</p>
+      <pre><code data-lang="ts">// src/lib/game/words.ts (the keys tally-tree reads)
+import type { Day } from '$lib/timelapse/time';
+import type { Branch } from './tree';
+import type { GameState } from './state';
+import type { SyncState } from './save-sync.svelte';
+import type { Stage } from '$lib/timelapse/types';
+
+// Units
+export const UNIT_MARK = '◆';
+export function unitsName(n: number): string; // '1 unit' | '1,240 units'
+export function priceText(n: number): string; // '◆ 900'; n 0: 'Free'
+export function shortText(n: number): string; // '298 short'
+
+// The goal headline
+export function goalLine(homes: number | null, amount: number, deadline: string): string;
+// '61,400 of 82,069 homes by 2055'; homes null: '82,069 homes by 2055'
+export const HOMES_WORD = ' homes'; // the part goalLine hides below sm, leading space included
+export function unlocksText(unlocks: string): string; // 'Unlocks: Height near transit'
+export const GOAL_MET = 'Goal met';
+export const LAST_GOAL = 'Last goal';
+export function sideMetText(n: number): string; // '1 side goal met' | '2 side goals met'
+export const SIDE_GOALS_TITLE = 'Side goals';
+export const NO_SIDE_GOALS = 'None open';
+export function progressText(value: number, target: number): string; // '600 of 1,000'
+export const MET = 'Met';
+export function goalMetLive(amount: number, deadline: string): string;
+// 'Goal met: 82,069 homes by 2055'
+export function sideMetLive(label: string): string; // 'Side goal met: 1,000 homes added'
+
+// The tally
+export function tallyTitle(reachedOn: Day | null, deadline: string): string;
+// reachedOn set: 'Goal met in Mar 2049'; else 'By 2055'
+export function homesOfText(homes: number, amount: number): string; // '61,400 of 82,069 homes'
+export function changeText(d: number): string; // '+3,150' | '−3,150' (U+2212) | 'No change'
+export function collectedText(collected: number, dropped: number): string;
+// '7,300 of 9,100 collected'
+export function lumpText(n: number): string; // '+5,000 for the goal'
+export function sideRewardText(n: number, label: string): string; // '+500 for 1,000 homes added'
+export const SIDE_GOAL_FALLBACK = 'a side goal';
+export function notBuiltTitle(deadline: string): string; // 'Not yet built by 2055'
+export const STAGE_ROWS: readonly {
+  id: 'planning' | 'approved' | 'issued' | 'building';
+  label: string;
+  stages: readonly Exclude&lt;Stage, 'complete'&gt;[];
+}[];
+// [{ id: 'planning', label: 'Planning review', stages: ['preApplication', 'filed'] },
+//  { id: 'approved', label: 'Approved', stages: ['entitled', 'permitFiled'] },
+//  { id: 'issued', label: 'Permit issued', stages: ['permitIssued'] },
+//  { id: 'building', label: 'Building', stages: ['construction'] }]
+export const WAITING_MONEY = 'Waiting for money';
+export const CONTINUE = 'Continue';
+
+// The tree
+export const TREE_TITLE = 'Levers';
+export const CURRENT_LAW = 'Current law';
+export const BRANCH_NAMES: Readonly&lt;Record&lt;Branch, string&gt;&gt;;
+// { permitting: 'Permitting', zoning: 'Zoning', money: 'Public money', hands: 'Hands' }
+export function buyText(price: number): string; // 'Buy · ◆ 900'; price 0: 'Buy · Free'
+export const BOUGHT = 'Bought';
+export const EDIT = 'Edit';
+export function editName(label: string): string; // 'Edit SB 423 clock'
+export const ON = 'On';
+export function switchName(label: string): string; // 'SB 423 clock on'
+export const OFF = 'off';
+export function nextStepText(step: string): string; // 'Next: 8 stories'
+export function nextPriceText(price: number): string; // 'next ◆ 420'
+export const SOURCE = 'Source';
+export function boughtLive(label: string, step: string): string; // 'Bought: Near BART, 8 stories'
+export const RUN = 'Run';
+export const RUN_BUSY = 'Getting the forecast ready';
+export function balanceText(n: number): string; // '◆ 1,652 to spend'
+export function balanceName(n: number): string; // '1,652 units to spend'
+export function takeNextText(label: string): string; // 'Take the next goal: 2050'
+export const ENDING_TITLE = 'Every goal met';
+export function endingReached(reachedOn: Day): string; // 'Reached in Mar 2041'
+export const ENDING_LEVERS = 'Levers bought';
+export function perHomeText(dollars: number): string; // 'Public money per added home: $123,456'
+export const ENDING_LIFTED = 'Every limit is lifted.';
+
+// The opening card
+export function roomMet(amount: number): string; // 'Room for 82,069 homes'
+export const OPENING_LINES: readonly string[];
+// ['Next, the forecast plays today’s law to the deadline.',
+//  'Sweep over homes as they finish to collect them.']
+export const START = 'Start';
+
+// The game panel
+export function entryStage(phase: GameState['phase'], rung: number): string;
+// 'opening': 'Painting'; 'runs': 'Goal 2 of 4' (rung + 1 of RUNGS)
+export const PLAYING = 'Playing';
+export const SAVED_GAMES = 'Saved games';
+export const NEW_GAME_LABEL = 'New game';
+export const NAME_LABEL = 'Name';
+export const RENAME = 'Rename';
+export const DELETE = 'Delete';
+export const CANCEL = 'Cancel';
+export function renameName(name: string): string; // 'Rename Game, 4 Mar'
+export function deleteName(name: string): string; // 'Delete Game, 4 Mar'
+export function deleteAsk(name: string): string; // 'Delete Game, 4 Mar?'
+export const SOUND = 'Sound';
+export const COLLECT_FOR_ME = 'Collect for me';
+export const COLLECT_BOUGHT = 'Always on: bought';
+export function syncText(state: SyncState): string | null; // moved
+export function playedText(savedAt: string, now: Date): string; // moved
+export const FULL_TEXT: string; // moved: '12 saved games. Delete one first.'
+export const STORAGE_TEXT: string; // moved: 'This browser refused to save.'</code></pre>
+      <ul>
+        <li><code>STAGE_ROWS</code> holds the first four rows of <code>STAGE_KEY</code> with the same ids, labels and stages. A spec in this unit checks that they agree.</li>
+        <li>No text above has 12 words or more.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-tally">
+      <h3>Tally</h3>
+      <p>The props of U1 with <code>before</code>. <code>game-sim</code> places the card over the map.</p>
+      <pre><code data-lang="svelte">&lt;div role="dialog" aria-modal="false" aria-labelledby={titleId} data-testid="tally"
+  class="{SURFACE_POP} flex w-80 max-w-full flex-col gap-3" onkeydown={onKeydown}&gt;
+  &lt;h2 id={titleId} class="text-base font-semibold"&gt;{tallyTitle(result.reachedOn, deadline)}&lt;/h2&gt;
+  &lt;div data-testid="tally-homes" class="flex flex-col gap-1"&gt;
+    &lt;p&gt;homes line, then the change&lt;/p&gt;
+    bar
+  &lt;/div&gt;
+  &lt;div data-testid="tally-units" class="flex flex-col gap-1"&gt;
+    &lt;p&gt;collected line&lt;/p&gt;
+    &lt;ul&gt;lump and side reward lines&lt;/ul&gt;
+  &lt;/div&gt;
+  &lt;section aria-labelledby={stagesId} class="flex flex-col gap-1"&gt;
+    &lt;h3 id={stagesId} class="font-semibold"&gt;{notBuiltTitle(deadline)}&lt;/h3&gt;
+    &lt;ul&gt;the stage rows, then the money row&lt;/ul&gt;
+  &lt;/section&gt;
+  &lt;button class={BUTTON_PRIMARY} data-testid="tally-continue"&gt;{CONTINUE}&lt;/button&gt;
+  &lt;AccountOffer /&gt;
+&lt;/div&gt;</code></pre>
+      <section id="sec-design-tally-lines">
+        <h4>Lines</h4>
+        <ul>
+          <li>The title is <code>tallyTitle(result.reachedOn, deadline)</code>: "Goal met in Mar 2049" when the run met the goal, else "By 2055".</li>
+          <li>The homes line is <code>homesOfText(result.homes, result.amount)</code> with the first number in <code>strong</code>.</li>
+          <li>The change follows the homes line in a <code>span data-testid="tally-change"</code>: <code>changeText(result.homes - before)</code>. It is absent when <code>before</code> is null.</li>
+          <li>The homes bar's fill is <code>min(1, homes / amount)</code> of the track, in <code>bg-accent dark:bg-accent-dark</code>, with <code>data-testid="tally-bar"</code> and the fill's width as <code>data-fill</code> (a whole percent).</li>
+          <li>The units line is the mark then <code>collectedText(total(result.collected), total(result.dropped))</code>.</li>
+          <li>A lump line <code>lumpText(total(result.lump))</code>, <code>data-testid="tally-lump"</code>, shows when <code>result.lump</code> is not null.</li>
+          <li>One side line per entry of <code>result.side</code>, in its order, <code>data-testid="tally-side"</code>: <code>sideRewardText(total(reward), label)</code>. The label is that of the entry of <code>SIDE_GOALS</code> with the same id, or <code>SIDE_GOAL_FALLBACK</code>.</li>
+          <li>Each lump and side line starts with the mark.</li>
+        </ul>
+      </section>
+      <section id="sec-design-tally-stages">
+        <h4>Stage and money rows</h4>
+        <ul>
+          <li>One row per entry of <code>STAGE_ROWS</code>, in its order, <code>data-testid="tally-stage"</code> with <code>data-stage</code> the row's id. The row's count is the sum of <code>result.stages</code> over the row's stages.</li>
+          <li>A row is a three-column grid <code>grid grid-cols-[7rem_1fr_auto] items-center gap-2</code>: the label, a bar, the count by <code>formatCount</code>, right-aligned, <code>tabular-nums</code>.</li>
+          <li>The money row follows the stage rows when <code>result.waitingMoney</code> is not null: <code>WAITING_MONEY</code>, its bar and its count, <code>data-testid="tally-money"</code>.</li>
+          <li>The rows' bars share one scale: each fill is the row's count over the largest count among the rows shown, or 0 when that is 0. Their fill is <code>bg-ink-muted dark:bg-ink-dark-muted</code>.</li>
+          <li>A row with 0 homes is shown.</li>
+        </ul>
+      </section>
+      <section id="sec-design-tally-keys">
+        <h4>Focus, keys and buttons</h4>
+        <ul>
+          <li>On mount Continue takes focus.</li>
+          <li>Continue calls <code>oncontinue()</code>.</li>
+          <li>Escape with focus inside the card is taken (default prevented, propagation stopped) and calls <code>oncontinue()</code>, as the win card does.</li>
+          <li><code>AccountOffer</code> is mounted unchanged after Continue.</li>
+        </ul>
+      </section>
+    </section>
+
+    <section id="sec-design-tree">
+      <h3>Tree</h3>
+      <p>The screen between runs. It fills the box <code>game-sim</code> gives it: a column of a scrolling body and a footer that stays at the bottom.</p>
+      <pre><code data-lang="svelte">&lt;section aria-labelledby={titleId} data-testid="tree"
+  class="flex h-full min-h-0 flex-col bg-surface text-ink dark:bg-surface-dark dark:text-ink-dark"
+  onkeydown={onKeydown}&gt;
+  &lt;h2 id={titleId} class="sr-only"&gt;{TREE_TITLE}&lt;/h2&gt;
+  &lt;div class="min-h-0 flex-1 overflow-y-auto p-4"&gt;
+    {#if ending}&lt;section data-testid="tree-ending"&gt;…&lt;/section&gt;{/if}
+    &lt;p data-testid="tree-root"&gt;{CURRENT_LAW}&lt;/p&gt;
+    &lt;div class="grid gap-4 md:grid-cols-2 lg:grid-cols-[repeat(4,minmax(0,1fr))_18rem]"&gt;
+      {#each branches as b}
+        &lt;section aria-labelledby={branchId(b)} data-testid="tree-branch" data-branch={b.branch}&gt;
+          &lt;h3 id={branchId(b)}&gt;{BRANCH_NAMES[b.branch]}&lt;/h3&gt;
+          &lt;ul&gt;node rows, nested&lt;/ul&gt;
+        &lt;/section&gt;
+      {/each}
+      {#if wide &amp;&amp; openId !== null}&lt;div class="lg:col-start-5 lg:row-start-1"&gt;detail&lt;/div&gt;{/if}
+    &lt;/div&gt;
+  &lt;/div&gt;
+  &lt;div class="flex flex-wrap items-center gap-2 border-t border-line p-3 dark:border-line-dark"&gt;
+    balance · busy status · Take the next goal · Run
+  &lt;/div&gt;
+  &lt;div class="sr-only" aria-live="polite" data-testid="tree-live"&gt;{spoken}&lt;/div&gt;
+&lt;/section&gt;</code></pre>
+
+      <section id="sec-design-tree-layout">
+        <h4>Layout by branch and adjacency</h4>
+        <pre><code data-lang="ts">// src/lib/game/ui/layout.ts
+import type { Branch, NodeView } from '../tree';
+
+export const BRANCH_ORDER: readonly Branch[] = ['permitting', 'zoning', 'money', 'hands'];
+
+export interface TreeRow {
+  view: NodeView;
+  children: TreeRow[];
+}
+
+export interface BranchRows {
+  branch: Branch;
+  rows: TreeRow[];
+}
+
+export function branchRows(nodes: readonly NodeView[]): BranchRows[];</code></pre>
+        <ul>
+          <li><code>branchRows</code> returns one entry per branch of <code>BRANCH_ORDER</code> that has a node in <code>nodes</code>, in that order.</li>
+          <li>A node's parent is the first id in its <code>after</code> that names a node of the same branch placed earlier in <code>nodes</code>. A node with none is a root of its branch.</li>
+          <li>Roots and children keep the order of <code>nodes</code>, which is the catalogue's.</li>
+          <li>Every node of <code>nodes</code> appears exactly once. A cycle in <code>after</code> cannot form, since a parent always comes earlier.</li>
+          <li>The function is pure and imports no component.</li>
+        </ul>
+        <ul>
+          <li>The "Current law" line is a <code>p</code> styled as a bought node, <code>data-testid="tree-root"</code>. It opens the body, after the ending's summary when that shows.</li>
+          <li>Below md the branches stack in one column. From md they sit two to a row. From lg they sit four to a row, with an 18rem fifth column for the open node's detail.</li>
+          <li>A branch is a <code>section</code> with an <code>h3</code> and a <code>ul</code> of its roots. A row's children are a nested <code>ul</code> with <code>ml-2 border-l border-line pl-4 dark:border-line-dark</code>, so adjacency reads as indent and a rule.</li>
+          <li>Each list is <code>flex flex-col gap-2</code>; the nested list adds <code>mt-2</code>.</li>
+          <li>Below 1024 px (<code>MediaQuery('(min-width: 1024px)')</code> false) the open node's detail renders inside its row, right after its card. From 1024 px it renders in the fifth column, at the top, <code>lg:sticky lg:top-0</code>.</li>
+          <li>The body scrolls; at 375 px nothing scrolls sideways.</li>
+        </ul>
+      </section>
+
+      <section id="sec-design-tree-node">
+        <h4>A node's card</h4>
+        <pre><code data-lang="svelte">&lt;li data-testid="tree-node" data-node={id} data-state={view.state} data-level={view.level}
+  data-on={hasSwitch ? String(on[id]) : undefined}&gt;
+  &lt;div class="flex flex-wrap items-center gap-1 rounded-md px-2 py-1 text-sm {look}"&gt;
+    &lt;button type="button" data-testid="tree-node-open" aria-expanded={open}
+      aria-controls={detailId} class="… flex-1 text-left"&gt;
+      &lt;span class="block font-semibold"&gt;{node.label}&lt;/span&gt;
+      &lt;span class="block text-xs"&gt;{sub}&lt;/span&gt;
+    &lt;/button&gt;
+    {#if view.level &gt; 0}edit button{/if}
+    {#if view.level &gt; 0 &amp;&amp; hasSwitch}switch{/if}
+  &lt;/div&gt;
+  {#if !wide &amp;&amp; open}detail{/if}
+  {#if row.children.length}&lt;ul&gt;…&lt;/ul&gt;{/if}
+&lt;/li&gt;</code></pre>
+        <table id="tbl-node-look">
+          <caption>A card's look by state</caption>
+          <thead>
+            <tr><th scope="col">Case</th><th scope="col">Classes beside the card's base</th></tr>
+          </thead>
+          <tbody>
+            <tr><th scope="row">Bought, lever on or no switch</th><td><code>border border-ink bg-surface-raised dark:border-ink-dark dark:bg-surface-dark-raised</code></td></tr>
+            <tr><th scope="row">Bought, lever off</th><td><code>border border-dashed border-control-line text-ink-muted dark:border-control-line-dark dark:text-ink-dark-muted</code></td></tr>
+            <tr><th scope="row">Not bought, <code>ready</code></th><td><code>border-2 border-accent dark:border-accent-dark</code></td></tr>
+            <tr><th scope="row">Not bought, <code>short</code></th><td><code>border border-line text-ink-muted dark:border-line-dark dark:text-ink-dark-muted</code></td></tr>
+          </tbody>
+        </table>
+        <p>The card's second line, <code>sub</code>, joined by " · ":</p>
+        <ul>
+          <li>Level 0, <code>ready</code>: <code>priceText(p)</code>, where <code>p</code> is <code>total</code> of the next level's price.</li>
+          <li>Level 0, <code>short</code>: <code>priceText(p)</code>, then <code>shortText(total(view.short))</code>. This is how far short the balance is.</li>
+          <li>Bought: the bought level's <code>step</code>; then <code>OFF</code> when <code>on[id]</code> is false; then, while a level is left, <code>nextPriceText(p)</code>, and <code>shortText(…)</code> when that level is <code>short</code>.</li>
+          <li>The open button is the card's name: <code>node.label</code>, with the second line as its <code>aria-describedby</code> text (an <code>sr-only</code> copy, so the name stays the label).</li>
+          <li>Pressing the open button opens the node's detail and closes any other; pressing it again closes it. One node is open at a time.</li>
+          <li>Edit is a <code>BUTTON</code> with the text <code>EDIT</code>, the name <code>editName(label)</code> and <code>data-testid="tree-node-edit"</code>. It calls <code>onedit(id)</code>.</li>
+          <li>The switch shows when the node is bought and <code>on</code> has an entry for it: a switch button with the text <code>ON</code>, the name <code>switchName(label)</code>, <code>aria-checked={on[id]}</code> and <code>data-testid="tree-node-on"</code>. A press calls <code>ontoggle(id, !on[id])</code>. The card's look and line follow <code>on</code> when the prop changes, never before.</li>
+          <li>A node that appears after mount (a purchase or a new ring revealed it) fades in over <code>REVEAL_MS</code>.</li>
+        </ul>
+      </section>
+
+      <section id="sec-design-tree-detail">
+        <h4>The open node's detail</h4>
+        <pre><code data-lang="svelte">&lt;div id={detailId} data-testid="tree-detail" class="{SURFACE_POP} flex flex-col gap-2"&gt;
+  &lt;h4 id={detailTitleId} tabindex="-1" class="font-semibold"&gt;{node.label}&lt;/h4&gt;
+  &lt;p&gt;{node.line}&lt;/p&gt;
+  {#if nextStep}&lt;p&gt;{nextStepText(nextStep)}&lt;/p&gt;{/if}
+  {#if node.source}source{/if}
+  buy, or {BOUGHT}
+&lt;/div&gt;</code></pre>
+        <ul>
+          <li><code>nextStep</code> is the next level's <code>step</code>, shown when the node has more than one level and a level is left.</li>
+          <li>The source with an <code>href</code> is a <code>BUTTON_QUIET</code> link, text <code>source.text</code>, <code>target="_blank"</code>, <code>rel="noopener noreferrer"</code>, <code>data-testid="tree-source"</code>. Without an <code>href</code> it is a <code>p</code>: <code>SOURCE</code>, ": ", then the text. A node with <code>source</code> null shows neither.</li>
+          <li>While a level is left, Buy is a <code>BUTTON_PRIMARY</code> with <code>buyText(p)</code> and <code>data-testid="tree-buy"</code>.</li>
+          <li>For <code>ready</code>, a press calls <code>onbuy(id)</code>.</li>
+          <li>For <code>short</code>, Buy is <code>aria-disabled="true"</code>, described by a <code>p</code> holding <code>shortText(…)</code>, and a press does nothing.</li>
+          <li>For <code>done</code>, the detail shows <code>BOUGHT</code> in place of Buy.</li>
+          <li>After a press on Buy, when the node's level rises in the props, the live region says <code>boughtLive(label, step)</code> with the bought level's step.</li>
+          <li>After that change, focus stays on Buy while it remains; when the node is <code>done</code>, focus moves to the detail's heading.</li>
+          <li>A press that buys nothing (the store refused) changes nothing on screen.</li>
+        </ul>
+      </section>
+
+      <section id="sec-design-tree-footer">
+        <h4>Run, the next goal and the balance</h4>
+        <ul>
+          <li>The footer reads, left to right: the balance, the busy status, "Take the next goal" when offered, Run. Run sits last, at the right (<code>ml-auto</code> on the first button).</li>
+          <li>The balance is a <code>p</code> showing <code>balanceText(total(units))</code> with the mark <code>aria-hidden</code>, and <code>balanceName(…)</code> as its <code>sr-only</code> text.</li>
+          <li>Run is a <code>BUTTON_PRIMARY</code> with the text <code>RUN</code> and <code>data-testid="tree-run"</code>. Every press calls <code>onrun()</code>.</li>
+          <li>While <code>busy</code>, Run carries <code>aria-busy="true"</code> and <code>aria-describedby</code> the status, and a <code>role="status"</code> span <code>data-testid="tree-busy"</code> says <code>RUN_BUSY</code>. Otherwise the span is empty. A press while busy still calls <code>onrun()</code>: <code>game-sim</code> starts the run when the forecast is ready and ignores a second press.</li>
+          <li>While <code>next</code> is set, a <code>BUTTON</code> <code>takeNextText(next.label)</code>, <code>data-testid="tree-next"</code>, calls <code>onnext()</code>. When it leaves after a press, focus moves to Run.</li>
+        </ul>
+      </section>
+
+      <section id="sec-design-tree-ending">
+        <h4>The ending</h4>
+        <ul>
+          <li>While <code>finished</code> and <code>ending</code> is set, a <code>section data-testid="tree-ending"</code> opens the body, before "Current law".</li>
+          <li>It holds an <code>h3</code> <code>ENDING_TITLE</code>; a <code>p</code> <code>endingReached(ending.reachedOn)</code>; an <code>h4</code> <code>ENDING_LEVERS</code> over a <code>ul</code> of the labels of every node with a level above 0, in catalogue order; a <code>p</code> <code>perHomeText(ending.perHome)</code> when it is not null; a <code>p</code> <code>ENDING_LIFTED</code>; then <code>publish</code>, when given.</li>
+          <li>Run stays. The player may keep running.</li>
+        </ul>
+      </section>
+
+      <section id="sec-design-tree-keys">
+        <h4>Focus and keys</h4>
+        <ul>
+          <li>On mount Run takes focus.</li>
+          <li>Escape while a detail is open, and not already handled, closes it and focuses that node's open button.</li>
+          <li>Escape with no detail open is left alone.</li>
+          <li>Opening a detail does not move focus.</li>
+        </ul>
+      </section>
+    </section>
+
+    <section id="sec-design-headline">
+      <h3>GoalHeadline</h3>
+      <p>The header's pinned item, at every width. The header is 48 px tall; the box is at most 44 px.</p>
+      <pre><code data-lang="svelte">&lt;span class="inline-flex" data-testid="goal-headline"&gt;
+  &lt;div bind:this={box} data-testid="goal-box" data-met={met || undefined} data-flash={flash || undefined}
+    class="relative flex max-w-80 min-w-6 flex-col justify-center gap-0.5 rounded-md border
+      border-gray-300 bg-surface px-2 py-0.5 text-sm leading-tight whitespace-nowrap text-ink
+      tabular-nums hover:bg-surface-raised has-[button:focus-visible]:outline-2
+      has-[button:focus-visible]:outline-offset-2 has-[button:focus-visible]:outline-accent
+      dark:border-gray-600 dark:bg-surface-dark dark:text-ink-dark dark:hover:bg-surface-dark-raised
+      dark:has-[button:focus-visible]:outline-accent-dark"&gt;
+    &lt;button type="button" data-testid="goal-headline-button" aria-expanded={open}
+      aria-controls={popId} aria-describedby={line2Id}
+      class="text-left font-semibold before:absolute before:inset-0 before:content-['']
+        focus-visible:outline-none"&gt;line 1&lt;/button&gt;
+    &lt;span aria-hidden="true" data-testid="goal-bar" data-fill={pct} class="track"&gt;fill&lt;/span&gt;
+    &lt;span aria-hidden="true" data-testid="goal-line2" class="pointer-events-none truncate text-xs
+      font-medium text-ink-muted max-sm:hidden dark:text-ink-dark-muted"&gt;line 2&lt;/span&gt;
+    &lt;span id={line2Id} class="sr-only"&gt;line 2&lt;/span&gt;
+    {#if sideMet &gt; 0}&lt;span aria-hidden="true" data-testid="goal-side-mark"
+      class="absolute -top-0.5 -right-0.5 size-2 rounded-full bg-accent dark:bg-accent-dark"&gt;&lt;/span&gt;{/if}
+  &lt;/div&gt;
+  {#if open}&lt;div id={popId} data-testid="side-goals" …&gt;…&lt;/div&gt;{/if}
+&lt;/span&gt;
+&lt;span class="sr-only" aria-live="polite" data-testid="goal-live"&gt;{spoken}&lt;/span&gt;</code></pre>
+      <section id="sec-design-headline-lines">
+        <h4>Lines and bar</h4>
+        <ul>
+          <li>Line 1 is <code>goalLine(shownHomes, amount, deadline)</code>, where <code>shownHomes</code> is the rolling count (<a href="#sec-design-motion">Motion</a>). The part <code>HOMES_WORD</code> sits in a <code>max-sm:sr-only</code> span, so below sm line 1 reads "61,400 of 82,069 by 2055" and its name stays whole.</li>
+          <li>With <code>homes</code> null line 1 shows the goal alone ("82,069 homes by 2055") and the bar is empty.</li>
+          <li>The bar sits under line 1 at every width: a track <code>block h-1 w-full</code>, its fill <code>min(1, shownHomes / amount)</code>, in <code>bg-accent dark:bg-accent-dark</code>. <code>data-fill</code> is the fill as a whole percent.</li>
+          <li>Line 2 is, joined by " · ": <code>GOAL_MET</code> when <code>met</code>; else <code>unlocksText(unlocks)</code> when <code>unlocks</code> is not null; else <code>LAST_GOAL</code>. Then <code>sideMetText(n)</code> when <code>n</code>, the count of <code>side</code> entries with <code>met</code> true, is above 0.</li>
+          <li>Line 2 shows from sm and truncates with an ellipsis in the 20rem box; its <code>sr-only</code> copy is whole at every width.</li>
+          <li>The mark when a side goal is met is the dot at the box's top right, at every width, while <code>n</code> is above 0.</li>
+          <li>Measured sizes: line 1 17.5 px, the bar 4 px, line 2 15 px, two 2 px gaps, 2 px of padding each side and the border: 44.5 px at most. Below sm line 2 is hidden and the box is about 28 px.</li>
+        </ul>
+      </section>
+      <section id="sec-design-headline-pop">
+        <h4>The side goals pop-over</h4>
+        <ul>
+          <li>The button toggles the pop-over. Opening it calls the <code>openOnly</code> of <code>headerOverlay('goal-side', …)</code>, so the Menu and the game panel close.</li>
+          <li>The pop-over is <code>SURFACE_POP absolute top-full z-50 mt-1 w-72 max-w-[calc(100vw-2rem)]</code>, positioned against the <code>&lt;header&gt;</code> (the nearest positioned ancestor; the headline's wrapper is not positioned).</li>
+          <li>Its left edge is measured at open: the box's centre less half the pop-over's width, clamped to between 16 px and the header's width less the pop-over's width less 16 px. The pop-over's width is the smaller of 288 px and the header's width less 32 px.</li>
+          <li>It holds an <code>h2</code> <code>SIDE_GOALS_TITLE</code> (<code>text-base font-semibold</code>) and a <code>ul</code>. With <code>side</code> empty the list is replaced by a <code>p</code> <code>NO_SIDE_GOALS</code>.</li>
+          <li>Each entry is an <code>li data-testid="side-goal" data-goal={goal.id} data-met={met || undefined}</code> with: the label (<code>font-semibold</code>); a bar of <code>min(1, value / target)</code> and <code>progressText(value, target)</code>; <code>priceText(total(goal.reward))</code> with the mark hidden and <code>unitsName(…)</code> as its <code>sr-only</code> text; and <code>MET</code> when <code>met</code>.</li>
+          <li>Closing: the button again; Escape (not already handled, no modal dialog open), which also refocuses the button; a press outside the headline and the pop-over; another header overlay opening.</li>
+          <li>The pop-over holds no control. Focus stays on the button while it is open.</li>
+        </ul>
+      </section>
+      <section id="sec-design-headline-live">
+        <h4>What a screen reader is told</h4>
+        <ul>
+          <li>The button's name is line 1; its description is line 2.</li>
+          <li>When <code>met</code> turns from false to true after mount, the live region says <code>goalMetLive(amount, deadline)</code>.</li>
+          <li>When a <code>side</code> entry's <code>met</code> turns from false to true after mount, the live region says <code>sideMetLive(goal.label)</code>. Two at once are joined by " · ".</li>
+          <li>Values present at mount are never spoken. The rolling count is never spoken.</li>
+        </ul>
+      </section>
+    </section>
+
+    <section id="sec-design-opening">
+      <h3>OpeningCard</h3>
+      <pre><code data-lang="svelte">&lt;div role="dialog" aria-modal="false" aria-labelledby={titleId} data-testid="opening-card"
+  class="{SURFACE_POP} flex w-80 max-w-full flex-col gap-3"&gt;
+  &lt;h2 id={titleId} class="text-base font-semibold"&gt;{roomMet(amount)}&lt;/h2&gt;
+  {#each OPENING_LINES as line}&lt;p&gt;{line}&lt;/p&gt;{/each}
+  &lt;button type="button" class={BUTTON_PRIMARY} data-testid="opening-start"&gt;{START}&lt;/button&gt;
+  &lt;AccountOffer /&gt;
+&lt;/div&gt;</code></pre>
+      <ul>
+        <li>On mount Start takes focus.</li>
+        <li>Each press on Start calls <code>onstart()</code>. <code>startRuns</code> is the store's, and <code>game-shell</code> ignores a second press.</li>
+        <li>The card takes no Escape: it has one action and no way back.</li>
+        <li><code>AccountOffer</code> is mounted unchanged after Start (D7: the account is made at this win).</li>
+        <li><code>game-shell</code> places the card over the map.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-cell">
+      <h3>GameCell</h3>
+      <p>The header's unit count. Everything <code>LevelCell</code> does as a header overlay moves over unchanged; the level, "Level up" and the Menu's dot do not.</p>
+      <ul>
+        <li>It renders nothing while <code>game.open</code>.</li>
+        <li>The button is a <code>BUTTON</code>, <code>data-testid="header-units"</code>, <code>aria-expanded</code>, <code>aria-controls</code>. It shows the mark and the rolling count of <code>total(game.state.units)</code>, both <code>aria-hidden</code>, and an <code>sr-only</code> <code>unitsName(…)</code> of the true count.</li>
+        <li>It opens <code>GamePanel</code> inside <code>div data-testid="header-game-panel"</code>.</li>
+        <li>Out of the Menu (<code>inMenu</code> false) the panel is the pop-over of today: <code>SURFACE_POP absolute top-full z-50 mt-1 max-h-[calc(100vh-4rem)] w-80 max-w-[calc(100vw-2rem)] overflow-y-auto</code>, its left edge measured from the button to the <code>&lt;header&gt;</code> at open, and opening it announces <code>headerOverlay</code>.</li>
+        <li>In the Menu the panel opens in place under the button and announces nothing.</li>
+        <li>It closes on: the button again; Escape (not already handled, no modal dialog open), which refocuses the button; a press outside the cell's root; a click on a link inside; another header overlay opening.</li>
+        <li>The root carries <code>data-header-keep-open</code>.</li>
+        <li>Opening does not move focus.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-panel">
+      <h3>GamePanel</h3>
+      <p>No props. It reads <code>useGame()</code> (G7) and the prefs of R1 through <code>getStorage()</code>.</p>
+      <pre><code data-lang="svelte">&lt;section aria-labelledby={headingId} data-testid="game-panel"
+  class="flex w-80 max-w-full flex-col gap-3 text-sm" onmousedowncapture={keepFocus}&gt;
+  &lt;div class="flex flex-col gap-1"&gt;
+    &lt;h2 id={headingId} tabindex="-1" class="text-base font-semibold"&gt;{current.name}&lt;/h2&gt;
+    &lt;p data-testid="game-stage"&gt;{entryStage(state.phase, state.rung)} · {unitsName(…)}&lt;/p&gt;
+  &lt;/div&gt;
+  {#if sync !== null}&lt;p data-testid="game-sync"&gt;…&lt;/p&gt;{/if}
+  &lt;div class="flex flex-col gap-1"&gt;sound switch, collect switch, the bought note&lt;/div&gt;
+  &lt;h3 class="font-semibold"&gt;{SAVED_GAMES}&lt;/h3&gt;
+  &lt;ul class="more-below flex max-h-64 flex-col gap-2 overflow-y-auto" {@attach moreBelow}&gt;…&lt;/ul&gt;
+  &lt;div class="flex flex-col gap-1"&gt;New game, FULL_TEXT when full&lt;/div&gt;
+  &lt;div role="alert" data-testid="game-error"&gt;{error}&lt;/div&gt;
+&lt;/section&gt;</code></pre>
+      <section id="sec-design-panel-kept">
+        <h4>Moved over unchanged from LevelPanel</h4>
+        <ul>
+          <li>The sync line: <code>syncText(game.sync.state)</code>, a <code>BUTTON_QUIET</code> link to <code>/signin?returnTo=&lt;path and query&gt;</code> for <code>sign-in</code>, absent when null.</li>
+          <li>The saved games list, its box, its rows (<code>data-testid="save-row"</code>, <code>aria-current</code>), switching by the name, Rename with its field (Enter, Escape, blur), Delete with its question, Cancel, focus after each, <code>keepFocus</code> and rename-first.</li>
+          <li>New game, <code>aria-disabled</code> at <code>MAX_SAVES</code> with <code>FULL_TEXT</code> under it.</li>
+          <li>The alert: <code>FULL_TEXT</code> for <code>full</code>, <code>STORAGE_TEXT</code> for <code>storage</code> and <code>changed</code>.</li>
+          <li>The words are the same, now from <code>words.ts</code>: <code>RENAME</code>, <code>DELETE</code>, <code>CANCEL</code>, <code>NAME_LABEL</code>, <code>PLAYING</code>, <code>renameName</code>, <code>deleteName</code>, <code>deleteAsk</code>, <code>NEW_GAME_LABEL</code>, <code>SAVED_GAMES</code>.</li>
+        </ul>
+      </section>
+      <section id="sec-design-panel-new">
+        <h4>What changes</h4>
+        <ul>
+          <li>The heading is the current game's name: the entry of <code>game.saves</code> whose id is <code>game.currentId</code>. It keeps <code>tabindex="-1"</code>.</li>
+          <li>Under it, <code>data-testid="game-stage"</code>: <code>entryStage(state.phase, state.rung)</code> · <code>unitsName(total(state.units))</code>.</li>
+          <li>A row's line reads <code>entryStage(entry.phase, entry.rung)</code> · <code>PLAYING</code> for the current game, else · <code>playedText(entry.savedAt, now)</code>. "Painting" stands where the level stood for a game in its opening; "Goal 2 of 4" for one in its runs.</li>
+          <li>Switching, New game, and deleting the current game call <code>reloadGame()</code> on success: <code>window.location.assign('/')</code>, a full load of the one address (call 6).</li>
+          <li>The sound switch: <code>SOUND</code>, <code>data-testid="game-sound"</code>, <code>aria-checked</code> is <code>!readMuted(storage)</code> as read at mount. A press writes <code>writeMuted(storage, !muted)</code>, updates the switch, then calls <code>announcePrefs</code>.</li>
+          <li>"Collect for me": <code>COLLECT_FOR_ME</code>, <code>data-testid="game-collect"</code>, <code>aria-checked</code> is <code>readCollectForMe(storage)</code> as read at mount. A press writes <code>writeCollectForMe(storage, !on)</code>, updates the switch, then calls <code>announcePrefs</code>.</li>
+          <li>While <code>game.limits.hands.auto</code> is true, the collect switch reads checked, is <code>aria-disabled</code>, is described by a <code>p</code> <code>COLLECT_BOUGHT</code>, and a press does nothing.</li>
+          <li><code>storage</code> is <code>getStorage()</code>. With null storage the switches show the defaults R1 reads (sound on, collect off), still switch on screen, and write nothing.</li>
+          <li>It renders nothing while <code>game.open</code>.</li>
+        </ul>
+      </section>
+    </section>
+
+    <section id="sec-design-motion">
+      <h3>Motion</h3>
+      <pre><code data-lang="ts">// src/lib/game/ui/motion.ts
+export const ROLL_MS = 400;
+export const TALLY_ROLL_MS = 800;
+export const MET_MS = 1200;
+export const REVEAL_MS = 300;</code></pre>
+      <table id="tbl-motion">
+        <caption>What moves, for how long, and with reduced motion</caption>
+        <thead>
+          <tr><th scope="col">What</th><th scope="col">How</th><th scope="col">Reduced motion</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">Headline count and bar</th><td>A <code>Tween</code> to each new <code>homes</code> over <code>ROLL_MS</code>, <code>cubicOut</code>; the bar's fill follows the tweened count</td><td>Duration 0: the new value at once</td></tr>
+          <tr><th scope="row">Headline, <code>homes</code> from null</th><td>Set at once, no roll</td><td>The same</td></tr>
+          <tr><th scope="row">Goal met moment</th><td>On <code>met</code> false to true after mount, <code>data-flash</code> is set for <code>MET_MS</code>: one 2 px accent outline that fades out once (<code>@keyframes goal-met</code>, opacity of the outline colour from 1 to 0)</td><td>No animation: the outline shows still for <code>MET_MS</code>, then goes</td></tr>
+          <tr><th scope="row">Unit count in the header</th><td>A <code>Tween</code> over <code>ROLL_MS</code> on each change after mount</td><td>Duration 0</td></tr>
+          <tr><th scope="row">Tally homes and bar</th><td>From <code>before</code> to <code>result.homes</code> over <code>TALLY_ROLL_MS</code>; with <code>before</code> null, no roll</td><td>Final values at once</td></tr>
+          <tr><th scope="row">Tally units collected</th><td>From 0 to the total over <code>TALLY_ROLL_MS</code></td><td>Final value at once</td></tr>
+          <tr><th scope="row">A node revealed after mount</th><td><code>in:fade</code> over <code>REVEAL_MS</code></td><td>Duration 0</td></tr>
+        </tbody>
+      </table>
+      <ul>
+        <li>The setting is read through <code>prefersReducedMotion</code> from <code>svelte/motion</code>; <code>Tween</code> is from the same module.</li>
+        <li>Nothing flashes: the one outline pulse happens once per goal met.</li>
+        <li>No part plays a sound. <code>game-sim</code> calls R1's <code>Sound</code> for a purchase and a goal met.</li>
+        <li>The text a screen reader gets is the final value, never a frame of a roll: names and <code>sr-only</code> copies use the true numbers.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-testids">
+      <h3>Test ids</h3>
+      <table id="tbl-testids">
+        <caption>Test ids this unit adds</caption>
+        <thead>
+          <tr><th scope="col">Part</th><th scope="col">Ids</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row"><code>Tally</code></th><td><code>tally</code>, <code>tally-homes</code>, <code>tally-change</code>, <code>tally-bar</code>, <code>tally-units</code>, <code>tally-lump</code>, <code>tally-side</code>, <code>tally-stage</code>, <code>tally-money</code>, <code>tally-continue</code></td></tr>
+          <tr><th scope="row"><code>Tree</code></th><td><code>tree</code>, <code>tree-root</code>, <code>tree-branch</code>, <code>tree-node</code>, <code>tree-node-open</code>, <code>tree-node-edit</code>, <code>tree-node-on</code>, <code>tree-detail</code>, <code>tree-source</code>, <code>tree-buy</code>, <code>tree-run</code>, <code>tree-busy</code>, <code>tree-next</code>, <code>tree-ending</code>, <code>tree-live</code></td></tr>
+          <tr><th scope="row"><code>GoalHeadline</code></th><td><code>goal-headline</code>, <code>goal-box</code>, <code>goal-headline-button</code>, <code>goal-bar</code>, <code>goal-line2</code>, <code>goal-side-mark</code>, <code>side-goals</code>, <code>side-goal</code>, <code>goal-live</code></td></tr>
+          <tr><th scope="row"><code>OpeningCard</code></th><td><code>opening-card</code>, <code>opening-start</code></td></tr>
+          <tr><th scope="row"><code>GameCell</code></th><td><code>header-units</code>, <code>header-game-panel</code></td></tr>
+          <tr><th scope="row"><code>GamePanel</code></th><td><code>game-panel</code>, <code>game-stage</code>, <code>game-sync</code>, <code>game-sound</code>, <code>game-collect</code>, <code>save-row</code>, <code>game-error</code></td></tr>
+        </tbody>
+      </table>
+      <p>Data attributes: <code>data-stage</code> on a stage row; <code>data-branch</code> on a branch; <code>data-node</code>, <code>data-state</code>, <code>data-level</code> and <code>data-on</code> on a node; <code>data-fill</code> on a bar; <code>data-met</code> and <code>data-flash</code> on the goal box; <code>data-goal</code> and <code>data-met</code> on a side goal.</p>
+    </section>
+
+    <section id="sec-design-files-helpers">
+      <h3>Helpers</h3>
+      <pre><code data-lang="ts">// src/lib/game/ui/reload.ts
+/** A full load of '/', even when '/' is on screen. */
+export function reloadGame(): void;</code></pre>
+      <ul>
+        <li>Specs mock <code>./reload</code>, as the level panel's spec mocks <code>./navigate</code>.</li>
+      </ul>
+    </section>
+  </section>
+
+  <section id="sec-files">
+    <h2>Files</h2>
+    <p>All under <code>src/lib/game/ui/</code>, the unit's write set. Nothing is deleted here.</p>
+    <table id="tbl-files">
+      <caption>Files this unit creates</caption>
+      <thead>
+        <tr><th scope="col">File</th><th scope="col">Part</th><th scope="col">What</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row"><code>Tally.svelte</code>, <code>Tally.svelte.spec.ts</code></th><td>A</td><td>The tally card</td></tr>
+        <tr><th scope="row"><code>Tree.svelte</code>, <code>Tree.svelte.spec.ts</code></th><td>A</td><td>The tree screen</td></tr>
+        <tr><th scope="row"><code>GoalHeadline.svelte</code>, <code>GoalHeadline.svelte.spec.ts</code></th><td>A</td><td>The pinned goal and side goals</td></tr>
+        <tr><th scope="row"><code>OpeningCard.svelte</code>, <code>OpeningCard.svelte.spec.ts</code></th><td>A</td><td>The opening's last card</td></tr>
+        <tr><th scope="row"><code>layout.ts</code>, <code>layout.spec.ts</code></th><td>A</td><td>Branches and nesting</td></tr>
+        <tr><th scope="row"><code>motion.ts</code></th><td>A</td><td>The durations</td></tr>
+        <tr><th scope="row"><code>test/fixtures.ts</code></th><td>A</td><td>Builders for <code>NodeView</code>, <code>TreeNode</code>, <code>RunResult</code> and side entries</td></tr>
+        <tr><th scope="row"><code>test/TallyHost.svelte</code>, <code>test/TreeHost.svelte</code>, <code>test/HeadlineHost.svelte</code>, <code>test/OpeningHost.svelte</code></th><td>A</td><td>Hosts: <code>provideGame</code>, the part, an Escape recorder, a positioned <code>&lt;header&gt;</code> for the headline, an outside area</td></tr>
+        <tr><th scope="row"><code>GameCell.svelte</code>, <code>GameCell.svelte.spec.ts</code></th><td>B</td><td>The unit count</td></tr>
+        <tr><th scope="row"><code>GamePanel.svelte</code>, <code>GamePanel.svelte.spec.ts</code></th><td>B</td><td>The game panel</td></tr>
+        <tr><th scope="row"><code>prefs-event.ts</code></th><td>B</td><td>The prefs event</td></tr>
+        <tr><th scope="row"><code>reload.ts</code></th><td>B</td><td>The full load of <code>/</code></td></tr>
+        <tr><th scope="row"><code>test/fake-game.svelte.ts</code>, <code>test/CellHost.svelte</code>, <code>test/PanelHost.svelte</code></th><td>B</td><td>A fake of the G7 members the two parts read, and hosts</td></tr>
+      </tbody>
+    </table>
+    <p>Needed outside the write set, not taken:</p>
+    <ul>
+      <li><code>src/lib/game/words.ts</code> (<code>game-core</code>): the keys in <a href="#sec-design-words">Words</a>.</li>
+      <li><code>src/lib/shell/accent.spec.ts</code> (<code>game-shell</code>): the six components join <code>THEMED_FILES</code>.</li>
+    </ul>
+  </section>
+
+  <section id="sec-tests">
+    <h2>Tests</h2>
+    <p>Colocated. Component specs run in the browser project with <code>vitest-browser-svelte</code>; each checks accessibility with <code>axe.run(element)</code> in light and in dark, as the specs of the win card and the level cell do. <code>expectNoA11yViolations</code> runs on pages, in <code>closing</code>'s e2e. Every test calls <code>expect</code>.</p>
+    <section id="sec-tests-unit">
+      <h3>Unit</h3>
+      <ul>
+        <li><code>branchRows</code>: branch order; a branch with no node is left out; a child nests under the first earlier node of its branch named in <code>after</code>; an <code>after</code> in another branch makes a root; an <code>after</code> naming a later node makes a root; siblings keep catalogue order; every node once.</li>
+      </ul>
+    </section>
+    <section id="sec-tests-tally">
+      <h3>Tally (component)</h3>
+      <ul>
+        <li>The title for a run that met the goal and for one that did not.</li>
+        <li>The homes line; the change for a rise, a fall and none; no change line with <code>before</code> null.</li>
+        <li>The collected line; the lump line only with a lump; one side line per reward with the label from <code>SIDE_GOALS</code>, and the fallback for an unknown id.</li>
+        <li>Four stage rows with the labels of <code>STAGE_KEY</code> and counts summed from a fixture with six distinct stage values; <code>STAGE_ROWS</code> agrees with <code>STAGE_KEY</code>'s first four rows.</li>
+        <li>The money row only when <code>waitingMoney</code> is not null; the bars' shared scale (<code>data-fill</code>).</li>
+        <li>Continue has focus at mount; Continue and Escape each call <code>oncontinue</code> once; Escape does not reach the window.</li>
+        <li><code>AccountOffer</code> is inside the card.</li>
+        <li>With reduced motion emulated the final numbers show at once; without, the final numbers show once <code>TALLY_ROLL_MS</code> has passed.</li>
+        <li>Every control is at least 24 by 24 px; axe in light and dark.</li>
+      </ul>
+    </section>
+    <section id="sec-tests-tree">
+      <h3>Tree (component)</h3>
+      <ul>
+        <li>Branches and nesting as <code>branchRows</code> gives them; "Current law" first.</li>
+        <li>A card's <code>data-state</code>, look and second line for ready, short, bought, bought and off, and bought with a level left.</li>
+        <li>Opening a node shows its line, next step, source link (<code>href</code>, new tab) or source text, and Buy; one node open at a time; a second press closes it.</li>
+        <li>Escape closes the detail and focuses the node's button; Escape with nothing open reaches the window.</li>
+        <li>Buy on a ready node calls <code>onbuy(id)</code>; on a short node it is <code>aria-disabled</code>, says how far short, and calls nothing; a done node shows "Bought".</li>
+        <li>After the host raises the node's level, the live region says "Bought: …" and focus follows the rule.</li>
+        <li>Edit calls <code>onedit(id)</code>. The switch shows only with an entry in <code>on</code>, reads <code>aria-checked</code>, and calls <code>ontoggle(id, !on)</code>.</li>
+        <li>Run has focus at mount and calls <code>onrun</code>; while busy it says <code>RUN_BUSY</code>, carries <code>aria-busy</code>, and still calls <code>onrun</code>.</li>
+        <li>"Take the next goal" shows only with <code>next</code>, calls <code>onnext</code>, and focus moves to Run when it leaves.</li>
+        <li>The ending: the month reached, the bought labels, money per home only when not null, the publish snippet.</li>
+        <li>At 1280 px the detail is in the fifth column; at 375 px it is inside the node's row and the page has no horizontal scroll.</li>
+        <li>A node added after mount fades in; with reduced motion it appears at once.</li>
+        <li>Every control is at least 24 by 24 px; axe in light and dark with a node open.</li>
+      </ul>
+    </section>
+    <section id="sec-tests-headline">
+      <h3>GoalHeadline (component)</h3>
+      <ul>
+        <li>Line 1 with homes and with null; below sm the word "homes" is hidden and the button's name is unchanged.</li>
+        <li>Line 2 for unlocks, met and the last goal, with the side count; hidden below sm, the description whole.</li>
+        <li>The bar's <code>data-fill</code>; the side mark only while an entry is met.</li>
+        <li>The pop-over: opens and closes by the button, Escape (refocus), a press outside and another overlay's event; it lies inside the viewport at 375 px and at 1280 px.</li>
+        <li>Each side entry's progress, reward and "Met"; "None open" with no entries.</li>
+        <li>The live region speaks a goal met and a side goal met after mount, and nothing at mount.</li>
+        <li><code>data-flash</code> lasts <code>MET_MS</code>; with reduced motion the box's <code>animation-name</code> is <code>none</code>.</li>
+        <li>The box is at most 44 px tall at 1280 px; axe in light and dark, with the pop-over open.</li>
+      </ul>
+    </section>
+    <section id="sec-tests-opening">
+      <h3>OpeningCard (component)</h3>
+      <ul>
+        <li>The title and the two lines; Start has focus at mount and calls <code>onstart</code>; <code>AccountOffer</code> is inside; axe in light and dark.</li>
+      </ul>
+    </section>
+    <section id="sec-tests-cell">
+      <h3>GameCell and GamePanel (component, part B)</h3>
+      <ul>
+        <li>The cell's count and name; the count rolls to a new total, and with reduced motion jumps.</li>
+        <li>From lg the panel is a pop-over at the cell's left edge inside the viewport; in the Menu it opens in place; Escape, a press outside, a link click and another overlay close it; the root keeps the Menu open.</li>
+        <li>Nothing renders for the open game.</li>
+        <li>The panel's heading and stage line; a row's line for a game in its opening and one in its runs.</li>
+        <li>Switching, New game and deleting the current game call <code>reloadGame</code>; the full and storage refusals show their words.</li>
+        <li>The rename and delete behaviours of the level panel's spec, carried over.</li>
+        <li>Each sync state's words and the sign-in link.</li>
+        <li>The sound and collect switches read the stored prefs, write them, and dispatch <code>GAME_PREFS_EVENT</code> with both values; with <code>hands.auto</code> the collect switch is checked, off and explained.</li>
+        <li>One test each against the real G7 store, the rest against <code>FakeGame</code>; axe in light and dark.</li>
+      </ul>
+    </section>
+  </section>
+
+  <section id="sec-decisions">
+    <h2>Decisions</h2>
+    <ul>
+      <li><strong>Two parts.</strong> G7 has no stub in <code>contracts</code>, so the cell and the panel wait for <code>game-save</code>'s store and join its lane.</li>
+      <li><strong>Four U1 additions</strong> (<code>on</code> and <code>ontoggle</code>, <code>ending</code> and <code>publish</code>, <code>before</code>, the prefs event): each is data the parts must show or a signal they must send, and U1 has no field for it.</li>
+      <li><strong>The tree is branch columns of nested lists.</strong> Adjacency is the first earlier <code>after</code> in the same branch; it needs no graph library, keeps a reading order, and stacks on a phone.</li>
+      <li><strong>No fogged "?" nodes.</strong> <code>treeView</code> returns shown nodes only and the tree reads nothing else.</li>
+      <li><strong>The detail is a side column from 1024 px and inline below.</strong> It matches the wireframe on a laptop and keeps the detail by its node on a phone.</li>
+      <li><strong>Run is always pressable.</strong> The busy text says why it waits; <code>game-sim</code> owns the wait, as the design's "Run says so and waits".</li>
+      <li><strong>Focus at mount goes to the one forward action:</strong> Continue, Run, Start.</li>
+      <li><strong>The opening card takes no Escape.</strong> Its one action is Start.</li>
+      <li><strong>The tally's title</strong> is the month met, or "By &lt;deadline&gt;" when missed; the wireframe's "2055 reached" read as the goal met.</li>
+      <li><strong>Stage labels are <code>STAGE_KEY</code>'s,</strong> copied into <code>words.ts</code> and checked by a spec, so the tally names stages as the map's key does without importing the map.</li>
+      <li><strong>The stage and money bars share one scale,</strong> the largest row, so the bottleneck is the longest bar.</li>
+      <li><strong>Line 2 of the headline</strong> says "Goal met" while met, "Last goal" at the last rung, and "Unlocks: …" otherwise.</li>
+      <li><strong>Below sm the headline drops the word "homes" and line 2</strong> and keeps the bar, to fit 375 px beside the status and the Menu.</li>
+      <li><strong>The panel's heading is the game's name;</strong> a row reads "Painting" or "Goal N of M", since a save entry has no deadline year.</li>
+      <li><strong>Prefs are read at mount</strong> and written on each press; the panel announces them by a window event.</li>
+      <li><strong>Durations:</strong> 400 ms for a roll, 800 ms for the tally, 1,200 ms for the goal met pulse, 300 ms for a reveal. They are starting values; <code>closing</code>'s playtest may change them in <code>motion.ts</code>.</li>
+      <li><strong>The mark ◆</strong> from the approved wireframe stands for units, hidden from screen readers, which hear "units".</li>
+    </ul>
+  </section>
+
+  <section id="sec-out-of-scope">
+    <h2>Out of scope</h2>
+    <ul>
+      <li>Placing the tally, the tree and the opening card on the page, the page's states, buying into the document, the switch's effect, sound calls, the run's clock and when <code>busy</code> is set: <code>game-sim</code> (the opening card: <code>game-shell</code>).</li>
+      <li>Mounting <code>GoalHeadline</code> as the pinned item and <code>GameCell</code> in the header, removing the steps, the level dot and the Menu's "level up ready" name, and deleting <code>LevelCell</code> and <code>LevelPanel</code>: <code>game-shell</code>.</li>
+      <li>The headline during the opening (Paint's "Room for N homes"): <code>game-shell</code>.</li>
+      <li>Deleting <code>WinCard</code>: <code>game-sim</code>.</li>
+      <li>The words file, the ladder, side goals and their reads, <code>settle</code>, <code>RUNGS</code>: <code>game-core</code>.</li>
+      <li>Node data, labels, lines, sources and prices: <code>tree-catalogue</code>.</li>
+      <li>The store, its saved games and the sync: <code>game-save</code>.</li>
+      <li>The prefs' storage keys and defaults, sound, drops and the ring: <code>run-play</code>.</li>
+      <li><code>AccountOffer</code> itself: it stays as it is.</li>
+      <li>Page e2e, the targets sweep and the rest-text checks on <code>/</code>: <code>closing</code>.</li>
+    </ul>
+  </section>
+</article>

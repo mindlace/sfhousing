@@ -1,0 +1,1629 @@
+<article>
+  <header>
+    <h1>Tree catalogue: nodes, buying, grants, the balance script and the reach measure</h1>
+    <p>The tree's nodes with their prices and sources, what is shown and bought, how a purchase changes the policy document, the script that plays the tree against the engine, and the measurement that fixes the ladder.</p>
+  </header>
+
+  <section id="sec-purpose">
+    <h2>Purpose</h2>
+    <p>This subsystem is the tree of the incremental loop: the catalogue that P3 says new levers add to, and the step that turns a purchase into policy.</p>
+    <ul>
+      <li>It holds the node data: every node's branch, label, line, adjacency, ring, levels, prices and source (G3).</li>
+      <li>It decides what the tree shows and buys the next level of a node (G3, <code>treeView</code> and <code>buy</code>).</li>
+      <li>It applies a purchase's grant to the policy document, dated from month 1 (G5, <code>applyGrant</code>).</li>
+      <li>It plays the tree against the real engine in several purchase orders and reports pacing (<code>scripts/tree-balance.ts</code>).</li>
+      <li>It measures the earliest year the full tree reaches the goal and derives <code>LADDER_YEARS</code> from it (<code>scripts/reach-measure.ts</code>).</li>
+    </ul>
+    <p>Rulings it carries:</p>
+    <ul>
+      <li><strong>P1</strong>: a node acts on a lever the code already has; the game never changes what a policy forecasts.</li>
+      <li><strong>P3</strong>: the tree is data; a new lever is a new entry.</li>
+      <li><strong>P11</strong> and <strong>D4</strong>: no node offers the painted area, an own pool, the City funding scale or market terms.</li>
+      <li><strong>P12</strong>: a grant puts its policy in force from today; switching it off is the document's own switch.</li>
+      <li><strong>Call 4</strong>: custom timing and custom route shares are not nodes.</li>
+      <li><strong>Call 5</strong>: every measure starts the month it is bought.</li>
+      <li><strong>Call 10</strong>: deadlines step in by five years down to the measured year.</li>
+      <li><strong>Call 16</strong>: protections, <code>state-off</code> and <code>federal-credits-off</code> are free and are not nodes.</li>
+      <li><strong>Global constraints</strong>: no node invents a value; every preset and measure node names its source.</li>
+    </ul>
+  </section>
+
+  <section id="sec-interfaces">
+    <h2>Interfaces</h2>
+    <p>This subsystem produces G3 and G5. It needs G1, G2, G4 and G6. The rows and their sections are copied from the design without change.</p>
+    <table id="tbl-interfaces">
+      <caption>Interface table</caption>
+      <thead>
+        <tr><th scope="col">Row</th><th scope="col">Owner</th><th scope="col">Layer</th><th scope="col">Summary</th><th scope="col">Contract</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">G1</th><td><code>game-core</code></td><td>Model commitment</td><td>The game's state and the saved game</td><td><a href="#sec-if-g1">G1</a></td></tr>
+        <tr><th scope="row">G2</th><td><code>game-core</code></td><td>Model commitment</td><td>Units by kind: balances, prices, spending</td><td><a href="#sec-if-g2">G2</a></td></tr>
+        <tr><th scope="row">G3</th><td><code>tree-catalogue</code></td><td>Model commitment</td><td>The tree: nodes, what is shown, buying</td><td><a href="#sec-if-g3">G3</a></td></tr>
+        <tr><th scope="row">G4</th><td><code>game-core</code></td><td>Model commitment</td><td>Limits from what is bought; whether a policy runs</td><td><a href="#sec-if-g4">G4</a></td></tr>
+        <tr><th scope="row">G5</th><td><code>tree-catalogue</code></td><td>Decomposition choice</td><td>Applying a grant to the policy document</td><td><a href="#sec-if-g5">G5</a></td></tr>
+        <tr><th scope="row">G6</th><td><code>game-core</code></td><td>Model commitment</td><td>The ladder, side goals, a run's result, settling</td><td><a href="#sec-if-g6">G6</a></td></tr>
+      </tbody>
+    </table>
+    <section id="sec-if-g1">
+      <h3>G1 The game's state and the saved game</h3>
+      <pre><code data-lang="ts">// src/lib/game/state.ts
+import type { Day } from '$lib/timelapse/time';
+import type { RunResult } from './run-result';
+
+export type UnitKind = 'home';
+export const UNIT_KINDS: readonly UnitKind[] = ['home'];
+export type Units = Partial&lt;Record&lt;UnitKind, number&gt;&gt;;
+export type NodeId = string;
+
+export interface MetRung {
+  rung: number;
+  reachedOn: Day;
+  datasetVersion: string;
+  at: string;
+}
+
+export interface GameState {
+  v: 2;
+  phase: 'opening' | 'runs';
+  firstWinAt: string | null;
+  bought: Record&lt;NodeId, number&gt;;
+  units: Units;
+  rung: number;
+  met: MetRung[];
+  side: Record&lt;string, string&gt;;
+  runs: number;
+  last: RunResult | null;
+}
+
+export const NEW_GAME: GameState;
+
+// src/lib/game/save-shape.ts
+export interface GameSave {
+  v: 2;
+  id: string;
+  name: string;
+  nameIsDefault: boolean;
+  state: GameState;
+  plan: string | null;
+  policy: string | null;
+  savedAt: string;
+}
+
+export type SaveEntry = Pick&lt;GameSave, 'id' | 'name' | 'nameIsDefault' | 'savedAt'&gt; &amp;
+  Pick&lt;GameState, 'phase' | 'rung'&gt;;
+
+export function parseGameSave(json: unknown): GameSave | null;</code></pre>
+      <dl>
+        <dt><code>phase</code></dt><dd><code>'opening'</code> until the first run starts.</dd>
+        <dt><code>firstWinAt</code></dt><dd>ISO time the room goal was first met. The server makes the account on the first save that has it (D7).</dd>
+        <dt><code>bought</code></dt><dd>The level bought of each node, 1 or more. A node not bought has no entry.</dd>
+        <dt><code>units</code></dt><dd>The balance to spend.</dd>
+        <dt><code>rung</code></dt><dd>The index in the ladder of the deadline in play.</dd>
+        <dt><code>met</code></dt><dd>One entry per rung met, ascending by rung, each recorded once.</dd>
+        <dt><code>side</code></dt><dd>Side goal id to the ISO time it was first met.</dd>
+        <dt><code>last</code></dt><dd>The latest run's result, which the header shows between runs.</dd>
+      </dl>
+      <ul>
+        <li><code>NEW_GAME</code> is the opening with nothing bought, no units, rung 0 and no runs.</li>
+        <li><code>parseGameSave</code> returns null unless <code>v</code> is 2 at both levels (P15).</li>
+        <li>The result is rebuilt from the known fields. An unknown field is dropped.</li>
+        <li>A <code>bought</code> entry for a node the catalogue does not have is dropped. A level above the node's last is lowered to it.</li>
+        <li>Unit amounts and <code>runs</code> are whole numbers of 0 or more.</li>
+        <li><code>plan</code> and <code>policy</code> stay opaque text, as they are today.</li>
+      </ul>
+      <p><strong>Removed:</strong> <code>Level</code>, <code>Progress</code>, <code>Banked</code>, <code>Bar</code>, <code>barOf</code>, <code>roundComplete</code>, <code>levelUp</code>, <code>standing</code>, <code>beats</code>.</p>
+    </section>
+
+    <section id="sec-if-g2">
+      <h3>G2 Units</h3>
+      <pre><code data-lang="ts">// src/lib/game/units.ts
+import type { Units } from './state';
+
+export function credit(a: Units, b: Units): Units;
+export function affords(have: Units, price: Units): boolean;
+export function spend(have: Units, price: Units): Units;
+export function shortBy(have: Units, price: Units): Units;
+export function total(u: Units): number;</code></pre>
+      <ul>
+        <li>A missing kind is 0.</li>
+        <li><code>spend</code> throws <code>RangeError</code> when <code>affords</code> is false.</li>
+        <li><code>shortBy</code> holds only the kinds the balance is short of.</li>
+        <li>No function changes its arguments.</li>
+      </ul>
+    </section>
+
+    <section id="sec-if-g3">
+      <h3>G3 The tree</h3>
+      <pre><code data-lang="ts">// src/lib/game/tree.ts
+import type { PresetId } from '$lib/sim-page/timing';
+import type { StopType } from '$lib/sim/levers/brushes';
+import type { GameState, NodeId, Units } from './state';
+
+export type Branch = 'permitting' | 'zoning' | 'money' | 'hands';
+
+export type Grant =
+  | { tag: 'preset'; preset: PresetId }
+  | { tag: 'measure'; preset: string }
+  | { tag: 'stop'; stop: StopType }
+  | { tag: 'bands'; max: 2 | 3 }
+  | { tag: 'stories'; max: number }
+  | { tag: 'reach'; maxM: number }
+  | { tag: 'hands'; what: 'radius' | 'linger'; value: number }
+  | { tag: 'hands'; what: 'auto' };
+
+export interface NodeLevel {
+  price: Units;
+  grant: Grant;
+  step: string;
+}
+
+export interface TreeNode {
+  id: NodeId;
+  branch: Branch;
+  label: string;
+  line: string;
+  after: NodeId[];
+  ring: number;
+  levels: NodeLevel[];
+  source: { text: string; href: string | null } | null;
+}
+
+export interface NodeView {
+  node: TreeNode;
+  level: number;
+  state: 'ready' | 'short' | 'done';
+  short: Units | null;
+}
+
+export type Bought =
+  | { ok: true; state: GameState; grant: Grant }
+  | { ok: false; reason: 'unknown' | 'hidden' | 'done' | 'short' };
+
+export function treeView(s: GameState, nodes?: readonly TreeNode[]): NodeView[];
+export function buy(s: GameState, id: NodeId, nodes?: readonly TreeNode[]): Bought;
+
+// src/lib/game/catalogue/nodes.ts
+export const NODES: readonly TreeNode[];</code></pre>
+      <dl>
+        <dt><code>after</code></dt><dd>The node is shown once any of these is bought. Empty: shown from the start.</dd>
+        <dt><code>ring</code></dt><dd>The node is shown once <code>GameState.rung</code> is at least this.</dd>
+        <dt><code>step</code></dt><dd>The words for the level, such as "8 stories".</dd>
+        <dt><code>line</code></dt><dd>One line saying what the node does.</dd>
+        <dt><code>source</code></dt><dd>Where the value comes from. Null for a step in what the player may choose.</dd>
+      </dl>
+      <ul>
+        <li><code>treeView</code> returns the shown nodes only, in catalogue order.</li>
+        <li><code>level</code> is the level bought, 0 for none. <code>state</code> speaks of the next level: <code>'ready'</code> when affordable, <code>'short'</code> when not, <code>'done'</code> when there is none.</li>
+        <li><code>buy</code> buys the next level: it spends its price and records the level. It changes nothing else.</li>
+        <li><code>nodes</code> defaults to <code>NODES</code>.</li>
+        <li>Every preset and measure node has a <code>source</code>. No grant multiplies homes.</li>
+        <li>Levels of one node are bought in order.</li>
+      </ul>
+    </section>
+
+    <section id="sec-if-g4">
+      <h3>G4 Limits</h3>
+      <pre><code data-lang="ts">// src/lib/game/limits.ts
+import type { StopType } from '$lib/sim/levers/brushes';
+import type { Policy, PolicyKind, SimPolicy4 } from '$lib/timeline/policy4';
+import type { GameState } from './state';
+import type { TreeNode } from './tree';
+
+export interface Hands {
+  radiusPx: number;
+  lingerMs: number;
+  auto: boolean;
+}
+
+export interface Limits {
+  open: boolean;
+  presets: ReadonlySet&lt;string&gt;;
+  measures: ReadonlySet&lt;string&gt;;
+  stops: ReadonlySet&lt;StopType&gt;;
+  bands: number;
+  stories: number;
+  reachM: number;
+  custom: boolean;
+  hands: Hands;
+}
+
+export const OPEN_LIMITS: Limits;
+export const BASE_HANDS: Hands;
+export const FREE_MEASURES: readonly string[];
+
+export function limitsOf(s: GameState, nodes?: readonly TreeNode[]): Limits;
+export function within(kind: PolicyKind, p: Policy, l: Limits): boolean;
+export function runnable(doc: SimPolicy4, l: Limits): SimPolicy4;
+export function isGiven(p: Policy): boolean;</code></pre>
+      <dl>
+        <dt><code>open</code></dt><dd>The open game: every control, no limit (call 9).</dd>
+        <dt><code>presets</code>, <code>measures</code></dt><dd>The permitting preset ids and funding preset ids that run.</dd>
+        <dt><code>bands</code>, <code>stories</code>, <code>reachM</code></dt><dd>The most bands a transit rule may have, its tallest band and its furthest band. All 0 before the first stop type is bought.</dd>
+        <dt><code>custom</code></dt><dd>Custom timing and custom route shares may be set.</dd>
+        <dt><code>FREE_MEASURES</code></dt><dd><code>state-off</code> and <code>federal-credits-off</code>.</dd>
+      </dl>
+      <ul>
+        <li><code>limitsOf</code> folds the grants of every level bought. The largest <code>stories</code>, <code>reach</code>, <code>bands</code>, <code>radius</code> and <code>linger</code> win.</li>
+        <li>Once the last rung is met, <code>stories</code> is 80, <code>bands</code> 3, <code>reachM</code> 3219, every stop type is in, and <code>custom</code> is true.</li>
+        <li>A permitting policy is within the limits when its preset is in <code>presets</code>, and, unless <code>custom</code>, it has no custom edit and no custom route shares.</li>
+        <li>A transit rule is within the limits when its stop types are in <code>stops</code>, it has at most <code>bands</code> bands, no band is taller than <code>stories</code> and none is further than <code>reachM</code>.</li>
+        <li>A protection is within the limits once <code>stops</code> is not empty.</li>
+        <li>A painted area is within the limits only when <code>open</code> (P11).</li>
+        <li>A money policy is within the limits when it is given and its preset is in <code>measures</code>, or its preset is in <code>FREE_MEASURES</code> and <code>measures</code> is not empty. Any other money policy only when <code>open</code> (D4).</li>
+        <li><code>runnable</code> keeps the policies within the limits and returns the same document when it drops none.</li>
+        <li>With <code>OPEN_LIMITS</code>, <code>within</code> is always true.</li>
+      </ul>
+      <p><strong>Unchanged:</strong> <code>isGiven</code>. <strong>Removed:</strong> <code>Allowed</code>, <code>ALL_ALLOWED</code>, <code>allowedAt</code>, <code>unlocksAt</code>, <code>runs</code>, <code>playable</code>, <code>levelNeeded</code>, <code>simLocked</code>, <code>needsHigher</code>.</p>
+    </section>
+
+    <section id="sec-if-g5">
+      <h3>G5 Applying a grant</h3>
+      <pre><code data-lang="ts">// src/lib/game/grant.ts
+import type { addChoices } from '$lib/timeline/add';
+import type { SimPolicy4 } from '$lib/timeline/policy4';
+import type { Limits } from './limits';
+import type { Grant } from './tree';
+
+export const GAME_TRANSIT_ID = 'game-transit';
+
+export interface GrantCtx {
+  cal: Parameters&lt;typeof addChoices&gt;[1];
+  limits: Limits;
+}
+
+export function applyGrant(doc: SimPolicy4, grant: Grant, ctx: GrantCtx): SimPolicy4;</code></pre>
+      <dl>
+        <dt><code>limits</code></dt><dd>The limits after the purchase.</dd>
+        <dt><code>GAME_TRANSIT_ID</code></dt><dd>The id of the one transit rule the game makes.</dd>
+      </dl>
+      <ul>
+        <li>Every policy the function adds is on, with one span from month 1 and no end.</li>
+        <li><code>preset</code> and <code>measure</code>: when no policy has that preset, one is added as "+" adds it today. When one exists it is switched on.</li>
+        <li><code>stop</code>: the game's rule gains the stop type. When there is no such rule, one is added with that stop type and one band at <code>limits.reachM</code> and <code>limits.stories</code>.</li>
+        <li><code>stories</code>: the innermost band of the game's rule takes the new cap.</li>
+        <li><code>reach</code>: the outermost band of the game's rule takes the new distance.</li>
+        <li><code>bands</code>: the game's rule gains a band beyond its outermost, as the editor adds one today, no further than <code>limits.reachM</code>.</li>
+        <li><code>hands</code>: the document is returned unchanged.</li>
+        <li>The result is within <code>ctx.limits</code> and passes <code>parsePolicy4</code>.</li>
+        <li>The function never removes a policy and never changes one it did not make.</li>
+      </ul>
+    </section>
+
+    <section id="sec-if-g6">
+      <h3>G6 The ladder, side goals and a run's result</h3>
+      <pre><code data-lang="ts">// src/lib/game/catalogue/ladder-years.ts
+export const LADDER_YEARS: readonly number[];
+
+// src/lib/game/ladder.ts
+import type { Goal } from '$lib/goal/goal';
+import type { Day } from '$lib/timelapse/time';
+import type { GameState, Units } from './state';
+
+export interface Rung {
+  deadline: Day;
+  label: string;
+}
+
+export const RUNGS: number;
+export const RUNG_LUMP: Units;
+
+export function ladder(asOf: Day): Rung[];
+export function goalAt(asOf: Day, rung: number, amount?: number): Goal;
+export function finished(s: GameState): boolean;
+export function takeNext(s: GameState): GameState;
+
+// src/lib/game/run-result.ts
+import type { TimelineView } from '$lib/sim/world/score/types';
+import type { Stage } from '$lib/timelapse/types';
+
+export interface RunTake {
+  dropped: Units;
+  collected: Units;
+}
+
+export interface RunReading {
+  homes: number;
+  reachedOn: Day | null;
+  stages: Record&lt;Exclude&lt;Stage, 'complete'&gt;, number&gt;;
+  waitingMoney: number | null;
+}
+
+export interface RunResult extends RunTake, RunReading {
+  rung: number;
+  amount: number;
+  datasetVersion: string;
+  at: string;
+  lump: Units | null;
+  side: { id: string; reward: Units }[];
+}
+
+export function readRun(view: TimelineView, goal: Goal): RunReading | null;
+export function resultOf(
+  s: GameState,
+  reading: RunReading,
+  take: RunTake,
+  input: SideInput,
+  meta: { amount: number; datasetVersion: string; at: string }
+): RunResult;
+export function settle(s: GameState, r: RunResult): GameState;
+
+// src/lib/game/side-goals.ts
+export interface SideInput {
+  view: TimelineView;
+  index: number;
+  take: RunTake;
+}
+
+export interface SideGoal {
+  id: string;
+  label: string;
+  ring: number;
+  reward: Units;
+  read(i: SideInput): { value: number; target: number } | null;
+}
+
+export const SIDE_GOALS: readonly SideGoal[];
+export const SIDE_SHOWN = 3;
+export function sideShown(s: GameState, goals?: readonly SideGoal[]): SideGoal[];</code></pre>
+      <dl>
+        <dt><code>LADDER_YEARS</code></dt><dd>The deadline years after the window's end, latest first. The measurement in <code>tree-catalogue</code> sets them.</dd>
+        <dt><code>RUNGS</code></dt><dd><code>LADDER_YEARS.length + 1</code>.</dd>
+        <dt><code>homes</code></dt><dd>The goal's measure at the deadline's month.</dd>
+        <dt><code>reachedOn</code></dt><dd>The day the amount was first met at or before the deadline, or null.</dd>
+        <dt><code>stages</code></dt><dd>Homes in each stage short of complete at the deadline's month.</dd>
+        <dt><code>waitingMoney</code></dt><dd>Homes waiting for money at the deadline's month; null when the view has no such series.</dd>
+        <dt><code>lump</code></dt><dd><code>RUNG_LUMP</code> when this run is the first to meet its rung, else null.</dd>
+        <dt><code>index</code></dt><dd>The deadline's month in the view.</dd>
+      </dl>
+      <ul>
+        <li>Rung 0's deadline is <code>defaultGoal(asOf).deadline</code>. Rung <em>k</em> is the last day of December of <code>LADDER_YEARS[k - 1]</code>.</li>
+        <li><code>goalAt</code> is <code>defaultGoal(asOf)</code> with the rung's deadline, and with <code>amount</code> when given.</li>
+        <li><code>readRun</code> returns null while the view does not cover the deadline's month.</li>
+        <li><code>resultOf</code> lists a side goal when it is shown, not yet met, and its <code>value</code> is at least its <code>target</code>.</li>
+        <li><code>settle</code> credits <code>collected</code>, <code>lump</code> and each side reward; records the rung in <code>met</code> when <code>reachedOn</code> is set and the rung is not there; records each side goal; adds 1 to <code>runs</code>; sets <code>last</code>.</li>
+        <li><code>settle</code> never removes a met rung (call 8).</li>
+        <li><code>takeNext</code> moves to the next rung when the rung in play is met and a next one exists. Otherwise it returns the same state.</li>
+        <li><code>finished</code> is true once the last rung is in <code>met</code>.</li>
+        <li><code>sideShown</code> returns the first <code>SIDE_SHOWN</code> goals whose ring is open and which are not met.</li>
+        <li>A side goal's <code>read</code> returns null when the view lacks what it reads.</li>
+      </ul>
+    </section>
+  </section>
+
+  <section id="sec-global-constraints">
+    <h2>Global constraints</h2>
+    <ul>
+      <li>One future: the same policy document always gives the same forecast. No game state reaches the worker except through the policy document.</li>
+      <li>No file the dataset version hashes is changed: <code>pipeline</code>, <code>src/lib/{data,generator,timelapse,scoreboard}</code>, <code>src/lib/plan/{geometry,types}.ts</code>, <code>src/lib/sim/{scenario,levers,finance}</code>. The dataset version stays as it is.</li>
+      <li>A policy node acts on a lever the code already has, at a value the code already sources. No node invents a value.</li>
+      <li>The painted area, own pools, the City funding scale and market terms are never offered in a game.</li>
+      <li>Published plans and policies open and play in full, as today.</li>
+      <li>WCAG 2.2 AA: everything works from the keyboard; targets are at least 24 px; motion follows the reduced-motion setting; nothing flashes more than three times a second.</li>
+      <li>Page text is short. A node is a name, a line and a price.</li>
+      <li>The CSP is not widened. Sound is made in the browser; no audio file, font or script is added.</li>
+      <li>A runtime dependency is not added without a credit in <code>src/lib/attribution.ts</code>. None is expected.</li>
+      <li>Code style: 2-space indent, single quotes, no trailing commas, 100 columns.</li>
+      <li>Vitest runs with <code>expect.requireAssertions</code>. Tests are colocated.</li>
+      <li>A schema change goes through <code>npm run db:generate</code>. Migrations are never edited by hand.</li>
+      <li>Signoff fails on server stderr, on timing crutches and on retried flakes. Timing is measured only on a quiet machine.</li>
+      <li>Port 4173 belongs to whichever session started the preview. Never kill it; wait.</li>
+      <li>Commits use Conventional Commits and carry no Claude attribution.</li>
+      <li>Work happens in git worktrees under <code>.claude/worktrees/</code>.</li>
+    </ul>
+  </section>
+
+  <section id="sec-found">
+    <h2>What the code is today</h2>
+    <p>Read on branch <code>worktree-incremental-feel</code> at <code>4d22bf96</code>. None of the files this spec writes exists yet; <code>contracts</code> creates them as stubs.</p>
+    <section id="sec-found-add">
+      <h3>Adding and switching policies</h3>
+      <ul>
+        <li><code>addPolicy(doc, choice, { w, month, cal })</code> clamps the month to the window, starts every new policy on <code>monthFirstDay(w.asOf, month)</code> with no end, renames a taken id with <code>-2</code>, <code>-3</code>, and appends it to its kind (<code>src/lib/timeline/add.ts:230-259</code>).</li>
+        <li>A permitting preset is added as a policy built from <code>resolvePreset(preset, cal)</code>, id <code>timing</code>, its <code>preset</code> the preset id (<code>src/lib/timeline/add.ts:169-178</code>).</li>
+        <li>A money preset is looked up in <code>fundingPresets(cal)</code> and refused with an <code>Error</code> when it is not available (<code>src/lib/timeline/add.ts:198-199</code>).</li>
+        <li>A money preset past 12 pools, 24 programmes or 24 scale entries over the document throws <code>AddLimitError</code> (<code>src/lib/timeline/add.ts:202-212</code>).</li>
+        <li>A given measure added by <code>addPolicy</code> is re-dated by <code>dateMeasure</code>, which rebuilds the preset from its first span's <code>from</code> (<code>src/lib/timeline/add.ts:249-253</code>; <code>src/lib/sim-page/funding-presets.ts:535</code>).</li>
+        <li><code>addChoices</code> offers every available permitting preset other than <code>observed</code>, and every available funding preset when the calibration has <code>market</code> and <code>baselineFunding</code> (<code>src/lib/timeline/add.ts:64-66</code>, <code>:90-106</code>).</li>
+        <li><code>setOn(doc, kind, id, on)</code> returns the same document when the policy is missing or already in that state (<code>src/lib/timeline/spans.ts:212-216</code>).</li>
+        <li>A schema 3 transit rule upgrades to a zoning policy labelled "Transit rule" whose one span starts on <code>monthFirstDay(asOf, 1)</code> (<code>src/lib/timeline/upgrade.ts:12-14</code>, <code>:37-46</code>).</li>
+      </ul>
+    </section>
+    <section id="sec-found-transit">
+      <h3>The transit rule</h3>
+      <ul>
+        <li>The stop types are <code>regionalRail</code>, <code>metro</code>, <code>rapidBus</code>, <code>frequentBus</code> (<code>src/lib/sim/levers/brushes.ts:13</code>).</li>
+        <li><code>MAX_BANDS</code> is 3, <code>BAND_MAX_M</code> 3219 and <code>NEW_BAND_STEP_M</code> 402 (<code>src/lib/sim-page/transit-edit.ts:19-23</code>).</li>
+        <li><code>addBand</code> adds a band 402 m beyond the outermost with its stories, capped at 3219 m, and returns null at 3 bands or when the outermost is at 3219 m (<code>src/lib/sim-page/transit-edit.ts:98-104</code>).</li>
+        <li><code>setBandStories</code> and <code>setBandDistance</code> clamp to the range the neighbouring bands leave (<code>src/lib/sim-page/transit-edit.ts:53-95</code>).</li>
+        <li><code>toggleStop</code> keeps stop types in <code>STOP_TYPES</code> order and refuses to turn off the last one (<code>src/lib/sim-page/transit-edit.ts:114-119</code>).</li>
+        <li>Stories are whole numbers from 1 to 80 (<code>src/lib/plan/constants.ts:3-4</code>).</li>
+        <li>The band rule refuses two bands at one distance and an outer band taller than the band inside it (<code>src/lib/sim-page/policy.ts:89-96</code>).</li>
+        <li>The editor's default bands are 402 m at 6 stories and 805 m at 4 stories, tier 4 (<code>src/lib/sim-page/policy.ts:71-78</code>).</li>
+      </ul>
+    </section>
+    <section id="sec-found-presets">
+      <h3>Presets, measures and their sources</h3>
+      <ul>
+        <li><code>PresetId</code> is <code>observed</code>, <code>sb423Clock</code>, <code>noDiscretionary</code>, <code>ceqaInfill</code> or <code>benchmarkPermits</code> (<code>src/lib/sim-page/timing.ts:44-45</code>).</li>
+        <li><code>ceqaInfill</code> is not available: <code>CEQA_FILED_RATIO</code> is null (<code>src/lib/sim-page/timing.ts:124-133</code>; <code>src/lib/sim-page/timing-sources.ts:156-165</code>).</li>
+        <li><code>sb423Clock</code>'s first provenance is <code>SB423_DEADLINE_DAYS</code>, labelled "SB 423 approval deadline, days from submittal", citing Cal. Gov. Code § 65913.4 (<code>src/lib/sim-page/timing.ts:106-110</code>; <code>src/lib/sim-page/timing-sources.ts:96-110</code>).</li>
+        <li><code>noDiscretionary</code>'s provenance is <code>NO_DISCRETIONARY_BASIS</code>, citing the HCD review of 2023-10-25 (<code>src/lib/sim-page/timing.ts:121</code>; <code>src/lib/sim-page/timing-sources.ts:168-183</code>).</li>
+        <li><code>benchmarkPermits</code>'s last provenance is "Applying San Diego's permit pace to SF permit review", citing the BLA's "Post-Entitlement Permitting" (<code>src/lib/sim-page/timing.ts:68-77</code>, <code>:143-147</code>).</li>
+        <li>The money measures that add money are <code>housing-bond</code>, <code>general-revenue</code>, <code>revolving-fund</code>, <code>public-bank</code>, <code>state-double</code> and <code>federal-support</code> (<code>src/lib/sim-page/funding-presets.ts:287-493</code>).</li>
+        <li>Their primary sources: <code>BOND_PRINCIPAL</code> (<code>src/lib/sim-page/funding-sources.ts:69-80</code>), <code>GENERAL_FUND_FY25</code> (<code>:83-91</code>), <code>REVOLVING_FUND_SIZE</code> (<code>:122-130</code>), <code>PUBLIC_BANK_HOUSING</code> (<code>:152-160</code>), <code>FEDERAL_SUPPORT_AMOUNT_PROVENANCE</code> (<code>:180-185</code>) and <code>STATE_DOUBLE_TERM_YEARS</code> (<code>:223-229</code>).</li>
+        <li>A custom starting value is labelled "(custom, not sourced)" and has no source link (<code>src/lib/sim-page/funding-sources.ts:40-45</code>).</li>
+        <li><code>state-double</code>'s own description says "on its own this adds no homes while the City's money is the limit, so pair it with more City or federal money" (<code>src/lib/sim-page/funding-presets.ts:428</code>).</li>
+        <li>The funding doc says <code>state-double</code> "buys no homes on the baseline" and adds homes only beside City money past about 1,267 homes a year or <code>federal-support</code> (<code>docs/dev/sim-funding.md:98</code>, testimony).</li>
+      </ul>
+    </section>
+    <section id="sec-found-engine">
+      <h3>Running the engine from a script</h3>
+      <ul>
+        <li><code>scripts/level2-check.ts</code> loads a dataset directory from disk, opens the timeline host on the reconciled empty document with <code>lots: {}</code>, prefetches every chunk and builds a <code>TimelineView</code> once <code>filled</code> reaches <code>statics.lastIndex</code> (<code>scripts/level2-check.ts:131-220</code>).</li>
+        <li>Its dataset reader and timers are not exported (<code>scripts/level2-check.ts:49-117</code>).</li>
+        <li><code>scripts/ensemble-measure.ts</code> resolves a document's lots by sending <code>resolveBrush</code> for each of <code>queriesOf4(doc)</code> and reading <code>brushLots</code>, then sends <code>setPolicy</code> (<code>scripts/ensemble-measure.ts:1371-1381</code>).</li>
+        <li><code>WINDOW_MONTHS</code> is 480 (<code>src/lib/sim/timeline-client.ts:29</code>). <code>defaultGoal(asOf)</code> has the window's last whole calendar month as its deadline (<code>src/lib/goal/goal.ts:63-65</code>).</li>
+        <li>The goal's measure is <code>baseline.completedNet + rows[i].completedNet</code> (<code>src/lib/goal/goal.ts:41-46</code>). <code>completedNet</code> counts net homes since the dataset date, less existing homes from each construction start (<code>.superpowers/superconductor/incremental-loop/surveys/engine-outputs.md</code>, section c).</li>
+        <li><code>npm run data:local</code> copies a published dataset into local R2 through a temporary directory that it deletes (<code>scripts/data-local.ts:58</code>, <code>:80-81</code>). It leaves no directory a script can read.</li>
+        <li>Script specs run in the server Vitest project (<code>vite.config.ts:59</code>). The fixture dataset <code>e2e/fixtures/data/fixture-0</code> has <code>market</code> and <code>baselineFunding</code> in its calibration.</li>
+        <li>Unit tests build a calibration with money from <code>mini-calibration.json</code>, <code>miniMarket()</code> and <code>baselineFixture()</code> (<code>src/lib/timeline/add.spec.ts:22-29</code>).</li>
+      </ul>
+    </section>
+  </section>
+
+  <section id="sec-design">
+    <h2>Design</h2>
+
+    <section id="sec-design-catalogue">
+      <h3>The catalogue</h3>
+      <p>The catalogue has 23 nodes in four branches: 3 permitting, 11 zoning, 6 money, 3 hands. A node's stage is the ring it sits in on a five-rung ladder; the ring on any other ladder follows from it (<a href="#sec-design-rings">Rings</a>).</p>
+      <table id="tbl-nodes">
+        <caption>Every node and level, in catalogue order</caption>
+        <thead>
+          <tr><th scope="col">Node</th><th scope="col">Level</th><th scope="col">Branch</th><th scope="col">Grant</th><th scope="col">Step</th><th scope="col">Starting price</th><th scope="col">After</th><th scope="col">Stage</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row"><code>sb423-clock</code></th><td>1</td><td>permitting</td><td>preset <code>sb423Clock</code></td><td>From today</td><td>8,000</td><td>none</td><td>0</td></tr>
+          <tr><th scope="row"><code>benchmark-permits</code></th><td>1</td><td>permitting</td><td>preset <code>benchmarkPermits</code></td><td>From today</td><td>18,000</td><td><code>sb423-clock</code></td><td>1</td></tr>
+          <tr><th scope="row"><code>no-discretionary</code></th><td>1</td><td>permitting</td><td>preset <code>noDiscretionary</code></td><td>From today</td><td>30,000</td><td><code>sb423-clock</code></td><td>2</td></tr>
+          <tr><th scope="row"><code>stop-rail</code></th><td>1</td><td>zoning</td><td>stop <code>regionalRail</code></td><td>Rail stations</td><td>6,000</td><td>none</td><td>0</td></tr>
+          <tr><th scope="row"><code>stop-metro</code></th><td>1</td><td>zoning</td><td>stop <code>metro</code></td><td>Muni Metro stops</td><td>10,000</td><td><code>stop-rail</code></td><td>0</td></tr>
+          <tr><th scope="row"><code>taller-1</code></th><td>1</td><td>zoning</td><td>stories 6</td><td>6 stories</td><td>8,000</td><td><code>stop-rail</code></td><td>0</td></tr>
+          <tr><th scope="row"><code>taller-1</code></th><td>2</td><td>zoning</td><td>stories 8</td><td>8 stories</td><td>12,000</td><td><code>stop-rail</code></td><td>0</td></tr>
+          <tr><th scope="row"><code>reach-1</code></th><td>1</td><td>zoning</td><td>reach 805 m</td><td>Within 805 m</td><td>16,000</td><td><code>stop-rail</code></td><td>1</td></tr>
+          <tr><th scope="row"><code>bands</code></th><td>1</td><td>zoning</td><td>bands 2</td><td>2 bands</td><td>6,000</td><td><code>reach-1</code></td><td>1</td></tr>
+          <tr><th scope="row"><code>bands</code></th><td>2</td><td>zoning</td><td>bands 3</td><td>3 bands</td><td>9,000</td><td><code>reach-1</code></td><td>1</td></tr>
+          <tr><th scope="row"><code>stop-rapid</code></th><td>1</td><td>zoning</td><td>stop <code>rapidBus</code></td><td>Rapid bus stops</td><td>28,000</td><td><code>stop-metro</code></td><td>2</td></tr>
+          <tr><th scope="row"><code>taller-2</code></th><td>1</td><td>zoning</td><td>stories 12</td><td>12 stories</td><td>26,000</td><td><code>taller-1</code></td><td>2</td></tr>
+          <tr><th scope="row"><code>taller-2</code></th><td>2</td><td>zoning</td><td>stories 20</td><td>20 stories</td><td>36,000</td><td><code>taller-1</code></td><td>2</td></tr>
+          <tr><th scope="row"><code>stop-frequent</code></th><td>1</td><td>zoning</td><td>stop <code>frequentBus</code></td><td>Frequent bus stops</td><td>45,000</td><td><code>stop-rapid</code></td><td>3</td></tr>
+          <tr><th scope="row"><code>reach-2</code></th><td>1</td><td>zoning</td><td>reach 1,609 m</td><td>Within 1,609 m</td><td>42,000</td><td><code>reach-1</code></td><td>3</td></tr>
+          <tr><th scope="row"><code>taller-3</code></th><td>1</td><td>zoning</td><td>stories 40</td><td>40 stories</td><td>60,000</td><td><code>taller-2</code></td><td>4</td></tr>
+          <tr><th scope="row"><code>taller-3</code></th><td>2</td><td>zoning</td><td>stories 80</td><td>80 stories</td><td>80,000</td><td><code>taller-2</code></td><td>4</td></tr>
+          <tr><th scope="row"><code>reach-3</code></th><td>1</td><td>zoning</td><td>reach 3,219 m</td><td>Within 3,219 m</td><td>70,000</td><td><code>reach-2</code></td><td>4</td></tr>
+          <tr><th scope="row"><code>housing-bond</code></th><td>1</td><td>money</td><td>measure <code>housing-bond</code></td><td>From today</td><td>7,000</td><td>none</td><td>0</td></tr>
+          <tr><th scope="row"><code>general-revenue</code></th><td>1</td><td>money</td><td>measure <code>general-revenue</code></td><td>From today</td><td>16,000</td><td><code>housing-bond</code></td><td>1</td></tr>
+          <tr><th scope="row"><code>revolving-fund</code></th><td>1</td><td>money</td><td>measure <code>revolving-fund</code></td><td>From today</td><td>12,000</td><td><code>housing-bond</code></td><td>1</td></tr>
+          <tr><th scope="row"><code>public-bank</code></th><td>1</td><td>money</td><td>measure <code>public-bank</code></td><td>From today</td><td>24,000</td><td><code>general-revenue</code> or <code>revolving-fund</code></td><td>2</td></tr>
+          <tr><th scope="row"><code>federal-support</code></th><td>1</td><td>money</td><td>measure <code>federal-support</code></td><td>From today</td><td>32,000</td><td><code>general-revenue</code></td><td>2</td></tr>
+          <tr><th scope="row"><code>state-double</code></th><td>1</td><td>money</td><td>measure <code>state-double</code></td><td>From today</td><td>40,000</td><td><code>federal-support</code></td><td>3</td></tr>
+          <tr><th scope="row"><code>hands-radius</code></th><td>1</td><td>hands</td><td>radius 40 px</td><td>40 px ring</td><td>3,000</td><td>none</td><td>0</td></tr>
+          <tr><th scope="row"><code>hands-radius</code></th><td>2</td><td>hands</td><td>radius 56 px</td><td>56 px ring</td><td>9,000</td><td>none</td><td>0</td></tr>
+          <tr><th scope="row"><code>hands-radius</code></th><td>3</td><td>hands</td><td>radius 72 px</td><td>72 px ring</td><td>20,000</td><td>none</td><td>0</td></tr>
+          <tr><th scope="row"><code>hands-radius</code></th><td>4</td><td>hands</td><td>radius 96 px</td><td>96 px ring</td><td>40,000</td><td>none</td><td>0</td></tr>
+          <tr><th scope="row"><code>hands-linger</code></th><td>1</td><td>hands</td><td>linger 3,000 ms</td><td>3 s</td><td>8,000</td><td><code>hands-radius</code></td><td>1</td></tr>
+          <tr><th scope="row"><code>hands-linger</code></th><td>2</td><td>hands</td><td>linger 4,500 ms</td><td>4.5 s</td><td>18,000</td><td><code>hands-radius</code></td><td>1</td></tr>
+          <tr><th scope="row"><code>hands-linger</code></th><td>3</td><td>hands</td><td>linger 6,000 ms</td><td>6 s</td><td>35,000</td><td><code>hands-radius</code></td><td>1</td></tr>
+          <tr><th scope="row"><code>hands-auto</code></th><td>1</td><td>hands</td><td>auto</td><td>Every drop</td><td>75,000</td><td><code>hands-linger</code></td><td>4</td></tr>
+        </tbody>
+      </table>
+      <table id="tbl-node-words">
+        <caption>Each node's label, line and source</caption>
+        <thead>
+          <tr><th scope="col">Node</th><th scope="col">Label</th><th scope="col">Line</th><th scope="col">Source</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row"><code>sb423-clock</code></th><td>SB 423 approval clock</td><td>Streamlined approvals meet the state deadline.</td><td><code>sb423Clock</code>'s first provenance</td></tr>
+          <tr><th scope="row"><code>benchmark-permits</code></th><td>Permits at San Diego's pace</td><td>Permit review takes 134 days, not 280.</td><td><code>benchmarkPermits</code>'s last provenance</td></tr>
+          <tr><th scope="row"><code>no-discretionary</code></th><td>No discretionary review</td><td>Projects that meet the code skip hearings.</td><td><code>noDiscretionary</code>'s first provenance</td></tr>
+          <tr><th scope="row"><code>stop-rail</code></th><td>Homes near rail</td><td>Taller homes near BART and Caltrain.</td><td>None</td></tr>
+          <tr><th scope="row"><code>stop-metro</code></th><td>Homes near Muni Metro</td><td>Taller homes near Muni Metro stops.</td><td>None</td></tr>
+          <tr><th scope="row"><code>taller-1</code></th><td>Mid-rise near transit</td><td>A higher height cap near transit.</td><td>None</td></tr>
+          <tr><th scope="row"><code>reach-1</code></th><td>Half a mile out</td><td>Taller homes further from each stop.</td><td>None</td></tr>
+          <tr><th scope="row"><code>bands</code></th><td>Distance bands</td><td>A band you can set to its own height.</td><td>None</td></tr>
+          <tr><th scope="row"><code>stop-rapid</code></th><td>Homes near Rapid buses</td><td>Taller homes near Muni Rapid stops.</td><td>None</td></tr>
+          <tr><th scope="row"><code>taller-2</code></th><td>High-rise near transit</td><td>A higher height cap near transit.</td><td>None</td></tr>
+          <tr><th scope="row"><code>stop-frequent</code></th><td>Homes near frequent buses</td><td>Taller homes near stops with a bus every 10 minutes.</td><td>None</td></tr>
+          <tr><th scope="row"><code>reach-2</code></th><td>A mile out</td><td>Taller homes further from each stop.</td><td>None</td></tr>
+          <tr><th scope="row"><code>taller-3</code></th><td>Towers near transit</td><td>A higher height cap near transit.</td><td>None</td></tr>
+          <tr><th scope="row"><code>reach-3</code></th><td>Two miles out</td><td>Taller homes further from each stop.</td><td>None</td></tr>
+          <tr><th scope="row"><code>housing-bond</code></th><td>A housing bond</td><td>A City bond for affordable homes, repaid over 20 years.</td><td><code>BOND_PRINCIPAL</code></td></tr>
+          <tr><th scope="row"><code>general-revenue</code></th><td>General revenue, yearly</td><td>More City money for affordable homes each year for 30 years.</td><td><code>GENERAL_FUND_FY25</code></td></tr>
+          <tr><th scope="row"><code>revolving-fund</code></th><td>A revolving construction-loan fund</td><td>A $100 million fund that lends to private builders.</td><td><code>REVOLVING_FUND_SIZE</code></td></tr>
+          <tr><th scope="row"><code>public-bank</code></th><td>The SF public bank, as planned</td><td>Public bank loans to affordable housing.</td><td><code>PUBLIC_BANK_HOUSING</code></td></tr>
+          <tr><th scope="row"><code>federal-support</code></th><td>Federal support from a year</td><td>A yearly federal grant for ten years.</td><td><code>FEDERAL_SUPPORT_AMOUNT_PROVENANCE</code></td></tr>
+          <tr><th scope="row"><code>state-double</code></th><td>State money doubled from a date</td><td>Twice today's state money for ten years.</td><td><code>STATE_DOUBLE_TERM_YEARS</code></td></tr>
+          <tr><th scope="row"><code>hands-radius</code></th><td>Wider ring</td><td>Collect drops further from the pointer.</td><td>None</td></tr>
+          <tr><th scope="row"><code>hands-linger</code></th><td>Longer drops</td><td>Drops wait longer before they fade.</td><td>None</td></tr>
+          <tr><th scope="row"><code>hands-auto</code></th><td>Collect everything</td><td>Every drop is collected as it appears.</td><td>None</td></tr>
+        </tbody>
+      </table>
+      <p>The catalogue as code:</p>
+<pre><code data-lang="ts">// src/lib/game/catalogue/nodes.ts
+import {
+  BOND_PRINCIPAL,
+  FEDERAL_SUPPORT_AMOUNT_PROVENANCE,
+  GENERAL_FUND_FY25,
+  PUBLIC_BANK_HOUSING,
+  REVOLVING_FUND_SIZE,
+  STATE_DOUBLE_TERM_YEARS
+} from '$lib/sim-page/funding-sources';
+import { PRESETS, type PresetId } from '$lib/sim-page/timing';
+import type { StopType } from '$lib/sim/levers/brushes';
+import type { Provenance } from '$lib/timelapse/types';
+import type { Grant, NodeLevel, TreeNode } from '../tree';
+import { LADDER_YEARS } from './ladder-years';
+
+/** The transit rule's limits once the first stop type is bought, before any step (game-core). */
+export const ZONING_BASE = { bands: 1, stories: 4, reachM: 402 } as const;
+
+/** Stages run 0 to STAGES: the rings of a five-rung ladder. */
+export const STAGES = 4;
+
+/** The ring of `stage` on a ladder of `rungs` rungs. */
+export function ringOf(stage: number, rungs: number = LADDER_YEARS.length + 1): number {
+  return Math.round((stage * (rungs - 1)) / STAGES);
+}
+
+export type CatalogueEntry = Omit&lt;TreeNode, 'ring'&gt; &amp; { stage: number };
+
+const source = (p: Provenance): TreeNode['source'] =&gt; ({
+  text: p.label,
+  href: p.sources[0]?.url ?? null
+});
+
+function presetOf(id: PresetId) {
+  const p = PRESETS.find((x) =&gt; x.id === id);
+  if (p === undefined || !p.available) throw new Error(`preset ${id} is not available`);
+  return p;
+}
+
+const presetSource = (id: PresetId, which: 'first' | 'last') =&gt; {
+  const list = presetOf(id).provenance;
+  return source(which === 'first' ? list[0] : list[list.length - 1]);
+};
+
+const level = (price: number, grant: Grant, step: string): NodeLevel =&gt; ({
+  price: { home: price },
+  grant,
+  step
+});
+
+const TODAY = 'From today';
+const TALLER = 'A higher height cap near transit.';
+const FURTHER = 'Taller homes further from each stop.';
+
+function permitting(
+  id: string,
+  preset: PresetId,
+  line: string,
+  after: string[],
+  stage: number,
+  price: number,
+  which: 'first' | 'last'
+): CatalogueEntry {
+  return {
+    id,
+    branch: 'permitting',
+    label: presetOf(preset).name,
+    line,
+    after,
+    stage,
+    levels: [level(price, { tag: 'preset', preset }, TODAY)],
+    source: presetSource(preset, which)
+  };
+}
+
+function stop(
+  id: string,
+  stopType: StopType,
+  label: string,
+  line: string,
+  step: string,
+  after: string[],
+  stage: number,
+  price: number
+): CatalogueEntry {
+  return {
+    id,
+    branch: 'zoning',
+    label,
+    line,
+    after,
+    stage,
+    levels: [level(price, { tag: 'stop', stop: stopType }, step)],
+    source: null
+  };
+}
+
+function measure(
+  id: string,
+  label: string,
+  line: string,
+  after: string[],
+  stage: number,
+  price: number,
+  p: Provenance
+): CatalogueEntry {
+  return {
+    id,
+    branch: 'money',
+    label,
+    line,
+    after,
+    stage,
+    levels: [level(price, { tag: 'measure', preset: id }, TODAY)],
+    source: source(p)
+  };
+}
+
+const stories = (n: number, price: number) =&gt;
+  level(price, { tag: 'stories', max: n }, `${n} stories`);
+const reach = (m: number, price: number) =&gt;
+  level(price, { tag: 'reach', maxM: m }, `Within ${m.toLocaleString('en-US')} m`);
+const radius = (px: number, price: number) =&gt;
+  level(price, { tag: 'hands', what: 'radius', value: px }, `${px} px ring`);
+const linger = (ms: number, price: number) =&gt;
+  level(price, { tag: 'hands', what: 'linger', value: ms }, `${ms / 1000} s`);
+
+const zoning = (
+  id: string,
+  label: string,
+  line: string,
+  after: string[],
+  stage: number,
+  levels: NodeLevel[]
+): CatalogueEntry =&gt; ({ id, branch: 'zoning', label, line, after, stage, levels, source: null });
+
+const hands = (
+  id: string,
+  label: string,
+  line: string,
+  after: string[],
+  stage: number,
+  levels: NodeLevel[]
+): CatalogueEntry =&gt; ({ id, branch: 'hands', label, line, after, stage, levels, source: null });
+
+export const CATALOGUE: readonly CatalogueEntry[] = [
+  permitting(
+    'sb423-clock',
+    'sb423Clock',
+    'Streamlined approvals meet the state deadline.',
+    [],
+    0,
+    8_000,
+    'first'
+  ),
+  permitting(
+    'benchmark-permits',
+    'benchmarkPermits',
+    'Permit review takes 134 days, not 280.',
+    ['sb423-clock'],
+    1,
+    18_000,
+    'last'
+  ),
+  permitting(
+    'no-discretionary',
+    'noDiscretionary',
+    'Projects that meet the code skip hearings.',
+    ['sb423-clock'],
+    2,
+    30_000,
+    'first'
+  ),
+  stop(
+    'stop-rail',
+    'regionalRail',
+    'Homes near rail',
+    'Taller homes near BART and Caltrain.',
+    'Rail stations',
+    [],
+    0,
+    6_000
+  ),
+  stop(
+    'stop-metro',
+    'metro',
+    'Homes near Muni Metro',
+    'Taller homes near Muni Metro stops.',
+    'Muni Metro stops',
+    ['stop-rail'],
+    0,
+    10_000
+  ),
+  zoning('taller-1', 'Mid-rise near transit', TALLER, ['stop-rail'], 0, [
+    stories(6, 8_000),
+    stories(8, 12_000)
+  ]),
+  zoning('reach-1', 'Half a mile out', FURTHER, ['stop-rail'], 1, [reach(805, 16_000)]),
+  zoning('bands', 'Distance bands', 'A band you can set to its own height.', ['reach-1'], 1, [
+    level(6_000, { tag: 'bands', max: 2 }, '2 bands'),
+    level(9_000, { tag: 'bands', max: 3 }, '3 bands')
+  ]),
+  stop(
+    'stop-rapid',
+    'rapidBus',
+    'Homes near Rapid buses',
+    'Taller homes near Muni Rapid stops.',
+    'Rapid bus stops',
+    ['stop-metro'],
+    2,
+    28_000
+  ),
+  zoning('taller-2', 'High-rise near transit', TALLER, ['taller-1'], 2, [
+    stories(12, 26_000),
+    stories(20, 36_000)
+  ]),
+  stop(
+    'stop-frequent',
+    'frequentBus',
+    'Homes near frequent buses',
+    'Taller homes near stops with a bus every 10 minutes.',
+    'Frequent bus stops',
+    ['stop-rapid'],
+    3,
+    45_000
+  ),
+  zoning('reach-2', 'A mile out', FURTHER, ['reach-1'], 3, [reach(1609, 42_000)]),
+  zoning('taller-3', 'Towers near transit', TALLER, ['taller-2'], 4, [
+    stories(40, 60_000),
+    stories(80, 80_000)
+  ]),
+  zoning('reach-3', 'Two miles out', FURTHER, ['reach-2'], 4, [reach(3219, 70_000)]),
+  measure(
+    'housing-bond',
+    'A housing bond',
+    'A City bond for affordable homes, repaid over 20 years.',
+    [],
+    0,
+    7_000,
+    BOND_PRINCIPAL.provenance
+  ),
+  measure(
+    'general-revenue',
+    'General revenue, yearly',
+    'More City money for affordable homes each year for 30 years.',
+    ['housing-bond'],
+    1,
+    16_000,
+    GENERAL_FUND_FY25.provenance
+  ),
+  measure(
+    'revolving-fund',
+    'A revolving construction-loan fund',
+    'A $100 million fund that lends to private builders.',
+    ['housing-bond'],
+    1,
+    12_000,
+    REVOLVING_FUND_SIZE.provenance
+  ),
+  measure(
+    'public-bank',
+    'The SF public bank, as planned',
+    'Public bank loans to affordable housing.',
+    ['general-revenue', 'revolving-fund'],
+    2,
+    24_000,
+    PUBLIC_BANK_HOUSING.provenance
+  ),
+  measure(
+    'federal-support',
+    'Federal support from a year',
+    'A yearly federal grant for ten years.',
+    ['general-revenue'],
+    2,
+    32_000,
+    FEDERAL_SUPPORT_AMOUNT_PROVENANCE
+  ),
+  measure(
+    'state-double',
+    'State money doubled from a date',
+    "Twice today's state money for ten years.",
+    ['federal-support'],
+    3,
+    40_000,
+    STATE_DOUBLE_TERM_YEARS.provenance
+  ),
+  hands('hands-radius', 'Wider ring', 'Collect drops further from the pointer.', [], 0, [
+    radius(40, 3_000),
+    radius(56, 9_000),
+    radius(72, 20_000),
+    radius(96, 40_000)
+  ]),
+  hands('hands-linger', 'Longer drops', 'Drops wait longer before they fade.', ['hands-radius'], 1, [
+    linger(3000, 8_000),
+    linger(4500, 18_000),
+    linger(6000, 35_000)
+  ]),
+  hands(
+    'hands-auto',
+    'Collect everything',
+    'Every drop is collected as it appears.',
+    ['hands-linger'],
+    4,
+    [level(75_000, { tag: 'hands', what: 'auto' }, 'Every drop')]
+  )
+];
+
+/** The tree's nodes, each at the ring its stage takes on the measured ladder. */
+export const NODES: readonly TreeNode[] = CATALOGUE.map(({ stage, ...n }) =&gt; ({
+  ...n,
+  ring: ringOf(stage)
+}));</code></pre>
+      <ul>
+        <li>A permitting node's label is the preset's <code>name</code> in <code>PRESETS</code>. A test holds each measure node's label equal to the <code>label</code> <code>fundingPresets</code> gives it.</li>
+        <li>A source's <code>text</code> is the provenance's <code>label</code>; its <code>href</code> is the provenance's first source's <code>url</code>, or null when it has none. <code>federal-support</code> and <code>state-double</code> have a custom source and so a null <code>href</code>.</li>
+        <li>A zoning or hands node's <code>source</code> is null: heights, distances and collecting are the player's to choose.</li>
+        <li>Every node is listed after each node it names in <code>after</code>.</li>
+        <li>The money nodes name only the six measures that add money. The three unavailable presets (<code>htf-2026</code>, <code>state-bond-2026</code>, <code>regional-bond</code>) and <code>ceqaInfill</code> are not nodes.</li>
+        <li><code>state-off</code>, <code>federal-credits-off</code> and the three protections are not nodes (call 16).</li>
+      </ul>
+      <aside data-kind="decision"><strong>Decision: <code>state-double</code> is a node, after <code>federal-support</code></strong> The code and the funding doc both say it buys no homes while the City's money is the limit, and adds homes beside <code>federal-support</code>. Shown only after <code>federal-support</code> is bought, it is never a purchase that does nothing.</aside>
+    </section>
+
+    <section id="sec-design-rings">
+      <h3>Rings, adjacency and what is shown from the start</h3>
+      <ul>
+        <li>A node's ring is <code>ringOf(stage)</code>: <code>Math.round(stage × (RUNGS − 1) / 4)</code>, where <code>RUNGS</code> is <code>LADDER_YEARS.length + 1</code>.</li>
+        <li>With five rungs, the ring is the stage. With fewer, the late stages share the last ring. With more, some rungs open no node.</li>
+        <li>Shown from the start (no <code>after</code>, stage 0): <code>sb423-clock</code>, <code>stop-rail</code>, <code>housing-bond</code> and <code>hands-radius</code>, one per branch.</li>
+        <li>The cheapest level shown from the start is <code>hands-radius</code> level 1 at 3,000 units; the cheapest policy is <code>stop-rail</code> at 6,000.</li>
+        <li>Every stage holds at least one node, so on a five-rung ladder each rung met opens something new.</li>
+      </ul>
+      <table id="tbl-stages">
+        <caption>The nodes each stage opens</caption>
+        <thead>
+          <tr><th scope="col">Stage</th><th scope="col">Nodes</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">0</th><td><code>sb423-clock</code>, <code>stop-rail</code>, <code>stop-metro</code>, <code>taller-1</code>, <code>housing-bond</code>, <code>hands-radius</code></td></tr>
+          <tr><th scope="row">1</th><td><code>benchmark-permits</code>, <code>reach-1</code>, <code>bands</code>, <code>general-revenue</code>, <code>revolving-fund</code>, <code>hands-linger</code></td></tr>
+          <tr><th scope="row">2</th><td><code>no-discretionary</code>, <code>stop-rapid</code>, <code>taller-2</code>, <code>public-bank</code>, <code>federal-support</code></td></tr>
+          <tr><th scope="row">3</th><td><code>stop-frequent</code>, <code>reach-2</code>, <code>state-double</code></td></tr>
+          <tr><th scope="row">4</th><td><code>taller-3</code>, <code>reach-3</code>, <code>hands-auto</code></td></tr>
+        </tbody>
+      </table>
+      <p>No zoning step is shown before a stop type is bought: every one comes after <code>stop-rail</code>, directly or through another step.</p>
+    </section>
+
+    <section id="sec-design-tree">
+      <h3><code>treeView</code> and <code>buy</code></h3>
+<pre><code data-lang="ts">// src/lib/game/tree.ts (beside the types of G3)
+import { affords, shortBy, spend } from './units';
+import { NODES } from './catalogue/nodes';
+
+/** The level bought of `node`, 0 for none, never above its last. */
+export function levelOf(s: GameState, node: TreeNode): number {
+  return Math.min(s.bought[node.id] ?? 0, node.levels.length);
+}
+
+/** Its ring is open and it comes after nothing, or after a node that is bought. */
+export function isShown(s: GameState, node: TreeNode): boolean {
+  if (s.rung &lt; node.ring) return false;
+  return node.after.length === 0 || node.after.some((id) =&gt; (s.bought[id] ?? 0) &gt;= 1);
+}
+
+export function treeView(s: GameState, nodes: readonly TreeNode[] = NODES): NodeView[] {
+  return nodes
+    .filter((node) =&gt; isShown(s, node))
+    .map((node): NodeView =&gt; {
+      const level = levelOf(s, node);
+      const next = node.levels[level];
+      if (next === undefined) return { node, level, state: 'done', short: null };
+      return affords(s.units, next.price)
+        ? { node, level, state: 'ready', short: null }
+        : { node, level, state: 'short', short: shortBy(s.units, next.price) };
+    });
+}
+
+export function buy(s: GameState, id: NodeId, nodes: readonly TreeNode[] = NODES): Bought {
+  const node = nodes.find((n) =&gt; n.id === id);
+  if (node === undefined) return { ok: false, reason: 'unknown' };
+  if (!isShown(s, node)) return { ok: false, reason: 'hidden' };
+  const level = levelOf(s, node);
+  const next = node.levels[level];
+  if (next === undefined) return { ok: false, reason: 'done' };
+  if (!affords(s.units, next.price)) return { ok: false, reason: 'short' };
+  return {
+    ok: true,
+    state: { ...s, units: spend(s.units, next.price), bought: { ...s.bought, [id]: level + 1 } },
+    grant: next.grant
+  };
+}</code></pre>
+      <ul>
+        <li>The reasons are checked in this order: <code>unknown</code>, <code>hidden</code>, <code>done</code>, <code>short</code>.</li>
+        <li><code>buy</code> returns a new state object and changes only <code>units</code> and <code>bought</code>. It never changes its argument.</li>
+        <li>A node bought stays shown: rungs only move forward and nothing is ever unbought.</li>
+        <li><code>levelOf</code> and <code>isShown</code> are exported for the tree screen and the scripts. They are not part of G3.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-grant">
+      <h3><code>applyGrant</code></h3>
+      <p>The function adds or edits policies with the editor's own functions. It reads the policy's id, its <code>preset</code> and its <code>where</code>; it never matches on a label.</p>
+<pre><code data-lang="ts">// src/lib/game/grant.ts (beside GAME_TRANSIT_ID and GrantCtx of G5)
+import { fundingPresets } from '$lib/sim-page/funding-presets';
+import { bandsInnermostFirst, type ZoningRule } from '$lib/sim-page/policy';
+import { PRESETS, type PresetId } from '$lib/sim-page/timing';
+import {
+  addBand,
+  setBandDistance,
+  setBandStories,
+  toggleStop
+} from '$lib/sim-page/transit-edit';
+import type { StopType } from '$lib/sim/levers/brushes';
+import { WINDOW_MONTHS } from '$lib/sim/timeline-client';
+import { monthFirstDay } from '$lib/sim/world/months';
+import { AddLimitError, addPolicy, type AddChoice } from '$lib/timeline/add';
+import type { Policy, SimPolicy4 } from '$lib/timeline/policy4';
+import { setOn } from '$lib/timeline/spans';
+
+/** The label of the transit rule the game makes, as the "+" menu labels one. */
+export const GAME_TRANSIT_LABEL = 'Transit rule';
+
+export function applyGrant(doc: SimPolicy4, grant: Grant, ctx: GrantCtx): SimPolicy4 {
+  switch (grant.tag) {
+    case 'preset':
+      return givePreset(doc, 'permitting', grant.preset, ctx);
+    case 'measure':
+      return givePreset(doc, 'money', grant.preset, ctx);
+    case 'stop':
+      return giveStop(doc, grant.stop, ctx);
+    case 'stories':
+      return editGameRule(doc, (r) =&gt; raiseInnermost(r, ctx.limits.stories));
+    case 'reach':
+      return editGameRule(doc, (r) =&gt; reachOut(r, ctx.limits.reachM));
+    case 'bands':
+      return editGameRule(doc, (r) =&gt; oneMoreBand(r, ctx.limits.bands, ctx.limits.reachM));
+    case 'hands':
+      return doc;
+  }
+}
+
+function offered(kind: 'permitting' | 'money', preset: string, ctx: GrantCtx): boolean {
+  if (kind === 'permitting')
+    return PRESETS.some((p) =&gt; p.id === preset &amp;&amp; p.id !== 'observed' &amp;&amp; p.available);
+  return fundingPresets(ctx.cal).some((p) =&gt; p.id === preset &amp;&amp; p.available);
+}
+
+function givePreset(
+  doc: SimPolicy4,
+  kind: 'permitting' | 'money',
+  preset: string,
+  ctx: GrantCtx
+): SimPolicy4 {
+  const named = doc.kinds[kind].filter((p) =&gt; p.preset === preset);
+  if (named.some((p) =&gt; p.on)) return doc;
+  if (named.length &gt; 0) return setOn(doc, kind, named[0].id, true);
+  if (!offered(kind, preset, ctx)) return doc;
+  const choice: AddChoice =
+    kind === 'permitting'
+      ? { kind, what: 'preset', preset: preset as PresetId }
+      : { kind, what: 'preset', preset };
+  try {
+    const w = { asOf: ctx.cal.asOf, months: WINDOW_MONTHS };
+    return addPolicy(doc, choice, { w, month: 1, cal: ctx.cal }).doc;
+  } catch (e) {
+    if (e instanceof AddLimitError) return doc;
+    throw e;
+  }
+}
+
+const isGameRule = (p: Policy): boolean =&gt;
+  p.id === GAME_TRANSIT_ID &amp;&amp; p.where.tag === 'transit';
+
+const allPolicies = (doc: SimPolicy4): Policy[] =&gt; [
+  ...doc.kinds.zoning,
+  ...doc.kinds.permitting,
+  ...doc.kinds.money
+];
+
+function putGameRule(doc: SimPolicy4, next: Policy): SimPolicy4 {
+  const zoning = doc.kinds.zoning.map((p) =&gt; (isGameRule(p) ? next : p));
+  return { ...doc, kinds: { ...doc.kinds, zoning } };
+}
+
+function giveStop(doc: SimPolicy4, stop: StopType, ctx: GrantCtx): SimPolicy4 {
+  const rule = doc.kinds.zoning.find(isGameRule);
+  if (rule === undefined) {
+    if (allPolicies(doc).some((p) =&gt; p.id === GAME_TRANSIT_ID)) return doc;
+    const { reachM, stories } = ctx.limits;
+    if (reachM &lt; 1 || stories &lt; 1) return doc;
+    const made: Policy = {
+      id: GAME_TRANSIT_ID,
+      label: GAME_TRANSIT_LABEL,
+      preset: null,
+      on: true,
+      where: { tag: 'transit', stopTypes: [stop] },
+      spans: [
+        {
+          from: monthFirstDay(ctx.cal.asOf, 1),
+          to: null,
+          what: { tag: 'bands', bands: [{ maxM: reachM, stories }] }
+        }
+      ]
+    };
+    return { ...doc, kinds: { ...doc.kinds, zoning: [...doc.kinds.zoning, made] } };
+  }
+  if (rule.where.tag !== 'transit') return doc;
+  const has = rule.where.stopTypes.includes(stop);
+  if (has &amp;&amp; rule.on) return doc;
+  const stopTypes = has
+    ? rule.where.stopTypes
+    : toggleStop(
+        { id: rule.id, kind: 'transit', stopTypes: rule.where.stopTypes, bands: [] },
+        stop
+      )!.stopTypes;
+  return putGameRule(doc, { ...rule, on: true, where: { tag: 'transit', stopTypes } });
+}
+
+/** `edit` on every span of the game's rule; null from `edit` leaves that span as it is. */
+function editGameRule(
+  doc: SimPolicy4,
+  edit: (r: ZoningRule) =&gt; ZoningRule | null
+): SimPolicy4 {
+  const rule = doc.kinds.zoning.find(isGameRule);
+  if (rule === undefined || rule.where.tag !== 'transit') return doc;
+  const stopTypes = rule.where.stopTypes;
+  let changed = false;
+  const spans = rule.spans.map((s) =&gt; {
+    if (s.what.tag !== 'bands') return s;
+    const next = edit({ id: rule.id, kind: 'transit', stopTypes, bands: s.what.bands });
+    if (next === null) return s;
+    changed = true;
+    return { ...s, what: { tag: 'bands' as const, bands: next.bands } };
+  });
+  return changed ? putGameRule(doc, { ...rule, on: true, spans }) : doc;
+}
+
+/** The innermost band, and each band out from it at the same stories, to `cap`. */
+function raiseInnermost(r: ZoningRule, cap: number): ZoningRule | null {
+  const bands = bandsInnermostFirst(r.bands);
+  const was = bands[0]?.stories;
+  if (was === undefined || cap &lt;= was) return null;
+  let out: ZoningRule = { ...r, bands };
+  for (let i = 0; i &lt; bands.length &amp;&amp; bands[i].stories === was; i++) {
+    out = setBandStories(out, i, cap);
+  }
+  return out;
+}
+
+/** The outermost band out to `maxM`; null when it is already there or further. */
+function reachOut(r: ZoningRule, maxM: number): ZoningRule | null {
+  const bands = bandsInnermostFirst(r.bands);
+  const last = bands.length - 1;
+  if (last &lt; 0 || bands[last].maxM &gt;= maxM) return null;
+  return setBandDistance({ ...r, bands }, last, maxM);
+}
+
+/** One more band: beyond the outermost as the editor adds one, else inside it. */
+function oneMoreBand(r: ZoningRule, most: number, maxM: number): ZoningRule | null {
+  const bands = bandsInnermostFirst(r.bands);
+  if (bands.length === 0 || bands.length &gt;= most) return null;
+  const added = addBand({ ...r, bands });
+  if (added !== null &amp;&amp; added.bands[added.bands.length - 1].maxM &lt;= maxM) return added;
+  const outer = bands[bands.length - 1];
+  const inner = bands.length &gt; 1 ? bands[bands.length - 2].maxM : 0;
+  const mid = Math.round((inner + outer.maxM) / 2);
+  if (mid &lt;= inner || mid &gt;= outer.maxM) return null;
+  return { ...r, bands: [...bands.slice(0, -1), { maxM: mid, stories: outer.stories }, outer] };
+}</code></pre>
+      <section id="sec-design-grant-rules">
+        <h4>Rules for each grant</h4>
+        <ul>
+          <li><code>preset</code> and <code>measure</code>: when a policy of that kind already names the preset and is on, the document is returned unchanged.</li>
+          <li><code>preset</code> and <code>measure</code>: when policies name it and all are off, the first in list order is switched on with <code>setOn</code>. Its spans stay as the player left them.</li>
+          <li><code>preset</code> and <code>measure</code>: when none names it, one is added with <code>addPolicy</code> at month 1, as "+" adds it.</li>
+          <li>A preset or measure the calibration does not offer leaves the document unchanged. The node stays bought.</li>
+          <li>A measure past the document's pool, programme or scale-entry limit (<code>AddLimitError</code>) leaves the document unchanged.</li>
+          <li><code>stop</code> with no game rule: the rule <code>game-transit</code> is added at the end of the zoning list, on, labelled "Transit rule", with that stop type and one band at <code>limits.reachM</code> and <code>limits.stories</code>, its one span from month 1 with no end.</li>
+          <li><code>stop</code> with a game rule: the stop type joins it in <code>STOP_TYPES</code> order through <code>toggleStop</code>, and the rule is switched on.</li>
+          <li><code>stories</code>: in every span, the innermost band takes <code>limits.stories</code> through <code>setBandStories</code>, and so does each band out from it that had the same stories. Nothing changes when the cap is not above the innermost band's stories.</li>
+          <li><code>reach</code>: in every span, the outermost band moves out to <code>limits.reachM</code> through <code>setBandDistance</code>. A band already at or beyond it is left.</li>
+          <li><code>bands</code>: in every span with fewer bands than <code>limits.bands</code>, <code>addBand</code> adds one 402 m beyond the outermost with its stories, when that is no further than <code>limits.reachM</code>.</li>
+          <li><code>bands</code>, when there is no room beyond: a band is inserted inside the outermost, halfway between it and the band inside it (or 0 m), with the outermost's stories.</li>
+          <li><code>stories</code>, <code>reach</code> and <code>bands</code> switch the game rule on when they change it. With no game rule they change nothing.</li>
+          <li><code>hands</code>: the document is returned unchanged.</li>
+          <li>Every edit returns the same document object when nothing changes.</li>
+          <li>The function never removes a policy, never lowers a value, and never touches a policy other than the one it adds, the game rule, or a policy that names the bought preset.</li>
+        </ul>
+        <aside data-kind="decision"><strong>Decision: a band with no room goes inside the outermost</strong> The stop grant makes its band at <code>limits.reachM</code>, and the reach grant moves the outermost band to <code>limits.reachM</code>. So the outermost band of an unedited game rule is always at the limit, and "beyond its outermost, no further than <code>limits.reachM</code>" never has room. Splitting the outermost band keeps the rule within the limits and gives the player a band to set.</aside>
+        <aside data-kind="decision"><strong>Decision: the stories grant raises the run of equal bands</strong> After a split, the inner part has the same stories as the outer. Raising only the innermost band would then raise less area than before the band was bought. Raising every band out from the innermost at the same stories keeps a bands purchase from costing homes. A band the player set lower stays where it is.</aside>
+      </section>
+      <section id="sec-design-grant-edits">
+        <h4>When the player has changed what a grant touches</h4>
+        <table id="tbl-grant-edits">
+          <caption>What a grant does after the player's edits</caption>
+          <thead>
+            <tr><th scope="col">The player has</th><th scope="col">What the grant does</th></tr>
+          </thead>
+          <tbody>
+            <tr><th scope="row">Removed a preset's or measure's policy</th><td>Adds a new one from month 1.</td></tr>
+            <tr><th scope="row">Switched it off</th><td>Switches it on, keeping its dates.</td></tr>
+            <tr><th scope="row">Moved its dates</th><td>Leaves its dates; switches it on if it is off.</td></tr>
+            <tr><th scope="row">Edited what a measure pays</th><td>The editor has set its <code>preset</code> to null, so a new measure is added beside it.</td></tr>
+            <tr><th scope="row">Removed the game rule</th><td>A stop grant makes a new one with only that stop type; a step grant does nothing until then.</td></tr>
+            <tr><th scope="row">Switched the game rule off</th><td>Switches it on when the grant changes it.</td></tr>
+            <tr><th scope="row">Turned off a stop type</th><td>A later stop grant adds only its own stop type.</td></tr>
+            <tr><th scope="row">Edited band heights or distances</th><td>Raises and moves out from the player's values; never lowers one.</td></tr>
+            <tr><th scope="row">Split the game rule into dated spans</th><td>Edits every span the same way, each from its own bands.</td></tr>
+            <tr><th scope="row">Given another policy the id <code>game-transit</code></th><td>A stop grant changes nothing. This cannot happen in a game, where the player names no ids.</td></tr>
+          </tbody>
+        </table>
+      </section>
+      <section id="sec-design-grant-dates">
+        <h4>How a measure is dated from month 1</h4>
+        <ul>
+          <li><code>addPolicy</code> starts the policy's span on <code>monthFirstDay(asOf, 1)</code>, the day after the dataset date's first model month begins, with no end.</li>
+          <li><code>addPolicy</code> then calls <code>dateMeasure</code>, which rebuilds the measure from <code>fundingPresets(cal, start)</code> with <code>start</code> that day.</li>
+          <li><code>housing-bond</code> and <code>revolving-fund</code>: their one payment arrives on that day.</li>
+          <li><code>general-revenue</code>: 30 yearly payments, the first on that day.</li>
+          <li><code>public-bank</code>: five payments, on that day and its next four anniversaries.</li>
+          <li><code>federal-support</code>: 10 yearly payments from that day, in place of its default 1 January 2028.</li>
+          <li><code>state-double</code>: scale 2 on the state pool from that day, back to 1 ten years later.</li>
+          <li>Permitting presets and the game rule have one span from the same day.</li>
+        </ul>
+      </section>
+    </section>
+
+    <section id="sec-design-needs">
+      <h3>What this needs from <code>game-core</code></h3>
+      <p>G4 says the transit limits are 0 before the first stop type is bought. It does not say what they are after it, before any step is bought. The stop grant needs a band to make.</p>
+      <ul>
+        <li>Once <code>stops</code> is not empty, <code>limitsOf</code> gives <code>bands</code>, <code>stories</code> and <code>reachM</code> at least <code>ZONING_BASE</code>: 1 band, 4 stories, 402 m.</li>
+        <li><code>ZONING_BASE</code> is exported from <code>src/lib/game/catalogue/nodes.ts</code> for <code>limitsOf</code> to read.</li>
+        <li>Each Hands step is larger than <code>BASE_HANDS</code>: <code>radiusPx</code> below 40 and <code>lingerMs</code> below 3,000. A test in this unit holds it.</li>
+      </ul>
+      <aside data-kind="decision"><strong>Decision: the zoning base is the lowest step of each ladder</strong> 402 m is the first reach step and the editor's innermost default distance. 4 stories is the lowest height the brief names. Without a base, the first stop type could make no band at all.</aside>
+    </section>
+
+    <section id="sec-design-play">
+      <h3>Playing the tree in code</h3>
+      <p>Both scripts, and the reach check in <code>closing</code>, play purchases through one module.</p>
+<pre><code data-lang="ts">// src/lib/game/catalogue/play.ts
+import type { Calibration } from '$lib/timelapse/types';
+import { DEFAULT_POLICY4, type SimPolicy4 } from '$lib/timeline/policy4';
+import { applyGrant } from '../grant';
+import { limitsOf, runnable } from '../limits';
+import { NEW_GAME, type GameState, type NodeId } from '../state';
+import { buy, type TreeNode } from '../tree';
+import { LADDER_YEARS } from './ladder-years';
+import { NODES } from './nodes';
+
+export interface Played {
+  state: GameState;
+  doc: SimPolicy4;
+}
+
+/** `buy`, then the grant applied with the limits after the purchase; null when refused. */
+export function buyAndApply(
+  p: Played,
+  id: NodeId,
+  cal: Calibration,
+  nodes: readonly TreeNode[] = NODES
+): Played | null {
+  const r = buy(p.state, id, nodes);
+  if (!r.ok) return null;
+  const limits = limitsOf(r.state, nodes);
+  return { state: r.state, doc: applyGrant(p.doc, r.grant, { cal, limits }) };
+}
+
+/** Every level of every node, bought in catalogue order from current law at no cost. */
+export function fullTree(cal: Calibration, nodes: readonly TreeNode[] = NODES): Played {
+  let p: Played = {
+    state: {
+      ...NEW_GAME,
+      phase: 'runs',
+      rung: LADDER_YEARS.length,
+      units: { home: Number.MAX_SAFE_INTEGER }
+    },
+    doc: DEFAULT_POLICY4
+  };
+  for (const n of nodes) {
+    for (let k = 0; k &lt; n.levels.length; k++) {
+      const next = buyAndApply(p, n.id, cal, nodes);
+      if (next === null) throw new Error(`full tree: ${n.id} level ${k + 1} was refused`);
+      p = next;
+    }
+  }
+  return { state: p.state, doc: runnable(p.doc, limitsOf(p.state, nodes)) };
+}</code></pre>
+      <ul>
+        <li><code>fullTree</code> sets the rung to the last, so every ring is open, and leaves the last rung unmet, so the limits are those of the purchases.</li>
+        <li>On today's catalogue, <code>fullTree</code>'s document holds the three permitting presets, the six measures and the game rule with all four stop types and three bands at 80 stories, the outermost at 3,219 m.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-engine">
+      <h3>The engine runner both scripts use</h3>
+      <p><code>scripts/reach-measure.ts</code> exports the runner. <code>scripts/tree-balance.ts</code> imports it.</p>
+<pre><code data-lang="ts">// scripts/reach-measure.ts
+export type DataSource = { dir: string } | { version: string; origin: string };
+
+export const DEFAULT_ORIGIN = 'https://sfhousing.mindlace.net';
+
+export interface Engine {
+  datasetVersion: string;
+  asOf: Day;
+  cal: Calibration;
+  /** The whole window's view for `doc`, reconciled and with its lots resolved. */
+  view(doc: SimPolicy4): Promise&lt;TimelineView&gt;;
+  close(): void;
+}
+
+export function openEngine(
+  src: DataSource,
+  opts?: { warn?: (msg: string) =&gt; void; timeoutMs?: number }
+): Promise&lt;Engine&gt;;</code></pre>
+      <ul>
+        <li>A directory source reads <code>&lt;dir&gt;/manifest.json</code> and serves <code>/data/&lt;version&gt;/&lt;path&gt;</code> from <code>&lt;dir&gt;/&lt;path&gt;</code>, as <code>level2-check.ts</code> does.</li>
+        <li>A version source fetches <code>&lt;origin&gt;/data/&lt;version&gt;/&lt;path&gt;</code> with the global <code>fetch</code>, keeps each file's bytes in memory for the life of the engine, and answers a failed fetch as a 404.</li>
+        <li><code>openEngine</code> loads the scenario with <code>loadScenario</code> for <code>cal</code> and <code>asOf</code>, starts <code>createTimelineHost</code> on real tracked timers, sends <code>openTimeline</code> at rev 1 with the reconciled <code>DEFAULT_POLICY4</code> and <code>lots: {}</code> over <code>WINDOW_MONTHS</code>, and a <code>prefetch</code> of every chunk's bbox.</li>
+        <li><code>openEngine</code> resolves once rev 1's window is filled; the rev 1 view is kept as the view of the reconciled empty document.</li>
+        <li><code>view(doc)</code> reconciles with <code>reconcilePolicy4(doc, cal, asOf).doc</code> and returns a kept view when one exists for the same <code>canonicalJson</code>.</li>
+        <li>Otherwise it sends <code>resolveBrush</code> for each of <code>queriesOf4(doc)</code> and reads each <code>brushLots</code> (an answer that is not ok gives no lots), then <code>setPolicy</code> at the next rev, and resolves with <code>viewOf</code> once <code>filled</code> at that rev reaches the <code>compiled</code> statics' <code>lastIndex</code>.</li>
+        <li>Calls to <code>view</code> run one at a time, in the order made.</li>
+        <li>An <code>error</code> message rejects the pending call with <code>host error: &lt;code&gt;: &lt;message&gt;</code>. A call not settled in <code>timeoutMs</code> (default 600,000) rejects with <code>window not filled in &lt;s&gt; s</code>.</li>
+        <li><code>close</code> disposes of the host and clears every timer.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-reach">
+      <h3><code>scripts/reach-measure.ts</code></h3>
+<pre><code data-lang="sh">npx tsx scripts/reach-measure.ts &lt;datasetDir&gt; [--write] [--amount &lt;homes&gt;]
+npx tsx scripts/reach-measure.ts --version &lt;datasetVersion&gt; [--from &lt;origin&gt;] [--write] [--amount &lt;homes&gt;]</code></pre>
+      <ul>
+        <li>It builds <code>fullTree(engine.cal).doc</code>, runs it through <code>engine.view</code>, and reads <code>readGoal(goal, view, view.lastIndex)</code> with <code>goal = defaultGoal(asOf)</code>, its amount replaced by <code>--amount</code> when given.</li>
+        <li>The measured year is the UTC year of <code>reachedOn</code>. The window's end year is the UTC year of <code>defaultGoal(asOf).deadline</code>.</li>
+        <li><code>LADDER_YEARS</code> is <code>ladderYears(endYear, reachedYear)</code>, below.</li>
+        <li><code>--write</code> rewrites <code>src/lib/game/catalogue/ladder-years.ts</code> with <code>ladderFile</code>, below, and prints <code>Wrote src/lib/game/catalogue/ladder-years.ts</code>.</li>
+        <li><code>--write</code> with <code>--amount</code> is refused, so a fixture or test amount never sets the ladder.</li>
+        <li>Exit 0 when the full tree reaches the goal in the window, 1 when it does not (nothing is written), 2 when it could not run, with one stderr line <code>reach-measure: &lt;reason&gt;</code> and nothing on stdout.</li>
+      </ul>
+<pre><code data-lang="ts">/** Multiples of five, from the last one below the window's end year down to the measured year. */
+export function ladderYears(endYear: number, reachedYear: number): number[] {
+  const out: number[] = [];
+  for (let y = 5 * Math.floor((endYear - 1) / 5); y &gt;= reachedYear; y -= 5) out.push(y);
+  return out;
+}
+
+/** The text of ladder-years.ts. */
+export function ladderFile(r: {
+  datasetVersion: string;
+  reachedOn: Day;
+  deadline: Day;
+  years: readonly number[];
+}): string {
+  return (
+    '// The deadline years after the window\'s end, latest first (G6). Written by\n' +
+    '// `npx tsx scripts/reach-measure.ts --write` on dataset ' + r.datasetVersion + ':\n' +
+    '// the full tree reaches the goal in ' + formatShortMonthYear(r.reachedOn) +
+    '; the window ends ' + formatShortMonthYear(r.deadline) + '.\n' +
+    'export const LADDER_YEARS: readonly number[] = [' + r.years.join(', ') + '];\n'
+  );
+}</code></pre>
+      <p>Printed on stdout, one line each:</p>
+<pre><code data-lang="text">Dataset 2026-11-08-d15bdf2d
+Full tree: 10 policies (1 zoning, 3 permitting, 6 money)
+Window ends Sep 2066
+Goal: 82,069 homes, reached Mar 2043
+LADDER_YEARS = [2065, 2060, 2055, 2050, 2045]</code></pre>
+      <ul>
+        <li>The figures above show the format only. A miss prints <code>Goal: 82,069 homes, missed: &lt;homes&gt; homes by &lt;Mon YYYY&gt;</code> and no <code>LADDER_YEARS</code> line.</li>
+        <li>Until the script has run, <code>ladder-years.ts</code> holds the provisional value below, so the catalogue has five rungs and each stage is its own ring.</li>
+      </ul>
+<pre><code data-lang="ts">// src/lib/game/catalogue/ladder-years.ts, until the reach is measured
+// The deadline years after the window's end, latest first (G6). Provisional: not measured.
+// `npx tsx scripts/reach-measure.ts --write` replaces this file.
+export const LADDER_YEARS: readonly number[] = [2065, 2060, 2055, 2050];</code></pre>
+      <aside data-kind="note"><strong>Who runs it</strong> The <code>tree-catalogue</code> implementer runs it with <code>--write</code> on the dataset version in production, before the unit is finished, and commits the file. It is run again whenever the dataset version changes or a policy node is added. The dataset must be on disk (a built <code>pipeline/out/&lt;version&gt;</code>) or fetched with <code>--version</code>: <code>npm run data:local</code> loads local R2 and keeps no directory.</aside>
+    </section>
+
+    <section id="sec-design-balance">
+      <h3><code>scripts/tree-balance.ts</code></h3>
+<pre><code data-lang="sh">npx tsx scripts/tree-balance.ts &lt;datasetDir&gt; [--order &lt;name&gt;] [--amount &lt;homes&gt;] [--json]
+npx tsx scripts/tree-balance.ts --version &lt;datasetVersion&gt; [--from &lt;origin&gt;] [--order &lt;name&gt;] [--amount &lt;homes&gt;] [--json]</code></pre>
+      <p>It plays the game from the first run to the last rung against the real engine, for each purchase order and each way of collecting, and reports each play against the pacing targets. The engine's view of each distinct document is computed once and kept for every play.</p>
+
+      <section id="sec-design-balance-play">
+        <h4>A play</h4>
+        <ol>
+          <li>The state starts as <code>NEW_GAME</code> with <code>phase</code> <code>'runs'</code> and <code>firstWinAt</code> set, and the document as <code>DEFAULT_POLICY4</code>.</li>
+          <li>A run reads the view of <code>runnable(doc, limitsOf(state))</code> at the rung's goal, <code>goalAt(asOf, state.rung, amount)</code>, with <code>readRun</code>.</li>
+          <li>The run's dropped units are <code>max(0, view.rows[d].completedNet)</code> at the deadline's month <code>d</code>. Collected units are <code>floor(share × dropped)</code>.</li>
+          <li>The run is settled with <code>resultOf</code> (side goals read from the same view) and <code>settle</code>.</li>
+          <li>When the rung in play is met and a next one exists, the play takes it with <code>takeNext</code>.</li>
+          <li>The play then buys by its order (below), applying each grant with <code>buyAndApply</code>, and runs again.</li>
+          <li>The play ends when <code>finished(state)</code>, or as stuck when nothing is left to buy and the rung is not met in 3 runs in a row, or after 300 runs.</li>
+        </ol>
+        <p>Dropped units from the series understate the drops slightly: <code>completedNet</code> takes off the existing homes of projects still building, and a project worth nothing leaves no drop.</p>
+      </section>
+
+      <section id="sec-design-balance-orders">
+        <h4>Purchase orders</h4>
+        <table id="tbl-orders">
+          <caption>The orders the script plays</caption>
+          <thead>
+            <tr><th scope="col">Order</th><th scope="col">Sequence</th></tr>
+          </thead>
+          <tbody>
+            <tr><th scope="row"><code>catalogue</code></th><td>Every level of every node, in catalogue order.</td></tr>
+            <tr><th scope="row"><code>permitting-first</code></th><td>The permitting nodes' levels, then the rest in catalogue order.</td></tr>
+            <tr><th scope="row"><code>zoning-first</code></th><td>The zoning nodes' levels, then the rest in catalogue order.</td></tr>
+            <tr><th scope="row"><code>money-first</code></th><td>The money nodes' levels, then the rest in catalogue order.</td></tr>
+            <tr><th scope="row"><code>hands-first</code></th><td>The hands nodes' levels, then the rest in catalogue order.</td></tr>
+            <tr><th scope="row"><code>cheapest</code></th><td>After each run, the cheapest ready level, ties in catalogue order, until none is ready.</td></tr>
+          </tbody>
+        </table>
+        <ul>
+          <li>A sequence lists a node once per level. After each run the play takes the first entry whose node is shown and not done, buys it if it is affordable and repeats, and stops at the first such entry it cannot afford.</li>
+          <li>Entries whose node is done are dropped. Entries whose node is not yet shown wait in place.</li>
+          <li><code>--order</code> plays one order; without it, all six are played.</li>
+        </ul>
+      </section>
+
+      <section id="sec-design-balance-shares">
+        <h4>Share of drops collected</h4>
+<pre><code data-lang="ts">export const SHARE = { base: 0.25, perRadius: 0.1, perLinger: 0.05 } as const;
+
+/** The share of dropped units a player collects: a starting assumption until playtests. */
+export function shareOf(s: GameState, mode: 'hand' | 'collect-for-me'): number {
+  if (mode === 'collect-for-me' || (s.bought['hands-auto'] ?? 0) &gt;= 1) return 1;
+  const r = s.bought['hands-radius'] ?? 0;
+  const l = s.bought['hands-linger'] ?? 0;
+  return Math.min(1, SHARE.base + SHARE.perRadius * r + SHARE.perLinger * l);
+}</code></pre>
+        <ul>
+          <li>Each order is played twice: <code>hand</code>, with the share above, and <code>collect-for-me</code>, with every drop collected (call 17).</li>
+          <li>The hand shares run from 0.25 with no Hands node to 0.80 with every radius and linger level.</li>
+          <li>The shares are a starting assumption. Playtests replace them: a playtest records collected and dropped units from each tally, by the Hands levels bought, and the owner of a later change edits <code>SHARE</code> to match.</li>
+        </ul>
+      </section>
+
+      <section id="sec-design-balance-clock">
+        <h4>The clock and the pacing targets</h4>
+<pre><code data-lang="ts">/** Seconds a player spends, assumed: Paint, a run, a tally, a purchase. */
+export const CLOCK = { openingS: 60, runS: 20, tallyS: 8, buyS: 4 } as const;
+
+export const TARGETS = {
+  firstPurchaseS: 120,
+  earlyPurchases: 5,
+  earlyRunsPerPurchase: 1,
+  runsPerPurchase: 3,
+  mapGapS: 300,
+  purchasesPerDeadline: 3
+} as const;</code></pre>
+        <p>The targets are the source model's Pacing targets, read as checks:</p>
+        <table id="tbl-pacing">
+          <caption>Pacing targets and how the script checks them</caption>
+          <thead>
+            <tr><th scope="col">Target (source model)</th><th scope="col">Check</th></tr>
+          </thead>
+          <tbody>
+            <tr><th scope="row">First purchase within 2 minutes of first load, Paint included</th><td>The clock at the first purchase is at most 120 s.</td></tr>
+            <tr><th scope="row">A run of about 20 seconds</th><td>Not checked: <code>CLOCK.runS</code> is assumed; <code>game-sim</code> sets the run's length.</td></tr>
+            <tr><th scope="row">Runs per purchase: 1 early on</th><td>Each of the first 5 purchases comes at most 1 run after the one before.</td></tr>
+            <tr><th scope="row">Runs per purchase: never more than 3</th><td>No purchase comes more than 3 runs after the one before.</td></tr>
+            <tr><th scope="row">Something new on the map about every 5 minutes</th><td>No more than 300 s of clock between two purchases that change the document.</td></tr>
+            <tr><th scope="row">Deadlines each several purchases apart</th><td>At least 3 purchases between one rung met and the next.</td></tr>
+          </tbody>
+        </table>
+        <ul>
+          <li>The clock starts at <code>CLOCK.openingS</code>, adds <code>runS + tallyS</code> per run and <code>buyS</code> per purchase.</li>
+          <li>Runs per purchase counts runs since the previous purchase; a purchase after the same run as the one before counts 0. The first purchase counts the runs since the start.</li>
+          <li>A purchase that changes the document is one whose grant is not <code>hands</code> and whose <code>applyGrant</code> result differs.</li>
+          <li>The checks are a pure function of the play's events, so they are tested without the engine.</li>
+        </ul>
+      </section>
+
+      <section id="sec-design-balance-output">
+        <h4>Output</h4>
+        <p>Without <code>--json</code>, each play prints a block like this (figures show the format only):</p>
+<pre><code data-lang="text">Dataset 2026-11-08-d15bdf2d
+Play catalogue, hand
+  Run 1   rung 0  Sep 2066  homes 84,120  reached Jul 2065  dropped 66,310  collected 16,577  balance 16,577
+          bought hands-radius 1, stop-rail 1, sb423-clock 1
+  ...
+  Finished: 41 runs, 47 purchases, clock 38:20
+  First purchase 1:32 (target 2:00)  pass
+  Early runs per purchase max 1 (target 1)  pass
+  Runs per purchase max 2 (target 3)  pass
+  Longest gap between map changes 4:10 (target 5:00)  pass
+  Fewest purchases between deadlines 4 (target 3)  pass</code></pre>
+<pre><code data-lang="ts">export interface PlayReport {
+  order: string;
+  mode: 'hand' | 'collect-for-me';
+  runs: {
+    n: number;
+    rung: number;
+    homes: number;
+    reachedOn: Day | null;
+    dropped: number;
+    collected: number;
+    balance: number;
+    bought: { id: NodeId; level: number; price: number }[];
+  }[];
+  end: 'finished' | 'stuck' | 'too-long';
+  clockS: number;
+  checks: { id: CheckId; value: number; target: number; pass: boolean }[];
+}
+
+export type CheckId =
+  | 'first-purchase'
+  | 'early-runs-per-purchase'
+  | 'runs-per-purchase'
+  | 'map-gap'
+  | 'purchases-per-deadline';</code></pre>
+        <ul>
+          <li><code>--json</code> prints one JSON object, <code>{ datasetVersion, plays: PlayReport[] }</code>, and nothing else.</li>
+          <li>Exit 0 when every play is finished and passes every check, 1 otherwise, 2 when it could not run (one stderr line <code>tree-balance: &lt;reason&gt;</code>).</li>
+        </ul>
+      </section>
+
+      <section id="sec-design-balance-prices">
+        <h4>Starting prices and who tunes them</h4>
+        <ul>
+          <li>The prices in <a href="#tbl-nodes">the catalogue table</a> are starting values. They are set from an estimate: current law completes about 66,000 net homes from today to the window's end, so a first run collects about 16,500 units at the 0.25 share.</li>
+          <li>A node's first level costs 3,000 to 10,000 in stage 0, 6,000 to 18,000 in stage 1, 24,000 to 32,000 in stage 2, 40,000 to 45,000 in stage 3 and 60,000 to 75,000 in stage 4. Each later level of a node costs more than the one before.</li>
+          <li>The <code>tree-catalogue</code> implementer runs the script on the dataset in production before the unit is finished, after <code>reach-measure --write</code>.</li>
+          <li>Prices change only by editing <code>CATALOGUE</code> after reading a report. The script never writes them.</li>
+          <li>The implementer edits prices until every <code>hand</code> play finishes and passes. If no set of prices passes, the unit hands the report to the owner with the checks that fail.</li>
+          <li>The script is run again whenever a node, a price, <code>SHARE</code>, <code>RUNG_LUMP</code>, a side goal or the dataset version changes.</li>
+        </ul>
+      </section>
+    </section>
+  </section>
+
+  <section id="sec-files">
+    <h2>Files</h2>
+    <table id="tbl-files">
+      <caption>Files this subsystem writes</caption>
+      <thead>
+        <tr><th scope="col">File</th><th scope="col">Change</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row"><code>src/lib/game/tree.ts</code></th><td>Write: <code>treeView</code>, <code>buy</code>, <code>levelOf</code>, <code>isShown</code> over the <code>contracts</code> stub.</td></tr>
+        <tr><th scope="row"><code>src/lib/game/grant.ts</code></th><td>Write: <code>applyGrant</code> and <code>GAME_TRANSIT_LABEL</code>.</td></tr>
+        <tr><th scope="row"><code>src/lib/game/catalogue/nodes.ts</code></th><td>Write: <code>CATALOGUE</code>, <code>NODES</code>, <code>ZONING_BASE</code>, <code>STAGES</code>, <code>ringOf</code>.</td></tr>
+        <tr><th scope="row"><code>src/lib/game/catalogue/ladder-years.ts</code></th><td>Write: the provisional value, then the measured one.</td></tr>
+        <tr><th scope="row"><code>src/lib/game/catalogue/play.ts</code></th><td>Create: <code>buyAndApply</code>, <code>fullTree</code>.</td></tr>
+        <tr><th scope="row"><code>src/lib/game/tree.spec.ts</code></th><td>Create.</td></tr>
+        <tr><th scope="row"><code>src/lib/game/grant.spec.ts</code></th><td>Create.</td></tr>
+        <tr><th scope="row"><code>src/lib/game/catalogue/nodes.spec.ts</code></th><td>Create.</td></tr>
+        <tr><th scope="row"><code>src/lib/game/catalogue/play.spec.ts</code></th><td>Create.</td></tr>
+        <tr><th scope="row"><code>scripts/reach-measure.ts</code></th><td>Create.</td></tr>
+        <tr><th scope="row"><code>scripts/reach-measure.spec.ts</code></th><td>Create.</td></tr>
+        <tr><th scope="row"><code>scripts/tree-balance.ts</code></th><td>Create.</td></tr>
+        <tr><th scope="row"><code>scripts/tree-balance.spec.ts</code></th><td>Create.</td></tr>
+      </tbody>
+    </table>
+    <p>No file is deleted. No file outside the design's write set for <code>tree-catalogue</code> is needed.</p>
+  </section>
+
+  <section id="sec-tests">
+    <h2>Tests</h2>
+    <p>Every test is a unit test in the server Vitest project; nothing here renders. Tests that run the engine use the fixture dataset <code>e2e/fixtures/data/fixture-0</code> with a small <code>--amount</code>, and a hook timeout as <code>scripts/level2-check.spec.ts</code> has.</p>
+    <section id="sec-tests-tree">
+      <h3><code>src/lib/game/tree.spec.ts</code></h3>
+      <ul>
+        <li><code>treeView(NEW_GAME)</code> shows exactly <code>sb423-clock</code>, <code>stop-rail</code>, <code>housing-bond</code> and <code>hands-radius</code>, in catalogue order, each at level 0.</li>
+        <li>Buying <code>stop-rail</code> shows <code>stop-metro</code> and <code>taller-1</code> at rung 0, and <code>reach-1</code> only once the rung reaches its ring.</li>
+        <li>A node with two <code>after</code> entries is shown once either is bought.</li>
+        <li><code>state</code> is <code>'ready'</code> when the next level is affordable, <code>'short'</code> with <code>shortBy</code> when not, and <code>'done'</code> with <code>short</code> null after the last level.</li>
+        <li><code>buy</code> refuses an unknown id, a hidden node, a done node and a short balance with those reasons, in that order of precedence.</li>
+        <li><code>buy</code> spends the next level's price, records level + 1, returns that level's grant and changes no other field.</li>
+        <li>Levels are bought in order: buying <code>taller-1</code> twice grants 6 then 8 stories.</li>
+        <li>Neither function changes its arguments; <code>nodes</code> defaults to <code>NODES</code> and a given list replaces it.</li>
+      </ul>
+    </section>
+    <section id="sec-tests-nodes">
+      <h3><code>src/lib/game/catalogue/nodes.spec.ts</code></h3>
+      <ul>
+        <li>Node ids are unique, and every <code>after</code> id names a node listed earlier.</li>
+        <li>Every stage from 0 to 4 holds a node, and <code>ringOf</code> gives the stage on five rungs, 0 for every stage on one rung, and rounds for three and seven rungs.</li>
+        <li>Every price is a whole number above 0 of the one kind <code>home</code>.</li>
+        <li>Every preset grant names an available preset other than <code>observed</code> and <code>ceqaInfill</code>; every measure grant names one of the six measures that add money, and each of the six appears once.</li>
+        <li>On the test calibration with money, <code>fundingPresets</code> offers each measure, with the label the node carries.</li>
+        <li>Every preset and measure node has a source with non-empty text; every zoning and hands node has none.</li>
+        <li>Stories steps are whole, rise within the node and across <code>taller-1</code> to <code>taller-3</code>, and end at 80; reach steps are 805, 1,609 and 3,219, none above <code>BAND_MAX_M</code>; bands steps are 2 and 3, none above <code>MAX_BANDS</code>.</li>
+        <li>Each stop type has one node.</li>
+        <li>Radius steps rise and are all above <code>BASE_HANDS.radiusPx</code>; linger steps rise and are all above <code>BASE_HANDS.lingerMs</code>; <code>hands-auto</code> is the last hands node.</li>
+        <li>With unlimited units at the last rung, buying every shown ready level until none is left buys every level of every node.</li>
+        <li><code>LADDER_YEARS</code> is descending by 5 and every year is a multiple of 5.</li>
+      </ul>
+    </section>
+    <section id="sec-tests-grant">
+      <h3><code>src/lib/game/grant.spec.ts</code></h3>
+      <p>The calibration is built as in <code>src/lib/timeline/add.spec.ts</code>, with money and without.</p>
+      <ul>
+        <li>A preset grant on an empty document adds one permitting policy naming that preset, on, one span from month 1 with no end.</li>
+        <li>A measure grant on an empty document adds what <code>addPolicy</code> adds at month 1, and the measure's first payment falls on <code>monthFirstDay(asOf, 1)</code>.</li>
+        <li>A preset or measure grant with a policy already on returns the same document object; with one off it switches the first on and keeps its spans.</li>
+        <li>A measure whose policy was edited to <code>preset: null</code> gets a new policy beside it.</li>
+        <li>A measure grant on a calibration without money returns the same document object.</li>
+        <li>The first stop grant adds <code>game-transit</code> at the end of the zoning list with that stop type and one band at the limits' distance and stories.</li>
+        <li>A second stop grant adds its stop type in <code>STOP_TYPES</code> order and switches an off rule on.</li>
+        <li>A stories grant raises the innermost band and the bands at its stories; a band the player set lower stays.</li>
+        <li>A reach grant moves the outermost band out to the limit and leaves one already there.</li>
+        <li>A bands grant adds a band 402 m beyond when the limit allows, and otherwise inserts one at the midpoint inside the outermost.</li>
+        <li>A step grant with no game rule returns the same document object; a stop grant then makes a rule at the current limits.</li>
+        <li>A grant applied to a rule split into two spans edits both spans.</li>
+        <li>A hands grant returns the same document object.</li>
+        <li>For every catalogue order of purchases played with <code>buyAndApply</code>, every result passes <code>parsePolicy4</code> with the dataset date, equals its own <code>reconcilePolicy4</code>, and is unchanged by <code>runnable</code> under the limits after the purchase.</li>
+        <li>No grant removes a policy or changes a policy other than the one it adds, the game rule or one naming the bought preset.</li>
+      </ul>
+    </section>
+    <section id="sec-tests-play">
+      <h3><code>src/lib/game/catalogue/play.spec.ts</code></h3>
+      <ul>
+        <li><code>buyAndApply</code> returns null when <code>buy</code> refuses, and otherwise the bought state and the granted document.</li>
+        <li><code>fullTree</code> on the test calibration holds the three presets, the six measures and one transit rule with all four stop types, three bands, 80 stories and an outermost band at 3,219 m.</li>
+        <li><code>fullTree</code> throws, naming the node, when a catalogue entry cannot be bought.</li>
+      </ul>
+    </section>
+    <section id="sec-tests-scripts">
+      <h3><code>scripts/reach-measure.spec.ts</code> and <code>scripts/tree-balance.spec.ts</code></h3>
+      <ul>
+        <li><code>ladderYears(2066, 2043)</code> is <code>[2065, 2060, 2055, 2050, 2045]</code>; <code>ladderYears(2065, 2050)</code> is <code>[2060, 2055, 2050]</code>; a measured year after the first step gives <code>[]</code>.</li>
+        <li><code>ladderFile</code> gives text that names the dataset, the reached month and the window's end, and exports the years.</li>
+        <li>The argument parser refuses an unknown flag, a second directory, <code>--version</code> beside a directory, a bad <code>--amount</code>, and <code>--write</code> with <code>--amount</code>.</li>
+        <li><code>openEngine</code> on the fixture directory gives a view of the empty document, and a view of <code>fullTree</code>'s document whose homes at the window's end are at least the empty document's.</li>
+        <li>A second <code>view</code> of an equal document returns the kept view without a new <code>setPolicy</code>.</li>
+        <li>The reach measure on the fixture with <code>--amount 1</code> prints the five lines and exits 0; with an amount no document reaches, it exits 1 and writes nothing.</li>
+        <li><code>shareOf</code> is 0.25 for a new game, 0.80 with every radius and linger level, and 1 with <code>hands-auto</code> or in <code>collect-for-me</code>.</li>
+        <li>The order sequences list each node once per level, the branch first where named.</li>
+        <li>The pacing checks, on hand-made events, pass and fail at each target's edge.</li>
+        <li>A play on the fixture with a catalogue whose prices are 1 unit and a small amount ends <code>finished</code> and buys every level.</li>
+      </ul>
+    </section>
+  </section>
+
+  <section id="sec-decisions">
+    <h2>Decisions</h2>
+    <ul>
+      <li><strong>23 nodes in stages 0 to 4.</strong> One stage per rung of a five-rung ladder keeps each rung opening something new.</li>
+      <li><strong>Rings follow from stages and the measured ladder (<code>ringOf</code>).</strong> The number of rungs is measured, so a fixed ring would hide nodes on a short ladder.</li>
+      <li><strong>One start node per branch.</strong> The player sees each kind of lever at once, and the cheapest is 3,000 units, under a first run's estimated 16,500.</li>
+      <li><strong>Heights, reach and stories are split into nodes by stage.</strong> A single node with every level would open 80 stories in ring 0.</li>
+      <li><strong><code>state-double</code> comes after <code>federal-support</code>.</strong> Alone it buys no homes.</li>
+      <li><strong>A preset node's source is a named provenance from <code>PRESETS</code></strong> (the first for <code>sb423Clock</code> and <code>noDiscretionary</code>, the last for <code>benchmarkPermits</code>). Each names the rule's own basis, not an invented parameter.</li>
+      <li><strong>A preset or measure step reads "From today".</strong> A one-level node has no value to name, and it is in force from today.</li>
+      <li><strong>A grant switches the game rule on when it changes it.</strong> A purchase takes effect at once (P12).</li>
+      <li><strong>A grant the data cannot honour changes nothing and keeps the purchase.</strong> Refunding would need a second state change outside <code>buy</code>.</li>
+      <li><strong>A band with no room is inserted inside the outermost</strong>, and <strong>stories raise the run of equal bands</strong>: see <a href="#sec-design-grant-rules">Rules for each grant</a>.</li>
+      <li><strong><code>ZONING_BASE</code> is 1 band, 4 stories, 402 m.</strong> The lowest step of each ladder.</li>
+      <li><strong>Hands steps: 40, 56, 72, 96 px and 3, 4.5, 6 s, then auto.</strong> Four and three steps with rising prices give the hands branch a purchase in every early round.</li>
+      <li><strong>The scripts read a directory or fetch a version.</strong> <code>npm run data:local</code> leaves no directory.</li>
+      <li><strong>The engine runner lives in <code>scripts/reach-measure.ts</code></strong> and <code>fullTree</code> in <code>catalogue/play.ts</code>, so <code>closing</code>'s reach check can import both.</li>
+      <li><strong>The first ladder year is the last multiple of five below the window's end year.</strong> Round years read well, and the brief's rule starts at the year below the end.</li>
+      <li><strong>The balance script assumes the player takes the next rung at once</strong> and estimates drops from <code>completedNet</code>. Both keep it a pure function of the engine's series.</li>
+    </ul>
+  </section>
+
+  <section id="sec-out-of-scope">
+    <h2>Out of scope</h2>
+    <ul>
+      <li><code>limitsOf</code>, <code>within</code>, <code>runnable</code>, <code>BASE_HANDS</code> and <code>FREE_MEASURES</code>: <code>game-core</code> (G4). This spec only asks for <code>ZONING_BASE</code>.</li>
+      <li><code>RUNGS</code>, <code>RUNG_LUMP</code>, <code>ladder</code>, <code>goalAt</code>, <code>settle</code>, side goals: <code>game-core</code> (G6). This unit writes only <code>LADDER_YEARS</code>.</li>
+      <li>Units and their arithmetic: <code>game-core</code> (G2).</li>
+      <li>Calling <code>applyGrant</code> on a purchase, the free levers in the editors, editor limits, the switch on a node: <code>game-sim</code>.</li>
+      <li>The tree screen, its words around a node and Buy: <code>tally-tree</code> (U1).</li>
+      <li>The store's <code>buy</code>: <code>game-save</code> (G7).</li>
+      <li>The reach check's new question in <code>scripts/level2-check.ts</code>: <code>closing</code>, which may import <code>fullTree</code> and <code>openEngine</code>.</li>
+      <li>How drops are collected and the real share a player gets: <code>run-play</code> (R1), then playtests.</li>
+      <li>New levers, <code>htf-2026</code> once certified, and affordable units in prices (P10): later rounds.</li>
+    </ul>
+  </section>
+</article>

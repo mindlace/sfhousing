@@ -1,0 +1,450 @@
+<article>
+  <header>
+    <h1>City net design</h1>
+    <p>The city feed carries, per project row, the homes the project replaces, from the worker through the map's validation and store to the page's index.</p>
+  </header>
+
+  <section id="sec-purpose">
+    <h2>Purpose</h2>
+    <p>A drop in a run is worth the project's net new homes (call 2). The page gets one record per project today, the <code>CityDelta</code> marker, and it has gross homes only. This unit adds the homes each project replaces, so that the <code>run-play</code> and <code>game-sim</code> units can price a drop at <code>homes - existing</code> with no new message.</p>
+    <ul>
+      <li>It carries call 2: a drop is worth net new homes, the same kind of number the goal counts.</li>
+      <li>It carries call 3 by what it leaves out: no income tiers per project.</li>
+      <li>It carries the global constraint "one future": the field is read from the world the series reads, and nothing about it flows back to the worker.</li>
+      <li>It produces row E1 and needs no row.</li>
+    </ul>
+  </section>
+
+  <section id="sec-interfaces">
+    <h2>Interfaces</h2>
+    <p>This row and its section are copied from the design document. A change to one is a change to the design.</p>
+    <table id="tbl-interfaces">
+      <caption>Interface table</caption>
+      <thead>
+        <tr><th scope="col">Row</th><th scope="col">Owner</th><th scope="col">Layer</th><th scope="col">Summary</th><th scope="col">Contract</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">E1</th><td><code>city-net</code></td><td>Decomposition choice</td><td>The homes a project replaces, in the city feed</td><td><a href="#sec-if-e1">E1</a></td></tr>
+      </tbody>
+    </table>
+
+    <section id="sec-if-e1">
+      <h3>E1 Existing homes in the city feed</h3>
+      <pre><code data-lang="ts">// src/lib/map/types.ts
+export interface CityDelta {
+  rows: number;
+  from?: number;
+  row: Int32Array;
+  lngLat: Float32Array;
+  days: Float32Array;
+  homes: Uint16Array;
+  existing: Uint16Array;
+  flags: Uint8Array;
+}</code></pre>
+      <dl>
+        <dt><code>existing</code></dt><dd>Per changed row: the homes on the lot that the project replaces, capped at 65,535.</dd>
+      </dl>
+      <ul>
+        <li>A row whose marker has not begun carries 0, as <code>homes</code> does.</li>
+        <li>A marker that differs only in <code>existing</code> is a changed marker and is sent.</li>
+        <li><code>validateCityDelta</code> checks the new array's length.</li>
+        <li>The map's store and the page's index keep it per row.</li>
+      </ul>
+      <p><strong>Unchanged:</strong> every other field and rule of the feed.</p>
+    </section>
+  </section>
+
+  <section id="sec-global-constraints">
+    <h2>Global constraints</h2>
+    <ul>
+      <li>One future: the same policy document always gives the same forecast. No game state reaches the worker except through the policy document.</li>
+      <li>No file the dataset version hashes is changed: <code>pipeline</code>, <code>src/lib/{data,generator,timelapse,scoreboard}</code>, <code>src/lib/plan/{geometry,types}.ts</code>, <code>src/lib/sim/{scenario,levers,finance}</code>. The dataset version stays as it is.</li>
+      <li>A policy node acts on a lever the code already has, at a value the code already sources. No node invents a value.</li>
+      <li>The painted area, own pools, the City funding scale and market terms are never offered in a game.</li>
+      <li>Published plans and policies open and play in full, as today.</li>
+      <li>WCAG 2.2 AA: everything works from the keyboard; targets are at least 24 px; motion follows the reduced-motion setting; nothing flashes more than three times a second.</li>
+      <li>Page text is short. A node is a name, a line and a price.</li>
+      <li>The CSP is not widened. Sound is made in the browser; no audio file, font or script is added.</li>
+      <li>A runtime dependency is not added without a credit in <code>src/lib/attribution.ts</code>. None is expected.</li>
+      <li>Code style: 2-space indent, single quotes, no trailing commas, 100 columns.</li>
+      <li>Vitest runs with <code>expect.requireAssertions</code>. Tests are colocated.</li>
+      <li>A schema change goes through <code>npm run db:generate</code>. Migrations are never edited by hand.</li>
+      <li>Signoff fails on server stderr, on timing crutches and on retried flakes. Timing is measured only on a quiet machine.</li>
+      <li>Port 4173 belongs to whichever session started the preview. Never kill it; wait.</li>
+      <li>Commits use Conventional Commits and carry no Claude attribution.</li>
+      <li>Work happens in git worktrees under <code>.claude/worktrees/</code>.</li>
+    </ul>
+  </section>
+
+  <section id="sec-found">
+    <h2>What the code is today</h2>
+    <p>Read on commit <code>4d22bf96</code>. Paths are relative to the worktree root.</p>
+
+    <section id="sec-found-worker">
+      <h3>The worker's feed</h3>
+      <ul>
+        <li><code>CityDelta</code> has <code>rows</code>, <code>from?</code>, <code>row</code>, <code>lngLat</code>, <code>days</code>, <code>homes</code> and <code>flags</code>, and no <code>existing</code> (<code>src/lib/map/types.ts:70-83</code>).</li>
+        <li>The feed keeps one marker per row as a <code>Float64Array</code> of <code>WIDTH = 7</code>: <code>LNG 0</code>, <code>LAT 1</code>, <code>DAYS 2</code> to 4, <code>HOMES 5</code>, <code>FLAGS 6</code> (<code>src/lib/sim/world/city-feed.ts:59-67</code>).</li>
+        <li><code>sameMarker</code> compares all <code>WIDTH</code> values, NaN equal to NaN (<code>src/lib/sim/world/city-feed.ts:69-74</code>). <code>take</code> and <code>rewind</code> send or touch a row only when it differs (<code>:170</code>, <code>:195</code>).</li>
+        <li><code>markerOf</code> reads <code>scheduleAt(world, statics, row, day)</code>. While it is null the days are NaN and the homes and flags stay 0 (<code>src/lib/sim/world/city-feed.ts:96-97</code>).</li>
+        <li><code>homes</code> is the last revision's units, clamped to 0 and capped at <code>MAX_HOMES = 0xffff</code> (<code>src/lib/sim/world/city-feed.ts:32</code>, <code>:108-109</code>).</li>
+        <li><code>deltaOf</code> builds the five per-row arrays (<code>src/lib/sim/world/city-feed.ts:114-139</code>).</li>
+        <li><code>scheduleAt</code> returns null for a master and for a row whose first entered day is after <code>day</code> (<code>src/lib/sim/world/read.ts:99-100</code>). Its <code>existingUnits</code> is the column <code>p.existing[row]</code> for every origin (<code>src/lib/sim/world/read.ts:76</code>, <code>:113</code>).</li>
+        <li><code>entered.construction</code> is present only once the row entered construction on or before <code>day</code> (<code>src/lib/sim/world/read.ts:25-33</code>).</li>
+        <li>The column <code>existing</code> is an <code>Int32Array</code> (<code>src/lib/sim/world/types.ts:98</code>). It is written once, when the row is made: simulated rows at <code>src/lib/sim/world/world.ts:392</code>, pipeline rows at <code>src/lib/sim/world/pipeline.ts:253</code>, phase rows at <code>src/lib/sim/world/pipeline.ts:402</code>.</li>
+        <li>For a simulated row <code>existingUnits</code> is the T11 sum of its parcels not already demolished earlier in the run (<code>src/lib/sim/scenario/types.ts:285</code>).</li>
+        <li>The world's <code>Statics.asOf</code> is the dataset date, <code>input.asOf</code> (<code>src/lib/sim/world/statics.ts:10</code>, <code>:21</code>).</li>
+      </ul>
+    </section>
+
+    <section id="sec-found-series">
+      <h3>What the series subtracts</h3>
+      <ul>
+        <li>On a row's <code>enter</code> into construction on a day after <code>asOf</code>, the series files <code>-p.existing[row]</code> into <code>FRESH</code> (simulated rows) or <code>PIPELINE</code> (every other non-master row) (<code>src/lib/sim/world/score/series.ts:502-509</code>).</li>
+        <li>A row that entered construction on or before <code>asOf</code> has nothing subtracted.</li>
+        <li>On a complete <code>end</code> the series files <code>+units</code>, the row's current units, into the same field (<code>src/lib/sim/world/score/series.ts:541-542</code>).</li>
+        <li><code>completedNet</code> is <code>PIPELINE + FRESH</code> (<code>src/lib/sim/world/score/series.ts:587</code>).</li>
+        <li>The series' <code>asOf</code> is <code>ScoreStatics.asOf</code> (<code>src/lib/sim/world/score/series.ts:240</code>), the same dataset date as the world's.</li>
+        <li>The goal's measure is <code>view.baseline.completedNet + view.rows[i].completedNet</code> (<code>src/lib/goal/goal.ts:42-46</code>).</li>
+        <li>A row's whole effect on <code>completedNet</code> is therefore its units when it completes, less <code>p.existing[row]</code> when it entered construction after <code>asOf</code>.</li>
+      </ul>
+    </section>
+
+    <section id="sec-found-wire">
+      <h3>The wire checks</h3>
+      <ul>
+        <li><code>CITY_DELTA_BYTES_PER_ROW = 27</code>, with the comment "row 4, lngLat 8, days 12, homes 2, flags 1" (<code>src/lib/map/city-delta.ts:5-6</code>).</li>
+        <li><code>validateCityDelta</code> throws <code>RangeError</code> on a bad <code>rows</code> or <code>from</code>, a length of <code>lngLat</code>, <code>days</code>, <code>homes</code> or <code>flags</code> that is not <code>k</code> times its width, a row not ascending or not below <code>rows</code>, and a flag above 3 (<code>src/lib/map/city-delta.ts:16-44</code>).</li>
+        <li><code>cityTransferables</code> lists the five buffers, each once (<code>src/lib/map/city-delta.ts:46-51</code>). The runner transfers them with every <code>cells</code> post (<code>src/lib/sim/world/runner/runner.ts:871</code>).</li>
+        <li><code>SimMap</code> and the controller validate <code>u.city</code> before anything else (<code>src/lib/map/SimMap.svelte:409</code>, <code>src/lib/map/timeline-controller.ts:246</code>).</li>
+      </ul>
+    </section>
+
+    <section id="sec-found-stores">
+      <h3>The stores on the page</h3>
+      <ul>
+        <li><code>CityStore</code> keeps typed arrays by world row: <code>lngLat</code>, <code>days</code>, <code>homes</code>, <code>flags</code>, <code>has</code>, with getters for each and for <code>size</code>, <code>flagged</code> and <code>length</code> (<code>src/lib/map/timelapse/city.ts:7-45</code>).</li>
+        <li><code>apply</code> validates first, then replaces or forgets, then writes each row's fields (<code>src/lib/map/timelapse/city.ts:52-76</code>). <code>#reserve</code> grows every array to at least twice the old capacity (<code>:96-109</code>). <code>clear</code> zeroes only <code>has</code> and the counts (<code>:78-83</code>).</li>
+        <li>The map's controller holds one <code>CityStore</code> (<code>src/lib/map/timeline-controller.ts:204</code>) and reads only <code>size</code> and <code>flagged</code>, for the debug snapshot's <code>cityMarkers</code> and <code>cityFlagged</code> (<code>:421-422</code>).</li>
+        <li>The page's index is <code>ActivityIndex</code>. It holds its own <code>CityStore</code> (<code>src/lib/timeline/activity.ts:36-37</code>), applies each update (<code>:46-53</code>) and exposes only <code>recent(after, through, limit)</code> and the test seam <code>sorts</code> (<code>:55-92</code>).</li>
+        <li><code>ActivityEvent</code> carries <code>row</code>, <code>kind</code>, <code>day</code>, <code>homes</code>, <code>lngLat</code> and <code>policy</code> (<code>src/lib/timeline/activity.ts:16-24</code>).</li>
+        <li><code>TimelineMode</code> makes one <code>ActivityIndex</code> (<code>src/lib/timeline/TimelineMode.svelte:530</code>) and feeds it every revision 0 and every update with <code>city</code>, before the map, bumping <code>cityVersion</code> (<code>src/lib/timeline/TimelineMode.svelte:1113-1126</code>).</li>
+      </ul>
+    </section>
+
+    <section id="sec-found-docs">
+      <h3>The documents</h3>
+      <ul>
+        <li><code>docs/dev/map-interfaces.md:136-152</code> is the feed's section. Line 142 lists the per-row arrays, line 143 states 27 bytes a row, five buffers and 810,000 bytes for 30,000 projects, line 146 the validation, and line 150 the second copy "27 bytes a row".</li>
+        <li><code>docs/dev/map-stream.md:33</code> says a rewind resends a row whose marker differs in "a day, the homes or the flags".</li>
+      </ul>
+    </section>
+
+    <section id="sec-found-fixtures">
+      <h3>Code that builds a <code>CityDelta</code> by hand</h3>
+      <p>Found with <code>rg -n "CityDelta" src e2e scripts</code> and <code>rg -n "homes: (new )?Uint16Array|Uint16Array.from" src</code>. Nothing under <code>e2e/</code> or <code>scripts/</code> builds one.</p>
+      <table id="tbl-fixtures">
+        <caption>Hand-built deltas</caption>
+        <thead>
+          <tr><th scope="col">File</th><th scope="col">Where</th><th scope="col">In this unit's write set</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row"><code>src/lib/sim/world/city-feed.ts</code></th><td><code>deltaOf</code>, <code>:114-139</code></td><td>Yes</td></tr>
+          <tr><th scope="row"><code>src/lib/map/city-delta.spec.ts</code></th><td><code>deltaOf</code> <code>:6-15</code>, the malformed table <code>:37-42</code>, the shared buffer <code>:84-97</code></td><td>Yes</td></tr>
+          <tr><th scope="row"><code>src/lib/map/timelapse/city.spec.ts</code></th><td><code>delta</code>, <code>:26-35</code></td><td>Yes</td></tr>
+          <tr><th scope="row"><code>src/lib/timeline/activity.spec.ts</code></th><td><code>delta</code>, <code>:17-26</code></td><td>Yes</td></tr>
+          <tr><th scope="row"><code>src/lib/sim/world/city-feed.spec.ts</code></th><td><code>rowsOf</code>, <code>:113-125</code>, reads only</td><td>Yes</td></tr>
+          <tr><th scope="row"><code>src/lib/timeline/TimelineMode.svelte.spec.ts</code></th><td><code>:3598-3616</code></td><td>No: <code>game-sim</code></td></tr>
+          <tr><th scope="row"><code>src/lib/map/SimMap.timeline.svelte.spec.ts</code></th><td><code>:343-357</code></td><td>No: <code>map-run</code></td></tr>
+          <tr><th scope="row"><code>src/lib/map/timeline-controller.spec.ts</code></th><td><code>cityDelta</code>, <code>:1055-1065</code></td><td>No: no owner</td></tr>
+          <tr><th scope="row"><code>src/lib/map/test/synthetic-timeline.ts</code></th><td><code>markers</code> <code>:76-83</code>, <code>mark</code> <code>:114-129</code></td><td>No: no owner</td></tr>
+          <tr><th scope="row"><code>src/lib/sim/world/test/map-stream-run.ts</code></th><td><code>CityMarker</code> and <code>markersOf</code>, <code>:123-150</code>, reads only</td><td>No: no owner</td></tr>
+          <tr><th scope="row"><code>src/lib/sim/world/host.spec.ts</code></th><td>the transfer check, <code>:580</code>, reads only</td><td>No: no owner</td></tr>
+        </tbody>
+      </table>
+    </section>
+  </section>
+
+  <section id="sec-design">
+    <h2>Design</h2>
+
+    <section id="sec-design-value">
+      <h3>The value of <code>existing</code></h3>
+      <p>A marker's <code>existing</code> is exactly what the series takes off <code>completedNet</code> for that row by the marker's day.</p>
+      <pre><code data-lang="ts">// in markerOf, after homes, with s = scheduleAt(world, statics, row, day) not null
+const built = s.entered.construction;
+if (built !== undefined &amp;&amp; built > statics.asOf) {
+  m[EXISTING] = Math.min(MAX_HOMES, Math.max(0, s.existingUnits));
+}</code></pre>
+      <ul>
+        <li>The source is <code>Schedule.existingUnits</code> from <code>scheduleAt</code>, which is the world's column <code>existing</code>. The feed reads no other column.</li>
+        <li>A row that entered construction after <code>statics.asOf</code>, on or before the marker's day, carries its existing homes.</li>
+        <li>A row that entered construction on or before <code>statics.asOf</code> carries 0. Its homes were replaced before today, and the goal counts its full units.</li>
+        <li>A row that has not entered construction by the marker's day carries 0.</li>
+        <li>A row that has not begun (<code>scheduleAt</code> is null) carries 0, as <code>homes</code> does.</li>
+        <li>The value is capped at 65,535 and a value below 0 is sent as 0, as <code>homes</code> is.</li>
+        <li>An exited row that entered construction after <code>asOf</code> keeps its <code>existing</code>: the series took those homes off too.</li>
+        <li>With no cap reached, for the rows that have a marker, at any day <code>D</code> the feed reads: the sum of <code>homes</code> over markers completed on or before <code>D</code>, less the sum of <code>existing</code> over every marker, equals those rows' share of <code>completedNet</code> at <code>D</code>.</li>
+        <li>For a completed marker, <code>homes - existing</code> is the row's whole effect on the goal's measure, which is R1's <code>worth</code>.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-layout">
+      <h3>The marker's layout in <code>city-feed.ts</code></h3>
+      <pre><code data-lang="ts">/** Values of one marker in a row of `Marker`'s layout (float32 as sent). */
+const WIDTH = 8;
+const LNG = 0;
+const LAT = 1;
+const DAYS = 2; // approved, started, completed: DAYS + CITY_DAY.*
+const HOMES = 5;
+const EXISTING = 6;
+const FLAGS = 7;</code></pre>
+      <ul>
+        <li><code>sameMarker</code> keeps comparing all <code>WIDTH</code> values, so a marker that differs only in <code>existing</code> is sent by <code>take</code> and touched by <code>rewind</code>.</li>
+        <li><code>deltaOf</code> makes <code>existing: new Uint16Array(k)</code> between <code>homes</code> and <code>flags</code> and writes <code>d.existing[i] = m[EXISTING]</code>.</li>
+        <li>The file's head comment names the field: "the homes the project replaces after the dataset date (0 until its construction starts after it; capped at 65,535)".</li>
+        <li>Nothing runs per world step but <code>touch</code>, as today. The value is read at flush with the rest of the marker.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-type">
+      <h3>The type</h3>
+      <pre><code data-lang="ts">// src/lib/map/types.ts, inside CityDelta, after homes
+  homes: Uint16Array; // per changed row: the final revision's units, capped at 65535
+  /** Per changed row: the homes the project replaces after the dataset date, capped at 65535. 0 until it enters construction, and when it entered on or before the dataset date. */
+  existing: Uint16Array;
+  flags: Uint8Array; // per changed row: SLOT_FLAG bits</code></pre>
+      <ul>
+        <li>The field is required. The <code>contracts</code> unit's optional <code>existing?</code> becomes <code>existing</code>.</li>
+        <li>The doc comment above <code>CityDelta</code> is unchanged.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-wire">
+      <h3>The wire: bytes, validation, transfer</h3>
+      <pre><code data-lang="ts">// src/lib/map/city-delta.ts
+/** Bytes a changed row costs: row 4, lngLat 8, days 12, homes 2, existing 2, flags 1. */
+export const CITY_DELTA_BYTES_PER_ROW = 29;
+
+// in validateCityDelta, before the widths
+if (d.existing === undefined) throw new RangeError('CityDelta: existing is missing');
+// the widths, in this order
+['lngLat', d.lngLat, 2],
+['days', d.days, 3],
+['homes', d.homes, 1],
+['existing', d.existing, 1],
+['flags', d.flags, 1]
+
+/** The six buffers, each once. */
+export function cityTransferables(d: CityDelta): ArrayBuffer[];
+// iterates [d.row, d.lngLat, d.days, d.homes, d.existing, d.flags]</code></pre>
+      <ul>
+        <li>A row is 29 bytes. 30,000 projects in a revision 0 or a resync are 870,000 bytes.</li>
+        <li><code>validateCityDelta</code> throws <code>RangeError</code> when <code>existing</code> is absent, with the message <code>CityDelta: existing is missing</code>.</li>
+        <li>It throws <code>RangeError</code> when <code>existing.length</code> is not the row count, with the message the width loop gives: <code>CityDelta: existing has N entries, not K × 1</code>.</li>
+        <li>It checks no value of <code>existing</code>: every <code>Uint16Array</code> value is a valid count.</li>
+        <li>The validation's doc comment adds <code>existing</code> absent to the list of what throws.</li>
+        <li><code>cityTransferables</code> lists six buffers, a shared one once. The runner's transfer list follows with no change to <code>runner.ts</code>.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-store">
+      <h3>The map's <code>CityStore</code></h3>
+      <pre><code data-lang="ts">// src/lib/map/timelapse/city.ts
+#existing = new Uint16Array(0);
+
+/** Per row: the homes the project replaces (CityDelta.existing). A view, valid until the next `apply` or `clear`. */
+get existing(): Uint16Array;</code></pre>
+      <ul>
+        <li><code>apply</code> writes <code>this.#existing[r] = d.existing[i]</code> for each row, beside <code>homes</code>.</li>
+        <li><code>#reserve</code> grows <code>#existing</code> with the others, keeping the values below the old capacity.</li>
+        <li><code>clear</code> and <code>#forget</code> are unchanged: a row's value is read only while <code>has</code> is set.</li>
+        <li>A malformed delta still throws before anything is written, so <code>existing</code> stays as it was with the rest.</li>
+        <li>The map's controller is unchanged. Its store keeps <code>existing</code> because it is a <code>CityStore</code>; nothing on the map reads it.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-index">
+      <h3>The page's index and its accessor</h3>
+      <pre><code data-lang="ts">// src/lib/timeline/activity.ts
+
+/** One marker the index holds, for a reader that wants every project. */
+export interface CityMarkerRow {
+  row: number;
+  lngLat: [number, number];
+  /** The completed day; NaN when the project has none (yet). */
+  completed: Day;
+  /** The final revision's units, capped at 65,535. */
+  homes: number;
+  /** The homes it replaces after the dataset date (CityDelta.existing). */
+  existing: number;
+}
+
+export class ActivityIndex {
+  // every member it has today, and:
+  /** Every marker held, ascending by row. A new array on each call. Never sorts. */
+  markers(): CityMarkerRow[];
+}</code></pre>
+      <dl>
+        <dt><code>markers()</code></dt><dd>The method the <code>game-sim</code> unit reads to build R1's <code>Marker</code> objects.</dd>
+      </dl>
+      <ul>
+        <li>It lists every row below the store's <code>length</code> whose <code>has</code> is set, in ascending row order, completed or not.</li>
+        <li><code>completed</code> is <code>days[3 × row + CITY_DAY.completed]</code>, NaN as stored.</li>
+        <li><code>lngLat</code> is a new two-element array per item.</li>
+        <li>It reflects every update applied so far, including a <code>from</code> that forgot rows.</li>
+        <li>It does not change <code>sorts</code> and does not mark the order stale.</li>
+        <li>Its cost is one pass over the store's rows: about 30,000 objects on the live city. A caller reads it once per run, not per frame.</li>
+        <li><code>ActivityEvent</code>, <code>recent</code> and <code>apply</code> are unchanged. Activity's list keeps showing gross homes.</li>
+      </ul>
+      <p>The <code>game-sim</code> unit maps one item to R1's <code>Marker</code> as follows. The mapping is that unit's code, shown here so both sides agree.</p>
+      <pre><code data-lang="ts">const marker = (m: CityMarkerRow): Marker => ({
+  row: m.row,
+  lng: m.lngLat[0],
+  lat: m.lngLat[1],
+  completed: m.completed,
+  homes: m.homes,
+  existing: m.existing
+});</code></pre>
+    </section>
+
+    <section id="sec-design-debug">
+      <h3>The debug snapshot</h3>
+      <ul>
+        <li>The map's debug snapshot is unchanged: <code>cityMarkers</code> and <code>cityFlagged</code> stay, and no field is added.</li>
+        <li>The tests in <a href="#sec-tests">Tests</a> read <code>existing</code> through <code>CityStore</code> and <code>ActivityIndex.markers()</code> instead.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-doc">
+      <h3>The document</h3>
+      <p>In <code>docs/dev/map-interfaces.md</code>, "The citywide feed", the third bullet becomes:</p>
+      <pre><code data-lang="md">- Per changed row, ascending, each below `rows`: `row` (`Int32Array`), `lngLat` (`Float32Array`, 2: the anchor lot's label point, about 0.7 m at San Francisco), `days` (`Float32Array`, 3, indexed by `CITY_DAY`: `approved` = the first of entitled and permitIssued, `started` = construction, `completed` = a complete end; `NaN` = not (yet)), `homes` (`Uint16Array`: the final revision's units, capped at 65,535, below 0 sent as 0), `existing` (`Uint16Array`: the homes the project replaces, as the score series takes them off: the row's existing homes once it enters construction after the dataset date, else 0; capped at 65,535, below 0 sent as 0), `flags` (`Uint8Array`: `SLOT_FLAG` bits, at most 3).
+- For a completed marker, `homes - existing` is the project's net effect on the goal's measure (`completedNet`). Summed over the markers, the completed ones' `homes` less every marker's `existing` is the marked rows' `completedNet` at the same day, short of the caps.</code></pre>
+      <p>The fourth bullet becomes:</p>
+      <pre><code data-lang="md">- 29 bytes a row (`CITY_DELTA_BYTES_PER_ROW`), transferred, not copied (`cityTransferables` lists the six buffers once each). 30,000 projects in a revision 0 or a resync: 870,000 bytes.</code></pre>
+      <p>The validation bullet becomes:</p>
+      <pre><code data-lang="md">- `validateCityDelta` (`src/lib/map/city-delta.ts`) throws `RangeError` on a missing `existing`, a wrong length, a row not ascending or at or past `rows`, a bad `rows`, a `from` that is not an integer in [0, `rows`], or a flag above 3.</code></pre>
+      <p>In the Consumers paragraph, "That is a second copy of the markers, 27 bytes a row." becomes:</p>
+      <pre><code data-lang="md">That is a second copy of the markers, 29 bytes a row. Besides `recent`, `ActivityIndex.markers()` lists every marker held, ascending by row, with its label point, completed day, `homes` and `existing`: the game's run reads it to place drops.</code></pre>
+    </section>
+  </section>
+
+  <section id="sec-files">
+    <h2>Files</h2>
+
+    <section id="sec-files-write">
+      <h3>Written</h3>
+      <ul>
+        <li><code>src/lib/sim/world/city-feed.ts</code>: the layout, <code>markerOf</code>, <code>deltaOf</code>, the head comment.</li>
+        <li><code>src/lib/sim/world/city-feed.spec.ts</code>: <code>rowsOf</code> gains <code>existing</code>; the expectation at <code>:225-235</code> gains <code>existing: 0</code>; the new tests.</li>
+        <li><code>src/lib/map/types.ts</code>: <code>CityDelta.existing</code> made required, with its comment. No other line.</li>
+        <li><code>src/lib/map/city-delta.ts</code>: the byte constant, the validation, the transfer list, their comments.</li>
+        <li><code>src/lib/map/city-delta.spec.ts</code>: <code>deltaOf</code> and the shared-buffer delta gain <code>existing</code>; the byte test sums six arrays; the malformed table gains an <code>existing</code> row; the transfer test counts six; the new tests.</li>
+        <li><code>src/lib/map/timelapse/city.ts</code>: the array, its getter, <code>apply</code>, <code>#reserve</code>.</li>
+        <li><code>src/lib/map/timelapse/city.spec.ts</code>: <code>M</code> gains <code>existing?: number</code> (default 0) and <code>delta</code> fills it; the new tests.</li>
+        <li><code>src/lib/timeline/activity.ts</code>: <code>CityMarkerRow</code> and <code>markers()</code>.</li>
+        <li><code>src/lib/timeline/activity.spec.ts</code>: <code>M</code> gains <code>existing?: number</code> (default 0) and <code>delta</code> fills it; the new tests.</li>
+        <li><code>docs/dev/map-interfaces.md</code>: the feed's section only, as in <a href="#sec-design-doc">The document</a>.</li>
+      </ul>
+      <p>Created: none. Deleted: none.</p>
+    </section>
+
+    <section id="sec-files-outside">
+      <h3>Needed outside the write set (reported, not taken)</h3>
+      <p>Once <code>existing</code> is required, these build a <code>CityDelta</code> without it and fail the type check, and <code>validateCityDelta</code> throws on them. Each needs one line. This unit does not take them; the change for each is stated so whoever is given it makes the same one.</p>
+      <ul>
+        <li><code>src/lib/timeline/TimelineMode.svelte.spec.ts:3608</code> (<code>game-sim</code>): add <code>existing: new Uint16Array(k),</code> after <code>homes</code>.</li>
+        <li><code>src/lib/map/SimMap.timeline.svelte.spec.ts:355</code> (<code>map-run</code>): add <code>existing: Uint16Array.from([0, 0]),</code> after <code>homes</code>.</li>
+        <li><code>src/lib/map/timeline-controller.spec.ts:1062</code> (no owner): add <code>existing: new Uint16Array(ms.length),</code> after <code>homes</code>.</li>
+        <li><code>src/lib/map/test/synthetic-timeline.ts:81</code> (no owner): add <code>existing: new Uint16Array(nProjects),</code> after <code>homes</code>. Every synthetic marker carries 0: the synthetic city has no dataset date to test construction against.</li>
+      </ul>
+      <p>Wanted, not needed to build:</p>
+      <ul>
+        <li><code>src/lib/sim/world/test/map-stream-run.ts:123-150</code>: <code>CityMarker</code> and <code>markersOf</code> gain <code>existing</code>, so the rewind specs that compare the page's markers with a snapshot (<code>src/lib/sim/world/map-stream.rewind.spec.ts:448</code>, <code>:467</code>, <code>src/lib/sim/world/city-feed.spec.ts:331</code>, <code>:357</code>) cover the field.</li>
+        <li><code>src/lib/sim/world/host.spec.ts:580</code>: the transfer check lists <code>city.existing</code> too.</li>
+        <li><code>docs/dev/map-stream.md:33</code>: "(a day, the homes or the flags)" becomes "(a day, the homes, the existing homes or the flags)".</li>
+      </ul>
+    </section>
+  </section>
+
+  <section id="sec-tests">
+    <h2>Tests</h2>
+    <p>All are unit tests in the colocated <code>.spec.ts</code> files. Every test calls <code>expect</code>.</p>
+
+    <section id="sec-tests-feed">
+      <h3><code>src/lib/sim/world/city-feed.spec.ts</code></h3>
+      <ul>
+        <li>A row that entered construction after <code>ASOF</code> carries its <code>existing</code> column; read on a day before its construction it carries 0.</li>
+        <li>A row whose construction day equals <code>ASOF</code>, and one before it, carry 0 with a non-zero <code>existing</code> column.</li>
+        <li>A row that has not begun carries 0, beside <code>homes</code> 0.</li>
+        <li><code>existing</code> above 65,535 is sent as 65,535; a negative column value is sent as 0.</li>
+        <li>An exited row that entered construction after <code>ASOF</code> keeps its <code>existing</code>.</li>
+        <li>After a snapshot, changing only a row's <code>existing</code> column and touching it makes <code>take</code> send that row with the new value.</li>
+        <li>A rewind to a world where only a row's <code>existing</code> differs touches that row, and the next <code>take</code> sends it.</li>
+        <li>On the fixture world stepped to the horizon (the existing test at <code>:431</code>), each marker's <code>existing</code> is <code>min(65535, max(0, s.existingUnits))</code> when <code>s.entered.construction > statics.asOf</code>, else 0, with <code>s = scheduleAt(...)</code>.</li>
+        <li>The series agrees. On fixture-0, a <code>WorldSeries</code> fed by <code>feedWorld</code> (<code>src/lib/sim/world/score/test/feed.ts</code>, mode <code>'live'</code>, seed 1, through <code>horizonMonth(input.asOf)</code>) with <code>testStatics(input, W)</code>, and a feed whose <code>anchorOf</code> gives every non-master row a T11 lot (its <code>cellAnchorParcel</code>, else the first id of T11). Take <code>i = lastIndex - 1</code> and the day before <code>months[i + 1]</code>. At that day, the snapshot's sum of <code>homes</code> over completed markers less its sum of <code>existing</code> equals <code>series.rows(0, lastIndex)[i].completedNet</code>. The test also asserts that some marker has <code>existing > 0</code> and none is at 65,535.</li>
+      </ul>
+    </section>
+
+    <section id="sec-tests-wire">
+      <h3><code>src/lib/map/city-delta.spec.ts</code></h3>
+      <ul>
+        <li>The six arrays of a one-row delta sum to <code>CITY_DELTA_BYTES_PER_ROW</code>, which is 29.</li>
+        <li>An <code>existing</code> of the wrong length throws <code>RangeError</code>.</li>
+        <li>A delta with no <code>existing</code> throws <code>RangeError</code> with the message <code>CityDelta: existing is missing</code>.</li>
+        <li><code>cityTransferables</code> lists the six buffers, each once; a buffer shared by two fields is listed once.</li>
+      </ul>
+    </section>
+
+    <section id="sec-tests-store">
+      <h3><code>src/lib/map/timelapse/city.spec.ts</code></h3>
+      <ul>
+        <li>A replace stores each row's <code>existing</code> at its row.</li>
+        <li>A later apply overwrites a row's <code>existing</code> and leaves the other rows' as they were.</li>
+        <li>Growing the store past its capacity keeps the <code>existing</code> already held.</li>
+        <li>A malformed delta (an <code>existing</code> of the wrong length) throws and leaves <code>existing</code> as it was.</li>
+      </ul>
+    </section>
+
+    <section id="sec-tests-index">
+      <h3><code>src/lib/timeline/activity.spec.ts</code></h3>
+      <ul>
+        <li><code>markers()</code> lists every held row in ascending row order, with its <code>lngLat</code>, <code>completed</code> (NaN when not complete), <code>homes</code> and <code>existing</code>.</li>
+        <li>After a delta with <code>from</code>, <code>markers()</code> omits the forgotten rows; after a revision 0 without <code>city</code>, it is empty.</li>
+        <li>Calling <code>markers()</code> leaves <code>sorts</code> unchanged, and a <code>recent</code> read after it sorts no more than it would without it.</li>
+        <li>Two calls return different arrays with equal contents.</li>
+      </ul>
+    </section>
+  </section>
+
+  <section id="sec-decisions">
+    <h2>Decisions</h2>
+    <ul>
+      <li><strong>The value follows the series, not the lot.</strong> <code>existing</code> is the row's existing homes only once it enters construction after the dataset date, because that is exactly what <code>completedNet</code> takes off; then <code>homes - existing</code> is the row's effect on the goal, as call 2 asks.</li>
+      <li><strong>Read through <code>scheduleAt</code>.</strong> <code>Schedule.existingUnits</code> is the column the series reads, and reading it from the schedule keeps the marker on the one read the cells are packed from.</li>
+      <li><strong>Layout: <code>EXISTING</code> at 6, <code>FLAGS</code> moves to 7.</strong> The values stay in the wire's field order.</li>
+      <li><strong>Cap and clamp as <code>homes</code>.</strong> Same type, same rule, so the two subtract cleanly.</li>
+      <li><strong>An absent <code>existing</code> throws <code>RangeError</code>.</strong> A delta built to the contracts unit's optional shape then fails with the feed's own error, not a <code>TypeError</code>.</li>
+      <li><strong>The debug snapshot is unchanged.</strong> Its counts do not depend on the new field, and the controller is outside this unit's write set.</li>
+      <li><strong>The accessor is <code>ActivityIndex.markers(): CityMarkerRow[]</code>.</strong> An array of every held marker is the simplest thing <code>planDrops</code> can iterate, and filtering by completed day belongs to R1.</li>
+      <li><strong>The accessor's item is not R1's <code>Marker</code>.</strong> <code>src/lib/timeline</code> does not import the game; <code>game-sim</code> maps it in one line.</li>
+      <li><strong><code>ActivityEvent</code> is unchanged.</strong> Activity's text shows gross homes today, and changing it is not asked for.</li>
+      <li><strong>The synthetic timeline carries 0.</strong> It has no dataset date to compare construction with.</li>
+    </ul>
+  </section>
+
+  <section id="sec-out-of-scope">
+    <h2>Out of scope</h2>
+    <ul>
+      <li>Building R1's <code>Marker</code> objects from <code>markers()</code>, and when to read it: <code>game-sim</code>.</li>
+      <li><code>planDrops</code>, a drop's <code>worth</code>, collecting: <code>run-play</code>.</li>
+      <li><code>TimelineMode</code>, its <code>cityVersion</code> and Activity's text: <code>game-sim</code>.</li>
+      <li>The <code>CityDelta.existing?</code> stub: <code>contracts</code>.</li>
+      <li><code>SimMapHandle</code> and the handle's lines of <code>src/lib/map/types.ts</code>: <code>map-run</code>.</li>
+      <li>The score series and the chunk, including homes waiting for money: <code>money-wait</code>.</li>
+      <li>Income tiers per project in the feed: deferred to P10's round (call 3).</li>
+      <li>The map's controller and its debug snapshot: unchanged.</li>
+    </ul>
+  </section>
+</article>

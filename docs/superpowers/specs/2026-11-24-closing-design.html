@@ -1,0 +1,1160 @@
+<article>
+  <header>
+    <h1>Closing: the journey, the reach check, the run bench and the documents</h1>
+    <p>Proves the incremental loop end to end on the merged tree, asks the reach check its two questions, measures a run with drops, and makes every current document true to the game and its new name.</p>
+  </header>
+
+  <section id="sec-purpose">
+    <h2>Purpose</h2>
+    <p>This unit runs last, after every other unit of the <a href="../design/2026-11-24-2120-incremental-loop.html">design</a> has merged into the integration branch. It produces no interface row and needs every row. Its job is to prove the package as a whole and to tell the next developer what the game now is.</p>
+    <ul>
+      <li>The journeys: a new visitor paints to the room goal, starts, runs with "Collect for me", reads the tally, buys a node, runs again and takes the next goal; a keyboard-only player does the same with the ring; a player at the last rung reaches the ending.</li>
+      <li>Every existing e2e spec made true to one address, no header steps, no levels, no Remix and the name "SF Housing".</li>
+      <li>The reach check asks two questions on a built dataset: current law meets rung 0, and the full tree's document meets the last rung.</li>
+      <li>One bench case: a run on the citywide view with drops and a moving pointer, held to the map's pass bar.</li>
+      <li>The game's developer document rewritten, and <code>CLAUDE.md</code>, <code>README.md</code> and the other current documents that carry the old name made true.</li>
+      <li>The accessibility checklist run for the game's page in each of its states.</li>
+    </ul>
+    <p>It carries these rulings and calls:</p>
+    <ul>
+      <li>P1: the journeys open the workshop and come back, so the forecasting tool is reachable.</li>
+      <li>P5 and call 6: one address; <code>/sim</code> redirects to <code>/</code>; the header has no steps.</li>
+      <li>P8 and call 15: the name "SF Housing" in the documents and the tests that expect it.</li>
+      <li>P9 and call 17: units come only from collected drops; "Collect for me" has no penalty.</li>
+      <li>P11: the brush is the opening only.</li>
+      <li>P13: no Remix in any test or document.</li>
+      <li>P15: no test reads or writes a five-level save.</li>
+      <li>D1 and the source model's "What changes in the app": the reach check's two questions, run before every dataset upload.</li>
+      <li>Call 9: an e2e spec that seeds no game runs the open game, which is the whole tool.</li>
+      <li>R7 and the global constraints: one future, timing measured only on a quiet machine, page text short.</li>
+    </ul>
+  </section>
+
+  <section id="sec-interfaces">
+    <h2>Interfaces</h2>
+    <p>This unit produces no row. It needs every row: the whole interface table is copied below from the design with no change. To keep this file readable, only the contracts the journeys, the bench and the reach check bind to are copied: G1, G6, G7, M1 and R1. The other rows' contracts (G2, G3, G4, G5, G8, E1, E2, U1) are in the <a href="../design/2026-11-24-2120-incremental-loop.html#sec-interfaces">design</a>, and a change to any row is a change to the design.</p>
+    <table id="tbl-interfaces">
+      <caption>Interface table</caption>
+      <thead>
+        <tr><th scope="col">Row</th><th scope="col">Owner</th><th scope="col">Layer</th><th scope="col">Summary</th><th scope="col">Contract</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">G1</th><td><code>game-core</code></td><td>Model commitment</td><td>The game's state and the saved game</td><td><a href="#sec-if-g1">G1</a></td></tr>
+        <tr><th scope="row">G2</th><td><code>game-core</code></td><td>Model commitment</td><td>Units by kind: balances, prices, spending</td><td><a href="#sec-if-g2">G2</a></td></tr>
+        <tr><th scope="row">G3</th><td><code>tree-catalogue</code></td><td>Model commitment</td><td>The tree: nodes, what is shown, buying</td><td><a href="#sec-if-g3">G3</a></td></tr>
+        <tr><th scope="row">G4</th><td><code>game-core</code></td><td>Model commitment</td><td>Limits from what is bought; whether a policy runs</td><td><a href="#sec-if-g4">G4</a></td></tr>
+        <tr><th scope="row">G5</th><td><code>tree-catalogue</code></td><td>Decomposition choice</td><td>Applying a grant to the policy document</td><td><a href="#sec-if-g5">G5</a></td></tr>
+        <tr><th scope="row">G6</th><td><code>game-core</code></td><td>Model commitment</td><td>The ladder, side goals, a run's result, settling</td><td><a href="#sec-if-g6">G6</a></td></tr>
+        <tr><th scope="row">G7</th><td><code>game-save</code></td><td>Decomposition choice</td><td>The browser's game store</td><td><a href="#sec-if-g7">G7</a></td></tr>
+        <tr><th scope="row">G8</th><td><code>game-save</code></td><td>Decomposition choice</td><td>The save API and the <code>game_save</code> table</td><td><a href="#sec-if-g8">G8</a></td></tr>
+        <tr><th scope="row">E1</th><td><code>city-net</code></td><td>Decomposition choice</td><td>The homes a project replaces, in the city feed</td><td><a href="#sec-if-e1">E1</a></td></tr>
+        <tr><th scope="row">E2</th><td><code>money-wait</code></td><td>Decomposition choice</td><td>Homes waiting for money, by month</td><td><a href="#sec-if-e2">E2</a></td></tr>
+        <tr><th scope="row">M1</th><td><code>map-run</code></td><td>Decomposition choice</td><td>The map's run view</td><td><a href="#sec-if-m1">M1</a></td></tr>
+        <tr><th scope="row">R1</th><td><code>run-play</code></td><td>Model commitment</td><td>Drops, collecting, sound</td><td><a href="#sec-if-r1">R1</a></td></tr>
+        <tr><th scope="row">U1</th><td><code>tally-tree</code></td><td>Decomposition choice</td><td>The game's cards, the tree screen, the header parts</td><td><a href="#sec-if-u1">U1</a></td></tr>
+      </tbody>
+    </table>
+
+    <section id="sec-if-g1">
+      <h3>G1 The game's state and the saved game</h3>
+      <pre><code data-lang="ts">// src/lib/game/state.ts
+import type { Day } from '$lib/timelapse/time';
+import type { RunResult } from './run-result';
+
+export type UnitKind = 'home';
+export const UNIT_KINDS: readonly UnitKind[] = ['home'];
+export type Units = Partial&lt;Record&lt;UnitKind, number&gt;&gt;;
+export type NodeId = string;
+
+export interface MetRung {
+  rung: number;
+  reachedOn: Day;
+  datasetVersion: string;
+  at: string;
+}
+
+export interface GameState {
+  v: 2;
+  phase: 'opening' | 'runs';
+  firstWinAt: string | null;
+  bought: Record&lt;NodeId, number&gt;;
+  units: Units;
+  rung: number;
+  met: MetRung[];
+  side: Record&lt;string, string&gt;;
+  runs: number;
+  last: RunResult | null;
+}
+
+export const NEW_GAME: GameState;
+
+// src/lib/game/save-shape.ts
+export interface GameSave {
+  v: 2;
+  id: string;
+  name: string;
+  nameIsDefault: boolean;
+  state: GameState;
+  plan: string | null;
+  policy: string | null;
+  savedAt: string;
+}
+
+export type SaveEntry = Pick&lt;GameSave, 'id' | 'name' | 'nameIsDefault' | 'savedAt'&gt; &amp;
+  Pick&lt;GameState, 'phase' | 'rung'&gt;;
+
+export function parseGameSave(json: unknown): GameSave | null;</code></pre>
+      <dl>
+        <dt><code>phase</code></dt><dd><code>'opening'</code> until the first run starts.</dd>
+        <dt><code>firstWinAt</code></dt><dd>ISO time the room goal was first met. The server makes the account on the first save that has it (D7).</dd>
+        <dt><code>bought</code></dt><dd>The level bought of each node, 1 or more. A node not bought has no entry.</dd>
+        <dt><code>units</code></dt><dd>The balance to spend.</dd>
+        <dt><code>rung</code></dt><dd>The index in the ladder of the deadline in play.</dd>
+        <dt><code>met</code></dt><dd>One entry per rung met, ascending by rung, each recorded once.</dd>
+        <dt><code>side</code></dt><dd>Side goal id to the ISO time it was first met.</dd>
+        <dt><code>last</code></dt><dd>The latest run's result, which the header shows between runs.</dd>
+      </dl>
+      <ul>
+        <li><code>NEW_GAME</code> is the opening with nothing bought, no units, rung 0 and no runs.</li>
+        <li><code>parseGameSave</code> returns null unless <code>v</code> is 2 at both levels (P15).</li>
+        <li>The result is rebuilt from the known fields. An unknown field is dropped.</li>
+        <li>A <code>bought</code> entry for a node the catalogue does not have is dropped. A level above the node's last is lowered to it.</li>
+        <li>Unit amounts and <code>runs</code> are whole numbers of 0 or more.</li>
+        <li><code>plan</code> and <code>policy</code> stay opaque text, as they are today.</li>
+      </ul>
+      <p><strong>Removed:</strong> <code>Level</code>, <code>Progress</code>, <code>Banked</code>, <code>Bar</code>, <code>barOf</code>, <code>roundComplete</code>, <code>levelUp</code>, <code>standing</code>, <code>beats</code>.</p>
+    </section>
+
+    <section id="sec-if-g6">
+      <h3>G6 The ladder, side goals and a run's result</h3>
+      <pre><code data-lang="ts">// src/lib/game/catalogue/ladder-years.ts
+export const LADDER_YEARS: readonly number[];
+
+// src/lib/game/ladder.ts
+import type { Goal } from '$lib/goal/goal';
+import type { Day } from '$lib/timelapse/time';
+import type { GameState, Units } from './state';
+
+export interface Rung {
+  deadline: Day;
+  label: string;
+}
+
+export const RUNGS: number;
+export const RUNG_LUMP: Units;
+
+export function ladder(asOf: Day): Rung[];
+export function goalAt(asOf: Day, rung: number, amount?: number): Goal;
+export function finished(s: GameState): boolean;
+export function takeNext(s: GameState): GameState;
+
+// src/lib/game/run-result.ts
+import type { TimelineView } from '$lib/sim/world/score/types';
+import type { Stage } from '$lib/timelapse/types';
+
+export interface RunTake {
+  dropped: Units;
+  collected: Units;
+}
+
+export interface RunReading {
+  homes: number;
+  reachedOn: Day | null;
+  stages: Record&lt;Exclude&lt;Stage, 'complete'&gt;, number&gt;;
+  waitingMoney: number | null;
+}
+
+export interface RunResult extends RunTake, RunReading {
+  rung: number;
+  amount: number;
+  datasetVersion: string;
+  at: string;
+  lump: Units | null;
+  side: { id: string; reward: Units }[];
+}
+
+export function readRun(view: TimelineView, goal: Goal): RunReading | null;
+export function resultOf(
+  s: GameState,
+  reading: RunReading,
+  take: RunTake,
+  input: SideInput,
+  meta: { amount: number; datasetVersion: string; at: string }
+): RunResult;
+export function settle(s: GameState, r: RunResult): GameState;
+
+// src/lib/game/side-goals.ts
+export interface SideInput {
+  view: TimelineView;
+  index: number;
+  take: RunTake;
+}
+
+export interface SideGoal {
+  id: string;
+  label: string;
+  ring: number;
+  reward: Units;
+  read(i: SideInput): { value: number; target: number } | null;
+}
+
+export const SIDE_GOALS: readonly SideGoal[];
+export const SIDE_SHOWN = 3;
+export function sideShown(s: GameState, goals?: readonly SideGoal[]): SideGoal[];</code></pre>
+      <dl>
+        <dt><code>LADDER_YEARS</code></dt><dd>The deadline years after the window's end, latest first. The measurement in <code>tree-catalogue</code> sets them.</dd>
+        <dt><code>RUNGS</code></dt><dd><code>LADDER_YEARS.length + 1</code>.</dd>
+        <dt><code>homes</code></dt><dd>The goal's measure at the deadline's month.</dd>
+        <dt><code>reachedOn</code></dt><dd>The day the amount was first met at or before the deadline, or null.</dd>
+        <dt><code>stages</code></dt><dd>Homes in each stage short of complete at the deadline's month.</dd>
+        <dt><code>waitingMoney</code></dt><dd>Homes waiting for money at the deadline's month; null when the view has no such series.</dd>
+        <dt><code>lump</code></dt><dd><code>RUNG_LUMP</code> when this run is the first to meet its rung, else null.</dd>
+        <dt><code>index</code></dt><dd>The deadline's month in the view.</dd>
+      </dl>
+      <ul>
+        <li>Rung 0's deadline is <code>defaultGoal(asOf).deadline</code>. Rung <em>k</em> is the last day of December of <code>LADDER_YEARS[k - 1]</code>.</li>
+        <li><code>goalAt</code> is <code>defaultGoal(asOf)</code> with the rung's deadline, and with <code>amount</code> when given.</li>
+        <li><code>readRun</code> returns null while the view does not cover the deadline's month.</li>
+        <li><code>resultOf</code> lists a side goal when it is shown, not yet met, and its <code>value</code> is at least its <code>target</code>.</li>
+        <li><code>settle</code> credits <code>collected</code>, <code>lump</code> and each side reward; records the rung in <code>met</code> when <code>reachedOn</code> is set and the rung is not there; records each side goal; adds 1 to <code>runs</code>; sets <code>last</code>.</li>
+        <li><code>settle</code> never removes a met rung (call 8).</li>
+        <li><code>takeNext</code> moves to the next rung when the rung in play is met and a next one exists. Otherwise it returns the same state.</li>
+        <li><code>finished</code> is true once the last rung is in <code>met</code>.</li>
+        <li><code>sideShown</code> returns the first <code>SIDE_SHOWN</code> goals whose ring is open and which are not met.</li>
+        <li>A side goal's <code>read</code> returns null when the view lacks what it reads.</li>
+      </ul>
+    </section>
+
+    <section id="sec-if-g7">
+      <h3>G7 The browser's game store</h3>
+      <pre><code data-lang="ts">// src/lib/game/store.svelte.ts
+export type StoreChange = { ok: true } | { ok: false; reason: 'full' | 'storage' | 'changed' };
+
+export class GameStore {
+  constructor(opts: { storage: Storage | null; sync: SaveSync; now?: () =&gt; Date });
+  get state(): GameState;
+  get limits(): Limits;
+  get open(): boolean;
+  get saves(): readonly SaveEntry[];
+  get currentId(): string;
+  get sync(): SaveSync;
+  won(): void;
+  startRuns(): StoreChange;
+  buy(id: NodeId): Bought;
+  settle(r: RunResult): StoreChange;
+  takeNext(): StoreChange;
+  touched(): void;
+  beforeLeave(fn: () =&gt; void): () =&gt; void;
+  newGame(): StoreChange;
+  switchTo(id: string): StoreChange;
+  rename(id: string, name: string): void;
+  remove(id: string): StoreChange;
+  read(id: string): GameSave | null;
+  adopt(saves: readonly GameSave[]): StoreChange;
+  rekey(id: string, newId: string): StoreChange;
+}
+
+export function openGame(): GameStore;
+export function provideGame(store: GameStore): void;
+export function useGame(): GameStore;</code></pre>
+      <ul>
+        <li><code>state</code> and <code>limits</code> are reactive. <code>limits</code> is <code>OPEN_LIMITS</code> for the open game, else <code>limitsOf(state)</code>.</li>
+        <li><code>won</code> sets <code>firstWinAt</code> once and writes.</li>
+        <li><code>startRuns</code> sets <code>phase</code> to <code>'runs'</code>. It does nothing while <code>firstWinAt</code> is null.</li>
+        <li><code>buy</code> writes the new state when the purchase is good and returns what <code>buy</code> of G3 returns. A refused write returns <code>{ ok: false, reason: 'short' }</code> and changes nothing.</li>
+        <li>The store does not hold the policy document. The page applies the grant (G5).</li>
+        <li>Each write calls <code>sync.changed(id)</code>, as today.</li>
+        <li>The open game has the last rung met, every node bought and no units; its methods that write do nothing.</li>
+      </ul>
+      <p><strong>Unchanged:</strong> the saved-games methods, <code>touched</code>, <code>beforeLeave</code>, the storage keys, <code>SaveSync</code>. <strong>Removed:</strong> <code>progress</code>, <code>allowed</code>, <code>offer</code>, <code>setOffer</code>, <code>levelUp</code>, <code>remix</code>, <code>Offer</code>.</p>
+    </section>
+
+    <section id="sec-if-m1">
+      <h3>M1 The map's run view</h3>
+      <pre><code data-lang="ts">// src/lib/map/types.ts
+export interface SimMapHandle {
+  // every method it has today, and:
+  setRunView(on: boolean): void;
+}</code></pre>
+      <ul>
+        <li><code>true</code>: the map remembers its camera, jumps to the whole city, flat and north up, and locks.</li>
+        <li>Locked: no drag, wheel, pinch, double click, key or control moves the camera, and the canvas container has <code>touch-action: none</code>.</li>
+        <li>Locked: taps and clicks are not delivered and no tooltip or card shows.</li>
+        <li><code>false</code>: the map unlocks and jumps back to the remembered camera.</li>
+        <li>The jump is not animated.</li>
+        <li>A call with the value already in force does nothing.</li>
+        <li>The state survives a remount of the map, as the pan state does.</li>
+        <li>The fit keeps the city inside the map box less the bottom inset.</li>
+      </ul>
+    </section>
+
+    <section id="sec-if-r1">
+      <h3>R1 Drops, collecting and sound</h3>
+      <pre><code data-lang="ts">// src/lib/game/run/drops.ts
+import type { Day } from '$lib/timelapse/time';
+import type { Hands } from '../limits';
+import type { RunTake } from '../run-result';
+import type { Units } from '../state';
+
+export interface Marker {
+  row: number;
+  lng: number;
+  lat: number;
+  completed: Day;
+  homes: number;
+  existing: number;
+}
+
+export interface Drop {
+  row: number;
+  lng: number;
+  lat: number;
+  day: Day;
+  worth: Units;
+}
+
+export function planDrops(markers: Iterable&lt;Marker&gt;, asOf: Day, to: Day): Drop[];
+
+export interface RunFeed {
+  drops: readonly Drop[];
+  day: Day;
+  running: boolean;
+  project(lng: number, lat: number): { x: number; y: number } | null;
+}
+
+// src/lib/game/run/RunLayer.svelte
+interface RunLayerProps {
+  feed: RunFeed;
+  hands: Hands;
+  collectForMe: boolean;
+  sound: Sound;
+  ontake(t: RunTake): void;
+}
+
+// src/lib/game/run/sound.ts
+export interface Sound {
+  pop(): void;
+  collect(): void;
+  goal(): void;
+  buy(): void;
+}
+export function createSound(muted: () =&gt; boolean): Sound;
+
+// src/lib/game/run/prefs.ts
+export function readCollectForMe(storage: Storage | null): boolean;
+export function writeCollectForMe(storage: Storage | null, on: boolean): void;
+export function readMuted(storage: Storage | null): boolean;
+export function writeMuted(storage: Storage | null, muted: boolean): void;</code></pre>
+      <dl>
+        <dt><code>completed</code></dt><dd>The marker's completed day; <code>NaN</code> when it has none.</dd>
+        <dt><code>worth</code></dt><dd><code>{ home: homes - existing }</code>.</dd>
+        <dt><code>project</code></dt><dd>The point's position in CSS pixels from the map box's top left, or null when it is off the map.</dd>
+        <dt><code>ontake</code></dt><dd>The run's totals so far, sent whenever they change and once when <code>running</code> turns false.</dd>
+      </dl>
+      <ul>
+        <li><code>planDrops</code> returns one drop for each marker completed after <code>asOf</code> and at or before <code>to</code> whose worth is above 0, ascending by day, then by row.</li>
+        <li>A drop appears when <code>feed.day</code> reaches its day and is counted in <code>dropped</code> then.</li>
+        <li>A drop is collected when its projected point is within <code>hands.radiusPx</code> of the ring's centre. It is counted in <code>collected</code> once.</li>
+        <li>A drop not collected is gone <code>hands.lingerMs</code> of wall time after it appeared.</li>
+        <li>With <code>collectForMe</code> or <code>hands.auto</code>, every drop is collected as it appears.</li>
+        <li>The ring's centre is the last pointer position over the map. Arrow keys move it by a fixed step; holding Shift moves it further.</li>
+        <li>The layer is a canvas over the map with <code>pointer-events: none</code>. It listens on the window.</li>
+        <li>Nothing the layer does reaches the worker or the policy document (P9).</li>
+        <li>With reduced motion, drops and counts appear and disappear without movement.</li>
+        <li>Nothing flashes more than three times a second.</li>
+        <li>A screen reader is told the run's totals at its end, never each drop.</li>
+        <li><code>createSound</code> makes its sounds with the Web Audio API and loads no file. It makes no sound while <code>muted()</code> is true or before a user gesture.</li>
+      </ul>
+    </section>
+  </section>
+
+  <section id="sec-global-constraints">
+    <h2>Global constraints</h2>
+    <ul>
+      <li>One future: the same policy document always gives the same forecast. No game state reaches the worker except through the policy document.</li>
+      <li>No file the dataset version hashes is changed: <code>pipeline</code>, <code>src/lib/{data,generator,timelapse,scoreboard}</code>, <code>src/lib/plan/{geometry,types}.ts</code>, <code>src/lib/sim/{scenario,levers,finance}</code>. The dataset version stays as it is.</li>
+      <li>A policy node acts on a lever the code already has, at a value the code already sources. No node invents a value.</li>
+      <li>The painted area, own pools, the City funding scale and market terms are never offered in a game.</li>
+      <li>Published plans and policies open and play in full, as today.</li>
+      <li>WCAG 2.2 AA: everything works from the keyboard; targets are at least 24 px; motion follows the reduced-motion setting; nothing flashes more than three times a second.</li>
+      <li>Page text is short. A node is a name, a line and a price.</li>
+      <li>The CSP is not widened. Sound is made in the browser; no audio file, font or script is added.</li>
+      <li>A runtime dependency is not added without a credit in <code>src/lib/attribution.ts</code>. None is expected.</li>
+      <li>Code style: 2-space indent, single quotes, no trailing commas, 100 columns.</li>
+      <li>Vitest runs with <code>expect.requireAssertions</code>. Tests are colocated.</li>
+      <li>A schema change goes through <code>npm run db:generate</code>. Migrations are never edited by hand.</li>
+      <li>Signoff fails on server stderr, on timing crutches and on retried flakes. Timing is measured only on a quiet machine.</li>
+      <li>Port 4173 belongs to whichever session started the preview. Never kill it; wait.</li>
+      <li>Commits use Conventional Commits and carry no Claude attribution.</li>
+      <li>Work happens in git worktrees under <code>.claude/worktrees/</code>.</li>
+    </ul>
+  </section>
+
+
+  <section id="sec-found">
+    <h2>What the code is today</h2>
+    <p>Read on commit <code>4d22bf96</code>, before any unit of this package has merged. Every other unit changes the tree before this one starts, so the implementer re-reads each file named here on the integration branch before writing, and the code there wins over this list.</p>
+
+    <section id="sec-found-seam">
+      <h3>The e2e seam and the helpers</h3>
+      <ul>
+        <li>The seam's keys are <code>E2E_GAME_KEY = 'sfhousing:e2e:game'</code> and <code>E2E_GOAL_KEY = 'sfhousing:e2e:goal'</code> (<code>src/lib/game/e2e.ts:1-2</code>).</li>
+        <li><code>e2eOpen(storage)</code> is true on a <code>VITE_E2E=1</code> build when the game key is absent, so a spec that seeds nothing gets the open game (<code>src/lib/game/e2e.ts:5-13</code>).</li>
+        <li><code>e2eGoalAmount(storage)</code> returns a whole number of at least 1 from the goal key, else null (<code>src/lib/game/e2e.ts:16-27</code>). Paint reads it at mount (<code>src/routes/+page.svelte:70</code>), and so does the simulation page (<code>src/lib/sim-page/SimPage.svelte:219</code>, <code>src/lib/sim-page/SimRoute.svelte:61</code>).</li>
+        <li><code>seedGame(page, level)</code> takes a level from 1 to 5 and writes a v1 save with <code>progress</code> and <code>banked</code> (<code>e2e/helpers/game.ts:24-70</code>).</li>
+        <li><code>newVisitor(page)</code> sets the game key and stores nothing (<code>e2e/helpers/game.ts:73-83</code>); <code>seedGoalAmount(page, amount)</code> sets the goal key (<code>e2e/helpers/game.ts:86-99</code>).</li>
+        <li>Both <code>seedGame</code> and <code>newVisitor</code> throw when the page already has a game (<code>e2e/helpers/game.ts:25</code>, <code>:74</code>).</li>
+        <li><code>gotoEditor(page)</code> is <code>page.goto('/')</code>, then the map and the Publish button (<code>e2e/helpers/sharing.ts:115-120</code>). It seeds nothing, so Paint specs run the open game today.</li>
+        <li><code>paintOnce(page, isMobile)</code> paints one stroke at <code>FRAME</code> on either project (<code>e2e/helpers/sharing.ts:295-309</code>). A keyboard Enter on the focused map canvas stamps once (<code>e2e/brush.spec.ts:172-195</code>).</li>
+        <li><code>headerScore</code>, <code>headerNet</code>, <code>finalNet</code>, <code>committedNet</code> and <code>settledNet</code> read the header's <code>score-bar</code> (<code>e2e/helpers/sharing.ts:311-393</code>).</li>
+        <li>The run helpers wait on <code>window.__sfhFzp</code>: <code>waitFilled</code> on <code>filledThrough === lastIndex</code> and not stale (<code>e2e/helpers/run.ts:15-20</code>).</li>
+        <li><code>expectPhoneHeaderFits</code> expects the link "SF Housing Simulator" in the Menu (<code>e2e/helpers/chrome.ts:70</code>).</li>
+      </ul>
+    </section>
+
+    <section id="sec-found-specs">
+      <h3>The e2e specs</h3>
+      <ul>
+        <li><code>e2e/game-journey.spec.ts</code> has two tests: a new visitor wins Paint and level 2 and levels up to 3 (<code>:65-170</code>), and a given measure dated from a later month (<code>:172-224</code>).</li>
+        <li>The journey writes a second goal amount with <code>page.evaluate</code> between Paint and <code>/sim</code> (<code>e2e/game-journey.spec.ts:94-97</code>), because each page reads the key at mount.</li>
+        <li>The five-level specs are <code>game-core</code>, <code>game-helpers</code>, <code>game-save</code>, <code>game-shell</code>, <code>game-sim</code> and <code>game-journey</code> (<code>e2e/game-*.spec.ts</code>); every test in them names a level, a bar, the win card, the level cell or the steps.</li>
+        <li><code>seedGame</code> is also called by <code>chrome-dark.spec.ts:543</code>, <code>share-notices.spec.ts:226</code>, <code>share-roundtrip.spec.ts:59</code>, <code>share-states.spec.ts:141</code>, <code>:165</code> and <code>sim-share.spec.ts:222</code>, <code>:363</code>, each for a Remix test or a banner state.</li>
+        <li>Remix is pressed in <code>share-states.spec.ts:151</code>, <code>share-notices.spec.ts:233</code>, <code>share-roundtrip.spec.ts:76</code>, <code>sim-share.spec.ts:230</code>, <code>:373</code> and <code>game-shell.spec.ts:86-165</code>, and asserted in <code>chrome-dark.spec.ts:550</code>.</li>
+        <li>The header's step links are clicked in <code>fzp.spec.ts:570</code>, <code>:588</code>, <code>:600</code>, <code>:604</code>, <code>fzp-sim.spec.ts:74</code>, <code>sim-activity.spec.ts:238</code>, <code>sim-funding.spec.ts:665</code> and <code>sim.spec.ts:1262</code>, and asserted in <code>chrome-dark.spec.ts:92</code>, <code>layout.spec.ts:759</code>, <code>:934</code>, <code>:1001</code> and <code>sim.spec.ts:354-355</code>, <code>:1597</code>.</li>
+        <li><code>/sim</code> is the address of every <code>gotoSim</code>, <code>FZP_PATH</code> and path list in the <code>sim-*</code>, <code>fzp</code>, <code>map-key</code>, <code>targets</code>, <code>layout</code>, <code>chrome-dark</code> and <code>pages-a11y</code> specs; the full list with lines is <code>surveys/shell-routes-name.md</code> section d.4.</li>
+        <li>The old name is expected exactly in <code>e2e/helpers/chrome.ts:70</code>, <code>e2e/transit.spec.ts:81</code>, <code>e2e/fzp.spec.ts:602</code> and <code>e2e/sim.spec.ts:1539</code>; elsewhere the specs match <code>/SF Housing/</code> (<code>e2e/layout.spec.ts:933</code>, <code>:1000</code>).</li>
+        <li>Paint specs that go to <code>/</code> without <code>gotoEditor</code>: <code>brush.spec.ts:31</code>, <code>layout.spec.ts:358</code>, <code>map.spec.ts:40</code>, <code>:270</code>, <code>sim-citywide.spec.ts:126</code>, <code>bench/map-pan.bench.ts:23</code> and <code>bench/map-timeline.bench.ts:128</code>.</li>
+        <li><code>pages-a11y.spec.ts:16</code> scans the map pages <code>/</code> and <code>/sim</code>.</li>
+      </ul>
+    </section>
+
+    <section id="sec-found-config">
+      <h3>The test configuration and signoff</h3>
+      <ul>
+        <li>Playwright runs two projects, <code>chromium</code> and <code>mobile</code> (375 by 812, touch), with one retry, and ignores <code>e2e/bench/**</code> (<code>playwright.config.ts:10</code>, <code>:30</code>, <code>:41-44</code>).</li>
+        <li>The web server builds with <code>VITE_E2E=1</code> on fixture-0 and never reuses a server on port 4173 (<code>playwright.config.ts:52</code>, <code>:55</code>).</li>
+        <li>Signoff's burn-in runs every changed e2e spec five times on <code>chromium</code> with retries off, and ignores <code>e2e/bench/**</code> (<code>chreode.config.ts:117</code>, <code>:128-133</code>).</li>
+        <li>Signoff's timing step fails on added fixed waits, raised timeouts or retries and unconditional skips; bench and perf files are exempt by path (<code>chreode.config.ts:120</code>, <code>docs/dev/testing.md:114</code>).</li>
+      </ul>
+    </section>
+
+    <section id="sec-found-reach">
+      <h3>The reach check</h3>
+      <ul>
+        <li><code>scripts/level2-check.ts</code> runs <code>reconcilePolicy4(DEFAULT_POLICY4, calibration, asOf).doc</code> through <code>createTimelineHost</code> over the whole window on a dataset directory (<code>scripts/level2-check.ts:131-220</code>).</li>
+        <li>It reads <code>defaultGoal(asOf)</code>, with <code>--amount</code> when given, by <code>readGoal</code> (<code>scripts/level2-check.ts:230-247</code>), and <code>readGoal</code> reads up to the goal's deadline month (<code>src/lib/goal/goal.ts:91-103</code>).</li>
+        <li>It prints three lines and exits 0 reached, 1 missed, 2 could not run with one stderr line <code>level2-check: {reason}</code> (<code>scripts/level2-check.ts:252-266</code>, <code>:292-308</code>).</li>
+        <li>Its test runs it on fixture-0; at amount 1 the goal is reached in the first month (<code>scripts/level2-check.spec.ts:82-89</code>), and at the goal's own amount it is missed (<code>:52-63</code>).</li>
+        <li>It is named in <code>CLAUDE.md:88</code>, <code>:109</code>, <code>docs/dev/pipeline.md:48</code>, <code>docs/dev/deploy.md:39</code> and <code>docs/dev/testing.md:100-102</code>.</li>
+        <li>A dataset build takes about 4.5 minutes and needs <code>pipeline/.cache</code> (<code>docs/dev/pipeline.md:43</code>, <code>:47</code>).</li>
+      </ul>
+    </section>
+
+    <section id="sec-found-bench">
+      <h3>The bench</h3>
+      <ul>
+        <li><code>npm run bench:map</code> runs <code>e2e/bench/**/*.bench.ts</code> headed at 1280 by 800, DPR 2, one worker, no retries, 180 s per test, on fixture-0 unless <code>SFH_BENCH_DATASET</code> names a live version in local R2 (<code>playwright.bench.config.ts:5-35</code>).</li>
+        <li>The pass bar is <code>BAR_MS = 16.7</code> on the p95 frame time (<code>e2e/bench/bench-util.ts:17</code>, <code>:25</code>).</li>
+        <li>Every case pans by script; none moves a pointer over the map (<code>surveys/map.md</code> section h).</li>
+        <li><code>docs/dev/map-perf.md:37</code> tells the reader to kill whatever listens on port 4173.</li>
+      </ul>
+    </section>
+
+    <section id="sec-found-docs">
+      <h3>The documents</h3>
+      <ul>
+        <li><code>docs/dev/game.md</code> documents the five levels: the ladder, results and bars, the playable document, saved games, storage, the store's changes, the open game, the win card, the level panel, words and navigation, and the e2e seam (<code>docs/dev/game.md:11-295</code>).</li>
+        <li><code>CLAUDE.md:7</code> describes five levels; <code>:101</code> describes the two steps and the level cell; <code>:62</code> lists game.md as levels and bars; seven doc-list entries name <code>/sim</code> (<code>:39-48</code>, <code>:59</code>).</li>
+        <li><code>README.md:1</code> is "# SF Housing Simulator" and <code>:3</code> says the game unlocks "one level at a time" and that plans and policies "can be published and remixed".</li>
+        <li>The old name in documents (<code>surveys/shell-routes-name.md</code> section c.3): <code>README.md:1</code>, <code>CLAUDE.md:7</code>, <code>docs/dev/deploy.md:177</code>, <code>docs/lesscars/plan-v1.md:2059</code>, 39 lines under <code>docs/superpowers/</code> and 5 under <code>.superpowers/</code>.</li>
+        <li><code>docs/dev/sim-page.md:81</code> says the site name drops "Simulator" from lg to xl.</li>
+        <li><code>pipeline/lidar-raster/sfh_lidar/__init__.py:1</code> carries the old name in a docstring, under <code>pipeline/</code>, which the dataset version hashes.</li>
+        <li><code>scripts/docs-index.spec.ts</code> asserts every <code>docs/dev/*.md</code> is linked from <code>CLAUDE.md</code> (<code>chreode.config.ts:8</code>).</li>
+      </ul>
+    </section>
+  </section>
+
+  <section id="sec-design">
+    <h2>Design</h2>
+
+    <section id="sec-design-order">
+      <h3>When it runs</h3>
+      <ul>
+        <li>The implementer's worktree is branched from the integration branch after every other unit has merged into it.</li>
+        <li>Before writing, the implementer reads the other eleven specs of this package (<code>docs/superpowers/specs/2026-11-24-*-design.html</code>) and the merged code for the selectors, words and test ids this spec defers to them.</li>
+        <li>A step of a journey or a test that the merged code cannot pass is a defect of the unit that owns the behaviour. The implementer reports it with the step, the file and the owner, and edits only files in this unit's write set.</li>
+        <li>Nothing in this unit changes a file the dataset version hashes, so the dataset version stays as it is and nothing is uploaded.</li>
+        <li>Signoff is run by the conductor after this unit hands back. This unit never runs <code>npm run signoff</code>.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-seams">
+      <h3>The seams the tests need</h3>
+      <table id="tbl-seams">
+        <caption>Seams, who provides each, and whether the design gives it</caption>
+        <thead>
+          <tr><th scope="col">Seam</th><th scope="col">Provided by</th><th scope="col">In the design</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">Goal amount, read in the opening</th><td><code>game-shell</code> (<code>src/routes/+page.svelte</code>)</td><td>Kept from today</td></tr>
+          <tr><th scope="row">Goal amount, read for the runs</th><td><code>game-sim</code></td><td>No: reported</td></tr>
+          <tr><th scope="row">A seeded game of any state</th><td><code>game-save</code> (<code>e2e/helpers/game.ts</code>)</td><td>No signature: reported</td></tr>
+          <tr><th scope="row">A fast run</th><td><code>game-save</code> (the key and helper), <code>game-sim</code> (the reader)</td><td>No: reported</td></tr>
+          <tr><th scope="row">The run's state in the page</th><td><code>run-play</code></td><td>No: reported</td></tr>
+          <tr><th scope="row">A short ladder</th><td>Not needed</td><td>See below</td></tr>
+          <tr><th scope="row">A node affordable after one run on fixture-0</th><td><code>tree-catalogue</code>, <code>game-core</code></td><td>No: reported</td></tr>
+        </tbody>
+      </table>
+
+      <section id="sec-design-seam-amount">
+        <h4>The goal amount</h4>
+        <ul>
+          <li>Every journey uses one amount, 1, set with <code>seedGoalAmount(page, 1)</code> before the first load.</li>
+          <li>At amount 1 one stamp meets the room goal, and current law meets every rung in its first month on fixture-0 (<code>scripts/level2-check.spec.ts:82-89</code>), so every run meets the rung in play.</li>
+          <li>The opening reads the amount when it mounts, as Paint does today.</li>
+          <li>The simulation page reads <code>e2eGoalAmount(storage)</code> when it mounts after Start, and passes it as <code>amount</code> to <code>goalAt</code> for every rung. This is a requirement on <code>game-sim</code>.</li>
+        </ul>
+      </section>
+
+      <section id="sec-design-seam-seed">
+        <h4>A seeded game</h4>
+        <p>The specs call this helper of <code>game-save</code>, and this spec relies on its shape:</p>
+        <pre><code data-lang="ts">// e2e/helpers/game.ts (game-save)
+import type { GameState } from '../../src/lib/game/state';
+
+/** Before the page loads: switch the real game on and store one game, "Seeded game",
+ *  whose state is NEW_GAME with `state`'s fields over it. */
+export async function seedGame(page: Page, state?: Partial&lt;GameState&gt;): Promise&lt;void&gt;;
+export async function newVisitor(page: Page): Promise&lt;void&gt;;
+export async function seedGoalAmount(page: Page, amount: number): Promise&lt;void&gt;;
+export async function seedRunMs(page: Page, ms: number): Promise&lt;void&gt;;</code></pre>
+        <ul>
+          <li><code>seedGame</code> and <code>newVisitor</code> keep today's rule: each throws when the page already has a game.</li>
+          <li>The storage keys stay <code>SAVES_KEY</code> and <code>saveKey(id)</code>, exported from <code>src/lib/game/saves.ts</code> (G7: "the storage keys" unchanged).</li>
+          <li>A game "between runs" is <code>{ phase: 'runs', firstWinAt: &lt;ISO now&gt; }</code>. Seeded so, <code>/</code> opens on the tree.</li>
+        </ul>
+      </section>
+
+      <section id="sec-design-seam-run">
+        <h4>A fast run</h4>
+        <p>A run takes about 20 seconds of wall time, and Playwright's test timeout is 30 seconds, which signoff forbids raising. The journeys therefore shorten the run through a seam:</p>
+        <pre><code data-lang="ts">// src/lib/game/e2e.ts (game-save)
+export const E2E_RUN_KEY = 'sfhousing:e2e:run';
+/** The run's wall time in ms under E2E_RUN_KEY when VITE_E2E is '1': a whole number
+ *  from 500 to 60000; null otherwise. */
+export function e2eRunMs(storage: Storage | null): number | null;</code></pre>
+        <ul>
+          <li><code>seedRunMs(page, ms)</code> in <code>e2e/helpers/game.ts</code> sets the key before the page loads, and throws for a value outside 500 to 60000.</li>
+          <li>The run seam of <code>game-sim</code> plays the run in <code>e2eRunMs(storage)</code> ms when it is not null, else in its own wall time.</li>
+          <li>The journeys use 2,000 ms; the keyboard journey and the run state's accessibility scan use 8,000 ms; the bench uses no seam.</li>
+        </ul>
+      </section>
+
+      <section id="sec-design-seam-hook">
+        <h4>The run's state in the page</h4>
+        <p>The keyboard journey steers the ring to a drop, and the bench counts drops. Both read this hook, which <code>run-play</code> installs from <code>RunLayer</code> on a <code>VITE_E2E=1</code> build only:</p>
+        <pre><code data-lang="ts">// src/lib/game/run/debug.ts (run-play)
+import type { RunTake } from '../run-result';
+
+export interface SfhRunDebug {
+  running: boolean;
+  planned: number;
+  ring: { x: number; y: number };
+  drops: { row: number; x: number; y: number }[];
+  take: RunTake;
+}
+// window.__sfhRun: SfhRunDebug, while a RunLayer is mounted</code></pre>
+        <dl>
+          <dt><code>planned</code></dt><dd>The number of drops <code>planDrops</code> gave for this run.</dd>
+          <dt><code>ring</code>, <code>drops</code></dt><dd>CSS pixels from the map box's top left, as <code>RunFeed.project</code> gives them. <code>drops</code> holds the drops on screen now and not collected.</dd>
+          <dt><code>take</code></dt><dd>The totals <code>ontake</code> last sent.</dd>
+        </dl>
+        <ul>
+          <li>The arrow key's plain step is no larger than <code>BASE_HANDS.radiusPx</code>, so a ring steered one plain step at a time cannot jump over a drop. This is a requirement on <code>run-play</code> and <code>game-core</code>.</li>
+        </ul>
+      </section>
+
+      <section id="sec-design-seam-ladder">
+        <h4>A short ladder</h4>
+        <ul>
+          <li>No ladder seam is added. G6 fixes <code>RUNGS</code> as a constant and <code>ladder(asOf)</code> takes no list, so a seam would change a model commitment.</li>
+          <li>At amount 1 every run meets its rung, so the ending is reached by seeding a game at the last rung: <code>seedGame(page, { phase: 'runs', firstWinAt, rung: RUNGS - 1, met })</code> with one <code>met</code> entry for each rung below it.</li>
+          <li>The test computes <code>RUNGS</code> as <code>LADDER_YEARS.length + 1</code>, importing <code>LADDER_YEARS</code> from <code>src/lib/game/catalogue/ladder-years.ts</code>.</li>
+          <li>Each seeded <code>met</code> entry is <code>{ rung: k, reachedOn: SEED_ASOF, datasetVersion: 'fixture-0', at: &lt;ISO now&gt; }</code>, where <code>SEED_ASOF</code> is the fixture's <code>asOf</code> read from <code>e2e/fixtures/data/fixture-0/scenarios/fzp/calibration.json</code>, as <code>e2e/helpers/game.ts</code> reads it today.</li>
+        </ul>
+      </section>
+
+      <section id="sec-design-seam-price">
+        <h4>A first purchase on fixture-0</h4>
+        <ul>
+          <li>The journeys buy a node after one run on fixture-0 at amount 1. They need at least one node shown at rung 0 whose first level costs no more than the first run pays there: the drops of the window plus <code>RUNG_LUMP</code>.</li>
+          <li>The simplest guarantee is that the cheapest ring-0 node costs no more than <code>RUNG_LUMP</code>. This is a requirement on <code>tree-catalogue</code> and <code>game-core</code>, reported, and checked by the journey with the message "no node is affordable after the first run on fixture-0".</li>
+        </ul>
+      </section>
+
+      <section id="sec-design-seam-reading">
+        <h4>Readings the tests take from the page</h4>
+        <ul>
+          <li>A game's state is read from storage, never from the screen: <code>savedGame(page)</code> reads <code>SAVES_KEY</code>'s current id and parses <code>saveKey(id)</code> into a <code>GameSave</code> (G1).</li>
+          <li>The document is read from <code>window.__sfhFzp.policy</code>, which the simulation page keeps on <code>/</code> after the opening.</li>
+          <li>Selectors are roles with the design's words: "Start", "Run", "Continue", "Buy", "Edit", "Back to the tree", "Take the next goal", "New game", "Collect for me".</li>
+          <li>Where the design gives no word (the game cell's button, a tree node's button, the goal headline), the selector is the test id the <code>tally-tree</code> spec fixes, read from that spec and the merged code.</li>
+          <li>The test does not import <code>src/lib/game/catalogue/nodes.ts</code> or <code>src/lib/game/tree.ts</code>: their imports of <code>$lib</code> do not resolve under Playwright. It finds a node it can buy on the screen (<a href="#sec-design-helpers">helpers</a>).</li>
+        </ul>
+      </section>
+    </section>
+
+    <section id="sec-design-helpers">
+      <h3>New and changed helpers</h3>
+      <p>A new file holds what the journeys, the accessibility spec, the target sweep and the bench share:</p>
+      <pre><code data-lang="ts">// e2e/helpers/play.ts
+import type { Locator, Page } from '@playwright/test';
+import type { GameSave } from '../../src/lib/game/save-shape';
+import type { SfhRunDebug } from '../../src/lib/game/run/debug';
+
+/** The current game as storage holds it. */
+export async function savedGame(page: Page): Promise&lt;GameSave&gt;;
+/** Polls savedGame until `ok` holds; returns that save. */
+export async function waitSaved(page: Page, ok: (s: GameSave) => boolean): Promise&lt;GameSave&gt;;
+/** window.__sfhRun, or null while no RunLayer is mounted. */
+export async function runState(page: Page): Promise&lt;SfhRunDebug | null&gt;;
+/** Waits until a run is running. */
+export async function waitRunning(page: Page): Promise&lt;void&gt;;
+/** Waits until the tally shows ("Continue" visible). */
+export async function waitTally(page: Page): Promise&lt;void&gt;;
+/** Presses Tab, at most `max` times, until `target` has focus; throws otherwise. */
+export async function tabTo(page: Page, target: Locator, max?: number): Promise&lt;void&gt;;
+/** Steers the ring with the arrow keys toward the nearest drop until one is collected
+ *  or the run ends; returns the homes collected. */
+export async function steerToADrop(page: Page): Promise&lt;number&gt;;
+/** Opens tree nodes in order and buys the first whose Buy is enabled; returns its node id. */
+export async function buyFirstReady(page: Page, by: 'pointer' | 'keys'): Promise&lt;string&gt;;
+/** Opens the game panel from the header's unit count (the Menu first below lg). */
+export async function openGamePanel(page: Page): Promise&lt;Locator&gt;;</code></pre>
+      <ul>
+        <li><code>tabTo</code>'s <code>max</code> is 80. It loops on key presses, not on time.</li>
+        <li><code>steerToADrop</code> loops at most 4,000 times. Each turn reads <code>runState</code>; it stops when <code>take.collected.home</code> is at least 1 or <code>running</code> is false; it presses the arrow toward the nearest drop on the larger axis, with Shift when that drop is more than 96 px away.</li>
+        <li><code>buyFirstReady</code> learns the node's id as the key that is new in <code>savedGame(page).state.bought</code> after Buy.</li>
+        <li><code>buyFirstReady</code> fails with "no node is affordable after the first run on fixture-0" when no shown node's Buy is enabled.</li>
+        <li><code>waitSaved</code> uses <code>expect.poll</code> with its default timeout.</li>
+      </ul>
+      <p>Changes to existing helpers:</p>
+      <ul>
+        <li><code>gotoEditor(page)</code> in <code>e2e/helpers/sharing.ts</code> becomes the opening as a new visitor: it calls <code>newVisitor(page)</code> the first time it is called for a page (a module <code>WeakSet</code> in <code>sharing.ts</code>), then does what it does today.</li>
+        <li>A spec that seeds its own game and wants <code>/</code> calls <code>gotoHydrated(page, '/')</code>, never <code>gotoEditor</code>.</li>
+        <li><code>expectPhoneHeaderFits</code> in <code>e2e/helpers/chrome.ts</code> expects the link named exactly "SF Housing" in the Menu.</li>
+        <li><code>e2e/helpers/header-text.ts</code> gains <code>widestGameHeader(page)</code>: it writes "9,999,999" into the unit count and "82,069 of 82,069 homes by Dec 2066" into the goal headline's first line, by the test ids the <code>tally-tree</code> spec fixes.</li>
+        <li>Comments in <code>e2e/helpers/*.ts</code> that name <code>/sim</code>, a level or "level up ready" are rewritten to the page as it is.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-journey">
+      <h3>Journey 1: a new visitor, by pointer</h3>
+      <p><code>e2e/game-journey.spec.ts</code>, test "a new visitor paints to the room goal, runs, buys and takes the next goal", on both projects, with reduced motion emulated.</p>
+      <ol>
+        <li><code>seedGoalAmount(page, 1)</code>, <code>seedRunMs(page, 2000)</code>, then <code>gotoEditor(page)</code>.</li>
+        <li>The header has no navigation named "Steps" and no link named "Simulate"; the banner has the link "SF Housing". <code>savedGame</code> is at <code>phase</code> <code>'opening'</code>, <code>rung</code> 0, <code>runs</code> 0.</li>
+        <li><code>paintOnce(page, isMobile)</code>. The opening card's "Start" is visible. <code>savedGame</code> has <code>firstWinAt</code> set.</li>
+        <li>The account the first win made shows: <code>[data-header-account]</code> reads <code>/^@\S+$/</code>, after <code>openHeaderMenu</code> below lg.</li>
+        <li><code>openGamePanel(page)</code>; check "Collect for me"; press Escape.</li>
+        <li>Press "Start". The address stays <code>/</code>. <code>waitRunning</code>, then <code>waitTally</code>.</li>
+        <li><code>waitSaved</code> until <code>runs</code> is 1. Then: <code>phase</code> is <code>'runs'</code>; <code>last.dropped.home</code> is above 0; <code>last.collected.home</code> equals it; <code>met</code> holds rung 0; <code>last.lump</code> is not null; <code>units.home</code> equals <code>last.collected.home</code> plus <code>last.lump.home</code> plus the sum of <code>last.side</code> rewards.</li>
+        <li><code>main</code> contains <code>last.collected.home.toLocaleString('en-US')</code>.</li>
+        <li>Press "Continue". "Run" and "Take the next goal" are visible.</li>
+        <li><code>buyFirstReady(page, 'pointer')</code>. <code>savedGame.state.bought</code> has that id at 1, and <code>units.home</code> fell.</li>
+        <li>Press the bought node's "Edit". The workshop shows: <code>waitFilled(page)</code> passes and "Back to the tree" is visible. Press it; "Run" is visible.</li>
+        <li>Press "Run"; <code>waitTally</code>; <code>waitSaved</code> until <code>runs</code> is 2; press "Continue".</li>
+        <li>Read the goal headline's text. Press "Take the next goal". <code>savedGame.state.rung</code> is 1, and the goal headline's text differs from the one read.</li>
+        <li><code>page.request.get('/api/game')</code> answers 200, polled until its <code>saves</code> are one entry with <code>phase</code> <code>'runs'</code> and <code>rung</code> 1.</li>
+      </ol>
+      <ul>
+        <li>No step waits a fixed time or raises a timeout; every wait is a state in the page or in storage.</li>
+        <li>The journey is the one spec that crosses every unit: the opening (<code>game-shell</code>), the store and saves (<code>game-save</code>), the run (<code>game-sim</code>, <code>run-play</code>, <code>map-run</code>), the screens (<code>tally-tree</code>), the rules (<code>game-core</code>, <code>tree-catalogue</code>) and the feed (<code>city-net</code>).</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-keyboard">
+      <h3>Journey 2: by keyboard only, with the ring</h3>
+      <p>Same file, test "a player plays the loop by keyboard only, collecting with the ring", on <code>chromium</code> only (the test skips when <code>isMobile</code>).</p>
+      <ol>
+        <li><code>seedGoalAmount(page, 1)</code>, <code>seedRunMs(page, 8000)</code>, <code>gotoEditor(page)</code>, <code>jumpAndIdle(page, FRAME)</code>.</li>
+        <li>Focus <code>body</code>; <code>tabTo</code> the map canvas; press Enter. The editor holds one op.</li>
+        <li><code>tabTo</code> "Start"; press Enter. <code>waitRunning</code>.</li>
+        <li><code>steerToADrop(page)</code> returns at least 1.</li>
+        <li><code>waitTally</code>; <code>savedGame.state.last.collected.home</code> is at least 1; "Collect for me" was never set, so <code>collected</code> is the ring's.</li>
+        <li><code>tabTo</code> "Continue"; Enter. Then <code>buyFirstReady(page, 'keys')</code>.</li>
+        <li><code>tabTo</code> the bought node's "Edit"; Enter; "Back to the tree" is visible. <code>tabTo</code> it; Enter.</li>
+        <li><code>tabTo</code> "Take the next goal"; Enter. <code>savedGame.state.rung</code> is 1.</li>
+      </ol>
+      <ul>
+        <li>After step 1 the test uses no <code>click</code>, <code>tap</code>, <code>mouse</code> or <code>touchscreen</code> call. <code>jumpAndIdle</code> is a camera seam, not player input.</li>
+        <li>Every focus target shows a visible focus ring: after each <code>tabTo</code>, the target matches <code>:focus-visible</code>.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-ending">
+      <h3>Journey 3: the ending</h3>
+      <p>Same file, test "meeting the last deadline is the ending", on both projects.</p>
+      <ol>
+        <li><code>seedGame(page, { phase: 'runs', firstWinAt, rung: RUNGS - 1, met })</code> as in <a href="#sec-design-seam-ladder">A short ladder</a>; <code>seedGoalAmount(page, 1)</code>; <code>seedRunMs(page, 2000)</code>; <code>gotoHydrated(page, '/')</code>.</li>
+        <li>"Run" is visible and "Take the next goal" is not. Press "Run"; <code>waitTally</code>; press "Continue".</li>
+        <li><code>savedGame.state.met</code> holds rung <code>RUNGS - 1</code>.</li>
+        <li><code>main</code> contains the year of <code>last.reachedOn</code> (UTC) and a button named "Publish" outside the banner. "Take the next goal" is not shown.</li>
+      </ol>
+    </section>
+
+    <section id="sec-design-e2e">
+      <h3>The existing specs</h3>
+      <p>Rules that apply across files, one per item:</p>
+      <ul>
+        <li><strong>Address.</strong> Every <code>/sim</code> used as an address becomes <code>/</code>: <code>page.goto</code>, <code>gotoHydrated</code>, <code>gotoSim</code>'s default, <code>FZP_PATH</code>, path lists and <code>toHaveURL(/\/sim$/)</code> (which becomes a check that the pathname is <code>/</code>).</li>
+        <li><strong>The open game.</strong> A spec that seeds no game and goes to <code>/</code> gets the open game, which shows the workshop (call 9). Specs about the simulation need nothing more.</li>
+        <li><strong>Paint.</strong> A spec that expects the brush goes through <code>gotoEditor</code>, which now opens the opening as a new visitor. A direct <code>page.goto('/')</code> or <code>gotoHydrated(page, '/')</code> that expects the brush is preceded by <code>newVisitor(page)</code>.</li>
+        <li><strong>Steps.</strong> Every assertion on the navigation "Steps", a step link or <code>[data-step-locked]</code> goes. A click on the "Simulate" or "Paint" step that served a client navigation to the simulation becomes a click on the header's site-name link "SF Housing" (after <code>openHeaderMenu</code> below sm), with the test's purpose kept.</li>
+        <li><strong>Name.</strong> "SF Housing Simulator" becomes "SF Housing", matched exactly. The title of <code>/</code> is expected to be "SF Housing". Regexes <code>/SF Housing/</code> and <code>/^SF Housing/</code> stay.</li>
+        <li><strong>Remix.</strong> A test whose subject is Remix is deleted. A test that only also presses Remix keeps the rest of its steps. One assertion per shared page proves the banner has no button named "Remix".</li>
+        <li><strong>Levels.</strong> No spec seeds a level, names a level, a bar, the win card, the level cell or the level panel.</li>
+        <li><strong>Comments.</strong> A comment that names <code>/sim</code> as the page, a level or Remix is rewritten to the code as it is.</li>
+        <li>A spec not listed below changes only by these rules, if at all.</li>
+      </ul>
+      <table id="tbl-e2e-census">
+        <caption>Existing e2e files and what changes in each</caption>
+        <thead>
+          <tr><th scope="col">File</th><th scope="col">What changes</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row"><code>game-journey.spec.ts</code></th><td>Rewritten: the three journeys above.</td></tr>
+          <tr><th scope="row"><code>game-core.spec.ts</code></th><td>Rewritten on v2 saves: <a href="#sec-design-game-specs">The game specs</a>.</td></tr>
+          <tr><th scope="row"><code>game-helpers.spec.ts</code></th><td>Rewritten for the helper shapes in <a href="#sec-design-seam-seed">A seeded game</a>.</td></tr>
+          <tr><th scope="row"><code>game-save.spec.ts</code></th><td>Seeds a game between runs; list entries carry <code>phase</code> and <code>rung</code>.</td></tr>
+          <tr><th scope="row"><code>game-shell.spec.ts</code></th><td>Rewritten: no steps, the name, the redirect, the opening, no Remix.</td></tr>
+          <tr><th scope="row"><code>game-sim.spec.ts</code></th><td>Rewritten: the page's states, buying, the switch, the workshop, the published view.</td></tr>
+          <tr><th scope="row"><code>chrome-dark.spec.ts</code></th><td>Address; the Menu test checks the site-name link instead of the Paint step; the published-plan test drops its Remix assertion.</td></tr>
+          <tr><th scope="row"><code>fzp.spec.ts</code></th><td>Address; step clicks become the site-name link; the header-links test is replaced (below).</td></tr>
+          <tr><th scope="row"><code>fzp-sim.spec.ts</code></th><td>The Simulate click becomes the site-name link.</td></tr>
+          <tr><th scope="row"><code>layout.spec.ts</code></th><td>Path keys become <code>opening</code> and <code>workshop</code>; step assertions go; header-fit cases gain the game's header.</td></tr>
+          <tr><th scope="row"><code>pages-a11y.spec.ts</code></th><td>The map pages are <code>/</code> alone; the game's states move to <code>game-a11y.spec.ts</code>.</td></tr>
+          <tr><th scope="row"><code>targets.spec.ts</code></th><td>Address; Paint through <code>gotoEditor</code>; adds the tree and the tally at 375 px.</td></tr>
+          <tr><th scope="row"><code>transit.spec.ts</code></th><td>A new visitor first; the site-name link is "SF Housing".</td></tr>
+          <tr><th scope="row"><code>sim.spec.ts</code></th><td>Address; the Menu's step links go; the Simulate click becomes the site-name link; the name.</td></tr>
+          <tr><th scope="row"><code>sim-activity.spec.ts</code>, <code>sim-funding.spec.ts</code></th><td>Address; the Simulate click becomes the site-name link.</td></tr>
+          <tr><th scope="row"><code>sim-citywide.spec.ts</code></th><td>Address; "Paint draws no timeline" starts as a new visitor.</td></tr>
+          <tr><th scope="row"><code>sim-details</code>, <code>sim-halos</code>, <code>sim-pools</code>, <code>sim-timeline</code>, <code>map-key</code> specs</th><td>Address only.</td></tr>
+          <tr><th scope="row"><code>sim-share.spec.ts</code></th><td>Address; the Remix test goes; the schema 2 test keeps its notice and drops its Remix steps.</td></tr>
+          <tr><th scope="row"><code>share-states.spec.ts</code></th><td>The Remix test goes; the banner test asserts no Remix.</td></tr>
+          <tr><th scope="row"><code>share-notices.spec.ts</code></th><td>The test "after Remix, Paint opens the published plan" goes.</td></tr>
+          <tr><th scope="row"><code>share-roundtrip.spec.ts</code></th><td>Ends at "same score"; its Remix steps and title words go.</td></tr>
+          <tr><th scope="row"><code>brush.spec.ts</code>, <code>map.spec.ts</code>, <code>layout.spec.ts:358</code></th><td>A direct <code>goto('/')</code> starts as a new visitor.</td></tr>
+          <tr><th scope="row"><code>perf/first-month.perf.spec.ts</code></th><td>Address.</td></tr>
+          <tr><th scope="row"><code>bench/map-pan.bench.ts</code>, <code>bench/map-timeline.bench.ts</code></th><td>A new visitor before <code>goto('/')</code>.</td></tr>
+          <tr><th scope="row"><code>bench/sim-timeline.bench.ts</code></th><td>Address.</td></tr>
+          <tr><th scope="row"><code>helpers/sharing.ts</code>, <code>helpers/chrome.ts</code>, <code>helpers/header-text.ts</code></th><td>As <a href="#sec-design-helpers">helpers</a> gives.</td></tr>
+        </tbody>
+      </table>
+      <ul>
+        <li>In <code>fzp.spec.ts</code> the test "the header links move between the editor and the simulation" becomes "the site name reaches the simulation by a client navigation": from <code>/about</code> after hydration, a click on "SF Housing" reaches <code>/</code> with the page's <code>window</code> kept, the title is "SF Housing", and the page has one <code>h1</code>.</li>
+        <li><code>e2e/game-shell.spec.ts</code> holds the redirect test: <code>page.goto('/sim')</code> ends on pathname <code>/</code>, and the response's request has <code>redirectedFrom()</code> whose pathname is <code>/sim</code>. The status code is <code>game-shell</code>'s and is not asserted.</li>
+        <li>The <code>map.spec.ts</code> goldens are expected to hold: they capture the map root with the dock and the status pill, which this package does not change. If one differs, the implementer regenerates it on darwin with <code>--update-snapshots</code> and names the unit whose change moved it.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-game-specs">
+      <h3>The game specs</h3>
+      <p><code>e2e/game-core.spec.ts</code>, each on both projects:</p>
+      <ul>
+        <li>With no helper, <code>/about</code> has no hydration warning and stores nothing under <code>SAVES_KEY</code> (the open game).</li>
+        <li>A new visitor gets one game: one index entry, current, with <code>phase</code> <code>'opening'</code> and <code>rung</code> 0, and its save parses with <code>v</code> 2.</li>
+        <li>A seeded index is kept as seeded.</li>
+        <li>A current id that names no entry gets a new game in the opening.</li>
+      </ul>
+      <p><code>e2e/game-helpers.spec.ts</code>: <code>seedGame</code> with no state stores <code>NEW_GAME</code>; with a state stores those fields; the seed is written once; a stored index is never overwritten; <code>newVisitor</code> stores nothing; <code>seedGoalAmount</code> and <code>seedRunMs</code> set their keys and leave the game open; each helper refuses bad calls; storage that refuses or throws still loads.</p>
+      <p><code>e2e/game-save.spec.ts</code>: the three tests stay. <code>firstSave</code> seeds <code>{ phase: 'runs', firstWinAt }</code>; the <code>Listed</code> type's entries gain <code>phase</code> and <code>rung</code>.</p>
+      <p><code>e2e/game-shell.spec.ts</code>:</p>
+      <ul>
+        <li>A new visitor's first load of <code>/</code> has no hydration warning, and the header has no navigation "Steps".</li>
+        <li>The header's site-name link is named exactly "SF Housing" at 1280 px and in the Menu at 375 px.</li>
+        <li><code>/sim</code> redirects to <code>/</code>.</li>
+        <li>A new visitor at amount 1 paints once; "Start" shows; pressing it leaves the brush (the dock's Paint tab is gone) and the map remounts once with its camera kept (the map's center and zoom read from <code>window.__sfhMap.map</code> before and after are equal).</li>
+        <li>On <code>/p/&lt;id&gt;</code> and <code>/s/&lt;id&gt;</code> the banner has no "Remix".</li>
+      </ul>
+      <p><code>e2e/game-sim.spec.ts</code>, each from a seeded game between runs at amount 1 and run time 2,000 ms:</p>
+      <ul>
+        <li>The tree shows "Run"; while the forecast for the next run is not ready, Run says so and waits; once ready, a run starts.</li>
+        <li>During a run the ruler is off: the slider "Date in the simulation" is absent or disabled; the test accepts either, which is <code>game-sim</code>'s choice.</li>
+        <li>After a run the tally shows; "Continue" leads to the tree.</li>
+        <li>Buying a node whose grant changes the document puts a policy in <code>__sfhFzp.policy</code> that is on, with one span from month 1 (G5); the forecast is refilled before the next run.</li>
+        <li>The bought lever's switch turns it off and on: the policy's <code>on</code> follows, and <code>units</code> does not change.</li>
+        <li>In the workshop the editors list only bought levers: a kind with nothing bought offers no "+".</li>
+        <li>"Back to the tree" returns to the tree.</li>
+        <li>The published view is outside the game, and a published policy runs in full in it: the two tests of today, at the new address.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-reach">
+      <h3>The reach check</h3>
+      <p><code>scripts/level2-check.ts</code> is renamed <code>scripts/reach-check.ts</code>, and its test <code>scripts/reach-check.spec.ts</code>. It asks two questions of one built dataset.</p>
+      <pre><code data-lang="sh">npx tsx scripts/reach-check.ts &lt;datasetDir&gt; [--amount &lt;homes&gt;]</code></pre>
+      <pre><code data-lang="ts">// scripts/reach-check.ts
+import type { addChoices } from '../src/lib/timeline/add';
+type Cal = Parameters&lt;typeof addChoices&gt;[1];
+
+export interface DocRun {
+  datasetVersion: string;
+  asOf: Day;
+  view: TimelineView;
+}
+
+export interface Reach {
+  who: 'current' | 'full';
+  rung: number;
+  amount: number;
+  deadline: Day;
+  reachedOn: Day | null;
+  homesAtDeadline: number;
+  marginMonths: number | null;
+}
+
+export function runDocument(
+  dir: string,
+  policyOf: (cal: Cal, asOf: Day) => SimPolicy4,
+  opts?: { warn?: (msg: string) => void; timeoutMs?: number }
+): Promise&lt;DocRun&gt;;
+export function currentLaw(cal: Cal, asOf: Day): SimPolicy4;
+export function fullTreeDocument(cal: Cal, asOf: Day): SimPolicy4;
+export function readReach(run: DocRun, who: 'current' | 'full', amount?: number): Reach;
+export function reachLines(datasetVersion: string, r: readonly Reach[]): string[];
+export function reachExit(r: readonly Reach[]): 0 | 1;</code></pre>
+      <dl>
+        <dt><code>runDocument</code></dt><dd>Today's <code>runEmptyDocument</code> with the document given by <code>policyOf</code> in place of the empty one; same loading, host, fill, timeout of 600,000 ms and errors.</dd>
+        <dt><code>currentLaw</code></dt><dd><code>reconcilePolicy4(DEFAULT_POLICY4, cal, asOf).doc</code>.</dd>
+        <dt><code>fullTreeDocument</code></dt><dd>Current law with the grant of every level of every node applied.</dd>
+        <dt><code>readReach</code></dt><dd><code>rung</code> is 0 for <code>'current'</code> and <code>RUNGS - 1</code> for <code>'full'</code>; the goal is <code>goalAt(run.asOf, rung, amount)</code>, read as <code>readLevel2</code> reads today.</dd>
+      </dl>
+      <p>How <code>fullTreeDocument</code> builds the document:</p>
+      <ol>
+        <li>Start from <code>currentLaw(cal, asOf)</code> and <code>s = { ...NEW_GAME, phase: 'runs', rung: RUNGS - 1 }</code>.</li>
+        <li>Take the nodes of <code>NODES</code> in catalogue order, moving a node after every node in its <code>after</code> when the catalogue lists it earlier (a stable topological order).</li>
+        <li>For each node, for each level in order: set <code>s.bought[node.id]</code> to that level, then <code>doc = applyGrant(doc, level.grant, { cal, limits: limitsOf(s) })</code>.</li>
+        <li>Check <code>runnable(doc, limitsOf(s)) === doc</code>; otherwise throw <code>Error('the full tree's document is outside its limits')</code>.</li>
+      </ol>
+      <ul>
+        <li>The free measures and the protections are not applied: they only take homes away.</li>
+        <li>The limits are those of every node bought before the last rung is met, so the document is what a player who bought everything runs while the last deadline is in play.</li>
+        <li><code>main</code> runs current law, then the full tree, each with its own <code>runDocument</code>, and prints the lines below.</li>
+      </ul>
+      <p>The output, on stdout:</p>
+      <pre><code data-lang="text">Dataset &lt;datasetVersion&gt;
+Goal: &lt;amount&gt; homes
+Current law by &lt;Mon YYYY&gt;: reached &lt;Mon YYYY&gt;, &lt;n&gt; months early
+Full tree by &lt;Mon YYYY&gt;: missed, &lt;homes&gt; homes, &lt;short&gt; short</code></pre>
+      <ul>
+        <li>Lines 3 and 4 each read either "reached &lt;Mon YYYY&gt;, &lt;n&gt; months early" ("1 month early" when <code>n</code> is 1) or "missed, &lt;homes&gt; homes, &lt;short&gt; short".</li>
+        <li>The first month on each line is the rung's deadline; months are <code>formatShortMonthYear</code>; numbers are <code>toLocaleString('en-US')</code>.</li>
+        <li>The amount is 82,069 unless <code>--amount</code> gives another; it applies to both questions.</li>
+        <li>Exit 0 when both are reached; 1 when either is missed; 2 when the check could not run, with one stderr line <code>reach-check: &lt;reason&gt;</code> and nothing on stdout.</li>
+        <li>Refusals (exit 2): no directory; an unknown flag; a second directory; an <code>--amount</code> that is not a whole number above 0; no manifest; a scenario that does not load; a fill that errs or times out; <code>fullTreeDocument</code> throwing. The usage line is <code>usage: npx tsx scripts/reach-check.ts &lt;datasetDir&gt; [--amount &lt;homes&gt;]</code>.</li>
+        <li>It is still run before every dataset upload. Every place that names the old script is changed: <code>CLAUDE.md</code> (commands table and Conventions), <code>docs/dev/pipeline.md:48</code>, <code>docs/dev/deploy.md:39</code>, <code>docs/dev/game.md</code> (its section "The reach check") and, when granted, <code>docs/dev/testing.md:100-102</code>.</li>
+      </ul>
+      <p>The run of record for this package:</p>
+      <ol>
+        <li><code>npm run pipeline -- version</code> prints <code>&lt;v&gt;</code>; <code>npx tsx scripts/dataset-version.ts --check</code> exits 0 (the version is published, since nothing hashed changed).</li>
+        <li>When <code>pipeline/.cache</code> is missing, <code>npm run pipeline -- fetch --restore</code>. Then <code>npm run pipeline -- build</code>.</li>
+        <li><code>npx tsx scripts/reach-check.ts pipeline/out/&lt;v&gt;</code>. Its four lines and exit code go in the hand-back.</li>
+        <li>Nothing is uploaded. The implementer removes <code>pipeline/out/&lt;v&gt;</code> and <code>pipeline/.cache/derived/&lt;v&gt;</code> afterwards, so the conductor's signoff meets no local live build.</li>
+        <li>An exit 1 stops the unit: it changes neither <code>LADDER_YEARS</code> nor the catalogue, and hands back "blocked: the reach check misses" with the lines; the remedy is the owner's (D1) or <code>tree-catalogue</code>'s measurement.</li>
+      </ol>
+    </section>
+
+    <section id="sec-design-bench">
+      <h3>The run bench</h3>
+      <p>A new case, <code>e2e/bench/game-run.bench.ts</code>, test "bench:map: run with drops, citywide, moving pointer".</p>
+      <ol>
+        <li><code>seedGame(page, { phase: 'runs', firstWinAt })</code>; no goal amount and no run time are seeded.</li>
+        <li><code>page.goto('/')</code>; the map is ready; <code>waitFilled(page)</code>; "Run" is visible.</li>
+        <li>Press "Run". Wait until <code>window.__sfhRun.running</code> is true.</li>
+        <li>In the page, record every <code>requestAnimationFrame</code> delta from then until <code>running</code> is false.</li>
+        <li>Meanwhile, from the test, move the mouse with <code>page.mouse.move</code> along a figure over the map box, one move after another until the recorder resolves: <code>x = left + width * (0.5 + 0.4 * sin(2πt / 3.1 s))</code>, <code>y = top + height * (0.5 + 0.4 * sin(2πt / 2.3 s))</code>, <code>t</code> from <code>Date.now()</code>.</li>
+        <li>Read <code>planned</code> and <code>take</code> from <code>window.__sfhRun</code>; compute p50 and p95 with <code>pct</code>.</li>
+      </ol>
+      <ul>
+        <li>"Collect for me" stays off and sound stays on, as a new player has them, so the ring's test and the sounds run each frame.</li>
+        <li>The view is the run view of M1: the whole city, flat and north up.</li>
+        <li>It prints one line: <code>bench:map case=run dataset=&lt;v&gt; frames=&lt;n&gt; drops=&lt;planned&gt; dropped=&lt;homes&gt; collected=&lt;homes&gt; p50=&lt;ms&gt; p95=&lt;ms&gt; bar=16.7ms PASS|FAIL dpr=&lt;dpr&gt; renderer="&lt;renderer&gt;"</code>, and pushes it as a <code>bench:map</code> annotation.</li>
+        <li>It passes when p95 is at most <code>BAR_MS</code> (16.7 ms).</li>
+        <li>It has no timeout of its own: the bench config's 180 s holds a run of about 20 s.</li>
+        <li>The measurement of record is on the live dataset: <code>npm run data:local -- &lt;v&gt;</code>, then <code>SFH_BENCH_DATASET=&lt;v&gt; npm run bench:map -- -g "run with drops"</code>. On fixture-0 it runs and reports, with few drops.</li>
+        <li>The agent runs it, never the owner, and only on a quiet machine: the one-minute load average from <code>uptime</code> is below 2 and no other session's Playwright, Vite or wrangler process is running. Otherwise the run is deferred and the hand-back says so.</li>
+        <li>Before running, <code>lsof -nP -iTCP:4173 -sTCP:LISTEN</code>: a listener belongs to another session, so the agent waits and checks again, and never stops it.</li>
+        <li>The result line goes in the hand-back and, when granted, under "Results" in <code>docs/dev/map-perf.md</code>.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-a11y">
+      <h3>Accessibility in each state</h3>
+      <p>A new spec, <code>e2e/game-a11y.spec.ts</code>, runs the per-page checklist of <code>docs/dev/accessibility.md</code> for the game's page in each state, on both projects:</p>
+      <table id="tbl-a11y-states">
+        <caption>States scanned and how each is reached</caption>
+        <thead>
+          <tr><th scope="col">State</th><th scope="col">Reached by</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">Opening</th><td><code>gotoEditor</code></td></tr>
+          <tr><th scope="row">Opening, room goal met</th><td>Amount 1, <code>paintOnce</code>; the opening card shows</td></tr>
+          <tr><th scope="row">Run</th><td>A game between runs, run time 8,000 ms, "Run", <code>waitRunning</code></td></tr>
+          <tr><th scope="row">Tally</th><td>The same after <code>waitTally</code></td></tr>
+          <tr><th scope="row">Tree, a node open</th><td>"Continue", then a node pressed</td></tr>
+          <tr><th scope="row">Workshop</th><td><code>buyFirstReady</code>, then "Edit"</td></tr>
+          <tr><th scope="row">Game panel open</th><td><code>openGamePanel</code> on the tree</td></tr>
+          <tr><th scope="row">Side goals open</th><td>The goal headline pressed on the tree</td></tr>
+          <tr><th scope="row">Ending</th><td>As journey 3</td></tr>
+        </tbody>
+      </table>
+      <p>In each state:</p>
+      <ul>
+        <li><code>expectNoA11yViolations(page)</code> passes.</li>
+        <li>The page has no horizontal scroll.</li>
+        <li>The page has one <code>main</code> and one <code>h1</code>.</li>
+        <li>The first Tab from <code>body</code> reaches the skip link, and the header's About entry is reachable (<code>expectAboutReachable</code>).</li>
+        <li>The state's own control ("Start", "Continue", "Run", "Buy", "Back to the tree") is reachable by <code>tabTo</code> and matches <code>:focus-visible</code>.</li>
+      </ul>
+      <ul>
+        <li>The run state is scanned with reduced motion emulated, while <code>running</code> is true.</li>
+        <li><code>e2e/targets.spec.ts</code> adds the tree with a node open and the tally to its 375 px sweep, with no new exemption.</li>
+        <li><code>e2e/layout.spec.ts</code> adds the game's header to its fit cases at 375, 768, 1024 and 1280 px, on the tree, with <code>widestGameHeader</code> applied: nothing overflows and no two items overlap (<code>expectPhoneHeaderFits</code> at 375 px).</li>
+        <li>The draggable-alternative criterion (SC 2.5.7) for the ring is journey 2. The flash limit and reduced motion of the drops are <code>run-play</code>'s component tests.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-gamemd">
+      <h3><code>docs/dev/game.md</code></h3>
+      <p>Rewritten whole. Its sections, in order, each with what it says:</p>
+      <ol>
+        <li><strong>The game.</strong> What it is in two sentences. The files of <code>src/lib/game/</code> and what each holds: <code>state.ts</code>, <code>save-shape.ts</code>, <code>units.ts</code>, <code>tree.ts</code>, <code>limits.ts</code>, <code>grant.ts</code>, <code>ladder.ts</code>, <code>run-result.ts</code>, <code>side-goals.ts</code>, <code>words.ts</code>, <code>catalogue/</code>, <code>run/</code>, <code>ui/</code>, <code>store.svelte.ts</code>, <code>saves.ts</code>, <code>save-sync.svelte.ts</code>, <code>save-api.ts</code>, <code>e2e.ts</code>. Links to <code>game-save.md</code>, <code>sim-page.md</code>, <code>timeline-ui.md</code> and <code>map-interfaces.md</code>.</li>
+        <li><strong>The page and its states.</strong> One address, <code>/</code>; <code>/sim</code> redirects. The five states of the design's table, what each shows and how each is left. The map remounts once at Start and keeps its camera. The header is the same in every state.</li>
+        <li><strong>The game's state.</strong> <code>GameState</code> field by field; <code>NEW_GAME</code>; <code>firstWinAt</code> and the account made at the first win (D7); nothing is reset in place (D14).</li>
+        <li><strong>Units.</strong> <code>Units</code> by kind, one kind <code>home</code>; <code>credit</code>, <code>affords</code>, <code>spend</code>, <code>shortBy</code>, <code>total</code>; how a second kind or a worth table is added later (P10).</li>
+        <li><strong>The tree.</strong> <code>TreeNode</code>, levels, <code>after</code> and <code>ring</code>; <code>treeView</code> and <code>NodeView</code>'s states; <code>buy</code>; the catalogue in <code>catalogue/nodes.ts</code>, every value sourced; how a new branch is added (P3); <code>scripts/tree-balance.ts</code> and what it reports.</li>
+        <li><strong>Grants and the policy document.</strong> <code>applyGrant</code> and <code>GAME_TRANSIT_ID</code>; every added policy on from month 1; the switch off and on, with no refund (P12); the page applies the grant, the store does not.</li>
+        <li><strong>Limits.</strong> <code>Limits</code>, <code>limitsOf</code>, <code>within</code>, <code>runnable</code>, <code>isGiven</code>, <code>FREE_MEASURES</code>; what the last rung lifts; what never runs in a game (P11, D4).</li>
+        <li><strong>The ladder.</strong> <code>LADDER_YEARS</code> and how <code>scripts/reach-measure.ts</code> sets it; <code>ladder</code>, <code>goalAt</code>, <code>RUNGS</code>, <code>RUNG_LUMP</code>, <code>takeNext</code>, <code>finished</code>; a met deadline stays met after a data update (call 8).</li>
+        <li><strong>Side goals.</strong> <code>SIDE_GOALS</code>, <code>SIDE_SHOWN</code>, <code>sideShown</code>, rewards, and that each reads what the page already has (call 11).</li>
+        <li><strong>A run.</strong> The run is not the playhead (call 1); the run seam and its wall time; <code>readRun</code>, <code>resultOf</code>, <code>settle</code>; what a run pays.</li>
+        <li><strong>Drops, the ring and sound.</strong> <code>planDrops</code> and a drop's worth (call 2); <code>RunLayer</code> and its canvas (call 13); the ring by pointer and keys; "Collect for me" (call 17); reduced motion, the flash limit and what a screen reader hears; <code>createSound</code> and the switch (call 18); the preference keys of <code>run/prefs.ts</code>.</li>
+        <li><strong>The screens and header parts.</strong> <code>Tally</code> (with the account offer), <code>Tree</code>, <code>GoalHeadline</code>, <code>OpeningCard</code>, <code>GameCell</code> and <code>GamePanel</code>; their test ids.</li>
+        <li><strong>The store.</strong> <code>GameStore</code>'s getters and methods (G7); each write calls <code>sync.changed</code>; <code>beforeLeave</code>; two tabs, last write wins.</li>
+        <li><strong>Saved games and storage.</strong> <code>GameSave</code> v2 and <code>parseGameSave</code>; <code>MAX_SAVES</code>; the storage keys; five-level saves are not read (P15). The server side is <code>game-save.md</code>.</li>
+        <li><strong>The open game and memory mode.</strong> The open game is the whole tool with no runs, tally or tree (call 9); what the server renders; what <code>/s/&lt;id&gt;</code> shows; <code>useGame()</code> outside a provider.</li>
+        <li><strong>The root layout and mounting.</strong> Where the store is made; the rule that a game part renders only after mount.</li>
+        <li><strong>Publishing.</strong> Publish sends the plan in the opening and the runnable document after it (P14). There is no Remix (P13).</li>
+        <li><strong>The e2e seams.</strong> The keys and readers of <code>e2e.ts</code>; the helpers of <code>e2e/helpers/game.ts</code> and <code>e2e/helpers/play.ts</code>; <code>window.__sfhRun</code>; why the journeys use amount 1 and a fast run; the three journeys of <code>e2e/game-journey.spec.ts</code>.</li>
+        <li><strong>The reach check.</strong> The command, its two questions, how the full tree's document is built, its four lines and exit codes, and that every dataset upload is preceded by it. Its test, <code>scripts/reach-check.spec.ts</code>.</li>
+        <li><strong>Words.</strong> <code>words.ts</code> holds the game's words; a page that shows one imports it.</li>
+      </ol>
+      <ul>
+        <li>Each statement names the code it describes and is checked against the merged code. Where this outline and the code differ, the code wins and the difference goes in the hand-back.</li>
+        <li>It names no level, bar, win card, level panel, <code>/sim</code> page or Remix, except the sentence that <code>/sim</code> redirects.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-claude">
+      <h3><code>CLAUDE.md</code></h3>
+      <p><strong>What This Is</strong> (<code>:7</code>) becomes:</p>
+      <blockquote>SF Housing: a free, open-source educational game on a map of San Francisco. A new game opens with the brush: paint zoning until there is room for the homes goal, then press Start. From then on the game is a loop of runs, a tally and a tree. A run plays the forecast to the goal's deadline in about 20 seconds; every completing project leaves a drop worth its net new homes, and only collected homes become units to spend. Between runs the tree spends units on real policy levers, each in force from today and able to be switched off; meeting the goal offers a deadline five years earlier. The workshop is the whole forecasting tool, limited to what is bought. Plans (<code>/p</code>) and policies (<code>/s</code>) are published as before. SvelteKit 2 + Svelte 5 (runes) + Tailwind 4 on a single Cloudflare Worker. Code is MIT; the data is open (ODbL / PDDL).</blockquote>
+      <p><strong>Architecture</strong>, the paragraph starting "Shell:" (<code>:101</code>), becomes:</p>
+      <blockquote>Shell: the root layout renders the skip link, header and <code>&lt;main&gt;</code>, and the footer on document routes only (<code>isFullHeightRoute</code> routes, the map pages, have none). The game is one page at one address: <code>/</code> holds the brush editor while the current game is in its opening and the simulation page after it, and <code>/sim</code> redirects to <code>/</code>. The header has no steps and is the same in every state of the game: the site name "SF Housing" (a link to <code>/</code>), the page's status cell, the pinned item, the unit count (<code>GameCell</code>, which opens the game panel: saved games, New game, the sync line, the sound switch and "Collect for me"), the page's actions, the account entry and About. The game's screens and header parts are in <code>src/lib/game/ui/</code> (<code>[docs/dev/game.md](docs/dev/game.md)</code>). Pages put actions in the header with <code>useHeaderActions(snippet, { pinned?, status? })</code> from <code>src/lib/shell/header-actions.svelte.ts</code> (<code>null</code> for none); only the root layout calls <code>provideHeaderActions()</code>. The map's layer switches are not header actions: they sit in the map toolbar's Layers panel beside Key (<code>MapKeyControl</code>, <code>[docs/dev/map-interfaces.md](docs/dev/map-interfaces.md)</code>). <code>status</code> is the page's one status cell on the left (after the site name, never in the Menu): the save state on <code>/</code>, with nothing visible when saved; after the opening "Updating" covers it while the numbers are stale or Play waits, and sits beside "Autosave off" instead while autosave is off. After the opening the actions hold Undo and Redo only while some pointer is coarse (a phone, a tablet, a touch laptop), then Publish; keyboard shortcuts are in About this model, not the header. Publish sends what is true: the plan during the opening, the policy the forecast runs after it. <code>pinned</code> is one item always in the bar: in the opening and on <code>/p/&lt;id&gt;</code> the room box (line 1 "Room for 47,335 homes", line 2 "57% of the goal", undated); after the opening the goal (<code>GoalHeadline</code>: line 1 the homes of the goal by its deadline, line 2 a bar and what meeting it unlocks; pressing it opens the side goals); in the open game, which <code>/s/&lt;id&gt;</code> shows, the simulation headline (line 1 the homes from today to the playhead's month, line 2 the effect and the goal). Below sm, on a page that pins an item, the site name moves into the Menu. The header also carries an account entry after the actions (<code>@handle</code> linking <code>/account</code>, fed by the root layout's <code>user</code>; or <code>Sign in</code> while a sign-in method is in effect, <code>signInAvailable</code>) and an About entry after it, both in the Menu below lg.</blockquote>
+      <ul>
+        <li>Where <code>SiteHeader.svelte</code> on the merged tree places the unit count below lg, one sentence says where, in the code's terms.</li>
+        <li>Where the merged code differs from a sentence above (the open game's pinned item, the opening's room box, the status cell), the sentence follows the code and the difference goes in the hand-back.</li>
+      </ul>
+      <p>The scoped docs list, entries that change (an entry not named stays, unless its file on the merged tree no longer covers what it names):</p>
+      <ul>
+        <li><strong>About this model (the page, the dialog on the simulation page, the link rule, the parts' colours, the map's credit)</strong>.</li>
+        <li><strong>Plan and policy sharing (<code>/p</code> plans and <code>/s</code> policies: API contract, rate limit, autosave, manual takedown)</strong>.</li>
+        <li><strong><code>src/lib/fzp/</code>, the code the simulation page shares (card and Details' pieces, lookups on the map, known gaps)</strong>.</li>
+        <li><strong>Ensemble runner (the simulation page's timeline worker host: openTimeline, setPolicy, filling, copies and refill, lookups)</strong>.</li>
+        <li>The timeline, sim page, permitting timers and public money entries: "on <code>/sim</code>" becomes "on the simulation page", and each names what its file covers on the merged tree (their files are <code>game-sim</code>'s).</li>
+        <li><strong>The game (the page and its states, the game's state, units, the tree and its catalogue, grants, limits and the runnable document, the ladder and side goals, a run, drops, the ring and sound, the screens and header parts, the store, saved games and storage, the open game, publishing, the e2e seams and journeys, the reach check)</strong> — <code>[docs/dev/game.md](docs/dev/game.md)</code>.</li>
+        <li><strong>Map performance (<code>npm run bench:map</code>: pan, timeline, simulation page and run cases, pass bar, results, CI note)</strong>.</li>
+        <li>The map-view interfaces and world score entries name the run view and homes waiting for money when <code>map-run</code> and <code>money-wait</code> documented them in those files.</li>
+      </ul>
+      <p>The commands table:</p>
+      <ul>
+        <li><code>npm run bench:map</code>: "Headed GPU map benchmark: pan, timeline and run cases (p50/p95 frame time); see docs/dev/map-perf.md".</li>
+        <li>The row <code>npx tsx scripts/level2-check.ts &lt;datasetDir&gt;</code> becomes <code>npx tsx scripts/reach-check.ts &lt;datasetDir&gt;</code>: "Run current law to the first deadline and the full tree to the last on a built dataset; exit 1 when either misses. Run before every dataset upload."</li>
+        <li>Two new rows for <code>tree-catalogue</code>'s scripts, each with the usage line from the script's first comment: <code>scripts/tree-balance.ts</code>, "Play the tree against the engine and report pacing", and <code>scripts/reach-measure.ts</code>, "Measure the earliest year the full tree reaches the goal; sets <code>LADDER_YEARS</code>".</li>
+      </ul>
+      <p>Conventions: the item on dataset uploads becomes "A dataset is uploaded only after <code>npx tsx scripts/reach-check.ts pipeline/out/&lt;v&gt;</code> exits 0 (D1: current law meets the first deadline; the full tree meets the last)."</p>
+    </section>
+
+    <section id="sec-design-readme">
+      <h3><code>README.md</code></h3>
+      <ul>
+        <li>The title becomes "# SF Housing".</li>
+        <li>The first paragraph becomes: "A free, open-source educational game about housing in San Francisco. Paint zoning until there is room for the homes goal, then play the city's forecast in short runs: collect units from the homes it builds and spend them on real policy levers, until the goal is met as early as the full set of levers allows. Plans and policies can be published."</li>
+        <li>Every other paragraph stays.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-name">
+      <h3>The old name in documents</h3>
+      <p>The rule: a current developer or user document says "SF Housing"; a dated record keeps what it said.</p>
+      <ul>
+        <li>Changes: <code>README.md:1</code>, <code>CLAUDE.md:7</code>, and <code>docs/dev/deploy.md:177</code>, whose app name becomes <code>SF Housing</code>.</li>
+        <li>Unchanged, as history: every file under <code>docs/superpowers/</code> (dated designs, specs and plans), every file under <code>.superpowers/</code> (run ledgers and surveys), <code>CHANGELOG.md</code>, and <code>docs/lesscars/plan-v1.md:2059</code> (a dated source record that names the dataset as it was then).</li>
+        <li>Unchanged, by the global constraint on hashed files: <code>pipeline/lidar-raster/sfh_lidar/__init__.py:1</code>.</li>
+        <li><code>docs/dev/sim-page.md:81</code> ("drops Simulator") is <code>game-sim</code>'s file; a hit left there is reported to that unit.</li>
+        <li>The Google Auth Platform's app name is a setting in Google's console: changing it is an owner action, named in the hand-back.</li>
+      </ul>
+      <p>Other lines of <code>docs/dev/deploy.md</code> and <code>docs/dev/pipeline.md</code>:</p>
+      <ul>
+        <li><code>docs/dev/deploy.md:39</code> becomes: "<strong>Reach check.</strong> Before <code>upload</code>, <code>npx tsx scripts/reach-check.ts pipeline/out/&lt;v&gt;</code> must exit 0. Exit 1 means current law misses the first deadline, or the full tree misses the last, on that data: nothing is uploaded, and the owner decides the remedy (<code>[game.md](game.md)</code>, "The reach check")."</li>
+        <li><code>docs/dev/pipeline.md:48</code> becomes: "3. <code>npx tsx scripts/reach-check.ts pipeline/out/&lt;v&gt;</code> must exit 0: on this data current law meets the first deadline and the full tree meets the last. On exit 1 nothing is uploaded and the owner decides (<code>[game.md](game.md)</code>, "The reach check")."</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-outside">
+      <h3>Documents outside the write set</h3>
+      <p>These current documents become untrue with this package and are in no unit's write set. This unit reports them and edits one only when the conductor adds it to this unit's write set. The change each needs:</p>
+      <ul>
+        <li><code>docs/dev/testing.md</code>: "The game in tests" rewritten for the helpers and seams above; the journey line (<code>:88</code>) names the three journeys; "The level 2 check" becomes "The reach check", pointing at <code>game.md</code>.</li>
+        <li><code>docs/dev/map-perf.md</code>: the run case under its own heading with its result; "Running it" (<code>:37</code>) stops telling the reader to kill the listener on port 4173 and says to wait for it.</li>
+        <li><code>docs/dev/accessibility.md</code>: the target sweep and the rest-text checks name the game's states on <code>/</code> instead of <code>/</code> and <code>/sim</code>.</li>
+        <li><code>docs/dev/developing.md</code>: Remix and the levels go; <code>/sim</code> as a page becomes <code>/</code>; "Levels while developing" becomes the game's seams while developing (amount, run time).</li>
+        <li><code>docs/dev/plan-sharing.md</code>, <code>docs/dev/ui-parts.md</code>, <code>docs/dev/sim-funding.md</code>: their Remix statements go.</li>
+        <li><code>docs/dev/about.md</code>, <code>fzp-mode.md</code>, <code>ensemble-runner.md</code>, <code>sim-timers.md</code>, <code>sim-levers.md</code>, <code>policy-timeline.md</code>, <code>finance-*.md</code>, <code>market.md</code>, <code>map-stream.md</code>, <code>road-lots.md</code>, <code>world-core.md</code>, <code>world-funding.md</code>: "<code>/sim</code>" as the name of the page becomes "the simulation page".</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-sweep">
+      <h3>The final sweep</h3>
+      <p>After the tests and documents are written, these find nothing outside the allowed places:</p>
+      <pre><code data-lang="sh">X=(-- . ':!docs/superpowers/**' ':!.superpowers/**' ':!CHANGELOG.md' ':!migrations/**' ':!docs/lesscars/**' ':!pipeline/**')
+git grep -n 'Housing Simulator' "${X[@]}"
+git grep -n -i 'remix' "${X[@]}"
+git grep -n -E 'LevelCell|LevelPanel|WinCard|levelUp|barOf|allowedAt|levelNeeded|SEED_BAR_DAY|header-level|win-card|paint-win|tl-win|tl-bar-flag|data-step' "${X[@]}"
+git grep -n -E 'level2-check|readLevel2|level2Lines|level2Exit|runEmptyDocument' "${X[@]}"
+git grep -n "'/sim'" -- e2e
+git grep -n -F '\/sim$' -- e2e</code></pre>
+      <ul>
+        <li>Allowed: the <code>/sim</code> redirect's route and the test that asserts the redirect; an assertion that a banner has no "Remix", and <code>game.md</code>'s sentence that there is no Remix; the history files the rule above keeps.</li>
+        <li>A hit in a file of this unit's write set is fixed.</li>
+        <li>A hit in another unit's file is reported with its <code>file:line</code> and owner, and left alone.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-checks">
+      <h3>The final checks</h3>
+      <pre><code data-lang="sh">npm run check
+npm run lint
+npm run test:unit
+npm run test:e2e
+npm run bench:map -- -g "run with drops"
+npx tsx scripts/reach-check.ts pipeline/out/&lt;v&gt;</code></pre>
+      <ul>
+        <li>All run on the merged tree, in this order, in the foreground.</li>
+        <li><code>test:e2e</code> and the bench start a server on port 4173 and fail when it is busy. Before each, <code>lsof -nP -iTCP:4173 -sTCP:LISTEN</code>: a listener belongs to another session; the implementer waits and checks again, and never stops it.</li>
+        <li>A test that passes only on retry counts as a failure.</li>
+        <li>The bench runs on a quiet machine, by the agent (<a href="#sec-design-bench">The run bench</a>); the reach check runs as <a href="#sec-design-reach">The reach check</a> gives.</li>
+        <li><code>scripts/docs-index.spec.ts</code> passes within <code>test:unit</code>.</li>
+        <li>Signoff is the conductor's, after the hand-back. The hand-back holds the reach check's lines, the bench line, the sweep's hits in other units' files, every requirement on another unit that the merged code did not meet, and the owner action for Google's app name.</li>
+      </ul>
+    </section>
+  </section>
+
+  <section id="sec-files">
+    <h2>Files</h2>
+    <p>Creates:</p>
+    <ul>
+      <li><code>e2e/game-a11y.spec.ts</code></li>
+      <li><code>e2e/helpers/play.ts</code></li>
+      <li><code>e2e/bench/game-run.bench.ts</code></li>
+      <li><code>scripts/reach-check.ts</code> and <code>scripts/reach-check.spec.ts</code>, by renaming the two level 2 files</li>
+    </ul>
+    <p>Changes:</p>
+    <ul>
+      <li><code>e2e/game-journey.spec.ts</code>, <code>e2e/game-core.spec.ts</code>, <code>e2e/game-helpers.spec.ts</code>, <code>e2e/game-save.spec.ts</code>, <code>e2e/game-shell.spec.ts</code>, <code>e2e/game-sim.spec.ts</code></li>
+      <li>The specs, perf specs, benches and helpers of <a href="#tbl-e2e-census">the census</a>, and any other e2e file the rules reach</li>
+      <li><code>docs/dev/game.md</code>, <code>CLAUDE.md</code>, <code>README.md</code></li>
+      <li><code>docs/dev/deploy.md</code> (<code>:39</code>, <code>:177</code>) and <code>docs/dev/pipeline.md</code> (<code>:48</code>)</li>
+    </ul>
+    <p>Deletes: <code>scripts/level2-check.ts</code> and <code>scripts/level2-check.spec.ts</code>, by the rename.</p>
+    <p>Outside the design's write set, reported:</p>
+    <ul>
+      <li><code>scripts/reach-check.ts</code> and its spec: the design names <code>scripts/level2-check.ts</code>; the rename keeps the script and gives it a name the game still has.</li>
+      <li><code>docs/dev/pipeline.md</code>: named by the assignment; it names the script.</li>
+      <li><code>docs/dev/deploy.md</code>: in the write set through "the other documents that carry the old name" (<code>:177</code>); <code>:39</code> names the script.</li>
+      <li>The documents of <a href="#sec-design-outside">Documents outside the write set</a>: not taken.</li>
+    </ul>
+    <p>Not touched: <code>e2e/helpers/game.ts</code> (<code>game-save</code>), <code>playwright.config.ts</code>, <code>playwright.bench.config.ts</code>, <code>chreode.config.ts</code>, and every file under <code>src/</code> and <code>pipeline/</code>.</p>
+  </section>
+
+  <section id="sec-tests">
+    <h2>Tests</h2>
+    <p>e2e, both projects unless marked:</p>
+    <ul>
+      <li>A new visitor paints to the room goal at amount 1, starts, runs with "Collect for me", collects every drop, reads the collected count in the tally, buys a node, opens the workshop and comes back, runs again and takes the next goal; the account holds the game at <code>phase</code> <code>'runs'</code>, <code>rung</code> 1.</li>
+      <li>By keyboard only (chromium): one stamp, Start, at least one drop collected by steering the ring with the arrow keys, Continue, a purchase, the workshop and back, the next goal; every target shows its focus ring.</li>
+      <li>A game at the last rung meets it in one run, and the tree shows the ending with its year and Publish, and no next goal.</li>
+      <li>The game's page passes the accessibility checklist in each of the nine states of <a href="#tbl-a11y-states">the states table</a>.</li>
+      <li>The target sweep passes on the tree and the tally at 375 px; the header fits with the game's widest strings at four widths.</li>
+      <li>The game specs of <a href="#sec-design-game-specs">The game specs</a>.</li>
+      <li>Every existing spec passes under the rules of <a href="#sec-design-e2e">The existing specs</a>, including <code>/sim</code> redirecting to <code>/</code> and no Remix on the shared pages.</li>
+    </ul>
+    <p>Unit (Vitest server project), <code>scripts/reach-check.spec.ts</code> on fixture-0, with the fills in <code>beforeAll</code> under a 600,000 ms hook argument as today:</p>
+    <ul>
+      <li><code>runDocument</code> with <code>currentLaw</code> covers the window.</li>
+      <li>At amount 1 both questions are reached in the first month and <code>reachExit</code> is 0.</li>
+      <li>At the goal's own amount, current law misses on the fixture, the line reads "missed, …, … short", and <code>reachExit</code> is 1.</li>
+      <li>For each question, the amount equal to its <code>homesAtDeadline</code> is reached and one more is missed by 1.</li>
+      <li><code>readReach(run, 'full')</code> reads the deadline of rung <code>RUNGS - 1</code>, and <code>'current'</code> that of rung 0.</li>
+      <li><code>fullTreeDocument</code> passes <code>parsePolicy4</code>, <code>runnable</code> returns it unchanged, it holds every policy of current law, and every preset and measure grant of <code>NODES</code> has an <code>on</code> policy with that preset.</li>
+      <li><code>reachLines</code> gives four lines, the first two as specified.</li>
+      <li>No manifest and a missing calibration are refused with the messages of today.</li>
+    </ul>
+    <p>Bench: the run case, by the agent on a quiet machine, p95 at most 16.7 ms on the live dataset.</p>
+  </section>
+
+  <section id="sec-decisions">
+    <h2>Decisions</h2>
+    <ul>
+      <li><strong>One goal amount, 1, for every journey.</strong> One stamp meets the room goal and every run meets its rung on fixture-0, which removes the old mid-test write of the key and makes each run's outcome certain.</li>
+      <li><strong>No ladder seam.</strong> G6 makes <code>RUNGS</code> a constant; seeding a game at the last rung reaches the ending without changing a model commitment.</li>
+      <li><strong>A fast-run seam of 500 to 60,000 ms.</strong> A 20 s run does not fit Playwright's 30 s test timeout, and signoff forbids raising it.</li>
+      <li><strong>A run hook, <code>window.__sfhRun</code>.</strong> The ring is drawn on a canvas, so a keyboard journey can find a drop only from the page's own state.</li>
+      <li><strong>The arrow step is at most the base radius.</strong> Otherwise a ring steered one step at a time can pass over a drop forever.</li>
+      <li><strong>State is read from storage, not the screen.</strong> The saved game is G1's contract, while the words on the tally are another unit's to choose.</li>
+      <li><strong>Nodes are found on the screen.</strong> The catalogue imports <code>$lib</code>, which Playwright cannot resolve.</li>
+      <li><strong>The keyboard journey runs on chromium only.</strong> A keyboard on the phone layout is not a case the checklist asks for, and the pointer journey covers the phone.</li>
+      <li><strong>The open game at <code>/</code> shows the workshop.</strong> Call 9 makes it the whole tool with no runs, tally or tree; the opening shows the brush only for a game in its opening.</li>
+      <li><strong><code>gotoEditor</code> makes a new visitor.</strong> The Paint specs then reach the brush with one change in one helper.</li>
+      <li><strong>The step clicks become the site-name link.</strong> Those tests are about a client navigation into the simulation, which the site name still gives.</li>
+      <li><strong>The title of <code>/</code> is expected to be "SF Housing".</strong> One page needs one title, and the design names the site "SF Housing".</li>
+      <li><strong>The reach check is renamed <code>reach-check</code>.</strong> Level 2 no longer exists, and the check now asks about the first and last deadlines.</li>
+      <li><strong>The full tree's document is built in the reach check by a written rule.</strong> The rule (catalogue order made topological, grants with the limits after each purchase) gives one document, which the check's test pins.</li>
+      <li><strong>Exit 1 when either question misses.</strong> Either miss means the game cannot be finished on that dataset, which must block an upload as D1 does.</li>
+      <li><strong>The reach check runs on a local rebuild of the published version.</strong> Nothing hashed changes, so the build is the published dataset, and nothing is uploaded.</li>
+      <li><strong>The bench case seeds no run time and no amount.</strong> It measures the run a player gets; the record is on the live dataset, because fixture-0 has too few drops to load a frame.</li>
+      <li><strong>The pointer path is a figure from the test, one move after another.</strong> Real input reaches the map and the run layer alike, and no timer paces it.</li>
+      <li><strong>The reach check's documentation lives in <code>game.md</code>.</strong> <code>game.md</code> is in this unit's write set and <code>testing.md</code> is not, so links point there.</li>
+      <li><strong><code>docs/lesscars/plan-v1.md</code> keeps the old name.</strong> Its line is a dated source record.</li>
+    </ul>
+  </section>
+
+  <section id="sec-out-of-scope">
+    <h2>Out of scope</h2>
+    <ul>
+      <li>The e2e helper file <code>e2e/helpers/game.ts</code>, the seam's keys and readers in <code>src/lib/game/e2e.ts</code>: <code>game-save</code>.</li>
+      <li>Reading the goal amount and the run time on the simulation page, and the run seam: <code>game-sim</code>.</li>
+      <li><code>window.__sfhRun</code>, the ring's step, the drops' motion and flash limit: <code>run-play</code>.</li>
+      <li>The test ids of the tally, tree, goal headline and game cell: <code>tally-tree</code>.</li>
+      <li>Node prices, <code>LADDER_YEARS</code> and its measurement, <code>scripts/tree-balance.ts</code>: <code>tree-catalogue</code>.</li>
+      <li><code>RUNG_LUMP</code> and <code>BASE_HANDS</code>: <code>game-core</code>.</li>
+      <li>The redirect's status code, the page title and <code>h1</code>, the header's layout by breakpoint: <code>game-shell</code>.</li>
+      <li><code>docs/dev/sim-page.md</code>, <code>timeline-ui.md</code>: <code>game-sim</code>. <code>docs/dev/game-save.md</code>: <code>game-save</code>. <code>docs/dev/map-interfaces.md</code>: <code>city-net</code> and <code>map-run</code>. <code>docs/dev/world-score.md</code>: <code>money-wait</code>.</li>
+      <li>The rest-text checks under <code>src/</code> and every Vitest file under <code>src/</code>: the units that own those files.</li>
+      <li>Uploading a dataset: nothing hashed changes.</li>
+      <li>Running <code>npm run signoff</code>: the conductor.</li>
+      <li>The Google Auth Platform's app name: the owner.</li>
+    </ul>
+  </section>
+</article>

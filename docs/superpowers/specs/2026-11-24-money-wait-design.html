@@ -1,0 +1,462 @@
+<article>
+  <header>
+    <h1>Homes waiting for money</h1>
+    <p>A per-month count of the homes waiting in the plan's funding line, taken in the worker's step, carried by <code>SeriesChunk.waiting</code> to <code>TimelineView.waitingMoney</code>.</p>
+  </header>
+
+  <section id="sec-purpose">
+    <h2>Purpose</h2>
+    <p>The tally after a run shows where the homes not yet built stand: homes in each permitting stage and homes waiting for money. The stage counts are in the series today. The count of homes waiting for money is not: the funding line is worker state, and no count of it is recorded or sent. This unit adds that count, month by month, so the tally (U1) and a run's reading (G6, <code>RunReading.waitingMoney</code>) can read it at the deadline's month.</p>
+    <ul>
+      <li>It produces row E2. It needs no row.</li>
+      <li>It carries call 12: the tally's "waiting for money" row is its own build unit. The tally ships without it and gains it when this unit lands.</li>
+      <li>It carries the source model's rule that the tally shows only what the engine measures: the count is read from the line the engine serves, and nothing is estimated.</li>
+      <li>It carries the global constraint of one future: the count is read from the world and never feeds back into it, so the forecast is unchanged.</li>
+    </ul>
+  </section>
+
+  <section id="sec-interfaces">
+    <h2>Interfaces</h2>
+    <p>These rows and their sections are copied from the design document. A change to one is a change to the design.</p>
+    <table id="tbl-interfaces">
+      <caption>Interface table</caption>
+      <thead>
+        <tr><th scope="col">Row</th><th scope="col">Owner</th><th scope="col">Layer</th><th scope="col">Summary</th><th scope="col">Contract</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">E2</th><td><code>money-wait</code></td><td>Decomposition choice</td><td>Homes waiting for money, by month</td><td><a href="#sec-if-e2">E2</a></td></tr>
+      </tbody>
+    </table>
+
+    <section id="sec-if-e2">
+      <h3>E2 Homes waiting for money</h3>
+      <pre><code data-lang="ts">// src/lib/sim/world/score/types.ts
+export interface SeriesChunk {
+  from: number;
+  rows: MonthRow[];
+  planEffect: PlanRow[];
+  money: MoneyRow[] | null;
+  tiers: TierUnits[] | null;
+  waiting: number[] | null;
+}
+
+export interface TimelineView {
+  // every field it has today, and:
+  waitingMoney: number[] | null;
+}</code></pre>
+      <dl>
+        <dt><code>waiting</code></dt><dd>Per calendar month of the chunk: homes in applications waiting in the plan's funding line at the month's end.</dd>
+      </dl>
+      <ul>
+        <li>Null exactly when <code>money</code> is null.</li>
+        <li>A row marked gone is not counted.</li>
+        <li>A lot with two applications counts once, by the larger.</li>
+        <li>The value is of the plan's world, never the comparison's.</li>
+        <li>No file under <code>src/lib/sim/scenario</code>, <code>levers</code> or <code>finance</code> changes.</li>
+      </ul>
+    </section>
+  </section>
+
+  <section id="sec-global-constraints">
+    <h2>Global constraints</h2>
+    <ul>
+      <li>One future: the same policy document always gives the same forecast. No game state reaches the worker except through the policy document.</li>
+      <li>No file the dataset version hashes is changed: <code>pipeline</code>, <code>src/lib/{data,generator,timelapse,scoreboard}</code>, <code>src/lib/plan/{geometry,types}.ts</code>, <code>src/lib/sim/{scenario,levers,finance}</code>. The dataset version stays as it is.</li>
+      <li>A policy node acts on a lever the code already has, at a value the code already sources. No node invents a value.</li>
+      <li>The painted area, own pools, the City funding scale and market terms are never offered in a game.</li>
+      <li>Published plans and policies open and play in full, as today.</li>
+      <li>WCAG 2.2 AA: everything works from the keyboard; targets are at least 24 px; motion follows the reduced-motion setting; nothing flashes more than three times a second.</li>
+      <li>Page text is short. A node is a name, a line and a price.</li>
+      <li>The CSP is not widened. Sound is made in the browser; no audio file, font or script is added.</li>
+      <li>A runtime dependency is not added without a credit in <code>src/lib/attribution.ts</code>. None is expected.</li>
+      <li>Code style: 2-space indent, single quotes, no trailing commas, 100 columns.</li>
+      <li>Vitest runs with <code>expect.requireAssertions</code>. Tests are colocated.</li>
+      <li>A schema change goes through <code>npm run db:generate</code>. Migrations are never edited by hand.</li>
+      <li>Signoff fails on server stderr, on timing crutches and on retried flakes. Timing is measured only on a quiet machine.</li>
+      <li>Port 4173 belongs to whichever session started the preview. Never kill it; wait.</li>
+      <li>Commits use Conventional Commits and carry no Claude attribution.</li>
+      <li>Work happens in git worktrees under <code>.claude/worktrees/</code>.</li>
+    </ul>
+  </section>
+
+  <section id="sec-found">
+    <h2>What the code is today</h2>
+    <p>Read on the branch <code>worktree-incremental-feel</code> at <code>4d22bf96</code>.</p>
+
+    <section id="sec-found-series">
+      <h3>The series, the chunk and the view</h3>
+      <ul>
+        <li>A series files 18 fields per calendar month: pipeline, new, entitled new, exited, six stages, funded, displaced, displaced of completed, five tiers (<code>src/lib/sim/world/score/series.ts:35-51</code>). Its data layout is <code>version: 5</code> (<code>series.ts:53</code>, <code>score/types.ts:97</code>).</li>
+        <li>Every field is a dated delta filed by an event, summed to a level on demand (<code>series.ts:260-276</code>, <code>:569-578</code>). None is a level read from the world.</li>
+        <li><code>stepped(month)</code> takes the model month only and has no world (<code>series.ts:607-622</code>, <code>score/types.ts:139</code>). <code>add(e, world, statics)</code> gets the world as it stands when the event is fed (<code>series.ts:396-401</code>).</li>
+        <li>Calendar month i is final once the model month holding its last day is stepped: <code>finalTable(s)[i] = monthOfDay(asOf, last day of month i)</code> (<code>score/statics.ts:220-225</code>, <code>series.ts:561-566</code>).</li>
+        <li>A model month is 30.436875 days (<code>src/lib/timelapse/time.ts:10</code>). Model month m runs from <code>asOf + floor((m - 1) * MONTH_DAYS) + 1</code> to <code>asOf + floor(m * MONTH_DAYS)</code>; day <code>asOf</code> and earlier are model month 0 (<code>src/lib/sim/world/months.ts:9-28</code>).</li>
+        <li><code>chunkOf</code> reads the plan's money and tiers through <code>extrasOf(plan)</code> only when a money feed is given, and the twin's rows only to subtract two fields (<code>score/chunk.ts:21-33</code>).</li>
+        <li><code>MoneyFeed</code> carries the plan's world (<code>score/types.ts:146-151</code>). <code>moneyRowsOf</code> already reads history from that world at chunk time: each pool's shut rows (<code>score/money.ts:37-48</code>). A world without funding columns gives null and false there.</li>
+        <li><code>viewOf</code> joins chunks; its <code>tiers</code> are null when any chunk has none, its <code>money</code> null when any chunk has none or there are no rows (<code>score/view.ts:102-128</code>). <code>chunksBefore</code> trims each per-month array of a straddling chunk (<code>score/view.ts:138-156</code>).</li>
+        <li><code>SeriesChunk</code> has <code>from</code>, <code>rows</code>, <code>planEffect</code>, <code>money</code>, <code>tiers</code> (<code>score/types.ts:78-86</code>). <code>TimelineView</code> has no waiting field (<code>score/types.ts:171-186</code>).</li>
+      </ul>
+    </section>
+
+    <section id="sec-found-line">
+      <h3>The funding line</h3>
+      <ul>
+        <li><code>FundLine</code> holds one row per waiting application: <code>lot</code>, <code>kind</code>, <code>units</code>, <code>gone</code>, <code>seq</code> and others (<code>src/lib/sim/world/funding/columns.ts:13-60</code>). <code>gone</code> is "1 = removed this step, dropped by <code>compactLine</code>" (<code>columns.ts:30-31</code>).</li>
+        <li><code>units</code> is the application's size, the homes it would build, set at joining (<code>funding/apply.ts:334</code>) or on a re-make (<code>apply.ts:472</code>). It is gross: the same size an award passes as <code>FundedStart.units</code> (<code>funding/serve.ts:228</code>, <code>:285</code>).</li>
+        <li>A lot holds at most two applications, one per kind (<code>apply.ts:376-378</code>, <code>funding/line-index.ts:59-65</code>).</li>
+        <li>Rows of a lot that started another way can stay on the line. An ordinary start with a <code>'start'</code> takes the lot's rows off (<code>funding/system.ts:84-85</code>). A start that gained no home sends no <code>'start'</code>, and its lot's rows stay until they would be awarded; the lazy guard then drops them (<code>serve.ts:60-66</code>). The guard's test is: the lot has a lot row and its state is not <code>LOT_FREE</code> (<code>serve.ts:202-206</code>).</li>
+        <li>A lapse marks a row <code>gone</code> directly (<code>apply.ts:465-468</code>).</li>
+        <li>Gone rows may survive a step on a long line; "every reader of the line skips them" (<code>funding/shadow.ts:81-83</code>). Compaction keeps the line index current (<code>line-index.ts:123-131</code>).</li>
+        <li>The line index keeps each lot's waiting rows in <code>byLot</code>, rebuilt from the rows not gone when stale (<code>line-index.ts:36-51</code>). <code>rowOfSeq</code> finds a row by <code>seq</code> by binary search (<code>line-index.ts:68-77</code>).</li>
+        <li><code>fundOf(world)</code> throws on a world without funding columns (<code>columns.ts:220-224</code>).</li>
+        <li>No count of waiting applications or homes is recorded or sent anywhere (<code>engine-outputs.md</code> section d, checked: the only reader of the funding columns outside <code>funding/</code> is <code>score/money.ts:42</code>).</li>
+      </ul>
+    </section>
+
+    <section id="sec-found-step">
+      <h3>When the line is served in a step</h3>
+      <ul>
+        <li>A step runs seven systems: (1) policy, (2) money in, (3) the stages due, (4) applications join (<code>f.apply</code>), (5) the line is served (<code>f.serve</code>), (6) ordinary starts set aside, (7) shadow starts (<code>f.shadow</code>), then <code>world.month</code> is set (<code>src/lib/sim/world/world.ts:569-675</code>).</li>
+        <li>The line is served once per model month, in system 5 (<code>world.ts:651-652</code>). Awards in the scan carry days inside the month (<code>serve.ts:257-269</code>), and joins carry their <code>applied</code> day (<code>apply.ts:328</code>). Within one step nothing orders them by day.</li>
+        <li>System 7 runs last in every funded month, and compacts the line (<code>shadow.ts:81-83</code>, <code>world.ts:671-674</code>).</li>
+        <li>No funding hook runs in a month whose frame has <code>finance</code> null (<code>world.ts:79-81</code>). The funding columns can be made after month 1 by the first hook that runs (<code>system.ts:20-33</code>).</li>
+      </ul>
+    </section>
+
+    <section id="sec-found-runner">
+      <h3>How the runner feeds, restores and refills</h3>
+      <ul>
+        <li>The world's events and a <code>stepped</code> mark go to a log at step time (<code>runner/ensemble.ts:132-143</code>, <code>:241-251</code>). A <code>feed</code> unit drains the log into the series later (<code>ensemble.ts:222-239</code>).</li>
+        <li>Feeding happens only while the series gate is open (<code>ensemble.ts:166</code>, <code>:285-290</code>). The gate closes on an accepted edit and reopens when that side's compile finishes (<code>runner/runner.ts:643</code>, <code>:776-784</code>). While it is closed the world can step on. So when a <code>stepped</code> mark is fed, the world may be months past it.</li>
+        <li>Copies are taken after model month 0 only (<code>ensemble.ts:23</code>). A copy holds a <code>structuredClone</code> of the world, the series data and the log's unfed tail (<code>ensemble.ts:213-220</code>). A restore clones the copy's world and series and re-steps quietly (<code>ensemble.ts:201-211</code>, <code>:298-329</code>).</li>
+        <li>The runner's money feed is the plan's ensemble world as it stands (<code>runner.ts:757-768</code>). It is null unless month 1's frame has finance with pools (<code>runner.ts:787-788</code>).</li>
+        <li><code>filled</code> carries <code>chunkOf(plan, comparison, moneyOf(through), posted + 1, through)</code> for months final in both ensembles (<code>runner.ts:811-822</code>). A <code>refill</code> withdraws months from <code>from</code> and the following <code>filled</code> re-posts them (<code>runner.ts:688-700</code>).</li>
+      </ul>
+    </section>
+
+    <section id="sec-found-tests">
+      <h3>Tests and bars that touch the shape</h3>
+      <ul>
+        <li><code>score/chunk.spec.ts:56-65</code> asserts a chunk's keys are exactly <code>from</code>, <code>money</code>, <code>planEffect</code>, <code>rows</code>, <code>tiers</code>.</li>
+        <li><code>score/view.spec.ts:101-104</code> builds a chunk with money by spreading a chunk made without a feed.</li>
+        <li><code>src/lib/sim/world/host.spec.ts:399-401</code> asserts the posted chunks give the same view as one chunk of a plain loop over the same world, with baseline money (<code>:390-395</code>).</li>
+        <li><code>src/lib/sim/world/host.edit.spec.ts:213-239</code> trims chunks at a refill with its own <code>before</code>, which copies <code>money</code> and <code>tiers</code> only, and compares the view with a fresh open's by <code>toEqual</code> (for example <code>:319-320</code>, with money).</li>
+        <li><code>src/lib/sim/timeline-client.host.spec.ts:188-198</code> has the same <code>before</code>.</li>
+        <li><code>src/lib/timeline/test/fixtures.ts:80-103</code> builds <code>SeriesChunk</code> literals. <code>src/lib/timeline/SimDetails.svelte.spec.ts:116-131</code> builds a <code>TimelineView</code> literal.</li>
+        <li>Bars: one funded world-month at most 90 µs mean on the bench city (<code>funding/funded-month.perf.spec.ts:21</code>, <code>:78-96</code>); no slice over 50 ms, first cells and first filled within 3 s, the live city's whole window within 480 × 9 ms (<code>host.perf.spec.ts:54-56</code>, <code>:813-838</code>); one month's scoring for one pair within 1 ms at the median (<code>score/chunk.perf.spec.ts:27</code>, <code>:129-150</code>).</li>
+        <li>The determinism rule for <code>src/lib/sim/world/**</code> forbids <code>Math.exp</code>, <code>Math.log</code>, <code>Math.pow</code> and the other inexact <code>Math</code> functions, and the <code>**</code> operator (<code>eslint.config.js:65-125</code>, checked by <code>determinism.lint.spec.ts</code>).</li>
+      </ul>
+    </section>
+  </section>
+
+  <section id="sec-design">
+    <h2>Design</h2>
+
+    <section id="sec-design-where">
+      <h3>Where the count is taken and kept</h3>
+      <p>The count is taken at the end of each funded step and kept in the world, beside the line. The chunk reads it from the plan's world.</p>
+      <aside data-kind="decision"><strong>Decision</strong> The count is not a series field. The series is fed from a log, and when a <code>stepped</code> mark is fed the world may have stepped on (<a href="#sec-found-runner">runner</a>). The line at a past month cannot be read then. So the count must be taken inside the step, where the world is the month's. Kept in the world, it survives a clone and a restore as the world does, and the series layout (<code>version: 5</code>, 18 fields) is unchanged.</aside>
+      <ul>
+        <li>The funding line gains two fields: <code>waitHomes</code>, the count by model month, and <code>waitThrough</code>, the last model month recorded.</li>
+        <li>The funding system's <code>shadow</code> hook (system 7) records the count after <code>stepShadows</code>. Nothing in the step changes the line after it.</li>
+        <li>A new file, <code>src/lib/sim/world/funding/waiting.ts</code>, holds the count, the record and the reader.</li>
+        <li>The series' extras gain <code>waiting(world, from, through)</code>, which maps calendar months to model months with the series' own <code>finalTable</code>.</li>
+        <li><code>chunkOf</code> fills <code>waiting</code> from the money feed's world, which is the plan's.</li>
+      </ul>
+      <figure id="fig-flow">
+        <svg class="diagram" viewBox="0 0 760 120" role="img" aria-labelledby="fig-flow-t">
+          <title id="fig-flow-t">The count is taken in the step, kept in the world and read by the chunk</title>
+          <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 10 5 0 10z"/></marker></defs>
+          <g class="node" id="n-step"><rect x="10" y="38" width="130" height="44"/><text x="75" y="60">step, system 7</text></g>
+          <g class="node missing" id="n-record"><rect x="170" y="38" width="130" height="44"/><text x="235" y="60">recordWaiting</text></g>
+          <g class="node missing" id="n-col"><rect x="330" y="38" width="130" height="44"/><text x="395" y="60">line.waitHomes[m]</text></g>
+          <g class="node" id="n-chunk"><rect x="490" y="38" width="120" height="44"/><text x="550" y="60">chunkOf</text></g>
+          <g class="node result" id="n-view"><rect x="640" y="38" width="110" height="44"/><text x="695" y="60">viewOf</text></g>
+          <g class="edge" data-from="n-step" data-to="n-record"><path d="M140 60H168"/></g>
+          <g class="edge" data-from="n-record" data-to="n-col"><path d="M300 60H328"/></g>
+          <g class="edge" data-from="n-col" data-to="n-chunk"><path d="M460 60H488"/><text x="474" y="30">finalTable[i]</text></g>
+          <g class="edge" data-from="n-chunk" data-to="n-view"><path d="M610 60H638"/><text x="624" y="30">waiting</text></g>
+        </svg>
+        <figcaption>Figure 1. The plan's world records each model month; a chunk reads the model month that ends each calendar month.</figcaption>
+      </figure>
+    </section>
+
+    <section id="sec-design-count">
+      <h3>The counting rule</h3>
+      <pre><code data-lang="ts">// src/lib/sim/world/funding/waiting.ts
+import type { World } from '../types';
+
+/** Homes in the applications waiting in the line now. 0 for a world without funding columns. */
+export function waitingHomes(world: World): number;
+
+/** Records `waitingHomes(world)` as model month `month`'s. Called once per funded step, last. */
+export function recordWaiting(world: World, month: number): void;
+
+/** Homes waiting at the end of model month `m`, for 0 &lt;= m &lt;= world.month. */
+export function waitingAt(world: World, m: number): number;</code></pre>
+      <p>The count, in code:</p>
+      <pre><code data-lang="ts">export function waitingHomes(world: World): number {
+  if (!('gone' in world.line)) return 0;
+  const line = world.line as FundLine;
+  const lots = world.lots;
+  let sum = 0;
+  for (const [lot, members] of lineIndex(line).byLot) {
+    // Rule 8's lazy guard, the same test as serveRow's: a lot no longer free waits for nothing.
+    const li = lotRow(lots, lot);
+    if (li &gt;= 0 &amp;&amp; lots.state[li] !== LOT_FREE) continue;
+    // A lot with two applications counts once, by the larger.
+    let most = 0;
+    for (const m of members) {
+      const i = rowOfSeq(line, m.seq);
+      if (i &lt; 0 || line.gone[i] === 1) continue;
+      if (line.units[i] &gt; most) most = line.units[i];
+    }
+    sum += most;
+  }
+  return sum;
+}</code></pre>
+      <ul>
+        <li>A row marked <code>gone</code> is not counted. The index holds only rows not gone; the check on <code>gone</code> guards a row marked after the index was built.</li>
+        <li>A lot with two applications counts once, by the larger <code>units</code>.</li>
+        <li>The homes of a row are its <code>units</code>: the gross homes the application would build, as an award passes them on.</li>
+        <li>A row whose lot has a lot row in a state other than <code>LOT_FREE</code> is not counted: its lot started another way, and the row is waiting only until the lazy guard drops it.</li>
+        <li>A row whose lot has no lot row is counted, as the guard treats that lot as free.</li>
+        <li>A row waiting on a closed pool, or one that will later lapse, is counted while it waits.</li>
+        <li>The sum is of whole numbers, so the order of <code>byLot</code> does not change it.</li>
+        <li>Imported names used per call (<code>LOT_FREE</code>, <code>lotRow</code>, <code>lineIndex</code>, <code>rowOfSeq</code>) are bound once at module top, as <code>series.ts:18-22</code> does.</li>
+        <li>The file uses no <code>Math</code> function the determinism rule forbids and no <code>**</code>.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-record">
+      <h3>The record in the world</h3>
+      <pre><code data-lang="ts">// src/lib/sim/world/funding/columns.ts
+export interface FundLine extends LineColumns {
+  // every column it has today, and:
+  /** `[m]`: homes waiting at the end of model month m (`recordWaiting`); `[0]` is 0. */
+  waitHomes: Int32Array;
+  /** The last model month recorded in `waitHomes`; 0 before any. */
+  waitThrough: number;
+}
+
+// emptyLine() adds:
+//   waitHomes: new Int32Array(1),
+//   waitThrough: 0
+
+// src/lib/sim/world/funding/system.ts
+shadow(ctx) {
+  ensure(ctx);
+  stepShadows(ctx);
+  recordWaiting(ctx.world, ctx.month);
+}</code></pre>
+      <ul>
+        <li><code>recordWaiting(world, month)</code> throws <code>Error('recordWaiting: month M is not after month T')</code> when <code>month &lt;= line.waitThrough</code>.</li>
+        <li>It grows <code>waitHomes</code> to hold index <code>month</code>, doubling its length, at least to 8.</li>
+        <li>Months from <code>waitThrough + 1</code> to <code>month - 1</code> take the value at <code>waitThrough</code>. Those are months in which no hook ran, so the line did not change. When the columns were made in a later month, the value at 0 is 0, which is right: the line was empty.</li>
+        <li>Then <code>waitHomes[month]</code> is the count and <code>waitThrough</code> is <code>month</code>.</li>
+        <li><code>waitingAt(world, m)</code> throws <code>RangeError</code> unless <code>m</code> is a whole number with <code>0 &lt;= m &lt;= world.month</code>.</li>
+        <li><code>waitingAt</code> on a world without funding columns returns 0.</li>
+        <li>Otherwise it returns <code>waitHomes[Math.min(m, waitThrough)]</code>. A month after <code>waitThrough</code> and not after <code>world.month</code> had no hook, so the last value holds.</li>
+        <li>Both fields are plain typed array and number, so <code>structuredClone(world)</code> copies them.</li>
+        <li>The comparison's world records too, as the same funding system steps both. Its record is never read (<a href="#sec-design-chunk">chunk</a>).</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-month">
+      <h3>Model months and calendar months</h3>
+      <p>The value for calendar month i is the line at the end of model month <code>finalTable(statics)[i]</code>: the model month that holds calendar month i's last day, the one whose step makes month i final.</p>
+      <aside data-kind="warning"><strong>Nearest correct quantity</strong> The line is served once a model month, and inside a step joins and awards are not ordered by day. So the line at a calendar month's last day is not observable. The value is the line at the end of the model month holding that day. It differs from the line at the calendar month's end by what happens in the rest of that model month, at most 30 days: applications that join after the last day are counted, and applications awarded after it are not. Two calendar months whose last days fall in one model month (a February between two model month ends) carry the same value.</aside>
+      <ul>
+        <li>Calendar month i with <code>finalTable[i] = 0</code> (a dataset date on its month's last day) reads model month 0, which is 0: nothing waits at the dataset date.</li>
+        <li>Every calendar month a chunk carries is final, so <code>finalTable[i] &lt;= stepped &lt;= world.month</code>, and <code>waitingAt</code> never throws for it in the runner.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-chunk">
+      <h3>The series' extras and the chunk</h3>
+      <pre><code data-lang="ts">// src/lib/sim/world/score/series.ts
+export interface Extras {
+  // every method it has today, and:
+  /**
+   * Homes waiting for money at the end of final calendar months `from..through`: entry k is
+   * `waitingAt(world, finalTable[from + k])`.
+   */
+  waiting(world: World, from: number, through: number): number[];
+}
+
+// src/lib/sim/world/score/chunk.ts, in chunkOf after tiers:
+const waiting = extras === null ? null : extras.waiting(money!.world, from, through);
+return { from, rows, planEffect, money: moneyRows, tiers, waiting };</code></pre>
+      <ul>
+        <li><code>waiting</code> checks its range as <code>rows</code> does (<code>checkRange('waiting', from, through)</code>).</li>
+        <li>It reads the series' own <code>table</code> from <code>tablesOf</code>, so it needs no <code>ScoreStatics</code> argument.</li>
+        <li><code>chunkOf</code>'s <code>waiting</code> is null exactly when its <code>money</code> is null: both follow the feed.</li>
+        <li><code>chunkOf</code> reads the count from <code>money.world</code> only. The runner's money feed is the plan's world, so the comparison's line is never read.</li>
+        <li><code>waiting</code> has <code>through - from + 1</code> entries.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-view">
+      <h3>The view</h3>
+      <pre><code data-lang="ts">// src/lib/sim/world/score/types.ts (required, replacing the optional fields contracts adds)
+export interface SeriesChunk {
+  // as today, and:
+  waiting: number[] | null;
+}
+export interface TimelineView {
+  // as today, and:
+  /** Homes waiting for money at the end of each calendar month; null as below. */
+  waitingMoney: number[] | null;
+}</code></pre>
+      <ul>
+        <li><code>viewOf</code> joins every chunk's <code>waiting</code> in order, as it joins <code>tiers</code>.</li>
+        <li><code>waitingMoney</code> is null when the view's <code>money</code> is null.</li>
+        <li><code>waitingMoney</code> is also null when some chunk's <code>waiting</code> is null or missing. Such a chunk was not made by <code>chunkOf</code> with a feed.</li>
+        <li>Otherwise <code>waitingMoney</code> has <code>filledThrough + 1</code> entries.</li>
+        <li><code>chunksBefore</code> trims <code>waiting</code> as it trims <code>money</code>: <code>waiting: c.waiting &amp;&amp; c.waiting.slice(0, n)</code>.</li>
+        <li><code>viewOf</code> and <code>chunksBefore</code> still read only the chunks and the plain fields of <code>ScoreStatics</code>, so they run on a posted copy.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-restore">
+      <h3>Restore and refill</h3>
+      <ul>
+        <li>A copy is a <code>structuredClone</code> of the world, so it holds the record through its month (month 0: the value 0).</li>
+        <li>A restore clones that world and re-steps quietly. Each quiet step records its month again, after the copy's <code>waitThrough</code>, so <code>recordWaiting</code>'s order check holds.</li>
+        <li>The re-stepped months record the values of the new policy. A month before the edit's first difference records the same value as before, as the step is the same.</li>
+        <li>A kept world (an edit whose first difference is after the months stepped) keeps its record; the months it has stepped did not change.</li>
+        <li>A refill re-posts months from <code>from</code>. Their chunks read the world in use, so a refilled view equals a fresh open's.</li>
+        <li>The series and its data are not touched, so <code>WorldSeriesData</code>, its <code>version</code> and <code>data()</code> are unchanged.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-cost">
+      <h3>Cost</h3>
+      <ul>
+        <li>The record runs once per funded world-month, on both worlds. It walks <code>byLot</code> once: one lot row lookup per waiting lot and one or two binary searches over the line. The index is current after system 7's compaction, so it is not rebuilt.</li>
+        <li>The read costs one array read per calendar month of a chunk.</li>
+        <li>The record adds 4 bytes per model month to each world: under 2 KB for a 480-month window.</li>
+        <li>The bars it must stay under, unchanged: one funded world-month at most 90 µs mean (<code>funded-month.perf.spec.ts</code>); no slice over 50 ms, first cells and first filled within 3 s, the whole window within 480 × 9 ms on the live city (<code>host.perf.spec.ts</code>); one month's scoring for a pair within 1 ms at the median (<code>chunk.perf.spec.ts</code>).</li>
+        <li>The implementer runs these on a quiet machine once the code is in. If a bar fails, the implementer stops and reports the numbers to the conductor; the counting rule is not changed to meet it.</li>
+      </ul>
+      <pre><code data-lang="sh">npx vitest --run --project perf --no-file-parallelism --maxWorkers=1 src/lib/sim/world/funding/funded-month.perf.spec.ts src/lib/sim/world/score/chunk.perf.spec.ts src/lib/sim/world/host.perf.spec.ts</code></pre>
+    </section>
+
+    <section id="sec-design-docs">
+      <h3>The developer document</h3>
+      <ul>
+        <li><code>docs/dev/world-score.md</code>, section "Chunks": a bullet for <code>waiting</code>, the plan world's homes waiting at each calendar month's end, read from its world with a money feed, null without one.</li>
+        <li>A new section "Homes waiting for money" after "Money": the counting rule, the record at the end of system 7, the model month of a calendar month and the difference that names, and why the count is kept in the world and not the series.</li>
+        <li>Section "The view": <code>waitingMoney</code> and its null rule; <code>chunksBefore</code> trims it.</li>
+        <li>Section "Files": <code>src/lib/sim/world/funding/waiting.ts</code> with its three functions.</li>
+      </ul>
+    </section>
+  </section>
+
+  <section id="sec-files">
+    <h2>Files</h2>
+    <table id="tbl-files">
+      <caption>Files this unit writes</caption>
+      <thead>
+        <tr><th scope="col">File</th><th scope="col">Change</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row"><code>src/lib/sim/world/funding/waiting.ts</code></th><td>Create: <code>waitingHomes</code>, <code>recordWaiting</code>, <code>waitingAt</code></td></tr>
+        <tr><th scope="row"><code>src/lib/sim/world/funding/waiting.spec.ts</code></th><td>Create</td></tr>
+        <tr><th scope="row"><code>src/lib/sim/world/funding/columns.ts</code></th><td><code>waitHomes</code> and <code>waitThrough</code> on <code>FundLine</code> and in <code>emptyLine</code></td></tr>
+        <tr><th scope="row"><code>src/lib/sim/world/funding/system.ts</code></th><td>The <code>shadow</code> hook calls <code>recordWaiting</code> after <code>stepShadows</code></td></tr>
+        <tr><th scope="row"><code>src/lib/sim/world/score/types.ts</code></th><td><code>SeriesChunk.waiting</code> and <code>TimelineView.waitingMoney</code> made required</td></tr>
+        <tr><th scope="row"><code>src/lib/sim/world/score/series.ts</code></th><td><code>Extras.waiting</code></td></tr>
+        <tr><th scope="row"><code>src/lib/sim/world/score/chunk.ts</code></th><td><code>waiting</code> in the chunk</td></tr>
+        <tr><th scope="row"><code>src/lib/sim/world/score/view.ts</code></th><td><code>waitingMoney</code> in <code>viewOf</code>; <code>chunksBefore</code> trims <code>waiting</code></td></tr>
+        <tr><th scope="row"><code>src/lib/sim/world/score/chunk.spec.ts</code></th><td>Keys list and null without a feed</td></tr>
+        <tr><th scope="row"><code>src/lib/sim/world/score/view.spec.ts</code></th><td><code>moneyChunk</code> carries <code>waiting</code>; new cases</td></tr>
+        <tr><th scope="row"><code>src/lib/sim/world/score/money.spec.ts</code></th><td>New cases on a funded feed</td></tr>
+        <tr><th scope="row"><code>docs/dev/world-score.md</code></th><td>As <a href="#sec-design-docs">The developer document</a> says</td></tr>
+      </tbody>
+    </table>
+    <p>No file is deleted. Nothing under <code>src/lib/sim/scenario</code>, <code>levers</code> or <code>finance</code> changes.</p>
+    <aside data-kind="warning"><strong>Needed outside the write set, not taken</strong> The design's write set names "the reader of the funding line under <code>funding/</code>". The count also needs a writer in the step: <code>columns.ts</code> (two fields) and <code>system.ts</code> (one call), both under <code>funding/</code>. They are listed above and reported to the conductor. Making the two fields required, and keeping the edit tests true, needs one line in each of these files, which this unit does not own:
+      <ul>
+        <li><code>src/lib/sim/world/host.edit.spec.ts</code>: its <code>before</code> adds <code>waiting: c.waiting ? c.waiting.slice(0, k) : null</code>. Without it every view after an edit with money has <code>waitingMoney</code> null and fails <code>toEqual</code> against a fresh open.</li>
+        <li><code>src/lib/sim/timeline-client.host.spec.ts</code>: the same line in its <code>before</code>.</li>
+        <li><code>src/lib/timeline/test/fixtures.ts</code> (<code>game-sim</code>'s): <code>chunk()</code> adds <code>waiting: pools ? ks.map(() =&gt; 0) : null</code>.</li>
+        <li><code>src/lib/timeline/SimDetails.svelte.spec.ts</code> (<code>game-sim</code>'s): <code>viewOfScore</code> adds <code>waitingMoney: null</code>.</li>
+        <li><code>docs/dev/world-funding.md</code>: its list of line columns gains <code>waitHomes</code> and <code>waitThrough</code>.</li>
+      </ul>
+    </aside>
+  </section>
+
+  <section id="sec-tests">
+    <h2>Tests</h2>
+    <p>All unit tests in the <code>server</code> project, colocated. Each calls <code>expect</code>.</p>
+
+    <section id="sec-tests-waiting">
+      <h3><code>funding/waiting.spec.ts</code></h3>
+      <ul>
+        <li>An empty line counts 0, and a world without funding columns counts 0.</li>
+        <li>A row marked <code>gone</code> is not counted, including one marked after the index was built.</li>
+        <li>A lot with a market application of 10 and an affordable one of 30 counts 30, whichever comes first on the line.</li>
+        <li>A row whose lot row is <code>LOT_DONE</code>, <code>LOT_LIVE</code> or <code>LOT_HELD</code> is not counted. A row whose lot has no lot row is counted.</li>
+        <li>On a funded world stepped through 480 months of the <code>fundedMini()</code> city (as <code>score/money.spec.ts:277</code> builds it), after every step <code>waitingAt(w, w.month)</code> equals a reference count written in the test by a plain scan of the rows (a <code>Map</code> of lot to largest units, the same lot test). Some month's count is above 0.</li>
+        <li><code>waitingAt(w, 0)</code> is 0. <code>waitingAt</code> throws <code>RangeError</code> for a month after <code>w.month</code>, below 0 or not whole.</li>
+        <li><code>recordWaiting</code> throws for a month not after <code>waitThrough</code>. A record after a gap fills the gap with the last value.</li>
+        <li>A <code>structuredClone</code> of a world reads the same values. A clone and its original, stepped on alike, record the same values.</li>
+        <li>Stepping a world never changes an earlier month's value.</li>
+      </ul>
+    </section>
+
+    <section id="sec-tests-score">
+      <h3><code>score/chunk.spec.ts</code>, <code>view.spec.ts</code>, <code>money.spec.ts</code></h3>
+      <ul>
+        <li>A chunk's keys are <code>from</code>, <code>money</code>, <code>planEffect</code>, <code>rows</code>, <code>tiers</code>, <code>waiting</code> (the existing keys test, updated).</li>
+        <li>Without a feed, <code>waiting</code> is null.</li>
+        <li>On a funded feed, <code>chunk.waiting[k]</code> equals <code>waitingAt(feed.world, finalTable(score)[from + k])</code> for every k, and has <code>through - from + 1</code> entries.</li>
+        <li>Two chunks over adjacent ranges give the same <code>waiting</code> as one over both.</li>
+        <li>The twin does not move it: <code>chunkOf(a, b, a.feed, …).waiting</code> equals <code>chunkOf(a, d, a.feed, …).waiting</code>, as the money case at <code>money.spec.ts:335-348</code> does for money.</li>
+        <li><code>viewOf</code> joins <code>waiting</code> into <code>waitingMoney</code> with <code>filledThrough + 1</code> entries.</li>
+        <li><code>waitingMoney</code> is null when the view's money is null, and when a chunk with money has <code>waiting</code> null.</li>
+        <li><code>chunksBefore</code> trims <code>waiting</code>, and a refill (<code>chunksBefore</code> then new chunks) gives the same view as a fresh fill, <code>waitingMoney</code> included.</li>
+      </ul>
+    </section>
+
+    <section id="sec-tests-existing">
+      <h3>Existing tests that then cover it</h3>
+      <ul>
+        <li><code>host.spec.ts</code> "the posted series equal a plain loop of the same world": chunks read month by month across the fill equal one chunk read at the end, so the record is permanent and read at the right months.</li>
+        <li><code>host.edit.spec.ts</code>, once its <code>before</code> carries <code>waiting</code>: a view after restores and refills equals a fresh open's, with money.</li>
+        <li>The world-equality tests that compare a clone or a restored world with a reference (<code>runner/ensemble.spec.ts:214</code>, <code>funding/closing.spec.ts:690</code>, <code>:911-924</code>) cover the record's determinism.</li>
+        <li><code>determinism.lint.spec.ts</code> and <code>npm run lint</code> cover the determinism rule for the new file.</li>
+      </ul>
+    </section>
+  </section>
+
+  <section id="sec-decisions">
+    <h2>Decisions</h2>
+    <ul>
+      <li><strong>The count is kept in the world, not as a series field.</strong> The series is fed after the world may have stepped on, so only the step sees the line at its month.</li>
+      <li><strong>It is recorded at the end of system 7.</strong> System 7 runs last in every funded month and compacts the line, so the record is the line as the month ends.</li>
+      <li><strong>Calendar month i reads model month <code>finalTable[i]</code>.</strong> It is the model month holding the month's last day and the one that makes month i final; the line within a model month is not observable.</li>
+      <li><strong>Homes are the application's gross <code>units</code>.</strong> The stage counts the tally shows beside it (<code>inProgress</code>) are gross too, and <code>units</code> is the size an award would build.</li>
+      <li><strong>Rows of a lot no longer free are left out by the lazy guard's own test.</strong> The engine already treats them as not waiting; the same test keeps the count and the award rule in step.</li>
+      <li><strong>The count walks the line index's <code>byLot</code>.</strong> It groups a lot's rows for free and is current after compaction, so no map is built per step.</li>
+      <li><strong>Months with no hook carry the last value.</strong> No hook means the line did not change.</li>
+      <li><strong><code>waitingAt</code> on a world without funding columns is 0, not an error.</strong> Its line is empty, and <code>moneyRowsOf</code> treats such a world the same way.</li>
+      <li><strong><code>waitingMoney</code> is null when any chunk lacks <code>waiting</code>.</strong> It mirrors <code>tiers</code>, and a chunk made by hand without it cannot fill a partial series.</li>
+      <li><strong>The comparison's world records too.</strong> One funding system steps both worlds and cannot tell them apart; the cost is one walk of a line per month, and the record is never read.</li>
+    </ul>
+  </section>
+
+  <section id="sec-out-of-scope">
+    <h2>Out of scope</h2>
+    <ul>
+      <li>Reading <code>waitingMoney</code> at the deadline's month into <code>RunReading.waitingMoney</code>: <code>game-core</code> (<code>readRun</code>, G6).</li>
+      <li>The tally's "waiting for money" row and its words: <code>tally-tree</code> (U1).</li>
+      <li>Passing the view to the tally on the page: <code>game-sim</code>.</li>
+      <li>Adding the optional fields first: <code>contracts</code>.</li>
+      <li>Homes waiting by kind or by income tier, homes waiting on room or on the market: not measured by the engine, not in this round.</li>
+      <li>The <code>filled</code> message, the runner and the ensemble: unchanged. The chunk travels in <code>filled</code> as today.</li>
+      <li>Any change to how the line is served, joined, re-made or compacted.</li>
+    </ul>
+  </section>
+</article>
