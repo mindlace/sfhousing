@@ -548,11 +548,11 @@ git commit -m "feat(game): store buys, starts runs, settles and takes the next r
 
   <section id="sec-task-3">
     <h2>Task 3: The sync reads v2 saves; the account offer's import</h2>
-    <p>Per game-save <code>sec-design-sync</code> and <code>sec-design-saves</code> (the <code>AccountOffer</code> line). Completes the <code>SaveSync</code> that row G7 carries; the sync's behaviour is unchanged.</p>
+    <p>Per game-save <code>sec-design-sync</code> and <code>sec-design-saves</code> (the <code>AccountOffer</code> line). Completes the <code>SaveSync</code> that row G7 carries. The sync's behaviour is unchanged except for one rule of <code>#keepBoth</code>: on a 409 it names the browser's copy with <code>defaultSaveName({ kind: 'conflict', name: mine.name }, taken)</code>, where <code>taken</code> is every name in <code>store.saves</code> plus the account copy's name, so the two copies never share a name (a name near 60 code points loses " (this device)" to the cut and takes a suffix instead).</p>
     <ul>
       <li><strong>Files</strong>
         <ul>
-          <li>Modify: <code>src/lib/game/save-sync.svelte.ts</code> (<code>:5</code> import; <code>:265</code>, <code>:308</code>, <code>:653</code> reads of <code>save.progress.firstWinAt</code>)</li>
+          <li>Modify: <code>src/lib/game/save-sync.svelte.ts</code> (<code>:5</code> import; <code>:265</code>, <code>:308</code>, <code>:653</code> reads of <code>save.progress.firstWinAt</code>; <code>:725-728</code>, <code>#keepBoth</code>'s <code>taken</code>)</li>
           <li>Modify: <code>src/lib/game/AccountOffer.svelte</code> (<code>:10</code>), <code>src/lib/game/AccountOffer.svelte.spec.ts</code> (<code>:8</code>)</li>
           <li>Test: <code>src/lib/game/save-sync.svelte.spec.ts</code></li>
         </ul>
@@ -573,11 +573,50 @@ it('a held send of a save whose firstWinAt is null is dropped with no PUT', asyn
   // no session; the save is waiting when #put runs and its state.firstWinAt is null
   expect(calls(reqs)).toEqual([]);
 });</code></pre>
+        In <code>describe('keep both')</code> (<code>:545</code>) add the 409 naming cases, driven like its neighbours with <code>h.answer</code> and <code>vi.advanceTimersByTimeAsync(2000)</code> (the harness's fake timers, no real waits):
+        <pre><code data-lang="ts">it('a 409 on a 60-code-point name names the copy with a suffix, not the account copy\'s name', async () =&gt; {
+  const long = 'x'.repeat(60);
+  const a = mk(long, true);
+  const h = harness({ saves: [a], signedIn: true });
+  const theirs: GameSave = { ...a, plan: 'their plan', savedAt: WON };
+  h.answer((r) =&gt;
+    r.url.endsWith(a.id) ? json(409, { rev: 2, save: theirs }) : json(200, line(1))
+  );
+  h.store.edit(a.id, { plan: 'my plan' });
+  await vi.advanceTimersByTimeAsync(2000);
+  const copyId = h.store.currentId;
+  expect(copyId).not.toBe(a.id);
+  expect(h.store.read(copyId)).toMatchObject({ name: 'x'.repeat(56) + ' (2)', plan: 'my plan' });
+  expect(h.store.read(a.id)?.name).toBe(long);
+});
+
+it('a 409 whose account copy was renamed elsewhere to the suffixed name takes the next suffix', async () =&gt; {
+  const long = 'x'.repeat(60);
+  const a = mk(long, true);
+  const h = harness({ saves: [a], signedIn: true });
+  // Renamed on another device to the name the browser's copy would otherwise take.
+  const theirs: GameSave = { ...a, name: 'x'.repeat(56) + ' (2)', savedAt: WON };
+  h.answer((r) =&gt;
+    r.url.endsWith(a.id) ? json(409, { rev: 2, save: theirs }) : json(200, line(1))
+  );
+  h.store.edit(a.id, { plan: 'my plan' });
+  await vi.advanceTimersByTimeAsync(2000);
+  const copyId = h.store.currentId;
+  expect(h.store.read(copyId)?.name).toBe('x'.repeat(56) + ' (3)');
+  expect(h.store.read(a.id)?.name).toBe('x'.repeat(56) + ' (2)');
+  const names = h.store.saves.map((s) =&gt; s.name);
+  expect(new Set(names).size).toBe(names.length);
+});</code></pre>
       </li>
-      <li id="t3-s2"><input type="checkbox"> Run and see it fail (<code>Cannot read properties of undefined (reading 'firstWinAt')</code>).
+      <li id="t3-s2"><input type="checkbox"> Run and see it fail (<code>Cannot read properties of undefined (reading 'firstWinAt')</code>; the renamed-elsewhere case expects <code>' (3)'</code> and gets <code>' (2)'</code>).
         <pre><code data-lang="sh">npx vitest --run --project client src/lib/game/save-sync.svelte.spec.ts</code></pre>
       </li>
-      <li id="t3-s3"><input type="checkbox"> Implement: the three reads become <code>save.state.firstWinAt</code>; the import at <code>:5</code> becomes <code>import { parseGameSave, type GameSave } from './save-shape';</code> and <code>import { defaultSaveName } from './words';</code>. <code>AccountOffer.svelte</code> and its spec: <code>import { syncText } from './words';</code>. (No comment about the offer exists in <code>#keepBoth</code>/<code>#keepRemoved</code>, <code>:713-759</code>, so none is removed.)</li>
+      <li id="t3-s3"><input type="checkbox"> Implement: the three reads become <code>save.state.firstWinAt</code>; the import at <code>:5</code> becomes <code>import { parseGameSave, type GameSave } from './save-shape';</code> and <code>import { defaultSaveName } from './words';</code>. <code>#keepBoth</code>'s name (<code>:725-728</code>) takes the account copy's name into <code>taken</code>:
+        <pre><code data-lang="ts">const name = defaultSaveName({ kind: 'conflict', name: mine.name }, [
+  ...store.saves.map((s) =&gt; s.name),
+  theirs.name
+]);</code></pre>
+        <code>AccountOffer.svelte</code> and its spec: <code>import { syncText } from './words';</code>. (No comment about the offer exists in <code>#keepBoth</code>/<code>#keepRemoved</code>, <code>:713-759</code>, so none is removed.)</li>
       <li id="t3-s4"><input type="checkbox"> Run and see it pass.
         <pre><code data-lang="sh">npx vitest --run --project client src/lib/game/save-sync.svelte.spec.ts src/lib/game/AccountOffer.svelte.spec.ts src/lib/game/store.svelte.spec.ts
 npx eslint src/lib/game/save-sync.svelte.ts src/lib/game/save-sync.svelte.spec.ts src/lib/game/AccountOffer.svelte src/lib/game/AccountOffer.svelte.spec.ts</code></pre>
@@ -789,6 +828,9 @@ describe('defaultSaveName of words.ts', () =&gt; {
     const long = 'x'.repeat(60);
     expect(defaultSaveName({ kind: 'conflict', name: long }, [])).toBe(long);
     expect(defaultSaveName({ kind: 'conflict', name: long }, [long])).toBe('x'.repeat(56) + ' (2)');
+    expect(
+      defaultSaveName({ kind: 'conflict', name: long }, [long, 'x'.repeat(56) + ' (2)'])
+    ).toBe('x'.repeat(56) + ' (3)');
   });
   it('has no remix kind', () =&gt; {
     // @ts-expect-error DefaultFrom has no remix kind (P13)
@@ -2282,7 +2324,9 @@ git commit -m "feat(game-sim): the page's phases and what each mounts"</code></p
 
   <section id="sec-task-31">
     <h2>Task 31: TimelineMode runs the forecast</h2>
-    <p>Per game-sim §sec-design-run (the run starts, the rules after it), §sec-design-feed (<code>CityMarkerRow</code> to <code>Marker</code>, <code>policy</code> from <code>flags</code>), and §tbl-goal-props' "In starting and run" column. Builder's call: with <code>sound</code> null TimelineMode hands <code>RunLayer</code> a silent <code>Sound</code> (four no-ops), because <code>RunLayerProps.sound</code> is required (R1) and the TimelineMode prop is optional.</p>
+    <p>Per game-sim §sec-design-run (the run starts, its fifth step on frames, the rules after it), §sec-design-feed (<code>CityMarkerRow</code> to <code>Marker</code>, <code>policy</code> from <code>flags</code>, the one feed object), §sec-if-r1 (<code>feed.running</code> holds each value for at least one animation frame; the feed's owner guarantees it), and §tbl-goal-props' "In starting and run" column. Builder's call: with <code>sound</code> null TimelineMode hands <code>RunLayer</code> a silent <code>Sound</code> (four no-ops), because <code>RunLayerProps.sound</code> is required (R1) and the TimelineMode prop is optional.</p>
+    <p>The feed is one <code>RunFeed</code> object, built once in TimelineMode's script for its whole life: <code>drops</code>, <code>day</code> and <code>running</code> are getters over the page's state (<code>running</code> reads <code>gamePhase === 'run' &amp;&amp; running</code>) and <code>project</code> is <code>projectPoint</code>. <code>RunLayer</code>'s <code>feed</code> prop therefore never changes identity; its frame loop starts from an effect on <code>feed.running</code> (<code>RunLayer.svelte:227-228</code>, <code>startLoop</code> at <code>:108-113</code>), which reruns only when <code>running</code> changes.</p>
+    <p>The frame rule: <code>RunLayer</code> reads <code>feed.running</code> once per animation frame (<code>RunLayer.svelte:74-106</code>), and the order of frame callbacks within one frame is not fixed. So TimelineMode counts ticks of the frame seam from each change of <code>feed.running</code> and treats a change as seen once two ticks have passed (the first tick is the frame in which <code>RunLayer</code> reads the change, in whatever order its callback runs; the second is the frame after). A run starts only once <code>running</code> has been false for two ticks; an abort that arrives before two ticks have passed since the run started is held and applied (stop the clock, send <code>abort</code>) on the second tick. An abort later in a run applies at once. Builder's call: the frame seam is R1's <code>raf</code>/<code>cancelRaf</code> from <code>$lib/game/run/clock</code> (<code>clock.ts:9-15</code>, the module component specs mock), and TimelineMode passes the same two to <code>RunClock</code>'s <code>raf</code>/<code>cancelRaf</code> props, so one mock drives the clock, the start gate and the held abort.</p>
     <p><strong>Files</strong></p>
     <ul>
       <li>Modify: <code>src/lib/timeline/TimelineMode.svelte</code> (<code>:530-531</code> index, <code>:806-816</code> waiting, <code>:1113-1122</code> <code>applyRender</code>, <code>:1326-1338</code> the edit effect, the map box)</li>
@@ -2290,8 +2334,8 @@ git commit -m "feat(game-sim): the page's phases and what each mounts"</code></p
     </ul>
     <p><strong>Interfaces</strong></p>
     <ul>
-      <li>Consumes: <code>RunClock</code> (Task 17); <code>runRate</code> (Task 16); <code>planDrops</code>, <code>Marker</code>, <code>RunFeed</code>, <code>RunLayer</code>, <code>Sound</code> (R1); <code>activityIndex.markers(): CityMarkerRow[]</code> (E1, <code>src/lib/timeline/activity.ts</code>).</li>
-      <li>Produces: internal <code>take: RunTake</code> (zero at start, latest <code>ontake</code> in run), <code>running</code>, <code>stop</code>; the <code>run-layer-box</code> wrapper and <code>RunClock</code> mounts.</li>
+      <li>Consumes: <code>RunClock</code> (Task 17, with its <code>raf</code>/<code>cancelRaf</code> props); <code>runRate</code> (Task 16); <code>planDrops</code>, <code>Marker</code>, <code>RunFeed</code>, <code>RunLayer</code>, <code>Sound</code>, <code>raf</code>, <code>cancelRaf</code> (R1; <code>src/lib/game/run/clock.ts:9-15</code>); <code>activityIndex.markers(): CityMarkerRow[]</code> (E1, <code>src/lib/timeline/activity.ts</code>); <code>SimMap.project</code> (through <code>projectPoint</code>).</li>
+      <li>Produces: internal <code>take: RunTake</code> (zero at start, latest <code>ontake</code> in run), <code>running</code>, <code>stop</code>; <code>const feed: RunFeed</code>, one object for TimelineMode's life (getters <code>drops</code>, <code>day</code>, <code>running</code>; <code>project: projectPoint</code>); the frame gate (<code>ticksSinceRunning: number</code>, a held abort); the <code>run-layer-box</code> wrapper and <code>RunClock</code> mounts.</li>
     </ul>
     <ol>
       <li id="t31-s1"><input type="checkbox"> Write the failing tests (<code>runMs: 200</code>; <code>cellsMsg</code> carries markers):
@@ -2324,13 +2368,103 @@ it('a crash in starting or run with no run settled returns to starting, never sh
 });
 it('a new run document in run stops the clock and aborts', async () =&gt; { ... s.setRun(other); await expect.poll(() =&gt; modePhase()).toBe('tree'); });
 it('Space in a run does not toggle and is prevented', async () =&gt; { ... same assertion as Task 30 in run });
-it('the headline reads the playhead\'s month in a run', async () =&gt; { ... expect headline text to contain formatCount(goal.measure.valueAt(view, i)) });</code></pre>
-        The marker case's <code>runLayerProps()</code> reads the props the mocked <code>RunLayer</code> got: mock <code>$lib/game/run/RunLayer.svelte</code> with a recording stub in this spec, as <code>SimMap</code> is mocked at <code>TimelineMode.game.svelte.spec.ts:35</code>. Write each "…" as the assertions named in its title. The "second run press" case is a Review Focus pin (no second run, no second event).
+it('the headline reads the playhead\'s month in a run', async () =&gt; { ... expect headline text to contain formatCount(goal.measure.valueAt(view, i)) });
+it('RunLayer\'s feed is one object at the start of a run and mid-run, its getters reading the page', async () =&gt; {
+  setup({ game: gameWith({ phase: 'runs', runs: 0 }), phased: true, runMs: 200 });
+  const f = runLayerProps().feed; // mounted in starting
+  expect(f.running).toBe(false);
+  emit(compiledMsg(1, LONG));
+  emit(filledMsg(1, 0, 6));
+  await expect.poll(() =&gt; modePhase()).toBe('run');
+  expect(runLayerProps().feed).toBe(f);
+  expect(f.running).toBe(true);
+  expect(f.day).toBe(asOf);
+  const first = f.drops;
+  emit(cellsMsg(1, MORE_MARKERS)); // cityVersion changes mid-run: drops are planned again
+  await expect.poll(() =&gt; f.drops).not.toBe(first);
+  expect(runLayerProps().feed).toBe(f);
+  const ll = stub.map.unproject([10, 10]);
+  const p = f.project(ll.lng, ll.lat)!; // project is projectPoint over the stub's project
+  expect(p.x).toBeCloseTo(10, 6);
+  expect(p.y).toBeCloseTo(10, 6);
+  expect(f.project(ll.lng - 10, ll.lat)).toBeNull(); // off the map box
+  expect(runLayerFeeds.size).toBe(1);
+});
+
+describe('the frame rule', () =&gt; {
+  beforeEach(() =&gt; {
+    frames.manual = true; // the mocked clock queues frames; frame() runs one
+  });
+  afterEach(() =&gt; {
+    frames.manual = false;
+  });
+
+  it('an abort in the frame a run started holds running true one frame, then stops the clock', async () =&gt; {
+    setup({ game: gameWith({ phase: 'runs', runs: 0 }), phased: true, runMs: 200 });
+    const f = runLayerProps().feed;
+    emit(compiledMsg(1, LONG));
+    emit(filledMsg(1, 0, 6));
+    await expect.poll(() =&gt; modePhase()).toBe('run'); // no frame has run yet
+    expect(f.running).toBe(true);
+    s.setRun(other); // a new run document: abort, before any frame
+    flushSync();
+    expect(modePhase()).toBe('run');
+    expect(f.running).toBe(true);
+    frame(); // the frame in which RunLayer reads the start
+    expect(f.running).toBe(true);
+    expect(modePhase()).toBe('run');
+    frame(); // the next frame: the clock stops and abort is sent
+    expect(f.running).toBe(false);
+    expect(modePhase()).toBe('starting');
+    expect(onphaseCalls('abort')).toHaveLength(1);
+  });
+
+  it('a run starts no earlier than the frame after the one in which running turned false', async () =&gt; {
+    setup({ game: gameWith({ phase: 'runs', runs: 0 }), phased: true, runMs: 200 });
+    const f = runLayerProps().feed;
+    emit(compiledMsg(1, LONG));
+    emit(filledMsg(1, 0, 6));
+    await expect.poll(() =&gt; modePhase()).toBe('run');
+    frame();
+    frame(); // past the start's hold
+    w().crash(); // abort with runs 0: back to starting, running false
+    await expect.poll(() =&gt; modePhase()).toBe('starting');
+    expect(f.running).toBe(false);
+    await page.getByRole('button', { name: 'Retry' }).click();
+    emit(compiledMsg(2, LONG));
+    emit(filledMsg(2, 0, 6)); // ready holds again, with no frame since running turned false
+    flushSync();
+    expect(modePhase()).toBe('starting');
+    const seen: boolean[] = [];
+    for (let i = 0; i &lt; 4 &amp;&amp; modePhase() !== 'run'; i++) {
+      frame();
+      seen.push(f.running);
+    }
+    expect(modePhase()).toBe('run');
+    expect(seen[0]).toBe(false); // RunLayer reads false in a frame before the new run
+    expect(onphaseCalls('ready')).toHaveLength(2);
+  });
+});</code></pre>
+        The marker and feed cases' <code>runLayerProps()</code> reads the props the mocked <code>RunLayer</code> got: mock <code>$lib/game/run/RunLayer.svelte</code> with a recording stub in this spec, as <code>SimMap</code> is mocked at <code>TimelineMode.game.svelte.spec.ts:35</code>; the stub's <code>$effect</code> adds each <code>feed</code> prop value it sees to <code>runLayerFeeds: Set&lt;RunFeed&gt;</code> and keeps the latest props. Mock <code>$lib/game/run/clock</code> as <code>RunLayer.svelte.spec.ts:15-51</code> does, with one switch: a hoisted <code>frames = { manual: false, t: 1000, pending: Map }</code>; while <code>manual</code> is false <code>raf</code>/<code>cancelRaf</code> forward to <code>requestAnimationFrame</code>/<code>cancelAnimationFrame</code> (the other cases run on real frames, as before); while it is true <code>raf</code> queues and <code>frame()</code> moves <code>frames.t</code> 16 ms on, runs the queued callbacks with it, and calls <code>flushSync()</code> before and after. No case uses <code>setTimeout</code>, <code>setInterval</code> or a fixed wait. <code>MORE_MARKERS</code> adds a marker completed before the deadline to the index; <code>other</code> is a run document that differs from the current one. Write each "…" as the assertions named in its title. The "second run press" case is a Review Focus pin (no second run, no second event).
       </li>
-      <li id="t31-s2"><input type="checkbox"> Run; expected FAIL (no <code>run-waiting</code>, no <code>run-clock</code>).
+      <li id="t31-s2"><input type="checkbox"> Run; expected FAIL (no <code>run-waiting</code>, no <code>run-clock</code>, no <code>RunLayer</code> props to read).
         <pre><code data-lang="sh">npx vitest run src/lib/timeline/TimelineMode.game.svelte.spec.ts</code></pre>
       </li>
-      <li id="t31-s3"><input type="checkbox"> Implement: on the rising edge of <code>gamePhase === 'starting' &amp;&amp; ready</code> run §sec-design-run's start steps and send <code>ready</code>; <code>stop = Math.min(goal.deadline, lastDay)</code>; <code>rate = runRate(asOf, stop, runMs)</code>; <code>RunClock</code> with <code>end={filledEnd}</code>, <code>onday={handleDay}</code>, bound <code>day</code>/<code>running</code>. <code>marker</code>, <code>feed</code> and <code>projectPoint</code> are §sec-design-feed's code verbatim; <code>mapW</code>/<code>mapH</code> bound by <code>bind:clientWidth</code>/<code>bind:clientHeight</code> on the map box. Re-plan on <code>cityVersion</code> while in run. The status slot's waiting reads <code>playing || running</code>. The edit effect, an error/crash notice, and <code>failed</code>/<code>noScenario</code> in starting stop the clock and send <code>abort</code>. Mount order and classes per §sec-design-feed.</li>
+      <li id="t31-s3"><input type="checkbox"> Implement: on the rising edge of <code>gamePhase === 'starting' &amp;&amp; ready &amp;&amp; ticksSinceRunning &gt;= 2</code> run §sec-design-run's start steps and send <code>ready</code>; <code>stop = Math.min(goal.deadline, lastDay)</code>; <code>rate = runRate(asOf, stop, runMs)</code>; <code>RunClock</code> with <code>end={filledEnd}</code>, <code>onday={handleDay}</code>, <code>{raf}</code>, <code>{cancelRaf}</code>, bound <code>day</code>/<code>running</code>. <code>marker</code>, <code>feed</code> and <code>projectPoint</code> are §sec-design-feed's code verbatim (the getter's <code>phase</code> is the local <code>gamePhase</code>), declared once at the top level of the script so <code>&lt;RunLayer feed={feed}&gt;</code> gets the same object in starting, run and tally; <code>mapW</code>/<code>mapH</code> bound by <code>bind:clientWidth</code>/<code>bind:clientHeight</code> on the map box. Re-plan on <code>cityVersion</code> while in run, replacing <code>runDrops</code> (the feed object stays). The status slot's waiting reads <code>playing || running</code>. The edit effect, an error/crash notice, and <code>failed</code>/<code>noScenario</code> in starting stop the clock and send <code>abort</code>, through <code>abortRun</code>. The frame gate:
+        <pre><code data-lang="ts">import { cancelRaf, raf } from '$lib/game/run/clock';
+
+/** Ticks of the frame seam since `feed.running` last changed; 2 or more: the change has been seen. */
+let ticksSinceRunning = $state(2);
+let heldAbort = false;
+let tickHandle: number | null = null;
+
+/** Called whenever feed.running changes (run start, clock stop, abort): restarts the count. */
+function markRunningChange(): void;
+/** One tick: counts, asks for the next while below 2, and on reaching 2 applies a held abort. */
+function onTick(): void;
+/** Stops the clock and sends abort; held until the second tick when the run started fewer than 2 ticks ago. */
+function abortRun(): void;</code></pre>
+        <code>markRunningChange</code> runs from an effect on <code>feed.running</code>; the pending tick is cancelled on unmount. Mount order and classes per §sec-design-feed.</li>
       <li id="t31-s4"><input type="checkbox"> Run; expected PASS.
         <pre><code data-lang="sh">npx vitest run src/lib/timeline/TimelineMode.game.svelte.spec.ts</code></pre>
       </li>
@@ -2391,8 +2525,25 @@ it('a deadline past the months held: the run holds at the stop without settling'
   await expect.poll(() =&gt; debug().day).toBe(lastDayOf(STATICS));
   expect(modePhase()).toBe('run');
   expect(game.state.runs).toBe(0);
+});
+it('RunLayer\'s feed is the same object at the start of a run, mid-run and at settling', async () =&gt; {
+  const game = gameWith({ phase: 'runs', runs: 0 });
+  setup({ game, phased: true, runMs: 200 });
+  const f = runLayerProps().feed;
+  emit(compiledMsg(1, LONG));
+  emit(filledMsg(1, 0, 6));
+  await expect.poll(() =&gt; modePhase()).toBe('run');
+  expect(runLayerProps().feed).toBe(f); // start
+  await expect.poll(() =&gt; f.day).toBeGreaterThan(asOf);
+  expect(f.running).toBe(true);
+  expect(runLayerProps().feed).toBe(f); // mid-run
+  await expect.poll(() =&gt; modePhase()).toBe('tally');
+  expect(f.running).toBe(false);
+  expect(f.day).toBe(stopDay);
+  expect(runLayerProps().feed).toBe(f); // settling
+  expect(runLayerFeeds.size).toBe(1);
 });</code></pre>
-        <code>tallyProps()</code> reads a recording mock of <code>$lib/game/ui/Tally.svelte</code> (builder's call: one recording mock, as <code>RunLayer</code> is mocked in Task 31; use it throughout this spec). The refused-write, crash-in-tally and past-the-months cases are Review Focus pins.
+        <code>tallyProps()</code> reads a recording mock of <code>$lib/game/ui/Tally.svelte</code> (builder's call: one recording mock, as <code>RunLayer</code> is mocked in Task 31; use it throughout this spec). The feed case reads Task 31's recording <code>RunLayer</code> (<code>runLayerProps()</code>, <code>runLayerFeeds</code>) on real frames; <code>stopDay</code> is the run's stop day. The refused-write, crash-in-tally and past-the-months cases are Review Focus pins.
       </li>
       <li id="t32-s2"><input type="checkbox"> Run; expected FAIL (no <code>tl-tally</code>; <code>game.state.runs</code> stays 0).
         <pre><code data-lang="sh">npx vitest run src/lib/timeline/TimelineMode.game.svelte.spec.ts</code></pre>
