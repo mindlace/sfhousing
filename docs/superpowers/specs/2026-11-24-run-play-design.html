@@ -877,6 +877,7 @@ export const RUN_FRAME_P95_MS = 2;</code></pre>
       <li>A shown drop whose row leaves a new <code>drops</code> array stays until its own end. Reason: taking away a drop the player saw, or units they collected, would read as a fault.</li>
       <li><code>onPrefs</code> notifies after every write, failed ones included, and only in this page. Reason: the switch the player pressed must take effect even when storage is full.</li>
       <li>Only the newest 240 drops are drawn; older live drops beyond the cap still count and can be collected. Reason: the draw stays inside the frame budget and the flash area, and no drop is lost.</li>
+      <li>A collected drop rings out in place and its "+N" rises from it; nothing flies to the unit count (call 28). Reason: the canvas covers only the map's box, the count is in the Menu below lg, and a flight for each drop would break the flash limit and the frame budget. The header's count rolls when the run is settled.</li>
       <li>Drop radius grows with the square root of worth, 4.5 to 9 px. Reason: area tracks homes while a large project does not hide its neighbours.</li>
       <li>At most one sound per frame, collect before pop, with gaps of 50 and 70 ms. Reason: a burst must not become a roar.</li>
       <li>The audio context is made at the first gesture even when muted. Reason: unmuting then plays at once.</li>
