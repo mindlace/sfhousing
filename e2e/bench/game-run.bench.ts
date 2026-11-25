@@ -120,7 +120,7 @@ test('bench:map: run with drops, citywide, moving pointer', async ({ page }) => 
 // ---- 2. purchase to ready --------------------------------------------------------------------------
 
 type BuyWin = Window & {
-  __buy?: { seenBusy: boolean; t0: number | null; t1: number | null };
+  __buy?: { armed: boolean; seenBusy: boolean; t0: number | null; t1: number | null };
 };
 
 test('bench:map: purchase to ready', async ({ browser, baseURL }) => {
@@ -141,7 +141,6 @@ test('bench:map: purchase to ready', async ({ browser, baseURL }) => {
     await waitPhase(page, 'tree');
 
     const run = page.getByTestId('tree-run');
-    await expect(run).not.toHaveAttribute('aria-busy', 'true');
     await page
       .locator(`[data-testid="tree-node"][data-node="${NODE}"]`)
       .getByTestId('tree-node-open')
@@ -150,13 +149,22 @@ test('bench:map: purchase to ready', async ({ browser, baseURL }) => {
     const buy = page.getByTestId('tree-detail').getByTestId('tree-buy');
     await expect(buy).toBeEnabled();
 
-    // The observer is in before the press: t1 is when aria-busy leaves "true" after being "true".
+    // The observer goes in first: t1 is when aria-busy leaves "true" after being "true". It walks
+    // every record with its old value, so a busy that turns on and off between two callbacks
+    // still counts. `armed` stays false until the press, so no flip before it is taken.
     await page.evaluate(() => {
       const w = window as BuyWin;
-      const rec = { seenBusy: false, t0: null as number | null, t1: null as number | null };
+      const rec = {
+        armed: false,
+        seenBusy: false,
+        t0: null as number | null,
+        t1: null as number | null
+      };
       w.__buy = rec;
       const el = document.querySelector('[data-testid="tree-run"]')!;
-      const obs = new MutationObserver(() => {
+      const obs = new MutationObserver((records) => {
+        if (!rec.armed) return;
+        for (const r of records) if (r.oldValue === 'true') rec.seenBusy = true;
         const busy = el.getAttribute('aria-busy') === 'true';
         if (busy) rec.seenBusy = true;
         else if (rec.seenBusy && rec.t1 === null) {
@@ -164,24 +172,36 @@ test('bench:map: purchase to ready', async ({ browser, baseURL }) => {
           obs.disconnect();
         }
       });
-      obs.observe(el, { attributes: true, attributeFilter: ['aria-busy'] });
+      obs.observe(el, {
+        attributes: true,
+        attributeFilter: ['aria-busy'],
+        attributeOldValue: true
+      });
     });
-    // t0 and the press in one page turn, so no round trip falls between them.
+    // With the observer in, Run is not busy before the press (a flip in between is seen above).
+    await expect(run).not.toHaveAttribute('aria-busy', 'true');
+    // Arming, t0 and the press in one page turn, so no round trip falls between them; the
+    // attribute is read again at that moment.
     await page.evaluate(() => {
+      const rec = (window as BuyWin).__buy!;
       const b = document.querySelector<HTMLButtonElement>(
         '[data-testid="tree-detail"] [data-testid="tree-buy"]'
       )!;
-      (window as BuyWin).__buy!.t0 = performance.now();
+      rec.seenBusy =
+        document.querySelector('[data-testid="tree-run"]')!.getAttribute('aria-busy') === 'true';
+      rec.armed = true;
+      rec.t0 = performance.now();
       b.click();
     });
 
-    // A purchase that never makes Run busy is a broken case, not a long wait: fail now.
-    await expect
-      .poll(() => page.evaluate(() => (window as BuyWin).__buy!.seenBusy), {
-        message: `bench: tree-run's aria-busy never turned "true" after buying ${NODE}`,
-        intervals: [50]
-      })
-      .toBe(true);
+    // Run turns busy, or the sample ends (bounded by the test's own timeout); a purchase that
+    // never makes Run busy is a broken case.
+    await page.waitForFunction(() => {
+      const rec = (window as BuyWin).__buy!;
+      return rec.seenBusy || rec.t1 !== null;
+    });
+    const seen = await page.evaluate(() => (window as BuyWin).__buy!.seenBusy);
+    expect(seen, `bench: tree-run's aria-busy never turned "true" after buying ${NODE}`).toBe(true);
     await page.waitForFunction(() => (window as BuyWin).__buy!.t1 !== null);
     const { t0, t1 } = await page.evaluate(() => (window as BuyWin).__buy!);
     samples.push(t1! - t0!);
@@ -191,7 +211,7 @@ test('bench:map: purchase to ready', async ({ browser, baseURL }) => {
   const median = [...samples].sort((a, b) => a - b)[samples.length >> 1];
   const line =
     `bench:map case=buy-to-ready dataset=${DATASET} node=${NODE} ` +
-    `samples=${samples.map((s) => s.toFixed(0)).join(',')} median=${median.toFixed(0)}ms ` +
+    `samples=${samples.map((s) => `${s.toFixed(0)}ms`).join(',')} median=${median.toFixed(0)}ms ` +
     `buyS=${(buyS * 1000).toFixed(0)}ms`;
   console.log(line);
   test.info().annotations.push({ type: 'bench:map', description: line });
