@@ -17,7 +17,8 @@ import {
   moneyRowsOf,
   poolRowOf,
   setSpell,
-  spellOf
+  spellOf,
+  waitingAt
 } from './columns';
 
 function funded(pools: string[] = ['city', 'state']): World {
@@ -199,5 +200,44 @@ describe('funding columns', () => {
     expect(line.shadowLot[1]).toBe(6);
     expect(line.shadowExisting[0]).toBe(4);
     expect(line.shadowMonth[1]).toBe(0);
+  });
+});
+
+describe('the waiting record', () => {
+  it('emptyLine gives waitHomes of length 1 holding 0 and waitThrough 0', () => {
+    const { line } = fundOf(funded());
+    expect(line.waitHomes).toBeInstanceOf(Int32Array);
+    expect(Array.from(line.waitHomes)).toEqual([0]);
+    expect(line.waitThrough).toBe(0);
+  });
+
+  it('waitingAt(w, 0) is 0', () => {
+    expect(waitingAt(funded(), 0)).toBe(0);
+  });
+
+  it('waitingAt throws RangeError for a month after world.month, below 0 or not whole', () => {
+    const w = funded();
+    w.month = 4;
+    expect(() => waitingAt(w, 5)).toThrow(RangeError);
+    expect(() => waitingAt(w, -1)).toThrow(RangeError);
+    expect(() => waitingAt(w, 0.5)).toThrow(RangeError);
+    expect(waitingAt(w, 4)).toBe(0);
+  });
+
+  it('waitingAt on a world without funding columns returns 0', () => {
+    const w = emptyWorld(0);
+    w.month = 3;
+    expect(waitingAt(w, 2)).toBe(0);
+  });
+
+  it('waitingAt after waitThrough and not after world.month gives the last recorded value', () => {
+    const w = funded();
+    const { line } = fundOf(w);
+    line.waitHomes[0] = 0;
+    line.waitThrough = 0;
+    line.waitHomes = Int32Array.of(0, 4, 9);
+    line.waitThrough = 2;
+    w.month = 6;
+    expect([0, 1, 2, 3, 6].map((m) => waitingAt(w, m))).toEqual([0, 4, 9, 9, 9]);
   });
 });

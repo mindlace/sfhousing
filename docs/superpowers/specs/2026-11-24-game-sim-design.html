@@ -1255,7 +1255,7 @@ function switchNode(id: NodeId, on: boolean): void {
         <li><code>/s/[id]/+page.svelte</code> no longer reads the game: no <code>useGame</code>, Remix state, <code>remix()</code>, <code>error</code>, <code>leaving</code> or <code>gameHref</code>, and no import from <code>$lib/game</code>.</li>
         <li>It passes <code>SharedBanner</code> the props <code>game-shell</code>'s spec gives it: <code>title</code>, <code>id</code>, <code>createdAt</code>, <code>datasetNotice</code>, <code>planVersion</code>, <code>currentVersion</code> and <code>kind="sim"</code>.</li>
         <li>What remains of the banner is <code>game-shell</code>'s: the title line with the published date, a "Your game" link to <code>/</code>, and the N5 or N6 line with no button.</li>
-        <li>The page title's name is <code>game-shell</code>'s edit, made after this unit's.</li>
+        <li>The page title's name is <code>game-shell</code>'s edit, in the same lane.</li>
         <li><code>SimRoute</code> is mounted with <code>mode="view"</code> and <code>persist="off"</code> as today, so the published policy plays in full (D5).</li>
       </ul>
     </section>
@@ -1498,7 +1498,7 @@ export function restoredLabel(node: TreeNode): string;</code></pre>
       <li>The rules of <code>limitsOf</code>, <code>within</code>, <code>runnable</code>, <code>readRun</code>, <code>resultOf</code>, <code>settle</code>, the ladder and side goals: <code>game-core</code>.</li>
       <li>The nodes, <code>applyGrant</code> and <code>LADDER_YEARS</code>: <code>tree-catalogue</code>.</li>
       <li>The game store, its persistence and <code>e2e/helpers/game.ts</code>: <code>game-save</code>.</li>
-      <li>The name in the titles of <code>src/routes/s/[id]/+page.svelte</code> and <code>+error.svelte</code>, written after this unit: <code>game-shell</code>.</li>
+      <li>The name in the titles of <code>src/routes/s/[id]/+page.svelte</code> and <code>+error.svelte</code>: <code>game-shell</code>, in the same lane.</li>
       <li>The header, the name elsewhere, <code>/</code> and how it mounts <code>SimRoute</code>, the opening, <code>SharedBanner</code>, <code>/p/[id]</code>: <code>game-shell</code>.</li>
       <li>The series field of homes waiting for money: <code>money-wait</code>.</li>
       <li>Every e2e spec, the reach check and <code>docs/dev/game.md</code>: <code>closing</code>.</li>
