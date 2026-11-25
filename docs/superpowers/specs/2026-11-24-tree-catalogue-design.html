@@ -433,7 +433,7 @@ npx tsx scripts/tree-balance.ts &lt;datasetDir&gt;</code></pre>
       <ul>
         <li>T1 is the state of two files after the measurement: <code>src/lib/game/catalogue/ladder-years.ts</code> and <code>src/lib/game/catalogue/tuning.ts</code>. It adds no type and no export to G3 or G6.</li>
         <li><code>LADDER_YEARS</code> holds the years <code>reach-measure</code> wrote from the production dataset, by G6's rule.</li>
-        <li><code>tuning.ts</code> holds prices, the rung lump and side-goal numbers under which <code>tree-balance</code> passes every check it reports on the production dataset.</li>
+        <li><code>tuning.ts</code> holds prices, the rung lump and side-goal numbers under which <code>tree-balance</code> exits 0 on the production dataset.</li>
         <li>Before T1, both files hold starting values. Code and tests outside <code>tree-catalogue</code> and <code>closing</code> never assert a price, a ladder year or the number of rungs from these files; they pass their own.</li>
         <li>When no set of numbers passes, the unit stops and hands the report to the owner with the checks that fail.</li>
       </ul>
@@ -1606,7 +1606,9 @@ export interface SideReport {
 }</code></pre>
         <ul>
           <li><code>--json</code> prints one JSON object, <code>{ datasetVersion, plays: PlayReport[], side: SideReport[] }</code>, and nothing else.</li>
-          <li>Exit 0 when every play is finished and passes every check and no side goal is flagged, 1 otherwise, 2 when it could not run (one stderr line <code>tree-balance: &lt;reason&gt;</code>).</li>
+          <li>The gated plays are the <code>hand</code> plays of <code>catalogue</code>, <code>permitting-first</code>, <code>zoning-first</code>, <code>hands-first</code> and <code>cheapest</code>. The <code>money-first</code> play and every <code>collect-for-me</code> play are played and reported in full, and gate nothing.</li>
+          <li>Exit 0 when every gated play is finished and passes every check and no side goal is flagged, 1 otherwise, 2 when it could not run (one stderr line <code>tree-balance: &lt;reason&gt;</code>).</li>
+          <li>A play that ends <code>stuck</code> reports the rung it stuck at and the nodes bought by then, so a policy that lowers homes at a deadline shows in the report.</li>
         </ul>
       </section>
 
@@ -1614,11 +1616,11 @@ export interface SideReport {
         <h4>Starting values and who tunes them</h4>
         <ul>
           <li>The prices in <code>PRICES</code> (shown in <a href="#tbl-nodes">the catalogue table</a>) are starting values. They are set from an estimate: current law completes about 66,000 net homes from today to the window's end, so a first run collects about 16,500 units at the 0.25 share.</li>
-          <li>A node's first level costs 2,000 to 10,000 in stage 0, 6,000 to 18,000 in stage 1, 24,000 to 32,000 in stage 2, 40,000 to 45,000 in stage 3 and 60,000 to 75,000 in stage 4. Each later level of a node costs more than the one before.</li>
+          <li>The starting price of a node's first level is 2,000 to 10,000 in stage 0, 6,000 to 18,000 in stage 1, 24,000 to 32,000 in stage 2, 40,000 to 45,000 in stage 3 and 60,000 to 75,000 in stage 4. Tuning may set any whole price above 0. Each later level of a node costs more than the one before.</li>
           <li>The implementer of the measurement part runs the script on the dataset in production before that part is finished, after <code>reach-measure --write</code>.</li>
           <li><code>RUNG_LUMP</code> and <code>SIDE_TUNING</code> start at the <code>game-core</code> spec's values.</li>
           <li>Prices, the lump and the side goals' targets and rewards change only by editing <code>tuning.ts</code> after reading a report. The script never writes them.</li>
-          <li>The implementer edits <code>tuning.ts</code> until every <code>hand</code> play finishes and passes and no side goal is flagged, keeping the cheapest level shown at rung 0 at or under <code>RUNG_LUMP</code>. If no set of prices passes, the unit hands the report to the owner with the checks that fail.</li>
+          <li>The implementer edits <code>tuning.ts</code> until the script exits 0: every gated play finishes and passes and no side goal is flagged, keeping the cheapest level shown at rung 0 at or under <code>RUNG_LUMP</code>. If no set of numbers passes, the unit hands the report to the owner with the checks that fail.</li>
           <li>The script is run again whenever a node, <code>tuning.ts</code>, <code>SHARE</code>, a side goal or the dataset version changes.</li>
         </ul>
       </section>
@@ -1772,6 +1774,8 @@ export interface SideReport {
       <li><strong>An empty ladder is refused, not written.</strong> With no year five years before the window's end the game has one rung: no deadline moves in, no ring opens and the loop cannot be played as designed (closing's journeys take the next goal). So <code>LADDER_YEARS</code> always holds one to four years, and a full tree that cannot beat the window's end by a five-year step is a finding for the owner, as a missed reach is.</li>
       <li><strong>A side-goal target at or below current law is raised to 1.25 times current law's value, rounded up to the next 1,000.</strong> It keeps the goal a step beyond what the player gets for nothing.</li>
       <li><strong>The balance script assumes the player takes the next rung at once</strong> and estimates drops from <code>completedNet</code>. Both keep it a pure function of the engine's series.</li>
+      <li><strong>The <code>money-first</code> play and the <code>collect-for-me</code> plays gate nothing.</strong> <code>money-first</code> buys every money measure before any other lever, and on the production dataset more City money for affordable homes lowers net homes at an early deadline, so that play can stick at a rung whatever the prices. A player who meets this switches the lever off (P12), which a sequence play does not model; the report keeps the finding in view for the owner. <code>collect-for-me</code> collects every drop, so it runs ahead of the pacing targets by design.</li>
+      <li><strong>The stage price ranges are starting values, not limits.</strong> A run's collected units are measured, so the prices that meet the pacing targets come from the report, not from the estimate the ranges rest on.</li>
     </ul>
   </section>
 
