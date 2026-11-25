@@ -2175,7 +2175,7 @@ describe('TimelineMode', () => {
 
   /** The boxes that must hold still as the status comes and goes. */
   function stillBoxes(): Record<string, DOMRect> {
-    const name = page.getByRole('banner').getByRole('link', { name: 'SF Housing Simulator' });
+    const name = page.getByRole('banner').getByRole('link', { name: 'SF Housing', exact: true });
     const lead = name.elements().length
       ? name.element()
       : page.getByRole('button', { name: 'Menu' }).element();

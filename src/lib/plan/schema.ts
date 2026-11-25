@@ -11,6 +11,7 @@ import {
   STORIES_MIN,
   TITLE_MAX_CHARS
 } from './constants';
+import { SITE_NAME } from '../shell/name';
 import { assertNever } from './geometry';
 import type { Plan, PlanOp } from './types';
 
@@ -29,8 +30,7 @@ export type PlanError = { path: string; code: PlanErrorCode; message: string };
 export type Result<T> = { ok: true; value: T } | { ok: false; errors: PlanError[] };
 export type Migration = (raw: Record<string, unknown>) => Record<string, unknown>;
 
-export const FUTURE_SCHEMA_MESSAGE =
-  'This plan was made with a newer version of SF Housing Simulator. Reload the page to get the latest version.';
+export const FUTURE_SCHEMA_MESSAGE = `This plan was made with a newer version of ${SITE_NAME}. Reload the page to get the latest version.`;
 
 /** MIGRATIONS[n] maps raw schema n to n + 1. Empty in M1 (spec §4.8). */
 export const MIGRATIONS: Readonly<Record<number, Migration>> = Object.freeze({});

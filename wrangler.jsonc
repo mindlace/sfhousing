@@ -37,7 +37,7 @@
   "vars": {
     "ENVIRONMENT": "production",
     "AUTH_METHODS": "magic-link,password,google,passkey",
-    "SES_FROM": "SF Housing Simulator <noreply@sfhousing.mindlace.net>",
+    "SES_FROM": "SF Housing <noreply@sfhousing.mindlace.net>",
     "PUBLIC_APP_RELEASE": "dev"
   },
   "env": {
@@ -92,7 +92,7 @@
       "vars": {
         "ENVIRONMENT": "staging",
         "AUTH_METHODS": "magic-link,password,google,passkey",
-        "SES_FROM": "SF Housing Simulator <noreply@sfhousing.mindlace.net>",
+        "SES_FROM": "SF Housing <noreply@sfhousing.mindlace.net>",
         "PUBLIC_APP_RELEASE": "dev"
       }
     }

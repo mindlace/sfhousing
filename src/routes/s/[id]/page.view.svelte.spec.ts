@@ -169,7 +169,7 @@ describe('/s/[id] read-only view', () => {
     expect(remixBtn().elements()).toHaveLength(0);
     expect(banner().getByRole('button', { name: REMIX_LOCKED }).elements()).toHaveLength(0);
     expect(banner().getByRole('link', { name: 'Start your own' }).elements()).toHaveLength(0);
-    await expect.poll(() => document.title).toBe('SD permits · SF Housing Simulator');
+    await expect.poll(() => document.title).toBe('SD permits · SF Housing');
   });
 
   it('/s shows the shared timeline read-only', async () => {
