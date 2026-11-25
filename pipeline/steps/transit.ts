@@ -401,7 +401,8 @@ export function reduceTransit(feeds: FeedInput[], opts: ReduceOpts): ReduceResul
 
 /**
  * Build step: read every gtfs-* lock entry, reduce, write `<outDir>/transit.json`. Needs
- * `<outDir>/neighborhoods.geojson` (written earlier in the build) for the clip.
+ * `<outDir>/neighborhoods.geojson` (written earlier in the build) for the clip. Returns the
+ * reduced network too (the car step's zone access reads it).
  */
 export function writeTransit(a: {
   lock: Lock;
@@ -410,7 +411,12 @@ export function writeTransit(a: {
   outDir: string;
   targetDate: string;
   strict: boolean;
-}): { bytes: number; counts: Record<string, number>; warnings: string[] } {
+}): {
+  bytes: number;
+  counts: Record<string, number>;
+  warnings: string[];
+  network: TransitNetwork;
+} {
   const feeds: FeedInput[] = Object.values(GTFS_FEEDS).map((spec) => {
     const entry = a.lock.sources.find((s) => s.id === spec.lockId);
     if (!entry) throw new TransitBuildError(`lock has no ${spec.lockId} entry`);
@@ -428,6 +434,7 @@ export function writeTransit(a: {
   return {
     bytes: body.length,
     counts: { ...r.counts, 'transit.bytes': body.length },
-    warnings: r.warnings
+    warnings: r.warnings,
+    network: r.network
   };
 }

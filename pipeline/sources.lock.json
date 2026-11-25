@@ -197,6 +197,42 @@
     {
       "files": [
         {
+          "archiveKey": "sources/2fd8349565b31534ee2005a839ba3ba6b29728a537eb000dceba89c3bb1a867b.csv",
+          "bytes": 3557,
+          "name": "census-puma-2010.csv",
+          "sha256": "2fd8349565b31534ee2005a839ba3ba6b29728a537eb000dceba89c3bb1a867b",
+          "url": "https://www2.census.gov/geo/docs/maps-data/data/rel/2010_Census_Tract_to_2010_PUMA.txt"
+        }
+      ],
+      "homepage": "https://www.census.gov/geographies/reference-files/time-series/geo/relationship-files.html",
+      "id": "census-puma-2010",
+      "label": "Census 2010 tract to 2010 PUMA relationship",
+      "license": "Public domain (U.S. Census Bureau)",
+      "retrievedAt": "2026-11-25T06:48:47.708Z",
+      "rowCount": 197,
+      "upstreamVersion": "Census 2010 tract to PUMA relationship file, SF tracts"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/3efbe56b1901468d445dcd85a6bc708968ebe36254b8b2011856a57008bf94cf.csv",
+          "bytes": 4403,
+          "name": "census-puma-2020.csv",
+          "sha256": "3efbe56b1901468d445dcd85a6bc708968ebe36254b8b2011856a57008bf94cf",
+          "url": "https://www2.census.gov/geo/docs/maps-data/data/rel2020/2020_Census_Tract_to_2020_PUMA.txt"
+        }
+      ],
+      "homepage": "https://www.census.gov/geographies/reference-files/time-series/geo/relationship-files.html",
+      "id": "census-puma-2020",
+      "label": "Census 2020 tract to 2020 PUMA relationship",
+      "license": "Public domain (U.S. Census Bureau)",
+      "retrievedAt": "2026-11-25T06:48:48.185Z",
+      "rowCount": 244,
+      "upstreamVersion": "Census 2020 tract to PUMA relationship file, SF tracts"
+    },
+    {
+      "files": [
+        {
           "archiveKey": "sources/ce826b3b38fad2bb3361cd31f489b32acdbae83e8d9940bb986649e5c2304b9c.csv",
           "bytes": 799412,
           "name": "census-pums5-2013.csv",

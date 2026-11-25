@@ -420,9 +420,9 @@ describe('fetchCensus: 2000 SF3, crosswalks, TIGER', () => {
     // A two-feature state file (one SF, one Alameda) written as a real shapefile.
     await db.run(
       `COPY (SELECT * FROM (VALUES
-          ('06','075','060750101001', ST_GeomFromText('POLYGON((-122.43 37.77,-122.42 37.77,-122.42 37.78,-122.43 37.78,-122.43 37.77))')),
-          ('06','001','060014001001', ST_GeomFromText('POLYGON((-122.2 37.8,-122.19 37.8,-122.19 37.81,-122.2 37.81,-122.2 37.8))'))
-        ) t(STATEFP, COUNTYFP, GEOID, geom))
+          ('06','075','060750101001', 876543::BIGINT, ST_GeomFromText('POLYGON((-122.43 37.77,-122.42 37.77,-122.42 37.78,-122.43 37.78,-122.43 37.77))')),
+          ('06','001','060014001001', 5::BIGINT, ST_GeomFromText('POLYGON((-122.2 37.8,-122.19 37.8,-122.19 37.81,-122.2 37.81,-122.2 37.8))'))
+        ) t(STATEFP, COUNTYFP, GEOID, ALAND, geom))
        TO '${join(work, 'bg.shp')}' (FORMAT GDAL, DRIVER 'ESRI Shapefile', SRS 'EPSG:4269')`
     );
     const parts: Record<string, Uint8Array> = {};
@@ -435,15 +435,53 @@ describe('fetchCensus: 2000 SF3, crosswalks, TIGER', () => {
     expect(e.rowCount).toBe(1);
     expect(e.files[0].bytes).toBe(bytes.length);
     await normalised(db, [e], dir);
-    const rows = await db.all<{ vintage: number; geoid: string; x: number }>(
-      `SELECT vintage, geoid, ST_X(ST_Centroid(geom)) x FROM src_bg_geom`
+    const rows = await db.all<{ vintage: number; geoid: string; x: number; aland: number }>(
+      `SELECT vintage, geoid, ST_X(ST_Centroid(geom)) x, aland FROM src_bg_geom`
     );
     expect(rows).toHaveLength(1);
     expect(rows[0].vintage).toBe(2020);
     expect(rows[0].geoid).toBe('060750101001');
+    // TIGER's land area (m²), the zones' area for the car model's density.
+    expect(rows[0].aland).toBe(876543);
     // EPSG:7131 is in metres, a few thousand to the east of its origin in SF
     expect(Math.abs(rows[0].x)).toBeGreaterThan(1000);
     db.close();
+  });
+});
+
+describe('fetchCensus: tract to PUMA relationship files', () => {
+  it('keeps the SF tracts with their PUMA, keyed by vintage', async () => {
+    const spec = CENSUS_SOURCES['census-puma-2020'];
+    if (spec.kind !== 'puma') throw new Error('puma spec');
+    const dir = tmp();
+    const http = fakeHttp({
+      [spec.url]:
+        '\uFEFFSTATEFP,COUNTYFP,TRACTCE,PUMA5CE\r\n06,001,400100,00101\r\n' +
+        '06,075,010101,07509\r\n06,075,060700,07507\r\n'
+    });
+    const e = await fetchCensus('census-puma-2020', dir, http, NOW);
+    expect(e.rowCount).toBe(2);
+    expect(e.license).toBe('Public domain (U.S. Census Bureau)');
+    const db = await openDuck();
+    await normalised(db, [e], dir);
+    const rows = await db.all(`SELECT * FROM src_tract_puma ORDER BY tract`);
+    expect(rows).toEqual([
+      { vintage: 2020, tract: '06075010101', puma: '07509' },
+      { vintage: 2020, tract: '06075060700', puma: '07507' }
+    ]);
+    db.close();
+  });
+
+  it('names a 2010 file too, and a file with no SF tracts throws', async () => {
+    expect(CENSUS_IDS).toContain('census-puma-2010');
+    const spec = CENSUS_SOURCES['census-puma-2010'];
+    if (spec.kind !== 'puma') throw new Error('puma spec');
+    const http = fakeHttp({
+      [spec.url]: 'STATEFP,COUNTYFP,TRACTCE,PUMA5CE\n06,001,400100,00101\n'
+    });
+    await expect(fetchCensus('census-puma-2010', tmp(), http, NOW)).rejects.toThrow(
+      /census-puma-2010: no San Francisco/
+    );
   });
 });
 
@@ -524,7 +562,8 @@ describe('normaliseAll without census entries', () => {
       'src_sf3_bg',
       'src_bg_geom',
       'src_bg_xwalk',
-      'src_dmv_zip'
+      'src_dmv_zip',
+      'src_tract_puma'
     ]) {
       expect(await tableExists(db, t)).toBe(false);
     }

@@ -22,6 +22,7 @@ import {
   type AcsSpec,
   type CensusSpec,
   type CensusTable,
+  type PumaRelSpec,
   type PumsSpec,
   type Sf3Spec,
   type TigerSpec,
@@ -457,6 +458,46 @@ async function fetchXwalk(
   });
 }
 
+// ---- Tract to PUMA ----------------------------------------------------------------------------
+
+/**
+ * Census tract to PUMA relationship file (comma separated, BOM on the header): the SF tracts as
+ * 11-digit tract geoids with their 5-digit PUMA. A block group is in its tract's PUMA.
+ */
+async function fetchPumaRel(
+  spec: PumaRelSpec,
+  rawDir: string,
+  http: Http,
+  now: Date
+): Promise<LockEntry> {
+  const bytes = await get(http, spec.url);
+  let h: string[] | undefined;
+  const rows: string[] = [];
+  textLines(bytes, (line) => {
+    const f = line.replace(/^\uFEFF/, '').split(',');
+    if (!h) {
+      h = f;
+      return;
+    }
+    const at = (c: string) => f[h!.indexOf(c)];
+    if (at('STATEFP') === SF_STATE && at('COUNTYFP') === SF_COUNTY)
+      rows.push(`${SF_COUNTY_GEOID}${at('TRACTCE')},${at('PUMA5CE')}`);
+  });
+  if (!h || !['STATEFP', 'COUNTYFP', 'TRACTCE', 'PUMA5CE'].every((c) => h!.includes(c)))
+    throw new Error(`${spec.id}: ${spec.url} lacks STATEFP, COUNTYFP, TRACTCE or PUMA5CE`);
+  if (rows.length === 0) throw new Error(`${spec.id}: no San Francisco tracts in ${spec.url}`);
+  rows.sort();
+  return entry(spec, {
+    rawDir,
+    name: `${spec.id}.csv`,
+    url: spec.url,
+    bytes: csvBytes('tract,puma', rows),
+    now,
+    upstreamVersion: `Census ${spec.vintage} tract to PUMA relationship file, SF tracts`,
+    rowCount: rows.length
+  });
+}
+
 // ---- TIGER/Line -------------------------------------------------------------------------------
 
 /** Records of a zip's .dbf whose COUNTYFP* field reads 075 (and STATEFP* 06). */
@@ -530,6 +571,8 @@ export async function fetchCensus(
       return fetchXwalk(spec, rawDir, http, now);
     case 'tiger':
       return fetchTiger(spec, rawDir, http, now);
+    case 'puma':
+      return fetchPumaRel(spec, rawDir, http, now);
   }
 }
 
@@ -613,7 +656,8 @@ const ORDER: Record<CensusTable, string> = {
   src_sf3_bg: 'geoid, variable',
   src_bg_geom: 'vintage, geoid',
   src_bg_xwalk: 'from_vintage, from_geoid, to_geoid',
-  src_dmv_zip: 'year, zip'
+  src_dmv_zip: 'year, zip',
+  src_tract_puma: 'vintage, tract'
 };
 
 /** One SELECT per lock entry of the table, in the table's column order. */
@@ -662,6 +706,9 @@ async function selectOf(
           FROM ${readCsv(file, { from_geoid: 'VARCHAR', to_geoid: 'VARCHAR', land_m2: 'DOUBLE', water_m2: 'DOUBLE' })})
         WHERE w > 0`;
     }
+    case 'src_tract_puma':
+      return `SELECT ${(spec as PumaRelSpec).vintage}::INTEGER AS vintage, tract, puma
+        FROM ${readCsv(file, { tract: 'VARCHAR', puma: 'VARCHAR' })}`;
     case 'src_dmv_zip':
       return `SELECT year, zip, light_duty
         FROM ${readCsv(file, { year: 'INTEGER', zip: 'VARCHAR', light_duty: 'INTEGER' })}`;
@@ -684,9 +731,13 @@ async function selectOf(
       // 2000 block groups have no GEOID00: BKGPIDFP00 is the same 12 digits.
       const geoid = cols.find((c) => /^GEOID/i.test(c)) ?? cols.find((c) => /^BKGPIDFP/i.test(c));
       const county = cols.find((c) => /^COUNTYFP/i.test(c));
-      if (!geoid || !county) throw new Error(`${e.id}: shapefile lacks GEOID or COUNTYFP`);
+      // ALAND, ALAND10, ALAND00: the block group's land area in m² (the car zones' area).
+      const aland = cols.find((c) => /^ALAND/i.test(c));
+      if (!geoid || !county || !aland)
+        throw new Error(`${e.id}: shapefile lacks GEOID, COUNTYFP or ALAND`);
       return `SELECT ${t.vintage}::INTEGER AS vintage, "${geoid}"::VARCHAR AS geoid,
-        ST_Transform(geom, 'EPSG:4269', 'EPSG:7131', always_xy := true) AS geom
+        ST_Transform(geom, 'EPSG:4269', 'EPSG:7131', always_xy := true) AS geom,
+        "${aland}"::DOUBLE AS aland
         FROM ST_Read(${q(shp)}) WHERE "${county}" = ${q(SF_COUNTY)}`;
     }
   }

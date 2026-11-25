@@ -84,7 +84,14 @@ export interface XwalkSpec extends CensusBase {
   layout: 'block' | 'blkgrp';
 }
 
-export type CensusSpec = AcsSpec | PumsSpec | Sf3Spec | TigerSpec | XwalkSpec;
+/** Census tract to PUMA relationship file: which PUMA each SF tract (so block group) is in. */
+export interface PumaRelSpec extends CensusBase {
+  kind: 'puma';
+  vintage: 2010 | 2020;
+  url: string;
+}
+
+export type CensusSpec = AcsSpec | PumsSpec | Sf3Spec | TigerSpec | XwalkSpec | PumaRelSpec;
 
 const HOME = {
   acs: 'https://www.census.gov/programs-surveys/acs/data/summary-file.html',
@@ -188,6 +195,16 @@ const xwalk = (from: 2000 | 2010, to: 2010 | 2020, url: string, layout: XwalkSpe
     license: CENSUS_LICENSE
   }) satisfies XwalkSpec;
 
+const pumaRel = (vintage: 2010 | 2020, url: string): PumaRelSpec => ({
+  kind: 'puma',
+  id: `census-puma-${vintage}`,
+  vintage,
+  url,
+  label: `Census ${vintage} tract to ${vintage} PUMA relationship`,
+  homepage: HOME.rel,
+  license: CENSUS_LICENSE
+});
+
 const ALL: CensusSpec[] = [
   ...ACS_END_YEARS.map(acs),
   PUMS_2013,
@@ -197,7 +214,9 @@ const ALL: CensusSpec[] = [
   tiger(2010, 'https://www2.census.gov/geo/tiger/TIGER2010/BG/2010/tl_2010_06075_bg10.zip'),
   tiger(2020, 'https://www2.census.gov/geo/tiger/TIGER2020/BG/tl_2020_06_bg.zip'),
   xwalk(2000, 2010, `${REL}/rel/t00t10/TAB2000_TAB2010_ST_06_v2.zip`, 'block'),
-  xwalk(2010, 2020, `${REL}/rel2020/blkgrp/tab20_blkgrp20_blkgrp10_st06.txt`, 'blkgrp')
+  xwalk(2010, 2020, `${REL}/rel2020/blkgrp/tab20_blkgrp20_blkgrp10_st06.txt`, 'blkgrp'),
+  pumaRel(2010, `${REL}/rel/2010_Census_Tract_to_2010_PUMA.txt`),
+  pumaRel(2020, `${REL}/rel2020/2020_Census_Tract_to_2020_PUMA.txt`)
 ];
 
 export const CENSUS_IDS: readonly string[] = ALL.map((s) => s.id);
@@ -232,7 +251,8 @@ export const CENSUS_TABLES = [
   'src_sf3_bg',
   'src_bg_geom',
   'src_bg_xwalk',
-  'src_dmv_zip'
+  'src_dmv_zip',
+  'src_tract_puma'
 ] as const;
 export type CensusTable = (typeof CENSUS_TABLES)[number];
 
@@ -250,5 +270,7 @@ export function censusTableOf(id: string): CensusTable | undefined {
           ? 'src_bg_geom'
           : k === 'xwalk'
             ? 'src_bg_xwalk'
-            : undefined;
+            : k === 'puma'
+              ? 'src_tract_puma'
+              : undefined;
 }

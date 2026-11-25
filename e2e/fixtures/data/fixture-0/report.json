@@ -801,6 +801,16 @@
       "detail": "src box/base/front/step/part 4/7/1/1/9; fallback 33.3%; reg fit 81.8%",
       "id": "V37",
       "ok": true
+    },
+    {
+      "detail": "no car data",
+      "id": "V38",
+      "ok": true
+    },
+    {
+      "detail": "no car data",
+      "id": "V39",
+      "ok": true
     }
   ],
   "license": {
