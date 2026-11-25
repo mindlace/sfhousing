@@ -465,6 +465,11 @@ it('setBox to a box still empty on one side does not centre')
   // createRun; setBox 800x0 -> ring (0, 0)
 it('setBox between two non-empty boxes only re-clamps')
   // setBox 800x600, pointRing (100, 100); setBox 1000x700 -> ring (100, 100)
+it('setBox is not a ring move: a centring or clamp empties sweep and leaves ringMoved unchanged')
+  // pointRing (100,100), (200,200) -> sweep non-empty, ringMoved true; setBox 150x150
+  //   -> ring (150, 150), sweep [], ringMoved still true; same from an empty box with ringMoved false
+it('after setBox centres from an empty box, sweepHits finds nothing on the corner-to-centre line')
+  // createRun; setBox 800x600 -> sweep []; sweepHits at (200, 150), r 10 -> false
 it('pointRing appends the old centre, or null when fresh, and sets ringMoved')
 it('sweep holds at most RUN_CAPS.maxSweep (32) entries, oldest dropped first')
 it('nudgeRing by 16 and by 64 sweeps the ground it crosses')
@@ -477,7 +482,7 @@ it('sweepHits: a null breaks the path; a lone point still counts')
       <li id="t5-s2"><input type="checkbox"> Run and see them fail.
         <pre><code data-lang="sh">npx vitest run --project server src/lib/game/run/run-model.spec.ts</code></pre>
       </li>
-      <li id="t5-s3"><input type="checkbox"> Implement. <code>sweepHits</code> walks the path <code>[...sweep, ring]</code> without allocating: for each adjacent pair with no <code>null</code> between, point-to-segment squared distance against <code>r * r</code>; each non-null point stands alone too. <code>pointRing</code> shifts the oldest sweep entry when the length would exceed <code>maxSweep</code>. <code>setBox</code>: when the old box had a side of 0 and the new one has both sides above 0, the ring goes to <code>(w / 2, h / 2)</code>, whether or not a run is in progress; otherwise the ring is clamped to the new box.</li>
+      <li id="t5-s3"><input type="checkbox"> Implement. <code>sweepHits</code> walks the path <code>[...sweep, ring]</code> without allocating: for each adjacent pair with no <code>null</code> between, point-to-segment squared distance against <code>r * r</code>; each non-null point stands alone too. <code>pointRing</code> shifts the oldest sweep entry when the length would exceed <code>maxSweep</code>. <code>setBox</code>: when the old box had a side of 0 and the new one has both sides above 0, the ring goes to <code>(w / 2, h / 2)</code>, whether or not a run is in progress; otherwise the ring is clamped to the new box. <code>setBox</code> is not a ring move: when it centres or clamps the ring it empties <code>sweep</code> and leaves <code>ringMoved</code> as it is (spec <code>sec-d-ring</code>).</li>
       <li id="t5-s4"><input type="checkbox"> Run, see them pass, lint (as <code>t1-s4</code>).</li>
       <li id="t5-s5"><input type="checkbox"> Commit, then check timing.
         <pre><code data-lang="sh">git add src/lib/game/run/run-model.ts src/lib/game/run/run-model.spec.ts
@@ -712,7 +717,7 @@ npx chreode timing-check --head HEAD</code></pre>
       <li>Produces: <code>export const RUN_FRAME_P95_MS = 2;</code></li>
     </ul>
     <ol>
-      <li id="t10-s1"><input type="checkbox"> Write the spec (client-perf project) per <code>sec-d-budget</code>: a real canvas with backing store 2560 by 1440 and <code>setTransform(2, 0, 0, 2, 0, 0)</code> for a 1280 by 720 box; 3,000 drops over 600 frames of 16.7 ms on a fake clock, 500 of them on frame 100; <code>BASE_HANDS</code>; <code>reduced: false</code>; the ring swept by 8 <code>pointRing</code> calls a frame round a circle of radius 200 px at the box centre. Time <code>step</code> plus <code>drawRun</code> per frame with <code>performance.now()</code>, skip 60 warm-up frames, and assert the p95 is at most <code>RUN_FRAME_P95_MS</code>. Also assert the run dropped 3,000.</li>
+      <li id="t10-s1"><input type="checkbox"> Write the spec (client-perf project) per <code>sec-d-budget</code>: a real canvas with backing store 2560 by 1440 and <code>setTransform(2, 0, 0, 2, 0, 0)</code> for a 1280 by 720 box; 3,000 drops over 600 frames of 16.7 ms on a fake clock, 500 of them on frame 100; every fifth drop in day order a policy drop (<code>policy: true</code>, drawn as a diamond), the rest circles; <code>BASE_HANDS</code>; <code>reduced: false</code>; the ring swept by 8 <code>pointRing</code> calls a frame round a circle of radius 200 px at the box centre. Time <code>step</code> plus <code>drawRun</code> per frame with <code>performance.now()</code>, skip 60 warm-up frames, and assert the p95 is at most <code>RUN_FRAME_P95_MS</code>. Also assert the run dropped 3,000.</li>
       <li id="t10-s2"><input type="checkbox"> Run it once to see it executes; record the p95 for the PR. Not a gate on a busy machine.
         <pre><code data-lang="sh">npx vitest run --project client-perf src/lib/game/run/run.perf.svelte.spec.ts</code></pre>
       </li>
@@ -732,8 +737,6 @@ npx chreode timing-check --head HEAD</code></pre>
 
   <section id="sec-open-questions">
     <h2>Open questions</h2>
-    <aside data-kind="question"><strong>Question 1</strong> Centring on the first size and the sweep. <code>sec-d-ring</code> says <code>setBox</code> from an empty box puts the ring at the new centre, but not whether that move appends to <code>sweep</code> or sets <code>ringMoved</code>, as <code>pointRing</code> does. If it appends the old centre (0, 0), the next collect pass sweeps a segment from the corner to the centre. The plan's tests (<code>t5-s1</code>, <code>t6-s1</code>) assert only the ring's position; the conductor decides the rest.</aside>
-    <aside data-kind="question"><strong>Question 2</strong> Policy drops in the perf case. <code>sec-d-budget</code>'s case gives 3,000 drops but no share of policy drops, and a diamond is a different path from a circle. The plan's Task 10 leaves <code>policy</code> as the case states it (unstated); the conductor decides whether the case mixes diamonds in.</aside>
     <aside data-kind="note">The clock mock and the reduced-motion emulation. Spec <code>sec-tests-component</code> mocks <code>./clock</code> "so the spec moves time and runs frames by hand" and also emulates <code>prefers-reduced-motion</code> both ways. A partial mock that replaces <code>now</code>, <code>raf</code> and <code>cancelRaf</code> and keeps the real <code>reducedMotion</code> (<code>t8-s1</code>) satisfies both lines.</aside>
   </section>
 </article>
