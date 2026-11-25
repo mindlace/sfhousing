@@ -256,6 +256,7 @@ export interface SideInput {
   view: TimelineView;
   index: number;
   take: RunTake;
+  inForce: boolean;
 }
 
 export interface SideGoal {
@@ -279,6 +280,7 @@ export function sideShown(s: GameState, goals?: readonly SideGoal[]): SideGoal[]
         <dt><code>waitingMoney</code></dt><dd>Homes waiting for money at the deadline's month; null when the view has no such series.</dd>
         <dt><code>lump</code></dt><dd><code>RUNG_LUMP</code> when this run is the first to meet its rung, else null.</dd>
         <dt><code>index</code></dt><dd>The deadline's month in the view.</dd>
+        <dt><code>inForce</code></dt><dd>A policy of the document the view was forecast from is on with a span in force: <code>!nothingInForce(doc)</code> of the runnable document.</dd>
       </dl>
       <ul>
         <li>Rung 0's deadline is <code>defaultGoal(asOf).deadline</code>. Rung <em>k</em> is the last day of December of <code>LADDER_YEARS[k - 1]</code>.</li>
@@ -300,6 +302,7 @@ export function sideShown(s: GameState, goals?: readonly SideGoal[]): SideGoal[]
         <li><code>fitGame</code> returns the same object when nothing is dropped or lowered.</li>
         <li><code>sideShown</code> returns the first <code>SIDE_SHOWN</code> goals whose ring is open and which are not met.</li>
         <li>A side goal's <code>read</code> returns null when the view lacks what it reads.</li>
+        <li>A goal that reads the policy's effect (<code>planEffect</code>) reads 0 while <code>inForce</code> is false: the view's twin is then the old zoning, not current law.</li>
       </ul>
     </section>
     <section id="sec-if-g7">
