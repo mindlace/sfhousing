@@ -1,4 +1,4 @@
-// bench:map cases for /sim with the timeline docked (timeline-ui R-5, Task 22; docs/dev/map-perf.md):
+// bench:map cases for the simulation at / with the timeline docked (timeline-ui R-5, Task 22; docs/dev/map-perf.md):
 //  1. the 10 s pan of map-pan.bench.ts over downtown while the timeline plays; rAF frame-time
 //     p50/p95, passes at p95 <= 16.7 ms;
 //  2. only with SFH_BENCH_DATASET (the live city): cell installs during the fill, sampled once a
@@ -124,7 +124,7 @@ async function waitMapReady(page: Page): Promise<void> {
 // ---- 1. the pan with the timeline docked ----------------------------------------------------------
 
 test('bench:map: /sim timeline docked, pan', async ({ page }) => {
-  await page.goto('/sim');
+  await page.goto('/');
   await waitMapReady(page);
   await page.waitForFunction(() => {
     const f = (window as Win).__sfhFzp;
@@ -205,7 +205,7 @@ test('bench:map: /sim fill, install frames per cells', async ({ page }) => {
   test.skip(!LIVE, 'SFH_BENCH_DATASET is not set: fixture-0 has too few cells to time');
   test.setTimeout(300_000);
   await installProbe(page, true);
-  await page.goto('/sim');
+  await page.goto('/');
   // The probe runs until the window is whole and the map has drained, so no slice goes unsampled.
   const probe = await waitWhole(page);
   const frames = probe.frames;
@@ -318,7 +318,7 @@ function paintedDoc(asOf: number): SimDoc4 {
 
 /** `asOf` of the dataset, read from one plain open (it also warms the HTTP cache for the rest). */
 async function readAsOf(page: Page): Promise<number> {
-  await page.goto('/sim');
+  await page.goto('/');
   await page.waitForFunction(() => (window as Win).__sfhFzp?.phase === 'ready');
   const asOf = await page.evaluate(() => (window as Win).__sfhFzp!.asOf);
   await page.evaluate((k) => localStorage.removeItem(k), SIM_KEY);
@@ -356,7 +356,7 @@ for (const kind of ['painted', 'empty'] as const)
         { key: SIM_KEY, doc: body }
       );
       await installProbe(p, false);
-      await p.goto('/sim');
+      await p.goto('/');
       const probe = await waitWhole(p);
       // The restore took: the page holds the painted policy (the empty case holds none).
       painted = await p.evaluate(
