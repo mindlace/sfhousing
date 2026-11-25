@@ -14,7 +14,8 @@ export function fmix32(h: number): number {
 /**
  * Draw purposes (spec 4.4.1). A stage step draws its kind on `STAGE` and its time on `STAGE_TIME`
  * (paired-draw fix). 17-23 are the retired in-flight stage redraws and are never reused; 7 and 10
- * are the affordable latent's (`INIT_AFFORDABLE`, `INIT_DAY_AFFORDABLE`).
+ * are the affordable latent's (`INIT_AFFORDABLE`, `INIT_DAY_AFFORDABLE`). 24-28 belong to the car
+ * system (`CAR_P`, `src/lib/sim/cars/types.ts`).
  */
 export const P = {
   INIT: 1,

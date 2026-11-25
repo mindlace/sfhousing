@@ -46,7 +46,8 @@ export const PATHS: readonly string[] = [
   'src/lib/timelapse',
   'src/lib/plan/geometry.ts',
   'src/lib/plan/types.ts',
-  'src/lib/sim/finance'
+  'src/lib/sim/finance',
+  'src/lib/sim/cars'
 ];
 /** Inputs and outputs under `pipeline`, not code: never part of the code hash. */
 const EXCLUDE_PATHS = ['pipeline/sources.lock.json', 'pipeline/.cache', 'pipeline/out'];
