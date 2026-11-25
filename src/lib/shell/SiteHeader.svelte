@@ -1,6 +1,6 @@
 <!--
   The site header. There are no steps: the name is the way home. From lg: the name, the game's
-  unit count (GameCell, once a game is open), the page's status, the pinned item centred in the
+  unit count (GameCell, after mount, never for the open game), the page's status, the pinned item centred in the
   bar (when both sides fit; a side that does not pushes it off centre, never clips), and the
   actions on the right. Below lg: the name, the status, the pinned item and a hamburger Menu
   button (named "Menu", never a dot) whose panel (under the header) holds the unit count and the

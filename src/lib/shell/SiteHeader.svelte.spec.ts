@@ -263,10 +263,10 @@ describe('SiteHeader', () => {
         render(SiteHeader, { routeId: '/sim', actions, pinned });
         const name = page.getByRole('link', { name: 'SF Housing', exact: true });
         await expect.element(name).toBeVisible();
+        const button = document.querySelector('[data-header-menu]')!;
+        const panel = document.getElementById(button.getAttribute('aria-controls')!)!;
+        expect(panel.contains(name.element())).toBe(false);
         if (width < 1024) {
-          const button = document.querySelector('[data-header-menu]')!;
-          const panel = document.getElementById(button.getAttribute('aria-controls')!)!;
-          expect(panel.contains(name.element())).toBe(false);
           await menu().click();
           await expect
             .element(page.getByRole('link', { name: 'About', exact: true }))
@@ -404,14 +404,12 @@ describe('SiteHeader', () => {
         await page.viewport(1024, 768);
         render(SiteHeader, { routeId: '/sim', actions, pinned, status });
         const slot = page.getByTestId('status-slot').element();
-        const lastLink = page.getByRole('link', { name: 'SF Housing', exact: true }).element();
+        const name = page.getByRole('link', { name: 'SF Housing', exact: true }).element();
         const score = page.getByRole('button', { name: '1,234 homes added' }).element();
-        expect(
-          lastLink.compareDocumentPosition(slot) & Node.DOCUMENT_POSITION_FOLLOWING
-        ).toBeTruthy();
+        expect(name.compareDocumentPosition(slot) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
         const s = slot.getBoundingClientRect();
-        expect(s.left).toBeGreaterThanOrEqual(lastLink.getBoundingClientRect().right);
-        expect(s.left - lastLink.getBoundingClientRect().right).toBeLessThanOrEqual(24);
+        expect(s.left).toBeGreaterThanOrEqual(name.getBoundingClientRect().right);
+        expect(s.left - name.getBoundingClientRect().right).toBeLessThanOrEqual(24);
         expect(s.right).toBeLessThanOrEqual(score.getBoundingClientRect().left);
       });
 
@@ -766,6 +764,14 @@ describe('SiteHeader', () => {
       const menu = page.getByRole('button', { name: 'Menu', exact: true });
       await menu.click();
       await page.getByTestId('header-units').click();
+      const gamePanel = page.getByTestId('header-game-panel');
+      await expect.element(gamePanel).toBeVisible();
+      // A switch has no aria-expanded, so only the keep-open rule holds the Menu open.
+      const sound = gamePanel.getByTestId('game-sound');
+      expect(sound.element().hasAttribute('aria-expanded')).toBe(false);
+      const before = sound.element().getAttribute('aria-checked');
+      await sound.click();
+      await expect.element(sound).not.toHaveAttribute('aria-checked', before!);
       await expect.element(menu).toHaveAttribute('aria-expanded', 'true');
       const about = page.getByRole('link', { name: 'About', exact: true }).element();
       about.addEventListener('click', (e) => e.preventDefault(), { once: true });
