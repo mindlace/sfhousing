@@ -142,6 +142,7 @@ const cellName = (table: string, i: number) => `${table}_${String(i).padStart(3,
 async function acsTableBased(spec: AcsSpec, http: Http): Promise<string[]> {
   const out: string[] = [];
   for (const t of ACS_TABLES) {
+    const before = out.length;
     const bytes = await get(http, acsSummaryUrl(spec.endYear, t));
     let cols: (string | undefined)[] | undefined;
     textLines(bytes, (line) => {
@@ -163,6 +164,9 @@ async function acsTableBased(spec: AcsSpec, http: Http): Promise<string[]> {
       });
     });
     if (!cols) throw new Error(`${spec.id}: ${acsSummaryUrl(spec.endYear, t)} has no header`);
+    if (out.length === before) {
+      throw new Error(`${spec.id}: ${acsSummaryUrl(spec.endYear, t)} has no San Francisco rows`);
+    }
   }
   return out;
 }
@@ -215,6 +219,11 @@ async function acsSequenceBased(spec: AcsSpec, http: Http): Promise<string[]> {
 async function fetchAcs(spec: AcsSpec, rawDir: string, http: Http, now: Date): Promise<LockEntry> {
   const rows =
     spec.layout === 'table' ? await acsTableBased(spec, http) : await acsSequenceBased(spec, http);
+  if (rows.length === 0) {
+    throw new Error(
+      `${spec.id}: no San Francisco block-group rows found (${spec.layout}-based files)`
+    );
+  }
   rows.sort();
   const url =
     spec.layout === 'table'
@@ -285,6 +294,15 @@ async function fetchPums(
     (n) => /\.csv$/i.test(n)
   );
   if (!header) throw new Error(`${spec.id}: ${spec.hhUrl} has no household file`);
+  const missingHh = ['SERIALNO', 'WGTP', 'VEH', 'NP', 'HINCP', 'ADJINC', 'TEN'].filter(
+    (c) => !header!.includes(c)
+  );
+  if (missingHh.length > 0) {
+    throw new Error(`${spec.id}: ${spec.hhUrl} lacks column(s) ${missingHh.join(', ')}`);
+  }
+  if (rows.length === 0) {
+    throw new Error(`${spec.id}: no occupied San Francisco households in ${spec.hhUrl}`);
+  }
   const sf = new Set(rows.map((r) => r.serial));
   // Workers per household come from the person file: WIF is blank for non-family households.
   const workers = new Map<string, number>();
@@ -304,6 +322,9 @@ async function fetchPums(
     },
     (n) => /\.csv$/i.test(n)
   );
+  if (!pHeader || !pHeader.includes('SERIALNO') || !pHeader.includes('ESR')) {
+    throw new Error(`${spec.id}: ${spec.personUrl} lacks SERIALNO or ESR`);
+  }
   const lines = rows
     .sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0))
     .map((r) => r.line(workers.get(r.serial) ?? 0));
@@ -349,6 +370,9 @@ async function fetchSf3(spec: Sf3Spec, rawDir: string, http: Http, now: Date): P
       if (n !== undefined) out.push(`${geoid},${spec.variables[i]},${n}`);
     });
   });
+  if (bg.size === 0 || out.length === 0) {
+    throw new Error(`${spec.id}: no San Francisco block-group rows found (${bg.size} geographies)`);
+  }
   out.sort();
   return entry(spec, {
     rawDir,
@@ -418,6 +442,7 @@ async function fetchXwalk(
     });
     if (!h) throw new Error(`${spec.id}: ${spec.url} has no header`);
   }
+  if (sums.size === 0) throw new Error(`${spec.id}: no San Francisco rows in ${spec.url}`);
   const lines = [...sums]
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
     .map(([k, [land, water]]) => `${k},${land},${water}`);
@@ -546,6 +571,11 @@ export async function fetchDmv(
       sums.set(k, (sums.get(k) ?? 0) + n);
     });
     if (!h) throw new Error(`${f.url}: empty file`);
+    const missing = ['zip code', 'duty', 'vehicles'].filter((c) => !h!.includes(c));
+    if (missing.length > 0) throw new Error(`${f.url}: lacks column(s) ${missing.join(', ')}`);
+    if (![...sums.keys()].some((k) => k.startsWith(`${f.year},`))) {
+      throw new Error(`${f.url}: no light-duty rows in ${DMV_ZIP_PREFIX}xx ZIPs`);
+    }
   }
   const lines = [...sums]
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))

@@ -565,3 +565,70 @@ describe('normaliseAll without census entries', () => {
     db.close();
   });
 });
+
+describe('a fetch that finds no San Francisco rows writes no lock entry', () => {
+  it('ACS: a table with no SF rows throws', async () => {
+    const routes = Object.fromEntries(
+      ACS_TABLES.map((t) => [
+        acsSummaryUrl(2024, t),
+        `GEO_ID|${t}_E001|${t}_M001\n1500000US060014001001|10|2\n`
+      ])
+    );
+    await expect(fetchCensus('census-acs5-bg-2024', tmp(), fakeHttp(routes), NOW)).rejects.toThrow(
+      /census-acs5-bg-2024.*no San Francisco rows/
+    );
+  });
+
+  it('SF3: no SF block groups throws', async () => {
+    const spec = CENSUS_SOURCES['census-sf3-2000-bg'];
+    if (spec.kind !== 'sf3') throw new Error('sf3 spec');
+    const http = fakeHttp({
+      [spec.geoUrl]: zip('cageo.uf3', 'uSF3  CA04000000  0000001\n'),
+      [spec.dataUrl]: zip('ca00058.uf3', 'uSF3,CA,000,58,0000001,1,2\n')
+    });
+    await expect(fetchCensus('census-sf3-2000-bg', tmp(), http, NOW)).rejects.toThrow(
+      /census-sf3-2000-bg: no San Francisco block-group rows/
+    );
+  });
+
+  it('PUMS: no SF households, and a missing column, throw', async () => {
+    const spec = CENSUS_SOURCES['census-pums5-2024'];
+    if (spec.kind !== 'pums') throw new Error('pums spec');
+    const person = zip('psam_p06.csv', 'SERIALNO,ESR\n');
+    const none = fakeHttp({
+      [spec.hhUrl]: zip(
+        'psam_h06.csv',
+        'PUMA,SERIALNO,WGTP,VEH,NP,HINCP,ADJINC,TEN,YRBLT\n06501,X,1,1,1,1,1,1,2000\n'
+      ),
+      [spec.personUrl]: person
+    });
+    await expect(fetchCensus('census-pums5-2024', tmp(), none, NOW)).rejects.toThrow(
+      /no occupied San Francisco households/
+    );
+    const noCol = fakeHttp({
+      [spec.hhUrl]: zip('psam_h06.csv', 'PUMA,SERIALNO,WGTP,NP\n07508,X,1,1\n'),
+      [spec.personUrl]: person
+    });
+    await expect(fetchCensus('census-pums5-2024', tmp(), noCol, NOW)).rejects.toThrow(
+      /lacks column\(s\) VEH/
+    );
+  });
+
+  it('DMV: a missing header column and a file with no SF ZIPs throw', async () => {
+    const PKG =
+      'https://data.ca.gov/api/3/action/package_show?id=vehicle-fuel-type-count-by-zip-code';
+    const pkg = JSON.stringify({
+      result: { resources: [{ name: '1/1/2026 x', format: 'CSV', url: 'https://x/a.csv' }] }
+    });
+    const badHeader = fakeHttp({
+      [PKG]: pkg,
+      'https://x/a.csv': 'Date,Zip,Duty,Vehicles\n1,94110,Light,5\n'
+    });
+    await expect(fetchDmv(tmp(), badHeader, NOW)).rejects.toThrow(/lacks column\(s\) zip code/);
+    const noSf = fakeHttp({
+      [PKG]: pkg,
+      'https://x/a.csv': 'Date,Zip Code,Duty,Vehicles\n1,95133,Light,5\n'
+    });
+    await expect(fetchDmv(tmp(), noSf, NOW)).rejects.toThrow(/no light-duty rows/);
+  });
+});
