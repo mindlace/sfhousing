@@ -14,6 +14,13 @@ async function gotoSim(page: Page, colorScheme: 'light' | 'dark' = 'light'): Pro
   await page.goto('/sim');
   await page.waitForFunction(() => (window as FzpWin).__sfhFzp?.phase === 'ready');
   await waitFilled(page);
+  // The forecast can fill before the map has loaded: `__sfhMap` is installed with `map` null and
+  // the style's layers exist only once the map is 'ready' (its load applies the Layers choice).
+  await page.waitForFunction(
+    () =>
+      document.querySelector('[data-testid="map-root"]')?.getAttribute('data-state') === 'ready' &&
+      !!(window as Win).__sfhMap?.map
+  );
 }
 
 const details = (page: Page): Locator => page.getByTestId('tl-details');
@@ -34,18 +41,19 @@ async function openLayers(page: Page): Promise<void> {
   await expect(layersGroup(page)).toBeVisible();
 }
 
-/** The cars layer's visibility and its source's `v` values, from the map (none before it is up). */
+/**
+ * The cars layer's visibility and its source's `v` values, from the loaded map (`gotoSim` waits
+ * for it). Everything is read from the map before the one await, so nothing touches it after.
+ */
 const carsLayer = (page: Page) =>
   page.evaluate(async () => {
-    const map = (window as Win).__sfhMap?.map;
-    if (!map?.getLayer('cars-per-household')) return { visibility: 'absent', values: [] };
+    const map = (window as Win).__sfhMap!.map!;
+    if (!map.getLayer('cars-per-household')) return { visibility: 'absent', values: [] };
+    const visibility = map.getLayoutProperty('cars-per-household', 'visibility') ?? 'visible';
     const src = map.getSource('car-zones') as
       { getData(): Promise<{ features: { properties: { v: number | null } }[] }> } | undefined;
     const data = src ? await src.getData() : { features: [] };
-    return {
-      visibility: map.getLayoutProperty('cars-per-household', 'visibility') ?? 'visible',
-      values: data.features.map((f) => f.properties.v)
-    };
+    return { visibility, values: data.features.map((f) => f.properties.v) };
   });
 
 /** Moves the playhead to the window's end and waits for the map and Details to read it. */
@@ -79,7 +87,8 @@ test('the Layers panel switches cars per household; the map draws the playhead m
   page
 }) => {
   await gotoSim(page);
-  await expect.poll(async () => (await carsLayer(page)).visibility).toBe('none');
+  // The map's load set the layer from the stored choice (off by default).
+  expect((await carsLayer(page)).visibility).toBe('none');
   await openLayers(page);
   // Beside transit: after the transit rows, before the height limits.
   await expect(layersGroup(page).locator('label')).toHaveText([
