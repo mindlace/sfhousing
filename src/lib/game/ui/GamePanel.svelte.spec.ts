@@ -36,8 +36,9 @@ async function scheme(value: 'light' | 'dark') {
   await cdp().send('Emulation.setEmulatedMedia', {
     features: [{ name: 'prefers-color-scheme', value }]
   });
-  // The panel sits on the header's surface and ink in the app; a checked switch's translucent
-  // tint needs that surface under it for axe to read the real colour.
+  // Stands in for SURFACE_POP (src/lib/shell/ui.ts:55), the pop-over surface the panel sits on in
+  // the app; a checked switch's translucent tint needs that surface under it for axe to read the
+  // real colour.
   const sfx = value === 'dark' ? '-dark' : '';
   document.body.style.background = `var(--color-surface${sfx})`;
   document.body.style.color = `var(--color-ink${sfx})`;
