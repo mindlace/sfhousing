@@ -1,6 +1,6 @@
 <script lang="ts" module>
   /** A layer row: a checkbox (and its legend or caption) for one ViewPrefs field. */
-  export type ViewRow = 'transitStops' | 'transitAccess' | 'heightLimits';
+  export type ViewRow = 'transitStops' | 'transitAccess' | 'carsPerHousehold' | 'heightLimits';
 
   /** The Zoning height limits row's caption. */
   export const LIMITS_CAPTION =
@@ -12,8 +12,10 @@
   // one checkbox and its legend or caption per layer, in `rows` order. The rows only: they sit in
   // MapKeyControl's Layers panel, the group named "Map layers". / and /p/:id show the two transit
   // rows (the default); /sim adds the zoning height limits, and shows only that row when the
-  // dataset has no transit.
-  import { TOKENS, accessSwatch } from '$lib/map/palette';
+  // dataset has no transit, and cars per household after the transit rows when the dataset has car
+  // zones (car-ownership Task 12).
+  import { CARS_CAPTION, CARS_LABEL, CARS_LEGEND } from '$lib/map/cars-layer';
+  import { TOKENS, accessSwatch, carsSwatch } from '$lib/map/palette';
   import type { Theme } from '$lib/map/types';
   import { ACCESS_CAPTION, ACCESS_LEGEND } from '$lib/transit/legend';
   import type { ViewPrefs } from './prefs';
@@ -84,6 +86,28 @@
         {/each}
       </ul>
       <p class="mt-2 pl-6 text-xs text-gray-700 dark:text-gray-300">{ACCESS_CAPTION}</p>
+    {:else if row === 'carsPerHousehold'}
+      <label class={SWITCH}>
+        <input
+          type="checkbox"
+          checked={view.carsPerHousehold}
+          onchange={(e) => onchange({ ...view, carsPerHousehold: e.currentTarget.checked })}
+        />
+        {CARS_LABEL}
+      </label>
+      <ul class="mt-1 flex flex-wrap gap-x-3 gap-y-1 pl-6" aria-label="{CARS_LABEL} legend">
+        {#each CARS_LEGEND as label, i (label)}
+          <li class="flex items-center gap-1">
+            <span
+              aria-hidden="true"
+              class="inline-block size-3 shrink-0"
+              style="background: {carsSwatch(theme, (i + 1) as 1 | 2 | 3 | 4 | 5)}"
+            ></span>
+            {label}
+          </li>
+        {/each}
+      </ul>
+      <p class="mt-2 pl-6 text-xs text-gray-700 dark:text-gray-300">{CARS_CAPTION}</p>
     {:else}
       <label class={SWITCH}>
         <input

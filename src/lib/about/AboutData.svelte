@@ -1,5 +1,6 @@
 <!--
-  About, part 3: data and licences. The dataset version, the manifest's sources, every notice
+  About, part 3: data and licences. The dataset version, the manifest's sources (a family of
+  them, such as the Census releases, as one row: sourceRows), every notice
   and the software credits. The Overture
   notice is built from the manifest's `overture:*` sources (overtureNotice). Without a manifest
   it shows the version alone and the fixed notices. Headings at `level` and `level + 1`; colours
@@ -9,8 +10,8 @@
   import { REPO_URL } from '$lib/config';
   import { SOFTWARE, isoDate } from '$lib/attribution';
   import type { ManifestSources } from '$lib/data/manifest';
-  import { ABOUT_ID, PART_HEADING } from './copy';
-  import { LICENCE_LINK, listJoin, overtureNotice } from './credits';
+  import { ABOUT_ID, CARS_NOTICE, PART_HEADING } from './copy';
+  import { LICENCE_LINK, listJoin, overtureNotice, sourceRows } from './credits';
 
   let {
     level,
@@ -21,6 +22,9 @@
   const sub = $derived(`h${level + 1}`);
   const hasScenario = $derived(!!manifest?.scenarios?.fzp);
   const hasPolicy = $derived(!!manifest?.scenarios?.fzp?.policy);
+  const hasCars = $derived(!!manifest?.scenarios?.fzp?.cars);
+  /** One row per source, or per family of them (the Census, the DMV, a GTFS operator's years). */
+  const rows = $derived(sourceRows(manifest?.sources ?? []));
   const hasTransit = $derived(manifest?.sources.some((s) => s.id.startsWith('gtfs-')) ?? false);
   // "from A and B under the ODbL, C under X and D under CC BY 4.0": each clause's words before
   // its licence, joined as a list; none gives "under the ODbL" alone.
@@ -59,13 +63,13 @@
           </tr>
         </thead>
         <tbody>
-          {#each manifest.sources as source (source.id)}
+          {#each rows as source (source.key)}
             <tr>
               <td class="pr-4"
                 ><a
                   class="inline-flex min-h-6 items-center underline"
                   href={source.url}
-                  rel="noopener noreferrer">{source.label ?? source.id}</a
+                  rel="noopener noreferrer">{source.label}</a
                 ></td
               >
               <td class="pr-4">{source.license}</td>
@@ -121,6 +125,9 @@
         082-26), SF public record (Board File 260132). Zoning rules follow California Government
         Code §§65912.155–65912.162 (SB 79, 2025) and San Francisco Planning Code §207.11.
       </li>
+    {/if}
+    {#if hasCars}
+      <li>{CARS_NOTICE}</li>
     {/if}
     <li>
       Derived data files under <code>/data/</code> that incorporate OpenStreetMap or Overture data are

@@ -29,6 +29,7 @@ import { cumulativeIncidence } from '$lib/timelapse/model';
 import type { ProjectsFile } from '$lib/timelapse/projects';
 import type { Day } from '$lib/timelapse/time';
 import { PATHWAYS, STAGE_ORDER } from '$lib/timelapse/types';
+import type { CarModel } from '$lib/sim/cars/types';
 import type {
   Calibration,
   FeatureId,
@@ -40,7 +41,7 @@ import type {
 } from '$lib/timelapse/types';
 import { transitionSectionId, LOCAL_PROGRAM_SECTION_ID } from './card';
 import { MEASURE_SERIES, SERIES_NAME } from './chart';
-import { formatDate, formatSourcePercent } from './format';
+import { formatDate, formatDollars, formatSourcePercent } from './format';
 import {
   MARKET_FUNDING_SENTENCE4,
   MARKET_HOLD_SENTENCE,
@@ -107,6 +108,9 @@ export const QUALITY_PARCEL_SENTENCE =
   "Checks on the assessor's roll and on the stage tables follow the same rules; a value they replace is marked as estimated in the data and is never shown as a record.";
 
 export const QUALITY_LOAD_FAILED = "The list of data checks couldn't be loaded.";
+
+/** The car model's section (car-ownership Task 12): About's Cars section links it. */
+export const CARS_SECTION_ID = 'src-cars';
 
 export const NOT_SF_NOTE = 'Not from San Francisco records.';
 
@@ -477,6 +481,44 @@ function pathwaySection(cal: Calibration): ProvSection {
   };
 }
 
+/** The car model: its fitted parts, each parking figure's source, then its figures. */
+function carsSection(cars: CarModel): ProvSection {
+  const { parking } = cars;
+  const cost = parking.costPerSpace;
+  const costRows: string[][] = [];
+  const COST_NAME = { surface: 'surface', podium: 'podium', belowGrade: 'below-grade' } as const;
+  for (const k of ['surface', 'podium', 'belowGrade'] as const) {
+    const v = cost?.[k];
+    if (typeof v === 'number') {
+      const dollars = parking.dollarsYear === null ? '' : ` (${parking.dollarsYear} dollars)`;
+      costRows.push([`Cost per ${COST_NAME[k]} space${dollars}`, formatDollars(v)]);
+    }
+  }
+  return {
+    id: CARS_SECTION_ID,
+    heading: 'The car model',
+    intro: [],
+    entries: [
+      entry('src-cars-choice', 'Cars a household owns', cars.choice.provenance),
+      entry('src-cars-moves', 'How often households move', cars.moves.provenance),
+      entry('src-cars-new-homes', 'Who moves into new homes', cars.newHomes.provenance),
+      ...parking.provenance.map((p, k) => entry(`src-cars-parking-${k}`, p.label, p))
+    ],
+    tables: [
+      {
+        caption: 'Figures the car model uses',
+        head: ['Figure', 'Value'],
+        rows: [
+          ['Cars of a household with 3 or more', cars.threePlusMean.toFixed(2)],
+          ['Parking spaces built per space used', String(parking.supplyOverUse)],
+          ...costRows,
+          ['Car choices refreshed every', `${cars.refreshMonths} months`]
+        ]
+      }
+    ]
+  };
+}
+
 /** The targets and the published estimates beside them (section 8). */
 function targetsSection(
   score: Pick<TimelineScore, 'targets' | 'references'>,
@@ -591,7 +633,8 @@ export function provenanceSections(
     ...(money ? [money] : []),
     sizeSection(cal),
     revisionSection(cal),
-    pathwaySection(cal)
+    pathwaySection(cal),
+    ...(cal.cars ? [carsSection(cal.cars)] : [])
   );
   if (score) {
     out.push(targetsSection(score, cal.asOf));

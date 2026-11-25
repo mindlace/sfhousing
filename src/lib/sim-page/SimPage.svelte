@@ -809,9 +809,12 @@
   const systemTheme = useSystemTheme();
   /** The manifest the map renders (TimelineMode's own, which a Retry can replace). */
   let mapManifest = $state.raw<Manifest | null>(null);
-  const viewRows = $derived<readonly ViewRow[]>(
-    mapManifest?.transit ? ['transitStops', 'transitAccess', 'heightLimits'] : ['heightLimits']
-  );
+  /** Transit's rows with transit, cars per household with car zones, then the height limits. */
+  const viewRows = $derived<readonly ViewRow[]>([
+    ...(mapManifest?.transit ? (['transitStops', 'transitAccess'] as const) : []),
+    ...(mapManifest?.scenarios?.fzp.carZones ? (['carsPerHousehold'] as const) : []),
+    'heightLimits'
+  ]);
 
   function setView(v: ViewPrefs): void {
     viewPrefs = v;

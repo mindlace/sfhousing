@@ -5,7 +5,12 @@ const mem = (v: string | null) => ({ getItem: (k: string) => (k === VIEW_KEY ? v
 
 describe('view prefs', () => {
   it('defaults to stops off, capacity off and the height limits on', () => {
-    expect(DEFAULT_VIEW).toEqual({ transitStops: false, transitAccess: false, heightLimits: true });
+    expect(DEFAULT_VIEW).toEqual({
+      transitStops: false,
+      transitAccess: false,
+      heightLimits: true,
+      carsPerHousehold: false
+    });
     expect(readViewPrefs(mem(null))).toEqual(DEFAULT_VIEW);
     expect(readViewPrefs(null)).toEqual(DEFAULT_VIEW);
     expect(readViewPrefs(null).heightLimits).toBe(true);
@@ -19,18 +24,29 @@ describe('view prefs', () => {
   });
 
   it('HIDDEN_VIEW turns every layer off', () => {
-    expect(HIDDEN_VIEW).toEqual({ transitStops: false, transitAccess: false, heightLimits: false });
+    expect(HIDDEN_VIEW).toEqual({
+      transitStops: false,
+      transitAccess: false,
+      heightLimits: false,
+      carsPerHousehold: false
+    });
   });
 
   it('reads stored booleans and falls back per field on junk', () => {
     expect(
       readViewPrefs(mem('{"transitStops":false,"transitAccess":true,"heightLimits":false}'))
-    ).toEqual({ transitStops: false, transitAccess: true, heightLimits: false });
+    ).toEqual({
+      transitStops: false,
+      transitAccess: true,
+      heightLimits: false,
+      carsPerHousehold: false
+    });
     expect(readViewPrefs(mem('{"transitStops":3}'))).toEqual(DEFAULT_VIEW);
     expect(readViewPrefs(mem('{"transitStops":false,"transitAccess":"x"}'))).toEqual({
       transitStops: false,
       transitAccess: false,
-      heightLimits: true
+      heightLimits: true,
+      carsPerHousehold: false
     });
     expect(readViewPrefs(mem('"nope"'))).toEqual(DEFAULT_VIEW);
     expect(readViewPrefs(mem('{'))).toEqual(DEFAULT_VIEW);
@@ -40,7 +56,8 @@ describe('view prefs', () => {
     expect(readViewPrefs(mem('{"transitStops":true,"transitAccess":false}'))).toEqual({
       transitStops: true,
       transitAccess: false,
-      heightLimits: true
+      heightLimits: true,
+      carsPerHousehold: false
     });
   });
 
@@ -53,12 +70,18 @@ describe('view prefs', () => {
       setItem: (k: string, v: string) => void saved.set(k, v)
     };
     const v = readViewPrefs(s);
-    expect(v).toEqual({ transitStops: true, transitAccess: true, heightLimits: false });
+    expect(v).toEqual({
+      transitStops: true,
+      transitAccess: true,
+      heightLimits: false,
+      carsPerHousehold: false
+    });
     writeViewPrefs(v, s);
     expect(JSON.parse(saved.get(VIEW_KEY)!)).toEqual({
       transitStops: true,
       transitAccess: true,
-      heightLimits: false
+      heightLimits: false,
+      carsPerHousehold: false
     });
     // The new field wins over a legacy one.
     expect(readViewPrefs(mem('{"heightFog":false,"heightLimits":true}')).heightLimits).toBe(true);
@@ -77,17 +100,30 @@ describe('view prefs', () => {
     expect(() => writeViewPrefs(DEFAULT_VIEW, boom)).not.toThrow();
   });
 
-  it('writes exactly the three fields', () => {
+  it('writes exactly the four fields', () => {
     let saved = '';
     writeViewPrefs(
-      { transitStops: false, transitAccess: true, heightLimits: true, extra: 1 } as never,
+      {
+        transitStops: false,
+        transitAccess: true,
+        heightLimits: true,
+        carsPerHousehold: true,
+        extra: 1
+      } as never,
       { setItem: (_k, v) => (saved = v) }
     );
     expect(JSON.parse(saved)).toEqual({
       transitStops: false,
       transitAccess: true,
-      heightLimits: true
+      heightLimits: true,
+      carsPerHousehold: true
     });
+  });
+
+  it('a stored carsPerHousehold wins; junk or none reads off', () => {
+    expect(readViewPrefs(mem('{"carsPerHousehold":true}')).carsPerHousehold).toBe(true);
+    expect(readViewPrefs(mem('{"carsPerHousehold":"x"}')).carsPerHousehold).toBe(false);
+    expect(readViewPrefs(mem('{"transitStops":true}')).carsPerHousehold).toBe(false);
   });
 
   it('a written heightLimits: false reads back false', () => {

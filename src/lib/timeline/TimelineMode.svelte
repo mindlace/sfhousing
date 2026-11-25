@@ -444,6 +444,14 @@
   /** Today's score shape over the view on show (rule 26). */
   const score = $derived(shownView ? scoreOfView(shownView, tierBaseline) : null);
   const shownFilled = $derived(shown.view?.filledThrough ?? -1);
+  /**
+   * The cars layer's values: cars per household by zone at the playhead's month (null past the
+   * fill or without car data). The same array for the same month, so the map rebuilds its source
+   * only when the month changes.
+   */
+  const carZones = $derived(
+    shownView?.cars && index <= shownFilled ? (shownView.cars.zones[index] ?? null) : null
+  );
   /** `resultsAt` over the score above (the view's, built once); at today `todayAt` of it. */
   const at = $derived.by(() => {
     if (!shown.view || !score || index > shownFilled) return null;
@@ -1829,6 +1837,7 @@
               onRetryChunks={() => client?.retryChunks()}
               onready={onMapReady}
               {view}
+              {carZones}
               timelinePick={onPick}
               tapCards={cards}
             />

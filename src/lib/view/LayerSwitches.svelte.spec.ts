@@ -7,7 +7,8 @@ import { cdp, page, userEvent } from 'vitest/browser';
 import '../../routes/layout.css';
 import LayerSwitches, { LIMITS_CAPTION } from './LayerSwitches.svelte';
 import { DEFAULT_VIEW } from './prefs';
-import { TOKENS, accessSwatch } from '$lib/map/palette';
+import { TOKENS, accessSwatch, carsSwatch } from '$lib/map/palette';
+import { CARS_CAPTION, CARS_LABEL, CARS_LEGEND } from '$lib/map/cars-layer';
 
 const rgb = (hex: string) =>
   `rgb(${[1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)).join(', ')})`;
@@ -32,8 +33,47 @@ describe('LayerSwitches', () => {
     expect(onchange).toHaveBeenCalledWith({
       transitStops: false,
       transitAccess: true,
-      heightLimits: true
+      heightLimits: true,
+      carsPerHousehold: false
     });
+  });
+
+  it('the cars row: listed only when asked, toggles carsPerHousehold, with its legend', async () => {
+    const a = await render(LayerSwitches, {
+      view: DEFAULT_VIEW,
+      theme: 'light',
+      onchange: vi.fn()
+    });
+    await expect.element(page.getByRole('checkbox', { name: 'Transit stops' })).toBeVisible();
+    expect(page.getByRole('checkbox', { name: CARS_LABEL }).query()).toBeNull();
+    await a.unmount();
+    const onchange = vi.fn();
+    render(LayerSwitches, {
+      view: DEFAULT_VIEW,
+      theme: 'dark',
+      onchange,
+      rows: ['transitStops', 'transitAccess', 'carsPerHousehold', 'heightLimits']
+    });
+    const box = page.getByRole('checkbox', { name: CARS_LABEL });
+    await expect.element(box).not.toBeChecked();
+    await box.click();
+    expect(onchange).toHaveBeenCalledWith({ ...DEFAULT_VIEW, carsPerHousehold: true });
+    for (const label of CARS_LEGEND) await expect.element(page.getByText(label)).toBeVisible();
+    await expect.element(page.getByText(CARS_CAPTION)).toBeVisible();
+    const spans = [...document.querySelectorAll(`[aria-label="${CARS_LABEL} legend"] li > span`)];
+    expect(spans.map((s) => getComputedStyle(s).backgroundColor)).toEqual(
+      ([1, 2, 3, 4, 5] as const).map((k) => rgb(carsSwatch('dark', k)))
+    );
+    const names = page
+      .getByRole('checkbox')
+      .elements()
+      .map((e) => e.closest('label')!.textContent!.trim());
+    expect(names).toEqual([
+      'Transit stops',
+      'Transit capacity within a 10-minute walk',
+      CARS_LABEL,
+      'Zoning height limits'
+    ]);
   });
 
   it("rows: the default has no height-limits row; /sim's lists all three in order", async () => {

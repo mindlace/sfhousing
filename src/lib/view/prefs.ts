@@ -1,6 +1,6 @@
 // Per-viewer map layer toggles (transit spec T6, §6.3; the height limits, height-lids plan Task 12).
 // One record shared by / and /sim, so a viewer's transit choice follows them between modes; / never
-// shows or uses `heightLimits` and writes back the value it read. A record from the height fog's
+// shows or uses `heightLimits` or `carsPerHousehold` and writes back the value it read. A record from the height fog's
 // time stored `heightFog`: it is still read as `heightLimits`. Best-effort persistence. Capacity
 // and stops start off; a stored choice wins.
 
@@ -9,19 +9,23 @@ export interface ViewPrefs {
   transitAccess: boolean;
   /** /sim only: the zoning height limits (glass lids and contours) in Setup. */
   heightLimits: boolean;
+  /** /sim only: cars per household by block group at the playhead (car-ownership Task 12). */
+  carsPerHousehold: boolean;
 }
 
 export const VIEW_KEY = 'sfhousing:view';
 export const DEFAULT_VIEW: ViewPrefs = {
   transitStops: false,
   transitAccess: false,
-  heightLimits: true
+  heightLimits: true,
+  carsPerHousehold: false
 };
 /** Every layer off: TimelineMode's default, and what /sim's map gets during a run. */
 export const HIDDEN_VIEW: ViewPrefs = {
   transitStops: false,
   transitAccess: false,
-  heightLimits: false
+  heightLimits: false,
+  carsPerHousehold: false
 };
 
 function defaultStorage(): Storage | null {
@@ -43,7 +47,8 @@ export function readViewPrefs(
     return {
       transitStops: bool(v?.transitStops, DEFAULT_VIEW.transitStops),
       transitAccess: bool(v?.transitAccess, DEFAULT_VIEW.transitAccess),
-      heightLimits: bool(v?.heightLimits, bool(v?.heightFog, DEFAULT_VIEW.heightLimits))
+      heightLimits: bool(v?.heightLimits, bool(v?.heightFog, DEFAULT_VIEW.heightLimits)),
+      carsPerHousehold: bool(v?.carsPerHousehold, DEFAULT_VIEW.carsPerHousehold)
     };
   } catch {
     return { ...DEFAULT_VIEW };
@@ -60,7 +65,8 @@ export function writeViewPrefs(
       JSON.stringify({
         transitStops: v.transitStops,
         transitAccess: v.transitAccess,
-        heightLimits: v.heightLimits
+        heightLimits: v.heightLimits,
+        carsPerHousehold: v.carsPerHousehold
       })
     );
   } catch {

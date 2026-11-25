@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MARKET_TERMS, AVERAGE_DRAWN, DRAW_UP_FRONT, resolveTerms } from '$lib/sim/finance';
 import { MONEY_SOURCES } from '$lib/sim/scenario/finance-score';
@@ -5,13 +6,13 @@ import { PIPELINE_FUNDED } from '$lib/sim/scenario/funding';
 import { REFERENCES, RHNA_DEADLINE } from '$lib/sim/scenario/score';
 import { formatCount } from '$lib/scoreboard/format';
 import { M1_TARGETS } from '$lib/scoreboard/targets';
-import { cumulativeIncidence } from '$lib/timelapse/model';
+import { cumulativeIncidence, parseCalibration } from '$lib/timelapse/model';
 import { parseProjectsFile } from '$lib/timelapse/projects';
 import { PATHWAYS, STAGE_ORDER } from '$lib/timelapse/types';
 import type { Pathway, Stage } from '$lib/timelapse/types';
 import { transitionSectionId } from './card';
 import { MEASURE_SERIES, SERIES_NAME } from './chart';
-import { formatDate } from './format';
+import { formatDate, formatDollars } from './format';
 import {
   fixtureCalibration,
   fixtureCalibrationWithoutMarket,
@@ -27,6 +28,7 @@ import { PROJECTS_JSON, PROJECTS_JSON_NO_RULES } from './fixtures/projects';
 import { TIMELINE_SCORE, TIMELINE_SCORE_NO_PHASING } from './fixtures/timeline-score';
 import { EXIT_LABEL, TIER_LABEL, inStageLabel } from './labels';
 import {
+  CARS_SECTION_ID,
   MONEY_ORDER_SENTENCE,
   NOT_SF_NOTE,
   PARTIAL_MONEY_SENTENCE,
@@ -139,6 +141,7 @@ describe('provenanceSections', () => {
       'src-size',
       'src-revision',
       'src-pathway',
+      ...(cal.cars ? ['src-cars'] : []),
       'src-targets',
       'src-multiphase'
     ]);
@@ -390,7 +393,8 @@ describe('provenanceSections', () => {
       'src-money',
       'src-size',
       'src-revision',
-      'src-pathway'
+      'src-pathway',
+      'src-cars'
     ]);
   });
 
@@ -402,6 +406,54 @@ describe('provenanceSections', () => {
     expect(s.tables[0].rows.map((r) => r[1])).toEqual(
       [0, 1, 2, 3, 4].map((i) => TIER_LABEL[i as 0 | 1 | 2 | 3 | 4])
     );
+  });
+});
+
+describe('the cars section (car-ownership Task 12)', () => {
+  // fixture-0's car model: its parking costs are invented test data (tier 4), marked so.
+  const fixtureCars = parseCalibration(
+    JSON.parse(readFileSync('e2e/fixtures/data/fixture-0/scenarios/fzp/calibration.json', 'utf8'))
+  ).cars!;
+  const withCars = provenanceSections({ ...cal, cars: fixtureCars }, TIMELINE_SCORE);
+
+  it('is absent without a car model', () => {
+    const none = provenanceSections({ ...cal, cars: undefined }, TIMELINE_SCORE);
+    expect(none.map((s) => s.id)).not.toContain(CARS_SECTION_ID);
+  });
+
+  it('follows the approval path: the model, moves, new homes and each parking figure', () => {
+    const ids = withCars.map((s) => s.id);
+    expect(ids.indexOf(CARS_SECTION_ID)).toBe(ids.indexOf('src-pathway') + 1);
+    const c = section(CARS_SECTION_ID, withCars);
+    expect(c.heading).toBe('The car model');
+    expect(c.entries.map((e) => e.id)).toEqual([
+      'src-cars-choice',
+      'src-cars-moves',
+      'src-cars-new-homes',
+      ...fixtureCars.parking.provenance.map((_, k) => `src-cars-parking-${k}`)
+    ]);
+    expect(c.entries[0].prov).toBe(fixtureCars.choice.provenance);
+    expect(c.entries[3].title).toBe(fixtureCars.parking.provenance[0].label);
+    // The invented costs are tier 4: research, so the dialog says they are not SF records.
+    expect(c.entries.slice(4).every((e) => e.research)).toBe(true);
+  });
+
+  it("tables the model's figures", () => {
+    const [t] = section(CARS_SECTION_ID, withCars).tables;
+    const cost = fixtureCars.parking.costPerSpace!;
+    expect(t.head).toEqual(['Figure', 'Value']);
+    expect(t.rows).toEqual([
+      ['Cars of a household with 3 or more', fixtureCars.threePlusMean.toFixed(2)],
+      ['Parking spaces built per space used', String(fixtureCars.parking.supplyOverUse)],
+      ['Cost per podium space (2026 dollars)', formatDollars(cost.podium!)],
+      ['Cost per below-grade space (2026 dollars)', formatDollars(cost.belowGrade!)],
+      ['Car choices refreshed every', `${fixtureCars.refreshMonths} months`]
+    ]);
+  });
+
+  it('modelSections carries it too', () => {
+    const model = modelSections({ ...cal, cars: fixtureCars });
+    expect(model.map((s) => s.id)).toContain(CARS_SECTION_ID);
   });
 });
 

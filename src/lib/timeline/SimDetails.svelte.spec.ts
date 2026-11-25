@@ -300,6 +300,51 @@ describe('pipeline', () => {
   });
 });
 
+describe('cars (Review Focus 5)', () => {
+  /** The fixture's view with cars: 1,000 households, 1,200 cars today, 10 fewer each month. */
+  function withCars(p: DetailsProps): DetailsProps {
+    const v = p.view!;
+    const n = v.rows.length;
+    const c = Array.from({ length: n }, (_, i) => 1200 - 10 * i);
+    return {
+      ...p,
+      view: {
+        ...v,
+        cars: {
+          households: c.map(() => 1000),
+          cars: c,
+          carless: c.map(() => 300),
+          perHousehold: c.map((x) => x / 1000),
+          spacesPerHome: c.map(() => null),
+          zones: c.map(() => new Float32Array([1, Number.NaN]))
+        }
+      }
+    };
+  }
+  const carsRows = () => page.getByTestId('tl-cars').elements();
+
+  it('one Cars row after the homes rows: today, the playhead, the change per household', async () => {
+    await page.viewport(1024, 768);
+    await renderAtRest(withCars(props()));
+    expect(carsRows()).toHaveLength(1);
+    const row = carsRows()[0];
+    // Month 53: 1,200 - 530 cars over 1,000 households.
+    expect(row.textContent).toContain('Cars');
+    expect(row.textContent).toContain('1,200 → 670');
+    expect(row.textContent).toContain('−0.53 per household');
+    expect(row.textContent).not.toContain('NaN');
+    const homes = page.getByTestId('tl-sources-of-homes').element();
+    expect(homes.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('no Cars row without car data', async () => {
+    await page.viewport(1024, 768);
+    await renderAtRest(props());
+    expect(carsRows()).toEqual([]);
+    expect(page.getByText('Cars', { exact: true }).elements()).toEqual([]);
+  });
+});
+
 describe('what the plan added', () => {
   it('shows the plan-effect rows and the twin paragraph', async () => {
     await page.viewport(1024, 768);

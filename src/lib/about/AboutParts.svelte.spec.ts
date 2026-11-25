@@ -12,7 +12,7 @@ import AboutData from './AboutData.svelte';
 import AboutMeanings from './AboutMeanings.svelte';
 import AboutUsing from './AboutUsing.svelte';
 import { MAX_SAVES } from '$lib/game/saves';
-import { ABOUT_ID, MEANINGS, PART_HEADING, SAVED_GAMES, YOUR_PLANS } from './copy';
+import { ABOUT_ID, CARS_NOTICE, MEANINGS, PART_HEADING, SAVED_GAMES, YOUR_PLANS } from './copy';
 
 const text = () => (document.body.textContent ?? '').replace(/\s+/g, ' ');
 
@@ -175,6 +175,30 @@ describe('AboutData', () => {
     await expect.element(page.getByText('Map data ©')).toBeInTheDocument();
     expect(text()).not.toContain('Housing project records');
     expect(text()).not.toContain('Street centerlines');
+  });
+
+  it('data: the Census sources are one row; the car notice follows the manifest (P13)', async () => {
+    const census = ['census-acs5-bg-2024', 'census-pums5-2024', 'census-tiger-bg-2020'].map(
+      (id) => ({ ...source, id, license: 'Public domain (U.S. Census Bureau)' })
+    );
+    const cars = {
+      fzp: {
+        ...scenarios.fzp,
+        cars: '/data/fixture-0/scenarios/fzp/cars.bin',
+        carZones: '/data/fixture-0/scenarios/fzp/car-zones.json'
+      }
+    };
+    const r = await renderData({ ...manifest, sources: [source, ...census], scenarios: cars });
+    const label = 'U.S. Census Bureau (ACS, PUMS, TIGER/Line), 2020–2024';
+    await expect
+      .element(page.getByRole('link', { name: label }))
+      .toHaveAttribute('href', 'https://www.census.gov/');
+    expect(document.querySelectorAll('tbody tr')).toHaveLength(2);
+    expect(text()).toContain(CARS_NOTICE);
+    await r.unmount();
+    renderData({ ...manifest, scenarios });
+    await expect.element(page.getByText('Map data ©')).toBeInTheDocument();
+    expect(text()).not.toContain(CARS_NOTICE);
   });
 
   it('data: the Overture notice comes from the manifest; "the ODbL" and "CC BY 4.0" link their licences', async () => {

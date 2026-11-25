@@ -77,9 +77,9 @@ Transit spec section 6. `SimMap` draws a transit access surface and the stops as
 
 - **Sources:** GeoJSON `transit-access` (binned 10-minute-walk capacity polygons) and `transit-stops`. The stops source is filled from `transit.json`, the access source once the map is idle (the grid is built on the main thread).
 - **Layers:** `transit-access` (fill) and `transit-stops-bus`, `transit-stops-rail`, `transit-stops-regional` (circles; bus from zoom 15, rail from 13, regional always). Stack order: base, `transit-access`, `existing-buildings`, chunk layers, labels, the stop layers, `overlay-anchor`. So the surface sits under existing buildings and the stops sit above the labels.
-- **Props:** `SimMapProps.view` (`ViewPrefs`: `transitStops`, `transitAccess`, `heightLimits`; default stops off, capacity off, limits on, and a stored choice wins; SimMap reads only the two transit fields) toggles layer `visibility`; `SimMapProps.fetchTransit` replaces the `transit.json` loader (tests inject a fixture network).
+- **Props:** `SimMapProps.view` (`ViewPrefs`: `transitStops`, `transitAccess`, `heightLimits`, `carsPerHousehold`; default stops off, capacity off, limits on, cars off, and a stored choice wins; SimMap reads the two transit fields and `carsPerHousehold`) toggles layer `visibility`; `SimMapProps.fetchTransit` replaces the `transit.json` loader (tests inject a fixture network).
 - **Why MapLibre layers:** `setOverlayLayers` is single-owner (the overlay mux, `src/lib/map/overlay-mux.ts`, on `/` and `/sim`: on `/` and `/p/:id` its `ring` slot holds the brush ring and its `outline` slot the outline of the height the map key shows; on `/sim` the `outline` slot is the selected painted area's or the eraser's), so transit does not use it.
-- **UI gating:** the map toolbar's Layers panel (`MapKeyControl`'s `layers`, holding `LayerSwitches`, `src/lib/view/LayerSwitches.svelte`: a checkbox per row, each label a 24 px target on every pointer, with its legend or caption; prefs persist in localStorage `sfhousing:view`, one record for every route, via `readViewPrefs` and `writeViewPrefs`). Gating is per route. On `/` and `/p/:id` the page passes `layers` (through `BrushEditor`) only when the manifest the map renders has `transit`, with the two transit rows (the default `rows`); without it there is no Layers toggle. Those pages never show `heightLimits` and write back the value they read. On `/sim` (and `/s/:id`) the page always passes `layers` (through `TimelineMode`, whose control mounts once the map and session are there), so only the transit rows are gated on `manifest.transit` (the limits row needs no transit), with `rows` `['transitStops', 'transitAccess', 'heightLimits']`, or `['heightLimits']` without `manifest.transit`. Without `manifest.transit` there are no transit sources, layers or transit rows, and `transit.json` is never fetched.
+- **UI gating:** the map toolbar's Layers panel (`MapKeyControl`'s `layers`, holding `LayerSwitches`, `src/lib/view/LayerSwitches.svelte`: a checkbox per row, each label a 24 px target on every pointer, with its legend or caption; prefs persist in localStorage `sfhousing:view`, one record for every route, via `readViewPrefs` and `writeViewPrefs`). Gating is per route. On `/` and `/p/:id` the page passes `layers` (through `BrushEditor`) only when the manifest the map renders has `transit`, with the two transit rows (the default `rows`); without it there is no Layers toggle. Those pages never show `heightLimits` and write back the value they read. On `/sim` (and `/s/:id`) the page always passes `layers` (through `TimelineMode`, whose control mounts once the map and session are there), so only the transit rows are gated on `manifest.transit` (the limits row needs no transit), with `rows` `['transitStops', 'transitAccess', 'carsPerHousehold', 'heightLimits']`, less the transit rows without `manifest.transit` and less the cars row without `manifest.scenarios.fzp.carZones` (see Cars per household). Without `manifest.transit` there are no transit sources, layers or transit rows, and `transit.json` is never fetched.
 - **Known gap:** the stop tooltip is pointer-only. It has no keyboard parity yet.
 
 ## Basemap road clones (`__lc`)
@@ -171,3 +171,26 @@ Which bars show changes only at a record's start or end and on a rebuild, never 
 ## Timeline demolitions after revision 0
 
 `TimelineUpdate.demolish` after revision 0 adds entries, applied as revision 0's are. `restore?: ParcelId[]` takes back every entry of each listed lot and is applied before `demolish`; revision 0 ignores it. An update with no `restore` and an empty `demolish` changes nothing. In `TimelineController.apply` this is `DemolishPump.amend(add, restore)`: the applied set stays the new list's prefix at the target, and feature-state follows by the same diff as `swap`. Producer: [map-stream.md](map-stream.md).
+
+## Cars per household
+
+The plan world's cars per household by zone (Census block group) at the playhead's month, on
+`/sim` only (car-ownership Task 12).
+
+- **Data:** `car-zones.json` (`manifest.scenarios.fzp.carZones`: block-group polygons, property
+  `z`, the zone index) and `TimelineView.cars.zones[month]` (a `Float32Array`, NaN for a zone with
+  no households). `TimelineMode` passes the playhead month's array as `SimMapProps.carZones` (null
+  past the fill or without car data); it is the same array for the same month, so the source is
+  rebuilt only when the month changes.
+- **Style:** `buildStyle` adds source `CARS_SOURCE` (`car-zones`) and the fill `CARS_LAYER`
+  (`cars-per-household`, `carsLayer(theme)`) only when the manifest names `carZones`, above
+  transit capacity and below the transit stops and roads, hidden at rest. The fill steps over
+  `CARS_BINS` (0.5, 0.75, 1, 1.5) through the `cars-1` to `cars-5` tokens at `CARS_OPACITY`; a
+  feature whose `v` is not a number (no households) draws nothing: no data, never 0.
+- **Loading:** SimMap fetches `car-zones.json` the first time the layer is turned on
+  (`SimMapProps.fetchCarZones` replaces the loader in tests), then sets the source to
+  `zonesCollection(geo, carZones)` (`src/lib/map/cars-layer.ts`: `v` per zone, null where NaN)
+  on every `carZones` change. A failed fetch is a warning; the layer stays empty.
+- **Layers panel:** the row "Cars per household" (`CARS_LABEL`) with the legend `CARS_LEGEND`
+  (swatches `carsSwatch(theme, k)`, the token composited over land) and the caption
+  `CARS_CAPTION`, after the transit rows.

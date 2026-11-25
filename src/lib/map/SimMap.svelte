@@ -72,6 +72,8 @@
   import {
     BUILDINGS_LAYER,
     BUILDINGS_SOURCE,
+    CARS_LAYER,
+    CARS_SOURCE,
     CHUNK_LAYERS,
     CHUNK_SOURCE,
     TRANSIT_ACCESS_LAYER,
@@ -86,6 +88,8 @@
     type PaintSet
   } from './style';
   import { tooltipLines, type TooltipHit } from './tooltip';
+  import { loadCarZones, zonesCollection } from './cars-layer';
+  import type { FeatureCollection } from 'geojson';
   import {
     accessCollection,
     loadTransitNetwork,
@@ -116,6 +120,8 @@
     onready = undefined,
     view = undefined,
     fetchTransit = undefined,
+    carZones = undefined,
+    fetchCarZones = undefined,
     timelinePick = undefined,
     tapCards = true,
     // e2e builds start collapsed: a five-second timer would race every step that reads the corner.
@@ -204,6 +210,8 @@
     warned: Set<string>;
     transit: TransitView | null;
     transitIdle: (() => void) | null; // cancels the pending access-grid build
+    carGeo: FeatureCollection | null; // car-zones.json, once the cars layer was first turned on
+    carsRequested: boolean; // its fetch has started (once per map)
     deckLayers: Layer[]; // the generated controller's latest deck layers
     deckGroupsPending: boolean; // set while deck skipped adding its MapLibre layer groups
     credit: Credit | null; // the credit's control and its one self-collapse
@@ -506,8 +514,14 @@
   });
 
   $effect(() => {
-    void [view?.transitStops, view?.transitAccess];
+    void [view?.transitStops, view?.transitAccess, view?.carsPerHousehold, carZones === undefined];
     untrack(() => applyView());
+  });
+
+  // The playhead's month changed the zones' values: rebuild the cars source's `v`.
+  $effect(() => {
+    void carZones;
+    untrack(() => pushCarZones());
   });
 
   $effect(() =>
@@ -557,6 +571,8 @@
       warned: new Set(),
       transit: null,
       transitIdle: null,
+      carGeo: null,
+      carsRequested: false,
       deckLayers: [],
       deckGroupsPending: false,
       credit: null
@@ -1048,6 +1064,7 @@
     l.transitIdle?.();
     l.transitIdle = null;
     l.transit = null;
+    l.carGeo = null;
     l.controller?.destroy();
     l.timeline?.destroy();
     if (l.onRejection) removeEventListener('unhandledrejection', l.onRejection);
@@ -1156,7 +1173,43 @@
     };
     set(TRANSIT_ACCESS_LAYER, v.transitAccess);
     for (const id of TRANSIT_STOP_LAYERS) set(id, v.transitStops);
+    // Only a page that feeds the zones' values (/sim) shows the cars layer: the prefs record is
+    // shared, so Paint gets the choice too.
+    const cars = v.carsPerHousehold === true && carZones !== undefined;
+    set(CARS_LAYER, cars);
+    if (cars && !l!.carsRequested) void startCars(l!, map);
     if (!v.transitStops && shown?.hit.kind === 'stop') clearShown();
+  }
+
+  /**
+   * Car-ownership Task 12: the zones' polygons load the first time the layer is turned on, then the
+   * source follows `carZones`. Warning-only, like transit: a failure leaves the layer empty.
+   */
+  async function startCars(l: Live, map: MapLibreMap): Promise<void> {
+    const url = manifest.scenarios?.fzp.carZones;
+    if (!url || !map.getSource(CARS_SOURCE)) return;
+    l.carsRequested = true;
+    let geo: FeatureCollection;
+    try {
+      geo = await (fetchCarZones ?? loadCarZones)(url);
+    } catch (e) {
+      console.warn('[map] car zones unavailable', e);
+      return;
+    }
+    if (l.dead || l.map !== map) return;
+    l.carGeo = geo;
+    pushCarZones();
+  }
+
+  /** The cars source from the zones and `carZones` (the playhead month's); empty without either. */
+  function pushCarZones(): void {
+    const l = live;
+    const map = l?.loaded ? l.map : null;
+    if (!l || !map || !l.carGeo) return;
+    const src = map.getSource(CARS_SOURCE) as GeoJSONSource | undefined;
+    src?.setData(
+      carZones ? zonesCollection(l.carGeo, carZones) : { type: 'FeatureCollection', features: [] }
+    );
   }
 
   function onIdle(fn: () => void): () => void {

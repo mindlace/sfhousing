@@ -793,7 +793,7 @@ describe('SimPage publish and view', () => {
       .toBeVisible();
   });
 
-  it('the header has no View; Layers on the map lists stops, capacity and limits in order', async () => {
+  it('the header has no View; Layers on the map lists stops, capacity, cars and limits in order', async () => {
     const r = await opened();
     await expect.element(layersToggle()).toBeVisible();
     expect(header().getByRole('button', { name: 'View', exact: true }).elements()).toEqual([]);
@@ -811,6 +811,7 @@ describe('SimPage publish and view', () => {
     expect(names()).toEqual([
       'Transit stops',
       'Transit capacity within a 10-minute walk',
+      'Cars per household',
       'Zoning height limits'
     ]);
     // After an edit and mid-refill: still there.
@@ -1080,13 +1081,23 @@ describe('SimPage map overlays', () => {
     }
   });
 
-  it('without manifest.transit Layers lists the limits row only', async () => {
+  it('without manifest.transit Layers lists cars and the limits only', async () => {
     await opened({ manifest: { ...manifest, transit: undefined } });
     await openLayers();
-    expect(layersPanel().getByRole('checkbox').elements()).toHaveLength(1);
+    expect(layersPanel().getByRole('checkbox').elements()).toHaveLength(2);
+    await expect.element(page.getByRole('checkbox', { name: 'Cars per household' })).toBeVisible();
     await expect
       .element(page.getByRole('checkbox', { name: 'Zoning height limits' }))
       .toBeChecked();
+  });
+
+  it('without car zones (an older dataset) Layers has no cars row', async () => {
+    const fzp = { ...manifest.scenarios!.fzp, cars: undefined, carZones: undefined };
+    await opened({ manifest: { ...manifest, scenarios: { fzp } } });
+    await openLayers();
+    await expect.element(page.getByRole('checkbox', { name: 'Transit stops' })).toBeVisible();
+    expect(page.getByRole('checkbox', { name: 'Cars per household' }).elements()).toEqual([]);
+    expect(layersPanel().getByRole('checkbox').elements()).toHaveLength(3);
   });
 
   it('the rows follow the manifest the map renders: a Retry after a failed load brings transit', async () => {
@@ -1102,7 +1113,7 @@ describe('SimPage map overlays', () => {
     emit(filledMsg(1, 0, LAST + 1));
     await openLayers();
     await expect.element(page.getByRole('checkbox', { name: 'Transit stops' })).toBeVisible();
-    expect(layersPanel().getByRole('checkbox').elements()).toHaveLength(3);
+    expect(layersPanel().getByRole('checkbox').elements()).toHaveLength(4);
   });
 
   it('the prefs are read from and written to the page storage', async () => {
@@ -1111,7 +1122,12 @@ describe('SimPage map overlays', () => {
     await opened({ storage: () => mem });
     await expect
       .poll(() => stub.props.view)
-      .toEqual({ transitStops: true, transitAccess: true, heightLimits: true });
+      .toEqual({
+        transitStops: true,
+        transitAccess: true,
+        heightLimits: true,
+        carsPerHousehold: false
+      });
     await openLayers();
     // The stored choices are on in the panel.
     await expect.element(page.getByRole('checkbox', { name: 'Transit stops' })).toBeChecked();
@@ -1119,7 +1135,12 @@ describe('SimPage map overlays', () => {
     await page.getByRole('checkbox', { name: 'Zoning height limits' }).click();
     await expect
       .poll(() => JSON.parse(mem.getItem(VIEW_KEY) ?? '{}'))
-      .toEqual({ transitStops: true, transitAccess: true, heightLimits: false });
+      .toEqual({
+        transitStops: true,
+        transitAccess: true,
+        heightLimits: false,
+        carsPerHousehold: false
+      });
   });
 });
 
