@@ -185,29 +185,35 @@ function start(m: RunModel, drops: readonly Drop[]): void {
   m.ring = { x: m.box.w / 2, y: m.box.h / 2 };
 }
 
+/** Passes one drop: appears unless its row is in `seen`. Returns 1 when it appeared. */
+function pass(m: RunModel, i: StepInput, d: Drop, linger: number): number {
+  if (m.seen.has(d.row)) return 0;
+  m.seen.add(d.row);
+  m.take.dropped = credit(m.take.dropped, d.worth);
+  m.live.push({
+    drop: d,
+    worth: total(d.worth),
+    at: i.project(d.lng, d.lat),
+    bornMs: i.now,
+    endMs: i.now + linger,
+    takenMs: null
+  });
+  return 1;
+}
+
 function appear(m: RunModel, i: StepInput): number {
+  const linger = Math.max(i.hands.lingerMs, RUN_TIMES.minShownMs);
+  let appeared = 0;
   if (i.drops !== m.drops) {
     m.drops = i.drops;
     m.cursor = firstAfter(i.drops, m.highDay);
+    // Rows whose day was reached before they arrived appear now, in array order.
+    for (let k = 0; k < m.cursor; k++) appeared += pass(m, i, i.drops[k], linger);
   }
   if (i.day > m.highDay) m.highDay = i.day;
-  const linger = Math.max(i.hands.lingerMs, RUN_TIMES.minShownMs);
-  let appeared = 0;
   const drops = m.drops;
   while (m.cursor < drops.length && drops[m.cursor].day <= m.highDay) {
-    const d = drops[m.cursor++];
-    if (m.seen.has(d.row)) continue;
-    m.seen.add(d.row);
-    m.take.dropped = credit(m.take.dropped, d.worth);
-    m.live.push({
-      drop: d,
-      worth: total(d.worth),
-      at: i.project(d.lng, d.lat),
-      bornMs: i.now,
-      endMs: i.now + linger,
-      takenMs: null
-    });
-    appeared++;
+    appeared += pass(m, i, drops[m.cursor++], linger);
   }
   return appeared;
 }

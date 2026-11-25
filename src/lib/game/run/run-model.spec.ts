@@ -498,6 +498,36 @@ describe('run model going back and new arrays', () => {
     expect(m.take.dropped).toEqual({ home: 3 });
   });
 
+  it('a new row whose day is at or before highDay appears in the step that takes the new array, once', () => {
+    const m = boxed();
+    step(m, input({ drops: [far(1, 10), far(2, 20)], day: 20 }));
+    expect(m.take.dropped).toEqual({ home: 2 });
+    const b = [far(3, 5, 4), far(1, 10, 9), far(4, 15), far(2, 20), far(5, 30)];
+    const r = step(m, input({ drops: b, day: 20, now: 1000 }));
+    expect(r.appeared).toBe(2);
+    expect(m.cursor).toBe(4);
+    expect(m.live.map((l) => l.drop.row)).toEqual([1, 2, 3, 4]);
+    expect(m.live[2]).toMatchObject({ bornMs: 1000, endMs: 5000, takenMs: null, worth: 4 });
+    expect(m.take.dropped).toEqual({ home: 7 });
+    expect(step(m, input({ drops: b, day: 20, now: 1100 })).appeared).toBe(0);
+    expect(step(m, input({ drops: b, day: 25, now: 1200 })).appeared).toBe(0);
+    expect(step(m, input({ drops: b, day: 30, now: 1300 })).appeared).toBe(1);
+    expect(m.take.dropped).toEqual({ home: 8 });
+    const c = [...b];
+    expect(step(m, input({ drops: c, day: 30, now: 1400 })).appeared).toBe(0);
+    expect(m.take.dropped).toEqual({ home: 8 });
+  });
+
+  it('the ending step passes unseen earlier rows of a new array too', () => {
+    const m = boxed();
+    step(m, input({ drops: [far(1, 10)], day: 10 }));
+    const b = [far(2, 5), far(1, 10)];
+    const r = step(m, input({ drops: b, day: 10, running: false, auto: true }));
+    expect(r.ended).toBe(true);
+    expect(r.appeared).toBe(1);
+    expect(m.take).toEqual({ dropped: { home: 2 }, collected: { home: 2 } });
+  });
+
   it('a shown drop keeps its state and times in a new array', () => {
     const m = boxed();
     step(m, input({ drops: [far(1, 10), drop(2, 10)], day: 10 }));
