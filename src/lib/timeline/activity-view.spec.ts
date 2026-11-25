@@ -6,8 +6,9 @@ import { parseCalibration } from '$lib/timelapse/model';
 import type { Calibration, TierUnits } from '$lib/timelapse/types';
 import type { TimelineView } from '$lib/sim/world/score/types';
 import { moneyFigureAt } from '$lib/fzp/money-view';
-import { allowedAt } from '$lib/game/allowed';
+import { OPEN_LIMITS } from '$lib/game/limits';
 import { addChoices } from './add';
+import { limitsWith } from './test/limits';
 import { EMPTY_LOG, logCompiled, logFilled, viewOfLog } from './chunk-log';
 import { DEFAULT_POLICY4, type Policy, type SimPolicy4 } from './policy4';
 import {
@@ -160,10 +161,24 @@ describe('startersFor', () => {
     ]);
   });
 
-  it('only what the level allows', () => {
-    expect(startersFor(cal, DEFAULT_POLICY4, allowedAt(2))).toEqual([]);
-    expect(startersFor(cal, DEFAULT_POLICY4, allowedAt(3)).map((x) => x.text)).toEqual([
-      'SB 423 approval clock'
+  it('only what is bought', () => {
+    expect(startersFor(cal, DEFAULT_POLICY4, OPEN_LIMITS)).toHaveLength(3);
+    expect(startersFor(cal, DEFAULT_POLICY4, limitsWith({}))).toEqual([]);
+    expect(
+      startersFor(cal, DEFAULT_POLICY4, limitsWith({ presets: new Set(['sb423Clock']) })).map(
+        (x) => x.text
+      )
+    ).toEqual(['SB 423 approval clock']);
+    const early = limitsWith({
+      stops: new Set(['metro']),
+      bands: 1,
+      stories: 4,
+      reachM: 402,
+      measures: new Set(['housing-bond'])
+    });
+    expect(startersFor(cal, DEFAULT_POLICY4, early).map((x) => x.text)).toEqual([
+      'Taller near transit',
+      'A housing bond'
     ]);
   });
 });

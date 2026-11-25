@@ -6,12 +6,19 @@
  * area, observed timing, a baseline or terms policy with nothing typed yet) the policy is built
  * directly. Pure TS.
  */
-import { ALL_ALLOWED, isGiven, type Allowed } from '$lib/game/allowed';
+import { FREE_MEASURES, OPEN_LIMITS, isGiven, type Limits } from '$lib/game/limits';
 import type { LimitKind } from '$lib/sim-page/funding-copy';
-import { DEFAULT_POLICY, type SimPolicy } from '$lib/sim-page/policy';
+import {
+  DEFAULT_POLICY,
+  type SimPolicy,
+  type TransitBand,
+  type ZoningRule
+} from '$lib/sim-page/policy';
 import { addPreset, dateMeasure, fundingPresets, nextAddedId } from '$lib/sim-page/funding-presets';
 import { PRESETS, resolvePreset, timingLabel, type PresetId } from '$lib/sim-page/timing';
 import { newLayer } from '$lib/sim-page/transit-edit';
+import { newOpId } from '$lib/brush/ids';
+import { STOP_TYPES } from '$lib/sim/levers/brushes';
 import { FINANCE_LIMITS } from '$lib/sim/levers/finance';
 import type { FinanceLevers } from '$lib/sim/levers/types';
 import { monthFirstDay } from '$lib/sim/world/months';
@@ -65,20 +72,47 @@ const PROTECT_LABELS: Record<Category, string> = {
 const hasMoney = (cal: Calibration): boolean =>
   cal.market !== undefined && cal.baselineFunding !== undefined;
 
+/** "+" opens on this kind: anything in it can be bought or is free. */
+export function kindOpen(kind: PolicyKind, limits: Limits): boolean {
+  if (limits.open) return true;
+  switch (kind) {
+    case 'zoning':
+      return limits.stops.size > 0;
+    case 'permitting':
+      return limits.presets.size > 0 || limits.custom;
+    case 'money':
+      return limits.measures.size > 0;
+  }
+}
+
+/** A transit rule fitted to the limits, for "+" in a game: one band at the reach and stories. */
+export function fittedLayer(limits: Limits): ZoningRule {
+  const bands: TransitBand[] = [{ maxM: limits.reachM, stories: limits.stories }];
+  return {
+    id: newOpId(),
+    kind: 'transit',
+    stopTypes: STOP_TYPES.filter((t) => limits.stops.has(t)),
+    bands
+  };
+}
+
 export function addChoices(
   kind: PolicyKind,
   cal: Calibration,
   doc: SimPolicy4,
-  allowed: Allowed = ALL_ALLOWED
+  limits: Limits = OPEN_LIMITS
 ): { choice: AddOffer; label: string }[] {
-  if (!allowed.kinds.has(kind)) return [];
+  if (!kindOpen(kind, limits)) return [];
   switch (kind) {
     case 'zoning': {
       const has = (c: Category) =>
         doc.kinds.zoning.some((p) => p.where.tag === 'category' && p.where.category === c);
+      const fits = limits.open || (limits.bands >= 1 && limits.stories >= 1 && limits.reachM >= 1);
       return [
-        { choice: { kind, what: 'transit' }, label: 'Transit rule' },
-        { choice: { kind, what: 'paint' }, label: 'Painted area' },
+        ...(fits ? [{ choice: { kind, what: 'transit' as const }, label: 'Transit rule' }] : []),
+        ...(limits.open
+          ? [{ choice: { kind, what: 'paint' as const }, label: 'Painted area' }]
+          : []),
         ...(['rentControl', 'historic', 'newerThan'] as const)
           .filter((c) => !has(c))
           .map((category) => ({
@@ -90,21 +124,35 @@ export function addChoices(
     case 'permitting':
       return [
         // Observed timing is the fixed row, not an addition.
-        ...PRESETS.filter((p) => p.available && p.id !== 'observed').map((p) => ({
+        ...PRESETS.filter(
+          (p) => p.available && p.id !== 'observed' && (limits.open || limits.presets.has(p.id))
+        ).map((p) => ({
           choice: { kind, what: 'preset' as const, preset: p.id },
           label: p.name
         })),
-        { choice: { kind, what: 'custom' }, label: CUSTOM_TIMING_LABEL }
+        ...(limits.custom
+          ? [{ choice: { kind, what: 'custom' as const }, label: CUSTOM_TIMING_LABEL }]
+          : [])
       ];
     case 'money': {
       if (!hasMoney(cal)) return [];
+      // Bought measures first, then the free ones (call 16); kindOpen made `measures` non-empty.
       const given = fundingPresets(cal)
         .filter((p) => p.available)
+        .filter((p) => limits.open || limits.measures.has(p.id))
         .map((p) => ({
           choice: { kind, what: 'preset' as const, preset: p.id },
           label: p.label
         }));
-      if (allowed.money === 'given') return given;
+      if (!limits.open) {
+        const free = fundingPresets(cal)
+          .filter((p) => p.available && FREE_MEASURES.includes(p.id) && !limits.measures.has(p.id))
+          .map((p) => ({
+            choice: { kind, what: 'preset' as const, preset: p.id },
+            label: p.label
+          }));
+        return [...given, ...free];
+      }
       return [
         ...given,
         { choice: { kind, what: 'ownPool' }, label: 'Your own pool' },
@@ -150,13 +198,13 @@ function direct(
 }
 
 /** The new policies for `choice`, ids not yet renamed and spans not yet dated. */
-function created(doc: SimPolicy4, choice: AddChoice, cal: Calibration): Policy[] {
+function created(doc: SimPolicy4, choice: AddChoice, cal: Calibration, limits: Limits): Policy[] {
   const p3: SimPolicy = structuredClone(DEFAULT_POLICY);
   const upgraded = () => upgradePolicy(p3, cal.asOf).kinds[choice.kind];
   switch (choice.kind) {
     case 'zoning':
       if (choice.what === 'transit') {
-        p3.rules = [newLayer()];
+        p3.rules = [limits.open ? newLayer() : fittedLayer(limits)];
         return upgraded();
       }
       if (choice.what === 'paint')
@@ -230,7 +278,7 @@ function created(doc: SimPolicy4, choice: AddChoice, cal: Calibration): Policy[]
 export function addPolicy(
   doc: SimPolicy4,
   choice: AddChoice,
-  ctx: { w: TimelineWindow; month: number; cal: Calibration }
+  ctx: { w: TimelineWindow; month: number; cal: Calibration; limits?: Limits }
 ): { doc: SimPolicy4; ref: SpanRef } {
   const month = Math.min(ctx.w.months, Math.max(1, Math.round(ctx.month)));
   const from = monthFirstDay(ctx.w.asOf, month);
@@ -241,7 +289,7 @@ export function addPolicy(
     used.add(id);
     return id;
   };
-  const dated = created(doc, choice, ctx.cal).map((p) => ({
+  const dated = created(doc, choice, ctx.cal, ctx.limits ?? OPEN_LIMITS).map((p) => ({
     ...p,
     id: idFor(p.id),
     spans: p.spans.map((s) => ({ ...s, from, to: null }))
