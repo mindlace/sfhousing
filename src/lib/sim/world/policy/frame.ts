@@ -27,10 +27,30 @@ export interface PolicyFrame {
   market: number;
   finance: FinanceFrame | null;
   /**
-   * Per lot row, a log-odds shift added to `z + market` for market starts (the parking a start no
-   * longer builds, `world/cars/parking.ts`); absent or null for none. Affordable odds ignore it.
+   * A log-odds shift per lot added to `z + market` for market starts (the parking a start no longer
+   * builds, `world/cars/parking.ts`); absent or null for none. Affordable odds ignore it.
    */
-  parking?: Float64Array | null;
+  parking?: ParkingShift | null;
+}
+
+/**
+ * A parking shift on start odds, held per zone (no per-lot array): each lot's shift is its zone's
+ * on the lot's prototype. `rates.ts` reads it through `rateOf`.
+ */
+export interface ParkingShift {
+  /** The lot's log-odds shift (0 for a lot in no zone or with no qualifying level). */
+  shift(lot: number): number;
+  /** The lot's zone; -1 for none. */
+  zoneOf(lot: number): number;
+  /** The lot's position in `zoneLots(zoneOf(lot))`. */
+  indexInZone(lot: number): number;
+  /** The zone's lots, ascending. */
+  zoneLots(zone: number): Int32Array;
+  /**
+   * A key of the zone's shifts: in one view, equal keys give equal shifts on every lot of the zone.
+   * Null when every lot of the zone has shift 0.
+   */
+  zoneKey(zone: number): string | null;
 }
 
 /** The money side of one month's frame. */

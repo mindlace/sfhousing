@@ -174,16 +174,24 @@ in system 3 or the car step, so every start of the month reads one table. Each r
 zone's predicted spaces per new market home with month 0's in whole steps of `SPACES_STEP` (0.01)
 and, where the step count moved, records an entry `(zone, month + 1, delta)` in `CarColumns.shift*`.
 `timelineOf` is then `parkingTimeline(base, …)`: from an entry's month on, the frame is the base
-frame with `parking` (per lot, `lotShift`: `signedOddsShift(-delta × cost per space)` of the
-parking type of the prototype at the lot's top qualifying fill level, on the frame's slope:
-`finance.slope`, else `calibration.market.slope.perCostShare`) and an id of its own. Entry months
-are frame changes: system 1 replans the changed zones' lots (`touched`; the union with the base's
-when both change in one month), and a funded month replans every lot as before. `startRates`
-(third argument), `skipBound`, `eachFreeLot` and the funded market clock (`ord` and `x0`) add the
-shift; affordable odds and every price are unchanged. With `costPerSpace` null or `{ link: false }`
-there are no entries and `timelineOf` returns its argument: every event equals the run without
-cars (`cars.property.spec.ts`, `parking.property.spec.ts`). Memory: each parking state holds a
-`parking` array and its start rates, a Float64Array per lot each, per world.
+frame with `parking`, a `ParkingShift` (`policy/frame.ts`), and an id of its own. A lot's shift is
+`lotShift`: `signedOddsShift(-delta × cost per space)` of the parking type of the prototype at the
+lot's top qualifying fill level, on the frame's slope (`finance.slope`, else
+`calibration.market.slope.perCostShare`). Entry months are frame changes: system 1 replans the
+changed zones' lots (`touched`; the union with the base's when both change in one month), and a
+funded month replans every lot as before. `ordinaryStart`, `eachFreeLot` and the funded market
+clock (`ord` and `x0`) read a parked frame lot by lot through `rateOf`; `skipBound` builds its
+arrays through `startRates(view, market, parking)` and drops them. Affordable odds and every price
+are unchanged. With `costPerSpace` null or `{ link: false }` there are no entries and `timelineOf`
+returns its argument: every event equals the run without cars (`cars.property.spec.ts`,
+`parking.property.spec.ts`).
+
+Memory: a parking state is per zone only (each zone's steps, the zones changed, a zones ×
+prototypes table per slope): O(zones × refreshes) per world, asserted in `parking.property.spec.ts`.
+Rates of a zone with a shift are memoised per (`view.pre`, market, zone key) over the zone's lots,
+shared across worlds, and cleared when the memo holds 8 times the city's lots. On the live city
+(155k lots, 580 zones, 357 entries) one world at month 480 holds +9.3 MB with the link on against
++9.4 MB off; per-lot arrays per refresh held +103.1 MB.
 
 ## Tests
 

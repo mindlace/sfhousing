@@ -6,9 +6,9 @@ import { PROTOTYPES, costPerHome, signedOddsShift } from '$lib/sim/finance';
 import { benchMarket } from '$lib/sim/scenario/fixtures/bench-finance';
 import type { CarModel } from '$lib/sim/cars';
 import { addProject, pushRev } from '../columns';
-import type { PolicyFrame, PolicyTimeline } from '../policy/frame';
+import type { ParkingShift, PolicyFrame, PolicyTimeline } from '../policy/frame';
 import { frameIdOf } from '../policy/intern';
-import { startRates } from '../rates';
+import { rateOf, startRates } from '../rates';
 import { staticsOf } from '../statics';
 import { miniInput } from '../test/mini';
 import { frameOf, oneFrame } from '../test/timeline';
@@ -38,6 +38,8 @@ const COSTS: ParkingCosts = { surface: 20_000, podium: 50_000, belowGrade: 120_0
 const f1 = frameOf(input, { id: frameIdOf('parking.spec|f1') });
 const f2 = frameOf(input, { id: frameIdOf('parking.spec|f2'), market: f1.market + 0.2 });
 const nowhere: StepSink = { event() {} };
+/** Every lot's shift, as an array (tests only). */
+const shiftsOf = (p: ParkingShift) => Float64Array.from({ length: N }, (_, l) => p.shift(l));
 
 function cityWith(costPerSpace: ParkingCosts | null) {
   const city = carCity(input, { zones: 3, noZoneEvery: 9 });
@@ -200,7 +202,7 @@ describe('parkingTimeline', () => {
       readyThrough: () => Number.MAX_SAFE_INTEGER
     };
     const t = parkingTimeline(base, colsWith([[0, 14, -3]]), data, model, statics);
-    const moved = zoneLots(0).filter((l) => t.frameAt(30).parking![l] !== 0);
+    const moved = zoneLots(0).filter((l) => t.frameAt(30).parking!.shift(l) !== 0);
     expect(moved.length).toBeGreaterThan(0);
     expect([...t.touched(30)!]).toEqual(moved);
   });
@@ -215,7 +217,7 @@ describe('parkingTimeline', () => {
     expect(t.frameAt(13)).toBe(f1);
     expect(t.frameAt(14)).toBe(t.frameAt(14));
     expect(t.frameAt(14)).toBe(t.frameAt(19));
-    expect(t.frameAt(14).parking).toBeInstanceOf(Float64Array);
+    expect(typeof t.frameAt(14).parking!.shift).toBe('function');
     expect(t.frameAt(14).id).not.toBe(f1.id);
     expect(t.frameAt(20).id).not.toBe(f2.id);
     expect(t.frameAt(20).id).not.toBe(t.frameAt(14).id);
@@ -241,7 +243,8 @@ describe('parkingTimeline', () => {
       [1, 14, 5]
     ]);
     const t = parkingTimeline(oneFrame(f1), cols, data, model, statics);
-    const pk = t.frameAt(14).parking!;
+    const shift = t.frameAt(14).parking!;
+    const pk = shiftsOf(shift);
     const delta = [-3 * SPACES_STEP, 5 * SPACES_STEP, 0];
     let pos = 0;
     let neg = 0;
@@ -257,9 +260,16 @@ describe('parkingTimeline', () => {
     // The shift reaches start rates: a lot with a shift gets a different rate.
     const lot = zoneLots(0).find((l) => pk[l] > 0 && f1.view.pre.logit[l] !== -Infinity)!;
     const plain = startRates(f1.view, f1.market)[lot];
-    const parked = startRates(f1.view, f1.market, pk)[lot];
+    const parked = startRates(f1.view, f1.market, shift)[lot];
     expect(parked).toBeLessThan(plain);
-    expect(startRates(f1.view, f1.market, pk)).toBe(startRates(f1.view, f1.market, pk));
+    // Lot by lot, `rateOf` gives the same rates, with no per-lot array kept per frame.
+    const all = startRates(f1.view, f1.market, shift);
+    for (let l = 0; l < N; l++) expect(rateOf(f1.view, f1.market, shift, l)).toBe(all[l]);
+    for (let l = 0; l < N; l++) {
+      if (shift.zoneOf(l) < 0 || shift.zoneKey(shift.zoneOf(l)) === null) {
+        expect(all[l]).toBe(startRates(f1.view, f1.market)[l]);
+      }
+    }
   });
 });
 
@@ -307,7 +317,7 @@ describe('the car system’s parking', () => {
     expect(c.shiftSpaces[entry(1)]).toBeGreaterThan(0);
     const t = sys.timelineOf(w, statics, timeline);
     expect(t.frameAt(13)).toBe(f1);
-    const pk = t.frameAt(14).parking!;
+    const pk = shiftsOf(t.frameAt(14).parking!);
     let pos = 0;
     let neg = 0;
     for (let lot = 0; lot < N; lot++) {

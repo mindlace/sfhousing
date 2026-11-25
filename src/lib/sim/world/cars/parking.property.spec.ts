@@ -5,6 +5,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { CarData } from '$lib/data/cars-codec';
 import type { CarModel } from '$lib/sim/cars';
+import { PROTOTYPES } from '$lib/sim/finance';
 import { benchMarket } from '$lib/sim/scenario/fixtures/bench-finance';
 import { seedHash } from '$lib/sim/scenario/rng';
 import { miniFinance } from '$lib/sim/scenario/fixtures/mini-finance';
@@ -25,7 +26,7 @@ import { changingAt, frameOf, marketAt } from '../test/timeline';
 import type { CarSystem, StepSink, World, WorldEvent } from '../types';
 import { withFunding } from '../world';
 import { carColumnsOf } from './columns';
-import { SPACES_STEP, parkingTimeline, type ParkingCosts } from './parking';
+import { SPACES_STEP, parkingRetained, parkingTimeline, type ParkingCosts } from './parking';
 import { createCarSystem } from './system';
 import { LIVE_BANDS, carCity, type CarCityOpts } from './test/city';
 
@@ -195,7 +196,8 @@ describe('the skip shortcut under large positive shifts (bench city)', () => {
   it('the shifts are large and positive', () => {
     const pk = t.frameAt(50).parking!;
     let max = 0;
-    for (const v of pk) {
+    for (let lot = 0; lot < c.statics.parcelId.length; lot++) {
+      const v = pk.shift(lot);
       expect(v).toBeGreaterThanOrEqual(0);
       max = Math.max(max, v);
     }
@@ -231,6 +233,39 @@ describe('the skip shortcut under large positive shifts (bench city)', () => {
       });
       expect(a.events.length).toBeGreaterThan(0);
       expectEqual(b.events, a.events, `seed ${seed}`);
+    }
+  }, 300_000);
+});
+
+describe('retained parking state is per zone (bench city, 40 refreshes)', () => {
+  it('holds O(zones x refreshes) numbers after a 480-month run reads every frame', () => {
+    const input = benchInput();
+    const c = cityOf('bench-retained', input, { zones: 60 });
+    const { data, model } = carsOf(input, { zones: 60 }, COSTS);
+    const Z = data.zones.length;
+    const N = c.statics.parcelId.length;
+    // The worst case: every zone moves at each of 40 refreshes (months 14, 26, ..., 482).
+    const R = 40;
+    const cols = carColumnsOf(data, model);
+    cols.shiftN = R * Z;
+    cols.shiftZone = Int32Array.from({ length: R * Z }, (_, i) => i % Z);
+    cols.shiftMonth = Int32Array.from({ length: R * Z }, (_, i) => 14 + 12 * Math.floor(i / Z));
+    cols.shiftSpaces = Float64Array.from(
+      { length: R * Z },
+      (_, i) => (((i * 7) % 11) - 5 - Math.floor(i / Z)) * SPACES_STEP
+    );
+    const t = parkingTimeline(c.timeline, cols, data, model, c.statics);
+    const rec = new Recorder();
+    runWorld(c.statics, t, 2, MONTHS, rec, { rebuildEvery: 60 });
+    expect(rec.events.length).toBeGreaterThan(0);
+    const got = parkingRetained(t)!;
+    expect(got.states).toBe(R);
+    // Per state: the zones' steps, the zones changed, and one zones x prototypes table per slope
+    // read (both base frames have one slope). No per-lot array per refresh.
+    expect(N).toBeGreaterThan(Z * 7);
+    expect(got.numbers).toBeLessThanOrEqual(R * Z * (2 + PROTOTYPES.length));
+    for (let k = 14; k <= MONTHS; k += 12) {
+      for (const v of Object.values(t.frameAt(k).parking!)) expect(typeof v).toBe('function');
     }
   }, 300_000);
 });
@@ -299,7 +334,10 @@ describe('Review Focus 4: funded mini, parking frames with a zero shift', () => 
       expect(w.cars!.shiftN).toBeGreaterThan(0);
       expect(viewed!.changes()).toContain(14);
       expect(viewed!.frameAt(14).id).not.toBe(timeline.frameAt(14).id);
-      expect(viewed!.frameAt(14).parking!.every((v) => v === 0)).toBe(true);
+      const pk = viewed!.frameAt(14).parking!;
+      let nonzero = 0;
+      for (let lot = 0; lot < statics.parcelId.length; lot++) if (pk.shift(lot) !== 0) nonzero++;
+      expect(nonzero).toBe(0);
       expect(changed.n).toBe(1);
       const a = run(null, seed);
       expectEqual(events, a.events, `seed ${seed}`);
@@ -357,7 +395,8 @@ describe.skipIf(LIVE === null)('parking convergence, live city', () => {
       let n = 0;
       let max = 0;
       if (pk) {
-        for (const v of pk) {
+        for (let lot = 0; lot < statics.parcelId.length; lot++) {
+          const v = pk.shift(lot);
           expect(Number.isFinite(v)).toBe(true);
           if (v === 0) continue;
           sum += Math.abs(v);

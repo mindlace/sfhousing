@@ -10,7 +10,7 @@ import * as scenarioCodecModule from '$lib/data/scenario-codec';
 import type { CarModel } from '$lib/sim/cars';
 import * as financeModule from '$lib/sim/finance';
 import type { Prototype } from '$lib/sim/finance';
-import type { PolicyFrame, PolicyTimeline, ZoningView } from '../policy/frame';
+import type { ParkingShift, PolicyFrame, PolicyTimeline, ZoningView } from '../policy/frame';
 import * as internModule from '../policy/intern';
 import type { Statics } from '../statics';
 import type { CarColumns } from './columns';
@@ -140,10 +140,11 @@ export function pushShifts(c: CarColumns, month: number): void {
   }
 }
 
-/** A zone's lots, ascending: `lots[start[z] .. start[z + 1])`. */
+/** A zone's lots, ascending: `lots[start[z] .. start[z + 1])`; `index[lot]`: its position there. */
 interface ZoneLots {
   start: Int32Array;
   lots: Int32Array;
+  index: Int32Array;
 }
 
 const zoneLotsMemo = new WeakMap<CarData, ZoneLots>();
@@ -158,16 +159,23 @@ function zoneLotsOf(data: CarData): ZoneLots {
   for (let z = 0; z < Z; z++) start[z + 1] += start[z];
   const at = start.slice(0, Z);
   const lots = new Int32Array(start[Z]);
+  const index = new Int32Array(lotZone.length).fill(-1);
   for (let lot = 0; lot < lotZone.length; lot++) {
     const z = lotZone[lot];
-    if (z >= 0) lots[at[z]++] = lot;
+    if (z >= 0) {
+      index[lot] = at[z] - start[z];
+      lots[at[z]++] = lot;
+    }
   }
-  hit = { start, lots };
+  hit = { start, lots, index };
   zoneLotsMemo.set(data, hit);
   return hit;
 }
 
-/** The parking states of one world's entries: one per distinct entry month, ascending. */
+/**
+ * The parking states of one world's entries: one per distinct entry month, ascending. Everything a
+ * state holds is per zone (controller's ruling: no per-lot array per refresh).
+ */
 interface State {
   month: number;
   /** Each zone's delta in whole steps, in force from `month`. */
@@ -178,24 +186,37 @@ interface State {
   key: string | null;
   /** Derived frames by base frame. */
   frames: Map<PolicyFrame, PolicyFrame>;
-  /** Parking arrays by (view, slope). */
-  arrays: WeakMap<ZoningView, Map<number, Float64Array>>;
+  /** zones x prototypes: the shift of each zone's delta on each prototype, by slope. */
+  tables: Map<number, Float64Array>;
+}
+
+/** What one view holds, for tests: its states and the numbers their typed arrays hold. */
+export interface ParkingRetained {
+  states: number;
+  numbers: number;
 }
 
 const EMPTY = new Int32Array(0);
 const views = new WeakMap<PolicyTimeline, WeakMap<CarColumns, PolicyTimeline>>();
+const retained = new WeakMap<PolicyTimeline, () => ParkingRetained>();
+
+/** The states a parking view holds and the numbers in their typed arrays; null for another timeline. */
+export function parkingRetained(t: PolicyTimeline): ParkingRetained | null {
+  return retained.get(t)?.() ?? null;
+}
 
 /**
  * `base` with the parking shift entries of `cols` laid over it (rulings R1, R2). A month with no
  * entry in force gives the base frame itself; from an entry's month on, the frame is the base
- * frame with `parking` set (per lot, the shift of its zone's delta, `lotShift`, on the frame's
- * view and slope) and an id of its own (`frameIdOf` of the base id, the car data and costs, and
- * every zone's delta). `changes()` is the base's changes plus each entry's month (up to
- * `readyThrough()`). `touched(c)`: null when the base's is; otherwise, ascending, the base's
- * touched lots, the lots of the zones whose delta changed in `c`, and, at a base change with
- * parking in force, every lot whose shift differs from the month before (a new view or slope).
- * One view per (base, cols), memoised; it reads the entries as they grow (an entry is always for
- * a month after the one the world last stepped, so no frame already read changes).
+ * frame with `parking` set (each lot's shift is its zone's delta on the lot's prototype,
+ * `lotShift`, on the frame's view and slope; held per zone, never as a per-lot array) and an id of
+ * its own (`frameIdOf` of the base id, the car data and costs, and every zone's delta).
+ * `changes()` is the base's changes plus each entry's month (up to `readyThrough()`).
+ * `touched(c)`: null when the base's is; otherwise, ascending, the base's touched lots, the lots
+ * of the zones whose delta changed in `c`, and, at a base change with parking in force, every lot
+ * whose shift differs from the month before (a new view or slope). One view per (base, cols),
+ * memoised; it reads the entries as they grow (an entry is always for a month after the one the
+ * world last stepped, so no frame already read changes).
  */
 export function parkingTimeline(
   base: PolicyTimeline,
@@ -248,7 +269,7 @@ function buildView(
           changed: EMPTY,
           key: null,
           frames: new Map(),
-          arrays: new WeakMap()
+          tables: new Map()
         };
         states.push(s);
       } else for (const z of prev.changed) zones.push(z);
@@ -261,7 +282,7 @@ function buildView(
       s!.changed = Int32Array.from(new Set(zones)).sort();
       s!.key = null;
       s!.frames.clear();
-      s!.arrays = new WeakMap();
+      s!.tables.clear();
     }
   };
 
@@ -278,38 +299,44 @@ function buildView(
     return lo - 1;
   };
 
-  const arrayOf = (s: State, view: ZoningView, slope: number): Float64Array => {
-    let bySlope = s.arrays.get(view);
-    if (!bySlope) s.arrays.set(view, (bySlope = new Map()));
-    let out = bySlope.get(slope);
+  /** One shift per (zone, prototype): `lotShift`'s arithmetic. */
+  const tableOf = (s: State, slope: number): Float64Array => {
+    let out = s.tables.get(slope);
     if (out) return out;
-    // One shift per (zone, prototype), then each lot takes its own: `lotShift`'s arithmetic.
-    const table = new Float64Array(Z * NP);
+    out = new Float64Array(Z * NP);
     for (let z = 0; z < Z; z++) {
       const delta = s.steps[z] * SPACES_STEP;
-      for (let i = 0; i < NP; i++) table[z * NP + i] = shiftOf(PROTOTYPES[i], delta, cost, slope);
+      for (let i = 0; i < NP; i++) out[z * NP + i] = shiftOf(PROTOTYPES[i], delta, cost, slope);
     }
-    const proto = protoIndexOf(view);
-    out = new Float64Array(N);
-    for (let lot = 0; lot < N; lot++) {
-      const z = lot < lotZone.length ? lotZone[lot] : -1;
-      const i = proto[lot];
-      if (z >= 0 && i >= 0) out[lot] = table[z * NP + i];
-    }
-    bySlope.set(slope, out);
+    s.tables.set(slope, out);
     return out;
   };
+
+  const zoneOf = (lot: number): number => (lot < lotZone.length ? lotZone[lot] : -1);
+  const zoneLots = (z: number): Int32Array => zl.lots.subarray(zl.start[z], zl.start[z + 1]);
+  const indexInZone = (lot: number): number => zl.index[lot];
 
   const derive = (frame: PolicyFrame, si: number): PolicyFrame => {
     const s = states[si];
     let out = s.frames.get(frame);
     if (out) return out;
     if (s.key === null) s.key = s.steps.join(',');
-    out = {
-      ...frame,
-      id: frameIdOf(`parking|${sysKey}|${frame.id}|${s.key}`),
-      parking: arrayOf(s, frame.view, slopeOf(frame))
+    const slope = slopeOf(frame);
+    const table = tableOf(s, slope);
+    const proto = protoIndexOf(frame.view);
+    const steps = s.steps;
+    const parking: ParkingShift = {
+      shift(lot) {
+        const z = zoneOf(lot);
+        const i = proto[lot];
+        return z < 0 || i < 0 ? 0 : table[z * NP + i];
+      },
+      zoneOf,
+      indexInZone,
+      zoneLots,
+      zoneKey: (z) => (steps[z] === 0 ? null : `${sysKey}|${z}|${steps[z]}|${slope}`)
     };
+    out = { ...frame, id: frameIdOf(`parking|${sysKey}|${frame.id}|${s.key}`), parking };
     s.frames.set(frame, out);
     return out;
   };
@@ -361,7 +388,7 @@ function buildView(
       if (si >= 0 && k > 1) {
         const a = frameAt(k - 1).parking;
         const b = frameAt(k).parking!;
-        for (let lot = 0; lot < N; lot++) if ((a ? a[lot] : 0) !== b[lot]) add(lot);
+        for (let lot = 0; lot < N; lot++) if ((a ? a.shift(lot) : 0) !== b.shift(lot)) add(lot);
       }
     }
     if (inPark) {
@@ -378,10 +405,20 @@ function buildView(
     return out;
   };
 
-  return {
+  const view: PolicyTimeline = {
     frameAt,
     changes,
     touched,
     readyThrough: () => base.readyThrough()
   };
+  retained.set(view, () => {
+    sync();
+    let numbers = 0;
+    for (const s of states) {
+      numbers += s.steps.length + s.changed.length;
+      for (const t of s.tables.values()) numbers += t.length;
+    }
+    return { states: states.length, numbers };
+  });
+  return view;
 }

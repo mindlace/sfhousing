@@ -6,7 +6,7 @@ import * as mathModule from '$lib/timelapse/math';
 import * as timeModule from '$lib/timelapse/time';
 import type { Day } from '$lib/timelapse/time';
 import * as monthsModule from './months';
-import type { PolicyTimeline, ZoningView } from './policy/frame';
+import type { ParkingShift, PolicyTimeline, ZoningView } from './policy/frame';
 import type { Statics } from './statics';
 
 // Imports are bound once, here: under Vite's module runner (the tests and the cost bench) every
@@ -17,55 +17,97 @@ const { exp, log } = mathModule;
 const { MONTH_DAYS } = timeModule;
 const { monthFirstDay, monthLastDay, monthOfDay } = monthsModule;
 
-type RateMemo = WeakMap<Precompute, Map<number, Float64Array>>;
+const rateMemo = new WeakMap<Precompute, Map<number, Float64Array>>();
 
-const rateMemo: RateMemo = new WeakMap();
-/** Rates under a parking shift, by the frame's `parking` array. */
-const parkedMemo = new WeakMap<Float64Array, RateMemo>();
+/** `log(1 - h)`, `h = 1 / (1 + exp(-x))`: one lot's log-survival rate at log-odds `x`. */
+const rateAt = (x: number): number => log(1 - 1 / (1 + exp(-x)));
 
 /**
  * Per lot row, the log-survival rate of starting, `log(1 - h)` with
- * `h = 1 / (1 + exp(-(z + market + parking[i])))` from `view.pre.logit` (0 where the logit is
+ * `h = 1 / (1 + exp(-(z + market + shift)))` from `view.pre.logit` (0 where the logit is
  * -Infinity): the expression `precomputeOf` uses, with the frame's parking shift (`frame.parking`,
- * none when absent or null). Memoised per (`parking`, `view.pre`, `market`); never reads
- * `pre.log1mh`.
+ * none when absent or null). Without parking it is memoised per (`view.pre`, `market`); with
+ * parking it is a new array each call, each entry `rateOf`'s (only `skipBound` asks for one).
+ * Never reads `pre.log1mh`.
  */
 export function startRates(
   view: ZoningView,
   market: number,
-  parking?: Float64Array | null
+  parking?: ParkingShift | null
 ): Float64Array {
-  let memo = rateMemo;
-  if (parking) {
-    let m = parkedMemo.get(parking);
-    if (!m) parkedMemo.set(parking, (m = new WeakMap()));
-    memo = m;
-  }
-  let byMarket = memo.get(view.pre);
+  let byMarket = rateMemo.get(view.pre);
   if (!byMarket) {
     byMarket = new Map();
-    memo.set(view.pre, byMarket);
+    rateMemo.set(view.pre, byMarket);
   }
   let out = byMarket.get(market);
   if (!out) {
     const logit = view.pre.logit;
     out = new Float64Array(logit.length);
-    if (parking) {
-      for (let i = 0; i < logit.length; i++) {
-        const z = logit[i];
-        if (z === -Infinity) continue;
-        out[i] = log(1 - 1 / (1 + exp(-(z + market + parking[i]))));
-      }
-    } else {
-      for (let i = 0; i < logit.length; i++) {
-        const z = logit[i];
-        if (z === -Infinity) continue;
-        out[i] = log(1 - 1 / (1 + exp(-(z + market))));
-      }
+    for (let i = 0; i < logit.length; i++) {
+      const z = logit[i];
+      if (z === -Infinity) continue;
+      out[i] = rateAt(z + market);
     }
     byMarket.set(market, out);
   }
-  return out;
+  if (!parking) return out;
+  const parked = out.slice();
+  for (let lot = 0; lot < parked.length; lot++) {
+    if (parking.zoneOf(lot) >= 0) parked[lot] = rateOf(view, market, parking, lot);
+  }
+  return parked;
+}
+
+/** Per (`view.pre`, `market`): rates of a zone's lots by `zoneKey`, and the lots they hold. */
+interface ZoneRates {
+  byKey: Map<string, Float64Array>;
+  lots: number;
+}
+
+const zoneMemo = new WeakMap<Precompute, Map<number, ZoneRates>>();
+/** Lots the zone memo of one (`view.pre`, `market`) may hold, per lot of the city, before it is cleared. */
+const ZONE_MEMO_LOTS = 8;
+
+/**
+ * One lot's rate, `startRates(view, market, parking)[lot]`, without a per-lot array per frame: a
+ * lot in a zone with a shift reads its zone's rates, memoised per (`view.pre`, `market`,
+ * `zoneKey`) and computed for the zone's lots at once; any other lot reads `startRates`' memo.
+ * The zone memo is cleared when it holds `ZONE_MEMO_LOTS` times the city's lots (values come back
+ * the same when recomputed).
+ */
+export function rateOf(
+  view: ZoningView,
+  market: number,
+  parking: ParkingShift | null | undefined,
+  lot: number
+): number {
+  if (!parking) return startRates(view, market)[lot];
+  const zone = parking.zoneOf(lot);
+  const key = zone < 0 ? null : parking.zoneKey(zone);
+  if (key === null) return startRates(view, market)[lot];
+  let byMarket = zoneMemo.get(view.pre);
+  if (!byMarket) zoneMemo.set(view.pre, (byMarket = new Map()));
+  let memo = byMarket.get(market);
+  if (!memo) byMarket.set(market, (memo = { byKey: new Map(), lots: 0 }));
+  let rates = memo.byKey.get(key);
+  if (!rates) {
+    const logit = view.pre.logit;
+    const lots = parking.zoneLots(zone);
+    if (memo.lots + lots.length > ZONE_MEMO_LOTS * logit.length) {
+      memo.byKey.clear();
+      memo.lots = 0;
+    }
+    rates = new Float64Array(lots.length);
+    for (let i = 0; i < lots.length; i++) {
+      const z = logit[lots[i]];
+      if (z === -Infinity) continue;
+      rates[i] = rateAt(z + market + parking.shift(lots[i]));
+    }
+    memo.byKey.set(key, rates);
+    memo.lots += lots.length;
+  }
+  return rates[parking.indexInZone(lot)];
 }
 
 interface EntityMemo {
@@ -125,12 +167,12 @@ export function ordinaryStart(
   const first = Math.min(monthOfDay(asOf, r + 1), month);
   const f0 = timeline.frameAt(first);
   const bounds: number[] = [];
-  const rates: number[] = [startRates(f0.view, f0.market, f0.parking)[lot]];
+  const rates: number[] = [rateOf(f0.view, f0.market, f0.parking, lot)];
   for (const c of timeline.changes()) {
     if (c <= first) continue;
     if (c > month) break;
     const f = timeline.frameAt(c);
-    const rate = startRates(f.view, f.market, f.parking)[lot];
+    const rate = rateOf(f.view, f.market, f.parking, lot);
     const bound = lastInitiationMonth(r, monthFirstDay(asOf, c) - 1);
     const last = rates.length - 1;
     // An empty segment: the new rate replaces the one that never ran.

@@ -1,7 +1,7 @@
 import * as rngModule from '$lib/sim/scenario/rng';
 import * as monthsModule from './months';
 import * as pipelineModule from './pipeline';
-import type { PolicyTimeline } from './policy/frame';
+import type { PolicyFrame, PolicyTimeline } from './policy/frame';
 import * as ratesModule from './rates';
 import type { Statics } from './statics';
 import * as typesModule from './types';
@@ -12,7 +12,7 @@ import type { Due, FundingSystem, StepCtx, StepSink, World } from './types';
 const { seedHash } = rngModule;
 const { monthFirstDay, monthLastDay } = monthsModule;
 const { dueMonthOf } = pipelineModule;
-const { initDraw, ordinaryStart, skipBound, startRates } = ratesModule;
+const { initDraw, ordinaryStart, rateOf, skipBound, startRates } = ratesModule;
 const { LOT_FREE } = typesModule;
 
 const FIRST_BUCKET = 64;
@@ -234,23 +234,28 @@ export function eachFreeLot(
   visit: (lot: number, r: number, k: number, rowless: boolean, never: boolean) => void,
   all = false
 ): void {
-  const rates = [timeline.frameAt(1)];
-  for (const c of timeline.changes()) if (c > 1 && c <= month) rates.push(timeline.frameAt(c));
-  const rateRows = rates.map((f) => startRates(f.view, f.market, f.parking));
+  const frames = [timeline.frameAt(1)];
+  for (const c of timeline.changes()) if (c > 1 && c <= month) frames.push(timeline.frameAt(c));
+  // A frame with a parking shift is read lot by lot (`rateOf`), never as a per-lot array.
+  const rateRows = frames.map((f) => (f.parking ? null : startRates(f.view, f.market)));
   const l = world.lots;
   const rowOf = l.rowOf;
   for (let lot = 0; lot < statics.parcelId.length; lot++) {
     const i = lot < rowOf.length ? rowOf[lot] - 1 : -1;
     if (i >= 0) {
       if (l.state[i] === LOT_FREE) visit(lot, l.r[i], l.k[i], false, false);
-    } else if (anyBelowZero(rateRows, lot)) visit(lot, statics.asOf, 0, true, false);
+    } else if (anyBelowZero(frames, rateRows, lot)) visit(lot, statics.asOf, 0, true, false);
     else if (all) visit(lot, statics.asOf, 0, true, true);
   }
 }
 
-/** True when some row of `rows` is below 0 at `lot`. */
-function anyBelowZero(rows: Float64Array[], lot: number): boolean {
-  for (let j = 0; j < rows.length; j++) if (rows[j][lot] < 0) return true;
+/** True when some frame's rate is below 0 at `lot` (`rows[j]` its rates, null: read by `rateOf`). */
+function anyBelowZero(frames: PolicyFrame[], rows: (Float64Array | null)[], lot: number): boolean {
+  for (let j = 0; j < rows.length; j++) {
+    const row = rows[j];
+    const f = frames[j];
+    if ((row !== null ? row[lot] : rateOf(f.view, f.market, f.parking, lot)) < 0) return true;
+  }
   return false;
 }
 
