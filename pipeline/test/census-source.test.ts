@@ -9,7 +9,8 @@ import {
   CENSUS_SOURCES,
   DMV_ID,
   acsBgVintage,
-  acsSummaryUrl
+  acsSummaryUrl,
+  censusTableOf
 } from '../census-config';
 import { openDuck, type Duck } from '../lib/duck';
 import { readLock, rawPath, type Lock, type LockEntry } from '../lib/lock';
@@ -144,6 +145,48 @@ describe('fetchCensus: ACS table-based releases', () => {
     expect(bad.n).toBe(0);
     expect(await tableExists(db, 'src_pums_hh')).toBe(false);
     db.close();
+  });
+});
+
+describe('fetchCensus: B25044 margins of error', () => {
+  const routes = () => ({
+    [acsSummaryUrl(2024, 'B25044')]:
+      'GEO_ID|B25044_E001|B25044_M001|B25044_E003|B25044_M003\n' +
+      '1500000US060750101011|517|134|22|32\n' +
+      '1500000US060750101012|699|151|0|14\n' +
+      '1500000US060750101013|-666666666|-555555555|-|-\n' +
+      '1500000US060014001001|10|2|3|1\n'
+  });
+
+  it('keeps the SF block groups B25044 margins and normalises to src_acs_bg_moe', async () => {
+    expect(CENSUS_IDS).toContain('census-acs5-bg-moe-2024');
+    expect(censusTableOf('census-acs5-bg-moe-2024')).toBe('src_acs_bg_moe');
+    const dir = tmp();
+    const http = fakeHttp(routes());
+    const e = await fetchCensus('census-acs5-bg-moe-2024', dir, http, NOW);
+    expect(e.license).toBe('Public domain (U.S. Census Bureau)');
+    expect(e.upstreamVersion).toContain('margins of error');
+    expect(e.rowCount).toBe(4);
+    expect(http.urls).toEqual([acsSummaryUrl(2024, 'B25044')]);
+    const db = await openDuck();
+    await normalised(db, [e], dir);
+    const rows = await db.all(`SELECT * FROM src_acs_bg_moe ORDER BY geoid, variable`);
+    expect(rows).toEqual([
+      { release: 2024, geoid: '060750101011', variable: 'B25044_001', moe: 134 },
+      { release: 2024, geoid: '060750101011', variable: 'B25044_003', moe: 32 },
+      { release: 2024, geoid: '060750101012', variable: 'B25044_001', moe: 151 },
+      { release: 2024, geoid: '060750101012', variable: 'B25044_003', moe: 14 }
+    ]);
+    db.close();
+  });
+
+  it('a file with no SF margins throws', async () => {
+    const http = fakeHttp({
+      [acsSummaryUrl(2024, 'B25044')]: 'GEO_ID|B25044_E001|B25044_M001\n1500000US060014001001|1|1\n'
+    });
+    await expect(fetchCensus('census-acs5-bg-moe-2024', tmp(), http, NOW)).rejects.toThrow(
+      /no San Francisco/
+    );
   });
 });
 

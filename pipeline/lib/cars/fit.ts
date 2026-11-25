@@ -11,6 +11,7 @@ import {
   carShares,
   densityOf,
   typeCount,
+  typeIndex,
   type CarModel,
   type TypeBands
 } from '../../../src/lib/sim/cars';
@@ -62,8 +63,10 @@ export interface FitStats {
     cityMix: number;
     /** (zone, level) cells with an observed zero. */
     observedZero: number;
-    /** The shrinkage's prior weight in households; null when B25044 shows no overdispersion. */
+    /** The shrinkage's prior weight (in effective sample units); null with no overdispersion. */
     n0: number | null;
+    /** The n of the shrinkage: effective sizes from the margins of error, or estimated households. */
+    sizes: { fromMoe: boolean; missing: number; median: number; householdsMedian: number };
     /** Smallest and largest constant fitted to the shrunk shares. */
     range: [number, number];
     /** The same fitted to the raw B25044 shares (an observed zero held at OBS_FLOOR). */
@@ -112,7 +115,8 @@ export function observedLevels(rows: readonly AcsRow[], zones: readonly string[]
  */
 export function shrinkShares(
   observed: Float64Array,
-  predicted: Float64Array
+  predicted: Float64Array,
+  size?: Float64Array
 ): { shares: Float64Array; n0: number | null; rho: number } {
   const Z = observed.length / CAR_LEVELS;
   const total = (z: number) => {
@@ -123,27 +127,99 @@ export function shrinkShares(
   let num = 0;
   let den = 0;
   for (let z = 0; z < Z; z++) {
-    const n = total(z);
-    if (!(n > 1)) continue;
+    const t = total(z);
+    const n = size ? size[z] : t;
+    if (!(t > 0) || !(n > 1)) continue;
     for (let k = 0; k < CAR_LEVELS; k++) {
       const p = predicted[z * CAR_LEVELS + k];
-      const d = observed[z * CAR_LEVELS + k] / n - p;
+      const d = observed[z * CAR_LEVELS + k] / t - p;
       num += n * d * d - p * (1 - p);
       den += (n - 1) * p * (1 - p);
     }
   }
   const rho = den > 0 ? num / den : 0;
+  // rho >= 1: dispersion at or beyond the multinomial limit, no pooling (n0 0); the constants'
+  // fit then floors any zero share (OBS_FLOOR) so it stays finite.
   const n0 = rho > 0 ? (rho < 1 ? 1 / rho - 1 : 0) : null;
   const shares = new Float64Array(observed.length);
   for (let z = 0; z < Z; z++) {
-    const n = total(z);
+    const t = total(z);
+    const n = size ? size[z] : t;
     for (let k = 0; k < CAR_LEVELS; k++) {
       const i = z * CAR_LEVELS + k;
       shares[i] =
-        n > 0 && n0 !== null ? (observed[i] + n0 * predicted[i]) / (n + n0) : predicted[i];
+        t > 0 && n0 !== null
+          ? (n * (observed[i] / t) + n0 * predicted[i]) / (n + n0)
+          : predicted[i];
     }
   }
   return { shares, n0, rho };
+}
+
+/** One margin-of-error cell (src_acs_bg_moe): 90% MOE, the estimate's cell name. */
+export interface MoeRow {
+  geoid: string;
+  variable: string;
+  moe: number;
+}
+
+/** z for a 90% margin of error. */
+export const MOE_Z = 1.645;
+
+/**
+ * Each zone's effective sample size from its B25044 margins of error. Per level, the count is the
+ * owner and renter cells added, SE(count) = sqrt(sum (MOE / 1.645)^2) over its cells, SE(total)
+ * from B25044_001; the share's SE is the Census proportion formula (1/N) sqrt(SE_x^2 - p^2
+ * SE_N^2), or the ratio formula with + where that is not positive. Pooled across levels:
+ * n_eff = sum p(1-p) / sum SE(p)^2, clamped to [1, N]. A zone with no margins (or zero summed
+ * variance) takes its estimated households N, counted in `missing`.
+ */
+export function effectiveSizes(
+  acs: readonly AcsRow[],
+  moe: readonly MoeRow[],
+  zones: readonly string[]
+): { nEff: Float64Array; missing: number } {
+  const zix = new Map(zones.map((z, i) => [z, i]));
+  const cells = MARGINS[0].cells;
+  const totalCell = MARGINS[0].total;
+  const Z = zones.length;
+  const count = observedLevels(acs, zones);
+  const varX = new Float64Array(Z * CAR_LEVELS);
+  const varN = new Float64Array(Z);
+  const seen = new Uint8Array(Z);
+  for (const r of moe) {
+    const z = zix.get(r.geoid);
+    if (z === undefined) continue;
+    const se = r.moe / MOE_Z;
+    if (r.variable === totalCell) {
+      varN[z] = se * se;
+      seen[z] = 1;
+    }
+    const c = cells[r.variable];
+    if (c === undefined) continue;
+    varX[z * CAR_LEVELS + (c % CAR_LEVELS)] += se * se;
+    seen[z] = 1;
+  }
+  const nEff = new Float64Array(Z);
+  let missing = 0;
+  for (let z = 0; z < Z; z++) {
+    let N = 0;
+    for (let k = 0; k < CAR_LEVELS; k++) N += count[z * CAR_LEVELS + k];
+    let num = 0;
+    let den = 0;
+    for (let k = 0; k < CAR_LEVELS; k++) {
+      const p = N > 0 ? count[z * CAR_LEVELS + k] / N : 0;
+      const vx = varX[z * CAR_LEVELS + k];
+      const rad = vx - p * p * varN[z];
+      num += p * (1 - p);
+      den += N > 0 ? (rad > 0 ? rad : vx + p * p * varN[z]) / (N * N) : 0;
+    }
+    if (!seen[z] || !(den > 0) || !(N > 0)) {
+      nEff[z] = N;
+      if (N > 0) missing++;
+    } else nEff[z] = Math.min(N, Math.max(1, num / den));
+  }
+  return { nEff, missing };
 }
 
 /** Cars per 3+ household: the WGTP-weighted mean of VEH (6 = 6 or more) over VEH >= 3. */
@@ -171,18 +247,20 @@ function householdFeatures(b: TypeBands): { names: string[]; of: (t: number) => 
     ...b.income.slice(1).map((_, i) => `income ${i + 2}`),
     'renter'
   ];
-  const of = (t: number) => {
-    const renter = t % 2;
-    const i = (t >> 1) % nI;
-    const w = Math.floor(t / (2 * nI)) % nW;
-    const s = Math.floor(t / (2 * nI * nW));
-    const f = new Array<number>(names.length).fill(0);
-    if (s > 0) f[s - 1] = 1;
-    if (w > 0) f[nS - 1 + w - 1] = 1;
-    if (i > 0) f[nS - 1 + nW - 1 + i - 1] = 1;
-    f[names.length - 1] = renter;
-    return f;
-  };
+  // Each type's dummies, indexed by typeIndex itself (the population's and the sim's layout).
+  const table = new Map<number, number[]>();
+  for (let si = 0; si < nS; si++)
+    for (let wi = 0; wi < nW; wi++)
+      for (let ii = 0; ii < nI; ii++)
+        for (const owner of [true, false]) {
+          const f = new Array<number>(names.length).fill(0);
+          if (si > 0) f[si - 1] = 1;
+          if (wi > 0) f[nS - 1 + wi - 1] = 1;
+          if (ii > 0) f[nS - 1 + nW - 1 + ii - 1] = 1;
+          f[names.length - 1] = owner ? 0 : 1;
+          table.set(typeIndex(b, b.size[si], b.workers[wi], b.income[ii], owner), f);
+        }
+  const of = (t: number) => table.get(t) ?? new Array<number>(names.length).fill(0);
   return { names, of };
 }
 
@@ -240,7 +318,8 @@ function fitKept(
 export function fitChoice(
   pums: { rows: readonly PumsRow[]; bands: TypeBands; window: [from: string, to: string] },
   observed: Float64Array,
-  data: CarData
+  data: CarData,
+  opts: { nEff?: Float64Array; moeMissing?: number } = {}
 ): { choice: CarModel['choice']; constant: Float64Array; fit: BgFit[]; stats: FitStats } {
   const { bands } = pums;
   const T = typeCount(bands);
@@ -284,7 +363,7 @@ export function fitChoice(
     if (p === undefined) throw new Error(`cars: PUMS record in unknown PUMA ${r.puma}`);
     recPumas.add(p);
     const owner = r.ten === 1 || r.ten === 2;
-    const t = typeOfRow(bands, r, owner);
+    const t = typeIndex(bands, r.np, r.workers, r.hincp_adj, owner);
     x1[i * F1] = 1;
     x1.set(typeFeat[t], i * F1 + 1);
     x1[i * F1 + 1 + nH] = pDensity[p];
@@ -396,6 +475,12 @@ export function fitChoice(
     cityMix: 0,
     observedZero: 0,
     n0: null,
+    sizes: {
+      fromMoe: opts.nEff !== undefined,
+      missing: opts.moeMissing ?? 0,
+      median: 0,
+      householdsMedian: 0
+    },
     range: [0, 0],
     rawRange: [0, 0],
     maxErr: 0
@@ -446,8 +531,17 @@ export function fitChoice(
       after: before
     });
   }
-  const shrunk = shrinkShares(observed, predicted);
+  const shrunk = shrinkShares(observed, predicted, opts.nEff);
   stats.n0 = shrunk.n0;
+  {
+    const med = (xs: number[]) => {
+      const a = [...xs].sort((x, y) => x - y);
+      return a.length ? a[a.length >> 1] : 0;
+    };
+    const obsZ = fit.flatMap((f, z) => (f.observedTotal > 0 ? [z] : []));
+    stats.sizes.householdsMedian = med(obsZ.map((z) => fit[z].observedTotal));
+    stats.sizes.median = med(obsZ.map((z) => (opts.nEff ? opts.nEff[z] : fit[z].observedTotal)));
+  }
   // Pass 2: constants fitted to the shrunk shares (and, for the report, to the raw shares).
   const raw = new Float64Array(Z * 3);
   const range = (a: Float64Array): [number, number] => {
@@ -478,7 +572,12 @@ export function fitChoice(
     }
     for (let k = 0; k < CAR_LEVELS; k++) target[k] /= tsum;
     fitConstants(z, T, mix, choice, density[z], data.access[z], target, base, raw, pred);
-    for (let k = 0; k < CAR_LEVELS; k++) target[k] = shrunk.shares[z * CAR_LEVELS + k];
+    tsum = 0;
+    for (let k = 0; k < CAR_LEVELS; k++) {
+      target[k] = Math.max(OBS_FLOOR, shrunk.shares[z * CAR_LEVELS + k]);
+      tsum += target[k];
+    }
+    for (let k = 0; k < CAR_LEVELS; k++) target[k] /= tsum;
     row.target = Array.from(target);
     fitConstants(z, T, mix, choice, density[z], data.access[z], target, base, constant, pred);
     const after = [0, 0, 0, 0];
@@ -515,18 +614,6 @@ export function fitChoice(
       constants: stats
     }
   };
-}
-
-function typeOfRow(b: TypeBands, r: PumsRow, owner: boolean): number {
-  const band = (edges: number[], x: number) => {
-    let n = 0;
-    for (const e of edges) if (e <= x) n++;
-    return n === 0 ? 0 : n - 1;
-  };
-  const s = band(b.size, r.np);
-  const w = band(b.workers, r.workers);
-  const i = band(b.income, r.hincp_adj);
-  return ((s * b.workers.length + w) * b.income.length + i) * 2 + (owner ? 0 : 1);
 }
 
 /**

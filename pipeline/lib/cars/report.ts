@@ -121,10 +121,17 @@ export function carsReportLines(
       ? 'Shrinkage: B25044 shows no dispersion beyond binomial around the model, so each block ' +
           "group's target is the model's shares (constants 0)."
       : `Shrinkage: each block group's B25044 shares are pulled toward the model's (empirical ` +
-          `Bayes, share* = (n obs + n0 pred) / (n + n0), n its B25044 households) with n0 = ` +
-          `${f4(c.n0)} households, by the method of moments on the dispersion of observed ` +
-          'against predicted shares beyond binomial variance. An observed zero level keeps a ' +
-          'nonzero share.',
+          `Bayes, share* = (n obs + n0 pred) / (n + n0)) with n0 = ${f4(c.n0)}, by the method of ` +
+          'moments on the dispersion of observed against predicted shares beyond sampling ' +
+          'variance. An observed zero level keeps a nonzero share.',
+    c.sizes.fromMoe
+      ? `n is each block group's effective sample size from its B25044 margins of error ` +
+          '(n_eff = sum p(1-p) / sum SE(p)^2 over the four levels, SE = MOE / 1.645): median ' +
+          `${f4(c.sizes.median)} against a median ${f4(c.sizes.householdsMedian)} estimated ` +
+          `households; ${c.sizes.missing} block groups had no margins and take their estimated ` +
+          'households.'
+      : "n is each block group's estimated households: the lock has no B25044 margins of " +
+          'error, so the shrinkage is too weak (ACS samples a fraction of households).',
     `Constants: ${c.fitted} block groups fitted to the shrunk shares (largest difference ` +
       `${c.maxErr.toExponential(1)}), range ${rng(c.range)}; fitted to the raw B25044 shares ` +
       `instead (an observed zero held at 1e-9) they would range ${rng(c.rawRange)}. ` +

@@ -8,7 +8,13 @@ import {
   type TypeBands
 } from '../../../src/lib/sim/cars';
 import { exp } from '../../../src/lib/timelapse/math';
-import { fitChoice, observedLevels, shrinkShares, threePlusMeanOf } from '../../lib/cars/fit';
+import {
+  effectiveSizes,
+  fitChoice,
+  observedLevels,
+  shrinkShares,
+  threePlusMeanOf
+} from '../../lib/cars/fit';
 import type { PumsRow } from '../../lib/cars/population';
 import { carsReportLines } from '../../lib/cars/report';
 
@@ -348,6 +354,82 @@ describe('empirical Bayes shrinkage of the observed shares', () => {
   });
 });
 
+describe('effective sample sizes from the B25044 margins of error', () => {
+  it('pools the level shares: n_eff = sum p(1-p) / sum SE(p)^2, SE = MOE / 1.645', () => {
+    const est = (geoid: string, cells: Record<string, number>) =>
+      Object.entries(cells).map(([variable, estimate]) => ({ geoid, variable, estimate }));
+    const moe = (geoid: string, cells: Record<string, number>) =>
+      Object.entries(cells).map(([variable, m]) => ({ geoid, variable, moe: m }));
+    // Zone a: 100 households, owners 0/1/2 cars 10/20/10, renters 0/1 30/30; zone b: no margins.
+    const acs = [
+      ...est('a', { B25044_001: 100, B25044_003: 10, B25044_004: 20, B25044_005: 10 }),
+      ...est('a', { B25044_010: 30, B25044_011: 30 }),
+      ...est('b', { B25044_001: 50, B25044_003: 50 })
+    ];
+    const m = moe('a', {
+      B25044_001: 16.45,
+      B25044_003: 8.225,
+      B25044_004: 16.45,
+      B25044_005: 8.225,
+      B25044_006: 16.45,
+      B25044_010: 16.45,
+      B25044_011: 16.45
+    });
+    const r = effectiveSizes(acs, m, ['a', 'b']);
+    // SE: total 10; level counts 40, 50, 10, 0 with SE sqrt(5^2+10^2), sqrt(10^2+10^2), 5, 10.
+    const N = 100;
+    const x = [40, 50, 10, 0];
+    const sx2 = [125, 200, 25, 100];
+    let num = 0;
+    let den = 0;
+    for (let k = 0; k < 4; k++) {
+      const p = x[k] / N;
+      const rad = sx2[k] - p * p * 100;
+      num += p * (1 - p);
+      den += (rad > 0 ? rad : sx2[k] + p * p * 100) / (N * N);
+    }
+    expect(r.nEff[0]).toBeCloseTo(num / den, 9);
+    // No margins: the estimated households stand in, and the zone is counted.
+    expect(r.nEff[1]).toBe(50);
+    expect(r.missing).toBe(1);
+  });
+
+  it('shrinkShares takes the effective sizes as n', () => {
+    const observed = Float64Array.from([50, 30, 20, 0, 10, 60, 25, 5, 40, 40, 10, 10]);
+    const predicted = Float64Array.from([
+      0.3, 0.4, 0.2, 0.1, 0.2, 0.5, 0.2, 0.1, 0.4, 0.3, 0.2, 0.1
+    ]);
+    const n = Float64Array.from([200, 300, 400]);
+    const s = shrinkShares(observed, predicted, n);
+    const n0 = s.n0 ?? NaN;
+    expect(n0).toBeGreaterThan(0);
+    expect(s.shares[3]).toBeCloseTo((0 * 200 + n0 * 0.1) / (200 + n0), 12);
+    expect(s.shares[4]).toBeCloseTo((0.1 * 300 + n0 * 0.2) / (300 + n0), 12);
+  });
+});
+
+describe('dispersion at or beyond the multinomial limit', () => {
+  it('gives n0 = 0 and still finite constants when every zone is all of one level', () => {
+    const c = city();
+    const Z = c.data.zones.length;
+    const observed = new Float64Array(Z * 4);
+    for (let z = 0; z < Z; z++) if (z !== 9) observed[z * 4 + 3] = 500;
+    const s = shrinkShares(
+      observed,
+      Float64Array.from({ length: Z * 4 }, () => 0.25)
+    );
+    expect(s.n0).toBe(0);
+    const r = fitChoice(
+      { rows: c.rows, bands: BANDS, window: ['2020-01-01', '2024-12-31'] },
+      observed,
+      c.data
+    );
+    expect(r.stats.constants.n0).toBe(0);
+    expect(Array.from(r.constant).every(Number.isFinite)).toBe(true);
+    expect(r.fit.every((f) => f.after.every(Number.isFinite))).toBe(true);
+  });
+});
+
 describe('fitChoice on thin data', () => {
   it('drops the location terms with one PUMA and one peopled zone, and a dummy with no variation', () => {
     const c = city();
@@ -437,7 +519,8 @@ describe('carsReportLines', () => {
   it('gives the fit by block group, citywide, the DMV check and spaces per new home', () => {
     expect(md).toMatch(/median [0-9.]+ points/);
     expect(md).toMatch(/90th percentile [0-9.]+ points/);
-    expect(md).toMatch(/n0 = [0-9.]+ households/);
+    expect(md).toMatch(/n0 = [0-9.]+, by the method of moments/);
+    expect(md).toContain("n is each block group's estimated households");
     expect(md).toMatch(/would range -?[0-9.]+ to -?[0-9.]+/);
     expect(md).toContain('Largest zero-car errors after the constants');
     expect(md).toContain('Citywide');
@@ -446,6 +529,24 @@ describe('carsReportLines', () => {
     expect(md).toMatch(/[0-9.]+ spaces per new home/);
     expect(md).not.toMatch(/NaN|Infinity|undefined|\bnull\b/);
     expect(lines.some((l) => /^#{1,2} /.test(l))).toBe(false);
+  });
+
+  it('states the effective sample sizes when the margins of error are given', () => {
+    const nEff = Float64Array.from(
+      c.observed.filter((_, i) => i % 4 === 0),
+      () => 300
+    );
+    const f = fitChoice(
+      { rows: c.rows, bands: BANDS, window: ['2020-01-01', '2024-12-31'] },
+      c.observed,
+      c.data,
+      { nEff, moeMissing: 2 }
+    );
+    const l = carsReportLines(model, { ...c.data, constant: f.constant }, f, null).join('\n');
+    expect(l).toMatch(
+      /effective sample size from its B25044 margins of error[^\n]*median 300 against/
+    );
+    expect(l).toContain('2 block groups had no margins');
   });
 
   it('says so when there is no DMV table or parking facts', () => {

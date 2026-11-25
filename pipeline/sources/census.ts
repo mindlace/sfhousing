@@ -7,6 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { Unzip, UnzipInflate, unzipSync } from 'fflate';
 import {
+  ACS_MOE_TABLES,
   ACS_TABLES,
   CENSUS_SOURCES,
   CENSUS_TABLES,
@@ -19,6 +20,7 @@ import {
   acsSeqDir,
   acsSummaryUrl,
   censusTableOf,
+  type AcsMoeSpec,
   type AcsSpec,
   type CensusSpec,
   type CensusTable,
@@ -238,6 +240,55 @@ async function fetchAcs(spec: AcsSpec, rawDir: string, http: Http, now: Date): P
     now,
     upstreamVersion: `ACS ${spec.endYear - 4}-${spec.endYear} 5-year, ${spec.layout}-based summary files, ${spec.bgVintage} block groups`,
     rowCount: rows.length
+  });
+}
+
+/**
+ * B25044's margins of error at SF block groups (`B25044_M<n>` columns of the table-based file),
+ * kept as `geoid,variable,moe` with the estimate's cell name. A negative code (no sample, a
+ * controlled cell) is no margin and is left out.
+ */
+async function fetchAcsMoe(
+  spec: AcsMoeSpec,
+  rawDir: string,
+  http: Http,
+  now: Date
+): Promise<LockEntry> {
+  const out: string[] = [];
+  for (const t of ACS_MOE_TABLES) {
+    const url = acsSummaryUrl(spec.endYear, t);
+    let cols: (string | undefined)[] | undefined;
+    textLines(await get(http, url), (line) => {
+      const f = line.split('|');
+      if (!cols) {
+        cols = f.map((c) =>
+          c
+            .match(/^(B\d+)_M(\d+)$/)
+            ?.slice(1)
+            .join('_')
+        );
+        return;
+      }
+      const geoid = sfGeoId(f[0]);
+      if (!geoid) return;
+      f.forEach((v, i) => {
+        const n = num(v);
+        if (cols![i] && n !== undefined && n >= 0) out.push(`${geoid},${cols![i]},${n}`);
+      });
+    });
+    if (!cols) throw new Error(`${spec.id}: ${url} has no header`);
+  }
+  if (out.length === 0)
+    throw new Error(`${spec.id}: no San Francisco block-group margins of error found`);
+  out.sort();
+  return entry(spec, {
+    rawDir,
+    name: `${spec.id}.csv`,
+    url: acsSummaryUrl(spec.endYear, ACS_MOE_TABLES[0]),
+    bytes: csvBytes('geoid,variable,moe', out),
+    now,
+    upstreamVersion: `ACS ${spec.endYear - 4}-${spec.endYear} 5-year, table-based summary files, margins of error (90%)`,
+    rowCount: out.length
   });
 }
 
@@ -563,6 +614,8 @@ export async function fetchCensus(
   switch (spec.kind) {
     case 'acs':
       return fetchAcs(spec, rawDir, http, now);
+    case 'acsmoe':
+      return fetchAcsMoe(spec, rawDir, http, now);
     case 'pums':
       return fetchPums(spec, rawDir, http, now);
     case 'sf3':
@@ -652,6 +705,7 @@ const readCsv = (file: string, cols: Record<string, string>) =>
 /** Row order of each table (the geometry column is never an ordering key). */
 const ORDER: Record<CensusTable, string> = {
   src_acs_bg: 'release, geoid, variable',
+  src_acs_bg_moe: 'release, geoid, variable',
   src_pums_hh: 'release, puma, serialno',
   src_sf3_bg: 'geoid, variable',
   src_bg_geom: 'vintage, geoid',
@@ -673,6 +727,9 @@ async function selectOf(
     case 'src_acs_bg':
       return `SELECT ${(spec as AcsSpec).endYear}::INTEGER AS release, geoid, variable, estimate
         FROM ${readCsv(file, { geoid: 'VARCHAR', variable: 'VARCHAR', estimate: 'DOUBLE' })}`;
+    case 'src_acs_bg_moe':
+      return `SELECT ${(spec as AcsMoeSpec).endYear}::INTEGER AS release, geoid, variable, moe
+        FROM ${readCsv(file, { geoid: 'VARCHAR', variable: 'VARCHAR', moe: 'DOUBLE' })}`;
     case 'src_pums_hh':
       return `SELECT ${(spec as PumsSpec).endYear}::INTEGER AS release, puma, serialno, wgtp, veh, mv,
         np, workers, hincp_adj, ten, ybl, puma_vintage, ybl_src

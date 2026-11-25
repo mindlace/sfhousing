@@ -197,6 +197,24 @@
     {
       "files": [
         {
+          "archiveKey": "sources/faee07923f97f090e62d517ee2bdf77c854ca8c9bf5ec9865bce76c275f8446d.csv",
+          "bytes": 277582,
+          "name": "census-acs5-bg-moe-2024.csv",
+          "sha256": "faee07923f97f090e62d517ee2bdf77c854ca8c9bf5ec9865bce76c275f8446d",
+          "url": "https://www2.census.gov/programs-surveys/acs/summary_file/2024/table-based-SF/data/5YRData/acsdt5y2024-b25044.dat"
+        }
+      ],
+      "homepage": "https://www.census.gov/programs-surveys/acs/data/summary-file.html",
+      "id": "census-acs5-bg-moe-2024",
+      "label": "ACS 2020-2024 5-year block-group margins of error (B25044)",
+      "license": "Public domain (U.S. Census Bureau)",
+      "retrievedAt": "2026-11-25T07:45:35.937Z",
+      "rowCount": 10215,
+      "upstreamVersion": "ACS 2020-2024 5-year, table-based summary files, margins of error (90%)"
+    },
+    {
+      "files": [
+        {
           "archiveKey": "sources/2fd8349565b31534ee2005a839ba3ba6b29728a537eb000dceba89c3bb1a867b.csv",
           "bytes": 3557,
           "name": "census-puma-2010.csv",

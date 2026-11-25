@@ -14,13 +14,24 @@ export const SF_COUNTY_GEOID = `${SF_STATE}${SF_COUNTY}`;
 const SF = 'https://www2.census.gov/programs-surveys/acs/summary_file';
 const PUMS = 'https://www2.census.gov/programs-surveys/acs/data/pums';
 
-/** The ACS tables pulled at block group (estimates only; margins of error are not kept). */
+/**
+ * The ACS tables pulled at block group (estimates only; B25044's margins of error come as their
+ * own entry, `ACS_MOE_TABLES`).
+ */
 export const ACS_TABLES = ['B25044', 'B25046', 'B25009', 'B19001', 'B25002', 'B08301'] as const;
 
 /** ACS 5-year releases pulled, by end year. 2021 on come as table-based summary files. */
 export const ACS_END_YEARS = [2009, 2013, 2019, 2020, 2021, 2022, 2023, 2024] as const;
 /** The latest release that exists (2020-2024; the 2021-2025 one is not out). */
 export const ACS_LATEST = 2024;
+
+/**
+ * Tables whose block-group margins of error are kept (`census-acs5-bg-moe-<year>`, table-based
+ * releases only): B25044, for the car choice's effective sample sizes.
+ */
+export const ACS_MOE_TABLES = ['B25044'] as const;
+/** Releases whose margins are pulled. */
+export const ACS_MOE_END_YEARS = [2024] as const;
 
 /** Block-group vintage of an ACS 5-year release: 2000 for 2005-2009, 2010 to 2019, then 2020. */
 export function acsBgVintage(endYear: number): 2000 | 2010 | 2020 {
@@ -41,6 +52,12 @@ export interface AcsSpec extends CensusBase {
   layout: 'table' | 'seq';
   /** layout 'seq': the sequence/table lookup file. */
   lookupUrl?: string;
+}
+
+/** Margins of error of `ACS_MOE_TABLES` at block group, from a table-based release. */
+export interface AcsMoeSpec extends CensusBase {
+  kind: 'acsmoe';
+  endYear: number;
 }
 
 export interface PumaCol {
@@ -91,7 +108,8 @@ export interface PumaRelSpec extends CensusBase {
   url: string;
 }
 
-export type CensusSpec = AcsSpec | PumsSpec | Sf3Spec | TigerSpec | XwalkSpec | PumaRelSpec;
+export type CensusSpec =
+  AcsSpec | AcsMoeSpec | PumsSpec | Sf3Spec | TigerSpec | XwalkSpec | PumaRelSpec;
 
 const HOME = {
   acs: 'https://www.census.gov/programs-surveys/acs/data/summary-file.html',
@@ -114,6 +132,15 @@ const acs = (endYear: number): AcsSpec => ({
         ? `${SF}/2009/documentation/5_year/user_tools/Sequence_Number_and_Table_Number_Lookup.txt`
         : `${SF}/${endYear}/documentation/user_tools/ACS_5yr_Seq_Table_Number_Lookup.txt`,
   label: `ACS ${endYear - 4}-${endYear} 5-year block-group tables (${ACS_TABLES.join(', ')})`,
+  homepage: HOME.acs,
+  license: CENSUS_LICENSE
+});
+
+const acsMoe = (endYear: number): AcsMoeSpec => ({
+  kind: 'acsmoe',
+  id: `census-acs5-bg-moe-${endYear}`,
+  endYear,
+  label: `ACS ${endYear - 4}-${endYear} 5-year block-group margins of error (${ACS_MOE_TABLES.join(', ')})`,
   homepage: HOME.acs,
   license: CENSUS_LICENSE
 });
@@ -207,6 +234,7 @@ const pumaRel = (vintage: 2010 | 2020, url: string): PumaRelSpec => ({
 
 const ALL: CensusSpec[] = [
   ...ACS_END_YEARS.map(acs),
+  ...ACS_MOE_END_YEARS.map(acsMoe),
   PUMS_2013,
   PUMS_2024,
   SF3,
@@ -247,6 +275,7 @@ export const DMV_ZIP_PREFIX = '941';
 /** The normalised tables of the sources above; each exists only when its lock entries do. */
 export const CENSUS_TABLES = [
   'src_acs_bg',
+  'src_acs_bg_moe',
   'src_pums_hh',
   'src_sf3_bg',
   'src_bg_geom',
@@ -262,15 +291,17 @@ export function censusTableOf(id: string): CensusTable | undefined {
   const k = CENSUS_SOURCES[id]?.kind;
   return k === 'acs'
     ? 'src_acs_bg'
-    : k === 'pums'
-      ? 'src_pums_hh'
-      : k === 'sf3'
-        ? 'src_sf3_bg'
-        : k === 'tiger'
-          ? 'src_bg_geom'
-          : k === 'xwalk'
-            ? 'src_bg_xwalk'
-            : k === 'puma'
-              ? 'src_tract_puma'
-              : undefined;
+    : k === 'acsmoe'
+      ? 'src_acs_bg_moe'
+      : k === 'pums'
+        ? 'src_pums_hh'
+        : k === 'sf3'
+          ? 'src_sf3_bg'
+          : k === 'tiger'
+            ? 'src_bg_geom'
+            : k === 'xwalk'
+              ? 'src_bg_xwalk'
+              : k === 'puma'
+                ? 'src_tract_puma'
+                : undefined;
 }

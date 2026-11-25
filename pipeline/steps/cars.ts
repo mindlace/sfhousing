@@ -16,7 +16,14 @@ import { DMV_ID, acsBgVintage, censusTableOf, type CensusTable } from '../census
 import { parseParkingFile } from '../enrichment/parking-schema';
 import { zoneAccess } from '../lib/cars/access';
 import { IPF, IPF_REPORT_ERR, MARGINS, WORKERS_TOTAL, typeBandsOf } from '../lib/cars/config';
-import { fitChoice, observedLevels, threePlusMeanOf, type CarChoiceModel } from '../lib/cars/fit';
+import {
+  effectiveSizes,
+  fitChoice,
+  observedLevels,
+  threePlusMeanOf,
+  type CarChoiceModel,
+  type MoeRow
+} from '../lib/cars/fit';
 import {
   acsMargins,
   occupiedShares,
@@ -171,10 +178,22 @@ export async function carsStep(db: Duck, o: CarsStepOpts): Promise<CarsStepOut> 
   // The ownership choice: household terms from PUMS, location terms and zone constants from the
   // block groups' B25044 shares.
   const observed = observedLevels(acs, zones);
+  // Effective sample sizes from B25044's margins of error, when the lock has them for the release.
+  let sizes: { nEff: Float64Array; missing: number } | null = null;
+  if (o.lock.sources.some((s) => s.id === `census-acs5-bg-moe-${release}`)) {
+    const moe = await db.all<MoeRow>(`SELECT geoid, variable, moe FROM src_acs_bg_moe
+      WHERE release = ${release} ORDER BY geoid, variable`);
+    sizes = effectiveSizes(acs, moe, zones);
+  } else
+    warnings.push(
+      `cars: no B25044 margins of error for ACS ${release} (census-acs5-bg-moe-${release}); ` +
+        'the zone shrinkage uses estimated households'
+    );
   const fit = fitChoice(
     { rows: pums, bands, window: [`${pumsRelease - 4}-01-01`, `${pumsRelease}-12-31`] },
     observed,
-    data
+    data,
+    sizes ? { nEff: sizes.nEff, moeMissing: sizes.missing } : {}
   );
   data.constant = fit.constant;
   const parking =
