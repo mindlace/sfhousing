@@ -10,8 +10,8 @@
   import { REPO_URL } from '$lib/config';
   import { SOFTWARE, isoDate } from '$lib/attribution';
   import type { ManifestSources } from '$lib/data/manifest';
-  import { ABOUT_ID, CARS_NOTICE, PART_HEADING } from './copy';
-  import { LICENCE_LINK, listJoin, overtureNotice, sourceRows } from './credits';
+  import { ABOUT_ID, PART_HEADING } from './copy';
+  import { LICENCE_LINK, carsNotice, listJoin, overtureNotice, sourceRows } from './credits';
 
   let {
     level,
@@ -22,7 +22,8 @@
   const sub = $derived(`h${level + 1}`);
   const hasScenario = $derived(!!manifest?.scenarios?.fzp);
   const hasPolicy = $derived(!!manifest?.scenarios?.fzp?.policy);
-  const hasCars = $derived(!!manifest?.scenarios?.fzp?.cars);
+  /** With car data, the car sources the dataset has (carsNotice); null for none. */
+  const cars = $derived(manifest?.scenarios?.fzp?.cars ? carsNotice(manifest.sources) : null);
   /** One row per source, or per family of them (the Census, the DMV, a GTFS operator's years). */
   const rows = $derived(sourceRows(manifest?.sources ?? []));
   const hasTransit = $derived(manifest?.sources.some((s) => s.id.startsWith('gtfs-')) ?? false);
@@ -126,8 +127,8 @@
         Code §§65912.155–65912.162 (SB 79, 2025) and San Francisco Planning Code §207.11.
       </li>
     {/if}
-    {#if hasCars}
-      <li>{CARS_NOTICE}</li>
+    {#if cars}
+      <li>{cars}</li>
     {/if}
     <li>
       Derived data files under <code>/data/</code> that incorporate OpenStreetMap or Overture data are

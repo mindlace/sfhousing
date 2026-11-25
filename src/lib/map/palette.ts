@@ -71,11 +71,11 @@ export const TOKENS: Record<Theme, Record<TokenName, string>> = {
     'transit-rail': '#0F5A52',
     'transit-regional': '#0B3B36',
     'transit-stroke': '#FFFFFF',
-    'cars-1': '#E4E7F5',
-    'cars-2': '#B8C1E6',
-    'cars-3': '#8996CF',
-    'cars-4': '#5A69B0',
-    'cars-5': '#323F86',
+    'cars-1': '#AEB9E2',
+    'cars-2': '#8C9AD3',
+    'cars-3': '#6B7BC0',
+    'cars-4': '#4C5DA6',
+    'cars-5': '#2E3E80',
     'limit-ink': '#2B2A28',
     'limit-edge': 'rgba(43,42,40,0.45)',
     'limit-glaze': 'rgba(72,74,78,0.4)',
@@ -123,11 +123,11 @@ export const TOKENS: Record<Theme, Record<TokenName, string>> = {
     'transit-rail': '#7FD6C9',
     'transit-regional': '#C2F0E8',
     'transit-stroke': '#111214',
-    'cars-1': '#1A1D2E',
-    'cars-2': '#252B4A',
-    'cars-3': '#364070',
-    'cars-4': '#5462A6',
-    'cars-5': '#8592D6',
+    'cars-1': '#3A4473',
+    'cars-2': '#4D5A92',
+    'cars-3': '#6574B0',
+    'cars-4': '#8393CC',
+    'cars-5': '#A9B6E6',
     'limit-ink': '#E8E4DC',
     'limit-edge': 'rgba(232,228,220,0.4)',
     'limit-glaze': 'rgba(214,216,220,0.3)',
@@ -183,8 +183,11 @@ export function accessSwatch(theme: Theme, k: 1 | 2 | 3 | 4 | 5): string {
   return compositeHex(t[`transit-access-${k}` as const], t.land, TRANSIT_ACCESS_OPACITY);
 }
 
-/** The cars-per-household fill's opacity over the basemap (car-ownership Task 12). */
-export const CARS_OPACITY = 0.6;
+/**
+ * The cars-per-household fill's opacity over the basemap (car-ownership Task 12). The lowest step
+ * stays clear of land (at least 1.3:1), since a zone with no households draws nothing.
+ */
+export const CARS_OPACITY = 0.7;
 
 /** A cars legend swatch: `cars-k` as drawn, composited over land at CARS_OPACITY. */
 export function carsSwatch(theme: Theme, k: 1 | 2 | 3 | 4 | 5): string {

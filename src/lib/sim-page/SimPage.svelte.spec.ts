@@ -99,12 +99,12 @@ function setup(over: Over = {}) {
   });
 }
 
-/** Opened, compiled and filled at rev 1. */
-async function opened(over: Over = {}) {
+/** Opened, compiled and filled at rev 1; with `cars`, the run carries car data (Loaded.cars). */
+async function opened(over: Over = {}, opts: { cars?: boolean } = {}) {
   const r = setup(over);
   await expect.poll(() => w()?.lastOf('openTimeline')).toBeTruthy();
   emit(compiledMsg(1, STATICS));
-  emit(filledMsg(1, 0, LAST + 1));
+  emit(filledMsg(1, 0, LAST + 1, { cars: opts.cars }));
   return r;
 }
 
@@ -794,7 +794,7 @@ describe('SimPage publish and view', () => {
   });
 
   it('the header has no View; Layers on the map lists stops, capacity, cars and limits in order', async () => {
-    const r = await opened();
+    const r = await opened({}, { cars: true });
     await expect.element(layersToggle()).toBeVisible();
     expect(header().getByRole('button', { name: 'View', exact: true }).elements()).toEqual([]);
     expect(header().element().contains(layersToggle().element())).toBe(false);
@@ -1082,7 +1082,7 @@ describe('SimPage map overlays', () => {
   });
 
   it('without manifest.transit Layers lists cars and the limits only', async () => {
-    await opened({ manifest: { ...manifest, transit: undefined } });
+    await opened({ manifest: { ...manifest, transit: undefined } }, { cars: true });
     await openLayers();
     expect(layersPanel().getByRole('checkbox').elements()).toHaveLength(2);
     await expect.element(page.getByRole('checkbox', { name: 'Cars per household' })).toBeVisible();
@@ -1091,9 +1091,17 @@ describe('SimPage map overlays', () => {
       .toBeChecked();
   });
 
+  it('car zones named but the run has no car data (Loaded.cars null): no cars row', async () => {
+    await opened();
+    await openLayers();
+    await expect.element(page.getByRole('checkbox', { name: 'Transit stops' })).toBeVisible();
+    expect(page.getByRole('checkbox', { name: 'Cars per household' }).elements()).toEqual([]);
+    expect(layersPanel().getByRole('checkbox').elements()).toHaveLength(3);
+  });
+
   it('without car zones (an older dataset) Layers has no cars row', async () => {
     const fzp = { ...manifest.scenarios!.fzp, cars: undefined, carZones: undefined };
-    await opened({ manifest: { ...manifest, scenarios: { fzp } } });
+    await opened({ manifest: { ...manifest, scenarios: { fzp } } }, { cars: true });
     await openLayers();
     await expect.element(page.getByRole('checkbox', { name: 'Transit stops' })).toBeVisible();
     expect(page.getByRole('checkbox', { name: 'Cars per household' }).elements()).toEqual([]);
@@ -1113,7 +1121,8 @@ describe('SimPage map overlays', () => {
     emit(filledMsg(1, 0, LAST + 1));
     await openLayers();
     await expect.element(page.getByRole('checkbox', { name: 'Transit stops' })).toBeVisible();
-    expect(layersPanel().getByRole('checkbox').elements()).toHaveLength(4);
+    // Transit, the limits; no cars row, as this run has no car data.
+    expect(layersPanel().getByRole('checkbox').elements()).toHaveLength(3);
   });
 
   it('the prefs are read from and written to the page storage', async () => {

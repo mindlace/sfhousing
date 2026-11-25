@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { listJoin, overtureNotice, sourceRows } from './credits';
+import { carsNotice, listJoin, overtureNotice, sourceRows } from './credits';
 
 const fixture = JSON.parse(
   readFileSync(
@@ -124,5 +124,32 @@ describe('sourceRows (P13: one row per source family)', () => {
     );
     expect(rows.filter((r) => r.label.includes('Census')).map((r) => r.key)).toEqual(['census']);
     expect(rows.length).toBe(fixture.sources.length - 4);
+  });
+});
+
+describe('carsNotice', () => {
+  const pd = 'Public domain (U.S. Census Bureau)';
+  it('names only the Census kinds the dataset has, and the DMV licence as the manifest states it', () => {
+    expect(
+      carsNotice([
+        { id: 'datasf-parcels', license: 'PDDL-1.0' },
+        { id: 'census-acs5-bg-2024', license: pd },
+        { id: 'census-pums5-2024', license: pd },
+        { id: 'census-tiger-bg-2020', license: pd },
+        { id: 'ca-dmv-vehicles-zip', license: 'No restrictions on public use (California DMV)' }
+      ])
+    ).toBe(
+      'Households and cars from the U.S. Census Bureau (ACS, PUMS and TIGER/Line), public domain. ' +
+        'Car totals checked against California DMV vehicle counts, licence: No restrictions on public use (California DMV). ' +
+        'The parking figures cite their sources in the assumptions.'
+    );
+  });
+
+  it('without a DMV source, no DMV clause; with no car source at all, null', () => {
+    const n = carsNotice([{ id: 'census-acs5-bg-2024', license: pd }])!;
+    expect(n).toContain('(ACS)');
+    expect(n).not.toContain('DMV');
+    expect(n).not.toContain('decennial');
+    expect(carsNotice([{ id: 'datasf-parcels', license: 'PDDL-1.0' }])).toBeNull();
   });
 });

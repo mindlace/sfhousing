@@ -211,7 +211,9 @@
     transit: TransitView | null;
     transitIdle: (() => void) | null; // cancels the pending access-grid build
     carGeo: FeatureCollection | null; // car-zones.json, once the cars layer was first turned on
-    carsRequested: boolean; // its fetch has started (once per map)
+    carsRequested: boolean; // its fetch has started or succeeded (a failure clears it, to retry)
+    carsShown: boolean; // the cars layer is visible
+    carsPushed: Float32Array | null | undefined; // the values in the source (undefined: none yet)
     deckLayers: Layer[]; // the generated controller's latest deck layers
     deckGroupsPending: boolean; // set while deck skipped adding its MapLibre layer groups
     credit: Credit | null; // the credit's control and its one self-collapse
@@ -573,6 +575,8 @@
       transitIdle: null,
       carGeo: null,
       carsRequested: false,
+      carsShown: false,
+      carsPushed: undefined,
       deckLayers: [],
       deckGroupsPending: false,
       credit: null
@@ -1177,7 +1181,9 @@
     // shared, so Paint gets the choice too.
     const cars = v.carsPerHousehold === true && carZones !== undefined;
     set(CARS_LAYER, cars);
+    l!.carsShown = cars;
     if (cars && !l!.carsRequested) void startCars(l!, map);
+    else if (cars) pushCarZones();
     if (!v.transitStops && shown?.hit.kind === 'stop') clearShown();
   }
 
@@ -1194,18 +1200,25 @@
       geo = await (fetchCarZones ?? loadCarZones)(url);
     } catch (e) {
       console.warn('[map] car zones unavailable', e);
+      // The next turn-on tries again.
+      if (l.map === map) l.carsRequested = false;
       return;
     }
     if (l.dead || l.map !== map) return;
     l.carGeo = geo;
+    l.carsPushed = undefined;
     pushCarZones();
   }
 
-  /** The cars source from the zones and `carZones` (the playhead month's); empty without either. */
+  /**
+   * The cars source from the zones and `carZones` (the playhead month's); empty without values.
+   * Nothing while the layer is off (turning it on pushes), nor for the values already there.
+   */
   function pushCarZones(): void {
     const l = live;
     const map = l?.loaded ? l.map : null;
-    if (!l || !map || !l.carGeo) return;
+    if (!l || !map || !l.carGeo || !l.carsShown || l.carsPushed === carZones) return;
+    l.carsPushed = carZones;
     const src = map.getSource(CARS_SOURCE) as GeoJSONSource | undefined;
     src?.setData(
       carZones ? zonesCollection(l.carGeo, carZones) : { type: 'FeatureCollection', features: [] }

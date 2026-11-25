@@ -260,6 +260,11 @@
     onmanifest?(m: Manifest | null): void;
     /** A Retry's reload brought a new calibration. */
     oncalibration?(cal: Calibration): void;
+    /**
+     * Whether the run carries car data (the worker loaded cars.bin: `Loaded.cars`), on each change
+     * once the session has a view.
+     */
+    oncars?(on: boolean): void;
     /** The zoning in force at the last view month: height regions and contours. */
     onheights?(c: HeightCity): void;
     /** A chunk response arrived (lots may have loaded). */
@@ -342,6 +347,7 @@
     onmapready = undefined,
     onmanifest = undefined,
     oncalibration = undefined,
+    oncars = undefined,
     onheights = undefined,
     onchunks = undefined,
     onmiss = undefined,
@@ -444,13 +450,24 @@
   /** Today's score shape over the view on show (rule 26). */
   const score = $derived(shownView ? scoreOfView(shownView, tierBaseline) : null);
   const shownFilled = $derived(shown.view?.filledThrough ?? -1);
+  /** The run carries car data; null until the session has a view. */
+  const runCars = $derived(current ? current.cars !== null : null);
+  $effect(() => {
+    const on = runCars;
+    if (on !== null) untrack(() => oncars?.(on));
+  });
   /**
    * The cars layer's values: cars per household by zone at the playhead's month (null past the
-   * fill or without car data). The same array for the same month, so the map rebuilds its source
-   * only when the month changes.
+   * fill). The same array for the same month, so the map rebuilds its source only when the month
+   * changes. Undefined unless the run carries car data: the map keeps the layer off, fetching
+   * nothing.
    */
   const carZones = $derived(
-    shownView?.cars && index <= shownFilled ? (shownView.cars.zones[index] ?? null) : null
+    runCars !== true
+      ? undefined
+      : shownView?.cars && index <= shownFilled
+        ? (shownView.cars.zones[index] ?? null)
+        : null
   );
   /** `resultsAt` over the score above (the view's, built once); at today `todayAt` of it. */
   const at = $derived.by(() => {

@@ -56,6 +56,14 @@ describe('palette (U4)', () => {
       for (let k = 1; k < c.length; k++) expect(c[k]).toBeGreaterThan(c[k - 1]);
     });
 
+    it(`${theme}: the lowest cars step reads apart from no data (land), ≥ 1.3:1; each step ≥ 1.2× the last`, () => {
+      const c = ([1, 2, 3, 4, 5] as const).map((k) =>
+        contrast(carsSwatch(theme, k), TOKENS[theme].land)
+      );
+      expect(c[0]).toBeGreaterThanOrEqual(1.3);
+      for (let k = 1; k < c.length; k++) expect(c[k] / c[k - 1]).toBeGreaterThanOrEqual(1.2);
+    });
+
     it(`${theme}: stop classes step up in contrast with land (bus < rail < regional), ΔE2000 ≥ 8`, () => {
       const ids = ['transit-bus', 'transit-rail', 'transit-regional'] as const;
       const cs = ids.map((id) => contrast(TOKENS[theme][id], TOKENS[theme].land));

@@ -179,7 +179,7 @@ The plan world's cars per household by zone (Census block group) at the playhead
 
 - **Data:** `car-zones.json` (`manifest.scenarios.fzp.carZones`: block-group polygons, property
   `z`, the zone index) and `TimelineView.cars.zones[month]` (a `Float32Array`, NaN for a zone with
-  no households). `TimelineMode` passes the playhead month's array as `SimMapProps.carZones` (null
+  no households). `TimelineMode` passes the playhead month's array as `SimMapProps.carZones` (undefined unless the run carries car data, which keeps the layer off and fetches nothing; null
   past the fill or without car data); it is the same array for the same month, so the source is
   rebuilt only when the month changes.
 - **Style:** `buildStyle` adds source `CARS_SOURCE` (`car-zones`) and the fill `CARS_LAYER`
@@ -190,7 +190,7 @@ The plan world's cars per household by zone (Census block group) at the playhead
 - **Loading:** SimMap fetches `car-zones.json` the first time the layer is turned on
   (`SimMapProps.fetchCarZones` replaces the loader in tests), then sets the source to
   `zonesCollection(geo, carZones)` (`src/lib/map/cars-layer.ts`: `v` per zone, null where NaN)
-  on every `carZones` change. A failed fetch is a warning; the layer stays empty.
+  on every `carZones` change while the layer shows (off, nothing is rebuilt; turning it on pushes the latest month). A failed fetch is a warning and the layer stays empty; the next turn-on fetches again.
 - **Layers panel:** the row "Cars per household" (`CARS_LABEL`) with the legend `CARS_LEGEND`
   (swatches `carsSwatch(theme, k)`, the token composited over land) and the caption
   `CARS_CAPTION`, after the transit rows.

@@ -136,3 +136,27 @@ export function sourceRows(sources: readonly CreditSource[]): SourceRow[] {
     };
   });
 }
+
+/**
+ * Data and licences' car notice, from the sources the dataset has: the Census kinds present
+ * (public domain) and the DMV check with its licence as the manifest states it. Null with neither.
+ * The parking figures cite their sources in the assumptions (the car model's section).
+ */
+export function carsNotice(sources: readonly { id: string; license: string }[]): string | null {
+  const ids = sources.map((s) => s.id);
+  const kinds = CENSUS_KINDS.filter(([re]) => ids.some((id) => re.test(id))).map(([, k]) => k);
+  const dmv = sources.find((s) => s.id.startsWith('ca-dmv-'));
+  const parts: string[] = [];
+  if (kinds.length > 0) {
+    parts.push(
+      `Households and cars from the U.S. Census Bureau (${listJoin(kinds)}), public domain.`
+    );
+  }
+  if (dmv)
+    parts.push(
+      `Car totals checked against California DMV vehicle counts, licence: ${dmv.license}.`
+    );
+  if (parts.length === 0) return null;
+  parts.push('The parking figures cite their sources in the assumptions.');
+  return parts.join(' ');
+}

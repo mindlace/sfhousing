@@ -12,7 +12,8 @@ import AboutData from './AboutData.svelte';
 import AboutMeanings from './AboutMeanings.svelte';
 import AboutUsing from './AboutUsing.svelte';
 import { MAX_SAVES } from '$lib/game/saves';
-import { ABOUT_ID, CARS_NOTICE, MEANINGS, PART_HEADING, SAVED_GAMES, YOUR_PLANS } from './copy';
+import { ABOUT_ID, MEANINGS, PART_HEADING, SAVED_GAMES, YOUR_PLANS } from './copy';
+import { carsNotice } from './credits';
 
 const text = () => (document.body.textContent ?? '').replace(/\s+/g, ' ');
 
@@ -194,11 +195,12 @@ describe('AboutData', () => {
       .element(page.getByRole('link', { name: label }))
       .toHaveAttribute('href', 'https://www.census.gov/');
     expect(document.querySelectorAll('tbody tr')).toHaveLength(2);
-    expect(text()).toContain(CARS_NOTICE);
+    const notice = carsNotice(census)!;
+    expect(text()).toContain(notice);
     await r.unmount();
-    renderData({ ...manifest, scenarios });
+    renderData({ ...manifest, sources: [source, ...census], scenarios });
     await expect.element(page.getByText('Map data ©')).toBeInTheDocument();
-    expect(text()).not.toContain(CARS_NOTICE);
+    expect(text()).not.toContain('Households and cars');
   });
 
   it('data: the Overture notice comes from the manifest; "the ODbL" and "CC BY 4.0" link their licences', async () => {

@@ -103,9 +103,11 @@ to `/about#src-cars`, the car model's section in `ProvenanceBody` (`CARS_SECTION
 `provenanceSections` when the calibration has `cars`: the choice model, moves and new homes, each
 parking figure's provenance, and a table of the model's figures). It shows on the page when the
 manifest names `scenarios.fzp.cars`, before the disclosure (the link opens it and lands, like any
-`src-` hash), and live when the run's sections hold `src-cars`. Data and licences adds
-`CARS_NOTICE` (the Census, the DMV check, the parking cost and Right Size Parking sources) to its
-notices under the same condition.
+`src-` hash), and live when the run's sections hold `src-cars`. With `scenarios.fzp.cars`, Data
+and licences adds `carsNotice(sources)` (`credits.ts`) to its notices: the Census kinds the
+manifest's sources hold (public domain), the DMV check with the licence the manifest states, and a
+pointer to the assumptions for the parking figures' sources; nothing when the manifest holds
+neither.
 
 ## Sources table
 

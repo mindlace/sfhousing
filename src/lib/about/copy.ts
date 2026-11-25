@@ -108,12 +108,8 @@ export const ASSUMPTIONS_FAILED = "The assumptions couldn't load.";
 /** Assumptions' Cars section (car-ownership Task 12), shown when the dataset has car data. */
 export const CARS_HEADING = 'Cars';
 export const CARS_ABOUT: readonly string[] = [
-  "Each household's cars (none, one, two, or three or more) come from a choice model fitted to the Census Bureau's American Community Survey: household records (PUMS) for size, workers, income and tenure, and block-group counts of cars (table B25044) for where they live.",
+  "Each household's cars (none to three or more) come from a choice model fitted to Census data: household records (PUMS) and block-group car counts (ACS table B25044).",
   'New homes take the kinds of households that recently moved into new buildings, and their parking follows the cars those households are expected to own.'
 ];
 /** The link after the sentences, to the car model's figures and sources in the assumptions. */
 export const CARS_DETAILS = 'Details';
-
-/** Data and licences: the car model's notice, shown when the dataset has car data. */
-export const CARS_NOTICE =
-  "Households and cars from the U.S. Census Bureau (American Community Survey tables and PUMS, the 2000 Census and TIGER/Line block groups), public domain, checked against California DMV vehicle counts, with no restrictions on public use. Parking costs are cited from SF Planning and MOHCD studies, brought to today's dollars with the SF Controller's cost index and the BLS Consumer Price Index; spaces built per space used from King County Metro's Right Size Parking study.";

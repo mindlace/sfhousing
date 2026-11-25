@@ -93,6 +93,46 @@ describe('SimMap cars', { timeout: 30_000 }, () => {
     expect(errors).toEqual([]);
   });
 
+  it('off, a month change leaves the source alone; turning on draws the latest month', async () => {
+    const { ready, screen } = await mount({
+      view: { ...DEFAULT_VIEW, carsPerHousehold: true },
+      carZones: new Float32Array([0.5, 1, 1.5])
+    });
+    const map = (await ready).getMap()!;
+    await expect.poll(() => values(map), { timeout: 10_000 }).toEqual([0.5, 1, 1.5]);
+    const source = map.getSource(CARS_SOURCE) as GeoJSONSource;
+    const setData = vi.spyOn(source, 'setData');
+    await screen.rerender({ view: DEFAULT_VIEW });
+    await expect.poll(() => vis(map, CARS_LAYER)).toBe('none');
+    await screen.rerender({ carZones: new Float32Array([2, 2, 2]) });
+    await screen.rerender({ carZones: new Float32Array([3, 3, 3]) });
+    expect(setData).not.toHaveBeenCalled();
+    await screen.rerender({ view: { ...DEFAULT_VIEW, carsPerHousehold: true } });
+    await expect.poll(() => values(map)).toEqual([3, 3, 3]);
+    expect(setData).toHaveBeenCalledTimes(1);
+  });
+
+  it('a failed car-zones.json fetch is a warning; the next turn-on tries again', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const fetchCarZones = vi
+      .fn<typeof loadCarZones>()
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockImplementation(loadCarZones);
+    const { ready, screen } = await mount({
+      fetchCarZones,
+      view: { ...DEFAULT_VIEW, carsPerHousehold: true },
+      carZones: new Float32Array([0.5, 1, 1.5])
+    });
+    const map = (await ready).getMap()!;
+    await expect.poll(() => warn.mock.calls.length).toBe(1);
+    expect(await values(map)).toEqual([]);
+    await screen.rerender({ view: DEFAULT_VIEW });
+    await screen.rerender({ view: { ...DEFAULT_VIEW, carsPerHousehold: true } });
+    await expect.poll(() => values(map), { timeout: 10_000 }).toEqual([0.5, 1, 1.5]);
+    expect(fetchCarZones).toHaveBeenCalledTimes(2);
+    expect(errors).toEqual([]);
+  });
+
   it('without carZones (Paint shares the prefs): the choice on shows and fetches nothing', async () => {
     const fetchCarZones = vi.fn(loadCarZones);
     const { ready } = await mount({
