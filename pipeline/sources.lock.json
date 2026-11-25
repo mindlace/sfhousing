@@ -35,6 +35,312 @@
     {
       "files": [
         {
+          "archiveKey": "sources/80be41f897dd31577e7d8df61eaee558e83f5f2aac5ebbc990d90765a7ce184a.csv",
+          "bytes": 7114,
+          "name": "ca-dmv-vehicles-zip.csv",
+          "sha256": "80be41f897dd31577e7d8df61eaee558e83f5f2aac5ebbc990d90765a7ce184a",
+          "url": "https://data.ca.gov/api/3/action/package_show?id=vehicle-fuel-type-count-by-zip-code"
+        }
+      ],
+      "homepage": "https://data.ca.gov/dataset/vehicle-fuel-type-count-by-zip-code",
+      "id": "ca-dmv-vehicles-zip",
+      "label": "California DMV vehicle fuel type counts by ZIP code (light duty, SF ZIPs)",
+      "license": "No restrictions on public use (California DMV, via data.ca.gov)",
+      "retrievedAt": "2026-11-25T06:21:30.707Z",
+      "rowCount": 469,
+      "upstreamVersion": "as-of 2019 to 2026, 8 files, package modified 2026-11-13T19:23:50.943358"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/f6193f1712e75bce2478c56e27da9c9e559334c946327cd0d94123d626a0e827.csv",
+          "bytes": 1169817,
+          "name": "census-acs5-bg-2009.csv",
+          "sha256": "f6193f1712e75bce2478c56e27da9c9e559334c946327cd0d94123d626a0e827",
+          "url": "https://www2.census.gov/programs-surveys/acs/summary_file/2009/data/5_year_seq_by_state/California/Tracts_Block_Groups_Only/g20095ca.txt"
+        }
+      ],
+      "homepage": "https://www.census.gov/programs-surveys/acs/data/summary-file.html",
+      "id": "census-acs5-bg-2009",
+      "label": "ACS 2005-2009 5-year block-group tables (B25044, B25046, B25009, B19001, B25002, B08301)",
+      "license": "Public domain (U.S. Census Bureau)",
+      "retrievedAt": "2026-11-25T06:20:22.629Z",
+      "rowCount": 43463,
+      "upstreamVersion": "ACS 2005-2009 5-year, seq-based summary files, 2000 block groups"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/439b6835e43774e8bf373d968c145b7562164fb1e842703059340e85952b0a1a.csv",
+          "bytes": 1185376,
+          "name": "census-acs5-bg-2013.csv",
+          "sha256": "439b6835e43774e8bf373d968c145b7562164fb1e842703059340e85952b0a1a",
+          "url": "https://www2.census.gov/programs-surveys/acs/summary_file/2013/data/5_year_seq_by_state/California/Tracts_Block_Groups_Only/g20135ca.txt"
+        }
+      ],
+      "homepage": "https://www.census.gov/programs-surveys/acs/data/summary-file.html",
+      "id": "census-acs5-bg-2013",
+      "label": "ACS 2009-2013 5-year block-group tables (B25044, B25046, B25009, B19001, B25002, B08301)",
+      "license": "Public domain (U.S. Census Bureau)",
+      "retrievedAt": "2026-11-25T06:20:24.284Z",
+      "rowCount": 44005,
+      "upstreamVersion": "ACS 2009-2013 5-year, seq-based summary files, 2010 block groups"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/8233dd28be8812c870180e409e7318036d0a380ccf117c1a87cbde5b8bc3159b.csv",
+          "bytes": 1185252,
+          "name": "census-acs5-bg-2019.csv",
+          "sha256": "8233dd28be8812c870180e409e7318036d0a380ccf117c1a87cbde5b8bc3159b",
+          "url": "https://www2.census.gov/programs-surveys/acs/summary_file/2019/data/5_year_seq_by_state/California/Tracts_Block_Groups_Only/g20195ca.txt"
+        }
+      ],
+      "homepage": "https://www.census.gov/programs-surveys/acs/data/summary-file.html",
+      "id": "census-acs5-bg-2019",
+      "label": "ACS 2015-2019 5-year block-group tables (B25044, B25046, B25009, B19001, B25002, B08301)",
+      "license": "Public domain (U.S. Census Bureau)",
+      "retrievedAt": "2026-11-25T06:20:26.016Z",
+      "rowCount": 43971,
+      "upstreamVersion": "ACS 2015-2019 5-year, seq-based summary files, 2010 block groups"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/1a47b5cc1114382aa4d66d656cca432c438424963d0e182319afa17e3412f054.csv",
+          "bytes": 1381142,
+          "name": "census-acs5-bg-2020.csv",
+          "sha256": "1a47b5cc1114382aa4d66d656cca432c438424963d0e182319afa17e3412f054",
+          "url": "https://www2.census.gov/programs-surveys/acs/summary_file/2020/data/5_year_seq_by_state/California/Tracts_Block_Groups_Only/g20205ca.txt"
+        }
+      ],
+      "homepage": "https://www.census.gov/programs-surveys/acs/data/summary-file.html",
+      "id": "census-acs5-bg-2020",
+      "label": "ACS 2016-2020 5-year block-group tables (B25044, B25046, B25009, B19001, B25002, B08301)",
+      "license": "Public domain (U.S. Census Bureau)",
+      "retrievedAt": "2026-11-25T06:20:27.702Z",
+      "rowCount": 51390,
+      "upstreamVersion": "ACS 2016-2020 5-year, seq-based summary files, 2020 block groups"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/9b5b9f73956abfe94fce2e305e62673dc31c5efe610eb794b493a5570e045482.csv",
+          "bytes": 1380448,
+          "name": "census-acs5-bg-2021.csv",
+          "sha256": "9b5b9f73956abfe94fce2e305e62673dc31c5efe610eb794b493a5570e045482",
+          "url": "https://www2.census.gov/programs-surveys/acs/summary_file/2021/table-based-SF/data/5YRData/acsdt5y2021-b25044.dat"
+        }
+      ],
+      "homepage": "https://www.census.gov/programs-surveys/acs/data/summary-file.html",
+      "id": "census-acs5-bg-2021",
+      "label": "ACS 2017-2021 5-year block-group tables (B25044, B25046, B25009, B19001, B25002, B08301)",
+      "license": "Public domain (U.S. Census Bureau)",
+      "retrievedAt": "2026-11-25T06:20:29.898Z",
+      "rowCount": 51377,
+      "upstreamVersion": "ACS 2017-2021 5-year, table-based summary files, 2020 block groups"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/727b4fca8ad2829ed51ce8bec2cc570a9b84eaa14219e08c4e692cc39e1e0e74.csv",
+          "bytes": 1381050,
+          "name": "census-acs5-bg-2022.csv",
+          "sha256": "727b4fca8ad2829ed51ce8bec2cc570a9b84eaa14219e08c4e692cc39e1e0e74",
+          "url": "https://www2.census.gov/programs-surveys/acs/summary_file/2022/table-based-SF/data/5YRData/acsdt5y2022-b25044.dat"
+        }
+      ],
+      "homepage": "https://www.census.gov/programs-surveys/acs/data/summary-file.html",
+      "id": "census-acs5-bg-2022",
+      "label": "ACS 2018-2022 5-year block-group tables (B25044, B25046, B25009, B19001, B25002, B08301)",
+      "license": "Public domain (U.S. Census Bureau)",
+      "retrievedAt": "2026-11-25T06:20:34.533Z",
+      "rowCount": 51412,
+      "upstreamVersion": "ACS 2018-2022 5-year, table-based summary files, 2020 block groups"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/65fb2b5acf02f03ab7b3a403c2dfdb5f94668181c24ebb7313e278216e35651e.csv",
+          "bytes": 1380970,
+          "name": "census-acs5-bg-2023.csv",
+          "sha256": "65fb2b5acf02f03ab7b3a403c2dfdb5f94668181c24ebb7313e278216e35651e",
+          "url": "https://www2.census.gov/programs-surveys/acs/summary_file/2023/table-based-SF/data/5YRData/acsdt5y2023-b25044.dat"
+        }
+      ],
+      "homepage": "https://www.census.gov/programs-surveys/acs/data/summary-file.html",
+      "id": "census-acs5-bg-2023",
+      "label": "ACS 2019-2023 5-year block-group tables (B25044, B25046, B25009, B19001, B25002, B08301)",
+      "license": "Public domain (U.S. Census Bureau)",
+      "retrievedAt": "2026-11-25T06:20:38.938Z",
+      "rowCount": 51421,
+      "upstreamVersion": "ACS 2019-2023 5-year, table-based summary files, 2020 block groups"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/9346d1e78f958905a91f4b3eed6c451c7a83d96d769fa7f200840d357b7e7a6c.csv",
+          "bytes": 1379565,
+          "name": "census-acs5-bg-2024.csv",
+          "sha256": "9346d1e78f958905a91f4b3eed6c451c7a83d96d769fa7f200840d357b7e7a6c",
+          "url": "https://www2.census.gov/programs-surveys/acs/summary_file/2024/table-based-SF/data/5YRData/acsdt5y2024-b25044.dat"
+        }
+      ],
+      "homepage": "https://www.census.gov/programs-surveys/acs/data/summary-file.html",
+      "id": "census-acs5-bg-2024",
+      "label": "ACS 2020-2024 5-year block-group tables (B25044, B25046, B25009, B19001, B25002, B08301)",
+      "license": "Public domain (U.S. Census Bureau)",
+      "retrievedAt": "2026-11-25T06:20:43.353Z",
+      "rowCount": 51385,
+      "upstreamVersion": "ACS 2020-2024 5-year, table-based summary files, 2020 block groups"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/ce826b3b38fad2bb3361cd31f489b32acdbae83e8d9940bb986649e5c2304b9c.csv",
+          "bytes": 799412,
+          "name": "census-pums5-2013.csv",
+          "sha256": "ce826b3b38fad2bb3361cd31f489b32acdbae83e8d9940bb986649e5c2304b9c",
+          "url": "https://www2.census.gov/programs-surveys/acs/data/pums/2013/5-Year/csv_hca.zip"
+        }
+      ],
+      "homepage": "https://www.census.gov/programs-surveys/acs/microdata.html",
+      "id": "census-pums5-2013",
+      "label": "ACS 2009-2013 5-year PUMS, San Francisco households",
+      "license": "Public domain (U.S. Census Bureau)",
+      "retrievedAt": "2026-11-25T06:20:47.646Z",
+      "rowCount": 15901,
+      "upstreamVersion": "ACS 2009-2013 5-year PUMS, household file 2013/5-Year/csv_hca.zip with workers (ESR 1, 2, 4, 5) from csv_pca.zip"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/b4af69a2055bdb13c1a9fa129ae9bd30287234e4c6faf573d3c0bb0a60f1f9b7.csv",
+          "bytes": 946532,
+          "name": "census-pums5-2024.csv",
+          "sha256": "b4af69a2055bdb13c1a9fa129ae9bd30287234e4c6faf573d3c0bb0a60f1f9b7",
+          "url": "https://www2.census.gov/programs-surveys/acs/data/pums/2024/5-Year/csv_hca.zip"
+        }
+      ],
+      "homepage": "https://www.census.gov/programs-surveys/acs/microdata.html",
+      "id": "census-pums5-2024",
+      "label": "ACS 2020-2024 5-year PUMS, San Francisco households",
+      "license": "Public domain (U.S. Census Bureau)",
+      "retrievedAt": "2026-11-25T06:21:08.641Z",
+      "rowCount": 17071,
+      "upstreamVersion": "ACS 2020-2024 5-year PUMS, household file 2024/5-Year/csv_hca.zip with workers (ESR 1, 2, 4, 5) from csv_pca.zip"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/d598919e507b9f01fa9d1f9407d10760634062c85a8d4043ff1ed20b0f5bee51.csv",
+          "bytes": 206429,
+          "name": "census-sf3-2000-bg.csv",
+          "sha256": "d598919e507b9f01fa9d1f9407d10760634062c85a8d4043ff1ed20b0f5bee51",
+          "url": "https://www2.census.gov/census_2000/datasets/Summary_File_3/California/ca00058_uf3.zip"
+        }
+      ],
+      "homepage": "https://www.census.gov/data/datasets/2000/dec/summary-file-3.html",
+      "id": "census-sf3-2000-bg",
+      "label": "2000 Census SF3 H044 tenure by vehicles available, block groups",
+      "license": "Public domain (U.S. Census Bureau)",
+      "retrievedAt": "2026-11-25T06:21:27.653Z",
+      "rowCount": 8625,
+      "upstreamVersion": "2000 Census SF3 segment 58 (H044), 575 block groups"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/6e30699f73c2d2e528e804a2839e77bde6b8fbccd6b8193750c430e783980d76.zip",
+          "bytes": 190476,
+          "name": "census-tiger-bg-2000.zip",
+          "sha256": "6e30699f73c2d2e528e804a2839e77bde6b8fbccd6b8193750c430e783980d76",
+          "url": "https://www2.census.gov/geo/tiger/TIGER2010/BG/2000/tl_2010_06075_bg00.zip"
+        }
+      ],
+      "homepage": "https://www.census.gov/geographies/mapping-files/time-series/geo/tiger-line-file.html",
+      "id": "census-tiger-bg-2000",
+      "label": "TIGER/Line 2000 block groups",
+      "license": "Public domain (U.S. Census Bureau)",
+      "retrievedAt": "2026-11-25T06:21:28.838Z",
+      "rowCount": 575,
+      "upstreamVersion": "TIGER/Line 2000 block groups, tl_2010_06075_bg00.zip"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/00bdee172ca1f3ec3aaf154297e3bf37b6c45b5d0c8eeb95670a6cdba2a36882.zip",
+          "bytes": 199755,
+          "name": "census-tiger-bg-2010.zip",
+          "sha256": "00bdee172ca1f3ec3aaf154297e3bf37b6c45b5d0c8eeb95670a6cdba2a36882",
+          "url": "https://www2.census.gov/geo/tiger/TIGER2010/BG/2010/tl_2010_06075_bg10.zip"
+        }
+      ],
+      "homepage": "https://www.census.gov/geographies/mapping-files/time-series/geo/tiger-line-file.html",
+      "id": "census-tiger-bg-2010",
+      "label": "TIGER/Line 2010 block groups",
+      "license": "Public domain (U.S. Census Bureau)",
+      "retrievedAt": "2026-11-25T06:21:28.864Z",
+      "rowCount": 581,
+      "upstreamVersion": "TIGER/Line 2010 block groups, tl_2010_06075_bg10.zip"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/4f26c1828b2039ab7a9e9046b0ab65786c0882e1243f71e074246812312d615c.zip",
+          "bytes": 51862487,
+          "name": "census-tiger-bg-2020.zip",
+          "sha256": "4f26c1828b2039ab7a9e9046b0ab65786c0882e1243f71e074246812312d615c",
+          "url": "https://www2.census.gov/geo/tiger/TIGER2020/BG/tl_2020_06_bg.zip"
+        }
+      ],
+      "homepage": "https://www.census.gov/geographies/mapping-files/time-series/geo/tiger-line-file.html",
+      "id": "census-tiger-bg-2020",
+      "label": "TIGER/Line 2020 block groups",
+      "license": "Public domain (U.S. Census Bureau)",
+      "retrievedAt": "2026-11-25T06:21:28.888Z",
+      "rowCount": 681,
+      "upstreamVersion": "TIGER/Line 2020 block groups, tl_2020_06_bg.zip"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/23a54e5249eea5e8db5e3bfa4ea24edd30d4ac2111ec0c7e3ac4003c0e596c27.csv",
+          "bytes": 22068,
+          "name": "census-xwalk-2000-2010.csv",
+          "sha256": "23a54e5249eea5e8db5e3bfa4ea24edd30d4ac2111ec0c7e3ac4003c0e596c27",
+          "url": "https://www2.census.gov/geo/docs/maps-data/data/rel/t00t10/TAB2000_TAB2010_ST_06_v2.zip"
+        }
+      ],
+      "homepage": "https://www.census.gov/geographies/reference-files/time-series/geo/relationship-files.html",
+      "id": "census-xwalk-2000-2010",
+      "label": "Census 2000 to 2010 block-group relationship (land area)",
+      "license": "Public domain (U.S. Census Bureau)",
+      "retrievedAt": "2026-11-25T06:21:29.219Z",
+      "rowCount": 632,
+      "upstreamVersion": "Census 2000 to 2010 block relationship file, SF rows by from block group"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/a928009f29c69581f9d4f29ff5eb2e8d6e19f131d0323646e82fdc9ac76210c6.csv",
+          "bytes": 28685,
+          "name": "census-xwalk-2010-2020.csv",
+          "sha256": "a928009f29c69581f9d4f29ff5eb2e8d6e19f131d0323646e82fdc9ac76210c6",
+          "url": "https://www2.census.gov/geo/docs/maps-data/data/rel2020/blkgrp/tab20_blkgrp20_blkgrp10_st06.txt"
+        }
+      ],
+      "homepage": "https://www.census.gov/geographies/reference-files/time-series/geo/relationship-files.html",
+      "id": "census-xwalk-2010-2020",
+      "label": "Census 2010 to 2020 block-group relationship (land area)",
+      "license": "Public domain (U.S. Census Bureau)",
+      "retrievedAt": "2026-11-25T06:21:30.225Z",
+      "rowCount": 829,
+      "upstreamVersion": "Census 2010 to 2020 block-group relationship file, SF rows by from block group"
+    },
+    {
+      "files": [
+        {
           "archiveKey": "sources/b75d184012d4b2634b13c9f7ec89575a917b080e291005466b9d4eb9a3144299.csv",
           "bytes": 4133318,
           "name": "datasf-assessor-roll.page-000.csv",

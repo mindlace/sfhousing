@@ -7,6 +7,8 @@ import { wranglerTarget, type R2Target } from '../lib/r2';
 import { DATASF, fetchDatasf, type DatasfId } from '../sources/datasf';
 import { fetchOverture, fetchOvertureParts, latestOvertureRelease } from '../sources/overture';
 import { fetchGtfs } from '../sources/gtfs';
+import { fetchCensus, fetchDmv } from '../sources/census';
+import { CENSUS_IDS, DMV_ID } from '../census-config';
 import { LIDAR_ID, LIDAR_LOCK, fetchLidar, writeLidarLock, type LidarOpts } from '../sources/lidar';
 import { run as realRun } from '../lib/exec';
 import { fetchBasemap, fetchFonts } from '../sources/protomaps';
@@ -29,6 +31,8 @@ export const FETCH_IDS = [
   'protomaps-fonts',
   ...GTFS_IDS,
   SFBOS_EXEMPTIONS_ID,
+  ...CENSUS_IDS,
+  DMV_ID,
   LIDAR_ID
 ] as const;
 
@@ -180,6 +184,10 @@ export async function fetchAll(opts: FetchOpts = {}): Promise<number> {
       entry = await fetchGtfs(id as GtfsLockId, rawDir, http);
     } else if (id === SFBOS_EXEMPTIONS_ID) {
       entry = await fetchSfbosExemptions(rawDir, http);
+    } else if (CENSUS_IDS.includes(id)) {
+      entry = await fetchCensus(id, rawDir, http);
+    } else if (id === DMV_ID) {
+      entry = await fetchDmv(rawDir, http);
     } else entry = await fetchFonts(rawDir, http);
     console.log(
       `  ${id}: ${entry.files.length} file(s), ${entry.rowCount} rows, ${entry.upstreamVersion} (${((Date.now() - t0) / 1000).toFixed(1)}s)`
