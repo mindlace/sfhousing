@@ -1415,9 +1415,9 @@ git grep -n -E 'level2-check|readLevel2|level2Lines|level2Exit|runEmptyDocument'
 git grep -n "'/sim" -- e2e
 git grep -n -F '\/sim$' -- e2e</code></pre>
       <ul>
-        <li>Allowed: the redirect's files and the tests that assert the redirect; an assertion that a banner has no "Remix", and <code>game.md</code>'s sentence that there is no Remix; a test that writes a five-level record to prove it is deleted; the history files the rule above keeps.</li>
+        <li>Allowed: the redirect's files and the tests that assert the redirect; an assertion that a banner has no "Remix", and <code>game.md</code>'s sentence that there is no Remix; a test that writes a five-level record to prove it is deleted; the history files the rule above keeps; <code>APP_NAME</code> in <code>src/lib/config.ts</code>, which the dataset version hashes; the shared pages' <code>DatasetNotice</code> value <code>'remix'</code> (the older-data notice N5) where the code and tests name it, and the tests that assert Remix is gone.</li>
         <li>A hit in a file of this unit's write set is fixed.</li>
-        <li>A hit in another unit's file is reported with its <code>file:line</code> and owner, and left alone.</li>
+        <li>A hit in another unit's file is reported with its <code>file:line</code> and owner, and left alone. <code>loose-ends</code>, which runs after this unit, clears the hits the package names.</li>
       </ul>
     </section>
 
