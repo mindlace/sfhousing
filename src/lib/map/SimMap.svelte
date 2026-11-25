@@ -53,7 +53,14 @@
   import type { Day } from '$lib/timelapse/time';
   import { DEFAULT_TRANSIT_PARAMS, SF_GRID_BBOX, buildAccessGrid } from '$lib/transit';
   import { DEFAULT_VIEW } from '$lib/view/prefs';
-  import { CONSTRAINTS, defaultFrame, initialCamera, pixelRatio } from './camera';
+  import {
+    CONSTRAINTS,
+    RUN_MIN_ZOOM,
+    defaultFrame,
+    initialCamera,
+    pixelRatio,
+    runFrame
+  } from './camera';
   import { loadDeck } from './deck-loader';
   import { loadTimelapse } from './timelapse-loader';
   import { generatedCellFilter } from './cull';
@@ -96,6 +103,7 @@
   } from './transit-layer';
   import type {
     BarMode,
+    CameraFrame,
     ChunkStatus,
     GeneratedUpdate,
     ParcelSummaryLike,
@@ -233,6 +241,10 @@
   let pendingApplies: GeneratedUpdate[] = [];
   let overlayLayers: Layer[] = [];
   let panEnabled = true;
+  /** M1: the value of the last setRunView call. Reactive because the markup reads it. */
+  let runView = $state(false);
+  /** The camera to go back to on unlock; taken when the lock first meets a map; null unlocked. */
+  let remembered: CameraFrame | null = null;
   let resyncCb: (() => void) | null = null;
   let readyFired = false;
   let unsupportedFired = false;
@@ -287,7 +299,7 @@
   export function setPanEnabled(enabled: boolean): void {
     panEnabled = enabled;
     if (!enabled) clearShown();
-    applyPan();
+    applyInteraction();
   }
 
   export function setBottomInset(px: number): void {
@@ -451,8 +463,65 @@
     live?.timeline?.setBarMode(mode);
   }
 
-  /** M1: the run view. Does nothing until map-run builds it. */
-  export function setRunView(_on: boolean): void {}
+  /**
+   * M1: the run view (map-interfaces.md, "The run view"). true fits the whole city flat and north
+   * up and locks the camera; false unlocks and returns to the camera before. A call with the value
+   * already in force does nothing. Never throws.
+   */
+  export function setRunView(on: boolean): void {
+    if (on === runView) return;
+    runView = on;
+    const l = live;
+    if (on) {
+      clearShown();
+      unreportHover();
+      if (l) {
+        l.pointer = null;
+        l.tap = null;
+        l.click = null;
+      }
+      if (l?.map) lockCamera(l);
+      return;
+    }
+    const map = l?.map;
+    if (!l || !map) {
+      remembered = null;
+      return;
+    }
+    map.getCanvasContainer().classList.remove('sim-map-run-locked');
+    l.overlay?.setProps({ _pickable: true });
+    applyInteraction();
+    if (remembered) map.jumpTo(remembered);
+    map.setMinZoom(CONSTRAINTS.minZoom);
+    map.setMaxBounds(CONSTRAINTS.maxBounds);
+    remembered = null;
+  }
+
+  /**
+   * Locks `l`'s map in the run view (§sec-design-on, steps 6 to 11): remembers the camera unless a
+   * lock already did, turns the handlers off, lifts the bounds and zoom floor, fits the city, and
+   * stops picking.
+   */
+  function lockCamera(l: Live): void {
+    const map = l.map;
+    if (!map) return;
+    if (!remembered) {
+      const c = map.getCenter();
+      remembered = {
+        center: [c.lng, c.lat],
+        zoom: map.getZoom(),
+        pitch: map.getPitch(),
+        bearing: map.getBearing()
+      };
+    }
+    applyInteraction();
+    map.setMaxBounds(null);
+    map.setMinZoom(RUN_MIN_ZOOM);
+    const box = map.getContainer(); // `container`
+    map.jumpTo(runFrame(box.clientWidth, box.clientHeight, bottomInset));
+    map.getCanvasContainer().classList.add('sim-map-run-locked');
+    l.overlay?.setProps({ _pickable: false });
+  }
 
   const handle: SimMapHandle = {
     applyGenerated,
@@ -621,7 +690,7 @@
     }
     l.map = map;
     if (bottomInset > 0) map.setPadding({ top: 0, left: 0, right: 0, bottom: bottomInset });
-    applyPan();
+    applyInteraction();
 
     map.on('error', (e) => onMapError(l, e));
     map.on('dataloading', () => onDataLoading(l));
@@ -821,6 +890,8 @@
     const [{ MapLibreOverlay }, { SolidPolygonLayer }] = mods;
     const overlay = new MapLibreOverlay({
       interleaved: true,
+      // Not pickable while the run view is on (a lock that met the map before its load).
+      _pickable: !runView,
       layers: [],
       layerFilter: generatedCellFilter,
       // luma reports shader compile/link failures here, not to deck's onError (ruling R10).
@@ -1108,9 +1179,27 @@
 
   // ---- map state --------------------------------------------------------------------------------
 
-  function applyPan(): void {
+  /** Sets MapLibre's handlers from both switches, runView and panEnabled; the only place that does. */
+  function applyInteraction(): void {
     const m = live?.map;
     if (!m) return;
+    if (runView) {
+      m.dragPan.disable();
+      m.dragRotate.disable();
+      m.scrollZoom.disable();
+      m.boxZoom.disable();
+      m.doubleClickZoom.disable();
+      m.keyboard.disable();
+      m.touchZoomRotate.disable();
+      m.touchPitch.disable();
+      return;
+    }
+    m.scrollZoom.enable();
+    m.boxZoom.enable();
+    m.doubleClickZoom.enable();
+    m.keyboard.enable();
+    m.touchZoomRotate.enable();
+    m.touchPitch.enable();
     if (panEnabled) {
       m.dragPan.enable();
       m.dragRotate.enable();
@@ -1273,6 +1362,7 @@
   }
 
   function resetView(): void {
+    if (runView) return;
     const m = live?.map;
     if (m && container) m.jumpTo(defaultFrame(container.clientWidth));
   }
@@ -1520,6 +1610,7 @@
   aria-label="3D map of San Francisco"
   data-testid="map-root"
   data-state={mapState}
+  data-run-view={runView ? 'on' : undefined}
   class="sim-map relative h-full w-full overflow-hidden"
   style={rootStyle}
 >
@@ -1603,7 +1694,7 @@
     {/if}
   </div>
 
-  {#if coarse && mapState === 'ready'}
+  {#if coarse && mapState === 'ready' && !runView}
     <button
       type="button"
       aria-label="Reset view"
@@ -1807,5 +1898,12 @@
   .sim-map :global(.maplibregl-ctrl-bottom-left),
   .sim-map :global(.maplibregl-ctrl-bottom-right) {
     bottom: var(--map-bottom-inset, 0px);
+  }
+  .sim-map[data-run-view='on'] :global(.maplibregl-ctrl-bottom-left) {
+    display: none;
+  }
+  .sim-map :global(.maplibregl-canvas-container.sim-map-run-locked) {
+    touch-action: none;
+    cursor: default;
   }
 </style>
