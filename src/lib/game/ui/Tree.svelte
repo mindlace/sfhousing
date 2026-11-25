@@ -3,7 +3,7 @@
   detail (in its row below 1024 px, in a fifth column from there), and the footer (Task 7).
 -->
 <script lang="ts">
-  import { tick } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import { prefersReducedMotion } from 'svelte/motion';
   import { MediaQuery } from 'svelte/reactivity';
   import { fade } from 'svelte/transition';
@@ -60,6 +60,13 @@
   const uid = $props.id();
   const titleId = `${uid}-title`;
   const wide = new MediaQuery('(min-width: 1024px)');
+
+  // A node's fade is global, so a node whose list or branch is new fades too (a local intro skips
+  // a block created with its parent); until mount its duration is 0, so nodes present then do not.
+  let mounted = $state(false);
+  onMount(() => {
+    mounted = true;
+  });
 
   let openId: NodeId | null = $state(null);
   /** What the live region says: the last purchase seen in the props. */
@@ -220,7 +227,7 @@
     data-state={v.state}
     data-level={v.level}
     data-on={sw ? String(props.on[id]) : undefined}
-    in:fade={{ duration: prefersReducedMotion.current ? 0 : REVEAL_MS }}
+    in:fade|global={{ duration: !mounted || prefersReducedMotion.current ? 0 : REVEAL_MS }}
   >
     <div class="flex flex-wrap items-center gap-1 rounded-md px-2 py-1 text-sm {look(v)}">
       <button

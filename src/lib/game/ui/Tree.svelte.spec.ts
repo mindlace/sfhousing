@@ -79,6 +79,12 @@ const sub = (id: string) =>
   card(id)
     .querySelector('[data-testid="tree-node-open"] [aria-hidden="true"]')
     ?.textContent?.trim();
+/**
+ * The durations of a node's running animations. Svelte starts a transition with a zero-length
+ * placeholder animation, then the fade itself.
+ */
+const durations = (id: string) =>
+  (li(id)?.getAnimations() ?? []).map((a) => a.effect?.getTiming().duration);
 const detail = () => page.getByTestId('tree-detail');
 const buyButton = () => page.getByTestId('tree-buy');
 
@@ -199,7 +205,8 @@ describe('Tree', () => {
     await opener('Gamma').click();
     await expect.element(detail()).toHaveTextContent(`${SOURCE}: Staff memo`);
     await expect.element(page.getByTestId('tree-source')).not.toBeInTheDocument();
-    expect(detail().element().textContent).not.toContain('Next:');
+    // Gamma has one level, 'Step 1': its next step would read nextStepText('Step 1').
+    expect(detail().element().textContent).not.toContain(nextStepText('Step 1'));
 
     await opener('Alpha').click();
     await expect.element(detail()).toHaveTextContent('Plain.');
@@ -370,11 +377,44 @@ describe('Tree', () => {
     await expect.element(openOf('a')).toBeVisible();
     expect(li('a')?.getAnimations()).toEqual([]);
     await screen.rerender({ tree: props({ nodes: [a, b] }) });
-    // Svelte starts a transition with a zero-length placeholder animation, then the fade itself.
-    const durations = () =>
-      (li('b')?.getAnimations() ?? []).map((a) => a.effect?.getTiming().duration);
-    await expect.poll(durations).toContain(REVEAL_MS);
+    await expect.poll(() => durations('b')).toContain(REVEAL_MS);
     expect(li('a')?.getAnimations()).toEqual([]);
+  });
+
+  it('a first child under a node present at mount fades in', async () => {
+    await emulate('light', 'no-preference');
+    const a = nodeView(treeNode({ id: 'a' }), { level: 1, state: 'done' });
+    const c = nodeView(treeNode({ id: 'c', after: ['a'] }));
+    const screen = await mount({ nodes: [a] });
+    await expect.element(openOf('a')).toBeVisible();
+    await screen.rerender({ tree: props({ nodes: [a, c] }) });
+    await expect.poll(() => durations('c')).toContain(REVEAL_MS);
+    expect(li('c')?.parentElement?.closest('[data-testid="tree-node"]')).toBe(li('a'));
+    expect(li('a')?.getAnimations()).toEqual([]);
+  });
+
+  it('a node in a branch not shown before fades in', async () => {
+    await emulate('light', 'no-preference');
+    const a = nodeView(treeNode({ id: 'a' }));
+    const z = nodeView(treeNode({ id: 'z', branch: 'zoning' }));
+    const screen = await mount({ nodes: [a] });
+    await expect.element(openOf('a')).toBeVisible();
+    await screen.rerender({ tree: props({ nodes: [a, z] }) });
+    await expect.poll(() => durations('z')).toContain(REVEAL_MS);
+    expect(li('a')?.getAnimations()).toEqual([]);
+  });
+
+  it('nodes present at mount have no fade', async () => {
+    await emulate('light', 'no-preference');
+    await mount({
+      nodes: [
+        nodeView(treeNode({ id: 'a' }), { level: 1, state: 'done' }),
+        nodeView(treeNode({ id: 'c', after: ['a'] })),
+        nodeView(treeNode({ id: 'z', branch: 'zoning' }))
+      ]
+    });
+    await expect.element(openOf('z')).toBeVisible();
+    for (const id of ['a', 'c', 'z']) expect(durations(id)).not.toContain(REVEAL_MS);
   });
 
   it('with reduced motion a node added after mount shows at once', async () => {
@@ -385,8 +425,7 @@ describe('Tree', () => {
     await screen.rerender({ tree: props({ nodes: [a, b] }) });
     await expect.element(openOf('b')).toBeInTheDocument();
     expect(getComputedStyle(li('b') as HTMLLIElement).opacity).toBe('1');
-    const durations = (li('b')?.getAnimations() ?? []).map((a) => a.effect?.getTiming().duration);
-    expect(durations).not.toContain(REVEAL_MS);
+    expect(durations('b')).not.toContain(REVEAL_MS);
   });
 
   it('every control is at least 24 px', async () => {
