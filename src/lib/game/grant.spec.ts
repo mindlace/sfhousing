@@ -10,11 +10,23 @@ import { monthFirstDay } from '$lib/sim/world/months';
 import { parseCalibration } from '$lib/timelapse/model';
 import type { Calibration } from '$lib/timelapse/types';
 import { addPolicy, type AddChoice } from '$lib/timeline/add';
-import { DEFAULT_POLICY4, type Policy, type Span, type SimPolicy4 } from '$lib/timeline/policy4';
+import { parsePolicy4 } from '$lib/timeline/parse4';
+import {
+  DEFAULT_POLICY4,
+  type Policy,
+  type PolicyKind,
+  type Span,
+  type SimPolicy4
+} from '$lib/timeline/policy4';
+import { reconcilePolicy4 } from '$lib/timeline/reconcile4';
 import { setOn } from '$lib/timeline/spans';
+import { LADDER_YEARS } from './catalogue/ladder-years';
+import { NODES } from './catalogue/nodes';
+import { buyAndApply, type Played } from './catalogue/play';
 import { applyGrant, GAME_TRANSIT_ID, type GrantCtx } from './grant';
-import { OPEN_LIMITS, runnable, type Limits } from './limits';
-import type { Grant } from './tree';
+import { limitsOf, OPEN_LIMITS, runnable, type Limits } from './limits';
+import { NEW_GAME, type NodeId } from './state';
+import { buy, type Branch, type Grant } from './tree';
 
 const miniCal = parseCalibration(structuredClone(miniCalibrationJson) as unknown);
 const cal: Calibration = {
@@ -360,5 +372,120 @@ describe('applyGrant', () => {
       { tag: 'hands', what: 'auto' }
     ] as Grant[])
       expect(applyGrant(doc, grant, ctxOf(OPEN_LIMITS))).toBe(doc);
+  });
+});
+
+/** One entry per level of each node, in catalogue order. */
+const CATALOGUE_ORDER: NodeId[] = NODES.flatMap((n) => n.levels.map(() => n.id));
+
+const BRANCHES: Branch[] = ['permitting', 'zoning', 'money', 'hands'];
+
+/** The catalogue order, then each branch's levels first and the rest in catalogue order. */
+const ORDERS: { name: string; order: NodeId[] }[] = [
+  { name: 'catalogue', order: CATALOGUE_ORDER },
+  ...BRANCHES.map((branch) => {
+    const mine = new Set(NODES.filter((n) => n.branch === branch).map((n) => n.id));
+    return {
+      name: `${branch} first`,
+      order: [
+        ...CATALOGUE_ORDER.filter((id) => mine.has(id)),
+        ...CATALOGUE_ORDER.filter((id) => !mine.has(id))
+      ]
+    };
+  })
+];
+
+interface Step {
+  where: string;
+  prev: Played;
+  next: Played;
+  grant: Grant;
+}
+
+/** Every step of `order` from `doc`, each the first remaining entry `buyAndApply` accepts. */
+function playOrder(name: string, order: NodeId[], doc: SimPolicy4): Step[] {
+  let p: Played = {
+    state: {
+      ...NEW_GAME,
+      phase: 'runs',
+      rung: LADDER_YEARS.length,
+      units: { home: Number.MAX_SAFE_INTEGER }
+    },
+    doc
+  };
+  const remaining = [...order];
+  const steps: Step[] = [];
+  while (remaining.length > 0) {
+    const i = remaining.findIndex((id) => buy(p.state, id).ok);
+    if (i < 0) throw new Error(`${name}: none of ${remaining.join(', ')} can be bought`);
+    const id = remaining[i];
+    const r = buy(p.state, id);
+    const next = buyAndApply(p, id, cal);
+    if (!r.ok || next === null) throw new Error(`${name}: ${id} was refused`);
+    const where = `${name} #${steps.length + 1}: ${id} level ${next.state.bought[id]}`;
+    steps.push({ where, prev: p, next, grant: r.grant });
+    remaining.splice(i, 1);
+    p = next;
+  }
+  return steps;
+}
+
+const playAll = (doc: SimPolicy4): Step[] =>
+  ORDERS.flatMap(({ name, order }) => playOrder(name, order, doc));
+
+const KINDS: PolicyKind[] = ['zoning', 'permitting', 'money'];
+
+describe('played through the tree', () => {
+  it('every result parses, reconciles to itself and runs under the limits after the purchase', () => {
+    const steps = playAll(DEFAULT_POLICY4);
+    expect(steps).toHaveLength(ORDERS.length * CATALOGUE_ORDER.length);
+    for (const { where, next } of steps) {
+      const { doc, state } = next;
+      expect(
+        () => parsePolicy4(JSON.parse(JSON.stringify(doc)), { asOf }),
+        `${where} parses`
+      ).not.toThrow();
+      expect(reconcilePolicy4(doc, cal, asOf).doc, `${where} reconciles`).toEqual(doc);
+      expect(runnable(doc, limitsOf(state)), `${where} runs`).toBe(doc);
+    }
+  });
+
+  it('no grant removes a policy or touches one other than its own, the game rule or a counted one', () => {
+    let start = addPolicy(DEFAULT_POLICY4, { kind: 'zoning', what: 'paint' }, addCtx).doc;
+    start = addPolicy(start, { kind: 'zoning', what: 'protect', category: 'historic' }, addCtx).doc;
+    start = addPolicy(start, fundChoice, addCtx).doc;
+    const own = KINDS.flatMap((kind) => start.kinds[kind].map((p) => ({ kind, p })));
+    expect(own).toHaveLength(3);
+    const steps = playAll(start);
+    const touched: string[] = [];
+    for (const { where, prev, next, grant } of steps) {
+      for (const { kind, p } of own)
+        expect(
+          next.doc.kinds[kind].find((q) => q.id === p.id),
+          `${where} keeps ${p.id}`
+        ).toEqual(p);
+      for (const kind of KINDS) {
+        const before = prev.doc.kinds[kind];
+        const after = next.doc.kinds[kind];
+        expect(after.length, `${where} ${kind}`).toBeGreaterThanOrEqual(before.length);
+        for (const q of before) {
+          const now = after.find((x) => x.id === q.id);
+          expect(now, `${where} keeps ${q.id}`).toBeDefined();
+          if (now === q) continue;
+          const counted =
+            (grant.tag === 'preset' || grant.tag === 'measure') && q.preset === grant.preset;
+          if (q.id !== GAME_TRANSIT_ID && !counted) touched.push(`${where} touched ${q.id}`);
+        }
+      }
+    }
+    expect(touched).toEqual([]);
+  });
+
+  it('applying a grant again to its own result returns the same document', () => {
+    for (const { where, next, grant } of playAll(DEFAULT_POLICY4))
+      expect(
+        applyGrant(next.doc, grant, { cal, limits: limitsOf(next.state) }),
+        `${where} again`
+      ).toBe(next.doc);
   });
 });
