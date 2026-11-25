@@ -1,4 +1,4 @@
-// /sim e2e on the timeline (timeline-ui): the header score and the phone Menu,
+// The simulation's e2e (the open game at `/`, no game seeded) on the timeline (timeline-ui): the header score and the phone Menu,
 // Details and the editor in the inspector, a transit rule, a painted area and its undo, selecting
 // on the map, a category protection, permitting presets and edits, the map overlays, the header
 // layout and the live paint preview, with the accessibility checks. Runs against the VITE_E2E
@@ -31,6 +31,7 @@ import {
   TO,
   TOUCH_FROM,
   TOUCH_TO,
+  gotoHydrated,
   headerAction,
   jumpAndIdle,
   mouseDrag,
@@ -63,8 +64,8 @@ async function waitReady(page: Page): Promise<void> {
   await waitFilled(page);
 }
 
-/** /sim (or `path`), ready, the forecast filled. */
-async function gotoSim(page: Page, path = '/sim'): Promise<void> {
+/** The simulation at `/` (the open game: no game seeded), or `path`, ready, the forecast filled. */
+async function gotoSim(page: Page, path = '/'): Promise<void> {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto(path);
   await waitReady(page);
@@ -234,7 +235,7 @@ async function expectNoHorizontalScroll(page: Page): Promise<void> {
 
 // ---- the shell ----------------------------------------------------------------------------------
 
-test('/sim opens on the Family Zoning Plan; Activity at rest, the header score shows Details', async ({
+test('the simulation opens on the Family Zoning Plan; Activity at rest, the header score shows Details', async ({
   isMobile,
   page
 }) => {
@@ -340,7 +341,7 @@ test('with a policy in force the chart draws current law and the gap; nothing pa
   await expectNoA11yViolations(page, { include: ['[data-testid=tl-dock]'] });
 });
 
-test('at 375 px the links wait in Menu; the header score stays pinned', async ({
+test('at 375 px the site name waits in Menu; the header score stays pinned', async ({
   isMobile,
   page
 }) => {
@@ -350,13 +351,10 @@ test('at 375 px the links wait in Menu; the header score stays pinned', async ({
   const menu = menuButton(page);
   await expect(menu).toHaveAttribute('aria-expanded', 'false');
   const menuPanel = page.locator(`[id="${await menu.getAttribute('aria-controls')}"]`);
-  const items = [
-    menuPanel.getByRole('link', { name: 'Paint', exact: true }),
-    menuPanel.getByRole('link', { name: 'Simulate', exact: true })
-  ];
-  for (const item of items) await expect(item).toBeHidden();
+  const name = menuPanel.getByRole('link', { name: 'SF Housing', exact: true });
+  await expect(name).toBeHidden();
   await openHeaderMenu(page);
-  for (const item of items) await expect(item).toBeVisible();
+  await expect(name).toBeVisible();
   await expect(scoreBar(page)).toBeVisible();
 });
 
@@ -536,7 +534,7 @@ test('the Updating status never moves the timeline or the editor', async ({ page
   await addPolicy(page, 'Zoning', 'Transit rule');
   await waitRefilled(page, 0);
   const before = await refillCount(page);
-  // The site name: the first visible home link in the header (the step link Paint follows it).
+  // The site name: the first visible home link in the header.
   const lead = 'header a[href="/"]';
   const box = async (selector: string) =>
     page.evaluate((s) => {
@@ -1226,7 +1224,9 @@ test('zoomed in over the loaded lots, the glass lids draw: the toggle changes th
 });
 
 for (const scheme of ['light', 'dark'] as const) {
-  test(`the open Layers panel on /sim has no axe violations (${scheme})`, async ({ page }) => {
+  test(`the open Layers panel on the simulation has no axe violations (${scheme})`, async ({
+    page
+  }) => {
     await page.emulateMedia({ colorScheme: scheme });
     await gotoSim(page);
     await openLayers(page);
@@ -1243,8 +1243,8 @@ test('without transit: no transit.json request, no transit layers, Layers has on
   page.on('request', (r) => {
     if (r.url().includes('/transit.json')) transitAsked.push(r.url());
   });
-  // SSR reads the manifest server-side, so strip it where the intercept applies: the /sim load
-  // re-runs in the browser on client navigation (as e2e/transit.spec.ts does for /).
+  // SSR reads the manifest server-side, so strip it where the intercept applies: the simulation's
+  // load re-runs in the browser on a client navigation (as e2e/transit.spec.ts does for Paint).
   await page.route('**/data/fixture-0/manifest.json', async (route) => {
     const res = await route.fetch();
     const manifest = (await res.json()) as Record<string, unknown>;
@@ -1252,17 +1252,14 @@ test('without transit: no transit.json request, no transit layers, Layers has on
     await route.fulfill({ response: res, json: manifest });
   });
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  await expect(async () => {
-    // A try that fell back to a full /sim load (the link clicked before hydration) asked for
-    // transit.json through SSR's manifest: only the try that passes counts.
-    transitAsked.length = 0;
-    await page.goto('/about');
-    await page.evaluate(() => ((window as Window & { __spa?: boolean }).__spa = true));
-    await openHeaderMenu(page);
-    await page.getByRole('banner').getByRole('link', { name: 'Simulate', exact: true }).click();
-    await waitReady(page);
-    expect(await page.evaluate(() => (window as Window & { __spa?: boolean }).__spa)).toBe(true);
-  }).toPass();
+  // The site name, clicked once hydrated, is a client navigation to the open game's simulation;
+  // the mark proves it.
+  await gotoHydrated(page, '/about');
+  await page.evaluate(() => ((window as Window & { __spa?: boolean }).__spa = true));
+  await openHeaderMenu(page);
+  await page.getByRole('banner').getByRole('link', { name: 'SF Housing', exact: true }).click();
+  await waitReady(page);
+  expect(await page.evaluate(() => (window as Window & { __spa?: boolean }).__spa)).toBe(true);
   await expect.poll(() => deckIds(page)).toContain(LIMITS_LAYER);
   const transitLayers = await page.evaluate(() =>
     (window as Win)
@@ -1383,7 +1380,7 @@ for (const width of [1024, 1280, 1536]) {
 
 // ---- About this model over the map ---------------------------------------------------------------
 
-/** About this model, the dialog /sim mounts over the map. */
+/** About this model, the dialog the simulation mounts over the map. */
 const aboutDialog = (page: Page): Locator => page.getByRole('dialog', { name: 'About this model' });
 
 /** The playhead's day, the furthest day reached and whether it plays. */
@@ -1393,7 +1390,7 @@ const runState = (page: Page) =>
     return { day: f.day, reached: f.reached, playing: f.playing };
   });
 
-test("/sim: the header's About opens About this model over the map; Escape closes it; the playhead stays", async ({
+test("the simulation: the header's About opens About this model over the map; Escape closes it; the playhead stays", async ({
   isMobile,
   page
 }) => {
@@ -1412,7 +1409,7 @@ test("/sim: the header's About opens About this model over the map; Escape close
   await about.click();
   const dialog = aboutDialog(page);
   await expect(dialog).toBeVisible();
-  await expect(page).toHaveURL(/\/sim$/);
+  await expect(page).toHaveURL(/\/$/);
   for (const name of ['What the numbers mean', 'Assumptions', 'Data and licences', 'Using it'])
     await expect(dialog.getByRole('heading', { level: 3, name, exact: true })).toBeVisible();
   // Live: the run's sections, the data checks loaded.
@@ -1422,7 +1419,7 @@ test("/sim: the header's About opens About this model over the map; Escape close
 
   await page.keyboard.press('Escape');
   await expect(dialog).toBeHidden();
-  await expect(page).toHaveURL(/\/sim$/);
+  await expect(page).toHaveURL(/\/$/);
   expect(await runState(page)).toEqual(before);
   // Focus back where About was pressed: the link, or the Menu button once the Menu closed.
   if (isMobile) await expect(menuButton(page)).toBeFocused();
@@ -1441,7 +1438,7 @@ test("/sim: the header's About opens About this model over the map; Escape close
   }
 });
 
-test("/sim: the credit's About this model opens the dialog at Data and licences", async ({
+test("the simulation: the credit's About this model opens the dialog at Data and licences", async ({
   isMobile,
   page
 }) => {
@@ -1459,7 +1456,7 @@ test("/sim: the credit's About this model opens the dialog at Data and licences"
   await link.click();
   const dialog = aboutDialog(page);
   await expect(dialog).toBeVisible();
-  await expect(page).toHaveURL(/\/sim$/);
+  await expect(page).toHaveURL(/\/$/);
   // Landed at Data and licences: its heading has focus, at the top of the scroll box.
   const heading = dialog.getByRole('heading', { level: 3, name: 'Data and licences', exact: true });
   await expect(heading).toBeFocused();
@@ -1470,7 +1467,9 @@ test("/sim: the credit's About this model opens the dialog at Data and licences"
   await expect(link).toBeFocused();
 });
 
-test("/sim: the credit's © OpenStreetMap opens in a new tab; the run stays", async ({ page }) => {
+test("the simulation: the credit's © OpenStreetMap opens in a new tab; the run stays", async ({
+  page
+}) => {
   // The copyright page is answered locally: the test checks where the link goes, not OSM.
   await page
     .context()
@@ -1485,11 +1484,11 @@ test("/sim: the credit's © OpenStreetMap opens in a new tab; the run stays", as
   const [tab] = await Promise.all([page.context().waitForEvent('page'), osm.click()]);
   await expect(tab).toHaveURL('https://www.openstreetmap.org/copyright');
   await tab.close();
-  await expect(page).toHaveURL(/\/sim$/);
+  await expect(page).toHaveURL(/\/$/);
   expect(await runState(page)).toEqual(before);
 });
 
-test('/sim at 375: About from the Menu opens the dialog; closing focuses the Menu button', async ({
+test('the simulation at 375: About from the Menu opens the dialog; closing focuses the Menu button', async ({
   isMobile,
   page
 }) => {
@@ -1536,7 +1535,7 @@ test('at 375 px the header fits with the widest strings; the site name waits in 
   await expectHeaderFits(page);
   expect((await banner.boundingBox())!.height).toBe(48);
   await openHeaderMenu(page);
-  await expect(banner.getByRole('link', { name: 'SF Housing Simulator' })).toBeVisible();
+  await expect(banner.getByRole('link', { name: 'SF Housing', exact: true })).toBeVisible();
   await expectNoHorizontalScroll(page);
   await menuButton(page).click();
   await expect(menuButton(page)).toHaveAttribute('aria-expanded', 'false');
@@ -1569,7 +1568,7 @@ test('the header has no Shortcuts; About lists the Timeline keys', async ({ isMo
 });
 
 for (const width of [768]) {
-  test(`at ${width} px the header is the Menu layout: it fits, and every action and step link is in the Menu`, async ({
+  test(`at ${width} px the header is the Menu layout: it fits, and every action is in the Menu`, async ({
     isMobile,
     page
   }) => {
@@ -1578,7 +1577,7 @@ for (const width of [768]) {
     const banner = page.getByRole('banner');
     const menu = banner.getByRole('button', { name: 'Menu', exact: true });
     await expect(menu).toBeVisible();
-    // Closed: the site name, status, score and Menu button only; no action or step link shows.
+    // Closed: the site name, status, score and Menu button only; no action shows.
     await expect(banner.getByRole('button', { name: /^(Publish|Share link)/ })).toBeHidden();
     await expect(banner.getByRole('link', { name: 'Fewer cars' })).toHaveCount(0);
     await widestHeaderText(page);
@@ -1594,8 +1593,6 @@ for (const width of [768]) {
     // The map's layers are not in the Menu: they are on the map.
     await expect(banner.getByRole('button', { name: 'View', exact: true })).toHaveCount(0);
     await expect(banner.getByRole('checkbox')).toHaveCount(0);
-    for (const name of ['Paint', 'Simulate'])
-      await expect(banner.getByRole('link', { name, exact: true })).toBeVisible();
     await expect(banner.getByRole('link', { name: 'Fewer cars' })).toHaveCount(0);
     await expectNoHorizontalScroll(page);
     await menu.click();

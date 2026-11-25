@@ -3,7 +3,8 @@
 // persistence, a11y.
 import { expect, test, type Page } from '@playwright/test';
 import { expectNoA11yViolations } from './helpers/a11y';
-import { gotoEditor, waitForMap, type Win } from './helpers/sharing';
+import { newVisitor } from './helpers/game';
+import { gotoEditor, gotoHydrated, openHeaderMenu, waitForMap, type Win } from './helpers/sharing';
 
 const visibility = (page: Page, id: string) =>
   page.evaluate(
@@ -74,14 +75,15 @@ test('there is no Layers toggle when the manifest has no transit, and no View an
     delete manifest.transit;
     await route.fulfill({ response: res, json: manifest });
   });
-  // A click before hydration is a full page load (SSR sees transit); retry until it is client-side.
-  await expect(async () => {
-    await page.goto('/about');
-    await page.evaluate(() => ((window as Window & { __spa?: boolean }).__spa = true));
-    await page.getByRole('banner').getByRole('link', { name: 'SF Housing Simulator' }).click();
-    await waitForMap(page);
-    expect(await page.evaluate(() => (window as Window & { __spa?: boolean }).__spa)).toBe(true);
-  }).toPass({ timeout: 25_000 });
+  // A new visitor, so `/` holds the brush. A click before hydration is a full page load (SSR sees
+  // transit), so the click waits for hydration and the mark proves it was client-side.
+  await newVisitor(page);
+  await gotoHydrated(page, '/about');
+  await page.evaluate(() => ((window as Window & { __spa?: boolean }).__spa = true));
+  await openHeaderMenu(page);
+  await page.getByRole('banner').getByRole('link', { name: 'SF Housing', exact: true }).click();
+  await waitForMap(page);
+  expect(await page.evaluate(() => (window as Window & { __spa?: boolean }).__spa)).toBe(true);
   await expect(page.getByTestId('publish-open')).toBeAttached();
   await expect(page.getByTestId('map-key-toggle')).toBeVisible();
   await expect(layersToggle(page)).toHaveCount(0);

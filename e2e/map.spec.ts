@@ -7,6 +7,7 @@ import type { SfhBrushDebug } from '../src/lib/brush/debug';
 import type { SfhMapDebug } from '../src/lib/map/debug';
 import type { ControllerSnapshot } from '../src/lib/map/generated-controller';
 import { expectNoA11yViolations } from './helpers/a11y';
+import { newVisitor } from './helpers/game';
 import {
   FRAME,
   FROM,
@@ -36,7 +37,17 @@ type Win = Window & {
   __cspViolations?: string[];
 };
 
+const visitors = new WeakSet<Page>();
+
+/** Before a page's first load of `/`: a new visitor, so `/` is Paint (the brush). */
+async function asNewVisitor(page: Page): Promise<void> {
+  if (visitors.has(page)) return;
+  visitors.add(page);
+  await newVisitor(page);
+}
+
 async function gotoReady(page: Page): Promise<void> {
+  await asNewVisitor(page);
   await page.goto('/');
   await expect(page.getByTestId('map-root')).toHaveAttribute('data-state', 'ready', {
     timeout: 20_000
@@ -267,6 +278,7 @@ test.describe('map view', () => {
         return (orig as (...a: unknown[]) => unknown).call(this, type, ...rest);
       } as typeof orig;
     });
+    await asNewVisitor(page);
     await page.goto('/');
     const root = page.getByTestId('map-root');
     await expect(root).toHaveAttribute('data-state', 'unsupported', { timeout: 20_000 });
@@ -494,7 +506,7 @@ test.describe('map view', () => {
     await expect(inner).toHaveText(CREDIT);
     const osm = credit(page).getByRole('link', { name: '© OpenStreetMap', exact: true });
     await expect(osm).toHaveAttribute('href', 'https://www.openstreetmap.org/copyright');
-    // A new tab on every map page, so it never ends a run on /sim.
+    // A new tab on every map page, so it never ends a run on the simulation.
     await expect(osm).toHaveAttribute('target', '_blank');
     const about = credit(page).getByRole('link', { name: 'About this model', exact: true });
     await expect(about).toHaveAttribute('href', '/about#about-data');
@@ -506,7 +518,7 @@ test.describe('map view', () => {
     await expect(credit(page)).not.toHaveClass(OPEN);
     await expect(toggle).toBeFocused();
     expect((await credit(page).boundingBox())!.height).toBeCloseTo(24, 0);
-    // Off /sim there is no About dialog: the link navigates to the page at Data and licences.
+    // On Paint there is no About dialog: the link navigates to the page at Data and licences.
     await toggle.click();
     await about.click();
     await expect(page).toHaveURL(/\/about#about-data$/);

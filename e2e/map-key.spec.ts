@@ -1,7 +1,7 @@
-// The map key control on the map's bottom right (map-on-screen slice 5, Tasks 3 and 5): on /sim the
-// key is open at rest from md and its counts follow the playhead's month; on a phone it starts
-// closed, clear of Reset view and the attribution, and its panel scrolls inside the room above it.
-// On Paint (`/`, `/p/:id`) it starts closed at every width, names the building types and each
+// The map key control on the map's bottom right (map-on-screen slice 5, Tasks 3 and 5): on the
+// simulation (the open game at `/`) the key is open at rest from md and its counts follow the
+// playhead's month; on a phone it starts closed, clear of Reset view and the attribution, and its
+// panel scrolls inside the room above it. On Paint (a new visitor's `/`, `/p/:id`) it starts closed at every width, names the building types and each
 // painted height with its lots, and a height's row outlines its lots on the map. Axe in light and
 // dark, open and closed. Layers (Task 6) sits before Key in the same toolbar: the layer switches
 // that were the header's View menu. Runs against the VITE_E2E build on fixture-0.
@@ -40,7 +40,7 @@ async function ourBoxes(page: Page): Promise<Box[]> {
 
 async function gotoSim(page: Page): Promise<void> {
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  await page.goto('/sim');
+  await page.goto('/');
   await page.waitForFunction(() => (window as Win).__sfhFzp?.phase === 'ready');
   await page.waitForFunction(
     () => document.querySelector('[data-testid="map-root"]')?.getAttribute('data-state') === 'ready'
@@ -88,7 +88,7 @@ async function expectClear(page: Page): Promise<void> {
     for (const b of theirs) expect(overlaps(a, b), JSON.stringify({ a, b })).toBe(false);
 }
 
-test('1280 px on /sim: the key is open, its counts follow the playhead, and it covers nothing', async ({
+test('1280 px on the simulation: the key is open, its counts follow the playhead, and it covers nothing', async ({
   isMobile,
   page
 }) => {
@@ -129,7 +129,7 @@ test('1280 px on /sim: the key is open, its counts follow the playhead, and it c
   await expectClear(page);
 });
 
-test('375 px on /sim: the key starts closed, sits clear of Reset and the attribution, opens and scrolls', async ({
+test('375 px on the simulation: the key starts closed, sits clear of Reset and the attribution, opens and scrolls', async ({
   isMobile,
   page
 }) => {
@@ -191,7 +191,7 @@ test('375 px on /sim: the key starts closed, sits clear of Reset and the attribu
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375);
 });
 
-test('/sim key: axe clean, light and dark, open and closed', async ({ page }) => {
+test('the simulation key: axe clean, light and dark, open and closed', async ({ page }) => {
   for (const colorScheme of ['light', 'dark'] as const) {
     await page.emulateMedia({ colorScheme });
     await gotoSim(page);
@@ -519,7 +519,7 @@ test("Tab from the map reaches Layers and Key before the open key panel's contro
   expect(panel.y + panel.height).toBeLessThanOrEqual((await boxOf(keyToggle(page))).y);
 });
 
-test('1280x800 on /sim: the open key panel does not scroll; its last row is in full view', async ({
+test('1280x800 on the simulation: the open key panel does not scroll; its last row is in full view', async ({
   isMobile,
   page
 }) => {
@@ -557,7 +557,7 @@ async function expectCueToTheEnd(panel: Locator): Promise<void> {
   await expect.poll(() => cue(panel)).toMatchObject({ more: true, opacity: '1' });
 }
 
-test('375 px on /sim: a scrolling key panel shows more below; the cue goes at its end', async ({
+test('375 px on the simulation: a scrolling key panel shows more below; the cue goes at its end', async ({
   isMobile,
   page
 }) => {
@@ -569,7 +569,7 @@ test('375 px on /sim: a scrolling key panel shows more below; the cue goes at it
   await expectCueToTheEnd(keyPanel(page));
 });
 
-test('1280x800 on /sim: a scrolling key panel shows more below; a line under forced colours', async ({
+test('1280x800 on the simulation: a scrolling key panel shows more below; a line under forced colours', async ({
   isMobile,
   page
 }) => {
@@ -634,16 +634,16 @@ test('375 px: Layers and Key are 24 px, inside the map, clear of Reset and the a
 /** Each project's widths: the fine-pointer layouts, and the phones. */
 const WIDTHS = { desktop: [768, 1024, 1280], phone: [320, 375] };
 
-for (const where of ['/', '/sim'] as const)
+for (const where of ['Paint', 'the simulation'] as const)
   test(`${where}: at every width, Layers and Key and each open panel cover nothing`, async ({
     isMobile,
     page
   }) => {
     for (const width of WIDTHS[isMobile ? 'phone' : 'desktop']) {
       await page.setViewportSize({ width, height: width < 768 ? 812 : 800 });
-      if (where === '/') await gotoEditor(page);
+      if (where === 'Paint') await gotoEditor(page);
       else await gotoSim(page);
-      const clear = where === '/' ? expectPaintClear : expectClear;
+      const clear = where === 'Paint' ? expectPaintClear : expectClear;
       await expect(layersToggle(page)).toBeVisible();
       await clear(page);
       for (const [toggle, panel] of [
@@ -661,7 +661,7 @@ for (const where of ['/', '/sim'] as const)
     }
   });
 
-test('1024 px signed in on /sim: no View in the header, the status cell is not clipped', async ({
+test('1024 px signed in on the simulation: no View in the header, the status cell is not clipped', async ({
   isMobile,
   page
 }) => {

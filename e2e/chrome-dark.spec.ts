@@ -1,13 +1,14 @@
-// Dark chrome (sim-runs spec §8, sim-ux spec Goal 9, timeline-ui): the header, /sim's playhead
-// and timeline, its editor, Details and About over the map, /'s dock and its Details face, and the
-// notice pills take dark variants and stay WCAG AA. Both Playwright projects.
+// Dark chrome (sim-runs spec §8, sim-ux spec Goal 9, timeline-ui): the header, the simulation's
+// playhead and timeline, its editor, Details and About over the map, Paint's dock and its Details
+// face, and the notice pills take dark variants and stay WCAG AA. Both Playwright projects. The
+// simulation is the open game at `/` (no game seeded); Paint is a new visitor's opening.
 import { expect, test, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { MSG } from '../src/lib/brush/messages';
 import type { SfhFzpDebug } from '../src/lib/fzp/debug';
+import { E2E_GAME_KEY } from '../src/lib/game/e2e';
 import { COPY } from '../src/lib/sharing/copy';
 import { expectNoA11yViolations } from './helpers/a11y';
-import { seedGame } from './helpers/game';
 import {
   addPolicy,
   holdPolicy,
@@ -38,10 +39,10 @@ type FzpWin = Window & { __sfhFzp?: SfhFzpDebug };
 
 test.use({ colorScheme: 'dark' });
 
-/** /sim, ready, the forecast filled. */
+/** The simulation at `/` (the open game: no game seeded), ready, the forecast filled. */
 async function gotoSim(page: Page): Promise<void> {
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  await page.goto('/sim');
+  await page.goto('/');
   await page.waitForFunction(() => (window as FzpWin).__sfhFzp?.phase === 'ready');
   await waitFilled(page);
   await expect(page.getByTestId('tl-timeline')).toBeVisible();
@@ -65,7 +66,9 @@ test('/ header has no axe violations in dark', async ({ page }) => {
   await expectNoA11yViolations(page, { include: ['header'] });
 });
 
-test('/sim header, playhead and timeline have no axe violations in dark', async ({ page }) => {
+test("the simulation's header, playhead and timeline have no axe violations in dark", async ({
+  page
+}) => {
   // The edit's setPolicy is held back from the worker until released, so the numbers stay stale
   // and "Updating" shows in the header while axe runs.
   await installPolicyHold(page);
@@ -89,7 +92,7 @@ test('at 375px the open Menu has no axe violations in dark', async ({ page }) =>
   await gotoEditor(page);
   await openHeaderMenu(page);
   await expect(
-    page.getByRole('navigation', { name: 'Steps' }).getByRole('link', { name: 'Paint' })
+    page.getByRole('banner').getByRole('link', { name: 'SF Housing', exact: true })
   ).toBeVisible();
   await expectNoA11yViolations(page, { include: ['header'] });
   expect(
@@ -116,7 +119,7 @@ test("/'s Details face follows the dark tokens: the goal row's fill is the dark 
   await expect(results.getByTestId('goal-row-goal')).toHaveCSS('color', 'rgb(232, 228, 220)');
 });
 
-// ---- /sim's editor, Details, the project card and the notice pills; /'s dock ------------------
+// ---- the simulation's editor, Details, the project card and the notice pills; Paint's dock ----
 
 for (const [kind, choice] of [
   ['Zoning', 'Transit rule'],
@@ -209,9 +212,11 @@ test("/'s open map key, a height painted and pressed, has no axe violations in d
   await expectNoA11yViolations(page, { include: ['[data-testid=map-key-control]'] });
 });
 
-test('the open Layers panel has no axe violations in dark', async ({ page }) => {
-  for (const where of ['/', '/sim'] as const) {
-    if (where === '/') await gotoEditor(page);
+// Paint is a new visitor's opening and the simulation the open game: one page each, since a page
+// that is a new visitor stays one.
+for (const where of ['Paint', 'the simulation'] as const) {
+  test(`the open Layers panel in ${where} has no axe violations in dark`, async ({ page }) => {
+    if (where === 'Paint') await gotoEditor(page);
     else await gotoSim(page);
     const toggle = page.getByTestId('map-layers-toggle');
     await toggle.click();
@@ -219,11 +224,11 @@ test('the open Layers panel has no axe violations in dark', async ({ page }) => 
     await expect(panel).toBeVisible();
     await expect(panel).toHaveCSS('background-color', 'rgb(28, 29, 31)');
     await expect(panel.getByRole('checkbox', { name: 'Transit stops' })).toBeVisible();
-    if (where === '/sim')
+    if (where === 'the simulation')
       await expect(panel.getByRole('checkbox', { name: 'Zoning height limits' })).toBeChecked();
     await expectNoA11yViolations(page, { include: ['[data-testid=map-key-control]'] });
-  }
-});
+  });
+}
 
 test("/p/:id's read-only Paint tab, its line and summary, has no axe violations in dark", async ({
   page
@@ -360,7 +365,7 @@ test('Details has no axe violations in dark', async ({ page }) => {
 
 /**
  * A shared policy with one transit rule (so the summary has a row), opened at /s/<id>: the rule is
- * added on /sim, read back from the app's own autosave, seeded as a policy row and visited.
+ * added on the simulation, read back from the app's own autosave, seeded as a policy row and visited.
  */
 async function gotoSharedPolicy(page: Page): Promise<void> {
   await gotoSim(page);
@@ -474,11 +479,15 @@ test('the Publish dialog has no axe violations in dark and draws on surface-dark
 });
 
 test('the Autosave off popover has no axe violations in dark', async ({ page, isMobile }) => {
-  await page.addInitScript(() => {
-    Storage.prototype.setItem = () => {
+  // Storage refuses every write but the e2e switch that makes this page a new visitor's game
+  // (gotoEditor's), so the page is Paint with autosave off.
+  await page.addInitScript((gameKey) => {
+    const set = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (key: string, value: string) {
+      if (key === gameKey) return set.call(this, key, value);
       throw new DOMException('refused', 'QuotaExceededError');
     };
-  });
+  }, E2E_GAME_KEY);
   await gotoEditor(page);
   await paintOnce(page, isMobile);
   const off = page.getByRole('banner').getByRole('button', { name: COPY.autosaveOff, exact: true });
@@ -493,7 +502,7 @@ test('the Autosave off popover has no axe violations in dark', async ({ page, is
 // `ink-dark-muted`, the dark partner of muted text.
 const INK_DARK_MUTED = 'rgb(180, 174, 163)';
 
-test('About on /sim in dark: surface-dark, muted text in ink-dark-muted, no axe violations', async ({
+test('About on the simulation in dark:surface-dark, muted text in ink-dark-muted, no axe violations', async ({
   page
 }) => {
   await gotoSim(page);
@@ -540,14 +549,13 @@ test("the shared view's banner has no axe violations in dark", async ({ page, re
   });
   expect(res.ok()).toBe(true);
   const { id } = (await res.json()) as { id: string };
-  await seedGame(page, 3);
 
   await page.goto(`/p/${id}`);
   const banner = page.getByRole('region', { name: 'Shared plan' });
   await expect(banner).toBeVisible();
-  // Mounted, so the banner shows the game's Remix state and Your game link.
+  // Mounted, so the banner shows its Your game link.
   await waitForMap(page);
-  await expect(banner.getByRole('button', { name: 'Remix' })).toBeVisible();
+  await expect(banner.getByRole('link', { name: 'Your game' })).toBeVisible();
   await expect(banner).toHaveCSS('background-color', SURFACE_DARK);
   await expectNoA11yViolations(page, { include: ['section[aria-label="Shared plan"]'] });
 });

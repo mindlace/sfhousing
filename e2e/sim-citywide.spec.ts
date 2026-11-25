@@ -1,5 +1,6 @@
-// The map citywide on /sim: the feed carries a marker for every project, one diamond an area shows
-// below zoom 14, and bars are in far mode. Paint stays as it was: street bars.
+// The map citywide on the simulation (the open game at `/`): the feed carries a marker for every
+// project, one diamond an area shows below zoom 14, and bars are in far mode. Paint (a new
+// visitor's opening) stays as it was: street bars.
 // Reads the map's debug snapshot (window.__sfhMap.timelineSnapshot) and the playhead
 // (window.__sfhFzp), never pixels. Runs against the VITE_E2E build on fixture-0.
 import { expect, test, type Locator, type Page } from '@playwright/test';
@@ -8,6 +9,7 @@ import type { SfhMapDebug } from '../src/lib/map/debug';
 import type { TimelineSnapshot } from '../src/lib/map/timelapse/types';
 import { expectNoA11yViolations } from './helpers/a11y';
 import { addPolicy, slider, waitFilled } from './helpers/run';
+import { newVisitor } from './helpers/game';
 import { gotoHydrated } from './helpers/sharing';
 
 type Win = Window & { __sfhFzp?: SfhFzpDebug; __sfhMap?: SfhMapDebug };
@@ -29,7 +31,7 @@ async function waitMap(page: Page): Promise<TimelineSnapshot> {
 
 async function gotoSim(page: Page): Promise<void> {
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  await page.goto('/sim');
+  await page.goto('/');
   await page.waitForFunction(() => (window as Win).__sfhFzp?.phase === 'ready');
   await page.waitForFunction(
     () => document.querySelector('[data-testid="map-root"]')?.getAttribute('data-state') === 'ready'
@@ -108,12 +110,12 @@ test('a transit rule: at the default zoom one diamond an area shows once its pro
   await expect.poll(async () => (await snap(page))!.marksShown).toBe(0);
 });
 
-test('bars are in far mode on /sim', async ({ page }) => {
+test('bars are in far mode on the simulation', async ({ page }) => {
   await gotoSim(page);
   await expect.poll(async () => (await snap(page))!.barMode).toBe('far');
 });
 
-test('/sim: axe clean with the key open, light and dark', async ({ page }) => {
+test('the simulation: axe clean with the key open, light and dark', async ({ page }) => {
   for (const colorScheme of ['light', 'dark'] as const) {
     await page.emulateMedia({ colorScheme });
     await gotoSim(page);
@@ -123,7 +125,10 @@ test('/sim: axe clean with the key open, light and dark', async ({ page }) => {
 });
 
 test('Paint draws no timeline: no bars', async ({ page }) => {
+  // A new visitor, so `/` shows the brush.
+  await newVisitor(page);
   await gotoHydrated(page, '/');
+  await page.waitForFunction(() => !!(window as Win & { __sfhBrush?: unknown }).__sfhBrush);
   await expect(page.getByTestId('map-root')).toHaveAttribute('data-state', 'ready');
   await page.waitForFunction(() => !!(window as Win).__sfhMap?.map);
   expect(await snap(page)).toBeNull();

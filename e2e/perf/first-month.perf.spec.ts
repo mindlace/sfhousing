@@ -8,7 +8,8 @@ type FzpWin = Window & { __sfhFzp?: SfhFzpDebug };
 
 test('the first forecast month arrives within 3 s of navigation', async ({ page }) => {
   const start = Date.now();
-  await page.goto('/sim', { waitUntil: 'commit' });
+  // The simulation: the open game at `/` (no game seeded).
+  await page.goto('/', { waitUntil: 'commit' });
   await page.waitForFunction(() => ((window as FzpWin).__sfhFzp?.filledThrough ?? -1) >= 0, null, {
     polling: 50
   });
