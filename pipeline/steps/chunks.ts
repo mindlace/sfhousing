@@ -78,8 +78,10 @@ async function readParcelRows(db: Duck): Promise<ParcelRow[]> {
 }
 
 /**
- * Every parcel_out row as the exact `ParcelRecord` `writeChunks` encodes, with its cell, sorted
- * by id. The scenario step reads parcels through this so both see one record per parcel.
+ * Every parcel_out row as the `ParcelRecord` `writeChunks` encodes, with its cell, sorted by id.
+ * The scenario step reads parcels through this so both see one record per parcel. The one
+ * difference: `writeChunks` writes freeway-land catalog lots with `eligible` false, while these
+ * records keep `parcel_out.eligible`, so the calibration panel does not move.
  */
 export async function readParcelRecords(
   db: Duck

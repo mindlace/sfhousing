@@ -65,8 +65,9 @@ export interface CheckExtras {
   calibrationChecks?: InvariantResult[];
   /**
    * V17: the freeway-land catalog's parcels (`readFreewayLandSet`), scenario-ineligible while their
-   * freeway stands. A standalone `check` reads today's catalog of the version's kind, so an older
-   * out dir checked against a newer catalog can fail. Absent: no freeway land.
+   * freeway stands, and never eligible in the parcel chunks (Paint cannot build on them). A
+   * standalone `check` reads today's catalog of the version's kind, so an older out dir checked
+   * against a newer catalog can fail. Absent: no freeway land.
    */
   freewayLand?: ReadonlySet<ParcelId>;
 }

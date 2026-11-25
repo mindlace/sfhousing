@@ -66,7 +66,7 @@ async function scenarioWithCatalog(parcels: string[]) {
   });
 }
 
-/** V17 on the committed fixture-0 with its report's counts. */
+/** V17 on a fixture-0 directory with its report's counts. */
 async function v17(dir: string, extras: Pick<CheckExtras, 'freewayLand'>) {
   const report = JSON.parse(readFileSync(join(dir, 'report.json'), 'utf8')) as {
     counts: Record<string, number>;
@@ -81,7 +81,7 @@ async function v17(dir: string, extras: Pick<CheckExtras, 'freewayLand'>) {
 
 /**
  * A copy of fixture-0 whose chunk record of every id in `ids` has `eligible` set to `eligible`
- * (fixture-0 predates the chunk rule, so its catalog lot is still chunk-eligible).
+ * (fixture-0 writes its catalog lot chunk-ineligible; the cases that need it eligible use this).
  */
 function fixtureWithChunkEligible(ids: string[], eligible: boolean): string {
   const dir = join(mkdtempSync(join(tmpdir(), 'sfh-v17-')), 'fixture-0');
@@ -180,8 +180,7 @@ describe('freeway land in the mini build', () => {
     expect((await v17(eligibleChunk, { freewayLand: new Set() })).detail).toMatch(
       /1 eligible flag/
     );
-    const dir = fixtureWithChunkEligible(['3512019'], false);
-    expect((await v17(dir, { freewayLand: new Set(['3512019']) })).ok).toBe(true);
+    expect((await v17(FIXTURE_0, { freewayLand: new Set(['3512019']) })).ok).toBe(true);
   });
 
   it('V17 fails when a catalog lot is chunk-eligible', async () => {
@@ -191,9 +190,7 @@ describe('freeway land in the mini build', () => {
     expect(bad.ok).toBe(false);
     expect(bad.detail).toMatch(/3512019/);
     expect(bad.detail).toMatch(/chunk/);
-    const good = await v17(fixtureWithChunkEligible(['3512019'], false), {
-      freewayLand: new Set(['3512019'])
-    });
+    const good = await v17(FIXTURE_0, { freewayLand: new Set(['3512019']) });
     expect(good.ok).toBe(true);
   });
 });

@@ -255,7 +255,8 @@ export async function build(
     // into this object, and `writeQualityReport` and V30 read it. The project-records step writes
     // all its counts into it; the other counts join it below.
     const counts: Record<string, number> = {};
-    // The scenario and policy steps share the chunk records (same rows, same order).
+    // The scenario and policy steps share the chunk records (same rows, same order), except that
+    // the chunks write freeway-land catalog lots with `eligible` false and these keep parcel_out's.
     const records = await readParcelRecords(db);
     const scenario = await report.time('scenario', async () =>
       writeScenario({
