@@ -1,4 +1,4 @@
-// G1 (contracts stub): the game's state. game-core makes it real.
+// G1: the game's state and the frozen new game.
 import type { Day } from '$lib/timelapse/time';
 import type { RunResult } from './run-result';
 
@@ -27,7 +27,7 @@ export interface GameState {
   last: RunResult | null;
 }
 
-export const NEW_GAME: GameState = {
+export const NEW_GAME: GameState = freeze({
   v: 2,
   phase: 'opening',
   firstWinAt: null,
@@ -38,4 +38,13 @@ export const NEW_GAME: GameState = {
   side: {},
   runs: 0,
   last: null
-};
+});
+
+/** Object.freeze on the state and on its bought, units, met and side. */
+function freeze(s: GameState): GameState {
+  Object.freeze(s.bought);
+  Object.freeze(s.units);
+  Object.freeze(s.met);
+  Object.freeze(s.side);
+  return Object.freeze(s);
+}
