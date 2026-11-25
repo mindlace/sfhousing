@@ -1,7 +1,7 @@
 <article>
   <header>
     <h1>Freeway land in Paint</h1>
-    <p>Paint refuses a lot on the freeway-land list while its freeway stands, and can open it once a plan removes that freeway.</p>
+    <p>Freeway land is unpaintable, like road-like and underwater lots.</p>
   </header>
 
   <section id="sec-why">
@@ -9,92 +9,61 @@
     <p>The owner saw Paint draw new buildings straight over the Central Freeway between Market and
       Duboce (lots <code>3502112</code>, <code>3513071</code>, <code>3513074</code> and their
       neighbours). These lots are on the freeway-land list
-      (<code>pipeline/enrichment/freeway-land.json</code>). That list is checked before the road-like
-      rule and skips it on purpose, because freeway land, unlike a road lot, has a future as housing
-      once its freeway comes down (each segment's <code>removedBy</code>).</p>
+      (<code>pipeline/enrichment/freeway-land.json</code>), which is checked before the road-like
+      rule and skips it.</p>
     <p>The scenario step zeroes freeway land in <code>parcels.bin</code>, so <code>/sim</code> never
-      builds there. The chunk records (<code>60_attributes.sql</code>) leave <code>eligible=1</code>
-      on all 559 catalog lots, and Paint's <code>applyOp</code>
-      (<code>src/lib/plan/resolve.ts</code>) checks only <code>rec.eligible</code>. Paint therefore
-      counts and draws about 32.8k homes of room on land under standing freeways.</p>
+      builds there. The chunk records (<code>pipeline/sql/60_attributes.sql</code>) clear
+      <code>eligible</code> only for underwater and road-like lots, so all 559 catalog lots are
+      <code>eligible=1</code>, and Paint's <code>applyOp</code> (<code>src/lib/plan/resolve.ts</code>)
+      checks only <code>rec.eligible</code>. Paint therefore counts and draws about 32.8k homes of
+      room on land under freeways.</p>
   </section>
 
   <section id="sec-goals">
     <h2>Goals and non-goals</h2>
     <ul>
-      <li><strong>Goal.</strong> Paint never builds on a catalog lot whose freeway stands. Because
-        nothing removes a freeway today, that is all 559 lots.</li>
-      <li><strong>Goal.</strong> The data says which removal frees each lot, so a later unlock that
-        brings back freeway removal (the incremental game's rebuilt less cars) opens the lots without
-        a new dataset format.</li>
-      <li><strong>Non-goal.</strong> A freeway-removal control in Paint, or any change to the plan
-        schema. The set of removed freeways is an input that is empty until that unlock.</li>
-      <li><strong>Non-goal.</strong> Changing the road-like rule, its thresholds or
-        <code>road-lots.json</code>. Freeway land stays on its own path.</li>
-      <li><strong>Anti-goal.</strong> Making catalog lots ineligible in the chunk record. That would
-        close them permanently and lose the route to freed land.</li>
+      <li><strong>Goal.</strong> No lot that is road, freeway land or otherwise, can be painted: the
+        chunk record of every freeway-land catalog lot has <code>eligible=0</code>.</li>
+      <li><strong>Non-goal.</strong> Freed freeway land in Paint. If freeway removal comes back it
+        belongs to later, non-Paint levels, which read <code>parcels.bin</code>, not the chunks.</li>
+      <li><strong>Non-goal.</strong> Changing the road-like rule, its thresholds,
+        <code>road-lots.json</code> or the catalog itself. Freeway land keeps its own list.</li>
+      <li><strong>Non-goal.</strong> A chunk format change. A catalog lot is an ordinary ineligible
+        lot, with no new column.</li>
     </ul>
   </section>
 
   <section id="sec-approaches">
     <h2>Approaches</h2>
     <ul>
-      <li><strong>A. Chunk <code>eligible=0</code> for catalog land.</strong> A one-line SQL change.
-        Paint would match <code>/sim</code>, but freed freeway land could never be painted.</li>
-      <li><strong>B. A per-lot freeway field in the chunk, and Paint gates on it.</strong> A chunk
-        column and client check. It keeps the lots open to a future removal. <em>Picked by the owner.</em></li>
+      <li><strong>A. Chunk <code>eligible=0</code> for catalog land.</strong> Pipeline only. Paint
+        matches <code>/sim</code>. <em>Picked by the owner.</em></li>
+      <li><strong>B. A per-lot freeway field, gated in Paint by a removed-freeway set.</strong>
+        Dropped: any future freeway removal happens in later levels, so Paint never needs to open
+        the land.</li>
     </ul>
   </section>
 
   <section id="sec-design">
     <h2>Design</h2>
-    <section id="sec-data">
-      <h3>Data</h3>
-      <ul>
-        <li>The chunk gains an optional sparse column <code>fw</code>, shaped like <code>rl</code>:
-          <code>[row, removedBy | null][]</code>, strictly increasing rows, absent when empty. The
-          value is the catalog segment's <code>removedBy</code>, or <code>null</code> for a freeway
-          that stays.</li>
-        <li>The decoded <code>ParcelRecord</code> gains an optional <code>freeway</code> field
-          holding that value (present only on catalog lots).</li>
-        <li><code>eligible</code> is unchanged. The decoder rejects an <code>fw</code> row that is
-          also underwater or road-like, since the sets are disjoint.</li>
-        <li>A build check confirms the <code>fw</code> rows match the catalog exactly (every catalog
-          lot in a chunk, with its segment's <code>removedBy</code>, and nothing else).</li>
-      </ul>
-    </section>
-    <section id="sec-paint">
-      <h3>Paint</h3>
-      <ul>
-        <li>The resolver takes the set of removed freeways (<code>removedBy</code> keys), empty by
-          default. A lot with <code>freeway</code> set counts as ineligible unless its value is
-          non-null and in that set. It is counted in <code>coverage.ineligible</code> like other
-          unbuildable land.</li>
-        <li>The headline "Room for N homes", the Level 1 bar and the map's built boxes follow from
-          the resolver, so they drop the freeway land with no change of their own.</li>
-        <li>A dataset without <code>fw</code> (older published plans) resolves exactly as before.</li>
-      </ul>
-    </section>
-    <section id="sec-dataset">
-      <h3>Dataset</h3>
-      <p>This changes the dataset version. The branch regenerates the fixture, builds the live
-        dataset, runs <code>scripts/level2-check.ts</code> on it, and uploads before signoff
-        (<code>docs/dev/pipeline.md</code>, "Finishing a branch that changes the dataset"). Docs:
-        <code>pipeline.md</code> "Freeway land" (drop "the chunk records are unchanged"),
-        <code>data-serving.md</code> or the chunk's doc for <code>fw</code>, and <code>game.md</code>
-        if it states Level 1's room.</p>
-    </section>
-  </section>
-
-  <section id="sec-builder">
-    <h2>Left to the builder</h2>
     <ul>
-      <li>Where the <code>fw</code> column is written (the chunk build reading <code>rl_catalog</code>
-        or the parsed catalog) and the check's V number.</li>
-      <li>How the removed set reaches the resolver (a parameter on <code>resolvePlan</code>/<code>applyOp</code>
-        defaulting to empty).</li>
-      <li>Whether Level 1's goal is still reachable on the live dataset with the room removed; if
-        not, stop and report before changing the goal.</li>
+      <li><code>60_attributes.sql</code> sets <code>eligible</code> false for a parcel in
+        <code>rl_catalog</code> (already in the SQL session), next to the underwater and road-like
+        exclusions.</li>
+      <li>Every build check that relates chunk <code>eligible</code> to <code>parcels.bin</code>,
+        <code>scenarioEligible</code> or the catalog (V17, V18 and any other) agrees with that; a
+        check asserts no catalog lot is chunk-eligible.</li>
+      <li>Paint's coverage, "Room for N homes", the Level 1 bar and the drawn boxes follow from
+        <code>eligible</code> with no client change. Older datasets resolve as before.</li>
+      <li>The dataset version changes. The branch regenerates the fixture, builds the live dataset,
+        runs <code>scripts/level2-check.ts</code> on it, and uploads before signoff
+        (<code>docs/dev/pipeline.md</code>, "Finishing a branch that changes the dataset").</li>
+      <li>Docs: <code>pipeline.md</code> "Freeway land" (replace "The chunk records (and so the Paint
+        editor) are unchanged") and "Road-like lots" where it describes chunk
+        <code>eligible</code>; <code>sim-page.md</code> and <code>game.md</code> if they state the
+        difference or Level 1's room.</li>
     </ul>
+    <aside data-kind="warning"><strong>Stop and report</strong> if Level 1's goal can no longer be
+      reached on the live dataset with the room removed; do not change the goal.</aside>
   </section>
 </article>
