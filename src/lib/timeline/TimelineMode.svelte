@@ -1046,14 +1046,13 @@
   }
 
   // Settling is tried whenever the phase is run and the clock has stopped at the stop day. It goes
-  // ahead only with the numbers current (not stale, not provisional), a view whose months reach
-  // the deadline's month (G6: no reading while the view does not cover it) and a reading there;
-  // otherwise it waits, with the clock at the stop day, and is tried again as the view changes.
+  // ahead only with the numbers current (not stale, not provisional) and a reading from `readRun`
+  // (whether the view covers the deadline is readRun's rule, G6); otherwise it waits, with the
+  // clock at the stop day, and is tried again as the view changes.
   $effect(() => {
     if (gp !== 'run' || running || day !== stop) return;
     const view = shown.view;
     if (!view || stale || !session || session.provisional) return;
-    if (filledEndDay(view.months, view.months.length - 1, asOf) < goal.deadline) return;
     const reading = readRun(view, goal);
     if (!reading) return;
     untrack(() => {

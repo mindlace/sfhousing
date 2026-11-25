@@ -56,7 +56,6 @@ import { settle } from '$lib/game/run-result';
 import { total } from '$lib/game/units';
 import { unitsName } from '$lib/game/ui/words';
 import { MemoryStorage } from '$lib/sharing/fixtures/memory-storage';
-import { filledEndDay } from './playhead';
 import TimelineModeHost from './test/TimelineModeHost.svelte';
 
 vi.mock('$lib/map/SimMap.svelte', () => import('$lib/fzp/test/FzpSimMapStub.svelte'));
@@ -114,6 +113,12 @@ const LONG: ScoreStatics = {
   months: monthsTo(WINDOW_MONTHS)
 };
 const fmt = formatShortMonthYear;
+/** "Collect N% of the homes in a run"'s target, as the catalogue tunes it (80 of 100 meets it). */
+const SHARE_TARGET = SIDE_GOALS.find((g) => g.id === 'collect-share-1')!.read({
+  view: null as never, // the share reads the take only
+  index: 0,
+  take: { dropped: { home: 1 }, collected: {} }
+})!.target;
 /** The default amount: the goal in play's amount without `goalAmount`. */
 const AMOUNT = defaultGoal(asOf).amount;
 
@@ -346,7 +351,7 @@ describe('TimelineMode in a game: the goal and the header', () => {
   it("side goals read the last run's take on the rung in play at the deadline's month", async () => {
     const last = runResult({ rung: 0, dropped: { home: 100 }, collected: { home: 80 } });
     await opened({ game: gameWith({ phase: 'runs', runs: 1, last }) }, LONG);
-    // Collect 50% of the homes in a run: 80 of 100 collected is met.
+    // "Collect N% of the homes in a run": 80 of 100 collected is met.
     await expect.element(line2()).toHaveTextContent(sideMetText(1));
     await page.getByTestId('goal-headline-button').click();
     const share = page
@@ -355,7 +360,7 @@ describe('TimelineMode in a game: the goal and the header', () => {
       .filter({
         hasText: SIDE_GOALS.find((g) => g.id === 'collect-share-1')!.label
       });
-    await expect.element(share).toHaveTextContent(progressText(80, 50));
+    await expect.element(share).toHaveTextContent(progressText(80, SHARE_TARGET));
     await expect.element(share).toHaveAttribute('data-met', 'true');
   });
 
@@ -863,13 +868,13 @@ describe('TimelineMode in a game: the run', () => {
     // The take starts at zero: the share goal is left out.
     await expect.element(headline()).toBeVisible();
     expect(line2().element().textContent).not.toContain(sideMetText(1));
-    // A take in run reaches the side goals: 80 of 100 collected meets "Collect 50%".
+    // A take in run reaches the side goals: 80 of 100 collected meets "Collect N%".
     runLayerProps().ontake({ dropped: { home: 100 }, collected: { home: 80 } });
     await expect.element(line2()).toHaveTextContent(sideMetText(1));
     await page.getByTestId('goal-headline-button').click();
     const label = SIDE_GOALS.find((g) => g.id === 'collect-share-1')!.label;
     const share = page.getByTestId('side-goal').filter({ hasText: label });
-    await expect.element(share).toHaveTextContent(progressText(80, 50));
+    await expect.element(share).toHaveTextContent(progressText(80, SHARE_TARGET));
     await page.getByTestId('goal-headline-button').click();
     // Back in starting (a new run document, no run settled), a take changes nothing.
     s.setRun(mk(protect(5)));
@@ -1149,9 +1154,6 @@ const ISO_AT = '2026-11-25T00:00:00.000Z';
 const goal = () => goalAt(asOf, 0);
 /** The props of the last Tally mounted (the recording stub). */
 const tallyProps = () => tallyRec.mounts.at(-1)!;
-/** A window of LAST + 1 months, which ends before the rung-0 deadline. */
-const STATICS: ScoreStatics = { ...baseStatics({ lastIndex: LAST }), asOf, months: MONTHS };
-const lastDayOf = (s: ScoreStatics): Day => filledEndDay(s.months, s.lastIndex, asOf);
 /** What the header's unit count says to a screen reader. */
 const headerUnits = () =>
   page.getByTestId('header-units').element().querySelector('.sr-only')!.textContent;
@@ -1304,17 +1306,18 @@ describe('TimelineMode in a game: settling and the tally', () => {
     expect(tallyRec.live).toBe(1);
   });
 
-  it('a deadline past the months held: the run holds at the stop without settling', async () => {
+  it('the run settles at the deadline: the clock at the stop, the numbers current, a reading', async () => {
     const game = gameWith({ phase: 'runs', runs: 0 });
-    expect(goal().deadline).toBeGreaterThan(lastDayOf(STATICS));
-    await runToEnd({ game, runMs: 200, statics: STATICS });
-    await expect.poll(() => debug().day).toBe(lastDayOf(STATICS));
-    await expect.poll(() => runLayerProps().feed.running).toBe(false);
-    await tick();
-    expect(modePhase()).toBe('run');
-    expect(game.state.runs).toBe(0);
-    expect(onphaseCalls('settled')).toHaveLength(0);
-    expect(tallyRec.mounts).toHaveLength(0);
+    // The stop is the rung's deadline, inside the view's months.
+    expect(STOP).toBe(goal().deadline);
+    await runToEnd({ game, runMs: 200 });
+    await expect.poll(() => modePhase()).toBe('tally');
+    expect(debug().day).toBe(STOP);
+    expect(runLayerProps().feed.running).toBe(false);
+    expect(debug().filledThrough).toBe(LONG.lastIndex);
+    expect(onphaseCalls('settled')).toHaveLength(1);
+    expect(game.state.runs).toBe(1);
+    expect(tallyRec.mounts).toHaveLength(1);
   });
 
   it("RunLayer's feed is the same object at the start of a run, mid-run and at settling", async () => {
