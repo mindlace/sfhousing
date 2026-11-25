@@ -1493,7 +1493,8 @@ export function shareOf(s: GameState, mode: 'hand' | 'collect-for-me'): number {
         <ul>
           <li>Each order is played twice: <code>hand</code>, with the share above, and <code>collect-for-me</code>, with every drop collected (call 17).</li>
           <li>The hand shares run from 0.25 with no Hands node to 0.80 with every radius and linger level.</li>
-          <li><code>SHARE</code> and <code>CLOCK</code> are assumptions, not measurements. This unit ships them as given, and no unit of this build measures them. The owner changes them after playing the built game.</li>
+          <li><code>SHARE</code> and <code>CLOCK</code> are assumptions, not measurements. This unit ships them as given, and the owner changes them after playing the built game.</li>
+          <li><code>CLOCK</code> counts no wait for the forecast after a purchase. The forecast for the next run starts at the purchase and fills while the player is still in the tree, so the wait is spent inside <code>buyS</code>. <code>closing</code>'s bench case "purchase to ready" measures that wait on a laptop and reports it beside <code>buyS</code>; when it is longer, the owner raises <code>buyS</code>. No unit measures it on a phone.</li>
         </ul>
       </section>
 
