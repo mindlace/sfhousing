@@ -21,7 +21,13 @@ const isPut =
     ok(decodeURIComponent(pathOf(r).slice(GAME.length + 1)));
 const idOf = (r: Response): string => decodeURIComponent(pathOf(r).slice(GAME.length + 1));
 
-type Entry = { id: string; name: string; savedAt: string };
+type Entry = {
+  id: string;
+  name: string;
+  savedAt: string;
+  phase: 'opening' | 'runs';
+  rung: number;
+};
 type Listed = {
   handle: string;
   handleClaimed: boolean;
@@ -58,9 +64,9 @@ async function rename(page: Page, id: string, name: string): Promise<void> {
   );
 }
 
-/** A won game at level 2 on a new device; answers its id once its PUT made the account. */
+/** A won game in the runs on a new device; answers its id once its PUT made the account. */
 async function firstSave(page: Page): Promise<string> {
-  await seedGame(page, 2);
+  await seedGame(page, { phase: 'runs' });
   const put = page.waitForResponse(isPut(() => true));
   await page.goto('/');
   const res = await put;
@@ -109,7 +115,11 @@ async function secondDevice(
 
 test('the first save makes the account', async ({ page, context }) => {
   const id = await firstSave(page);
-  expect((await savesOf(page)).current).toBe(id);
+  const held = await savesOf(page);
+  expect(held.current).toBe(id);
+  const entry = held.saves.find((s) => s.id === id);
+  expect(entry?.phase).toBe('runs');
+  expect(entry?.rung).toBe(0);
   expect((await context.cookies()).map((c) => c.name)).toContain('better-auth.session_token');
 
   const list = await listOf(page);
@@ -125,7 +135,11 @@ test('a second device signed into the account gets the saved game', async ({ pag
   try {
     const held = await savesOf(second.page);
     expect(held.current).toBe(second.own);
-    expect(held.saves.find((s) => s.id === id)?.name).toBe('Seeded game');
+    const got = held.saves.find((s) => s.id === id);
+    expect(got?.name).toBe('Seeded game');
+    expect(got?.phase).toBe('runs');
+    expect(got?.rung).toBe(0);
+    expect(held.saves.find((s) => s.id === second.own)?.phase).toBe('opening');
   } finally {
     await second.close();
   }
@@ -158,6 +172,9 @@ test('a conflict keeps both versions', async ({ page, browser }) => {
       .toEqual(expect.arrayContaining(['Alpha', 'Beta (this device)']));
     const names = (await listOf(b)).saves.map((s) => s.name);
     expect(names).toEqual(expect.arrayContaining(['Alpha', 'Beta (this device)']));
+    const copy = (await savesOf(b)).saves.find((s) => s.name === 'Beta (this device)');
+    expect(copy?.phase).toBe('runs');
+    expect(copy?.rung).toBe(0);
   } finally {
     await second.close();
   }
