@@ -1,6 +1,7 @@
 <!--
   The screen between runs: "Current law", the branches of nested node cards, one open node's
-  detail (in its row below 1024 px, in a fifth column from there), and the footer (Task 7).
+  detail (in its row below 1024 px, in a fifth column from there), the ending's summary once
+  every goal is met, and the footer: the balance, the busy status, Take the next goal, and Run.
 -->
 <script lang="ts">
   import { onMount, tick } from 'svelte';
@@ -20,21 +21,33 @@
     BRANCH_NAMES,
     CURRENT_LAW,
     EDIT,
+    ENDING_LEVERS,
+    ENDING_LIFTED,
+    ENDING_TITLE,
     OFF,
     ON,
+    PUBLISH,
+    RUN,
+    RUN_BUSY,
     SOURCE,
     TREE_TITLE,
+    balanceName,
+    balanceText,
     boughtLive,
     buyName,
     buyText,
     editName,
+    endingReached,
+    endingState,
     nextPriceName,
     nextPriceText,
     nextStepText,
+    perAddedHomeText,
     priceName,
     priceText,
     shortText,
-    switchName
+    switchName,
+    takeNextText
   } from './words';
 
   interface TreeProps {
@@ -52,21 +65,44 @@
     onpublish(): void;
   }
 
-  // The footer's and the ending's props (units, busy, next, ending, onrun, onnext, onpublish)
-  // are declared now and read when the footer and the ending are drawn.
-  // eslint-disable-next-line svelte/no-unused-props
   const props: TreeProps = $props();
 
   const uid = $props.id();
   const titleId = `${uid}-title`;
+  const busyId = `${uid}-busy`;
+  const endingTitleId = `${uid}-ending`;
   const wide = new MediaQuery('(min-width: 1024px)');
+
+  let runButton: HTMLButtonElement | undefined = $state();
 
   // A node's fade is global, so a node whose list or branch is new fades too (a local intro skips
   // a block created with its parent); until mount its duration is 0, so nodes present then do not.
   let mounted = $state(false);
   onMount(() => {
     mounted = true;
+    runButton?.focus();
   });
+
+  /** The goal "Take the next goal" offered when pressed; cleared once the offer changes. */
+  let takenNext: Rung | null = null;
+
+  function takeNext(): void {
+    takenNext = props.next;
+    props.onnext();
+  }
+
+  // When the offer leaves after a press, focus moves to Run; a prop change with no press, or a
+  // new offer, leaves focus alone.
+  $effect(() => {
+    const n = props.next;
+    const t = takenNext;
+    if (t === null || (n !== null && n.deadline === t.deadline)) return;
+    takenNext = null;
+    if (n === null) runButton?.focus();
+  });
+
+  const bought = $derived(props.nodes.filter((v) => v.level > 0));
+  const balance = $derived(total(props.units));
 
   let openId: NodeId | null = $state(null);
   /** What the live region says: the last purchase seen in the props. */
@@ -284,6 +320,30 @@
 >
   <h2 id={titleId} class="sr-only">{TREE_TITLE}</h2>
   <div class="min-h-0 flex-1 overflow-y-auto p-4">
+    {#if props.ending !== null}
+      {@const e = props.ending}
+      <section
+        aria-labelledby={endingTitleId}
+        data-testid="tree-ending"
+        class="{SURFACE_POP} mb-4 flex flex-col gap-2"
+      >
+        <h3 id={endingTitleId} class="font-semibold">{ENDING_TITLE}</h3>
+        <p>{endingReached(e.reachedOn)}</p>
+        <p>{endingState(e.stateBy)}</p>
+        <h4 class="font-semibold">{ENDING_LEVERS}</h4>
+        <ul class="flex flex-col gap-1">
+          {#each bought as v (v.node.id)}<li>{v.node.label}</li>{/each}
+        </ul>
+        {#if e.perAddedHome !== null}<p>{perAddedHomeText(e.perAddedHome)}</p>{/if}
+        <p>{ENDING_LIFTED}</p>
+        <button
+          type="button"
+          class="{BUTTON_PRIMARY} self-start"
+          data-testid="tree-publish"
+          onclick={() => props.onpublish()}>{PUBLISH}</button
+        >
+      </section>
+    {/if}
     <p
       data-testid="tree-root"
       class="mb-4 rounded-md border border-ink bg-surface-raised px-2 py-1 text-sm font-semibold dark:border-ink-dark dark:bg-surface-dark-raised"
@@ -304,8 +364,32 @@
       {/if}
     </div>
   </div>
-  <div
-    class="flex flex-wrap items-center gap-2 border-t border-line p-3 dark:border-line-dark"
-  ></div>
+  <div class="flex flex-wrap items-center gap-2 border-t border-line p-3 dark:border-line-dark">
+    <p class="text-sm font-semibold">
+      <span aria-hidden="true">{balanceText(balance)}</span><span class="sr-only"
+        >{balanceName(balance)}</span
+      >
+    </p>
+    <span
+      id={busyId}
+      role="status"
+      data-testid="tree-busy"
+      class="text-sm text-ink-muted dark:text-ink-dark-muted">{props.busy ? RUN_BUSY : ''}</span
+    >
+    {#if props.next !== null}
+      <button type="button" class="{BUTTON} ml-auto" data-testid="tree-next" onclick={takeNext}
+        >{takeNextText(props.next.label)}</button
+      >
+    {/if}
+    <button
+      bind:this={runButton}
+      type="button"
+      class="{BUTTON_PRIMARY} {props.next === null ? 'ml-auto' : ''}"
+      data-testid="tree-run"
+      aria-busy={props.busy ? 'true' : undefined}
+      aria-describedby={props.busy ? busyId : undefined}
+      onclick={() => props.onrun()}>{RUN}</button
+    >
+  </div>
   <div class="sr-only" aria-live="polite" data-testid="tree-live">{spoken}</div>
 </section>

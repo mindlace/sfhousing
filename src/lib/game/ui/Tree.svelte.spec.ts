@@ -5,6 +5,8 @@ import { render } from 'vitest-browser-svelte';
 import { cdp, page, userEvent } from 'vitest/browser';
 import axe from 'axe-core';
 import '../../../routes/layout.css';
+import { dayFromUtc } from '$lib/fzp/time';
+import type { Rung } from '../ladder';
 import type { NodeView, TreeNode } from '../tree';
 import { branchRows, type TreeRow } from './layout';
 import { REVEAL_MS } from './motion';
@@ -14,16 +16,26 @@ import { nodeLevel, nodeView, treeNode } from './test/fixtures';
 import {
   BOUGHT,
   CURRENT_LAW,
+  ENDING_LEVERS,
+  ENDING_LIFTED,
+  ENDING_TITLE,
   OFF,
+  PUBLISH,
+  RUN,
+  RUN_BUSY,
   SOURCE,
+  balanceName,
+  balanceText,
   boughtLive,
   buyName,
   editName,
   nextPriceName,
   nextStepText,
+  perAddedHomeText,
   priceName,
   shortText,
-  switchName
+  switchName,
+  takeNextText
 } from './words';
 
 /** Both media features at once: each Emulation.setEmulatedMedia call replaces the last. */
@@ -38,6 +50,8 @@ async function emulate(scheme: 'light' | 'dark', motion: 'reduce' | 'no-preferen
 
 afterEach(async () => {
   await emulate('light', 'reduce');
+  // The browser project's default viewport; the layout cases change it.
+  await page.viewport(414, 896);
 });
 
 type Props = ComponentProps<typeof Tree>;
@@ -87,6 +101,19 @@ const durations = (id: string) =>
   (li(id)?.getAnimations() ?? []).map((a) => a.effect?.getTiming().duration);
 const detail = () => page.getByTestId('tree-detail');
 const buyButton = () => page.getByTestId('tree-buy');
+const run = () => page.getByTestId('tree-run');
+const nextButton = () => page.getByTestId('tree-next');
+const ending = () => page.getByTestId('tree-ending');
+const NEXT: Rung = { deadline: dayFromUtc(2050, 12, 31), label: 'Dec 2050' };
+const ENDING = {
+  reachedOn: dayFromUtc(2041, 3, 1),
+  stateBy: dayFromUtc(2031, 1, 31),
+  perAddedHome: 123456
+};
+/** True when `a` comes before `b` in the document. */
+const before = (a: Element, b: Element) =>
+  (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) ===
+  Node.DOCUMENT_POSITION_FOLLOWING;
 
 describe('Tree', () => {
   it('branches and nesting as branchRows gives them; Current law first', async () => {
@@ -428,6 +455,174 @@ describe('Tree', () => {
     expect(durations('b')).not.toContain(REVEAL_MS);
   });
 
+  it('the balance', async () => {
+    await mount({ units: { home: 1652 } });
+    const shown = page.getByText(balanceText(1652), { exact: true });
+    await expect.element(shown).toBeVisible();
+    expect(shown.element().closest('[aria-hidden="true"]')).not.toBeNull();
+    const p = shown.element().closest('p') as HTMLParagraphElement;
+    const said = p.querySelector('.sr-only');
+    expect(said?.textContent).toBe(balanceName(1652));
+    expect(said?.closest('[aria-hidden="true"]')).toBeNull();
+  });
+
+  it('Run has focus at mount and calls onrun', async () => {
+    const onrun = vi.fn();
+    await mount({ onrun, nodes: [nodeView(one('a', 'Alpha'))] });
+    await expect.element(run()).toHaveFocus();
+    await expect.element(run()).toHaveAccessibleName(RUN);
+    await run().click();
+    expect(onrun).toHaveBeenCalledTimes(1);
+  });
+
+  it('while busy Run says so and still calls onrun', async () => {
+    const onrun = vi.fn();
+    const screen = await mount({ onrun, busy: true });
+    const busy = page.getByTestId('tree-busy');
+    await expect.element(busy).toHaveTextContent(RUN_BUSY);
+    await expect.element(busy).toHaveAttribute('role', 'status');
+    await expect.element(run()).toHaveAttribute('aria-busy', 'true');
+    await expect.element(run()).toHaveAccessibleDescription(RUN_BUSY);
+    await run().click();
+    expect(onrun).toHaveBeenCalledTimes(1);
+
+    await screen.rerender({ tree: props({ onrun, busy: false }) });
+    await expect.element(run()).not.toHaveAttribute('aria-busy');
+    expect(busy.element().textContent?.trim()).toBe('');
+    await run().click();
+    expect(onrun).toHaveBeenCalledTimes(2);
+  });
+
+  it('Take the next goal', async () => {
+    const onnext = vi.fn();
+    const screen = await mount({ onnext });
+    await expect.element(run()).toBeVisible();
+    await expect.element(nextButton()).not.toBeInTheDocument();
+
+    // A prop change with no press leaves focus alone.
+    await screen.rerender({ tree: props({ onnext, next: NEXT }) });
+    await expect.element(nextButton()).toHaveTextContent(takeNextText('Dec 2050'));
+    expect(before(nextButton().element(), run().element())).toBe(true);
+    nextButton().element().focus();
+    await screen.rerender({ tree: props({ onnext, next: { ...NEXT } }) });
+    await expect.element(nextButton()).toHaveFocus();
+    await screen.rerender({ tree: props({ onnext, next: null }) });
+    await expect.element(nextButton()).not.toBeInTheDocument();
+    await expect.element(run()).not.toHaveFocus();
+
+    await screen.rerender({ tree: props({ onnext, next: NEXT }) });
+    await expect.element(nextButton()).toBeVisible();
+
+    await nextButton().click();
+    expect(onnext).toHaveBeenCalledTimes(1);
+    await screen.rerender({ tree: props({ onnext, next: null }) });
+    await expect.element(nextButton()).not.toBeInTheDocument();
+    await expect.element(run()).toHaveFocus();
+  });
+
+  it('the ending', async () => {
+    const onpublish = vi.fn();
+    const nodes = [
+      nodeView(one('z', 'Zeta'), { level: 1, state: 'done' }),
+      nodeView(one('a', 'Alpha')),
+      nodeView(two('m', 'Mu', { branch: 'money' }), { level: 1 }),
+      nodeView(one('b', 'Beta', { branch: 'zoning' }), { level: 1, state: 'done' })
+    ];
+    const screen = await mount({ nodes, onpublish });
+    await expect.element(page.getByTestId('tree-root')).toBeVisible();
+    await expect.element(ending()).not.toBeInTheDocument();
+
+    await screen.rerender({ tree: props({ nodes, onpublish, ending: ENDING }) });
+    await expect.element(ending()).toBeVisible();
+    expect(before(ending().element(), page.getByTestId('tree-root').element())).toBe(true);
+    await expect
+      .element(ending().getByRole('heading', { name: ENDING_TITLE, exact: true }))
+      .toBeVisible();
+    await expect.element(ending()).toHaveTextContent('Reached in Mar 2041');
+    await expect.element(ending()).toHaveTextContent('The state asks by Jan 2031');
+    const levers = ending().getByRole('heading', { name: ENDING_LEVERS, exact: true });
+    await expect.element(levers).toBeVisible();
+    const list = levers.element().nextElementSibling as HTMLUListElement;
+    expect(list.tagName).toBe('UL');
+    expect([...list.querySelectorAll('li')].map((e) => e.textContent?.trim())).toEqual([
+      'Zeta',
+      'Mu',
+      'Beta'
+    ]);
+    await expect.element(ending()).toHaveTextContent(perAddedHomeText(123456));
+    await expect.element(ending()).toHaveTextContent(ENDING_LIFTED);
+    const publish = page.getByTestId('tree-publish');
+    await expect.element(publish).toHaveAccessibleName(PUBLISH);
+    expect(publish.element().closest('[data-testid="tree-ending"]')).toBe(ending().element());
+    await publish.click();
+    expect(onpublish).toHaveBeenCalledTimes(1);
+    await expect.element(run()).toBeVisible();
+
+    await screen.rerender({
+      tree: props({ nodes, onpublish, ending: { ...ENDING, perAddedHome: null } })
+    });
+    await expect.element(ending()).toHaveTextContent(ENDING_LIFTED);
+    expect(ending().element().textContent).not.toContain(perAddedHomeText(123456));
+    expect(ending().element().textContent).not.toContain('Public money');
+    await expect.element(run()).toBeVisible();
+  });
+
+  it('the tree fills its host and the footer sits at the bottom', async () => {
+    const nodes = Array.from({ length: 30 }, (_, i) => nodeView(one(`n${i}`, `Node ${i}`)));
+    await mount({ nodes });
+    await expect.element(run()).toBeVisible();
+    const tree = page.getByTestId('tree').element().getBoundingClientRect();
+    const host = page.getByTestId('tree-host').element().getBoundingClientRect();
+    expect(host.height).toBe(600);
+    expect(tree.height).toBe(host.height);
+    const footer = run().element().parentElement as HTMLElement;
+    expect(footer.getBoundingClientRect().bottom).toBe(tree.bottom);
+    const body = page.getByTestId('tree-root').element().parentElement as HTMLElement;
+    expect(body.scrollHeight).toBeGreaterThan(body.clientHeight);
+  });
+
+  it('at 1280 px the detail is in the fifth column', async () => {
+    await page.viewport(1280, 800);
+    await mount({
+      nodes: [
+        nodeView(treeNode({ id: 'p1' })),
+        nodeView(treeNode({ id: 'z1', branch: 'zoning' })),
+        nodeView(treeNode({ id: 'm1', branch: 'money' })),
+        nodeView(treeNode({ id: 'h1', branch: 'hands' }))
+      ]
+    });
+    await openOf('z1').click();
+    await expect.element(detail()).toBeVisible();
+    expect(li('z1')?.contains(detail().element())).toBe(false);
+    const left = detail().element().getBoundingClientRect().left;
+    const branches = page.getByTestId('tree-branch').elements();
+    expect(branches).toHaveLength(4);
+    for (const b of branches) {
+      expect(left).toBeGreaterThan(b.getBoundingClientRect().right);
+    }
+  });
+
+  it("at 375 px it is inside the node's row and nothing scrolls sideways", async () => {
+    await page.viewport(375, 812);
+    await mount({
+      nodes: [
+        nodeView(
+          two('p1', 'A lever with a rather long label', {
+            line: 'A line long enough to wrap across the narrow screen of a phone.',
+            source: { text: 'Planning Code', href: 'https://example.org/code' }
+          })
+        ),
+        nodeView(treeNode({ id: 'z1', branch: 'zoning' }))
+      ],
+      next: NEXT,
+      ending: ENDING
+    });
+    await opener('A lever with a rather long label').click();
+    await expect.element(detail()).toBeVisible();
+    expect(li('p1')?.contains(detail().element())).toBe(true);
+    expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(window.innerWidth);
+  });
+
   it('every control is at least 24 px', async () => {
     await mount({
       nodes: [
@@ -435,7 +630,9 @@ describe('Tree', () => {
           level: 1
         })
       ],
-      on: { b: true }
+      on: { b: true },
+      next: NEXT,
+      ending: ENDING
     });
     await opener('Beta').click();
     await expect.element(detail()).toBeVisible();
@@ -444,7 +641,10 @@ describe('Tree', () => {
       page.getByTestId('tree-node-edit').element(),
       page.getByTestId('tree-node-on').element(),
       buyButton().element(),
-      page.getByTestId('tree-source').element()
+      page.getByTestId('tree-source').element(),
+      run().element(),
+      nextButton().element(),
+      page.getByTestId('tree-publish').element()
     ];
     for (const c of controls) {
       const r = c.getBoundingClientRect();
@@ -463,8 +663,13 @@ describe('Tree', () => {
         nodeView(one('o', 'Off', { branch: 'zoning' }), { level: 1, state: 'done' }),
         nodeView(one('m', 'Memo', { branch: 'money', source: { text: 'Memo', href: null } }))
       ],
-      on: { b: true, o: false }
+      on: { b: true, o: false },
+      busy: true,
+      next: NEXT,
+      ending: ENDING
     });
+    await expect.element(nextButton()).toBeVisible();
+    await expect.element(page.getByTestId('tree-publish')).toBeVisible();
     await opener('Short').click();
     await expect.element(detail()).toBeVisible();
     for (const s of ['light', 'dark'] as const) {
