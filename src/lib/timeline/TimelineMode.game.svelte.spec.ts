@@ -774,6 +774,7 @@ const toMarker = (m: MarkerIn): Marker => ({
 
 const modePhase = () => page.getByTestId('tl-mode').element().getAttribute('data-phase');
 const runPhase = { phase: 'runs' as const, runs: 0 };
+const clockDay = () => Number(page.getByTestId('run-clock').element().getAttribute('data-day'));
 
 /** Lands in starting (runs 0) and fills six months: the run starts. */
 async function toRun(over: Over = {}) {
@@ -824,13 +825,79 @@ describe('TimelineMode in a game: the run', () => {
 
   it("RunLayer gets the game's hands, a silent sound for none, and the take while in run", async () => {
     const game = gameWith(runPhase);
-    await toRun({ game });
+    // The whole window filled, so the side goals read at the deadline's month; a long run.
+    const s = setup({ game, phased: true, runMs: 20_000 });
+    await opening();
+    emit(compiledMsg(1, LONG));
+    emit(filledMsg(1, 0, LONG.lastIndex + 1));
+    await expect.poll(() => modePhase()).toBe('run');
     const p = runLayerProps();
     expect(p.hands).toEqual(game.limits.hands);
     for (const k of ['pop', 'collect', 'goal', 'buy'] as const) {
       expect(() => p.sound[k]()).not.toThrow();
     }
     expect(p.collectForMe).toBe(false);
+    // The take starts at zero: the share goal is left out.
+    await expect.element(headline()).toBeVisible();
+    expect(line2().element().textContent).not.toContain(sideMetText(1));
+    // A take in run reaches the side goals: 80 of 100 collected meets "Collect 50%".
+    runLayerProps().ontake({ dropped: { home: 100 }, collected: { home: 80 } });
+    await expect.element(line2()).toHaveTextContent(sideMetText(1));
+    await page.getByTestId('goal-headline-button').click();
+    const label = SIDE_GOALS.find((g) => g.id === 'collect-share-1')!.label;
+    const share = page.getByTestId('side-goal').filter({ hasText: label });
+    await expect.element(share).toHaveTextContent(progressText(80, 50));
+    await page.getByTestId('goal-headline-button').click();
+    // Back in starting (a new run document, no run settled), a take changes nothing.
+    s.setRun(mk(protect(5)));
+    await expect.poll(() => modePhase()).toBe('starting');
+    await expect.poll(() => line2().element().textContent).not.toContain(sideMetText(1));
+    runLayerProps().ontake({ dropped: { home: 100 }, collected: { home: 90 } });
+    flushSync();
+    await tick();
+    expect(line2().element().textContent).not.toContain(sideMetText(1));
+  });
+
+  it('an abort in the same flush as the start is held too', async () => {
+    frames.manual = true;
+    const s = setup({ game: gameWith(runPhase), phased: true, runMs: 200 });
+    await expect.poll(() => runLayer.props).not.toBeNull();
+    const f = runLayerProps().feed;
+    await opening();
+    emit(compiledMsg(1, LONG));
+    await expect.poll(() => debug().lastIndex).toBe(LONG.lastIndex);
+    emit(filledMsg(1, 0, 6)); // ready rises ...
+    s.setRun(mk(protect(5))); // ... and a new run document lands before the next flush
+    flushSync();
+    expect(onphaseCalls('ready')).toHaveLength(1);
+    expect(modePhase()).toBe('run');
+    expect(f.running).toBe(true);
+    frame(); // the frame in which RunLayer reads the start
+    expect(modePhase()).toBe('run');
+    expect(f.running).toBe(true);
+    frame();
+    expect(f.running).toBe(false);
+    expect(modePhase()).toBe('starting');
+    expect(onphaseCalls('abort')).toHaveLength(1);
+  });
+
+  it('entering starting puts the clock, the day and the headline at today', async () => {
+    const s = await opened({ game: gameWith({ phase: 'runs', runs: 1 }), phased: true }, LONG);
+    s.send('edit');
+    await expect.poll(() => modePhase()).toBe('workshop');
+    await toEnd(); // the playhead well past today
+    // Lots failed: the forecast is not ready, so starting waits.
+    s.setLotsFailed(true);
+    s.setLots(null);
+    s.send('back');
+    await expect.poll(() => modePhase()).toBe('tree');
+    await page.getByTestId('host-run').click();
+    await expect.poll(() => modePhase()).toBe('starting');
+    await expect.poll(() => clockDay()).toBe(asOf);
+    expect(debug().day).toBe(asOf);
+    await expect
+      .element(page.getByTestId('goal-headline-button'))
+      .toHaveTextContent(goalLine(LONG.baseline.units, AMOUNT, ladder(asOf)[0].label));
   });
 
   it('a change of collectForMe mid-run reaches RunLayer', async () => {
@@ -889,9 +956,13 @@ describe('TimelineMode in a game: the run', () => {
     emit(compiledMsg(rev, LONG));
     emit(filledMsg(rev, 0, 6));
     await expect.poll(() => modePhase()).toBe('run');
+    await expect.poll(() => debug().day).toBeGreaterThan(asOf); // the clock has moved on
     // In run.
     w().crash();
     await expect.poll(() => modePhase()).toBe('starting');
+    // Back in starting the clock is at today.
+    await expect.poll(() => clockDay()).toBe(asOf);
+    expect(debug().day).toBe(asOf);
     expect(onphaseCalls('abort')).toHaveLength(2);
     expect(none('host-tree')).toBeNull();
     expect(none('game-tree-pane')).toBeNull();

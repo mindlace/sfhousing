@@ -982,6 +982,9 @@
     reveal = revealOpen(asOf);
     take = { dropped: {}, collected: {} };
     planRun();
+    // The count restarts before `running` turns true, so an abort in this same flush (before the
+    // effect on feed.running reruns) is held too.
+    markRunningChange();
     running = true;
     onphase?.('ready');
   }
@@ -1014,6 +1017,20 @@
       const rising = a && !wasAbortWanted;
       wasAbortWanted = a;
       if (rising) abortRun();
+    });
+  });
+
+  // On each change into starting the clock, the map's time and the headline are at today
+  // (`RunClock` at today); the reveal is left as it is.
+  let dayPhase: GamePhase | null = untrack(() => gp);
+  $effect(() => {
+    const p = gp;
+    untrack(() => {
+      if (p === dayPhase) return;
+      dayPhase = p;
+      if (p !== 'starting' || day === asOf) return;
+      day = asOf;
+      handleDay(asOf);
     });
   });
 
