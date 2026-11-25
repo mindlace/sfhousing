@@ -59,7 +59,23 @@ async function values(map: MapLibreMap): Promise<unknown[]> {
 }
 const vis = (map: MapLibreMap, id: string) => map.getLayoutProperty(id, 'visibility') ?? 'visible';
 
-describe('SimMap cars', { timeout: 30_000 }, () => {
+// A fetchCarZones that records each call's promise, so a test waits on the fetch itself (not on a
+// raised poll timeout) and then only polls the map's own, fast, reaction to it.
+function tracked(first?: () => Promise<never>) {
+  const calls: Promise<unknown>[] = [];
+  const fn = vi.fn<typeof loadCarZones>((...a) => {
+    const p = calls.length === 0 && first ? first() : loadCarZones(...a);
+    calls.push(p.catch(() => undefined));
+    return p;
+  });
+  const settled = async (n: number) => {
+    await expect.poll(() => calls.length, { timeout: 5000 }).toBeGreaterThanOrEqual(n);
+    await calls[n - 1];
+  };
+  return { fn, settled };
+}
+
+describe('SimMap cars', () => {
   it('fetches nothing and hides the layer while it is off', async () => {
     const fetchCarZones = vi.fn(loadCarZones);
     const { ready } = await mount({ fetchCarZones, carZones: new Float32Array([1, 2, 3]) });
@@ -70,15 +86,16 @@ describe('SimMap cars', { timeout: 30_000 }, () => {
   });
 
   it("turned on: loads the zones once and draws the month's values; NaN is no data", async () => {
-    const fetchCarZones = vi.fn(loadCarZones);
+    const { fn: fetchCarZones, settled } = tracked();
     const { ready, screen } = await mount({
       fetchCarZones,
       view: { ...DEFAULT_VIEW, carsPerHousehold: true },
       carZones: new Float32Array([0.5, Number.NaN, 1.5])
     });
     const map = (await ready).getMap()!;
+    await settled(1);
     await expect.poll(() => vis(map, CARS_LAYER)).toBe('visible');
-    await expect.poll(() => values(map), { timeout: 10_000 }).toEqual([0.5, null, 1.5]);
+    await expect.poll(() => values(map)).toEqual([0.5, null, 1.5]);
 
     // A playhead month change rebuilds `v`; no second fetch.
     await screen.rerender({ carZones: new Float32Array([0.25, 1, Number.NaN]) });
@@ -94,12 +111,15 @@ describe('SimMap cars', { timeout: 30_000 }, () => {
   });
 
   it('off, a month change leaves the source alone; turning on draws the latest month', async () => {
+    const { fn: fetchCarZones, settled } = tracked();
     const { ready, screen } = await mount({
+      fetchCarZones,
       view: { ...DEFAULT_VIEW, carsPerHousehold: true },
       carZones: new Float32Array([0.5, 1, 1.5])
     });
     const map = (await ready).getMap()!;
-    await expect.poll(() => values(map), { timeout: 10_000 }).toEqual([0.5, 1, 1.5]);
+    await settled(1);
+    await expect.poll(() => values(map)).toEqual([0.5, 1, 1.5]);
     const source = map.getSource(CARS_SOURCE) as GeoJSONSource;
     const setData = vi.spyOn(source, 'setData');
     await screen.rerender({ view: DEFAULT_VIEW });
@@ -114,10 +134,7 @@ describe('SimMap cars', { timeout: 30_000 }, () => {
 
   it('a failed car-zones.json fetch is a warning; the next turn-on tries again', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const fetchCarZones = vi
-      .fn<typeof loadCarZones>()
-      .mockRejectedValueOnce(new Error('offline'))
-      .mockImplementation(loadCarZones);
+    const { fn: fetchCarZones, settled } = tracked(() => Promise.reject(new Error('offline')));
     const { ready, screen } = await mount({
       fetchCarZones,
       view: { ...DEFAULT_VIEW, carsPerHousehold: true },
@@ -128,7 +145,8 @@ describe('SimMap cars', { timeout: 30_000 }, () => {
     expect(await values(map)).toEqual([]);
     await screen.rerender({ view: DEFAULT_VIEW });
     await screen.rerender({ view: { ...DEFAULT_VIEW, carsPerHousehold: true } });
-    await expect.poll(() => values(map), { timeout: 10_000 }).toEqual([0.5, 1, 1.5]);
+    await settled(2);
+    await expect.poll(() => values(map)).toEqual([0.5, 1, 1.5]);
     expect(fetchCarZones).toHaveBeenCalledTimes(2);
     expect(errors).toEqual([]);
   });
