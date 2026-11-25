@@ -394,6 +394,52 @@ describe('effective sample sizes from the B25044 margins of error', () => {
     expect(r.missing).toBe(1);
   });
 
+  it('keeps only the largest margin among zero-estimate cells of a level (Census rule)', () => {
+    const est = (cells: Record<string, number>) =>
+      Object.entries(cells).map(([variable, estimate]) => ({ geoid: 'a', variable, estimate }));
+    const moe = (cells: Record<string, number>) =>
+      Object.entries(cells).map(([variable, m]) => ({ geoid: 'a', variable, moe: m }));
+    // 100 households: 0 cars 50, 1 car 45, 3+ cars 5 (one owner cell); five 3+ cells are zero.
+    const acs = est({
+      B25044_001: 100,
+      B25044_003: 30,
+      B25044_010: 20,
+      B25044_004: 45,
+      B25044_006: 5,
+      B25044_007: 0,
+      B25044_008: 0
+    });
+    const m = moe({
+      B25044_001: 16.45,
+      B25044_003: 16.45,
+      B25044_010: 16.45,
+      B25044_004: 16.45,
+      B25044_005: 16.45,
+      B25044_012: 32.9,
+      B25044_006: 8.225,
+      B25044_007: 16.45,
+      B25044_008: 24.675,
+      B25044_013: 16.45,
+      B25044_014: 16.45,
+      B25044_015: 16.45
+    });
+    const r = effectiveSizes(acs, m, ['a']);
+    // SE^2 per level: 0 cars 100 + 100; 1 car 100 (the renter cell is absent: no margin);
+    // 2 cars: both cells zero, the larger (20^2) only; 3+: 5^2 nonzero + the largest zero 15^2.
+    const N = 100;
+    const x = [50, 45, 0, 5];
+    const sx2 = [200, 100, 400, 25 + 225];
+    let num = 0;
+    let den = 0;
+    for (let k = 0; k < 4; k++) {
+      const p = x[k] / N;
+      const rad = sx2[k] - p * p * 100;
+      num += p * (1 - p);
+      den += (rad > 0 ? rad : sx2[k] + p * p * 100) / (N * N);
+    }
+    expect(r.nEff[0]).toBeCloseTo(num / den, 9);
+  });
+
   it('shrinkShares takes the effective sizes as n', () => {
     const observed = Float64Array.from([50, 30, 20, 0, 10, 60, 25, 5, 40, 40, 10, 10]);
     const predicted = Float64Array.from([

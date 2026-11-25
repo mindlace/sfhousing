@@ -126,7 +126,10 @@ export function carsReportLines(
           'variance. An observed zero level keeps a nonzero share.',
     c.sizes.fromMoe
       ? `n is each block group's effective sample size from its B25044 margins of error ` +
-          '(n_eff = sum p(1-p) / sum SE(p)^2 over the four levels, SE = MOE / 1.645): median ' +
+          '(n_eff = sum p(1-p) / sum SE(p)^2 over the four levels, SE = MOE / 1.645; a ' +
+          "level's MOE is the Census rule for a sum: every nonzero cell's MOE in quadrature " +
+          "plus only the largest MOE among its zero-estimate cells, per the Census Bureau's " +
+          '"Understanding and Using American Community Survey Data" (2020), ch. 8): median ' +
           `${f4(c.sizes.median)} against a median ${f4(c.sizes.householdsMedian)} estimated ` +
           `households; ${c.sizes.missing} block groups had no margins and take their estimated ` +
           'households.'

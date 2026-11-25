@@ -107,11 +107,13 @@ export function observedLevels(rows: readonly AcsRow[], zones: readonly string[]
 
 /**
  * Empirical Bayes shrinkage of each zone's observed shares toward the model's (no constant):
- * share* = (n obs + n0 pred) / (n + n0), n the zone's B25044 households. n0 is the
- * Dirichlet-multinomial prior weight, by the method of moments: with rho = 1 / (1 + n0),
+ * share* = (n obs + n0 pred) / (n + n0). n is the zone's effective sample size when `size` is
+ * given (`effectiveSizes`, from the B25044 margins of error), else its B25044 households. n0 is
+ * the Dirichlet-multinomial prior weight, by the method of moments: with rho = 1 / (1 + n0),
  * E[n (o - p)^2] = p (1 - p) (1 + (n - 1) rho), pooled over zones and levels, so rho is the
- * dispersion beyond binomial variance. No overdispersion (rho <= 0) gives n0 null and share* =
- * pred; a zone with no households takes pred.
+ * dispersion beyond sampling variance. No overdispersion (rho <= 0) gives n0 null and share* =
+ * pred; rho >= 1 (at or beyond the multinomial limit) gives n0 = 0, share* = obs, and the
+ * constants' fit floors a zero share at OBS_FLOOR. A zone with no households takes pred.
  */
 export function shrinkShares(
   observed: Float64Array,
@@ -168,8 +170,12 @@ export const MOE_Z = 1.645;
 
 /**
  * Each zone's effective sample size from its B25044 margins of error. Per level, the count is the
- * owner and renter cells added, SE(count) = sqrt(sum (MOE / 1.645)^2) over its cells, SE(total)
- * from B25044_001; the share's SE is the Census proportion formula (1/N) sqrt(SE_x^2 - p^2
+ * owner and renter cells added. Its SE follows the Census rule for the MOE of a sum (U.S. Census
+ * Bureau, "Understanding and Using American Community Survey Data: What All Data Users Need to
+ * Know", 2020, ch. 8, "Calculating Measures of Error for Derived Estimates", and the ACS
+ * "Accuracy of the Data" documents): sqrt of the sum of squared MOEs of the cells with a nonzero
+ * estimate plus only the largest squared MOE among the cells estimated 0, divided by 1.645.
+ * SE(total) is from B25044_001; the share's SE is the Census proportion formula (1/N) sqrt(SE_x^2 - p^2
  * SE_N^2), or the ratio formula with + where that is not positive. Pooled across levels:
  * n_eff = sum p(1-p) / sum SE(p)^2, clamped to [1, N]. A zone with no margins (or zero summed
  * variance) takes its estimated households N, counted in `missing`.
@@ -184,7 +190,12 @@ export function effectiveSizes(
   const totalCell = MARGINS[0].total;
   const Z = zones.length;
   const count = observedLevels(acs, zones);
+  // Cell estimates, to tell zero-estimate cells (absent counts as 0).
+  const estimate = new Map<string, number>();
+  for (const r of acs)
+    if (cells[r.variable] !== undefined) estimate.set(`${r.geoid}|${r.variable}`, r.estimate);
   const varX = new Float64Array(Z * CAR_LEVELS);
+  const zeroMax = new Float64Array(Z * CAR_LEVELS);
   const varN = new Float64Array(Z);
   const seen = new Uint8Array(Z);
   for (const r of moe) {
@@ -197,9 +208,12 @@ export function effectiveSizes(
     }
     const c = cells[r.variable];
     if (c === undefined) continue;
-    varX[z * CAR_LEVELS + (c % CAR_LEVELS)] += se * se;
+    const i = z * CAR_LEVELS + (c % CAR_LEVELS);
+    if ((estimate.get(`${r.geoid}|${r.variable}`) ?? 0) > 0) varX[i] += se * se;
+    else zeroMax[i] = Math.max(zeroMax[i], se * se);
     seen[z] = 1;
   }
+  for (let i = 0; i < varX.length; i++) varX[i] += zeroMax[i];
   const nEff = new Float64Array(Z);
   let missing = 0;
   for (let z = 0; z < Z; z++) {
