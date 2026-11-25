@@ -10,9 +10,10 @@ import { scenarioUrls } from '$lib/sim/scenario/load';
 import type { TimelineHostRequest, TimelineHostResponse } from '$lib/sim/timeline-protocol';
 import { DEFAULT_POLICY4, type Policy, type SimPolicy4 } from '$lib/timeline/policy4';
 import type { Day } from '$lib/timelapse/time';
-import { carSystemOf } from './cars';
+import { carSnapshotOf, carSystemOf } from './cars';
 import { createTimelineHost, type TimelineHostDeps } from './host';
 import { span, timingSet } from './policy/test/fixtures';
+import { carRowsOf } from './score/series';
 import { viewOf, type ScoreStatics, type SeriesChunk, type TimelineView } from './score';
 import { createChunkSet, loadDataset, type Dataset, type DatasetDeps } from './runner/dataset';
 import { SEED } from './runner/ensemble';
@@ -177,19 +178,45 @@ describe('both worlds', () => {
   });
 });
 
+describe('snapshots', () => {
+  it("only the plan's series takes car snapshots (the comparison's reach no chunk)", async () => {
+    const r = makeRunner();
+    r.runner.open(1, DEFAULT_POLICY4, {}, MONTHS);
+    await r.run(r.full(1));
+    const { plan, comp } = r.runner.ensembles();
+    expect(plan!.series).not.toBeNull();
+    expect(comp!.series).not.toBeNull();
+    expect(carRowsOf(plan!.series!, 0, plan!.finalThrough())).not.toBeNull();
+    expect(carRowsOf(comp!.series!, 0, comp!.finalThrough())).toBeNull();
+    r.runner.dispose();
+  });
+
+  it("month 0's row is the world's car state at creation", async () => {
+    const r = makeRunner();
+    r.runner.open(1, DEFAULT_POLICY4, {}, MONTHS);
+    await r.run(r.full(1));
+    const cars = viewFrom(r.posts).cars!;
+    const timeline = r.runner.internals().timelines[0]!;
+    r.runner.dispose();
+    const w = ds.core.createWorld(ds.statics, timeline, SEED, { event() {} });
+    const start = carSnapshotOf(w)!;
+    expect(start.households).toBeGreaterThan(0);
+    expect(cars.households[0]).toBe(start.households);
+    expect(cars.cars[0]).toBe(start.cars);
+  });
+});
+
 describe('the host', () => {
   it('on fixture-0 the filled chunks carry cars, households above 0', async () => {
     const h = await filledHost();
     expect(h.of('error')).toEqual([]);
     expect(h.chunks.length).toBeGreaterThan(0);
-    // Calendar month 0 holds no model month's last day (model months end after the dataset date),
-    // so it carries zeros (world-score.md); every later month has households.
+    // month 0 included: it carries the start snapshot (`WorldSeries.created`)
+    expect(h.chunks[0].from).toBe(0);
     for (const c of h.chunks) {
       expect(c.cars).not.toBeNull();
       expect(c.cars!.length).toBe(c.rows.length);
-      c.cars!.forEach((row, k) => {
-        if (c.from + k >= 1) expect(row.households).toBeGreaterThan(0);
-      });
+      for (const row of c.cars!) expect(row.households).toBeGreaterThan(0);
     }
   });
 

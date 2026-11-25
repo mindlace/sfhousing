@@ -47,7 +47,7 @@ A calendar month is final when each ensemble's world has stepped the model month
 
 ### The series gate (D2, D3)
 
-`createWorldSeries` needs `ScoreStatics`, which `scoreStaticsOf` gives only for a fully compiled timeline. Each world keeps a feed log (events and `stepped` marks, each mark with the world's `carSnapshotOf` after that month, null without a car system); `feed` units drain it into the series (`stepped(month, cars)`) once its ensemble's statics exist, so the chunks in `filled` carry `cars` (null without one). Copies keep the log, so a restore feeds the same snapshots. Each ensemble uses its own statics (the comparison's tier table matches its frames). An edit closes the gate (`setStatics(null)`), and the new statics reopen it, re-creating each series from its `data()`.
+`createWorldSeries` needs `ScoreStatics`, which `scoreStaticsOf` gives only for a fully compiled timeline. Each world keeps a feed log (events and `stepped` marks); `feed` units drain it into the series once its ensemble's statics exist. The plan's log (`snapshotCars`) also holds its car state at creation (`created`) and gives each mark the world's `carSnapshotOf` after that month (null without a car system), so the chunks in `filled` carry `cars` from month 0 (null without one); the comparison takes no snapshots, since no chunk reads its cars. Copies keep the log, so a restore feeds the same snapshots. Each ensemble uses its own statics (the comparison's tier table matches its frames). An edit closes the gate (`setStatics(null)`), and the new statics reopen it, re-creating each series from its `data()`.
 
 ### `MoneyFeed` (D9)
 

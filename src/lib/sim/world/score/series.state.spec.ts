@@ -45,6 +45,7 @@ function splitRun(
       target.stepped(m);
       if (m === at) target = restored = createWorldSeries(s, saved!);
     },
+    created: (c) => target.created(c),
     finalThrough: () => target.finalThrough(),
     rows: (a, b) => target.rows(a, b),
     data: () => target.data()

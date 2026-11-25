@@ -646,6 +646,14 @@ export function createWorldSeries(s: ScoreStatics, from?: WorldSeriesData): Worl
 
   const series: WorldSeries = {
     add,
+    created(cars: CarSnapshot | null): void {
+      if (d.stepped !== 0) {
+        throw new Error(`world-score: created after month ${d.stepped}`);
+      }
+      // Model month 0's last day is the dataset date: its calendar month (a model month 1 ending
+      // there too overwrites it, as any later model month does).
+      if (cars) fileCars(0, cars);
+    },
     stepped(month: number, cars?: CarSnapshot | null): void {
       if (month !== d.stepped + 1) {
         throw new Error(`world-score: stepped(${month}) after month ${d.stepped}`);

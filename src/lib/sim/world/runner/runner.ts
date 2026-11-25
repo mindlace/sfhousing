@@ -728,6 +728,8 @@ export function createRunner(deps: RunnerDeps): Runner {
   function ensembleOf(s: Side, t: PolicyTimeline): Ensemble {
     return createEnsemble({
       core: ds.core,
+      // only the plan's cars reach the chunks (`chunkOf`)
+      snapshotCars: s.isPlan,
       statics: ds.statics,
       timeline: t,
       months,

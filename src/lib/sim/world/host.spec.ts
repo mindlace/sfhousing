@@ -266,11 +266,14 @@ function plainLoop(
     const ledgerSink = side === 0 ? (e: LedgerEvent) => own.push(e) : undefined;
     const w = createWorld(ds.statics, t, 1, { event: (e) => buf.push(e), ledger: ledgerSink });
     for (const e of buf) ws.add(e, w, ds.statics);
+    // the plan's series alone takes car snapshots, as the runner feeds it
+    const snap = () => (side === 0 ? carSnapshotOf(w) : null);
+    ws.created(snap());
     const due = planDue(w, ds.statics, t, 1, months);
     const sink = { event: (e: WorldEvent) => ws.add(e, w, ds.statics), ledger: ledgerSink };
     while (w.month < months) {
       step(w, due, ds.statics, t, 1, sink);
-      ws.stepped(w.month, carSnapshotOf(w));
+      ws.stepped(w.month, snap());
     }
     if (side === 0) {
       world1 = w;

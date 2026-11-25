@@ -170,6 +170,12 @@ export interface WorldSeriesData {
 /** One world's series by calendar month, fed by the runner. */
 export interface WorldSeries {
   add(e: WorldEvent, world: World, statics: Statics): void;
+  /**
+   * The world's car state at creation (model month 0, the dataset date), before any `stepped`:
+   * filed in the calendar month holding the dataset date, so that month has today's households
+   * rather than zeros. Null (no car system) files nothing.
+   */
+  created(cars: CarSnapshot | null): void;
   /** Called after each step with the model month just stepped. */
   stepped(month: number, cars?: CarSnapshot | null): void;
   finalThrough(): number;

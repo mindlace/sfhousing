@@ -85,6 +85,26 @@ describe('cars in the series', () => {
     expect(c[0].spacesPerHome).toBeNull();
   });
 
+  it('created files the start snapshot in the dataset date month, carried until a later one', () => {
+    const s = createWorldSeries(statics);
+    s.created(snap(7, null));
+    for (let m = 1; m <= 14; m++) s.stepped(m, m >= 3 ? snap(m * 10) : null);
+    const c = chunkOf(s, s, null, 0, s.finalThrough()).cars!;
+    expect(c[0].households).toBe(7);
+    expect(c[0].spacesPerHome).toBeNull();
+    expect(c[0].zones).toEqual(new Float32Array([7, 14]));
+    for (let i = 0; i < calendarOf(3); i++) expect(c[i].households).toBe(7);
+    expect(c[calendarOf(3)].households).toBe(30);
+  });
+
+  it('created after a step throws; created(null) files nothing', () => {
+    const s = createWorldSeries(statics);
+    s.created(null);
+    s.stepped(1, null);
+    expect(() => s.created(snap(1))).toThrow('created after month 1');
+    expect(chunkOf(s, s, null, 0, 0).cars).toBeNull();
+  });
+
   it('a series fed no snapshots gives null cars', () => {
     const s = fed(14, () => null);
     const chunk = chunkOf(s, s, null, 0, 2);
