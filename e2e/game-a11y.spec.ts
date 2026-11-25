@@ -58,6 +58,9 @@ async function checkStructure(page: Page): Promise<void> {
 
 /** The header's About entry reachable, and each of `own` reached by Tab with a visible ring. */
 async function checkReach(page: Page, ...own: Locator[]): Promise<void> {
+  // The skip link is in flow while focused: a click on the header would blur it and move the
+  // header under the pointer, so the check starts with focus on body.
+  await focusBody(page);
   await expectAboutReachable(page);
   for (const control of own) {
     if (!(await control.isVisible())) await openHeaderMenu(page);
@@ -93,6 +96,29 @@ test('the opening', async ({ page }) => {
   await checkState(page);
 });
 
+/** Tab from body to the skip link; no horizontal scroll and axe clean with it still focused. */
+async function scanSkipFocused(page: Page): Promise<void> {
+  const skip = page.getByRole('link', { name: 'Skip to content' });
+  await focusBody(page);
+  await page.keyboard.press('Tab');
+  await expect(skip).toBeFocused();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await expectNoA11yViolations(page);
+  await expect(skip).toBeFocused();
+}
+
+test('the skip link focused, in the opening', async ({ page }) => {
+  await gotoEditor(page);
+  await scanSkipFocused(page);
+  await expect(page.locator('h1')).toHaveCount(1);
+});
+
+test('the skip link focused, on the tree', async ({ page }) => {
+  await treeAfterRun(page);
+  await scanSkipFocused(page);
+  await expect(page.locator('h1')).toHaveCount(1);
+});
+
 test('the opening with the room goal met', async ({ page, isMobile }) => {
   await seedGoalAmount(page, 1);
   await gotoEditor(page);
@@ -118,8 +144,6 @@ test('a run, with reduced motion', async ({ page }) => {
   // than what is left of the run, and nothing in it depends on the run still going.
   await test.step('structure and axe, inside the 8,000 ms run', async () => {
     await checkStructure(page);
-    // Focus back on body: the focused skip link would lie over the header for the scan.
-    await focusBody(page);
     await expectNoA11yViolations(page);
   });
 

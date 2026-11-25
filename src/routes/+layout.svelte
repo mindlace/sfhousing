@@ -40,9 +40,7 @@
   });
 </script>
 
-<a
-  href="#main"
-  class="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-50 focus:bg-white focus:px-3 focus:py-2"
+<a href="#main" class="sr-only focus:not-sr-only focus:bg-white focus:px-3 focus:py-2"
   >Skip to content</a
 >
 <!-- The map pages are themed whole, so in dark they declare the dark color-scheme (native
