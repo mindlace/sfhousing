@@ -1,0 +1,1419 @@
+<article>
+  <header>
+    <h1>Closing implementation plan</h1>
+    <p>Implements the closing unit of the incremental loop: the journeys, the existing e2e specs made true, the reach check, the run bench and the documents.</p>
+    <aside data-kind="note"><strong>For agentic workers</strong> REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps are checklist items; progress is kept in the workspace ledger, not in the plan.</aside>
+  </header>
+
+  <section id="sec-overview">
+    <h2>Overview</h2>
+    <dl>
+      <dt>Goal</dt>
+      <dd>Prove the merged incremental loop end to end in e2e, rename and widen the dataset reach check, add the run bench, and make every current document and test true to one address, no levels, no Remix and the name "SF Housing".</dd>
+      <dt>Architecture</dt>
+      <dd>The unit writes tests, two scripts and documents only; it changes nothing under <code>src/</code> or <code>pipeline/</code>. It runs on the integration branch after every other unit (rows G1 to G8, E1, E2, M1, R1, U1 and T1) has merged, so every selector, word and helper named here is checked against the merged code first, and the code wins. New e2e helpers live in <code>e2e/helpers/play.ts</code>; the reach check reuses <code>tree-catalogue</code>'s engine runner. The plan will be checked for independent lanes (task groups sharing no dependency edge and no file); the closing note lists the groups this plan has.</dd>
+      <dt>Tech Stack</dt>
+      <dd>Playwright (projects <code>chromium</code> and <code>mobile</code>, <code>playwright.config.ts</code>; the headed bench <code>playwright.bench.config.ts</code>), Vitest server project (<code>vite.config.ts:54-62</code>, <code>scripts/**/*.spec.ts</code>), <code>tsx</code> for scripts, Markdown docs.</dd>
+      <dt>Spec</dt>
+      <dd><code>docs/superpowers/specs/2026-11-24-closing-design.html</code> (the closing spec) and <code>docs/superpowers/design/2026-11-24-2120-incremental-loop.html</code> (the design), both package-relative.</dd>
+    </dl>
+    <aside data-kind="question"><strong>Question</strong> The closing spec fixes <code>CLAUDE.md</code>'s new "What This Is" text with "meeting the goal offers a deadline five years earlier" (§sec-design-claude), while G6 lets ladder steps be wider than five years ("When more than four five-year steps fit, the first and last are kept with two evenly between"). If the merged <code>LADDER_YEARS</code> are not all five years apart, should the sentence say "an earlier deadline"? Recommendation: copy the spec's text when the merged steps are all five years; otherwise write "an earlier deadline" and name the change in the hand-back. Task 11 follows this recommendation unless the operator rules otherwise.</aside>
+  </section>
+
+  <section id="sec-global-constraints">
+    <h2>Global Constraints</h2>
+    <p>Every task's requirements include this section. The interface rows and the design's global constraints are copied verbatim from the design; the project constraints follow.</p>
+
+    <section id="sec-gc-project">
+      <h3>Project constraints</h3>
+      <ul>
+        <li>No <code>setTimeout</code> or <code>setInterval</code> in any spec or test helper, even zero-length. The page-side frame recorder of the bench uses <code>requestAnimationFrame</code>; the pointer figure moves one awaited <code>page.mouse.move</code> after another.</li>
+        <li>No fixed waits (<code>waitForTimeout</code>) and no raised timeouts in e2e: every wait is on a readiness signal in the page or in storage (<code>data-phase</code>, <code>data-state</code>, <code>data-hydrated</code>, <code>__sfhFzp</code>, the saved game).</li>
+        <li><code>npx chreode timing-check --head HEAD</code> is clean after each task.</li>
+        <li>Every changed e2e spec passes with <code>--repeat-each=5 --retries=0</code>.</li>
+        <li>No new stderr from the preview server.</li>
+        <li>Port 4173 is shared: run <code>lsof -nP -iTCP:4173 -sTCP:LISTEN</code> before any preview, Playwright or bench run. A listener belongs to another session: wait and check again; never kill it.</li>
+        <li>No <code>npm run signoff</code>, <code>git push</code>, dataset upload or deploy: the closing spec gives signoff to the conductor and uploads nothing (§sec-design-order).</li>
+        <li>Vitest runs with <code>expect.requireAssertions</code>: every test calls <code>expect</code>.</li>
+        <li>Write set: <code>e2e/**</code> other than <code>e2e/helpers/game.ts</code>; <code>scripts/reach-check.ts</code> and <code>scripts/reach-check.spec.ts</code> (renamed from <code>scripts/level2-check.ts</code> and its spec); <code>docs/dev/game.md</code>, <code>docs/dev/pipeline.md</code> and every <code>docs/dev</code> file except <code>game-save.md</code>, <code>sim-page.md</code>, <code>timeline-ui.md</code>, <code>map-interfaces.md</code>, <code>map-stream.md</code>, <code>world-score.md</code>, <code>world-funding.md</code>; <code>CLAUDE.md</code>, <code>README.md</code>. A needed change outside it is reported with its <code>file:line</code> and owner, never made (§sec-design-order).</li>
+        <li>Each task starts by re-reading, on the merged tree, the files and names it relies on. Where a selector, word, key or helper differs from this plan or the specs, the code wins and the difference goes in the task's report for the hand-back (§sec-design-order).</li>
+        <li>Specs never import <code>src/lib/game/catalogue/nodes.ts</code> or <code>tree.ts</code>. They import node ids as literals, <code>LADDER_YEARS</code> from <code>ladder-years.ts</code>, <code>PRICES</code> and <code>RUNG_LUMP</code> from <code>tuning.ts</code>, and never write a price, a ladder year, the lump or the number of rungs as a literal (§sec-design-order, §sec-design-seam-ids).</li>
+      </ul>
+    </section>
+
+    <section id="sec-gc-design">
+      <h3>The design's global constraints</h3>
+      <ul>
+        <li>One future: the same policy document always gives the same forecast. No game state reaches the worker except through the policy document.</li>
+        <li>No file the dataset version hashes is changed: <code>pipeline</code>, <code>src/lib/config.ts</code>, <code>src/lib/{data,generator,timelapse}</code>, <code>src/lib/plan/{geometry,types}.ts</code>, <code>src/lib/sim/finance</code> (<code>pipeline/lib/version.ts:41</code>). The dataset version stays as it is.</li>
+        <li>A policy node acts on a lever the code already has, at a value the code already sources. No node invents a value.</li>
+        <li>The painted area, own pools, the City funding scale and market terms are never offered in a game.</li>
+        <li>Published plans and policies open and play in full, as today.</li>
+        <li>WCAG 2.2 AA: everything works from the keyboard; targets are at least 24 px; motion follows the reduced-motion setting; nothing flashes more than three times a second.</li>
+        <li>Page text is short. A node is a name, a line and a price.</li>
+        <li>The CSP is not widened. Sound is made in the browser; no audio file, font or script is added.</li>
+        <li>A runtime dependency is not added without a credit in <code>src/lib/attribution.ts</code>. None is expected.</li>
+        <li>Code style: 2-space indent, single quotes, no trailing commas, 100 columns.</li>
+        <li>Vitest runs with <code>expect.requireAssertions</code>. Tests are colocated.</li>
+        <li>A schema change goes through <code>npm run db:generate</code>. Migrations are never edited by hand.</li>
+        <li>Signoff fails on server stderr, on timing crutches and on retried flakes. Timing is measured only on a quiet machine.</li>
+        <li>Port 4173 belongs to whichever session started the preview. Never kill it; wait.</li>
+        <li>Commits use Conventional Commits and carry no Claude attribution.</li>
+        <li>Work happens in git worktrees under <code>.claude/worktrees/</code>.</li>
+      </ul>
+    </section>
+
+    <section id="sec-gc-interfaces">
+      <h3>The interface rows this unit consumes</h3>
+      <table id="tbl-gc-interfaces">
+        <caption>Interface table</caption>
+        <thead>
+          <tr><th scope="col">Row</th><th scope="col">Owner</th><th scope="col">Layer</th><th scope="col">Summary</th><th scope="col">Contract</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">G1</th><td><code>game-core</code></td><td>Model commitment</td><td>The game's state and the saved game</td><td><a href="#sec-gc-if-g1">G1</a></td></tr>
+          <tr><th scope="row">G2</th><td><code>game-core</code></td><td>Model commitment</td><td>Units by kind: balances, prices, spending</td><td><a href="#sec-gc-if-g2">G2</a></td></tr>
+          <tr><th scope="row">G3</th><td><code>tree-catalogue</code></td><td>Model commitment</td><td>The tree: nodes, what is shown, buying</td><td><a href="#sec-gc-if-g3">G3</a></td></tr>
+          <tr><th scope="row">G4</th><td><code>game-core</code></td><td>Model commitment</td><td>Limits from what is bought; whether a policy runs</td><td><a href="#sec-gc-if-g4">G4</a></td></tr>
+          <tr><th scope="row">G5</th><td><code>tree-catalogue</code></td><td>Decomposition choice</td><td>Applying a grant to the policy document</td><td><a href="#sec-gc-if-g5">G5</a></td></tr>
+          <tr><th scope="row">G6</th><td><code>game-core</code></td><td>Model commitment</td><td>The ladder, side goals, a run's result, settling</td><td><a href="#sec-gc-if-g6">G6</a></td></tr>
+          <tr><th scope="row">G7</th><td><code>game-save</code></td><td>Decomposition choice</td><td>The browser's game store</td><td><a href="#sec-gc-if-g7">G7</a></td></tr>
+          <tr><th scope="row">G8</th><td><code>game-save</code></td><td>Decomposition choice</td><td>The save API and the <code>game_save</code> table</td><td><a href="#sec-gc-if-g8">G8</a></td></tr>
+          <tr><th scope="row">E1</th><td><code>city-net</code></td><td>Decomposition choice</td><td>The homes a project replaces, in the city feed</td><td><a href="#sec-gc-if-e1">E1</a></td></tr>
+          <tr><th scope="row">E2</th><td><code>money-wait</code></td><td>Decomposition choice</td><td>Homes waiting for money, by month</td><td><a href="#sec-gc-if-e2">E2</a></td></tr>
+          <tr><th scope="row">M1</th><td><code>map-run</code></td><td>Decomposition choice</td><td>The map's run view</td><td><a href="#sec-gc-if-m1">M1</a></td></tr>
+          <tr><th scope="row">R1</th><td><code>run-play</code></td><td>Model commitment</td><td>Drops, collecting, sound</td><td><a href="#sec-gc-if-r1">R1</a></td></tr>
+          <tr><th scope="row">U1</th><td><code>tally-tree</code></td><td>Decomposition choice</td><td>The game's cards, the tree screen, the header parts</td><td><a href="#sec-gc-if-u1">U1</a></td></tr>
+          <tr><th scope="row">T1</th><td><code>tree-catalogue</code></td><td>Decomposition choice</td><td>The measured ladder years and the tuned numbers</td><td><a href="#sec-gc-if-t1">T1</a></td></tr>
+        </tbody>
+      </table>
+
+      <section id="sec-gc-if-g1">
+        <h4>G1 The game's state and the saved game</h4>
+        <pre><code data-lang="ts">// src/lib/game/state.ts
+import type { Day } from '$lib/timelapse/time';
+import type { RunResult } from './run-result';
+
+export type UnitKind = 'home';
+export const UNIT_KINDS: readonly UnitKind[] = ['home'];
+export type Units = Partial&lt;Record&lt;UnitKind, number&gt;&gt;;
+export type NodeId = string;
+
+export interface MetRung {
+  rung: number;
+  reachedOn: Day;
+  datasetVersion: string;
+  at: string;
+}
+
+export interface GameState {
+  v: 2;
+  phase: 'opening' | 'runs';
+  firstWinAt: string | null;
+  bought: Record&lt;NodeId, number&gt;;
+  units: Units;
+  rung: number;
+  met: MetRung[];
+  side: Record&lt;string, string&gt;;
+  runs: number;
+  last: RunResult | null;
+}
+
+export const NEW_GAME: GameState;
+
+// src/lib/game/save-shape.ts
+export interface GameSave {
+  v: 2;
+  id: string;
+  name: string;
+  nameIsDefault: boolean;
+  state: GameState;
+  plan: string | null;
+  policy: string | null;
+  savedAt: string;
+}
+
+export type SaveEntry = Pick&lt;GameSave, 'id' | 'name' | 'nameIsDefault' | 'savedAt'&gt; &amp;
+  Pick&lt;GameState, 'phase' | 'rung'&gt;;
+
+export function parseGameSave(json: unknown): GameSave | null;</code></pre>
+        <dl>
+          <dt><code>phase</code></dt><dd><code>'opening'</code> until the first run starts.</dd>
+          <dt><code>firstWinAt</code></dt><dd>ISO time the room goal was first met. The server makes the account on the first save that has it (D7).</dd>
+          <dt><code>bought</code></dt><dd>The level bought of each node, 1 or more. A node not bought has no entry.</dd>
+          <dt><code>units</code></dt><dd>The balance to spend.</dd>
+          <dt><code>rung</code></dt><dd>The index in the ladder of the deadline in play.</dd>
+          <dt><code>met</code></dt><dd>One entry per rung met, ascending by rung, each recorded once.</dd>
+          <dt><code>side</code></dt><dd>Side goal id to the ISO time it was first met.</dd>
+          <dt><code>last</code></dt><dd>The latest run's result, which the header shows between runs.</dd>
+        </dl>
+        <ul>
+          <li><code>NEW_GAME</code> is the opening with nothing bought, no units, rung 0 and no runs.</li>
+          <li><code>parseGameSave</code> returns null unless <code>v</code> is 2 at both levels (P15).</li>
+          <li>The result is rebuilt from the known fields. An unknown field is dropped.</li>
+          <li><code>parseGameSave</code> checks the shape only. It keeps a node, a level, a side goal or a rung the catalogue does not have; <code>fitGame</code> (G6) drops those in the browser.</li>
+          <li>The server stores what <code>parseGameSave</code> returns.</li>
+          <li>Unit amounts and <code>runs</code> are whole numbers of 0 or more.</li>
+          <li><code>plan</code> and <code>policy</code> stay opaque text, as they are today.</li>
+        </ul>
+        <p><strong>Removed:</strong> <code>Level</code>, <code>Progress</code>, <code>Banked</code>, <code>Bar</code>, <code>barOf</code>, <code>roundComplete</code>, <code>levelUp</code>, <code>standing</code>, <code>beats</code>.</p>
+      </section>
+
+      <section id="sec-gc-if-g2">
+        <h4>G2 Units</h4>
+        <pre><code data-lang="ts">// src/lib/game/units.ts
+import type { Units } from './state';
+
+export function credit(a: Units, b: Units): Units;
+export function affords(have: Units, price: Units): boolean;
+export function spend(have: Units, price: Units): Units;
+export function shortBy(have: Units, price: Units): Units;
+export function total(u: Units): number;</code></pre>
+        <ul>
+          <li>A missing kind is 0.</li>
+          <li><code>spend</code> throws <code>RangeError</code> when <code>affords</code> is false.</li>
+          <li><code>shortBy</code> holds only the kinds the balance is short of.</li>
+          <li>No function changes its arguments.</li>
+        </ul>
+      </section>
+
+      <section id="sec-gc-if-g3">
+        <h4>G3 The tree</h4>
+        <pre><code data-lang="ts">// src/lib/game/tree.ts
+import type { PresetId } from '$lib/sim-page/timing';
+import type { StopType } from '$lib/sim/levers/brushes';
+import type { GameState, NodeId, Units } from './state';
+
+export type Branch = 'permitting' | 'zoning' | 'money' | 'hands';
+
+export type Grant =
+  | { tag: 'preset'; preset: PresetId }
+  | { tag: 'measure'; preset: string }
+  | { tag: 'stop'; stop: StopType }
+  | { tag: 'bands'; max: 2 | 3 }
+  | { tag: 'stories'; max: number }
+  | { tag: 'reach'; maxM: number }
+  | { tag: 'hands'; what: 'radius' | 'linger'; value: number }
+  | { tag: 'hands'; what: 'auto' };
+
+export interface NodeLevel {
+  price: Units;
+  grant: Grant;
+  step: string;
+}
+
+export interface TreeNode {
+  id: NodeId;
+  branch: Branch;
+  label: string;
+  line: string;
+  after: NodeId[];
+  ring: number;
+  levels: NodeLevel[];
+  source: { text: string; href: string | null } | null;
+}
+
+export interface NodeView {
+  node: TreeNode;
+  level: number;
+  state: 'ready' | 'short' | 'done';
+  short: Units | null;
+}
+
+export type Bought =
+  | { ok: true; state: GameState; grant: Grant }
+  | { ok: false; reason: 'unknown' | 'hidden' | 'done' | 'short' };
+
+export function treeView(s: GameState, nodes?: readonly TreeNode[]): NodeView[];
+export function buy(s: GameState, id: NodeId, nodes?: readonly TreeNode[]): Bought;
+
+// src/lib/game/catalogue/nodes.ts
+export const NODES: readonly TreeNode[];</code></pre>
+        <dl>
+          <dt><code>after</code></dt><dd>The node is shown once any of these is bought. Empty: shown from the start.</dd>
+          <dt><code>ring</code></dt><dd>The node is shown once <code>GameState.rung</code> is at least this.</dd>
+          <dt><code>step</code></dt><dd>The words for the level, such as "8 stories".</dd>
+          <dt><code>line</code></dt><dd>One line saying what the node does.</dd>
+          <dt><code>source</code></dt><dd>Where the value comes from. Null for a step in what the player may choose.</dd>
+        </dl>
+        <ul>
+          <li><code>treeView</code> returns the shown nodes only, in catalogue order.</li>
+          <li><code>level</code> is the level bought, 0 for none. <code>state</code> speaks of the next level: <code>'ready'</code> when affordable, <code>'short'</code> when not, <code>'done'</code> when there is none.</li>
+          <li><code>buy</code> buys the next level: it spends its price and records the level. It changes nothing else.</li>
+          <li><code>nodes</code> defaults to <code>NODES</code>.</li>
+          <li>Every preset and measure node has a <code>source</code>. No grant multiplies homes.</li>
+          <li>Levels of one node are bought in order.</li>
+        </ul>
+      </section>
+
+      <section id="sec-gc-if-g4">
+        <h4>G4 Limits</h4>
+        <pre><code data-lang="ts">// src/lib/game/limits.ts
+import type { StopType } from '$lib/sim/levers/brushes';
+import type { Policy, PolicyKind, SimPolicy4 } from '$lib/timeline/policy4';
+import type { GameState } from './state';
+import type { TreeNode } from './tree';
+
+export interface Hands {
+  radiusPx: number;
+  lingerMs: number;
+  auto: boolean;
+}
+
+export interface Limits {
+  open: boolean;
+  presets: ReadonlySet&lt;string&gt;;
+  measures: ReadonlySet&lt;string&gt;;
+  stops: ReadonlySet&lt;StopType&gt;;
+  bands: number;
+  stories: number;
+  reachM: number;
+  custom: boolean;
+  hands: Hands;
+}
+
+export const OPEN_LIMITS: Limits;
+export const BASE_HANDS: Hands;
+export const START_BANDS = 1;
+export const START_STORIES = 4;
+export const START_REACH_M = 402;
+export const FREE_MEASURES: readonly string[];
+
+export function limitsOf(s: GameState, nodes?: readonly TreeNode[]): Limits;
+export function within(kind: PolicyKind, p: Policy, l: Limits): boolean;
+export function runnable(doc: SimPolicy4, l: Limits): SimPolicy4;
+export function isGiven(p: Policy): boolean;</code></pre>
+        <dl>
+          <dt><code>open</code></dt><dd>The open game: every control, no limit (call 9).</dd>
+          <dt><code>presets</code>, <code>measures</code></dt><dd>The permitting preset ids and funding preset ids that run.</dd>
+          <dt><code>bands</code>, <code>stories</code>, <code>reachM</code></dt><dd>The most bands a transit rule may have, its tallest band and its furthest band. All 0 before the first stop type is bought.</dd>
+          <dt><code>custom</code></dt><dd>Custom timing and custom route shares may be set.</dd>
+          <dt><code>FREE_MEASURES</code></dt><dd><code>state-off</code> and <code>federal-credits-off</code>.</dd>
+        </dl>
+        <ul>
+          <li><code>limitsOf</code> folds the grants of every level bought. The largest <code>stories</code>, <code>reach</code>, <code>bands</code>, <code>radius</code> and <code>linger</code> win.</li>
+          <li>Once a stop type is bought, <code>bands</code>, <code>stories</code> and <code>reachM</code> are at least <code>START_BANDS</code>, <code>START_STORIES</code> and <code>START_REACH_M</code>.</li>
+          <li><code>BASE_HANDS</code> is a radius of 48 px, a linger of 4,000 ms and no auto. Every Hands step in the catalogue is above it.</li>
+          <li>Once the last rung is met, <code>stories</code> is 80, <code>bands</code> 3, <code>reachM</code> 3219, every stop type is in, <code>custom</code> is true, and <code>presets</code> also holds <code>observed</code>, the preset a custom timing policy carries.</li>
+          <li><code>within</code> does not read a policy's <code>on</code>.</li>
+          <li>A permitting policy is within the limits when its preset is in <code>presets</code>, and, unless <code>custom</code>, it has no custom edit and no custom route shares.</li>
+          <li>A transit rule is within the limits when its stop types are in <code>stops</code>, it has at most <code>bands</code> bands, no band is taller than <code>stories</code> and none is further than <code>reachM</code>.</li>
+          <li>A protection is within the limits once <code>stops</code> is not empty.</li>
+          <li>A painted area is within the limits only when <code>open</code> (P11).</li>
+          <li>A money policy is within the limits when it is given and its preset is in <code>measures</code>, or its preset is in <code>FREE_MEASURES</code> and <code>measures</code> is not empty. Any other money policy only when <code>open</code> (D4).</li>
+          <li><code>runnable</code> keeps the policies within the limits and returns the same document when it drops none.</li>
+          <li>With <code>OPEN_LIMITS</code>, <code>within</code> is always true.</li>
+        </ul>
+        <p><strong>Unchanged:</strong> <code>isGiven</code>. <strong>Removed:</strong> <code>Allowed</code>, <code>ALL_ALLOWED</code>, <code>allowedAt</code>, <code>unlocksAt</code>, <code>runs</code>, <code>playable</code>, <code>levelNeeded</code>, <code>simLocked</code>, <code>needsHigher</code>.</p>
+      </section>
+
+      <section id="sec-gc-if-g5">
+        <h4>G5 Applying a grant</h4>
+        <pre><code data-lang="ts">// src/lib/game/grant.ts
+import type { addChoices } from '$lib/timeline/add';
+import type { SimPolicy4 } from '$lib/timeline/policy4';
+import type { Limits } from './limits';
+import type { Grant } from './tree';
+
+export const GAME_TRANSIT_ID = 'game-transit';
+
+export interface GrantCtx {
+  cal: Parameters&lt;typeof addChoices&gt;[1];
+  limits: Limits;
+}
+
+export function applyGrant(doc: SimPolicy4, grant: Grant, ctx: GrantCtx): SimPolicy4;</code></pre>
+        <dl>
+          <dt><code>limits</code></dt><dd>The limits after the purchase.</dd>
+          <dt><code>GAME_TRANSIT_ID</code></dt><dd>The id of the one transit rule the game makes.</dd>
+        </dl>
+        <ul>
+          <li>Every policy the function adds is on, with one span from month 1 and no end.</li>
+          <li><code>preset</code> and <code>measure</code>: when no policy has that preset, one is added as "+" adds it today. When one exists it is switched on.</li>
+          <li><code>stop</code>: the game's rule gains the stop type. When there is no such rule, one is added with that stop type and one band at <code>limits.reachM</code> and <code>limits.stories</code>.</li>
+          <li><code>stories</code>: the innermost band of the game's rule takes the new cap, and so does every band that was as tall as it.</li>
+          <li><code>reach</code>: the outermost band of the game's rule takes the new distance.</li>
+          <li><code>bands</code>: the game's rule gains a band. Where there is room inside <code>limits.reachM</code> it goes beyond the outermost, as the editor adds one today. Where there is none the outermost band is split in two.</li>
+          <li>A grant whose policy the player removed or changed past recognition adds it again and leaves the player's own policies alone.</li>
+          <li><code>hands</code>: the document is returned unchanged.</li>
+          <li>The result is within <code>ctx.limits</code> and passes <code>parsePolicy4</code>.</li>
+          <li>The function never removes a policy and never changes one it did not make.</li>
+        </ul>
+      </section>
+
+      <section id="sec-gc-if-g6">
+        <h4>G6 The ladder, side goals and a run's result</h4>
+        <pre><code data-lang="ts">// src/lib/game/catalogue/ladder-years.ts
+export const LADDER_YEARS: readonly number[];
+
+// src/lib/game/catalogue/tuning.ts
+import type { Units } from '../state';
+export const RUNG_LUMP: Units;
+export const SIDE_TUNING: Record&lt;string, { target: number; reward: Units }&gt;;
+
+// src/lib/game/ladder.ts
+import type { Goal } from '$lib/goal/goal';
+import type { Day } from '$lib/timelapse/time';
+import type { SideGoal } from './side-goals';
+import type { GameState, Units } from './state';
+import type { TreeNode } from './tree';
+
+export interface Rung {
+  deadline: Day;
+  label: string;
+}
+
+export const RUNGS: number;
+
+export function ladder(asOf: Day): Rung[];
+export function goalAt(asOf: Day, rung: number, amount?: number): Goal;
+export function finished(s: GameState): boolean;
+export function takeNext(s: GameState): GameState;
+export function fitGame(
+  s: GameState,
+  nodes?: readonly TreeNode[],
+  goals?: readonly SideGoal[]
+): GameState;
+
+// src/lib/game/run-result.ts
+import type { TimelineView } from '$lib/sim/world/score/types';
+import type { Stage } from '$lib/timelapse/types';
+
+export interface RunTake {
+  dropped: Units;
+  collected: Units;
+}
+
+export interface RunReading {
+  homes: number;
+  reachedOn: Day | null;
+  stages: Record&lt;Exclude&lt;Stage, 'complete'&gt;, number&gt;;
+  waitingMoney: number | null;
+}
+
+export interface RunResult extends RunTake, RunReading {
+  rung: number;
+  amount: number;
+  datasetVersion: string;
+  at: string;
+  lump: Units | null;
+  side: { id: string; reward: Units }[];
+}
+
+export function readRun(view: TimelineView, goal: Goal): RunReading | null;
+export function resultOf(
+  s: GameState,
+  reading: RunReading,
+  take: RunTake,
+  input: SideInput,
+  meta: { amount: number; datasetVersion: string; at: string }
+): RunResult;
+export function settle(s: GameState, r: RunResult): GameState;
+
+// src/lib/game/side-goals.ts
+export interface SideInput {
+  view: TimelineView;
+  index: number;
+  take: RunTake;
+}
+
+export interface SideGoal {
+  id: string;
+  label: string;
+  ring: number;
+  reward: Units;
+  read(i: SideInput): { value: number; target: number } | null;
+}
+
+export const SIDE_GOALS: readonly SideGoal[];
+export const SIDE_SHOWN = 3;
+export function sideShown(s: GameState, goals?: readonly SideGoal[]): SideGoal[];</code></pre>
+        <dl>
+          <dt><code>LADDER_YEARS</code></dt><dd>The deadline years after the window's end, latest first, at most four. The measurement in <code>tree-catalogue</code> sets them.</dd>
+          <dt><code>RUNG_LUMP</code>, <code>SIDE_TUNING</code></dt><dd>The numbers the balance script tunes: the lump for a rung first met, and each side goal's target and reward by its id.</dd>
+          <dt><code>RUNGS</code></dt><dd><code>LADDER_YEARS.length + 1</code>.</dd>
+          <dt><code>homes</code></dt><dd>The goal's measure at the deadline's month.</dd>
+          <dt><code>reachedOn</code></dt><dd>The day the amount was first met at or before the deadline, or null.</dd>
+          <dt><code>stages</code></dt><dd>Homes in each stage short of complete at the deadline's month.</dd>
+          <dt><code>waitingMoney</code></dt><dd>Homes waiting for money at the deadline's month; null when the view has no such series.</dd>
+          <dt><code>lump</code></dt><dd><code>RUNG_LUMP</code> when this run is the first to meet its rung, else null.</dd>
+          <dt><code>index</code></dt><dd>The deadline's month in the view.</dd>
+        </dl>
+        <ul>
+          <li>Rung 0's deadline is <code>defaultGoal(asOf).deadline</code>. Rung <em>k</em> is the last day of December of <code>LADDER_YEARS[k - 1]</code>.</li>
+          <li>A rung's deadline is never after the rung before it and never before the dataset date's month.</li>
+          <li>The first ladder year is the largest multiple of five that is at least five years before the window's end year. The last is the first multiple of five at or after the measured year. When more than four five-year steps fit, the first and last are kept with two evenly between.</li>
+          <li>The cheapest node shown at rung 0 costs no more than <code>RUNG_LUMP</code>.</li>
+          <li>A side goal's <code>reward</code> and target are read from <code>SIDE_TUNING</code> by its id.</li>
+          <li><code>goalAt</code> is <code>defaultGoal(asOf)</code> with the rung's deadline, and with <code>amount</code> when given.</li>
+          <li><code>readRun</code> returns null while the view does not cover the deadline's month.</li>
+          <li><code>resultOf</code> lists a side goal when it is shown, not yet met, and its <code>value</code> is at least its <code>target</code>.</li>
+          <li><code>settle</code> credits <code>collected</code>, <code>lump</code> and each side reward; records the rung in <code>met</code> when <code>reachedOn</code> is set and the rung is not there; records each side goal; adds 1 to <code>runs</code>; sets <code>last</code>.</li>
+          <li><code>settle</code> never removes a met rung (call 8).</li>
+          <li><code>settle</code> pays a lump or a side reward only when it also records it, so a result settled twice pays its lump and its side rewards once. The store refuses a second settle of one result (G7).</li>
+          <li><code>takeNext</code> moves to the next rung when the rung in play is met and a next one exists. Otherwise it returns the same state.</li>
+          <li><code>finished</code> is true once the last rung is in <code>met</code>.</li>
+          <li><code>fitGame</code> drops a <code>bought</code> entry for a node the catalogue does not have and lowers a level above the node's last to it.</li>
+          <li><code>fitGame</code> drops a <code>side</code> entry for an id <code>SIDE_GOALS</code> does not have.</li>
+          <li><code>fitGame</code> lowers a rung at <code>RUNGS</code> or above to <code>RUNGS - 1</code> and drops met rungs at <code>RUNGS</code> or above.</li>
+          <li><code>fitGame</code> returns the same object when nothing is dropped or lowered.</li>
+          <li><code>sideShown</code> returns the first <code>SIDE_SHOWN</code> goals whose ring is open and which are not met.</li>
+          <li>A side goal's <code>read</code> returns null when the view lacks what it reads.</li>
+        </ul>
+      </section>
+
+      <section id="sec-gc-if-g7">
+        <h4>G7 The browser's game store</h4>
+        <pre><code data-lang="ts">// src/lib/game/store.svelte.ts
+export type StoreChange = { ok: true } | { ok: false; reason: 'full' | 'storage' | 'changed' };
+
+export class GameStore {
+  constructor(opts: { storage: Storage | null; sync: SaveSync; now?: () =&gt; Date });
+  get state(): GameState;
+  get limits(): Limits;
+  get open(): boolean;
+  get saves(): readonly SaveEntry[];
+  get currentId(): string;
+  get sync(): SaveSync;
+  won(): void;
+  startRuns(): StoreChange;
+  buy(id: NodeId): Bought;
+  settle(r: RunResult): StoreChange;
+  takeNext(): StoreChange;
+  touched(): void;
+  beforeLeave(fn: () =&gt; void): () =&gt; void;
+  newGame(): StoreChange;
+  switchTo(id: string): StoreChange;
+  rename(id: string, name: string): void;
+  remove(id: string): StoreChange;
+  read(id: string): GameSave | null;
+  adopt(saves: readonly GameSave[]): StoreChange;
+  rekey(id: string, newId: string): StoreChange;
+}
+
+export function openGame(): GameStore;
+export function provideGame(store: GameStore): void;
+export function useGame(): GameStore;</code></pre>
+        <ul>
+          <li><code>state</code> and <code>limits</code> are reactive. <code>limits</code> is <code>OPEN_LIMITS</code> for the open game, else <code>limitsOf(state)</code>.</li>
+          <li>Every save the store reads, from storage or from the server, passes through <code>parseGameSave</code> and then its state through <code>fitGame</code> (G6).</li>
+          <li><code>won</code> sets <code>firstWinAt</code> once and writes.</li>
+          <li><code>startRuns</code> sets <code>phase</code> to <code>'runs'</code>. It does nothing while <code>firstWinAt</code> is null.</li>
+          <li><code>buy</code> writes the new state when the purchase is good and returns what <code>buy</code> of G3 returns. A refused write returns <code>{ ok: false, reason: 'short' }</code> and changes nothing.</li>
+          <li>The store does not hold the policy document. The page applies the grant (G5).</li>
+          <li>Each write calls <code>sync.changed(id)</code>, as today.</li>
+          <li>The open game is in phase <code>'runs'</code> with the last rung met, every node bought and no units; its methods that write do nothing.</li>
+          <li><code>settle</code> does nothing for a result already settled.</li>
+        </ul>
+        <p><strong>Unchanged:</strong> the saved-games methods, <code>touched</code>, <code>beforeLeave</code>, the storage keys, <code>SaveSync</code>. <strong>Removed:</strong> <code>progress</code>, <code>allowed</code>, <code>offer</code>, <code>setOffer</code>, <code>levelUp</code>, <code>remix</code>, <code>Offer</code>.</p>
+      </section>
+
+      <section id="sec-gc-if-g8">
+        <h4>G8 The save API and table</h4>
+        <pre><code data-lang="ts">// src/lib/server/db/schema/gameSave.ts
+export const gameSave = sqliteTable(
+  'game_save',
+  {
+    identityId: text('identity_id').notNull().references(() =&gt; userIdentity.id),
+    id: text('id').notNull(),
+    rev: integer('rev').notNull(),
+    name: text('name').notNull(),
+    phase: text('phase').notNull(),
+    rung: integer('rung').notNull(),
+    body: text('body').notNull(),
+    savedAt: integer('saved_at', { mode: 'timestamp_ms' }).notNull(),
+    removedAt: integer('removed_at', { mode: 'timestamp_ms' })
+  },
+  (t) =&gt; [primaryKey({ columns: [t.identityId, t.id] })]
+);</code></pre>
+        <ul>
+          <li>The routes, methods, statuses, limits and rate limit of <code>/api/game</code> are as they are today.</li>
+          <li>Every body that carried a v1 save carries a <code>GameSave</code> of G1. A list entry carries <code>phase</code> and <code>rung</code> where it carried <code>level</code>.</li>
+          <li><code>PUT</code> answers 422 <code>no_win</code> for a signed-out save whose <code>state.firstWinAt</code> is null.</li>
+          <li>The migration is generated with <code>npm run db:generate</code>. Rows made under the five levels are not kept (P15).</li>
+        </ul>
+      </section>
+
+      <section id="sec-gc-if-e1">
+        <h4>E1 Existing homes in the city feed</h4>
+        <pre><code data-lang="ts">// src/lib/map/types.ts
+export interface CityDelta {
+  rows: number;
+  from?: number;
+  row: Int32Array;
+  lngLat: Float32Array;
+  days: Float32Array;
+  homes: Uint16Array;
+  existing: Uint16Array;
+  flags: Uint8Array;
+}</code></pre>
+        <dl>
+          <dt><code>existing</code></dt><dd>Per changed row: the homes the project takes off the goal's count, capped at 65,535. That is the homes on its lot once it has entered construction after the dataset date, and 0 otherwise.</dd>
+        </dl>
+        <ul>
+          <li><code>homes - existing</code> of a completed row is that row's effect on the series' <code>completedNet</code>.</li>
+          <li>A row whose marker has not begun carries 0, as <code>homes</code> does.</li>
+          <li>A marker that differs only in <code>existing</code> is a changed marker and is sent.</li>
+          <li><code>validateCityDelta</code> checks the new array's length.</li>
+          <li>The map's store and the page's index keep it per row.</li>
+        </ul>
+        <p><strong>Unchanged:</strong> every other field and rule of the feed.</p>
+      </section>
+
+      <section id="sec-gc-if-e2">
+        <h4>E2 Homes waiting for money</h4>
+        <pre><code data-lang="ts">// src/lib/sim/world/score/types.ts
+export interface SeriesChunk {
+  from: number;
+  rows: MonthRow[];
+  planEffect: PlanRow[];
+  money: MoneyRow[] | null;
+  tiers: TierUnits[] | null;
+  waiting?: number[] | null;
+}
+
+export interface TimelineView {
+  // every field it has today, and:
+  waitingMoney?: number[] | null;
+}</code></pre>
+        <dl>
+          <dt><code>waiting</code></dt><dd>Per calendar month of the chunk: homes in applications waiting in the plan's funding line at the end of the model month that holds the calendar month's last day.</dd>
+        </dl>
+        <ul>
+          <li>Both fields stay optional. An absent field reads as null.</li>
+          <li>Null or absent exactly when <code>money</code> is null.</li>
+          <li>Homes are an application's gross units.</li>
+          <li>A row marked gone is not counted. A lot that is no longer free is not counted.</li>
+          <li>A lot with two applications counts once, by the larger.</li>
+          <li>Two calendar months that end in one model month share a value.</li>
+          <li>The value is of the plan's world, never the comparison's.</li>
+          <li><code>waitingMoney</code> is null when any chunk of the view lacks <code>waiting</code>.</li>
+          <li>No file under <code>src/lib/sim/finance</code> changes.</li>
+        </ul>
+      </section>
+
+      <section id="sec-gc-if-m1">
+        <h4>M1 The map's run view</h4>
+        <pre><code data-lang="ts">// src/lib/map/types.ts
+export interface SimMapHandle {
+  // every method it has today, and:
+  setRunView(on: boolean): void;
+}</code></pre>
+        <ul>
+          <li><code>true</code>: the map remembers its camera, jumps to the whole city, flat and north up, and locks.</li>
+          <li>Locked: no drag, wheel, pinch, double click, key or control moves the camera, and the canvas container has <code>touch-action: none</code>.</li>
+          <li>Locked: hover picks, taps and clicks are not made or delivered, and no tooltip or card shows.</li>
+          <li>Locked: the map's bounds and zoom floor are lifted so the city fits a small box. They return at unlock.</li>
+          <li>Locked: a resize or a change of the bottom inset fits again.</li>
+          <li><code>false</code>: the map unlocks and jumps back to the remembered camera.</li>
+          <li>The jump is not animated.</li>
+          <li>A call with the value already in force does nothing.</li>
+          <li>The state survives a remount of the map, as the pan state does.</li>
+          <li>The fit keeps the city inside the map box less the bottom inset.</li>
+        </ul>
+      </section>
+
+      <section id="sec-gc-if-r1">
+        <h4>R1 Drops, collecting and sound</h4>
+        <pre><code data-lang="ts">// src/lib/game/run/drops.ts
+import type { Day } from '$lib/timelapse/time';
+import type { Hands } from '../limits';
+import type { RunTake } from '../run-result';
+import type { Units } from '../state';
+
+export interface Marker {
+  row: number;
+  lng: number;
+  lat: number;
+  completed: Day;
+  homes: number;
+  existing: number;
+  policy: boolean;
+}
+
+export interface Drop {
+  row: number;
+  lng: number;
+  lat: number;
+  day: Day;
+  worth: Units;
+  policy: boolean;
+}
+
+export function planDrops(markers: Iterable&lt;Marker&gt;, asOf: Day, to: Day): Drop[];
+
+export interface RunFeed {
+  drops: readonly Drop[];
+  day: Day;
+  running: boolean;
+  project(lng: number, lat: number): { x: number; y: number } | null;
+}
+
+// src/lib/game/run/RunLayer.svelte
+interface RunLayerProps {
+  feed: RunFeed;
+  hands: Hands;
+  collectForMe: boolean;
+  sound: Sound;
+  ontake(t: RunTake): void;
+}
+
+// src/lib/game/run/sound.ts
+export interface Sound {
+  pop(): void;
+  collect(): void;
+  goal(): void;
+  buy(): void;
+}
+export function createSound(muted: () =&gt; boolean): Sound;
+
+// src/lib/game/run/prefs.ts
+export function readCollectForMe(storage: Storage | null): boolean;
+export function writeCollectForMe(storage: Storage | null, on: boolean): void;
+export function readMuted(storage: Storage | null): boolean;
+export function writeMuted(storage: Storage | null, muted: boolean): void;
+export function onPrefs(fn: () =&gt; void): () =&gt; void;</code></pre>
+        <dl>
+          <dt><code>completed</code></dt><dd>The marker's completed day; <code>NaN</code> when it has none.</dd>
+          <dt><code>worth</code></dt><dd><code>{ home: homes - existing }</code>.</dd>
+          <dt><code>policy</code></dt><dd>The project carries the map's policy mark, the diamond: its <code>CityDelta.flags</code> are not 0. A drop takes its marker's value.</dd>
+          <dt><code>project</code></dt><dd>The point's position in CSS pixels from the map box's top left, or null when it is off the map.</dd>
+          <dt><code>ontake</code></dt><dd>The run's totals so far, sent whenever they change and once when <code>running</code> turns false.</dd>
+        </dl>
+        <ul>
+          <li><code>planDrops</code> returns one drop for each marker completed after <code>asOf</code> and at or before <code>to</code> whose worth is above 0, ascending by day, then by row.</li>
+          <li><code>feed.drops</code> may be replaced during a run, as the forecast fills. Drops are matched by <code>row</code>: one already shown stays as it is, and none is counted twice.</li>
+          <li>A drop appears when <code>feed.day</code> reaches its day and is counted in <code>dropped</code> then.</li>
+          <li>A drop whose <code>policy</code> is true pops in the policy's colour, the colour of the map's diamond (<code>tl-halo-policy</code>); every other drop pops in the accent. Its worth and how it is collected do not change.</li>
+          <li>A drop is collected when its projected point is within <code>hands.radiusPx</code> of the ring's centre. It is counted in <code>collected</code> once.</li>
+          <li>A drop not collected is gone <code>hands.lingerMs</code> of wall time after it appeared.</li>
+          <li>With <code>collectForMe</code> or <code>hands.auto</code>, every drop is collected as it appears.</li>
+          <li>The ring's centre is the last pointer position over the map. Arrow keys move it by a fixed step; holding Shift moves it further.</li>
+          <li>The layer is a canvas over the map with <code>pointer-events: none</code>. It listens on the window.</li>
+          <li>Nothing the layer does reaches the worker or the policy document (P9).</li>
+          <li>With reduced motion, drops and counts appear and disappear without movement.</li>
+          <li>Nothing flashes more than three times a second.</li>
+          <li>A screen reader is told the run's totals at its end, never each drop.</li>
+          <li>The layer's root carries <code>data-dropped</code> and <code>data-collected</code>, the totals in homes.</li>
+          <li><code>onPrefs</code> calls <code>fn</code> after either preference is written in this page, and returns its own removal. A change applies to a run in progress.</li>
+          <li>The layer's words are in <code>src/lib/game/run/words.ts</code>.</li>
+          <li><code>createSound</code> makes its sounds with the Web Audio API and loads no file. It makes no sound while <code>muted()</code> is true or before a user gesture.</li>
+        </ul>
+      </section>
+
+      <section id="sec-gc-if-u1">
+        <h4>U1 The game's screens and header parts</h4>
+        <pre><code data-lang="ts">// src/lib/game/ui/Tally.svelte
+interface TallyProps {
+  result: RunResult;
+  before: number | null;
+  deadline: string;
+  oncontinue(): void;
+}
+
+// src/lib/game/ui/Tree.svelte
+interface TreeProps {
+  nodes: NodeView[];
+  on: Record&lt;NodeId, boolean&gt;;
+  units: Units;
+  busy: boolean;
+  next: Rung | null;
+  ending: { reachedOn: Day; stateBy: Day; perAddedHome: number | null } | null;
+  onbuy(id: NodeId): void;
+  onedit(id: NodeId): void;
+  ontoggle(id: NodeId, on: boolean): void;
+  onrun(): void;
+  onnext(): void;
+  onpublish(): void;
+}
+
+// src/lib/game/ui/GoalHeadline.svelte
+interface GoalHeadlineProps {
+  homes: number | null;
+  amount: number;
+  deadline: string;
+  unlocks: string | null;
+  met: boolean;
+  side: { goal: SideGoal; value: number; target: number; met: boolean }[];
+}
+
+// src/lib/game/ui/OpeningCard.svelte
+interface OpeningCardProps {
+  amount: number;
+  onstart(): void;
+}
+
+// src/lib/game/ui/GameCell.svelte
+interface GameCellProps {
+  inMenu: boolean;
+}</code></pre>
+        <dl>
+          <dt><code>before</code></dt><dd>Homes by the deadline in the run before this one on the same rung, or null.</dd>
+          <dt><code>on</code></dt><dd>For each bought node whose grant made a policy: whether that policy is switched on. A node with no entry shows no switch.</dd>
+          <dt><code>ending</code></dt><dd>Set once the last rung is met: the day the goal was reached, the day the state asks for the goal's homes by (<code>stateBy</code>, RHNA's deadline), and public money per added home.</dd>
+          <dt><code>busy</code></dt><dd>The forecast for the next run is not ready. Run says so and waits.</dd>
+          <dt><code>next</code></dt><dd>The rung on offer, when the rung in play is met.</dd>
+          <dt><code>homes</code></dt><dd>Null before the first run of a rung: the headline then shows the goal alone.</dd>
+          <dt><code>unlocks</code></dt><dd>What meeting the goal opens; null at the last rung.</dd>
+        </dl>
+        <ul>
+          <li><code>Tally</code> shows homes by the deadline with the change from the last run, units collected out of units dropped, the lump and side rewards, homes in each stage, and homes waiting for money when that is not null.</li>
+          <li><code>Tally</code> holds the account offer that the win card holds today.</li>
+          <li><code>Tree</code> shows each node with its label, its step, its price or how far short the balance is, and Edit when bought. One node at a time is open with its line, its source and Buy.</li>
+          <li><code>Tree</code> holds Run, and "Take the next goal" while <code>next</code> is set.</li>
+          <li><code>Tree</code> fills the page below the header, as in the wireframe.</li>
+          <li>A bought node with an entry in <code>on</code> carries a switch, which calls <code>ontoggle</code>.</li>
+          <li>With <code>ending</code> set, <code>Tree</code> shows the ending's summary and Publish, which calls <code>onpublish</code>.</li>
+          <li><code>GamePanel</code> loads <code>/</code> afresh after a switch of game, a new game, or the deletion of the game in play.</li>
+          <li>These parts' words are in <code>src/lib/game/ui/words.ts</code>.</li>
+          <li><code>GoalHeadline</code> is the header's pinned item: line 1 the homes of the amount by the deadline, line 2 a bar and what it unlocks. Pressing it opens the side goals.</li>
+          <li><code>GameCell</code> shows the unit count and opens <code>GamePanel</code>: saved games, New game, the sync line, the sound switch and "Collect for me".</li>
+          <li>Every control is reachable by keyboard, has a visible focus ring and a target of at least 24 px.</li>
+          <li>No part reads the simulation or the map. Each takes what it shows as props or from <code>useGame()</code>.</li>
+        </ul>
+        <p><strong>Removed:</strong> <code>WinCard</code>, <code>LevelPanel</code>, <code>LevelCell</code>.</p>
+      </section>
+
+      <section id="sec-gc-if-t1">
+        <h4>T1 The measured ladder years and the tuned numbers</h4>
+        <pre><code data-lang="sh">npx tsx scripts/reach-measure.ts &lt;datasetDir&gt; --write
+npx tsx scripts/tree-balance.ts &lt;datasetDir&gt;</code></pre>
+        <ul>
+          <li>T1 is the state of two files after the measurement: <code>src/lib/game/catalogue/ladder-years.ts</code> and <code>src/lib/game/catalogue/tuning.ts</code>. It adds no type and no export to G3 or G6.</li>
+          <li><code>LADDER_YEARS</code> holds the years <code>reach-measure</code> wrote from the production dataset, by G6's rule.</li>
+          <li><code>tuning.ts</code> holds prices, the rung lump and side-goal numbers under which <code>tree-balance</code> passes every check it reports on the production dataset.</li>
+          <li>Before T1, both files hold starting values. Code and tests outside <code>tree-catalogue</code> and <code>closing</code> never assert a price, a ladder year or the number of rungs from these files; they pass their own.</li>
+          <li>When no set of numbers passes, the unit stops and hands the report to the owner with the checks that fail.</li>
+        </ul>
+      </section>
+    </section>
+
+    <section id="sec-gc-other">
+      <h3>Other units' names this plan uses</h3>
+      <p>Not rows, but fixed by the sibling specs; check each on the merged tree.</p>
+      <ul>
+        <li><code>tree-catalogue</code>: <code>scripts/reach-measure.ts</code> exports <code>type DataSource = { dir: string } | { version: string; origin: string }</code>, <code>DEFAULT_ORIGIN = 'https://sfhousing.mindlace.net'</code>, <code>interface Engine { datasetVersion; asOf; cal; view(doc): Promise&lt;TimelineView&gt;; close(): void }</code> and <code>openEngine(src, opts?: { warn?; timeoutMs? }): Promise&lt;Engine&gt;</code>; <code>src/lib/game/catalogue/play.ts</code> exports <code>fullTree(cal, nodes?): Played</code> with <code>Played = { state: GameState; doc: SimPolicy4 }</code>; <code>tuning.ts</code> exports <code>PRICES: Readonly&lt;Record&lt;NodeId, readonly number[]&gt;&gt;</code> (tree-catalogue spec §sec-design-engine, §sec-design-play, §sec-design-tuning).</li>
+        <li><code>game-save</code>: <code>e2e/helpers/game.ts</code> exports <code>seedGame(page, state?)</code>, <code>newVisitor(page)</code>, <code>seedGoalAmount(page, amount)</code>, <code>seedRunMs(page, ms)</code>; <code>seedRunMs</code> throws <code>seedRunMs: ms must be a whole number from 100 to 20000</code>; <code>SAVES_KEY</code> and <code>saveKey(id)</code> from <code>src/lib/game/saves.ts</code> (game-save spec §sec-design-e2e).</li>
+        <li><code>game-sim</code>: <code>src/lib/sim-page/game-phase.ts</code> exports <code>type GamePhase = 'starting' | 'run' | 'tally' | 'tree' | 'workshop'</code> and <code>landing(s)</code>; <code>src/lib/sim-page/e2e-run.ts</code> exports <code>E2E_RUN_MS_KEY = 'sfhousing:e2e:run-ms'</code> (game-sim spec §sec-design-states, §sec-design-seam).</li>
+        <li><code>run-play</code>: <code>RING_KEYS = { stepPx: 16, shiftStepPx: 64 }</code> in <code>src/lib/game/run/run-model.ts</code> (run-play spec §sec-d-ring).</li>
+        <li><code>tally-tree</code>: <code>RUN_BUSY = 'Getting the forecast ready'</code>, <code>ENDING_TITLE = 'Every goal met'</code>, <code>endingReached</code> ("Reached in Mar 2041"), <code>endingState</code> ("The state asks by Jan 2031"); while busy Run carries <code>aria-busy="true"</code>; test ids per its §sec-design-testids.</li>
+        <li>Existing helpers: <code>gotoHydrated</code>, <code>openHeaderMenu</code>, <code>headerAction</code>, <code>gotoEditor</code>, <code>jumpAndIdle</code>, <code>paintOnce</code>, <code>publishDialog</code>, <code>FRAME</code> (<code>e2e/helpers/sharing.ts:21</code>, <code>:56</code>, <code>:86</code>, <code>:98</code>, <code>:115</code>, <code>:122</code>, <code>:295</code>, <code>:395</code>); <code>waitFilled</code>, <code>installPolicyHold</code>, <code>holdPolicy</code>, <code>releasePolicy</code> (<code>e2e/helpers/run.ts:15</code>, <code>:37</code>, <code>:57</code>, <code>:62</code>); <code>expectAboutReachable</code>, <code>expectPhoneHeaderFits</code> (<code>e2e/helpers/chrome.ts:15</code>, <code>:42</code>); <code>expectNoA11yViolations</code> (<code>e2e/helpers/a11y.ts:48</code>); <code>BAR_MS</code>, <code>pct</code>, <code>verdict</code> (<code>e2e/bench/bench-util.ts:17-25</code>); <code>__sfhFzp.policy</code> (<code>src/lib/fzp/debug.ts:21</code>).</li>
+      </ul>
+    </section>
+  </section>
+
+  <section id="sec-review-focus">
+    <h2>Review Focus</h2>
+    <ol>
+      <li><strong>A double press of Run.</strong> A player who double-clicks <code>tree-run</code> gets one run and <code>runs</code> rises by exactly 1 (G7: no second settle). Test added to Task 4.</li>
+      <li><strong>A reload on the tally.</strong> A player who reloads after a run settles and before Continue lands on the tree with <code>units</code> unchanged: nothing is paid twice. Assertion added to Task 4's reload case.</li>
+      <li><strong>The game in dark mode.</strong> A player whose system is dark sees the tree with a node open and the tally with no axe violation. Test added to Task 6.</li>
+      <li><strong>The reach check with no network.</strong> <code>--version &lt;v&gt; --from &lt;unreachable origin&gt;</code> exits 2 with one <code>reach-check:</code> stderr line and nothing on stdout, never a stack trace or a hang. Test added to Task 1.</li>
+      <li><strong>The reach check's wording at the edges.</strong> A margin of one month reads "1 month early"; a large shortfall is grouped with commas. Test added to Task 1.</li>
+    </ol>
+  </section>
+
+  <section id="sec-file-structure">
+    <h2>File Structure</h2>
+    <table id="tbl-files">
+      <caption>Files by task</caption>
+      <thead>
+        <tr><th scope="col">File</th><th scope="col">Task</th><th scope="col">Responsibility</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row"><code>scripts/reach-check.ts</code>, <code>scripts/reach-check.spec.ts</code> (renamed from <code>level2-check</code>)</th><td>1</td><td>The two-question reach check</td></tr>
+        <tr><th scope="row"><code>e2e/helpers/play.ts</code> (new); <code>e2e/helpers/{sharing,chrome,header-text,run,a11y,pointer,account,auth}.ts</code> (comments and the named changes)</th><td>2</td><td>Game play helpers; <code>gotoEditor</code> as a new visitor; the name</td></tr>
+        <tr><th scope="row"><code>e2e/game-shell.spec.ts</code></th><td>2</td><td>The opening, the redirect, the header, the open game</td></tr>
+        <tr><th scope="row"><code>e2e/game-core.spec.ts</code>, <code>e2e/game-helpers.spec.ts</code>, <code>e2e/game-save.spec.ts</code></th><td>3</td><td>The store and saves through storage and the API</td></tr>
+        <tr><th scope="row"><code>e2e/game-sim.spec.ts</code></th><td>4</td><td>The phases, buying, the switch, the workshop, the published view</td></tr>
+        <tr><th scope="row"><code>e2e/game-journey.spec.ts</code></th><td>5</td><td>The three journeys</td></tr>
+        <tr><th scope="row"><code>e2e/game-a11y.spec.ts</code> (new), <code>e2e/targets.spec.ts</code>, <code>e2e/layout.spec.ts</code>, <code>e2e/pages-a11y.spec.ts</code></th><td>6</td><td>Accessibility in each state; targets; header fit</td></tr>
+        <tr><th scope="row"><code>e2e/{chrome-dark,fzp,fzp-sim,transit,sim,sim-activity,sim-funding,sim-citywide,sim-details,sim-halos,sim-pools,sim-timeline,map-key,brush,map}.spec.ts</code>, <code>e2e/perf/*.perf.spec.ts</code>, any other spec the rules reach</th><td>7</td><td>Address, Paint, steps, name</td></tr>
+        <tr><th scope="row"><code>e2e/{sim-share,share-states,share-notices,share-roundtrip}.spec.ts</code></th><td>8</td><td>Remix out; address</td></tr>
+        <tr><th scope="row"><code>e2e/bench/game-run.bench.ts</code> (new), <code>e2e/bench/{map-pan,map-timeline,sim-timeline}.bench.ts</code>, <code>docs/dev/map-perf.md</code></th><td>9 (results in 13)</td><td>The run and purchase-to-ready cases</td></tr>
+        <tr><th scope="row"><code>docs/dev/game.md</code></th><td>10</td><td>The game's developer document</td></tr>
+        <tr><th scope="row"><code>CLAUDE.md</code>, <code>README.md</code>, <code>docs/dev/{deploy,pipeline,testing,accessibility,developing}.md</code></th><td>11</td><td>The entry documents, the reach check, tests</td></tr>
+        <tr><th scope="row"><code>docs/dev/{about,fzp-mode,ensemble-runner,sim-timers,sim-levers,policy-timeline,finance-*,market,road-lots,world-core,plan-sharing,ui-parts,sim-funding,auth,data-serving,building-boxes}.md</code></th><td>12</td><td>The page's name, Remix and levels out</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="sec-task-1">
+    <h2>Task 1: The reach check</h2>
+    <ul>
+      <li>Create (by <code>git mv</code>): <code>scripts/reach-check.ts</code> from <code>scripts/level2-check.ts</code>; <code>scripts/reach-check.spec.ts</code> from <code>scripts/level2-check.spec.ts</code></li>
+      <li>Delete: <code>scripts/level2-check.ts</code>, <code>scripts/level2-check.spec.ts</code> (by the move)</li>
+    </ul>
+    <ul>
+      <li>Consumes: G6 (<code>goalAt</code>, <code>RUNGS</code>, <code>ladder</code>), T1 (the measured <code>LADDER_YEARS</code>), G3 and G5 through <code>fullTree</code>, E2 (the view the engine returns); <code>openEngine</code>, <code>DEFAULT_ORIGIN</code>, <code>DataSource</code> from <code>scripts/reach-measure.ts</code>; <code>readGoal</code> (<code>src/lib/goal/goal.ts:91-103</code>), <code>formatShortMonthYear</code>, <code>DEFAULT_POLICY4</code>.</li>
+      <li>Produces: the command and its exports below; nothing else waits on them.</li>
+    </ul>
+    <pre><code data-lang="ts">// scripts/reach-check.ts
+import { openEngine, DEFAULT_ORIGIN, type DataSource } from './reach-measure';
+import { fullTree } from '../src/lib/game/catalogue/play';
+
+export interface Reach {
+  who: 'current' | 'full';
+  rung: number;
+  amount: number;
+  deadline: Day;
+  reachedOn: Day | null;
+  homesAtDeadline: number;
+  marginMonths: number | null;
+}
+
+export function readReach(
+  view: TimelineView,
+  asOf: Day,
+  who: 'current' | 'full',
+  amount?: number
+): Reach;
+export function reachLines(datasetVersion: string, r: readonly Reach[]): string[];
+export function reachExit(r: readonly Reach[]): 0 | 1;
+
+// builder's call: exported so the refusal tests need no child process
+export function parseArgs(argv: string[]): { src: DataSource; amount?: number } | { error: string };
+export interface Io { out(line: string): void; err(line: string): void }
+export function main(argv: string[], io?: Io): Promise&lt;0 | 1 | 2&gt;;</code></pre>
+    <ol>
+      <li id="t1-s1"><input type="checkbox"> Check on the merged tree that <code>scripts/reach-measure.ts</code> exports <code>openEngine</code>, <code>DEFAULT_ORIGIN</code>, <code>DataSource</code> and <code>Engine</code> as above, and <code>src/lib/game/catalogue/play.ts</code> exports <code>fullTree</code>. Note any difference for the report.</li>
+      <li id="t1-s2"><input type="checkbox"> <code>git mv</code> both files, then rewrite the spec's header comment and imports to <code>./reach-check</code>.</li>
+      <li id="t1-s3"><input type="checkbox"> Write the failing tests in <code>scripts/reach-check.spec.ts</code>. One <code>beforeAll</code> opens <code>openEngine({ dir: 'e2e/fixtures/data/fixture-0' })</code> and takes <code>current = await engine.view(DEFAULT_POLICY4)</code> and <code>full = await engine.view(fullTree(engine.cal).doc)</code> under the hook argument <code>FILL_HOOK_MS = 600_000</code> (kept from <code>level2-check.spec.ts:23</code>); <code>afterAll</code> closes the engine and removes temp dirs.
+        <pre><code data-lang="ts">it('amount 1: both questions are reached in the first month', () =&gt; {
+  const r = [readReach(current, asOf, 'current', 1), readReach(full, asOf, 'full', 1)];
+  for (const x of r) expect(x.reachedOn).toBe(current.months[0]);
+  expect(reachExit(r)).toBe(0);
+});
+it("the goal's own amount: current law misses on the fixture", () =&gt; {
+  const c = readReach(current, asOf, 'current');
+  expect(c.amount).toBe(82_069);
+  expect(c.reachedOn).toBeNull();
+  expect(reachLines('fixture-0', [c, readReach(full, asOf, 'full')])[2]).toMatch(
+    /^Current law by [A-Z][a-z]{2} \d{4}: missed, [\d,]+ homes, [\d,]+ short$/
+  );
+  expect(reachExit([c])).toBe(1);
+});
+it.each(['current', 'full'] as const)('%s: homesAtDeadline is reached, one more misses by 1', (who) =&gt; {
+  /* view by who; readReach at h is reached; at h + 1 reachedOn is null and the line ends ', 1 short' */
+});
+it('rungs: full reads rung RUNGS - 1, current rung 0', () =&gt; {
+  expect(readReach(full, asOf, 'full').deadline).toBe(ladder(asOf)[RUNGS - 1].deadline);
+  expect(readReach(current, asOf, 'current').deadline).toBe(ladder(asOf)[0].deadline);
+});
+it('reachLines: four lines, the first two fixed', () =&gt; {
+  /* ['Dataset fixture-0', `Goal: ${(82_069).toLocaleString('en-US')} homes`, line 3 starts
+     'Current law by ', line 4 starts 'Full tree by '] */
+});
+it('reachLines: one month early is singular', () =&gt; {
+  /* a synthetic Reach with marginMonths 1 gives ': reached &lt;Mon YYYY&gt;, 1 month early' */
+});
+it('reachLines: numbers are grouped', () =&gt; {
+  /* a synthetic missed Reach, amount 1_234_567, homesAtDeadline 1_000 gives
+     'missed, 1,000 homes, 1,233,567 short' */
+});
+describe('main refuses', () =&gt; {
+  /* each with an io recorder: exit 2, exactly one err line starting 'reach-check: ', no out line:
+     []                       -&gt; err is 'reach-check: usage: npx tsx scripts/reach-check.ts &lt;datasetDir&gt; | --version &lt;v&gt; [--from &lt;origin&gt;] [--amount &lt;homes&gt;]'
+     [FIXTURE, '--version', 'x'], ['--bogus'], [FIXTURE, FIXTURE], ['--from', 'http://x'],
+     [FIXTURE, '--amount', '0'], [FIXTURE, '--amount', '1.5'], [FIXTURE, '--amount'],
+     [an empty temp dir]      (no manifest),
+     ['--version', 'fixture-0', '--from', 'http://127.0.0.1:9']   (no network) */
+});</code></pre>
+      </li>
+      <li id="t1-s4"><input type="checkbox"> Run them and see them fail on the missing exports.
+        <pre><code data-lang="sh">npx vitest run --project server scripts/reach-check.spec.ts</code></pre>
+      </li>
+      <li id="t1-s5"><input type="checkbox"> Implement <code>readReach</code>: goal <code>goalAt(asOf, who === 'current' ? 0 : RUNGS - 1, amount)</code>; <code>reachedOn</code> from <code>readGoal(goal, view, view.lastIndex)</code>; <code>homesAtDeadline</code> as <code>goal.measure.valueAt(view, d)</code> at the deadline's month index, as <code>readLevel2</code> finds it (<code>scripts/level2-check.ts:236-244</code>); <code>marginMonths</code> by <code>monthsBetween</code>. Delete <code>runEmptyDocument</code>, <code>readLevel2</code>, <code>level2Lines</code>, <code>level2Exit</code>, <code>EmptyRun</code>, <code>Level2Result</code> and the local fetch and timer helpers that <code>openEngine</code> now owns.</li>
+      <li id="t1-s6"><input type="checkbox"> Implement <code>reachLines</code> to the four lines of §sec-design-reach: line 3 "Current law by &lt;Mon YYYY&gt;: …", line 4 "Full tree by &lt;Mon YYYY&gt;: …", each either "reached &lt;Mon YYYY&gt;, &lt;n&gt; months early" ("1 month early") or "missed, &lt;homes&gt; homes, &lt;short&gt; short", months by <code>formatShortMonthYear</code>, numbers by <code>toLocaleString('en-US')</code>. <code>reachExit</code> is 1 when any <code>reachedOn</code> is null.</li>
+      <li id="t1-s7"><input type="checkbox"> Implement <code>parseArgs</code> and <code>main</code> to §sec-design-reach's five steps and its refusals: <code>main</code> prints only through <code>io</code> (default <code>console.log</code> / <code>console.error</code>), closes the engine in <code>finally</code>, and turns an <code>openEngine</code>, <code>view</code> or <code>fullTree</code> rejection into exit 2 with <code>reach-check: &lt;message&gt;</code>. The wording of each refusal other than the usage line is builder's call (one short clause naming the bad argument). The <code>import.meta.url</code> guard sets <code>process.exitCode</code> as today (<code>scripts/level2-check.ts:310-320</code>).</li>
+      <li id="t1-s8"><input type="checkbox"> Run the spec and see it pass; then <code>npx tsx scripts/reach-check.ts e2e/fixtures/data/fixture-0 --amount 1</code> prints four lines and exits 0.
+        <pre><code data-lang="sh">npx vitest run --project server scripts/reach-check.spec.ts</code></pre>
+      </li>
+      <li id="t1-s9"><input type="checkbox"> <code>npm run check</code> and <code>npx eslint scripts/reach-check.ts scripts/reach-check.spec.ts</code> are clean.</li>
+      <li id="t1-s10"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add scripts/reach-check.ts scripts/reach-check.spec.ts scripts/level2-check.ts scripts/level2-check.spec.ts
+git commit -m "feat(reach-check): ask current law and the full tree of one dataset"</code></pre>
+      </li>
+      <li id="t1-s11"><input type="checkbox"> Timing check is clean; on a finding, fix it and commit again.
+        <pre><code data-lang="sh">npx chreode timing-check --head HEAD</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-2">
+    <h2>Task 2: The play helpers and the shell spec</h2>
+    <ul>
+      <li>Create: <code>e2e/helpers/play.ts</code></li>
+      <li>Modify: <code>e2e/helpers/sharing.ts:114-120</code> (<code>gotoEditor</code>), <code>e2e/helpers/chrome.ts:70</code>, <code>e2e/helpers/header-text.ts</code> (adds <code>widestGameHeader</code>), comments in <code>e2e/helpers/*.ts</code> that name <code>/sim</code> as the page, a level or "level up ready" (for example <code>sharing.ts:82-84</code>, <code>run.ts:1</code>, <code>header-text.ts:1</code>)</li>
+      <li>Rewrite: <code>e2e/game-shell.spec.ts</code></li>
+    </ul>
+    <ul>
+      <li>Consumes: G1 (<code>GameSave</code>), G7 (storage keys through <code>SAVES_KEY</code>, <code>saveKey</code>), U1 test ids, <code>GamePhase</code> (game-sim), <code>seedGame</code>, <code>newVisitor</code>, <code>seedGoalAmount</code>, <code>seedRunMs</code> (game-save), <code>RING_KEYS</code> (run-play).</li>
+      <li>Produces, in <code>e2e/helpers/play.ts</code>:
+        <pre><code data-lang="ts">import type { Locator, Page } from '@playwright/test';
+import type { GameSave } from '../../src/lib/game/save-shape';
+import type { GamePhase } from '../../src/lib/sim-page/game-phase';
+
+export async function savedGame(page: Page): Promise&lt;GameSave&gt;;
+export async function waitSaved(page: Page, ok: (s: GameSave) =&gt; boolean): Promise&lt;GameSave&gt;;
+export async function waitPhase(page: Page, p: GamePhase): Promise&lt;void&gt;;
+export function runLayer(page: Page): Locator;
+export async function runTotals(page: Page): Promise&lt;{ dropped: number; collected: number }&gt;;
+export async function tabTo(page: Page, target: Locator): Promise&lt;void&gt;;
+export async function sweepRing(page: Page): Promise&lt;number&gt;;
+export async function buyNode(page: Page, id: string, by: 'pointer' | 'keys'): Promise&lt;GameSave&gt;;
+export async function firstReady(page: Page): Promise&lt;string&gt;;
+export async function openGamePanel(page: Page): Promise&lt;Locator&gt;;</code></pre>
+        and <code>widestGameHeader(page: Page): Promise&lt;void&gt;</code> in <code>e2e/helpers/header-text.ts</code>; <code>gotoEditor(page)</code> unchanged in signature, now a new visitor on first call.</li>
+    </ul>
+    <ol>
+      <li id="t2-s1"><input type="checkbox"> Preflight: on the merged tree, find each selector of §sec-design-seam-ids (<code>tl-mode</code> with <code>data-phase</code>, <code>run-layer</code>, <code>run-layer-box</code>, <code>run-clock</code>, <code>data-run-view</code>, <code>opening-card</code>, <code>opening-card-box</code>, <code>opening-start</code>, <code>tally*</code>, <code>tree*</code>, <code>game-tree-pane</code>, <code>game-back</code>, <code>run-waiting</code>, <code>goal-headline-button</code>, <code>side-goals</code>, <code>header-units</code>, <code>game-panel</code>, <code>game-collect</code>, <code>game-sound</code>) with ripgrep under <code>src/</code>, and the four helpers in <code>e2e/helpers/game.ts</code>. Record every miss or difference for the report.</li>
+      <li id="t2-s2"><input type="checkbox"> Write the failing tests: rewrite <code>e2e/game-shell.spec.ts</code> to game-shell's end-to-end list (§sec-design-game-specs), one test per item, both projects:
+        <pre><code data-lang="ts">test('a new visitor paints once, presses Start, and the first run starts at /', …)
+  // seedGoalAmount(page, 1); gotoEditor; paintOnce; expect(opening-start).toBeVisible();
+  // press it; waitPhase(page, 'run'); pathname '/' throughout;
+  // focus is the map box, as the spec words it: document.activeElement contains map-root
+  // expect(await page.evaluate(() =&gt;
+  //   !!document.activeElement?.contains(document.querySelector('[data-testid="map-root"]')))).toBe(true)
+test('the opening card is one element inside its box', …)   // opening-card-box &gt;&gt; opening-card, count 1
+test('/sim is a 308 to /', …)  // page.request.get('/sim?seed=1', { maxRedirects: 0 }): status 308, location '/';
+                               // page.goto('/sim') ends on pathname '/'
+test('the header has no steps and reads SF Housing', …)  // at 375 (in the Menu) and 1280 px:
+                               // no navigation 'Steps'; link name exactly 'SF Housing'
+test("a new visitor's first load shows the brush at Room for 0 homes", …)  // no hydration warning;
+                               // score-bar text 'Room for 0 homes'
+test('with no game, / shows the simulation and no unit count', …)  // tl-mode visible; header-units
+                               // count 0; no brush
+test('/p/&lt;id&gt; opens in full with no Remix and links Your game to /', …)</code></pre>
+      </li>
+      <li id="t2-s3"><input type="checkbox"> Run it and see it fail (missing <code>play.ts</code>, <code>gotoEditor</code> not a new visitor).
+        <pre><code data-lang="sh">lsof -nP -iTCP:4173 -sTCP:LISTEN
+npx playwright test e2e/game-shell.spec.ts --retries=0</code></pre>
+      </li>
+      <li id="t2-s4"><input type="checkbox"> Implement <code>play.ts</code> to §sec-design-helpers: <code>savedGame</code> reads <code>SAVES_KEY</code>'s <code>current</code> and <code>saveKey(current)</code> by <code>page.evaluate</code> and throws when absent; <code>waitSaved</code> is <code>expect.poll</code> on <code>savedGame</code> with the default timeout; <code>waitPhase</code> is <code>expect(getByTestId('tl-mode')).toHaveAttribute('data-phase', p)</code>; <code>tabTo</code> presses Tab at most 80 times, checking focus after each, and throws <code>tabTo: target not reached in 80 presses</code>; <code>sweepRing</code> moves Shift+ArrowLeft / Shift+ArrowUp from the box centre to its top left, then serpentines with Shift+Arrow keys, steps computed from <code>runLayer</code>'s bounding box and <code>RING_KEYS.shiftStepPx</code>, reading <code>runTotals</code> at each row end, stopping at <code>collected &gt;= 1</code> or <code>data-state="idle"</code> or 3,000 keys; <code>buyNode</code> presses <code>tree-node-open</code> then <code>tree-buy</code> inside <code>tree-detail</code> (click, or <code>tabTo</code> and Enter) and returns <code>waitSaved</code> until <code>bought[id]</code> is one higher; <code>firstReady</code> reads <code>[data-testid="tree-node"][data-state="ready"]</code>'s <code>data-node</code> and throws <code>firstReady: no ready node</code>; <code>openGamePanel</code> calls <code>openHeaderMenu</code>, presses the unit count, and returns <code>getByTestId('game-panel')</code> once visible. No <code>setTimeout</code>, no <code>waitForTimeout</code>.</li>
+      <li id="t2-s5"><input type="checkbox"> Change <code>gotoEditor</code>: a module <code>WeakSet&lt;Page&gt;</code>; on a page's first call, <code>await newVisitor(page)</code>, then go to <code>/</code> as today. Change <code>expectPhoneHeaderFits</code> to expect the Menu link named exactly "SF Housing". Add <code>widestGameHeader</code>: writes "9,999,999" into <code>header-units</code>'s visible count and "82,069 of 82,069 homes by Sep 2066" into <code>goal-headline-button</code>'s line 1, removing its own earlier copies as <code>widestHeaderText</code> does (<code>header-text.ts:25</code>). Rewrite the helper comments that name <code>/sim</code> as the page, a level or "level up ready".</li>
+      <li id="t2-s6"><input type="checkbox"> Find every caller that would now throw: ripgrep <code>e2e/</code> for a spec that calls <code>seedGame</code> or <code>newVisitor</code> and then <code>gotoEditor</code> on the same page, and switch it to <code>gotoHydrated(page, '/')</code> (§sec-design-helpers). Those in files of later tasks are fixed there; list them in the report.</li>
+      <li id="t2-s7"><input type="checkbox"> Run the spec and see it pass five times.
+        <pre><code data-lang="sh">lsof -nP -iTCP:4173 -sTCP:LISTEN
+npx playwright test e2e/game-shell.spec.ts --repeat-each=5 --retries=0</code></pre>
+      </li>
+      <li id="t2-s8"><input type="checkbox"> <code>npm run check</code> and <code>npx eslint e2e/helpers e2e/game-shell.spec.ts</code> are clean; the preview server printed no new stderr.</li>
+      <li id="t2-s9"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add e2e/helpers e2e/game-shell.spec.ts
+git commit -m "test(e2e): game play helpers and the shell's journey on one address"</code></pre>
+      </li>
+      <li id="t2-s10"><input type="checkbox"> Timing check is clean.
+        <pre><code data-lang="sh">npx chreode timing-check --head HEAD</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-3">
+    <h2>Task 3: The store and save specs</h2>
+    <ul>
+      <li>Rewrite: <code>e2e/game-core.spec.ts</code>, <code>e2e/game-helpers.spec.ts</code></li>
+      <li>Modify: <code>e2e/game-save.spec.ts</code></li>
+    </ul>
+    <ul>
+      <li>Consumes: G1, G7 (load, <code>fitGame</code> on read, a five-level record deleted at load), G8 (list entries with <code>phase</code> and <code>rung</code>), the game-save helpers, <code>savedGame</code> (Task 2).</li>
+      <li>Produces: nothing other tasks use.</li>
+    </ul>
+    <ol>
+      <li id="t3-s1"><input type="checkbox"> Write the failing tests. <code>game-core.spec.ts</code>, both projects:
+        <pre><code data-lang="ts">test('with no helper, /about has no hydration warning and stores no saves', …)
+  // expect(await page.evaluate((k) =&gt; localStorage.getItem(k), SAVES_KEY)).toBeNull()
+test('a new visitor gets one game in the opening', …)
+  // index.v 2, saves.length 1, current === saves[0].id; save.v 2, state.phase 'opening', state.rung 0
+test('a seeded index is kept as seeded', …)
+test('a current id that names no entry gets a new game in the opening', …)
+test('a five-level index and save are deleted at load, never moved aside', …)
+  // write { v: 1, … } before load; after load no key holds the v1 save and none ends in a corrupt suffix</code></pre>
+        <code>game-helpers.spec.ts</code> to game-save's list (§sec-design-game-specs): <code>seedGame(page)</code> stores one v2 save in the opening and a <code>v: 2</code> index naming it current; <code>seedGame(page, { phase: 'runs', units: { home: 500 } })</code> stores that state with <code>firstWinAt</code> set and loads as current; a second <code>seedGame</code> or <code>newVisitor</code> throws <code>…: this page already has a game</code>; a reload keeps what the page stored since; <code>seedRunMs(page, 500)</code> stores <code>'500'</code> under <code>sfhousing:e2e:run-ms</code>; <code>seedRunMs(page, 99)</code> and <code>seedRunMs(page, 1.5)</code> throw <code>seedRunMs: ms must be a whole number from 100 to 20000</code>; <code>seedGoalAmount</code> sets its key; storage that refuses or throws still loads.<br>
+        <code>game-save.spec.ts</code>: the three tests stay; <code>firstSave</code> seeds <code>{ phase: 'runs' }</code>; the <code>Listed</code> type's entries gain <code>phase: 'opening' | 'runs'</code> and <code>rung: number</code>, and each test asserts them where it asserted <code>level</code>.</li>
+      <li id="t3-s2"><input type="checkbox"> Run them; a failure here is either a test error to fix or a defect of <code>game-save</code> to report with the step, file and owner (§sec-design-order).
+        <pre><code data-lang="sh">lsof -nP -iTCP:4173 -sTCP:LISTEN
+npx playwright test e2e/game-core.spec.ts e2e/game-helpers.spec.ts e2e/game-save.spec.ts --retries=0</code></pre>
+      </li>
+      <li id="t3-s3"><input type="checkbox"> Make them pass five times.
+        <pre><code data-lang="sh">npx playwright test e2e/game-core.spec.ts e2e/game-helpers.spec.ts e2e/game-save.spec.ts --repeat-each=5 --retries=0</code></pre>
+      </li>
+      <li id="t3-s4"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add e2e/game-core.spec.ts e2e/game-helpers.spec.ts e2e/game-save.spec.ts
+git commit -m "test(e2e): the game store and saves on v2 records"</code></pre>
+      </li>
+      <li id="t3-s5"><input type="checkbox"> Timing check is clean.
+        <pre><code data-lang="sh">npx chreode timing-check --head HEAD</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-4">
+    <h2>Task 4: The game on the simulation</h2>
+    <ul>
+      <li>Rewrite: <code>e2e/game-sim.spec.ts</code></li>
+    </ul>
+    <ul>
+      <li>Consumes: G4 and G5 (<code>GAME_TRANSIT_ID</code>, a policy on from month 1), G6 (settling), G7 (<code>settle</code> once), R1 (<code>run-layer</code>), U1 (tree, tally, switch), M1 (<code>data-run-view</code>), <code>PRICES</code> (T1), <code>installPolicyHold</code>, <code>holdPolicy</code>, <code>releasePolicy</code>, the Task 2 helpers.</li>
+      <li>Produces: nothing other tasks use.</li>
+    </ul>
+    <ol>
+      <li id="t4-s1"><input type="checkbox"> Write the failing tests, both projects; every case calls <code>seedGoalAmount(page, 1)</code> and <code>seedRunMs(page, 2000)</code> and seeds <code>{ phase: 'runs', runs: 1, units }</code> unless it names its own seed, then <code>gotoHydrated(page, '/')</code>:
+        <pre><code data-lang="ts">test('lands on the tree with Run focused over an inert map', …)
+test('a run goes tree, run, tally, tree', …)  // run-clock visible, no slider 'Date in the simulation';
+                                               // tally-continue focused
+test('buying stop-rail adds the game transit rule', …)
+  // units { home: PRICES['stop-rail'][0] }; buyNode(page, 'stop-rail', 'pointer');
+  // units.home 0; __sfhFzp.policy holds a zoning policy id 'game-transit', on, one span from month 1
+test('the node switch turns its policy off and on, units unchanged', …)  // tree-node-on aria-checked
+test('Run while the forecast is held waits, then runs', …)
+  // installPolicyHold before load; holdPolicy before the buy; tree-run -&gt; 'starting',
+  // run-waiting reads 'Getting the forecast ready'; releasePolicy -&gt; 'run'
+test('the workshop offers no Public money until bought', …)
+  // builder's call: buy stop-rail, then its tree-node-edit, the only way into the workshop
+  // with nothing in the money branch; the lane reads 'Opens in the tree', no '+'
+test('Back to the tree returns to the tree', …)  // game-back
+test('a reload lands where the game is', …)
+  // runs 0: reload during the first run lands in 'starting'; after a run settles and before
+  // Continue, reload lands in 'tree' and units.home equals its value before the reload (Review Focus 2)
+test('a first run that fails starts again', …)
+  // seed { phase: 'runs' }; page.route('**/scenarios/fzp/calibration.json') answers 500 once;
+  // failure and Retry show; after Retry 'run' then 'tally'; game-tree-pane never attached before 'tally'
+test('a bought node changes nothing on the map before the next run', …)  // map stays inert under the tree
+test('a double press of Run makes one run', …)  // Review Focus 1: tree-run dblclick; after 'tally',
+                                                // waitSaved runs === 2 and stays 2 after Continue
+test('a published policy runs in full outside the game', …)  // today's two /s/&lt;id&gt; tests, no Remix</code></pre>
+      </li>
+      <li id="t4-s2"><input type="checkbox"> Run it; report any failure that is a defect of <code>game-sim</code>, <code>tally-tree</code> or <code>tree-catalogue</code> with step, file and owner.
+        <pre><code data-lang="sh">lsof -nP -iTCP:4173 -sTCP:LISTEN
+npx playwright test e2e/game-sim.spec.ts --retries=0</code></pre>
+      </li>
+      <li id="t4-s3"><input type="checkbox"> Make it pass five times.
+        <pre><code data-lang="sh">npx playwright test e2e/game-sim.spec.ts --repeat-each=5 --retries=0</code></pre>
+      </li>
+      <li id="t4-s4"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add e2e/game-sim.spec.ts
+git commit -m "test(e2e): the game's phases, buying and the workshop on the simulation"</code></pre>
+      </li>
+      <li id="t4-s5"><input type="checkbox"> Timing check is clean.
+        <pre><code data-lang="sh">npx chreode timing-check --head HEAD</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-5">
+    <h2>Task 5: The three journeys</h2>
+    <ul>
+      <li>Rewrite: <code>e2e/game-journey.spec.ts</code></li>
+    </ul>
+    <ul>
+      <li>Consumes: every row; <code>RUNG_LUMP</code>, <code>PRICES</code> from <code>tuning.ts</code>; <code>LADDER_YEARS</code> from <code>ladder-years.ts</code>; <code>MetRung</code> (type, G1); the Task 2 helpers; <code>paintOnce</code>, <code>jumpAndIdle</code>, <code>FRAME</code>, <code>headerAction</code>, <code>openHeaderMenu</code>, <code>publishDialog</code>, <code>waitFilled</code>.</li>
+      <li>Produces: nothing other tasks use.</li>
+    </ul>
+    <ol>
+      <li id="t5-s1"><input type="checkbox"> Write test 1, "a new visitor paints to the room goal, runs, buys and takes the next goal", both projects, reduced motion emulated (<code>test.use({ reducedMotion: 'reduce' })</code>, builder's call over <code>emulateMedia</code>: it holds for the whole test). Its fourteen steps are §sec-design-journey's, each an assertion. The ones with values:
+        <pre><code data-lang="ts">// step 7
+const s = await waitSaved(page, (g) =&gt; g.state.runs === 1);
+expect(s.state.phase).toBe('runs');
+expect(s.state.last!.dropped.home).toBeGreaterThan(0);
+expect(s.state.last!.collected.home).toBe(s.state.last!.dropped.home);
+expect(s.state.met.map((m) =&gt; m.rung)).toContain(0);
+expect(s.state.last!.lump).toEqual(RUNG_LUMP);
+expect(s.state.units.home).toBe(
+  s.state.last!.collected.home! + RUNG_LUMP.home! +
+    s.state.last!.side.reduce((n, x) =&gt; n + (x.reward.home ?? 0), 0)
+);
+// step 10
+expect(after.state.bought[id]).toBe(1);
+expect(after.state.units.home).toBe(before.state.units.home! - PRICES[id][0]);
+// step 14: expect.poll on page.request.get('/api/game'): status 200, saves length 1,
+// saves[0].phase 'runs', saves[0].rung 1</code></pre>
+      </li>
+      <li id="t5-s2"><input type="checkbox"> Write test 2, "a player plays the loop by keyboard only, collecting with the ring", chromium only (<code>test.skip(isMobile, …)</code> keyed on the project, not unconditional), to §sec-design-keyboard's nine steps. The canvas is <code>.maplibregl-canvas</code> (<code>e2e/brush.spec.ts:175</code>). After step 1 the test calls no <code>click</code>, <code>tap</code>, <code>mouse</code> or <code>touchscreen</code>; after each <code>tabTo</code>, <code>expect(await target.evaluate((el) =&gt; el.matches(':focus-visible'))).toBe(true)</code>. Step 4: <code>expect(await sweepRing(page)).toBeGreaterThanOrEqual(1)</code>.</li>
+      <li id="t5-s3"><input type="checkbox"> Write test 3, "meeting the last deadline is the ending", both projects, to §sec-design-ending: <code>RUNGS = LADDER_YEARS.length + 1</code>; <code>ASOF</code> read from <code>e2e/fixtures/data/fixture-0/scenarios/fzp/calibration.json</code>; <code>met</code> built as the spec's block; then:
+        <pre><code data-lang="ts">await expect(page.getByTestId('tree-next')).toHaveCount(0);
+await expect(page.getByTestId('tree-ending')).toHaveCount(0);
+// tree-run, 'tally', tally-continue, 'tree'
+expect((await savedGame(page)).state.met.map((m) =&gt; m.rung)).toContain(RUNGS - 1);
+const ending = page.getByTestId('tree-ending');
+await expect(ending).toContainText('Every goal met');
+await expect(ending).toContainText(/Reached in [A-Z][a-z]{2} \d{4}/);
+await expect(ending).toContainText(/The state asks by [A-Z][a-z]{2} \d{4}/);
+await expect(page.getByTestId('tree-next')).toHaveCount(0);
+await page.getByTestId('tree-publish').click();
+await expect(publishDialog(page)).toBeVisible();</code></pre>
+        "Lists the label of no node": no <code>tree-node</code> inside <code>tree-ending</code>.</li>
+      <li id="t5-s4"><input type="checkbox"> Run them; report any failure that is another unit's defect with step, file and owner.
+        <pre><code data-lang="sh">lsof -nP -iTCP:4173 -sTCP:LISTEN
+npx playwright test e2e/game-journey.spec.ts --retries=0</code></pre>
+      </li>
+      <li id="t5-s5"><input type="checkbox"> Make them pass five times.
+        <pre><code data-lang="sh">npx playwright test e2e/game-journey.spec.ts --repeat-each=5 --retries=0</code></pre>
+      </li>
+      <li id="t5-s6"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add e2e/game-journey.spec.ts
+git commit -m "test(e2e): the loop by pointer, by keyboard, and the ending"</code></pre>
+      </li>
+      <li id="t5-s7"><input type="checkbox"> Timing check is clean.
+        <pre><code data-lang="sh">npx chreode timing-check --head HEAD</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-6">
+    <h2>Task 6: Accessibility in each state</h2>
+    <ul>
+      <li>Create: <code>e2e/game-a11y.spec.ts</code></li>
+      <li>Modify: <code>e2e/targets.spec.ts</code>, <code>e2e/layout.spec.ts</code> (all its census changes: path keys <code>opening</code> and <code>/</code>, step assertions out, the game's header in the fit cases, <code>:358</code> as a new visitor), <code>e2e/pages-a11y.spec.ts</code> (the map pages are <code>/</code> alone)</li>
+    </ul>
+    <ul>
+      <li>Consumes: U1 (every control reachable with a visible ring), R1 (reduced motion), the Task 2 helpers including <code>widestGameHeader</code>; <code>expectNoA11yViolations</code>, <code>expectAboutReachable</code>, <code>expectPhoneHeaderFits</code>.</li>
+      <li>Produces: nothing other tasks use.</li>
+    </ul>
+    <ol>
+      <li id="t6-s1"><input type="checkbox"> Write the failing tests: <code>game-a11y.spec.ts</code>, both projects, one test per row of §sec-design-a11y's states table (opening; opening, room goal met; run; tally; tree with a node open; workshop; game panel open; side goals open; ending), each reached as the table says, each calling one shared check:
+        <pre><code data-lang="ts">async function checkState(page: Page, own: Locator): Promise&lt;void&gt; {
+  await expectNoA11yViolations(page);
+  expect(await page.evaluate(() =&gt; document.documentElement.scrollWidth &lt;= innerWidth)).toBe(true);
+  await expect(page.locator('main')).toHaveCount(1);
+  await expect(page.locator('h1')).toHaveCount(1);
+  // first Tab from body reaches the skip link
+  await expectAboutReachable(page);
+  await tabTo(page, own);
+  expect(await own.evaluate((el) =&gt; el.matches(':focus-visible'))).toBe(true);
+}</code></pre>
+        The run state is scanned with reduced motion emulated while <code>run-layer</code>'s <code>data-state</code> is <code>running</code> (run time 8,000 ms). Add Review Focus 3: "the tree with a node open and the tally pass in dark mode" (<code>colorScheme: 'dark'</code>), <code>expectNoA11yViolations</code> only.</li>
+      <li id="t6-s2"><input type="checkbox"> In <code>targets.spec.ts</code>, add the tree with a node open and the tally to the 375 px sweep with no new exemption; Paint goes through <code>gotoEditor</code>; the address is <code>/</code>. In <code>layout.spec.ts</code>, add the fit cases at 375, 768, 1024 and 1280 px on the tree with <code>widestGameHeader</code> applied: nothing overflows, no two items overlap, <code>expectPhoneHeaderFits</code> at 375 px; apply the census's other changes. In <code>pages-a11y.spec.ts</code>, the map pages list is <code>['/']</code>.</li>
+      <li id="t6-s3"><input type="checkbox"> Run them and fix test errors; report another unit's defect with step, file and owner.
+        <pre><code data-lang="sh">lsof -nP -iTCP:4173 -sTCP:LISTEN
+npx playwright test e2e/game-a11y.spec.ts e2e/targets.spec.ts e2e/layout.spec.ts e2e/pages-a11y.spec.ts --retries=0</code></pre>
+      </li>
+      <li id="t6-s4"><input type="checkbox"> Make them pass five times.
+        <pre><code data-lang="sh">npx playwright test e2e/game-a11y.spec.ts e2e/targets.spec.ts e2e/layout.spec.ts e2e/pages-a11y.spec.ts --repeat-each=5 --retries=0</code></pre>
+      </li>
+      <li id="t6-s5"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add e2e/game-a11y.spec.ts e2e/targets.spec.ts e2e/layout.spec.ts e2e/pages-a11y.spec.ts
+git commit -m "test(e2e): the accessibility checklist in each state of the game"</code></pre>
+      </li>
+      <li id="t6-s6"><input type="checkbox"> Timing check is clean.
+        <pre><code data-lang="sh">npx chreode timing-check --head HEAD</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-7">
+    <h2>Task 7: The simulation and Paint specs on one address</h2>
+    <ul>
+      <li>Modify: <code>e2e/chrome-dark.spec.ts</code>, <code>fzp.spec.ts</code>, <code>fzp-sim.spec.ts</code>, <code>transit.spec.ts</code>, <code>sim.spec.ts</code>, <code>sim-activity.spec.ts</code>, <code>sim-funding.spec.ts</code>, <code>sim-citywide.spec.ts</code>, <code>sim-details.spec.ts</code>, <code>sim-halos.spec.ts</code>, <code>sim-pools.spec.ts</code>, <code>sim-timeline.spec.ts</code>, <code>map-key.spec.ts</code>, <code>brush.spec.ts</code>, <code>map.spec.ts</code> (and its goldens if they move), <code>e2e/perf/first-month.perf.spec.ts</code>, and any other <code>e2e/**/*.spec.ts</code> not owned by Tasks 2 to 6 or 8 that the rules reach</li>
+    </ul>
+    <ul>
+      <li>Consumes: the open game at <code>/</code> (G7, calls 9 and 21), the redirect and <code>SITE_NAME</code> (game-shell), <code>gotoEditor</code> and <code>expectPhoneHeaderFits</code> (Task 2).</li>
+      <li>Produces: nothing other tasks use.</li>
+    </ul>
+    <ol>
+      <li id="t7-s1"><input type="checkbox"> List the hits this task must clear, by ripgrep over the files above: <code>'/sim</code>, <code>\/sim$</code>, <code>Steps</code>, <code>data-step</code>, <code>data-level-dot</code>, <code>Simulate</code>, <code>Paint</code> step links, <code>SF Housing Simulator</code>, <code>seedGame(</code>, <code>Remix</code>, <code>level</code>. Each hit is changed by exactly one rule of §sec-design-e2e (Address, The open game, Paint, Steps, Name, Remix, Levels, Comments) and the census row for its file.</li>
+      <li id="t7-s2"><input type="checkbox"> Apply the rules. The ones with fixed values: every <code>/sim</code> address becomes <code>/</code> and <code>toHaveURL(/\/sim$/)</code> becomes <code>toHaveURL(/\/$/)</code>; a click on the "Simulate" step becomes a click on the banner link named exactly "SF Housing" (after <code>openHeaderMenu</code> below sm); the titles are "SF Housing", "&lt;title&gt; · SF Housing" and "About this model · SF Housing"; a direct <code>goto('/')</code> that expects the brush is preceded by <code>newVisitor(page)</code> (<code>brush.spec.ts:31</code>, <code>map.spec.ts:40</code>, <code>:270</code>, <code>sim-citywide.spec.ts:126</code>); <code>chrome-dark.spec.ts</code>'s Menu test checks the site-name link and its published-plan test drops its Remix assertion and seeds no level.</li>
+      <li id="t7-s3"><input type="checkbox"> In <code>fzp.spec.ts</code>, replace "the header links move between the editor and the simulation" with "the site name reaches the simulation by a client navigation": <code>gotoHydrated(page, '/about')</code>; set a marker on <code>window</code>; click "SF Housing"; <code>toHaveURL(/\/$/)</code>; the marker survives; title "SF Housing"; one <code>h1</code>.</li>
+      <li id="t7-s4"><input type="checkbox"> Run the changed specs; a <code>map.spec.ts</code> golden that differs is regenerated on darwin with <code>--update-snapshots</code>, and the report names the unit whose change moved it.
+        <pre><code data-lang="sh">lsof -nP -iTCP:4173 -sTCP:LISTEN
+npx playwright test e2e/chrome-dark.spec.ts e2e/fzp.spec.ts e2e/fzp-sim.spec.ts e2e/transit.spec.ts e2e/sim.spec.ts e2e/sim-activity.spec.ts e2e/sim-funding.spec.ts e2e/sim-citywide.spec.ts e2e/sim-details.spec.ts e2e/sim-halos.spec.ts e2e/sim-pools.spec.ts e2e/sim-timeline.spec.ts e2e/map-key.spec.ts e2e/brush.spec.ts e2e/map.spec.ts --retries=0</code></pre>
+      </li>
+      <li id="t7-s5"><input type="checkbox"> Make every changed spec pass five times (list exactly the files this task changed).
+        <pre><code data-lang="sh">npx playwright test e2e/chrome-dark.spec.ts e2e/fzp.spec.ts e2e/fzp-sim.spec.ts e2e/transit.spec.ts e2e/sim.spec.ts e2e/sim-activity.spec.ts e2e/sim-funding.spec.ts e2e/sim-citywide.spec.ts e2e/sim-details.spec.ts e2e/sim-halos.spec.ts e2e/sim-pools.spec.ts e2e/sim-timeline.spec.ts e2e/map-key.spec.ts e2e/brush.spec.ts e2e/map.spec.ts --repeat-each=5 --retries=0</code></pre>
+        The perf spec is run once with <code>npx playwright test e2e/perf/first-month.perf.spec.ts --retries=0</code>, on a quiet machine only.</li>
+      <li id="t7-s6"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add e2e
+git commit -m "test(e2e): the simulation and Paint specs on one address and the new name"</code></pre>
+      </li>
+      <li id="t7-s7"><input type="checkbox"> Timing check is clean.
+        <pre><code data-lang="sh">npx chreode timing-check --head HEAD</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-8">
+    <h2>Task 8: The share specs without Remix</h2>
+    <ul>
+      <li>Modify: <code>e2e/sim-share.spec.ts</code>, <code>e2e/share-states.spec.ts</code>, <code>e2e/share-notices.spec.ts</code>, <code>e2e/share-roundtrip.spec.ts</code></li>
+    </ul>
+    <ul>
+      <li>Consumes: the published views of game-shell and game-sim (no Remix, no "Open with current data"), <code>publishDialog</code>.</li>
+      <li>Produces: nothing other tasks use.</li>
+    </ul>
+    <ol>
+      <li id="t8-s1"><input type="checkbox"> Apply the census: <code>sim-share.spec.ts</code> takes the address rule, loses its Remix test (<code>:222-</code>), and its schema 2 test keeps its notice and drops its Remix steps (<code>:363-373</code>); <code>share-states.spec.ts</code> loses its Remix test (<code>:141-151</code>) and its banner test asserts <code>getByRole('button', { name: 'Remix' })</code> and the text "Open with current data" have count 0; <code>share-notices.spec.ts</code> loses "after Remix, Paint opens the published plan" (<code>:226-233</code>); <code>share-roundtrip.spec.ts</code> ends at "same score", its Remix steps and title words removed (<code>:59-76</code>). Remove each <code>seedGame</code> call these tests made.</li>
+      <li id="t8-s2"><input type="checkbox"> One assertion per shared page proves the banner has no button named "Remix": <code>/p/&lt;id&gt;</code> in <code>share-states.spec.ts</code>, <code>/s/&lt;id&gt;</code> in <code>sim-share.spec.ts</code>.</li>
+      <li id="t8-s3"><input type="checkbox"> Run them five times.
+        <pre><code data-lang="sh">lsof -nP -iTCP:4173 -sTCP:LISTEN
+npx playwright test e2e/sim-share.spec.ts e2e/share-states.spec.ts e2e/share-notices.spec.ts e2e/share-roundtrip.spec.ts --repeat-each=5 --retries=0</code></pre>
+      </li>
+      <li id="t8-s4"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add e2e/sim-share.spec.ts e2e/share-states.spec.ts e2e/share-notices.spec.ts e2e/share-roundtrip.spec.ts
+git commit -m "test(e2e): published plans and policies with no Remix"</code></pre>
+      </li>
+      <li id="t8-s5"><input type="checkbox"> Timing check is clean.
+        <pre><code data-lang="sh">npx chreode timing-check --head HEAD</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-9">
+    <h2>Task 9: The run bench</h2>
+    <ul>
+      <li>Create: <code>e2e/bench/game-run.bench.ts</code></li>
+      <li>Modify: <code>e2e/bench/map-pan.bench.ts:23</code>, <code>e2e/bench/map-timeline.bench.ts:128</code> (a new visitor before <code>goto('/')</code>), <code>e2e/bench/sim-timeline.bench.ts</code> (address), <code>docs/dev/map-perf.md</code> (all of its changes)</li>
+    </ul>
+    <ul>
+      <li>Consumes: M1 (the run view), R1 (<code>run-layer</code>'s <code>data-state</code>, <code>data-dropped</code>, <code>data-collected</code>), U1 (<code>tree-run</code>'s <code>aria-busy</code>), <code>PRICES</code> (T1), <code>seedGame</code>, <code>runTotals</code>, <code>waitPhase</code>, <code>waitFilled</code>, <code>BAR_MS</code>, <code>pct</code>, <code>verdict</code>.</li>
+      <li>Produces: two result lines for Task 13 and the hand-back.</li>
+    </ul>
+    <ol>
+      <li id="t9-s1"><input type="checkbox"> Write test "bench:map: run with drops, citywide, moving pointer" to §sec-design-bench's six steps: <code>seedGame(page, { phase: 'runs', runs: 1 })</code>, no amount and no run time; <code>page.goto('/')</code>; map ready; <code>waitFilled</code>; <code>waitPhase</code> <code>tree</code>; press <code>tree-run</code>; wait for <code>data-state="running"</code>; a page-side recorder of <code>requestAnimationFrame</code> deltas resolves at <code>data-state="idle"</code>; meanwhile the test awaits <code>page.mouse.move</code> one after another along <code>x = left + width × (0.5 + 0.4 sin(2πt / 3.1 s))</code>, <code>y = top + height × (0.5 + 0.4 sin(2πt / 2.3 s))</code>, <code>t</code> from <code>Date.now()</code>, until the recorder resolves. Print and annotate
+        <pre><code data-lang="text">bench:map case=run dataset=&lt;v&gt; frames=&lt;n&gt; dropped=&lt;homes&gt; collected=&lt;homes&gt; p50=&lt;ms&gt; p95=&lt;ms&gt; bar=16.7ms PASS|FAIL dpr=&lt;dpr&gt; renderer="&lt;renderer&gt;"</code></pre>
+        and <code>expect(p95, line).toBeLessThanOrEqual(BAR_MS)</code>, as <code>map-pan.bench.ts:103-106</code> does. No timeout of its own.</li>
+      <li id="t9-s2"><input type="checkbox"> Write test "bench:map: purchase to ready": three samples, each in a fresh <code>browser.newContext()</code> with <code>seedGame(page, { phase: 'runs', runs: 1, units: { home: PRICES['stop-rail'][0] } })</code>; <code>goto('/')</code>, map ready, <code>waitFilled</code>, <code>waitPhase</code> <code>tree</code>; open <code>stop-rail</code>; install a <code>MutationObserver</code> on <code>tree-run</code>'s attributes that records <code>performance.now()</code> when <code>aria-busy</code> leaves <code>"true"</code> after having been <code>"true"</code>; take <code>t0</code> in the page and press <code>tree-buy</code>; the sample is <code>t1 - t0</code>. Print and annotate
+        <pre><code data-lang="text">bench:map case=buy-to-ready dataset=&lt;v&gt; node=stop-rail samples=&lt;ms&gt;,&lt;ms&gt;,&lt;ms&gt; median=&lt;ms&gt; buyS=&lt;CLOCK.buyS × 1000&gt;ms</code></pre>
+        with <code>CLOCK</code> imported from <code>scripts/tree-balance.ts</code> when it is exported there (else read on the merged tree and noted in the report). No pass bar: the test's only <code>expect</code> is that three finite samples were taken.</li>
+      <li id="t9-s3"><input type="checkbox"> Change the three benches: <code>newVisitor(page)</code> before <code>goto('/')</code> in <code>map-pan</code> and <code>map-timeline</code>; <code>/sim</code> to <code>/</code> in <code>sim-timeline</code>.</li>
+      <li id="t9-s4"><input type="checkbox"> Rewrite <code>docs/dev/map-perf.md</code>: "Running it" (<code>:37</code>, and the same advice at <code>:11</code>) loses <code>lsof -ti :4173 | xargs kill</code> and says "Port 4173 belongs to whichever session started its server. Check it with <code>lsof -nP -iTCP:4173 -sTCP:LISTEN</code> and wait while it is taken; never stop it."; the run case gets a section of its own (what it measures, the commands <code>npm run data:local -- &lt;v&gt;</code> then <code>SFH_BENCH_DATASET=&lt;v&gt; npm run bench:map -- -g "run with drops"</code> and <code>-g "purchase to ready"</code>, the quiet-machine rule, and a "Results" placeholder Task 13 fills); <code>/sim</code> as the page becomes the simulation at <code>/</code>.</li>
+      <li id="t9-s5"><input type="checkbox"> Smoke-run both cases once on fixture-0, only on a quiet machine (one-minute load average from <code>uptime</code> below 2, no other session's Playwright, Vite or wrangler process); otherwise defer and say so in the report.
+        <pre><code data-lang="sh">uptime
+lsof -nP -iTCP:4173 -sTCP:LISTEN
+npm run bench:map -- -g "run with drops|purchase to ready"</code></pre>
+      </li>
+      <li id="t9-s6"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add e2e/bench docs/dev/map-perf.md
+git commit -m "test(bench): a run with drops and the wait from a purchase to the next run"</code></pre>
+      </li>
+      <li id="t9-s7"><input type="checkbox"> Timing check is clean (bench files are exempt by path; the check still must pass).
+        <pre><code data-lang="sh">npx chreode timing-check --head HEAD</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-10">
+    <h2>Task 10: <code>docs/dev/game.md</code></h2>
+    <ul>
+      <li>Rewrite: <code>docs/dev/game.md</code></li>
+    </ul>
+    <ul>
+      <li>Consumes: every row, as merged; the names of Tasks 1, 2 and 5 (<code>scripts/reach-check.ts</code>, <code>e2e/helpers/play.ts</code>, the three journey names).</li>
+      <li>Produces: the anchors "The reach check" and "The e2e seams" that Tasks 11 and 12 link to.</li>
+    </ul>
+    <ol>
+      <li id="t10-s1"><input type="checkbox"> Write the twenty sections of §sec-design-gamemd in that order, each statement naming the code it describes and checked against the merged code (the code wins; the difference goes in the report). The reach check section carries the command, its two sources, its two questions, its four lines and exits, the pre-upload rule and <code>scripts/reach-check.spec.ts</code>.</li>
+      <li id="t10-s2"><input type="checkbox"> Check: the file names no level, bar, win card, level panel, <code>/sim</code> page or Remix, except the sentences that <code>/sim</code> redirects and that there is no Remix.
+        <pre><code data-lang="sh">git grep -n -i -E 'level [1-5]|levels|level up|level panel|remix|/sim|win card|barOf' -- docs/dev/game.md</code></pre>
+        Every hit is one of the two allowed sentences or a word in another sense (a node's level).</li>
+      <li id="t10-s3"><input type="checkbox"> <code>npx prettier --check docs/dev/game.md</code> and <code>npx vitest run --project server scripts/docs-index.spec.ts</code> pass.</li>
+      <li id="t10-s4"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add docs/dev/game.md
+git commit -m "docs(game): the incremental loop"</code></pre>
+      </li>
+      <li id="t10-s5"><input type="checkbox"> Timing check is clean.
+        <pre><code data-lang="sh">npx chreode timing-check --head HEAD</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-11">
+    <h2>Task 11: <code>CLAUDE.md</code>, <code>README.md</code> and the workflow docs</h2>
+    <ul>
+      <li>Modify: <code>CLAUDE.md</code> (<code>:7</code>, the scoped docs list, the commands table <code>:88</code> and the bench row, Architecture's "Shell:" paragraph <code>:101</code>, Conventions <code>:109</code>), <code>README.md</code> (<code>:1</code>, <code>:3</code>), <code>docs/dev/deploy.md</code> (<code>:39</code>, <code>:177</code>), <code>docs/dev/pipeline.md:48</code>, <code>docs/dev/testing.md</code> ("The game in tests", <code>:88</code>, <code>:100-102</code>), <code>docs/dev/accessibility.md</code>, <code>docs/dev/developing.md</code></li>
+    </ul>
+    <ul>
+      <li>Consumes: Task 10's anchors; the merged <code>scripts/tree-balance.ts</code> first comment (its usage line).</li>
+      <li>Produces: nothing other tasks use.</li>
+    </ul>
+    <ol>
+      <li id="t11-s1"><input type="checkbox"> Replace <code>CLAUDE.md</code>'s "What This Is" and the "Shell:" paragraph with the two blockquotes of §sec-design-claude, verbatim (subject to the overview's question on "five years earlier"). Rewrite the scoped docs list entries it names, the commands table (the bench row; <code>npx tsx scripts/reach-check.ts &lt;datasetDir&gt;</code> with its description; new rows for <code>scripts/reach-measure.ts &lt;datasetDir&gt; [--write]</code> and <code>scripts/tree-balance.ts</code>), and the Conventions upload item, all to the spec's words.</li>
+      <li id="t11-s2"><input type="checkbox"> <code>README.md</code>: title "# SF Housing"; the first paragraph to §sec-design-readme's text; every other paragraph unchanged.</li>
+      <li id="t11-s3"><input type="checkbox"> <code>deploy.md:39</code> and <code>pipeline.md:48</code> to §sec-design-docs's text; <code>deploy.md:177</code>'s app name to <code>SF Housing</code>; <code>testing.md</code>'s "The game in tests" names the helpers of <code>e2e/helpers/game.ts</code> and <code>play.ts</code>, the open game at <code>/</code>, the new visitor, and the hooks <code>data-phase</code>, <code>data-dropped</code>, <code>data-collected</code>; its journey line names the three journeys; "The level 2 check" becomes "The reach check", one paragraph pointing at <code>game.md</code>; <code>accessibility.md</code> and <code>developing.md</code> per §sec-design-docs.</li>
+      <li id="t11-s4"><input type="checkbox"> Check, then make the checks pass.
+        <pre><code data-lang="sh">git grep -n -E 'level2-check|Housing Simulator|/sim\b|[Rr]emix|[Ll]evel [1-5]' -- CLAUDE.md README.md docs/dev/deploy.md docs/dev/pipeline.md docs/dev/testing.md docs/dev/accessibility.md docs/dev/developing.md
+npx prettier --check CLAUDE.md README.md docs/dev
+npx vitest run --project server scripts/docs-index.spec.ts</code></pre>
+        Allowed hits: the sentence that <code>/sim</code> is a 308 to <code>/</code>.</li>
+      <li id="t11-s5"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add CLAUDE.md README.md docs/dev/deploy.md docs/dev/pipeline.md docs/dev/testing.md docs/dev/accessibility.md docs/dev/developing.md
+git commit -m "docs: SF Housing as one game at one address, and the reach check"</code></pre>
+      </li>
+      <li id="t11-s6"><input type="checkbox"> Timing check is clean.
+        <pre><code data-lang="sh">npx chreode timing-check --head HEAD</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-12">
+    <h2>Task 12: The other developer documents</h2>
+    <ul>
+      <li>Modify: <code>docs/dev/{plan-sharing,ui-parts,sim-funding}.md</code> (Remix out); <code>docs/dev/{about,fzp-mode,ensemble-runner,sim-timers,sim-levers,policy-timeline,finance-data,finance-engine,finance-levers,finance-model,finance-score,market,road-lots,world-core}.md</code> (<code>/sim</code> as the page's name becomes "the simulation"); any other statement about levels, bars, Remix, the header's steps or the old name in a <code>docs/dev</code> file of this unit</li>
+    </ul>
+    <ul>
+      <li>Consumes: Task 10's anchors.</li>
+      <li>Produces: nothing other tasks use.</li>
+    </ul>
+    <ol>
+      <li id="t12-s1"><input type="checkbox"> List the hits in this task's files.
+        <pre><code data-lang="sh">git grep -n -E '/sim\b|[Rr]emix|[Ll]evel [1-5]|level up|header.s steps|Housing Simulator' -- docs/dev ':!docs/dev/game-save.md' ':!docs/dev/sim-page.md' ':!docs/dev/timeline-ui.md' ':!docs/dev/map-interfaces.md' ':!docs/dev/map-stream.md' ':!docs/dev/world-score.md' ':!docs/dev/world-funding.md' ':!docs/dev/game.md' ':!docs/dev/map-perf.md'</code></pre>
+      </li>
+      <li id="t12-s2"><input type="checkbox"> Make each hit true by §sec-design-docs: a route path in a URL or a statement about the redirect stays; <code>/sim</code> naming the page becomes "the simulation"; Remix statements go; levels and steps go. Hits in other units' files are listed for the report, not changed.</li>
+      <li id="t12-s3"><input type="checkbox"> Run the grep again (only allowed hits remain), then <code>npx prettier --check docs/dev</code> and <code>npx vitest run --project server scripts/docs-index.spec.ts</code>.</li>
+      <li id="t12-s4"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add docs/dev
+git commit -m "docs(dev): the simulation by name, with no levels or Remix"</code></pre>
+      </li>
+      <li id="t12-s5"><input type="checkbox"> Timing check is clean.
+        <pre><code data-lang="sh">npx chreode timing-check --head HEAD</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-13">
+    <h2>Task 13: The final sweep, checks and runs of record</h2>
+    <ul>
+      <li>Modify: any file of this unit's write set the sweep finds; <code>docs/dev/map-perf.md</code> (Results)</li>
+    </ul>
+    <ul>
+      <li>Consumes: Tasks 1 to 12.</li>
+      <li>Produces: the hand-back: the reach check's four lines and exit code, the two bench lines, the sweep's hits in other units' files with <code>file:line</code> and owner, every selector or rule of another unit the merged code did not meet (from every task's report), the golden regenerations and their cause, and the owner action for Google's app name.</li>
+    </ul>
+    <ol>
+      <li id="t13-s1"><input type="checkbox"> Run the sweep of §sec-design-sweep, one command per line.
+        <pre><code data-lang="sh">git grep -n 'Housing Simulator' -- . ':!docs/superpowers/**' ':!.superpowers/**' ':!CHANGELOG.md' ':!migrations/**' ':!docs/lesscars/**' ':!pipeline/**'
+git grep -n -i 'remix' -- . ':!docs/superpowers/**' ':!.superpowers/**' ':!CHANGELOG.md' ':!migrations/**' ':!docs/lesscars/**' ':!pipeline/**'
+git grep -n -E 'LevelCell|LevelPanel|WinCard|levelUp|barOf|allowedAt|levelNeeded|SEED_BAR_DAY|header-level|win-card|paint-win|tl-win|tl-bar-flag|data-step' -- . ':!docs/superpowers/**' ':!.superpowers/**' ':!CHANGELOG.md' ':!migrations/**' ':!docs/lesscars/**' ':!pipeline/**'
+git grep -n -E 'level2-check|readLevel2|level2Lines|level2Exit|runEmptyDocument' -- . ':!docs/superpowers/**' ':!.superpowers/**' ':!CHANGELOG.md' ':!migrations/**' ':!docs/lesscars/**' ':!pipeline/**'
+git grep -n "'/sim" -- e2e
+git grep -n -F '\/sim$' -- e2e</code></pre>
+        Allowed: the redirect's files and the tests that assert it; a "no Remix" assertion and <code>game.md</code>'s sentence; a test that writes a five-level record to prove it is deleted; the history files. A hit in this unit's write set is fixed and committed; any other is reported.</li>
+      <li id="t13-s2"><input type="checkbox"> Run the final checks in the foreground, in order, on the merged tree; check port 4173 before each Playwright run. A test that passes only on retry counts as a failure.
+        <pre><code data-lang="sh">npm run check
+npm run lint
+npm run test:unit
+lsof -nP -iTCP:4173 -sTCP:LISTEN
+npm run test:e2e</code></pre>
+      </li>
+      <li id="t13-s3"><input type="checkbox"> Reach check of record: <code>npm run pipeline -- version</code> prints <code>&lt;v&gt;</code>; <code>npx tsx scripts/dataset-version.ts --check</code> exits 0; then the four lines and exit code go in the hand-back. Exit 1 stops the unit: change neither <code>LADDER_YEARS</code> nor the catalogue, and hand back "blocked: the reach check misses" with the lines. Nothing is built or uploaded.
+        <pre><code data-lang="sh">npm run pipeline -- version
+npx tsx scripts/dataset-version.ts --check
+npx tsx scripts/reach-check.ts --version &lt;v&gt;</code></pre>
+      </li>
+      <li id="t13-s4"><input type="checkbox"> Bench of record on the live dataset, by the agent, only on a quiet machine with port 4173 free; otherwise defer and say so. Run case passes at p95 &lt;= 16.7 ms; the purchase-to-ready median is reported, and flagged when above <code>CLOCK.buyS</code> seconds.
+        <pre><code data-lang="sh">uptime
+lsof -nP -iTCP:4173 -sTCP:LISTEN
+npm run data:local -- &lt;v&gt;
+SFH_BENCH_DATASET=&lt;v&gt; npm run bench:map -- -g "run with drops|purchase to ready"</code></pre>
+      </li>
+      <li id="t13-s5"><input type="checkbox"> Put both result lines under "Results" in <code>docs/dev/map-perf.md</code>'s run section; <code>npx prettier --check docs/dev/map-perf.md</code>.</li>
+      <li id="t13-s6"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add docs/dev/map-perf.md
+git commit -m "docs(map-perf): the run case and purchase-to-ready results"</code></pre>
+      </li>
+      <li id="t13-s7"><input type="checkbox"> Timing check is clean; write the hand-back as the final report (no signoff, no push).
+        <pre><code data-lang="sh">npx chreode timing-check --head HEAD</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <aside data-kind="note"><strong>Lanes</strong> Three groups share no file and no dependency edge until Task 13: <strong>A</strong>, Task 1 (<code>scripts/reach-check.ts</code>, <code>scripts/reach-check.spec.ts</code>); <strong>B</strong>, Task 2 then Tasks 3 to 9, which all depend on Task 2's helpers but not on each other (<code>e2e/**</code>, <code>docs/dev/map-perf.md</code>); <strong>C</strong>, Tasks 10, 11 and 12 (<code>docs/dev/game.md</code>; <code>CLAUDE.md</code>, <code>README.md</code>, <code>docs/dev/{deploy,pipeline,testing,accessibility,developing}.md</code>; the other <code>docs/dev</code> files), with 11 and 12 linking to 10's anchors. Tasks 3 to 9 could run as separate lanes after Task 2, but every one of them starts a Playwright server on port 4173, so their e2e steps serialise on the port whatever the lane split. Task 13 joins all three.</aside>
+</article>
