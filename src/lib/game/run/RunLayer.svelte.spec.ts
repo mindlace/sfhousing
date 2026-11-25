@@ -96,6 +96,37 @@ function start(feed: FakeFeed): void {
 
 const lastTake = (ontake: ReturnType<typeof vi.fn>) => ontake.mock.calls.at(-1)?.[0] as RunTake;
 
+/** Dispatches a pointer event on `on` at (x, y) in the box's own pixels. */
+function point(
+  box: HTMLElement,
+  on: EventTarget,
+  type: 'pointermove' | 'pointerdown',
+  x: number,
+  y: number,
+  pointerType = 'mouse'
+): void {
+  const r = box.getBoundingClientRect();
+  on.dispatchEvent(
+    new PointerEvent(type, { clientX: r.left + x, clientY: r.top + y, pointerType, bubbles: true })
+  );
+}
+
+/** Dispatches a cancelable keydown on `target` and returns it. */
+function key(target: EventTarget, init: KeyboardEventInit): KeyboardEvent {
+  const e = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init });
+  target.dispatchEvent(e);
+  return e;
+}
+
+/** Spies on arc; `ring()` is the centre of the last ring drawn (radius BASE_HANDS.radiusPx). */
+function ringSpy() {
+  const arc = vi.spyOn(CanvasRenderingContext2D.prototype, 'arc');
+  return () => {
+    const c = arc.mock.calls.filter((a) => a[2] === BASE_HANDS.radiusPx).at(-1);
+    return c ? [c[0], c[1]] : null;
+  };
+}
+
 beforeEach(() => {
   clock.t = 1000;
   clock.pending.clear();
@@ -370,5 +401,214 @@ describe('RunLayer', () => {
       if (clear.mock.calls.length > n) drawn++;
     }
     expect(drawn).toBe(4);
+  });
+
+  describe('input', () => {
+    it('a mouse pointermove over a drop collects it; data-collected and ontake follow', async () => {
+      const { box, map, feed, ontake, root, sound } = await mount();
+      feed.drops = [feed.dropAt(1, 100, 100, 10, 3)];
+      start(feed);
+      feed.day = 15;
+      frame();
+      expect(root.dataset.collected).toBe('0');
+      point(box, map, 'pointermove', 100, 100);
+      frame();
+      expect(root.dataset.collected).toBe('3');
+      expect(lastTake(ontake)).toEqual({ dropped: { home: 3 }, collected: { home: 3 } });
+      expect(sound.calls.collect).toBe(1);
+    });
+
+    it('a touch pointerdown then pointermove collects a drop under the drag', async () => {
+      const { box, map, feed, root } = await mount();
+      feed.drops = [feed.dropAt(1, 400, 100, 10, 2)];
+      start(feed);
+      feed.day = 15;
+      frame();
+      expect(root.dataset.collected).toBe('0');
+      point(box, map, 'pointerdown', 100, 100, 'touch');
+      point(box, map, 'pointermove', 700, 100, 'touch');
+      frame();
+      expect(root.dataset.collected).toBe('2');
+    });
+
+    it('a touch elsewhere does not sweep the ground between', async () => {
+      const { box, map, feed, root } = await mount();
+      feed.drops = [feed.dropAt(1, 400, 100, 10, 2)];
+      start(feed);
+      feed.day = 15;
+      frame();
+      point(box, map, 'pointerdown', 100, 100, 'touch');
+      point(box, map, 'pointerdown', 700, 100, 'touch');
+      frame();
+      expect(root.dataset.collected).toBe('0');
+    });
+
+    it('a pen pointermove moves the ring as a mouse does', async () => {
+      const ring = ringSpy();
+      const { box, map, feed, root } = await mount();
+      feed.drops = [feed.dropAt(1, 600, 450, 10)];
+      start(feed);
+      expect(ring()).toEqual([400, 300]);
+      point(box, map, 'pointermove', 250, 150, 'pen');
+      frame();
+      expect(ring()).toEqual([250, 150]);
+      point(box, map, 'pointermove', 600, 450, 'pen');
+      feed.day = 15;
+      frame();
+      expect(ring()).toEqual([600, 450]);
+      expect(root.dataset.collected).toBe('1');
+    });
+
+    it('the first move back inside after leaving the box starts a fresh path', async () => {
+      const { box, map, feed, root } = await mount();
+      feed.drops = [feed.dropAt(1, 400, 100, 10, 2)];
+      start(feed);
+      feed.day = 15;
+      frame();
+      point(box, map, 'pointermove', 100, 100);
+      point(box, map, 'pointermove', -50, 100);
+      point(box, map, 'pointermove', 700, 100);
+      frame();
+      expect(root.dataset.collected).toBe('0');
+      // A move inside after that one sweeps again.
+      point(box, map, 'pointermove', 100, 100);
+      frame();
+      expect(root.dataset.collected).toBe('2');
+    });
+
+    it('pointer events while not running move nothing', async () => {
+      await motion('reduce');
+      const ring = ringSpy();
+      const { box, map, feed, root, ontake } = await mount();
+      point(box, map, 'pointermove', 100, 100);
+      point(box, map, 'pointerdown', 100, 100, 'touch');
+      expect(key(document.body, { key: 'ArrowRight' }).defaultPrevented).toBe(false);
+      expect(clock.asked).toBe(0);
+      expect(ring()).toBeNull();
+
+      feed.drops = [feed.dropAt(1, 100, 100, 10)];
+      start(feed);
+      expect(ring()).toEqual([400, 300]);
+      feed.day = 15;
+      frame();
+      feed.running = false;
+      frame();
+      expect(root.dataset.state).toBe('idle');
+      expect(clock.pending.size).toBe(0);
+      const asked = clock.asked;
+      const takes = ontake.mock.calls.length;
+      point(box, map, 'pointermove', 100, 100);
+      point(box, map, 'pointerdown', 100, 100, 'pen');
+      expect(key(document.body, { key: 'ArrowRight' }).defaultPrevented).toBe(false);
+      frame();
+      expect(clock.asked).toBe(asked);
+      expect(ontake.mock.calls.length).toBe(takes);
+      expect(root.dataset.collected).toBe('0');
+      expect(ring()).toEqual([400, 300]);
+    });
+
+    it('ArrowRight moves the ring 16 px and Shift+ArrowRight 64 px, each prevented', async () => {
+      const ring = ringSpy();
+      const { feed } = await mount();
+      start(feed);
+      expect(ring()).toEqual([400, 300]);
+      expect(key(document.body, { key: 'ArrowRight' }).defaultPrevented).toBe(true);
+      frame();
+      expect(ring()).toEqual([416, 300]);
+      expect(key(document.body, { key: 'ArrowRight', shiftKey: true }).defaultPrevented).toBe(true);
+      frame();
+      expect(ring()).toEqual([480, 300]);
+      expect(key(document.body, { key: 'ArrowUp' }).defaultPrevented).toBe(true);
+      expect(key(document.body, { key: 'ArrowLeft', shiftKey: true }).defaultPrevented).toBe(true);
+      frame();
+      expect(ring()).toEqual([416, 284]);
+      expect(key(document.body, { key: 'a' }).defaultPrevented).toBe(false);
+    });
+
+    it('an arrow key in an input, a contenteditable, or inside role=slider is left alone', async () => {
+      const ring = ringSpy();
+      const { box, feed } = await mount();
+      const input = document.createElement('input');
+      const area = document.createElement('textarea');
+      const select = document.createElement('select');
+      const editable = document.createElement('div');
+      editable.contentEditable = 'true';
+      box.appendChild(input);
+      box.appendChild(area);
+      box.appendChild(select);
+      box.appendChild(editable);
+      const targets: EventTarget[] = [input, area, select, editable];
+      for (const role of [
+        'slider',
+        'menu',
+        'menubar',
+        'listbox',
+        'radiogroup',
+        'tablist',
+        'tree',
+        'grid'
+      ]) {
+        const widget = document.createElement('div');
+        widget.setAttribute('role', role);
+        const inner = document.createElement('span');
+        widget.appendChild(inner);
+        box.appendChild(widget);
+        targets.push(inner);
+      }
+      start(feed);
+      for (const t of targets) {
+        expect(key(t, { key: 'ArrowRight' }).defaultPrevented).toBe(false);
+        expect(key(t, { key: 'ArrowDown', shiftKey: true }).defaultPrevented).toBe(false);
+      }
+      frame();
+      expect(ring()).toEqual([400, 300]);
+    });
+
+    it('arrow keys are left alone under auto, with Alt/Control/Meta, or when already prevented', async () => {
+      const autoHands = { ...BASE_HANDS, auto: true };
+      for (const over of [{ collectForMe: true }, { hands: autoHands }]) {
+        const { feed, screen } = await mount(over);
+        start(feed);
+        expect(key(document.body, { key: 'ArrowRight' }).defaultPrevented).toBe(false);
+        screen.unmount();
+      }
+
+      const ring = ringSpy();
+      const { feed } = await mount();
+      start(feed);
+      for (const mod of [{ altKey: true }, { ctrlKey: true }, { metaKey: true }]) {
+        expect(key(document.body, { key: 'ArrowRight', ...mod }).defaultPrevented).toBe(false);
+      }
+      const prevent = (e: Event) => e.preventDefault();
+      document.body.addEventListener('keydown', prevent);
+      try {
+        key(document.body, { key: 'ArrowRight' });
+      } finally {
+        document.body.removeEventListener('keydown', prevent);
+      }
+      frame();
+      expect(ring()).toEqual([400, 300]);
+    });
+
+    it('unmounting mid-run: no further ontake, the frame is cancelled, a later arrow key is not prevented', async () => {
+      const { box, map, feed, ontake, screen } = await mount();
+      feed.drops = [feed.dropAt(1, 100, 100, 10), feed.dropAt(2, 700, 500, 20)];
+      start(feed);
+      feed.day = 15;
+      frame();
+      expect(ontake).toHaveBeenCalled();
+      expect(clock.pending.size).toBe(1);
+      const takes = ontake.mock.calls.length;
+      screen.unmount();
+      expect(clock.pending.size).toBe(0);
+      feed.day = 25;
+      point(box, map, 'pointermove', 700, 500);
+      expect(key(document.body, { key: 'ArrowRight' }).defaultPrevented).toBe(false);
+      frame();
+      feed.running = false;
+      frame();
+      expect(ontake.mock.calls.length).toBe(takes);
+      expect(clock.pending.size).toBe(0);
+    });
   });
 });
