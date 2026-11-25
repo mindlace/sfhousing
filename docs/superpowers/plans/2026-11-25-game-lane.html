@@ -174,8 +174,8 @@ interface GameCellProps {
       <tbody>
         <tr><th scope="row">S game-save</th><td><code>src/lib/game/{store.svelte,save-sync.svelte,save-api,saves}.ts</code> and specs; <code>src/lib/game/AccountOffer.svelte</code> and spec (one import); <code>src/lib/game/test/StoreHost.svelte</code>; <code>src/lib/server/game/**</code>; <code>src/lib/server/db/schema/gameSave.ts</code>; <code>migrations/**</code> (two generated); <code>src/routes/api/game/**</code>; <code>src/lib/server/auth/better-auth.spec.ts</code>; <code>src/lib/server/user-store/deletion.spec.ts</code>; <code>e2e/helpers/game.ts</code>; <code>docs/dev/game-save.md</code>; deletes <code>src/lib/game/{levels,progress,standing,allowed,copy,navigate}.ts</code> and specs</td><td>1 to 8, 21</td></tr>
         <tr><th scope="row">T tally-tree B</th><td><code>src/lib/game/ui/{GameCell,GamePanel}.svelte</code> and specs; <code>src/lib/game/ui/reload.ts</code>; <code>src/lib/game/ui/test/{fake-game.svelte.ts,CellHost.svelte,PanelHost.svelte}</code></td><td>9 to 11</td></tr>
-        <tr><th scope="row">M game-sim</th><td><code>src/lib/sim-page/**</code> (creates <code>game-phase.ts</code>, <code>game-levers.ts</code>, <code>e2e-run.ts</code> and specs, <code>SimRoute.game.svelte.spec.ts</code>, <code>SimRoute.svelte.spec.ts</code>, <code>load.spec.ts</code>, <code>test/GameSimHost.svelte</code>, <code>test/SimRouteHost.svelte</code>); <code>src/lib/timeline/**</code> other than <code>activity.ts</code> and its spec (creates <code>RunClock.svelte</code>, spec, <code>test/RunClockHost.svelte</code>, <code>test/limits.ts</code>); <code>src/lib/fzp/playback.ts</code> and spec; <code>src/routes/sim/**</code> other than <code>+page.svelte</code>/<code>+page.ts</code> (tests and hosts deleted after moving); <code>src/routes/s/**</code>; <code>docs/dev/{sim-page,timeline-ui}.md</code>; deletes <code>src/lib/game/WinCard.svelte</code> and spec</td><td>15 to 20, 22 to 38</td></tr>
-        <tr><th scope="row">H game-shell</th><td><code>src/lib/shell/**</code> (creates <code>name.ts</code>, <code>PaintOpening.svelte</code>, <code>test/GameHeaderHost.svelte</code>; deletes <code>LevelCell.svelte</code>, spec, <code>test/LevelCellHost.svelte</code>); <code>src/routes/+page.svelte</code>, <code>+page.ts</code>, <code>page*.spec.ts</code>, <code>src/routes/test/**</code>; <code>src/routes/sim/+page.svelte</code>, <code>+page.ts</code>; <code>src/routes/s/[id]/+page.svelte</code> and <code>+error.svelte</code> (titles); <code>src/routes/about/+page.svelte</code>; <code>src/routes/p/**</code>; <code>src/lib/sharing/**</code> (deletes <code>remix.ts</code> and spec); <code>src/lib/about/**</code>; <code>src/lib/brush/BrushEditor.svelte</code> (<code>camera()</code>); <code>src/lib/server/auth/brand.ts</code>; <code>src/lib/plan/schema.ts</code> and spec; <code>wrangler.jsonc</code> (<code>SES_FROM</code>); deletes <code>src/lib/game/LevelPanel.svelte</code> and spec</td><td>12 to 14, 37, 39 to 42</td></tr>
+        <tr><th scope="row">M game-sim</th><td><code>src/lib/sim-page/**</code> (creates <code>game-phase.ts</code>, <code>game-levers.ts</code>, <code>e2e-run.ts</code> and specs, <code>SimRoute.game.svelte.spec.ts</code>, <code>SimRoute.svelte.spec.ts</code>, <code>load.spec.ts</code>, <code>test/GameSimHost.svelte</code>, <code>test/SimRouteHost.svelte</code>); <code>src/lib/timeline/**</code> other than <code>activity.ts</code> and its spec (creates <code>RunClock.svelte</code>, spec, <code>test/RunClockHost.svelte</code>, <code>test/limits.ts</code>, <code>test/TallyStub.svelte</code>); <code>src/lib/fzp/playback.ts</code> and spec; <code>src/routes/sim/**</code> other than <code>+page.svelte</code>/<code>+page.ts</code> (tests and hosts deleted after moving); <code>src/routes/s/**</code>; <code>docs/dev/{sim-page,timeline-ui}.md</code>; deletes <code>src/lib/game/WinCard.svelte</code> and spec</td><td>15 to 20, 22 to 38</td></tr>
+        <tr><th scope="row">H game-shell</th><td><code>src/lib/shell/**</code> (creates <code>name.ts</code>, <code>PaintOpening.svelte</code>, <code>test/GameHeaderHost.svelte</code>, <code>test/GoalPinnedHeader.svelte</code>; deletes <code>LevelCell.svelte</code>, spec, <code>test/LevelCellHost.svelte</code>); <code>src/routes/+page.svelte</code>, <code>+page.ts</code>, <code>page*.spec.ts</code>, <code>src/routes/test/**</code>; <code>src/routes/sim/+page.svelte</code>, <code>+page.ts</code>; <code>src/routes/s/[id]/+page.svelte</code> and <code>+error.svelte</code> (titles); <code>src/routes/about/+page.svelte</code>; <code>src/routes/p/**</code>; <code>src/lib/sharing/**</code> (deletes <code>remix.ts</code> and spec); <code>src/lib/about/**</code>; <code>src/lib/brush/BrushEditor.svelte</code> (<code>camera()</code>); <code>src/lib/server/auth/brand.ts</code>; <code>src/lib/plan/schema.ts</code> and spec; <code>wrangler.jsonc</code> (<code>SES_FROM</code>); deletes <code>src/lib/game/LevelPanel.svelte</code> and spec</td><td>12 to 14, 37, 39 to 42</td></tr>
       </tbody>
     </table>
     <p>Two operator rulings cross the write sets: Task 13 edits the old-name lines at <code>src/lib/timeline/TimelineMode.svelte.spec.ts:2178</code> and <code>src/routes/s/[id]/page.view.svelte.spec.ts:172</code>, and Task 37 removes <code>remixFrom</code> from <code>src/lib/sim-page/sim-session.ts</code> (P13: no Remix this round).</p>
@@ -1400,6 +1400,7 @@ git commit -m "feat(shell): name the site SF Housing"</code></pre>
     <ul>
       <li>Modify: <code>src/lib/shell/SiteHeader.svelte</code>: the comment <code>:1-17</code>; imports <code>:21-25</code>; <code>onSim</code>, <code>lockedStep</code>, <code>locked</code>, <code>ready</code> <code>:51</code>, <code>:64-79</code> (<code>link</code>, <code>tab</code>, <code>mounted</code>, <code>account</code>, <code>wide</code> stay); the snippets <code>:146-173</code>; the name and nav <code>:187-193</code>; the Menu button's label and dot <code>:214</code>, <code>:223-229</code>; the Menu's name and nav <code>:243-253</code>; the keep-open comment <code>:126</code></li>
       <li>Create: <code>src/lib/shell/test/GameHeaderHost.svelte</code> (<code>src/lib/shell/test/LevelCellHost.svelte</code>'s content, its comment naming the game)</li>
+      <li>Create: <code>src/lib/shell/test/GoalPinnedHeader.svelte</code> (test host: <code>SiteHeader</code> with the real <code>GoalHeadline</code> pinned, as <code>src/lib/shell/test/HeaderScoreHeader.svelte:30-43</code> pins <code>HeaderScore</code>)</li>
       <li>Delete: <code>src/lib/shell/LevelCell.svelte</code>, <code>src/lib/shell/LevelCell.svelte.spec.ts</code>, <code>src/lib/shell/test/LevelCellHost.svelte</code>, <code>src/lib/game/LevelPanel.svelte</code>, <code>src/lib/game/LevelPanel.svelte.spec.ts</code></li>
       <li>Modify: <code>src/lib/shell/test/SimRowGameHeader.svelte</code> (comment: <code>GameCell</code> sits in the row), <code>src/lib/shell/test/HeaderScoreHeader.svelte:43</code> (<code>routeId="/"</code>)</li>
       <li>Modify: <code>src/lib/shell/accent.spec.ts:84-86</code> (<code>THEMED_FILES</code>)</li>
@@ -1407,8 +1408,10 @@ git commit -m "feat(shell): name the site SF Housing"</code></pre>
     </ul>
     <p><strong>Interfaces</strong></p>
     <ul>
-      <li>Consumes: <code>GameCell</code> <code>{ inMenu: boolean }</code> (Task 11); <code>SITE_NAME</code> (Task 13); <code>seededGame</code>, <code>quietSync</code> (Task 12); <code>useGame</code>, <code>provideGame</code> (G7).</li>
+      <li>Consumes: <code>GameCell</code> <code>{ inMenu: boolean }</code> (Task 11); <code>SITE_NAME</code> (Task 13); <code>seededGame</code>, <code>quietSync</code> (Task 12); <code>useGame</code>, <code>provideGame</code> (G7); <code>GoalHeadline</code> (part A, props <code>{ homes; amount; deadline; unlocks; met; side }</code>, <code>src/lib/game/ui/GoalHeadline.svelte:33-40</code>; two root nodes, <code>goal-headline</code> and <code>goal-live</code>; its <code>side-goals</code> pop-over is <code>absolute top-full</code>, placed against the nearest positioned ancestor, tally-tree §sec-design-headline-pop).</li>
       <li>Produces: <code>GameHeaderHost.svelte</code> props <code>{ game: GameStore; routeId?: string | null; user?: { handle: string } | null; signInAvailable?: boolean; actions?: Snippet; pinned?: Snippet; status?: Snippet }</code>, calling <code>provideGame(game)</code> at init and rendering <code>&lt;SiteHeader&gt;</code>, then <code>&lt;div data-testid="outside" style="height: 400px"&gt;Map&lt;/div&gt;</code>. <code>SiteHeader</code>'s props do not change (<code>routeId</code> stays; only About's <code>aria-current</code> reads it); it no longer imports any deleted <code>$lib/game</code> module.</li>
+      <li>Produces: <code>GoalPinnedHeader.svelte</code>, props <code>{ game: GameStore; headline: ComponentProps&lt;typeof GoalHeadline&gt; }</code>: <code>provideGame(game)</code> at init, a <code>pinned</code> snippet rendering <code>&lt;GoalHeadline {...headline} /&gt;</code>, <code>&lt;SiteHeader routeId="/sim" {pinned} /&gt;</code>, then <code>&lt;div data-testid="outside" style="height: 400px"&gt;Map&lt;/div&gt;</code>.</li>
+      <li>The header's placement rule (game-shell §sec-design-header): the <code>&lt;header&gt;</code> is <code>relative</code> (<code>SiteHeader.svelte:178</code>); the pinned slot's box, <code>&lt;div class="flex min-w-0 items-center"&gt;{@render pinned()}&lt;/div&gt;</code> (<code>:207-209</code>), a direct child of the <code>&lt;header&gt;</code>, carries no position class, so <code>GoalHeadline</code>'s pop-over places itself against the header; the box renders the snippet's nodes as they come, so both of <code>GoalHeadline</code>'s root nodes sit in it.</li>
     </ul>
     <ol>
       <li id="t14-s1"><input type="checkbox"> Rewrite the header specs. In <code>SiteHeader.svelte.spec.ts</code>: the <code>describe('steps')</code> (<code>:144-294</code>), <code>describe('brand')</code> (<code>:296-329</code>) and <code>describe('the game')</code> (<code>:879-964</code>) are replaced by the cases below; every other case that names <code>'SF Housing Simulator'</code> names <code>'SF Housing'</code> (exact); every case that places items against the Steps nav (<code>:587-633</code>, <code>:768</code>) places them against the name link instead; the level-cell row cases (<code>:841-876</code>) become <code>for (const touch of [false, true])</code> with <code>seededGame({ state: { phase: 'runs', firstWinAt: WON, units: { home: 12345 } } })</code> and items <code>[header-units, score-bar's parent, Publish, @a-very-long-handle-x, About]</code>, same assertions; the account-entry cases keep their assertions with <code>GameHeaderHost</code> and <code>seededGame({ sync })</code>.
@@ -1471,7 +1474,31 @@ it('a button inside data-header-keep-open leaves the Menu open; a link closes it
   about.addEventListener('click', (e) =&gt; e.preventDefault(), { once: true });
   (about as HTMLElement).click();
   await expect.element(menu).toHaveAttribute('aria-expanded', 'false');
-});</code></pre>
+});
+const HEADLINE = { homes: 61400, amount: 82069, deadline: 'Dec 2055', unlocks: null, met: false, side: [] };
+for (const width of [375, 1280])
+  it(`at ${width}px the header is positioned, the pinned box is not, and both GoalHeadline root nodes sit in it`, async () =&gt; {
+    await page.viewport(width, 800);
+    render(GoalPinnedHeader, { game: seededGame().game, headline: HEADLINE });
+    const headline = page.getByTestId('goal-headline');
+    await expect.element(headline).toBeVisible();
+    const banner = page.getByRole('banner').element() as HTMLElement;
+    const slot = headline.element().parentElement!;
+    expect(slot.parentElement).toBe(banner);
+    expect(page.getByTestId('goal-live').element().parentElement).toBe(slot);
+    expect(getComputedStyle(banner).position).toBe('relative');
+    expect(getComputedStyle(slot).position).toBe('static');
+    await page.getByTestId('goal-headline-button').click();
+    const pop = page.getByTestId('side-goals');
+    await expect.element(pop).toBeVisible();
+    expect((pop.element() as HTMLElement).offsetParent).toBe(banner);
+    const p = pop.element().getBoundingClientRect();
+    const b = banner.getBoundingClientRect();
+    expect(p.top).toBeGreaterThanOrEqual(b.bottom);
+    expect(p.left).toBeGreaterThanOrEqual(b.left + 16 - 0.5);
+    expect(p.right).toBeLessThanOrEqual(b.right - 16 + 0.5);
+  });</code></pre>
+        <p>The placement case pins game-shell §sec-design-header's rule against the real <code>GoalHeadline</code>: the pop-over's <code>offsetParent</code> is the <code>&lt;header&gt;</code>, it opens under the header and inside its 16 px gutters (tally-tree §sec-design-headline-pop).</p>
         <p><code>SiteHeader.ssr.spec.ts</code>, one case:</p>
         <pre><code data-lang="ts">it('before mount: the name, no unit count, no steps, the account from user only', () =&gt; {
   const { game } = seededGame({ sync: quietSync({ handle: 'ada', handleClaimed: true }) });
@@ -1486,11 +1513,11 @@ it('a button inside data-header-keep-open leaves the Menu open; a link closes it
 });</code></pre>
         <p>In <code>accent.spec.ts</code>: <code>THEMED_FILES</code> loses <code>'src/lib/game/WinCard.svelte'</code>, <code>'src/lib/game/LevelPanel.svelte'</code> and <code>'src/lib/shell/LevelCell.svelte'</code> and gains the six paths of game-shell §sec-design-accent (<code>src/lib/game/ui/{Tally,Tree,GoalHeadline,OpeningCard,GameCell,GamePanel}.svelte</code>). <code>WinCard.svelte</code> still exists until Task 29 deletes it; dropping it here keeps <code>accent.spec.ts</code> green when it goes.</p>
       </li>
-      <li id="t14-s2"><input type="checkbox"> Run them and see them fail: the header specs on the import of <code>$lib/game/allowed</code> (deleted in Task 7) or on the missing <code>GameHeaderHost</code>. <code>accent.spec.ts</code> may already pass, since the six files it now names exist (part A and Task 11); a failure there names a gray, white or black utility without its <code>dark:</code> pair, which goes back to the component's owner.
+      <li id="t14-s2"><input type="checkbox"> Run them and see them fail: the header specs on the import of <code>$lib/game/allowed</code> (deleted in Task 7) or on the missing <code>GameHeaderHost</code> and <code>GoalPinnedHeader</code>. <code>accent.spec.ts</code> may already pass, since the six files it now names exist (part A and Task 11); a failure there names a gray, white or black utility without its <code>dark:</code> pair, which goes back to the component's owner.
         <pre><code data-lang="sh">npx vitest run --project server src/lib/shell/SiteHeader.ssr.spec.ts src/lib/shell/accent.spec.ts
 npx vitest run --project client src/lib/shell/SiteHeader.svelte.spec.ts</code></pre>
       </li>
-      <li id="t14-s3"><input type="checkbox"> Change <code>SiteHeader.svelte</code> per game-shell §sec-design-header: import <code>GameCell from '$lib/game/ui/GameCell.svelte'</code> and <code>SITE_NAME</code>; drop the <code>simLocked</code>, <code>roundComplete</code> and <code>LevelCell</code> imports and the names listed in Files; the bar's name is <code>{SITE_NAME}</code> with no hidden part; <code>{#if mounted &amp;&amp; !game.open &amp;&amp; wide}&lt;GameCell inMenu={false} /&gt;{/if}</code> after it; the Menu's name is <code>{SITE_NAME}</code>, then <code>{#if mounted &amp;&amp; !game.open &amp;&amp; !wide}&lt;GameCell inMenu /&gt;{/if}</code>; the Menu button's <code>aria-label</code> is <code>"Menu"</code> and it has no dot; the keep-open rule at <code>:127</code> stays, its comment naming <code>GameCell</code>; the header comment is rewritten to the section's rules and widths. Create <code>GameHeaderHost.svelte</code>; delete the five files; edit <code>SimRowGameHeader.svelte</code>'s comment, <code>HeaderScoreHeader.svelte</code>'s <code>routeId</code> and <code>accent.spec.ts</code>.</li>
+      <li id="t14-s3"><input type="checkbox"> Change <code>SiteHeader.svelte</code> per game-shell §sec-design-header: import <code>GameCell from '$lib/game/ui/GameCell.svelte'</code> and <code>SITE_NAME</code>; drop the <code>simLocked</code>, <code>roundComplete</code> and <code>LevelCell</code> imports and the names listed in Files; the bar's name is <code>{SITE_NAME}</code> with no hidden part; <code>{#if mounted &amp;&amp; !game.open &amp;&amp; wide}&lt;GameCell inMenu={false} /&gt;{/if}</code> after it; the Menu's name is <code>{SITE_NAME}</code>, then <code>{#if mounted &amp;&amp; !game.open &amp;&amp; !wide}&lt;GameCell inMenu /&gt;{/if}</code>; the Menu button's <code>aria-label</code> is <code>"Menu"</code> and it has no dot; the keep-open rule at <code>:127</code> stays, its comment naming <code>GameCell</code>; the <code>&lt;header&gt;</code> keeps <code>relative</code> and the pinned slot's box keeps no position class (<code>relative</code>, <code>absolute</code>, <code>fixed</code> or <code>sticky</code> on it would move <code>GoalHeadline</code>'s pop-over), and it renders <code>{@render pinned()}</code> with no wrapper of its own; the header comment is rewritten to the section's rules and widths, including that one. Create <code>GameHeaderHost.svelte</code> and <code>GoalPinnedHeader.svelte</code>; delete the five files; edit <code>SimRowGameHeader.svelte</code>'s comment, <code>HeaderScoreHeader.svelte</code>'s <code>routeId</code> and <code>accent.spec.ts</code>.</li>
       <li id="t14-s4"><input type="checkbox"> Run them and see them pass. The whole client shell set imports only the header, the scoreboard, <code>HistoryButtons</code> and <code>SaveIndicator</code>, none of which part M touches, so it passes here.
         <pre><code data-lang="sh">npx vitest run --project server src/lib/shell/SiteHeader.ssr.spec.ts src/lib/shell/accent.spec.ts src/lib/shell/name.spec.ts
 npx vitest run --project client src/lib/shell</code></pre>
@@ -1498,7 +1525,7 @@ npx vitest run --project client src/lib/shell</code></pre>
       </li>
       <li id="t14-s5"><input type="checkbox"> Grep <code>LevelCell|LevelPanel|data-level-dot|data-step-|header-level</code> in <code>src</code>: no match. ESLint and Prettier clean on the changed files.</li>
       <li id="t14-s6"><input type="checkbox"> Commit, then <code>npx chreode timing-check --head HEAD</code> is clean.
-        <pre><code data-lang="sh">git add src/lib/shell/SiteHeader.svelte src/lib/shell/SiteHeader.svelte.spec.ts src/lib/shell/SiteHeader.ssr.spec.ts src/lib/shell/accent.spec.ts src/lib/shell/test/GameHeaderHost.svelte src/lib/shell/test/SimRowGameHeader.svelte src/lib/shell/test/HeaderScoreHeader.svelte
+        <pre><code data-lang="sh">git add src/lib/shell/SiteHeader.svelte src/lib/shell/SiteHeader.svelte.spec.ts src/lib/shell/SiteHeader.ssr.spec.ts src/lib/shell/accent.spec.ts src/lib/shell/test/GameHeaderHost.svelte src/lib/shell/test/GoalPinnedHeader.svelte src/lib/shell/test/SimRowGameHeader.svelte src/lib/shell/test/HeaderScoreHeader.svelte
 git rm src/lib/shell/LevelCell.svelte src/lib/shell/LevelCell.svelte.spec.ts src/lib/shell/test/LevelCellHost.svelte src/lib/game/LevelPanel.svelte src/lib/game/LevelPanel.svelte.spec.ts
 git commit -m "feat(shell): header without steps, with the unit count"</code></pre>
       </li>
@@ -2215,8 +2242,13 @@ git commit -m "feat(game-sim): find, restore and switch a node's policies"</code
       <li id="t29-s1"><input type="checkbox"> Write the failing tests. In a game the <code>goal</code> seam is not read, so game cases open with the whole window's statics (<code>LONG</code>, as <code>TimelineMode.game.svelte.spec.ts:47-51</code>), filled through <code>WINDOW_MONTHS</code>.
         <pre><code data-lang="ts">it('the pinned item is GoalHeadline with homes null before the rung\'s first run', async () =&gt; {
   await opened({ game: gameWith({ phase: 'runs', runs: 0 }) }, LONG);
-  const pinned = page.getByTestId('header-pinned');
-  await expect.element(pinned.getByTestId('goal-headline')).toBeVisible();
+  const banner = page.getByRole('banner');
+  await expect.element(banner.getByTestId('goal-headline')).toBeVisible();
+  const slot = page.getByTestId('goal-headline').element().parentElement!; // SiteHeader's pinned box
+  expect(slot.parentElement).toBe(banner.element());
+  expect(page.getByTestId('goal-live').element().parentElement).toBe(slot); // both root nodes
+  expect(getComputedStyle(banner.element()).position).toBe('relative');
+  expect(getComputedStyle(slot).position).toBe('static');
   expect(document.querySelector('[data-testid=score-bar]')).toBeNull();
   expect(document.querySelector('[data-testid=tl-goal-notice]')).toBeNull();
 });
@@ -2229,12 +2261,13 @@ it('the goal is goalAt of the rung, with goalAmount', async () =&gt; {
   await opened({ game: gameWith({ phase: 'runs', runs: 1, rung: 1 }), goalAmount: 5000 }, LONG);
   await expect.element(page.getByTestId('goal-headline')).toHaveTextContent(ladder(asOf)[1].label);
 });</code></pre>
+        <code>TimelineModeHost</code> mounts the real <code>SiteHeader</code> (<code>src/lib/timeline/test/TimelineModeHost.svelte:111-113</code>), which has no <code>header-pinned</code> test id, so the first case finds the pinned box as <code>goal-headline</code>'s parent inside the <code>banner</code> and holds game-shell §sec-design-header's rule there: the header <code>relative</code>, the box not positioned, both of <code>GoalHeadline</code>'s root nodes in it.
         In <code>TimelineMode.svelte.spec.ts</code>: with no game, and with the open game (<code>openGame()</code> under <code>VITE_E2E</code>), the pinned item is <code>TimelineHeaderScore</code> (<code>score-bar</code>) and the goal notice is today's.
       </li>
       <li id="t29-s2"><input type="checkbox"> Run; expected FAIL: <code>TimelineMode.svelte</code> imports the modules Task 7 deleted and <code>test/game.ts</code> builds v1 saves.
         <pre><code data-lang="sh">npx vitest run src/lib/timeline/TimelineMode.game.svelte.spec.ts src/lib/timeline/TimelineMode.svelte.spec.ts</code></pre>
       </li>
-      <li id="t29-s3"><input type="checkbox"> Implement. Remove everything §sec-design-removed lists for TimelineMode (and <code>bar=</code>/<code>barDay=</code> at <code>:1634</code>, <code>:1680</code>). <code>goal</code> is <code>g ? goalAt(asOf, g.state.rung, goalAmount ?? undefined) : today's</code>. <code>scoreBar</code> renders <code>GoalHeadline</code> when <code>g &amp;&amp; calibration</code> with §tbl-goal-props' "tally, tree and workshop" column (the run column comes in Task 31): <code>unlocks = rung + 1 &lt; RUNGS ? goalUnlocks(NODES.filter((n) =&gt; n.ring === rung + 1).length, true) : null</code>; <code>side</code> per §sec-design-goal's rules. <code>goalNotice</code> is null in a game. Timeline gets <code>limits={g?.limits ?? OPEN_LIMITS}</code>. Starters: <code>startersFor(calibration, runDoc)</code>.</li>
+      <li id="t29-s3"><input type="checkbox"> Implement. Remove everything §sec-design-removed lists for TimelineMode (and <code>bar=</code>/<code>barDay=</code> at <code>:1634</code>, <code>:1680</code>). <code>goal</code> is <code>g ? goalAt(asOf, g.state.rung, goalAmount ?? undefined) : today's</code>. <code>scoreBar</code> renders <code>GoalHeadline</code> as the snippet's only content (no wrapper element, so its two root nodes land in the header's pinned box) when <code>g &amp;&amp; calibration</code> with §tbl-goal-props' "tally, tree and workshop" column (the run column comes in Task 31): <code>unlocks = rung + 1 &lt; RUNGS ? goalUnlocks(NODES.filter((n) =&gt; n.ring === rung + 1).length, true) : null</code>; <code>side</code> per §sec-design-goal's rules. <code>goalNotice</code> is null in a game. Timeline gets <code>limits={g?.limits ?? OPEN_LIMITS}</code>. Starters: <code>startersFor(calibration, runDoc)</code>.</li>
       <li id="t29-s4"><input type="checkbox"> Run; expected PASS (including the <code>stillBoxes()</code> cases on the name <code>'SF Housing'</code>, Task 13). Also <code>npm run check</code>: no diagnostic in the files this task lists.
         <pre><code data-lang="sh">npx vitest run src/lib/timeline/TimelineMode.game.svelte.spec.ts src/lib/timeline/TimelineMode.svelte.spec.ts</code></pre>
       </li>
@@ -2477,16 +2510,35 @@ git commit -m "feat(game-sim): a run plays the forecast to the deadline and feed
 
   <section id="sec-task-32">
     <h2>Task 32: Settling and the tally</h2>
-    <p>Per game-sim §sec-design-settle (the rules and <code>settleRun</code>).</p>
+    <p>Per game-sim §sec-design-settle (the rules, <code>settleRun</code>, and where <code>Tally</code> sits: only in the tally phase, inside <code>tl-tally</code>, under <code>{#key tally.result}</code>, so each result mounts a fresh <code>Tally</code> whose counts roll once, from mount).</p>
     <p><strong>Files</strong></p>
     <ul>
       <li>Modify: <code>src/lib/timeline/TimelineMode.svelte</code></li>
+      <li>Create: <code>src/lib/timeline/test/TallyStub.svelte</code> (the recording mock of <code>Tally</code>)</li>
       <li>Test: <code>src/lib/timeline/TimelineMode.game.svelte.spec.ts</code></li>
     </ul>
     <p><strong>Interfaces</strong></p>
     <ul>
-      <li>Consumes: <code>readRun</code>, <code>resultOf</code>, <code>ladder</code> (G6); <code>Tally</code> (U1 part A, <code>{ result; before; deadline; oncontinue }</code>); <code>game.settle</code> (G7, Task 2); <code>sound.goal()</code> (R1).</li>
+      <li>Consumes: <code>readRun</code>, <code>resultOf</code>, <code>ladder</code> (G6); <code>Tally</code> (U1 part A, <code>{ result; before; deadline; oncontinue }</code>, <code>src/lib/game/ui/Tally.svelte:31-38</code>; its first button is <code>tally-continue</code>, <code>:199</code>); <code>game.settle</code> (G7, Task 2); <code>sound.goal()</code> (R1).</li>
       <li>Produces: <code>settleRun(view: TimelineView, reading: RunReading): void</code> (§sec-design-settle's body verbatim); <code>tally: { result: RunResult; before: number | null } | null</code>.</li>
+      <li>Produces (markup): in the tally phase only,
+        <pre><code data-lang="svelte">{#if gamePhase === 'tally' &amp;&amp; tally}
+  &lt;div data-testid="tl-tally" class="pointer-events-auto max-w-full"&gt;
+    {#key tally.result}
+      &lt;Tally result={tally.result} before={tally.before} deadline={ladder(asOf)[tally.result.rung].label} oncontinue={() =&gt; onphase?.('continue')} /&gt;
+    {/key}
+  &lt;/div&gt;
+{/if}</code></pre>
+        where the win card sat. Outside the tally phase neither <code>tl-tally</code> nor <code>Tally</code> is in the document.</li>
+      <li>Produces (test): <code>TallyStub.svelte</code>, mocked in for <code>$lib/game/ui/Tally.svelte</code> by <code>vi.mock('$lib/game/ui/Tally.svelte', () =&gt; import('./test/TallyStub.svelte'))</code> (as <code>SimMap</code> is mocked at <code>TimelineMode.game.svelte.spec.ts:35</code>):
+        <pre><code data-lang="ts">// src/lib/timeline/test/TallyStub.svelte, &lt;script module&gt;
+type TallyProps = ComponentProps&lt;typeof Tally&gt;;
+/** Each mount's props, in mount order; `live` counts the stubs mounted now. */
+export const tallyRec: { mounts: TallyProps[]; live: number; reset(): void };
+// &lt;script&gt;: at init pushes its props onto tallyRec.mounts and adds 1 to live; onDestroy takes 1 off.
+// markup: &lt;div data-testid="tally-stub"&gt;&lt;button type="button" data-testid="tally-continue"
+//   onclick={() =&gt; oncontinue()}&gt;Continue&lt;/button&gt;&lt;/div&gt; (the first button, as in Tally)</code></pre>
+        <code>tallyProps()</code> is <code>tallyRec.mounts.at(-1)!</code>; <code>beforeEach</code> calls <code>tallyRec.reset()</code>.</li>
     </ul>
     <ol>
       <li id="t32-s1"><input type="checkbox"> Write the failing tests:
@@ -2506,6 +2558,41 @@ it('before is the last run\'s homes on the same rung, null on a new rung; Contin
   await page.getByTestId('tally-continue').click();
   await expect.poll(() =&gt; modePhase()).toBe('tree');
   expect(stub.callsOf('setRunView').at(-1)).toEqual([false]);
+});
+it('Tally is mounted only in the tally phase', async () =&gt; {
+  const game = gameWith({ phase: 'runs', runs: 0 });
+  setup({ game, phased: true, runMs: 200 });
+  await expect.element(page.getByTestId('run-waiting')).toBeVisible(); // starting
+  expect(document.querySelector('[data-testid=tl-tally]')).toBeNull();
+  emit(compiledMsg(1, LONG));
+  emit(filledMsg(1, 0, WINDOW_MONTHS));
+  await expect.poll(() =&gt; modePhase()).toBe('run');
+  expect(document.querySelector('[data-testid=tl-tally]')).toBeNull();
+  expect(tallyRec.mounts).toHaveLength(0);
+  await expect.poll(() =&gt; modePhase()).toBe('tally');
+  await expect.element(page.getByTestId('tl-tally').getByTestId('tally-stub')).toBeVisible();
+  expect(tallyRec.live).toBe(1);
+  await page.getByTestId('tally-continue').click();
+  await expect.poll(() =&gt; modePhase()).toBe('tree');
+  expect(document.querySelector('[data-testid=tl-tally]')).toBeNull();
+  expect(tallyRec.live).toBe(0);
+});
+it('each settled result mounts its own Tally', async () =&gt; {
+  const game = gameWith({ phase: 'runs', runs: 0 });
+  await runToEnd({ game, runMs: 200 });
+  await expect.poll(() =&gt; modePhase()).toBe('tally');
+  const first = game.state.last;
+  expect(tallyRec.mounts).toHaveLength(1);
+  expect(tallyRec.mounts[0].result).toEqual(first);
+  await page.getByTestId('tally-continue').click();
+  await expect.poll(() =&gt; modePhase()).toBe('tree');
+  await page.getByTestId('host-tree').getByRole('button', { name: 'Run' }).click();
+  await expect.poll(() =&gt; game.state.runs).toBe(2);
+  await expect.poll(() =&gt; modePhase()).toBe('tally');
+  expect(tallyRec.mounts).toHaveLength(2);
+  expect(tallyRec.mounts[1].result).not.toBe(tallyRec.mounts[0].result);
+  expect(tallyRec.mounts[1].result).toEqual(game.state.last);
+  expect(tallyRec.live).toBe(1);
 });
 it('a refused settle write still shows the tally', async () =&gt; {
   const storage = new MemoryStorage();
@@ -2543,17 +2630,17 @@ it('RunLayer\'s feed is the same object at the start of a run, mid-run and at se
   expect(runLayerProps().feed).toBe(f); // settling
   expect(runLayerFeeds.size).toBe(1);
 });</code></pre>
-        <code>tallyProps()</code> reads a recording mock of <code>$lib/game/ui/Tally.svelte</code> (builder's call: one recording mock, as <code>RunLayer</code> is mocked in Task 31; use it throughout this spec). The feed case reads Task 31's recording <code>RunLayer</code> (<code>runLayerProps()</code>, <code>runLayerFeeds</code>) on real frames; <code>stopDay</code> is the run's stop day. The refused-write, crash-in-tally and past-the-months cases are Review Focus pins.
+        <code>Tally</code> is <code>TallyStub.svelte</code> throughout this spec (builder's call: one recording mock, as <code>RunLayer</code> is mocked in Task 31, so the spec reads the props each mount got and counts mounts); the stub's first button is <code>tally-continue</code> calling <code>oncontinue</code>, so the cases that click <code>tally-continue</code> and the focus check on <code>tl-tally</code>'s first button run against it. <code>runToEnd</code> opens the page in starting with <code>phased: true</code> and fills the whole window (<code>LONG</code> through <code>WINDOW_MONTHS</code>); the second run in "each settled result" fills from the same forecast, so the host tree's Run reaches tally again with no new message. No case uses <code>setTimeout</code>, <code>setInterval</code> or a fixed wait: every wait is <code>expect.element</code> or <code>expect.poll</code>. The feed case reads Task 31's recording <code>RunLayer</code> (<code>runLayerProps()</code>, <code>runLayerFeeds</code>) on real frames; <code>stopDay</code> is the run's stop day. The refused-write, crash-in-tally and past-the-months cases are Review Focus pins.
       </li>
-      <li id="t32-s2"><input type="checkbox"> Run; expected FAIL (no <code>tl-tally</code>; <code>game.state.runs</code> stays 0).
+      <li id="t32-s2"><input type="checkbox"> Run; expected FAIL (no <code>./test/TallyStub.svelte</code>; once it exists, no <code>tl-tally</code>, <code>tallyRec.mounts</code> empty, <code>game.state.runs</code> stays 0).
         <pre><code data-lang="sh">npx vitest run src/lib/timeline/TimelineMode.game.svelte.spec.ts</code></pre>
       </li>
-      <li id="t32-s3"><input type="checkbox"> Implement: an effect tries settling while <code>gamePhase === 'run' &amp;&amp; !running &amp;&amp; day === stop</code>, only with the numbers current and <code>readRun(shown.view, goal)</code> not null. <code>Tally</code> in <code>&lt;div data-testid="tl-tally" class="pointer-events-auto max-w-full"&gt;</code> where the win card sat, with <code>deadline = ladder(asOf)[r.rung].label</code> and <code>oncontinue</code> sending <code>continue</code>.</li>
+      <li id="t32-s3"><input type="checkbox"> Implement: an effect tries settling while <code>gamePhase === 'run' &amp;&amp; !running &amp;&amp; day === stop</code>, only with the numbers current and <code>readRun(shown.view, goal)</code> not null. Mount <code>Tally</code> as the Interfaces block's markup gives it: only while <code>gamePhase === 'tally'</code> and <code>tally</code> is set, in <code>&lt;div data-testid="tl-tally" class="pointer-events-auto max-w-full"&gt;</code> where the win card sat, under <code>{#key tally.result}</code>, with <code>before</code> as <code>settleRun</code> took it, <code>deadline = ladder(asOf)[r.rung].label</code> and <code>oncontinue</code> sending <code>continue</code>. Write <code>TallyStub.svelte</code> as the Interfaces block gives it.</li>
       <li id="t32-s4"><input type="checkbox"> Run; expected PASS.
         <pre><code data-lang="sh">npx vitest run src/lib/timeline/TimelineMode.game.svelte.spec.ts</code></pre>
       </li>
       <li id="t32-s5"><input type="checkbox"> Commit, then <code>npx chreode timing-check --head HEAD</code> is clean.
-        <pre><code data-lang="sh">git add src/lib/timeline/TimelineMode.svelte src/lib/timeline/TimelineMode.game.svelte.spec.ts
+        <pre><code data-lang="sh">git add src/lib/timeline/TimelineMode.svelte src/lib/timeline/TimelineMode.game.svelte.spec.ts src/lib/timeline/test/TallyStub.svelte
 git commit -m "feat(game-sim): a run settles at its deadline and shows the tally"</code></pre>
       </li>
     </ol>
