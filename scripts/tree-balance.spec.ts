@@ -269,6 +269,15 @@ describe('side report', () => {
     expect(below[0]?.raiseTo).toBeNull();
   });
 
+  it('does not flag a policy goal that reads 0 under current law', () => {
+    const r = sideReport([goal('policy-homes-1', 1)], at(0), new Set(['policy-homes-1']));
+    const target = r[0]?.target ?? 0;
+    expect(target).toBeGreaterThan(0);
+    expect(r[0]?.value).toBe(0);
+    expect(r[0]?.flags).toEqual([]);
+    expect(r[0]?.raiseTo).toBeNull();
+  });
+
   it('flags a goal never met', () => {
     const r = sideReport([goal('collect-run', 0)], at(1), new Set());
     expect(r[0]?.flags).toEqual(['never-met']);
@@ -518,6 +527,7 @@ const FIXTURE = 'e2e/fixtures/data/fixture-0';
 /** Enough for the fixture's fills of every play below; a hook argument, not a wait. */
 const FILL_HOOK_MS = 600_000;
 const FAR = 10_000_000;
+const POLICY = ['policy-homes-1', 'policy-homes-2', 'policy-homes-3', 'approved-homes'];
 
 const priced = (home: number): TreeNode[] =>
   NODES.map((n) => ({ ...n, levels: n.levels.map((l) => ({ ...l, price: { home } })) }));
@@ -647,6 +657,22 @@ describe('play on the fixture', () => {
     expect(atLaw(RUNGS)).toBeNull();
     expect(atLaw(RUNGS + 3)).toBeNull();
     expect(atLaw(RUNGS - 1)).not.toBeNull();
+  });
+
+  it('current law reads every policy goal as 0 at every rung', async () => {
+    const atLaw = await currentLaw(engine);
+    for (let rung = 0; rung < RUNGS; rung++) {
+      for (const g of SIDE_GOALS.filter((x) => POLICY.includes(x.id))) {
+        expect(atLaw(rung)!(g)).toBe(0);
+      }
+    }
+  });
+
+  it('no policy goal is met on a run that forecast a document with nothing in force', () => {
+    // run 1 of every play forecasts DEFAULT_POLICY4
+    for (const r of [finishing, forMe, stuck, tooLong]) {
+      expect(r.runs[0]!.sideMet.filter((id) => POLICY.includes(id))).toEqual([]);
+    }
   });
 });
 
