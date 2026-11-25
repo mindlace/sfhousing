@@ -1,0 +1,134 @@
+<article>
+  <header>
+    <h1>Freeway land in Paint implementation plan</h1>
+    <p>Freeway-land catalog lots are written to the chunks as ineligible, so Paint cannot build on them.</p>
+    <aside data-kind="note"><strong>For agentic workers</strong> REQUIRED SUB-SKILL: Use
+      superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to
+      implement this plan task-by-task. Steps are checklist items; progress is kept in the workspace
+      ledger, not in the plan.</aside>
+  </header>
+
+  <section id="sec-overview">
+    <h2>Overview</h2>
+    <ul>
+      <li><strong>Goal.</strong> Every freeway-land catalog lot's chunk record has
+        <code>eligible=false</code>, so Paint (<code>src/lib/plan/resolve.ts</code>
+        <code>applyOp</code>, which checks only <code>rec.eligible</code>) never paints it.</li>
+      <li><strong>Architecture.</strong> The change is made where the chunks are encoded
+        (<code>writeChunks</code>, <code>pipeline/steps/chunks.ts</code>), not in
+        <code>60_attributes.sql</code>. <code>parcel_out.eligible</code> and
+        <code>readParcelRecords</code> stay as they are, because the scenario step's T13 calibration
+        panel and the <code>scenario.freeway_land.net_removed</code> counts read them and must not
+        change (calibration describes the past market, <code>docs/dev/pipeline.md</code> "Freeway
+        land"). No client code changes.</li>
+      <li><strong>Tech stack.</strong> TypeScript pipeline (tsx, DuckDB), Vitest pipeline project.</li>
+      <li><strong>Spec.</strong> <a href="../specs/2026-11-24-freeway-land-paint-design.html">docs/superpowers/specs/2026-11-24-freeway-land-paint-design.html</a></li>
+    </ul>
+  </section>
+
+  <section id="sec-global-constraints">
+    <h2>Global constraints</h2>
+    <ul>
+      <li>The chunk format (<code>src/lib/data/parcel-chunk.ts</code>) does not change: no new column.</li>
+      <li>The road-like rule, <code>road-lots.json</code> and <code>freeway-land.json</code> do not change.</li>
+      <li>The fixture's <code>scenarios/fzp/calibration.json</code> and <code>parcels.bin</code>
+        (decoded) are identical before and after; only chunk files and what hashes them change.</li>
+      <li>Every test calls <code>expect</code>. Conventional Commits, no Claude attribution.</li>
+      <li>Port 4173 may be in use by another session: never kill it, wait.</li>
+    </ul>
+  </section>
+
+  <section id="sec-review-focus">
+    <h2>Review focus</h2>
+    <ul>
+      <li>The re-encode check in <code>build.ts</code> (the second <code>writeChunks</code> call
+        into <code>reencode</code>) gets the same catalog set; otherwise the byte comparison fails
+        on every catalog lot.</li>
+      <li>A standalone <code>check &lt;v&gt;</code> on an older out dir: the new V17 clause fails
+        it, the same way V17 already does for a newer catalog. Acceptable; note it in the docs.</li>
+      <li>A catalog id with no <code>parcel_out</code> row is ignored by <code>writeChunks</code>
+        (the scenario step already warns about it).</li>
+      <li>Paint's Level 1 room drops by the static capacity on freeway land (~32.8k homes live);
+        the goal must stay reachable (Task 2).</li>
+    </ul>
+  </section>
+
+  <section id="sec-task-1">
+    <h2>Task 1: Catalog lots ineligible in the chunks</h2>
+    <ul>
+      <li><strong>Files.</strong> Modify <code>pipeline/steps/chunks.ts</code>
+        (<code>writeChunks</code>), <code>pipeline/steps/build.ts</code> (both calls, ~lines
+        234 and 237), <code>pipeline/steps/check.ts</code> (V17), <code>docs/dev/pipeline.md</code>
+        ("Freeway land": replace "The chunk records (and so the Paint editor) are unchanged"; the
+        V17 "Check" line), <code>pipeline/lib/scenario-eligibility.ts</code> doc comment ("the
+        chunk record (and so the editor) is unchanged" now false for freeway land),
+        <code>docs/dev/sim-page.md:33</code> if it contrasts Paint. Tests:
+        <code>pipeline/test/chunks.test.ts</code>, <code>pipeline/test/freeway-land.test.ts</code>.</li>
+      <li><strong>Interfaces.</strong> Produces
+        <code>writeChunks(db: Duck, outDir: string, datasetVersion: string, report: Report, freewayLand: ReadonlySet&lt;ParcelId&gt;): Promise&lt;ChunkOut[]&gt;</code>;
+        <code>build.ts</code> passes <code>freewayLandSet(freewayLand)</code> (already computed at
+        ~line 216). V17 reads the chunks it already reads with <code>extras.freewayLand</code>.</li>
+    </ul>
+    <ol>
+      <li id="t1-s1"><input type="checkbox"> Write the failing test in <code>chunks.test.ts</code>,
+        <code>catalog lots are written ineligible</code>: with a <code>parcel_out</code> where lot
+        <code>A</code> and <code>B</code> are eligible, <code>writeChunks(..., new Set(['A']))</code>
+        decodes to <code>A.eligible === false</code>, <code>B.eligible === true</code>, and
+        <code>A</code> keeps its units, polygon and no <code>roadLike</code>/<code>underwater</code>.
+        Follow the file's existing fixture setup.</li>
+      <li id="t1-s2"><input type="checkbox"> Write the failing test in
+        <code>freeway-land.test.ts</code>, <code>V17 fails when a catalog lot is chunk-eligible</code>,
+        next to the existing V17 cases (the <code>r.find((x) =&gt; x.id === 'V17')</code> helper):
+        a chunk record of a catalog parcel with <code>eligible: true</code> makes V17 fail with a
+        message naming the parcel id; the passing case has it false.</li>
+      <li id="t1-s3"><input type="checkbox"> Run both and see them fail
+        <pre><code data-lang="sh">npx vitest run --project pipeline pipeline/test/chunks.test.ts pipeline/test/freeway-land.test.ts</code></pre>
+      </li>
+      <li id="t1-s4"><input type="checkbox"> Implement: <code>writeChunks</code> sets
+        <code>rec.eligible = false</code> for ids in <code>freewayLand</code> before encoding; update
+        both <code>build.ts</code> calls and every other caller; add the V17 clause (no catalog
+        parcel's chunk record is eligible); update the docs and comment named above.</li>
+      <li id="t1-s5"><input type="checkbox"> Run the pipeline test project and see it pass
+        <pre><code data-lang="sh">npm run test:pipeline</code></pre>
+      </li>
+      <li id="t1-s6"><input type="checkbox"> Commit
+        <pre><code data-lang="sh">git commit -m "fix(pipeline): freeway land is ineligible in the chunks, so Paint cannot build on it"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-2">
+    <h2>Task 2: Fixture, live dataset, Level 1 check and upload</h2>
+    <ul>
+      <li><strong>Files.</strong> Regenerated <code>e2e/fixtures/data/fixture-0</code> (per
+        <code>docs/dev/pipeline.md</code> "Fixture"); any golden test whose numbers move because
+        Paint's room on the fixture drops; <code>docs/dev/road-lots.md</code> or
+        <code>pipeline.md</code> with the live counts.</li>
+      <li><strong>Interfaces.</strong> Consumes Task 1's <code>writeChunks</code>.</li>
+    </ul>
+    <ol>
+      <li id="t2-s1"><input type="checkbox"> Regenerate the fixture
+        (<code>npm run pipeline -- fixture</code>) and confirm from a decode that
+        <code>calibration.json</code> and decoded <code>parcels.bin</code> are unchanged against
+        <code>main</code> and that only catalog lots flipped <code>eligible</code> in the chunks.</li>
+      <li id="t2-s2"><input type="checkbox"> Run <code>npm run test:unit</code>; update any golden
+        or count that moved only because fixture catalog lots are no longer paintable, and say
+        which in the commit body.</li>
+      <li id="t2-s3"><input type="checkbox"> Follow <code>docs/dev/pipeline.md</code> "Finishing a
+        branch that changes the dataset" steps 1–3: merge <code>origin/main</code>,
+        <code>npm run pipeline -- build</code> (all invariants pass, tiles built), then
+        <pre><code data-lang="sh">npx tsx scripts/level2-check.ts pipeline/out/&lt;v&gt;</code></pre>
+        exits 0.</li>
+      <li id="t2-s4"><input type="checkbox"> Confirm Level 1 is still winnable on the live
+        dataset: the most room Paint can reach (all eligible lots at the most permissive zoning
+        Level 1 allows, see <code>docs/dev/game.md</code>) is at least Level 1's goal. Record both
+        numbers and the count of chunk-ineligible catalog lots (expect 559) in the commit body.
+        <strong>If the goal is out of reach, stop and report; do not change the goal.</strong></li>
+      <li id="t2-s5"><input type="checkbox"> Steps 4–5: <code>npm run pipeline -- upload &lt;v&gt;</code>,
+        then <code>verify &lt;v&gt; --origin</code> staging.</li>
+      <li id="t2-s6"><input type="checkbox"> Commit
+        <pre><code data-lang="sh">git commit -m "chore(data): regenerate fixture with freeway land unpaintable"</code></pre>
+      </li>
+    </ol>
+  </section>
+</article>
