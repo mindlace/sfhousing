@@ -5,6 +5,7 @@ import {
   carShares,
   densityOf,
   typeCount,
+  type CarModel,
   type TypeBands
 } from '../../../src/lib/sim/cars';
 import { exp } from '../../../src/lib/timelapse/math';
@@ -16,7 +17,7 @@ import {
   threePlusMeanOf
 } from '../../lib/cars/fit';
 import type { PumsRow } from '../../lib/cars/population';
-import { carsReportLines } from '../../lib/cars/report';
+import { carsModelReportLines, carsReportLines, spacesPerNewHome } from '../../lib/cars/report';
 
 function rng(seed: number): () => number {
   let a = seed >>> 0;
@@ -543,8 +544,7 @@ describe('carsReportLines', () => {
     schema: 1 as const,
     bands: BANDS,
     choice: r.choice,
-    threePlusMean: 3.3,
-    parking: { supplyOverUse: 1.4 }
+    threePlusMean: 3.3
   };
   const lines = carsReportLines(model, { ...c.data, constant: r.constant }, r, {
     year: 2026,
@@ -562,7 +562,7 @@ describe('carsReportLines', () => {
     expect(md).toContain('tier 3');
   });
 
-  it('gives the fit by block group, citywide, the DMV check and spaces per new home', () => {
+  it('gives the fit by block group, citywide and the DMV check', () => {
     expect(md).toMatch(/median [0-9.]+ points/);
     expect(md).toMatch(/90th percentile [0-9.]+ points/);
     expect(md).toMatch(/n0 = [0-9.]+, by the method of moments/);
@@ -572,7 +572,6 @@ describe('carsReportLines', () => {
     expect(md).toContain('Citywide');
     expect(md).toContain('DMV');
     expect(md).toContain('410813');
-    expect(md).toMatch(/[0-9.]+ spaces per new home/);
     expect(md).not.toMatch(/NaN|Infinity|undefined|\bnull\b/);
     expect(lines.some((l) => /^#{1,2} /.test(l))).toBe(false);
   });
@@ -595,10 +594,117 @@ describe('carsReportLines', () => {
     expect(l).toContain('2 block groups had no margins');
   });
 
-  it('says so when there is no DMV table or parking facts', () => {
-    const m = { ...model, parking: null };
-    const l = carsReportLines(m, { ...c.data, constant: r.constant }, r, null).join('\n');
+  it('says so when there is no DMV table', () => {
+    const l = carsReportLines(model, { ...c.data, constant: r.constant }, r, null).join('\n');
     expect(l).toContain('DMV: no registrations in the lock');
-    expect(l).toContain('no parking facts');
+  });
+});
+
+describe('carsModelReportLines', () => {
+  const c = city();
+  const r = fitChoice(
+    { rows: c.rows, bands: BANDS, window: ['2020-01-01', '2024-12-31'] },
+    c.observed,
+    c.data
+  );
+  const data = { ...c.data, constant: r.constant };
+  const prov = {
+    tier: 1 as const,
+    label: 'test',
+    sources: [{ label: 'PUMS', url: 'https://example.invalid/pums' }],
+    method: 'test',
+    n: 10,
+    window: ['2020-01-01', '2024-12-31'] as [string, string]
+  };
+  const uniform = Array.from({ length: T }, () => 1 / T);
+  // Only one-person owner households: fewer cars than the uniform mix.
+  const small = Array.from({ length: T }, (_, t) => (t < 12 && t % 2 === 0 ? 1 / 6 : 0));
+  const cost = { surface: null, podium: 32_821, belowGrade: 89_840 };
+  const model: CarModel = {
+    schema: 1,
+    bands: BANDS,
+    choice: r.choice,
+    threePlusMean: 3.3,
+    moves: { perMonth: uniform.map(() => 0.01), inMix: PUMAS.map(() => uniform), provenance: prov },
+    newHomes: {
+      mix: { market: uniform, veryLow: small, low: small, moderate: uniform },
+      affordableTiers: { veryLow: 0.5, low: 0.3, moderate: 0.2 },
+      provenance: prov
+    },
+    parking: { supplyOverUse: 1.4, costPerSpace: cost, dollarsYear: 2023, provenance: [prov] },
+    refreshMonths: 12
+  };
+  const tenure = { records: 100, households: 2000, annual: 0.12, perMonth: 0.0106 };
+  const stats = {
+    pumas: PUMAS,
+    moves: {
+      records: 200,
+      noMv: 0,
+      tenure: { owner: tenure, renter: { ...tenure, annual: 0.25, perMonth: 0.0237 } },
+      fallback: 40,
+      perMonthRange: [0.005, 0.03] as [number, number],
+      moversByPuma: [10, 20, 30, 40],
+      pumaFallback: []
+    },
+    newHomes: {
+      release: 2024,
+      builtFrom: 2010,
+      amiYear: 2024,
+      records: { market: 300, veryLow: 40, low: 60, moderate: 90 },
+      households: { market: 9000, veryLow: 1000, low: 1500, moderate: 2500 },
+      allHomes: [],
+      tiersFrom: 'projects' as const,
+      byTier: { veryLow: 2203, low: 1352, moderate: 559 }
+    },
+    parking: {
+      supply: { value: 1.4, tier: 3, sources: ['King County Right Size Parking'] },
+      costs: [
+        {
+          type: 'podium' as const,
+          value: 28_700,
+          dollarsYear: 2012,
+          factor: 112.3 / 98.2,
+          escalated: 32_821,
+          sources: ['Seifel 2012']
+        }
+      ],
+      unpriced: ['surface' as const],
+      commonYear: 2023,
+      searched: ['Controller 2026']
+    }
+  };
+
+  it('uses the new-home mix for spaces per new home', () => {
+    const a = spacesPerNewHome(model, data, uniform);
+    const b = spacesPerNewHome(model, data, small);
+    expect(a.zones).toHaveLength(data.zones.length);
+    expect(b.city).toBeLessThan(a.city);
+    expect(a.city).toBeGreaterThan(0);
+  });
+
+  it('gives move rates, mixes, spaces, costs, the baseline and the cross-check', () => {
+    const md = carsModelReportLines(model, data, stats).join('\n');
+    expect(md).toContain('owners 12.0% a year (1.060% a month');
+    expect(md).toContain('40 take their tenure');
+    expect(md).toContain('07507 10');
+    expect(md).toMatch(/\| Market \| 300 \| 9000 \| [0-9.]+% \| [0-9.]+ \|/);
+    expect(md).toContain('very low 50.0%, low 30.0%, moderate 20.0%');
+    expect(md).toContain('2203, 1352, 559');
+    expect(md).toContain('built to demand');
+    expect(md).toContain('| podium | $28,700 | 2012 | 1.1436 | $32,821 | Seifel 2012 |');
+    expect(md).toContain('projects built with that parking get no parking cost');
+    expect(md).toContain('$98,000 to $144,000 per below-grade space');
+    expect(md).not.toMatch(/NaN|Infinity|undefined|\bnull\b/);
+  });
+
+  it('says the parking link is off and lists the search when there is no cost', () => {
+    const off = { ...model, parking: { ...model.parking, costPerSpace: null, dollarsYear: null } };
+    const md = carsModelReportLines(off, data, {
+      ...stats,
+      parking: { ...stats.parking, costs: null, unpriced: [], commonYear: null }
+    }).join('\n');
+    expect(md).toContain('The parking link is off');
+    expect(md).toContain('- Controller 2026');
+    expect(md).not.toContain('Cross-check, not used');
   });
 });

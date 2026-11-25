@@ -1,7 +1,9 @@
 // The car-ownership step (spec "Households"): car zones (block groups of the latest ACS vintage),
 // each lot's zone, the start household population by zone, type and car level, and today's zone
 // transit access, and the fitted ownership choice (pipeline/lib/cars/fit.ts: the model's choice,
-// the zone constants in cars.bin, report section 14). Writes scenarios/fzp/cars.bin and
+// the zone constants in cars.bin, report section 14); then move rates, the refill and new-home
+// mixes and the parking facts (pipeline/lib/cars/rates.ts), completing the CarModel that
+// calibration.json carries as `cars`. Writes scenarios/fzp/cars.bin and
 // scenarios/fzp/car-zones.json. Without the Census lock entries it writes nothing and returns
 // nulls (the mini fixture until it gains them).
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -12,8 +14,11 @@ import type { ScenarioParcels } from '../../src/lib/data/scenario-codec';
 import type { TransitNetwork } from '../../src/lib/data/transit';
 import { CAR_LEVELS, typeCount, type CarModel } from '../../src/lib/sim/cars';
 import { buildAccessGrid } from '../../src/lib/transit/grid';
+import { parseProjectsFile } from '../../src/lib/timelapse/projects';
 import { DMV_ID, acsBgVintage, censusTableOf, type CensusTable } from '../census-config';
-import { parseParkingFile } from '../enrichment/parking-schema';
+import { AMI_JSON, parseAmiFile } from '../enrichment/ami-schema';
+import { parseMarketFile } from '../enrichment/market-schema';
+import { PARKING_JSON, parseParkingFile } from '../enrichment/parking-schema';
 import { zoneAccess } from '../lib/cars/access';
 import { IPF, IPF_REPORT_ERR, MARGINS, WORKERS_TOTAL, typeBandsOf } from '../lib/cars/config';
 import {
@@ -31,20 +36,28 @@ import {
   pumsSeed,
   startPopulation,
   zoneHomes,
-  type AcsRow,
-  type PumsRow
+  type AcsRow
 } from '../lib/cars/population';
-import { carsReportLines } from '../lib/cars/report';
+import {
+  REFRESH_MONTHS,
+  moveRates,
+  newHomeMixes,
+  parkingOf,
+  type MoverRow
+} from '../lib/cars/rates';
+import { carsModelReportLines, carsReportLines } from '../lib/cars/report';
 import { assignZones, zoneFeatures } from '../lib/cars/zones';
 import type { Duck } from '../lib/duck';
 import type { Lock } from '../lib/lock';
 import { CARS_BIN, CAR_ZONES_JSON } from '../lib/scenario-files';
+import { MARKET_JSON } from './calibration';
+import { PROJECTS_JSON } from './projects';
 
 export interface CarsStepOut {
   data: CarData | null;
-  /** The complete model, once moves, new-home mixes and parking join the choice (Task 6). */
+  /** The complete model (choice, moves, new-home mixes, parking): calibration.json `cars`. */
   model: CarModel | null;
-  /** The fitted choice with its bands and the 3+ mean: the model's part fitted so far. */
+  /** The fitted choice with its bands and the 3+ mean (the model's choice part). */
   choice: CarChoiceModel | null;
   /** Calibration-report lines (section 14 takes them). */
   report: string[];
@@ -57,10 +70,14 @@ export interface CarsStepOpts {
   lock: Lock;
   transit: TransitNetwork | null;
   parcels: ScenarioParcels;
-  /** Parking facts (pipeline/enrichment/parking.json, or the fixture's); read by later tasks. */
+  /** Parking facts (default pipeline/enrichment/parking.json; the fixture's on a fixture build). */
   parkingPath?: string;
-  /** SF AMI by year and size (pipeline/enrichment/ami.json, or the fixture's); later tasks. */
+  /** SF AMI by year and household size (default pipeline/enrichment/ami.json). */
   amiPath?: string;
+  /** The Controller's cost index for the cost per space (default market.json). */
+  marketPath?: string;
+  /** The dataset's projects.json, for the affordable completions by tier (default the outDir's). */
+  projectsPath?: string;
 }
 
 /** The Census tables the start population needs. */
@@ -99,8 +116,8 @@ export async function carsStep(db: Duck, o: CarsStepOpts): Promise<CarsStepOut> 
     `SELECT max(release) AS pumsRelease FROM src_pums_hh WHERE puma_vintage = ${vintage}`
   );
   if (pumsRelease === null) return none([`cars: no car data, no PUMS release on ${vintage} PUMAs`]);
-  const pums = await db.all<PumsRow>(`SELECT puma, wgtp, veh, np, workers, hincp_adj, ten
-    FROM src_pums_hh WHERE release = ${pumsRelease} AND puma_vintage = ${vintage}
+  const pums = await db.all<MoverRow>(`SELECT puma, wgtp, veh, np, workers, hincp_adj, ten, mv,
+    ybl, ybl_src FROM src_pums_hh WHERE release = ${pumsRelease} AND puma_vintage = ${vintage}
     ORDER BY puma, serialno`);
   const tractPuma = new Map(
     (
@@ -209,19 +226,41 @@ export async function carsStep(db: Duck, o: CarsStepOpts): Promise<CarsStepOut> 
   const refit = refitConstants(first.choice, data, observed, first);
   const fit = { ...first, ...refit };
   data.constant = fit.constant;
-  const parking =
-    o.parkingPath && existsSync(o.parkingPath)
-      ? {
-          supplyOverUse: parseParkingFile(JSON.parse(readFileSync(o.parkingPath, 'utf8')))
-            .supplyOverUse.value
-        }
-      : null;
   const choice: CarChoiceModel = {
     schema: 1,
     bands,
     choice: fit.choice,
-    threePlusMean: threePlusMeanOf(pums),
-    parking
+    threePlusMean: threePlusMeanOf(pums)
+  };
+
+  // Moves, the refill and new-home mixes, and parking: the rest of the model.
+  const window: [string, string] = [`${pumsRelease - 4}-01-01`, `${pumsRelease}-12-31`];
+  const readJson = (path: string, what: string): unknown => {
+    if (!existsSync(path)) throw new Error(`cars: no ${what} at ${path}`);
+    return JSON.parse(readFileSync(path, 'utf8'));
+  };
+  const parkingFile = parseParkingFile(readJson(o.parkingPath ?? PARKING_JSON, 'parking facts'));
+  const ami = parseAmiFile(readJson(o.amiPath ?? AMI_JSON, 'SF AMI table'));
+  const marketPath = o.marketPath ?? MARKET_JSON;
+  const market = parseMarketFile(readJson(marketPath, 'market file'), marketPath);
+  const projects = parseProjectsFile(
+    readJson(o.projectsPath ?? join(o.outDir, PROJECTS_JSON), 'projects.json')
+  );
+  const byTier = projects.rhnaCompletedNet.byTier;
+  if (!byTier) throw new Error('cars: projects.json has no rhnaCompletedNet.byTier');
+  const mv = moveRates(pums, bands, pumas, window);
+  const nh = newHomeMixes(pums, bands, ami, byTier, {
+    release: pumsRelease,
+    window
+  });
+  const pk = parkingOf(parkingFile, market);
+  warnings.push(...mv.warnings, ...nh.warnings, ...pk.warnings);
+  const model: CarModel = {
+    ...choice,
+    moves: mv.moves,
+    newHomes: nh.newHomes,
+    parking: pk.parking,
+    refreshMonths: REFRESH_MONTHS
   };
   let dmv: { year: number; lightDuty: number } | null = null;
   if (o.lock.sources.some((s) => s.id === DMV_ID)) {
@@ -282,6 +321,10 @@ export async function carsStep(db: Duck, o: CarsStepOpts): Promise<CarsStepOut> 
     'cars.fit.constants': fit.stats.constants.fitted,
     'cars.fit.noObservation': fit.stats.constants.noObservation,
     'cars.fit.observedZero': fit.stats.constants.observedZero,
+    'cars.moves.typeFallback': mv.stats.fallback,
+    'cars.moves.pumaFallback': mv.stats.pumaFallback.length,
+    'cars.newHomes.records': nh.stats.records.market,
+    'cars.parking.linkOn': pk.parking.costPerSpace === null ? 0 : 1,
     'cars.bytes': body.length,
     'cars.zonesJson.bytes': zonesJson.length
   };
@@ -311,5 +354,13 @@ export async function carsStep(db: Duck, o: CarsStepOpts): Promise<CarsStepOut> 
       'tenure comes from B25009.'
   ];
   report.push(...carsReportLines(choice, data, fit, dmv));
-  return { data, model: null, choice, report, counts, warnings };
+  report.push(
+    ...carsModelReportLines(model, data, {
+      moves: mv.stats,
+      newHomes: nh.stats,
+      parking: pk.stats,
+      pumas
+    })
+  );
+  return { data, model, choice, report, counts, warnings };
 }

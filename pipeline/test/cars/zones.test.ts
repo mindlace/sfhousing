@@ -1,6 +1,6 @@
-import { existsSync, mkdtempSync, readdirSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { gridLngLat, type AccessGrid } from '../../../src/lib/transit/grid';
 import { project } from '../../../src/lib/plan/geometry';
@@ -11,8 +11,12 @@ import type { ScenarioParcels } from '../../../src/lib/data/scenario-codec';
 import type { Lock } from '../../lib/lock';
 import { carsStep } from '../../steps/cars';
 import { CAR_LEVELS, carShares, densityOf, type CarModel } from '../../../src/lib/sim/cars';
+import { parseCalibration } from '../../../src/lib/timelapse/model';
 
 /** A lng/lat box as WKT. */
+/** The mini fixture's projects.json: its affordable completions by tier sum to 0. */
+const PROJECTS = join(import.meta.dirname, '../fixtures/mini/golden/scenarios/fzp/projects.json');
+
 const box = (w: number, s: number, e: number, n: number) =>
   `'POLYGON((${w} ${s}, ${e} ${s}, ${e} ${n}, ${w} ${n}, ${w} ${s}))'`;
 
@@ -125,10 +129,12 @@ describe('carsStep with census tables', () => {
         'EPSG:7131', always_xy := true) AS geom, 1000.0 AS aland`);
     await db.run(`CREATE TABLE src_tract_puma AS SELECT 2020 AS vintage,
       '06075010200' AS tract, '07507' AS puma`);
-    // One household of each car level, all of one type (the fit drops what cannot vary).
+    // One household of each car level, all of one type (the fit drops what cannot vary), at an
+    // income under half the AMI; two moved in within the year, all into a home built in 2015.
     await db.run(`CREATE TABLE src_pums_hh AS SELECT 2024 AS release, '07507' AS puma,
-      'S' || veh AS serialno, 10 AS wgtp, veh, 2 AS np, 1 AS workers, 90000.0 AS hincp_adj,
-      3 AS ten, 2020 AS puma_vintage FROM range(4) t(veh)`);
+      'S' || veh AS serialno, 10 AS wgtp, veh, 2 AS np, 1 AS workers, 50000.0 AS hincp_adj,
+      3 AS ten, 2020 AS puma_vintage, CASE WHEN veh < 2 THEN 1 ELSE 4 END AS mv, 2015 AS ybl,
+      'YRBLT' AS ybl_src FROM range(4) t(veh)`);
     await db.run(`CREATE TABLE src_acs_bg AS SELECT * FROM (VALUES
       (2024, '060750102001', 'B25002_001', 10.0),
       (2024, '060750102001', 'B25002_002', ${o.occupied}::DOUBLE)
@@ -153,7 +159,8 @@ describe('carsStep with census tables', () => {
       '06075010200' AS tract, '07507' AS puma`);
     await db.run(`CREATE TABLE src_pums_hh AS SELECT 2024 AS release, '07507' AS puma,
       'S' || veh || ten AS serialno, 10 + veh AS wgtp, veh, 2 AS np, 1 AS workers,
-      90000.0 AS hincp_adj, ten, 2020 AS puma_vintage
+      50000.0 AS hincp_adj, ten, 2020 AS puma_vintage, CASE WHEN veh < 2 THEN 1 ELSE 4 END AS mv,
+      2015 AS ybl, 'YRBLT' AS ybl_src
       FROM range(4) a(veh), (VALUES (1), (3)) b(ten)`);
     // B25044 owner 0/1/2/3 cars (cells 003-006) and renter (010-013) per zone.
     const b25044 = [
@@ -179,7 +186,13 @@ describe('carsStep with census tables', () => {
       existingUnits: Uint16Array.from([1000, 1000, 1000, 1000])
     } as unknown as ScenarioParcels;
     const outDir = mkdtempSync(join(tmpdir(), 'sfh-cars-'));
-    const r = await carsStep(db, { outDir, lock, transit: null, parcels: four });
+    const r = await carsStep(db, {
+      outDir,
+      lock,
+      transit: null,
+      parcels: four,
+      projectsPath: PROJECTS
+    });
     const d = r.data!;
     const choice = r.choice!;
     const cells = d.types * CAR_LEVELS;
@@ -214,9 +227,9 @@ describe('carsStep with census tables', () => {
   it('fails when src_bg_geom lacks the latest release vintage, and writes nothing', async () => {
     const db = await censusDb({ bgVintage: 2010, occupied: 9 });
     const outDir = mkdtempSync(join(tmpdir(), 'sfh-cars-'));
-    await expect(carsStep(db, { outDir, lock, transit: null, parcels })).rejects.toThrow(
-      /no 2020 block groups in src_bg_geom for ACS 2024/
-    );
+    await expect(
+      carsStep(db, { outDir, lock, transit: null, parcels, projectsPath: PROJECTS })
+    ).rejects.toThrow(/no 2020 block groups in src_bg_geom for ACS 2024/);
     expect(readdirSync(outDir)).toEqual([]);
     db.close();
   });
@@ -224,9 +237,9 @@ describe('carsStep with census tables', () => {
   it('fails on 0 households while the zones hold homes', async () => {
     const db = await censusDb({ bgVintage: 2020, occupied: 0 });
     const outDir = mkdtempSync(join(tmpdir(), 'sfh-cars-'));
-    await expect(carsStep(db, { outDir, lock, transit: null, parcels })).rejects.toThrow(
-      /0 households on 10 homes in 1 zones/
-    );
+    await expect(
+      carsStep(db, { outDir, lock, transit: null, parcels, projectsPath: PROJECTS })
+    ).rejects.toThrow(/0 households on 10 homes in 1 zones/);
     expect(readdirSync(outDir)).toEqual([]);
     db.close();
   });
@@ -234,15 +247,39 @@ describe('carsStep with census tables', () => {
   it('writes the files when the census places households', async () => {
     const db = await censusDb({ bgVintage: 2020, occupied: 9 });
     const outDir = mkdtempSync(join(tmpdir(), 'sfh-cars-'));
-    const r = await carsStep(db, { outDir, lock, transit: null, parcels });
+    const r = await carsStep(db, { outDir, lock, transit: null, parcels, projectsPath: PROJECTS });
     expect(r.counts['cars.households']).toBe(9);
     expect(existsSync(join(outDir, 'scenarios/fzp/cars.bin'))).toBe(true);
-    // The choice is fitted (constants only on this data) and the report has its section.
-    expect(r.model).toBeNull();
+    // The choice is fitted (constants only on this data), the model is complete and the report
+    // has its sections.
     expect(r.choice?.choice.asc).toHaveLength(3);
-    expect(r.choice?.parking).toBeNull();
     expect(r.data?.constant).toHaveLength(3);
+    const m = r.model!;
+    expect(m.choice).toBe(r.choice?.choice);
+    expect(m.refreshMonths).toBe(12);
+    // Every household is of one renter type t; two of four (weights 10 each) moved in within the
+    // year. Under 30 records, t takes the renters' rate: 50% a year.
+    const t = m.newHomes.mix.market.indexOf(1);
+    expect(t % 2).toBe(1);
+    expect(m.moves.perMonth[t]).toBeCloseTo(1 - Math.exp(Math.log(0.5) / 12), 12);
+    expect(m.moves.inMix).toEqual([m.newHomes.mix.market]);
+    expect(m.newHomes.mix.veryLow[t]).toBe(1);
+    // The mini projects.json has no affordable completion by tier: the PUMS fallback, warned.
+    expect(m.newHomes.affordableTiers).toEqual({ veryLow: 1, low: 0, moderate: 0 });
+    expect(r.warnings.join(' ')).toMatch(/sum to 0/);
+    // The live parking.json: below grade and podium priced in the index's last year, no surface.
+    expect(m.parking.dollarsYear).toBe(2023);
+    expect(m.parking.costPerSpace).toEqual({ surface: null, podium: 32_821, belowGrade: 89_840 });
     expect(r.report).toContain('### Choice model');
+    expect(r.report).toContain('### Moves');
+    expect(r.report).toContain('### Parking in new buildings');
+    // calibration.json's validator takes it as `cars`. One income here ties the quartile edges,
+    // which the validator rejects (strictly ascending); the check spreads them.
+    const cal = JSON.parse(readFileSync(join(dirname(PROJECTS), 'calibration.json'), 'utf8'));
+    const spread = { ...m, bands: { ...m.bands, income: [0, 1, 2, 3] } };
+    expect(parseCalibration(JSON.parse(JSON.stringify({ ...cal, cars: spread }))).cars).toEqual(
+      spread
+    );
     expect(r.report.join('\n')).toContain('DMV: no registrations in the lock');
     db.close();
   });

@@ -124,7 +124,9 @@ describe('fitMnl', () => {
 describe('determinism', () => {
   it('the fitting files take exp and log from math.ts: the lint passes on them', async () => {
     const root = process.cwd();
-    const files = ['mnl.ts', 'fit.ts', 'report.ts'].map((f) => join(root, 'pipeline/lib/cars', f));
+    const files = ['mnl.ts', 'fit.ts', 'report.ts', 'rates.ts'].map((f) =>
+      join(root, 'pipeline/lib/cars', f)
+    );
     const results = await new ESLint({ cwd: root }).lintFiles(files);
     for (const r of results) expect(r.messages, r.filePath).toEqual([]);
   });

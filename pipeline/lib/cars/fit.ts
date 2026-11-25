@@ -76,10 +76,8 @@ export interface FitStats {
   };
 }
 
-/** The choice model's part of `CarModel` this task fits, plus what the report reads. */
-export type CarChoiceModel = Pick<CarModel, 'schema' | 'bands' | 'choice' | 'threePlusMean'> & {
-  parking: { supplyOverUse: number } | null;
-};
+/** The choice model's part of `CarModel`: what the choice report reads. */
+export type CarChoiceModel = Pick<CarModel, 'schema' | 'bands' | 'choice' | 'threePlusMean'>;
 
 /** PUMAs (stage 1) or peopled zones (stage 2) a location term needs. */
 export const MIN_LOCATIONS = 3;

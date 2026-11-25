@@ -1,11 +1,27 @@
-// Calibration report section 14 (car ownership), the choice model's part: the fitted coefficients
-// with standard errors, the published priors beside them, the fit by block group and citywide,
-// the DMV cross-check and today's predicted spaces per new home. Pure.
+// Calibration report section 14 (car ownership): the choice model's part (the fitted
+// coefficients with standard errors, the published priors beside them, the fit by block group and
+// citywide, the DMV cross-check) and the rest of the model (move rates, refill and new-home mixes,
+// spaces per new home, cost per space). Pure.
 import type { CarData } from '../../../src/lib/data/cars-codec';
-import { CAR_LEVELS, carShares, densityOf, meanCars } from '../../../src/lib/sim/cars';
+import {
+  CAR_LEVELS,
+  MIXES,
+  carShares,
+  densityOf,
+  meanCars,
+  type CarModel,
+  type Mix
+} from '../../../src/lib/sim/cars';
 import { num } from '../fzp-cal/report';
 import type { BgFit, CarChoiceModel, FitStats, FitTerm } from './fit';
 import { PRIORS, PRIOR_PROVENANCE } from './priors';
+import {
+  COST_CROSS_CHECK,
+  MIN_CELL_RECORDS,
+  type MoveStats,
+  type NewHomeStats,
+  type ParkingStats
+} from './rates';
 
 /** Worst block groups listed by their zero-car error before the constants. */
 export const WORST_ZONES = 10;
@@ -276,13 +292,182 @@ export function carsReportLines(
       ? `DMV: ${dmv.lightDuty} light-duty vehicles registered in SF ZIPs (941xx) as of 1/1/` +
           `${dmv.year}, ${f4(dmv.lightDuty / cars)} times the model's cars; DMV counts business ` +
           'and non-household registrations too. Cross-check only.'
-      : 'DMV: no registrations in the lock; no cross-check.',
-    model.parking
-      ? `Today: ${f4(perHh)} predicted cars per household (the start households' mix) times ` +
-          `${f4(model.parking.supplyOverUse)} spaces built per space used gives ` +
-          `${f4(perHh * model.parking.supplyOverUse)} spaces per new home citywide (the ` +
-          "new-home mix replaces today's households' mix once it is fitted)."
-      : 'Spaces per new home: no parking facts (supply over use), not computed.'
+      : 'DMV: no registrations in the lock; no cross-check.'
+  );
+  return lines;
+}
+
+/**
+ * Predicted spaces per new home for a type mix: per zone, supplyOverUse x mean cars of the mix at
+ * the zone's start density (the choice with its constants, `meanCars` with the 3+ mean); citywide,
+ * the zones' mean weighted by start households. Zones with no household are left out.
+ */
+export function spacesPerNewHome(
+  model: CarModel,
+  data: CarData,
+  mix: readonly number[]
+): { city: number; zones: number[] } {
+  const T = data.types;
+  const cells = T * CAR_LEVELS;
+  const out = new Float64Array(CAR_LEVELS);
+  const zones: number[] = [];
+  let sum = 0;
+  let weight = 0;
+  for (let z = 0; z < data.zones.length; z++) {
+    let n = 0;
+    for (let i = 0; i < cells; i++) n += data.households[z * cells + i];
+    if (n === 0) continue;
+    const density = densityOf(n, data.areaM2[z]);
+    let cars = 0;
+    for (let t = 0; t < T; t++) {
+      if (mix[t] === 0) continue;
+      carShares(model, data, z, t, density, out);
+      cars += mix[t] * meanCars(out, model.threePlusMean);
+    }
+    const spaces = cars * model.parking.supplyOverUse;
+    zones.push(spaces);
+    sum += n * spaces;
+    weight += n;
+  }
+  return { city: weight > 0 ? sum / weight : 0, zones };
+}
+
+const MIX_LABEL: Record<Mix, string> = {
+  market: 'Market',
+  veryLow: 'Very low income',
+  low: 'Low income',
+  moderate: 'Moderate income'
+};
+const usd = (x: number) => `$${Math.round(x).toLocaleString('en-US')}`;
+const pctMonth = (x: number) => `${(100 * x).toFixed(3)}%`;
+
+/** Section 14's lines for moves, new homes and parking: the model beyond the choice. */
+export function carsModelReportLines(
+  model: CarModel,
+  data: CarData,
+  s: { moves: MoveStats; newHomes: NewHomeStats; parking: ParkingStats; pumas: string[] }
+): string[] {
+  const T = data.types;
+  const m = s.moves;
+  const nh = s.newHomes;
+  const pk = s.parking;
+  const [from, to] = model.moves.provenance.window ?? ['', ''];
+  const tenureLine = (label: string, r: MoveStats['tenure']['owner']) =>
+    `${label} ${pct(r.annual)} a year (${pctMonth(r.perMonth)} a month, ${r.records} records)`;
+  const lines: string[] = [
+    '',
+    '### Moves',
+    '',
+    `Move rates from PUMS ${from.slice(0, 4)}-${to.slice(0, 4)} households by when they moved ` +
+      `in (MV 1, within 12 months), ${m.records} records` +
+      (m.noMv > 0 ? ` (${m.noMv} without MV left out)` : '') +
+      `: ${tenureLine('owners', m.tenure.owner)}; ${tenureLine('renters', m.tenure.renter)}. ` +
+      `Monthly = 1 - (1 - annual)^(1/12). ${T - m.fallback} of ${T} types have their own rate ` +
+      `(at least ${MIN_CELL_RECORDS} records); ${m.fallback} take their tenure's. Monthly ` +
+      `rates range ${pctMonth(m.perMonthRange[0])} to ${pctMonth(m.perMonthRange[1])}.`,
+    "Refill: an out-mover's home takes a household drawn from its PUMA's movers mix (type " +
+      'shares of households with MV 1). Mover records by PUMA: ' +
+      s.pumas.map((p, i) => `${p} ${m.moversByPuma[i]}`).join(', ') +
+      '.' +
+      (m.pumaFallback.length > 0
+        ? ` ${m.pumaFallback.join(', ')} had none and take the citywide movers' mix.`
+        : '')
+  ];
+
+  // New homes.
+  const renters = (mix: readonly number[]) => mix.reduce((a, x, t) => (t % 2 === 1 ? a + x : a), 0);
+  const spaces = Object.fromEntries(
+    MIXES.map((k) => [k, spacesPerNewHome(model, data, model.newHomes.mix[k])])
+  ) as Record<Mix, { city: number; zones: number[] }>;
+  const tiers = model.newHomes.affordableTiers;
+  lines.push(
+    '',
+    '### New homes',
+    '',
+    `A new home's household type is drawn from PUMS ${nh.release} households that moved in ` +
+      `within 12 months into homes built from ${nh.builtFrom} (the latest built-year code at or ` +
+      `before ${nh.release} - 10). Affordable homes take the same households at incomes at or ` +
+      `below their tier's limit (50%, 80% or 120% of SF AMI ${nh.amiYear} for the household's ` +
+      'size, MOHCD).' +
+      (nh.allHomes.length > 0
+        ? ` ${nh.allHomes.map((k) => MIX_LABEL[k]).join(', ')}: no new-home record, so movers ` +
+          'into homes of any age.'
+        : ''),
+    '',
+    '| Mix | Records | Households | Renters | Spaces per new home |',
+    '|---|---|---|---|---|',
+    ...MIXES.map(
+      (k) =>
+        `| ${MIX_LABEL[k]} | ${nh.records[k]} | ${Math.round(nh.households[k])} | ` +
+        `${pct(renters(model.newHomes.mix[k]))} | ${f4(spaces[k].city)} |`
+    ),
+    '',
+    `Affordable homes by tier: very low ${pct(tiers.veryLow)}, low ${pct(tiers.low)}, moderate ` +
+      `${pct(tiers.moderate)}` +
+      (nh.tiersFrom === 'projects'
+        ? ' (net affordable completions since the RHNA window opened, projects.json: ' +
+          `${nh.byTier.veryLow}, ${nh.byTier.low}, ${nh.byTier.moderate}).`
+        : ". The dataset's affordable completions by tier sum to 0, so these are the PUMS " +
+          'new-home movers at or below the moderate limit, split by tier.')
+  );
+
+  // Parking.
+  const market = spaces.market;
+  lines.push(
+    '',
+    '### Parking in new buildings',
+    '',
+    'Spaces per new home = predicted cars per household of the new-home mix (the choice and the ' +
+      `zone's constants at its density) x ${f4(pk.supply.value)} spaces built per space used ` +
+      `(tier ${pk.supply.tier}: ${pk.supply.sources.join('; ')}).`,
+    market.zones.length > 0
+      ? `Market mix today: ${f4(market.city)} spaces per new home citywide (start-households ` +
+          `weighted); by block group median ${f4(quantile(market.zones, 0.5))}, 10th to 90th ` +
+          `percentile ${f4(quantile(market.zones, 0.1))} to ${f4(quantile(market.zones, 0.9))}.`
+      : 'Market mix today: no block group has a start household; no spaces per new home.',
+    "Baseline: each lot's reference is the spaces per home the model predicts for it at the " +
+      "window's start (today's households, today's transit). Today's starts are post-2018, " +
+      'built to demand, so predicted demand (not the old minimums, nor the parking the ' +
+      'Controller prototypes assume) is the reference; only change from today moves start odds.'
+  );
+  if (pk.costs === null) {
+    lines.push(
+      '',
+      'The parking link is off: no cited San Francisco cost per space was found. The model ' +
+        'still predicts spaces per home. Searched:',
+      '',
+      ...pk.searched.map((x) => `- ${x}`)
+    );
+    return lines;
+  }
+  const [lo, hi] = COST_CROSS_CHECK.perGsf;
+  const gsf = COST_CROSS_CHECK.gsfPerSpace;
+  lines.push(
+    '',
+    `Cost per space (hard cost, cited SF figures), brought to ${pk.commonYear} dollars by the ` +
+      "Controller's Blended Construction Cost Index (market.json, inflation-adjusted): cost x " +
+      `I(${pk.commonYear}) / I(dollars year).`,
+    '',
+    `| Type | Cited | Dollars year | Index ratio | ${pk.commonYear} dollars | Source |`,
+    '|---|---|---|---|---|---|',
+    ...pk.costs.map(
+      (c) =>
+        `| ${c.type} | ${usd(c.value)} | ${c.dollarsYear} | ${c.factor.toFixed(4)} | ` +
+        `${usd(c.escalated)} | ${c.sources.join('; ')} |`
+    ),
+    ...pk.unpriced.map((t) => `| ${t} | none | none | none | none | no SF source found |`),
+    ''
+  );
+  if (pk.unpriced.length > 0)
+    lines.push(
+      `${pk.unpriced.join(', ')}: no cited SF cost per space, so projects built with that ` +
+        'parking get no parking cost (zero shift).'
+    );
+  lines.push(
+    `Cross-check, not used: the Controller's ${COST_CROSS_CHECK.year} parking hard cost of ` +
+      `${usd(lo)} to ${usd(hi)} per gross square foot times about ${gsf} square feet per space ` +
+      `gives ${usd(lo * gsf)} to ${usd(hi * gsf)} per below-grade space in ` +
+      `${COST_CROSS_CHECK.year} dollars (docs/dev/cars-data.md).`
   );
   return lines;
 }
