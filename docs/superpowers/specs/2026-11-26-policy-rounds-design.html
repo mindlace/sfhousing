@@ -271,9 +271,6 @@
           <tr><th scope="row">4</th><td>Taller near frequent bus</td><td></td><td>Public bank, state-double</td></tr>
         </tbody>
       </table>
-      <aside data-kind="question"><strong>Question</strong> Is three or four per round the right
-        size (P8), and is "one of each kind" the right mix? Two per round would give seven
-        rounds.</aside>
       <ul>
         <li><strong>A fixed zoning policy includes height.</strong> A stop type at 4 stories does
           nothing, so each transit rule arrives with a height and a reach.</li>
@@ -297,7 +294,7 @@
           <tr><th scope="row">Taller near regional rail (BART, Caltrain)</th><td>75 ft</td><td>65 ft</td><td>SB 79 Tier 1</td></tr>
           <tr><th scope="row">Taller near Muni Metro</th><td>65 ft</td><td>55 ft</td><td>SB 79 Tier 2</td></tr>
           <tr><th scope="row">Taller near rapid bus</th><td>65 ft</td><td>55 ft</td><td>SB 79 Tier 2 (bus with dedicated lanes)</td></tr>
-          <tr><th scope="row">Taller near frequent bus</th><td>55 ft</td><td>none</td><td>No enacted source</td></tr>
+          <tr><th scope="row">Taller near frequent bus</th><td>55 ft within 300 m</td><td>45 ft from 300 to 600 m</td><td>No enacted source; distances are the owner's</td></tr>
         </tbody>
       </table>
       <ul>
@@ -308,14 +305,14 @@
         <li>San Francisco adopted an alternative plan in May 2026, so SB 79's defaults bind no
           parcel in the city. These policies are "what if the default tiers applied", and their
           one-line descriptions say so.</li>
-        <li>SB 79 does not cover ordinary frequent bus. That rule goes beyond enacted law and its
-          values are hand-picked.</li>
+        <li>SB 79 does not cover ordinary frequent bus. That rule goes beyond enacted law. Its
+          bands are 300 m and 600 m, the owner's choice; its heights (one step below Tier 2) are
+          my call.</li>
       </ul>
-      <aside data-kind="question"><strong>Question</strong> Is a hand-picked frequent bus rule
-        acceptable, or should the fourth zoning policy be something with a source?</aside>
-      <aside data-kind="note"><strong>Note</strong> These are my proposals: the round table, the
-        fixed values, what "editable" covers, and the rule for adding and removing. The plan
-        measures each round's effect with these values before anything else is built on them.</aside>
+      <aside data-kind="decision"><strong>Decision</strong> The owner accepted the round table,
+        the fixed values, what "editable" covers and the rule for adding and removing
+        (2026-11-26). The plan measures each round's effect with these values before anything
+        else is built on them.</aside>
     </section>
 
     <section id="sec-reach">
@@ -346,10 +343,10 @@
           drop such a policy from its forecast (<code>within</code> in
           <code>limits.ts</code>); that must not happen.</li>
       </ul>
-      <aside data-kind="question"><strong>Question</strong> 1,200 m, or the owner's 1,000 m? The
-        evidence for 1,200 is one survey's 85th percentile for rail; the law stops at 805 m. A
-        separate, shorter maximum for bus (about 800 m) fits the evidence better but one rule can
-        hold several stop types, so I propose a single value.</aside>
+      <aside data-kind="decision"><strong>Decision</strong> 1,200 m, one value for every stop
+        type; accepted by the owner (2026-11-26). The evidence is one survey's 85th percentile
+        for rail; the law stops at 805 m. A shorter maximum for bus would fit the evidence
+        better, but one rule can hold several stop types.</aside>
     </section>
 
     <section id="sec-height">
