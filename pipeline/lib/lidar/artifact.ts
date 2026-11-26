@@ -28,12 +28,12 @@ export const BOXES_LABEL = 'Building boxes (USGS 3DEP LiDAR 2023 and Overture)';
 export const BOXES_HOMEPAGE = 'https://www.usgs.gov/3d-elevation-program';
 
 const LIDAR_SOURCE = 'usgs-lidar-sf';
-const SCHEMA = 'boxes/1';
+const SCHEMA = 'boxes/2';
 const HINT = 'run npm run pipeline -- boxes';
 
 /** Full sha256 hex of every recorded input; '' = the source is absent from its lock. */
 export interface BoxesInputs {
-  schema: 1;
+  schema: 2;
   code: string;
   config: string;
   sources: Record<string, string>;
@@ -58,13 +58,13 @@ export function boxesInputsOf(lock: Lock, lidarLock: Lock | null, code: string):
   const sources: Record<string, string> = {};
   for (const id of BOXES_RECORDED)
     sources[id] = entryHash(entryOf(id === LIDAR_SOURCE ? lidarLock : lock, id));
-  return { schema: 1, code, config: configHash(), sources };
+  return { schema: 2, code, config: configHash(), sources };
 }
 
 const prefix = (h: string): string => (h === '' ? '-' : h.slice(0, 12));
 
 /**
- * 'boxes/1 code=<12> config=<12> overture-buildings=<12> overture-building-parts=<12>
+ * 'boxes/2 code=<12> config=<12> overture-buildings=<12> overture-building-parts=<12>
  * usgs-lidar-sf=<12> datasf-parcels=<12> datasf-streets=<12> datasf-neighborhoods=<12>'
  * ('-' when absent).
  */
@@ -214,7 +214,11 @@ const REG = ['fit', 'zero', 'frame-nad83', 'frame-wgs84', 'none'] as const;
  *   `boxes.reg.clusters`, `boxes.reg.<source>` (frame_nad83, frame_wgs84; `zero` too),
  *   `boxes.reg.flagged`, `boxes.reg.ratio_p50`/`_p90`, `boxes.reg.shift_p50_m`/`_p90_m`;
  * - `boxes.parts.buildings`, `boxes.parts.count` (counted parts), `boxes.parts.coverage_p50`,
- *   `boxes.parts.uncovered_dropped` (buildings whose uncovered area had no usable LiDAR).
+ *   `boxes.parts.uncovered_dropped` (buildings whose uncovered area had no usable LiDAR);
+ * - the parts check: `boxes.parts.checked` and `boxes.parts.disputed` (parts, summed),
+ *   `boxes.parts.rejected` (buildings whose parts the LiDAR rejected);
+ * - terraces: `boxes.step.sliced` (buildings that took the sliced stage) and
+ *   `boxes.step.over_cap` (buildings with more steps than their own `step_cap`).
  * Shares and percentiles are rounded to 3 decimals.
  */
 export async function boxesCounts(db: Duck): Promise<Record<string, number>> {
@@ -264,5 +268,10 @@ export async function boxesCounts(db: Duck): Promise<Record<string, number>> {
     'SELECT quantile_cont(parts_coverage, 0.5) AS n FROM bx_roofs WHERE n_parts > 0'
   );
   c['boxes.parts.uncovered_dropped'] = await roofs('uncovered_dropped > 0');
+  c['boxes.parts.checked'] = await one('SELECT sum(parts_checked) AS n FROM bx_roofs');
+  c['boxes.parts.disputed'] = await one('SELECT sum(parts_disputed) AS n FROM bx_roofs');
+  c['boxes.parts.rejected'] = await roofs('parts_rejected');
+  c['boxes.step.sliced'] = await roofs('sliced');
+  c['boxes.step.over_cap'] = await roofs('n_step > step_cap');
   return c;
 }

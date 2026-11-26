@@ -10,17 +10,17 @@
           "url": "derived:building-boxes/boxes.parquet"
         },
         {
-          "archiveKey": "sources/b6ef679bb3e2ce9fef148f0c75d9d3adab53090d79c4097d271e552a22d7e929.parquet",
-          "bytes": 5164,
+          "archiveKey": "sources/486a4eba84339af777f9a8d7fda2858ec2687dab0c0ca450f97bfdb11e18cab1.parquet",
+          "bytes": 6014,
           "name": "building-boxes/roofs.parquet",
-          "sha256": "b6ef679bb3e2ce9fef148f0c75d9d3adab53090d79c4097d271e552a22d7e929",
+          "sha256": "486a4eba84339af777f9a8d7fda2858ec2687dab0c0ca450f97bfdb11e18cab1",
           "url": "derived:building-boxes/roofs.parquet"
         },
         {
-          "archiveKey": "sources/c7ad516be98f485fb67d6be954c6c917511cb6ce4ae15dafdc4ef219262211d4.json",
+          "archiveKey": "sources/d23ba562149355335620f3c412fdcb1e6e52061776b596d0da14eab098e2ea83.json",
           "bytes": 697,
           "name": "building-boxes/inputs.json",
-          "sha256": "c7ad516be98f485fb67d6be954c6c917511cb6ce4ae15dafdc4ef219262211d4",
+          "sha256": "d23ba562149355335620f3c412fdcb1e6e52061776b596d0da14eab098e2ea83",
           "url": "derived:building-boxes/inputs.json"
         }
       ],
@@ -30,7 +30,7 @@
       "license": "ODbL-1.0",
       "retrievedAt": "2026-10-10T00:00:00.000Z",
       "rowCount": 12,
-      "upstreamVersion": "boxes/1 code=6ad1b432e861 config=dc85575b930a overture-buildings=9eafd45b224f overture-building-parts=5cf4e60fa210 usgs-lidar-sf=5aa70101421c datasf-parcels=043e64236abd datasf-streets=d189eabe60de datasf-neighborhoods=b4596d45e804"
+      "upstreamVersion": "boxes/2 code=d183feafc518 config=b1b2ff367806 overture-buildings=9eafd45b224f overture-building-parts=5cf4e60fa210 usgs-lidar-sf=5aa70101421c datasf-parcels=043e64236abd datasf-streets=d189eabe60de datasf-neighborhoods=b4596d45e804"
     },
     {
       "files": [

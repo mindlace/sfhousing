@@ -31,6 +31,7 @@ import {
   outsideFootprint
 } from '../lib/lidar/artifact.js';
 import { clusterBuildings } from '../lib/lidar/clusters.js';
+import { checkParts, type PartsCheck } from '../lib/lidar/dispute.js';
 import { deriveBoxes, groundOf, type RenderBox, type RoofRecord } from '../lib/lidar/derive.js';
 import { openLidarMosaic, type LidarMosaic, type RasterWindow } from '../lib/lidar/mosaic.js';
 import {
@@ -120,7 +121,9 @@ const ROOF_COLUMNS = `{bid: 'VARCHAR', roof: 'VARCHAR', eave_m: 'DOUBLE', ridge_
   shift_dy: 'DOUBLE', shift_source: 'VARCHAR', reg_score: 'DOUBLE', reg_ratio: 'DOUBLE',
   reg_sharp_x: 'DOUBLE', reg_sharp_y: 'DOUBLE', reg_flagged: 'BOOLEAN', cluster_id: 'VARCHAR',
   fallback: 'VARCHAR', n_front: 'INTEGER', n_step: 'INTEGER', steps_capped: 'BOOLEAN',
-  n_parts: 'INTEGER', parts_coverage: 'DOUBLE', uncovered_dropped: 'DOUBLE'}`;
+  n_parts: 'INTEGER', parts_coverage: 'DOUBLE', uncovered_dropped: 'DOUBLE',
+  parts_checked: 'INTEGER', parts_disputed: 'INTEGER', parts_rejected: 'BOOLEAN',
+  sliced: 'BOOLEAN', step_cap: 'INTEGER'}`;
 
 /**
  * Reads buildings, pieces, src_overture_parts, src_streets of a db where
@@ -205,7 +208,7 @@ export async function deriveBuildingBoxes(a: {
       const w = lidar ? lidar.window(registrationBbox(members)) : null;
       const shift = registerCluster(w, members);
       for (const fp of members) {
-        const { boxes, roof, nParts, coverage, dropped } = buildingBoxes(
+        const { boxes, roof, nParts, coverage, dropped, check } = buildingBoxes(
           w,
           fp,
           shift,
@@ -223,7 +226,7 @@ export async function deriveBuildingBoxes(a: {
             g: b.src === 'base' && b.shape === fp.shape ? null : toGeoJson(b.shape)
           });
         }
-        roofOut.push(roofRow(roof, shift, cid, nParts, coverage, dropped));
+        roofOut.push(roofRow(roof, shift, cid, nParts, coverage, dropped, check));
       }
     }
   } finally {
@@ -237,6 +240,7 @@ export async function deriveBuildingBoxes(a: {
     SELECT r.bid, roof, eave_m, ridge_m, ridge_deg, ground_m, ground_min_m, shift_dx, shift_dy,
            shift_source, reg_score, reg_ratio, reg_sharp_x, reg_sharp_y, reg_flagged, cluster_id,
            fallback, n_front, n_step, steps_capped, n_parts, parts_coverage, uncovered_dropped,
+           parts_checked, parts_disputed, parts_rejected, sliced, step_cap,
            round(ST_X(p.pt), 7) AS lng, round(ST_Y(p.pt), 7) AS lat
     FROM read_json(${q(roofOut.path)}, format = 'newline_delimited', columns = ${ROOF_COLUMNS}) r
     JOIN (
@@ -268,8 +272,12 @@ export async function loadBoxRows(db: Duck, path: string, table: string): Promis
     ORDER BY bid, k`);
 }
 
-/** One building's boxes and roof record (see deriveBuildingBoxes). */
-function buildingBoxes(
+/**
+ * One building's boxes and roof record (see deriveBuildingBoxes). With counted parts the LiDAR
+ * checks them first (`check`, null without any): a rejected building takes the plain LiDAR
+ * derivation, no part boxes, and none at all when that falls back.
+ */
+export function buildingBoxes(
   w: RasterWindow | null,
   fp: Footprint,
   shift: Shift | null,
@@ -281,6 +289,7 @@ function buildingBoxes(
   nParts: number;
   coverage: number | null;
   dropped: number;
+  check: PartsCheck | null;
 } {
   const counted = countedParts(parts);
   if (counted.length === 0) {
@@ -290,7 +299,20 @@ function buildingBoxes(
       roof: d.roof,
       nParts: 0,
       coverage: null,
-      dropped: 0
+      dropped: 0,
+      check: null
+    };
+  }
+  const check = checkParts(w, fp, shift, counted);
+  if (check.rejected) {
+    const d = deriveBoxes(w, { fp, shift, streets });
+    return {
+      boxes: d.roof.fallback ? [] : d.boxes,
+      roof: d.roof,
+      nParts: counted.length,
+      coverage: partCoverage(fp.shape, counted),
+      dropped: 0,
+      check
     };
   }
   const boxes = partBoxes(fp.bid, counted, 0);
@@ -314,17 +336,25 @@ function buildingBoxes(
       sliced: false,
       stepCap: BOXES.stepCap
     };
-    return { boxes, roof, nParts: counted.length, coverage, dropped: 0 };
+    return { boxes, roof, nParts: counted.length, coverage, dropped: 0, check };
   }
   const d = deriveBoxes(w, { fp, shift, streets, area: uncovered, kStart: boxes.length });
   if (d.roof.fallback)
-    return { boxes, roof: d.roof, nParts: counted.length, coverage, dropped: area(uncovered) };
+    return {
+      boxes,
+      roof: d.roof,
+      nParts: counted.length,
+      coverage,
+      dropped: area(uncovered),
+      check
+    };
   return {
     boxes: [...boxes, ...d.boxes],
     roof: d.roof,
     nParts: counted.length,
     coverage,
-    dropped: 0
+    dropped: 0,
+    check
   };
 }
 
@@ -334,7 +364,8 @@ function roofRow(
   cid: string,
   nParts: number,
   coverage: number | null,
-  dropped: number
+  dropped: number,
+  check: PartsCheck | null
 ): Record<string, unknown> {
   return {
     bid: r.bid,
@@ -359,7 +390,12 @@ function roofRow(
     steps_capped: r.stepsCapped,
     n_parts: nParts,
     parts_coverage: roundOrNull(coverage, 3),
-    uncovered_dropped: round(dropped, 1)
+    uncovered_dropped: round(dropped, 1),
+    parts_checked: check?.checked ?? 0,
+    parts_disputed: check?.disputed ?? 0,
+    parts_rejected: check?.rejected ?? false,
+    sliced: r.sliced,
+    step_cap: r.stepCap
   };
 }
 

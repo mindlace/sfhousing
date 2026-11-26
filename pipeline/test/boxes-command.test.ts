@@ -19,8 +19,12 @@ import { openLidarMosaic } from '../lib/lidar/mosaic';
 import { rawPath, readLock, sha256File, type Lock, type LockEntry } from '../lib/lock';
 import { runSql } from '../lib/sql';
 import { LIDAR_LOCK, lidarTilesOf, readLidarLock } from '../sources/lidar';
-import { boxesCommand, deriveBuildingBoxes, loadBoxRows } from '../steps/boxes';
+import { StreetIndex } from '../lib/lidar/streets';
+import type { Part } from '../lib/lidar/parts';
+import { area, type MultiPoly, type Ring } from '../geom';
+import { boxesCommand, buildingBoxes, deriveBuildingBoxes, loadBoxRows } from '../steps/boxes';
 import { MINI, openMiniDuck } from './helpers';
+import { fpOf, rect, shiftOf, synthWindow, type SynthScene } from './lidar-synth';
 
 const RAW = join(MINI, 'raw');
 
@@ -142,6 +146,23 @@ describe('deriveBuildingBoxes', () => {
     expect(r14.fallback).toBeNull();
     expect(r14.ground_m).not.toBeNull();
     expect(r14.ground_min_m!).toBeLessThan(r14.ground_m! - 0.2);
+
+    // p14a is checked (p14b is tiered, p14leg small); p10 is checked and agrees.
+    expect(r14).toMatchObject({ parts_checked: 1, parts_disputed: 0, parts_rejected: false });
+    expect(roofOf('b10')).toMatchObject({
+      parts_checked: 1,
+      parts_disputed: 0,
+      parts_rejected: false
+    });
+    for (const r of snap.roofs.filter((x) => x.bid !== 'b14' && x.bid !== 'b10'))
+      expect([r.bid, r.parts_checked, r.parts_disputed, r.parts_rejected]).toEqual([
+        r.bid,
+        0,
+        0,
+        false
+      ]);
+    for (const r of snap.roofs.filter((x) => x.n_parts === 0))
+      expect([r.bid, r.sliced, r.step_cap]).toEqual([r.bid, false, 4]);
   });
 
   it('keeps boxes ordered with k from 0 and heights inside the range', () => {
@@ -215,7 +236,7 @@ describe('recorded inputs', () => {
     const lidarLock = readLidarLock(LIDAR_LOCK.fixture);
     const i = boxesInputsOf(lock, lidarLock, code);
     const entry = (l: Lock | null, id: string) => l?.sources.find((s) => s.id === id);
-    expect(i.schema).toBe(1);
+    expect(i.schema).toBe(2);
     expect(i.code).toBe(code);
     expect(i.config).toBe(configHash());
     expect(i.config).toMatch(/^[0-9a-f]{64}$/);
@@ -236,7 +257,7 @@ describe('recorded inputs', () => {
     const j = boxesInputsOf(noParts, lidarLock, code);
     expect(j.sources['overture-building-parts']).toBe('');
     const v = boxesUpstreamVersion(j);
-    expect(v).toMatch(/^boxes\/1 code=c{12} config=[0-9a-f]{12} overture-buildings=[0-9a-f]{12} /);
+    expect(v).toMatch(/^boxes\/2 code=c{12} config=[0-9a-f]{12} overture-buildings=[0-9a-f]{12} /);
     expect(v).toContain(' overture-building-parts=- ');
     const p = parseBoxesUpstreamVersion(v);
     expect(p.code).toBe(code.slice(0, 12));
@@ -244,6 +265,7 @@ describe('recorded inputs', () => {
     for (const [id, h] of Object.entries(j.sources))
       expect(p.sources[id]).toBe(h === '' ? '-' : h.slice(0, 12));
     expect(entryHash(undefined)).toBe('');
+    expect(() => parseBoxesUpstreamVersion(v.replace('boxes/2', 'boxes/1'))).toThrow('not boxes/2');
   });
 });
 
@@ -268,6 +290,70 @@ function changed(lock: Lock, id: string): Lock {
   e.files[0].sha256 = 'f'.repeat(64);
   return l;
 }
+
+describe('buildingBoxes', () => {
+  const part = (id: string, ring: Ring, o: Partial<Part> = {}): Part => ({
+    id,
+    buildingId: 'b1',
+    shape: [[ring]] as MultiPoly,
+    heightM: 20,
+    minHeightM: null,
+    roofShape: null,
+    roofHeightM: null,
+    ...o
+  });
+  const win = (scene: SynthScene, ring: Ring) => {
+    const xs = ring.map((q) => q[0]);
+    const ys = ring.map((q) => q[1]);
+    return synthWindow(scene, {
+      x0: Math.min(...xs) - 4,
+      y0: Math.min(...ys) - 4,
+      x1: Math.max(...xs) + 4,
+      y1: Math.max(...ys) + 4
+    });
+  };
+  const streets = new StreetIndex([]);
+
+  it('a rejected building takes the plain LiDAR derivation', () => {
+    const ring = rect(100, 200, 130, 220);
+    const cake: SynthScene = {
+      ground: () => 15,
+      boxes: [
+        { ring, top: 12 },
+        { ring: rect(101, 201, 129, 219), top: 24 },
+        { ring: rect(103, 203, 127, 217), top: 36 },
+        { ring: rect(105, 205, 125, 215), top: 48 },
+        { ring: rect(107, 207, 123, 213), top: 60 }
+      ]
+    };
+    const p = part('a', rect(100, 200, 120, 208), {
+      heightM: 70,
+      roofShape: 'skillion',
+      roofHeightM: 50
+    });
+    const r = buildingBoxes(win(cake, ring), fpOf([[ring]]), shiftOf(), streets, [p]);
+    expect(r.check?.rejected).toBe(true);
+    expect(r.boxes.some((b) => b.src === 'part')).toBe(false);
+    expect(r.boxes.some((b) => b.src === 'base')).toBe(true);
+    expect(r.roof.sliced).toBe(true);
+    expect(r.nParts).toBe(1);
+    expect(r.dropped).toBe(0);
+  });
+
+  it('a rejected building whose LiDAR falls back stores no rows', () => {
+    const ring = rect(100, 200, 120, 210); // 200 m2
+    const pr = rect(100, 200, 106, 205); // 30 m2
+    const scene: SynthScene = { ground: () => 15, boxes: [{ ring: pr, top: 10 }] };
+    const r = buildingBoxes(win(scene, ring), fpOf([[ring]]), shiftOf(), streets, [
+      part('a', pr, { heightM: 45 })
+    ]);
+    expect(area([[pr]])).toBe(30);
+    expect(r.check).toMatchObject({ disputed: 1, rejected: true });
+    expect(r.roof.fallback).toBe('new_building');
+    expect(r.boxes).toEqual([]);
+    expect(r.nParts).toBe(1);
+  });
+});
 
 describe('boxesLockProblem', () => {
   const code = 'c'.repeat(64);
