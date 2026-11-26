@@ -138,17 +138,17 @@ writing**, or the index goes stale silently (a write without a bump is not detec
 
 **Compaction** (`line-index.ts` `compact`, perf): a line of `COMPACT_MIN` (1024) rows or more is
 compacted only once an eighth of it is `gone`; a shorter one whenever it holds a `gone` row. So
-`gone` rows may survive a step on a long line; every reader skips them. The count comes from the
-index (rebuilt from columns when stale), so a clone compacts in the same months.
+`gone` rows may survive a step on a long line; every reader skips them. The row count comes from
+the index (rebuilt from columns when stale), so a clone compacts in the same months.
 
 **Homes waiting** (`system.ts` `waitingHomes`, `recordWaiting`): last in the step, after the
 compaction, `recordWaiting(world, month)` stores the count in `line.waitHomes[month]`. The count
 is one pass over the line's rows, without the index: a lot counts once, by its larger `units`; a
 row marked `gone` and a row whose lot has a lot row not `LOT_FREE` (the lazy guard's test) are
 skipped. Its per-lot scratch is module-level, grown by doubling and told apart between calls by a
-stamp, so a month allocates nothing; it is not part of any world. Months with no hook
-between two records take the last value; a month not after `waitThrough` throws. Both fields are
-plain, so a clone and a restore carry the record.
+stamp, so a month allocates nothing; every world shares it. Months with no hook between two
+records take the last value; a month not after `waitThrough` throws. Both fields are plain, so a
+clone and a restore carry the record.
 
 ## Pool closing
 
@@ -256,9 +256,10 @@ npx vitest --run --project perf src/lib/sim/world/funding/funded-month.perf.spec
 
 synthCity with its bench baseline money (`benchFunded('baseline')`), seeds 1 to 8 stepped untimed
 to month 120, then months 121 to 240 timed one `step` at a time per world (the whole step: core
-and funding, with the waiting-homes record, which adds about 100 µs). Bar: **mean at most 250 µs per
-world-month** (the 9 ms constraint is a sum over two
-worlds, the plan's and its twin's; this bar is per world). It also prints each hook's share and the whole-city replan month, unasserted.
+and funding, with the waiting-homes record, which adds about 100 µs). Bar: **mean at most
+250 µs per world-month** (the 9 ms constraint is a sum over two worlds, the plan's and its twin's;
+this bar is per world). It also prints each hook's share and the whole-city replan month,
+unasserted.
 
 Task 8 (synthCity, bench baseline money; hooks only, months 2 to 120, quiet, lock held), after
 grouped serving, the line index and the lazy guard: serve mean 9.1 to 13.0 µs, apply 3.9 to 9.6,
@@ -352,7 +353,7 @@ is month 120 after a market step (+0.25 from month 120: every free lot replanned
 | live, funded `planDue` per world, median ms            | 15.0          | 5.8          | 27.6          | 8.0          |
 | live, 96 worlds' `planDue`, ms                         | 1,484         | 591          | 2,682         | 799          |
 | live, change month per world, median ms (48 worlds)    | 26.8          | 6.7          | 40.6          | 8.7          |
-| synthCity baseline, world-month mean µs (bar 90)       | 75.8          | 79.3         | 87.1          | 83.1         |
+| synthCity baseline, world-month mean µs (bar then 90)  | 75.8          | 79.3         | 87.1          | 83.1         |
 | synthCity bench set, `planDue` per world, median ms    | 109.3         | 72.8         | 158.3         | 120.4        |
 | synthCity bench set, change month per world, median ms | 157.1         | 120.5        | 215.8         | 172.0        |
 | synthCity bench set, world-month mean µs               | 222.0         | 208.3        | 272.6         | 256.1        |
