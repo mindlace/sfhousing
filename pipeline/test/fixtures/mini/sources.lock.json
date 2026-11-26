@@ -17,10 +17,10 @@
           "url": "derived:building-boxes/roofs.parquet"
         },
         {
-          "archiveKey": "sources/6e3d8c53c8651c5edc75348facae3fdf3028a53473b71699a8d8cfee6a068aa8.json",
+          "archiveKey": "sources/0906c044bc47fa46264056a4b94123689e4540211f60554dec2fa83fbedea124.json",
           "bytes": 697,
           "name": "building-boxes/inputs.json",
-          "sha256": "6e3d8c53c8651c5edc75348facae3fdf3028a53473b71699a8d8cfee6a068aa8",
+          "sha256": "0906c044bc47fa46264056a4b94123689e4540211f60554dec2fa83fbedea124",
           "url": "derived:building-boxes/inputs.json"
         }
       ],
@@ -30,7 +30,7 @@
       "license": "ODbL-1.0",
       "retrievedAt": "2026-10-10T00:00:00.000Z",
       "rowCount": 12,
-      "upstreamVersion": "boxes/2 code=8eb90c0317f4 config=b1b2ff367806 overture-buildings=9eafd45b224f overture-building-parts=354bceed6e49 usgs-lidar-sf=d0f9c40490e4 datasf-parcels=043e64236abd datasf-streets=d189eabe60de datasf-neighborhoods=b4596d45e804"
+      "upstreamVersion": "boxes/2 code=6ff8d5707a0c config=b1b2ff367806 overture-buildings=9eafd45b224f overture-building-parts=354bceed6e49 usgs-lidar-sf=d0f9c40490e4 datasf-parcels=043e64236abd datasf-streets=d189eabe60de datasf-neighborhoods=b4596d45e804"
     },
     {
       "files": [

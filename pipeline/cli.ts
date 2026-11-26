@@ -97,10 +97,16 @@ const steps: Record<string, { help: string; run: Step }> = {
     run: async () => reportDoctor(await doctor(), console.log)
   },
   boxes: {
-    help: 'derive the building boxes from the locked footprints, parts and LiDAR tiles and lock the building-boxes artifact [--fixture: the mini fixture]',
+    help: 'derive the building boxes from the locked footprints, parts and LiDAR tiles and lock the building-boxes artifact [--fixture: the mini fixture] [--probe <bid,bid,…|@file>: derive only those buildings, print per-part verdicts as JSON lines, write nothing]',
     run: (args) => {
       const fixture = args.flags.fixture === true;
+      const probe = str(args.flags.probe);
+      if (args.flags.probe !== undefined && !probe) {
+        console.error('--probe needs building ids: --probe <bid,bid,…> or --probe @file');
+        return 1;
+      }
       return boxesCommand({
+        probe: probe ? probe.split(',').filter((b) => b !== '') : undefined,
         lockPath: fixture ? join(MINI, 'sources.lock.json') : LOCK,
         lidarLockPath: fixture ? LIDAR_LOCK.fixture : LIDAR_LOCK.live,
         rawDir: fixture ? join(MINI, 'raw') : RAW,

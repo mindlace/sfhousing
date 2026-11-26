@@ -8,6 +8,7 @@ import {
   mkdirSync,
   mkdtempSync,
   openSync,
+  readFileSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -31,7 +32,7 @@ import {
   outsideFootprint
 } from '../lib/lidar/artifact.js';
 import { clusterBuildings } from '../lib/lidar/clusters.js';
-import { checkParts, type PartsCheck } from '../lib/lidar/dispute.js';
+import { checkParts, type PartVerdict, type PartsCheck } from '../lib/lidar/dispute.js';
 import { deriveBoxes, groundOf, type RenderBox, type RoofRecord } from '../lib/lidar/derive.js';
 import { openLidarMosaic, type LidarMosaic, type RasterWindow } from '../lib/lidar/mosaic.js';
 import {
@@ -125,28 +126,15 @@ const ROOF_COLUMNS = `{bid: 'VARCHAR', roof: 'VARCHAR', eave_m: 'DOUBLE', ridge_
   parts_checked: 'INTEGER', parts_disputed: 'INTEGER', parts_rejected: 'BOOLEAN',
   sliced: 'BOOLEAN', step_cap: 'INTEGER'}`;
 
-/**
- * Reads buildings, pieces, src_overture_parts, src_streets of a db where
- * runSql(db, '50_clip.sql') ran; leaves bx_boxes and bx_roofs.
- *
- * - bx_boxes(bid, k, src, base_m, height_m, geom): geom is WKB in EPSG:7131, NULL for a base box
- *   over the whole footprint. Ordered by bid, k.
- * - bx_roofs: one row per `buildings` row (see roofRow), plus lng/lat, the EPSG:4326 point on
- *   surface of the footprint.
- *
- * Per building: with counted parts, the part boxes, then the LiDAR derivation of the area no
- * counted part covers. A fallback there drops that area (`uncovered_dropped`, m2, and the
- * fallback recorded) and emits nothing for it: it is never drawn at height_m. Without counted
- * parts, the LiDAR derivation; its fallback box is not stored (`build` draws today's box from its
- * own buildings table), so the artifact holds no fallback geometry and nothing to clamp there.
- * The ground reference is always the whole footprint's (F3), also where no derivation runs.
- */
-export async function deriveBuildingBoxes(a: {
-  db: Duck;
-  lidar: LidarMosaic | null;
-  workDir: string;
-}): Promise<void> {
-  const { db, lidar } = a;
+interface LoadedClusters {
+  partsOf: Map<string, Part[]>;
+  streets: StreetIndex;
+  /** Cluster id to its member footprints, in bid order. */
+  clusters: Map<string, Footprint[]>;
+}
+
+/** Buildings, their parts, the streets and the clusters of a db where 50_clip.sql ran. */
+async function loadClusters(db: Duck): Promise<LoadedClusters> {
   const buildings = await db.all<{ bid: string; g: string; h: number; b: number; hs: number }>(
     `SELECT bid, ST_AsGeoJSON(geom) AS g, height_m AS h, base_m AS b, hs FROM buildings
      ORDER BY bid`
@@ -198,6 +186,32 @@ export async function deriveBuildingBoxes(a: {
     if (list) list.push(fps.get(r.bid)!);
     else clusters.set(cid, [fps.get(r.bid)!]);
   }
+  return { partsOf, streets, clusters };
+}
+
+/**
+ * Reads buildings, pieces, src_overture_parts, src_streets of a db where
+ * runSql(db, '50_clip.sql') ran; leaves bx_boxes and bx_roofs.
+ *
+ * - bx_boxes(bid, k, src, base_m, height_m, geom): geom is WKB in EPSG:7131, NULL for a base box
+ *   over the whole footprint. Ordered by bid, k.
+ * - bx_roofs: one row per `buildings` row (see roofRow), plus lng/lat, the EPSG:4326 point on
+ *   surface of the footprint.
+ *
+ * Per building: with counted parts, the part boxes, then the LiDAR derivation of the area no
+ * counted part covers. A fallback there drops that area (`uncovered_dropped`, m2, and the
+ * fallback recorded) and emits nothing for it: it is never drawn at height_m. Without counted
+ * parts, the LiDAR derivation; its fallback box is not stored (`build` draws today's box from its
+ * own buildings table), so the artifact holds no fallback geometry and nothing to clamp there.
+ * The ground reference is always the whole footprint's (F3), also where no derivation runs.
+ */
+export async function deriveBuildingBoxes(a: {
+  db: Duck;
+  lidar: LidarMosaic | null;
+  workDir: string;
+}): Promise<void> {
+  const { db, lidar } = a;
+  const { partsOf, streets, clusters } = await loadClusters(db);
 
   mkdirSync(a.workDir, { recursive: true });
   const boxOut = new Ndjson(join(a.workDir, 'bx_boxes.ndjson'));
@@ -399,6 +413,72 @@ function roofRow(
   };
 }
 
+export interface ProbeRow {
+  bid: string;
+  fallback: string | null;
+  nParts: number;
+  partsChecked: number;
+  partsDisputed: number;
+  partsRejected: boolean;
+  sliced: boolean;
+  nStep: number;
+  /** The tallest stored box (clamped); null without rows. */
+  topM: number | null;
+  /** [] without counted parts. */
+  parts: PartVerdict[];
+}
+
+/** Derive only the clusters holding `bids` (unknown bids are skipped and named on stderr). */
+export async function probeBoxes(a: {
+  db: Duck;
+  lidar: LidarMosaic | null;
+  bids: string[];
+  err?: (line: string) => void;
+}): Promise<ProbeRow[]> {
+  const err = a.err ?? ((l: string) => console.error(l));
+  const { partsOf, streets, clusters } = await loadClusters(a.db);
+  const clusterOfBid = new Map<string, string>();
+  for (const [cid, members] of clusters) for (const m of members) clusterOfBid.set(m.bid, cid);
+  const unknown = a.bids.filter((b) => !clusterOfBid.has(b));
+  if (unknown.length > 0) err(`unknown building ids skipped: ${unknown.join(', ')}`);
+  const rows = new Map<string, ProbeRow>();
+  const cids = new Set(a.bids.flatMap((b) => clusterOfBid.get(b) ?? []));
+  for (const cid of [...cids].sort()) {
+    const members = clusters.get(cid)!;
+    const w = a.lidar ? a.lidar.window(registrationBbox(members)) : null;
+    const shift = registerCluster(w, members);
+    for (const fp of members) {
+      if (!a.bids.includes(fp.bid)) continue;
+      const r = buildingBoxes(w, fp, shift, streets, partsOf.get(fp.bid) ?? []);
+      rows.set(fp.bid, {
+        bid: fp.bid,
+        fallback: r.roof.fallback,
+        nParts: r.nParts,
+        partsChecked: r.check?.checked ?? 0,
+        partsDisputed: r.check?.disputed ?? 0,
+        partsRejected: r.check?.rejected ?? false,
+        sliced: r.roof.sliced,
+        nStep: r.roof.nStep,
+        topM: r.boxes.length > 0 ? Math.max(...r.boxes.map((b) => clampH(b.heightM))) : null,
+        parts: r.check?.parts ?? []
+      });
+    }
+  }
+  return a.bids.flatMap((b) => rows.get(b) ?? []);
+}
+
+/** `--probe` values: ids, or `@path` for a file of one id per line (blank lines ignored). */
+export function probeBids(items: string[]): string[] {
+  return items.flatMap((i) =>
+    i.startsWith('@')
+      ? readFileSync(i.slice(1), 'utf8')
+          .split('\n')
+          .map((l) => l.trim())
+          .filter((l) => l !== '')
+      : [i.trim()]
+  );
+}
+
 export interface BoxesCommandOpts {
   lockPath: string;
   lidarLockPath: string;
@@ -410,6 +490,8 @@ export interface BoxesCommandOpts {
   now?: Date;
   /** The mini fixture: its SB 79 exemption transcription (F8) and fixed retrievedAt (F1). */
   fixture?: boolean;
+  /** Probe mode: derive only these buildings, print one JSON line each, write nothing. */
+  probe?: string[];
   out?: (line: string) => void;
   err?: (line: string) => void;
 }
@@ -445,7 +527,10 @@ export async function boxesCommand(o: BoxesCommandOpts): Promise<number> {
     err(release);
     return 1;
   }
-  if (!lidarLock) out(`no ${o.lidarLockPath}: every building without parts falls back (no_lidar)`);
+  if (!lidarLock)
+    (o.probe ? err : out)(
+      `no ${o.lidarLockPath}: every building without parts falls back (no_lidar)`
+    );
 
   const work = mkdtempSync(join(tmpdir(), 'sfh-boxes-'));
   const db = await openDuck();
@@ -458,6 +543,11 @@ export async function boxesCommand(o: BoxesCommandOpts): Promise<number> {
     await loadNormalised(db, norm);
     await runSql(db, '50_clip.sql');
     const lidar = openLidarMosaic(lidarTilesOf(lidarLock, o.rawDir, o.byName));
+    if (o.probe) {
+      for (const r of await probeBoxes({ db, lidar, bids: probeBids(o.probe), err }))
+        out(JSON.stringify(r));
+      return 0;
+    }
     await deriveBuildingBoxes({ db, lidar, workDir: work });
 
     const counts = await boxesCounts(db);

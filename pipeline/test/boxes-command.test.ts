@@ -549,6 +549,59 @@ describe('boxesCommand', () => {
     rmSync(c.dir, { recursive: true, force: true });
   }, 180_000);
 
+  it('--probe prints the named buildings and writes nothing', async () => {
+    const c = miniCopy();
+    const lockBefore = readFileSync(c.lockPath);
+    const lines: string[] = [];
+    const errs: string[] = [];
+    const code = await boxesCommand({
+      lockPath: c.lockPath,
+      lidarLockPath: c.lidarLockPath,
+      rawDir: c.rawDir,
+      byName: true,
+      repoRoot: process.cwd(),
+      fixture: true,
+      probe: ['bpier', 'b14', 'nope'],
+      out: (l) => lines.push(l),
+      err: (l) => errs.push(l)
+    });
+    expect(code).toBe(0);
+    const rows = lines.filter((l) => l.startsWith('{')).map((l) => JSON.parse(l));
+    expect(rows.map((r) => r.bid)).toEqual(['bpier', 'b14']);
+    const [pier, b14] = rows;
+    expect(pier).toMatchObject({ partsRejected: true, sliced: true });
+    expect(pier.topM).toBeCloseTo(60, 0);
+    expect(Math.abs(pier.topM - 60)).toBeLessThanOrEqual(0.3);
+    expect(pier.parts).toHaveLength(1);
+    expect(pier.parts[0].disputed).toBe(true);
+    expect(b14.parts).toHaveLength(3);
+    expect(b14.parts.find((p: { id: string }) => p.id === 'p14a').checked).toBe(true);
+    expect(errs.join('\n')).toContain('nope');
+    expect(readFileSync(c.lockPath).equals(lockBefore)).toBe(true);
+    rmSync(c.dir, { recursive: true, force: true });
+  }, 180_000);
+
+  it('--probe reads its building ids from a file with @path', async () => {
+    const c = miniCopy();
+    const f = join(c.dir, 'bids.txt');
+    writeFileSync(f, 'b14\n\n  bpier \n');
+    const lines: string[] = [];
+    const code = await boxesCommand({
+      lockPath: c.lockPath,
+      lidarLockPath: c.lidarLockPath,
+      rawDir: c.rawDir,
+      byName: true,
+      repoRoot: process.cwd(),
+      fixture: true,
+      probe: [`@${f}`],
+      out: (l) => lines.push(l),
+      err: () => {}
+    });
+    expect(code).toBe(0);
+    expect(lines.map((l) => JSON.parse(l).bid)).toEqual(['b14', 'bpier']);
+    rmSync(c.dir, { recursive: true, force: true });
+  }, 180_000);
+
   it('without the LiDAR tiles exits 1 and names fetch --restore --lidar', async () => {
     const c = miniCopy();
     rmSync(join(c.rawDir, 'usgs-lidar-sf'), { recursive: true, force: true });
