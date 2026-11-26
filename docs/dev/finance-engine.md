@@ -40,13 +40,10 @@ are the ones the paired-draw fix reserved, and no existing draw moved.) So a mar
 never later than the ordinary start: it is the same draw at a rate that is never above the ordinary
 one.
 
-**Segments.** For one attempt the months from its risk start `r` split into segments at the regime
-days, the market step days, every programme's `from` and `to + 1`, and every `off` entry's `from`
-and `to + 1`. A month falls under the segment of its first day, the rule the dated regimes use.
-Within a segment the view, the market step and the offered programmes are constant. The funded clocks (`world/funding/clocks.ts`) store nothing: each is recomputed from the spell, walking the segments of the policy frames the lot has lived through.
+**Segments.** A spell's months split into segments where the policy frame changes (`world/funding/clocks.ts`). A lot-month takes the view, the market step and the offer of the frame in force on its first day (`viewMonth` is that frame's model month, `frameMoney` its offers and bundles). A programme's or an `off` entry's day dates reach a clock only through the frames compiled from them. The clocks store nothing: each is recomputed from the spell over the frames the lot has lived through.
 
-**Rates per segment.** `z` is the lot's log-odds in the segment's view (`Precompute.logit`) and `m`
-the market step's:
+**Rates per segment.** `z` is the lot's log-odds in the segment's frame (`Precompute.logit`) and `m`
+the frame's market step:
 
 - Market kind: `z + m` (plus the frame's parking shift, `frame.parking`, in the world engine;
   `world-core.md`, The car hook), plus the bundle's shift when the bundle is not empty. The
@@ -59,15 +56,15 @@ costPerHome('affordable')`, plus the bundle's shift when the bundle is not empty
   rule, R2 and its clamp). A segment where the view has no size, or the lot has no hazard, gives no
   start.
 
-`piecewiseMonth` turns the draw and the rates into the latent month `T`. Every latent starts on
+`piecewiseMonth` turns the draw and the rates into the latent lot-month `T`. Every latent starts on
 `r + 1 + floor((T − 1 + v) × MONTH_DAYS)`: there is no first-day rule, so fully funded
 applications spread over their month like any other.
 
 A certain bundle starts at the ordinary odds at full coverage (`world/funding/clocks.ts`).
 
 **No application in a month without a bundle.** The month's bundle is the programmes of its kind
-that are active on its first day, whose pool is not off that day and whose `minHomes` the drawn size
-meets. A latent that falls in a month where that bundle is empty makes no application, so money
+that the frame in force on the month's first day offers (active, pool not off) and whose `minHomes`
+the drawn size meets. A latent that falls in a month where that bundle is empty makes no application, so money
 that is not on offer moves nothing. (Spec 4.3's letter is kept: the application uses its month's
 first-day bundle and is not re-made on joining.)
 
@@ -83,7 +80,7 @@ spans of one pool mean their union).
 - A programme is **offered** on day d when it is active (`from ≤ d` and `to` null or `d ≤ to`) and
   its pool is not off on d. Only offered programmes enter a bundle. Switching a pool off never
   splits or renames a programme.
-- Off and on days are segment bounds, like programme days.
+- A programme's or an off span's dates change the frames compiled from them; the clocks read the frame in force on a lot-month's first day.
 - An arrival on a day its pool is off is not received: no `in` event, `received` unchanged.
 - A pool's commitments run on while it is off: what is committed stays committed and is spent,
   repaid, released or lost as scheduled, and what is left stays unspent. Nothing new is committed
