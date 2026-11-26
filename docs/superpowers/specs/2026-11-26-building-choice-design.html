@@ -1,7 +1,7 @@
 <article>
   <header>
     <h1>Building choice: the developer picks the building a cap allows</h1>
-    <p><strong>Status: approved (2026-11-26).</strong> For each lot, list the buildings it could hold at or below its cap, cost and time each by construction type, and start the one a developer would build; check the picks against DBI records.</p>
+    <p><strong>Status: approved (2026-11-26); amended 2026-11-26 (owner): costs, values and stage-time multipliers are dated step series, shape only.</strong> For each lot, list the buildings it could hold at or below its cap, cost and time each by construction type, and start the one a developer would build; check the picks against DBI records.</p>
   </header>
 
   <section id="sec-intent">
@@ -37,6 +37,7 @@
         <li>Density-bonus projects that build over the cap. They keep today's fitted over-limit amount (<code>sizeOverEnvelope</code>). See <a href="#q-bonus">the decision</a>.</li>
         <li>Random bands. The world shows one future, and every draw uses the existing seeded per-lot streams.</li>
         <li>Adjustable costs. The owner wants a later ability to change costs and similar inputs (cost and value per home by type, <code>locationValue</code>, the carrying cost) to move break-even. That is a follow-up, not this spec, but it must not be designed out: costs, values, durations and <code>locationValue</code> are data inputs (the calibration and per-lot dataset files), not constants baked into code.</li>
+        <li>Real cost time series, the owner's cost and value lever, and the overlap between costs over time and the <code>calibration.market</code> start-odds shift. These belong to the later cost-adjustment spec. A real series cannot ship here: the Controller's cost index is good for fitting only, not for shipping. The overlap matters because, once costs move over time, the margin start feature and the market shift could count the same change twice.</li>
         <li>New UI. The card and map show the chosen building. Naming its construction type is optional and must follow the terse-copy rule.</li>
       </ul>
     </section>
@@ -85,7 +86,8 @@
     <p>Districts (sites of 20,000 m² or more) keep their split into lots of about 1,524 m² (<code>DISTRICT_MIN_M2</code>, <code>LOT_FRONTAGE_M</code>). Each district lot gets its own option set.</p>
     <section id="sec-options-prune">
       <h3>Pruning</h3>
-      <p>An option is dropped when another option on the same lot has stories ≤ the option's, homes ≥ the option's, cost per home ≤ the option's, value per home ≥ the option's and build time ≤ the option's. Such an option beats it at every cap and every value index, so the pruning never changes a choice. In practice a taller option of the same type with fewer homes is always dropped, which removes the tower cliff by construction. The builder measures how many options survive per lot (<a href="#sec-calls">calls left to the builder</a>).</p>
+      <p>Pruning at dataset build uses only <strong>cost-independent dominance</strong>. An option is dropped only when another option on the same lot has the same construction type and form, homes ≥ the option's, and stories ≤ the option's. That other option has the same <code>costPerHome</code>, <code>valuePerHome</code> and <code>carryPerHome</code> step series, and it is allowed at every cap that allows the dropped one, so the drop holds whatever the costs at any step. Pruning never compares cost or value across types, because those are dated data that may change (<a href="#sec-cost-steps">Costs as dated steps</a>). It still removes the tower cliff: a taller option of the same type with fewer homes is always dropped.</p>
+      <aside data-kind="decision"><strong>Call:</strong> The builder reports the distribution of surviving options per lot under cost-independent pruning, and how much it grows against the cost-based pruning this spec first proposed.</aside>
     </section>
   </section>
 
@@ -116,6 +118,15 @@
     <aside data-kind="decision" id="q-location-value"><strong>Decision (owner):</strong> <code>locationValue</code> comes from the assessor's values of residential buildings completed 2015 on (tier 0 data, tier 2 index), smoothed by area and divided by the citywide figure. One citywide value (<code>locationValue = 1</code>) is not used. The <code>locationValue</code> pipeline, the tower and several-tower forms, and the large-lot check are all built.</aside>
     <p>The construction times say height barely matters to 20 stories and adds about 6 months above it. The stage tables get a construction-time multiplier by height band, fitted from DBI records in the pipeline (<code>pipeline/lib/fzp-cal/transitions.ts</code>). Bands with too few records merge into the lower neighbour, as the size model does with <code>sizeMinN</code>. Earlier stages keep no height term unless the records show one; the builder reports the per-band medians for filed-to-issued as well.</p>
     <aside data-kind="decision"><strong>Call:</strong> Each stage is fitted on its matching interval. The permit stage is fitted on first construction document to issued, and the construction stage on issued to completion. The height-band multipliers are fitted per stage on those intervals, and the acceptance checks use the same intervals.</aside>
+    <section id="sec-cost-steps">
+      <h3>Costs as dated steps</h3>
+      <aside data-kind="decision"><strong>Decision (owner, 2026-11-26):</strong> The time-varying constants are added in shape only.</aside>
+      <ul>
+        <li><code>costPerHome</code> (by construction type), <code>valuePerHome</code>, <code>carryPerHome</code> and the stage-time multipliers are dated step series in the calibration data. Each has the same shape as the <code>SimInput.market</code> steps: a list of <code>{ from, value }</code>.</li>
+        <li>This spec ships exactly one step for each: today's values, from <a href="#tbl-params">the parameter table</a> and the stage fit.</li>
+        <li>At run time a start reads the step in force at its month, as the market shift is read today.</li>
+      </ul>
+    </section>
   </section>
 
   <section id="sec-choice">
@@ -128,7 +139,7 @@ share(option)       ∝ exp(residualLandValue(option, choiceValue) / (choiceSpre
     <ul>
       <li><strong>Land drops out.</strong> The lot's land cost is the same for every option on it, so it does not change which option scores highest.</li>
       <li><strong>A start means the project pencils.</strong> The start logit, with today's market shift, decides whether a lot starts. Most lots today have no positive residual at the citywide value (the Controller finds every prototype short). A developer who starts anyway knows something the model does not, so the choice treats the lot as at least at break-even (<code>choiceValue</code>). At break-even the option that pays best per dollar wins. Above it, the margin times homes decides, and bigger buildings win where values carry them. The rule is continuous in <code>locationValue</code>.</li>
-      <li><strong><code>breakEvenValue</code>, <code>meanOptionHomes</code> and <code>meanOptionCost</code> are properties of the lot.</strong> They are taken over all of the lot's options, not the cap-filtered set, and baked at dataset build. So a higher cap never moves <code>choiceValue</code>, and it never changes the odds between options that were already allowed. <aside data-kind="decision"><strong>Call:</strong> <code>breakEvenValue</code> and the averages <code>meanOptionHomes</code> and <code>meanOptionCost</code> are taken over all of a lot's options, as a location property independent of the cap, and computed at dataset build.</aside></li>
+      <li><strong><code>breakEvenValue</code>, <code>meanOptionHomes</code> and <code>meanOptionCost</code> are properties of the lot and the cost step.</strong> They are taken over all of the lot's options, not the cap-filtered set, and computed per cost step (a cheap min and mean over the lot's options). With one step, that is one value per lot. So a higher cap never moves <code>choiceValue</code>, and it never changes the odds between options that were already allowed. <aside data-kind="decision"><strong>Call:</strong> <code>breakEvenValue</code> and the averages <code>meanOptionHomes</code> and <code>meanOptionCost</code> are taken over all of a lot's options, as a location property independent of the cap. They are computed per cost step (amended 2026-11-26; with the one step shipped, one value per lot).</aside></li>
       <li><strong>One future.</strong> The draw uses the lot's existing size stream (<code>drawOn(stream, P.SIZE, 0)</code> in <code>world.ts</code>), so a run stays deterministic. As <code>choiceSpread</code> approaches 0 the rule becomes the argmax. <code>choiceSpread</code> is fitted so that the spread of built height ÷ limit matches the records.</li>
       <li><strong>Revisions</strong> (<code>src/lib/sim/world/stage.ts</code>) move to a neighbouring option on the lot instead of rescaling a fill fraction. The builder keeps the existing ratio draw for the unit count when the option's type is unchanged.</li>
     </ul>
@@ -170,8 +181,8 @@ share(option)       ∝ exp(residualLandValue(option, choiceValue) / (choiceSpre
   <section id="sec-bake">
     <h2>Baked at dataset build, chosen at run time</h2>
     <ul>
-      <li><strong>Baked</strong> (pipeline, so a new dataset version): per lot, a fixed-width row of <code>optionCount</code> pruned options, each <code>(type, form, stories, homes)</code>; <code>locationValue</code> per lot; the type cost, value and duration tables in the calibration; the refitted <code>initiation</code>, size (<code>choiceSpread</code>) and stage tables. <code>gross.bin</code> is replaced by the option rows, or gains a type dimension (<code>gross-table.ts</code>, <code>pipeline/steps/gross.ts</code>). FZP, base, SB 79 and current-law rows (<code>pipeline/steps/scenario.ts</code>, <code>policy.ts</code>) become option rows filtered at those caps. Changing <code>src/lib/generator/</code> already changes the dataset version (<code>PATHS</code> in <code>pipeline/lib/version.ts</code>).</li>
-      <li><strong>At run time:</strong> for a cap from a lever or a game grant, filter the lot's <code>optionCount</code> options by stories and the unit cap, then compute <code>optionCount</code> exponentials. This builds the choice row in place of <code>sizeCum</code>, memoised per view as <code>precomputeOf</code> is today. That is O(<code>optionCount</code>) per lot with no generator call. The per-project columns <code>level</code>, <code>yields</code> and <code>stories</code> (<code>world.ts</code>, <code>columns.ts</code>) hold the option index and the option's homes.</li>
+      <li><strong>Baked</strong> (pipeline, so a new dataset version): per lot, a fixed-width row of <code>optionCount</code> pruned options, each <code>(type, form, stories, homes)</code>; <code>locationValue</code> per lot; the dated step series for <code>costPerHome</code>, <code>valuePerHome</code>, <code>carryPerHome</code> and the stage-time multipliers in the calibration (one step each); the refitted <code>initiation</code>, size (<code>choiceSpread</code>) and stage tables. <code>gross.bin</code> is replaced by the option rows, or gains a type dimension (<code>gross-table.ts</code>, <code>pipeline/steps/gross.ts</code>). FZP, base, SB 79 and current-law rows (<code>pipeline/steps/scenario.ts</code>, <code>policy.ts</code>) become option rows filtered at those caps. Changing <code>src/lib/generator/</code> already changes the dataset version (<code>PATHS</code> in <code>pipeline/lib/version.ts</code>).</li>
+      <li><strong>At run time:</strong> for a cap from a lever or a game grant, filter the lot's <code>optionCount</code> options by stories and the unit cap, then compute <code>optionCount</code> exponentials. This builds the choice row in place of <code>sizeCum</code>, memoised as <code>precomputeOf</code> is today, with the memo keyed by (lot, step), so a start reads the row for the cost step in force at its month. That is O(<code>optionCount</code>) per lot with no generator call. The per-project columns <code>level</code>, <code>yields</code> and <code>stories</code> (<code>world.ts</code>, <code>columns.ts</code>) hold the option index and the option's homes.</li>
       <li><strong>Performance budget.</strong> <code>precomputeOf</code> on the live dataset stays within 1.5 times its current time, and the purchase-to-ready wait in <code>bench:map</code> stays within its pass bar (<code>docs/dev/map-perf.md</code>). Both are measured on a quiet machine.</li>
     </ul>
     <aside data-kind="warning"><strong>Warning</strong> This is a dataset change. Upload follows <code>docs/dev/pipeline.md</code>: build, then <code>npx tsx scripts/reach-check.ts pipeline/out/&lt;v&gt;</code> must exit 0, then upload, then signoff. If current law no longer meets the first deadline, the ladder moves; see <a href="#sec-blast">blast radius</a>, game.</aside>
@@ -252,7 +263,7 @@ share(option)       ∝ exp(residualLandValue(option, choiceValue) / (choiceSpre
       <h3>Follow-ups</h3>
       <ul>
         <li>The state density bonus as a developer option. This is the next spec.</li>
-        <li>Adjustable costs and similar inputs to move break-even (see Non-goals). Costs, values, durations and <code>locationValue</code> stay data inputs.</li>
+        <li>The cost-adjustment spec: adjustable costs and similar inputs to move break-even, real dated cost series, and resolving the double count between costs over time and the <code>calibration.market</code> shift (see Non-goals). Costs, values, durations and <code>locationValue</code> stay data inputs, already shaped as step series.</li>
       </ul>
     </section>
   </section>
