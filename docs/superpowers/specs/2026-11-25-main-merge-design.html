@@ -11,6 +11,7 @@
       <li><strong>The merge:</strong> <code>origin/main</code> merged into the unit's branch, every conflict resolved by the rules below, the application whole on the merged tree, and the reach check of record run.</li>
       <li><strong>The retake:</strong> the measured ladder, the tuned numbers, the run bench, the purchase-to-ready wait and the budgets held to <code>main</code>, taken again on <code>main</code>'s dataset with cars in the world.</li>
     </ul>
+    <p>When <code>origin/main</code> takes further commits before the package is merged to <code>main</code>, the two parts run again as one more pass, by the rules of <a href="#sec-design-later">Commits main takes later</a>. Each pass merges <code>origin/main</code> as it stands when the pass starts.</p>
     <p>It carries P1 (the game never changes what the simulation forecasts), P3 (new parts of the model join the tree as branches of nodes), D1 (current law reaches the first goal inside the window), R7 (one future; evidence ranks), call 10 (the measured ladder) and call 25 (every tuned number in <code>tuning.ts</code>).</p>
   </section>
 
@@ -51,6 +52,7 @@
       <li>On <code>main</code>, <code>createTimelineHost</code> takes <code>cars?: 'on' | 'off'</code> (default <code>'on'</code>: both worlds run the dataset's car system when it ships one).</li>
       <li>The car model adds no policy to the document and no lever to "+": the forecast's homes move only through the parking link in start odds (<code>docs/dev/cars.md</code>). It adds a Details row (<code>src/lib/timeline/cars-row.ts</code>), a map layer <code>cars-per-household</code> in the Layers panel, and a Cars section in About's assumptions.</li>
       <li><code>main</code>'s dataset version hashes <code>src/lib/sim/cars</code>, <code>src/lib/sim/scenario/rng.ts</code> and <code>src/lib/transit</code> beside the paths the global constraints name (<code>pipeline/lib/version.ts</code>, <code>PATHS</code>). Its commits change the dataset version: <code>docs/dev/cars.md</code> records current law on <code>2026-11-25-76c90397</code> reaching the goal in Jun 2065 with cars, Jul 2065 without.</li>
+      <li><code>origin/main</code> then took <code>083fb7ae</code>, "more money never turns an award into a wait" (#154): it changes the funding award rule under <code>src/lib/sim/world/funding/</code> and its specs and fixtures (54 files). Merged on top of the first pass, it conflicts in <code>CLAUDE.md</code>, <code>docs/dev/pipeline.md</code> and <code>src/lib/sim/world/score/money.spec.ts</code>.</li>
       <li>The package's results of record were taken on <code>2026-11-14-09ca30c8</code> without cars: <code>LADDER_YEARS</code> <code>[2060, 2055, 2045, 2040]</code>, the tuned <code>tuning.ts</code>, the reach check, the run bench and the purchase-to-ready wait.</li>
     </ul>
   </section>
@@ -122,9 +124,34 @@
       </ul>
     </section>
 
+    <section id="sec-design-later">
+      <h3>Commits main takes later</h3>
+      <ul>
+        <li>A further commit on <code>origin/main</code> is merged by a further pass of this unit: the merge part, then the retake part where the table below asks for it. The pass follows every rule of this spec; it needs no ruling unless a conflict falls outside the rules below or the merged suite fails in a way no rule assigns.</li>
+        <li>Conflicts in documents follow <a href="#sec-design-conflicts">The other conflicts</a>. A conflict in a spec file under <code>src/lib/sim/**</code> keeps <code>main</code>'s cases as <code>main</code> has them and the package's cases beside them; a package case that reads a fixture or a value <code>main</code> changed runs on <code>main</code>'s fixture, its expected values derived again by the package's own rule, which does not change.</li>
+        <li><code>main</code>'s engine wins in every engine file. The package's code under <code>src/lib/sim/world/</code> (the waiting count, the city feed's <code>existing</code>, the score series' <code>waiting</code>) keeps its rules on top of <code>main</code>'s engine: the waiting count still counts the rows on the funding line not marked gone, on lots that are free, once per lot by the larger units, at the end of the <code>shadow</code> hook. When <code>main</code> renames or reshapes a line column the count reads, the pass makes the count read <code>main</code>'s column with that rule unchanged.</li>
+        <li>The merge part always ends with <a href="#sec-design-merge-checks">When the merge is done</a>, the reach check of record included, and with <a href="#sec-design-dataset">The dataset</a>'s check.</li>
+      </ul>
+      <table id="tbl-later-retake">
+        <caption>What the retake takes again after a later pass</caption>
+        <thead><tr><th scope="col">The commits merged touch</th><th scope="col">Taken again</th></tr></thead>
+        <tbody>
+          <tr><td>The dataset version, or any file under <code>src/lib/sim/**</code>, <code>src/lib/goal/**</code>, <code>src/lib/timelapse/**</code>, <code>pipeline/**</code>, or <code>scripts/{reach-check,reach-measure,tree-balance}.ts</code></td><td><code>reach-measure --write</code>, <code>tree-balance</code> to exit 0 under tree-catalogue's rules, the purchase-to-ready wait, and the <code>npm run test:perf</code> budgets held to <code>main</code></td></tr>
+          <tr><td>Any file under <code>src/lib/map/**</code>, <code>src/lib/game/run/**</code>, <code>src/lib/timeline/**</code> or <code>src/lib/sim-page/**</code></td><td>The run bench and the <code>npm run bench:map</code> budgets held to <code>main</code></td></tr>
+          <tr><td>None of these</td><td>Nothing: the results of record stand</td></tr>
+        </tbody>
+      </table>
+      <ul>
+        <li>The rows add up: commits that touch both sets take both. <code>083fb7ae</code> touches <code>src/lib/sim/world/funding/</code>, so its pass takes the first row again; the run bench and the map budgets stand.</li>
+        <li>A retake starts from all eleven side-goal ids: a goal an earlier retake left out of <code>SIDE_TUNING</code> gets its entry back at its starting values and is tuned again, and the left-out rule decides afresh on the dataset of record.</li>
+        <li>A retake that a later pass is admitted to supersede before it finishes is finished as it stands: <code>tree-balance</code> exits 0 with the goals the retake before it left out still left out, and nothing is re-decided for them. <code>docs/dev/game.md</code> then names each such goal as carried from the earlier dataset, with that dataset's highest value, floor and deadline as recorded there, says it is not decided on this version, and names the pass whose retake decides it. That pass's retake starts from all eleven ids.</li>
+        <li>The results of a later retake replace the earlier ones in <code>docs/dev/map-perf.md</code> and <code>docs/dev/game.md</code>, which name the dataset and the <code>main</code> commit they were taken on.</li>
+      </ul>
+    </section>
+
     <section id="sec-design-retake">
       <h3>The retake</h3>
-      <p>Every result of record below was taken without cars; each is taken again on <code>main</code>'s version with cars on.</p>
+      <p>Each result of record below is taken on <code>main</code>'s version with cars on, after the first pass and again after each later pass as <a href="#sec-design-later">Commits main takes later</a> asks.</p>
       <ul>
         <li><code>npx tsx scripts/reach-measure.ts --version &lt;v&gt; --write</code>: <code>LADDER_YEARS</code> by G6's rule. A change of years moves the rings by <code>ringOf</code>; no code changes for it.</li>
         <li><code>npx tsx scripts/tree-balance.ts --version &lt;v&gt;</code> exits 0, with <code>tuning.ts</code> edited by hand under tree-catalogue's rules (§ The lump and the side goals, § Starting values and who tunes them): the gated plays, the 1.25 raise rule, the left-out rule and the hand-back when no numbers pass.</li>
@@ -139,7 +166,7 @@
   <section id="sec-files">
     <h2>Files</h2>
     <ul>
-      <li>The merge: the 17 conflicted files above; <code>scripts/reach-check.ts</code>, <code>scripts/reach-check.spec.ts</code>, <code>scripts/reach-measure.ts</code> and its spec (the <code>cars</code> option and <code>fillMs</code>); <code>docs/dev/cars.md</code>; any further file the suite shows disagreeing on the merged tree, named in the hand-back with the side it came from.</li>
+      <li>The merge: the 17 conflicted files above; <code>scripts/reach-check.ts</code>, <code>scripts/reach-check.spec.ts</code>, <code>scripts/reach-measure.ts</code> and its spec (the <code>cars</code> option and <code>fillMs</code>); <code>docs/dev/cars.md</code>; any further file the suite shows disagreeing on the merged tree, named in the hand-back with the side it came from. A later pass: the files its merge conflicts in (for <code>083fb7ae</code>, <code>CLAUDE.md</code>, <code>docs/dev/pipeline.md</code> and <code>src/lib/sim/world/score/money.spec.ts</code>) and the package's files under <code>src/lib/sim/world/</code> the merged suite shows disagreeing.</li>
       <li>The retake: <code>src/lib/game/catalogue/ladder-years.ts</code>, <code>src/lib/game/catalogue/tuning.ts</code> and <code>tuning.spec.ts</code> (held to tree-catalogue's rule when a goal is left out), <code>docs/dev/map-perf.md</code>, <code>docs/dev/game.md</code>.</li>
       <li>Deletes nothing; <code>scripts/level2-check.ts</code> and its spec stay deleted.</li>
     </ul>
@@ -153,6 +180,7 @@
       <li><code>reach-check.spec.ts</code>: <code>--cars off</code> and <code>--cars on</code> are accepted, <code>--cars maybe</code> gives exit 2 with its line; the fifth line reads <code>Filled in N.N s (cars on)</code>; the four lines and exits stay as they are.</li>
       <li><code>reach-measure.spec.ts</code>: <code>openEngine</code> passes <code>cars</code> to the host and reports <code>fillMs</code> above 0.</li>
       <li>Done when § When the merge is done holds, and for the retake when <code>tree-balance</code> exits 0 and the bench lines are in the hand-back.</li>
+      <li>A later pass: <code>main</code>'s new and changed specs pass as <code>main</code> has them, and the package's waiting tests (<code>funding/system.spec.ts</code>, <code>columns.spec.ts</code>, the waiting cases of <code>score/money.spec.ts</code>, <code>chunk.spec.ts</code>, <code>view.spec.ts</code>) pass with the counting rule unchanged.</li>
     </ul>
   </section>
 
@@ -163,6 +191,7 @@
       <li>Cars stay out of the game's rules. The model has no lever in the document, so a node would invent one; the game sees cars only as the forecast's homes.</li>
       <li>The reach check takes <code>main</code>'s switch, not its name. Level 2 does not exist in the game; the check's question is the package's, and <code>--cars off</code> keeps <code>main</code>'s way of measuring the car system's cost.</li>
       <li>The scripts that set numbers run with cars on. The ladder and the prices are for the forecast the player plays.</li>
+      <li>A later commit on <code>main</code> is another pass of this unit, not a new design. The table of what each pass takes again ties the retake to the code the results depend on, so a commit that cannot move a result leaves it standing.</li>
     </ul>
   </section>
 
