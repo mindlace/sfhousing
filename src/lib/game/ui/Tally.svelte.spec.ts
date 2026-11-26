@@ -1,5 +1,5 @@
 /// <reference types="@vitest/browser-playwright" />
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { flushSync } from 'svelte';
 import { render } from 'vitest-browser-svelte';
 import { cdp, page, userEvent } from 'vitest/browser';
@@ -42,7 +42,13 @@ async function emulate(scheme: 'light' | 'dark', motion: 'reduce' | 'no-preferen
   });
 }
 
+// Svelte runs every tween on one shared frame loop. A tween left pending on real frames (a hidden
+// page pauses them) or on faked ones (gone once real timers return) stalls every later roll, so
+// no test starts with motion on and every faked frame runs out before the clock is restored.
+beforeAll(() => emulate('light', 'reduce'));
+
 afterEach(async () => {
+  if (vi.isFakeTimers()) await vi.runAllTimersAsync();
   vi.useRealTimers();
   await emulate('light', 'reduce');
 });
