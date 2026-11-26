@@ -211,7 +211,7 @@ Which bars show changes only at a record's start or end and on a rebuild, never 
 ## Cars per household
 
 The plan world's cars per household by zone (Census block group) at the playhead's month, on
-`/sim` only (car-ownership Task 12).
+the simulation only (car-ownership Task 12).
 
 - **Data:** `car-zones.json` (`manifest.scenarios.fzp.carZones`: block-group polygons, property
   `z`, the zone index) and `TimelineView.cars.zones[month]` (a `Float32Array`, NaN for a zone with

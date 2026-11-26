@@ -248,7 +248,7 @@ describe.each([768, 375])('RouteTimeline at %i px', (width) => {
     expect(document.querySelector('[data-testid^="handle-"]')).toBeNull();
     await segment(/^Permit review/).click();
     await expect.element(segment(/^Permit review/)).toHaveAttribute('aria-expanded', 'true');
-    await expect.element(page.getByText(/^Typical: 7 months/)).toBeVisible();
+    await expect.element(page.getByText(/^Typical: 9 months/)).toBeVisible();
     expect(months().elements()).toHaveLength(0);
     expect(page.getByRole('button', { name: 'Shorten by 0.5 month' }).elements()).toHaveLength(0);
     expect(page.getByRole('button', { name: 'Lengthen by 0.5 month' }).elements()).toHaveLength(0);

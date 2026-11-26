@@ -1,6 +1,7 @@
-// /sim's cars (car-ownership Task 12): the Cars row in Details at the playhead, the cars per
-// household layer in the map toolbar's Layers panel, and axe over both. fixture-0 carries car data
-// (cars.bin, car-zones.json); the VITE_E2E build's debug hooks, never pixels; conditions only.
+// The simulation's cars (the open game at `/`, no game seeded; car-ownership Task 12): the Cars row
+// in Details at the playhead, the cars per household layer in the map toolbar's Layers panel, and
+// axe over both. fixture-0 carries car data (cars.bin, car-zones.json); the VITE_E2E build's debug
+// hooks, never pixels; conditions only.
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import type { SfhFzpDebug } from '../src/lib/fzp/debug';
 import { expectNoA11yViolations } from './helpers/a11y';
@@ -9,9 +10,10 @@ import type { Win } from './helpers/sharing';
 
 type FzpWin = Win & { __sfhFzp?: SfhFzpDebug };
 
+/** The simulation at `/` (the open game: no game seeded), ready, filled, its map loaded. */
 async function gotoSim(page: Page, colorScheme: 'light' | 'dark' = 'light'): Promise<void> {
   await page.emulateMedia({ reducedMotion: 'reduce', colorScheme });
-  await page.goto('/sim');
+  await page.goto('/');
   await page.waitForFunction(() => (window as FzpWin).__sfhFzp?.phase === 'ready');
   await waitFilled(page);
   // The forecast can fill before the map has loaded: `__sfhMap` is installed with `map` null and
