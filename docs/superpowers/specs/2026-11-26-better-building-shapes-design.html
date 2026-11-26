@@ -85,7 +85,7 @@
       <aside data-kind="decision"><strong>Decision</strong> Measure the slices from the low percentile, not from <code>flatRoof</code>'s main roof. On Salesforce about 1,040 of 2,650 m² is at the crown and the rest is spread smoothly from 130 to 320 m, so <code>flatRoof</code> would most likely pick the crown as the main roof, leaving no rise to slice and a full-width prism to 320 m.</aside>
       <ul>
         <li>Levels: <code>base + k × band</code>, with <code>rise</code> = 99th percentile − base and <code>band = max(stepGapM, rise / taperTiers)</code>, up to the 99th percentile.</li>
-        <li>For each level, the region is the candidate cells (same masks as today: interior, non-vegetation, not rough) with height at least that level, opened and grown back as today, components under <code>stepMinAreaM2</code> dropped.</li>
+        <li>For each level, the region is the candidate cells (same masks as today: interior, non-vegetation, not rough) with height at least that level plus half a band, so each cell is drawn to its nearest level and a podium is not raised by a band, opened and grown back as today, components under <code>stepMinAreaM2</code> dropped.</li>
         <li>Each region becomes a box from its level's base to the next level's base (the top level to the median of its cells), so the boxes <strong>stack</strong>: <code>base_m</code> is the level below, not <code>baseTop</code>. Regions keep today's flush-face growth and clip to the shape; a region drawn at a level must lie inside the region of the level below, enforced by intersection.</li>
         <li>Rough cells (<code>treeRoughM</code>) stay excluded; fronts lose to terraces as they lose to steps today.</li>
       </ul>
