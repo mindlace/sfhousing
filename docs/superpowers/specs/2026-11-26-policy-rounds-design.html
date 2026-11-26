@@ -50,12 +50,34 @@
         <tr><th scope="row">P12</th><td>A win has to be seen: the playhead reaches the goal month,
           by Play or by dragging.</td></tr>
         <tr><th scope="row">P13</th><td>The no-gain rule (a round can complete without a win)
-          "sounds decent".</td></tr>
+          "sounds decent". Superseded by P19 and P20: a late result grants nothing.</td></tr>
         <tr><th scope="row">P14</th><td>"Since transit rules are implicitly about walking
           distance, maybe we have a sensible max, and don't default to the max as we appear to
           today. I would think 1km would already be pretty darn far."</td></tr>
         <tr><th scope="row">P15</th><td>20 and 40 stories reaching the goal later than 12 "sounds
           like some kind of simulation bug".</td></tr>
+        <tr><th scope="row">P16</th><td>"Reset the timeline when a policy changes or is enabled
+          to the present or to when the policy goes into effect, whichever is later."</td></tr>
+        <tr><th scope="row">P17</th><td>"Round 2" is a status, not a button. Clicking the score
+          opens the round panel. In the policies pane each row has the switch on the left and
+          Edit on the right. "Don't show a lock - 'new' is synonymous with fixed, so it either
+          has a 'new' badge or an edit button. Clicking on either should show the edit pane, but
+          in the new state it should just show details." On a phone, Edit or New goes beneath
+          the switch.</td></tr>
+        <tr><th scope="row">P18</th><td>"The round panel is an information panel not a tool
+          surface. Show only choosable policies in effect for that round with their as-set
+          rules. For earlier rounds, show what was achieved." A pop-over.</td></tr>
+        <tr><th scope="row">P19</th><td>No modal victory: "the user may want to tweak things
+          more". The top score converts to a win state when the current policies are winning
+          and the playhead has made it to or past the threshold; it is sticky while policies
+          are unchanged. A little present icon that jiggles stands for the new policies. Once
+          the present is opened, each new policy gets an explainer with an Accept button that
+          goes to the next. The losing state shows "82,069 homes by Jun 2062" over "2 years
+          late". "No policies granted, no nothing."</td></tr>
+        <tr><th scope="row">P20</th><td>A separate agent is improving the realism of the
+          scenario engine. "We should focus on the mechanisms and not worry too much if this
+          iteration paints the user into corners - we're not going to release this round of work
+          without integrating the sim changes."</td></tr>
       </tbody>
     </table>
   </section>
@@ -98,7 +120,6 @@
         <li>A forecast the player cannot pause, scrub or replay.</li>
         <li>A policy the player has won with that they cannot edit, or an edit that silently
           reverts (the 805 m revert the owner hit).</li>
-        <li>A round the player cannot get past.</li>
         <li>Any currency, score multiplier or reward that is not the forecast itself.</li>
       </ul>
     </section>
@@ -202,32 +223,34 @@
       <h3>The loop</h3>
       <figure id="fig-loop">
         <svg class="diagram" viewBox="0 0 760 240" role="img" aria-labelledby="fig-loop-t">
-          <title id="fig-loop-t">A round: offer, change, forecast, see the goal month, then a win or no gain</title>
+          <title id="fig-loop-t">A round: change a policy, watch the forecast, then a win the player takes or a late result</title>
           <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 10 5 0 10z"/></marker></defs>
-          <g class="node" id="n-offer"><rect x="10" y="30" width="150" height="44"/><text x="85" y="52">Round offered</text></g>
-          <g class="node" id="n-change"><rect x="200" y="30" width="150" height="44"/><text x="275" y="52">Switch or edit</text></g>
-          <g class="node" id="n-forecast"><rect x="390" y="30" width="150" height="44"/><text x="465" y="52">Forecast updates</text></g>
-          <g class="node" id="n-seen"><rect x="580" y="30" width="170" height="44"/><text x="665" y="52">Goal month seen</text></g>
-          <g class="node result" id="n-win"><rect x="580" y="150" width="170" height="44"/><text x="665" y="172">Win</text></g>
-          <g class="node" id="n-nogain"><rect x="300" y="150" width="220" height="44"/><text x="410" y="172">No gain</text></g>
-          <g class="edge" data-from="n-offer" data-to="n-change"><path d="M160 52H198"/></g>
-          <g class="edge" data-from="n-change" data-to="n-forecast"><path d="M350 52H388"/></g>
-          <g class="edge" data-from="n-forecast" data-to="n-seen"><path d="M540 52H578"/></g>
-          <g class="edge" data-from="n-seen" data-to="n-win"><path d="M700 74V148"/><text x="728" y="114">earlier</text></g>
-          <g class="edge" data-from="n-seen" data-to="n-nogain"><path d="M620 74V112H410V148"/><text x="515" y="104">not earlier, all tried</text></g>
-          <g class="edge" data-from="n-seen" data-to="n-change"><path d="M640 30V12H275V28"/><text x="458" y="8">not earlier, more to try</text></g>
-          <g class="edge" data-from="n-win" data-to="n-offer"><path d="M665 194V222H85V76"/><text x="375" y="234">next round</text></g>
-          <g class="edge" data-from="n-nogain" data-to="n-offer"><path d="M410 194V222H85V76"/></g>
+          <g class="node" id="n-change"><rect x="10" y="30" width="150" height="44"/><text x="85" y="52">Switch or edit</text></g>
+          <g class="node" id="n-reset"><rect x="200" y="30" width="150" height="44"/><text x="275" y="52">Timeline resets</text></g>
+          <g class="node" id="n-watch"><rect x="390" y="30" width="150" height="44"/><text x="465" y="52">Play or drag</text></g>
+          <g class="node" id="n-late"><rect x="580" y="30" width="170" height="44"/><text x="665" y="52">Late</text></g>
+          <g class="node result" id="n-win"><rect x="390" y="150" width="150" height="44"/><text x="465" y="172">Win state</text></g>
+          <g class="node" id="n-gift"><rect x="200" y="150" width="150" height="44"/><text x="275" y="172">Gift opened</text></g>
+          <g class="node" id="n-accept"><rect x="10" y="150" width="150" height="44"/><text x="85" y="172">Policies accepted</text></g>
+          <g class="edge" data-from="n-change" data-to="n-reset"><path d="M160 52H198"/></g>
+          <g class="edge" data-from="n-reset" data-to="n-watch"><path d="M350 52H388"/></g>
+          <g class="edge" data-from="n-watch" data-to="n-late"><path d="M540 52H578"/><text x="559" y="44">not yet</text></g>
+          <g class="edge" data-from="n-watch" data-to="n-win"><path d="M465 74V148"/><text x="500" y="114">earlier</text></g>
+          <g class="edge" data-from="n-late" data-to="n-change"><path d="M665 30V12H85V28"/><text x="375" y="8">try something else</text></g>
+          <g class="edge" data-from="n-win" data-to="n-gift"><path d="M390 172H352"/></g>
+          <g class="edge" data-from="n-gift" data-to="n-accept"><path d="M200 172H162"/></g>
+          <g class="edge" data-from="n-accept" data-to="n-change"><path d="M85 150V76"/><text x="118" y="114">next round</text></g>
+          <g class="edge" data-from="n-win" data-to="n-change"><path d="M465 194V222H40V76"/><text x="250" y="234">or keep tweaking</text></g>
         </svg>
-        <figcaption>Figure 1. A win sets a new target and makes the policies that were on
-          editable. No gain keeps the target and makes the round's policies editable. Both offer
-          the next round.</figcaption>
+        <figcaption>Figure 1. A win is a state the player can leave standing while they tweak
+          more. Opening the gift takes it: the target moves and the next round's policies
+          arrive.</figcaption>
       </figure>
       <ol>
         <li><strong>The baseline comes first.</strong> After Start no policy is offered. The
-          player plays or drags to the baseline's goal month. Seeing it sets the first target and
-          offers round 1. Seeing current law before any policy is the comparison everything later
-          is read against. Accepted by the owner (2026-11-26).
+          player plays or drags to the baseline's goal month. Seeing it is the first win; taking
+          it sets the first target and offers round 1. Seeing current law before any policy is
+          the comparison everything later is read against. Accepted by the owner (2026-11-26).
           <ul>
             <li>Nothing depends on the baseline meeting the legal deadline. The owner's rule is
               that the model follows realism wherever current law then lands, and the game is
@@ -238,39 +261,45 @@
         </li>
         <li><strong>A change resets the timeline.</strong> When a policy is switched on or off, or
           edited, playback pauses and the playhead goes to the first month the change takes
-          effect, or to today if that is later (the owner's rule, 2026-11-26). Everything after
-          that point is unseen again. So a player parked past the target cannot win by switching
-          a policy on without watching (P12); they press Play or drag forward from the reset
-          point.</li>
-        <li><strong>Seen.</strong> A month is seen when the playhead has landed on it or passed
-          over it, by Play, drag or keys, since the last change. With the reset above, this is
-          the ruler's "seen" zone.</li>
-        <li><strong>A win.</strong> The forecast is current, its goal month is earlier than the
-          target, and that month has been seen. A win does not move the playhead. Then:
+          effect, or to today if that is later (P16). Everything after that point is unseen
+          again, and the result state below is cleared.</li>
+        <li><strong>The result state.</strong> The pinned goal in the header shows one of three
+          states (P19). There is no result card and nothing interrupts the player.
+          <ul>
+            <li><strong>Pending.</strong> The target: "82,069 homes before Jun 2060".</li>
+            <li><strong>Win.</strong> The forecast is current, its goal month is earlier than the
+              target, and the playhead has reached or passed that month. It reads "82,069 homes
+              by Mar 2058" over "2 yr 3 mo early", with a gift beside it.</li>
+            <li><strong>Late.</strong> The playhead has reached or passed the target month and
+              the win conditions are not met. It reads "82,069 homes by Jun 2062" over "2 years
+              late". Nothing is granted.</li>
+          </ul>
+          Win and Late are sticky: dragging back and forth does not change them. Only a change
+          to a policy clears them.</li>
+        <li><strong>Any means count.</strong> A win needs no new policy on. Editing an older
+          policy for an earlier date is a win (P11).</li>
+        <li><strong>Taking the win.</strong> The player may keep tweaking in the win state. When
+          they open the gift:
           <ul>
             <li>the goal month becomes the target (P7);</li>
-            <li>every fixed policy that was on becomes editable (P9);</li>
-            <li>the next round is offered, if one is left.</li>
+            <li>every New policy that is on becomes editable (P9);</li>
+            <li>the next round's policies are presented one at a time, each with an explainer
+              and one button, Accept, which goes to the next. When all are accepted they are in
+              the timeline, off, marked New.</li>
           </ul>
         </li>
-        <li><strong>Any means count.</strong> A win needs no new policy on. Editing an older
-          policy for an earlier date wins the round (P11).</li>
-        <li><strong>Tried.</strong> A fixed policy is tried once, with that policy on and the
-          forecast current, the goal month or the target month has been seen, whichever comes
-          first. The tried set is emptied when a round is offered.</li>
-        <li><strong>No gain.</strong> "Fixed policies on offer" means every policy that is still
-          fixed: this round's and any left off in earlier rounds. When all of them have been
-          tried and none of those plays was a win, the round completes anyway: all of them
-          become editable, the target stays, and the next round is offered. Switching every
-          fixed policy on and playing once is enough. The page says the policies added nothing on
-          top of what the player has (P13).</li>
-        <li><strong>The end.</strong> When the last round has completed, the game is finished:
-          the limits are those <code>finished</code> gives today, and "+" offers every kind of
-          policy. The brush stays in the opening. The target keeps tracking the player's best
-          date.</li>
+        <li><strong>No way round a late result.</strong> A round is passed only by a win. A
+          player whose policies cannot beat their target is stuck in that round. The owner
+          accepts this for now (P20): the engine is being made more realistic in separate
+          work, and this design is not released before that lands.</li>
+        <li><strong>The end.</strong> After the last round, the next win's gift opens the whole
+          tool: the limits are those <code>finished</code> gives today, and "+" offers every
+          kind of policy. The brush stays in the opening. The target keeps tracking the player's
+          best date.</li>
       </ol>
       <p>Nothing is ever taken away. A later forecast that is worse changes nothing; the target is
-        the best date reached. Wins and editable policies are not undone by Undo.</p>
+        the best date taken. Wins and editable policies are not undone by Undo. An untaken win
+        is not saved: after a reload the player plays to the goal month again.</p>
     </section>
 
     <section id="sec-policies">
@@ -413,39 +442,55 @@
         tilted camera the opening handed over, free to pan, zoom and rotate; the timeline with
         its policies; the Playhead with Play, Pause, Replay, "Play from", the ruler, Today and the
         1× and 3× speeds (1 and 3 years per second); the chart; cards and Details.</p>
-      <pre><code data-lang="text">SF Housing   Round 2   [82,069 homes before Oct 2061  ▓▓▓░ ]   Publish  @you  About
-┌──────────────────────────────────────────────────────────────────────────────┐
-│                         map, 3D, pan and zoom                                │
-│                                                                              │
-├──────────────────────────────────────────────────────────────────────────────┤
-│ Zoning      [Taller near regional rail   on ]  [Taller near Muni Metro  New] │
-│ Permitting  [SB 423 clock               off ]  [Benchmark permits       New] │
-│ Money       [Housing bond                on ]  [General revenue         New] │
-│ ▶ 1×  Today  ├────seen────┼──────unseen──────⚑ Oct 2061───────────┤          │
-└──────────────────────────────────────────────────────────────────────────────┘</code></pre>
+      <pre><code data-lang="text">SF Housing  Round 2      [82,069 homes by Mar 2058 · 2 yr 3 mo early 🎁]   Publish  Games  @you  About
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│                           map, 3D, pan and zoom                                  │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│ Zoning      (on ) Taller near BART and Caltrain  [Edit]  ▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬   │
+│             (off) Taller near Muni Metro          New    ▭▭▭▭▭▭▭▭▭▭▭▭▭▭▭▭▭▭▭▭▭▭   │
+│ Permitting  (off) SB 423 clock                    New    ▭▭▭▭▭▭▭▭▭▭▭▭▭▭▭▭▭▭▭▭▭▭   │
+│ ▶ 1×  Today  ├────seen────┼──────unseen──────⚑ Jun 2060───────────┤              │
+└──────────────────────────────────────────────────────────────────────────────────┘</code></pre>
       <ul>
-        <li><strong>The target on the ruler.</strong> The goal flag sits at the target month,
-          as the "To beat" flag did before #158.</li>
-        <li><strong>The pinned goal.</strong> Line 1 is the goal and the target ("82,069 homes
-          before Oct 2061"; for the first target, "by Oct 2066"). Line 2 is the bar and what a
-          win brings ("3 new policies"). Pressing it opens the round panel: this round's
-          policies, one line each on what the policy is, its switch, and Edit when editable.
-          The side goals leave with the units that paid for them.</li>
-        <li><strong>Policies in the timeline.</strong> A policy offered this round carries a
-          "New" mark until it has been tried. A fixed policy shows its values read-only when
-          selected, as given measures do today.</li>
-        <li><strong>A win.</strong> A card: the goal month, how much earlier, and the new
-          policies. Playback pauses, as the win card did before #158. No gain gets the same card
-          with its own words.</li>
-        <li><strong>The header.</strong> The unit count becomes the round ("Round 2"). It still
-          opens the game panel: saved games, New game and the sync line. "Collect for me" and the
-          sound switch go; sound existed for collecting.</li>
+        <li><strong>The round is a status.</strong> "Round 2" is plain text beside the site name.
+          It is not a button and opens nothing (P17).</li>
+        <li><strong>The pinned goal.</strong> It shows the result state: pending, win or late
+          (see <a href="#sec-loop">The loop</a>). In the win state it carries a gift that
+          jiggles, and stays still under reduced motion. Pressing the goal opens the round
+          panel; pressing the gift takes the win.</li>
+        <li><strong>The round panel.</strong> A pop-over under the pinned goal. It is information
+          only, with nothing to operate (P18). For the current round it lists the policies
+          offered this round, each with its rules as set. For earlier rounds it shows what was
+          achieved: the goal month and how much earlier. The side goals leave with the units
+          that paid for them.</li>
+        <li><strong>A policy row.</strong> In the timeline's label column: the switch on the left,
+          the name, and on the right either a "New" badge or an "Edit" button (P17).
+          <ul>
+            <li>"New" means the policy is still fixed. It stays until the policy becomes
+              editable. There is no lock and no separate "fixed" mark.</li>
+            <li>Pressing "New" or "Edit" opens the policy's pane. For a New policy the pane
+              shows its details read-only; for an editable one it is the editor.</li>
+            <li>On a phone, where a policy takes two rows, "New" or "Edit" sits beneath the
+              switch.</li>
+          </ul>
+        </li>
+        <li><strong>The target on the ruler.</strong> The goal flag sits at the target month, as
+          the "To beat" flag did before #158.</li>
+        <li><strong>New policies arrive by explainer.</strong> Opening the gift shows one modal
+          per new policy: its name, a line or two on what it is and its rules as set, a step
+          count, and Accept. After the last, the policies are in the timeline with their New
+          badges.</li>
+        <li><strong>Saved games.</strong> The unit count was the door to the game panel: saved
+          games, New game and the sync line. With the round a status, that panel opens from a
+          "Games" button among the header actions, in the Menu on a phone. "Collect for me" and
+          the sound switch go; sound existed for collecting.</li>
         <li><strong>Actions.</strong> "Back to the tree" goes. Undo, Redo and Publish stay as
           they are.</li>
       </ul>
-      <aside data-kind="note"><strong>Note</strong> The look of the round panel, the win card and
-        the "New" mark is the owner's to settle. I will bring mockups once the rules above are
-        agreed. Dropping the side goals and sound is my call.</aside>
+      <aside data-kind="note"><strong>Note</strong> The owner reviewed the first mockups
+        (2026-11-26) and set the row layout, the New and Edit rule, the information-only round
+        panel, the result states in place of a card, the gift and the explainers. The "Games"
+        button, and dropping the side goals and sound, are my calls.</aside>
     </section>
 
     <section id="sec-removed">
@@ -469,7 +514,7 @@
     <section id="sec-state">
       <h3>State and saved games</h3>
       <p><code>GameState</code> version 3 holds: the round offered so far, the target, the set of
-        editable policies, the set of fixed policies tried since the last round was offered, the
+        editable policies, the
         list of wins (goal month, when, and the dataset version), and whether the game is
         finished. It no longer holds
         units, <code>bought</code>, the last run's result, side goals, the rung or the run count.
@@ -489,8 +534,8 @@
       </ul>
       <p><strong>A new dataset.</strong> The target is a month from one dataset's forecast. It is
         kept when the dataset changes; it is not re-based. If the new forecast beats it, that is
-        a win like any other. If the target is now out of reach, the no-gain rule still moves
-        the rounds on.</p>
+        a win like any other. If the target is now out of reach the player is stuck in that
+        round, which the owner accepts for now (P20).</p>
       <p>The <code>game_save</code> columns <code>phase</code> and <code>rung</code> list a
         game's progress. Whether <code>rung</code> is renamed by a generated migration or reused
         for the round is left to the plan; no migration is hand-edited.</p>
@@ -498,10 +543,11 @@
 
     <section id="sec-checks">
       <h3>The dataset check</h3>
-      <p>The rounds need almost nothing from a dataset. Targets come from the player's own
-        forecast and a round can complete with no gain, so no model result can block the game.
-        This follows the owner's rule (2026-11-26) that levers are judged by realism, and that
-        "more never builds fewer" is a diagnostic and not a gate.</p>
+      <p>The rounds ask little of a dataset: targets come from the player's own forecast. This
+        follows the owner's rule (2026-11-26) that levers are judged by realism, and that "more
+        never builds fewer" is a diagnostic and not a gate. A model result can leave a player
+        stuck in a round; the report below is how that is seen, and the engine's realism work
+        is where it is fixed (P20).</p>
       <ul>
         <li><strong>The gate.</strong> <code>scripts/reach-check.ts</code> still runs before every
           upload, with one rule: the goal is reached inside the window with every policy on at
@@ -564,7 +610,8 @@
         Seeking is already done in the browser.</li>
       <li>What is published at <code>/s/&lt;id&gt;</code> is still the runnable document, and
         existing published policies load and run unchanged.</li>
-      <li>WCAG 2.2 AA: a win and a no-gain result are announced; everything a drag does has a
+      <li>WCAG 2.2 AA: the win and late states are announced, and neither is shown by colour alone;
+        the gift is a button with a name; the explainers are dialogs that hold focus; everything a drag does has a
         key, as the ruler has today.</li>
       <li>Page text stays terse; details sit behind a tap.</li>
       <li>The e2e seam for a seeded game stays, with the new state. Signoff's checks apply
@@ -582,14 +629,20 @@
         every moment of the game.</li>
       <li>Play, Pause, drag, the keys and the 1× and 3× speeds work from the first second.</li>
       <li>No unit count, price, drop or tally appears anywhere, including About.</li>
-      <li>The baseline play wins, sets the target to its goal month and offers round 1.</li>
-      <li>Switching on a round-1 policy and seeing the goal month wins, moves the target to that
-        month, and makes that policy editable; setting its reach to any allowed value holds.</li>
+      <li>Seeing the baseline's goal month puts the pinned goal in its win state with a gift.
+        Opening the gift sets the target to that month and presents round 1's policies one by
+        one; after the last Accept they are in the timeline, off, marked New.</li>
+      <li>Switching on a round-1 policy and seeing the goal month gives the win state. It holds
+        while the player drags back and forth and clears when a policy changes. Opening the
+        gift moves the target to that month and turns that policy's New badge into Edit;
+        setting its reach to any allowed value holds.</li>
+      <li>With the playhead at the target month and the goal not reached, the pinned goal reads
+        the forecast's goal month over how late it is, and nothing is granted.</li>
+      <li>The round label is plain text and the round panel has nothing to operate.</li>
       <li>Editing an older policy for an earlier date wins with no new policy on.</li>
       <li>Switching a policy on with the playhead at the end of the timeline pauses playback and
         moves the playhead to today, or to the policy's start if later; no win is given until
         the goal month is reached again.</li>
-      <li>With every fixed policy tried and no earlier date, the round completes as no gain.</li>
       <li>A game saved before this change opens with its policies and plan intact.</li>
       <li>With a baseline that misses the legal deadline, the game still plays: the baseline's
         goal month becomes the first target.</li>
