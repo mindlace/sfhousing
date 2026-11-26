@@ -60,7 +60,7 @@ export async function inspectZ13(file: string, lng: number, lat: number): Promis
   const t = await new PMTiles(new NodeFileSource(file)).getZxy(z, x, y);
   const layer = t ? new VectorTile(new Pbf(new Uint8Array(t.data))).layers.buildings : undefined;
   const lines: string[] = [];
-  for (let i = 0; i < (layer?.length ?? 0); i++) {
+  for (let i = 0; layer && i < layer.length; i++) {
     const p = layer.feature(i).properties;
     lines.push(`${p.parcelId} ${p.heightM} ${p.baseM}`);
   }

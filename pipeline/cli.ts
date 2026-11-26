@@ -98,7 +98,7 @@ const steps: Record<string, { help: string; run: Step }> = {
   },
   boxes: {
     help: 'derive the building boxes from the locked footprints, parts and LiDAR tiles and lock the building-boxes artifact [--fixture: the mini fixture] [--probe <bid,bid,…|@file>: derive only those buildings, print per-part verdicts as JSON lines, write nothing]',
-    run: (args) => {
+    run: async (args) => {
       const fixture = args.flags.fixture === true;
       const probe = str(args.flags.probe);
       if (args.flags.probe !== undefined && !probe) {
