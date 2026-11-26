@@ -9,7 +9,10 @@ export const SHARED_DIRS = ['raw', 'ept', 'lidar-work'] as const;
 export const LOCAL_CACHE = resolve(import.meta.dirname, '../.cache');
 
 /** `SFH_CACHE_DIR`, else `$XDG_CACHE_HOME/sfhousing` (absolute only), else `~/.cache/sfhousing`. */
-export function cacheRoot(env: NodeJS.ProcessEnv = process.env, home: string = homedir()): string {
+export function cacheRoot(
+  env: Record<string, string | undefined> = process.env,
+  home: string = homedir()
+): string {
   if (env.SFH_CACHE_DIR) return resolve(env.SFH_CACHE_DIR);
   if (env.XDG_CACHE_HOME && isAbsolute(env.XDG_CACHE_HOME)) {
     return join(env.XDG_CACHE_HOME, 'sfhousing');
