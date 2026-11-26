@@ -1,7 +1,7 @@
 // The eligibility memo for lots with no row (perf), the `bundleOf` units array and the hoisted
 // closures change no result. Events and ledger hash as recorded from the build before them
 // (2026-11-13, at a7844ad1), with the memo on and off: synthCity seeds 1 and 2 (baseline money and
-// the bench set) always; live 2026-11-10-6ee5a23d seeds 1 to 3 with SFH_WORLD_LIVE. Each run is
+// the bench set) always; live 2026-11-25-76c90397 seeds 1 to 3 with SFH_WORLD_LIVE. Each run is
 // `createWorld`, `planDue` through 480 and 130 steps on the money timeline with every frame from
 // month 120 under another id (`replanAt`: every free lot is replanned then). On the mini city, the
 // cases the planning proposal did not examine: a money timeline with a programme switched off and
@@ -43,16 +43,17 @@ const CHANGE = 120;
  * re-recorded again when `LEGACY_UNCAPPED_DOLLARS` became ten trillion: only those `in` amounts
  * moved (the counts are unchanged). The synthCity values were re-recorded on 2026-11-25 for the
  * fallback award (rule 16 as amended): an application short on one pool is awarded on the others,
- * so many more lots start (counts about eight times larger). The live values predate it.
+ * so many more lots start (counts about eight times larger). The live values were re-recorded the
+ * same day, on dataset 2026-11-25-76c90397 (`SFH_WORLD_LIVE` set to its directory).
  */
 const RECORDED: Record<string, string> = {
   'synthCity baseline 1': 'ed887a96/59690',
   'synthCity baseline 2': 'a51a14cb/61033',
   'synthCity bench 1': '4eb1f5dc/61114',
   'synthCity bench 2': '719ab2ae/62687',
-  'live 1': 'b04ec705/6292',
-  'live 2': 'dbb6c92c/6849',
-  'live 3': 'c590436b/6133'
+  'live 1': '6fc8002e/6097',
+  'live 2': '641fdd82/6626',
+  'live 3': 'b6d521ff/5982'
 };
 
 function fnv(h: number, s: string): number {
@@ -125,7 +126,7 @@ describe.each([['baseline'], ['bench']] as const)('synthCity, %s money: as recor
 
 const live = process.env.SFH_WORLD_LIVE ? liveDir() : null;
 
-describe.skipIf(live === null)('live 2026-11-10-6ee5a23d, baseline money: as recorded', () => {
+describe.skipIf(live === null)('live 2026-11-25-76c90397, baseline money: as recorded', () => {
   let statics: Statics;
   let timeline: PolicyTimeline;
   beforeAll(async () => {
