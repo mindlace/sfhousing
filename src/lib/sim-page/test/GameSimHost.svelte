@@ -39,7 +39,7 @@
     <div data-testid="header-actions">{@render slot.current?.()}</div>
   </div>
 {/if}
-<!-- A fixed height, as the root layout's main gives: the tree's pane fills the box over the map. -->
+<!-- A fixed height, as the root layout's main gives. -->
 <div style="height: 600px">
   <SimRoute {data} mode="edit" persist="restore" storage={() => storage} />
 </div>

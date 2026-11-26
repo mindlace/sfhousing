@@ -40,7 +40,7 @@ import {
 } from './helpers/sharing';
 import { newVisitor } from './helpers/game';
 import { widestGameHeader, widestHeaderText } from './helpers/header-text';
-import { seedRuns, waitPhase } from './helpers/play';
+import { seedRuns, waitSim } from './helpers/play';
 import { touchLaptop } from './helpers/pointer';
 import { addPolicy, holdPolicy, installPolicyHold, releasePolicy, waitFilled } from './helpers/run';
 
@@ -1088,7 +1088,7 @@ test.describe("the game's header on the tree", () => {
       await seedRuns(page);
       await page.goto('/');
       await expect(page.locator('html')).toHaveAttribute('data-hydrated', '');
-      await waitPhase(page, 'tree');
+      await waitSim(page);
       const headline = page.getByTestId('goal-headline-button');
       await expect(headline).toBeVisible();
       await expect(page.getByTestId('header-units')).toBeAttached();

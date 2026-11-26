@@ -1,13 +1,12 @@
 // Target size (WCAG 2.2 AA, 2.5.8; docs/dev/accessibility.md): at 375 px on the mobile project
 // (touch, coarse pointer), every visible interactive element on `/` (Paint, as a new visitor; the
-// simulation, as the open game; the game's tally and tree) and `/about` is at least 24 by 24 CSS
-// px, at rest and with the page's sheets, menus, panels and dialogs open (About over the
-// simulation, the assumptions open on `/about`). One size for every pointer: nothing here needs
-// 44 px. The exemptions are listed below with their reasons.
+// simulation, as the open game) and `/about` is at least 24 by 24 CSS px, at rest and with the
+// page's sheets, menus, panels and dialogs open (About over the simulation, the assumptions open
+// on `/about`). One size for every pointer: nothing here needs 44 px. The exemptions are listed
+// below with their reasons.
 import { expect, test, type Page } from '@playwright/test';
-import { firstReady, seedRuns, untilPhase, waitPhase } from './helpers/play';
 import { addPolicy, waitFilled } from './helpers/run';
-import { gotoEditor, gotoHydrated, openHeaderMenu } from './helpers/sharing';
+import { gotoEditor, openHeaderMenu } from './helpers/sharing';
 
 type W = Window & { __sfhFzp?: { phase?: string } };
 
@@ -273,29 +272,6 @@ test.describe('targets at 375 px', () => {
     await page.getByRole('radio', { name: 'Paint', exact: true }).click();
     await expect(page.getByTestId('palette-strip')).toBeVisible();
     await expectTargets(page, 'Paint palette strip', 8);
-  });
-
-  test('the game: the tally, and the tree with a node open', async ({ page }) => {
-    await seedRuns(page);
-    await gotoHydrated(page, '/');
-    await waitPhase(page, 'tree');
-    await page.getByTestId('tree-run').click();
-    await untilPhase(page, 'tally');
-    await expect(page.getByTestId('tally-continue')).toBeVisible();
-    await expectTargets(page, 'the tally', 4);
-    await page.getByTestId('tally-continue').click();
-    await waitPhase(page, 'tree');
-    await expect(
-      page.locator('[data-testid="tree-node"][data-state="ready"]').first()
-    ).toBeVisible();
-    const id = await firstReady(page);
-    await page
-      .locator(`[data-testid="tree-node"][data-node="${id}"]`)
-      .getByTestId('tree-node-open')
-      .first()
-      .click();
-    await expect(page.getByTestId('tree-detail')).toBeVisible();
-    await expectTargets(page, 'the tree with a node open', 6);
   });
 
   test('Paint: the palette strip at 320 px, Undo, Redo and Done as its check', async ({ page }) => {

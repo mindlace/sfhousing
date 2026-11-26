@@ -110,12 +110,6 @@ export const SAVED_GAMES: readonly string[] = [
   'Games are saved in this browser, and to your account from your first win.'
 ];
 
-/** About's Run table: the keys of a run (R1). */
-export const RUN_SHORTCUTS: readonly { keys: string; action: string }[] = [
-  { keys: '← ↑ → ↓', action: 'Move the collecting ring (during a run)' },
-  { keys: 'Shift + ← ↑ → ↓', action: 'Move the collecting ring further' }
-];
-
 export const WORKED_OUT = 'How this is worked out';
 export const ASSUMPTIONS_SHOW = 'Show the assumptions';
 export const ASSUMPTIONS_FAILED = "The assumptions couldn't load.";

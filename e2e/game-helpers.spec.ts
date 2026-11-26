@@ -1,7 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
-import { newVisitor, seedGame, seedGoalAmount, seedRunMs } from './helpers/game';
+import { newVisitor, seedGame, seedGoalAmount } from './helpers/game';
 import { E2E_GAME_KEY, E2E_GOAL_KEY } from '../src/lib/game/e2e';
-import { E2E_RUN_MS_KEY } from '../src/lib/sim-page/e2e-run';
 import { SAVES_KEY, saveKey } from '../src/lib/game/saves';
 
 type Probe = Record<string, string>;
@@ -15,13 +14,7 @@ async function probe(page: Page): Promise<void> {
         for (let i = 0; i < localStorage.length; i++) {
           const key = localStorage.key(i);
           if (key === null) continue;
-          if (
-            key === k.game ||
-            key === k.goal ||
-            key === k.runMs ||
-            key === k.saves ||
-            key.startsWith(k.prefix)
-          )
+          if (key === k.game || key === k.goal || key === k.saves || key.startsWith(k.prefix))
             out[key] = localStorage.getItem(key) ?? '';
         }
       } catch {
@@ -32,7 +25,6 @@ async function probe(page: Page): Promise<void> {
     {
       game: E2E_GAME_KEY,
       goal: E2E_GOAL_KEY,
-      runMs: E2E_RUN_MS_KEY,
       saves: SAVES_KEY,
       prefix: saveKey('')
     }
@@ -176,19 +168,6 @@ test('seedGoalAmount sets the goal and leaves the game open', async ({ page }) =
   const p = await load(page);
   expect(p[E2E_GOAL_KEY]).toBe('5000');
   expect(p[E2E_GAME_KEY]).toBeUndefined();
-});
-
-test('seedRunMs stores the wall time of a run', async ({ page }) => {
-  await seedRunMs(page, 500);
-  const p = await load(page);
-  expect(p[E2E_RUN_MS_KEY]).toBe('500');
-  expect(p[E2E_GAME_KEY]).toBeUndefined();
-});
-
-test('seedRunMs refuses a time outside 100 to 20000 or not whole', async ({ page }) => {
-  const message = 'seedRunMs: ms must be a whole number from 100 to 20000';
-  await expect(seedRunMs(page, 99)).rejects.toThrow(message);
-  await expect(seedRunMs(page, 1.5)).rejects.toThrow(message);
 });
 
 test('the helpers refuse a second game on one page', async ({ page, browser }) => {

@@ -766,12 +766,11 @@ describe('SiteHeader', () => {
       await page.getByTestId('header-units').click();
       const gamePanel = page.getByTestId('header-game-panel');
       await expect.element(gamePanel).toBeVisible();
-      // A switch has no aria-expanded, so only the keep-open rule holds the Menu open.
-      const sound = gamePanel.getByTestId('game-sound');
-      expect(sound.element().hasAttribute('aria-expanded')).toBe(false);
-      const before = sound.element().getAttribute('aria-checked');
-      await sound.click();
-      await expect.element(sound).not.toHaveAttribute('aria-checked', before!);
+      // Rename has no aria-expanded, so only the keep-open rule holds the Menu open.
+      const rename = gamePanel.getByRole('button', { name: /^Rename / }).first();
+      expect(rename.element().hasAttribute('aria-expanded')).toBe(false);
+      await rename.click();
+      await expect.element(gamePanel.getByRole('textbox', { name: 'Name' })).toBeVisible();
       await expect.element(menu).toHaveAttribute('aria-expanded', 'true');
       const about = page.getByRole('link', { name: 'About', exact: true }).element();
       about.addEventListener('click', (e) => e.preventDefault(), { once: true });

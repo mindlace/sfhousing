@@ -1,14 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SF_GRID_BBOX } from '$lib/transit/grid';
-import {
-  RUN_BOUNDS,
-  RUN_MIN_ZOOM,
-  RUN_PAD_PX,
-  defaultFrame,
-  initialCamera,
-  pixelRatio,
-  runFrame
-} from './camera';
+import { defaultFrame, initialCamera, pixelRatio } from './camera';
 
 describe('camera', () => {
   it('default frames by width', () => {
@@ -54,30 +45,5 @@ describe('camera', () => {
   it('caps pixel ratio at 2', () => {
     expect(pixelRatio(3)).toBe(2);
     expect(pixelRatio(1)).toBe(1);
-  });
-});
-
-describe('runFrame', () => {
-  it("runFrame(1280, 744, 0) fits by height: zoom 11.603, the bounds' Mercator centre, flat and north up", () => {
-    const f = runFrame(1280, 744, 0);
-    expect(f.zoom).toBeCloseTo(11.603, 3);
-    expect(f.center[0]).toBeCloseTo(-122.4352, 4);
-    expect(f.center[1]).toBeCloseTo(37.77023, 4);
-    expect([f.pitch, f.bearing]).toEqual([0, 0]);
-  });
-  it('runFrame(375, 600, 0): a portrait box is fitted by width', () => {
-    expect(runFrame(375, 600, 0).zoom).toBeCloseTo(10.483, 3);
-  });
-  it('runFrame(1280, 744, 300): the inset is taken from the height', () => {
-    expect(runFrame(1280, 744, 300).zoom).toBeCloseTo(10.789, 3);
-  });
-  it('a box too small for the city gets RUN_MIN_ZOOM', () => {
-    expect(runFrame(100, 100, 0).zoom).toBe(RUN_MIN_ZOOM);
-    expect(runFrame(40, 40, 0).zoom).toBe(RUN_MIN_ZOOM);
-    expect(RUN_MIN_ZOOM).toBe(8);
-  });
-  it('RUN_BOUNDS is SF_GRID_BBOX', () => {
-    expect(RUN_BOUNDS).toEqual(SF_GRID_BBOX);
-    expect(RUN_PAD_PX).toBe(24);
   });
 });

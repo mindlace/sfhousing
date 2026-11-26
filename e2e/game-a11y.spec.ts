@@ -7,23 +7,9 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { expectNoA11yViolations } from './helpers/a11y';
 import { expectAboutReachable } from './helpers/chrome';
-import { seedGame, seedGoalAmount, seedRunMs } from './helpers/game';
-import {
-  buyNode,
-  firstReady,
-  openGamePanel,
-  playToEnding,
-  runLayer,
-  seedRuns,
-  tabTo,
-  untilPhase,
-  waitPhase
-} from './helpers/play';
-import { waitFilled } from './helpers/run';
+import { seedGoalAmount } from './helpers/game';
+import { openGamePanel, seedRuns, tabTo, waitSim } from './helpers/play';
 import { gotoEditor, gotoHydrated, openHeaderMenu, paintOnce } from './helpers/sharing';
-
-const node = (page: Page, id: string): Locator =>
-  page.locator(`[data-testid="tree-node"][data-node="${id}"]`);
 
 /** Puts focus on body and makes it the start of sequential focus navigation. */
 async function focusBody(page: Page): Promise<void> {
@@ -70,26 +56,6 @@ async function checkReach(page: Page, ...own: Locator[]): Promise<void> {
   }
 }
 
-/** The tree after one run at the goal amount 1: the lump paid, so a node is ready. */
-async function treeAfterRun(page: Page): Promise<void> {
-  await seedRuns(page);
-  await gotoHydrated(page, '/');
-  await waitPhase(page, 'tree');
-  await page.getByTestId('tree-run').click();
-  await untilPhase(page, 'tally');
-  await page.getByTestId('tally-continue').click();
-  await waitPhase(page, 'tree');
-  await expect(page.locator('[data-testid="tree-node"][data-state="ready"]').first()).toBeVisible();
-}
-
-/** Opens `firstReady`'s node; returns its id. */
-async function openReady(page: Page): Promise<string> {
-  const id = await firstReady(page);
-  await node(page, id).getByTestId('tree-node-open').first().click();
-  await expect(page.getByTestId('tree-detail')).toBeVisible();
-  return id;
-}
-
 test('the opening', async ({ page }) => {
   await gotoEditor(page);
   await expect(page.getByTestId('opening-start')).toHaveCount(0);
@@ -113,8 +79,10 @@ test('the skip link focused, in the opening', async ({ page }) => {
   await expect(page.locator('h1')).toHaveCount(1);
 });
 
-test('the skip link focused, on the tree', async ({ page }) => {
-  await treeAfterRun(page);
+test('the skip link focused, in the simulation', async ({ page }) => {
+  await seedRuns(page);
+  await gotoHydrated(page, '/');
+  await waitSim(page);
   await scanSkipFocused(page);
   await expect(page.locator('h1')).toHaveCount(1);
 });
@@ -128,65 +96,10 @@ test('the opening with the room goal met', async ({ page, isMobile }) => {
   await checkState(page, start);
 });
 
-test('a run, with reduced motion', async ({ page }) => {
-  await page.emulateMedia({ reducedMotion: 'reduce' });
-  await seedGoalAmount(page, 1);
-  await seedRunMs(page, 8000);
-  await seedGame(page, { phase: 'runs', runs: 1 });
-  await gotoHydrated(page, '/');
-  await waitPhase(page, 'tree');
-  await page.getByTestId('tree-run').click();
-  await untilPhase(page, 'run');
-  await expect(runLayer(page)).toHaveAttribute('data-state', 'running');
-
-  // The structure checks and the axe scan run inside the run: the layer is running before them
-  // and still running after them. The About check comes last: in this state it can take longer
-  // than what is left of the run, and nothing in it depends on the run still going.
-  await test.step('structure and axe, inside the 8,000 ms run', async () => {
-    await checkStructure(page);
-    await expectNoA11yViolations(page);
-  });
-
-  await expect(runLayer(page)).toHaveAttribute('data-state', 'running');
-
-  await test.step('About', () => checkReach(page));
-});
-
-test('the tally', async ({ page }) => {
-  await seedRuns(page);
-  await gotoHydrated(page, '/');
-  await waitPhase(page, 'tree');
-  await page.getByTestId('tree-run').click();
-  await untilPhase(page, 'tally');
-  const next = page.getByTestId('tally-continue');
-  await expect(next).toBeFocused();
-  await checkState(page, next);
-});
-
-test('the tree with a node open', async ({ page }) => {
-  await treeAfterRun(page);
-  await openReady(page);
-  // The tree covers the map: axe scans the pane, not the map.
-  const box = page.getByTestId('tl-map-box');
-  await expect(box).toHaveAttribute('inert', '');
-  await expect(box).toHaveAttribute('aria-hidden', 'true');
-  await checkState(page, page.getByTestId('tree-buy'), page.getByTestId('tree-run'));
-});
-
-test('the workshop', async ({ page }) => {
-  await treeAfterRun(page);
-  const id = await firstReady(page);
-  expect((await buyNode(page, id, 'pointer')).state.bought[id]).toBe(1);
-  await node(page, id).getByTestId('tree-node-edit').click();
-  await waitPhase(page, 'workshop');
-  await waitFilled(page);
-  await checkState(page, page.getByTestId('game-back'));
-});
-
 test('the game panel open', async ({ page }) => {
   await seedRuns(page);
   await gotoHydrated(page, '/');
-  await waitPhase(page, 'tree');
+  await waitSim(page);
   await expect(await openGamePanel(page)).toBeVisible();
   await checkState(page);
 });
@@ -194,37 +107,10 @@ test('the game panel open', async ({ page }) => {
 test('the side goals open', async ({ page }) => {
   await seedRuns(page);
   await gotoHydrated(page, '/');
-  await waitPhase(page, 'tree');
+  await waitSim(page);
   const headline = page.getByTestId('goal-headline-button');
   await headline.click();
   await expect(headline).toHaveAttribute('aria-expanded', 'true');
   await expect(page.getByTestId('side-goals')).toBeVisible();
   await checkState(page);
-});
-
-test('the ending', async ({ page }) => {
-  await playToEnding(page);
-  await expect(page.getByTestId('tree-ending')).toBeVisible();
-  await checkState(page, page.getByTestId('tree-publish'));
-});
-
-// Review Focus 3: the two screens drawn over the map, in dark.
-test.describe('dark mode', () => {
-  test.use({ colorScheme: 'dark' });
-
-  test('the tree with a node open and the tally pass in dark mode', async ({ page }) => {
-    await seedRuns(page);
-    await gotoHydrated(page, '/');
-    await waitPhase(page, 'tree');
-    await page.getByTestId('tree-run').click();
-    await untilPhase(page, 'tally');
-    await expectNoA11yViolations(page);
-    await page.getByTestId('tally-continue').click();
-    await waitPhase(page, 'tree');
-    await expect(
-      page.locator('[data-testid="tree-node"][data-state="ready"]').first()
-    ).toBeVisible();
-    await openReady(page);
-    await expectNoA11yViolations(page);
-  });
 });

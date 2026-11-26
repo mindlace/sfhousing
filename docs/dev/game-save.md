@@ -4,7 +4,7 @@ Saved games leave the browser for the player's account through `/api/game` (type
 `src/lib/game/save-api.ts`), stored in the `game_save` table, one row per saved game with a rev
 that every write checks. The browser side is the save sync (`src/lib/game/save-sync.svelte.ts`),
 which the root layout makes once and the store calls after each change, and which keeps both
-versions when two devices changed the same game. The account offer on the tally is
+versions when two devices changed the same game. The account offer on the opening card is
 `src/lib/game/AccountOffer.svelte`.
 
 The saved game itself (`GameSave`, `parseGameSave`) belongs to `src/lib/game/save-shape.ts`, the
@@ -300,7 +300,7 @@ The games are in `localStorage` first in every state; no state blocks play or bu
 - 400 or 429: the body's `error`, under the input, associated with it and focused. 401: "Sign in
   first." Any other status: "Couldn't save. Try again." A thrown fetch: "Couldn't reach the server.
   Check your connection."
-- Nothing in the offer blocks buying or closes the tally.
+- Nothing in the offer blocks Start.
 
 ## e2e seams
 
@@ -310,9 +310,6 @@ The games are in `localStorage` first in every state; no state blocks play or bu
   a v2 game in the runs phase, with `firstWinAt` set and never sent, so the sync sends it at attach
   on the first load and the `PUT` mints the account. Rate limits always allow under
   `ENVIRONMENT=development`.
-- `seedRunMs(page, ms)` writes `ms` (a whole number from 100 to 20000, else it throws) under
-  `E2E_RUN_MS_KEY` before the page loads, so an e2e build's run lasts `ms` of wall time. It does
-  not count as a seeded game: it may follow `seedGame` or `newVisitor`.
 - A spec changes a stored game by writing its `saveKey(id)` value and its `SAVES_KEY` entry with
   `page.evaluate` (a new `name` and `savedAt`), then reloading: the sync finds it changed here.
 - A second device: the first context adds an email on `/account` through the `dev-link`; a second

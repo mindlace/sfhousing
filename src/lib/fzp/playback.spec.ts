@@ -1,15 +1,7 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { MONTH_DAYS } from '$lib/timelapse/time';
-import {
-  DEFAULT_SPEED,
-  FRAME_CLAMP_MS,
-  RUN_MS,
-  SPEED_DAYS,
-  SPEED_NAME,
-  advance,
-  runRate
-} from './playback';
+import { DEFAULT_SPEED, FRAME_CLAMP_MS, SPEED_DAYS, SPEED_NAME, advance } from './playback';
 import { HORIZON, dayFromUtc } from './time';
 import type { Speed } from './types';
 
@@ -41,31 +33,11 @@ describe('speed tables', () => {
   });
 });
 
-describe('a run rate', () => {
+describe('a rate in days per second', () => {
   it('advance takes days per second', () => {
     expect(advance(0, 50, 360, 10_000)).toEqual({ t: 18, day: 18, done: false });
     expect(advance(40, 50, 360, 50)).toEqual({ t: 50, day: 50, done: true });
     expect(advance(0, 5000, 360, 10_000).t).toBe(36); // clamped to 100 ms
-  });
-
-  it('runRate', () => {
-    expect(RUN_MS).toBe(20_000);
-    expect(runRate(0, 2000, 10_000)).toBe(200);
-    expect(runRate(100, 100)).toBe(0);
-    expect(runRate(200, 100)).toBe(0);
-  });
-
-  it('runRate plays any span in 20 s of 16 ms frames to within one frame', () => {
-    for (const span of [30, 3650, 9000]) {
-      const rate = runRate(0, span);
-      let t = 0;
-      let frames = 0;
-      while (t < span) {
-        t = advance(t, 16, rate, span).t;
-        frames++;
-      }
-      expect(Math.abs(frames * 16 - 20_000)).toBeLessThanOrEqual(16);
-    }
   });
 });
 

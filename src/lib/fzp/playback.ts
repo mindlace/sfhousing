@@ -19,14 +19,6 @@ export const SPEED_NAME: Record<Speed, string> = {
 /** Longest frame counted, so a background tab does not make the clock jump. */
 export const FRAME_CLAMP_MS = 100;
 
-/** How long a run plays, whatever its span, in milliseconds. */
-export const RUN_MS = 20_000;
-
-/** Days per second that play `asOf` to `stop` in `ms` (0 when `stop` is not after `asOf`). */
-export function runRate(asOf: Day, stop: Day, ms = RUN_MS): number {
-  return Math.max(stop - asOf, 0) / (ms / 1000);
-}
-
 /**
  * One frame: `t += min(dt, 100 ms) x daysPerSecond`, `day = min(floor(t), horizon)`. `t` is the
  * fractional clock and stops at `horizon`, where `done` is true.

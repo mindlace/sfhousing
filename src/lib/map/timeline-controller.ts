@@ -65,14 +65,11 @@ export interface TimelinePartLookup {
   existingUnits: number;
 }
 
-/** The id suffix of the merged layers (`setMerged`): `timeline-solid-run`, `timeline-ghost-run`. */
-const MERGED_ID = 'run';
-
 /**
- * Ids of the per-cell timeline layers (picking and culling). `timeline-bars`, `timeline-halos`
- * and the merged pair (`setMerged`) are not.
+ * Ids of the per-cell timeline layers (picking and culling). `timeline-bars` and `timeline-halos`
+ * are not.
  */
-export const TIMELINE_PART_LAYER = /^timeline-(solid|ghost)-(?!run$)/;
+export const TIMELINE_PART_LAYER = /^timeline-(solid|ghost)-/;
 
 type Accessor<T> = (o: unknown, info: { index: number }) => T;
 type TimelineLayerProps = ConstructorParameters<
@@ -87,11 +84,10 @@ interface PackCache {
 
 // Created once per pack (data, elevation) and per (pack, theme) (fill colour), as in
 // generated-controller.ts. Both of a cell's layers share them, so they share one tessellation
-// key and one registered cull bound. `cull` false (the merged join) registers no bound, so
-// `generatedCellFilter` keeps the layer.
+// key and one registered cull bound.
 const packCache = new WeakMap<TimedPackedCell, PackCache>();
 
-function accessorsFor(pack: TimedPackedCell, theme: Theme, cull = true) {
+function accessorsFor(pack: TimedPackedCell, theme: Theme) {
   let c = packCache.get(pack);
   if (!c) {
     const { partTopM } = pack;
@@ -104,7 +100,7 @@ function accessorsFor(pack: TimedPackedCell, theme: Theme, cull = true) {
       getElevation: (_, { index }) => partTopM[index],
       fill: {}
     };
-    if (cull) registerCellBounds(c.data, pack);
+    registerCellBounds(c.data, pack);
     packCache.set(pack, c);
   }
   let fill = c.fill[theme];
@@ -168,87 +164,6 @@ function vec4Accessor(cell: Pick<Cell, 'enc'>, key: keyof EncodedParts): Accesso
 
 const byKey = <T>(a: [string, T], b: [string, T]) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0);
 
-/** The typed arrays `from` concatenated into a new `Ctor`. */
-function concat<A extends Float64Array | Float32Array | Uint32Array | Uint8Array>(
-  Ctor: { new (n: number): A },
-  from: A[]
-): A {
-  let n = 0;
-  for (const a of from) n += a.length;
-  const out = new Ctor(n);
-  let o = 0;
-  for (const a of from) {
-    out.set(a, o);
-    o += a.length;
-  }
-  return out;
-}
-
-/**
- * The cells' parts as one cell, `cellId` MERGED_ID, in the given order: positions, part arrays
- * and encodings concatenated; startIndices offset by the vertices before each cell, ending with
- * the total vertex count. Only the fields the layers read are filled; the slot tables are empty.
- */
-function joinCells(cells: Cell[]): { pack: TimedPackedCell; enc: EncodedParts } {
-  let parts = 0;
-  for (const c of cells) parts += c.pack.partCount;
-  const startIndices = new Uint32Array(parts + 1);
-  let k = 0;
-  let verts = 0;
-  for (const { pack } of cells) {
-    for (let i = 0; i < pack.partCount; i++) startIndices[k++] = pack.startIndices[i] + verts;
-    verts += pack.positions.length / 2;
-  }
-  startIndices[parts] = verts;
-  const packs = cells.map((c) => c.pack);
-  const encs = cells.map((c) => c.enc);
-  const pack: TimedPackedCell = {
-    cellId: MERGED_ID,
-    parcelIds: [],
-    parcelMeta: new Uint32Array(0),
-    partCount: parts,
-    startIndices,
-    positions: concat(
-      Float64Array,
-      packs.map((p) => p.positions)
-    ),
-    partTopM: concat(
-      Float32Array,
-      packs.map((p) => p.partTopM)
-    ),
-    partSlot: new Uint32Array(0),
-    partAppearance: concat(
-      Uint8Array,
-      packs.map((p) => p.partAppearance)
-    ),
-    partTypology: concat(
-      Uint8Array,
-      packs.map((p) => p.partTypology)
-    ),
-    slotProjectIds: [],
-    partWindow: new Float32Array(0),
-    slotStages: new Float32Array(0),
-    slotEnd: new Float32Array(0),
-    slotPathway: new Uint8Array(0),
-    slotCohort: new Uint8Array(0)
-  };
-  const enc: EncodedParts = {
-    tlA: concat(
-      Float32Array,
-      encs.map((e) => e.tlA)
-    ),
-    tlB: concat(
-      Float32Array,
-      encs.map((e) => e.tlB)
-    ),
-    tlC: concat(
-      Float32Array,
-      encs.map((e) => e.tlC)
-    )
-  };
-  return { pack, enc };
-}
-
 export class TimelineController {
   private lastRevision = -1;
   private cells = new Map<string, Cell>();
@@ -295,14 +210,6 @@ export class TimelineController {
   private leftover = new Set<string>();
   /** From a swap's revision 0 until its leftovers go: slices use SWAP_CELLS_PER_SLICE. */
   private swapping = false;
-  /** `setMerged`: one solid and one ghost layer over every cell in place of the per-cell pairs. */
-  private merged = false;
-  /** The merged pair, built by `emit` while merged; null with no parts (or not built yet). */
-  private mergedLayers: { solid: Layer; ghost: Layer } | null = null;
-  /** A cell's layers were built or a cell went since the merged pair was built. */
-  private mergeDirty = true;
-  /** The merged layers' `updateTriggers.getTlC`, bumped at each join. */
-  private mergeCount = 0;
 
   /**
    * `labelBeforeId`: the basemap's first label layer. Every layer this controller emits carries
@@ -393,19 +300,6 @@ export class TimelineController {
     this.rebuildBars(); // no cells: only the bars depend on the lookups
     if (!this.barJob) this.emit(); // far: the last declutter slice emits
     this.schedule();
-  }
-
-  /** One merged solid and ghost layer over every cell while on; per-cell layers while off. */
-  setMerged(on: boolean): void {
-    if (this.destroyed || on === this.merged) return;
-    this.merged = on;
-    // Off: drop the join (a copy of every cell); per-cell layers are kept current while merged.
-    this.mergedLayers = null;
-    this.mergeDirty = true;
-    // deck finalizes a layer that leaves its list, so an instance is never emitted again after a
-    // merged emit replaced it: new per-cell instances from the held packs, no re-encode or re-pack.
-    if (!on) for (const cell of this.cells.values()) this.buildCellLayers(cell);
-    if (this.lastRevision >= 0) this.emit();
   }
 
   setTheme(t: Theme): void {
@@ -566,7 +460,6 @@ export class TimelineController {
     this.barJob = null;
     this.halos = [];
     this.halosLayer = null;
-    this.mergedLayers = null;
     this.city.clear();
     this.current = [];
   }
@@ -579,7 +472,6 @@ export class TimelineController {
     this.queue = [];
     this.barJob = null;
     this.cells.clear();
-    this.mergeDirty = true;
     this.leftover.clear();
     this.swapping = false;
     this.bars = [];
@@ -646,7 +538,7 @@ export class TimelineController {
       // During a swap a removed cell stays as a leftover, so the map never thins mid-switch.
       if (this.swapping) {
         if (this.cells.has(id)) this.leftover.add(id);
-      } else if (this.cells.delete(id)) this.barsDirty = this.halosDirty = this.mergeDirty = true;
+      } else if (this.cells.delete(id)) this.barsDirty = this.halosDirty = true;
     }
     for (const pack of slice.cells) this.install(pack);
     for (const id of slice.reencode) {
@@ -658,7 +550,7 @@ export class TimelineController {
     }
     if (slice.complete) {
       for (const id of this.leftover)
-        if (this.cells.delete(id)) this.barsDirty = this.halosDirty = this.mergeDirty = true;
+        if (this.cells.delete(id)) this.barsDirty = this.halosDirty = true;
       this.leftover.clear();
       this.swapping = false;
     }
@@ -823,19 +715,15 @@ export class TimelineController {
     const has = cell.pack.partCount > 0;
     cell.solid = has ? this.makeLayer(cell, 0, cell.pack.cellId) : null;
     cell.ghost = has ? this.makeLayer(cell, 1, cell.pack.cellId) : null;
-    this.mergeDirty = true;
   }
 
-  /**
-   * A cell's layer (`suffix` its cellId, culled per cell) or a merged one (`suffix` MERGED_ID,
-   * never culled). Nothing else differs, so the two draw alike.
-   */
+  /** A cell's layer for `pass` (`suffix` its cellId, culled per cell). */
   private makeLayer(cell: Pick<Cell, 'pack' | 'tl' | 'tlc'>, pass: 0 | 1, suffix: string): Layer {
     const theme = this.theme;
     const id = `timeline-${pass === 0 ? 'solid' : 'ghost'}-${suffix}`;
     return new this.deps.SolidPolygonLayer<unknown, TimelapseExtensionProps>({
       id,
-      ...accessorsFor(cell.pack, theme, suffix !== MERGED_ID),
+      ...accessorsFor(cell.pack, theme),
       ...cell.tl,
       extruded: true,
       _normalize: false,
@@ -853,49 +741,18 @@ export class TimelineController {
   }
 
   /**
-   * The merged pair over every cell with parts, in cellId order (the per-cell emit order); null
-   * when no cell has parts. Joined again only when a cell's layers were built or a cell went
-   * since, and then once per update: while cell, removal or re-encode slices are queued the
-   * previous pair stays (as the bars and halos wait), unless there is none yet.
-   */
-  private mergedPair(sorted: [string, Cell][]): { solid: Layer; ghost: Layer } | null {
-    if (!this.mergeDirty || (this.mergedLayers && !this.drained())) return this.mergedLayers;
-    this.mergeDirty = false;
-    const cells = sorted.map(([, c]) => c).filter((c) => c.pack.partCount > 0);
-    if (cells.length === 0) return (this.mergedLayers = null);
-    const join = joinCells(cells);
-    const tl = {
-      getTlA: vec4Accessor(join, 'tlA'),
-      getTlB: vec4Accessor(join, 'tlB'),
-      getTlC: vec4Accessor(join, 'tlC')
-    };
-    const cell = { pack: join.pack, tl, tlc: ++this.mergeCount };
-    return (this.mergedLayers = {
-      solid: this.makeLayer(cell, 0, MERGED_ID),
-      ghost: this.makeLayer(cell, 1, MERGED_ID)
-    });
-  }
-
-  /**
-   * Solids by cellId, then ghosts by cellId (merged: `timeline-solid-run`, `timeline-ghost-run`),
-   * then `timeline-bars`, then `timeline-halos`, then the overlay.
+   * Solids by cellId, then ghosts by cellId, then `timeline-bars`, then `timeline-halos`, then the
+   * overlay.
    */
   private emit(): void {
     if (this.destroyed) return;
     const sorted = [...this.cells].sort(byKey);
     const solids: Layer[] = [];
     const ghosts: Layer[] = [];
-    if (this.merged) {
-      const pair = this.mergedPair(sorted);
-      if (pair) {
-        solids.push(pair.solid);
-        ghosts.push(pair.ghost);
-      }
-    } else
-      for (const [, c] of sorted) {
-        if (c.solid) solids.push(c.solid);
-        if (c.ghost) ghosts.push(c.ghost);
-      }
+    for (const [, c] of sorted) {
+      if (c.solid) solids.push(c.solid);
+      if (c.ghost) ghosts.push(c.ghost);
+    }
     this.current = [
       ...solids,
       ...ghosts,

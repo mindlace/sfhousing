@@ -18,7 +18,6 @@ import {
   GAME_STEPS,
   MEANINGS,
   PART_HEADING,
-  RUN_SHORTCUTS,
   SAVED_GAMES,
   YOUR_PLANS
 } from './copy';
@@ -296,21 +295,12 @@ describe('AboutUsing', () => {
     expect(rows).toEqual(TIMELINE_SHORTCUTS.map((s) => [s.keys, s.action]));
   });
 
-  it('using: the tables are Painting, Timeline and Run; Run holds its two rows', async () => {
+  it('using: the tables are Painting and Timeline', async () => {
     render(AboutUsing, { level: 2 });
     const captions = [...document.querySelectorAll('#about-shortcuts table caption')].map((c) =>
       c.textContent?.trim()
     );
-    expect(captions).toEqual(['Painting', 'Timeline', 'Run']);
-    const run = [...document.querySelectorAll('#about-shortcuts table')][2];
-    const rows = [...run.querySelectorAll('tbody tr')].map((r) =>
-      [...r.querySelectorAll('td')].map((d) => d.textContent?.trim())
-    );
-    expect(rows).toEqual([
-      ['← ↑ → ↓', 'Move the collecting ring (during a run)'],
-      ['Shift + ← ↑ → ↓', 'Move the collecting ring further']
-    ]);
-    expect(RUN_SHORTCUTS.map((s) => [s.keys, s.action])).toEqual(rows);
+    expect(captions).toEqual(['Painting', 'Timeline']);
   });
 
   it('using: The game, an ordered list of its five steps, then its four notes, word for word', async () => {

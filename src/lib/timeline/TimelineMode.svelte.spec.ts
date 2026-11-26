@@ -3611,13 +3611,12 @@ describe('halos on the map', () => {
   });
 });
 
-describe('no game: no phase', () => {
-  it('data-phase is none, setRunView is never called, and the dock mounts', async () => {
+describe('no game', () => {
+  it('no data-phase, and the dock mounts', async () => {
     await opened();
-    expect(page.getByTestId('tl-mode').element().getAttribute('data-phase')).toBe('none');
+    expect(page.getByTestId('tl-mode').element().hasAttribute('data-phase')).toBe(false);
     await expect.element(page.getByTestId('tl-dock')).toBeInTheDocument();
     expect(callsOf('getMap').length).toBeGreaterThan(0); // the map was ready
-    expect(callsOf('setRunView')).toEqual([]);
     const box = page.getByTestId('tl-map-box').element();
     expect(box.hasAttribute('inert')).toBe(false);
     expect(box.hasAttribute('tabindex')).toBe(false);

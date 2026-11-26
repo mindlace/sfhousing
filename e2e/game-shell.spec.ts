@@ -1,10 +1,10 @@
-// The game shell end to end (game-shell): the opening on `/` and the first run's start at the same
-// address, `/sim` as a redirect to `/`, the header with no steps, the first load's brush, the
+// The game shell end to end (game-shell): the opening on `/` and the simulation after Start at the
+// same address, `/sim` as a redirect to `/`, the header with no steps, the first load's brush, the
 // simulation with no game, and `/p/<id>` in full. Runs against the VITE_E2E build on fixture-0,
 // with the real game switched on by e2e/helpers/game.ts before the first navigation.
 import { expect, test } from '@playwright/test';
 import { seedGoalAmount } from './helpers/game';
-import { untilPhase } from './helpers/play';
+import { waitSim } from './helpers/play';
 import {
   gotoEditor,
   gotoHydrated,
@@ -14,7 +14,7 @@ import {
   smallText
 } from './helpers/sharing';
 
-test('a new visitor paints once, presses Start, and the first run starts at /', async ({
+test('a new visitor paints once, presses Start, and the simulation opens at /', async ({
   page,
   isMobile
 }) => {
@@ -30,28 +30,12 @@ test('a new visitor paints once, presses Start, and the first run starts at /', 
   const start = page.getByTestId('opening-start');
   await expect(start).toBeVisible();
   await start.click();
-  await untilPhase(page, 'run');
+  await waitSim(page);
 
   await expect(page).toHaveURL(/\/$/);
   expect(new URL(page.url()).pathname).toBe('/');
   expect(paths.length).toBeGreaterThan(0);
   expect(new Set(paths)).toEqual(new Set(['/']));
-  // The map box takes focus (tl-map-box, tabindex -1 while starting and running).
-  await expect
-    .poll(() =>
-      page.evaluate(() => {
-        const a = document.activeElement;
-        const root = document.querySelector('[data-testid="map-root"]');
-        return (
-          !!a &&
-          a !== document.body &&
-          a !== document.documentElement &&
-          a.contains(root) &&
-          a.closest('[data-testid="tl-map-box"]') !== null
-        );
-      })
-    )
-    .toBe(true);
 });
 
 test('the opening card is one element inside its box', async ({ page, isMobile }) => {

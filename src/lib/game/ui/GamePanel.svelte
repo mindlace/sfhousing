@@ -2,26 +2,21 @@
   /** The game panel, the content of the header's game cell: saved games and the sync line. */
   import { tick } from 'svelte';
   import { page } from '$app/state';
-  import { getStorage } from '$lib/sharing/storage';
   import { moreBelow } from '$lib/shell/more-below';
   import { BUTTON, BUTTON_PRIMARY, BUTTON_QUIET } from '$lib/shell/ui';
   import { MAX_SAVES, SAVE_NAME_MAX } from '../saves';
   import { useGame, type StoreChange } from '../store.svelte';
   import { total } from '../units';
   import { FULL_TEXT, STORAGE_TEXT, playedText, syncText } from '../words';
-  import { readCollectForMe, readMuted, writeCollectForMe, writeMuted } from '../run/prefs';
   import { reloadGame } from './reload';
   import {
     CANCEL,
-    COLLECT_BOUGHT,
-    COLLECT_FOR_ME,
     DELETE,
     NAME_LABEL,
     NEW_GAME_LABEL,
     PLAYING,
     RENAME,
     SAVED_GAMES,
-    SOUND,
     deleteAsk,
     deleteName,
     entryStage,
@@ -37,13 +32,6 @@
   const deleteId = (id: string) => `${uid}-delete-${id}`;
   const cancelId = (id: string) => `${uid}-cancel-${id}`;
   const fieldId = (id: string) => `${uid}-field-${id}`;
-  const collectNoteId = `${uid}-collect-note`;
-
-  // Prefs are read once, at mount.
-  const storage = getStorage();
-  let muted = $state(readMuted(storage));
-  let collecting = $state(readCollectForMe(storage));
-  const auto = $derived(game.limits.hands.auto);
 
   /** The one row action open now. */
   let open = $state<{ id: string; kind: 'rename' | 'delete' } | null>(null);
@@ -87,19 +75,6 @@
     const field = document.getElementById(fieldId(id));
     open = null;
     if (field instanceof HTMLInputElement) game.rename(id, field.value);
-  }
-
-  function toggleSound(): void {
-    commitOpenRename();
-    muted = !muted;
-    writeMuted(storage, muted);
-  }
-
-  function toggleCollect(): void {
-    commitOpenRename();
-    if (auto) return;
-    collecting = !collecting;
-    writeCollectForMe(storage, collecting);
   }
 
   function switchTo(id: string): void {
@@ -224,31 +199,6 @@
         {/if}
       </p>
     {/if}
-    <div class="flex flex-col gap-1">
-      <button
-        type="button"
-        role="switch"
-        data-testid="game-sound"
-        aria-checked={!muted}
-        class="{BUTTON} aria-checked:bg-accent-tint dark:aria-checked:bg-accent-dark/30"
-        onclick={toggleSound}
-      >
-        {SOUND}
-      </button>
-      <button
-        type="button"
-        role="switch"
-        data-testid="game-collect"
-        aria-checked={auto || collecting}
-        aria-disabled={auto ? 'true' : undefined}
-        aria-describedby={auto ? collectNoteId : undefined}
-        class="{BUTTON} aria-checked:bg-accent-tint dark:aria-checked:bg-accent-dark/30"
-        onclick={toggleCollect}
-      >
-        {COLLECT_FOR_ME}
-      </button>
-      {#if auto}<p id={collectNoteId}>{COLLECT_BOUGHT}</p>{/if}
-    </div>
     <h3 class="font-semibold">{SAVED_GAMES}</h3>
     <ul class="more-below flex max-h-64 flex-col gap-2 overflow-y-auto" {@attach moreBelow}>
       {#each game.saves as entry (entry.id)}
